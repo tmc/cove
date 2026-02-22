@@ -288,7 +288,7 @@ func main() {
 				os.Exit(1)
 			}
 			return
-		case "verify":
+		case "verify", "doctor":
 			if err := handleVerify(args); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)

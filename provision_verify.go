@@ -3,10 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // VerifyResult holds the verification status for a single file
@@ -22,22 +27,30 @@ type VerifyResult struct {
 
 // handleVerify verifies provisioning files in a VM disk
 func handleVerify(args []string) error {
-	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	verboseFlag := fs.Bool("v", false, "Verbose output")
+	fixFlag := fs.Bool("fix", false, "Attempt to fix issues (inject agent, fix ownership)")
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: vz-macos verify [options]
+		fmt.Fprintf(os.Stderr, `Usage: vz-macos doctor [options]
 
-Verify that provisioning files are correctly installed in the VM disk image.
-This checks file existence, ownership, and permissions.
+Diagnose VM health: provisioning, agent, and file ownership.
+
+When the VM is running, checks via control socket and guest agent.
+When stopped, mounts the disk and inspects files directly.
+
+With --fix, attempts to repair issues automatically:
+  - Inject missing vz-agent binary and LaunchDaemon
+  - Fix file ownership (requires admin privileges)
 
 Options:
 `)
 		fs.PrintDefaults()
 		fmt.Fprintf(os.Stderr, `
 Example:
-  vz-macos -vm test-vm verify
-  vz-macos -vm test-vm verify -v
+  vz-macos doctor            # diagnose
+  vz-macos doctor --fix      # diagnose and repair
+  vz-macos doctor -v         # verbose output
 `)
 	}
 
@@ -49,41 +62,173 @@ Example:
 		provisionVerbose = true
 	}
 
+	// Check if VM is running.
+	sock := GetControlSocketPath()
+	if isVMRunning(sock) {
+		return verifyRunning(sock, *verboseFlag)
+	}
+
+	return verifyStopped(*verboseFlag, *fixFlag)
+}
+
+// isVMRunning checks if the VM control socket is alive.
+func isVMRunning(sock string) bool {
+	if _, err := os.Stat(sock); os.IsNotExist(err) {
+		return false
+	}
+	conn, err := net.DialTimeout("unix", sock, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// verifyRunning performs checks against a running VM via the control socket.
+func verifyRunning(sock string, verbose bool) error {
+	fmt.Println("=== Verifying VM (Running) ===")
+	fmt.Printf("VM: %s\n", vmDir)
+	fmt.Printf("Control socket: %s\n\n", sock)
+
+	allOK := true
+
+	// 1. Check VM status.
+	req := &controlpb.ControlRequest{Type: "status"}
+	resp, err := ctlSendRequest(sock, req, 5*time.Second, "status")
+	if err != nil {
+		fmt.Printf("  VM status: error (%v)\n", err)
+		allOK = false
+	} else if resp.Success {
+		fmt.Printf("  VM status: OK\n")
+	}
+
+	// 2. Check agent.
+	agentOK := false
+	pingReq := &controlpb.ControlRequest{Type: "agent-ping"}
+	pingResp, err := ctlSendRequest(sock, pingReq, 5*time.Second, "agent-ping")
+	if err != nil {
+		fmt.Printf("  Agent: not reachable (%v)\n", err)
+	} else if !pingResp.Success {
+		fmt.Printf("  Agent: not reachable (%s)\n", pingResp.Error)
+	} else {
+		fmt.Printf("  Agent: connected\n")
+		agentOK = true
+	}
+
+	if !agentOK {
+		fmt.Println()
+		fmt.Println("  Agent is not running. To inject:")
+		fmt.Println("    1. Stop the VM")
+		fmt.Println("    2. ./vz-macos inject -agent")
+		fmt.Println("    3. ./vz-macos run")
+		allOK = false
+	}
+
+	// 3. If agent is available, check files inside guest.
+	if agentOK {
+		fmt.Println()
+		fmt.Println("Guest file checks (via agent):")
+
+		guestFiles := []struct {
+			path string
+			desc string
+		}{
+			{"/usr/local/bin/vz-agent", "Agent binary"},
+			{"/Library/LaunchDaemons/com.vz.agent.plist", "Agent LaunchDaemon"},
+			{"/private/var/db/.vz-provisioned", "Provisioning completed marker"},
+			{"/private/var/db/.AppleSetupDone", "Setup Assistant skip marker"},
+		}
+
+		for _, f := range guestFiles {
+			execReq := &controlpb.ControlRequest{
+				Type: "agent-exec",
+				Command: &controlpb.ControlRequest_AgentExec{
+					AgentExec: &controlpb.AgentExecCommand{
+						Args: []string{"test", "-f", f.path},
+					},
+				},
+			}
+			execResp, err := ctlSendRequest(sock, execReq, 5*time.Second, "agent-exec")
+			if err == nil && execResp.Success {
+				fmt.Printf("  + %s: present\n", f.desc)
+			} else {
+				fmt.Printf("  - %s: not found (%s)\n", f.desc, f.path)
+			}
+		}
+
+		// Check vz-agent process is running.
+		execReq := &controlpb.ControlRequest{
+			Type: "agent-exec",
+			Command: &controlpb.ControlRequest_AgentExec{
+				AgentExec: &controlpb.AgentExecCommand{
+					Args: []string{"pgrep", "-x", "vz-agent"},
+				},
+			},
+		}
+		execResp, err := ctlSendRequest(sock, execReq, 5*time.Second, "agent-exec")
+		if err == nil && execResp.Success {
+			fmt.Printf("  + vz-agent process: running\n")
+		} else {
+			fmt.Printf("  - vz-agent process: not running\n")
+		}
+	}
+
+	fmt.Println()
+	if allOK {
+		fmt.Println("Verification passed")
+	} else {
+		fmt.Println("Verification completed with issues")
+	}
+	return nil
+}
+
+// verifyStopped mounts the disk and inspects files directly.
+// If fix is true, attempts to repair issues found.
+func verifyStopped(verbose, fix bool) error {
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
 		return fmt.Errorf("disk image not found: %s\nRun 'vz-macos install' first to create a VM", diskPath)
 	}
 
-	// Check disk is not already mounted/in use
 	if err := checkDiskNotMounted(diskPath); err != nil {
 		return err
 	}
 
-	fmt.Println("=== Verifying Provisioning Files ===")
+	fmt.Println("=== Verifying Provisioning Files (Disk) ===")
 	fmt.Printf("VM: %s\n\n", vmDir)
 
-	// Mount the disk
-	mountPoint, device, _, err := attachAndMountDataVolume(diskPath)
+	mountPoint, device, dataPartition, err := attachAndMountDataVolume(diskPath)
 	if err != nil {
 		return fmt.Errorf("mount data volume: %w", err)
 	}
 	defer detachDisk(device)
 
-	// Define files to verify with expected ownership
+	// Check if provisioning already completed (self-cleaning scripts are gone).
+	provisionedMarker := filepath.Join(mountPoint, "private", "var", "db", ".vz-provisioned")
+	provisioned := false
+	if _, statErr := os.Stat(provisionedMarker); statErr == nil {
+		provisioned = true
+	}
+
+	// Provision plist/script are only required if provisioning hasn't run yet.
+	provisionRequired := !provisioned
+
 	filesToVerify := []struct {
 		relativePath string
 		expected     string
 		required     bool
 		description  string
 	}{
-		{"Library/LaunchDaemons/com.vz.provision.plist", "root:wheel", true, "LaunchDaemon plist"},
-		{"private/var/db/vz-provision.sh", "root:wheel", true, "Provisioning script"},
+		{"Library/LaunchDaemons/com.vz.provision.plist", "root:wheel", provisionRequired, "LaunchDaemon plist"},
+		{"private/var/db/vz-provision.sh", "root:wheel", provisionRequired, "Provisioning script"},
 		{"private/var/db/.AppleSetupDone", "any", false, "Setup Assistant skip marker"},
 		{"private/etc/kcpassword", "root:wheel", false, "Auto-login password (kcpassword)"},
 		{"Library/Preferences/com.apple.loginwindow.plist", "root:wheel", false, "Login window preferences"},
 		{"private/var/db/.vz-provisioned", "any", false, "Provisioning completed marker"},
 		{"private/var/db/vz-guest-tools.pkg", "root:wheel", false, "SPICE guest tools package (pending install)"},
 		{"private/var/db/.vz-guest-tools-installed", "any", false, "SPICE guest tools installed marker"},
+		{"usr/local/bin/vz-agent", "root:wheel", false, "Guest agent binary (vz-agent)"},
+		{"Library/LaunchDaemons/com.vz.agent.plist", "root:wheel", false, "Guest agent LaunchDaemon"},
 	}
 
 	var results []VerifyResult
@@ -113,12 +258,10 @@ Example:
 			result.Exists = true
 			result.Mode = info.Mode()
 
-			// Get ownership info
 			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 				result.OwnerUID = int(stat.Uid)
 				result.OwnerGID = int(stat.Gid)
 
-				// Check ownership
 				if f.expected == "root:wheel" {
 					if result.OwnerUID == 0 && result.OwnerGID == 0 {
 						result.Status = "OK"
@@ -144,38 +287,131 @@ Example:
 	fmt.Println("File Verification Results:")
 	fmt.Println(strings.Repeat("-", 80))
 	for _, r := range results {
-		statusIcon := "✓"
+		statusIcon := "+"
 		if strings.HasPrefix(r.Status, "MISSING") || strings.HasPrefix(r.Status, "WRONG_OWNER") {
-			statusIcon = "✗"
+			statusIcon = "!"
 		} else if r.Status == "not present" {
 			statusIcon = "-"
 		}
 		fmt.Printf("%s %s\n", statusIcon, r.Path)
-		fmt.Printf("    Status: %s\n", r.Status)
+		fmt.Printf("    %s: %s\n", r.Expected, r.Status)
 	}
 	fmt.Println(strings.Repeat("-", 80))
 
-	// Summary
-	fmt.Println()
-	if criticalFail {
-		fmt.Println("❌ VERIFICATION FAILED: Critical files missing or have wrong ownership")
-		fmt.Println()
-		fmt.Println("To fix ownership issues, re-run provision:")
-		fmt.Println("  ./vz-macos provision -user <user> -password <pass> -skip-setup-assistant")
-		return fmt.Errorf("verification failed")
-	} else if !allOK {
-		fmt.Println("⚠️  VERIFICATION WARNING: Some non-critical issues found")
-		fmt.Println("   Auto-login may not work, but user provisioning should succeed")
-	} else {
-		fmt.Println("✓ VERIFICATION PASSED: All files present with correct ownership")
+	// Check for missing agent.
+	agentBinPath := filepath.Join(mountPoint, "usr", "local", "bin", "vz-agent")
+	agentPlistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.vz.agent.plist")
+	agentMissing := false
+	if _, err := os.Stat(agentBinPath); os.IsNotExist(err) {
+		agentMissing = true
+	}
+	if _, err := os.Stat(agentPlistPath); os.IsNotExist(err) {
+		agentMissing = true
 	}
 
-	// Check for completed provisioning
-	provisionedPath := filepath.Join(mountPoint, "private", "var", "db", ".vz-provisioned")
-	if _, err := os.Stat(provisionedPath); err == nil {
+	// Collect paths needing ownership fix.
+	var badOwnerPaths []string
+	for _, r := range results {
+		if strings.HasPrefix(r.Status, "WRONG_OWNER") {
+			badOwnerPaths = append(badOwnerPaths, filepath.Join(mountPoint, r.Path))
+		}
+	}
+
+	fmt.Println()
+	if criticalFail {
+		fmt.Println("VERIFICATION FAILED: Critical files missing or have wrong ownership")
+	} else if !allOK || agentMissing {
+		fmt.Println("VERIFICATION WARNING: Issues found")
+	} else {
+		fmt.Println("VERIFICATION PASSED: All files present with correct ownership")
+	}
+
+	if provisioned {
 		fmt.Println()
 		fmt.Println("Note: Provisioning has already completed (found .vz-provisioned marker)")
 	}
 
+	// --fix: attempt repairs.
+	if fix && (agentMissing || len(badOwnerPaths) > 0) {
+		fmt.Println()
+		fmt.Println("=== Applying Fixes ===")
+
+		if agentMissing {
+			fmt.Println("Injecting vz-agent...")
+			// Build agent binary to temp.
+			tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
+			defer os.Remove(tmpBinary)
+			if err := buildAgentBinary(tmpBinary); err != nil {
+				fmt.Printf("  Agent build failed: %v\n", err)
+			} else {
+				// Write plist to temp.
+				tmpPlist := filepath.Join(os.TempDir(), agentLaunchDaemonLabel+".plist")
+				defer os.Remove(tmpPlist)
+				os.WriteFile(tmpPlist, []byte(agentLaunchDaemonPlist), 0644)
+
+				binDir := filepath.Join(mountPoint, "usr", "local", "bin")
+				binPath := filepath.Join(binDir, agentBinaryName)
+				daemonDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
+				plistPath := filepath.Join(daemonDir, agentLaunchDaemonLabel+".plist")
+
+				// Use elevated script for ownership + copy.
+				script := fmt.Sprintf(
+					"diskutil enableOwnership %s"+
+						" && mkdir -p %q %q"+
+						" && cp %q %q && chmod 755 %q && chown root:wheel %q"+
+						" && cp %q %q && chmod 644 %q && chown root:wheel %q",
+					dataPartition,
+					binDir, daemonDir,
+					tmpBinary, binPath, binPath, binPath,
+					tmpPlist, plistPath, plistPath, plistPath,
+				)
+				tmpScript, tmpErr := os.CreateTemp("", "vz-doctor-fix-*.sh")
+				if tmpErr != nil {
+					fmt.Printf("  Fix failed: %v\n", tmpErr)
+				} else {
+					fmt.Fprintf(tmpScript, "#!/bin/bash\nset -e\n%s\n", script)
+					tmpScript.Close()
+					os.Chmod(tmpScript.Name(), 0755)
+					defer os.Remove(tmpScript.Name())
+
+					if os.Getuid() == 0 {
+						cmd := exec.Command("bash", tmpScript.Name())
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+						if err := cmd.Run(); err != nil {
+							fmt.Printf("  Agent inject failed: %v\n", err)
+						} else {
+							fmt.Println("  Agent injected successfully")
+						}
+					} else {
+						fmt.Println("Requesting administrator privileges...")
+						if err := runElevatedBash(tmpScript.Name()); err != nil {
+							fmt.Printf("  Agent inject failed: %v\n", err)
+						} else {
+							fmt.Println("  Agent injected successfully")
+						}
+					}
+				}
+			}
+		} else if len(badOwnerPaths) > 0 {
+			fmt.Printf("Fixing ownership on %d file(s)...\n", len(badOwnerPaths))
+			if err := fixOwnershipWithSudo(badOwnerPaths, dataPartition); err != nil {
+				fmt.Printf("  Ownership fix failed: %v\n", err)
+			} else {
+				fmt.Println("  Ownership fixed")
+			}
+		}
+
+		fmt.Println()
+		fmt.Println("Fixes applied. Re-run 'doctor' to verify.")
+	} else if !fix && (agentMissing || len(badOwnerPaths) > 0) {
+		fmt.Println()
+		fmt.Println("To fix issues automatically:")
+		fmt.Println("  ./vz-macos doctor --fix")
+	}
+
+	if criticalFail && !fix {
+		return fmt.Errorf("verification failed")
+	}
 	return nil
 }
