@@ -6,6 +6,7 @@
 //
 // Guest commands:
 //
+//	guest-wait [timeout]        Wait for VM boot and agent connectivity
 //	guest-ping                  Check agent connectivity
 //	guest-exec <args...>        Run a command in the guest
 //	guest-shell <file>          Run a local script file in the guest via bash
@@ -53,6 +54,7 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 	defaults := script.DefaultCmds()
 	cmds := map[string]script.Cmd{
 		// Guest commands.
+		"guest-wait":     guestWaitCmd(cfg),
 		"guest-ping":     guestPingCmd(cfg),
 		"guest-exec":     guestExecCmd(cfg),
 		"guest-shell":    guestShellCmd(cfg),
@@ -78,6 +80,47 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		Cmds:  cmds,
 		Conds: script.DefaultConds(),
 	}
+}
+
+// guestWaitCmd waits for the VM control socket and guest agent to be reachable.
+// Usage: guest-wait [timeout]
+// Default timeout is 10m. Polls every 5s until the agent responds to a ping.
+func guestWaitCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "wait for VM to boot and guest agent to be reachable",
+			Args:    "[timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			timeout := 10 * time.Minute
+			if len(args) > 0 {
+				d, err := time.ParseDuration(args[0])
+				if err != nil {
+					return nil, fmt.Errorf("invalid timeout %q: %w", args[0], err)
+				}
+				timeout = d
+			}
+
+			deadline := time.Now().Add(timeout)
+			attempt := 0
+			for time.Now().Before(deadline) {
+				attempt++
+				resp, err := ctlSendRequest(cfg.socketPath,
+					&controlpb.ControlRequest{Type: "agent-ping"},
+					10*time.Second, "agent-ping")
+				if err == nil && resp.Success {
+					return func(*script.State) (string, string, error) {
+						return fmt.Sprintf("agent ready after %d attempt(s)\n", attempt), "", nil
+					}, nil
+				}
+				if attempt == 1 {
+					s.Logf("waiting for guest agent (timeout %s)...\n", timeout)
+				}
+				time.Sleep(5 * time.Second)
+			}
+			return nil, fmt.Errorf("timeout after %s waiting for guest agent", timeout)
+		},
+	)
 }
 
 func guestPingCmd(cfg vzscriptConfig) script.Cmd {
