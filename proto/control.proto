@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package vz.control.v1;
+
+option go_package = "github.com/tmc/vz-macos/proto/controlpb";
+
+// ControlRequest is the envelope for all control socket requests.
+// Every JSON line sent to the socket is unmarshaled into this message.
+// The "type" field selects the handler; the oneof carries the payload.
+message ControlRequest {
+  // Command type string for dispatch (e.g. "key", "screenshot", "ping").
+  string type = 1;
+
+  oneof command {
+    KeyCommand key = 10;
+    MouseCommand mouse = 11;
+    TextCommand text = 12;
+    ScreenshotCommand screenshot = 13;
+    SnapshotCommand snapshot = 14;
+    MemoryCommand memory = 15;
+    AgentExecCommand agent_exec = 20;
+    AgentFileReadCommand agent_read = 21;
+    AgentFileWriteCommand agent_write = 22;
+    AgentShutdownCommand agent_shutdown = 23;
+    AgentSSHDCommand agent_sshd = 24;
+    AgentCopyCommand agent_cp = 25;
+  }
+}
+
+// ControlResponse is the envelope for all control socket responses.
+message ControlResponse {
+  bool success = 1;
+  string error = 2;
+  string data = 3;
+}
+
+// KeyCommand sends a keyboard event to the VM.
+message KeyCommand {
+  uint32 key_code = 1;
+  string character = 2;
+  uint32 modifiers = 3;
+  bool key_down = 4;
+  bool use_cg_event = 5;
+}
+
+// MouseCommand sends a mouse event to the VM.
+message MouseCommand {
+  double x = 1;
+  double y = 2;
+  int32 button = 3;
+  string action = 4;
+  double scroll_x = 5;
+  double scroll_y = 6;
+  bool absolute = 7;
+}
+
+// TextCommand types a string of text character by character.
+message TextCommand {
+  string text = 1;
+}
+
+// ScreenshotCommand captures the VM display.
+message ScreenshotCommand {
+  bool diff = 1;
+  double scale = 2;
+  int32 quality = 3;
+  string format = 4;
+}
+
+// SnapshotCommand manages VM state snapshots.
+message SnapshotCommand {
+  string action = 1;
+  string name = 2;
+}
+
+// MemoryCommand manages runtime memory balloon.
+message MemoryCommand {
+  string action = 1;
+  double size_gb = 2;
+}
+
+// NetworkInfoResponse contains VM network configuration.
+message NetworkInfoResponse {
+  string mac_address = 1;
+  string guest_ip = 2;
+  string mode = 3;
+}
+
+// MemoryInfo contains information about VM memory configuration.
+message MemoryInfo {
+  double configured_gb = 1;
+  double target_gb = 2;
+  uint64 minimum_allowed_mb = 3;
+  bool has_balloon = 4;
+}
+
+// SnapshotInfo contains metadata about a saved snapshot.
+message SnapshotInfo {
+  string name = 1;
+  string created = 2;
+  int64 size = 3;
+  string vm_state = 4;
+  string file_path = 5;
+}
+
+// AgentExecCommand runs a command inside the guest.
+message AgentExecCommand {
+  repeated string args = 1;
+  map<string, string> env = 2;
+  string working_dir = 3;
+}
+
+// AgentFileReadCommand reads a file from the guest.
+message AgentFileReadCommand {
+  string path = 1;
+}
+
+// AgentFileWriteCommand writes a file to the guest.
+message AgentFileWriteCommand {
+  string path = 1;
+  string data = 2;
+  uint32 mode = 3;
+}
+
+// AgentShutdownCommand triggers a graceful shutdown.
+message AgentShutdownCommand {
+  bool force = 1;
+}
+
+// AgentSSHDCommand manages sshd via systemsetup.
+message AgentSSHDCommand {
+  string action = 1;
+}
+
+// AgentCopyCommand copies files between host and guest using streaming gRPC.
+// Direction is determined by the presence of host_path and guest_path:
+//   - host_path set + guest_path set: copy host→guest (to_guest=true) or guest→host (to_guest=false)
+message AgentCopyCommand {
+  string host_path = 1;
+  string guest_path = 2;
+  bool to_guest = 3;
+  uint32 mode = 4;
+}

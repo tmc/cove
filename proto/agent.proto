@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package vz.agent.v1;
+
+option go_package = "github.com/tmc/vz-macos/proto/agentpb";
+
+import "google/protobuf/timestamp.proto";
+
+// Agent provides in-guest control of a macOS virtual machine.
+// Modeled after apple/containerization's SandboxContext service.
+// Transport: GRPC over vsock (port 1024).
+service Agent {
+  // Ping checks that the agent is alive.
+  rpc Ping(PingRequest) returns (PingResponse);
+  // Info returns guest system information.
+  rpc Info(InfoRequest) returns (InfoResponse);
+
+  // Exec runs a command and waits for it to complete.
+  rpc Exec(ExecRequest) returns (ExecResponse);
+  // ExecStream runs a command with streaming stdout/stderr.
+  rpc ExecStream(ExecRequest) returns (stream ExecOutput);
+
+  // CopyIn transfers a file from the host into the guest.
+  rpc CopyIn(stream CopyInChunk) returns (CopyInResponse);
+  // CopyOut transfers a file from the guest to the host.
+  rpc CopyOut(CopyOutRequest) returns (stream CopyOutChunk);
+
+  // WriteFile writes data to a file in the guest.
+  rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
+  // ReadFile reads a file from the guest.
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+  // Mkdir creates a directory in the guest.
+  rpc Mkdir(MkdirRequest) returns (MkdirResponse);
+
+  // Mount mounts a filesystem in the guest.
+  rpc Mount(MountRequest) returns (MountResponse);
+  // Unmount unmounts a filesystem in the guest.
+  rpc Unmount(UnmountRequest) returns (UnmountResponse);
+
+  // Shutdown initiates a graceful shutdown of the guest.
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+  // Reboot initiates a guest reboot.
+  rpc Reboot(RebootRequest) returns (RebootResponse);
+}
+
+// Ping
+
+message PingRequest {}
+message PingResponse {
+  google.protobuf.Timestamp timestamp = 1;
+  string version = 2;
+}
+
+// Info
+
+message InfoRequest {}
+message InfoResponse {
+  string hostname = 1;
+  string os_version = 2;
+  string kernel_version = 3;
+  string arch = 4;
+  uint64 memory_total = 5;
+  uint64 memory_available = 6;
+  uint64 disk_total = 7;
+  uint64 disk_available = 8;
+  repeated string users = 9;
+  double load_avg_1 = 10;
+  double load_avg_5 = 11;
+  double load_avg_15 = 12;
+  uint64 uptime_seconds = 13;
+}
+
+// Exec
+
+message ExecRequest {
+  repeated string args = 1;
+  map<string, string> env = 2;
+  string working_dir = 3;
+  optional string user = 4;
+  optional bytes stdin = 5;
+}
+
+message ExecResponse {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+  double duration_seconds = 4;
+}
+
+message ExecOutput {
+  enum Stream {
+    STDOUT = 0;
+    STDERR = 1;
+  }
+  Stream stream = 1;
+  bytes data = 2;
+  // Set on the final message.
+  optional int32 exit_code = 3;
+}
+
+// File transfer
+
+message CopyInChunk {
+  oneof content {
+    CopyInInit init = 1;
+    bytes data = 2;
+  }
+}
+
+message CopyInInit {
+  string path = 1;
+  uint32 mode = 2;
+  bool create_parents = 3;
+}
+
+message CopyInResponse {}
+
+message CopyOutRequest {
+  string path = 1;
+}
+
+message CopyOutChunk {
+  oneof content {
+    CopyOutInit init = 1;
+    bytes data = 2;
+  }
+}
+
+message CopyOutInit {
+  uint64 total_size = 1;
+  uint32 mode = 2;
+}
+
+// Filesystem
+
+message WriteFileRequest {
+  string path = 1;
+  bytes data = 2;
+  uint32 mode = 3;
+  bool create_parents = 4;
+  bool append = 5;
+}
+
+message WriteFileResponse {}
+
+message ReadFileRequest {
+  string path = 1;
+  optional uint64 offset = 2;
+  optional uint64 limit = 3;
+}
+
+message ReadFileResponse {
+  bytes data = 1;
+  uint64 size = 2;
+  uint32 mode = 3;
+}
+
+message MkdirRequest {
+  string path = 1;
+  bool all = 2;
+  uint32 mode = 3;
+}
+
+message MkdirResponse {}
+
+message MountRequest {
+  string type = 1;
+  string source = 2;
+  string destination = 3;
+  repeated string options = 4;
+}
+
+message MountResponse {}
+
+message UnmountRequest {
+  string path = 1;
+  bool force = 2;
+}
+
+message UnmountResponse {}
+
+// Power
+
+message ShutdownRequest {
+  bool force = 1;
+}
+
+message ShutdownResponse {}
+
+message RebootRequest {}
+message RebootResponse {}
