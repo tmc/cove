@@ -108,6 +108,9 @@ func injectAgent(mountPoint string, rootFiles *[]string) error {
 // and its LaunchDaemon plist. No user provisioning is performed.
 // Uses osascript for elevated file operations so sudo is not required.
 func injectAgentOnly() error {
+	if err := checkVMNotRunning(); err != nil {
+		return err
+	}
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
 		return fmt.Errorf("disk image not found: %s\nRun 'vz-macos install' first to create a VM", diskPath)

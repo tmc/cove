@@ -364,6 +364,10 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 		return fmt.Errorf("password cannot be empty")
 	}
 
+	if err := checkVMNotRunning(); err != nil {
+		return err
+	}
+
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
 		return fmt.Errorf("disk image not found: %s\nRun 'vz-macos install' first to create a VM", diskPath)

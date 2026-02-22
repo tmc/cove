@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // attachAndMountDataVolume attaches the disk image and mounts the Data volume.
@@ -243,6 +245,23 @@ func detachDisk(device string) {
 		fmt.Printf("Warning: %v\n", err)
 		fmt.Printf("  Manual fix: hdiutil detach %s -force\n", device)
 	}
+}
+
+// checkVMNotRunning checks whether the VM is currently running by probing
+// the control socket. Returns a clear error if the VM is active, preventing
+// disk operations that would corrupt a running VM.
+func checkVMNotRunning() error {
+	sock := GetControlSocketPath()
+	if _, err := os.Stat(sock); os.IsNotExist(err) {
+		return nil // no socket, VM not running
+	}
+	conn, err := net.DialTimeout("unix", sock, 2*time.Second)
+	if err != nil {
+		// Socket exists but can't connect — stale socket, VM not running.
+		return nil
+	}
+	conn.Close()
+	return fmt.Errorf("VM is currently running (control socket active: %s)\n  Stop the VM first, then retry.\n  To stop: ./vz-macos ctl shutdown", sock)
 }
 
 // checkDiskNotMounted checks if the disk is already mounted via hdiutil.
