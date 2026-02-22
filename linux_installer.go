@@ -51,6 +51,11 @@ func DefaultLinuxProvisionConfig() LinuxProvisionConfig {
 func installLinuxVM() error {
 	fmt.Println("=== Linux VM Installer ===")
 
+	// Safety check: refuse to overwrite existing VM disk unless -force is specified.
+	if err := checkExistingVM(vmDir, "linux-disk.img"); err != nil {
+		return err
+	}
+
 	// Validate settings
 	if err := validateVMSettings(); err != nil {
 		return err

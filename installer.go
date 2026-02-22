@@ -182,10 +182,34 @@ func stopVMAndInject(vm *virtualMachine) {
 // installMacOSLikeVZ installs macOS following the Code-Hex/vz pattern more closely.
 // Key differences from our previous approach:
 // 1. Uses file path instead of URL for installer
+// checkExistingVM checks if a VM disk already exists in the VM directory.
+// Returns an error if disk.img exists and -force was not specified, preventing
+// accidental data loss from re-installing over an existing VM.
+func checkExistingVM(dir string, diskName string) error {
+	diskFile := filepath.Join(dir, diskName)
+	info, err := os.Stat(diskFile)
+	if err != nil {
+		return nil // doesn't exist, safe to proceed
+	}
+	if forceInstall {
+		fmt.Printf("WARNING: overwriting existing disk %s (%d MB)\n", diskFile, info.Size()/(1024*1024))
+		if err := os.Remove(diskFile); err != nil {
+			return fmt.Errorf("remove existing disk: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("VM disk already exists: %s (%d MB)\n\nTo install over this disk, use -force (THIS WILL DESTROY ALL DATA IN THE VM).\nTo use a different VM, use -vm <name>", diskFile, info.Size()/(1024*1024))
+}
+
 // 2. Creates platform config with hardware model from IPSW requirements
 // 3. Uses simpler VM creation flow
 func installMacOSLikeVZ(ctx context.Context) error {
 	fmt.Println("=== macOS Installation ===")
+
+	// Safety check: refuse to overwrite existing VM disk unless -force is specified.
+	if err := checkExistingVM(vmDir, "disk.img"); err != nil {
+		return err
+	}
 
 	// Step 1: Create VM bundle directory
 	if err := os.MkdirAll(vmDir, 0755); err != nil {
@@ -338,7 +362,6 @@ func runFullInstallWithGUI(ctx context.Context) error {
 			return
 		}
 
-		startTime := time.Now()
 		overlayVisible := true
 		lastPercent := -1.0
 
@@ -373,8 +396,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 			default:
 				currentPercent := installProgress.FractionCompleted() * 100
 				if currentPercent-lastPercent >= 1.0 || lastPercent < 0 {
-					elapsed := time.Since(startTime).Truncate(time.Second)
-					printProgress(currentPercent, elapsed)
+					printProgress(currentPercent)
 					ui.requestSetVMWindowTitle(fmt.Sprintf("macOS VM Installation - %.1f%%", currentPercent))
 					if overlayVisible && currentPercent > 0 {
 						overlayVisible = false
@@ -1324,7 +1346,7 @@ type macOSInstaller struct {
 }
 
 // printProgress displays a compact progress bar.
-func printProgress(percent float64, elapsed time.Duration) {
+func printProgress(percent float64) {
 	const barWidth = 30
 	filled := int(percent / 100 * barWidth)
 	if filled > barWidth {
@@ -1341,7 +1363,7 @@ func printProgress(percent float64, elapsed time.Duration) {
 		}
 	}
 	// Clear line and print progress
-	fmt.Printf("\r\033[K[%s] %5.1f%% (%v)", string(bar), percent, elapsed)
+	fmt.Printf("\r\033[K[%s] %5.1f%%", string(bar), percent)
 }
 
 // runInstallation runs the installation with progress monitoring.
@@ -1385,7 +1407,6 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 		return fmt.Errorf("installer has no progress object")
 	}
 
-	startTime := time.Now()
 	lastPercent := -1.0
 	lastStateLog := time.Time{}
 
@@ -1434,8 +1455,7 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 			// Update progress display
 			currentPercent := progress.FractionCompleted() * 100
 			if currentPercent-lastPercent >= 1.0 || lastPercent < 0 {
-				elapsed := time.Since(startTime).Truncate(time.Second)
-				printProgress(currentPercent, elapsed)
+				printProgress(currentPercent)
 				lastPercent = currentPercent
 			}
 
@@ -1446,7 +1466,7 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 				fmt.Printf("\n[DEBUG] progress=%.1f%% vmState=%d\n", currentPercent, vmState)
 				lastStateLog = time.Now()
 				// Reprint progress bar
-				printProgress(currentPercent, time.Since(startTime).Truncate(time.Second))
+				printProgress(currentPercent)
 			}
 
 			time.Sleep(100 * time.Millisecond)

@@ -78,10 +78,12 @@ var (
 	// Clipboard sharing (SPICE agent)
 	enableClipboard bool
 	// Scripts share (VirtioFS for guest agent)
-	enableScripts     bool
-	scriptsPath       string
-	scriptsReadOnly   bool
-	scriptsRunOnBoot  bool
+	enableScripts    bool
+	scriptsPath      string
+	scriptsReadOnly  bool
+	scriptsRunOnBoot bool
+	// vzscripts to run after install (comma-separated recipe names)
+	installVZScripts string
 	// Headless mode (disables GUI)
 	headlessMode bool
 	// Unattended install flags
@@ -90,6 +92,8 @@ var (
 	debugOCR         bool
 	// Auto-mount tagged volumes via agent
 	autoMountVolumes bool
+	// Force install over existing VM
+	forceInstall bool
 )
 
 func init() {
@@ -128,6 +132,7 @@ func init() {
 	flag.BoolVar(&provisionAdmin, "provision-admin", true, "make auto-provisioned user an admin")
 	flag.StringVar(&provisionStrategy, "provision-strategy", "inject",
 		"provisioning strategy: inject (disk injection, needs sudo), gui (keyboard automation), auto (try inject, fall back to gui)")
+	flag.StringVar(&installVZScripts, "vzscripts", "", "comma-separated vzscript recipes to run after install (e.g. homebrew,openclaw)")
 	// VM selection flag
 	flag.StringVar(&vmName, "vm", "", "VM name to use (default: active VM or 'default')")
 	// Clone options
@@ -160,6 +165,8 @@ func init() {
 	flag.BoolVar(&debugOCR, "debug-ocr", false, "save OCR debug screenshots with text bounding boxes")
 	// Auto-mount volumes
 	flag.BoolVar(&autoMountVolumes, "auto-mount-volumes", true, "auto-mount tagged volumes in guest via agent")
+	// Force install (skip existing VM check)
+	flag.BoolVar(&forceInstall, "force", false, "force install even if VM disk already exists (DESTROYS existing data)")
 }
 
 func main() {
@@ -346,6 +353,12 @@ func main() {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
+			}
+			if installVZScripts != "" {
+				if err := runPostInstallVZScripts(installVZScripts); err != nil {
+					fmt.Fprintf(os.Stderr, "Error running vzscripts: %v\n", err)
+					os.Exit(1)
+				}
 			}
 			return
 		case "run":
