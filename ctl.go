@@ -69,6 +69,9 @@ Guest Agent (via GRPC over vsock):
   agent-sshd <on|off|status>  Manage SSH remote login
   agent-mount-volumes         Mount tagged VirtioFS volumes in guest
 
+VM Management:
+  reset-password <user> <pass>  Reset user password (agent if running, disk if stopped)
+
 Options:
 `)
 		fs.PrintDefaults()
@@ -317,6 +320,12 @@ Examples:
 		}
 		*timeout = 10 * time.Minute // large file default
 
+	case "reset-password":
+		if len(subArgs) < 2 {
+			return fmt.Errorf("usage: ctl reset-password <username> <new-password>")
+		}
+		return ctlResetPassword(sock, *timeout, subArgs[0], subArgs[1])
+
 	default:
 		return fmt.Errorf("unknown command: %s", cmdType)
 	}
@@ -485,6 +494,128 @@ func ctlDetectScreen(socketPath string) error {
 		}
 	}
 
+	return nil
+}
+
+// ctlResetPassword resets a user's password. If the VM is running and the
+// guest agent is reachable, it uses dscl inside the guest. Otherwise it
+// re-injects kcpassword via disk mount for auto-login with the new password.
+func ctlResetPassword(sock string, timeout time.Duration, username, password string) error {
+	// Try agent first (VM running).
+	req := &controlpb.ControlRequest{
+		Type: "agent-exec",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{
+				Args: []string{"dscl", ".", "-passwd", "/Users/" + username, password},
+			},
+		},
+	}
+	resp, err := ctlSendRequest(sock, req, timeout, "agent-exec")
+	if err == nil && resp.Success {
+		fmt.Printf("Password reset for %s (via guest agent)\n", username)
+		// Also update kcpassword for auto-login consistency.
+		kcReq := &controlpb.ControlRequest{
+			Type: "agent-exec",
+			Command: &controlpb.ControlRequest_AgentExec{
+				AgentExec: &controlpb.AgentExecCommand{
+					Args: []string{"bash", "-c",
+						fmt.Sprintf("printf '%s' | /usr/bin/python3 -c \""+
+							"import sys; key=[0x7D,0x89,0x52,0x23,0xD2,0xBC,0xDD,0xEA,0xA3,0xB9,0x1F]; "+
+							"pw=sys.stdin.buffer.read(); pw+=b'\\x00'*(11-len(pw)%%11); "+
+							"sys.stdout.buffer.write(bytes(b^key[i%%len(key)] for i,b in enumerate(pw)))\" > /etc/kcpassword",
+							password),
+					},
+				},
+			},
+		}
+		ctlSendRequest(sock, kcReq, timeout, "agent-exec")
+		return nil
+	}
+
+	// Agent not available — try offline disk injection.
+	fmt.Println("Guest agent not reachable, attempting offline password reset...")
+	diskPath := filepath.Join(vmDir, "disk.img")
+	if _, statErr := os.Stat(diskPath); os.IsNotExist(statErr) {
+		return fmt.Errorf("VM disk not found: %s", diskPath)
+	}
+
+	mountPoint, device, _, mountErr := attachAndMountDataVolume(diskPath)
+	if mountErr != nil {
+		return fmt.Errorf("mount data volume: %w", mountErr)
+	}
+	defer detachDisk(device)
+
+	// Update kcpassword.
+	kcData := EncodeKCPassword(password)
+	kcPath := filepath.Join(mountPoint, "private", "etc", "kcpassword")
+	if writeErr := os.WriteFile(kcPath, kcData, 0600); writeErr != nil {
+		return fmt.Errorf("write kcpassword: %w", writeErr)
+	}
+	fmt.Printf("Updated kcpassword for auto-login at: %s\n", kcPath)
+
+	// Update loginwindow.plist autoLoginUser.
+	lwPath := filepath.Join(mountPoint, "Library", "Preferences", "com.apple.loginwindow.plist")
+	lwPlist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>autoLoginUser</key>
+	<string>%s</string>
+</dict>
+</plist>`, username)
+	if writeErr := os.WriteFile(lwPath, []byte(lwPlist), 0644); writeErr != nil {
+		return fmt.Errorf("write loginwindow.plist: %w", writeErr)
+	}
+
+	// Write a LaunchDaemon that resets the password on next boot via dscl.
+	script := fmt.Sprintf(`#!/bin/bash
+dscl . -passwd /Users/%s '%s'
+rm -f /Library/LaunchDaemons/com.vz.pwreset.plist /var/db/vz-pwreset.sh
+`, username, password)
+	scriptPath := filepath.Join(mountPoint, "private", "var", "db", "vz-pwreset.sh")
+	if writeErr := os.WriteFile(scriptPath, []byte(script), 0755); writeErr != nil {
+		return fmt.Errorf("write reset script: %w", writeErr)
+	}
+
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.vz.pwreset</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/var/db/vz-pwreset.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+</dict>
+</plist>`
+	plistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.vz.pwreset.plist")
+	if writeErr := os.WriteFile(plistPath, []byte(plist), 0644); writeErr != nil {
+		return fmt.Errorf("write plist: %w", writeErr)
+	}
+
+	// Fix ownership if running as root.
+	if os.Getuid() == 0 {
+		os.Chown(scriptPath, 0, 0)
+		os.Chown(plistPath, 0, 0)
+		os.Chown(kcPath, 0, 0)
+	} else {
+		fmt.Println("Note: run with sudo for proper LaunchDaemon ownership, or password will reset on next boot only if files are root:wheel.")
+		// Try elevated bash for the chown.
+		tmpScript, tmpErr := os.CreateTemp("", "vz-pwreset-chown-*.sh")
+		if tmpErr == nil {
+			fmt.Fprintf(tmpScript, "#!/bin/bash\nchown root:wheel %q %q %q\n", scriptPath, plistPath, kcPath)
+			tmpScript.Close()
+			os.Chmod(tmpScript.Name(), 0755)
+			runElevatedBash(tmpScript.Name())
+			os.Remove(tmpScript.Name())
+		}
+	}
+
+	fmt.Printf("Password reset staged for %s (will apply on next boot)\n", username)
 	return nil
 }
 
