@@ -15,7 +15,6 @@ import (
 )
 
 var (
-	e2e         bool
 	fetchLatest bool
 	runVM       bool // Deprecated: kept for compatibility, now handled by commands
 	installVM   bool // Deprecated: kept for compatibility, now handled by commands
@@ -95,7 +94,6 @@ var (
 
 func init() {
 	flag.Usage = usage
-	flag.BoolVar(&e2e, "e2e", false, "run E2E tests (non-interactive)")
 	flag.BoolVar(&fetchLatest, "fetch-latest", false, "fetch latest supported restore image info")
 	flag.BoolVar(&runVM, "run", false, "run a VM (macOS by default, use -linux for Linux)")
 	flag.BoolVar(&installVM, "install", false, "install macOS from IPSW (uses -ipsw or fetches latest)")
@@ -172,11 +170,6 @@ func main() {
 		guiMode = false
 	}
 
-	if e2e {
-		runE2ETest()
-		return
-	}
-
 	// Set up macgo bundling (entitlements, signing, app icon).
 	// Must be before LockOSThread. May relaunch and not return.
 	initMacgo()
@@ -228,12 +221,8 @@ func main() {
 	defer runtime.UnlockOSThread()
 
 	// Legacy flag handling compatibility
-	if e2e {
-		runE2ETest()
-		return
-	}
 	if fetchLatest {
-		if err := fetchLatestRestoreImage(); err != nil {
+		if _, err := fetchLatestRestoreImageObject(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -414,11 +403,8 @@ func main() {
 			}
 			return
 		case "setup":
-			if err := handleSetup(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
+			fmt.Fprintf(os.Stderr, "Error: setup command not yet implemented\n")
+			os.Exit(1)
 		case "recovery-disk":
 			if err := sipCreateDisk(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)

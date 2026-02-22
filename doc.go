@@ -106,9 +106,9 @@
 //
 // The binary must be signed with virtualization entitlements:
 //
-//	codesign -s - -f --entitlements vz.entitlements ./vz-macos
+//	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./vz-macos
 //
-// Required entitlements (vz.entitlements):
+// Required entitlements (internal/autosign/vz.entitlements):
 //
 //	com.apple.security.virtualization          - Basic VM capability
 //	com.apple.security.hypervisor             - Hypervisor access
@@ -129,4 +129,4 @@
 package main
 
 //go:generate go build -o vz-macos .
-//go:generate codesign --entitlements entitlements.plist -f -s - ./vz-macos
+//go:generate codesign --entitlements internal/autosign/vz.entitlements -f -s - ./vz-macos

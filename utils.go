@@ -234,7 +234,7 @@ func hintEntitlements(err error) error {
 	if strings.Contains(msg, "catalog failed to load") ||
 		strings.Contains(msg, "installation service") ||
 		strings.Contains(msg, "unexpected error") {
-		return fmt.Errorf("%w\n\n  This usually means the binary is missing the com.apple.security.virtualization entitlement.\n  Fix: codesign -s - -f --entitlements vz.entitlements ./vz-macos", err)
+		return fmt.Errorf("%w\n\n  This usually means the binary is missing the com.apple.security.virtualization entitlement.\n  Fix: codesign -s - -f --entitlements internal/autosign/vz.entitlements ./vz-macos", err)
 	}
 	return err
 }
