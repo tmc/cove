@@ -24,20 +24,20 @@ import (
 
 // TemplateInfo holds information about a template.
 type TemplateInfo struct {
-	Name       string    // Template name (directory name)
-	Path       string    // Full path to template directory
-	DiskSize   int64     // Disk image size (compressed or uncompressed)
-	Created    time.Time // Creation time
-	FastMode   bool      // True if template uses clonefile (uncompressed)
-	HasUserData bool     // True if template includes userdata.sparsebundle
+	Name        string    // Template name (directory name)
+	Path        string    // Full path to template directory
+	DiskSize    int64     // Disk image size (compressed or uncompressed)
+	Created     time.Time // Creation time
+	FastMode    bool      // True if template uses clonefile (uncompressed)
+	HasUserData bool      // True if template includes userdata.sparsebundle
 }
 
 // SaveTemplateOptions configures template creation behavior.
 type SaveTemplateOptions struct {
-	VMName       string // Source VM name
-	TemplateName string // Template name to create
-	FastMode     bool   // Use clonefile instead of compression (instant but more disk space)
-	IncludeUserData bool // Include userdata.sparsebundle if present
+	VMName          string // Source VM name
+	TemplateName    string // Template name to create
+	FastMode        bool   // Use clonefile instead of compression (instant but more disk space)
+	IncludeUserData bool   // Include userdata.sparsebundle if present
 }
 
 // TemplateFiles are the files that make up a compressed template.

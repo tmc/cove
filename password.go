@@ -128,8 +128,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/crypto/pbkdf2"
 	"github.com/tmc/appledocs/plist"
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // ShadowHashData represents the password hash structure used by macOS

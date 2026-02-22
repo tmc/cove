@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"unsafe"
 
 	"github.com/tmc/appledocs/generated/dispatch"
 	"github.com/tmc/appledocs/generated/foundation"

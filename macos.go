@@ -14,7 +14,6 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/appledocs/generated/appkit"
 	"github.com/tmc/appledocs/generated/corefoundation"
 	"github.com/tmc/appledocs/generated/dispatch"
@@ -22,6 +21,7 @@ import (
 	"github.com/tmc/appledocs/generated/objc"
 	"github.com/tmc/appledocs/generated/objectivec"
 	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/vz-macos/internal/assets"
 )
 
 // setAppIcon sets the Dock and app icon from the embedded .icns asset.

@@ -46,9 +46,9 @@ func EnsureScriptsDir(path string) error {
 
 	// Create subdirectories
 	subdirs := []string{
-		"boot.d",     // Scripts run at boot (in order)
-		"on-demand",  // Scripts run on-demand via control socket
-		"agent",      // Guest agent files
+		"boot.d",    // Scripts run at boot (in order)
+		"on-demand", // Scripts run on-demand via control socket
+		"agent",     // Guest agent files
 	}
 	for _, subdir := range subdirs {
 		if err := os.MkdirAll(filepath.Join(path, subdir), 0755); err != nil {

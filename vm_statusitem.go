@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/appledocs/generated/appkit"
 	"github.com/tmc/appledocs/generated/corefoundation"
 	"github.com/tmc/appledocs/generated/foundation"
 	"github.com/tmc/appledocs/generated/objc"
 	"github.com/tmc/appledocs/generated/objectivec"
 	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/vz-macos/internal/assets"
 )
 
 // VMStatusItem manages a system menu bar status item that mirrors VM state.
@@ -78,12 +78,12 @@ func (s *VMStatusItem) setup() {
 	sharedMenuItem.SetSubmenu(&sharedMenu)
 	s.menu.AddItem(&sharedMenuItem) // 4
 
-	s.addActionItem("Show Window", "showVMWindow:", "", target)     // 5
-	s.addSeparator()                                                // 6
-	s.addItem(fmt.Sprintf("%s \u2014 Starting...", s.vmName))       // 7
+	s.addActionItem("Show Window", "showVMWindow:", "", target) // 5
+	s.addSeparator()                                            // 6
+	s.addItem(fmt.Sprintf("%s \u2014 Starting...", s.vmName))   // 7
 	s.statusIdx = 7
-	s.addSeparator()                                                // 8
-	s.addActionItem("Quit", "terminate:", "q", 0)                   // 9
+	s.addSeparator()                              // 8
+	s.addActionItem("Quit", "terminate:", "q", 0) // 9
 
 	s.statusItem.SetMenu(&s.menu)
 }

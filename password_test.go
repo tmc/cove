@@ -60,7 +60,7 @@ func TestEncodeKCPassword(t *testing.T) {
 
 		// Verify the encoded password has the right length
 		// Must be padded to multiple of 11 (key length)
-		if len(encoded) % 11 != 0 {
+		if len(encoded)%11 != 0 {
 			t.Errorf("EncodeKCPassword(%q) length = %d, not multiple of 11", tt.password, len(encoded))
 		}
 

@@ -16,9 +16,9 @@ type hdiutilInfo struct {
 
 // hdiutilImage represents a single attached disk image entry.
 type hdiutilImage struct {
-	ImagePath   string              `plist:"image-path"`
-	SystemImage bool                `plist:"system-image"`
-	Entities    []hdiutilImagePart  `plist:"system-entities"`
+	ImagePath   string             `plist:"image-path"`
+	SystemImage bool               `plist:"system-image"`
+	Entities    []hdiutilImagePart `plist:"system-entities"`
 }
 
 // hdiutilImagePart represents a partition within an attached image.

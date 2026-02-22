@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/utils"
 	"github.com/tmc/appledocs/generated/dispatch"
 	"github.com/tmc/appledocs/generated/foundation"
 	"github.com/tmc/appledocs/generated/objc"
+	"github.com/tmc/vz-macos/internal/utils"
 	"github.com/tmc/vzkit"
 )
 

@@ -125,7 +125,6 @@
 //   - Apple Virtualization Framework: https://developer.apple.com/documentation/virtualization
 //   - purego: https://github.com/ebitengine/purego
 //   - Code-Hex/vz (CGO reference): https://github.com/Code-Hex/vz
-//
 package main
 
 //go:generate go build -o vz-macos .

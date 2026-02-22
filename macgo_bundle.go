@@ -10,9 +10,9 @@ import (
 	"os"
 	"slices"
 
+	"github.com/tmc/macgo"
 	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/vz-macos/internal/autosign"
-	"github.com/tmc/macgo"
 )
 
 // initMacgo sets up macgo with single-process mode.
