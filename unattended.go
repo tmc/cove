@@ -1,0 +1,201 @@
+// unattended.go - Unattended macOS install orchestrator
+package main
+
+import (
+	"embed"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+)
+
+//go:embed presets/*.txt
+var presetFS embed.FS
+
+// runUnattendedSetup runs post-install Setup Assistant automation.
+//
+// The primary path uses disk injection (SkipSetupAssistant + AutoLogin),
+// which bypasses Setup Assistant entirely. This function handles the
+// fallback case where injection failed or wasn't used, automating
+// Setup Assistant via OCR + keyboard navigation.
+//
+// It can also run user-provided boot command scripts for custom automation.
+func runUnattendedSetup(cs *ControlServer) error {
+	ocr := NewOCRService(verbose)
+	debugDir := ""
+	if debugOCR {
+		debugDir = filepath.Join(vmDir, "debug")
+		fmt.Printf("OCR debug screenshots will be saved to: %s\n", debugDir)
+	}
+
+	// If boot commands file is provided, use that
+	if bootCommandsFile != "" {
+		return runBootCommands(cs, ocr, debugDir)
+	}
+
+	// Otherwise, run the default unattended flow
+	return runDefaultUnattendedFlow(cs, ocr, debugDir)
+}
+
+// runBootCommands loads and executes a boot commands file.
+func runBootCommands(cs *ControlServer, ocr *OCRService, debugDir string) error {
+	data, err := os.ReadFile(bootCommandsFile)
+	if err != nil {
+		return fmt.Errorf("read boot commands: %w", err)
+	}
+
+	commands, err := ParseBootCommands(string(data))
+	if err != nil {
+		return fmt.Errorf("parse boot commands: %w", err)
+	}
+
+	fmt.Printf("Executing %d boot commands from %s\n", len(commands), bootCommandsFile)
+
+	executor := NewBootCommandExecutor(ocr, cs, verbose, debugDir)
+	return executor.Execute(commands)
+}
+
+// runDefaultUnattendedFlow waits for the VM to reach a usable state.
+//
+// Strategy:
+//  1. Wait for the screen to stabilize (boot complete)
+//  2. Check if we're at desktop (injection succeeded) — done
+//  3. Check if we're at login screen — type password, done
+//  4. Check if we're at Setup Assistant — run OCR-guided navigation
+func runDefaultUnattendedFlow(cs *ControlServer, ocr *OCRService, debugDir string) error {
+	fmt.Println("Waiting for VM to boot...")
+
+	// Wait up to 5 minutes for the screen to leave black/Apple logo
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
+		img, errMsg := cs.captureVMView()
+		if errMsg != "" {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		state := DetectScreenStateOCR(img, ocr)
+		if verbose {
+			fmt.Printf("[unattended] screen state: %s\n", state)
+		}
+
+		if debugOCR && debugDir != "" {
+			observations, _ := ocr.RecognizeText(img)
+			saveOCRDebugScreenshot(img, observations, debugDir, fmt.Sprintf("boot-%s", state))
+		}
+
+		switch state {
+		case ScreenStateDesktop:
+			fmt.Println("VM reached desktop — setup complete!")
+			return nil
+
+		case ScreenStateLoginScreen:
+			fmt.Println("VM at login screen — attempting login...")
+			return attemptLogin(cs, ocr)
+
+		case ScreenStateSetupAssistant:
+			fmt.Println("VM at Setup Assistant — running OCR-guided navigation...")
+			return runOCRSetupAssistant(cs, ocr, debugDir)
+
+		case ScreenStateBlack, ScreenStateAppleLogo:
+			// Still booting
+			time.Sleep(3 * time.Second)
+			continue
+
+		default:
+			time.Sleep(2 * time.Second)
+		}
+	}
+
+	return fmt.Errorf("timeout waiting for VM to boot")
+}
+
+// attemptLogin types the provisioning password at the login screen.
+func attemptLogin(cs *ControlServer, ocr *OCRService) error {
+	if provisionPassword == "" {
+		return fmt.Errorf("at login screen but no -provision-password set")
+	}
+
+	// Click in the password field area, then type password
+	time.Sleep(500 * time.Millisecond)
+	resp := cs.typeText(&controlpb.TextCommand{Text: provisionPassword})
+	if !resp.Success {
+		return fmt.Errorf("type password: %s", resp.Error)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	resp = cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: true, UseCgEvent: true}) // Return
+	cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: false, UseCgEvent: true})
+
+	// Wait for desktop
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+		img, errMsg := cs.captureVMView()
+		if errMsg != "" {
+			continue
+		}
+		if DetectScreenStateOCR(img, ocr) == ScreenStateDesktop {
+			fmt.Println("Login successful — at desktop!")
+			return nil
+		}
+	}
+
+	return fmt.Errorf("timeout waiting for desktop after login")
+}
+
+// runOCRSetupAssistant navigates Setup Assistant using OCR text detection.
+// This is the fallback path when disk injection didn't skip Setup Assistant.
+func runOCRSetupAssistant(cs *ControlServer, ocr *OCRService, debugDir string) error {
+	// Try to load a preset for the detected macOS version
+	commands, err := loadPresetCommands()
+	if err != nil && verbose {
+		fmt.Printf("[unattended] no preset available: %v\n", err)
+	}
+
+	if len(commands) > 0 {
+		fmt.Printf("Using preset boot commands (%d steps)\n", len(commands))
+		executor := NewBootCommandExecutor(ocr, cs, verbose, debugDir)
+		if err := executor.Execute(commands); err != nil {
+			fmt.Printf("Warning: preset commands failed: %v\n", err)
+			fmt.Println("Falling back to interactive Setup Assistant navigation...")
+		} else {
+			return nil
+		}
+	}
+
+	// Fall back to the existing keyboard-driven Setup Assistant automation
+	fmt.Println("Using keyboard-driven Setup Assistant navigation...")
+	sa := &SetupAssistant{
+		client: nil, // cs is available via global; the SA uses it differently
+		config: ProvisionConfig{
+			Username: provisionUser,
+			Password: provisionPassword,
+			Admin:    provisionAdmin,
+		},
+		verbose: verbose,
+		saveDir: debugDir,
+	}
+	return sa.Run()
+}
+
+// loadPresetCommands tries to load boot commands from embedded presets.
+func loadPresetCommands() ([]BootCommand, error) {
+	// Try sequoia first (most common current version), then tahoe
+	for _, name := range []string{"sequoia.txt", "tahoe.txt"} {
+		data, err := presetFS.ReadFile("presets/" + name)
+		if err != nil {
+			continue
+		}
+		commands, err := ParseBootCommands(string(data))
+		if err != nil {
+			continue
+		}
+		if len(commands) > 0 {
+			return commands, nil
+		}
+	}
+	return nil, fmt.Errorf("no preset boot commands available")
+}
