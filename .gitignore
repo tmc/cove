@@ -1,0 +1,22 @@
+# Binaries
+vz-macos
+/vz-agent
+cmd/vz-agent/vz-agent
+
+# VM state
+vm/
+cache/
+
+# Build artifacts
+*.log
+build_errors.txt
+
+# Go workspace (local)
+go.work
+go.work.sum
+
+# macOS
+.DS_Store
+
+# IDE/tool config
+.claude/
