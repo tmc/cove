@@ -20,7 +20,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -168,9 +167,20 @@ func injectAgentOnly() error {
 		tmpPlist, plistPath, plistPath, plistPath,
 	)
 
+	// Write script to temp file for execution.
+	tmpScript, err := os.CreateTemp("", "vz-agent-inject-*.sh")
+	if err != nil {
+		return fmt.Errorf("create temp script: %w", err)
+	}
+	tmpScriptPath := tmpScript.Name()
+	defer os.Remove(tmpScriptPath)
+	fmt.Fprintf(tmpScript, "#!/bin/bash\nset -e\n%s\n", script)
+	tmpScript.Close()
+	os.Chmod(tmpScriptPath, 0755)
+
 	if os.Getuid() == 0 {
 		fmt.Println("Running as root, copying files directly...")
-		cmd := exec.Command("sh", "-c", script)
+		cmd := exec.Command("bash", tmpScriptPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -178,15 +188,8 @@ func injectAgentOnly() error {
 		}
 	} else {
 		fmt.Println("Requesting administrator privileges...")
-		cmd := exec.Command("osascript", "-e",
-			fmt.Sprintf(`do shell script %q with prompt "vz-macos needs to write agent files to the VM disk." with administrator privileges`, script))
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			if strings.Contains(err.Error(), "canceled") || strings.Contains(err.Error(), "-128") {
-				return fmt.Errorf("interrupted: user cancelled authorization")
-			}
-			return fmt.Errorf("elevated copy: %w", err)
+		if err := runElevatedBash(tmpScriptPath); err != nil {
+			return fmt.Errorf("agent inject: %w", err)
 		}
 	}
 

@@ -852,31 +852,51 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 			return fmt.Errorf("apply files: %w", err)
 		}
 	} else {
-		fmt.Println("Requesting administrator privileges to write files to VM disk...")
-		cmd := exec.Command("osascript", "-e",
-			fmt.Sprintf(`do shell script %q with prompt "vz-macos needs to write provisioning files to the VM disk." with administrator privileges`, tmpPath))
-		// Run with a timeout — osascript "with administrator privileges" can
-		// spin after script completion. If it doesn't return within 120s,
-		// kill it (files are already on disk by then).
-		done := make(chan error, 1)
-		go func() { done <- cmd.Run() }()
-
-		select {
-		case err := <-done:
-			if err != nil {
-				if strings.Contains(err.Error(), "canceled") || strings.Contains(err.Error(), "-128") {
-					return fmt.Errorf("interrupted: user cancelled authorization")
-				}
-				return fmt.Errorf("elevated apply: %w", err)
-			}
-		case <-time.After(120 * time.Second):
-			cmd.Process.Kill()
-			fmt.Println("  (osascript timed out after files were written — this is expected)")
+		fmt.Println("Requesting administrator privileges...")
+		if err := runElevatedBash(tmpPath); err != nil {
+			return err
 		}
 	}
 
 	for _, f := range manifest.Files {
 		fmt.Printf("  Applied: %s\n", f.Path)
+	}
+	return nil
+}
+
+// runElevatedBash runs a bash script with root privileges. It uses osascript
+// to prompt for the admin password via a GUI dialog, then pipes it to sudo -S.
+// This avoids the known macOS bug where osascript "with administrator privileges"
+// hangs indefinitely after the script completes.
+func runElevatedBash(scriptPath string) error {
+	// Use osascript to show a password dialog and capture the password.
+	pwCmd := exec.Command("osascript", "-e",
+		`display dialog "vz-macos needs administrator privileges to set file ownership." `+
+			`default answer "" with hidden answer buttons {"Cancel","OK"} default button "OK" `+
+			`with title "vz-macos" with icon caution`)
+	pwOut, err := pwCmd.Output()
+	if err != nil {
+		if strings.Contains(err.Error(), "-128") || strings.Contains(err.Error(), "canceled") {
+			return fmt.Errorf("interrupted: user cancelled authorization")
+		}
+		return fmt.Errorf("password prompt: %w", err)
+	}
+
+	// osascript returns "button returned:OK, text returned:<password>"
+	password := string(pwOut)
+	if idx := strings.Index(password, "text returned:"); idx >= 0 {
+		password = strings.TrimSpace(password[idx+len("text returned:"):])
+	} else {
+		return fmt.Errorf("unexpected osascript output")
+	}
+
+	// Run the script via sudo -S (read password from stdin).
+	cmd := exec.Command("sudo", "-S", "bash", scriptPath)
+	cmd.Stdin = strings.NewReader(password + "\n")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("elevated apply: %w", err)
 	}
 	return nil
 }

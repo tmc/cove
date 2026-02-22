@@ -310,21 +310,28 @@ func fixOwnershipWithSudo(paths []string, dataPartition string) error {
 		script += fmt.Sprintf(" %q", p)
 	}
 
+	// Write script to temp file for execution.
+	tmpScript, err := os.CreateTemp("", "vz-provision-chown-*.sh")
+	if err != nil {
+		return fmt.Errorf("create temp script: %w", err)
+	}
+	tmpPath := tmpScript.Name()
+	defer os.Remove(tmpPath)
+	fmt.Fprintf(tmpScript, "#!/bin/bash\nset -e\n%s\n", script)
+	tmpScript.Close()
+	os.Chmod(tmpPath, 0755)
+
 	if os.Getuid() == 0 {
 		fmt.Println("Running as root, setting ownership directly...")
-		cmd := exec.Command("sh", "-c", script)
+		cmd := exec.Command("bash", tmpPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	}
 
-	// Use osascript to get authorization via a GUI prompt. This works
-	// regardless of terminal/tty state (macgo replaces stdin with a pipe
-	// and /dev/tty may not be available).
+	// Use osascript display dialog for password, then sudo -S to run the
+	// script. This avoids "do shell script ... with administrator privileges"
+	// which has a known macOS bug where it hangs after completion.
 	fmt.Println("Requesting administrator privileges...")
-	cmd := exec.Command("osascript", "-e",
-		fmt.Sprintf(`do shell script %q with prompt "vz-macos needs to set file ownership on the VM disk for launchd." with administrator privileges`, script))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return runElevatedBash(tmpPath)
 }
