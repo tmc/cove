@@ -1,0 +1,14 @@
+{
+  "format": "icon",
+  "version": 1,
+  "layers": [
+    {
+      "name": "Background",
+      "asset": "background.svg"
+    },
+    {
+      "name": "Symbol",
+      "asset": "symbol.svg"
+    }
+  ]
+}
