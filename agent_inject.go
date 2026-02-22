@@ -22,6 +22,8 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	vz "github.com/tmc/appledocs/generated/virtualization"
 )
 
 // agentBinaryName is the name of the guest agent binary.
@@ -208,28 +210,46 @@ func injectAgentOnly() error {
 }
 
 // checkAgentAvailability runs in the background after VM start. It waits
-// for the guest to boot, then tries to connect to the vz-agent. If the
-// agent is not reachable, it prints a hint telling the user how to inject it.
+// for the guest to reach Running state, allows time for the OS to boot,
+// then tries to connect to the vz-agent with retries. If the agent is
+// not reachable after all attempts, it prints a hint.
 func checkAgentAvailability(cs *ControlServer) {
-	// Wait for the guest to boot before attempting vsock connection.
-	time.Sleep(15 * time.Second)
-
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-
-	if err := cs.ensureAgent(); err != nil {
-		fmt.Println()
-		fmt.Println("Note: vz-agent is not running in this VM.")
-		fmt.Println("  The agent enables remote command execution, file transfer, and SSH control.")
-		fmt.Println("  To inject the agent (VM must be stopped first):")
-		fmt.Println()
-		fmt.Printf("    ./vz-macos inject -agent\n")
-		fmt.Println()
-	} else {
-		if verbose {
-			fmt.Println("Guest agent: connected")
+	// Wait for the VM to reach Running state (up to 60s).
+	for i := 0; i < 120; i++ {
+		time.Sleep(500 * time.Millisecond)
+		state := vz.VZVirtualMachineState(cs.vm.State())
+		if state == vz.VZVirtualMachineStateRunning {
+			break
+		}
+		if state == vz.VZVirtualMachineStateStopped || state == vz.VZVirtualMachineStateError {
+			return // VM stopped before we could check
 		}
 	}
+
+	// Allow time for the guest OS to boot and launchd to start daemons.
+	time.Sleep(20 * time.Second)
+
+	// Retry agent connection a few times (launchd may still be starting).
+	for attempt := 0; attempt < 3; attempt++ {
+		cs.mu.Lock()
+		err := cs.ensureAgent()
+		cs.mu.Unlock()
+		if err == nil {
+			if verbose {
+				fmt.Println("Guest agent: connected")
+			}
+			return
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	fmt.Println()
+	fmt.Println("Note: vz-agent is not running in this VM.")
+	fmt.Println("  The agent enables remote command execution, file transfer, and SSH control.")
+	fmt.Println("  To inject the agent (VM must be stopped first):")
+	fmt.Println()
+	fmt.Printf("    ./vz-macos inject -agent\n")
+	fmt.Println()
 }
 
 // agentLaunchDaemonPlist is the launchd plist for the guest agent.

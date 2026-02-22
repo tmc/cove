@@ -378,9 +378,11 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					return
 				}
 				fmt.Println("=== Installation Complete ===")
+				ui.requestSetVMWindowTitle("macOS VM Installation - Stopping VM...")
 
 				stopVMAndInject(installer.vm)
 
+				ui.requestSetVMWindowTitle("macOS VM Installation - Restarting...")
 				fmt.Println("Restarting VM for first boot...")
 				lifecycleErrMu.Lock()
 				lifecycleErr = errRestartVM
