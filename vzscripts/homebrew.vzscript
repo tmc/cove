@@ -1,0 +1,28 @@
+# homebrew — Install Homebrew package manager
+
+guest-ping
+guest-shell install-brew.sh
+
+-- install-brew.sh --
+#!/bin/bash
+set -eu
+
+# Homebrew must run as a non-root user with sudo access.
+# Find the first admin user (skip root and hidden users).
+BREW_USER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$BREW_USER" ]; then
+  echo "error: no admin user found" >&2
+  exit 1
+fi
+echo "Installing Homebrew as user: $BREW_USER"
+
+# Grant passwordless sudo temporarily for the install.
+echo "$BREW_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebrew-install
+chmod 0440 /etc/sudoers.d/homebrew-install
+
+su -l "$BREW_USER" -c 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+su -l "$BREW_USER" -c 'echo "eval \"\$(/opt/homebrew/bin/brew shellenv)\"" >> ~/.zprofile'
+su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && echo "Homebrew installed: $(brew --version)"'
+
+# Remove temporary sudoers entry.
+rm -f /etc/sudoers.d/homebrew-install

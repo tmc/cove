@@ -1,0 +1,26 @@
+# golang — Install Go programming language
+
+guest-ping
+guest-shell install-go.sh
+
+-- install-go.sh --
+#!/bin/bash
+set -eu
+
+# Determine latest stable Go version.
+GOVERSION=$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1)
+if [ -z "$GOVERSION" ]; then
+  echo "error: could not determine latest Go version" >&2
+  exit 1
+fi
+echo "Installing $GOVERSION for darwin/arm64..."
+
+PKG="${GOVERSION}.darwin-arm64.pkg"
+URL="https://go.dev/dl/${PKG}"
+
+curl -fsSL -o "/tmp/${PKG}" "$URL"
+sudo installer -pkg "/tmp/${PKG}" -target /
+rm -f "/tmp/${PKG}"
+
+# Verify.
+echo "Installed: $(/usr/local/go/bin/go version)"

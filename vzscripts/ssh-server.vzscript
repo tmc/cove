@@ -1,0 +1,6 @@
+# ssh-server — Enable and configure SSH remote login
+
+guest-ping
+guest-exec launchctl load -w /System/Library/LaunchDaemons/ssh.plist
+? guest-exec systemsetup -setremotelogin on
+guest-exec systemsetup -getremotelogin

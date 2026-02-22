@@ -1,0 +1,43 @@
+# openclaw — Install OpenClaw personal AI assistant
+
+guest-ping
+guest-shell install-openclaw.sh
+
+-- install-openclaw.sh --
+#!/bin/bash
+set -eu
+
+BREW_USER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$BREW_USER" ]; then
+  echo "error: no admin user found" >&2
+  exit 1
+fi
+echo "Installing OpenClaw as user: $BREW_USER"
+
+# Ensure Node.js 22+ is present.
+NODE_VERSION=$(su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)"; node --version 2>/dev/null' || echo "")
+if [ -z "$NODE_VERSION" ]; then
+  echo "Node.js not found, installing via Homebrew..."
+  su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && brew install node'
+  NODE_VERSION=$(su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && node --version')
+fi
+
+MAJOR=$(echo "$NODE_VERSION" | sed 's/^v//' | cut -d. -f1)
+if [ "$MAJOR" -lt 22 ] 2>/dev/null; then
+  echo "error: Node.js 22+ required, found $NODE_VERSION" >&2
+  exit 1
+fi
+echo "Node.js: $NODE_VERSION"
+
+# Install openclaw globally.
+su -l "$BREW_USER" -c '
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+  SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install -g openclaw@latest
+'
+
+INSTALLED=$(su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)"; openclaw --version')
+echo "Installed: openclaw $INSTALLED"
+echo ""
+echo "Next steps:"
+echo "  openclaw onboard --install-daemon"
+echo "  openclaw doctor"

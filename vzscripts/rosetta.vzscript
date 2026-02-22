@@ -1,0 +1,5 @@
+# rosetta — Install Rosetta 2 for x86-64 compatibility
+
+guest-ping
+guest-exec softwareupdate --install-rosetta --agree-to-license
+guest-exec /usr/bin/arch -x86_64 /usr/bin/true

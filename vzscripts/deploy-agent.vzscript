@@ -1,0 +1,36 @@
+# deploy-agent — Deploy updated vz-agent binary to the guest
+
+guest-ping
+guest-shell deploy-agent.sh
+
+-- deploy-agent.sh --
+#!/bin/bash
+set -eu
+
+# Look for the new agent binary in shared locations.
+AGENT=""
+for p in "/Volumes/My Shared Files/vz-agent" "/Volumes/drops/vz-agent"; do
+  if [ -f "$p" ]; then
+    AGENT="$p"
+    break
+  fi
+done
+
+if [ -z "$AGENT" ]; then
+  echo "error: vz-agent binary not found in shared volumes" >&2
+  echo "Place the binary at one of:" >&2
+  echo "  Host shared files directory (appears as /Volumes/My Shared Files/)" >&2
+  echo "  Drops directory (appears as /Volumes/drops/)" >&2
+  exit 1
+fi
+
+echo "Found agent at: $AGENT"
+CURRENT=$(/usr/local/bin/vz-agent -version 2>/dev/null || echo "unknown")
+echo "Current agent: $CURRENT"
+
+cp "$AGENT" /usr/local/bin/vz-agent
+chmod 755 /usr/local/bin/vz-agent
+
+echo "Restarting vz-agent service..."
+launchctl kickstart -k system/com.vz.agent 2>/dev/null || true
+echo "Agent deployed. Reconnect with: vz-macos ctl agent-connect"

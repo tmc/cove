@@ -1,0 +1,62 @@
+# macOS Sequoia (15.x) Setup Assistant boot commands
+# These navigate Setup Assistant when disk injection is not available.
+
+# Wait for initial boot to reach Setup Assistant
+<wait 30s>
+
+# Language selection - just press Return to accept English
+<waitForText "English">
+<key return>
+<wait 2s>
+
+# Country/Region - accept default
+<waitForText "Country">
+<key return>
+<wait 2s>
+
+# Accessibility - skip
+<waitForText "Accessibility">
+<key escape>
+<wait 1s>
+<key return>
+<wait 2s>
+
+# Wi-Fi - skip (VM uses NAT)
+<waitForText "Wi-Fi">
+<key escape>
+<wait 1s>
+<key return>
+<wait 2s>
+
+# Migration Assistant - select "Not Now"
+<waitForText "Migration">
+<key tab>
+<key tab>
+<key tab>
+<key return>
+<wait 2s>
+
+# Apple ID - Set Up Later
+<waitForText "Apple">
+<key tab>
+<key tab>
+<key tab>
+<key tab>
+<key return>
+<wait 1s>
+<key return>
+<wait 2s>
+
+# Terms and Conditions - Agree
+<waitForText "Terms">
+<key tab>
+<key tab>
+<key return>
+<wait 1s>
+<key return>
+<wait 2s>
+
+# Create Computer Account - filled by provisioning config
+# (username/password injected by the orchestrator)
+<waitForText "Computer Account">
+<screenshot>

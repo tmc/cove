@@ -1,0 +1,31 @@
+# claude-code — Install Claude Code CLI
+
+guest-ping
+guest-shell install-claude-code.sh
+
+-- install-claude-code.sh --
+#!/bin/bash
+set -eu
+
+BREW_USER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$BREW_USER" ]; then
+  echo "error: no admin user found" >&2
+  exit 1
+fi
+echo "Installing Claude Code as user: $BREW_USER"
+
+# Ensure Node.js 18+ is present.
+NODE_VERSION=$(su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)"; node --version 2>/dev/null' || echo "")
+if [ -z "$NODE_VERSION" ]; then
+  echo "Node.js not found, installing via Homebrew..."
+  su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && brew install node'
+fi
+
+# Install claude-code globally.
+su -l "$BREW_USER" -c '
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+  npm install -g @anthropic-ai/claude-code@latest
+'
+
+INSTALLED=$(su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)"; claude --version')
+echo "Installed: claude $INSTALLED"
