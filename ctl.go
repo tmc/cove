@@ -172,6 +172,10 @@ Examples:
 		req.Command = &controlpb.ControlRequest_Snapshot{Snapshot: cmd}
 
 	case "screenshot":
+		// Accept positional path: "ctl screenshot /tmp/screen.jpg"
+		if len(subArgs) > 0 && *outputFile == "" {
+			*outputFile = subArgs[0]
+		}
 		req.Command = &controlpb.ControlRequest_Screenshot{
 			Screenshot: &controlpb.ScreenshotCommand{
 				Scale:   0.5,
