@@ -159,6 +159,8 @@ func stopVMAndInject(vm *virtualMachine) {
 		},
 		SkipSetupAssistant: true,
 		AutoLogin:          true,
+		InjectAgent:        true,
+		InjectGuestTools:   true,
 	}
 	if err := injectProvisioningFilesWithOptions(injectOpts); err != nil {
 		fmt.Printf("Warning: provisioning injection failed: %v\n", err)
