@@ -7,13 +7,10 @@ import (
 	"image/png"
 	"os"
 	"strings"
-	"unsafe"
 
-	"github.com/tmc/appledocs/generated/corefoundation"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
-	"github.com/tmc/appledocs/generated/objectivec"
-	"github.com/tmc/appledocs/generated/vision"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/vision"
 )
 
 // TextObservation holds a recognized text region from OCR.
@@ -104,12 +101,9 @@ func (o *OCRService) recognizeTextInFile(path string, width, height int) ([]Text
 	request.SetRecognitionLevel(vision.VNRequestTextRecognitionLevelAccurate)
 	request.SetUsesLanguageCorrection(true)
 
-	requestsArray := objectivec.SliceToNSArray(
-		[]vision.VNRecognizeTextRequest{request},
-		func(r vision.VNRecognizeTextRequest) objc.ID { return r.ID },
-	)
-
-	ok, err := handler.PerformRequestsError(unsafe.Pointer(requestsArray))
+	ok, err := handler.PerformRequestsError([]vision.VNRequest{
+		vision.VNRequestFromID(request.ID),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("perform requests: %w", err)
 	}
