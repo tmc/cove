@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/ebitengine/purego"
-	"github.com/tmc/appledocs/generated/corefoundation"
+	"github.com/tmc/apple/corefoundation"
 )
 
 // Manual bindings for CoreGraphics functions missing from generated code
@@ -91,6 +91,26 @@ func TypeCharacter(char rune) {
 	}
 	CGEventKeyboardSetUnicodeString(eventUp, string(char))
 	CGEventPostToSelf(eventUp)
+}
+
+// typeCharacterToSystem types a single character by posting CGEvents through
+// the system-level HID event tap (kCGHIDEventTap). Unlike CGEventPostToPid,
+// this routes events through the window server to the focused window, which
+// is required for VZVirtualMachineView to properly handle keyboard input.
+func typeCharacterToSystem(char rune) {
+	eventDown := CGEventCreateKeyboardEvent(0, 0, true)
+	if eventDown == 0 {
+		return
+	}
+	CGEventKeyboardSetUnicodeString(eventDown, string(char))
+	cgEventPost(kCGHIDEventTap, eventDown)
+
+	eventUp := CGEventCreateKeyboardEvent(0, 0, false)
+	if eventUp == 0 {
+		return
+	}
+	CGEventKeyboardSetUnicodeString(eventUp, string(char))
+	cgEventPost(kCGHIDEventTap, eventUp)
 }
 
 const (

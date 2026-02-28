@@ -16,9 +16,9 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/objc"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/objc"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // dropsVirtioFSTag is the VirtioFS tag for the drops directory.
@@ -90,7 +90,7 @@ func SetupDragDrop(vmView vz.VZVirtualMachineView, vm vz.VZVirtualMachine, vmQue
 		objc.Sel("arrayWithObject:"),
 		nsPasteboardTypeFileURL,
 	)
-	objc.Send[struct{}](vmView.NSView.ID, objc.Sel("registerForDraggedTypes:"), typeArr)
+	objc.Send[struct{}](vmView.ID, objc.Sel("registerForDraggedTypes:"), typeArr)
 
 	dd.verifyDropsDevice()
 
@@ -99,7 +99,7 @@ func SetupDragDrop(vmView vz.VZVirtualMachineView, vm vz.VZVirtualMachine, vmQue
 }
 
 func addDragMethodsToView(vmView vz.VZVirtualMachineView) {
-	cls := objc.Send[objc.Class](vmView.NSView.ID, objc.Sel("class"))
+	cls := objc.Send[objc.Class](vmView.ID, objc.Sel("class"))
 
 	enteredIMP := purego.NewCallback(dragDraggingEntered)
 	objc.AddMethod(cls, objc.RegisterName("draggingEntered:"), enteredIMP, "Q@:@")
