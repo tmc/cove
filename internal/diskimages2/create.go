@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	di2 "github.com/tmc/appledocs/generated/diskimages2"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
+	di2 "github.com/tmc/apple/private/diskimages2"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 )
 
 // CreateASIF creates an Apple Sparse Image Format disk image at the given path.
@@ -20,7 +20,7 @@ func CreateASIF(path string, sizeBytes int64) error {
 		return err
 	}
 
-	url := foundation.FileURL(path)
+	url := foundation.NewURLFileURLWithPath(path)
 	numBlocks := uint64(sizeBytes / 512)
 
 	params, err := di2.NewDICreateASIFParamsWithURLNumBlocksError(url, numBlocks)
@@ -41,7 +41,7 @@ func CreateASIF(path string, sizeBytes int64) error {
 	)
 	if !ok {
 		if errPtr != 0 {
-			nsErr := foundation.NSErrorFrom(errPtr)
+			nsErr := foundation.NSErrorFromID(errPtr)
 			return fmt.Errorf("diskimages2: create: %s", nsErr.LocalizedDescription())
 		}
 		return fmt.Errorf("diskimages2: createBlankWithParams failed")
@@ -56,7 +56,7 @@ func Resize(path string, newSizeBytes int64) error {
 		return err
 	}
 
-	url := foundation.FileURL(path)
+	url := foundation.NewURLFileURLWithPath(path)
 
 	params, err := di2.NewDIResizeParamsWithURLSizeError(url, uint64(newSizeBytes))
 	if err != nil {

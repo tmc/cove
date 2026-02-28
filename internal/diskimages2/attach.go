@@ -5,9 +5,9 @@ import (
 	"os/exec"
 	"unsafe"
 
-	di2 "github.com/tmc/appledocs/generated/diskimages2"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
+	di2 "github.com/tmc/apple/private/diskimages2"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 )
 
 // Attach attaches a disk image at the given path using DIAttachParams.
@@ -18,7 +18,7 @@ func Attach(path string, opts AttachOptions) (*DeviceHandle, error) {
 		return nil, err
 	}
 
-	url := foundation.FileURL(path)
+	url := foundation.NewURLFileURLWithPath(path)
 
 	params, err := di2.NewDIAttachParamsWithURLError(url)
 	if err != nil {
@@ -62,7 +62,7 @@ func AttachSimple(path string, readOnly, autoMount bool) (bsdName string, err er
 		return "", err
 	}
 
-	url := foundation.FileURL(path)
+	url := foundation.NewURLFileURLWithPath(path)
 
 	// The generated binding for DICommonAttach treats BSDName as a string
 	// param, but the ObjC method uses NSString ** (output parameter).
@@ -77,14 +77,14 @@ func AttachSimple(path string, readOnly, autoMount bool) (bsdName string, err er
 	)
 	if !ok {
 		if errPtr != 0 {
-			nsErr := foundation.NSErrorFrom(errPtr)
+			nsErr := foundation.NSErrorFromID(errPtr)
 			return "", fmt.Errorf("diskimages2: %s", nsErr.LocalizedDescription())
 		}
 		return "", fmt.Errorf("diskimages2: diskImageAttach failed")
 	}
 
 	if bsdNamePtr != 0 {
-		return foundation.NSStringFrom(bsdNamePtr).String(), nil
+		return foundation.NSStringFromID(bsdNamePtr).String(), nil
 	}
 	return "", nil
 }

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	di2 "github.com/tmc/appledocs/generated/diskimages2"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
+	di2 "github.com/tmc/apple/private/diskimages2"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 )
 
 // RetrieveInfo returns metadata about a disk image file using DIImageInfoParams.
@@ -16,7 +16,7 @@ func RetrieveInfo(path string) (*ImageInfo, error) {
 		return nil, err
 	}
 
-	url := foundation.FileURL(path)
+	url := foundation.NewURLFileURLWithPath(path)
 
 	params, err := di2.NewDIImageInfoParamsWithURLError(url)
 	if err != nil {
@@ -33,15 +33,15 @@ func RetrieveInfo(path string) (*ImageInfo, error) {
 	dictIface := params.ImageInfo()
 	info := &ImageInfo{Raw: make(map[string]string)}
 	if dictIface != nil && dictIface.GetID() != 0 {
-		dict := foundation.NSDictionaryFrom(dictIface.GetID())
+		dict := foundation.NSDictionaryFromID(dictIface.GetID())
 		keys := dict.AllKeys()
 		for _, key := range keys {
 			val := dict.ObjectForKey(key)
 			if val == nil {
 				continue
 			}
-			keyStr := foundation.NSStringFrom(key.GetID()).String()
-			valStr := foundation.NSStringFrom(
+			keyStr := foundation.NSStringFromID(key.GetID()).String()
+			valStr := foundation.NSStringFromID(
 				objc.Send[objc.ID](val.GetID(), objc.Sel("description")),
 			).String()
 			info.Raw[keyStr] = valStr
@@ -69,7 +69,7 @@ func ListAttached() ([]AttachedDeviceInfo, error) {
 	)
 	if arrayID == 0 {
 		if errPtr != 0 {
-			nsErr := foundation.NSErrorFrom(errPtr)
+			nsErr := foundation.NSErrorFromID(errPtr)
 			return nil, fmt.Errorf("diskimages2: list attached: %s", nsErr.LocalizedDescription())
 		}
 		return nil, nil
@@ -83,13 +83,13 @@ func ListAttached() ([]AttachedDeviceInfo, error) {
 			continue
 		}
 		info := AttachedDeviceInfo{
-			BSDName: foundation.NSStringFrom(
+			BSDName: foundation.NSStringFromID(
 				objc.Send[objc.ID](item, objc.Sel("BSDName")),
 			).String(),
 		}
 		urlID := objc.Send[objc.ID](item, objc.Sel("imageURL"))
 		if urlID != 0 {
-			info.ImageURL = foundation.NSStringFrom(
+			info.ImageURL = foundation.NSStringFromID(
 				objc.Send[objc.ID](urlID, objc.Sel("path")),
 			).String()
 		}

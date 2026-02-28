@@ -7,10 +7,10 @@ package diskimages2
 import (
 	"errors"
 
-	"github.com/tmc/appledocs/generated/objc"
+	"github.com/tmc/apple/objc"
 
 	// Import generated package to trigger framework loading via its init().
-	di2 "github.com/tmc/appledocs/generated/diskimages2"
+	di2 "github.com/tmc/apple/private/diskimages2"
 )
 
 // ErrFrameworkUnavailable is returned when DiskImages2.framework cannot be loaded.

@@ -1,6 +1,6 @@
 package diskimages2
 
-import di2 "github.com/tmc/appledocs/generated/diskimages2"
+import di2 "github.com/tmc/apple/private/diskimages2"
 
 // AttachOptions configures disk image attachment behavior.
 type AttachOptions struct {
