@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/corefoundation"
-	"github.com/tmc/appledocs/generated/objc"
-	"github.com/tmc/appledocs/generated/objectivec"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/objc"
+	"github.com/tmc/apple/objectivec"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // MenubarApp manages a system menu bar interface for VM control.
@@ -125,7 +125,7 @@ func (m *MenubarApp) registerActions() {
 	m.delegate = objc.Send[objc.ID](m.delegate, objc.Sel("init"))
 
 	// Set delegate as target for custom actions (Start, Stop, Show Display)
-	delegateObj := objectivec.ObjectFrom(objc.ID(m.delegate))
+	delegateObj := objectivec.ObjectFromID(objc.ID(m.delegate))
 	for _, i := range []int{menuIdxStartVM, menuIdxStopVM, menuIdxShowWindow} {
 		item := m.menu.ItemAtIndex(i)
 		if item != nil {
@@ -159,7 +159,7 @@ func (m *MenubarApp) createWindow() {
 		false,
 	)
 	m.window.SetTitle("macOS VM")
-	m.window.SetContentView(&m.vmView.NSView)
+	m.window.SetContentView(vmViewAsNSView(m.vmView))
 	m.window.Center()
 
 	// Prevent window from releasing on close so we can re-show it
@@ -177,7 +177,7 @@ func (m *MenubarApp) showWindow() {
 	app.SetActivationPolicy(appkit.NSApplicationActivationPolicyRegular)
 
 	m.window.MakeKeyAndOrderFront(nil)
-	app.ActivateIgnoringOtherApps(true)
+	app.Activate()
 
 	m.windowVisible = true
 	m.updateWindowMenuItem()

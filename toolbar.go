@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
-	"github.com/tmc/appledocs/generated/objectivec"
-	"github.com/tmc/appledocs/generated/uniformtypeidentifiers"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
+	"github.com/tmc/apple/objectivec"
+	"github.com/tmc/apple/uniformtypeidentifiers"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // Toolbar item identifiers.
@@ -68,7 +68,7 @@ func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.
 	t.toolbar = appkit.NewToolbarWithIdentifier("com.vz-macos.vmToolbar")
 	t.toolbar.SetDisplayMode(appkit.NSToolbarDisplayModeIconOnly)
 
-	delegateObj := appkit.NSToolbarDelegateObjectFrom(t.delegateID)
+	delegateObj := appkit.NSToolbarDelegateObjectFromID(t.delegateID)
 	t.toolbar.SetDelegate(delegateObj)
 
 	window.SetToolbar(&t.toolbar)
@@ -516,7 +516,7 @@ func (t *VMToolbar) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID) {
 func (t *VMToolbar) handleShowWindow(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	t.window.MakeKeyAndOrderFront(nil)
 	app := getSharedApp()
-	app.ActivateIgnoringOtherApps(true)
+	app.Activate()
 }
 
 func (t *VMToolbar) handleCaptureInput(_ objc.ID, _ objc.SEL, _ objc.ID) {
@@ -737,7 +737,7 @@ func (t *VMToolbar) applySharedFoldersToVM(folders []SharedFolderEntry) {
 				fmt.Printf("Toolbar: skipping missing folder: %s\n", f.Path)
 				continue
 			}
-			url := foundation.FileURL(f.Path)
+			url := foundation.NewURLFileURLWithPath(f.Path)
 			sharedDir := vz.NewSharedDirectoryWithURLReadOnly(url, f.ReadOnly)
 			objc.Send[objc.ID](sharedDir.ID, objc.Sel("retain"))
 			nsKey := objc.String(f.Tag)

@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/objc"
-	"github.com/tmc/appledocs/generated/objectivec"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/objc"
+	"github.com/tmc/apple/objectivec"
 )
 
 // setupMainMenu creates a proper macOS main menu bar with standard menus.
@@ -54,7 +54,7 @@ func setupMainMenu(toolbarDelegate objc.ID) {
 	// Shared Folders submenu
 	sharedMenu := appkit.NewMenuWithTitle("Shared Folders")
 	// Set the delegate so menuNeedsUpdate: fires before each open
-	delegateObj := appkit.NSMenuDelegateObjectFrom(toolbarDelegate)
+	delegateObj := appkit.NSMenuDelegateObjectFromID(toolbarDelegate)
 	sharedMenu.SetDelegate(delegateObj)
 	addMainMenuItem(sharedMenu, "Add Folder...", "addSharedFolder:", "", toolbarDelegate)
 	sharedMenuItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("Shared Folders", 0, "")

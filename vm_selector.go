@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/corefoundation"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
-	"github.com/tmc/appledocs/generated/objectivec"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
+	"github.com/tmc/apple/objectivec"
 )
 
 // VMSelector displays a native macOS window with a table of VMs.
@@ -42,7 +42,7 @@ func NewVMSelector(vms []VMInfo, onSelect func(VMInfo), onInstall func()) *VMSel
 func (s *VMSelector) Show() {
 	s.window.MakeKeyAndOrderFront(nil)
 	app := getSharedApp()
-	app.ActivateIgnoringOtherApps(true)
+	app.Activate()
 }
 
 // registerDelegate registers the ObjC class for NSTableView data source and delegate.
@@ -348,7 +348,7 @@ func showVMSelectorWindow(vms []VMInfo) {
 	setAppIcon(&app)
 
 	if !appFinishedLaunching {
-		foundation.GetNSTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
+		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
 			app.Stop(nil)
 			postDummyEvent(app)
 		})
@@ -387,7 +387,7 @@ func showVMSelectorWindow(vms []VMInfo) {
 	setupSelectorMenu()
 
 	// Quit when the selector window closes.
-	nc := foundation.GetNSNotificationCenterClass().DefaultCenter()
+	nc := foundation.GetNotificationCenterClass().DefaultCenter()
 	nsName := objc.String("NSWindowWillCloseNotification")
 	objc.Send[objc.ID](nc.ID, objc.Sel("addObserverForName:object:queue:usingBlock:"),
 		nsName, selector.window.ID, objc.ID(0),

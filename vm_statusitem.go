@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/corefoundation"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
-	"github.com/tmc/appledocs/generated/objectivec"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
+	"github.com/tmc/apple/objectivec"
+	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/vz-macos/internal/assets"
 )
 
@@ -71,7 +71,7 @@ func (s *VMStatusItem) setup() {
 
 	// Shared Folders submenu — dynamically rebuilt via menuNeedsUpdate:
 	sharedMenu := appkit.NewMenuWithTitle("Shared Folders")
-	delegateObj := appkit.NSMenuDelegateObjectFrom(target)
+	delegateObj := appkit.NSMenuDelegateObjectFromID(target)
 	sharedMenu.SetDelegate(delegateObj)
 	addMainMenuItem(sharedMenu, "Add Folder...", "addSharedFolder:", "", target)
 	sharedMenuItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("Shared Folders", 0, "")
