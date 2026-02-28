@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // RosettaAvailability represents the availability state of Rosetta

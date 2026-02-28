@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // DisplayConfig represents a single display configuration

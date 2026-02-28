@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/tmc/appledocs/plist"
+	"github.com/tmc/apple/x/plist"
 )
 
 // hdiutilInfo represents the top-level structure returned by hdiutil info -plist.

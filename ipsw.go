@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // downloadIPSWCurl downloads the IPSW from the given URL to the specified path using curl.

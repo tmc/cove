@@ -7,9 +7,9 @@ package main
 import (
 	"net"
 
-	"github.com/tmc/appledocs/generated/dispatch"
-	vz "github.com/tmc/appledocs/generated/virtualization"
-	"github.com/tmc/vzkit"
+	"github.com/tmc/apple/dispatch"
+	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit"
 )
 
 // VsockConnection wraps a VZVirtioSocketConnection as a net.Conn.

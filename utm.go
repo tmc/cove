@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tmc/appledocs/plist"
+	"github.com/tmc/apple/x/plist"
 )
 
 // UTMConfig represents the parsed UTM configuration.

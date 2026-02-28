@@ -4,8 +4,8 @@ package main
 import (
 	"fmt"
 
-	vz "github.com/tmc/appledocs/generated/virtualization"
-	"github.com/tmc/vzkit"
+	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit"
 )
 
 // NetworkMode represents the type of network configuration.

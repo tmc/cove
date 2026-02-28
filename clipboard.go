@@ -8,8 +8,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/tmc/appledocs/generated/objc"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/objc"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // createClipboardConfig creates a Virtio console device with SPICE agent

@@ -11,8 +11,8 @@ import (
 	"image/png"
 	"unsafe"
 
-	"github.com/tmc/appledocs/generated/corefoundation"
-	"github.com/tmc/appledocs/generated/coregraphics"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/coregraphics"
 	"golang.org/x/image/draw"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"

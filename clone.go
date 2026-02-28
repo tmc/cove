@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"unsafe"
 
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	vz "github.com/tmc/apple/virtualization"
 	"golang.org/x/sys/unix"
 )
 

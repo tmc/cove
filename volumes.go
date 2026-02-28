@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	vz "github.com/tmc/appledocs/generated/virtualization"
-	"github.com/tmc/vzkit"
+	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit"
 )
 
 // VolumeMount represents a host-to-guest volume mount configuration.

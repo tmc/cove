@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/appledocs/plist"
+	"github.com/tmc/apple/x/plist"
 )
 
 // validateUsername checks if a username is valid for macOS

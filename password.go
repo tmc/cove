@@ -128,7 +128,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/appledocs/plist"
+	"github.com/tmc/apple/x/plist"
 	"golang.org/x/crypto/pbkdf2"
 )
 
