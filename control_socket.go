@@ -16,10 +16,10 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/corefoundation"
-	"github.com/tmc/appledocs/generated/dispatch"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/dispatch"
+	vz "github.com/tmc/apple/virtualization"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -212,8 +212,9 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 }
 
 // sendKeyEvent sends a keyboard event to the VM.
-// By default uses CGEvent (system-level, thread-safe).
-// Set UseCGEvent=false to try NSEvent (view-level, may have thread issues).
+// Uses direct NSEvent delivery to VZVirtualMachineView by default (reliable,
+// works even when the vz-macos window is not the focused app).
+// Set UseCGEvent=true to use CGEvent (system-level, posts via window server).
 func (s *ControlServer) sendKeyEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
 	if s.vmView.ID == 0 {
 		return &controlpb.ControlResponse{Error: "keyboard input requires GUI mode (run with -gui)"}
@@ -222,15 +223,7 @@ func (s *ControlServer) sendKeyEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 		return &controlpb.ControlResponse{Error: "keyboard input requires GUI mode (run with -gui)"}
 	}
 
-	// Default to CGEvent unless explicitly disabled
-	useCGEvent := true
-	if !cmd.UseCgEvent && cmd.Character != "" {
-		// If character is specified and UseCGEvent is explicitly false,
-		// use NSEvent method (for view-level typing)
-		useCGEvent = false
-	}
-
-	if useCGEvent {
+	if cmd.UseCgEvent {
 		return s.sendKeyEventCGEvent(cmd)
 	}
 	return s.sendKeyEventNSEvent(cmd)
@@ -240,6 +233,18 @@ func (s *ControlServer) sendKeyEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 // This is thread-safe. Events are posted to our own process via CGEventPostToPid
 // so they reach the VM window regardless of which app has focus.
 func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	// Activate our app and make the window key so the event reaches the VM view.
+	// CGEventPostToPid delivers to the process, but the event is dropped
+	// if no window is key/focused within the app.
+	done := make(chan struct{})
+	DispatchAsync(GetMainDispatchQueue(), func() {
+		defer close(done)
+		appkit.GetNSApplicationClass().SharedApplication().Activate()
+		s.window.MakeKeyAndOrderFront(nil)
+		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
+	})
+	<-done
+
 	event := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
 	if event == 0 {
 		return &controlpb.ControlResponse{Error: "failed to create CGEvent"}
@@ -320,10 +325,11 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 			return
 		}
 
+		responder := appkit.NSResponderFromID(s.vmView.ID)
 		if cmd.KeyDown {
-			s.vmView.KeyDown(&event)
+			responder.KeyDown(event)
 		} else {
-			s.vmView.KeyUp(&event)
+			responder.KeyUp(event)
 		}
 		resp = &controlpb.ControlResponse{Success: true}
 	})
@@ -352,7 +358,7 @@ func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.C
 		defer close(done)
 		s.window.MakeKeyAndOrderFront(nil)
 		windowFrame = s.window.Frame()
-		bounds = s.vmView.Bounds()
+		bounds = vmViewAsNSView(s.vmView).Bounds()
 		mainScreen := appkit.GetNSScreenClass().MainScreen()
 		screenHeight = mainScreen.Frame().Size.Height
 	})
@@ -432,17 +438,64 @@ func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.C
 	return &controlpb.ControlResponse{Success: true}
 }
 
-// typeText types a string of text character by character
+// typeText types a string of text character by character using CGEvent
+// with Unicode string support. Each character is posted from the main
+// thread with a run loop pump between characters so the virtualization
+// framework can process each event.
 func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlResponse {
-	// Type each character using CGEvent with Unicode string support.
-	// CGEventPost is thread-safe — no need for MakeKeyAndOrderFront
-	// (which crashes when called from a background goroutine).
-	for _, char := range cmd.Text {
-		TypeCharacter(char)
-		// Small delay between characters for reliability
-		time.Sleep(20 * time.Millisecond)
+	if s.vmView.ID == 0 || s.window.ID == 0 {
+		return &controlpb.ControlResponse{Error: "text input requires GUI mode (run with -gui)"}
 	}
-	return &controlpb.ControlResponse{Success: true}
+
+	// Type one character at a time on the main thread.
+	// Between characters, return to the caller and re-dispatch, giving
+	// the run loop a chance to deliver the posted event.
+	chars := []rune(cmd.Text)
+	errCh := make(chan error, 1)
+
+	// First: activate and focus the VM window.
+	done := make(chan struct{})
+	DispatchAsync(GetMainDispatchQueue(), func() {
+		defer close(done)
+		app := appkit.GetNSApplicationClass().SharedApplication()
+		app.Activate()
+		s.window.MakeKeyAndOrderFront(nil)
+		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
+	})
+	<-done
+	time.Sleep(100 * time.Millisecond)
+
+	// Now type each character, dispatching to main thread for each one.
+	for _, char := range chars {
+		ch := char
+		charDone := make(chan struct{})
+		DispatchAsync(GetMainDispatchQueue(), func() {
+			defer close(charDone)
+			eventDown := CGEventCreateKeyboardEvent(0, 0, true)
+			if eventDown == 0 {
+				return
+			}
+			CGEventKeyboardSetUnicodeString(eventDown, string(ch))
+			CGEventPostToSelf(eventDown)
+
+			eventUp := CGEventCreateKeyboardEvent(0, 0, false)
+			if eventUp == 0 {
+				return
+			}
+			CGEventKeyboardSetUnicodeString(eventUp, string(ch))
+			CGEventPostToSelf(eventUp)
+		})
+		<-charDone
+		// Give the run loop time to deliver the event to VZVirtualMachineView.
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	select {
+	case err := <-errCh:
+		return &controlpb.ControlResponse{Error: err.Error()}
+	default:
+		return &controlpb.ControlResponse{Success: true}
+	}
 }
 
 // GetControlSocketPath returns the default socket path
@@ -456,7 +509,7 @@ func GetControlSocketPath() string {
 
 // getVMStatus returns the current VM state and available operations.
 func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
@@ -489,7 +542,7 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 
 // pauseVM pauses the VM.
 func (s *ControlServer) pauseVM() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
@@ -529,7 +582,7 @@ func (s *ControlServer) pauseVM() *controlpb.ControlResponse {
 
 // resumeVM resumes a paused VM.
 func (s *ControlServer) resumeVM() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
@@ -569,7 +622,7 @@ func (s *ControlServer) resumeVM() *controlpb.ControlResponse {
 
 // stopVM forcefully stops the VM.
 func (s *ControlServer) stopVM() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
@@ -609,7 +662,7 @@ func (s *ControlServer) stopVM() *controlpb.ControlResponse {
 
 // requestStopVM sends an ACPI power button event for graceful shutdown.
 func (s *ControlServer) requestStopVM() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
