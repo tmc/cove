@@ -32,9 +32,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // buildWindowsVMConfiguration builds a VZVirtualMachineConfiguration for Windows.
@@ -62,7 +62,7 @@ func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfi
 	config.SetBootLoader(&bootloader.VZBootLoader)
 
 	// Storage - main disk (NVMe — Windows ARM64 EFI has built-in NVMe drivers)
-	diskURL := foundation.FileURL(diskImagePath)
+	diskURL := foundation.NewURLFileURLWithPath(diskImagePath)
 	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&diskURL, false)
 	if err != nil {
 		return config, fmt.Errorf("create disk attachment: %w", err)
@@ -175,7 +175,7 @@ func loadOrCreateWindowsMachineIdentifier() vz.VZGenericMachineIdentifier {
 	if data, err := os.ReadFile(machineIDPath); err == nil && len(data) > 0 {
 		nsData := createNSDataFromBytes(data)
 		if nsData != 0 {
-			nsDataObj := foundation.NSDataFrom(nsData)
+			nsDataObj := foundation.NSDataFromID(nsData)
 			machineID := vz.NewGenericMachineIdentifierWithDataRepresentation(&nsDataObj)
 			if machineID.ID != 0 {
 				fmt.Println("  Loaded existing Windows machine identifier")
@@ -238,7 +238,7 @@ func runWindowsVM() error {
 
 	// Create VM
 	fmt.Println("Creating virtual machine...")
-	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue.Handle())
+	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue)
 	if vm.ID == 0 {
 		return fmt.Errorf("failed to create virtual machine")
 	}

@@ -7,14 +7,11 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 )
-
-// DISPATCH_TIME_FOREVER is the constant for waiting forever.
-const DISPATCH_TIME_FOREVER = dispatch.TimeForever
 
 // CFRunLoop functions (exported for use by root package event loops).
 var (
@@ -111,19 +108,19 @@ func RunRunLoopAggressively() {
 	}
 
 	// Also run NSRunLoop to handle any Objective-C specific callbacks
-	mainRunLoop := foundation.GetNSRunLoopClass().MainRunLoop()
-	currentRunLoop := foundation.GetNSRunLoopClass().CurrentRunLoop()
+	mainRunLoop := foundation.GetRunLoopClass().MainRunLoop()
+	currentRunLoop := foundation.GetRunLoopClass().CurrentRunLoop()
 	vlog("  NSRunLoop main: %#x, current: %#x, same=%v", mainRunLoop.ID, currentRunLoop.ID, mainRunLoop.ID == currentRunLoop.ID)
 
 	futureDate := foundation.GetNSDateClass().DateWithTimeIntervalSinceNow(0.1)
 	if futureDate.ID != 0 {
 		if mainRunLoop.ID != 0 {
-			ran := mainRunLoop.RunModeBeforeDate(foundation.RunLoopDefaultMode, &futureDate)
+			ran := mainRunLoop.RunModeBeforeDate(foundation.NSDefaultRunLoopMode, futureDate)
 			vlog("  NSRunLoop.main.runMode: %v", ran)
 		}
 		if currentRunLoop.ID != 0 && currentRunLoop.ID != mainRunLoop.ID {
 			futureDate2 := foundation.GetNSDateClass().DateWithTimeIntervalSinceNow(0.1)
-			ran := currentRunLoop.RunModeBeforeDate(foundation.RunLoopDefaultMode, &futureDate2)
+			ran := currentRunLoop.RunModeBeforeDate(foundation.NSDefaultRunLoopMode, futureDate2)
 			vlog("  NSRunLoop.current.runMode: %v", ran)
 		}
 	}
@@ -138,13 +135,14 @@ func RunRunLoopAggressively() {
 		for i := 0; i < 5; i++ {
 			// NSEventMaskAny = NSUIntegerMax
 			// kCFRunLoopDefaultMode == "kCFRunLoopDefaultMode" as a string
+			mode := foundation.NSStringFromID(objc.String(foundation.NSDefaultRunLoopMode))
 			iEvent := sharedApp.NextEventMatchingMaskUntilDateInModeDequeue(
-				appkit.NSEventMaskAny, distantPast, "kCFRunLoopDefaultMode", true)
+				appkit.NSEventMaskAny, distantPast, mode, true)
 			event := appkit.NSEventFromID(iEvent.GetID())
 			if event.ID != 0 {
 				eventsProcessed++
 				vlog("  NSApp event %d: %#x", i, event.ID)
-				sharedApp.SendEvent(&event)
+				sharedApp.SendEvent(event)
 			}
 		}
 		vlog("  NSApp events processed: %d", eventsProcessed)
