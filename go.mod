@@ -4,10 +4,8 @@ go 1.25.5
 
 require (
 	github.com/ebitengine/purego v0.10.0-alpha.4.0.20260212124526-587d406ac104
-	github.com/tmc/appledocs v0.0.0
-	github.com/tmc/appledocs/generated v0.0.0
-	github.com/tmc/macgo v0.0.0-20260221171528-e87b69da660b
-	github.com/tmc/vzkit v0.0.0
+	github.com/tmc/apple v0.0.0
+github.com/tmc/macgo v0.0.0-20260221171528-e87b69da660b
 	golang.org/x/crypto v0.47.0
 	golang.org/x/image v0.33.0
 	golang.org/x/sys v0.41.0
@@ -23,3 +21,5 @@ require (
 	golang.org/x/text v0.33.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
 )
+
+replace github.com/tmc/apple => ../apple
