@@ -17,8 +17,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tmc/appledocs/generated/foundation"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/foundation"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // ScriptsShareTag is the VirtioFS tag for the scripts share
@@ -103,7 +103,7 @@ func CreateScriptsShareConfig(config ScriptsShareConfig) (vz.VZVirtioFileSystemD
 	fsConfig.Retain()
 
 	// Create shared directory pointing to host path
-	sharedURL := foundation.FileURL(config.HostPath)
+	sharedURL := foundation.NewURLFileURLWithPath(config.HostPath)
 	sharedURL.Retain()
 
 	// Create VZSharedDirectory with read-only setting

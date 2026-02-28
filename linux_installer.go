@@ -20,9 +20,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // LinuxProvisionConfig holds configuration for Linux VM provisioning.
@@ -134,7 +134,7 @@ func installLinuxVM() error {
 
 	// Create VM
 	fmt.Println("Creating virtual machine...")
-	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue.Handle())
+	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue)
 	if vm.ID == 0 {
 		return fmt.Errorf("failed to create virtual machine")
 	}
@@ -201,7 +201,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	// 3. Installation ISO (USB mass storage — matches Code-Hex/vz pattern)
 
 	// Main disk
-	diskURL := foundation.FileURL(diskPath)
+	diskURL := foundation.NewURLFileURLWithPath(diskPath)
 	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(diskURL, false)
 	if err != nil {
 		return config, fmt.Errorf("create disk attachment: %w", err)
@@ -211,7 +211,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	diskStorage.Retain()
 
 	// Cloud-init ISO (Virtio block so cloud-init can detect it as NoCloud datasource)
-	cloudInitURL := foundation.FileURL(cloudInitISO)
+	cloudInitURL := foundation.NewURLFileURLWithPath(cloudInitISO)
 	cloudInitAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(cloudInitURL, true)
 	if err != nil {
 		return config, fmt.Errorf("create cloud-init attachment: %w", err)
@@ -221,7 +221,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	cloudInitStorage.Retain()
 
 	// Installation ISO as USB mass storage (EFI firmware can boot from USB)
-	isoURL := foundation.FileURL(installISO)
+	isoURL := foundation.NewURLFileURLWithPath(installISO)
 	isoAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(isoURL, true)
 	if err != nil {
 		return config, fmt.Errorf("create ISO attachment: %w", err)
@@ -302,7 +302,7 @@ func createLinuxInstallBootLoader(kernelPath, initrdPath, cmdLine string) (vz.VZ
 		return vz.VZLinuxBootLoader{}, fmt.Errorf("kernel not found: %s", absKernelPath)
 	}
 
-	kernelURL := foundation.FileURL(absKernelPath)
+	kernelURL := foundation.NewURLFileURLWithPath(absKernelPath)
 	if kernelURL.ID == 0 {
 		return vz.VZLinuxBootLoader{}, fmt.Errorf("failed to create kernel URL")
 	}
@@ -320,7 +320,7 @@ func createLinuxInstallBootLoader(kernelPath, initrdPath, cmdLine string) (vz.VZ
 		if _, statErr := os.Stat(absInitrdPath); statErr != nil {
 			return vz.VZLinuxBootLoader{}, fmt.Errorf("initrd not found: %s", absInitrdPath)
 		}
-		initrdURL := foundation.FileURL(absInitrdPath)
+		initrdURL := foundation.NewURLFileURLWithPath(absInitrdPath)
 		if initrdURL.ID == 0 {
 			return vz.VZLinuxBootLoader{}, fmt.Errorf("failed to create initrd URL")
 		}

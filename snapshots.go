@@ -25,9 +25,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	vz "github.com/tmc/apple/virtualization"
 	"golang.org/x/sys/unix"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -132,7 +132,7 @@ func (m *SnapshotManager) Save(vm vz.VZVirtualMachine, queue dispatch.Queue, nam
 
 	// Save the snapshot
 	snapshotFile := m.snapshotPath(name)
-	saveURL := foundation.FileURL(snapshotFile)
+	saveURL := foundation.NewURLFileURLWithPath(snapshotFile)
 	saveURL.Retain()
 
 	fmt.Printf("Saving snapshot '%s' to: %s\n", name, snapshotFile)
@@ -214,7 +214,7 @@ func (m *SnapshotManager) Restore(vm vz.VZVirtualMachine, queue dispatch.Queue, 
 	}
 
 	// Restore the snapshot
-	restoreURL := foundation.FileURL(snapshotFile)
+	restoreURL := foundation.NewURLFileURLWithPath(snapshotFile)
 	restoreURL.Retain()
 
 	fmt.Printf("Restoring snapshot '%s' from: %s\n", name, snapshotFile)
@@ -600,7 +600,7 @@ func dirSize(path string) (int64, error) {
 
 // handleSnapshotCommand handles snapshot commands from the control socket
 func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 

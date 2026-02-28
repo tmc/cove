@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/foundation"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/foundation"
 )
 
 // showOpenPanelForUTM displays an NSOpenPanel for selecting a .utm bundle.
@@ -46,7 +46,7 @@ func showOpenPanelForUTM() string {
 	}
 	for _, p := range defaultPaths {
 		if _, err := os.Stat(p); err == nil {
-			url := foundation.FileURL(p)
+			url := foundation.NewURLFileURLWithPath(p)
 			panel.SetDirectoryURL(url)
 			break
 		}

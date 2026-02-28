@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
 
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
+	vz "github.com/tmc/apple/virtualization"
 	"golang.org/x/sys/unix"
 )
 
@@ -201,7 +202,7 @@ func createSerialConsoleConfig() vz.VZVirtioConsoleDeviceSerialPortConfiguration
 	writeHandle.Retain()
 
 	// Create file handle serial port attachment
-	attachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(readHandle, writeHandle)
+	attachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(&readHandle, &writeHandle)
 	if attachment.ID == 0 {
 		fmt.Printf("  Warning: could not create serial port attachment\n")
 		return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
@@ -241,15 +242,20 @@ func hintEntitlements(err error) error {
 
 // saveNSDataToFile saves NSData bytes to a file.
 func saveNSDataToFile(dataID objc.ID, path string) error {
-	data := foundation.NSDataFrom(dataID)
-	bytes := data.GoBytes()
-	if len(bytes) == 0 {
+	data := foundation.NSDataFromID(dataID)
+	length := data.Length()
+	if length == 0 {
 		return fmt.Errorf("empty data")
 	}
+	ptr := data.Bytes()
+	bytes := unsafe.Slice((*byte)(ptr), length)
 	return os.WriteFile(path, bytes, 0644)
 }
 
 // createNSDataFromBytes creates an NSData object from Go bytes.
 func createNSDataFromBytes(data []byte) objc.ID {
-	return foundation.DataFromBytes(data).ID
+	if len(data) == 0 {
+		return 0
+	}
+	return foundation.GetNSDataClass().DataWithBytesLength(unsafe.Pointer(&data[0]), uint(len(data))).ID
 }

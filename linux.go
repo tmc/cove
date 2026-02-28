@@ -11,9 +11,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // buildLinuxVMConfiguration builds a VZVirtualMachineConfiguration for Linux.
@@ -53,7 +53,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// Storage - main disk
-	diskURL := foundation.FileURL(diskImagePath)
+	diskURL := foundation.NewURLFileURLWithPath(diskImagePath)
 	// Create disk attachment
 	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(diskURL, false)
 	if err != nil {
@@ -67,7 +67,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 
 	// If ISO is provided, add it as second storage device (read-only)
 	if isoPath != "" {
-		isoURL := foundation.FileURL(isoPath)
+		isoURL := foundation.NewURLFileURLWithPath(isoPath)
 		isoAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(isoURL, true)
 		if err != nil {
 			return config, fmt.Errorf("failed to create ISO attachment: %w", err)
@@ -193,7 +193,7 @@ func createLinuxBootLoader() (vz.VZLinuxBootLoader, error) {
 		return vz.VZLinuxBootLoader{}, fmt.Errorf("kernel not found: %s", absKernelPath)
 	}
 
-	kernelURL := foundation.FileURL(absKernelPath)
+	kernelURL := foundation.NewURLFileURLWithPath(absKernelPath)
 	if kernelURL.ID == 0 {
 		return vz.VZLinuxBootLoader{}, fmt.Errorf("failed to create kernel URL")
 	}
@@ -214,7 +214,7 @@ func createLinuxBootLoader() (vz.VZLinuxBootLoader, error) {
 			return vz.VZLinuxBootLoader{}, fmt.Errorf("initrd not found: %s", absInitrdPath)
 		}
 
-		initrdURL := foundation.FileURL(absInitrdPath)
+		initrdURL := foundation.NewURLFileURLWithPath(absInitrdPath)
 		if initrdURL.ID == 0 {
 			return vz.VZLinuxBootLoader{}, fmt.Errorf("failed to create initrd URL")
 		}
@@ -249,7 +249,7 @@ func createEFIBootLoader() (vz.VZEFIBootLoader, error) {
 
 	// Create or load EFI variable store
 	efiStorePath := filepath.Join(vmDir, "efi.nvram")
-	efiStoreURL := foundation.FileURL(efiStorePath)
+	efiStoreURL := foundation.NewURLFileURLWithPath(efiStorePath)
 
 	var efiStore vz.VZEFIVariableStore
 	if _, err := os.Stat(efiStorePath); os.IsNotExist(err) {
@@ -281,7 +281,7 @@ func loadOrCreateGenericMachineIdentifier() vz.VZGenericMachineIdentifier {
 	if data, err := os.ReadFile(machineIDPath); err == nil && len(data) > 0 {
 		nsData := createNSDataFromBytes(data)
 		if nsData != 0 {
-			nsDataObj := foundation.NSDataFrom(nsData)
+			nsDataObj := foundation.NSDataFromID(nsData)
 			machineID := vz.NewGenericMachineIdentifierWithDataRepresentation(&nsDataObj)
 			if machineID.ID != 0 {
 				fmt.Println("  Loaded existing machine identifier")
@@ -375,7 +375,7 @@ func runLinuxVM() error {
 
 	// Create VM with dispatch queue
 	fmt.Println("Creating virtual machine...")
-	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue.Handle())
+	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue)
 	if vm.ID == 0 {
 		return fmt.Errorf("failed to create virtual machine")
 	}

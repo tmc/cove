@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/appledocs/generated/foundation"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/foundation"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // USBStorageConfig represents a USB storage device configuration
@@ -57,7 +57,7 @@ func ParseUSBStorageFlag(s string) (USBStorageConfig, error) {
 // CreateUSBStorageDevice creates a VZUSBMassStorageDeviceConfiguration
 func CreateUSBStorageDevice(config USBStorageConfig) (vz.VZUSBMassStorageDeviceConfiguration, error) {
 	// Create file URL
-	url := foundation.FileURL(config.Path)
+	url := foundation.NewURLFileURLWithPath(config.Path)
 	if url.ID == 0 {
 		return vz.VZUSBMassStorageDeviceConfiguration{}, fmt.Errorf("failed to create URL for %s", config.Path)
 	}

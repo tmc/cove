@@ -9,14 +9,15 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"unsafe"
 
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/corefoundation"
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
-	"github.com/tmc/appledocs/generated/symbols"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
+	"github.com/tmc/apple/symbols"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // guiUpdate holds pending UI changes that background goroutines request.
@@ -278,7 +279,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 	if !appFinishedLaunching {
 		// Use "run-then-stop" to fully initialize the NSApplication event
 		// machinery (see runVMWithGUI for full explanation).
-		foundation.GetNSTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
+		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
 			app.Stop(nil)
 			postDummyEvent(app)
 		})
@@ -289,7 +290,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 	// Create a compact progress window for the download/prep phase.
 	progressWindow, statusLabel, progressBarID := createProgressWindow()
 	progressWindow.MakeKeyAndOrderFront(nil)
-	app.ActivateIgnoringOtherApps(true)
+	app.Activate()
 
 	// Shared state for background → main thread communication.
 	var ui guiUpdate
@@ -418,7 +419,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 	// window server events (mouse, keyboard, Cmd+Tab) — unlike a manual
 	// NextEventMatchingMask/SendEvent loop which never receives events.
 	var overlayFadeStep int = -1 // -1 means not fading
-	foundation.GetNSTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(
+	foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(
 		0.033, // ~30 Hz
 		true,
 		func(_ *foundation.NSTimer) {
@@ -463,7 +464,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					vmView.SetVirtualMachine(&installerRef.vm.vm)
 					vmView.SetCapturesSystemKeys(true)
 					vmView.SetAutomaticallyReconfiguresDisplay(true)
-					vmView.NSView.SetFrame(corefoundation.CGRect{
+					vmViewAsNSView(vmView).SetFrame(corefoundation.CGRect{
 						Origin: corefoundation.CGPoint{X: 0, Y: 0},
 						Size:   contentRect.Size,
 					})
@@ -477,14 +478,14 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					vmWindow.SetTitleVisibility(appkit.NSWindowTitleVisible)
 					vmWindow.SetTitlebarAppearsTransparent(false)
 					vmWindow.SetTitle("macOS VM Installation")
-					vmWindow.SetContentView(&vmView.NSView)
+					vmWindow.SetContentView(vmViewAsNSView(vmView))
 					vmWindow.Center()
 
 					vmOverlay = createInstallOverlay(contentRect.Size)
-					vmView.NSView.AddSubview(&vmOverlay)
+					vmViewAsNSView(vmView).AddSubview(&vmOverlay)
 
 					vmWindow.MakeKeyAndOrderFront(nil)
-					vmWindow.MakeFirstResponder(&vmView.NSView.NSResponder)
+					vmWindow.MakeFirstResponder(vmViewAsNSView(vmView).NSResponder)
 					vmWindowCreated = true
 					ui.createVMWindow = false
 				}
@@ -619,7 +620,7 @@ func createProgressWindow() (appkit.NSWindow, objc.ID, objc.ID) {
 	label := appkit.NewTextFieldLabelWithString("Preparing...")
 	fontClass := appkit.GetNSFontClass()
 	font := fontClass.SystemFontOfSize(13)
-	label.SetFont(&font)
+	label.SetFont(font)
 	label.SetAlignment(appkit.NSTextAlignmentLeft)
 	objc.Send[objc.ID](label.ID, objc.Sel("setBezeled:"), false)
 	objc.Send[objc.ID](label.ID, objc.Sel("setDrawsBackground:"), false)
@@ -818,7 +819,7 @@ func loadMacOSRestoreImageFromPath(imagePath string) (vz.VZMacOSRestoreImage, er
 	done := make(chan struct{})
 
 	// Create file URL from path
-	fileURL := foundation.FileURL(imagePath)
+	fileURL := foundation.NewURLFileURLWithPath(imagePath)
 	fileURL.Retain()
 
 	vzlog("loadMacOSRestoreImageFromPath: calling loadFileURL %s", imagePath)
@@ -924,7 +925,7 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 
 	// Create auxiliary storage with hardware model (key difference from runtime)
 	auxStoragePath := filepath.Join(vmDir, "aux.img")
-	auxURL := foundation.FileURL(auxStoragePath)
+	auxURL := foundation.NewURLFileURLWithPath(auxStoragePath)
 	auxURL.Retain()
 
 	auxStorage, err := vz.NewMacAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
@@ -960,11 +961,13 @@ func saveDataRepresentation(objID objc.ID, path string) error {
 	if dataID == 0 {
 		return fmt.Errorf("no data representation")
 	}
-	data := foundation.NSDataFrom(dataID)
-	bytes := data.GoBytes()
-	if len(bytes) == 0 {
+	data := foundation.NSDataFromID(dataID)
+	length := data.Length()
+	if length == 0 {
 		return fmt.Errorf("empty data")
 	}
+	ptr := data.Bytes()
+	bytes := unsafe.Slice((*byte)(ptr), length)
 	return os.WriteFile(path, bytes, 0644)
 }
 
@@ -1115,7 +1118,7 @@ func createBlockDeviceConfiguration(ctx context.Context, diskPath string) (vz.VZ
 		}
 	}
 
-	diskURL := foundation.FileURL(diskPath)
+	diskURL := foundation.NewURLFileURLWithPath(diskPath)
 	diskURL.Retain() // Create disk attachment
 	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(diskURL, false)
 	if err != nil {
@@ -1210,7 +1213,7 @@ func createAudioDeviceConfiguration() (vz.VZVirtioSoundDeviceConfiguration, erro
 func newVirtualMachine(config vz.VZVirtualMachineConfiguration) (*virtualMachine, error) {
 	queue := dispatch.QueueCreate("com.appledocs.vz.vm")
 
-	vzVM := vz.NewVirtualMachineWithConfigurationQueue(&config, queue.Handle())
+	vzVM := vz.NewVirtualMachineWithConfigurationQueue(&config, queue)
 	if vzVM.ID == 0 {
 		return nil, fmt.Errorf("failed to create VM")
 	}
@@ -1317,7 +1320,7 @@ func newMacOSInstaller(vm *virtualMachine, restoreImagePath string) (*macOSInsta
 	}
 
 	// Get disk URL
-	diskURL := foundation.FileURL(restoreImagePath)
+	diskURL := foundation.NewURLFileURLWithPath(restoreImagePath)
 	diskURL.Retain()
 
 	// Create installer using the VM's dispatch queue
@@ -1602,7 +1605,7 @@ func createInstallOverlay(size corefoundation.CGSize) appkit.NSView {
 	label := appkit.NewTextFieldLabelWithString("Starting installation...")
 	fontClass := appkit.GetNSFontClass()
 	font := fontClass.SystemFontOfSizeWeight(24, -0.4) // NSFontWeightLight
-	label.SetFont(&font)
+	label.SetFont(font)
 	label.SetAlignment(appkit.NSTextAlignmentCenter)
 	whiteColor := objc.Send[objc.ID](
 		objc.ID(objc.GetClass("NSColor")),

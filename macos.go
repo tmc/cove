@@ -14,13 +14,13 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/tmc/appledocs/generated/appkit"
-	"github.com/tmc/appledocs/generated/corefoundation"
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
-	"github.com/tmc/appledocs/generated/objectivec"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
+	"github.com/tmc/apple/objectivec"
+	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/vz-macos/internal/assets"
 )
 
@@ -215,7 +215,7 @@ func runMacOSVM() error {
 	vmQueue := dispatch.QueueCreate("com.appledocs.vz.vmqueue")
 
 	// Create VM with dispatch queue
-	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue.Handle())
+	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue)
 	if vm.ID == 0 {
 		return fmt.Errorf("failed to create virtual machine")
 	}
@@ -273,7 +273,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	if utmAuxStoragePath != "" {
 		auxStoragePath = utmAuxStoragePath
 	}
-	auxURL := foundation.FileURL(auxStoragePath)
+	auxURL := foundation.NewURLFileURLWithPath(auxStoragePath)
 	auxURL.Retain() // Prevent premature deallocation
 	var auxStorage vz.VZMacAuxiliaryStorage
 	if _, statErr := os.Stat(auxStoragePath); os.IsNotExist(statErr) {
@@ -304,7 +304,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	config.SetBootLoader(&bootloader.VZBootLoader)
 
 	// Storage
-	diskURL := foundation.FileURL(diskImagePath)
+	diskURL := foundation.NewURLFileURLWithPath(diskImagePath)
 	diskURL.Retain() // Prevent premature deallocation
 	// Create disk attachment
 	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(diskURL, false)
@@ -497,7 +497,7 @@ func loadOrCreateMachineIdentifier() vz.VZMacMachineIdentifier {
 	if data, err := os.ReadFile(machineIDPath); err == nil && len(data) > 0 {
 		nsData := createNSDataFromBytes(data)
 		if nsData != 0 {
-			nsDataObj := foundation.NSDataFrom(nsData)
+			nsDataObj := foundation.NSDataFromID(nsData)
 			machineID := vz.NewMacMachineIdentifierWithDataRepresentation(&nsDataObj)
 			if machineID.ID != 0 {
 				if verbose {
@@ -569,7 +569,7 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 		}
 		nsData := createNSDataFromBytes(data)
 		if nsData != 0 {
-			nsDataObj := foundation.NSDataFrom(nsData)
+			nsDataObj := foundation.NSDataFromID(nsData)
 			model := vz.NewMacHardwareModelWithDataRepresentation(&nsDataObj)
 			if verbose {
 				fmt.Printf("  Hardware model ID: %#x, Supported: %v\n", model.ID, model.ID != 0 && model.Supported())
@@ -720,7 +720,7 @@ func createSharedFoldersDevice(folders []SharedFolderEntry) vz.VZVirtioFileSyste
 			fmt.Printf("Warning: shared folder not found: %s\n", f.Path)
 			continue
 		}
-		url := foundation.FileURL(f.Path)
+		url := foundation.NewURLFileURLWithPath(f.Path)
 		sharedDir := vz.NewSharedDirectoryWithURLReadOnly(url, f.ReadOnly)
 		sharedDir.Retain()
 		nsKey := objc.String(f.Tag)
@@ -753,7 +753,7 @@ func createSingleDirectoryDevice(hostPath, tag string, readOnly bool) vz.VZVirti
 	}
 	fsConfig.Retain()
 
-	url := foundation.FileURL(hostPath)
+	url := foundation.NewURLFileURLWithPath(hostPath)
 	url.Retain()
 	sharedDir := vz.NewSharedDirectoryWithURLReadOnly(url, readOnly)
 	sharedDir.Retain()
@@ -991,7 +991,7 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return fmt.Errorf("VM must be stopped to restore (current: %s)", vmStateName(currentState))
 	}
 
-	restoreURL := foundation.FileURL(stateFile)
+	restoreURL := foundation.NewURLFileURLWithPath(stateFile)
 	restoreURL.Retain()
 
 	// Restore state (VM must be stopped → becomes paused)
@@ -1064,7 +1064,7 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Save state to file
 	stateFile := suspendStatePath()
-	saveURL := foundation.FileURL(stateFile)
+	saveURL := foundation.NewURLFileURLWithPath(stateFile)
 	saveURL.Retain()
 
 	saveCh := make(chan error, 1)
@@ -1127,7 +1127,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		// completing its setup. This avoids the purego GC crash caused by
 		// a permanent reflect.Value.call frame (which only happens when
 		// Run() blocks indefinitely).
-		foundation.GetNSTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
+		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
 			app.Stop(nil)
 			postDummyEvent(app)
 		})
@@ -1182,15 +1182,15 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	if vmName != "" && vmName != "default" {
 		procName = fmt.Sprintf("vz-macos (%s)", vmName)
 	}
-	foundation.GetNSProcessInfoClass().ProcessInfo().SetProcessName(procName)
+	foundation.GetProcessInfoClass().ProcessInfoValue().SetProcessName(procName)
 
 	// Set the VM view frame to match the content rect
-	vmView.NSView.SetFrame(corefoundation.CGRect{
+	vmViewAsNSView(vmView).SetFrame(corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 0, Y: 0},
 		Size:   contentRect.Size,
 	})
 
-	window.SetContentView(&vmView.NSView)
+	window.SetContentView(vmViewAsNSView(vmView))
 	window.Center()
 
 	// Set up drag-and-drop file transfer. Files dropped onto the VM window
@@ -1205,13 +1205,13 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	currentState := vz.VZVirtualMachineState(vm.State())
 	if currentState != vz.VZVirtualMachineStateRunning {
 		bootOverlay = createBootOverlay(contentRect.Size)
-		vmView.NSView.AddSubview(&bootOverlay)
+		vmViewAsNSView(vmView).AddSubview(&bootOverlay)
 	}
 
 	// Show window and make VM view first responder for keyboard input.
 	window.MakeKeyAndOrderFront(nil)
-	window.MakeFirstResponder(&vmView.NSView.NSResponder)
-	app.ActivateIgnoringOtherApps(true)
+	window.MakeFirstResponder(vmViewAsNSView(vmView).NSResponder)
+	app.Activate()
 
 	fmt.Println("VM display window opened.")
 
@@ -1377,7 +1377,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// that GC mistakes for invalid pointers.
 	var scheduleTimer func()
 	scheduleTimer = func() {
-		foundation.GetNSTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(
+		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(
 			0.033, // ~30 Hz
 			false, // one-shot: no persistent reflect frame
 			func(_ *foundation.NSTimer) {
@@ -1417,7 +1417,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 								}
 								objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("setAlphaValue:"), alpha)
 							}
-							vmView.NSView.AddSubview(&pauseOverlay)
+							vmViewAsNSView(vmView).AddSubview(&pauseOverlay)
 						} else if !isPaused && pauseOverlay.ID != 0 {
 							objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("removeFromSuperview"))
 							pauseOverlay = appkit.NSView{}
@@ -1534,7 +1534,7 @@ func createBootOverlay(size corefoundation.CGSize) appkit.NSView {
 	label := appkit.NewTextFieldLabelWithString("Booting...")
 	fontClass := appkit.GetNSFontClass()
 	font := fontClass.SystemFontOfSizeWeight(22, -0.4) // Light weight
-	label.SetFont(&font)
+	label.SetFont(font)
 	label.SetAlignment(appkit.NSTextAlignmentCenter)
 	whiteColor := objc.Send[objc.ID](
 		objc.ID(objc.GetClass("NSColor")),
@@ -1588,7 +1588,7 @@ func createPauseOverlay(size corefoundation.CGSize, state vz.VZVirtualMachineSta
 	label := appkit.NewTextFieldLabelWithString(text)
 	fontClass := appkit.GetNSFontClass()
 	font := fontClass.SystemFontOfSizeWeight(28, 0.3) // Medium weight
-	label.SetFont(&font)
+	label.SetFont(font)
 	label.SetAlignment(appkit.NSTextAlignmentCenter)
 	whiteColor := objc.Send[objc.ID](
 		objc.ID(objc.GetClass("NSColor")),

@@ -24,8 +24,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/appledocs/generated/foundation"
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	"github.com/tmc/apple/foundation"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // MountStrategy defines how the user data disk is mounted in the guest
@@ -135,7 +135,7 @@ func CreateUserDataStorageDevice(config UserDataConfig) (vz.VZVirtioBlockDeviceC
 		diskPath = devicePath
 	}
 
-	url := foundation.FileURL(diskPath)
+	url := foundation.NewURLFileURLWithPath(diskPath)
 	url.Retain()
 
 	attachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(url, config.ReadOnly)
