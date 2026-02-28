@@ -9,15 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/appledocs/generated/dispatch"
-	"github.com/tmc/appledocs/generated/foundation"
-	"github.com/tmc/appledocs/generated/objc"
+	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 	"github.com/tmc/vz-macos/internal/utils"
-	"github.com/tmc/vzkit"
+	"github.com/tmc/apple/x/vzkit"
 )
-
-// DISPATCH_TIME_FOREVER is the constant for waiting forever.
-const DISPATCH_TIME_FOREVER = dispatch.TimeForever
 
 // verboseLog is set by the -v flag to enable verbose logging
 var verboseLog bool
@@ -57,11 +54,6 @@ func DispatchAsyncQueue(queue dispatch.Queue, fn func()) {
 	queue.Async(fn)
 }
 
-// DispatchSyncQueue executes a block synchronously on a dispatch.Queue.
-func DispatchSyncQueue(queue dispatch.Queue, fn func()) {
-	queue.Sync(fn)
-}
-
 // runRunLoopOnce runs the main run loop briefly to process pending callbacks.
 func runRunLoopOnce() {
 	vzkit.RunRunLoopOnce()
@@ -76,9 +68,6 @@ func runRunLoopAggressively() {
 func printUnderlyingErrorDetails(nsError objc.ID) {
 	vzkit.PrintNSErrorDetailed(nsError)
 }
-
-// ErrorCompletionHandler captures an optional NSError from an Objective-C completion handler.
-type ErrorCompletionHandler = vzkit.ErrorCompletionHandler
 
 // printDetailedInstallError prints verbose error details for an installation failure.
 // It type-asserts the error back to *foundation.NSError (since NSErrorToError preserves
