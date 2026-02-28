@@ -23,7 +23,7 @@ import (
 	"syscall"
 	"time"
 
-	vz "github.com/tmc/appledocs/generated/virtualization"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 // agentBinaryName is the name of the guest agent binary.
@@ -58,32 +58,58 @@ func buildAgentBinary(outputPath string) error {
 
 // injectAgent cross-compiles the vz-agent binary and injects it into the
 // mounted Data volume along with a LaunchDaemon plist.
-func injectAgent(mountPoint string, rootFiles *[]string) error {
+//
+// When running as root, files are written directly. When running as a normal
+// user, directories under root-owned paths (e.g. /usr/local/bin) cannot be
+// created. In that case, files are staged to temp and added to pendingInstalls
+// so the caller's elevated script handles mkdir + cp + chown in one pass.
+func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pendingInstall) error {
 	fmt.Println()
 	fmt.Println("=== Injecting Guest Agent ===")
 
 	// Build to a temp location
 	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
-	defer os.Remove(tmpBinary)
+	// Note: don't defer Remove — caller may need the file for the elevated script.
+	// Caller is responsible for cleanup after fixOwnershipWithSudo completes.
 
 	if err := buildAgentBinary(tmpBinary); err != nil {
 		return err
 	}
 
-	// Read the built binary
+	binDir := filepath.Join(mountPoint, "usr", "local", "bin")
+	binPath := filepath.Join(binDir, agentBinaryName)
+	launchDaemonsDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
+	plistPath := filepath.Join(launchDaemonsDir, agentLaunchDaemonLabel+".plist")
+
+	// Try direct write (works when running as root).
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		// Can't create directory — stage for elevated install.
+		fmt.Printf("Staging agent for elevated install (need root for %s)\n", binDir)
+
+		// Stage plist to temp.
+		tmpPlist := filepath.Join(os.TempDir(), agentLaunchDaemonLabel+".plist")
+		if err := os.WriteFile(tmpPlist, []byte(agentLaunchDaemonPlist), 0644); err != nil {
+			return fmt.Errorf("write temp agent plist: %w", err)
+		}
+
+		*pendingInstalls = append(*pendingInstalls,
+			pendingInstall{Src: tmpBinary, Dest: binPath, Mode: 0755},
+			pendingInstall{Src: tmpPlist, Dest: plistPath, Mode: 0644},
+		)
+
+		info, _ := os.Stat(tmpBinary)
+		fmt.Printf("Staged: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, info.Size())
+		fmt.Printf("Staged: %s\n", plistPath)
+		return nil
+	}
+
+	// Direct write succeeded — write files and record for chown.
 	binaryData, err := os.ReadFile(tmpBinary)
 	if err != nil {
 		return fmt.Errorf("read built binary: %w", err)
 	}
+	os.Remove(tmpBinary)
 
-	// Write to /usr/local/bin/vz-agent on the Data volume.
-	// On the Data volume, /usr/local is at usr/local (directly).
-	binDir := filepath.Join(mountPoint, "usr", "local", "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return fmt.Errorf("create bin directory: %w", err)
-	}
-
-	binPath := filepath.Join(binDir, agentBinaryName)
 	if err := os.WriteFile(binPath, binaryData, 0755); err != nil {
 		return fmt.Errorf("write agent binary: %w", err)
 	}
@@ -91,12 +117,10 @@ func injectAgent(mountPoint string, rootFiles *[]string) error {
 	fmt.Printf("Written: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, len(binaryData))
 
 	// Write the LaunchDaemon plist
-	launchDaemonsDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
 	if err := os.MkdirAll(launchDaemonsDir, 0755); err != nil {
 		return fmt.Errorf("create LaunchDaemons directory: %w", err)
 	}
 
-	plistPath := filepath.Join(launchDaemonsDir, agentLaunchDaemonLabel+".plist")
 	if err := os.WriteFile(plistPath, []byte(agentLaunchDaemonPlist), 0644); err != nil {
 		return fmt.Errorf("write agent plist: %w", err)
 	}

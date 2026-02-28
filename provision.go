@@ -421,6 +421,10 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	// single targeted "sudo chown root:wheel <files>" so only that one command
 	// needs elevated privileges.
 	var rootFiles []string
+	// Collect files that need to be copied to root-owned directories
+	// (e.g. /usr/local/bin which is owned by root). These are staged to temp
+	// and installed via the elevated script.
+	var pendingInstalls []pendingInstall
 
 	if opts.CreateUserPlist {
 		// Advanced mode: Create user plist directly with password hash
@@ -518,7 +522,7 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 
 	// Optionally cross-compile and inject the vz-agent GRPC daemon
 	if opts.InjectAgent {
-		if err := injectAgent(mountPoint, &rootFiles); err != nil {
+		if err := injectAgent(mountPoint, &rootFiles, &pendingInstalls); err != nil {
 			return fmt.Errorf("inject agent: %w", err)
 		}
 	}
@@ -531,10 +535,10 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 		}
 	}
 
-	// Fix ownership on files that need root:wheel. If already running as root,
-	// rootFiles will be empty (chown succeeded inline). Otherwise, prompt for
-	// sudo to run a single targeted chown command.
-	if err := fixOwnershipWithSudo(rootFiles, dataPart); err != nil {
+	// Fix ownership on files that need root:wheel, and copy any files
+	// that were staged because their target directories are root-owned.
+	// If already running as root, both lists will be empty.
+	if err := fixOwnershipWithSudo(rootFiles, dataPart, pendingInstalls...); err != nil {
 		if strings.Contains(err.Error(), "interrupted") {
 			fmt.Printf("\n%v\n", err)
 			return err // defer detachDisk will run
@@ -542,6 +546,10 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 		fmt.Printf("Warning: could not fix file ownership: %v\n", err)
 		fmt.Println("  LaunchDaemons may not load on first boot.")
 		fmt.Println("  Fix manually with: sudo chown root:wheel <files>")
+	}
+	// Clean up temp files from pending installs.
+	for _, inst := range pendingInstalls {
+		os.Remove(inst.Src)
 	}
 
 	fmt.Println()

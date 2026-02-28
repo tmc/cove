@@ -304,6 +304,14 @@ func checkDiskNotMounted(diskPath string) error {
 	return fmt.Errorf("disk image is already mounted%s\n  Detach with: hdiutil detach %s -force\n  Or run: ./vz-macos disk-detach", hint, device)
 }
 
+// pendingInstall represents a file that needs to be copied to a root-owned
+// location with specific permissions. Used when the current process is not root.
+type pendingInstall struct {
+	Src  string      // temp file on host
+	Dest string      // target path on mounted volume
+	Mode os.FileMode // e.g. 0755
+}
+
 // chownRootWheel attempts to set ownership to root:wheel. If the process is not
 // running as root, it records the path for a later targeted sudo chown call.
 // This allows inject to run as a normal user, with only the chown step requiring sudo.
@@ -314,19 +322,38 @@ func chownRootWheel(path string, failedPaths *[]string) {
 }
 
 // fixOwnershipWithSudo enables APFS ownership on the volume and runs a single
-// targeted sudo chown on files that need root:wheel ownership.
+// elevated script that creates directories, copies pending files, and sets
+// root:wheel ownership.
 // APFS volumes from disk images have ownership disabled by default — without
 // enableOwnership, chown silently does nothing even with sudo.
-func fixOwnershipWithSudo(paths []string, dataPartition string) error {
-	if len(paths) == 0 {
+func fixOwnershipWithSudo(paths []string, dataPartition string, installs ...pendingInstall) error {
+	if len(paths) == 0 && len(installs) == 0 {
 		return nil
 	}
-	fmt.Printf("\n%d file(s) need root:wheel ownership for launchd.\n", len(paths))
 
-	// Build a shell script that enables ownership then chowns.
-	script := fmt.Sprintf("diskutil enableOwnership %s && chown root:wheel", dataPartition)
-	for _, p := range paths {
-		script += fmt.Sprintf(" %q", p)
+	total := len(paths) + len(installs)
+	fmt.Printf("\n%d file(s) need root privileges.\n", total)
+
+	// Build a shell script that enables ownership, copies pending files,
+	// then chowns everything.
+	var script strings.Builder
+	script.WriteString(fmt.Sprintf("diskutil enableOwnership %s\n", dataPartition))
+
+	// Create directories and copy staged files.
+	for _, inst := range installs {
+		script.WriteString(fmt.Sprintf("mkdir -p %q\n", filepath.Dir(inst.Dest)))
+		script.WriteString(fmt.Sprintf("cp %q %q\n", inst.Src, inst.Dest))
+		script.WriteString(fmt.Sprintf("chmod %o %q\n", inst.Mode, inst.Dest))
+		script.WriteString(fmt.Sprintf("chown root:wheel %q\n", inst.Dest))
+	}
+
+	// Chown existing files that were written but have wrong ownership.
+	if len(paths) > 0 {
+		script.WriteString("chown root:wheel")
+		for _, p := range paths {
+			script.WriteString(fmt.Sprintf(" %q", p))
+		}
+		script.WriteString("\n")
 	}
 
 	// Write script to temp file for execution.
@@ -336,12 +363,12 @@ func fixOwnershipWithSudo(paths []string, dataPartition string) error {
 	}
 	tmpPath := tmpScript.Name()
 	defer os.Remove(tmpPath)
-	fmt.Fprintf(tmpScript, "#!/bin/bash\nset -e\n%s\n", script)
+	fmt.Fprintf(tmpScript, "#!/bin/bash\nset -e\n%s", script.String())
 	tmpScript.Close()
 	os.Chmod(tmpPath, 0755)
 
 	if os.Getuid() == 0 {
-		fmt.Println("Running as root, setting ownership directly...")
+		fmt.Println("Running as root, applying directly...")
 		cmd := exec.Command("bash", tmpPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
