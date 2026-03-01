@@ -3,9 +3,9 @@ module github.com/tmc/vz-macos
 go 1.25.5
 
 require (
-	github.com/ebitengine/purego v0.10.0-alpha.4.0.20260212124526-587d406ac104
+	github.com/ebitengine/purego v0.10.0-alpha.5
 	github.com/tmc/apple v0.0.0
-github.com/tmc/macgo v0.0.0-20260221171528-e87b69da660b
+	github.com/tmc/macgo v0.0.0-20260221201249-9f1975a72d07
 	golang.org/x/crypto v0.47.0
 	golang.org/x/image v0.33.0
 	golang.org/x/sys v0.41.0
