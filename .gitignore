@@ -20,3 +20,4 @@ go.work.sum
 
 # IDE/tool config
 .claude/
+*.cstemp
