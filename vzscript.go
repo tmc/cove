@@ -1,8 +1,8 @@
 // vzscript.go - Script engine for VM provisioning.
 //
 // Extends rsc.io/script with commands for interacting with a guest VM
-// via the control socket and guest agent. Scripts are standard txtar
-// archives executed by rsc.io/script.
+// via the control socket and guest agent, plus OCR-driven GUI automation.
+// Scripts are standard txtar archives executed by rsc.io/script.
 //
 // Guest commands:
 //
@@ -14,14 +14,36 @@
 //	guest-write <dst> <src>     Copy a local file to the guest
 //	guest-read <path>           Read a guest file to stdout
 //
+// UI automation commands (via control socket):
+//
+//	ocr-click <text> [timeout]  Find text on screen via OCR and click it
+//	ocr-wait <text> [timeout]   Wait until text appears on screen
+//	ocr-gone <text> [timeout]   Wait until text disappears from screen
+//	ocr                         Run OCR on current screen; stdout is all text
+//	screenshot [file]           Capture VM screen to file
+//	type <text>                 Type text into the VM
+//	key <spec>                  Send key event (e.g. "return", "tab", "cmd+v")
+//	click <x> <y>              Click at normalized coordinates (0-1)
+//	detect-page                 Detect Setup Assistant page via OCR
+//	detect-screen               Detect screen state (desktop/login/setup)
+//
+// Conditions:
+//
+//	[screen:<state>]            True if current screen matches state
+//	[page:<name>]               True if current SA page matches name
+//	[text-visible:<text>]       True if text is visible on screen
+//
 // Example:
 //
-//	guest-ping
-//	guest-write /etc/profile.d/dev.sh dev.sh
-//	guest-shell install.sh
+//	# Phase 1: OCR-driven GUI automation
+//	ocr-wait Continue 120s
+//	ocr-click Continue
+//	wait 2s
 //
-//	-- dev.sh --
-//	export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+//	# Phase 2: Guest agent commands
+//	guest-wait 3m
+//	guest-ping
+//	guest-shell install.sh
 //
 //	-- install.sh --
 //	#!/bin/bash
@@ -33,6 +55,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -49,7 +72,8 @@ type vzscriptConfig struct {
 	terminal    bool // force guest-shell/guest-exec to run in Terminal.app
 }
 
-// newVZScriptEngine returns a script engine with guest VM commands.
+// newVZScriptEngine returns a script engine with guest VM commands and
+// UI automation commands. Both command sets communicate over the control socket.
 func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 	defaults := script.DefaultCmds()
 	cmds := map[string]script.Cmd{
@@ -62,6 +86,19 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"guest-write":    guestWriteCmd(cfg),
 		"guest-read":     guestReadCmd(cfg),
 		"guest-cp":       guestCpCmd(cfg),
+
+		// UI automation commands (via control socket).
+		"ocr-click":     vzOCRClickCmd(cfg),
+		"ocr-wait":      vzOCRWaitCmd(cfg),
+		"ocr-gone":      vzOCRGoneCmd(cfg),
+		"ocr":           vzOCRCmd(cfg),
+		"screenshot":    vzScreenshotCmd(cfg),
+		"type":          vzTypeCmd(cfg),
+		"key":           vzKeyCmd(cfg),
+		"click":         vzClickCmd(cfg),
+		"wait":          vzWaitCmd(),
+		"detect-page":   vzDetectPageCmd(cfg),
+		"detect-screen": vzDetectScreenCmd(cfg),
 
 		// Standard commands.
 		"cat":    defaults["cat"],
@@ -76,9 +113,15 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"stdout": defaults["stdout"],
 		"stop":   defaults["stop"],
 	}
+
+	conds := script.DefaultConds()
+	conds["screen"] = vzScreenCond(cfg)
+	conds["page"] = vzPageCond(cfg)
+	conds["text-visible"] = vzTextVisibleCond(cfg)
+
 	return &script.Engine{
 		Cmds:  cmds,
-		Conds: script.DefaultConds(),
+		Conds: conds,
 	}
 }
 
@@ -381,6 +424,435 @@ func guestCpCmd(cfg vzscriptConfig) script.Cmd {
 			return func(*script.State) (string, string, error) {
 				return resp.Data + "\n", "", nil
 			}, nil
+		},
+	)
+}
+
+// --- UI automation commands (via control socket) ---
+
+// ctlSendOCR sends an OCR command with optional text/timeout params.
+func ctlSendOCR(sock, cmdType, text, timeout string, readTimeout time.Duration) (*controlpb.ControlResponse, error) {
+	obj := map[string]interface{}{
+		"type": cmdType,
+	}
+	data := map[string]string{}
+	if text != "" {
+		data["text"] = text
+	}
+	if timeout != "" {
+		data["timeout"] = timeout
+	}
+	if len(data) > 0 {
+		obj["data"] = data
+	}
+	return ctlSendJSON(sock, obj, readTimeout)
+}
+
+func vzOCRClickCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "find text on screen via OCR and click its center",
+			Args:    "text [timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			text := args[0]
+			timeout := "10s"
+			if len(args) > 1 {
+				timeout = args[1]
+			}
+			if cfg.verbose {
+				s.Logf("ocr-click %q (timeout %s)\n", text, timeout)
+			}
+			d, _ := time.ParseDuration(timeout)
+			if d == 0 {
+				d = 30 * time.Second
+			}
+			resp, err := ctlSendOCR(cfg.socketPath, "ocr-click", text, timeout, d+10*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return func(*script.State) (string, string, error) {
+				return resp.Data + "\n", "", nil
+			}, nil
+		},
+	)
+}
+
+func vzOCRWaitCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "wait for text to appear on screen via OCR",
+			Args:    "text [timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			text := args[0]
+			timeout := "60s"
+			if len(args) > 1 {
+				timeout = args[1]
+			}
+			if cfg.verbose {
+				s.Logf("ocr-wait %q (timeout %s)\n", text, timeout)
+			}
+			d, _ := time.ParseDuration(timeout)
+			if d == 0 {
+				d = 120 * time.Second
+			}
+			resp, err := ctlSendOCR(cfg.socketPath, "ocr-wait", text, timeout, d+10*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return func(*script.State) (string, string, error) {
+				return resp.Data + "\n", "", nil
+			}, nil
+		},
+	)
+}
+
+func vzOCRGoneCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "wait for text to disappear from screen via OCR",
+			Args:    "text [timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			text := args[0]
+			timeout := "30s"
+			if len(args) > 1 {
+				timeout = args[1]
+			}
+			d, _ := time.ParseDuration(timeout)
+			if d == 0 {
+				d = 60 * time.Second
+			}
+			resp, err := ctlSendOCR(cfg.socketPath, "ocr-gone", text, timeout, d+10*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return func(*script.State) (string, string, error) {
+				return resp.Data + "\n", "", nil
+			}, nil
+		},
+	)
+}
+
+func vzOCRCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{Summary: "run OCR on current screen; stdout is all recognized text"},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			resp, err := ctlSendOCR(cfg.socketPath, "ocr-all-text", "", "", 30*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return func(*script.State) (string, string, error) {
+				return resp.Data + "\n", "", nil
+			}, nil
+		},
+	)
+}
+
+func vzScreenshotCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "capture VM screen to JPEG file",
+			Args:    "[file]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			req := &controlpb.ControlRequest{
+				Type: "screenshot",
+				Command: &controlpb.ControlRequest_Screenshot{
+					Screenshot: &controlpb.ScreenshotCommand{
+						Format: "jpeg",
+					},
+				},
+			}
+			resp, err := ctlSendRequest(cfg.socketPath, req, 30*time.Second, "screenshot")
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			if len(args) > 0 {
+				imgData, err := base64.StdEncoding.DecodeString(resp.Data)
+				if err != nil {
+					return nil, fmt.Errorf("decode screenshot: %w", err)
+				}
+				path := s.Path(args[0])
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					return nil, fmt.Errorf("mkdir: %w", err)
+				}
+				if err := os.WriteFile(path, imgData, 0644); err != nil {
+					return nil, err
+				}
+				return func(*script.State) (string, string, error) {
+					return path + "\n", "", nil
+				}, nil
+			}
+			return func(*script.State) (string, string, error) {
+				return "screenshot captured\n", "", nil
+			}, nil
+		},
+	)
+}
+
+func vzTypeCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "type text into the VM",
+			Args:    "text",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			text := strings.Join(args, " ")
+			if cfg.verbose {
+				s.Logf("type %q\n", text)
+			}
+			req := &controlpb.ControlRequest{
+				Type: "text",
+				Command: &controlpb.ControlRequest_Text{
+					Text: &controlpb.TextCommand{
+						Text: text,
+					},
+				},
+			}
+			resp, err := ctlSendRequest(cfg.socketPath, req, 60*time.Second, "text")
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return nil, nil
+		},
+	)
+}
+
+func vzKeyCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "send a key event to the VM",
+			Args:    "keyspec",
+			Detail:  []string{"Examples: return, tab, escape, space, cmd+v, shift+a, cmd+shift+3"},
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			spec := args[0]
+			if !isValidKeySpec(spec) {
+				return nil, fmt.Errorf("invalid key spec %q", spec)
+			}
+			keyCode, modifiers := parseKeySpec(spec)
+			if cfg.verbose {
+				s.Logf("key %s (code=%d mods=%d)\n", spec, keyCode, modifiers)
+			}
+			// Key down.
+			req := &controlpb.ControlRequest{
+				Type: "key",
+				Command: &controlpb.ControlRequest_Key{
+					Key: &controlpb.KeyCommand{
+						KeyCode:    uint32(keyCode),
+						KeyDown:    true,
+						Modifiers:  uint32(modifiers),
+						UseCgEvent: true,
+					},
+				},
+			}
+			resp, err := ctlSendRequest(cfg.socketPath, req, 10*time.Second, "key")
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("key down: %s", resp.Error)
+			}
+			time.Sleep(50 * time.Millisecond)
+			// Key up.
+			req.Command = &controlpb.ControlRequest_Key{
+				Key: &controlpb.KeyCommand{
+					KeyCode:    uint32(keyCode),
+					KeyDown:    false,
+					Modifiers:  uint32(modifiers),
+					UseCgEvent: true,
+				},
+			}
+			resp, err = ctlSendRequest(cfg.socketPath, req, 10*time.Second, "key")
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("key up: %s", resp.Error)
+			}
+			return nil, nil
+		},
+	)
+}
+
+func vzClickCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "click at normalized coordinates (0-1, top-left origin)",
+			Args:    "x y",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) != 2 {
+				return nil, script.ErrUsage
+			}
+			var x, y float64
+			if _, err := fmt.Sscanf(args[0], "%f", &x); err != nil {
+				return nil, fmt.Errorf("invalid x %q: %w", args[0], err)
+			}
+			if _, err := fmt.Sscanf(args[1], "%f", &y); err != nil {
+				return nil, fmt.Errorf("invalid y %q: %w", args[1], err)
+			}
+			if cfg.verbose {
+				s.Logf("click (%.3f, %.3f)\n", x, y)
+			}
+			req := &controlpb.ControlRequest{
+				Type: "mouse",
+				Command: &controlpb.ControlRequest_Mouse{
+					Mouse: &controlpb.MouseCommand{
+						X: x, Y: y, Button: 0, Action: "click",
+					},
+				},
+			}
+			resp, err := ctlSendRequest(cfg.socketPath, req, 10*time.Second, "mouse")
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("click: %s", resp.Error)
+			}
+			return nil, nil
+		},
+	)
+}
+
+func vzWaitCmd() script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "sleep for a duration",
+			Args:    "duration",
+			Detail:  []string{"Examples: 1s, 500ms, 2m"},
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			d, err := time.ParseDuration(args[0])
+			if err != nil {
+				return nil, fmt.Errorf("invalid duration %q: %w", args[0], err)
+			}
+			time.Sleep(d)
+			return nil, nil
+		},
+	)
+}
+
+func vzDetectPageCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{Summary: "detect current Setup Assistant page via OCR"},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			resp, err := ctlSendOCR(cfg.socketPath, "detect-page", "", "", 30*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return func(*script.State) (string, string, error) {
+				return resp.Data + "\n", "", nil
+			}, nil
+		},
+	)
+}
+
+func vzDetectScreenCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{Summary: "detect screen state (desktop, login, setup_assistant, etc.)"},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			resp, err := ctlSendOCR(cfg.socketPath, "detect-screen", "", "", 30*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return func(*script.State) (string, string, error) {
+				return resp.Data + "\n", "", nil
+			}, nil
+		},
+	)
+}
+
+// --- Conditions ---
+
+func vzScreenCond(cfg vzscriptConfig) script.Cond {
+	return script.PrefixCondition(
+		"current screen state matches",
+		func(s *script.State, suffix string) (bool, error) {
+			resp, err := ctlSendOCR(cfg.socketPath, "detect-screen", "", "", 30*time.Second)
+			if err != nil {
+				return false, nil
+			}
+			if !resp.Success {
+				return false, nil
+			}
+			return resp.Data == suffix, nil
+		},
+	)
+}
+
+func vzPageCond(cfg vzscriptConfig) script.Cond {
+	return script.PrefixCondition(
+		"current Setup Assistant page matches",
+		func(s *script.State, suffix string) (bool, error) {
+			resp, err := ctlSendOCR(cfg.socketPath, "detect-page", "", "", 30*time.Second)
+			if err != nil {
+				return false, nil
+			}
+			if !resp.Success {
+				return false, nil
+			}
+			return resp.Data == suffix, nil
+		},
+	)
+}
+
+func vzTextVisibleCond(cfg vzscriptConfig) script.Cond {
+	return script.PrefixCondition(
+		"text is visible on screen",
+		func(s *script.State, suffix string) (bool, error) {
+			resp, err := ctlSendOCR(cfg.socketPath, "ocr-all-text", "", "", 30*time.Second)
+			if err != nil {
+				return false, nil
+			}
+			if !resp.Success {
+				return false, nil
+			}
+			return strings.Contains(strings.ToLower(resp.Data), strings.ToLower(suffix)), nil
 		},
 	)
 }

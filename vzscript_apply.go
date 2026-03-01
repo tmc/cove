@@ -53,6 +53,7 @@ by rsc.io/script. The comment section contains commands; files in
 the archive are extracted to a working directory.
 
 Guest commands:
+  guest-wait [timeout]        Wait for VM boot and guest agent to be reachable
   guest-ping                  Check guest agent connectivity
   guest-exec <args...>        Run a command in the guest
   guest-shell <file>          Run a script file in the guest via bash
@@ -61,6 +62,24 @@ Guest commands:
   guest-cp -from-guest <host> <guest>  Copy guest→host
   guest-write <dst> <src>     Copy a local file to the guest (small files)
   guest-read <path>           Read a guest file to stdout
+
+UI automation commands (via control socket):
+  ocr-click <text> [timeout]  Find text via OCR and click its center
+  ocr-wait <text> [timeout]   Wait until text appears on screen
+  ocr-gone <text> [timeout]   Wait until text disappears from screen
+  ocr                         Run OCR; stdout is all recognized text
+  screenshot [file]           Capture VM screen to JPEG file
+  type <text>                 Type text into the VM
+  key <spec>                  Send key event (return, tab, cmd+v, etc.)
+  click <x> <y>              Click at normalized coordinates (0-1)
+  wait <duration>             Sleep for a duration (1s, 500ms, 2m)
+  detect-page                 Detect Setup Assistant page via OCR
+  detect-screen               Detect screen state (desktop, login, etc.)
+
+Conditions:
+  [screen:<state>]            True if screen state matches (desktop, login, etc.)
+  [page:<name>]               True if Setup Assistant page matches
+  [text-visible:<text>]       True if text is visible on screen
 
 Standard rsc.io/script commands (echo, cat, env, etc.) and conditions
 ([darwin], [GOOS:linux], etc.) are also available.

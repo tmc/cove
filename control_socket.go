@@ -59,6 +59,7 @@ type ControlServer struct {
 	running        bool
 	lastScreenshot image.Image  // For diff mode
 	agent          *AgentClient // GRPC client to guest agent (nil until connected)
+	ocr            *OCRService  // lazily created OCR service for server-side OCR commands
 	windowNum         int // cached window number for thread-safe screenshot
 	viewContentHeight int // cached view content height in pixels (excludes title bar)
 }
@@ -196,6 +197,13 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 			continue
 		}
 
+		// OCR commands use the raw JSON line to extract the "data" field
+		// since these commands aren't in the protobuf schema.
+		if resp, ok := s.handleOCRSocketCommand(&req, []byte(line)); ok {
+			writeResponse(conn, resp)
+			continue
+		}
+
 		resp := s.handleRequest(&req)
 		writeResponse(conn, resp)
 	}
@@ -285,6 +293,126 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 	default:
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown command type: %s", req.Type)}
 	}
+}
+
+// getOCR returns the lazily-initialized OCR service.
+func (s *ControlServer) getOCR() *OCRService {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ocr == nil {
+		s.ocr = NewOCRService(verbose)
+	}
+	return s.ocr
+}
+
+// ocrDataParams extracts text and timeout from the JSON "data" field.
+type ocrDataParams struct {
+	Text    string `json:"text"`
+	Timeout string `json:"timeout"`
+}
+
+func parseOCRData(rawJSON []byte) ocrDataParams {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &raw); err != nil {
+		return ocrDataParams{}
+	}
+	blob, ok := raw["data"]
+	if !ok {
+		return ocrDataParams{}
+	}
+	var p ocrDataParams
+	json.Unmarshal(blob, &p)
+	return p
+}
+
+// handleOCRSocketCommand handles OCR-related commands that need the raw JSON
+// line to extract parameters. Returns (response, true) if handled.
+func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, rawJSON []byte) (*controlpb.ControlResponse, bool) {
+	switch req.Type {
+	case "ocr-click":
+		p := parseOCRData(rawJSON)
+		if p.Text == "" {
+			return &controlpb.ControlResponse{Error: "ocr-click requires text"}, true
+		}
+		timeout := 10 * time.Second
+		if p.Timeout != "" {
+			if d, err := time.ParseDuration(p.Timeout); err == nil {
+				timeout = d
+			}
+		}
+		ocr := s.getOCR()
+		if err := s.OCRClickText(ocr, p.Text, timeout); err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}, true
+		}
+		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("clicked %q", p.Text)}, true
+
+	case "ocr-wait":
+		p := parseOCRData(rawJSON)
+		if p.Text == "" {
+			return &controlpb.ControlResponse{Error: "ocr-wait requires text"}, true
+		}
+		timeout := 60 * time.Second
+		if p.Timeout != "" {
+			if d, err := time.ParseDuration(p.Timeout); err == nil {
+				timeout = d
+			}
+		}
+		ocr := s.getOCR()
+		if err := s.OCRWaitForText(ocr, p.Text, timeout); err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}, true
+		}
+		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("found %q", p.Text)}, true
+
+	case "ocr-gone":
+		p := parseOCRData(rawJSON)
+		if p.Text == "" {
+			return &controlpb.ControlResponse{Error: "ocr-gone requires text"}, true
+		}
+		timeout := 30 * time.Second
+		if p.Timeout != "" {
+			if d, err := time.ParseDuration(p.Timeout); err == nil {
+				timeout = d
+			}
+		}
+		ocr := s.getOCR()
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			img, errMsg := s.captureVMView()
+			if errMsg != "" {
+				time.Sleep(time.Second)
+				continue
+			}
+			_, _, found := ocr.FindTextNormalized(img, p.Text)
+			if !found {
+				return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("%q gone", p.Text)}, true
+			}
+			time.Sleep(time.Second)
+		}
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("timeout: text %q still visible", p.Text)}, true
+
+	case "ocr-all-text":
+		ocr := s.getOCR()
+		text, err := s.OCRAllText(ocr)
+		if err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}, true
+		}
+		return &controlpb.ControlResponse{Success: true, Data: text}, true
+
+	case "detect-page":
+		ocr := s.getOCR()
+		page := s.OCRDetectPage(ocr)
+		return &controlpb.ControlResponse{Success: true, Data: page}, true
+
+	case "detect-screen":
+		ocr := s.getOCR()
+		img, errMsg := s.captureVMView()
+		if errMsg != "" {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("capture: %s", errMsg)}, true
+		}
+		state := DetectScreenStateOCR(img, ocr)
+		return &controlpb.ControlResponse{Success: true, Data: state.String()}, true
+	}
+	return nil, false
 }
 
 func populateLegacyRequestPayloads(line string, req *controlpb.ControlRequest) {

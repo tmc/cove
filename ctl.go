@@ -551,6 +551,43 @@ func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Dur
 	return &resp, nil
 }
 
+// ctlSendJSON sends a raw JSON object over the control socket and reads
+// the protojson-encoded response. This is used for commands (like OCR)
+// that pass parameters in a "data" field not modeled in the proto schema.
+func ctlSendJSON(sock string, obj map[string]interface{}, timeout time.Duration) (*controlpb.ControlResponse, error) {
+	if token := resolveControlTokenForSocket(sock); token != "" {
+		obj["auth_token"] = token
+	}
+	reqBytes, err := json.Marshal(obj)
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
+	}
+
+	conn, err := net.DialTimeout("unix", sock, timeout)
+	if err != nil {
+		return nil, fmt.Errorf("connect to %s: %w", sock, err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(timeout))
+
+	reqBytes = append(reqBytes, '\n')
+	if _, err := conn.Write(reqBytes); err != nil {
+		return nil, fmt.Errorf("send: %w", err)
+	}
+
+	reader := bufio.NewReaderSize(conn, 256*1024)
+	respLine, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("receive: %w", err)
+	}
+
+	var resp controlpb.ControlResponse
+	if err := protojson.Unmarshal([]byte(respLine), &resp); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	return &resp, nil
+}
+
 func resolveControlTokenForSocket(sock string) string {
 	if token := strings.TrimSpace(os.Getenv(controlTokenEnvVar)); token != "" {
 		return token

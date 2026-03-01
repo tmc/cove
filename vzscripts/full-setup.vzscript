@@ -1,0 +1,42 @@
+# full-setup — Navigate Setup Assistant and install developer tools
+#
+# Combines OCR-driven GUI automation with guest agent provisioning
+# in a single script. Requires -gui mode for Phase 1 and the guest
+# agent for Phase 2.
+
+# Phase 1: OCR-driven GUI automation (Setup Assistant)
+ocr-wait Continue 120s
+ocr-click Continue
+wait 2s
+ocr-click Continue 10s
+wait 2s
+
+# Wait for country selection, accept default
+key return
+wait 3s
+
+# Skip accessibility, diagnostics, etc.
+[text-visible:Not Now] ocr-click "Not Now"
+wait 2s
+[text-visible:Continue] ocr-click Continue
+wait 2s
+
+# Phase 2: Wait for agent, install tools
+guest-wait 5m
+guest-ping
+guest-shell install-dev.sh
+
+-- install-dev.sh --
+#!/bin/bash
+set -eu
+
+echo "Installing developer tools..."
+
+# Accept Xcode license and install CLI tools if needed
+if ! xcode-select -p &>/dev/null; then
+    xcode-select --install
+    echo "Waiting for Xcode CLI tools installation..."
+    sleep 30
+fi
+
+echo "Developer tools ready."
