@@ -509,7 +509,7 @@ func GetControlSocketPath() string {
 
 // getVMStatus returns the current VM state and available operations.
 func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
@@ -542,7 +542,7 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 
 // pauseVM pauses the VM.
 func (s *ControlServer) pauseVM() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
@@ -582,7 +582,7 @@ func (s *ControlServer) pauseVM() *controlpb.ControlResponse {
 
 // resumeVM resumes a paused VM.
 func (s *ControlServer) resumeVM() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
@@ -622,7 +622,7 @@ func (s *ControlServer) resumeVM() *controlpb.ControlResponse {
 
 // stopVM forcefully stops the VM.
 func (s *ControlServer) stopVM() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
@@ -662,7 +662,7 @@ func (s *ControlServer) stopVM() *controlpb.ControlResponse {
 
 // requestStopVM sends an ACPI power button event for graceful shutdown.
 func (s *ControlServer) requestStopVM() *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 

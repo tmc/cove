@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
-
 	"github.com/ebitengine/purego"
 
 	"github.com/tmc/apple/appkit"
@@ -27,7 +25,7 @@ import (
 // setAppIcon sets the Dock and app icon from the embedded .icns asset.
 func setAppIcon(app *appkit.NSApplication) {
 	iconData := assets.Icon
-	nsData := foundation.NewDataWithBytesLength(unsafe.Pointer(&iconData[0]), uint(len(iconData)))
+	nsData := foundation.NewDataWithBytesLength(iconData)
 	img := appkit.NewImageWithData(&nsData)
 	if img.ID != 0 {
 		app.SetApplicationIconImage(&img)
@@ -1182,7 +1180,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	if vmName != "" && vmName != "default" {
 		procName = fmt.Sprintf("vz-macos (%s)", vmName)
 	}
-	foundation.GetProcessInfoClass().ProcessInfoValue().SetProcessName(procName)
+	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
 
 	// Set the VM view frame to match the content rect
 	vmViewAsNSView(vmView).SetFrame(corefoundation.CGRect{

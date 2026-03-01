@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"unsafe"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
@@ -50,7 +49,7 @@ func (s *VMStatusItem) setup() {
 
 	if button := s.statusItem.Button(); button != nil && button.GetID() != 0 {
 		iconData := assets.Icon
-		nsData := foundation.NewDataWithBytesLength(unsafe.Pointer(&iconData[0]), uint(len(iconData)))
+		nsData := foundation.NewDataWithBytesLength(iconData)
 		img := appkit.NewImageWithData(&nsData)
 		if img.ID != 0 {
 			img.SetSize(corefoundation.CGSize{Width: 18, Height: 18})

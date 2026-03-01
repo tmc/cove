@@ -600,7 +600,7 @@ func dirSize(path string) (int64, error) {
 
 // handleSnapshotCommand handles snapshot commands from the control socket
 func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 

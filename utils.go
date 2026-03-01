@@ -202,7 +202,7 @@ func createSerialConsoleConfig() vz.VZVirtioConsoleDeviceSerialPortConfiguration
 	writeHandle.Retain()
 
 	// Create file handle serial port attachment
-	attachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(&readHandle, &writeHandle)
+	attachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(readHandle, writeHandle)
 	if attachment.ID == 0 {
 		fmt.Printf("  Warning: could not create serial port attachment\n")
 		return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
@@ -257,5 +257,5 @@ func createNSDataFromBytes(data []byte) objc.ID {
 	if len(data) == 0 {
 		return 0
 	}
-	return foundation.GetNSDataClass().DataWithBytesLength(unsafe.Pointer(&data[0]), uint(len(data))).ID
+	return foundation.GetNSDataClass().DataWithBytesLength(data).ID
 }

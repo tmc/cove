@@ -95,7 +95,7 @@ func setMemoryTarget(vm vz.VZVirtualMachine, queue dispatch.Queue, sizeGB float6
 
 // handleMemoryCommand handles memory commands from the control socket
 func (s *ControlServer) handleMemoryCommand(cmd *controlpb.MemoryCommand) *controlpb.ControlResponse {
-	if s.vm.ID == 0 || s.vmQueue.Handle() == nil {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
