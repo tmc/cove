@@ -78,7 +78,7 @@ proto/               Protocol buffer definitions
 
 ## Security Model
 
-- **Control socket** uses Unix domain socket permissions for access control (local trust only). Any process with filesystem access to the socket path can control the VM.
+- **Control socket** requires a per-VM bearer token from `~/.vz/vms/<name>/control.token` and uses owner-only socket/file permissions (`0600`).
 - **Agent gRPC** is unencrypted, designed for use within the VM boundary over vsock. Do not expose the agent port outside the host.
 - **Full Disk Access (FDA)** may be required for certain disk operations. SIP status inside the guest can be managed with the `sip` command.
 - **UTM import** is limited to Apple-backend macOS bundles (.utm with QEMU backends are not supported).

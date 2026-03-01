@@ -4,7 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// shellEscape wraps a value in single quotes with proper escaping for safe
+// embedding in shell scripts. Single quotes within the value are replaced
+// with the sequence '\'' (end quote, escaped quote, start quote).
+func shellEscape(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
 
 // injectLaunchDaemonProvisioning creates the LaunchDaemon and script for first-boot provisioning.
 // Files needing root:wheel ownership are collected in rootFiles for a later targeted sudo chown.
@@ -118,9 +126,9 @@ func generateEmbeddedProvisionScript(config ProvisionConfig) string {
 set -e
 
 # Embedded configuration
-USERNAME="%s"
-PASSWORD="%s"
-FULLNAME="%s"
+USERNAME=%s
+PASSWORD=%s
+FULLNAME=%s
 ADMIN="%s"
 BOOTSTRAP_RECOVERY="%s"
 INSTALL_XCODE_CLI="%s"
@@ -307,7 +315,7 @@ log "Restarting loginwindow for auto-login..."
 killall loginwindow 2>/dev/null || true
 
 exit 0
-`, config.Username, config.Password, fullname, adminStr, bootstrapStr, xcodeStr, sshdStr)
+`, shellEscape(config.Username), shellEscape(config.Password), shellEscape(fullname), adminStr, bootstrapStr, xcodeStr, sshdStr)
 }
 
 // LaunchDaemon plist that runs provisioning script on first boot

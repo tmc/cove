@@ -1,61 +1,68 @@
 # macOS Tahoe (26.x) Setup Assistant boot commands
 # These navigate Setup Assistant when disk injection is not available.
+# Uses OCR click commands for reliable navigation across language variants.
 
 # Wait for initial boot
 <wait 30s>
 
-# Language selection
-<waitForText "English">
-<key return>
-<wait 2s>
+# Hello screen — click Continue (visible in any language)
+<waitForText "Continue">
+<click "Continue">
+<wait 3s>
 
-# Country/Region
+# Language selection — English should be highlighted by default
+# Click the arrow button or press Return to accept English
+<waitForText "Language">
+<wait 1s>
+<key return>
+<wait 3s>
+
+# Country/Region — select and continue
 <waitForText "Country">
+<wait 1s>
 <key return>
-<wait 2s>
+<wait 3s>
 
-# Accessibility - skip
+# Accessibility — skip
 <waitForText "Accessibility">
-<key escape>
 <wait 1s>
-<key return>
-<wait 2s>
+<click "Not Now">
+<wait 3s>
 
-# Wi-Fi - skip (VM uses NAT)
+# Wi-Fi — skip (VM uses NAT networking)
 <waitForText "Wi-Fi">
-<key escape>
 <wait 1s>
-<key return>
+<click "Other Network Options">
 <wait 2s>
+<click "without">
+<wait 2s>
+<click "Continue">
+<wait 3s>
 
-# Migration Assistant - Not Now
+# Migration Assistant — Don't transfer
 <waitForText "Migration">
-<key tab>
-<key tab>
-<key tab>
-<key return>
-<wait 2s>
+<wait 1s>
+<click "Not Now">
+<wait 3s>
 
-# Apple ID - Set Up Later
+# Apple ID — Skip / Set Up Later
 <waitForText "Apple">
-<key tab>
-<key tab>
-<key tab>
-<key tab>
-<key return>
 <wait 1s>
-<key return>
+<click "Set Up Later">
 <wait 2s>
+<click "Skip">
+<wait 3s>
 
-# Terms and Conditions - Agree
+# Terms and Conditions — Agree
 <waitForText "Terms">
-<key tab>
-<key tab>
-<key return>
 <wait 1s>
-<key return>
+<click "Agree">
 <wait 2s>
+# Confirmation dialog
+<click "Agree">
+<wait 3s>
 
-# Create Computer Account
-<waitForText "Computer Account">
+# Create Computer Account — fill in user details
+# The orchestrator will type username/password after this
+<waitForText "Account">
 <screenshot>

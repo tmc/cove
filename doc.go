@@ -64,24 +64,26 @@
 // Running VMs expose a Unix domain socket for control and monitoring:
 //
 //	~/.vz/vms/<name>/control.sock
+//	~/.vz/vms/<name>/control.token
 //
 // Commands are sent as JSON (protobuf JSON mapping of ControlRequest).
 // The "type" field selects the handler; command payloads use the matching field name:
 //
-//	{"type":"ping"}                                    - Health check
-//	{"type":"status"}                                  - VM state and capabilities
-//	{"type":"screenshot"}                              - Capture display (base64 PNG in response)
-//	{"type":"screenshot","screenshot":{"scale":0.5}}   - Capture at half resolution
-//	{"type":"key","key":{"key_code":36}}               - Send keypress (Return)
-//	{"type":"text","text":{"text":"hello"}}             - Type text string
-//	{"type":"pause"}                                   - Pause VM
-//	{"type":"resume"}                                  - Resume VM
+//	{"type":"ping","auth_token":"<token>"}                     - Health check
+//	{"type":"status","auth_token":"<token>"}                   - VM state and capabilities
+//	{"type":"screenshot","auth_token":"<token>"}               - Capture display (base64 PNG in response)
+//	{"type":"screenshot","auth_token":"<token>","screenshot":{"scale":0.5}} - Capture at half resolution
+//	{"type":"key","auth_token":"<token>","key":{"key_code":36}} - Send keypress (Return)
+//	{"type":"text","auth_token":"<token>","text":{"text":"hello"}} - Type text string
+//	{"type":"pause","auth_token":"<token>"}                    - Pause VM
+//	{"type":"resume","auth_token":"<token>"}                   - Resume VM
 //
 // See proto/control.proto for the full schema.
 //
 // Example usage:
 //
-//	echo '{"type":"status"}' | nc -U ~/.vz/vms/default/control.sock
+//	TOKEN=$(cat ~/.vz/vms/default/control.token)
+//	echo "{\"type\":\"status\",\"auth_token\":\"$TOKEN\"}" | nc -U ~/.vz/vms/default/control.sock
 //
 // # Linux VM Support
 //
@@ -106,6 +108,7 @@
 //	machine.id    - Machine identifier (macOS only)
 //	efi-vars.img  - EFI variable store (Linux only)
 //	control.sock  - Control socket (when running)
+//	control.token - Control socket auth token (owner-read only)
 //
 // # Entitlements
 //

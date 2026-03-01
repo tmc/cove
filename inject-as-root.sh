@@ -85,28 +85,39 @@ if [ -z "$PASSWORD" ]; then
     exit 1
 fi
 
-# Build the command
-CMD="$VZ_MACOS"
+# Build the command as an array for safe argument handling
+CMD_ARGS=("$VZ_MACOS")
 if [ -n "$VM_DIR" ]; then
-    CMD="$CMD -vm $VM_DIR"
+    CMD_ARGS+=("-vm" "$VM_DIR")
 fi
-CMD="$CMD inject -user '$USER' -password '$PASSWORD'"
+CMD_ARGS+=("inject" "-user" "$USER" "-password" "$PASSWORD")
 if [ "$SKIP_SETUP" = "true" ]; then
-    CMD="$CMD -skip-setup-assistant"
+    CMD_ARGS+=("-skip-setup-assistant")
 fi
 if [ "$NO_AUTO_LOGIN" = "true" ]; then
-    CMD="$CMD -no-auto-login"
+    CMD_ARGS+=("-no-auto-login")
 fi
 if [ "$VERBOSE" = "true" ]; then
-    CMD="$CMD -v"
+    CMD_ARGS+=("-v")
 fi
 
+# Build a safely escaped command string for osascript
+ESCAPED_CMD=""
+for arg in "${CMD_ARGS[@]}"; do
+    ESCAPED_CMD="${ESCAPED_CMD} $(printf '%q' "$arg")"
+done
+ESCAPED_CMD="${ESCAPED_CMD# }"  # trim leading space
+
 echo "Running inject with admin privileges..."
-echo "Command: $CMD"
+echo "Command: $ESCAPED_CMD"
 echo ""
 
+# Escape backslashes and double quotes for osascript's "do shell script" string
+OSASCRIPT_CMD="${ESCAPED_CMD//\\/\\\\}"
+OSASCRIPT_CMD="${OSASCRIPT_CMD//\"/\\\"}"
+
 # Use osascript to run with admin privileges (prompts for password via GUI)
-osascript -e "do shell script \"$CMD\" with administrator privileges"
+osascript -e "do shell script \"$OSASCRIPT_CMD\" with administrator privileges"
 
 echo ""
 echo "Inject complete. Run the VM with: ./vz-macos run"
