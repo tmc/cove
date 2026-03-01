@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"sort"
 	"strings"
 
 	"github.com/tmc/apple/corefoundation"
@@ -51,6 +52,11 @@ func (o *OCRService) RecognizeText(img image.Image) ([]TextObservation, error) {
 }
 
 // FindText searches for text on screen and returns its center pixel coordinates.
+// When multiple observations contain the needle, it prefers:
+//  1. Exact full-text matches (observation text equals needle, case-insensitive)
+//  2. Shorter observation text (closer to the needle itself, e.g. a button label)
+//  3. Observations closer to the bottom of the screen (buttons are typically there)
+//
 // Returns found=false if the text is not visible.
 func (o *OCRService) FindText(img image.Image, needle string) (x, y float64, found bool) {
 	observations, err := o.RecognizeText(img)
@@ -61,16 +67,49 @@ func (o *OCRService) FindText(img image.Image, needle string) (x, y float64, fou
 		return 0, 0, false
 	}
 
+	best, ok := bestMatch(observations, needle)
+	if !ok {
+		return 0, 0, false
+	}
+	if o.verbose {
+		fmt.Printf("[ocr] found %q in %q at (%d, %d)\n", needle, best.Text, best.Center.X, best.Center.Y)
+	}
+	return float64(best.Center.X), float64(best.Center.Y), true
+}
+
+// bestMatch selects the best observation matching needle from candidates.
+// Ranking: exact match > shorter text > closer to bottom of screen.
+func bestMatch(observations []TextObservation, needle string) (TextObservation, bool) {
 	needle = strings.ToLower(needle)
+
+	var matches []TextObservation
 	for _, obs := range observations {
 		if strings.Contains(strings.ToLower(obs.Text), needle) {
-			if o.verbose {
-				fmt.Printf("[ocr] found %q in %q at (%d, %d)\n", needle, obs.Text, obs.Center.X, obs.Center.Y)
-			}
-			return float64(obs.Center.X), float64(obs.Center.Y), true
+			matches = append(matches, obs)
 		}
 	}
-	return 0, 0, false
+	if len(matches) == 0 {
+		return TextObservation{}, false
+	}
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		ti := strings.ToLower(matches[i].Text)
+		tj := strings.ToLower(matches[j].Text)
+		exactI := ti == needle
+		exactJ := tj == needle
+		if exactI != exactJ {
+			return exactI
+		}
+		if len(ti) != len(tj) {
+			return len(ti) < len(tj)
+		}
+		// Lower on screen (higher Y) is preferred.
+		return matches[i].Center.Y > matches[j].Center.Y
+	})
+	return matches[0], true
 }
 
 // FindTextNormalized searches for text and returns its center in normalized
