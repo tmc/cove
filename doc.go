@@ -65,14 +65,19 @@
 //
 //	~/.vz/vms/<name>/control.sock
 //
-// Commands are sent as JSON and support:
+// Commands are sent as JSON (protobuf JSON mapping of ControlRequest).
+// The "type" field selects the handler; command payloads use the matching field name:
 //
-//	{"type": "ping"}              - Health check
-//	{"type": "status"}            - VM state, pause/resume capability
-//	{"type": "screenshot"}        - Capture current display
-//	{"type": "screenshot", "path": "/tmp/screen.png"}  - Save to file
-//	{"type": "key", "keycode": 36}                     - Send keypress
-//	{"type": "text", "text": "hello"}                  - Type text
+//	{"type":"ping"}                                    - Health check
+//	{"type":"status"}                                  - VM state and capabilities
+//	{"type":"screenshot"}                              - Capture display (base64 PNG in response)
+//	{"type":"screenshot","screenshot":{"scale":0.5}}   - Capture at half resolution
+//	{"type":"key","key":{"key_code":36}}               - Send keypress (Return)
+//	{"type":"text","text":{"text":"hello"}}             - Type text string
+//	{"type":"pause"}                                   - Pause VM
+//	{"type":"resume"}                                  - Resume VM
+//
+// See proto/control.proto for the full schema.
 //
 // Example usage:
 //

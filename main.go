@@ -525,7 +525,7 @@ Commands:
   menubar     Run as a menubar app for VM control
   provision   (deprecated: use 'inject' instead)
   inject      Inject provisioning files directly into VM disk (self-contained)
-  verify      Verify provisioning files in VM disk (check ownership, existence)
+  verify      Verify provisioning files in VM disk (alias: doctor)
   clean       Remove VM files (disk, aux, hw.model, machine.id)
   clone       Clone a VM (vz-macos clone [source] <target> [--linked])
   template    Manage VM templates (save/list/create)

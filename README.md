@@ -18,7 +18,7 @@ macOS and Linux VM management using Apple's Virtualization.framework via [purego
 ```bash
 # Build and sign
 go build -o vz-macos .
-codesign --entitlements vz.entitlements -f -s - ./vz-macos
+codesign --entitlements internal/autosign/vz.entitlements -f -s - ./vz-macos
 
 # Install macOS
 ./vz-macos install -ipsw ~/Downloads/UniversalMac_14.0_RestoreImage.ipsw
@@ -67,6 +67,21 @@ vzscript*.go         Scripted VM configuration engine
 cmd/vz-agent/        Guest-side gRPC daemon
 proto/               Protocol buffer definitions
 ```
+
+## Feature Maturity
+
+| Maturity | Features |
+|----------|----------|
+| GA | install, run, provisioning (inject) |
+| Beta | snapshots, agent, userdata |
+| Experimental | FDA, UTM import, memory balloon, Windows stub |
+
+## Security Model
+
+- **Control socket** uses Unix domain socket permissions for access control (local trust only). Any process with filesystem access to the socket path can control the VM.
+- **Agent gRPC** is unencrypted, designed for use within the VM boundary over vsock. Do not expose the agent port outside the host.
+- **Full Disk Access (FDA)** may be required for certain disk operations. SIP status inside the guest can be managed with the `sip` command.
+- **UTM import** is limited to Apple-backend macOS bundles (.utm with QEMU backends are not supported).
 
 ## References
 
