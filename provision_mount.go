@@ -261,7 +261,7 @@ func checkVMNotRunning() error {
 		return nil
 	}
 	conn.Close()
-	return fmt.Errorf("VM is currently running (control socket active: %s)\n  Stop the VM first, then retry.\n  To stop: ./vz-macos ctl shutdown", sock)
+	return fmt.Errorf("vm is currently running (control socket active: %s)\n  Stop the VM first, then retry.\n  To stop: ./vz-macos ctl shutdown", sock)
 }
 
 // checkDiskNotMounted checks if the disk is already mounted via hdiutil.

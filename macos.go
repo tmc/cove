@@ -119,7 +119,7 @@ func checkSuspendConfigMatch() error {
 		diffs = append(diffs, fmt.Sprintf("serial: %v -> %v", saved.Serial, current.Serial))
 	}
 	if len(diffs) > 0 {
-		return fmt.Errorf("VM config changed since suspend (%s); delete %s to cold boot",
+		return fmt.Errorf("vm config changed since suspend (%s); delete %s to cold boot",
 			strings.Join(diffs, ", "), suspendStatePath())
 	}
 	return nil
@@ -238,7 +238,7 @@ func validateVMSettings() error {
 	maxMem := configClass.MaximumAllowedMemorySize() / (1024 * 1024 * 1024)
 
 	if cpuCount < uint(minCPU) || cpuCount > uint(maxCPU) {
-		return fmt.Errorf("CPU count must be between %d and %d", minCPU, maxCPU)
+		return fmt.Errorf("cpu count must be between %d and %d", minCPU, maxCPU)
 	}
 	if memoryGB < minMem || memoryGB > maxMem {
 		return fmt.Errorf("memory must be between %d GB and %d GB", minMem, maxMem)
@@ -856,7 +856,7 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	for !started {
 		select {
 		case <-timeout:
-			return fmt.Errorf("VM start timed out")
+			return fmt.Errorf("vm start timed out")
 		default:
 			runRunLoopOnce()
 			time.Sleep(10 * time.Millisecond)
@@ -883,7 +883,7 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			fmt.Println("Hint: the disk image is still mounted from a previous inject/verify.")
 			fmt.Println("  Run: ./vz-macos disk-detach")
 		}
-		return fmt.Errorf("VM start failed: %w", err)
+		return fmt.Errorf("vm start failed: %w", err)
 	}
 	fmt.Println("VM started successfully")
 
@@ -992,7 +992,7 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return fmt.Errorf("timed out checking VM state")
 	}
 	if currentState != vz.VZVirtualMachineStateStopped {
-		return fmt.Errorf("VM must be stopped to restore (current: %s)", vmStateName(currentState))
+		return fmt.Errorf("vm must be stopped to restore (current: %s)", vmStateName(currentState))
 	}
 
 	restoreURL := foundation.NewURLFileURLWithPath(stateFile)
@@ -1049,7 +1049,7 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			return
 		}
 		if state != vz.VZVirtualMachineStateRunning {
-			pauseCh <- fmt.Errorf("VM not running (state: %d)", state)
+			pauseCh <- fmt.Errorf("vm not running (state: %d)", state)
 			return
 		}
 		vm.PauseWithCompletionHandler(func(err error) {
@@ -1172,8 +1172,6 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	osLabel := "macOS VM"
 	if linuxMode {
 		osLabel = "Linux VM"
-	} else if windowsMode {
-		osLabel = "Windows VM"
 	}
 	windowTitle := osLabel
 	if vmName != "" && vmName != "default" {

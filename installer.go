@@ -201,7 +201,7 @@ func checkExistingVM(dir string, diskName string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("VM disk already exists: %s (%d MB)\n\nTo install over this disk, use -force (THIS WILL DESTROY ALL DATA IN THE VM).\nTo use a different VM, use -vm <name>", diskFile, info.Size()/(1024*1024))
+	return fmt.Errorf("vm disk already exists: %s (%d MB)\n\nTo install over this disk, use -force (THIS WILL DESTROY ALL DATA IN THE VM).\nTo use a different VM, use -vm <name>", diskFile, info.Size()/(1024*1024))
 }
 
 // 2. Creates platform config with hardware model from IPSW requirements

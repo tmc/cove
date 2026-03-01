@@ -21,8 +21,7 @@ var (
 	guiMode     bool
 	useCurl     bool
 	linuxMode   bool
-	windowsMode bool // TODO: re-enable when Apple adds GOP linear framebuffer to VZEFIBootLoader
-	cpuCount    uint
+	cpuCount uint
 	memoryGB    uint64
 	diskPath    string
 	diskSizeGB  uint64
@@ -105,7 +104,6 @@ func init() {
 	flag.BoolVar(&headlessMode, "headless", false, "run without GUI window")
 	flag.BoolVar(&useCurl, "curl", false, "use curl for IPSW download (resumable, saves to restore.ipsw)")
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
-	flag.BoolVar(&windowsMode, "windows", false, "run a Windows ARM64 VM instead of macOS")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.UintVar(&cpuCount, "cpu", 2, "number of CPUs")
 	flag.Uint64Var(&memoryGB, "memory", 4, "memory in GB")
@@ -172,6 +170,20 @@ func init() {
 func main() {
 	flag.Parse()
 
+	// Validate mutually exclusive flags.
+	if headlessMode && guiMode {
+		// Both were explicitly set; check if -gui was passed explicitly.
+		guiExplicit := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "gui" {
+				guiExplicit = true
+			}
+		})
+		if guiExplicit {
+			fmt.Fprintf(os.Stderr, "error: -gui and -headless are mutually exclusive\n")
+			os.Exit(1)
+		}
+	}
 	// --headless overrides --gui
 	if headlessMode {
 		guiMode = false
@@ -240,10 +252,9 @@ func main() {
 		return
 	}
 	if installVM {
+		fmt.Fprintf(os.Stderr, "warning: -install flag is deprecated, use 'vz-macos install' command instead\n")
 		var err error
-		if windowsMode {
-			err = windowsNotSupported()
-		} else if linuxMode {
+		if linuxMode {
 			err = handleLinuxInstall()
 		} else {
 			err = installMacOSLikeVZ(context.Background())
@@ -259,6 +270,7 @@ func main() {
 		return
 	}
 	if runVM {
+		fmt.Fprintf(os.Stderr, "warning: -run flag is deprecated, use 'vz-macos run' command instead\n")
 		handleRun()
 		return
 	}
@@ -343,9 +355,7 @@ func main() {
 		case "install":
 			installVM = true
 			var err error
-			if windowsMode {
-				err = windowsNotSupported()
-			} else if linuxMode {
+			if linuxMode {
 				err = handleLinuxInstall()
 			} else {
 				err = installMacOSLikeVZ(context.Background())
@@ -416,9 +426,6 @@ func main() {
 				os.Exit(1)
 			}
 			return
-		case "setup":
-			fmt.Fprintf(os.Stderr, "Error: setup command not yet implemented\n")
-			os.Exit(1)
 		case "recovery-disk":
 			if err := sipCreateDisk(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -487,21 +494,9 @@ func handleUTM() {
 	}
 }
 
-// windowsNotSupported returns an error explaining why Windows is not available.
-// Apple's Virtualization.framework lacks the GOP linear framebuffer that Windows
-// Boot Manager requires. See windows.go for full technical details.
-func windowsNotSupported() error {
-	return fmt.Errorf("Windows ARM64 is not supported on Apple's Virtualization.framework.\n" +
-		"The Windows Boot Manager requires a linear framebuffer (GOP) that Apple's\n" +
-		"built-in EFI firmware does not provide. Use UTM (which uses QEMU) instead.\n" +
-		"See windows.go for technical details and tracking information")
-}
-
 func handleRun() {
 	var err error
-	if windowsMode {
-		err = windowsNotSupported()
-	} else if linuxMode {
+	if linuxMode {
 		err = runLinuxVM()
 	} else {
 		err = runMacOSVM()
@@ -535,7 +530,6 @@ Commands:
   network     Network configuration (list interfaces, help)
   rosetta     Rosetta 2 for Linux VMs (status/install/setup)
   userdata    Separate user data disk (help/setup/workflow)
-  setup       Software installation modules (list/enable/disable)
   disk-detach Detach VM disk if stuck from a previous inject/verify
   sip         SIP management (disable/enable/status)
   recovery-disk Create recovery tools disk (FAT32 with csrutil scripts)
