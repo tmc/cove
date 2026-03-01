@@ -237,24 +237,11 @@ func setupProvisioning() error {
 	admin := provisionAdmin
 
 	if username == "" {
-		fmt.Println("=== vz-macos Provisioning Setup ===")
-		fmt.Println()
-		fmt.Println("This will create a provisioning directory that automatically")
-		fmt.Println("creates a user account on first boot of a macOS VM.")
-		fmt.Println()
-		fmt.Print("Username: ")
-		fmt.Scanln(&username)
-		if username == "" {
-			username = "vmuser"
-		}
+		return fmt.Errorf("username is required: use -provision-user flag")
 	}
 
 	if password == "" {
-		fmt.Print("Password: ")
-		fmt.Scanln(&password)
-		if password == "" {
-			password = "vmuser123"
-		}
+		return fmt.Errorf("password is required: use -provision-password flag")
 	}
 
 	config := ProvisionConfig{
