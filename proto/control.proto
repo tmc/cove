@@ -10,6 +10,8 @@ option go_package = "github.com/tmc/vz-macos/proto/controlpb";
 message ControlRequest {
   // Command type string for dispatch (e.g. "key", "screenshot", "ping").
   string type = 1;
+  // Optional bearer token for control-socket authentication.
+  string auth_token = 2;
 
   oneof command {
     KeyCommand key = 10;

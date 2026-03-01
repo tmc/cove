@@ -3,12 +3,15 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,19 +24,33 @@ import (
 type ControlClient struct {
 	socketPath string
 	timeout    time.Duration
+	authToken  string
 }
 
 // NewControlClient creates a new control client
 func NewControlClient(socketPath string) *ControlClient {
+	authToken := strings.TrimSpace(os.Getenv(controlTokenEnvVar))
+	if authToken == "" {
+		tokenPath := filepath.Join(filepath.Dir(socketPath), controlTokenFileName)
+		if token, err := LoadControlTokenFromPath(tokenPath); err == nil {
+			authToken = token
+		}
+	}
 	return &ControlClient{
 		socketPath: socketPath,
 		timeout:    10 * time.Second,
+		authToken:  authToken,
 	}
 }
 
 // SetTimeout sets the command timeout
 func (c *ControlClient) SetTimeout(d time.Duration) {
 	c.timeout = d
+}
+
+// SetAuthToken overrides the token used for control socket requests.
+func (c *ControlClient) SetAuthToken(token string) {
+	c.authToken = strings.TrimSpace(token)
 }
 
 // sendRequest sends a proto request and returns the proto response
@@ -47,7 +64,13 @@ func (c *ControlClient) sendRequest(req *controlpb.ControlRequest) (*controlpb.C
 	conn.SetDeadline(time.Now().Add(c.timeout))
 
 	// Marshal and send request
-	reqBytes, err := protojsonMarshaler.Marshal(req)
+	reqToSend := req
+	if req.AuthToken == "" && c.authToken != "" {
+		reqCopy := *req
+		reqCopy.AuthToken = c.authToken
+		reqToSend = &reqCopy
+	}
+	reqBytes, err := protojsonMarshaler.Marshal(reqToSend)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
@@ -116,10 +139,10 @@ func (c *ControlClient) Screenshot() (image.Image, error) {
 	}
 
 	// Decode image
-	img, pngErr := png.Decode(strings.NewReader(string(imgData)))
+	img, pngErr := png.Decode(bytes.NewReader(imgData))
 	if pngErr != nil {
 		// Try JPEG as fallback
-		img, err = jpeg.Decode(strings.NewReader(string(imgData)))
+		img, err = jpeg.Decode(bytes.NewReader(imgData))
 		if err != nil {
 			return nil, fmt.Errorf("decode image: %w", err)
 		}
@@ -158,7 +181,7 @@ func (c *ControlClient) ScreenshotScaled(scale float64) (image.Image, error) {
 		return nil, fmt.Errorf("decode base64: %w", err)
 	}
 
-	img, err := jpeg.Decode(strings.NewReader(string(imgData)))
+	img, err := jpeg.Decode(bytes.NewReader(imgData))
 	if err != nil {
 		return nil, fmt.Errorf("decode image: %w", err)
 	}

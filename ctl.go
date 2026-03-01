@@ -507,10 +507,14 @@ func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Dur
 	}
 	defer conn.Close()
 
-	// Screenshots may take longer and produce larger responses
+	// Screenshots may take longer and produce larger responses.
+	// Text input may also be slow (80ms per character).
 	readTimeout := timeout
-	if cmdType == "screenshot" {
+	switch cmdType {
+	case "screenshot":
 		readTimeout = 30 * time.Second
+	case "text":
+		readTimeout = 60 * time.Second
 	}
 	conn.SetDeadline(time.Now().Add(readTimeout))
 

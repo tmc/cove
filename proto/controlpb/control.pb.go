@@ -7,12 +7,11 @@
 package controlpb
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -29,6 +28,8 @@ type ControlRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Command type string for dispatch (e.g. "key", "screenshot", "ping").
 	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	// Optional bearer token for control-socket authentication.
+	AuthToken string `protobuf:"bytes,2,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
 	// Types that are valid to be assigned to Command:
 	//
 	//	*ControlRequest_Key
@@ -81,6 +82,13 @@ func (*ControlRequest) Descriptor() ([]byte, []int) {
 func (x *ControlRequest) GetType() string {
 	if x != nil {
 		return x.Type
+	}
+	return ""
+}
+
+func (x *ControlRequest) GetAuthToken() string {
+	if x != nil {
+		return x.AuthToken
 	}
 	return ""
 }
@@ -1266,9 +1274,11 @@ var File_control_proto protoreflect.FileDescriptor
 
 const file_control_proto_rawDesc = "" +
 	"\n" +
-	"\rcontrol.proto\x12\rvz.control.v1\"\x9e\x06\n" +
+	"\rcontrol.proto\x12\rvz.control.v1\"\xbd\x06\n" +
 	"\x0eControlRequest\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12-\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1d\n" +
+	"\n" +
+	"auth_token\x18\x02 \x01(\tR\tauthToken\x12-\n" +
 	"\x03key\x18\n" +
 	" \x01(\v2\x19.vz.control.v1.KeyCommandH\x00R\x03key\x123\n" +
 	"\x05mouse\x18\v \x01(\v2\x1b.vz.control.v1.MouseCommandH\x00R\x05mouse\x120\n" +
