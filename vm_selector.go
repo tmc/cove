@@ -12,6 +12,17 @@ import (
 	"github.com/tmc/apple/objectivec"
 )
 
+// VM selector window dimensions.
+const (
+	selectorWindowWidth  = 540
+	selectorWindowHeight = 400
+	selectorMinWidth     = 400
+	selectorMinHeight    = 300
+	selectorTableHeight  = 340
+	selectorBarHeight    = 50
+	selectorButtonHeight = 30
+)
+
 // VMSelector displays a native macOS window with a table of VMs.
 type VMSelector struct {
 	window     appkit.NSWindow
@@ -75,7 +86,7 @@ func (s *VMSelector) registerDelegate() {
 func (s *VMSelector) buildWindow() {
 	contentRect := corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 200, Y: 200},
-		Size:   corefoundation.CGSize{Width: 540, Height: 400},
+		Size:   corefoundation.CGSize{Width: selectorWindowWidth, Height: selectorWindowHeight},
 	}
 	s.window = appkit.NewWindowWithContentRectStyleMaskBackingDefer(
 		contentRect,
@@ -87,13 +98,13 @@ func (s *VMSelector) buildWindow() {
 		false,
 	)
 	s.window.SetTitle("vz-macos")
-	s.window.SetMinSize(corefoundation.CGSize{Width: 400, Height: 300})
+	s.window.SetMinSize(corefoundation.CGSize{Width: selectorMinWidth, Height: selectorMinHeight})
 	s.window.Center()
 	objc.Send[objc.ID](s.window.ID, objc.Sel("setReleasedWhenClosed:"), false)
 
 	// Build the table view
 	tableFrame := corefoundation.CGRect{
-		Size: corefoundation.CGSize{Width: 540, Height: 340},
+		Size: corefoundation.CGSize{Width: selectorWindowWidth, Height: selectorTableHeight},
 	}
 	s.tableView = appkit.NewTableViewWithFrame(tableFrame)
 	objc.Send[objc.ID](s.tableView.ID, objc.Sel("retain"))
@@ -118,8 +129,8 @@ func (s *VMSelector) buildWindow() {
 
 	// Wrap table in scroll view
 	scrollView := appkit.NewScrollViewWithFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 0, Y: 50},
-		Size:   corefoundation.CGSize{Width: 540, Height: 350},
+		Origin: corefoundation.CGPoint{X: 0, Y: selectorBarHeight},
+		Size:   corefoundation.CGSize{Width: selectorWindowWidth, Height: selectorWindowHeight - selectorBarHeight},
 	})
 	objc.Send[objc.ID](scrollView.ID, objc.Sel("retain"))
 	objc.Send[objc.ID](scrollView.ID, objc.Sel("setDocumentView:"), s.tableView.ID)
@@ -168,7 +179,7 @@ func (s *VMSelector) addColumn(identifier, title string, width float64, resizabl
 func (s *VMSelector) buildButtonBar() objc.ID {
 	barFrame := corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 0, Y: 0},
-		Size:   corefoundation.CGSize{Width: 540, Height: 50},
+		Size:   corefoundation.CGSize{Width: selectorWindowWidth, Height: selectorBarHeight},
 	}
 	bar := appkit.NewViewWithFrame(barFrame)
 	objc.Send[objc.ID](bar.ID, objc.Sel("retain"))
@@ -181,7 +192,7 @@ func (s *VMSelector) buildButtonBar() objc.ID {
 	newBtn := appkit.NewButtonWithTitleTargetAction("+ New VM...", target, objc.Sel("createVM:"))
 	newBtn.SetFrame(corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 12, Y: 10},
-		Size:   corefoundation.CGSize{Width: 100, Height: 30},
+		Size:   corefoundation.CGSize{Width: 100, Height: selectorButtonHeight},
 	})
 	objc.Send[objc.ID](newBtn.ID, objc.Sel("setBezelStyle:"), int(1)) // NSBezelStyleRounded
 	objc.Send[objc.ID](bar.ID, objc.Sel("addSubview:"), newBtn.ID)
@@ -189,8 +200,8 @@ func (s *VMSelector) buildButtonBar() objc.ID {
 	// "Run" button (right-aligned, default button)
 	s.runButton = appkit.NewButtonWithTitleTargetAction("Run", target, objc.Sel("runVM:"))
 	s.runButton.SetFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 540 - 12 - 80, Y: 10},
-		Size:   corefoundation.CGSize{Width: 80, Height: 30},
+		Origin: corefoundation.CGPoint{X: selectorWindowWidth - 12 - 80, Y: 10},
+		Size:   corefoundation.CGSize{Width: 80, Height: selectorButtonHeight},
 	})
 	objc.Send[objc.ID](s.runButton.ID, objc.Sel("setBezelStyle:"), int(1))
 	objc.Send[objc.ID](s.runButton.ID, objc.Sel("setKeyEquivalent:"), objc.String("\r"))
@@ -201,8 +212,8 @@ func (s *VMSelector) buildButtonBar() objc.ID {
 	// "Delete" button (right-aligned, before Run)
 	s.delButton = appkit.NewButtonWithTitleTargetAction("Delete", target, objc.Sel("deleteVM:"))
 	s.delButton.SetFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 540 - 12 - 80 - 8 - 80, Y: 10},
-		Size:   corefoundation.CGSize{Width: 80, Height: 30},
+		Origin: corefoundation.CGPoint{X: selectorWindowWidth - 12 - 80 - 8 - 80, Y: 10},
+		Size:   corefoundation.CGSize{Width: 80, Height: selectorButtonHeight},
 	})
 	objc.Send[objc.ID](s.delButton.ID, objc.Sel("setBezelStyle:"), int(1))
 	objc.Send[objc.ID](s.delButton.ID, objc.Sel("setAutoresizingMask:"), uint(4))

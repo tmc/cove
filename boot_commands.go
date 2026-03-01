@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -261,7 +262,10 @@ func (e *BootCommandExecutor) saveScreenshot() error {
 		return fmt.Errorf("no screenshot available")
 	}
 	if e.ocr != nil {
-		observations, _ := e.ocr.RecognizeText(img)
+		observations, err := e.ocr.RecognizeText(img)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: OCR recognition failed: %v\n", err)
+		}
 		saveOCRDebugScreenshot(img, observations, e.debugDir, "boot-cmd")
 	}
 	return nil

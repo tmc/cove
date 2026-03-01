@@ -135,6 +135,12 @@ var utmAuxStoragePath string
 // appFinishedLaunching guards against calling FinishLaunching more than once.
 var appFinishedLaunching bool
 
+// Default VM window dimensions.
+const (
+	defaultWindowWidth  = 1024
+	defaultWindowHeight = 768
+)
+
 // runMacOSVM runs a macOS VM with the configured settings.
 func runMacOSVM() error {
 	fmt.Println("=== macOS VM Runner ===")
@@ -1142,7 +1148,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// Create window with proper frame
 	contentRect := corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 100, Y: 100},
-		Size:   corefoundation.CGSize{Width: 1024, Height: 768},
+		Size:   corefoundation.CGSize{Width: defaultWindowWidth, Height: defaultWindowHeight},
 	}
 	window := appkit.NewWindowWithContentRectStyleMaskBackingDefer(
 		contentRect,

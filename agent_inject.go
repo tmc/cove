@@ -97,7 +97,10 @@ func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pend
 			pendingInstall{Src: tmpPlist, Dest: plistPath, Mode: 0644},
 		)
 
-		info, _ := os.Stat(tmpBinary)
+		info, err := os.Stat(tmpBinary)
+		if err != nil {
+			return fmt.Errorf("stat agent binary: %w", err)
+		}
 		fmt.Printf("Staged: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, info.Size())
 		fmt.Printf("Staged: %s\n", plistPath)
 		return nil
@@ -222,7 +225,10 @@ func injectAgentOnly() error {
 		}
 	}
 
-	info, _ := os.Stat(binPath)
+	info, err := os.Stat(binPath)
+	if err != nil {
+		return fmt.Errorf("stat installed agent binary: %w", err)
+	}
 	fmt.Printf("Written: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, info.Size())
 	fmt.Printf("Written: %s\n", plistPath)
 

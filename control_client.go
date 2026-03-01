@@ -283,7 +283,7 @@ func (c *ControlClient) WaitForConnection(timeout time.Duration) error {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return fmt.Errorf("timeout waiting for control socket: %v", lastErr)
+	return fmt.Errorf("timeout waiting for control socket: %w", lastErr)
 }
 
 // DetectScreen takes a screenshot and analyzes it to detect the current screen state

@@ -84,7 +84,9 @@ func CreateRecoveryDisk(path string) error {
 		return fmt.Errorf("could not find device in hdiutil output: %s", string(attachOut))
 	}
 	if mountPoint == "" {
-		exec.Command("hdiutil", "detach", device).Run()
+		if detachErr := exec.Command("hdiutil", "detach", device).Run(); detachErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: detach %s: %v\n", device, detachErr)
+		}
 		os.Remove(dmgPath)
 		return fmt.Errorf("could not find mount point in hdiutil output: %s", string(attachOut))
 	}
@@ -100,7 +102,9 @@ func CreateRecoveryDisk(path string) error {
 	for name, content := range scripts {
 		filePath := filepath.Join(mountPoint, name)
 		if err := os.WriteFile(filePath, []byte(content), 0755); err != nil {
-			exec.Command("hdiutil", "detach", device).Run()
+			if detachErr := exec.Command("hdiutil", "detach", device).Run(); detachErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: detach %s: %v\n", device, detachErr)
+			}
 			os.Remove(dmgPath)
 			return fmt.Errorf("write %s: %w", name, err)
 		}
@@ -109,7 +113,9 @@ func CreateRecoveryDisk(path string) error {
 	// Detach the disk
 	if out, err := exec.Command("hdiutil", "detach", device).CombinedOutput(); err != nil {
 		// Try force detach
-		exec.Command("hdiutil", "detach", device, "-force").Run()
+		if forceErr := exec.Command("hdiutil", "detach", device, "-force").Run(); forceErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: force detach %s: %v\n", device, forceErr)
+		}
 		fmt.Printf("Warning: detach: %s\n", string(out))
 	}
 

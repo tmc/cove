@@ -132,7 +132,10 @@ func (s *SetupAssistant) navigateSetupAssistant() error {
 	for step := 0; step < 50; step++ { // Max 50 steps to prevent infinite loop
 		s.saveDebugScreenshot(fmt.Sprintf("step_%02d", step))
 
-		state, _ := s.detectCurrentScreen()
+		state, err := s.detectCurrentScreen()
+		if err != nil {
+			s.log("Warning: screen detection failed: %v", err)
+		}
 		s.log("Step %d: screen=%s", step, state)
 
 		if state == ScreenStateDesktop {
@@ -146,9 +149,12 @@ func (s *SetupAssistant) navigateSetupAssistant() error {
 		}
 
 		// Detect Setup Assistant page type
-		img, _ := s.client.Screenshot()
+		img, screenshotErr := s.client.Screenshot()
+		if screenshotErr != nil {
+			s.log("Warning: screenshot failed: %v", screenshotErr)
+		}
 		if img == nil {
-			s.log("Warning: failed to get screenshot")
+			s.log("Warning: no screenshot available")
 			time.Sleep(time.Second)
 			continue
 		}
@@ -384,7 +390,10 @@ func (s *SetupAssistant) genericNavigate() {
 	time.Sleep(300 * time.Millisecond)
 
 	// Take another screenshot to check if we advanced
-	newImg, _ := s.client.Screenshot()
+	newImg, err := s.client.Screenshot()
+	if err != nil {
+		s.log("Warning: screenshot failed during navigation: %v", err)
+	}
 	if newImg != nil {
 		newPage := DetectSetupAssistantPage(newImg)
 		if newPage != "unknown" {
@@ -409,7 +418,10 @@ func (s *SetupAssistant) attemptRecovery(step int) bool {
 	s.pressKey(KeyCodeEscape)
 	time.Sleep(500 * time.Millisecond)
 
-	img, _ := s.client.Screenshot()
+	img, err := s.client.Screenshot()
+	if err != nil {
+		s.log("Warning: screenshot failed during recovery: %v", err)
+	}
 	if img != nil {
 		state := DetectScreenState(img)
 		if state == ScreenStateDesktop || state == ScreenStateLoginScreen {
