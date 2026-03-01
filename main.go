@@ -374,7 +374,8 @@ func main() {
 			}
 			return
 		case "provision":
-			if err := setupProvisioning(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: 'provision' command is deprecated, use 'inject' instead\n")
+			if err := handleProvision(args); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -522,7 +523,7 @@ Commands:
   run         Run a VM (macOS by default, -linux for Linux)
   list        List available VMs and templates
   menubar     Run as a menubar app for VM control
-  provision   Setup provisioning directory for auto-user-creation (deprecated)
+  provision   (deprecated: use 'inject' instead)
   inject      Inject provisioning files directly into VM disk (self-contained)
   verify      Verify provisioning files in VM disk (check ownership, existence)
   clean       Remove VM files (disk, aux, hw.model, machine.id)
