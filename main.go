@@ -22,7 +22,7 @@ var (
 	guiMode     bool
 	useCurl     bool
 	linuxMode   bool
-	cpuCount uint
+	cpuCount    uint
 	memoryGB    uint64
 	diskPath    string
 	diskSizeGB  uint64
@@ -332,6 +332,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "uiscript":
+			if err := uiscriptCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
@@ -534,6 +540,8 @@ Commands:
   disk-detach Detach VM disk if stuck from a previous inject/verify
   sip         SIP management (disable/enable/status)
   recovery-disk Create recovery tools disk (FAT32 with csrutil scripts)
+  vzscript    Run guest-agent scripts (rsc.io/script + txtar)
+  uiscript    Run OCR-driven UI automation scripts (rsc.io/script + txtar)
 
 Auto-Provisioning (Recommended - inject command):
   Inject user provisioning directly into VM disk (no VirtioFS needed):
@@ -869,13 +877,11 @@ Snapshots are saved to ~/.vz/vms/<vmname>/snapshots/
 For save/restore operations, the VM must be running and you must use
 the control socket. Example:
 
-  # Save snapshot via control socket
-  echo '{"type":"snapshot","data":{"action":"save","name":"checkpoint1"}}' | \
-    nc -U ~/.vz/vms/default/control.sock
+  # Save snapshot (ctl auto-loads control.token)
+  vz-macos ctl snapshot save checkpoint1
 
-  # Restore snapshot via control socket
-  echo '{"type":"snapshot","data":{"action":"restore","name":"checkpoint1"}}' | \
-    nc -U ~/.vz/vms/default/control.sock`)
+  # Restore snapshot
+  vz-macos ctl snapshot restore checkpoint1`)
 		os.Exit(1)
 	}
 
@@ -916,9 +922,8 @@ the control socket. Example:
 
 	case "save", "restore":
 		fmt.Fprintln(os.Stderr, "Save/restore operations require a running VM.")
-		fmt.Fprintln(os.Stderr, "Use the control socket to save/restore:")
-		fmt.Fprintf(os.Stderr, "\n  echo '{\"type\":\"snapshot\",\"data\":{\"action\":\"%s\",\"name\":\"%s\"}}' | \\\n    nc -U %s\n\n",
-			subcmd, "your-snapshot-name", GetControlSocketPath())
+		fmt.Fprintf(os.Stderr, "Use ctl:\n\n  vz-macos ctl snapshot %s %s\n\n",
+			subcmd, "your-snapshot-name")
 		os.Exit(1)
 
 	default:

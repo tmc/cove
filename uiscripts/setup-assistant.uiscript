@@ -1,0 +1,57 @@
+# setup-assistant — Navigate macOS Setup Assistant to desktop
+
+# Wait for the VM to boot and show Setup Assistant
+ocr-wait Continue 120s
+screenshot
+
+# Hello screen
+ocr-click Continue
+wait 2s
+
+# Language — accept default (English)
+[page:language] key return
+[!page:language] wait 500ms
+wait 2s
+
+# Country/Region — accept default
+[page:country_region] key return
+[!page:country_region] wait 500ms
+wait 2s
+
+# Accessibility — skip
+? ocr-click 'Not Now' 5s
+wait 2s
+
+# Privacy
+? ocr-click Continue 5s
+wait 2s
+
+# Migration Assistant — skip
+? ocr-click 'Not Now' 5s
+wait 2s
+
+# Apple ID — skip
+? ocr-click 'Set Up Later' 5s
+wait 1s
+? ocr-click Skip 3s
+wait 2s
+
+# Terms and Conditions
+? ocr-click Agree 5s
+wait 1s
+? ocr-click Agree 3s
+wait 2s
+
+# Account creation is handled separately via setup-user.uiscript
+# since it requires $USERNAME and $PASSWORD environment variables.
+
+# Skip remaining screens with generic Continue/Return
+? ocr-click Continue 5s
+wait 2s
+? ocr-click Continue 5s
+wait 2s
+? ocr-click Continue 5s
+wait 2s
+
+detect-screen
+stdout desktop

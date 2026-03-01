@@ -1,0 +1,18 @@
+# login — Log in at the macOS login screen
+
+# Requires $PASSWORD environment variable.
+# Optionally set $USERNAME to click a specific user first.
+
+ocr-wait 'Enter Password' 30s
+
+# If username is set, click it first
+[text-visible:$USERNAME] ocr-click $USERNAME
+[text-visible:$USERNAME] wait 1s
+
+type $PASSWORD
+wait 500ms
+key return
+wait 5s
+
+detect-screen
+stdout desktop

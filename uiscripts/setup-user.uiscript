@@ -1,0 +1,43 @@
+# setup-user — Create a user account in Setup Assistant
+
+# Requires $FULLNAME, $USERNAME, and $PASSWORD environment variables.
+# Run after setup-assistant reaches the user account screen.
+
+ocr-wait 'Full Name' 30s
+screenshot
+
+# Click Full Name field and type
+ocr-click 'Full Name'
+wait 500ms
+type $FULLNAME
+wait 500ms
+
+# Tab to Account Name
+key tab
+wait 500ms
+key cmd+a
+wait 200ms
+type $USERNAME
+wait 500ms
+
+# Tab to Password
+key tab
+wait 500ms
+type $PASSWORD
+wait 500ms
+
+# Tab to Verify Password
+key tab
+wait 500ms
+type $PASSWORD
+wait 500ms
+
+# Skip hint, click Continue
+key tab
+wait 200ms
+? ocr-click Continue 3s
+[!text-visible:Continue] key return
+wait 3s
+
+screenshot
+detect-page
