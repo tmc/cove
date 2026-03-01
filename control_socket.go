@@ -55,9 +55,12 @@ type ControlServer struct {
 	vmQueue        dispatch.Queue
 	mu             sync.Mutex
 	agentMu        sync.Mutex // separate mutex for agent operations (can be long-running)
+	screenshotMu   sync.Mutex // protects lastScreenshot for diff mode
 	running        bool
 	lastScreenshot image.Image  // For diff mode
 	agent          *AgentClient // GRPC client to guest agent (nil until connected)
+	windowNum         int // cached window number for thread-safe screenshot
+	viewContentHeight int // cached view content height in pixels (excludes title bar)
 }
 
 // NewControlServer creates a new control server
@@ -89,6 +92,13 @@ func (s *ControlServer) SetVMViewWithWindow(view vz.VZVirtualMachineView, window
 	defer s.mu.Unlock()
 	s.vmView = view
 	s.window = window
+	// Cache window number for thread-safe access (avoids main-thread dispatch).
+	s.windowNum = int(window.WindowNumber())
+	// Cache view content height for title bar cropping in screenshots.
+	// This runs on the main thread so we can safely read NSView bounds.
+	s.viewContentHeight = int(vmViewAsNSView(view).Bounds().Size.Height)
+	fmt.Printf("[control] SetVMViewWithWindow: vmView=%x window=%x windowNum=%d viewH=%d verbose=%v\n",
+		view.ID, window.ID, s.windowNum, s.viewContentHeight, verbose)
 }
 
 // SetVM sets the VM and dispatch queue for lifecycle operations (pause/resume/stop)
@@ -209,9 +219,9 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return resp
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// Handle lock-free commands first. These use thread-safe APIs
+	// (CGWindowListCreateImage, VM state queries) and must not block
+	// behind the mutex — otherwise a slow screenshot holds up ping/status.
 	switch req.Type {
 	case "screenshot":
 		cmd := req.GetScreenshot()
@@ -219,6 +229,18 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 			cmd = &controlpb.ScreenshotCommand{}
 		}
 		return s.takeScreenshotWithOptions(cmd)
+	case "ping":
+		return &controlpb.ControlResponse{Success: true, Data: "pong"}
+	case "status":
+		return s.getVMStatus()
+	case "capabilities":
+		return s.getCapabilities()
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch req.Type {
 	case "key":
 		cmd := req.GetKey()
 		if cmd == nil {
@@ -236,13 +258,8 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		if cmd == nil {
 			return &controlpb.ControlResponse{Error: "missing text command payload"}
 		}
+		// Use CGEvent typing via window server (same path as real keyboard input).
 		return s.typeText(cmd)
-	case "ping":
-		return &controlpb.ControlResponse{Success: true, Data: "pong"}
-	case "status":
-		return s.getVMStatus()
-	case "capabilities":
-		return s.getCapabilities()
 	case "pause":
 		return s.pauseVM()
 	case "resume":
@@ -475,13 +492,13 @@ func (s *ControlServer) sendKeyEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 		return &controlpb.ControlResponse{Error: "keyboard input requires GUI mode (run with -gui)"}
 	}
 
-	// Use the NSEvent path by default — this calls VZVirtualMachineView's
-	// keyDown:/keyUp: directly via objc.Send, which internally converts
-	// the NSEvent to HID format for the VM.
-	if !cmd.UseCgEvent {
-		return s.sendKeyEventNSEvent(cmd)
+	// Use the NSEvent path by default — creates a CGEvent (for correct
+	// keyCodes on ARM64), converts to NSEvent, and delivers via
+	// VZVirtualMachineView's keyDown:/keyUp: directly.
+	if cmd.UseCgEvent {
+		return s.sendKeyEventCGEvent(cmd)
 	}
-	return s.sendKeyEventCGEvent(cmd)
+	return s.sendKeyEventNSEvent(cmd)
 }
 
 // macKeycodeToHIDUsage maps macOS virtual keycodes to USB HID usage IDs.
@@ -648,12 +665,15 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 		CGEventSetFlags(event, uint64(cmd.Modifiers))
 	}
 
-	// Post through the system HID event tap so events travel the same
-	// path as real keyboard input (window server → focused app → key window).
+	// Try both delivery methods: first activate the app, then post through
+	// the HID event tap (window server path). Also post to PID as fallback.
 	if err := ensureCGInit(); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CG: %v", err)}
 	}
 	cgEventPost(kCGHIDEventTap, event)
+	if verbose {
+		fmt.Printf("[key-cgevent] posted keyCode=%d down=%v via kCGHIDEventTap\n", cmd.KeyCode, cmd.KeyDown)
+	}
 
 	return &controlpb.ControlResponse{Success: true}
 }
@@ -661,13 +681,19 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 // sendKeyEventNSEvent uses AppKit NSEvent for view-level keyboard injection.
 // All AppKit calls are dispatched to the main thread.
 func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	var eventType appkit.NSEventType
-	if cmd.KeyDown {
-		eventType = appkit.NSEventTypeKeyDown
-	} else {
-		eventType = appkit.NSEventTypeKeyUp
+	// Create a CGEvent with the correct virtual keycode. CGEventCreateKeyboardEvent
+	// is a C function registered via purego.RegisterLibFunc, which handles uint16
+	// argument passing correctly (unlike objc.Send which has ARM64 stack-passing bugs
+	// for arguments beyond position 8).
+	cgEvent, err := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("create CGEvent: %v", err)}
+	}
+	if cgEvent == 0 {
+		return &controlpb.ControlResponse{Error: "CGEventCreateKeyboardEvent returned nil"}
 	}
 
+	// Set Unicode string on the CGEvent for character input.
 	chars := cmd.Character
 	if chars == "" {
 		switch cmd.KeyCode {
@@ -681,62 +707,53 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 			chars = "\x1b"
 		case 49:
 			chars = " "
-		case 126:
-			chars = "\x1b[A"
-		case 125:
-			chars = "\x1b[B"
-		case 124:
-			chars = "\x1b[C"
-		case 123:
-			chars = "\x1b[D"
-		default:
-			chars = ""
 		}
 	}
+	if chars != "" {
+		CGEventKeyboardSetUnicodeString(cgEvent, chars)
+	}
 
-	// All AppKit calls must happen on the main thread.
+	// Set modifier flags if specified.
+	if cmd.Modifiers != 0 {
+		CGEventSetFlags(cgEvent, uint64(cmd.Modifiers))
+	}
+
+	// Convert CGEvent to NSEvent and deliver to VZVirtualMachineView on the main thread.
 	var resp *controlpb.ControlResponse
 	done := make(chan struct{})
 	DispatchAsync(GetMainDispatchQueue(), func() {
 		defer close(done)
-		windowNumber := s.window.WindowNumber()
 
-		iEvent := appkit.GetNSEventClass().KeyEventWithTypeLocationModifierFlagsTimestampWindowNumberContextCharactersCharactersIgnoringModifiersIsARepeatKeyCode(
-			eventType,
-			corefoundation.CGPoint{X: 0, Y: 0},
-			appkit.NSEventModifierFlags(cmd.Modifiers),
-			0.0,
-			int(windowNumber),
-			nil,
-			chars,
-			chars,
-			false,
-			uint16(cmd.KeyCode),
+		// Convert CGEvent → NSEvent via +[NSEvent eventWithCGEvent:]
+		eventID := objc.Send[objc.ID](
+			objc.ID(objc.GetClass("NSEvent")),
+			objc.Sel("eventWithCGEvent:"),
+			uintptr(cgEvent),
 		)
-
-		event := appkit.NSEventFromID(iEvent.GetID())
-		if event.ID == 0 {
-			resp = &controlpb.ControlResponse{Error: "failed to create NSEvent"}
+		if eventID == 0 {
+			resp = &controlpb.ControlResponse{Error: "NSEvent eventWithCGEvent: returned nil"}
 			return
 		}
+		event := appkit.NSEventFromID(eventID)
 
-		// Make sure the VM view is first responder so keyDown: routes correctly.
+		// Make sure the VM view is first responder.
 		s.window.MakeKeyAndOrderFront(nil)
 		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
 
-		// Call keyDown:/keyUp: directly on the VZVirtualMachineView object
-		// via objc.Send to ensure we hit the VZ override (not NSResponder's
-		// default). VZVirtualMachineView.keyDown: internally converts the
-		// NSEvent to HID format and calls sendKeyboardEvents:keyboardID:.
+		actualKeyCode := event.KeyCode()
 		if verbose {
-			fmt.Printf("[key-nsevent] vmView=%x keyCode=%d down=%v chars=%q\n",
-				s.vmView.ID, cmd.KeyCode, cmd.KeyDown, chars)
+			fmt.Printf("[key-nsevent] vmView=%x keyCode=%d actualKeyCode=%d down=%v chars=%q\n",
+				s.vmView.ID, cmd.KeyCode, actualKeyCode, cmd.KeyDown, chars)
 		}
+
+		// Route through VZVirtualMachineView's keyDown:/keyUp: directly,
+		// matching the pattern used for mouse events (mouseDown:/mouseUp:).
 		if cmd.KeyDown {
 			objc.Send[struct{}](s.vmView.ID, objc.Sel("keyDown:"), event.ID)
 		} else {
 			objc.Send[struct{}](s.vmView.ID, objc.Sel("keyUp:"), event.ID)
 		}
+
 		if verbose {
 			fmt.Printf("[key-nsevent] sent successfully\n")
 		}
@@ -801,18 +818,27 @@ func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *con
 		// Calculate view-local coordinates.
 		// Callers use top-left origin (x=0,y=0 is top-left, normalized 0-1).
 		// NSEvent locationInWindow uses bottom-left origin, so we flip Y.
+		//
+		// The NSView bounds height (800) includes the title bar area, but
+		// callers send normalized coordinates relative to the VM content area
+		// (768px, matching the cropped screenshot). Map Y against the content
+		// height so OCR coordinates translate correctly to click targets.
+		contentH := float64(s.viewContentHeight)
+		if contentH <= 0 {
+			contentH = bounds.Size.Height // fallback if not set
+		}
 		var viewX, viewY float64
 		if cmd.Absolute {
 			viewX = cmd.X
-			viewY = bounds.Size.Height - cmd.Y
+			viewY = contentH - cmd.Y
 		} else {
 			viewX = cmd.X * bounds.Size.Width
-			viewY = (1.0 - cmd.Y) * bounds.Size.Height
+			viewY = (1.0 - cmd.Y) * contentH
 		}
 
 		if verbose {
-			fmt.Printf("[mouse-direct] bounds=%.0fx%.0f input=(%.3f,%.3f) view=(%.1f,%.1f) action=%s\n",
-				bounds.Size.Width, bounds.Size.Height, cmd.X, cmd.Y, viewX, viewY, cmd.Action)
+			fmt.Printf("[mouse-direct] bounds=%.0fx%.0f contentH=%.0f input=(%.3f,%.3f) view=(%.1f,%.1f) action=%s\n",
+				bounds.Size.Width, bounds.Size.Height, contentH, cmd.X, cmd.Y, viewX, viewY, cmd.Action)
 		}
 
 		location := corefoundation.CGPoint{X: viewX, Y: viewY}
@@ -963,124 +989,125 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 	return &controlpb.ControlResponse{Success: true}
 }
 
-// typeText types a string of text character by character using CGEvent
-// with Unicode string support. Each character is posted from the main
-// thread with a run loop pump between characters so the virtualization
-// framework can process each event.
+// typeText types text into the VM character by character. Each character is
+// mapped to its macOS virtual keycode and sent via sendKeyEventNSEvent which
+// creates CGEvents (for correct keyCodes) and delivers them as NSEvents
+// directly to VZVirtualMachineView's keyDown:/keyUp: handlers.
 func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlResponse {
 	if s.vmView.ID == 0 || s.window.ID == 0 {
 		return &controlpb.ControlResponse{Error: "text input requires GUI mode (run with -gui)"}
 	}
 
-	// Type one character at a time on the main thread.
-	// Between characters, return to the caller and re-dispatch, giving
-	// the run loop a chance to deliver the posted event.
-	chars := []rune(cmd.Text)
+	fmt.Printf("[typeText] typing %d chars: %q\n", len([]rune(cmd.Text)), cmd.Text)
 
-	// First: activate and focus the VM window.
-	done := make(chan struct{})
-	DispatchAsync(GetMainDispatchQueue(), func() {
-		defer close(done)
-		app := appkit.GetNSApplicationClass().SharedApplication()
-		app.Activate()
-		s.window.MakeKeyAndOrderFront(nil)
-		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
-	})
-	<-done
-	time.Sleep(100 * time.Millisecond)
-
-	// Now type each character, dispatching to main thread for each one.
-	for _, char := range chars {
-		ch := char
-		charDone := make(chan error, 1)
-		DispatchAsync(GetMainDispatchQueue(), func() {
-			eventDown, err := CGEventCreateKeyboardEvent(0, 0, true)
-			if err != nil {
-				charDone <- fmt.Errorf("init CGEvent: %w", err)
-				return
-			}
-			if eventDown == 0 {
-				charDone <- fmt.Errorf("create key down event for %q", ch)
-				return
-			}
-			CGEventKeyboardSetUnicodeString(eventDown, string(ch))
-			cgEventPost(kCGHIDEventTap, eventDown)
-			corefoundation.CFRelease(corefoundation.CFTypeRef(eventDown))
-
-			eventUp, err := CGEventCreateKeyboardEvent(0, 0, false)
-			if err != nil {
-				charDone <- fmt.Errorf("init CGEvent: %w", err)
-				return
-			}
-			if eventUp == 0 {
-				charDone <- fmt.Errorf("create key up event for %q", ch)
-				return
-			}
-			CGEventKeyboardSetUnicodeString(eventUp, string(ch))
-			cgEventPost(kCGHIDEventTap, eventUp)
-			corefoundation.CFRelease(corefoundation.CFTypeRef(eventUp))
-
-			charDone <- nil
-		})
-		if err := <-charDone; err != nil {
-			return &controlpb.ControlResponse{Error: err.Error()}
+	for _, ch := range cmd.Text {
+		info, ok := charToKeyCode[ch]
+		if !ok {
+			fmt.Printf("[typeText] no keycode for %q, skipping\n", ch)
+			continue
 		}
-		// Give the run loop time to deliver the event to VZVirtualMachineView.
+
+		var mods uint32
+		if info.shift {
+			mods = uint32(ModifierShift)
+		}
+
+		downCmd := &controlpb.KeyCommand{
+			KeyCode:   uint32(info.keyCode),
+			KeyDown:   true,
+			Modifiers: mods,
+			Character: string(ch),
+		}
+		s.sendKeyEventNSEvent(downCmd)
+		time.Sleep(30 * time.Millisecond)
+
+		upCmd := &controlpb.KeyCommand{
+			KeyCode:   uint32(info.keyCode),
+			KeyDown:   false,
+			Modifiers: mods,
+			Character: string(ch),
+		}
+		s.sendKeyEventNSEvent(upCmd)
 		time.Sleep(50 * time.Millisecond)
 	}
 
+	fmt.Printf("[typeText] done typing %q\n", cmd.Text)
 	return &controlpb.ControlResponse{Success: true}
 }
 
-// pasteText sets the system pasteboard content and sends Cmd+V to paste into the VM.
-// This is the most reliable text input method since it bypasses keycode translation.
+// pasteText types text into the VM character by character by posting
+// NSEvents to the window. This uses NSWindow.postEvent:atStart: which
+// routes events through the normal AppKit dispatch pipeline — the same
+// path as real keyboard input from the user.
 func (s *ControlServer) pasteText(text string) {
-	if s.vmView.ID == 0 || s.window.ID == 0 {
-		if verbose {
-			fmt.Printf("[paste] GUI not available, falling back to typeText\n")
-		}
-		s.typeText(&controlpb.TextCommand{Text: text})
-		return
-	}
+	// Use clipboard paste: set NSPasteboard, then Cmd+V.
+	// SPICE clipboard sharing forwards the host pasteboard to the guest.
+	fmt.Printf("[pasteText] pasting %d chars via clipboard+Cmd+V: %q\n", len([]rune(text)), text)
 
-	// Set pasteboard content on main thread.
+	// Step 1: Set the system pasteboard on the main thread.
 	done := make(chan struct{})
 	DispatchAsync(GetMainDispatchQueue(), func() {
 		defer close(done)
-		pb := objc.Send[objc.ID](
-			objc.ID(objc.GetClass("NSPasteboard")),
-			objc.Sel("generalPasteboard"),
-		)
-		objc.Send[objc.ID](pb, objc.Sel("clearContents"))
-		objc.Send[bool](pb, objc.Sel("setString:forType:"),
-			objc.String(text),
-			objc.String("public.utf8-plain-text"),
-		)
-
-		// Activate window
-		app := appkit.GetNSApplicationClass().SharedApplication()
-		app.Activate()
-		s.window.MakeKeyAndOrderFront(nil)
-		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
+		pb := appkit.GetNSPasteboardClass().GeneralPasteboard()
+		pb.ClearContents()
+		ok := pb.SetStringForType(text, appkit.NSPasteboardTypeString)
+		fmt.Printf("[pasteText] clipboard set to %q (ok=%v)\n", text, ok)
 	})
 	<-done
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
-	// Send Cmd+V
-	s.sendKeyEvent(&controlpb.KeyCommand{
-		KeyCode:    9, // 'v'
-		KeyDown:    true,
-		Modifiers:  uint32(ModifierCommand),
-		UseCgEvent: true,
-	})
+	// Step 2: Send Cmd+V via NSEvent to paste.
+	cmdV := &controlpb.KeyCommand{
+		KeyCode:   9, // 'v' keycode
+		KeyDown:   true,
+		Modifiers: uint32(ModifierCommand),
+		Character: "v",
+	}
+	s.sendKeyEventNSEvent(cmdV)
 	time.Sleep(50 * time.Millisecond)
-	s.sendKeyEvent(&controlpb.KeyCommand{
-		KeyCode:    9,
-		KeyDown:    false,
-		Modifiers:  uint32(ModifierCommand),
-		UseCgEvent: true,
-	})
-	time.Sleep(100 * time.Millisecond)
+	cmdVUp := &controlpb.KeyCommand{
+		KeyCode:   9,
+		KeyDown:   false,
+		Modifiers: uint32(ModifierCommand),
+		Character: "v",
+	}
+	s.sendKeyEventNSEvent(cmdVUp)
+	time.Sleep(200 * time.Millisecond)
+
+	fmt.Printf("[pasteText] done pasting %q\n", text)
+}
+
+// charKeyCodeInfo holds keycode and shift state for a character.
+type charKeyCodeInfo struct {
+	keyCode uint16
+	shift   bool
+}
+
+// charToKeyCode maps ASCII characters to macOS virtual keycodes.
+var charToKeyCode = map[rune]charKeyCodeInfo{
+	'a': {0, false}, 'b': {11, false}, 'c': {8, false}, 'd': {2, false},
+	'e': {14, false}, 'f': {3, false}, 'g': {5, false}, 'h': {4, false},
+	'i': {34, false}, 'j': {38, false}, 'k': {40, false}, 'l': {37, false},
+	'm': {46, false}, 'n': {45, false}, 'o': {31, false}, 'p': {35, false},
+	'q': {12, false}, 'r': {15, false}, 's': {1, false}, 't': {17, false},
+	'u': {32, false}, 'v': {9, false}, 'w': {13, false}, 'x': {7, false},
+	'y': {16, false}, 'z': {6, false},
+	'A': {0, true}, 'B': {11, true}, 'C': {8, true}, 'D': {2, true},
+	'E': {14, true}, 'F': {3, true}, 'G': {5, true}, 'H': {4, true},
+	'I': {34, true}, 'J': {38, true}, 'K': {40, true}, 'L': {37, true},
+	'M': {46, true}, 'N': {45, true}, 'O': {31, true}, 'P': {35, true},
+	'Q': {12, true}, 'R': {15, true}, 'S': {1, true}, 'T': {17, true},
+	'U': {32, true}, 'V': {9, true}, 'W': {13, true}, 'X': {7, true},
+	'Y': {16, true}, 'Z': {6, true},
+	'0': {29, false}, '1': {18, false}, '2': {19, false}, '3': {20, false},
+	'4': {21, false}, '5': {23, false}, '6': {22, false}, '7': {26, false},
+	'8': {28, false}, '9': {25, false},
+	' ': {49, false}, '-': {27, false}, '=': {24, false}, '[': {33, false},
+	']': {30, false}, '\\': {42, false}, ';': {41, false}, '\'': {39, false},
+	',': {43, false}, '.': {47, false}, '/': {44, false}, '`': {50, false},
+	'!': {18, true}, '@': {19, true}, '#': {20, true}, '$': {21, true},
+	'%': {23, true}, '^': {22, true}, '&': {26, true}, '*': {28, true},
+	'(': {25, true}, ')': {29, true}, '_': {27, true}, '+': {24, true},
 }
 
 // GetControlSocketPath returns the default socket path

@@ -46,12 +46,12 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 
 	// Generate diff if requested and we have a previous screenshot
 	var outputImg image.Image = img
+	s.screenshotMu.Lock()
 	if opts.Diff && s.lastScreenshot != nil {
 		outputImg = generateDiff(s.lastScreenshot, img)
 	}
-
-	// Store current screenshot for future diffs
 	s.lastScreenshot = img
+	s.screenshotMu.Unlock()
 
 	// Scale image
 	if scale < 1 {
@@ -79,8 +79,8 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 		return nil, "window not set"
 	}
 
-	// Get window number - this should be safe to call from any thread
-	windowNum := s.window.WindowNumber()
+	// Use cached window number to avoid AppKit call from background thread.
+	windowNum := s.windowNum
 	if windowNum <= 0 {
 		return nil, fmt.Sprintf("invalid window number: %d", windowNum)
 	}
@@ -90,15 +90,20 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 	bounds := corefoundation.CGRect{} // CGRectNull
 
 	// CGWindowListOption: kCGWindowListOptionIncludingWindow = 1 << 3 = 8
-	// CGWindowImageOption: kCGWindowImageDefault = 0
+	// CGWindowImageOption: kCGWindowImageBoundsIgnoreFraming = 1
+	// Use BoundsIgnoreFraming to capture only the content area (no title bar),
+	// so OCR pixel coordinates map directly to VM view coordinates.
 	cgImage := coregraphics.CGWindowListCreateImage(
 		bounds,
-		coregraphics.CGWindowListOption(8), // kCGWindowListOptionIncludingWindow
+		coregraphics.CGWindowListOption(8),  // kCGWindowListOptionIncludingWindow
 		coregraphics.CGWindowID(windowNum),
-		coregraphics.CGWindowImageOption(0), // kCGWindowImageDefault
+		coregraphics.CGWindowImageOption(1), // kCGWindowImageBoundsIgnoreFraming
 	)
 
 	if cgImage == 0 {
+		if verbose {
+			fmt.Printf("[screenshot] CGWindowListCreateImage returned nil for windowNum=%d\n", windowNum)
+		}
 		return nil, "CGWindowListCreateImage returned nil"
 	}
 	defer coregraphics.CGImageRelease(cgImage)
@@ -106,6 +111,9 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 	// Get image dimensions
 	width := int(coregraphics.CGImageGetWidth(cgImage))
 	height := int(coregraphics.CGImageGetHeight(cgImage))
+	if verbose {
+		fmt.Printf("[screenshot] captured %dx%d from window %d\n", width, height, windowNum)
+	}
 
 	if width == 0 || height == 0 {
 		return nil, fmt.Sprintf("invalid image dimensions: %dx%d", width, height)
@@ -134,21 +142,41 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 	// Get bytes per row
 	bytesPerRow := int(coregraphics.CGImageGetBytesPerRow(cgImage))
 
-	// Convert to Go image - CGImage typically uses BGRA format
-	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
-	srcData := unsafe.Slice((*byte)(dataPtr), dataLength)
+	// Determine the title bar offset by comparing CGImage height to the
+	// VM view bounds. CGWindowListCreateImage captures the full window
+	// (including the title bar) even with kCGWindowImageBoundsIgnoreFraming.
+	// We crop to match the view content area so OCR pixel coordinates map
+	// directly to normalized mouse input coordinates.
+	// Crop title bar using cached view content height (set in SetVMViewWithWindow).
+	titleBarPx := 0
+	viewH := s.viewContentHeight
+	if viewH > 0 && height > viewH {
+		titleBarPx = height - viewH
+		if verbose {
+			fmt.Printf("[screenshot] cropping %dpx title bar (screenshot=%d, view=%d)\n",
+				titleBarPx, height, viewH)
+		}
+	}
 
-	for y := 0; y < height; y++ {
-		rowStart := y * bytesPerRow
+	contentHeight := height - titleBarPx
+
+	// Convert to Go image - CGImage typically uses BGRA format
+	rgba := image.NewRGBA(image.Rect(0, 0, width, contentHeight))
+	srcData := unsafe.Slice((*byte)(dataPtr), dataLength)
+	dstData := rgba.Pix
+
+	for y := 0; y < contentHeight; y++ {
+		srcRowStart := (y + titleBarPx) * bytesPerRow
+		dstRowStart := y * rgba.Stride
 		for x := 0; x < width; x++ {
-			pixelStart := rowStart + x*4
-			if pixelStart+3 < int(dataLength) {
+			srcPixel := srcRowStart + x*4
+			if srcPixel+3 < int(dataLength) {
+				dstPixel := dstRowStart + x*4
 				// BGRA to RGBA
-				b := srcData[pixelStart]
-				g := srcData[pixelStart+1]
-				r := srcData[pixelStart+2]
-				a := srcData[pixelStart+3]
-				rgba.SetRGBA(x, y, color.RGBA{r, g, b, a})
+				dstData[dstPixel] = srcData[srcPixel+2]   // R
+				dstData[dstPixel+1] = srcData[srcPixel+1] // G
+				dstData[dstPixel+2] = srcData[srcPixel]   // B
+				dstData[dstPixel+3] = srcData[srcPixel+3] // A
 			}
 		}
 	}
