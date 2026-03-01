@@ -11,8 +11,6 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
-	"github.com/tmc/apple/objc"
-	"github.com/tmc/vz-macos/internal/utils"
 	"github.com/tmc/apple/x/vzkit"
 )
 
@@ -54,21 +52,6 @@ func DispatchAsyncQueue(queue dispatch.Queue, fn func()) {
 	queue.Async(fn)
 }
 
-// runRunLoopOnce runs the main run loop briefly to process pending callbacks.
-func runRunLoopOnce() {
-	vzkit.RunRunLoopOnce()
-}
-
-// runRunLoopAggressively runs the run loop more aggressively for long-running operations.
-func runRunLoopAggressively() {
-	utils.RunRunLoopAggressively()
-}
-
-// printUnderlyingErrorDetails prints detailed information about an NSError and its underlying errors.
-func printUnderlyingErrorDetails(nsError objc.ID) {
-	vzkit.PrintNSErrorDetailed(nsError)
-}
-
 // printDetailedInstallError prints verbose error details for an installation failure.
 // It type-asserts the error back to *foundation.NSError (since NSErrorToError preserves
 // the type) and prints domain, code, failure reason, user info, and underlying errors.
@@ -79,7 +62,7 @@ func printDetailedInstallError(err error) {
 	var nsErr *foundation.NSError
 	if errors.As(err, &nsErr) && nsErr.ID != 0 {
 		fmt.Println()
-		printUnderlyingErrorDetails(nsErr.ID)
+		vzkit.PrintNSErrorDetailed(nsErr.ID)
 	}
 
 	// Query system log for recent Virtualization-related errors.

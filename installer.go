@@ -18,6 +18,7 @@ import (
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/symbols"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit"
 )
 
 // guiUpdate holds pending UI changes that background goroutines request.
@@ -853,7 +854,7 @@ func loadMacOSRestoreImageFromPath(imagePath string) (vz.VZMacOSRestoreImage, er
 			// In GUI mode, the main thread's manual event loop handles
 			// run loop pumping — just sleep and wait.
 			if !guiMode {
-				runRunLoopOnce()
+				vzkit.RunRunLoopOnce()
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -1455,7 +1456,7 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 
 		default:
 			// Pump run loop to process XPC messages and framework callbacks
-			runRunLoopAggressively()
+			vzkit.RunRunLoopAggressively()
 
 			// Update progress display
 			currentPercent := progress.FractionCompleted() * 100
@@ -1514,7 +1515,7 @@ func downloadRestoreImageVZ(ctx context.Context, destPath string) error {
 				fmt.Printf("\r\033[K")
 				return fmt.Errorf("timeout fetching restore image info")
 			}
-			runRunLoopOnce()
+			vzkit.RunRunLoopOnce()
 			elapsed := time.Since(start).Truncate(100 * time.Millisecond)
 			fmt.Printf("\r  %s Fetching restore image URL from Apple... %v", spinner[i%len(spinner)], elapsed)
 			i++

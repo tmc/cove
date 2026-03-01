@@ -36,17 +36,12 @@ func (v *volumeSlice) String() string {
 }
 
 func (v *volumeSlice) Set(value string) error {
-	mount, err := parseVolumeSpec(value)
+	mount, err := vzkit.ParseVolumeSpec(value)
 	if err != nil {
 		return err
 	}
 	*v = append(*v, mount)
 	return nil
-}
-
-// parseVolumeSpec parses a docker-style volume specification.
-func parseVolumeSpec(spec string) (VolumeMount, error) {
-	return vzkit.ParseVolumeSpec(spec)
 }
 
 // createVolumeConfigs creates VirtioFS configurations for all volume mounts

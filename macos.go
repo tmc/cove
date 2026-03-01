@@ -19,6 +19,7 @@ import (
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit"
 	"github.com/tmc/vz-macos/internal/assets"
 )
 
@@ -858,7 +859,7 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		case <-timeout:
 			return fmt.Errorf("vm start timed out")
 		default:
-			runRunLoopOnce()
+			vzkit.RunRunLoopOnce()
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
@@ -955,7 +956,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	defer monitorTicker.Stop()
 
 	for range monitorTicker.C {
-		runRunLoopOnce()
+		vzkit.RunRunLoopOnce()
 
 		state := vz.VZVirtualMachineState(vm.State())
 		if state == vz.VZVirtualMachineStateStopped || state == vz.VZVirtualMachineStateError {

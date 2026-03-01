@@ -13,6 +13,7 @@ import (
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit"
 )
 
 // downloadIPSWCurl downloads the IPSW from the given URL to the specified path using curl.
@@ -195,7 +196,7 @@ func downloadRestoreImageVZWithProgress(ctx context.Context, destPath string, pr
 				return fmt.Errorf("timeout fetching restore image info")
 			}
 			if !guiMode {
-				runRunLoopOnce()
+				vzkit.RunRunLoopOnce()
 			}
 			elapsed := time.Since(start).Truncate(100 * time.Millisecond)
 			status := fmt.Sprintf("Fetching restore image URL from Apple... %v", elapsed)
@@ -371,7 +372,7 @@ func fetchLatestRestoreImageObject() (vz.VZMacOSRestoreImage, error) {
 				fmt.Printf("\r  ✗ Timeout after 30s\n")
 				return vz.VZMacOSRestoreImage{}, fmt.Errorf("timeout waiting for response")
 			}
-			runRunLoopOnce()
+			vzkit.RunRunLoopOnce()
 			elapsed := time.Since(start).Truncate(100 * time.Millisecond)
 			fmt.Printf("\r  %s Contacting Apple servers... %v", spinner[i%len(spinner)], elapsed)
 			i++
