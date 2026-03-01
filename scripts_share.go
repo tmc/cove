@@ -159,7 +159,7 @@ func InjectScriptsRunnerLaunchDaemon(mountPoint string, config ScriptsShareConfi
 		return fmt.Errorf("create LaunchDaemons directory: %w", err)
 	}
 
-	plistPath := filepath.Join(launchDaemonsDir, "com.vz.scripts-runner.plist")
+	plistPath := filepath.Join(launchDaemonsDir, "com.github.tmc.vz-macos.scripts-runner.plist")
 	if err := os.WriteFile(plistPath, []byte(scriptsRunnerPlist), 0644); err != nil {
 		return fmt.Errorf("write LaunchDaemon plist: %w", err)
 	}
@@ -175,7 +175,7 @@ const scriptsRunnerPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.vz.scripts-runner</string>
+    <string>com.github.tmc.vz-macos.scripts-runner</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>

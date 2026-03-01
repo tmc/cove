@@ -134,7 +134,7 @@ func verifyRunning(sock string, verbose bool) error {
 			desc string
 		}{
 			{"/usr/local/bin/vz-agent", "Agent binary"},
-			{"/Library/LaunchDaemons/com.vz.agent.plist", "Agent LaunchDaemon"},
+			{"/Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist", "Agent LaunchDaemon"},
 			{"/private/var/db/.vz-provisioned", "Provisioning completed marker"},
 			{"/private/var/db/.AppleSetupDone", "Setup Assistant skip marker"},
 		}
@@ -219,7 +219,7 @@ func verifyStopped(verbose, fix bool) error {
 		required     bool
 		description  string
 	}{
-		{"Library/LaunchDaemons/com.vz.provision.plist", "root:wheel", provisionRequired, "LaunchDaemon plist"},
+		{"Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist", "root:wheel", provisionRequired, "LaunchDaemon plist"},
 		{"private/var/db/vz-provision.sh", "root:wheel", provisionRequired, "Provisioning script"},
 		{"private/var/db/.AppleSetupDone", "any", false, "Setup Assistant skip marker"},
 		{"private/etc/kcpassword", "root:wheel", false, "Auto-login password (kcpassword)"},
@@ -228,7 +228,7 @@ func verifyStopped(verbose, fix bool) error {
 		{"private/var/db/vz-guest-tools.pkg", "root:wheel", false, "SPICE guest tools package (pending install)"},
 		{"private/var/db/.vz-guest-tools-installed", "any", false, "SPICE guest tools installed marker"},
 		{"usr/local/bin/vz-agent", "root:wheel", false, "Guest agent binary (vz-agent)"},
-		{"Library/LaunchDaemons/com.vz.agent.plist", "root:wheel", false, "Guest agent LaunchDaemon"},
+		{"Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist", "root:wheel", false, "Guest agent LaunchDaemon"},
 	}
 
 	var results []VerifyResult
@@ -300,7 +300,7 @@ func verifyStopped(verbose, fix bool) error {
 
 	// Check for missing agent.
 	agentBinPath := filepath.Join(mountPoint, "usr", "local", "bin", "vz-agent")
-	agentPlistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.vz.agent.plist")
+	agentPlistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.github.tmc.vz-macos.vz-agent.plist")
 	agentMissing := false
 	if _, err := os.Stat(agentBinPath); os.IsNotExist(err) {
 		agentMissing = true

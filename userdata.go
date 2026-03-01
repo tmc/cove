@@ -237,7 +237,7 @@ func InjectUserDataSetup(mountPoint string, config UserDataConfig, rootFiles *[]
 		return fmt.Errorf("create LaunchDaemons directory: %w", err)
 	}
 
-	plistPath := filepath.Join(launchDaemonsDir, "com.vz.userdata.plist")
+	plistPath := filepath.Join(launchDaemonsDir, "com.github.tmc.vz-macos.userdata.plist")
 	plistContent := generateUserDataLaunchDaemonPlist()
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
 		return fmt.Errorf("write LaunchDaemon plist: %w", err)
@@ -255,7 +255,7 @@ func generateUserDataLaunchDaemonPlist() string {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.vz.userdata</string>
+    <string>com.github.tmc.vz-macos.userdata</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -446,7 +446,7 @@ touch "$MARKER"
 log "Configuration marker created: $MARKER"
 
 # Self-cleanup
-rm -f /Library/LaunchDaemons/com.vz.userdata.plist 2>/dev/null || true
+rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.userdata.plist 2>/dev/null || true
 rm -f /var/db/vz-userdata-setup.sh 2>/dev/null || true
 log "Cleanup complete"
 

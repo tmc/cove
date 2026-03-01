@@ -6,7 +6,7 @@
 // Injection writes two files to the Data volume:
 //
 //   - /usr/local/bin/vz-agent (the binary)
-//   - /Library/LaunchDaemons/com.vz.agent.plist (the LaunchDaemon)
+//   - /Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist (the LaunchDaemon)
 //
 // The LaunchDaemon is configured with KeepAlive=true so launchd restarts
 // the agent if it crashes. It runs as root to allow user management and
@@ -30,7 +30,7 @@ import (
 const agentBinaryName = "vz-agent"
 
 // agentLaunchDaemonLabel is the launchd label for the guest agent.
-const agentLaunchDaemonLabel = "com.vz.agent"
+const agentLaunchDaemonLabel = "com.github.tmc.vz-macos.vz-agent"
 
 // buildAgentBinary cross-compiles the vz-agent binary for the guest.
 // It targets darwin/arm64 with CGO disabled for a static binary.
@@ -284,7 +284,7 @@ const agentLaunchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.vz.agent</string>
+    <string>com.github.tmc.vz-macos.vz-agent</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/vz-agent</string>

@@ -570,7 +570,7 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 	// Write a LaunchDaemon that resets the password on next boot via dscl.
 	script := fmt.Sprintf(`#!/bin/bash
 dscl . -passwd /Users/%s '%s'
-rm -f /Library/LaunchDaemons/com.vz.pwreset.plist /var/db/vz-pwreset.sh
+rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pwreset.sh
 `, username, password)
 	scriptPath := filepath.Join(mountPoint, "private", "var", "db", "vz-pwreset.sh")
 	if writeErr := os.WriteFile(scriptPath, []byte(script), 0755); writeErr != nil {
@@ -582,7 +582,7 @@ rm -f /Library/LaunchDaemons/com.vz.pwreset.plist /var/db/vz-pwreset.sh
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.vz.pwreset</string>
+	<string>com.github.tmc.vz-macos.pwreset</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
@@ -592,7 +592,7 @@ rm -f /Library/LaunchDaemons/com.vz.pwreset.plist /var/db/vz-pwreset.sh
 	<true/>
 </dict>
 </plist>`
-	plistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.vz.pwreset.plist")
+	plistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.github.tmc.vz-macos.pwreset.plist")
 	if writeErr := os.WriteFile(plistPath, []byte(plist), 0644); writeErr != nil {
 		return fmt.Errorf("write plist: %w", writeErr)
 	}

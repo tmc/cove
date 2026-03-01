@@ -40,7 +40,7 @@ const (
 	guestToolsDownloadURL = "https://github.com/utmapp/vd_agent/releases/download/spice-vdagent-" + guestToolsVersion + "-macOS/" + guestToolsIMGName
 
 	// guestToolsLaunchDaemonLabel is the launchd label for the installer.
-	guestToolsLaunchDaemonLabel = "com.vz.guest-tools-install"
+	guestToolsLaunchDaemonLabel = "com.github.tmc.vz-macos.guest-tools-install"
 )
 
 // guestToolsCacheDir returns the directory for cached guest tools downloads.
@@ -254,7 +254,7 @@ const guestToolsLaunchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.vz.guest-tools-install</string>
+    <string>com.github.tmc.vz-macos.guest-tools-install</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -305,7 +305,7 @@ if [ $? -eq 0 ]; then
 
     # Clean up installer files.
     rm -f "$PKG"
-    rm -f /Library/LaunchDaemons/com.vz.guest-tools-install.plist
+    rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.guest-tools-install.plist
     rm -f /var/db/vz-install-guest-tools.sh
     log "Installer files cleaned up."
 else

@@ -15,7 +15,7 @@
 //
 // The injection process mounts the VM's APFS "Data" volume and writes:
 //
-//  1. LaunchDaemon plist (/Library/LaunchDaemons/com.vz.provision.plist)
+//  1. LaunchDaemon plist (/Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist)
 //  2. Provisioning script (/var/db/vz-provision.sh)
 //  3. Setup Assistant bypass marker (/var/db/.AppleSetupDone)
 //  4. Auto-login credentials (/etc/kcpassword + loginwindow.plist)
@@ -31,7 +31,7 @@
 //
 // # LaunchDaemon Provisioning
 //
-// The LaunchDaemon (com.vz.provision.plist) is configured with RunAtLoad=true,
+// The LaunchDaemon (com.github.tmc.vz-macos.provision.plist) is configured with RunAtLoad=true,
 // which causes launchd to execute the provisioning script immediately at boot.
 // The script uses sysadminctl to create the user account with proper credentials.
 //
@@ -294,7 +294,7 @@ func createProvisioningDirectory(provDir string, config ProvisionConfig) error {
 	fmt.Printf("Created: %s\n", configPath)
 
 	// Write LaunchDaemon plist
-	plistPath := filepath.Join(provDir, "launchd", "com.vz.provision.plist")
+	plistPath := filepath.Join(provDir, "launchd", "com.github.tmc.vz-macos.provision.plist")
 	if err := os.WriteFile(plistPath, []byte(launchDaemonPlist), 0644); err != nil {
 		return fmt.Errorf("write plist: %w", err)
 	}
@@ -987,7 +987,7 @@ func stageUserDataSetup(stagingDir string, config UserDataConfig, manifest *Prov
 	}
 
 	plistContent := generateUserDataLaunchDaemonPlist()
-	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.vz.userdata.plist"),
+	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.userdata.plist"),
 		[]byte(plistContent), 0644, "root:wheel", manifest); err != nil {
 		return err
 	}
@@ -1005,7 +1005,7 @@ func stageScriptsRunnerLaunchDaemon(stagingDir string, config ScriptsShareConfig
 		return err
 	}
 
-	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.vz.scripts-runner.plist"),
+	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.scripts-runner.plist"),
 		[]byte(scriptsRunnerPlist), 0644, "root:wheel", manifest); err != nil {
 		return err
 	}

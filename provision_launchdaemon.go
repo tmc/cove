@@ -31,7 +31,7 @@ func injectLaunchDaemonProvisioning(mountPoint string, config ProvisionConfig, r
 		return fmt.Errorf("create LaunchDaemons directory: %w", err)
 	}
 
-	plistPath := filepath.Join(launchDaemonsDir, "com.vz.provision.plist")
+	plistPath := filepath.Join(launchDaemonsDir, "com.github.tmc.vz-macos.provision.plist")
 	plistContent := generateEmbeddedLaunchDaemonPlist()
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
 		return fmt.Errorf("write LaunchDaemon plist: %w", err)
@@ -52,7 +52,7 @@ func stageLaunchDaemonProvisioning(stagingDir string, config ProvisionConfig, ma
 	}
 
 	plistContent := generateEmbeddedLaunchDaemonPlist()
-	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.vz.provision.plist"),
+	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"),
 		[]byte(plistContent), 0644, "root:wheel", manifest); err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func generateEmbeddedLaunchDaemonPlist() string {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.vz.provision</string>
+    <string>com.github.tmc.vz-macos.provision</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -289,7 +289,7 @@ touch "$MARKER"
 log "Provisioning marker created: $MARKER"
 
 # Self-cleanup: remove the LaunchDaemon and script so they don't run again
-rm -f /Library/LaunchDaemons/com.vz.provision.plist 2>/dev/null || true
+rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist 2>/dev/null || true
 rm -f /var/db/vz-provision.sh 2>/dev/null || true
 log "LaunchDaemon and script removed (self-cleanup)"
 
@@ -317,7 +317,7 @@ const launchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.vz.provision</string>
+    <string>com.github.tmc.vz-macos.provision</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -451,7 +451,7 @@ touch "$MARKER"
 log "Provisioning marker created: $MARKER"
 
 # Self-cleanup: remove the LaunchDaemon so it doesn't run again
-rm -f /Library/LaunchDaemons/com.vz.provision.plist 2>/dev/null || true
+rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist 2>/dev/null || true
 log "LaunchDaemon removed (self-cleanup)"
 
 log "=== Provisioning complete ==="
