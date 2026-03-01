@@ -749,7 +749,7 @@ func (t *VMToolbar) applySharedFoldersToVM(folders []SharedFolderEntry) {
 			return
 		}
 
-		dict := foundation.NewDictionaryWithObjectsForKeys(values, keys)
+		dict := newDictFromSlices(values, keys)
 		share := vz.NewMultipleDirectoryShareWithDirectories(&dict)
 		device.SetShare(&share.VZDirectoryShare)
 		fmt.Printf("Toolbar: hotplugged %d shared folder(s) into running VM\n", len(keys))

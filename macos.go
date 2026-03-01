@@ -740,7 +740,7 @@ func createSharedFoldersDevice(folders []SharedFolderEntry) vz.VZVirtioFileSyste
 
 	var dict foundation.NSDictionary
 	if len(keys) > 0 {
-		dict = foundation.NewDictionaryWithObjectsForKeys(values, keys)
+		dict = newDictFromSlices(values, keys)
 	} else {
 		dict = foundation.NewNSDictionary()
 	}
@@ -772,6 +772,28 @@ func createSingleDirectoryDevice(hostPath, tag string, readOnly bool) vz.VZVirti
 	}
 	fmt.Printf("  Drops share: %s -> /Volumes/%s (%s)\n", hostPath, tag, mode)
 	return fsConfig
+}
+
+// newDictFromSlices creates an NSDictionary from Go slices using the
+// initWithObjects:forKeys:count: selector. The NSArray-based
+// initWithObjects:forKeys: does not work with purego because objc.Send
+// passes Go slices as raw pointers instead of converting them to NSArrays.
+func newDictFromSlices(values, keys []objectivec.IObject) foundation.NSDictionary {
+	count := len(values)
+	if count == 0 {
+		return foundation.NewNSDictionary()
+	}
+	// Extract raw objc IDs so we can pass a C array pointer.
+	valIDs := make([]objc.ID, count)
+	keyIDs := make([]objc.ID, count)
+	for i := range values {
+		valIDs[i] = values[i].GetID()
+		keyIDs[i] = keys[i].GetID()
+	}
+	instance := objc.Send[objc.ID](objc.ID(objc.GetClass("NSDictionary")), objc.Sel("alloc"))
+	rv := objc.Send[objc.ID](instance, objc.Sel("initWithObjects:forKeys:count:"),
+		objc.CArray(valIDs), objc.CArray(keyIDs), uint(count))
+	return foundation.NSDictionaryFromID(rv)
 }
 
 // setDirectorySharingDevicesMulti adds multiple VirtioFS configurations to the VM
