@@ -1,4 +1,7 @@
 // memory.go - Memory balloon runtime control
+//
+// Core balloon operations delegate to vzkit. The control socket
+// command handler and protobuf integration remain here.
 package main
 
 import (
@@ -6,94 +9,30 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-// getMemoryInfo retrieves memory information from the VM
+// getMemoryInfo retrieves memory information from the VM.
 func getMemoryInfo(vm vz.VZVirtualMachine, queue dispatch.Queue) (*controlpb.MemoryInfo, error) {
-	var info controlpb.MemoryInfo
-	var err error
-
-	done := make(chan struct{})
-	DispatchAsyncQueue(queue, func() {
-		defer close(done)
-
-		// Get memory balloon devices
-		devices := vm.MemoryBalloonDevices()
-		if len(devices) == 0 {
-			info.HasBalloon = false
-			return
-		}
-
-		info.HasBalloon = true
-
-		// Get the first balloon device and cast to traditional balloon type
-		device := devices[0]
-		// Cast to VZVirtioTraditionalMemoryBalloonDevice
-		traditionalDevice := vz.VZVirtioTraditionalMemoryBalloonDeviceFromID(device.GetID())
-		if traditionalDevice.ID == 0 {
-			err = fmt.Errorf("balloon device is not a VirtioTraditional type")
-			return
-		}
-
-		// Get current target
-		targetBytes := traditionalDevice.TargetVirtualMachineMemorySize()
-		info.TargetGb = float64(targetBytes) / (1024 * 1024 * 1024)
-
-		// Get minimum allowed
-		info.MinimumAllowedMb = vz.GetVZVirtualMachineConfigurationClass().MinimumAllowedMemorySize() / (1024 * 1024)
-	})
-	<-done
-
+	info, err := vzkit.GetBalloonInfo(vzkit.WrapQueue(queue), vm)
 	if err != nil {
 		return nil, err
 	}
-	return &info, nil
+	return &controlpb.MemoryInfo{
+		HasBalloon:       info.HasBalloon,
+		TargetGb:         info.TargetGB,
+		MinimumAllowedMb: info.MinimumAllowMB,
+	}, nil
 }
 
-// setMemoryTarget sets the memory balloon target size
+// setMemoryTarget sets the memory balloon target size.
 func setMemoryTarget(vm vz.VZVirtualMachine, queue dispatch.Queue, sizeGB float64) error {
-	sizeBytes := uint64(sizeGB * 1024 * 1024 * 1024)
-
-	// Ensure size is a multiple of 1MB
-	sizeBytes = (sizeBytes / (1024 * 1024)) * (1024 * 1024)
-
-	var err error
-	done := make(chan struct{})
-	DispatchAsyncQueue(queue, func() {
-		defer close(done)
-
-		devices := vm.MemoryBalloonDevices()
-		if len(devices) == 0 {
-			err = fmt.Errorf("no memory balloon device configured")
-			return
-		}
-
-		device := devices[0]
-		traditionalDevice := vz.VZVirtioTraditionalMemoryBalloonDeviceFromID(device.GetID())
-		if traditionalDevice.ID == 0 {
-			err = fmt.Errorf("balloon device is not a VirtioTraditional type")
-			return
-		}
-
-		// Validate the size
-		minSize := vz.GetVZVirtualMachineConfigurationClass().MinimumAllowedMemorySize()
-		if sizeBytes < minSize {
-			err = fmt.Errorf("target size %.2f GB is below minimum allowed %.2f GB",
-				sizeGB, float64(minSize)/(1024*1024*1024))
-			return
-		}
-
-		// Set the target
-		traditionalDevice.SetTargetVirtualMachineMemorySize(sizeBytes)
-	})
-	<-done
-
-	return err
+	return vzkit.SetBalloonTarget(vzkit.WrapQueue(queue), vm, sizeGB)
 }
 
-// handleMemoryCommand handles memory commands from the control socket
+// handleMemoryCommand handles memory commands from the control socket.
 func (s *ControlServer) handleMemoryCommand(cmd *controlpb.MemoryCommand) *controlpb.ControlResponse {
 	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
@@ -122,13 +61,7 @@ func (s *ControlServer) handleMemoryCommand(cmd *controlpb.MemoryCommand) *contr
 	}
 }
 
-// addMemoryBalloonToMacOSConfig adds a memory balloon device to a macOS VM config
-// Call this from buildVMConfiguration to enable runtime memory control
+// addMemoryBalloonDevice adds a memory balloon device to a VM config.
 func addMemoryBalloonDevice(config vz.VZVirtualMachineConfiguration) {
-	balloonConfig := vz.NewVZVirtioTraditionalMemoryBalloonDeviceConfiguration()
-	if balloonConfig.ID != 0 {
-		config.SetMemoryBalloonDevices([]vz.VZMemoryBalloonDeviceConfiguration{
-			balloonConfig.VZMemoryBalloonDeviceConfiguration,
-		})
-	}
+	vzkit.AddMemoryBalloonDevice(config)
 }

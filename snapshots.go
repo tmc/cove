@@ -3,6 +3,7 @@
 // Two types of snapshots are supported:
 //
 //  1. VM State Snapshots: Save/restore CPU and memory state (fast resume)
+//     - Delegates to vzkit.SnapshotManager
 //     - Stored in vmDir/snapshots/<name>.vmstate
 //     - VM must be paused to save, stopped to restore
 //
@@ -25,27 +26,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/tmc/apple/dispatch"
-	"github.com/tmc/apple/foundation"
-	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit"
 	"golang.org/x/sys/unix"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
-
-// snapshotMeta is the on-disk metadata format for VM state snapshots.
-type snapshotMeta struct {
-	Name     string    `json:"name"`
-	Created  time.Time `json:"created"`
-	Size     int64     `json:"size"`
-	VMState  string    `json:"vmState"` // State when snapshot was taken
-	FilePath string    `json:"filePath"`
-}
-
-// SnapshotManager handles VM state snapshot operations
-type SnapshotManager struct {
-	vmDir string
-}
 
 // DiskSnapshotTarget specifies which disk(s) to snapshot.
 type DiskSnapshotTarget int
@@ -72,268 +57,23 @@ type DiskSnapshotManager struct {
 	vmDir string
 }
 
-// NewSnapshotManager creates a new snapshot manager for the given VM directory
-func NewSnapshotManager(vmDir string) *SnapshotManager {
-	return &SnapshotManager{vmDir: vmDir}
-}
-
-// snapshotsDir returns the path to the snapshots directory
-func (m *SnapshotManager) snapshotsDir() string {
-	return filepath.Join(m.vmDir, "snapshots")
-}
-
-// snapshotPath returns the path to a specific snapshot file
-func (m *SnapshotManager) snapshotPath(name string) string {
-	return filepath.Join(m.snapshotsDir(), name+".vmstate")
-}
-
-// metadataPath returns the path to snapshot metadata file
-func (m *SnapshotManager) metadataPath(name string) string {
-	return filepath.Join(m.snapshotsDir(), name+".json")
-}
-
-// ensureDir creates the snapshots directory if it doesn't exist
-func (m *SnapshotManager) ensureDir() error {
-	return os.MkdirAll(m.snapshotsDir(), 0755)
-}
-
-// Save saves the current VM state to a snapshot
-// The VM must be paused before saving
-func (m *SnapshotManager) Save(vm vz.VZVirtualMachine, queue dispatch.Queue, name string) error {
-	if err := m.ensureDir(); err != nil {
-		return fmt.Errorf("create snapshots directory: %w", err)
-	}
-
-	// Check if VM can be saved (must be paused)
-	var state vz.VZVirtualMachineState
-	checkDone := make(chan struct{})
-	DispatchAsyncQueue(queue, func() {
-		defer close(checkDone)
-		state = vz.VZVirtualMachineState(vm.State())
-	})
-	<-checkDone
-
-	// If running, pause first
-	wasPaused := state == vz.VZVirtualMachineStatePaused
-	if state == vz.VZVirtualMachineStateRunning {
-		fmt.Println("Pausing VM for snapshot...")
-		errCh := make(chan error, 1)
-		DispatchAsyncQueue(queue, func() {
-			vm.PauseWithCompletionHandler(func(err error) {
-				errCh <- err
-			})
-		})
-		if err := <-errCh; err != nil {
-			return fmt.Errorf("pause VM: %w", err)
-		}
-	} else if state != vz.VZVirtualMachineStatePaused {
-		return fmt.Errorf("VM must be running or paused to save snapshot (current state: %s)", state.String())
-	}
-
-	// Save the snapshot
-	snapshotFile := m.snapshotPath(name)
-	saveURL := foundation.NewURLFileURLWithPath(snapshotFile)
-	saveURL.Retain()
-
-	fmt.Printf("Saving snapshot '%s' to: %s\n", name, snapshotFile)
-
-	errCh := make(chan error, 1)
-	DispatchAsyncQueue(queue, func() {
-		vm.SaveMachineStateToURLCompletionHandler(saveURL, func(err error) {
-			errCh <- err
-		})
-	})
-
-	// Wait for save with timeout
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("save snapshot: %w", err)
-		}
-	case <-time.After(60 * time.Second):
-		return fmt.Errorf("save snapshot timed out")
-	}
-
-	// Get file size
-	info, err := os.Stat(snapshotFile)
-	var size int64
-	if err == nil {
-		size = info.Size()
-	}
-
-	// Save metadata
-	metadata := snapshotMeta{
-		Name:     name,
-		Created:  time.Now(),
-		Size:     size,
-		VMState:  "paused",
-		FilePath: snapshotFile,
-	}
-	metaBytes, _ := json.MarshalIndent(metadata, "", "  ")
-	if err := os.WriteFile(m.metadataPath(name), metaBytes, 0644); err != nil {
-		fmt.Printf("Warning: could not save snapshot metadata: %v\n", err)
-	}
-
-	// Resume if VM was running before
-	if !wasPaused {
-		fmt.Println("Resuming VM...")
-		resumeErrCh := make(chan error, 1)
-		DispatchAsyncQueue(queue, func() {
-			vm.ResumeWithCompletionHandler(func(err error) {
-				resumeErrCh <- err
-			})
-		})
-		if err := <-resumeErrCh; err != nil {
-			return fmt.Errorf("resume VM after snapshot: %w", err)
-		}
-	}
-
-	fmt.Printf("Snapshot '%s' saved successfully (%s)\n", name, FormatSize(size))
-	return nil
-}
-
-// Restore restores the VM from a saved snapshot
-// The VM must be stopped before restoring, and will be in paused state after
-func (m *SnapshotManager) Restore(vm vz.VZVirtualMachine, queue dispatch.Queue, name string) error {
-	snapshotFile := m.snapshotPath(name)
-	if _, err := os.Stat(snapshotFile); os.IsNotExist(err) {
-		return fmt.Errorf("snapshot '%s' not found", name)
-	}
-
-	// Check VM state (must be stopped)
-	var state vz.VZVirtualMachineState
-	checkDone := make(chan struct{})
-	DispatchAsyncQueue(queue, func() {
-		defer close(checkDone)
-		state = vz.VZVirtualMachineState(vm.State())
-	})
-	<-checkDone
-
-	if state != vz.VZVirtualMachineStateStopped {
-		return fmt.Errorf("VM must be stopped to restore snapshot (current state: %s)", state.String())
-	}
-
-	// Restore the snapshot
-	restoreURL := foundation.NewURLFileURLWithPath(snapshotFile)
-	restoreURL.Retain()
-
-	fmt.Printf("Restoring snapshot '%s' from: %s\n", name, snapshotFile)
-
-	errCh := make(chan error, 1)
-	DispatchAsyncQueue(queue, func() {
-		vm.RestoreMachineStateFromURLCompletionHandler(restoreURL, func(err error) {
-			errCh <- err
-		})
-	})
-
-	// Wait for restore with timeout
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("restore snapshot: %w", err)
-		}
-	case <-time.After(60 * time.Second):
-		return fmt.Errorf("restore snapshot timed out")
-	}
-
-	fmt.Printf("Snapshot '%s' restored successfully (VM is now paused)\n", name)
-	return nil
-}
-
-// List returns all available snapshots
-func (m *SnapshotManager) List() ([]snapshotMeta, error) {
-	dir := m.snapshotsDir()
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return nil, nil
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("read snapshots directory: %w", err)
-	}
-
-	var snapshots []snapshotMeta
-	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) != ".vmstate" {
-			continue
-		}
-
-		name := entry.Name()[:len(entry.Name())-8] // Remove .vmstate extension
-
-		// Try to load metadata
-		var info snapshotMeta
-		metaPath := m.metadataPath(name)
-		if metaBytes, err := os.ReadFile(metaPath); err == nil {
-			json.Unmarshal(metaBytes, &info)
-		}
-
-		// Fill in basic info if metadata missing
-		if info.Name == "" {
-			info.Name = name
-		}
-		if fileInfo, err := entry.Info(); err == nil {
-			info.Size = fileInfo.Size()
-			if info.Created.IsZero() {
-				info.Created = fileInfo.ModTime()
-			}
-		}
-		info.FilePath = filepath.Join(dir, entry.Name())
-
-		snapshots = append(snapshots, info)
-	}
-
-	// Sort by creation time (newest first)
-	sort.Slice(snapshots, func(i, j int) bool {
-		return snapshots[i].Created.After(snapshots[j].Created)
-	})
-
-	return snapshots, nil
-}
-
-// Delete removes a snapshot
-func (m *SnapshotManager) Delete(name string) error {
-	snapshotFile := m.snapshotPath(name)
-	if _, err := os.Stat(snapshotFile); os.IsNotExist(err) {
-		return fmt.Errorf("snapshot '%s' not found", name)
-	}
-
-	// Remove snapshot file
-	if err := os.Remove(snapshotFile); err != nil {
-		return fmt.Errorf("remove snapshot file: %w", err)
-	}
-
-	// Remove metadata file (ignore errors)
-	os.Remove(m.metadataPath(name))
-
-	fmt.Printf("Snapshot '%s' deleted\n", name)
-	return nil
-}
-
-// =============================================================================
-// Disk Snapshot Manager - independent disk-level snapshots
-// =============================================================================
-
 // NewDiskSnapshotManager creates a new disk snapshot manager.
 func NewDiskSnapshotManager(vmDir string) *DiskSnapshotManager {
 	return &DiskSnapshotManager{vmDir: vmDir}
 }
 
-// diskSnapshotsDir returns the path to the disk snapshots directory.
 func (m *DiskSnapshotManager) diskSnapshotsDir() string {
 	return filepath.Join(m.vmDir, "disk-snapshots")
 }
 
-// snapshotDir returns the path to a specific disk snapshot directory.
 func (m *DiskSnapshotManager) snapshotDir(name string) string {
 	return filepath.Join(m.diskSnapshotsDir(), name)
 }
 
-// metadataPath returns the path to disk snapshot metadata.
 func (m *DiskSnapshotManager) metadataPath(name string) string {
 	return filepath.Join(m.snapshotDir(name), "metadata.json")
 }
 
-// ensureDir creates the disk snapshots directory if needed.
 func (m *DiskSnapshotManager) ensureDir() error {
 	return os.MkdirAll(m.diskSnapshotsDir(), 0755)
 }
@@ -362,7 +102,6 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 		FilePath:    snapDir,
 	}
 
-	// Snapshot system disk
 	if target&DiskSnapshotSystem != 0 {
 		srcPath := filepath.Join(m.vmDir, "disk.img")
 		if _, err := os.Stat(srcPath); err == nil {
@@ -380,7 +119,6 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 		}
 	}
 
-	// Snapshot userdata disk
 	if target&DiskSnapshotUserData != 0 {
 		srcPath := filepath.Join(m.vmDir, "userdata.sparsebundle")
 		if _, err := os.Stat(srcPath); err == nil {
@@ -398,7 +136,6 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 		}
 	}
 
-	// Save metadata
 	metaBytes, _ := json.MarshalIndent(info, "", "  ")
 	if err := os.WriteFile(m.metadataPath(name), metaBytes, 0644); err != nil {
 		return fmt.Errorf("save snapshot metadata: %w", err)
@@ -416,19 +153,16 @@ func (m *DiskSnapshotManager) Restore(name string, target DiskSnapshotTarget) er
 		return fmt.Errorf("disk snapshot '%s' not found", name)
 	}
 
-	// Load metadata to verify what's in the snapshot
 	var info DiskSnapshotInfo
 	if metaBytes, err := os.ReadFile(m.metadataPath(name)); err == nil {
 		json.Unmarshal(metaBytes, &info)
 	}
 
-	// Restore system disk
 	if target&DiskSnapshotSystem != 0 {
 		srcPath := filepath.Join(snapDir, "disk.img")
 		dstPath := filepath.Join(m.vmDir, "disk.img")
 		if _, err := os.Stat(srcPath); err == nil {
 			fmt.Printf("  Restoring system disk...\n")
-			// Remove existing disk first
 			if err := os.Remove(dstPath); err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("remove existing system disk: %w", err)
 			}
@@ -440,13 +174,11 @@ func (m *DiskSnapshotManager) Restore(name string, target DiskSnapshotTarget) er
 		}
 	}
 
-	// Restore userdata disk
 	if target&DiskSnapshotUserData != 0 {
 		srcPath := filepath.Join(snapDir, "userdata.sparsebundle")
 		dstPath := filepath.Join(m.vmDir, "userdata.sparsebundle")
 		if _, err := os.Stat(srcPath); err == nil {
 			fmt.Printf("  Restoring userdata disk...\n")
-			// Remove existing disk first
 			if err := os.RemoveAll(dstPath); err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("remove existing userdata disk: %w", err)
 			}
@@ -483,13 +215,11 @@ func (m *DiskSnapshotManager) List() ([]DiskSnapshotInfo, error) {
 		name := entry.Name()
 		var info DiskSnapshotInfo
 
-		// Try to load metadata
 		metaPath := m.metadataPath(name)
 		if metaBytes, err := os.ReadFile(metaPath); err == nil {
 			json.Unmarshal(metaBytes, &info)
 		}
 
-		// Fill in defaults if metadata missing
 		if info.Name == "" {
 			info.Name = name
 		}
@@ -501,7 +231,6 @@ func (m *DiskSnapshotManager) List() ([]DiskSnapshotInfo, error) {
 		snapshots = append(snapshots, info)
 	}
 
-	// Sort by creation time (newest first)
 	sort.Slice(snapshots, func(i, j int) bool {
 		return snapshots[i].Created.After(snapshots[j].Created)
 	})
@@ -524,28 +253,22 @@ func (m *DiskSnapshotManager) Delete(name string) error {
 	return nil
 }
 
-// cloneFileWithFallback uses APFS clonefile with fallback to regular copy.
 func (m *DiskSnapshotManager) cloneFileWithFallback(src, dst string) error {
 	err := unix.Clonefile(src, dst, 0)
 	if err == nil {
 		return nil
 	}
-	// Fall back to regular copy
 	return copyFile(src, dst)
 }
 
-// cloneDirWithFallback clones a directory (for sparse bundles).
 func (m *DiskSnapshotManager) cloneDirWithFallback(src, dst string) error {
-	// Try clonefile on the directory itself first (works on APFS)
 	err := unix.Clonefile(src, dst, 0)
 	if err == nil {
 		return nil
 	}
-	// Fall back to recursive copy
 	return copyDirRecursiveDisk(src, dst)
 }
 
-// copyDirRecursiveDisk copies a directory recursively (for disk snapshots).
 func copyDirRecursiveDisk(src, dst string) error {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
@@ -579,7 +302,6 @@ func copyDirRecursiveDisk(src, dst string) error {
 	return nil
 }
 
-// dirSize calculates the total size of a directory.
 func dirSize(path string) (int64, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
@@ -598,20 +320,19 @@ func dirSize(path string) (int64, error) {
 // Control socket command handlers for snapshots
 // =============================================================================
 
-// handleSnapshotCommand handles snapshot commands from the control socket
 func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *controlpb.ControlResponse {
 	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
-	mgr := NewSnapshotManager(vmDir)
+	mgr := vzkit.NewSnapshotManager(vmDir)
 
 	switch cmd.Action {
 	case "save":
 		if cmd.Name == "" {
 			return &controlpb.ControlResponse{Error: "snapshot name required"}
 		}
-		if err := mgr.Save(s.vm, s.vmQueue, cmd.Name); err != nil {
+		if err := mgr.Save(s.vm, vzkit.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("snapshot '%s' saved", cmd.Name)}
@@ -620,7 +341,7 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if cmd.Name == "" {
 			return &controlpb.ControlResponse{Error: "snapshot name required"}
 		}
-		if err := mgr.Restore(s.vm, s.vmQueue, cmd.Name); err != nil {
+		if err := mgr.Restore(s.vm, vzkit.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("snapshot '%s' restored (VM paused)", cmd.Name)}
@@ -651,7 +372,6 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 // CLI handlers for disk snapshots
 // =============================================================================
 
-// handleDiskSnapshotCommand handles the disk-snapshot CLI subcommand.
 func handleDiskSnapshotCommand(args []string) {
 	if len(args) == 0 {
 		printDiskSnapshotUsage()
@@ -720,10 +440,9 @@ func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) {
 	}
 
 	name := args[0]
-	target := DiskSnapshotBoth // Default to both
+	target := DiskSnapshotBoth
 	description := ""
 
-	// Parse flags
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "-system":
@@ -754,9 +473,8 @@ func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) {
 	}
 
 	name := args[0]
-	target := DiskSnapshotBoth // Default to both
+	target := DiskSnapshotBoth
 
-	// Parse flags
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "-system":

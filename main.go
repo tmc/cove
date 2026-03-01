@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"text/tabwriter"
 
+	"github.com/tmc/apple/x/vzkit"
 	"golang.org/x/term"
 )
 
@@ -878,7 +879,7 @@ the control socket. Example:
 		os.Exit(1)
 	}
 
-	mgr := NewSnapshotManager(vmDir)
+	mgr := vzkit.NewSnapshotManager(vmDir)
 	subcmd := args[0]
 	subargs := args[1:]
 
