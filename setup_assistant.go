@@ -1,4 +1,4 @@
-// setup_assistant.go - Automate macOS Setup Assistant via keyboard navigation
+// setup_assistant.go - Automate macOS Setup Assistant via OCR-driven navigation
 package main
 
 import (
@@ -8,14 +8,20 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-// SetupAssistant automates the macOS first-run experience
+// SetupAssistant automates the macOS first-run experience using OCR-driven
+// screen detection and click targeting. Falls back to keyboard navigation
+// when OCR is unavailable.
 type SetupAssistant struct {
-	client    *ControlClient
+	cs        *ControlServer // direct server reference for in-process use
+	client    *ControlClient // socket client for out-of-process use (ctl command)
+	ocr       *OCRService
 	config    ProvisionConfig
 	verbose   bool
-	saveDir   string // Directory to save screenshots for debugging
+	saveDir   string // directory to save screenshots for debugging
 	stepDelay time.Duration
 }
 
@@ -30,7 +36,7 @@ type SetupAssistantOptions struct {
 	SaveDir    string // Optional: save screenshots to this directory
 }
 
-// NewSetupAssistant creates a new setup assistant
+// NewSetupAssistant creates a setup assistant that communicates via socket.
 func NewSetupAssistant(opts SetupAssistantOptions) *SetupAssistant {
 	fullname := opts.Fullname
 	if fullname == "" {
@@ -38,10 +44,11 @@ func NewSetupAssistant(opts SetupAssistantOptions) *SetupAssistant {
 	}
 
 	client := NewControlClient(opts.SocketPath)
-	client.SetTimeout(60 * time.Second) // Screenshots can take a while
+	client.SetTimeout(60 * time.Second)
 
 	return &SetupAssistant{
 		client: client,
+		ocr:    NewOCRService(opts.Verbose),
 		config: ProvisionConfig{
 			Username: opts.Username,
 			Password: opts.Password,
@@ -54,17 +61,35 @@ func NewSetupAssistant(opts SetupAssistantOptions) *SetupAssistant {
 	}
 }
 
-// Run navigates through Setup Assistant and creates the user
+// NewSetupAssistantInProcess creates a setup assistant that uses the
+// ControlServer directly, avoiding socket overhead for in-process automation.
+func NewSetupAssistantInProcess(cs *ControlServer, ocr *OCRService, config ProvisionConfig, verbose bool, saveDir string) *SetupAssistant {
+	if config.Fullname == "" {
+		config.Fullname = config.Username
+	}
+	return &SetupAssistant{
+		cs:        cs,
+		ocr:       ocr,
+		config:    config,
+		verbose:   verbose,
+		saveDir:   saveDir,
+		stepDelay: 500 * time.Millisecond,
+	}
+}
+
+// Run navigates through Setup Assistant and creates the user.
 func (s *SetupAssistant) Run() error {
 	s.log("Starting Setup Assistant automation")
 	s.log("Target user: %s", s.config.Username)
 
-	// Wait for control socket to be available
-	s.log("Waiting for control socket...")
-	if err := s.client.WaitForConnection(60 * time.Second); err != nil {
-		return fmt.Errorf("control socket not available: %w", err)
+	// Wait for control socket to be available (only for socket-based mode)
+	if s.client != nil {
+		s.log("Waiting for control socket...")
+		if err := s.client.WaitForConnection(60 * time.Second); err != nil {
+			return fmt.Errorf("control socket not available: %w", err)
+		}
+		s.log("Control socket connected")
 	}
-	s.log("Control socket connected")
 
 	// Wait for screen to stabilize (VM is booting)
 	s.log("Waiting for screen to stabilize...")
@@ -72,17 +97,12 @@ func (s *SetupAssistant) Run() error {
 		s.log("Warning: screen stability check failed: %v", err)
 	}
 
-	// Detect current screen state
-	state, err := s.detectCurrentScreen()
-	if err != nil {
-		s.log("Warning: initial screen detection failed: %v", err)
-	}
+	// Detect current screen state using OCR if available
+	state := s.detectCurrentScreenOCR()
 	s.log("Initial screen state: %s", state)
 
-	// Navigate through Setup Assistant based on current state
 	switch state {
 	case ScreenStateBlack, ScreenStateAppleLogo:
-		// Still booting, wait for Setup Assistant
 		s.log("Waiting for Setup Assistant to appear...")
 		if err := s.waitForSetupAssistant(180 * time.Second); err != nil {
 			return err
@@ -101,68 +121,35 @@ func (s *SetupAssistant) Run() error {
 		return nil
 
 	default:
-		// Try Setup Assistant navigation anyway
 		return s.navigateSetupAssistant()
 	}
 }
 
-// navigateSetupAssistant walks through the Setup Assistant screens
+// navigateSetupAssistant walks through Setup Assistant screens using OCR.
 func (s *SetupAssistant) navigateSetupAssistant() error {
-	s.log("Navigating Setup Assistant...")
-
-	// The Setup Assistant flow varies by macOS version, but generally:
-	// 1. Language/Region selection
-	// 2. Accessibility options
-	// 3. Network (may be automatic for VMs)
-	// 4. Migration Assistant (skip)
-	// 5. Apple ID (skip)
-	// 6. Terms & Conditions (agree)
-	// 7. Create Computer Account
-	// 8. Express Setup (skip)
-	// 9. Analytics (skip)
-	// 10. Screen Time (skip)
-	// 11. Siri (skip)
-	// 12. Choose Look (skip)
-	// ... and finally Desktop
+	s.log("Navigating Setup Assistant (OCR-driven)...")
 
 	var lastPage string
 	stuckCount := 0
 	const maxStuckCount = 3
 
-	for step := 0; step < 50; step++ { // Max 50 steps to prevent infinite loop
+	for step := 0; step < 50; step++ {
 		s.saveDebugScreenshot(fmt.Sprintf("step_%02d", step))
 
-		state, err := s.detectCurrentScreen()
-		if err != nil {
-			s.log("Warning: screen detection failed: %v", err)
-		}
-		s.log("Step %d: screen=%s", step, state)
+		// Detect page using OCR
+		page := s.detectPage()
+		s.log("Step %d: page=%s", step, page)
 
-		if state == ScreenStateDesktop {
+		if page == "desktop" {
 			s.log("Reached desktop!")
 			return nil
 		}
-
-		if state == ScreenStateLoginScreen {
+		if page == "login" {
 			s.log("Reached login screen - attempting login")
 			return s.loginWithCredentials()
 		}
 
-		// Detect Setup Assistant page type
-		img, screenshotErr := s.client.Screenshot()
-		if screenshotErr != nil {
-			s.log("Warning: screenshot failed: %v", screenshotErr)
-		}
-		if img == nil {
-			s.log("Warning: no screenshot available")
-			time.Sleep(time.Second)
-			continue
-		}
-
-		page := DetectSetupAssistantPage(img)
-		s.log("Detected page: %s", page)
-
-		// Check if we're stuck on the same page
+		// Check if we're stuck
 		if page == lastPage && page != "unknown" {
 			stuckCount++
 			s.log("Stuck count: %d/%d", stuckCount, maxStuckCount)
@@ -171,7 +158,6 @@ func (s *SetupAssistant) navigateSetupAssistant() error {
 		}
 		lastPage = page
 
-		// Recovery mechanism: if stuck, try escape sequences
 		if stuckCount >= maxStuckCount {
 			s.log("Stuck on page %s, attempting recovery...", page)
 			if s.attemptRecovery(step) {
@@ -180,14 +166,16 @@ func (s *SetupAssistant) navigateSetupAssistant() error {
 			}
 		}
 
-		// Handle specific Setup Assistant pages
-		handled := s.handleSetupAssistantPage(page)
+		// Handle the page with OCR-driven clicks
+		handled := s.handlePage(page)
 		if handled {
+			// Verify we advanced to a new page
 			time.Sleep(s.stepDelay)
+			s.waitForPageChange(page, 5*time.Second)
 			continue
 		}
 
-		// Generic navigation for unknown pages
+		// Generic navigation fallback
 		s.log("Using generic navigation for page: %s", page)
 		s.genericNavigate()
 		time.Sleep(s.stepDelay)
@@ -196,54 +184,72 @@ func (s *SetupAssistant) navigateSetupAssistant() error {
 	return fmt.Errorf("setup assistant navigation did not complete within expected steps")
 }
 
-// handleSetupAssistantPage handles a specific Setup Assistant page
-// Returns true if the page was handled, false for generic navigation
-func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
+// handlePage handles a specific Setup Assistant page using OCR-driven clicks.
+// Returns true if the page was handled.
+func (s *SetupAssistant) handlePage(page string) bool {
 	switch page {
 	case "hello":
-		// Press Return to dismiss hello animation
-		s.log("Handling hello screen - pressing Return")
+		s.log("Handling hello screen")
+		// Hello screen responds to Return or clicking Continue
+		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(2 * time.Second)
 		return true
 
 	case "language":
-		// Language selection - press Return to accept default (English)
-		s.log("Handling language screen - accepting default")
+		s.log("Handling language screen - selecting English")
+		if s.tryOCRClick("English", 3*time.Second) == nil {
+			time.Sleep(300 * time.Millisecond)
+			s.tryOCRClick("Continue", 3*time.Second)
+			return true
+		}
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
 	case "country_region":
-		// Country is usually pre-selected, press Return to continue
-		s.log("Handling country/region screen - pressing Return")
+		s.log("Handling country/region screen")
+		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
 	case "accessibility":
-		// Skip accessibility options with Escape or "Not Now"
-		s.log("Handling accessibility screen - pressing Escape to skip")
+		s.log("Handling accessibility screen")
+		if s.tryOCRClick("Not Now", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeEscape)
 		time.Sleep(500 * time.Millisecond)
-		s.pressKey(KeyCodeReturn) // Confirm skip
+		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
 	case "wifi", "network":
-		// VM uses NAT, skip network setup
-		s.log("Handling wifi/network screen - pressing Escape to skip")
+		s.log("Handling wifi/network screen - skipping")
+		if s.tryOCRClick("Other Network Options", 2*time.Second) == nil {
+			time.Sleep(500 * time.Millisecond)
+			s.tryOCRClick("My computer does not connect to the internet", 2*time.Second)
+			time.Sleep(500 * time.Millisecond)
+			s.tryOCRClick("Continue", 2*time.Second)
+			return true
+		}
 		s.pressKey(KeyCodeEscape)
 		time.Sleep(500 * time.Millisecond)
-		// Some versions need extra confirmation
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
 	case "migration":
-		// Skip Migration Assistant
 		s.log("Handling migration screen - selecting 'Not Now'")
-		// Tab to "Not Now" button and press Return
+		if s.tryOCRClick("Not Now", 3*time.Second) == nil {
+			return true
+		}
+		// Fallback: tab to Not Now
 		for i := 0; i < 3; i++ {
 			s.pressKey(KeyCodeTab)
 			time.Sleep(100 * time.Millisecond)
@@ -253,37 +259,44 @@ func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
 		return true
 
 	case "apple_id", "signin":
-		// Skip Apple ID sign in
 		s.log("Handling Apple ID screen - selecting 'Set Up Later'")
-		// Tab to "Set Up Later" and press Return
+		if s.tryOCRClick("Set Up Later", 3*time.Second) == nil {
+			time.Sleep(time.Second)
+			// Confirm skip dialog
+			s.tryOCRClick("Skip", 3*time.Second)
+			return true
+		}
+		// Fallback
 		for i := 0; i < 4; i++ {
 			s.pressKey(KeyCodeTab)
 			time.Sleep(100 * time.Millisecond)
 		}
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(500 * time.Millisecond)
-		// Confirm "Skip" in dialog
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
-	case "terms", "terms_conditions":
-		// Agree to Terms & Conditions
-		s.log("Handling terms screen - pressing Tab to Agree, then Return")
-		// Tab to Agree button
+	case "terms":
+		s.log("Handling terms screen - clicking Agree")
+		if s.tryOCRClick("Agree", 3*time.Second) == nil {
+			time.Sleep(time.Second)
+			// Confirm agreement dialog
+			s.tryOCRClick("Agree", 3*time.Second)
+			return true
+		}
+		// Fallback
 		for i := 0; i < 2; i++ {
 			s.pressKey(KeyCodeTab)
 			time.Sleep(100 * time.Millisecond)
 		}
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(500 * time.Millisecond)
-		// Confirm agreement in dialog
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(2 * time.Second)
 		return true
 
 	case "user_account":
-		// Create user account
 		s.log("Handling user account screen")
 		if err := s.fillUserAccountForm(); err != nil {
 			s.log("Warning: user account form failed: %v", err)
@@ -292,8 +305,10 @@ func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
 		return true
 
 	case "express_setup":
-		// Customize settings instead of express setup
-		s.log("Handling express setup screen - selecting 'Customize Settings'")
+		s.log("Handling express setup screen")
+		if s.tryOCRClick("Customize Settings", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeTab)
 		time.Sleep(100 * time.Millisecond)
 		s.pressKey(KeyCodeReturn)
@@ -301,16 +316,17 @@ func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
 		return true
 
 	case "analytics":
-		// Skip analytics
-		s.log("Handling analytics screen - unchecking and continuing")
-		// Uncheck checkboxes by pressing Space, then Tab+Return
-		s.pressKey(KeyCodeSpace) // Uncheck first checkbox
+		s.log("Handling analytics screen")
+		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			return true
+		}
+		// Fallback: skip through checkboxes then continue
+		s.pressKey(KeyCodeSpace)
 		time.Sleep(100 * time.Millisecond)
 		s.pressKey(KeyCodeTab)
 		time.Sleep(100 * time.Millisecond)
-		s.pressKey(KeyCodeSpace) // Uncheck second checkbox if present
+		s.pressKey(KeyCodeSpace)
 		time.Sleep(100 * time.Millisecond)
-		// Tab to Continue
 		for i := 0; i < 3; i++ {
 			s.pressKey(KeyCodeTab)
 			time.Sleep(100 * time.Millisecond)
@@ -320,8 +336,13 @@ func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
 		return true
 
 	case "screen_time":
-		// Skip Screen Time setup
-		s.log("Handling screen time screen - selecting 'Set Up Later'")
+		s.log("Handling screen time screen")
+		if s.tryOCRClick("Set Up Later", 3*time.Second) == nil {
+			return true
+		}
+		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeTab)
 		time.Sleep(100 * time.Millisecond)
 		s.pressKey(KeyCodeReturn)
@@ -329,9 +350,10 @@ func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
 		return true
 
 	case "siri":
-		// Don't enable Siri
-		s.log("Handling Siri screen - selecting 'Don't Enable Siri'")
-		// Usually need to Tab to the decline option
+		s.log("Handling Siri screen")
+		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeTab)
 		time.Sleep(100 * time.Millisecond)
 		s.pressKey(KeyCodeReturn)
@@ -339,31 +361,39 @@ func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
 		return true
 
 	case "touch_id":
-		// Skip Touch ID setup
-		s.log("Handling Touch ID screen - selecting 'Set Up Later'")
+		s.log("Handling Touch ID screen")
+		if s.tryOCRClick("Set Up Later", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeTab)
 		time.Sleep(100 * time.Millisecond)
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
-	case "choose_look", "appearance":
-		// Accept default appearance
-		s.log("Handling appearance screen - accepting default")
+	case "appearance", "choose_look":
+		s.log("Handling appearance screen")
+		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
 	case "privacy":
-		// Skip privacy settings
-		s.log("Handling privacy screen - continuing")
+		s.log("Handling privacy screen")
+		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
 	case "filevault":
-		// Skip FileVault for VMs
 		s.log("Handling FileVault screen - skipping")
+		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeTab)
 		time.Sleep(100 * time.Millisecond)
 		s.pressKey(KeyCodeReturn)
@@ -371,8 +401,10 @@ func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
 		return true
 
 	case "icloud_keychain":
-		// Skip iCloud Keychain
 		s.log("Handling iCloud Keychain screen - skipping")
+		if s.tryOCRClick("Set Up Later", 3*time.Second) == nil {
+			return true
+		}
 		s.pressKey(KeyCodeTab)
 		time.Sleep(100 * time.Millisecond)
 		s.pressKey(KeyCodeReturn)
@@ -383,32 +415,123 @@ func (s *SetupAssistant) handleSetupAssistantPage(page string) bool {
 	return false
 }
 
-// genericNavigate attempts generic navigation for unknown pages
+// tryOCRClick attempts to find and click text using OCR.
+// Returns nil on success, error on failure (text not found or click failed).
+func (s *SetupAssistant) tryOCRClick(text string, timeout time.Duration) error {
+	if s.cs != nil && s.ocr != nil {
+		return s.cs.OCRClickText(s.ocr, text, timeout)
+	}
+	// Socket-based mode: take screenshot, find text, click
+	if s.client != nil && s.ocr != nil {
+		return s.ocrClickViaClient(text, timeout)
+	}
+	return fmt.Errorf("no OCR or control path available")
+}
+
+// ocrClickViaClient uses the socket client for screenshot + OCR + click.
+func (s *SetupAssistant) ocrClickViaClient(text string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img, err := s.client.Screenshot()
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		normX, normY, found := s.ocr.FindTextNormalized(img, text)
+		if found {
+			s.log("OCR found %q at (%.3f, %.3f) — clicking", text, normX, normY)
+			return s.client.MouseClick(normX, normY)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout: text %q not found", text)
+}
+
+// detectPage uses OCR to identify the current Setup Assistant page.
+func (s *SetupAssistant) detectPage() string {
+	if s.cs != nil && s.ocr != nil {
+		return s.cs.OCRDetectPage(s.ocr)
+	}
+	if s.client != nil && s.ocr != nil {
+		img, err := s.client.Screenshot()
+		if err != nil {
+			return "unknown"
+		}
+		return OCRDetectSetupAssistantPage(img, s.ocr)
+	}
+	// Fallback to pixel-based detection
+	if s.client != nil {
+		img, err := s.client.ScreenshotScaled(0.5)
+		if err != nil {
+			return "unknown"
+		}
+		return DetectSetupAssistantPage(img)
+	}
+	return "unknown"
+}
+
+// detectCurrentScreenOCR detects screen state using OCR when available.
+func (s *SetupAssistant) detectCurrentScreenOCR() ScreenState {
+	if s.cs != nil {
+		img, errMsg := s.cs.captureVMView()
+		if errMsg != "" {
+			return ScreenStateUnknown
+		}
+		return DetectScreenStateOCR(img, s.ocr)
+	}
+	if s.client != nil {
+		img, err := s.client.ScreenshotScaled(0.5)
+		if err != nil {
+			return ScreenStateUnknown
+		}
+		if s.ocr != nil {
+			return DetectScreenStateOCR(img, s.ocr)
+		}
+		return DetectScreenState(img)
+	}
+	return ScreenStateUnknown
+}
+
+// waitForPageChange polls until the detected page differs from currentPage.
+func (s *SetupAssistant) waitForPageChange(currentPage string, timeout time.Duration) {
+	if s.cs != nil && s.ocr != nil {
+		s.cs.OCRWaitForPageChange(s.ocr, currentPage, timeout)
+		return
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		newPage := s.detectPage()
+		if newPage != currentPage {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// genericNavigate attempts generic navigation for unknown pages.
 func (s *SetupAssistant) genericNavigate() {
-	// Try pressing Return first
+	// Try clicking "Continue" via OCR first
+	if s.tryOCRClick("Continue", 2*time.Second) == nil {
+		return
+	}
+
+	// Fall back to keyboard
 	s.pressKey(KeyCodeReturn)
 	time.Sleep(300 * time.Millisecond)
 
-	// Take another screenshot to check if we advanced
-	newImg, err := s.client.Screenshot()
-	if err != nil {
-		s.log("Warning: screenshot failed during navigation: %v", err)
-	}
-	if newImg != nil {
-		newPage := DetectSetupAssistantPage(newImg)
-		if newPage != "unknown" {
-			return // We advanced
-		}
+	// Check if we advanced
+	newPage := s.detectPage()
+	if newPage != "unknown" {
+		return
 	}
 
-	// If Return didn't work, try Tab + Return
 	s.log("Return didn't advance, trying Tab + Return")
 	s.pressKey(KeyCodeTab)
 	time.Sleep(100 * time.Millisecond)
 	s.pressKey(KeyCodeReturn)
 }
 
-// attemptRecovery tries various escape sequences when stuck
+// attemptRecovery tries various escape sequences when stuck.
 func (s *SetupAssistant) attemptRecovery(step int) bool {
 	s.log("Attempting recovery sequence...")
 	s.saveDebugScreenshot(fmt.Sprintf("recovery_%02d", step))
@@ -418,20 +541,27 @@ func (s *SetupAssistant) attemptRecovery(step int) bool {
 	s.pressKey(KeyCodeEscape)
 	time.Sleep(500 * time.Millisecond)
 
-	img, err := s.client.Screenshot()
-	if err != nil {
-		s.log("Warning: screenshot failed during recovery: %v", err)
-	}
-	if img != nil {
-		state := DetectScreenState(img)
-		if state == ScreenStateDesktop || state == ScreenStateLoginScreen {
-			return true
-		}
+	page := s.detectPage()
+	if page == "desktop" || page == "login" {
+		return true
 	}
 
 	// Try 2: Cmd+. (Cancel)
 	s.log("Recovery: trying Cmd+.")
-	s.client.KeyPressWithModifiers(KeyCodePeriod, ModifierCommand)
+	if s.client != nil {
+		s.client.KeyPressWithModifiers(KeyCodePeriod, ModifierCommand)
+	} else if s.cs != nil {
+		s.cs.sendKeyEvent(&controlpb.KeyCommand{
+			KeyCode:   uint32(KeyCodePeriod),
+			KeyDown:   true,
+			Modifiers: uint32(ModifierCommand),
+		})
+		s.cs.sendKeyEvent(&controlpb.KeyCommand{
+			KeyCode:   uint32(KeyCodePeriod),
+			KeyDown:   false,
+			Modifiers: uint32(ModifierCommand),
+		})
+	}
 	time.Sleep(500 * time.Millisecond)
 
 	// Try 3: Tab cycle through buttons then Return
@@ -446,65 +576,87 @@ func (s *SetupAssistant) attemptRecovery(step int) bool {
 	return false
 }
 
-// fillUserAccountForm fills in the user account creation form
+// fillUserAccountForm fills in the user account creation form.
+// Uses OCR to click fields when available, falls back to tab navigation.
 func (s *SetupAssistant) fillUserAccountForm() error {
 	s.log("Filling user account form...")
 
-	// User account form typically has:
-	// - Full Name field
-	// - Account Name field
-	// - Password field
-	// - Verify Password field
-	// - Password Hint field (optional)
+	// Try OCR-driven field selection first
+	if s.ocr != nil {
+		if err := s.tryOCRClick("Full Name", 2*time.Second); err == nil {
+			time.Sleep(200 * time.Millisecond)
+			s.log("Entering full name: %s", s.config.Fullname)
+			s.typeText(s.config.Fullname)
+			time.Sleep(200 * time.Millisecond)
 
-	// Navigate to first field (Tab to ensure we're in the form)
+			// Account Name field
+			s.pressKey(KeyCodeTab)
+			time.Sleep(200 * time.Millisecond)
+			s.selectAll()
+			time.Sleep(100 * time.Millisecond)
+			s.log("Entering username: %s", s.config.Username)
+			s.typeText(s.config.Username)
+			time.Sleep(200 * time.Millisecond)
+
+			// Password
+			s.pressKey(KeyCodeTab)
+			time.Sleep(200 * time.Millisecond)
+			s.log("Entering password")
+			s.typeText(s.config.Password)
+			time.Sleep(200 * time.Millisecond)
+
+			// Verify Password
+			s.pressKey(KeyCodeTab)
+			time.Sleep(200 * time.Millisecond)
+			s.typeText(s.config.Password)
+			time.Sleep(200 * time.Millisecond)
+
+			// Skip hint, click Continue
+			s.pressKey(KeyCodeTab)
+			time.Sleep(200 * time.Millisecond)
+			if s.tryOCRClick("Continue", 2*time.Second) != nil {
+				s.pressKey(KeyCodeTab)
+				time.Sleep(200 * time.Millisecond)
+				s.pressKey(KeyCodeReturn)
+			}
+			time.Sleep(2 * time.Second)
+
+			s.log("User account form submitted")
+			return nil
+		}
+	}
+
+	// Fallback: tab-based navigation
 	for i := 0; i < 3; i++ {
 		s.pressKey(KeyCodeTab)
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Full Name
 	s.log("Entering full name: %s", s.config.Fullname)
-	if err := s.client.TypeText(s.config.Fullname); err != nil {
-		return fmt.Errorf("type fullname: %w", err)
-	}
+	s.typeText(s.config.Fullname)
 	time.Sleep(200 * time.Millisecond)
 
-	// Tab to Account Name (may auto-populate from full name)
 	s.pressKey(KeyCodeTab)
 	time.Sleep(200 * time.Millisecond)
-
-	// Clear and set username
 	s.selectAll()
 	time.Sleep(100 * time.Millisecond)
 	s.log("Entering username: %s", s.config.Username)
-	if err := s.client.TypeText(s.config.Username); err != nil {
-		return fmt.Errorf("type username: %w", err)
-	}
+	s.typeText(s.config.Username)
 	time.Sleep(200 * time.Millisecond)
 
-	// Tab to Password
 	s.pressKey(KeyCodeTab)
 	time.Sleep(200 * time.Millisecond)
 	s.log("Entering password")
-	if err := s.client.TypeText(s.config.Password); err != nil {
-		return fmt.Errorf("type password: %w", err)
-	}
+	s.typeText(s.config.Password)
 	time.Sleep(200 * time.Millisecond)
 
-	// Tab to Verify Password
 	s.pressKey(KeyCodeTab)
 	time.Sleep(200 * time.Millisecond)
-	if err := s.client.TypeText(s.config.Password); err != nil {
-		return fmt.Errorf("type verify password: %w", err)
-	}
+	s.typeText(s.config.Password)
 	time.Sleep(200 * time.Millisecond)
 
-	// Tab to Password Hint (skip it)
 	s.pressKey(KeyCodeTab)
 	time.Sleep(200 * time.Millisecond)
-
-	// Tab to Continue button and press Enter
 	s.pressKey(KeyCodeTab)
 	time.Sleep(200 * time.Millisecond)
 	s.pressKey(KeyCodeReturn)
@@ -514,68 +666,51 @@ func (s *SetupAssistant) fillUserAccountForm() error {
 	return nil
 }
 
-// loginWithCredentials attempts to log in at the login screen
+// loginWithCredentials attempts to log in at the login screen.
 func (s *SetupAssistant) loginWithCredentials() error {
 	s.log("Attempting login with created credentials")
-
-	// At login screen, click on user icon or type username
-	// Then type password and press Enter
-
-	// Usually the user is already selected, just type password
 	time.Sleep(500 * time.Millisecond)
 
-	// Type password
-	if err := s.client.TypeText(s.config.Password); err != nil {
-		return fmt.Errorf("type login password: %w", err)
-	}
+	s.typeText(s.config.Password)
 	time.Sleep(200 * time.Millisecond)
-
-	// Press Enter to login
 	s.pressKey(KeyCodeReturn)
 	time.Sleep(5 * time.Second)
 
-	// Check if we reached desktop
-	state, _ := s.detectCurrentScreen()
-	if state == ScreenStateDesktop {
+	page := s.detectPage()
+	if page == "desktop" {
 		s.log("Login successful!")
 		return nil
 	}
 
-	s.log("Login may have failed, current state: %s", state)
+	s.log("Login may have failed, current page: %s", page)
 	return nil
 }
 
-// waitForSetupAssistant waits for Setup Assistant to appear
+// waitForSetupAssistant waits for Setup Assistant to appear.
 func (s *SetupAssistant) waitForSetupAssistant(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		state, err := s.detectCurrentScreen()
-		if err != nil {
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
+		state := s.detectCurrentScreenOCR()
 		if state == ScreenStateSetupAssistant {
 			return nil
 		}
 		if state == ScreenStateLoginScreen || state == ScreenStateDesktop {
-			return nil // Already past Setup Assistant
+			return nil
 		}
-
 		time.Sleep(2 * time.Second)
 	}
 	return fmt.Errorf("timeout waiting for Setup Assistant")
 }
 
-// waitForStableScreen waits for the screen to stop changing
+// waitForStableScreen waits for the screen to stop changing.
 func (s *SetupAssistant) waitForStableScreen(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastImg image.Image
 	stableCount := 0
 
 	for time.Now().Before(deadline) {
-		img, err := s.client.ScreenshotScaled(0.25)
-		if err != nil {
+		img := s.screenshotScaled(0.25)
+		if img == nil {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
@@ -595,30 +730,80 @@ func (s *SetupAssistant) waitForStableScreen(timeout time.Duration) error {
 	return nil
 }
 
-// detectCurrentScreen takes a screenshot and detects the screen state
-func (s *SetupAssistant) detectCurrentScreen() (ScreenState, error) {
-	img, err := s.client.ScreenshotScaled(0.5)
-	if err != nil {
-		return ScreenStateUnknown, err
+// screenshotScaled captures a scaled screenshot via either path.
+func (s *SetupAssistant) screenshotScaled(scale float64) image.Image {
+	if s.cs != nil {
+		img, errMsg := s.cs.captureVMView()
+		if errMsg != "" {
+			return nil
+		}
+		if scale < 1 {
+			return scaleImage(img, scale)
+		}
+		return img
 	}
-	return DetectScreenState(img), nil
+	if s.client != nil {
+		img, err := s.client.ScreenshotScaled(scale)
+		if err != nil {
+			return nil
+		}
+		return img
+	}
+	return nil
 }
 
-// pressKey presses and releases a key
+// pressKey presses and releases a key via either path.
 func (s *SetupAssistant) pressKey(keyCode uint16) {
-	if err := s.client.KeyPress(keyCode); err != nil {
-		s.log("Warning: key press failed: %v", err)
+	if s.cs != nil {
+		s.cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: uint32(keyCode), KeyDown: true})
+		time.Sleep(50 * time.Millisecond)
+		s.cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: uint32(keyCode), KeyDown: false})
+		return
+	}
+	if s.client != nil {
+		if err := s.client.KeyPress(keyCode); err != nil {
+			s.log("Warning: key press failed: %v", err)
+		}
 	}
 }
 
-// selectAll sends Cmd+A to select all text
+// typeText types a string via either path.
+func (s *SetupAssistant) typeText(text string) {
+	if s.cs != nil {
+		s.cs.typeText(&controlpb.TextCommand{Text: text})
+		return
+	}
+	if s.client != nil {
+		if err := s.client.TypeText(text); err != nil {
+			s.log("Warning: type text failed: %v", err)
+		}
+	}
+}
+
+// selectAll sends Cmd+A to select all text.
 func (s *SetupAssistant) selectAll() {
-	if err := s.client.KeyPressWithModifiers(KeyCodeA, ModifierCommand); err != nil {
-		s.log("Warning: select all failed: %v", err)
+	if s.cs != nil {
+		s.cs.sendKeyEvent(&controlpb.KeyCommand{
+			KeyCode:   uint32(KeyCodeA),
+			KeyDown:   true,
+			Modifiers: uint32(ModifierCommand),
+		})
+		time.Sleep(50 * time.Millisecond)
+		s.cs.sendKeyEvent(&controlpb.KeyCommand{
+			KeyCode:   uint32(KeyCodeA),
+			KeyDown:   false,
+			Modifiers: uint32(ModifierCommand),
+		})
+		return
+	}
+	if s.client != nil {
+		if err := s.client.KeyPressWithModifiers(KeyCodeA, ModifierCommand); err != nil {
+			s.log("Warning: select all failed: %v", err)
+		}
 	}
 }
 
-// saveDebugScreenshot saves a screenshot for debugging
+// saveDebugScreenshot saves a screenshot for debugging.
 func (s *SetupAssistant) saveDebugScreenshot(name string) {
 	if s.saveDir == "" {
 		return
@@ -629,9 +814,22 @@ func (s *SetupAssistant) saveDebugScreenshot(name string) {
 		return
 	}
 
-	img, err := s.client.Screenshot()
-	if err != nil {
-		s.log("Warning: failed to capture screenshot: %v", err)
+	var img image.Image
+	if s.cs != nil {
+		captured, errMsg := s.cs.captureVMView()
+		if errMsg != "" {
+			s.log("Warning: failed to capture screenshot: %s", errMsg)
+			return
+		}
+		img = captured
+	} else if s.client != nil {
+		captured, err := s.client.Screenshot()
+		if err != nil {
+			s.log("Warning: failed to capture screenshot: %v", err)
+			return
+		}
+		img = captured
+	} else {
 		return
 	}
 
@@ -650,40 +848,37 @@ func (s *SetupAssistant) saveDebugScreenshot(name string) {
 	s.log("Saved debug screenshot: %s", path)
 }
 
-// log prints a message if verbose mode is enabled
+// log prints a message if verbose mode is enabled.
 func (s *SetupAssistant) log(format string, args ...interface{}) {
 	if s.verbose {
 		fmt.Printf("[SetupAssistant] "+format+"\n", args...)
 	}
 }
 
-// Wait for desktop
-
-// Open Terminal via Spotlight
-
-// Type the command to enable auto-login
-
-// Enter password for sudo
-
-// Close Terminal
-
-// VerifyProvisioning checks if the user was created successfully
+// VerifyProvisioning checks if the user was created successfully.
 func (s *SetupAssistant) VerifyProvisioning() (bool, error) {
-	state, err := s.detectCurrentScreen()
-	if err != nil {
-		return false, err
-	}
+	page := s.detectPage()
 
-	if state == ScreenStateDesktop {
+	if page == "desktop" {
 		s.log("Verification: At desktop - provisioning appears successful")
 		return true, nil
 	}
 
+	if page == "login" {
+		s.log("Verification: At login screen - user created, needs login")
+		return true, nil
+	}
+
+	state := s.detectCurrentScreenOCR()
+	if state == ScreenStateDesktop {
+		s.log("Verification: At desktop - provisioning appears successful")
+		return true, nil
+	}
 	if state == ScreenStateLoginScreen {
 		s.log("Verification: At login screen - user created, needs login")
 		return true, nil
 	}
 
-	s.log("Verification: Unexpected state: %s", state)
+	s.log("Verification: Unexpected state: %s / page: %s", state, page)
 	return false, nil
 }

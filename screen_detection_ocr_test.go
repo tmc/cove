@@ -105,3 +105,41 @@ func TestCountInputFields_Uniform(t *testing.T) {
 		t.Errorf("expected 0 input fields on uniform image, got %d", count)
 	}
 }
+
+func TestOCRDetectSetupAssistantPage_NilInputs(t *testing.T) {
+	ocr := NewOCRService(false)
+
+	if page := OCRDetectSetupAssistantPage(nil, ocr); page != "unknown" {
+		t.Errorf("OCRDetectSetupAssistantPage(nil, ocr) = %q, want %q", page, "unknown")
+	}
+
+	img := newSolidImage(800, 600, color.RGBA{128, 128, 128, 255})
+	if page := OCRDetectSetupAssistantPage(img, nil); page != "unknown" {
+		t.Errorf("OCRDetectSetupAssistantPage(img, nil) = %q, want %q", page, "unknown")
+	}
+}
+
+func TestOCRDetectSetupAssistantPage_BlankImage(t *testing.T) {
+	ocr := NewOCRService(false)
+	img := newSolidImage(800, 600, color.RGBA{255, 255, 255, 255})
+	page := OCRDetectSetupAssistantPage(img, ocr)
+	// Blank white image has no text, should return "unknown"
+	if page != "unknown" {
+		t.Errorf("OCRDetectSetupAssistantPage(blank) = %q, want %q", page, "unknown")
+	}
+}
+
+func TestOCRPageDetectionOrder_HasEntries(t *testing.T) {
+	if len(ocrPageDetectionOrder) == 0 {
+		t.Fatal("ocrPageDetectionOrder is empty")
+	}
+	// Verify all entries have at least one marker
+	for _, entry := range ocrPageDetectionOrder {
+		if entry.page == "" {
+			t.Error("empty page name in ocrPageDetectionOrder")
+		}
+		if len(entry.markers) == 0 {
+			t.Errorf("no markers for page %q in ocrPageDetectionOrder", entry.page)
+		}
+	}
+}

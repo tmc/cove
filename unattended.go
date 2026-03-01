@@ -166,18 +166,13 @@ func runOCRSetupAssistant(cs *ControlServer, ocr *OCRService, debugDir string) e
 		}
 	}
 
-	// Fall back to the existing keyboard-driven Setup Assistant automation
-	fmt.Println("Using keyboard-driven Setup Assistant navigation...")
-	sa := &SetupAssistant{
-		client: nil, // cs is available via global; the SA uses it differently
-		config: ProvisionConfig{
-			Username: provisionUser,
-			Password: provisionPassword,
-			Admin:    provisionAdmin,
-		},
-		verbose: verbose,
-		saveDir: debugDir,
-	}
+	// Fall back to OCR-driven Setup Assistant automation (in-process)
+	fmt.Println("Using OCR-driven Setup Assistant navigation...")
+	sa := NewSetupAssistantInProcess(cs, ocr, ProvisionConfig{
+		Username: provisionUser,
+		Password: provisionPassword,
+		Admin:    provisionAdmin,
+	}, verbose, debugDir)
 	return sa.Run()
 }
 

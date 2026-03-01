@@ -68,3 +68,65 @@ func DetectScreenStateOCR(img image.Image, ocr *OCRService) ScreenState {
 	// Fall back to pixel heuristics
 	return DetectScreenState(img)
 }
+
+// ocrPageDetectionOrder defines the order in which pages are checked.
+// More specific markers are checked before generic ones to avoid false matches.
+// For example, "hello" is checked last because it's a common word.
+var ocrPageDetectionOrder = []struct {
+	page    string
+	markers []string
+}{
+	{"user_account", []string{"create a computer account", "full name", "account name"}},
+	{"terms", []string{"terms and conditions"}},
+	{"migration", []string{"migration assistant", "transfer information"}},
+	{"apple_id", []string{"apple id", "sign in with your apple"}},
+	{"country_region", []string{"select your country", "country or region"}},
+	{"express_setup", []string{"express set up"}},
+	{"analytics", []string{"help apple improve", "share mac analytics"}},
+	{"screen_time", []string{"screen time"}},
+	{"siri", []string{"enable siri", "ask siri"}},
+	{"appearance", []string{"choose your look"}},
+	{"touch_id", []string{"touch id"}},
+	{"filevault", []string{"filevault"}},
+	{"icloud_keychain", []string{"icloud keychain"}},
+	{"accessibility", []string{"accessibility"}},
+	{"wifi", []string{"select a wi-fi network"}},
+	{"privacy", []string{"data & privacy", "data and privacy"}},
+	{"language", []string{"select your language", "choose your language"}},
+	{"hello", []string{"hello", "bonjour"}},
+}
+
+// OCRDetectSetupAssistantPage uses OCR to identify the current Setup Assistant page.
+// Returns a page name string (e.g., "language", "migration", "user_account")
+// or "unknown" if no known page is detected.
+func OCRDetectSetupAssistantPage(img image.Image, ocr *OCRService) string {
+	if ocr == nil || img == nil {
+		return "unknown"
+	}
+
+	text := ocr.AllText(img)
+	if text == "" {
+		return "unknown"
+	}
+
+	lower := strings.ToLower(text)
+
+	// Check for desktop or login (not Setup Assistant pages)
+	if strings.Contains(lower, "finder") && strings.Contains(lower, "file") {
+		return "desktop"
+	}
+	if strings.Contains(lower, "enter password") || strings.Contains(lower, "login window") {
+		return "login"
+	}
+
+	// Check pages in priority order
+	for _, entry := range ocrPageDetectionOrder {
+		for _, marker := range entry.markers {
+			if strings.Contains(lower, marker) {
+				return entry.page
+			}
+		}
+	}
+
+	return "unknown"
+}

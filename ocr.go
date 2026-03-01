@@ -2,10 +2,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/png"
-	"os"
 	"strings"
 
 	"github.com/tmc/apple/corefoundation"
@@ -37,20 +37,17 @@ func (o *OCRService) RecognizeText(img image.Image) ([]TextObservation, error) {
 		return nil, fmt.Errorf("nil image")
 	}
 
-	// Save image to temp file, load as CGImage via ImageIO
-	tmpFile, err := os.CreateTemp("", "ocr-*.png")
-	if err != nil {
-		return nil, fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if err := png.Encode(tmpFile, img); err != nil {
-		tmpFile.Close()
+	// Keep OCR fully in-memory to avoid temp file churn on repeated screen polling.
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
 		return nil, fmt.Errorf("encode png: %w", err)
 	}
-	tmpFile.Close()
+	data := foundation.NewDataFromBytes(buf.Bytes())
+	if data.ID == 0 {
+		return nil, fmt.Errorf("create NSData from image bytes")
+	}
 
-	return o.recognizeTextInFile(tmpFile.Name(), img.Bounds().Dx(), img.Bounds().Dy())
+	return o.recognizeTextInData(data, img.Bounds().Dx(), img.Bounds().Dy())
 }
 
 // FindText searches for text on screen and returns its center pixel coordinates.
@@ -76,6 +73,45 @@ func (o *OCRService) FindText(img image.Image, needle string) (x, y float64, fou
 	return 0, 0, false
 }
 
+// FindTextNormalized searches for text and returns its center in normalized
+// coordinates (0-1, top-left origin) suitable for mouse input commands.
+func (o *OCRService) FindTextNormalized(img image.Image, needle string) (x, y float64, found bool) {
+	px, py, found := o.FindText(img, needle)
+	if !found {
+		return 0, 0, false
+	}
+	bounds := img.Bounds()
+	return px / float64(bounds.Dx()), py / float64(bounds.Dy()), true
+}
+
+// NormalizedObservation holds a recognized text region with normalized coordinates.
+type NormalizedObservation struct {
+	Text       string
+	Confidence float32
+	X, Y       float64 // center in normalized coordinates (0-1, top-left origin)
+}
+
+// FindAllTextNormalized returns all OCR observations with normalized coordinates.
+func (o *OCRService) FindAllTextNormalized(img image.Image) ([]NormalizedObservation, error) {
+	observations, err := o.RecognizeText(img)
+	if err != nil {
+		return nil, err
+	}
+	bounds := img.Bounds()
+	w := float64(bounds.Dx())
+	h := float64(bounds.Dy())
+	result := make([]NormalizedObservation, len(observations))
+	for i, obs := range observations {
+		result[i] = NormalizedObservation{
+			Text:       obs.Text,
+			Confidence: obs.Confidence,
+			X:          float64(obs.Center.X) / w,
+			Y:          float64(obs.Center.Y) / h,
+		}
+	}
+	return result, nil
+}
+
 // AllText returns all recognized text as a single string.
 func (o *OCRService) AllText(img image.Image) string {
 	observations, err := o.RecognizeText(img)
@@ -96,6 +132,26 @@ func (o *OCRService) recognizeTextInFile(path string, width, height int) ([]Text
 	}
 
 	handler := vision.NewImageRequestHandlerWithURLOptions(url, nil)
+
+	request := vision.NewVNRecognizeTextRequest()
+	request.SetRecognitionLevel(vision.VNRequestTextRecognitionLevelAccurate)
+	request.SetUsesLanguageCorrection(true)
+
+	ok, err := handler.PerformRequestsError([]vision.VNRequest{
+		vision.VNRequestFromID(request.ID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("perform requests: %w", err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("perform requests returned false")
+	}
+
+	return o.extractResults(request, width, height), nil
+}
+
+func (o *OCRService) recognizeTextInData(data foundation.INSData, width, height int) ([]TextObservation, error) {
+	handler := vision.NewImageRequestHandlerWithDataOptions(data, nil)
 
 	request := vision.NewVNRecognizeTextRequest()
 	request.SetRecognitionLevel(vision.VNRequestTextRecognitionLevelAccurate)
@@ -144,7 +200,3 @@ func (o *OCRService) extractResults(request vision.VNRecognizeTextRequest, width
 	}
 	return results
 }
-
-// Get CGImage from the window for direct OCR (avoids PNG round-trip)
-
-// Fallback to PNG round-trip

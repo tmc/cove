@@ -66,3 +66,44 @@ func TestOCRService_Verbose(t *testing.T) {
 	ocr.FindText(img, "test")
 	ocr.AllText(img)
 }
+
+func TestOCRService_FindTextNormalized_NilImage(t *testing.T) {
+	ocr := NewOCRService(false)
+	_, _, found := ocr.FindTextNormalized(nil, "hello")
+	if found {
+		t.Error("expected found=false for nil image")
+	}
+}
+
+func TestOCRService_FindTextNormalized_BlankImage(t *testing.T) {
+	ocr := NewOCRService(false)
+	img := image.NewRGBA(image.Rect(0, 0, 800, 600))
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.Point{}, draw.Src)
+
+	_, _, found := ocr.FindTextNormalized(img, "hello")
+	if found {
+		t.Error("expected found=false for blank image")
+	}
+}
+
+func TestOCRService_FindAllTextNormalized_BlankImage(t *testing.T) {
+	ocr := NewOCRService(false)
+	img := image.NewRGBA(image.Rect(0, 0, 200, 200))
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.Point{}, draw.Src)
+
+	results, err := ocr.FindAllTextNormalized(img)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results on blank image, got %d", len(results))
+	}
+}
+
+func TestOCRService_FindAllTextNormalized_NilImage(t *testing.T) {
+	ocr := NewOCRService(false)
+	_, err := ocr.FindAllTextNormalized(nil)
+	if err == nil {
+		t.Error("expected error for nil image")
+	}
+}

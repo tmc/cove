@@ -8,7 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"image"
-	"image/jpeg"
+	"image/png"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -28,6 +29,7 @@ func ctlCommand(args []string) error {
 	outputFile := fs.String("o", "", "Output file for screenshot data (default: stdout)")
 	raw := fs.Bool("raw", false, "Output raw JSON response")
 	wait := fs.Duration("wait", 0, "Wait duration for agent commands (retries until agent is ready)")
+	token := fs.String("token", "", "Control socket auth token (default: env or VM control.token file)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: vz-macos ctl [options] <command> [args...]
@@ -35,6 +37,7 @@ func ctlCommand(args []string) error {
 Commands:
   ping                  Test connection
   status                Get VM state and capabilities
+  capabilities          Get machine-readable control protocol capabilities
   screenshot            Capture VM screen (base64 JPEG)
   screenshot -o file    Save screenshot to file
   pause                 Pause VM
@@ -52,6 +55,9 @@ Commands:
   mouse <x> <y> <action>   Send mouse event (action: move|down|up|click)
   text <string>         Type text string
   detect                Detect current screen state (setup_assistant, login, desktop)
+  ocr                   Run OCR on current screen and print all recognized text
+  click-text <text>     Find text on screen via OCR and click its center
+  boot-script <file>    Execute a boot command script file
   step                  Interactive step-through mode for Setup Assistant debugging
   setup-assist <user> <pass>  Run Setup Assistant automation
 
@@ -60,6 +66,7 @@ Guest Agent (via GRPC over vsock):
   agent-ping            Ping guest agent
   agent-info            Get guest system info
   agent-exec <cmd> [args...]  Run command in guest
+  agent-exec-stream <cmd> [args...]  Stream stdout/stderr from guest command
   agent-cp <host> <guest>     Copy file host→guest (streaming)
   agent-cp -from-guest <guest> <host>  Copy file guest→host
   agent-read <path>     Read file from guest (base64)
@@ -122,10 +129,25 @@ Examples:
 	if sock == "" {
 		sock = GetControlSocketPath()
 	}
+	if strings.TrimSpace(*token) != "" {
+		os.Setenv(controlTokenEnvVar, strings.TrimSpace(*token))
+	}
 
 	switch cmdType {
 	case "detect":
 		return ctlDetectScreen(sock)
+	case "ocr":
+		return ctlOCR(sock)
+	case "click-text":
+		if len(subArgs) < 1 {
+			return fmt.Errorf("click-text requires text argument")
+		}
+		return ctlClickText(sock, strings.Join(subArgs, " "))
+	case "boot-script":
+		if len(subArgs) < 1 {
+			return fmt.Errorf("boot-script requires a script file path")
+		}
+		return ctlBootScript(sock, subArgs[0])
 	case "step":
 		return ctlStepMode(sock, *outputFile)
 	case "setup-assist":
@@ -137,9 +159,10 @@ Examples:
 
 	// Build proto request
 	req := &controlpb.ControlRequest{Type: cmdType}
+	req.AuthToken = resolveControlTokenForSocket(sock)
 
 	switch cmdType {
-	case "ping", "status", "pause", "resume", "stop", "request-stop", "network-info":
+	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "network-info":
 		// No payload needed
 
 	case "memory":
@@ -189,19 +212,55 @@ Examples:
 
 	case "key":
 		if len(subArgs) < 1 {
-			return fmt.Errorf("key command requires keycode")
+			return fmt.Errorf("key command requires keycode or key name (e.g., return, tab, space)")
 		}
-		var keycode int
-		fmt.Sscanf(subArgs[0], "%d", &keycode)
-		keyDown := true
-		if len(subArgs) >= 2 && subArgs[1] == "up" {
-			keyDown = false
+		// Try key name first (return, tab, space, etc.), fall back to numeric keycode
+		keySpec := subArgs[0]
+		keycode := keyNameToCode(keySpec)
+		if keycode == 0 && keySpec != "a" {
+			// Not a known name and not "a" — try numeric
+			var numCode int
+			if _, err := fmt.Sscanf(keySpec, "%d", &numCode); err != nil {
+				return fmt.Errorf("unknown key: %q (use a name like return, tab, space, or a numeric keycode)", keySpec)
+			}
+			keycode = uint16(numCode)
 		}
-		req.Command = &controlpb.ControlRequest_Key{
-			Key: &controlpb.KeyCommand{
-				KeyCode: uint32(keycode),
-				KeyDown: keyDown,
-			},
+		// Support explicit "down"/"up" for individual events, otherwise send
+		// a complete press (down + up) as two sequential requests.
+		if len(subArgs) >= 2 && (subArgs[1] == "down" || subArgs[1] == "up") {
+			keyDown := subArgs[1] == "down"
+			req.Command = &controlpb.ControlRequest_Key{
+				Key: &controlpb.KeyCommand{
+					KeyCode: uint32(keycode),
+					KeyDown: keyDown,
+				},
+			}
+		} else {
+			// Full key press: send down, then up as two requests.
+			downReq := &controlpb.ControlRequest{
+				Type: "key",
+				Command: &controlpb.ControlRequest_Key{
+					Key: &controlpb.KeyCommand{
+						KeyCode: uint32(keycode),
+						KeyDown: true,
+					},
+				},
+			}
+			resp, err := ctlSendRequest(sock, downReq, *timeout, "key")
+			if err != nil {
+				return fmt.Errorf("key down: %w", err)
+			}
+			if !resp.Success {
+				return fmt.Errorf("key down: %s", resp.Error)
+			}
+			time.Sleep(50 * time.Millisecond)
+			// Now send key up
+			req.Command = &controlpb.ControlRequest_Key{
+				Key: &controlpb.KeyCommand{
+					KeyCode: uint32(keycode),
+					KeyDown: false,
+				},
+			}
 		}
 
 	case "mouse":
@@ -320,6 +379,23 @@ Examples:
 		}
 		*timeout = 10 * time.Minute // large file default
 
+	case "agent-exec-stream":
+		if len(subArgs) < 1 {
+			return fmt.Errorf("agent-exec-stream requires at least one argument")
+		}
+		req.Command = &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{
+				Args: subArgs,
+			},
+		}
+		if *wait > 0 {
+			pingReq := &controlpb.ControlRequest{Type: "agent-ping"}
+			if err := ctlAgentWithRetry(sock, pingReq, *wait, *timeout, false); err != nil {
+				return err
+			}
+		}
+		return ctlExecStream(sock, req, *timeout)
+
 	case "reset-password":
 		if len(subArgs) < 2 {
 			return fmt.Errorf("usage: ctl reset-password <username> <new-password>")
@@ -345,6 +421,84 @@ Examples:
 	return ctlPrintResponse(resp, cmdType, *raw, *outputFile)
 }
 
+func ctlExecStream(sock string, req *controlpb.ControlRequest, timeout time.Duration) error {
+	conn, err := net.DialTimeout("unix", sock, timeout)
+	if err != nil {
+		return fmt.Errorf("connect to %s: %w", sock, err)
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(timeout))
+
+	reqToSend := req
+	if req.AuthToken == "" {
+		if token := resolveControlTokenForSocket(sock); token != "" {
+			reqCopy := *req
+			reqCopy.AuthToken = token
+			reqToSend = &reqCopy
+		}
+	}
+	reqBytes, err := protojsonMarshaler.Marshal(reqToSend)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	reqBytes = append(reqBytes, '\n')
+	if _, err := conn.Write(reqBytes); err != nil {
+		return fmt.Errorf("send: %w", err)
+	}
+
+	reader := bufio.NewReaderSize(conn, 256*1024)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("receive: %w", err)
+		}
+
+		var resp controlpb.ControlResponse
+		if err := protojson.Unmarshal([]byte(line), &resp); err != nil {
+			return fmt.Errorf("parse response: %w", err)
+		}
+		if !resp.Success {
+			return fmt.Errorf("command failed: %s", resp.Error)
+		}
+		if resp.Data == "" {
+			continue
+		}
+
+		var event struct {
+			Stream   string `json:"stream"`
+			Data     string `json:"data"`
+			Done     bool   `json:"done"`
+			ExitCode int32  `json:"exitCode"`
+		}
+		if err := json.Unmarshal([]byte(resp.Data), &event); err != nil {
+			fmt.Println(resp.Data)
+			continue
+		}
+
+		if event.Data != "" {
+			chunk, err := base64.StdEncoding.DecodeString(event.Data)
+			if err != nil {
+				fmt.Print(event.Data)
+			} else if event.Stream == "stderr" {
+				_, _ = os.Stderr.Write(chunk)
+			} else {
+				_, _ = os.Stdout.Write(chunk)
+			}
+		}
+
+		if event.Done {
+			if event.ExitCode != 0 {
+				return fmt.Errorf("command exited with code %d", event.ExitCode)
+			}
+			return nil
+		}
+	}
+}
+
 // ctlSendRequest sends a proto request to the control socket and returns the response.
 func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
 	conn, err := net.DialTimeout("unix", sock, timeout)
@@ -361,7 +515,15 @@ func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Dur
 	conn.SetDeadline(time.Now().Add(readTimeout))
 
 	// Marshal and send request
-	reqBytes, err := protojsonMarshaler.Marshal(req)
+	reqToSend := req
+	if req.AuthToken == "" {
+		if token := resolveControlTokenForSocket(sock); token != "" {
+			reqCopy := *req
+			reqCopy.AuthToken = token
+			reqToSend = &reqCopy
+		}
+	}
+	reqBytes, err := protojsonMarshaler.Marshal(reqToSend)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
@@ -383,6 +545,18 @@ func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Dur
 	}
 
 	return &resp, nil
+}
+
+func resolveControlTokenForSocket(sock string) string {
+	if token := strings.TrimSpace(os.Getenv(controlTokenEnvVar)); token != "" {
+		return token
+	}
+	tokenPath := filepath.Join(filepath.Dir(sock), controlTokenFileName)
+	token, err := LoadControlTokenFromPath(tokenPath)
+	if err != nil {
+		return ""
+	}
+	return token
 }
 
 // ctlPrintResponse handles formatting and output of a control response.
@@ -458,6 +632,152 @@ func ctlAgentWithRetry(sock string, req *controlpb.ControlRequest, wait, timeout
 	}
 }
 
+// ctlOCR runs OCR on the current screen and prints all recognized text.
+func ctlOCR(socketPath string) error {
+	client := NewControlClient(socketPath)
+	client.SetTimeout(30 * time.Second)
+
+	img, err := client.Screenshot()
+	if err != nil {
+		return fmt.Errorf("screenshot: %w", err)
+	}
+
+	ocr := NewOCRService(false)
+	observations, err := ocr.RecognizeText(img)
+	if err != nil {
+		return fmt.Errorf("OCR: %w", err)
+	}
+
+	if len(observations) == 0 {
+		fmt.Println("(no text detected)")
+		return nil
+	}
+
+	for _, obs := range observations {
+		bounds := img.Bounds()
+		normX := float64(obs.Center.X) / float64(bounds.Dx())
+		normY := float64(obs.Center.Y) / float64(bounds.Dy())
+		fmt.Printf("[%.2f] %q at norm(%.3f, %.3f) px(%d, %d)\n",
+			obs.Confidence, obs.Text, normX, normY, obs.Center.X, obs.Center.Y)
+	}
+	return nil
+}
+
+// ctlClickText finds text on screen via OCR and clicks its center.
+func ctlClickText(socketPath, text string) error {
+	client := NewControlClient(socketPath)
+	client.SetTimeout(30 * time.Second)
+
+	ocr := NewOCRService(true)
+
+	img, err := client.Screenshot()
+	if err != nil {
+		return fmt.Errorf("screenshot: %w", err)
+	}
+
+	normX, normY, found := ocr.FindTextNormalized(img, text)
+	if !found {
+		return fmt.Errorf("text %q not found on screen", text)
+	}
+
+	fmt.Printf("Found %q at (%.3f, %.3f) — clicking\n", text, normX, normY)
+	return client.MouseClick(normX, normY)
+}
+
+// ctlBootScript loads and executes a boot command script via the control socket.
+func ctlBootScript(socketPath, scriptPath string) error {
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		return fmt.Errorf("read script: %w", err)
+	}
+
+	commands, err := ParseBootCommands(string(data))
+	if err != nil {
+		return fmt.Errorf("parse script: %w", err)
+	}
+
+	fmt.Printf("Executing %d boot commands from %s\n", len(commands), scriptPath)
+
+	// The boot command executor needs a ControlServer, but from ctl we only
+	// have a socket. Create a thin ControlServer with just the socket path
+	// for screenshot + input passthrough. In practice, boot-script from ctl
+	// is less common than from the in-process path (unattended.go), but we
+	// support it for manual debugging.
+	//
+	// For now, use the ControlClient-based approach by translating commands
+	// to client calls.
+	client := NewControlClient(socketPath)
+	client.SetTimeout(60 * time.Second)
+	ocr := NewOCRService(true)
+
+	for i, cmd := range commands {
+		fmt.Printf("[boot] step %d/%d: <%s %s>\n", i+1, len(commands), cmd.Type, cmd.Args)
+		if err := executeBootCommandViaClient(client, ocr, cmd); err != nil {
+			return fmt.Errorf("step %d <%s %s>: %w", i+1, cmd.Type, cmd.Args, err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return nil
+}
+
+// executeBootCommandViaClient executes a single boot command using a ControlClient.
+func executeBootCommandViaClient(client *ControlClient, ocr *OCRService, cmd BootCommand) error {
+	switch cmd.Type {
+	case "wait":
+		d, _ := time.ParseDuration(cmd.Args)
+		time.Sleep(d)
+		return nil
+
+	case "waitForText":
+		deadline := time.Now().Add(60 * time.Second)
+		for time.Now().Before(deadline) {
+			img, err := client.Screenshot()
+			if err != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+			_, _, found := ocr.FindText(img, cmd.Args)
+			if found {
+				return nil
+			}
+			time.Sleep(time.Second)
+		}
+		return fmt.Errorf("timeout waiting for text %q", cmd.Args)
+
+	case "click":
+		deadline := time.Now().Add(60 * time.Second)
+		for time.Now().Before(deadline) {
+			img, err := client.Screenshot()
+			if err != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+			normX, normY, found := ocr.FindTextNormalized(img, cmd.Args)
+			if found {
+				return client.MouseClick(normX, normY)
+			}
+			time.Sleep(time.Second)
+		}
+		return fmt.Errorf("timeout waiting for text %q to click", cmd.Args)
+
+	case "type":
+		return client.TypeText(cmd.Args)
+
+	case "key":
+		keyCode, modifiers := parseKeySpec(cmd.Args)
+		if modifiers != 0 {
+			return client.KeyPressWithModifiers(keyCode, modifiers)
+		}
+		return client.KeyPress(keyCode)
+
+	case "screenshot":
+		return nil // no-op from ctl
+
+	default:
+		return fmt.Errorf("unknown command: %s", cmd.Type)
+	}
+}
+
 // ctlDetectScreen detects the current screen state
 func ctlDetectScreen(socketPath string) error {
 	client := NewControlClient(socketPath)
@@ -483,14 +803,21 @@ func ctlDetectScreen(socketPath string) error {
 	fmt.Printf("  Has login elements: %v\n", stats.HasLoginElements)
 
 	state := DetectScreenState(img)
-	fmt.Printf("Detected screen state: %s\n", state)
+	fmt.Printf("Detected screen state (pixel): %s\n", state)
 
-	// If it looks like Setup Assistant, try to detect the page
-	if state == ScreenStateSetupAssistant {
+	// OCR-based detection
+	ocr := NewOCRService(false)
+	ocrState := DetectScreenStateOCR(img, ocr)
+	fmt.Printf("Detected screen state (OCR):   %s\n", ocrState)
+
+	// If it looks like Setup Assistant, detect the page with both methods
+	if state == ScreenStateSetupAssistant || ocrState == ScreenStateSetupAssistant {
 		fullImg, err := client.Screenshot()
 		if err == nil {
 			page := DetectSetupAssistantPage(fullImg)
-			fmt.Printf("Setup Assistant page: %s\n", page)
+			fmt.Printf("Setup Assistant page (pixel): %s\n", page)
+			ocrPage := OCRDetectSetupAssistantPage(fullImg, ocr)
+			fmt.Printf("Setup Assistant page (OCR):   %s\n", ocrPage)
 		}
 	}
 
@@ -868,7 +1195,5 @@ func saveScreenshotPNG(img image.Image, filename string) error {
 	}
 	defer f.Close()
 
-	// Need to import image/png - using jpeg as fallback since png may not be imported
-	// Actually, we can use the jpeg encoder
-	return jpeg.Encode(f, img, &jpeg.Options{Quality: 95})
+	return png.Encode(f, img)
 }
