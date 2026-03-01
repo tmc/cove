@@ -344,6 +344,9 @@ func main() {
 		// (e.g., "vz-macos run -gui" parses -gui here).
 		flag.CommandLine.Parse(args)
 
+		// Re-apply verbose after subcommand flag re-parse.
+		SetVerbose(verbose)
+
 		// --headless overrides --gui after subcommand re-parse
 		if headlessMode {
 			guiMode = false

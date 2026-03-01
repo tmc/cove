@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ebitengine/purego"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-	"github.com/ebitengine/purego"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
@@ -906,12 +906,12 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Start control socket for agent and lifecycle commands (no GUI needed).
 	// Screenshot/keyboard/mouse commands will gracefully error with "VM view not set".
-	controlServer := NewControlServer(GetControlSocketPath())
+	sock := GetControlSocketPathForVM(vmDir)
+	controlServer := NewControlServerWithVMDir(sock, vmDir)
 	controlServer.SetVM(vm, queue)
 	if err := controlServer.Start(); err != nil {
 		fmt.Printf("Warning: control socket: %v\n", err)
 	} else {
-		sock := GetControlSocketPath()
 		fmt.Printf("Control socket: %s\n", sock)
 		if verbose {
 			fmt.Printf("  vz-macos ctl -socket %s agent-ping\n", sock)
@@ -1219,17 +1219,18 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	fmt.Println("VM display window opened.")
 
 	// Start control socket for screenshots, keyboard, mouse control
-	controlServer := NewControlServer(GetControlSocketPath())
+	sock := GetControlSocketPathForVM(vmDir)
+	controlServer := NewControlServerWithVMDir(sock, vmDir)
 	controlServer.SetVMViewWithWindow(vmView, window)
 	controlServer.SetVM(vm, queue)
 	if err := controlServer.Start(); err != nil {
 		fmt.Printf("Warning: could not start control socket: %v\n", err)
 	} else {
-		sock := GetControlSocketPath()
 		fmt.Printf("Control socket: %s\n", sock)
 		if verbose {
 			fmt.Printf("  vz-macos ctl -socket %s screenshot -o screen.jpg\n", sock)
-			fmt.Printf("  echo '{\"type\":\"screenshot\"}' | nc -U %s\n", sock)
+			fmt.Printf("  TOKEN=$(cat %s)\n", GetControlTokenPathForVM(vmDir))
+			fmt.Printf("  echo '{\"type\":\"screenshot\",\"auth_token\":\"'$TOKEN'\"}' | nc -U %s\n", sock)
 		}
 	}
 
@@ -1268,7 +1269,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			}
 		}()
 	} else if provisionUser != "" && shouldRunGUIAutomation() {
-		go runProvisioningAutomation(GetControlSocketPath())
+		go runProvisioningAutomation(controlServer)
 	}
 
 	// Shared state for background → main thread communication.
@@ -1500,13 +1501,27 @@ func transformToForegroundApp() {
 
 // shouldRunGUIAutomation reports whether GUI provisioning automation should
 // run based on the selected -provision-strategy.
+//
+// When running a VM (not installing), the "inject" strategy is not applicable
+// because injection requires pre-boot disk manipulation. In this case, we
+// auto-upgrade to GUI automation so that -provision-user works as expected
+// without requiring -provision-strategy gui.
 func shouldRunGUIAutomation() bool {
 	switch provisionStrategy {
 	case "gui":
 		return true
 	case "auto":
 		return !didInjectSucceed()
-	default: // "inject"
+	case "inject":
+		// During "run", inject is not applicable — auto-upgrade to GUI.
+		if !installVM {
+			if verbose {
+				fmt.Println("[provision] auto-upgrading strategy from inject to gui (inject only applies during install)")
+			}
+			return true
+		}
+		return false
+	default:
 		return false
 	}
 }
