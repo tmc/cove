@@ -84,6 +84,15 @@ func (c *AgentClient) Exec(ctx context.Context, args []string, env map[string]st
 	})
 }
 
+// ExecStream runs a command in the guest and streams stdout/stderr chunks.
+func (c *AgentClient) ExecStream(ctx context.Context, args []string, env map[string]string, workDir string) (pb.Agent_ExecStreamClient, error) {
+	return c.client.ExecStream(ctx, &pb.ExecRequest{
+		Args:       args,
+		Env:        env,
+		WorkingDir: workDir,
+	})
+}
+
 // ExecAs runs a command in the guest as the specified user.
 func (c *AgentClient) ExecAs(ctx context.Context, user string, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
 	return c.client.Exec(ctx, &pb.ExecRequest{

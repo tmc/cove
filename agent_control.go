@@ -20,6 +20,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -95,6 +97,10 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 			return &controlpb.ControlResponse{Error: "missing agent-exec command payload"}, true
 		}
 		return s.handleAgentExec(cmd), true
+	case "agent-exec-stream":
+		return &controlpb.ControlResponse{
+			Error: "agent-exec-stream requires streaming transport (use one request per connection)",
+		}, true
 	case "agent-read":
 		cmd := req.GetAgentRead()
 		if cmd == nil {
@@ -292,7 +298,7 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 
-	cfg, err := LoadVMConfig(vmDir)
+	cfg, err := LoadVMConfig(s.effectiveVMDir())
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("load config: %v", err)}
 	}
@@ -333,6 +339,69 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 
 	data, _ := json.Marshal(results)
 	return &controlpb.ControlResponse{Success: true, Data: string(data)}
+}
+
+func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *controlpb.ControlRequest) {
+	cmd := req.GetAgentExec()
+	if cmd == nil {
+		writeResponse(conn, &controlpb.ControlResponse{Error: "missing agent-exec command payload"})
+		return
+	}
+	if len(cmd.Args) == 0 {
+		writeResponse(conn, &controlpb.ControlResponse{Error: "args required"})
+		return
+	}
+
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
+
+	if err := s.ensureAgent(); err != nil {
+		writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	stream, err := s.agent.ExecStream(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+	if err != nil {
+		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("exec stream: %v", err)})
+		return
+	}
+
+	var finalExitCode int32
+	for {
+		out, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("recv stream: %v", err)})
+			return
+		}
+
+		if len(out.Data) > 0 {
+			streamName := "stdout"
+			if out.Stream == 1 {
+				streamName = "stderr"
+			}
+			chunkPayload, _ := json.Marshal(map[string]any{
+				"stream": streamName,
+				"data":   base64.StdEncoding.EncodeToString(out.Data),
+			})
+			writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(chunkPayload)})
+		}
+
+		if out.ExitCode != nil {
+			finalExitCode = *out.ExitCode
+		}
+	}
+
+	donePayload, _ := json.Marshal(map[string]any{
+		"done":     true,
+		"exitCode": finalExitCode,
+	})
+	writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(donePayload)})
 }
 
 func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *controlpb.ControlResponse {
