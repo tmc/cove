@@ -141,8 +141,14 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 }
 
 func writeResponse(conn net.Conn, resp *controlpb.ControlResponse) {
-	data, _ := protojsonMarshaler.Marshal(resp)
-	conn.Write(append(data, '\n'))
+	data, err := protojsonMarshaler.Marshal(resp)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "control socket: marshal response: %v\n", err)
+		return
+	}
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		fmt.Fprintf(os.Stderr, "control socket: write response: %v\n", err)
+	}
 }
 
 func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.ControlResponse {
@@ -245,7 +251,10 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 	})
 	<-done
 
-	event := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	event, err := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
+	}
 	if event == 0 {
 		return &controlpb.ControlResponse{Error: "failed to create CGEvent"}
 	}
@@ -426,7 +435,10 @@ func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.C
 	}
 
 	// Create and post CGEvent
-	event := CGEventCreateMouseEvent(0, eventType, position, mouseButton)
+	event, err := CGEventCreateMouseEvent(0, eventType, position, mouseButton)
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
+	}
 	if event == 0 {
 		return &controlpb.ControlResponse{Error: "failed to create CGEvent"}
 	}
@@ -451,7 +463,6 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 	// Between characters, return to the caller and re-dispatch, giving
 	// the run loop a chance to deliver the posted event.
 	chars := []rune(cmd.Text)
-	errCh := make(chan error, 1)
 
 	// First: activate and focus the VM window.
 	done := make(chan struct{})
@@ -468,34 +479,44 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 	// Now type each character, dispatching to main thread for each one.
 	for _, char := range chars {
 		ch := char
-		charDone := make(chan struct{})
+		charDone := make(chan error, 1)
 		DispatchAsync(GetMainDispatchQueue(), func() {
-			defer close(charDone)
-			eventDown := CGEventCreateKeyboardEvent(0, 0, true)
+			eventDown, err := CGEventCreateKeyboardEvent(0, 0, true)
+			if err != nil {
+				charDone <- fmt.Errorf("init CGEvent: %w", err)
+				return
+			}
 			if eventDown == 0 {
+				charDone <- fmt.Errorf("create key down event for %q", ch)
 				return
 			}
 			CGEventKeyboardSetUnicodeString(eventDown, string(ch))
 			CGEventPostToSelf(eventDown)
+			corefoundation.CFRelease(corefoundation.CFTypeRef(eventDown))
 
-			eventUp := CGEventCreateKeyboardEvent(0, 0, false)
+			eventUp, err := CGEventCreateKeyboardEvent(0, 0, false)
+			if err != nil {
+				charDone <- fmt.Errorf("init CGEvent: %w", err)
+				return
+			}
 			if eventUp == 0 {
+				charDone <- fmt.Errorf("create key up event for %q", ch)
 				return
 			}
 			CGEventKeyboardSetUnicodeString(eventUp, string(ch))
 			CGEventPostToSelf(eventUp)
+			corefoundation.CFRelease(corefoundation.CFTypeRef(eventUp))
+
+			charDone <- nil
 		})
-		<-charDone
+		if err := <-charDone; err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}
+		}
 		// Give the run loop time to deliver the event to VZVirtualMachineView.
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	select {
-	case err := <-errCh:
-		return &controlpb.ControlResponse{Error: err.Error()}
-	default:
-		return &controlpb.ControlResponse{Success: true}
-	}
+	return &controlpb.ControlResponse{Success: true}
 }
 
 // GetControlSocketPath returns the default socket path
