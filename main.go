@@ -326,6 +326,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "up":
+			if err := handleUp(args); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "vzscript":
 			if err := vzscriptCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -524,6 +530,7 @@ Usage:
   vz-macos [flags] [command]
 
 Commands:
+  up          Install + provision + boot in one command (vz-macos up -user me)
   install     Install OS (macOS from IPSW, -linux for Ubuntu)
   run         Run a VM (macOS by default, -linux for Linux)
   list        List available VMs and templates
