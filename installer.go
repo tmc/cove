@@ -303,7 +303,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 	// Shared state for the VM window (created on main thread, referenced by both).
 	var vmWindow appkit.NSWindow
 	var vmOverlay appkit.NSView
-	var vmWindowCreated bool
+	vmWindowCreated := make(chan struct{})
 	var installerRef *macOSInstaller
 
 	// Helper for the background goroutine to set progress.
@@ -345,9 +345,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 		ui.requestCreateVMWindow()
 
 		// Wait for the main thread to create the VM window before proceeding.
-		for !vmWindowCreated {
-			time.Sleep(50 * time.Millisecond)
-		}
+		<-vmWindowCreated
 
 		// Phase 4: Run installation with progress monitoring.
 		doneCh := make(chan error, 1)
@@ -486,7 +484,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 
 					vmWindow.MakeKeyAndOrderFront(nil)
 					vmWindow.MakeFirstResponder(vmViewAsNSView(vmView).NSResponder)
-					vmWindowCreated = true
+					close(vmWindowCreated)
 					ui.createVMWindow = false
 				}
 
