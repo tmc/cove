@@ -561,7 +561,7 @@ func (t *VMToolbar) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	panel.SetMessage("Save VM Screenshot")
 	pngType := uniformtypeidentifiers.NewTypeWithFilenameExtension("png")
 	if pngType.ID != 0 {
-		panel.SetAllowedContentTypes([]uniformtypeidentifiers.UTType{pngType})
+		panel.SetAllowedContentTypes([]objectivec.IObject{pngType})
 	}
 
 	response := panel.RunModal()
