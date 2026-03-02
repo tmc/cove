@@ -58,6 +58,7 @@ func (s *VMStatusItem) setup() {
 		} else {
 			button.SetTitle("VZ")
 		}
+		button.SetToolTip(s.vmName)
 	}
 
 	s.menu = appkit.NewMenuWithTitle("")
@@ -117,6 +118,11 @@ func (s *VMStatusItem) addSeparator() {
 // UpdateState updates the status item icon and status text for the current VM state.
 func (s *VMStatusItem) UpdateState(state vz.VZVirtualMachineState) {
 	name := vmStateName(state)
+
+	// Update tooltip to show VM name and state on hover.
+	if button := s.statusItem.Button(); button != nil && button.GetID() != 0 {
+		button.SetToolTip(fmt.Sprintf("%s — %s", s.vmName, name))
+	}
 
 	// Update status text
 	if item := s.menu.ItemAtIndex(s.statusIdx); item != nil {
