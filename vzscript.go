@@ -248,13 +248,7 @@ func guestTerminalCmd(cfg vzscriptConfig) script.Cmd {
 			if err := guestWriteFile(cfg.socketPath, guestPath, data, 0755); err != nil {
 				return nil, err
 			}
-			// Use osascript to open Terminal.app and run the script.
-			// This makes the script visible to the user in the VM GUI.
-			osa := fmt.Sprintf(
-				`tell application "Terminal" to do script "%s; exit"`,
-				strings.ReplaceAll(guestPath, `"`, `\"`),
-			)
-			return guestExec(cfg, []string{"osascript", "-e", osa})
+			return guestExecInTerminal(cfg, guestPath)
 		},
 	)
 }
@@ -353,12 +347,50 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 }
 
 // guestExecInTerminal runs a script in Terminal.app so the user can watch.
+// It runs osascript as the console user (not root) since GUI apps require
+// a WindowServer session, which root doesn't have.
 func guestExecInTerminal(cfg vzscriptConfig, guestPath string) (script.WaitFunc, error) {
 	osa := fmt.Sprintf(
 		`tell application "Terminal" to do script "%s; exit"`,
 		strings.ReplaceAll(guestPath, `"`, `\"`),
 	)
-	return guestExec(cfg, []string{"osascript", "-e", osa})
+	user, err := guestConsoleUser(cfg)
+	if err != nil {
+		// Fall back to running as root if we can't detect the user.
+		return guestExec(cfg, []string{"osascript", "-e", osa})
+	}
+	return guestExec(cfg, []string{"su", "-l", user, "-c", fmt.Sprintf("osascript -e '%s'", osa)})
+}
+
+// guestConsoleUser returns the username of the currently logged-in console user.
+func guestConsoleUser(cfg vzscriptConfig) (string, error) {
+	req := &controlpb.ControlRequest{
+		Type: "agent-exec",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{
+				Args: []string{"/usr/bin/stat", "-f", "%Su", "/dev/console"},
+			},
+		},
+	}
+	resp, err := ctlSendRequest(cfg.socketPath, req, 10*time.Second, "agent-exec")
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("%s", resp.Error)
+	}
+	var result struct {
+		ExitCode int    `json:"exitCode"`
+		Stdout   string `json:"stdout"`
+	}
+	if err := json.Unmarshal([]byte(resp.Data), &result); err != nil {
+		return "", err
+	}
+	user := strings.TrimSpace(result.Stdout)
+	if user == "" || user == "root" {
+		return "", fmt.Errorf("no console user logged in")
+	}
+	return user, nil
 }
 
 // guestWriteFile writes data to a file in the guest.

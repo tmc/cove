@@ -288,18 +288,25 @@ func autoApproveOnce(sock string, buttons []string, verbose bool) {
 }
 
 // looksLikePermissionDialog checks if screen text suggests a TCC/permission dialog.
+// TCC dialogs have a specific pattern: a request phrase AND both "Don't Allow" and
+// "Allow" buttons. We require both to avoid false positives from System Settings.
 func looksLikePermissionDialog(text string) bool {
 	lower := strings.ToLower(text)
-	indicators := []string{
-		"would like to",     // "X would like to access/control Y"
-		"wants to access",   // "X wants to access Y"
-		"wants to control",  // "vz-agent wants to control Terminal"
-		"wants access to",   // accessibility prompts
-		"allow",             // Allow button present
-		"don't allow",       // TCC dialog has Don't Allow + Allow
+
+	// Must have "Don't Allow" — this is specific to TCC dialogs.
+	if !strings.Contains(lower, "don't allow") && !strings.Contains(lower, "don\u2019t allow") {
+		return false
 	}
-	for _, ind := range indicators {
-		if strings.Contains(lower, ind) {
+
+	// Must also have a request phrase.
+	requestPhrases := []string{
+		"would like to",    // "X would like to access/control Y"
+		"wants to access",  // "X wants to access Y"
+		"wants to control", // "vz-agent wants to control Terminal"
+		"wants access to",  // accessibility prompts
+	}
+	for _, phrase := range requestPhrases {
+		if strings.Contains(lower, phrase) {
 			return true
 		}
 	}
