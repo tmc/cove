@@ -1209,7 +1209,7 @@ func suggestAction(page string) {
 }
 
 // ctlSendCommand sends a command to the control socket and returns the response.
-// This is a compatibility wrapper used by fda.go and sip.go. All callers pass
+// This is a compatibility wrapper used by tcc.go and sip.go. All callers pass
 // agent-exec with {"args": [...]}, so we build the appropriate proto request.
 func ctlSendCommand(sock, cmdType string, cmdData interface{}, timeout time.Duration) (*controlpb.ControlResponse, error) {
 	req := &controlpb.ControlRequest{Type: cmdType}

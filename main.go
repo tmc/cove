@@ -320,8 +320,8 @@ func main() {
 				os.Exit(1)
 			}
 			return
-		case "fda":
-			if err := handleFDACommand(args); err != nil {
+		case "tcc", "fda":
+			if err := handleTCCCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -548,6 +548,7 @@ Commands:
   rosetta     Rosetta 2 for Linux VMs (status/install/setup)
   userdata    Separate user data disk (help/setup/workflow)
   disk-detach Detach VM disk if stuck from a previous inject/verify
+  tcc         TCC permissions (grant/status/query for FDA, Automation, Accessibility)
   sip         SIP management (disable/enable/status)
   recovery-disk Create recovery tools disk (FAT32 with csrutil scripts)
   vzscript    Run guest-agent scripts (rsc.io/script + txtar)
