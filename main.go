@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -260,6 +261,13 @@ func main() {
 		} else {
 			err = installMacOSLikeVZ(context.Background())
 		}
+		if errors.Is(err, errRestartVM) {
+			if err := runMacOSVM(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -376,7 +384,12 @@ func main() {
 			} else {
 				err = installMacOSLikeVZ(context.Background())
 			}
-			if err != nil {
+			if errors.Is(err, errRestartVM) {
+				if err := runMacOSVM(); err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
+			} else if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -472,7 +485,11 @@ func handleDefaultAction() {
 	switch len(vms) {
 	case 0:
 		guiMode = true
-		if err := installMacOSLikeVZ(context.Background()); err != nil {
+		err := installMacOSLikeVZ(context.Background())
+		if errors.Is(err, errRestartVM) {
+			err = runMacOSVM()
+		}
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

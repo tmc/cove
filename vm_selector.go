@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -389,7 +390,11 @@ func showVMSelectorWindow(vms []VMInfo) {
 		postDummyEvent(app)
 
 		guiMode = true
-		if err := installMacOSLikeVZ(context.Background()); err != nil {
+		err := installMacOSLikeVZ(context.Background())
+		if errors.Is(err, errRestartVM) {
+			err = runMacOSVM()
+		}
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

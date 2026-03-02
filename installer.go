@@ -138,6 +138,18 @@ func stopVMAndInject(vm *virtualMachine) {
 	// Wait for the disk to be released instead of a fixed sleep. The VZ
 	// framework may hold the file handle briefly after stop returns.
 	diskFile := filepath.Join(vmDir, "disk.img")
+	if _, err := os.Stat(diskFile); err != nil {
+		fmt.Printf("Warning: disk not found after VM stop: %s (%v)\n", diskFile, err)
+		fmt.Printf("  vmDir=%s\n", vmDir)
+		// List what's actually in the directory.
+		if entries, derr := os.ReadDir(vmDir); derr == nil {
+			for _, e := range entries {
+				fmt.Printf("  - %s\n", e.Name())
+			}
+		} else {
+			fmt.Printf("  cannot list vmDir: %v\n", derr)
+		}
+	}
 	if err := waitForDiskAvailable(diskFile, 15*time.Second); err != nil {
 		fmt.Printf("Warning: %v\n", err)
 	}
@@ -223,11 +235,7 @@ func installMacOSLikeVZ(ctx context.Context) error {
 	// In GUI mode, the entire lifecycle (download → install → first boot)
 	// happens within a single window. Hand off to the GUI installer early.
 	if guiMode {
-		err := runFullInstallWithGUI(ctx)
-		if errors.Is(err, errRestartVM) {
-			return runMacOSVM()
-		}
-		return err
+		return runFullInstallWithGUI(ctx)
 	}
 
 	// Headless path: download → install sequentially with stdout progress.

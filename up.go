@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -104,9 +105,11 @@ Examples:
 	// Step 1: Install macOS.
 	fmt.Println("=== Step 1/3: Installing macOS ===")
 	installVM = true
-	if err := installMacOSLikeVZ(context.Background()); err != nil {
-		return fmt.Errorf("install: %w", err)
+	installErr := installMacOSLikeVZ(context.Background())
+	if installErr != nil && !errors.Is(installErr, errRestartVM) {
+		return fmt.Errorf("install: %w", installErr)
 	}
+	// errRestartVM means install succeeded and VM was stopped; ready for inject.
 
 	// Step 2: Inject provisioning files.
 	// The install step may have already injected (via stopVMAndInject) but
