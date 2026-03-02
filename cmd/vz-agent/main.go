@@ -58,12 +58,12 @@ func main() {
 
 	srv := grpc.NewServer(
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second,
+			MinTime:             20 * time.Second,
 			PermitWithoutStream: true,
 		}),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    30 * time.Second,
-			Timeout: 10 * time.Second,
+			Time:    60 * time.Second,
+			Timeout: 30 * time.Second,
 		}),
 	)
 	pb.RegisterAgentServer(srv, newAgentServer())

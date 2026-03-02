@@ -39,8 +39,8 @@ func NewAgentClient(netConn net.Conn) (*AgentClient, error) {
 			return netConn, nil
 		}),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                30 * time.Second,
-			Timeout:             10 * time.Second,
+			Time:                60 * time.Second,
+			Timeout:             30 * time.Second,
 			PermitWithoutStream: true,
 		}),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64*1024*1024)),
