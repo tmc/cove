@@ -348,17 +348,33 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 
 // guestExecInTerminal runs a script in Terminal.app so the user can watch.
 // It runs osascript as the console user (not root) since GUI apps require
-// a WindowServer session, which root doesn't have.
+// a WindowServer session, which root doesn't have. The script itself is
+// run via sudo so it has root privileges (matching the non-terminal mode).
+//
+// To avoid sudo password prompts, a temporary NOPASSWD entry is created
+// in /etc/sudoers.d/ before the script runs.
 func guestExecInTerminal(cfg vzscriptConfig, guestPath string) (script.WaitFunc, error) {
-	osa := fmt.Sprintf(
-		`tell application "Terminal" to do script "%s; exit"`,
-		strings.ReplaceAll(guestPath, `"`, `\"`),
-	)
 	user, err := guestConsoleUser(cfg)
 	if err != nil {
-		// Fall back to running as root if we can't detect the user.
-		return guestExec(cfg, []string{"osascript", "-e", osa})
+		// No console user — run directly as root (won't open Terminal).
+		return guestExec(cfg, []string{"/bin/bash", guestPath})
 	}
+
+	// Grant temporary passwordless sudo for all commands.
+	// The sudoers entry is removed after the script finishes.
+	sudoersFile := "/etc/sudoers.d/vzscript-terminal"
+	sudoersLine := fmt.Sprintf("%s ALL=(ALL) NOPASSWD: ALL\n", user)
+	if err := guestWriteFile(cfg.socketPath, sudoersFile, []byte(sudoersLine), 0440); err != nil {
+		if cfg.verbose {
+			fmt.Fprintf(os.Stderr, "[guest-terminal] warning: could not write sudoers: %v\n", err)
+		}
+	}
+
+	// Build a wrapper that runs the script with sudo and cleans up the sudoers entry.
+	termCmd := fmt.Sprintf("sudo %s; sudo rm -f %s; exit",
+		strings.ReplaceAll(guestPath, `"`, `\"`),
+		sudoersFile)
+	osa := fmt.Sprintf(`tell application "Terminal" to do script "%s"`, termCmd)
 	return guestExec(cfg, []string{"su", "-l", user, "-c", fmt.Sprintf("osascript -e '%s'", osa)})
 }
 

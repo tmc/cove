@@ -145,6 +145,12 @@ func vzscriptShow(args []string) error {
 }
 
 func vzscriptRun(args []string) error {
+	// Reorder args so flags can appear after the recipe name.
+	// Go's flag package stops parsing at the first non-flag arg, so
+	// "vzscript run -vm=test1 golang -terminal -v" would leave -terminal
+	// and -v unparsed. We move the recipe name to the end.
+	args = reorderArgsForFlags(args)
+
 	rf := flag.NewFlagSet("vzscript run", flag.ExitOnError)
 	socketPath := rf.String("socket", "", "Control socket path")
 	timeout := rf.Duration("timeout", 10*time.Minute, "Timeout for guest-exec commands")
@@ -309,6 +315,50 @@ func looksLikePermissionDialog(text string) bool {
 		if strings.Contains(lower, phrase) {
 			return true
 		}
+	}
+	return false
+}
+
+// reorderArgsForFlags moves the first non-flag argument (the recipe name)
+// to the end so that Go's flag package can parse all flags regardless of
+// where they appear. This allows:
+//
+//	vzscript run -vm=test1 golang -terminal -v
+//
+// to work the same as:
+//
+//	vzscript run -vm=test1 -terminal -v golang
+func reorderArgsForFlags(args []string) []string {
+	var flags []string
+	var positional []string
+	i := 0
+	for i < len(args) {
+		a := args[i]
+		if strings.HasPrefix(a, "-") {
+			flags = append(flags, a)
+			// Check if this flag takes a value as the next arg
+			// (e.g., "-vm test1" vs "-vm=test1").
+			if !strings.Contains(a, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				// Could be a flag value. Heuristic: known value-taking flags.
+				name := strings.TrimLeft(a, "-")
+				if flagTakesValue(name) {
+					i++
+					flags = append(flags, args[i])
+				}
+			}
+		} else {
+			positional = append(positional, a)
+		}
+		i++
+	}
+	return append(flags, positional...)
+}
+
+// flagTakesValue returns true for vzscript run flags that take a value argument.
+func flagTakesValue(name string) bool {
+	switch name {
+	case "socket", "timeout", "vm":
+		return true
 	}
 	return false
 }
