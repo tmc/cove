@@ -1209,6 +1209,12 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
 
+	// Show VM name on the dock icon badge.
+	if vmName != "" && vmName != "default" {
+		dockTile := app.DockTile()
+		dockTile.SetBadgeLabel(vmName)
+	}
+
 	// Set the VM view frame to match the content rect
 	vmViewAsNSView(vmView).SetFrame(corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 0, Y: 0},
