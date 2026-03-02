@@ -1,4 +1,5 @@
 # claude-code — Install Claude Code CLI
+# requires: homebrew
 
 guest-ping
 guest-shell install-claude-code.sh

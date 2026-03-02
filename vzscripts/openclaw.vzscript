@@ -1,4 +1,5 @@
 # openclaw — Install OpenClaw personal AI assistant
+# requires: homebrew
 
 guest-ping
 guest-shell install-openclaw.sh

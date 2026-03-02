@@ -46,7 +46,7 @@ func vzscriptUsage() error {
 Commands:
   list                    List built-in recipes
   show <recipe>           Print recipe contents
-  run [-v] [-timeout d] <recipe>  Run a recipe against a running VM
+  run [-v] [-timeout d] <recipe...>  Run one or more recipes against a running VM
 
 A recipe is a txtar archive (see golang.org/x/tools/txtar) executed
 by rsc.io/script. The comment section contains commands; files in
@@ -85,10 +85,16 @@ Standard rsc.io/script commands (echo, cat, env, etc.) and conditions
 ([darwin], [GOOS:linux], etc.) are also available.
 Use '!' prefix for expected-failure, '?' for don't-care.
 
+Dependencies:
+  Scripts can declare dependencies with "# requires: recipe1, recipe2"
+  in the header. Dependencies are resolved automatically and each recipe
+  runs at most once. Multiple recipes can be given on the command line.
+
 Examples:
   vz-macos vzscript list
   vz-macos vzscript show homebrew
   vz-macos vzscript run developer-tools
+  vz-macos vzscript run homebrew golang openclaw
   vz-macos vzscript run ./custom.vzscript
 `)
 	return fmt.Errorf("command required")
@@ -97,6 +103,7 @@ Examples:
 func vzscriptList() error {
 	type entry struct {
 		name, desc string
+		requires   []string
 	}
 	var entries []entry
 
@@ -113,21 +120,25 @@ func vzscriptList() error {
 			continue
 		}
 		ar := txtar.Parse(data)
-		name, desc := parseScriptHeader(ar.Comment)
+		meta := parseScriptMeta(ar.Comment)
+		name := meta.name
 		if name == "" {
 			name = strings.TrimSuffix(f.Name(), ".vzscript")
 		}
-		entries = append(entries, entry{name, desc})
+		entries = append(entries, entry{name, meta.desc, meta.requires})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 
 	fmt.Println("Built-in recipes:")
 	for _, e := range entries {
+		line := fmt.Sprintf("  %-20s", e.name)
 		if e.desc != "" {
-			fmt.Printf("  %-20s %s\n", e.name, e.desc)
-		} else {
-			fmt.Printf("  %s\n", e.name)
+			line += " " + e.desc
 		}
+		if len(e.requires) > 0 {
+			line += fmt.Sprintf(" (requires: %s)", strings.Join(e.requires, ", "))
+		}
+		fmt.Println(line)
 	}
 	return nil
 }
@@ -175,11 +186,6 @@ func vzscriptRun(args []string) error {
 		vmName = *vm
 	}
 
-	data, err := loadVZScriptData(rf.Arg(0))
-	if err != nil {
-		return err
-	}
-
 	sock := *socketPath
 	if sock == "" {
 		sock = GetControlSocketPath()
@@ -192,7 +198,62 @@ func vzscriptRun(args []string) error {
 		terminal:    *terminal,
 		autoApprove: *autoApprove,
 	}
-	return runVZScript(data, rf.Arg(0), cfg)
+
+	// Collect all recipe names from positional args.
+	recipes := rf.Args()
+
+	// Resolve dependencies and run in order.
+	return runVZScriptWithDeps(recipes, cfg)
+}
+
+// runVZScriptWithDeps resolves dependencies for the given recipes and runs
+// them in topological order. Each recipe is run at most once.
+func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
+	// Start background auto-approver if enabled (shared across all recipes).
+	if cfg.autoApprove {
+		stop := startAutoApprover(cfg.socketPath, cfg.verbose)
+		defer stop()
+	}
+
+	completed := map[string]bool{}
+	var run func(name string) error
+	run = func(name string) error {
+		if completed[name] {
+			return nil
+		}
+		data, err := loadVZScriptData(name)
+		if err != nil {
+			return err
+		}
+		ar := txtar.Parse(data)
+		meta := parseScriptMeta(ar.Comment)
+
+		// Run dependencies first.
+		for _, dep := range meta.requires {
+			if err := run(dep); err != nil {
+				return fmt.Errorf("dependency %s (required by %s): %w", dep, name, err)
+			}
+		}
+
+		if completed[name] {
+			return nil
+		}
+		if cfg.verbose {
+			fmt.Fprintf(os.Stderr, "--- running recipe: %s ---\n", name)
+		}
+		if err := runVZScript(data, name, cfg); err != nil {
+			return err
+		}
+		completed[name] = true
+		return nil
+	}
+
+	for _, recipe := range recipes {
+		if err := run(recipe); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
@@ -211,12 +272,6 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 	}
 	if err := state.ExtractFiles(ar); err != nil {
 		return fmt.Errorf("extract files: %w", err)
-	}
-
-	// Start background auto-approver if enabled.
-	if cfg.autoApprove {
-		stop := startAutoApprover(cfg.socketPath, cfg.verbose)
-		defer stop()
 	}
 
 	var log bytes.Buffer
@@ -381,9 +436,20 @@ func loadVZScriptData(nameOrPath string) ([]byte, error) {
 	return data, nil
 }
 
-// parseScriptHeader extracts name and description from the first comment line.
-// Expected: "# name — description" or "# name - description".
-func parseScriptHeader(comment []byte) (name, desc string) {
+// scriptMeta holds parsed metadata from a vzscript header.
+type scriptMeta struct {
+	name     string
+	desc     string
+	requires []string // recipe names this script depends on
+}
+
+// parseScriptMeta extracts metadata from script comment lines.
+// Recognized headers:
+//
+//	# name — description   (first non-blank comment line)
+//	# requires: a, b       (dependency list)
+func parseScriptMeta(comment []byte) scriptMeta {
+	var m scriptMeta
 	s := bufio.NewScanner(bytes.NewReader(comment))
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
@@ -394,12 +460,39 @@ func parseScriptHeader(comment []byte) (name, desc string) {
 			break
 		}
 		text := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-		for _, sep := range []string{" — ", " - "} {
-			if i := strings.Index(text, sep); i >= 0 {
-				return strings.TrimSpace(text[:i]), strings.TrimSpace(text[i+len(sep):])
+
+		// Check for "requires:" directive.
+		if strings.HasPrefix(strings.ToLower(text), "requires:") {
+			deps := strings.TrimSpace(text[len("requires:"):])
+			for _, dep := range strings.Split(deps, ",") {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					m.requires = append(m.requires, dep)
+				}
+			}
+			continue
+		}
+
+		// First non-directive comment is the name/description.
+		if m.name == "" {
+			for _, sep := range []string{" — ", " - "} {
+				if i := strings.Index(text, sep); i >= 0 {
+					m.name = strings.TrimSpace(text[:i])
+					m.desc = strings.TrimSpace(text[i+len(sep):])
+					break
+				}
+			}
+			if m.name == "" {
+				m.name = text
 			}
 		}
-		return text, ""
 	}
-	return "", ""
+	return m
+}
+
+// parseScriptHeader extracts name and description from the first comment line.
+// Expected: "# name — description" or "# name - description".
+func parseScriptHeader(comment []byte) (name, desc string) {
+	m := parseScriptMeta(comment)
+	return m.name, m.desc
 }
