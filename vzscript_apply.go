@@ -150,11 +150,22 @@ func vzscriptRun(args []string) error {
 	timeout := rf.Duration("timeout", 10*time.Minute, "Timeout for guest-exec commands")
 	verbose := rf.Bool("v", false, "Verbose output")
 	terminal := rf.Bool("terminal", false, "Run guest-shell commands in Terminal.app (visible in VM GUI)")
+	vm := rf.String("vm", "", "VM name (default: active VM or 'default')")
 	if err := rf.Parse(args); err != nil {
 		return err
 	}
 	if rf.NArg() < 1 {
 		return fmt.Errorf("run requires a recipe name or path")
+	}
+
+	// Update global vmDir if -vm was specified.
+	if *vm != "" {
+		dir, err := EnsureVMDir(*vm)
+		if err != nil {
+			return err
+		}
+		vmDir = dir
+		vmName = *vm
 	}
 
 	data, err := loadVZScriptData(rf.Arg(0))
