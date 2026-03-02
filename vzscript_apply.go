@@ -150,6 +150,7 @@ func vzscriptRun(args []string) error {
 	timeout := rf.Duration("timeout", 10*time.Minute, "Timeout for guest-exec commands")
 	verbose := rf.Bool("v", false, "Verbose output")
 	terminal := rf.Bool("terminal", false, "Run guest-shell commands in Terminal.app (visible in VM GUI)")
+	autoApprove := rf.Bool("auto-approve", false, "Auto-click Allow/OK on system dialogs via OCR")
 	vm := rf.String("vm", "", "VM name (default: active VM or 'default')")
 	if err := rf.Parse(args); err != nil {
 		return err
@@ -183,6 +184,7 @@ func vzscriptRun(args []string) error {
 		execTimeout: *timeout,
 		verbose:     *verbose,
 		terminal:    *terminal,
+		autoApprove: *autoApprove,
 	}
 	return runVZScript(data, rf.Arg(0), cfg)
 }
@@ -205,6 +207,12 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 		return fmt.Errorf("extract files: %w", err)
 	}
 
+	// Start background auto-approver if enabled.
+	if cfg.autoApprove {
+		stop := startAutoApprover(cfg.socketPath, cfg.verbose)
+		defer stop()
+	}
+
 	var log bytes.Buffer
 	var out io.Writer = &log
 	if cfg.verbose {
@@ -215,6 +223,87 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 		os.Stderr.Write(log.Bytes())
 	}
 	return err
+}
+
+// startAutoApprover starts a background goroutine that polls the VM screen
+// via OCR and auto-clicks "Allow" or "OK" buttons on system dialogs (e.g.,
+// TCC permission prompts). Returns a stop function.
+func startAutoApprover(sock string, verbose bool) func() {
+	done := make(chan struct{})
+	go func() {
+		// Buttons to look for, in priority order.
+		// "Allow" handles TCC dialogs ("vz-agent wants to control Terminal").
+		// "OK" handles generic confirmation dialogs.
+		buttons := []string{"Allow", "OK"}
+
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				autoApproveOnce(sock, buttons, verbose)
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
+// autoApproveOnce runs one OCR pass looking for dialog buttons to click.
+func autoApproveOnce(sock string, buttons []string, verbose bool) {
+	// Get all text on screen.
+	resp, err := ctlSendOCR(sock, "ocr-all-text", "", "", 5*time.Second)
+	if err != nil || !resp.Success {
+		return
+	}
+	screenText := resp.Data
+
+	// Only act if this looks like a dialog (contains permission-related keywords).
+	if !looksLikePermissionDialog(screenText) {
+		return
+	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "[auto-approve] detected dialog, looking for buttons...\n")
+	}
+
+	// Try to click the first matching button.
+	for _, btn := range buttons {
+		if !strings.Contains(screenText, btn) {
+			continue
+		}
+		resp, err := ctlSendOCR(sock, "ocr-click", btn, "3s", 5*time.Second)
+		if err != nil {
+			continue
+		}
+		if resp.Success {
+			fmt.Fprintf(os.Stderr, "[auto-approve] clicked %q\n", btn)
+			// Wait a moment for the dialog to dismiss before next poll.
+			time.Sleep(2 * time.Second)
+			return
+		}
+	}
+}
+
+// looksLikePermissionDialog checks if screen text suggests a TCC/permission dialog.
+func looksLikePermissionDialog(text string) bool {
+	lower := strings.ToLower(text)
+	indicators := []string{
+		"would like to",     // "X would like to access/control Y"
+		"wants to access",   // "X wants to access Y"
+		"wants to control",  // "vz-agent wants to control Terminal"
+		"wants access to",   // accessibility prompts
+		"allow",             // Allow button present
+		"don't allow",       // TCC dialog has Don't Allow + Allow
+	}
+	for _, ind := range indicators {
+		if strings.Contains(lower, ind) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadVZScriptData(nameOrPath string) ([]byte, error) {

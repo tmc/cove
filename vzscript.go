@@ -70,6 +70,7 @@ type vzscriptConfig struct {
 	execTimeout time.Duration
 	verbose     bool
 	terminal    bool // force guest-shell/guest-exec to run in Terminal.app
+	autoApprove bool // auto-click "Allow"/"OK" on system dialogs via OCR
 }
 
 // newVZScriptEngine returns a script engine with guest VM commands and
