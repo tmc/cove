@@ -10,15 +10,20 @@ import (
 	"rsc.io/script"
 )
 
-func TestUIScriptEngineCommands(t *testing.T) {
-	// Verify all expected commands are registered.
-	cfg := uiscriptConfig{}
-	engine := newUIScriptEngine(cfg)
+func TestVZScriptEngineCommands(t *testing.T) {
+	cfg := vzscriptConfig{}
+	engine := newVZScriptEngine(cfg)
 
 	wantCmds := []string{
+		// Guest commands.
+		"guest-wait", "guest-ping", "guest-exec", "guest-shell",
+		"guest-terminal", "guest-write", "guest-read", "guest-cp",
+		// UI automation commands.
 		"screenshot", "ocr", "ocr-click", "ocr-wait", "ocr-gone",
 		"type", "key", "click", "wait", "detect-page", "detect-screen",
-		"echo", "cat", "env", "sleep", "stdout", "stderr", "stop", "help",
+		// Standard commands.
+		"echo", "cat", "cp", "env", "exists", "sleep", "stdout", "stderr",
+		"stop", "help", "mkdir",
 	}
 	for _, name := range wantCmds {
 		if _, ok := engine.Cmds[name]; !ok {
@@ -27,9 +32,9 @@ func TestUIScriptEngineCommands(t *testing.T) {
 	}
 }
 
-func TestUIScriptEngineConditions(t *testing.T) {
-	cfg := uiscriptConfig{}
-	engine := newUIScriptEngine(cfg)
+func TestVZScriptEngineConditions(t *testing.T) {
+	cfg := vzscriptConfig{}
+	engine := newVZScriptEngine(cfg)
 
 	wantConds := []string{"screen", "page", "text-visible"}
 	for _, name := range wantConds {
@@ -39,42 +44,40 @@ func TestUIScriptEngineConditions(t *testing.T) {
 	}
 }
 
-func TestUIScriptWaitCommand(t *testing.T) {
-	cfg := uiscriptConfig{}
-	engine := newUIScriptEngine(cfg)
+func TestVZScriptWaitCommand(t *testing.T) {
+	cfg := vzscriptConfig{}
+	engine := newVZScriptEngine(cfg)
 
 	state, err := script.NewState(context.Background(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Execute a simple script with just wait and echo.
 	src := `echo hello
 wait 10ms
 echo done
 `
 	var log bytes.Buffer
-	err = engine.Execute(state, "test.uiscript",
+	err = engine.Execute(state, "test.vzscript",
 		bufio.NewReader(strings.NewReader(src)), &log)
 	if err != nil {
 		t.Fatalf("execute: %v\nlog:\n%s", err, log.String())
 	}
 }
 
-func TestUIScriptEmbeddedScripts(t *testing.T) {
-	// Verify we can load each built-in script.
-	entries, err := builtinUIScripts.ReadDir("uiscripts")
+func TestVZScriptEmbeddedScripts(t *testing.T) {
+	entries, err := builtinScripts.ReadDir("vzscripts")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(entries) == 0 {
-		t.Fatal("no embedded uiscripts found")
+		t.Fatal("no embedded vzscripts found")
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".uiscript") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vzscript") {
 			continue
 		}
-		data, err := builtinUIScripts.ReadFile("uiscripts/" + e.Name())
+		data, err := builtinScripts.ReadFile("vzscripts/" + e.Name())
 		if err != nil {
 			t.Errorf("read %s: %v", e.Name(), err)
 			continue
@@ -86,19 +89,20 @@ func TestUIScriptEmbeddedScripts(t *testing.T) {
 	}
 }
 
-func TestLoadUIScriptData(t *testing.T) {
+func TestLoadVZScriptData(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
 		wantErr bool
 	}{
 		{"builtin by name", "setup-assistant", false},
-		{"builtin with ext", "setup-assistant.uiscript", false},
+		{"builtin with ext", "setup-assistant.vzscript", false},
+		{"builtin homebrew", "homebrew", false},
 		{"nonexistent", "does-not-exist", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data, err := loadUIScriptData(tt.input)
+			data, err := loadVZScriptData(tt.input)
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error")

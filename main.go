@@ -40,8 +40,6 @@ var (
 	serialOutput string
 	// Boot into recovery mode
 	recoveryMode bool
-	// Attach recovery tools disk (FAT32 with csrutil scripts)
-	recoveryDisk bool
 	// Boot arguments (saved for use inside guest)
 	bootArgs string
 	// UTM bundle path
@@ -69,20 +67,8 @@ var (
 	displays DisplaySlice
 	// Rosetta for Linux VMs
 	enableRosetta bool
-	// User data disk (separate from system)
-	enableUserData    bool
-	userDataPath      string
-	userDataSizeGB    uint64
-	userDataReadOnly  bool
-	userDataStrategy  string
-	userDataEphemeral bool
 	// Clipboard sharing (SPICE agent)
 	enableClipboard bool
-	// Scripts share (VirtioFS for guest agent)
-	enableScripts    bool
-	scriptsPath      string
-	scriptsReadOnly  bool
-	scriptsRunOnBoot bool
 	// vzscripts to run after install (comma-separated recipe names)
 	installVZScripts string
 	// Headless mode (disables GUI)
@@ -120,7 +106,6 @@ func init() {
 	flag.StringVar(&isoPath, "iso", "", "path to ISO image for EFI boot installation")
 	flag.StringVar(&serialOutput, "serial", "stdout", "serial console output: 'stdout', 'none', or file path")
 	flag.BoolVar(&recoveryMode, "recovery", false, "boot into macOS recovery mode")
-	flag.BoolVar(&recoveryDisk, "recovery-disk", false, "attach recovery FAT32 disk with SIP tools (auto-created)")
 	flag.StringVar(&bootArgs, "boot-args", "", "boot arguments (e.g., 'serial=3 -v'); saved to vm-dir/boot-args.txt for use inside guest")
 	flag.StringVar(&utmBundlePath, "utm", "", "path to UTM bundle (.utm) to run, or 'list' for menu")
 	flag.BoolVar(&listVMs, "list", false, "list available VMs in vm-dir")
@@ -145,20 +130,8 @@ func init() {
 	flag.Var(&displays, "display", "display config: WIDTHxHEIGHT[@PPI] or preset (4k, 1080p, 720p)")
 	// Rosetta for Linux
 	flag.BoolVar(&enableRosetta, "rosetta", false, "enable Rosetta for x86-64 binary translation in Linux VMs")
-	// User data disk (separate from system)
-	flag.BoolVar(&enableUserData, "userdata", false, "use separate disk for user data")
-	flag.StringVar(&userDataPath, "userdata-path", "", "path to user data disk image")
-	flag.Uint64Var(&userDataSizeGB, "userdata-size", 32, "size of user data disk in GB")
-	flag.BoolVar(&userDataReadOnly, "userdata-ro", false, "mount user data disk as read-only")
-	flag.StringVar(&userDataStrategy, "userdata-strategy", "volumes", "mount strategy: volumes, symlinks, direct")
-	flag.BoolVar(&userDataEphemeral, "userdata-ephemeral", false, "discard user data changes after VM stops")
 	// Clipboard sharing
-	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing (SPICE agent)")
-	// Scripts share (VirtioFS for guest agent)
-	flag.BoolVar(&enableScripts, "scripts", false, "enable VirtioFS scripts share for guest agent")
-	flag.StringVar(&scriptsPath, "scripts-path", "", "path to scripts directory (default: vmDir/scripts/)")
-	flag.BoolVar(&scriptsReadOnly, "scripts-ro", false, "mount scripts share as read-only")
-	flag.BoolVar(&scriptsRunOnBoot, "scripts-run", true, "run bootstrap script on boot (default: true)")
+	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
 	// Unattended install
 	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (inject provisioning, OCR fallback)")
 	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to boot commands file for custom setup automation")
@@ -322,18 +295,6 @@ func main() {
 				os.Exit(1)
 			}
 			return
-		case "sip":
-			if err := handleSIPCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "tcc", "fda":
-			if err := handleTCCCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
 		case "up":
 			if err := handleUp(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -347,10 +308,8 @@ func main() {
 			}
 			return
 		case "uiscript":
-			if err := uiscriptCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
+			fmt.Fprintf(os.Stderr, "The 'uiscript' command has been merged into 'vzscript'.\nUse 'vz-macos vzscript' instead.\n")
+			os.Exit(1)
 			return
 		}
 
@@ -406,12 +365,6 @@ func main() {
 		case "list":
 			handleList()
 			return
-		case "menubar":
-			if err := RunMenubarApp(vmDir); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
 		case "provision":
 			fmt.Fprintf(os.Stderr, "warning: 'provision' command is deprecated, use 'inject' instead\n")
 			if err := handleProvision(args); err != nil {
@@ -445,18 +398,6 @@ func main() {
 			return
 		case "rosetta":
 			if err := handleRosettaCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "userdata":
-			if err := handleUserDataCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "recovery-disk":
-			if err := sipCreateDisk(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
@@ -551,7 +492,6 @@ Commands:
   install     Install OS (macOS from IPSW, -linux for Ubuntu)
   run         Run a VM (macOS by default, -linux for Linux)
   list        List available VMs and templates
-  menubar     Run as a menubar app for VM control
   provision   (deprecated: use 'inject' instead)
   inject      Inject provisioning files directly into VM disk (self-contained)
   verify      Verify provisioning files in VM disk (alias: doctor)
@@ -563,13 +503,8 @@ Commands:
   snapshot    Manage VM snapshots (list/save/restore/delete)
   network     Network configuration (list interfaces, help)
   rosetta     Rosetta 2 for Linux VMs (status/install/setup)
-  userdata    Separate user data disk (help/setup/workflow)
   disk-detach Detach VM disk if stuck from a previous inject/verify
-  tcc         TCC permissions (grant/status/query for FDA, Automation, Accessibility)
-  sip         SIP management (disable/enable/status)
-  recovery-disk Create recovery tools disk (FAT32 with csrutil scripts)
-  vzscript    Run guest-agent scripts (rsc.io/script + txtar)
-  uiscript    Run OCR-driven UI automation scripts (rsc.io/script + txtar)
+  vzscript    Run guest-agent and UI automation scripts (rsc.io/script + txtar)
 
 Auto-Provisioning (Recommended - inject command):
   Inject user provisioning directly into VM disk (no VirtioFS needed):
@@ -896,20 +831,17 @@ func handleSnapshotCommand(args []string) {
 
 Commands:
   list                    List available snapshots
-  save <name>             Save current VM state (must connect to running VM)
-  restore <name>          Restore VM from snapshot (must connect to running VM)
+  save <name>             Save current VM state (VM must be running)
+  restore <name>          Restore VM from snapshot (VM must be running)
   delete <name>           Delete a snapshot
 
 Snapshots are saved to ~/.vz/vms/<vmname>/snapshots/
 
-For save/restore operations, the VM must be running and you must use
-the control socket. Example:
-
-  # Save snapshot (ctl auto-loads control.token)
-  vz-macos ctl snapshot save checkpoint1
-
-  # Restore snapshot
-  vz-macos ctl snapshot restore checkpoint1`)
+Examples:
+  vz-macos snapshot list
+  vz-macos snapshot save checkpoint1
+  vz-macos snapshot restore checkpoint1
+  vz-macos snapshot delete checkpoint1`)
 		os.Exit(1)
 	}
 
@@ -949,10 +881,14 @@ the control socket. Example:
 		}
 
 	case "save", "restore":
-		fmt.Fprintln(os.Stderr, "Save/restore operations require a running VM.")
-		fmt.Fprintf(os.Stderr, "Use ctl:\n\n  vz-macos ctl snapshot %s %s\n\n",
-			subcmd, "your-snapshot-name")
-		os.Exit(1)
+		if len(subargs) < 1 {
+			fmt.Fprintf(os.Stderr, "Usage: vz-macos snapshot %s <name>\n", subcmd)
+			os.Exit(1)
+		}
+		if err := snapshotViaControlSocket(subcmd, subargs[0]); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown snapshot command: %s\n", subcmd)
@@ -979,25 +915,3 @@ func handleNetworkCommand(args []string) {
 	}
 }
 
-// getUserDataConfig builds UserDataConfig from CLI flags
-func getUserDataConfig() UserDataConfig {
-	strategy, err := ParseMountStrategy(userDataStrategy)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: %v, using 'volumes'\n", err)
-		strategy = MountStrategyVolumes
-	}
-
-	config := UserDataConfig{
-		Enabled:       enableUserData,
-		SizeGB:        userDataSizeGB,
-		ReadOnly:      userDataReadOnly,
-		MountStrategy: strategy,
-		Ephemeral:     userDataEphemeral,
-	}
-	if userDataPath != "" {
-		config.Path = userDataPath
-	} else if enableUserData {
-		config.Path = DefaultUserDataPath(vmDir)
-	}
-	return config
-}
