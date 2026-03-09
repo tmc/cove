@@ -400,28 +400,6 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		}
 	}
 
-	// Recovery tools disk (FAT32 with csrutil scripts)
-	if recoveryDisk {
-		rdPath, err := EnsureRecoveryDisk(vmDir)
-		if err != nil {
-			return config, fmt.Errorf("recovery disk: %w", err)
-		}
-		if err := AddUSBStorageToConfig(config, []USBStorageConfig{{Path: rdPath, ReadOnly: true}}); err != nil {
-			return config, fmt.Errorf("add recovery disk: %w", err)
-		}
-	}
-
-	// Separate user data disk
-	userDataConfig := getUserDataConfig()
-	if userDataConfig.Enabled {
-		if err := EnsureUserDataDisk(userDataConfig); err != nil {
-			return config, fmt.Errorf("ensure user data disk: %w", err)
-		}
-		if err := AddUserDataDiskToConfig(config, userDataConfig); err != nil {
-			return config, fmt.Errorf("add user data disk: %w", err)
-		}
-	}
-
 	// Serial console (for streaming output to stdout/stderr)
 	serialConfig := createSerialConsoleConfig()
 	if serialConfig.ID != 0 {
@@ -463,27 +441,6 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	sharedFoldersDevice := createSharedFoldersDevice(sharedFolders)
 	if sharedFoldersDevice.ID != 0 {
 		allVirtioConfigs = append(allVirtioConfigs, sharedFoldersDevice)
-	}
-
-	// Standalone VirtioFS device for drag-and-drop file transfer.
-	// Uses its own tag ("drops") so the guest can mount it independently.
-	dropsDir := filepath.Join(vmDir, "drops")
-	if err := os.MkdirAll(dropsDir, 0755); err == nil {
-		dropsFSConfig := createSingleDirectoryDevice(dropsDir, dropsVirtioFSTag, false)
-		if dropsFSConfig.ID != 0 {
-			allVirtioConfigs = append(allVirtioConfigs, dropsFSConfig)
-		}
-	}
-
-	// Scripts share (VirtioFS for guest agent)
-	scriptsConfig := GetScriptsShareConfig(enableScripts, scriptsPath, scriptsReadOnly, scriptsRunOnBoot)
-	if scriptsConfig.Enabled {
-		scriptsFSConfig, err := CreateScriptsShareConfig(scriptsConfig)
-		if err != nil {
-			fmt.Printf("warning: scripts share config: %v\n", err)
-		} else if scriptsFSConfig.ID != 0 {
-			allVirtioConfigs = append(allVirtioConfigs, scriptsFSConfig)
-		}
 	}
 
 	// Apply all VirtioFS configurations
@@ -1224,12 +1181,6 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	window.SetContentView(vmViewAsNSView(vmView))
 	window.Center()
 
-	// Set up drag-and-drop file transfer. Files dropped onto the VM window
-	// are copied to a VirtioFS-shared "drops" directory. The control server
-	// is wired in below so dropped files are also delivered to the guest's
-	// frontmost app via the agent.
-	ddHandler := SetupDragDrop(vmView, vm, queue, vmDir)
-
 	// Add a boot overlay that fades out once the VM reaches Running state.
 	// If the VM is already running (e.g. after install → restart), skip the overlay.
 	var bootOverlay appkit.NSView
@@ -1262,12 +1213,6 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		}
 	}
 
-	// Wire control server to drag-drop so dropped files are delivered
-	// to the guest's frontmost app via the agent.
-	if ddHandler != nil {
-		ddHandler.SetControlServer(controlServer)
-	}
-
 	// Check if vz-agent is available in the guest (background, non-blocking).
 	go checkAgentAvailability(controlServer)
 
@@ -1276,9 +1221,6 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Setup main menu bar
 	setupMainMenu(vmToolbar.delegateID)
-
-	// Create system status bar item for quick VM control
-	vmStatusItem := NewVMStatusItem(window, vmToolbar, vmName)
 
 	// Auto-mount tagged volumes in guest if requested.
 	if autoMountVolumes {
@@ -1419,7 +1361,6 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					stateUpdate.changed = false
 					if stateUpdate.newState >= 0 {
 						vmToolbar.UpdateState(stateUpdate.newState)
-						vmStatusItem.UpdateState(stateUpdate.newState)
 						window.SetTitle(fmt.Sprintf("%s — %s", windowTitle, vmStateName(stateUpdate.newState)))
 						// Start fading the boot overlay once the VM is running.
 						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && overlayFadeStep == -1 && bootOverlay.ID != 0 {
