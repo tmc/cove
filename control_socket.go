@@ -197,6 +197,24 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 			continue
 		}
 
+		// Handle typed OCR command from proto oneof.
+		if req.Type == "ocr" {
+			if ocrCmd := req.GetOcr(); ocrCmd != nil {
+				// Map proto OCR action to legacy command type for unified handling.
+				mapped := &controlpb.ControlRequest{Type: "ocr-" + ocrCmd.Action}
+				fakeJSON, _ := json.Marshal(map[string]any{
+					"type": "ocr-" + ocrCmd.Action,
+					"data": map[string]string{"text": ocrCmd.Text, "timeout": ocrCmd.Timeout},
+				})
+				if resp, ok := s.handleOCRSocketCommand(mapped, fakeJSON); ok {
+					writeResponse(conn, resp)
+					continue
+				}
+			}
+			writeResponse(conn, &controlpb.ControlResponse{Error: "missing ocr command payload"})
+			continue
+		}
+
 		// OCR commands use the raw JSON line to extract the "data" field
 		// since these commands aren't in the protobuf schema.
 		if resp, ok := s.handleOCRSocketCommand(&req, []byte(line)); ok {
@@ -238,7 +256,7 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		}
 		return s.takeScreenshotWithOptions(cmd)
 	case "ping":
-		return &controlpb.ControlResponse{Success: true, Data: "pong"}
+		return &controlpb.ControlResponse{Success: true, Data: "pong", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "pong"}}}
 	case "status":
 		return s.getVMStatus()
 	case "capabilities":
@@ -344,7 +362,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		if err := s.OCRClickText(ocr, p.Text, timeout); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}
-		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("clicked %q", p.Text)}, true
+		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("clicked %q", p.Text), Result: &controlpb.ControlResponse_OcrText{OcrText: &controlpb.OCRTextResponse{Text: fmt.Sprintf("clicked %q", p.Text)}}}, true
 
 	case "ocr-wait":
 		p := parseOCRData(rawJSON)
@@ -361,7 +379,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		if err := s.OCRWaitForText(ocr, p.Text, timeout); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}
-		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("found %q", p.Text)}, true
+		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("found %q", p.Text), Result: &controlpb.ControlResponse_OcrText{OcrText: &controlpb.OCRTextResponse{Text: fmt.Sprintf("found %q", p.Text)}}}, true
 
 	case "ocr-gone":
 		p := parseOCRData(rawJSON)
@@ -384,7 +402,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 			}
 			_, _, found := ocr.FindTextNormalized(img, p.Text)
 			if !found {
-				return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("%q gone", p.Text)}, true
+				return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("%q gone", p.Text), Result: &controlpb.ControlResponse_OcrText{OcrText: &controlpb.OCRTextResponse{Text: fmt.Sprintf("%q gone", p.Text)}}}, true
 			}
 			time.Sleep(time.Second)
 		}
@@ -396,12 +414,12 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		if err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}
-		return &controlpb.ControlResponse{Success: true, Data: text}, true
+		return &controlpb.ControlResponse{Success: true, Data: text, Result: &controlpb.ControlResponse_OcrText{OcrText: &controlpb.OCRTextResponse{Text: text}}}, true
 
 	case "detect-page":
 		ocr := s.getOCR()
 		page := s.OCRDetectPage(ocr)
-		return &controlpb.ControlResponse{Success: true, Data: page}, true
+		return &controlpb.ControlResponse{Success: true, Data: page, Result: &controlpb.ControlResponse_OcrText{OcrText: &controlpb.OCRTextResponse{Text: page}}}, true
 
 	case "detect-screen":
 		ocr := s.getOCR()
@@ -410,7 +428,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("capture: %s", errMsg)}, true
 		}
 		state := DetectScreenStateOCR(img, ocr)
-		return &controlpb.ControlResponse{Success: true, Data: state.String()}, true
+		return &controlpb.ControlResponse{Success: true, Data: state.String(), Result: &controlpb.ControlResponse_ScreenDetection{ScreenDetection: &controlpb.ScreenDetectionResponse{State: state.String()}}}, true
 	}
 	return nil, false
 }
@@ -750,7 +768,7 @@ func (s *ControlServer) sendKeyEventHID(cmd *controlpb.KeyCommand) (resp *contro
 			defer close(done)
 			objc.Send[struct{}](s.vm.ID, objc.Sel("sendKeyboardEvents:keyboardID:"),
 				unsafe.Pointer(&report[0]), uint32(0))
-			resp = &controlpb.ControlResponse{Success: true}
+			resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 		})
 	} else {
 		// Fall back to main queue
@@ -758,7 +776,7 @@ func (s *ControlServer) sendKeyEventHID(cmd *controlpb.KeyCommand) (resp *contro
 			defer close(done)
 			objc.Send[struct{}](s.vm.ID, objc.Sel("sendKeyboardEvents:keyboardID:"),
 				unsafe.Pointer(&report[0]), uint32(0))
-			resp = &controlpb.ControlResponse{Success: true}
+			resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 		})
 	}
 	<-done
@@ -803,7 +821,7 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 		fmt.Printf("[key-cgevent] posted keyCode=%d down=%v via kCGHIDEventTap\n", cmd.KeyCode, cmd.KeyDown)
 	}
 
-	return &controlpb.ControlResponse{Success: true}
+	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 }
 
 // sendKeyEventNSEvent uses AppKit NSEvent for view-level keyboard injection.
@@ -886,7 +904,7 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 			fmt.Printf("[key-nsevent] sent successfully\n")
 		}
 
-		resp = &controlpb.ControlResponse{Success: true}
+		resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 	})
 	<-done
 	return resp
@@ -1031,7 +1049,7 @@ func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *con
 		case "move":
 			objc.Send[struct{}](s.vmView.ID, objc.Sel("mouseMoved:"), event.ID)
 		}
-		resp = &controlpb.ControlResponse{Success: true}
+		resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 	})
 	<-done
 	return resp
@@ -1114,7 +1132,7 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 	}
 	cgEventPost(kCGHIDEventTap, event)
 
-	return &controlpb.ControlResponse{Success: true}
+	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 }
 
 // typeText types text into the VM character by character. Each character is
@@ -1160,7 +1178,7 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 	}
 
 	fmt.Printf("[typeText] done typing %q\n", cmd.Text)
-	return &controlpb.ControlResponse{Success: true}
+	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 }
 
 // pasteText types text into the VM character by character by posting
@@ -1354,7 +1372,17 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 	}
 
 	data, _ := json.Marshal(status)
-	return &controlpb.ControlResponse{Success: true, Data: string(data)}
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    string(data),
+		Result: &controlpb.ControlResponse_Status{Status: &controlpb.StatusResponse{
+			State:          state.String(),
+			CanPause:       canPause,
+			CanResume:      canResume,
+			CanStop:        canStop,
+			CanRequestStop: canRequestStop,
+		}},
+	}
 }
 
 // pauseVM pauses the VM.
@@ -1391,7 +1419,7 @@ func (s *ControlServer) pauseVM() *controlpb.ControlResponse {
 		if err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("pause failed: %v", err)}
 		}
-		return &controlpb.ControlResponse{Success: true, Data: "paused"}
+		return &controlpb.ControlResponse{Success: true, Data: "paused", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "paused"}}}
 	case <-time.After(10 * time.Second):
 		return &controlpb.ControlResponse{Error: "pause timed out"}
 	}
@@ -1431,7 +1459,7 @@ func (s *ControlServer) resumeVM() *controlpb.ControlResponse {
 		if err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("resume failed: %v", err)}
 		}
-		return &controlpb.ControlResponse{Success: true, Data: "resumed"}
+		return &controlpb.ControlResponse{Success: true, Data: "resumed", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "resumed"}}}
 	case <-time.After(10 * time.Second):
 		return &controlpb.ControlResponse{Error: "resume timed out"}
 	}
@@ -1471,7 +1499,7 @@ func (s *ControlServer) stopVM() *controlpb.ControlResponse {
 		if err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("stop failed: %v", err)}
 		}
-		return &controlpb.ControlResponse{Success: true, Data: "stopped"}
+		return &controlpb.ControlResponse{Success: true, Data: "stopped", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "stopped"}}}
 	case <-time.After(30 * time.Second):
 		return &controlpb.ControlResponse{Error: "stop timed out"}
 	}
@@ -1506,7 +1534,7 @@ func (s *ControlServer) requestStopVM() *controlpb.ControlResponse {
 		return &controlpb.ControlResponse{Error: "request stop failed"}
 	}
 
-	return &controlpb.ControlResponse{Success: true, Data: "stop requested (ACPI power button sent)"}
+	return &controlpb.ControlResponse{Success: true, Data: "stop requested (ACPI power button sent)", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "stop requested (ACPI power button sent)"}}}
 }
 
 // handleNetworkInfo returns the VM's network configuration including MAC address
@@ -1533,7 +1561,11 @@ func (s *ControlServer) handleNetworkInfo() *controlpb.ControlResponse {
 	}
 
 	data, _ := protojsonMarshaler.Marshal(info)
-	return &controlpb.ControlResponse{Success: true, Data: string(data)}
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    string(data),
+		Result:  &controlpb.ControlResponse_NetworkInfo{NetworkInfo: info},
+	}
 }
 
 func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
@@ -1567,8 +1599,32 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			"agent-sshd", "agent-mount-volumes",
 		},
 	}
+	commands := []string{
+		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
+		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
+		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
+		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
+		"agent-sshd", "agent-mount-volumes",
+	}
+	features := map[string]bool{
+		"agentExecStream": true,
+		"screenshotDiff":  true,
+		"snapshots":       true,
+		"memoryBalloon":   true,
+	}
+
 	data, _ := json.Marshal(payload)
-	return &controlpb.ControlResponse{Success: true, Data: string(data)}
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    string(data),
+		Result: &controlpb.ControlResponse_Capabilities{Capabilities: &controlpb.CapabilitiesResponse{
+			ProtocolVersion: "vz.control.v1",
+			Encoding:        "protojson",
+			Commands:        commands,
+			Features:        features,
+			AuthRequired:    s.authToken != "",
+		}},
+	}
 }
 
 // Global control server instance

@@ -335,7 +335,8 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if err := mgr.Save(s.vm, vzkit.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
-		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("snapshot '%s' saved", cmd.Name)}
+		msg := fmt.Sprintf("snapshot '%s' saved", cmd.Name)
+		return &controlpb.ControlResponse{Success: true, Data: msg, Result: &controlpb.ControlResponse_SnapshotAction{SnapshotAction: &controlpb.SnapshotActionResponse{Message: msg}}}
 
 	case "restore":
 		if cmd.Name == "" {
@@ -344,7 +345,8 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if err := mgr.Restore(s.vm, vzkit.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
-		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("snapshot '%s' restored (VM paused)", cmd.Name)}
+		msg := fmt.Sprintf("snapshot '%s' restored (VM paused)", cmd.Name)
+		return &controlpb.ControlResponse{Success: true, Data: msg, Result: &controlpb.ControlResponse_SnapshotAction{SnapshotAction: &controlpb.SnapshotActionResponse{Message: msg}}}
 
 	case "list":
 		snapshots, err := mgr.List()
@@ -352,7 +354,17 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		data, _ := json.Marshal(snapshots)
-		return &controlpb.ControlResponse{Success: true, Data: string(data)}
+		var pbSnapshots []*controlpb.SnapshotInfo
+		for _, s := range snapshots {
+			pbSnapshots = append(pbSnapshots, &controlpb.SnapshotInfo{
+				Name:     s.Name,
+				Created:  s.Created.Format(time.RFC3339),
+				Size:     s.Size,
+				VmState:  s.VMState,
+				FilePath: s.FilePath,
+			})
+		}
+		return &controlpb.ControlResponse{Success: true, Data: string(data), Result: &controlpb.ControlResponse_SnapshotList{SnapshotList: &controlpb.SnapshotListResponse{Snapshots: pbSnapshots}}}
 
 	case "delete":
 		if cmd.Name == "" {
@@ -361,7 +373,8 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if err := mgr.Delete(cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
-		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("snapshot '%s' deleted", cmd.Name)}
+		msg := fmt.Sprintf("snapshot '%s' deleted", cmd.Name)
+		return &controlpb.ControlResponse{Success: true, Data: msg, Result: &controlpb.ControlResponse_SnapshotAction{SnapshotAction: &controlpb.SnapshotActionResponse{Message: msg}}}
 
 	default:
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown snapshot action: %s", cmd.Action)}

@@ -45,7 +45,11 @@ func (s *ControlServer) handleMemoryCommand(cmd *controlpb.MemoryCommand) *contr
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		data, _ := protojsonMarshaler.Marshal(info)
-		return &controlpb.ControlResponse{Success: true, Data: string(data)}
+		return &controlpb.ControlResponse{
+			Success: true,
+			Data:    string(data),
+			Result:  &controlpb.ControlResponse_MemoryInfo{MemoryInfo: &controlpb.MemoryInfoResponse{Info: info}},
+		}
 
 	case "set":
 		if cmd.SizeGb <= 0 {
@@ -54,7 +58,8 @@ func (s *ControlServer) handleMemoryCommand(cmd *controlpb.MemoryCommand) *contr
 		if err := setMemoryTarget(s.vm, s.vmQueue, cmd.SizeGb); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
-		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("memory target set to %.2f GB", cmd.SizeGb)}
+		msg := fmt.Sprintf("memory target set to %.2f GB", cmd.SizeGb)
+		return &controlpb.ControlResponse{Success: true, Data: msg, Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
 
 	default:
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown memory action: %s (use 'info' or 'set')", cmd.Action)}

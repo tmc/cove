@@ -149,7 +149,7 @@ func (s *ControlServer) handleAgentConnect() *controlpb.ControlResponse {
 	if err := s.connectAgentLocked(); err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-	return &controlpb.ControlResponse{Success: true, Data: "connected to guest agent"}
+	return &controlpb.ControlResponse{Success: true, Data: "connected to guest agent", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "connected to guest agent"}}}
 }
 
 func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
@@ -162,7 +162,11 @@ func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("ping: %v", err)}
 	}
-	return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("agent version: %s", version)}
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    fmt.Sprintf("agent version: %s", version),
+		Result:  &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: version}},
+	}
 }
 
 func (s *ControlServer) handleAgentInfo() *controlpb.ControlResponse {
@@ -176,7 +180,16 @@ func (s *ControlServer) handleAgentInfo() *controlpb.ControlResponse {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("info: %v", err)}
 	}
 	data, _ := json.Marshal(info)
-	return &controlpb.ControlResponse{Success: true, Data: string(data)}
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    string(data),
+		Result: &controlpb.ControlResponse_AgentInfo{AgentInfo: &controlpb.AgentInfoResponse{
+			Hostname: info.GetHostname(),
+			Os:       info.GetOsVersion(),
+			Arch:     info.GetArch(),
+			RawJson:  string(data),
+		}},
+	}
 }
 
 func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *controlpb.ControlResponse {
@@ -198,7 +211,16 @@ func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *contro
 		"stderr":   string(result.Stderr),
 		"duration": result.DurationSeconds,
 	})
-	return &controlpb.ControlResponse{Success: true, Data: string(data)}
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    string(data),
+		Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+			ExitCode:        result.ExitCode,
+			Stdout:          string(result.Stdout),
+			Stderr:          string(result.Stderr),
+			DurationSeconds: result.DurationSeconds,
+		}},
+	}
 }
 
 func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *controlpb.ControlResponse {
@@ -214,7 +236,11 @@ func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *co
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("read: %v", err)}
 	}
-	return &controlpb.ControlResponse{Success: true, Data: base64.StdEncoding.EncodeToString(data)}
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    base64.StdEncoding.EncodeToString(data),
+		Result:  &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Data: data}},
+	}
 }
 
 func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *controlpb.ControlResponse {
@@ -237,7 +263,7 @@ func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *
 	if err := s.agent.WriteFile(ctx, cmd.Path, data, mode); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("write: %v", err)}
 	}
-	return &controlpb.ControlResponse{Success: true, Data: "ok"}
+	return &controlpb.ControlResponse{Success: true, Data: "ok", Result: &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: "ok"}}}
 }
 
 func (s *ControlServer) handleAgentShutdown(cmd *controlpb.AgentShutdownCommand) *controlpb.ControlResponse {
@@ -249,7 +275,7 @@ func (s *ControlServer) handleAgentShutdown(cmd *controlpb.AgentShutdownCommand)
 	if err := s.agent.Shutdown(ctx, cmd.Force); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("shutdown: %v", err)}
 	}
-	return &controlpb.ControlResponse{Success: true, Data: "shutdown initiated"}
+	return &controlpb.ControlResponse{Success: true, Data: "shutdown initiated", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "shutdown initiated"}}}
 }
 
 func (s *ControlServer) handleAgentReboot() *controlpb.ControlResponse {
@@ -261,7 +287,7 @@ func (s *ControlServer) handleAgentReboot() *controlpb.ControlResponse {
 	if err := s.agent.Reboot(ctx); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("reboot: %v", err)}
 	}
-	return &controlpb.ControlResponse{Success: true, Data: "reboot initiated"}
+	return &controlpb.ControlResponse{Success: true, Data: "reboot initiated", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "reboot initiated"}}}
 }
 
 func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *controlpb.ControlResponse {
@@ -290,7 +316,15 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 		"stdout":   string(result.Stdout),
 		"stderr":   string(result.Stderr),
 	})
-	return &controlpb.ControlResponse{Success: true, Data: string(data)}
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    string(data),
+		Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+			ExitCode: result.ExitCode,
+			Stdout:   string(result.Stdout),
+			Stderr:   string(result.Stderr),
+		}},
+	}
 }
 
 func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
@@ -305,7 +339,7 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 
 	tagged := taggedVolumes(cfg.Volumes)
 	if len(tagged) == 0 {
-		return &controlpb.ControlResponse{Success: true, Data: "no tagged volumes to mount"}
+		return &controlpb.ControlResponse{Success: true, Data: "no tagged volumes to mount", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "no tagged volumes to mount"}}}
 	}
 
 	var results []map[string]interface{}
@@ -338,7 +372,7 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 	}
 
 	data, _ := json.Marshal(results)
-	return &controlpb.ControlResponse{Success: true, Data: string(data)}
+	return &controlpb.ControlResponse{Success: true, Data: string(data), Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: string(data)}}}
 }
 
 func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *controlpb.ControlRequest) {
@@ -427,9 +461,11 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 		if err := s.agent.CopyToGuest(ctx, cmd.HostPath, cmd.GuestPath, mode); err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
 		}
+		msg := fmt.Sprintf("%s -> guest:%s (%d bytes)", cmd.HostPath, cmd.GuestPath, info.Size())
 		return &controlpb.ControlResponse{
 			Success: true,
-			Data:    fmt.Sprintf("%s -> guest:%s (%d bytes)", cmd.HostPath, cmd.GuestPath, info.Size()),
+			Data:    msg,
+			Result:  &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: msg}},
 		}
 	}
 
@@ -442,8 +478,10 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 	if info != nil {
 		size = info.Size()
 	}
+	msg := fmt.Sprintf("guest:%s -> %s (%d bytes)", cmd.GuestPath, cmd.HostPath, size)
 	return &controlpb.ControlResponse{
 		Success: true,
-		Data:    fmt.Sprintf("guest:%s -> %s (%d bytes)", cmd.GuestPath, cmd.HostPath, size),
+		Data:    msg,
+		Result:  &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: msg}},
 	}
 }

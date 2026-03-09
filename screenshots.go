@@ -59,18 +59,29 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 	}
 
 	// Encode to bytes
-	var encoded string
+	var rawBytes []byte
 	var encErr string
 	if format == "png" {
-		encoded, encErr = encodePNG(outputImg)
+		rawBytes, encErr = encodePNGBytes(outputImg)
 	} else {
-		encoded, encErr = encodeJPEG(outputImg, int(quality))
+		rawBytes, encErr = encodeJPEGBytes(outputImg, int(quality))
 	}
 	if encErr != "" {
 		return &controlpb.ControlResponse{Error: encErr}
 	}
 
-	return &controlpb.ControlResponse{Success: true, Data: encoded}
+	encoded := base64.StdEncoding.EncodeToString(rawBytes)
+	bounds := outputImg.Bounds()
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    encoded,
+		Result: &controlpb.ControlResponse_ScreenshotResult{ScreenshotResult: &controlpb.ScreenshotResponse{
+			ImageData: rawBytes,
+			Format:    format,
+			Width:     int32(bounds.Dx()),
+			Height:    int32(bounds.Dy()),
+		}},
+	}
 }
 
 // captureVMView captures the raw image from the VM view using CGWindowListCreateImage
@@ -260,24 +271,24 @@ func scaleImage(img image.Image, scale float64) image.Image {
 	return scaled
 }
 
-// encodeJPEG encodes an image as JPEG with the given quality
-func encodeJPEG(img image.Image, quality int) (string, string) {
+// encodeJPEGBytes encodes an image as JPEG with the given quality, returning raw bytes.
+func encodeJPEGBytes(img image.Image, quality int) ([]byte, string) {
 	var buf bytes.Buffer
 	err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
 	if err != nil {
-		return "", "failed to encode JPEG: " + err.Error()
+		return nil, "failed to encode JPEG: " + err.Error()
 	}
-	return base64.StdEncoding.EncodeToString(buf.Bytes()), ""
+	return buf.Bytes(), ""
 }
 
-// encodePNG encodes an image as PNG
-func encodePNG(img image.Image) (string, string) {
+// encodePNGBytes encodes an image as PNG, returning raw bytes.
+func encodePNGBytes(img image.Image) ([]byte, string) {
 	var buf bytes.Buffer
 	err := png.Encode(&buf, img)
 	if err != nil {
-		return "", "failed to encode PNG: " + err.Error()
+		return nil, "failed to encode PNG: " + err.Error()
 	}
-	return base64.StdEncoding.EncodeToString(buf.Bytes()), ""
+	return buf.Bytes(), ""
 }
 
 // absDiff returns the absolute difference between two uint32 values
