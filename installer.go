@@ -598,7 +598,7 @@ func createProgressWindow() (appkit.NSWindow, objc.ID, objc.ID) {
 			symbolImg = appkit.NSImageFromID(largeSymbol)
 		}
 
-		imageView := appkit.GetNSImageViewClass().ImageViewWithImage(&symbolImg)
+		imageView := appkit.NewImageViewWithImage(&symbolImg)
 		imageView.SetFrame(corefoundation.CGRect{
 			Origin: corefoundation.CGPoint{X: iconLeft, Y: (winH - iconSize) / 2},
 			Size:   corefoundation.CGSize{Width: iconSize, Height: iconSize},

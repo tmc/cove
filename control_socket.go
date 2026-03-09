@@ -45,23 +45,23 @@ const (
 
 // ControlServer manages the Unix socket for VM control
 type ControlServer struct {
-	socketPath     string
-	vmDir          string
-	authToken      string
-	listener       net.Listener
-	vmView         vz.VZVirtualMachineView
-	window         appkit.NSWindow
-	vm             vz.VZVirtualMachine
-	vmQueue        dispatch.Queue
-	mu             sync.Mutex
-	agentMu        sync.Mutex // separate mutex for agent operations (can be long-running)
-	screenshotMu   sync.Mutex // protects lastScreenshot for diff mode
-	running        bool
-	lastScreenshot image.Image  // For diff mode
-	agent          *AgentClient // GRPC client to guest agent (nil until connected)
-	ocr            *OCRService  // lazily created OCR service for server-side OCR commands
-	windowNum         int // cached window number for thread-safe screenshot
-	viewContentHeight int // cached view content height in pixels (excludes title bar)
+	socketPath        string
+	vmDir             string
+	authToken         string
+	listener          net.Listener
+	vmView            vz.VZVirtualMachineView
+	window            appkit.NSWindow
+	vm                vz.VZVirtualMachine
+	vmQueue           dispatch.Queue
+	mu                sync.Mutex
+	agentMu           sync.Mutex // separate mutex for agent operations (can be long-running)
+	screenshotMu      sync.Mutex // protects lastScreenshot for diff mode
+	running           bool
+	lastScreenshot    image.Image  // For diff mode
+	agent             *AgentClient // GRPC client to guest agent (nil until connected)
+	ocr               *OCRService  // lazily created OCR service for server-side OCR commands
+	windowNum         int          // cached window number for thread-safe screenshot
+	viewContentHeight int          // cached view content height in pixels (excludes title bar)
 }
 
 // NewControlServer creates a new control server
@@ -1001,10 +1001,10 @@ func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *con
 			0, // modifiers
 			0, // timestamp (0 = now)
 			int(windowNumber),
-			nil,                   // context
-			0,                     // eventNumber
-			1,                     // clickCount
-			float32(1.0),          // pressure
+			nil,          // context
+			0,            // eventNumber
+			1,            // clickCount
+			float32(1.0), // pressure
 		)
 		event := appkit.NSEventFromID(iEvent.GetID())
 		if event.ID == 0 {
@@ -1178,7 +1178,7 @@ func (s *ControlServer) pasteText(text string) {
 		defer close(done)
 		pb := appkit.GetNSPasteboardClass().GeneralPasteboard()
 		pb.ClearContents()
-		ok := pb.SetStringForType(text, appkit.NSPasteboardTypeString)
+		ok := pb.SetStringForType(text, appkit.NSPasteboardTypes.String)
 		fmt.Printf("[pasteText] clipboard set to %q (ok=%v)\n", text, ok)
 	})
 	<-done

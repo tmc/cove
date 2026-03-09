@@ -103,7 +103,7 @@ func (t *VMToolbar) registerDelegate() {
 		},
 	)
 	if err != nil {
-		fmt.Printf("Warning: could not register toolbar delegate: %v\n", err)
+		fmt.Printf("warning: could not register toolbar delegate: %v\n", err)
 		return
 	}
 
@@ -118,7 +118,7 @@ func toolbarItemIDs() []string {
 		toolbarIDStartPause,
 		toolbarIDRestart,
 		toolbarIDBootOptions,
-		string(appkit.NSToolbarFlexibleSpaceItemIdentifier),
+		string(appkit.ToolbarFlexibleSpaceItemIdentifier),
 		toolbarIDCaptureInput,
 		toolbarIDScreenshot,
 		toolbarIDSharedFolder,
@@ -561,11 +561,11 @@ func (t *VMToolbar) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	panel.SetMessage("Save VM Screenshot")
 	pngType := uniformtypeidentifiers.NewTypeWithFilenameExtension("png")
 	if pngType.ID != 0 {
-		panel.SetAllowedContentTypes([]objectivec.IObject{pngType})
+		panel.SetAllowedContentTypes([]uniformtypeidentifiers.UTType{pngType})
 	}
 
 	response := panel.RunModal()
-	if response != appkit.NSModalResponseOK {
+	if response != appkit.NSModalResponses.OK {
 		return
 	}
 
@@ -599,7 +599,7 @@ func (t *VMToolbar) handleAddSharedFolder(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	panel.SetMessage("Choose folders to share with the VM")
 
 	response := panel.NSSavePanel.RunModal()
-	if response != appkit.NSModalResponseOK {
+	if response != appkit.NSModalResponses.OK {
 		return
 	}
 
