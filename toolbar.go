@@ -91,7 +91,6 @@ func (t *VMToolbar) registerDelegate() {
 			{Cmd: objc.RegisterName("startPauseVM:"), Fn: t.handleStartPause},
 			{Cmd: objc.RegisterName("restartVM:"), Fn: t.handleRestart},
 			{Cmd: objc.RegisterName("bootRecovery:"), Fn: t.handleBootRecovery},
-			{Cmd: objc.RegisterName("bootRecoveryWithDisk:"), Fn: t.handleBootRecoveryWithDisk},
 			{Cmd: objc.RegisterName("suspendVM:"), Fn: t.handleSuspend},
 			{Cmd: objc.RegisterName("captureInput:"), Fn: t.handleCaptureInput},
 			{Cmd: objc.RegisterName("takeScreenshot:"), Fn: t.handleScreenshot},
@@ -209,7 +208,6 @@ func (t *VMToolbar) createMenuToolbarItem(id, sfSymbol, label string) appkit.NSM
 
 	menu := appkit.NewMenuWithTitle(label)
 	addToolbarMenuItem(menu, "Boot to Recovery", "bootRecovery:", t.delegateID)
-	addToolbarMenuItem(menu, "Boot to Recovery with Disk", "bootRecoveryWithDisk:", t.delegateID)
 	addToolbarMenuSeparator(menu)
 	addToolbarMenuItem(menu, "Suspend", "suspendVM:", t.delegateID)
 	menuItem.SetMenu(&menu)
@@ -477,25 +475,6 @@ func (t *VMToolbar) handleBootRecovery(_ objc.ID, _ objc.SEL, _ objc.ID) {
 			startRecovery()
 		})
 	})
-}
-
-func (t *VMToolbar) handleBootRecoveryWithDisk(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	fmt.Println("Toolbar: booting to recovery mode with tools disk...")
-
-	// Ensure recovery disk exists
-	rdPath, err := EnsureRecoveryDisk(t.vmDirectory)
-	if err != nil {
-		fmt.Printf("Toolbar: create recovery disk: %v\n", err)
-		return
-	}
-	fmt.Printf("Toolbar: recovery disk at %s\n", rdPath)
-
-	// Set the global flag so buildVMConfiguration includes the recovery disk
-	recoveryDisk = true
-	recoveryMode = true
-
-	// Reuse the boot-to-recovery handler which stops the VM and restarts it
-	t.handleBootRecovery(0, 0, 0)
 }
 
 func (t *VMToolbar) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID) {
