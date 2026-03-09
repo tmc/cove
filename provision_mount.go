@@ -9,6 +9,10 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
+	di2 "github.com/tmc/apple/private/diskimages2"
 )
 
 // attachAndMountDataVolume attaches the disk image and mounts the Data volume.
@@ -16,56 +20,57 @@ import (
 func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartition string, err error) {
 	provisionLog("attachAndMountDataVolume: diskPath=%s", diskPath)
 
+	var lines []string
+	var cmd *exec.Cmd
+	var output []byte
+
 	// Step 1: Attach the disk image without mounting
-	cmd := exec.Command("hdiutil", "attach", diskPath, "-nobrowse", "-nomount")
-	provisionLog("Running: hdiutil attach %s -nobrowse -nomount", diskPath)
-	output, err := cmd.Output()
+	device, err = attachDiskImageNoMountDI2(diskPath)
 	if err != nil {
-		provisionLog("hdiutil attach failed: %v", err)
-		return "", "", "", fmt.Errorf("hdiutil attach failed: %w", err)
-	}
-	provisionLog("hdiutil output:\n%s", string(output))
-
-	// Parse output to find the base disk device (e.g., /dev/disk19)
-	// The output includes the base disk AND all synthesized APFS containers
-	// Output format:
-	// /dev/disk19         	GUID_partition_scheme
-	// /dev/disk19s1       	Apple_APFS_ISC
-	// /dev/disk19s2       	Apple_APFS
-	// /dev/disk20         	EF57347C-... (synthesized APFS container)
-	// /dev/disk20s1       	41504653-... (APFS volume)
-	// Parse output to find the base disk device
-	// Look for /dev/diskN (without partition suffix like s1, s2)
-	baseDiskRe := regexp.MustCompile(`^(/dev/disk\d+)\s`)
-	partitionRe := regexp.MustCompile(`^(/dev/disk\d+s\d+)\s`)
-
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		// First, try to find a base disk (no partition suffix)
-		if matches := baseDiskRe.FindStringSubmatch(line); matches != nil {
-			if device == "" {
-				device = matches[1]
-				break
-			}
+		provisionLog("diskimages2 attach failed, falling back to hdiutil: %v", err)
+		cmd = exec.Command("hdiutil", "attach", diskPath, "-nobrowse", "-nomount")
+		provisionLog("Running: hdiutil attach %s -nobrowse -nomount", diskPath)
+		output, err = cmd.Output()
+		if err != nil {
+			provisionLog("hdiutil attach failed: %v", err)
+			return "", "", "", fmt.Errorf("hdiutil attach failed: %w", err)
 		}
-	}
+		provisionLog("hdiutil output:\n%s", string(output))
 
-	// Fallback: if no base disk found, extract from first partition
-	if device == "" {
+		// Parse output to find the base disk device (e.g., /dev/disk19)
+		// The output includes the base disk AND all synthesized APFS containers.
+		baseDiskRe := regexp.MustCompile(`^(/dev/disk\d+)\s`)
+		partitionRe := regexp.MustCompile(`^(/dev/disk\d+s\d+)\s`)
+		lines = strings.Split(string(output), "\n")
 		for _, line := range lines {
-			if matches := partitionRe.FindStringSubmatch(line); matches != nil {
-				// Extract base disk from partition (e.g., /dev/disk19s1 -> /dev/disk19)
-				partDiskRe := regexp.MustCompile(`^(/dev/disk\d+)s\d+$`)
-				if baseMatches := partDiskRe.FindStringSubmatch(matches[1]); baseMatches != nil {
-					device = baseMatches[1]
+			if matches := baseDiskRe.FindStringSubmatch(line); matches != nil {
+				if device == "" {
+					device = matches[1]
 					break
 				}
 			}
 		}
+
+		// Fallback: if no base disk found, extract from first partition.
+		if device == "" {
+			for _, line := range lines {
+				if matches := partitionRe.FindStringSubmatch(line); matches != nil {
+					partDiskRe := regexp.MustCompile(`^(/dev/disk\d+)s\d+$`)
+					if baseMatches := partDiskRe.FindStringSubmatch(matches[1]); baseMatches != nil {
+						device = baseMatches[1]
+						break
+					}
+				}
+			}
+		}
+
+		if device == "" {
+			return "", "", "", fmt.Errorf("could not find device in hdiutil output: %s", string(output))
+		}
 	}
 
 	if device == "" {
-		return "", "", "", fmt.Errorf("could not find device in hdiutil output: %s", string(output))
+		return "", "", "", fmt.Errorf("could not attach disk image: empty device")
 	}
 
 	fmt.Printf("Attached disk image to %s\n", device)
@@ -233,6 +238,48 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 	return mountPoint, device, dataPartition, nil
 }
 
+// attachDiskImageNoMountDI2 attaches a disk image using DiskImages2.framework
+// and returns the base BSD device path (e.g. /dev/disk19). It disables
+// automount to preserve existing provisioning behavior.
+func attachDiskImageNoMountDI2(diskPath string) (string, error) {
+	// The generated package loads the framework in init; class lookup verifies availability.
+	if objc.GetClass("DiskImages2") == 0 {
+		return "", fmt.Errorf("diskimages2 framework unavailable")
+	}
+
+	url := foundation.NewURLFileURLWithPath(diskPath)
+	params, err := di2.NewDIAttachParamsWithURLError(url)
+	if err != nil {
+		return "", fmt.Errorf("diskimages2 init attach params: %w", err)
+	}
+	if params.ID == 0 {
+		return "", fmt.Errorf("diskimages2 initWithURL returned nil")
+	}
+	params.SetAutoMount(false)
+
+	handleIface, err := params.NewAttachWithError()
+	if err != nil {
+		return "", fmt.Errorf("diskimages2 attach: %w", err)
+	}
+	handle, ok := handleIface.(di2.DIDeviceHandle)
+	if !ok || handle.ID == 0 {
+		return "", fmt.Errorf("diskimages2 attach: unexpected handle type %T", handleIface)
+	}
+	defer handle.Release()
+
+	if _, err := handle.WaitForDeviceWithError(); err != nil {
+		return "", fmt.Errorf("diskimages2 wait for device: %w", err)
+	}
+	bsd := strings.TrimSpace(handle.BSDName())
+	if bsd == "" {
+		return "", fmt.Errorf("diskimages2 returned empty BSDName")
+	}
+	if strings.HasPrefix(bsd, "/dev/") {
+		return bsd, nil
+	}
+	return "/dev/" + bsd, nil
+}
+
 // detachDisk safely detaches a disk device and verifies it is no longer
 // attached. Falls back to escalating detach strategies if needed.
 func detachDisk(device string) {
@@ -242,7 +289,7 @@ func detachDisk(device string) {
 	diskPath := filepath.Join(vmDir, "disk.img")
 
 	if err := detachDiskVerified(device, diskPath); err != nil {
-		fmt.Printf("Warning: %v\n", err)
+		fmt.Printf("warning: %v\n", err)
 		fmt.Printf("  Manual fix: hdiutil detach %s -force\n", device)
 	}
 }
