@@ -197,7 +197,7 @@ func main() {
 			fmt.Fprintln(tty) // newline after hidden input
 			tty.Close()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading password: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: could not read password from terminal: %v\n  use -provision-password <pw> to provide the password non-interactively\n", err)
 				os.Exit(1)
 			}
 			provisionPassword = string(pw)
@@ -262,6 +262,9 @@ func main() {
 
 		// Commands that have their own flag parsing (don't re-parse with main flags)
 		switch cmd {
+		case "version":
+			fmt.Println(versionInfo())
+			return
 		case "ctl":
 			if err := ctlCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -354,7 +357,7 @@ func main() {
 			}
 			if installVZScripts != "" {
 				if err := runPostInstallVZScripts(installVZScripts); err != nil {
-					fmt.Fprintf(os.Stderr, "Error running vzscripts: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: running vzscripts: %v\n", err)
 					os.Exit(1)
 				}
 			}
@@ -419,7 +422,7 @@ func main() {
 func handleDefaultAction() {
 	vms, err := ListVMs()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error listing VMs: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: listing VMs: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -503,8 +506,11 @@ Commands:
   snapshot    Manage VM snapshots (list/save/restore/delete)
   network     Network configuration (list interfaces, help)
   rosetta     Rosetta 2 for Linux VMs (status/install/setup)
+  disk-snapshot Manage disk-level snapshots (APFS clonefile, copy-on-write)
   disk-detach Detach VM disk if stuck from a previous inject/verify
+  inject-agent Inject only vz-agent daemon (no user provisioning)
   vzscript    Run guest-agent and UI automation scripts (rsc.io/script + txtar)
+  version     Print version information
 
 Auto-Provisioning (Recommended - inject command):
   Inject user provisioning directly into VM disk (no VirtioFS needed):
@@ -566,7 +572,7 @@ func handleList() {
 	// List VMs
 	vms, err := ListVMs()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error listing VMs: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: listing VMs: %v\n", err)
 		os.Exit(1)
 	}
 
