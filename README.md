@@ -11,26 +11,21 @@ macOS and Linux VM management using Apple's Virtualization.framework via [purego
 - Screenshot capture and screen state detection
 - Guest agent over vsock (gRPC)
 - vzscript engine for automated VM configuration
-- Clipboard sharing, drag-and-drop, GUI toolbars
+- Clipboard sharing, shared folders, GUI toolbars
 
 ## Quick Start
 
 ```bash
-# Build and sign
+# Build (auto-signs with virtualization entitlements on first run)
 go build -o vz-macos .
-codesign --entitlements internal/autosign/vz.entitlements -f -s - ./vz-macos
 
-# Install macOS
-./vz-macos install -ipsw ~/Downloads/UniversalMac_14.0_RestoreImage.ipsw
+# One-command setup: install + provision + boot
+./vz-macos up -user testuser
 
-# Provision (requires sudo for LaunchDaemon ownership)
-sudo ./vz-macos inject -user testuser -password secret123 -skip-setup-assistant
-
-# Verify provisioning
-./vz-macos verify
-
-# Run with GUI
-./vz-macos run -gui
+# Or step-by-step:
+./vz-macos install                                         # auto-downloads IPSW
+./vz-macos inject -user testuser -skip-setup-assistant     # provisions user
+./vz-macos run                                             # boots with GUI
 ```
 
 ## Linux VMs
@@ -72,15 +67,15 @@ proto/               Protocol buffer definitions
 
 | Maturity | Features |
 |----------|----------|
-| GA | install, run, provisioning (inject) |
-| Beta | snapshots, agent, userdata |
-| Experimental | FDA, UTM import, memory balloon, Windows stub |
+| GA | install, run, provisioning (inject), vzscripts |
+| Beta | snapshots, agent, clipboard sharing |
+| Experimental | UTM import, memory balloon, Windows stub |
 
 ## Security Model
 
 - **Control socket** requires a per-VM bearer token from `~/.vz/vms/<name>/control.token` and uses owner-only socket/file permissions (`0600`).
 - **Agent gRPC** is unencrypted, designed for use within the VM boundary over vsock. Do not expose the agent port outside the host.
-- **Full Disk Access (FDA)** may be required for certain disk operations. SIP status inside the guest can be managed with the `sip` command.
+- **Full Disk Access (FDA)** may be required for certain disk operations when using `inject` or `verify`.
 - **UTM import** is limited to Apple-backend macOS bundles (.utm with QEMU backends are not supported).
 
 ## References

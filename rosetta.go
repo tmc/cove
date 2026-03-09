@@ -219,7 +219,7 @@ Rosetta allows ARM64 Linux VMs to run x86-64 binaries through
 transparent binary translation.
 
 Requirements:
-  - Apple Silicon Mac (M1/M2/M3)
+  - Apple Silicon Mac (M1/M2/M3/M4)
   - macOS 13.0 or later
   - Linux VM with VirtioFS support
 
