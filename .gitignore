@@ -18,6 +18,10 @@ go.work.sum
 # macOS
 .DS_Store
 
+# Debug output
+setup_assistant_debug/
+nohup.out
+
 # IDE/tool config
 .claude/
 *.cstemp
