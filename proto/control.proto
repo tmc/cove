@@ -3,6 +3,7 @@ syntax = "proto3";
 package vz.control.v1;
 
 option go_package = "github.com/tmc/vz-macos/proto/controlpb";
+option swift_prefix = "VZControl_";
 
 // ControlRequest is the envelope for all control socket requests.
 // Every JSON line sent to the socket is unmarshaled into this message.
@@ -20,6 +21,7 @@ message ControlRequest {
     ScreenshotCommand screenshot = 13;
     SnapshotCommand snapshot = 14;
     MemoryCommand memory = 15;
+    OCRCommand ocr = 16;
     AgentExecCommand agent_exec = 20;
     AgentFileReadCommand agent_read = 21;
     AgentFileWriteCommand agent_write = 22;
@@ -30,11 +32,37 @@ message ControlRequest {
 }
 
 // ControlResponse is the envelope for all control socket responses.
+// The "data" field (3) is kept for backward compatibility. New clients
+// should read from the typed "result" oneof instead.
 message ControlResponse {
   bool success = 1;
   string error = 2;
+  // Legacy: opaque string carrying base64 images, JSON objects, or plain text.
   string data = 3;
+
+  // Typed response payload. New clients should prefer these fields.
+  oneof result {
+    StatusResponse status = 10;
+    CapabilitiesResponse capabilities = 11;
+    ScreenshotResponse screenshot_result = 12;
+    EmptyResponse empty = 13;
+    SnapshotListResponse snapshot_list = 14;
+    SnapshotActionResponse snapshot_action = 15;
+    MessageResponse message = 16;
+    NetworkInfoResponse network_info = 17;
+    MemoryInfoResponse memory_info = 18;
+    AgentExecResponse agent_exec_result = 20;
+    AgentFileResponse agent_file = 21;
+    AgentInfoResponse agent_info = 22;
+    AgentPingResponse agent_ping = 23;
+    OCRTextResponse ocr_text = 24;
+    ScreenDetectionResponse screen_detection = 25;
+  }
 }
+
+// --------------------------------------------------------------------------
+// Request command messages
+// --------------------------------------------------------------------------
 
 // KeyCommand sends a keyboard event to the VM.
 message KeyCommand {
@@ -81,28 +109,14 @@ message MemoryCommand {
   double size_gb = 2;
 }
 
-// NetworkInfoResponse contains VM network configuration.
-message NetworkInfoResponse {
-  string mac_address = 1;
-  string guest_ip = 2;
-  string mode = 3;
-}
-
-// MemoryInfo contains information about VM memory configuration.
-message MemoryInfo {
-  double configured_gb = 1;
-  double target_gb = 2;
-  uint64 minimum_allowed_mb = 3;
-  bool has_balloon = 4;
-}
-
-// SnapshotInfo contains metadata about a saved snapshot.
-message SnapshotInfo {
-  string name = 1;
-  string created = 2;
-  int64 size = 3;
-  string vm_state = 4;
-  string file_path = 5;
+// OCRCommand performs OCR operations on the VM display.
+message OCRCommand {
+  // Action: "click", "wait", "gone", "all-text", "detect-page", "detect-screen"
+  string action = 1;
+  // Target text for click/wait/gone operations.
+  string text = 2;
+  // Timeout as a Go duration string (e.g. "10s", "1m").
+  string timeout = 3;
 }
 
 // AgentExecCommand runs a command inside the guest.
@@ -142,4 +156,139 @@ message AgentCopyCommand {
   string guest_path = 2;
   bool to_guest = 3;
   uint32 mode = 4;
+}
+
+// --------------------------------------------------------------------------
+// Typed response messages
+// --------------------------------------------------------------------------
+
+// StatusResponse contains VM state and available operations.
+message StatusResponse {
+  string state = 1;
+  bool can_pause = 2;
+  bool can_resume = 3;
+  bool can_stop = 4;
+  bool can_request_stop = 5;
+}
+
+// CapabilitiesResponse describes the control protocol capabilities.
+message CapabilitiesResponse {
+  string protocol_version = 1;
+  string encoding = 2;
+  repeated string commands = 3;
+  map<string, bool> features = 4;
+  bool auth_required = 5;
+}
+
+// ScreenshotResponse contains a captured VM display image.
+message ScreenshotResponse {
+  // Raw image bytes (PNG or JPEG). Not base64-encoded.
+  bytes image_data = 1;
+  // Image format: "png" or "jpeg".
+  string format = 2;
+  // Image dimensions after scaling.
+  int32 width = 3;
+  int32 height = 4;
+}
+
+// EmptyResponse is used for commands that have no meaningful payload.
+message EmptyResponse {}
+
+// SnapshotListResponse wraps a list of snapshot metadata.
+message SnapshotListResponse {
+  repeated SnapshotInfo snapshots = 1;
+}
+
+// SnapshotActionResponse carries the result of a snapshot save/restore/delete.
+message SnapshotActionResponse {
+  string message = 1;
+}
+
+// MessageResponse carries a simple string message.
+message MessageResponse {
+  string message = 1;
+}
+
+// MemoryInfoResponse wraps memory info for the typed oneof.
+message MemoryInfoResponse {
+  MemoryInfo info = 1;
+}
+
+// NetworkInfoResponse contains VM network configuration.
+message NetworkInfoResponse {
+  string mac_address = 1;
+  string guest_ip = 2;
+  string mode = 3;
+}
+
+// MemoryInfo contains information about VM memory configuration.
+message MemoryInfo {
+  double configured_gb = 1;
+  double target_gb = 2;
+  uint64 minimum_allowed_mb = 3;
+  bool has_balloon = 4;
+}
+
+// SnapshotInfo contains metadata about a saved snapshot.
+message SnapshotInfo {
+  string name = 1;
+  string created = 2;
+  int64 size = 3;
+  string vm_state = 4;
+  string file_path = 5;
+}
+
+// AgentExecResponse contains the result of an agent exec command.
+message AgentExecResponse {
+  int32 exit_code = 1;
+  string stdout = 2;
+  string stderr = 3;
+  double duration_seconds = 4;
+}
+
+// AgentFileResponse contains the result of an agent file operation.
+message AgentFileResponse {
+  // Raw file data (for reads). Not base64-encoded.
+  bytes data = 1;
+  // Human-readable message (for writes, copies).
+  string message = 2;
+}
+
+// AgentInfoResponse contains guest system information.
+message AgentInfoResponse {
+  string hostname = 1;
+  string os = 2;
+  string arch = 3;
+  string version = 4;
+  // Opaque JSON payload for extensibility.
+  string raw_json = 5;
+}
+
+// AgentPingResponse contains the agent version.
+message AgentPingResponse {
+  string version = 1;
+}
+
+// OCRTextResponse contains OCR results from the VM display.
+message OCRTextResponse {
+  // Full recognized text (for all-text action).
+  string text = 1;
+  // Individual text matches with bounding boxes.
+  repeated OCRMatch matches = 2;
+}
+
+// OCRMatch represents a single OCR text match with its location.
+message OCRMatch {
+  string text = 1;
+  // Normalized coordinates (0-1 range, top-left origin).
+  double x = 2;
+  double y = 3;
+  double width = 4;
+  double height = 5;
+}
+
+// ScreenDetectionResponse contains the detected screen state.
+message ScreenDetectionResponse {
+  // Detected state: "black", "apple-logo", "setup-assistant", "login", "desktop", "unknown"
+  string state = 1;
 }
