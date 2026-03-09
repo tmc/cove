@@ -18,10 +18,8 @@ type InjectOptions struct {
 	AutoLogin          bool
 	CreateUserPlist    bool // Create user plist directly instead of using LaunchDaemon
 	UID                int
-	SSHKeyPath         string              // Path to SSH public key file for authorized_keys
-	UserDataConfig     *UserDataConfig     // Optional user data disk configuration
-	ScriptsConfig      *ScriptsShareConfig // Optional scripts runner configuration
-	InjectAgent        bool                // Cross-compile and inject the vz-agent GRPC daemon
+	SSHKeyPath       string // Path to SSH public key file for authorized_keys
+	InjectAgent      bool   // Cross-compile and inject the vz-agent GRPC daemon
 	InjectGuestTools   bool                // Download and inject SPICE guest tools for clipboard sharing
 	BootstrapRecovery  bool                // Two-user bootstrap: create hidden admin first, then real user
 	EnableSSHD         bool                // Enable SSH daemon (Remote Login) on first boot
@@ -71,17 +69,6 @@ func handleProvision(args []string) error {
 	applyOnly := fs.Bool("apply", false, "Apply previously staged provisioning files to VM disk (requires staged files)")
 	stageOnly := fs.Bool("stage-only", false, "Stage files only (no disk mount); prints the apply command")
 
-	// User data disk options
-	enableUserData := fs.Bool("userdata", false, "Create and configure separate user data disk")
-	userDataPath := fs.String("userdata-path", "", "Path for user data disk (default: vmDir/userdata.sparsebundle)")
-	userDataSize := fs.Uint64("userdata-size", 32, "Size of user data disk in GB")
-	userDataStrategy := fs.String("userdata-strategy", "volumes", "Mount strategy: volumes, symlinks, direct")
-	userDataEphemeral := fs.Bool("userdata-ephemeral", false, "Mark as ephemeral (CI/CD mode, discard changes)")
-
-	// Scripts runner options
-	enableScriptsRunner := fs.Bool("scripts", false, "Inject scripts runner LaunchDaemon for VirtioFS scripts share")
-	scriptsRunOnBoot := fs.Bool("scripts-run", true, "Run bootstrap script on boot (default: true)")
-
 	// Guest agent options
 	enableAgent := fs.Bool("agent", true, "Cross-compile and inject vz-agent GRPC daemon (default: true)")
 
@@ -125,9 +112,6 @@ Examples:
 
   # Apply previously staged files
   vz-macos provision -apply
-
-  # With separate user data disk (golden image workflow)
-  vz-macos provision -user testuser -password secret123 -skip-setup-assistant -userdata
 
   # With SSH key for remote access
   vz-macos provision -user testuser -password secret123 -skip-setup-assistant -ssh-key ~/.ssh/id_rsa.pub
@@ -191,7 +175,6 @@ Recovery Authorization:
 	provisionLog("  CreateUserPlist: %v", *createUserPlist)
 	provisionLog("  UID: %d", *uid)
 	provisionLog("  SSHKeyPath: %s", *sshKeyPath)
-	provisionLog("  EnableUserData: %v", *enableUserData)
 	provisionLog("  EnableGuestTools: %v", *enableGuestTools)
 	provisionLog("  StageOnly: %v", *stageOnly)
 	provisionLog("  VM Dir: %s", vmDir)
@@ -207,38 +190,6 @@ Recovery Authorization:
 		EnableSSHD:        *enableSSHD,
 	}
 
-	// Build user data config if enabled
-	var userDataConfig *UserDataConfig
-	if *enableUserData {
-		strategy, err := ParseMountStrategy(*userDataStrategy)
-		if err != nil {
-			return fmt.Errorf("invalid mount strategy: %w", err)
-		}
-
-		path := *userDataPath
-		if path == "" {
-			path = DefaultUserDataPath(vmDir)
-		}
-
-		userDataConfig = &UserDataConfig{
-			Enabled:       true,
-			Path:          path,
-			SizeGB:        *userDataSize,
-			MountStrategy: strategy,
-			Ephemeral:     *userDataEphemeral,
-		}
-	}
-
-	// Build scripts config if enabled
-	var scriptsConfig *ScriptsShareConfig
-	if *enableScriptsRunner {
-		scriptsConfig = &ScriptsShareConfig{
-			Enabled:   true,
-			HostPath:  DefaultScriptsPath(vmDir),
-			RunOnBoot: *scriptsRunOnBoot,
-		}
-	}
-
 	opts := InjectOptions{
 		Config:             config,
 		SkipSetupAssistant: *skipSetup,
@@ -246,8 +197,6 @@ Recovery Authorization:
 		CreateUserPlist:    *createUserPlist,
 		UID:                *uid,
 		SSHKeyPath:         *sshKeyPath,
-		UserDataConfig:     userDataConfig,
-		ScriptsConfig:      scriptsConfig,
 		InjectAgent:        *enableAgent,
 		InjectGuestTools:   *enableGuestTools,
 		BootstrapRecovery:  *bootstrapRecovery,

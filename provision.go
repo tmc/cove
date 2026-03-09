@@ -464,49 +464,6 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 		}
 	}
 
-	// Optionally create and configure user data disk
-	if opts.UserDataConfig != nil && opts.UserDataConfig.Enabled {
-		fmt.Println()
-		fmt.Println("=== Setting Up User Data Disk ===")
-
-		// Create the sparse bundle if it doesn't exist
-		if err := EnsureUserDataDisk(*opts.UserDataConfig); err != nil {
-			return fmt.Errorf("create user data disk: %w", err)
-		}
-
-		// Inject the user data setup LaunchDaemon
-		if err := InjectUserDataSetup(mountPoint, *opts.UserDataConfig, &rootFiles); err != nil {
-			return fmt.Errorf("inject user data setup: %w", err)
-		}
-
-		fmt.Printf("User data disk: %s\n", opts.UserDataConfig.Path)
-		fmt.Printf("Mount strategy: %s\n", opts.UserDataConfig.MountStrategy)
-		if opts.UserDataConfig.Ephemeral {
-			fmt.Println("Mode: ephemeral (changes will be discarded)")
-		}
-	}
-
-	// Optionally inject scripts runner for VirtioFS share
-	if opts.ScriptsConfig != nil && opts.ScriptsConfig.Enabled {
-		fmt.Println()
-		fmt.Println("=== Setting Up Scripts Runner ===")
-
-		// Ensure scripts directory exists on host
-		if err := EnsureScriptsDir(opts.ScriptsConfig.HostPath); err != nil {
-			return fmt.Errorf("create scripts directory: %w", err)
-		}
-
-		// Inject the scripts runner LaunchDaemon
-		if err := InjectScriptsRunnerLaunchDaemon(mountPoint, *opts.ScriptsConfig, &rootFiles); err != nil {
-			return fmt.Errorf("inject scripts runner: %w", err)
-		}
-
-		fmt.Printf("Scripts directory: %s\n", opts.ScriptsConfig.HostPath)
-		if opts.ScriptsConfig.RunOnBoot {
-			fmt.Println("Bootstrap script will run on first boot")
-		}
-	}
-
 	// Optionally cross-compile and inject the vz-agent GRPC daemon
 	if opts.InjectAgent {
 		if err := injectAgent(mountPoint, &rootFiles, &pendingInstalls); err != nil {
@@ -560,14 +517,6 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	if opts.SSHKeyPath != "" {
 		fmt.Printf("  - SSH key added to %s's authorized_keys\n", opts.Config.Username)
 	}
-	if opts.UserDataConfig != nil && opts.UserDataConfig.Enabled {
-		fmt.Println("  - User data disk configured with LaunchDaemon")
-		fmt.Printf("  - Mount strategy: %s\n", opts.UserDataConfig.MountStrategy)
-	}
-	if opts.ScriptsConfig != nil && opts.ScriptsConfig.Enabled {
-		fmt.Println("  - Scripts runner LaunchDaemon installed")
-		fmt.Printf("  - Scripts dir: %s\n", opts.ScriptsConfig.HostPath)
-	}
 	if opts.InjectAgent {
 		fmt.Println("  - vz-agent GRPC daemon installed (vsock port 1024)")
 	}
@@ -582,19 +531,7 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	}
 	fmt.Println()
 
-	// Show appropriate run command
-	var runFlags []string
-	if opts.UserDataConfig != nil && opts.UserDataConfig.Enabled {
-		runFlags = append(runFlags, "-userdata")
-	}
-	if opts.ScriptsConfig != nil && opts.ScriptsConfig.Enabled {
-		runFlags = append(runFlags, "-scripts")
-	}
-	if len(runFlags) > 0 {
-		fmt.Printf("Run the VM with: ./vz-macos run %s\n", strings.Join(runFlags, " "))
-	} else {
-		fmt.Println("Run the VM with: ./vz-macos run")
-	}
+	fmt.Println("Run the VM with: ./vz-macos run")
 
 	return nil
 }
@@ -683,33 +620,6 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 		if err := stageSSHKey(stagingDir, opts.Config.Username, opts.SSHKeyPath, manifest); err != nil {
 			fmt.Printf("warning: SSH key staging failed: %v\n", err)
 		}
-	}
-
-	// Stage user data disk setup.
-	if opts.UserDataConfig != nil && opts.UserDataConfig.Enabled {
-		fmt.Println()
-		fmt.Println("=== Staging User Data Disk Setup ===")
-		if err := EnsureUserDataDisk(*opts.UserDataConfig); err != nil {
-			return "", fmt.Errorf("create user data disk: %w", err)
-		}
-		if err := stageUserDataSetup(stagingDir, *opts.UserDataConfig, manifest); err != nil {
-			return "", fmt.Errorf("stage user data setup: %w", err)
-		}
-		fmt.Printf("User data disk: %s\n", opts.UserDataConfig.Path)
-		fmt.Printf("Mount strategy: %s\n", opts.UserDataConfig.MountStrategy)
-	}
-
-	// Stage scripts runner.
-	if opts.ScriptsConfig != nil && opts.ScriptsConfig.Enabled {
-		fmt.Println()
-		fmt.Println("=== Staging Scripts Runner ===")
-		if err := EnsureScriptsDir(opts.ScriptsConfig.HostPath); err != nil {
-			return "", fmt.Errorf("create scripts directory: %w", err)
-		}
-		if err := stageScriptsRunnerLaunchDaemon(stagingDir, *opts.ScriptsConfig, manifest); err != nil {
-			return "", fmt.Errorf("stage scripts runner: %w", err)
-		}
-		fmt.Printf("Scripts directory: %s\n", opts.ScriptsConfig.HostPath)
 	}
 
 	// Stage vz-agent binary (cross-compile happens here, no root needed).
@@ -965,36 +875,4 @@ func stageGuestTools(stagingDir string, manifest *ProvisionManifest) error {
 	return nil
 }
 
-// stageUserDataSetup stages the user data setup script and LaunchDaemon.
-func stageUserDataSetup(stagingDir string, config UserDataConfig, manifest *ProvisionManifest) error {
-	scriptContent := generateUserDataSetupScript(config)
-	if err := stageFile(stagingDir, filepath.Join("private", "var", "db", "vz-userdata-setup.sh"),
-		[]byte(scriptContent), 0755, "root:wheel", manifest); err != nil {
-		return err
-	}
 
-	plistContent := generateUserDataLaunchDaemonPlist()
-	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.userdata.plist"),
-		[]byte(plistContent), 0644, "root:wheel", manifest); err != nil {
-		return err
-	}
-	return nil
-}
-
-// stageScriptsRunnerLaunchDaemon stages the scripts runner and its LaunchDaemon.
-func stageScriptsRunnerLaunchDaemon(stagingDir string, config ScriptsShareConfig, manifest *ProvisionManifest) error {
-	if !config.RunOnBoot {
-		return nil
-	}
-
-	if err := stageFile(stagingDir, filepath.Join("private", "var", "db", "vz-scripts-runner.sh"),
-		[]byte(scriptsRunnerScript), 0755, "root:wheel", manifest); err != nil {
-		return err
-	}
-
-	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.scripts-runner.plist"),
-		[]byte(scriptsRunnerPlist), 0644, "root:wheel", manifest); err != nil {
-		return err
-	}
-	return nil
-}
