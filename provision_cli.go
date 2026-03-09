@@ -52,7 +52,7 @@ func handleProvision(args []string) error {
 	provisionVerbose = os.Getenv("VZ_DEBUG_INJECT") == "1"
 
 	// Parse flags specific to inject command
-	fs := flag.NewFlagSet("provision", flag.ExitOnError)
+	fs := flag.NewFlagSet("inject", flag.ExitOnError)
 	user := fs.String("user", "", "Username for the provisioned user (required)")
 	password := fs.String("password", "", "Password for the provisioned user (required)")
 	admin := fs.Bool("admin", true, "Make the user an admin")
@@ -83,7 +83,7 @@ func handleProvision(args []string) error {
 	noBootstrapRecovery := fs.Bool("no-bootstrap-recovery", false, "Disable two-user bootstrap (single user, may lack recovery auth)")
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: vz-macos provision [options]
+		fmt.Fprintf(os.Stderr, `Usage: vz-macos inject [options]
 
 Provision a VM with user account, auto-login, and guest tools.
 
@@ -104,17 +104,17 @@ Options:
 		fmt.Fprintf(os.Stderr, `
 Examples:
   # Standard provisioning (builds, downloads, then writes to disk)
-  vz-macos provision -user testuser -skip-setup-assistant
+  vz-macos inject -user testuser -skip-setup-assistant
 
   # Two-phase: stage first (no root), then apply
-  vz-macos provision -user testuser -password secret123 -stage-only
-  sudo vz-macos provision -apply
+  vz-macos inject -user testuser -password secret123 -stage-only
+  sudo vz-macos inject -apply
 
   # Apply previously staged files
-  vz-macos provision -apply
+  vz-macos inject -apply
 
   # With SSH key for remote access
-  vz-macos provision -user testuser -password secret123 -skip-setup-assistant -ssh-key ~/.ssh/id_rsa.pub
+  vz-macos inject -user testuser -password secret123 -skip-setup-assistant -ssh-key ~/.ssh/id_rsa.pub
 
 Recovery Authorization:
   By default, provision uses a two-user bootstrap (-bootstrap-recovery=true):

@@ -401,7 +401,7 @@ Note: VM should be stopped for consistent disk snapshots.`)
 
 func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: snapshot name required")
+		fmt.Fprintln(os.Stderr, "error: snapshot name required")
 		os.Exit(1)
 	}
 
@@ -430,7 +430,7 @@ func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) {
 
 func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: snapshot name required")
+		fmt.Fprintln(os.Stderr, "error: snapshot name required")
 		os.Exit(1)
 	}
 
@@ -478,7 +478,7 @@ func handleDiskSnapshotList(mgr *DiskSnapshotManager) {
 
 func handleDiskSnapshotDelete(mgr *DiskSnapshotManager, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: snapshot name required")
+		fmt.Fprintln(os.Stderr, "error: snapshot name required")
 		os.Exit(1)
 	}
 

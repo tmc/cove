@@ -654,7 +654,7 @@ func applyProvisioningFiles() error {
 
 	manifest, err := readManifest(stagingDir)
 	if err != nil {
-		return fmt.Errorf("no staged files found: %w\nRun 'vz-macos provision' first to stage files", err)
+		return fmt.Errorf("no staged provisioning files found: %w\n  run 'vz-macos inject -user <username> -skip-setup-assistant' to stage and apply", err)
 	}
 
 	diskPath := filepath.Join(vmDir, "disk.img")

@@ -411,7 +411,7 @@ func verifyStopped(verbose, fix bool) error {
 	}
 
 	if criticalFail && !fix {
-		return fmt.Errorf("verification failed")
+		return fmt.Errorf("verification failed: critical issues found\n  run 'vz-macos doctor --fix' to attempt automatic repair")
 	}
 	return nil
 }

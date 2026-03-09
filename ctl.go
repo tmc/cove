@@ -424,7 +424,7 @@ Examples:
 func ctlExecStream(sock string, req *controlpb.ControlRequest, timeout time.Duration) error {
 	conn, err := net.DialTimeout("unix", sock, timeout)
 	if err != nil {
-		return fmt.Errorf("connect to %s: %w", sock, err)
+		return ctlConnectError(sock, err)
 	}
 	defer conn.Close()
 
@@ -503,7 +503,7 @@ func ctlExecStream(sock string, req *controlpb.ControlRequest, timeout time.Dura
 func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
 	conn, err := net.DialTimeout("unix", sock, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %w", sock, err)
+		return nil, ctlConnectError(sock, err)
 	}
 	defer conn.Close()
 
@@ -661,9 +661,9 @@ func ctlAgentWithRetry(sock string, req *controlpb.ControlRequest, wait, timeout
 
 		if time.Now().After(deadline) {
 			if err != nil {
-				return fmt.Errorf("agent not ready after %s: %w", wait, err)
+				return fmt.Errorf("guest agent not ready after %s: %w\n  possible causes:\n  - VM is still booting (try a longer -wait)\n  - agent not installed (run: vz-macos inject -agent)\n  - agent crashed (check /var/log/vz-agent.log inside guest)", wait, err)
 			}
-			return fmt.Errorf("agent not ready after %s: %s", wait, resp.Error)
+			return fmt.Errorf("guest agent not ready after %s: %s", wait, resp.Error)
 		}
 
 		if attempt == 1 {
@@ -1208,9 +1208,19 @@ func suggestAction(page string) {
 	}
 }
 
+// ctlConnectError wraps a control socket dial error with actionable guidance.
+func ctlConnectError(sock string, err error) error {
+	if os.IsNotExist(err) || strings.Contains(err.Error(), "no such file") {
+		return fmt.Errorf("VM is not running (no control socket at %s)\n  start the VM first: vz-macos run", sock)
+	}
+	if strings.Contains(err.Error(), "connection refused") {
+		return fmt.Errorf("VM control socket exists but is not responding at %s\n  the VM may have crashed; try: vz-macos run", sock)
+	}
+	return fmt.Errorf("connect to control socket %s: %w", sock, err)
+}
+
 // ctlSendCommand sends a command to the control socket and returns the response.
-// This is a compatibility wrapper used by tcc.go and sip.go. All callers pass
-// agent-exec with {"args": [...]}, so we build the appropriate proto request.
+// Builds a proto request from the given command type and data map.
 func ctlSendCommand(sock, cmdType string, cmdData interface{}, timeout time.Duration) (*controlpb.ControlResponse, error) {
 	req := &controlpb.ControlRequest{Type: cmdType}
 
