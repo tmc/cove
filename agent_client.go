@@ -1,4 +1,4 @@
-// agent_client.go - Host-side GRPC client for the guest agent.
+// agent_client.go - Host-side connect-go client for the guest agent.
 //
 // Connects to the vz-agent daemon running inside the guest via
 // VZVirtioSocketDevice on vsock port 1024.
@@ -6,121 +6,146 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
-	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/keepalive"
+	"connectrpc.com/connect"
+	"golang.org/x/net/http2"
 
 	pb "github.com/tmc/vz-macos/proto/agentpb"
+	"github.com/tmc/vz-macos/proto/agentpbconnect"
 )
 
 const agentPort = 1024
 
-// AgentClient wraps the GRPC client for the guest agent.
+// AgentClient wraps the connect-go client for the guest agent.
 type AgentClient struct {
-	conn   *grpc.ClientConn
-	client pb.AgentClient
+	client agentpbconnect.AgentClient
 }
 
 // NewAgentClient creates a client connected to the guest agent.
 // The netConn should be obtained from VZVirtioSocketDevice.ConnectToPort.
 func NewAgentClient(netConn net.Conn) (*AgentClient, error) {
-	// Use the existing connection as the GRPC transport.
-	// passthrough scheme avoids gRPC's URL resolver which chokes on "vsock://guest:1024".
-	conn, err := grpc.NewClient(
-		"passthrough:///vsock-guest",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return netConn, nil
-		}),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                60 * time.Second,
-			Timeout:             30 * time.Second,
-			PermitWithoutStream: true,
-		}),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64*1024*1024)),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("grpc dial: %w", err)
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+				return netConn, nil
+			},
+		},
 	}
-	return &AgentClient{
-		conn:   conn,
-		client: pb.NewAgentClient(conn),
-	}, nil
+	client := agentpbconnect.NewAgentClient(
+		httpClient,
+		"http://vsock-guest",
+		connect.WithGRPC(),
+	)
+	return &AgentClient{client: client}, nil
 }
 
-// Close closes the gRPC connection.
-func (c *AgentClient) Close() {
-	if c.conn != nil {
-		c.conn.Close()
-	}
-}
+// Close is a no-op; the underlying net.Conn is managed by the caller.
+func (c *AgentClient) Close() {}
 
 // Ping checks that the agent is alive.
 func (c *AgentClient) Ping(ctx context.Context) (string, error) {
-	resp, err := c.client.Ping(ctx, &pb.PingRequest{})
+	resp, err := c.client.Ping(ctx, connect.NewRequest(&pb.PingRequest{}))
 	if err != nil {
 		return "", err
 	}
-	return resp.Version, nil
+	return resp.Msg.Version, nil
 }
 
 // Info returns guest system information.
 func (c *AgentClient) Info(ctx context.Context) (*pb.InfoResponse, error) {
-	return c.client.Info(ctx, &pb.InfoRequest{})
+	resp, err := c.client.Info(ctx, connect.NewRequest(&pb.InfoRequest{}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
 }
 
 // Exec runs a command in the guest and returns its output.
 func (c *AgentClient) Exec(ctx context.Context, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
-	return c.client.Exec(ctx, &pb.ExecRequest{
+	resp, err := c.client.Exec(ctx, connect.NewRequest(&pb.ExecRequest{
 		Args:       args,
 		Env:        env,
 		WorkingDir: workDir,
-	})
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+// execStreamReceiver wraps connect's ServerStreamForClient to provide a Recv() method
+// compatible with callers that expect the gRPC streaming interface.
+type execStreamReceiver struct {
+	stream *connect.ServerStreamForClient[pb.ExecOutput]
+}
+
+func (r *execStreamReceiver) Recv() (*pb.ExecOutput, error) {
+	if r.stream.Receive() {
+		return r.stream.Msg(), nil
+	}
+	if err := r.stream.Err(); err != nil {
+		return nil, err
+	}
+	return nil, io.EOF
+}
+
+// ExecStreamReceiver is the interface returned by ExecStream.
+type ExecStreamReceiver interface {
+	Recv() (*pb.ExecOutput, error)
 }
 
 // ExecStream runs a command in the guest and streams stdout/stderr chunks.
-func (c *AgentClient) ExecStream(ctx context.Context, args []string, env map[string]string, workDir string) (pb.Agent_ExecStreamClient, error) {
-	return c.client.ExecStream(ctx, &pb.ExecRequest{
+func (c *AgentClient) ExecStream(ctx context.Context, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
+	stream, err := c.client.ExecStream(ctx, connect.NewRequest(&pb.ExecRequest{
 		Args:       args,
 		Env:        env,
 		WorkingDir: workDir,
-	})
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return &execStreamReceiver{stream: stream}, nil
 }
 
 // ExecAs runs a command in the guest as the specified user.
 func (c *AgentClient) ExecAs(ctx context.Context, user string, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
-	return c.client.Exec(ctx, &pb.ExecRequest{
+	resp, err := c.client.Exec(ctx, connect.NewRequest(&pb.ExecRequest{
 		Args:       args,
 		Env:        env,
 		WorkingDir: workDir,
 		User:       &user,
-	})
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
 }
 
 // WriteFile writes data to a file in the guest.
 func (c *AgentClient) WriteFile(ctx context.Context, path string, data []byte, mode uint32) error {
-	_, err := c.client.WriteFile(ctx, &pb.WriteFileRequest{
+	_, err := c.client.WriteFile(ctx, connect.NewRequest(&pb.WriteFileRequest{
 		Path:          path,
 		Data:          data,
 		Mode:          mode,
 		CreateParents: true,
-	})
+	}))
 	return err
 }
 
 // ReadFile reads a file from the guest.
 func (c *AgentClient) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	resp, err := c.client.ReadFile(ctx, &pb.ReadFileRequest{Path: path})
+	resp, err := c.client.ReadFile(ctx, connect.NewRequest(&pb.ReadFileRequest{Path: path}))
 	if err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Msg.Data, nil
 }
 
 // CopyToGuest streams a local file into the guest at guestPath.
@@ -131,10 +156,7 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 	}
 	defer f.Close()
 
-	stream, err := c.client.CopyIn(ctx)
-	if err != nil {
-		return fmt.Errorf("open stream: %w", err)
-	}
+	stream := c.client.CopyIn(ctx)
 
 	if err := stream.Send(&pb.CopyInChunk{
 		Content: &pb.CopyInChunk_Init{Init: &pb.CopyInInit{
@@ -164,7 +186,7 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 		}
 	}
 
-	if _, err := stream.CloseAndRecv(); err != nil {
+	if _, err := stream.CloseAndReceive(); err != nil {
 		return fmt.Errorf("close: %w", err)
 	}
 	return nil
@@ -172,15 +194,18 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 
 // CopyFromGuest streams a file from the guest to a local path.
 func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath string) error {
-	stream, err := c.client.CopyOut(ctx, &pb.CopyOutRequest{Path: guestPath})
+	stream, err := c.client.CopyOut(ctx, connect.NewRequest(&pb.CopyOutRequest{Path: guestPath}))
 	if err != nil {
 		return fmt.Errorf("open stream: %w", err)
 	}
 
-	first, err := stream.Recv()
-	if err != nil {
-		return fmt.Errorf("recv init: %w", err)
+	if !stream.Receive() {
+		if err := stream.Err(); err != nil {
+			return fmt.Errorf("recv init: %w", err)
+		}
+		return fmt.Errorf("expected init message")
 	}
+	first := stream.Msg()
 	init := first.GetInit()
 	if init == nil {
 		return fmt.Errorf("expected init message")
@@ -197,31 +222,28 @@ func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath st
 	}
 	defer f.Close()
 
-	for {
-		chunk, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("recv: %w", err)
-		}
+	for stream.Receive() {
+		chunk := stream.Msg()
 		if data := chunk.GetData(); len(data) > 0 {
 			if _, err := f.Write(data); err != nil {
 				return fmt.Errorf("write local: %w", err)
 			}
 		}
 	}
+	if err := stream.Err(); err != nil {
+		return fmt.Errorf("recv: %w", err)
+	}
 	return nil
 }
 
 // Shutdown initiates a graceful shutdown.
 func (c *AgentClient) Shutdown(ctx context.Context, force bool) error {
-	_, err := c.client.Shutdown(ctx, &pb.ShutdownRequest{Force: force})
+	_, err := c.client.Shutdown(ctx, connect.NewRequest(&pb.ShutdownRequest{Force: force}))
 	return err
 }
 
 // Reboot initiates a guest reboot.
 func (c *AgentClient) Reboot(ctx context.Context) error {
-	_, err := c.client.Reboot(ctx, &pb.RebootRequest{})
+	_, err := c.client.Reboot(ctx, connect.NewRequest(&pb.RebootRequest{}))
 	return err
 }

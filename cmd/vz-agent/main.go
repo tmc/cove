@@ -1,5 +1,5 @@
 // vz-agent is a guest agent daemon for VMs managed by vz-macos.
-// It runs inside the guest (macOS or Linux) and exposes a GRPC API over vsock.
+// It runs inside the guest (macOS or Linux) and exposes a connect-go API over vsock.
 //
 // The host connects to the agent via VZVirtioSocketDevice on port 1024
 // to execute commands, transfer files, and manage the guest.
@@ -12,16 +12,16 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime/debug"
 	"syscall"
-	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
-	pb "github.com/tmc/vz-macos/proto/agentpb"
+	"github.com/tmc/vz-macos/proto/agentpbconnect"
 )
 
 const defaultPort = 1024
@@ -56,17 +56,12 @@ func main() {
 	}
 	defer lis.Close()
 
-	srv := grpc.NewServer(
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             20 * time.Second,
-			PermitWithoutStream: true,
-		}),
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    60 * time.Second,
-			Timeout: 30 * time.Second,
-		}),
-	)
-	pb.RegisterAgentServer(srv, newAgentServer())
+	mux := http.NewServeMux()
+	path, handler := agentpbconnect.NewAgentHandler(newAgentServer())
+	mux.Handle(path, handler)
+
+	h2cHandler := h2c.NewHandler(mux, &http2.Server{})
+	srv := &http.Server{Handler: h2cHandler}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -74,11 +69,11 @@ func main() {
 	go func() {
 		<-ctx.Done()
 		log.Println("shutting down")
-		srv.GracefulStop()
+		srv.Shutdown(context.Background())
 	}()
 
 	log.Printf("listening on vsock port %d", *port)
-	if err := srv.Serve(lis); err != nil {
+	if err := srv.Serve(lis); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("serve: %v", err)
 	}
 }

@@ -8,3 +8,6 @@ plugins:
     out: .
     opt:
       - paths=source_relative
+  # Swift generation is handled separately via protoc --swift_out
+  # because buf does not bundle protoc-gen-swift.
+  # Use: make proto-swift

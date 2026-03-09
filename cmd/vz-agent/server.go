@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,11 +16,11 @@ import (
 	"syscall"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/tmc/vz-macos/proto/agentpb"
+	"github.com/tmc/vz-macos/proto/agentpbconnect"
 )
 
 // systemInfo holds platform-agnostic system information.
@@ -36,21 +37,21 @@ type systemInfo struct {
 }
 
 type agentServer struct {
-	pb.UnimplementedAgentServer
+	agentpbconnect.UnimplementedAgentHandler
 }
 
 func newAgentServer() *agentServer {
 	return &agentServer{}
 }
 
-func (s *agentServer) Ping(_ context.Context, _ *pb.PingRequest) (*pb.PingResponse, error) {
-	return &pb.PingResponse{
+func (s *agentServer) Ping(_ context.Context, _ *connect.Request[pb.PingRequest]) (*connect.Response[pb.PingResponse], error) {
+	return connect.NewResponse(&pb.PingResponse{
 		Timestamp: timestamppb.Now(),
 		Version:   agentVersion(),
-	}, nil
+	}), nil
 }
 
-func (s *agentServer) Info(_ context.Context, _ *pb.InfoRequest) (*pb.InfoResponse, error) {
+func (s *agentServer) Info(_ context.Context, _ *connect.Request[pb.InfoRequest]) (*connect.Response[pb.InfoResponse], error) {
 	hostname, _ := os.Hostname()
 
 	resp := &pb.InfoResponse{
@@ -58,7 +59,6 @@ func (s *agentServer) Info(_ context.Context, _ *pb.InfoRequest) (*pb.InfoRespon
 		Arch:     runtime.GOARCH,
 	}
 
-	// Platform-specific OS/kernel/memory/load/uptime info.
 	var si systemInfo
 	populateSystemInfo(&si)
 	resp.OsVersion = si.OSVersion
@@ -70,43 +70,42 @@ func (s *agentServer) Info(_ context.Context, _ *pb.InfoRequest) (*pb.InfoRespon
 	resp.LoadAvg_15 = si.LoadAvg15
 	resp.UptimeSeconds = si.UptimeSeconds
 
-	// Disk usage (syscall.Statfs_t is portable across macOS and Linux).
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/", &stat); err == nil {
 		resp.DiskTotal = stat.Blocks * uint64(stat.Bsize)
 		resp.DiskAvailable = stat.Bavail * uint64(stat.Bsize)
 	}
 
-	// Users (platform-specific: dscl on macOS, /etc/passwd on Linux).
 	if users, err := listLocalUsers(); err == nil {
 		resp.Users = users
 	}
 
-	return resp, nil
+	return connect.NewResponse(resp), nil
 }
 
-func (s *agentServer) Exec(ctx context.Context, req *pb.ExecRequest) (*pb.ExecResponse, error) {
-	if len(req.Args) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "args required")
+func (s *agentServer) Exec(ctx context.Context, req *connect.Request[pb.ExecRequest]) (*connect.Response[pb.ExecResponse], error) {
+	r := req.Msg
+	if len(r.Args) == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("args required"))
 	}
 
-	cmd := exec.CommandContext(ctx, req.Args[0], req.Args[1:]...)
-	if req.WorkingDir != "" {
-		cmd.Dir = req.WorkingDir
+	cmd := exec.CommandContext(ctx, r.Args[0], r.Args[1:]...)
+	if r.WorkingDir != "" {
+		cmd.Dir = r.WorkingDir
 	}
-	if len(req.Env) > 0 {
+	if len(r.Env) > 0 {
 		cmd.Env = os.Environ()
-		for k, v := range req.Env {
+		for k, v := range r.Env {
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
 	}
-	if req.User != nil {
-		if err := setUser(cmd, *req.User); err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "set user: %v", err)
+	if r.User != nil {
+		if err := setUser(cmd, *r.User); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("set user: %v", err))
 		}
 	}
-	if req.Stdin != nil {
-		cmd.Stdin = bytes.NewReader(req.Stdin)
+	if r.Stdin != nil {
+		cmd.Stdin = bytes.NewReader(r.Stdin)
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -122,48 +121,49 @@ func (s *agentServer) Exec(ctx context.Context, req *pb.ExecRequest) (*pb.ExecRe
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			return nil, status.Errorf(codes.Internal, "exec: %v", err)
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("exec: %v", err))
 		}
 	}
 
-	return &pb.ExecResponse{
+	return connect.NewResponse(&pb.ExecResponse{
 		ExitCode:        int32(exitCode),
 		Stdout:          stdout.Bytes(),
 		Stderr:          stderr.Bytes(),
 		DurationSeconds: duration,
-	}, nil
+	}), nil
 }
 
-func (s *agentServer) ExecStream(req *pb.ExecRequest, stream pb.Agent_ExecStreamServer) error {
-	if len(req.Args) == 0 {
-		return status.Error(codes.InvalidArgument, "args required")
+func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.ExecRequest], stream *connect.ServerStream[pb.ExecOutput]) error {
+	r := req.Msg
+	if len(r.Args) == 0 {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("args required"))
 	}
 
-	cmd := exec.CommandContext(stream.Context(), req.Args[0], req.Args[1:]...)
-	if req.WorkingDir != "" {
-		cmd.Dir = req.WorkingDir
+	cmd := exec.CommandContext(ctx, r.Args[0], r.Args[1:]...)
+	if r.WorkingDir != "" {
+		cmd.Dir = r.WorkingDir
 	}
-	if len(req.Env) > 0 {
+	if len(r.Env) > 0 {
 		cmd.Env = os.Environ()
-		for k, v := range req.Env {
+		for k, v := range r.Env {
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
 	}
-	if req.Stdin != nil {
-		cmd.Stdin = bytes.NewReader(req.Stdin)
+	if r.Stdin != nil {
+		cmd.Stdin = bytes.NewReader(r.Stdin)
 	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return status.Errorf(codes.Internal, "stdout pipe: %v", err)
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("stdout pipe: %v", err))
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return status.Errorf(codes.Internal, "stderr pipe: %v", err)
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("stderr pipe: %v", err))
 	}
 
 	if err := cmd.Start(); err != nil {
-		return status.Errorf(codes.Internal, "start: %v", err)
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("start: %v", err))
 	}
 
 	done := make(chan error, 2)
@@ -181,7 +181,7 @@ func (s *agentServer) ExecStream(req *pb.ExecRequest, stream pb.Agent_ExecStream
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
 }
 
-func streamPipe(stream pb.Agent_ExecStreamServer, pipe io.ReadCloser, which pb.ExecOutput_Stream, done chan<- error) {
+func streamPipe(stream *connect.ServerStream[pb.ExecOutput], pipe io.ReadCloser, which pb.ExecOutput_Stream, done chan<- error) {
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := pipe.Read(buf)
@@ -201,137 +201,145 @@ func streamPipe(stream pb.Agent_ExecStreamServer, pipe io.ReadCloser, which pb.E
 	}
 }
 
-func (s *agentServer) WriteFile(_ context.Context, req *pb.WriteFileRequest) (*pb.WriteFileResponse, error) {
-	if req.Path == "" {
-		return nil, status.Error(codes.InvalidArgument, "path required")
+func (s *agentServer) WriteFile(_ context.Context, req *connect.Request[pb.WriteFileRequest]) (*connect.Response[pb.WriteFileResponse], error) {
+	r := req.Msg
+	if r.Path == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("path required"))
 	}
-	if req.CreateParents {
-		if err := os.MkdirAll(filepath.Dir(req.Path), 0o755); err != nil {
-			return nil, status.Errorf(codes.Internal, "mkdir: %v", err)
+	if r.CreateParents {
+		if err := os.MkdirAll(filepath.Dir(r.Path), 0o755); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("mkdir: %v", err))
 		}
 	}
 	flag := os.O_WRONLY | os.O_CREATE
-	if req.Append {
+	if r.Append {
 		flag |= os.O_APPEND
 	} else {
 		flag |= os.O_TRUNC
 	}
 	mode := os.FileMode(0o644)
-	if req.Mode != 0 {
-		mode = os.FileMode(req.Mode)
+	if r.Mode != 0 {
+		mode = os.FileMode(r.Mode)
 	}
-	f, err := os.OpenFile(req.Path, flag, mode)
+	f, err := os.OpenFile(r.Path, flag, mode)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "open: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("open: %v", err))
 	}
 	defer f.Close()
-	if _, err := f.Write(req.Data); err != nil {
-		return nil, status.Errorf(codes.Internal, "write: %v", err)
+	if _, err := f.Write(r.Data); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write: %v", err))
 	}
-	return &pb.WriteFileResponse{}, nil
+	return connect.NewResponse(&pb.WriteFileResponse{}), nil
 }
 
-func (s *agentServer) ReadFile(_ context.Context, req *pb.ReadFileRequest) (*pb.ReadFileResponse, error) {
-	if req.Path == "" {
-		return nil, status.Error(codes.InvalidArgument, "path required")
+func (s *agentServer) ReadFile(_ context.Context, req *connect.Request[pb.ReadFileRequest]) (*connect.Response[pb.ReadFileResponse], error) {
+	r := req.Msg
+	if r.Path == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("path required"))
 	}
-	info, err := os.Stat(req.Path)
+	info, err := os.Stat(r.Path)
 	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "stat: %v", err)
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("stat: %v", err))
 	}
-	f, err := os.Open(req.Path)
+	f, err := os.Open(r.Path)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "open: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("open: %v", err))
 	}
 	defer f.Close()
 
-	if req.Offset != nil {
-		f.Seek(int64(*req.Offset), io.SeekStart)
+	if r.Offset != nil {
+		f.Seek(int64(*r.Offset), io.SeekStart)
 	}
 	var data []byte
-	if req.Limit != nil {
-		data = make([]byte, *req.Limit)
+	if r.Limit != nil {
+		data = make([]byte, *r.Limit)
 		n, err := io.ReadFull(f, data)
 		if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-			return nil, status.Errorf(codes.Internal, "read: %v", err)
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("read: %v", err))
 		}
 		data = data[:n]
 	} else {
 		data, err = io.ReadAll(f)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "read: %v", err)
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("read: %v", err))
 		}
 	}
 
-	return &pb.ReadFileResponse{
+	return connect.NewResponse(&pb.ReadFileResponse{
 		Data: data,
 		Size: uint64(info.Size()),
 		Mode: uint32(info.Mode()),
-	}, nil
+	}), nil
 }
 
-func (s *agentServer) Mkdir(_ context.Context, req *pb.MkdirRequest) (*pb.MkdirResponse, error) {
-	if req.Path == "" {
-		return nil, status.Error(codes.InvalidArgument, "path required")
+func (s *agentServer) Mkdir(_ context.Context, req *connect.Request[pb.MkdirRequest]) (*connect.Response[pb.MkdirResponse], error) {
+	r := req.Msg
+	if r.Path == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("path required"))
 	}
 	mode := os.FileMode(0o755)
-	if req.Mode != 0 {
-		mode = os.FileMode(req.Mode)
+	if r.Mode != 0 {
+		mode = os.FileMode(r.Mode)
 	}
 	var err error
-	if req.All {
-		err = os.MkdirAll(req.Path, mode)
+	if r.All {
+		err = os.MkdirAll(r.Path, mode)
 	} else {
-		err = os.Mkdir(req.Path, mode)
+		err = os.Mkdir(r.Path, mode)
 	}
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "mkdir: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("mkdir: %v", err))
 	}
-	return &pb.MkdirResponse{}, nil
+	return connect.NewResponse(&pb.MkdirResponse{}), nil
 }
 
-func (s *agentServer) Mount(_ context.Context, req *pb.MountRequest) (*pb.MountResponse, error) {
-	args := []string{"-t", req.Type}
-	if len(req.Options) > 0 {
-		args = append(args, "-o", strings.Join(req.Options, ","))
+func (s *agentServer) Mount(_ context.Context, req *connect.Request[pb.MountRequest]) (*connect.Response[pb.MountResponse], error) {
+	r := req.Msg
+	args := []string{"-t", r.Type}
+	if len(r.Options) > 0 {
+		args = append(args, "-o", strings.Join(r.Options, ","))
 	}
-	args = append(args, req.Source, req.Destination)
-	if err := os.MkdirAll(req.Destination, 0o755); err != nil {
-		return nil, status.Errorf(codes.Internal, "mkdir mount point: %v", err)
+	args = append(args, r.Source, r.Destination)
+	if err := os.MkdirAll(r.Destination, 0o755); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("mkdir mount point: %v", err))
 	}
 	out, err := exec.Command("mount", args...).CombinedOutput()
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "mount: %v: %s", err, out)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("mount: %v: %s", err, out))
 	}
-	return &pb.MountResponse{}, nil
+	return connect.NewResponse(&pb.MountResponse{}), nil
 }
 
-func (s *agentServer) Unmount(_ context.Context, req *pb.UnmountRequest) (*pb.UnmountResponse, error) {
+func (s *agentServer) Unmount(_ context.Context, req *connect.Request[pb.UnmountRequest]) (*connect.Response[pb.UnmountResponse], error) {
+	r := req.Msg
 	args := []string{}
-	if req.Force {
+	if r.Force {
 		args = append(args, "-f")
 	}
-	args = append(args, req.Path)
+	args = append(args, r.Path)
 	out, err := exec.Command("umount", args...).CombinedOutput()
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "umount: %v: %s", err, out)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("umount: %v: %s", err, out))
 	}
-	return &pb.UnmountResponse{}, nil
+	return connect.NewResponse(&pb.UnmountResponse{}), nil
 }
 
-func (s *agentServer) CopyIn(stream pb.Agent_CopyInServer) error {
-	first, err := stream.Recv()
-	if err != nil {
-		return status.Errorf(codes.Internal, "recv init: %v", err)
+func (s *agentServer) CopyIn(_ context.Context, stream *connect.ClientStream[pb.CopyInChunk]) (*connect.Response[pb.CopyInResponse], error) {
+	if !stream.Receive() {
+		if err := stream.Err(); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("recv init: %v", err))
+		}
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("first message must be init"))
 	}
+	first := stream.Msg()
 	init := first.GetInit()
 	if init == nil {
-		return status.Error(codes.InvalidArgument, "first message must be init")
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("first message must be init"))
 	}
 
 	if init.CreateParents {
 		if err := os.MkdirAll(filepath.Dir(init.Path), 0o755); err != nil {
-			return status.Errorf(codes.Internal, "mkdir: %v", err)
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("mkdir: %v", err))
 		}
 	}
 
@@ -341,38 +349,36 @@ func (s *agentServer) CopyIn(stream pb.Agent_CopyInServer) error {
 	}
 	f, err := os.OpenFile(init.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
-		return status.Errorf(codes.Internal, "create: %v", err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create: %v", err))
 	}
 	defer f.Close()
 
-	for {
-		chunk, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return status.Errorf(codes.Internal, "recv: %v", err)
-		}
+	for stream.Receive() {
+		chunk := stream.Msg()
 		data := chunk.GetData()
 		if len(data) > 0 {
 			if _, err := f.Write(data); err != nil {
-				return status.Errorf(codes.Internal, "write: %v", err)
+				return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write: %v", err))
 			}
 		}
 	}
-
-	return stream.SendAndClose(&pb.CopyInResponse{})
-}
-
-func (s *agentServer) CopyOut(req *pb.CopyOutRequest, stream pb.Agent_CopyOutServer) error {
-	info, err := os.Stat(req.Path)
-	if err != nil {
-		return status.Errorf(codes.NotFound, "stat: %v", err)
+	if err := stream.Err(); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("recv: %v", err))
 	}
 
-	f, err := os.Open(req.Path)
+	return connect.NewResponse(&pb.CopyInResponse{}), nil
+}
+
+func (s *agentServer) CopyOut(_ context.Context, req *connect.Request[pb.CopyOutRequest], stream *connect.ServerStream[pb.CopyOutChunk]) error {
+	r := req.Msg
+	info, err := os.Stat(r.Path)
 	if err != nil {
-		return status.Errorf(codes.Internal, "open: %v", err)
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("stat: %v", err))
+	}
+
+	f, err := os.Open(r.Path)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("open: %v", err))
 	}
 	defer f.Close()
 
@@ -403,32 +409,32 @@ func (s *agentServer) CopyOut(req *pb.CopyOutRequest, stream pb.Agent_CopyOutSer
 			break
 		}
 		if err != nil {
-			return status.Errorf(codes.Internal, "read: %v", err)
+			return connect.NewError(connect.CodeInternal, fmt.Errorf("read: %v", err))
 		}
 	}
 	return nil
 }
 
-func (s *agentServer) Shutdown(_ context.Context, req *pb.ShutdownRequest) (*pb.ShutdownResponse, error) {
+func (s *agentServer) Shutdown(_ context.Context, req *connect.Request[pb.ShutdownRequest]) (*connect.Response[pb.ShutdownResponse], error) {
 	log.Println("shutdown requested")
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		args := []string{"now"}
-		if req.Force {
+		if req.Msg.Force {
 			args = []string{"-h", "now"}
 		}
 		exec.Command("shutdown", args...).Run()
 	}()
-	return &pb.ShutdownResponse{}, nil
+	return connect.NewResponse(&pb.ShutdownResponse{}), nil
 }
 
-func (s *agentServer) Reboot(_ context.Context, _ *pb.RebootRequest) (*pb.RebootResponse, error) {
+func (s *agentServer) Reboot(_ context.Context, _ *connect.Request[pb.RebootRequest]) (*connect.Response[pb.RebootResponse], error) {
 	log.Println("reboot requested")
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		exec.Command("shutdown", "-r", "now").Run()
 	}()
-	return &pb.RebootResponse{}, nil
+	return connect.NewResponse(&pb.RebootResponse{}), nil
 }
 
 func setUser(cmd *exec.Cmd, username string) error {
