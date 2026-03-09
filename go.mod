@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/ebitengine/purego v0.10.0
-	github.com/tmc/apple v0.0.0
+	github.com/tmc/apple v0.1.0
 	github.com/tmc/macgo v0.0.0-20260221201249-9f1975a72d07
 	golang.org/x/crypto v0.47.0
 	golang.org/x/image v0.33.0
@@ -18,5 +18,3 @@ require (
 )
 
 require golang.org/x/text v0.33.0 // indirect
-
-replace github.com/tmc/apple => ../apple

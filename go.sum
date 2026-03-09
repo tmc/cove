@@ -4,6 +4,8 @@ github.com/ebitengine/purego v0.10.0 h1:QIw4xfpWT6GWTzaW5XEKy3HXoqrJGx1ijYHzTF0/
 github.com/ebitengine/purego v0.10.0/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
+github.com/tmc/apple v0.1.0 h1:RsuiZXJOReuimxacSlSa+Y9TqCZoqRsIiPA8Qui6fUw=
+github.com/tmc/apple v0.1.0/go.mod h1:znPo4mHNz4lu9EH8ep5g9yBa7gxLMjDvLpye4y6tggI=
 github.com/tmc/macgo v0.0.0-20260221201249-9f1975a72d07 h1:5MIrZrcxSeG922+JqU5oBa5XuXu4F1Sl5XPnerDg/nQ=
 github.com/tmc/macgo v0.0.0-20260221201249-9f1975a72d07/go.mod h1:X6P77neg6ent0JsJDbnhC64pks1izaAANCU5J21PH34=
 golang.org/x/crypto v0.47.0 h1:V6e3FRj+n4dbpw86FJ8Fv7XVOql7TEwpHapKoMJ/GO8=
