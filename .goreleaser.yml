@@ -1,0 +1,120 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: vz-macos
+    main: .
+    binary: vz-macos
+    goos:
+      - darwin
+    goarch:
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+  - id: vz-agent
+    dir: cmd/vz-agent
+    binary: vz-agent
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: vz-macos
+    builds:
+      - vz-macos
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - internal/autosign/vz.entitlements
+      - LICENSE*
+      - README*
+
+  - id: vz-agent
+    builds:
+      - vz-agent
+    name_template: "vz-agent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "Merge pull request"
+
+brews:
+  - name: vz-macos
+    ids:
+      - vz-macos
+    homepage: https://github.com/tmc/vz-macos
+    description: macOS and Linux VM management using Apple's Virtualization framework
+    directory: Formula
+    repository:
+      owner: tmc
+      name: homebrew-tap
+      branch: "{{.ProjectName}}-{{.Version}}"
+    commit_author:
+      name: github-actions
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    dependencies:
+      - name: macos
+    install: |
+      bin.install "vz-macos"
+    caveats: |
+      vz-macos requires virtualization entitlements to run. On first execution,
+      it automatically signs itself with the required entitlements.
+
+      If auto-signing fails, manually sign:
+        codesign -s - -f --entitlements $(brew --prefix)/share/vz-macos/vz.entitlements #{HOMEBREW_PREFIX}/bin/vz-macos
+    test: |
+      assert_match "vz-macos", shell_output("#{bin}/vz-macos version 2>&1")
+
+release:
+  github:
+    owner: tmc
+    name: vz-macos
+  draft: false
+  prerelease: auto
+  header: |
+    ## vz-macos {{ .Tag }}
+
+    macOS and Linux VM management using Apple's Virtualization framework.
+
+    ### Installation
+
+    ```bash
+    # Via Homebrew
+    brew install tmc/tap/vz-macos
+
+    # Or download and extract
+    tar xzf vz-macos_{{ .Version }}_darwin_arm64.tar.gz
+
+    # Install (the binary self-signs with required entitlements on first run)
+    sudo install vz-macos /usr/local/bin/
+    ```
+
+    ### Requirements
+    - Apple Silicon Mac (M1/M2/M3/M4)
+    - macOS 12.0+ (Monterey or later)
+  footer: |
+    **Full Changelog**: https://github.com/tmc/vz-macos/compare/{{ .PreviousTag }}...{{ .Tag }}
