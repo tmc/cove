@@ -48,5 +48,10 @@ func createClipboardConfig() vz.VZVirtioConsoleDeviceConfiguration {
 	ports := consoleDevice.Ports()
 	objc.Send[struct{}](ports.GetID(), objc.Sel("setObject:atIndexedSubscript:"), spicePort.ID, uint(0))
 
+	// The SPICE console device is created on the host side, but clipboard sharing
+	// only functions when the guest has spice-vdagent running. For macOS guests,
+	// this requires macOS 15+ with SPICE guest tools installed.
+	fmt.Println("  Note: clipboard sharing requires spice-vdagent in the guest to function")
+
 	return consoleDevice
 }
