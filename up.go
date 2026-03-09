@@ -9,31 +9,73 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-// handleUp implements the "up" subcommand: install → inject → run → vzscripts.
+// upConfig holds all configuration for the "up" command.
+// It is built from flags and used to drive the install/inject/run pipeline.
+type upConfig struct {
+	user       string
+	password   string
+	vmName     string
+	vmDir      string
+	ipswPath   string
+	vzscripts  string
+	cpuCount   uint
+	memoryGB   uint64
+	diskSizeGB uint64
+	gui        bool
+	force      bool
+	noShutdown bool
+	verbose    bool
+}
+
+// handleUp implements the "up" subcommand: install -> inject -> run -> vzscripts.
 func handleUp(args []string) error {
+	cfg, err := parseUpFlags(args)
+	if err != nil {
+		return err
+	}
+
+	// Apply configuration to package-level state.
+	// The install/inject/run functions read these globals directly.
+	// This is the single point where "up" touches global state.
+	applyUpConfig(cfg)
+
+	if err := runUpPipeline(cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+// parseUpFlags parses flags and prompts for missing values.
+// Returns a fully populated upConfig or an error.
+func parseUpFlags(args []string) (upConfig, error) {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
-	user := fs.String("user", "", "Username for the provisioned user (required)")
-	password := fs.String("password", "", "Password for the provisioned user (prompts if empty)")
-	vzscripts := fs.String("vzscripts", "", "Comma-separated vzscript recipes to run after boot (e.g. homebrew,openclaw)")
-	ipsw := fs.String("ipsw", "", "Path to IPSW restore image (downloads latest if empty)")
-	force := fs.Bool("force", false, "Force install even if VM disk already exists")
-	gui := fs.Bool("gui", true, "Show VM display in a window")
-	headless := fs.Bool("headless", false, "Run without GUI window")
-	cpu := fs.Uint("cpu", 2, "Number of CPUs")
-	mem := fs.Uint64("memory", 4, "Memory in GB")
-	diskSize := fs.Uint64("disk-size", 64, "Disk size in GB")
-	noShutdown := fs.Bool("no-shutdown", false, "Leave VM running after vzscripts complete")
-	verboseFlag := fs.Bool("v", false, "Verbose output")
-	vm := fs.String("vm", "", "VM name (default: active VM or 'default')")
+	var cfg upConfig
+	var headless bool
+
+	fs.StringVar(&cfg.user, "user", "", "Username for the provisioned user (required)")
+	fs.StringVar(&cfg.password, "password", "", "Password for the provisioned user (prompts if empty)")
+	fs.StringVar(&cfg.vzscripts, "vzscripts", "", "Comma-separated vzscript recipes to run after boot (e.g. homebrew,openclaw)")
+	fs.StringVar(&cfg.ipswPath, "ipsw", "", "Path to IPSW restore image (downloads latest if empty)")
+	fs.BoolVar(&cfg.force, "force", false, "Force install even if VM disk already exists")
+	fs.BoolVar(&cfg.gui, "gui", true, "Show VM display in a window")
+	fs.BoolVar(&headless, "headless", false, "Run without GUI window")
+	fs.UintVar(&cfg.cpuCount, "cpu", 2, "Number of CPUs")
+	fs.Uint64Var(&cfg.memoryGB, "memory", 4, "Memory in GB")
+	fs.Uint64Var(&cfg.diskSizeGB, "disk-size", 64, "Disk size in GB")
+	fs.BoolVar(&cfg.noShutdown, "no-shutdown", false, "Leave VM running after vzscripts complete")
+	fs.BoolVar(&cfg.verbose, "v", false, "Verbose output")
+	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: vz-macos up [options]
 
 Install, provision, and boot a macOS VM in one command.
 
-Combines: install → inject (user, auto-login, skip-setup, agent) → run [→ vzscripts]
+Combines: install -> inject (user, auto-login, skip-setup, agent) -> run [-> vzscripts]
 
 Options:
 `)
@@ -55,72 +97,81 @@ Examples:
 	}
 
 	if err := fs.Parse(args); err != nil {
-		return err
+		return upConfig{}, err
+	}
+	if cfg.user == "" {
+		return upConfig{}, fmt.Errorf("missing required flag: -user")
+	}
+	if headless {
+		cfg.gui = false
 	}
 
-	if *user == "" {
-		return fmt.Errorf("missing required flag: -user")
-	}
-
-	// Apply flags to globals used by the install/run/inject machinery.
-	if *vm != "" {
-		vmName = *vm
-		var err error
-		vmDir, err = EnsureVMDir(vmName)
+	// Resolve VM directory.
+	if cfg.vmName != "" {
+		dir, err := EnsureVMDir(cfg.vmName)
 		if err != nil {
-			return err
+			return upConfig{}, err
 		}
-	}
-	if *ipsw != "" {
-		ipswPath = *ipsw
-	}
-	forceInstall = *force
-	cpuCount = *cpu
-	memoryGB = *mem
-	diskSizeGB = *diskSize
-	verbose = *verboseFlag
-	SetVerbose(verbose)
-
-	if *headless {
-		guiMode = false
-	} else {
-		guiMode = *gui
+		cfg.vmDir = dir
 	}
 
 	// Prompt for password if not provided.
-	if *password == "" {
-		pw, err := readPassword(fmt.Sprintf("Password for %s: ", *user))
+	if cfg.password == "" {
+		pw, err := readPassword(fmt.Sprintf("Password for %s: ", cfg.user))
 		if err != nil {
-			return fmt.Errorf("read password: %w", err)
+			return upConfig{}, fmt.Errorf("read password: %w", err)
 		}
-		*password = string(pw)
-		if *password == "" {
-			return fmt.Errorf("password required")
+		cfg.password = string(pw)
+		if cfg.password == "" {
+			return upConfig{}, fmt.Errorf("password required")
 		}
 	}
-	provisionUser = *user
-	provisionPassword = *password
-	provisionStrategy = "inject"
 
+	return cfg, nil
+}
+
+// applyUpConfig sets the package-level globals that installMacOSLikeVZ,
+// stageProvisioningFiles, applyProvisioningFiles, and runMacOSVM read.
+func applyUpConfig(cfg upConfig) {
+	if cfg.vmName != "" {
+		vmName = cfg.vmName
+		vmDir = cfg.vmDir
+	}
+	if cfg.ipswPath != "" {
+		ipswPath = cfg.ipswPath
+	}
+	forceInstall = cfg.force
+	cpuCount = cfg.cpuCount
+	memoryGB = cfg.memoryGB
+	diskSizeGB = cfg.diskSizeGB
+	verbose = cfg.verbose
+	guiMode = cfg.gui
+	provisionUser = cfg.user
+	provisionPassword = cfg.password
+	provisionStrategy = "inject"
+	installVM = true
+	SetVerbose(cfg.verbose)
+}
+
+// runUpPipeline executes the install -> inject -> run pipeline.
+func runUpPipeline(cfg upConfig) error {
 	// Step 1: Install macOS.
 	fmt.Println("=== Step 1/3: Installing macOS ===")
-	installVM = true
 	installErr := installMacOSLikeVZ(context.Background())
 	if installErr != nil && !errors.Is(installErr, errRestartVM) {
 		return fmt.Errorf("install: %w", installErr)
 	}
-	// errRestartVM means install succeeded and VM was stopped; ready for inject.
 
 	// Step 2: Inject provisioning files.
-	// The install step may have already injected (via stopVMAndInject) but
-	// only if running headless. If injection succeeded, skip this step.
+	// The install step may have already injected (via stopVMAndInject) in
+	// headless mode. Skip if injection already succeeded.
 	if !didInjectSucceed() {
 		fmt.Println()
 		fmt.Println("=== Step 2/3: Provisioning VM ===")
 		opts := InjectOptions{
 			Config: ProvisionConfig{
-				Username: *user,
-				Password: *password,
+				Username: cfg.user,
+				Password: cfg.password,
 				Admin:    true,
 			},
 			SkipSetupAssistant: true,
@@ -140,13 +191,11 @@ Examples:
 	}
 
 	// Step 3: Boot VM and optionally run vzscripts.
-	if *vzscripts != "" {
+	recipes := splitRecipes(cfg.vzscripts)
+	if len(recipes) > 0 {
 		fmt.Println()
-		fmt.Printf("=== Step 3/3: Boot + vzscripts (%s) ===\n", *vzscripts)
-		if *noShutdown {
-			return runUpWithVZScriptsNoShutdown(*vzscripts)
-		}
-		return runPostInstallVZScripts(*vzscripts)
+		fmt.Printf("=== Step 3/3: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
+		return runUpWithVZScripts(recipes, cfg.noShutdown, cfg.verbose)
 	}
 
 	fmt.Println()
@@ -154,9 +203,18 @@ Examples:
 	return runMacOSVM()
 }
 
-// runUpWithVZScriptsNoShutdown boots the VM, runs vzscripts, then leaves
-// the VM running instead of shutting it down.
-func runUpWithVZScriptsNoShutdown(recipes string) error {
+// runUpWithVZScripts boots the VM in a goroutine, runs the given vzscript
+// recipes, and either shuts down the VM or leaves it running based on
+// noShutdown. If the VM exits unexpectedly during script execution, the
+// error is returned immediately.
+func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
+	// Validate all recipes before booting.
+	for _, name := range recipes {
+		if _, err := loadVZScriptData(name); err != nil {
+			return fmt.Errorf("recipe %q: %w", name, err)
+		}
+	}
+
 	// Boot the VM in a goroutine.
 	vmErr := make(chan error, 1)
 	go func() {
@@ -167,37 +225,71 @@ func runUpWithVZScriptsNoShutdown(recipes string) error {
 	cfg := vzscriptConfig{
 		socketPath:  sock,
 		execTimeout: 30 * time.Minute,
-		verbose:     verbose,
+		verbose:     verboseMode,
 	}
 
-	// Wait for the agent.
+	// Wait for the guest agent, checking for early VM failure.
 	fmt.Println("Waiting for VM to boot and guest agent...")
 	waitScript := []byte("guest-wait 15m\n")
-	if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
-		return fmt.Errorf("waiting for agent: %w", err)
+	if err := runVZScriptOrVMErr(waitScript, "wait-for-agent", cfg, vmErr); err != nil {
+		return err
 	}
 
-	// Run each recipe.
-	for _, name := range splitRecipes(recipes) {
+	// Run each recipe in order.
+	for _, name := range recipes {
 		fmt.Printf("\n=== Running vzscript: %s ===\n", name)
 		data, err := loadVZScriptData(name)
 		if err != nil {
 			return err
 		}
-		if err := runVZScript(data, name, cfg); err != nil {
-			return fmt.Errorf("vzscript %s: %w", name, err)
+		if err := runVZScriptOrVMErr(data, name, cfg, vmErr); err != nil {
+			return err
 		}
 		fmt.Printf("=== Done: %s ===\n", name)
 	}
 
-	fmt.Println("\nAll vzscripts complete. VM is still running.")
-	fmt.Println("Use 'vz-macos ctl stop' to shut it down.")
-
-	// Wait for the VM to exit (user will close it manually).
-	if err := <-vmErr; err != nil {
-		return err
+	if noShutdown {
+		fmt.Println("\nAll vzscripts complete. VM is still running.")
+		fmt.Println("Use 'vz-macos ctl stop' to shut it down.")
+		return <-vmErr
 	}
+
+	// Shut down the VM gracefully.
+	fmt.Println("\nShutting down VM...")
+	_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
+	select {
+	case err := <-vmErr:
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "VM exited with error: %v\n", err)
+		}
+	case <-time.After(2 * time.Minute):
+		fmt.Println("VM did not exit within timeout.")
+	}
+
+	fmt.Println("\nPost-install complete.")
 	return nil
+}
+
+// runVZScriptOrVMErr runs a vzscript while also monitoring the VM error
+// channel. If the VM exits before the script completes, the VM error is
+// returned. This prevents scripts from hanging if the VM crashes during boot.
+func runVZScriptOrVMErr(script []byte, name string, cfg vzscriptConfig, vmErr <-chan error) error {
+	scriptErr := make(chan error, 1)
+	go func() {
+		scriptErr <- runVZScript(script, name, cfg)
+	}()
+	select {
+	case err := <-scriptErr:
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		return nil
+	case err := <-vmErr:
+		if err != nil {
+			return fmt.Errorf("vm exited during %s: %w", name, err)
+		}
+		return fmt.Errorf("vm exited unexpectedly during %s", name)
+	}
 }
 
 // splitRecipes splits a comma-separated recipe list, trimming whitespace.
