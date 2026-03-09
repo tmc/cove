@@ -208,7 +208,7 @@ func main() {
 	var err error
 	vmDir, err = EnsureVMDir(vmName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -234,7 +234,7 @@ func main() {
 	switch provisionStrategy {
 	case "inject", "gui", "auto":
 	default:
-		fmt.Fprintf(os.Stderr, "Error: invalid -provision-strategy %q (must be inject, gui, or auto)\n", provisionStrategy)
+		fmt.Fprintf(os.Stderr, "error: invalid -provision-strategy %q (must be inject, gui, or auto)\n", provisionStrategy)
 		os.Exit(1)
 	}
 
@@ -244,7 +244,7 @@ func main() {
 	// Legacy flag handling compatibility
 	if fetchLatest {
 		if _, err := fetchLatestRestoreImageObject(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		return
@@ -263,13 +263,13 @@ func main() {
 		}
 		if errors.Is(err, errRestartVM) {
 			if err := runMacOSVM(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		return
@@ -291,64 +291,64 @@ func main() {
 		switch cmd {
 		case "ctl":
 			if err := ctlCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "inject":
 			// inject is now an alias for provision
 			if err := handleProvision(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "inject-agent":
 			// Shorthand for "inject -agent" (no user provisioning)
 			if err := injectAgentOnly(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "verify", "doctor":
 			if err := handleVerify(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "disk-detach":
 			diskFile := filepath.Join(vmDir, "disk.img")
 			if err := ensureDiskDetached(diskFile); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "sip":
 			if err := handleSIPCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "tcc", "fda":
 			if err := handleTCCCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "up":
 			if err := handleUp(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "vzscript":
 			if err := vzscriptCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "uiscript":
 			if err := uiscriptCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -370,7 +370,7 @@ func main() {
 		if vmName != "" {
 			vmDir, err = EnsureVMDir(vmName)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 		}
@@ -386,11 +386,11 @@ func main() {
 			}
 			if errors.Is(err, errRestartVM) {
 				if err := runMacOSVM(); err != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
 					os.Exit(1)
 				}
 			} else if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			if installVZScripts != "" {
@@ -408,20 +408,20 @@ func main() {
 			return
 		case "menubar":
 			if err := RunMenubarApp(vmDir); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "provision":
-			fmt.Fprintf(os.Stderr, "Warning: 'provision' command is deprecated, use 'inject' instead\n")
+			fmt.Fprintf(os.Stderr, "warning: 'provision' command is deprecated, use 'inject' instead\n")
 			if err := handleProvision(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "clean":
 			if err := cleanVM(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -445,19 +445,19 @@ func main() {
 			return
 		case "rosetta":
 			if err := handleRosettaCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "userdata":
 			if err := handleUserDataCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "recovery-disk":
 			if err := sipCreateDisk(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -490,7 +490,7 @@ func handleDefaultAction() {
 			err = runMacOSVM()
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 	case 1:
@@ -522,7 +522,7 @@ func handleUTM() {
 		err = runUTMBundle(utmBundlePath)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -535,7 +535,7 @@ func handleRun() {
 		err = runMacOSVM()
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -708,7 +708,7 @@ func handleClone(args []string) {
 		CopyMachineID: false,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -744,7 +744,7 @@ Compressed templates take longer to save but use less disk space.`)
 			source = vmName
 		}
 		if err := SaveTemplate(source, subargs[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -758,14 +758,14 @@ Compressed templates take longer to save but use less disk space.`)
 			source = vmName
 		}
 		if err := SaveTemplateFast(source, subargs[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
 	case "list":
 		templates, err := ListTemplates()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		if len(templates) == 0 {
@@ -793,7 +793,7 @@ Compressed templates take longer to save but use less disk space.`)
 			os.Exit(1)
 		}
 		if err := CreateFromTemplate(subargs[0], subargs[1]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -803,7 +803,7 @@ Compressed templates take longer to save but use less disk space.`)
 			os.Exit(1)
 		}
 		if err := DeleteTemplate(subargs[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("Template '%s' deleted.\n", subargs[0])
@@ -838,7 +838,7 @@ Commands:
 			os.Exit(1)
 		}
 		if err := SetActiveVM(subargs[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("Active VM set to '%s'.\n", subargs[0])
@@ -849,7 +849,7 @@ Commands:
 			os.Exit(1)
 		}
 		if err := DeleteVM(subargs[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -859,7 +859,7 @@ Commands:
 			os.Exit(1)
 		}
 		if err := RenameVM(subargs[0], subargs[1]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -869,7 +869,7 @@ Commands:
 			os.Exit(1)
 		}
 		if err := ExportVM(subargs[0], subargs[1]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -879,7 +879,7 @@ Commands:
 			os.Exit(1)
 		}
 		if err := ImportVM(subargs[0], subargs[1]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -921,7 +921,7 @@ the control socket. Example:
 	case "list":
 		snapshots, err := mgr.List()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		if len(snapshots) == 0 {
@@ -944,7 +944,7 @@ the control socket. Example:
 			os.Exit(1)
 		}
 		if err := mgr.Delete(subargs[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -983,7 +983,7 @@ func handleNetworkCommand(args []string) {
 func getUserDataConfig() UserDataConfig {
 	strategy, err := ParseMountStrategy(userDataStrategy)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v, using 'volumes'\n", err)
+		fmt.Fprintf(os.Stderr, "warning: %v, using 'volumes'\n", err)
 		strategy = MountStrategyVolumes
 	}
 

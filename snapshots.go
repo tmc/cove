@@ -461,7 +461,7 @@ func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) {
 
 	fmt.Printf("Creating disk snapshot '%s'...\n", name)
 	if err := mgr.Save(name, target, description); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -488,7 +488,7 @@ func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) {
 
 	fmt.Printf("Restoring disk snapshot '%s'...\n", name)
 	if err := mgr.Restore(name, target); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -496,7 +496,7 @@ func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) {
 func handleDiskSnapshotList(mgr *DiskSnapshotManager) {
 	snapshots, err := mgr.List()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -537,7 +537,7 @@ func handleDiskSnapshotDelete(mgr *DiskSnapshotManager, args []string) {
 
 	name := args[0]
 	if err := mgr.Delete(name); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }

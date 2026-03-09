@@ -116,7 +116,7 @@ func CreateRecoveryDisk(path string) error {
 		if forceErr := exec.Command("hdiutil", "detach", device, "-force").Run(); forceErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: force detach %s: %v\n", device, forceErr)
 		}
-		fmt.Printf("Warning: detach: %s\n", string(out))
+		fmt.Printf("warning: detach: %s\n", string(out))
 	}
 
 	// Rename .dmg to .img for consistency with other disk images

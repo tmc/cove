@@ -159,7 +159,7 @@ func runOCRSetupAssistant(cs *ControlServer, ocr *OCRService, debugDir string) e
 		fmt.Printf("Using preset boot commands (%d steps)\n", len(commands))
 		executor := NewBootCommandExecutor(ocr, cs, verbose, debugDir)
 		if err := executor.Execute(commands); err != nil {
-			fmt.Printf("Warning: preset commands failed: %v\n", err)
+			fmt.Printf("warning: preset commands failed: %v\n", err)
 			fmt.Println("Falling back to interactive Setup Assistant navigation...")
 		} else {
 			return nil

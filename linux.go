@@ -157,7 +157,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	if len(effectiveVolumes) > 0 {
 		volumeConfigs, err := createVolumeConfigs(effectiveVolumes)
 		if err != nil {
-			fmt.Printf("Warning: volume config: %v\n", err)
+			fmt.Printf("warning: volume config: %v\n", err)
 		} else if len(volumeConfigs) > 0 {
 			setDirectorySharingDevicesMulti(config, volumeConfigs)
 		}
@@ -166,7 +166,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	// Rosetta support for x86-64 binary translation
 	if enableRosetta {
 		if err := AddRosettaToLinuxVM(config, vmDir); err != nil {
-			fmt.Printf("Warning: Rosetta setup failed: %v\n", err)
+			fmt.Printf("warning: Rosetta setup failed: %v\n", err)
 		}
 	}
 

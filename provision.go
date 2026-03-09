@@ -327,7 +327,7 @@ func cleanVM() error {
 		path := filepath.Join(vmDir, f)
 		if _, err := os.Stat(path); err == nil {
 			if err := os.Remove(path); err != nil {
-				fmt.Printf("Warning: could not remove %s: %v\n", path, err)
+				fmt.Printf("warning: could not remove %s: %v\n", path, err)
 			} else {
 				fmt.Printf("Removed: %s\n", path)
 			}
@@ -430,7 +430,7 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 		// Create .AppleSetupDone to skip main Setup Assistant
 		setupDonePath := filepath.Join(mountPoint, "private", "var", "db", ".AppleSetupDone")
 		if err := os.WriteFile(setupDonePath, []byte{}, 0644); err != nil {
-			fmt.Printf("Warning: could not create .AppleSetupDone: %v\n", err)
+			fmt.Printf("warning: could not create .AppleSetupDone: %v\n", err)
 		} else {
 			fmt.Printf("Written: %s\n", setupDonePath)
 		}
@@ -453,14 +453,14 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	// Optionally configure auto-login
 	if opts.AutoLogin {
 		if err := injectAutoLogin(mountPoint, opts.Config.Username, opts.Config.Password, &rootFiles); err != nil {
-			fmt.Printf("Warning: auto-login configuration failed: %v\n", err)
+			fmt.Printf("warning: auto-login configuration failed: %v\n", err)
 		}
 	}
 
 	// Optionally inject SSH key for remote access
 	if opts.SSHKeyPath != "" {
 		if err := injectSSHKey(mountPoint, opts.Config.Username, opts.SSHKeyPath); err != nil {
-			fmt.Printf("Warning: SSH key injection failed: %v\n", err)
+			fmt.Printf("warning: SSH key injection failed: %v\n", err)
 		}
 	}
 
@@ -517,7 +517,7 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	// Optionally download and inject SPICE guest tools for clipboard sharing
 	if opts.InjectGuestTools {
 		if err := injectGuestTools(mountPoint, &rootFiles); err != nil {
-			fmt.Printf("Warning: guest tools injection failed: %v\n", err)
+			fmt.Printf("warning: guest tools injection failed: %v\n", err)
 			fmt.Println("  Clipboard sharing will not work until guest tools are installed manually.")
 		}
 	}
@@ -530,7 +530,7 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 			fmt.Printf("\n%v\n", err)
 			return err // defer detachDisk will run
 		}
-		fmt.Printf("Warning: could not fix file ownership: %v\n", err)
+		fmt.Printf("warning: could not fix file ownership: %v\n", err)
 		fmt.Println("  LaunchDaemons may not load on first boot.")
 		fmt.Println("  Fix manually with: sudo chown root:wheel <files>")
 	}
@@ -663,7 +663,7 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 	if opts.SkipSetupAssistant {
 		if err := stageFile(stagingDir, filepath.Join("private", "var", "db", ".AppleSetupDone"),
 			[]byte{}, 0644, "", manifest); err != nil {
-			fmt.Printf("Warning: could not stage .AppleSetupDone: %v\n", err)
+			fmt.Printf("warning: could not stage .AppleSetupDone: %v\n", err)
 		}
 		if err := stageFile(stagingDir, filepath.Join("Library", "User Template", "English.lproj", ".skipbuddy"),
 			[]byte{}, 0644, "", manifest); err != nil {
@@ -674,14 +674,14 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 	// Stage auto-login files.
 	if opts.AutoLogin {
 		if err := stageAutoLogin(stagingDir, opts.Config.Username, opts.Config.Password, manifest); err != nil {
-			fmt.Printf("Warning: auto-login staging failed: %v\n", err)
+			fmt.Printf("warning: auto-login staging failed: %v\n", err)
 		}
 	}
 
 	// Stage SSH key.
 	if opts.SSHKeyPath != "" {
 		if err := stageSSHKey(stagingDir, opts.Config.Username, opts.SSHKeyPath, manifest); err != nil {
-			fmt.Printf("Warning: SSH key staging failed: %v\n", err)
+			fmt.Printf("warning: SSH key staging failed: %v\n", err)
 		}
 	}
 
@@ -722,7 +722,7 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 	// Stage guest tools (download happens here, no root needed).
 	if opts.InjectGuestTools {
 		if err := stageGuestTools(stagingDir, manifest); err != nil {
-			fmt.Printf("Warning: guest tools staging failed: %v\n", err)
+			fmt.Printf("warning: guest tools staging failed: %v\n", err)
 			fmt.Println("  Clipboard sharing will not work until guest tools are installed manually.")
 		}
 	}

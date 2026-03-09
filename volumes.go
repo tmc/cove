@@ -134,7 +134,7 @@ func getEffectiveVolumes() []VolumeMount {
 	// If volumes were specified on the command line, save them to config.
 	if len(cliVolumes) > 0 {
 		if err := saveVolumesToConfig(vmDir, cliVolumes); err != nil {
-			fmt.Printf("Warning: save volume config: %v\n", err)
+			fmt.Printf("warning: save volume config: %v\n", err)
 		}
 		return cliVolumes
 	}
@@ -142,7 +142,7 @@ func getEffectiveVolumes() []VolumeMount {
 	// No CLI volumes: load saved volumes from config.
 	cfg, err := LoadVMConfig(vmDir)
 	if err != nil {
-		fmt.Printf("Warning: load volume config: %v\n", err)
+		fmt.Printf("warning: load volume config: %v\n", err)
 		return nil
 	}
 	if len(cfg.Volumes) > 0 {

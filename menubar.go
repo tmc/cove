@@ -117,7 +117,7 @@ func (m *MenubarApp) registerActions() {
 		},
 	)
 	if err != nil {
-		fmt.Printf("Warning: could not register delegate class: %v\n", err)
+		fmt.Printf("warning: could not register delegate class: %v\n", err)
 		return
 	}
 

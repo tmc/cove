@@ -71,14 +71,14 @@ func injectUserPlist(mountPoint string, opts InjectOptions) error {
 
 	// Create standard subdirectories
 	if err := CreateHomeDirectoryStructure(homeDir, opts.UID, 20); err != nil {
-		fmt.Printf("Warning: home directory structure incomplete: %v\n", err)
+		fmt.Printf("warning: home directory structure incomplete: %v\n", err)
 	}
 	fmt.Printf("Created home directory: %s\n", homeDir)
 
 	// Add user to admin group if requested
 	if config.Admin {
 		if err := addUserToAdminGroup(mountPoint, config.Username); err != nil {
-			fmt.Printf("Warning: could not add to admin group: %v\n", err)
+			fmt.Printf("warning: could not add to admin group: %v\n", err)
 		}
 	}
 

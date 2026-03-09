@@ -207,7 +207,7 @@ func runUTMBundle(bundlePath string) error {
 	if cfg.MACAddress != "" {
 		macPath := filepath.Join(vmDir, "mac.address")
 		if err := os.WriteFile(macPath, []byte(cfg.MACAddress+"\n"), 0644); err != nil {
-			fmt.Printf("Warning: could not save MAC address: %v\n", err)
+			fmt.Printf("warning: could not save MAC address: %v\n", err)
 		}
 	}
 
@@ -221,13 +221,13 @@ func runUTMBundle(bundlePath string) error {
 	if len(cfg.HWModel) > 0 {
 		hwPath := filepath.Join(vmDir, "hw.model")
 		if err := os.WriteFile(hwPath, cfg.HWModel, 0644); err != nil {
-			fmt.Printf("Warning: could not save hardware model: %v\n", err)
+			fmt.Printf("warning: could not save hardware model: %v\n", err)
 		}
 	}
 	if len(cfg.MachineID) > 0 {
 		machineIDPath := filepath.Join(vmDir, "machine.id")
 		if err := os.WriteFile(machineIDPath, cfg.MachineID, 0644); err != nil {
-			fmt.Printf("Warning: could not save machine ID: %v\n", err)
+			fmt.Printf("warning: could not save machine ID: %v\n", err)
 		}
 	}
 

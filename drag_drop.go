@@ -67,7 +67,7 @@ func SetupDragDrop(vmView vz.VZVirtualMachineView, vm vz.VZVirtualMachine, vmQue
 
 	dropsDir := filepath.Join(vmDirectory, "drops")
 	if err := os.MkdirAll(dropsDir, 0755); err != nil {
-		fmt.Printf("Warning: drag-drop: could not create drops dir: %v\n", err)
+		fmt.Printf("warning: drag-drop: could not create drops dir: %v\n", err)
 		return nil
 	}
 

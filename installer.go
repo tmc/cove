@@ -139,7 +139,7 @@ func stopVMAndInject(vm *virtualMachine) {
 	// framework may hold the file handle briefly after stop returns.
 	diskFile := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskFile); err != nil {
-		fmt.Printf("Warning: disk not found after VM stop: %s (%v)\n", diskFile, err)
+		fmt.Printf("warning: disk not found after VM stop: %s (%v)\n", diskFile, err)
 		fmt.Printf("  vmDir=%s\n", vmDir)
 		// List what's actually in the directory.
 		if entries, derr := os.ReadDir(vmDir); derr == nil {
@@ -151,7 +151,7 @@ func stopVMAndInject(vm *virtualMachine) {
 		}
 	}
 	if err := waitForDiskAvailable(diskFile, 15*time.Second); err != nil {
-		fmt.Printf("Warning: %v\n", err)
+		fmt.Printf("warning: %v\n", err)
 	}
 
 	if provisionUser == "" || provisionPassword == "" {
@@ -177,7 +177,7 @@ func stopVMAndInject(vm *virtualMachine) {
 		InjectGuestTools:   true,
 	}
 	if err := injectProvisioningFilesWithOptions(injectOpts); err != nil {
-		fmt.Printf("Warning: provisioning injection failed: %v\n", err)
+		fmt.Printf("warning: provisioning injection failed: %v\n", err)
 		if provisionStrategy == "auto" {
 			fmt.Println("Will fall back to GUI automation on first boot.")
 		} else {
@@ -808,7 +808,7 @@ func prepareInstaller(ctx context.Context, restoreImagePath string) (*macOSInsta
 	if bootArgs != "" {
 		bootArgsPath := filepath.Join(vmDir, "boot-args.txt")
 		if err := os.WriteFile(bootArgsPath, []byte(bootArgs+"\n"), 0644); err != nil {
-			fmt.Printf("Warning: could not save boot-args: %v\n", err)
+			fmt.Printf("warning: could not save boot-args: %v\n", err)
 		}
 	}
 
@@ -915,7 +915,7 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 	// Save hardware model data for future runs
 	hwModelPath := filepath.Join(vmDir, "hw.model")
 	if err := saveDataRepresentation(hwModel.ID, hwModelPath); err != nil {
-		fmt.Printf("Warning: could not save hardware model: %v\n", err)
+		fmt.Printf("warning: could not save hardware model: %v\n", err)
 	}
 
 	// Create new machine identifier
@@ -927,7 +927,7 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 	// Save machine identifier data for future runs
 	machineIDPath := filepath.Join(vmDir, "machine.id")
 	if err := saveDataRepresentation(machineID.ID, machineIDPath); err != nil {
-		fmt.Printf("Warning: could not save machine identifier: %v\n", err)
+		fmt.Printf("warning: could not save machine identifier: %v\n", err)
 	}
 
 	// Create auxiliary storage with hardware model (key difference from runtime)
@@ -1033,7 +1033,7 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	// Audio
 	audioConfig, err := createAudioDeviceConfiguration()
 	if err != nil {
-		fmt.Printf("Warning: audio config: %v\n", err)
+		fmt.Printf("warning: audio config: %v\n", err)
 	} else {
 		setAudioDevices(config, audioConfig)
 	}
@@ -1047,7 +1047,7 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	if len(effectiveVolumes) > 0 {
 		volumeConfigs, err := createVolumeConfigs(effectiveVolumes)
 		if err != nil {
-			fmt.Printf("Warning: volume config: %v\n", err)
+			fmt.Printf("warning: volume config: %v\n", err)
 		} else if len(volumeConfigs) > 0 {
 			setDirectorySharingDevicesMulti(config, volumeConfigs)
 		}

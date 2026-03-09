@@ -379,7 +379,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	// Audio with host input/output streams
 	audioConfig, err := createAudioDeviceConfiguration()
 	if err != nil {
-		fmt.Printf("Warning: audio config: %v\n", err)
+		fmt.Printf("warning: audio config: %v\n", err)
 	} else {
 		setAudioDevices(config, audioConfig)
 	}
@@ -451,7 +451,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	if len(effectiveVolumes) > 0 {
 		volumeConfigs, err := createVolumeConfigs(effectiveVolumes)
 		if err != nil {
-			fmt.Printf("Warning: volume config: %v\n", err)
+			fmt.Printf("warning: volume config: %v\n", err)
 		} else {
 			allVirtioConfigs = append(allVirtioConfigs, volumeConfigs...)
 		}
@@ -480,7 +480,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	if scriptsConfig.Enabled {
 		scriptsFSConfig, err := CreateScriptsShareConfig(scriptsConfig)
 		if err != nil {
-			fmt.Printf("Warning: scripts share config: %v\n", err)
+			fmt.Printf("warning: scripts share config: %v\n", err)
 		} else if scriptsFSConfig.ID != 0 {
 			allVirtioConfigs = append(allVirtioConfigs, scriptsFSConfig)
 		}
@@ -722,7 +722,7 @@ func createSharedFoldersDevice(folders []SharedFolderEntry) vz.VZVirtioFileSyste
 	values := make([]objectivec.IObject, 0, len(folders))
 	for _, f := range folders {
 		if _, err := os.Stat(f.Path); err != nil {
-			fmt.Printf("Warning: shared folder not found: %s\n", f.Path)
+			fmt.Printf("warning: shared folder not found: %s\n", f.Path)
 			continue
 		}
 		url := foundation.NewURLFileURLWithPath(f.Path)
@@ -813,7 +813,7 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	if bootArgs != "" {
 		bootArgsPath := filepath.Join(vmDir, "boot-args.txt")
 		if err := os.WriteFile(bootArgsPath, []byte(bootArgs+"\n"), 0644); err != nil {
-			fmt.Printf("Warning: could not save boot-args: %v\n", err)
+			fmt.Printf("warning: could not save boot-args: %v\n", err)
 		} else {
 			fmt.Printf("Boot args saved to: %s\n", bootArgsPath)
 			fmt.Printf("To apply inside guest: sudo nvram boot-args=\"%s\"\n", bootArgs)
@@ -932,7 +932,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	controlServer := NewControlServerWithVMDir(sock, vmDir)
 	controlServer.SetVM(vm, queue)
 	if err := controlServer.Start(); err != nil {
-		fmt.Printf("Warning: control socket: %v\n", err)
+		fmt.Printf("warning: control socket: %v\n", err)
 	} else {
 		fmt.Printf("Control socket: %s\n", sock)
 		if verbose {
@@ -1252,7 +1252,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	controlServer.SetVMViewWithWindow(vmView, window)
 	controlServer.SetVM(vm, queue)
 	if err := controlServer.Start(); err != nil {
-		fmt.Printf("Warning: could not start control socket: %v\n", err)
+		fmt.Printf("warning: could not start control socket: %v\n", err)
 	} else {
 		fmt.Printf("Control socket: %s\n", sock)
 		if verbose {

@@ -100,7 +100,7 @@ func installWindowsVM() error {
 	// Ensure SPICE guest tools
 	guestToolsExe, err := ensureWindowsGuestTools()
 	if err != nil {
-		fmt.Printf("Warning: could not download SPICE guest tools: %v\n", err)
+		fmt.Printf("warning: could not download SPICE guest tools: %v\n", err)
 		fmt.Println("  Clipboard sharing will need manual guest tools installation.")
 		guestToolsExe = ""
 	}
@@ -267,7 +267,7 @@ func buildWindowsInstallConfiguration(diskPath, windowsISO, virtioISO, autounatt
 		virtioISOURL := foundation.NewURLFileURLWithPath(virtioISO)
 		virtioISOAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&virtioISOURL, true)
 		if err != nil {
-			fmt.Printf("Warning: could not attach VirtIO drivers ISO: %v\n", err)
+			fmt.Printf("warning: could not attach VirtIO drivers ISO: %v\n", err)
 		} else {
 			virtioISOAttachment.Retain()
 			virtioISOUSB := vz.NewUSBMassStorageDeviceConfigurationWithAttachment(&virtioISOAttachment.VZStorageDeviceAttachment)
@@ -282,7 +282,7 @@ func buildWindowsInstallConfiguration(diskPath, windowsISO, virtioISO, autounatt
 		autoISOURL := foundation.NewURLFileURLWithPath(autounattendISO)
 		autoISOAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&autoISOURL, true)
 		if err != nil {
-			fmt.Printf("Warning: could not attach autounattend ISO: %v\n", err)
+			fmt.Printf("warning: could not attach autounattend ISO: %v\n", err)
 		} else {
 			autoISOAttachment.Retain()
 			autoISOUSB := vz.NewUSBMassStorageDeviceConfigurationWithAttachment(&autoISOAttachment.VZStorageDeviceAttachment)
@@ -415,11 +415,11 @@ func createAutounattendISO(config WindowsProvisionConfig, guestToolsExe string) 
 	if guestToolsExe != "" {
 		data, err := os.ReadFile(guestToolsExe)
 		if err != nil {
-			fmt.Printf("Warning: could not read guest tools: %v\n", err)
+			fmt.Printf("warning: could not read guest tools: %v\n", err)
 		} else {
 			destPath := filepath.Join(autoDir, "spice-guest-tools.exe")
 			if err := os.WriteFile(destPath, data, 0644); err != nil {
-				fmt.Printf("Warning: could not copy guest tools: %v\n", err)
+				fmt.Printf("warning: could not copy guest tools: %v\n", err)
 			}
 		}
 	}

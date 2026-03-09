@@ -52,7 +52,7 @@ func RenameVM(oldName, newName string) error {
 	// Update active VM symlink if needed
 	if GetActiveVM() == oldName {
 		if err := SetActiveVM(newName); err != nil {
-			fmt.Printf("Warning: could not update active VM symlink: %v\n", err)
+			fmt.Printf("warning: could not update active VM symlink: %v\n", err)
 		}
 	}
 

@@ -21,7 +21,7 @@ func runProvisioningAutomation(cs *ControlServer) {
 	// The ControlServer is already initialized with SetVMViewWithWindow,
 	// but the VM may still be booting and the window not yet rendered.
 	if err := waitForVMScreenReady(cs, 120*time.Second); err != nil {
-		fmt.Printf("Warning: VM screen not ready: %v\n", err)
+		fmt.Printf("warning: VM screen not ready: %v\n", err)
 		fmt.Println("Continuing anyway — automation may recover during page detection.")
 	}
 
@@ -126,7 +126,7 @@ func tryLoginFallback(socketPath string) error {
 
 	fmt.Println("Still at login screen - trying to click user and retry...")
 	if err := client.SendMouseClick(300, 300); err != nil {
-		fmt.Printf("Warning: mouse click failed: %v\n", err)
+		fmt.Printf("warning: mouse click failed: %v\n", err)
 	}
 	time.Sleep(500 * time.Millisecond)
 

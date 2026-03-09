@@ -88,7 +88,7 @@ func applyVMConfig(dir string) {
 
 	if changed {
 		if err := SaveVMConfig(dir, cfg); err != nil {
-			fmt.Printf("Warning: save vm config: %v\n", err)
+			fmt.Printf("warning: save vm config: %v\n", err)
 		}
 	}
 }
@@ -105,7 +105,7 @@ func saveHardwareConfig(dir string) {
 	cfg.CPU = cpuCount
 	cfg.MemoryGB = memoryGB
 	if err := SaveVMConfig(dir, cfg); err != nil {
-		fmt.Printf("Warning: save vm config: %v\n", err)
+		fmt.Printf("warning: save vm config: %v\n", err)
 	}
 }
 
