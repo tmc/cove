@@ -95,7 +95,7 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 	// so OCR pixel coordinates map directly to VM view coordinates.
 	cgImage := coregraphics.CGWindowListCreateImage(
 		bounds,
-		coregraphics.CGWindowListOption(8),  // kCGWindowListOptionIncludingWindow
+		coregraphics.CGWindowListOption(8), // kCGWindowListOptionIncludingWindow
 		coregraphics.CGWindowID(windowNum),
 		coregraphics.CGWindowImageOption(1), // kCGWindowImageBoundsIgnoreFraming
 	)

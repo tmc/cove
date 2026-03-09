@@ -9,7 +9,7 @@ import (
 
 // shellEscape wraps a value in single quotes with proper escaping for safe
 // embedding in shell scripts. Single quotes within the value are replaced
-// with the sequence '\'' (end quote, escaped quote, start quote).
+// with the sequence '\” (end quote, escaped quote, start quote).
 func shellEscape(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

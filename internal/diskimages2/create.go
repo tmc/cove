@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	di2 "github.com/tmc/apple/private/diskimages2"
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
+	di2 "github.com/tmc/apple/private/diskimages2"
 )
 
 // CreateASIF creates an Apple Sparse Image Format disk image at the given path.

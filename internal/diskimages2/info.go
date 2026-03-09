@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	di2 "github.com/tmc/apple/private/diskimages2"
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
+	di2 "github.com/tmc/apple/private/diskimages2"
 )
 
 // RetrieveInfo returns metadata about a disk image file using DIImageInfoParams.

@@ -5,9 +5,9 @@ import (
 	"os/exec"
 	"unsafe"
 
-	di2 "github.com/tmc/apple/private/diskimages2"
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
+	di2 "github.com/tmc/apple/private/diskimages2"
 )
 
 // Attach attaches a disk image at the given path using DIAttachParams.
