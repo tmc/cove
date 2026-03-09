@@ -28,16 +28,14 @@ type TemplateInfo struct {
 	Path        string    // Full path to template directory
 	DiskSize    int64     // Disk image size (compressed or uncompressed)
 	Created     time.Time // Creation time
-	FastMode    bool      // True if template uses clonefile (uncompressed)
-	HasUserData bool      // True if template includes userdata.sparsebundle
+	FastMode bool // True if template uses clonefile (uncompressed)
 }
 
 // SaveTemplateOptions configures template creation behavior.
 type SaveTemplateOptions struct {
 	VMName          string // Source VM name
 	TemplateName    string // Template name to create
-	FastMode        bool   // Use clonefile instead of compression (instant but more disk space)
-	IncludeUserData bool   // Include userdata.sparsebundle if present
+	FastMode bool // Use clonefile instead of compression (instant but more disk space)
 }
 
 // TemplateFiles are the files that make up a compressed template.
@@ -143,18 +141,6 @@ func SaveTemplateWithOptions(opts SaveTemplateOptions) error {
 		if err := compressFile(diskSrc, diskDst); err != nil {
 			os.RemoveAll(templatePath)
 			return fmt.Errorf("compress disk.img: %w", err)
-		}
-	}
-
-	// Optionally include userdata disk
-	if opts.IncludeUserData {
-		userDataSrc := filepath.Join(vmPath, "userdata.sparsebundle")
-		if _, err := os.Stat(userDataSrc); err == nil {
-			userDataDst := filepath.Join(templatePath, "userdata.sparsebundle")
-			fmt.Println("  Copying userdata.sparsebundle...")
-			if err := copyDirRecursive(userDataSrc, userDataDst); err != nil {
-				fmt.Printf("  Warning: could not copy userdata: %v\n", err)
-			}
 		}
 	}
 
@@ -281,19 +267,12 @@ func getTemplateInfo(templatePath string) (*TemplateInfo, error) {
 		return nil, fmt.Errorf("stat disk image: %w", err)
 	}
 
-	// Check for userdata
-	hasUserData := false
-	if _, err := os.Stat(filepath.Join(templatePath, "userdata.sparsebundle")); err == nil {
-		hasUserData = true
-	}
-
 	return &TemplateInfo{
-		Name:        name,
-		Path:        templatePath,
-		DiskSize:    diskInfo.Size(),
-		Created:     diskInfo.ModTime(),
-		FastMode:    fastMode,
-		HasUserData: hasUserData,
+		Name:     name,
+		Path:     templatePath,
+		DiskSize: diskInfo.Size(),
+		Created:  diskInfo.ModTime(),
+		FastMode: fastMode,
 	}, nil
 }
 
@@ -301,8 +280,7 @@ func getTemplateInfo(templatePath string) (*TemplateInfo, error) {
 type CreateFromTemplateOptions struct {
 	TemplateName    string // Source template name
 	VMName          string // Target VM name
-	UseClonefile    bool   // Use clonefile even if template is compressed (decompress once, then clone)
-	IncludeUserData bool   // Include userdata disk if template has one
+	UseClonefile bool // Use clonefile even if template is compressed (decompress once, then clone)
 }
 
 // CreateFromTemplate creates a new VM from a template.
@@ -382,16 +360,6 @@ func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
 	if err := generateMachineID(vmPath); err != nil {
 		os.RemoveAll(vmPath)
 		return fmt.Errorf("generate machine ID: %w", err)
-	}
-
-	// Optionally copy userdata
-	if opts.IncludeUserData && templateInfo.HasUserData {
-		userDataSrc := filepath.Join(templatePath, "userdata.sparsebundle")
-		userDataDst := filepath.Join(vmPath, "userdata.sparsebundle")
-		fmt.Println("  Copying userdata.sparsebundle...")
-		if err := copyDirRecursive(userDataSrc, userDataDst); err != nil {
-			fmt.Printf("  Warning: could not copy userdata: %v\n", err)
-		}
 	}
 
 	fmt.Println("VM created successfully.")

@@ -9,13 +9,7 @@
 //
 //  2. Disk Snapshots: Save/restore disk image state (clone the disk)
 //     - Uses APFS clonefile for instant copy-on-write snapshots
-//     - Can snapshot system disk and/or userdata disk independently
 //     - Stored in vmDir/disk-snapshots/<name>/
-//
-// The dual-disk architecture allows independent operations:
-//   - Snapshot only userdata (preserve user files)
-//   - Snapshot only system (preserve OS state)
-//   - Snapshot both (full checkpoint)
 package main
 
 import (
@@ -36,9 +30,8 @@ import (
 type DiskSnapshotTarget int
 
 const (
-	DiskSnapshotSystem   DiskSnapshotTarget = 1 << iota // System disk (disk.img)
-	DiskSnapshotUserData                                // User data disk (userdata.sparsebundle)
-	DiskSnapshotBoth     = DiskSnapshotSystem | DiskSnapshotUserData
+	DiskSnapshotSystem DiskSnapshotTarget = 1 << iota // System disk (disk.img)
+	DiskSnapshotBoth   = DiskSnapshotSystem
 )
 
 // DiskSnapshotInfo contains metadata about a disk snapshot.
@@ -46,9 +39,8 @@ type DiskSnapshotInfo struct {
 	Name         string             `json:"name"`
 	Created      time.Time          `json:"created"`
 	Target       DiskSnapshotTarget `json:"target"`
-	SystemSize   int64              `json:"systemSize,omitempty"`
-	UserDataSize int64              `json:"userDataSize,omitempty"`
-	Description  string             `json:"description,omitempty"`
+	SystemSize  int64              `json:"systemSize,omitempty"`
+	Description string             `json:"description,omitempty"`
 	FilePath     string             `json:"filePath"`
 }
 
@@ -119,23 +111,6 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 		}
 	}
 
-	if target&DiskSnapshotUserData != 0 {
-		srcPath := filepath.Join(m.vmDir, "userdata.sparsebundle")
-		if _, err := os.Stat(srcPath); err == nil {
-			dstPath := filepath.Join(snapDir, "userdata.sparsebundle")
-			fmt.Printf("  Snapshotting userdata disk...\n")
-			if err := m.cloneDirWithFallback(srcPath, dstPath); err != nil {
-				os.RemoveAll(snapDir)
-				return fmt.Errorf("clone userdata disk: %w", err)
-			}
-			if size, err := dirSize(srcPath); err == nil {
-				info.UserDataSize = size
-			}
-		} else {
-			fmt.Printf("  Info: no userdata disk found (single-disk setup)\n")
-		}
-	}
-
 	metaBytes, _ := json.MarshalIndent(info, "", "  ")
 	if err := os.WriteFile(m.metadataPath(name), metaBytes, 0644); err != nil {
 		return fmt.Errorf("save snapshot metadata: %w", err)
@@ -171,22 +146,6 @@ func (m *DiskSnapshotManager) Restore(name string, target DiskSnapshotTarget) er
 			}
 		} else if info.Target&DiskSnapshotSystem != 0 {
 			return fmt.Errorf("snapshot claims to have system disk but file not found")
-		}
-	}
-
-	if target&DiskSnapshotUserData != 0 {
-		srcPath := filepath.Join(snapDir, "userdata.sparsebundle")
-		dstPath := filepath.Join(m.vmDir, "userdata.sparsebundle")
-		if _, err := os.Stat(srcPath); err == nil {
-			fmt.Printf("  Restoring userdata disk...\n")
-			if err := os.RemoveAll(dstPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove existing userdata disk: %w", err)
-			}
-			if err := m.cloneDirWithFallback(srcPath, dstPath); err != nil {
-				return fmt.Errorf("restore userdata disk: %w", err)
-			}
-		} else if info.Target&DiskSnapshotUserData != 0 {
-			return fmt.Errorf("snapshot claims to have userdata disk but directory not found")
 		}
 	}
 
@@ -418,10 +377,10 @@ Disk-level snapshots using APFS clonefile (copy-on-write).
 Unlike VM state snapshots, these snapshot the actual disk contents.
 
 Commands:
-  save <name> [-system] [-userdata] [-both] [-desc "..."]
-      Save disk snapshot (default: both disks if present)
+  save <name> [-system] [-desc "..."]
+      Save disk snapshot
 
-  restore <name> [-system] [-userdata] [-both]
+  restore <name> [-system]
       Restore disks from snapshot
 
   list
@@ -431,14 +390,8 @@ Commands:
       Delete a disk snapshot
 
 Examples:
-  # Snapshot both system and userdata disks
+  # Snapshot system disk
   vz-macos disk-snapshot save checkpoint1
-
-  # Snapshot only the system disk
-  vz-macos disk-snapshot save system-clean -system
-
-  # Restore only userdata from snapshot
-  vz-macos disk-snapshot restore checkpoint1 -userdata
 
   # List all disk snapshots
   vz-macos disk-snapshot list
@@ -460,10 +413,6 @@ func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) {
 		switch args[i] {
 		case "-system":
 			target = DiskSnapshotSystem
-		case "-userdata":
-			target = DiskSnapshotUserData
-		case "-both":
-			target = DiskSnapshotBoth
 		case "-desc":
 			if i+1 < len(args) {
 				i++
@@ -492,10 +441,6 @@ func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) {
 		switch args[i] {
 		case "-system":
 			target = DiskSnapshotSystem
-		case "-userdata":
-			target = DiskSnapshotUserData
-		case "-both":
-			target = DiskSnapshotBoth
 		}
 	}
 
@@ -519,26 +464,15 @@ func handleDiskSnapshotList(mgr *DiskSnapshotManager) {
 	}
 
 	fmt.Println("Disk snapshots:")
-	fmt.Printf("  %-20s  %-10s  %-12s  %-12s  %s\n", "NAME", "TARGET", "SYSTEM", "USERDATA", "CREATED")
+	fmt.Printf("  %-20s  %-12s  %s\n", "NAME", "SYSTEM", "CREATED")
 	for _, s := range snapshots {
-		targetStr := "both"
-		if s.Target == DiskSnapshotSystem {
-			targetStr = "system"
-		} else if s.Target == DiskSnapshotUserData {
-			targetStr = "userdata"
-		}
-
 		systemStr := "-"
 		if s.SystemSize > 0 {
 			systemStr = FormatSize(s.SystemSize)
 		}
-		userdataStr := "-"
-		if s.UserDataSize > 0 {
-			userdataStr = FormatSize(s.UserDataSize)
-		}
 
-		fmt.Printf("  %-20s  %-10s  %-12s  %-12s  %s\n",
-			s.Name, targetStr, systemStr, userdataStr, s.Created.Format("2006-01-02 15:04"))
+		fmt.Printf("  %-20s  %-12s  %s\n",
+			s.Name, systemStr, s.Created.Format("2006-01-02 15:04"))
 	}
 }
 
@@ -553,4 +487,25 @@ func handleDiskSnapshotDelete(mgr *DiskSnapshotManager, args []string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// snapshotViaControlSocket sends a snapshot save or restore command to the
+// running VM via its control socket. Returns an error if the VM is not running
+// or the operation fails.
+func snapshotViaControlSocket(action, name string) error {
+	sock := GetControlSocketPath()
+	req := &controlpb.ControlRequest{
+		Type: "snapshot",
+		Command: &controlpb.ControlRequest_Snapshot{
+			Snapshot: &controlpb.SnapshotCommand{
+				Action: action,
+				Name:   name,
+			},
+		},
+	}
+	resp, err := ctlSendRequest(sock, req, 30*time.Second, "snapshot")
+	if err != nil {
+		return fmt.Errorf("%w\n\nNote: save/restore require a running VM with the control socket active", err)
+	}
+	return ctlPrintResponse(resp, "snapshot", false, "")
 }
