@@ -2,7 +2,6 @@
 package main
 
 import (
-	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,9 +9,6 @@ import (
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
-
-//go:embed presets/*.txt
-var presetFS embed.FS
 
 // runUnattendedSetup runs post-install Setup Assistant automation.
 //
@@ -149,24 +145,6 @@ func attemptLogin(cs *ControlServer, ocr *OCRService) error {
 // runOCRSetupAssistant navigates Setup Assistant using OCR text detection.
 // This is the fallback path when disk injection didn't skip Setup Assistant.
 func runOCRSetupAssistant(cs *ControlServer, ocr *OCRService, debugDir string) error {
-	// Try to load a preset for the detected macOS version
-	commands, err := loadPresetCommands()
-	if err != nil && verbose {
-		fmt.Printf("[unattended] no preset available: %v\n", err)
-	}
-
-	if len(commands) > 0 {
-		fmt.Printf("Using preset boot commands (%d steps)\n", len(commands))
-		executor := NewBootCommandExecutor(ocr, cs, verbose, debugDir)
-		if err := executor.Execute(commands); err != nil {
-			fmt.Printf("warning: preset commands failed: %v\n", err)
-			fmt.Println("Falling back to interactive Setup Assistant navigation...")
-		} else {
-			return nil
-		}
-	}
-
-	// Fall back to OCR-driven Setup Assistant automation (in-process)
 	fmt.Println("Using OCR-driven Setup Assistant navigation...")
 	sa := NewSetupAssistantInProcess(cs, ocr, ProvisionConfig{
 		Username: provisionUser,
@@ -174,23 +152,4 @@ func runOCRSetupAssistant(cs *ControlServer, ocr *OCRService, debugDir string) e
 		Admin:    provisionAdmin,
 	}, verbose, debugDir)
 	return sa.Run()
-}
-
-// loadPresetCommands tries to load boot commands from embedded presets.
-func loadPresetCommands() ([]BootCommand, error) {
-	// Try sequoia first (most common current version), then tahoe
-	for _, name := range []string{"sequoia.txt", "tahoe.txt"} {
-		data, err := presetFS.ReadFile("presets/" + name)
-		if err != nil {
-			continue
-		}
-		commands, err := ParseBootCommands(string(data))
-		if err != nil {
-			continue
-		}
-		if len(commands) > 0 {
-			return commands, nil
-		}
-	}
-	return nil, fmt.Errorf("no preset boot commands available")
 }
