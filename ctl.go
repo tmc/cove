@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -433,9 +434,8 @@ func ctlExecStream(sock string, req *controlpb.ControlRequest, timeout time.Dura
 	reqToSend := req
 	if req.AuthToken == "" {
 		if token := resolveControlTokenForSocket(sock); token != "" {
-			reqCopy := *req
-			reqCopy.AuthToken = token
-			reqToSend = &reqCopy
+			reqToSend = proto.Clone(req).(*controlpb.ControlRequest)
+			reqToSend.AuthToken = token
 		}
 	}
 	reqBytes, err := protojsonMarshaler.Marshal(reqToSend)
@@ -522,9 +522,8 @@ func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Dur
 	reqToSend := req
 	if req.AuthToken == "" {
 		if token := resolveControlTokenForSocket(sock); token != "" {
-			reqCopy := *req
-			reqCopy.AuthToken = token
-			reqToSend = &reqCopy
+			reqToSend = proto.Clone(req).(*controlpb.ControlRequest)
+			reqToSend.AuthToken = token
 		}
 	}
 	reqBytes, err := protojsonMarshaler.Marshal(reqToSend)
@@ -1217,25 +1216,6 @@ func ctlConnectError(sock string, err error) error {
 		return fmt.Errorf("VM control socket exists but is not responding at %s\n  the VM may have crashed; try: vz-macos run", sock)
 	}
 	return fmt.Errorf("connect to control socket %s: %w", sock, err)
-}
-
-// ctlSendCommand sends a command to the control socket and returns the response.
-// Builds a proto request from the given command type and data map.
-func ctlSendCommand(sock, cmdType string, cmdData interface{}, timeout time.Duration) (*controlpb.ControlResponse, error) {
-	req := &controlpb.ControlRequest{Type: cmdType}
-
-	// Handle agent-exec with args map
-	if cmdType == "agent-exec" {
-		if m, ok := cmdData.(map[string]interface{}); ok {
-			if args, ok := m["args"].([]string); ok {
-				req.Command = &controlpb.ControlRequest_AgentExec{
-					AgentExec: &controlpb.AgentExecCommand{Args: args},
-				}
-			}
-		}
-	}
-
-	return ctlSendRequest(sock, req, timeout, cmdType)
 }
 
 // saveScreenshotPNG saves an image as PNG

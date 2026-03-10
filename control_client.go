@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -67,9 +68,8 @@ func (c *ControlClient) sendRequest(req *controlpb.ControlRequest) (*controlpb.C
 	// Marshal and send request
 	reqToSend := req
 	if req.AuthToken == "" && c.authToken != "" {
-		reqCopy := *req
-		reqCopy.AuthToken = c.authToken
-		reqToSend = &reqCopy
+		reqToSend = proto.Clone(req).(*controlpb.ControlRequest)
+		reqToSend.AuthToken = c.authToken
 	}
 	reqBytes, err := protojsonMarshaler.Marshal(reqToSend)
 	if err != nil {
