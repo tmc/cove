@@ -220,61 +220,6 @@ func (m *DiskSnapshotManager) cloneFileWithFallback(src, dst string) error {
 	return copyFile(src, dst)
 }
 
-func (m *DiskSnapshotManager) cloneDirWithFallback(src, dst string) error {
-	err := unix.Clonefile(src, dst, 0)
-	if err == nil {
-		return nil
-	}
-	return copyDirRecursiveDisk(src, dst)
-}
-
-func copyDirRecursiveDisk(src, dst string) error {
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
-		return err
-	}
-
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-
-		if entry.IsDir() {
-			if err := copyDirRecursiveDisk(srcPath, dstPath); err != nil {
-				return err
-			}
-		} else {
-			if err := copyFile(srcPath, dstPath); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func dirSize(path string) (int64, error) {
-	var size int64
-	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			size += info.Size()
-		}
-		return nil
-	})
-	return size, err
-}
-
 // =============================================================================
 // Control socket command handlers for snapshots
 // =============================================================================

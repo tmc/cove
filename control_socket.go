@@ -1181,48 +1181,6 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 }
 
-// pasteText types text into the VM character by character by posting
-// NSEvents to the window. This uses NSWindow.postEvent:atStart: which
-// routes events through the normal AppKit dispatch pipeline — the same
-// path as real keyboard input from the user.
-func (s *ControlServer) pasteText(text string) {
-	// Use clipboard paste: set NSPasteboard, then Cmd+V.
-	// SPICE clipboard sharing forwards the host pasteboard to the guest.
-	fmt.Printf("[pasteText] pasting %d chars via clipboard+Cmd+V: %q\n", len([]rune(text)), text)
-
-	// Step 1: Set the system pasteboard on the main thread.
-	done := make(chan struct{})
-	DispatchAsync(GetMainDispatchQueue(), func() {
-		defer close(done)
-		pb := appkit.GetNSPasteboardClass().GeneralPasteboard()
-		pb.ClearContents()
-		ok := pb.SetStringForType(text, appkit.NSPasteboardTypes.String)
-		fmt.Printf("[pasteText] clipboard set to %q (ok=%v)\n", text, ok)
-	})
-	<-done
-	time.Sleep(200 * time.Millisecond)
-
-	// Step 2: Send Cmd+V via NSEvent to paste.
-	cmdV := &controlpb.KeyCommand{
-		KeyCode:   9, // 'v' keycode
-		KeyDown:   true,
-		Modifiers: uint32(ModifierCommand),
-		Character: "v",
-	}
-	s.sendKeyEventNSEvent(cmdV)
-	time.Sleep(50 * time.Millisecond)
-	cmdVUp := &controlpb.KeyCommand{
-		KeyCode:   9,
-		KeyDown:   false,
-		Modifiers: uint32(ModifierCommand),
-		Character: "v",
-	}
-	s.sendKeyEventNSEvent(cmdVUp)
-	time.Sleep(200 * time.Millisecond)
-
-	fmt.Printf("[pasteText] done pasting %q\n", text)
-}
-
 // charKeyCodeInfo holds keycode and shift state for a character.
 type charKeyCodeInfo struct {
 	keyCode uint16

@@ -707,30 +707,6 @@ func createSharedFoldersDevice(folders []SharedFolderEntry) vz.VZVirtioFileSyste
 	return fsConfig
 }
 
-// createSingleDirectoryDevice creates a standalone VirtioFS device for a single directory.
-func createSingleDirectoryDevice(hostPath, tag string, readOnly bool) vz.VZVirtioFileSystemDeviceConfiguration {
-	fsConfig := vz.NewVirtioFileSystemDeviceConfigurationWithTag(tag)
-	if fsConfig.ID == 0 {
-		return fsConfig
-	}
-	fsConfig.Retain()
-
-	url := foundation.NewURLFileURLWithPath(hostPath)
-	url.Retain()
-	sharedDir := vz.NewSharedDirectoryWithURLReadOnly(url, readOnly)
-	sharedDir.Retain()
-	singleShare := vz.NewSingleDirectoryShareWithDirectory(&sharedDir)
-	singleShare.Retain()
-	fsConfig.SetShare(&singleShare.VZDirectoryShare)
-
-	mode := "rw"
-	if readOnly {
-		mode = "ro"
-	}
-	fmt.Printf("  Drops share: %s -> /Volumes/%s (%s)\n", hostPath, tag, mode)
-	return fsConfig
-}
-
 // newDictFromSlices creates an NSDictionary from Go slices using the
 // initWithObjects:forKeys:count: selector. The NSArray-based
 // initWithObjects:forKeys: does not work with purego because objc.Send

@@ -490,9 +490,3 @@ func parseScriptMeta(comment []byte) scriptMeta {
 	return m
 }
 
-// parseScriptHeader extracts name and description from the first comment line.
-// Expected: "# name — description" or "# name - description".
-func parseScriptHeader(comment []byte) (name, desc string) {
-	m := parseScriptMeta(comment)
-	return m.name, m.desc
-}
