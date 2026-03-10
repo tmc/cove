@@ -33,20 +33,22 @@ builds:
 
 archives:
   - id: vz-macos
-    builds:
+    ids:
       - vz-macos
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    formats:
+      - tar.gz
     files:
       - internal/autosign/vz.entitlements
       - LICENSE*
       - README*
 
   - id: vz-agent
-    builds:
+    ids:
       - vz-agent
     name_template: "vz-agent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    formats:
+      - tar.gz
     files:
       - LICENSE*
 
@@ -62,13 +64,18 @@ changelog:
       - "^ci:"
       - "Merge pull request"
 
-brews:
+homebrew_casks:
   - name: vz-macos
     ids:
       - vz-macos
+    binaries:
+      - vz-macos
     homepage: https://github.com/tmc/vz-macos
     description: macOS and Linux VM management using Apple's Virtualization framework
-    directory: Formula
+    directory: Casks
+    custom_block: |
+      depends_on macos: ">= :monterey"
+      depends_on arch: :arm64
     repository:
       owner: tmc
       name: homebrew-tap
@@ -76,18 +83,12 @@ brews:
     commit_author:
       name: github-actions
       email: 41898282+github-actions[bot]@users.noreply.github.com
-    dependencies:
-      - name: macos
-    install: |
-      bin.install "vz-macos"
     caveats: |
       vz-macos requires virtualization entitlements to run. On first execution,
       it automatically signs itself with the required entitlements.
 
       If auto-signing fails, manually sign:
-        codesign -s - -f --entitlements $(brew --prefix)/share/vz-macos/vz.entitlements #{HOMEBREW_PREFIX}/bin/vz-macos
-    test: |
-      assert_match "vz-macos", shell_output("#{bin}/vz-macos version 2>&1")
+        codesign -s - -f --entitlements $(brew --prefix)/share/vz-macos/vz.entitlements $(brew --prefix)/bin/vz-macos
 
 release:
   github:
