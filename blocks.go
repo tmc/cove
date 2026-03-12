@@ -20,6 +20,72 @@ var verboseLog bool
 // vzDebugInstall is set by VZ_DEBUG_INSTALL=1 environment variable
 var vzDebugInstall = os.Getenv("VZ_DEBUG_INSTALL") != ""
 
+type nsErrorSnapshot struct {
+	domain      string
+	code        int
+	description string
+	reason      string
+}
+
+func (e nsErrorSnapshot) Error() string {
+	var parts []string
+	if e.domain != "" {
+		parts = append(parts, fmt.Sprintf("domain=%s code=%d", e.domain, e.code))
+	}
+	if e.description != "" {
+		parts = append(parts, e.description)
+	}
+	if e.reason != "" && e.reason != e.description {
+		parts = append(parts, e.reason)
+	}
+	if len(parts) == 0 {
+		return "virtualization error"
+	}
+	return strings.Join(parts, ": ")
+}
+
+func snapshotNSError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var nsErr *foundation.NSError
+	if errors.As(err, &nsErr) && nsErr != nil && nsErr.ID != 0 {
+		return nsErrorSnapshot{
+			domain:      nsErr.Domain(),
+			code:        nsErr.Code(),
+			description: strings.TrimSpace(nsErr.LocalizedDescription()),
+			reason:      strings.TrimSpace(nsErr.LocalizedFailureReason()),
+		}
+	}
+	return errors.New(err.Error())
+}
+
+func printNSErrorSummary(prefix string, err error) bool {
+	switch e := err.(type) {
+	case nsErrorSnapshot:
+		if e.domain != "" {
+			fmt.Printf("%s: domain=%s code=%d\n", prefix, e.domain, e.code)
+		}
+		if e.description != "" {
+			fmt.Printf("%s: %s\n", prefix, e.description)
+		}
+		if e.reason != "" && e.reason != e.description {
+			fmt.Printf("%s failure reason: %s\n", prefix, e.reason)
+		}
+		return true
+	case *foundation.NSError:
+		if e != nil && e.ID != 0 {
+			fmt.Printf("%s: domain=%s code=%d\n", prefix, e.Domain(), e.Code())
+			fmt.Printf("%s: %s\n", prefix, e.LocalizedDescription())
+			if reason := e.LocalizedFailureReason(); reason != "" {
+				fmt.Printf("%s failure reason: %s\n", prefix, reason)
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // SetVerbose enables or disables verbose logging
 func SetVerbose(v bool) {
 	verboseLog = v
@@ -63,6 +129,15 @@ func printDetailedInstallError(err error) {
 	if errors.As(err, &nsErr) && nsErr.ID != 0 {
 		fmt.Println()
 		vzkit.PrintNSErrorDetailed(nsErr.ID)
+	} else if snap, ok := err.(nsErrorSnapshot); ok {
+		fmt.Println()
+		fmt.Printf("NSError domain=%s code=%d\n", snap.domain, snap.code)
+		if snap.description != "" {
+			fmt.Printf("Description: %s\n", snap.description)
+		}
+		if snap.reason != "" && snap.reason != snap.description {
+			fmt.Printf("Failure reason: %s\n", snap.reason)
+		}
 	}
 
 	// Query system log for recent Virtualization-related errors.

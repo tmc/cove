@@ -1,0 +1,185 @@
+package main
+
+import "testing"
+
+func TestValidateNewVMOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    newVMOptions
+		wantErr bool
+	}{
+		{
+			name: "install only",
+			opts: newVMOptions{
+				Name: "macos",
+			},
+		},
+		{
+			name: "provisioned admin user",
+			opts: newVMOptions{
+				Name:              "macos",
+				ProvisionUser:     "builder",
+				ProvisionPassword: "secret123",
+				ProvisionAdmin:    true,
+			},
+		},
+		{
+			name: "missing password",
+			opts: newVMOptions{
+				Name:          "macos",
+				ProvisionUser: "builder",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing username",
+			opts: newVMOptions{
+				Name:              "macos",
+				ProvisionPassword: "secret123",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid username",
+			opts: newVMOptions{
+				Name:              "macos",
+				ProvisionUser:     "root",
+				ProvisionPassword: "secret123",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid vm name",
+			opts: newVMOptions{
+				Name: "bad/name",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNewVMOptions(tt.opts)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateNewVMOptions() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRunButtonTitle(t *testing.T) {
+	tests := []struct {
+		name string
+		vm   *VMInfo
+		want string
+	}{
+		{
+			name: "no selection",
+			want: "Run",
+		},
+		{
+			name: "stopped vm",
+			vm: &VMInfo{
+				State: "stopped",
+			},
+			want: "Run",
+		},
+		{
+			name: "suspended vm",
+			vm: &VMInfo{
+				State: "suspended",
+			},
+			want: "Resume",
+		},
+		{
+			name: "running vm",
+			vm: &VMInfo{
+				State: "running",
+			},
+			want: "Running",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := runButtonTitle(tt.vm); got != tt.want {
+				t.Fatalf("runButtonTitle() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectorStateText(t *testing.T) {
+	tests := []struct {
+		name string
+		vm   VMInfo
+		want string
+	}{
+		{
+			name: "running",
+			vm:   VMInfo{State: "running"},
+			want: "Running",
+		},
+		{
+			name: "suspended",
+			vm:   VMInfo{State: "suspended"},
+			want: "Suspended",
+		},
+		{
+			name: "stopped",
+			vm:   VMInfo{State: "stopped"},
+			want: "Stopped",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := selectorStateText(tt.vm); got != tt.want {
+				t.Fatalf("selectorStateText() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInitialSelectionRow(t *testing.T) {
+	tests := []struct {
+		name     string
+		vms      []VMInfo
+		activeVM string
+		want     int
+	}{
+		{
+			name: "empty",
+			want: -1,
+		},
+		{
+			name: "first row fallback",
+			vms: []VMInfo{
+				{Name: "default"},
+				{Name: "macos-2"},
+			},
+			want: 0,
+		},
+		{
+			name: "active vm selected",
+			vms: []VMInfo{
+				{Name: "default"},
+				{Name: "macos-2"},
+			},
+			activeVM: "macos-2",
+			want:     1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &VMSelector{
+				vms:      tt.vms,
+				activeVM: tt.activeVM,
+			}
+			if got := s.initialSelectionRow(); got != tt.want {
+				t.Fatalf("initialSelectionRow() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

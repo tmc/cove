@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -115,7 +116,7 @@ type VMInfo struct {
 	Path     string    // Full path to VM directory
 	DiskSize int64     // Disk image size in bytes (sparse size)
 	Created  time.Time // Creation time (from disk.img mtime)
-	State    string    // "stopped" (running detection not implemented)
+	State    string    // "running", "stopped", or "suspended"
 	OSType   string    // "macOS", "Linux", or "unknown"
 }
 
@@ -188,9 +189,34 @@ func GetVMInfo(vmPath string) (*VMInfo, error) {
 		Path:     vmPath,
 		DiskSize: diskInfo.Size(),
 		Created:  diskInfo.ModTime(),
-		State:    "stopped",
+		State:    detectVMState(vmPath),
 		OSType:   detectOSType(vmPath),
 	}, nil
+}
+
+func detectVMState(vmPath string) string {
+	if isVMRunningAt(vmPath) {
+		return "running"
+	}
+	if hasSuspendStateAt(vmPath) {
+		return "suspended"
+	}
+	return "stopped"
+}
+
+func hasSuspendStateAt(vmPath string) bool {
+	_, err := os.Stat(filepath.Join(vmPath, "suspend.vmstate"))
+	return err == nil
+}
+
+func isVMRunningAt(vmPath string) bool {
+	sock := GetControlSocketPathForVM(vmPath)
+	conn, err := net.DialTimeout("unix", sock, 200*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 // ListVMs returns all VMs in the base directory.

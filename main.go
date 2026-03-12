@@ -81,6 +81,8 @@ var (
 	autoMountVolumes bool
 	// Force install over existing VM
 	forceInstall bool
+	// Skip restore from saved suspend state and cold boot instead.
+	skipResume bool
 )
 
 func init() {
@@ -132,6 +134,8 @@ func init() {
 	flag.BoolVar(&enableRosetta, "rosetta", false, "enable Rosetta for x86-64 binary translation in Linux VMs")
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
+	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
+	flag.BoolVar(&skipResume, "cold-boot", false, "alias for -no-resume")
 	// Unattended install
 	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (inject provisioning, OCR fallback)")
 	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to boot commands file for custom setup automation")
@@ -417,13 +421,22 @@ func main() {
 
 // handleDefaultAction routes based on the number of existing VMs:
 //   - 0 VMs: start guided install
-//   - 1 VM: run it directly
+//   - 1 VM: show the native selector in GUI mode, otherwise run it directly
 //   - 2+ VMs: show native VM selector window
 func handleDefaultAction() {
 	vms, err := ListVMs()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: listing VMs: %v\n", err)
 		os.Exit(1)
+	}
+	if len(vms) == 0 {
+		if info, err := GetVMInfo(vmDir); err == nil {
+			vms = append(vms, *info)
+		}
+	}
+	if guiMode && len(vms) > 0 {
+		showVMSelectorWindow(vms)
+		return
 	}
 
 	switch len(vms) {
@@ -920,4 +933,3 @@ func handleNetworkCommand(args []string) {
 		os.Exit(1)
 	}
 }
-

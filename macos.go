@@ -742,6 +742,18 @@ func setDirectorySharingDevicesMulti(config vz.VZVirtualMachineConfiguration, de
 // If a suspend state file exists and recovery mode is not requested,
 // it restores from the saved state for near-instant resume.
 func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
+	if guiMode {
+		return runVMWithGUI(vm, queue)
+	}
+
+	if err := startConfiguredVM(vm, queue, true); err != nil {
+		return err
+	}
+
+	return runVMHeadless(vm, queue)
+}
+
+func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop bool) error {
 	// Handle boot-args - save to file for manual application inside guest
 	if bootArgs != "" {
 		bootArgsPath := filepath.Join(vmDir, "boot-args.txt")
@@ -754,6 +766,11 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 
 	// Try to restore from suspend state (UTM-style fast resume)
+	if skipResume && hasSuspendState() {
+		fmt.Println("Discarding saved suspend state and performing cold boot...")
+		os.Remove(suspendStatePath())
+		os.Remove(suspendConfigPath())
+	}
 	if canSaveRestore && !recoveryMode && hasSuspendState() {
 		stateFile := suspendStatePath()
 		if err := checkSuspendConfigMatch(); err != nil {
@@ -784,49 +801,10 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 
 	fmt.Println("Starting virtual machine...")
-
-	// Create completion handler with channel
-	startErr := make(chan error, 1)
-	started := false
-
-	// Create completion handler using generated ErrorHandler type
-	startHandlerFn := func(err error) {
-		started = true
-		startErr <- err
-	}
-
-	// Start the VM on the dispatch queue (VM methods must be called on VM's queue)
-	DispatchAsyncQueue(queue, func() {
-		if recoveryMode {
-			fmt.Println("Starting VM in recovery mode...")
-			startOptions := vz.NewVZMacOSVirtualMachineStartOptions()
-			startOptions.SetStartUpFromMacOSRecovery(true)
-			vm.StartWithOptionsCompletionHandler(&startOptions.VZVirtualMachineStartOptions, startHandlerFn)
-		} else {
-			vm.StartWithCompletionHandler(startHandlerFn)
-		}
-	})
-
-	// Wait for start while pumping run loop
-	timeout := time.After(30 * time.Second)
-	for !started {
-		select {
-		case <-timeout:
-			return fmt.Errorf("vm start timed out")
-		default:
-			vzkit.RunRunLoopOnce()
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-
-	// Check start error
-	if err := <-startErr; err != nil {
-		if nsErr, ok := err.(*foundation.NSError); ok {
-			fmt.Printf("VM start error: domain=%s code=%d\n", nsErr.Domain(), nsErr.Code())
-			fmt.Printf("VM start error: %s\n", nsErr.LocalizedDescription())
-			if reason := nsErr.LocalizedFailureReason(); reason != "" {
-				fmt.Printf("VM start failure reason: %s\n", reason)
-			}
+	startErr := beginVMStart(vm, queue)
+	if err := waitForVMStart(startErr, pumpRunLoop); err != nil {
+		if !printNSErrorSummary("VM start error", err) {
+			fmt.Printf("VM start error: %v\n", err)
 		}
 		// Check if the disk is still attached — a common cause of
 		// "storage device attachment is invalid".
@@ -842,13 +820,44 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return fmt.Errorf("vm start failed: %w", err)
 	}
 	fmt.Println("VM started successfully")
+	return nil
+}
 
-	// Show GUI window if requested
-	if guiMode {
-		return runVMWithGUI(vm, queue)
+func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
+	startErr := make(chan error, 1)
+	startHandlerFn := func(err error) {
+		startErr <- snapshotNSError(err)
 	}
 
-	return runVMHeadless(vm, queue)
+	DispatchAsyncQueue(queue, func() {
+		if recoveryMode {
+			fmt.Println("Starting VM in recovery mode...")
+			startOptions := vz.NewVZMacOSVirtualMachineStartOptions()
+			startOptions.SetStartUpFromMacOSRecovery(true)
+			vm.StartWithOptionsCompletionHandler(&startOptions.VZVirtualMachineStartOptions, startHandlerFn)
+			return
+		}
+		vm.StartWithCompletionHandler(startHandlerFn)
+	})
+
+	return startErr
+}
+
+func waitForVMStart(startErr <-chan error, pumpRunLoop bool) error {
+	timeout := time.After(30 * time.Second)
+	for {
+		select {
+		case err := <-startErr:
+			return err
+		case <-timeout:
+			return fmt.Errorf("vm start timed out")
+		default:
+			if pumpRunLoop {
+				vzkit.RunRunLoopOnce()
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 }
 
 // runVMHeadless runs the VM in headless mode with serial console and signal handling.
@@ -958,7 +967,7 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	errCh := make(chan error, 1)
 	DispatchAsyncQueue(queue, func() {
 		vm.RestoreMachineStateFromURLCompletionHandler(restoreURL, func(err error) {
-			errCh <- err
+			errCh <- snapshotNSError(err)
 		})
 	})
 
@@ -975,7 +984,7 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	resumeCh := make(chan error, 1)
 	DispatchAsyncQueue(queue, func() {
 		vm.ResumeWithCompletionHandler(func(err error) {
-			resumeCh <- err
+			resumeCh <- snapshotNSError(err)
 		})
 	})
 
@@ -1009,7 +1018,7 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			return
 		}
 		vm.PauseWithCompletionHandler(func(err error) {
-			pauseCh <- err
+			pauseCh <- snapshotNSError(err)
 		})
 	})
 
@@ -1030,7 +1039,7 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	saveCh := make(chan error, 1)
 	DispatchAsyncQueue(queue, func() {
 		vm.SaveMachineStateToURLCompletionHandler(saveURL, func(err error) {
-			saveCh <- err
+			saveCh <- snapshotNSError(err)
 		})
 	})
 
@@ -1059,7 +1068,7 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 func hardStopVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 	DispatchAsyncQueue(queue, func() {
 		vm.StopWithCompletionHandler(func(err error) {
-			if err != nil {
+			if err := snapshotNSError(err); err != nil {
 				fmt.Printf("VM stop error: %v\n", err)
 			}
 		})
@@ -1231,6 +1240,12 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 	var stateUpdate vmStateUpdate
 	stateUpdate.newState = -1
+	startResult := make(chan error, 1)
+	var runErr error
+
+	go func() {
+		startResult <- startConfiguredVM(vm, queue, false)
+	}()
 
 	// Monitor VM state in background
 	go func() {
@@ -1331,6 +1346,21 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			0.033, // ~30 Hz
 			false, // one-shot: no persistent reflect frame
 			func(_ *foundation.NSTimer) {
+				if startResult != nil {
+					select {
+					case err := <-startResult:
+						startResult = nil
+						if err != nil {
+							runErr = err
+							stateUpdate.mu.Lock()
+							stateUpdate.terminate = true
+							stateUpdate.changed = true
+							stateUpdate.mu.Unlock()
+						}
+					default:
+					}
+				}
+
 				// Apply pending state updates from background goroutine.
 				stateUpdate.mu.Lock()
 				if stateUpdate.changed {
@@ -1414,7 +1444,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// app.Run() blocks until app.Stop() is called (when VM terminates).
 	app.Run()
 
-	return nil
+	return runErr
 }
 
 // transformToForegroundApp tells the window server that this process is a
