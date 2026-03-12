@@ -83,3 +83,13 @@ proto/               Protocol buffer definitions
 - [Apple Virtualization Framework](https://developer.apple.com/documentation/virtualization)
 - [purego](https://github.com/ebitengine/purego)
 - [Code-Hex/vz](https://github.com/Code-Hex/vz) (CGO reference implementation)
+
+## Release
+
+Before tagging a release, run:
+
+```bash
+make release-check
+```
+
+This runs `go test -short`, `go vet`, and a local Goreleaser snapshot build without using your local `go.work`.

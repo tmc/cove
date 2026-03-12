@@ -10,6 +10,7 @@ cache/
 # Build artifacts
 *.log
 build_errors.txt
+dist/
 
 # Go workspace (local)
 go.work

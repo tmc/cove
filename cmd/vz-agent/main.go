@@ -11,11 +11,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"syscall"
 
 	"golang.org/x/net/http2"
@@ -26,24 +26,15 @@ import (
 
 const defaultPort = 1024
 
-func agentVersion() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		v := info.Main.Version
-		if v != "" && v != "(devel)" {
-			return v
-		}
-		for _, s := range info.Settings {
-			if s.Key == "vcs.revision" && len(s.Value) >= 8 {
-				return s.Value[:8]
-			}
-		}
-	}
-	return "dev"
-}
-
 func main() {
 	port := flag.Int("port", defaultPort, "vsock port to listen on")
+	showVersion := flag.Bool("version", false, "print version information")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(agentVersionInfo())
+		return
+	}
 
 	log.SetPrefix("vz-agent: ")
 	log.SetFlags(log.LstdFlags | log.Lshortfile)

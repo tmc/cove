@@ -3,13 +3,13 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build sign agent test clean lint proto proto-go proto-swift
+.PHONY: build sign agent test clean lint proto proto-go proto-swift release-check
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o vz-macos .
 
 agent:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o cmd/vz-agent/vz-agent ./cmd/vz-agent
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o cmd/vz-agent/vz-agent ./cmd/vz-agent
 
 sign:
 	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./vz-macos
@@ -19,6 +19,11 @@ test:
 
 lint:
 	golangci-lint run ./...
+
+release-check:
+	GOWORK=off go test -short ./...
+	GOWORK=off go vet ./...
+	GOWORK=off goreleaser release --snapshot --clean --skip=publish
 
 clean:
 	rm -f vz-macos cmd/vz-agent/vz-agent
