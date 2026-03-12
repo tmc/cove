@@ -169,7 +169,7 @@ func stopVMAndInject(vm *virtualMachine) {
 		Config: ProvisionConfig{
 			Username: provisionUser,
 			Password: provisionPassword,
-			Admin:    true,
+			Admin:    provisionAdmin,
 		},
 		SkipSetupAssistant: true,
 		AutoLogin:          true,

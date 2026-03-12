@@ -139,6 +139,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -778,30 +779,40 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 // This avoids the known macOS bug where osascript "with administrator privileges"
 // hangs indefinitely after the script completes.
 func runElevatedBash(scriptPath string) error {
-	// Use osascript to show a password dialog and capture the password.
-	pwCmd := exec.Command("osascript", "-e",
-		`display dialog "vz-macos needs administrator privileges to set file ownership." `+
-			`default answer "" with hidden answer buttons {"Cancel","OK"} default button "OK" `+
-			`with title "vz-macos" with icon caution`)
-	pwOut, err := pwCmd.Output()
-	if err != nil {
-		if strings.Contains(err.Error(), "-128") || strings.Contains(err.Error(), "canceled") {
-			return fmt.Errorf("interrupted: user cancelled authorization")
+	// Reuse an existing sudo authentication timestamp when available.
+	cmd := exec.Command("sudo", "-n", "bash", scriptPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		if stdout.Len() > 0 {
+			_, _ = os.Stdout.Write(stdout.Bytes())
 		}
-		return fmt.Errorf("password prompt: %w", err)
+		if stderr.Len() > 0 {
+			_, _ = os.Stderr.Write(stderr.Bytes())
+		}
+		return nil
+	} else if msg := stderr.String(); !strings.Contains(msg, "a password is required") && !strings.Contains(msg, "a terminal is required") {
+		if stdout.Len() > 0 {
+			_, _ = os.Stdout.Write(stdout.Bytes())
+		}
+		if stderr.Len() > 0 {
+			_, _ = os.Stderr.Write(stderr.Bytes())
+		}
+		return fmt.Errorf("elevated apply: %w", err)
 	}
 
-	// osascript returns "button returned:OK, text returned:<password>"
-	password := string(pwOut)
-	if idx := strings.Index(password, "text returned:"); idx >= 0 {
-		password = strings.TrimSpace(password[idx+len("text returned:"):])
-	} else {
-		return fmt.Errorf("unexpected osascript output")
+	pw, err := readPassword("Administrator password: ")
+	if err != nil {
+		if strings.Contains(err.Error(), "interrupted") || strings.Contains(err.Error(), "canceled") {
+			return fmt.Errorf("interrupted: user cancelled authorization")
+		}
+		return fmt.Errorf("read administrator password: %w", err)
 	}
 
 	// Run the script via sudo -S (read password from stdin).
-	cmd := exec.Command("sudo", "-S", "bash", scriptPath)
-	cmd.Stdin = strings.NewReader(password + "\n")
+	cmd = exec.Command("sudo", "-S", "bash", scriptPath)
+	cmd.Stdin = strings.NewReader(string(pw) + "\n")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -874,5 +885,3 @@ func stageGuestTools(stagingDir string, manifest *ProvisionManifest) error {
 
 	return nil
 }
-
-
