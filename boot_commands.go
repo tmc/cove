@@ -15,7 +15,7 @@ import (
 
 // BootCommand represents a single boot automation command.
 type BootCommand struct {
-	Type string // "wait", "waitForText", "click", "type", "key", "screenshot"
+	Type string // "wait", "waitForText", "waitForMenuText", "click", "clickMenu", "clickMenuItem", "type", "typeAndReturnIfText", "key", "screenshot"
 	Args string // command-specific arguments
 }
 
@@ -26,8 +26,12 @@ type BootCommand struct {
 //
 //	<wait 5s>                  - sleep for duration
 //	<waitForText "Continue">   - OCR poll until text appears (timeout 60s)
+//	<waitForMenuText "Utilities"> - OCR poll menu bar text (timeout 60s)
 //	<click "Continue">         - OCR find text, click its center
+//	<clickMenu "Utilities">    - OCR find text in menu bar, click center
+//	<clickMenuItem "Utilities|Terminal"> - click menu title then menu item
 //	<type "testuser">          - type text string
+//	<typeAndReturnIfText "Enter password|secret"> - conditional type+return
 //	<key return>               - send key event
 //	<key tab>                  - send key event
 //	<key cmd+q>                - send key combo
@@ -69,15 +73,41 @@ func ParseBootCommands(script string) ([]BootCommand, error) {
 			if cmd.Args == "" {
 				return nil, fmt.Errorf("line %d: waitForText requires text argument", i+1)
 			}
+		case "waitformenutext":
+			cmd.Type = "waitForMenuText"
+			cmd.Args = unquote(cmd.Args)
+			if cmd.Args == "" {
+				return nil, fmt.Errorf("line %d: waitForMenuText requires text argument", i+1)
+			}
 		case "click":
 			cmd.Args = unquote(cmd.Args)
 			if cmd.Args == "" {
 				return nil, fmt.Errorf("line %d: click requires text argument", i+1)
 			}
+		case "clickmenu":
+			cmd.Type = "clickMenu"
+			cmd.Args = unquote(cmd.Args)
+			if cmd.Args == "" {
+				return nil, fmt.Errorf("line %d: clickMenu requires text argument", i+1)
+			}
+		case "clickmenuitem":
+			cmd.Type = "clickMenuItem"
+			cmd.Args = unquote(cmd.Args)
+			menu, item := splitMenuItemArgs(cmd.Args)
+			if menu == "" || item == "" {
+				return nil, fmt.Errorf("line %d: clickMenuItem requires \"menu|item\"", i+1)
+			}
 		case "type":
 			cmd.Args = unquote(cmd.Args)
 			if cmd.Args == "" {
 				return nil, fmt.Errorf("line %d: type requires text argument", i+1)
+			}
+		case "typeandreturniftext":
+			cmd.Type = "typeAndReturnIfText"
+			cmd.Args = unquote(cmd.Args)
+			needle, value := splitConditionalTypeArgs(cmd.Args)
+			if needle == "" || value == "" {
+				return nil, fmt.Errorf("line %d: typeAndReturnIfText requires \"needle|value\"", i+1)
 			}
 		case "key":
 			if cmd.Args == "" {
@@ -144,11 +174,31 @@ func (e *BootCommandExecutor) executeOne(cmd BootCommand) error {
 	case "waitForText":
 		return e.waitForText(cmd.Args, 60*time.Second)
 
+	case "waitForMenuText":
+		return e.waitForTextWithOptions(cmd.Args, 60*time.Second, OCRMenuSearchOptions())
+
 	case "click":
 		return e.clickText(cmd.Args, 60*time.Second)
 
+	case "clickMenu":
+		return e.clickTextWithOptions(cmd.Args, 60*time.Second, OCRMenuSearchOptions())
+
+	case "clickMenuItem":
+		menu, item := splitMenuItemArgs(cmd.Args)
+		if menu == "" || item == "" {
+			return fmt.Errorf("clickMenuItem requires \"menu|item\"")
+		}
+		return e.clickMenuItem(menu, item, 60*time.Second)
+
 	case "type":
 		return e.typeText(cmd.Args)
+
+	case "typeAndReturnIfText":
+		needle, value := splitConditionalTypeArgs(cmd.Args)
+		if needle == "" || value == "" {
+			return fmt.Errorf("typeAndReturnIfText requires \"needle|value\"")
+		}
+		return e.typeAndReturnIfText(needle, value, 8*time.Second)
 
 	case "key":
 		return e.sendKey(cmd.Args)
@@ -162,6 +212,10 @@ func (e *BootCommandExecutor) executeOne(cmd BootCommand) error {
 }
 
 func (e *BootCommandExecutor) waitForText(text string, timeout time.Duration) error {
+	return e.waitForTextWithOptions(text, timeout, OCRSearchOptions{})
+}
+
+func (e *BootCommandExecutor) waitForTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -169,7 +223,7 @@ func (e *BootCommandExecutor) waitForText(text string, timeout time.Duration) er
 			time.Sleep(time.Second)
 			continue
 		}
-		_, _, found := e.ocr.FindText(img, text)
+		_, _, found := e.ocr.FindTextWithOptions(img, text, opts)
 		if found {
 			return nil
 		}
@@ -179,6 +233,10 @@ func (e *BootCommandExecutor) waitForText(text string, timeout time.Duration) er
 }
 
 func (e *BootCommandExecutor) clickText(text string, timeout time.Duration) error {
+	return e.clickTextWithOptions(text, timeout, OCRSearchOptions{})
+}
+
+func (e *BootCommandExecutor) clickTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -186,7 +244,7 @@ func (e *BootCommandExecutor) clickText(text string, timeout time.Duration) erro
 			time.Sleep(time.Second)
 			continue
 		}
-		x, y, found := e.ocr.FindText(img, text)
+		x, y, found := e.ocr.FindTextWithOptions(img, text, opts)
 		if found {
 			return e.clickAt(x, y, img.Bounds().Dx(), img.Bounds().Dy())
 		}
@@ -195,10 +253,43 @@ func (e *BootCommandExecutor) clickText(text string, timeout time.Duration) erro
 	return fmt.Errorf("timeout waiting for text %q to click", text)
 }
 
+func (e *BootCommandExecutor) clickMenuItem(menu, item string, timeout time.Duration) error {
+	opts := OCRMenuSearchOptions()
+	if err := e.waitForTextWithOptions(menu, timeout, opts); err != nil {
+		return err
+	}
+	if err := e.clickTextWithOptions(menu, timeout, opts); err != nil {
+		return err
+	}
+	// Keep the menu interaction in one command to reduce timing flakiness.
+	time.Sleep(250 * time.Millisecond)
+	return e.clickTextWithOptions(item, 10*time.Second, opts)
+}
+
 func (e *BootCommandExecutor) typeText(text string) error {
 	resp := e.cs.typeText(&controlpb.TextCommand{Text: text})
 	if !resp.Success {
 		return fmt.Errorf("type text: %s", resp.Error)
+	}
+	return nil
+}
+
+func (e *BootCommandExecutor) typeAndReturnIfText(needle, value string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img := e.captureScreen()
+		if img == nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		_, _, found := e.ocr.FindText(img, needle)
+		if found {
+			if err := e.typeText(value); err != nil {
+				return err
+			}
+			return e.sendKey("return")
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 	return nil
 }
@@ -291,6 +382,26 @@ func parseKeySpec(spec string) (keyCode uint16, modifiers uint) {
 
 	keyCode = keyNameToCode(keyName)
 	return
+}
+
+func splitMenuItemArgs(args string) (menu, item string) {
+	parts := strings.SplitN(args, "|", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	menu = strings.TrimSpace(parts[0])
+	item = strings.TrimSpace(parts[1])
+	return menu, item
+}
+
+func splitConditionalTypeArgs(args string) (needle, value string) {
+	parts := strings.SplitN(args, "|", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	needle = strings.TrimSpace(parts[0])
+	value = strings.TrimSpace(parts[1])
+	return needle, value
 }
 
 func isValidKeySpec(spec string) bool {

@@ -56,8 +56,12 @@ Commands:
   mouse <x> <y> <action>   Send mouse event (action: move|down|up|click)
   text <string>         Type text string
   detect                Detect current screen state (setup_assistant, login, desktop)
-  ocr                   Run OCR on current screen and print all recognized text
-  click-text <text>     Find text on screen via OCR and click its center
+  ocr [-region <spec>]  Run OCR on current screen (spec: menu or x1,y1,x2,y2)
+  click-text [options] <text>  Find text via OCR and click its center
+                        options: -region <spec> -timeout <duration>
+  click-menu [options] <menu> <item>  Click menu title, then menu item (menu OCR region)
+                        options: -timeout <duration>
+  shared-folders-apply   Reload shared_folders.json into a running VM
   boot-script <file>    Execute a boot command script file
   step                  Interactive step-through mode for Setup Assistant debugging
   setup-assist <user> <pass>  Run Setup Assistant automation
@@ -92,6 +96,8 @@ Examples:
   vz-macos ctl key 36 up      # Release Return
   vz-macos ctl mouse 0.5 0.5 click  # Click center
   vz-macos ctl text "hello"
+  vz-macos ctl click-text -region menu Utilities
+  vz-macos ctl click-menu Utilities Terminal
   vz-macos ctl step           # Interactive step mode
   vz-macos ctl agent-ping     # Auto-connects to agent
   vz-macos ctl -wait 60s agent-ping  # Wait up to 60s for agent
@@ -138,12 +144,23 @@ Examples:
 	case "detect":
 		return ctlDetectScreen(sock)
 	case "ocr":
-		return ctlOCR(sock)
-	case "click-text":
-		if len(subArgs) < 1 {
-			return fmt.Errorf("click-text requires text argument")
+		region, err := parseOCROptions(subArgs)
+		if err != nil {
+			return err
 		}
-		return ctlClickText(sock, strings.Join(subArgs, " "))
+		return ctlOCR(sock, region)
+	case "click-text":
+		text, region, clickTimeout, err := parseClickTextOptions(subArgs)
+		if err != nil {
+			return err
+		}
+		return ctlClickText(sock, text, region, clickTimeout)
+	case "click-menu":
+		menu, item, clickTimeout, err := parseClickMenuOptions(subArgs)
+		if err != nil {
+			return err
+		}
+		return ctlClickMenu(sock, menu, item, clickTimeout)
 	case "boot-script":
 		if len(subArgs) < 1 {
 			return fmt.Errorf("boot-script requires a script file path")
@@ -163,7 +180,7 @@ Examples:
 	req.AuthToken = resolveControlTokenForSocket(sock)
 
 	switch cmdType {
-	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "network-info":
+	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "network-info", "shared-folders-apply":
 		// No payload needed
 
 	case "memory":
@@ -672,8 +689,83 @@ func ctlAgentWithRetry(sock string, req *controlpb.ControlRequest, wait, timeout
 	}
 }
 
+func parseOCROptions(args []string) (string, error) {
+	fs := flag.NewFlagSet("ocr", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	region := fs.String("region", "", "OCR region selector")
+	if err := fs.Parse(args); err != nil {
+		return "", err
+	}
+	if fs.NArg() != 0 {
+		return "", fmt.Errorf("ocr: unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	if _, err := ParseOCRSearchOptions(*region); err != nil {
+		return "", err
+	}
+	return *region, nil
+}
+
+func parseClickTextOptions(args []string) (text, region string, timeout time.Duration, err error) {
+	timeout = 10 * time.Second
+	var textParts []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-region":
+			if i+1 >= len(args) {
+				return "", "", 0, fmt.Errorf("click-text: -region requires a value")
+			}
+			region = args[i+1]
+			i++
+		case "-timeout":
+			if i+1 >= len(args) {
+				return "", "", 0, fmt.Errorf("click-text: -timeout requires a value")
+			}
+			d, parseErr := time.ParseDuration(args[i+1])
+			if parseErr != nil {
+				return "", "", 0, fmt.Errorf("click-text: invalid timeout %q", args[i+1])
+			}
+			timeout = d
+			i++
+		default:
+			textParts = append(textParts, args[i])
+		}
+	}
+	if len(textParts) == 0 {
+		return "", "", 0, fmt.Errorf("click-text requires text argument")
+	}
+	if _, err := ParseOCRSearchOptions(region); err != nil {
+		return "", "", 0, err
+	}
+	return strings.Join(textParts, " "), region, timeout, nil
+}
+
+func parseClickMenuOptions(args []string) (menu, item string, timeout time.Duration, err error) {
+	timeout = 10 * time.Second
+	var parts []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-timeout":
+			if i+1 >= len(args) {
+				return "", "", 0, fmt.Errorf("click-menu: -timeout requires a value")
+			}
+			d, parseErr := time.ParseDuration(args[i+1])
+			if parseErr != nil {
+				return "", "", 0, fmt.Errorf("click-menu: invalid timeout %q", args[i+1])
+			}
+			timeout = d
+			i++
+		default:
+			parts = append(parts, args[i])
+		}
+	}
+	if len(parts) != 2 {
+		return "", "", 0, fmt.Errorf("click-menu requires exactly 2 arguments: <menu> <item>")
+	}
+	return parts[0], parts[1], timeout, nil
+}
+
 // ctlOCR runs OCR on the current screen and prints all recognized text.
-func ctlOCR(socketPath string) error {
+func ctlOCR(socketPath, regionSpec string) error {
 	client := NewControlClient(socketPath)
 	client.SetTimeout(30 * time.Second)
 
@@ -683,9 +775,23 @@ func ctlOCR(socketPath string) error {
 	}
 
 	ocr := NewOCRService(false)
+	opts, err := ParseOCRSearchOptions(regionSpec)
+	if err != nil {
+		return err
+	}
 	observations, err := ocr.RecognizeText(img)
 	if err != nil {
 		return fmt.Errorf("OCR: %w", err)
+	}
+
+	if opts.Region != nil {
+		filtered := observations[:0]
+		for _, obs := range observations {
+			if observationInSearchRegion(obs, img.Bounds(), opts.Region) {
+				filtered = append(filtered, obs)
+			}
+		}
+		observations = filtered
 	}
 
 	if len(observations) == 0 {
@@ -704,24 +810,24 @@ func ctlOCR(socketPath string) error {
 }
 
 // ctlClickText finds text on screen via OCR and clicks its center.
-func ctlClickText(socketPath, text string) error {
-	client := NewControlClient(socketPath)
-	client.SetTimeout(30 * time.Second)
-
-	ocr := NewOCRService(true)
-
-	img, err := client.Screenshot()
+func ctlClickText(socketPath, text, region string, timeout time.Duration) error {
+	resp, err := ctlSendOCRWithRegion(socketPath, "ocr-click", text, timeout.String(), region, timeout+10*time.Second)
 	if err != nil {
-		return fmt.Errorf("screenshot: %w", err)
+		return err
 	}
-
-	normX, normY, found := ocr.FindTextNormalized(img, text)
-	if !found {
-		return fmt.Errorf("text %q not found on screen", text)
+	if !resp.Success {
+		return fmt.Errorf("%s", resp.Error)
 	}
+	fmt.Println(resp.Data)
+	return nil
+}
 
-	fmt.Printf("Found %q at (%.3f, %.3f) — clicking\n", text, normX, normY)
-	return client.MouseClick(normX, normY)
+func ctlClickMenu(socketPath, menu, item string, timeout time.Duration) error {
+	if err := ctlClickText(socketPath, menu, "menu", timeout); err != nil {
+		return err
+	}
+	time.Sleep(250 * time.Millisecond)
+	return ctlClickText(socketPath, item, "menu", timeout)
 }
 
 // ctlBootScript loads and executes a boot command script via the control socket.
@@ -784,6 +890,23 @@ func executeBootCommandViaClient(client *ControlClient, ocr *OCRService, cmd Boo
 		}
 		return fmt.Errorf("timeout waiting for text %q", cmd.Args)
 
+	case "waitForMenuText":
+		deadline := time.Now().Add(60 * time.Second)
+		opts := OCRMenuSearchOptions()
+		for time.Now().Before(deadline) {
+			img, err := client.Screenshot()
+			if err != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+			_, _, found := ocr.FindTextWithOptions(img, cmd.Args, opts)
+			if found {
+				return nil
+			}
+			time.Sleep(time.Second)
+		}
+		return fmt.Errorf("timeout waiting for menu text %q", cmd.Args)
+
 	case "click":
 		deadline := time.Now().Add(60 * time.Second)
 		for time.Now().Before(deadline) {
@@ -800,8 +923,59 @@ func executeBootCommandViaClient(client *ControlClient, ocr *OCRService, cmd Boo
 		}
 		return fmt.Errorf("timeout waiting for text %q to click", cmd.Args)
 
+	case "clickMenu":
+		deadline := time.Now().Add(60 * time.Second)
+		opts := OCRMenuSearchOptions()
+		for time.Now().Before(deadline) {
+			img, err := client.Screenshot()
+			if err != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+			normX, normY, found := ocr.FindTextNormalizedWithOptions(img, cmd.Args, opts)
+			if found {
+				return client.MouseClick(normX, normY)
+			}
+			time.Sleep(time.Second)
+		}
+		return fmt.Errorf("timeout waiting for menu text %q to click", cmd.Args)
+
+	case "clickMenuItem":
+		menu, item := splitMenuItemArgs(cmd.Args)
+		if menu == "" || item == "" {
+			return fmt.Errorf("clickMenuItem requires \"menu|item\"")
+		}
+		if err := executeBootCommandViaClient(client, ocr, BootCommand{Type: "clickMenu", Args: menu}); err != nil {
+			return err
+		}
+		time.Sleep(250 * time.Millisecond)
+		return executeBootCommandViaClient(client, ocr, BootCommand{Type: "clickMenu", Args: item})
+
 	case "type":
 		return client.TypeText(cmd.Args)
+
+	case "typeAndReturnIfText":
+		needle, value := splitConditionalTypeArgs(cmd.Args)
+		if needle == "" || value == "" {
+			return fmt.Errorf("typeAndReturnIfText requires \"needle|value\"")
+		}
+		deadline := time.Now().Add(8 * time.Second)
+		for time.Now().Before(deadline) {
+			img, err := client.Screenshot()
+			if err != nil {
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			_, _, found := ocr.FindText(img, needle)
+			if found {
+				if err := client.TypeText(value); err != nil {
+					return err
+				}
+				return client.KeyPress(36)
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		return nil
 
 	case "key":
 		keyCode, modifiers := parseKeySpec(cmd.Args)

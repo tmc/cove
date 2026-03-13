@@ -13,7 +13,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/tmc/apple/x/vzkit"
-	"golang.org/x/term"
 )
 
 var (
@@ -83,6 +82,18 @@ var (
 	forceInstall bool
 	// Skip restore from saved suspend state and cold boot instead.
 	skipResume bool
+	// GUI launch order experiment mode.
+	launchOrder string
+	// Runtime device profile for macOS VMs.
+	runtimeProfile string
+	// Stream Apple unified logs relevant to virtualization while running.
+	appleLog bool
+	// Custom unified log predicate for -apple-log.
+	appleLogPredicate string
+	// Allow destructive identity reset recovery when VM metadata is missing.
+	recoverIdentity bool
+	// Prefer GUI password dialogs over terminal prompts when available.
+	preferPasswordDialog bool
 )
 
 func init() {
@@ -136,6 +147,11 @@ func init() {
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
 	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
 	flag.BoolVar(&skipResume, "cold-boot", false, "alias for -no-resume")
+	flag.StringVar(&launchOrder, "launch-order", "window-first", "GUI launch order: window-first or start-first")
+	flag.StringVar(&runtimeProfile, "runtime-profile", "full", "macOS runtime profile: full or minimal")
+	flag.BoolVar(&appleLog, "apple-log", false, "stream Apple unified logs relevant to virtualization while running")
+	flag.StringVar(&appleLogPredicate, "apple-log-predicate", "", "custom predicate for -apple-log (NSPredicate syntax)")
+	flag.BoolVar(&recoverIdentity, "recover-identity", false, "if VM identity metadata is missing, back it up and reset identity files to attempt recovery")
 	// Unattended install
 	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (inject provisioning, OCR fallback)")
 	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to boot commands file for custom setup automation")
@@ -193,25 +209,18 @@ func main() {
 	applyVMConfig(vmDir)
 
 	// Prompt for password securely if -provision-user is set without -provision-password.
-	// Use /dev/tty directly — macgo may have replaced os.Stdin with a pipe.
+	preferPasswordDialog = guiMode && !headlessMode
 	if provisionUser != "" && provisionPassword == "" {
-		if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-			fmt.Fprintf(tty, "Password for %s: ", provisionUser)
-			pw, err := term.ReadPassword(int(tty.Fd()))
-			fmt.Fprintln(tty) // newline after hidden input
-			tty.Close()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: could not read password from terminal: %v\n  use -provision-password <pw> to provide the password non-interactively\n", err)
-				os.Exit(1)
-			}
-			provisionPassword = string(pw)
+		pw, err := readPassword(fmt.Sprintf("Password for %s: ", provisionUser))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: could not read password: %v\n  use -provision-password <pw> to provide the password non-interactively\n", err)
+			os.Exit(1)
 		}
+		provisionPassword = string(pw)
 	}
 
-	switch provisionStrategy {
-	case "inject", "gui", "auto":
-	default:
-		fmt.Fprintf(os.Stderr, "error: invalid -provision-strategy %q (must be inject, gui, or auto)\n", provisionStrategy)
+	if err := validateLaunchOptions(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -268,6 +277,12 @@ func main() {
 		switch cmd {
 		case "version":
 			fmt.Println(versionInfo())
+			return
+		case "sip":
+			if err := handleSIPCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
 			return
 		case "ctl":
 			if err := ctlCommand(args); err != nil {
@@ -330,6 +345,10 @@ func main() {
 		// --headless overrides --gui after subcommand re-parse
 		if headlessMode {
 			guiMode = false
+		}
+		if err := validateLaunchOptions(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
 		}
 
 		// Re-resolve vmDir if -vm flag was provided after subcommand
@@ -515,6 +534,7 @@ Commands:
   clone       Clone a VM (vz-macos clone [source] <target> [--linked])
   template    Manage VM templates (save/list/create)
   vm          VM management (set/delete/rename/export/import)
+  sip         SIP management (enable/disable/status + recovery automation)
   ctl         Control running VM via socket (screenshot, status, pause, etc.)
   snapshot    Manage VM snapshots (list/save/restore/delete)
   network     Network configuration (list interfaces, help)
@@ -578,6 +598,27 @@ Volume Mounting (-vol flag):
 Flags:
 `)
 	flag.PrintDefaults()
+}
+
+func validateLaunchOptions() error {
+	switch provisionStrategy {
+	case "inject", "gui", "auto":
+	default:
+		return fmt.Errorf("invalid -provision-strategy %q (must be inject, gui, or auto)", provisionStrategy)
+	}
+
+	switch launchOrder {
+	case "window-first", "start-first":
+	default:
+		return fmt.Errorf("invalid -launch-order %q (must be window-first or start-first)", launchOrder)
+	}
+
+	switch runtimeProfile {
+	case "full", "minimal":
+	default:
+		return fmt.Errorf("invalid -runtime-profile %q (must be full or minimal)", runtimeProfile)
+	}
+	return nil
 }
 
 // handleList shows all VMs and templates.
@@ -778,7 +819,8 @@ Commands:
   delete <name>           Delete a VM
   rename <old> <new>      Rename a VM
   export <name> <path>    Export VM to tarball
-  import <path> <name>    Import VM from tarball`)
+  import <path> <name>    Import VM from tarball
+  shared-folder ...       Manage runtime shared folders`)
 		os.Exit(1)
 	}
 
@@ -833,6 +875,12 @@ Commands:
 			os.Exit(1)
 		}
 		if err := ImportVM(subargs[0], subargs[1]); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "shared-folder", "shared-folders":
+		if err := handleVMSharedFolderCommand(subargs); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

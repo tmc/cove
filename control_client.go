@@ -192,12 +192,12 @@ func (c *ControlClient) ScreenshotScaled(scale float64) (image.Image, error) {
 
 // KeyDown sends a key down event
 func (c *ControlClient) KeyDown(keyCode uint16) error {
-	return c.sendKeyEvent(keyCode, true, 0)
+	return c.sendKeyEvent(keyCode, true, 0, false)
 }
 
 // KeyUp sends a key up event
 func (c *ControlClient) KeyUp(keyCode uint16) error {
-	return c.sendKeyEvent(keyCode, false, 0)
+	return c.sendKeyEvent(keyCode, false, 0, false)
 }
 
 // KeyPress sends a key down followed by key up
@@ -211,22 +211,24 @@ func (c *ControlClient) KeyPress(keyCode uint16) error {
 
 // KeyPressWithModifiers sends a key press with modifier keys
 func (c *ControlClient) KeyPressWithModifiers(keyCode uint16, modifiers uint) error {
-	if err := c.sendKeyEvent(keyCode, true, modifiers); err != nil {
+	// Use CGEvent for app-level shortcuts (menu commands, Cmd+Q, etc).
+	if err := c.sendKeyEvent(keyCode, true, modifiers, true); err != nil {
 		return err
 	}
 	time.Sleep(50 * time.Millisecond)
-	return c.sendKeyEvent(keyCode, false, modifiers)
+	return c.sendKeyEvent(keyCode, false, modifiers, true)
 }
 
 // sendKeyEvent sends a keyboard event
-func (c *ControlClient) sendKeyEvent(keyCode uint16, keyDown bool, modifiers uint) error {
+func (c *ControlClient) sendKeyEvent(keyCode uint16, keyDown bool, modifiers uint, useCGEvent bool) error {
 	req := &controlpb.ControlRequest{
 		Type: "key",
 		Command: &controlpb.ControlRequest_Key{
 			Key: &controlpb.KeyCommand{
-				KeyCode:   uint32(keyCode),
-				KeyDown:   keyDown,
-				Modifiers: uint32(modifiers),
+				KeyCode:    uint32(keyCode),
+				KeyDown:    keyDown,
+				Modifiers:  uint32(modifiers),
+				UseCgEvent: useCGEvent,
 			},
 		},
 	}
@@ -267,7 +269,15 @@ func (c *ControlClient) TypeText(text string) error {
 
 // MouseClick clicks at normalized coordinates
 func (c *ControlClient) MouseClick(x, y float64) error {
-	return c.sendMouseEvent(x, y, "click", 0, false)
+	if err := c.sendMouseEvent(x, y, "move", 0, false); err != nil {
+		return err
+	}
+	time.Sleep(20 * time.Millisecond)
+	if err := c.sendMouseEvent(x, y, "down", 0, false); err != nil {
+		return err
+	}
+	time.Sleep(50 * time.Millisecond)
+	return c.sendMouseEvent(x, y, "up", 0, false)
 }
 
 // sendMouseEvent sends a mouse event
@@ -739,6 +749,21 @@ func (c *ControlClient) OCRClickText(text string, timeout time.Duration) error {
 		return fmt.Errorf("ocr click-text: %s", resp.Error)
 	}
 	return nil
+}
+
+// SharedFoldersApply reloads shared_folders.json and hot-applies it to a running VM.
+func (c *ControlClient) SharedFoldersApply() (string, error) {
+	resp, err := c.sendRequest(&controlpb.ControlRequest{Type: "shared-folders-apply"})
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("shared-folders-apply: %s", resp.Error)
+	}
+	if s := resp.GetMessage(); s != nil {
+		return s.Message, nil
+	}
+	return resp.Data, nil
 }
 
 // Pause pauses the VM.

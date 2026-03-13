@@ -64,9 +64,9 @@ Guest commands:
   guest-read <path>           Read a guest file to stdout
 
 UI automation commands (via control socket):
-  ocr-click <text> [timeout]  Find text via OCR and click its center
-  ocr-wait <text> [timeout]   Wait until text appears on screen
-  ocr-gone <text> [timeout]   Wait until text disappears from screen
+  ocr-click <text> [timeout] [region]  Find text via OCR and click its center
+  ocr-wait <text> [timeout] [region]   Wait until text appears on screen
+  ocr-gone <text> [timeout] [region]   Wait until text disappears from screen
   ocr                         Run OCR; stdout is all recognized text
   screenshot [file]           Capture VM screen to JPEG file
   type <text>                 Type text into the VM
@@ -277,7 +277,10 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 	var log bytes.Buffer
 	var out io.Writer = &log
 	if cfg.verbose {
-		out = os.Stderr
+		out = cfg.logWriter
+		if out == nil {
+			out = os.Stderr
+		}
 	}
 	err = engine.Execute(state, name, bufio.NewReader(bytes.NewReader(ar.Comment)), out)
 	if !cfg.verbose && log.Len() > 0 {
@@ -489,4 +492,3 @@ func parseScriptMeta(comment []byte) scriptMeta {
 	}
 	return m
 }
-

@@ -261,6 +261,8 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.getVMStatus()
 	case "capabilities":
 		return s.getCapabilities()
+	case "shared-folders-apply":
+		return s.handleSharedFoldersApply()
 	}
 
 	s.mu.Lock()
@@ -327,6 +329,7 @@ func (s *ControlServer) getOCR() *OCRService {
 type ocrDataParams struct {
 	Text    string `json:"text"`
 	Timeout string `json:"timeout"`
+	Region  string `json:"region"`
 }
 
 func parseOCRData(rawJSON []byte) ocrDataParams {
@@ -352,6 +355,10 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		if p.Text == "" {
 			return &controlpb.ControlResponse{Error: "ocr-click requires text"}, true
 		}
+		opts, err := ParseOCRSearchOptions(p.Region)
+		if err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}, true
+		}
 		timeout := 10 * time.Second
 		if p.Timeout != "" {
 			if d, err := time.ParseDuration(p.Timeout); err == nil {
@@ -359,7 +366,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 			}
 		}
 		ocr := s.getOCR()
-		if err := s.OCRClickText(ocr, p.Text, timeout); err != nil {
+		if err := s.OCRClickTextWithOptions(ocr, p.Text, timeout, opts); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}
 		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("clicked %q", p.Text), Result: &controlpb.ControlResponse_OcrText{OcrText: &controlpb.OCRTextResponse{Text: fmt.Sprintf("clicked %q", p.Text)}}}, true
@@ -369,6 +376,10 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		if p.Text == "" {
 			return &controlpb.ControlResponse{Error: "ocr-wait requires text"}, true
 		}
+		opts, err := ParseOCRSearchOptions(p.Region)
+		if err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}, true
+		}
 		timeout := 60 * time.Second
 		if p.Timeout != "" {
 			if d, err := time.ParseDuration(p.Timeout); err == nil {
@@ -376,7 +387,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 			}
 		}
 		ocr := s.getOCR()
-		if err := s.OCRWaitForText(ocr, p.Text, timeout); err != nil {
+		if err := s.OCRWaitForTextWithOptions(ocr, p.Text, timeout, opts); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}
 		return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("found %q", p.Text), Result: &controlpb.ControlResponse_OcrText{OcrText: &controlpb.OCRTextResponse{Text: fmt.Sprintf("found %q", p.Text)}}}, true
@@ -385,6 +396,10 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		p := parseOCRData(rawJSON)
 		if p.Text == "" {
 			return &controlpb.ControlResponse{Error: "ocr-gone requires text"}, true
+		}
+		opts, err := ParseOCRSearchOptions(p.Region)
+		if err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}
 		timeout := 30 * time.Second
 		if p.Timeout != "" {
@@ -400,7 +415,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 				time.Sleep(time.Second)
 				continue
 			}
-			_, _, found := ocr.FindTextNormalized(img, p.Text)
+			_, _, found := ocr.FindTextNormalizedWithOptions(img, p.Text, opts)
 			if !found {
 				return &controlpb.ControlResponse{Success: true, Data: fmt.Sprintf("%q gone", p.Text), Result: &controlpb.ControlResponse_OcrText{OcrText: &controlpb.OCRTextResponse{Text: fmt.Sprintf("%q gone", p.Text)}}}, true
 			}
@@ -638,13 +653,154 @@ func (s *ControlServer) sendKeyEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 		return &controlpb.ControlResponse{Error: "keyboard input requires GUI mode (run with -gui)"}
 	}
 
-	// Use the NSEvent path by default — creates a CGEvent (for correct
-	// keyCodes on ARM64), converts to NSEvent, and delivers via
-	// VZVirtualMachineView's keyDown:/keyUp: directly.
+	// Modifier chords are fragile in Recovery UI when represented only as
+	// event flags. Synthesize real modifier-key presses instead.
+	if cmd.Modifiers != 0 {
+		return s.sendKeyChordEvent(cmd)
+	}
+
+	// For non-modifier keys, keep the simple path unless caller explicitly asks
+	// for CGEvent fallback behavior.
+	return s.sendKeyEventPrimitive(cmd)
+}
+
+func (s *ControlServer) sendKeyEventPrimitive(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
 	if cmd.UseCgEvent {
-		return s.sendKeyEventCGEvent(cmd)
+		return s.sendKeyEventMultiPath(cmd, false)
 	}
 	return s.sendKeyEventNSEvent(cmd)
+}
+
+func (s *ControlServer) sendKeyChordEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	mods := modifierKeySequence(cmd.Modifiers)
+	if len(mods) == 0 {
+		// Unknown modifier bit pattern; fall back to flag-based injection.
+		return s.sendKeyEventMultiPath(cmd, true)
+	}
+
+	var errs []string
+	send := func(name string, c *controlpb.KeyCommand) bool {
+		resp := s.sendKeyEventPrimitive(c)
+		if resp != nil && resp.Success {
+			return true
+		}
+		msg := "unknown error"
+		if resp != nil && resp.Error != "" {
+			msg = resp.Error
+		}
+		errs = append(errs, name+": "+msg)
+		return false
+	}
+
+	if cmd.KeyDown {
+		for _, keyCode := range mods {
+			send(fmt.Sprintf("modifier-down-%d", keyCode), &controlpb.KeyCommand{
+				KeyCode:    keyCode,
+				KeyDown:    true,
+				UseCgEvent: cmd.UseCgEvent,
+			})
+		}
+		if send("chord-key-down", &controlpb.KeyCommand{
+			KeyCode:    cmd.KeyCode,
+			Character:  cmd.Character,
+			KeyDown:    true,
+			UseCgEvent: cmd.UseCgEvent,
+		}) {
+			return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+		}
+		return &controlpb.ControlResponse{Error: "keyboard chord down failed: " + strings.Join(errs, "; ")}
+	}
+
+	// Key up: release primary key first, then modifiers in reverse order.
+	send("chord-key-up", &controlpb.KeyCommand{
+		KeyCode:    cmd.KeyCode,
+		Character:  cmd.Character,
+		KeyDown:    false,
+		UseCgEvent: cmd.UseCgEvent,
+	})
+	for i := len(mods) - 1; i >= 0; i-- {
+		keyCode := mods[i]
+		send(fmt.Sprintf("modifier-up-%d", keyCode), &controlpb.KeyCommand{
+			KeyCode:    keyCode,
+			KeyDown:    false,
+			UseCgEvent: cmd.UseCgEvent,
+		})
+	}
+	if len(errs) == 0 {
+		return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+	}
+	return &controlpb.ControlResponse{Error: "keyboard chord up failed: " + strings.Join(errs, "; ")}
+}
+
+func modifierKeySequence(flags uint32) []uint32 {
+	var seq []uint32
+	if flags&(1<<18) != 0 { // Control
+		seq = append(seq, 59)
+	}
+	if flags&(1<<19) != 0 { // Option
+		seq = append(seq, 58)
+	}
+	if flags&(1<<17) != 0 { // Shift
+		seq = append(seq, 56)
+	}
+	if flags&(1<<20) != 0 { // Command
+		seq = append(seq, 55)
+	}
+	return seq
+}
+
+func (s *ControlServer) sendKeyEventMultiPath(cmd *controlpb.KeyCommand, fanout bool) *controlpb.ControlResponse {
+	type keyInjector struct {
+		name string
+		fn   func(*controlpb.KeyCommand) *controlpb.ControlResponse
+	}
+	paths := []keyInjector{
+		{name: "nsevent", fn: s.sendKeyEventNSEvent},
+		{name: "cgevent", fn: s.sendKeyEventCGEvent},
+		{name: "hid", fn: s.sendKeyEventHID},
+	}
+	if cmd.UseCgEvent {
+		// For shortcut-style input, prefer lower-level injectors first.
+		paths = []keyInjector{
+			{name: "hid", fn: s.sendKeyEventHID},
+			{name: "cgevent", fn: s.sendKeyEventCGEvent},
+			{name: "nsevent", fn: s.sendKeyEventNSEvent},
+		}
+	}
+
+	var errs []string
+	succeeded := false
+	for _, p := range paths {
+		resp := p.fn(cmd)
+		if resp != nil && resp.Success {
+			succeeded = true
+			if verbose {
+				fmt.Printf("[key-fallback] %s ok keyCode=%d down=%v mods=%d\n",
+					p.name, cmd.KeyCode, cmd.KeyDown, cmd.Modifiers)
+			}
+			if !fanout {
+				return resp
+			}
+			continue
+		}
+
+		msg := "unknown error"
+		if resp != nil && resp.Error != "" {
+			msg = resp.Error
+		}
+		errs = append(errs, p.name+": "+msg)
+		if verbose {
+			fmt.Printf("[key-fallback] %s failed: %s\n", p.name, msg)
+		}
+	}
+
+	if succeeded {
+		return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+	}
+	if len(errs) == 0 {
+		return &controlpb.ControlResponse{Error: "keyboard injection failed"}
+	}
+	return &controlpb.ControlResponse{Error: "keyboard injection failed: " + strings.Join(errs, "; ")}
 }
 
 // macKeycodeToHIDUsage maps macOS virtual keycodes to USB HID usage IDs.
@@ -923,8 +1079,17 @@ func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.C
 		return &controlpb.ControlResponse{Error: "mouse input requires GUI mode (run with -gui)"}
 	}
 
-	// Handle click as down+up sequence
+	// Handle click as move+down+up sequence.
 	if cmd.Action == "click" {
+		moveCmd := &controlpb.MouseCommand{
+			X: cmd.X, Y: cmd.Y, Button: cmd.Button, Action: "move", Absolute: cmd.Absolute,
+		}
+		moveResp := s.sendMouseEvent(moveCmd)
+		if !moveResp.Success {
+			return moveResp
+		}
+		time.Sleep(20 * time.Millisecond)
+
 		downCmd := &controlpb.MouseCommand{
 			X: cmd.X, Y: cmd.Y, Button: cmd.Button, Action: "down", Absolute: cmd.Absolute,
 		}
@@ -1552,6 +1717,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"commands": []string{
 			"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 			"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
+			"shared-folders-apply",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 			"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 			"agent-sshd", "agent-mount-volumes",
@@ -1560,6 +1726,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 	commands := []string{
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
+		"shared-folders-apply",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 		"agent-sshd", "agent-mount-volumes",

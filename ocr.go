@@ -59,6 +59,11 @@ func (o *OCRService) RecognizeText(img image.Image) ([]TextObservation, error) {
 //
 // Returns found=false if the text is not visible.
 func (o *OCRService) FindText(img image.Image, needle string) (x, y float64, found bool) {
+	return o.FindTextWithOptions(img, needle, OCRSearchOptions{})
+}
+
+// FindTextWithOptions searches for text with optional region and ranking preferences.
+func (o *OCRService) FindTextWithOptions(img image.Image, needle string, opts OCRSearchOptions) (x, y float64, found bool) {
 	observations, err := o.RecognizeText(img)
 	if err != nil {
 		if o.verbose {
@@ -67,7 +72,7 @@ func (o *OCRService) FindText(img image.Image, needle string) (x, y float64, fou
 		return 0, 0, false
 	}
 
-	best, ok := bestMatch(observations, needle)
+	best, ok := bestMatchWithOptions(observations, needle, opts, img.Bounds())
 	if !ok {
 		return 0, 0, false
 	}
@@ -80,10 +85,17 @@ func (o *OCRService) FindText(img image.Image, needle string) (x, y float64, fou
 // bestMatch selects the best observation matching needle from candidates.
 // Ranking: exact match > shorter text > closer to bottom of screen.
 func bestMatch(observations []TextObservation, needle string) (TextObservation, bool) {
+	return bestMatchWithOptions(observations, needle, OCRSearchOptions{}, image.Rectangle{})
+}
+
+func bestMatchWithOptions(observations []TextObservation, needle string, opts OCRSearchOptions, bounds image.Rectangle) (TextObservation, bool) {
 	needle = strings.ToLower(needle)
 
 	var matches []TextObservation
 	for _, obs := range observations {
+		if !observationInSearchRegion(obs, bounds, opts.Region) {
+			continue
+		}
 		if strings.Contains(strings.ToLower(obs.Text), needle) {
 			matches = append(matches, obs)
 		}
@@ -106,8 +118,15 @@ func bestMatch(observations []TextObservation, needle string) (TextObservation, 
 		if len(ti) != len(tj) {
 			return len(ti) < len(tj)
 		}
-		// Lower on screen (higher Y) is preferred.
-		return matches[i].Center.Y > matches[j].Center.Y
+		if opts.PreferTop {
+			if matches[i].Center.Y != matches[j].Center.Y {
+				return matches[i].Center.Y < matches[j].Center.Y
+			}
+		} else if matches[i].Center.Y != matches[j].Center.Y {
+			// Lower on screen (higher Y) is preferred.
+			return matches[i].Center.Y > matches[j].Center.Y
+		}
+		return matches[i].Center.X < matches[j].Center.X
 	})
 	return matches[0], true
 }
@@ -115,7 +134,13 @@ func bestMatch(observations []TextObservation, needle string) (TextObservation, 
 // FindTextNormalized searches for text and returns its center in normalized
 // coordinates (0-1, top-left origin) suitable for mouse input commands.
 func (o *OCRService) FindTextNormalized(img image.Image, needle string) (x, y float64, found bool) {
-	px, py, found := o.FindText(img, needle)
+	return o.FindTextNormalizedWithOptions(img, needle, OCRSearchOptions{})
+}
+
+// FindTextNormalizedWithOptions searches for text with options and returns the
+// center in normalized coordinates (0-1, top-left origin).
+func (o *OCRService) FindTextNormalizedWithOptions(img image.Image, needle string, opts OCRSearchOptions) (x, y float64, found bool) {
+	px, py, found := o.FindTextWithOptions(img, needle, opts)
 	if !found {
 		return 0, 0, false
 	}

@@ -16,9 +16,9 @@
 //
 // UI automation commands (via control socket):
 //
-//	ocr-click <text> [timeout]  Find text on screen via OCR and click it
-//	ocr-wait <text> [timeout]   Wait until text appears on screen
-//	ocr-gone <text> [timeout]   Wait until text disappears from screen
+//	ocr-click <text> [timeout] [region]  Find text via OCR and click it
+//	ocr-wait <text> [timeout] [region]   Wait until text appears
+//	ocr-gone <text> [timeout] [region]   Wait until text disappears
 //	ocr                         Run OCR on current screen; stdout is all text
 //	screenshot [file]           Capture VM screen to file
 //	type <text>                 Type text into the VM
@@ -51,14 +51,19 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"rsc.io/script"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -71,6 +76,9 @@ type vzscriptConfig struct {
 	verbose     bool
 	terminal    bool // force guest-shell/guest-exec to run in Terminal.app
 	autoApprove bool // auto-click "Allow"/"OK" on system dialogs via OCR
+	logWriter   io.Writer
+	streamOut   io.Writer
+	streamErr   io.Writer
 }
 
 // newVZScriptEngine returns a script engine with guest VM commands and
@@ -314,6 +322,37 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 	if timeout == 0 {
 		timeout = 10 * time.Minute
 	}
+
+	// In verbose mode, stream command output live so long-running installs
+	// show progress as they run.
+	if cfg.verbose {
+		out := cfg.streamOut
+		if out == nil {
+			out = os.Stdout
+		}
+		errOut := cfg.streamErr
+		if errOut == nil {
+			errOut = os.Stderr
+		}
+		return func(*script.State) (string, string, error) {
+			stdout, stderr, exitCode, err := guestExecStream(
+				cfg.socketPath,
+				args,
+				timeout,
+				func(chunk []byte) { _, _ = out.Write(chunk) },
+				func(chunk []byte) { _, _ = errOut.Write(chunk) },
+			)
+			if err != nil {
+				return "", "", err
+			}
+			var execErr error
+			if exitCode != 0 {
+				execErr = fmt.Errorf("exit code %d", exitCode)
+			}
+			return stdout, stderr, execErr
+		}, nil
+	}
+
 	req := &controlpb.ControlRequest{
 		Type: "agent-exec",
 		Command: &controlpb.ControlRequest_AgentExec{
@@ -344,6 +383,106 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 		}
 		return result.Stdout, result.Stderr, execErr
 	}, nil
+}
+
+// guestExecStream runs agent-exec-stream and returns collected stdout/stderr
+// plus final exit code. Optional callbacks receive live chunk data.
+func guestExecStream(socketPath string, args []string, timeout time.Duration, onStdout, onStderr func([]byte)) (string, string, int32, error) {
+	req := &controlpb.ControlRequest{
+		Type: "agent-exec-stream",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{Args: args},
+		},
+	}
+
+	conn, err := net.DialTimeout("unix", socketPath, timeout)
+	if err != nil {
+		return "", "", 0, ctlConnectError(socketPath, err)
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(timeout))
+
+	reqToSend := req
+	if req.AuthToken == "" {
+		if token := resolveControlTokenForSocket(socketPath); token != "" {
+			reqToSend = proto.Clone(req).(*controlpb.ControlRequest)
+			reqToSend.AuthToken = token
+		}
+	}
+	reqBytes, err := protojsonMarshaler.Marshal(reqToSend)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("marshal: %w", err)
+	}
+	reqBytes = append(reqBytes, '\n')
+	if _, err := conn.Write(reqBytes); err != nil {
+		return "", "", 0, fmt.Errorf("send: %w", err)
+	}
+
+	reader := bufio.NewReaderSize(conn, 256*1024)
+	var stdoutBuf, stderrBuf bytes.Buffer
+	var exitCode int32
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", "", 0, fmt.Errorf("receive: %w", err)
+		}
+
+		var resp controlpb.ControlResponse
+		if err := protojsonUnmarshaler.Unmarshal([]byte(line), &resp); err != nil {
+			return "", "", 0, fmt.Errorf("parse response: %w", err)
+		}
+		if !resp.Success {
+			return stdoutBuf.String(), stderrBuf.String(), exitCode, fmt.Errorf("%s", resp.Error)
+		}
+		if resp.Data == "" {
+			continue
+		}
+
+		var event struct {
+			Stream   string `json:"stream"`
+			Data     string `json:"data"`
+			Done     bool   `json:"done"`
+			ExitCode int32  `json:"exitCode"`
+		}
+		if err := json.Unmarshal([]byte(resp.Data), &event); err != nil {
+			// Fallback: treat non-event payload as stdout text.
+			stdoutBuf.WriteString(resp.Data)
+			if onStdout != nil {
+				onStdout([]byte(resp.Data))
+			}
+			continue
+		}
+
+		if event.Data != "" {
+			chunk, err := base64.StdEncoding.DecodeString(event.Data)
+			if err != nil {
+				return "", "", 0, fmt.Errorf("decode stream chunk: %w", err)
+			}
+			if event.Stream == "stderr" {
+				stdoutOrStderrWrite(&stderrBuf, onStderr, chunk)
+			} else {
+				stdoutOrStderrWrite(&stdoutBuf, onStdout, chunk)
+			}
+		}
+
+		if event.Done {
+			exitCode = event.ExitCode
+			break
+		}
+	}
+
+	return stdoutBuf.String(), stderrBuf.String(), exitCode, nil
+}
+
+func stdoutOrStderrWrite(buf *bytes.Buffer, sink func([]byte), chunk []byte) {
+	_, _ = buf.Write(chunk)
+	if sink != nil {
+		sink(chunk)
+	}
 }
 
 // guestExecInTerminal runs a script in Terminal.app so the user can watch.
@@ -481,6 +620,11 @@ func guestCpCmd(cfg vzscriptConfig) script.Cmd {
 
 // ctlSendOCR sends an OCR command with optional text/timeout params.
 func ctlSendOCR(sock, cmdType, text, timeout string, readTimeout time.Duration) (*controlpb.ControlResponse, error) {
+	return ctlSendOCRWithRegion(sock, cmdType, text, timeout, "", readTimeout)
+}
+
+// ctlSendOCRWithRegion sends an OCR command with optional text/timeout/region params.
+func ctlSendOCRWithRegion(sock, cmdType, text, timeout, region string, readTimeout time.Duration) (*controlpb.ControlResponse, error) {
 	obj := map[string]interface{}{
 		"type": cmdType,
 	}
@@ -491,35 +635,72 @@ func ctlSendOCR(sock, cmdType, text, timeout string, readTimeout time.Duration) 
 	if timeout != "" {
 		data["timeout"] = timeout
 	}
+	if region != "" {
+		data["region"] = region
+	}
 	if len(data) > 0 {
 		obj["data"] = data
 	}
 	return ctlSendJSON(sock, obj, readTimeout)
 }
 
+func parseOCROptionalTimeoutRegion(args []string, defaultTimeout string) (text, timeout, region string, err error) {
+	if len(args) == 0 {
+		return "", "", "", script.ErrUsage
+	}
+	if len(args) > 3 {
+		return "", "", "", script.ErrUsage
+	}
+
+	text = args[0]
+	timeout = defaultTimeout
+	if len(args) == 1 {
+		return text, timeout, "", nil
+	}
+
+	if _, parseErr := time.ParseDuration(args[1]); parseErr == nil {
+		timeout = args[1]
+		if len(args) == 3 {
+			region = args[2]
+			if _, regionErr := ParseOCRSearchOptions(region); regionErr != nil {
+				return "", "", "", regionErr
+			}
+		}
+		return text, timeout, region, nil
+	}
+
+	region = args[1]
+	if len(args) == 3 {
+		timeout = args[2]
+		if _, parseErr := time.ParseDuration(timeout); parseErr != nil {
+			return "", "", "", fmt.Errorf("invalid timeout %q", timeout)
+		}
+	}
+	if _, parseErr := ParseOCRSearchOptions(region); parseErr != nil {
+		return "", "", "", parseErr
+	}
+	return text, timeout, region, nil
+}
+
 func vzOCRClickCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
 			Summary: "find text on screen via OCR and click its center",
-			Args:    "text [timeout]",
+			Args:    "text [timeout] [region]",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
-			if len(args) == 0 {
-				return nil, script.ErrUsage
-			}
-			text := args[0]
-			timeout := "10s"
-			if len(args) > 1 {
-				timeout = args[1]
+			text, timeout, region, err := parseOCROptionalTimeoutRegion(args, "10s")
+			if err != nil {
+				return nil, err
 			}
 			if cfg.verbose {
-				s.Logf("ocr-click %q (timeout %s)\n", text, timeout)
+				s.Logf("ocr-click %q (timeout %s, region %q)\n", text, timeout, region)
 			}
 			d, _ := time.ParseDuration(timeout)
 			if d == 0 {
 				d = 30 * time.Second
 			}
-			resp, err := ctlSendOCR(cfg.socketPath, "ocr-click", text, timeout, d+10*time.Second)
+			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-click", text, timeout, region, d+10*time.Second)
 			if err != nil {
 				return nil, err
 			}
@@ -537,25 +718,21 @@ func vzOCRWaitCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
 			Summary: "wait for text to appear on screen via OCR",
-			Args:    "text [timeout]",
+			Args:    "text [timeout] [region]",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
-			if len(args) == 0 {
-				return nil, script.ErrUsage
-			}
-			text := args[0]
-			timeout := "60s"
-			if len(args) > 1 {
-				timeout = args[1]
+			text, timeout, region, err := parseOCROptionalTimeoutRegion(args, "60s")
+			if err != nil {
+				return nil, err
 			}
 			if cfg.verbose {
-				s.Logf("ocr-wait %q (timeout %s)\n", text, timeout)
+				s.Logf("ocr-wait %q (timeout %s, region %q)\n", text, timeout, region)
 			}
 			d, _ := time.ParseDuration(timeout)
 			if d == 0 {
 				d = 120 * time.Second
 			}
-			resp, err := ctlSendOCR(cfg.socketPath, "ocr-wait", text, timeout, d+10*time.Second)
+			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-wait", text, timeout, region, d+10*time.Second)
 			if err != nil {
 				return nil, err
 			}
@@ -573,22 +750,18 @@ func vzOCRGoneCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
 			Summary: "wait for text to disappear from screen via OCR",
-			Args:    "text [timeout]",
+			Args:    "text [timeout] [region]",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
-			if len(args) == 0 {
-				return nil, script.ErrUsage
-			}
-			text := args[0]
-			timeout := "30s"
-			if len(args) > 1 {
-				timeout = args[1]
+			text, timeout, region, err := parseOCROptionalTimeoutRegion(args, "30s")
+			if err != nil {
+				return nil, err
 			}
 			d, _ := time.ParseDuration(timeout)
 			if d == 0 {
 				d = 60 * time.Second
 			}
-			resp, err := ctlSendOCR(cfg.socketPath, "ocr-gone", text, timeout, d+10*time.Second)
+			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-gone", text, timeout, region, d+10*time.Second)
 			if err != nil {
 				return nil, err
 			}

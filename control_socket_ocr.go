@@ -11,6 +11,11 @@ import (
 // OCRClickText takes a screenshot, finds the given text via OCR, and clicks its center.
 // Retries until text is found or timeout expires.
 func (s *ControlServer) OCRClickText(ocr *OCRService, text string, timeout time.Duration) error {
+	return s.OCRClickTextWithOptions(ocr, text, timeout, OCRSearchOptions{})
+}
+
+// OCRClickTextWithOptions takes a screenshot, finds text via OCR options, and clicks its center.
+func (s *ControlServer) OCRClickTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img, errMsg := s.captureVMView()
@@ -19,7 +24,7 @@ func (s *ControlServer) OCRClickText(ocr *OCRService, text string, timeout time.
 			continue
 		}
 
-		normX, normY, found := ocr.FindTextNormalized(img, text)
+		normX, normY, found := ocr.FindTextNormalizedWithOptions(img, text, opts)
 		if found {
 			if verbose {
 				fmt.Printf("[ocr-click] found %q at (%.3f, %.3f)\n", text, normX, normY)
@@ -43,6 +48,11 @@ func (s *ControlServer) OCRClickText(ocr *OCRService, text string, timeout time.
 
 // OCRWaitForText polls screenshots until the given text appears or timeout expires.
 func (s *ControlServer) OCRWaitForText(ocr *OCRService, text string, timeout time.Duration) error {
+	return s.OCRWaitForTextWithOptions(ocr, text, timeout, OCRSearchOptions{})
+}
+
+// OCRWaitForTextWithOptions polls screenshots until text appears or timeout expires.
+func (s *ControlServer) OCRWaitForTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img, errMsg := s.captureVMView()
@@ -51,7 +61,7 @@ func (s *ControlServer) OCRWaitForText(ocr *OCRService, text string, timeout tim
 			continue
 		}
 
-		_, _, found := ocr.FindTextNormalized(img, text)
+		_, _, found := ocr.FindTextNormalizedWithOptions(img, text, opts)
 		if found {
 			if verbose {
 				fmt.Printf("[ocr-wait] found %q\n", text)
@@ -66,12 +76,17 @@ func (s *ControlServer) OCRWaitForText(ocr *OCRService, text string, timeout tim
 
 // OCRWaitAndClick waits for text to appear, then clicks it.
 func (s *ControlServer) OCRWaitAndClick(ocr *OCRService, text string, timeout time.Duration) error {
-	if err := s.OCRWaitForText(ocr, text, timeout); err != nil {
+	return s.OCRWaitAndClickWithOptions(ocr, text, timeout, OCRSearchOptions{})
+}
+
+// OCRWaitAndClickWithOptions waits for text using options, then clicks it.
+func (s *ControlServer) OCRWaitAndClickWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
+	if err := s.OCRWaitForTextWithOptions(ocr, text, timeout, opts); err != nil {
 		return err
 	}
 	// Brief pause to let the UI settle after text appears.
 	time.Sleep(300 * time.Millisecond)
-	return s.OCRClickText(ocr, text, 10*time.Second)
+	return s.OCRClickTextWithOptions(ocr, text, 10*time.Second, opts)
 }
 
 // OCRAllText takes a screenshot and returns all recognized text.

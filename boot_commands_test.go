@@ -35,13 +35,33 @@ func TestParseBootCommands(t *testing.T) {
 			want:  1,
 		},
 		{
+			name:  "waitForMenuText",
+			input: `<waitForMenuText "Utilities">`,
+			want:  1,
+		},
+		{
 			name:  "click",
 			input: `<click "Continue">`,
 			want:  1,
 		},
 		{
+			name:  "clickMenu",
+			input: `<clickMenu "Utilities">`,
+			want:  1,
+		},
+		{
+			name:  "clickMenuItem",
+			input: `<clickMenuItem "Utilities|Terminal">`,
+			want:  1,
+		},
+		{
 			name:  "type",
 			input: `<type "testuser">`,
+			want:  1,
+		},
+		{
+			name:  "typeAndReturnIfText",
+			input: `<typeAndReturnIfText "Enter password|secret">`,
 			want:  1,
 		},
 		{
@@ -99,6 +119,16 @@ func TestParseBootCommands(t *testing.T) {
 		{
 			name:    "type without text",
 			input:   `<type>`,
+			wantErr: true,
+		},
+		{
+			name:    "typeAndReturnIfText invalid args",
+			input:   `<typeAndReturnIfText "Enter password">`,
+			wantErr: true,
+		},
+		{
+			name:    "clickMenuItem invalid args",
+			input:   `<clickMenuItem "Utilities">`,
 			wantErr: true,
 		},
 		{
@@ -199,5 +229,39 @@ func TestUnquote(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("unquote(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestSplitMenuItemArgs(t *testing.T) {
+	menu, item := splitMenuItemArgs("Utilities|Terminal")
+	if menu != "Utilities" || item != "Terminal" {
+		t.Fatalf("splitMenuItemArgs simple = (%q, %q), want (%q, %q)", menu, item, "Utilities", "Terminal")
+	}
+
+	menu, item = splitMenuItemArgs(` Utilities | Terminal `)
+	if menu != "Utilities" || item != "Terminal" {
+		t.Fatalf("splitMenuItemArgs trimmed = (%q, %q), want (%q, %q)", menu, item, "Utilities", "Terminal")
+	}
+
+	menu, item = splitMenuItemArgs("Utilities")
+	if menu != "" || item != "" {
+		t.Fatalf("splitMenuItemArgs invalid = (%q, %q), want empty", menu, item)
+	}
+}
+
+func TestSplitConditionalTypeArgs(t *testing.T) {
+	needle, value := splitConditionalTypeArgs("Enter password|secret")
+	if needle != "Enter password" || value != "secret" {
+		t.Fatalf("splitConditionalTypeArgs simple = (%q, %q), want (%q, %q)", needle, value, "Enter password", "secret")
+	}
+
+	needle, value = splitConditionalTypeArgs("  Are you sure  |  y  ")
+	if needle != "Are you sure" || value != "y" {
+		t.Fatalf("splitConditionalTypeArgs trimmed = (%q, %q), want (%q, %q)", needle, value, "Are you sure", "y")
+	}
+
+	needle, value = splitConditionalTypeArgs("invalid")
+	if needle != "" || value != "" {
+		t.Fatalf("splitConditionalTypeArgs invalid = (%q, %q), want empty", needle, value)
 	}
 }
