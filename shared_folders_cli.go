@@ -349,7 +349,19 @@ func mountSharedFoldersInGuest(vmDirectory, mountPoint string) (bool, error) {
 		return false, fmt.Errorf("query mounts: %w", err)
 	}
 	if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
-		return false, nil
+		tags := expectedSharedFolderTags(vmDirectory)
+		lsRes, lsErr := client.AgentExecTyped([]string{"ls", "-1", mountPoint}, nil, "")
+		if lsErr == nil && lsRes.ExitCode == 0 && mountContainsAllTags(lsRes.Stdout, tags) {
+			return false, nil
+		}
+
+		// Refresh mounted view to pick up newly hotplugged or removed tags.
+		if _, err := client.AgentExecTyped([]string{"umount", mountPoint}, nil, ""); err != nil && !strings.Contains(strings.ToLower(err.Error()), "not currently mounted") {
+			return false, fmt.Errorf("remount shared folders: unmount %q: %w", mountPoint, err)
+		}
+		if _, err := client.AgentExecTyped([]string{"mkdir", "-p", mountPoint}, nil, ""); err != nil {
+			return false, fmt.Errorf("recreate mount point %q: %w", mountPoint, err)
+		}
 	}
 
 	res, err := client.AgentExecTyped([]string{"mount_virtiofs", SharedFoldersVirtioFSTag, mountPoint}, nil, "")
@@ -378,4 +390,39 @@ func printSharedFolderStatusError(prefix string, err error) {
 		}
 		fmt.Printf("  %s\n", line)
 	}
+}
+
+func expectedSharedFolderTags(vmDirectory string) []string {
+	folders := LoadSharedFolders(vmDirectory)
+	out := make([]string, 0, len(folders))
+	for _, f := range folders {
+		if strings.TrimSpace(f.Tag) == "" {
+			continue
+		}
+		if _, err := os.Stat(f.Path); err != nil {
+			continue
+		}
+		out = append(out, f.Tag)
+	}
+	return out
+}
+
+func mountContainsAllTags(listing string, tags []string) bool {
+	if len(tags) == 0 {
+		return true
+	}
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(listing, "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		seen[name] = true
+	}
+	for _, tag := range tags {
+		if !seen[tag] {
+			return false
+		}
+	}
+	return true
 }

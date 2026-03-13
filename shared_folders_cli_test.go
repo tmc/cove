@@ -114,3 +114,16 @@ func TestRemoveSharedFolderEntry(t *testing.T) {
 		t.Fatalf("remaining tag = %q, want %q", folders[0].Tag, "two")
 	}
 }
+
+func TestMountContainsAllTags(t *testing.T) {
+	listing := "ml-explore\nmlx-go\ntmc\n"
+	if !mountContainsAllTags(listing, []string{"ml-explore", "tmc"}) {
+		t.Fatalf("expected tags to be found")
+	}
+	if mountContainsAllTags(listing, []string{"missing"}) {
+		t.Fatalf("unexpected success for missing tag")
+	}
+	if !mountContainsAllTags(listing, nil) {
+		t.Fatalf("empty tag set should always pass")
+	}
+}
