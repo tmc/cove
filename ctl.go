@@ -435,6 +435,9 @@ Examples:
 	if err != nil {
 		return err
 	}
+	if !resp.Success && strings.HasPrefix(cmdType, "agent-") {
+		return ctlAgentCommandError(sock, cmdType, resp.Error)
+	}
 
 	return ctlPrintResponse(resp, cmdType, *raw, *outputFile)
 }
@@ -479,6 +482,9 @@ func ctlExecStream(sock string, req *controlpb.ControlRequest, timeout time.Dura
 			return fmt.Errorf("parse response: %w", err)
 		}
 		if !resp.Success {
+			if strings.HasPrefix(req.Type, "agent-") {
+				return ctlAgentCommandError(sock, req.Type, resp.Error)
+			}
 			return fmt.Errorf("command failed: %s", resp.Error)
 		}
 		if resp.Data == "" {
@@ -581,7 +587,7 @@ func ctlSendJSON(sock string, obj map[string]interface{}, timeout time.Duration)
 
 	conn, err := net.DialTimeout("unix", sock, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %w", sock, err)
+		return nil, ctlConnectError(sock, err)
 	}
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(timeout))
@@ -679,7 +685,7 @@ func ctlAgentWithRetry(sock string, req *controlpb.ControlRequest, wait, timeout
 			if err != nil {
 				return fmt.Errorf("guest agent not ready after %s: %w\n  possible causes:\n  - VM is still booting (try a longer -wait)\n  - agent not installed (run: vz-macos inject -agent)\n  - agent crashed (check /var/log/vz-agent.log inside guest)", wait, err)
 			}
-			return fmt.Errorf("guest agent not ready after %s: %s", wait, resp.Error)
+			return fmt.Errorf("guest agent not ready after %s: %w", wait, ctlAgentCommandError(sock, req.Type, resp.Error))
 		}
 
 		if attempt == 1 {
@@ -1428,15 +1434,53 @@ func suggestAction(page string) {
 	}
 }
 
+func ctlAgentCommandError(sock, cmdType, detail string) error {
+	state, err := ctlVMStatusState(sock, 2*time.Second)
+	if err != nil || state == "" {
+		return fmt.Errorf("guest agent unavailable: %s", detail)
+	}
+
+	switch canonicalVMState(state) {
+	case "starting", "resuming", "restoring":
+		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)\n  retry with: vz-macos ctl -wait 60s %s\n  details: %s", state, cmdType, detail)
+	case "paused":
+		return fmt.Errorf("guest agent unavailable: vm is paused\n  resume it first: vz-macos ctl resume\n  details: %s", detail)
+	case "stopped", "stopping", "error":
+		return fmt.Errorf("guest agent unavailable: vm is %s\n  start it first: %s\n  details: %s", state, vmRunHintForSocket(sock), detail)
+	case "running":
+		return fmt.Errorf("guest agent unavailable while vm is running\n  vm may still be booting or vz-agent may not be installed/started\n  retry with: vz-macos ctl -wait 60s %s\n  install agent if needed: vz-macos inject -agent\n  details: %s", cmdType, detail)
+	default:
+		return fmt.Errorf("guest agent unavailable: vm state is %s\n  details: %s", state, detail)
+	}
+}
+
+func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {
+	req := &controlpb.ControlRequest{
+		Type:      "status",
+		AuthToken: resolveControlTokenForSocket(sock),
+	}
+	resp, err := ctlSendRequest(sock, req, timeout, "status")
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("status: %s", resp.Error)
+	}
+	if status := resp.GetStatus(); status != nil {
+		return canonicalVMState(status.State), nil
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(resp.Data), &parsed); err != nil {
+		return "", fmt.Errorf("parse status: %w", err)
+	}
+	rawState, _ := parsed["state"].(string)
+	return canonicalVMState(rawState), nil
+}
+
 // ctlConnectError wraps a control socket dial error with actionable guidance.
 func ctlConnectError(sock string, err error) error {
-	if os.IsNotExist(err) || strings.Contains(err.Error(), "no such file") {
-		return fmt.Errorf("VM is not running (no control socket at %s)\n  start the VM first: vz-macos run", sock)
-	}
-	if strings.Contains(err.Error(), "connection refused") {
-		return fmt.Errorf("VM control socket exists but is not responding at %s\n  the VM may have crashed; try: vz-macos run", sock)
-	}
-	return fmt.Errorf("connect to control socket %s: %w", sock, err)
+	return formatControlSocketDialError(sock, err)
 }
 
 // saveScreenshotPNG saves an image as PNG

@@ -26,12 +26,22 @@ import (
 	"strings"
 	"time"
 
+	vz "github.com/tmc/apple/virtualization"
+
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // ensureAgent connects to the guest agent if not already connected.
 // Caller must hold s.agentMu.
 func (s *ControlServer) ensureAgent() error {
+	state, err := s.currentVMState()
+	if err != nil {
+		return err
+	}
+	if err := agentUnavailableForVMState(state); err != nil {
+		return err
+	}
+
 	if s.agent != nil {
 		// Quick health check: if the connection is dead, reconnect.
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -46,6 +56,31 @@ func (s *ControlServer) ensureAgent() error {
 	return s.connectAgentLocked()
 }
 
+func (s *ControlServer) currentVMState() (vz.VZVirtualMachineState, error) {
+	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
+		return vz.VZVirtualMachineStateError, fmt.Errorf("vm not configured")
+	}
+	state := vz.VZVirtualMachineStateStopped
+	DispatchSync(uintptr(s.vmQueue.Handle()), func() {
+		state = vz.VZVirtualMachineState(s.vm.State())
+	})
+	return state, nil
+}
+
+func agentUnavailableForVMState(state vz.VZVirtualMachineState) error {
+	label := vmStateLabel(state)
+	switch state {
+	case vz.VZVirtualMachineStateRunning:
+		return nil
+	case vz.VZVirtualMachineStateStarting, vz.VZVirtualMachineStateResuming, vz.VZVirtualMachineStateRestoring:
+		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)", label)
+	case vz.VZVirtualMachineStatePaused:
+		return fmt.Errorf("guest agent unavailable: vm is paused")
+	default:
+		return fmt.Errorf("guest agent unavailable: vm is %s", label)
+	}
+}
+
 // connectAgentLocked establishes the agent connection.
 // Caller must hold s.agentMu.
 func (s *ControlServer) connectAgentLocked() error {
@@ -55,12 +90,12 @@ func (s *ControlServer) connectAgentLocked() error {
 
 	mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
 	if err != nil {
-		return fmt.Errorf("vsock device: %w (is the VM running?)", err)
+		return fmt.Errorf("vsock device: %w", err)
 	}
 
 	conn, err := mgr.ConnectToAgent(agentPort)
 	if err != nil {
-		return fmt.Errorf("connect agent: %w (is the guest agent running? check /var/log/vz-agent.log inside the VM)", err)
+		return fmt.Errorf("connect agent: %w (guest may still be booting; check /var/log/vz-agent.log inside the vm)", err)
 	}
 
 	client, err := NewAgentClient(conn)

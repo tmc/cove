@@ -59,7 +59,7 @@ func (c *ControlClient) SetAuthToken(token string) {
 func (c *ControlClient) sendRequest(req *controlpb.ControlRequest) (*controlpb.ControlResponse, error) {
 	conn, err := net.DialTimeout("unix", c.socketPath, c.timeout)
 	if err != nil {
-		return nil, fmt.Errorf("connect: %w", err)
+		return nil, formatControlSocketDialError(c.socketPath, err)
 	}
 	defer conn.Close()
 

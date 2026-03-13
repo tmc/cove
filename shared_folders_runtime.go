@@ -42,7 +42,7 @@ func (s *ControlServer) applySharedFoldersToRunningVM(folders []SharedFolderEntr
 	DispatchSync(uintptr(s.vmQueue.Handle()), func() {
 		state := vz.VZVirtualMachineState(s.vm.State())
 		if state != vz.VZVirtualMachineStateRunning && state != vz.VZVirtualMachineStatePaused {
-			applyErr = fmt.Errorf("vm not running (state=%s)", state.String())
+			applyErr = fmt.Errorf("vm not running (state=%s)", vmStateLabel(state))
 			return
 		}
 

@@ -277,13 +277,13 @@ func sharedFolderStatus(vmDirectory, mountPoint string) error {
 	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
 	client.SetTimeout(10 * time.Second)
 	if err := client.Ping(); err != nil {
-		fmt.Printf("Control socket: unavailable (%v)\n", err)
+		printSharedFolderStatusError("Control socket: unavailable", err)
 		return nil
 	}
 	fmt.Println("Control socket: available")
 
 	if _, err := client.AgentPingTyped(); err != nil {
-		fmt.Printf("Guest agent: unavailable (%v)\n", err)
+		printSharedFolderStatusError("Guest agent: unavailable", err)
 		return nil
 	}
 	fmt.Println("Guest agent: available")
@@ -367,4 +367,15 @@ func mountSharedFoldersInGuest(vmDirectory, mountPoint string) (bool, error) {
 		return false, fmt.Errorf("mount_virtiofs exit %d: %s", res.ExitCode, msg)
 	}
 	return true, nil
+}
+
+func printSharedFolderStatusError(prefix string, err error) {
+	fmt.Println(prefix)
+	for _, line := range strings.Split(strings.TrimSpace(err.Error()), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fmt.Printf("  %s\n", line)
+	}
 }

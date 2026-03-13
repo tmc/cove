@@ -1487,7 +1487,7 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 	<-done
 
 	status := map[string]interface{}{
-		"state":          state.String(),
+		"state":          vmStateLabel(state),
 		"canPause":       canPause,
 		"canResume":      canResume,
 		"canStop":        canStop,
@@ -1499,7 +1499,7 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 		Success: true,
 		Data:    string(data),
 		Result: &controlpb.ControlResponse_Status{Status: &controlpb.StatusResponse{
-			State:          state.String(),
+			State:          vmStateLabel(state),
 			CanPause:       canPause,
 			CanResume:      canResume,
 			CanStop:        canStop,
