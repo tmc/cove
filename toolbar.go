@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tmc/apple/appkit"
@@ -35,6 +36,14 @@ const sharedFolderMenuTag = 1000
 // SharedFoldersVirtioFSTag is the VirtioFS tag for the dedicated shared folders device.
 // This device is always created at boot so the toolbar can hotplug folders at runtime.
 const SharedFoldersVirtioFSTag = "_shared-folders"
+
+// modalResponseOKCode is NSModalResponseOK from AppKit.
+// Use the numeric value to stay compatible across apple binding revisions.
+const modalResponseOKCode = 1000
+
+func isModalResponseOK(response appkit.NSModalResponse) bool {
+	return int64(response) == modalResponseOKCode
+}
 
 // VMToolbar manages the NSToolbar for a VM window.
 type VMToolbar struct {
@@ -544,7 +553,7 @@ func (t *VMToolbar) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 
 	response := panel.RunModal()
-	if response != appkit.NSModalResponses.OK {
+	if !isModalResponseOK(response) {
 		return
 	}
 
@@ -578,7 +587,7 @@ func (t *VMToolbar) handleAddSharedFolder(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	panel.SetMessage("Choose folders to share with the VM")
 
 	response := panel.NSSavePanel.RunModal()
-	if response != appkit.NSModalResponses.OK {
+	if !isModalResponseOK(response) {
 		return
 	}
 
@@ -666,6 +675,12 @@ func (t *VMToolbar) saveAndApplySharedFolders(folders []SharedFolderEntry) {
 
 	// Hotplug: update the running VM's directory sharing device
 	t.applySharedFoldersToVM(folders)
+
+	// Mirror CLI behavior: after hotplugging shares, ensure the guest mount
+	// exists so folders appear immediately without requiring a reboot.
+	if len(folders) > 0 && !linuxMode {
+		go t.ensureGuestSharedFoldersMounted()
+	}
 }
 
 // applySharedFoldersToVM updates the VirtioFS share on a running VM.
@@ -733,6 +748,33 @@ func (t *VMToolbar) applySharedFoldersToVM(folders []SharedFolderEntry) {
 		device.SetShare(&share.VZDirectoryShare)
 		fmt.Printf("Toolbar: hotplugged %d shared folder(s) into running VM\n", len(keys))
 	})
+}
+
+func (t *VMToolbar) ensureGuestSharedFoldersMounted() {
+	var lastErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		mounted, err := mountSharedFoldersInGuest(t.vmDirectory, defaultSharedFoldersMountPoint)
+		if err == nil {
+			if mounted {
+				fmt.Printf("Toolbar: mounted shared folders at %s\n", defaultSharedFoldersMountPoint)
+			} else if verbose {
+				fmt.Printf("Toolbar: shared folders already mounted at %s\n", defaultSharedFoldersMountPoint)
+			}
+			return
+		}
+		lastErr = err
+		// Agent/socket readiness often lags behind a recent boot; retry shortly.
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "guest agent unavailable") ||
+			strings.Contains(msg, "not ready") ||
+			strings.Contains(msg, "starting") ||
+			strings.Contains(msg, "resuming") {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		break
+	}
+	fmt.Printf("Toolbar: could not mount shared folders in guest: %v\n", lastErr)
 }
 
 // SharedFolderEntry represents a persisted shared folder configuration.
