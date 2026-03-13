@@ -823,11 +823,10 @@ func ctlClickText(socketPath, text, region string, timeout time.Duration) error 
 }
 
 func ctlClickMenu(socketPath, menu, item string, timeout time.Duration) error {
-	if err := ctlClickText(socketPath, menu, "menu", timeout); err != nil {
-		return err
-	}
-	time.Sleep(250 * time.Millisecond)
-	return ctlClickText(socketPath, item, "menu", timeout)
+	client := NewControlClient(socketPath)
+	client.SetTimeout(timeout + 10*time.Second)
+	ocr := NewOCRService(false)
+	return clickMenuItemViaClient(client, ocr, menu, item, timeout)
 }
 
 // ctlBootScript loads and executes a boot command script via the control socket.
@@ -945,11 +944,7 @@ func executeBootCommandViaClient(client *ControlClient, ocr *OCRService, cmd Boo
 		if menu == "" || item == "" {
 			return fmt.Errorf("clickMenuItem requires \"menu|item\"")
 		}
-		if err := executeBootCommandViaClient(client, ocr, BootCommand{Type: "clickMenu", Args: menu}); err != nil {
-			return err
-		}
-		time.Sleep(250 * time.Millisecond)
-		return executeBootCommandViaClient(client, ocr, BootCommand{Type: "clickMenu", Args: item})
+		return clickMenuItemViaClient(client, ocr, menu, item, 60*time.Second)
 
 	case "type":
 		return client.TypeText(cmd.Args)
@@ -990,6 +985,58 @@ func executeBootCommandViaClient(client *ControlClient, ocr *OCRService, cmd Boo
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Type)
 	}
+}
+
+func clickMenuItemViaClient(client *ControlClient, ocr *OCRService, menu, item string, timeout time.Duration) error {
+	opts := OCRMenuSearchOptions()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		// Step 1: click the menu title.
+		menuClicked := false
+		menuPhaseDeadline := time.Now().Add(3 * time.Second)
+		if menuPhaseDeadline.After(deadline) {
+			menuPhaseDeadline = deadline
+		}
+		for time.Now().Before(menuPhaseDeadline) {
+			img, err := client.Screenshot()
+			if err != nil {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			normX, normY, found := ocr.FindTextNormalizedWithOptions(img, menu, opts)
+			if found {
+				if err := client.MouseClick(normX, normY); err != nil {
+					return err
+				}
+				menuClicked = true
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if !menuClicked {
+			continue
+		}
+
+		// Step 2: click the menu item while the menu is open.
+		time.Sleep(250 * time.Millisecond)
+		itemPhaseDeadline := time.Now().Add(2 * time.Second)
+		if itemPhaseDeadline.After(deadline) {
+			itemPhaseDeadline = deadline
+		}
+		for time.Now().Before(itemPhaseDeadline) {
+			img, err := client.Screenshot()
+			if err != nil {
+				time.Sleep(150 * time.Millisecond)
+				continue
+			}
+			normX, normY, found := ocr.FindTextNormalizedWithOptions(img, item, opts)
+			if found {
+				return client.MouseClick(normX, normY)
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
+	}
+	return fmt.Errorf("timeout clicking menu item %q from menu %q", item, menu)
 }
 
 // ctlDetectScreen detects the current screen state

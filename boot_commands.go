@@ -255,15 +255,34 @@ func (e *BootCommandExecutor) clickTextWithOptions(text string, timeout time.Dur
 
 func (e *BootCommandExecutor) clickMenuItem(menu, item string, timeout time.Duration) error {
 	opts := OCRMenuSearchOptions()
-	if err := e.waitForTextWithOptions(menu, timeout, opts); err != nil {
-		return err
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := e.waitForTextWithOptions(menu, 3*time.Second, opts); err != nil {
+			continue
+		}
+		if err := e.clickTextWithOptions(menu, 2*time.Second, opts); err != nil {
+			continue
+		}
+		time.Sleep(250 * time.Millisecond)
+
+		itemDeadline := time.Now().Add(2 * time.Second)
+		if itemDeadline.After(deadline) {
+			itemDeadline = deadline
+		}
+		for time.Now().Before(itemDeadline) {
+			img := e.captureScreen()
+			if img == nil {
+				time.Sleep(150 * time.Millisecond)
+				continue
+			}
+			x, y, found := e.ocr.FindTextWithOptions(img, item, opts)
+			if found {
+				return e.clickAt(x, y, img.Bounds().Dx(), img.Bounds().Dy())
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
 	}
-	if err := e.clickTextWithOptions(menu, timeout, opts); err != nil {
-		return err
-	}
-	// Keep the menu interaction in one command to reduce timing flakiness.
-	time.Sleep(250 * time.Millisecond)
-	return e.clickTextWithOptions(item, 10*time.Second, opts)
+	return fmt.Errorf("timeout clicking menu item %q from menu %q", item, menu)
 }
 
 func (e *BootCommandExecutor) typeText(text string) error {
