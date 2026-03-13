@@ -486,9 +486,9 @@ func stdoutOrStderrWrite(buf *bytes.Buffer, sink func([]byte), chunk []byte) {
 }
 
 // guestExecInTerminal runs a script in Terminal.app so the user can watch.
-// It runs osascript as the console user (not root) since GUI apps require
-// a WindowServer session, which root doesn't have. The script itself is
-// run via sudo so it has root privileges (matching the non-terminal mode).
+// It launches Terminal with "open -a Terminal <wrapper>" as the console user.
+// This avoids AppleEvents automation prompts from osascript while still
+// executing the target script with root privileges via sudo.
 //
 // To avoid sudo password prompts, a temporary NOPASSWD entry is created
 // in /etc/sudoers.d/ before the script runs.
@@ -509,12 +509,24 @@ func guestExecInTerminal(cfg vzscriptConfig, guestPath string) (script.WaitFunc,
 		}
 	}
 
-	// Build a wrapper that runs the script with sudo and cleans up the sudoers entry.
-	termCmd := fmt.Sprintf("sudo %s; sudo rm -f %s; exit",
-		strings.ReplaceAll(guestPath, `"`, `\"`),
-		sudoersFile)
-	osa := fmt.Sprintf(`tell application "Terminal" to do script "%s"`, termCmd)
-	return guestExec(cfg, []string{"su", "-l", user, "-c", fmt.Sprintf("osascript -e '%s'", osa)})
+	// Build a wrapper launched by Terminal. It runs the target script via sudo
+	// and then removes the temporary sudoers entry.
+	wrapperPath := guestPath + ".command"
+	wrapper := fmt.Sprintf(`#!/bin/bash
+set +e
+sudo /bin/bash %s
+status=$?
+sudo rm -f %s
+echo
+echo "[vzscript] finished with exit code $status"
+exit $status
+`, shellEscape(guestPath), shellEscape(sudoersFile))
+	if err := guestWriteFile(cfg.socketPath, wrapperPath, []byte(wrapper), 0755); err != nil {
+		return nil, fmt.Errorf("write terminal wrapper: %w", err)
+	}
+
+	openCmd := "open -a Terminal " + shellEscape(wrapperPath)
+	return guestExec(cfg, []string{"su", "-l", user, "-c", openCmd})
 }
 
 // guestConsoleUser returns the username of the currently logged-in console user.
