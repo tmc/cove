@@ -178,103 +178,141 @@ func taggedVolumes(mounts []VolumeMount) []VolumeMount {
 // after VM start.
 func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []VolumeMount) {
 	tagged := taggedVolumes(mounts)
-	sharedConfigured := len(LoadSharedFolders(vmDir)) > 0
-	if len(tagged) == 0 && !sharedConfigured {
+	if len(tagged) == 0 && len(LoadSharedFolders(vmDir)) == 0 {
 		return
 	}
 
-	// Wait for agent to become available (VM needs to finish booting).
-	var connected bool
-	for attempt := 0; !connected; attempt++ {
+	// Keep running for the VM lifetime so guest reboot cycles get re-mounted
+	// when the agent becomes available again.
+	for {
+		if err := waitForAgent(ctx, cs); err != nil {
+			return
+		}
+
+		if len(tagged) > 0 {
+			fmt.Println("Auto-mounting tagged volumes in guest...")
+			mountTaggedVolumesOnce(ctx, cs, tagged)
+		}
+
+		sharedConfigured := len(LoadSharedFolders(vmDir)) > 0
+		if sharedConfigured && !linuxMode {
+			mounted, err := mountSharedFoldersInGuest(vmDir, defaultSharedFoldersMountPoint)
+			if err != nil {
+				fmt.Printf("auto-mount shared folders: %v\n", err)
+			} else if mounted {
+				fmt.Printf("Auto-mounted shared folders at %s\n", defaultSharedFoldersMountPoint)
+			} else if verbose {
+				fmt.Printf("Shared folders already mounted at %s\n", defaultSharedFoldersMountPoint)
+			}
+		}
+
+		// Wait here until the guest agent goes away (e.g., guest reboot).
+		// Then loop and perform mount reconciliation again when it returns.
+		if err := waitForAgentLoss(ctx, cs); err != nil {
+			return
+		}
+	}
+}
+
+func waitForAgent(ctx context.Context, cs *ControlServer) error {
+	for attempt := 0; ; attempt++ {
 		delay := time.Duration(min(attempt+1, 5)) * time.Second
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		case <-time.After(delay):
 		}
 
 		cs.mu.Lock()
 		err := cs.ensureAgent()
 		cs.mu.Unlock()
-		if err != nil {
-			if verbose {
-				fmt.Printf("auto-mount: waiting for agent (attempt %d): %v\n", attempt+1, err)
+		if err == nil {
+			return nil
+		}
+		if verbose {
+			fmt.Printf("auto-mount: waiting for agent (attempt %d): %v\n", attempt+1, err)
+		}
+	}
+}
+
+func waitForAgentLoss(ctx context.Context, cs *ControlServer) error {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			cs.mu.Lock()
+			err := cs.ensureAgent()
+			cs.mu.Unlock()
+			if err != nil {
+				if verbose {
+					fmt.Printf("auto-mount: agent unavailable; will re-mount after reconnect: %v\n", err)
+				}
+				return nil
 			}
+		}
+	}
+}
+
+func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []VolumeMount) {
+	for _, m := range tagged {
+		mountPoint := "/mnt/" + m.Tag
+		if linuxMode {
+			mountPoint = "/mnt/" + m.Tag
+		} else {
+			mountPoint = "/Volumes/" + m.Tag
+		}
+
+		// Create mount point
+		cs.mu.Lock()
+		mkdirCtx, mkdirCancel := context.WithTimeout(ctx, 10*time.Second)
+		_, mkdirErr := cs.agent.Exec(mkdirCtx, []string{"mkdir", "-p", mountPoint}, nil, "")
+		mkdirCancel()
+		cs.mu.Unlock()
+
+		if mkdirErr != nil {
+			fmt.Printf("  auto-mount %s: mkdir failed: %v\n", m.Tag, mkdirErr)
 			continue
 		}
-		connected = true
-	}
 
-	if len(tagged) > 0 {
-		fmt.Println("Auto-mounting tagged volumes in guest...")
-		for _, m := range tagged {
-			mountPoint := "/mnt/" + m.Tag
-			if linuxMode {
-				mountPoint = "/mnt/" + m.Tag
-			} else {
-				mountPoint = "/Volumes/" + m.Tag
-			}
+		// Check if already mounted (common after VM resume).
+		cs.mu.Lock()
+		checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+		checkResult, checkErr := cs.agent.Exec(checkCtx, []string{"mount"}, nil, "")
+		checkCancel()
+		cs.mu.Unlock()
 
-			// Create mount point
-			cs.mu.Lock()
-			mkdirCtx, mkdirCancel := context.WithTimeout(ctx, 10*time.Second)
-			_, mkdirErr := cs.agent.Exec(mkdirCtx, []string{"mkdir", "-p", mountPoint}, nil, "")
-			mkdirCancel()
-			cs.mu.Unlock()
-
-			if mkdirErr != nil {
-				fmt.Printf("  auto-mount %s: mkdir failed: %v\n", m.Tag, mkdirErr)
-				continue
-			}
-
-			// Check if already mounted (common after VM resume).
-			cs.mu.Lock()
-			checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
-			checkResult, checkErr := cs.agent.Exec(checkCtx, []string{"mount"}, nil, "")
-			checkCancel()
-			cs.mu.Unlock()
-
-			if checkErr == nil && checkResult.ExitCode == 0 {
-				if strings.Contains(string(checkResult.Stdout), mountPoint) {
+		if checkErr == nil && checkResult.ExitCode == 0 {
+			if strings.Contains(string(checkResult.Stdout), mountPoint) {
+				if verbose {
 					fmt.Printf("  %s already mounted at %s\n", m.Tag, mountPoint)
-					continue
 				}
-			}
-
-			// Mount the VirtioFS tag
-			cs.mu.Lock()
-			mountCtx, mountCancel := context.WithTimeout(ctx, 10*time.Second)
-			result, mountErr := cs.agent.Exec(mountCtx, []string{"mount_virtiofs", m.Tag, mountPoint}, nil, "")
-			mountCancel()
-			cs.mu.Unlock()
-
-			if mountErr != nil {
-				fmt.Printf("  auto-mount %s: mount failed: %v\n", m.Tag, mountErr)
 				continue
 			}
-			if result.ExitCode != 0 {
-				fmt.Printf("  auto-mount %s: mount failed (exit %d): %s\n", m.Tag, result.ExitCode, strings.TrimSpace(string(result.Stderr)))
-				continue
-			}
+		}
 
-			mode := "rw"
-			if m.ReadOnly {
-				mode = "ro"
-			}
-			fmt.Printf("  mounted %s at %s (%s)\n", m.Tag, mountPoint, mode)
-		}
-	}
+		// Mount the VirtioFS tag
+		cs.mu.Lock()
+		mountCtx, mountCancel := context.WithTimeout(ctx, 10*time.Second)
+		result, mountErr := cs.agent.Exec(mountCtx, []string{"mount_virtiofs", m.Tag, mountPoint}, nil, "")
+		mountCancel()
+		cs.mu.Unlock()
 
-	if sharedConfigured && !linuxMode {
-		mounted, err := mountSharedFoldersInGuest(vmDir, defaultSharedFoldersMountPoint)
-		if err != nil {
-			fmt.Printf("auto-mount shared folders: %v\n", err)
-			return
+		if mountErr != nil {
+			fmt.Printf("  auto-mount %s: mount failed: %v\n", m.Tag, mountErr)
+			continue
 		}
-		if mounted {
-			fmt.Printf("Auto-mounted shared folders at %s\n", defaultSharedFoldersMountPoint)
-		} else if verbose {
-			fmt.Printf("Shared folders already mounted at %s\n", defaultSharedFoldersMountPoint)
+		if result.ExitCode != 0 {
+			fmt.Printf("  auto-mount %s: mount failed (exit %d): %s\n", m.Tag, result.ExitCode, strings.TrimSpace(string(result.Stderr)))
+			continue
 		}
+
+		mode := "rw"
+		if m.ReadOnly {
+			mode = "ro"
+		}
+		fmt.Printf("  mounted %s at %s (%s)\n", m.Tag, mountPoint, mode)
 	}
 }
