@@ -18,11 +18,11 @@ type InjectOptions struct {
 	AutoLogin          bool
 	CreateUserPlist    bool // Create user plist directly instead of using LaunchDaemon
 	UID                int
-	SSHKeyPath       string // Path to SSH public key file for authorized_keys
-	InjectAgent      bool   // Cross-compile and inject the vz-agent GRPC daemon
-	InjectGuestTools   bool                // Download and inject SPICE guest tools for clipboard sharing
-	BootstrapRecovery  bool                // Two-user bootstrap: create hidden admin first, then real user
-	EnableSSHD         bool                // Enable SSH daemon (Remote Login) on first boot
+	SSHKeyPath         string // Path to SSH public key file for authorized_keys
+	InjectAgent        bool   // Cross-compile and inject the vz-agent GRPC daemon
+	InjectGuestTools   bool   // Download and inject SPICE guest tools for clipboard sharing
+	BootstrapRecovery  bool   // Two-user bootstrap: create hidden admin first, then real user
+	EnableSSHD         bool   // Enable SSH daemon (Remote Login) on first boot
 }
 
 // provisionVerbose controls verbose output for provision operations.
@@ -227,11 +227,21 @@ Recovery Authorization:
 }
 
 // readPassword prompts for a password, trying multiple approaches:
-//  1. /dev/tty with term.ReadPassword (best: secure, works in normal terminals)
-//  2. osascript GUI dialog (works when no tty, e.g., macgo re-exec)
+//  1. osascript GUI dialog (first when GUI mode is active)
+//  2. /dev/tty with term.ReadPassword
 //  3. os.Stdin plain read (last resort, password will echo)
 func readPassword(prompt string) ([]byte, error) {
-	// Try /dev/tty first — works in normal terminal sessions.
+	if preferPasswordDialog {
+		pw, err := readPasswordViaDialog(prompt)
+		if err == nil && len(pw) > 0 {
+			return pw, nil
+		}
+		if err != nil && strings.Contains(err.Error(), "canceled") {
+			return nil, err
+		}
+	}
+
+	// Try /dev/tty.
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
 		defer tty.Close()
 		fmt.Fprint(tty, prompt)
@@ -243,14 +253,17 @@ func readPassword(prompt string) ([]byte, error) {
 			}
 			return pw, nil
 		}
-		// Fall through to other methods.
 	}
 
-	// Try osascript GUI dialog — works in macgo re-exec where /dev/tty
-	// is unavailable. Shows a native macOS password dialog.
-	pw, err := readPasswordViaDialog(prompt)
-	if err == nil && len(pw) > 0 {
-		return pw, nil
+	// Try osascript GUI dialog as fallback when terminal input is unavailable.
+	if !preferPasswordDialog {
+		pw, err := readPasswordViaDialog(prompt)
+		if err == nil && len(pw) > 0 {
+			return pw, nil
+		}
+		if err != nil && strings.Contains(err.Error(), "canceled") {
+			return nil, err
+		}
 	}
 
 	// Last resort: read from os.Stdin (macgo pipe). Password will echo
@@ -275,8 +288,15 @@ func readPasswordViaDialog(prompt string) ([]byte, error) {
 		prompt,
 	)
 	cmd := exec.Command("osascript", "-e", script)
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, "User canceled") || strings.Contains(msg, "(-128)") {
+			return nil, fmt.Errorf("canceled")
+		}
+		if msg != "" {
+			return nil, fmt.Errorf("osascript: %s", msg)
+		}
 		return nil, err
 	}
 	// Output format: "button returned:OK, text returned:thepassword\n"

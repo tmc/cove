@@ -145,6 +145,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -762,7 +763,7 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 			return fmt.Errorf("apply files: %w", err)
 		}
 	} else {
-		fmt.Println("Requesting administrator privileges...")
+		fmt.Println("Requesting macOS host administrator privileges...")
 		if err := runElevatedBash(tmpPath); err != nil {
 			return err
 		}
@@ -802,7 +803,17 @@ func runElevatedBash(scriptPath string) error {
 		return fmt.Errorf("elevated apply: %w", err)
 	}
 
-	pw, err := readPassword("Administrator password: ")
+	hostUser := os.Getenv("USER")
+	if hostUser == "" {
+		if u, err := user.Current(); err == nil {
+			hostUser = filepath.Base(u.Username)
+		}
+	}
+	prompt := "Host administrator password (for this Mac, not the VM user): "
+	if hostUser != "" {
+		prompt = fmt.Sprintf("Host administrator password for %s (this Mac, not the VM user): ", hostUser)
+	}
+	pw, err := readPassword(prompt)
 	if err != nil {
 		if strings.Contains(err.Error(), "interrupted") || strings.Contains(err.Error(), "canceled") {
 			return fmt.Errorf("interrupted: user cancelled authorization")
@@ -811,7 +822,8 @@ func runElevatedBash(scriptPath string) error {
 	}
 
 	// Run the script via sudo -S (read password from stdin).
-	cmd = exec.Command("sudo", "-S", "bash", scriptPath)
+	// Suppress sudo's own prompt since we already collected the password.
+	cmd = exec.Command("sudo", "-S", "-p", "", "bash", scriptPath)
 	cmd.Stdin = strings.NewReader(string(pw) + "\n")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
