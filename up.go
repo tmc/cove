@@ -117,6 +117,7 @@ Examples:
 
 	// Prompt for password if not provided.
 	if cfg.password == "" {
+		preferPasswordDialog = cfg.gui
 		pw, err := readPassword(fmt.Sprintf("Password for %s: ", cfg.user))
 		if err != nil {
 			return upConfig{}, fmt.Errorf("read password: %w", err)
