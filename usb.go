@@ -47,7 +47,7 @@ func ParseUSBStorageFlag(s string) (USBStorageConfig, error) {
 
 	// Verify file exists
 	if _, err := os.Stat(path); err != nil {
-		return config, fmt.Errorf("USB storage file not found: %s", path)
+		return config, fmt.Errorf("usb storage file not found: %s", path)
 	}
 
 	config.Path = path
@@ -112,7 +112,7 @@ func AddUSBStorageToConfig(config vz.VZVirtualMachineConfiguration, usbConfigs [
 	for i, usbConf := range usbConfigs {
 		usbDevice, err := CreateUSBStorageDevice(usbConf)
 		if err != nil {
-			return fmt.Errorf("USB device %d: %w", i, err)
+			return fmt.Errorf("usb device %d: %w", i, err)
 		}
 		storageDevices = append(storageDevices, vz.VZStorageDeviceConfigurationFromID(usbDevice.ID))
 	}
@@ -157,13 +157,3 @@ func (s *USBStorageSlice) Set(value string) error {
 
 // Check if it's a mass storage device
 
-// USBDeviceInfo contains information about a USB controller
-type USBDeviceInfo struct {
-	ControllerID       string               `json:"controllerId"`
-	MassStorageDevices []USBMassStorageInfo `json:"massStorageDevices,omitempty"`
-}
-
-// USBMassStorageInfo contains information about a USB mass storage device
-type USBMassStorageInfo struct {
-	UUID string `json:"uuid"`
-}

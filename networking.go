@@ -31,19 +31,6 @@ func CreateNetworkDeviceConfiguration(config NetworkConfig) (vz.VZVirtioNetworkD
 	return vzkit.CreateNetworkDevice(config)
 }
 
-// NetworkDeviceInfo contains runtime info about a network device.
-type NetworkDeviceInfo struct {
-	MACAddress    string `json:"macAddress,omitempty"`
-	HasAttachment bool   `json:"hasAttachment"`
-	Mode          string `json:"mode,omitempty"`
-}
-
-// NetworkInterfaceInfo contains information about a network interface.
-type NetworkInterfaceInfo struct {
-	Identifier           string `json:"identifier"`
-	LocalizedDisplayName string `json:"displayName"`
-}
-
 // NetworkModeHelp returns help text for network modes.
 func NetworkModeHelp() string {
 	return `Network modes:

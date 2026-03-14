@@ -94,7 +94,7 @@ func (s *SetupAssistant) Run() error {
 	// Wait for screen to stabilize (VM is booting)
 	s.log("Waiting for screen to stabilize...")
 	if err := s.waitForStableScreen(30 * time.Second); err != nil {
-		s.log("Warning: screen stability check failed: %v", err)
+		s.log("warning: screen stability check failed: %v", err)
 	}
 
 	// Use OCR page detection which is more reliable than pixel-based
@@ -344,7 +344,7 @@ func (s *SetupAssistant) handlePage(page string) bool {
 	case "user_account":
 		s.log("Handling user account screen")
 		if err := s.fillUserAccountForm(); err != nil {
-			s.log("Warning: user account form failed: %v", err)
+			s.log("warning: user account form failed: %v", err)
 		}
 		time.Sleep(2 * time.Second)
 		return true
@@ -832,7 +832,7 @@ func (s *SetupAssistant) clickNormalized(x, y float64) {
 	}
 	if s.client != nil {
 		if err := s.client.MouseClick(x, y); err != nil {
-			s.log("Warning: click at (%.3f, %.3f) failed: %v", x, y, err)
+			s.log("warning: click at (%.3f, %.3f) failed: %v", x, y, err)
 		}
 	}
 }
@@ -847,7 +847,7 @@ func (s *SetupAssistant) pressKey(keyCode uint16) {
 	}
 	if s.client != nil {
 		if err := s.client.KeyPress(keyCode); err != nil {
-			s.log("Warning: key press failed: %v", err)
+			s.log("warning: key press failed: %v", err)
 		}
 	}
 }
@@ -896,30 +896,7 @@ func (s *SetupAssistant) typeText(text string) {
 	}
 	if s.client != nil {
 		if err := s.client.TypeText(text); err != nil {
-			s.log("Warning: type text failed: %v", err)
-		}
-	}
-}
-
-// selectAll sends Cmd+A to select all text.
-func (s *SetupAssistant) selectAll() {
-	if s.cs != nil {
-		s.cs.sendKeyEvent(&controlpb.KeyCommand{
-			KeyCode:   uint32(KeyCodeA),
-			KeyDown:   true,
-			Modifiers: uint32(ModifierCommand),
-		})
-		time.Sleep(50 * time.Millisecond)
-		s.cs.sendKeyEvent(&controlpb.KeyCommand{
-			KeyCode:   uint32(KeyCodeA),
-			KeyDown:   false,
-			Modifiers: uint32(ModifierCommand),
-		})
-		return
-	}
-	if s.client != nil {
-		if err := s.client.KeyPressWithModifiers(KeyCodeA, ModifierCommand); err != nil {
-			s.log("Warning: select all failed: %v", err)
+			s.log("warning: type text failed: %v", err)
 		}
 	}
 }
@@ -931,7 +908,7 @@ func (s *SetupAssistant) saveDebugScreenshot(name string) {
 	}
 
 	if err := os.MkdirAll(s.saveDir, 0755); err != nil {
-		s.log("Warning: failed to create debug dir: %v", err)
+		s.log("warning: failed to create debug dir: %v", err)
 		return
 	}
 
@@ -939,14 +916,14 @@ func (s *SetupAssistant) saveDebugScreenshot(name string) {
 	if s.cs != nil {
 		captured, errMsg := s.cs.captureVMView()
 		if errMsg != "" {
-			s.log("Warning: failed to capture screenshot: %s", errMsg)
+			s.log("warning: failed to capture screenshot: %s", errMsg)
 			return
 		}
 		img = captured
 	} else if s.client != nil {
 		captured, err := s.client.Screenshot()
 		if err != nil {
-			s.log("Warning: failed to capture screenshot: %v", err)
+			s.log("warning: failed to capture screenshot: %v", err)
 			return
 		}
 		img = captured
@@ -957,13 +934,13 @@ func (s *SetupAssistant) saveDebugScreenshot(name string) {
 	path := filepath.Join(s.saveDir, fmt.Sprintf("%s_%d.png", name, time.Now().Unix()))
 	f, err := os.Create(path)
 	if err != nil {
-		s.log("Warning: failed to create screenshot file: %v", err)
+		s.log("warning: failed to create screenshot file: %v", err)
 		return
 	}
 	defer f.Close()
 
 	if err := png.Encode(f, img); err != nil {
-		s.log("Warning: failed to encode screenshot: %v", err)
+		s.log("warning: failed to encode screenshot: %v", err)
 		return
 	}
 	s.log("Saved debug screenshot: %s", path)

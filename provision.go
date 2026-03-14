@@ -223,96 +223,6 @@ type ProvisionConfig struct {
 	EnableSSHD        bool   `json:"enable_sshd,omitempty"`        // Enable SSH daemon (Remote Login) on first boot
 }
 
-// DefaultProvisionDir returns the default provisioning directory path
-func DefaultProvisionDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "provision")
-}
-
-// setupProvisioning creates the provisioning directory structure
-func setupProvisioning() error {
-	provDir := DefaultProvisionDir()
-
-	// Use flags if provided, otherwise prompt
-	username := provisionUser
-	password := provisionPassword
-	admin := provisionAdmin
-
-	if username == "" {
-		return fmt.Errorf("username is required: use -provision-user flag")
-	}
-
-	if password == "" {
-		return fmt.Errorf("password is required: use -provision-password flag")
-	}
-
-	config := ProvisionConfig{
-		Username: username,
-		Password: password,
-		Fullname: username,
-		Admin:    admin,
-	}
-
-	return createProvisioningDirectory(provDir, config)
-}
-
-// createProvisioningDirectory creates the full provisioning directory structure
-func createProvisioningDirectory(provDir string, config ProvisionConfig) error {
-	// Create directory structure
-	dirs := []string{
-		filepath.Join(provDir, "launchd"),
-		filepath.Join(provDir, "scripts"),
-		filepath.Join(provDir, "config"),
-	}
-
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("create directory %s: %w", dir, err)
-		}
-	}
-
-	// Write user config
-	configPath := filepath.Join(provDir, "config", "user.json")
-	configData, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
-	}
-	if err := os.WriteFile(configPath, configData, 0600); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-	fmt.Printf("Created: %s\n", configPath)
-
-	// Write LaunchDaemon plist
-	plistPath := filepath.Join(provDir, "launchd", "com.github.tmc.vz-macos.provision.plist")
-	if err := os.WriteFile(plistPath, []byte(launchDaemonPlist), 0644); err != nil {
-		return fmt.Errorf("write plist: %w", err)
-	}
-	fmt.Printf("Created: %s\n", plistPath)
-
-	// Write provision script
-	scriptPath := filepath.Join(provDir, "scripts", "provision.sh")
-	if err := os.WriteFile(scriptPath, []byte(provisionScript), 0755); err != nil {
-		return fmt.Errorf("write script: %w", err)
-	}
-	fmt.Printf("Created: %s\n", scriptPath)
-
-	fmt.Println()
-	fmt.Println("=== Provisioning Setup Complete ===")
-	fmt.Println()
-	fmt.Printf("Directory: %s\n", provDir)
-	fmt.Printf("Username:  %s\n", config.Username)
-	fmt.Printf("Admin:     %v\n", config.Admin)
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Install macOS: ./vz-macos install")
-	fmt.Println("  2. Run with shared dir: ./vz-macos run -share-dir " + provDir)
-	fmt.Println()
-	fmt.Println("Use: ./vz-macos install (and then ./vz-macos provision)")
-	fmt.Println()
-
-	return nil
-}
-
 // cleanVM removes all VM files from vmDir
 func cleanVM() error {
 	fmt.Printf("Cleaning VM directory: %s\n", vmDir)
@@ -441,11 +351,11 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 		// (iCloud setup, Siri setup, etc.)
 		userTemplateDir := filepath.Join(mountPoint, "Library", "User Template", "English.lproj")
 		if err := os.MkdirAll(userTemplateDir, 0755); err != nil {
-			provisionLog("Warning: could not create User Template directory: %v", err)
+			provisionLog("warning: could not create User Template directory: %v", err)
 		} else {
 			skipBuddyPath := filepath.Join(userTemplateDir, ".skipbuddy")
 			if err := os.WriteFile(skipBuddyPath, []byte{}, 0644); err != nil {
-				provisionLog("Warning: could not create .skipbuddy: %v", err)
+				provisionLog("warning: could not create .skipbuddy: %v", err)
 			} else {
 				provisionLog("Written: %s (suppresses first-login dialogs)", skipBuddyPath)
 			}
@@ -606,7 +516,7 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 		}
 		if err := stageFile(stagingDir, filepath.Join("Library", "User Template", "English.lproj", ".skipbuddy"),
 			[]byte{}, 0644, "", manifest); err != nil {
-			provisionLog("Warning: could not stage .skipbuddy: %v", err)
+			provisionLog("warning: could not stage .skipbuddy: %v", err)
 		}
 	}
 

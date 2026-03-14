@@ -1,7 +1,7 @@
 // display.go - Multi-display support for VMs
 //
 // This file delegates to vzkit for core display configuration.
-// App-specific helpers (verbose logging, DisplayInfo) remain here.
+// App-specific helpers (verbose logging) remain here.
 package main
 
 import (
@@ -20,11 +20,6 @@ type DisplaySlice = vzkit.DisplaySlice
 // DefaultDisplayConfig returns the default display configuration.
 func DefaultDisplayConfig() DisplayConfig {
 	return vzkit.DefaultDisplayConfig()
-}
-
-// ParseDisplaySpec parses a display specification string.
-func ParseDisplaySpec(s string) (DisplayConfig, error) {
-	return vzkit.ParseDisplaySpec(s)
 }
 
 // CreateMacGraphicsConfig creates a macOS graphics device configuration
@@ -46,13 +41,6 @@ func CreateMacGraphicsConfig(displays []DisplayConfig) (vz.VZMacGraphicsDeviceCo
 // with the specified displays (for VirtIO GPU).
 func CreateVirtioGraphicsConfig(displays []DisplayConfig) (vz.VZVirtioGraphicsDeviceConfiguration, error) {
 	return vzkit.CreateVirtioGraphicsConfig(displays)
-}
-
-// DisplayInfo contains runtime display information.
-type DisplayInfo struct {
-	Index  int `json:"index"`
-	Width  int `json:"width"`
-	Height int `json:"height"`
 }
 
 // GetDefaultDisplayForVM returns the appropriate default display for a VM type.

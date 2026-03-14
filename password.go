@@ -338,22 +338,6 @@ func EncodeLoginWindowPlist(lwp *LoginWindowPlist) ([]byte, error) {
 	return plist.Marshal(lwp, plist.FormatBinary)
 }
 
-// Derive key from password using same parameters
-
-// Compare
-
-// KCPasswordPath is the path to the kcpassword file
-const KCPasswordPath = "/etc/kcpassword"
-
-// LoginWindowPlistPath is the path to the loginwindow plist
-const LoginWindowPlistPath = "/Library/Preferences/com.apple.loginwindow.plist"
-
-// UserPlistDir is the directory containing user plists
-const UserPlistDir = "/var/db/dslocal/nodes/Default/users"
-
-// AppleSetupDonePath is the marker file to skip Setup Assistant
-const AppleSetupDonePath = "/var/db/.AppleSetupDone"
-
 // HomeDirectories are the standard directories in a user's home folder
 var HomeDirectories = []string{
 	"Desktop",

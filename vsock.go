@@ -12,9 +12,6 @@ import (
 	"github.com/tmc/apple/x/vzkit"
 )
 
-// VsockConnection wraps a VZVirtioSocketConnection as a net.Conn.
-type VsockConnection = vzkit.VsockConn
-
 // VsockDeviceManager manages the VZVirtioSocketDevice for a running VM.
 type VsockDeviceManager struct {
 	mgr *vzkit.VsockManager

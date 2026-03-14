@@ -82,12 +82,6 @@ func (o *OCRService) FindTextWithOptions(img image.Image, needle string, opts OC
 	return float64(best.Center.X), float64(best.Center.Y), true
 }
 
-// bestMatch selects the best observation matching needle from candidates.
-// Ranking: exact match > shorter text > closer to bottom of screen.
-func bestMatch(observations []TextObservation, needle string) (TextObservation, bool) {
-	return bestMatchWithOptions(observations, needle, OCRSearchOptions{}, image.Rectangle{})
-}
-
 func bestMatchWithOptions(observations []TextObservation, needle string, opts OCRSearchOptions, bounds image.Rectangle) (TextObservation, bool) {
 	needle = strings.ToLower(needle)
 
@@ -148,34 +142,6 @@ func (o *OCRService) FindTextNormalizedWithOptions(img image.Image, needle strin
 	return px / float64(bounds.Dx()), py / float64(bounds.Dy()), true
 }
 
-// NormalizedObservation holds a recognized text region with normalized coordinates.
-type NormalizedObservation struct {
-	Text       string
-	Confidence float32
-	X, Y       float64 // center in normalized coordinates (0-1, top-left origin)
-}
-
-// FindAllTextNormalized returns all OCR observations with normalized coordinates.
-func (o *OCRService) FindAllTextNormalized(img image.Image) ([]NormalizedObservation, error) {
-	observations, err := o.RecognizeText(img)
-	if err != nil {
-		return nil, err
-	}
-	bounds := img.Bounds()
-	w := float64(bounds.Dx())
-	h := float64(bounds.Dy())
-	result := make([]NormalizedObservation, len(observations))
-	for i, obs := range observations {
-		result[i] = NormalizedObservation{
-			Text:       obs.Text,
-			Confidence: obs.Confidence,
-			X:          float64(obs.Center.X) / w,
-			Y:          float64(obs.Center.Y) / h,
-		}
-	}
-	return result, nil
-}
-
 // AllText returns all recognized text as a single string.
 func (o *OCRService) AllText(img image.Image) string {
 	observations, err := o.RecognizeText(img)
@@ -187,31 +153,6 @@ func (o *OCRService) AllText(img image.Image) string {
 		lines = append(lines, obs.Text)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func (o *OCRService) recognizeTextInFile(path string, width, height int) ([]TextObservation, error) {
-	url := foundation.GetNSURLClass().FileURLWithPath(path)
-	if url.ID == 0 {
-		return nil, fmt.Errorf("invalid path: %s", path)
-	}
-
-	handler := vision.NewImageRequestHandlerWithURLOptions(url, nil)
-
-	request := vision.NewVNRecognizeTextRequest()
-	request.SetRecognitionLevel(vision.VNRequestTextRecognitionLevelAccurate)
-	request.SetUsesLanguageCorrection(true)
-
-	ok, err := handler.PerformRequestsError([]vision.VNRequest{
-		vision.VNRequestFromID(request.ID),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("perform requests: %w", err)
-	}
-	if !ok {
-		return nil, fmt.Errorf("perform requests returned false")
-	}
-
-	return o.extractResults(request, width, height), nil
 }
 
 func (o *OCRService) recognizeTextInData(data foundation.INSData, width, height int) ([]TextObservation, error) {

@@ -161,28 +161,6 @@ func cloneFileWithFallback(src, dst string) error {
 	return copyFile(src, dst)
 }
 
-// copyDirRecursive copies a directory tree.
-func copyDirRecursive(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			return os.MkdirAll(target, info.Mode())
-		}
-		return copyFile(path, target)
-	})
-}
-
 // ListTemplates returns all available templates.
 func ListTemplates() ([]TemplateInfo, error) {
 	templateDir := GetTemplateDir()
@@ -291,7 +269,7 @@ func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
 	// Check VM doesn't exist
 	vmPath := GetVMPath(opts.VMName)
 	if _, err := os.Stat(vmPath); !os.IsNotExist(err) {
-		return fmt.Errorf("VM already exists: %s", opts.VMName)
+		return fmt.Errorf("vm already exists: %s", opts.VMName)
 	}
 
 	modeStr := "decompressing"
