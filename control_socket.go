@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -56,7 +57,7 @@ type ControlServer struct {
 	mu                sync.Mutex
 	agentMu           sync.Mutex // separate mutex for agent operations (can be long-running)
 	screenshotMu      sync.Mutex // protects lastScreenshot for diff mode
-	running           bool
+	running           atomic.Bool
 	lastScreenshot    image.Image  // For diff mode
 	agent             *AgentClient // GRPC client to guest agent (nil until connected)
 	ocr               *OCRService  // lazily created OCR service for server-side OCR commands
@@ -98,8 +99,10 @@ func (s *ControlServer) SetVMViewWithWindow(view vz.VZVirtualMachineView, window
 	// Cache view content height for title bar cropping in screenshots.
 	// This runs on the main thread so we can safely read NSView bounds.
 	s.viewContentHeight = int(vmViewAsNSView(view).Bounds().Size.Height)
-	fmt.Printf("[control] SetVMViewWithWindow: vmView=%x window=%x windowNum=%d viewH=%d verbose=%v\n",
-		view.ID, window.ID, s.windowNum, s.viewContentHeight, verbose)
+	if verbose {
+		fmt.Printf("[control] SetVMViewWithWindow: vmView=%x window=%x windowNum=%d viewH=%d\n",
+			view.ID, window.ID, s.windowNum, s.viewContentHeight)
+	}
 }
 
 // SetVM sets the VM and dispatch queue for lifecycle operations (pause/resume/stop)
@@ -132,7 +135,7 @@ func (s *ControlServer) Start() error {
 		return fmt.Errorf("chmod socket: %w", err)
 	}
 	s.listener = listener
-	s.running = true
+	s.running.Store(true)
 
 	if verbose {
 		fmt.Printf("Control socket listening at: %s\n", s.socketPath)
@@ -145,7 +148,7 @@ func (s *ControlServer) Start() error {
 
 // Stop closes the control server
 func (s *ControlServer) Stop() {
-	s.running = false
+	s.running.Store(false)
 	if s.listener != nil {
 		s.listener.Close()
 	}
@@ -153,10 +156,10 @@ func (s *ControlServer) Stop() {
 }
 
 func (s *ControlServer) acceptLoop() {
-	for s.running {
+	for s.running.Load() {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			if s.running {
+			if s.running.Load() {
 				fmt.Printf("Accept error: %v\n", err)
 			}
 			continue
@@ -1309,12 +1312,16 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 		return &controlpb.ControlResponse{Error: "text input requires GUI mode (run with -gui)"}
 	}
 
-	fmt.Printf("[typeText] typing %d chars: %q\n", len([]rune(cmd.Text)), cmd.Text)
+	if verbose {
+		fmt.Printf("[typeText] typing %d chars: %q\n", len([]rune(cmd.Text)), cmd.Text)
+	}
 
 	for _, ch := range cmd.Text {
 		info, ok := charToKeyCode[ch]
 		if !ok {
-			fmt.Printf("[typeText] no keycode for %q, skipping\n", ch)
+			if verbose {
+				fmt.Printf("[typeText] no keycode for %q, skipping\n", ch)
+			}
 			continue
 		}
 
@@ -1342,7 +1349,9 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	fmt.Printf("[typeText] done typing %q\n", cmd.Text)
+	if verbose {
+		fmt.Printf("[typeText] done typing %q\n", cmd.Text)
+	}
 	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 }
 
@@ -1389,19 +1398,9 @@ func GetControlSocketPathForVM(vmDirectory string) string {
 	return filepath.Join(vmDirectory, "control.sock")
 }
 
-// GetControlTokenPath returns the default control token file path.
-func GetControlTokenPath() string {
-	return GetControlTokenPathForVM(vmDir)
-}
-
 // GetControlTokenPathForVM returns the control token file path for a specific VM dir.
 func GetControlTokenPathForVM(vmDirectory string) string {
 	return filepath.Join(vmDirectory, controlTokenFileName)
-}
-
-// LoadControlTokenForVM reads the control token for a specific VM directory.
-func LoadControlTokenForVM(vmDirectory string) (string, error) {
-	return LoadControlTokenFromPath(GetControlTokenPathForVM(vmDirectory))
 }
 
 // LoadControlTokenFromPath reads a control token file and trims whitespace.

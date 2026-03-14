@@ -20,7 +20,7 @@ var (
 	runVM       bool // Deprecated: kept for compatibility, now handled by commands
 	installVM   bool // Deprecated: kept for compatibility, now handled by commands
 	guiMode     bool
-	useCurl     bool
+
 	linuxMode   bool
 	cpuCount    uint
 	memoryGB    uint64
@@ -103,7 +103,7 @@ func init() {
 	flag.BoolVar(&installVM, "install", false, "install macOS from IPSW (uses -ipsw or fetches latest)")
 	flag.BoolVar(&guiMode, "gui", true, "show VM display in a window (default: true)")
 	flag.BoolVar(&headlessMode, "headless", false, "run without GUI window")
-	flag.BoolVar(&useCurl, "curl", false, "use curl for IPSW download (resumable, saves to restore.ipsw)")
+
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.UintVar(&cpuCount, "cpu", 2, "number of CPUs")
@@ -297,6 +297,13 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "provision":
+			fmt.Fprintf(os.Stderr, "warning: 'provision' command is deprecated, use 'inject' instead\n")
+			if err := handleProvision(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "inject-agent":
 			// Shorthand for "inject -agent" (no user provisioning)
 			if err := injectAgentOnly(); err != nil {
@@ -330,8 +337,8 @@ func main() {
 			}
 			return
 		case "uiscript":
-			fmt.Fprintf(os.Stderr, "The 'uiscript' command has been merged into 'vzscript'.\nUse 'vz-macos vzscript' instead.\n")
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'vz-macos vzscript' instead.\n")
+			os.Exit(0)
 			return
 		}
 
@@ -390,13 +397,6 @@ func main() {
 			return
 		case "list":
 			handleList()
-			return
-		case "provision":
-			fmt.Fprintf(os.Stderr, "warning: 'provision' command is deprecated, use 'inject' instead\n")
-			if err := handleProvision(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
 			return
 		case "clean":
 			if err := cleanVM(); err != nil {
@@ -618,6 +618,9 @@ func validateLaunchOptions() error {
 	default:
 		return fmt.Errorf("invalid -runtime-profile %q (must be full or minimal)", runtimeProfile)
 	}
+	if diskSizeGB < 1 {
+		return fmt.Errorf("disk-size must be at least 1 (GB)")
+	}
 	return nil
 }
 
@@ -679,7 +682,7 @@ func handleClone(args []string) {
 	for _, arg := range args {
 		if arg == "--linked" || arg == "-linked" {
 			cloneLinked = true
-		} else if arg[0] != '-' {
+		} else if len(arg) > 0 && arg[0] != '-' {
 			nonFlagArgs = append(nonFlagArgs, arg)
 		}
 	}
@@ -804,7 +807,7 @@ Compressed templates take longer to save but use less disk space.`)
 		fmt.Printf("Template '%s' deleted.\n", subargs[0])
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown template command: %s\n", subcmd)
+		fmt.Fprintf(os.Stderr, "Unknown template command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -886,7 +889,7 @@ Commands:
 		}
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown vm command: %s\n", subcmd)
+		fmt.Fprintf(os.Stderr, "Unknown vm command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -958,7 +961,7 @@ Examples:
 		}
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown snapshot command: %s\n", subcmd)
+		fmt.Fprintf(os.Stderr, "Unknown snapshot command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -976,8 +979,7 @@ func handleNetworkCommand(args []string) {
 	case "help":
 		fmt.Println(NetworkModeHelp())
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown network command: %s\n", args[0])
-		fmt.Println("\nUsage: vz-macos network [list|help]")
+		fmt.Fprintf(os.Stderr, "Unknown network command: %s\nRun 'vz-macos -help' for usage.\n", args[0])
 		os.Exit(1)
 	}
 }
