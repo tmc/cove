@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -13,6 +14,15 @@ import (
 // runPostInstallVZScripts boots the VM, waits for the guest agent, runs
 // the comma-separated vzscript recipes, and shuts down the VM.
 func runPostInstallVZScripts(recipes string) error {
+	return runPostInstallVZScriptsWithOutput(recipes, os.Stdout)
+}
+
+// runPostInstallVZScriptsWithOutput is runPostInstallVZScripts with a caller-provided
+// log sink for progress and streamed command output.
+func runPostInstallVZScriptsWithOutput(recipes string, out io.Writer) error {
+	if out == nil {
+		out = os.Stdout
+	}
 	names := strings.Split(recipes, ",")
 	for i := range names {
 		names[i] = strings.TrimSpace(names[i])
@@ -28,11 +38,11 @@ func runPostInstallVZScripts(recipes string) error {
 		}
 	}
 
-	fmt.Printf("\n=== Post-install: running %d vzscript(s) ===\n", len(names))
+	fmt.Fprintf(out, "\n=== Post-install: running %d vzscript(s) ===\n", len(names))
 	for _, n := range names {
-		fmt.Printf("  - %s\n", n)
+		fmt.Fprintf(out, "  - %s\n", n)
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 
 	// Boot the VM in a goroutine.
 	vmErr := make(chan error, 1)
@@ -46,11 +56,14 @@ func runPostInstallVZScripts(recipes string) error {
 		socketPath:  sock,
 		execTimeout: 30 * time.Minute,
 		verbose:     true,
+		logWriter:   out,
+		streamOut:   out,
+		streamErr:   out,
 	}
 
 	// Build a combined script: guest-wait, then each recipe.
 	// First wait for the agent.
-	fmt.Println("Waiting for VM to boot and guest agent...")
+	fmt.Fprintln(out, "Waiting for VM to boot and guest agent...")
 	waitScript := []byte("guest-wait 15m\n")
 	if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
 		return fmt.Errorf("waiting for agent: %w", err)
@@ -58,7 +71,7 @@ func runPostInstallVZScripts(recipes string) error {
 
 	// Run each recipe in order.
 	for _, name := range names {
-		fmt.Printf("\n=== Running vzscript: %s ===\n", name)
+		fmt.Fprintf(out, "\n=== Running vzscript: %s ===\n", name)
 		data, err := loadVZScriptData(name)
 		if err != nil {
 			return err
@@ -66,22 +79,22 @@ func runPostInstallVZScripts(recipes string) error {
 		if err := runVZScript(data, name, cfg); err != nil {
 			return fmt.Errorf("vzscript %s: %w", name, err)
 		}
-		fmt.Printf("=== Done: %s ===\n", name)
+		fmt.Fprintf(out, "=== Done: %s ===\n", name)
 	}
 
 	// Shut down the VM gracefully.
-	fmt.Println("\nShutting down VM...")
+	fmt.Fprintln(out, "\nShutting down VM...")
 	_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
 
 	select {
 	case err := <-vmErr:
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "VM exited with error: %v\n", err)
+			fmt.Fprintf(out, "VM exited with error: %v\n", err)
 		}
 	case <-time.After(2 * time.Minute):
-		fmt.Println("VM did not exit within timeout.")
+		fmt.Fprintln(out, "VM did not exit within timeout.")
 	}
 
-	fmt.Println("\nPost-install complete.")
+	fmt.Fprintln(out, "\nPost-install complete.")
 	return nil
 }
