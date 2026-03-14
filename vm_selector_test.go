@@ -55,6 +55,21 @@ func TestValidateNewVMOptions(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "valid post-install recipe",
+			opts: newVMOptions{
+				Name:               "macos",
+				PostInstallRecipes: "homebrew",
+			},
+		},
+		{
+			name: "invalid post-install recipe",
+			opts: newVMOptions{
+				Name:               "macos",
+				PostInstallRecipes: "does-not-exist",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -181,5 +196,17 @@ func TestInitialSelectionRow(t *testing.T) {
 				t.Fatalf("initialSelectionRow() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSelectorAutoresizingMaskConstants(t *testing.T) {
+	if selectorViewMinX != 1 {
+		t.Fatalf("selectorViewMinX = %d, want 1", selectorViewMinX)
+	}
+	if selectorViewWidth != 2 {
+		t.Fatalf("selectorViewWidth = %d, want 2", selectorViewWidth)
+	}
+	if selectorViewHeight != 16 {
+		t.Fatalf("selectorViewHeight = %d, want 16", selectorViewHeight)
 	}
 }

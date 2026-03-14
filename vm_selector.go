@@ -4,40 +4,59 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // VM selector window dimensions.
 const (
-	selectorWindowWidth  = 540
-	selectorWindowHeight = 400
-	selectorMinWidth     = 400
-	selectorMinHeight    = 300
-	selectorTableHeight  = 340
-	selectorBarHeight    = 50
+	selectorWindowWidth  = 920
+	selectorWindowHeight = 520
+	selectorMinWidth     = 760
+	selectorMinHeight    = 380
+	selectorBarHeight    = 52
 	selectorButtonHeight = 30
+	selectorDetailWidth  = 290
+	selectorViewMinX     = 1
+	selectorViewWidth    = 2
+	selectorViewHeight   = 16
 )
 
 // VMSelector displays a native macOS window with a table of VMs.
 type VMSelector struct {
-	window     appkit.NSWindow
-	tableView  appkit.NSTableView
-	runButton  appkit.NSButton
-	coldButton appkit.NSButton
-	delButton  appkit.NSButton
-	vms        []VMInfo
-	activeVM   string
-	delegateID objc.ID
-	onSelect   func(VMInfo, bool)
-	onInstall  func()
+	window        appkit.NSWindow
+	tableView     appkit.NSTableView
+	runButton     appkit.NSButton
+	coldButton    appkit.NSButton
+	delButton     appkit.NSButton
+	refreshButton appkit.NSButton
+	revealButton  appkit.NSButton
+	detailTitle   appkit.NSTextField
+	detailState   appkit.NSTextField
+	detailOS      appkit.NSTextField
+	detailSize    appkit.NSTextField
+	detailDate    appkit.NSTextField
+	detailPath    appkit.NSTextField
+	vms           []VMInfo
+	activeVM      string
+	delegateID    objc.ID
+	onSelect      func(VMInfo, bool)
+	onInstall     func()
 }
 
 type selectorActionKind int
@@ -56,10 +75,485 @@ type selectorAction struct {
 }
 
 type newVMOptions struct {
-	Name              string
-	ProvisionUser     string
-	ProvisionPassword string
-	ProvisionAdmin    bool
+	Name               string
+	ProvisionUser      string
+	ProvisionPassword  string
+	ProvisionAdmin     bool
+	PostInstallRecipes string
+}
+
+const selectorNoRecipe = "(none)"
+
+var vmSelectorDelegateCounter uint64
+var selectorScriptRunnerDelegateCounter uint64
+
+type selectorLogWriter struct {
+	ch chan string
+}
+
+func (w *selectorLogWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	w.ch <- string(append([]byte(nil), p...))
+	return len(p), nil
+}
+
+type selectorScriptRunner struct {
+	window    appkit.NSWindow
+	status    appkit.NSTextField
+	popup     appkit.NSPopUpButton
+	textView  appkit.NSTextView
+	runButton appkit.NSButton
+	vm        VMInfo
+	delegate  objc.ID
+	logCh     chan string
+	doneCh    chan error
+	running   bool
+	closed    bool
+}
+
+func newSelectorScriptRunner(vm VMInfo, recipes []string) *selectorScriptRunner {
+	r := &selectorScriptRunner{
+		vm:     vm,
+		logCh:  make(chan string, 1024),
+		doneCh: make(chan error, 1),
+	}
+	r.registerDelegate()
+	r.buildWindow(recipes)
+	return r
+}
+
+func (r *selectorScriptRunner) registerDelegate() {
+	className := fmt.Sprintf("VZScriptRunnerDelegate_%d", atomic.AddUint64(&selectorScriptRunnerDelegateCounter, 1))
+	cls, err := objc.RegisterClass(
+		className,
+		objc.GetClass("NSObject"),
+		nil, nil,
+		[]objc.MethodDef{
+			{Cmd: objc.RegisterName("runVZScriptRecipe:"), Fn: r.handleRun},
+			{Cmd: objc.RegisterName("closeVZScriptRunner:"), Fn: r.handleClose},
+		},
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not register VZScriptRunnerDelegate: %v\n", err)
+		return
+	}
+	r.delegate = objc.Send[objc.ID](objc.ID(cls), objc.Sel("alloc"))
+	r.delegate = objc.Send[objc.ID](r.delegate, objc.Sel("init"))
+}
+
+func (r *selectorScriptRunner) buildWindow(recipes []string) {
+	frame := corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 260, Y: 260},
+		Size:   corefoundation.CGSize{Width: 760, Height: 420},
+	}
+	r.window = appkit.NewWindowWithContentRectStyleMaskBackingDefer(
+		frame,
+		appkit.NSWindowStyleMaskTitled|
+			appkit.NSWindowStyleMaskClosable|
+			appkit.NSWindowStyleMaskMiniaturizable,
+		appkit.NSBackingStoreBuffered,
+		false,
+	)
+	r.window.SetTitle("Run VZScript")
+	r.window.Center()
+	objc.Send[objc.ID](r.window.ID, objc.Sel("setReleasedWhenClosed:"), false)
+
+	content := objc.Send[objc.ID](r.window.ID, objc.Sel("contentView"))
+
+	title := appkit.NewTextFieldLabelWithString(fmt.Sprintf("VM: %s", r.vm.Name))
+	title.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 16, Y: 390},
+		Size:   corefoundation.CGSize{Width: 728, Height: 18},
+	})
+	objc.Send[objc.ID](content, objc.Sel("addSubview:"), title.ID)
+
+	r.status = appkit.NewTextFieldLabelWithString("Select a recipe and click Run.")
+	r.status.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 16, Y: 366},
+		Size:   corefoundation.CGSize{Width: 728, Height: 18},
+	})
+	objc.Send[objc.ID](content, objc.Sel("addSubview:"), r.status.ID)
+
+	r.popup = appkit.NewPopUpButtonWithFramePullsDown(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 16, Y: 338},
+		Size:   corefoundation.CGSize{Width: 530, Height: 24},
+	}, false)
+	if len(recipes) > 0 {
+		r.popup.AddItemsWithTitles(recipes)
+	}
+	objc.Send[objc.ID](content, objc.Sel("addSubview:"), r.popup.ID)
+
+	target := objectivec.ObjectFromID(r.delegate)
+	r.runButton = appkit.NewButtonWithTitleTargetAction("Run", target, objc.Sel("runVZScriptRecipe:"))
+	r.runButton.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 560, Y: 336},
+		Size:   corefoundation.CGSize{Width: 88, Height: 28},
+	})
+	objc.Send[objc.ID](r.runButton.ID, objc.Sel("setBezelStyle:"), int(1))
+	objc.Send[objc.ID](content, objc.Sel("addSubview:"), r.runButton.ID)
+
+	closeBtn := appkit.NewButtonWithTitleTargetAction("Close", target, objc.Sel("closeVZScriptRunner:"))
+	closeBtn.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 656, Y: 336},
+		Size:   corefoundation.CGSize{Width: 88, Height: 28},
+	})
+	objc.Send[objc.ID](closeBtn.ID, objc.Sel("setBezelStyle:"), int(1))
+	objc.Send[objc.ID](content, objc.Sel("addSubview:"), closeBtn.ID)
+
+	scroll := appkit.NewScrollViewWithFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 16, Y: 16},
+		Size:   corefoundation.CGSize{Width: 728, Height: 312},
+	})
+	scroll.SetHasVerticalScroller(true)
+	scroll.SetHasHorizontalScroller(false)
+	scroll.SetAutohidesScrollers(true)
+	objc.Send[objc.ID](scroll.ID, objc.Sel("setBorderType:"), appkit.NSBezelBorder)
+
+	r.textView = appkit.NewTextViewWithFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 0, Y: 0},
+		Size:   corefoundation.CGSize{Width: 728, Height: 312},
+	})
+	r.textView.SetEditable(false)
+	r.textView.SetSelectable(true)
+	r.textView.SetString("")
+	mono := appkit.GetNSFontClass().MonospacedSystemFontOfSizeWeight(12, appkit.NSFontWeights.Regular)
+	r.textView.SetFont(mono)
+	scroll.SetDocumentView(r.textView)
+	objc.Send[objc.ID](content, objc.Sel("addSubview:"), scroll.ID)
+}
+
+func (r *selectorScriptRunner) runModal() {
+	app := getSharedApp()
+
+	nc := foundation.GetNotificationCenterClass().DefaultCenter()
+	nsName := objc.String("NSWindowWillCloseNotification")
+	objc.Send[objc.ID](nc.ID, objc.Sel("addObserverForName:object:queue:usingBlock:"),
+		nsName, r.window.ID, objc.ID(0),
+		objc.NewBlock(func(_ objc.Block, _ objc.ID) {
+			r.closed = true
+			app.StopModal()
+		}),
+	)
+
+	r.window.MakeKeyAndOrderFront(nil)
+	app.Activate()
+
+	var logText strings.Builder
+	var scheduleTimer func()
+	scheduleTimer = func() {
+		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0.05, false, func(_ *foundation.NSTimer) {
+			updated := false
+			for i := 0; i < 256; i++ {
+				select {
+				case chunk := <-r.logCh:
+					logText.WriteString(chunk)
+					updated = true
+				default:
+					i = 256
+				}
+			}
+			if updated {
+				text := logText.String()
+				r.textView.SetString(text)
+				r.textView.ScrollRangeToVisible(foundation.NSRange{
+					Location: uint(len(text)),
+					Length:   0,
+				})
+			}
+
+			if r.running {
+				select {
+				case err := <-r.doneCh:
+					r.running = false
+					objc.Send[objc.ID](r.runButton.ID, objc.Sel("setEnabled:"), true)
+					objc.Send[objc.ID](r.popup.ID, objc.Sel("setEnabled:"), true)
+					if err != nil {
+						r.status.SetStringValue("Failed: " + err.Error())
+					} else {
+						r.status.SetStringValue("Complete.")
+					}
+				default:
+				}
+			}
+
+			if !r.closed {
+				scheduleTimer()
+			}
+		})
+	}
+	scheduleTimer()
+	app.RunModalForWindow(r.window)
+}
+
+func (r *selectorScriptRunner) handleRun(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	if r.running {
+		return
+	}
+	recipe := strings.TrimSpace(r.popup.TitleOfSelectedItem())
+	if recipe == "" {
+		r.status.SetStringValue("Select a recipe first.")
+		return
+	}
+	r.status.SetStringValue("Running " + recipe + "...")
+	r.running = true
+	objc.Send[objc.ID](r.runButton.ID, objc.Sel("setEnabled:"), false)
+	objc.Send[objc.ID](r.popup.ID, objc.Sel("setEnabled:"), false)
+	go func() {
+		r.doneCh <- runVZScriptRecipeOnRunningVM(r.vm, recipe, &selectorLogWriter{ch: r.logCh})
+	}()
+}
+
+func (r *selectorScriptRunner) handleClose(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	r.closed = true
+	getSharedApp().StopModal()
+	r.window.Close()
+}
+
+func runVZScriptRecipeOnRunningVM(vm VMInfo, recipe string, out io.Writer) error {
+	if out == nil {
+		out = os.Stdout
+	}
+	sock := filepath.Join(vm.Path, "control.sock")
+	if !isVMRunning(sock) {
+		return fmt.Errorf("vm %q is not running; start it and retry", vm.Name)
+	}
+	cfg := vzscriptConfig{
+		socketPath:  sock,
+		execTimeout: 30 * time.Minute,
+		verbose:     true,
+		logWriter:   out,
+		streamOut:   out,
+		streamErr:   out,
+	}
+	fmt.Fprintf(out, "\n=== Running vzscript on %s: %s ===\n", vm.Name, recipe)
+	if err := runVZScriptWithDeps([]string{recipe}, cfg); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "=== Done: %s ===\n", recipe)
+	return nil
+}
+
+func runPostInstallVZScriptsWithSelectorUI(recipes string) error {
+	app := getSharedApp()
+
+	contentRect := corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 240, Y: 240},
+		Size:   corefoundation.CGSize{Width: 840, Height: 520},
+	}
+	window := appkit.NewWindowWithContentRectStyleMaskBackingDefer(
+		contentRect,
+		appkit.NSWindowStyleMaskTitled,
+		appkit.NSBackingStoreBuffered,
+		false,
+	)
+	window.SetTitle("Post-install VZScript Output")
+	window.Center()
+	objc.Send[objc.ID](window.ID, objc.Sel("setReleasedWhenClosed:"), false)
+
+	contentViewID := objc.Send[objc.ID](window.ID, objc.Sel("contentView"))
+
+	status := appkit.NewTextFieldLabelWithString("Running post-install scripts. VM window and log window are both active.")
+	status.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 16, Y: 486},
+		Size:   corefoundation.CGSize{Width: 808, Height: 20},
+	})
+	objc.Send[objc.ID](contentViewID, objc.Sel("addSubview:"), status.ID)
+
+	scroll := appkit.NewScrollViewWithFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 16, Y: 16},
+		Size:   corefoundation.CGSize{Width: 808, Height: 460},
+	})
+	scroll.SetHasVerticalScroller(true)
+	scroll.SetHasHorizontalScroller(false)
+	scroll.SetAutohidesScrollers(true)
+	objc.Send[objc.ID](scroll.ID, objc.Sel("setBorderType:"), appkit.NSBezelBorder)
+
+	textView := appkit.NewTextViewWithFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 0, Y: 0},
+		Size:   corefoundation.CGSize{Width: 808, Height: 460},
+	})
+	textView.SetEditable(false)
+	textView.SetSelectable(true)
+	textView.SetString("")
+	mono := appkit.GetNSFontClass().MonospacedSystemFontOfSizeWeight(12, appkit.NSFontWeights.Regular)
+	textView.SetFont(mono)
+	scroll.SetDocumentView(textView)
+	objc.Send[objc.ID](contentViewID, objc.Sel("addSubview:"), scroll.ID)
+
+	logCh := make(chan string, 2048)
+	doneCh := make(chan error, 1)
+	go func() {
+		defer close(logCh)
+		doneCh <- runPostInstallVZScriptsWithSelectorOutput(recipes, &selectorLogWriter{ch: logCh})
+		close(doneCh)
+	}()
+
+	window.MakeKeyAndOrderFront(nil)
+	app.Activate()
+
+	var logText strings.Builder
+	var runErr error
+	done := false
+	logClosed := false
+
+	var scheduleTimer func()
+	scheduleTimer = func() {
+		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(
+			0.05,
+			false,
+			func(_ *foundation.NSTimer) {
+				updated := false
+				for i := 0; i < 512; i++ {
+					select {
+					case chunk, ok := <-logCh:
+						if !ok {
+							logClosed = true
+							i = 512
+							continue
+						}
+						logText.WriteString(chunk)
+						updated = true
+					default:
+						i = 512
+					}
+				}
+
+				if !done {
+					select {
+					case runErr = <-doneCh:
+						done = true
+						if runErr != nil {
+							status.SetStringValue("Post-install scripts failed.")
+						} else {
+							status.SetStringValue("Post-install scripts complete.")
+						}
+					default:
+					}
+				}
+
+				if updated {
+					text := logText.String()
+					textView.SetString(text)
+					textView.ScrollRangeToVisible(foundation.NSRange{
+						Location: uint(len(text)),
+						Length:   0,
+					})
+				}
+
+				if done && logClosed {
+					app.StopModal()
+					return
+				}
+
+				scheduleTimer()
+			},
+		)
+	}
+
+	scheduleTimer()
+	app.RunModalForWindow(window)
+	window.Close()
+	return runErr
+}
+
+func runPostInstallVZScriptsWithSelectorOutput(recipes string, out io.Writer) (retErr error) {
+	if out == nil {
+		out = os.Stdout
+	}
+
+	names := splitRecipes(recipes)
+	if len(names) == 0 {
+		return nil
+	}
+
+	for _, name := range names {
+		if _, err := loadVZScriptData(name); err != nil {
+			return fmt.Errorf("recipe %q: %w", name, err)
+		}
+	}
+
+	fmt.Fprintf(out, "\n=== Post-install: running %d vzscript(s) ===\n", len(names))
+	for _, n := range names {
+		fmt.Fprintf(out, "  - %s\n", n)
+	}
+	fmt.Fprintln(out)
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve executable path: %w", err)
+	}
+
+	vmCmd := exec.Command(exePath, "run", "-vm", vmName, "-gui=true")
+	vmCmd.Stdout = out
+	vmCmd.Stderr = out
+	if err := vmCmd.Start(); err != nil {
+		return fmt.Errorf("start vm gui process: %w", err)
+	}
+
+	vmErr := make(chan error, 1)
+	go func() {
+		vmErr <- vmCmd.Wait()
+	}()
+
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		if vmCmd.Process != nil {
+			_ = vmCmd.Process.Kill()
+		}
+		select {
+		case <-vmErr:
+		case <-time.After(5 * time.Second):
+		}
+	}()
+
+	cfg := vzscriptConfig{
+		socketPath:  GetControlSocketPath(),
+		execTimeout: 30 * time.Minute,
+		verbose:     true,
+		logWriter:   out,
+		streamOut:   out,
+		streamErr:   out,
+	}
+
+	fmt.Fprintln(out, "Waiting for VM to boot and guest agent...")
+	waitScript := []byte("guest-wait 15m\n")
+	if err := runVZScriptOrVMErr(waitScript, "wait-for-agent", cfg, vmErr); err != nil {
+		return fmt.Errorf("waiting for agent: %w", err)
+	}
+
+	for _, name := range names {
+		fmt.Fprintf(out, "\n=== Running vzscript: %s ===\n", name)
+		data, err := loadVZScriptData(name)
+		if err != nil {
+			return err
+		}
+		if err := runVZScriptOrVMErr(data, name, cfg, vmErr); err != nil {
+			return fmt.Errorf("vzscript %s: %w", name, err)
+		}
+		fmt.Fprintf(out, "=== Done: %s ===\n", name)
+	}
+
+	fmt.Fprintln(out, "\nShutting down VM...")
+	_, _ = ctlSendRequest(cfg.socketPath, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
+
+	select {
+	case err := <-vmErr:
+		if err != nil {
+			fmt.Fprintf(out, "VM exited with error: %v\n", err)
+		}
+	case <-time.After(2 * time.Minute):
+		fmt.Fprintln(out, "VM did not exit within timeout.")
+		if vmCmd.Process != nil {
+			_ = vmCmd.Process.Kill()
+		}
+	}
+
+	fmt.Fprintln(out, "\nPost-install complete.")
+	return nil
 }
 
 func nextNewVMName() string {
@@ -116,20 +610,49 @@ func validateNewVMOptions(opts newVMOptions) error {
 		if strings.TrimSpace(opts.ProvisionPassword) != "" {
 			return errors.New("enter a username for provisioning")
 		}
-		return nil
+	} else {
+		if err := validateUsername(opts.ProvisionUser); err != nil {
+			return err
+		}
+		if opts.ProvisionPassword == "" {
+			return errors.New("enter a password for provisioning")
+		}
 	}
-	if err := validateUsername(opts.ProvisionUser); err != nil {
-		return err
-	}
-	if opts.ProvisionPassword == "" {
-		return errors.New("enter a password for provisioning")
+	for _, name := range splitRecipes(opts.PostInstallRecipes) {
+		if _, err := loadVZScriptData(name); err != nil {
+			return fmt.Errorf("invalid post-install recipe %q: %w", name, err)
+		}
 	}
 	return nil
 }
 
-func newVMAccessoryView(opts newVMOptions) (appkit.NSView, appkit.NSTextField, appkit.NSTextField, appkit.NSSecureTextField) {
+func listBuiltinVZScriptNames() ([]string, error) {
+	entries, err := fs.ReadDir(builtinScripts, "vzscripts")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vzscript") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(e.Name(), ".vzscript"))
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func normalizeRecipeSelection(primary string) string {
+	primary = strings.TrimSpace(primary)
+	if primary == "" || primary == selectorNoRecipe {
+		return ""
+	}
+	return primary
+}
+
+func newVMAccessoryView(opts newVMOptions, recipeNames []string) (appkit.NSView, appkit.NSTextField, appkit.NSTextField, appkit.NSSecureTextField, appkit.NSPopUpButton) {
 	view := appkit.NewViewWithFrame(corefoundation.CGRect{
-		Size: corefoundation.CGSize{Width: 320, Height: 104},
+		Size: corefoundation.CGSize{Width: 320, Height: 144},
 	})
 
 	addLabel := func(text string, y float64) {
@@ -141,12 +664,13 @@ func newVMAccessoryView(opts newVMOptions) (appkit.NSView, appkit.NSTextField, a
 		objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), label.ID)
 	}
 
-	addLabel("VM Name:", 76)
-	addLabel("Username:", 42)
-	addLabel("Password:", 8)
+	addLabel("VM Name:", 112)
+	addLabel("Username:", 78)
+	addLabel("Password:", 44)
+	addLabel("Advanced:", 10)
 
 	nameField := appkit.NewTextFieldWithFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 96, Y: 72},
+		Origin: corefoundation.CGPoint{X: 96, Y: 108},
 		Size:   corefoundation.CGSize{Width: 224, Height: 24},
 	})
 	nameField.SetStringValue(opts.Name)
@@ -158,7 +682,7 @@ func newVMAccessoryView(opts newVMOptions) (appkit.NSView, appkit.NSTextField, a
 	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), nameField.ID)
 
 	userField := appkit.NewTextFieldWithFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 96, Y: 38},
+		Origin: corefoundation.CGPoint{X: 96, Y: 74},
 		Size:   corefoundation.CGSize{Width: 224, Height: 24},
 	})
 	userField.SetStringValue(opts.ProvisionUser)
@@ -170,7 +694,7 @@ func newVMAccessoryView(opts newVMOptions) (appkit.NSView, appkit.NSTextField, a
 	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), userField.ID)
 
 	passwordField := appkit.NewSecureTextFieldWithFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 96, Y: 4},
+		Origin: corefoundation.CGPoint{X: 96, Y: 40},
 		Size:   corefoundation.CGSize{Width: 224, Height: 24},
 	})
 	passwordField.SetStringValue(opts.ProvisionPassword)
@@ -181,7 +705,31 @@ func newVMAccessoryView(opts newVMOptions) (appkit.NSView, appkit.NSTextField, a
 	passwordField.SetAccessibilityIdentifier("new-vm-password")
 	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), passwordField.ID)
 
-	return view, nameField, userField, passwordField
+	recipePopup := appkit.NewPopUpButtonWithFramePullsDown(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 96, Y: 6},
+		Size:   corefoundation.CGSize{Width: 224, Height: 24},
+	}, false)
+	recipePopup.AddItemWithTitle(selectorNoRecipe)
+	if len(recipeNames) > 0 {
+		recipePopup.AddItemsWithTitles(recipeNames)
+	}
+
+	selectedRecipe := selectorNoRecipe
+	known := make(map[string]bool, len(recipeNames))
+	for _, n := range recipeNames {
+		known[n] = true
+	}
+	for _, r := range splitRecipes(opts.PostInstallRecipes) {
+		if selectedRecipe == selectorNoRecipe && known[r] {
+			selectedRecipe = r
+		}
+	}
+	recipePopup.SelectItemWithTitle(selectedRecipe)
+	recipePopup.SetAccessibilityLabel("Advanced Post-install Script")
+	recipePopup.SetAccessibilityIdentifier("new-vm-recipe")
+	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), recipePopup.ID)
+
+	return view, nameField, userField, passwordField, recipePopup
 }
 
 func promptForNewVMOptions() (newVMOptions, bool) {
@@ -192,19 +740,20 @@ func promptForNewVMOptions() (newVMOptions, bool) {
 	}
 	baseDir = resolvePath(baseDir)
 	opts := newVMOptions{
-		Name:              nextNewVMName(),
-		ProvisionUser:     strings.TrimSpace(provisionUser),
-		ProvisionPassword: provisionPassword,
-		ProvisionAdmin:    true,
+		Name:               nextNewVMName(),
+		ProvisionUser:      strings.TrimSpace(provisionUser),
+		ProvisionPassword:  provisionPassword,
+		ProvisionAdmin:     true,
+		PostInstallRecipes: strings.TrimSpace(installVZScripts),
 	}
-
+	recipeNames, _ := listBuiltinVZScriptNames()
 	for {
 		alert := appkit.NewNSAlert()
 		alert.SetMessageText("Create New VM")
-		alert.SetInformativeText(fmt.Sprintf("Enter a name for the new VM. It will be created in %s.\n\nLeave username and password blank to install without provisioning. If provided, the user will be created as an administrator.", baseDir))
+		alert.SetInformativeText(fmt.Sprintf("Create in %s.\nOptional username/password creates an admin user.\nAdvanced script runs after first boot.", baseDir))
 		alert.AddButtonWithTitle("Create")
 		alert.AddButtonWithTitle("Cancel")
-		accessoryView, nameField, userField, passwordField := newVMAccessoryView(opts)
+		accessoryView, nameField, userField, passwordField, recipePopup := newVMAccessoryView(opts, recipeNames)
 		alert.SetAccessoryView(accessoryView)
 
 		if alert.RunModal() != appkit.AlertFirstButtonReturn {
@@ -215,6 +764,7 @@ func promptForNewVMOptions() (newVMOptions, bool) {
 		opts.ProvisionUser = strings.TrimSpace(userField.StringValue())
 		opts.ProvisionPassword = passwordField.StringValue()
 		opts.ProvisionAdmin = true
+		opts.PostInstallRecipes = normalizeRecipeSelection(recipePopup.TitleOfSelectedItem())
 
 		if err := validateNewVMOptions(opts); err != nil {
 			showSelectorAlert("Invalid VM Settings", err.Error())
@@ -258,6 +808,58 @@ func selectorStateText(vm VMInfo) string {
 	}
 }
 
+func runningVMNames(excludeName string) []string {
+	vms, err := ListVMs()
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, vm := range vms {
+		if vm.State == "running" && vm.Name != excludeName {
+			names = append(names, vm.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func isVMLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "maximum supported number of active virtual machines") {
+		return true
+	}
+	if strings.Contains(lower, "number of virtual machines exceeds the limit") {
+		return true
+	}
+
+	var snap nsErrorSnapshot
+	if errors.As(err, &snap) && strings.EqualFold(snap.domain, "VZErrorDomain") && snap.code == 6 {
+		return true
+	}
+	return false
+}
+
+func withVMLimitHint(err error, targetVM string) error {
+	if err == nil {
+		return nil
+	}
+	running := runningVMNames(targetVM)
+	lower := strings.ToLower(err.Error())
+	genericStartFailure := strings.Contains(lower, "virtual machine failed to start")
+	if !isVMLimitError(err) && !(genericStartFailure && len(running) > 0) {
+		return err
+	}
+
+	if len(running) == 0 {
+		return fmt.Errorf("host virtualization limit reached; stop another running VM and retry: %w", err)
+	}
+	return fmt.Errorf("host virtualization limit reached (%d running: %s); stop one and retry: %w",
+		len(running), strings.Join(running, ", "), err)
+}
+
 func (s *VMSelector) initialSelectionRow() int {
 	if s.activeVM != "" {
 		for i, vm := range s.vms {
@@ -294,8 +896,9 @@ func (s *VMSelector) Show() {
 
 // registerDelegate registers the ObjC class for NSTableView data source and delegate.
 func (s *VMSelector) registerDelegate() {
+	className := fmt.Sprintf("VMSelectorDelegate_%d", atomic.AddUint64(&vmSelectorDelegateCounter, 1))
 	cls, err := objc.RegisterClass(
-		"VMSelectorDelegate",
+		className,
 		objc.GetClass("NSObject"),
 		nil, nil,
 		[]objc.MethodDef{
@@ -309,6 +912,9 @@ func (s *VMSelector) registerDelegate() {
 			{Cmd: objc.RegisterName("coldBootVM:"), Fn: s.handleColdBoot},
 			{Cmd: objc.RegisterName("createVM:"), Fn: s.handleCreate},
 			{Cmd: objc.RegisterName("deleteVM:"), Fn: s.handleDelete},
+			{Cmd: objc.RegisterName("refreshVMs:"), Fn: s.handleRefresh},
+			{Cmd: objc.RegisterName("revealVMInFinder:"), Fn: s.handleRevealInFinder},
+			{Cmd: objc.RegisterName("openVZScriptRunner:"), Fn: s.handleOpenVZScriptRunner},
 		},
 	)
 	if err != nil {
@@ -339,9 +945,11 @@ func (s *VMSelector) buildWindow() {
 	s.window.Center()
 	objc.Send[objc.ID](s.window.ID, objc.Sel("setReleasedWhenClosed:"), false)
 
+	tableWidth := float64(selectorWindowWidth - selectorDetailWidth)
+
 	// Build the table view
 	tableFrame := corefoundation.CGRect{
-		Size: corefoundation.CGSize{Width: selectorWindowWidth, Height: selectorTableHeight},
+		Size: corefoundation.CGSize{Width: tableWidth, Height: selectorWindowHeight - selectorBarHeight},
 	}
 	s.tableView = appkit.NewTableViewWithFrame(tableFrame)
 	objc.Send[objc.ID](s.tableView.ID, objc.Sel("retain"))
@@ -359,22 +967,24 @@ func (s *VMSelector) buildWindow() {
 	objc.Send[objc.ID](s.tableView.ID, objc.Sel("setDoubleAction:"), objc.Sel("runVM:"))
 
 	// Add columns
-	s.addColumn("name", "Name", 190, true)
+	s.addColumn("name", "Name", 220, true)
 	s.addColumn("state", "State", 90, false)
-	s.addColumn("os", "OS", 60, false)
-	s.addColumn("size", "Size", 80, false)
+	s.addColumn("os", "OS", 80, false)
+	s.addColumn("size", "Size", 90, false)
 	s.addColumn("created", "Created", 100, false)
 
 	// Wrap table in scroll view
 	scrollView := appkit.NewScrollViewWithFrame(corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 0, Y: selectorBarHeight},
-		Size:   corefoundation.CGSize{Width: selectorWindowWidth, Height: selectorWindowHeight - selectorBarHeight},
+		Size:   corefoundation.CGSize{Width: tableWidth, Height: selectorWindowHeight - selectorBarHeight},
 	})
 	objc.Send[objc.ID](scrollView.ID, objc.Sel("retain"))
 	objc.Send[objc.ID](scrollView.ID, objc.Sel("setDocumentView:"), s.tableView.ID)
 	objc.Send[objc.ID](scrollView.ID, objc.Sel("setHasVerticalScroller:"), true)
-	// NSViewWidthSizable (2) | NSViewHeightSizable (16)
-	objc.Send[objc.ID](scrollView.ID, objc.Sel("setAutoresizingMask:"), uint(2|16))
+	// Keep the table pinned left and sized to fill available width.
+	objc.Send[objc.ID](scrollView.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth|selectorViewHeight))
+
+	details := s.buildDetailsPanel(tableWidth)
 
 	// Build button bar
 	buttonBar := s.buildButtonBar()
@@ -382,6 +992,7 @@ func (s *VMSelector) buildWindow() {
 	// Add subviews to the window's content view
 	contentViewID := objc.Send[objc.ID](s.window.ID, objc.Sel("contentView"))
 	objc.Send[objc.ID](contentViewID, objc.Sel("addSubview:"), scrollView.ID)
+	objc.Send[objc.ID](contentViewID, objc.Sel("addSubview:"), details.ID)
 	objc.Send[objc.ID](contentViewID, objc.Sel("addSubview:"), buttonBar)
 
 	// Select the active VM when present, otherwise the first row.
@@ -394,6 +1005,47 @@ func (s *VMSelector) buildWindow() {
 	}
 
 	s.updateButtonStates()
+}
+
+func (s *VMSelector) buildDetailsPanel(x float64) appkit.NSView {
+	panel := appkit.NewViewWithFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: x, Y: selectorBarHeight},
+		Size:   corefoundation.CGSize{Width: selectorDetailWidth, Height: selectorWindowHeight - selectorBarHeight},
+	})
+	objc.Send[objc.ID](panel.ID, objc.Sel("retain"))
+	// Keep the details panel pinned to the right edge.
+	objc.Send[objc.ID](panel.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewMinX|selectorViewHeight))
+
+	makeLabel := func(text string, y float64) appkit.NSTextField {
+		label := appkit.NewTextFieldLabelWithString(text)
+		label.SetFrame(corefoundation.CGRect{
+			Origin: corefoundation.CGPoint{X: 14, Y: y},
+			Size:   corefoundation.CGSize{Width: selectorDetailWidth - 28, Height: 22},
+		})
+		objc.Send[objc.ID](panel.ID, objc.Sel("addSubview:"), label.ID)
+		return label
+	}
+
+	s.detailTitle = makeLabel("VM Details", selectorWindowHeight-selectorBarHeight-38)
+	s.detailState = makeLabel("Status:", selectorWindowHeight-selectorBarHeight-72)
+	s.detailOS = makeLabel("OS:", selectorWindowHeight-selectorBarHeight-96)
+	s.detailSize = makeLabel("Disk:", selectorWindowHeight-selectorBarHeight-120)
+	s.detailDate = makeLabel("Created:", selectorWindowHeight-selectorBarHeight-144)
+	makeLabel("Path:", selectorWindowHeight-selectorBarHeight-174)
+	s.detailPath = makeLabel("", selectorWindowHeight-selectorBarHeight-198)
+	s.detailPath.SetUsesSingleLineMode(true)
+	s.detailPath.SetLineBreakMode(appkit.NSLineBreakByTruncatingMiddle)
+
+	s.revealButton = appkit.NewButtonWithTitleTargetAction("Reveal in Finder", objectivec.ObjectFromID(s.delegateID), objc.Sel("revealVMInFinder:"))
+	s.revealButton.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 14, Y: 14},
+		Size:   corefoundation.CGSize{Width: 132, Height: selectorButtonHeight},
+	})
+	objc.Send[objc.ID](s.revealButton.ID, objc.Sel("setBezelStyle:"), int(1))
+	objc.Send[objc.ID](s.revealButton.ID, objc.Sel("setEnabled:"), false)
+	objc.Send[objc.ID](panel.ID, objc.Sel("addSubview:"), s.revealButton.ID)
+
+	return panel
 }
 
 // addColumn adds an NSTableColumn to the table view.
@@ -421,8 +1073,7 @@ func (s *VMSelector) buildButtonBar() objc.ID {
 	}
 	bar := appkit.NewViewWithFrame(barFrame)
 	objc.Send[objc.ID](bar.ID, objc.Sel("retain"))
-	// NSViewWidthSizable (2)
-	objc.Send[objc.ID](bar.ID, objc.Sel("setAutoresizingMask:"), uint(2))
+	objc.Send[objc.ID](bar.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth))
 
 	target := objectivec.ObjectFromID(s.delegateID)
 
@@ -435,6 +1086,15 @@ func (s *VMSelector) buildButtonBar() objc.ID {
 	objc.Send[objc.ID](newBtn.ID, objc.Sel("setBezelStyle:"), int(1)) // NSBezelStyleRounded
 	objc.Send[objc.ID](bar.ID, objc.Sel("addSubview:"), newBtn.ID)
 
+	// "Refresh" button (left-aligned, after New VM)
+	s.refreshButton = appkit.NewButtonWithTitleTargetAction("Refresh", target, objc.Sel("refreshVMs:"))
+	s.refreshButton.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 12 + 100 + 8, Y: 10},
+		Size:   corefoundation.CGSize{Width: 82, Height: selectorButtonHeight},
+	})
+	objc.Send[objc.ID](s.refreshButton.ID, objc.Sel("setBezelStyle:"), int(1))
+	objc.Send[objc.ID](bar.ID, objc.Sel("addSubview:"), s.refreshButton.ID)
+
 	// "Run" button (right-aligned, default button)
 	s.runButton = appkit.NewButtonWithTitleTargetAction("Run", target, objc.Sel("runVM:"))
 	s.runButton.SetFrame(corefoundation.CGRect{
@@ -442,8 +1102,8 @@ func (s *VMSelector) buildButtonBar() objc.ID {
 		Size:   corefoundation.CGSize{Width: 80, Height: selectorButtonHeight},
 	})
 	objc.Send[objc.ID](s.runButton.ID, objc.Sel("setBezelStyle:"), int(1))
-	// NSViewMinXMargin (4) — stay anchored to right edge
-	objc.Send[objc.ID](s.runButton.ID, objc.Sel("setAutoresizingMask:"), uint(4))
+	// Keep right-side buttons anchored to the trailing edge.
+	objc.Send[objc.ID](s.runButton.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewMinX))
 	objc.Send[objc.ID](bar.ID, objc.Sel("addSubview:"), s.runButton.ID)
 
 	// "Cold Boot" button (right-aligned, before Run)
@@ -453,7 +1113,7 @@ func (s *VMSelector) buildButtonBar() objc.ID {
 		Size:   corefoundation.CGSize{Width: 100, Height: selectorButtonHeight},
 	})
 	objc.Send[objc.ID](s.coldButton.ID, objc.Sel("setBezelStyle:"), int(1))
-	objc.Send[objc.ID](s.coldButton.ID, objc.Sel("setAutoresizingMask:"), uint(4))
+	objc.Send[objc.ID](s.coldButton.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewMinX))
 	objc.Send[objc.ID](bar.ID, objc.Sel("addSubview:"), s.coldButton.ID)
 
 	// "Delete" button (right-aligned, before Run)
@@ -463,7 +1123,7 @@ func (s *VMSelector) buildButtonBar() objc.ID {
 		Size:   corefoundation.CGSize{Width: 80, Height: selectorButtonHeight},
 	})
 	objc.Send[objc.ID](s.delButton.ID, objc.Sel("setBezelStyle:"), int(1))
-	objc.Send[objc.ID](s.delButton.ID, objc.Sel("setAutoresizingMask:"), uint(4))
+	objc.Send[objc.ID](s.delButton.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewMinX))
 	objc.Send[objc.ID](bar.ID, objc.Sel("addSubview:"), s.delButton.ID)
 
 	return bar.ID
@@ -483,6 +1143,76 @@ func (s *VMSelector) updateButtonStates() {
 
 	canColdBoot := hasSelection && vm.State == "suspended"
 	objc.Send[objc.ID](s.coldButton.ID, objc.Sel("setEnabled:"), canColdBoot)
+	objc.Send[objc.ID](s.revealButton.ID, objc.Sel("setEnabled:"), hasSelection)
+	s.updateDetailsPanel(vm)
+}
+
+func (s *VMSelector) updateDetailsPanel(vm *VMInfo) {
+	if vm == nil {
+		s.detailTitle.SetStringValue("No VM Selected")
+		s.detailState.SetStringValue("Status: -")
+		s.detailOS.SetStringValue("OS: -")
+		s.detailSize.SetStringValue("Disk: -")
+		s.detailDate.SetStringValue("Created: -")
+		s.detailPath.SetStringValue("")
+		return
+	}
+
+	title := vm.Name
+	if vm.Name == s.activeVM {
+		title += " (active)"
+	}
+	s.detailTitle.SetStringValue(title)
+	s.detailState.SetStringValue("Status: " + selectorStateText(*vm))
+	s.detailOS.SetStringValue("OS: " + vm.OSType)
+	s.detailSize.SetStringValue("Disk: " + FormatSize(vm.DiskSize))
+	s.detailDate.SetStringValue("Created: " + vm.Created.Format("2006-01-02 15:04"))
+	s.detailPath.SetStringValue(vm.Path)
+}
+
+func (s *VMSelector) selectRowByName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := range s.vms {
+		if s.vms[i].Name == name {
+			indexSet := objc.Send[objc.ID](
+				objc.Send[objc.ID](objc.ID(objc.GetClass("NSIndexSet")), objc.Sel("alloc")),
+				objc.Sel("initWithIndex:"), uint(i),
+			)
+			objc.Send[objc.ID](s.tableView.ID, objc.Sel("selectRowIndexes:byExtendingSelection:"), indexSet, false)
+			return true
+		}
+	}
+	return false
+}
+
+func (s *VMSelector) reloadVMList() error {
+	selected := s.selectedVM()
+	selectedName := ""
+	if selected != nil {
+		selectedName = selected.Name
+	}
+
+	vms, err := ListVMs()
+	if err != nil {
+		return err
+	}
+	s.vms = vms
+	s.activeVM = GetActiveVM()
+	objc.Send[objc.ID](s.tableView.ID, objc.Sel("reloadData"))
+
+	if !s.selectRowByName(selectedName) && !s.selectRowByName(s.activeVM) {
+		if row := s.initialSelectionRow(); row >= 0 {
+			indexSet := objc.Send[objc.ID](
+				objc.Send[objc.ID](objc.ID(objc.GetClass("NSIndexSet")), objc.Sel("alloc")),
+				objc.Sel("initWithIndex:"), uint(row),
+			)
+			objc.Send[objc.ID](s.tableView.ID, objc.Sel("selectRowIndexes:byExtendingSelection:"), indexSet, false)
+		}
+	}
+	s.updateButtonStates()
+	return nil
 }
 
 // selectedVM returns the currently selected VM, or nil if none.
@@ -568,6 +1298,47 @@ func (s *VMSelector) handleCreate(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 }
 
+// handleRefresh reloads VM metadata and updates selection.
+func (s *VMSelector) handleRefresh(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	if err := s.reloadVMList(); err != nil {
+		showSelectorError("Cannot Refresh VM List", err)
+	}
+}
+
+// handleRevealInFinder reveals the selected VM in Finder.
+func (s *VMSelector) handleRevealInFinder(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	vm := s.selectedVM()
+	if vm == nil {
+		return
+	}
+	if err := exec.Command("open", "-R", vm.Path).Run(); err != nil {
+		showSelectorError("Cannot Reveal VM", fmt.Errorf("open finder: %w", err))
+	}
+}
+
+func (s *VMSelector) handleOpenVZScriptRunner(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	vm := s.selectedVM()
+	if vm == nil {
+		showSelectorAlert("No VM Selected", "Select a running VM first.")
+		return
+	}
+	if vm.State != "running" {
+		showSelectorAlert("VM Not Running", fmt.Sprintf("Start %q first, then run vzscripts.", vm.Name))
+		return
+	}
+	recipes, err := listBuiltinVZScriptNames()
+	if err != nil {
+		showSelectorError("Cannot Load VZScripts", err)
+		return
+	}
+	if len(recipes) == 0 {
+		showSelectorAlert("No VZScripts Found", "No built-in recipes are available.")
+		return
+	}
+	runner := newSelectorScriptRunner(*vm, recipes)
+	runner.runModal()
+}
+
 // handleDelete deletes the selected VM after confirmation.
 func (s *VMSelector) handleDelete(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	vm := s.selectedVM()
@@ -606,25 +1377,9 @@ func (s *VMSelector) handleDelete(_ objc.ID, _ objc.SEL, _ objc.ID) {
 		return
 	}
 
-	// Refresh the VM list
-	newVMs, err := ListVMs()
-	if err != nil {
+	if err := s.reloadVMList(); err != nil {
 		showSelectorError("Cannot Refresh VM List", err)
-		return
 	}
-	s.vms = newVMs
-	s.activeVM = GetActiveVM()
-	objc.Send[objc.ID](s.tableView.ID, objc.Sel("reloadData"))
-
-	// Re-select first row
-	if len(s.vms) > 0 {
-		indexSet := objc.Send[objc.ID](
-			objc.Send[objc.ID](objc.ID(objc.GetClass("NSIndexSet")), objc.Sel("alloc")),
-			objc.Sel("initWithIndex:"), uint(0),
-		)
-		objc.Send[objc.ID](s.tableView.ID, objc.Sel("selectRowIndexes:byExtendingSelection:"), indexSet, false)
-	}
-	s.updateButtonStates()
 }
 
 func performSelectorAction(action selectorAction) error {
@@ -636,14 +1391,15 @@ func performSelectorAction(action selectorAction) error {
 		skipResume = action.coldBoot
 		linuxMode = action.vm.OSType == "Linux"
 		if linuxMode {
-			return runLinuxVM()
+			return withVMLimitHint(runLinuxVM(), vmName)
 		}
-		return runMacOSVM()
+		return withVMLimitHint(runMacOSVM(), vmName)
 	case selectorActionInstall:
 		vmName = action.newVM.Name
 		vmDir = resolvePath(GetVMPath(action.newVM.Name))
 		guiMode = true
 		linuxMode = false
+		postInstallRecipes := strings.TrimSpace(action.newVM.PostInstallRecipes)
 		provisionUser = action.newVM.ProvisionUser
 		provisionPassword = action.newVM.ProvisionPassword
 		provisionAdmin = action.newVM.ProvisionAdmin
@@ -655,13 +1411,19 @@ func performSelectorAction(action selectorAction) error {
 			if setErr := SetActiveVM(vmName); setErr != nil {
 				return fmt.Errorf("set active VM: %w", setErr)
 			}
-			return runMacOSVM()
+			if postInstallRecipes != "" {
+				return withVMLimitHint(runPostInstallVZScriptsWithSelectorUI(postInstallRecipes), vmName)
+			}
+			return withVMLimitHint(runMacOSVM(), vmName)
 		}
 		if err != nil {
-			return err
+			return withVMLimitHint(err, vmName)
 		}
 		if setErr := SetActiveVM(vmName); setErr != nil {
 			return fmt.Errorf("set active VM: %w", setErr)
+		}
+		if postInstallRecipes != "" {
+			return withVMLimitHint(runPostInstallVZScriptsWithSelectorUI(postInstallRecipes), vmName)
 		}
 		return nil
 	default:
@@ -710,8 +1472,6 @@ func showVMSelectorWindow(vms []VMInfo) {
 		appFinishedLaunching = true
 	}
 
-	setupSelectorMenu()
-
 	for {
 		var action selectorAction
 
@@ -739,6 +1499,7 @@ func showVMSelectorWindow(vms []VMInfo) {
 			app.Stop(nil)
 			postDummyEvent(app)
 		})
+		setupSelectorMenu(selector.delegateID)
 
 		// Quit when the selector window closes.
 		nc := foundation.GetNotificationCenterClass().DefaultCenter()

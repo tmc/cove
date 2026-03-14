@@ -118,9 +118,8 @@ func addMainMenuItemWithModifiers(menu appkit.NSMenu, title, action, key string,
 	menu.AddItem(&item)
 }
 
-// setupSelectorMenu creates a minimal menu bar for the VM selector window.
-// Only includes App menu (Quit) and Window menu (Minimize/Zoom).
-func setupSelectorMenu() {
+// setupSelectorMenu creates the menu bar for the VM selector window.
+func setupSelectorMenu(selectorTarget objc.ID) {
 	app := getSharedApp()
 
 	mainMenu := appkit.NewMenuWithTitle("")
@@ -133,6 +132,13 @@ func setupSelectorMenu() {
 	appMenuItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("", 0, "")
 	appMenuItem.SetSubmenu(&appMenu)
 	mainMenu.AddItem(&appMenuItem)
+
+	// Scripts menu
+	scriptsMenu := appkit.NewMenuWithTitle("Scripts")
+	addMainMenuItem(scriptsMenu, "Run VZScript...", "openVZScriptRunner:", "", selectorTarget)
+	scriptsMenuItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("Scripts", 0, "")
+	scriptsMenuItem.SetSubmenu(&scriptsMenu)
+	mainMenu.AddItem(&scriptsMenuItem)
 
 	// Window menu
 	windowMenu := appkit.NewMenuWithTitle("Window")
