@@ -208,7 +208,7 @@ func checkExistingVM(dir string, diskName string) error {
 		return nil // doesn't exist, safe to proceed
 	}
 	if forceInstall {
-		fmt.Printf("WARNING: overwriting existing disk %s (%d MB)\n", diskFile, info.Size()/(1024*1024))
+		fmt.Printf("warning: overwriting existing disk %s (%d MB)\n", diskFile, info.Size()/(1024*1024))
 		if err := os.Remove(diskFile); err != nil {
 			return fmt.Errorf("remove existing disk: %w", err)
 		}

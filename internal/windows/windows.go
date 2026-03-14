@@ -188,7 +188,7 @@ func loadOrCreateWindowsMachineIdentifier() vz.VZGenericMachineIdentifier {
 	fmt.Println("  Created new Windows machine identifier")
 
 	if err := saveGenericMachineIdentifier(machineID, machineIDPath); err != nil {
-		fmt.Printf("  Warning: could not save machine identifier: %v\n", err)
+		fmt.Printf("  warning: could not save machine identifier: %v\n", err)
 	}
 
 	return machineID
@@ -214,7 +214,7 @@ func runWindowsVM() error {
 
 	// Verify the disk exists
 	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
-		return fmt.Errorf("Windows disk image not found: %s\nRun 'vz-macos install -windows -iso <path>' first", resolvedDiskPath)
+		return fmt.Errorf("windows disk image not found: %s\nRun 'vz-macos install -windows -iso <path>' first", resolvedDiskPath)
 	}
 
 	// Build VM configuration

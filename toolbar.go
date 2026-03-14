@@ -394,12 +394,12 @@ func (t *VMToolbar) handleStop(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	DispatchAsyncQueue(t.vmQueue, func() {
 		ok, err := t.vm.RequestStopWithError()
 		if err != nil {
-			fmt.Printf("VM stop request error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: vm stop request: %v\n", err)
 		} else if !ok {
 			fmt.Println("VM stop request returned false, forcing stop...")
 			t.vm.StopWithCompletionHandler(func(err error) {
 				if err != nil {
-					fmt.Printf("VM force stop error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: vm force stop: %v\n", err)
 				}
 			})
 		}
@@ -414,21 +414,21 @@ func (t *VMToolbar) handleStartPause(_ objc.ID, _ objc.SEL, _ objc.ID) {
 			fmt.Println("Toolbar: pausing VM...")
 			t.vm.PauseWithCompletionHandler(func(err error) {
 				if err != nil {
-					fmt.Printf("VM pause error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: vm pause: %v\n", err)
 				}
 			})
 		case vz.VZVirtualMachineStatePaused:
 			fmt.Println("Toolbar: resuming VM...")
 			t.vm.ResumeWithCompletionHandler(func(err error) {
 				if err != nil {
-					fmt.Printf("VM resume error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: vm resume: %v\n", err)
 				}
 			})
 		case vz.VZVirtualMachineStateStopped:
 			fmt.Println("Toolbar: starting VM...")
 			t.vm.StartWithCompletionHandler(func(err error) {
 				if err != nil {
-					fmt.Printf("VM start error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
 				}
 			})
 		}
@@ -440,13 +440,13 @@ func (t *VMToolbar) handleRestart(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	DispatchAsyncQueue(t.vmQueue, func() {
 		t.vm.StopWithCompletionHandler(func(err error) {
 			if err != nil {
-				fmt.Printf("VM stop error during restart: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: vm stop during restart: %v\n", err)
 				return
 			}
 			fmt.Println("Toolbar: VM stopped, starting again...")
 			t.vm.StartWithCompletionHandler(func(err error) {
 				if err != nil {
-					fmt.Printf("VM start error during restart: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: vm start during restart: %v\n", err)
 				}
 			})
 		})
@@ -463,7 +463,7 @@ func (t *VMToolbar) handleBootRecovery(_ objc.ID, _ objc.SEL, _ objc.ID) {
 				&opts.VZVirtualMachineStartOptions,
 				func(err error) {
 					if err != nil {
-						fmt.Printf("VM recovery start error: %v\n", err)
+						fmt.Fprintf(os.Stderr, "error: vm recovery start: %v\n", err)
 					} else {
 						fmt.Println("Toolbar: VM started in recovery mode")
 					}
@@ -478,7 +478,7 @@ func (t *VMToolbar) handleBootRecovery(_ objc.ID, _ objc.SEL, _ objc.ID) {
 		}
 		t.vm.StopWithCompletionHandler(func(err error) {
 			if err != nil {
-				fmt.Printf("VM stop error before recovery: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: vm stop before recovery: %v\n", err)
 				return
 			}
 			startRecovery()
@@ -494,7 +494,7 @@ func (t *VMToolbar) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	fmt.Println("Toolbar: suspending VM...")
 	go func() {
 		if err := suspendVM(t.vm, t.vmQueue); err != nil {
-			fmt.Printf("Toolbar: suspend error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: suspend: %v\n", err)
 		} else {
 			fmt.Println("Toolbar: VM suspended (will resume on next launch)")
 		}
@@ -539,7 +539,7 @@ func (t *VMToolbar) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
 
 	img, errMsg := t.control.captureVMView()
 	if errMsg != "" {
-		fmt.Printf("Toolbar: screenshot error: %s\n", errMsg)
+		fmt.Fprintf(os.Stderr, "error: screenshot: %s\n", errMsg)
 		return
 	}
 
@@ -565,13 +565,13 @@ func (t *VMToolbar) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
 
 	f, err := os.Create(savePath)
 	if err != nil {
-		fmt.Printf("Toolbar: screenshot save error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: screenshot save: %v\n", err)
 		return
 	}
 	defer f.Close()
 
 	if err := png.Encode(f, img); err != nil {
-		fmt.Printf("Toolbar: screenshot encode error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: screenshot encode: %v\n", err)
 		return
 	}
 	fmt.Printf("Toolbar: screenshot saved to %s\n", savePath)
@@ -661,11 +661,11 @@ func (t *VMToolbar) saveAndApplySharedFolders(folders []SharedFolderEntry) {
 	} else {
 		data, err := json.MarshalIndent(folders, "", "  ")
 		if err != nil {
-			fmt.Printf("Toolbar: error encoding shared folders: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: encoding shared folders: %v\n", err)
 			return
 		}
 		if err := os.WriteFile(configPath, data, 0644); err != nil {
-			fmt.Printf("Toolbar: error saving shared folders: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: saving shared folders: %v\n", err)
 			return
 		}
 	}

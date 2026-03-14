@@ -107,7 +107,7 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 				info.SystemSize = fi.Size()
 			}
 		} else {
-			fmt.Printf("  Warning: system disk not found at %s\n", srcPath)
+			fmt.Printf("  warning: system disk not found at %s\n", srcPath)
 		}
 	}
 
@@ -309,7 +309,7 @@ func handleDiskSnapshotCommand(args []string) {
 	case "help", "-h", "--help":
 		printDiskSnapshotUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown disk-snapshot command: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "Unknown disk-snapshot command: %s\nRun 'vz-macos -help' for usage.\n", args[0])
 		printDiskSnapshotUsage()
 		os.Exit(1)
 	}

@@ -18,7 +18,7 @@ func createClipboardConfig() vz.VZVirtioConsoleDeviceConfiguration {
 	// Create SPICE agent attachment with clipboard sharing.
 	spiceAgent := vz.NewVZSpiceAgentPortAttachment()
 	if spiceAgent.ID == 0 {
-		fmt.Println("  Warning: could not create SPICE agent port attachment")
+		fmt.Println("  warning: could not create SPICE agent port attachment")
 		return vz.VZVirtioConsoleDeviceConfiguration{}
 	}
 	spiceAgent.SetSharesClipboard(true)
@@ -29,7 +29,7 @@ func createClipboardConfig() vz.VZVirtioConsoleDeviceConfiguration {
 	// Create a Virtio console port for the SPICE agent.
 	spicePort := vz.NewVZVirtioConsolePortConfiguration()
 	if spicePort.ID == 0 {
-		fmt.Println("  Warning: could not create console port configuration")
+		fmt.Println("  warning: could not create console port configuration")
 		return vz.VZVirtioConsoleDeviceConfiguration{}
 	}
 	spicePort.SetName(portName)
@@ -38,7 +38,7 @@ func createClipboardConfig() vz.VZVirtioConsoleDeviceConfiguration {
 	// Create the console device and assign the port at index 0.
 	consoleDevice := vz.NewVZVirtioConsoleDeviceConfiguration()
 	if consoleDevice.ID == 0 {
-		fmt.Println("  Warning: could not create console device configuration")
+		fmt.Println("  warning: could not create console device configuration")
 		return vz.VZVirtioConsoleDeviceConfiguration{}
 	}
 

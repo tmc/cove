@@ -14,7 +14,7 @@ import (
 func DeleteVM(name string) error {
 	vmPath := GetVMPath(name)
 	if !ValidateVM(vmPath) {
-		return fmt.Errorf("VM not found: %s", name)
+		return fmt.Errorf("vm not found: %s", name)
 	}
 
 	// Check if it's the active VM
@@ -64,7 +64,7 @@ func RenameVM(oldName, newName string) error {
 func ExportVM(name, destPath string) error {
 	vmPath := GetVMPath(name)
 	if !ValidateVM(vmPath) {
-		return fmt.Errorf("VM not found: %s", name)
+		return fmt.Errorf("vm not found: %s", name)
 	}
 
 	// Add .tar.gz extension if not present
@@ -152,7 +152,7 @@ func ImportVM(archivePath, name string) error {
 	// Check VM doesn't exist
 	vmPath := GetVMPath(name)
 	if _, err := os.Stat(vmPath); !os.IsNotExist(err) {
-		return fmt.Errorf("VM already exists: %s", name)
+		return fmt.Errorf("vm already exists: %s", name)
 	}
 
 	fmt.Printf("Importing VM '%s' from %s...\n", name, archivePath)

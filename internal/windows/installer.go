@@ -358,7 +358,7 @@ func ensureWindowsISO() (string, error) {
 			return "", fmt.Errorf("resolve ISO path: %w", err)
 		}
 		if _, err := os.Stat(absPath); err != nil {
-			return "", fmt.Errorf("ISO file not found: %s", absPath)
+			return "", fmt.Errorf("iso file not found: %s", absPath)
 		}
 		return absPath, nil
 	}
@@ -658,7 +658,7 @@ func ensureWindowsEFIBootImage(windowsISO string) (string, error) {
 	if _, err := os.Stat(efiDir); err != nil {
 		efiDir = filepath.Join(isoMount, "EFI")
 		if _, err := os.Stat(efiDir); err != nil {
-			return "", fmt.Errorf("EFI directory not found in Windows ISO")
+			return "", fmt.Errorf("efi directory not found in Windows ISO")
 		}
 	}
 	fmt.Printf("  Found EFI directory: %s\n", efiDir)
@@ -716,7 +716,7 @@ func ensureWindowsEFIBootImage(windowsISO string) (string, error) {
 	defer exec.Command("hdiutil", "detach", dmgDevice).Run()
 
 	if dmgMount == "" {
-		return "", fmt.Errorf("FAT32 partition not auto-mounted: %s", attachOut)
+		return "", fmt.Errorf("fat32 partition not auto-mounted: %s", attachOut)
 	}
 	fmt.Printf("  Mounted FAT32 partition at: %s\n", dmgMount)
 
@@ -758,7 +758,7 @@ func ensureWindowsEFIBootImage(windowsISO string) (string, error) {
 			// Rename Windows Boot Manager
 			bootmgrDst := filepath.Join(bootDir, "bootmgfw.efi")
 			if err := os.Rename(bootEFIPath, bootmgrDst); err != nil {
-				fmt.Printf("  Warning: could not rename bootaa64.efi: %v\n", err)
+				fmt.Printf("  warning: could not rename bootaa64.efi: %v\n", err)
 			} else {
 				// Copy UEFI Shell as the primary boot loader
 				shellData, err := os.ReadFile(uefiShellPath)

@@ -270,7 +270,7 @@ func GetActiveVM() string {
 func SetActiveVM(name string) error {
 	vmPath := filepath.Join(GetVMBaseDir(), name)
 	if !ValidateVM(vmPath) {
-		return fmt.Errorf("VM not found or invalid: %s", name)
+		return fmt.Errorf("vm not found or invalid: %s", name)
 	}
 
 	linkPath := GetCurrentVMLink()
@@ -332,7 +332,7 @@ func MigrateIfNeeded() error {
 
 		if _, err := os.Stat(oldPath); err == nil {
 			if err := os.Rename(oldPath, newPath); err != nil {
-				fmt.Printf("  Warning: could not move %s: %v\n", f, err)
+				fmt.Printf("  warning: could not move %s: %v\n", f, err)
 			} else {
 				fmt.Printf("  Moved: %s -> default/%s\n", f, f)
 			}
@@ -346,7 +346,7 @@ func MigrateIfNeeded() error {
 	ipswNew := filepath.Join(cacheDir, "RestoreImage.ipsw")
 	if _, err := os.Stat(ipswOld); err == nil {
 		if err := os.Rename(ipswOld, ipswNew); err != nil {
-			fmt.Printf("  Warning: could not move IPSW to cache: %v\n", err)
+			fmt.Printf("  warning: could not move IPSW to cache: %v\n", err)
 		} else {
 			fmt.Printf("  Moved: RestoreImage.ipsw -> cache/RestoreImage.ipsw\n")
 		}
@@ -354,7 +354,7 @@ func MigrateIfNeeded() error {
 
 	// Set default as active VM
 	if err := SetActiveVM("default"); err != nil {
-		fmt.Printf("  Warning: could not set active VM: %v\n", err)
+		fmt.Printf("  warning: could not set active VM: %v\n", err)
 	}
 
 	fmt.Println("Migration complete. Active VM is now 'default'.")

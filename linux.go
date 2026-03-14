@@ -296,7 +296,7 @@ func loadOrCreateGenericMachineIdentifier() vz.VZGenericMachineIdentifier {
 
 	// Save for future use
 	if err := saveGenericMachineIdentifier(machineID, machineIDPath); err != nil {
-		fmt.Printf("  Warning: could not save machine identifier: %v\n", err)
+		fmt.Printf("  warning: could not save machine identifier: %v\n", err)
 	}
 
 	return machineID
@@ -464,7 +464,7 @@ func ensureLinuxISO() (string, error) {
 		}
 		// It's a local file path
 		if _, err := os.Stat(isoPath); err != nil {
-			return "", fmt.Errorf("ISO file not found: %s", isoPath)
+			return "", fmt.Errorf("iso file not found: %s", isoPath)
 		}
 		return isoPath, nil
 	}

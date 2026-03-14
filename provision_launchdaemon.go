@@ -265,7 +265,7 @@ if [ "$INSTALL_XCODE_CLI" = "true" ]; then
         log "Found CLI tools: $PROD"
         softwareupdate -i "$PROD" --verbose 2>&1 | tee -a "$LOG" || true
     else
-        log "Warning: Command Line Tools not found in softwareupdate"
+        log "warning: Command Line Tools not found in softwareupdate"
     fi
 fi
 

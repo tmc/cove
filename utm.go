@@ -394,7 +394,7 @@ end tell`
 	cmd := exec.Command("osascript", "-e", script)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("AppleScript failed: %w (grant Automation permission in System Settings)", err)
+		return nil, fmt.Errorf("applescript failed: %w (grant Automation permission in System Settings)", err)
 	}
 
 	var vms []UTMVMInfo

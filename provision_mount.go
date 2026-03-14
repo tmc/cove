@@ -318,7 +318,7 @@ func checkDiskNotMounted(diskPath string) error {
 	if err != nil {
 		// Log but don't block — if hdiutil info fails we proceed and let
 		// hdiutil attach fail with a clearer error.
-		provisionLog("Warning: could not check disk attachment: %v", err)
+		provisionLog("warning: could not check disk attachment: %v", err)
 		return nil
 	}
 	if !found {

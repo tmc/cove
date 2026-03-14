@@ -787,7 +787,7 @@ func ctlOCR(socketPath, regionSpec string) error {
 	}
 	observations, err := ocr.RecognizeText(img)
 	if err != nil {
-		return fmt.Errorf("OCR: %w", err)
+		return fmt.Errorf("ocr: %w", err)
 	}
 
 	if opts.Region != nil {
@@ -1130,7 +1130,7 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 	fmt.Println("Guest agent not reachable, attempting offline password reset...")
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, statErr := os.Stat(diskPath); os.IsNotExist(statErr) {
-		return fmt.Errorf("VM disk not found: %s", diskPath)
+		return fmt.Errorf("vm disk not found: %s", diskPath)
 	}
 
 	mountPoint, device, _, mountErr := attachAndMountDataVolume(diskPath)
@@ -1285,7 +1285,7 @@ func ctlStepMode(socketPath, outputDir string) error {
 
 		img, err := client.Screenshot()
 		if err != nil {
-			fmt.Printf("Screenshot error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: screenshot: %v\n", err)
 		} else {
 			screenState := DetectScreenState(img)
 			fmt.Printf("Screen state: %s\n", screenState)
@@ -1318,7 +1318,7 @@ func ctlStepMode(socketPath, outputDir string) error {
 		case "r":
 			fmt.Println("Pressing Return...")
 			if err := client.KeyPress(KeyCodeReturn); err != nil {
-				fmt.Printf("error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			}
 			time.Sleep(500 * time.Millisecond)
 			stepNum++
@@ -1326,14 +1326,14 @@ func ctlStepMode(socketPath, outputDir string) error {
 		case "t":
 			fmt.Println("Pressing Tab...")
 			if err := client.KeyPress(KeyCodeTab); err != nil {
-				fmt.Printf("error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			}
 			time.Sleep(200 * time.Millisecond)
 
 		case "e":
 			fmt.Println("Pressing Escape...")
 			if err := client.KeyPress(KeyCodeEscape); err != nil {
-				fmt.Printf("error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			}
 			time.Sleep(500 * time.Millisecond)
 			stepNum++
@@ -1341,7 +1341,7 @@ func ctlStepMode(socketPath, outputDir string) error {
 		case "sp":
 			fmt.Println("Pressing Space...")
 			if err := client.KeyPress(KeyCodeSpace); err != nil {
-				fmt.Printf("error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			}
 			time.Sleep(200 * time.Millisecond)
 
@@ -1354,7 +1354,7 @@ func ctlStepMode(socketPath, outputDir string) error {
 			filename := filepath.Join(saveDir, fmt.Sprintf("step_%03d_%d.png", stepNum, time.Now().Unix()))
 			if img != nil {
 				if err := saveScreenshotPNG(img, filename); err != nil {
-					fmt.Printf("Error saving screenshot: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: saving screenshot: %v\n", err)
 				} else {
 					fmt.Printf("Saved: %s\n", filename)
 				}
@@ -1362,10 +1362,10 @@ func ctlStepMode(socketPath, outputDir string) error {
 				// Capture fresh
 				img, err := client.Screenshot()
 				if err != nil {
-					fmt.Printf("Screenshot error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: screenshot: %v\n", err)
 				} else {
 					if err := saveScreenshotPNG(img, filename); err != nil {
-						fmt.Printf("Error saving screenshot: %v\n", err)
+						fmt.Fprintf(os.Stderr, "error: saving screenshot: %v\n", err)
 					} else {
 						fmt.Printf("Saved: %s\n", filename)
 					}
@@ -1382,14 +1382,14 @@ func ctlStepMode(socketPath, outputDir string) error {
 				text := strings.TrimPrefix(input, "type ")
 				fmt.Printf("Typing: %s\n", text)
 				if err := client.TypeText(text); err != nil {
-					fmt.Printf("error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				}
 			} else if strings.HasPrefix(input, "key ") {
 				var keycode int
 				fmt.Sscanf(strings.TrimPrefix(input, "key "), "%d", &keycode)
 				fmt.Printf("Pressing key %d...\n", keycode)
 				if err := client.KeyPress(uint16(keycode)); err != nil {
-					fmt.Printf("error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				}
 			} else {
 				fmt.Println("Unknown command. Use: Enter, r, t, e, s, q, type <text>, key <code>")

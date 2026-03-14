@@ -615,7 +615,7 @@ func loadOrCreateMachineIdentifier() vz.VZMacMachineIdentifier {
 
 	// Save for future use
 	if err := saveMachineIdentifier(machineID, machineIDPath); err != nil {
-		fmt.Printf("  Warning: could not save machine identifier: %v\n", err)
+		fmt.Printf("  warning: could not save machine identifier: %v\n", err)
 	}
 
 	return machineID
@@ -651,7 +651,7 @@ func loadOrCreateMACAddress() vz.VZMACAddress {
 	}
 
 	if err := os.WriteFile(macPath, []byte(macAddr.String()+"\n"), 0644); err != nil {
-		fmt.Printf("  Warning: could not save MAC address: %v\n", err)
+		fmt.Printf("  warning: could not save MAC address: %v\n", err)
 	}
 
 	return macAddr
@@ -677,10 +677,10 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 				return model, nil
 			}
 			if model.ID != 0 {
-				fmt.Printf("  Warning: Hardware model loaded but not supported on this host\n")
+				fmt.Printf("  warning: hardware model loaded but not supported on this host\n")
 			}
 		} else {
-			fmt.Println("  Warning: Failed to create NSData from hw.model bytes")
+			fmt.Println("  warning: failed to create NSData from hw.model bytes")
 		}
 	} else if err != nil {
 		fmt.Printf("  No existing hw.model: %v\n", err)
@@ -726,7 +726,7 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 
 	// Save hardware model for future use
 	if err := saveHardwareModel(model, hwModelPath); err != nil {
-		fmt.Printf("  Warning: could not save hardware model: %v\n", err)
+		fmt.Printf("  warning: could not save hardware model: %v\n", err)
 	}
 
 	if verbose {
@@ -938,7 +938,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 	startErr := beginVMStart(vm, queue)
 	if err := waitForVMStart(startErr, pumpRunLoop); err != nil {
 		if !printNSErrorSummary("VM start error", err) {
-			fmt.Printf("VM start error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
 		}
 		// Check if the disk is still attached — a common cause of
 		// "storage device attachment is invalid".
@@ -1208,7 +1208,7 @@ func hardStopVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 	DispatchAsyncQueue(queue, func() {
 		vm.StopWithCompletionHandler(func(err error) {
 			if err := snapshotNSError(err); err != nil {
-				fmt.Printf("VM stop error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "error: vm stop: %v\n", err)
 			}
 		})
 	})

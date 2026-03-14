@@ -55,7 +55,7 @@ func setRawMode() func() {
 	// Get current terminal settings
 	termios, err := unix.IoctlGetTermios(fd, unix.TIOCGETA)
 	if err != nil {
-		fmt.Printf("  Warning: could not get terminal settings: %v\n", err)
+		fmt.Printf("  warning: could not get terminal settings: %v\n", err)
 		return func() {}
 	}
 
@@ -74,7 +74,7 @@ func setRawMode() func() {
 	termios.Cc[unix.VTIME] = 0
 
 	if err := unix.IoctlSetTermios(fd, unix.TIOCSETA, termios); err != nil {
-		fmt.Printf("  Warning: could not set raw mode: %v\n", err)
+		fmt.Printf("  warning: could not set raw mode: %v\n", err)
 		return func() {}
 	}
 
@@ -186,7 +186,7 @@ func createSerialConsoleConfig() vz.VZVirtioConsoleDeviceSerialPortConfiguration
 		var err error
 		serialOutputFile, err = os.OpenFile(serialOutput, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			fmt.Printf("  Warning: could not open serial output file %s: %v\n", serialOutput, err)
+			fmt.Printf("  warning: could not open serial output file %s: %v\n", serialOutput, err)
 			return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
 		}
 		writeFd = int(serialOutputFile.Fd())
@@ -204,7 +204,7 @@ func createSerialConsoleConfig() vz.VZVirtioConsoleDeviceSerialPortConfiguration
 	// Create file handle serial port attachment
 	attachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(readHandle, writeHandle)
 	if attachment.ID == 0 {
-		fmt.Printf("  Warning: could not create serial port attachment\n")
+		fmt.Printf("  warning: could not create serial port attachment\n")
 		return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
 	}
 	attachment.Retain()
@@ -212,7 +212,7 @@ func createSerialConsoleConfig() vz.VZVirtioConsoleDeviceSerialPortConfiguration
 	// Create the serial port configuration
 	serialConfig := vz.NewVZVirtioConsoleDeviceSerialPortConfiguration()
 	if serialConfig.ID == 0 {
-		fmt.Println("  Warning: could not create serial port configuration")
+		fmt.Println("  warning: could not create serial port configuration")
 		return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
 	}
 
