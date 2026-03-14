@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-Usage: bisect-black-screen.sh (-vm NAME | -vm-dir DIR) [-mode run|selector] [-- extra go run args]
+Usage: bisect-black-screen.sh (-vm NAME | -vm-dir DIR) [-mode run|selector] [-launch-order window-first|start-first] [-runtime-profile full|minimal] [-- extra go run args]
 
 Launch vz-macos for manual black-screen classification during git bisect.
 
@@ -22,6 +22,9 @@ Exit codes are suitable for `git bisect run`:
 
 Examples:
   bisect-black-screen.sh -vm codex-e2e
+  bisect-black-screen.sh -vm codex-e2e -launch-order start-first
+  bisect-black-screen.sh -vm codex-e2e -runtime-profile minimal
+  bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile minimal
   bisect-black-screen.sh -vm codex-e2e -- -display 1920x1200
   bisect-black-screen.sh -vm-dir "$HOME/.vz/vms/codex-e2e"
 EOF
@@ -73,6 +76,8 @@ EOF
 vm_name=""
 vm_dir=""
 mode="run"
+launch_order="window-first"
+runtime_profile="full"
 extra_args=()
 
 while [[ $# -gt 0 ]]; do
@@ -90,6 +95,16 @@ while [[ $# -gt 0 ]]; do
 	-mode)
 		[[ $# -ge 2 ]] || die "missing value for -mode"
 		mode="$2"
+		shift 2
+		;;
+	-launch-order)
+		[[ $# -ge 2 ]] || die "missing value for -launch-order"
+		launch_order="$2"
+		shift 2
+		;;
+	-runtime-profile)
+		[[ $# -ge 2 ]] || die "missing value for -runtime-profile"
+		runtime_profile="$2"
 		shift 2
 		;;
 	-h|--help)
@@ -115,6 +130,12 @@ if [[ -z "$vm_name" && -z "$vm_dir" ]]; then
 fi
 if [[ "$mode" != "run" && "$mode" != "selector" ]]; then
 	die "mode must be run or selector"
+fi
+if [[ "$launch_order" != "window-first" && "$launch_order" != "start-first" ]]; then
+	die "launch order must be window-first or start-first"
+fi
+if [[ "$runtime_profile" != "full" && "$runtime_profile" != "minimal" ]]; then
+	die "runtime profile must be full or minimal"
 fi
 if [[ "$(uname -s)" != "Darwin" ]]; then
 	die "this helper only works on macOS"
@@ -143,11 +164,11 @@ run)
 	# Use the direct run path so the bisect isolates display startup instead
 	# of selector behavior. Older revisions all support -vm-dir and the run
 	# subcommand.
-	cmd+=(-vm-dir "$vm_dir" run -gui -serial none)
+	cmd+=(-vm-dir "$vm_dir" -launch-order "$launch_order" -runtime-profile "$runtime_profile" run -gui -serial none)
 		;;
 	selector)
 	# No subcommand here: allow the default GUI path to show the selector.
-	cmd+=(-vm-dir "$vm_dir")
+	cmd+=(-vm-dir "$vm_dir" -launch-order "$launch_order" -runtime-profile "$runtime_profile")
 		;;
 esac
 cmd+=("${extra_args[@]}")
@@ -155,6 +176,11 @@ cmd+=("${extra_args[@]}")
 cat <<EOF
 Launching:
   ${cmd[*]}
+
+Approach:
+- mode: $mode
+- launch-order: $launch_order
+- runtime-profile: $runtime_profile
 
 Expected classification:
 - good: VM display renders guest output

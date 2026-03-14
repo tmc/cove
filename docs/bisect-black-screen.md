@@ -54,6 +54,29 @@ If you need to exercise the selector path instead of the direct run path:
 git bisect run /tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -mode selector
 ```
 
+## Experiment matrix (launch/config)
+
+To compare launch behavior and runtime device profile explicitly, run:
+
+```bash
+/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order window-first -runtime-profile full
+/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile full
+/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order window-first -runtime-profile minimal
+/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile minimal
+```
+
+For Apple unified logs during each run, pass through:
+
+```bash
+/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile minimal -- -apple-log -verbose
+```
+
+Interpretation:
+
+- if `start-first` fixes black screen while `window-first` fails, startup ordering is the likely culprit
+- if `minimal` fixes black screen while `full` fails, one of the optional runtime devices is the likely culprit
+- if only `start-first + minimal` works, both factors interact
+
 When finished:
 
 ```bash
