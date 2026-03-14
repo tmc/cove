@@ -145,6 +145,10 @@ const (
 // runMacOSVM runs a macOS VM with the configured settings.
 func runMacOSVM() error {
 	fmt.Println("=== macOS VM Runner ===")
+	preferPasswordDialog = guiMode && !headlessMode
+
+	stopAppleLogStream := maybeStartAppleLogStream()
+	defer stopAppleLogStream()
 
 	// Validate settings
 	if err := validateVMSettings(); err != nil {
@@ -165,11 +169,26 @@ func runMacOSVM() error {
 		resolvedDiskPath = filepath.Join(vmDir, "disk.img")
 	}
 
+	_, diskStatErr := os.Stat(resolvedDiskPath)
+	diskExists := diskStatErr == nil
+
 	// Create disk if it doesn't exist
-	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
+	if os.IsNotExist(diskStatErr) {
 		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, diskSizeGB)
 		if err := createDiskImage(resolvedDiskPath, diskSizeGB); err != nil {
 			return fmt.Errorf("create disk image: %w", err)
+		}
+	} else if diskStatErr != nil {
+		return fmt.Errorf("stat disk image: %w", diskStatErr)
+	}
+
+	// Refuse to auto-repair identity metadata for an existing disk.
+	// Recreating hw.model or machine.id for a pre-existing macOS disk can
+	// produce an identity mismatch and undefined boot behavior (often black
+	// screen or immediate boot failure).
+	if diskExists {
+		if err := validateExistingMacOSIdentityMetadata(); err != nil {
+			return err
 		}
 	}
 
@@ -228,6 +247,99 @@ func runMacOSVM() error {
 
 	// Start VM - delegate to startVMWithQueue for proper handling
 	return startVMWithQueue(vm, vmQueue)
+}
+
+func validateExistingMacOSIdentityMetadata() error {
+	missing, err := missingMacOSIdentityMetadata()
+	if err != nil {
+		return err
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	if !recoverIdentity {
+		return fmt.Errorf("existing VM disk found, but required identity metadata is missing (%s); refusing to launch. restore these files from backup, or retry with -recover-identity to attempt a metadata reset", strings.Join(missing, ", "))
+	}
+
+	backupDir, err := recoverIdentityMetadata(missing)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Recovery mode enabled: missing identity metadata (%s)\n", strings.Join(missing, ", "))
+	fmt.Printf("  Backed up existing identity files to: %s\n", backupDir)
+	fmt.Println("  Reset identity metadata (hw.model, machine.id, aux.img); regenerating on launch")
+	return nil
+}
+
+func missingMacOSIdentityMetadata() ([]string, error) {
+	required := []string{
+		filepath.Join(vmDir, "aux.img"),
+		filepath.Join(vmDir, "hw.model"),
+		filepath.Join(vmDir, "machine.id"),
+	}
+	var missing []string
+	for _, path := range required {
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				missing = append(missing, filepath.Base(path))
+				continue
+			}
+			return nil, fmt.Errorf("stat %s: %w", path, err)
+		}
+		if info.Size() == 0 {
+			missing = append(missing, filepath.Base(path))
+		}
+	}
+	return missing, nil
+}
+
+func recoverIdentityMetadata(missing []string) (string, error) {
+	backupDir := filepath.Join(vmDir, "recovery", "identity-reset-"+time.Now().Format("20060102-150405"))
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return "", fmt.Errorf("create recovery backup dir: %w", err)
+	}
+
+	backupCandidates := []string{
+		"aux.img",
+		"hw.model",
+		"machine.id",
+		"mac.address",
+	}
+	for _, name := range backupCandidates {
+		src := filepath.Join(vmDir, name)
+		if _, err := os.Stat(src); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", fmt.Errorf("stat %s: %w", src, err)
+		}
+		dst := filepath.Join(backupDir, name)
+		if err := copyFile(src, dst); err != nil {
+			return "", fmt.Errorf("backup %s: %w", name, err)
+		}
+	}
+
+	resetFiles := []string{
+		filepath.Join(vmDir, "aux.img"),
+		filepath.Join(vmDir, "hw.model"),
+		filepath.Join(vmDir, "machine.id"),
+	}
+	for _, path := range resetFiles {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("reset %s: %w", path, err)
+		}
+	}
+
+	if len(missing) > 0 {
+		notePath := filepath.Join(backupDir, "RECOVERY_NOTE.txt")
+		note := fmt.Sprintf("Recovery triggered at %s\nMissing metadata detected: %s\nReset files: aux.img, hw.model, machine.id\n",
+			time.Now().Format(time.RFC3339), strings.Join(missing, ", "))
+		_ = os.WriteFile(notePath, []byte(note), 0644)
+	}
+
+	return backupDir, nil
 }
 
 // validateVMSettings validates the VM configuration settings.
@@ -384,33 +496,51 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		setAudioDevices(config, audioConfig)
 	}
 
-	// Memory balloon device for runtime memory control
-	addMemoryBalloonDevice(config)
+	minimalProfile := runtimeProfile == "minimal"
 
-	// Virtio socket device (vsock for host-guest communication)
-	vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
-	if vsockConfig.ID != 0 {
-		setSocketDevices(config, vsockConfig)
+	if !minimalProfile {
+		// Memory balloon device for runtime memory control
+		addMemoryBalloonDevice(config)
+
+		// Virtio socket device (vsock for host-guest communication)
+		vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
+		if vsockConfig.ID != 0 {
+			setSocketDevices(config, vsockConfig)
+		}
 	}
 
 	// USB storage devices
 	if len(usbDevices) > 0 {
-		if err := AddUSBStorageToConfig(config, usbDevices); err != nil {
-			return config, fmt.Errorf("add USB storage: %w", err)
+		if minimalProfile {
+			fmt.Println("warning: ignoring -usb devices with -runtime-profile minimal")
+		} else {
+			if err := AddUSBStorageToConfig(config, usbDevices); err != nil {
+				return config, fmt.Errorf("add USB storage: %w", err)
+			}
 		}
 	}
 
 	// Serial console (for streaming output to stdout/stderr)
-	serialConfig := createSerialConsoleConfig()
-	if serialConfig.ID != 0 {
-		setSerialPorts(config, serialConfig)
-		if verbose {
-			fmt.Println("  Serial console attached (output to stdout)")
+	if minimalProfile {
+		if serialOutput != "none" {
+			fmt.Println("warning: ignoring -serial with -runtime-profile minimal")
+		}
+	} else {
+		serialConfig := createSerialConsoleConfig()
+		if serialConfig.ID != 0 {
+			setSerialPorts(config, serialConfig)
+			if verbose {
+				fmt.Println("  Serial console attached (output to stdout)")
+			}
 		}
 	}
 
 	// Clipboard sharing (SPICE agent over Virtio console)
-	if enableClipboard {
+	if minimalProfile {
+		if enableClipboard {
+			fmt.Println("warning: ignoring -clipboard with -runtime-profile minimal")
+		}
+	} else if enableClipboard {
 		clipboardDevice := createClipboardConfig()
 		if clipboardDevice.ID != 0 {
 			config.SetConsoleDevices([]vz.VZConsoleDeviceConfiguration{
@@ -422,30 +552,37 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		}
 	}
 
-	// Volume mounts (VirtioFS) - docker-style -v flag
-	var allVirtioConfigs []vz.VZVirtioFileSystemDeviceConfiguration
+	if !minimalProfile {
+		// Volume mounts (VirtioFS) - docker-style -v flag
+		var allVirtioConfigs []vz.VZVirtioFileSystemDeviceConfiguration
 
-	effectiveVolumes := getEffectiveVolumes()
-	if len(effectiveVolumes) > 0 {
-		volumeConfigs, err := createVolumeConfigs(effectiveVolumes)
-		if err != nil {
-			fmt.Printf("warning: volume config: %v\n", err)
-		} else {
-			allVirtioConfigs = append(allVirtioConfigs, volumeConfigs...)
+		effectiveVolumes := getEffectiveVolumes()
+		if len(effectiveVolumes) > 0 {
+			volumeConfigs, err := createVolumeConfigs(effectiveVolumes)
+			if err != nil {
+				fmt.Printf("warning: volume config: %v\n", err)
+			} else {
+				allVirtioConfigs = append(allVirtioConfigs, volumeConfigs...)
+			}
 		}
-	}
 
-	// Dedicated VirtioFS device for toolbar-managed shared folders.
-	// Always created so the GUI can hotplug folders at runtime.
-	sharedFolders := LoadSharedFolders(vmDir)
-	sharedFoldersDevice := createSharedFoldersDevice(sharedFolders)
-	if sharedFoldersDevice.ID != 0 {
-		allVirtioConfigs = append(allVirtioConfigs, sharedFoldersDevice)
-	}
+		// Dedicated VirtioFS device for toolbar-managed shared folders.
+		// Always created so the GUI can hotplug folders at runtime.
+		sharedFolders := LoadSharedFolders(vmDir)
+		sharedFoldersDevice := createSharedFoldersDevice(sharedFolders)
+		if sharedFoldersDevice.ID != 0 {
+			allVirtioConfigs = append(allVirtioConfigs, sharedFoldersDevice)
+		}
 
-	// Apply all VirtioFS configurations
-	if len(allVirtioConfigs) > 0 {
-		setDirectorySharingDevicesMulti(config, allVirtioConfigs)
+		// Apply all VirtioFS configurations
+		if len(allVirtioConfigs) > 0 {
+			setDirectorySharingDevicesMulti(config, allVirtioConfigs)
+		}
+	} else {
+		effectiveVolumes := getEffectiveVolumes()
+		if len(effectiveVolumes) > 0 || len(LoadSharedFolders(vmDir)) > 0 {
+			fmt.Println("warning: ignoring shared folders/volumes with -runtime-profile minimal")
+		}
 	}
 
 	return config, nil
@@ -787,10 +924,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 			if err := restoreAndResumeVM(vm, queue); err == nil {
 				fmt.Println("VM resumed from saved state")
 				os.Remove(suspendConfigPath())
-				if guiMode {
-					return runVMWithGUI(vm, queue)
-				}
-				return runVMHeadless(vm, queue)
+				return nil
 			} else {
 				fmt.Printf("Suspend restore failed: %v\n", err)
 				fmt.Println("Performing cold boot...")
@@ -827,6 +961,11 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 	startErr := make(chan error, 1)
 	startHandlerFn := func(err error) {
 		startErr <- snapshotNSError(err)
+	}
+
+	if verbose {
+		fmt.Printf("beginVMStart: queue=%#x currentState=%s recovery=%v\n",
+			queue.Handle(), vmStateName(vz.VZVirtualMachineState(vm.State())), recoveryMode)
 	}
 
 	DispatchAsyncQueue(queue, func() {
@@ -1104,11 +1243,26 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		appFinishedLaunching = true
 	}
 
+	if launchOrder == "start-first" {
+		if verbose {
+			fmt.Println("GUI launch order: start-first")
+		}
+		if err := startConfiguredVM(vm, queue, true); err != nil {
+			return err
+		}
+	} else if verbose {
+		fmt.Println("GUI launch order: window-first")
+	}
+
 	// Create VM view
 	vmView := vz.NewVZVirtualMachineView()
 	vmView.SetVirtualMachine(&vm)
 	vmView.SetCapturesSystemKeys(false) // start with system keys going to macOS; toggle via toolbar (Cmd+K)
 	vmView.SetAutomaticallyReconfiguresDisplay(true)
+	if verbose {
+		fmt.Printf("VM view created: id=%#x autoReconfiguresDisplay=%v\n",
+			vmView.ID, vmView.AutomaticallyReconfiguresDisplay())
+	}
 
 	// Create window with proper frame
 	contentRect := corefoundation.CGRect{
@@ -1143,6 +1297,14 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		windowTitle = fmt.Sprintf("%s — %s", osLabel, vmName)
 	}
 	window.SetTitle(windowTitle)
+	restoredFrame, frameAutosaveName := configureWindowFramePersistence(window)
+	if verbose {
+		if restoredFrame {
+			fmt.Printf("Window frame restored from %q\n", frameAutosaveName)
+		} else {
+			fmt.Printf("No saved window frame for %q; using default layout\n", frameAutosaveName)
+		}
+	}
 
 	// Set process name for Cmd-Tab display
 	procName := "vz-macos"
@@ -1164,14 +1326,16 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	})
 
 	window.SetContentView(vmViewAsNSView(vmView))
-	window.Center()
+	if !restoredFrame {
+		window.Center()
+	}
 
 	// Add a boot overlay that fades out once the VM reaches Running state.
 	// If the VM is already running (e.g. after install → restart), skip the overlay.
 	var bootOverlay appkit.NSView
 	currentState := vz.VZVirtualMachineState(vm.State())
 	if currentState != vz.VZVirtualMachineStateRunning {
-		bootOverlay = createBootOverlay(contentRect.Size)
+		bootOverlay = createBootOverlay(currentVMViewSize(vmView, contentRect.Size))
 		vmViewAsNSView(vmView).AddSubview(&bootOverlay)
 	}
 
@@ -1240,12 +1404,15 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 	var stateUpdate vmStateUpdate
 	stateUpdate.newState = -1
-	startResult := make(chan error, 1)
+	var startResult <-chan error
 	var runErr error
-
-	go func() {
-		startResult <- startConfiguredVM(vm, queue, false)
-	}()
+	if launchOrder == "window-first" {
+		ch := make(chan error, 1)
+		startResult = ch
+		go func() {
+			ch <- startConfiguredVM(vm, queue, false)
+		}()
+	}
 
 	// Monitor VM state in background
 	go func() {
@@ -1254,6 +1421,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			time.Sleep(500 * time.Millisecond)
 			state := vz.VZVirtualMachineState(vm.State())
 			if state != lastState {
+				if verbose {
+					fmt.Printf("VM state transition: %s -> %s\n", vmStateName(lastState), vmStateName(state))
+				}
 				lastState = state
 				stateUpdate.mu.Lock()
 				stateUpdate.newState = state
@@ -1298,12 +1468,30 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	var cleanupOnce sync.Once
 	doCleanup := func() { cleanupOnce.Do(cleanup) }
 
+	// Close-window should behave like app quit: clean up VM lifecycle and stop the app.
+	windowDelegate := appkit.NewNSWindowDelegate(appkit.NSWindowDelegateConfig{
+		ShouldClose: func(_ appkit.NSWindow) bool {
+			saveWindowDisplayPlacement(window, frameAutosaveName)
+			window.SaveFrameUsingName(frameAutosaveName)
+			stateUpdate.mu.Lock()
+			stateUpdate.signalCleanup = true
+			stateUpdate.mu.Unlock()
+			doCleanup()
+			app.Stop(nil)
+			postDummyEvent(app)
+			return true
+		},
+	})
+	window.SetDelegate(windowDelegate)
+
 	// Register an NSApplicationDelegate so that Cmd+Q and "Quit" in the
 	// status item menu trigger a clean suspend instead of a hard kill.
 	// ShouldTerminate runs cleanup, then cancels NSApp's terminate: flow
 	// so we control the exit via app.Stop + postDummyEvent.
 	delegate := appkit.NewNSApplicationDelegate(appkit.NSApplicationDelegateConfig{
 		ShouldTerminate: func(_ appkit.NSApplication) appkit.NSApplicationTerminateReply {
+			saveWindowDisplayPlacement(window, frameAutosaveName)
+			window.SaveFrameUsingName(frameAutosaveName)
 			doCleanup()
 			app.Stop(nil)
 			postDummyEvent(app)
@@ -1384,7 +1572,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 								objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("removeFromSuperview"))
 								needsFadeIn = false // already fading or faded in
 							}
-							pauseOverlay = createPauseOverlay(contentRect.Size, stateUpdate.newState)
+							pauseOverlay = createPauseOverlay(currentVMViewSize(vmView, contentRect.Size), stateUpdate.newState)
 							if needsFadeIn {
 								objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("setAlphaValue:"), 0.0)
 								pauseFadeStep = 0 // start fade-in
@@ -1501,6 +1689,14 @@ func shouldRunGUIAutomation() bool {
 	}
 }
 
+func currentVMViewSize(vmView vz.VZVirtualMachineView, fallback corefoundation.CGSize) corefoundation.CGSize {
+	bounds := vmViewAsNSView(vmView).Bounds().Size
+	if bounds.Width > 0 && bounds.Height > 0 {
+		return bounds
+	}
+	return fallback
+}
+
 // createBootOverlay creates a dark overlay with a "Booting..." label,
 // shown over the VM view while the VM starts up.
 func createBootOverlay(size corefoundation.CGSize) appkit.NSView {
@@ -1510,6 +1706,8 @@ func createBootOverlay(size corefoundation.CGSize) appkit.NSView {
 	}
 	overlay := appkit.NewViewWithFrame(frame)
 	objc.Send[objc.ID](overlay.ID, objc.Sel("setWantsLayer:"), true)
+	// Keep overlay synced to VM view size on live window resizes.
+	objc.Send[objc.ID](overlay.ID, objc.Sel("setAutoresizingMask:"), uint(2|16))
 
 	// Dark background via CALayer.
 	layer := objc.Send[objc.ID](overlay.ID, objc.Sel("layer"))
@@ -1542,6 +1740,8 @@ func createBootOverlay(size corefoundation.CGSize) appkit.NSView {
 		Origin: corefoundation.CGPoint{X: 0, Y: (size.Height - 36) / 2},
 		Size:   corefoundation.CGSize{Width: size.Width, Height: 36},
 	})
+	// Stretch label width and keep it vertically centered as the overlay grows.
+	objc.Send[objc.ID](label.ID, objc.Sel("setAutoresizingMask:"), uint(2|8|32))
 	overlay.AddSubview(&label.NSView)
 	return overlay
 }
@@ -1596,6 +1796,8 @@ func createPauseOverlay(size corefoundation.CGSize, state vz.VZVirtualMachineSta
 		Origin: corefoundation.CGPoint{X: 0, Y: (size.Height - 40) / 2},
 		Size:   corefoundation.CGSize{Width: size.Width, Height: 40},
 	})
+	// Stretch label width and keep it vertically centered as the overlay grows.
+	objc.Send[objc.ID](label.ID, objc.Sel("setAutoresizingMask:"), uint(2|8|32))
 	overlay.AddSubview(&label.NSView)
 	return overlay
 }
