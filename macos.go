@@ -1415,10 +1415,17 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 
 	// Monitor VM state in background
+	monitorDone := make(chan struct{})
 	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
 		var lastState vz.VZVirtualMachineState = -1
 		for {
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case <-monitorDone:
+				return
+			case <-ticker.C:
+			}
 			state := vz.VZVirtualMachineState(vm.State())
 			if state != lastState {
 				if verbose {
@@ -1450,6 +1457,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Setup cleanup on window close / app quit — suspend if possible
 	cleanup := func() {
+		close(monitorDone)
 		controlServer.Stop()
 		if canSaveRestore {
 			fmt.Println("\nSuspending VM...")

@@ -1235,6 +1235,7 @@ func newVirtualMachine(config vz.VZVirtualMachineConfiguration) (*virtualMachine
 		queue:        queue,
 		stateChanged: make(chan vz.VZVirtualMachineState, 10),
 		currentState: initialState,
+		done:         make(chan struct{}),
 	}
 
 	// Start state monitoring goroutine
@@ -1278,7 +1279,13 @@ func (vm *virtualMachine) monitorState() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-vm.done:
+			return
+		case <-ticker.C:
+		}
+
 		if vm.vm.ID == 0 {
 			return
 		}
@@ -1306,7 +1313,15 @@ func (vm *virtualMachine) State() vz.VZVirtualMachineState {
 	return vm.currentState
 }
 
-// Continue polling
+// stopMonitor signals the monitorState goroutine to exit.
+func (vm *virtualMachine) stopMonitor() {
+	select {
+	case <-vm.done:
+		// already closed
+	default:
+		close(vm.done)
+	}
+}
 
 // virtualMachine wraps VZVirtualMachine with its dispatch queue.
 // Mirrors Code-Hex/vz's VirtualMachine struct.
@@ -1316,7 +1331,8 @@ type virtualMachine struct {
 	stateChanged chan vz.VZVirtualMachineState
 	stateLock    sync.Mutex
 	currentState vz.VZVirtualMachineState
-	observer     objc.ID // For KVO observation
+	observer     objc.ID    // For KVO observation
+	done         chan struct{} // closed to stop monitorState goroutine
 }
 
 // newMacOSInstaller creates a macOS installer.
@@ -1386,6 +1402,8 @@ func printProgress(percent float64) {
 // This avoids XPC callback issues where purego blocks may interfere with
 // MobileDevice XPC services during the DFU->RestoreOS state transition.
 func runInstallation(ctx context.Context, installer *macOSInstaller) error {
+	defer installer.vm.stopMonitor()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
