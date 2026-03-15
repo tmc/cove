@@ -1384,7 +1384,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	if unattended {
 		go func() {
 			if err := runUnattendedSetup(controlServer); err != nil {
-				fmt.Printf("Unattended setup failed: %v\n", err)
+				fmt.Fprintf(os.Stderr, "warning: unattended setup failed: %v\n", err)
 			}
 		}()
 	} else if provisionUser != "" && shouldRunGUIAutomation() {

@@ -307,13 +307,21 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	// device attachment is invalid" on the next `run`.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	interrupted := make(chan struct{})
 	go func() {
 		<-sigCh
-		fmt.Println("\nInterrupted — detaching disk before exit...")
-		detachDisk(device)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "\ninterrupted — detaching disk before exit...")
+		close(interrupted)
 	}()
 	defer signal.Stop(sigCh)
+	isInterrupted := func() bool {
+		select {
+		case <-interrupted:
+			return true
+		default:
+			return false
+		}
+	}
 
 	// Collect files that need root:wheel ownership. If we're not running as root,
 	// os.Chown will fail silently and paths accumulate here. At the end we run a
@@ -324,6 +332,10 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	// (e.g. /usr/local/bin which is owned by root). These are staged to temp
 	// and installed via the elevated script.
 	var pendingInstalls []pendingInstall
+
+	if isInterrupted() {
+		return fmt.Errorf("interrupted")
+	}
 
 	if opts.CreateUserPlist {
 		// Advanced mode: Create user plist directly with password hash
@@ -389,6 +401,10 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 			fmt.Printf("warning: guest tools injection failed: %v\n", err)
 			fmt.Println("  Clipboard sharing will not work until guest tools are installed manually.")
 		}
+	}
+
+	if isInterrupted() {
+		return fmt.Errorf("interrupted")
 	}
 
 	// Fix ownership on files that need root:wheel, and copy any files
@@ -589,16 +605,23 @@ func applyProvisioningFiles() error {
 	}
 	defer detachDisk(device)
 
-	// Handle Ctrl+C.
+	// Handle Ctrl+C — close a channel instead of os.Exit so deferred
+	// detachDisk runs and the disk is cleanly released.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	interrupted := make(chan struct{})
 	go func() {
 		<-sigCh
-		fmt.Println("\nInterrupted — detaching disk before exit...")
-		detachDisk(device)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "\ninterrupted — detaching disk before exit...")
+		close(interrupted)
 	}()
 	defer signal.Stop(sigCh)
+
+	select {
+	case <-interrupted:
+		return fmt.Errorf("interrupted")
+	default:
+	}
 
 	// Build a shell script that enables ownership, copies files, sets modes
 	// and ownership in one elevated pass. This avoids the problem where APFS
