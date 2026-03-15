@@ -14,9 +14,6 @@ import (
 	"github.com/tmc/apple/x/vzkit"
 )
 
-// verboseLog is set by the -v flag to enable verbose logging
-var verboseLog bool
-
 // vzDebugInstall is set by VZ_DEBUG_INSTALL=1 environment variable
 var vzDebugInstall = os.Getenv("VZ_DEBUG_INSTALL") != ""
 
@@ -84,11 +81,6 @@ func printNSErrorSummary(prefix string, err error) bool {
 		}
 	}
 	return false
-}
-
-// SetVerbose enables or disables verbose logging
-func SetVerbose(v bool) {
-	verboseLog = v
 }
 
 // vzlog prints install debug messages if VZ_DEBUG_INSTALL=1

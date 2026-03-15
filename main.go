@@ -194,9 +194,6 @@ func main() {
 	// foundation.NSSetUncaughtExceptionHandler(func(e foundation.NSException) {
 	// 	panic("Exiting due to uncaught exception.")
 	// })
-	// Enable verbose logging if -v flag is set
-	SetVerbose(verbose)
-
 	// Resolve VM directory using registry (handles migration and VM selection)
 	var err error
 	vmDir, err = EnsureVMDir(vmName)
@@ -345,9 +342,6 @@ func main() {
 		// Re-parse remaining args so flags after the subcommand work
 		// (e.g., "vz-macos run -gui" parses -gui here).
 		flag.CommandLine.Parse(args)
-
-		// Re-apply verbose after subcommand flag re-parse.
-		SetVerbose(verbose)
 
 		// --headless overrides --gui after subcommand re-parse
 		if headlessMode {

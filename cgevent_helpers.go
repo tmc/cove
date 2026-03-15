@@ -131,36 +131,6 @@ func TypeCharacter(char rune) error {
 	return nil
 }
 
-// typeCharacterToSystem types a single character by posting CGEvents through
-// the system-level HID event tap (kCGHIDEventTap). Unlike CGEventPostToPid,
-// this routes events through the window server to the focused window, which
-// is required for VZVirtualMachineView to properly handle keyboard input.
-func typeCharacterToSystem(char rune) error {
-	if err := ensureCGInit(); err != nil {
-		return err
-	}
-	eventDown, err := CGEventCreateKeyboardEvent(0, 0, true)
-	if err != nil {
-		return err
-	}
-	if eventDown == 0 {
-		return fmt.Errorf("create key down event")
-	}
-	CGEventKeyboardSetUnicodeString(eventDown, string(char))
-	cgEventPost(kCGHIDEventTap, eventDown)
-
-	eventUp, err := CGEventCreateKeyboardEvent(0, 0, false)
-	if err != nil {
-		return err
-	}
-	if eventUp == 0 {
-		return fmt.Errorf("create key up event")
-	}
-	CGEventKeyboardSetUnicodeString(eventUp, string(char))
-	cgEventPost(kCGHIDEventTap, eventUp)
-	return nil
-}
-
 const (
 	kCGHIDEventTap         = 0
 	kCGEventNull           = 0

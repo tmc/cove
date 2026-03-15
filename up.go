@@ -151,7 +151,6 @@ func applyUpConfig(cfg upConfig) {
 	provisionPassword = cfg.password
 	provisionStrategy = "inject"
 	installVM = true
-	SetVerbose(cfg.verbose)
 }
 
 // runUpPipeline executes the install -> inject -> run pipeline.
