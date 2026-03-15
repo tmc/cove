@@ -114,7 +114,9 @@ func ensureGuestToolsPkg() (string, error) {
 
 	// Also stash a copy in the VM directory for resilience.
 	if data, err := os.ReadFile(pkgPath); err == nil {
-		os.WriteFile(vmPkgPath, data, 0644)
+		if err := os.WriteFile(vmPkgPath, data, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: cache guest tools pkg: %v\n", err)
+		}
 	}
 
 	return pkgPath, nil

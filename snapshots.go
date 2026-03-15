@@ -309,7 +309,7 @@ func handleDiskSnapshotCommand(args []string) {
 	case "help", "-h", "--help":
 		printDiskSnapshotUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown disk-snapshot command: %s\nRun 'vz-macos -help' for usage.\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown disk-snapshot command: %s\nRun 'vz-macos -help' for usage.\n", args[0])
 		printDiskSnapshotUsage()
 		os.Exit(1)
 	}

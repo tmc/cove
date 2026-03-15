@@ -79,7 +79,9 @@ func currentConfigFingerprint() suspendConfigFingerprint {
 func saveSuspendConfig() {
 	fp := currentConfigFingerprint()
 	data, _ := json.MarshalIndent(fp, "", "  ")
-	os.WriteFile(suspendConfigPath(), append(data, '\n'), 0644)
+	if err := os.WriteFile(suspendConfigPath(), append(data, '\n'), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: save suspend config: %v\n", err)
+	}
 }
 
 // checkSuspendConfigMatch compares the saved config fingerprint with the current one.

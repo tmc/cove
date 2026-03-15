@@ -423,7 +423,7 @@ func main() {
 			}
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "Unknown command: %s\nRun 'vz-macos -help' for usage.\n", cmd)
+			fmt.Fprintf(os.Stderr, "unknown command: %s\nRun 'vz-macos -help' for usage.\n", cmd)
 			os.Exit(1)
 		}
 	}
@@ -801,7 +801,7 @@ Compressed templates take longer to save but use less disk space.`)
 		fmt.Printf("Template '%s' deleted.\n", subargs[0])
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown template command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
+		fmt.Fprintf(os.Stderr, "unknown template command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -883,7 +883,7 @@ Commands:
 		}
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown vm command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
+		fmt.Fprintf(os.Stderr, "unknown vm command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -955,7 +955,7 @@ Examples:
 		}
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown snapshot command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
+		fmt.Fprintf(os.Stderr, "unknown snapshot command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -973,7 +973,7 @@ func handleNetworkCommand(args []string) {
 	case "help":
 		fmt.Println(NetworkModeHelp())
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown network command: %s\nRun 'vz-macos -help' for usage.\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown network command: %s\nRun 'vz-macos -help' for usage.\n", args[0])
 		os.Exit(1)
 	}
 }

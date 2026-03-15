@@ -37,7 +37,7 @@ func RenameVM(oldName, newName string) error {
 	newPath := GetVMPath(newName)
 
 	if !ValidateVM(oldPath) {
-		return fmt.Errorf("VM not found: %s", oldName)
+		return fmt.Errorf("vm not found: %s", oldName)
 	}
 
 	if _, err := os.Stat(newPath); !os.IsNotExist(err) {

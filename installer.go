@@ -107,7 +107,11 @@ var errRestartVM = errors.New("restart VM")
 func injectSucceededMarker() string { return filepath.Join(vmDir, ".inject-succeeded") }
 
 // markInjectSucceeded creates the inject success marker file.
-func markInjectSucceeded() { os.WriteFile(injectSucceededMarker(), nil, 0644) }
+func markInjectSucceeded() {
+	if err := os.WriteFile(injectSucceededMarker(), nil, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: mark inject succeeded: %v\n", err)
+	}
+}
 
 // clearInjectSucceeded removes the inject success marker file.
 func clearInjectSucceeded() { os.Remove(injectSucceededMarker()) }
