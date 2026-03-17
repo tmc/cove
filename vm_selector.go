@@ -87,6 +87,17 @@ const selectorNoRecipe = "(none)"
 var vmSelectorDelegateCounter uint64
 var selectorScriptRunnerDelegateCounter uint64
 
+func selectorMonospacedRegularWeight() appkit.NSFontWeight {
+	switch v := any(appkit.NSFontWeights.Regular).(type) {
+	case appkit.NSFontWeight:
+		return v
+	case func() appkit.NSFontWeight:
+		return v()
+	default:
+		return appkit.NSFontWeight(0)
+	}
+}
+
 type selectorLogWriter struct {
 	ch chan string
 }
@@ -218,7 +229,7 @@ func (r *selectorScriptRunner) buildWindow(recipes []string) {
 	r.textView.SetEditable(false)
 	r.textView.SetSelectable(true)
 	r.textView.SetString("")
-	mono := appkit.GetNSFontClass().MonospacedSystemFontOfSizeWeight(12, appkit.NSFontWeights.Regular)
+	mono := appkit.GetNSFontClass().MonospacedSystemFontOfSizeWeight(12, selectorMonospacedRegularWeight())
 	r.textView.SetFont(mono)
 	scroll.SetDocumentView(r.textView)
 	objc.Send[objc.ID](content, objc.Sel("addSubview:"), scroll.ID)
@@ -377,7 +388,7 @@ func runPostInstallVZScriptsWithSelectorUI(recipes string) error {
 	textView.SetEditable(false)
 	textView.SetSelectable(true)
 	textView.SetString("")
-	mono := appkit.GetNSFontClass().MonospacedSystemFontOfSizeWeight(12, appkit.NSFontWeights.Regular)
+	mono := appkit.GetNSFontClass().MonospacedSystemFontOfSizeWeight(12, selectorMonospacedRegularWeight())
 	textView.SetFont(mono)
 	scroll.SetDocumentView(textView)
 	objc.Send[objc.ID](contentViewID, objc.Sel("addSubview:"), scroll.ID)
