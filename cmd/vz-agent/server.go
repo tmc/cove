@@ -85,27 +85,9 @@ func (s *agentServer) Info(_ context.Context, _ *connect.Request[pb.InfoRequest]
 
 func (s *agentServer) Exec(ctx context.Context, req *connect.Request[pb.ExecRequest]) (*connect.Response[pb.ExecResponse], error) {
 	r := req.Msg
-	if len(r.Args) == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("args required"))
-	}
-
-	cmd := exec.CommandContext(ctx, r.Args[0], r.Args[1:]...)
-	if r.WorkingDir != "" {
-		cmd.Dir = r.WorkingDir
-	}
-	if len(r.Env) > 0 {
-		cmd.Env = os.Environ()
-		for k, v := range r.Env {
-			cmd.Env = append(cmd.Env, k+"="+v)
-		}
-	}
-	if r.User != nil {
-		if err := setUser(cmd, *r.User); err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("set user: %v", err))
-		}
-	}
-	if r.Stdin != nil {
-		cmd.Stdin = bytes.NewReader(r.Stdin)
+	cmd, err := newExecCommand(ctx, r)
+	if err != nil {
+		return nil, err
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -113,7 +95,7 @@ func (s *agentServer) Exec(ctx context.Context, req *connect.Request[pb.ExecRequ
 	cmd.Stderr = &stderr
 
 	start := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	duration := time.Since(start).Seconds()
 
 	exitCode := 0
@@ -135,22 +117,9 @@ func (s *agentServer) Exec(ctx context.Context, req *connect.Request[pb.ExecRequ
 
 func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.ExecRequest], stream *connect.ServerStream[pb.ExecOutput]) error {
 	r := req.Msg
-	if len(r.Args) == 0 {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("args required"))
-	}
-
-	cmd := exec.CommandContext(ctx, r.Args[0], r.Args[1:]...)
-	if r.WorkingDir != "" {
-		cmd.Dir = r.WorkingDir
-	}
-	if len(r.Env) > 0 {
-		cmd.Env = os.Environ()
-		for k, v := range r.Env {
-			cmd.Env = append(cmd.Env, k+"="+v)
-		}
-	}
-	if r.Stdin != nil {
-		cmd.Stdin = bytes.NewReader(r.Stdin)
+	cmd, err := newExecCommand(ctx, r)
+	if err != nil {
+		return err
 	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -179,6 +148,32 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 		}
 	}
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
+}
+
+func newExecCommand(ctx context.Context, r *pb.ExecRequest) (*exec.Cmd, error) {
+	if len(r.Args) == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("args required"))
+	}
+
+	cmd := exec.CommandContext(ctx, r.Args[0], r.Args[1:]...)
+	if r.WorkingDir != "" {
+		cmd.Dir = r.WorkingDir
+	}
+	if len(r.Env) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range r.Env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
+	if r.User != nil {
+		if err := setUser(cmd, *r.User); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("set user: %v", err))
+		}
+	}
+	if r.Stdin != nil {
+		cmd.Stdin = bytes.NewReader(r.Stdin)
+	}
+	return cmd, nil
 }
 
 func streamPipe(stream *connect.ServerStream[pb.ExecOutput], pipe io.ReadCloser, which pb.ExecOutput_Stream, done chan<- error) {

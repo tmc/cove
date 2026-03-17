@@ -406,8 +406,23 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 		results = append(results, entry)
 	}
 
+	return agentMountVolumesResponse(results)
+}
+
+func agentMountVolumesResponse(results []map[string]interface{}) *controlpb.ControlResponse {
+	success := true
+	for _, entry := range results {
+		if _, failed := entry["error"]; failed {
+			success = false
+			break
+		}
+	}
 	data, _ := json.Marshal(results)
-	return &controlpb.ControlResponse{Success: true, Data: string(data), Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: string(data)}}}
+	return &controlpb.ControlResponse{
+		Success: success,
+		Data:    string(data),
+		Result:  &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: string(data)}},
+	}
 }
 
 func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *controlpb.ControlRequest) {

@@ -25,6 +25,7 @@ const agentPort = 1024
 // AgentClient wraps the connect-go client for the guest agent.
 type AgentClient struct {
 	client agentpbconnect.AgentClient
+	conn   net.Conn
 }
 
 // NewAgentClient creates a client connected to the guest agent.
@@ -43,11 +44,17 @@ func NewAgentClient(netConn net.Conn) (*AgentClient, error) {
 		"http://vsock-guest",
 		connect.WithGRPC(),
 	)
-	return &AgentClient{client: client}, nil
+	return &AgentClient{client: client, conn: netConn}, nil
 }
 
-// Close is a no-op; the underlying net.Conn is managed by the caller.
-func (c *AgentClient) Close() {}
+// Close closes the underlying vsock connection.
+func (c *AgentClient) Close() {
+	if c == nil || c.conn == nil {
+		return
+	}
+	c.conn.Close()
+	c.conn = nil
+}
 
 // Ping checks that the agent is alive.
 func (c *AgentClient) Ping(ctx context.Context) (string, error) {
@@ -103,10 +110,24 @@ type ExecStreamReceiver interface {
 
 // ExecStream runs a command in the guest and streams stdout/stderr chunks.
 func (c *AgentClient) ExecStream(ctx context.Context, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
-	stream, err := c.client.ExecStream(ctx, connect.NewRequest(&pb.ExecRequest{
+	return c.ExecStreamAs(ctx, "", args, env, workDir)
+}
+
+// ExecStreamAs runs a command in the guest as the specified user and streams output.
+func (c *AgentClient) ExecStreamAs(ctx context.Context, user string, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
+	req := &pb.ExecRequest{
 		Args:       args,
 		Env:        env,
 		WorkingDir: workDir,
+	}
+	if user != "" {
+		req.User = &user
+	}
+	stream, err := c.client.ExecStream(ctx, connect.NewRequest(&pb.ExecRequest{
+		Args:       req.Args,
+		Env:        req.Env,
+		WorkingDir: req.WorkingDir,
+		User:       req.User,
 	}))
 	if err != nil {
 		return nil, err
