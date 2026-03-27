@@ -124,10 +124,10 @@ Examples:
 		return fmt.Errorf("command required")
 	}
 
-	// Extract subcommand. Any remaining positional args after the subcommand
-	// are subcommand-specific arguments (not ctl flags).
+	// Extract subcommand. Copy remaining args so flag extraction can safely
+	// modify the slice without aliasing fs.Args()'s backing array.
 	cmdType := fs.Arg(0)
-	subArgs := fs.Args()[1:]
+	subArgs := append([]string{}, fs.Args()[1:]...)
 
 	// Handle flags that appear after the subcommand (e.g. "screenshot -o file.jpg").
 	// Go's flag parser stops at the first non-flag arg, so flags after the subcommand
