@@ -536,6 +536,50 @@ func keyNameToCode(name string) uint16 {
 		return 118
 	case "f5":
 		return 96
+	// Number row
+	case "0":
+		return 29
+	case "1":
+		return 18
+	case "2":
+		return 19
+	case "3":
+		return 20
+	case "4":
+		return 21
+	case "5":
+		return 23
+	case "6":
+		return 22
+	case "7":
+		return 26
+	case "8":
+		return 28
+	case "9":
+		return 25
+	// Punctuation
+	case "slash":
+		return 44
+	case "backslash":
+		return 42
+	case "period", "dot":
+		return 47
+	case "comma":
+		return 43
+	case "semicolon":
+		return 41
+	case "quote", "apostrophe":
+		return 39
+	case "minus", "dash", "hyphen":
+		return 27
+	case "equals", "equal":
+		return 24
+	case "leftbracket", "lbracket":
+		return 33
+	case "rightbracket", "rbracket":
+		return 30
+	case "grave", "backtick", "tilde":
+		return 50
 	default:
 		// Try to parse as a numeric keycode
 		if code, err := strconv.ParseUint(name, 10, 16); err == nil {
