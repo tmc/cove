@@ -43,8 +43,11 @@ func TestFormatControlSocketDialErrorConnectionRefused(t *testing.T) {
 	if !strings.Contains(got, "may still be booting") {
 		t.Fatalf("missing booting hint: %q", got)
 	}
-	if !strings.Contains(got, "remove "+sock) {
-		t.Fatalf("missing stale socket cleanup hint: %q", got)
+	if !strings.Contains(got, "if exited: restart with:") {
+		t.Fatalf("missing restart hint: %q", got)
+	}
+	if !strings.Contains(got, `"macos-3"`) {
+		t.Fatalf("missing VM name in error: %q", got)
 	}
 }
 

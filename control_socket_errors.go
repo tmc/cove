@@ -22,10 +22,11 @@ func formatControlSocketDialError(sock string, err error) error {
 	}
 
 	if strings.Contains(msg, "connection refused") {
+		vmName := filepath.Base(filepath.Dir(sock))
 		if _, statErr := os.Stat(sock); statErr == nil {
-			return fmt.Errorf("vm control socket exists but is not accepting connections at %s\n  vm may still be booting or may have exited uncleanly\n  if booting: retry in a few seconds\n  if stale: remove %s and restart: %s", sock, sock, runHint)
+			return fmt.Errorf("vm %q control socket exists but is not accepting connections at %s\n  vm may still be booting or may have exited uncleanly\n  if booting: retry in a few seconds\n  if exited: restart with: %s", vmName, sock, runHint)
 		}
-		return fmt.Errorf("vm is not running: control socket unavailable at %s\n  start it with: %s", sock, runHint)
+		return fmt.Errorf("vm %q is not running: control socket unavailable at %s\n  start it with: %s", vmName, sock, runHint)
 	}
 
 	if strings.Contains(msg, "i/o timeout") ||
