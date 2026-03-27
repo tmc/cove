@@ -19,7 +19,7 @@ PKG="${GOVERSION}.darwin-arm64.pkg"
 URL="https://go.dev/dl/${PKG}"
 
 curl -fsSL -o "/tmp/${PKG}" "$URL"
-sudo installer -pkg "/tmp/${PKG}" -target /
+installer -pkg "/tmp/${PKG}" -target /
 rm -f "/tmp/${PKG}"
 
 # Verify.

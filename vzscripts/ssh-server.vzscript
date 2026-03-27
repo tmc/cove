@@ -1,6 +1,40 @@
 # ssh-server — Enable and configure SSH remote login
 
 guest-ping
-guest-exec launchctl load -w /System/Library/LaunchDaemons/ssh.plist
-? guest-exec systemsetup -setremotelogin on
-guest-exec systemsetup -getremotelogin
+guest-shell enable-sshd.sh
+
+-- enable-sshd.sh --
+#!/bin/bash
+set -eu
+
+# Runs as root via daemon agent (no sudo needed).
+
+# Enable sshd via launchctl.
+if launchctl list com.openssh.sshd &>/dev/null; then
+  echo "sshd already running"
+else
+  echo "Enabling sshd..."
+  launchctl load -w /System/Library/LaunchDaemons/ssh.plist
+fi
+
+# Ensure password authentication is enabled in sshd_config.
+SSHD_CONFIG="/etc/ssh/sshd_config"
+if grep -q "^PasswordAuthentication no" "$SSHD_CONFIG" 2>/dev/null; then
+  echo "Enabling password authentication..."
+  sed -i '' 's/^PasswordAuthentication no/PasswordAuthentication yes/' "$SSHD_CONFIG"
+  launchctl kickstart -k system/com.openssh.sshd 2>/dev/null || true
+fi
+
+# Verify sshd is listening on port 22.
+for i in 1 2 3 4 5; do
+  if /usr/bin/nc -z localhost 22 2>/dev/null; then
+    echo "sshd is listening on port 22"
+    systemsetup -getremotelogin 2>/dev/null || true
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "warning: sshd may not be listening on port 22" >&2
+systemsetup -getremotelogin 2>/dev/null || true
+exit 0
