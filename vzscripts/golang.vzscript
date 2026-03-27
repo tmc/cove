@@ -22,15 +22,12 @@ curl -fsSL -o "/tmp/${PKG}" "$URL"
 installer -pkg "/tmp/${PKG}" -target /
 rm -f "/tmp/${PKG}"
 
-# Fix GOPATH ownership — the installer runs as root but ~/go should
-# belong to the admin user, not root.
+# Set up GOPATH for the admin user so it's created with correct ownership.
 GOUSER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
 if [ -n "$GOUSER" ]; then
   USER_HOME=$(dscl . -read "/Users/$GOUSER" NFSHomeDirectory | awk '{print $2}')
-  if [ -d "$USER_HOME/go" ]; then
-    chown -R "$GOUSER:staff" "$USER_HOME/go"
-    echo "Fixed ownership of $USER_HOME/go"
-  fi
+  su -l "$GOUSER" -c 'mkdir -p ~/go/bin ~/go/pkg'
+  echo "Created $USER_HOME/go (owned by $GOUSER)"
 fi
 
 # Verify.
