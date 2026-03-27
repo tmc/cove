@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"runtime/debug"
 )
 
@@ -47,5 +51,23 @@ func agentVersion() string {
 
 func agentVersionInfo() string {
 	resolvedVersion, resolvedCommit, resolvedDate := resolvedVersionInfo()
-	return fmt.Sprintf("vz-agent %s (commit %s, built %s)", resolvedVersion, resolvedCommit, resolvedDate)
+	return fmt.Sprintf("vz-agent %s (commit %s, built %s, sha256:%s)", resolvedVersion, resolvedCommit, resolvedDate, selfSHA256())
+}
+
+// selfSHA256 returns the first 12 hex characters of the running binary's SHA256 hash.
+func selfSHA256() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "unknown"
+	}
+	f, err := os.Open(exe)
+	if err != nil {
+		return "unknown"
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "unknown"
+	}
+	return hex.EncodeToString(h.Sum(nil))[:12]
 }

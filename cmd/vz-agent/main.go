@@ -39,7 +39,7 @@ func main() {
 	log.SetPrefix("vz-agent: ")
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	log.Printf("starting version %s on vsock port %d", agentVersion(), *port)
+	log.Printf("starting %s on vsock port %d", agentVersionInfo(), *port)
 
 	lis, err := listenVsock(uint32(*port))
 	if err != nil {

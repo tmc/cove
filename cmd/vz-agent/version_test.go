@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAgentVersionRelease(t *testing.T) {
 	oldVersion, oldCommit, oldDate := version, commit, date
@@ -15,8 +18,10 @@ func TestAgentVersionRelease(t *testing.T) {
 	if got, want := agentVersion(), "v1.2.3"; got != want {
 		t.Fatalf("agentVersion() = %q, want %q", got, want)
 	}
-	if got, want := agentVersionInfo(), "vz-agent v1.2.3 (commit abc12345, built 2026-03-11T10:00:00Z)"; got != want {
-		t.Fatalf("agentVersionInfo() = %q, want %q", got, want)
+	got := agentVersionInfo()
+	wantPrefix := "vz-agent v1.2.3 (commit abc12345, built 2026-03-11T10:00:00Z, sha256:"
+	if !strings.HasPrefix(got, wantPrefix) {
+		t.Fatalf("agentVersionInfo() = %q, want prefix %q", got, wantPrefix)
 	}
 }
 
@@ -33,7 +38,9 @@ func TestAgentVersionDevFallsBackToCommit(t *testing.T) {
 	if got, want := agentVersion(), "deadbeef"; got != want {
 		t.Fatalf("agentVersion() = %q, want %q", got, want)
 	}
-	if got, want := agentVersionInfo(), "vz-agent deadbeef (commit deadbeef, built 2026-03-11T10:00:00Z)"; got != want {
-		t.Fatalf("agentVersionInfo() = %q, want %q", got, want)
+	got := agentVersionInfo()
+	wantPrefix := "vz-agent deadbeef (commit deadbeef, built 2026-03-11T10:00:00Z, sha256:"
+	if !strings.HasPrefix(got, wantPrefix) {
+		t.Fatalf("agentVersionInfo() = %q, want prefix %q", got, wantPrefix)
 	}
 }
