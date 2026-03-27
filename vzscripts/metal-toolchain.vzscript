@@ -1,0 +1,38 @@
+# metal-toolchain — Download Metal shader compiler toolchain
+# requires: xcode
+
+guest-ping
+guest-shell install-metal-toolchain.sh
+
+-- install-metal-toolchain.sh --
+#!/bin/bash
+set -e
+
+# Ensure Xcode is installed and selected.
+if [ ! -d /Applications/Xcode.app/Contents/Developer ]; then
+  echo "error: Xcode not installed. Run: vz-macos vzscript run xcode" >&2
+  exit 1
+fi
+xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+# Check if Metal is already available.
+if xcrun metal --version &>/dev/null; then
+  echo "Metal compiler already available: $(xcrun metal --version 2>&1 | head -1)"
+  exit 0
+fi
+
+# On macOS 26+, Metal tools are a separate downloadable component (cryptex).
+# The metal binary exists in Xcode but refuses to run without the toolchain.
+echo "Metal compiler not available. Downloading Metal Toolchain..."
+echo "(This is a ~700 MB download on macOS 26+)"
+
+xcodebuild -downloadComponent MetalToolchain 2>&1
+
+# Verify.
+if xcrun metal --version &>/dev/null; then
+  echo "Metal compiler installed: $(xcrun metal --version 2>&1 | head -1)"
+else
+  echo "error: metal still not available after downloading MetalToolchain" >&2
+  echo "Try: xcodebuild -downloadAllPlatformsAndComponents" >&2
+  exit 1
+fi

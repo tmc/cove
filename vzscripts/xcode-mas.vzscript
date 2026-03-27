@@ -1,0 +1,50 @@
+# xcode-mas — Install Xcode from Mac App Store (slow, ~35 GB)
+# requires: homebrew
+
+guest-ping
+guest-shell install-xcode-mas.sh
+
+-- install-xcode-mas.sh --
+#!/bin/bash
+set -e
+
+# Check if Xcode is already installed.
+if [ -d /Applications/Xcode.app/Contents/Developer ]; then
+  xcode-select -s /Applications/Xcode.app/Contents/Developer
+  echo "Xcode already installed: $(xcodebuild -version 2>&1 | head -1)"
+  exit 0
+fi
+
+BREW_USER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$BREW_USER" ]; then
+  echo "error: no admin user found" >&2
+  exit 1
+fi
+
+# Grant passwordless sudo temporarily (mas needs it internally).
+echo "$BREW_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/xcode-install
+chmod 0440 /etc/sudoers.d/xcode-install
+trap 'rm -f /etc/sudoers.d/xcode-install' EXIT
+
+# Install mas if needed.
+if ! su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null)" && command -v mas' &>/dev/null; then
+  echo "Installing mas (Mac App Store CLI)..."
+  su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && brew install mas'
+fi
+
+echo "Installing Xcode from the Mac App Store..."
+echo "This downloads ~35 GB and may take a very long time."
+echo "TIP: For faster setup, copy Xcode from the host instead:"
+echo "  vz-macos ctl agent-cp /Applications/Xcode.app /Applications/Xcode.app"
+echo ""
+su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && mas install 497799835'
+
+if [ ! -d /Applications/Xcode.app ]; then
+  echo "error: Xcode.app not found after mas install" >&2
+  exit 1
+fi
+
+xcode-select -s /Applications/Xcode.app/Contents/Developer
+xcodebuild -license accept 2>/dev/null || true
+xcodebuild -runFirstLaunch 2>/dev/null || true
+echo "Xcode installed: $(xcodebuild -version 2>&1 | head -1)"
