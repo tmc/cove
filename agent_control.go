@@ -31,29 +31,49 @@ import (
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-// ensureAgent connects to the guest agent if not already connected.
-// Caller must hold s.agentMu.
-func (s *ControlServer) ensureAgent() error {
+// getAgent returns the current agent client, connecting if necessary.
+// It holds agentMu only briefly for connection setup, not during RPCs.
+func (s *ControlServer) getAgent() (*AgentClient, error) {
 	state, err := s.currentVMState()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := agentUnavailableForVMState(state); err != nil {
-		return err
+		return nil, err
 	}
 
+	// Fast path: read lock to check existing connection.
+	s.agentMu.RLock()
+	if a := s.agent; a != nil {
+		s.agentMu.RUnlock()
+		// Quick health check outside any lock.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := a.Ping(ctx); err == nil {
+			return a, nil
+		}
+		// Connection is dead, fall through to reconnect.
+	} else {
+		s.agentMu.RUnlock()
+	}
+
+	// Slow path: write lock to reconnect.
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
+	// Double-check after acquiring write lock.
 	if s.agent != nil {
-		// Quick health check: if the connection is dead, reconnect.
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if _, err := s.agent.Ping(ctx); err == nil {
-			return nil
+			return s.agent, nil
 		}
-		// Connection is dead, reconnect.
 		s.agent.Close()
 		s.agent = nil
 	}
-	return s.connectAgentLocked()
+	if err := s.connectAgentLocked(); err != nil {
+		return nil, err
+	}
+	return s.agent, nil
 }
 
 func (s *ControlServer) currentVMState() (vz.VZVirtualMachineState, error) {
@@ -110,14 +130,11 @@ func (s *ControlServer) connectAgentLocked() error {
 
 // handleAgentCommand dispatches agent-* commands from the control socket.
 // Returns ok=true if the command was handled, ok=false if not an agent command.
-// Uses agentMu (not mu) so long-running agent-exec doesn't block other operations.
+// Agent commands run concurrently — the lock is only held briefly for connection setup.
 func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp *controlpb.ControlResponse, ok bool) {
-	// Quick check: is this an agent command?
 	if !strings.HasPrefix(req.Type, "agent-") {
 		return nil, false
 	}
-	s.agentMu.Lock()
-	defer s.agentMu.Unlock()
 
 	switch req.Type {
 	case "agent-connect":
@@ -176,7 +193,9 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 }
 
 func (s *ControlServer) handleAgentConnect() *controlpb.ControlResponse {
-	// Force reconnect: close any stale connection first.
+	// Force reconnect: write lock to close and reopen.
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
 	if s.agent != nil {
 		s.agent.Close()
 		s.agent = nil
@@ -188,12 +207,13 @@ func (s *ControlServer) handleAgentConnect() *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	version, err := s.agent.Ping(ctx)
+	version, err := a.Ping(ctx)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("ping: %v", err)}
 	}
@@ -205,12 +225,13 @@ func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) handleAgentInfo() *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	info, err := s.agent.Info(ctx)
+	info, err := a.Info(ctx)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("info: %v", err)}
 	}
@@ -228,7 +249,8 @@ func (s *ControlServer) handleAgentInfo() *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	if len(cmd.Args) == 0 {
@@ -236,7 +258,7 @@ func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *contro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	result, err := s.agent.Exec(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+	result, err := a.Exec(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("exec: %v", err)}
 	}
@@ -259,7 +281,8 @@ func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *contro
 }
 
 func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	if cmd.Path == "" {
@@ -267,7 +290,7 @@ func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *co
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	data, err := s.agent.ReadFile(ctx, cmd.Path)
+	data, err := a.ReadFile(ctx, cmd.Path)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("read: %v", err)}
 	}
@@ -279,7 +302,8 @@ func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *co
 }
 
 func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	if cmd.Path == "" {
@@ -295,38 +319,41 @@ func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := s.agent.WriteFile(ctx, cmd.Path, data, mode); err != nil {
+	if err := a.WriteFile(ctx, cmd.Path, data, mode); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("write: %v", err)}
 	}
 	return &controlpb.ControlResponse{Success: true, Data: "ok", Result: &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: "ok"}}}
 }
 
 func (s *ControlServer) handleAgentShutdown(cmd *controlpb.AgentShutdownCommand) *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.agent.Shutdown(ctx, cmd.Force); err != nil {
+	if err := a.Shutdown(ctx, cmd.Force); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("shutdown: %v", err)}
 	}
 	return &controlpb.ControlResponse{Success: true, Data: "shutdown initiated", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "shutdown initiated"}}}
 }
 
 func (s *ControlServer) handleAgentReboot() *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.agent.Reboot(ctx); err != nil {
+	if err := a.Reboot(ctx); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("reboot: %v", err)}
 	}
 	return &controlpb.ControlResponse{Success: true, Data: "reboot initiated", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "reboot initiated"}}}
 }
 
 func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	var args []string
@@ -342,7 +369,7 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	result, err := s.agent.Exec(ctx, args, nil, "")
+	result, err := a.Exec(ctx, args, nil, "")
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("sshd %s: %v", cmd.Action, err)}
 	}
@@ -363,7 +390,8 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 }
 
 func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 
@@ -385,11 +413,11 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		s.agent.Exec(ctx, []string{"mkdir", "-p", mountPoint}, nil, "")
+		a.Exec(ctx, []string{"mkdir", "-p", mountPoint}, nil, "")
 		cancel()
 
 		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-		result, err := s.agent.Exec(ctx, []string{"mount_virtiofs", m.Tag, mountPoint}, nil, "")
+		result, err := a.Exec(ctx, []string{"mount_virtiofs", m.Tag, mountPoint}, nil, "")
 		cancel()
 
 		entry := map[string]interface{}{
@@ -436,10 +464,8 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 		return
 	}
 
-	s.agentMu.Lock()
-	defer s.agentMu.Unlock()
-
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})
 		return
 	}
@@ -447,7 +473,7 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	stream, err := s.agent.ExecStream(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+	stream, err := a.ExecStream(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
 	if err != nil {
 		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("exec stream: %v", err)})
 		return
@@ -489,7 +515,8 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 }
 
 func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *controlpb.ControlResponse {
-	if err := s.ensureAgent(); err != nil {
+	a, err := s.getAgent()
+	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	if cmd.HostPath == "" || cmd.GuestPath == "" {
@@ -508,7 +535,7 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 		if mode == 0 {
 			mode = info.Mode()
 		}
-		if err := s.agent.CopyToGuest(ctx, cmd.HostPath, cmd.GuestPath, mode); err != nil {
+		if err := a.CopyToGuest(ctx, cmd.HostPath, cmd.GuestPath, mode); err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
 		}
 		msg := fmt.Sprintf("%s -> guest:%s (%d bytes)", cmd.HostPath, cmd.GuestPath, info.Size())
@@ -520,7 +547,7 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 	}
 
 	// Guest to host.
-	if err := s.agent.CopyFromGuest(ctx, cmd.GuestPath, cmd.HostPath); err != nil {
+	if err := a.CopyFromGuest(ctx, cmd.GuestPath, cmd.HostPath); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
 	}
 	info, _ := os.Stat(cmd.HostPath)

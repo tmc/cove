@@ -261,9 +261,7 @@ func checkAgentAvailability(cs *ControlServer) {
 
 	// Retry agent connection a few times (launchd may still be starting).
 	for attempt := 0; attempt < 3; attempt++ {
-		cs.mu.Lock()
-		err := cs.ensureAgent()
-		cs.mu.Unlock()
+		_, err := cs.getAgent()
 		if err == nil {
 			if verbose {
 				fmt.Println("Guest agent: connected")

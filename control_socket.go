@@ -55,7 +55,7 @@ type ControlServer struct {
 	vm                vz.VZVirtualMachine
 	vmQueue           dispatch.Queue
 	mu                sync.Mutex
-	agentMu           sync.Mutex // separate mutex for agent operations (can be long-running)
+	agentMu           sync.RWMutex // protects agent connection setup; RLock for concurrent RPCs
 	screenshotMu      sync.Mutex // protects lastScreenshot for diff mode
 	running           atomic.Bool
 	lastScreenshot    image.Image  // For diff mode
@@ -1673,10 +1673,10 @@ func (s *ControlServer) handleNetworkInfo() *controlpb.ControlResponse {
 	}
 
 	// Try to get guest IP via agent (best-effort, short timeout)
-	if err := s.ensureAgent(); err == nil {
+	if a, err := s.getAgent(); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		result, err := s.agent.Exec(ctx, []string{"ipconfig", "getifaddr", "en0"}, nil, "")
+		result, err := a.Exec(ctx, []string{"ipconfig", "getifaddr", "en0"}, nil, "")
 		if err == nil && result.ExitCode == 0 {
 			info.GuestIp = strings.TrimSpace(string(result.Stdout))
 		}

@@ -223,9 +223,7 @@ func waitForAgent(ctx context.Context, cs *ControlServer) error {
 		case <-time.After(delay):
 		}
 
-		cs.mu.Lock()
-		err := cs.ensureAgent()
-		cs.mu.Unlock()
+		_, err := cs.getAgent()
 		if err == nil {
 			return nil
 		}
@@ -243,9 +241,7 @@ func waitForAgentLoss(ctx context.Context, cs *ControlServer) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			cs.mu.Lock()
-			err := cs.ensureAgent()
-			cs.mu.Unlock()
+			_, err := cs.getAgent()
 			if err != nil {
 				if verbose {
 					fmt.Printf("auto-mount: agent unavailable; will re-mount after reconnect: %v\n", err)
