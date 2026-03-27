@@ -624,14 +624,23 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 		return &controlpb.ControlResponse{Error: "host_path and guest_path required"}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
+	timeout := 10 * time.Minute
 	if cmd.ToGuest {
 		info, err := os.Stat(cmd.HostPath)
 		if err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("stat %s: %v", cmd.HostPath, err)}
 		}
+
+		// Directory copy: use longer timeout (large apps like Xcode can be 3+ GB).
+		if info.IsDir() {
+			timeout = 30 * time.Minute
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	if cmd.ToGuest {
+		info, _ := os.Stat(cmd.HostPath) // already checked above
 
 		// Directory copy: tar on host, stream to guest, extract there.
 		if info.IsDir() {

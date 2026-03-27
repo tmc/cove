@@ -13,6 +13,8 @@
 //	guest-terminal <file>       Run a local script file in Terminal.app (visible to user)
 //	guest-write <dst> <src>     Copy a local file to the guest
 //	guest-read <path>           Read a guest file to stdout
+//	guest-cp <host> <guest>     Copy a file or directory host→guest (streaming)
+//	host-cp <host> <guest>      Copy a host file/directory to guest (long timeout)
 //	append-path <dir>           Add a directory to system PATH via /etc/paths.d/
 //
 // UI automation commands (via control socket):
@@ -96,6 +98,7 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"guest-write":    guestWriteCmd(cfg),
 		"guest-read":     guestReadCmd(cfg),
 		"guest-cp":       guestCpCmd(cfg),
+		"host-cp":        hostCpCmd(cfg),
 		"append-path":    appendPathCmd(cfg),
 
 		// UI automation commands (via control socket).
@@ -615,6 +618,55 @@ func guestCpCmd(cfg vzscriptConfig) script.Cmd {
 			timeout := cfg.execTimeout
 			if timeout == 0 {
 				timeout = 10 * time.Minute
+			}
+			resp, err := ctlSendRequest(cfg.socketPath, req, timeout, "agent-cp")
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return func(*script.State) (string, string, error) {
+				return resp.Data + "\n", "", nil
+			}, nil
+		},
+	)
+}
+
+// hostCpCmd copies a host file or directory to the guest.
+// Unlike guest-cp, this always copies host→guest and uses a longer default
+// timeout suitable for large directory copies (e.g., Xcode.app).
+func hostCpCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "copy a host file or directory to the guest (streaming)",
+			Args:    "[-timeout duration] host-path guest-path",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			timeout := 30 * time.Minute
+			if len(args) >= 2 && args[0] == "-timeout" {
+				d, err := time.ParseDuration(args[1])
+				if err != nil {
+					return nil, fmt.Errorf("invalid timeout: %w", err)
+				}
+				timeout = d
+				args = args[2:]
+			}
+			if len(args) != 2 {
+				return nil, script.ErrUsage
+			}
+			hostPath := args[0]
+			guestPath := args[1]
+
+			req := &controlpb.ControlRequest{
+				Type: "agent-cp",
+				Command: &controlpb.ControlRequest_AgentCp{
+					AgentCp: &controlpb.AgentCopyCommand{
+						HostPath:  hostPath,
+						GuestPath: guestPath,
+						ToGuest:   true,
+					},
+				},
 			}
 			resp, err := ctlSendRequest(cfg.socketPath, req, timeout, "agent-cp")
 			if err != nil {

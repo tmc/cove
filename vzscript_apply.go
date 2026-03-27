@@ -60,7 +60,8 @@ Guest commands:
   guest-shell <file>          Run a script file in the guest via bash
   guest-terminal <file>       Run a script in Terminal.app (visible in VM)
   guest-cp <host> <guest>     Copy a file host→guest (streaming, for large files)
-  guest-cp -from-guest <host> <guest>  Copy guest→host
+  guest-cp -from-guest <guest> <host>  Copy guest→host
+  host-cp <host> <guest>      Copy host file/directory to guest (30m timeout)
   guest-write <dst> <src>     Copy a local file to the guest (small files)
   guest-read <path>           Read a guest file to stdout
 

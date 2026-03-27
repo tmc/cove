@@ -17,7 +17,7 @@ func TestVZScriptEngineCommands(t *testing.T) {
 	wantCmds := []string{
 		// Guest commands.
 		"guest-wait", "guest-ping", "guest-exec", "guest-shell",
-		"guest-terminal", "guest-write", "guest-read", "guest-cp",
+		"guest-terminal", "guest-write", "guest-read", "guest-cp", "host-cp",
 		// UI automation commands.
 		"screenshot", "ocr", "ocr-click", "ocr-wait", "ocr-gone",
 		"type", "key", "click", "wait", "detect-page", "detect-screen",

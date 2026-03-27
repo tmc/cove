@@ -2,91 +2,61 @@
 # requires: developer-tools
 
 guest-ping
-guest-shell install-xcode.sh
 
--- install-xcode.sh --
+# Copy Xcode from host to guest via tar streaming over vsock.
+# Uses '?' prefix: if Xcode doesn't exist on the host at these paths,
+# the command fails gracefully and we continue.
+# If Xcode is already installed in the guest, the setup script below
+# detects it and skips redundant work.
+? host-cp /Applications/Xcode.app /Applications/Xcode.app
+? host-cp /Applications/Xcode-rc.app /Applications/Xcode-rc.app
+
+# Set up Xcode: select, accept license, run first launch.
+guest-shell setup-xcode.sh
+
+-- setup-xcode.sh --
 #!/bin/bash
 set -e
 
-# Check if Xcode is already installed and selected.
-if [ -d /Applications/Xcode.app/Contents/Developer ]; then
-  xcode-select -s /Applications/Xcode.app/Contents/Developer
-  echo "Xcode already installed: $(xcodebuild -version 2>&1 | head -1)"
-  exit 0
-fi
-
-# Check for Xcode-rc.app (release candidate) as an alternative.
-for app in /Applications/Xcode-rc.app /Applications/Xcode-beta.app; do
+# Find Xcode in /Applications/.
+XCODE=""
+for app in /Applications/Xcode.app /Applications/Xcode-rc.app /Applications/Xcode-beta.app; do
   if [ -d "$app/Contents/Developer" ]; then
-    echo "Found $app, symlinking to /Applications/Xcode.app..."
-    ln -sfn "$app" /Applications/Xcode.app
-    xcode-select -s /Applications/Xcode.app/Contents/Developer
-    xcodebuild -license accept 2>/dev/null || true
-    xcodebuild -runFirstLaunch 2>/dev/null || true
-    echo "Xcode ready: $(xcodebuild -version 2>&1 | head -1)"
-    exit 0
+    XCODE="$app"
+    break
   fi
 done
 
-echo "Xcode not found in guest. Checking for host copy..."
-
-# Strategy 1: Check VirtioFS shared folder mounts.
-# Common mount points where host /Applications may appear.
-for mount in "/Volumes/My Shared Files/Applications" \
-             "/Volumes/My Shared Files/applications" \
-             /Volumes/Applications \
-             /mnt/host/Applications; do
-  for app in "$mount/Xcode.app" "$mount/Xcode-rc.app" "$mount/Xcode-beta.app"; do
-    if [ -d "$app/Contents/Developer" ]; then
-      echo "Found Xcode on shared folder: $app"
-      echo "NOTE: Xcode over VirtioFS has limited functionality."
-      echo "      Framework loading and Metal tools may not work."
-      echo "      Use 'vz-macos ctl agent-cp' to copy natively instead."
-      ln -sfn "$app" /Applications/Xcode.app
-      xcode-select -s /Applications/Xcode.app/Contents/Developer
-      xcodebuild -license accept 2>/dev/null || true
-      # Test if it actually works (framework loading often fails over VirtioFS).
-      if xcodebuild -version &>/dev/null; then
-        echo "Xcode available (via shared folder): $(xcodebuild -version 2>&1 | head -1)"
-        exit 0
-      fi
-      echo "warning: Xcode found on shared folder but xcodebuild fails."
-      echo "         Removing symlink; will attempt native copy."
-      rm -f /Applications/Xcode.app
-      break 2
-    fi
-  done
-done
-
-# Strategy 2: Copy from host via ctl agent-cp (uses tar streaming over vsock).
-# This is the recommended approach — produces a native installation.
-# The vzscript engine doesn't have direct access to run host-side ctl commands,
-# so this strategy works when the user runs:
-#   vz-macos ctl agent-cp /Applications/Xcode.app /Applications/Xcode.app
-#   vz-macos ctl agent-cp /Applications/Xcode-rc.app /Applications/Xcode-rc.app
-# After that, re-run this vzscript and it will find Xcode.
-echo ""
-echo "=== Manual Xcode Installation Required ==="
-echo ""
-echo "Xcode must be copied from the host to the guest."
-echo "From the host, run one of:"
-echo ""
-echo "  vz-macos ctl agent-cp /Applications/Xcode.app /Applications/Xcode.app"
-echo "  vz-macos ctl agent-cp /Applications/Xcode-rc.app /Applications/Xcode-rc.app"
-echo ""
-echo "This streams Xcode (~3.5 GB) via tar over vsock (takes ~4 minutes)."
-echo "After the copy completes, re-run: vz-macos vzscript run xcode"
-echo ""
-
-# Strategy 3: Fall back to Mac App Store via mas.
-BREW_USER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
-if [ -z "$BREW_USER" ]; then
-  echo "No admin user found. Cannot install via Mac App Store."
+if [ -z "$XCODE" ]; then
+  echo "error: no Xcode found in /Applications/" >&2
+  echo "" >&2
+  echo "Ensure Xcode is installed on the HOST at one of:" >&2
+  echo "  /Applications/Xcode.app" >&2
+  echo "  /Applications/Xcode-rc.app" >&2
+  echo "" >&2
+  echo "Then re-run: vz-macos vzscript run xcode" >&2
+  echo "" >&2
+  echo "Or install manually:" >&2
+  echo "  vz-macos ctl agent-cp /Applications/Xcode.app /Applications/Xcode.app" >&2
   exit 1
 fi
 
-echo "Alternatively, install from the Mac App Store (~35 GB download):"
-echo "  vz-macos vzscript run xcode-mas"
-echo ""
-echo "Or install manually inside the VM."
-exit 1
+# Symlink to /Applications/Xcode.app if we found a variant.
+if [ "$XCODE" != "/Applications/Xcode.app" ]; then
+  if [ ! -L /Applications/Xcode.app ]; then
+    ln -sfn "$XCODE" /Applications/Xcode.app
+    echo "Symlinked /Applications/Xcode.app -> $XCODE"
+  fi
+fi
+
+# Select and configure.
+xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+# Accept license (idempotent).
+xcodebuild -license accept 2>/dev/null || true
+
+# Run first launch tasks (installs system components).
+echo "Running first launch tasks..."
+xcodebuild -runFirstLaunch 2>&1 || true
+
+echo "Xcode ready: $(xcodebuild -version 2>&1 | head -1)"
