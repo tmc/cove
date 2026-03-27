@@ -156,6 +156,103 @@ func TestSelectorStateText(t *testing.T) {
 	}
 }
 
+func TestSelectorVMCountText(t *testing.T) {
+	tests := []struct {
+		name  string
+		count int
+		want  string
+	}{
+		{
+			name:  "zero",
+			count: 0,
+			want:  "0 VMs",
+		},
+		{
+			name:  "one",
+			count: 1,
+			want:  "1 VM",
+		},
+		{
+			name:  "many",
+			count: 5,
+			want:  "5 VMs",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := selectorVMCountText(tt.count); got != tt.want {
+				t.Fatalf("selectorVMCountText() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectorRowTitle(t *testing.T) {
+	tests := []struct {
+		name     string
+		vm       VMInfo
+		activeVM string
+		want     string
+	}{
+		{
+			name: "inactive",
+			vm:   VMInfo{Name: "default"},
+			want: "default",
+		},
+		{
+			name:     "active",
+			vm:       VMInfo{Name: "default"},
+			activeVM: "default",
+			want:     "default *",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := selectorRowTitle(tt.vm, tt.activeVM); got != tt.want {
+				t.Fatalf("selectorRowTitle() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCanOpenVZScriptRunner(t *testing.T) {
+	tests := []struct {
+		name string
+		vm   *VMInfo
+		want bool
+	}{
+		{
+			name: "no selection",
+			want: false,
+		},
+		{
+			name: "stopped vm",
+			vm:   &VMInfo{State: "stopped"},
+			want: false,
+		},
+		{
+			name: "suspended vm",
+			vm:   &VMInfo{State: "suspended"},
+			want: false,
+		},
+		{
+			name: "running vm",
+			vm:   &VMInfo{State: "running"},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canOpenVZScriptRunner(tt.vm); got != tt.want {
+				t.Fatalf("canOpenVZScriptRunner() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestInitialSelectionRow(t *testing.T) {
 	tests := []struct {
 		name     string
