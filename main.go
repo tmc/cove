@@ -54,6 +54,7 @@ var (
 	provisionPassword string
 	provisionAdmin    bool
 	provisionStrategy string
+	noAgent           bool
 	// VM selection flag
 	vmName string
 	// Clone options
@@ -130,6 +131,7 @@ func init() {
 	flag.BoolVar(&provisionAdmin, "provision-admin", true, "make auto-provisioned user an admin")
 	flag.StringVar(&provisionStrategy, "provision-strategy", "inject",
 		"provisioning strategy: inject (disk injection, needs sudo), gui (keyboard automation), auto (try inject, fall back to gui)")
+	flag.BoolVar(&noAgent, "no-agent", false, "skip vz-agent installation during Linux provisioning")
 	flag.StringVar(&installVZScripts, "vzscripts", "", "comma-separated vzscript recipes to run after install (e.g. homebrew,openclaw)")
 	// VM selection flag
 	flag.StringVar(&vmName, "vm", "", "VM name to use (default: active VM or 'default')")

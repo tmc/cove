@@ -27,23 +27,25 @@ import (
 
 // LinuxProvisionConfig holds configuration for Linux VM provisioning.
 type LinuxProvisionConfig struct {
-	Username  string
-	Password  string
-	Hostname  string
-	SSHPubKey string
-	AutoLogin bool
-	TimeZone  string
-	Locale    string
+	Username     string
+	Password     string
+	Hostname     string
+	SSHPubKey    string
+	AutoLogin    bool
+	TimeZone     string
+	Locale       string
+	InstallAgent bool // Install vz-agent during provisioning
 }
 
 // DefaultLinuxProvisionConfig returns default provisioning settings.
 func DefaultLinuxProvisionConfig() LinuxProvisionConfig {
 	return LinuxProvisionConfig{
-		Username: "ubuntu",
-		Password: "ubuntu",
-		Hostname: "ubuntu-vm",
-		TimeZone: "UTC",
-		Locale:   "en_US.UTF-8",
+		Username:     "ubuntu",
+		Password:     "ubuntu",
+		Hostname:     "ubuntu-vm",
+		TimeZone:     "UTC",
+		Locale:       "en_US.UTF-8",
+		InstallAgent: true,
 	}
 }
 
@@ -73,6 +75,9 @@ func installLinuxVM() error {
 	}
 	if provisionPassword != "" {
 		provConfig.Password = provisionPassword
+	}
+	if noAgent {
+		provConfig.InstallAgent = false
 	}
 
 	// Get ISO (download if needed)
@@ -349,8 +354,20 @@ func createCloudInitISO(config LinuxProvisionConfig) (string, error) {
 		return "", fmt.Errorf("create cloud-init directory: %w", err)
 	}
 
+	// Build and include vz-agent if requested.
+	agentIncluded := false
+	if config.InstallAgent {
+		agentBin := filepath.Join(cloudInitDir, "vz-agent")
+		if err := buildAgentBinaryTo(agentBin, "linux", "arm64"); err != nil {
+			fmt.Printf("warning: could not build vz-agent for inclusion: %v\n", err)
+		} else {
+			agentIncluded = true
+			fmt.Println("  vz-agent binary included in cloud-init ISO")
+		}
+	}
+
 	// Generate user-data (autoinstall configuration)
-	userData := generateUserData(config)
+	userData := generateUserData(config, agentIncluded)
 	userDataPath := filepath.Join(cloudInitDir, "user-data")
 	if err := os.WriteFile(userDataPath, []byte(userData), 0644); err != nil {
 		return "", fmt.Errorf("write user-data: %w", err)
@@ -386,8 +403,23 @@ func createCloudInitISO(config LinuxProvisionConfig) (string, error) {
 
 // createFATImage creates a raw FAT12/16 disk image with the given volume label,
 // populating it with all files from srcDir.
+// buildAgentBinaryTo cross-compiles the vz-agent binary to the given path.
+func buildAgentBinaryTo(outputPath, targetOS, targetArch string) error {
+	agentPkg := "github.com/tmc/vz-macos/cmd/vz-agent"
+	cmd := exec.Command("go", "build", "-o", outputPath, agentPkg)
+	cmd.Env = append(os.Environ(),
+		"CGO_ENABLED=0",
+		"GOOS="+targetOS,
+		"GOARCH="+targetArch,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	fmt.Printf("Building vz-agent (%s/%s)...\n", targetOS, targetArch)
+	return cmd.Run()
+}
+
 // generateUserData creates the cloud-init user-data file with autoinstall config.
-func generateUserData(config LinuxProvisionConfig) string {
+func generateUserData(config LinuxProvisionConfig, includeAgent bool) string {
 	// Hash password using SHA-512 for compatibility
 	hashedPassword := hashPassword(config.Password)
 
@@ -406,6 +438,27 @@ func generateUserData(config LinuxProvisionConfig) string {
     allow-pw: true`
 	}
 
+	agentLateCommands := ""
+	if includeAgent {
+		agentLateCommands = `
+    - cp /cdrom/vz-agent /target/usr/local/bin/vz-agent
+    - chmod 755 /target/usr/local/bin/vz-agent
+    - |
+      cat > /target/etc/systemd/system/vz-agent.service << 'SVCEOF'
+      [Unit]
+      Description=vz-macos Guest Agent
+      After=network.target
+      [Service]
+      Type=simple
+      ExecStart=/usr/local/bin/vz-agent
+      Restart=always
+      RestartSec=5
+      [Install]
+      WantedBy=multi-user.target
+      SVCEOF
+    - curtin in-target --target=/target -- systemctl enable vz-agent`
+	}
+
 	userData := fmt.Sprintf(`#cloud-config
 autoinstall:
   version: 1
@@ -422,11 +475,11 @@ autoinstall:
     layout:
       name: direct
   late-commands:
-    - curtin in-target --target=/target -- systemctl enable ssh
+    - curtin in-target --target=/target -- systemctl enable ssh%s
   user-data:
     disable_root: false
     timezone: %s
-`, config.Locale, config.Hostname, config.Username, hashedPassword, sshSection, config.TimeZone)
+`, config.Locale, config.Hostname, config.Username, hashedPassword, sshSection, agentLateCommands, config.TimeZone)
 
 	return userData
 }
