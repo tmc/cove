@@ -24,6 +24,8 @@ import (
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // agentBinaryName is the name of the guest agent binary.
@@ -278,6 +280,102 @@ func checkAgentAvailability(cs *ControlServer) {
 	fmt.Println()
 	fmt.Printf("    ./vz-macos inject -agent\n")
 	fmt.Println()
+}
+
+// upgradeAgent builds a new vz-agent binary and deploys it to a running VM
+// via the control socket. It copies the binary, restarts the service, and
+// verifies the new version is running.
+func upgradeAgent() error {
+	sock := GetControlSocketPath()
+
+	// Check current agent version.
+	pingReq := &controlpb.ControlRequest{Type: "agent-ping"}
+	resp, err := ctlSendRequest(sock, pingReq, 5*time.Second, "agent-ping")
+	if err != nil {
+		return fmt.Errorf("agent not reachable (is the VM running?): %w", err)
+	}
+	oldVersion := ""
+	if r := resp.GetAgentPing(); r != nil {
+		oldVersion = r.Version
+	}
+	fmt.Printf("Current agent version: %s\n", oldVersion)
+
+	// Build new agent binary.
+	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
+	defer os.Remove(tmpBinary)
+	if err := buildAgentBinary(tmpBinary); err != nil {
+		return err
+	}
+
+	// Copy to guest via agent-cp.
+	absPath, _ := filepath.Abs(tmpBinary)
+	fmt.Println("Copying agent to guest...")
+	cpReq := &controlpb.ControlRequest{
+		Type: "agent-cp",
+		Command: &controlpb.ControlRequest_AgentCp{
+			AgentCp: &controlpb.AgentCopyCommand{
+				HostPath:  absPath,
+				GuestPath: "/usr/local/bin/" + agentBinaryName,
+				ToGuest:   true,
+				Mode:      0755,
+			},
+		},
+	}
+	resp, err = ctlSendRequest(sock, cpReq, 2*time.Minute, "agent-cp")
+	if err != nil {
+		return fmt.Errorf("copy agent: %w", err)
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("copy agent: %s", resp.Error)
+	}
+	fmt.Println("Copied.")
+
+	// Restart the agent service via launchctl kickstart.
+	fmt.Println("Restarting agent service...")
+	execReq := &controlpb.ControlRequest{
+		Type: "agent-exec",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{
+				Args: []string{"launchctl", "kickstart", "-k", "system/" + agentLaunchDaemonLabel},
+			},
+		},
+	}
+	// The kickstart kills the agent, so the connection may drop — that's expected.
+	ctlSendRequest(sock, execReq, 10*time.Second, "agent-exec")
+
+	// Wait for launchd to restart the agent with KeepAlive.
+	fmt.Println("Waiting for new agent...")
+	time.Sleep(5 * time.Second)
+
+	// Reconnect: the old vsock connection is dead, force a new one.
+	connectReq := &controlpb.ControlRequest{Type: "agent-connect"}
+	var connected bool
+	for attempt := 0; attempt < 10; attempt++ {
+		resp, err = ctlSendRequest(sock, connectReq, 10*time.Second, "agent-connect")
+		if err == nil && resp.Error == "" {
+			connected = true
+			break
+		}
+		fmt.Printf("  reconnect attempt %d...\n", attempt+1)
+		time.Sleep(3 * time.Second)
+	}
+	if !connected {
+		return fmt.Errorf("agent did not come back after upgrade (tried 10 reconnects)")
+	}
+
+	resp, err = ctlSendRequest(sock, pingReq, 10*time.Second, "agent-ping")
+	if err != nil {
+		return fmt.Errorf("agent ping failed after upgrade: %w", err)
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("agent ping failed: %s", resp.Error)
+	}
+	newVersion := ""
+	if r := resp.GetAgentPing(); r != nil {
+		newVersion = r.Version
+	}
+	fmt.Printf("Upgraded: %s → %s\n", oldVersion, newVersion)
+	return nil
 }
 
 // agentLaunchDaemonPlist is the launchd plist for the guest agent.

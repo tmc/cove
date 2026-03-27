@@ -308,6 +308,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "agent-upgrade", "upgrade-agent":
+			if err := upgradeAgent(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "verify", "doctor":
 			if err := handleVerify(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -536,6 +542,7 @@ Commands:
   disk-snapshot Manage disk-level snapshots (APFS clonefile, copy-on-write)
   disk-detach Detach VM disk if stuck from a previous inject/verify
   inject-agent Inject only vz-agent daemon (no user provisioning)
+  agent-upgrade Live-upgrade vz-agent in a running VM (build, copy, restart)
   vzscript    Run guest-agent and UI automation scripts (rsc.io/script + txtar)
   version     Print version information
 
