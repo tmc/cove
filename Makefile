@@ -40,7 +40,6 @@ proto-go:
 	cd proto && protoc --go_out=. --go_opt=paths=source_relative \
 		--connect-go_out=. --connect-go_opt=paths=source_relative agent.proto
 	mv proto/agent.pb.go proto/agentpb/agent.pb.go
-	mv proto/agent.connect.go proto/agentpbconnect/agent.connect.go
 
 proto-swift:
 	@if command -v protoc-gen-swift >/dev/null 2>&1; then \
