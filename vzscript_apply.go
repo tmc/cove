@@ -176,19 +176,18 @@ func vzscriptRun(args []string) error {
 		return fmt.Errorf("run requires a recipe name or path")
 	}
 
-	// Update global vmDir if -vm was specified.
-	if *vm != "" {
-		dir, err := EnsureVMDir(*vm)
-		if err != nil {
-			return err
-		}
-		vmDir = dir
-		vmName = *vm
-	}
-
+	// Resolve socket path without mutating global vmDir.
 	sock := *socketPath
 	if sock == "" {
-		sock = GetControlSocketPath()
+		if *vm != "" {
+			dir, err := EnsureVMDir(*vm)
+			if err != nil {
+				return err
+			}
+			sock = GetControlSocketPathForVM(dir)
+		} else {
+			sock = GetControlSocketPath()
+		}
 	}
 
 	cfg := vzscriptConfig{
