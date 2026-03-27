@@ -9,9 +9,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"connectrpc.com/connect"
 	"golang.org/x/net/http2"
@@ -178,6 +180,11 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 	}
 	defer f.Close()
 
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
 	stream := c.client.CopyIn(ctx)
 
 	if err := stream.Send(&pb.CopyInChunk{
@@ -190,6 +197,11 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 		return fmt.Errorf("send init: %w", err)
 	}
 
+	var sent int64
+	total := fi.Size()
+	start := time.Now()
+	lastLog := start
+
 	buf := make([]byte, 64*1024)
 	for {
 		n, err := f.Read(buf)
@@ -198,6 +210,11 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 				Content: &pb.CopyInChunk_Data{Data: buf[:n]},
 			}); sendErr != nil {
 				return fmt.Errorf("send data: %w", sendErr)
+			}
+			sent += int64(n)
+			if now := time.Now(); now.Sub(lastLog) >= 3*time.Second {
+				logCopyProgress(localPath, sent, total, start)
+				lastLog = now
 			}
 		}
 		if err == io.EOF {
@@ -211,6 +228,7 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 	if _, err := stream.CloseAndReceive(); err != nil {
 		return fmt.Errorf("close: %w", err)
 	}
+	logCopyDone(localPath, sent, start)
 	return nil
 }
 
@@ -228,6 +246,10 @@ func (c *AgentClient) CopyReaderToGuest(ctx context.Context, r io.Reader, guestP
 		return fmt.Errorf("send init: %w", err)
 	}
 
+	var sent int64
+	start := time.Now()
+	lastLog := start
+
 	buf := make([]byte, 256*1024)
 	for {
 		n, err := r.Read(buf)
@@ -236,6 +258,11 @@ func (c *AgentClient) CopyReaderToGuest(ctx context.Context, r io.Reader, guestP
 				Content: &pb.CopyInChunk_Data{Data: buf[:n]},
 			}); sendErr != nil {
 				return fmt.Errorf("send data: %w", sendErr)
+			}
+			sent += int64(n)
+			if now := time.Now(); now.Sub(lastLog) >= 3*time.Second {
+				logCopyProgress(guestPath, sent, 0, start)
+				lastLog = now
 			}
 		}
 		if err == io.EOF {
@@ -249,6 +276,7 @@ func (c *AgentClient) CopyReaderToGuest(ctx context.Context, r io.Reader, guestP
 	if _, err := stream.CloseAndReceive(); err != nil {
 		return fmt.Errorf("close: %w", err)
 	}
+	logCopyDone(guestPath, sent, start)
 	return nil
 }
 
@@ -339,6 +367,29 @@ func (c *UserAgentClient) Close() {
 	}
 	c.conn.Close()
 	c.conn = nil
+}
+
+// logCopyProgress logs periodic transfer progress.
+// If total is 0, only bytes sent and rate are shown (unknown total).
+func logCopyProgress(name string, sent, total int64, start time.Time) {
+	elapsed := time.Since(start).Seconds()
+	rateMB := float64(sent) / (1024 * 1024) / elapsed
+	sentMB := float64(sent) / (1024 * 1024)
+	if total > 0 {
+		totalMB := float64(total) / (1024 * 1024)
+		pct := float64(sent) / float64(total) * 100
+		log.Printf("agent-cp: %s %.0f/%.0f MB (%.0f%%) %.1f MB/s", name, sentMB, totalMB, pct, rateMB)
+	} else {
+		log.Printf("agent-cp: %s %.0f MB sent, %.1f MB/s", name, sentMB, rateMB)
+	}
+}
+
+// logCopyDone logs the final transfer summary.
+func logCopyDone(name string, sent int64, start time.Time) {
+	elapsed := time.Since(start)
+	sentMB := float64(sent) / (1024 * 1024)
+	rateMB := sentMB / elapsed.Seconds()
+	log.Printf("agent-cp: %s done: %.0f MB in %s (%.1f MB/s)", name, sentMB, elapsed.Round(time.Millisecond), rateMB)
 }
 
 // UserExec runs a command in the user session context (inherits TCC/FDA).
