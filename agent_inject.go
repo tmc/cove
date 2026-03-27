@@ -35,22 +35,25 @@ const agentBinaryName = "vz-agent"
 const agentLaunchDaemonLabel = "com.github.tmc.vz-macos.vz-agent"
 
 // buildAgentBinary cross-compiles the vz-agent binary for the guest.
-// It targets darwin/arm64 with CGO disabled for a static binary.
+// It targets the appropriate OS/arch with CGO disabled for a static binary.
 func buildAgentBinary(outputPath string) error {
-	// Find the agent source directory relative to the current binary.
-	// The agent source is at cmd/vz-agent/ relative to the project root.
 	agentPkg := "github.com/tmc/vz-macos/cmd/vz-agent"
+
+	targetOS := "darwin"
+	if linuxMode {
+		targetOS = "linux"
+	}
 
 	cmd := exec.Command("go", "build", "-o", outputPath, agentPkg)
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",
-		"GOOS=darwin",
+		"GOOS="+targetOS,
 		"GOARCH=arm64",
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	fmt.Printf("Building %s (darwin/arm64)...\n", agentBinaryName)
+	fmt.Printf("Building %s (%s/arm64)...\n", agentBinaryName, targetOS)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build agent: %w", err)
 	}
@@ -144,7 +147,11 @@ func injectAgentOnly() error {
 	}
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		return fmt.Errorf("disk image not found: %s\nRun 'vz-macos install' first to create a VM", diskPath)
+		// Linux VMs use linux-disk.img
+		diskPath = filepath.Join(vmDir, "linux-disk.img")
+		if _, err := os.Stat(diskPath); os.IsNotExist(err) {
+			return fmt.Errorf("disk image not found: %s (also checked linux-disk.img)\nRun 'vz-macos install' first to create a VM", filepath.Join(vmDir, "disk.img"))
+		}
 	}
 	if err := checkDiskNotMounted(diskPath); err != nil {
 		return err
