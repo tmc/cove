@@ -1356,7 +1356,9 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 			Modifiers: mods,
 			Character: string(ch),
 		}
-		s.sendKeyEventNSEvent(downCmd)
+		if resp := s.sendKeyEventNSEvent(downCmd); resp.Error != "" {
+			return resp
+		}
 		time.Sleep(30 * time.Millisecond)
 
 		upCmd := &controlpb.KeyCommand{
@@ -1365,7 +1367,9 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 			Modifiers: mods,
 			Character: string(ch),
 		}
-		s.sendKeyEventNSEvent(upCmd)
+		if resp := s.sendKeyEventNSEvent(upCmd); resp.Error != "" {
+			return resp
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
 
