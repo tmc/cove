@@ -75,8 +75,10 @@ Guest Agent (via GRPC over vsock):
   agent-connect         Connect to guest agent
   agent-ping            Ping guest agent
   agent-info            Get guest system info
-  agent-exec <cmd> [args...]  Run command in guest
-  agent-exec-stream <cmd> [args...]  Stream stdout/stderr from guest command
+  agent-exec <cmd> [args...]  Run command in guest (user session, has TCC/FDA)
+  agent-exec --daemon <cmd>   Run command via root daemon instead
+  agent-exec-stream <cmd> [args...]  Stream command output (user session)
+  agent-exec-stream --daemon <cmd>   Stream via root daemon instead
   agent-cp <host> <guest>     Copy file host→guest (streaming)
   agent-cp -from-guest <guest> <host>  Copy file guest→host
   agent-read <path>     Read file from guest (base64)
@@ -106,6 +108,8 @@ Examples:
   vz-macos ctl step           # Interactive step mode
   vz-macos ctl agent-ping     # Auto-connects to agent
   vz-macos ctl -wait 60s agent-ping  # Wait up to 60s for agent
+  vz-macos ctl agent-exec ls /tmp    # Run as user (default, has TCC/FDA)
+  vz-macos ctl agent-exec --daemon whoami  # Run as root via daemon
   vz-macos ctl agent-sshd on  # Enable SSH
   vz-macos ctl agent-reboot   # Reboot guest
 `)
@@ -132,6 +136,14 @@ Examples:
 		if subArgs[i] == "-o" && i+1 < len(subArgs) {
 			*outputFile = subArgs[i+1]
 			subArgs = append(subArgs[:i], subArgs[i+2:]...)
+			i--
+		}
+	}
+	useDaemon := false
+	for i := 0; i < len(subArgs); i++ {
+		if subArgs[i] == "--daemon" || subArgs[i] == "-daemon" {
+			useDaemon = true
+			subArgs = append(subArgs[:i], subArgs[i+1:]...)
 			i--
 		}
 	}
@@ -326,6 +338,9 @@ Examples:
 		if len(subArgs) < 1 {
 			return fmt.Errorf("agent-exec requires at least one argument")
 		}
+		if !useDaemon {
+			req.Type = "agent-user-exec"
+		}
 		req.Command = &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
 				Args: subArgs,
@@ -411,6 +426,9 @@ Examples:
 	case "agent-exec-stream":
 		if len(subArgs) < 1 {
 			return fmt.Errorf("agent-exec-stream requires at least one argument")
+		}
+		if !useDaemon {
+			req.Type = "agent-user-exec"
 		}
 		req.Command = &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
