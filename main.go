@@ -79,6 +79,8 @@ var (
 	debugOCR         bool
 	// Auto-mount tagged volumes via agent
 	autoMountVolumes bool
+	// Auto-upgrade guest agent when version mismatches host
+	autoUpgradeAgent bool
 	// Force install over existing VM
 	forceInstall bool
 	// Skip restore from saved suspend state and cold boot instead.
@@ -160,6 +162,7 @@ func init() {
 	flag.BoolVar(&debugOCR, "debug-ocr", false, "save OCR debug screenshots with text bounding boxes")
 	// Auto-mount volumes
 	flag.BoolVar(&autoMountVolumes, "auto-mount-volumes", true, "auto-mount tagged volumes in guest via agent")
+	flag.BoolVar(&autoUpgradeAgent, "auto-upgrade-agent", false, "auto-upgrade guest agent when version mismatches host")
 	// Force install (skip existing VM check)
 	flag.BoolVar(&forceInstall, "force", false, "force install even if VM disk already exists (DESTROYS existing data)")
 }

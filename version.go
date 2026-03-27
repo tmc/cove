@@ -14,8 +14,8 @@ var (
 	date    = "unknown"
 )
 
-// versionInfo returns a formatted version string.
-func versionInfo() string {
+// resolveVersion populates commit and date from build info if still at defaults.
+func resolveVersion() {
 	if version == "dev" {
 		if info, ok := debug.ReadBuildInfo(); ok {
 			for _, s := range info.Settings {
@@ -28,5 +28,23 @@ func versionInfo() string {
 			}
 		}
 	}
+}
+
+// versionInfo returns a formatted version string.
+func versionInfo() string {
+	resolveVersion()
 	return fmt.Sprintf("vz-macos %s (commit %s, built %s)", version, commit, date)
+}
+
+// hostVersion returns the host binary's resolved version string.
+// In dev mode, this is the git commit hash (8 chars).
+func hostVersion() string {
+	resolveVersion()
+	if version != "dev" {
+		return version
+	}
+	if commit != "unknown" {
+		return commit
+	}
+	return "dev"
 }

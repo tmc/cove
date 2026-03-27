@@ -72,11 +72,13 @@ type ControlServer struct {
 
 // agentHealthState tracks proactive agent health monitoring.
 type agentHealthState struct {
-	daemonStatus  string    // "connected", "disconnected", "reconnecting"
-	userStatus    string    // "connected", "disconnected", "unknown"
-	lastPing      time.Time // last successful daemon ping
-	lastErr       string    // last ping error (empty if healthy)
-	version       string    // agent version from last successful ping
+	daemonStatus     string    // "connected", "disconnected", "reconnecting"
+	userStatus       string    // "connected", "disconnected", "unknown"
+	lastPing         time.Time // last successful daemon ping
+	lastErr          string    // last ping error (empty if healthy)
+	version          string    // agent version from last successful ping
+	versionChecked   bool      // true after first version comparison
+	upgradeAttempted bool      // true after auto-upgrade attempt
 }
 
 // NewControlServer creates a new control server

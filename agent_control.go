@@ -371,11 +371,12 @@ func (s *ControlServer) healthCheckOnce(failCount *int) {
 
 	if a != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		version, err := a.Ping(ctx)
+		agentVer, err := a.Ping(ctx)
 		cancel()
 		if err == nil {
 			*failCount = 0
-			s.setHealthStatus("connected", version, "")
+			s.setHealthStatus("connected", agentVer, "")
+			s.checkAgentVersion(agentVer)
 			s.healthCheckUserAgent()
 			return
 		}
@@ -405,17 +406,80 @@ func (s *ControlServer) healthCheckOnce(failCount *int) {
 
 	if a != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		version, err := a.Ping(ctx)
+		agentVer, err := a.Ping(ctx)
 		cancel()
 		if err == nil {
 			*failCount = 0
-			s.setHealthStatus("connected", version, "")
-			log.Printf("agent-health: reconnected (version %s)", version)
+			s.setHealthStatus("connected", agentVer, "")
+			log.Printf("agent-health: reconnected (version %s)", agentVer)
+			s.checkAgentVersion(agentVer)
 			s.healthCheckUserAgent()
 			return
 		}
 		s.setHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
 	}
+}
+
+// checkAgentVersion compares the guest agent version with the host version.
+// Logs a warning on mismatch. If autoUpgradeAgent is enabled and this is the
+// first mismatch detected, triggers a background upgrade.
+func (s *ControlServer) checkAgentVersion(agentVer string) {
+	s.healthMu.RLock()
+	checked := s.agentHealth.versionChecked
+	s.healthMu.RUnlock()
+	if checked {
+		return
+	}
+
+	s.healthMu.Lock()
+	s.agentHealth.versionChecked = true
+	s.healthMu.Unlock()
+
+	hostVer := hostVersion()
+
+	// Skip comparison if either version is unresolvable.
+	if agentVer == "" || agentVer == "dev" || agentVer == "unknown" {
+		return
+	}
+	if hostVer == "" || hostVer == "dev" || hostVer == "unknown" {
+		return
+	}
+
+	if agentVer == hostVer {
+		log.Printf("agent-health: version match (%s)", agentVer)
+		return
+	}
+
+	log.Printf("agent-health: version mismatch: host=%s guest=%s", hostVer, agentVer)
+
+	if !autoUpgradeAgent {
+		log.Printf("agent-health: run 'vz-macos agent-upgrade' to update, or use -auto-upgrade-agent")
+		return
+	}
+
+	s.healthMu.RLock()
+	attempted := s.agentHealth.upgradeAttempted
+	s.healthMu.RUnlock()
+	if attempted {
+		return
+	}
+
+	s.healthMu.Lock()
+	s.agentHealth.upgradeAttempted = true
+	s.healthMu.Unlock()
+
+	log.Printf("agent-health: auto-upgrading agent (%s -> %s)...", agentVer, hostVer)
+	go func() {
+		if err := upgradeAgent(); err != nil {
+			log.Printf("agent-health: auto-upgrade failed: %v", err)
+			return
+		}
+		// Reset version check so next ping verifies the new version.
+		s.healthMu.Lock()
+		s.agentHealth.versionChecked = false
+		s.healthMu.Unlock()
+		log.Printf("agent-health: auto-upgrade complete")
+	}()
 }
 
 func (s *ControlServer) healthCheckUserAgent() {
