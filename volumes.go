@@ -30,6 +30,9 @@ func (v *volumeSlice) String() string {
 		if m.ReadOnly {
 			s += ":ro"
 		}
+		if len(m.MountOpts) > 0 {
+			s += ":" + strings.Join(m.MountOpts, ",")
+		}
 		parts = append(parts, s)
 	}
 	return strings.Join(parts, ", ")
@@ -83,7 +86,11 @@ func printVolumeMountInfo(mounts []VolumeMount) {
 		}
 
 		if mount.Tag != "" {
-			fmt.Printf("  %s -> tag %q (%s)\n", mount.HostPath, mount.Tag, mode)
+			opts := ""
+			if len(mount.MountOpts) > 0 {
+				opts = " [" + strings.Join(mount.MountOpts, ",") + "]"
+			}
+			fmt.Printf("  %s -> tag %q (%s%s)\n", mount.HostPath, mount.Tag, mode, opts)
 			fmt.Printf("    guest: mount_virtiofs %s /mnt/%s\n", mount.Tag, mount.Tag)
 		} else {
 			guestPath := "/Volumes/My Shared Files"
@@ -289,10 +296,23 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []Vol
 			}
 		}
 
-		// Mount the VirtioFS tag
+		// Mount the VirtioFS tag.
+		// Use mount -t virtiofs on Linux, mount_virtiofs on macOS.
+		// Pass through any MountOpts via -o.
+		var mountArgs []string
+		if linuxMode {
+			mountArgs = []string{"mount", "-t", "virtiofs"}
+		} else {
+			mountArgs = []string{"mount_virtiofs"}
+		}
+		if len(m.MountOpts) > 0 {
+			mountArgs = append(mountArgs, "-o", strings.Join(m.MountOpts, ","))
+		}
+		mountArgs = append(mountArgs, m.Tag, mountPoint)
+
 		cs.mu.Lock()
 		mountCtx, mountCancel := context.WithTimeout(ctx, 10*time.Second)
-		result, mountErr := cs.agent.Exec(mountCtx, []string{"mount_virtiofs", m.Tag, mountPoint}, nil, "")
+		result, mountErr := cs.agent.Exec(mountCtx, mountArgs, nil, "")
 		mountCancel()
 		cs.mu.Unlock()
 
