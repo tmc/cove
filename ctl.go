@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -88,6 +89,11 @@ Guest Agent (via GRPC over vsock):
   agent-sshd <on|off|status>  Manage SSH remote login
   agent-mount-volumes         Mount tagged VirtioFS volumes in guest
   agent-status                Agent health status (daemon + user agent)
+
+Port Forwarding:
+  port-forward start <hostPort:guestPort>  Forward host TCP to guest vsock
+  port-forward stop <hostPort>             Stop a port forward
+  port-forward list                        List active port forwards
 
 VM Management:
   reset-password <user> <pass>  Reset user password (agent if running, disk if stopped)
@@ -447,6 +453,49 @@ Examples:
 			}
 		}
 		return ctlExecStream(sock, req, *timeout)
+
+	case "port-forward":
+		if len(subArgs) < 1 {
+			return fmt.Errorf("usage: ctl port-forward <start hostPort:guestPort | stop hostPort | list>")
+		}
+		action := subArgs[0]
+		pfCmd := &controlpb.PortForwardCommand{Action: action}
+		switch action {
+		case "start":
+			if len(subArgs) < 2 {
+				return fmt.Errorf("usage: ctl port-forward start <hostPort:guestPort>")
+			}
+			parts := strings.SplitN(subArgs[1], ":", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("expected hostPort:guestPort, got %q", subArgs[1])
+			}
+			hp, hpErr := strconv.ParseUint(parts[0], 10, 32)
+			if hpErr != nil {
+				return fmt.Errorf("invalid host port: %w", hpErr)
+			}
+			gp, gpErr := strconv.ParseUint(parts[1], 10, 32)
+			if gpErr != nil {
+				return fmt.Errorf("invalid guest port: %w", gpErr)
+			}
+			pfCmd.HostPort = uint32(hp)
+			pfCmd.GuestPort = uint32(gp)
+		case "stop":
+			if len(subArgs) < 2 {
+				return fmt.Errorf("usage: ctl port-forward stop <hostPort>")
+			}
+			hp, parseErr := strconv.ParseUint(subArgs[1], 10, 32)
+			if parseErr != nil {
+				return fmt.Errorf("invalid host port: %w", parseErr)
+			}
+			pfCmd.HostPort = uint32(hp)
+		case "list":
+			// no extra args
+		default:
+			return fmt.Errorf("unknown port-forward action: %s (use start, stop, or list)", action)
+		}
+		req.Command = &controlpb.ControlRequest_PortForward{
+			PortForward: pfCmd,
+		}
 
 	case "reset-password":
 		if len(subArgs) < 2 {

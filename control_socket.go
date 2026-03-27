@@ -169,6 +169,9 @@ func (s *ControlServer) Stop() {
 	if s.iterm2Proxy != nil {
 		s.iterm2Proxy.Stop()
 	}
+	if s.portForwards != nil {
+		s.portForwards.StopAll()
+	}
 	if s.listener != nil {
 		s.listener.Close()
 	}
@@ -301,6 +304,12 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.handleITerm2ProxyStop()
 	case "iterm2-proxy-status":
 		return s.handleITerm2ProxyStatus()
+	case "port-forward":
+		cmd := req.GetPortForward()
+		if cmd == nil {
+			return &controlpb.ControlResponse{Error: "missing port-forward command payload"}
+		}
+		return s.handlePortForward(cmd)
 	}
 
 	s.mu.Lock()
@@ -1759,7 +1768,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"commands": []string{
 			"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 			"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
-			"shared-folders-apply",
+			"shared-folders-apply", "port-forward",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 			"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 			"agent-sshd", "agent-mount-volumes", "agent-status",
@@ -1768,7 +1777,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 	commands := []string{
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
-		"shared-folders-apply",
+		"shared-folders-apply", "port-forward",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 		"agent-sshd", "agent-mount-volumes", "agent-status",
