@@ -80,6 +80,12 @@ func (s *agentServer) Info(_ context.Context, _ *connect.Request[pb.InfoRequest]
 		resp.Users = users
 	}
 
+	v, c, d := resolvedVersionInfo()
+	resp.AgentVersion = v
+	resp.AgentCommit = c
+	resp.AgentBuildDate = d
+	resp.AgentSha256 = selfSHA256()
+
 	return connect.NewResponse(resp), nil
 }
 

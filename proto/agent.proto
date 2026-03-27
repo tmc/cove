@@ -68,6 +68,10 @@ message InfoResponse {
   double load_avg_5 = 11;
   double load_avg_15 = 12;
   uint64 uptime_seconds = 13;
+  string agent_version = 14;
+  string agent_commit = 15;
+  string agent_build_date = 16;
+  string agent_sha256 = 17;
 }
 
 // Exec
