@@ -295,17 +295,6 @@ func startLiveVM(vmName string) (vz.VZVirtualMachine, privvz.VZVirtualMachine, d
 	return pubVM, privVM, queue, nil
 }
 
-// errString eagerly converts an error to a string. The NSError objects returned
-// by Virtualization framework completion handlers may be autoreleased by the
-// ObjC runtime, so calling err.Error() later (e.g. in t.Logf) can SIGSEGV.
-// Convert to string immediately inside the callback while the object is alive.
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
 // ============================================================================
 // Integration Tests: require -integration flag and a VM named "vz-macos-test"
 // ============================================================================
@@ -360,16 +349,16 @@ func TestLiveAPI_StateDescriptionPaused(t *testing.T) {
 func TestLiveAPI_ResetWithType(t *testing.T) {
 	_, privVM, queue := requireLiveVM(t)
 
-	done := make(chan string, 1)
+	done := make(chan error, 1)
 	queue.Sync(func() {
 		privVM.ResetWithTypeCompletionHandler(0, func(err error) {
-			done <- errString(err)
+			done <- err
 		})
 	})
 	select {
-	case errMsg := <-done:
-		if errMsg != "" {
-			t.Logf("_resetWithType(0): error: %s", errMsg)
+	case err := <-done:
+		if err != nil {
+			t.Logf("_resetWithType(0): error: %v", err)
 		} else {
 			t.Log("_resetWithType(0): success")
 		}
@@ -408,16 +397,16 @@ func TestLiveAPI_SaveMachineState(t *testing.T) {
 	savePath := filepath.Join(tmpDir, "test.vmstate")
 	saveURL := foundation.NewURLFileURLWithPath(savePath)
 
-	done := make(chan string, 1)
+	done := make(chan error, 1)
 	queue.Sync(func() {
 		privVM.SaveMachineStateToURLOptionsCompletionHandler(saveURL, nil, func(err error) {
-			done <- errString(err)
+			done <- err
 		})
 	})
 	select {
-	case errMsg := <-done:
-		if errMsg != "" {
-			t.Logf("_saveMachineStateToURL: error: %s", errMsg)
+	case err := <-done:
+		if err != nil {
+			t.Logf("_saveMachineStateToURL: error: %v", err)
 		} else {
 			t.Log("_saveMachineStateToURL: success")
 			info, _ := os.Stat(savePath)
@@ -483,7 +472,7 @@ func TestLiveAPI_KeyboardsDiscovery(t *testing.T) {
 func TestLiveAPI_TakeScreenshot(t *testing.T) {
 	pubVM, _, queue := requireLiveVM(t)
 
-	done := make(chan string, 1)
+	done := make(chan error, 1)
 	queue.Sync(func() {
 		gfxDevices := pubVM.GraphicsDevices()
 		if len(gfxDevices) == 0 {
@@ -498,14 +487,14 @@ func TestLiveAPI_TakeScreenshot(t *testing.T) {
 
 		privDisplay := privvz.VZGraphicsDisplayFromID(displays[0].ID)
 		privDisplay.TakeScreenshotWithCompletionHandler(func(err error) {
-			done <- errString(err)
+			done <- err
 		})
 	})
 
 	select {
-	case errMsg := <-done:
-		if errMsg != "" {
-			t.Logf("_takeScreenshot: error: %s", errMsg)
+	case err := <-done:
+		if err != nil {
+			t.Logf("_takeScreenshot: error: %v", err)
 		} else {
 			t.Log("_takeScreenshot: success")
 		}
@@ -578,16 +567,16 @@ func TestLiveAPI_RestrictedMode(t *testing.T) {
 	})
 	t.Logf("restricted mode supported: %v, error: %v", supported, valErr)
 
-	done := make(chan string, 1)
+	done := make(chan error, 1)
 	queue.Sync(func() {
 		privVM.EnterRestrictedModeWithCompletionHandler(func(err error) {
-			done <- errString(err)
+			done <- err
 		})
 	})
 	select {
-	case errMsg := <-done:
-		if errMsg != "" {
-			t.Logf("_enterRestrictedMode: error: %s", errMsg)
+	case err := <-done:
+		if err != nil {
+			t.Logf("_enterRestrictedMode: error: %v", err)
 		} else {
 			t.Log("_enterRestrictedMode: success")
 		}

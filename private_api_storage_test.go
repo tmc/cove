@@ -432,13 +432,11 @@ func TestVZDiskImageStorageDeviceAttachmentDiskImageClass(t *testing.T) {
 		t.Fatal("VZDiskImageStorageDeviceAttachment class is nil")
 	}
 
-	// Passing nil for the disk image - should return nil or a base object
-	result := cls.DiskImageStorageDeviceAttachmentWithDiskImage(objectivec.Object{ID: 0})
-	if result == nil || result.GetID() == 0 {
-		t.Log("DiskImageStorageDeviceAttachmentWithDiskImage(nil) returned nil (expected)")
-	} else {
-		t.Logf("DiskImageStorageDeviceAttachmentWithDiskImage(nil) returned ID=%v", result.GetID())
-	}
+	// Passing nil for the disk image triggers an ObjC exception (NSInvalidArgumentException).
+	// Just verify the class method selector exists.
+	responds := objc.Send[bool](objc.ID(cls.Class()), objc.Sel("respondsToSelector:"),
+		objc.Sel("_diskImageStorageDeviceAttachmentWithDiskImage:"))
+	t.Logf("responds to _diskImageStorageDeviceAttachmentWithDiskImage: %v", responds)
 }
 
 // TestStorageDeviceAPIInventory documents the private API surface for
