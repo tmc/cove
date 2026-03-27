@@ -1,4 +1,4 @@
-# developer-tools — Install Xcode Command Line Tools
+# developer-tools — Install Xcode Command Line Tools (headless)
 
 guest-ping
 guest-write /etc/profile.d/developer.sh developer.sh
@@ -11,9 +11,37 @@ export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 -- install-clt.sh --
 #!/bin/bash
 set -e
-xcode-select --install 2>/dev/null || true
-echo "Waiting for Xcode Command Line Tools..."
-until xcode-select -p &>/dev/null; do
-  sleep 5
-done
-echo "Xcode CLT installed: $(xcode-select -p)"
+
+echo "Installing Xcode Command Line Tools (headless)..."
+
+# Check if already installed.
+if xcode-select -p &>/dev/null; then
+  echo "Xcode CLT already installed: $(xcode-select -p)"
+  exit 0
+fi
+
+# Create sentinel file so CLT appears in softwareupdate list.
+touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+
+echo "Searching for Command Line Tools package..."
+PROD=$(softwareupdate -l 2>/dev/null | grep "\*.*Command Line" | head -n 1 | awk -F"*" '{print $2}' | sed -e 's/^ *//' | sed 's/Label: //g' | tr -d '\n')
+
+if [ -z "$PROD" ]; then
+  echo "error: Command Line Tools not found in softwareupdate"
+  rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  exit 1
+fi
+
+echo "Found: $PROD"
+echo "Installing (this may take 15-30 minutes)..."
+softwareupdate -i "$PROD" --verbose 2>&1
+
+rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+
+# Verify.
+if xcode-select -p &>/dev/null; then
+  echo "Xcode CLT installed: $(xcode-select -p)"
+else
+  echo "error: installation verification failed"
+  exit 1
+fi
