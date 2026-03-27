@@ -23,6 +23,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// AgentName is the fully-qualified name of the Agent service.
 	AgentName = "vz.agent.v1.Agent"
+	// UserAgentName is the fully-qualified name of the UserAgent service.
+	UserAgentName = "vz.agent.v1.UserAgent"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -59,6 +61,11 @@ const (
 	AgentShutdownProcedure = "/vz.agent.v1.Agent/Shutdown"
 	// AgentRebootProcedure is the fully-qualified name of the Agent's Reboot RPC.
 	AgentRebootProcedure = "/vz.agent.v1.Agent/Reboot"
+	// UserAgentUserExecProcedure is the fully-qualified name of the UserAgent's UserExec RPC.
+	UserAgentUserExecProcedure = "/vz.agent.v1.UserAgent/UserExec"
+	// UserAgentUserExecStreamProcedure is the fully-qualified name of the UserAgent's UserExecStream
+	// RPC.
+	UserAgentUserExecStreamProcedure = "/vz.agent.v1.UserAgent/UserExecStream"
 )
 
 // AgentClient is a client for the vz.agent.v1.Agent service.
@@ -467,4 +474,104 @@ func (UnimplementedAgentHandler) Shutdown(context.Context, *connect.Request[agen
 
 func (UnimplementedAgentHandler) Reboot(context.Context, *connect.Request[agentpb.RebootRequest]) (*connect.Response[agentpb.RebootResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.Reboot is not implemented"))
+}
+
+// UserAgentClient is a client for the vz.agent.v1.UserAgent service.
+type UserAgentClient interface {
+	// UserExec runs a command as the logged-in user, inheriting TCC and FDA.
+	UserExec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
+	// UserExecStream runs a command with streaming output as the logged-in user.
+	UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error)
+}
+
+// NewUserAgentClient constructs a client for the vz.agent.v1.UserAgent service. By default, it uses
+// the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewUserAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) UserAgentClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	userAgentMethods := agentpb.File_agent_proto.Services().ByName("UserAgent").Methods()
+	return &userAgentClient{
+		userExec: connect.NewClient[agentpb.ExecRequest, agentpb.ExecResponse](
+			httpClient,
+			baseURL+UserAgentUserExecProcedure,
+			connect.WithSchema(userAgentMethods.ByName("UserExec")),
+			connect.WithClientOptions(opts...),
+		),
+		userExecStream: connect.NewClient[agentpb.ExecRequest, agentpb.ExecOutput](
+			httpClient,
+			baseURL+UserAgentUserExecStreamProcedure,
+			connect.WithSchema(userAgentMethods.ByName("UserExecStream")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// userAgentClient implements UserAgentClient.
+type userAgentClient struct {
+	userExec       *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
+	userExecStream *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
+}
+
+// UserExec calls vz.agent.v1.UserAgent.UserExec.
+func (c *userAgentClient) UserExec(ctx context.Context, req *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error) {
+	return c.userExec.CallUnary(ctx, req)
+}
+
+// UserExecStream calls vz.agent.v1.UserAgent.UserExecStream.
+func (c *userAgentClient) UserExecStream(ctx context.Context, req *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error) {
+	return c.userExecStream.CallServerStream(ctx, req)
+}
+
+// UserAgentHandler is an implementation of the vz.agent.v1.UserAgent service.
+type UserAgentHandler interface {
+	// UserExec runs a command as the logged-in user, inheriting TCC and FDA.
+	UserExec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
+	// UserExecStream runs a command with streaming output as the logged-in user.
+	UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error
+}
+
+// NewUserAgentHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewUserAgentHandler(svc UserAgentHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	userAgentMethods := agentpb.File_agent_proto.Services().ByName("UserAgent").Methods()
+	userAgentUserExecHandler := connect.NewUnaryHandler(
+		UserAgentUserExecProcedure,
+		svc.UserExec,
+		connect.WithSchema(userAgentMethods.ByName("UserExec")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userAgentUserExecStreamHandler := connect.NewServerStreamHandler(
+		UserAgentUserExecStreamProcedure,
+		svc.UserExecStream,
+		connect.WithSchema(userAgentMethods.ByName("UserExecStream")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/vz.agent.v1.UserAgent/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case UserAgentUserExecProcedure:
+			userAgentUserExecHandler.ServeHTTP(w, r)
+		case UserAgentUserExecStreamProcedure:
+			userAgentUserExecStreamHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedUserAgentHandler returns CodeUnimplemented from all methods.
+type UnimplementedUserAgentHandler struct{}
+
+func (UnimplementedUserAgentHandler) UserExec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.UserExec is not implemented"))
+}
+
+func (UnimplementedUserAgentHandler) UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.UserExecStream is not implemented"))
 }

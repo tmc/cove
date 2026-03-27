@@ -183,6 +183,15 @@ message UnmountRequest {
 
 message UnmountResponse {}
 
+// UserAgent runs in the logged-in user's session context (LaunchAgent)
+// and inherits TCC/FDA grants. Transport: GRPC over vsock (port 1025).
+service UserAgent {
+  // UserExec runs a command as the logged-in user, inheriting TCC and FDA.
+  rpc UserExec(ExecRequest) returns (ExecResponse);
+  // UserExecStream runs a command with streaming output as the logged-in user.
+  rpc UserExecStream(ExecRequest) returns (stream ExecOutput);
+}
+
 // Power
 
 message ShutdownRequest {

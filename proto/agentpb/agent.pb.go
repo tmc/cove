@@ -1730,7 +1730,10 @@ const file_agent_proto_rawDesc = "" +
 	"\x05Mount\x12\x19.vz.agent.v1.MountRequest\x1a\x1a.vz.agent.v1.MountResponse\x12D\n" +
 	"\aUnmount\x12\x1b.vz.agent.v1.UnmountRequest\x1a\x1c.vz.agent.v1.UnmountResponse\x12G\n" +
 	"\bShutdown\x12\x1c.vz.agent.v1.ShutdownRequest\x1a\x1d.vz.agent.v1.ShutdownResponse\x12A\n" +
-	"\x06Reboot\x12\x1a.vz.agent.v1.RebootRequest\x1a\x1b.vz.agent.v1.RebootResponseB'Z%github.com/tmc/vz-macos/proto/agentpbb\x06proto3"
+	"\x06Reboot\x12\x1a.vz.agent.v1.RebootRequest\x1a\x1b.vz.agent.v1.RebootResponse2\x93\x01\n" +
+	"\tUserAgent\x12?\n" +
+	"\bUserExec\x12\x18.vz.agent.v1.ExecRequest\x1a\x19.vz.agent.v1.ExecResponse\x12E\n" +
+	"\x0eUserExecStream\x12\x18.vz.agent.v1.ExecRequest\x1a\x17.vz.agent.v1.ExecOutput0\x01B'Z%github.com/tmc/vz-macos/proto/agentpbb\x06proto3"
 
 var (
 	file_agent_proto_rawDescOnce sync.Once
@@ -1797,21 +1800,25 @@ var file_agent_proto_depIdxs = []int32{
 	22, // 15: vz.agent.v1.Agent.Unmount:input_type -> vz.agent.v1.UnmountRequest
 	24, // 16: vz.agent.v1.Agent.Shutdown:input_type -> vz.agent.v1.ShutdownRequest
 	26, // 17: vz.agent.v1.Agent.Reboot:input_type -> vz.agent.v1.RebootRequest
-	2,  // 18: vz.agent.v1.Agent.Ping:output_type -> vz.agent.v1.PingResponse
-	4,  // 19: vz.agent.v1.Agent.Info:output_type -> vz.agent.v1.InfoResponse
-	6,  // 20: vz.agent.v1.Agent.Exec:output_type -> vz.agent.v1.ExecResponse
-	7,  // 21: vz.agent.v1.Agent.ExecStream:output_type -> vz.agent.v1.ExecOutput
-	10, // 22: vz.agent.v1.Agent.CopyIn:output_type -> vz.agent.v1.CopyInResponse
-	12, // 23: vz.agent.v1.Agent.CopyOut:output_type -> vz.agent.v1.CopyOutChunk
-	15, // 24: vz.agent.v1.Agent.WriteFile:output_type -> vz.agent.v1.WriteFileResponse
-	17, // 25: vz.agent.v1.Agent.ReadFile:output_type -> vz.agent.v1.ReadFileResponse
-	19, // 26: vz.agent.v1.Agent.Mkdir:output_type -> vz.agent.v1.MkdirResponse
-	21, // 27: vz.agent.v1.Agent.Mount:output_type -> vz.agent.v1.MountResponse
-	23, // 28: vz.agent.v1.Agent.Unmount:output_type -> vz.agent.v1.UnmountResponse
-	25, // 29: vz.agent.v1.Agent.Shutdown:output_type -> vz.agent.v1.ShutdownResponse
-	27, // 30: vz.agent.v1.Agent.Reboot:output_type -> vz.agent.v1.RebootResponse
-	18, // [18:31] is the sub-list for method output_type
-	5,  // [5:18] is the sub-list for method input_type
+	5,  // 18: vz.agent.v1.UserAgent.UserExec:input_type -> vz.agent.v1.ExecRequest
+	5,  // 19: vz.agent.v1.UserAgent.UserExecStream:input_type -> vz.agent.v1.ExecRequest
+	2,  // 20: vz.agent.v1.Agent.Ping:output_type -> vz.agent.v1.PingResponse
+	4,  // 21: vz.agent.v1.Agent.Info:output_type -> vz.agent.v1.InfoResponse
+	6,  // 22: vz.agent.v1.Agent.Exec:output_type -> vz.agent.v1.ExecResponse
+	7,  // 23: vz.agent.v1.Agent.ExecStream:output_type -> vz.agent.v1.ExecOutput
+	10, // 24: vz.agent.v1.Agent.CopyIn:output_type -> vz.agent.v1.CopyInResponse
+	12, // 25: vz.agent.v1.Agent.CopyOut:output_type -> vz.agent.v1.CopyOutChunk
+	15, // 26: vz.agent.v1.Agent.WriteFile:output_type -> vz.agent.v1.WriteFileResponse
+	17, // 27: vz.agent.v1.Agent.ReadFile:output_type -> vz.agent.v1.ReadFileResponse
+	19, // 28: vz.agent.v1.Agent.Mkdir:output_type -> vz.agent.v1.MkdirResponse
+	21, // 29: vz.agent.v1.Agent.Mount:output_type -> vz.agent.v1.MountResponse
+	23, // 30: vz.agent.v1.Agent.Unmount:output_type -> vz.agent.v1.UnmountResponse
+	25, // 31: vz.agent.v1.Agent.Shutdown:output_type -> vz.agent.v1.ShutdownResponse
+	27, // 32: vz.agent.v1.Agent.Reboot:output_type -> vz.agent.v1.RebootResponse
+	6,  // 33: vz.agent.v1.UserAgent.UserExec:output_type -> vz.agent.v1.ExecResponse
+	7,  // 34: vz.agent.v1.UserAgent.UserExecStream:output_type -> vz.agent.v1.ExecOutput
+	20, // [20:35] is the sub-list for method output_type
+	5,  // [5:20] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -1841,7 +1848,7 @@ func file_agent_proto_init() {
 			NumEnums:      1,
 			NumMessages:   28,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_agent_proto_goTypes,
 		DependencyIndexes: file_agent_proto_depIdxs,
