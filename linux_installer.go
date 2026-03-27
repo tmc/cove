@@ -178,6 +178,12 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	platformConfig := vz.NewVZGenericPlatformConfiguration()
 	machineID := loadOrCreateGenericMachineIdentifier()
 	platformConfig.SetMachineIdentifier(&machineID)
+
+	// Enable nested virtualization (KVM in guest) if supported (macOS 15+, M3+)
+	if vz.GetVZGenericPlatformConfigurationClass().NestedVirtualizationSupported() {
+		platformConfig.SetNestedVirtualizationEnabled(true)
+	}
+
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
 
 	// Boot loader: direct kernel boot (with autoinstall cmdline) or EFI

@@ -31,6 +31,13 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	// Machine identifier (unique to this VM)
 	machineID := loadOrCreateGenericMachineIdentifier()
 	platformConfig.SetMachineIdentifier(&machineID)
+
+	// Enable nested virtualization (KVM in guest) if supported (macOS 15+, M3+)
+	if vz.GetVZGenericPlatformConfigurationClass().NestedVirtualizationSupported() {
+		platformConfig.SetNestedVirtualizationEnabled(true)
+		fmt.Println("  Nested virtualization enabled (KVM will be available in guest)")
+	}
+
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
 
 	// Boot loader - choose based on flags
