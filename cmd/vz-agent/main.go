@@ -63,6 +63,8 @@ func main() {
 		srv.Shutdown(context.Background())
 	}()
 
+	go startITerm2Relay()
+
 	log.Printf("listening on vsock port %d", *port)
 	if err := srv.Serve(lis); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("serve: %v", err)
