@@ -108,14 +108,21 @@ func installLinuxVM() error {
 		}
 	}
 
-	// Use EFI boot by default (what UTM does for ISO-based Linux installation).
-	// Direct kernel boot is only used when -kernel flag is explicitly provided.
+	// Prefer direct kernel boot to pass `autoinstall` on the kernel cmdline,
+	// which suppresses Ubuntu 24.04's interactive confirmation prompt.
+	// If no kernel/initrd was provided, try to extract them from the ISO.
 	useDirectBoot := kernelPath != "" && initrdPath != ""
-	if useDirectBoot {
-		// Extract kernel/initrd from ISO if paths provided but files don't exist.
-		if cmdLine == "" {
-			cmdLine = "boot=casper autoinstall console=tty0 --- quiet"
+	if !useDirectBoot {
+		extracted, err := extractKernelFromISO(resolvedISO, vmDir)
+		if err == nil {
+			kernelPath = extracted.kernel
+			initrdPath = extracted.initrd
+			useDirectBoot = true
+			fmt.Println("Extracted kernel/initrd from ISO for direct boot (autoinstall)")
 		}
+	}
+	if useDirectBoot && cmdLine == "" {
+		cmdLine = "boot=casper autoinstall console=tty0 --- quiet"
 	}
 
 	// Build VM configuration with both ISOs
@@ -149,7 +156,7 @@ func installLinuxVM() error {
 	fmt.Println()
 	fmt.Println("=== Ubuntu Installation Starting ===")
 	if useDirectBoot {
-		fmt.Println("Using direct kernel boot with autoinstall.")
+		fmt.Println("Using direct kernel boot with autoinstall (no confirmation prompt).")
 	} else {
 		fmt.Println("Using EFI boot from ISO.")
 		fmt.Println("The GRUB bootloader will start automatically after ~5 seconds.")
@@ -346,6 +353,50 @@ func createLinuxInstallBootLoader(kernelPath, initrdPath, cmdLine string) (vz.VZ
 	return bootloader, nil
 }
 
+type extractedKernel struct {
+	kernel string
+	initrd string
+}
+
+// extractKernelFromISO mounts the Ubuntu ISO and copies vmlinuz + initrd to vmDir.
+// Returns paths to the extracted files, or an error if extraction fails.
+func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
+	// Mount the ISO
+	out, err := exec.Command("hdiutil", "attach", isoPath, "-nobrowse", "-readonly", "-mountpoint", "/tmp/vz-iso-mount").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("mount ISO: %w: %s", err, out)
+	}
+	defer exec.Command("hdiutil", "detach", "/tmp/vz-iso-mount", "-quiet").Run()
+
+	// Look for kernel and initrd in standard Ubuntu ISO paths.
+	candidates := []struct {
+		kernel string
+		initrd string
+	}{
+		{"/tmp/vz-iso-mount/casper/vmlinuz", "/tmp/vz-iso-mount/casper/initrd"},
+		{"/tmp/vz-iso-mount/casper/hwe-vmlinuz", "/tmp/vz-iso-mount/casper/hwe-initrd"},
+	}
+
+	for _, c := range candidates {
+		if _, err := os.Stat(c.kernel); err != nil {
+			continue
+		}
+		if _, err := os.Stat(c.initrd); err != nil {
+			continue
+		}
+		dstKernel := filepath.Join(vmDir, "vmlinuz")
+		dstInitrd := filepath.Join(vmDir, "initrd")
+		if err := copyFile(c.kernel, dstKernel); err != nil {
+			return nil, fmt.Errorf("copy kernel: %w", err)
+		}
+		if err := copyFile(c.initrd, dstInitrd); err != nil {
+			return nil, fmt.Errorf("copy initrd: %w", err)
+		}
+		return &extractedKernel{kernel: dstKernel, initrd: dstInitrd}, nil
+	}
+	return nil, fmt.Errorf("no kernel/initrd found in ISO")
+}
+
 // createCloudInitISO creates a cloud-init NoCloud ISO with autoinstall configuration.
 func createCloudInitISO(config LinuxProvisionConfig) (string, error) {
 	// Create temporary directory for cloud-init files
@@ -378,6 +429,12 @@ func createCloudInitISO(config LinuxProvisionConfig) (string, error) {
 	metaDataPath := filepath.Join(cloudInitDir, "meta-data")
 	if err := os.WriteFile(metaDataPath, []byte(metaData), 0644); err != nil {
 		return "", fmt.Errorf("write meta-data: %w", err)
+	}
+
+	// Write a vendor-data file (required by some cloud-init versions).
+	vendorDataPath := filepath.Join(cloudInitDir, "vendor-data")
+	if err := os.WriteFile(vendorDataPath, []byte("#cloud-config\n{}"), 0644); err != nil {
+		return "", fmt.Errorf("write vendor-data: %w", err)
 	}
 
 	// Create ISO9660 CIDATA image using hdiutil makehybrid.
