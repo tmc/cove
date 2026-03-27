@@ -1,0 +1,24 @@
+# shared-folders — Mount VirtioFS shared folders in the guest
+
+guest-ping
+guest-shell mount-shares.sh
+
+-- mount-shares.sh --
+#!/bin/bash
+set -e
+
+MOUNT_BASE="/Volumes/My Shared Files"
+
+# The Virtualization framework automounts all VirtioFS shares under
+# /Volumes/My Shared Files at boot time. Verify the mount exists and
+# list contents.
+
+if mount | grep -q "AppleVirtIOFS"; then
+  echo "VirtioFS mounted at: $MOUNT_BASE"
+  ls "$MOUNT_BASE" 2>/dev/null && echo "Shared folders accessible." || echo "warning: mount exists but access denied (may need Full Disk Access or VM reboot)"
+else
+  echo "warning: no VirtioFS mount found — shared folders must be configured before VM boot"
+  echo "  on host: vz-macos vm shared-folder add <path>"
+  echo "  then reboot the VM"
+  exit 1
+fi
