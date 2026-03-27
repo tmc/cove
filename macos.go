@@ -1727,7 +1727,7 @@ func createBootOverlay(size corefoundation.CGSize) appkit.NSView {
 			objc.Sel("colorWithWhite:alpha:"),
 			0.08, 0.95,
 		)
-		cgColor := objc.Send[uintptr](bgColor, objc.Sel("CGColor"))
+		cgColor := objc.Send[objc.ID](bgColor, objc.Sel("CGColor"))
 		objc.Send[objc.ID](layer, objc.Sel("setBackgroundColor:"), cgColor)
 	}
 
@@ -1777,7 +1777,7 @@ func createPauseOverlay(size corefoundation.CGSize, state vz.VZVirtualMachineSta
 			objc.Sel("colorWithWhite:alpha:"),
 			0.0, 0.45,
 		)
-		cgColor := objc.Send[uintptr](bgColor, objc.Sel("CGColor"))
+		cgColor := objc.Send[objc.ID](bgColor, objc.Sel("CGColor"))
 		objc.Send[objc.ID](layer, objc.Sel("setBackgroundColor:"), cgColor)
 	}
 
