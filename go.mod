@@ -17,6 +17,9 @@ require (
 	rsc.io/script v0.0.2
 )
 
-require golang.org/x/text v0.35.0 // indirect
+require (
+	github.com/gorilla/websocket v1.5.3 // indirect
+	golang.org/x/text v0.35.0 // indirect
+)
 
 replace github.com/tmc/apple => /Users/tmc/go/src/github.com/tmc/apple

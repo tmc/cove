@@ -59,10 +59,12 @@ type ControlServer struct {
 	screenshotMu      sync.Mutex // protects lastScreenshot for diff mode
 	running           atomic.Bool
 	lastScreenshot    image.Image  // For diff mode
-	agent             *AgentClient // GRPC client to guest agent (nil until connected)
-	ocr               *OCRService  // lazily created OCR service for server-side OCR commands
-	windowNum         int          // cached window number for thread-safe screenshot
-	viewContentHeight int          // cached view content height in pixels (excludes title bar)
+	agent             *AgentClient     // GRPC client to guest agent daemon (nil until connected)
+	userAgent         *UserAgentClient // GRPC client to guest user agent (nil until connected)
+	ocr               *OCRService      // lazily created OCR service for server-side OCR commands
+	iterm2Proxy       *ITerm2Proxy     // WebSocket-to-vsock relay for iTerm2 API (nil until started)
+	windowNum         int              // cached window number for thread-safe screenshot
+	viewContentHeight int              // cached view content height in pixels (excludes title bar)
 }
 
 // NewControlServer creates a new control server
@@ -149,6 +151,9 @@ func (s *ControlServer) Start() error {
 // Stop closes the control server
 func (s *ControlServer) Stop() {
 	s.running.Store(false)
+	if s.iterm2Proxy != nil {
+		s.iterm2Proxy.Stop()
+	}
 	if s.listener != nil {
 		s.listener.Close()
 	}
@@ -225,6 +230,17 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 			continue
 		}
 
+		// iterm2-proxy-start with optional port from raw JSON data field.
+		if req.Type == "iterm2-proxy-start" {
+			port := parseITerm2ProxyPort([]byte(line))
+			if port > 0 {
+				writeResponse(conn, s.handleITerm2ProxyStartWithPort(port))
+			} else {
+				writeResponse(conn, s.handleITerm2ProxyStart())
+			}
+			continue
+		}
+
 		resp := s.handleRequest(&req)
 		writeResponse(conn, resp)
 	}
@@ -266,6 +282,10 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.getCapabilities()
 	case "shared-folders-apply":
 		return s.handleSharedFoldersApply()
+	case "iterm2-proxy-stop":
+		return s.handleITerm2ProxyStop()
+	case "iterm2-proxy-status":
+		return s.handleITerm2ProxyStatus()
 	}
 
 	s.mu.Lock()

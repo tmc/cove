@@ -66,6 +66,11 @@ Commands:
   step                  Interactive step-through mode for Setup Assistant debugging
   setup-assist <user> <pass>  Run Setup Assistant automation
 
+iTerm2 API Proxy (WebSocket-to-vsock):
+  iterm2-proxy [--port N]     Start WebSocket proxy to guest iTerm2 (default: 1913)
+  iterm2-proxy-stop           Stop the iTerm2 proxy
+  iterm2-proxy-status         Check proxy status
+
 Guest Agent (via GRPC over vsock):
   agent-connect         Connect to guest agent
   agent-ping            Ping guest agent
@@ -173,6 +178,12 @@ Examples:
 			return fmt.Errorf("setup-assist requires: <username> <password>")
 		}
 		return ctlSetupAssist(sock, subArgs[0], subArgs[1])
+	case "iterm2-proxy":
+		return ctlITerm2Proxy(sock, subArgs, *raw)
+	case "iterm2-proxy-stop":
+		return ctlITerm2ProxyCommand(sock, "iterm2-proxy-stop", *raw)
+	case "iterm2-proxy-status":
+		return ctlITerm2ProxyCommand(sock, "iterm2-proxy-status", *raw)
 	}
 
 	// Build proto request
@@ -1492,4 +1503,86 @@ func saveScreenshotPNG(img image.Image, filename string) error {
 	defer f.Close()
 
 	return png.Encode(f, img)
+}
+
+// ctlITerm2Proxy starts the iTerm2 WebSocket proxy via the control socket.
+func ctlITerm2Proxy(sock string, args []string, raw bool) error {
+	fs := flag.NewFlagSet("iterm2-proxy", flag.ExitOnError)
+	port := fs.Int("port", iterm2DefaultPort, "WebSocket listen port")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	client := NewControlClient(sock)
+	req := &controlpb.ControlRequest{Type: "iterm2-proxy-start"}
+	// Pass port in the JSON data field via the legacy raw-JSON path.
+	// The server-side handler uses the default port; for non-default
+	// ports we use a custom raw JSON approach.
+	if *port != iterm2DefaultPort {
+		// Send raw JSON directly for port override.
+		conn, err := net.DialTimeout("unix", sock, client.timeout)
+		if err != nil {
+			return ctlConnectError(sock, err)
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(client.timeout))
+
+		token := resolveControlTokenForSocket(sock)
+		rawReq := fmt.Sprintf(`{"type":"iterm2-proxy-start","auth_token":%q,"data":{"port":%d}}`, token, *port)
+		if _, err := conn.Write(append([]byte(rawReq), '\n')); err != nil {
+			return fmt.Errorf("write: %w", err)
+		}
+		reader := bufio.NewReader(conn)
+		respLine, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("read: %w", err)
+		}
+		if raw {
+			fmt.Print(respLine)
+			return nil
+		}
+		var resp controlpb.ControlResponse
+		if err := protojson.Unmarshal([]byte(respLine), &resp); err != nil {
+			return fmt.Errorf("parse: %w", err)
+		}
+		if resp.Error != "" {
+			return fmt.Errorf("%s", resp.Error)
+		}
+		fmt.Println(resp.Data)
+		return nil
+	}
+
+	resp, err := client.sendRequest(req)
+	if err != nil {
+		return err
+	}
+	if raw {
+		data, _ := protojson.Marshal(resp)
+		fmt.Println(string(data))
+		return nil
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	fmt.Println(resp.Data)
+	return nil
+}
+
+// ctlITerm2ProxyCommand sends a simple iterm2-proxy-* command.
+func ctlITerm2ProxyCommand(sock, cmdType string, raw bool) error {
+	client := NewControlClient(sock)
+	resp, err := client.sendRequest(&controlpb.ControlRequest{Type: cmdType})
+	if err != nil {
+		return err
+	}
+	if raw {
+		data, _ := protojson.Marshal(resp)
+		fmt.Println(string(data))
+		return nil
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	fmt.Println(resp.Data)
+	return nil
 }
