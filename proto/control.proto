@@ -22,6 +22,7 @@ message ControlRequest {
     SnapshotCommand snapshot = 14;
     MemoryCommand memory = 15;
     OCRCommand ocr = 16;
+    PortForwardCommand port_forward = 17;
     AgentExecCommand agent_exec = 20;
     AgentFileReadCommand agent_read = 21;
     AgentFileWriteCommand agent_write = 22;
@@ -117,6 +118,16 @@ message OCRCommand {
   string text = 2;
   // Timeout as a Go duration string (e.g. "10s", "1m").
   string timeout = 3;
+}
+
+// PortForwardCommand manages host TCP -> guest vsock port forwarding.
+message PortForwardCommand {
+  // Action: "start", "stop", "list"
+  string action = 1;
+  // Host TCP port to listen on.
+  uint32 host_port = 2;
+  // Guest vsock port to forward to.
+  uint32 guest_port = 3;
 }
 
 // AgentExecCommand runs a command inside the guest.

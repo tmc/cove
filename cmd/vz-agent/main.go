@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -25,6 +26,15 @@ import (
 
 	"github.com/tmc/vz-macos/proto/agentpbconnect"
 )
+
+// relaySpecs collects -relay flags (vsockPort:tcpAddr).
+type relaySpecs []string
+
+func (r *relaySpecs) String() string { return strings.Join(*r, ", ") }
+func (r *relaySpecs) Set(v string) error {
+	*r = append(*r, v)
+	return nil
+}
 
 const (
 	daemonPort = 1024
@@ -35,6 +45,8 @@ func main() {
 	mode := flag.String("mode", "", "run mode: daemon (root, port 1024) or agent (user, port 1025)")
 	port := flag.Int("port", 0, "vsock port to listen on (overrides mode default)")
 	showVersion := flag.Bool("version", false, "print version information")
+	var relays relaySpecs
+	flag.Var(&relays, "relay", "TCP relay: vsockPort:tcpAddr (e.g. 2222:localhost:22)")
 	flag.Parse()
 
 	if *showVersion {
@@ -99,6 +111,18 @@ func main() {
 		go startITerm2Relay()
 	}
 
+	// Start configured TCP relays.
+	for _, spec := range relays {
+		vport, addr, err := parseRelaySpec(spec)
+		if err != nil {
+			log.Printf("invalid relay spec %q: %v", spec, err)
+			continue
+		}
+		if _, err := StartTCPRelay(vport, addr); err != nil {
+			log.Printf("start relay %s: %v", spec, err)
+		}
+	}
+
 	log.Printf("listening on vsock port %d", *port)
 	if err := srv.Serve(lis); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("serve: %v", err)
@@ -113,4 +137,28 @@ func detectMode() string {
 		return "agent"
 	}
 	return "daemon"
+}
+
+// parseRelaySpec parses "vsockPort:host:port" or "vsockPort:port" into
+// a vsock port number and TCP address string.
+func parseRelaySpec(spec string) (uint32, string, error) {
+	// Split on first colon only to get vsockPort and tcpAddr.
+	idx := strings.IndexByte(spec, ':')
+	if idx < 0 {
+		return 0, "", fmt.Errorf("expected vsockPort:tcpAddr")
+	}
+	vportStr := spec[:idx]
+	addr := spec[idx+1:]
+
+	vport, err := strconv.ParseUint(vportStr, 10, 32)
+	if err != nil {
+		return 0, "", fmt.Errorf("invalid vsock port %q: %w", vportStr, err)
+	}
+
+	// If addr is just a port number, prefix with localhost.
+	if _, err := strconv.ParseUint(addr, 10, 16); err == nil {
+		addr = "localhost:" + addr
+	}
+
+	return uint32(vport), addr, nil
 }
