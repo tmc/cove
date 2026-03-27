@@ -1410,6 +1410,10 @@ var charToKeyCode = map[rune]charKeyCodeInfo{
 	'!': {18, true}, '@': {19, true}, '#': {20, true}, '$': {21, true},
 	'%': {23, true}, '^': {22, true}, '&': {26, true}, '*': {28, true},
 	'(': {25, true}, ')': {29, true}, '_': {27, true}, '+': {24, true},
+	'{': {33, true}, '}': {30, true}, '|': {42, true}, '~': {50, true},
+	':': {41, true}, '"': {39, true}, '<': {43, true}, '>': {47, true},
+	'?': {44, true},
+	'\n': {36, false}, '\t': {48, false},
 }
 
 // GetControlSocketPath returns the default socket path
