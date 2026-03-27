@@ -13,6 +13,7 @@
 //	guest-terminal <file>       Run a local script file in Terminal.app (visible to user)
 //	guest-write <dst> <src>     Copy a local file to the guest
 //	guest-read <path>           Read a guest file to stdout
+//	append-path <dir>           Add a directory to system PATH via /etc/paths.d/
 //
 // UI automation commands (via control socket):
 //
@@ -95,6 +96,7 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"guest-write":    guestWriteCmd(cfg),
 		"guest-read":     guestReadCmd(cfg),
 		"guest-cp":       guestCpCmd(cfg),
+		"append-path":    appendPathCmd(cfg),
 
 		// UI automation commands (via control socket).
 		"ocr-click":     vzOCRClickCmd(cfg),
@@ -626,6 +628,67 @@ func guestCpCmd(cfg vzscriptConfig) script.Cmd {
 			}, nil
 		},
 	)
+}
+
+// appendPathCmd adds a directory to the system PATH via /etc/paths.d/.
+// Usage: append-path /usr/local/go/bin
+//
+// The file name is derived from the path: for /usr/local/go/bin, the parent
+// directory name "go" is used, creating /etc/paths.d/go. If the last component
+// is unique enough (not "bin", "sbin", etc.), it is used directly.
+//
+// The command is idempotent: it checks whether the path already exists in any
+// file under /etc/paths.d/ before writing.
+func appendPathCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "add a directory to the system PATH via /etc/paths.d/",
+			Args:    "path",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) != 1 {
+				return nil, script.ErrUsage
+			}
+			dir := filepath.Clean(args[0])
+			name := pathsDName(dir)
+
+			// Shell script: check if path already exists in /etc/paths.d/,
+			// and write it if not.
+			script := fmt.Sprintf(`#!/bin/bash
+set -eu
+target=%s
+name=%s
+if grep -rqxF "$target" /etc/paths.d/ 2>/dev/null; then
+  echo "already in /etc/paths.d/"
+  exit 0
+fi
+echo "$target" > "/etc/paths.d/$name"
+echo "wrote /etc/paths.d/$name"
+`, shellEscape(dir), shellEscape(name))
+
+			if err := guestWriteFile(cfg.socketPath, "/tmp/vzscript-append-path.sh", []byte(script), 0755); err != nil {
+				return nil, fmt.Errorf("write append-path script: %w", err)
+			}
+			return guestExec(cfg, []string{"/bin/bash", "/tmp/vzscript-append-path.sh"})
+		},
+	)
+}
+
+// pathsDName returns a suitable filename for /etc/paths.d/ given a directory path.
+// For paths ending in generic names like "bin" or "sbin", the parent directory
+// name is used instead (e.g., /usr/local/go/bin -> "go", /opt/homebrew/bin -> "homebrew").
+func pathsDName(dir string) string {
+	generic := map[string]bool{
+		"bin": true, "sbin": true, "libexec": true,
+	}
+	base := filepath.Base(dir)
+	if generic[base] {
+		parent := filepath.Base(filepath.Dir(dir))
+		if parent != "." && parent != "/" {
+			return parent
+		}
+	}
+	return base
 }
 
 // --- UI automation commands (via control socket) ---
