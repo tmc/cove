@@ -777,16 +777,27 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 		return
 	}
 
-	a, err := s.getAgent()
-	if err != nil {
-		writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	stream, err := a.ExecStream(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+	var stream ExecStreamReceiver
+	var connErr error
+	if req.Type == "agent-user-exec-stream" {
+		ua, err := s.getUserAgent()
+		if err != nil {
+			writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})
+			return
+		}
+		stream, connErr = ua.UserExecStream(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+	} else {
+		a, err := s.getAgent()
+		if err != nil {
+			writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})
+			return
+		}
+		stream, connErr = a.ExecStream(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+	}
+	err := connErr
 	if err != nil {
 		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("exec stream: %v", err)})
 		return

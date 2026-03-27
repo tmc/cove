@@ -218,7 +218,7 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 			continue
 		}
 
-		if req.Type == "agent-exec-stream" {
+		if req.Type == "agent-exec-stream" || req.Type == "agent-user-exec-stream" {
 			s.handleAgentExecStreamConnection(conn, &req)
 			continue
 		}

@@ -439,7 +439,7 @@ Examples:
 			return fmt.Errorf("agent-exec-stream requires at least one argument")
 		}
 		if !useDaemon {
-			req.Type = "agent-user-exec"
+			req.Type = "agent-user-exec-stream"
 		}
 		req.Command = &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
