@@ -1,0 +1,29 @@
+# it2 — Install it2 (iTerm2 CLI) in the guest
+# requires: golang
+
+guest-ping
+guest-shell install-it2.sh
+
+-- install-it2.sh --
+#!/bin/bash
+set -e
+
+# Check if already installed.
+if command -v it2 &>/dev/null; then
+  echo "it2 already installed: $(which it2)"
+  it2 version 2>/dev/null || true
+  exit 0
+fi
+
+echo "Installing it2..."
+go install github.com/tmc/it2/cmd/it2@latest
+
+# Verify.
+if command -v it2 &>/dev/null; then
+  echo "it2 installed: $(which it2)"
+  it2 version 2>/dev/null || true
+else
+  echo "error: it2 not found in PATH after install"
+  echo "  ensure ~/go/bin is in PATH"
+  exit 1
+fi

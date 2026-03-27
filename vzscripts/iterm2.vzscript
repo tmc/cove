@@ -1,0 +1,34 @@
+# iterm2 — Install iTerm2.app and configure API access in the guest
+# requires: it2
+
+guest-ping
+guest-shell install-iterm2.sh
+
+-- install-iterm2.sh --
+#!/bin/bash
+set -e
+
+# Check if already installed.
+if [ -d "/Applications/iTerm.app" ]; then
+  echo "iTerm2 already installed."
+else
+  echo "Downloading iTerm2..."
+  curl -fsSL "https://iterm2.com/downloads/stable/latest" -o /tmp/iTerm2.zip
+  echo "Installing iTerm2.app..."
+  unzip -q /tmp/iTerm2.zip -d /Applications/
+  rm -f /tmp/iTerm2.zip
+fi
+
+# Enable API server before first launch to avoid interactive prompts.
+defaults write com.googlecode.iterm2 EnableAPIServer -bool true
+
+# Launch iTerm2.
+echo "Launching iTerm2..."
+open -a iTerm
+sleep 5
+
+# Run it2 setup to verify and complete configuration.
+echo "Running it2 setup..."
+it2 setup || echo "warning: it2 setup had issues (may need manual auth approval)"
+
+echo "iTerm2 setup complete."
