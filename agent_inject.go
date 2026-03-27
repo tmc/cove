@@ -31,8 +31,11 @@ import (
 // agentBinaryName is the name of the guest agent binary.
 const agentBinaryName = "vz-agent"
 
-// agentLaunchDaemonLabel is the launchd label for the guest agent.
+// agentLaunchDaemonLabel is the launchd label for the guest agent daemon (root, port 1024).
 const agentLaunchDaemonLabel = "com.github.tmc.vz-macos.vz-agent"
+
+// agentLaunchAgentLabel is the launchd label for the guest user agent (user session, port 1025).
+const agentLaunchAgentLabel = "com.github.tmc.vz-macos.vz-agent-user"
 
 // buildAgentBinary cross-compiles the vz-agent binary for the guest.
 // It targets the appropriate OS/arch with CGO disabled for a static binary.
@@ -62,7 +65,7 @@ func buildAgentBinary(outputPath string) error {
 }
 
 // injectAgent cross-compiles the vz-agent binary and injects it into the
-// mounted Data volume along with a LaunchDaemon plist.
+// mounted Data volume along with LaunchDaemon and LaunchAgent plists.
 //
 // When running as root, files are written directly. When running as a normal
 // user, directories under root-owned paths (e.g. /usr/local/bin) cannot be
@@ -84,22 +87,29 @@ func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pend
 	binDir := filepath.Join(mountPoint, "usr", "local", "bin")
 	binPath := filepath.Join(binDir, agentBinaryName)
 	launchDaemonsDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
-	plistPath := filepath.Join(launchDaemonsDir, agentLaunchDaemonLabel+".plist")
+	launchAgentsDir := filepath.Join(mountPoint, "Library", "LaunchAgents")
+	daemonPlistPath := filepath.Join(launchDaemonsDir, agentLaunchDaemonLabel+".plist")
+	agentPlistPath := filepath.Join(launchAgentsDir, agentLaunchAgentLabel+".plist")
 
 	// Try direct write (works when running as root).
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		// Can't create directory — stage for elevated install.
 		fmt.Printf("Staging agent for elevated install (need root for %s)\n", binDir)
 
-		// Stage plist to temp.
-		tmpPlist := filepath.Join(os.TempDir(), agentLaunchDaemonLabel+".plist")
-		if err := os.WriteFile(tmpPlist, []byte(agentLaunchDaemonPlist), 0644); err != nil {
+		// Stage plists to temp.
+		tmpDaemonPlist := filepath.Join(os.TempDir(), agentLaunchDaemonLabel+".plist")
+		if err := os.WriteFile(tmpDaemonPlist, []byte(agentLaunchDaemonPlist), 0644); err != nil {
+			return fmt.Errorf("write temp daemon plist: %w", err)
+		}
+		tmpAgentPlist := filepath.Join(os.TempDir(), agentLaunchAgentLabel+".plist")
+		if err := os.WriteFile(tmpAgentPlist, []byte(agentLaunchAgentPlist), 0644); err != nil {
 			return fmt.Errorf("write temp agent plist: %w", err)
 		}
 
 		*pendingInstalls = append(*pendingInstalls,
 			pendingInstall{Src: tmpBinary, Dest: binPath, Mode: 0755},
-			pendingInstall{Src: tmpPlist, Dest: plistPath, Mode: 0644},
+			pendingInstall{Src: tmpDaemonPlist, Dest: daemonPlistPath, Mode: 0644},
+			pendingInstall{Src: tmpAgentPlist, Dest: agentPlistPath, Mode: 0644},
 		)
 
 		info, err := os.Stat(tmpBinary)
@@ -107,7 +117,8 @@ func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pend
 			return fmt.Errorf("stat agent binary: %w", err)
 		}
 		fmt.Printf("Staged: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, info.Size())
-		fmt.Printf("Staged: %s\n", plistPath)
+		fmt.Printf("Staged: %s\n", daemonPlistPath)
+		fmt.Printf("Staged: %s\n", agentPlistPath)
 		return nil
 	}
 
@@ -124,23 +135,32 @@ func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pend
 	chownRootWheel(binPath, rootFiles)
 	fmt.Printf("Written: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, len(binaryData))
 
-	// Write the LaunchDaemon plist
+	// Write the LaunchDaemon plist (root, port 1024).
 	if err := os.MkdirAll(launchDaemonsDir, 0755); err != nil {
 		return fmt.Errorf("create LaunchDaemons directory: %w", err)
 	}
+	if err := os.WriteFile(daemonPlistPath, []byte(agentLaunchDaemonPlist), 0644); err != nil {
+		return fmt.Errorf("write daemon plist: %w", err)
+	}
+	chownRootWheel(daemonPlistPath, rootFiles)
+	fmt.Printf("Written: %s\n", daemonPlistPath)
 
-	if err := os.WriteFile(plistPath, []byte(agentLaunchDaemonPlist), 0644); err != nil {
+	// Write the LaunchAgent plist (user session, port 1025).
+	if err := os.MkdirAll(launchAgentsDir, 0755); err != nil {
+		return fmt.Errorf("create LaunchAgents directory: %w", err)
+	}
+	if err := os.WriteFile(agentPlistPath, []byte(agentLaunchAgentPlist), 0644); err != nil {
 		return fmt.Errorf("write agent plist: %w", err)
 	}
-	chownRootWheel(plistPath, rootFiles)
-	fmt.Printf("Written: %s\n", plistPath)
+	chownRootWheel(agentPlistPath, rootFiles)
+	fmt.Printf("Written: %s\n", agentPlistPath)
 
 	return nil
 }
 
-// injectAgentOnly mounts the VM disk and injects only the vz-agent binary
-// and its LaunchDaemon plist. No user provisioning is performed.
-// Uses osascript for elevated file operations so sudo is not required.
+// injectAgentOnly mounts the VM disk and injects the vz-agent binary,
+// LaunchDaemon plist (port 1024), and LaunchAgent plist (port 1025).
+// No user provisioning is performed.
 func injectAgentOnly() error {
 	if err := checkVMNotRunning(); err != nil {
 		return err
@@ -166,11 +186,16 @@ func injectAgentOnly() error {
 		return err
 	}
 
-	// Write plist to temp location.
-	tmpPlist := filepath.Join(os.TempDir(), agentLaunchDaemonLabel+".plist")
-	defer os.Remove(tmpPlist)
-	if err := os.WriteFile(tmpPlist, []byte(agentLaunchDaemonPlist), 0644); err != nil {
-		return fmt.Errorf("write temp plist: %w", err)
+	// Write plists to temp locations.
+	tmpDaemonPlist := filepath.Join(os.TempDir(), agentLaunchDaemonLabel+".plist")
+	defer os.Remove(tmpDaemonPlist)
+	if err := os.WriteFile(tmpDaemonPlist, []byte(agentLaunchDaemonPlist), 0644); err != nil {
+		return fmt.Errorf("write temp daemon plist: %w", err)
+	}
+	tmpAgentPlist := filepath.Join(os.TempDir(), agentLaunchAgentLabel+".plist")
+	defer os.Remove(tmpAgentPlist)
+	if err := os.WriteFile(tmpAgentPlist, []byte(agentLaunchAgentPlist), 0644); err != nil {
+		return fmt.Errorf("write temp agent plist: %w", err)
 	}
 
 	// Mount the Data volume.
@@ -193,19 +218,23 @@ func injectAgentOnly() error {
 	binDir := filepath.Join(mountPoint, "usr", "local", "bin")
 	binPath := filepath.Join(binDir, agentBinaryName)
 	daemonDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
-	plistPath := filepath.Join(daemonDir, agentLaunchDaemonLabel+".plist")
+	agentDir := filepath.Join(mountPoint, "Library", "LaunchAgents")
+	daemonPlistPath := filepath.Join(daemonDir, agentLaunchDaemonLabel+".plist")
+	agentPlistPath := filepath.Join(agentDir, agentLaunchAgentLabel+".plist")
 
 	// Use a single elevated shell script to enable ownership, copy files,
 	// and set permissions — avoids needing sudo for the entire command.
 	script := fmt.Sprintf(
 		"diskutil enableOwnership %s"+
-			" && mkdir -p %q %q"+
+			" && mkdir -p %q %q %q"+
 			" && cp %q %q && chmod 755 %q && chown root:wheel %q"+
+			" && cp %q %q && chmod 644 %q && chown root:wheel %q"+
 			" && cp %q %q && chmod 644 %q && chown root:wheel %q",
 		dataPart,
-		binDir, daemonDir,
+		binDir, daemonDir, agentDir,
 		tmpBinary, binPath, binPath, binPath,
-		tmpPlist, plistPath, plistPath, plistPath,
+		tmpDaemonPlist, daemonPlistPath, daemonPlistPath, daemonPlistPath,
+		tmpAgentPlist, agentPlistPath, agentPlistPath, agentPlistPath,
 	)
 
 	// Write script to temp file for execution.
@@ -239,11 +268,13 @@ func injectAgentOnly() error {
 		return fmt.Errorf("stat installed agent binary: %w", err)
 	}
 	fmt.Printf("Written: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, info.Size())
-	fmt.Printf("Written: %s\n", plistPath)
+	fmt.Printf("Written: %s\n", daemonPlistPath)
+	fmt.Printf("Written: %s\n", agentPlistPath)
 
 	fmt.Println()
 	fmt.Println("=== Agent Injection Complete ===")
-	fmt.Println("  - vz-agent GRPC daemon installed (vsock port 1024)")
+	fmt.Println("  - vz-agent daemon installed (vsock port 1024, root)")
+	fmt.Println("  - vz-agent user agent installed (vsock port 1025, user session)")
 	fmt.Println("Run the VM with: ./vz-macos run")
 	return nil
 }
@@ -385,9 +416,8 @@ func upgradeAgent() error {
 	return nil
 }
 
-// agentLaunchDaemonPlist is the launchd plist for the guest agent.
-// KeepAlive ensures launchd restarts the agent if it exits.
-// ThrottleInterval prevents rapid restart loops.
+// agentLaunchDaemonPlist is the launchd plist for the guest agent daemon.
+// Runs as root on boot (port 1024). KeepAlive ensures launchd restarts if it crashes.
 const agentLaunchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -397,6 +427,8 @@ const agentLaunchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/vz-agent</string>
+        <string>-mode</string>
+        <string>daemon</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -408,6 +440,37 @@ const agentLaunchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>
     <string>/var/log/vz-agent.log</string>
     <key>StandardErrorPath</key>
     <string>/var/log/vz-agent.log</string>
+</dict>
+</plist>
+`
+
+// agentLaunchAgentPlist is the launchd plist for the guest user agent.
+// Runs in the logged-in user's session (port 1025) with TCC/FDA grants.
+// LimitLoadToSessionType: Aqua ensures it only starts in GUI sessions.
+const agentLaunchAgentPlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.github.tmc.vz-macos.vz-agent-user</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/vz-agent</string>
+        <string>-mode</string>
+        <string>agent</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>StandardOutPath</key>
+    <string>/tmp/vz-agent-user.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/vz-agent-user.log</string>
 </dict>
 </plist>
 `

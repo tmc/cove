@@ -21,6 +21,7 @@ import (
 )
 
 const agentPort = 1024
+const userAgentPort = 1025
 
 // AgentClient wraps the connect-go client for the guest agent.
 type AgentClient struct {
@@ -267,4 +268,63 @@ func (c *AgentClient) Shutdown(ctx context.Context, force bool) error {
 func (c *AgentClient) Reboot(ctx context.Context) error {
 	_, err := c.client.Reboot(ctx, connect.NewRequest(&pb.RebootRequest{}))
 	return err
+}
+
+// UserAgentClient wraps the connect-go client for the user session agent (port 1025).
+type UserAgentClient struct {
+	client agentpbconnect.UserAgentClient
+	conn   net.Conn
+}
+
+// NewUserAgentClient creates a client connected to the user agent on port 1025.
+func NewUserAgentClient(netConn net.Conn) (*UserAgentClient, error) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+				return netConn, nil
+			},
+		},
+	}
+	client := agentpbconnect.NewUserAgentClient(
+		httpClient,
+		"http://vsock-guest-user",
+		connect.WithGRPC(),
+	)
+	return &UserAgentClient{client: client, conn: netConn}, nil
+}
+
+// Close closes the underlying vsock connection.
+func (c *UserAgentClient) Close() {
+	if c == nil || c.conn == nil {
+		return
+	}
+	c.conn.Close()
+	c.conn = nil
+}
+
+// UserExec runs a command in the user session context (inherits TCC/FDA).
+func (c *UserAgentClient) UserExec(ctx context.Context, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
+	resp, err := c.client.UserExec(ctx, connect.NewRequest(&pb.ExecRequest{
+		Args:       args,
+		Env:        env,
+		WorkingDir: workDir,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+// UserExecStream runs a command in user context with streaming output.
+func (c *UserAgentClient) UserExecStream(ctx context.Context, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
+	stream, err := c.client.UserExecStream(ctx, connect.NewRequest(&pb.ExecRequest{
+		Args:       args,
+		Env:        env,
+		WorkingDir: workDir,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return &execStreamReceiver{stream: stream}, nil
 }

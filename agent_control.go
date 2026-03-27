@@ -1,18 +1,21 @@
-// agent_control.go - Bridge between control socket and GRPC guest agent.
+// agent_control.go - Bridge between control socket and GRPC guest agents.
 //
 // Extends the control socket with agent commands that delegate to the
-// vz-agent daemon running inside the guest. The host connects to the agent
-// over vsock port 1024 via VZVirtioSocketDevice.
+// vz-agent processes running inside the guest. Two agents:
+//
+//   - Daemon (port 1024): root context, system ops
+//   - User agent (port 1025): user session, TCC/FDA grants
 //
 // New command types:
 //
-//	agent-connect  - Establish vsock connection to guest agent
-//	agent-ping     - Check if agent is alive
-//	agent-info     - Get guest system information
-//	agent-exec     - Run a command in the guest
-//	agent-read     - Read a file from the guest
-//	agent-write    - Write a file to the guest
-//	agent-shutdown - Graceful guest shutdown via agent
+//	agent-connect      - Establish vsock connection to guest daemon agent
+//	agent-ping         - Check if daemon agent is alive
+//	agent-info         - Get guest system information
+//	agent-exec         - Run a command in the guest (as root)
+//	agent-user-exec    - Run a command in the user session (TCC/FDA)
+//	agent-read         - Read a file from the guest
+//	agent-write        - Write a file to the guest
+//	agent-shutdown     - Graceful guest shutdown via agent
 package main
 
 import (
@@ -74,6 +77,64 @@ func (s *ControlServer) getAgent() (*AgentClient, error) {
 		return nil, err
 	}
 	return s.agent, nil
+}
+
+// getUserAgent returns the user session agent client, connecting if necessary.
+// Falls back to the daemon agent with a warning if the user agent is not running.
+func (s *ControlServer) getUserAgent() (*UserAgentClient, error) {
+	state, err := s.currentVMState()
+	if err != nil {
+		return nil, err
+	}
+	if err := agentUnavailableForVMState(state); err != nil {
+		return nil, err
+	}
+
+	// Fast path: check existing connection.
+	s.agentMu.RLock()
+	if ua := s.userAgent; ua != nil {
+		s.agentMu.RUnlock()
+		return ua, nil
+	}
+	s.agentMu.RUnlock()
+
+	// Slow path: connect.
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
+	if s.userAgent != nil {
+		return s.userAgent, nil
+	}
+	if err := s.connectUserAgentLocked(); err != nil {
+		return nil, err
+	}
+	return s.userAgent, nil
+}
+
+// connectUserAgentLocked establishes the user agent connection on port 1025.
+// Caller must hold s.agentMu write lock.
+func (s *ControlServer) connectUserAgentLocked() error {
+	if s.userAgent != nil {
+		return nil
+	}
+
+	mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
+	if err != nil {
+		return fmt.Errorf("vsock device: %w", err)
+	}
+
+	conn, err := mgr.ConnectToAgent(userAgentPort)
+	if err != nil {
+		return fmt.Errorf("connect user agent port %d: %w (user agent may not be running; check /tmp/vz-agent-user.log inside the vm)", userAgentPort, err)
+	}
+
+	client, err := NewUserAgentClient(conn)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("user agent client: %w", err)
+	}
+
+	s.userAgent = client
+	return nil
 }
 
 func (s *ControlServer) currentVMState() (vz.VZVirtualMachineState, error) {
@@ -185,10 +246,48 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 			return &controlpb.ControlResponse{Error: "missing agent-cp command payload"}, true
 		}
 		return s.handleAgentCopy(cmd), true
+	case "agent-user-exec":
+		cmd := req.GetAgentExec()
+		if cmd == nil {
+			return &controlpb.ControlResponse{Error: "missing agent-exec command payload"}, true
+		}
+		return s.handleAgentUserExec(cmd), true
 	case "agent-mount-volumes":
 		return s.handleAgentMountVolumes(), true
 	default:
 		return nil, false
+	}
+}
+
+func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *controlpb.ControlResponse {
+	ua, err := s.getUserAgent()
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("user agent: %v", err)}
+	}
+	if len(cmd.Args) == 0 {
+		return &controlpb.ControlResponse{Error: "args required"}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	result, err := ua.UserExec(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("user exec: %v", err)}
+	}
+	data, _ := json.Marshal(map[string]interface{}{
+		"exitCode": result.ExitCode,
+		"stdout":   string(result.Stdout),
+		"stderr":   string(result.Stderr),
+		"duration": result.DurationSeconds,
+	})
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    string(data),
+		Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+			ExitCode:        result.ExitCode,
+			Stdout:          string(result.Stdout),
+			Stderr:          string(result.Stderr),
+			DurationSeconds: result.DurationSeconds,
+		}},
 	}
 }
 
