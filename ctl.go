@@ -87,6 +87,7 @@ Guest Agent (via GRPC over vsock):
   agent-reboot                Reboot guest
   agent-sshd <on|off|status>  Manage SSH remote login
   agent-mount-volumes         Mount tagged VirtioFS volumes in guest
+  agent-status                Agent health status (daemon + user agent)
 
 VM Management:
   reset-password <user> <pass>  Reset user password (agent if running, disk if stopped)
@@ -335,7 +336,7 @@ Examples:
 		}
 
 	// Agent commands
-	case "agent-connect", "agent-ping", "agent-info", "agent-reboot", "agent-mount-volumes":
+	case "agent-connect", "agent-ping", "agent-info", "agent-reboot", "agent-mount-volumes", "agent-status":
 		// No payload needed
 
 	case "agent-exec":

@@ -62,9 +62,21 @@ type ControlServer struct {
 	agent             *AgentClient     // GRPC client to guest agent daemon (nil until connected)
 	userAgent         *UserAgentClient // GRPC client to guest user agent (nil until connected)
 	ocr               *OCRService      // lazily created OCR service for server-side OCR commands
-	iterm2Proxy       *ITerm2Proxy     // WebSocket-to-vsock relay for iTerm2 API (nil until started)
-	windowNum         int              // cached window number for thread-safe screenshot
-	viewContentHeight int              // cached view content height in pixels (excludes title bar)
+	iterm2Proxy       *ITerm2Proxy          // WebSocket-to-vsock relay for iTerm2 API (nil until started)
+	portForwards      *PortForwardManager   // host TCP -> guest vsock port forwards (nil until first use)
+	windowNum         int                   // cached window number for thread-safe screenshot
+	viewContentHeight int                   // cached view content height in pixels (excludes title bar)
+	healthMu          sync.RWMutex       // protects agentHealth
+	agentHealth       agentHealthState   // proactive health monitoring state
+}
+
+// agentHealthState tracks proactive agent health monitoring.
+type agentHealthState struct {
+	daemonStatus  string    // "connected", "disconnected", "reconnecting"
+	userStatus    string    // "connected", "disconnected", "unknown"
+	lastPing      time.Time // last successful daemon ping
+	lastErr       string    // last ping error (empty if healthy)
+	version       string    // agent version from last successful ping
 }
 
 // NewControlServer creates a new control server
@@ -145,6 +157,7 @@ func (s *ControlServer) Start() error {
 	}
 
 	go s.acceptLoop()
+	go s.agentHealthMonitor()
 	return nil
 }
 
@@ -1747,7 +1760,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			"shared-folders-apply",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 			"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
-			"agent-sshd", "agent-mount-volumes",
+			"agent-sshd", "agent-mount-volumes", "agent-status",
 		},
 	}
 	commands := []string{
@@ -1756,7 +1769,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"shared-folders-apply",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
-		"agent-sshd", "agent-mount-volumes",
+		"agent-sshd", "agent-mount-volumes", "agent-status",
 	}
 	features := map[string]bool{
 		"agentExecStream": true,

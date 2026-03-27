@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -256,6 +257,8 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 		return s.handleAgentUserExec(cmd), true
 	case "agent-mount-volumes":
 		return s.handleAgentMountVolumes(), true
+	case "agent-status":
+		return s.handleAgentStatus(), true
 	default:
 		return nil, false
 	}
@@ -305,6 +308,151 @@ func (s *ControlServer) handleAgentConnect() *controlpb.ControlResponse {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	return &controlpb.ControlResponse{Success: true, Data: "connected to guest agent", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "connected to guest agent"}}}
+}
+
+func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
+	s.healthMu.RLock()
+	h := s.agentHealth
+	s.healthMu.RUnlock()
+
+	status := map[string]any{
+		"daemon":   h.daemonStatus,
+		"user":     h.userStatus,
+		"lastPing": h.lastPing.Format(time.RFC3339),
+		"version":  h.version,
+	}
+	if h.lastErr != "" {
+		status["lastError"] = h.lastErr
+	}
+	if !h.lastPing.IsZero() {
+		status["ago"] = time.Since(h.lastPing).Round(time.Second).String()
+	}
+
+	data, _ := json.Marshal(status)
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    string(data),
+		Result:  &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: string(data)}},
+	}
+}
+
+// agentHealthMonitor runs in the background, pinging the agent every 10 seconds.
+// On failure, it marks the agent as disconnected and attempts reconnection with backoff.
+func (s *ControlServer) agentHealthMonitor() {
+	// Wait a bit for the VM to boot before starting health checks.
+	time.Sleep(5 * time.Second)
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	failCount := 0
+	for {
+		if !s.running.Load() {
+			return
+		}
+
+		s.healthCheckOnce(&failCount)
+
+		<-ticker.C
+	}
+}
+
+func (s *ControlServer) healthCheckOnce(failCount *int) {
+	state, err := s.currentVMState()
+	if err != nil || agentUnavailableForVMState(state) != nil {
+		s.setHealthStatus("disconnected", "", "vm not running")
+		return
+	}
+
+	// Try to ping via existing connection (read lock only).
+	s.agentMu.RLock()
+	a := s.agent
+	s.agentMu.RUnlock()
+
+	if a != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		version, err := a.Ping(ctx)
+		cancel()
+		if err == nil {
+			*failCount = 0
+			s.setHealthStatus("connected", version, "")
+			s.healthCheckUserAgent()
+			return
+		}
+	}
+
+	// Ping failed or no connection. Attempt reconnect.
+	*failCount++
+	s.setHealthStatus("reconnecting", "", fmt.Sprintf("ping failed (attempt %d)", *failCount))
+
+	s.agentMu.Lock()
+	if s.agent != nil {
+		s.agent.Close()
+		s.agent = nil
+	}
+	err = s.connectAgentLocked()
+	s.agentMu.Unlock()
+
+	if err != nil {
+		s.setHealthStatus("disconnected", "", err.Error())
+		return
+	}
+
+	// Reconnected — verify with a ping.
+	s.agentMu.RLock()
+	a = s.agent
+	s.agentMu.RUnlock()
+
+	if a != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		version, err := a.Ping(ctx)
+		cancel()
+		if err == nil {
+			*failCount = 0
+			s.setHealthStatus("connected", version, "")
+			log.Printf("agent-health: reconnected (version %s)", version)
+			s.healthCheckUserAgent()
+			return
+		}
+		s.setHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
+	}
+}
+
+func (s *ControlServer) healthCheckUserAgent() {
+	s.agentMu.RLock()
+	ua := s.userAgent
+	s.agentMu.RUnlock()
+
+	if ua == nil {
+		s.healthMu.Lock()
+		s.agentHealth.userStatus = "unknown"
+		s.healthMu.Unlock()
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	_, err := ua.UserExec(ctx, []string{"true"}, nil, "")
+	cancel()
+	s.healthMu.Lock()
+	if err == nil {
+		s.agentHealth.userStatus = "connected"
+	} else {
+		s.agentHealth.userStatus = "disconnected"
+	}
+	s.healthMu.Unlock()
+}
+
+func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+	s.agentHealth.daemonStatus = status
+	if version != "" {
+		s.agentHealth.version = version
+	}
+	s.agentHealth.lastErr = lastErr
+	if status == "connected" {
+		s.agentHealth.lastPing = time.Now()
+	}
 }
 
 func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
