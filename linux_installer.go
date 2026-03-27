@@ -119,6 +119,9 @@ func installLinuxVM() error {
 			initrdPath = extracted.initrd
 			useDirectBoot = true
 			fmt.Println("Extracted kernel/initrd from ISO for direct boot (autoinstall)")
+		} else {
+			fmt.Printf("warning: could not extract kernel from ISO: %v\n", err)
+			fmt.Println("  Falling back to EFI boot (may require manual 'yes' at autoinstall prompt)")
 		}
 	}
 	if useDirectBoot && cmdLine == "" {
@@ -358,43 +361,33 @@ type extractedKernel struct {
 	initrd string
 }
 
-// extractKernelFromISO mounts the Ubuntu ISO and copies vmlinuz + initrd to vmDir.
-// Returns paths to the extracted files, or an error if extraction fails.
+// extractKernelFromISO extracts vmlinuz + initrd from an Ubuntu ISO into vmDir.
+// Uses bsdtar to read the ISO9660 filesystem (hdiutil cannot mount hybrid ISOs).
 func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
-	// Mount the ISO
-	out, err := exec.Command("hdiutil", "attach", isoPath, "-nobrowse", "-readonly", "-mountpoint", "/tmp/vz-iso-mount").CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("mount ISO: %w: %s", err, out)
-	}
-	defer exec.Command("hdiutil", "detach", "/tmp/vz-iso-mount", "-quiet").Run()
-
-	// Look for kernel and initrd in standard Ubuntu ISO paths.
 	candidates := []struct {
 		kernel string
 		initrd string
 	}{
-		{"/tmp/vz-iso-mount/casper/vmlinuz", "/tmp/vz-iso-mount/casper/initrd"},
-		{"/tmp/vz-iso-mount/casper/hwe-vmlinuz", "/tmp/vz-iso-mount/casper/hwe-initrd"},
+		{"casper/vmlinuz", "casper/initrd"},
+		{"casper/hwe-vmlinuz", "casper/hwe-initrd"},
 	}
-
 	for _, c := range candidates {
-		if _, err := os.Stat(c.kernel); err != nil {
-			continue
-		}
-		if _, err := os.Stat(c.initrd); err != nil {
-			continue
-		}
 		dstKernel := filepath.Join(vmDir, "vmlinuz")
 		dstInitrd := filepath.Join(vmDir, "initrd")
-		if err := copyFile(c.kernel, dstKernel); err != nil {
-			return nil, fmt.Errorf("copy kernel: %w", err)
+		out, err := exec.Command("bsdtar", "-xf", isoPath, "-C", vmDir, "--include", c.kernel, "--include", c.initrd, "--strip-components=1").CombinedOutput()
+		if err != nil {
+			continue
 		}
-		if err := copyFile(c.initrd, dstInitrd); err != nil {
-			return nil, fmt.Errorf("copy initrd: %w", err)
+		if _, err := os.Stat(dstKernel); err != nil {
+			continue
 		}
+		if _, err := os.Stat(dstInitrd); err != nil {
+			continue
+		}
+		_ = out
 		return &extractedKernel{kernel: dstKernel, initrd: dstInitrd}, nil
 	}
-	return nil, fmt.Errorf("no kernel/initrd found in ISO")
+	return nil, fmt.Errorf("no kernel/initrd found in ISO (tried bsdtar)")
 }
 
 // createCloudInitISO creates a cloud-init NoCloud ISO with autoinstall configuration.
