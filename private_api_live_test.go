@@ -295,21 +295,6 @@ func startLiveVM(vmName string) (vz.VZVirtualMachine, privvz.VZVirtualMachine, d
 	return pubVM, privVM, queue, nil
 }
 
-// safeErrorString extracts an error message from an NSError ID without going
-// through the generated NSError wrapper (which can crash via SafeErrorFrom).
-func safeErrorString(errID objc.ID) string {
-	if errID == 0 {
-		return ""
-	}
-	nsErrorClass := objc.GetClass("NSError")
-	if nsErrorClass != 0 && objc.Send[bool](errID, objc.Sel("isKindOfClass:"), nsErrorClass) {
-		desc := objc.Send[objc.ID](errID, objc.Sel("localizedDescription"))
-		return foundation.NSStringFromID(desc).String()
-	}
-	desc := objc.Send[objc.ID](errID, objc.Sel("description"))
-	return foundation.NSStringFromID(desc).String()
-}
-
 // ============================================================================
 // Integration Tests: require -integration flag and a VM named "vz-macos-test"
 // ============================================================================
@@ -364,19 +349,16 @@ func TestLiveAPI_StateDescriptionPaused(t *testing.T) {
 func TestLiveAPI_ResetWithType(t *testing.T) {
 	_, privVM, queue := requireLiveVM(t)
 
-	done := make(chan string, 1)
-	block := objc.NewBlock(func(b objc.Block, errID objc.ID) {
-		done <- safeErrorString(errID)
-	})
-	defer block.Release()
-
+	done := make(chan error, 1)
 	queue.Sync(func() {
-		objc.Send[objc.ID](privVM.ID, objc.Sel("_resetWithType:completionHandler:"), int64(0), objc.ID(block))
+		privVM.ResetWithTypeCompletionHandler(0, func(err error) {
+			done <- err
+		})
 	})
 	select {
-	case errMsg := <-done:
-		if errMsg != "" {
-			t.Logf("_resetWithType(0): error: %s", errMsg)
+	case err := <-done:
+		if err != nil {
+			t.Logf("_resetWithType(0): error: %v", err)
 		} else {
 			t.Log("_resetWithType(0): success")
 		}
@@ -413,23 +395,18 @@ func TestLiveAPI_SaveMachineState(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	savePath := filepath.Join(tmpDir, "test.vmstate")
-	saveURL := objc.Send[objc.ID](objc.ID(objc.GetClass("NSURL")), objc.Sel("fileURLWithPath:"), objc.String(savePath))
+	saveURL := foundation.NewURLFileURLWithPath(savePath)
 
-	done := make(chan string, 1)
-	block := objc.NewBlock(func(b objc.Block, errID objc.ID) {
-		done <- safeErrorString(errID)
-	})
-	defer block.Release()
-
+	done := make(chan error, 1)
 	queue.Sync(func() {
-		objc.Send[objc.ID](privVM.ID,
-			objc.Sel("_saveMachineStateToURL:options:completionHandler:"),
-			saveURL, objc.ID(0), objc.ID(block))
+		privVM.SaveMachineStateToURLOptionsCompletionHandler(saveURL, nil, func(err error) {
+			done <- err
+		})
 	})
 	select {
-	case errMsg := <-done:
-		if errMsg != "" {
-			t.Logf("_saveMachineStateToURL: error: %s", errMsg)
+	case err := <-done:
+		if err != nil {
+			t.Logf("_saveMachineStateToURL: error: %v", err)
 		} else {
 			t.Log("_saveMachineStateToURL: success")
 			info, _ := os.Stat(savePath)
@@ -495,12 +472,7 @@ func TestLiveAPI_KeyboardsDiscovery(t *testing.T) {
 func TestLiveAPI_TakeScreenshot(t *testing.T) {
 	pubVM, _, queue := requireLiveVM(t)
 
-	done := make(chan string, 1)
-	block := objc.NewBlock(func(b objc.Block, errID objc.ID) {
-		done <- safeErrorString(errID)
-	})
-	defer block.Release()
-
+	done := make(chan error, 1)
 	queue.Sync(func() {
 		gfxDevices := pubVM.GraphicsDevices()
 		if len(gfxDevices) == 0 {
@@ -513,14 +485,16 @@ func TestLiveAPI_TakeScreenshot(t *testing.T) {
 			return
 		}
 
-		objc.Send[objc.ID](displays[0].ID,
-			objc.Sel("_takeScreenshotWithCompletionHandler:"), objc.ID(block))
+		privDisplay := privvz.VZGraphicsDisplayFromID(displays[0].ID)
+		privDisplay.TakeScreenshotWithCompletionHandler(func(err error) {
+			done <- err
+		})
 	})
 
 	select {
-	case errMsg := <-done:
-		if errMsg != "" {
-			t.Logf("_takeScreenshot: error: %s", errMsg)
+	case err := <-done:
+		if err != nil {
+			t.Logf("_takeScreenshot: error: %v", err)
 		} else {
 			t.Log("_takeScreenshot: success")
 		}
@@ -593,20 +567,16 @@ func TestLiveAPI_RestrictedMode(t *testing.T) {
 	})
 	t.Logf("restricted mode supported: %v, error: %v", supported, valErr)
 
-	done := make(chan string, 1)
-	block := objc.NewBlock(func(b objc.Block, errID objc.ID) {
-		done <- safeErrorString(errID)
-	})
-	defer block.Release()
-
+	done := make(chan error, 1)
 	queue.Sync(func() {
-		objc.Send[objc.ID](privVM.ID,
-			objc.Sel("_enterRestrictedModeWithCompletionHandler:"), objc.ID(block))
+		privVM.EnterRestrictedModeWithCompletionHandler(func(err error) {
+			done <- err
+		})
 	})
 	select {
-	case errMsg := <-done:
-		if errMsg != "" {
-			t.Logf("_enterRestrictedMode: error: %s", errMsg)
+	case err := <-done:
+		if err != nil {
+			t.Logf("_enterRestrictedMode: error: %v", err)
 		} else {
 			t.Log("_enterRestrictedMode: success")
 		}
