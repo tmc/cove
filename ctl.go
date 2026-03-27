@@ -147,6 +147,10 @@ Examples:
 			i--
 		}
 	}
+	// Strip conventional "--" separator between ctl flags and command args.
+	if len(subArgs) > 0 && subArgs[0] == "--" {
+		subArgs = subArgs[1:]
+	}
 
 	// Determine socket path
 	sock := *socketPath
