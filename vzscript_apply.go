@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/tools/txtar"
@@ -169,6 +170,7 @@ func vzscriptRun(args []string) error {
 	terminal := rf.Bool("terminal", false, "Run guest-shell commands in Terminal.app (visible in VM GUI)")
 	autoApprove := rf.Bool("auto-approve", false, "Auto-click Allow/OK on system dialogs via OCR")
 	vm := rf.String("vm", "", "VM name (default: active VM or 'default')")
+	parallel := rf.Bool("parallel", false, "Run independent recipes concurrently")
 	if err := rf.Parse(args); err != nil {
 		return err
 	}
@@ -201,6 +203,9 @@ func vzscriptRun(args []string) error {
 	// Collect all recipe names from positional args.
 	recipes := rf.Args()
 
+	if *parallel {
+		return runVZScriptsParallel(recipes, cfg)
+	}
 	// Resolve dependencies and run in order.
 	return runVZScriptWithDeps(recipes, cfg)
 }
@@ -251,6 +256,155 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 		if err := run(recipe); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// uiCommands are vzscript commands that interact with the VM display.
+// Recipes using these must run sequentially to avoid input conflicts.
+var uiCommands = map[string]bool{
+	"ocr-click":     true,
+	"ocr-wait":      true,
+	"ocr-gone":      true,
+	"ocr":           true,
+	"screenshot":    true,
+	"type":          true,
+	"key":           true,
+	"click":         true,
+	"detect-page":   true,
+	"detect-screen": true,
+}
+
+// scriptUsesUI reports whether a vzscript's command section references
+// any UI automation commands. Used to determine if a recipe must run
+// sequentially in parallel mode.
+func scriptUsesUI(comment []byte) bool {
+	s := bufio.NewScanner(bytes.NewReader(comment))
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		cmd := strings.Fields(line)[0]
+		// Strip negation/optional prefixes used by rsc.io/script.
+		cmd = strings.TrimLeft(cmd, "!?")
+		if uiCommands[cmd] {
+			return true
+		}
+	}
+	return false
+}
+
+// resolvedRecipe holds a loaded recipe with its parsed metadata and data.
+type resolvedRecipe struct {
+	name     string
+	data     []byte
+	meta     scriptMeta
+	usesUI   bool
+	depNames []string // flattened transitive dependency names
+}
+
+// runVZScriptsParallel resolves dependencies and runs independent recipes
+// concurrently. Recipes that use UI commands are serialized to avoid
+// conflicting display interactions. Dependencies are coordinated via
+// channels: each recipe waits for its dependencies to signal completion
+// before starting.
+func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
+	if cfg.autoApprove {
+		stop := startAutoApprover(cfg.socketPath, cfg.verbose)
+		defer stop()
+	}
+
+	// Load and resolve all recipes (including transitive deps).
+	all := map[string]*resolvedRecipe{}
+	var order []string
+	var resolve func(name string) error
+	resolve = func(name string) error {
+		if all[name] != nil {
+			return nil
+		}
+		data, err := loadVZScriptData(name)
+		if err != nil {
+			return err
+		}
+		ar := txtar.Parse(data)
+		meta := parseScriptMeta(ar.Comment)
+		r := &resolvedRecipe{
+			name:   name,
+			data:   data,
+			meta:   meta,
+			usesUI: scriptUsesUI(ar.Comment),
+		}
+		all[name] = r
+		for _, dep := range meta.requires {
+			if err := resolve(dep); err != nil {
+				return fmt.Errorf("dependency %s (required by %s): %w", dep, name, err)
+			}
+			r.depNames = append(r.depNames, dep)
+		}
+		order = append(order, name)
+		return nil
+	}
+	for _, name := range names {
+		if err := resolve(name); err != nil {
+			return err
+		}
+	}
+
+	// Create a done channel per recipe for dependency signaling.
+	done := map[string]chan struct{}{}
+	for name := range all {
+		done[name] = make(chan struct{})
+	}
+
+	// UI recipes share a mutex to serialize display interactions.
+	var uiMu sync.Mutex
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(order))
+
+	for _, name := range order {
+		r := all[name]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer close(done[r.name])
+
+			// Wait for all dependencies to complete.
+			for _, dep := range r.depNames {
+				<-done[dep]
+			}
+
+			if r.usesUI {
+				uiMu.Lock()
+				defer uiMu.Unlock()
+			}
+
+			if cfg.verbose {
+				fmt.Fprintf(os.Stderr, "--- running recipe: %s ---\n", r.name)
+			}
+			if err := runVZScript(r.data, r.name, cfg); err != nil {
+				errCh <- fmt.Errorf("%s: %w", r.name, err)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	if len(errs) > 1 {
+		msgs := make([]string, len(errs))
+		for i, e := range errs {
+			msgs[i] = e.Error()
+		}
+		return fmt.Errorf("%d recipes failed:\n  %s", len(errs), strings.Join(msgs, "\n  "))
 	}
 	return nil
 }
