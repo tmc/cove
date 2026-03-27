@@ -310,6 +310,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "shared-folder", "shared-folders":
+			if err := handleVMSharedFolderCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "agent-upgrade", "upgrade-agent":
 			if err := upgradeAgent(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -524,29 +530,53 @@ func usage() {
 Usage:
   vz-macos [flags] [command]
 
-Commands:
-  up          Install + provision + boot in one command (vz-macos up -user me)
-  install     Install OS (macOS from IPSW, -linux for Ubuntu)
-  run         Run a VM (macOS by default, -linux for Linux)
-  list        List available VMs and templates
-  provision   (deprecated: use 'inject' instead)
-  inject      Inject provisioning files directly into VM disk (self-contained)
-  verify      Verify provisioning files in VM disk (alias: doctor)
-  clean       Remove VM files (disk, aux, hw.model, machine.id)
-  clone       Clone a VM (vz-macos clone [source] <target> [--linked])
-  template    Manage VM templates (save/list/create)
-  vm          VM management (set/delete/rename/export/import)
-  sip         SIP management (enable/disable/status + recovery automation)
-  ctl         Control running VM via socket (screenshot, status, pause, etc.)
-  snapshot    Manage VM snapshots (list/save/restore/delete)
-  network     Network configuration (list interfaces, help)
-  rosetta     Rosetta 2 for Linux VMs (status/install/setup)
-  disk-snapshot Manage disk-level snapshots (APFS clonefile, copy-on-write)
-  disk-detach Detach VM disk if stuck from a previous inject/verify
-  inject-agent Inject only vz-agent daemon (no user provisioning)
-  agent-upgrade Live-upgrade vz-agent in a running VM (build, copy, restart)
-  vzscript    Run guest-agent and UI automation scripts (rsc.io/script + txtar)
-  version     Print version information
+Quick Start:
+  up              Install + provision + boot in one command (vz-macos up -user me)
+
+Lifecycle:
+  install         Install OS (macOS from IPSW, -linux for Ubuntu)
+  run             Run a VM (macOS by default, -linux for Linux)
+  list            List available VMs and templates
+  clean           Remove VM files (disk, aux, hw.model, machine.id)
+
+Provisioning:
+  inject          Inject provisioning files into VM disk (self-contained)
+  inject-agent    Inject only vz-agent daemon (no user provisioning)
+  agent-upgrade   Live-upgrade vz-agent in a running VM (build, copy, restart)
+  verify          Verify provisioning files in VM disk (alias: doctor)
+  sip             SIP management (enable/disable/status + recovery automation)
+
+VM Management:
+  vm set <name>           Set active VM
+  vm delete <name>        Delete a VM
+  vm rename <old> <new>   Rename a VM
+  vm export <name> <path> Export VM to tarball
+  vm import <path> <name> Import VM from tarball
+  clone           Clone a VM (vz-macos clone [source] <target> [--linked])
+  template        Manage VM templates (save/list/create)
+
+Shared Folders:
+  shared-folder list                    List configured shared folders
+  shared-folder add <path> [tag] [ro]   Add a shared folder
+  shared-folder remove <tag-or-path>    Remove a shared folder
+  shared-folder status                  Show mount status in guest
+  shared-folder mount                   Mount in guest via agent
+
+Snapshots:
+  snapshot        Manage VM state snapshots (list/save/restore/delete)
+  disk-snapshot   Manage disk-level snapshots (APFS clonefile, COW)
+
+Runtime Control:
+  ctl             Control running VM via socket (screenshot, key, text, mouse, ...)
+  vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
+
+Networking:
+  network         Network configuration (list interfaces, help)
+  rosetta         Rosetta 2 for Linux VMs (status/install/setup)
+
+Other:
+  disk-detach     Detach VM disk if stuck from a previous inject/verify
+  version         Print version information
 
 Auto-Provisioning (Recommended - inject command):
   Inject user provisioning directly into VM disk (no VirtioFS needed):
@@ -589,14 +619,17 @@ Linux VM (Ubuntu):
   vz-macos run -linux -gui                                   # Run with display
 
 Volume Mounting (-vol flag):
-  Docker-style volume mounts. Format: /host/path[:tag][:ro|rw]
+  Docker-style volume mounts. Format: /host/path[:tag][:ro|rw][:opt=val,...]
+
+  Parts containing "=" are mount options passed to the guest mount command.
 
   Examples:
-    -vol /path/to/dir                   Mount at /Volumes/My Shared Files (rw)
-    -vol /path/to/dir:ro                Mount at /Volumes/My Shared Files (read-only)
-    -vol /path/to/dir:MyData            Mount at /Volumes/MyData (rw)
-    -vol /path/to/dir:MyData:ro         Mount at /Volumes/MyData (read-only)
-    -vol ~/code:Code -vol ~/data:Data   Multiple volumes
+    -vol /path/to/dir                          Mount at /Volumes/My Shared Files (rw)
+    -vol /path/to/dir:ro                       Mount at /Volumes/My Shared Files (read-only)
+    -vol /path/to/dir:MyData                   Mount at /Volumes/MyData (rw)
+    -vol /path/to/dir:MyData:ro                Mount at /Volumes/MyData (read-only)
+    -vol /path/to/dir:MyData:cache=none        Disable VirtioFS caching (Linux)
+    -vol ~/code:Code -vol ~/data:Data          Multiple volumes
 
 Flags:
 `)
