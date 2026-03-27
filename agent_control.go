@@ -26,6 +26,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -630,6 +632,12 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 		if err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("stat %s: %v", cmd.HostPath, err)}
 		}
+
+		// Directory copy: tar on host, stream to guest, extract there.
+		if info.IsDir() {
+			return s.handleAgentCopyDir(ctx, a, cmd.HostPath, cmd.GuestPath)
+		}
+
 		mode := os.FileMode(cmd.Mode)
 		if mode == 0 {
 			mode = info.Mode()
@@ -655,6 +663,57 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 		size = info.Size()
 	}
 	msg := fmt.Sprintf("guest:%s -> %s (%d bytes)", cmd.GuestPath, cmd.HostPath, size)
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    msg,
+		Result:  &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: msg}},
+	}
+}
+
+// handleAgentCopyDir copies a host directory to the guest by streaming a tar
+// archive over the CopyIn RPC, then extracting it on the guest side.
+func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *AgentClient, hostDir, guestDir string) *controlpb.ControlResponse {
+	// Stream tar from host dir into a temp file on guest.
+	tmpTar := "/tmp/vz-cp-" + filepath.Base(hostDir) + ".tar"
+	pr, pw := io.Pipe()
+
+	// Tar the directory in a goroutine.
+	go func() {
+		cmd := exec.Command("tar", "cf", "-", "-C", filepath.Dir(hostDir), filepath.Base(hostDir))
+		cmd.Stdout = pw
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			pw.CloseWithError(fmt.Errorf("tar: %w", err))
+			return
+		}
+		pw.Close()
+	}()
+
+	// Stream the tar to guest via CopyIn.
+	if err := a.CopyReaderToGuest(ctx, pr, tmpTar, 0644); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("stream tar to guest: %v", err)}
+	}
+
+	// Extract on guest.
+	result, err := a.Exec(ctx, []string{"tar", "xf", tmpTar, "-C", filepath.Dir(guestDir)}, nil, "")
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("extract tar on guest: %v", err)}
+	}
+	if result.ExitCode != 0 {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("extract tar: exit %d: %s", result.ExitCode, string(result.Stderr))}
+	}
+
+	// Clean up temp tar.
+	a.Exec(ctx, []string{"rm", "-f", tmpTar}, nil, "")
+
+	// Check extracted size.
+	sizeResult, _ := a.Exec(ctx, []string{"du", "-sh", guestDir}, nil, "")
+	sizeStr := ""
+	if sizeResult != nil {
+		sizeStr = strings.TrimSpace(string(sizeResult.Stdout))
+	}
+
+	msg := fmt.Sprintf("%s -> guest:%s (%s)", hostDir, guestDir, sizeStr)
 	return &controlpb.ControlResponse{
 		Success: true,
 		Data:    msg,

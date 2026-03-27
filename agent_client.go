@@ -214,6 +214,44 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 	return nil
 }
 
+// CopyReaderToGuest streams data from an io.Reader to a guest file path.
+func (c *AgentClient) CopyReaderToGuest(ctx context.Context, r io.Reader, guestPath string, mode os.FileMode) error {
+	stream := c.client.CopyIn(ctx)
+
+	if err := stream.Send(&pb.CopyInChunk{
+		Content: &pb.CopyInChunk_Init{Init: &pb.CopyInInit{
+			Path:          guestPath,
+			Mode:          uint32(mode),
+			CreateParents: true,
+		}},
+	}); err != nil {
+		return fmt.Errorf("send init: %w", err)
+	}
+
+	buf := make([]byte, 256*1024)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if sendErr := stream.Send(&pb.CopyInChunk{
+				Content: &pb.CopyInChunk_Data{Data: buf[:n]},
+			}); sendErr != nil {
+				return fmt.Errorf("send data: %w", sendErr)
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read: %w", err)
+		}
+	}
+
+	if _, err := stream.CloseAndReceive(); err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+	return nil
+}
+
 // CopyFromGuest streams a file from the guest to a local path.
 func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath string) error {
 	stream, err := c.client.CopyOut(ctx, connect.NewRequest(&pb.CopyOutRequest{Path: guestPath}))
