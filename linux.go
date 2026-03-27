@@ -457,37 +457,52 @@ func downloadLinuxISO(urlStr, path string) error {
 }
 
 // ensureLinuxISO ensures we have a Linux ISO, downloading if necessary.
+// ISOs are cached in ~/.vz/cache/ so they survive VM deletion and can be
+// shared across multiple Linux VMs.
 func ensureLinuxISO() (string, error) {
-	isoFile := filepath.Join(vmDir, "linux.iso")
-
-	// If user specified an ISO path, use that
+	// If user specified an ISO path, use that directly
 	if isoPath != "" {
-		// Check if it's a URL or local file
 		if isURL(isoPath) {
-			if err := downloadLinuxISO(isoPath, isoFile); err != nil {
+			cacheDir := GetCacheDir()
+			if err := os.MkdirAll(cacheDir, 0755); err != nil {
+				return "", fmt.Errorf("create cache dir: %w", err)
+			}
+			cacheFile := filepath.Join(cacheDir, "linux.iso")
+			if err := downloadLinuxISO(isoPath, cacheFile); err != nil {
 				return "", err
 			}
-			return isoFile, nil
+			return cacheFile, nil
 		}
-		// It's a local file path
 		if _, err := os.Stat(isoPath); err != nil {
 			return "", fmt.Errorf("iso file not found: %s", isoPath)
 		}
 		return isoPath, nil
 	}
 
-	// Check if we already have an ISO
-	if info, err := os.Stat(isoFile); err == nil && info.Size() > 500*1024*1024 {
-		fmt.Printf("Using existing ISO: %s (%.1f GB)\n", isoFile, float64(info.Size())/(1024*1024*1024))
-		return isoFile, nil
+	// Check shared cache first (~/.vz/cache/linux.iso)
+	cacheDir := GetCacheDir()
+	cacheFile := filepath.Join(cacheDir, "linux.iso")
+	if info, err := os.Stat(cacheFile); err == nil && info.Size() > 500*1024*1024 {
+		fmt.Printf("Using cached ISO: %s (%.1f GB)\n", cacheFile, float64(info.Size())/(1024*1024*1024))
+		return cacheFile, nil
 	}
 
-	// Download Ubuntu Server ARM64 by default
+	// Fall back to per-VM directory for existing installs
+	legacyFile := filepath.Join(vmDir, "linux.iso")
+	if info, err := os.Stat(legacyFile); err == nil && info.Size() > 500*1024*1024 {
+		fmt.Printf("Using existing ISO: %s (%.1f GB)\n", legacyFile, float64(info.Size())/(1024*1024*1024))
+		return legacyFile, nil
+	}
+
+	// Download to shared cache
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return "", fmt.Errorf("create cache dir: %w", err)
+	}
 	fmt.Println("No ISO specified, downloading Ubuntu Server 24.04 ARM64...")
-	if err := downloadLinuxISO(UbuntuServerARM64URL, isoFile); err != nil {
+	if err := downloadLinuxISO(UbuntuServerARM64URL, cacheFile); err != nil {
 		return "", err
 	}
-	return isoFile, nil
+	return cacheFile, nil
 }
 
 // isURL checks if a string looks like a URL.
