@@ -83,7 +83,7 @@ func (s *ControlServer) getAgent() (*AgentClient, error) {
 }
 
 // getUserAgent returns the user session agent client, connecting if necessary.
-// Falls back to the daemon agent with a warning if the user agent is not running.
+// If the LaunchAgent is missing in a macOS guest, it is bootstrapped on demand.
 func (s *ControlServer) getUserAgent() (*UserAgentClient, error) {
 	state, err := s.currentVMState()
 	if err != nil {
@@ -93,19 +93,30 @@ func (s *ControlServer) getUserAgent() (*UserAgentClient, error) {
 		return nil, err
 	}
 
-	// Fast path: check existing connection.
+	// Fast path: verify existing connection.
 	s.agentMu.RLock()
 	if ua := s.userAgent; ua != nil {
 		s.agentMu.RUnlock()
-		return ua, nil
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := ua.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
+			return ua, nil
+		}
+	} else {
+		s.agentMu.RUnlock()
 	}
-	s.agentMu.RUnlock()
 
 	// Slow path: connect.
 	s.agentMu.Lock()
 	defer s.agentMu.Unlock()
 	if s.userAgent != nil {
-		return s.userAgent, nil
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := s.userAgent.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
+			return s.userAgent, nil
+		}
+		s.userAgent.Close()
+		s.userAgent = nil
 	}
 	if err := s.connectUserAgentLocked(); err != nil {
 		return nil, err
@@ -120,6 +131,23 @@ func (s *ControlServer) connectUserAgentLocked() error {
 		return nil
 	}
 
+	if err := s.connectUserAgentPortLocked(); err == nil {
+		return nil
+	} else if linuxMode {
+		return err
+	} else {
+		repairErr := s.bootstrapUserAgentLocked()
+		if repairErr != nil {
+			return fmt.Errorf("%v; bootstrap user agent: %w", err, repairErr)
+		}
+		if retryErr := s.connectUserAgentPortLocked(); retryErr != nil {
+			return fmt.Errorf("connect user agent after bootstrap: %w", retryErr)
+		}
+		return nil
+	}
+}
+
+func (s *ControlServer) connectUserAgentPortLocked() error {
 	mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
 	if err != nil {
 		return fmt.Errorf("vsock device: %w", err)
@@ -138,6 +166,90 @@ func (s *ControlServer) connectUserAgentLocked() error {
 
 	s.userAgent = client
 	return nil
+}
+
+func (s *ControlServer) bootstrapUserAgentLocked() error {
+	if linuxMode {
+		return fmt.Errorf("user agent bootstrap is only supported for macOS guests")
+	}
+	if err := s.connectAgentLocked(); err != nil {
+		return fmt.Errorf("connect daemon agent: %w", err)
+	}
+
+	user, uid, err := s.consoleUserLocked()
+	if err != nil {
+		return err
+	}
+
+	plistPath := "/Library/LaunchAgents/" + agentLaunchAgentLabel + ".plist"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := s.agent.WriteFile(ctx, plistPath, []byte(agentLaunchAgentPlist), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", plistPath, err)
+	}
+
+	script := fmt.Sprintf(`
+set -e
+chown root:wheel %q 2>/dev/null || chown root:0 %q
+chmod 644 %q
+launchctl print gui/%d/%s >/dev/null 2>&1 && launchctl bootout gui/%d/%s >/dev/null 2>&1 || true
+launchctl bootstrap gui/%d %q
+launchctl enable gui/%d/%s
+launchctl kickstart -k gui/%d/%s
+`, plistPath, plistPath, plistPath, uid, agentLaunchAgentLabel, uid, agentLaunchAgentLabel, uid, plistPath, uid, agentLaunchAgentLabel, uid, agentLaunchAgentLabel)
+
+	result, err := s.agent.Exec(ctx, []string{"sh", "-lc", script}, nil, "")
+	if err != nil {
+		return fmt.Errorf("bootstrap %s for %s (%d): %w", agentLaunchAgentLabel, user, uid, err)
+	}
+	if result.ExitCode != 0 {
+		msg := strings.TrimSpace(string(result.Stderr))
+		if msg == "" {
+			msg = strings.TrimSpace(string(result.Stdout))
+		}
+		if msg == "" {
+			msg = "unknown error"
+		}
+		return fmt.Errorf("bootstrap %s for %s (%d): %s", agentLaunchAgentLabel, user, uid, msg)
+	}
+	return nil
+}
+
+func (s *ControlServer) consoleUserLocked() (string, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := s.agent.Exec(ctx, []string{"stat", "-f", "%Su %u", "/dev/console"}, nil, "")
+	if err != nil {
+		return "", 0, fmt.Errorf("query console user: %w", err)
+	}
+	if result.ExitCode != 0 {
+		msg := strings.TrimSpace(string(result.Stderr))
+		if msg == "" {
+			msg = strings.TrimSpace(string(result.Stdout))
+		}
+		if msg == "" {
+			msg = "unknown error"
+		}
+		return "", 0, fmt.Errorf("query console user: %s", msg)
+	}
+	return parseConsoleOwnerOutput(string(result.Stdout))
+}
+
+func parseConsoleOwnerOutput(stdout string) (string, int, error) {
+	fields := strings.Fields(strings.TrimSpace(stdout))
+	if len(fields) != 2 {
+		return "", 0, fmt.Errorf("unexpected console owner output %q", strings.TrimSpace(stdout))
+	}
+	var uid int
+	if _, err := fmt.Sscanf(fields[1], "%d", &uid); err != nil {
+		return "", 0, fmt.Errorf("parse console uid %q: %w", fields[1], err)
+	}
+	if fields[0] == "root" || uid == 0 {
+		return "", 0, fmt.Errorf("no logged-in GUI user on /dev/console")
+	}
+	return fields[0], uid, nil
 }
 
 func (s *ControlServer) currentVMState() (vz.VZVirtualMachineState, error) {
