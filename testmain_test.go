@@ -3,6 +3,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"testing"
 
@@ -17,5 +18,6 @@ func TestMain(m *testing.M) {
 		// clear errors rather than crashing.
 		os.Stderr.WriteString("warning: autosign: " + err.Error() + "\n")
 	}
+	flag.Parse()
 	os.Exit(m.Run())
 }
