@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +14,6 @@ import (
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
-	"github.com/tmc/apple/uniformtypeidentifiers"
 	vz "github.com/tmc/apple/virtualization"
 )
 
@@ -394,115 +392,23 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 // Action handlers
 
 func (t *VMToolbar) handleStop(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	fmt.Println("Toolbar: requesting VM stop...")
-	DispatchAsyncQueue(t.vmQueue, func() {
-		ok, err := t.vm.RequestStopWithError()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: vm stop request: %v\n", err)
-		} else if !ok {
-			fmt.Println("VM stop request returned false, forcing stop...")
-			t.vm.StopWithCompletionHandler(func(err error) {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "error: vm force stop: %v\n", err)
-				}
-			})
-		}
-	})
+	requestVMStop("Toolbar", t.vm, t.vmQueue)
 }
 
 func (t *VMToolbar) handleStartPause(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	DispatchAsyncQueue(t.vmQueue, func() {
-		state := vz.VZVirtualMachineState(t.vm.State())
-		switch state {
-		case vz.VZVirtualMachineStateRunning:
-			fmt.Println("Toolbar: pausing VM...")
-			t.vm.PauseWithCompletionHandler(func(err error) {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "error: vm pause: %v\n", err)
-				}
-			})
-		case vz.VZVirtualMachineStatePaused:
-			fmt.Println("Toolbar: resuming VM...")
-			t.vm.ResumeWithCompletionHandler(func(err error) {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "error: vm resume: %v\n", err)
-				}
-			})
-		case vz.VZVirtualMachineStateStopped:
-			fmt.Println("Toolbar: starting VM...")
-			t.vm.StartWithCompletionHandler(func(err error) {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
-				}
-			})
-		}
-	})
+	toggleVMStartPause("Toolbar", t.vm, t.vmQueue)
 }
 
 func (t *VMToolbar) handleRestart(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	fmt.Println("Toolbar: restarting VM...")
-	DispatchAsyncQueue(t.vmQueue, func() {
-		t.vm.StopWithCompletionHandler(func(err error) {
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: vm stop during restart: %v\n", err)
-				return
-			}
-			fmt.Println("Toolbar: VM stopped, starting again...")
-			t.vm.StartWithCompletionHandler(func(err error) {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "error: vm start during restart: %v\n", err)
-				}
-			})
-		})
-	})
+	restartVM("Toolbar", t.vm, t.vmQueue)
 }
 
 func (t *VMToolbar) handleBootRecovery(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	fmt.Println("Toolbar: booting to recovery mode...")
-	DispatchAsyncQueue(t.vmQueue, func() {
-		startRecovery := func() {
-			opts := vz.NewVZMacOSVirtualMachineStartOptions()
-			opts.SetStartUpFromMacOSRecovery(true)
-			t.vm.StartWithOptionsCompletionHandler(
-				&opts.VZVirtualMachineStartOptions,
-				func(err error) {
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "error: vm recovery start: %v\n", err)
-					} else {
-						fmt.Println("Toolbar: VM started in recovery mode")
-					}
-				},
-			)
-		}
-
-		state := vz.VZVirtualMachineState(t.vm.State())
-		if state == vz.VZVirtualMachineStateStopped {
-			startRecovery()
-			return
-		}
-		t.vm.StopWithCompletionHandler(func(err error) {
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: vm stop before recovery: %v\n", err)
-				return
-			}
-			startRecovery()
-		})
-	})
+	bootVMToRecovery("Toolbar", t.vm, t.vmQueue)
 }
 
 func (t *VMToolbar) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	if !canSaveRestore {
-		fmt.Println("Toolbar: save/restore not supported for this VM configuration")
-		return
-	}
-	fmt.Println("Toolbar: suspending VM...")
-	go func() {
-		if err := suspendVM(t.vm, t.vmQueue); err != nil {
-			fmt.Fprintf(os.Stderr, "error: suspend: %v\n", err)
-		} else {
-			fmt.Println("Toolbar: VM suspended (will resume on next launch)")
-		}
-	}()
+	requestVMSuspend("Toolbar", t.vm, t.vmQueue)
 }
 
 func (t *VMToolbar) handleShowWindow(_ objc.ID, _ objc.SEL, _ objc.ID) {
@@ -536,49 +442,7 @@ func (t *VMToolbar) handleCaptureInput(_ objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func (t *VMToolbar) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	if t.control == nil {
-		fmt.Println("Toolbar: no control server for screenshot")
-		return
-	}
-
-	img, errMsg := t.control.captureVMView()
-	if errMsg != "" {
-		fmt.Fprintf(os.Stderr, "error: screenshot: %s\n", errMsg)
-		return
-	}
-
-	panel := appkit.NewNSSavePanel()
-	defaultName := fmt.Sprintf("vz-macos_%s.png", time.Now().Format("20060102_150405"))
-	panel.SetNameFieldStringValue(defaultName)
-	panel.SetMessage("Save VM Screenshot")
-	pngType := uniformtypeidentifiers.NewTypeWithFilenameExtension("png")
-	if pngType.ID != 0 {
-		panel.SetAllowedContentTypes([]uniformtypeidentifiers.UTType{pngType})
-	}
-
-	response := panel.RunModal()
-	if !isModalResponseOK(response) {
-		return
-	}
-
-	url := panel.URL()
-	if url.GetID() == 0 {
-		return
-	}
-	savePath := url.Path()
-
-	f, err := os.Create(savePath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: screenshot save: %v\n", err)
-		return
-	}
-	defer f.Close()
-
-	if err := png.Encode(f, img); err != nil {
-		fmt.Fprintf(os.Stderr, "error: screenshot encode: %v\n", err)
-		return
-	}
-	fmt.Printf("Toolbar: screenshot saved to %s\n", savePath)
+	saveCurrentVMScreenshot("Toolbar", t.control)
 }
 
 // handleAddSharedFolder opens an NSOpenPanel to pick a directory,
