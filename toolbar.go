@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/tmc/apple/appkit"
@@ -40,6 +41,8 @@ const SharedFoldersVirtioFSTag = "_shared-folders"
 // modalResponseOKCode is NSModalResponseOK from AppKit.
 // Use the numeric value to stay compatible across apple binding revisions.
 const modalResponseOKCode = 1000
+
+var toolbarDelegateSerial uint64
 
 func isModalResponseOK(response appkit.NSModalResponse) bool {
 	return int64(response) == modalResponseOKCode
@@ -88,8 +91,9 @@ func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.
 
 // registerDelegate registers the Objective-C delegate class for toolbar callbacks.
 func (t *VMToolbar) registerDelegate() {
+	className := fmt.Sprintf("VMToolbarDelegate_%d", atomic.AddUint64(&toolbarDelegateSerial, 1))
 	cls, err := objc.RegisterClass(
-		"VMToolbarDelegate",
+		className,
 		objc.GetClass("NSObject"),
 		nil, nil,
 		[]objc.MethodDef{
