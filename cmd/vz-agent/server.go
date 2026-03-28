@@ -51,7 +51,7 @@ func (s *agentServer) Ping(_ context.Context, _ *connect.Request[pb.PingRequest]
 	}), nil
 }
 
-func (s *agentServer) Info(_ context.Context, _ *connect.Request[pb.InfoRequest]) (*connect.Response[pb.InfoResponse], error) {
+func (s *agentServer) Info(ctx context.Context, _ *connect.Request[pb.InfoRequest]) (*connect.Response[pb.InfoResponse], error) {
 	hostname, _ := os.Hostname()
 
 	resp := &pb.InfoResponse{
@@ -60,7 +60,7 @@ func (s *agentServer) Info(_ context.Context, _ *connect.Request[pb.InfoRequest]
 	}
 
 	var si systemInfo
-	populateSystemInfo(&si)
+	populateSystemInfo(ctx, &si)
 	resp.OsVersion = si.OSVersion
 	resp.KernelVersion = si.KernelVersion
 	resp.MemoryTotal = si.MemoryTotal
@@ -76,7 +76,7 @@ func (s *agentServer) Info(_ context.Context, _ *connect.Request[pb.InfoRequest]
 		resp.DiskAvailable = stat.Bavail * uint64(stat.Bsize)
 	}
 
-	if users, err := listLocalUsers(); err == nil {
+	if users, err := listLocalUsers(ctx); err == nil {
 		resp.Users = users
 	}
 

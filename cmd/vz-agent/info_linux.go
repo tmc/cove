@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -9,7 +10,7 @@ import (
 )
 
 // populateSystemInfo fills in OS-specific fields from /proc and /etc.
-func populateSystemInfo(info *systemInfo) {
+func populateSystemInfo(_ context.Context, info *systemInfo) {
 	// OS version from /etc/os-release
 	if f, err := os.Open("/etc/os-release"); err == nil {
 		defer f.Close()
@@ -69,7 +70,7 @@ func populateSystemInfo(info *systemInfo) {
 }
 
 // listLocalUsers returns non-system users from /etc/passwd.
-func listLocalUsers() ([]string, error) {
+func listLocalUsers(_ context.Context) ([]string, error) {
 	f, err := os.Open("/etc/passwd")
 	if err != nil {
 		return nil, err
