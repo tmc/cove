@@ -21,13 +21,13 @@ var (
 	installVM   bool // Deprecated: kept for compatibility, now handled by commands
 	guiMode     bool
 
-	linuxMode   bool
-	cpuCount    uint
-	memoryGB    uint64
-	diskPath    string
-	diskSizeGB  uint64
-	ipswPath    string
-	vmDir       string
+	linuxMode  bool
+	cpuCount   uint
+	memoryGB   uint64
+	diskPath   string
+	diskSizeGB uint64
+	ipswPath   string
+	vmDir      string
 	// Linux-specific flags
 	kernelPath string
 	initrdPath string
@@ -102,9 +102,9 @@ var (
 func init() {
 	flag.Usage = usage
 	flag.BoolVar(&fetchLatest, "fetch-latest", false, "fetch latest supported restore image info")
-	flag.BoolVar(&runVM, "run", false, "run a VM (macOS by default, use -linux for Linux)")
-	flag.BoolVar(&installVM, "install", false, "install macOS from IPSW (uses -ipsw or fetches latest)")
-	flag.BoolVar(&guiMode, "gui", true, "show VM display in a window (default: true)")
+	flag.BoolVar(&runVM, "run", false, "deprecated: use the run command")
+	flag.BoolVar(&installVM, "install", false, "deprecated: use the install command")
+	flag.BoolVar(&guiMode, "gui", true, "show VM display in a window")
 	flag.BoolVar(&headlessMode, "headless", false, "run without GUI window")
 
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
@@ -124,10 +124,10 @@ func init() {
 	flag.BoolVar(&recoveryMode, "recovery", false, "boot into macOS recovery mode")
 	flag.StringVar(&bootArgs, "boot-args", "", "boot arguments (e.g., 'serial=3 -v'); saved to vm-dir/boot-args.txt for use inside guest")
 	flag.StringVar(&utmBundlePath, "utm", "", "path to UTM bundle (.utm) to run, or 'list' for menu")
-	flag.BoolVar(&listVMs, "list", false, "list available VMs in vm-dir")
-	flag.Var(&volumes, "v", "mount volume: /host/path[:tag][:ro] (can be repeated; tag defaults to auto-mount)")
-	flag.Var(&volumes, "vol", "mount volume: /host/path[:tag][:ro] (can be repeated; tag defaults to auto-mount)")
-	flag.StringVar(&shareDir, "share-dir", "", "(deprecated: use -vol) host directory to share with guest")
+	flag.BoolVar(&listVMs, "list", false, "deprecated: use the list command")
+	flag.Var(&volumes, "v", "alias for -vol")
+	flag.Var(&volumes, "vol", "mount host directory: /host/path[:tag][:ro|rw][:opt=val,...] (repeatable; default tag is the host directory name)")
+	flag.StringVar(&shareDir, "share-dir", "", "deprecated alias for -vol /host/path")
 	flag.StringVar(&provisionUser, "provision-user", "", "username for auto-provisioned user (enables provisioning)")
 	flag.StringVar(&provisionPassword, "provision-password", "", "password for auto-provisioned user")
 	flag.BoolVar(&provisionAdmin, "provision-admin", true, "make auto-provisioned user an admin")
@@ -146,11 +146,11 @@ func init() {
 	// Display configuration
 	flag.Var(&displays, "display", "display config: WIDTHxHEIGHT[@PPI] or preset (4k, 1080p, 720p)")
 	// Rosetta for Linux
-	flag.BoolVar(&enableRosetta, "rosetta", false, "enable Rosetta for x86-64 binary translation in Linux VMs")
+	flag.BoolVar(&enableRosetta, "rosetta", false, "enable Rosetta translation support when running Linux VMs")
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
 	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
-	flag.BoolVar(&skipResume, "cold-boot", false, "alias for -no-resume")
+	flag.BoolVar(&skipResume, "cold-boot", false, "same as -no-resume")
 	flag.StringVar(&launchOrder, "launch-order", "window-first", "GUI launch order: window-first or start-first")
 	flag.StringVar(&runtimeProfile, "runtime-profile", "full", "macOS runtime profile: full or minimal")
 	flag.BoolVar(&appleLog, "apple-log", false, "stream Apple unified logs relevant to virtualization while running")
@@ -187,6 +187,13 @@ func main() {
 	// --headless overrides --gui
 	if headlessMode {
 		guiMode = false
+	}
+
+	if handled, exitCode := handleEarlyCLI(flag.Args()); handled {
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
 	}
 
 	// Set up macgo bundling (entitlements, signing, app icon).
@@ -533,6 +540,8 @@ func usage() {
 Usage:
   vz-macos [flags] [command]
 
+Use 'vz-macos <command> -h' for command-specific help.
+
 Quick Start:
   up              Install + provision + boot in one command (vz-macos up -user me)
 
@@ -579,6 +588,7 @@ Networking:
 
 Other:
   disk-detach     Detach VM disk if stuck from a previous inject/verify
+  help [command]  Show top-level or command-specific help
   version         Print version information
 
 Auto-Provisioning (Recommended - inject command):
@@ -624,11 +634,14 @@ Linux VM (Ubuntu):
 Volume Mounting (-vol flag):
   Docker-style volume mounts. Format: /host/path[:tag][:ro|rw][:opt=val,...]
 
-  Parts containing "=" are mount options passed to the guest mount command.
+  If tag is omitted, the guest tag defaults to the host directory name.
+  On macOS guests, tagged mounts are auto-mounted at /Volumes/<tag>.
+  '/Volumes/My Shared Files' is the shared-folder flow, not the -vol flow.
+  Parts containing "=" are guest mount options; they are primarily useful on Linux.
 
   Examples:
-    -vol /path/to/dir                          Mount at /Volumes/My Shared Files (rw)
-    -vol /path/to/dir:ro                       Mount at /Volumes/My Shared Files (read-only)
+    -vol ~/code                                Tag defaults to "code"
+    -vol ~/code:code:ro                        Mount at /Volumes/code (read-only)
     -vol /path/to/dir:MyData                   Mount at /Volumes/MyData (rw)
     -vol /path/to/dir:MyData:ro                Mount at /Volumes/MyData (read-only)
     -vol /path/to/dir:MyData:cache=none        Disable VirtioFS caching (Linux)
@@ -753,17 +766,7 @@ func handleClone(args []string) {
 // handleTemplate handles the template subcommand.
 func handleTemplate(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, `Usage: vz-macos template <command>
-
-Commands:
-  save <name>                Save current VM as template (compressed)
-  save-fast <name>           Save as fast template (clonefile, instant but larger)
-  list                       List available templates
-  create <template> <name>   Create VM from template
-  delete <name>              Delete a template
-
-Fast templates use APFS clonefile for instant copy-on-write creation.
-Compressed templates take longer to save but use less disk space.`)
+		printTemplateUsage(os.Stderr)
 		os.Exit(1)
 	}
 
@@ -771,6 +774,9 @@ Compressed templates take longer to save but use less disk space.`)
 	subargs := args[1:]
 
 	switch subcmd {
+	case "help", "-h", "--help":
+		printTemplateUsage(os.Stderr)
+		return
 	case "save":
 		if len(subargs) < 1 {
 			fmt.Fprintln(os.Stderr, "Usage: vz-macos template save <name>")
@@ -854,15 +860,7 @@ Compressed templates take longer to save but use less disk space.`)
 // handleVMCommand handles the vm subcommand.
 func handleVMCommand(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, `Usage: vz-macos vm <command>
-
-Commands:
-  set <name>              Set active VM
-  delete <name>           Delete a VM
-  rename <old> <new>      Rename a VM
-  export <name> <path>    Export VM to tarball
-  import <path> <name>    Import VM from tarball
-  shared-folder ...       Manage runtime shared folders`)
+		printVMUsage(os.Stderr)
 		os.Exit(1)
 	}
 
@@ -870,6 +868,9 @@ Commands:
 	subargs := args[1:]
 
 	switch subcmd {
+	case "help", "-h", "--help":
+		printVMUsage(os.Stderr)
+		return
 	case "set":
 		if len(subargs) < 1 {
 			fmt.Fprintln(os.Stderr, "Usage: vz-macos vm set <name>")
@@ -936,21 +937,7 @@ Commands:
 // handleSnapshotCommand handles the snapshot subcommand
 func handleSnapshotCommand(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, `Usage: vz-macos snapshot <command>
-
-Commands:
-  list                    List available snapshots
-  save <name>             Save current VM state (VM must be running)
-  restore <name>          Restore VM from snapshot (VM must be running)
-  delete <name>           Delete a snapshot
-
-Snapshots are saved to ~/.vz/vms/<vmname>/snapshots/
-
-Examples:
-  vz-macos snapshot list
-  vz-macos snapshot save checkpoint1
-  vz-macos snapshot restore checkpoint1
-  vz-macos snapshot delete checkpoint1`)
+		printSnapshotUsage(os.Stderr)
 		os.Exit(1)
 	}
 
@@ -959,6 +946,9 @@ Examples:
 	subargs := args[1:]
 
 	switch subcmd {
+	case "help", "-h", "--help":
+		printSnapshotUsage(os.Stderr)
+		return
 	case "list":
 		snapshots, err := mgr.List()
 		if err != nil {

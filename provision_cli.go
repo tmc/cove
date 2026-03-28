@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -51,79 +52,12 @@ func handleProvision(args []string) error {
 	// Check environment variable for debug mode
 	provisionVerbose = os.Getenv("VZ_DEBUG_INJECT") == "1"
 
-	// Parse flags specific to inject command
-	fs := flag.NewFlagSet("inject", flag.ExitOnError)
-	user := fs.String("user", "", "Username for the provisioned user (required)")
-	password := fs.String("password", "", "Password for the provisioned user (required)")
-	admin := fs.Bool("admin", true, "Make the user an admin")
-	skipSetup := fs.Bool("skip-setup-assistant", false, "Skip Setup Assistant by creating .AppleSetupDone")
-	autoLogin := fs.Bool("auto-login", true, "Enable automatic login for the user (default: true)")
-	noAutoLogin := fs.Bool("no-auto-login", false, "Disable automatic login")
-	createUserPlist := fs.Bool("plist", false, "Create user plist directly (advanced: bypasses sysadminctl)")
-	uid := fs.Int("uid", 501, "User ID for plist mode")
-	sshKeyPath := fs.String("ssh-key", "", "Path to SSH public key file for authorized_keys")
-	installXcodeCLI := fs.Bool("xcode-cli", false, "Install Xcode Command Line Tools during provisioning")
-	verboseFlag := fs.Bool("v", false, "Verbose output (or set VZ_DEBUG_INJECT=1)")
-
-	// Two-phase provisioning flags
-	applyOnly := fs.Bool("apply", false, "Apply previously staged provisioning files to VM disk (requires staged files)")
-	stageOnly := fs.Bool("stage-only", false, "Stage files only (no disk mount); prints the apply command")
-
-	// Guest agent options
-	enableAgent := fs.Bool("agent", true, "Cross-compile and inject vz-agent GRPC daemon (default: true)")
-
-	// Guest tools (SPICE clipboard) options
-	enableGuestTools := fs.Bool("guest-tools", true, "Download and inject SPICE guest tools for clipboard sharing (default: true)")
-
-	// SSH daemon (Remote Login)
-	enableSSHD := fs.Bool("enable-sshd", false, "Enable SSH daemon (Remote Login) on first boot")
-
-	// Recovery bootstrap options
-	bootstrapRecovery := fs.Bool("bootstrap-recovery", true, "Two-user bootstrap: create hidden admin first to grant full recovery auth (default: true)")
-	noBootstrapRecovery := fs.Bool("no-bootstrap-recovery", false, "Disable two-user bootstrap (single user, may lack recovery auth)")
-
-	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: vz-macos inject [options]
-
-Provision a VM with user account, auto-login, and guest tools.
-
-Two-phase provisioning:
-  Phase 1 (no root): Builds agent binary, downloads guest tools, generates scripts.
-  Phase 2 (may need admin): Mounts VM disk, copies files, sets ownership.
-
-By default both phases run in a single command. Use -stage-only and -apply
-to run them separately (useful for CI or to avoid building as root).
-
-Provisioning modes:
-  1. LaunchDaemon mode (default): Writes a script that runs sysadminctl on first boot
-  2. Plist mode (-plist): Directly creates the user plist with password hash (advanced)
-
-Options:
-`)
-		fs.PrintDefaults()
-		fmt.Fprintf(os.Stderr, `
-Examples:
-  # Standard provisioning (builds, downloads, then writes to disk)
-  vz-macos inject -user testuser -skip-setup-assistant
-
-  # Two-phase: stage first (no root), then apply
-  vz-macos inject -user testuser -password secret123 -stage-only
-  sudo vz-macos inject -apply
-
-  # Apply previously staged files
-  vz-macos inject -apply
-
-  # With SSH key for remote access
-  vz-macos inject -user testuser -password secret123 -skip-setup-assistant -ssh-key ~/.ssh/id_rsa.pub
-
-Recovery Authorization:
-  By default, provision uses a two-user bootstrap (-bootstrap-recovery=true):
-  a hidden admin is created first, then your user is created BY that admin,
-  granting full recovery auth. Use -no-bootstrap-recovery to disable.
-`)
-	}
+	fs, user, password, admin, skipSetup, autoLogin, noAutoLogin, createUserPlist, uid, sshKeyPath, installXcodeCLI, verboseFlag, applyOnly, stageOnly, enableAgent, enableGuestTools, enableSSHD, bootstrapRecovery, noBootstrapRecovery := newInjectFlagSet()
 
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 
@@ -224,6 +158,66 @@ Recovery Authorization:
 
 	// Phase 2: Apply staged files to the VM disk.
 	return applyProvisioningFiles()
+}
+
+func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *bool, *bool, *int, *string, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool) {
+	fs := flag.NewFlagSet("inject", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	user := fs.String("user", "", "Username for the provisioned user (required)")
+	password := fs.String("password", "", "Password for the provisioned user (required)")
+	admin := fs.Bool("admin", true, "Make the user an admin")
+	skipSetup := fs.Bool("skip-setup-assistant", false, "Skip Setup Assistant by creating .AppleSetupDone")
+	autoLogin := fs.Bool("auto-login", true, "Enable automatic login for the user")
+	noAutoLogin := fs.Bool("no-auto-login", false, "Disable automatic login")
+	createUserPlist := fs.Bool("plist", false, "Create the user plist directly (advanced: bypasses sysadminctl)")
+	uid := fs.Int("uid", 501, "User ID for plist mode")
+	sshKeyPath := fs.String("ssh-key", "", "Path to SSH public key file for authorized_keys")
+	installXcodeCLI := fs.Bool("xcode-cli", false, "Install Xcode Command Line Tools during provisioning")
+	verboseFlag := fs.Bool("v", false, "Verbose output (or set VZ_DEBUG_INJECT=1)")
+	applyOnly := fs.Bool("apply", false, "Apply previously staged provisioning files to the VM disk")
+	stageOnly := fs.Bool("stage-only", false, "Stage files only (no disk mount); prints the apply command")
+	enableAgent := fs.Bool("agent", true, "Cross-compile and inject the vz-agent gRPC daemon")
+	enableGuestTools := fs.Bool("guest-tools", true, "Download and inject SPICE guest tools for clipboard sharing")
+	enableSSHD := fs.Bool("enable-sshd", false, "Enable SSH daemon (Remote Login) on first boot")
+	bootstrapRecovery := fs.Bool("bootstrap-recovery", true, "Create a hidden admin first to grant full recovery authorization")
+	noBootstrapRecovery := fs.Bool("no-bootstrap-recovery", false, "Disable the two-user recovery bootstrap")
+	fs.Usage = func() {
+		printInjectUsage(os.Stderr, fs)
+	}
+	return fs, user, password, admin, skipSetup, autoLogin, noAutoLogin, createUserPlist, uid, sshKeyPath, installXcodeCLI, verboseFlag, applyOnly, stageOnly, enableAgent, enableGuestTools, enableSSHD, bootstrapRecovery, noBootstrapRecovery
+}
+
+func printInjectUsage(w io.Writer, fs *flag.FlagSet) {
+	fmt.Fprintf(w, `Usage: vz-macos inject [options]
+
+Provision a VM with a user account, auto-login, and guest tools.
+
+Two-phase provisioning:
+  Phase 1 (no root): build binaries, download tools, generate scripts
+  Phase 2 (may need admin): mount the VM disk, copy files, fix ownership
+
+By default both phases run in one command. Use -stage-only and -apply
+to split them for CI or to avoid building as root.
+
+Provisioning modes:
+  1. LaunchDaemon mode (default): run sysadminctl on first boot
+  2. Plist mode (-plist): create the user plist directly (advanced)
+
+Options:
+`)
+	fs.PrintDefaults()
+	fmt.Fprintf(w, `
+Examples:
+  vz-macos inject -user testuser -skip-setup-assistant
+  vz-macos inject -user testuser -password secret123 -stage-only
+  sudo vz-macos inject -apply
+  vz-macos inject -user testuser -password secret123 -ssh-key ~/.ssh/id_rsa.pub
+
+Recovery authorization:
+  By default, inject uses a two-user bootstrap. A hidden admin is created
+  first, then your user is created by that admin so the account has full
+  recovery authorization. Use -no-bootstrap-recovery to disable that flow.
+`)
 }
 
 // readPassword prompts for a password, trying multiple approaches:

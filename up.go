@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -35,6 +36,9 @@ type upConfig struct {
 func handleUp(args []string) error {
 	cfg, err := parseUpFlags(args)
 	if err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 
@@ -52,57 +56,18 @@ func handleUp(args []string) error {
 // parseUpFlags parses flags and prompts for missing values.
 // Returns a fully populated upConfig or an error.
 func parseUpFlags(args []string) (upConfig, error) {
-	fs := flag.NewFlagSet("up", flag.ExitOnError)
-	var cfg upConfig
-	var headless bool
-
-	fs.StringVar(&cfg.user, "user", "", "Username for the provisioned user (required)")
-	fs.StringVar(&cfg.password, "password", "", "Password for the provisioned user (prompts if empty)")
-	fs.StringVar(&cfg.vzscripts, "vzscripts", "", "Comma-separated vzscript recipes to run after boot (e.g. homebrew,openclaw)")
-	fs.StringVar(&cfg.ipswPath, "ipsw", "", "Path to IPSW restore image (downloads latest if empty)")
-	fs.BoolVar(&cfg.force, "force", false, "Force install even if VM disk already exists")
-	fs.BoolVar(&cfg.gui, "gui", true, "Show VM display in a window")
-	fs.BoolVar(&headless, "headless", false, "Run without GUI window")
-	fs.UintVar(&cfg.cpuCount, "cpu", 2, "Number of CPUs")
-	fs.Uint64Var(&cfg.memoryGB, "memory", 4, "Memory in GB")
-	fs.Uint64Var(&cfg.diskSizeGB, "disk-size", 64, "Disk size in GB")
-	fs.BoolVar(&cfg.noShutdown, "no-shutdown", false, "Leave VM running after vzscripts complete")
-	fs.BoolVar(&cfg.verbose, "v", false, "Verbose output")
-	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
-
-	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: vz-macos up [options]
-
-Install, provision, and boot a macOS VM in one command.
-
-Combines: install -> inject (user, auto-login, skip-setup, agent) -> run [-> vzscripts]
-
-Options:
-`)
-		fs.PrintDefaults()
-		fmt.Fprintf(os.Stderr, `
-Examples:
-  # Basic: install + provision + boot to desktop
-  vz-macos up -user me
-
-  # With vzscripts: install + provision + boot + run recipes
-  vz-macos up -user me -vzscripts homebrew,openclaw
-
-  # Using existing IPSW
-  vz-macos up -user me -ipsw ~/restore.ipsw
-
-  # Headless with more resources
-  vz-macos up -user me -headless -cpu 4 -memory 8 -vzscripts developer-tools
-`)
-	}
+	fs, cfg, headless := newUpFlagSet()
 
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return upConfig{}, err
+		}
 		return upConfig{}, err
 	}
 	if cfg.user == "" {
 		return upConfig{}, fmt.Errorf("missing required flag: -user")
 	}
-	if headless {
+	if *headless {
 		cfg.gui = false
 	}
 
@@ -128,7 +93,51 @@ Examples:
 		}
 	}
 
-	return cfg, nil
+	return *cfg, nil
+}
+
+func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
+	fs := flag.NewFlagSet("up", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	cfg := &upConfig{}
+	headless := new(bool)
+
+	fs.StringVar(&cfg.user, "user", "", "Username for the provisioned user (required)")
+	fs.StringVar(&cfg.password, "password", "", "Password for the provisioned user (prompts if empty)")
+	fs.StringVar(&cfg.vzscripts, "vzscripts", "", "Comma-separated vzscript recipes to run after boot (e.g. homebrew,openclaw)")
+	fs.StringVar(&cfg.ipswPath, "ipsw", "", "Path to IPSW restore image (downloads latest if empty)")
+	fs.BoolVar(&cfg.force, "force", false, "Force install even if the VM disk already exists")
+	fs.BoolVar(&cfg.gui, "gui", true, "Show VM display in a window")
+	fs.BoolVar(headless, "headless", false, "Run without a GUI window")
+	fs.UintVar(&cfg.cpuCount, "cpu", 2, "Number of CPUs")
+	fs.Uint64Var(&cfg.memoryGB, "memory", 4, "Memory in GB")
+	fs.Uint64Var(&cfg.diskSizeGB, "disk-size", 64, "Disk size in GB")
+	fs.BoolVar(&cfg.noShutdown, "no-shutdown", false, "Leave the VM running after vzscripts complete")
+	fs.BoolVar(&cfg.verbose, "v", false, "Verbose output")
+	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
+	fs.Usage = func() {
+		printUpUsage(os.Stderr, fs)
+	}
+	return fs, cfg, headless
+}
+
+func printUpUsage(w io.Writer, fs *flag.FlagSet) {
+	fmt.Fprintf(w, `Usage: vz-macos up [options]
+
+Install, provision, and boot a macOS VM in one command.
+
+Combines: install -> inject -> run [-> vzscripts]
+
+Options:
+`)
+	fs.PrintDefaults()
+	fmt.Fprintf(w, `
+Examples:
+  vz-macos up -user me
+  vz-macos up -user me -vzscripts homebrew,openclaw
+  vz-macos up -user me -ipsw ~/restore.ipsw
+  vz-macos up -user me -headless -cpu 4 -memory 8 -vzscripts developer-tools
+`)
 }
 
 // applyUpConfig sets the package-level globals that installMacOSLikeVZ,

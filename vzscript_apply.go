@@ -42,7 +42,12 @@ func vzscriptCommand(args []string) error {
 }
 
 func vzscriptUsage() error {
-	fmt.Fprintf(os.Stderr, `Usage: vz-macos vzscript <command> [args...]
+	printVzscriptUsage(os.Stderr)
+	return fmt.Errorf("command required")
+}
+
+func printVzscriptUsage(w io.Writer) {
+	fmt.Fprintf(w, `Usage: vz-macos vzscript <command> [args...]
 
 Commands:
   list                    List built-in recipes
@@ -99,7 +104,6 @@ Examples:
   vz-macos vzscript run homebrew golang openclaw
   vz-macos vzscript run ./custom.vzscript
 `)
-	return fmt.Errorf("command required")
 }
 
 func vzscriptList() error {

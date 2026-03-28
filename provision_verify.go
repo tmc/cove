@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -27,34 +28,12 @@ type VerifyResult struct {
 
 // handleVerify verifies provisioning files in a VM disk
 func handleVerify(args []string) error {
-	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
-	verboseFlag := fs.Bool("v", false, "Verbose output")
-	fixFlag := fs.Bool("fix", false, "Attempt to fix issues (inject agent, fix ownership)")
-
-	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: vz-macos doctor [options]
-
-Diagnose VM health: provisioning, agent, and file ownership.
-
-When the VM is running, checks via control socket and guest agent.
-When stopped, mounts the disk and inspects files directly.
-
-With --fix, attempts to repair issues automatically:
-  - Inject missing vz-agent binary and LaunchDaemon
-  - Fix file ownership (requires admin privileges)
-
-Options:
-`)
-		fs.PrintDefaults()
-		fmt.Fprintf(os.Stderr, `
-Example:
-  vz-macos doctor            # diagnose
-  vz-macos doctor --fix      # diagnose and repair
-  vz-macos doctor -v         # verbose output
-`)
-	}
+	fs, verboseFlag, fixFlag := newVerifyFlagSet()
 
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 
@@ -69,6 +48,40 @@ Example:
 	}
 
 	return verifyStopped(*verboseFlag, *fixFlag)
+}
+
+func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool) {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	verboseFlag := fs.Bool("v", false, "Verbose output")
+	fixFlag := fs.Bool("fix", false, "Attempt to fix issues automatically")
+	fs.Usage = func() {
+		printVerifyUsage(os.Stderr, fs)
+	}
+	return fs, verboseFlag, fixFlag
+}
+
+func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
+	fmt.Fprintf(w, `Usage: vz-macos doctor [options]
+
+Diagnose VM health: provisioning, agent, and file ownership.
+
+When the VM is running, doctor checks via the control socket and guest agent.
+When stopped, it mounts the disk and inspects files directly.
+
+With --fix, doctor attempts to repair issues automatically:
+  - inject a missing vz-agent binary and LaunchDaemon
+  - fix file ownership (requires admin privileges)
+
+Options:
+`)
+	fs.PrintDefaults()
+	fmt.Fprintf(w, `
+Examples:
+  vz-macos doctor
+  vz-macos doctor --fix
+  vz-macos doctor -v
+`)
 }
 
 // isVMRunning checks if the VM control socket is alive.

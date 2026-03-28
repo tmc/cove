@@ -23,18 +23,23 @@ import (
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-// ctlCommand handles the "ctl" subcommand for control socket interaction
-func ctlCommand(args []string) error {
-	fs := flag.NewFlagSet("ctl", flag.ExitOnError)
+func newCtlFlagSet() (*flag.FlagSet, *string, *time.Duration, *string, *bool, *time.Duration, *string) {
+	fs := flag.NewFlagSet("ctl", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
 	socketPath := fs.String("socket", "", "Control socket path (default: auto-detected from VM dir)")
 	timeout := fs.Duration("timeout", 10*time.Second, "Command timeout")
 	outputFile := fs.String("o", "", "Output file for screenshot data (default: stdout)")
 	raw := fs.Bool("raw", false, "Output raw JSON response")
 	wait := fs.Duration("wait", 0, "Wait duration for agent commands (retries until agent is ready)")
 	token := fs.String("token", "", "Control socket auth token (default: env or VM control.token file)")
-
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: vz-macos ctl [options] <command> [args...]
+		printCtlUsage(os.Stderr, fs)
+	}
+	return fs, socketPath, timeout, outputFile, raw, wait, token
+}
+
+func printCtlUsage(w io.Writer, fs *flag.FlagSet) {
+	fmt.Fprintf(w, `Usage: vz-macos ctl [options] <command> [args...]
 
 Commands:
   ping                  Test connection
@@ -51,7 +56,7 @@ Commands:
   gui open              Show the live VM window for a headless runtime
   gui close             Return the runtime to headless mode without stopping it
   memory info           Get memory balloon info
-  memory set <GB>       Set memory target (e.g., memory set 8)
+  memory set <GB>       Set memory target (for example: memory set 8)
   snapshot list         List snapshots
   snapshot save <name>  Save snapshot
   snapshot restore <name> Restore snapshot
@@ -63,19 +68,19 @@ Commands:
   ocr [-region <spec>]  Run OCR on current screen (spec: menu or x1,y1,x2,y2)
   click-text [options] <text>  Find text via OCR and click its center
                         options: -region <spec> -timeout <duration>
-  click-menu [options] <menu> <item>  Click menu title, then menu item (menu OCR region)
+  click-menu [options] <menu> <item>  Click menu title, then menu item
                         options: -timeout <duration>
-  shared-folders-apply   Reload shared_folders.json into a running VM
+  shared-folders-apply  Reload shared_folders.json into a running VM
   boot-script <file>    Execute a boot command script file
   step                  Interactive step-through mode for Setup Assistant debugging
   setup-assist <user> <pass>  Run Setup Assistant automation
 
-iTerm2 API Proxy (WebSocket-to-vsock):
+iTerm2 API proxy (WebSocket-to-vsock):
   iterm2-proxy [--port N]     Start WebSocket proxy to guest iTerm2 (default: 1913)
   iterm2-proxy-stop           Stop the iTerm2 proxy
   iterm2-proxy-status         Check proxy status
 
-Guest Agent (via GRPC over vsock):
+Guest agent (gRPC over vsock):
   agent-connect         Connect to guest agent
   agent-ping            Ping guest agent
   agent-info            Get guest system info
@@ -93,18 +98,20 @@ Guest Agent (via GRPC over vsock):
   agent-mount-volumes         Mount tagged VirtioFS volumes in guest
   agent-status                Agent health status (daemon + user agent)
 
-Port Forwarding:
+Port forwarding:
   port-forward start <hostPort:guestPort>  Forward host TCP to guest vsock
   port-forward stop <hostPort>             Stop a port forward
   port-forward list                        List active port forwards
 
-VM Management:
+VM management:
   reset-password <user> <pass>  Reset user password (agent if running, disk if stopped)
 
 Options:
 `)
+	if fs != nil {
 		fs.PrintDefaults()
-		fmt.Fprintf(os.Stderr, `
+	}
+	fmt.Fprintf(w, `
 Examples:
   vz-macos ctl ping
   vz-macos ctl status
@@ -117,17 +124,26 @@ Examples:
   vz-macos ctl text "hello"
   vz-macos ctl click-text -region menu Utilities
   vz-macos ctl click-menu Utilities Terminal
-  vz-macos ctl step           # Interactive step mode
-  vz-macos ctl agent-ping     # Auto-connects to agent
-  vz-macos ctl -wait 60s agent-ping  # Wait up to 60s for agent
-  vz-macos ctl agent-exec ls /tmp    # Run as user (default, has TCC/FDA)
-  vz-macos ctl agent-exec --daemon whoami  # Run as root via daemon
-  vz-macos ctl agent-sshd on  # Enable SSH
-  vz-macos ctl agent-reboot   # Reboot guest
+  vz-macos ctl step
+  vz-macos ctl -wait 60s agent-ping
+  vz-macos ctl agent-exec ls /tmp
+  vz-macos ctl agent-exec --daemon whoami
 `)
+}
+
+// ctlCommand handles the "ctl" subcommand for control socket interaction
+func ctlCommand(args []string) error {
+	fs, socketPath, timeout, outputFile, raw, wait, token := newCtlFlagSet()
+
+	if len(args) > 0 && isHelpArg(args[0]) {
+		fs.Usage()
+		return nil
 	}
 
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 
