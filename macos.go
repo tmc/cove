@@ -24,6 +24,8 @@ import (
 	"github.com/tmc/vz-macos/internal/assets"
 )
 
+var errVMStartupInProgress = errors.New("vm startup already in progress")
+
 // setAppIcon sets the Dock and app icon from the embedded .icns asset.
 func setAppIcon(app *appkit.NSApplication) {
 	iconData := assets.Icon
@@ -253,52 +255,102 @@ func runMacOSVM() error {
 }
 
 func validateExistingMacOSIdentityMetadata() error {
-	missing, err := missingMacOSIdentityMetadata()
+	issues, err := macOSIdentityMetadataIssues()
 	if err != nil {
 		return err
 	}
-	if len(missing) == 0 {
+	if len(issues) == 0 {
 		return nil
 	}
 
 	if !recoverIdentity {
-		return fmt.Errorf("existing VM disk found, but required identity metadata is missing (%s); refusing to launch. restore these files from backup, or retry with -recover-identity to attempt a metadata reset", strings.Join(missing, ", "))
+		return fmt.Errorf("existing VM disk found, but macOS identity metadata is missing or invalid (%s); refusing to launch. restore these files from backup, or retry with -recover-identity to attempt a metadata reset", strings.Join(issues, ", "))
 	}
 
-	backupDir, err := recoverIdentityMetadata(missing)
+	backupDir, err := recoverIdentityMetadata(issues)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Recovery mode enabled: missing identity metadata (%s)\n", strings.Join(missing, ", "))
+	fmt.Printf("Recovery mode enabled: macOS identity metadata issues detected (%s)\n", strings.Join(issues, ", "))
 	fmt.Printf("  Backed up existing identity files to: %s\n", backupDir)
 	fmt.Println("  Reset identity metadata (hw.model, machine.id, aux.img); regenerating on launch")
 	return nil
 }
 
-func missingMacOSIdentityMetadata() ([]string, error) {
-	required := []string{
-		filepath.Join(vmDir, "aux.img"),
-		filepath.Join(vmDir, "hw.model"),
-		filepath.Join(vmDir, "machine.id"),
+func macOSIdentityMetadataIssues() ([]string, error) {
+	var issues []string
+
+	auxPath := filepath.Join(vmDir, "aux.img")
+	auxInfo, err := os.Stat(auxPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			issues = append(issues, "aux.img missing")
+		} else {
+			return nil, fmt.Errorf("stat %s: %w", auxPath, err)
+		}
+	} else if auxInfo.Size() == 0 {
+		issues = append(issues, "aux.img empty")
+	} else {
+		auxURL := foundation.NewURLFileURLWithPath(auxPath)
+		auxStorage := vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
+		if auxStorage.ID == 0 {
+			issues = append(issues, "aux.img unreadable")
+		}
 	}
-	var missing []string
-	for _, path := range required {
-		info, err := os.Stat(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				missing = append(missing, filepath.Base(path))
-				continue
+
+	hwModelPath := filepath.Join(vmDir, "hw.model")
+	hwData, err := os.ReadFile(hwModelPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			issues = append(issues, "hw.model missing")
+		} else {
+			return nil, fmt.Errorf("read %s: %w", hwModelPath, err)
+		}
+	} else if len(hwData) == 0 {
+		issues = append(issues, "hw.model empty")
+	} else {
+		nsData := createNSDataFromBytes(hwData)
+		if nsData == 0 {
+			issues = append(issues, "hw.model invalid")
+		} else {
+			nsDataObj := foundation.NSDataFromID(nsData)
+			model := vz.NewMacHardwareModelWithDataRepresentation(&nsDataObj)
+			switch {
+			case model.ID == 0:
+				issues = append(issues, "hw.model invalid")
+			case !model.Supported():
+				issues = append(issues, "hw.model unsupported on this host")
 			}
-			return nil, fmt.Errorf("stat %s: %w", path, err)
-		}
-		if info.Size() == 0 {
-			missing = append(missing, filepath.Base(path))
 		}
 	}
-	return missing, nil
+
+	machineIDPath := filepath.Join(vmDir, "machine.id")
+	machineData, err := os.ReadFile(machineIDPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			issues = append(issues, "machine.id missing")
+		} else {
+			return nil, fmt.Errorf("read %s: %w", machineIDPath, err)
+		}
+	} else if len(machineData) == 0 {
+		issues = append(issues, "machine.id empty")
+	} else {
+		nsData := createNSDataFromBytes(machineData)
+		if nsData == 0 {
+			issues = append(issues, "machine.id invalid")
+		} else {
+			nsDataObj := foundation.NSDataFromID(nsData)
+			machineID := vz.NewMacMachineIdentifierWithDataRepresentation(&nsDataObj)
+			if machineID.ID == 0 {
+				issues = append(issues, "machine.id invalid")
+			}
+		}
+	}
+
+	return issues, nil
 }
 
-func recoverIdentityMetadata(missing []string) (string, error) {
+func recoverIdentityMetadata(issues []string) (string, error) {
 	backupDir := filepath.Join(vmDir, "recovery", "identity-reset-"+time.Now().Format("20060102-150405"))
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return "", fmt.Errorf("create recovery backup dir: %w", err)
@@ -335,10 +387,10 @@ func recoverIdentityMetadata(missing []string) (string, error) {
 		}
 	}
 
-	if len(missing) > 0 {
+	if len(issues) > 0 {
 		notePath := filepath.Join(backupDir, "RECOVERY_NOTE.txt")
-		note := fmt.Sprintf("Recovery triggered at %s\nMissing metadata detected: %s\nReset files: aux.img, hw.model, machine.id\n",
-			time.Now().Format(time.RFC3339), strings.Join(missing, ", "))
+		note := fmt.Sprintf("Recovery triggered at %s\nMetadata issues detected: %s\nReset files: aux.img, hw.model, machine.id\n",
+			time.Now().Format(time.RFC3339), strings.Join(issues, ", "))
 		_ = os.WriteFile(notePath, []byte(note), 0644)
 	}
 
@@ -377,7 +429,10 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	platformConfig := vz.NewVZMacPlatformConfiguration()
 
 	// Machine identifier (unique to this VM)
-	machineID := loadOrCreateMachineIdentifier()
+	machineID, err := loadOrCreateMachineIdentifier()
+	if err != nil {
+		return config, fmt.Errorf("machine identifier: %w", err)
+	}
 	platformConfig.SetMachineIdentifier(&machineID)
 
 	// Hardware model from restore image's mostFeaturefulSupportedConfiguration
@@ -412,6 +467,9 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 			fmt.Println("  Loading existing auxiliary storage...")
 		}
 		auxStorage = vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
+		if auxStorage.ID == 0 {
+			return config, fmt.Errorf("failed to load auxiliary storage: %s", auxStoragePath)
+		}
 		auxStorage.Retain() // Prevent premature deallocation
 	}
 	if auxStorage.ID != 0 {
@@ -588,26 +646,37 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		}
 	}
 
+	if _, err := config.ValidateWithError(); err != nil {
+		return config, fmt.Errorf("validate configuration: %w", err)
+	}
+
 	return config, nil
 }
 
 // loadOrCreateMachineIdentifier loads an existing machine identifier or creates a new one.
-func loadOrCreateMachineIdentifier() vz.VZMacMachineIdentifier {
+func loadOrCreateMachineIdentifier() (vz.VZMacMachineIdentifier, error) {
 	machineIDPath := filepath.Join(vmDir, "machine.id")
 
 	// Check if we have a saved machine identifier
-	if data, err := os.ReadFile(machineIDPath); err == nil && len(data) > 0 {
-		nsData := createNSDataFromBytes(data)
-		if nsData != 0 {
-			nsDataObj := foundation.NSDataFromID(nsData)
-			machineID := vz.NewMacMachineIdentifierWithDataRepresentation(&nsDataObj)
-			if machineID.ID != 0 {
-				if verbose {
-					fmt.Println("  Loaded existing machine identifier")
-				}
-				return machineID
-			}
+	if data, err := os.ReadFile(machineIDPath); err == nil {
+		if len(data) == 0 {
+			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is empty")
 		}
+		nsData := createNSDataFromBytes(data)
+		if nsData == 0 {
+			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is invalid")
+		}
+		nsDataObj := foundation.NSDataFromID(nsData)
+		machineID := vz.NewMacMachineIdentifierWithDataRepresentation(&nsDataObj)
+		if machineID.ID == 0 {
+			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is invalid")
+		}
+		if verbose {
+			fmt.Println("  Loaded existing machine identifier")
+		}
+		return machineID, nil
+	} else if !os.IsNotExist(err) {
+		return vz.VZMacMachineIdentifier{}, fmt.Errorf("read machine identifier: %w", err)
 	}
 
 	// Create new machine identifier
@@ -621,7 +690,7 @@ func loadOrCreateMachineIdentifier() vz.VZMacMachineIdentifier {
 		fmt.Printf("  warning: could not save machine identifier: %v\n", err)
 	}
 
-	return machineID
+	return machineID, nil
 }
 
 // saveMachineIdentifier saves the machine identifier data representation to a file.
@@ -665,28 +734,31 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 	hwModelPath := filepath.Join(vmDir, "hw.model")
 
 	// Check if we have a saved hardware model
-	if data, err := os.ReadFile(hwModelPath); err == nil && len(data) > 0 {
+	if data, err := os.ReadFile(hwModelPath); err == nil {
+		if len(data) == 0 {
+			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is empty")
+		}
 		if verbose {
 			fmt.Printf("  Found hw.model file: %s (%d bytes)\n", hwModelPath, len(data))
 		}
 		nsData := createNSDataFromBytes(data)
-		if nsData != 0 {
-			nsDataObj := foundation.NSDataFromID(nsData)
-			model := vz.NewMacHardwareModelWithDataRepresentation(&nsDataObj)
-			if verbose {
-				fmt.Printf("  Hardware model ID: %#x, Supported: %v\n", model.ID, model.ID != 0 && model.Supported())
-			}
-			if model.ID != 0 && model.Supported() {
-				return model, nil
-			}
-			if model.ID != 0 {
-				fmt.Printf("  warning: hardware model loaded but not supported on this host\n")
-			}
-		} else {
-			fmt.Println("  warning: failed to create NSData from hw.model bytes")
+		if nsData == 0 {
+			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is invalid")
 		}
-	} else if err != nil {
-		fmt.Printf("  No existing hw.model: %v\n", err)
+		nsDataObj := foundation.NSDataFromID(nsData)
+		model := vz.NewMacHardwareModelWithDataRepresentation(&nsDataObj)
+		if verbose {
+			fmt.Printf("  Hardware model ID: %#x, Supported: %v\n", model.ID, model.ID != 0 && model.Supported())
+		}
+		if model.ID == 0 {
+			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is invalid")
+		}
+		if !model.Supported() {
+			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model is not supported on this host")
+		}
+		return model, nil
+	} else if !os.IsNotExist(err) {
+		return vz.VZMacHardwareModel{}, fmt.Errorf("read hardware model: %w", err)
 	}
 
 	// Try to get hardware model from IPSW or fetch latest
@@ -944,7 +1016,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 
 	fmt.Println("Starting virtual machine...")
 	startErr := beginVMStart(vm, queue)
-	if err := waitForVMStart(startErr, pumpRunLoop); err != nil {
+	if err := waitForVMStart(vm, queue, startErr, pumpRunLoop); err != nil {
 		if !printNSErrorSummary("VM start error", err) {
 			fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
 		}
@@ -977,6 +1049,25 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 	}
 
 	DispatchAsyncQueue(queue, func() {
+		state := vz.VZVirtualMachineState(vm.State())
+		switch state {
+		case vz.VZVirtualMachineStateRunning:
+			startErr <- nil
+			return
+		case vz.VZVirtualMachineStatePaused:
+			if recoveryMode {
+				startErr <- fmt.Errorf("cannot boot recovery from paused VM; stop it first")
+				return
+			}
+			vm.ResumeWithCompletionHandler(startHandlerFn)
+			return
+		case vz.VZVirtualMachineStateStarting, vz.VZVirtualMachineStateResuming, vz.VZVirtualMachineStateRestoring:
+			startErr <- errVMStartupInProgress
+			return
+		case vz.VZVirtualMachineStatePausing, vz.VZVirtualMachineStateStopping, vz.VZVirtualMachineStateSaving:
+			startErr <- fmt.Errorf("vm busy in state %s", vmStateName(state))
+			return
+		}
 		if recoveryMode {
 			fmt.Println("Starting VM in recovery mode...")
 			startOptions := vz.NewVZMacOSVirtualMachineStartOptions()
@@ -990,20 +1081,70 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 	return startErr
 }
 
-func waitForVMStart(startErr <-chan error, pumpRunLoop bool) error {
+func waitForVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue, startErr <-chan error, pumpRunLoop bool) error {
 	timeout := time.After(30 * time.Second)
 	for {
 		select {
 		case err := <-startErr:
+			if errors.Is(err, errVMStartupInProgress) {
+				return waitForVMRunning(vm, queue, pumpRunLoop, 30*time.Second)
+			}
 			return err
 		case <-timeout:
 			return fmt.Errorf("vm start timed out")
 		default:
+			state, err := currentVMState(vm, queue)
+			if err == nil {
+				switch state {
+				case vz.VZVirtualMachineStateRunning:
+					return nil
+				case vz.VZVirtualMachineStateError:
+					return fmt.Errorf("vm entered error state during startup")
+				case vz.VZVirtualMachineStateStopped:
+					// Allow the in-flight start callback to report the failure.
+				}
+			}
 			if pumpRunLoop {
 				vzkit.RunRunLoopOnce()
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
+	}
+}
+
+func waitForVMRunning(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop bool, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		state, err := currentVMState(vm, queue)
+		if err != nil {
+			return err
+		}
+		switch state {
+		case vz.VZVirtualMachineStateRunning:
+			return nil
+		case vz.VZVirtualMachineStateError:
+			return fmt.Errorf("vm entered error state during startup")
+		case vz.VZVirtualMachineStateStopped:
+			return fmt.Errorf("vm returned to stopped state during startup")
+		}
+		if pumpRunLoop {
+			vzkit.RunRunLoopOnce()
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return fmt.Errorf("vm start timed out")
+}
+
+func currentVMState(vm vz.VZVirtualMachine, queue dispatch.Queue) (vz.VZVirtualMachineState, error) {
+	stateCh := make(chan vz.VZVirtualMachineState, 1)
+	DispatchAsyncQueue(queue, func() {
+		stateCh <- vz.VZVirtualMachineState(vm.State())
+	})
+	select {
+	case state := <-stateCh:
+		return state, nil
+	case <-time.After(5 * time.Second):
+		return 0, fmt.Errorf("timed out checking VM state")
 	}
 }
 
