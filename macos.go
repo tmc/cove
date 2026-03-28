@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/ebitengine/purego"
 	"net"
@@ -1097,6 +1098,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}()
 
 	// Setup cleanup on exit — save state if possible, otherwise hard stop.
+	var statusItem *VMStatusItemController
 	cleanup := func() {
 		stopMonitor()
 		controlServer.Stop()
@@ -1121,11 +1123,15 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		postDummyEvent(app)
 	}
 	var cleanupOnce sync.Once
-	setupSignalHandler(func() {
+	quitRuntime := func() {
 		stateUpdate.mu.Lock()
 		stateUpdate.signalCleanup = true
 		stateUpdate.mu.Unlock()
 		cleanupOnce.Do(cleanup)
+	}
+	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, guiController.window, guiController, guiController.toolbar, quitRuntime)
+	setupSignalHandler(func() {
+		quitRuntime()
 	})
 
 	var scheduleTimer func()
@@ -1141,6 +1147,8 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					stateUpdate.changed = false
 					if state >= 0 {
 						guiController.updateStateOnMain(state)
+						statusItem.UpdateState(state)
+						statusItem.setWindow(guiController.window)
 					}
 					if terminate {
 						os.Remove(suspendStatePath())
@@ -1162,6 +1170,9 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	stopMonitor()
 	controlServer.Stop()
+	if statusItem != nil {
+		statusItem.Shutdown()
+	}
 	guiController.shutdownOnMain()
 	if restoreTerminal != nil {
 		restoreTerminal()
@@ -1553,6 +1564,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}()
 
 	// Setup cleanup on window close / app quit — suspend if possible
+	var statusItem *VMStatusItemController
 	cleanup := func() {
 		close(monitorDone)
 		controlServer.Stop()
@@ -1572,18 +1584,25 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 	var cleanupOnce sync.Once
 	doCleanup := func() { cleanupOnce.Do(cleanup) }
+	quitRuntime := func() {
+		stateUpdate.mu.Lock()
+		stateUpdate.signalCleanup = true
+		stateUpdate.mu.Unlock()
+		saveWindowDisplayPlacement(window, frameAutosaveName)
+		window.SaveFrameUsingName(frameAutosaveName)
+		doCleanup()
+		app.Stop(nil)
+		postDummyEvent(app)
+	}
+	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, window, nil, vmToolbar, quitRuntime)
 
 	// Close-window should behave like app quit: clean up VM lifecycle and stop the app.
 	windowDelegate := appkit.NewNSWindowDelegate(appkit.NSWindowDelegateConfig{
 		ShouldClose: func(_ appkit.NSWindow) bool {
-			saveWindowDisplayPlacement(window, frameAutosaveName)
-			window.SaveFrameUsingName(frameAutosaveName)
 			stateUpdate.mu.Lock()
 			stateUpdate.signalCleanup = true
 			stateUpdate.mu.Unlock()
-			doCleanup()
-			app.Stop(nil)
-			postDummyEvent(app)
+			quitRuntime()
 			return true
 		},
 	})
@@ -1595,11 +1614,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// so we control the exit via app.Stop + postDummyEvent.
 	delegate := appkit.NewNSApplicationDelegate(appkit.NSApplicationDelegateConfig{
 		ShouldTerminate: func(_ appkit.NSApplication) appkit.NSApplicationTerminateReply {
-			saveWindowDisplayPlacement(window, frameAutosaveName)
-			window.SaveFrameUsingName(frameAutosaveName)
-			doCleanup()
-			app.Stop(nil)
-			postDummyEvent(app)
+			quitRuntime()
 			return appkit.NSTerminateCancel
 		},
 	})
@@ -1662,6 +1677,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					stateUpdate.changed = false
 					if stateUpdate.newState >= 0 {
 						vmToolbar.UpdateState(stateUpdate.newState)
+						statusItem.UpdateState(stateUpdate.newState)
 						window.SetTitle(fmt.Sprintf("%s — %s", windowTitle, vmStateName(stateUpdate.newState)))
 						// Start fading the boot overlay once the VM is running.
 						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && overlayFadeStep == -1 && bootOverlay.ID != 0 {
@@ -1749,6 +1765,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// app.Run() blocks until app.Stop() is called (when VM terminates).
 	app.Run()
+	if statusItem != nil {
+		statusItem.Shutdown()
+	}
 
 	return runErr
 }
