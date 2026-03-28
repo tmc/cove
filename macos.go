@@ -1625,7 +1625,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// its reflect frame is cleaned up before GC can scan stale values.
 	var overlayFadeStep int = -1 // -1 means not fading
 	var pauseOverlay appkit.NSView
-	var pauseFadeStep int = -1 // -1 means not fading; >0 means fading in; used for fade-out too
+	var pauseFadeStep int = -1    // -1 means not fading; >0 means fading in; used for fade-out too
+	var healthPollCounter int     // poll agent health every ~1s (30 frames)
+	var lastHealthSubtitle string // avoid redundant SetSubtitle calls
 
 	// Self-rescheduling one-shot timer handles state updates on the main
 	// thread at ~30 Hz. Each invocation creates a fresh reflect frame via
@@ -1724,6 +1726,17 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						pauseFadeStep++
 						alpha := float64(pauseFadeStep) / float64(pauseFadeFrames)
 						objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("setAlphaValue:"), alpha)
+					}
+				}
+
+				// Poll agent health ~1x/sec and update window subtitle.
+				healthPollCounter++
+				if healthPollCounter >= 30 {
+					healthPollCounter = 0
+					subtitle := controlServer.AgentHealthSummary()
+					if subtitle != lastHealthSubtitle {
+						lastHealthSubtitle = subtitle
+						window.SetSubtitle(subtitle)
 					}
 				}
 

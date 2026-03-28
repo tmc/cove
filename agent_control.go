@@ -618,6 +618,31 @@ func (s *ControlServer) healthCheckUserAgent() {
 	s.healthMu.Unlock()
 }
 
+// AgentHealthSummary returns a short status string for UI display.
+// Thread-safe; intended for main-thread polling.
+func (s *ControlServer) AgentHealthSummary() string {
+	s.healthMu.RLock()
+	h := s.agentHealth
+	s.healthMu.RUnlock()
+
+	switch h.daemonStatus {
+	case "connected":
+		if h.userStatus == "connected" {
+			return "Agent: connected"
+		}
+		return "Agent: connected (no user session)"
+	case "reconnecting":
+		return "Agent: reconnecting..."
+	case "disconnected":
+		if h.lastErr != "" {
+			return "Agent: disconnected"
+		}
+		return "Agent: disconnected"
+	default:
+		return ""
+	}
+}
+
 func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
 	s.healthMu.Lock()
 	defer s.healthMu.Unlock()
