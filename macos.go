@@ -885,6 +885,11 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return runVMWithGUI(vm, queue)
 	}
 
+	// Headless mode now relies on a hidden AppKit presentation for GUI attach
+	// and framebuffer screenshots. Initialize NSApplication before starting or
+	// restoring the VM so resume paths do not bootstrap AppKit against a live VM.
+	ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
+
 	if err := startConfiguredVM(vm, queue, true); err != nil {
 		return err
 	}
