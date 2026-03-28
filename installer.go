@@ -199,12 +199,16 @@ func stopVMAndInject(vm *virtualMachine) {
 	fmt.Println()
 }
 
-// installMacOSLikeVZ installs macOS following the Code-Hex/vz pattern more closely.
-// Key differences from our previous approach:
-// 1. Uses file path instead of URL for installer
+// installMacOSLikeVZ installs macOS using the flow originally modeled on
+// Code-Hex/vz, the CGO reference implementation for Virtualization.framework.
+// The name is historical. The flow keeps the same core setup:
+// 1. Uses a local restore image path instead of a restore image URL.
+// 2. Creates platform config from the IPSW's hardware requirements.
+// 3. Uses the simpler VM creation and installer flow.
+
 // checkExistingVM checks if a VM disk already exists in the VM directory.
-// Returns an error if disk.img exists and -force was not specified, preventing
-// accidental data loss from re-installing over an existing VM.
+// It returns an error if disk.img exists and -force was not specified,
+// preventing accidental data loss from re-installing over an existing VM.
 func checkExistingVM(dir string, diskName string) error {
 	diskFile := filepath.Join(dir, diskName)
 	info, err := os.Stat(diskFile)
@@ -221,8 +225,6 @@ func checkExistingVM(dir string, diskName string) error {
 	return fmt.Errorf("vm disk already exists: %s (%d MB)\n\nTo install over this disk, use -force (THIS WILL DESTROY ALL DATA IN THE VM).\nTo use a different VM, use -vm <name>", diskFile, info.Size()/(1024*1024))
 }
 
-// 2. Creates platform config with hardware model from IPSW requirements
-// 3. Uses simpler VM creation flow
 func installMacOSLikeVZ(ctx context.Context) error {
 	fmt.Println("=== macOS Installation ===")
 
@@ -901,7 +903,7 @@ func setupVMConfigurationWithRequirements(ctx context.Context, reqs *vz.VZMacOSC
 	}
 
 	// Create main VM configuration
-	return setupVMConfiguration(ctx, platformConfig)
+	return setupVMConfiguration(ctx, platformConfig, uint(reqs.MinimumSupportedCPUCount()), reqs.MinimumSupportedMemorySize())
 }
 
 // createMacInstallerPlatformConfiguration creates platform config for installation.
@@ -984,7 +986,7 @@ func saveDataRepresentation(objID objc.ID, path string) error {
 
 // setupVMConfiguration creates the full VM configuration.
 // Mirrors Code-Hex/vz's setupVMConfiguration.
-func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformConfiguration) (vz.VZVirtualMachineConfiguration, error) {
+func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformConfiguration, minCPU uint, minMem uint64) (vz.VZVirtualMachineConfiguration, error) {
 	// Create boot loader
 	bootloader := vz.NewVZMacOSBootLoader()
 	if bootloader.ID == 0 {
@@ -994,8 +996,8 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	// Create main configuration
 	config := vz.NewVZVirtualMachineConfiguration()
 	config.SetBootLoader(&bootloader.VZBootLoader)
-	config.SetCPUCount(computeCPUCount())
-	config.SetMemorySize(computeMemorySize())
+	config.SetCPUCount(computeInstallCPUCount(minCPU))
+	config.SetMemorySize(computeInstallMemorySize(minMem))
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
 
 	// Graphics
@@ -1065,38 +1067,57 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	return config, nil
 }
 
-// computeCPUCount returns appropriate CPU count for VM.
-func computeCPUCount() uint {
-	configClass := vz.GetVZVirtualMachineConfigurationClass()
-	minCPU := configClass.MinimumAllowedCPUCount()
-	maxCPU := configClass.MaximumAllowedCPUCount()
+func clampInstallCPUCount(requested, frameworkMin, frameworkMax, restoreMin uint) uint {
+	minCPU := frameworkMin
+	if restoreMin > minCPU {
+		minCPU = restoreMin
+	}
+	if requested < minCPU {
+		requested = minCPU
+	}
+	if requested > frameworkMax {
+		requested = frameworkMax
+	}
+	return requested
+}
 
-	virtualCPUCount := cpuCount
-	if virtualCPUCount < uint(minCPU) {
-		virtualCPUCount = uint(minCPU)
-	}
-	if virtualCPUCount > uint(maxCPU) {
-		virtualCPUCount = uint(maxCPU)
-	}
-	vzlog("computeCPUCount: requested=%d, min=%d, max=%d, using=%d", cpuCount, minCPU, maxCPU, virtualCPUCount)
+// computeInstallCPUCount returns an install-time CPU count that respects both
+// framework-wide limits and the restore image's minimum requirements.
+func computeInstallCPUCount(minRequired uint) uint {
+	configClass := vz.GetVZVirtualMachineConfigurationClass()
+	frameworkMin := uint(configClass.MinimumAllowedCPUCount())
+	frameworkMax := uint(configClass.MaximumAllowedCPUCount())
+	virtualCPUCount := clampInstallCPUCount(cpuCount, frameworkMin, frameworkMax, minRequired)
+	vzlog("computeInstallCPUCount: requested=%d, frameworkMin=%d, restoreMin=%d, max=%d, using=%d",
+		cpuCount, frameworkMin, minRequired, frameworkMax, virtualCPUCount)
 	return virtualCPUCount
 }
 
-// computeMemorySize returns appropriate memory size for VM.
-func computeMemorySize() uint64 {
-	configClass := vz.GetVZVirtualMachineConfigurationClass()
-	minMem := configClass.MinimumAllowedMemorySize()
-	maxMem := configClass.MaximumAllowedMemorySize()
+func clampInstallMemorySize(requested, frameworkMin, frameworkMax, restoreMin uint64) uint64 {
+	minMem := frameworkMin
+	if restoreMin > minMem {
+		minMem = restoreMin
+	}
+	if requested < minMem {
+		requested = minMem
+	}
+	if requested > frameworkMax {
+		requested = frameworkMax
+	}
+	return requested
+}
 
-	memSize := memoryGB * 1024 * 1024 * 1024
-	if memSize < minMem {
-		memSize = minMem
-	}
-	if memSize > maxMem {
-		memSize = maxMem
-	}
-	vzlog("computeMemorySize: requested=%d GB, min=%d (%.1f GB), max=%d (%.1f GB), using=%d (%.1f GB)",
-		memoryGB, minMem, float64(minMem)/(1024*1024*1024), maxMem, float64(maxMem)/(1024*1024*1024),
+// computeInstallMemorySize returns an install-time memory size that respects
+// both framework-wide limits and the restore image's minimum requirements.
+func computeInstallMemorySize(minRequired uint64) uint64 {
+	configClass := vz.GetVZVirtualMachineConfigurationClass()
+	frameworkMin := configClass.MinimumAllowedMemorySize()
+	frameworkMax := configClass.MaximumAllowedMemorySize()
+
+	requested := memoryGB * 1024 * 1024 * 1024
+	memSize := clampInstallMemorySize(requested, frameworkMin, frameworkMax, minRequired)
+	vzlog("computeInstallMemorySize: requested=%d GB, frameworkMin=%d (%.1f GB), restoreMin=%d (%.1f GB), max=%d (%.1f GB), using=%d (%.1f GB)",
+		memoryGB, frameworkMin, float64(frameworkMin)/(1024*1024*1024), minRequired, float64(minRequired)/(1024*1024*1024), frameworkMax, float64(frameworkMax)/(1024*1024*1024),
 		memSize, float64(memSize)/(1024*1024*1024))
 	return memSize
 }
@@ -1335,7 +1356,7 @@ type virtualMachine struct {
 	stateChanged chan vz.VZVirtualMachineState
 	stateLock    sync.Mutex
 	currentState vz.VZVirtualMachineState
-	observer     objc.ID    // For KVO observation
+	observer     objc.ID       // For KVO observation
 	done         chan struct{} // closed to stop monitorState goroutine
 }
 
@@ -1626,7 +1647,7 @@ func createInstallOverlay(size corefoundation.CGSize) appkit.NSView {
 			objc.Sel("colorWithWhite:alpha:"),
 			0.1, 0.9,
 		)
-		cgColor := objc.Send[uintptr](bgColor, objc.Sel("CGColor"))
+		cgColor := objc.Send[objc.ID](bgColor, objc.Sel("CGColor"))
 		objc.Send[objc.ID](layer, objc.Sel("setBackgroundColor:"), cgColor)
 	}
 
