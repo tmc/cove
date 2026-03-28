@@ -56,18 +56,19 @@ type ControlServer struct {
 	vmQueue           dispatch.Queue
 	mu                sync.Mutex
 	agentMu           sync.RWMutex // protects agent connection setup; RLock for concurrent RPCs
-	screenshotMu      sync.Mutex // protects lastScreenshot for diff mode
+	screenshotMu      sync.Mutex   // protects lastScreenshot for diff mode
 	running           atomic.Bool
-	lastScreenshot    image.Image  // For diff mode
-	agent             *AgentClient     // GRPC client to guest agent daemon (nil until connected)
-	userAgent         *UserAgentClient // GRPC client to guest user agent (nil until connected)
-	ocr               *OCRService      // lazily created OCR service for server-side OCR commands
-	iterm2Proxy       *ITerm2Proxy          // WebSocket-to-vsock relay for iTerm2 API (nil until started)
-	portForwards      *PortForwardManager   // host TCP -> guest vsock port forwards (nil until first use)
-	windowNum         int                   // cached window number for thread-safe screenshot
-	viewContentHeight int                   // cached view content height in pixels (excludes title bar)
-	healthMu          sync.RWMutex       // protects agentHealth
-	agentHealth       agentHealthState   // proactive health monitoring state
+	lastScreenshot    image.Image         // For diff mode
+	agent             *AgentClient        // GRPC client to guest agent daemon (nil until connected)
+	userAgent         *UserAgentClient    // GRPC client to guest user agent (nil until connected)
+	ocr               *OCRService         // lazily created OCR service for server-side OCR commands
+	iterm2Proxy       *ITerm2Proxy        // WebSocket-to-vsock relay for iTerm2 API (nil until started)
+	portForwards      *PortForwardManager // host TCP -> guest vsock port forwards (nil until first use)
+	windowNum         int                 // cached window number for thread-safe screenshot
+	viewContentHeight int                 // cached view content height in pixels (excludes title bar)
+	healthMu          sync.RWMutex        // protects agentHealth
+	agentHealth       agentHealthState    // proactive health monitoring state
+	gui               VMGUIController
 }
 
 // agentHealthState tracks proactive agent health monitoring.
@@ -304,6 +305,8 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.handleITerm2ProxyStop()
 	case "iterm2-proxy-status":
 		return s.handleITerm2ProxyStatus()
+	case "gui-open", "gui-close", "gui-status":
+		return s.handleGUIRequest(req.Type)
 	case "port-forward":
 		cmd := req.GetPortForward()
 		if cmd == nil {
@@ -1436,7 +1439,7 @@ var charToKeyCode = map[rune]charKeyCodeInfo{
 	'(': {25, true}, ')': {29, true}, '_': {27, true}, '+': {24, true},
 	'{': {33, true}, '}': {30, true}, '|': {42, true}, '~': {50, true},
 	':': {41, true}, '"': {39, true}, '<': {43, true}, '>': {47, true},
-	'?': {44, true},
+	'?':  {44, true},
 	'\n': {36, false}, '\t': {48, false},
 }
 
@@ -1743,6 +1746,9 @@ func (s *ControlServer) handleNetworkInfo() *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
+	s.mu.Lock()
+	guiAvailable := s.gui != nil
+	s.mu.Unlock()
 	payload := map[string]any{
 		"protocolVersion": "vz.control.v1",
 		"encoding":        "protojson",
@@ -1764,11 +1770,12 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			"screenshotDiff":  true,
 			"snapshots":       true,
 			"memoryBalloon":   true,
+			"guiAttach":       guiAvailable,
 		},
 		"commands": []string{
 			"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 			"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
-			"shared-folders-apply", "port-forward",
+			"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 			"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 			"agent-sshd", "agent-mount-volumes", "agent-status",
@@ -1777,7 +1784,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 	commands := []string{
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
-		"shared-folders-apply", "port-forward",
+		"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 		"agent-sshd", "agent-mount-volumes", "agent-status",
@@ -1787,6 +1794,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"screenshotDiff":  true,
 		"snapshots":       true,
 		"memoryBalloon":   true,
+		"guiAttach":       guiAvailable,
 	}
 
 	data, _ := json.Marshal(payload)

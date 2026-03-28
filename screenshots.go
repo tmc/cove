@@ -38,8 +38,8 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 		format = "jpeg"
 	}
 
-	// Capture raw screenshot
-	img, errMsg := s.captureVMView()
+	// Capture raw screenshot.
+	img, errMsg := s.captureDisplayImage()
 	if errMsg != "" {
 		return &controlpb.ControlResponse{Error: errMsg}
 	}
@@ -84,6 +84,23 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 	}
 }
 
+func (s *ControlServer) captureDisplayImage() (image.Image, string) {
+	s.mu.Lock()
+	gui := s.gui
+	s.mu.Unlock()
+	if gui != nil {
+		status := gui.Status()
+		if !status.Headed {
+			if img, errMsg := s.capturePrivateGraphicsDisplay(); errMsg == "" {
+				return img, ""
+			} else if verbose {
+				fmt.Printf("[screenshot] private capture unavailable: %s\n", errMsg)
+			}
+		}
+	}
+	return s.captureVMView()
+}
+
 // captureVMView captures the raw image from the VM view using CGWindowListCreateImage
 func (s *ControlServer) captureVMView() (image.Image, string) {
 	if s.window.ID == 0 {
@@ -119,13 +136,33 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 	}
 	defer coregraphics.CGImageRelease(cgImage)
 
+	// Determine the title bar offset by comparing CGImage height to the
+	// VM view bounds. CGWindowListCreateImage captures the full window
+	// (including the title bar) even with kCGWindowImageBoundsIgnoreFraming.
+	// We crop to match the view content area so OCR pixel coordinates map
+	// directly to normalized mouse input coordinates.
+	titleBarPx := 0
+	height := int(coregraphics.CGImageGetHeight(cgImage))
+	viewH := s.viewContentHeight
+	if viewH > 0 && height > viewH {
+		titleBarPx = height - viewH
+		if verbose {
+			fmt.Printf("[screenshot] cropping %dpx title bar (screenshot=%d, view=%d)\n",
+				titleBarPx, height, viewH)
+		}
+	}
+
+	return goImageFromCGImage(cgImage, titleBarPx)
+}
+
+func goImageFromCGImage(cgImage coregraphics.CGImageRef, cropTopPx int) (image.Image, string) {
+	if cgImage == 0 {
+		return nil, "cgimage is nil"
+	}
+
 	// Get image dimensions
 	width := int(coregraphics.CGImageGetWidth(cgImage))
 	height := int(coregraphics.CGImageGetHeight(cgImage))
-	if verbose {
-		fmt.Printf("[screenshot] captured %dx%d from window %d\n", width, height, windowNum)
-	}
-
 	if width == 0 || height == 0 {
 		return nil, fmt.Sprintf("invalid image dimensions: %dx%d", width, height)
 	}
@@ -152,24 +189,10 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 
 	// Get bytes per row
 	bytesPerRow := int(coregraphics.CGImageGetBytesPerRow(cgImage))
-
-	// Determine the title bar offset by comparing CGImage height to the
-	// VM view bounds. CGWindowListCreateImage captures the full window
-	// (including the title bar) even with kCGWindowImageBoundsIgnoreFraming.
-	// We crop to match the view content area so OCR pixel coordinates map
-	// directly to normalized mouse input coordinates.
-	// Crop title bar using cached view content height (set in SetVMViewWithWindow).
-	titleBarPx := 0
-	viewH := s.viewContentHeight
-	if viewH > 0 && height > viewH {
-		titleBarPx = height - viewH
-		if verbose {
-			fmt.Printf("[screenshot] cropping %dpx title bar (screenshot=%d, view=%d)\n",
-				titleBarPx, height, viewH)
-		}
+	contentHeight := height - cropTopPx
+	if contentHeight <= 0 {
+		return nil, fmt.Sprintf("invalid cropped height: %d", contentHeight)
 	}
-
-	contentHeight := height - titleBarPx
 
 	// Convert to Go image - CGImage typically uses BGRA format
 	rgba := image.NewRGBA(image.Rect(0, 0, width, contentHeight))
@@ -177,7 +200,7 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 	dstData := rgba.Pix
 
 	for y := 0; y < contentHeight; y++ {
-		srcRowStart := (y + titleBarPx) * bytesPerRow
+		srcRowStart := (y + cropTopPx) * bytesPerRow
 		dstRowStart := y * rgba.Stride
 		for x := 0; x < width; x++ {
 			srcPixel := srcRowStart + x*4

@@ -831,7 +831,7 @@ func createSharedFoldersDevice(folders []SharedFolderEntry) vz.VZVirtioFileSyste
 		if f.ReadOnly {
 			mode = "ro"
 		}
-		fmt.Printf("Shared folder: %s -> /Volumes/%s (%s)\n", f.Path, f.Tag, mode)
+		fmt.Printf("Shared folder: %s -> %s/%s (%s)\n", f.Path, defaultSharedFoldersMountPoint, f.Tag, mode)
 	}
 
 	var dict foundation.NSDictionary
@@ -1009,17 +1009,26 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		restoreTerminal = setRawMode()
 	}
 
-	// Start control socket for agent and lifecycle commands (no GUI needed).
-	// Screenshot/keyboard/mouse commands will gracefully error with "VM view not set".
+	app := ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
+
 	sock := GetControlSocketPathForVM(vmDir)
 	controlServer := NewControlServerWithVMDir(sock, vmDir)
 	controlServer.SetVM(vm, queue)
+	guiController, err := newHeadlessGUIController(app, vm, queue, controlServer, false)
+	if err != nil {
+		if restoreTerminal != nil {
+			restoreTerminal()
+		}
+		return fmt.Errorf("headless presentation: %w", err)
+	}
+	controlServer.SetGUIController(guiController)
 	if err := controlServer.Start(); err != nil {
 		fmt.Printf("warning: control socket: %v\n", err)
 	} else {
 		fmt.Printf("Control socket: %s\n", sock)
 		if verbose {
 			fmt.Printf("  vz-macos ctl -socket %s agent-ping\n", sock)
+			fmt.Printf("  vz-macos ctl -socket %s gui open\n", sock)
 		}
 	}
 
@@ -1033,9 +1042,60 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		go autoMountTaggedVolumes(ctx, controlServer, getEffectiveVolumes())
 	}
 
-	// Setup cleanup on exit — save state if possible, otherwise hard stop
+	type vmStateUpdate struct {
+		mu            sync.Mutex
+		newState      vz.VZVirtualMachineState
+		changed       bool
+		terminate     bool
+		signalCleanup bool
+	}
+	var stateUpdate vmStateUpdate
+	stateUpdate.newState = -1
+
+	monitorDone := make(chan struct{})
+	var stopMonitorOnce sync.Once
+	stopMonitor := func() {
+		stopMonitorOnce.Do(func() {
+			close(monitorDone)
+		})
+	}
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		var lastState vz.VZVirtualMachineState = -1
+		for {
+			select {
+			case <-monitorDone:
+				return
+			case <-ticker.C:
+			}
+			state := vz.VZVirtualMachineState(vm.State())
+			if state != lastState {
+				lastState = state
+				stateUpdate.mu.Lock()
+				stateUpdate.newState = state
+				stateUpdate.changed = true
+				stateUpdate.mu.Unlock()
+			}
+			if state == vz.VZVirtualMachineStateStopped || state == vz.VZVirtualMachineStateError {
+				stateUpdate.mu.Lock()
+				if stateUpdate.signalCleanup {
+					stateUpdate.mu.Unlock()
+					return
+				}
+				stateUpdate.terminate = true
+				stateUpdate.changed = true
+				stateUpdate.mu.Unlock()
+				return
+			}
+		}
+	}()
+
+	// Setup cleanup on exit — save state if possible, otherwise hard stop.
 	cleanup := func() {
+		stopMonitor()
 		controlServer.Stop()
+		guiController.Shutdown()
 		if restoreTerminal != nil {
 			restoreTerminal()
 		}
@@ -1052,30 +1112,60 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
+		app.Stop(nil)
+		postDummyEvent(app)
 	}
 	var cleanupOnce sync.Once
-	setupSignalHandler(func() { cleanupOnce.Do(cleanup) })
+	setupSignalHandler(func() {
+		stateUpdate.mu.Lock()
+		stateUpdate.signalCleanup = true
+		stateUpdate.mu.Unlock()
+		cleanupOnce.Do(cleanup)
+	})
 
-	// Monitor state in a loop
-	monitorTicker := time.NewTicker(2 * time.Second)
-	defer monitorTicker.Stop()
-
-	for range monitorTicker.C {
-		vzkit.RunRunLoopOnce()
-
-		state := vz.VZVirtualMachineState(vm.State())
-		if state == vz.VZVirtualMachineStateStopped || state == vz.VZVirtualMachineStateError {
-			if restoreTerminal != nil {
-				restoreTerminal()
-			}
-			// VM stopped normally — remove any suspend state and inject marker
-			os.Remove(suspendStatePath())
-			os.Remove(suspendConfigPath())
-			clearInjectSucceeded()
-			fmt.Println("VM stopped")
-			return nil
-		}
+	var scheduleTimer func()
+	scheduleTimer = func() {
+		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(
+			0.033,
+			false,
+			func(_ *foundation.NSTimer) {
+				stateUpdate.mu.Lock()
+				if stateUpdate.changed {
+					state := stateUpdate.newState
+					terminate := stateUpdate.terminate
+					stateUpdate.changed = false
+					if state >= 0 {
+						guiController.updateStateOnMain(state)
+					}
+					if terminate {
+						os.Remove(suspendStatePath())
+						os.Remove(suspendConfigPath())
+						clearInjectSucceeded()
+						app.Stop(nil)
+						postDummyEvent(app)
+						stateUpdate.mu.Unlock()
+						return
+					}
+				}
+				stateUpdate.mu.Unlock()
+				scheduleTimer()
+			},
+		)
 	}
+	scheduleTimer()
+	app.Run()
+
+	stopMonitor()
+	controlServer.Stop()
+	guiController.shutdownOnMain()
+	if restoreTerminal != nil {
+		restoreTerminal()
+	}
+	os.Remove(suspendStatePath())
+	os.Remove(suspendConfigPath())
+	clearInjectSucceeded()
+	closeSerialOutputFile()
+	fmt.Println("VM stopped")
 	return nil
 }
 

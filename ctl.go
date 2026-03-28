@@ -47,6 +47,9 @@ Commands:
   stop                  Force stop VM
   request-stop          Send ACPI power button (graceful shutdown)
   network-info          Get VM network info (MAC address, guest IP, mode)
+  gui status            Report whether the VM is currently headed or headless
+  gui open              Show the live VM window for a headless runtime
+  gui close             Return the runtime to headless mode without stopping it
   memory info           Get memory balloon info
   memory set <GB>       Set memory target (e.g., memory set 8)
   snapshot list         List snapshots
@@ -105,6 +108,8 @@ Options:
 Examples:
   vz-macos ctl ping
   vz-macos ctl status
+  vz-macos ctl gui status
+  vz-macos ctl gui open
   vz-macos ctl screenshot -o screen.jpg
   vz-macos ctl key 36 down    # Press Return
   vz-macos ctl key 36 up      # Release Return
@@ -207,6 +212,21 @@ Examples:
 		return ctlITerm2ProxyCommand(sock, "iterm2-proxy-stop", *raw)
 	case "iterm2-proxy-status":
 		return ctlITerm2ProxyCommand(sock, "iterm2-proxy-status", *raw)
+	case "gui":
+		if len(subArgs) < 1 {
+			return fmt.Errorf("gui requires action: status, open, or close")
+		}
+		action := subArgs[0]
+		switch action {
+		case "status":
+			return ctlSimpleCommand(sock, "gui-status", *timeout, *raw)
+		case "open":
+			return ctlSimpleCommand(sock, "gui-open", *timeout, *raw)
+		case "close":
+			return ctlSimpleCommand(sock, "gui-close", *timeout, *raw)
+		default:
+			return fmt.Errorf("unknown gui action: %s (use status, open, or close)", action)
+		}
 	}
 
 	// Build proto request
@@ -523,6 +543,18 @@ Examples:
 	}
 
 	return ctlPrintResponse(resp, cmdType, *raw, *outputFile)
+}
+
+func ctlSimpleCommand(sock, cmdType string, timeout time.Duration, raw bool) error {
+	req := &controlpb.ControlRequest{
+		Type:      cmdType,
+		AuthToken: resolveControlTokenForSocket(sock),
+	}
+	resp, err := ctlSendRequest(sock, req, timeout, cmdType)
+	if err != nil {
+		return err
+	}
+	return ctlPrintResponse(resp, cmdType, raw, "")
 }
 
 func ctlExecStream(sock string, req *controlpb.ControlRequest, timeout time.Duration) error {
