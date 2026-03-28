@@ -112,9 +112,8 @@
 //
 // # Entitlements
 //
-// The binary must be signed with virtualization entitlements:
-//
-//	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./vz-macos
+// vz-macos signs itself on first launch if the required virtualization
+// entitlements are missing. No manual codesign step is required.
 //
 // Required entitlements (internal/autosign/vz.entitlements):
 //
@@ -125,7 +124,7 @@
 //
 //   - Apple Silicon Mac (M1/M2/M3/M4)
 //   - macOS 12.0+ (Monterey or later)
-//   - Xcode Command Line Tools (for codesign)
+//   - Xcode Command Line Tools (for the automatic first-launch codesign step)
 //   - IPSW restore image for macOS installation
 //
 // # References

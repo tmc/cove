@@ -16,7 +16,7 @@ macOS and Linux VM management using Apple's Virtualization.framework via [purego
 ## Quick Start
 
 ```bash
-# Build (auto-signs with virtualization entitlements on first run)
+# Build
 go build -o vz-macos .
 
 # One-command setup: install + provision + boot
@@ -27,6 +27,11 @@ go build -o vz-macos .
 ./vz-macos inject -user testuser -skip-setup-assistant     # provisions user
 ./vz-macos run                                             # boots with GUI
 ```
+
+On first launch, `vz-macos` checks whether the binary already has the
+Virtualization.framework entitlements it needs. If not, it ad-hoc signs the
+binary with the embedded entitlements and re-execs automatically. No manual
+`codesign --entitlements ...` step is required.
 
 ## Linux VMs
 
@@ -42,7 +47,7 @@ go build -o vz-macos .
 
 - Apple Silicon Mac (M1/M2/M3/M4)
 - macOS 12.0+ (Monterey or later)
-- Xcode Command Line Tools (for codesign)
+- Xcode Command Line Tools (`codesign`, used by the automatic first-launch signing step)
 
 ## Project Structure
 

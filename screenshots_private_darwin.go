@@ -8,6 +8,7 @@ import (
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/coregraphics"
+	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 )
@@ -24,57 +25,58 @@ func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 	)
 
 	DispatchSync(GetMainDispatchQueue(), func() {
-		objc.AutoreleasePool(func() {
-			vmView := vmViewAsNSView(s.vmView)
-			captureView := vmView
-			mode = "view-cache"
+		pool := foundation.NewNSAutoreleasePool()
+		defer pool.Drain()
 
-			vmViewObj := objectivec.ObjectFromID(s.vmView.ID)
-			framebufferIvar := objectivec.Class_getInstanceVariable(objc.GetClass("VZVirtualMachineView"), "_framebufferView")
-			if framebufferIvar != 0 {
-				framebufferObj := objectivec.Object_getIvar(vmViewObj, framebufferIvar)
-				if framebufferObj.ID != 0 {
-					captureView = appkit.NSViewFromID(framebufferObj.ID)
-					mode = "private-framebuffer"
-				}
-			}
+		vmView := vmViewAsNSView(s.vmView)
+		captureView := vmView
+		mode = "view-cache"
 
-			if s.window.ID != 0 {
-				s.window.DisplayIfNeeded()
+		vmViewObj := objectivec.ObjectFromID(s.vmView.ID)
+		framebufferIvar := objectivec.Class_getInstanceVariable(objc.GetClass("VZVirtualMachineView"), "_framebufferView")
+		if framebufferIvar != 0 {
+			framebufferObj := objectivec.Object_getIvar(vmViewObj, framebufferIvar)
+			if framebufferObj.ID != 0 {
+				captureView = appkit.NSViewFromID(framebufferObj.ID)
+				mode = "private-framebuffer"
 			}
-			vmView.LayoutSubtreeIfNeeded()
-			vmView.SetNeedsDisplay(true)
-			vmView.DisplayIfNeeded()
-			captureView.LayoutSubtreeIfNeeded()
-			captureView.SetNeedsDisplay(true)
-			captureView.DisplayIfNeeded()
+		}
 
-			bounds := captureView.VisibleRect()
-			if bounds.Size.Width <= 0 || bounds.Size.Height <= 0 {
-				bounds = captureView.Bounds()
-			}
-			if bounds.Size.Width <= 0 || bounds.Size.Height <= 0 {
-				bounds = captureView.Frame()
-			}
-			if bounds.Size.Width <= 0 || bounds.Size.Height <= 0 {
-				errMsg = fmt.Sprintf("%s has empty bounds %.0fx%.0f", mode, bounds.Size.Width, bounds.Size.Height)
-				return
-			}
+		if s.window.ID != 0 {
+			s.window.DisplayIfNeeded()
+		}
+		vmView.LayoutSubtreeIfNeeded()
+		vmView.SetNeedsDisplay(true)
+		vmView.DisplayIfNeeded()
+		captureView.LayoutSubtreeIfNeeded()
+		captureView.SetNeedsDisplay(true)
+		captureView.DisplayIfNeeded()
 
-			rep := captureView.BitmapImageRepForCachingDisplayInRect(bounds)
-			if rep == nil || rep.GetID() == 0 {
-				errMsg = fmt.Sprintf("%s bitmap cache setup failed", mode)
-				return
-			}
-			captureView.CacheDisplayInRectToBitmapImageRep(bounds, rep)
+		bounds := captureView.VisibleRect()
+		if bounds.Size.Width <= 0 || bounds.Size.Height <= 0 {
+			bounds = captureView.Bounds()
+		}
+		if bounds.Size.Width <= 0 || bounds.Size.Height <= 0 {
+			bounds = captureView.Frame()
+		}
+		if bounds.Size.Width <= 0 || bounds.Size.Height <= 0 {
+			errMsg = fmt.Sprintf("%s has empty bounds %.0fx%.0f", mode, bounds.Size.Width, bounds.Size.Height)
+			return
+		}
 
-			imageRef := coregraphics.CGImageRef(objc.Send[objc.ID](rep.GetID(), objc.Sel("CGImage")))
-			if imageRef == 0 {
-				errMsg = fmt.Sprintf("%s cgimage is nil", mode)
-				return
-			}
-			cgImage = coregraphics.CGImageRetain(imageRef)
-		})
+		rep := captureView.BitmapImageRepForCachingDisplayInRect(bounds)
+		if rep == nil || rep.GetID() == 0 {
+			errMsg = fmt.Sprintf("%s bitmap cache setup failed", mode)
+			return
+		}
+		captureView.CacheDisplayInRectToBitmapImageRep(bounds, rep)
+
+		imageRef := coregraphics.CGImageRef(objc.Send[objc.ID](rep.GetID(), objc.Sel("CGImage")))
+		if imageRef == 0 {
+			errMsg = fmt.Sprintf("%s cgimage is nil", mode)
+			return
+		}
+		cgImage = coregraphics.CGImageRetain(imageRef)
 	})
 
 	if errMsg != "" {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/foundation"
 )
 
 const windowFrameAutosavePrefix = "com.github.tmc.vz-macos.window."
@@ -152,7 +153,7 @@ func findScreenByDisplayID(displayID uint32) (appkit.NSScreen, bool) {
 		if screen.GetID() == 0 {
 			continue
 		}
-		if screen.CgDirectDisplayID() == displayID {
+		if screenDisplayID(screen) == displayID {
 			return screen, true
 		}
 	}
@@ -163,7 +164,15 @@ func screenDisplayID(screen appkit.INSScreen) uint32 {
 	if screen == nil || screen.GetID() == 0 {
 		return 0
 	}
-	return screen.CgDirectDisplayID()
+	desc := screen.DeviceDescription()
+	if desc.GetID() == 0 {
+		return 0
+	}
+	value := desc.ObjectForKey(foundation.NewStringWithString("NSScreenNumber"))
+	if value == nil || value.GetID() == 0 {
+		return 0
+	}
+	return foundation.NSNumberFromID(value.GetID()).UnsignedIntValue()
 }
 
 func translateWindowFrameBetweenScreens(frame, fromScreen, toScreen corefoundation.CGRect) corefoundation.CGRect {
