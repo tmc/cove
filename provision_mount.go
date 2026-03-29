@@ -422,9 +422,6 @@ func fixOwnershipWithSudo(paths []string, dataPartition string, installs ...pend
 		return cmd.Run()
 	}
 
-	// Use osascript display dialog for password, then sudo -S to run the
-	// script. This avoids "do shell script ... with administrator privileges"
-	// which has a known macOS bug where it hangs after completion.
 	fmt.Println("Requesting administrator privileges...")
 	return runElevatedBash(tmpPath)
 }

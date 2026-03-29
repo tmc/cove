@@ -5,10 +5,11 @@ go 1.25.5
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/ebitengine/purego v0.11.0-alpha.1.0.20260318130922-386f7c8fb549
+	github.com/gorilla/websocket v1.5.3
 	github.com/tmc/apple v0.4.4
 	github.com/tmc/macgo v0.1.0
 	golang.org/x/crypto v0.49.0
-	golang.org/x/image v0.33.0
+	golang.org/x/image v0.38.0
 	golang.org/x/net v0.52.0
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0
@@ -17,9 +18,6 @@ require (
 	rsc.io/script v0.0.2
 )
 
-require (
-	github.com/gorilla/websocket v1.5.3 // indirect
-	golang.org/x/text v0.35.0 // indirect
-)
+require golang.org/x/text v0.35.0 // indirect
 
 replace github.com/tmc/apple => /Users/tmc/go/src/github.com/tmc/apple

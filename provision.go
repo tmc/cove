@@ -708,12 +708,14 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 	return nil
 }
 
-// runElevatedBash runs a bash script with root privileges. It uses osascript
-// to prompt for the admin password via a GUI dialog, then pipes it to sudo -S.
-// This avoids the known macOS bug where osascript "with administrator privileges"
-// hangs indefinitely after the script completes.
+// runElevatedBash runs a bash script with root privileges.
+//
+// Strategy:
+//  1. Try sudo -n (reuse cached credentials).
+//  2. Try native AuthorizationServices (system dialog with Touch ID).
+//  3. Fall back to password prompt + sudo -S.
 func runElevatedBash(scriptPath string) error {
-	// Reuse an existing sudo authentication timestamp when available.
+	// Try cached sudo credentials first.
 	cmd := exec.Command("sudo", "-n", "bash", scriptPath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -736,6 +738,17 @@ func runElevatedBash(scriptPath string) error {
 		return fmt.Errorf("elevated apply: %w", err)
 	}
 
+	// Try native macOS authorization (system dialog with Touch ID).
+	if err := runElevatedBashNative(scriptPath); err == nil {
+		return nil
+	}
+
+	// Fall back to password prompt + sudo -S.
+	return runElevatedBashSudo(scriptPath)
+}
+
+// runElevatedBashSudo prompts for the admin password and runs via sudo -S.
+func runElevatedBashSudo(scriptPath string) error {
 	hostUser := os.Getenv("USER")
 	if hostUser == "" {
 		if u, err := user.Current(); err == nil {
@@ -754,9 +767,7 @@ func runElevatedBash(scriptPath string) error {
 		return fmt.Errorf("read administrator password: %w", err)
 	}
 
-	// Run the script via sudo -S (read password from stdin).
-	// Suppress sudo's own prompt since we already collected the password.
-	cmd = exec.Command("sudo", "-S", "-p", "", "bash", scriptPath)
+	cmd := exec.Command("sudo", "-S", "-p", "", "bash", scriptPath)
 	cmd.Stdin = strings.NewReader(string(pw) + "\n")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
