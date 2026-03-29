@@ -48,6 +48,40 @@ guest-ping
 	}
 }
 
+func TestParseScriptMetaRunsOn(t *testing.T) {
+	input := []byte(`# daemon-recipe — Runs as root
+# runs-on: daemon
+# requires: homebrew, golang
+
+guest-exec /bin/echo hello
+`)
+	meta := parseScriptMeta(input)
+	if meta.runsOn != "daemon" {
+		t.Errorf("runsOn = %q, want %q", meta.runsOn, "daemon")
+	}
+	if len(meta.requires) != 2 {
+		t.Fatalf("got %d requires, want 2", len(meta.requires))
+	}
+	if meta.requires[0] != "homebrew" || meta.requires[1] != "golang" {
+		t.Errorf("requires = %v, want [homebrew golang]", meta.requires)
+	}
+	if meta.desc != "Runs as root" {
+		t.Errorf("desc = %q, want %q", meta.desc, "Runs as root")
+	}
+}
+
+func TestParseScriptMetaEmpty(t *testing.T) {
+	meta := parseScriptMeta(nil)
+	if meta.name != "" || len(meta.requires) != 0 || len(meta.inject) != 0 {
+		t.Errorf("empty input should produce zero-value meta, got %+v", meta)
+	}
+
+	meta = parseScriptMeta([]byte("guest-ping\n"))
+	if meta.name != "" {
+		t.Errorf("no-comment input: name = %q, want empty", meta.name)
+	}
+}
+
 func TestParseFileMode(t *testing.T) {
 	tests := []struct {
 		input string
