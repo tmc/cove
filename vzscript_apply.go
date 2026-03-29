@@ -252,7 +252,8 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 		if cfg.verbose {
 			fmt.Fprintf(os.Stderr, "--- running recipe: %s ---\n", name)
 		}
-		if err := runVZScript(data, name, cfg); err != nil {
+		rcfg := cfgForRecipe(cfg, meta)
+		if err := runVZScript(data, name, rcfg); err != nil {
 			return err
 		}
 		completed[name] = true
@@ -390,7 +391,8 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 			if cfg.verbose {
 				fmt.Fprintf(os.Stderr, "--- running recipe: %s ---\n", r.name)
 			}
-			if err := runVZScript(r.data, r.name, cfg); err != nil {
+			rcfg := cfgForRecipe(cfg, r.meta)
+			if err := runVZScript(r.data, r.name, rcfg); err != nil {
 				errCh <- fmt.Errorf("%s: %w", r.name, err)
 			}
 		}()
@@ -418,6 +420,9 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 
 func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 	ar := txtar.Parse(data)
+
+	// Wrap output writers with recipe name prefix for clarity.
+	cfg = prefixOutputWriters(cfg, name)
 	engine := newVZScriptEngine(cfg)
 
 	workdir, err := os.MkdirTemp("", "vzscript-*")
@@ -447,6 +452,65 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 		os.Stderr.Write(log.Bytes())
 	}
 	return err
+}
+
+// prefixOutputWriters wraps cfg's log and stream writers with a line-prefixing
+// writer that prepends "[recipe-name] " to each output line. Sets defaults
+// for nil writers so the prefix is always visible.
+func prefixOutputWriters(cfg vzscriptConfig, name string) vzscriptConfig {
+	prefix := "[" + name + "] "
+	if cfg.logWriter == nil {
+		cfg.logWriter = os.Stderr
+	}
+	cfg.logWriter = newPrefixWriter(cfg.logWriter, prefix)
+	if cfg.streamOut == nil {
+		cfg.streamOut = os.Stdout
+	}
+	cfg.streamOut = newPrefixWriter(cfg.streamOut, prefix)
+	if cfg.streamErr == nil {
+		cfg.streamErr = os.Stderr
+	}
+	cfg.streamErr = newPrefixWriter(cfg.streamErr, prefix)
+	return cfg
+}
+
+// prefixWriter wraps an io.Writer and prepends a prefix at the start of
+// each line. Partial writes (no trailing newline) buffer until the next
+// newline arrives.
+type prefixWriter struct {
+	w      io.Writer
+	prefix string
+	atBOL  bool // at beginning of line
+}
+
+func newPrefixWriter(w io.Writer, prefix string) *prefixWriter {
+	return &prefixWriter{w: w, prefix: prefix, atBOL: true}
+}
+
+func (pw *prefixWriter) Write(p []byte) (int, error) {
+	written := 0
+	for len(p) > 0 {
+		if pw.atBOL {
+			if _, err := io.WriteString(pw.w, pw.prefix); err != nil {
+				return written, err
+			}
+			pw.atBOL = false
+		}
+		i := bytes.IndexByte(p, '\n')
+		if i < 0 {
+			n, err := pw.w.Write(p)
+			written += n
+			return written, err
+		}
+		n, err := pw.w.Write(p[:i+1])
+		written += n
+		if err != nil {
+			return written, err
+		}
+		pw.atBOL = true
+		p = p[i+1:]
+	}
+	return written, nil
 }
 
 // startAutoApprover starts a background goroutine that polls the VM screen
@@ -599,11 +663,21 @@ func loadVZScriptData(nameOrPath string) ([]byte, error) {
 	return data, nil
 }
 
+// cfgForRecipe returns a copy of cfg with per-recipe overrides applied.
+// Currently handles "runs-on: daemon" to route commands through the root agent.
+func cfgForRecipe(cfg vzscriptConfig, meta scriptMeta) vzscriptConfig {
+	if meta.runsOn == "daemon" {
+		cfg.daemon = true
+	}
+	return cfg
+}
+
 // scriptMeta holds parsed metadata from a vzscript header.
 type scriptMeta struct {
 	name     string
 	desc     string
 	requires []string // recipe names this script depends on
+	runsOn   string   // "daemon" to run as root via daemon agent
 }
 
 // parseScriptMeta extracts metadata from script comment lines.
@@ -611,6 +685,7 @@ type scriptMeta struct {
 //
 //	# name — description   (first non-blank comment line)
 //	# requires: a, b       (dependency list)
+//	# runs-on: daemon      (run as root via daemon agent)
 func parseScriptMeta(comment []byte) scriptMeta {
 	var m scriptMeta
 	s := bufio.NewScanner(bytes.NewReader(comment))
@@ -633,6 +708,12 @@ func parseScriptMeta(comment []byte) scriptMeta {
 					m.requires = append(m.requires, dep)
 				}
 			}
+			continue
+		}
+
+		// Check for "runs-on:" directive.
+		if strings.HasPrefix(strings.ToLower(text), "runs-on:") {
+			m.runsOn = strings.TrimSpace(text[len("runs-on:"):])
 			continue
 		}
 

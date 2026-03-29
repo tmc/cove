@@ -1,4 +1,5 @@
 # deploy-agent — Deploy updated vz-agent binary to the guest
+# runs-on: daemon
 
 guest-ping
 guest-shell deploy-agent.sh

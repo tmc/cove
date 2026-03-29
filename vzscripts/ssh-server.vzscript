@@ -1,4 +1,5 @@
 # ssh-server — Enable and configure SSH remote login
+# runs-on: daemon
 
 guest-ping
 guest-shell enable-sshd.sh

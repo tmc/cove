@@ -1,4 +1,5 @@
 # golang — Install Go programming language
+# runs-on: daemon
 
 guest-ping
 guest-shell install-go.sh
