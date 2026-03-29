@@ -1,5 +1,6 @@
 # workstation — Full development workstation with pre-boot setup
 # requires: login
+# runs-on: daemon
 # inject: Library/LaunchDaemons/com.vz.workstation-setup.plist setup-daemon.plist 0644 root:wheel
 # inject: usr/local/bin/workstation-setup.sh setup.sh 0755 root:wheel
 

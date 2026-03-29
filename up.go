@@ -322,11 +322,11 @@ func splitRecipes(s string) []string {
 	return names
 }
 
-// stageVZScriptInjects loads the named vzscript recipes, extracts any
-// # inject: directives from their metadata, and stages the referenced
-// txtar files into the existing provisioning staging directory. This runs
-// between stageProvisioningFiles and applyProvisioningFiles so the inject
-// files are included in the same disk-write pass.
+// stageVZScriptInjects loads the named vzscript recipes and their transitive
+// dependencies, extracts any # inject: directives from their metadata, and
+// stages the referenced txtar files into the existing provisioning staging
+// directory. This runs between stageProvisioningFiles and applyProvisioningFiles
+// so the inject files are included in the same disk-write pass.
 func stageVZScriptInjects(recipes []string) error {
 	stagingDir := provisionStagingDir()
 	manifest, err := readManifest(stagingDir)
@@ -336,9 +336,12 @@ func stageVZScriptInjects(recipes []string) error {
 
 	staged := 0
 	seen := map[string]bool{}
-	for _, name := range recipes {
+
+	// walk recursively resolves dependencies and stages inject directives.
+	var walk func(name string) error
+	walk = func(name string) error {
 		if seen[name] {
-			continue
+			return nil
 		}
 		seen[name] = true
 
@@ -348,8 +351,16 @@ func stageVZScriptInjects(recipes []string) error {
 		}
 		ar := txtar.Parse(data)
 		meta := parseScriptMeta(ar.Comment)
+
+		// Resolve dependencies first (depth-first).
+		for _, dep := range meta.requires {
+			if err := walk(dep); err != nil {
+				return err
+			}
+		}
+
 		if len(meta.inject) == 0 {
-			continue
+			return nil
 		}
 
 		// Index txtar files by name for lookup.
@@ -368,6 +379,13 @@ func stageVZScriptInjects(recipes []string) error {
 				return fmt.Errorf("recipe %s: stage inject %s: %w", name, inj.guestPath, err)
 			}
 			staged++
+		}
+		return nil
+	}
+
+	for _, name := range recipes {
+		if err := walk(name); err != nil {
+			return err
 		}
 	}
 
