@@ -231,6 +231,7 @@ func cleanVM() error {
 		"hw.model",
 		"machine.id",
 		"boot-args.txt",
+		".inject-succeeded",
 	}
 
 	for _, f := range files {
@@ -241,6 +242,16 @@ func cleanVM() error {
 			} else {
 				fmt.Printf("Removed: %s\n", path)
 			}
+		}
+	}
+
+	// Remove provisioning staging directory.
+	stagingDir := provisionStagingDir()
+	if _, err := os.Stat(stagingDir); err == nil {
+		if err := os.RemoveAll(stagingDir); err != nil {
+			fmt.Printf("warning: could not remove %s: %v\n", stagingDir, err)
+		} else {
+			fmt.Printf("Removed: %s\n", stagingDir)
 		}
 	}
 
@@ -708,8 +719,20 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 			return fmt.Errorf("apply files: %w", err)
 		}
 	} else {
-		fmt.Println("Requesting macOS host administrator privileges...")
-		if err := runElevatedBash(tmpPath, "vz-macos needs to write provisioning files (user account, agent, LaunchDaemons) into the VM disk image with correct ownership."); err != nil {
+		fmt.Println()
+		fmt.Println("Administrator privileges required to write provisioning files")
+		fmt.Println("into the VM disk image with correct root:wheel ownership.")
+		fmt.Println()
+		fmt.Println("  What this will do:")
+		fmt.Printf("    - Enable APFS ownership on %s\n", dataPart)
+		for _, f := range manifest.Files {
+			fmt.Printf("    - Write %s (owner: %s, mode: %s)\n", f.Path, f.Owner, f.Mode)
+		}
+		fmt.Println()
+		if err := runElevatedBash(tmpPath, fmt.Sprintf(
+			"vz-macos will write %d provisioning files (user account, agent, LaunchDaemons) into the VM disk image with root:wheel ownership.",
+			len(manifest.Files),
+		)); err != nil {
 			return err
 		}
 	}
@@ -753,6 +776,7 @@ func runElevatedBash(scriptPath, prompt string) error {
 	}
 
 	// Try native macOS authorization (system dialog with Touch ID).
+	fmt.Println("A macOS authorization dialog will appear (Touch ID or password).")
 	if err := runElevatedBashNative(scriptPath, prompt); err == nil {
 		return nil
 	}
