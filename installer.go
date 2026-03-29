@@ -163,12 +163,12 @@ func stopVMAndInject(vm *virtualMachine) {
 	}
 
 	if provisionStrategy == "gui" {
-		fmt.Println("Skipping disk injection (strategy=gui).")
+		fmt.Println("Skipping disk provisioning (strategy=gui).")
 		return
 	}
 
 	fmt.Println()
-	fmt.Println("Injecting provisioning files...")
+	fmt.Println("Provisioning VM disk...")
 	injectOpts := InjectOptions{
 		Config: ProvisionConfig{
 			Username: provisionUser,
@@ -181,17 +181,17 @@ func stopVMAndInject(vm *virtualMachine) {
 		InjectGuestTools:   true,
 	}
 	if err := injectProvisioningFilesWithOptions(injectOpts); err != nil {
-		fmt.Printf("warning: provisioning injection failed: %v\n", err)
+		fmt.Printf("warning: disk provisioning failed: %v\n", err)
 		if provisionStrategy == "auto" {
 			fmt.Println("Will fall back to GUI automation on first boot.")
 		} else {
 			exe, _ := os.Executable()
-			fmt.Println("You can manually inject later with:")
+			fmt.Println("You can provision later with:")
 			fmt.Printf("  %s", exe)
 			if vmName != "" {
 				fmt.Printf(" -vm %s", vmName)
 			}
-			fmt.Printf(" inject -user %s -password <password> -skip-setup-assistant\n", provisionUser)
+			fmt.Printf(" provision -user %s -password <password> -skip-setup-assistant\n", provisionUser)
 		}
 	} else {
 		markInjectSucceeded()
@@ -220,6 +220,8 @@ func checkExistingVM(dir string, diskName string) error {
 		if err := os.Remove(diskFile); err != nil {
 			return fmt.Errorf("remove existing disk: %w", err)
 		}
+		// Clear stale provisioning marker from previous install.
+		clearInjectSucceeded()
 		return nil
 	}
 	return fmt.Errorf("vm disk already exists: %s (%d MB)\n\nTo install over this disk, use -force (THIS WILL DESTROY ALL DATA IN THE VM).\nTo use a different VM, use -vm <name>", diskFile, info.Size()/(1024*1024))
@@ -1506,8 +1508,8 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 				fmt.Println("For auto-provisioning (automatic user creation), add flags:")
 				fmt.Println("  ./vz-macos install -provision-user myuser -provision-password mypass")
 				fmt.Println()
-				fmt.Println("Or inject after installation:")
-				fmt.Printf("  ./vz-macos inject -user myuser -password mypass -skip-setup-assistant\n")
+				fmt.Println("Or provision after installation:")
+				fmt.Printf("  ./vz-macos provision -user myuser -password mypass -skip-setup-assistant\n")
 			}
 			fmt.Println()
 			return nil

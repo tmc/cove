@@ -16,8 +16,8 @@
 //	# Download and install macOS
 //	./vz-macos install -ipsw ~/Downloads/UniversalMac_14.0_RestoreImage.ipsw
 //
-//	# Inject provisioning for automatic user creation (REQUIRES SUDO)
-//	sudo ./vz-macos inject -user testuser -password secret123 -skip-setup-assistant
+//	# Provision VM for automatic user creation
+//	./vz-macos provision -user testuser -password secret123 -skip-setup-assistant
 //
 //	# Verify provisioning files are correct
 //	./vz-macos verify
@@ -31,7 +31,7 @@
 //
 //	main.go           - CLI entry point and VM configuration
 //	installer.go      - macOS installation from IPSW restore images
-//	provision.go      - Disk injection and LaunchDaemon provisioning
+//	provision.go      - Disk provisioning and LaunchDaemon setup
 //	password.go       - Password hashing and auto-login encoding
 //	control_socket.go - Unix socket server for VM control
 //	screenshots.go    - Screen capture using CGWindowListCreateImage
@@ -106,7 +106,7 @@
 //	aux.img       - macOS auxiliary storage (NVRAM, etc.)
 //	hw.model      - Hardware model identifier (macOS only)
 //	machine.id    - Machine identifier (macOS only)
-//	efi-vars.img  - EFI variable store (Linux only)
+//	efi.nvram    - EFI variable store (Linux only)
 //	control.sock  - Control socket (when running)
 //	control.token - Control socket auth token (owner-read only)
 //

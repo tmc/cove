@@ -1,5 +1,5 @@
 #!/bin/bash
-# inject-as-root.sh - Run vz-macos inject with admin privileges
+# inject-as-root.sh - Run vz-macos provision with admin privileges (legacy name)
 # Uses osascript to prompt for admin password via GUI dialog
 
 set -e
@@ -90,7 +90,7 @@ CMD_ARGS=("$VZ_MACOS")
 if [ -n "$VM_DIR" ]; then
     CMD_ARGS+=("-vm" "$VM_DIR")
 fi
-CMD_ARGS+=("inject" "-user" "$USER" "-password" "$PASSWORD")
+CMD_ARGS+=("provision" "-user" "$USER" "-password" "$PASSWORD")
 if [ "$SKIP_SETUP" = "true" ]; then
     CMD_ARGS+=("-skip-setup-assistant")
 fi
@@ -108,7 +108,7 @@ for arg in "${CMD_ARGS[@]}"; do
 done
 ESCAPED_CMD="${ESCAPED_CMD# }"  # trim leading space
 
-echo "Running inject with admin privileges..."
+echo "Running provision with admin privileges..."
 echo "Command: $ESCAPED_CMD"
 echo ""
 
@@ -120,4 +120,4 @@ OSASCRIPT_CMD="${OSASCRIPT_CMD//\"/\\\"}"
 osascript -e "do shell script \"$OSASCRIPT_CMD\" with administrator privileges"
 
 echo ""
-echo "Inject complete. Run the VM with: ./vz-macos run"
+echo "Provisioning complete. Run the VM with: ./vz-macos run"

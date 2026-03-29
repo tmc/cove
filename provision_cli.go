@@ -161,7 +161,7 @@ func handleProvision(args []string) error {
 }
 
 func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *bool, *bool, *int, *string, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool) {
-	fs := flag.NewFlagSet("inject", flag.ContinueOnError)
+	fs := flag.NewFlagSet("provision", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	user := fs.String("user", "", "Username for the provisioned user (required)")
 	password := fs.String("password", "", "Password for the provisioned user (required)")
@@ -188,16 +188,16 @@ func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *
 }
 
 func printInjectUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintf(w, `Usage: vz-macos inject [options]
+	fmt.Fprintf(w, `Usage: vz-macos provision [options]
 
 Provision a VM with a user account, auto-login, and guest tools.
 
 Two-phase provisioning:
-  Phase 1 (no root): build binaries, download tools, generate scripts
+  Phase 1 (no admin): build binaries, download tools, generate scripts
   Phase 2 (may need admin): mount the VM disk, copy files, fix ownership
 
 By default both phases run in one command. Use -stage-only and -apply
-to split them for CI or to avoid building as root.
+to split them for CI or to avoid building as admin.
 
 Provisioning modes:
   1. LaunchDaemon mode (default): run sysadminctl on first boot
@@ -208,13 +208,13 @@ Options:
 	fs.PrintDefaults()
 	fmt.Fprintf(w, `
 Examples:
-  vz-macos inject -user testuser -skip-setup-assistant
-  vz-macos inject -user testuser -password secret123 -stage-only
-  sudo vz-macos inject -apply
-  vz-macos inject -user testuser -password secret123 -ssh-key ~/.ssh/id_rsa.pub
+  vz-macos provision -user testuser -skip-setup-assistant
+  vz-macos provision -user testuser -password secret123 -stage-only
+  sudo vz-macos provision -apply
+  vz-macos provision -user testuser -password secret123 -ssh-key ~/.ssh/id_rsa.pub
 
 Recovery authorization:
-  By default, inject uses a two-user bootstrap. A hidden admin is created
+  By default, provision uses a two-user bootstrap. A hidden admin is created
   first, then your user is created by that admin so the account has full
   recovery authorization. Use -no-bootstrap-recovery to disable that flow.
 `)

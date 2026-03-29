@@ -73,7 +73,7 @@ func buildAgentBinary(outputPath string) error {
 // so the caller's elevated script handles mkdir + cp + chown in one pass.
 func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pendingInstall) error {
 	fmt.Println()
-	fmt.Println("=== Injecting Guest Agent ===")
+	fmt.Println("=== Provisioning Guest Agent ===")
 
 	// Build to a temp location
 	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
@@ -177,7 +177,7 @@ func injectAgentOnly() error {
 		return err
 	}
 
-	fmt.Println("=== Injecting Guest Agent ===")
+	fmt.Println("=== Provisioning Guest Agent ===")
 
 	// Build the agent binary to a temp location first (no disk mount needed).
 	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
@@ -257,8 +257,15 @@ func injectAgentOnly() error {
 			return fmt.Errorf("copy files: %w", err)
 		}
 	} else {
-		fmt.Println("Requesting administrator privileges...")
-		if err := runElevatedBash(tmpScriptPath, "vz-macos needs to inject the guest agent into the VM disk image with root ownership."); err != nil {
+		fmt.Println()
+		fmt.Println("Administrator privileges required to inject the guest agent.")
+		fmt.Println()
+		fmt.Println("  What this will do:")
+		fmt.Printf("    - Copy vz-agent binary to %s (owner: root:wheel)\n", binPath)
+		fmt.Printf("    - Write LaunchDaemon plist to %s (owner: root:wheel)\n", daemonPlistPath)
+		fmt.Printf("    - Write user agent plist to %s\n", agentPlistPath)
+		fmt.Println()
+		if err := runElevatedBash(tmpScriptPath, "vz-macos will copy the guest agent binary and LaunchDaemon plists into the VM disk image with root:wheel ownership."); err != nil {
 			return fmt.Errorf("agent inject: %w", err)
 		}
 	}
@@ -272,7 +279,7 @@ func injectAgentOnly() error {
 	fmt.Printf("Written: %s\n", agentPlistPath)
 
 	fmt.Println()
-	fmt.Println("=== Agent Injection Complete ===")
+	fmt.Println("=== Agent Provisioning Complete ===")
 	fmt.Println("  - vz-agent daemon installed (vsock port 1024, root)")
 	fmt.Println("  - vz-agent user agent installed (vsock port 1025, user session)")
 	fmt.Println("Run the VM with: ./vz-macos run")
@@ -314,9 +321,19 @@ func checkAgentAvailability(cs *ControlServer) {
 	fmt.Println()
 	fmt.Println("Note: vz-agent is not running in this VM.")
 	fmt.Println("  The agent enables remote command execution, file transfer, and SSH control.")
-	fmt.Println("  To inject the agent (VM must be stopped first):")
 	fmt.Println()
-	fmt.Printf("    ./vz-macos inject -agent\n")
+	exe := "./vz-macos"
+	vmFlag := ""
+	if vmName != "" && vmName != "default" {
+		vmFlag = " -vm " + vmName
+	}
+	fmt.Println("  To fix, stop the VM and re-provision:")
+	fmt.Println()
+	fmt.Printf("    %s%s provision -user <username> -skip-setup-assistant\n", exe, vmFlag)
+	fmt.Println()
+	fmt.Println("  Or to provision just the agent:")
+	fmt.Println()
+	fmt.Printf("    %s%s provision-agent\n", exe, vmFlag)
 	fmt.Println()
 }
 
