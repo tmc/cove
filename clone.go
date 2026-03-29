@@ -75,8 +75,7 @@ func CloneVM(opts CloneOptions) error {
 			fmt.Printf("  Cloning (CoW): %s\n", f.name)
 			err = cloneFile(srcFile, dstFile)
 			if err != nil {
-				// Fall back to regular copy if clonefile fails
-				fmt.Printf("  CoW failed, falling back to copy: %v\n", err)
+				fmt.Fprintf(os.Stderr, "warning: CoW clone failed for %s: %v (falling back to full copy)\n", f.name, err)
 				err = copyFile(srcFile, dstFile)
 			}
 		} else {
@@ -119,6 +118,24 @@ func CloneVM(opts CloneOptions) error {
 // cloneFile uses APFS clonefile for copy-on-write cloning.
 func cloneFile(src, dst string) error {
 	return unix.Clonefile(src, dst, 0)
+}
+
+// SupportsClonefile checks whether the directory at path supports APFS
+// clonefile (copy-on-write). Returns false if the filesystem is not APFS
+// or clonefile is otherwise unavailable.
+func SupportsClonefile(dir string) bool {
+	probe := filepath.Join(dir, ".clonefile-probe")
+	f, err := os.CreateTemp(dir, ".clonefile-probe-*")
+	if err != nil {
+		return false
+	}
+	src := f.Name()
+	f.Close()
+	defer os.Remove(src)
+
+	err = unix.Clonefile(src, probe, 0)
+	os.Remove(probe)
+	return err == nil
 }
 
 // copyFile is defined in ipsw.go
