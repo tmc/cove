@@ -84,6 +84,7 @@ type vzscriptConfig struct {
 	streamOut   io.Writer
 	streamErr   io.Writer
 	env         []string // extra environment variables (KEY=VALUE)
+	hostLogFile *os.File // persistent log file in VM directory
 }
 
 // execType returns the control request type for exec commands,

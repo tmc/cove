@@ -207,6 +207,15 @@ func vzscriptRun(args []string) error {
 		daemon:      *daemon,
 	}
 
+	// Open a persistent log file in the VM directory.
+	logFile, err := openVZScriptLog(sock)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: vzscript log: %v\n", err)
+	} else {
+		defer logFile.Close()
+		cfg.hostLogFile = logFile
+	}
+
 	// Collect all recipe names from positional args.
 	recipes := rf.Args()
 
@@ -420,6 +429,12 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 
 func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 	ar := txtar.Parse(data)
+	start := time.Now()
+
+	// Log header to persistent log file.
+	if cfg.hostLogFile != nil {
+		fmt.Fprintf(cfg.hostLogFile, "\n=== %s: %s started ===\n", start.Format(time.RFC3339), name)
+	}
 
 	// Wrap output writers with recipe name prefix for clarity.
 	cfg = prefixOutputWriters(cfg, name)
@@ -441,17 +456,32 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 		return fmt.Errorf("extract files: %w", err)
 	}
 
-	var log bytes.Buffer
-	var out io.Writer = &log
+	var logBuf bytes.Buffer
+	var out io.Writer = &logBuf
 	if cfg.verbose {
 		out = cfg.logWriter
 		if out == nil {
 			out = os.Stderr
 		}
 	}
+	// Tee script output to host log file.
+	if cfg.hostLogFile != nil {
+		out = io.MultiWriter(out, cfg.hostLogFile)
+	}
+
 	err = engine.Execute(state, name, bufio.NewReader(bytes.NewReader(ar.Comment)), out)
-	if !cfg.verbose && log.Len() > 0 {
-		os.Stderr.Write(log.Bytes())
+	if !cfg.verbose && logBuf.Len() > 0 {
+		os.Stderr.Write(logBuf.Bytes())
+	}
+
+	// Log footer with duration and result.
+	if cfg.hostLogFile != nil {
+		status := "ok"
+		if err != nil {
+			status = fmt.Sprintf("error: %v", err)
+		}
+		fmt.Fprintf(cfg.hostLogFile, "=== %s: %s finished (%s) [%s] ===\n",
+			time.Now().Format(time.RFC3339), name, time.Since(start).Round(time.Millisecond), status)
 	}
 	return err
 }
@@ -645,6 +675,14 @@ func flagTakesValue(name string) bool {
 		return true
 	}
 	return false
+}
+
+// openVZScriptLog opens (or creates) the vzscript log file in the VM directory
+// derived from the control socket path. The file is opened in append mode.
+func openVZScriptLog(socketPath string) (*os.File, error) {
+	vmDirectory := filepath.Dir(socketPath)
+	logPath := filepath.Join(vmDirectory, "vzscript.log")
+	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }
 
 func loadVZScriptData(nameOrPath string) ([]byte, error) {
