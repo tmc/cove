@@ -97,6 +97,12 @@ Dependencies:
   in the header. Dependencies are resolved automatically and each recipe
   runs at most once. Multiple recipes can be given on the command line.
 
+Host mounts:
+  Scripts can declare host directories to mount via VirtioFS with
+  "# mount: <host-path> [ro|rw]" in the header. Paths support ~/
+  expansion. Default mode is rw. Mounts are registered as shared folders,
+  hot-plugged into the running VM, and mounted in the guest automatically.
+
 Examples:
   vz-macos vzscript list
   vz-macos vzscript show homebrew
@@ -110,6 +116,7 @@ func vzscriptList() error {
 	type entry struct {
 		name, desc string
 		requires   []string
+		mounts     int
 	}
 	var entries []entry
 
@@ -131,7 +138,7 @@ func vzscriptList() error {
 		if name == "" {
 			name = strings.TrimSuffix(f.Name(), ".vzscript")
 		}
-		entries = append(entries, entry{name, meta.desc, meta.requires})
+		entries = append(entries, entry{name, meta.desc, meta.requires, len(meta.mounts)})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 
@@ -143,6 +150,9 @@ func vzscriptList() error {
 		}
 		if len(e.requires) > 0 {
 			line += fmt.Sprintf(" (requires: %s)", strings.Join(e.requires, ", "))
+		}
+		if e.mounts > 0 {
+			line += fmt.Sprintf(" (mounts: %d)", e.mounts)
 		}
 		fmt.Println(line)
 	}
@@ -257,6 +267,12 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 
 		if completed[name] {
 			return nil
+		}
+		// Apply mount directives before running the script.
+		if len(meta.mounts) > 0 {
+			if err := applyMountDirectives(meta.mounts, cfg.socketPath, cfg.verbose); err != nil {
+				return fmt.Errorf("recipe %s: mount: %w", name, err)
+			}
 		}
 		if cfg.verbose {
 			fmt.Fprintf(os.Stderr, "--- running recipe: %s ---\n", name)
@@ -397,6 +413,12 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 				defer uiMu.Unlock()
 			}
 
+			if len(r.meta.mounts) > 0 {
+				if err := applyMountDirectives(r.meta.mounts, cfg.socketPath, cfg.verbose); err != nil {
+					errCh <- fmt.Errorf("%s: mount: %w", r.name, err)
+					return
+				}
+			}
 			if cfg.verbose {
 				fmt.Fprintf(os.Stderr, "--- running recipe: %s ---\n", r.name)
 			}
@@ -720,6 +742,12 @@ type injectDirective struct {
 	owner     string // e.g. "root:wheel"
 }
 
+// mountDirective describes a host directory to mount in the guest via VirtioFS.
+type mountDirective struct {
+	hostPath string // host directory path (may contain ~/)
+	readOnly bool   // true for read-only mount
+}
+
 // scriptMeta holds parsed metadata from a vzscript header.
 type scriptMeta struct {
 	name     string
@@ -727,6 +755,7 @@ type scriptMeta struct {
 	requires []string          // recipe names this script depends on
 	runsOn   string            // "daemon" to run as root via daemon agent
 	inject   []injectDirective // files to inject into VM disk
+	mounts   []mountDirective  // host directories to mount via VirtioFS
 }
 
 // parseScriptMeta extracts metadata from script comment lines.
@@ -783,6 +812,24 @@ func parseScriptMeta(comment []byte) scriptMeta {
 			continue
 		}
 
+		// Check for "mount:" directive.
+		if strings.HasPrefix(strings.ToLower(text), "mount:") {
+			fields := strings.Fields(strings.TrimSpace(text[len("mount:"):]))
+			if len(fields) >= 1 {
+				d := mountDirective{hostPath: fields[0]}
+				if len(fields) >= 2 {
+					switch strings.ToLower(fields[1]) {
+					case "ro":
+						d.readOnly = true
+					case "rw":
+						d.readOnly = false
+					}
+				}
+				m.mounts = append(m.mounts, d)
+			}
+			continue
+		}
+
 		// First non-directive comment is the name/description.
 		if m.name == "" {
 			for _, sep := range []string{" — ", " - "} {
@@ -798,4 +845,78 @@ func parseScriptMeta(comment []byte) scriptMeta {
 		}
 	}
 	return m
+}
+
+// expandTilde replaces a leading ~/ (or bare ~) with the current user's
+// home directory. Non-tilde paths are returned unchanged.
+func expandTilde(path string) string {
+	if path == "" {
+		return ""
+	}
+	if path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+// applyMountDirectives registers host directories as shared folders and
+// attempts to hot-plug and mount them in the guest. Errors from hot-plug
+// and guest mount are treated as warnings (the share is saved for next boot).
+func applyMountDirectives(mounts []mountDirective, socketPath string, verbose bool) error {
+	vmDirectory := filepath.Dir(socketPath)
+
+	for _, m := range mounts {
+		abs, err := filepath.Abs(expandTilde(m.hostPath))
+		if err != nil {
+			return fmt.Errorf("resolve mount path %q: %w", m.hostPath, err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return fmt.Errorf("mount path %q: %w", abs, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("mount path %q is not a directory", abs)
+		}
+
+		entry, added, err := addSharedFolderEntry(vmDirectory, abs, "", m.readOnly)
+		if err != nil {
+			return fmt.Errorf("add shared folder %q: %w", abs, err)
+		}
+		if added && verbose {
+			mode := "rw"
+			if entry.ReadOnly {
+				mode = "ro"
+			}
+			fmt.Fprintf(os.Stderr, "mount: added shared folder %s (tag=%s, %s)\n", entry.Path, entry.Tag, mode)
+		}
+	}
+
+	// Hot-plug into running VM (best-effort).
+	client := NewControlClient(socketPath)
+	client.SetTimeout(15 * time.Second)
+	if _, err := client.SharedFoldersApply(); err != nil {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "mount: warning: hot-plug failed: %v (will apply on next boot)\n", err)
+		}
+		return nil
+	}
+
+	// Mount in guest (best-effort).
+	if _, err := mountSharedFoldersInGuest(vmDirectory, defaultSharedFoldersMountPoint); err != nil {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "mount: warning: guest mount failed: %v\n", err)
+		}
+	}
+	return nil
 }
