@@ -244,6 +244,10 @@ func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
 		socketPath:  sock,
 		execTimeout: 30 * time.Minute,
 		verbose:     verboseMode,
+		env: []string{
+			"USERNAME=" + provisionUser,
+			"PASSWORD=" + provisionPassword,
+		},
 	}
 
 	// Wait for the guest agent, checking for early VM failure.

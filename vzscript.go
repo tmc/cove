@@ -83,6 +83,7 @@ type vzscriptConfig struct {
 	logWriter   io.Writer
 	streamOut   io.Writer
 	streamErr   io.Writer
+	env         []string // extra environment variables (KEY=VALUE)
 }
 
 // execType returns the control request type for exec commands,

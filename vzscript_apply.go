@@ -431,7 +431,9 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 	}
 	defer os.RemoveAll(workdir)
 
-	state, err := script.NewState(context.Background(), workdir, os.Environ())
+	env := os.Environ()
+	env = append(env, cfg.env...)
+	state, err := script.NewState(context.Background(), workdir, env)
 	if err != nil {
 		return err
 	}
