@@ -494,8 +494,15 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					vmWindow.SetContentView(vmViewAsNSView(vmView))
 					vmWindow.Center()
 
-					vmOverlay = createInstallOverlay(contentRect.Size)
-					vmViewAsNSView(vmView).AddSubview(&vmOverlay)
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								fmt.Fprintf(os.Stderr, "warning: install overlay skipped: %v\n", r)
+							}
+						}()
+						vmOverlay = createInstallOverlay(contentRect.Size)
+						vmViewAsNSView(vmView).AddSubview(&vmOverlay)
+					}()
 
 					vmWindow.MakeKeyAndOrderFront(nil)
 					vmWindow.MakeFirstResponder(vmViewAsNSView(vmView).NSResponder)
