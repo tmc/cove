@@ -128,7 +128,7 @@ func printUpUsage(w io.Writer, fs *flag.FlagSet) {
 
 Install, provision, and boot a macOS VM in one command.
 
-Combines: install -> inject -> run [-> vzscripts]
+Combines: install -> provision -> run [-> vzscripts]
 
 Options:
 `)
@@ -160,7 +160,7 @@ func applyUpConfig(cfg upConfig) {
 	guiMode = cfg.gui
 	provisionUser = cfg.user
 	provisionPassword = cfg.password
-	provisionStrategy = "inject"
+	provisionStrategy = "disk"
 	installVM = true
 }
 
@@ -233,12 +233,6 @@ func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
 		}
 	}
 
-	// Boot the VM in a goroutine.
-	vmErr := make(chan error, 1)
-	go func() {
-		vmErr <- runMacOSVM()
-	}()
-
 	sock := GetControlSocketPath()
 	cfg := vzscriptConfig{
 		socketPath:  sock,
@@ -250,46 +244,70 @@ func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
 		},
 	}
 
-	// Wait for the guest agent, checking for early VM failure.
-	fmt.Println("Waiting for VM to boot and guest agent...")
-	waitScript := []byte("guest-wait 15m\n")
-	if err := runVZScriptOrVMErr(waitScript, "wait-for-agent", cfg, vmErr); err != nil {
-		return err
-	}
-
-	// Run each recipe in order.
-	for _, name := range recipes {
-		fmt.Printf("\n=== Running vzscript: %s ===\n", name)
-		data, err := loadVZScriptData(name)
-		if err != nil {
-			return err
+	// Run vzscripts in a goroutine. The VM must run on the main thread
+	// because runMacOSVM does AppKit operations (NSWindow, VZVirtualMachineView)
+	// that require the main OS thread.
+	scriptsDone := make(chan error, 1)
+	go func() {
+		// Wait for the guest agent.
+		fmt.Println("Waiting for VM to boot and guest agent...")
+		waitScript := []byte("guest-wait 15m\n")
+		if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
+			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
+			return
 		}
-		if err := runVZScriptOrVMErr(data, name, cfg, vmErr); err != nil {
-			return err
+
+		// Run each recipe in order.
+		for _, name := range recipes {
+			fmt.Printf("\n=== Running vzscript: %s ===\n", name)
+			data, err := loadVZScriptData(name)
+			if err != nil {
+				scriptsDone <- err
+				return
+			}
+			ar := txtar.Parse(data)
+			meta := parseScriptMeta(ar.Comment)
+			if len(meta.mounts) > 0 {
+				if err := applyMountDirectives(meta.mounts, cfg.socketPath, cfg.verbose); err != nil {
+					scriptsDone <- fmt.Errorf("recipe %s: mount: %w", name, err)
+					return
+				}
+			}
+			if err := runVZScript(data, name, cfg); err != nil {
+				scriptsDone <- fmt.Errorf("%s: %w", name, err)
+				return
+			}
+			fmt.Printf("=== Done: %s ===\n", name)
 		}
-		fmt.Printf("=== Done: %s ===\n", name)
-	}
 
-	if noShutdown {
-		fmt.Println("\nAll vzscripts complete. VM is still running.")
-		fmt.Println("Use 'vz-macos ctl stop' to shut it down.")
-		return <-vmErr
-	}
+		if noShutdown {
+			fmt.Println("\nAll vzscripts complete. VM is still running.")
+			fmt.Println("Use 'vz-macos ctl stop' to shut it down.")
+			scriptsDone <- nil
+			return
+		}
 
-	// Shut down the VM gracefully.
-	fmt.Println("\nShutting down VM...")
-	_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
+		// Shut down the VM gracefully.
+		fmt.Println("\nShutting down VM...")
+		_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
+		fmt.Println("\nPost-install complete.")
+		scriptsDone <- nil
+	}()
+
+	// Run the VM on the main thread (required for AppKit).
+	// This blocks until the VM exits (user closes window, shutdown, or crash).
+	vmErr := runMacOSVM()
+
+	// Check if scripts reported an error before VM exited.
 	select {
-	case err := <-vmErr:
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "VM exited with error: %v\n", err)
+	case err := <-scriptsDone:
+		if err != nil && vmErr == nil {
+			return err
 		}
-	case <-time.After(2 * time.Minute):
-		fmt.Println("VM did not exit within timeout.")
+	default:
 	}
 
-	fmt.Println("\nPost-install complete.")
-	return nil
+	return vmErr
 }
 
 // runVZScriptOrVMErr runs a vzscript while also monitoring the VM error
