@@ -1335,7 +1335,7 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 			fmt.Fprintf(tmpScript, "#!/bin/bash\nchown root:wheel %q %q %q\n", scriptPath, plistPath, kcPath)
 			tmpScript.Close()
 			os.Chmod(tmpScript.Name(), 0755)
-			runElevatedBash(tmpScript.Name())
+			runElevatedBash(tmpScript.Name(), "vz-macos needs to set root ownership on password reset files.")
 			os.Remove(tmpScript.Name())
 		}
 	}

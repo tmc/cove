@@ -423,5 +423,5 @@ func fixOwnershipWithSudo(paths []string, dataPartition string, installs ...pend
 	}
 
 	fmt.Println("Requesting administrator privileges...")
-	return runElevatedBash(tmpPath)
+	return runElevatedBash(tmpPath, "vz-macos needs to detach the VM disk image.")
 }

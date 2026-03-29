@@ -258,7 +258,7 @@ func injectAgentOnly() error {
 		}
 	} else {
 		fmt.Println("Requesting administrator privileges...")
-		if err := runElevatedBash(tmpScriptPath); err != nil {
+		if err := runElevatedBash(tmpScriptPath, "vz-macos needs to inject the guest agent into the VM disk image with root ownership."); err != nil {
 			return fmt.Errorf("agent inject: %w", err)
 		}
 	}

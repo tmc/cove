@@ -55,13 +55,49 @@ func initAuthorization() {
 	})
 }
 
+// authorizationItem matches the C struct AuthorizationItem.
+type authorizationItem struct {
+	name        uintptr // *C.char (null-terminated)
+	valueLength uintptr // size_t
+	value       uintptr // *void
+	flags       uint32
+	_           [4]byte // padding for 8-byte alignment
+}
+
+// authorizationItemSet matches the C struct AuthorizationItemSet.
+type authorizationItemSet struct {
+	count uint32
+	_     [4]byte  // padding
+	items uintptr  // *AuthorizationItem
+}
+
 // runElevatedBashNative runs a bash script with root privileges using the
-// native macOS authorization dialog (Touch ID / password). Shows the standard
-// system authentication prompt.
-func runElevatedBashNative(scriptPath string) error {
+// native macOS authorization dialog (Touch ID / password). If prompt is
+// non-empty, it is displayed in the authentication dialog as descriptive text.
+func runElevatedBashNative(scriptPath, prompt string) error {
 	initAuthorization()
 	if authInitErr != nil {
 		return fmt.Errorf("authorization init: %w", authInitErr)
+	}
+
+	// Build environment with optional prompt text.
+	var envPtr uintptr
+	var promptBytes []byte
+	var promptItem authorizationItem
+	var envSet authorizationItemSet
+	if prompt != "" {
+		promptBytes = appendNull([]byte(prompt))
+		promptName := appendNull([]byte("prompt"))
+		promptItem = authorizationItem{
+			name:        uintptr(unsafe.Pointer(&promptName[0])),
+			valueLength: uintptr(len(promptBytes) - 1), // exclude NUL
+			value:       uintptr(unsafe.Pointer(&promptBytes[0])),
+		}
+		envSet = authorizationItemSet{
+			count: 1,
+			items: uintptr(unsafe.Pointer(&promptItem)),
+		}
+		envPtr = uintptr(unsafe.Pointer(&envSet))
 	}
 
 	// Create an authorization reference with interactive rights.
@@ -71,7 +107,7 @@ func runElevatedBashNative(scriptPath string) error {
 		kAuthorizationFlagExtendRights |
 		kAuthorizationFlagPreAuthorize)
 
-	status := fnAuthorizationCreate(0, 0, flags, &auth)
+	status := fnAuthorizationCreate(0, envPtr, flags, &auth)
 	if status != errAuthorizationSuccess {
 		return authStatusError("AuthorizationCreate", status)
 	}
@@ -101,6 +137,9 @@ func runElevatedBashNative(scriptPath string) error {
 	runtime.KeepAlive(tool)
 	runtime.KeepAlive(arg)
 	runtime.KeepAlive(argv)
+	runtime.KeepAlive(promptBytes)
+	runtime.KeepAlive(promptItem)
+	runtime.KeepAlive(envSet)
 
 	if status != errAuthorizationSuccess {
 		return authStatusError("AuthorizationExecuteWithPrivileges", status)

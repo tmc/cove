@@ -398,7 +398,7 @@ func verifyStopped(verbose, fix bool) error {
 						}
 					} else {
 						fmt.Println("Requesting administrator privileges...")
-						if err := runElevatedBash(tmpScript.Name()); err != nil {
+						if err := runElevatedBash(tmpScript.Name(), "vz-macos needs to fix file ownership in the VM disk image."); err != nil {
 							fmt.Printf("  Agent inject failed: %v\n", err)
 						} else {
 							fmt.Println("  Agent injected successfully")

@@ -695,7 +695,7 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 		}
 	} else {
 		fmt.Println("Requesting macOS host administrator privileges...")
-		if err := runElevatedBash(tmpPath); err != nil {
+		if err := runElevatedBash(tmpPath, "vz-macos needs to write provisioning files (user account, agent, LaunchDaemons) into the VM disk image with correct ownership."); err != nil {
 			return err
 		}
 	}
@@ -712,7 +712,9 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 //  1. Try sudo -n (reuse cached credentials).
 //  2. Try native AuthorizationServices (system dialog with Touch ID).
 //  3. Fall back to password prompt + sudo -S.
-func runElevatedBash(scriptPath string) error {
+//
+// The prompt string is shown in the native macOS authorization dialog.
+func runElevatedBash(scriptPath, prompt string) error {
 	// Try cached sudo credentials first.
 	cmd := exec.Command("sudo", "-n", "bash", scriptPath)
 	var stdout, stderr bytes.Buffer
@@ -737,7 +739,7 @@ func runElevatedBash(scriptPath string) error {
 	}
 
 	// Try native macOS authorization (system dialog with Touch ID).
-	if err := runElevatedBashNative(scriptPath); err == nil {
+	if err := runElevatedBashNative(scriptPath, prompt); err == nil {
 		return nil
 	}
 
