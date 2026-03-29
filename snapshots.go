@@ -18,9 +18,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
-	"github.com/tmc/apple/x/vzkit"
+	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
+	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 	"golang.org/x/sys/unix"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -31,17 +33,17 @@ type DiskSnapshotTarget int
 
 const (
 	DiskSnapshotSystem DiskSnapshotTarget = 1 << iota // System disk (disk.img)
-	DiskSnapshotBoth   = DiskSnapshotSystem
+	DiskSnapshotBoth                      = DiskSnapshotSystem
 )
 
 // DiskSnapshotInfo contains metadata about a disk snapshot.
 type DiskSnapshotInfo struct {
-	Name         string             `json:"name"`
-	Created      time.Time          `json:"created"`
-	Target       DiskSnapshotTarget `json:"target"`
+	Name        string             `json:"name"`
+	Created     time.Time          `json:"created"`
+	Target      DiskSnapshotTarget `json:"target"`
 	SystemSize  int64              `json:"systemSize,omitempty"`
 	Description string             `json:"description,omitempty"`
-	FilePath     string             `json:"filePath"`
+	FilePath    string             `json:"filePath"`
 }
 
 // DiskSnapshotManager handles disk-level snapshot operations.
@@ -70,9 +72,28 @@ func (m *DiskSnapshotManager) ensureDir() error {
 	return os.MkdirAll(m.diskSnapshotsDir(), 0755)
 }
 
+// validateSnapshotName checks that a snapshot name is safe for use as a
+// directory component. Empty names, path separators, and path traversal
+// components are rejected.
+func validateSnapshotName(name string) error {
+	if name == "" {
+		return fmt.Errorf("snapshot name must not be empty")
+	}
+	if strings.ContainsAny(name, "/\\") {
+		return fmt.Errorf("snapshot name must not contain path separators: %q", name)
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("snapshot name must not be %q", name)
+	}
+	return nil
+}
+
 // Save creates a disk snapshot using APFS clonefile.
 // VM should be stopped for consistent snapshots.
 func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, description string) error {
+	if err := validateSnapshotName(name); err != nil {
+		return err
+	}
 	if err := m.ensureDir(); err != nil {
 		return fmt.Errorf("create disk snapshots directory: %w", err)
 	}
@@ -123,6 +144,9 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 // Restore restores disk(s) from a snapshot.
 // VM must be stopped before restoring.
 func (m *DiskSnapshotManager) Restore(name string, target DiskSnapshotTarget) error {
+	if err := validateSnapshotName(name); err != nil {
+		return err
+	}
 	snapDir := m.snapshotDir(name)
 	if _, err := os.Stat(snapDir); os.IsNotExist(err) {
 		return fmt.Errorf("disk snapshot '%s' not found", name)
@@ -199,6 +223,9 @@ func (m *DiskSnapshotManager) List() ([]DiskSnapshotInfo, error) {
 
 // Delete removes a disk snapshot.
 func (m *DiskSnapshotManager) Delete(name string) error {
+	if err := validateSnapshotName(name); err != nil {
+		return err
+	}
 	snapDir := m.snapshotDir(name)
 	if _, err := os.Stat(snapDir); os.IsNotExist(err) {
 		return fmt.Errorf("disk snapshot '%s' not found", name)
@@ -229,14 +256,14 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		return &controlpb.ControlResponse{Error: "VM not configured"}
 	}
 
-	mgr := vzkit.NewSnapshotManager(vmDir)
+	mgr := snapshotx.NewManager(vmDir)
 
 	switch cmd.Action {
 	case "save":
 		if cmd.Name == "" {
 			return &controlpb.ControlResponse{Error: "snapshot name required"}
 		}
-		if err := mgr.Save(s.vm, vzkit.WrapQueue(s.vmQueue), cmd.Name); err != nil {
+		if err := mgr.Save(s.vm, vmruntime.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		msg := fmt.Sprintf("snapshot '%s' saved", cmd.Name)
@@ -246,7 +273,7 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if cmd.Name == "" {
 			return &controlpb.ControlResponse{Error: "snapshot name required"}
 		}
-		if err := mgr.Restore(s.vm, vzkit.WrapQueue(s.vmQueue), cmd.Name); err != nil {
+		if err := mgr.Restore(s.vm, vmruntime.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		msg := fmt.Sprintf("snapshot '%s' restored (VM paused)", cmd.Name)

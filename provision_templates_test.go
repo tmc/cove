@@ -54,6 +54,34 @@ func TestGenerateEmbeddedProvisionScriptFullnameDefault(t *testing.T) {
 	}
 }
 
+func TestKCPasswordDoesNotContainPlaintext(t *testing.T) {
+	passwords := []string{"secret123", "p@ssw0rd!", "hunter2"}
+	for _, pw := range passwords {
+		encoded := EncodeKCPassword(pw)
+		if strings.Contains(string(encoded), pw) {
+			t.Errorf("kcpassword for %q contains plaintext", pw)
+		}
+	}
+}
+
+func TestProvisionScriptContainsPasswordOnlyInVariable(t *testing.T) {
+	config := ProvisionConfig{
+		Username: "testuser",
+		Password: "MyS3cretP@ss!",
+	}
+	script := generateEmbeddedProvisionScript(config)
+
+	// The password should appear only as PASSWORD='...' variable assignment.
+	// Count occurrences of the password string.
+	count := strings.Count(script, "MyS3cretP@ss!")
+	if count == 0 {
+		t.Fatal("password not found in provision script at all")
+	}
+	if count != 1 {
+		t.Errorf("password appears %d times in provision script, want 1 (only in PASSWORD= assignment)", count)
+	}
+}
+
 func TestGenerateEmbeddedLaunchDaemonPlist(t *testing.T) {
 	plist := generateEmbeddedLaunchDaemonPlist()
 	checks := []string{
