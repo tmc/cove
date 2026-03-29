@@ -52,6 +52,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("network", func(t *testing.T) { testNetwork(t, vm) })
 	t.Run("port-forward", func(t *testing.T) { testPortForward(t, vm) })
 	t.Run("vzscript", func(t *testing.T) { testVZScript(t, vm) })
+	t.Run("host-cp", func(t *testing.T) { testHostCp(t, vm) })
 	if *flagIntegrationSIP {
 		t.Run("sip", func(t *testing.T) { testSIP(t, vm) })
 	}
@@ -629,4 +630,61 @@ func buildIntegrationBinary(tb testing.TB) string {
 		tb.Fatalf("build integration binary: %v", integrationBinaryErr)
 	}
 	return integrationBinaryPath
+}
+
+// cloneTestVM creates an isolated VM clone from the base test VM using APFS
+// copy-on-write. The clone is started and cleaned up (stopped + deleted) when
+// the test finishes. This enables per-test isolation for destructive operations
+// like Xcode installation.
+func cloneTestVM(t *testing.T, baseVM *testVM) *testVM {
+	t.Helper()
+
+	cloneName := fmt.Sprintf("test-clone-%s-%d", t.Name(), time.Now().UnixNano()%100000)
+
+	// Stop base VM if we started it, or verify it is stopped for cloning.
+	// For safety we clone disk from the base VM directory directly.
+	err := CloneVM(CloneOptions{
+		Source: baseVM.name,
+		Target: cloneName,
+		Linked: true, // APFS copy-on-write
+	})
+	if err != nil {
+		t.Fatalf("clone VM %s -> %s: %v", baseVM.name, cloneName, err)
+	}
+
+	dir := resolvePath(GetVMPath(cloneName))
+	tokenPath := GetControlTokenPathForVM(dir)
+
+	// Clone inherits the auth token from the base.
+	token, err := LoadControlTokenFromPath(tokenPath)
+	if err != nil {
+		// If no token file in clone, copy from base.
+		srcToken := GetControlTokenPathForVM(baseVM.dir)
+		if data, readErr := os.ReadFile(srcToken); readErr == nil {
+			os.WriteFile(tokenPath, data, 0600)
+			token = strings.TrimSpace(string(data))
+		} else {
+			t.Fatalf("load control token for clone %q: %v (base: %v)", cloneName, err, readErr)
+		}
+	}
+
+	vm := &testVM{
+		name:  cloneName,
+		dir:   dir,
+		sock:  GetControlSocketPathForVM(dir),
+		token: token,
+	}
+
+	startTestVM(t, vm)
+	waitVMReadyTB(t, vm, 3*time.Minute)
+
+	t.Cleanup(func() {
+		vm.cleanupTB(t)
+		// Delete the clone VM directory.
+		if err := os.RemoveAll(dir); err != nil {
+			t.Logf("cleanup clone dir %s: %v", dir, err)
+		}
+	})
+
+	return vm
 }
