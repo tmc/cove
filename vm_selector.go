@@ -428,7 +428,7 @@ func runPostInstallVZScriptsWithSelectorUI(recipes string) error {
 	}
 	window := appkit.NewWindowWithContentRectStyleMaskBackingDefer(
 		contentRect,
-		appkit.NSWindowStyleMaskTitled,
+		appkit.NSWindowStyleMaskTitled|appkit.NSWindowStyleMaskClosable|appkit.NSWindowStyleMaskMiniaturizable|appkit.NSWindowStyleMaskResizable,
 		appkit.NSBackingStoreBuffered,
 		false,
 	)
