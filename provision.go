@@ -131,9 +131,7 @@
 //	provision.go             - Types, staging utilities, orchestration
 //	provision_cli.go         - CLI handler, InjectOptions, password prompts
 //	provision_mount.go       - APFS disk mount, partition discovery, ownership
-//	provision_user.go        - User creation, admin group, SSH keys
-//	provision_autologin.go   - kcpassword encoding, loginwindow plist
-//	provision_launchdaemon.go - LaunchDaemon plist/script generation
+//	provision_inject.go      - File staging: LaunchDaemon, auto-login, user plist, SSH keys
 //	provision_verify.go      - File verification command
 //	provision_automation.go  - Setup Assistant keyboard automation
 package main
