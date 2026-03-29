@@ -167,6 +167,7 @@ message AgentCopyCommand {
   string guest_path = 2;
   bool to_guest = 3;
   uint32 mode = 4;
+  bool overwrite = 5;
 }
 
 // --------------------------------------------------------------------------

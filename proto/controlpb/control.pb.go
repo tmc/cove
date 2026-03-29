@@ -1420,6 +1420,7 @@ type AgentCopyCommand struct {
 	GuestPath     string                 `protobuf:"bytes,2,opt,name=guest_path,json=guestPath,proto3" json:"guest_path,omitempty"`
 	ToGuest       bool                   `protobuf:"varint,3,opt,name=to_guest,json=toGuest,proto3" json:"to_guest,omitempty"`
 	Mode          uint32                 `protobuf:"varint,4,opt,name=mode,proto3" json:"mode,omitempty"`
+	Overwrite     bool                   `protobuf:"varint,5,opt,name=overwrite,proto3" json:"overwrite,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1480,6 +1481,13 @@ func (x *AgentCopyCommand) GetMode() uint32 {
 		return x.Mode
 	}
 	return 0
+}
+
+func (x *AgentCopyCommand) GetOverwrite() bool {
+	if x != nil {
+		return x.Overwrite
+	}
+	return false
 }
 
 // StatusResponse contains VM state and available operations.
@@ -2670,13 +2678,14 @@ const file_control_proto_rawDesc = "" +
 	"\x14AgentShutdownCommand\x12\x14\n" +
 	"\x05force\x18\x01 \x01(\bR\x05force\"*\n" +
 	"\x10AgentSSHDCommand\x12\x16\n" +
-	"\x06action\x18\x01 \x01(\tR\x06action\"}\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\"\x9b\x01\n" +
 	"\x10AgentCopyCommand\x12\x1b\n" +
 	"\thost_path\x18\x01 \x01(\tR\bhostPath\x12\x1d\n" +
 	"\n" +
 	"guest_path\x18\x02 \x01(\tR\tguestPath\x12\x19\n" +
 	"\bto_guest\x18\x03 \x01(\bR\atoGuest\x12\x12\n" +
-	"\x04mode\x18\x04 \x01(\rR\x04mode\"\xa7\x01\n" +
+	"\x04mode\x18\x04 \x01(\rR\x04mode\x12\x1c\n" +
+	"\toverwrite\x18\x05 \x01(\bR\toverwrite\"\xa7\x01\n" +
 	"\x0eStatusResponse\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1b\n" +
 	"\tcan_pause\x18\x02 \x01(\bR\bcanPause\x12\x1d\n" +

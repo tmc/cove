@@ -527,9 +527,7 @@ func guestExecInTerminal(cfg vzscriptConfig, guestPath string) (script.WaitFunc,
 	sudoersFile := "/etc/sudoers.d/vzscript-terminal"
 	sudoersLine := fmt.Sprintf("%s ALL=(ALL) NOPASSWD: ALL\n", user)
 	if err := guestWriteFile(cfg.socketPath, sudoersFile, []byte(sudoersLine), 0440); err != nil {
-		if cfg.verbose {
-			fmt.Fprintf(os.Stderr, "[guest-terminal] warning: could not write sudoers: %v\n", err)
-		}
+		fmt.Fprintf(os.Stderr, "[guest-terminal] warning: could not write sudoers: %v\n", err)
 	}
 
 	// Build a wrapper launched by Terminal. It runs the target script via sudo
@@ -658,23 +656,46 @@ func hostCpCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
 			Summary: "copy a host file or directory to the guest (streaming)",
-			Args:    "[-timeout duration] host-path guest-path",
+			Args:    "[-force] [-timeout duration] host-path guest-path",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
 			timeout := 30 * time.Minute
-			if len(args) >= 2 && args[0] == "-timeout" {
-				d, err := time.ParseDuration(args[1])
-				if err != nil {
-					return nil, fmt.Errorf("invalid timeout: %w", err)
+			force := false
+			for len(args) >= 1 {
+				switch args[0] {
+				case "-force":
+					force = true
+					args = args[1:]
+					continue
+				case "-timeout":
+					if len(args) < 2 {
+						return nil, fmt.Errorf("-timeout requires a duration argument")
+					}
+					d, err := time.ParseDuration(args[1])
+					if err != nil {
+						return nil, fmt.Errorf("invalid timeout: %w", err)
+					}
+					timeout = d
+					args = args[2:]
+					continue
 				}
-				timeout = d
-				args = args[2:]
+				break
 			}
 			if len(args) != 2 {
 				return nil, script.ErrUsage
 			}
 			hostPath := args[0]
 			guestPath := args[1]
+
+			if info, err := os.Stat(hostPath); err == nil {
+				var size string
+				if info.IsDir() {
+					size = "directory"
+				} else {
+					size = fmt.Sprintf("%.1f MB", float64(info.Size())/(1024*1024))
+				}
+				fmt.Fprintf(os.Stderr, "[host-cp] %s -> guest:%s (%s)\n", hostPath, guestPath, size)
+			}
 
 			req := &controlpb.ControlRequest{
 				Type: "agent-cp",
@@ -683,6 +704,7 @@ func hostCpCmd(cfg vzscriptConfig) script.Cmd {
 						HostPath:  hostPath,
 						GuestPath: guestPath,
 						ToGuest:   true,
+						Overwrite: force,
 					},
 				},
 			}
