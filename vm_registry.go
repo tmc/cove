@@ -440,10 +440,13 @@ func EnsureVMDir(vmName string) (string, error) {
 }
 
 // detectOSType determines the OS type of a VM by checking for characteristic files.
-// hw.model → macOS, efi-vars.img → Linux, otherwise unknown.
+// hw.model → macOS, efi.nvram/efi-vars.img → Linux, otherwise unknown.
 func detectOSType(vmPath string) string {
 	if _, err := os.Stat(filepath.Join(vmPath, "hw.model")); err == nil {
 		return "macOS"
+	}
+	if _, err := os.Stat(filepath.Join(vmPath, "efi.nvram")); err == nil {
+		return "Linux"
 	}
 	if _, err := os.Stat(filepath.Join(vmPath, "efi-vars.img")); err == nil {
 		return "Linux"
