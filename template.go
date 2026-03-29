@@ -12,6 +12,8 @@ package main
 
 import (
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -54,6 +56,10 @@ var TemplateFilesFast = []string{
 
 // TemplateMarkerFast is a marker file indicating fast mode template.
 const TemplateMarkerFast = ".fast-template"
+
+// TemplateHashFile stores a hash of provisioning source files used to detect
+// stale templates. The hash covers provision Go files, templates, and vzscripts.
+const TemplateHashFile = ".source-hash"
 
 // SaveTemplate saves a VM as a template (compresses disk image).
 // This is a convenience wrapper around SaveTemplateWithOptions.
@@ -145,6 +151,10 @@ func SaveTemplateWithOptions(opts SaveTemplateOptions) error {
 	}
 
 	// Note: We intentionally don't copy machine.id - it's generated when creating from template
+
+	// Write provisioning source hash for staleness detection.
+	hashPath := filepath.Join(templatePath, TemplateHashFile)
+	os.WriteFile(hashPath, []byte(ProvisioningSourceHash()), 0644)
 
 	fmt.Println("Template created successfully.")
 	return nil
@@ -264,6 +274,12 @@ func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
 	templateInfo, err := getTemplateInfo(templatePath)
 	if err != nil {
 		return fmt.Errorf("template not found or invalid: %s: %w", opts.TemplateName, err)
+	}
+
+	// Warn if template was built from different provisioning sources.
+	if stale, tmplHash, curHash := CheckTemplateStale(templatePath); stale {
+		fmt.Fprintf(os.Stderr, "warning: template %q is stale (hash %s, current %s) — run 'make golden' to rebuild\n",
+			opts.TemplateName, tmplHash, curHash)
 	}
 
 	// Check VM doesn't exist
@@ -428,4 +444,49 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	}
 
 	return n, err
+}
+
+// provisioningSourceFiles lists files whose content determines the template's
+// provisioning behavior. Changes to any of these files make existing templates
+// stale.
+var provisioningSourceFiles = []string{
+	"provision.go",
+	"provision_inject.go",
+	"provision_templates.go",
+	"provision_cli.go",
+	"provision_mount.go",
+	"agent_inject.go",
+	"templates/vz-provision.sh.tmpl",
+	"templates/com.github.tmc.vz-macos.provision.plist",
+	"templates/com.github.tmc.vz-macos.vz-agent.plist",
+	"templates/com.github.tmc.vz-macos.vz-agent-user.plist",
+}
+
+// ProvisioningSourceHash computes a short SHA-256 hash of the provisioning
+// source files. The hash is stable across builds as long as the file contents
+// don't change.
+func ProvisioningSourceHash() string {
+	h := sha256.New()
+	for _, f := range provisioningSourceFiles {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		h.Write(data)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:12]
+}
+
+// CheckTemplateStale compares the template's stored source hash with the
+// current provisioning source hash. Returns true if the template was built
+// from different source files.
+func CheckTemplateStale(templatePath string) (stale bool, templateHash, currentHash string) {
+	hashPath := filepath.Join(templatePath, TemplateHashFile)
+	data, err := os.ReadFile(hashPath)
+	if err != nil {
+		return false, "", "" // no hash file, can't determine staleness
+	}
+	templateHash = string(data)
+	currentHash = ProvisioningSourceHash()
+	return templateHash != currentHash, templateHash, currentHash
 }
