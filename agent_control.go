@@ -631,12 +631,14 @@ func (s *ControlServer) AgentHealthSummary() string {
 	case "reconnecting":
 		return "Agent: reconnecting..."
 	case "disconnected":
-		if h.lastErr != "" {
-			return "Agent: disconnected"
+		if h.lastPing.IsZero() {
+			// Never connected — still booting up.
+			return "Agent: connecting..."
 		}
 		return "Agent: disconnected"
 	default:
-		return ""
+		// No health check has run yet.
+		return "Agent: connecting..."
 	}
 }
 
