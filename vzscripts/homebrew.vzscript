@@ -1,4 +1,5 @@
 # homebrew — Install Homebrew package manager
+# runs-on: daemon
 
 guest-ping
 guest-shell install-brew.sh

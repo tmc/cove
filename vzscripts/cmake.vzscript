@@ -1,5 +1,6 @@
 # cmake — Install CMake build system
 # requires: homebrew
+# runs-on: daemon
 
 guest-ping
 guest-shell install-cmake.sh

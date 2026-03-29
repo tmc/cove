@@ -1,5 +1,6 @@
 # xcode-mas — Install Xcode from Mac App Store (slow, ~35 GB)
 # requires: homebrew
+# runs-on: daemon
 
 guest-ping
 guest-shell install-xcode-mas.sh
