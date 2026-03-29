@@ -595,19 +595,16 @@ func (s *ControlServer) checkAgentVersion(agentVer string) {
 }
 
 func (s *ControlServer) healthCheckUserAgent() {
-	s.agentMu.RLock()
-	ua := s.userAgent
-	s.agentMu.RUnlock()
-
-	if ua == nil {
+	ua, err := s.getUserAgent()
+	if err != nil {
 		s.healthMu.Lock()
-		s.agentHealth.userStatus = "unknown"
+		s.agentHealth.userStatus = "disconnected"
 		s.healthMu.Unlock()
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	_, err := ua.UserExec(ctx, []string{"true"}, nil, "")
+	_, err = ua.UserExec(ctx, []string{"true"}, nil, "")
 	cancel()
 	s.healthMu.Lock()
 	if err == nil {
