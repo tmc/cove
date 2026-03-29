@@ -418,59 +418,11 @@ func upgradeAgent() error {
 
 // agentLaunchDaemonPlist is the launchd plist for the guest agent daemon.
 // Runs as root on boot (port 1024). KeepAlive ensures launchd restarts if it crashes.
-const agentLaunchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.github.tmc.vz-macos.vz-agent</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/vz-agent</string>
-        <string>-mode</string>
-        <string>daemon</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>ThrottleInterval</key>
-    <integer>5</integer>
-    <key>StandardOutPath</key>
-    <string>/var/log/vz-agent.log</string>
-    <key>StandardErrorPath</key>
-    <string>/var/log/vz-agent.log</string>
-</dict>
-</plist>
-`
+// Loaded from templates/com.github.tmc.vz-macos.vz-agent.plist via go:embed.
+var agentLaunchDaemonPlist = agentLaunchDaemonPlistEmbed
 
 // agentLaunchAgentPlist is the launchd plist for the guest user agent.
 // Runs in the logged-in user's session (port 1025) with TCC/FDA grants.
 // LimitLoadToSessionType: Aqua ensures it only starts in GUI sessions.
-const agentLaunchAgentPlist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.github.tmc.vz-macos.vz-agent-user</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/vz-agent</string>
-        <string>-mode</string>
-        <string>agent</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>ThrottleInterval</key>
-    <integer>5</integer>
-    <key>LimitLoadToSessionType</key>
-    <string>Aqua</string>
-    <key>StandardOutPath</key>
-    <string>/tmp/vz-agent-user.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/vz-agent-user.log</string>
-</dict>
-</plist>
-`
+// Loaded from templates/com.github.tmc.vz-macos.vz-agent-user.plist via go:embed.
+var agentLaunchAgentPlist = agentLaunchAgentPlistEmbed
