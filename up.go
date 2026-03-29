@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"golang.org/x/tools/txtar"
 )
 
 // upConfig holds all configuration for the "up" command.
@@ -191,6 +193,12 @@ func runUpPipeline(cfg upConfig) error {
 		if _, err := stageProvisioningFiles(opts); err != nil {
 			return fmt.Errorf("stage provisioning: %w", err)
 		}
+		// Stage inject directives from vzscript recipes before applying.
+		if cfg.vzscripts != "" {
+			if err := stageVZScriptInjects(splitRecipes(cfg.vzscripts)); err != nil {
+				return fmt.Errorf("stage vzscript injects: %w", err)
+			}
+		}
 		if err := applyProvisioningFiles(); err != nil {
 			return fmt.Errorf("apply provisioning: %w", err)
 		}
@@ -312,4 +320,75 @@ func splitRecipes(s string) []string {
 		}
 	}
 	return names
+}
+
+// stageVZScriptInjects loads the named vzscript recipes, extracts any
+// # inject: directives from their metadata, and stages the referenced
+// txtar files into the existing provisioning staging directory. This runs
+// between stageProvisioningFiles and applyProvisioningFiles so the inject
+// files are included in the same disk-write pass.
+func stageVZScriptInjects(recipes []string) error {
+	stagingDir := provisionStagingDir()
+	manifest, err := readManifest(stagingDir)
+	if err != nil {
+		return fmt.Errorf("read staging manifest: %w", err)
+	}
+
+	staged := 0
+	seen := map[string]bool{}
+	for _, name := range recipes {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		data, err := loadVZScriptData(name)
+		if err != nil {
+			return fmt.Errorf("load recipe %s: %w", name, err)
+		}
+		ar := txtar.Parse(data)
+		meta := parseScriptMeta(ar.Comment)
+		if len(meta.inject) == 0 {
+			continue
+		}
+
+		// Index txtar files by name for lookup.
+		fileIndex := map[string][]byte{}
+		for _, f := range ar.Files {
+			fileIndex[f.Name] = f.Data
+		}
+
+		for _, inj := range meta.inject {
+			content, ok := fileIndex[inj.txtarFile]
+			if !ok {
+				return fmt.Errorf("recipe %s: inject references txtar file %q, but it is not in the archive", name, inj.txtarFile)
+			}
+			mode := parseFileMode(inj.mode, 0644)
+			if err := stageFile(stagingDir, inj.guestPath, content, mode, inj.owner, manifest); err != nil {
+				return fmt.Errorf("recipe %s: stage inject %s: %w", name, inj.guestPath, err)
+			}
+			staged++
+		}
+	}
+
+	if staged > 0 {
+		if err := writeManifest(stagingDir, manifest); err != nil {
+			return fmt.Errorf("update manifest: %w", err)
+		}
+		fmt.Printf("Staged %d file(s) from vzscript inject directives\n", staged)
+	}
+	return nil
+}
+
+// parseFileMode parses an octal mode string like "0755". Returns defaultMode
+// if s is empty or unparseable.
+func parseFileMode(s string, defaultMode os.FileMode) os.FileMode {
+	if s == "" {
+		return defaultMode
+	}
+	v, err := strconv.ParseUint(s, 8, 32)
+	if err != nil {
+		return defaultMode
+	}
+	return os.FileMode(v)
 }

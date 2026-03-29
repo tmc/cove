@@ -672,12 +672,21 @@ func cfgForRecipe(cfg vzscriptConfig, meta scriptMeta) vzscriptConfig {
 	return cfg
 }
 
+// injectDirective describes a file to inject into the VM disk before running.
+type injectDirective struct {
+	guestPath string // macOS guest path relative to Data volume
+	txtarFile string // name of file in txtar archive
+	mode      string // octal mode string, e.g. "0644"
+	owner     string // e.g. "root:wheel"
+}
+
 // scriptMeta holds parsed metadata from a vzscript header.
 type scriptMeta struct {
 	name     string
 	desc     string
-	requires []string // recipe names this script depends on
-	runsOn   string   // "daemon" to run as root via daemon agent
+	requires []string          // recipe names this script depends on
+	runsOn   string            // "daemon" to run as root via daemon agent
+	inject   []injectDirective // files to inject into VM disk
 }
 
 // parseScriptMeta extracts metadata from script comment lines.
@@ -686,6 +695,7 @@ type scriptMeta struct {
 //	# name — description   (first non-blank comment line)
 //	# requires: a, b       (dependency list)
 //	# runs-on: daemon      (run as root via daemon agent)
+//	# inject: guest-path txtar-file [mode] [owner]
 func parseScriptMeta(comment []byte) scriptMeta {
 	var m scriptMeta
 	s := bufio.NewScanner(bytes.NewReader(comment))
@@ -714,6 +724,22 @@ func parseScriptMeta(comment []byte) scriptMeta {
 		// Check for "runs-on:" directive.
 		if strings.HasPrefix(strings.ToLower(text), "runs-on:") {
 			m.runsOn = strings.TrimSpace(text[len("runs-on:"):])
+			continue
+		}
+
+		// Check for "inject:" directive.
+		if strings.HasPrefix(strings.ToLower(text), "inject:") {
+			fields := strings.Fields(strings.TrimSpace(text[len("inject:"):]))
+			if len(fields) >= 2 {
+				d := injectDirective{guestPath: fields[0], txtarFile: fields[1]}
+				if len(fields) >= 3 {
+					d.mode = fields[2]
+				}
+				if len(fields) >= 4 {
+					d.owner = fields[3]
+				}
+				m.inject = append(m.inject, d)
+			}
 			continue
 		}
 

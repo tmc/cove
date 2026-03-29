@@ -1,0 +1,96 @@
+# workstation — Full development workstation with pre-boot setup
+# requires: login
+# inject: Library/LaunchDaemons/com.vz.workstation-setup.plist setup-daemon.plist 0644 root:wheel
+# inject: usr/local/bin/workstation-setup.sh setup.sh 0755 root:wheel
+
+guest-wait 10m
+guest-ping
+
+# Verify injected files landed on disk.
+guest-exec test -f /Library/LaunchDaemons/com.vz.workstation-setup.plist
+guest-exec test -f /usr/local/bin/workstation-setup.sh
+
+# Install Xcode Command Line Tools.
+guest-shell install-clt.sh
+
+# Enable SSH server for remote access.
+guest-exec systemsetup -setremotelogin on
+
+# Verify the guest agent is running.
+guest-exec pgrep -x vz-agent
+
+-- setup-daemon.plist --
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.vz.workstation-setup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/workstation-setup.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/workstation-setup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/workstation-setup.log</string>
+</dict>
+</plist>
+
+-- setup.sh --
+#!/bin/bash
+set -eu
+
+LOG=/var/log/workstation-setup.log
+echo "$(date): workstation first-boot setup starting" >> "$LOG"
+
+# Disable sleep so long builds are not interrupted.
+pmset -a disablesleep 1 2>/dev/null || true
+
+# Accept Xcode license if present.
+if [ -d /Applications/Xcode.app ]; then
+    xcodebuild -license accept 2>/dev/null || true
+fi
+
+echo "$(date): workstation first-boot setup complete" >> "$LOG"
+
+# Self-disable after first run.
+launchctl bootout system/com.vz.workstation-setup 2>/dev/null || true
+
+-- install-clt.sh --
+#!/bin/bash
+set -e
+
+echo "Installing Xcode Command Line Tools (headless)..."
+
+if xcode-select -p &>/dev/null; then
+    echo "Xcode CLT already installed: $(xcode-select -p)"
+    exit 0
+fi
+
+touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+
+echo "Searching for Command Line Tools package..."
+PROD=$(softwareupdate -l 2>/dev/null | grep "\*.*Command Line" | head -n 1 | awk -F"*" '{print $2}' | sed -e 's/^ *//' | sed 's/Label: //g' | tr -d '\n')
+
+if [ -z "$PROD" ]; then
+    echo "error: Command Line Tools not found in softwareupdate"
+    rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+    exit 1
+fi
+
+echo "Found: $PROD"
+echo "Installing (this may take 15-30 minutes)..."
+softwareupdate -i "$PROD" --verbose 2>&1
+
+rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+
+if xcode-select -p &>/dev/null; then
+    echo "Xcode CLT installed: $(xcode-select -p)"
+else
+    echo "error: installation verification failed"
+    exit 1
+fi
