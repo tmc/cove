@@ -61,21 +61,32 @@ type suspendConfigFingerprint struct {
 	Displays   int    `json:"displays"`
 	Volumes    int    `json:"volumes"`
 	USBDevices int    `json:"usbDevices"`
-	Clipboard  bool   `json:"clipboard"`
-	Serial     bool   `json:"serial"`
+	// USBControllers captures the guest-visible USB topology used by the
+	// runtime profile. Save/restore requires device counts to match exactly.
+	USBControllers int  `json:"usbControllers"`
+	Clipboard      bool `json:"clipboard"`
+	Serial         bool `json:"serial"`
 }
 
 func currentConfigFingerprint() suspendConfigFingerprint {
 	return suspendConfigFingerprint{
-		CPUs:       int(cpuCount),
-		MemoryGB:   int(memoryGB),
-		Network:    networkMode,
-		Displays:   max(len(displays), 1),
-		Volumes:    len(getEffectiveVolumes()),
-		USBDevices: len(usbDevices),
-		Clipboard:  enableClipboard,
-		Serial:     serialOutput != "none",
+		CPUs:           int(cpuCount),
+		MemoryGB:       int(memoryGB),
+		Network:        networkMode,
+		Displays:       max(len(displays), 1),
+		Volumes:        len(getEffectiveVolumes()),
+		USBDevices:     len(usbDevices),
+		USBControllers: currentUSBControllerFingerprintCount(),
+		Clipboard:      enableClipboard,
+		Serial:         serialOutput != "none",
 	}
+}
+
+func currentUSBControllerFingerprintCount() int {
+	if runtimeProfile == "minimal" {
+		return 0
+	}
+	return 1
 }
 
 // saveSuspendConfig writes the current config fingerprint alongside the suspend state.
@@ -117,6 +128,9 @@ func checkSuspendConfigMatch() error {
 	}
 	if saved.USBDevices != current.USBDevices {
 		diffs = append(diffs, fmt.Sprintf("USB devices: %d -> %d", saved.USBDevices, current.USBDevices))
+	}
+	if saved.USBControllers != current.USBControllers {
+		diffs = append(diffs, fmt.Sprintf("USB controllers: %d -> %d", saved.USBControllers, current.USBControllers))
 	}
 	if saved.Clipboard != current.Clipboard {
 		diffs = append(diffs, fmt.Sprintf("clipboard: %v -> %v", saved.Clipboard, current.Clipboard))
@@ -558,6 +572,9 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	}
 
 	minimalProfile := runtimeProfile == "minimal"
+	if !minimalProfile {
+		EnsureUSBController(config)
+	}
 
 	if !minimalProfile {
 		// Memory balloon device for runtime memory control
@@ -644,6 +661,10 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		if len(effectiveVolumes) > 0 || len(LoadSharedFolders(vmDir)) > 0 {
 			fmt.Println("warning: ignoring shared folders/volumes with -runtime-profile minimal")
 		}
+	}
+
+	if err := applyPrivateVMConfiguration(config); err != nil {
+		return config, err
 	}
 
 	if _, err := config.ValidateWithError(); err != nil {
@@ -988,7 +1009,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		os.Remove(suspendStatePath())
 		os.Remove(suspendConfigPath())
 	}
-	if canSaveRestore && !recoveryMode && hasSuspendState() {
+	if canSaveRestore && !recoveryMode && !privateMacStartOptionsEnabled() && hasSuspendState() {
 		stateFile := suspendStatePath()
 		if err := checkSuspendConfigMatch(); err != nil {
 			fmt.Printf("Cannot restore suspend state: %v\n", err)
@@ -1014,7 +1035,11 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		}
 	}
 
-	fmt.Println("Starting virtual machine...")
+	if summary := privateRuntimeSummary(); summary != "" {
+		fmt.Printf("Starting virtual machine (%s)...\n", summary)
+	} else {
+		fmt.Println("Starting virtual machine...")
+	}
 	startErr := beginVMStart(vm, queue)
 	if err := waitForVMStart(vm, queue, startErr, pumpRunLoop); err != nil {
 		if !printNSErrorSummary("VM start error", err) {
@@ -1055,8 +1080,8 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 			startErr <- nil
 			return
 		case vz.VZVirtualMachineStatePaused:
-			if recoveryMode {
-				startErr <- fmt.Errorf("cannot boot recovery from paused VM; stop it first")
+			if recoveryMode || privateMacStartOptionsEnabled() {
+				startErr <- fmt.Errorf("private macOS boot options require a stopped VM; stop it first")
 				return
 			}
 			vm.ResumeWithCompletionHandler(startHandlerFn)
@@ -1070,9 +1095,11 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 		}
 		if recoveryMode {
 			fmt.Println("Starting VM in recovery mode...")
-			startOptions := vz.NewVZMacOSVirtualMachineStartOptions()
-			startOptions.SetStartUpFromMacOSRecovery(true)
-			vm.StartWithOptionsCompletionHandler(&startOptions.VZVirtualMachineStartOptions, startHandlerFn)
+			startVMWithRuntimeOptions(vm, startHandlerFn)
+			return
+		}
+		if privateMacStartOptionsEnabled() {
+			startVMWithRuntimeOptions(vm, startHandlerFn)
 			return
 		}
 		vm.StartWithCompletionHandler(startHandlerFn)
@@ -1161,6 +1188,14 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	sock := GetControlSocketPathForVM(vmDir)
 	controlServer := NewControlServerWithVMDir(sock, vmDir)
 	controlServer.SetVM(vm, queue)
+	runtimeFeatures, err := newRuntimeFeatureState()
+	if err != nil {
+		if restoreTerminal != nil {
+			restoreTerminal()
+		}
+		return fmt.Errorf("runtime features: %w", err)
+	}
+	controlServer.SetRuntimeFeatureState(runtimeFeatures)
 	guiController, err := newHeadlessGUIController(app, vm, queue, controlServer, false)
 	if err != nil {
 		if restoreTerminal != nil {
@@ -1176,6 +1211,11 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		if verbose {
 			fmt.Printf("  vz-macos ctl -socket %s agent-ping\n", sock)
 			fmt.Printf("  vz-macos ctl -socket %s gui open\n", sock)
+		}
+	}
+	if runtimeFeatures != nil {
+		if err := runtimeFeatures.startVMServices(vm, queue); err != nil {
+			fmt.Printf("warning: runtime features: %v\n", err)
 		}
 	}
 
@@ -1242,6 +1282,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	var statusItem *VMStatusItemController
 	cleanup := func() {
 		stopMonitor()
+		controlServer.StopRuntimeFeatureState()
 		controlServer.Stop()
 		guiController.Shutdown()
 		if restoreTerminal != nil {
@@ -1310,6 +1351,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	app.Run()
 
 	stopMonitor()
+	controlServer.StopRuntimeFeatureState()
 	controlServer.Stop()
 	if statusItem != nil {
 		statusItem.Shutdown()
@@ -1426,7 +1468,7 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	saveCh := make(chan error, 1)
 	DispatchAsyncQueue(queue, func() {
-		vm.SaveMachineStateToURLCompletionHandler(saveURL, func(err error) {
+		saveMachineStateWithRuntimeOptions(vm, saveURL, func(err error) {
 			saveCh <- snapshotNSError(err)
 		})
 	})
@@ -1600,6 +1642,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	controlServer := NewControlServerWithVMDir(sock, vmDir)
 	controlServer.SetVMViewWithWindow(vmView, window)
 	controlServer.SetVM(vm, queue)
+	runtimeFeatures, err := newRuntimeFeatureState()
+	if err != nil {
+		return fmt.Errorf("runtime features: %w", err)
+	}
+	controlServer.SetRuntimeFeatureState(runtimeFeatures)
 	if err := controlServer.Start(); err != nil {
 		fmt.Printf("warning: could not start control socket: %v\n", err)
 	} else {
@@ -1608,6 +1655,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			fmt.Printf("  vz-macos ctl -socket %s screenshot -o screen.jpg\n", sock)
 			fmt.Printf("  TOKEN=$(cat %s)\n", GetControlTokenPathForVM(vmDir))
 			fmt.Printf("  echo '{\"type\":\"screenshot\",\"auth_token\":\"'$TOKEN'\"}' | nc -U %s\n", sock)
+		}
+	}
+	if launchOrder != "window-first" && runtimeFeatures != nil {
+		if err := runtimeFeatures.startVMServices(vm, queue); err != nil {
+			fmt.Printf("warning: runtime features: %v\n", err)
 		}
 	}
 
@@ -1708,6 +1760,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	var statusItem *VMStatusItemController
 	cleanup := func() {
 		close(monitorDone)
+		controlServer.StopRuntimeFeatureState()
 		controlServer.Stop()
 		if canSaveRestore {
 			fmt.Println("\nSuspending VM...")
@@ -1820,6 +1873,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						vmToolbar.UpdateState(stateUpdate.newState)
 						statusItem.UpdateState(stateUpdate.newState)
 						window.SetTitle(fmt.Sprintf("%s — %s", windowTitle, vmStateName(stateUpdate.newState)))
+						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && runtimeFeatures != nil {
+							if err := runtimeFeatures.startVMServices(vm, queue); err != nil {
+								fmt.Printf("warning: runtime features: %v\n", err)
+							}
+						}
 						// Start fading the boot overlay once the VM is running.
 						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && overlayFadeStep == -1 && bootOverlay.ID != 0 {
 							overlayFadeStep = 15 // ~0.5s fade at 30 Hz
@@ -1906,6 +1964,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// app.Run() blocks until app.Stop() is called (when VM terminates).
 	app.Run()
+	controlServer.StopRuntimeFeatureState()
+	controlServer.Stop()
 	if statusItem != nil {
 		statusItem.Shutdown()
 	}
@@ -1943,9 +2003,9 @@ func transformToForegroundApp() {
 // shouldRunGUIAutomation reports whether GUI provisioning automation should
 // run based on the selected -provision-strategy.
 //
-// When running a VM (not installing), the "inject" strategy is not applicable
-// because injection requires pre-boot disk manipulation. In this case, we
-// auto-upgrade to GUI automation so that -provision-user works as expected
+// When running a VM (not installing), the "disk" strategy is not applicable
+// because disk provisioning requires pre-boot disk manipulation. In this case,
+// we auto-upgrade to GUI automation so that -provision-user works as expected
 // without requiring -provision-strategy gui.
 func shouldRunGUIAutomation() bool {
 	switch provisionStrategy {
@@ -1953,11 +2013,11 @@ func shouldRunGUIAutomation() bool {
 		return true
 	case "auto":
 		return !didInjectSucceed()
-	case "inject":
-		// During "run", inject is not applicable — auto-upgrade to GUI.
+	case "disk":
+		// During "run", disk provisioning is not applicable — auto-upgrade to GUI.
 		if !installVM {
 			if verbose {
-				fmt.Println("[provision] auto-upgrading strategy from inject to gui (inject only applies during install)")
+				fmt.Println("[provision] auto-upgrading strategy from disk to gui (disk only applies during install)")
 			}
 			return true
 		}

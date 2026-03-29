@@ -97,6 +97,23 @@ var (
 	recoverIdentity bool
 	// Prefer GUI password dialogs over terminal prompts when available.
 	preferPasswordDialog bool
+	// Private VNC server port or :port.
+	vncAddress string
+	// Private VNC password.
+	vncPassword string
+	// Optional Bonjour service name for private VNC.
+	vncBonjourService string
+	// Private GDB debug-stub port or :port.
+	gdbAddress string
+	// Listen on all interfaces for the GDB debug stub.
+	gdbListenAll bool
+	// Private save options for suspend/resume state.
+	saveCompress bool
+	saveEncrypt  bool
+	// Private macOS boot-stop options.
+	forceDFU          bool
+	stopInIBootStage1 bool
+	stopInIBootStage2 bool
 )
 
 func init() {
@@ -131,8 +148,8 @@ func init() {
 	flag.StringVar(&provisionUser, "provision-user", "", "username for auto-provisioned user (enables provisioning)")
 	flag.StringVar(&provisionPassword, "provision-password", "", "password for auto-provisioned user")
 	flag.BoolVar(&provisionAdmin, "provision-admin", true, "make auto-provisioned user an admin")
-	flag.StringVar(&provisionStrategy, "provision-strategy", "inject",
-		"provisioning strategy: inject (disk injection, needs sudo), gui (keyboard automation), auto (try inject, fall back to gui)")
+	flag.StringVar(&provisionStrategy, "provision-strategy", "disk",
+		"provisioning strategy: disk (mount disk + write files, needs admin), gui (keyboard automation), auto (try disk, fall back to gui)")
 	flag.BoolVar(&noAgent, "no-agent", false, "skip vz-agent installation during Linux provisioning")
 	flag.StringVar(&installVZScripts, "vzscripts", "", "comma-separated vzscript recipes to run after install (e.g. homebrew,openclaw)")
 	// VM selection flag
@@ -156,8 +173,18 @@ func init() {
 	flag.BoolVar(&appleLog, "apple-log", false, "stream Apple unified logs relevant to virtualization while running")
 	flag.StringVar(&appleLogPredicate, "apple-log-predicate", "", "custom predicate for -apple-log (NSPredicate syntax)")
 	flag.BoolVar(&recoverIdentity, "recover-identity", false, "if VM identity metadata is missing, back it up and reset identity files to attempt recovery")
+	flag.StringVar(&vncAddress, "vnc", "", "start private VNC server on port or :port (for example :5901)")
+	flag.StringVar(&vncPassword, "vnc-password", "", "password for private VNC server")
+	flag.StringVar(&vncBonjourService, "vnc-bonjour", "", "bonjour service name for the private VNC server")
+	flag.StringVar(&gdbAddress, "gdb", "", "attach private GDB debug stub on port or :port (for example :1234)")
+	flag.BoolVar(&gdbListenAll, "gdb-listen-all", false, "listen on all interfaces for -gdb")
+	flag.BoolVar(&saveCompress, "save-compress", false, "compress suspend state using private save options")
+	flag.BoolVar(&saveEncrypt, "save-encrypt", false, "encrypt suspend state using private save options")
+	flag.BoolVar(&forceDFU, "force-dfu", false, "start a macOS VM in DFU mode using private start options")
+	flag.BoolVar(&stopInIBootStage1, "iboot-stage1", false, "start a macOS VM and stop in iBoot stage 1")
+	flag.BoolVar(&stopInIBootStage2, "iboot-stage2", false, "start a macOS VM and stop in iBoot stage 2")
 	// Unattended install
-	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (inject provisioning, OCR fallback)")
+	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (disk provisioning, OCR fallback)")
 	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to boot commands file for custom setup automation")
 	flag.BoolVar(&debugOCR, "debug-ocr", false, "save OCR debug screenshots with text bounding boxes")
 	// Auto-mount volumes
@@ -299,22 +326,27 @@ func main() {
 				os.Exit(1)
 			}
 			return
-		case "inject":
-			// inject is now an alias for provision
+		case "provision":
 			if err := handleProvision(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
-		case "provision":
-			fmt.Fprintf(os.Stderr, "warning: 'provision' command is deprecated, use 'inject' instead\n")
+		case "inject":
+			fmt.Fprintf(os.Stderr, "note: 'inject' has been renamed to 'provision'\n")
 			if err := handleProvision(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "provision-agent":
+			if err := injectAgentOnly(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "inject-agent":
-			// Shorthand for "inject -agent" (no user provisioning)
+			fmt.Fprintf(os.Stderr, "note: 'inject-agent' has been renamed to 'provision-agent'\n")
 			if err := injectAgentOnly(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
@@ -552,8 +584,8 @@ Lifecycle:
   clean           Remove VM files (disk, aux, hw.model, machine.id)
 
 Provisioning:
-  inject          Inject provisioning files into VM disk (self-contained)
-  inject-agent    Inject only vz-agent daemon (no user provisioning)
+  provision       Write provisioning files into VM disk (self-contained)
+  provision-agent Write only vz-agent daemon (no user provisioning)
   agent-upgrade   Live-upgrade vz-agent in a running VM (build, copy, restart)
   verify          Verify provisioning files in VM disk (alias: doctor)
   sip             SIP management (enable/disable/status + recovery automation)
@@ -564,6 +596,7 @@ VM Management:
   vm rename <old> <new>   Rename a VM
   vm export <name> <path> Export VM to tarball
   vm import <path> <name> Import VM from tarball
+  vm config ...           Export/import framework config snapshots
   clone           Clone a VM (vz-macos clone [source] <target> [--linked])
   template        Manage VM templates (save/list/create)
 
@@ -580,22 +613,26 @@ Snapshots:
 
 Runtime Control:
   ctl             Control running VM via socket (screenshot, key, text, mouse, ...)
+  ctl disk list   Inspect runtime storage devices
+  ctl usb list    Inspect runtime USB controllers and devices
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
+  run -headless -vnc :5901            Expose a private VNC console
+  run -gdb :1234                      Attach a private GDB debug stub
 
 Networking:
   network         Network configuration (list interfaces, help)
   rosetta         Rosetta 2 for Linux VMs (status/install/setup)
 
 Other:
-  disk-detach     Detach VM disk if stuck from a previous inject/verify
+  disk-detach     Detach VM disk if stuck from a previous provision/verify
   help [command]  Show top-level or command-specific help
   version         Print version information
 
-Auto-Provisioning (Recommended - inject command):
-  Inject user provisioning directly into VM disk (no VirtioFS needed):
+Auto-Provisioning (Recommended - provision command):
+  Write user provisioning directly into VM disk (no VirtioFS needed):
 
   vz-macos install -ipsw restore.ipsw
-  vz-macos inject -user testuser -skip-setup-assistant  # prompts for password
+  vz-macos provision -user testuser -skip-setup-assistant  # prompts for password
   vz-macos run
 
   This creates a self-contained LaunchDaemon that:
@@ -616,11 +653,11 @@ Auto-Provisioning (Alternative - GUI automation):
   5. Proceed to desktop
 
 Provisioning Strategy (-provision-strategy):
-  inject (default)  Stop VM after install, mount disk, write LaunchDaemon.
-                    On first boot, launchd creates user. Needs sudo.
-  gui               Skip disk injection. On first boot, navigate Setup
-                    Assistant via keyboard automation. No sudo needed.
-  auto              Try inject first. If it fails, fall back to gui.
+  disk (default)    Stop VM after install, mount disk, write LaunchDaemon.
+                    On first boot, launchd creates user. Needs admin.
+  gui               Skip disk provisioning. On first boot, navigate Setup
+                    Assistant via keyboard automation. No admin needed.
+  auto              Try disk first. If it fails, fall back to gui.
 
 Linux VM (Ubuntu):
   Install and run Ubuntu Server ARM64 using cloud-init autoinstall:
@@ -654,9 +691,12 @@ Flags:
 
 func validateLaunchOptions() error {
 	switch provisionStrategy {
-	case "inject", "gui", "auto":
+	case "disk", "gui", "auto":
+	case "inject":
+		// Accept old name as alias.
+		provisionStrategy = "disk"
 	default:
-		return fmt.Errorf("invalid -provision-strategy %q (must be inject, gui, or auto)", provisionStrategy)
+		return fmt.Errorf("invalid -provision-strategy %q (must be disk, gui, or auto)", provisionStrategy)
 	}
 
 	switch launchOrder {

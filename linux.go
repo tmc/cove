@@ -129,6 +129,9 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
 	setAudioDevices(config, audioConfig)
 
+	// Runtime USB attach/detach requires a live USB controller.
+	EnsureUSBController(config)
+
 	// Memory balloon device (allows guest memory management)
 	balloonConfig := vz.NewVZVirtioTraditionalMemoryBalloonDeviceConfiguration()
 	if balloonConfig.ID != 0 {
@@ -182,6 +185,10 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 		if err := AddUSBStorageToConfig(config, usbDevices); err != nil {
 			return config, fmt.Errorf("add USB storage: %w", err)
 		}
+	}
+
+	if err := applyPrivateVMConfiguration(config); err != nil {
+		return config, err
 	}
 
 	return config, nil

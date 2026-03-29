@@ -8,6 +8,8 @@ option swift_prefix = "VZControl_";
 // ControlRequest is the envelope for all control socket requests.
 // Every JSON line sent to the socket is unmarshaled into this message.
 // The "type" field selects the handler; the oneof carries the payload.
+// Some requests, such as "vnc-status" and "debug-stub-status", are handled
+// as flat request types and return JSON in ControlResponse.data.
 message ControlRequest {
   // Command type string for dispatch (e.g. "key", "screenshot", "ping").
   string type = 1;
