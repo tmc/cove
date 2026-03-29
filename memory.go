@@ -9,14 +9,15 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/apple/x/vzkit"
+	balloonx "github.com/tmc/apple/x/vzkit/balloon"
+	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // getMemoryInfo retrieves memory information from the VM.
 func getMemoryInfo(vm vz.VZVirtualMachine, queue dispatch.Queue, vmDirectory string) (*controlpb.MemoryInfo, error) {
-	info, err := vzkit.GetBalloonInfo(vzkit.WrapQueue(queue), vm)
+	info, err := balloonx.GetInfo(vmruntime.WrapQueue(queue), vm)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +42,7 @@ func setMemoryTarget(vm vz.VZVirtualMachine, queue dispatch.Queue, vmDirectory s
 	if err := validateMemoryTargetGB(sizeGB, configuredBytes); err != nil {
 		return err
 	}
-	return vzkit.SetBalloonTarget(vzkit.WrapQueue(queue), vm, sizeGB)
+	return balloonx.SetTarget(vmruntime.WrapQueue(queue), vm, sizeGB)
 }
 
 // handleMemoryCommand handles memory commands from the control socket.
@@ -80,5 +81,5 @@ func (s *ControlServer) handleMemoryCommand(cmd *controlpb.MemoryCommand) *contr
 
 // addMemoryBalloonDevice adds a memory balloon device to a VM config.
 func addMemoryBalloonDevice(config vz.VZVirtualMachineConfiguration) {
-	vzkit.AddMemoryBalloonDevice(config)
+	balloonx.AddDevice(config)
 }

@@ -8,11 +8,11 @@ import (
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/apple/x/vzkit"
+	virtiofsx "github.com/tmc/apple/x/vzkit/virtiofs"
 )
 
 // VolumeMount represents a host-to-guest volume mount configuration.
-type VolumeMount = vzkit.VolumeMount
+type VolumeMount = virtiofsx.Mount
 
 // volumeSlice implements flag.Value for collecting multiple -v flags.
 type volumeSlice []VolumeMount
@@ -39,7 +39,7 @@ func (v *volumeSlice) String() string {
 }
 
 func (v *volumeSlice) Set(value string) error {
-	mount, err := vzkit.ParseVolumeSpec(value)
+	mount, err := virtiofsx.ParseMount(value)
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func createVolumeConfigs(mounts []VolumeMount) ([]vz.VZVirtioFileSystemDeviceCon
 		return nil, nil
 	}
 
-	configs, err := vzkit.CreateVirtioFSDevices(mounts)
+	configs, err := virtiofsx.CreateDevices(mounts)
 	if err != nil {
 		return nil, err
 	}

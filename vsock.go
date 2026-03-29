@@ -9,19 +9,19 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/apple/x/vzkit"
+	vsockx "github.com/tmc/apple/x/vzkit/vsock"
 )
 
 // VsockDeviceManager manages the VZVirtioSocketDevice for a running VM.
 type VsockDeviceManager struct {
-	mgr *vzkit.VsockManager
+	mgr *vsockx.Manager
 }
 
 // NewVsockDeviceManager wraps the VZVirtioSocketDevice from a running VM.
 // The queue parameter is the VM's dispatch queue; Virtualization framework
 // calls must be dispatched on this queue to avoid SIGTRAP crashes.
 func NewVsockDeviceManager(vm vz.VZVirtualMachine, queue dispatch.Queue) (*VsockDeviceManager, error) {
-	mgr, err := vzkit.NewVsockManager(vm)
+	mgr, err := vsockx.NewManager(vm)
 	if err != nil {
 		return nil, err
 	}

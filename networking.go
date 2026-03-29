@@ -5,30 +5,31 @@ import (
 	"fmt"
 
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/apple/x/vzkit"
+	networkx "github.com/tmc/apple/x/vzkit/network"
 )
 
 // NetworkMode represents the type of network configuration.
-type NetworkMode = vzkit.NetworkMode
+type NetworkMode = networkx.Mode
 
 const (
-	NetworkModeNAT     = vzkit.NetworkModeNAT
-	NetworkModeBridged = vzkit.NetworkModeBridged
-	NetworkModeVMNet   = vzkit.NetworkModeVMNet
-	NetworkModeNone    = vzkit.NetworkModeNone
+	NetworkModeNAT      = networkx.ModeNAT
+	NetworkModeBridged  = networkx.ModeBridged
+	NetworkModeHostOnly = networkx.ModeHostOnly
+	NetworkModeVMNet    = networkx.ModeVMNet
+	NetworkModeNone     = networkx.ModeNone
 )
 
 // NetworkConfig holds network configuration settings.
-type NetworkConfig = vzkit.NetworkConfig
+type NetworkConfig = networkx.Config
 
 // ParseNetworkMode parses a network mode string.
 func ParseNetworkMode(s string) (NetworkConfig, error) {
-	return vzkit.ParseNetworkMode(s)
+	return networkx.Parse(s)
 }
 
 // CreateNetworkDeviceConfiguration creates a complete network device configuration.
 func CreateNetworkDeviceConfiguration(config NetworkConfig) (vz.VZVirtioNetworkDeviceConfiguration, error) {
-	return vzkit.CreateNetworkDevice(config)
+	return networkx.CreateDevice(config)
 }
 
 // NetworkModeHelp returns help text for network modes.
@@ -37,12 +38,14 @@ func NetworkModeHelp() string {
   nat              NAT networking (default, guest gets private IP via DHCP)
   bridged:<iface>  Bridge to host interface (e.g., bridged:en0)
                    Guest appears on same network as host
+  host-only        Private host-only network between host and guest
   vmnet            VMNet shared networking (macOS 14+)
   none             No networking
 
 Examples:
   -network nat              Default NAT mode
   -network bridged:en0      Bridge to ethernet
+  -network host-only        Host and guest only
   -network bridged:en1      Bridge to WiFi (check 'vz-macos network list')
   -network none             Disable networking`
 }
