@@ -1,207 +1,27 @@
-// ocr.go - Vision framework OCR for screen text recognition
+// ocr.go - Vision framework OCR for screen text recognition.
+//
+// Delegates to github.com/tmc/apple/x/vzkit/ocr for the implementation.
+// Type aliases maintain backwards compatibility with existing callsites.
 package main
 
 import (
-	"bytes"
-	"fmt"
 	"image"
-	"image/png"
-	"sort"
-	"strings"
 
-	"github.com/tmc/apple/corefoundation"
-	"github.com/tmc/apple/foundation"
-	"github.com/tmc/apple/vision"
+	"github.com/tmc/apple/x/vzkit/ocr"
 )
 
-// TextObservation holds a recognized text region from OCR.
-type TextObservation struct {
-	Text        string
-	Confidence  float32
-	BoundingBox corefoundation.CGRect // normalized coordinates (0-1), origin at bottom-left
-	Center      image.Point           // center in screen pixel coordinates
-}
+// TextObservation is an alias for ocr.TextObservation.
+type TextObservation = ocr.TextObservation
 
-// OCRService performs text recognition using Apple's Vision framework.
-type OCRService struct {
-	verbose bool
-}
+// OCRService is an alias for ocr.Service.
+type OCRService = ocr.Service
 
 // NewOCRService creates a new OCR service.
 func NewOCRService(verbose bool) *OCRService {
-	return &OCRService{verbose: verbose}
+	return ocr.NewService(verbose)
 }
 
-// RecognizeText runs OCR on an image and returns all recognized text observations.
-func (o *OCRService) RecognizeText(img image.Image) ([]TextObservation, error) {
-	if img == nil {
-		return nil, fmt.Errorf("nil image")
-	}
-
-	// Keep OCR fully in-memory to avoid temp file churn on repeated screen polling.
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return nil, fmt.Errorf("encode png: %w", err)
-	}
-	data := foundation.NewDataFromBytes(buf.Bytes())
-	if data.ID == 0 {
-		return nil, fmt.Errorf("create NSData from image bytes")
-	}
-
-	return o.recognizeTextInData(data, img.Bounds().Dx(), img.Bounds().Dy())
-}
-
-// FindText searches for text on screen and returns its center pixel coordinates.
-// When multiple observations contain the needle, it prefers:
-//  1. Exact full-text matches (observation text equals needle, case-insensitive)
-//  2. Shorter observation text (closer to the needle itself, e.g. a button label)
-//  3. Observations closer to the bottom of the screen (buttons are typically there)
-//
-// Returns found=false if the text is not visible.
-func (o *OCRService) FindText(img image.Image, needle string) (x, y float64, found bool) {
-	return o.FindTextWithOptions(img, needle, OCRSearchOptions{})
-}
-
-// FindTextWithOptions searches for text with optional region and ranking preferences.
-func (o *OCRService) FindTextWithOptions(img image.Image, needle string, opts OCRSearchOptions) (x, y float64, found bool) {
-	observations, err := o.RecognizeText(img)
-	if err != nil {
-		if o.verbose {
-			fmt.Printf("[ocr] error: %v\n", err)
-		}
-		return 0, 0, false
-	}
-
-	best, ok := bestMatchWithOptions(observations, needle, opts, img.Bounds())
-	if !ok {
-		return 0, 0, false
-	}
-	if o.verbose {
-		fmt.Printf("[ocr] found %q in %q at (%d, %d)\n", needle, best.Text, best.Center.X, best.Center.Y)
-	}
-	return float64(best.Center.X), float64(best.Center.Y), true
-}
-
+// bestMatchWithOptions delegates to ocr.BestMatch.
 func bestMatchWithOptions(observations []TextObservation, needle string, opts OCRSearchOptions, bounds image.Rectangle) (TextObservation, bool) {
-	needle = strings.ToLower(needle)
-
-	var matches []TextObservation
-	for _, obs := range observations {
-		if !observationInSearchRegion(obs, bounds, opts.Region) {
-			continue
-		}
-		if strings.Contains(strings.ToLower(obs.Text), needle) {
-			matches = append(matches, obs)
-		}
-	}
-	if len(matches) == 0 {
-		return TextObservation{}, false
-	}
-	if len(matches) == 1 {
-		return matches[0], true
-	}
-
-	sort.Slice(matches, func(i, j int) bool {
-		ti := strings.ToLower(matches[i].Text)
-		tj := strings.ToLower(matches[j].Text)
-		exactI := ti == needle
-		exactJ := tj == needle
-		if exactI != exactJ {
-			return exactI
-		}
-		if len(ti) != len(tj) {
-			return len(ti) < len(tj)
-		}
-		if opts.PreferTop {
-			if matches[i].Center.Y != matches[j].Center.Y {
-				return matches[i].Center.Y < matches[j].Center.Y
-			}
-		} else if matches[i].Center.Y != matches[j].Center.Y {
-			// Lower on screen (higher Y) is preferred.
-			return matches[i].Center.Y > matches[j].Center.Y
-		}
-		return matches[i].Center.X < matches[j].Center.X
-	})
-	return matches[0], true
-}
-
-// FindTextNormalized searches for text and returns its center in normalized
-// coordinates (0-1, top-left origin) suitable for mouse input commands.
-func (o *OCRService) FindTextNormalized(img image.Image, needle string) (x, y float64, found bool) {
-	return o.FindTextNormalizedWithOptions(img, needle, OCRSearchOptions{})
-}
-
-// FindTextNormalizedWithOptions searches for text with options and returns the
-// center in normalized coordinates (0-1, top-left origin).
-func (o *OCRService) FindTextNormalizedWithOptions(img image.Image, needle string, opts OCRSearchOptions) (x, y float64, found bool) {
-	px, py, found := o.FindTextWithOptions(img, needle, opts)
-	if !found {
-		return 0, 0, false
-	}
-	bounds := img.Bounds()
-	return px / float64(bounds.Dx()), py / float64(bounds.Dy()), true
-}
-
-// AllText returns all recognized text as a single string.
-func (o *OCRService) AllText(img image.Image) string {
-	observations, err := o.RecognizeText(img)
-	if err != nil {
-		return ""
-	}
-	var lines []string
-	for _, obs := range observations {
-		lines = append(lines, obs.Text)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func (o *OCRService) recognizeTextInData(data foundation.INSData, width, height int) ([]TextObservation, error) {
-	handler := vision.NewImageRequestHandlerWithDataOptions(data, nil)
-
-	request := vision.NewVNRecognizeTextRequest()
-	request.SetRecognitionLevel(vision.VNRequestTextRecognitionLevelAccurate)
-	request.SetUsesLanguageCorrection(true)
-
-	ok, err := handler.PerformRequestsError([]vision.VNRequest{
-		vision.VNRequestFromID(request.ID),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("perform requests: %w", err)
-	}
-	if !ok {
-		return nil, fmt.Errorf("perform requests returned false")
-	}
-
-	return o.extractResults(request, width, height), nil
-}
-
-func (o *OCRService) extractResults(request vision.VNRecognizeTextRequest, width, height int) []TextObservation {
-	observations := request.Results()
-	var results []TextObservation
-	for _, obs := range observations {
-		textObs := vision.VNRecognizedTextObservationFromID(obs.ID)
-		candidates := textObs.TopCandidates(1)
-		if len(candidates) == 0 {
-			continue
-		}
-		candidate := candidates[0]
-		bbox := textObs.BoundingBox()
-
-		// Convert normalized bbox (origin bottom-left) to pixel center
-		centerX := int((bbox.Origin.X + bbox.Size.Width/2) * float64(width))
-		centerY := int((1 - bbox.Origin.Y - bbox.Size.Height/2) * float64(height))
-
-		result := TextObservation{
-			Text:        candidate.String(),
-			Confidence:  float32(candidate.Confidence()),
-			BoundingBox: bbox,
-			Center:      image.Point{X: centerX, Y: centerY},
-		}
-		results = append(results, result)
-
-		if o.verbose {
-			fmt.Printf("[ocr] [%.2f] %q at (%d,%d)\n", result.Confidence, result.Text, centerX, centerY)
-		}
-	}
-	return results
+	return ocr.BestMatch(observations, needle, opts, bounds)
 }

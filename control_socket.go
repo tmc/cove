@@ -26,6 +26,7 @@ import (
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit/input"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -1021,10 +1022,9 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 
 	// Try both delivery methods: first activate the app, then post through
 	// the HID event tap (window server path). Also post to PID as fallback.
-	if err := ensureCGInit(); err != nil {
+	if err := input.Post(input.HIDEventTap, event); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CG: %v", err)}
 	}
-	cgEventPost(kCGHIDEventTap, event)
 	if verbose {
 		fmt.Printf("[key-cgevent] posted keyCode=%d down=%v via kCGHIDEventTap\n", cmd.KeyCode, cmd.KeyDown)
 	}
@@ -1344,10 +1344,9 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 
 	// Post through the system HID event tap so events travel the same
 	// path as real mouse input (window server → focused app → key window).
-	if err := ensureCGInit(); err != nil {
+	if err := input.Post(input.HIDEventTap, event); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CG: %v", err)}
 	}
-	cgEventPost(kCGHIDEventTap, event)
 
 	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 }

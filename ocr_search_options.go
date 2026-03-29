@@ -1,99 +1,34 @@
+// ocr_search_options.go - OCR search region and options.
+//
+// Delegates to github.com/tmc/apple/x/vzkit/ocr for the implementation.
 package main
 
 import (
-	"fmt"
 	"image"
-	"strconv"
-	"strings"
+
+	"github.com/tmc/apple/x/vzkit/ocr"
 )
 
-// OCRRegion describes a normalized screen rectangle (0-1, top-left origin).
-type OCRRegion struct {
-	MinX float64
-	MinY float64
-	MaxX float64
-	MaxY float64
-}
+// OCRRegion is an alias for ocr.Region.
+type OCRRegion = ocr.Region
 
-// OCRSearchOptions controls OCR text matching behavior.
-type OCRSearchOptions struct {
-	Region    *OCRRegion
-	PreferTop bool
-}
-
-var ocrMenuBarRegion = OCRRegion{
-	MinX: 0,
-	MinY: 0,
-	MaxX: 1,
-	MaxY: 0.30,
-}
+// OCRSearchOptions is an alias for ocr.SearchOptions.
+type OCRSearchOptions = ocr.SearchOptions
 
 // OCRMenuSearchOptions returns options tuned for menu bar targeting.
 func OCRMenuSearchOptions() OCRSearchOptions {
-	region := ocrMenuBarRegion
-	return OCRSearchOptions{
-		Region:    &region,
-		PreferTop: true,
-	}
+	return ocr.MenuSearchOptions()
 }
 
 // ParseOCRSearchOptions parses a region selector for OCR commands.
-// Supported selectors:
-//   - "" / "screen" / "full": whole screen
-//   - "menu" / "menubar": top menu bar strip
-//   - "x1,y1,x2,y2": normalized rectangle coordinates
 func ParseOCRSearchOptions(regionSpec string) (OCRSearchOptions, error) {
-	spec := strings.TrimSpace(strings.ToLower(regionSpec))
-	switch spec {
-	case "", "screen", "full":
-		return OCRSearchOptions{}, nil
-	case "menu", "menubar", "top-menu":
-		return OCRMenuSearchOptions(), nil
-	}
-
-	parts := strings.Split(spec, ",")
-	if len(parts) != 4 {
-		return OCRSearchOptions{}, fmt.Errorf("invalid OCR region %q (want menu or x1,y1,x2,y2)", regionSpec)
-	}
-
-	values := make([]float64, 0, 4)
-	for _, part := range parts {
-		v, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
-		if err != nil {
-			return OCRSearchOptions{}, fmt.Errorf("invalid OCR region %q: %w", regionSpec, err)
-		}
-		values = append(values, v)
-	}
-
-	region := OCRRegion{
-		MinX: values[0],
-		MinY: values[1],
-		MaxX: values[2],
-		MaxY: values[3],
-	}
-	if err := validateOCRRegion(region); err != nil {
-		return OCRSearchOptions{}, fmt.Errorf("invalid OCR region %q: %w", regionSpec, err)
-	}
-	return OCRSearchOptions{Region: &region}, nil
+	return ocr.ParseSearchOptions(regionSpec)
 }
 
-func validateOCRRegion(region OCRRegion) error {
-	if region.MinX < 0 || region.MinX > 1 || region.MaxX < 0 || region.MaxX > 1 {
-		return fmt.Errorf("x coordinates must be within [0,1]")
-	}
-	if region.MinY < 0 || region.MinY > 1 || region.MaxY < 0 || region.MaxY > 1 {
-		return fmt.Errorf("y coordinates must be within [0,1]")
-	}
-	if region.MinX >= region.MaxX {
-		return fmt.Errorf("x1 must be less than x2")
-	}
-	if region.MinY >= region.MaxY {
-		return fmt.Errorf("y1 must be less than y2")
-	}
-	return nil
-}
-
+// observationInSearchRegion checks if an observation falls within the search region.
 func observationInSearchRegion(obs TextObservation, bounds image.Rectangle, region *OCRRegion) bool {
+	// Use BestMatch with a single observation to check region membership.
+	// This is a simple proxy since observationInRegion is unexported in vzkit/ocr.
 	if region == nil {
 		return true
 	}
