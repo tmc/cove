@@ -957,7 +957,9 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 				"stream": streamName,
 				"data":   base64.StdEncoding.EncodeToString(out.Data),
 			})
-			writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(chunkPayload)})
+			if err := writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(chunkPayload)}); err != nil {
+				return
+			}
 		}
 
 		if out.ExitCode != nil {

@@ -265,15 +265,17 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 	}
 }
 
-func writeResponse(conn net.Conn, resp *controlpb.ControlResponse) {
+func writeResponse(conn net.Conn, resp *controlpb.ControlResponse) error {
 	data, err := protojsonMarshaler.Marshal(resp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "control socket: marshal response: %v\n", err)
-		return
+		return err
 	}
 	if _, err := conn.Write(append(data, '\n')); err != nil {
 		fmt.Fprintf(os.Stderr, "control socket: write response: %v\n", err)
+		return err
 	}
+	return nil
 }
 
 func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.ControlResponse {
