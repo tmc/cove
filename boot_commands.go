@@ -353,10 +353,10 @@ func (e *BootCommandExecutor) clickAt(x, y float64, screenWidth, screenHeight in
 }
 
 func (e *BootCommandExecutor) captureScreen() image.Image {
-	if e.cs == nil || e.cs.window.ID == 0 {
+	if e.cs == nil {
 		return nil
 	}
-	img, errMsg := e.cs.captureVMView()
+	img, errMsg := e.cs.captureDisplayImage()
 	if errMsg != "" {
 		return nil
 	}

@@ -463,7 +463,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		ocr := s.getOCR()
 		deadline := time.Now().Add(timeout)
 		for time.Now().Before(deadline) {
-			img, errMsg := s.captureVMView()
+			img, errMsg := s.captureDisplayImage()
 			if errMsg != "" {
 				time.Sleep(time.Second)
 				continue
@@ -491,7 +491,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 
 	case "detect-screen":
 		ocr := s.getOCR()
-		img, errMsg := s.captureVMView()
+		img, errMsg := s.captureDisplayImage()
 		if errMsg != "" {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("capture: %s", errMsg)}, true
 		}

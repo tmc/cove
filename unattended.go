@@ -66,7 +66,7 @@ func runDefaultUnattendedFlow(cs *ControlServer, ocr *OCRService, debugDir strin
 	// Wait up to 5 minutes for the screen to leave black/Apple logo
 	deadline := time.Now().Add(5 * time.Minute)
 	for time.Now().Before(deadline) {
-		img, errMsg := cs.captureVMView()
+		img, errMsg := cs.captureDisplayImage()
 		if errMsg != "" {
 			time.Sleep(2 * time.Second)
 			continue
@@ -129,7 +129,7 @@ func attemptLogin(cs *ControlServer, ocr *OCRService) error {
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(2 * time.Second)
-		img, errMsg := cs.captureVMView()
+		img, errMsg := cs.captureDisplayImage()
 		if errMsg != "" {
 			continue
 		}

@@ -18,7 +18,7 @@ func (s *ControlServer) OCRClickText(ocr *OCRService, text string, timeout time.
 func (s *ControlServer) OCRClickTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		img, errMsg := s.captureVMView()
+		img, errMsg := s.captureDisplayImage()
 		if errMsg != "" {
 			time.Sleep(time.Second)
 			continue
@@ -55,7 +55,7 @@ func (s *ControlServer) OCRWaitForText(ocr *OCRService, text string, timeout tim
 func (s *ControlServer) OCRWaitForTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		img, errMsg := s.captureVMView()
+		img, errMsg := s.captureDisplayImage()
 		if errMsg != "" {
 			time.Sleep(time.Second)
 			continue
@@ -91,7 +91,7 @@ func (s *ControlServer) OCRWaitAndClickWithOptions(ocr *OCRService, text string,
 
 // OCRAllText takes a screenshot and returns all recognized text.
 func (s *ControlServer) OCRAllText(ocr *OCRService) (string, error) {
-	img, errMsg := s.captureVMView()
+	img, errMsg := s.captureDisplayImage()
 	if errMsg != "" {
 		return "", fmt.Errorf("capture: %s", errMsg)
 	}
@@ -100,7 +100,7 @@ func (s *ControlServer) OCRAllText(ocr *OCRService) (string, error) {
 
 // OCRDetectPage takes a screenshot and identifies the Setup Assistant page.
 func (s *ControlServer) OCRDetectPage(ocr *OCRService) string {
-	img, errMsg := s.captureVMView()
+	img, errMsg := s.captureDisplayImage()
 	if errMsg != "" {
 		return "unknown"
 	}
@@ -111,7 +111,7 @@ func (s *ControlServer) OCRDetectPage(ocr *OCRService) string {
 func (s *ControlServer) OCRWaitForPageChange(ocr *OCRService, currentPage string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		img, errMsg := s.captureVMView()
+		img, errMsg := s.captureDisplayImage()
 		if errMsg != "" {
 			time.Sleep(500 * time.Millisecond)
 			continue

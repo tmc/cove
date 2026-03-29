@@ -566,7 +566,7 @@ func (s *SetupAssistant) detectPage() string {
 // detectCurrentScreenOCR detects screen state using OCR when available.
 func (s *SetupAssistant) detectCurrentScreenOCR() ScreenState {
 	if s.cs != nil {
-		img, errMsg := s.cs.captureVMView()
+		img, errMsg := s.cs.captureDisplayImage()
 		if errMsg != "" {
 			return ScreenStateUnknown
 		}
@@ -803,7 +803,7 @@ func (s *SetupAssistant) waitForStableScreen(timeout time.Duration) error {
 // screenshotScaled captures a scaled screenshot via either path.
 func (s *SetupAssistant) screenshotScaled(scale float64) image.Image {
 	if s.cs != nil {
-		img, errMsg := s.cs.captureVMView()
+		img, errMsg := s.cs.captureDisplayImage()
 		if errMsg != "" {
 			return nil
 		}
@@ -881,7 +881,7 @@ func (s *SetupAssistant) saveDebugScreenshot(name string) {
 
 	var img image.Image
 	if s.cs != nil {
-		captured, errMsg := s.cs.captureVMView()
+		captured, errMsg := s.cs.captureDisplayImage()
 		if errMsg != "" {
 			s.log("warning: failed to capture screenshot: %s", errMsg)
 			return

@@ -64,12 +64,12 @@ func runProvisioningAutomation(cs *ControlServer) {
 	}
 }
 
-// waitForVMScreenReady polls captureVMView until it returns a valid image,
+// waitForVMScreenReady polls captureDisplayImage until it returns a valid image,
 // indicating the VM window is rendered and screenshots are working.
 func waitForVMScreenReady(cs *ControlServer, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		img, errMsg := cs.captureVMView()
+		img, errMsg := cs.captureDisplayImage()
 		if errMsg == "" && img != nil {
 			if verbose {
 				fmt.Printf("[provision] VM screen ready (%dx%d)\n",
