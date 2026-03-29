@@ -306,12 +306,19 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	interrupted := make(chan struct{})
+	injectDone := make(chan struct{})
 	go func() {
-		<-sigCh
-		fmt.Fprintln(os.Stderr, "\ninterrupted — detaching disk before exit...")
-		close(interrupted)
+		select {
+		case <-sigCh:
+			fmt.Fprintln(os.Stderr, "\ninterrupted — detaching disk before exit...")
+			close(interrupted)
+		case <-injectDone:
+		}
 	}()
-	defer signal.Stop(sigCh)
+	defer func() {
+		signal.Stop(sigCh)
+		close(injectDone)
+	}()
 	isInterrupted := func() bool {
 		select {
 		case <-interrupted:
@@ -608,12 +615,19 @@ func applyProvisioningFiles() error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	interrupted := make(chan struct{})
+	applyDone := make(chan struct{})
 	go func() {
-		<-sigCh
-		fmt.Fprintln(os.Stderr, "\ninterrupted — detaching disk before exit...")
-		close(interrupted)
+		select {
+		case <-sigCh:
+			fmt.Fprintln(os.Stderr, "\ninterrupted — detaching disk before exit...")
+			close(interrupted)
+		case <-applyDone:
+		}
 	}()
-	defer signal.Stop(sigCh)
+	defer func() {
+		signal.Stop(sigCh)
+		close(applyDone)
+	}()
 
 	select {
 	case <-interrupted:
