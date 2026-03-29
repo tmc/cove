@@ -174,6 +174,7 @@ func vzscriptRun(args []string) error {
 	verbose := rf.Bool("v", false, "Verbose output")
 	terminal := rf.Bool("terminal", false, "Run guest-shell commands in Terminal.app (visible in VM GUI)")
 	autoApprove := rf.Bool("auto-approve", false, "Auto-click Allow/OK on system dialogs via OCR")
+	daemon := rf.Bool("daemon", false, "Route guest commands through daemon agent (root) instead of user agent")
 	vm := rf.String("vm", "", "VM name (default: active VM or 'default')")
 	parallel := rf.Bool("parallel", false, "Run independent recipes concurrently")
 	if err := rf.Parse(args); err != nil {
@@ -203,6 +204,7 @@ func vzscriptRun(args []string) error {
 		verbose:     *verbose,
 		terminal:    *terminal,
 		autoApprove: *autoApprove,
+		daemon:      *daemon,
 	}
 
 	// Collect all recipe names from positional args.

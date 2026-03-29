@@ -79,9 +79,27 @@ type vzscriptConfig struct {
 	verbose     bool
 	terminal    bool // force guest-shell/guest-exec to run in Terminal.app
 	autoApprove bool // auto-click "Allow"/"OK" on system dialogs via OCR
+	daemon      bool // use daemon agent (root) instead of user agent
 	logWriter   io.Writer
 	streamOut   io.Writer
 	streamErr   io.Writer
+}
+
+// execType returns the control request type for exec commands,
+// routing to daemon or user agent based on config.
+func (c vzscriptConfig) execType() string {
+	if c.daemon {
+		return "agent-exec"
+	}
+	return "agent-user-exec"
+}
+
+// execStreamType returns the control request type for streaming exec commands.
+func (c vzscriptConfig) execStreamType() string {
+	if c.daemon {
+		return "agent-exec-stream"
+	}
+	return "agent-user-exec-stream"
 }
 
 // newVZScriptEngine returns a script engine with guest VM commands and
@@ -341,7 +359,7 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 		}
 		return func(*script.State) (string, string, error) {
 			stdout, stderr, exitCode, err := guestExecStream(
-				cfg.socketPath,
+				cfg,
 				args,
 				timeout,
 				func(chunk []byte) { _, _ = out.Write(chunk) },
@@ -359,14 +377,14 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 	}
 
 	req := &controlpb.ControlRequest{
-		Type: "agent-exec",
+		Type: cfg.execType(),
 		Command: &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
 				Args: args,
 			},
 		},
 	}
-	resp, err := ctlSendRequest(cfg.socketPath, req, timeout, "agent-exec")
+	resp, err := ctlSendRequest(cfg.socketPath, req, timeout, cfg.execType())
 	if err != nil {
 		return nil, err
 	}
@@ -392,17 +410,17 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 
 // guestExecStream runs agent-exec-stream and returns collected stdout/stderr
 // plus final exit code. Optional callbacks receive live chunk data.
-func guestExecStream(socketPath string, args []string, timeout time.Duration, onStdout, onStderr func([]byte)) (string, string, int32, error) {
+func guestExecStream(cfg vzscriptConfig, args []string, timeout time.Duration, onStdout, onStderr func([]byte)) (string, string, int32, error) {
 	req := &controlpb.ControlRequest{
-		Type: "agent-exec-stream",
+		Type: cfg.execStreamType(),
 		Command: &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{Args: args},
 		},
 	}
 
-	conn, err := net.DialTimeout("unix", socketPath, timeout)
+	conn, err := net.DialTimeout("unix", cfg.socketPath, timeout)
 	if err != nil {
-		return "", "", 0, ctlConnectError(socketPath, err)
+		return "", "", 0, ctlConnectError(cfg.socketPath, err)
 	}
 	defer conn.Close()
 
@@ -410,7 +428,7 @@ func guestExecStream(socketPath string, args []string, timeout time.Duration, on
 
 	reqToSend := req
 	if req.AuthToken == "" {
-		if token := resolveControlTokenForSocket(socketPath); token != "" {
+		if token := resolveControlTokenForSocket(cfg.socketPath); token != "" {
 			reqToSend = proto.Clone(req).(*controlpb.ControlRequest)
 			reqToSend.AuthToken = token
 		}
