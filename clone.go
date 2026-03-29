@@ -99,8 +99,8 @@ func CloneVM(opts CloneOptions) error {
 		}
 	}
 
-	// Copy optional files (boot-args.txt, etc.)
-	optionalFiles := []string{"boot-args.txt"}
+	// Copy optional files (boot-args.txt, control.token, etc.)
+	optionalFiles := []string{"boot-args.txt", "control.token"}
 	for _, f := range optionalFiles {
 		srcFile := filepath.Join(srcPath, f)
 		dstFile := filepath.Join(dstPath, f)
@@ -108,6 +108,9 @@ func CloneVM(opts CloneOptions) error {
 			copyFile(srcFile, dstFile)
 		}
 	}
+
+	// Remove suspend state from clone for deterministic cold boot.
+	os.Remove(filepath.Join(dstPath, "suspend.vmstate"))
 
 	fmt.Println("Clone complete.")
 	return nil

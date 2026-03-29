@@ -655,17 +655,10 @@ func cloneTestVM(t *testing.T, baseVM *testVM) *testVM {
 	dir := resolvePath(GetVMPath(cloneName))
 	tokenPath := GetControlTokenPathForVM(dir)
 
-	// Clone inherits the auth token from the base.
+	// CloneVM copies control.token as an optional file.
 	token, err := LoadControlTokenFromPath(tokenPath)
 	if err != nil {
-		// If no token file in clone, copy from base.
-		srcToken := GetControlTokenPathForVM(baseVM.dir)
-		if data, readErr := os.ReadFile(srcToken); readErr == nil {
-			os.WriteFile(tokenPath, data, 0600)
-			token = strings.TrimSpace(string(data))
-		} else {
-			t.Fatalf("load control token for clone %q: %v (base: %v)", cloneName, err, readErr)
-		}
+		t.Fatalf("load control token for clone %q: %v", cloneName, err)
 	}
 
 	vm := &testVM{
