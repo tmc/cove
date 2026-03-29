@@ -1,0 +1,59 @@
+# mlx-lm — Install MLX-LM for Apple Silicon ML inference
+# requires: homebrew
+# runs-on: daemon
+# mount: ~/.cache/huggingface ro
+
+guest-ping
+guest-shell install-mlx-lm.sh
+
+-- install-mlx-lm.sh --
+#!/bin/bash
+set -eu
+
+# Find the admin user (Homebrew is installed under their account).
+BREW_USER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$BREW_USER" ]; then
+  echo "error: no admin user found" >&2
+  exit 1
+fi
+echo "Installing mlx-lm as user: $BREW_USER"
+
+# Grant passwordless sudo temporarily.
+echo "$BREW_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/mlx-lm-install
+chmod 0440 /etc/sudoers.d/mlx-lm-install
+
+# Install Python 3.12 via Homebrew.
+su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && brew install python@3.12'
+
+# Create a venv and install mlx-lm into it.
+VENV="/Users/$BREW_USER/.venv/mlx"
+su -l "$BREW_USER" -c "eval \"\$(/opt/homebrew/bin/brew shellenv)\" && python3.12 -m venv $VENV"
+su -l "$BREW_USER" -c "$VENV/bin/pip install mlx-lm"
+
+# Add venv activation to shell profile so mlx commands are on PATH.
+su -l "$BREW_USER" -c "echo 'export PATH=\"$VENV/bin:\$PATH\"' >> ~/.zprofile"
+
+# Verify installation.
+su -l "$BREW_USER" -c "$VENV/bin/python -c \"import mlx_lm; print('mlx-lm version:', mlx_lm.__version__)\""
+
+# Symlink the shared HuggingFace cache if mounted.
+MOUNT_POINT="/Volumes/My Shared Files/huggingface"
+if [ -d "$MOUNT_POINT" ]; then
+  GUEST_CACHE="/Users/$BREW_USER/.cache/huggingface"
+  su -l "$BREW_USER" -c "mkdir -p ~/.cache"
+  if [ -L "$GUEST_CACHE" ] || [ -d "$GUEST_CACHE" ]; then
+    echo "HuggingFace cache already exists at $GUEST_CACHE, skipping symlink"
+  else
+    ln -s "$MOUNT_POINT" "$GUEST_CACHE"
+    echo "Linked $MOUNT_POINT -> $GUEST_CACHE"
+  fi
+  echo "Available models:"
+  ls "$MOUNT_POINT/hub/" 2>/dev/null | grep "^models--" | sed 's/models--/  /' | head -20
+else
+  echo "Note: HuggingFace cache not mounted at $MOUNT_POINT"
+  echo "Models will be downloaded on first use."
+fi
+
+# Clean up.
+rm -f /etc/sudoers.d/mlx-lm-install
+echo "mlx-lm installation complete."
