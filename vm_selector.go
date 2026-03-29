@@ -21,6 +21,8 @@ import (
 	"github.com/tmc/apple/objectivec"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+
+	"golang.org/x/tools/txtar"
 )
 
 // VM selector window dimensions.
@@ -36,7 +38,7 @@ const (
 	selectorPanelGap     = 18
 	selectorHeaderHeight = 58
 	selectorSectionGap   = 12
-	selectorRowHeight    = 80
+	selectorRowHeight    = 60
 	selectorViewMinX     = 1
 	selectorViewMinY     = 4
 	selectorViewWidth    = 2
@@ -93,7 +95,17 @@ type newVMOptions struct {
 	PostInstallRecipes string
 }
 
-const selectorNoRecipe = "(none)"
+// defaultRecipePreset lists the recipes selected by the "Use defaults" checkbox.
+var defaultRecipePreset = []string{"homebrew", "golang", "developer-tools"}
+
+// recipeSelectorMeta lists scripts that are not useful as post-install selections.
+var recipeSelectorHidden = map[string]bool{
+	"setup-assistant": true,
+	"setup-user":      true,
+	"login":           true,
+	"full-setup":      true,
+	"deploy-agent":    true,
+}
 
 var vmSelectorDelegateCounter uint64
 var selectorScriptRunnerDelegateCounter uint64
@@ -125,6 +137,10 @@ func selectorRowTitle(vm VMInfo, activeVM string) string {
 	return title
 }
 
+func selectorRowSubtitle(vm VMInfo) string {
+	return fmt.Sprintf("%s | %s | %s", vm.OSType, FormatSize(vm.DiskSize), vm.Created.Format("2006-01-02"))
+}
+
 func selectorLabel(
 	text string,
 	frame corefoundation.CGRect,
@@ -149,9 +165,9 @@ func selectorPanel(frame corefoundation.CGRect) appkit.NSBox {
 	objc.Send[struct{}](panel.ID, objc.Sel("setBorderType:"), appkit.NSLineBorder)
 	panel.SetTitlePosition(appkit.NSNoTitle)
 	panel.SetBorderWidth(0.75)
-	panel.SetCornerRadius(14)
-	panel.SetBorderColor(appkit.GetNSColorClass().SeparatorColor().ColorWithAlphaComponent(0.16))
-	panel.SetFillColor(appkit.GetNSColorClass().ControlBackgroundColor().ColorWithAlphaComponent(0.78))
+	panel.SetCornerRadius(16)
+	panel.SetBorderColor(appkit.GetNSColorClass().SeparatorColor().ColorWithAlphaComponent(0.12))
+	panel.SetFillColor(appkit.GetNSColorClass().ControlBackgroundColor().ColorWithAlphaComponent(0.56))
 	return panel
 }
 
@@ -710,36 +726,184 @@ func listBuiltinVZScriptNames() ([]string, error) {
 	return names, nil
 }
 
-func normalizeRecipeSelection(primary string) string {
-	primary = strings.TrimSpace(primary)
-	if primary == "" || primary == selectorNoRecipe {
-		return ""
-	}
-	return primary
+// recipeInfo holds parsed metadata for a vzscript recipe.
+type recipeInfo struct {
+	name     string
+	desc     string
+	requires []string
 }
 
-func newVMAccessoryView(opts newVMOptions, recipeNames []string) (appkit.NSView, appkit.NSTextField, appkit.NSTextField, appkit.NSSecureTextField, appkit.NSPopUpButton) {
+// recipeCheckboxRow pairs a recipe with its UI controls.
+type recipeCheckboxRow struct {
+	info     recipeInfo
+	checkbox appkit.NSButton
+}
+
+// recipeSelector manages the multi-select recipe UI in the New VM dialog.
+type recipeSelector struct {
+	rows          []recipeCheckboxRow
+	byName        map[string]*recipeCheckboxRow
+	defaultsCheck appkit.NSButton
+	disclosureBtn appkit.NSButton
+	container     appkit.NSView
+	recipeSection appkit.NSView
+	topSubviews   []appkit.NSView
+	expanded      bool
+	alert         appkit.NSAlert
+}
+
+// bindAlert stores the alert reference and wires the disclosure toggle.
+func (s *recipeSelector) bindAlert(alert appkit.NSAlert) {
+	s.alert = alert
+	s.disclosureBtn.SetActionHandler(func() {
+		s.toggleDisclosure()
+	})
+}
+
+const recipeSectionHeight = 200.0
+
+// toggleDisclosure expands or collapses the recipe section.
+func (s *recipeSelector) toggleDisclosure() {
+	s.expanded = !s.expanded
+	if s.expanded {
+		for _, sv := range s.topSubviews {
+			f := sv.Frame()
+			f.Origin.Y += recipeSectionHeight
+			sv.SetFrame(f)
+		}
+		f := s.container.Frame()
+		f.Size.Height += recipeSectionHeight
+		s.container.SetFrame(f)
+		s.recipeSection.SetIsHidden(false)
+	} else {
+		for _, sv := range s.topSubviews {
+			f := sv.Frame()
+			f.Origin.Y -= recipeSectionHeight
+			sv.SetFrame(f)
+		}
+		f := s.container.Frame()
+		f.Size.Height -= recipeSectionHeight
+		s.container.SetFrame(f)
+		s.recipeSection.SetIsHidden(true)
+	}
+	if s.alert.ID != 0 {
+		s.alert.Layout()
+	}
+}
+
+// selectedRecipes returns a comma-separated list of checked recipe names.
+func (s *recipeSelector) selectedRecipes() string {
+	var selected []string
+	for _, row := range s.rows {
+		if row.checkbox.State() == appkit.NSControlStateValue(1) {
+			selected = append(selected, row.info.name)
+		}
+	}
+	return strings.Join(selected, ",")
+}
+
+// updateDefaultsState syncs the "Use defaults" checkbox with individual recipe state.
+func (s *recipeSelector) updateDefaultsState() {
+	allOn := true
+	for _, name := range defaultRecipePreset {
+		if row, ok := s.byName[name]; ok {
+			if row.checkbox.State() != appkit.NSControlStateValue(1) {
+				allOn = false
+				break
+			}
+		} else {
+			allOn = false
+			break
+		}
+	}
+	if allOn {
+		s.defaultsCheck.SetState(appkit.NSControlStateValue(1))
+	} else {
+		s.defaultsCheck.SetState(appkit.NSControlStateValue(0))
+	}
+}
+
+// autoCheckDeps recursively checks transitive dependencies for a recipe.
+func (s *recipeSelector) autoCheckDeps(name string, visited map[string]bool) {
+	if visited[name] {
+		return
+	}
+	visited[name] = true
+	row, ok := s.byName[name]
+	if !ok {
+		return
+	}
+	for _, dep := range row.info.requires {
+		if r, ok := s.byName[dep]; ok {
+			r.checkbox.SetState(appkit.NSControlStateValue(1))
+		}
+		s.autoCheckDeps(dep, visited)
+	}
+}
+
+// loadRecipeInfos returns metadata for all user-selectable builtin recipes.
+func loadRecipeInfos() []recipeInfo {
+	names, err := listBuiltinVZScriptNames()
+	if err != nil {
+		return nil
+	}
+	var recipes []recipeInfo
+	for _, name := range names {
+		if recipeSelectorHidden[name] {
+			continue
+		}
+		data, err := loadVZScriptData(name)
+		if err != nil {
+			continue
+		}
+		ar := txtar.Parse(data)
+		meta := parseScriptMeta(ar.Comment)
+		recipes = append(recipes, recipeInfo{
+			name:     name,
+			desc:     meta.desc,
+			requires: meta.requires,
+		})
+	}
+	return recipes
+}
+
+func newVMAccessoryView(opts newVMOptions, recipes []recipeInfo) (appkit.NSView, appkit.NSTextField, appkit.NSTextField, appkit.NSSecureTextField, *recipeSelector) {
+	const (
+		viewWidth       = 320.0
+		labelWidth      = 92.0
+		fieldX          = 96.0
+		fieldWidth      = 224.0
+		fieldHeight     = 24.0
+		collapsedHeight = 144.0
+		checkboxRowH    = 22.0
+		depLabelH       = 14.0
+		recipeRowH      = checkboxRowH + depLabelH + 2
+	)
+
 	view := appkit.NewViewWithFrame(corefoundation.CGRect{
-		Size: corefoundation.CGSize{Width: 320, Height: 144},
+		Size: corefoundation.CGSize{Width: viewWidth, Height: collapsedHeight},
 	})
 
-	addLabel := func(text string, y float64) {
+	sel := &recipeSelector{byName: map[string]*recipeCheckboxRow{}, container: view}
+
+	// Helper to create a label and track it for disclosure repositioning.
+	addLabel := func(text string, y float64) appkit.NSTextField {
 		label := appkit.NewTextFieldLabelWithString(text)
 		label.SetFrame(corefoundation.CGRect{
 			Origin: corefoundation.CGPoint{X: 0, Y: y},
-			Size:   corefoundation.CGSize{Width: 92, Height: 22},
+			Size:   corefoundation.CGSize{Width: labelWidth, Height: 22},
 		})
 		objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), label.ID)
+		return label
 	}
 
-	addLabel("VM Name:", 112)
-	addLabel("Username:", 78)
-	addLabel("Password:", 44)
-	addLabel("Advanced:", 10)
+	lbl1 := addLabel("VM Name:", 112)
+	lbl2 := addLabel("Username:", 78)
+	lbl3 := addLabel("Password:", 44)
 
 	nameField := appkit.NewTextFieldWithFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 96, Y: 108},
-		Size:   corefoundation.CGSize{Width: 224, Height: 24},
+		Origin: corefoundation.CGPoint{X: fieldX, Y: 108},
+		Size:   corefoundation.CGSize{Width: fieldWidth, Height: fieldHeight},
 	})
 	nameField.SetStringValue(opts.Name)
 	nameField.SetPlaceholderString("macos")
@@ -750,8 +914,8 @@ func newVMAccessoryView(opts newVMOptions, recipeNames []string) (appkit.NSView,
 	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), nameField.ID)
 
 	userField := appkit.NewTextFieldWithFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 96, Y: 74},
-		Size:   corefoundation.CGSize{Width: 224, Height: 24},
+		Origin: corefoundation.CGPoint{X: fieldX, Y: 74},
+		Size:   corefoundation.CGSize{Width: fieldWidth, Height: fieldHeight},
 	})
 	userField.SetStringValue(opts.ProvisionUser)
 	userField.SetPlaceholderString("optional")
@@ -762,8 +926,8 @@ func newVMAccessoryView(opts newVMOptions, recipeNames []string) (appkit.NSView,
 	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), userField.ID)
 
 	passwordField := appkit.NewSecureTextFieldWithFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 96, Y: 40},
-		Size:   corefoundation.CGSize{Width: 224, Height: 24},
+		Origin: corefoundation.CGPoint{X: fieldX, Y: 40},
+		Size:   corefoundation.CGSize{Width: fieldWidth, Height: fieldHeight},
 	})
 	passwordField.SetStringValue(opts.ProvisionPassword)
 	passwordField.SetPlaceholderString("optional")
@@ -773,31 +937,136 @@ func newVMAccessoryView(opts newVMOptions, recipeNames []string) (appkit.NSView,
 	passwordField.SetAccessibilityIdentifier("new-vm-password")
 	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), passwordField.ID)
 
-	recipePopup := appkit.NewPopUpButtonWithFramePullsDown(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 96, Y: 6},
-		Size:   corefoundation.CGSize{Width: 224, Height: 24},
-	}, false)
-	recipePopup.AddItemWithTitle(selectorNoRecipe)
-	if len(recipeNames) > 0 {
-		recipePopup.AddItemsWithTitles(recipeNames)
+	// Disclosure triangle + label.
+	disclosureBtn := appkit.NewButtonWithFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 0, Y: 6},
+		Size:   corefoundation.CGSize{Width: 13, Height: 13},
+	})
+	disclosureBtn.SetButtonType(appkit.NSButtonTypePushOnPushOff)
+	disclosureBtn.SetBezelStyle(appkit.NSBezelStyleDisclosure)
+	disclosureBtn.SetTitle("")
+	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), disclosureBtn.ID)
+
+	disclosureLabel := appkit.NewTextFieldLabelWithString("Post-Install Scripts")
+	disclosureLabel.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 18, Y: 6},
+		Size:   corefoundation.CGSize{Width: 200, Height: 18},
+	})
+	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), disclosureLabel.ID)
+
+	sel.disclosureBtn = disclosureBtn
+	sel.topSubviews = []appkit.NSView{
+		lbl1.NSView, lbl2.NSView, lbl3.NSView,
+		nameField.NSView, userField.NSView, passwordField.NSView,
+		disclosureBtn.NSView, disclosureLabel.NSView,
 	}
 
-	selectedRecipe := selectorNoRecipe
-	known := make(map[string]bool, len(recipeNames))
-	for _, n := range recipeNames {
-		known[n] = true
+	// Recipe section (initially hidden, positioned at bottom of view).
+	recipeSection := appkit.NewViewWithFrame(corefoundation.CGRect{
+		Size: corefoundation.CGSize{Width: viewWidth, Height: recipeSectionHeight},
+	})
+	recipeSection.SetIsHidden(true)
+	sel.recipeSection = recipeSection
+
+	// "Use defaults" checkbox.
+	defaultsCheck := appkit.NewButtonCheckboxWithTitleTargetAction(
+		"Use defaults (homebrew, golang, dev-tools)",
+		nil, 0,
+	)
+	defaultsCheck.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 4, Y: recipeSectionHeight - 24},
+		Size:   corefoundation.CGSize{Width: viewWidth - 8, Height: 20},
+	})
+	objc.Send[objc.ID](recipeSection.ID, objc.Sel("addSubview:"), defaultsCheck.ID)
+	sel.defaultsCheck = defaultsCheck
+
+	// Scroll view for recipe checkboxes.
+	scrollFrame := corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: 0, Y: 0},
+		Size:   corefoundation.CGSize{Width: viewWidth, Height: recipeSectionHeight - 30},
 	}
-	for _, r := range splitRecipes(opts.PostInstallRecipes) {
-		if selectedRecipe == selectorNoRecipe && known[r] {
-			selectedRecipe = r
+	scrollView := appkit.NewScrollViewWithFrame(scrollFrame)
+	scrollView.SetHasVerticalScroller(true)
+	scrollView.SetAutohidesScrollers(true)
+
+	// Document view containing all recipe rows.
+	docHeight := float64(len(recipes)) * recipeRowH
+	if docHeight < scrollFrame.Size.Height {
+		docHeight = scrollFrame.Size.Height
+	}
+	docView := appkit.NewViewWithFrame(corefoundation.CGRect{
+		Size: corefoundation.CGSize{Width: viewWidth - 20, Height: docHeight},
+	})
+
+	for i, recipe := range recipes {
+		y := docHeight - float64(i+1)*recipeRowH
+
+		title := recipe.name
+		if recipe.desc != "" {
+			title = recipe.name + " — " + recipe.desc
+		}
+		cb := appkit.NewButtonCheckboxWithTitleTargetAction(title, nil, 0)
+		cb.SetFrame(corefoundation.CGRect{
+			Origin: corefoundation.CGPoint{X: 4, Y: y + depLabelH},
+			Size:   corefoundation.CGSize{Width: viewWidth - 28, Height: checkboxRowH},
+		})
+		objc.Send[objc.ID](cb.ID, objc.Sel("setControlSize:"), appkit.NSControlSizeSmall)
+		objc.Send[objc.ID](docView.ID, objc.Sel("addSubview:"), cb.ID)
+
+		if len(recipe.requires) > 0 {
+			depText := "requires: " + strings.Join(recipe.requires, ", ")
+			depLabel := appkit.NewTextFieldLabelWithString(depText)
+			depLabel.SetFrame(corefoundation.CGRect{
+				Origin: corefoundation.CGPoint{X: 22, Y: y},
+				Size:   corefoundation.CGSize{Width: viewWidth - 46, Height: depLabelH},
+			})
+			depLabel.SetFont(appkit.GetNSFontClass().SystemFontOfSize(10))
+			depLabel.SetTextColor(appkit.GetNSColorClass().SecondaryLabelColor())
+			objc.Send[objc.ID](docView.ID, objc.Sel("addSubview:"), depLabel.ID)
+		}
+
+		row := recipeCheckboxRow{info: recipe, checkbox: cb}
+		sel.rows = append(sel.rows, row)
+		sel.byName[recipe.name] = &sel.rows[len(sel.rows)-1]
+	}
+
+	scrollView.SetDocumentView(docView)
+	objc.Send[objc.ID](recipeSection.ID, objc.Sel("addSubview:"), scrollView.ID)
+	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), recipeSection.ID)
+
+	// Wire checkbox action handlers.
+	for i := range sel.rows {
+		row := &sel.rows[i]
+		row.checkbox.SetActionHandler(func() {
+			if row.checkbox.State() == appkit.NSControlStateValue(1) {
+				sel.autoCheckDeps(row.info.name, map[string]bool{})
+			}
+			sel.updateDefaultsState()
+		})
+	}
+
+	defaultsCheck.SetActionHandler(func() {
+		on := defaultsCheck.State() == appkit.NSControlStateValue(1)
+		for _, name := range defaultRecipePreset {
+			if row, ok := sel.byName[name]; ok {
+				if on {
+					row.checkbox.SetState(appkit.NSControlStateValue(1))
+				} else {
+					row.checkbox.SetState(appkit.NSControlStateValue(0))
+				}
+			}
+		}
+	})
+
+	// Pre-select from opts.
+	for _, name := range splitRecipes(opts.PostInstallRecipes) {
+		if row, ok := sel.byName[name]; ok {
+			row.checkbox.SetState(appkit.NSControlStateValue(1))
 		}
 	}
-	recipePopup.SelectItemWithTitle(selectedRecipe)
-	recipePopup.SetAccessibilityLabel("Advanced Post-install Script")
-	recipePopup.SetAccessibilityIdentifier("new-vm-recipe")
-	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), recipePopup.ID)
+	sel.updateDefaultsState()
 
-	return view, nameField, userField, passwordField, recipePopup
+	return view, nameField, userField, passwordField, sel
 }
 
 func promptForNewVMOptions() (newVMOptions, bool) {
@@ -814,15 +1083,16 @@ func promptForNewVMOptions() (newVMOptions, bool) {
 		ProvisionAdmin:     true,
 		PostInstallRecipes: strings.TrimSpace(installVZScripts),
 	}
-	recipeNames, _ := listBuiltinVZScriptNames()
+	recipes := loadRecipeInfos()
 	for {
 		alert := appkit.NewNSAlert()
 		alert.SetMessageText("Create New VM")
-		alert.SetInformativeText(fmt.Sprintf("Create in %s.\nOptional username/password creates an admin user.\nAdvanced script runs after first boot.", baseDir))
+		alert.SetInformativeText(fmt.Sprintf("Create in %s.\nOptional username/password creates an admin user.\nPost-install scripts run after first boot.", baseDir))
 		alert.AddButtonWithTitle("Create")
 		alert.AddButtonWithTitle("Cancel")
-		accessoryView, nameField, userField, passwordField, recipePopup := newVMAccessoryView(opts, recipeNames)
+		accessoryView, nameField, userField, passwordField, recipeSel := newVMAccessoryView(opts, recipes)
 		alert.SetAccessoryView(accessoryView)
+		recipeSel.bindAlert(alert)
 
 		if alert.RunModal() != appkit.AlertFirstButtonReturn {
 			return newVMOptions{}, false
@@ -832,7 +1102,7 @@ func promptForNewVMOptions() (newVMOptions, bool) {
 		opts.ProvisionUser = strings.TrimSpace(userField.StringValue())
 		opts.ProvisionPassword = passwordField.StringValue()
 		opts.ProvisionAdmin = true
-		opts.PostInstallRecipes = normalizeRecipeSelection(recipePopup.TitleOfSelectedItem())
+		opts.PostInstallRecipes = recipeSel.selectedRecipes()
 
 		if err := validateNewVMOptions(opts); err != nil {
 			showSelectorAlert("Invalid VM Settings", err.Error())
@@ -976,6 +1246,7 @@ func (s *VMSelector) registerDelegate() {
 			{Cmd: objc.RegisterName("tableView:objectValueForTableColumn:row:"), Fn: s.objectValueForColumn},
 			// NSTableViewDelegate
 			{Cmd: objc.RegisterName("tableView:viewForTableColumn:row:"), Fn: s.viewForTableColumn},
+			{Cmd: objc.RegisterName("tableView:rowViewForRow:"), Fn: s.rowViewForRow},
 			{Cmd: objc.RegisterName("tableViewSelectionDidChange:"), Fn: s.selectionDidChange},
 			// Button actions
 			{Cmd: objc.RegisterName("runVM:"), Fn: s.handleRun},
@@ -1060,7 +1331,7 @@ func (s *VMSelector) buildWindow() {
 		objc.Send[objc.ID](s.tableView.ID, objc.Sel("selectRowIndexes:byExtendingSelection:"), indexSet, false)
 	}
 
-	s.selectedRow = int(objc.Send[int64](s.tableView.ID, objc.Sel("selectedRow")))
+	s.syncSelectedRow()
 	s.updateListState()
 	s.updateButtonStates()
 }
@@ -1138,21 +1409,23 @@ func (s *VMSelector) buildListPanel(x, y, width, height float64) appkit.NSView {
 		Origin: corefoundation.CGPoint{X: 0, Y: 0},
 		Size:   corefoundation.CGSize{Width: width, Height: boxHeight},
 	})
+	box.SetBorderColor(appkit.GetNSColorClass().SeparatorColor().ColorWithAlphaComponent(0.06))
+	box.SetFillColor(appkit.GetNSColorClass().ControlBackgroundColor().ColorWithAlphaComponent(0.28))
 	objc.Send[objc.ID](box.ID, objc.Sel("retain"))
 	objc.Send[objc.ID](box.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth|selectorViewHeight))
 	objc.Send[objc.ID](panel.ID, objc.Sel("addSubview:"), box.ID)
 
 	tableFrame := corefoundation.CGRect{
-		Size: corefoundation.CGSize{Width: width - 20, Height: boxHeight - 20},
+		Size: corefoundation.CGSize{Width: width, Height: boxHeight},
 	}
 	s.tableView = appkit.NewTableViewWithFrame(tableFrame)
 	objc.Send[objc.ID](s.tableView.ID, objc.Sel("retain"))
-	s.tableView.SetBackgroundColor(appkit.GetNSColorClass().ControlBackgroundColor())
+	s.tableView.SetBackgroundColor(appkit.GetNSColorClass().WindowBackgroundColor().ColorWithAlphaComponent(0.01))
 	s.tableView.SetUsesAlternatingRowBackgroundColors(false)
 	s.tableView.SetAllowsEmptySelection(false)
 	s.tableView.SetIntercellSpacing(corefoundation.CGSize{Width: 0, Height: 8})
 	s.tableView.SetRowHeight(selectorRowHeight)
-	s.tableView.SetSelectionHighlightStyle(appkit.NSTableViewSelectionHighlightStyleNone)
+	s.tableView.SetSelectionHighlightStyle(appkit.NSTableViewSelectionHighlightStyleRegular)
 	s.tableView.SetColumnAutoresizingStyle(appkit.NSTableViewFirstColumnOnlyAutoresizingStyle)
 
 	objc.Send[objc.ID](s.tableView.ID, objc.Sel("setHeaderView:"), objc.ID(0))
@@ -1163,8 +1436,8 @@ func (s *VMSelector) buildListPanel(x, y, width, height float64) appkit.NSView {
 	s.addColumn("vm", "", width-20, true)
 
 	s.listScroll = appkit.NewScrollViewWithFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 10, Y: 10},
-		Size:   corefoundation.CGSize{Width: width - 20, Height: boxHeight - 20},
+		Origin: corefoundation.CGPoint{X: 0, Y: 0},
+		Size:   corefoundation.CGSize{Width: width, Height: boxHeight},
 	})
 	objc.Send[objc.ID](s.listScroll.ID, objc.Sel("retain"))
 	s.listScroll.SetDrawsBackground(false)
@@ -1234,6 +1507,8 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 		Origin: corefoundation.CGPoint{X: 0, Y: 0},
 		Size:   corefoundation.CGSize{Width: width, Height: boxHeight},
 	})
+	box.SetBorderColor(appkit.GetNSColorClass().SeparatorColor().ColorWithAlphaComponent(0.08))
+	box.SetFillColor(appkit.GetNSColorClass().ControlBackgroundColor().ColorWithAlphaComponent(0.42))
 	objc.Send[objc.ID](box.ID, objc.Sel("retain"))
 	objc.Send[objc.ID](box.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth|selectorViewHeight))
 	objc.Send[objc.ID](panel.ID, objc.Sel("addSubview:"), box.ID)
@@ -1245,13 +1520,13 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 	s.detailTitle = selectorLabel(
 		"No VM Selected",
 		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: 14, Y: boxHeight - 36},
-			Size:   corefoundation.CGSize{Width: width - 28, Height: 22},
+			Origin: corefoundation.CGPoint{X: 18, Y: boxHeight - 40},
+			Size:   corefoundation.CGSize{Width: width - 36, Height: 24},
 		},
-		appkit.GetNSFontClass().BoldSystemFontOfSize(18),
+		appkit.GetNSFontClass().BoldSystemFontOfSize(20),
 		labelColor,
 	)
-	s.detailTitle.SetAlignment(appkit.NSTextAlignmentCenter)
+	s.detailTitle.SetAlignment(appkit.NSTextAlignmentLeft)
 	objc.Send[objc.ID](s.detailTitle.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth|selectorViewMinY))
 	objc.Send[objc.ID](box.ID, objc.Sel("addSubview:"), s.detailTitle.ID)
 
@@ -1259,8 +1534,8 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 		left := selectorLabel(
 			label,
 			corefoundation.CGRect{
-				Origin: corefoundation.CGPoint{X: 14, Y: y},
-				Size:   corefoundation.CGSize{Width: 88, Height: 18},
+				Origin: corefoundation.CGPoint{X: 18, Y: y},
+				Size:   corefoundation.CGSize{Width: 62, Height: 18},
 			},
 			appkit.GetNSFontClass().SystemFontOfSize(13),
 			secondaryColor,
@@ -1271,8 +1546,8 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 		value := selectorLabel(
 			"",
 			corefoundation.CGRect{
-				Origin: corefoundation.CGPoint{X: 108, Y: y},
-				Size:   corefoundation.CGSize{Width: width - 122, Height: 18},
+				Origin: corefoundation.CGPoint{X: 90, Y: y},
+				Size:   corefoundation.CGSize{Width: width - 108, Height: 18},
 			},
 			valueFont,
 			labelColor,
@@ -1283,35 +1558,34 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 		return value
 	}
 
-	s.detailState = addDetailRow("Status", boxHeight-74)
-	s.detailOS = addDetailRow("OS", boxHeight-100)
-	s.detailSize = addDetailRow("Disk", boxHeight-126)
-	s.detailDate = addDetailRow("Created", boxHeight-152)
+	s.detailState = addDetailRow("Status", boxHeight-78)
+	s.detailOS = addDetailRow("OS", boxHeight-104)
+	s.detailSize = addDetailRow("Disk", boxHeight-130)
+	s.detailDate = addDetailRow("Created", boxHeight-156)
 
 	pathLabel := selectorLabel(
 		"Path",
 		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: 14, Y: boxHeight - 194},
-			Size:   corefoundation.CGSize{Width: width - 28, Height: 18},
+			Origin: corefoundation.CGPoint{X: 18, Y: boxHeight - 194},
+			Size:   corefoundation.CGSize{Width: width - 36, Height: 18},
 		},
 		appkit.GetNSFontClass().SystemFontOfSize(13),
 		secondaryColor,
 	)
-	pathLabel.SetAlignment(appkit.NSTextAlignmentCenter)
 	objc.Send[objc.ID](pathLabel.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth|selectorViewMinY))
 	objc.Send[objc.ID](box.ID, objc.Sel("addSubview:"), pathLabel.ID)
 
 	s.detailPath = selectorLabel(
 		"",
 		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: 14, Y: boxHeight - 222},
-			Size:   corefoundation.CGSize{Width: width - 28, Height: 32},
+			Origin: corefoundation.CGPoint{X: 18, Y: boxHeight - 226},
+			Size:   corefoundation.CGSize{Width: width - 36, Height: 34},
 		},
 		appkit.GetNSFontClass().SystemFontOfSize(11),
 		secondaryColor,
 	)
-	s.detailPath.SetAlignment(appkit.NSTextAlignmentCenter)
-	s.detailPath.SetUsesSingleLineMode(true)
+	s.detailPath.SetAlignment(appkit.NSTextAlignmentLeft)
+	s.detailPath.SetUsesSingleLineMode(false)
 	s.detailPath.SetLineBreakMode(appkit.NSLineBreakByTruncatingMiddle)
 	objc.Send[objc.ID](s.detailPath.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth|selectorViewMinY))
 	objc.Send[objc.ID](box.ID, objc.Sel("addSubview:"), s.detailPath.ID)
@@ -1319,8 +1593,8 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 	target := objectivec.ObjectFromID(s.delegateID)
 	s.revealButton = appkit.NewButtonWithTitleTargetAction("Reveal in Finder", target, objc.Sel("revealVMInFinder:"))
 	s.revealButton.SetFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 54, Y: 48},
-		Size:   corefoundation.CGSize{Width: width - 108, Height: selectorButtonHeight},
+		Origin: corefoundation.CGPoint{X: 18, Y: 52},
+		Size:   corefoundation.CGSize{Width: width - 36, Height: selectorButtonHeight},
 	})
 	objc.Send[objc.ID](s.revealButton.ID, objc.Sel("setBezelStyle:"), int(1))
 	objc.Send[objc.ID](s.revealButton.ID, objc.Sel("setEnabled:"), false)
@@ -1329,8 +1603,8 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 
 	s.scriptButton = appkit.NewButtonWithTitleTargetAction("Run VZScript...", target, objc.Sel("openVZScriptRunner:"))
 	s.scriptButton.SetFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 54, Y: 12},
-		Size:   corefoundation.CGSize{Width: width - 108, Height: selectorButtonHeight},
+		Origin: corefoundation.CGPoint{X: 18, Y: 16},
+		Size:   corefoundation.CGSize{Width: width - 36, Height: selectorButtonHeight},
 	})
 	objc.Send[objc.ID](s.scriptButton.ID, objc.Sel("setBezelStyle:"), int(1))
 	objc.Send[objc.ID](s.scriptButton.ID, objc.Sel("setEnabled:"), false)
@@ -1338,45 +1612,6 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 	objc.Send[objc.ID](box.ID, objc.Sel("addSubview:"), s.scriptButton.ID)
 
 	return panel
-}
-
-func (s *VMSelector) rowChip(frame corefoundation.CGRect, label, value string) appkit.NSBox {
-	chip := appkit.NewBoxWithFrame(frame)
-	chip.SetBoxType(appkit.NSBoxCustom)
-	objc.Send[struct{}](chip.ID, objc.Sel("setBorderType:"), appkit.NSLineBorder)
-	chip.SetTitlePosition(appkit.NSNoTitle)
-	chip.SetBorderWidth(0.75)
-	chip.SetCornerRadius(8)
-	chip.SetBorderColor(appkit.GetNSColorClass().SeparatorColor().ColorWithAlphaComponent(0.12))
-	chip.SetFillColor(appkit.GetNSColorClass().WindowBackgroundColor().ColorWithAlphaComponent(0.48))
-
-	title := selectorLabel(
-		label,
-		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: 0, Y: frame.Size.Height - 15},
-			Size:   corefoundation.CGSize{Width: frame.Size.Width, Height: 12},
-		},
-		appkit.GetNSFontClass().SystemFontOfSize(9),
-		appkit.GetNSColorClass().SecondaryLabelColor(),
-	)
-	title.SetAlignment(appkit.NSTextAlignmentCenter)
-	objc.Send[objc.ID](chip.ID, objc.Sel("addSubview:"), title.ID)
-
-	text := selectorLabel(
-		value,
-		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: 6, Y: 7},
-			Size:   corefoundation.CGSize{Width: frame.Size.Width - 12, Height: 16},
-		},
-		appkit.GetNSFontClass().BoldSystemFontOfSize(11),
-		appkit.GetNSColorClass().LabelColor(),
-	)
-	text.SetAlignment(appkit.NSTextAlignmentCenter)
-	text.SetUsesSingleLineMode(true)
-	text.SetLineBreakMode(appkit.NSLineBreakByTruncatingTail)
-	objc.Send[objc.ID](chip.ID, objc.Sel("addSubview:"), text.ID)
-
-	return chip
 }
 
 func (s *VMSelector) updateListState() {
@@ -1411,6 +1646,24 @@ func (s *VMSelector) reloadRowCards(rows ...int) {
 
 	columnIndexes := foundation.NewMutableIndexSetWithIndex(0)
 	s.tableView.ReloadDataForRowIndexesColumnIndexes(rowIndexes.NSIndexSet, columnIndexes.NSIndexSet)
+	s.updateRowViews(rows...)
+}
+
+func (s *VMSelector) syncSelectedRow() {
+	row := int(objc.Send[int64](s.tableView.ID, objc.Sel("selectedRow")))
+	s.reloadRowCards(s.selectedRow, row)
+	s.selectedRow = row
+}
+
+func (s *VMSelector) updateRowViews(rows ...int) {}
+
+func (s *VMSelector) rowViewForRow(_ objc.ID, _ objc.SEL, _ objc.ID, row int) objc.ID {
+	rowView := appkit.NewNSTableRowView()
+	if row >= 0 && row < len(s.vms) {
+		rowView.SetAccessibilityLabel(s.vms[row].Name)
+		rowView.SetAccessibilityIdentifier(s.vms[row].Name)
+	}
+	return rowView.ID
 }
 
 func (s *VMSelector) viewForTableColumn(_ objc.ID, _ objc.SEL, _ objc.ID, colID objc.ID, row int) objc.ID {
@@ -1428,83 +1681,50 @@ func (s *VMSelector) viewForTableColumn(_ objc.ID, _ objc.SEL, _ objc.ID, colID 
 		Size: corefoundation.CGSize{Width: columnWidth, Height: selectorRowHeight},
 	})
 
-	cardWidth := columnWidth - 12
-	cardHeight := float64(selectorRowHeight - 10)
-	card := selectorPanel(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 6, Y: 5},
-		Size:   corefoundation.CGSize{Width: cardWidth, Height: cardHeight},
-	})
-	if row == int(objc.Send[int64](s.tableView.ID, objc.Sel("selectedRow"))) {
-		card.SetFillColor(appkit.GetNSColorClass().UnemphasizedSelectedContentBackgroundColor().ColorWithAlphaComponent(0.82))
-		card.SetBorderColor(appkit.GetNSColorClass().ControlAccentColor().ColorWithAlphaComponent(0.42))
-		card.SetBorderWidth(1)
-	} else {
-		card.SetFillColor(appkit.GetNSColorClass().WindowBackgroundColor().ColorWithAlphaComponent(0.34))
-		card.SetBorderColor(appkit.GetNSColorClass().SeparatorColor().ColorWithAlphaComponent(0.08))
-		card.SetBorderWidth(0.75)
-	}
-	objc.Send[objc.ID](card.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth|selectorViewHeight))
-	objc.Send[objc.ID](cell.ID, objc.Sel("addSubview:"), card.ID)
+	contentX := 22.0
+	contentRightInset := 18.0
 
 	title := selectorLabel(
 		selectorRowTitle(vm, s.activeVM),
 		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: 14, Y: cardHeight - 26},
-			Size:   corefoundation.CGSize{Width: cardWidth - 120, Height: 18},
+			Origin: corefoundation.CGPoint{X: contentX, Y: 30},
+			Size:   corefoundation.CGSize{Width: columnWidth - contentX - 110, Height: 18},
 		},
 		appkit.GetNSFontClass().BoldSystemFontOfSize(14),
 		appkit.GetNSColorClass().LabelColor(),
 	)
 	title.SetUsesSingleLineMode(true)
 	title.SetLineBreakMode(appkit.NSLineBreakByTruncatingTail)
-	objc.Send[objc.ID](card.ID, objc.Sel("addSubview:"), title.ID)
+	objc.Send[objc.ID](title.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth))
+	objc.Send[objc.ID](cell.ID, objc.Sel("addSubview:"), title.ID)
+	cell.SetTextField(title)
 
 	status := selectorLabel(
 		selectorStateText(vm),
 		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: cardWidth - 94, Y: cardHeight - 25},
-			Size:   corefoundation.CGSize{Width: 80, Height: 14},
+			Origin: corefoundation.CGPoint{X: columnWidth - 82 - contentRightInset, Y: 31},
+			Size:   corefoundation.CGSize{Width: 82, Height: 14},
 		},
 		appkit.GetNSFontClass().SystemFontOfSize(11),
-		appkit.GetNSColorClass().SecondaryLabelColor(),
+		appkit.GetNSColorClass().TertiaryLabelColor(),
 	)
 	status.SetAlignment(appkit.NSTextAlignmentRight)
-	objc.Send[objc.ID](card.ID, objc.Sel("addSubview:"), status.ID)
+	objc.Send[objc.ID](status.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewMinX))
+	objc.Send[objc.ID](cell.ID, objc.Sel("addSubview:"), status.ID)
 
-	chipGap := 8.0
-	chipY := 12.0
-	chipHeight := 30.0
-	chipWidths := []float64{64, 78, 94}
-	chipX := 14.0
-	chips := []appkit.NSBox{
-		s.rowChip(
-			corefoundation.CGRect{
-				Origin: corefoundation.CGPoint{X: chipX, Y: chipY},
-				Size:   corefoundation.CGSize{Width: chipWidths[0], Height: chipHeight},
-			},
-			"OS",
-			vm.OSType,
-		),
-		s.rowChip(
-			corefoundation.CGRect{
-				Origin: corefoundation.CGPoint{X: chipX + chipWidths[0] + chipGap, Y: chipY},
-				Size:   corefoundation.CGSize{Width: chipWidths[1], Height: chipHeight},
-			},
-			"Disk",
-			FormatSize(vm.DiskSize),
-		),
-		s.rowChip(
-			corefoundation.CGRect{
-				Origin: corefoundation.CGPoint{X: chipX + chipWidths[0] + chipWidths[1] + 2*chipGap, Y: chipY},
-				Size:   corefoundation.CGSize{Width: chipWidths[2], Height: chipHeight},
-			},
-			"Created",
-			vm.Created.Format("2006-01-02"),
-		),
-	}
-	for i := range chips {
-		objc.Send[objc.ID](card.ID, objc.Sel("addSubview:"), chips[i].ID)
-	}
+	subtitle := selectorLabel(
+		selectorRowSubtitle(vm),
+		corefoundation.CGRect{
+			Origin: corefoundation.CGPoint{X: contentX, Y: 12},
+			Size:   corefoundation.CGSize{Width: columnWidth - contentX - contentRightInset, Height: 15},
+		},
+		appkit.GetNSFontClass().SystemFontOfSize(12),
+		appkit.GetNSColorClass().SecondaryLabelColor(),
+	)
+	subtitle.SetUsesSingleLineMode(true)
+	subtitle.SetLineBreakMode(appkit.NSLineBreakByTruncatingTail)
+	objc.Send[objc.ID](subtitle.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth))
+	objc.Send[objc.ID](cell.ID, objc.Sel("addSubview:"), subtitle.ID)
 
 	return cell.ID
 }
@@ -1676,11 +1896,11 @@ func (s *VMSelector) reloadVMList() error {
 				objc.Sel("initWithIndex:"), uint(row),
 			)
 			objc.Send[objc.ID](s.tableView.ID, objc.Sel("selectRowIndexes:byExtendingSelection:"), indexSet, false)
-			s.selectedRow = row
 		} else {
 			s.selectedRow = -1
 		}
 	}
+	s.syncSelectedRow()
 	s.updateButtonStates()
 	return nil
 }
@@ -1734,9 +1954,7 @@ func (s *VMSelector) objectValueForColumn(_ objc.ID, _ objc.SEL, _ objc.ID, colI
 
 // NSTableViewDelegate: tableViewSelectionDidChange:
 func (s *VMSelector) selectionDidChange(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	row := int(objc.Send[int64](s.tableView.ID, objc.Sel("selectedRow")))
-	s.reloadRowCards(s.selectedRow, row)
-	s.selectedRow = row
+	s.syncSelectedRow()
 	s.updateButtonStates()
 }
 
@@ -1882,6 +2100,12 @@ func performSelectorAction(action selectorAction) error {
 			provisionStrategy = "auto"
 		}
 		err := installMacOSLikeVZ(context.Background())
+
+		// Save selected recipes to config.json so they survive failures.
+		if postInstallRecipes != "" {
+			savePostInstallRecipes(vmDir, postInstallRecipes)
+		}
+
 		if errors.Is(err, errRestartVM) {
 			if setErr := SetActiveVM(vmName); setErr != nil {
 				return fmt.Errorf("set active VM: %w", setErr)

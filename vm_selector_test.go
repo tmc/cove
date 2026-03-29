@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestValidateNewVMOptions(t *testing.T) {
 	tests := []struct {
@@ -60,6 +63,13 @@ func TestValidateNewVMOptions(t *testing.T) {
 			opts: newVMOptions{
 				Name:               "macos",
 				PostInstallRecipes: "homebrew",
+			},
+		},
+		{
+			name: "multiple valid post-install recipes",
+			opts: newVMOptions{
+				Name:               "macos",
+				PostInstallRecipes: "homebrew,golang,developer-tools",
 			},
 		},
 		{
@@ -217,6 +227,20 @@ func TestSelectorRowTitle(t *testing.T) {
 	}
 }
 
+func TestSelectorRowSubtitle(t *testing.T) {
+	vm := VMInfo{
+		OSType:   "macOS",
+		DiskSize: 64 * 1024 * 1024 * 1024,
+		Created:  time.Date(2026, time.March, 28, 1, 11, 33, 0, time.UTC),
+	}
+
+	got := selectorRowSubtitle(vm)
+	want := "macOS | 64.0 GB | 2026-03-28"
+	if got != want {
+		t.Fatalf("selectorRowSubtitle() = %q, want %q", got, want)
+	}
+}
+
 func TestCanOpenVZScriptRunner(t *testing.T) {
 	tests := []struct {
 		name string
@@ -293,6 +317,40 @@ func TestInitialSelectionRow(t *testing.T) {
 				t.Fatalf("initialSelectionRow() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadRecipeInfos(t *testing.T) {
+	recipes := loadRecipeInfos()
+	if len(recipes) == 0 {
+		t.Fatal("loadRecipeInfos returned no recipes")
+	}
+	// Verify hidden scripts are excluded.
+	for _, r := range recipes {
+		if recipeSelectorHidden[r.name] {
+			t.Errorf("hidden recipe %q included in results", r.name)
+		}
+	}
+	// Verify homebrew is present and has no deps.
+	found := false
+	for _, r := range recipes {
+		if r.name == "homebrew" {
+			found = true
+			if len(r.requires) != 0 {
+				t.Errorf("homebrew has unexpected deps: %v", r.requires)
+			}
+		}
+	}
+	if !found {
+		t.Error("homebrew recipe not found")
+	}
+	// Verify cmake depends on homebrew.
+	for _, r := range recipes {
+		if r.name == "cmake" {
+			if len(r.requires) == 0 || r.requires[0] != "homebrew" {
+				t.Errorf("cmake requires = %v, want [homebrew]", r.requires)
+			}
+		}
 	}
 }
 

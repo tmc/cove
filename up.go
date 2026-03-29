@@ -202,6 +202,7 @@ func runUpPipeline(cfg upConfig) error {
 	// Step 3: Boot VM and optionally run vzscripts.
 	recipes := splitRecipes(cfg.vzscripts)
 	if len(recipes) > 0 {
+		savePostInstallRecipes(vmDir, cfg.vzscripts)
 		fmt.Println()
 		fmt.Printf("=== Step 3/3: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
 		return runUpWithVZScripts(recipes, cfg.noShutdown, cfg.verbose)

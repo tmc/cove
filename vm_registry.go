@@ -15,9 +15,10 @@ import (
 // VMConfig holds persistent configuration for a VM.
 // Stored as config.json in the VM directory.
 type VMConfig struct {
-	CPU      uint          `json:"cpu,omitempty"`
-	MemoryGB uint64        `json:"memoryGB,omitempty"`
-	Volumes  []VolumeMount `json:"volumes,omitempty"`
+	CPU                uint          `json:"cpu,omitempty"`
+	MemoryGB           uint64        `json:"memoryGB,omitempty"`
+	Volumes            []VolumeMount `json:"volumes,omitempty"`
+	PostInstallRecipes string        `json:"postInstallRecipes,omitempty"`
 }
 
 // LoadVMConfig reads the VM configuration from vmDir/config.json.
@@ -91,6 +92,19 @@ func applyVMConfig(dir string) {
 		if err := SaveVMConfig(dir, cfg); err != nil {
 			fmt.Printf("warning: save vm config: %v\n", err)
 		}
+	}
+}
+
+// savePostInstallRecipes persists the selected post-install recipes
+// so they can be retried if installation or scripting fails.
+func savePostInstallRecipes(dir, recipes string) {
+	cfg, err := LoadVMConfig(dir)
+	if err != nil {
+		cfg = &VMConfig{}
+	}
+	cfg.PostInstallRecipes = recipes
+	if err := SaveVMConfig(dir, cfg); err != nil {
+		fmt.Printf("warning: save vzscript config: %v\n", err)
 	}
 }
 
