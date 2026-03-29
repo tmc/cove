@@ -49,6 +49,7 @@ func testAgent(t *testing.T, vm *testVM) {
 
 	t.Run("user-exec", func(t *testing.T) {
 		requireGUI(t)
+		requireUserAgent(t, vm)
 
 		result := userAgentExecExpectCode(t, vm, 0, "/usr/bin/id", "-un")
 		user := strings.TrimSpace(result.GetStdout())

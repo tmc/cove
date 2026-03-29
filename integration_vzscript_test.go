@@ -10,6 +10,7 @@ import (
 
 func testVZScript(t *testing.T, vm *testVM) {
 	t.Run("guest-shell", func(t *testing.T) {
+		requireUserAgent(t, vm)
 		guestPath := "/tmp/vz-integration-vzscript-shell.txt"
 		t.Cleanup(func() { cleanupGuestPaths(t, vm, guestPath) })
 
@@ -29,6 +30,7 @@ printf 'vzscript-ok\n' > /tmp/vz-integration-vzscript-shell.txt
 	})
 
 	t.Run("append-path", func(t *testing.T) {
+		requireUserAgent(t, vm)
 		const pathValue = "/tmp/vz-integration-append-path/bin"
 		pathsDFile := "/etc/paths.d/" + pathsDName(pathValue)
 		t.Cleanup(func() { cleanupGuestPaths(t, vm, pathsDFile) })

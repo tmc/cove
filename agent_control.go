@@ -1046,7 +1046,7 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *AgentClient, hostDir, guestDir string, overwrite bool) *controlpb.ControlResponse {
 	// Skip if destination already exists (unless overwrite is set).
 	if !overwrite {
-		checkResult, _ := a.Exec(ctx, []string{"test", "-d", guestDir}, nil, "")
+		checkResult, _ := a.Exec(ctx, []string{"/bin/test", "-d", guestDir}, nil, "")
 		if checkResult != nil && checkResult.ExitCode == 0 {
 			sizeResult, _ := a.Exec(ctx, []string{"du", "-sh", guestDir}, nil, "")
 			sizeStr := ""
@@ -1089,8 +1089,14 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *AgentClient, 
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("stream tar to guest: %v", err)}
 	}
 
-	// Extract on guest.
-	result, err := a.Exec(ctx, []string{"tar", "xf", tmpTar, "-C", filepath.Dir(guestDir)}, nil, "")
+	// Create destination and extract, stripping the source directory name so
+	// files land under guestDir regardless of the original basename.
+	if mkResult, err := a.Exec(ctx, []string{"mkdir", "-p", guestDir}, nil, ""); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("mkdir guest dir: %v", err)}
+	} else if mkResult.ExitCode != 0 {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("mkdir guest dir: exit %d: %s", mkResult.ExitCode, string(mkResult.Stderr))}
+	}
+	result, err := a.Exec(ctx, []string{"tar", "xf", tmpTar, "--strip-components=1", "-C", guestDir}, nil, "")
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("extract tar on guest: %v", err)}
 	}

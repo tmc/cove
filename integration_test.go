@@ -357,6 +357,15 @@ func requireGUI(t *testing.T) {
 	}
 }
 
+func requireUserAgent(t *testing.T, vm *testVM) {
+	t.Helper()
+	req := &controlpb.ControlRequest{Type: "agent-user-ping", AuthToken: vm.token}
+	resp, err := ctlSendRequest(vm.sock, req, 5*time.Second, req.Type)
+	if err != nil || !resp.Success {
+		t.Skip("user agent not available (no GUI login session)")
+	}
+}
+
 func screenshotPNG(t *testing.T, vm *testVM) []byte {
 	t.Helper()
 

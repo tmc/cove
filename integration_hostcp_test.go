@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -117,7 +118,7 @@ func testHostCp(t *testing.T, vm *testVM) {
 
 		// Verify the temp tar file was cleaned up.
 		tmpTar := "/tmp/vz-cp-" + filepath.Base(testDir) + ".tar"
-		result := agentExecResult(t, vm, "/usr/bin/test", "-f", tmpTar)
+		result := agentExecResult(t, vm, "/bin/test", "-f", tmpTar)
 		if result.GetExitCode() == 0 {
 			t.Fatalf("temp tar %q should have been cleaned up", tmpTar)
 		}
