@@ -65,10 +65,12 @@ type ControlServer struct {
 	ocr               *OCRService         // lazily created OCR service for server-side OCR commands
 	iterm2Proxy       *ITerm2Proxy        // WebSocket-to-vsock relay for iTerm2 API (nil until started)
 	portForwards      *PortForwardManager // host TCP -> guest vsock port forwards (nil until first use)
-	windowNum         int                 // cached window number for thread-safe screenshot
-	viewContentHeight int                 // cached view content height in pixels (excludes title bar)
-	healthMu          sync.RWMutex        // protects agentHealth
-	agentHealth       agentHealthState    // proactive health monitoring state
+	vncStatus         VNCStatus
+	debugStubStatus   DebugStubStatus
+	windowNum         int              // cached window number for thread-safe screenshot
+	viewContentHeight int              // cached view content height in pixels (excludes title bar)
+	healthMu          sync.RWMutex     // protects agentHealth
+	agentHealth       agentHealthState // proactive health monitoring state
 	gui               VMGUIController
 }
 
@@ -261,6 +263,15 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 			continue
 		}
 
+		if req.Type == "disk" {
+			writeResponse(conn, s.handleDiskJSONRequest([]byte(line)))
+			continue
+		}
+		if req.Type == "usb" {
+			writeResponse(conn, s.handleRuntimeUSBJSONRequest([]byte(line)))
+			continue
+		}
+
 		resp := s.handleRequest(&req)
 		writeResponse(conn, resp)
 	}
@@ -296,6 +307,10 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 			cmd = &controlpb.ScreenshotCommand{}
 		}
 		return s.takeScreenshotWithOptions(cmd)
+	case "vnc-status":
+		return s.handleVNCStatus()
+	case "debug-stub-status":
+		return s.handleDebugStubStatus()
 	case "ping":
 		return &controlpb.ControlResponse{Success: true, Data: "pong", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "pong"}}}
 	case "status":
@@ -1767,16 +1782,21 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			"tokenField":           true,
 		},
 		"features": map[string]bool{
-			"agentExecStream": true,
-			"screenshotDiff":  true,
-			"snapshots":       true,
-			"memoryBalloon":   true,
-			"guiAttach":       guiAvailable,
+			"agentExecStream":    true,
+			"screenshotDiff":     true,
+			"snapshots":          true,
+			"memoryBalloon":      true,
+			"guiAttach":          guiAvailable,
+			"vncStatus":          true,
+			"debugStubStatus":    true,
+			"runtimeDiskControl": true,
+			"runtimeUSBControl":  true,
 		},
 		"commands": []string{
 			"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 			"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
 			"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
+			"vnc-status", "debug-stub-status", "disk", "usb",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 			"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 			"agent-sshd", "agent-mount-volumes", "agent-status",
@@ -1786,16 +1806,21 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
 		"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
+		"vnc-status", "debug-stub-status", "disk", "usb",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 		"agent-sshd", "agent-mount-volumes", "agent-status",
 	}
 	features := map[string]bool{
-		"agentExecStream": true,
-		"screenshotDiff":  true,
-		"snapshots":       true,
-		"memoryBalloon":   true,
-		"guiAttach":       guiAvailable,
+		"agentExecStream":    true,
+		"screenshotDiff":     true,
+		"snapshots":          true,
+		"memoryBalloon":      true,
+		"guiAttach":          guiAvailable,
+		"vncStatus":          true,
+		"debugStubStatus":    true,
+		"runtimeDiskControl": true,
+		"runtimeUSBControl":  true,
 	}
 
 	data, _ := json.Marshal(payload)

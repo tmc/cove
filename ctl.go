@@ -55,6 +55,16 @@ Commands:
   gui status            Report whether the VM is currently headed or headless
   gui open              Show the live VM window for a headless runtime
   gui close             Return the runtime to headless mode without stopping it
+  vnc status            Report VNC server status
+  debug-stub status     Report debug stub status
+  disk list             List runtime storage devices
+  disk swap <n> <path[:ro|rw]>  Swap a live disk-image backing
+  disk resize <n> <size>  Resize a live disk-image backing (for example: 64G)
+  usb list              List runtime USB controllers and devices
+  usb attach-storage <path[:ro|rw]> [controller]  Attach USB mass storage
+  usb attach-host-service <id> [controller]       Attach host USB by service ID
+  usb attach-host-location <id> [controller]      Attach host USB by location ID
+  usb detach <device> [controller]                Detach runtime USB device
   memory info           Get memory balloon info
   memory set <GB>       Set memory target (for example: memory set 8)
   snapshot list         List snapshots
@@ -117,6 +127,13 @@ Examples:
   vz-macos ctl status
   vz-macos ctl gui status
   vz-macos ctl gui open
+  vz-macos ctl vnc status
+  vz-macos ctl debug-stub status
+  vz-macos ctl disk list
+  vz-macos ctl disk swap 0 /tmp/other.img:ro
+  vz-macos ctl disk resize 0 96G
+  vz-macos ctl usb list
+  vz-macos ctl usb attach-storage /tmp/installer.iso:ro
   vz-macos ctl screenshot -o screen.jpg
   vz-macos ctl key 36 down    # Press Return
   vz-macos ctl key 36 up      # Release Return
@@ -243,6 +260,30 @@ func ctlCommand(args []string) error {
 		default:
 			return fmt.Errorf("unknown gui action: %s (use status, open, or close)", action)
 		}
+	case "vnc":
+		if len(subArgs) < 1 {
+			return fmt.Errorf("vnc requires action: status")
+		}
+		switch subArgs[0] {
+		case "status":
+			return ctlSimpleCommand(sock, "vnc-status", *timeout, *raw)
+		default:
+			return fmt.Errorf("unknown vnc action: %s (use status)", subArgs[0])
+		}
+	case "debug-stub":
+		if len(subArgs) < 1 {
+			return fmt.Errorf("debug-stub requires action: status")
+		}
+		switch subArgs[0] {
+		case "status":
+			return ctlSimpleCommand(sock, "debug-stub-status", *timeout, *raw)
+		default:
+			return fmt.Errorf("unknown debug-stub action: %s (use status)", subArgs[0])
+		}
+	case "disk":
+		return ctlRuntimeDiskCommand(sock, subArgs, *timeout, *raw)
+	case "usb":
+		return ctlRuntimeUSBCommand(sock, subArgs, *timeout, *raw)
 	}
 
 	// Build proto request
@@ -571,6 +612,219 @@ func ctlSimpleCommand(sock, cmdType string, timeout time.Duration, raw bool) err
 		return err
 	}
 	return ctlPrintResponse(resp, cmdType, raw, "")
+}
+
+func ctlRuntimeDiskCommand(sock string, args []string, timeout time.Duration, raw bool) error {
+	if len(args) < 1 {
+		return fmt.Errorf("disk requires action: list, swap, or resize")
+	}
+
+	data := map[string]any{}
+	switch args[0] {
+	case "list":
+		data["action"] = "list"
+	case "swap":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: ctl disk swap <index> <path[:ro|rw]>")
+		}
+		index, err := parseNonNegativeInt(args[1], "disk index")
+		if err != nil {
+			return err
+		}
+		spec, err := ParseUSBStorageFlag(args[2])
+		if err != nil {
+			return err
+		}
+		data["action"] = "swap"
+		data["index"] = index
+		data["path"] = spec.Path
+		data["read_only"] = spec.ReadOnly
+	case "resize":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: ctl disk resize <index> <size>")
+		}
+		index, err := parseNonNegativeInt(args[1], "disk index")
+		if err != nil {
+			return err
+		}
+		sizeBytes, err := parseByteSize(args[2])
+		if err != nil {
+			return err
+		}
+		data["action"] = "resize"
+		data["index"] = index
+		data["size_bytes"] = sizeBytes
+	default:
+		return fmt.Errorf("unknown disk action: %s (use list, swap, or resize)", args[0])
+	}
+
+	resp, err := ctlSendJSON(sock, map[string]any{
+		"type": "disk",
+		"data": data,
+	}, timeout)
+	if err != nil {
+		return err
+	}
+	return ctlPrintResponse(resp, "disk", raw, "")
+}
+
+func ctlRuntimeUSBCommand(sock string, args []string, timeout time.Duration, raw bool) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usb requires action: list, attach-storage, attach-host-service, attach-host-location, or detach")
+	}
+
+	data := map[string]any{}
+	switch args[0] {
+	case "list":
+		data["action"] = "list"
+	case "attach-storage":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: ctl usb attach-storage <path[:ro|rw]> [controller]")
+		}
+		spec, err := ParseUSBStorageFlag(args[1])
+		if err != nil {
+			return err
+		}
+		controllerIndex, err := parseOptionalNonNegativeInt(args[2:], "controller index")
+		if err != nil {
+			return err
+		}
+		data["action"] = "attach-mass-storage"
+		data["controller_index"] = controllerIndex
+		data["path"] = spec.Path
+		data["read_only"] = spec.ReadOnly
+	case "attach-host-service":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: ctl usb attach-host-service <service-id> [controller]")
+		}
+		serviceID, err := parseUint32(args[1], "service id")
+		if err != nil {
+			return err
+		}
+		controllerIndex, err := parseOptionalNonNegativeInt(args[2:], "controller index")
+		if err != nil {
+			return err
+		}
+		data["action"] = "attach-passthrough"
+		data["controller_index"] = controllerIndex
+		data["service_id"] = serviceID
+	case "attach-host-location":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: ctl usb attach-host-location <location-id> [controller]")
+		}
+		locationID, err := parseUint32(args[1], "location id")
+		if err != nil {
+			return err
+		}
+		controllerIndex, err := parseOptionalNonNegativeInt(args[2:], "controller index")
+		if err != nil {
+			return err
+		}
+		data["action"] = "attach-passthrough"
+		data["controller_index"] = controllerIndex
+		data["location_id"] = locationID
+	case "detach":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: ctl usb detach <device-index> [controller]")
+		}
+		deviceIndex, err := parseNonNegativeInt(args[1], "device index")
+		if err != nil {
+			return err
+		}
+		controllerIndex, err := parseOptionalNonNegativeInt(args[2:], "controller index")
+		if err != nil {
+			return err
+		}
+		data["action"] = "detach"
+		data["controller_index"] = controllerIndex
+		data["device_index"] = deviceIndex
+	default:
+		return fmt.Errorf("unknown usb action: %s (use list, attach-storage, attach-host-service, attach-host-location, or detach)", args[0])
+	}
+
+	resp, err := ctlSendJSON(sock, map[string]any{
+		"type": "usb",
+		"data": data,
+	}, timeout)
+	if err != nil {
+		return err
+	}
+	return ctlPrintResponse(resp, "usb", raw, "")
+}
+
+func parseNonNegativeInt(value, label string) (int, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", label, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("%s must be >= 0", label)
+	}
+	return n, nil
+}
+
+func parseOptionalNonNegativeInt(values []string, label string) (int, error) {
+	if len(values) == 0 {
+		return 0, nil
+	}
+	if len(values) > 1 {
+		return 0, fmt.Errorf("too many arguments")
+	}
+	return parseNonNegativeInt(values[0], label)
+}
+
+func parseUint32(value, label string) (uint32, error) {
+	n, err := strconv.ParseUint(value, 0, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", label, err)
+	}
+	return uint32(n), nil
+}
+
+func parseByteSize(value string) (uint64, error) {
+	s := strings.TrimSpace(value)
+	if s == "" {
+		return 0, fmt.Errorf("size required")
+	}
+
+	i := len(s)
+	for i > 0 {
+		c := s[i-1]
+		if (c >= '0' && c <= '9') || c == '.' {
+			break
+		}
+		i--
+	}
+	numPart := strings.TrimSpace(s[:i])
+	unitPart := strings.ToLower(strings.TrimSpace(s[i:]))
+	if numPart == "" {
+		return 0, fmt.Errorf("invalid size %q", value)
+	}
+
+	n, err := strconv.ParseFloat(numPart, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid size %q: %w", value, err)
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("size must be positive")
+	}
+
+	multiplier := float64(1)
+	switch unitPart {
+	case "", "b":
+	case "k", "kb", "kib":
+		multiplier = 1024
+	case "m", "mb", "mib":
+		multiplier = 1024 * 1024
+	case "g", "gb", "gib":
+		multiplier = 1024 * 1024 * 1024
+	case "t", "tb", "tib":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	default:
+		return 0, fmt.Errorf("unknown size unit %q", unitPart)
+	}
+
+	return uint64(n * multiplier), nil
 }
 
 func ctlExecStream(sock string, req *controlpb.ControlRequest, timeout time.Duration) error {
