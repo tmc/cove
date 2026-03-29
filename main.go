@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"text/tabwriter"
 
-	"github.com/tmc/apple/x/vzkit"
+	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 )
 
 var (
@@ -713,6 +713,9 @@ func validateLaunchOptions() error {
 	if diskSizeGB < 1 {
 		return fmt.Errorf("disk-size must be at least 1 (GB)")
 	}
+	if err := validatePrivateRuntimeOptions(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -967,6 +970,11 @@ func handleVMCommand(args []string) {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+	case "config":
+		if err := handleVMConfigCommand(subargs); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown vm command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
@@ -981,7 +989,7 @@ func handleSnapshotCommand(args []string) {
 		os.Exit(1)
 	}
 
-	mgr := vzkit.NewSnapshotManager(vmDir)
+	mgr := snapshotx.NewManager(vmDir)
 	subcmd := args[0]
 	subargs := args[1:]
 

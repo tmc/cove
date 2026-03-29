@@ -43,7 +43,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "up":
 			fs, _, _ := newUpFlagSet()
 			fs.Usage()
-		case "inject", "provision":
+		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
 		case "doctor", "verify":
@@ -52,7 +52,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "template":
 			printTemplateUsage(os.Stderr)
 		case "vm":
-			printVMUsage(os.Stderr)
+			if len(subargs) > 1 && subargs[1] == "config" {
+				printVMConfigUsage(os.Stderr)
+			} else {
+				printVMUsage(os.Stderr)
+			}
 		case "snapshot":
 			printSnapshotUsage(os.Stderr)
 		case "shared-folder", "shared-folders":
@@ -93,7 +97,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fs.Usage()
 			return true, 0
 		}
-	case "inject", "provision":
+	case "provision", "inject":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
@@ -114,6 +118,10 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printVMUsage(os.Stderr)
 			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 0 && subargs[0] == "config" && (len(subargs) == 1 || isHelpArg(subargs[1])) {
+			printVMConfigUsage(os.Stderr)
+			return true, usageExitCode(subargs[1:])
 		}
 	case "snapshot":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
@@ -158,7 +166,20 @@ Commands:
   rename <old> <new>      Rename a VM
   export <name> <path>    Export a VM to a tarball
   import <path> <name>    Import a VM from a tarball
+  config <command>        Export/import a framework config snapshot
   shared-folder ...       Manage shared folders (alias: vz-macos shared-folder ...)`)
+}
+
+func printVMConfigUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: vz-macos vm config <command>
+
+Commands:
+  export <path>           Write the current framework config snapshot
+  import <path>           Decode a snapshot, print a summary, and store raw bytes
+
+Export uses the currently selected VM directory and the active VM settings
+already persisted on disk. Import does not mutate identity files; it stores the
+raw config snapshot in the VM directory for later inspection.`)
 }
 
 func printSnapshotUsage(w io.Writer) {

@@ -1068,7 +1068,7 @@ func ctlAgentWithRetry(sock string, req *controlpb.ControlRequest, wait, timeout
 
 		if time.Now().After(deadline) {
 			if err != nil {
-				return fmt.Errorf("guest agent not ready after %s: %w\n  possible causes:\n  - VM is still booting (try a longer -wait)\n  - agent not installed (run: vz-macos inject -agent)\n  - agent crashed (check /var/log/vz-agent.log inside guest)", wait, err)
+				return fmt.Errorf("guest agent not ready after %s: %w\n  possible causes:\n  - VM is still booting (try a longer -wait)\n  - agent not installed (run: vz-macos provision-agent)\n  - agent crashed (check /var/log/vz-agent.log inside guest)", wait, err)
 			}
 			return fmt.Errorf("guest agent not ready after %s: %w", wait, ctlAgentCommandError(sock, req.Type, resp.Error))
 		}
@@ -1582,14 +1582,20 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 		os.Chown(plistPath, 0, 0)
 		os.Chown(kcPath, 0, 0)
 	} else {
-		fmt.Println("Note: run with sudo for proper LaunchDaemon ownership, or password will reset on next boot only if files are root:wheel.")
-		// Try elevated bash for the chown.
+		// Set root:wheel ownership on the password reset files so launchd loads them.
 		tmpScript, tmpErr := os.CreateTemp("", "vz-pwreset-chown-*.sh")
 		if tmpErr == nil {
 			fmt.Fprintf(tmpScript, "#!/bin/bash\nchown root:wheel %q %q %q\n", scriptPath, plistPath, kcPath)
 			tmpScript.Close()
 			os.Chmod(tmpScript.Name(), 0755)
-			runElevatedBash(tmpScript.Name(), "vz-macos needs to set root ownership on password reset files.")
+			fmt.Println()
+			fmt.Println("Administrator privileges required to set root:wheel ownership")
+			fmt.Printf("on password reset files so launchd will load them on next boot.\n")
+			fmt.Println()
+			runElevatedBash(tmpScript.Name(), fmt.Sprintf(
+				"vz-macos will chown root:wheel on 3 password reset files: %s, %s, %s",
+				filepath.Base(scriptPath), filepath.Base(plistPath), filepath.Base(kcPath),
+			))
 			os.Remove(tmpScript.Name())
 		}
 	}
@@ -1833,7 +1839,7 @@ func ctlAgentCommandError(sock, cmdType, detail string) error {
 	case "stopped", "stopping", "error":
 		return fmt.Errorf("guest agent unavailable: vm is %s\n  start it first: %s\n  details: %s", state, vmRunHintForSocket(sock), detail)
 	case "running":
-		return fmt.Errorf("guest agent unavailable while vm is running\n  vm may still be booting or vz-agent may not be installed/started\n  retry with: vz-macos ctl -wait 60s %s\n  install agent if needed: vz-macos inject -agent\n  details: %s", cmdType, detail)
+		return fmt.Errorf("guest agent unavailable while vm is running\n  vm may still be booting or vz-agent may not be installed/started\n  retry with: vz-macos ctl -wait 60s %s\n  install agent if needed: vz-macos provision-agent\n  details: %s", cmdType, detail)
 	default:
 		return fmt.Errorf("guest agent unavailable: vm state is %s\n  details: %s", state, detail)
 	}
