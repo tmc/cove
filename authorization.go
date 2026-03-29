@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -105,10 +106,15 @@ func runElevatedBashNative(scriptPath string) error {
 		return authStatusError("AuthorizationExecuteWithPrivileges", status)
 	}
 
-	// Drain output from the communications pipe.
+	// Drain output from the communications pipe, then reap the child.
 	if pipe != 0 {
 		drainAuthPipe(pipe)
 	}
+
+	// AuthorizationExecuteWithPrivileges forks a child process.
+	// Reap it to prevent zombies.
+	var ws syscall.WaitStatus
+	syscall.Wait4(-1, &ws, 0, nil)
 
 	return nil
 }
