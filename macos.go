@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ebitengine/purego"
 	"net"
 	"os"
 	"path/filepath"
@@ -1974,30 +1973,28 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 }
 
 // transformToForegroundApp tells the window server that this process is a
-// foreground GUI application. Without this, bare binaries (ForceDirectExecution)
-// don't receive window events from the window server.
+// foreground GUI application so it receives window events and appears in
+// Cmd+Tab.
 //
-// Uses the deprecated but still functional TransformProcessType Carbon API,
-// which is the only reliable way to promote a CLI process to a GUI app
-// that receives events and appears in Cmd+Tab.
+// Uses NSApplication.setActivationPolicy(.regular) followed by
+// NSRunningApplication.current.activate(options:). The previous
+// implementation used the deprecated Carbon TransformProcessType API
+// which causes a SIGTRAP on macOS 26.
 func transformToForegroundApp() {
-	appServices, err := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_LAZY)
-	if err != nil {
+	app := getSharedApp()
+	app.SetActivationPolicy(appkit.NSApplicationActivationPolicyRegular)
+
+	// NSRunningApplication.currentApplication.activate(options:)
+	runningAppCls := objc.GetClass("NSRunningApplication")
+	if runningAppCls == 0 {
 		return
 	}
-	transformSym, err := purego.Dlsym(appServices, "TransformProcessType")
-	if err != nil {
+	currentApp := objc.Send[objc.ID](objc.ID(runningAppCls), objc.Sel("currentApplication"))
+	if currentApp == 0 {
 		return
 	}
-	// ProcessSerialNumber{0, kCurrentProcess(2)} with kProcessTransformToForegroundApplication(1)
-	type ProcessSerialNumber struct {
-		HighLongOfPSN uint32
-		LowLongOfPSN  uint32
-	}
-	var transformProcessType func(psn *ProcessSerialNumber, transformState uint32) int32
-	purego.RegisterFunc(&transformProcessType, transformSym)
-	psn := ProcessSerialNumber{0, 2} // kCurrentProcess
-	transformProcessType(&psn, 1)    // kProcessTransformToForegroundApplication
+	// NSApplicationActivateIgnoringOtherApps = 1 << 1 = 2
+	objc.Send[bool](currentApp, objc.Sel("activateWithOptions:"), uintptr(2))
 }
 
 // shouldRunGUIAutomation reports whether GUI provisioning automation should
