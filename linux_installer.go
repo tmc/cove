@@ -12,13 +12,18 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
@@ -35,6 +40,46 @@ type LinuxProvisionConfig struct {
 	TimeZone     string
 	Locale       string
 	InstallAgent bool // Install vz-agent during provisioning
+	Variant      LinuxVariant
+}
+
+// LinuxVariant identifies the Ubuntu install source to provision.
+type LinuxVariant string
+
+const (
+	LinuxVariantServer  LinuxVariant = "server"
+	LinuxVariantDesktop LinuxVariant = "desktop"
+)
+
+const linuxAutoinstallPath = "autoinstall.yaml"
+
+func currentLinuxVariant() LinuxVariant {
+	if linuxDesktop {
+		return LinuxVariantDesktop
+	}
+	return LinuxVariantServer
+}
+
+func (v LinuxVariant) sourceID() string {
+	switch v {
+	case LinuxVariantDesktop:
+		return ""
+	default:
+		return "ubuntu-server"
+	}
+}
+
+func (v LinuxVariant) installISOVariant() LinuxVariant {
+	switch v {
+	case LinuxVariantDesktop:
+		return LinuxVariantServer
+	default:
+		return v
+	}
+}
+
+func linuxInstallCommandLine(seedAddress string) string {
+	return fmt.Sprintf("boot=casper autoinstall ip=dhcp ds=nocloud-net;s=http://%s/ console=tty0", seedAddress)
 }
 
 // DefaultLinuxProvisionConfig returns default provisioning settings.
@@ -45,7 +90,8 @@ func DefaultLinuxProvisionConfig() LinuxProvisionConfig {
 		Hostname:     "ubuntu-vm",
 		TimeZone:     "UTC",
 		Locale:       "en_US.UTF-8",
-		InstallAgent: true,
+		InstallAgent: false,
+		Variant:      currentLinuxVariant(),
 	}
 }
 
@@ -63,10 +109,27 @@ func installLinuxVM() error {
 		return err
 	}
 
+	// Bump defaults for Desktop variant (needs more resources than Server)
+	if linuxDesktop {
+		if cpuCount < 4 {
+			cpuCount = 4
+			fmt.Println("  Desktop mode: bumped CPU to 4")
+		}
+		if memoryGB < 8 {
+			memoryGB = 8
+			fmt.Println("  Desktop mode: bumped memory to 8 GB")
+		}
+		if diskSizeGB < 40 {
+			diskSizeGB = 40
+			fmt.Println("  Desktop mode: bumped disk size to 40 GB")
+		}
+	}
+
 	// Ensure VM directory exists
 	if err := os.MkdirAll(vmDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
+	saveHardwareConfig(vmDir)
 
 	// Configure provisioning
 	provConfig := DefaultLinuxProvisionConfig()
@@ -76,19 +139,19 @@ func installLinuxVM() error {
 	if provisionPassword != "" {
 		provConfig.Password = provisionPassword
 	}
-	if noAgent {
+	if noAgent || !sandboxAllowsAgentProvision() {
 		provConfig.InstallAgent = false
 	}
 
 	// Get ISO (download if needed)
-	resolvedISO, err := ensureLinuxISO()
+	resolvedISO, err := ensureLinuxISOForVariant(provConfig.Variant.installISOVariant())
 	if err != nil {
 		return fmt.Errorf("ensure ISO: %w", err)
 	}
 	fmt.Printf("Using ISO: %s\n", resolvedISO)
 
 	// Create cloud-init ISO
-	cloudInitISO, err := createCloudInitISO(provConfig)
+	cloudInitISO, _, err := createCloudInitISO(provConfig)
 	if err != nil {
 		return fmt.Errorf("create cloud-init ISO: %w", err)
 	}
@@ -108,30 +171,45 @@ func installLinuxVM() error {
 		}
 	}
 
-	// Prefer direct kernel boot to pass `autoinstall` on the kernel cmdline,
-	// which suppresses Ubuntu 24.04's interactive confirmation prompt.
-	// If no kernel/initrd was provided, try to extract them from the ISO.
-	useDirectBoot := kernelPath != "" && initrdPath != ""
+	// Prefer direct kernel boot to pass `autoinstall` on the kernel cmdline.
+	// The ISO's GRUB does not include `autoinstall` so subiquity won't
+	// detect autoinstall config without it. We extract and decompress the
+	// kernel from the ISO (ARM64 vmlinuz is gzip-compressed).
+	installKernelPath := kernelPath
+	installInitrdPath := initrdPath
+	installCmdLine := cmdLine
+	useDirectBoot := installKernelPath != "" && installInitrdPath != ""
 	if !useDirectBoot {
 		extracted, err := extractKernelFromISO(resolvedISO, vmDir)
 		if err == nil {
-			kernelPath = extracted.kernel
-			initrdPath = extracted.initrd
+			installKernelPath = extracted.kernel
+			installInitrdPath = extracted.initrd
 			useDirectBoot = true
 			fmt.Println("Extracted kernel/initrd from ISO for direct boot (autoinstall)")
 		} else {
 			fmt.Printf("warning: could not extract kernel from ISO: %v\n", err)
-			fmt.Println("  Falling back to EFI boot (may require manual 'yes' at autoinstall prompt)")
+			fmt.Println("  Falling back to EFI boot (autoinstall may require manual confirmation)")
 		}
 	}
-	if useDirectBoot && cmdLine == "" {
-		cmdLine = "boot=casper autoinstall console=tty0 --- quiet"
+	if useDirectBoot {
+		seedDir := filepath.Join(vmDir, "cloud-init-data")
+		seedAddress, seedCloser, err := startCloudInitHTTPServer(seedDir)
+		if err != nil {
+			return fmt.Errorf("start cloud-init HTTP server: %w", err)
+		}
+		defer seedCloser.Close()
+		if installCmdLine == "" {
+			installCmdLine = linuxInstallCommandLine(seedAddress)
+		}
+		if verbose {
+			fmt.Printf("  Serving NoCloud seed via http://%s/\n", seedAddress)
+		}
 	}
 
 	// Build VM configuration with both ISOs
 	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
 	fmt.Printf("  Boot mode: %s\n", map[bool]string{true: "direct kernel", false: "EFI"}[useDirectBoot])
-	config, err := buildLinuxInstallConfiguration(resolvedDiskPath, resolvedISO, cloudInitISO, kernelPath, initrdPath, cmdLine, useDirectBoot)
+	config, err := buildLinuxInstallConfiguration(resolvedDiskPath, resolvedISO, cloudInitISO, installKernelPath, installInitrdPath, installCmdLine, useDirectBoot)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
 	}
@@ -169,15 +247,29 @@ func installLinuxVM() error {
 	fmt.Printf("  Username: %s\n", provConfig.Username)
 	fmt.Printf("  Hostname: %s\n", provConfig.Hostname)
 	fmt.Println()
-	fmt.Println("After installation completes:")
-	fmt.Printf("  1. The VM will reboot automatically\n")
-	fmt.Printf("  2. Stop this process (Ctrl+C)\n")
-	fmt.Printf("  3. Run: ./vz-macos -linux run\n")
+
+	if useDirectBoot {
+		fmt.Println("Installation will power off when it finishes.")
+	} else {
+		fmt.Println("After installation completes:")
+		fmt.Printf("  1. The VM will reboot automatically\n")
+		fmt.Printf("  2. Stop this process (Ctrl+C)\n")
+		fmt.Printf("  3. Run: ./vz-macos -linux run\n")
+	}
 	fmt.Println()
 
 	// Start VM
 	fmt.Println("Starting installation...")
-	return startVMWithQueue(vm, vmQueue)
+	if err := startVMWithQueue(vm, vmQueue); err != nil {
+		return err
+	}
+	if err := verifyLinuxInstallBootable(resolvedDiskPath); err != nil {
+		return err
+	}
+	if err := writeLinuxInstalledMarker(vmDir, provConfig.Variant); err != nil {
+		return fmt.Errorf("write install marker: %w", err)
+	}
+	return nil
 }
 
 // buildLinuxInstallConfiguration builds a VM config for Linux installation.
@@ -194,10 +286,9 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	machineID := loadOrCreateGenericMachineIdentifier()
 	platformConfig.SetMachineIdentifier(&machineID)
 
-	// Enable nested virtualization (KVM in guest) if supported (macOS 15+, M3+)
-	if vz.GetVZGenericPlatformConfigurationClass().NestedVirtualizationSupported() {
-		platformConfig.SetNestedVirtualizationEnabled(true)
-	}
+	// Keep nested virtualization disabled during installation. The Ubuntu
+	// desktop bootstrap has hit undefined-instruction crashes in overlayfs
+	// with the richer virtual CPU feature exposure.
 
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
 
@@ -231,15 +322,18 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	diskStorage := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment.VZStorageDeviceAttachment)
 	diskStorage.Retain()
 
-	// Cloud-init ISO (Virtio block so cloud-init can detect it as NoCloud datasource)
+	// Cloud-init data as USB mass storage. The casper live environment's
+	// initrd may not include virtio block drivers, so CIDATA on a Virtio
+	// block device won't be visible to cloud-init. USB mass storage is
+	// universally supported in the initramfs.
 	cloudInitURL := foundation.NewURLFileURLWithPath(cloudInitISO)
 	cloudInitAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(cloudInitURL, true)
 	if err != nil {
 		return config, fmt.Errorf("create cloud-init attachment: %w", err)
 	}
 	cloudInitAttachment.Retain()
-	cloudInitStorage := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&cloudInitAttachment.VZStorageDeviceAttachment)
-	cloudInitStorage.Retain()
+	cloudInitUSB := vz.NewUSBMassStorageDeviceConfigurationWithAttachment(&cloudInitAttachment.VZStorageDeviceAttachment)
+	cloudInitUSB.Retain()
 
 	// Installation ISO as USB mass storage (EFI firmware can boot from USB)
 	isoURL := foundation.NewURLFileURLWithPath(installISO)
@@ -251,16 +345,16 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	isoUSB := vz.NewUSBMassStorageDeviceConfigurationWithAttachment(&isoAttachment.VZStorageDeviceAttachment)
 	isoUSB.Retain()
 
-	// Set all storage: main disk + cloud-init (Virtio) + install ISO (USB)
+	// Set all storage: main disk (Virtio) + cloud-init (USB) + install ISO (USB)
 	if verbose {
 		fmt.Printf("  Storage devices:\n")
 		fmt.Printf("    Disk: ID=%x attachment=%x\n", diskStorage.ID, diskAttachment.ID)
-		fmt.Printf("    Cloud-init: ID=%x attachment=%x\n", cloudInitStorage.ID, cloudInitAttachment.ID)
+		fmt.Printf("    Cloud-init: ID=%x attachment=%x\n", cloudInitUSB.ID, cloudInitAttachment.ID)
 		fmt.Printf("    ISO USB: ID=%x attachment=%x\n", isoUSB.ID, isoAttachment.ID)
 	}
 	config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{
 		vz.VZStorageDeviceConfigurationFromID(diskStorage.ID),
-		vz.VZStorageDeviceConfigurationFromID(cloudInitStorage.ID),
+		vz.VZStorageDeviceConfigurationFromID(cloudInitUSB.ID),
 		vz.VZStorageDeviceConfigurationFromID(isoUSB.ID),
 	})
 
@@ -305,10 +399,28 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 		vz.VZUSBControllerConfigurationFromID(usbController.ID),
 	})
 
-	// Serial console — skip during installation to prevent subiquity from
-	// detecting hvc0 and showing a serial mode selection prompt that blocks
-	// autoinstall (LP: #2018415). This applies to both direct-boot and EFI
-	// boot modes. The serial port can be added for post-install running.
+	// Attach a serial console only when the kernel cmdline asks for hvc0.
+	// The live installer pauses on a serial-mode chooser when hvc0 is a console,
+	// so direct-boot autoinstall keeps the serial device detached.
+	if strings.Contains(installCmdLine, "console=hvc0") {
+		serialLogPath := filepath.Join(vmDir, "install-serial.log")
+		serialFile, serialErr := os.OpenFile(serialLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if serialErr == nil {
+			readHandle := foundation.NewFileHandleWithFileDescriptor(int(os.Stdin.Fd()))
+			writeHandle := foundation.NewFileHandleWithFileDescriptor(int(serialFile.Fd()))
+			serialAttachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(readHandle, writeHandle)
+			if serialAttachment.ID != 0 {
+				serialPort := vz.NewVZVirtioConsoleDeviceSerialPortConfiguration()
+				serialPort.SetAttachment(&serialAttachment.VZSerialPortAttachment)
+				if serialPort.ID != 0 {
+					setSerialPorts(config, serialPort)
+					if verbose {
+						fmt.Printf("  Serial console logging to %s\n", serialLogPath)
+					}
+				}
+			}
+		}
+	}
 
 	return config, nil
 }
@@ -349,7 +461,7 @@ func createLinuxInstallBootLoader(kernelPath, initrdPath, cmdLine string) (vz.VZ
 	}
 
 	if cmdLine == "" {
-		cmdLine = "boot=casper autoinstall console=tty0 --- quiet"
+		cmdLine = "boot=casper autoinstall ds=nocloud console=hvc0 console=tty0"
 	}
 	bootloader.SetCommandLine(cmdLine)
 
@@ -363,6 +475,8 @@ type extractedKernel struct {
 
 // extractKernelFromISO extracts vmlinuz + initrd from an Ubuntu ISO into vmDir.
 // Uses bsdtar to read the ISO9660 filesystem (hdiutil cannot mount hybrid ISOs).
+// ARM64 vmlinuz is gzip-compressed; VZLinuxBootLoader requires the uncompressed
+// Image (starts with MZ), so we decompress if needed.
 func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
 	candidates := []struct {
 		kernel string
@@ -385,70 +499,332 @@ func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
 			continue
 		}
 		_ = out
+		// Ensure extracted files are writable (ISO preserves read-only
+		// permissions). The kernel may need in-place decompression and
+		// the initrd may have cloud-init data appended.
+		os.Chmod(dstKernel, 0644)
+		os.Chmod(dstInitrd, 0644)
+		if err := decompressKernelIfNeeded(dstKernel); err != nil {
+			return nil, fmt.Errorf("decompress kernel: %w", err)
+		}
 		return &extractedKernel{kernel: dstKernel, initrd: dstInitrd}, nil
 	}
 	return nil, fmt.Errorf("no kernel/initrd found in ISO (tried bsdtar)")
 }
 
+// decompressKernelIfNeeded checks if the kernel file is gzip-compressed and
+// decompresses it in-place. ARM64 Ubuntu vmlinuz files are gzip-wrapped;
+// VZLinuxBootLoader requires the raw Image format (MZ header).
+func decompressKernelIfNeeded(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	var magic [2]byte
+	_, err = f.Read(magic[:])
+	f.Close()
+	if err != nil {
+		return err
+	}
+	// 0x1f 0x8b = gzip magic number
+	if magic[0] != 0x1f || magic[1] != 0x8b {
+		return nil // already uncompressed
+	}
+	tmp := path + ".raw"
+	out, err := exec.Command("gunzip", "-c", path).Output()
+	if err != nil {
+		return fmt.Errorf("gunzip: %w", err)
+	}
+	if err := os.WriteFile(tmp, out, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func injectAutoinstallIntoInitrd(initrdPath, autoinstallConfigPath string) (string, error) {
+	if initrdPath == "" {
+		return "", fmt.Errorf("empty initrd path")
+	}
+	if autoinstallConfigPath == "" {
+		return "", fmt.Errorf("empty autoinstall config path")
+	}
+
+	workDir := filepath.Join(filepath.Dir(initrdPath), "initrd.autoinstall.d")
+	if err := os.RemoveAll(workDir); err != nil {
+		return "", fmt.Errorf("reset initrd work directory: %w", err)
+	}
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return "", fmt.Errorf("create initrd work directory: %w", err)
+	}
+	defer os.RemoveAll(workDir)
+
+	autoinstallData, err := os.ReadFile(autoinstallConfigPath)
+	if err != nil {
+		return "", fmt.Errorf("read autoinstall config: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, linuxAutoinstallPath), autoinstallData, 0644); err != nil {
+		return "", fmt.Errorf("write autoinstall config into initrd: %w", err)
+	}
+
+	outputPath := filepath.Join(filepath.Dir(initrdPath), "initrd.autoinstall")
+	tempPath := outputPath + ".tmp"
+	if err := os.Remove(tempPath); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("remove temporary initrd: %w", err)
+	}
+	if err := copyFile(initrdPath, tempPath); err != nil {
+		return "", fmt.Errorf("copy initrd for autoinstall injection: %w", err)
+	}
+	archive, err := buildAutoinstallArchive(workDir)
+	if err != nil {
+		return "", err
+	}
+	outputFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return "", fmt.Errorf("open autoinstall initrd for append: %w", err)
+	}
+	if _, err := outputFile.Write(archive); err != nil {
+		outputFile.Close()
+		return "", fmt.Errorf("append autoinstall archive: %w", err)
+	}
+	if err := outputFile.Close(); err != nil {
+		return "", fmt.Errorf("close autoinstall initrd: %w", err)
+	}
+	if err := os.Rename(tempPath, outputPath); err != nil {
+		return "", fmt.Errorf("rename autoinstall initrd: %w", err)
+	}
+	return outputPath, nil
+}
+
+func buildAutoinstallArchive(rootDir string) ([]byte, error) {
+	var archive bytes.Buffer
+	cpioCmd := exec.Command("cpio", "-o", "-H", "newc", "--quiet")
+	cpioCmd.Dir = rootDir
+	cpioCmd.Stdin = strings.NewReader(linuxAutoinstallPath + "\n")
+	cpioCmd.Stdout = &archive
+	var cpioStderr bytes.Buffer
+	cpioCmd.Stderr = &cpioStderr
+	if err := cpioCmd.Run(); err != nil {
+		return nil, fmt.Errorf("build autoinstall archive: %w: %s", err, strings.TrimSpace(cpioStderr.String()))
+	}
+	return archive.Bytes(), nil
+}
+
+type linuxCloudInitData struct {
+	userData        string
+	metaData        string
+	vendorData      string
+	autoinstallData string
+}
+
+func buildLinuxCloudInitData(config LinuxProvisionConfig, includeAgent bool, agentURL string) linuxCloudInitData {
+	autoinstallData := generateAutoinstallData(config, includeAgent, agentURL)
+	return linuxCloudInitData{
+		userData:        "#cloud-config\n" + autoinstallData,
+		metaData:        generateMetaData(config),
+		vendorData:      "#cloud-config\n{}\n",
+		autoinstallData: autoinstallData,
+	}
+}
+
+// startCloudInitHTTPServer starts an HTTP server that serves cloud-init
+// NoCloud data (user-data, meta-data, vendor-data). The server listens on
+// a random port on all interfaces. The guest fetches these files via the
+// ds=nocloud-net;s=http://host:port/ kernel cmdline parameter.
+type processCloser struct {
+	cmd     *exec.Cmd
+	logFile *os.File
+}
+
+func (c *processCloser) Close() error {
+	if c.cmd != nil && c.cmd.Process != nil {
+		_ = c.cmd.Process.Kill()
+		_, _ = c.cmd.Process.Wait()
+	}
+	if c.logFile != nil {
+		return c.logFile.Close()
+	}
+	return nil
+}
+
+func startCloudInitHTTPServer(seedDir string) (string, io.Closer, error) {
+	if seedDir == "" {
+		return "", nil, fmt.Errorf("empty seed directory")
+	}
+	if _, err := os.Stat(filepath.Join(seedDir, "user-data")); err != nil {
+		return "", nil, fmt.Errorf("seed user-data: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(seedDir, "meta-data")); err != nil {
+		return "", nil, fmt.Errorf("seed meta-data: %w", err)
+	}
+
+	if python3, err := exec.LookPath("python3"); err == nil {
+		addr, closer, startErr := startCloudInitPythonHTTPServer(python3, seedDir)
+		if startErr == nil {
+			return addr, closer, nil
+		}
+		if verbose {
+			fmt.Printf("  warning: python3 cloud-init HTTP server failed: %v\n", startErr)
+		}
+	}
+
+	return startCloudInitGoHTTPServer(seedDir)
+}
+
+func startCloudInitPythonHTTPServer(python3, seedDir string) (string, io.Closer, error) {
+	portListener, err := net.Listen("tcp4", "127.0.0.1:0")
+	// The guest reaches the host over the default VZ NAT IPv4 gateway
+	// (192.168.64.1). Listen on IPv4 explicitly so the advertised seed URL
+	// is reachable from the guest even when the host prefers an IPv6 wildcard
+	// listener for "tcp".
+	if err != nil {
+		return "", nil, fmt.Errorf("listen: %w", err)
+	}
+	port := portListener.Addr().(*net.TCPAddr).Port
+	portListener.Close()
+
+	// Determine the host IP that the guest can reach. VZ's NAT networking
+	// uses 192.168.64.1 as the default gateway/host IP.
+	hostIP := "192.168.64.1"
+	addr := fmt.Sprintf("%s:%d", hostIP, port)
+
+	logPath := filepath.Join(vmDir, "cloud-init-http.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return "", nil, fmt.Errorf("open cloud-init HTTP log: %w", err)
+	}
+	writer := io.Writer(logFile)
+	if verbose {
+		writer = io.MultiWriter(os.Stdout, logFile)
+	}
+
+	cmd := exec.Command(python3, "-m", "http.server", fmt.Sprintf("%d", port), "--bind", "0.0.0.0")
+	cmd.Dir = seedDir
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		return "", nil, fmt.Errorf("start python3 http.server: %w", err)
+	}
+
+	readyURL := fmt.Sprintf("http://127.0.0.1:%d/meta-data", port)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	for i := 0; i < 10; i++ {
+		resp, err := client.Get(readyURL)
+		if err == nil {
+			resp.Body.Close()
+			return addr, &processCloser{cmd: cmd, logFile: logFile}, nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	closer := &processCloser{cmd: cmd, logFile: logFile}
+	_ = closer.Close()
+	return "", nil, fmt.Errorf("python3 http.server did not become ready")
+}
+
+func startCloudInitGoHTTPServer(seedDir string) (string, io.Closer, error) {
+	listener, err := net.Listen("tcp4", "0.0.0.0:0")
+	if err != nil {
+		return "", nil, fmt.Errorf("listen: %w", err)
+	}
+
+	hostIP := "192.168.64.1"
+	port := listener.Addr().(*net.TCPAddr).Port
+	addr := fmt.Sprintf("%s:%d", hostIP, port)
+
+	fileServer := http.FileServer(http.Dir(seedDir))
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if verbose {
+			fmt.Printf("  cloud-init HTTP %s %s from %s\n", r.Method, r.URL.Path, r.RemoteAddr)
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+
+	srv := &http.Server{Handler: handler}
+	go srv.Serve(listener)
+
+	return addr, srv, nil
+}
+
 // createCloudInitISO creates a cloud-init NoCloud ISO with autoinstall configuration.
-func createCloudInitISO(config LinuxProvisionConfig) (string, error) {
+func createCloudInitISO(config LinuxProvisionConfig) (string, string, error) {
 	// Create temporary directory for cloud-init files
 	cloudInitDir := filepath.Join(vmDir, "cloud-init-data")
 	if err := os.MkdirAll(cloudInitDir, 0755); err != nil {
-		return "", fmt.Errorf("create cloud-init directory: %w", err)
+		return "", "", fmt.Errorf("create cloud-init directory: %w", err)
 	}
 
 	// Build and include vz-agent if requested.
 	agentIncluded := false
+	agentPath := ""
 	if config.InstallAgent {
-		agentBin := filepath.Join(cloudInitDir, "vz-agent")
-		if err := buildAgentBinaryTo(agentBin, "linux", "arm64"); err != nil {
+		agentPath = filepath.Join(cloudInitDir, "vz-agent")
+		if err := buildAgentBinaryTo(agentPath, "linux", "arm64"); err != nil {
 			fmt.Printf("warning: could not build vz-agent for inclusion: %v\n", err)
+			agentPath = ""
 		} else {
 			agentIncluded = true
 			fmt.Println("  vz-agent binary included in cloud-init ISO")
 		}
 	}
 
-	// Generate user-data (autoinstall configuration)
-	userData := generateUserData(config, agentIncluded)
 	userDataPath := filepath.Join(cloudInitDir, "user-data")
-	if err := os.WriteFile(userDataPath, []byte(userData), 0644); err != nil {
-		return "", fmt.Errorf("write user-data: %w", err)
+	seed := buildLinuxCloudInitData(config, agentIncluded, "")
+	if err := os.WriteFile(userDataPath, []byte(seed.userData), 0644); err != nil {
+		return "", "", fmt.Errorf("write user-data: %w", err)
+	}
+	autoinstallPath := filepath.Join(cloudInitDir, linuxAutoinstallPath)
+	if err := os.WriteFile(autoinstallPath, []byte(seed.autoinstallData), 0644); err != nil {
+		return "", "", fmt.Errorf("write %s: %w", linuxAutoinstallPath, err)
 	}
 
 	// Generate meta-data (instance identification)
-	metaData := generateMetaData(config)
 	metaDataPath := filepath.Join(cloudInitDir, "meta-data")
-	if err := os.WriteFile(metaDataPath, []byte(metaData), 0644); err != nil {
-		return "", fmt.Errorf("write meta-data: %w", err)
+	if err := os.WriteFile(metaDataPath, []byte(seed.metaData), 0644); err != nil {
+		return "", "", fmt.Errorf("write meta-data: %w", err)
 	}
 
 	// Write a vendor-data file (required by some cloud-init versions).
 	vendorDataPath := filepath.Join(cloudInitDir, "vendor-data")
-	if err := os.WriteFile(vendorDataPath, []byte("#cloud-config\n{}"), 0644); err != nil {
-		return "", fmt.Errorf("write vendor-data: %w", err)
+	if err := os.WriteFile(vendorDataPath, []byte(seed.vendorData), 0644); err != nil {
+		return "", "", fmt.Errorf("write vendor-data: %w", err)
 	}
 
-	// Create ISO9660 CIDATA image using hdiutil makehybrid.
-	// This doesn't require mounting/unmounting, avoiding diskutil hangs.
-	// Cloud-init's NoCloud datasource looks for a filesystem labeled CIDATA.
+	// Create ISO9660 CIDATA image. Cloud-init's NoCloud datasource scans
+	// block devices for a filesystem labeled "CIDATA" (iso9660 or vfat).
+	//
+	// Prefer mkisofs (from cdrtools) over hdiutil makehybrid because
+	// hdiutil adds Apple HFS+ hybrid extensions that some Linux kernels
+	// in the casper live environment fail to read.
 	isoPath := filepath.Join(vmDir, "cloud-init.iso")
 	os.Remove(isoPath)
-	cmd := exec.Command("hdiutil", "makehybrid",
-		"-o", isoPath,
-		"-joliet",
-		"-iso",
-		"-default-volume-name", "CIDATA",
-		"-iso-volume-name", "CIDATA",
-		"-joliet-volume-name", "CIDATA",
-		cloudInitDir,
-	)
+
+	var cmd *exec.Cmd
+	if mkisofs, err := exec.LookPath("mkisofs"); err == nil {
+		cmd = exec.Command(mkisofs,
+			"-output", isoPath,
+			"-volid", "CIDATA",
+			"-joliet",
+			"-rock",
+			cloudInitDir,
+		)
+	} else {
+		// Fallback to hdiutil if mkisofs is not available.
+		cmd = exec.Command("hdiutil", "makehybrid",
+			"-o", isoPath,
+			"-joliet",
+			"-iso",
+			"-default-volume-name", "CIDATA",
+			"-iso-volume-name", "CIDATA",
+			"-joliet-volume-name", "CIDATA",
+			cloudInitDir,
+		)
+	}
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("create cloud-init ISO: %w: %s", err, output)
+		return "", "", fmt.Errorf("create cloud-init ISO: %w: %s", err, output)
 	}
 
-	return isoPath, nil
+	return isoPath, agentPath, nil
 }
 
 // createFATImage creates a raw FAT12/16 disk image with the given volume label,
@@ -468,8 +844,146 @@ func buildAgentBinaryTo(outputPath, targetOS, targetArch string) error {
 	return cmd.Run()
 }
 
-// generateUserData creates the cloud-init user-data file with autoinstall config.
-func generateUserData(config LinuxProvisionConfig, includeAgent bool) string {
+func linuxAutoLoginLateCommand(config LinuxProvisionConfig) string {
+	if !config.AutoLogin || config.Variant != LinuxVariantDesktop {
+		return ""
+	}
+	return fmt.Sprintf(`
+    - |
+      mkdir -p /target/etc/gdm3
+      printf '%%s\n' '[daemon]' 'AutomaticLoginEnable=true' %q > /target/etc/gdm3/custom.conf`, "AutomaticLogin="+config.Username)
+}
+
+func linuxDesktopPackagesSection(config LinuxProvisionConfig) string {
+	if config.Variant != LinuxVariantDesktop {
+		return ""
+	}
+	return `
+  packages:
+    - ubuntu-desktop`
+}
+
+func linuxSourceSection(config LinuxProvisionConfig) string {
+	sourceID := config.Variant.sourceID()
+	if sourceID == "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+  source:
+    search_drivers: false
+    id: %s`, sourceID)
+}
+
+func linuxEarlyCommandsSection(config LinuxProvisionConfig) string {
+	return fmt.Sprintf(`
+  early-commands:
+    - printf '#!/bin/sh\nexit 0\n' > /usr/sbin/flash-kernel && chmod +x /usr/sbin/flash-kernel
+    - |
+      # Disable flash-kernel in the target. curthooks installs the kernel
+      # inside /target via chroot, which triggers flash-kernel's postinst.
+      # flash-kernel fails on VMs without DTB entries. We background a
+      # watcher that replaces /target/usr/sbin/flash-kernel with a no-op
+      # stub after curtin extracts the root filesystem. The kernel/initrd
+      # are still installed correctly; only flash-kernel's DTB flashing
+      # (which is irrelevant for EFI VMs) is skipped.
+      (while true; do
+        if [ -x /target/usr/sbin/flash-kernel ] && \
+           ! head -1 /target/usr/sbin/flash-kernel 2>/dev/null | grep -q 'exit 0'; then
+          printf '#!/bin/sh\nexit 0\n' > /target/usr/sbin/flash-kernel
+        fi
+        sleep 1
+      done) &`)
+}
+
+func linuxStorageSection() string {
+	return `
+  storage:
+    swap:
+      size: 0
+    config:
+      - type: disk
+        id: disk0
+        match:
+          size: largest
+        ptable: gpt
+        wipe: superblock-recursive
+        grub_device: true
+      - type: partition
+        id: disk0-esp
+        device: disk0
+        number: 1
+        size: 1G
+        flag: boot
+      - type: format
+        id: disk0-esp-fs
+        volume: disk0-esp
+        fstype: fat32
+        label: EFI
+      - type: partition
+        id: disk0-root
+        device: disk0
+        number: 2
+        size: -1
+      - type: format
+        id: disk0-root-fs
+        volume: disk0-root
+        fstype: ext4
+        label: cloudimg-rootfs
+      - type: mount
+        id: disk0-root-mount
+        path: /
+        device: disk0-root-fs
+      - type: mount
+        id: disk0-esp-mount
+        path: /boot/efi
+        device: disk0-esp-fs`
+}
+
+func linuxBootloaderLateCommands() string {
+	return `
+    - >-
+      curtin in-target -- apt-get install -y
+      grub-efi-arm64
+      grub-efi-arm64-bin
+    - >-
+      curtin in-target -- grub-install
+      --target=arm64-efi
+      --efi-directory=/boot/efi
+      --bootloader-id=ubuntu
+      --no-nvram
+      --removable
+    - |
+      ROOT_UUID=$(findmnt -no UUID /target)
+      mkdir -p /target/boot/efi/EFI/BOOT
+      printf '%s\n' \
+        'insmod part_gpt' \
+        'insmod ext2' \
+        "search --no-floppy --fs-uuid --set=root ${ROOT_UUID}" \
+        'set prefix=($root)/boot/grub' \
+        'configfile $prefix/grub.cfg' \
+        > /target/boot/efi/EFI/BOOT/grub.cfg
+    - curtin in-target -- update-grub`
+}
+
+func linuxDesktopLateCommands(config LinuxProvisionConfig) string {
+	if config.Variant != LinuxVariantDesktop {
+		return ""
+	}
+	return `
+    - >-
+      curtin in-target --
+      sed -i -e
+      's/GRUB_CMDLINE_LINUX_DEFAULT=".*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/'
+      /etc/default/grub
+    - curtin in-target -- update-grub
+    - rm -f /target/etc/netplan/00-installer-config*yaml
+    - >-
+      printf "network:\n  version: 2\n  renderer: NetworkManager\n"
+      > /target/etc/netplan/01-network-manager-all.yaml
+    - curtin in-target -- apt-get install -y cloud-init`
+}
+
+func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, agentURL string) string {
 	// Hash password using SHA-512 for compatibility
 	hashedPassword := hashPassword(config.Password)
 
@@ -488,50 +1002,174 @@ func generateUserData(config LinuxProvisionConfig, includeAgent bool) string {
     allow-pw: true`
 	}
 
+	sourceSection := linuxSourceSection(config)
+	packagesSection := linuxDesktopPackagesSection(config)
+
 	agentLateCommands := ""
 	if includeAgent {
+		agentInstallCommand := `
+    - |
+      # Find vz-agent on any mounted CIDATA volume.
+      for d in /media/*/vz-agent /mnt/*/vz-agent /cdrom/vz-agent; do
+        [ -f "$d" ] && cp "$d" /target/usr/local/bin/vz-agent && break
+      done
+      test -s /target/usr/local/bin/vz-agent`
+		if agentURL != "" {
+			agentInstallCommand = fmt.Sprintf(`
+    - |
+      if command -v wget >/dev/null 2>&1; then
+        wget -O /target/usr/local/bin/vz-agent %q
+      elif command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o /target/usr/local/bin/vz-agent %q
+      else
+        for d in /media/*/vz-agent /mnt/*/vz-agent /cdrom/vz-agent; do
+          [ -f "$d" ] && cp "$d" /target/usr/local/bin/vz-agent && break
+        done
+      fi
+      test -s /target/usr/local/bin/vz-agent`, agentURL, agentURL)
+		}
 		agentLateCommands = `
-    - cp /cdrom/vz-agent /target/usr/local/bin/vz-agent
+` + agentInstallCommand + `
     - chmod 755 /target/usr/local/bin/vz-agent
     - |
-      cat > /target/etc/systemd/system/vz-agent.service << 'SVCEOF'
-      [Unit]
-      Description=vz-macos Guest Agent
-      After=network.target
-      [Service]
-      Type=simple
-      ExecStart=/usr/local/bin/vz-agent
-      Restart=always
-      RestartSec=5
-      [Install]
-      WantedBy=multi-user.target
-      SVCEOF
+      mkdir -p /target/etc/systemd/system
+      printf '%s\n' \
+        '[Unit]' \
+        'Description=vz-macos Guest Agent' \
+        'After=network.target' \
+        '[Service]' \
+        'Type=simple' \
+        'ExecStart=/usr/local/bin/vz-agent' \
+        'Restart=always' \
+        'RestartSec=5' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /target/etc/systemd/system/vz-agent.service
     - curtin in-target --target=/target -- systemctl enable vz-agent`
 	}
 
-	userData := fmt.Sprintf(`#cloud-config
-autoinstall:
+	autoLoginLateCommands := linuxAutoLoginLateCommand(config)
+	earlyCommandsSection := linuxEarlyCommandsSection(config)
+	storageSection := linuxStorageSection()
+	bootloaderLateCommands := linuxBootloaderLateCommands()
+	desktopLateCommands := linuxDesktopLateCommands(config)
+
+	return fmt.Sprintf(`autoinstall:
   version: 1
   locale: %s
   keyboard:
     layout: us
+%s%s
   identity:
     hostname: %s
     username: %s
     password: %s%s
-  early-commands:
-    - printf '#!/bin/sh\nexit 0\n' > /usr/sbin/flash-kernel && chmod +x /usr/sbin/flash-kernel
-  storage:
-    layout:
-      name: direct
+  shutdown: poweroff
+%s
+%s
   late-commands:
-    - curtin in-target --target=/target -- systemctl enable ssh%s
+    - curtin in-target --target=/target -- systemctl enable ssh%s%s%s%s
+  error-commands:
+    - cat /var/log/installer/curtin-install.log | tail -200 > /dev/hvc0 2>&1 || true
+    - cat /var/crash/*.crash > /dev/hvc0 2>&1 || true
   user-data:
     disable_root: false
     timezone: %s
-`, config.Locale, config.Hostname, config.Username, hashedPassword, sshSection, agentLateCommands, config.TimeZone)
+`, config.Locale, packagesSection, sourceSection, config.Hostname, config.Username, hashedPassword, sshSection, earlyCommandsSection, storageSection, bootloaderLateCommands, desktopLateCommands, agentLateCommands, autoLoginLateCommands, config.TimeZone)
+}
 
-	return userData
+// generateUserData creates the cloud-init user-data file with autoinstall config.
+func generateUserData(config LinuxProvisionConfig, includeAgent bool, agentURL string) string {
+	return "#cloud-config\n" + generateAutoinstallData(config, includeAgent, agentURL)
+}
+
+func linuxInstalledMarkerPath(vmDir string) string {
+	return filepath.Join(vmDir, "linux-installed")
+}
+
+func writeLinuxInstalledMarker(vmDir string, variant LinuxVariant) error {
+	return os.WriteFile(linuxInstalledMarkerPath(vmDir), []byte(string(variant)+"\n"), 0644)
+}
+
+func verifyLinuxInstallBootable(diskPath string) error {
+	devices, err := attachLinuxDiskReadOnly(diskPath)
+	if err != nil {
+		return fmt.Errorf("attach installed disk: %w", err)
+	}
+	if len(devices) < 2 {
+		detachLinuxDisk(devices)
+		return fmt.Errorf("attach installed disk: expected partition devices, got %v", devices)
+	}
+	defer detachLinuxDisk(devices)
+
+	mountPoint, err := mountLinuxEFIPartitionReadOnly(devices[1])
+	if err != nil {
+		return fmt.Errorf("mount EFI system partition: %w", err)
+	}
+	defer unmountLinuxEFIPartition(mountPoint)
+
+	bootloaderPath := filepath.Join(mountPoint, "EFI", "BOOT", "BOOTAA64.EFI")
+	if _, err := os.Stat(bootloaderPath); err != nil {
+		return fmt.Errorf("missing EFI bootloader %s: %w", bootloaderPath, err)
+	}
+	return nil
+}
+
+func attachLinuxDiskReadOnly(diskPath string) ([]string, error) {
+	out, err := exec.Command("hdiutil", "attach", "-readonly", "-nomount", diskPath).CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("hdiutil attach: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var devices []string
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if strings.HasPrefix(fields[0], "/dev/disk") {
+			devices = append(devices, fields[0])
+		}
+	}
+	if len(devices) == 0 {
+		return nil, fmt.Errorf("hdiutil attach returned no devices")
+	}
+	return devices, nil
+}
+
+func detachLinuxDisk(devices []string) {
+	if len(devices) == 0 {
+		return
+	}
+	_ = exec.Command("hdiutil", "detach", devices[0]).Run()
+}
+
+func mountLinuxEFIPartitionReadOnly(device string) (string, error) {
+	out, err := exec.Command("diskutil", "mount", "readOnly", device).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("diskutil mount: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	infoOut, err := exec.Command("diskutil", "info", device).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("diskutil info: %w: %s", err, strings.TrimSpace(string(infoOut)))
+	}
+	for _, line := range strings.Split(string(infoOut), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Mount Point:") {
+			mountPoint := strings.TrimSpace(strings.TrimPrefix(line, "Mount Point:"))
+			if mountPoint != "" && mountPoint != "Not mounted" {
+				return mountPoint, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("could not determine mount point for %s", device)
+}
+
+func unmountLinuxEFIPartition(mountPoint string) {
+	if mountPoint == "" {
+		return
+	}
+	_ = exec.Command("diskutil", "unmount", mountPoint).Run()
 }
 
 // generateMetaData creates the cloud-init meta-data file.
@@ -558,6 +1196,55 @@ func hashPassword(password string) string {
 		return fmt.Sprintf("$6$vz.macos$%s", encoded)
 	}
 	return strings.TrimSpace(string(output))
+}
+
+// monitorInstallCompletion watches the serial log for the first successful
+// shutdown/reboot event. With direct kernel boot the VM would reboot into
+// the same installer kernel, causing an install loop. When the shutdown
+// line is detected we send SIGINT to ourselves so the VM exits cleanly.
+func monitorInstallCompletion(logPath string) {
+	// Poll the log file for the shutdown event.
+	seen := int64(0)
+	for {
+		time.Sleep(5 * time.Second)
+		f, err := os.Open(logPath)
+		if err != nil {
+			continue
+		}
+		if seen > 0 {
+			f.Seek(seen, 0)
+		}
+		buf := make([]byte, 8192)
+		n, _ := f.Read(buf)
+		f.Close()
+		if n == 0 {
+			continue
+		}
+		seen += int64(n)
+		chunk := string(buf[:n])
+		if strings.Contains(chunk, "subiquity/Shutdown/shutdown: mode=REBOOT") ||
+			strings.Contains(chunk, "reboot: Restarting system") {
+			fmt.Println()
+			fmt.Println("=== Installation Complete ===")
+			fmt.Println("The installer has finished and requested a reboot.")
+			fmt.Println("Run the installed VM with: ./vz-macos -linux run")
+			// Give serial log a moment to flush.
+			time.Sleep(2 * time.Second)
+			p, _ := os.FindProcess(os.Getpid())
+			p.Signal(os.Interrupt)
+			return
+		}
+		// Also detect install failure.
+		if strings.Contains(chunk, "install_fail") {
+			fmt.Println()
+			fmt.Println("=== Installation Failed ===")
+			fmt.Printf("Check the serial log for details: %s\n", logPath)
+			time.Sleep(2 * time.Second)
+			p, _ := os.FindProcess(os.Getpid())
+			p.Signal(os.Interrupt)
+			return
+		}
+	}
 }
 
 // handleLinuxInstall handles the "install -linux" command.

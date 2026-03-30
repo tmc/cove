@@ -6,10 +6,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
@@ -32,10 +34,12 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	machineID := loadOrCreateGenericMachineIdentifier()
 	platformConfig.SetMachineIdentifier(&machineID)
 
-	// Enable nested virtualization (KVM in guest) if supported (macOS 15+, M3+)
+	// Leave nested virtualization disabled by default. Recent Ubuntu ARM64
+	// installers can trip into undefined-instruction crashes in overlayfs
+	// when the guest sees a richer virtual CPU feature set than it can
+	// safely use in this environment.
 	if vz.GetVZGenericPlatformConfigurationClass().NestedVirtualizationSupported() {
-		platformConfig.SetNestedVirtualizationEnabled(true)
-		fmt.Println("  Nested virtualization enabled (KVM will be available in guest)")
+		fmt.Println("  Nested virtualization disabled")
 	}
 
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
@@ -139,9 +143,11 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// Virtio socket device (vsock for host-guest communication)
-	vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
-	if vsockConfig.ID != 0 {
-		setSocketDevices(config, vsockConfig)
+	if sandboxAllowsVsock() {
+		vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
+		if vsockConfig.ID != 0 {
+			setSocketDevices(config, vsockConfig)
+		}
 	}
 
 	// Serial console
@@ -174,7 +180,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// Rosetta support for x86-64 binary translation
-	if enableRosetta {
+	if enableRosetta && !sandboxStrict() {
 		if err := AddRosettaToLinuxVM(config, vmDir); err != nil {
 			fmt.Printf("warning: Rosetta setup failed: %v\n", err)
 		}
@@ -342,13 +348,38 @@ func runLinuxVM() error {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
 
-	// For EFI boot (no kernel specified), ensure we have an ISO
+	// For EFI boot: only attach ISO if the VM hasn't been installed yet
+	// (no efi.nvram) or if the user explicitly provided an ISO.
 	if kernelPath == "" {
-		resolvedISO, err := ensureLinuxISO()
-		if err != nil {
-			return fmt.Errorf("ensure ISO: %w", err)
+		efiStorePath := filepath.Join(vmDir, "efi.nvram")
+		isoExplicit := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "iso" {
+				isoExplicit = true
+			}
+		})
+		if isoExplicit || isoPath != "" {
+			// User explicitly wants an ISO — resolve it
+			resolvedISO, err := ensureLinuxISO()
+			if err != nil {
+				return fmt.Errorf("ensure ISO: %w", err)
+			}
+			isoPath = resolvedISO
+		} else if _, err := os.Stat(efiStorePath); os.IsNotExist(err) {
+			if _, markerErr := os.Stat(linuxInstalledMarkerPath(vmDir)); markerErr == nil {
+				// The unattended installer completed previously. Create an EFI
+				// variable store on first real boot, but do not reattach
+				// installation media.
+			} else {
+				// No EFI store yet — first boot, need the ISO
+				resolvedISO, err := ensureLinuxISO()
+				if err != nil {
+					return fmt.Errorf("ensure ISO: %w", err)
+				}
+				isoPath = resolvedISO
+			}
 		}
-		isoPath = resolvedISO
+		// else: efi.nvram exists, boot from disk — no ISO needed
 	}
 
 	// Resolve disk path
@@ -465,8 +496,13 @@ func downloadLinuxISO(urlStr, path string) error {
 
 // ensureLinuxISO ensures we have a Linux ISO, downloading if necessary.
 // ISOs are cached in ~/.vz/cache/ so they survive VM deletion and can be
-// shared across multiple Linux VMs.
+// shared across multiple Linux VMs. Desktop and Server variants use separate
+// cache files (linux-desktop.iso and linux-server.iso).
 func ensureLinuxISO() (string, error) {
+	return ensureLinuxISOForVariant(currentLinuxVariant())
+}
+
+func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 	// If user specified an ISO path, use that directly
 	if isoPath != "" {
 		if isURL(isoPath) {
@@ -486,30 +522,73 @@ func ensureLinuxISO() (string, error) {
 		return isoPath, nil
 	}
 
-	// Check shared cache first (~/.vz/cache/linux.iso)
+	// Determine variant-specific cache file name
 	cacheDir := GetCacheDir()
-	cacheFile := filepath.Join(cacheDir, "linux.iso")
+	var cacheFile string
+	var downloadURL string
+	if variant == LinuxVariantDesktop {
+		cacheFile = filepath.Join(cacheDir, "linux-desktop.iso")
+		downloadURL = UbuntuDesktopARM64URL
+	} else {
+		cacheFile = filepath.Join(cacheDir, "linux-server.iso")
+		downloadURL = UbuntuServerARM64URL
+	}
+
+	// Check variant-specific cache.
 	if info, err := os.Stat(cacheFile); err == nil && info.Size() > 500*1024*1024 {
 		fmt.Printf("Using cached ISO: %s (%.1f GB)\n", cacheFile, float64(info.Size())/(1024*1024*1024))
 		return cacheFile, nil
 	}
 
+	// Check legacy cache file (backward compat) only if it matches the
+	// requested variant. The historical linux.iso name did not encode
+	// Server vs Desktop, so blindly reusing it can boot the wrong installer.
+	legacyCache := filepath.Join(cacheDir, "linux.iso")
+	if info, err := os.Stat(legacyCache); err == nil && info.Size() > 500*1024*1024 {
+		if linuxISOMatchesVariant(legacyCache, variant) {
+			fmt.Printf("Using cached ISO: %s (%.1f GB)\n", legacyCache, float64(info.Size())/(1024*1024*1024))
+			return legacyCache, nil
+		}
+		fmt.Printf("Ignoring cached ISO: %s (does not match Ubuntu %s)\n", legacyCache, variant)
+	}
+
 	// Fall back to per-VM directory for existing installs
 	legacyFile := filepath.Join(vmDir, "linux.iso")
 	if info, err := os.Stat(legacyFile); err == nil && info.Size() > 500*1024*1024 {
-		fmt.Printf("Using existing ISO: %s (%.1f GB)\n", legacyFile, float64(info.Size())/(1024*1024*1024))
-		return legacyFile, nil
+		if linuxISOMatchesVariant(legacyFile, variant) {
+			fmt.Printf("Using existing ISO: %s (%.1f GB)\n", legacyFile, float64(info.Size())/(1024*1024*1024))
+			return legacyFile, nil
+		}
+		fmt.Printf("Ignoring existing ISO: %s (does not match Ubuntu %s)\n", legacyFile, variant)
 	}
 
-	// Download to shared cache
+	// Download to variant-specific cache
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return "", fmt.Errorf("create cache dir: %w", err)
 	}
-	fmt.Println("No ISO specified, downloading Ubuntu Server 24.04 ARM64...")
-	if err := downloadLinuxISO(UbuntuServerARM64URL, cacheFile); err != nil {
+	name := "Server"
+	if variant == LinuxVariantDesktop {
+		name = "Desktop"
+	}
+	fmt.Printf("No ISO specified, downloading Ubuntu %s 24.04 ARM64...\n", name)
+	if err := downloadLinuxISO(downloadURL, cacheFile); err != nil {
 		return "", err
 	}
 	return cacheFile, nil
+}
+
+func linuxISOMatchesVariant(path string, want LinuxVariant) bool {
+	out, err := exec.Command("bsdtar", "-xOf", path, ".disk/info").Output()
+	if err != nil {
+		return false
+	}
+	info := strings.ToLower(string(out))
+	switch want {
+	case LinuxVariantDesktop:
+		return strings.Contains(info, "desktop")
+	default:
+		return strings.Contains(info, "server")
+	}
 }
 
 // isURL checks if a string looks like a URL.

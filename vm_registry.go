@@ -173,14 +173,24 @@ func GetCurrentVMLink() string {
 }
 
 // ValidateVM checks if a directory contains a valid VM.
+// Accepts either macOS files (disk.img + aux.img) or Linux files (linux-disk.img).
 func ValidateVM(vmPath string) bool {
+	// macOS VM: disk.img + aux.img
+	macOSValid := true
 	for _, f := range VMFilesRequired {
-		path := filepath.Join(vmPath, f)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return false
+		if _, err := os.Stat(filepath.Join(vmPath, f)); os.IsNotExist(err) {
+			macOSValid = false
+			break
 		}
 	}
-	return true
+	if macOSValid {
+		return true
+	}
+	// Linux VM: linux-disk.img is sufficient
+	if _, err := os.Stat(filepath.Join(vmPath, "linux-disk.img")); err == nil {
+		return true
+	}
+	return false
 }
 
 // GetVMInfo returns information about a specific VM.
@@ -191,6 +201,10 @@ func GetVMInfo(vmPath string) (*VMInfo, error) {
 
 	name := filepath.Base(vmPath)
 	diskPath := filepath.Join(vmPath, "disk.img")
+	// Fall back to linux-disk.img for Linux VMs
+	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
+		diskPath = filepath.Join(vmPath, "linux-disk.img")
+	}
 
 	// Get disk info
 	diskInfo, err := os.Stat(diskPath)
