@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"text/tabwriter"
 
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
@@ -21,13 +22,14 @@ var (
 	installVM   bool // Deprecated: kept for compatibility, now handled by commands
 	guiMode     bool
 
-	linuxMode  bool
-	cpuCount   uint
-	memoryGB   uint64
-	diskPath   string
-	diskSizeGB uint64
-	ipswPath   string
-	vmDir      string
+	linuxMode    bool
+	linuxDesktop bool
+	cpuCount     uint
+	memoryGB     uint64
+	diskPath     string
+	diskSizeGB   uint64
+	ipswPath     string
+	vmDir        string
 	// Linux-specific flags
 	kernelPath string
 	initrdPath string
@@ -59,8 +61,12 @@ var (
 	vmName string
 	// Clone options
 	cloneLinked bool
+	// Disposable run mode; boots from a temporary linked clone.
+	disposableMode bool
 	// Network mode (nat, bridged:<iface>, vmnet, none)
 	networkMode string
+	// Sandbox policy for safer research runs.
+	sandboxLevel string
 	// USB storage devices
 	usbDevices USBStorageSlice
 	// Display configurations
@@ -74,9 +80,12 @@ var (
 	// Headless mode (disables GUI)
 	headlessMode bool
 	// Unattended install flags
-	unattended       bool
-	bootCommandsFile string
-	debugOCR         bool
+	unattended               bool
+	bootCommandsFile         string
+	debugOCR                 bool
+	automationBackend        string
+	automationCaptureBackend string
+	automationInputBackend   string
 	// Auto-mount tagged volumes via agent
 	autoMountVolumes bool
 	// Auto-upgrade guest agent when version mismatches host
@@ -99,6 +108,8 @@ var (
 	preferPasswordDialog bool
 	// Private VNC server port or :port.
 	vncAddress string
+	// Optional PCAP output when using -network filehandle.
+	pcapPath string
 	// Private VNC password.
 	vncPassword string
 	// Optional Bonjour service name for private VNC.
@@ -125,6 +136,7 @@ func init() {
 	flag.BoolVar(&headlessMode, "headless", false, "run without GUI window")
 
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
+	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.UintVar(&cpuCount, "cpu", 2, "number of CPUs")
 	flag.Uint64Var(&memoryGB, "memory", 4, "memory in GB")
@@ -156,8 +168,12 @@ func init() {
 	flag.StringVar(&vmName, "vm", "", "VM name to use (default: active VM or 'default')")
 	// Clone options
 	flag.BoolVar(&cloneLinked, "linked", false, "create linked clone using APFS copy-on-write")
+	flag.BoolVar(&disposableMode, "disposable", false, "run from a disposable linked clone and delete it after shutdown")
 	// Network mode
-	flag.StringVar(&networkMode, "network", "nat", "network mode: nat, bridged:<iface>, vmnet, none")
+	flag.StringVar(&networkMode, "network", "nat", "network mode: nat, bridged:<iface>, vmnet, filehandle, none")
+	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal or strict")
+	flag.StringVar(&proxyURL, "proxy", "", "configure guest system proxy after boot (for example http://192.168.64.1:8080)")
+	flag.StringVar(&pcapPath, "pcap", "", "write captured Ethernet frames to a PCAP file when using -network filehandle")
 	// USB storage
 	flag.Var(&usbDevices, "usb", "USB storage device: /path/to/disk.img[:ro] (can be repeated)")
 	// Display configuration
@@ -187,6 +203,9 @@ func init() {
 	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (disk provisioning, OCR fallback)")
 	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to boot commands file for custom setup automation")
 	flag.BoolVar(&debugOCR, "debug-ocr", false, "save OCR debug screenshots with text bounding boxes")
+	flag.StringVar(&automationBackend, "automation-backend", "auto", "UI automation backend: auto, framebuffer, or window")
+	flag.StringVar(&automationCaptureBackend, "automation-capture-backend", "", "override screenshot backend: auto, framebuffer, or window")
+	flag.StringVar(&automationInputBackend, "automation-input-backend", "", "override input backend: auto, direct, or window")
 	// Auto-mount volumes
 	flag.BoolVar(&autoMountVolumes, "auto-mount-volumes", true, "auto-mount tagged volumes in guest via agent")
 	flag.BoolVar(&autoUpgradeAgent, "auto-upgrade-agent", false, "auto-upgrade guest agent when version mismatches host")
@@ -196,6 +215,11 @@ func init() {
 
 func main() {
 	flag.Parse()
+
+	// -desktop implies -linux
+	if linuxDesktop {
+		linuxMode = true
+	}
 
 	// Validate mutually exclusive flags.
 	if headlessMode && guiMode {
@@ -243,6 +267,10 @@ func main() {
 
 	// Load saved VM config and apply defaults for flags not explicitly set.
 	applyVMConfig(vmDir)
+	if err := applySandboxDefaults(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Prompt for password securely if -provision-user is set without -provision-password.
 	preferPasswordDialog = guiMode && !headlessMode
@@ -353,6 +381,10 @@ func main() {
 			}
 			return
 		case "shared-folder", "shared-folders":
+			if sharedFolderCommandBlocked(args) {
+				fmt.Fprintf(os.Stderr, "error: -sandbox-level %s does not allow shared-folder mutations\n", sandboxLevel)
+				os.Exit(1)
+			}
 			if err := handleVMSharedFolderCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
@@ -383,6 +415,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "gc":
+			if err := handleGCCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "vzscript":
 			if err := vzscriptCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -399,9 +437,17 @@ func main() {
 		// (e.g., "vz-macos run -gui" parses -gui here).
 		flag.CommandLine.Parse(args)
 
+		if linuxDesktop {
+			linuxMode = true
+		}
+
 		// --headless overrides --gui after subcommand re-parse
 		if headlessMode {
 			guiMode = false
+		}
+		if err := applySandboxDefaults(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
 		}
 		if err := validateLaunchOptions(); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -554,11 +600,44 @@ func handleUTM() {
 }
 
 func handleRun() {
+	originalVMName := vmName
+	originalVMDir := vmDir
+	var clone DisposableClone
+	if disposableMode {
+		source := originalVMName
+		if source == "" {
+			source = filepath.Base(originalVMDir)
+		}
+		created, err := SetupDisposableClone(DisposableSetupOptions{
+			Source:        source,
+			Linked:        true,
+			CopyMachineID: false,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		clone = created
+		vmName = clone.Name
+		vmDir = clone.Path
+		fmt.Printf("Disposable clone: %s\n", clone.Name)
+		fmt.Printf("Disposable path: %s\n", clone.Path)
+	}
+
 	var err error
 	if linuxMode {
 		err = runLinuxVM()
 	} else {
 		err = runMacOSVM()
+	}
+	if disposableMode {
+		if cleanupErr := CleanupDisposableClone(clone.Path); cleanupErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: cleanup disposable clone: %v\n", cleanupErr)
+		} else {
+			fmt.Printf("Disposable clone removed: %s\n", clone.Name)
+		}
+		vmName = originalVMName
+		vmDir = originalVMDir
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -598,6 +677,7 @@ VM Management:
   vm import <path> <name> Import VM from tarball
   vm config ...           Export/import framework config snapshots
   clone           Clone a VM (vz-macos clone [source] <target> [--linked])
+  gc              Delete old disposable VM clones
   template        Manage VM templates (save/list/create)
 
 Shared Folders:
@@ -618,6 +698,10 @@ Runtime Control:
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
   run -headless -vnc :5901            Expose a private VNC console
   run -gdb :1234                      Attach a private GDB debug stub
+  run -sandbox-level strict -disposable -gui
+                                      Safer disposable analysis run
+  run -network filehandle -pcap /tmp/vm.pcap
+                                      Capture raw guest Ethernet frames
 
 Networking:
   network         Network configuration (list interfaces, help)
@@ -660,13 +744,16 @@ Provisioning Strategy (-provision-strategy):
   auto              Try disk first. If it fails, fall back to gui.
 
 Linux VM (Ubuntu):
-  Install and run Ubuntu Server ARM64 using cloud-init autoinstall:
+  Install and run Ubuntu ARM64 using cloud-init autoinstall:
 
-  vz-macos install -linux                                    # Auto-downloads Ubuntu
+  vz-macos install -linux                                    # Ubuntu Server (default)
+  vz-macos install -linux -desktop                           # Ubuntu Desktop
   vz-macos install -linux -iso /path/to/ubuntu.iso           # Use local ISO
   vz-macos install -linux -provision-user me -provision-password pw  # With user
   vz-macos run -linux                                        # Run installed VM
   vz-macos run -linux -gui                                   # Run with display
+  vz-macos up -linux -user me                                # Server: install + boot
+  vz-macos up -linux -desktop -user me                       # Desktop: install + boot
 
 Volume Mounting (-vol flag):
   Docker-style volume mounts. Format: /host/path[:tag][:ro|rw][:opt=val,...]
@@ -710,8 +797,30 @@ func validateLaunchOptions() error {
 	default:
 		return fmt.Errorf("invalid -runtime-profile %q (must be full or minimal)", runtimeProfile)
 	}
+	if _, err := parseAutomationBackend(automationBackend); err != nil {
+		return err
+	}
+	if strings.TrimSpace(automationCaptureBackend) != "" {
+		if _, err := parseAutomationCaptureBackend(automationCaptureBackend); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(automationInputBackend) != "" {
+		if _, err := parseAutomationInputBackend(automationInputBackend); err != nil {
+			return err
+		}
+	}
 	if diskSizeGB < 1 {
 		return fmt.Errorf("disk-size must be at least 1 (GB)")
+	}
+	if _, err := ParseSandboxLevel(sandboxLevel); err != nil {
+		return err
+	}
+	if strings.TrimSpace(pcapPath) != "" && strings.TrimSpace(networkMode) != "filehandle" {
+		return fmt.Errorf("-pcap requires -network filehandle")
+	}
+	if err := validateProxyFlags(); err != nil {
+		return err
 	}
 	if err := validatePrivateRuntimeOptions(); err != nil {
 		return err
@@ -735,14 +844,16 @@ func handleList() {
 	} else {
 		fmt.Println("VMs:")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tSIZE\tCREATED\tACTIVE")
+		fmt.Fprintln(w, "  NAME\tOS\tSTATE\tSIZE\tCREATED\tACTIVE")
 		for _, vm := range vms {
 			active := ""
 			if vm.Name == activeVM {
 				active = "*"
 			}
-			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
 				vm.Name,
+				vm.OSType,
+				vm.State,
 				FormatSize(vm.DiskSize),
 				vm.Created.Format("2006-01-02"),
 				active)
@@ -966,6 +1077,10 @@ func handleVMCommand(args []string) {
 		}
 
 	case "shared-folder", "shared-folders":
+		if sharedFolderCommandBlocked(subargs) {
+			fmt.Fprintf(os.Stderr, "error: -sandbox-level %s does not allow shared-folder mutations\n", sandboxLevel)
+			os.Exit(1)
+		}
 		if err := handleVMSharedFolderCommand(subargs); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
