@@ -99,7 +99,7 @@ func CloneVM(opts CloneOptions) error {
 	}
 
 	// Copy optional files (boot-args.txt, control.token, etc.)
-	optionalFiles := []string{"boot-args.txt", "control.token"}
+	optionalFiles := []string{"boot-args.txt", "control.token", "config.json", "shared_folders.json"}
 	for _, f := range optionalFiles {
 		srcFile := filepath.Join(srcPath, f)
 		dstFile := filepath.Join(dstPath, f)

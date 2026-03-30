@@ -43,6 +43,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "up":
 			fs, _, _ := newUpFlagSet()
 			fs.Usage()
+		case "gc":
+			printGCUsage(os.Stderr)
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
@@ -97,6 +99,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fs.Usage()
 			return true, 0
 		}
+	case "gc":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printGCUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
 	case "provision", "inject":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
@@ -141,6 +148,16 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	}
 
 	return false, 0
+}
+
+func printGCUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: vz-macos gc [options]
+
+Delete disposable VM clones created with -disposable.
+
+Options:
+  -dry-run              Print disposable clones without deleting them
+  -older-than duration  Only delete disposable clones older than the given age`)
 }
 
 func printTemplateUsage(w io.Writer) {
