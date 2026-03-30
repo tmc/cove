@@ -19,6 +19,7 @@ import (
 
 var (
 	flagIntegrationVM          = flag.String("integration.vm", os.Getenv("VZ_TEST_VM"), "existing VM name for integration tests")
+	flagIntegrationLinuxVM     = flag.String("integration.linux-vm", envOrString("VZ_TEST_LINUX_VM", "vz-linux-test"), "Linux VM name for integration tests")
 	flagIntegrationHeadless    = flag.Bool("integration.headless", envBool("VZ_TEST_HEADLESS"), "skip GUI-dependent integration tests")
 	flagIntegrationSIP         = flag.Bool("integration.sip", envBool("VZ_TEST_SIP"), "run SIP recovery integration test")
 	flagIntegrationSIPUser     = flag.String("integration.sip-user", os.Getenv("VZ_TEST_SIP_USER"), "recovery auth username for SIP integration test")
@@ -31,6 +32,7 @@ type testVM struct {
 	dir           string
 	sock          string
 	token         string
+	linux         bool
 	startedByTest bool
 	cmd           *exec.Cmd
 	waitCh        chan error
@@ -58,6 +60,15 @@ func TestIntegration(t *testing.T) {
 	}
 }
 
+func TestLinuxIntegration(t *testing.T) {
+	vm := acquireLinuxTestVM(t)
+	t.Cleanup(func() { vm.Cleanup(t) })
+
+	t.Run("agent", func(t *testing.T) { testLinuxAgent(t, vm) })
+	t.Run("ctl", func(t *testing.T) { testLinuxCtl(t, vm) })
+	t.Run("network", func(t *testing.T) { testLinuxNetwork(t, vm) })
+}
+
 func envBool(name string) bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
 	return v == "1" || v == "true" || v == "yes" || v == "on"
@@ -65,6 +76,39 @@ func envBool(name string) bool {
 
 func acquireTestVM(t *testing.T) *testVM {
 	return acquireIntegrationVM(t)
+}
+
+func acquireLinuxTestVM(t *testing.T) *testVM {
+	t.Helper()
+
+	name := strings.TrimSpace(*flagIntegrationLinuxVM)
+	if name == "" {
+		t.Skip("set -integration.linux-vm or VZ_TEST_LINUX_VM to a Linux VM name")
+	}
+
+	dir := resolvePath(GetVMPath(name))
+	if !ValidateVM(dir) {
+		t.Skipf("Linux VM %q not found at %s (run: vz-macos install -linux -vm %s)", name, dir, name)
+	}
+
+	tokenPath := GetControlTokenPathForVM(dir)
+	token, err := LoadControlTokenFromPath(tokenPath)
+	if err != nil {
+		t.Fatalf("load control token %q: %v", tokenPath, err)
+	}
+
+	vm := &testVM{
+		name:  name,
+		dir:   dir,
+		sock:  GetControlSocketPathForVM(dir),
+		token: token,
+		linux: true,
+	}
+	if !controlSocketReady(vm.sock, vm.token) {
+		startTestVM(t, vm)
+	}
+	waitVMReadyTB(t, vm, 3*time.Minute)
+	return vm
 }
 
 func (vm *testVM) Cleanup(t *testing.T) {
@@ -214,6 +258,9 @@ func startTestVM(tb testing.TB, vm *testVM) {
 	vm.logPath = logFile.Name()
 
 	args := []string{"-vm", vm.name}
+	if vm.linux {
+		args = append(args, "-linux")
+	}
 	if *flagIntegrationHeadless {
 		args = append(args, "-headless")
 	} else {

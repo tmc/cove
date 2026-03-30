@@ -19,19 +19,24 @@ import (
 // upConfig holds all configuration for the "up" command.
 // It is built from flags and used to drive the install/inject/run pipeline.
 type upConfig struct {
-	user       string
-	password   string
-	vmName     string
-	vmDir      string
-	ipswPath   string
-	vzscripts  string
-	cpuCount   uint
-	memoryGB   uint64
-	diskSizeGB uint64
-	gui        bool
-	force      bool
-	noShutdown bool
-	verbose    bool
+	user                     string
+	password                 string
+	vmName                   string
+	vmDir                    string
+	ipswPath                 string
+	vzscripts                string
+	cpuCount                 uint
+	memoryGB                 uint64
+	diskSizeGB               uint64
+	automationBackend        string
+	automationCaptureBackend string
+	automationInputBackend   string
+	gui                      bool
+	force                    bool
+	noShutdown               bool
+	verbose                  bool
+	linux                    bool
+	desktop                  bool
 }
 
 // handleUp implements the "up" subcommand: install -> inject -> run -> vzscripts.
@@ -66,11 +71,32 @@ func parseUpFlags(args []string) (upConfig, error) {
 		}
 		return upConfig{}, err
 	}
-	if cfg.user == "" {
+	// -desktop implies -linux.
+	if cfg.desktop {
+		cfg.linux = true
+	}
+	// For Linux, user is optional (defaults to ubuntu/ubuntu).
+	if cfg.user == "" && !cfg.linux {
 		return upConfig{}, fmt.Errorf("missing required flag: -user")
+	}
+	if cfg.linux && cfg.user == "" {
+		cfg.user = "ubuntu"
 	}
 	if *headless {
 		cfg.gui = false
+	}
+	if _, err := parseAutomationBackend(cfg.automationBackend); err != nil {
+		return upConfig{}, err
+	}
+	if strings.TrimSpace(cfg.automationCaptureBackend) != "" {
+		if _, err := parseAutomationCaptureBackend(cfg.automationCaptureBackend); err != nil {
+			return upConfig{}, err
+		}
+	}
+	if strings.TrimSpace(cfg.automationInputBackend) != "" {
+		if _, err := parseAutomationInputBackend(cfg.automationInputBackend); err != nil {
+			return upConfig{}, err
+		}
 	}
 
 	// Resolve VM directory.
@@ -82,8 +108,8 @@ func parseUpFlags(args []string) (upConfig, error) {
 		cfg.vmDir = dir
 	}
 
-	// Prompt for password if not provided.
-	if cfg.password == "" {
+	// Prompt for password if not provided (skip for Linux with defaults).
+	if cfg.password == "" && !cfg.linux {
 		preferPasswordDialog = cfg.gui
 		pw, err := readPassword(fmt.Sprintf("Password for %s: ", cfg.user))
 		if err != nil {
@@ -93,6 +119,8 @@ func parseUpFlags(args []string) (upConfig, error) {
 		if cfg.password == "" {
 			return upConfig{}, fmt.Errorf("password required")
 		}
+	} else if cfg.password == "" && cfg.linux {
+		cfg.password = cfg.user // Default: password = username for Linux.
 	}
 
 	return *cfg, nil
@@ -114,9 +142,14 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.UintVar(&cfg.cpuCount, "cpu", 2, "Number of CPUs")
 	fs.Uint64Var(&cfg.memoryGB, "memory", 4, "Memory in GB")
 	fs.Uint64Var(&cfg.diskSizeGB, "disk-size", 64, "Disk size in GB")
+	fs.StringVar(&cfg.automationBackend, "automation-backend", "auto", "UI automation backend: auto, framebuffer, or window")
+	fs.StringVar(&cfg.automationCaptureBackend, "automation-capture-backend", "", "override screenshot backend: auto, framebuffer, or window")
+	fs.StringVar(&cfg.automationInputBackend, "automation-input-backend", "", "override input backend: auto, direct, or window")
 	fs.BoolVar(&cfg.noShutdown, "no-shutdown", false, "Leave the VM running after vzscripts complete")
 	fs.BoolVar(&cfg.verbose, "v", false, "Verbose output")
 	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
+	fs.BoolVar(&cfg.linux, "linux", false, "Install a Linux VM instead of macOS")
+	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
 	fs.Usage = func() {
 		printUpUsage(os.Stderr, fs)
 	}
@@ -126,19 +159,23 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 func printUpUsage(w io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintf(w, `Usage: vz-macos up [options]
 
-Install, provision, and boot a macOS VM in one command.
+Install, provision, and boot a VM in one command.
 
-Combines: install -> provision -> run [-> vzscripts]
+macOS: install -> provision -> run [-> vzscripts]
+Linux: install (cloud-init provisions) -> run [-> vzscripts]
 
 Options:
 `)
 	fs.PrintDefaults()
 	fmt.Fprintf(w, `
 Examples:
-  vz-macos up -user me
-  vz-macos up -user me -vzscripts homebrew,openclaw
-  vz-macos up -user me -ipsw ~/restore.ipsw
-  vz-macos up -user me -headless -cpu 4 -memory 8 -vzscripts developer-tools
+  vz-macos up -user me                                        # macOS VM
+  vz-macos up -user me -vzscripts homebrew,openclaw            # macOS + recipes
+  vz-macos up -user me -ipsw ~/restore.ipsw                   # macOS with IPSW
+  vz-macos up -linux                                           # Linux Server (ubuntu/ubuntu)
+  vz-macos up -linux -user tmc -password secret                # Linux with custom user
+  vz-macos up -linux -desktop -user me                         # Ubuntu Desktop
+  vz-macos up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
 `)
 }
 
@@ -158,14 +195,27 @@ func applyUpConfig(cfg upConfig) {
 	diskSizeGB = cfg.diskSizeGB
 	verbose = cfg.verbose
 	guiMode = cfg.gui
+	automationBackend = cfg.automationBackend
+	automationCaptureBackend = cfg.automationCaptureBackend
+	automationInputBackend = cfg.automationInputBackend
 	provisionUser = cfg.user
 	provisionPassword = cfg.password
 	provisionStrategy = "disk"
 	installVM = true
+	if cfg.linux {
+		linuxMode = true
+	}
+	if cfg.desktop {
+		linuxDesktop = true
+	}
 }
 
 // runUpPipeline executes the install -> inject -> run pipeline.
 func runUpPipeline(cfg upConfig) error {
+	if cfg.linux {
+		return runLinuxUpPipeline(cfg)
+	}
+
 	// Step 1: Install macOS.
 	fmt.Println("=== Step 1/3: Installing macOS ===")
 	installErr := installMacOSLikeVZ(context.Background())
@@ -187,8 +237,8 @@ func runUpPipeline(cfg upConfig) error {
 			},
 			SkipSetupAssistant: true,
 			AutoLogin:          true,
-			InjectAgent:        true,
-			InjectGuestTools:   true,
+			InjectAgent:        sandboxAllowsAgentProvision(),
+			InjectGuestTools:   !sandboxActive(),
 		}
 		if _, err := stageProvisioningFiles(opts); err != nil {
 			return fmt.Errorf("stage provisioning: %w", err)
@@ -299,6 +349,105 @@ func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
 	vmErr := runMacOSVM()
 
 	// Check if scripts reported an error before VM exited.
+	select {
+	case err := <-scriptsDone:
+		if err != nil && vmErr == nil {
+			return err
+		}
+	default:
+	}
+
+	return vmErr
+}
+
+// runLinuxUpPipeline executes the install -> run pipeline for Linux VMs.
+// Cloud-init handles user provisioning during install, so no inject step is needed.
+func runLinuxUpPipeline(cfg upConfig) error {
+	// Step 1: Install Linux VM (cloud-init provisions the user).
+	fmt.Println("=== Step 1/2: Installing Linux VM ===")
+	if err := installLinuxVM(); err != nil {
+		return fmt.Errorf("install: %w", err)
+	}
+
+	// Step 2: Boot VM and optionally run vzscripts.
+	recipes := splitRecipes(cfg.vzscripts)
+	if len(recipes) > 0 {
+		savePostInstallRecipes(vmDir, cfg.vzscripts)
+		fmt.Println()
+		fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
+		return runLinuxUpWithVZScripts(recipes, cfg.noShutdown, cfg.verbose)
+	}
+
+	fmt.Println()
+	fmt.Println("=== Step 2/2: Booting Linux VM ===")
+	return runLinuxVM()
+}
+
+// runLinuxUpWithVZScripts boots a Linux VM and runs vzscript recipes.
+func runLinuxUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
+	for _, name := range recipes {
+		if _, err := loadVZScriptData(name); err != nil {
+			return fmt.Errorf("recipe %q: %w", name, err)
+		}
+	}
+
+	sock := GetControlSocketPath()
+	cfg := vzscriptConfig{
+		socketPath:  sock,
+		execTimeout: 30 * time.Minute,
+		verbose:     verboseMode,
+		env: []string{
+			"USERNAME=" + provisionUser,
+			"PASSWORD=" + provisionPassword,
+		},
+	}
+
+	scriptsDone := make(chan error, 1)
+	go func() {
+		fmt.Println("Waiting for VM to boot and guest agent...")
+		waitScript := []byte("guest-wait 15m\n")
+		if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
+			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
+			return
+		}
+
+		for _, name := range recipes {
+			fmt.Printf("\n=== Running vzscript: %s ===\n", name)
+			data, err := loadVZScriptData(name)
+			if err != nil {
+				scriptsDone <- err
+				return
+			}
+			ar := txtar.Parse(data)
+			meta := parseScriptMeta(ar.Comment)
+			if len(meta.mounts) > 0 {
+				if err := applyMountDirectives(meta.mounts, cfg.socketPath, cfg.verbose); err != nil {
+					scriptsDone <- fmt.Errorf("recipe %s: mount: %w", name, err)
+					return
+				}
+			}
+			if err := runVZScript(data, name, cfg); err != nil {
+				scriptsDone <- fmt.Errorf("%s: %w", name, err)
+				return
+			}
+			fmt.Printf("=== Done: %s ===\n", name)
+		}
+
+		if noShutdown {
+			fmt.Println("\nAll vzscripts complete. VM is still running.")
+			fmt.Println("Use 'vz-macos ctl stop' to shut it down.")
+			scriptsDone <- nil
+			return
+		}
+
+		fmt.Println("\nShutting down VM...")
+		_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
+		fmt.Println("\nPost-install complete.")
+		scriptsDone <- nil
+	}()
+
+	vmErr := runLinuxVM()
+
 	select {
 	case err := <-scriptsDone:
 		if err != nil && vmErr == nil {
