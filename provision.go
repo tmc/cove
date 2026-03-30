@@ -747,10 +747,9 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 //
 // Strategy:
 //  1. Try sudo -n (reuse cached credentials).
-//  2. Try native AuthorizationServices (system dialog with Touch ID).
-//  3. Fall back to password prompt + sudo -S.
+//  2. Fall back to password prompt + sudo -S.
 //
-// The prompt string is shown in the native macOS authorization dialog.
+// The prompt string is shown in the password prompt/dialog path.
 func runElevatedBash(scriptPath, prompt string) error {
 	// Try cached sudo credentials first.
 	cmd := exec.Command("sudo", "-n", "bash", scriptPath)
@@ -775,13 +774,9 @@ func runElevatedBash(scriptPath, prompt string) error {
 		return fmt.Errorf("elevated apply: %w", err)
 	}
 
-	// Try native macOS authorization (system dialog with Touch ID).
-	fmt.Println("A macOS authorization dialog will appear (Touch ID or password).")
-	if err := runElevatedBashNative(scriptPath, prompt); err == nil {
-		return nil
-	}
-
-	// Fall back to password prompt + sudo -S.
+	// AuthorizationCopyRights via purego currently traps on macOS 26 in this
+	// process, so use the existing password prompt/dialog fallback instead.
+	fmt.Println("A macOS password prompt will appear.")
 	return runElevatedBashSudo(scriptPath)
 }
 
