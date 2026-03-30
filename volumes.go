@@ -115,6 +115,12 @@ func printVolumeMountInfo(mounts []VolumeMount) {
 // to the VM config for future runs. When no -vol flags are given, saved
 // volumes from the VM config are loaded instead.
 func getEffectiveVolumes() []VolumeMount {
+	policy, err := currentSandboxPolicy()
+	if err != nil {
+		fmt.Printf("warning: sandbox policy: %v\n", err)
+		return nil
+	}
+
 	cliVolumes := make([]VolumeMount, len(volumes))
 	copy(cliVolumes, volumes)
 
@@ -140,6 +146,9 @@ func getEffectiveVolumes() []VolumeMount {
 
 	// If volumes were specified on the command line, save them to config.
 	if len(cliVolumes) > 0 {
+		if !policy.AllowsVolumes() {
+			return nil
+		}
 		if err := saveVolumesToConfig(vmDir, cliVolumes); err != nil {
 			fmt.Printf("warning: save volume config: %v\n", err)
 		}
@@ -152,10 +161,10 @@ func getEffectiveVolumes() []VolumeMount {
 		fmt.Printf("warning: load volume config: %v\n", err)
 		return nil
 	}
-	if len(cfg.Volumes) > 0 {
+	if len(cfg.Volumes) > 0 && policy.AllowsVolumes() {
 		fmt.Printf("Using saved volume mounts from %s\n", filepath.Join(vmDir, "config.json"))
 	}
-	return cfg.Volumes
+	return policy.EffectiveVolumes(nil, cfg.Volumes)
 }
 
 // saveVolumesToConfig persists volume mounts to the VM config file.
@@ -185,7 +194,7 @@ func taggedVolumes(mounts []VolumeMount) []VolumeMount {
 // after VM start.
 func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []VolumeMount) {
 	tagged := taggedVolumes(mounts)
-	if len(tagged) == 0 && len(LoadSharedFolders(vmDir)) == 0 {
+	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 {
 		return
 	}
 
@@ -201,7 +210,7 @@ func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []Vol
 			mountTaggedVolumesOnce(ctx, cs, tagged)
 		}
 
-		sharedConfigured := len(LoadSharedFolders(vmDir)) > 0
+		sharedConfigured := len(effectiveSharedFolders(vmDir)) > 0
 		if sharedConfigured && !linuxMode {
 			mounted, err := mountSharedFoldersInGuest(vmDir, defaultSharedFoldersMountPoint)
 			if err != nil {

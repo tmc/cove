@@ -177,8 +177,8 @@ func stopVMAndInject(vm *virtualMachine) {
 		},
 		SkipSetupAssistant: true,
 		AutoLogin:          true,
-		InjectAgent:        true,
-		InjectGuestTools:   true,
+		InjectAgent:        sandboxAllowsAgentProvision(),
+		InjectGuestTools:   !sandboxActive(),
 	}
 	if err := injectProvisioningFilesWithOptions(injectOpts); err != nil {
 		fmt.Printf("warning: disk provisioning failed: %v\n", err)
