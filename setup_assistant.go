@@ -853,11 +853,10 @@ func (s *SetupAssistant) pressKey(keyCode uint16) {
 }
 
 // typeText types a string via either path.
-// For in-process mode, uses CGEvent typing through the window server
-// (same path as real keyboard input).
+// For in-process mode, it follows the configured automation backend.
 func (s *SetupAssistant) typeText(text string) {
 	if s.cs != nil {
-		s.log("typeText(cgevent): %q", text)
+		s.log("typeText(%s): %q", s.cs.inputBackend().inputString(), text)
 		s.cs.typeText(&controlpb.TextCommand{Text: text})
 		return
 	}

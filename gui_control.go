@@ -20,10 +20,15 @@ const (
 )
 
 type GUIStatus struct {
-	Supported   bool   `json:"supported"`
-	Headed      bool   `json:"headed"`
-	WindowReady bool   `json:"window_ready"`
-	CaptureMode string `json:"capture_mode"`
+	Supported         bool   `json:"supported"`
+	Headed            bool   `json:"headed"`
+	WindowReady       bool   `json:"window_ready"`
+	CaptureMode       string `json:"capture_mode"`
+	AutomationBackend string `json:"automation_backend"`
+	CaptureBackend    string `json:"capture_backend"`
+	InputBackend      string `json:"input_backend"`
+	KeyboardMode      string `json:"keyboard_mode"`
+	MouseMode         string `json:"mouse_mode"`
 }
 
 type VMGUIController interface {
@@ -344,11 +349,21 @@ func (s *ControlServer) handleGUIRequest(reqType string) *controlpb.ControlRespo
 		Supported:   ctrl != nil,
 		Headed:      windowReady,
 		WindowReady: windowReady,
-		CaptureMode: "window",
 	}
 	if ctrl != nil {
 		status = ctrl.Status()
 	}
+	refreshStatus := func() {
+		capture := s.captureBackend()
+		input := s.inputBackend()
+		status.AutomationBackend = combinedAutomationBackend(capture, input)
+		status.CaptureBackend = capture.String()
+		status.InputBackend = input.inputString()
+		status.CaptureMode = capture.captureMode(status.Headed)
+		status.KeyboardMode = input.keyboardMode()
+		status.MouseMode = input.mouseMode()
+	}
+	refreshStatus()
 
 	switch reqType {
 	case "gui-open":
@@ -359,6 +374,7 @@ func (s *ControlServer) handleGUIRequest(reqType string) *controlpb.ControlRespo
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("gui open: %v", err)}
 		}
 		status = ctrl.Status()
+		refreshStatus()
 	case "gui-close":
 		if ctrl == nil {
 			return &controlpb.ControlResponse{Error: "gui control unavailable for this runtime"}
@@ -367,6 +383,37 @@ func (s *ControlServer) handleGUIRequest(reqType string) *controlpb.ControlRespo
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("gui close: %v", err)}
 		}
 		status = ctrl.Status()
+		refreshStatus()
+	case "gui-backend-auto":
+		s.setCaptureBackend(automationBackendAuto)
+		s.setInputBackend(automationBackendAuto)
+		refreshStatus()
+	case "gui-backend-framebuffer":
+		s.setCaptureBackend(automationBackendFramebuffer)
+		s.setInputBackend(automationBackendFramebuffer)
+		refreshStatus()
+	case "gui-backend-window":
+		s.setCaptureBackend(automationBackendWindow)
+		s.setInputBackend(automationBackendWindow)
+		refreshStatus()
+	case "gui-capture-backend-auto":
+		s.setCaptureBackend(automationBackendAuto)
+		refreshStatus()
+	case "gui-capture-backend-framebuffer":
+		s.setCaptureBackend(automationBackendFramebuffer)
+		refreshStatus()
+	case "gui-capture-backend-window":
+		s.setCaptureBackend(automationBackendWindow)
+		refreshStatus()
+	case "gui-input-backend-auto":
+		s.setInputBackend(automationBackendAuto)
+		refreshStatus()
+	case "gui-input-backend-direct":
+		s.setInputBackend(automationBackendFramebuffer)
+		refreshStatus()
+	case "gui-input-backend-window":
+		s.setInputBackend(automationBackendWindow)
+		refreshStatus()
 	case "gui-status":
 	default:
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown gui command: %s", reqType)}

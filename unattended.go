@@ -122,8 +122,9 @@ func attemptLogin(cs *ControlServer, ocr *OCRService) error {
 	}
 
 	time.Sleep(200 * time.Millisecond)
-	resp = cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: true, UseCgEvent: true}) // Return
-	cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: false, UseCgEvent: true})
+	useCGEvent := cs.inputBackend() == automationBackendWindow
+	resp = cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: true, UseCgEvent: useCGEvent}) // Return
+	cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: false, UseCgEvent: useCGEvent})
 
 	// Wait for desktop
 	deadline := time.Now().Add(60 * time.Second)

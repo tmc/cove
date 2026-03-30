@@ -315,11 +315,12 @@ func (e *BootCommandExecutor) typeAndReturnIfText(needle, value string, timeout 
 
 func (e *BootCommandExecutor) sendKey(keySpec string) error {
 	keyCode, modifiers := parseKeySpec(keySpec)
+	useCGEvent := e.cs != nil && e.cs.inputBackend() == automationBackendWindow
 	resp := e.cs.sendKeyEvent(&controlpb.KeyCommand{
 		KeyCode:    uint32(keyCode),
 		KeyDown:    true,
 		Modifiers:  uint32(modifiers),
-		UseCgEvent: true,
+		UseCgEvent: useCGEvent,
 	})
 	if !resp.Success {
 		return fmt.Errorf("send key: %s", resp.Error)
@@ -329,7 +330,7 @@ func (e *BootCommandExecutor) sendKey(keySpec string) error {
 		KeyCode:    uint32(keyCode),
 		KeyDown:    false,
 		Modifiers:  uint32(modifiers),
-		UseCgEvent: true,
+		UseCgEvent: useCGEvent,
 	})
 	if !resp.Success {
 		return fmt.Errorf("send key up: %s", resp.Error)

@@ -55,6 +55,9 @@ Commands:
   gui status            Report whether the VM is currently headed or headless
   gui open              Show the live VM window for a headless runtime
   gui close             Return the runtime to headless mode without stopping it
+  gui backend <mode>    Set automation backend: auto, framebuffer, or window
+  gui capture-backend <mode>  Set screenshot backend: auto, framebuffer, or window
+  gui input-backend <mode>    Set input backend: auto, direct, or window
   vnc status            Report VNC server status
   debug-stub status     Report debug stub status
   disk list             List runtime storage devices
@@ -247,7 +250,7 @@ func ctlCommand(args []string) error {
 		return ctlITerm2ProxyCommand(sock, "iterm2-proxy-status", *raw)
 	case "gui":
 		if len(subArgs) < 1 {
-			return fmt.Errorf("gui requires action: status, open, or close")
+			return fmt.Errorf("gui requires action: status, open, close, backend, capture-backend, or input-backend")
 		}
 		action := subArgs[0]
 		switch action {
@@ -257,8 +260,35 @@ func ctlCommand(args []string) error {
 			return ctlSimpleCommand(sock, "gui-open", *timeout, *raw)
 		case "close":
 			return ctlSimpleCommand(sock, "gui-close", *timeout, *raw)
+		case "backend":
+			if len(subArgs) < 2 {
+				return fmt.Errorf("gui backend requires mode: auto, framebuffer, or window")
+			}
+			mode, err := parseAutomationBackend(subArgs[1])
+			if err != nil {
+				return err
+			}
+			return ctlSimpleCommand(sock, "gui-backend-"+mode.String(), *timeout, *raw)
+		case "capture-backend":
+			if len(subArgs) < 2 {
+				return fmt.Errorf("gui capture-backend requires mode: auto, framebuffer, or window")
+			}
+			mode, err := parseAutomationCaptureBackend(subArgs[1])
+			if err != nil {
+				return err
+			}
+			return ctlSimpleCommand(sock, "gui-capture-backend-"+mode.String(), *timeout, *raw)
+		case "input-backend":
+			if len(subArgs) < 2 {
+				return fmt.Errorf("gui input-backend requires mode: auto, direct, or window")
+			}
+			mode, err := parseAutomationInputBackend(subArgs[1])
+			if err != nil {
+				return err
+			}
+			return ctlSimpleCommand(sock, "gui-input-backend-"+mode.inputString(), *timeout, *raw)
 		default:
-			return fmt.Errorf("unknown gui action: %s (use status, open, or close)", action)
+			return fmt.Errorf("unknown gui action: %s (use status, open, close, backend, capture-backend, or input-backend)", action)
 		}
 	case "vnc":
 		if len(subArgs) < 1 {

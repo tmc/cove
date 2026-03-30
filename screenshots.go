@@ -78,6 +78,13 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 }
 
 func (s *ControlServer) captureDisplayImage() (image.Image, string) {
+	switch s.captureBackend() {
+	case automationBackendFramebuffer:
+		return s.capturePrivateGraphicsDisplay()
+	case automationBackendWindow:
+		return s.captureVMView()
+	}
+
 	s.mu.Lock()
 	gui := s.gui
 	s.mu.Unlock()

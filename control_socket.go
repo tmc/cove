@@ -72,6 +72,8 @@ type ControlServer struct {
 	healthMu          sync.RWMutex     // protects agentHealth
 	agentHealth       agentHealthState // proactive health monitoring state
 	gui               VMGUIController
+	captureMode       atomic.Int32
+	inputMode         atomic.Int32
 }
 
 // agentHealthState tracks proactive agent health monitoring.
@@ -95,10 +97,30 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 	if vmDirectory == "" {
 		vmDirectory = vmDir
 	}
-	return &ControlServer{
+	s := &ControlServer{
 		socketPath: socketPath,
 		vmDir:      vmDirectory,
 	}
+	capture, input := resolveAutomationBackends()
+	s.setCaptureBackend(capture)
+	s.setInputBackend(input)
+	return s
+}
+
+func (s *ControlServer) captureBackend() automationBackendMode {
+	return automationBackendMode(s.captureMode.Load())
+}
+
+func (s *ControlServer) setCaptureBackend(mode automationBackendMode) {
+	s.captureMode.Store(int32(mode))
+}
+
+func (s *ControlServer) inputBackend() automationBackendMode {
+	return automationBackendMode(s.inputMode.Load())
+}
+
+func (s *ControlServer) setInputBackend(mode automationBackendMode) {
+	s.inputMode.Store(int32(mode))
 }
 
 func (s *ControlServer) effectiveVMDir() string {
@@ -323,7 +345,10 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.handleITerm2ProxyStop()
 	case "iterm2-proxy-status":
 		return s.handleITerm2ProxyStatus()
-	case "gui-open", "gui-close", "gui-status":
+	case "gui-open", "gui-close", "gui-status",
+		"gui-backend-auto", "gui-backend-framebuffer", "gui-backend-window",
+		"gui-capture-backend-auto", "gui-capture-backend-framebuffer", "gui-capture-backend-window",
+		"gui-input-backend-auto", "gui-input-backend-direct", "gui-input-backend-window":
 		return s.handleGUIRequest(req.Type)
 	case "port-forward":
 		cmd := req.GetPortForward()
@@ -727,12 +752,15 @@ func (s *ControlServer) sendKeyEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 		return s.sendKeyChordEvent(cmd)
 	}
 
-	// For non-modifier keys, keep the simple path unless caller explicitly asks
-	// for CGEvent fallback behavior.
+	// For non-modifier keys, choose the configured automation backend unless
+	// the caller explicitly asks for CGEvent-style fallback behavior.
 	return s.sendKeyEventPrimitive(cmd)
 }
 
 func (s *ControlServer) sendKeyEventPrimitive(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	if s.inputBackend() == automationBackendWindow {
+		return s.sendKeyEventCGEvent(cmd)
+	}
 	if cmd.UseCgEvent {
 		return s.sendKeyEventMultiPath(cmd, false)
 	}
@@ -1134,10 +1162,8 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 }
 
 // sendMouseEvent sends a mouse event to the VM.
-// Uses VZVirtualMachine's private sendPointerNSEvent:pointingDeviceIndex:
-// to deliver mouse events directly through the VM's input pipeline,
-// bypassing CGEvent entirely. Falls back to CGEvent if the VM doesn't
-// support the private API.
+// Uses either the direct VM input path or the host window-server CGEvent path,
+// depending on the configured automation backend.
 func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.ControlResponse {
 	if s.vmView.ID == 0 {
 		return &controlpb.ControlResponse{Error: "mouse input requires GUI mode (run with -gui)"}
@@ -1169,6 +1195,13 @@ func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.C
 			X: cmd.X, Y: cmd.Y, Button: cmd.Button, Action: "up", Absolute: cmd.Absolute,
 		}
 		return s.sendMouseEvent(upCmd)
+	}
+
+	switch s.inputBackend() {
+	case automationBackendWindow:
+		return s.sendMouseEventCGEvent(cmd)
+	case automationBackendFramebuffer:
+		return s.sendMouseEventVMDirect(cmd)
 	}
 
 	// Try the direct VM input path first (sendPointerNSEvent:pointingDeviceIndex:).
@@ -1367,9 +1400,8 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 }
 
 // typeText types text into the VM character by character. Each character is
-// mapped to its macOS virtual keycode and sent via sendKeyEventNSEvent which
-// creates CGEvents (for correct keyCodes) and delivers them as NSEvents
-// directly to VZVirtualMachineView's keyDown:/keyUp: handlers.
+// mapped to its macOS virtual keycode and delivered through the configured
+// automation backend.
 func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlResponse {
 	if s.vmView.ID == 0 || s.window.ID == 0 {
 		return &controlpb.ControlResponse{Error: "text input requires GUI mode (run with -gui)"}
@@ -1377,6 +1409,11 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 
 	if verbose {
 		fmt.Printf("[typeText] typing %d chars: %q\n", len([]rune(cmd.Text)), cmd.Text)
+	}
+
+	sendKey := s.sendKeyEventNSEvent
+	if s.inputBackend() == automationBackendWindow {
+		sendKey = s.sendKeyEventCGEvent
 	}
 
 	for _, ch := range cmd.Text {
@@ -1399,7 +1436,7 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 			Modifiers: mods,
 			Character: string(ch),
 		}
-		if resp := s.sendKeyEventNSEvent(downCmd); resp.Error != "" {
+		if resp := sendKey(downCmd); resp.Error != "" {
 			return resp
 		}
 		time.Sleep(30 * time.Millisecond)
@@ -1410,7 +1447,7 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 			Modifiers: mods,
 			Character: string(ch),
 		}
-		if resp := s.sendKeyEventNSEvent(upCmd); resp.Error != "" {
+		if resp := sendKey(upCmd); resp.Error != "" {
 			return resp
 		}
 		time.Sleep(50 * time.Millisecond)
