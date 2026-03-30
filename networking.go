@@ -12,11 +12,12 @@ import (
 type NetworkMode = networkx.Mode
 
 const (
-	NetworkModeNAT      = networkx.ModeNAT
-	NetworkModeBridged  = networkx.ModeBridged
-	NetworkModeHostOnly = networkx.ModeHostOnly
-	NetworkModeVMNet    = networkx.ModeVMNet
-	NetworkModeNone     = networkx.ModeNone
+	NetworkModeNAT                    = networkx.ModeNAT
+	NetworkModeBridged                = networkx.ModeBridged
+	NetworkModeHostOnly               = networkx.ModeHostOnly
+	NetworkModeVMNet                  = networkx.ModeVMNet
+	NetworkModeNone                   = networkx.ModeNone
+	NetworkModeFileHandle NetworkMode = "filehandle"
 )
 
 // NetworkConfig holds network configuration settings.
@@ -24,11 +25,17 @@ type NetworkConfig = networkx.Config
 
 // ParseNetworkMode parses a network mode string.
 func ParseNetworkMode(s string) (NetworkConfig, error) {
+	if s == string(NetworkModeFileHandle) {
+		return NetworkConfig{Mode: NetworkModeFileHandle}, nil
+	}
 	return networkx.Parse(s)
 }
 
 // CreateNetworkDeviceConfiguration creates a complete network device configuration.
 func CreateNetworkDeviceConfiguration(config NetworkConfig) (vz.VZVirtioNetworkDeviceConfiguration, error) {
+	if config.Mode == NetworkModeFileHandle {
+		return prepareFileHandleNetworkDevice()
+	}
 	return networkx.CreateDevice(config)
 }
 
@@ -40,6 +47,7 @@ func NetworkModeHelp() string {
                    Guest appears on same network as host
   host-only        Private host-only network between host and guest
   vmnet            VMNet shared networking (macOS 14+)
+  filehandle       Host-side filehandle attachment for raw frame capture
   none             No networking
 
 Examples:
@@ -47,6 +55,7 @@ Examples:
   -network bridged:en0      Bridge to ethernet
   -network host-only        Host and guest only
   -network bridged:en1      Bridge to WiFi (check 'vz-macos network list')
+  -network filehandle       Raw frame capture via VZFileHandleNetworkDeviceAttachment
   -network none             Disable networking`
 }
 
