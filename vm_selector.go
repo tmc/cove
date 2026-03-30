@@ -161,7 +161,7 @@ func selectorLabel(
 
 func selectorPanel(frame corefoundation.CGRect) appkit.NSBox {
 	panel := appkit.NewBoxWithFrame(frame)
-	panel.SetBoxType(appkit.NSBoxCustom)
+	panel.SetBoxType(nsBoxCustom)
 	objc.Send[struct{}](panel.ID, objc.Sel("setBorderType:"), appkit.NSLineBorder)
 	panel.SetTitlePosition(appkit.NSNoTitle)
 	panel.SetBorderWidth(0.75)
@@ -304,7 +304,7 @@ func (r *selectorScriptRunner) buildWindow(recipes []string) {
 	objc.Send[objc.ID](r.textView.ID, objc.Sel("setString:"), foundation.NewStringWithString(""))
 	mono := appkit.GetNSFontClass().MonospacedSystemFontOfSizeWeight(12, selectorMonospacedRegularWeight())
 	r.textView.SetFont(mono)
-	scroll.SetDocumentView(r.textView)
+	scroll.SetDocumentView(r.textView.NSView)
 	objc.Send[objc.ID](content, objc.Sel("addSubview:"), scroll.ID)
 }
 
@@ -463,7 +463,7 @@ func runPostInstallVZScriptsWithSelectorUI(recipes string) error {
 	objc.Send[objc.ID](textView.ID, objc.Sel("setString:"), foundation.NewStringWithString(""))
 	mono := appkit.GetNSFontClass().MonospacedSystemFontOfSizeWeight(12, selectorMonospacedRegularWeight())
 	textView.SetFont(mono)
-	scroll.SetDocumentView(textView)
+	scroll.SetDocumentView(textView.NSView)
 	objc.Send[objc.ID](contentViewID, objc.Sel("addSubview:"), scroll.ID)
 
 	logCh := make(chan string, 2048)
@@ -667,7 +667,7 @@ func validateNewVMName(name string) error {
 
 func showSelectorAlert(title, message string) {
 	alert := appkit.NewNSAlert()
-	alert.SetAlertStyle(appkit.NSAlertStyleWarning)
+	alert.SetAlertStyle(nsAlertStyleWarning)
 	alert.SetMessageText(title)
 	alert.SetInformativeText(message)
 	alert.AddButtonWithTitle("OK")
@@ -774,7 +774,7 @@ func (s *recipeSelector) toggleDisclosure() {
 		f := s.container.Frame()
 		f.Size.Height += recipeSectionHeight
 		s.container.SetFrame(f)
-		s.recipeSection.SetIsHidden(false)
+		s.recipeSection.SetHidden(false)
 	} else {
 		for _, sv := range s.topSubviews {
 			f := sv.Frame()
@@ -784,7 +784,7 @@ func (s *recipeSelector) toggleDisclosure() {
 		f := s.container.Frame()
 		f.Size.Height -= recipeSectionHeight
 		s.container.SetFrame(f)
-		s.recipeSection.SetIsHidden(true)
+		s.recipeSection.SetHidden(true)
 	}
 	if s.alert.ID != 0 {
 		s.alert.Layout()
@@ -943,7 +943,7 @@ func newVMAccessoryView(opts newVMOptions, recipes []recipeInfo) (appkit.NSView,
 		Size:   corefoundation.CGSize{Width: 13, Height: 13},
 	})
 	disclosureBtn.SetButtonType(appkit.NSButtonTypePushOnPushOff)
-	disclosureBtn.SetBezelStyle(appkit.NSBezelStyleDisclosure)
+	disclosureBtn.SetBezelStyle(nsBezelStyleDisclosure)
 	disclosureBtn.SetTitle("")
 	objc.Send[objc.ID](view.ID, objc.Sel("addSubview:"), disclosureBtn.ID)
 
@@ -965,7 +965,7 @@ func newVMAccessoryView(opts newVMOptions, recipes []recipeInfo) (appkit.NSView,
 	recipeSection := appkit.NewViewWithFrame(corefoundation.CGRect{
 		Size: corefoundation.CGSize{Width: viewWidth, Height: recipeSectionHeight},
 	})
-	recipeSection.SetIsHidden(true)
+	recipeSection.SetHidden(true)
 	sel.recipeSection = recipeSection
 
 	// "Use defaults" checkbox.
@@ -1622,8 +1622,8 @@ func (s *VMSelector) updateListState() {
 		return
 	}
 	hasVMs := len(s.vms) > 0
-	s.listScroll.SetIsHidden(!hasVMs)
-	s.emptyState.SetIsHidden(hasVMs)
+	s.listScroll.SetHidden(!hasVMs)
+	s.emptyState.SetHidden(hasVMs)
 }
 
 func (s *VMSelector) reloadRowCards(rows ...int) {

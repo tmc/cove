@@ -64,12 +64,12 @@ func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 			return
 		}
 
-		rep := captureView.BitmapImageRepForCachingDisplayInRect(bounds)
-		if rep == nil || rep.GetID() == 0 {
+		rep := bitmapImageRepForCachingDisplay(captureView, bounds)
+		if rep.GetID() == 0 {
 			errMsg = fmt.Sprintf("%s bitmap cache setup failed", mode)
 			return
 		}
-		captureView.CacheDisplayInRectToBitmapImageRep(bounds, rep)
+		cacheDisplayInRectToBitmapImageRep(captureView, bounds, rep)
 
 		imageRef := coregraphics.CGImageRef(objc.Send[objc.ID](rep.GetID(), objc.Sel("CGImage")))
 		if imageRef == 0 {

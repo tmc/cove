@@ -10,6 +10,7 @@ import (
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 )
 
 const windowFrameAutosavePrefix = "com.github.tmc.vz-macos.window."
@@ -22,7 +23,7 @@ func configureWindowFramePersistence(window appkit.NSWindow) (restored bool, nam
 	if restoreWindowDisplayPlacement(window, name) {
 		restored = true
 	}
-	window.SetFrameAutosaveName(name)
+	objc.Send[struct{}](window.ID, objc.Sel("setFrameAutosaveName:"), objc.String(string(name)))
 	return restored, name
 }
 

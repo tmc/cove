@@ -503,7 +503,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 							}
 						}()
 						vmOverlay = createInstallOverlay(contentRect.Size)
-						vmViewAsNSView(vmView).AddSubview(&vmOverlay)
+						addSubview(vmViewAsNSView(vmView), vmOverlay)
 					}()
 
 					vmWindow.MakeKeyAndOrderFront(nil)
@@ -635,7 +635,7 @@ func createProgressWindow() (appkit.NSWindow, objc.ID, objc.ID) {
 			)
 		}
 
-		contentView.AddSubview(&imageView.NSView)
+		addSubview(contentView, imageView.NSView)
 	}
 
 	// Status label to the right of the icon.
@@ -652,7 +652,7 @@ func createProgressWindow() (appkit.NSWindow, objc.ID, objc.ID) {
 		Origin: corefoundation.CGPoint{X: textLeft, Y: 60},
 		Size:   corefoundation.CGSize{Width: textWidth, Height: 20},
 	})
-	contentView.AddSubview(&label.NSView)
+	addSubview(contentView, label.NSView)
 
 	// Progress bar below the label, to the right of the icon.
 	progressBarID := objc.Send[objc.ID](
@@ -672,9 +672,9 @@ func createProgressWindow() (appkit.NSWindow, objc.ID, objc.ID) {
 	objc.Send[objc.ID](progressBarID, objc.Sel("startAnimation:"), objc.ID(0))
 
 	barView := appkit.NSViewFromID(progressBarID)
-	contentView.AddSubview(&barView)
+	addSubview(contentView, barView)
 
-	window.SetContentView(&contentView)
+	window.SetContentView(contentView)
 	return window, label.ID, progressBarID
 }
 
@@ -1683,7 +1683,7 @@ func createInstallOverlay(size corefoundation.CGSize) appkit.NSView {
 		Size: corefoundation.CGSize{Width: size.Width, Height: 40},
 	})
 
-	overlay.AddSubview(&label.NSView)
+	addSubview(overlay, label.NSView)
 	return overlay
 }
 
@@ -1694,7 +1694,7 @@ func postDummyEvent(app appkit.NSApplication) {
 	eventID := objc.Send[objc.ID](
 		objc.ID(objc.GetClass("NSEvent")),
 		objc.Sel("otherEventWithType:location:modifierFlags:timestamp:windowNumber:context:subtype:data1:data2:"),
-		appkit.NSEventTypeApplicationDefined,
+		nsEventTypeApplicationDefined,
 		corefoundation.CGPoint{},
 		appkit.NSEventModifierFlags(0),
 		float64(0),

@@ -6,7 +6,7 @@ require (
 	connectrpc.com/connect v1.19.1
 	github.com/ebitengine/purego v0.11.0-alpha.1.0.20260318130922-386f7c8fb549
 	github.com/gorilla/websocket v1.5.3
-	github.com/tmc/apple v0.4.4
+	github.com/tmc/apple v0.5.1
 	github.com/tmc/macgo v0.1.0
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
