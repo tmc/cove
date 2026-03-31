@@ -645,7 +645,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 
 		// Dedicated VirtioFS device for toolbar-managed shared folders.
 		// Always created so the GUI can hotplug folders at runtime.
-		sharedFolders := LoadSharedFolders(vmDir)
+		sharedFolders := effectiveSharedFolders(vmDir)
 		sharedFoldersDevice := createSharedFoldersDevice(sharedFolders)
 		if sharedFoldersDevice.ID != 0 {
 			allVirtioConfigs = append(allVirtioConfigs, sharedFoldersDevice)
@@ -1212,11 +1212,8 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			fmt.Printf("  vz-macos ctl -socket %s gui open\n", sock)
 		}
 	}
-	if runtimeFeatures != nil {
-		if err := runtimeFeatures.startVMServices(vm, queue); err != nil {
-			fmt.Printf("warning: runtime features: %v\n", err)
-		}
-	}
+	startRuntimeFeatureServices(runtimeFeatures, vm, queue)
+	startControlRuntimeInfrastructure(controlServer)
 
 	// Check if vz-agent is available in the guest (background, non-blocking).
 	go checkAgentAvailability(controlServer)
@@ -1281,8 +1278,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	var statusItem *VMStatusItemController
 	cleanup := func() {
 		stopMonitor()
-		controlServer.StopRuntimeFeatureState()
-		controlServer.Stop()
+		stopControlRuntimeInfrastructure(controlServer)
 		guiController.Shutdown()
 		if restoreTerminal != nil {
 			restoreTerminal()
@@ -1350,8 +1346,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	app.Run()
 
 	stopMonitor()
-	controlServer.StopRuntimeFeatureState()
-	controlServer.Stop()
+	stopControlRuntimeInfrastructure(controlServer)
 	if statusItem != nil {
 		statusItem.Shutdown()
 	}
@@ -1656,11 +1651,10 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			fmt.Printf("  echo '{\"type\":\"screenshot\",\"auth_token\":\"'$TOKEN'\"}' | nc -U %s\n", sock)
 		}
 	}
-	if launchOrder != "window-first" && runtimeFeatures != nil {
-		if err := runtimeFeatures.startVMServices(vm, queue); err != nil {
-			fmt.Printf("warning: runtime features: %v\n", err)
-		}
+	if launchOrder != "window-first" {
+		startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 	}
+	startControlRuntimeInfrastructure(controlServer)
 
 	// Check if vz-agent is available in the guest (background, non-blocking).
 	go checkAgentAvailability(controlServer)
@@ -1759,8 +1753,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	var statusItem *VMStatusItemController
 	cleanup := func() {
 		close(monitorDone)
-		controlServer.StopRuntimeFeatureState()
-		controlServer.Stop()
+		stopControlRuntimeInfrastructure(controlServer)
 		if canSaveRestore {
 			fmt.Println("\nSuspending VM...")
 			if err := suspendVM(vm, queue); err != nil {
@@ -1872,10 +1865,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						vmToolbar.UpdateState(stateUpdate.newState)
 						statusItem.UpdateState(stateUpdate.newState)
 						window.SetTitle(fmt.Sprintf("%s — %s", windowTitle, vmStateName(stateUpdate.newState)))
-						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && runtimeFeatures != nil {
-							if err := runtimeFeatures.startVMServices(vm, queue); err != nil {
-								fmt.Printf("warning: runtime features: %v\n", err)
-							}
+						if stateUpdate.newState == vz.VZVirtualMachineStateRunning {
+							startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 						}
 						// Start fading the boot overlay once the VM is running.
 						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && overlayFadeStep == -1 && bootOverlay.ID != 0 {
@@ -1963,8 +1954,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// app.Run() blocks until app.Stop() is called (when VM terminates).
 	app.Run()
-	controlServer.StopRuntimeFeatureState()
-	controlServer.Stop()
+	stopControlRuntimeInfrastructure(controlServer)
 	if statusItem != nil {
 		statusItem.Shutdown()
 	}

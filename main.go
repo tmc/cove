@@ -600,46 +600,7 @@ func handleUTM() {
 }
 
 func handleRun() {
-	originalVMName := vmName
-	originalVMDir := vmDir
-	var clone DisposableClone
-	if disposableMode {
-		source := originalVMName
-		if source == "" {
-			source = filepath.Base(originalVMDir)
-		}
-		created, err := SetupDisposableClone(DisposableSetupOptions{
-			Source:        source,
-			Linked:        true,
-			CopyMachineID: false,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		clone = created
-		vmName = clone.Name
-		vmDir = clone.Path
-		fmt.Printf("Disposable clone: %s\n", clone.Name)
-		fmt.Printf("Disposable path: %s\n", clone.Path)
-	}
-
-	var err error
-	if linuxMode {
-		err = runLinuxVM()
-	} else {
-		err = runMacOSVM()
-	}
-	if disposableMode {
-		if cleanupErr := CleanupDisposableClone(clone.Path); cleanupErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: cleanup disposable clone: %v\n", cleanupErr)
-		} else {
-			fmt.Printf("Disposable clone removed: %s\n", clone.Name)
-		}
-		vmName = originalVMName
-		vmDir = originalVMDir
-	}
-	if err != nil {
+	if err := runCurrentVM(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
