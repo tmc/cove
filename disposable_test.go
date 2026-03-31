@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -147,5 +148,47 @@ func TestGCDisposableClones(t *testing.T) {
 	}
 	if _, err := os.Stat(activePath); err != nil {
 		t.Fatalf("active disposable clone missing: %v", err)
+	}
+}
+
+func TestHandleGCCommand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	baseDir := GetVMBaseDir()
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		t.Fatalf("mkdir vm base dir: %v", err)
+	}
+
+	oldName := disposableCloneName("research-base", time.Now().Add(-48*time.Hour))
+	oldPath := filepath.Join(baseDir, oldName)
+	if err := os.MkdirAll(oldPath, 0755); err != nil {
+		t.Fatalf("mkdir old disposable clone: %v", err)
+	}
+
+	out, err := captureStdoutResult(t, func() error {
+		return handleGCCommand([]string{"-dry-run", "-older-than", "24h"})
+	})
+	if err != nil {
+		t.Fatalf("handleGCCommand(dry-run) error = %v", err)
+	}
+	if !strings.Contains(out, "would remove "+oldPath) {
+		t.Fatalf("dry-run output = %q, want removal line for %q", out, oldPath)
+	}
+	if _, err := os.Stat(oldPath); err != nil {
+		t.Fatalf("dry-run removed clone unexpectedly: %v", err)
+	}
+
+	out, err = captureStdoutResult(t, func() error {
+		return handleGCCommand([]string{"-older-than", "24h"})
+	})
+	if err != nil {
+		t.Fatalf("handleGCCommand(remove) error = %v", err)
+	}
+	if !strings.Contains(out, "removed "+oldPath) {
+		t.Fatalf("remove output = %q, want removal line for %q", out, oldPath)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old disposable clone still exists: %v", err)
 	}
 }
