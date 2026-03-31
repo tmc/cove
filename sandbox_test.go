@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -197,5 +200,66 @@ func TestSandboxPolicyCopiesInput(t *testing.T) {
 	got[0].Tag = "mutated"
 	if cliVolumes[0].Tag != "cli" {
 		t.Fatalf("EffectiveVolumes() returned alias of input slice")
+	}
+}
+
+func TestGetEffectiveVolumesRespectsSandboxForSavedConfig(t *testing.T) {
+	oldVMDir := vmDir
+	oldVolumes := volumes
+	oldShareDir := shareDir
+	oldSandboxLevel := sandboxLevel
+	t.Cleanup(func() {
+		vmDir = oldVMDir
+		volumes = oldVolumes
+		shareDir = oldShareDir
+		sandboxLevel = oldSandboxLevel
+	})
+
+	vmDir = t.TempDir()
+	volumes = nil
+	shareDir = ""
+	sandboxLevel = ""
+
+	want := VolumeMount{HostPath: "/tmp/saved", Tag: "saved"}
+	if err := SaveVMConfig(vmDir, &VMConfig{Volumes: []VolumeMount{want}}); err != nil {
+		t.Fatalf("SaveVMConfig() error = %v", err)
+	}
+
+	got := getEffectiveVolumes()
+	if !reflect.DeepEqual(got, []VolumeMount{want}) {
+		t.Fatalf("getEffectiveVolumes() = %#v, want %#v", got, []VolumeMount{want})
+	}
+
+	sandboxLevel = "minimal"
+	got = getEffectiveVolumes()
+	if len(got) != 0 {
+		t.Fatalf("getEffectiveVolumes() with sandbox = %#v, want nil", got)
+	}
+}
+
+func TestEffectiveSharedFoldersRespectsSandboxForSavedState(t *testing.T) {
+	oldSandboxLevel := sandboxLevel
+	t.Cleanup(func() {
+		sandboxLevel = oldSandboxLevel
+	})
+
+	vmDirectory := t.TempDir()
+	want := []SharedFolderEntry{{Path: filepath.Join(vmDirectory, "share"), Tag: "share", ReadOnly: true}}
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal shared folders: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDirectory, "shared_folders.json"), append(data, '\n'), 0644); err != nil {
+		t.Fatalf("write shared_folders.json: %v", err)
+	}
+
+	sandboxLevel = ""
+	if got := effectiveSharedFolders(vmDirectory); !reflect.DeepEqual(got, want) {
+		t.Fatalf("effectiveSharedFolders() = %#v, want %#v", got, want)
+	}
+
+	sandboxLevel = "strict"
+	if got := effectiveSharedFolders(vmDirectory); len(got) != 0 {
+		t.Fatalf("effectiveSharedFolders() with sandbox = %#v, want nil", got)
 	}
 }
