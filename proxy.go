@@ -205,7 +205,9 @@ func validateProxyFlagsFor(cfg proxyFlags) error {
 
 func proxyAgentCapable() bool {
 	if linuxMode {
-		return !noAgent && sandboxAllowsVsock()
+		// -no-agent controls Linux provisioning, not the capabilities of an
+		// already provisioned guest selected for a run.
+		return sandboxAllowsVsock()
 	}
 	if runtimeProfile == "minimal" || !sandboxAllowsVsock() {
 		return false

@@ -124,6 +124,29 @@ func TestValidateProxyFlagsFor(t *testing.T) {
 	}
 }
 
+func TestProxyAgentCapableLinuxIgnoresNoAgentFlag(t *testing.T) {
+	oldLinux := linuxMode
+	oldNoAgent := noAgent
+	oldSandboxLevel := sandboxLevel
+	t.Cleanup(func() {
+		linuxMode = oldLinux
+		noAgent = oldNoAgent
+		sandboxLevel = oldSandboxLevel
+	})
+
+	linuxMode = true
+	noAgent = true
+	sandboxLevel = ""
+	if !proxyAgentCapable() {
+		t.Fatal("proxyAgentCapable() = false, want true for an existing Linux VM run")
+	}
+
+	sandboxLevel = "strict"
+	if proxyAgentCapable() {
+		t.Fatal("proxyAgentCapable() = true, want false when strict sandbox disables vsock")
+	}
+}
+
 func TestLinuxProxyFiles(t *testing.T) {
 	spec, err := parseProxySpec("http://127.0.0.1:8080")
 	if err != nil {
