@@ -155,6 +155,11 @@ func (vm *testVM) cleanupTB(tb testing.TB) {
 	if !vm.startedByTest {
 		return
 	}
+	defer func() {
+		vm.startedByTest = false
+		vm.cmd = nil
+		vm.waitCh = nil
+	}()
 
 	if vm.waitCh != nil {
 		select {
@@ -235,6 +240,10 @@ func controlSocketReady(sock, token string) bool {
 }
 
 func startTestVM(tb testing.TB, vm *testVM) {
+	startTestVMWithArgs(tb, vm)
+}
+
+func startTestVMWithArgs(tb testing.TB, vm *testVM, extraArgs ...string) {
 	tb.Helper()
 
 	if vm.waitCh != nil {
@@ -266,6 +275,7 @@ func startTestVM(tb testing.TB, vm *testVM) {
 	} else {
 		args = append(args, "-gui")
 	}
+	args = append(args, extraArgs...)
 	args = append(args, "run")
 
 	cmd := exec.Command(bin, args...)
@@ -517,6 +527,11 @@ func userAgentExecExpectCode(t *testing.T, vm *testVM, want int32, args ...strin
 	return result
 }
 
+func userAgentExec(t *testing.T, vm *testVM, args ...string) string {
+	t.Helper()
+	return userAgentExecExpectCode(t, vm, 0, args...).GetStdout()
+}
+
 func agentRead(t *testing.T, vm *testVM, path string) []byte {
 	t.Helper()
 
@@ -695,7 +710,7 @@ func buildIntegrationBinary(tb testing.TB) string {
 func cloneTestVM(t *testing.T, baseVM *testVM) *testVM {
 	t.Helper()
 
-	cloneName := fmt.Sprintf("test-clone-%s-%d", t.Name(), time.Now().UnixNano()%100000)
+	cloneName := integrationCloneName(t.Name())
 
 	// Stop base VM if we started it, or verify it is stopped for cloning.
 	// For safety we clone disk from the base VM directory directly.
@@ -707,6 +722,35 @@ func cloneTestVM(t *testing.T, baseVM *testVM) *testVM {
 	if err != nil {
 		t.Fatalf("clone VM %s -> %s: %v", baseVM.name, cloneName, err)
 	}
+
+	vm := clonedTestVM(t, cloneName, baseVM.linux)
+	startTestVM(t, vm)
+	waitVMReadyTB(t, vm, 3*time.Minute)
+	return vm
+}
+
+func integrationCloneName(name string) string {
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		default:
+			return '-'
+		}
+	}, name)
+	name = strings.Trim(name, "-")
+	if name == "" {
+		name = "vm"
+	}
+	return fmt.Sprintf("test-clone-%s-%d", name, time.Now().UnixNano()%100000)
+}
+
+func clonedTestVM(t *testing.T, cloneName string, linux bool) *testVM {
+	t.Helper()
 
 	dir := resolvePath(GetVMPath(cloneName))
 	tokenPath := GetControlTokenPathForVM(dir)
@@ -722,18 +766,13 @@ func cloneTestVM(t *testing.T, baseVM *testVM) *testVM {
 		dir:   dir,
 		sock:  GetControlSocketPathForVM(dir),
 		token: token,
+		linux: linux,
 	}
-
-	startTestVM(t, vm)
-	waitVMReadyTB(t, vm, 3*time.Minute)
-
 	t.Cleanup(func() {
 		vm.cleanupTB(t)
-		// Delete the clone VM directory.
 		if err := os.RemoveAll(dir); err != nil {
 			t.Logf("cleanup clone dir %s: %v", dir, err)
 		}
 	})
-
 	return vm
 }
