@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestGetVMInfoState(t *testing.T) {
@@ -61,4 +62,35 @@ func makeTestVMDir(t *testing.T) string {
 		}
 	}
 	return vmPath
+}
+
+func TestVMConfigRoundTripAgentState(t *testing.T) {
+	vmPath := makeTestVMDir(t)
+	want := &VMConfig{
+		CPU:      4,
+		MemoryGB: 8,
+		Agent: &VMAgentConfig{
+			Platform:   vmAgentPlatformLinux,
+			Requested:  true,
+			Verified:   true,
+			VerifiedAt: time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC),
+			Source:     vmAgentSourceRuntime,
+		},
+	}
+	if err := SaveVMConfig(vmPath, want); err != nil {
+		t.Fatalf("SaveVMConfig() error = %v", err)
+	}
+	got, err := LoadVMConfig(vmPath)
+	if err != nil {
+		t.Fatalf("LoadVMConfig() error = %v", err)
+	}
+	if got.Agent == nil {
+		t.Fatal("LoadVMConfig().Agent = nil, want value")
+	}
+	if got.Agent.Platform != want.Agent.Platform || !got.Agent.Requested || !got.Agent.Verified || got.Agent.Source != want.Agent.Source {
+		t.Fatalf("LoadVMConfig().Agent = %#v, want %#v", got.Agent, want.Agent)
+	}
+	if !got.Agent.VerifiedAt.Equal(want.Agent.VerifiedAt) {
+		t.Fatalf("LoadVMConfig().Agent.VerifiedAt = %v, want %v", got.Agent.VerifiedAt, want.Agent.VerifiedAt)
+	}
 }

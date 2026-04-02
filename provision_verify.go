@@ -126,6 +126,9 @@ func verifyRunning(sock string, verbose bool) error {
 	} else {
 		fmt.Printf("  Agent: connected\n")
 		agentOK = true
+		if err := markVMAgentVerifiedForSocket(sock, vmAgentSourceVerify); err != nil && verbose {
+			fmt.Printf("warning: record guest agent capability: %v\n", err)
+		}
 	}
 
 	if !agentOK {

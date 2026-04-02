@@ -628,6 +628,9 @@ func ctlCommand(args []string) error {
 	if !resp.Success && strings.HasPrefix(cmdType, "agent-") {
 		return ctlAgentCommandError(sock, cmdType, resp.Error)
 	}
+	if err := markAgentCapabilityForCommand(sock, cmdType, resp); err != nil && verbose {
+		fmt.Printf("warning: record guest agent capability: %v\n", err)
+	}
 
 	return ctlPrintResponse(resp, cmdType, *raw, *outputFile)
 }
@@ -1093,6 +1096,9 @@ func ctlAgentWithRetry(sock string, req *controlpb.ControlRequest, wait, timeout
 		attempt++
 		resp, err := ctlSendRequest(sock, req, timeout, req.Type)
 		if err == nil && resp.Success {
+			if markErr := markAgentCapabilityForCommand(sock, req.Type, resp); markErr != nil && verbose {
+				fmt.Printf("warning: record guest agent capability: %v\n", markErr)
+			}
 			return ctlPrintResponse(resp, req.Type, raw, "")
 		}
 
@@ -1107,6 +1113,18 @@ func ctlAgentWithRetry(sock string, req *controlpb.ControlRequest, wait, timeout
 			fmt.Fprintf(os.Stderr, "Connecting to guest agent (waiting up to %s)...\n", wait)
 		}
 		time.Sleep(2 * time.Second)
+	}
+}
+
+func markAgentCapabilityForCommand(sock, cmdType string, resp *controlpb.ControlResponse) error {
+	if resp == nil || !resp.Success {
+		return nil
+	}
+	switch cmdType {
+	case "agent-ping":
+		return markVMAgentVerifiedForSocket(sock, vmAgentSourceRuntime)
+	default:
+		return nil
 	}
 }
 

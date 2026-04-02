@@ -657,11 +657,31 @@ func applyProvisioningFiles() error {
 	// Clean up staging directory on success.
 	os.RemoveAll(stagingDir)
 	markInjectSucceeded()
+	if manifestIncludesAgent(manifest) {
+		if err := setVMAgentRequested(vmDir, detectVMAgentPlatform(vmDir), true, vmAgentSourceProvision); err != nil {
+			fmt.Printf("warning: save guest agent config: %v\n", err)
+		}
+	}
 
 	fmt.Println()
 	fmt.Println("=== Provisioning Applied Successfully ===")
 	fmt.Println("Run the VM with: ./vz-macos run")
 	return nil
+}
+
+func manifestIncludesAgent(manifest *ProvisionManifest) bool {
+	if manifest == nil {
+		return false
+	}
+	for _, file := range manifest.Files {
+		switch filepath.Clean(file.Path) {
+		case filepath.Join("usr", "local", "bin", agentBinaryName),
+			filepath.Join("Library", "LaunchDaemons", agentLaunchDaemonLabel+".plist"),
+			filepath.Join("Library", "LaunchAgents", agentLaunchAgentLabel+".plist"):
+			return true
+		}
+	}
+	return false
 }
 
 // applyStagedFiles enables APFS ownership, copies all staged files to the

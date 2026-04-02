@@ -15,10 +15,11 @@ import (
 // VMConfig holds persistent configuration for a VM.
 // Stored as config.json in the VM directory.
 type VMConfig struct {
-	CPU                uint          `json:"cpu,omitempty"`
-	MemoryGB           uint64        `json:"memoryGB,omitempty"`
-	Volumes            []VolumeMount `json:"volumes,omitempty"`
-	PostInstallRecipes string        `json:"postInstallRecipes,omitempty"`
+	CPU                uint           `json:"cpu,omitempty"`
+	MemoryGB           uint64         `json:"memoryGB,omitempty"`
+	Volumes            []VolumeMount  `json:"volumes,omitempty"`
+	PostInstallRecipes string         `json:"postInstallRecipes,omitempty"`
+	Agent              *VMAgentConfig `json:"agent,omitempty"`
 }
 
 // LoadVMConfig reads the VM configuration from vmDir/config.json.

@@ -283,6 +283,9 @@ func injectAgentOnly() error {
 	fmt.Println("  - vz-agent daemon installed (vsock port 1024, root)")
 	fmt.Println("  - vz-agent user agent installed (vsock port 1025, user session)")
 	fmt.Println("Run the VM with: ./vz-macos run")
+	if err := setVMAgentRequested(vmDir, detectVMAgentPlatform(vmDir), true, vmAgentSourceProvision); err != nil {
+		fmt.Printf("warning: save guest agent config: %v\n", err)
+	}
 	return nil
 }
 
@@ -310,6 +313,9 @@ func checkAgentAvailability(cs *ControlServer) {
 	for attempt := 0; attempt < 3; attempt++ {
 		_, err := cs.getAgent()
 		if err == nil {
+			if err := markVMAgentVerified(cs.effectiveVMDir(), currentVMAgentPlatform(), vmAgentSourceRuntime, time.Now()); err != nil && verbose {
+				fmt.Printf("warning: record guest agent capability: %v\n", err)
+			}
 			if verbose {
 				fmt.Println("Guest agent: connected")
 			}
@@ -428,6 +434,9 @@ func upgradeAgent() error {
 	newVersion := ""
 	if r := resp.GetAgentPing(); r != nil {
 		newVersion = r.Version
+	}
+	if err := markVMAgentVerifiedForSocket(sock, vmAgentSourceUpgrade); err != nil && verbose {
+		fmt.Printf("warning: record guest agent capability: %v\n", err)
 	}
 	fmt.Printf("Upgraded: %s → %s\n", oldVersion, newVersion)
 	return nil

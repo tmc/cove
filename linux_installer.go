@@ -139,8 +139,9 @@ func installLinuxVM() error {
 	if provisionPassword != "" {
 		provConfig.Password = provisionPassword
 	}
-	if noAgent || !sandboxAllowsAgentProvision() {
-		provConfig.InstallAgent = false
+	provConfig.InstallAgent = !noAgent && sandboxAllowsAgentProvision()
+	if err := setVMAgentRequested(vmDir, vmAgentPlatformLinux, provConfig.InstallAgent, vmAgentSourceInstall); err != nil {
+		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
 
 	// Get ISO (download if needed)
