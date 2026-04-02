@@ -99,6 +99,9 @@ func SetupDisposableClone(opts DisposableSetupOptions) (DisposableClone, error) 
 	if err := cloneFn(cloneOpts); err != nil {
 		return DisposableClone{}, fmt.Errorf("create disposable clone: %w", err)
 	}
+	if err := os.Remove(proxyStatePath(GetVMPath(cloneName))); err != nil && !os.IsNotExist(err) {
+		return DisposableClone{}, fmt.Errorf("clear proxy state from disposable clone: %w", err)
+	}
 	return DisposableClone{
 		Name:      cloneName,
 		Path:      GetVMPath(cloneName),

@@ -162,7 +162,7 @@ func init() {
 	flag.BoolVar(&provisionAdmin, "provision-admin", true, "make auto-provisioned user an admin")
 	flag.StringVar(&provisionStrategy, "provision-strategy", "disk",
 		"provisioning strategy: disk (mount disk + write files, needs admin), gui (keyboard automation), auto (try disk, fall back to gui)")
-	flag.BoolVar(&noAgent, "no-agent", false, "skip vz-agent installation during Linux provisioning")
+	flag.BoolVar(&noAgent, "no-agent", false, "skip vz-agent installation during Linux install/provisioning")
 	flag.StringVar(&installVZScripts, "vzscripts", "", "comma-separated vzscript recipes to run after install (e.g. homebrew,openclaw)")
 	// VM selection flag
 	flag.StringVar(&vmName, "vm", "", "VM name to use (default: active VM or 'default')")
@@ -172,7 +172,7 @@ func init() {
 	// Network mode
 	flag.StringVar(&networkMode, "network", "nat", "network mode: nat, bridged:<iface>, vmnet, filehandle, none")
 	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal or strict")
-	flag.StringVar(&proxyURL, "proxy", "", "configure guest system proxy after boot (for example http://192.168.64.1:8080)")
+	flag.StringVar(&proxyURL, "proxy", "", "configure guest system HTTP/HTTPS proxy after boot (for example http://192.168.64.1:8080)")
 	flag.StringVar(&pcapPath, "pcap", "", "write captured Ethernet frames to a PCAP file when using -network filehandle")
 	// USB storage
 	flag.Var(&usbDevices, "usb", "USB storage device: /path/to/disk.img[:ro] (can be repeated)")

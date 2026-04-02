@@ -43,6 +43,35 @@ binary with the embedded entitlements and re-execs automatically. No manual
 ./vz-macos run -linux -gui
 ```
 
+By default Linux install/provisioning includes `vz-agent`. Use `-no-agent` only
+to skip agent installation during Linux install/provisioning. It does not
+change the capabilities of an already-created VM.
+
+## Guest Proxy
+
+`-proxy` configures guest system `http` and `https` proxy settings after boot.
+The guest agent must be available over vsock.
+
+```bash
+# macOS guest
+./vz-macos run -proxy http://192.168.64.1:8080
+
+# Linux guest
+./vz-macos run -linux -proxy http://192.168.64.1:8080
+```
+
+Linux writes:
+- `/etc/environment.d/99-vz-macos-proxy.conf`
+- `/etc/profile.d/99-vz-macos-proxy.sh`
+
+macOS applies proxy settings with `networksetup` through the guest user agent.
+On clean shutdown, `vz-macos` restores the previous proxy state best-effort.
+
+Troubleshooting:
+- Linux stopped-VM preflight rejects if `config.json` says the agent was not requested. Run `vz-macos provision-agent` or reinstall without `-no-agent`.
+- macOS may report an unknown preflight and continue to a runtime probe. That is expected when the VM is stopped and only injection state is known.
+- If proxy restore fails, the VM directory retains `.proxy-state.json`. Boot the VM again with the same `-proxy` setting and stop it cleanly, or restore the guest proxy manually before removing the state file.
+
 ## Requirements
 
 - Apple Silicon Mac (M1/M2/M3/M4)

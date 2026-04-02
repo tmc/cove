@@ -13,18 +13,37 @@ import (
 	"time"
 
 	pb "github.com/tmc/vz-macos/proto/agentpb"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 var proxyURL string
 var proxySandboxLevel string
+var proxyLastValidation *proxyValidation
 
 const (
 	proxyStateFileName   = ".proxy-state.json"
 	proxyPlatformMacOS   = "macos"
 	proxyPlatformLinux   = "linux"
-	proxyStateVersion    = 1
+	proxyStateVersion    = 2
 	proxyEnvFileName     = "99-vz-macos-proxy.conf"
 	proxyProfileFileName = "99-vz-macos-proxy.sh"
+	proxyStateCaptured   = "captured"
+	proxyStateApplied    = "applied"
+	proxyStateRollback   = "rollback_pending"
+
+	proxyCapabilityReady       = "ready"
+	proxyCapabilityUnknown     = "unknown"
+	proxyCapabilityUnavailable = "unavailable"
+
+	proxyCapabilityRuntime = "runtime"
+	proxyCapabilityConfig  = "config"
+	proxyCapabilityNone    = "none"
+)
+
+const (
+	proxyRuntimeWaitTimeout     = 2 * time.Minute
+	proxyRuntimeTeardownTimeout = 15 * time.Second
+	proxyRuntimePollInterval    = 2 * time.Second
 )
 
 type proxySpec struct {
@@ -47,18 +66,34 @@ func (s proxySpec) canonicalURL() string {
 }
 
 type proxyFlags struct {
-	RawURL           string
-	SandboxLevel     string
-	NetworkMode      string
-	RuntimeProfile   string
-	Linux            bool
-	ProvisionEnabled bool
-	AgentCapable     bool
+	RawURL          string
+	SandboxLevel    string
+	NetworkMode     string
+	RuntimeProfile  string
+	Linux           bool
+	VMDir           string
+	Running         bool
+	RunningKnown    bool
+	InjectSucceeded bool
+	AgentConfig     *VMAgentConfig
+	CapabilityProbe func(context.Context, proxyFlags) proxyCapability
+}
+
+type proxyValidation struct {
+	Spec       proxySpec
+	Capability proxyCapability
+}
+
+type proxyCapability struct {
+	Status string
+	Source string
+	Reason string
 }
 
 type proxyState struct {
 	Version   int              `json:"version"`
 	Platform  string           `json:"platform"`
+	Stage     string           `json:"stage,omitempty"`
 	Spec      string           `json:"spec,omitempty"`
 	AppliedAt time.Time        `json:"applied_at,omitempty"`
 	Mac       *macOSProxyState `json:"mac,omitempty"`
@@ -166,56 +201,176 @@ func (r *proxyRuntimeClient) WriteFile(ctx context.Context, path string, data []
 }
 
 func validateProxyFlags() error {
-	return validateProxyFlagsFor(proxyFlags{
-		RawURL:           proxyURL,
-		SandboxLevel:     proxySandboxLevel,
-		NetworkMode:      networkMode,
-		RuntimeProfile:   runtimeProfile,
-		Linux:            linuxMode,
-		ProvisionEnabled: provisionUser != "" || didInjectSucceed(),
-		AgentCapable:     proxyAgentCapable(),
-	})
-}
-
-func validateProxyFlagsFor(cfg proxyFlags) error {
-	if strings.TrimSpace(cfg.RawURL) == "" {
+	proxyLastValidation = nil
+	if strings.TrimSpace(proxyURL) == "" {
 		return nil
 	}
-	if strings.TrimSpace(cfg.SandboxLevel) == "strict" {
-		return fmt.Errorf("-sandbox-level strict does not allow -proxy; use minimal or omit -proxy")
-	}
-	if strings.TrimSpace(cfg.NetworkMode) == "none" {
-		return fmt.Errorf("-network none does not allow -proxy")
-	}
-	if !cfg.Linux && strings.TrimSpace(cfg.RuntimeProfile) == "minimal" {
-		return fmt.Errorf("-runtime-profile minimal disables vsock; use full for -proxy")
-	}
-	if cfg.Linux && !cfg.AgentCapable {
-		return fmt.Errorf("-proxy requires vz-agent on Linux guests; omit -no-agent or provision the agent")
-	}
-	if !cfg.Linux && !cfg.AgentCapable {
-		return fmt.Errorf("-proxy requires a guest-agent-capable macOS VM; provision the guest or use an existing agent-capable VM")
-	}
-	_, err := parseProxySpec(cfg.RawURL)
+	cfg, err := currentProxyFlags()
 	if err != nil {
 		return err
 	}
+	validation, err := resolveProxyValidationFor(context.Background(), cfg)
+	if err != nil {
+		return err
+	}
+	proxyLastValidation = validation
 	return nil
 }
 
-func proxyAgentCapable() bool {
-	if linuxMode {
-		// -no-agent controls Linux provisioning, not the capabilities of an
-		// already provisioned guest selected for a run.
-		return sandboxAllowsVsock()
+func validateProxyFlagsFor(cfg proxyFlags) error {
+	_, err := resolveProxyValidationFor(context.Background(), cfg)
+	return err
+}
+
+func currentProxyFlags() (proxyFlags, error) {
+	cfg := proxyFlags{
+		RawURL:          proxyURL,
+		SandboxLevel:    proxySandboxLevel,
+		NetworkMode:     networkMode,
+		RuntimeProfile:  runtimeProfile,
+		Linux:           linuxMode,
+		VMDir:           vmDir,
+		RunningKnown:    strings.TrimSpace(vmDir) != "",
+		InjectSucceeded: didInjectSucceed(),
 	}
-	if runtimeProfile == "minimal" || !sandboxAllowsVsock() {
+	if cfg.RunningKnown {
+		cfg.Running = isVMRunningAt(vmDir)
+	}
+	vmcfg, err := LoadVMConfig(vmDir)
+	if err != nil {
+		return cfg, fmt.Errorf("load vm config: %w", err)
+	}
+	cfg.AgentConfig = cloneVMAgentConfig(vmcfg.Agent)
+	return cfg, nil
+}
+
+func resolveProxyValidationFor(ctx context.Context, cfg proxyFlags) (*proxyValidation, error) {
+	if strings.TrimSpace(cfg.RawURL) == "" {
+		return &proxyValidation{}, nil
+	}
+	if strings.TrimSpace(cfg.SandboxLevel) == "strict" {
+		return nil, fmt.Errorf("-sandbox-level strict does not allow -proxy; use minimal or omit -proxy")
+	}
+	if strings.TrimSpace(cfg.NetworkMode) == "none" {
+		return nil, fmt.Errorf("-network none does not allow -proxy")
+	}
+	if !cfg.Linux && strings.TrimSpace(cfg.RuntimeProfile) == "minimal" {
+		return nil, fmt.Errorf("-runtime-profile minimal disables vsock; use full for -proxy")
+	}
+	if !proxyVsockAvailable(cfg) {
+		return nil, fmt.Errorf("-proxy requires vsock availability")
+	}
+	spec, err := parseProxySpec(cfg.RawURL)
+	if err != nil {
+		return nil, err
+	}
+	capability := resolveProxyCapability(ctx, cfg)
+	if capability.Status == proxyCapabilityUnavailable {
+		return nil, proxyCapabilityError(cfg, capability)
+	}
+	return &proxyValidation{Spec: spec, Capability: capability}, nil
+}
+
+func proxyVsockAvailable(cfg proxyFlags) bool {
+	if strings.TrimSpace(cfg.SandboxLevel) == "strict" {
 		return false
 	}
-	if provisionUser != "" && sandboxAllowsAgentProvision() {
-		return true
+	if !cfg.Linux && strings.TrimSpace(cfg.RuntimeProfile) == "minimal" {
+		return false
 	}
-	return didInjectSucceed()
+	return true
+}
+
+func resolveProxyCapability(ctx context.Context, cfg proxyFlags) proxyCapability {
+	if cfg.RunningKnown && cfg.Running {
+		probe := cfg.CapabilityProbe
+		if probe == nil {
+			probe = probeProxyRuntimeCapability
+		}
+		capability := probe(ctx, cfg)
+		if capability.Status == proxyCapabilityReady && strings.TrimSpace(cfg.VMDir) != "" {
+			_ = markVMAgentVerified(cfg.VMDir, proxyPlatformForFlags(cfg), vmAgentSourceRuntime, time.Now())
+		}
+		return capability
+	}
+
+	if agent := cloneVMAgentConfig(cfg.AgentConfig); agent != nil {
+		if agent.Platform == "" || agent.Platform == proxyPlatformForFlags(cfg) {
+			if agent.Verified {
+				return proxyCapability{Status: proxyCapabilityReady, Source: proxyCapabilityConfig, Reason: "agent_verified"}
+			}
+			if cfg.Linux {
+				if agent.Requested {
+					return proxyCapability{Status: proxyCapabilityUnknown, Source: proxyCapabilityConfig, Reason: "linux_agent_requested"}
+				}
+				return proxyCapability{Status: proxyCapabilityUnavailable, Source: proxyCapabilityConfig, Reason: "linux_agent_requested_false"}
+			}
+			if agent.Requested {
+				return proxyCapability{Status: proxyCapabilityReady, Source: proxyCapabilityConfig, Reason: "macos_agent_requested"}
+			}
+		}
+	}
+
+	if !cfg.Linux && cfg.InjectSucceeded {
+		return proxyCapability{Status: proxyCapabilityReady, Source: proxyCapabilityConfig, Reason: "inject_succeeded"}
+	}
+	if cfg.Linux {
+		return proxyCapability{Status: proxyCapabilityUnknown, Source: proxyCapabilityNone, Reason: "linux_agent_unknown"}
+	}
+	return proxyCapability{Status: proxyCapabilityUnknown, Source: proxyCapabilityNone, Reason: "macos_agent_unknown"}
+}
+
+func proxyPlatformForFlags(cfg proxyFlags) string {
+	if cfg.Linux {
+		return proxyPlatformLinux
+	}
+	return proxyPlatformMacOS
+}
+
+func probeProxyRuntimeCapability(ctx context.Context, cfg proxyFlags) proxyCapability {
+	sock := GetControlSocketPathForVM(cfg.VMDir)
+	timeout := 5 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
+			timeout = remaining
+		}
+	}
+	if cfg.Linux {
+		resp, err := ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-ping"}, timeout, "agent-ping")
+		if err == nil && resp.Success {
+			return proxyCapability{Status: proxyCapabilityReady, Source: proxyCapabilityRuntime, Reason: "linux_agent_ping"}
+		}
+		return proxyCapability{Status: proxyCapabilityUnavailable, Source: proxyCapabilityRuntime, Reason: "linux_agent_probe_failed"}
+	}
+	resp, err := ctlSendRequest(sock, &controlpb.ControlRequest{
+		Type: "agent-user-exec",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{Args: []string{"/usr/bin/true"}},
+		},
+	}, timeout, "agent-user-exec")
+	if err == nil && resp.Success {
+		if result := resp.GetAgentExecResult(); result == nil || result.GetExitCode() == 0 {
+			return proxyCapability{Status: proxyCapabilityReady, Source: proxyCapabilityRuntime, Reason: "macos_user_agent_ready"}
+		}
+	}
+	return proxyCapability{Status: proxyCapabilityUnavailable, Source: proxyCapabilityRuntime, Reason: "macos_user_agent_unavailable"}
+}
+
+func proxyCapabilityError(cfg proxyFlags, capability proxyCapability) error {
+	if cfg.Linux {
+		switch capability.Reason {
+		case "linux_agent_requested_false":
+			return fmt.Errorf("-proxy requires vz-agent on Linux guests; run 'vz-macos provision-agent' or reinstall without -no-agent")
+		default:
+			return fmt.Errorf("-proxy requires vz-agent on Linux guests; runtime probe failed against the running VM")
+		}
+	}
+	switch capability.Reason {
+	case "macos_user_agent_unavailable":
+		return fmt.Errorf("-proxy requires the macOS user agent for networksetup; log in graphically or provision the guest agent")
+	default:
+		return fmt.Errorf("-proxy requires a guest-agent-capable macOS VM; provision the guest or use an existing agent-capable VM")
+	}
 }
 
 func parseProxySpec(raw string) (proxySpec, error) {
@@ -273,23 +428,22 @@ func configureGuestProxy(ctx context.Context, cs *ControlServer, rawURL string) 
 	if cs == nil {
 		return fmt.Errorf("proxy runtime unavailable")
 	}
+	flags, err := currentProxyFlags()
+	if err != nil {
+		return err
+	}
+	flags.RawURL = rawURL
+	flags.Running = false
+	flags.RunningKnown = false
 	rt := &proxyRuntimeClient{server: cs, linux: linuxMode}
-	return configureGuestProxyOnRuntime(ctx, rt, rawURL, proxyFlags{
-		RawURL:           rawURL,
-		SandboxLevel:     proxySandboxLevel,
-		NetworkMode:      networkMode,
-		RuntimeProfile:   runtimeProfile,
-		Linux:            linuxMode,
-		ProvisionEnabled: provisionUser != "" || didInjectSucceed(),
-		AgentCapable:     proxyAgentCapable(),
-	})
+	return configureGuestProxyOnRuntime(ctx, rt, rawURL, flags)
 }
 
 func configureRequestedProxy(cs *ControlServer) error {
 	if strings.TrimSpace(proxyURL) == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), proxyRuntimeWaitTimeout)
 	defer cancel()
 	return configureGuestProxy(ctx, cs, proxyURL)
 }
@@ -299,7 +453,10 @@ func configureRequestedProxyAfterBoot(cs *ControlServer) {
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		if proxyLastValidation != nil && proxyLastValidation.Capability.Status == proxyCapabilityUnknown {
+			fmt.Println("Proxy preflight unknown: proceeding to runtime probe.")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), proxyRuntimeWaitTimeout)
 		defer cancel()
 		if err := waitForProxyRuntime(ctx, cs); err != nil {
 			fmt.Printf("warning: configure guest proxy: %v\n", err)
@@ -325,10 +482,10 @@ func teardownRequestedProxy(cs *ControlServer) {
 	if strings.TrimSpace(proxyURL) == "" || cs == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), proxyRuntimeTeardownTimeout)
 	defer cancel()
-	if err := teardownGuestProxy(ctx, cs); err != nil && verbose {
-		fmt.Printf("warning: restore guest proxy: %v\n", err)
+	if err := teardownGuestProxy(ctx, cs); err != nil {
+		printProxyRestoreFailure(cs.effectiveVMDir(), err)
 	}
 }
 
@@ -336,7 +493,7 @@ func waitForProxyRuntime(ctx context.Context, cs *ControlServer) error {
 	if cs == nil {
 		return fmt.Errorf("proxy runtime unavailable")
 	}
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(proxyRuntimePollInterval)
 	defer ticker.Stop()
 	for {
 		var err error
@@ -346,6 +503,9 @@ func waitForProxyRuntime(ctx context.Context, cs *ControlServer) error {
 			_, err = cs.getUserAgent()
 		}
 		if err == nil {
+			if markErr := markVMAgentVerified(cs.effectiveVMDir(), currentVMAgentPlatform(), vmAgentSourceRuntime, time.Now()); markErr != nil && verbose {
+				fmt.Printf("warning: record guest agent capability: %v\n", markErr)
+			}
 			return nil
 		}
 		select {
@@ -361,20 +521,18 @@ func configureGuestProxyOnRuntime(ctx context.Context, rt proxyRuntime, rawURL s
 		return nil
 	}
 	flags.RawURL = rawURL
-	if err := validateProxyFlagsFor(flags); err != nil {
-		return err
-	}
-
-	spec, err := parseProxySpec(rawURL)
+	validation, err := resolveProxyValidationFor(ctx, flags)
 	if err != nil {
 		return err
 	}
+	spec := validation.Spec
 
 	state, err := captureProxyState(ctx, rt)
 	if err != nil {
 		return err
 	}
 	state.Version = proxyStateVersion
+	state.Stage = proxyStateCaptured
 	if rt.IsLinux() {
 		state.Platform = proxyPlatformLinux
 	} else {
@@ -385,19 +543,33 @@ func configureGuestProxyOnRuntime(ctx context.Context, rt proxyRuntime, rawURL s
 	if err := saveProxyState(rt.VMDir(), state); err != nil {
 		return err
 	}
-
-	if rt.IsLinux() {
-		state.Linux, err = applyLinuxProxy(ctx, rt, state.Linux, spec)
-		if err != nil {
-			return err
-		}
-	} else {
-		state.Mac, err = applyMacOSProxy(ctx, rt, state.Mac, spec)
-		if err != nil {
-			return err
-		}
+	state.Stage = proxyStateRollback
+	if err := saveProxyState(rt.VMDir(), state); err != nil {
+		return err
 	}
 
+	if rt.IsLinux() {
+		err = applyLinuxProxy(ctx, rt, state.Linux, spec)
+	} else {
+		_, err = applyMacOSProxy(ctx, rt, state.Mac, spec)
+	}
+	if err != nil {
+		if rollbackErr := restoreProxyState(ctx, rt, state); rollbackErr != nil {
+			if saveErr := saveProxyState(rt.VMDir(), state); saveErr != nil && verbose {
+				fmt.Printf("warning: persist proxy rollback state: %v\n", saveErr)
+			}
+			return fmt.Errorf("configure guest proxy: %w (rollback failed: %v; state retained at %s)", err, rollbackErr, proxyStatePath(rt.VMDir()))
+		}
+		if removeErr := os.Remove(proxyStatePath(rt.VMDir())); removeErr != nil && !os.IsNotExist(removeErr) {
+			return fmt.Errorf("configure guest proxy: %w (cleanup state: %v)", err, removeErr)
+		}
+		return fmt.Errorf("configure guest proxy: %w", err)
+	}
+
+	state.Stage = proxyStateApplied
+	if err := saveProxyState(rt.VMDir(), state); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -410,6 +582,38 @@ func teardownGuestProxyOnRuntime(ctx context.Context, rt proxyRuntime) error {
 		return err
 	}
 
+	switch state.currentStage() {
+	case proxyStateCaptured:
+		if err := os.Remove(proxyStatePath(rt.VMDir())); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove proxy state: %w", err)
+		}
+		return nil
+	case proxyStateApplied, proxyStateRollback:
+	default:
+		return fmt.Errorf("unknown proxy state stage %q", state.Stage)
+	}
+
+	if err := restoreProxyState(ctx, rt, state); err != nil {
+		state.Stage = proxyStateRollback
+		if saveErr := saveProxyState(rt.VMDir(), state); saveErr != nil && verbose {
+			fmt.Printf("warning: persist proxy rollback state: %v\n", saveErr)
+		}
+		return err
+	}
+	if err := os.Remove(proxyStatePath(rt.VMDir())); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove proxy state: %w", err)
+	}
+	return nil
+}
+
+func (s *proxyState) currentStage() string {
+	if s == nil || s.Stage == "" {
+		return proxyStateApplied
+	}
+	return s.Stage
+}
+
+func restoreProxyState(ctx context.Context, rt proxyRuntime, state *proxyState) error {
 	switch state.Platform {
 	case proxyPlatformLinux:
 		if err := restoreLinuxProxy(ctx, rt, state.Linux); err != nil {
@@ -421,10 +625,6 @@ func teardownGuestProxyOnRuntime(ctx context.Context, rt proxyRuntime) error {
 		}
 	default:
 		return fmt.Errorf("unknown proxy state platform %q", state.Platform)
-	}
-
-	if err := os.Remove(proxyStatePath(rt.VMDir())); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove proxy state: %w", err)
 	}
 	return nil
 }
@@ -544,7 +744,7 @@ func restoreMacOSProxy(ctx context.Context, rt proxyRuntime, state *macOSProxySt
 	return nil
 }
 
-func applyLinuxProxy(ctx context.Context, rt proxyRuntime, state *linuxProxyState, spec proxySpec) (*linuxProxyState, error) {
+func applyLinuxProxy(ctx context.Context, rt proxyRuntime, state *linuxProxyState, spec proxySpec) error {
 	if state == nil {
 		state = &linuxProxyState{}
 	}
@@ -554,14 +754,11 @@ func applyLinuxProxy(ctx context.Context, rt proxyRuntime, state *linuxProxyStat
 		if !ok {
 			continue
 		}
-		file.Present = true
-		file.Mode = 0644
-		file.Data = []byte(content)
-		if err := rt.WriteFile(ctx, file.Path, file.Data, file.Mode); err != nil {
-			return nil, fmt.Errorf("write proxy file %s: %w", file.Path, err)
+		if err := rt.WriteFile(ctx, file.Path, []byte(content), 0644); err != nil {
+			return fmt.Errorf("write proxy file %s: %w", file.Path, err)
 		}
 	}
-	return state, nil
+	return nil
 }
 
 func restoreLinuxProxy(ctx context.Context, rt proxyRuntime, state *linuxProxyState) error {
@@ -830,4 +1027,18 @@ func loadProxyState(vmDirectory string) (*proxyState, error) {
 		return nil, fmt.Errorf("parse proxy state: %w", err)
 	}
 	return &state, nil
+}
+
+func printProxyRestoreFailure(vmDirectory string, err error) {
+	statePath := proxyStatePath(vmDirectory)
+	spec := ""
+	if state, loadErr := loadProxyState(vmDirectory); loadErr == nil {
+		spec = strings.TrimSpace(state.Spec)
+	}
+	fmt.Printf("warning: guest proxy restore failed; manual recovery needed: %v\n", err)
+	fmt.Printf("  vm dir: %s\n", vmDirectory)
+	fmt.Printf("  state file: %s\n", statePath)
+	if spec != "" {
+		fmt.Printf("  rerun after boot: vz-macos -vm %s run -proxy %s\n", filepath.Base(vmDirectory), spec)
+	}
 }

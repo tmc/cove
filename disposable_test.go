@@ -38,7 +38,11 @@ func TestSetupDisposableCloneUsesInjectedClone(t *testing.T) {
 	var gotOpts CloneOptions
 	clone := func(opts CloneOptions) error {
 		gotOpts = opts
-		return os.MkdirAll(GetVMPath(opts.Target), 0755)
+		target := GetVMPath(opts.Target)
+		if err := os.MkdirAll(target, 0755); err != nil {
+			return err
+		}
+		return os.WriteFile(proxyStatePath(target), []byte("{}\n"), 0644)
 	}
 
 	got, err := SetupDisposableClone(DisposableSetupOptions{
@@ -69,6 +73,9 @@ func TestSetupDisposableCloneUsesInjectedClone(t *testing.T) {
 	}
 	if gotOpts.Source != "research-base" || gotOpts.Target != wantName || !gotOpts.Linked || gotOpts.CopyMachineID {
 		t.Fatalf("SetupDisposableClone() clone opts = %#v", gotOpts)
+	}
+	if _, err := os.Stat(proxyStatePath(got.Path)); !os.IsNotExist(err) {
+		t.Fatalf("SetupDisposableClone() left proxy state behind: %v", err)
 	}
 }
 
