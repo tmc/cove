@@ -189,7 +189,7 @@ func (t *VMToolbar) createItem(id, sfSymbol, label, action string) appkit.NSTool
 	item := appkit.NewToolbarItemWithItemIdentifier(appkit.NSToolbarItemIdentifier(id))
 
 	img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription(sfSymbol, label)
-	item.SetImage(objectivec.ObjectFromID(img.ID))
+	item.SetImage(&img)
 
 	item.SetLabel(label)
 	item.SetPaletteLabel(label)
@@ -208,7 +208,7 @@ func (t *VMToolbar) createMenuToolbarItem(id, sfSymbol, label string) appkit.NSM
 	menuItem := appkit.NewMenuToolbarItemWithItemIdentifier(appkit.NSToolbarItemIdentifier(id))
 
 	img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription(sfSymbol, label)
-	menuItem.SetImage(objectivec.ObjectFromID(img.ID))
+	menuItem.SetImage(&img)
 
 	menuItem.SetLabel(label)
 	menuItem.SetPaletteLabel(label)
@@ -231,7 +231,7 @@ func (t *VMToolbar) createSharedFolderMenu() appkit.NSMenuToolbarItem {
 	menuItem := appkit.NewMenuToolbarItemWithItemIdentifier(appkit.NSToolbarItemIdentifier(toolbarIDSharedFolder))
 
 	img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("folder", "Shared Folders")
-	menuItem.SetImage(objectivec.ObjectFromID(img.ID))
+	menuItem.SetImage(&img)
 
 	menuItem.SetLabel("Shared Folders")
 	menuItem.SetPaletteLabel("Shared Folders")
@@ -355,12 +355,12 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 		item.SetEnabled(!busy)
 		if running {
 			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("pause.fill", "Pause")
-			item.SetImage(objectivec.ObjectFromID(img.ID))
+			item.SetImage(&img)
 			item.SetLabel("Pause")
 			item.SetToolTip("Pause")
 		} else {
 			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("play.fill", "Start")
-			item.SetImage(objectivec.ObjectFromID(img.ID))
+			item.SetImage(&img)
 			item.SetLabel("Start")
 			item.SetToolTip("Start")
 		}
@@ -376,7 +376,7 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 		if !running && t.captureEnabled {
 			t.captureEnabled = false
 			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("keyboard", "Capture Input")
-			item.SetImage(objectivec.ObjectFromID(img.ID))
+			item.SetImage(&img)
 			item.SetLabel("Capture Input")
 			item.SetToolTip("Capture Input")
 		}
@@ -429,7 +429,7 @@ func (t *VMToolbar) handleCaptureInput(_ objc.ID, _ objc.SEL, _ objc.ID) {
 			label = "Release Input"
 		}
 		img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription(symbol, label)
-		item.SetImage(objectivec.ObjectFromID(img.ID))
+		item.SetImage(&img)
 		item.SetLabel(label)
 		item.SetToolTip(label)
 	}
