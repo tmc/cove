@@ -1030,15 +1030,21 @@ func loadProxyState(vmDirectory string) (*proxyState, error) {
 }
 
 func printProxyRestoreFailure(vmDirectory string, err error) {
-	statePath := proxyStatePath(vmDirectory)
-	spec := ""
-	if state, loadErr := loadProxyState(vmDirectory); loadErr == nil {
-		spec = strings.TrimSpace(state.Spec)
-	}
 	fmt.Printf("warning: guest proxy restore failed; manual recovery needed: %v\n", err)
-	fmt.Printf("  vm dir: %s\n", vmDirectory)
-	fmt.Printf("  state file: %s\n", statePath)
-	if spec != "" {
-		fmt.Printf("  rerun after boot: vz-macos -vm %s run -proxy %s\n", filepath.Base(vmDirectory), spec)
+	for _, line := range proxyRecoveryLines(vmDirectory) {
+		fmt.Printf("  %s\n", line)
 	}
+}
+
+func proxyRecoveryLines(vmDirectory string) []string {
+	lines := []string{
+		fmt.Sprintf("vm dir: %s", vmDirectory),
+		fmt.Sprintf("state file: %s", proxyStatePath(vmDirectory)),
+	}
+	if state, loadErr := loadProxyState(vmDirectory); loadErr == nil {
+		if spec := strings.TrimSpace(state.Spec); spec != "" {
+			lines = append(lines, fmt.Sprintf("rerun after boot: vz-macos -vm %s run -proxy %s", filepath.Base(vmDirectory), spec))
+		}
+	}
+	return lines
 }

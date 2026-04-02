@@ -67,6 +67,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printVzscriptUsage(os.Stderr)
 		case "network":
 			fmt.Println(NetworkModeHelp())
+		case "proxy":
+			printProxyUsage(os.Stderr)
 		case "rosetta":
 			fmt.Println(RosettaHelp())
 		default:
@@ -80,6 +82,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "network":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			fmt.Println(NetworkModeHelp())
+			return true, 0
+		}
+	case "proxy":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printProxyUsage(os.Stderr)
 			return true, 0
 		}
 	case "rosetta":
@@ -158,6 +165,28 @@ Delete disposable VM clones created with -disposable.
 Options:
   -dry-run              Print disposable clones without deleting them
   -older-than duration  Only delete disposable clones older than the given age`)
+}
+
+func printProxyUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: vz-macos run -proxy http://HOST:PORT
+
+Configure guest system HTTP/HTTPS proxy settings after boot.
+
+Behavior:
+  - Linux writes /etc/environment.d/99-vz-macos-proxy.conf and /etc/profile.d/99-vz-macos-proxy.sh
+  - macOS configures proxy settings with networksetup through the guest user agent
+  - clean shutdown restores the previous guest proxy state best-effort
+
+Preflight:
+  - -sandbox-level strict rejects -proxy
+  - -network none rejects -proxy
+  - macOS -runtime-profile minimal rejects -proxy
+  - Linux -no-agent only affects install/provisioning; existing VM runs use durable guest-agent state from config.json
+
+Troubleshooting:
+  - If preflight says the Linux guest lacks vz-agent, run: vz-macos provision-agent
+  - If macOS runtime probing cannot reach the user agent, log in graphically and retry
+  - If .proxy-state.json remains in the VM directory, run doctor or boot again with the same -proxy and stop cleanly`)
 }
 
 func printTemplateUsage(w io.Writer) {

@@ -189,6 +189,7 @@ func verifyRunning(sock string, verbose bool) error {
 		}
 	}
 
+	reportProxyRecoveryState(os.Stdout, vmDir, &allOK)
 	fmt.Println()
 	if allOK {
 		fmt.Println("Verification passed")
@@ -333,6 +334,7 @@ func verifyStopped(verbose, fix bool) error {
 		}
 	}
 
+	reportProxyRecoveryState(os.Stdout, vmDir, &allOK)
 	fmt.Println()
 	if criticalFail {
 		fmt.Println("VERIFICATION FAILED: Critical files missing or have wrong ownership")
@@ -429,4 +431,18 @@ func verifyStopped(verbose, fix bool) error {
 		return fmt.Errorf("verification failed: critical issues found\n  run 'vz-macos doctor --fix' to attempt automatic repair")
 	}
 	return nil
+}
+
+func reportProxyRecoveryState(w io.Writer, vmDirectory string, allOK *bool) {
+	if _, err := os.Stat(proxyStatePath(vmDirectory)); err != nil {
+		return
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Warning: guest proxy recovery is pending")
+	for _, line := range proxyRecoveryLines(vmDirectory) {
+		fmt.Fprintf(w, "  %s\n", line)
+	}
+	if allOK != nil {
+		*allOK = false
+	}
 }

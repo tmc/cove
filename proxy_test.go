@@ -501,6 +501,29 @@ func TestProxyValidationErrorsAreActionable(t *testing.T) {
 	}
 }
 
+func TestProxyRecoveryLines(t *testing.T) {
+	dir := t.TempDir()
+	if err := saveProxyState(dir, &proxyState{
+		Version:  proxyStateVersion,
+		Platform: proxyPlatformLinux,
+		Stage:    proxyStateRollback,
+		Spec:     "http://127.0.0.1:8080",
+	}); err != nil {
+		t.Fatalf("saveProxyState() error = %v", err)
+	}
+	lines := proxyRecoveryLines(dir)
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"vm dir: " + dir,
+		"state file: " + proxyStatePath(dir),
+		"vz-macos -vm " + filepath.Base(dir) + " run -proxy http://127.0.0.1:8080",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("proxyRecoveryLines() = %q, want substring %q", joined, want)
+		}
+	}
+}
+
 func linuxProxyFilesMust(raw string) map[string]string {
 	spec, _ := parseProxySpec(raw)
 	return linuxProxyFiles(spec)
