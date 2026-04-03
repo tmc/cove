@@ -53,6 +53,11 @@ const (
 
 const linuxAutoinstallPath = "autoinstall.yaml"
 
+const (
+	linuxEFIBootArtifactsDir = "EFI/VZMACOS"
+	linuxRootUUIDFileName    = "linux-root-uuid.txt"
+)
+
 func currentLinuxVariant() LinuxVariant {
 	if linuxDesktop {
 		return LinuxVariantDesktop
@@ -627,26 +632,6 @@ func buildLinuxCloudInitData(config LinuxProvisionConfig, includeAgent bool, age
 	}
 }
 
-// startCloudInitHTTPServer starts an HTTP server that serves cloud-init
-// NoCloud data (user-data, meta-data, vendor-data). The server listens on
-// a random port on all interfaces. The guest fetches these files via the
-// ds=nocloud-net;s=http://host:port/ kernel cmdline parameter.
-type processCloser struct {
-	cmd     *exec.Cmd
-	logFile *os.File
-}
-
-func (c *processCloser) Close() error {
-	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-		_, _ = c.cmd.Process.Wait()
-	}
-	if c.logFile != nil {
-		return c.logFile.Close()
-	}
-	return nil
-}
-
 func startCloudInitHTTPServer(seedDir string) (string, io.Closer, error) {
 	if seedDir == "" {
 		return "", nil, fmt.Errorf("empty seed directory")
@@ -658,69 +643,7 @@ func startCloudInitHTTPServer(seedDir string) (string, io.Closer, error) {
 		return "", nil, fmt.Errorf("seed meta-data: %w", err)
 	}
 
-	if python3, err := exec.LookPath("python3"); err == nil {
-		addr, closer, startErr := startCloudInitPythonHTTPServer(python3, seedDir)
-		if startErr == nil {
-			return addr, closer, nil
-		}
-		if verbose {
-			fmt.Printf("  warning: python3 cloud-init HTTP server failed: %v\n", startErr)
-		}
-	}
-
 	return startCloudInitGoHTTPServer(seedDir)
-}
-
-func startCloudInitPythonHTTPServer(python3, seedDir string) (string, io.Closer, error) {
-	portListener, err := net.Listen("tcp4", "127.0.0.1:0")
-	// The guest reaches the host over the default VZ NAT IPv4 gateway
-	// (192.168.64.1). Listen on IPv4 explicitly so the advertised seed URL
-	// is reachable from the guest even when the host prefers an IPv6 wildcard
-	// listener for "tcp".
-	if err != nil {
-		return "", nil, fmt.Errorf("listen: %w", err)
-	}
-	port := portListener.Addr().(*net.TCPAddr).Port
-	portListener.Close()
-
-	// Determine the host IP that the guest can reach. VZ's NAT networking
-	// uses 192.168.64.1 as the default gateway/host IP.
-	hostIP := "192.168.64.1"
-	addr := fmt.Sprintf("%s:%d", hostIP, port)
-
-	logPath := filepath.Join(vmDir, "cloud-init-http.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return "", nil, fmt.Errorf("open cloud-init HTTP log: %w", err)
-	}
-	writer := io.Writer(logFile)
-	if verbose {
-		writer = io.MultiWriter(os.Stdout, logFile)
-	}
-
-	cmd := exec.Command(python3, "-m", "http.server", fmt.Sprintf("%d", port), "--bind", "0.0.0.0")
-	cmd.Dir = seedDir
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Start(); err != nil {
-		logFile.Close()
-		return "", nil, fmt.Errorf("start python3 http.server: %w", err)
-	}
-
-	readyURL := fmt.Sprintf("http://127.0.0.1:%d/meta-data", port)
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-	for i := 0; i < 10; i++ {
-		resp, err := client.Get(readyURL)
-		if err == nil {
-			resp.Body.Close()
-			return addr, &processCloser{cmd: cmd, logFile: logFile}, nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	closer := &processCloser{cmd: cmd, logFile: logFile}
-	_ = closer.Close()
-	return "", nil, fmt.Errorf("python3 http.server did not become ready")
 }
 
 func startCloudInitGoHTTPServer(seedDir string) (string, io.Closer, error) {
@@ -941,7 +864,7 @@ func linuxStorageSection() string {
 }
 
 func linuxBootloaderLateCommands() string {
-	return `
+	return fmt.Sprintf(`
     - >-
       curtin in-target -- apt-get install -y
       grub-efi-arm64
@@ -956,14 +879,30 @@ func linuxBootloaderLateCommands() string {
     - |
       ROOT_UUID=$(findmnt -no UUID /target)
       mkdir -p /target/boot/efi/EFI/BOOT
-      printf '%s\n' \
+      printf '%%s\n' \
         'insmod part_gpt' \
         'insmod ext2' \
         "search --no-floppy --fs-uuid --set=root ${ROOT_UUID}" \
         'set prefix=($root)/boot/grub' \
         'configfile $prefix/grub.cfg' \
         > /target/boot/efi/EFI/BOOT/grub.cfg
-    - curtin in-target -- update-grub`
+    - >-
+      curtin in-target -- /bin/sh -c
+      'if grep -q "^GRUB_CMDLINE_LINUX=" /etc/default/grub; then
+         sed -i -e "s/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX=\"console=tty0 console=hvc0\"/" /etc/default/grub;
+       else
+         printf "\nGRUB_CMDLINE_LINUX=\"console=tty0 console=hvc0\"\n" >> /etc/default/grub;
+       fi'
+    - curtin in-target -- update-grub
+    - |
+      set -eu
+      latest_kernel=$(ls /target/boot/vmlinuz-* | sort -V | tail -n 1)
+      latest_initrd=$(ls /target/boot/initrd.img-* | sort -V | tail -n 1)
+      mkdir -p /target/boot/efi/%s
+      cp "$latest_kernel" /target/boot/efi/%s/vmlinuz
+      cp "$latest_initrd" /target/boot/efi/%s/initrd
+      findmnt -no UUID /target > /target/boot/efi/%s/%s
+`, linuxEFIBootArtifactsDir, linuxEFIBootArtifactsDir, linuxEFIBootArtifactsDir, linuxEFIBootArtifactsDir, linuxRootUUIDFileName)
 }
 
 func linuxDesktopLateCommands(config LinuxProvisionConfig) string {
@@ -1010,10 +949,25 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
 	if includeAgent {
 		agentInstallCommand := `
     - |
-      # Find vz-agent on any mounted CIDATA volume.
-      for d in /media/*/vz-agent /mnt/*/vz-agent /cdrom/vz-agent; do
-        [ -f "$d" ] && cp "$d" /target/usr/local/bin/vz-agent && break
+      found=""
+      for d in /media/*/vz-agent /mnt/*/vz-agent /cdrom/vz-agent /var/lib/cloud/seed/nocloud*/vz-agent; do
+        if [ -f "$d" ]; then
+          cp "$d" /target/usr/local/bin/vz-agent
+          found=1
+          break
+        fi
       done
+      if [ -z "$found" ]; then
+        seed_dev=$(blkid -L CIDATA || true)
+        if [ -n "$seed_dev" ]; then
+          mkdir -p /tmp/vz-cidata
+          if mount -o ro "$seed_dev" /tmp/vz-cidata 2>/dev/null; then
+            cp /tmp/vz-cidata/vz-agent /target/usr/local/bin/vz-agent
+            umount /tmp/vz-cidata || true
+            found=1
+          fi
+        fi
+      fi
       test -s /target/usr/local/bin/vz-agent`
 		if agentURL != "" {
 			agentInstallCommand = fmt.Sprintf(`
@@ -1023,9 +977,24 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
       elif command -v curl >/dev/null 2>&1; then
         curl -fsSL -o /target/usr/local/bin/vz-agent %q
       else
-        for d in /media/*/vz-agent /mnt/*/vz-agent /cdrom/vz-agent; do
-          [ -f "$d" ] && cp "$d" /target/usr/local/bin/vz-agent && break
+        found=""
+        for d in /media/*/vz-agent /mnt/*/vz-agent /cdrom/vz-agent /var/lib/cloud/seed/nocloud*/vz-agent; do
+          if [ -f "$d" ]; then
+            cp "$d" /target/usr/local/bin/vz-agent
+            found=1
+            break
+          fi
         done
+        if [ -z "$found" ]; then
+          seed_dev=$(blkid -L CIDATA || true)
+          if [ -n "$seed_dev" ]; then
+            mkdir -p /tmp/vz-cidata
+            if mount -o ro "$seed_dev" /tmp/vz-cidata 2>/dev/null; then
+              cp /tmp/vz-cidata/vz-agent /target/usr/local/bin/vz-agent
+              umount /tmp/vz-cidata || true
+            fi
+          fi
+        fi
       fi
       test -s /target/usr/local/bin/vz-agent`, agentURL, agentURL)
 		}
@@ -1037,15 +1006,20 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
       printf '%s\n' \
         '[Unit]' \
         'Description=vz-macos Guest Agent' \
-        'After=network.target' \
+        'After=network-online.target systemd-modules-load.service' \
+        'Wants=network-online.target' \
         '[Service]' \
         'Type=simple' \
-        'ExecStart=/usr/local/bin/vz-agent' \
+        'ExecStartPre=/bin/sh -c "modprobe vsock >/dev/null 2>&1 || true; modprobe virtio_vsock >/dev/null 2>&1 || true; modprobe vmw_vsock_virtio_transport >/dev/null 2>&1 || true; for i in 1 2 3 4 5; do [ -e /dev/vsock ] && exit 0; sleep 1; done; exit 0"' \
+        'ExecStart=/bin/sh -c "exec /usr/local/bin/vz-agent -mode daemon 2>&1 | tee -a /var/log/vz-agent.log"' \
         'Restart=always' \
-        'RestartSec=5' \
+        'RestartSec=2' \
+        'StandardOutput=journal+console' \
+        'StandardError=journal+console' \
         '[Install]' \
         'WantedBy=multi-user.target' \
         > /target/etc/systemd/system/vz-agent.service
+    - curtin in-target --target=/target -- systemctl daemon-reload
     - curtin in-target --target=/target -- systemctl enable vz-agent`
 	}
 
@@ -1098,10 +1072,12 @@ func verifyLinuxInstallBootable(diskPath string) error {
 		return fmt.Errorf("attach installed disk: %w", err)
 	}
 	if len(devices) < 2 {
-		detachLinuxDisk(devices)
+		_ = detachLinuxDisk(diskPath, devices)
 		return fmt.Errorf("attach installed disk: expected partition devices, got %v", devices)
 	}
-	defer detachLinuxDisk(devices)
+	defer func() {
+		_ = detachLinuxDisk(diskPath, devices)
+	}()
 
 	mountPoint, err := mountLinuxEFIPartitionReadOnly(devices[1])
 	if err != nil {
@@ -1112,6 +1088,45 @@ func verifyLinuxInstallBootable(diskPath string) error {
 	bootloaderPath := filepath.Join(mountPoint, "EFI", "BOOT", "BOOTAA64.EFI")
 	if _, err := os.Stat(bootloaderPath); err != nil {
 		return fmt.Errorf("missing EFI bootloader %s: %w", bootloaderPath, err)
+	}
+	if err := stageInstalledLinuxBootArtifacts(vmDir, mountPoint); err != nil {
+		return err
+	}
+	return nil
+}
+
+func stageInstalledLinuxBootArtifacts(vmDir, mountPoint string) error {
+	artifactDir := filepath.Join(mountPoint, filepath.FromSlash(linuxEFIBootArtifactsDir))
+	kernelSource := filepath.Join(artifactDir, "vmlinuz")
+	initrdSource := filepath.Join(artifactDir, "initrd")
+	rootUUIDSource := filepath.Join(artifactDir, linuxRootUUIDFileName)
+
+	for _, path := range []string{kernelSource, initrdSource, rootUUIDSource} {
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("missing staged linux boot artifact %s: %w", path, err)
+		}
+	}
+
+	if err := copyFile(kernelSource, filepath.Join(vmDir, "vmlinuz")); err != nil {
+		return fmt.Errorf("copy staged linux kernel: %w", err)
+	}
+	if err := decompressKernelIfNeeded(filepath.Join(vmDir, "vmlinuz")); err != nil {
+		return fmt.Errorf("prepare staged linux kernel: %w", err)
+	}
+	if err := copyFile(initrdSource, filepath.Join(vmDir, "initrd")); err != nil {
+		return fmt.Errorf("copy staged linux initrd: %w", err)
+	}
+
+	rootUUID, err := os.ReadFile(rootUUIDSource)
+	if err != nil {
+		return fmt.Errorf("read staged linux root uuid: %w", err)
+	}
+	rootUUID = bytes.TrimSpace(rootUUID)
+	if len(rootUUID) == 0 {
+		return fmt.Errorf("staged linux root uuid is empty")
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, linuxRootUUIDFileName), append(rootUUID, '\n'), 0644); err != nil {
+		return fmt.Errorf("write staged linux root uuid: %w", err)
 	}
 	return nil
 }
@@ -1138,11 +1153,35 @@ func attachLinuxDiskReadOnly(diskPath string) ([]string, error) {
 	return devices, nil
 }
 
-func detachLinuxDisk(devices []string) {
+func detachLinuxDisk(diskPath string, devices []string) error {
 	if len(devices) == 0 {
-		return
+		return nil
 	}
-	_ = exec.Command("hdiutil", "detach", devices[0]).Run()
+	if out, err := exec.Command("hdiutil", "detach", devices[0]).CombinedOutput(); err != nil {
+		if forceOut, forceErr := exec.Command("hdiutil", "detach", "-force", devices[0]).CombinedOutput(); forceErr != nil {
+			return fmt.Errorf("hdiutil detach %s: %w: %s; force detach: %w: %s", devices[0], err, strings.TrimSpace(string(out)), forceErr, strings.TrimSpace(string(forceOut)))
+		}
+	}
+	if diskPath == "" {
+		return nil
+	}
+	return waitForLinuxDiskDetach(diskPath, 45*time.Second)
+}
+
+func waitForLinuxDiskDetach(diskPath string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	want := "image-path      : " + diskPath
+	for time.Now().Before(deadline) {
+		out, err := exec.Command("hdiutil", "info").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("hdiutil info: %w: %s", err, strings.TrimSpace(string(out)))
+		}
+		if !strings.Contains(string(out), want) {
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fmt.Errorf("disk image still attached after %s: %s", timeout, diskPath)
 }
 
 func mountLinuxEFIPartitionReadOnly(device string) (string, error) {

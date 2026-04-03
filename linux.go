@@ -44,11 +44,25 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
 
+	kernelToUse := kernelPath
+	initrdToUse := initrdPath
+	cmdLineToUse := cmdLine
+	if kernelToUse == "" {
+		if installed, ok := loadInstalledLinuxBootArtifacts(vmDir); ok {
+			fmt.Println("  Using staged installed kernel boot (VZLinuxBootLoader)")
+			kernelToUse = installed.kernel
+			initrdToUse = installed.initrd
+			if cmdLineToUse == "" {
+				cmdLineToUse = installed.commandLine()
+			}
+		}
+	}
+
 	// Boot loader - choose based on flags
-	if kernelPath != "" {
+	if kernelToUse != "" {
 		// Direct kernel boot
 		fmt.Println("  Using direct kernel boot (VZLinuxBootLoader)")
-		bootloader, err := createLinuxBootLoader()
+		bootloader, err := createLinuxBootLoaderWithPaths(kernelToUse, initrdToUse, cmdLineToUse)
 		if err != nil {
 			return config, err
 		}
@@ -202,6 +216,10 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 
 // createLinuxBootLoader creates a VZLinuxBootLoader with kernel, initrd, and cmdline.
 func createLinuxBootLoader() (vz.VZLinuxBootLoader, error) {
+	return createLinuxBootLoaderWithPaths(kernelPath, initrdPath, cmdLine)
+}
+
+func createLinuxBootLoaderWithPaths(kernelPath, initrdPath, cmdLine string) (vz.VZLinuxBootLoader, error) {
 	// Resolve to absolute paths (NSURL requires absolute paths)
 	absKernelPath, err := filepath.Abs(kernelPath)
 	if err != nil {
@@ -258,6 +276,49 @@ func createLinuxBootLoader() (vz.VZLinuxBootLoader, error) {
 	}
 
 	return bootloader, nil
+}
+
+type installedLinuxBootArtifacts struct {
+	kernel   string
+	initrd   string
+	rootUUID string
+}
+
+func loadInstalledLinuxBootArtifacts(vmDir string) (installedLinuxBootArtifacts, bool) {
+	kernel := filepath.Join(vmDir, "vmlinuz")
+	initrd := filepath.Join(vmDir, "initrd")
+	rootUUIDPath := filepath.Join(vmDir, linuxRootUUIDFileName)
+
+	for _, path := range []string{kernel, initrd, rootUUIDPath} {
+		info, err := os.Stat(path)
+		if err != nil || info.Size() == 0 {
+			return installedLinuxBootArtifacts{}, false
+		}
+	}
+
+	rootUUID, err := os.ReadFile(rootUUIDPath)
+	if err != nil {
+		return installedLinuxBootArtifacts{}, false
+	}
+	rootUUIDValue := strings.TrimSpace(string(rootUUID))
+	if rootUUIDValue == "" {
+		return installedLinuxBootArtifacts{}, false
+	}
+
+	return installedLinuxBootArtifacts{
+		kernel:   kernel,
+		initrd:   initrd,
+		rootUUID: rootUUIDValue,
+	}, true
+}
+
+func hasInstalledLinuxBootArtifacts(vmDir string) bool {
+	_, ok := loadInstalledLinuxBootArtifacts(vmDir)
+	return ok
+}
+
+func (a installedLinuxBootArtifacts) commandLine() string {
+	return fmt.Sprintf("console=tty0 console=hvc0 root=UUID=%s", a.rootUUID)
 }
 
 // createEFIBootLoader creates a VZEFIBootLoader with variable store.
@@ -351,32 +412,36 @@ func runLinuxVM() error {
 	// For EFI boot: only attach ISO if the VM hasn't been installed yet
 	// (no efi.nvram) or if the user explicitly provided an ISO.
 	if kernelPath == "" {
-		efiStorePath := filepath.Join(vmDir, "efi.nvram")
-		isoExplicit := false
-		flag.Visit(func(f *flag.Flag) {
-			if f.Name == "iso" {
-				isoExplicit = true
-			}
-		})
-		if isoExplicit || isoPath != "" {
-			// User explicitly wants an ISO — resolve it
-			resolvedISO, err := ensureLinuxISO()
-			if err != nil {
-				return fmt.Errorf("ensure ISO: %w", err)
-			}
-			isoPath = resolvedISO
-		} else if _, err := os.Stat(efiStorePath); os.IsNotExist(err) {
-			if _, markerErr := os.Stat(linuxInstalledMarkerPath(vmDir)); markerErr == nil {
-				// The unattended installer completed previously. Create an EFI
-				// variable store on first real boot, but do not reattach
-				// installation media.
-			} else {
-				// No EFI store yet — first boot, need the ISO
+		if _, ok := loadInstalledLinuxBootArtifacts(vmDir); ok {
+			isoPath = ""
+		} else {
+			efiStorePath := filepath.Join(vmDir, "efi.nvram")
+			isoExplicit := false
+			flag.Visit(func(f *flag.Flag) {
+				if f.Name == "iso" {
+					isoExplicit = true
+				}
+			})
+			if isoExplicit || isoPath != "" {
+				// User explicitly wants an ISO — resolve it
 				resolvedISO, err := ensureLinuxISO()
 				if err != nil {
 					return fmt.Errorf("ensure ISO: %w", err)
 				}
 				isoPath = resolvedISO
+			} else if _, err := os.Stat(efiStorePath); os.IsNotExist(err) {
+				if _, markerErr := os.Stat(linuxInstalledMarkerPath(vmDir)); markerErr == nil {
+					// The unattended installer completed previously. Create an EFI
+					// variable store on first real boot, but do not reattach
+					// installation media.
+				} else {
+					// No EFI store yet — first boot, need the ISO
+					resolvedISO, err := ensureLinuxISO()
+					if err != nil {
+						return fmt.Errorf("ensure ISO: %w", err)
+					}
+					isoPath = resolvedISO
+				}
 			}
 		}
 		// else: efi.nvram exists, boot from disk — no ISO needed

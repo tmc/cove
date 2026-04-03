@@ -91,6 +91,7 @@ func TestGenerateUserDataDesktopWithAgent(t *testing.T) {
 		"AutomaticLoginEnable=true",
 		"AutomaticLogin=me",
 		"http://192.168.64.1:1234/vz-agent",
+		"blkid -L CIDATA",
 		"systemctl enable vz-agent",
 	} {
 		if !strings.Contains(got, want) {
@@ -133,6 +134,9 @@ func TestBuildLinuxCloudInitData(t *testing.T) {
 	}
 	if !strings.Contains(seed.autoinstallData, "http://192.168.64.1:9999/vz-agent") {
 		t.Fatalf("buildLinuxCloudInitData autoinstallData missing agent URL\n%s", seed.autoinstallData)
+	}
+	if !strings.Contains(seed.autoinstallData, "blkid -L CIDATA") {
+		t.Fatalf("buildLinuxCloudInitData autoinstallData missing CIDATA fallback\n%s", seed.autoinstallData)
 	}
 	if !strings.Contains(seed.metaData, "instance-id: seed-vm") {
 		t.Fatalf("buildLinuxCloudInitData meta-data missing hostname\n%s", seed.metaData)
