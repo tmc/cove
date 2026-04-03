@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -210,23 +211,42 @@ func applyUpConfig(cfg upConfig) {
 	}
 }
 
+// vmAlreadyInstalled reports whether the VM disk already exists, meaning
+// a previous install completed. When true, up can skip directly to boot.
+func vmAlreadyInstalled(dir string, linux bool) bool {
+	name := "disk.img"
+	if linux {
+		name = "linux-disk.img"
+	}
+	info, err := os.Stat(filepath.Join(dir, name))
+	return err == nil && info.Size() > 0
+}
+
 // runUpPipeline executes the install -> inject -> run pipeline.
+// If the VM is already installed (disk exists) and -force is not set,
+// it skips install and provisioning and proceeds to boot + vzscripts.
 func runUpPipeline(cfg upConfig) error {
 	if cfg.linux {
 		return runLinuxUpPipeline(cfg)
 	}
 
-	// Step 1: Install macOS.
-	fmt.Println("=== Step 1/3: Installing macOS ===")
-	installErr := installMacOSLikeVZ(context.Background())
-	if installErr != nil && !errors.Is(installErr, errRestartVM) {
-		return fmt.Errorf("install: %w", installErr)
+	installed := vmAlreadyInstalled(vmDir, false)
+
+	// Step 1: Install macOS (skip if already installed).
+	if installed && !cfg.force {
+		fmt.Println("=== Step 1/3: Install (already done) ===")
+	} else {
+		fmt.Println("=== Step 1/3: Installing macOS ===")
+		installErr := installMacOSLikeVZ(context.Background())
+		if installErr != nil && !errors.Is(installErr, errRestartVM) {
+			return fmt.Errorf("install: %w", installErr)
+		}
 	}
 
 	// Step 2: Inject provisioning files.
 	// The install step may have already injected (via stopVMAndInject) in
 	// headless mode. Skip if injection already succeeded.
-	if !didInjectSucceed() {
+	if !didInjectSucceed() && !(installed && !cfg.force) {
 		fmt.Println()
 		fmt.Println("=== Step 2/3: Provisioning VM ===")
 		opts := InjectOptions{
@@ -364,10 +384,16 @@ func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
 // runLinuxUpPipeline executes the install -> run pipeline for Linux VMs.
 // Cloud-init handles user provisioning during install, so no inject step is needed.
 func runLinuxUpPipeline(cfg upConfig) error {
-	// Step 1: Install Linux VM (cloud-init provisions the user).
-	fmt.Println("=== Step 1/2: Installing Linux VM ===")
-	if err := installLinuxVM(); err != nil {
-		return fmt.Errorf("install: %w", err)
+	installed := vmAlreadyInstalled(vmDir, true)
+
+	// Step 1: Install Linux VM (skip if already installed).
+	if installed && !cfg.force {
+		fmt.Println("=== Step 1/2: Install (already done) ===")
+	} else {
+		fmt.Println("=== Step 1/2: Installing Linux VM ===")
+		if err := installLinuxVM(); err != nil {
+			return fmt.Errorf("install: %w", err)
+		}
 	}
 
 	// Step 2: Boot VM and optionally run vzscripts.
