@@ -460,6 +460,9 @@ func detectOSType(vmPath string) string {
 	if _, err := os.Stat(filepath.Join(vmPath, "hw.model")); err == nil {
 		return "macOS"
 	}
+	if _, err := os.Stat(filepath.Join(vmPath, "linux-disk.img")); err == nil {
+		return "Linux"
+	}
 	if _, err := os.Stat(filepath.Join(vmPath, "efi.nvram")); err == nil {
 		return "Linux"
 	}
