@@ -87,15 +87,6 @@ type vzscriptConfig struct {
 	hostLogFile *os.File // persistent log file in VM directory
 }
 
-// execType returns the control request type for exec commands,
-// routing to daemon or user agent based on config.
-func (c vzscriptConfig) execType() string {
-	if c.daemon {
-		return "agent-exec"
-	}
-	return "agent-user-exec"
-}
-
 // execStreamType returns the control request type for streaming exec commands.
 func (c vzscriptConfig) execStreamType() string {
 	if c.daemon {
@@ -348,8 +339,10 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 		timeout = 10 * time.Minute
 	}
 
-	// In verbose mode, stream command output live so long-running installs
-	// show progress as they run.
+	// Always use streaming so long-running commands (guest-shell scripts,
+	// package installs) don't appear to hang. In verbose mode, output is
+	// printed live; otherwise it is collected silently.
+	var onStdout, onStderr func([]byte)
 	if cfg.verbose {
 		out := cfg.streamOut
 		if out == nil {
@@ -359,54 +352,25 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 		if errOut == nil {
 			errOut = os.Stderr
 		}
-		return func(*script.State) (string, string, error) {
-			stdout, stderr, exitCode, err := guestExecStream(
-				cfg,
-				args,
-				timeout,
-				func(chunk []byte) { _, _ = out.Write(chunk) },
-				func(chunk []byte) { _, _ = errOut.Write(chunk) },
-			)
-			if err != nil {
-				return "", "", err
-			}
-			var execErr error
-			if exitCode != 0 {
-				execErr = fmt.Errorf("exit code %d", exitCode)
-			}
-			return stdout, stderr, execErr
-		}, nil
-	}
-
-	req := &controlpb.ControlRequest{
-		Type: cfg.execType(),
-		Command: &controlpb.ControlRequest_AgentExec{
-			AgentExec: &controlpb.AgentExecCommand{
-				Args: args,
-			},
-		},
-	}
-	resp, err := ctlSendRequest(cfg.socketPath, req, timeout, cfg.execType())
-	if err != nil {
-		return nil, err
-	}
-	if !resp.Success {
-		return nil, fmt.Errorf("%s", resp.Error)
-	}
-	var result struct {
-		ExitCode int32  `json:"exitCode"`
-		Stdout   string `json:"stdout"`
-		Stderr   string `json:"stderr"`
-	}
-	if err := json.Unmarshal([]byte(resp.Data), &result); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
+		onStdout = func(chunk []byte) { _, _ = out.Write(chunk) }
+		onStderr = func(chunk []byte) { _, _ = errOut.Write(chunk) }
 	}
 	return func(*script.State) (string, string, error) {
-		var execErr error
-		if result.ExitCode != 0 {
-			execErr = fmt.Errorf("exit code %d", result.ExitCode)
+		stdout, stderr, exitCode, err := guestExecStream(
+			cfg,
+			args,
+			timeout,
+			onStdout,
+			onStderr,
+		)
+		if err != nil {
+			return "", "", err
 		}
-		return result.Stdout, result.Stderr, execErr
+		var execErr error
+		if exitCode != 0 {
+			execErr = fmt.Errorf("exit code %d", exitCode)
+		}
+		return stdout, stderr, execErr
 	}, nil
 }
 
