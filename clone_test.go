@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -41,5 +42,43 @@ func TestCloneFileCreatesIdenticalContent(t *testing.T) {
 	}
 	if string(got) != string(content) {
 		t.Errorf("clone content = %q, want %q", got, content)
+	}
+}
+
+func TestCloneVMLinux(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src := filepath.Join(GetVMBaseDir(), "src-linux")
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"linux-disk.img":   []byte("disk"),
+		"linux-machine.id": []byte("machine"),
+		"config.json":      []byte("{\"memoryGB\":4}\n"),
+		"control.token":    []byte("token"),
+	} {
+		if err := os.WriteFile(filepath.Join(src, name), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := CloneVM(CloneOptions{
+		Source:        "src-linux",
+		Target:        "dst-linux",
+		CopyMachineID: true,
+	}); err != nil {
+		t.Fatalf("CloneVM() error = %v", err)
+	}
+
+	dst := filepath.Join(GetVMBaseDir(), "dst-linux")
+	for _, name := range []string{"linux-disk.img", "linux-machine.id", "config.json", "control.token"} {
+		if _, err := os.Stat(filepath.Join(dst, name)); err != nil {
+			t.Fatalf("cloned file %q missing: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dst, "disk.img")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected macOS disk clone artifact: %v", err)
 	}
 }
