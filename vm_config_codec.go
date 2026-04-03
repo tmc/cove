@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/configcodec"
 )
 
 const vmFrameworkConfigFileName = "framework-config.vzcfg"
+const frameworkConfigFormatPrefix = "vzcfg-format:"
 
 func handleVMConfigCommand(args []string) error {
 	if len(args) == 0 {
@@ -51,19 +55,20 @@ func exportVMFrameworkConfig(destPath string) error {
 		return err
 	}
 
-	encoded, err := configcodec.EncodeAtBasePath(vmDir, cfg, configcodec.DefaultFormat)
+	encoded, formatUsed, err := encodeFrameworkConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("encode framework config: %w", err)
 	}
+	snapshot := marshalFrameworkConfigSnapshot(formatUsed, encoded)
 	summary := summarizeExportedFrameworkConfig(cfg)
-	summary.EncodedBytes = len(encoded)
+	summary.EncodedBytes = len(snapshot)
 	printFrameworkConfigSummary("Export snapshot", summary)
 
-	if err := writeFrameworkConfigBytes(destPath, encoded); err != nil {
+	if err := writeFrameworkConfigBytes(destPath, snapshot); err != nil {
 		return err
 	}
 
-	fmt.Printf("Wrote %d bytes to %s\n", len(encoded), destPath)
+	fmt.Printf("Wrote %d bytes to %s (format %d)\n", len(snapshot), destPath, formatUsed)
 	return nil
 }
 
@@ -73,18 +78,17 @@ func importVMFrameworkConfig(sourcePath string) error {
 		return fmt.Errorf("read framework config: %w", err)
 	}
 
-	cfg, err := configcodec.DecodeAtBasePath(vmDir, data, configcodec.DefaultFormat)
+	format, payload, err := unmarshalFrameworkConfigSnapshot(data)
 	if err != nil {
-		return fmt.Errorf("decode framework config: %w", err)
+		return fmt.Errorf("parse framework config: %w", err)
 	}
 
 	if err := writeFrameworkConfigBytes(filepath.Join(vmDir, vmFrameworkConfigFileName), data); err != nil {
 		return err
 	}
 
-	summary := summarizeExportedFrameworkConfig(vz.VZVirtualMachineConfigurationFromID(cfg.GetID()))
-	summary.EncodedBytes = len(data)
-	printFrameworkConfigSummary("Imported snapshot", summary)
+	fmt.Printf("Imported snapshot format: %d\n", format)
+	fmt.Printf("Imported snapshot payload bytes: %d\n", len(payload))
 	fmt.Printf("Stored raw snapshot at %s\n", filepath.Join(vmDir, vmFrameworkConfigFileName))
 	return nil
 }
@@ -95,7 +99,7 @@ func currentVMFrameworkDiskPath() (string, error) {
 		if vmDir == "" {
 			return "", fmt.Errorf("vm directory not set")
 		}
-		if detectOSType(vmDir) == "Linux" {
+		if frameworkConfigVMType() == "Linux" {
 			path = filepath.Join(vmDir, "linux-disk.img")
 		} else {
 			path = filepath.Join(vmDir, "disk.img")
@@ -109,7 +113,7 @@ func currentVMFrameworkDiskPath() (string, error) {
 }
 
 func buildSelectedVMFrameworkConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
-	switch detectOSType(vmDir) {
+	switch frameworkConfigVMType() {
 	case "Linux":
 		return buildLinuxVMConfiguration(diskImagePath)
 	case "macOS":
@@ -120,7 +124,7 @@ func buildSelectedVMFrameworkConfiguration(diskImagePath string) (vz.VZVirtualMa
 }
 
 func ensureFrameworkConfigInputs() error {
-	switch detectOSType(vmDir) {
+	switch frameworkConfigVMType() {
 	case "macOS":
 		for _, name := range []string{"aux.img", "hw.model", "machine.id"} {
 			if err := ensureReadableFile(filepath.Join(vmDir, name)); err != nil {
@@ -138,7 +142,8 @@ func ensureFrameworkConfigInputs() error {
 				return err
 			}
 		}
-		if kernelPath != "" {
+		switch {
+		case kernelPath != "":
 			if err := ensureReadableFile(resolvePath(kernelPath)); err != nil {
 				return err
 			}
@@ -147,7 +152,13 @@ func ensureFrameworkConfigInputs() error {
 					return err
 				}
 			}
-		} else {
+		case hasInstalledLinuxBootArtifacts(vmDir):
+			for _, name := range []string{"vmlinuz", "initrd", linuxRootUUIDFileName} {
+				if err := ensureReadableFile(filepath.Join(vmDir, name)); err != nil {
+					return err
+				}
+			}
+		default:
 			if err := ensureReadableFile(filepath.Join(vmDir, "efi.nvram")); err != nil {
 				return err
 			}
@@ -156,6 +167,55 @@ func ensureFrameworkConfigInputs() error {
 		return fmt.Errorf("cannot determine vm type for %s", vmDir)
 	}
 	return nil
+}
+
+func frameworkConfigVMType() string {
+	if linuxMode {
+		return "Linux"
+	}
+	return detectOSType(vmDir)
+}
+
+func marshalFrameworkConfigSnapshot(format configcodec.Format, payload []byte) []byte {
+	header := []byte(fmt.Sprintf("%s%d\n", frameworkConfigFormatPrefix, format))
+	out := make([]byte, 0, len(header)+len(payload))
+	out = append(out, header...)
+	out = append(out, payload...)
+	return out
+}
+
+func unmarshalFrameworkConfigSnapshot(data []byte) (configcodec.Format, []byte, error) {
+	line, rest, found := bytes.Cut(data, []byte{'\n'})
+	if !found || !bytes.HasPrefix(line, []byte(frameworkConfigFormatPrefix)) {
+		return configcodec.DefaultFormat, data, nil
+	}
+	rawFormat := strings.TrimSpace(strings.TrimPrefix(string(line), frameworkConfigFormatPrefix))
+	value, err := strconv.ParseUint(rawFormat, 10, 64)
+	if err != nil {
+		return configcodec.DefaultFormat, nil, fmt.Errorf("invalid format %q", rawFormat)
+	}
+	return configcodec.Format(value), rest, nil
+}
+
+func encodeFrameworkConfig(cfg vz.VZVirtualMachineConfiguration) ([]byte, configcodec.Format, error) {
+	formats := []configcodec.Format{
+		configcodec.DefaultFormat,
+		100,
+		200,
+	}
+	var errs []string
+	for _, format := range formats {
+		encoded, err := configcodec.Encode(cfg, format)
+		if err == nil && len(encoded) > 0 {
+			return encoded, format, nil
+		}
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("format %d: %v", format, err))
+			continue
+		}
+		errs = append(errs, fmt.Sprintf("format %d: empty data", format))
+	}
+	return nil, configcodec.DefaultFormat, fmt.Errorf("%s", strings.Join(errs, "; "))
 }
 
 func ensureReadableFile(path string) error {
