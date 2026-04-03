@@ -1,10 +1,11 @@
 // authorization.go — Native macOS privilege escalation via AuthorizationServices.
 //
 // Shows the native macOS authentication dialog (Touch ID + password) via
-// AuthorizationCopyRights, then executes the script as root.
+// AuthorizationCopyRights, then executes the script as root via sudo.
 //
-// AuthorizationExecuteWithPrivileges is deprecated and causes SIGTRAP on
-// macOS 26. We use AuthorizationCopyRights for the dialog + sudo for execution.
+// AuthorizationExecuteWithPrivileges is deprecated since macOS 10.7 but still
+// functional. We avoid it in favor of AuthorizationCopyRights + sudo -n, which
+// separates the authentication dialog from execution.
 package main
 
 import (
@@ -67,8 +68,7 @@ type authorizationItemSet struct {
 // Touch ID / password, then executes the script as root via sudo.
 //
 // AuthorizationCopyRights shows the dialog and caches credentials.
-// AuthorizationExecuteWithPrivileges is NOT used (SIGTRAP on macOS 26).
-// After authentication, we use sudo -n which succeeds with cached creds.
+// After authentication, sudo -n succeeds with cached creds.
 func runElevatedBashNative(scriptPath, prompt string) error {
 	initAuthorizationServices()
 	if authCreate == nil {
