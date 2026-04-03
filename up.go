@@ -323,7 +323,8 @@ func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
 					return
 				}
 			}
-			if err := runVZScript(data, name, cfg); err != nil {
+			rcfg := cfgForRecipe(cfg, meta)
+			if err := runVZScript(data, name, rcfg); err != nil {
 				scriptsDone <- fmt.Errorf("%s: %w", name, err)
 				return
 			}
@@ -426,7 +427,8 @@ func runLinuxUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) err
 					return
 				}
 			}
-			if err := runVZScript(data, name, cfg); err != nil {
+			rcfg := cfgForRecipe(cfg, meta)
+			if err := runVZScript(data, name, rcfg); err != nil {
 				scriptsDone <- fmt.Errorf("%s: %w", name, err)
 				return
 			}
