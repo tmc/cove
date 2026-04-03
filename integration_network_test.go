@@ -32,7 +32,7 @@ func testNetwork(t *testing.T, vm *testVM) {
 		clone := clonedTestVM(t, cloneName, false)
 
 		startTestVMWithArgs(t, clone, "-proxy", "http://192.168.64.1:8080")
-		waitVMReadyTB(t, clone, 3*time.Minute)
+		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
 		requireUserAgent(t, clone)
 
 		service := firstMacOSNetworkService(t, clone)
@@ -40,7 +40,7 @@ func testNetwork(t *testing.T, vm *testVM) {
 
 		clone.cleanupTB(t)
 		startTestVM(t, clone)
-		waitVMReadyTB(t, clone, 3*time.Minute)
+		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
 		requireUserAgent(t, clone)
 		waitForMacOSProxyState(t, clone, service, false, "", 0)
 	})

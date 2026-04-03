@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -18,13 +19,13 @@ import (
 )
 
 var (
-	flagIntegrationVM          = flag.String("integration.vm", os.Getenv("VZ_TEST_VM"), "existing VM name for integration tests")
+	flagIntegrationVM          = flag.String("integration.vm", envOrString("VZ_TEST_VM", "vz-macos-test"), "macOS VM name for integration tests")
 	flagIntegrationLinuxVM     = flag.String("integration.linux-vm", envOrString("VZ_TEST_LINUX_VM", "vz-linux-test"), "Linux VM name for integration tests")
 	flagIntegrationHeadless    = flag.Bool("integration.headless", envBool("VZ_TEST_HEADLESS"), "skip GUI-dependent integration tests")
 	flagIntegrationSIP         = flag.Bool("integration.sip", envBool("VZ_TEST_SIP"), "run SIP recovery integration test")
 	flagIntegrationSIPUser     = flag.String("integration.sip-user", os.Getenv("VZ_TEST_SIP_USER"), "recovery auth username for SIP integration test")
 	flagIntegrationSIPPassword = flag.String("integration.sip-password", os.Getenv("VZ_TEST_SIP_PASSWORD"), "recovery auth password for SIP integration test")
-	flagIntegrationSIPConfirm  = flag.Bool("integration.sip-confirm", envBool("VZ_TEST_SIP_CONFIRM"), "answer recovery confirmation prompts during SIP integration test")
+	flagIntegrationSIPConfirm  = flag.Bool("integration.sip-confirm", envBoolDefault("VZ_TEST_SIP_CONFIRM", true), "answer recovery confirmation prompts during SIP integration test")
 )
 
 type testVM struct {
@@ -51,8 +52,10 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("agent", func(t *testing.T) { testAgent(t, vm) })
 	t.Run("ctl", func(t *testing.T) { testCtl(t, vm) })
+	t.Run("runtime-surface", func(t *testing.T) { testRuntimeSurface(t, vm) })
 	t.Run("network", func(t *testing.T) { testNetwork(t, vm) })
 	t.Run("port-forward", func(t *testing.T) { testPortForward(t, vm) })
+	t.Run("vm-config", func(t *testing.T) { testVMConfig(t, vm) })
 	t.Run("vzscript", func(t *testing.T) { testVZScript(t, vm) })
 	t.Run("host-cp", func(t *testing.T) { testHostCp(t, vm) })
 	if *flagIntegrationSIP {
@@ -66,7 +69,9 @@ func TestLinuxIntegration(t *testing.T) {
 
 	t.Run("agent", func(t *testing.T) { testLinuxAgent(t, vm) })
 	t.Run("ctl", func(t *testing.T) { testLinuxCtl(t, vm) })
+	t.Run("runtime-surface", func(t *testing.T) { testRuntimeSurface(t, vm) })
 	t.Run("network", func(t *testing.T) { testLinuxNetwork(t, vm) })
+	t.Run("vm-config", func(t *testing.T) { testVMConfig(t, vm) })
 }
 
 func envBool(name string) bool {
@@ -85,11 +90,9 @@ func acquireLinuxTestVM(t *testing.T) *testVM {
 	if name == "" {
 		t.Skip("set -integration.linux-vm or VZ_TEST_LINUX_VM to a Linux VM name")
 	}
+	fresh := ensureIntegrationBaseVM(t, name, true)
 
 	dir := resolvePath(GetVMPath(name))
-	if !ValidateVM(dir) {
-		t.Skipf("Linux VM %q not found at %s (run: vz-macos install -linux -vm %s)", name, dir, name)
-	}
 
 	tokenPath := GetControlTokenPathForVM(dir)
 	token, err := LoadControlTokenFromPath(tokenPath)
@@ -107,7 +110,8 @@ func acquireLinuxTestVM(t *testing.T) *testVM {
 	if !controlSocketReady(vm.sock, vm.token) {
 		startTestVM(t, vm)
 	}
-	waitVMReadyTB(t, vm, 3*time.Minute)
+	timeout := integrationVMReadyTimeout(vm, fresh)
+	waitVMReadyTB(t, vm, timeout)
 	return vm
 }
 
@@ -122,13 +126,9 @@ func acquireIntegrationVM(tb testing.TB) *testVM {
 	if name == "" {
 		tb.Skip("set -integration.vm or VZ_TEST_VM to a running VM name")
 	}
+	fresh := ensureIntegrationBaseVM(tb, name, false)
 
 	dir := resolvePath(GetVMPath(name))
-	if info, err := os.Stat(dir); err != nil {
-		tb.Fatalf("stat vm dir %q: %v", dir, err)
-	} else if !info.IsDir() {
-		tb.Fatalf("vm path %q is not a directory", dir)
-	}
 
 	tokenPath := GetControlTokenPathForVM(dir)
 	token, err := LoadControlTokenFromPath(tokenPath)
@@ -145,7 +145,8 @@ func acquireIntegrationVM(tb testing.TB) *testVM {
 	if !controlSocketReady(vm.sock, vm.token) {
 		startTestVM(tb, vm)
 	}
-	waitVMReadyTB(tb, vm, 3*time.Minute)
+	timeout := integrationVMReadyTimeout(vm, fresh)
+	waitVMReadyTB(tb, vm, timeout)
 	return vm
 }
 
@@ -218,11 +219,50 @@ func waitVMReadyTB(tb testing.TB, vm *testVM, timeout time.Duration) {
 	tb.Helper()
 
 	if err := waitControlReady(vm.sock, vm.token, timeout); err != nil {
-		tb.Fatalf("wait for control socket: %v", err)
+		tb.Fatalf("wait for control socket: %v%s", err, integrationFailureContext(vm))
 	}
 	if err := waitAgentReady(vm.sock, vm.token, timeout); err != nil {
-		tb.Fatalf("wait for guest agent: %v", err)
+		tb.Fatalf("wait for guest agent: %v%s", err, integrationFailureContext(vm))
 	}
+}
+
+func integrationVMReadyTimeout(vm *testVM, fresh bool) time.Duration {
+	if vm != nil && vm.linux {
+		if fresh {
+			return 15 * time.Minute
+		}
+		return 6 * time.Minute
+	}
+	if fresh {
+		return 12 * time.Minute
+	}
+	return 4 * time.Minute
+}
+
+func integrationFailureContext(vm *testVM) string {
+	if vm == nil {
+		return ""
+	}
+
+	var details []string
+	if vm.logPath != "" {
+		if tail := strings.TrimSpace(tailFile(vm.logPath, 80)); tail != "" {
+			details = append(details, fmt.Sprintf("\nvm log (%s):\n%s", vm.logPath, tail))
+		}
+	}
+	if vm.linux && vm.dir != "" {
+		for _, name := range []string{"boot-serial.log", "install-serial.log"} {
+			serialPath := filepath.Join(vm.dir, name)
+			if tail := strings.TrimSpace(tailFile(serialPath, 80)); tail != "" && !strings.HasPrefix(tail, "read log ") {
+				label := strings.TrimSuffix(name, filepath.Ext(name))
+				details = append(details, fmt.Sprintf("\n%s (%s):\n%s", label, serialPath, tail))
+			}
+		}
+	}
+	if len(details) == 0 {
+		return ""
+	}
+	return "\n\n" + strings.Join(details, "\n")
 }
 
 func waitControlReady(sock, token string, timeout time.Duration) error {
@@ -270,10 +310,22 @@ func startTestVMWithArgs(tb testing.TB, vm *testVM, extraArgs ...string) {
 	if vm.linux {
 		args = append(args, "-linux")
 	}
-	if *flagIntegrationHeadless {
-		args = append(args, "-headless")
-	} else {
-		args = append(args, "-gui")
+	modeExplicit := false
+	for _, arg := range extraArgs {
+		switch arg {
+		case "-gui", "-headless":
+			modeExplicit = true
+		}
+	}
+	if !modeExplicit {
+		if *flagIntegrationHeadless || vm.linux {
+			args = append(args, "-headless")
+		} else {
+			args = append(args, "-gui")
+		}
+	}
+	if vm.linux {
+		args = append(args, "-serial", filepath.Join(vm.dir, "boot-serial.log"))
 	}
 	args = append(args, extraArgs...)
 	args = append(args, "run")
@@ -703,6 +755,25 @@ func buildIntegrationBinary(tb testing.TB) string {
 	return integrationBinaryPath
 }
 
+func runIntegrationBinaryCommand(tb testing.TB, args ...string) (string, error) {
+	tb.Helper()
+
+	bin := buildIntegrationBinary(tb)
+	cmd := exec.Command(bin, args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func runIntegrationBinaryCommandExpectSuccess(tb testing.TB, args ...string) string {
+	tb.Helper()
+
+	out, err := runIntegrationBinaryCommand(tb, args...)
+	if err != nil {
+		tb.Fatalf("%s %v: %v\n%s", filepath.Base(buildIntegrationBinary(tb)), args, err, out)
+	}
+	return out
+}
+
 // cloneTestVM creates an isolated VM clone from the base test VM using APFS
 // copy-on-write. The clone is started and cleaned up (stopped + deleted) when
 // the test finishes. This enables per-test isolation for destructive operations
@@ -725,7 +796,7 @@ func cloneTestVM(t *testing.T, baseVM *testVM) *testVM {
 
 	vm := clonedTestVM(t, cloneName, baseVM.linux)
 	startTestVM(t, vm)
-	waitVMReadyTB(t, vm, 3*time.Minute)
+	waitVMReadyTB(t, vm, integrationVMReadyTimeout(vm, false))
 	return vm
 }
 

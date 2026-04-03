@@ -19,5 +19,17 @@ func TestMain(m *testing.M) {
 		os.Stderr.WriteString("warning: autosign: " + err.Error() + "\n")
 	}
 	flag.Parse()
+	if os.Getenv("VZ_TEST_INTEGRATION_BUILD") == "1" {
+		if f := flag.Lookup("test.timeout"); f != nil {
+			current := f.Value.String()
+			if current == "" || current == "10m0s" || current == "10m" {
+				timeout := os.Getenv("VZ_TEST_TIMEOUT")
+				if timeout == "" {
+					timeout = "2h"
+				}
+				_ = f.Value.Set(timeout)
+			}
+		}
+	}
 	os.Exit(m.Run())
 }

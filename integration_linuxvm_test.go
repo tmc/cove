@@ -80,7 +80,7 @@ func testLinuxCtl(t *testing.T, vm *testVM) {
 
 		ctlDo(t, vm, &controlpb.ControlRequest{Type: "resume"})
 		waitVMState(t, vm, "running", 30*time.Second)
-		waitVMReady(t, vm, 2*time.Minute)
+		waitVMReady(t, vm, integrationVMReadyTimeout(vm, false))
 	})
 }
 
@@ -107,12 +107,12 @@ func testLinuxNetwork(t *testing.T, vm *testVM) {
 		clone := clonedTestVM(t, cloneName, true)
 
 		startTestVMWithArgs(t, clone, "-proxy", "http://192.168.64.1:8080", "-no-agent")
-		waitVMReadyTB(t, clone, 3*time.Minute)
+		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
 		waitForLinuxProxyFiles(t, clone, true)
 
 		clone.cleanupTB(t)
 		startTestVM(t, clone)
-		waitVMReadyTB(t, clone, 3*time.Minute)
+		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
 		waitForLinuxProxyFiles(t, clone, false)
 	})
 

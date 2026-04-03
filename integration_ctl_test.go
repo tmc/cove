@@ -43,6 +43,6 @@ func testCtl(t *testing.T, vm *testVM) {
 
 		ctlDo(t, vm, &controlpb.ControlRequest{Type: "resume"})
 		waitVMState(t, vm, "running", 30*time.Second)
-		waitVMReady(t, vm, 2*time.Minute)
+		waitVMReady(t, vm, integrationVMReadyTimeout(vm, false))
 	})
 }
