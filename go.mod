@@ -23,5 +23,3 @@ require (
 )
 
 replace github.com/tmc/apple => /Users/tmc/go/src/github.com/tmc/apple
-
-replace github.com/tmc/macgo => /Volumes/tmc/go/src/github.com/tmc/macgo
