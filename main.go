@@ -251,6 +251,9 @@ func main() {
 	// Must be before LockOSThread. May relaunch and not return.
 	initMacgo()
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Note: NSSetUncaughtExceptionHandler disabled — purego cannot marshal
 	// struct types through callbacks (NSException is a Go struct wrapper).
 	// ObjC exceptions will still surface as Go panics via the runtime.
@@ -287,9 +290,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 
 	// Legacy flag handling compatibility
 	if fetchLatest {

@@ -66,15 +66,28 @@ func ensureAppReady(policy appkit.NSApplicationActivationPolicy) appkit.NSApplic
 	if policy == appkit.NSApplicationActivationPolicyRegular {
 		setAppIcon(&app)
 	}
-	if !appFinishedLaunching {
-		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
-			app.Stop(nil)
-			postDummyEvent(app)
-		})
-		app.Run()
-		appFinishedLaunching = true
-	}
+	ensureAppLaunched(app)
 	return app
+}
+
+func ensureAppLaunched(app appkit.NSApplication) {
+	if appFinishedLaunching {
+		return
+	}
+	foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
+		app.Stop(nil)
+		postDummyEvent(app)
+	})
+	app.Run()
+	appFinishedLaunching = true
+}
+
+func pumpAppEventLoopUntil(stop func() bool) {
+	runLoop := foundation.GetRunLoopClass().CurrentRunLoop()
+	for !stop() {
+		limit := foundation.NewDateWithTimeIntervalSinceNow(0.05)
+		runLoop.RunModeBeforeDate(foundation.RunLoopDefaultMode, limit)
+	}
 }
 
 func newHeadlessGUIController(app appkit.NSApplication, vm vz.VZVirtualMachine, queue dispatch.Queue, control *ControlServer, initiallyHeaded bool) (*vmGUIController, error) {

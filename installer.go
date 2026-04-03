@@ -293,16 +293,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 		return fmt.Errorf("failed to create NSApplication")
 	}
 	app.SetActivationPolicy(appkit.NSApplicationActivationPolicyRegular)
-	if !appFinishedLaunching {
-		// Use "run-then-stop" to fully initialize the NSApplication event
-		// machinery (see runVMWithGUI for full explanation).
-		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
-			app.Stop(nil)
-			postDummyEvent(app)
-		})
-		app.Run()
-		appFinishedLaunching = true
-	}
+	ensureAppLaunched(app)
 
 	// Create a compact progress window for the download/prep phase.
 	progressWindow, statusLabel, progressBarID := createProgressWindow()

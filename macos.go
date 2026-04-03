@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tmc/apple/appkit"
@@ -1509,24 +1510,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	app := getSharedApp()
 	app.SetActivationPolicy(appkit.NSApplicationActivationPolicyRegular)
 	setAppIcon(&app)
-	if !appFinishedLaunching {
-		// Use "run-then-stop" to fully initialize the NSApplication event
-		// machinery. Calling just FinishLaunching() doesn't set up the
-		// window server event routing, so mouse/keyboard events are never
-		// delivered. app.Run() does the full initialization internally.
-		//
-		// We schedule a zero-delay timer that calls app.stop: on the first
-		// run loop iteration, so Run() returns almost immediately after
-		// completing its setup. This avoids the purego GC crash caused by
-		// a permanent reflect.Value.call frame (which only happens when
-		// Run() blocks indefinitely).
-		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
-			app.Stop(nil)
-			postDummyEvent(app)
-		})
-		app.Run()
-		appFinishedLaunching = true
-	}
+	ensureAppLaunched(app)
 
 	if launchOrder == "start-first" {
 		if verbose {
@@ -1751,6 +1735,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Setup cleanup on window close / app quit — suspend if possible
 	var statusItem *VMStatusItemController
+	var appLoopStop atomic.Bool
 	cleanup := func() {
 		close(monitorDone)
 		stopControlRuntimeInfrastructure(controlServer)
@@ -1771,14 +1756,13 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	var cleanupOnce sync.Once
 	doCleanup := func() { cleanupOnce.Do(cleanup) }
 	quitRuntime := func() {
+		appLoopStop.Store(true)
 		stateUpdate.mu.Lock()
 		stateUpdate.signalCleanup = true
 		stateUpdate.mu.Unlock()
 		saveWindowDisplayPlacement(window, frameAutosaveName)
 		window.SaveFrameUsingName(frameAutosaveName)
 		doCleanup()
-		app.Stop(nil)
-		postDummyEvent(app)
 	}
 	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, window, nil, vmToolbar, quitRuntime)
 
@@ -1806,24 +1790,15 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	})
 	app.SetDelegate(delegate)
 	setupSignalHandler(func() {
+		appLoopStop.Store(true)
 		stateUpdate.mu.Lock()
 		stateUpdate.signalCleanup = true
 		stateUpdate.mu.Unlock()
 		doCleanup()
 	})
 
-	// Use app.Run() for proper event delivery. The window server only
-	// routes events (mouse clicks, keyboard input, Cmd+Tab) to processes
-	// whose NSApplication is in the "running" state via [NSApp run].
-	// A manual NextEventMatchingMask/SendEvent loop does not work because
-	// the window server connection requires the internal state that Run()
-	// sets up.
-	//
-	// GC safety: app.Run() blocks on objc.Send which does NOT create
-	// reflect.Value.call frames (it uses purego.SyscallN). The concern
-	// about GC crashes only applies to purego callbacks that use
-	// reflect.MakeFunc — our timer callback below is short-lived, so
-	// its reflect frame is cleaned up before GC can scan stale values.
+	// NSApplication.Run() traps on macOS 26 for this bare-binary path, so keep
+	// the app responsive by pumping the NSRunLoop explicitly.
 	var overlayFadeStep int = -1 // -1 means not fading
 	var pauseOverlay appkit.NSView
 	var pauseFadeStep int = -1    // -1 means not fading; >0 means fading in; used for fade-out too
@@ -1906,8 +1881,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					if stateUpdate.terminate {
 						os.Remove(suspendStatePath())
 						clearInjectSucceeded()
-						app.Stop(nil)
-						postDummyEvent(app)
+						appLoopStop.Store(true)
 						stateUpdate.mu.Unlock()
 						return // don't reschedule — app is stopping
 					}
@@ -1952,8 +1926,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 	scheduleTimer()
 
-	// app.Run() blocks until app.Stop() is called (when VM terminates).
-	app.Run()
+	pumpAppEventLoopUntil(appLoopStop.Load)
 	stopControlRuntimeInfrastructure(controlServer)
 	if statusItem != nil {
 		statusItem.Shutdown()
