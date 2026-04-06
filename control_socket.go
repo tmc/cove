@@ -74,6 +74,7 @@ type ControlServer struct {
 	gui               VMGUIController
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
+	activeConnections atomic.Int32
 }
 
 // agentHealthState tracks proactive agent health monitoring.
@@ -213,15 +214,24 @@ func (s *ControlServer) acceptLoop() {
 			}
 			continue
 		}
+		if s.activeConnections.Add(1) > 64 {
+			s.activeConnections.Add(-1)
+			conn.Close()
+			continue
+		}
 		go s.handleConnection(conn)
 	}
 }
 
 func (s *ControlServer) handleConnection(conn net.Conn) {
+	defer s.activeConnections.Add(-1)
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
+		return
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -242,7 +252,13 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 		}
 
 		if req.Type == "agent-exec-stream" || req.Type == "agent-user-exec-stream" {
+			if err := conn.SetDeadline(time.Time{}); err != nil {
+				return
+			}
 			s.handleAgentExecStreamConnection(conn, &req)
+			if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
+				return
+			}
 			continue
 		}
 
@@ -293,6 +309,9 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 
 		resp := s.handleRequest(&req)
 		writeResponse(conn, resp)
+		if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
+			return
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("read request: %v", err)})
