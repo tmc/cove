@@ -647,12 +647,16 @@ func startCloudInitHTTPServer(seedDir string) (string, io.Closer, error) {
 }
 
 func startCloudInitGoHTTPServer(seedDir string) (string, io.Closer, error) {
-	listener, err := net.Listen("tcp4", "0.0.0.0:0")
+	hostIP := "192.168.64.1"
+	listener, err := net.Listen("tcp4", net.JoinHostPort(hostIP, "0"))
 	if err != nil {
-		return "", nil, fmt.Errorf("listen: %w", err)
+		fmt.Printf("warning: cloud-init HTTP bind to %s failed, falling back to all interfaces: %v\n", hostIP, err)
+		listener, err = net.Listen("tcp4", "0.0.0.0:0")
+		if err != nil {
+			return "", nil, fmt.Errorf("listen: %w", err)
+		}
 	}
 
-	hostIP := "192.168.64.1"
 	port := listener.Addr().(*net.TCPAddr).Port
 	addr := fmt.Sprintf("%s:%d", hostIP, port)
 
