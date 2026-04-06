@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -46,10 +47,27 @@ func NewITerm2Proxy(cs *ControlServer, port int) *ITerm2Proxy {
 		cs:   cs,
 		upgrader: websocket.Upgrader{
 			Subprotocols:    []string{iterm2WSSubprotocol},
-			CheckOrigin:     func(r *http.Request) bool { return true },
+			CheckOrigin:     allowLocalhostOrigin,
 			ReadBufferSize:  64 * 1024,
 			WriteBufferSize: 64 * 1024,
 		},
+	}
+}
+
+func allowLocalhostOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
 	}
 }
 
