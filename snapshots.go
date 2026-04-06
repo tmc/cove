@@ -452,6 +452,13 @@ func handleDiskSnapshotDelete(mgr *DiskSnapshotManager, args []string) error {
 	}
 
 	name := args[0]
+	ok, err := confirmDeletef("Delete disk snapshot %q? This cannot be undone. [y/N] ", name)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
 	if err := mgr.Delete(name); err != nil {
 		return err
 	}

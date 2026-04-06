@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -14,6 +15,7 @@ import (
 	"text/tabwriter"
 
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
+	"golang.org/x/term"
 )
 
 var (
@@ -807,6 +809,19 @@ func validateLaunchOptions() error {
 	return nil
 }
 
+func confirmDeletef(format string, args ...any) (bool, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return true, nil
+	}
+	fmt.Fprintf(os.Stderr, format, args...)
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("read confirmation: %w", err)
+	}
+	answer := strings.TrimSpace(line)
+	return answer == "y" || answer == "Y", nil
+}
+
 // handleList shows all VMs and templates.
 func handleList() {
 	// List VMs
@@ -1020,6 +1035,14 @@ func handleVMCommand(args []string) {
 			fmt.Fprintln(os.Stderr, "Usage: vz-macos vm delete <name>")
 			os.Exit(1)
 		}
+		ok, err := confirmDeletef("Delete VM %q? This cannot be undone. [y/N] ", subargs[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if !ok {
+			return
+		}
 		if err := DeleteVM(subargs[0]); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -1115,6 +1138,14 @@ func handleSnapshotCommand(args []string) {
 		if len(subargs) < 1 {
 			fmt.Fprintln(os.Stderr, "Usage: vz-macos snapshot delete <name>")
 			os.Exit(1)
+		}
+		ok, err := confirmDeletef("Delete snapshot %q? This cannot be undone. [y/N] ", subargs[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if !ok {
+			return
 		}
 		if err := mgr.Delete(subargs[0]); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
