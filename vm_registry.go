@@ -47,8 +47,13 @@ func SaveVMConfig(vmDir string, cfg *VMConfig) error {
 		return fmt.Errorf("marshal vm config: %w", err)
 	}
 	path := filepath.Join(vmDir, "config.json")
-	if err := os.WriteFile(path, append(data, '\n'), 0644); err != nil {
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, append(data, '\n'), 0644); err != nil {
 		return fmt.Errorf("write vm config: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("rename vm config: %w", err)
 	}
 	return nil
 }
