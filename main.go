@@ -774,6 +774,21 @@ func validateLaunchOptions() error {
 	if diskSizeGB < 1 {
 		return fmt.Errorf("disk-size must be at least 1 (GB)")
 	}
+	if diskSizeGB > 16384 {
+		return fmt.Errorf("disk-size must be at most 16384 (16 TB)")
+	}
+	if cpuCount < 1 {
+		return fmt.Errorf("cpu must be at least 1")
+	}
+	if cpuCount > 256 {
+		return fmt.Errorf("cpu must be at most 256")
+	}
+	if memoryGB < 1 {
+		return fmt.Errorf("memory must be at least 1 (GB)")
+	}
+	if memoryGB > 512 {
+		return fmt.Errorf("memory must be at most 512 (GB)")
+	}
 	if _, err := ParseSandboxLevel(sandboxLevel); err != nil {
 		return err
 	}
