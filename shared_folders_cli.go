@@ -54,7 +54,7 @@ func handleVMSharedFolderCommand(args []string) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("unknown shared-folder command: %s", args[0])
+		return fmt.Errorf("unknown shared-folder command: %s\nValid commands: help, list, status, add, remove, clear, mount", args[0])
 	}
 }
 

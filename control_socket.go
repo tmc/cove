@@ -423,7 +423,7 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 	case "network-info":
 		return s.handleNetworkInfo()
 	default:
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown command type: %s", req.Type)}
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown command type: %s\nValid commands include ping, status, capabilities, screenshot, key, mouse, text, pause, resume, stop, snapshot, memory, and network-info.", req.Type)}
 	}
 }
 

@@ -37,7 +37,7 @@ func vzscriptCommand(args []string) error {
 	case "run":
 		return vzscriptRun(args[1:])
 	default:
-		return fmt.Errorf("unknown vzscript command: %s", args[0])
+		return fmt.Errorf("unknown vzscript command: %s\nValid commands: list, show, run", args[0])
 	}
 }
 

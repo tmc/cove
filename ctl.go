@@ -611,7 +611,7 @@ func ctlCommand(args []string) error {
 		return ctlResetPassword(sock, *timeout, subArgs[0], subArgs[1])
 
 	default:
-		return fmt.Errorf("unknown command: %s", cmdType)
+		return fmt.Errorf("unknown command: %s\nRun 'vz-macos ctl help' for usage.", cmdType)
 	}
 
 	// For agent commands with -wait, retry until agent is ready
@@ -1422,7 +1422,7 @@ func executeBootCommandViaClient(client *ControlClient, ocr *OCRService, cmd Boo
 		return nil // no-op from ctl
 
 	default:
-		return fmt.Errorf("unknown command: %s", cmd.Type)
+		return fmt.Errorf("unknown command: %s\nRun 'vz-macos ctl help' for usage.", cmd.Type)
 	}
 }
 
