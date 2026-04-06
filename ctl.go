@@ -1541,16 +1541,17 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 	if err == nil && resp.Success {
 		fmt.Printf("Password reset for %s (via guest agent)\n", username)
 		// Also update kcpassword for auto-login consistency.
+		escapedPassword := shellEscape(password)
 		kcReq := &controlpb.ControlRequest{
 			Type: "agent-exec",
 			Command: &controlpb.ControlRequest_AgentExec{
 				AgentExec: &controlpb.AgentExecCommand{
 					Args: []string{"bash", "-c",
-						fmt.Sprintf("printf '%s' | /usr/bin/python3 -c \""+
+						fmt.Sprintf("printf %%s %s | /usr/bin/python3 -c \""+
 							"import sys; key=[0x7D,0x89,0x52,0x23,0xD2,0xBC,0xDD,0xEA,0xA3,0xB9,0x1F]; "+
 							"pw=sys.stdin.buffer.read(); pw+=b'\\x00'*(11-len(pw)%%11); "+
 							"sys.stdout.buffer.write(bytes(b^key[i%%len(key)] for i,b in enumerate(pw)))\" > /etc/kcpassword",
-							password),
+							escapedPassword),
 					},
 				},
 			},
@@ -1595,10 +1596,12 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 	}
 
 	// Write a LaunchDaemon that resets the password on next boot via dscl.
+	escapedUserPath := shellEscape("/Users/" + username)
+	escapedPassword := shellEscape(password)
 	script := fmt.Sprintf(`#!/bin/bash
-dscl . -passwd /Users/%s '%s'
+dscl . -passwd %s %s
 rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pwreset.sh
-`, username, password)
+`, escapedUserPath, escapedPassword)
 	scriptPath := filepath.Join(mountPoint, "private", "var", "db", "vz-pwreset.sh")
 	if writeErr := os.WriteFile(scriptPath, []byte(script), 0755); writeErr != nil {
 		return fmt.Errorf("write reset script: %w", writeErr)
