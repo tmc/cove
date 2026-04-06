@@ -68,7 +68,10 @@ func injectLaunchDaemonProvisioning(mountPoint string, config ProvisionConfig, r
 	}
 
 	scriptPath := filepath.Join(scriptDir, "vz-provision.sh")
-	scriptContent := generateEmbeddedProvisionScript(config)
+	scriptContent, err := generateEmbeddedProvisionScript(config)
+	if err != nil {
+		return fmt.Errorf("generate provision script: %w", err)
+	}
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		return fmt.Errorf("write provision script: %w", err)
 	}
@@ -96,7 +99,10 @@ func injectLaunchDaemonProvisioning(mountPoint string, config ProvisionConfig, r
 // stageLaunchDaemonProvisioning stages the LaunchDaemon plist and provision
 // script to the staging directory.
 func stageLaunchDaemonProvisioning(stagingDir string, config ProvisionConfig, manifest *ProvisionManifest) error {
-	scriptContent := generateEmbeddedProvisionScript(config)
+	scriptContent, err := generateEmbeddedProvisionScript(config)
+	if err != nil {
+		return fmt.Errorf("generate provision script: %w", err)
+	}
 	if err := stageFile(stagingDir, filepath.Join("private", "var", "db", "vz-provision.sh"),
 		[]byte(scriptContent), 0755, "root:wheel", manifest); err != nil {
 		return err
@@ -118,7 +124,7 @@ func generateEmbeddedLaunchDaemonPlist() string {
 
 // generateEmbeddedProvisionScript returns a self-contained provisioning script
 // with all configuration embedded (no external file dependencies)
-func generateEmbeddedProvisionScript(config ProvisionConfig) string {
+func generateEmbeddedProvisionScript(config ProvisionConfig) (string, error) {
 	fullname := config.Fullname
 	if fullname == "" {
 		fullname = config.Username
@@ -140,10 +146,9 @@ func generateEmbeddedProvisionScript(config ProvisionConfig) string {
 	}
 	result, err := renderProvisionScript(data)
 	if err != nil {
-		// Template is compiled at init time; this should never fail.
-		panic(fmt.Sprintf("render provision script: %v", err))
+		return "", fmt.Errorf("render provision script: %w", err)
 	}
-	return result
+	return result, nil
 }
 
 // --- Auto-login injection ---

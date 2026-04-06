@@ -76,8 +76,8 @@ func TestProvisionScriptGeneration(t *testing.T) {
 		{
 			name: "install xcode cli",
 			config: ProvisionConfig{
-				Username:      "dev",
-				Password:      "pass",
+				Username:        "dev",
+				Password:        "pass",
 				InstallXcodeCLI: true,
 			},
 			want: []string{`INSTALL_XCODE_CLI="true"`, "Command Line Tools"},
@@ -86,7 +86,10 @@ func TestProvisionScriptGeneration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			script := generateEmbeddedProvisionScript(tt.config)
+			script, err := generateEmbeddedProvisionScript(tt.config)
+			if err != nil {
+				t.Fatalf("generateEmbeddedProvisionScript: %v", err)
+			}
 
 			for _, s := range tt.want {
 				if !strings.Contains(script, s) {

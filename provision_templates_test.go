@@ -16,7 +16,10 @@ func TestGenerateEmbeddedProvisionScript(t *testing.T) {
 		EnableSSHD:        true,
 	}
 
-	result := generateEmbeddedProvisionScript(config)
+	result, err := generateEmbeddedProvisionScript(config)
+	if err != nil {
+		t.Fatalf("generateEmbeddedProvisionScript: %v", err)
+	}
 
 	checks := []struct {
 		name string
@@ -48,7 +51,10 @@ func TestGenerateEmbeddedProvisionScriptFullnameDefault(t *testing.T) {
 		Username: "alice",
 		Password: "secret",
 	}
-	result := generateEmbeddedProvisionScript(config)
+	result, err := generateEmbeddedProvisionScript(config)
+	if err != nil {
+		t.Fatalf("generateEmbeddedProvisionScript: %v", err)
+	}
 	if !strings.Contains(result, "FULLNAME='alice'") {
 		t.Error("expected fullname to default to username")
 	}
@@ -69,7 +75,10 @@ func TestProvisionScriptContainsPasswordOnlyInVariable(t *testing.T) {
 		Username: "testuser",
 		Password: "MyS3cretP@ss!",
 	}
-	script := generateEmbeddedProvisionScript(config)
+	script, err := generateEmbeddedProvisionScript(config)
+	if err != nil {
+		t.Fatalf("generateEmbeddedProvisionScript: %v", err)
+	}
 
 	// The password should appear only as PASSWORD='...' variable assignment.
 	// Count occurrences of the password string.
