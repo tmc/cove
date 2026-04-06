@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -48,8 +49,36 @@ func suspendConfigPath() string {
 
 // hasSuspendState checks if a suspend state file exists from a previous session.
 func hasSuspendState() bool {
-	_, err := os.Stat(suspendStatePath())
-	return err == nil
+	path := suspendStatePath()
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	if info.Size() <= 0 {
+		removeCorruptSuspendState(path)
+		return false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		removeCorruptSuspendState(path)
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 16)
+	n, err := f.Read(buf)
+	if n == 0 || (err != nil && !errors.Is(err, io.EOF)) {
+		removeCorruptSuspendState(path)
+		return false
+	}
+	return true
+}
+
+func removeCorruptSuspendState(path string) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "warning: corrupt suspend state detected but could not be removed: %v\n", err)
+		return
+	}
+	fmt.Fprintln(os.Stderr, "warning: corrupt suspend state removed, performing cold boot")
 }
 
 // suspendConfigFingerprint captures the VM config params that must match between save and restore.
