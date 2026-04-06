@@ -1590,6 +1590,14 @@ func downloadRestoreImageVZ(ctx context.Context, destPath string) error {
 	fmt.Printf("  Saving to:   %s\n", destPath)
 	fmt.Println()
 
+	needBytes := getHTTPContentLength(downloadURL)
+	if needBytes <= 0 {
+		needBytes = 17 * 1024 * 1024 * 1024
+	}
+	if err := checkDiskSpace(filepath.Dir(destPath), needBytes); err != nil {
+		return err
+	}
+
 	// Download using curl (resumable, has its own progress display)
 	return downloadIPSWCurl(downloadURL, destPath)
 }

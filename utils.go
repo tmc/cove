@@ -31,6 +31,10 @@ func resolvePath(path string) string {
 
 // createDiskImage creates a sparse disk image using truncate (same as vz library).
 func createDiskImage(path string, sizeGB uint64) error {
+	sizeBytes := int64(sizeGB) * 1024 * 1024 * 1024
+	if err := checkDiskSpace(filepath.Dir(path), sizeBytes); err != nil {
+		return err
+	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		if os.IsExist(err) {
@@ -40,8 +44,22 @@ func createDiskImage(path string, sizeGB uint64) error {
 	}
 	defer f.Close()
 
-	sizeBytes := int64(sizeGB) * 1024 * 1024 * 1024
 	return f.Truncate(sizeBytes)
+}
+
+func checkDiskSpace(dir string, needBytes int64) error {
+	if needBytes <= 0 {
+		return nil
+	}
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(dir, &stat); err != nil {
+		return fmt.Errorf("statfs %s: %w", dir, err)
+	}
+	available := int64(stat.Bavail) * int64(stat.Bsize)
+	if available < needBytes {
+		return fmt.Errorf("insufficient disk space: need %s, have %s available", FormatSize(needBytes), FormatSize(available))
+	}
+	return nil
 }
 
 // savedTermios stores the original terminal settings for restoration

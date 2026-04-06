@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -231,6 +232,14 @@ func downloadRestoreImageVZWithProgress(ctx context.Context, destPath string, pr
 	fmt.Printf("  Downloading: %s\n", downloadURL)
 	fmt.Printf("  Saving to:   %s\n", destPath)
 	fmt.Println()
+
+	needBytes := getHTTPContentLength(downloadURL)
+	if needBytes <= 0 {
+		needBytes = 17 * 1024 * 1024 * 1024
+	}
+	if err := checkDiskSpace(filepath.Dir(destPath), needBytes); err != nil {
+		return err
+	}
 
 	return downloadIPSWCurlWithProgress(downloadURL, destPath, progress)
 }
