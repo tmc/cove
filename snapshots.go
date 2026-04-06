@@ -316,29 +316,29 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 // CLI handlers for disk snapshots
 // =============================================================================
 
-func handleDiskSnapshotCommand(args []string) {
+func handleDiskSnapshotCommand(args []string) error {
 	if len(args) == 0 {
 		printDiskSnapshotUsage()
-		return
+		return nil
 	}
 
 	mgr := NewDiskSnapshotManager(vmDir)
 
 	switch args[0] {
 	case "save":
-		handleDiskSnapshotSave(mgr, args[1:])
+		return handleDiskSnapshotSave(mgr, args[1:])
 	case "restore":
-		handleDiskSnapshotRestore(mgr, args[1:])
+		return handleDiskSnapshotRestore(mgr, args[1:])
 	case "list":
-		handleDiskSnapshotList(mgr)
+		return handleDiskSnapshotList(mgr)
 	case "delete":
-		handleDiskSnapshotDelete(mgr, args[1:])
+		return handleDiskSnapshotDelete(mgr, args[1:])
 	case "help", "-h", "--help":
 		printDiskSnapshotUsage()
+		return nil
 	default:
-		fmt.Fprintf(os.Stderr, "unknown disk-snapshot command: %s\nRun 'vz-macos -help' for usage.\n", args[0])
 		printDiskSnapshotUsage()
-		os.Exit(1)
+		return fmt.Errorf("unknown disk-snapshot command: %s\nRun 'vz-macos -help' for usage.", args[0])
 	}
 }
 
@@ -371,10 +371,9 @@ Examples:
 Note: VM should be stopped for consistent disk snapshots.`)
 }
 
-func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) {
+func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) error {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "error: snapshot name required")
-		os.Exit(1)
+		return fmt.Errorf("snapshot name required")
 	}
 
 	name := args[0]
@@ -395,15 +394,14 @@ func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) {
 
 	fmt.Printf("Creating disk snapshot '%s'...\n", name)
 	if err := mgr.Save(name, target, description); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
-func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) {
+func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) error {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "error: snapshot name required")
-		os.Exit(1)
+		return fmt.Errorf("snapshot name required")
 	}
 
 	name := args[0]
@@ -418,21 +416,20 @@ func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) {
 
 	fmt.Printf("Restoring disk snapshot '%s'...\n", name)
 	if err := mgr.Restore(name, target); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
-func handleDiskSnapshotList(mgr *DiskSnapshotManager) {
+func handleDiskSnapshotList(mgr *DiskSnapshotManager) error {
 	snapshots, err := mgr.List()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	if len(snapshots) == 0 {
 		fmt.Println("No disk snapshots found.")
-		return
+		return nil
 	}
 
 	fmt.Println("Disk snapshots:")
@@ -446,19 +443,19 @@ func handleDiskSnapshotList(mgr *DiskSnapshotManager) {
 		fmt.Printf("  %-20s  %-12s  %s\n",
 			s.Name, systemStr, s.Created.Format("2006-01-02 15:04"))
 	}
+	return nil
 }
 
-func handleDiskSnapshotDelete(mgr *DiskSnapshotManager, args []string) {
+func handleDiskSnapshotDelete(mgr *DiskSnapshotManager, args []string) error {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "error: snapshot name required")
-		os.Exit(1)
+		return fmt.Errorf("snapshot name required")
 	}
 
 	name := args[0]
 	if err := mgr.Delete(name); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 // snapshotViaControlSocket sends a snapshot save or restore command to the

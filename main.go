@@ -513,7 +513,10 @@ func main() {
 			handleSnapshotCommand(args)
 			return
 		case "disk-snapshot":
-			handleDiskSnapshotCommand(args)
+			if err := handleDiskSnapshotCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
 			return
 		case "network":
 			handleNetworkCommand(args)
