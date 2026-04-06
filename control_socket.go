@@ -220,14 +220,11 @@ func (s *ControlServer) acceptLoop() {
 func (s *ControlServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	reader := bufio.NewReader(conn)
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return
-		}
-
+	for scanner.Scan() {
+		line := scanner.Text()
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -296,6 +293,9 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 
 		resp := s.handleRequest(&req)
 		writeResponse(conn, resp)
+	}
+	if err := scanner.Err(); err != nil {
+		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("read request: %v", err)})
 	}
 }
 
