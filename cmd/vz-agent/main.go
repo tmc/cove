@@ -108,7 +108,7 @@ func main() {
 
 	// iTerm2 relay only runs in agent mode (needs user session for iTerm2).
 	if *mode == "agent" {
-		go startITerm2Relay()
+		go startITerm2Relay(ctx)
 	}
 
 	// Start configured TCP relays.
@@ -118,7 +118,7 @@ func main() {
 			log.Printf("invalid relay spec %q: %v", spec, err)
 			continue
 		}
-		if _, err := StartTCPRelay(vport, addr); err != nil {
+		if _, err := StartTCPRelay(ctx, vport, addr); err != nil {
 			log.Printf("start relay %s: %v", spec, err)
 		}
 	}

@@ -1,10 +1,11 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"log"
 	"net"
-	"fmt"
 )
 
 // TCPRelay listens on a vsock port and relays connections to a local TCP address.
@@ -15,7 +16,7 @@ type TCPRelay struct {
 }
 
 // StartTCPRelay creates and starts a relay from vsockPort to tcpAddr.
-func StartTCPRelay(vsockPort uint32, tcpAddr string) (*TCPRelay, error) {
+func StartTCPRelay(ctx context.Context, vsockPort uint32, tcpAddr string) (*TCPRelay, error) {
 	lis, err := listenVsock(vsockPort)
 	if err != nil {
 		return nil, fmt.Errorf("listen vsock %d: %w", vsockPort, err)
@@ -25,15 +26,22 @@ func StartTCPRelay(vsockPort uint32, tcpAddr string) (*TCPRelay, error) {
 		tcpAddr:   tcpAddr,
 		listener:  lis,
 	}
-	go r.serve()
+	go func() {
+		<-ctx.Done()
+		r.Close()
+	}()
+	go r.serve(ctx)
 	log.Printf("tcp relay: vsock:%d -> %s", vsockPort, tcpAddr)
 	return r, nil
 }
 
-func (r *TCPRelay) serve() {
+func (r *TCPRelay) serve(ctx context.Context) {
 	for {
 		conn, err := r.listener.Accept()
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			log.Printf("tcp relay vsock:%d: accept: %v", r.vsockPort, err)
 			return
 		}
