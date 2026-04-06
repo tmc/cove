@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,15 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
 )
+
+func killDownloadProcess(cmd *exec.Cmd, done <-chan error) {
+	if cmd.Process != nil {
+		if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			fmt.Printf("  warning: could not stop download process: %v\n", err)
+		}
+	}
+	<-done
+}
 
 // downloadIPSWCurl downloads the IPSW from the given URL to the specified path using curl.
 // curl handles resumable downloads via -C flag.
@@ -84,7 +94,7 @@ func downloadIPSWCurl(urlStr, path string) error {
 			// likely ignored our Range header and restarted from scratch.
 			// Kill curl to prevent unbounded growth.
 			if totalSize > 0 && currentSize > totalSize*120/100 {
-				cmd.Process.Kill()
+				killDownloadProcess(cmd, done)
 				fmt.Printf("\n  Download exceeded expected size (%.1f GB > %.1f GB) — possible resume failure.\n",
 					float64(currentSize)/(1024*1024*1024), float64(totalSize)/(1024*1024*1024))
 				fmt.Println("  Removing corrupted file. Re-run to start a fresh download.")
@@ -282,6 +292,16 @@ func downloadIPSWCurlWithProgress(urlStr, path string, progress progressFunc) er
 			currentSize := startSize
 			if err == nil {
 				currentSize = info.Size()
+			}
+
+			if totalSize > 0 && currentSize > totalSize*120/100 {
+				killDownloadProcess(cmd, done)
+				fmt.Printf("\n  Download exceeded expected size (%.1f GB > %.1f GB) — possible resume failure.\n",
+					float64(currentSize)/(1024*1024*1024), float64(totalSize)/(1024*1024*1024))
+				fmt.Println("  Removing corrupted file. Re-run to start a fresh download.")
+				progress("Download exceeded expected size", 0)
+				os.Remove(path)
+				return fmt.Errorf("download overshot expected size; removed %s", path)
 			}
 
 			downloaded := currentSize - startSize
