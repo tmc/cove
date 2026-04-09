@@ -72,13 +72,13 @@ func TestPrivateHIDSendPointerNSEventSignature(t *testing.T) {
 	event := appkit.GetNSEventClass().MouseEventWithTypeLocationModifierFlagsTimestampWindowNumberContextEventNumberClickCountPressure(
 		appkit.NSEventTypeMouseMoved,
 		location,
-		0,    // modifiers
-		0,    // timestamp
-		0,    // windowNumber (0 = no window)
-		nil,  // context
-		0,    // eventNumber
-		0,    // clickCount
-		0.0,  // pressure
+		0,   // modifiers
+		0,   // timestamp
+		0,   // windowNumber (0 = no window)
+		nil, // context
+		0,   // eventNumber
+		0,   // clickCount
+		0.0, // pressure
 	)
 	eventID := event.GetID()
 	if eventID == 0 {
@@ -422,31 +422,31 @@ func TestPrivateHIDCGEventToNSEventRoundTrip(t *testing.T) {
 //
 // Key findings:
 //
-//   sendPointerNSEvent:pointingDeviceIndex:
-//     - Takes an NSEvent directly (objectivec.IObject)
-//     - Most promising for mouse input: we already construct NSEvents for
-//       sendMouseEventVMDirect, just need to call the VM method directly
-//       instead of going through VZVirtualMachineView
-//     - Works without a GUI window (headless mode!)
-//     - Device index 0 = first pointing device
+//	sendPointerNSEvent:pointingDeviceIndex:
+//	  - Takes an NSEvent directly (objectivec.IObject)
+//	  - Most promising for mouse input: we already construct NSEvents for
+//	    sendMouseEventVMDirect, just need to call the VM method directly
+//	    instead of going through VZVirtualMachineView
+//	  - Works without a GUI window (headless mode!)
+//	  - Device index 0 = first pointing device
 //
-//   sendKeyboardEvents:keyboardID:
-//     - Takes unsafe.Pointer (likely NSArray of private event objects)
-//     - keyboardID 0 = first keyboard
-//     - Event format is unknown -- may be NSArray<_VZKeyboardEvent*>
-//     - Could potentially wrap NSEvents in an array, but format needs
-//       reverse engineering of VZVirtualMachineView's keyDown: implementation
+//	sendKeyboardEvents:keyboardID:
+//	  - Takes unsafe.Pointer (likely NSArray of private event objects)
+//	  - keyboardID 0 = first keyboard
+//	  - Event format is unknown -- may be NSArray<_VZKeyboardEvent*>
+//	  - Could potentially wrap NSEvents in an array, but format needs
+//	    reverse engineering of VZVirtualMachineView's keyDown: implementation
 //
-//   sendMouseEvents:pointingDeviceIndex:
-//     - Takes unsafe.Pointer (likely NSArray of private event objects)
-//     - Similar format questions as keyboard events
-//     - sendPointerNSEvent is preferred since it takes standard NSEvent
+//	sendMouseEvents:pointingDeviceIndex:
+//	  - Takes unsafe.Pointer (likely NSArray of private event objects)
+//	  - Similar format questions as keyboard events
+//	  - sendPointerNSEvent is preferred since it takes standard NSEvent
 //
-//   _processHIDReports:forDevice:deviceType:
-//     - Raw HID report data
-//     - Most low-level option
-//     - Reports are likely USB HID report descriptors
-//     - device = USB device ID, deviceType = keyboard(0)/mouse(1)/etc.
+//	_processHIDReports:forDevice:deviceType:
+//	  - Raw HID report data
+//	  - Most low-level option
+//	  - Reports are likely USB HID report descriptors
+//	  - device = USB device ID, deviceType = keyboard(0)/mouse(1)/etc.
 func TestPrivateHIDEventPassingToVM(t *testing.T) {
 	t.Log("=== Private HID API Integration Guide ===")
 	t.Log("")
@@ -479,21 +479,5 @@ func cfStringToGo(ref uintptr) string {
 	if ref == 0 {
 		return ""
 	}
-	cstr := objc.Send[objc.ID](objc.ID(ref), objc.Sel("UTF8String"))
-	if cstr == 0 {
-		return ""
-	}
-	// Read C string from pointer.
-	var bytes []byte
-	for i := 0; ; i++ {
-		b := *(*byte)(unsafe.Pointer(uintptr(cstr) + uintptr(i)))
-		if b == 0 {
-			break
-		}
-		bytes = append(bytes, b)
-		if i > 1024 {
-			break
-		}
-	}
-	return string(bytes)
+	return objc.IDToString(objc.ID(ref))
 }
