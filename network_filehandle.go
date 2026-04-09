@@ -28,7 +28,7 @@ type FileHandleNetworkSession struct {
 	pcapFile *os.File
 	pcap     *PCAPWriter
 
-	stats FileHandleNetworkStats
+	stats fileHandleNetworkStats
 
 	mu     sync.Mutex
 	closed bool

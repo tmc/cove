@@ -39,11 +39,14 @@ type FileHandleNetworkStats struct {
 	BytesIn   uint64    `json:"bytes_in,omitempty"`
 	BytesOut  uint64    `json:"bytes_out,omitempty"`
 	LastError string    `json:"last_error,omitempty"`
+}
 
+type fileHandleNetworkStats struct {
+	FileHandleNetworkStats
 	mu sync.Mutex
 }
 
-func (s *FileHandleNetworkStats) start(now time.Time) {
+func (s *fileHandleNetworkStats) start(now time.Time) {
 	s.mu.Lock()
 	if s.StartedAt.IsZero() {
 		s.StartedAt = now
@@ -51,7 +54,7 @@ func (s *FileHandleNetworkStats) start(now time.Time) {
 	s.mu.Unlock()
 }
 
-func (s *FileHandleNetworkStats) finish(now time.Time, err error) {
+func (s *fileHandleNetworkStats) finish(now time.Time, err error) {
 	s.mu.Lock()
 	if s.StoppedAt.IsZero() {
 		s.StoppedAt = now
@@ -62,7 +65,7 @@ func (s *FileHandleNetworkStats) finish(now time.Time, err error) {
 	s.mu.Unlock()
 }
 
-func (s *FileHandleNetworkStats) recordInbound(n int) {
+func (s *fileHandleNetworkStats) recordInbound(n int) {
 	if n <= 0 {
 		return
 	}
@@ -72,7 +75,7 @@ func (s *FileHandleNetworkStats) recordInbound(n int) {
 	s.mu.Unlock()
 }
 
-func (s *FileHandleNetworkStats) recordOutbound(n int) {
+func (s *fileHandleNetworkStats) recordOutbound(n int) {
 	if n <= 0 {
 		return
 	}
@@ -82,12 +85,10 @@ func (s *FileHandleNetworkStats) recordOutbound(n int) {
 	s.mu.Unlock()
 }
 
-func (s *FileHandleNetworkStats) snapshot() FileHandleNetworkStats {
+func (s *fileHandleNetworkStats) snapshot() FileHandleNetworkStats {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	snap := *s
-	snap.mu = sync.Mutex{}
-	return snap
+	return s.FileHandleNetworkStats
 }
 
 func (s FileHandleNetworkStats) summary(cfg FileHandleNetworkConfig) string {
