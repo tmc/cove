@@ -36,6 +36,7 @@ type guiUpdate struct {
 	// One-shot actions (cleared after apply).
 	closeProgressWindow bool
 	createVMWindow      bool
+	closeVMWindow       bool
 	setVMWindowTitle    string
 	fadeOutOverlay      bool
 	stopApp             bool
@@ -70,6 +71,14 @@ func (g *guiUpdate) requestCloseProgressWindow() {
 func (g *guiUpdate) requestCreateVMWindow() {
 	g.mu.Lock()
 	g.createVMWindow = true
+	g.dirty = true
+	g.mu.Unlock()
+}
+
+// requestCloseVMWindow signals the main thread to detach and close the VM window.
+func (g *guiUpdate) requestCloseVMWindow() {
+	g.mu.Lock()
+	g.closeVMWindow = true
 	g.dirty = true
 	g.mu.Unlock()
 }
@@ -123,20 +132,8 @@ func didInjectSucceed() bool { _, err := os.Stat(injectSucceededMarker()); retur
 // optionally injects provisioning files if provisionUser/provisionPassword are set.
 func stopVMAndInject(vm *virtualMachine) {
 	fmt.Println("Stopping VM...")
-	stopDone := make(chan struct{})
-	DispatchAsyncQueue(vm.queue, func() {
-		vm.vm.StopWithCompletionHandler(func(err error) {
-			if err != nil {
-				vzlog("VM stop error: %v", err)
-			}
-			close(stopDone)
-		})
-	})
-	select {
-	case <-stopDone:
-		fmt.Println("VM stopped.")
-	case <-time.After(30 * time.Second):
-		fmt.Println("VM stop timed out, continuing...")
+	if err := stopInstallerVM(vm); err != nil {
+		fmt.Printf("warning: %v\n", err)
 	}
 
 	// Wait for the disk to be released instead of a fixed sleep. The VZ
@@ -197,6 +194,143 @@ func stopVMAndInject(vm *virtualMachine) {
 		markInjectSucceeded()
 	}
 	fmt.Println()
+}
+
+type installerVMStopStatus struct {
+	state          vz.VZVirtualMachineState
+	canStop        bool
+	canRequestStop bool
+}
+
+func queryInstallerVMStopStatus(vm *virtualMachine) (installerVMStopStatus, error) {
+	if vm == nil || vm.vm.ID == 0 || vm.queue.Handle() == 0 {
+		return installerVMStopStatus{}, fmt.Errorf("vm not initialized")
+	}
+
+	statusCh := make(chan installerVMStopStatus, 1)
+	errCh := make(chan error, 1)
+	DispatchAsyncQueue(vm.queue, func() {
+		if vm.vm.ID == 0 {
+			errCh <- fmt.Errorf("vm not initialized")
+			return
+		}
+		statusCh <- installerVMStopStatus{
+			state:          vz.VZVirtualMachineState(vm.vm.State()),
+			canStop:        vm.vm.CanStop(),
+			canRequestStop: vm.vm.CanRequestStop(),
+		}
+	})
+
+	select {
+	case status := <-statusCh:
+		return status, nil
+	case err := <-errCh:
+		return installerVMStopStatus{}, err
+	case <-time.After(5 * time.Second):
+		return installerVMStopStatus{}, fmt.Errorf("timed out querying VM stop state")
+	}
+}
+
+func requestInstallerVMStop(vm *virtualMachine) (bool, error) {
+	resultCh := make(chan bool, 1)
+	errCh := make(chan error, 1)
+	DispatchAsyncQueue(vm.queue, func() {
+		ok, err := vm.vm.RequestStopWithError()
+		if err != nil {
+			errCh <- snapshotNSError(err)
+			return
+		}
+		resultCh <- ok
+	})
+
+	select {
+	case ok := <-resultCh:
+		return ok, nil
+	case err := <-errCh:
+		return false, err
+	case <-time.After(5 * time.Second):
+		return false, fmt.Errorf("timed out requesting VM stop")
+	}
+}
+
+func waitForInstallerVMStopped(vm *virtualMachine, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	lastState := vz.VZVirtualMachineState(-1)
+
+	for time.Now().Before(deadline) {
+		status, err := queryInstallerVMStopStatus(vm)
+		if err != nil {
+			return err
+		}
+		lastState = status.state
+		switch status.state {
+		case vz.VZVirtualMachineStateStopped:
+			fmt.Println("VM stopped.")
+			return nil
+		case vz.VZVirtualMachineStateError:
+			return fmt.Errorf("vm entered error state while stopping")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return fmt.Errorf("vm did not stop within %s (last state: %s)", timeout, vmStateName(lastState))
+}
+
+func stopInstallerVM(vm *virtualMachine) error {
+	status, err := queryInstallerVMStopStatus(vm)
+	if err != nil {
+		return err
+	}
+	if verbose || vzDebugInstall {
+		fmt.Printf("Installer stop preflight: state=%s canStop=%v canRequestStop=%v\n",
+			vmStateName(status.state), status.canStop, status.canRequestStop)
+	}
+
+	switch status.state {
+	case vz.VZVirtualMachineStateStopped:
+		fmt.Println("VM already stopped.")
+		return nil
+	case vz.VZVirtualMachineStateStopping:
+		return waitForInstallerVMStopped(vm, 30*time.Second)
+	case vz.VZVirtualMachineStateError:
+		return fmt.Errorf("vm entered error state before stop")
+	}
+
+	if status.canRequestStop {
+		ok, err := requestInstallerVMStop(vm)
+		if err == nil && ok {
+			return waitForInstallerVMStopped(vm, 30*time.Second)
+		}
+		if verbose || vzDebugInstall {
+			if err != nil {
+				fmt.Printf("Installer request-stop failed: %v\n", err)
+			} else {
+				fmt.Println("Installer request-stop returned false; falling back to force stop")
+			}
+		}
+	}
+
+	if !status.canStop {
+		return fmt.Errorf("vm cannot stop in state %s", vmStateName(status.state))
+	}
+
+	stopDone := make(chan error, 1)
+	DispatchAsyncQueue(vm.queue, func() {
+		vm.vm.StopWithCompletionHandler(func(err error) {
+			stopDone <- snapshotNSError(err)
+		})
+	})
+
+	select {
+	case err := <-stopDone:
+		if err != nil {
+			return fmt.Errorf("vm stop: %w", err)
+		}
+	case <-time.After(30 * time.Second):
+		return fmt.Errorf("vm stop timed out")
+	}
+
+	return waitForInstallerVMStopped(vm, 15*time.Second)
 }
 
 // installMacOSLikeVZ installs macOS using the flow originally modeled on
@@ -311,7 +445,9 @@ func runFullInstallWithGUI(ctx context.Context) error {
 	// Shared state for the VM window (created on main thread, referenced by both).
 	var vmWindow appkit.NSWindow
 	var vmOverlay appkit.NSView
+	var vmView vz.VZVirtualMachineView
 	vmWindowCreated := make(chan struct{})
+	vmWindowClosed := make(chan struct{}, 1)
 	var installerRef *macOSInstaller
 
 	// Helper for the background goroutine to set progress.
@@ -388,6 +524,12 @@ func runFullInstallWithGUI(ctx context.Context) error {
 				}
 				fmt.Println("=== Installation Complete ===")
 				ui.requestSetVMWindowTitle("macOS VM Installation - Stopping VM...")
+				ui.requestCloseVMWindow()
+				select {
+				case <-vmWindowClosed:
+				case <-time.After(2 * time.Second):
+					fmt.Fprintln(os.Stderr, "warning: timed out closing install window before stop")
+				}
 
 				stopVMAndInject(installer.vm)
 
@@ -466,7 +608,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 						Origin: corefoundation.CGPoint{X: 100, Y: 100},
 						Size:   corefoundation.CGSize{Width: 1024, Height: 768},
 					}
-					vmView := vz.NewVZVirtualMachineView()
+					vmView = vz.NewVZVirtualMachineView()
 					vmView.SetVirtualMachine(&installerRef.vm.vm)
 					vmView.SetCapturesSystemKeys(true)
 					vmView.SetAutomaticallyReconfiguresDisplay(true)
@@ -501,6 +643,26 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					vmWindow.MakeFirstResponder(vmViewAsNSView(vmView).NSResponder)
 					close(vmWindowCreated)
 					ui.createVMWindow = false
+				}
+
+				// Detach and close the VM window before stopping the installer VM.
+				if ui.closeVMWindow {
+					if vmView.ID != 0 {
+						vmView.SetVirtualMachine(nil)
+					}
+					if vmOverlay.ID != 0 {
+						objc.Send[objc.ID](vmOverlay.ID, objc.Sel("removeFromSuperview"))
+						vmOverlay = appkit.NSView{}
+					}
+					if vmWindow.ID != 0 {
+						vmWindow.Close()
+						vmWindow = appkit.NSWindow{}
+					}
+					select {
+					case vmWindowClosed <- struct{}{}:
+					default:
+					}
+					ui.closeVMWindow = false
 				}
 
 				// VM window title.
