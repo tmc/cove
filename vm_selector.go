@@ -2161,18 +2161,11 @@ func showVMSelectorWindow(vms []VMInfo) {
 	app := getSharedApp()
 	app.SetActivationPolicy(appkit.NSApplicationActivationPolicyRegular)
 	setAppIcon(&app)
-
-	if !appFinishedLaunching {
-		foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
-			app.Stop(nil)
-			postDummyEvent(app)
-		})
-		app.Run()
-		appFinishedLaunching = true
-	}
+	ensureAppLaunched(app)
 
 	for {
 		var action selectorAction
+		var appLoopStop atomic.Bool
 
 		// Declare selector before the closures that reference it.
 		var selector *VMSelector
@@ -2183,7 +2176,7 @@ func showVMSelectorWindow(vms []VMInfo) {
 				coldBoot: coldBoot,
 			}
 			objc.Send[objc.ID](selector.window.ID, objc.Sel("close"))
-			app.Stop(nil)
+			appLoopStop.Store(true)
 			postDummyEvent(app)
 		}, func() {
 			opts, ok := promptForNewVMOptions()
@@ -2195,7 +2188,7 @@ func showVMSelectorWindow(vms []VMInfo) {
 				newVM: opts,
 			}
 			objc.Send[objc.ID](selector.window.ID, objc.Sel("close"))
-			app.Stop(nil)
+			appLoopStop.Store(true)
 			postDummyEvent(app)
 		})
 		setupSelectorMenu(selector.delegateID)
@@ -2206,13 +2199,13 @@ func showVMSelectorWindow(vms []VMInfo) {
 		objc.Send[objc.ID](nc.ID, objc.Sel("addObserverForName:object:queue:usingBlock:"),
 			nsName, selector.window.ID, objc.ID(0),
 			objc.NewBlock(func(_ objc.Block, _ objc.ID) {
-				app.Stop(nil)
+				appLoopStop.Store(true)
 				postDummyEvent(app)
 			}),
 		)
 
 		selector.Show()
-		app.Run()
+		runAppEventLoopUntil(app, appLoopStop.Load)
 
 		if action.kind == selectorActionNone {
 			return

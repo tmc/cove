@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -23,7 +24,7 @@ import (
 
 // guiUpdate holds pending UI changes that background goroutines request.
 // The main thread polls this and applies updates, avoiding purego callbacks
-// on the main queue (which cause GC stack corruption with app.Run()).
+// on the main queue.
 type guiUpdate struct {
 	mu    sync.Mutex
 	dirty bool // true if any field changed since last apply
@@ -563,10 +564,10 @@ func runFullInstallWithGUI(ctx context.Context) error {
 	}()
 
 	// Repeating NSTimer handles UI updates on the main thread at ~30 Hz.
-	// This runs inside app.Run()'s event loop, which properly routes
-	// window server events (mouse, keyboard, Cmd+Tab) — unlike a manual
-	// NextEventMatchingMask/SendEvent loop which never receives events.
+	// The event loop below routes window server events using AppKit's
+	// nextEvent/sendEvent pattern while retaining explicit stop control.
 	var overlayFadeStep int = -1 // -1 means not fading
+	var appLoopStop atomic.Bool
 	foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(
 		0.033, // ~30 Hz
 		true,
@@ -688,7 +689,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 				// Stop the app when lifecycle is done.
 				if ui.stopApp {
 					ui.stopApp = false
-					app.Stop(nil)
+					appLoopStop.Store(true)
 					postDummyEvent(app)
 				}
 			}
@@ -696,9 +697,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 		},
 	)
 
-	// app.Run() blocks until app.Stop() is called (when lifecycle completes).
-	// This properly routes all window server events (mouse, keyboard, Cmd+Tab).
-	app.Run()
+	runAppEventLoopUntil(app, appLoopStop.Load)
 
 	// Close any windows left over from the install phase so the run phase
 	// starts with a clean slate (avoids stale black windows).
@@ -1012,9 +1011,8 @@ func loadMacOSRestoreImageFromPath(imagePath string) (vz.VZMacOSRestoreImage, er
 		close(done)
 	})
 
-	// Wait for completion. If NSApplication.Run() is active (GUI mode), the
-	// main run loop is already being pumped — just sleep. Otherwise, pump it
-	// ourselves via runRunLoopOnce().
+	// Wait for completion. If the AppKit event pump is active (GUI mode),
+	// the main run loop is already being pumped; otherwise, pump it here.
 	timeout := time.After(60 * time.Second)
 	for {
 		select {
@@ -1027,8 +1025,8 @@ func loadMacOSRestoreImageFromPath(imagePath string) (vz.VZMacOSRestoreImage, er
 			return vz.VZMacOSRestoreImage{}, fmt.Errorf("timeout loading restore image")
 		default:
 			// In non-GUI mode, pump the run loop from this goroutine.
-			// In GUI mode, the main thread's manual event loop handles
-			// run loop pumping — just sleep and wait.
+			// In GUI mode, the main thread's AppKit event pump handles
+			// run loop pumping; just sleep and wait.
 			if !guiMode {
 				vzkit.RunRunLoopOnce()
 			}
@@ -1108,13 +1106,27 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 	if err != nil {
 		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to create auxiliary storage: %w", err)
 	}
-	auxStorage.Retain() // Keep alive for VM
+	auxStorage.Retain() // Keep alive for creation path diagnostics
+	if info, statErr := os.Stat(auxStoragePath); statErr != nil {
+		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("auxiliary storage created but missing on disk: %w", statErr)
+	} else if info.Size() == 0 {
+		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("auxiliary storage created but empty: %s", auxStoragePath)
+	}
+
+	// Re-open the freshly created aux image through the same path we use at
+	// runtime. This validates readability immediately and avoids install/start
+	// discrepancies between the "create" and "load existing" code paths.
+	reloadedAux := vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
+	if reloadedAux.ID == 0 {
+		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to reload created auxiliary storage: %s", auxStoragePath)
+	}
+	reloadedAux.Retain()
 
 	// Build platform configuration
 	platformConfig := vz.NewVZMacPlatformConfiguration()
 	platformConfig.SetHardwareModel(hwModel)
 	platformConfig.SetMachineIdentifier(&machineID)
-	platformConfig.SetAuxiliaryStorage(&auxStorage)
+	platformConfig.SetAuxiliaryStorage(&reloadedAux)
 
 	return platformConfig, nil
 }
@@ -1591,6 +1603,8 @@ func printProgress(percent float64) {
 func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 	defer installer.vm.stopMonitor()
 
+	const installProgressStallTimeout = 3 * time.Minute
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -1628,6 +1642,7 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 
 	lastPercent := -1.0
 	lastStateLog := time.Time{}
+	lastProgressAt := time.Now()
 
 	vzlog("runInstallation: entering progress monitoring loop")
 
@@ -1676,6 +1691,12 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 			if currentPercent-lastPercent >= 1.0 || lastPercent < 0 {
 				printProgress(currentPercent)
 				lastPercent = currentPercent
+				lastProgressAt = time.Now()
+			}
+			if time.Since(lastProgressAt) > installProgressStallTimeout {
+				vmState := installer.vm.State()
+				fmt.Println()
+				return fmt.Errorf("installation progress stalled at %.1f%% for %s (vm state %d)", currentPercent, installProgressStallTimeout, vmState)
 			}
 
 			// Log state periodically for debugging (only when debug enabled, doesn't break progress bar)
@@ -1786,7 +1807,7 @@ func downloadRestoreImageVZ(ctx context.Context, destPath string) error {
 
 // Monitor installation completion in a background goroutine.
 // Sets installComplete/installErr; the NSTimer on the main thread
-// polls these and calls app.Stop() when done.
+// polls these and stops the AppKit event pump when done.
 
 // NSTimer polls progress and completion at ~2 Hz, applies UI changes
 // on the main thread. Avoids DispatchAsync(GetMainDispatchQueue())
@@ -1796,7 +1817,7 @@ func downloadRestoreImageVZ(ctx context.Context, destPath string) error {
 
 // Check for completion.
 
-// app.Run() drains both the GCD main queue and CFRunLoop.
+// The AppKit event pump drains both the GCD main queue and CFRunLoop.
 
 // createInstallOverlay creates a dark overlay view with a "Starting installation..." label.
 func createInstallOverlay(size corefoundation.CGSize) appkit.NSView {
@@ -1848,9 +1869,9 @@ func createInstallOverlay(size corefoundation.CGSize) appkit.NSView {
 	return overlay
 }
 
-// postDummyEvent posts an application-defined event to unblock app.Run()
-// after app.Stop() has been called. Uses objc.Send directly to pass nil
-// context (the generated binding crashes on nil *NSGraphicsContext).
+// postDummyEvent posts an application-defined event to unblock the AppKit
+// event pump after its stop condition has been set. Uses objc.Send directly
+// to pass nil context (the generated binding crashes on nil *NSGraphicsContext).
 func postDummyEvent(app appkit.NSApplication) {
 	eventID := objc.Send[objc.ID](
 		objc.ID(objc.GetClass("NSEvent")),

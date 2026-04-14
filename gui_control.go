@@ -9,6 +9,7 @@ import (
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 	vz "github.com/tmc/apple/virtualization"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -74,19 +75,37 @@ func ensureAppLaunched(app appkit.NSApplication) {
 	if appFinishedLaunching {
 		return
 	}
-	foundation.GetTimerClass().ScheduledTimerWithTimeIntervalRepeatsBlock(0, false, func(_ *foundation.NSTimer) {
-		app.Stop(nil)
-		postDummyEvent(app)
-	})
-	app.Run()
-	appFinishedLaunching = true
+
+	launch := func() {
+		if appFinishedLaunching {
+			return
+		}
+		app.FinishLaunching()
+		appFinishedLaunching = true
+	}
+
+	if foundation.GetThreadClass().CurrentThread().IsMainThread() {
+		launch()
+		return
+	}
+	DispatchSync(GetMainDispatchQueue(), launch)
 }
 
-func pumpAppEventLoopUntil(stop func() bool) {
-	runLoop := foundation.GetRunLoopClass().CurrentRunLoop()
+// runAppEventLoopUntil mirrors NSApplication.Run's nextEvent/sendEvent loop
+// while letting CLI lifecycles stop without entering a long-lived app.Run.
+func runAppEventLoopUntil(app appkit.NSApplication, stop func() bool) {
+	mode := foundation.NewStringWithString(foundation.RunLoopDefaultMode)
+	defer mode.Release()
 	for !stop() {
-		limit := foundation.NewDateWithTimeIntervalSinceNow(0.05)
-		runLoop.RunModeBeforeDate(foundation.RunLoopDefaultMode, limit)
+		objc.AutoreleasePool(func() {
+			limit := foundation.GetNSDateClass().DateWithTimeIntervalSinceNow(0.05)
+			event := app.NextEventMatchingMaskUntilDateInModeDequeue(nsEventMaskAny, limit, mode, true)
+			if event.GetID() == 0 {
+				return
+			}
+			app.SendEvent(event)
+			app.UpdateWindows()
+		})
 	}
 }
 

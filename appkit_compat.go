@@ -7,6 +7,7 @@ import (
 )
 
 const nsEventTypeApplicationDefined = appkit.NSEventType(15)
+const nsEventMaskAny = appkit.NSEventMask(-1) // NSAnyEventMask is NSUIntegerMax.
 const nsToolbarDisplayModeIconOnly = appkit.NSToolbarDisplayMode(2)
 const nsBoxCustom = appkit.NSBoxType(4)
 const nsAlertStyleWarning = appkit.NSAlertStyle(0)
