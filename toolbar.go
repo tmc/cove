@@ -669,6 +669,7 @@ func LoadSharedFolders(vmDirectory string) []SharedFolderEntry {
 // uniqueTag returns a VirtioFS tag that doesn't collide with existing entries.
 // If "data" is taken, returns "data-2", "data-3", etc.
 func uniqueTag(base string, existing []SharedFolderEntry) string {
+	base = sanitizeSharedFolderTag(base)
 	taken := make(map[string]bool, len(existing))
 	for _, f := range existing {
 		taken[f.Tag] = true
@@ -682,4 +683,34 @@ func uniqueTag(base string, existing []SharedFolderEntry) string {
 			return candidate
 		}
 	}
+}
+
+func sanitizeSharedFolderTag(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return "share"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range base {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + ('a' - 'A'))
+			lastDash = false
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if b.Len() == 0 || lastDash {
+				continue
+			}
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	tag := strings.Trim(b.String(), "-")
+	if tag == "" {
+		return "share"
+	}
+	return tag
 }

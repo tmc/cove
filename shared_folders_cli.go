@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 const defaultSharedFoldersMountPoint = "/Volumes/My Shared Files"
@@ -344,10 +346,10 @@ func mountSharedFoldersInGuest(vmDirectory, mountPoint string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("query mounts: %w", err)
 	}
+	tags := expectedSharedFolderTags(vmDirectory)
 	if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
-		tags := expectedSharedFolderTags(vmDirectory)
 		lsRes, lsErr := client.AgentExecTyped([]string{"ls", "-1", mountPoint}, nil, "")
-		if lsErr == nil && lsRes.ExitCode == 0 && mountContainsAllTags(lsRes.Stdout, tags) {
+		if sharedFoldersMountedAndSynced(mountRes.Stdout, mountPoint, tags, lsRes, lsErr) {
 			return false, nil
 		}
 
@@ -375,6 +377,16 @@ func mountSharedFoldersInGuest(vmDirectory, mountPoint string) (bool, error) {
 		return false, fmt.Errorf("mount_virtiofs exit %d: %s", res.ExitCode, msg)
 	}
 	return true, nil
+}
+
+func sharedFoldersMountedAndSynced(mountOutput, mountPoint string, tags []string, lsRes *controlpb.AgentExecResponse, lsErr error) bool {
+	if !strings.Contains(mountOutput, " on "+mountPoint+" ") {
+		return false
+	}
+	if lsErr != nil || lsRes == nil || lsRes.ExitCode != 0 {
+		return false
+	}
+	return mountContainsAllTags(lsRes.Stdout, tags)
 }
 
 func printSharedFolderStatusError(prefix string, err error) {

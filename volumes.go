@@ -305,19 +305,8 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []Vol
 			}
 		}
 
-		// Mount the VirtioFS tag.
-		// Use mount -t virtiofs on Linux, mount_virtiofs on macOS.
-		// Pass through any MountOpts via -o.
-		var mountArgs []string
-		if linuxMode {
-			mountArgs = []string{"mount", "-t", "virtiofs"}
-		} else {
-			mountArgs = []string{"mount_virtiofs"}
-		}
-		if len(m.MountOpts) > 0 {
-			mountArgs = append(mountArgs, "-o", strings.Join(m.MountOpts, ","))
-		}
-		mountArgs = append(mountArgs, m.Tag, mountPoint)
+		// Mount the VirtioFS tag using guest-native mount semantics.
+		mountArgs := virtioFSMountArgs(m, mountPoint, linuxMode)
 
 		cs.mu.Lock()
 		mountCtx, mountCancel := context.WithTimeout(ctx, 10*time.Second)
@@ -340,4 +329,26 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []Vol
 		}
 		fmt.Printf("  mounted %s at %s (%s)\n", m.Tag, mountPoint, mode)
 	}
+}
+
+func virtioFSMountArgs(m VolumeMount, mountPoint string, linuxGuest bool) []string {
+	if linuxGuest {
+		opts := append([]string{}, m.MountOpts...)
+		if m.ReadOnly {
+			opts = append([]string{"ro"}, opts...)
+		}
+		args := []string{"mount", "-t", "virtiofs"}
+		if len(opts) > 0 {
+			args = append(args, "-o", strings.Join(opts, ","))
+		}
+		return append(args, m.Tag, mountPoint)
+	}
+
+	args := []string{"mount_virtiofs"}
+	if m.ReadOnly {
+		args = append(args, "-r")
+	}
+	// macOS mount_virtiofs only documents -r, -u, and -g. Generic MountOpts are
+	// Linux-only today; passing -o here would be invalid.
+	return append(args, m.Tag, mountPoint)
 }
