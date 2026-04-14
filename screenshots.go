@@ -78,11 +78,17 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 }
 
 func (s *ControlServer) captureDisplayImage() (image.Image, string) {
+	remember := func(img image.Image, errMsg string) (image.Image, string) {
+		if errMsg == "" {
+			s.rememberCaptureBounds(img)
+		}
+		return img, errMsg
+	}
 	switch s.captureBackend() {
 	case automationBackendFramebuffer:
-		return s.capturePrivateGraphicsDisplay()
+		return remember(s.capturePrivateGraphicsDisplay())
 	case automationBackendWindow:
-		return s.captureVMView()
+		return remember(s.captureVMView())
 	}
 
 	s.mu.Lock()
@@ -92,13 +98,13 @@ func (s *ControlServer) captureDisplayImage() (image.Image, string) {
 		status := gui.Status()
 		if !status.Headed {
 			if img, errMsg := s.capturePrivateGraphicsDisplay(); errMsg == "" {
-				return img, ""
+				return remember(img, "")
 			} else if verbose {
 				fmt.Printf("[screenshot] private capture unavailable: %s\n", errMsg)
 			}
 		}
 	}
-	return s.captureVMView()
+	return remember(s.captureVMView())
 }
 
 // captureVMView captures the raw image from the VM view using CGWindowListCreateImage.
@@ -128,18 +134,13 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 	}
 	defer coregraphics.CGImageRelease(cgImage)
 
-	titleBarPx := 0
-	height := int(coregraphics.CGImageGetHeight(cgImage))
-	viewH := s.viewContentHeight
-	if viewH > 0 && height > viewH {
-		titleBarPx = height - viewH
-		if verbose {
-			fmt.Printf("[screenshot] cropping %dpx title bar (screenshot=%d, view=%d)\n",
-				titleBarPx, height, viewH)
-		}
-	}
-
-	return goImageFromCGImage(cgImage, titleBarPx)
+	// Do not blindly crop the top delta between the captured window image and
+	// the VM view bounds. Recovery can render guest-visible controls in that
+	// strip, including the menu bar needed for Terminal automation.
+	//
+	// The old behavior assumed the delta was always host title bar chrome.
+	// Live Recovery captures show that assumption is false.
+	return goImageFromCGImage(cgImage, 0)
 }
 
 // goImageFromCGImage converts a CGImageRef to a Go image with BGRA→RGBA conversion.
