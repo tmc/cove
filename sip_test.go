@@ -1,50 +1,43 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestGenerateSIPBootCommands_DisableWithPasswordConfirmReboot(t *testing.T) {
-	cmds := generateSIPBootCommands("disable", "", "secret", true, true)
+func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot_Order(t *testing.T) {
+	got := generateSIPVZScript("disable", "admin", "secret", true, true)
 
-	if !hasCommand(cmds, BootCommand{Type: "clickMenuItem", Args: "Utilities|Terminal"}) {
-		t.Fatalf("expected clickMenuItem Utilities|Terminal command")
+	wantOrder := []string{
+		`key cmd+shift+t`,
+		`type 'csrutil disable'`,
+		`[text-visible:Are+you+sure] type-keycodes 'y'`,
+		`[text-visible:Authorized+user] type 'admin'`,
+		`[text-visible:Password] type-keycodes 'secret'`,
+		`[text-visible:System+Integrity+Protection+is+off.] type reboot`,
 	}
-	if !hasCommand(cmds, BootCommand{Type: "type", Args: "csrutil disable"}) {
-		t.Fatalf("expected csrutil disable command")
-	}
+	assertOrderedSnippets(t, got, wantOrder)
+}
 
-	yIdx := indexOfCommand(cmds, BootCommand{Type: "typeAndReturnIfText", Args: "Are you sure|y"})
-	passIdx := indexOfCommand(cmds, BootCommand{Type: "typeAndReturnIfText", Args: "Enter password|secret"})
-	if yIdx < 0 {
-		t.Fatalf("expected confirm command y")
+func TestGenerateSIPVZScript_DisableWithoutConfirm(t *testing.T) {
+	got := generateSIPVZScript("disable", "", "secret", false, true)
+	if strings.Contains(got, "Are you sure") {
+		t.Fatalf("did not expect confirm prompt handling when confirm=false\n%s", got)
 	}
-	if passIdx < 0 {
-		t.Fatalf("expected password command")
-	}
-	if yIdx <= passIdx {
-		t.Fatalf("expected y to be sent after password (y=%d pass=%d)", yIdx, passIdx)
-	}
-
-	if !hasCommand(cmds, BootCommand{Type: "type", Args: "reboot"}) {
-		t.Fatalf("expected reboot command")
+	if strings.Contains(got, "[y/n]") {
+		t.Fatalf("did not expect [y/n] prompt handling when confirm=false\n%s", got)
 	}
 }
 
-func TestGenerateSIPBootCommands_DisableWithoutConfirm(t *testing.T) {
-	cmds := generateSIPBootCommands("disable", "", "secret", false, true)
-	if hasCommand(cmds, BootCommand{Type: "typeAndReturnIfText", Args: "Are you sure|y"}) {
-		t.Fatalf("did not expect confirm command when confirm=false")
-	}
-}
+func assertOrderedSnippets(t *testing.T, script string, want []string) {
+	t.Helper()
 
-func hasCommand(cmds []BootCommand, want BootCommand) bool {
-	return indexOfCommand(cmds, want) >= 0
-}
-
-func indexOfCommand(cmds []BootCommand, want BootCommand) int {
-	for i, cmd := range cmds {
-		if cmd.Type == want.Type && cmd.Args == want.Args {
-			return i
+	pos := 0
+	for _, snippet := range want {
+		i := strings.Index(script[pos:], snippet)
+		if i < 0 {
+			t.Fatalf("missing snippet %q\n%s", snippet, script)
 		}
+		pos += i + len(snippet)
 	}
-	return -1
 }
