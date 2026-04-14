@@ -17,7 +17,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/tmc/apple/objc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -27,6 +26,8 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/input"
+	"github.com/tmc/apple/x/vzkit/vm"
+	"github.com/tmc/apple/x/vzkit/vminput"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -60,6 +61,8 @@ type ControlServer struct {
 	screenshotMu      sync.Mutex   // protects lastScreenshot for diff mode
 	running           atomic.Bool
 	lastScreenshot    image.Image         // For diff mode
+	lastCaptureWidth  int                 // last screenshot width used for OCR/click mapping
+	lastCaptureHeight int                 // last screenshot height used for OCR/click mapping
 	agent             *AgentClient        // GRPC client to guest agent daemon (nil until connected)
 	userAgent         *UserAgentClient    // GRPC client to guest user agent (nil until connected)
 	ocr               *OCRService         // lazily created OCR service for server-side OCR commands
@@ -122,6 +125,23 @@ func (s *ControlServer) inputBackend() automationBackendMode {
 
 func (s *ControlServer) setInputBackend(mode automationBackendMode) {
 	s.inputMode.Store(int32(mode))
+}
+
+func (s *ControlServer) rememberCaptureBounds(img image.Image) {
+	if img == nil {
+		return
+	}
+	b := img.Bounds()
+	s.screenshotMu.Lock()
+	s.lastCaptureWidth = b.Dx()
+	s.lastCaptureHeight = b.Dy()
+	s.screenshotMu.Unlock()
+}
+
+func (s *ControlServer) lastCaptureBounds() (width, height int) {
+	s.screenshotMu.Lock()
+	defer s.screenshotMu.Unlock()
+	return s.lastCaptureWidth, s.lastCaptureHeight
 }
 
 func (s *ControlServer) effectiveVMDir() string {
@@ -780,6 +800,15 @@ func (s *ControlServer) sendKeyEventPrimitive(cmd *controlpb.KeyCommand) *contro
 	if s.inputBackend() == automationBackendWindow {
 		return s.sendKeyEventCGEvent(cmd)
 	}
+	if s.inputBackend() == automationBackendFramebuffer {
+		if allowExperimentalHIDKeyboard() {
+			return s.sendKeyEventPrivate(cmd)
+		}
+		if s.window.ID != 0 {
+			return s.sendKeyEventCGEvent(cmd)
+		}
+		return &controlpb.ControlResponse{Error: "direct private keyboard injection is disabled; set VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD=1 to re-enable the experimental private API path"}
+	}
 	if cmd.UseCgEvent {
 		return s.sendKeyEventMultiPath(cmd, false)
 	}
@@ -872,14 +901,18 @@ func (s *ControlServer) sendKeyEventMultiPath(cmd *controlpb.KeyCommand, fanout 
 	paths := []keyInjector{
 		{name: "nsevent", fn: s.sendKeyEventNSEvent},
 		{name: "cgevent", fn: s.sendKeyEventCGEvent},
-		{name: "hid", fn: s.sendKeyEventHID},
+	}
+	if allowExperimentalHIDKeyboard() {
+		paths = append(paths, keyInjector{name: "private", fn: s.sendKeyEventPrivate})
 	}
 	if cmd.UseCgEvent {
 		// For shortcut-style input, prefer lower-level injectors first.
 		paths = []keyInjector{
-			{name: "hid", fn: s.sendKeyEventHID},
 			{name: "cgevent", fn: s.sendKeyEventCGEvent},
 			{name: "nsevent", fn: s.sendKeyEventNSEvent},
+		}
+		if allowExperimentalHIDKeyboard() {
+			paths = append([]keyInjector{{name: "private", fn: s.sendKeyEventPrivate}}, paths...)
 		}
 	}
 
@@ -918,140 +951,30 @@ func (s *ControlServer) sendKeyEventMultiPath(cmd *controlpb.KeyCommand, fanout 
 	return &controlpb.ControlResponse{Error: "keyboard injection failed: " + strings.Join(errs, "; ")}
 }
 
-// macKeycodeToHIDUsage maps macOS virtual keycodes to USB HID usage IDs.
-var macKeycodeToHIDUsage = map[uint32]byte{
-	0:  0x04, // a
-	1:  0x16, // s
-	2:  0x07, // d
-	3:  0x09, // f
-	4:  0x0B, // h
-	5:  0x0A, // g
-	6:  0x1D, // z
-	7:  0x1B, // x
-	8:  0x06, // c
-	9:  0x19, // v
-	11: 0x05, // b
-	12: 0x14, // q
-	13: 0x1A, // w
-	14: 0x08, // e
-	15: 0x15, // r
-	16: 0x1C, // y
-	17: 0x17, // t
-	18: 0x1E, // 1
-	19: 0x1F, // 2
-	20: 0x20, // 3
-	21: 0x21, // 4
-	22: 0x23, // 6
-	23: 0x22, // 5
-	24: 0x2E, // =
-	25: 0x26, // 9
-	26: 0x24, // 7
-	27: 0x2D, // -
-	28: 0x25, // 8
-	29: 0x27, // 0
-	30: 0x30, // ]
-	31: 0x12, // o
-	32: 0x18, // u
-	33: 0x2F, // [
-	34: 0x0C, // i
-	35: 0x13, // p
-	36: 0x28, // Return
-	37: 0x0F, // l
-	38: 0x0D, // j
-	39: 0x34, // '
-	40: 0x0E, // k
-	41: 0x33, // ;
-	42: 0x31, // backslash
-	43: 0x36, // ,
-	44: 0x38, // /
-	45: 0x11, // n
-	46: 0x10, // m
-	47: 0x37, // .
-	48: 0x2B, // Tab
-	49: 0x2C, // Space
-	50: 0x35, // `
-	51: 0x2A, // Delete (Backspace)
-	53: 0x29, // Escape
-	// Arrow keys
-	123: 0x50, // Left
-	124: 0x4F, // Right
-	125: 0x51, // Down
-	126: 0x52, // Up
-	// Function keys
-	122: 0x3A, // F1
-	120: 0x3B, // F2
-	99:  0x3C, // F3
-	118: 0x3D, // F4
-	96:  0x3E, // F5
-	97:  0x3F, // F6
-	98:  0x40, // F7
-	100: 0x41, // F8
-	101: 0x42, // F9
-	109: 0x43, // F10
-	103: 0x44, // F11
-	111: 0x45, // F12
+func allowExperimentalHIDKeyboard() bool {
+	return strings.TrimSpace(os.Getenv("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD")) == "1"
 }
 
-// sendKeyEventHID sends a USB HID keyboard report directly to the VM
-// via the private sendKeyboardEvents:keyboardID: method.
-func (s *ControlServer) sendKeyEventHID(cmd *controlpb.KeyCommand) (resp *controlpb.ControlResponse) {
-	// Recover from panics — the private API may crash if args are wrong.
-	defer func() {
-		if r := recover(); r != nil {
-			resp = &controlpb.ControlResponse{Error: fmt.Sprintf("HID inject panic: %v", r)}
-		}
-	}()
-
-	hidUsage, ok := macKeycodeToHIDUsage[cmd.KeyCode]
-	if !ok && cmd.KeyDown {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("no HID mapping for keycode %d", cmd.KeyCode)}
+// sendKeyEventPrivate sends a keyboard event through the typed private
+// _VZKeyboard.sendKeyEvents: path using _VZKeyEvent objects.
+//
+// This remains opt-in behind VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD=1 because it
+// still depends on private Virtualization selectors, but it no longer assumes
+// raw HID byte-buffer semantics.
+func (s *ControlServer) sendKeyEventPrivate(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	event, err := s.newKeyboardNSEvent(cmd)
+	if err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-
-	// Build 8-byte USB HID keyboard report:
-	// [modifier, reserved, key1, key2, key3, key4, key5, key6]
-	var report [8]byte
-	if cmd.Modifiers&(1<<17) != 0 { // Shift
-		report[0] |= 0x02
+	sender := vminput.NewSender(vm.WrapQueue(s.vmQueue), s.vm)
+	if err := sender.SendKeyboardNSEvent(event, 0); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("private keyboard inject: %v", err)}
 	}
-	if cmd.Modifiers&(1<<18) != 0 { // Control
-		report[0] |= 0x01
-	}
-	if cmd.Modifiers&(1<<19) != 0 { // Option/Alt
-		report[0] |= 0x04
-	}
-	if cmd.Modifiers&(1<<20) != 0 { // Command
-		report[0] |= 0x08
-	}
-	if cmd.KeyDown {
-		report[2] = hidUsage
-	}
-
 	if verbose {
-		fmt.Printf("[key-hid] report=%x keycode=%d hid=0x%02x down=%v\n",
-			report, cmd.KeyCode, hidUsage, cmd.KeyDown)
+		fmt.Printf("[key-private] sent keyCode=%d down=%v mods=%d chars=%q\n",
+			cmd.KeyCode, cmd.KeyDown, cmd.Modifiers, keyboardEventUnicodeString(cmd))
 	}
-
-	// Dispatch on the VM queue (not main queue) since VZVirtualMachine
-	// operations should run on the queue it was created with.
-	done := make(chan struct{})
-	if s.vmQueue.Handle() != 0 {
-		DispatchAsyncQueue(s.vmQueue, func() {
-			defer close(done)
-			objc.Send[struct{}](s.vm.ID, objc.Sel("sendKeyboardEvents:keyboardID:"),
-				unsafe.Pointer(&report[0]), uint32(0))
-			resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
-		})
-	} else {
-		// Fall back to main queue
-		DispatchAsync(GetMainDispatchQueue(), func() {
-			defer close(done)
-			objc.Send[struct{}](s.vm.ID, objc.Sel("sendKeyboardEvents:keyboardID:"),
-				unsafe.Pointer(&report[0]), uint32(0))
-			resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
-		})
-	}
-	<-done
-	return resp
+	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 }
 
 // sendKeyEventCGEvent uses Quartz CGEvent for keyboard injection.
@@ -1097,41 +1020,9 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 // sendKeyEventNSEvent uses AppKit NSEvent for view-level keyboard injection.
 // All AppKit calls are dispatched to the main thread.
 func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	// Create a CGEvent with the correct virtual keycode. CGEventCreateKeyboardEvent
-	// is a C function registered via purego.RegisterLibFunc, which handles uint16
-	// argument passing correctly (unlike objc.Send which has ARM64 stack-passing bugs
-	// for arguments beyond position 8).
-	cgEvent, err := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	event, err := s.newKeyboardNSEvent(cmd)
 	if err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("create CGEvent: %v", err)}
-	}
-	if cgEvent == 0 {
-		return &controlpb.ControlResponse{Error: "CGEventCreateKeyboardEvent returned nil"}
-	}
-
-	// Set Unicode string on the CGEvent for character input.
-	chars := cmd.Character
-	if chars == "" {
-		switch cmd.KeyCode {
-		case 36:
-			chars = "\r"
-		case 48:
-			chars = "\t"
-		case 51:
-			chars = "\x7f"
-		case 53:
-			chars = "\x1b"
-		case 49:
-			chars = " "
-		}
-	}
-	if chars != "" {
-		CGEventKeyboardSetUnicodeString(cgEvent, chars)
-	}
-
-	// Set modifier flags if specified.
-	if cmd.Modifiers != 0 {
-		CGEventSetFlags(cgEvent, uint64(cmd.Modifiers))
+		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 
 	// Convert CGEvent to NSEvent and deliver to VZVirtualMachineView on the main thread.
@@ -1140,23 +1031,12 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 	DispatchAsync(GetMainDispatchQueue(), func() {
 		defer close(done)
 
-		// Convert CGEvent → NSEvent via +[NSEvent eventWithCGEvent:]
-		eventID := objc.Send[objc.ID](
-			objc.ID(objc.GetClass("NSEvent")),
-			objc.Sel("eventWithCGEvent:"),
-			uintptr(cgEvent),
-		)
-		if eventID == 0 {
-			resp = &controlpb.ControlResponse{Error: "NSEvent eventWithCGEvent: returned nil"}
-			return
-		}
-		event := appkit.NSEventFromID(eventID)
-
 		// Make sure the VM view is first responder.
 		s.window.MakeKeyAndOrderFront(nil)
 		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
 
 		actualKeyCode := event.KeyCode()
+		chars := keyboardEventUnicodeString(cmd)
 		if verbose {
 			fmt.Printf("[key-nsevent] vmView=%x keyCode=%d actualKeyCode=%d down=%v chars=%q\n",
 				s.vmView.ID, cmd.KeyCode, actualKeyCode, cmd.KeyDown, chars)
@@ -1178,6 +1058,55 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 	})
 	<-done
 	return resp
+}
+
+func (s *ControlServer) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NSEvent, error) {
+	cgEvent, err := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	if err != nil {
+		return appkit.NSEvent{}, fmt.Errorf("create CGEvent: %v", err)
+	}
+	if cgEvent == 0 {
+		return appkit.NSEvent{}, fmt.Errorf("CGEventCreateKeyboardEvent returned nil")
+	}
+
+	chars := keyboardEventUnicodeString(cmd)
+	if chars != "" {
+		CGEventKeyboardSetUnicodeString(cgEvent, chars)
+	}
+	if cmd.Modifiers != 0 {
+		CGEventSetFlags(cgEvent, uint64(cmd.Modifiers))
+	}
+
+	eventID := objc.Send[objc.ID](
+		objc.ID(objc.GetClass("NSEvent")),
+		objc.Sel("eventWithCGEvent:"),
+		uintptr(cgEvent),
+	)
+	if eventID == 0 {
+		return appkit.NSEvent{}, fmt.Errorf("NSEvent eventWithCGEvent: returned nil")
+	}
+	return appkit.NSEventFromID(eventID), nil
+}
+
+func keyboardEventUnicodeString(cmd *controlpb.KeyCommand) string {
+	if cmd == nil {
+		return ""
+	}
+	if cmd.Character != "" {
+		return cmd.Character
+	}
+	switch cmd.KeyCode {
+	case 48:
+		return "\t"
+	case 51:
+		return "\x7f"
+	case 53:
+		return "\x1b"
+	case 49:
+		return " "
+	default:
+		return ""
+	}
 }
 
 // sendMouseEvent sends a mouse event to the VM.
@@ -1218,6 +1147,9 @@ func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.C
 
 	switch s.inputBackend() {
 	case automationBackendWindow:
+		if cmd.Absolute && s.captureBackend() == automationBackendWindow {
+			return s.sendMouseEventVMDirect(cmd)
+		}
 		return s.sendMouseEventCGEvent(cmd)
 	case automationBackendFramebuffer:
 		return s.sendMouseEventVMDirect(cmd)
@@ -1235,8 +1167,32 @@ func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.C
 	return s.sendMouseEventCGEvent(cmd)
 }
 
+func mapWindowCapturePointToViewPoint(x, y float64, captureW, captureH int, boundsW, contentH float64) (viewX, viewY float64) {
+	if captureW <= 0 || captureH <= 0 || boundsW <= 0 || contentH <= 0 {
+		return x, contentH - y
+	}
+
+	viewX = x * (boundsW / float64(captureW))
+
+	topInset := float64(captureH) - contentH
+	if topInset < 0 {
+		topInset = 0
+	}
+	contentY := y - topInset
+	if contentY < 0 {
+		contentY = 0
+	}
+	if contentY > contentH {
+		contentY = contentH
+	}
+	viewY = contentH - contentY
+	return viewX, viewY
+}
+
 // sendMouseEventVMDirect creates an NSEvent and sends it directly to the
 // VZVirtualMachine via the private sendPointerNSEvent:pointingDeviceIndex:.
+// If that selector is unavailable, it falls back to routing through
+// VZVirtualMachineView's mouse event handlers.
 func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *controlpb.ControlResponse {
 	var resp *controlpb.ControlResponse
 	done := make(chan struct{})
@@ -1259,8 +1215,13 @@ func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *con
 		}
 		var viewX, viewY float64
 		if cmd.Absolute {
-			viewX = cmd.X
-			viewY = contentH - cmd.Y
+			if s.captureBackend() == automationBackendWindow {
+				captureW, captureH := s.lastCaptureBounds()
+				viewX, viewY = mapWindowCapturePointToViewPoint(cmd.X, cmd.Y, captureW, captureH, bounds.Size.Width, contentH)
+			} else {
+				viewX = cmd.X
+				viewY = contentH - cmd.Y
+			}
 		} else {
 			viewX = cmd.X * bounds.Size.Width
 			viewY = (1.0 - cmd.Y) * contentH
@@ -1314,9 +1275,16 @@ func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *con
 			return
 		}
 
-		// Route through VZVirtualMachineView's own event methods.
-		// The view's mouseDown:/mouseUp:/mouseMoved: implementations handle
-		// coordinate conversion and call the VM's internal HID path correctly.
+		if s.vm.ID != 0 && objc.Send[bool](s.vm.ID, objc.Sel("respondsToSelector:"), objc.Sel("sendPointerNSEvent:pointingDeviceIndex:")) {
+			if verbose {
+				fmt.Printf("[mouse-hid] action=%s point=(%.1f,%.1f)\n", cmd.Action, viewX, viewY)
+			}
+			objc.Send[struct{}](s.vm.ID, objc.Sel("sendPointerNSEvent:pointingDeviceIndex:"), event.ID, uint32(0))
+			resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+			return
+		}
+
+		// Fall back to routing through VZVirtualMachineView's own event methods.
 		switch cmd.Action {
 		case "down":
 			if cmd.Button == 1 {
@@ -1360,6 +1328,22 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 	if cmd.Absolute {
 		viewX = cmd.X
 		viewY = cmd.Y
+		if s.captureBackend() == automationBackendWindow {
+			captureW, captureH := s.lastCaptureBounds()
+			if captureW > 0 && captureH > 0 {
+				viewX = cmd.X * (windowFrame.Size.Width / float64(captureW))
+				viewY = cmd.Y * (windowFrame.Size.Height / float64(captureH))
+			}
+		}
+	} else if s.captureBackend() == automationBackendWindow {
+		captureW, captureH := s.lastCaptureBounds()
+		if captureW > 0 && captureH > 0 {
+			viewX = cmd.X * float64(captureW)
+			viewY = cmd.Y * float64(captureH)
+		} else {
+			viewX = cmd.X * windowFrame.Size.Width
+			viewY = cmd.Y * windowFrame.Size.Height
+		}
 	} else {
 		viewX = cmd.X * bounds.Size.Width
 		viewY = cmd.Y * bounds.Size.Height
@@ -1367,7 +1351,18 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 
 	screenX := windowFrame.Origin.X + viewX
 	windowTop := screenHeight - (windowFrame.Origin.Y + windowFrame.Size.Height)
-	screenY := windowTop + 22 + viewY
+	screenY := windowTop + viewY
+	if !cmd.Absolute && s.captureBackend() != automationBackendWindow {
+		screenY += 22
+	}
+
+	if verbose {
+		captureW, captureH := s.lastCaptureBounds()
+		fmt.Printf("[mouse-cgevent] absolute=%v action=%s input=(%.1f,%.1f) view=(%.1f,%.1f) window=(x=%.1f y=%.1f w=%.1f h=%.1f) capture=%dx%d screen=(%.1f,%.1f)\n",
+			cmd.Absolute, cmd.Action, cmd.X, cmd.Y, viewX, viewY,
+			windowFrame.Origin.X, windowFrame.Origin.Y, windowFrame.Size.Width, windowFrame.Size.Height,
+			captureW, captureH, screenX, screenY)
+	}
 
 	position := corefoundation.CGPoint{X: screenX, Y: screenY}
 
@@ -1430,11 +1425,6 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 		fmt.Printf("[typeText] typing %d chars: %q\n", len([]rune(cmd.Text)), cmd.Text)
 	}
 
-	sendKey := s.sendKeyEventNSEvent
-	if s.inputBackend() == automationBackendWindow {
-		sendKey = s.sendKeyEventCGEvent
-	}
-
 	for _, ch := range cmd.Text {
 		info, ok := charToKeyCode[ch]
 		if !ok {
@@ -1455,7 +1445,7 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 			Modifiers: mods,
 			Character: string(ch),
 		}
-		if resp := sendKey(downCmd); resp.Error != "" {
+		if resp := s.sendKeyEvent(downCmd); resp.Error != "" {
 			return resp
 		}
 		time.Sleep(30 * time.Millisecond)
@@ -1466,7 +1456,7 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 			Modifiers: mods,
 			Character: string(ch),
 		}
-		if resp := sendKey(upCmd); resp.Error != "" {
+		if resp := s.sendKeyEvent(upCmd); resp.Error != "" {
 			return resp
 		}
 		time.Sleep(50 * time.Millisecond)

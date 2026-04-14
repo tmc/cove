@@ -50,6 +50,32 @@ func (c *ControlClient) SetTimeout(d time.Duration) {
 	c.timeout = d
 }
 
+// SetGUIInputBackend switches the runtime automation input backend.
+func (c *ControlClient) SetGUIInputBackend(mode string) error {
+	reqType := "gui-input-backend-" + mode
+	resp, err := c.sendRequest(&controlpb.ControlRequest{Type: reqType})
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	return nil
+}
+
+// SetGUICaptureBackend switches the runtime automation screenshot backend.
+func (c *ControlClient) SetGUICaptureBackend(mode string) error {
+	reqType := "gui-capture-backend-" + mode
+	resp, err := c.sendRequest(&controlpb.ControlRequest{Type: reqType})
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	return nil
+}
+
 // SetAuthToken overrides the token used for control socket requests.
 func (c *ControlClient) SetAuthToken(token string) {
 	c.authToken = strings.TrimSpace(token)
@@ -278,6 +304,19 @@ func (c *ControlClient) MouseClick(x, y float64) error {
 	}
 	time.Sleep(50 * time.Millisecond)
 	return c.sendMouseEvent(x, y, "up", 0, false)
+}
+
+// MouseClickAbsolute clicks at absolute window pixel coordinates.
+func (c *ControlClient) MouseClickAbsolute(x, y float64) error {
+	if err := c.sendMouseEvent(x, y, "move", 0, true); err != nil {
+		return err
+	}
+	time.Sleep(20 * time.Millisecond)
+	if err := c.sendMouseEvent(x, y, "down", 0, true); err != nil {
+		return err
+	}
+	time.Sleep(50 * time.Millisecond)
+	return c.sendMouseEvent(x, y, "up", 0, true)
 }
 
 // sendMouseEvent sends a mouse event
