@@ -25,16 +25,20 @@
 //	ocr                         Run OCR on current screen; stdout is all text
 //	screenshot [file]           Capture VM screen to file
 //	type <text>                 Type text into the VM
+//	type-keycodes <text>        Type text using per-key keycode events
 //	key <spec>                  Send key event (e.g. "return", "tab", "cmd+v")
 //	click <x> <y>              Click at normalized coordinates (0-1)
+//	wait-prompt-clear <text> [timeout]  Wait until a prompt clears or progresses
 //	detect-page                 Detect Setup Assistant page via OCR
 //	detect-screen               Detect screen state (desktop/login/setup)
 //
 // Conditions:
 //
-//	[screen:<state>]            True if current screen matches state
-//	[page:<name>]               True if current SA page matches name
-//	[text-visible:<text>]       True if text is visible on screen
+//	[screen:desktop]                    True if current screen matches state
+//	[page:language]                     True if current SA page matches name
+//	[text-visible:Continue]             True if text is visible on screen
+//	[text-visible:Authorized+user]      Space and punctuation use URL encoding
+//	[text-visible:%5By%2Fn%5D]          Encoded form of "[y/n]"
 //
 // Example:
 //
@@ -59,8 +63,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +91,7 @@ type vzscriptConfig struct {
 	streamErr   io.Writer
 	env         []string // extra environment variables (KEY=VALUE)
 	hostLogFile *os.File // persistent log file in VM directory
+	controlSrv  *ControlServer
 }
 
 // execStreamType returns the control request type for streaming exec commands.
@@ -113,17 +120,23 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"append-path":    appendPathCmd(cfg),
 
 		// UI automation commands (via control socket).
-		"ocr-click":     vzOCRClickCmd(cfg),
-		"ocr-wait":      vzOCRWaitCmd(cfg),
-		"ocr-gone":      vzOCRGoneCmd(cfg),
-		"ocr":           vzOCRCmd(cfg),
-		"screenshot":    vzScreenshotCmd(cfg),
-		"type":          vzTypeCmd(cfg),
-		"key":           vzKeyCmd(cfg),
-		"click":         vzClickCmd(cfg),
-		"wait":          vzWaitCmd(),
-		"detect-page":   vzDetectPageCmd(cfg),
-		"detect-screen": vzDetectScreenCmd(cfg),
+		"ocr-click":         vzOCRClickCmd(cfg),
+		"ocr-wait":          vzOCRWaitCmd(cfg),
+		"ocr-gone":          vzOCRGoneCmd(cfg),
+		"ocr":               vzOCRCmd(cfg),
+		"screenshot":        vzScreenshotCmd(cfg),
+		"wait-menu-text":    vzWaitMenuTextCmd(cfg),
+		"click-menu-item":   vzClickMenuItemCmd(cfg),
+		"startup-options":   vzStartupOptionsCmd(cfg),
+		"recovery-continue": vzRecoveryContinueCmd(cfg),
+		"type":              vzTypeCmd(cfg),
+		"type-keycodes":     vzTypeKeycodesCmd(cfg),
+		"key":               vzKeyCmd(cfg),
+		"click":             vzClickCmd(cfg),
+		"wait-prompt-clear": vzWaitPromptClearCmd(cfg),
+		"wait":              vzWaitCmd(),
+		"detect-page":       vzDetectPageCmd(cfg),
+		"detect-screen":     vzDetectScreenCmd(cfg),
 
 		// Standard commands.
 		"cat":    defaults["cat"],
@@ -833,6 +846,14 @@ func vzOCRClickCmd(cfg vzscriptConfig) script.Cmd {
 			if d == 0 {
 				d = 30 * time.Second
 			}
+			if exec := newScriptBootExecutor(cfg); exec != nil {
+				switch region {
+				case "", "screen":
+					return nil, exec.clickText(text, d)
+				case "menu":
+					return nil, exec.hostClickTextWithOptions(text, d, OCRMenuSearchOptions())
+				}
+			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-click", text, timeout, region, d+10*time.Second)
 			if err != nil {
 				return nil, err
@@ -865,6 +886,14 @@ func vzOCRWaitCmd(cfg vzscriptConfig) script.Cmd {
 			if d == 0 {
 				d = 120 * time.Second
 			}
+			if exec := newScriptBootExecutor(cfg); exec != nil {
+				switch region {
+				case "", "screen":
+					return nil, exec.waitForText(text, d)
+				case "menu":
+					return nil, exec.waitForTextWithOptions(text, d, OCRMenuSearchOptions())
+				}
+			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-wait", text, timeout, region, d+10*time.Second)
 			if err != nil {
 				return nil, err
@@ -893,6 +922,26 @@ func vzOCRGoneCmd(cfg vzscriptConfig) script.Cmd {
 			d, _ := time.ParseDuration(timeout)
 			if d == 0 {
 				d = 60 * time.Second
+			}
+			if exec := newScriptBootExecutor(cfg); exec != nil && (region == "" || region == "screen" || region == "menu") {
+				deadline := time.Now().Add(d)
+				opts := OCRSearchOptions{}
+				if region == "menu" {
+					opts = OCRMenuSearchOptions()
+				}
+				for time.Now().Before(deadline) {
+					img := exec.captureScreen()
+					if img == nil {
+						time.Sleep(500 * time.Millisecond)
+						continue
+					}
+					_, _, found := exec.ocr.FindTextWithOptions(img, text, opts)
+					if !found {
+						return nil, nil
+					}
+					time.Sleep(500 * time.Millisecond)
+				}
+				return nil, fmt.Errorf("timeout waiting for text %q to disappear", text)
 			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-gone", text, timeout, region, d+10*time.Second)
 			if err != nil {
@@ -971,6 +1020,163 @@ func vzScreenshotCmd(cfg vzscriptConfig) script.Cmd {
 	)
 }
 
+func newScriptBootExecutor(cfg vzscriptConfig) *automationExecutor {
+	if cfg.controlSrv == nil {
+		return nil
+	}
+	debugDir := ""
+	if debugOCR {
+		debugDir = filepath.Join(vmDir, "debug")
+	}
+	return newAutomationExecutor(NewOCRService(cfg.verbose), cfg.controlSrv, cfg.verbose, debugDir)
+}
+
+func vzWaitMenuTextCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "wait for menu-bar text to appear via OCR",
+			Args:    "text [timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			text := args[0]
+			timeout := "60s"
+			if len(args) > 1 {
+				timeout = args[1]
+			}
+			d, err := time.ParseDuration(timeout)
+			if err != nil {
+				return nil, fmt.Errorf("invalid timeout %q: %w", timeout, err)
+			}
+			if exec := newScriptBootExecutor(cfg); exec != nil {
+				return nil, exec.waitForTextWithOptions(text, d, OCRMenuSearchOptions())
+			}
+			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-wait", text, timeout, "menu", d+10*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return func(*script.State) (string, string, error) {
+				return resp.Data + "\n", "", nil
+			}, nil
+		},
+	)
+}
+
+func vzClickMenuItemCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "click a menu title and then a menu item",
+			Args:    "menu item [timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) < 2 || len(args) > 3 {
+				return nil, script.ErrUsage
+			}
+			menu := args[0]
+			item := args[1]
+			timeout := 60 * time.Second
+			if len(args) == 3 {
+				d, err := time.ParseDuration(args[2])
+				if err != nil {
+					return nil, fmt.Errorf("invalid timeout %q: %w", args[2], err)
+				}
+				timeout = d
+			}
+			if exec := newScriptBootExecutor(cfg); exec != nil {
+				prevCapture := cfg.controlSrv.captureBackend()
+				prevInput := cfg.controlSrv.inputBackend()
+				cfg.controlSrv.setCaptureBackend(automationBackendWindow)
+				cfg.controlSrv.setInputBackend(automationBackendWindow)
+				defer func() {
+					cfg.controlSrv.setCaptureBackend(prevCapture)
+					cfg.controlSrv.setInputBackend(prevInput)
+				}()
+				return nil, exec.clickMenuItem(menu, item, timeout)
+			}
+			client := NewControlClient(cfg.socketPath)
+			client.SetTimeout(timeout)
+			_ = client.SetGUICaptureBackend("window")
+			_ = client.SetGUIInputBackend("window")
+			defer func() {
+				_ = client.SetGUICaptureBackend("auto")
+				_ = client.SetGUIInputBackend("auto")
+			}()
+			ocr := NewOCRService(cfg.verbose)
+			return nil, clickMenuItemViaClient(client, ocr, menu, item, timeout)
+		},
+	)
+}
+
+func vzStartupOptionsCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "activate Recovery Options from the Apple Silicon startup picker",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) > 1 {
+				return nil, script.ErrUsage
+			}
+			timeout := 60 * time.Second
+			if len(args) == 1 {
+				d, err := time.ParseDuration(args[0])
+				if err != nil {
+					return nil, fmt.Errorf("invalid timeout %q: %w", args[0], err)
+				}
+				timeout = d
+			}
+			if exec := newScriptBootExecutor(cfg); exec != nil {
+				return nil, exec.activateStartupOptions(timeout)
+			}
+			client := NewControlClient(cfg.socketPath)
+			client.SetTimeout(timeout)
+			ocr := NewOCRService(cfg.verbose)
+			return nil, activateStartupOptionsViaClient(client, ocr, timeout)
+		},
+	)
+}
+
+func vzRecoveryContinueCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "advance the Recovery language/Continue screen if it is present",
+			Args:    "[timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			timeout := 60 * time.Second
+			if len(args) > 1 {
+				return nil, script.ErrUsage
+			}
+			if len(args) == 1 {
+				d, err := time.ParseDuration(args[0])
+				if err != nil {
+					return nil, fmt.Errorf("invalid timeout %q: %w", args[0], err)
+				}
+				timeout = d
+			}
+			if exec := newScriptBootExecutor(cfg); exec != nil {
+				return nil, exec.continueRecoveryLanguage(timeout)
+			}
+			client := NewControlClient(cfg.socketPath)
+			client.SetTimeout(timeout)
+			ocr := NewOCRService(cfg.verbose)
+			return nil, continueRecoveryLanguageViaClient(client, ocr, timeout)
+		},
+	)
+}
+
+func recoveryAuthFailedOCR(ocr *OCRService, img image.Image) bool {
+	return pageContainsAnyOCR(ocr, img,
+		"Authentication failure",
+		"Failed to authenticate",
+		"failed to set credential",
+	)
+}
+
 func vzTypeCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
@@ -999,6 +1205,30 @@ func vzTypeCmd(cfg vzscriptConfig) script.Cmd {
 			}
 			if !resp.Success {
 				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return nil, nil
+		},
+	)
+}
+
+func vzTypeKeycodesCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "type text using per-key keycode events",
+			Args:    "text",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			text := strings.Join(args, " ")
+			if cfg.verbose {
+				s.Logf("type-keycodes %q\n", text)
+			}
+			client := NewControlClient(cfg.socketPath)
+			client.SetTimeout(60 * time.Second)
+			if err := typeTextKeycodesViaClient(client, text); err != nil {
+				return nil, err
 			}
 			return nil, nil
 		},
@@ -1063,6 +1293,107 @@ func vzKeyCmd(cfg vzscriptConfig) script.Cmd {
 			return nil, nil
 		},
 	)
+}
+
+func vzWaitPromptClearCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "wait until a prompt clears or the screen advances",
+			Args:    "text [timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) < 1 || len(args) > 2 {
+				return nil, script.ErrUsage
+			}
+			needle := args[0]
+			timeout := 5 * time.Second
+			if len(args) == 2 {
+				d, err := time.ParseDuration(args[1])
+				if err != nil {
+					return nil, fmt.Errorf("invalid timeout %q: %w", args[1], err)
+				}
+				timeout = d
+			}
+			if exec := newScriptBootExecutor(cfg); exec != nil {
+				deadline := time.Now().Add(timeout)
+				for time.Now().Before(deadline) {
+					img := exec.captureScreen()
+					if img == nil {
+						time.Sleep(250 * time.Millisecond)
+						continue
+					}
+					if strings.Contains(strings.ToLower(needle), "password") && exec.recoveryAuthFailed(img) {
+						return nil, fmt.Errorf("%s", recoveryAuthFailureMessage(needle))
+					}
+					if promptClearedOCR(exec.ocr, img, needle) {
+						return nil, nil
+					}
+					time.Sleep(250 * time.Millisecond)
+				}
+				return nil, fmt.Errorf("timeout waiting for prompt %q to clear", needle)
+			}
+
+			client := NewControlClient(cfg.socketPath)
+			client.SetTimeout(timeout + 10*time.Second)
+			ocr := NewOCRService(cfg.verbose)
+			deadline := time.Now().Add(timeout)
+			lowerNeedle := strings.ToLower(needle)
+			for time.Now().Before(deadline) {
+				img, err := client.Screenshot()
+				if err != nil {
+					time.Sleep(250 * time.Millisecond)
+					continue
+				}
+				if strings.Contains(lowerNeedle, "password") && recoveryAuthFailedOCR(ocr, img) {
+					return nil, fmt.Errorf("%s", recoveryAuthFailureMessage(needle))
+				}
+				if promptClearedOCR(ocr, img, needle) {
+					return nil, nil
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			return nil, fmt.Errorf("timeout waiting for prompt %q to clear", needle)
+		},
+	)
+}
+
+func typeTextKeycodesViaClient(client *ControlClient, text string) error {
+	for _, ch := range text {
+		info, ok := charToKeyCode[ch]
+		if !ok {
+			return fmt.Errorf("no keycode for %q", ch)
+		}
+		var modifiers uint32
+		if info.shift {
+			modifiers = uint32(ModifierShift)
+		}
+		for _, down := range []bool{true, false} {
+			req := &controlpb.ControlRequest{
+				Type: "key",
+				Command: &controlpb.ControlRequest_Key{
+					Key: &controlpb.KeyCommand{
+						KeyCode:    uint32(info.keyCode),
+						KeyDown:    down,
+						Modifiers:  modifiers,
+						Character:  string(ch),
+						UseCgEvent: false,
+					},
+				},
+			}
+			resp, err := client.sendRequest(req)
+			if err != nil {
+				return err
+			}
+			if !resp.Success {
+				if down {
+					return fmt.Errorf("type key down %q: %s", ch, resp.Error)
+				}
+				return fmt.Errorf("type key up %q: %s", ch, resp.Error)
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+	}
+	return nil
 }
 
 func vzClickCmd(cfg vzscriptConfig) script.Cmd {
@@ -1200,6 +1531,10 @@ func vzTextVisibleCond(cfg vzscriptConfig) script.Cond {
 	return script.PrefixCondition(
 		"text is visible on screen",
 		func(s *script.State, suffix string) (bool, error) {
+			needle, err := url.QueryUnescape(suffix)
+			if err != nil {
+				return false, fmt.Errorf("decode text-visible suffix %q: %w", suffix, err)
+			}
 			resp, err := ctlSendOCR(cfg.socketPath, "ocr-all-text", "", "", 30*time.Second)
 			if err != nil {
 				return false, nil
@@ -1207,7 +1542,11 @@ func vzTextVisibleCond(cfg vzscriptConfig) script.Cond {
 			if !resp.Success {
 				return false, nil
 			}
-			return strings.Contains(strings.ToLower(resp.Data), strings.ToLower(suffix)), nil
+			return strings.Contains(normalizeVisibleText(resp.Data), normalizeVisibleText(needle)), nil
 		},
 	)
+}
+
+func normalizeVisibleText(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }

@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/txtar"
 	"rsc.io/script"
 )
 
@@ -20,7 +24,9 @@ func TestVZScriptEngineCommands(t *testing.T) {
 		"guest-terminal", "guest-write", "guest-read", "guest-cp", "host-cp",
 		// UI automation commands.
 		"screenshot", "ocr", "ocr-click", "ocr-wait", "ocr-gone",
-		"type", "key", "click", "wait", "detect-page", "detect-screen",
+		"wait-menu-text", "click-menu-item", "startup-options", "recovery-continue",
+		"wait-prompt-clear",
+		"type", "type-keycodes", "key", "click", "wait", "detect-page", "detect-screen",
 		// Standard commands.
 		"echo", "cat", "cp", "env", "exists", "sleep", "stdout", "stderr",
 		"stop", "help", "mkdir",
@@ -66,7 +72,7 @@ echo done
 }
 
 func TestVZScriptEmbeddedScripts(t *testing.T) {
-	entries, err := builtinScripts.ReadDir("vzscripts")
+	entries, err := fs.ReadDir(builtinScripts, "vzscripts")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +90,11 @@ func TestVZScriptEmbeddedScripts(t *testing.T) {
 		}
 		if len(data) == 0 {
 			t.Errorf("%s is empty", e.Name())
+			continue
 		}
-		t.Logf("loaded %s (%d bytes)", e.Name(), len(data))
+		if err := executeVZScriptSyntaxOnly(t, e.Name(), data); err != nil {
+			t.Errorf("%s: %v", e.Name(), err)
+		}
 	}
 }
 
@@ -117,4 +126,106 @@ func TestLoadVZScriptData(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenerateSIPVZScript_Syntax(t *testing.T) {
+	data := []byte(generateSIPVZScript("disable", "admin", "secret", true, false))
+	if err := executeVZScriptSyntaxOnly(t, "sip-disable.vzscript", data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVZScriptSyntax_EncodedConditionSuffix(t *testing.T) {
+	data := []byte(`# encoded condition suffixes with spaces and punctuation
+[text-visible:Authorized+user] echo ok
+[text-visible:%5By%2Fn%5D] echo ok
+`)
+	if err := executeVZScriptSyntaxOnly(t, "encoded-conds.vzscript", data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNormalizeVisibleText(t *testing.T) {
+	got := normalizeVisibleText("System Integrity Protection is\noff.\n")
+	want := "system integrity protection is off."
+	if got != want {
+		t.Fatalf("normalizeVisibleText() = %q, want %q", got, want)
+	}
+}
+
+func executeVZScriptSyntaxOnly(t *testing.T, name string, data []byte) error {
+	t.Helper()
+
+	ar := txtar.Parse(data)
+	files := make(map[string]bool, len(ar.Files))
+	for _, f := range ar.Files {
+		files[f.Name] = true
+	}
+
+	state, err := script.NewState(context.Background(), t.TempDir(), nil)
+	if err != nil {
+		return err
+	}
+	var log bytes.Buffer
+	engine := newVZScriptSyntaxEngine(files)
+	if err := engine.Execute(state, name, bufio.NewReader(bytes.NewReader(ar.Comment)), &log); err != nil {
+		return fmt.Errorf("syntax execute: %w\nlog:\n%s", err, log.String())
+	}
+	return nil
+}
+
+func newVZScriptSyntaxEngine(files map[string]bool) *script.Engine {
+	base := newVZScriptEngine(vzscriptConfig{})
+
+	cmds := make(map[string]script.Cmd, len(base.Cmds))
+	for name, cmd := range base.Cmds {
+		usage := *cmd.Usage()
+		name := name
+		cmds[name] = script.Command(usage, func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if err := validateVZScriptStubCommand(name, files, args); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		})
+	}
+
+	conds := make(map[string]script.Cond, len(base.Conds))
+	for name, cond := range base.Conds {
+		usage := cond.Usage()
+		if usage.Prefix {
+			conds[name] = script.PrefixCondition(usage.Summary, func(*script.State, string) (bool, error) {
+				return true, nil
+			})
+			continue
+		}
+		conds[name] = script.BoolCondition(usage.Summary, true)
+	}
+
+	return &script.Engine{Cmds: cmds, Conds: conds}
+}
+
+func validateVZScriptStubCommand(name string, files map[string]bool, args []string) error {
+	switch name {
+	case "guest-shell", "guest-terminal":
+		if len(args) != 1 {
+			return nil
+		}
+		return requireArchiveFile(files, args[0])
+	case "guest-write":
+		if len(args) != 2 {
+			return nil
+		}
+		return requireArchiveFile(files, args[1])
+	}
+	return nil
+}
+
+func requireArchiveFile(files map[string]bool, path string) error {
+	if filepath.IsAbs(path) {
+		return nil
+	}
+	if files[path] {
+		return nil
+	}
+	return fmt.Errorf("referenced archive file %q not found", path)
 }

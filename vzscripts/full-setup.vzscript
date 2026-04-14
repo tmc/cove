@@ -16,7 +16,7 @@ key return
 wait 3s
 
 # Skip accessibility, diagnostics, etc.
-[text-visible:Not Now] ocr-click 'Not Now'
+[text-visible:Not+Now] ocr-click 'Not Now'
 wait 2s
 [text-visible:Continue] ocr-click Continue
 wait 2s

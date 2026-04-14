@@ -84,9 +84,10 @@ UI automation commands (via control socket):
   detect-screen               Detect screen state (desktop, login, etc.)
 
 Conditions:
-  [screen:<state>]            True if screen state matches (desktop, login, etc.)
-  [page:<name>]               True if Setup Assistant page matches
-  [text-visible:<text>]       True if text is visible on screen
+  [screen:desktop]            True if screen state matches (desktop, login, etc.)
+  [page:language]             True if Setup Assistant page matches
+  [text-visible:Continue]     True if text is visible on screen
+  [text-visible:Not+Now]      Space and punctuation use URL encoding
 
 Standard rsc.io/script commands (echo, cat, env, etc.) and conditions
 ([darwin], [GOOS:linux], etc.) are also available.

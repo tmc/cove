@@ -1,0 +1,213 @@
+# mlx-go — Build mlx-go inference tools in a macOS guest
+# requires: developer-tools, golang, cmake
+# runs-on: daemon
+
+guest-ping
+guest-shell install-mlx-go.sh
+
+-- install-mlx-go.sh --
+#!/bin/bash
+set -euo pipefail
+
+GOUSER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$GOUSER" ]; then
+  echo "error: no admin user found" >&2
+  exit 1
+fi
+
+USER_HOME=$(dscl . -read "/Users/$GOUSER" NFSHomeDirectory | awk '{print $2}')
+if [ -z "$USER_HOME" ] || [ ! -d "$USER_HOME" ]; then
+  echo "error: could not determine home directory for $GOUSER" >&2
+  exit 1
+fi
+
+install -d -o "$GOUSER" -g staff "$USER_HOME/go/bin" "$USER_HOME/src/github.com/tmc" "$USER_HOME/Library/Caches"
+
+cat > /tmp/vzscript-install-mlx-go-user.sh <<EOF
+#!/bin/bash
+set -euo pipefail
+
+export PATH=/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export GIT_TERMINAL_PROMPT=0
+
+USER_HOME=${USER_HOME}
+WORKROOT="\$USER_HOME/src/github.com/tmc"
+GOBIN="\$USER_HOME/go/bin"
+SHARE_ROOT="/Volumes/My Shared Files"
+
+find_shared_module_dir() {
+  local module="\$1"
+  local gomod
+  [ -d "\$SHARE_ROOT" ] || return 1
+  while IFS= read -r -d '' gomod; do
+    if grep -qx "module \$module" "\$gomod" 2>/dev/null; then
+      dirname "\$gomod"
+      return 0
+    fi
+  done < <(find "\$SHARE_ROOT" -type f -name go.mod -print0 2>/dev/null)
+  return 1
+}
+
+sync_tree() {
+  local src="\$1"
+  local dst="\$2"
+  rm -rf "\$dst"
+  mkdir -p "\$(dirname "\$dst")"
+  ditto "\$src" "\$dst"
+}
+
+sync_repo() {
+  local name="\$1"
+  local module="\$2"
+  local url="\$3"
+  local dst="\$WORKROOT/\$name"
+  local shared
+
+  if [ -d "\$dst/.git" ]; then
+    echo "Updating \$name from \$url"
+    git -C "\$dst" fetch --depth 1 origin
+    local head
+    head=\$(git -C "\$dst" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+    if [ -n "\$head" ]; then
+      git -C "\$dst" reset --hard "\$head"
+    else
+      git -C "\$dst" reset --hard FETCH_HEAD
+    fi
+    return 0
+  fi
+
+  rm -rf "\$dst"
+  echo "Cloning \$name from \$url"
+  if git clone --depth 1 "\$url" "\$dst"; then
+    return 0
+  fi
+
+  if shared=\$(find_shared_module_dir "\$module"); then
+    echo "Clone failed; copying \$name from shared folder: \$shared"
+    sync_tree "\$shared" "\$dst"
+    return 0
+  fi
+
+  echo "error: could not clone or locate shared repo for \$name" >&2
+  return 1
+}
+
+link_hf_cache() {
+  local mounted="\$SHARE_ROOT/huggingface"
+  local cache="\$USER_HOME/.cache/huggingface"
+  [ -d "\$mounted" ] || return 0
+  mkdir -p "\$USER_HOME/.cache"
+  if [ -e "\$cache" ] && [ ! -L "\$cache" ]; then
+    echo "Leaving existing Hugging Face cache in place: \$cache"
+    return 0
+  fi
+  rm -rf "\$cache"
+  ln -s "\$mounted" "\$cache"
+  echo "Linked Hugging Face cache: \$cache -> \$mounted"
+}
+
+install_mlx_go() {
+  sync_repo mlx-go github.com/tmc/mlx-go https://github.com/tmc/mlx-go.git
+
+  local libdir="\$WORKROOT/mlx-go/mlxc/lib"
+  local distdir="\$libdir/dist/darwin-arm64"
+  local headers="\$libdir/build-mlx-c-darwin/mlx-c/mlx/c/mlx.h"
+  if [ -f "\$distdir/libmlxc.dylib" ] && [ ! -f "\$libdir/libmlxc.dylib" ]; then
+    ln -sf "\$distdir/libmlxc.dylib" "\$libdir/libmlxc.dylib"
+  fi
+  if [ -f "\$distdir/libmlx.dylib" ] && [ ! -f "\$libdir/libmlx.dylib" ]; then
+    ln -sf "\$distdir/libmlx.dylib" "\$libdir/libmlx.dylib"
+  fi
+  if [ -f "\$distdir/mlx.metallib" ] && [ ! -f "\$libdir/mlx.metallib" ]; then
+    ln -sf "\$distdir/mlx.metallib" "\$libdir/mlx.metallib"
+  fi
+  if [ ! -f "\$libdir/libmlxc.dylib" ] || [ ! -f "\$libdir/libmlx.dylib" ] || [ ! -f "\$headers" ]; then
+    echo "Bootstrapping MLX native libraries (this can take a while)..."
+    (
+      cd "\$libdir"
+      GOWORK=off go run generate.go
+    )
+    ln -sf "\$distdir/libmlxc.dylib" "\$libdir/libmlxc.dylib"
+    ln -sf "\$distdir/libmlx.dylib" "\$libdir/libmlx.dylib"
+    ln -sf "\$distdir/mlx.metallib" "\$libdir/mlx.metallib"
+  fi
+
+  echo "Building mlx-lm-generate..."
+  (
+    cd "\$WORKROOT/mlx-go/examples/mlx-go-lm"
+    GOWORK=off go build -o "\$GOBIN/mlx-lm-generate" ./cmd/mlx-lm-generate
+  )
+}
+
+install_mlx_ane() {
+  sync_repo mlx-go-ane github.com/tmc/mlx-go-ane https://github.com/tmc/mlx-go-ane.git
+  sync_repo apple github.com/tmc/apple https://github.com/tmc/apple.git
+
+  (
+    cd "\$WORKROOT/mlx-go-ane"
+    go mod edit -replace github.com/tmc/mlx-go=../mlx-go
+    go mod edit -replace github.com/tmc/mlx-go-lm=../mlx-go/examples/mlx-go-lm
+    go mod edit -replace github.com/tmc/apple=../apple
+    go mod tidy
+    GOWORK=off go build -tags ane_appleneuralengine -o "\$GOBIN/mlx-ane-generate" ./cmd/mlx-ane-generate
+  )
+}
+
+write_wrapper() {
+  cat > "\$GOBIN/mlx-go-infer" <<'WRAP'
+#!/bin/bash
+set -euo pipefail
+
+if [ $# -eq 0 ]; then
+  cat <<'EOF'
+Usage: mlx-go-infer --model <repo-or-path> --prompt <text> [flags...]
+
+Example:
+  mlx-go-infer --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    --prompt "Write one sentence about virtualization." \
+    --max-tokens 32
+EOF
+  exit 2
+fi
+
+if [ -x "$HOME/go/bin/mlx-ane-generate" ]; then
+  : "${MLXGO_ANE_DECODE_PLANE:=qwen35}"
+  : "${MLXGO_ANE_DECODE_CACHE:=$HOME/Library/Caches/mlx-go-ane/decode}"
+  mkdir -p "$MLXGO_ANE_DECODE_CACHE"
+  exec "$HOME/go/bin/mlx-ane-generate" "$@"
+fi
+
+exec "$HOME/go/bin/mlx-lm-generate" "$@"
+WRAP
+  chmod 0755 "\$GOBIN/mlx-go-infer"
+}
+
+link_hf_cache
+install_mlx_go
+
+if install_mlx_ane; then
+  echo "Built mlx-ane-generate with ane_appleneuralengine support."
+else
+  echo "warning: mlx-ane-generate build failed; mlx-go-infer will use mlx-lm-generate instead" >&2
+  rm -f "\$GOBIN/mlx-ane-generate"
+fi
+
+write_wrapper
+
+echo
+echo "Installed commands:"
+echo "  \$GOBIN/mlx-lm-generate"
+if [ -x "\$GOBIN/mlx-ane-generate" ]; then
+  echo "  \$GOBIN/mlx-ane-generate"
+fi
+echo "  \$GOBIN/mlx-go-infer"
+echo
+echo "Try:"
+echo "  mlx-go-infer --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --prompt 'hello from the VM' --max-tokens 32"
+EOF
+
+chmod 0755 /tmp/vzscript-install-mlx-go-user.sh
+su -l "$GOUSER" -c /tmp/vzscript-install-mlx-go-user.sh
+rm -f /tmp/vzscript-install-mlx-go-user.sh
+
+echo "mlx-go installation complete for user: $GOUSER"
