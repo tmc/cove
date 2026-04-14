@@ -39,6 +39,8 @@ var (
 	isoPath    string
 	// Verbose flag
 	verbose bool
+	// Optional pprof listener for live diagnostics.
+	pprofAddr string
 	// Serial console output destination
 	serialOutput string
 	// Boot into recovery mode
@@ -140,6 +142,7 @@ func init() {
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
+	flag.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
 	flag.UintVar(&cpuCount, "cpu", 2, "number of CPUs")
 	flag.Uint64Var(&memoryGB, "memory", 4, "memory in GB")
 	flag.StringVar(&diskPath, "disk", "", "path to disk image")
@@ -203,7 +206,7 @@ func init() {
 	flag.BoolVar(&stopInIBootStage2, "iboot-stage2", false, "start a macOS VM and stop in iBoot stage 2")
 	// Unattended install
 	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (disk provisioning, OCR fallback)")
-	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to boot commands file for custom setup automation")
+	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to vzscript automation file for custom setup")
 	flag.BoolVar(&debugOCR, "debug-ocr", false, "save OCR debug screenshots with text bounding boxes")
 	flag.StringVar(&automationBackend, "automation-backend", "auto", "UI automation backend: auto, framebuffer, or window")
 	flag.StringVar(&automationCaptureBackend, "automation-capture-backend", "", "override screenshot backend: auto, framebuffer, or window")
@@ -217,6 +220,7 @@ func init() {
 
 func main() {
 	flag.Parse()
+	maybeStartPprofServer()
 
 	// -desktop implies -linux
 	if linuxDesktop {
@@ -539,10 +543,11 @@ func main() {
 	handleDefaultAction()
 }
 
-// handleDefaultAction routes based on the number of existing VMs:
-//   - 0 VMs: start guided install
-//   - 1 VM: show the native selector in GUI mode, otherwise run it directly
-//   - 2+ VMs: show native VM selector window
+// handleDefaultAction routes based on the selected UI mode:
+//   - GUI mode: show the native selector, including its empty-state New VM flow
+//   - non-GUI mode with 0 VMs: start guided install
+//   - non-GUI mode with 1 VM: run it directly
+//   - non-GUI mode with 2+ VMs: show native VM selector window
 func handleDefaultAction() {
 	vms, err := ListVMs()
 	if err != nil {
@@ -554,7 +559,7 @@ func handleDefaultAction() {
 			vms = append(vms, *info)
 		}
 	}
-	if guiMode && len(vms) > 0 {
+	if guiMode {
 		showVMSelectorWindow(vms)
 		return
 	}
