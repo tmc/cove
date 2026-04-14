@@ -54,6 +54,7 @@ func handleUp(args []string) error {
 	// The install/inject/run functions read these globals directly.
 	// This is the single point where "up" touches global state.
 	applyUpConfig(cfg)
+	maybeStartPprofServer()
 
 	if err := runUpPipeline(cfg); err != nil {
 		return err
@@ -148,6 +149,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.StringVar(&cfg.automationInputBackend, "automation-input-backend", "", "override input backend: auto, direct, or window")
 	fs.BoolVar(&cfg.noShutdown, "no-shutdown", false, "Leave the VM running after vzscripts complete")
 	fs.BoolVar(&cfg.verbose, "v", false, "Verbose output")
+	fs.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
 	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
 	fs.BoolVar(&cfg.linux, "linux", false, "Install a Linux VM instead of macOS")
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")

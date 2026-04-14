@@ -84,34 +84,62 @@ func removeCorruptSuspendState(path string) {
 // suspendConfigFingerprint captures the VM config params that must match between save and restore.
 // If any of these change, restoreMachineStateFromURL will fail with "invalid argument".
 type suspendConfigFingerprint struct {
-	CPUs       int    `json:"cpus"`
-	MemoryGB   int    `json:"memoryGB"`
-	Network    string `json:"network"`
-	Displays   int    `json:"displays"`
-	Volumes    int    `json:"volumes"`
-	USBDevices int    `json:"usbDevices"`
+	CPUs                    int    `json:"cpus"`
+	MemoryGB                int    `json:"memoryGB"`
+	Network                 string `json:"network"`
+	Displays                int    `json:"displays"`
+	Volumes                 int    `json:"volumes"`
+	DirectorySharingDevices int    `json:"directorySharingDevices"`
+	USBDevices              int    `json:"usbDevices"`
 	// USBControllers captures the guest-visible USB topology used by the
 	// runtime profile. Save/restore requires device counts to match exactly.
 	USBControllers int  `json:"usbControllers"`
+	SocketDevices  int  `json:"socketDevices"`
+	BalloonDevices int  `json:"balloonDevices"`
 	Clipboard      bool `json:"clipboard"`
 	Serial         bool `json:"serial"`
 }
 
 func currentConfigFingerprint() suspendConfigFingerprint {
 	return suspendConfigFingerprint{
-		CPUs:           int(cpuCount),
-		MemoryGB:       int(memoryGB),
-		Network:        networkMode,
-		Displays:       max(len(displays), 1),
-		Volumes:        len(getEffectiveVolumes()),
-		USBDevices:     len(usbDevices),
-		USBControllers: currentUSBControllerFingerprintCount(),
-		Clipboard:      enableClipboard,
-		Serial:         serialOutput != "none",
+		CPUs:                    int(cpuCount),
+		MemoryGB:                int(memoryGB),
+		Network:                 networkMode,
+		Displays:                max(len(displays), 1),
+		Volumes:                 len(getEffectiveVolumes()),
+		DirectorySharingDevices: currentDirectorySharingDeviceFingerprintCount(),
+		USBDevices:              len(usbDevices),
+		USBControllers:          currentUSBControllerFingerprintCount(),
+		SocketDevices:           currentSocketDeviceFingerprintCount(),
+		BalloonDevices:          currentBalloonDeviceFingerprintCount(),
+		Clipboard:               enableClipboard,
+		Serial:                  serialOutput != "none",
 	}
 }
 
 func currentUSBControllerFingerprintCount() int {
+	if runtimeProfile == "minimal" {
+		return 0
+	}
+	return 1
+}
+
+func currentDirectorySharingDeviceFingerprintCount() int {
+	if runtimeProfile == "minimal" {
+		return 0
+	}
+	count := len(getEffectiveVolumes())
+	return count + 1 // dedicated shared-folders VirtioFS device
+}
+
+func currentSocketDeviceFingerprintCount() int {
+	if runtimeProfile == "minimal" {
+		return 0
+	}
+	return 1
+}
+
+func currentBalloonDeviceFingerprintCount() int {
 	if runtimeProfile == "minimal" {
 		return 0
 	}
@@ -155,11 +183,20 @@ func checkSuspendConfigMatch() error {
 	if saved.Volumes != current.Volumes {
 		diffs = append(diffs, fmt.Sprintf("volumes: %d -> %d", saved.Volumes, current.Volumes))
 	}
+	if saved.DirectorySharingDevices != current.DirectorySharingDevices {
+		diffs = append(diffs, fmt.Sprintf("directory sharing devices: %d -> %d", saved.DirectorySharingDevices, current.DirectorySharingDevices))
+	}
 	if saved.USBDevices != current.USBDevices {
 		diffs = append(diffs, fmt.Sprintf("USB devices: %d -> %d", saved.USBDevices, current.USBDevices))
 	}
 	if saved.USBControllers != current.USBControllers {
 		diffs = append(diffs, fmt.Sprintf("USB controllers: %d -> %d", saved.USBControllers, current.USBControllers))
+	}
+	if saved.SocketDevices != current.SocketDevices {
+		diffs = append(diffs, fmt.Sprintf("socket devices: %d -> %d", saved.SocketDevices, current.SocketDevices))
+	}
+	if saved.BalloonDevices != current.BalloonDevices {
+		diffs = append(diffs, fmt.Sprintf("balloon devices: %d -> %d", saved.BalloonDevices, current.BalloonDevices))
 	}
 	if saved.Clipboard != current.Clipboard {
 		diffs = append(diffs, fmt.Sprintf("clipboard: %v -> %v", saved.Clipboard, current.Clipboard))
@@ -1306,7 +1343,9 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Setup cleanup on exit — save state if possible, otherwise hard stop.
 	var statusItem *VMStatusItemController
+	var appLoopStop atomic.Bool
 	cleanup := func() {
+		appLoopStop.Store(true)
 		stopMonitor()
 		stopControlRuntimeInfrastructure(controlServer)
 		guiController.Shutdown()
@@ -1326,7 +1365,6 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
-		app.Stop(nil)
 		postDummyEvent(app)
 	}
 	var cleanupOnce sync.Once
@@ -1361,7 +1399,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						os.Remove(suspendStatePath())
 						os.Remove(suspendConfigPath())
 						clearInjectSucceeded()
-						app.Stop(nil)
+						appLoopStop.Store(true)
 						postDummyEvent(app)
 						stateUpdate.mu.Unlock()
 						return
@@ -1373,7 +1411,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		)
 	}
 	scheduleTimer()
-	app.Run()
+	runAppEventLoopUntil(app, appLoopStop.Load)
 
 	stopMonitor()
 	stopControlRuntimeInfrastructure(controlServer)
@@ -1810,7 +1848,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// Register an NSApplicationDelegate so that Cmd+Q and "Quit" in the
 	// status item menu trigger a clean suspend instead of a hard kill.
 	// ShouldTerminate runs cleanup, then cancels NSApp's terminate: flow
-	// so we control the exit via app.Stop + postDummyEvent.
+	// so we control the exit through the shared AppKit event pump.
 	delegate := appkit.NewNSApplicationDelegate(appkit.NSApplicationDelegateConfig{
 		ShouldTerminate: func(_ appkit.NSApplication) appkit.NSApplicationTerminateReply {
 			quitRuntime()
@@ -1826,8 +1864,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		doCleanup()
 	})
 
-	// NSApplication.Run() traps on macOS 26 for this bare-binary path, so keep
-	// the app responsive by pumping the NSRunLoop explicitly.
+	// A long-lived NSApplication.Run() traps on macOS 26 for this bare-binary
+	// path, so keep the app responsive with the shared AppKit event pump.
 	var overlayFadeStep int = -1 // -1 means not fading
 	var pauseOverlay appkit.NSView
 	var pauseFadeStep int = -1    // -1 means not fading; >0 means fading in; used for fade-out too
@@ -1955,7 +1993,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 	scheduleTimer()
 
-	pumpAppEventLoopUntil(appLoopStop.Load)
+	runAppEventLoopUntil(app, appLoopStop.Load)
 	stopControlRuntimeInfrastructure(controlServer)
 	if statusItem != nil {
 		statusItem.Shutdown()
