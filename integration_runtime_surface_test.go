@@ -162,6 +162,62 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 			t.Fatalf("usb controllers empty: %+v", status.List)
 		}
 	})
+
+	if !vm.linux {
+		t.Run("shared-folder-pause-resume", func(t *testing.T) {
+			status := statusResponse(t, vm)
+			if !status.GetCanPause() {
+				t.Skip("pause not supported for this VM")
+			}
+
+			original := LoadSharedFolders(vm.dir)
+			restoreOriginal := func() {
+				if err := saveSharedFolders(vm.dir, original); err != nil {
+					t.Fatalf("restore shared folders: %v", err)
+				}
+				ctlDo(t, vm, &controlpb.ControlRequest{Type: "shared-folders-apply"})
+				_, _ = mountSharedFoldersInGuest(vm.dir, defaultSharedFoldersMountPoint)
+			}
+			defer restoreOriginal()
+
+			hostDir := t.TempDir()
+			hostFile := filepath.Join(hostDir, "sentinel.txt")
+			if err := os.WriteFile(hostFile, []byte("shared-folder-pause-resume\n"), 0644); err != nil {
+				t.Fatalf("write host sentinel: %v", err)
+			}
+
+			entry, _, err := addSharedFolderEntry(vm.dir, hostDir, "pause-resume", false)
+			if err != nil {
+				t.Fatalf("addSharedFolderEntry(): %v", err)
+			}
+
+			ctlDo(t, vm, &controlpb.ControlRequest{Type: "shared-folders-apply"})
+			if _, err := mountSharedFoldersInGuest(vm.dir, defaultSharedFoldersMountPoint); err != nil {
+				t.Fatalf("mountSharedFoldersInGuest(): %v", err)
+			}
+
+			guestFile := filepath.Join(defaultSharedFoldersMountPoint, entry.Tag, "sentinel.txt")
+			agentExecExpectCode(t, vm, 0, "/bin/test", "-f", guestFile)
+			before := agentExec(t, vm, "/bin/cat", guestFile)
+			if before != "shared-folder-pause-resume\n" {
+				t.Fatalf("guest sentinel before pause = %q, want %q", before, "shared-folder-pause-resume\n")
+			}
+
+			ctlDo(t, vm, &controlpb.ControlRequest{Type: "pause"})
+			waitVMState(t, vm, "paused", 30*time.Second)
+
+			ctlDo(t, vm, &controlpb.ControlRequest{Type: "resume"})
+			waitVMState(t, vm, "running", 30*time.Second)
+			waitVMReady(t, vm, integrationVMReadyTimeout(vm, false))
+
+			agentExecExpectCode(t, vm, 0, "/bin/test", "-d", defaultSharedFoldersMountPoint)
+			agentExecExpectCode(t, vm, 0, "/bin/test", "-f", guestFile)
+			after := agentExec(t, vm, "/bin/cat", guestFile)
+			if after != "shared-folder-pause-resume\n" {
+				t.Fatalf("guest sentinel after resume = %q, want %q", after, "shared-folder-pause-resume\n")
+			}
+		})
+	}
 }
 
 func runtimeSurfaceDiskFileName(vm *testVM) string {

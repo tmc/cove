@@ -153,7 +153,12 @@ func provisionMacOSIntegrationVM(tb testing.TB, name string) {
 	tb.Helper()
 
 	bin := buildIntegrationBinary(tb)
-	installArgs := []string{"-vm", name, "-headless", "-verbose"}
+	installArgs := []string{"-vm", name, "-verbose"}
+	if integrationHeadlessMode(false) {
+		installArgs = append(installArgs, "-headless")
+	} else {
+		installArgs = append(installArgs, "-gui")
+	}
 	ipsw := strings.TrimSpace(*flagIntegrationIPSW)
 	if ipsw == "" {
 		cached := filepath.Join(GetCacheDir(), "RestoreImage.ipsw")

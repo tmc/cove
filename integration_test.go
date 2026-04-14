@@ -22,6 +22,7 @@ var (
 	flagIntegrationVM          = flag.String("integration.vm", envOrString("VZ_TEST_VM", "vz-macos-test"), "macOS VM name for integration tests")
 	flagIntegrationLinuxVM     = flag.String("integration.linux-vm", envOrString("VZ_TEST_LINUX_VM", "vz-linux-test"), "Linux VM name for integration tests")
 	flagIntegrationHeadless    = flag.Bool("integration.headless", envBool("VZ_TEST_HEADLESS"), "skip GUI-dependent integration tests")
+	flagIntegrationHeaded      = flag.Bool("integration.headed", envBool("VZ_TEST_HEADED"), "force GUI mode for macOS integration provisioning and runtime")
 	flagIntegrationSIP         = flag.Bool("integration.sip", envBool("VZ_TEST_SIP"), "run SIP recovery integration test")
 	flagIntegrationSIPUser     = flag.String("integration.sip-user", os.Getenv("VZ_TEST_SIP_USER"), "recovery auth username for SIP integration test")
 	flagIntegrationSIPPassword = flag.String("integration.sip-password", os.Getenv("VZ_TEST_SIP_PASSWORD"), "recovery auth password for SIP integration test")
@@ -318,7 +319,7 @@ func startTestVMWithArgs(tb testing.TB, vm *testVM, extraArgs ...string) {
 		}
 	}
 	if !modeExplicit {
-		if *flagIntegrationHeadless || vm.linux {
+		if integrationHeadlessMode(vm.linux) {
 			args = append(args, "-headless")
 		} else {
 			args = append(args, "-gui")
@@ -347,6 +348,16 @@ func startTestVMWithArgs(tb testing.TB, vm *testVM, extraArgs ...string) {
 	go func() {
 		vm.waitCh <- cmd.Wait()
 	}()
+}
+
+func integrationHeadlessMode(linux bool) bool {
+	if linux {
+		return true
+	}
+	if *flagIntegrationHeaded {
+		return false
+	}
+	return *flagIntegrationHeadless
 }
 
 func (vm *testVM) removeStaleSocket(tb testing.TB) {
@@ -461,7 +472,7 @@ func statusResponse(t *testing.T, vm *testVM) *controlpb.StatusResponse {
 
 func requireGUI(t *testing.T) {
 	t.Helper()
-	if *flagIntegrationHeadless {
+	if integrationHeadlessMode(false) {
 		t.Skip("requires GUI mode")
 	}
 }
