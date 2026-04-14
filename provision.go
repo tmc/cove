@@ -137,13 +137,11 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -592,7 +590,7 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 
 // applyProvisioningFiles reads a staging manifest, mounts the VM disk, and
 // copies all staged files to the Data volume with correct ownership.
-// This is the only step that may require elevated privileges (via osascript).
+// This is the only step that may require elevated privileges.
 func applyProvisioningFiles() error {
 	stagingDir := provisionStagingDir()
 
@@ -686,7 +684,7 @@ func manifestIncludesAgent(manifest *ProvisionManifest) bool {
 
 // applyStagedFiles enables APFS ownership, copies all staged files to the
 // mount point, sets permissions and ownership. If not running as root, the
-// entire operation runs via a single osascript elevation prompt.
+// entire operation runs via a native Security.framework authorization prompt.
 func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *ProvisionManifest) error {
 	// Build a shell script that does everything in one elevated pass:
 	// 1. Enable APFS ownership on the partition
@@ -712,10 +710,8 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 		}
 	}
 
-	// Write the script to a temp file so osascript gets a short one-liner.
-	// Passing large inline scripts to "do shell script" causes osascript to
-	// spin indefinitely after the script exits (known macOS bug with the
-	// authorization session cleanup in "with administrator privileges").
+	// Write the script to a temp file so the privileged launcher only needs
+	// to run a short, fixed command line.
 	tmpScript, err := os.CreateTemp("", "vz-provision-apply-*.sh")
 	if err != nil {
 		return fmt.Errorf("create temp script: %w", err)
@@ -763,71 +759,10 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 	return nil
 }
 
-// runElevatedBash runs a bash script with root privileges.
-//
-// Strategy:
-//  1. Try sudo -n (reuse cached credentials).
-//  2. Fall back to password prompt + sudo -S.
-//
-// The prompt string is shown in the password prompt/dialog path.
+// runElevatedBash runs a bash script with root privileges using native
+// Authorization Services. It does not read the host admin password in app code.
 func runElevatedBash(scriptPath, prompt string) error {
-	// Try cached sudo credentials first.
-	cmd := exec.Command("sudo", "-n", "bash", scriptPath)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err == nil {
-		if stdout.Len() > 0 {
-			_, _ = os.Stdout.Write(stdout.Bytes())
-		}
-		if stderr.Len() > 0 {
-			_, _ = os.Stderr.Write(stderr.Bytes())
-		}
-		return nil
-	} else if msg := stderr.String(); !strings.Contains(msg, "a password is required") && !strings.Contains(msg, "a terminal is required") {
-		if stdout.Len() > 0 {
-			_, _ = os.Stdout.Write(stdout.Bytes())
-		}
-		if stderr.Len() > 0 {
-			_, _ = os.Stderr.Write(stderr.Bytes())
-		}
-		return fmt.Errorf("elevated apply: %w", err)
-	}
-
-	// AuthorizationCopyRights via purego currently traps on macOS 26 in this
-	// process, so use the existing password prompt/dialog fallback instead.
-	fmt.Println("A macOS password prompt will appear.")
-	return runElevatedBashSudo(scriptPath)
-}
-
-// runElevatedBashSudo prompts for the admin password and runs via sudo -S.
-func runElevatedBashSudo(scriptPath string) error {
-	hostUser := os.Getenv("USER")
-	if hostUser == "" {
-		if u, err := user.Current(); err == nil {
-			hostUser = filepath.Base(u.Username)
-		}
-	}
-	prompt := "Host administrator password (for this Mac, not the VM user): "
-	if hostUser != "" {
-		prompt = fmt.Sprintf("Host administrator password for %s (this Mac, not the VM user): ", hostUser)
-	}
-	pw, err := readPassword(prompt)
-	if err != nil {
-		if strings.Contains(err.Error(), "interrupted") || strings.Contains(err.Error(), "canceled") {
-			return fmt.Errorf("interrupted: user cancelled authorization")
-		}
-		return fmt.Errorf("read administrator password: %w", err)
-	}
-
-	cmd := exec.Command("sudo", "-S", "-p", "", "bash", scriptPath)
-	cmd.Stdin = strings.NewReader(string(pw) + "\n")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("elevated apply: %w", err)
-	}
-	return nil
+	return runElevatedBashNative(scriptPath, prompt)
 }
 
 // stageAgent cross-compiles the vz-agent binary and stages it along with

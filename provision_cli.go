@@ -151,7 +151,7 @@ func handleProvision(args []string) error {
 		}
 		fmt.Printf("  sudo ./vz-macos%s provision -apply\n", vmFlag)
 		fmt.Println()
-		fmt.Println("Or without sudo (will prompt for admin password via GUI dialog):")
+		fmt.Println("Or without sudo (will show a native macOS authorization prompt):")
 		fmt.Printf("  ./vz-macos%s provision -apply\n", vmFlag)
 		return nil
 	}
@@ -210,7 +210,7 @@ Options:
 Examples:
   vz-macos provision -user testuser -skip-setup-assistant
   vz-macos provision -user testuser -password secret123 -stage-only
-  sudo vz-macos provision -apply
+  vz-macos provision -apply
   vz-macos provision -user testuser -password secret123 -ssh-key ~/.ssh/id_rsa.pub
 
 Recovery authorization:

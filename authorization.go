@@ -1,17 +1,13 @@
 // authorization.go — Native macOS privilege escalation via AuthorizationServices.
 //
-// Shows the native macOS authentication dialog (Touch ID + password) via
-// AuthorizationCopyRights, then executes the script as root via sudo.
-//
-// AuthorizationExecuteWithPrivileges is deprecated since macOS 10.7 but still
-// functional. We avoid it in favor of AuthorizationCopyRights + sudo -n, which
-// separates the authentication dialog from execution.
+// This uses the Security framework to obtain an authorization reference and
+// then launches a privileged tool with AuthorizationExecuteWithPrivileges.
+// It avoids collecting the raw host admin password in app code.
 package main
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
+	"syscall"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -20,7 +16,7 @@ import (
 var (
 	securityLib     uintptr
 	authCreate      func(rights uintptr, environment uintptr, flags uint32, authRef *uintptr) int32
-	authCopyRights  func(authRef uintptr, rights uintptr, environment uintptr, flags uint32, authorizedRights *uintptr) int32
+	authExecute     func(authRef uintptr, pathToTool uintptr, options uint32, arguments uintptr, communicationsPipe uintptr) int32
 	authFree        func(authRef uintptr, flags uint32) int32
 	authInitialized bool
 )
@@ -38,18 +34,20 @@ func initAuthorizationServices() {
 	securityLib = lib
 
 	purego.RegisterLibFunc(&authCreate, securityLib, "AuthorizationCreate")
-	purego.RegisterLibFunc(&authCopyRights, securityLib, "AuthorizationCopyRights")
+	purego.RegisterLibFunc(&authExecute, securityLib, "AuthorizationExecuteWithPrivileges")
 	purego.RegisterLibFunc(&authFree, securityLib, "AuthorizationFree")
 }
 
 const (
-	kAuthorizationFlagDefaults          uint32  = 0
-	kAuthorizationFlagInteractionAllowed uint32 = 1 << 0
-	kAuthorizationFlagExtendRights      uint32  = 1 << 1
-	kAuthorizationFlagPreAuthorize      uint32  = 1 << 4
-	kAuthorizationFlagDestroyRights     uint32  = 1 << 3
-	kAuthorizationEmptyEnvironment      uintptr = 0
-	errAuthorizationCanceled            int32   = -60006
+	kAuthorizationFlagDefaults           uint32  = 0
+	kAuthorizationFlagInteractionAllowed uint32  = 1 << 0
+	kAuthorizationFlagExtendRights       uint32  = 1 << 1
+	kAuthorizationFlagPreAuthorize       uint32  = 1 << 4
+	kAuthorizationFlagDestroyRights      uint32  = 1 << 3
+	kAuthorizationEmptyEnvironment       uintptr = 0
+	errAuthorizationCanceled             int32   = -60006
+	kAuthorizationRightExecute                   = "system.privilege.admin"
+	kAuthorizationEnvironmentPrompt              = "prompt"
 )
 
 type authorizationItem struct {
@@ -64,32 +62,35 @@ type authorizationItemSet struct {
 	items *authorizationItem
 }
 
-// runElevatedBashNative shows the native macOS authorization dialog with
-// Touch ID / password, then executes the script as root via sudo.
-//
-// AuthorizationCopyRights shows the dialog and caches credentials.
-// After authentication, sudo -n succeeds with cached creds.
+// runElevatedBashNative shows the native macOS authorization dialog and then
+// executes the script as root via AuthorizationExecuteWithPrivileges.
 func runElevatedBashNative(scriptPath, prompt string) error {
 	initAuthorizationServices()
-	if authCreate == nil {
+	if authCreate == nil || authExecute == nil {
 		return fmt.Errorf("authorization services not available")
 	}
 
-	var authRef uintptr
-	status := authCreate(0, kAuthorizationEmptyEnvironment, kAuthorizationFlagDefaults, &authRef)
-	if status != 0 {
-		return fmt.Errorf("AuthorizationCreate: status %d", status)
+	toolPath, err := syscall.BytePtrFromString("/bin/bash")
+	if err != nil {
+		return fmt.Errorf("authorization tool path: %w", err)
 	}
-	defer authFree(authRef, kAuthorizationFlagDestroyRights)
+	scriptArg, err := syscall.BytePtrFromString(scriptPath)
+	if err != nil {
+		return fmt.Errorf("authorization script path: %w", err)
+	}
 
-	// Build rights for admin privileges.
-	rightName := []byte("system.privilege.admin\x00")
-	rightItem := authorizationItem{name: &rightName[0]}
+	// Build rights for the privileged tool itself.
+	rightName := []byte(kAuthorizationRightExecute)
+	rightItem := authorizationItem{
+		name:        &rightName[0],
+		valueLength: uint32(len("/bin/bash")),
+		value:       unsafe.Pointer(toolPath),
+	}
 	rights := authorizationItemSet{count: 1, items: &rightItem}
 
 	// Build environment with prompt text.
 	promptBytes := []byte(prompt)
-	envKey := []byte("prompt\x00")
+	envKey := []byte(kAuthorizationEnvironmentPrompt)
 	promptItem := authorizationItem{
 		name:        &envKey[0],
 		valueLength: uint32(len(promptBytes)),
@@ -97,29 +98,34 @@ func runElevatedBashNative(scriptPath, prompt string) error {
 	}
 	env := authorizationItemSet{count: 1, items: &promptItem}
 
-	// Show the native dialog (Touch ID / password).
-	copyFlags := kAuthorizationFlagInteractionAllowed | kAuthorizationFlagExtendRights | kAuthorizationFlagPreAuthorize
-	status = authCopyRights(
-		authRef,
+	var authRef uintptr
+	status := authCreate(
 		uintptr(unsafe.Pointer(&rights)),
 		uintptr(unsafe.Pointer(&env)),
-		copyFlags,
-		nil,
+		kAuthorizationFlagInteractionAllowed|kAuthorizationFlagExtendRights|kAuthorizationFlagPreAuthorize,
+		&authRef,
 	)
 	if status == errAuthorizationCanceled {
 		return fmt.Errorf("interrupted: user cancelled authorization")
 	}
 	if status != 0 {
-		return fmt.Errorf("authorization failed: status %d", status)
+		return fmt.Errorf("AuthorizationCreate: status %d", status)
 	}
+	defer authFree(authRef, kAuthorizationFlagDestroyRights)
 
-	// User authenticated via native dialog. Execute the script as root.
-	// sudo -n should work now because AuthorizationCopyRights cached the credential.
-	cmd := exec.Command("sudo", "-n", "bash", scriptPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("sudo after authorization: %w", err)
+	argv := []*byte{scriptArg, nil}
+	status = authExecute(
+		authRef,
+		uintptr(unsafe.Pointer(toolPath)),
+		0,
+		uintptr(unsafe.Pointer(&argv[0])),
+		0,
+	)
+	if status == errAuthorizationCanceled {
+		return fmt.Errorf("interrupted: user cancelled authorization")
+	}
+	if status != 0 {
+		return fmt.Errorf("AuthorizationExecuteWithPrivileges: status %d", status)
 	}
 	return nil
 }
