@@ -1,0 +1,145 @@
+/* cove docs branding */
+
+/* Sidebar header — brand identity */
+.sidebar-header h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+}
+.sidebar-header h1::before {
+    content: "⛵ ";
+    font-size: 1.2rem;
+}
+
+/* Hide the auto-generated TOC at top of content — we rely on sidebar nav */
+.main-content > .content > ul:first-child,
+.main-content > .content > h2:first-child + ul {
+    /* Don't hide — it's the actual page ToC which is useful */
+}
+
+/* Top header bar — add GitHub link styling */
+.site-header {
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-subtle);
+}
+
+/* Code blocks — copy button effect */
+pre {
+    position: relative;
+}
+pre:hover::after {
+    content: "copy";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 0.7rem;
+    color: var(--fg-muted);
+    background: var(--bg-subtle);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+/* Callout/admonition boxes — match GitHub alerts */
+blockquote {
+    border-left: 4px solid var(--accent);
+    background: var(--bg-subtle);
+    padding: 1rem 1.5rem;
+    margin: 1.5rem 0;
+    border-radius: 0 6px 6px 0;
+}
+blockquote p:first-child {
+    font-weight: 600;
+}
+
+/* Breadcrumb styling */
+.breadcrumb {
+    font-size: 0.85rem;
+    color: var(--fg-muted);
+    margin-bottom: 0.5rem;
+}
+.breadcrumb a {
+    color: var(--accent);
+    text-decoration: none;
+}
+.breadcrumb a:hover {
+    text-decoration: underline;
+}
+
+/* Page title — larger, more prominent */
+.main-content h1:first-of-type {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-top: 0.5rem;
+    letter-spacing: -0.03em;
+}
+
+/* Sidebar section headers */
+.nav-section-title {
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Active nav item — bolder highlight */
+.nav-item.active a,
+a[aria-current="page"] {
+    background: var(--accent);
+    color: white !important;
+    border-radius: 6px;
+    padding: 6px 12px;
+    display: block;
+}
+
+/* Tables — cleaner look */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+}
+th {
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+    padding: 0.5rem 0.75rem;
+}
+td {
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+}
+
+/* Feature maturity badges */
+code {
+    font-size: 0.85em;
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    background: var(--bg-subtle);
+}
+
+/* Prev/Next navigation */
+.prev-next {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Make the overall content area wider */
+.docs-layout {
+    max-width: 1400px;
+}
+.main-content {
+    max-width: 900px;
+}
