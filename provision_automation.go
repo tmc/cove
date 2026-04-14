@@ -17,6 +17,10 @@ func runProvisioningAutomation(cs *ControlServer) {
 	fmt.Printf("Admin: %v\n", provisionAdmin)
 	fmt.Println()
 
+	prevInputBackend := cs.inputBackend()
+	cs.setInputBackend(automationBackendFramebuffer)
+	defer cs.setInputBackend(prevInputBackend)
+
 	// Wait for the VM window to be ready for screenshots.
 	// The ControlServer is already initialized with SetVMViewWithWindow,
 	// but the VM may still be booting and the window not yet rendered.

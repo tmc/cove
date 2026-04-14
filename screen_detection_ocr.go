@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+var helloContinueMarkers = []string{
+	"continue", "continua", "continuar", "fortfahren", "fortsæt", "fortsett",
+	"fortsätt", "ga door", "proceed", "продолжить",
+}
+
 // setupAssistantPageMarkers maps page names to their characteristic text.
 var setupAssistantPageMarkers = map[string][]string{
 	"language":          {"English", "Deutsch", "Francais"},
@@ -140,5 +145,22 @@ func OCRDetectSetupAssistantPage(img image.Image, ocr *OCRService) string {
 		}
 	}
 
+	// The multilingual Hello screen can OCR as a short greeting plus a translated
+	// Continue button, without any stable "hello" token. If all we can reliably
+	// see is a Continue-like button and no stronger page marker matched above,
+	// treat it as the hello page so the dedicated handler can advance.
+	if containsAny(lower, helloContinueMarkers) {
+		return "hello"
+	}
+
 	return "unknown"
+}
+
+func containsAny(s string, markers []string) bool {
+	for _, marker := range markers {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }
