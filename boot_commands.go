@@ -1,221 +1,41 @@
-// boot_commands.go - Boot command DSL parser and executor for unattended setup
+// boot_commands.go - Recovery automation helpers shared by unattended setup and vzscript
 package main
 
 import (
 	"fmt"
 	"image"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/tmc/apple/appkit"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-// BootCommand represents a single boot automation command.
-type BootCommand struct {
-	Type string // "wait", "waitForText", "waitForMenuText", "click", "clickMenu", "clickMenuItem", "type", "typeAndReturnIfText", "key", "screenshot"
-	Args string // command-specific arguments
+// automationExecutor runs Recovery automation steps against a VM.
+type automationExecutor struct {
+	ocr      *OCRService
+	cs       *ControlServer
+	verbose  bool
+	debugDir string // if set, save debug screenshots here
 }
 
-// ParseBootCommands parses a boot command script into commands.
-// Each line is one command. Blank lines and # comments are ignored.
-//
-// Supported syntax:
-//
-//	<wait 5s>                  - sleep for duration
-//	<waitForText "Continue">   - OCR poll until text appears (timeout 60s)
-//	<waitForMenuText "Utilities"> - OCR poll menu bar text (timeout 60s)
-//	<click "Continue">         - OCR find text, click its center
-//	<clickMenu "Utilities">    - OCR find text in menu bar, click center
-//	<clickMenuItem "Utilities|Terminal"> - click menu title then menu item
-//	<type "testuser">          - type text string
-//	<typeAndReturnIfText "Enter password|secret"> - conditional type+return
-//	<key return>               - send key event
-//	<key tab>                  - send key event
-//	<key cmd+q>                - send key combo
-//	<screenshot>               - save debug screenshot
-func ParseBootCommands(script string) ([]BootCommand, error) {
-	var commands []BootCommand
-	lines := strings.Split(script, "\n")
-
-	cmdPattern := regexp.MustCompile(`^<(\w+)\s*(.*)>$`)
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		m := cmdPattern.FindStringSubmatch(line)
-		if m == nil {
-			return nil, fmt.Errorf("line %d: invalid command: %s", i+1, line)
-		}
-
-		cmd := BootCommand{
-			Type: strings.ToLower(m[1]),
-			Args: strings.TrimSpace(m[2]),
-		}
-
-		switch cmd.Type {
-		case "wait", "delay":
-			cmd.Type = "wait"
-			if cmd.Args == "" {
-				return nil, fmt.Errorf("line %d: wait requires a duration", i+1)
-			}
-			if _, err := time.ParseDuration(cmd.Args); err != nil {
-				return nil, fmt.Errorf("line %d: invalid duration %q: %w", i+1, cmd.Args, err)
-			}
-		case "waitfortext":
-			cmd.Type = "waitForText"
-			cmd.Args = unquote(cmd.Args)
-			if cmd.Args == "" {
-				return nil, fmt.Errorf("line %d: waitForText requires text argument", i+1)
-			}
-		case "waitformenutext":
-			cmd.Type = "waitForMenuText"
-			cmd.Args = unquote(cmd.Args)
-			if cmd.Args == "" {
-				return nil, fmt.Errorf("line %d: waitForMenuText requires text argument", i+1)
-			}
-		case "click":
-			cmd.Args = unquote(cmd.Args)
-			if cmd.Args == "" {
-				return nil, fmt.Errorf("line %d: click requires text argument", i+1)
-			}
-		case "clickmenu":
-			cmd.Type = "clickMenu"
-			cmd.Args = unquote(cmd.Args)
-			if cmd.Args == "" {
-				return nil, fmt.Errorf("line %d: clickMenu requires text argument", i+1)
-			}
-		case "clickmenuitem":
-			cmd.Type = "clickMenuItem"
-			cmd.Args = unquote(cmd.Args)
-			menu, item := splitMenuItemArgs(cmd.Args)
-			if menu == "" || item == "" {
-				return nil, fmt.Errorf("line %d: clickMenuItem requires \"menu|item\"", i+1)
-			}
-		case "type":
-			cmd.Args = unquote(cmd.Args)
-			if cmd.Args == "" {
-				return nil, fmt.Errorf("line %d: type requires text argument", i+1)
-			}
-		case "typeandreturniftext":
-			cmd.Type = "typeAndReturnIfText"
-			cmd.Args = unquote(cmd.Args)
-			needle, value := splitConditionalTypeArgs(cmd.Args)
-			if needle == "" || value == "" {
-				return nil, fmt.Errorf("line %d: typeAndReturnIfText requires \"needle|value\"", i+1)
-			}
-		case "key":
-			if cmd.Args == "" {
-				return nil, fmt.Errorf("line %d: key requires key name", i+1)
-			}
-			if !isValidKeySpec(cmd.Args) {
-				return nil, fmt.Errorf("line %d: invalid key spec %q", i+1, cmd.Args)
-			}
-		case "screenshot":
-			// no args needed
-		default:
-			return nil, fmt.Errorf("line %d: unknown command %q", i+1, cmd.Type)
-		}
-
-		commands = append(commands, cmd)
-	}
-
-	return commands, nil
-}
-
-// BootCommandExecutor runs boot commands against a VM.
-type BootCommandExecutor struct {
-	ocr       *OCRService
-	cs        *ControlServer
-	verbose   bool
-	debugDir  string // if set, save debug screenshots here
-	stepDelay time.Duration
-}
-
-// NewBootCommandExecutor creates a new executor.
-func NewBootCommandExecutor(ocr *OCRService, cs *ControlServer, verbose bool, debugDir string) *BootCommandExecutor {
-	return &BootCommandExecutor{
-		ocr:       ocr,
-		cs:        cs,
-		verbose:   verbose,
-		debugDir:  debugDir,
-		stepDelay: 500 * time.Millisecond,
+// newAutomationExecutor creates a new executor.
+func newAutomationExecutor(ocr *OCRService, cs *ControlServer, verbose bool, debugDir string) *automationExecutor {
+	return &automationExecutor{
+		ocr:      ocr,
+		cs:       cs,
+		verbose:  verbose,
+		debugDir: debugDir,
 	}
 }
 
-// Execute runs a sequence of boot commands.
-func (e *BootCommandExecutor) Execute(commands []BootCommand) error {
-	for i, cmd := range commands {
-		if e.verbose {
-			fmt.Printf("[boot] step %d/%d: <%s %s>\n", i+1, len(commands), cmd.Type, cmd.Args)
-		}
-
-		if err := e.executeOne(cmd); err != nil {
-			return fmt.Errorf("step %d <%s %s>: %w", i+1, cmd.Type, cmd.Args, err)
-		}
-
-		time.Sleep(e.stepDelay)
-	}
-	return nil
-}
-
-func (e *BootCommandExecutor) executeOne(cmd BootCommand) error {
-	switch cmd.Type {
-	case "wait":
-		d, _ := time.ParseDuration(cmd.Args) // already validated
-		time.Sleep(d)
-		return nil
-
-	case "waitForText":
-		return e.waitForText(cmd.Args, 60*time.Second)
-
-	case "waitForMenuText":
-		return e.waitForTextWithOptions(cmd.Args, 60*time.Second, OCRMenuSearchOptions())
-
-	case "click":
-		return e.clickText(cmd.Args, 60*time.Second)
-
-	case "clickMenu":
-		return e.clickTextWithOptions(cmd.Args, 60*time.Second, OCRMenuSearchOptions())
-
-	case "clickMenuItem":
-		menu, item := splitMenuItemArgs(cmd.Args)
-		if menu == "" || item == "" {
-			return fmt.Errorf("clickMenuItem requires \"menu|item\"")
-		}
-		return e.clickMenuItem(menu, item, 60*time.Second)
-
-	case "type":
-		return e.typeText(cmd.Args)
-
-	case "typeAndReturnIfText":
-		needle, value := splitConditionalTypeArgs(cmd.Args)
-		if needle == "" || value == "" {
-			return fmt.Errorf("typeAndReturnIfText requires \"needle|value\"")
-		}
-		return e.typeAndReturnIfText(needle, value, 8*time.Second)
-
-	case "key":
-		return e.sendKey(cmd.Args)
-
-	case "screenshot":
-		return e.saveScreenshot()
-
-	default:
-		return fmt.Errorf("unknown command: %s", cmd.Type)
-	}
-}
-
-func (e *BootCommandExecutor) waitForText(text string, timeout time.Duration) error {
+func (e *automationExecutor) waitForText(text string, timeout time.Duration) error {
 	return e.waitForTextWithOptions(text, timeout, OCRSearchOptions{})
 }
 
-func (e *BootCommandExecutor) waitForTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (e *automationExecutor) waitForTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -232,11 +52,11 @@ func (e *BootCommandExecutor) waitForTextWithOptions(text string, timeout time.D
 	return fmt.Errorf("timeout waiting for text %q", text)
 }
 
-func (e *BootCommandExecutor) clickText(text string, timeout time.Duration) error {
+func (e *automationExecutor) clickText(text string, timeout time.Duration) error {
 	return e.clickTextWithOptions(text, timeout, OCRSearchOptions{})
 }
 
-func (e *BootCommandExecutor) clickTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (e *automationExecutor) clickTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -253,14 +73,290 @@ func (e *BootCommandExecutor) clickTextWithOptions(text string, timeout time.Dur
 	return fmt.Errorf("timeout waiting for text %q to click", text)
 }
 
-func (e *BootCommandExecutor) clickMenuItem(menu, item string, timeout time.Duration) error {
+func (e *automationExecutor) hostClickTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img := e.captureScreen()
+		if img == nil {
+			time.Sleep(time.Second)
+			continue
+		}
+		x, y, found := e.ocr.FindTextWithOptions(img, text, opts)
+		if found {
+			return e.hostClickPixel(x, y)
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("timeout waiting for text %q to host-click", text)
+}
+
+func (e *automationExecutor) hostClickTextIfPresent(text string, timeout time.Duration, opts OCRSearchOptions) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img := e.captureScreen()
+		if img == nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		x, y, found := e.ocr.FindTextWithOptions(img, text, opts)
+		if found {
+			return e.hostClickPixel(x, y)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return nil
+}
+
+func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error {
+	if e.cs == nil {
+		return fmt.Errorf("startupOptions requires control server")
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img := e.captureScreen()
+		if img == nil {
+			time.Sleep(time.Second)
+			continue
+		}
+
+		width := float64(img.Bounds().Dx())
+		height := float64(img.Bounds().Dy())
+		if width == 0 || height == 0 {
+			time.Sleep(250 * time.Millisecond)
+			continue
+		}
+
+		if continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{}); continueFound && continueBelongsToOptions(width, continueX) {
+			if err := e.sendKey("return"); err == nil {
+				time.Sleep(500 * time.Millisecond)
+				return nil
+			}
+			if err := e.clickAt(continueX, continueY, int(width), int(height)); err == nil {
+				time.Sleep(350 * time.Millisecond)
+				return nil
+			}
+		}
+
+		for _, key := range []string{"right", "right", "return"} {
+			if err := e.sendKey(key); err != nil {
+				return err
+			}
+			time.Sleep(350 * time.Millisecond)
+
+			img = e.captureScreen()
+			if img == nil {
+				continue
+			}
+			width = float64(img.Bounds().Dx())
+			height = float64(img.Bounds().Dy())
+			continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+			if continueFound && continueBelongsToOptions(width, continueX) {
+				if err := e.sendKey("return"); err == nil {
+					time.Sleep(500 * time.Millisecond)
+					return nil
+				}
+				if err := e.clickAt(continueX, continueY, img.Bounds().Dx(), img.Bounds().Dy()); err == nil {
+					time.Sleep(350 * time.Millisecond)
+					return nil
+				}
+				return nil
+			}
+			if len(ocrTexts(e.ocr, img)) == 0 {
+				return nil
+			}
+		}
+
+		optX, optY, found := e.ocr.FindTextWithOptions(img, "Options", OCRSearchOptions{})
+		if !found {
+			time.Sleep(time.Second)
+			continue
+		}
+
+		clicked := false
+		for _, pt := range startupOptionsTilePoints(width, height, optX, optY) {
+			x := pt.X
+			y := pt.Y
+			if y < 0 {
+				y = 0
+			}
+			if err := e.clickAt(x, y, int(width), int(height)); err != nil {
+				return err
+			}
+			clicked = true
+			time.Sleep(350 * time.Millisecond)
+
+			img = e.captureScreen()
+			if img != nil {
+				continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+				if continueFound && continueBelongsToOptions(width, continueX) {
+					if err := e.sendKey("return"); err == nil {
+						time.Sleep(500 * time.Millisecond)
+						return nil
+					}
+					time.Sleep(350 * time.Millisecond)
+					return e.clickAt(continueX, continueY, int(width), int(height))
+				}
+			}
+
+			// Startup Options behaves like a tile selector. After selecting the
+			// tile, Return is often the reliable activation gesture even when the
+			// Continue button is not yet OCR-visible.
+			if err := e.sendKey("return"); err != nil {
+				return err
+			}
+			time.Sleep(500 * time.Millisecond)
+
+			img = e.captureScreen()
+			if img != nil {
+				continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+				if continueFound && continueBelongsToOptions(width, continueX) {
+					if err := e.sendKey("return"); err == nil {
+						time.Sleep(500 * time.Millisecond)
+						return nil
+					}
+					time.Sleep(350 * time.Millisecond)
+					return e.clickAt(continueX, continueY, int(width), int(height))
+				}
+				if len(ocrTexts(e.ocr, img)) == 0 {
+					return nil
+				}
+			}
+		}
+		if clicked {
+			blankSince := time.Now()
+			for time.Since(blankSince) < 4*time.Second {
+				img = e.captureScreen()
+				if img == nil {
+					time.Sleep(250 * time.Millisecond)
+					continue
+				}
+				if len(ocrTexts(e.ocr, img)) == 0 {
+					return nil
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			time.Sleep(800 * time.Millisecond)
+		}
+	}
+
+	return fmt.Errorf("timeout activating Recovery Startup Options")
+}
+
+type startupClickPoint struct {
+	X float64
+	Y float64
+}
+
+func startupOptionsTilePoints(width, height, optX, optY float64) []startupClickPoint {
+	points := []startupClickPoint{
+		{X: 0.61 * width, Y: 0.45 * height},
+		{X: 0.61 * width, Y: 0.48 * height},
+		{X: 0.58 * width, Y: 0.45 * height},
+		{X: 0.64 * width, Y: 0.45 * height},
+	}
+	for _, xOffsetNorm := range []float64{0.00, -0.02, 0.02} {
+		for _, yOffsetNorm := range []float64{0.11, 0.09, 0.07} {
+			points = append(points, startupClickPoint{
+				X: optX + xOffsetNorm*width,
+				Y: optY - yOffsetNorm*height,
+			})
+		}
+	}
+	return points
+}
+
+func continueBelongsToOptions(width, continueX float64) bool {
+	return continueX >= width*0.5
+}
+
+func ocrTexts(ocr *OCRService, img image.Image) []string {
+	if ocr == nil || img == nil {
+		return nil
+	}
+	obs, err := ocr.RecognizeText(img)
+	if err != nil {
+		return nil
+	}
+	texts := make([]string, 0, len(obs))
+	for _, ob := range obs {
+		if strings.TrimSpace(ob.Text) != "" {
+			texts = append(texts, ob.Text)
+		}
+	}
+	return texts
+}
+
+func (e *automationExecutor) continueRecoveryLanguage(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	advanced := false
+	for time.Now().Before(deadline) {
+		if e.hasHostMenuTitle("Utilities") {
+			return nil
+		}
+
+		img := e.captureScreen()
+		if img == nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		if _, _, found := e.ocr.FindTextWithOptions(img, "Utilities", OCRMenuSearchOptions()); found {
+			return nil
+		}
+
+		if continueX, continueY, found := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{}); found {
+			if err := e.sendKey("return"); err != nil {
+				return err
+			}
+			time.Sleep(500 * time.Millisecond)
+			next := e.captureScreen()
+			if next != nil {
+				if _, _, stillVisible := e.ocr.FindTextWithOptions(next, "Continue", OCRSearchOptions{}); stillVisible {
+					if err := e.clickAt(continueX, continueY, img.Bounds().Dx(), img.Bounds().Dy()); err != nil {
+						return err
+					}
+				}
+			}
+			advanced = true
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		if _, _, found := e.ocr.FindTextWithOptions(img, "Language", OCRSearchOptions{}); !found {
+			if advanced {
+				return nil
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		// On the Recovery language sheet, Return advances the selected language
+		// reliably. Pointer input on the arrow button is inconsistent here.
+		if err := e.sendKey("return"); err != nil {
+			return err
+		}
+		advanced = true
+		time.Sleep(2 * time.Second)
+	}
+	if advanced {
+		return fmt.Errorf("timeout leaving Recovery language page")
+	}
+	return nil
+}
+
+func (e *automationExecutor) clickMenuItem(menu, item string, timeout time.Duration) error {
+	if e.clickHostMenuItem(menu, item) {
+		return nil
+	}
+
 	opts := OCRMenuSearchOptions()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if err := e.waitForTextWithOptions(menu, 3*time.Second, opts); err != nil {
 			continue
 		}
-		if err := e.clickTextWithOptions(menu, 2*time.Second, opts); err != nil {
+		if err := e.hostClickTextWithOptions(menu, 2*time.Second, opts); err != nil {
 			continue
 		}
 		time.Sleep(250 * time.Millisecond)
@@ -277,7 +373,7 @@ func (e *BootCommandExecutor) clickMenuItem(menu, item string, timeout time.Dura
 			}
 			x, y, found := e.ocr.FindTextWithOptions(img, item, opts)
 			if found {
-				return e.clickAt(x, y, img.Bounds().Dx(), img.Bounds().Dy())
+				return e.hostClickPixel(x, y)
 			}
 			time.Sleep(150 * time.Millisecond)
 		}
@@ -285,7 +381,90 @@ func (e *BootCommandExecutor) clickMenuItem(menu, item string, timeout time.Dura
 	return fmt.Errorf("timeout clicking menu item %q from menu %q", item, menu)
 }
 
-func (e *BootCommandExecutor) typeText(text string) error {
+func (e *automationExecutor) hasHostMenuTitle(title string) bool {
+	if e.cs == nil {
+		return false
+	}
+
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return false
+	}
+
+	var found bool
+	DispatchSync(GetMainDispatchQueue(), func() {
+		mainMenu := appkit.NSMenuFromID(getSharedApp().MainMenu().GetID())
+		if mainMenu.ID == 0 {
+			if e.verbose {
+				fmt.Printf("[boot] host menu lookup %q: no main menu\n", title)
+			}
+			return
+		}
+		item := appkit.NSMenuItemFromID(mainMenu.ItemWithTitle(title).GetID())
+		found = item.ID != 0
+	})
+	if e.verbose {
+		fmt.Printf("[boot] host menu lookup %q: found=%v\n", title, found)
+	}
+	return found
+}
+
+func (e *automationExecutor) clickHostMenuItem(menuTitle, itemTitle string) bool {
+	if e.cs == nil {
+		return false
+	}
+
+	menuTitle = strings.TrimSpace(menuTitle)
+	itemTitle = strings.TrimSpace(itemTitle)
+	if menuTitle == "" || itemTitle == "" {
+		return false
+	}
+
+	var clicked bool
+	var reason string
+	DispatchSync(GetMainDispatchQueue(), func() {
+		app := getSharedApp()
+		mainMenu := appkit.NSMenuFromID(app.MainMenu().GetID())
+		if mainMenu.ID == 0 {
+			reason = "no main menu"
+			return
+		}
+
+		menuItem := appkit.NSMenuItemFromID(mainMenu.ItemWithTitle(menuTitle).GetID())
+		if menuItem.ID == 0 || !menuItem.HasSubmenu() {
+			reason = "menu missing or has no submenu"
+			return
+		}
+
+		submenu := appkit.NSMenuFromID(menuItem.Submenu().GetID())
+		if submenu.ID == 0 {
+			reason = "submenu missing"
+			return
+		}
+
+		subItem := appkit.NSMenuItemFromID(submenu.ItemWithTitle(itemTitle).GetID())
+		if subItem.ID == 0 {
+			reason = "submenu item missing"
+			return
+		}
+
+		idx := submenu.IndexOfItem(subItem)
+		if idx < 0 {
+			reason = "submenu item index missing"
+			return
+		}
+
+		submenu.PerformActionForItemAtIndex(idx)
+		clicked = true
+		reason = "performed action"
+	})
+	if e.verbose {
+		fmt.Printf("[boot] host menu click %q -> %q: clicked=%v reason=%s\n", menuTitle, itemTitle, clicked, reason)
+	}
+	return clicked
+}
+
+func (e *automationExecutor) typeText(text string) error {
 	resp := e.cs.typeText(&controlpb.TextCommand{Text: text})
 	if !resp.Success {
 		return fmt.Errorf("type text: %s", resp.Error)
@@ -293,7 +472,47 @@ func (e *BootCommandExecutor) typeText(text string) error {
 	return nil
 }
 
-func (e *BootCommandExecutor) typeAndReturnIfText(needle, value string, timeout time.Duration) error {
+func (e *automationExecutor) typeTextKeycodes(text string) error {
+	for _, ch := range text {
+		info, ok := charToKeyCode[ch]
+		if !ok {
+			return fmt.Errorf("no keycode for %q", ch)
+		}
+
+		var modifiers uint32
+		if info.shift {
+			modifiers = uint32(ModifierShift)
+		}
+		useCGEvent := e.cs != nil && e.cs.inputBackend() == automationBackendWindow
+
+		resp := e.cs.sendKeyEvent(&controlpb.KeyCommand{
+			KeyCode:    uint32(info.keyCode),
+			KeyDown:    true,
+			Modifiers:  modifiers,
+			Character:  string(ch),
+			UseCgEvent: useCGEvent,
+		})
+		if !resp.Success {
+			return fmt.Errorf("type key down %q: %s", ch, resp.Error)
+		}
+		time.Sleep(30 * time.Millisecond)
+
+		resp = e.cs.sendKeyEvent(&controlpb.KeyCommand{
+			KeyCode:    uint32(info.keyCode),
+			KeyDown:    false,
+			Modifiers:  modifiers,
+			Character:  string(ch),
+			UseCgEvent: useCGEvent,
+		})
+		if !resp.Success {
+			return fmt.Errorf("type key up %q: %s", ch, resp.Error)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil
+}
+
+func (e *automationExecutor) typeAndReturnIfText(needle, value string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -301,19 +520,161 @@ func (e *BootCommandExecutor) typeAndReturnIfText(needle, value string, timeout 
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
+		lowerNeedle := strings.ToLower(needle)
+		if strings.Contains(lowerNeedle, "password") && e.recoveryAuthFailed(img) {
+			return fmt.Errorf("%s", recoveryAuthFailureMessage(needle))
+		}
 		_, _, found := e.ocr.FindText(img, needle)
 		if found {
-			if err := e.typeText(value); err != nil {
+			typeFn := e.typeText
+			if strings.Contains(lowerNeedle, "password") ||
+				strings.Contains(lowerNeedle, "[y/n]") ||
+				strings.Contains(lowerNeedle, "are you sure") ||
+				strings.Contains(lowerNeedle, "allow booting unsigned") {
+				// Recovery's secure-password prompt can render before Terminal is
+				// and confirmation prompts can render before Terminal is actually
+				// ready to consume injected text. A short settle plus raw keycode
+				// entry behaves more like physical typing than Unicode text input.
+				time.Sleep(1500 * time.Millisecond)
+				typeFn = e.typeTextKeycodes
+			}
+			if err := typeFn(value); err != nil {
 				return err
 			}
-			return e.sendKey("return")
+			if err := e.sendKey("return"); err != nil {
+				return err
+			}
+
+			clearSatisfied := func(img image.Image) bool {
+				return promptClearedOCR(e.ocr, img, needle)
+			}
+
+			// Wait for the prompt to actually clear before allowing the next
+			// step to run. Recovery screens can lag behind the injected key
+			// event, and without this a later prompt step can re-match the same
+			// visible line and inject the same answer twice.
+			clearDeadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(clearDeadline) {
+				img = e.captureScreen()
+				if img == nil {
+					time.Sleep(250 * time.Millisecond)
+					continue
+				}
+				if strings.Contains(lowerNeedle, "password") && e.recoveryAuthFailed(img) {
+					return fmt.Errorf("%s", recoveryAuthFailureMessage(needle))
+				}
+				if clearSatisfied(img) {
+					return nil
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			return fmt.Errorf("timeout waiting for prompt %q to clear", needle)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 	return nil
 }
 
-func (e *BootCommandExecutor) sendKey(keySpec string) error {
+func promptClearedOCR(ocr *OCRService, img image.Image, needle string) bool {
+	if img == nil {
+		return false
+	}
+	if _, _, found := ocr.FindText(img, needle); !found {
+		return true
+	}
+	return pageContainsAnyOCR(ocr, img, promptClearTexts(needle)...)
+}
+
+func pageContainsAnyOCR(ocr *OCRService, img image.Image, texts ...string) bool {
+	for _, text := range texts {
+		if _, _, found := ocr.FindText(img, text); found {
+			return true
+		}
+	}
+	return false
+}
+
+func promptClearTexts(needle string) []string {
+	lowerNeedle := strings.ToLower(needle)
+	if strings.Contains(lowerNeedle, "[y/n]") ||
+		strings.Contains(lowerNeedle, "allow booting unsigned") ||
+		strings.Contains(lowerNeedle, "are you sure") {
+		return []string{
+			"password for user",
+			"Password",
+			"Authorized user",
+			"Enter password",
+			"Authentication failure",
+			"System Integrity Protection is",
+			"System Integrity Protection is off",
+			"System Integrity Protection is enabled",
+			"Restart the machine",
+			"-bash-3.2#",
+		}
+	}
+	if strings.Contains(lowerNeedle, "authorized user") ||
+		strings.Contains(lowerNeedle, "enter username") ||
+		strings.Contains(lowerNeedle, "user name") {
+		return []string{
+			"Password",
+			"Enter password",
+			"password for user",
+			"Unknown user",
+			"Authentication failure",
+			"System Integrity Protection is",
+			"System Integrity Protection is off",
+			"System Integrity Protection is enabled",
+			"Restart the machine",
+			"-bash-3.2#",
+		}
+	}
+	if strings.Contains(lowerNeedle, "password") {
+		return []string{
+			"Authentication failure",
+			"System Integrity Protection is",
+			"System Integrity Protection is off",
+			"System Integrity Protection is enabled",
+			"Restart the machine",
+			"-bash-3.2#",
+		}
+	}
+	return nil
+}
+
+func (e *automationExecutor) pageContainsAny(img image.Image, texts ...string) bool {
+	return pageContainsAnyOCR(e.ocr, img, texts...)
+}
+
+func (e *automationExecutor) recoveryAuthFailed(img image.Image) bool {
+	return e.pageContainsAny(img,
+		"Authentication failure",
+		"Failed to authenticate",
+		"failed to set credential",
+	)
+}
+
+func recoveryAuthFailureMessage(needle string) string {
+	return fmt.Sprintf("recovery authentication failed after answering prompt %q; the VM user is not authorized for recovery operations. Ensure provisioning completed with bootstrap recovery enabled and that 'diskutil apfs updatePreboot /' ran successfully", needle)
+}
+
+func (e *automationExecutor) rebootIfText(needle string) error {
+	img := e.captureScreen()
+	if img == nil {
+		return fmt.Errorf("capture screen for rebootIfText")
+	}
+	if _, _, found := e.ocr.FindText(img, needle); !found {
+		if e.verbose {
+			fmt.Printf("[boot] rebootIfText skipped: %q not visible\n", needle)
+		}
+		return nil
+	}
+	if err := e.typeText("reboot"); err != nil {
+		return err
+	}
+	return e.sendKey("return")
+}
+
+func (e *automationExecutor) sendKey(keySpec string) error {
 	keyCode, modifiers := parseKeySpec(keySpec)
 	useCGEvent := e.cs != nil && e.cs.inputBackend() == automationBackendWindow
 	resp := e.cs.sendKeyEvent(&controlpb.KeyCommand{
@@ -338,7 +699,7 @@ func (e *BootCommandExecutor) sendKey(keySpec string) error {
 	return nil
 }
 
-func (e *BootCommandExecutor) clickAt(x, y float64, screenWidth, screenHeight int) error {
+func (e *automationExecutor) clickAt(x, y float64, screenWidth, screenHeight int) error {
 	normX := x / float64(screenWidth)
 	normY := y / float64(screenHeight)
 	resp := e.cs.sendMouseEvent(&controlpb.MouseCommand{
@@ -353,7 +714,21 @@ func (e *BootCommandExecutor) clickAt(x, y float64, screenWidth, screenHeight in
 	return nil
 }
 
-func (e *BootCommandExecutor) captureScreen() image.Image {
+func (e *automationExecutor) hostClickPixel(x, y float64) error {
+	if e.cs == nil {
+		return fmt.Errorf("host click requires control server")
+	}
+	img := e.captureScreen()
+	if img != nil {
+		if e.verbose {
+			fmt.Printf("[boot] safe guest click pixel=(%.1f, %.1f)\n", x, y)
+		}
+		return e.clickAt(x, y, img.Bounds().Dx(), img.Bounds().Dy())
+	}
+	return fmt.Errorf("safe click unavailable: no captured screen")
+}
+
+func (e *automationExecutor) captureScreen() image.Image {
 	if e.cs == nil {
 		return nil
 	}
@@ -364,7 +739,7 @@ func (e *BootCommandExecutor) captureScreen() image.Image {
 	return img
 }
 
-func (e *BootCommandExecutor) saveScreenshot() error {
+func (e *automationExecutor) saveScreenshot() error {
 	if e.debugDir == "" {
 		return nil
 	}

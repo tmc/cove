@@ -84,7 +84,7 @@ Commands:
   click-menu [options] <menu> <item>  Click menu title, then menu item
                         options: -timeout <duration>
   shared-folders-apply  Reload shared_folders.json into a running VM
-  boot-script <file>    Execute a boot command script file
+  boot-script <file>    Execute a vzscript automation file
   step                  Interactive step-through mode for Setup Assistant debugging
   setup-assist <user> <pass>  Run Setup Assistant automation
 
@@ -1268,162 +1268,161 @@ func ctlClickMenu(socketPath, menu, item string, timeout time.Duration) error {
 	return clickMenuItemViaClient(client, ocr, menu, item, timeout)
 }
 
-// ctlBootScript loads and executes a boot command script via the control socket.
+// ctlBootScript loads and executes a vzscript automation file via the control socket.
 func ctlBootScript(socketPath, scriptPath string) error {
 	data, err := os.ReadFile(scriptPath)
 	if err != nil {
 		return fmt.Errorf("read script: %w", err)
 	}
 
-	commands, err := ParseBootCommands(string(data))
-	if err != nil {
-		return fmt.Errorf("parse script: %w", err)
+	if !isVZScriptAutomationFile(scriptPath, data) {
+		return unsupportedAutomationScriptError(scriptPath)
 	}
-
-	fmt.Printf("Executing %d boot commands from %s\n", len(commands), scriptPath)
-
-	// The boot command executor needs a ControlServer, but from ctl we only
-	// have a socket. Create a thin ControlServer with just the socket path
-	// for screenshot + input passthrough. In practice, boot-script from ctl
-	// is less common than from the in-process path (unattended.go), but we
-	// support it for manual debugging.
-	//
-	// For now, use the ControlClient-based approach by translating commands
-	// to client calls.
-	client := NewControlClient(socketPath)
-	client.SetTimeout(60 * time.Second)
-	ocr := NewOCRService(true)
-
-	for i, cmd := range commands {
-		fmt.Printf("[boot] step %d/%d: <%s %s>\n", i+1, len(commands), cmd.Type, cmd.Args)
-		if err := executeBootCommandViaClient(client, ocr, cmd); err != nil {
-			return fmt.Errorf("step %d <%s %s>: %w", i+1, cmd.Type, cmd.Args, err)
-		}
-		time.Sleep(500 * time.Millisecond)
+	fmt.Printf("Executing vzscript automation from %s\n", scriptPath)
+	cfg := vzscriptConfig{
+		socketPath: socketPath,
+		verbose:    true,
 	}
-	return nil
+	return runVZScript(data, filepath.Base(scriptPath), cfg)
 }
 
-// executeBootCommandViaClient executes a single boot command using a ControlClient.
-func executeBootCommandViaClient(client *ControlClient, ocr *OCRService, cmd BootCommand) error {
-	switch cmd.Type {
-	case "wait":
-		d, _ := time.ParseDuration(cmd.Args)
-		time.Sleep(d)
-		return nil
+func activateStartupOptionsViaClient(client *ControlClient, ocr *OCRService, timeout time.Duration) error {
+	if err := client.SetGUIInputBackend("direct"); err != nil {
+		return fmt.Errorf("set input backend direct: %w", err)
+	}
+	if err := client.SetGUICaptureBackend("window"); err != nil {
+		return fmt.Errorf("set capture backend window: %w", err)
+	}
 
-	case "waitForText":
-		deadline := time.Now().Add(60 * time.Second)
-		for time.Now().Before(deadline) {
-			img, err := client.Screenshot()
-			if err != nil {
-				time.Sleep(time.Second)
-				continue
-			}
-			_, _, found := ocr.FindText(img, cmd.Args)
-			if found {
-				return nil
-			}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img, err := client.Screenshot()
+		if err != nil {
 			time.Sleep(time.Second)
+			continue
 		}
-		return fmt.Errorf("timeout waiting for text %q", cmd.Args)
 
-	case "waitForMenuText":
-		deadline := time.Now().Add(60 * time.Second)
-		opts := OCRMenuSearchOptions()
-		for time.Now().Before(deadline) {
-			img, err := client.Screenshot()
-			if err != nil {
-				time.Sleep(time.Second)
-				continue
-			}
-			_, _, found := ocr.FindTextWithOptions(img, cmd.Args, opts)
-			if found {
-				return nil
-			}
-			time.Sleep(time.Second)
+		width := float64(img.Bounds().Dx())
+		height := float64(img.Bounds().Dy())
+		if width == 0 || height == 0 {
+			time.Sleep(250 * time.Millisecond)
+			continue
 		}
-		return fmt.Errorf("timeout waiting for menu text %q", cmd.Args)
 
-	case "click":
-		deadline := time.Now().Add(60 * time.Second)
-		for time.Now().Before(deadline) {
-			img, err := client.Screenshot()
-			if err != nil {
-				time.Sleep(time.Second)
-				continue
-			}
-			normX, normY, found := ocr.FindTextNormalized(img, cmd.Args)
-			if found {
-				return client.MouseClick(normX, normY)
-			}
-			time.Sleep(time.Second)
-		}
-		return fmt.Errorf("timeout waiting for text %q to click", cmd.Args)
-
-	case "clickMenu":
-		deadline := time.Now().Add(60 * time.Second)
-		opts := OCRMenuSearchOptions()
-		for time.Now().Before(deadline) {
-			img, err := client.Screenshot()
-			if err != nil {
-				time.Sleep(time.Second)
-				continue
-			}
-			normX, normY, found := ocr.FindTextNormalizedWithOptions(img, cmd.Args, opts)
-			if found {
-				return client.MouseClick(normX, normY)
-			}
-			time.Sleep(time.Second)
-		}
-		return fmt.Errorf("timeout waiting for menu text %q to click", cmd.Args)
-
-	case "clickMenuItem":
-		menu, item := splitMenuItemArgs(cmd.Args)
-		if menu == "" || item == "" {
-			return fmt.Errorf("clickMenuItem requires \"menu|item\"")
-		}
-		return clickMenuItemViaClient(client, ocr, menu, item, 60*time.Second)
-
-	case "type":
-		return client.TypeText(cmd.Args)
-
-	case "typeAndReturnIfText":
-		needle, value := splitConditionalTypeArgs(cmd.Args)
-		if needle == "" || value == "" {
-			return fmt.Errorf("typeAndReturnIfText requires \"needle|value\"")
-		}
-		deadline := time.Now().Add(8 * time.Second)
-		for time.Now().Before(deadline) {
-			img, err := client.Screenshot()
-			if err != nil {
+		if continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{}); continueFound && continueBelongsToOptions(width, continueX) {
+			if err := client.KeyPress(KeyCodeReturn); err == nil {
 				time.Sleep(500 * time.Millisecond)
-				continue
+				return nil
 			}
-			_, _, found := ocr.FindText(img, needle)
-			if found {
-				if err := client.TypeText(value); err != nil {
-					return err
+			time.Sleep(350 * time.Millisecond)
+			return client.MouseClick(continueX/width, continueY/height)
+		}
+
+		for _, key := range []uint16{KeyCodeRightArrow, KeyCodeRightArrow, KeyCodeReturn} {
+			if err := client.KeyPress(key); err != nil {
+				return err
+			}
+			time.Sleep(350 * time.Millisecond)
+
+			img, err = client.Screenshot()
+			if err == nil {
+				width = float64(img.Bounds().Dx())
+				height = float64(img.Bounds().Dy())
+				continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+				if continueFound && continueBelongsToOptions(width, continueX) {
+					if err := client.KeyPress(KeyCodeReturn); err == nil {
+						time.Sleep(500 * time.Millisecond)
+						return nil
+					}
+					time.Sleep(350 * time.Millisecond)
+					return client.MouseClick(continueX/width, continueY/height)
 				}
-				return client.KeyPress(36)
+				if len(ocrTexts(ocr, img)) == 0 {
+					return nil
+				}
+			}
+		}
+
+		optX, optY, found := ocr.FindTextWithOptions(img, "Options", OCRSearchOptions{})
+		if !found {
+			time.Sleep(time.Second)
+			continue
+		}
+		for _, pt := range startupOptionsTilePoints(width, height, optX, optY) {
+			if err := client.MouseClick(pt.X/width, pt.Y/height); err != nil {
+				return err
+			}
+			time.Sleep(350 * time.Millisecond)
+			img, err = client.Screenshot()
+			if err == nil {
+				width = float64(img.Bounds().Dx())
+				height = float64(img.Bounds().Dy())
+				continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+				if continueFound && continueBelongsToOptions(width, continueX) {
+					if err := client.KeyPress(KeyCodeReturn); err == nil {
+						time.Sleep(500 * time.Millisecond)
+						return nil
+					}
+					time.Sleep(350 * time.Millisecond)
+					return client.MouseClick(continueX/width, continueY/height)
+				}
+			}
+		}
+	}
+
+	return fmt.Errorf("timeout activating Recovery Startup Options")
+}
+
+func continueRecoveryLanguageViaClient(client *ControlClient, ocr *OCRService, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	advanced := false
+	for time.Now().Before(deadline) {
+		img, err := client.Screenshot()
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		if _, _, found := ocr.FindTextWithOptions(img, "Utilities", OCRMenuSearchOptions()); found {
+			return nil
+		}
+
+		if normX, normY, found := ocr.FindTextNormalizedWithOptions(img, "Continue", OCRSearchOptions{}); found {
+			if err := client.KeyPress(KeyCodeReturn); err != nil {
+				return err
 			}
 			time.Sleep(500 * time.Millisecond)
+			next, err := client.Screenshot()
+			if err == nil {
+				if _, _, stillVisible := ocr.FindTextWithOptions(next, "Continue", OCRSearchOptions{}); stillVisible {
+					if err := client.MouseClick(normX, normY); err != nil {
+						return err
+					}
+				}
+			}
+			advanced = true
+			time.Sleep(2 * time.Second)
+			continue
 		}
-		return nil
 
-	case "key":
-		keyCode, modifiers := parseKeySpec(cmd.Args)
-		if modifiers != 0 {
-			return client.KeyPressWithModifiers(keyCode, modifiers)
+		if _, _, found := ocr.FindTextWithOptions(img, "Language", OCRSearchOptions{}); !found {
+			if advanced {
+				return nil
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
 		}
-		return client.KeyPress(keyCode)
 
-	case "screenshot":
-		return nil // no-op from ctl
-
-	default:
-		return fmt.Errorf("unknown command: %s\nRun 'vz-macos ctl help' for usage.", cmd.Type)
+		if err := client.KeyPress(KeyCodeReturn); err != nil {
+			return err
+		}
+		advanced = true
+		time.Sleep(2 * time.Second)
 	}
+	if advanced {
+		return fmt.Errorf("timeout leaving Recovery language page")
+	}
+	return nil
 }
 
 func clickMenuItemViaClient(client *ControlClient, ocr *OCRService, menu, item string, timeout time.Duration) error {
@@ -1660,6 +1659,12 @@ func ctlSetupAssist(socketPath, username, password string) error {
 	fmt.Println("=== Setup Assistant Automation ===")
 	fmt.Printf("Username: %s\n", username)
 	fmt.Println()
+
+	client := NewControlClient(socketPath)
+	client.SetTimeout(10 * time.Second)
+	if _, err := client.sendRequest(&controlpb.ControlRequest{Type: "gui-input-backend-direct"}); err != nil {
+		fmt.Printf("warning: set gui input backend to direct: %v\n", err)
+	}
 
 	// Create debug screenshot directory
 	saveDir := filepath.Join(".", "setup_assistant_debug")

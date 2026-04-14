@@ -26,31 +26,73 @@ func runUnattendedSetup(cs *ControlServer) error {
 		fmt.Printf("OCR debug screenshots will be saved to: %s\n", debugDir)
 	}
 
-	// If boot commands file is provided, use that
+	// If an automation script file is provided, use that.
 	if bootCommandsFile != "" {
-		return runBootCommands(cs, ocr, debugDir)
+		return runAutomationScript(cs, debugDir)
 	}
 
 	// Otherwise, run the default unattended flow
 	return runDefaultUnattendedFlow(cs, ocr, debugDir)
 }
 
-// runBootCommands loads and executes a boot commands file.
-func runBootCommands(cs *ControlServer, ocr *OCRService, debugDir string) error {
+// runAutomationScript loads and executes a vzscript automation file.
+func runAutomationScript(cs *ControlServer, debugDir string) error {
 	data, err := os.ReadFile(bootCommandsFile)
 	if err != nil {
-		return fmt.Errorf("read boot commands: %w", err)
+		return fmt.Errorf("read automation script: %w", err)
 	}
 
-	commands, err := ParseBootCommands(string(data))
-	if err != nil {
-		return fmt.Errorf("parse boot commands: %w", err)
+	if !isVZScriptAutomationFile(bootCommandsFile, data) {
+		return unsupportedAutomationScriptError(bootCommandsFile)
+	}
+	fmt.Printf("Executing vzscript automation from %s\n", bootCommandsFile)
+
+	restoreBackends := forceBootCommandAutomationBackends(cs)
+	defer restoreBackends()
+
+	cfg := vzscriptConfig{
+		socketPath: GetControlSocketPath(),
+		verbose:    verbose,
+		controlSrv: cs,
+	}
+	_ = debugDir
+	return runVZScript(data, filepath.Base(bootCommandsFile), cfg)
+}
+
+func forceBootCommandAutomationBackends(cs *ControlServer) func() {
+	if cs == nil {
+		return func() {}
 	}
 
-	fmt.Printf("Executing %d boot commands from %s\n", len(commands), bootCommandsFile)
+	prevCapture := cs.captureBackend()
+	prevInput := cs.inputBackend()
+	if prevCapture != automationBackendFramebuffer {
+		if verbose {
+			fmt.Printf("[unattended] forcing boot command capture backend: %s -> %s\n", prevCapture, automationBackendFramebuffer)
+		}
+		cs.setCaptureBackend(automationBackendFramebuffer)
+	}
+	if prevInput != automationBackendFramebuffer {
+		if verbose {
+			fmt.Printf("[unattended] forcing boot command input backend: %s -> %s\n", prevInput.inputString(), automationBackendFramebuffer.inputString())
+		}
+		cs.setInputBackend(automationBackendFramebuffer)
+	}
 
-	executor := NewBootCommandExecutor(ocr, cs, verbose, debugDir)
-	return executor.Execute(commands)
+	return func() {
+		if cs.captureBackend() != prevCapture {
+			if verbose {
+				fmt.Printf("[unattended] restoring boot command capture backend: %s\n", prevCapture)
+			}
+			cs.setCaptureBackend(prevCapture)
+		}
+		if cs.inputBackend() != prevInput {
+			if verbose {
+				fmt.Printf("[unattended] restoring boot command input backend: %s\n", prevInput.inputString())
+			}
+			cs.setInputBackend(prevInput)
+		}
+	}
 }
 
 // runDefaultUnattendedFlow waits for the VM to reach a usable state.

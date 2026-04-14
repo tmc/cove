@@ -1,166 +1,9 @@
 package main
 
-import "testing"
-
-func TestParseBootCommands(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		want    int // number of commands
-		wantErr bool
-	}{
-		{
-			name:  "empty",
-			input: "",
-			want:  0,
-		},
-		{
-			name:  "comments and blank lines",
-			input: "# this is a comment\n\n# another comment\n",
-			want:  0,
-		},
-		{
-			name:  "wait command",
-			input: `<wait 5s>`,
-			want:  1,
-		},
-		{
-			name:  "delay is alias for wait",
-			input: `<delay 2s>`,
-			want:  1,
-		},
-		{
-			name:  "waitForText",
-			input: `<waitForText "Continue">`,
-			want:  1,
-		},
-		{
-			name:  "waitForMenuText",
-			input: `<waitForMenuText "Utilities">`,
-			want:  1,
-		},
-		{
-			name:  "click",
-			input: `<click "Continue">`,
-			want:  1,
-		},
-		{
-			name:  "clickMenu",
-			input: `<clickMenu "Utilities">`,
-			want:  1,
-		},
-		{
-			name:  "clickMenuItem",
-			input: `<clickMenuItem "Utilities|Terminal">`,
-			want:  1,
-		},
-		{
-			name:  "type",
-			input: `<type "testuser">`,
-			want:  1,
-		},
-		{
-			name:  "typeAndReturnIfText",
-			input: `<typeAndReturnIfText "Enter password|secret">`,
-			want:  1,
-		},
-		{
-			name:  "key",
-			input: `<key return>`,
-			want:  1,
-		},
-		{
-			name:  "key with modifier",
-			input: `<key cmd+q>`,
-			want:  1,
-		},
-		{
-			name:  "screenshot",
-			input: `<screenshot>`,
-			want:  1,
-		},
-		{
-			name: "multi command sequence",
-			input: `# Setup Assistant automation
-<wait 5s>
-<waitForText "Select Your Country">
-<click "Continue">
-<wait 2s>
-<type "testuser">
-<key tab>
-<key return>`,
-			want: 7,
-		},
-		{
-			name:    "invalid command",
-			input:   `not a command`,
-			wantErr: true,
-		},
-		{
-			name:    "unknown command type",
-			input:   `<explode now>`,
-			wantErr: true,
-		},
-		{
-			name:    "wait without duration",
-			input:   `<wait>`,
-			wantErr: true,
-		},
-		{
-			name:    "wait with invalid duration",
-			input:   `<wait tomorrow>`,
-			wantErr: true,
-		},
-		{
-			name:    "click without text",
-			input:   `<click>`,
-			wantErr: true,
-		},
-		{
-			name:    "type without text",
-			input:   `<type>`,
-			wantErr: true,
-		},
-		{
-			name:    "typeAndReturnIfText invalid args",
-			input:   `<typeAndReturnIfText "Enter password">`,
-			wantErr: true,
-		},
-		{
-			name:    "clickMenuItem invalid args",
-			input:   `<clickMenuItem "Utilities">`,
-			wantErr: true,
-		},
-		{
-			name:    "key without name",
-			input:   `<key>`,
-			wantErr: true,
-		},
-		{
-			name:    "key with invalid name",
-			input:   `<key totallyunknown>`,
-			wantErr: true,
-		},
-		{
-			name:    "key with invalid modifier",
-			input:   `<key hyper+q>`,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseBootCommands(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseBootCommands() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && len(got) != tt.want {
-				t.Errorf("ParseBootCommands() got %d commands, want %d", len(got), tt.want)
-			}
-		})
-	}
-}
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseKeySpec(t *testing.T) {
 	tests := []struct {
@@ -212,6 +55,74 @@ func TestIsValidKeySpec(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRecoveryAuthFailureMessage(t *testing.T) {
+	got := recoveryAuthFailureMessage("Enter password")
+	if got == "" {
+		t.Fatal("recoveryAuthFailureMessage returned empty string")
+	}
+	for _, want := range []string{
+		`"Enter password"`,
+		"bootstrap recovery enabled",
+		"diskutil apfs updatePreboot /",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("recoveryAuthFailureMessage() = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestPromptClearTexts(t *testing.T) {
+	tests := []struct {
+		name   string
+		needle string
+		want   []string
+	}{
+		{
+			name:   "confirm prompt",
+			needle: "[y/n]",
+			want:   []string{"Authorized user", "Password", "System Integrity Protection is", "-bash-3.2#"},
+		},
+		{
+			name:   "username prompt",
+			needle: "Authorized user",
+			want:   []string{"Password", "Unknown user", "System Integrity Protection is", "-bash-3.2#"},
+		},
+		{
+			name:   "password prompt",
+			needle: "Password",
+			want:   []string{"Authentication failure", "System Integrity Protection is", "-bash-3.2#"},
+		},
+		{
+			name:   "ordinary prompt",
+			needle: "Continue",
+			want:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := promptClearTexts(tt.needle)
+			if tt.want == nil && len(got) != 0 {
+				t.Fatalf("promptClearTexts(%q)=%v, want no prompt-clear markers", tt.needle, got)
+			}
+			for _, want := range tt.want {
+				if !containsString(got, want) {
+					t.Fatalf("promptClearTexts(%q)=%v, missing %q", tt.needle, got, want)
+				}
+			}
+		})
+	}
+}
+
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestUnquote(t *testing.T) {
