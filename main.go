@@ -310,7 +310,7 @@ func main() {
 		return
 	}
 	if installVM {
-		fmt.Fprintf(os.Stderr, "warning: -install flag is deprecated, use 'vz-macos install' command instead\n")
+		fmt.Fprintf(os.Stderr, "warning: -install flag is deprecated, use 'cove install' command instead\n")
 		var err error
 		if linuxMode {
 			err = handleLinuxInstall()
@@ -335,7 +335,7 @@ func main() {
 		return
 	}
 	if runVM {
-		fmt.Fprintf(os.Stderr, "warning: -run flag is deprecated, use 'vz-macos run' command instead\n")
+		fmt.Fprintf(os.Stderr, "warning: -run flag is deprecated, use 'cove run' command instead\n")
 		handleRun()
 		return
 	}
@@ -434,13 +434,13 @@ func main() {
 			}
 			return
 		case "uiscript":
-			fmt.Fprintf(os.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'vz-macos vzscript' instead.\n")
+			fmt.Fprintf(os.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'cove vzscript' instead.\n")
 			os.Exit(0)
 			return
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
-		// (e.g., "vz-macos run -gui" parses -gui here).
+		// (e.g., "cove run -gui" parses -gui here).
 		flag.CommandLine.Parse(args)
 
 		if linuxDesktop {
@@ -534,7 +534,7 @@ func main() {
 			}
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "unknown command: %s\nRun 'vz-macos -help' for usage.\n", cmd)
+			fmt.Fprintf(os.Stderr, "unknown command: %s\nRun 'cove -help' for usage.\n", cmd)
 			os.Exit(1)
 		}
 	}
@@ -617,15 +617,15 @@ func handleRun() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `vz-macos - Apple Virtualization Framework Example
+	fmt.Fprintf(os.Stderr, `cove - Apple Virtualization Framework Example
 
 Usage:
-  vz-macos [flags] [command]
+  cove [flags] [command]
 
-Use 'vz-macos <command> -h' for command-specific help.
+Use 'cove <command> -h' for command-specific help.
 
 Quick Start:
-  up              Install + provision + boot in one command (vz-macos up -user me)
+  up              Install + provision + boot in one command (cove up -user me)
 
 Lifecycle:
   install         Install OS (macOS from IPSW, -linux for Ubuntu)
@@ -647,7 +647,7 @@ VM Management:
   vm export <name> <path> Export VM to tarball
   vm import <path> <name> Import VM from tarball
   vm config ...           Export/import framework config snapshots
-  clone           Clone a VM (vz-macos clone [source] <target> [--linked])
+  clone           Clone a VM (cove clone [source] <target> [--linked])
   gc              Delete old disposable VM clones
   template        Manage VM templates (save/list/create)
 
@@ -686,9 +686,9 @@ Other:
 Auto-Provisioning (Recommended - provision command):
   Write user provisioning directly into VM disk (no VirtioFS needed):
 
-  vz-macos install -ipsw restore.ipsw
-  vz-macos provision -user testuser -skip-setup-assistant  # prompts for password
-  vz-macos run
+  cove install -ipsw restore.ipsw
+  cove provision -user testuser -skip-setup-assistant  # prompts for password
+  cove run
 
   This creates a self-contained LaunchDaemon that:
   - Runs on first boot to create the user account
@@ -698,7 +698,7 @@ Auto-Provisioning (Recommended - provision command):
 Auto-Provisioning (Alternative - GUI automation):
   Use -provision-user with -gui to automate user creation (prompts for password):
 
-  vz-macos run -gui -provision-user testuser
+  cove run -gui -provision-user testuser
 
   This will:
   1. Start the VM with GUI window
@@ -717,14 +717,14 @@ Provisioning Strategy (-provision-strategy):
 Linux VM (Ubuntu):
   Install and run Ubuntu ARM64 using cloud-init autoinstall:
 
-  vz-macos install -linux                                    # Ubuntu Server (default)
-  vz-macos install -linux -desktop                           # Ubuntu Desktop
-  vz-macos install -linux -iso /path/to/ubuntu.iso           # Use local ISO
-  vz-macos install -linux -provision-user me -provision-password pw  # With user
-  vz-macos run -linux                                        # Run installed VM
-  vz-macos run -linux -gui                                   # Run with display
-  vz-macos up -linux -user me                                # Server: install + boot
-  vz-macos up -linux -desktop -user me                       # Desktop: install + boot
+  cove install -linux                                    # Ubuntu Server (default)
+  cove install -linux -desktop                           # Ubuntu Desktop
+  cove install -linux -iso /path/to/ubuntu.iso           # Use local ISO
+  cove install -linux -provision-user me -provision-password pw  # With user
+  cove run -linux                                        # Run installed VM
+  cove run -linux -gui                                   # Run with display
+  cove up -linux -user me                                # Server: install + boot
+  cove up -linux -desktop -user me                       # Desktop: install + boot
 
 Volume Mounting (-vol flag):
   Docker-style volume mounts. Format: /host/path[:tag][:ro|rw][:opt=val,...]
@@ -839,7 +839,7 @@ func handleList() {
 	activeVM := GetActiveVM()
 
 	if len(vms) == 0 {
-		fmt.Println("No VMs found. Run 'vz-macos install' to create one.")
+		fmt.Println("No VMs found. Run 'cove install' to create one.")
 	} else {
 		fmt.Println("VMs:")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -894,7 +894,7 @@ func handleClone(args []string) {
 
 	switch len(nonFlagArgs) {
 	case 0:
-		fmt.Fprintln(os.Stderr, "Usage: vz-macos clone [source] <target> [--linked]")
+		fmt.Fprintln(os.Stderr, "Usage: cove clone [source] <target> [--linked]")
 		os.Exit(1)
 	case 1:
 		source = GetActiveVM()
@@ -932,7 +932,7 @@ func handleTemplate(args []string) {
 		return
 	case "save":
 		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos template save <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove template save <name>")
 			os.Exit(1)
 		}
 		source := GetActiveVM()
@@ -946,7 +946,7 @@ func handleTemplate(args []string) {
 
 	case "save-fast":
 		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos template save-fast <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove template save-fast <name>")
 			os.Exit(1)
 		}
 		source := GetActiveVM()
@@ -985,7 +985,7 @@ func handleTemplate(args []string) {
 
 	case "create":
 		if len(subargs) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos template create <template> <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove template create <template> <name>")
 			os.Exit(1)
 		}
 		if err := CreateFromTemplate(subargs[0], subargs[1]); err != nil {
@@ -995,7 +995,7 @@ func handleTemplate(args []string) {
 
 	case "delete":
 		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos template delete <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove template delete <name>")
 			os.Exit(1)
 		}
 		if err := DeleteTemplate(subargs[0]); err != nil {
@@ -1005,7 +1005,7 @@ func handleTemplate(args []string) {
 		fmt.Printf("Template '%s' deleted.\n", subargs[0])
 
 	default:
-		fmt.Fprintf(os.Stderr, "unknown template command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
+		fmt.Fprintf(os.Stderr, "unknown template command: %s\nRun 'cove -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -1026,7 +1026,7 @@ func handleVMCommand(args []string) {
 		return
 	case "set":
 		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos vm set <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove vm set <name>")
 			os.Exit(1)
 		}
 		if err := SetActiveVM(subargs[0]); err != nil {
@@ -1037,7 +1037,7 @@ func handleVMCommand(args []string) {
 
 	case "delete":
 		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos vm delete <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove vm delete <name>")
 			os.Exit(1)
 		}
 		ok, err := confirmDeletef("Delete VM %q? This cannot be undone. [y/N] ", subargs[0])
@@ -1055,7 +1055,7 @@ func handleVMCommand(args []string) {
 
 	case "rename":
 		if len(subargs) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos vm rename <old> <new>")
+			fmt.Fprintln(os.Stderr, "Usage: cove vm rename <old> <new>")
 			os.Exit(1)
 		}
 		if err := RenameVM(subargs[0], subargs[1]); err != nil {
@@ -1065,7 +1065,7 @@ func handleVMCommand(args []string) {
 
 	case "export":
 		if len(subargs) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos vm export <name> <path>")
+			fmt.Fprintln(os.Stderr, "Usage: cove vm export <name> <path>")
 			os.Exit(1)
 		}
 		if err := ExportVM(subargs[0], subargs[1]); err != nil {
@@ -1075,7 +1075,7 @@ func handleVMCommand(args []string) {
 
 	case "import":
 		if len(subargs) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos vm import <path> <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove vm import <path> <name>")
 			os.Exit(1)
 		}
 		if err := ImportVM(subargs[0], subargs[1]); err != nil {
@@ -1099,7 +1099,7 @@ func handleVMCommand(args []string) {
 		}
 
 	default:
-		fmt.Fprintf(os.Stderr, "unknown vm command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
+		fmt.Fprintf(os.Stderr, "unknown vm command: %s\nRun 'cove -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -1141,7 +1141,7 @@ func handleSnapshotCommand(args []string) {
 
 	case "delete":
 		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: vz-macos snapshot delete <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove snapshot delete <name>")
 			os.Exit(1)
 		}
 		ok, err := confirmDeletef("Delete snapshot %q? This cannot be undone. [y/N] ", subargs[0])
@@ -1159,7 +1159,7 @@ func handleSnapshotCommand(args []string) {
 
 	case "save", "restore":
 		if len(subargs) < 1 {
-			fmt.Fprintf(os.Stderr, "Usage: vz-macos snapshot %s <name>\n", subcmd)
+			fmt.Fprintf(os.Stderr, "Usage: cove snapshot %s <name>\n", subcmd)
 			os.Exit(1)
 		}
 		if err := snapshotViaControlSocket(subcmd, subargs[0]); err != nil {
@@ -1168,7 +1168,7 @@ func handleSnapshotCommand(args []string) {
 		}
 
 	default:
-		fmt.Fprintf(os.Stderr, "unknown snapshot command: %s\nRun 'vz-macos -help' for usage.\n", subcmd)
+		fmt.Fprintf(os.Stderr, "unknown snapshot command: %s\nRun 'cove -help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -1186,7 +1186,7 @@ func handleNetworkCommand(args []string) {
 	case "help":
 		fmt.Println(NetworkModeHelp())
 	default:
-		fmt.Fprintf(os.Stderr, "unknown network command: %s\nRun 'vz-macos -help' for usage.\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown network command: %s\nRun 'cove -help' for usage.\n", args[0])
 		os.Exit(1)
 	}
 }

@@ -1,6 +1,6 @@
 //go:build darwin
 
-// UTM Launcher helpers for vz-macos.
+// UTM Launcher helpers for cove.
 // Provides native NSOpenPanel file picker.
 package main
 

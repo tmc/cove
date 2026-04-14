@@ -1,4 +1,4 @@
-// UTM bundle support for vz-macos.
+// UTM bundle support for cove.
 // Allows running existing UTM Apple VMs without modification.
 //
 // UTM bundle structure (.utm directory):
@@ -455,7 +455,7 @@ func runUTMLauncher() error {
 			fmt.Println("\nTo run sandboxed VMs, either:")
 			fmt.Println("  1. Grant Full Disk Access to this app")
 			fmt.Println("  2. Export VM from UTM to an accessible location")
-			fmt.Println("  3. Use: ./vz-macos -utm /path/to/exported/VM.utm")
+			fmt.Println("  3. Use: ./cove -utm /path/to/exported/VM.utm")
 			return nil
 		}
 	}

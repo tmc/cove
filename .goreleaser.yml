@@ -1,13 +1,15 @@
 version: 2
 
+project_name: cove
+
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: vz-macos
+  - id: cove
     main: .
-    binary: vz-macos
+    binary: cove
     goos:
       - darwin
     goarch:
@@ -37,9 +39,9 @@ builds:
       - -X main.date={{.Date}}
 
 archives:
-  - id: vz-macos
+  - id: cove
     ids:
-      - vz-macos
+      - cove
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats:
       - tar.gz
@@ -70,11 +72,11 @@ changelog:
       - "Merge pull request"
 
 homebrew_casks:
-  - name: vz-macos
+  - name: cove
     ids:
-      - vz-macos
+      - cove
     binaries:
-      - vz-macos
+      - cove
     homepage: https://github.com/tmc/vz-macos
     description: macOS and Linux VM management using Apple's Virtualization framework
     directory: Casks
@@ -89,11 +91,11 @@ homebrew_casks:
       name: github-actions
       email: 41898282+github-actions[bot]@users.noreply.github.com
     caveats: |
-      vz-macos requires virtualization entitlements to run. On first execution,
+      cove requires virtualization entitlements to run. On first execution,
       it automatically signs itself with the required entitlements.
 
       If auto-signing fails, manually sign:
-        codesign -s - -f --entitlements $(brew --prefix)/share/vz-macos/vz.entitlements $(brew --prefix)/bin/vz-macos
+        codesign -s - -f --entitlements $(brew --prefix)/Caskroom/cove/current/internal/autosign/vz.entitlements $(brew --prefix)/bin/cove
 
 release:
   github:
@@ -101,8 +103,9 @@ release:
     name: vz-macos
   draft: false
   prerelease: auto
+  name_template: "{{.Tag}}"
   header: |
-    ## vz-macos {{ .Tag }}
+    ## cove {{ .Tag }}
 
     macOS and Linux VM management using Apple's Virtualization framework.
 
@@ -110,13 +113,13 @@ release:
 
     ```bash
     # Via Homebrew
-    brew install tmc/tap/vz-macos
+    brew install tmc/tap/cove
 
     # Or download and extract
-    tar xzf vz-macos_{{ .Version }}_darwin_arm64.tar.gz
+    tar xzf cove_{{ .Version }}_darwin_arm64.tar.gz
 
     # Install (the binary self-signs with required entitlements on first run)
-    sudo install vz-macos /usr/local/bin/
+    sudo install cove /usr/local/bin/
     ```
 
     ### Requirements

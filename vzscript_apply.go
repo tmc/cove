@@ -47,7 +47,7 @@ func vzscriptUsage() error {
 }
 
 func printVzscriptUsage(w io.Writer) {
-	fmt.Fprintf(w, `Usage: vz-macos vzscript <command> [args...]
+	fmt.Fprintf(w, `Usage: cove vzscript <command> [args...]
 
 Commands:
   list                    List built-in recipes
@@ -105,11 +105,11 @@ Host mounts:
   hot-plugged into the running VM, and mounted in the guest automatically.
 
 Examples:
-  vz-macos vzscript list
-  vz-macos vzscript show homebrew
-  vz-macos vzscript run developer-tools
-  vz-macos vzscript run homebrew golang openclaw
-  vz-macos vzscript run ./custom.vzscript
+  cove vzscript list
+  cove vzscript show homebrew
+  cove vzscript run developer-tools
+  cove vzscript run homebrew golang openclaw
+  cove vzscript run ./custom.vzscript
 `)
 }
 

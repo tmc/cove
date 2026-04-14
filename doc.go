@@ -1,8 +1,8 @@
-// vz-macos - macOS and Linux VM management using Apple's Virtualization framework
+// cove - macOS and Linux VM management using Apple's Virtualization framework
 //
 // # Overview
 //
-// vz-macos is a command-line tool for creating, provisioning, and running
+// cove is a command-line tool for creating, provisioning, and running
 // virtual machines using Apple's Virtualization.framework. It supports both
 // macOS and Linux guests on Apple Silicon Macs.
 //
@@ -14,16 +14,16 @@
 // Install and provision a macOS VM:
 //
 //	# Download and install macOS
-//	./vz-macos install -ipsw ~/Downloads/UniversalMac_14.0_RestoreImage.ipsw
+//	./cove install -ipsw ~/Downloads/UniversalMac_14.0_RestoreImage.ipsw
 //
 //	# Provision VM for automatic user creation
-//	./vz-macos provision -user testuser -password secret123 -skip-setup-assistant
+//	./cove provision -user testuser -password secret123 -skip-setup-assistant
 //
 //	# Verify provisioning files are correct
-//	./vz-macos verify
+//	./cove verify
 //
 //	# Run the VM with GUI
-//	./vz-macos run -gui
+//	./cove run -gui
 //
 // # Architecture
 //
@@ -95,8 +95,8 @@
 //
 // Install and run a Linux VM:
 //
-//	./vz-macos install -linux -provision-user ubuntu -provision-password secret
-//	./vz-macos run -linux -gui
+//	./cove install -linux -provision-user ubuntu -provision-password secret
+//	./cove run -linux -gui
 //
 // # VM Directory Structure
 //
@@ -112,7 +112,7 @@
 //
 // # Entitlements
 //
-// vz-macos signs itself on first launch if the required virtualization
+// cove signs itself on first launch if the required virtualization
 // entitlements are missing. No manual codesign step is required.
 //
 // Required entitlements (internal/autosign/vz.entitlements):
@@ -134,5 +134,5 @@
 //   - Code-Hex/vz (CGO reference): https://github.com/Code-Hex/vz
 package main
 
-//go:generate go build -o vz-macos .
-//go:generate codesign --entitlements internal/autosign/vz.entitlements -f -s - ./vz-macos
+//go:generate go build -o cove .
+//go:generate codesign --entitlements internal/autosign/vz.entitlements -f -s - ./cove

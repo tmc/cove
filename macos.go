@@ -277,13 +277,13 @@ func runMacOSVM() error {
 		}
 	}
 
-	// Pre-flight: check if another vz-macos process is already using this VM.
+	// Pre-flight: check if another cove process is already using this VM.
 	// A stale control socket or running process can cause "storage device
 	// attachment is invalid" when the VZ framework tries to open the disk.
 	sock := GetControlSocketPath()
 	if conn, err := net.DialTimeout("unix", sock, 500*time.Millisecond); err == nil {
 		conn.Close()
-		return fmt.Errorf("another vz-macos process is already running this VM (control socket active at %s)\nStop it first, or use a different -vm name", sock)
+		return fmt.Errorf("another cove process is already running this VM (control socket active at %s)\nStop it first, or use a different -vm name", sock)
 	}
 	// Clean up stale socket file from a crashed process.
 	os.Remove(sock)
@@ -1120,7 +1120,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		if _, found, _ := findAttachedDisk(diskFile); found {
 			fmt.Println()
 			fmt.Println("Hint: the disk image is still mounted from a previous inject/verify.")
-			fmt.Println("  Run: ./vz-macos disk-detach")
+			fmt.Println("  Run: ./cove disk-detach")
 		}
 		return fmt.Errorf("vm start failed: %w", err)
 	}
@@ -1275,8 +1275,8 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	} else {
 		fmt.Printf("Control socket: %s\n", sock)
 		if verbose {
-			fmt.Printf("  vz-macos ctl -socket %s agent-ping\n", sock)
-			fmt.Printf("  vz-macos ctl -socket %s gui open\n", sock)
+			fmt.Printf("  cove ctl -socket %s agent-ping\n", sock)
+			fmt.Printf("  cove ctl -socket %s gui open\n", sock)
 		}
 	}
 	startRuntimeFeatureServices(runtimeFeatures, vm, queue)
@@ -1643,9 +1643,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 
 	// Set process name for Cmd-Tab display
-	procName := "vz-macos"
+	procName := "cove"
 	if vmName != "" && vmName != "default" {
-		procName = fmt.Sprintf("vz-macos (%s)", vmName)
+		procName = fmt.Sprintf("cove (%s)", vmName)
 	}
 	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
 
@@ -1697,7 +1697,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	} else {
 		fmt.Printf("Control socket: %s\n", sock)
 		if verbose {
-			fmt.Printf("  vz-macos ctl -socket %s screenshot -o screen.jpg\n", sock)
+			fmt.Printf("  cove ctl -socket %s screenshot -o screen.jpg\n", sock)
 			fmt.Printf("  TOKEN=$(cat %s)\n", GetControlTokenPathForVM(vmDir))
 			fmt.Printf("  echo '{\"type\":\"screenshot\",\"auth_token\":\"'$TOKEN'\"}' | nc -U %s\n", sock)
 		}

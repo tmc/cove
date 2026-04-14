@@ -108,7 +108,7 @@ func CreateRosettaDirectoryShare(vmDir string) (vz.VZLinuxRosettaDirectoryShare,
 	}
 
 	if status.Availability == RosettaNotInstalled {
-		return vz.VZLinuxRosettaDirectoryShare{}, fmt.Errorf("rosetta is not installed; run 'vz-macos rosetta install' first")
+		return vz.VZLinuxRosettaDirectoryShare{}, fmt.Errorf("rosetta is not installed; run 'cove rosetta install' first")
 	}
 
 	// Create the directory share
@@ -224,15 +224,15 @@ Requirements:
   - Linux VM with VirtioFS support
 
 Commands:
-  vz-macos rosetta status   Check Rosetta availability
-  vz-macos rosetta install  Install Rosetta (if needed)
-  vz-macos rosetta setup    Show guest setup instructions
+  cove rosetta status   Check Rosetta availability
+  cove rosetta install  Install Rosetta (if needed)
+  cove rosetta setup    Show guest setup instructions
 
 Usage:
-  vz-macos run -linux -rosetta   Run Linux VM with Rosetta enabled
+  cove run -linux -rosetta   Run Linux VM with Rosetta enabled
 
 The guest must mount the Rosetta virtiofs share and register the
-binfmt handler. See 'vz-macos rosetta setup' for instructions.`
+binfmt handler. See 'cove rosetta setup' for instructions.`
 }
 
 // handleRosettaCommand handles the rosetta subcommand
@@ -248,7 +248,7 @@ func handleRosettaCommand(args []string) error {
 		fmt.Printf("Rosetta availability: %s\n", status.Availability.String())
 		fmt.Printf("Description: %s\n", status.Description)
 		if status.CanInstall {
-			fmt.Println("\nTo install: vz-macos rosetta install")
+			fmt.Println("\nTo install: cove rosetta install")
 		}
 		return nil
 

@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	flagIntegrationVM          = flag.String("integration.vm", envOrString("VZ_TEST_VM", "vz-macos-test"), "macOS VM name for integration tests")
+	flagIntegrationVM          = flag.String("integration.vm", envOrString("VZ_TEST_VM", "cove-test"), "macOS VM name for integration tests")
 	flagIntegrationLinuxVM     = flag.String("integration.linux-vm", envOrString("VZ_TEST_LINUX_VM", "vz-linux-test"), "Linux VM name for integration tests")
 	flagIntegrationHeadless    = flag.Bool("integration.headless", envBool("VZ_TEST_HEADLESS"), "skip GUI-dependent integration tests")
 	flagIntegrationHeaded      = flag.Bool("integration.headed", envBool("VZ_TEST_HEADED"), "force GUI mode for macOS integration provisioning and runtime")
@@ -301,7 +301,7 @@ func startTestVMWithArgs(tb testing.TB, vm *testVM, extraArgs ...string) {
 	}
 
 	bin := buildIntegrationBinary(tb)
-	logFile, err := os.CreateTemp("", "vz-macos-integration-run-*.log")
+	logFile, err := os.CreateTemp("", "cove-integration-run-*.log")
 	if err != nil {
 		tb.Fatalf("create vm log file: %v", err)
 	}
@@ -744,12 +744,12 @@ func buildIntegrationBinary(tb testing.TB) string {
 	tb.Helper()
 
 	integrationBinaryOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "vz-macos-integration-bin-*")
+		dir, err := os.MkdirTemp("", "cove-integration-bin-*")
 		if err != nil {
 			integrationBinaryErr = err
 			return
 		}
-		path := dir + "/vz-macos-integration"
+		path := dir + "/cove-integration"
 		cmd := exec.Command("go", "build", "-o", path, ".")
 		cmd.Dir = "/Volumes/tmc/go/src/github.com/tmc/vz-macos"
 		out, err := cmd.CombinedOutput()

@@ -472,7 +472,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 
 		// Phase 2: Load and configure VM.
 		setStatus("Loading restore image...", -1)
-		ui.setWindowTitle("vz-macos - Loading Restore Image")
+		ui.setWindowTitle("cove - Loading Restore Image")
 		fmt.Println("Loading restore image...")
 		installer, err := prepareInstaller(ctx, restoreImagePath)
 		if err != nil {
@@ -736,7 +736,7 @@ func createProgressWindow() (appkit.NSWindow, objc.ID, objc.ID) {
 		false,
 	)
 	window.SetStyleMask(styleMask)
-	window.SetTitle("vz-macos - Downloading macOS Installer")
+	window.SetTitle("cove - Downloading macOS Installer")
 	window.SetTitleVisibility(appkit.NSWindowTitleVisible)
 	window.SetTitlebarAppearsTransparent(false)
 	window.Center()
@@ -1670,14 +1670,14 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 
 			stopVMAndInject(installer.vm)
 
-			fmt.Println("You can now run the VM with: ./vz-macos run")
+			fmt.Println("You can now run the VM with: ./cove run")
 			if provisionUser == "" {
 				fmt.Println()
 				fmt.Println("For auto-provisioning (automatic user creation), add flags:")
-				fmt.Println("  ./vz-macos install -provision-user myuser -provision-password mypass")
+				fmt.Println("  ./cove install -provision-user myuser -provision-password mypass")
 				fmt.Println()
 				fmt.Println("Or provision after installation:")
-				fmt.Printf("  ./vz-macos provision -user myuser -password mypass -skip-setup-assistant\n")
+				fmt.Printf("  ./cove provision -user myuser -password mypass -skip-setup-assistant\n")
 			}
 			fmt.Println()
 			return nil

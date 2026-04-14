@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_provision_e2e.sh - Automated end-to-end provisioning test for vz-macos
+# test_provision_e2e.sh - Automated end-to-end provisioning test for cove
 #
 # This script exercises the real install/provision/boot path:
 # 1. Install macOS to a VM (optionally auto-download the latest IPSW)
@@ -122,11 +122,11 @@ warn() {
 }
 
 run_vz() {
-	env HOME="$VZ_HOME" VZMAC_NO_MACGO=1 ./vz-macos -vm "$VM_NAME" "$@"
+	env HOME="$VZ_HOME" VZMAC_NO_MACGO=1 ./cove -vm "$VM_NAME" "$@"
 }
 
 run_vz_root() {
-	sudo env HOME="$VZ_HOME" VZMAC_NO_MACGO=1 ./vz-macos -vm "$VM_NAME" "$@"
+	sudo env HOME="$VZ_HOME" VZMAC_NO_MACGO=1 ./cove -vm "$VM_NAME" "$@"
 }
 
 require_free_space() {
@@ -183,8 +183,8 @@ cleanup() {
 trap cleanup EXIT
 
 # Build
-log "Building vz-macos..."
-go build -o vz-macos . || { error "build failed"; exit 1; }
+log "Building cove..."
+go build -o cove . || { error "build failed"; exit 1; }
 
 mkdir -p "$VZ_HOME"
 require_free_space
@@ -201,7 +201,7 @@ fi
 
 echo ""
 echo "=============================================="
-echo "  vz-macos Automated Provisioning E2E Test"
+echo "  cove Automated Provisioning E2E Test"
 echo "=============================================="
 echo ""
 echo "Configuration:"
@@ -288,9 +288,9 @@ fi
 log "Step 6: Booting VM headless..."
 RUN_LOG="$(mktemp -t vz-e2e-run.XXXXXX.log)"
 if [[ "$VERBOSE" == true ]]; then
-	env HOME="$VZ_HOME" VZMAC_NO_MACGO=1 ./vz-macos -vm "$VM_NAME" run -headless -verbose >"$RUN_LOG" 2>&1 &
+	env HOME="$VZ_HOME" VZMAC_NO_MACGO=1 ./cove -vm "$VM_NAME" run -headless -verbose >"$RUN_LOG" 2>&1 &
 else
-	env HOME="$VZ_HOME" VZMAC_NO_MACGO=1 ./vz-macos -vm "$VM_NAME" run -headless >"$RUN_LOG" 2>&1 &
+	env HOME="$VZ_HOME" VZMAC_NO_MACGO=1 ./cove -vm "$VM_NAME" run -headless >"$RUN_LOG" 2>&1 &
 fi
 RUN_PID=$!
 

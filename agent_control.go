@@ -565,7 +565,7 @@ func (s *ControlServer) checkAgentVersion(agentVer string) {
 	log.Printf("agent-health: version mismatch: host=%s guest=%s", hostVer, agentVer)
 
 	if !sandboxAllowsAgentUpgrade() {
-		log.Printf("agent-health: run 'vz-macos agent-upgrade' to update, or use -auto-upgrade-agent")
+		log.Printf("agent-health: run 'cove agent-upgrade' to update, or use -auto-upgrade-agent")
 		return
 	}
 

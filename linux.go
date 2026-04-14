@@ -1,4 +1,4 @@
-// Linux VM support for vz-macos.
+// Linux VM support for cove.
 //
 // Supports two boot modes:
 // - Direct kernel boot: uses VZLinuxBootLoader with kernel + initrd

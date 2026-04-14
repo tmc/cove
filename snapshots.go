@@ -338,12 +338,12 @@ func handleDiskSnapshotCommand(args []string) error {
 		return nil
 	default:
 		printDiskSnapshotUsage()
-		return fmt.Errorf("unknown disk-snapshot command: %s\nRun 'vz-macos -help' for usage.", args[0])
+		return fmt.Errorf("unknown disk-snapshot command: %s\nRun 'cove -help' for usage.", args[0])
 	}
 }
 
 func printDiskSnapshotUsage() {
-	fmt.Println(`Usage: vz-macos disk-snapshot <command> [options]
+	fmt.Println(`Usage: cove disk-snapshot <command> [options]
 
 Disk-level snapshots using APFS clonefile (copy-on-write).
 Unlike VM state snapshots, these snapshot the actual disk contents.
@@ -363,10 +363,10 @@ Commands:
 
 Examples:
   # Snapshot system disk
-  vz-macos disk-snapshot save checkpoint1
+  cove disk-snapshot save checkpoint1
 
   # List all disk snapshots
-  vz-macos disk-snapshot list
+  cove disk-snapshot list
 
 Note: VM should be stopped for consistent disk snapshots.`)
 }

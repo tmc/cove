@@ -418,7 +418,7 @@ func TestPrivateHIDCGEventToNSEventRoundTrip(t *testing.T) {
 }
 
 // TestPrivateHIDEventPassingToVM documents how to pass events to the private APIs.
-// This serves as a reference for integrating these APIs into vz-macos.
+// This serves as a reference for integrating these APIs into cove.
 //
 // Key findings:
 //

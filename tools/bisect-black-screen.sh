@@ -6,7 +6,7 @@ usage() {
 	cat <<'EOF'
 Usage: bisect-black-screen.sh (-vm NAME | -vm-dir DIR) [-mode run|selector] [-launch-order window-first|start-first] [-runtime-profile full|minimal] [-- extra go run args]
 
-Launch vz-macos for manual black-screen classification during git bisect.
+Launch cove for manual black-screen classification during git bisect.
 
 The script:
 - forces a cold start by deleting saved suspend state files

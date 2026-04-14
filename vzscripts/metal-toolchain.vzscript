@@ -10,7 +10,7 @@ set -e
 
 # Ensure Xcode is installed and selected.
 if [ ! -d /Applications/Xcode.app/Contents/Developer ]; then
-  echo "error: Xcode not installed. Run: vz-macos vzscript run xcode" >&2
+  echo "error: Xcode not installed. Run: cove vzscript run xcode" >&2
   exit 1
 fi
 xcode-select -s /Applications/Xcode.app/Contents/Developer

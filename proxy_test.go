@@ -474,7 +474,7 @@ func TestProxyStateRoundTrip(t *testing.T) {
 		Stage:    proxyStateApplied,
 		Linux: &linuxProxyState{
 			Files: []proxyFileBackup{
-				{Path: "/etc/environment.d/99-vz-macos-proxy.conf", Present: true, Mode: 0644, Data: []byte("HTTP_PROXY=http://127.0.0.1:8080\n")},
+				{Path: "/etc/environment.d/99-cove-proxy.conf", Present: true, Mode: 0644, Data: []byte("HTTP_PROXY=http://127.0.0.1:8080\n")},
 			},
 		},
 	}
@@ -516,7 +516,7 @@ func TestProxyRecoveryLines(t *testing.T) {
 	for _, want := range []string{
 		"vm dir: " + dir,
 		"state file: " + proxyStatePath(dir),
-		"vz-macos -vm " + filepath.Base(dir) + " run -proxy http://127.0.0.1:8080",
+		"cove -vm " + filepath.Base(dir) + " run -proxy http://127.0.0.1:8080",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("proxyRecoveryLines() = %q, want substring %q", joined, want)

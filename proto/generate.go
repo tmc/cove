@@ -1,4 +1,4 @@
-// Package proto contains protocol buffer definitions for vz-macos.
+// Package proto contains protocol buffer definitions for cove.
 //
 // To regenerate: make proto
 //

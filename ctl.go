@@ -39,7 +39,7 @@ func newCtlFlagSet() (*flag.FlagSet, *string, *time.Duration, *string, *bool, *t
 }
 
 func printCtlUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintf(w, `Usage: vz-macos ctl [options] <command> [args...]
+	fmt.Fprintf(w, `Usage: cove ctl [options] <command> [args...]
 
 Commands:
   ping                  Test connection
@@ -126,28 +126,28 @@ Options:
 	}
 	fmt.Fprintf(w, `
 Examples:
-  vz-macos ctl ping
-  vz-macos ctl status
-  vz-macos ctl gui status
-  vz-macos ctl gui open
-  vz-macos ctl vnc status
-  vz-macos ctl debug-stub status
-  vz-macos ctl disk list
-  vz-macos ctl disk swap 0 /tmp/other.img:ro
-  vz-macos ctl disk resize 0 96G
-  vz-macos ctl usb list
-  vz-macos ctl usb attach-storage /tmp/installer.iso:ro
-  vz-macos ctl screenshot -o screen.jpg
-  vz-macos ctl key 36 down    # Press Return
-  vz-macos ctl key 36 up      # Release Return
-  vz-macos ctl mouse 0.5 0.5 click  # Click center
-  vz-macos ctl text "hello"
-  vz-macos ctl click-text -region menu Utilities
-  vz-macos ctl click-menu Utilities Terminal
-  vz-macos ctl step
-  vz-macos ctl -wait 60s agent-ping
-  vz-macos ctl agent-exec ls /tmp
-  vz-macos ctl agent-exec --daemon whoami
+  cove ctl ping
+  cove ctl status
+  cove ctl gui status
+  cove ctl gui open
+  cove ctl vnc status
+  cove ctl debug-stub status
+  cove ctl disk list
+  cove ctl disk swap 0 /tmp/other.img:ro
+  cove ctl disk resize 0 96G
+  cove ctl usb list
+  cove ctl usb attach-storage /tmp/installer.iso:ro
+  cove ctl screenshot -o screen.jpg
+  cove ctl key 36 down    # Press Return
+  cove ctl key 36 up      # Release Return
+  cove ctl mouse 0.5 0.5 click  # Click center
+  cove ctl text "hello"
+  cove ctl click-text -region menu Utilities
+  cove ctl click-menu Utilities Terminal
+  cove ctl step
+  cove ctl -wait 60s agent-ping
+  cove ctl agent-exec ls /tmp
+  cove ctl agent-exec --daemon whoami
 `)
 }
 
@@ -611,7 +611,7 @@ func ctlCommand(args []string) error {
 		return ctlResetPassword(sock, *timeout, subArgs[0], subArgs[1])
 
 	default:
-		return fmt.Errorf("unknown command: %s\nRun 'vz-macos ctl help' for usage.", cmdType)
+		return fmt.Errorf("unknown command: %s\nRun 'cove ctl help' for usage.", cmdType)
 	}
 
 	// For agent commands with -wait, retry until agent is ready
@@ -1104,7 +1104,7 @@ func ctlAgentWithRetry(sock string, req *controlpb.ControlRequest, wait, timeout
 
 		if time.Now().After(deadline) {
 			if err != nil {
-				return fmt.Errorf("guest agent not ready after %s: %w\n  possible causes:\n  - VM is still booting (try a longer -wait)\n  - agent not installed (run: vz-macos provision-agent)\n  - agent crashed (check /var/log/vz-agent.log inside guest)", wait, err)
+				return fmt.Errorf("guest agent not ready after %s: %w\n  possible causes:\n  - VM is still booting (try a longer -wait)\n  - agent not installed (run: cove provision-agent)\n  - agent crashed (check /var/log/vz-agent.log inside guest)", wait, err)
 			}
 			return fmt.Errorf("guest agent not ready after %s: %w", wait, ctlAgentCommandError(sock, req.Type, resp.Error))
 		}
@@ -1643,7 +1643,7 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 			fmt.Printf("on password reset files so launchd will load them on next boot.\n")
 			fmt.Println()
 			runElevatedBash(tmpScript.Name(), fmt.Sprintf(
-				"vz-macos will chown root:wheel on 3 password reset files: %s, %s, %s",
+				"cove will chown root:wheel on 3 password reset files: %s, %s, %s",
 				filepath.Base(scriptPath), filepath.Base(plistPath), filepath.Base(kcPath),
 			))
 			os.Remove(tmpScript.Name())
@@ -1889,13 +1889,13 @@ func ctlAgentCommandError(sock, cmdType, detail string) error {
 
 	switch canonicalVMState(state) {
 	case "starting", "resuming", "restoring":
-		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)\n  retry with: vz-macos ctl -wait 60s %s\n  details: %s", state, cmdType, detail)
+		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)\n  retry with: cove ctl -wait 60s %s\n  details: %s", state, cmdType, detail)
 	case "paused":
-		return fmt.Errorf("guest agent unavailable: vm is paused\n  resume it first: vz-macos ctl resume\n  details: %s", detail)
+		return fmt.Errorf("guest agent unavailable: vm is paused\n  resume it first: cove ctl resume\n  details: %s", detail)
 	case "stopped", "stopping", "error":
 		return fmt.Errorf("guest agent unavailable: vm is %s\n  start it first: %s\n  details: %s", state, vmRunHintForSocket(sock), detail)
 	case "running":
-		return fmt.Errorf("guest agent unavailable while vm is running\n  vm may still be booting or vz-agent may not be installed/started\n  retry with: vz-macos ctl -wait 60s %s\n  install agent if needed: vz-macos provision-agent\n  details: %s", cmdType, detail)
+		return fmt.Errorf("guest agent unavailable while vm is running\n  vm may still be booting or vz-agent may not be installed/started\n  retry with: cove ctl -wait 60s %s\n  install agent if needed: cove provision-agent\n  details: %s", cmdType, detail)
 	default:
 		return fmt.Errorf("guest agent unavailable: vm state is %s\n  details: %s", state, detail)
 	}

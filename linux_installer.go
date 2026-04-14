@@ -260,7 +260,7 @@ func installLinuxVM() error {
 		fmt.Println("After installation completes:")
 		fmt.Printf("  1. The VM will reboot automatically\n")
 		fmt.Printf("  2. Stop this process (Ctrl+C)\n")
-		fmt.Printf("  3. Run: ./vz-macos -linux run\n")
+		fmt.Printf("  3. Run: ./cove -linux run\n")
 	}
 	fmt.Println()
 
@@ -1009,7 +1009,7 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
       mkdir -p /target/etc/systemd/system
       printf '%s\n' \
         '[Unit]' \
-        'Description=vz-macos Guest Agent' \
+        'Description=cove Guest Agent' \
         'After=network-online.target systemd-modules-load.service' \
         'Wants=network-online.target' \
         '[Service]' \
@@ -1271,7 +1271,7 @@ func monitorInstallCompletion(logPath string) {
 			fmt.Println()
 			fmt.Println("=== Installation Complete ===")
 			fmt.Println("The installer has finished and requested a reboot.")
-			fmt.Println("Run the installed VM with: ./vz-macos -linux run")
+			fmt.Println("Run the installed VM with: ./cove -linux run")
 			// Give serial log a moment to flush.
 			time.Sleep(2 * time.Second)
 			p, _ := os.FindProcess(os.Getpid())

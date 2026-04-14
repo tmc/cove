@@ -42,12 +42,12 @@ func provisionLog(format string, args ...interface{}) {
 // from disk operations that need elevated privileges. By default, both phases run
 // in a single invocation:
 //
-//	./vz-macos provision -user testuser -password secret123 -skip-setup-assistant
+//	./cove provision -user testuser -password secret123 -skip-setup-assistant
 //
 // For CI/headless use, the phases can be run separately:
 //
-//	./vz-macos provision -user testuser -password secret123 -stage-only
-//	sudo ./vz-macos provision --apply
+//	./cove provision -user testuser -password secret123 -stage-only
+//	sudo ./cove provision --apply
 func handleProvision(args []string) error {
 	// Check environment variable for debug mode
 	provisionVerbose = os.Getenv("VZ_DEBUG_INJECT") == "1"
@@ -149,10 +149,10 @@ func handleProvision(args []string) error {
 		if vmName != "" {
 			vmFlag = fmt.Sprintf(" -vm %s", vmName)
 		}
-		fmt.Printf("  sudo ./vz-macos%s provision -apply\n", vmFlag)
+		fmt.Printf("  sudo ./cove%s provision -apply\n", vmFlag)
 		fmt.Println()
 		fmt.Println("Or without sudo (will show a native macOS authorization prompt):")
-		fmt.Printf("  ./vz-macos%s provision -apply\n", vmFlag)
+		fmt.Printf("  ./cove%s provision -apply\n", vmFlag)
 		return nil
 	}
 
@@ -188,7 +188,7 @@ func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *
 }
 
 func printInjectUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintf(w, `Usage: vz-macos provision [options]
+	fmt.Fprintf(w, `Usage: cove provision [options]
 
 Provision a VM with a user account, auto-login, and guest tools.
 
@@ -208,10 +208,10 @@ Options:
 	fs.PrintDefaults()
 	fmt.Fprintf(w, `
 Examples:
-  vz-macos provision -user testuser -skip-setup-assistant
-  vz-macos provision -user testuser -password secret123 -stage-only
-  vz-macos provision -apply
-  vz-macos provision -user testuser -password secret123 -ssh-key ~/.ssh/id_rsa.pub
+  cove provision -user testuser -skip-setup-assistant
+  cove provision -user testuser -password secret123 -stage-only
+  cove provision -apply
+  cove provision -user testuser -password secret123 -ssh-key ~/.ssh/id_rsa.pub
 
 Recovery authorization:
   By default, provision uses a two-user bootstrap. A hidden admin is created
@@ -278,7 +278,7 @@ func readPassword(prompt string) ([]byte, error) {
 // readPasswordViaDialog uses osascript to show a native macOS password dialog.
 func readPasswordViaDialog(prompt string) ([]byte, error) {
 	script := fmt.Sprintf(
-		`display dialog %q default answer "" with hidden answer buttons {"Cancel","OK"} default button "OK" with title "vz-macos"`,
+		`display dialog %q default answer "" with hidden answer buttons {"Cancel","OK"} default button "OK" with title "cove"`,
 		prompt,
 	)
 	cmd := exec.Command("osascript", "-e", script)

@@ -1,6 +1,6 @@
 # Bisecting the Black-Screen Regression
 
-Use this workflow when `vz-macos` launches a VM window but the guest display stays black.
+Use this workflow when `cove` launches a VM window but the guest display stays black.
 
 ## Scope
 
@@ -24,8 +24,8 @@ Use `tools/bisect-black-screen.sh`. It:
 Because `git bisect` checks out older commits, copy the helper outside the worktree before you start:
 
 ```bash
-cp ./tools/bisect-black-screen.sh /tmp/vz-macos-bisect-black-screen.sh
-chmod +x /tmp/vz-macos-bisect-black-screen.sh
+cp ./tools/bisect-black-screen.sh /tmp/cove-bisect-black-screen.sh
+chmod +x /tmp/cove-bisect-black-screen.sh
 ```
 
 ## Commands
@@ -34,7 +34,7 @@ Validate a good endpoint first:
 
 ```bash
 git checkout 934670c
-/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e
+/tmp/cove-bisect-black-screen.sh -vm codex-e2e
 ```
 
 If `934670c` is already bad, test `bb64936` the same way and use that as the good endpoint instead.
@@ -45,13 +45,13 @@ Then run the bisect:
 git bisect start
 git bisect bad b42b100
 git bisect good 934670c
-git bisect run /tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e
+git bisect run /tmp/cove-bisect-black-screen.sh -vm codex-e2e
 ```
 
 If you need to exercise the selector path instead of the direct run path:
 
 ```bash
-git bisect run /tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -mode selector
+git bisect run /tmp/cove-bisect-black-screen.sh -vm codex-e2e -mode selector
 ```
 
 ## Experiment matrix (launch/config)
@@ -59,16 +59,16 @@ git bisect run /tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -mode selector
 To compare launch behavior and runtime device profile explicitly, run:
 
 ```bash
-/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order window-first -runtime-profile full
-/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile full
-/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order window-first -runtime-profile minimal
-/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile minimal
+/tmp/cove-bisect-black-screen.sh -vm codex-e2e -launch-order window-first -runtime-profile full
+/tmp/cove-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile full
+/tmp/cove-bisect-black-screen.sh -vm codex-e2e -launch-order window-first -runtime-profile minimal
+/tmp/cove-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile minimal
 ```
 
 For Apple unified logs during each run, pass through:
 
 ```bash
-/tmp/vz-macos-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile minimal -- -apple-log -verbose
+/tmp/cove-bisect-black-screen.sh -vm codex-e2e -launch-order start-first -runtime-profile minimal -- -apple-log -verbose
 ```
 
 Interpretation:

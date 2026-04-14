@@ -1,4 +1,4 @@
-// vz-agent is a guest agent daemon for VMs managed by vz-macos.
+// vz-agent is a guest agent daemon for VMs managed by cove.
 // It runs inside the guest (macOS or Linux) and exposes a connect-go API over vsock.
 //
 // Two modes:

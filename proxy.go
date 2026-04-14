@@ -25,8 +25,8 @@ const (
 	proxyPlatformMacOS   = "macos"
 	proxyPlatformLinux   = "linux"
 	proxyStateVersion    = 2
-	proxyEnvFileName     = "99-vz-macos-proxy.conf"
-	proxyProfileFileName = "99-vz-macos-proxy.sh"
+	proxyEnvFileName     = "99-cove-proxy.conf"
+	proxyProfileFileName = "99-cove-proxy.sh"
 	proxyStateCaptured   = "captured"
 	proxyStateApplied    = "applied"
 	proxyStateRollback   = "rollback_pending"
@@ -360,7 +360,7 @@ func proxyCapabilityError(cfg proxyFlags, capability proxyCapability) error {
 	if cfg.Linux {
 		switch capability.Reason {
 		case "linux_agent_requested_false":
-			return fmt.Errorf("-proxy requires vz-agent on Linux guests; run 'vz-macos provision-agent' or reinstall without -no-agent")
+			return fmt.Errorf("-proxy requires vz-agent on Linux guests; run 'cove provision-agent' or reinstall without -no-agent")
 		default:
 			return fmt.Errorf("-proxy requires vz-agent on Linux guests; runtime probe failed against the running VM")
 		}
@@ -1043,7 +1043,7 @@ func proxyRecoveryLines(vmDirectory string) []string {
 	}
 	if state, loadErr := loadProxyState(vmDirectory); loadErr == nil {
 		if spec := strings.TrimSpace(state.Spec); spec != "" {
-			lines = append(lines, fmt.Sprintf("rerun after boot: vz-macos -vm %s run -proxy %s", filepath.Base(vmDirectory), spec))
+			lines = append(lines, fmt.Sprintf("rerun after boot: cove -vm %s run -proxy %s", filepath.Base(vmDirectory), spec))
 		}
 	}
 	return lines

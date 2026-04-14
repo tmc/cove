@@ -1281,7 +1281,7 @@ func (s *VMSelector) buildWindow() {
 		appkit.NSBackingStoreBuffered,
 		false,
 	)
-	s.window.SetTitle("vz-macos")
+	s.window.SetTitle("cove")
 	s.window.SetBackgroundColor(appkit.GetNSColorClass().WindowBackgroundColor())
 	s.window.SetMinSize(corefoundation.CGSize{Width: selectorMinWidth, Height: selectorMinHeight})
 	s.window.Center()
@@ -1345,7 +1345,7 @@ func (s *VMSelector) buildHeader(x, y, width, height float64) appkit.NSView {
 	objc.Send[objc.ID](header.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewWidth|selectorViewMinY))
 
 	title := selectorLabel(
-		"vz-macos",
+		"cove",
 		corefoundation.CGRect{
 			Origin: corefoundation.CGPoint{X: 0, Y: height - 28},
 			Size:   corefoundation.CGSize{Width: width - 140, Height: 22},

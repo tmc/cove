@@ -160,7 +160,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 }
 
 func printUpUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintf(w, `Usage: vz-macos up [options]
+	fmt.Fprintf(w, `Usage: cove up [options]
 
 Install, provision, and boot a VM in one command.
 
@@ -172,13 +172,13 @@ Options:
 	fs.PrintDefaults()
 	fmt.Fprintf(w, `
 Examples:
-  vz-macos up -user me                                        # macOS VM
-  vz-macos up -user me -vzscripts homebrew,openclaw            # macOS + recipes
-  vz-macos up -user me -ipsw ~/restore.ipsw                   # macOS with IPSW
-  vz-macos up -linux                                           # Linux Server (ubuntu/ubuntu)
-  vz-macos up -linux -user tmc -password secret                # Linux with custom user
-  vz-macos up -linux -desktop -user me                         # Ubuntu Desktop
-  vz-macos up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
+  cove up -user me                                        # macOS VM
+  cove up -user me -vzscripts homebrew,openclaw            # macOS + recipes
+  cove up -user me -ipsw ~/restore.ipsw                   # macOS with IPSW
+  cove up -linux                                           # Linux Server (ubuntu/ubuntu)
+  cove up -linux -user tmc -password secret                # Linux with custom user
+  cove up -linux -desktop -user me                         # Ubuntu Desktop
+  cove up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
 `)
 }
 
@@ -355,7 +355,7 @@ func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
 
 		if noShutdown {
 			fmt.Println("\nAll vzscripts complete. VM is still running.")
-			fmt.Println("Use 'vz-macos ctl stop' to shut it down.")
+			fmt.Println("Use 'cove ctl stop' to shut it down.")
 			scriptsDone <- nil
 			return
 		}
@@ -465,7 +465,7 @@ func runLinuxUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) err
 
 		if noShutdown {
 			fmt.Println("\nAll vzscripts complete. VM is still running.")
-			fmt.Println("Use 'vz-macos ctl stop' to shut it down.")
+			fmt.Println("Use 'cove ctl stop' to shut it down.")
 			scriptsDone <- nil
 			return
 		}

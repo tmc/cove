@@ -23,7 +23,7 @@ import (
 
 var (
 	flagIntegration = flag.Bool("integration", false, "run integration tests against a live VM")
-	flagTestVM      = flag.String("test-vm", "vz-macos-test", "VM name to use for integration tests")
+	flagTestVM      = flag.String("test-vm", "cove-test", "VM name to use for integration tests")
 )
 
 // liveVM holds a running VM for integration tests. Initialized once via sync.Once.
@@ -296,7 +296,7 @@ func startLiveVM(vmName string) (vz.VZVirtualMachine, privvz.VZVirtualMachine, d
 }
 
 // ============================================================================
-// Integration Tests: require -integration flag and a VM named "vz-macos-test"
+// Integration Tests: require -integration flag and a VM named "cove-test"
 // ============================================================================
 
 // A. _stateDescription on running VM

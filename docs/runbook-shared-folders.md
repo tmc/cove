@@ -9,38 +9,38 @@ Add a host folder from CLI, hot-apply to a running VM UI/session, and mount it i
 List configured entries:
 
 ```sh
-vz-macos -vm macos-3 vm shared-folder list
+cove -vm macos-3 vm shared-folder list
 ```
 
 Status (config + control socket + agent + mount state):
 
 ```sh
-vz-macos -vm macos-3 vm shared-folder status
+cove -vm macos-3 vm shared-folder status
 ```
 
 Add and attempt hot-apply + guest mount:
 
 ```sh
-vz-macos -vm macos-3 vm shared-folder add /Volumes/tmc
+cove -vm macos-3 vm shared-folder add /Volumes/tmc
 ```
 
 With explicit tag and mode:
 
 ```sh
-vz-macos -vm macos-3 vm shared-folder add /Volumes/tmc tmc rw
+cove -vm macos-3 vm shared-folder add /Volumes/tmc tmc rw
 ```
 
 Mount in guest (default `/Volumes/My Shared Files`):
 
 ```sh
-vz-macos -vm macos-3 vm shared-folder mount
+cove -vm macos-3 vm shared-folder mount
 ```
 
 Remove and clear:
 
 ```sh
-vz-macos -vm macos-3 vm shared-folder remove tmc
-vz-macos -vm macos-3 vm shared-folder clear
+cove -vm macos-3 vm shared-folder remove tmc
+cove -vm macos-3 vm shared-folder clear
 ```
 
 ## Guest Path

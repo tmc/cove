@@ -34,4 +34,4 @@ chmod 755 /usr/local/bin/vz-agent
 
 echo "Restarting vz-agent service..."
 launchctl kickstart -k system/com.github.tmc.vz-macos.vz-agent 2>/dev/null || true
-echo "Agent deployed. Reconnect with: vz-macos ctl agent-connect"
+echo "Agent deployed. Reconnect with: cove ctl agent-connect"

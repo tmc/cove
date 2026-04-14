@@ -62,7 +62,7 @@ func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool) {
 }
 
 func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintf(w, `Usage: vz-macos doctor [options]
+	fmt.Fprintf(w, `Usage: cove doctor [options]
 
 Diagnose VM health: provisioning, agent, and file ownership.
 
@@ -78,9 +78,9 @@ Options:
 	fs.PrintDefaults()
 	fmt.Fprintf(w, `
 Examples:
-  vz-macos doctor
-  vz-macos doctor --fix
-  vz-macos doctor -v
+  cove doctor
+  cove doctor --fix
+  cove doctor -v
 `)
 }
 
@@ -135,8 +135,8 @@ func verifyRunning(sock string, verbose bool) error {
 		fmt.Println()
 		fmt.Println("  Agent is not running. To inject:")
 		fmt.Println("    1. Stop the VM")
-		fmt.Println("    2. ./vz-macos inject -agent")
-		fmt.Println("    3. ./vz-macos run")
+		fmt.Println("    2. ./cove inject -agent")
+		fmt.Println("    3. ./cove run")
 		allOK = false
 	}
 
@@ -204,7 +204,7 @@ func verifyRunning(sock string, verbose bool) error {
 func verifyStopped(verbose, fix bool) error {
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		return fmt.Errorf("disk image not found: %s\nRun 'vz-macos install' first to create a VM", diskPath)
+		return fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
 	}
 
 	if err := checkDiskNotMounted(diskPath); err != nil {
@@ -402,7 +402,7 @@ func verifyStopped(verbose, fix bool) error {
 							fmt.Println("  Agent injected successfully")
 						}
 					} else {
-						if err := runElevatedBash(tmpScript.Name(), "vz-macos needs to fix file ownership (chown root:wheel) in the VM disk image."); err != nil {
+						if err := runElevatedBash(tmpScript.Name(), "cove needs to fix file ownership (chown root:wheel) in the VM disk image."); err != nil {
 							fmt.Printf("  Agent inject failed: %v\n", err)
 						} else {
 							fmt.Println("  Agent injected successfully")
@@ -424,11 +424,11 @@ func verifyStopped(verbose, fix bool) error {
 	} else if !fix && (agentMissing || len(badOwnerPaths) > 0) {
 		fmt.Println()
 		fmt.Println("To fix issues automatically:")
-		fmt.Println("  ./vz-macos doctor --fix")
+		fmt.Println("  ./cove doctor --fix")
 	}
 
 	if criticalFail && !fix {
-		return fmt.Errorf("verification failed: critical issues found\n  run 'vz-macos doctor --fix' to attempt automatic repair")
+		return fmt.Errorf("verification failed: critical issues found\n  run 'cove doctor --fix' to attempt automatic repair")
 	}
 	return nil
 }

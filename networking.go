@@ -54,7 +54,7 @@ Examples:
   -network nat              Default NAT mode
   -network bridged:en0      Bridge to ethernet
   -network host-only        Host and guest only
-  -network bridged:en1      Bridge to WiFi (check 'vz-macos network list')
+  -network bridged:en1      Bridge to WiFi (check 'cove network list')
   -network filehandle       Raw frame capture via VZFileHandleNetworkDeviceAttachment
   -network none             Disable networking`
 }
@@ -71,6 +71,6 @@ func printNetworkInterfaces() {
 	fmt.Println("  en1        Secondary network interface")
 	fmt.Println("  bridge0    Thunderbolt Bridge")
 	fmt.Println()
-	fmt.Println("Usage: vz-macos run -network bridged:<identifier>")
-	fmt.Println("Example: vz-macos run -network bridged:en0")
+	fmt.Println("Usage: cove run -network bridged:<identifier>")
+	fmt.Println("Example: cove run -network bridged:en0")
 }

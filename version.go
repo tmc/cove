@@ -33,7 +33,7 @@ func resolveVersion() {
 // versionInfo returns a formatted version string.
 func versionInfo() string {
 	resolveVersion()
-	return fmt.Sprintf("vz-macos %s (commit %s, built %s)", version, commit, date)
+	return fmt.Sprintf("cove %s (commit %s, built %s)", version, commit, date)
 }
 
 // hostVersion returns the host binary's resolved version string.

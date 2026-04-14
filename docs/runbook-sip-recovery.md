@@ -9,25 +9,25 @@ Automate `csrutil enable` / `csrutil disable` from Recovery Terminal with prompt
 Disable SIP with password prompt handling:
 
 ```sh
-vz-macos -vm macos-3 sip disable-auto -password '<PASSWORD>'
+cove -vm macos-3 sip disable-auto -password '<PASSWORD>'
 ```
 
 If your Recovery build asks for explicit confirmation (`Are you sure`), include:
 
 ```sh
-vz-macos -vm macos-3 sip disable-auto -password '<PASSWORD>' -confirm
+cove -vm macos-3 sip disable-auto -password '<PASSWORD>' -confirm
 ```
 
 Enable SIP:
 
 ```sh
-vz-macos -vm macos-3 sip enable-auto -password '<PASSWORD>'
+cove -vm macos-3 sip enable-auto -password '<PASSWORD>'
 ```
 
 ## Execute Automation
 
 ```sh
-vz-macos -vm macos-3 run -recovery -no-resume -gui -unattended \
+cove -vm macos-3 run -recovery -no-resume -gui -unattended \
   -usb "/Users/tmc/.vz/vms/macos-3/recovery-disk.img" \
   -boot-commands "/Users/tmc/.vz/vms/macos-3/sip-disable.vzscript"
 ```
@@ -45,7 +45,7 @@ This avoids hardcoding one prompt order while keeping the script syntax shell-li
 ## Verify After Reboot
 
 ```sh
-vz-macos -vm macos-3 sip status
+cove -vm macos-3 sip status
 ```
 
 ## Troubleshooting

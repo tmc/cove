@@ -83,16 +83,16 @@
 // Complete provisioning workflow:
 //
 //	# Install macOS to create VM
-//	./vz-macos install -ipsw restore.ipsw
+//	./cove install -ipsw restore.ipsw
 //
 //	# Provision the VM (will prompt for sudo to fix file ownership)
-//	./vz-macos provision -user testuser -password secret123 -skip-setup-assistant
+//	./cove provision -user testuser -password secret123 -skip-setup-assistant
 //
 //	# Verify provisioning succeeded
-//	./vz-macos verify
+//	./cove verify
 //
 //	# Run VM - should boot directly to desktop
-//	./vz-macos run -gui
+//	./cove run -gui
 //
 // # Troubleshooting
 //
@@ -276,7 +276,7 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		return fmt.Errorf("disk image not found: %s\nRun 'vz-macos install' first to create a VM", diskPath)
+		return fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
 	}
 
 	// Check disk is not already mounted
@@ -473,7 +473,7 @@ func injectProvisioningFilesWithOptions(opts InjectOptions) error {
 	}
 	fmt.Println()
 
-	fmt.Println("Run the VM with: ./vz-macos run")
+	fmt.Println("Run the VM with: ./cove run")
 
 	return nil
 }
@@ -492,7 +492,7 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("disk image not found: %s\nRun 'vz-macos install' first to create a VM", diskPath)
+		return "", fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
 	}
 
 	stagingDir := provisionStagingDir()
@@ -596,7 +596,7 @@ func applyProvisioningFiles() error {
 
 	manifest, err := readManifest(stagingDir)
 	if err != nil {
-		return fmt.Errorf("no staged provisioning files found: %w\n  run 'vz-macos inject -user <username> -skip-setup-assistant' to stage and apply", err)
+		return fmt.Errorf("no staged provisioning files found: %w\n  run 'cove inject -user <username> -skip-setup-assistant' to stage and apply", err)
 	}
 
 	diskPath := filepath.Join(vmDir, "disk.img")
@@ -663,7 +663,7 @@ func applyProvisioningFiles() error {
 
 	fmt.Println()
 	fmt.Println("=== Provisioning Applied Successfully ===")
-	fmt.Println("Run the VM with: ./vz-macos run")
+	fmt.Println("Run the VM with: ./cove run")
 	return nil
 }
 
@@ -746,7 +746,7 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 		}
 		fmt.Println()
 		if err := runElevatedBash(tmpPath, fmt.Sprintf(
-			"vz-macos will write %d provisioning files (user account, agent, LaunchDaemons) into the VM disk image with root:wheel ownership.",
+			"cove will write %d provisioning files (user account, agent, LaunchDaemons) into the VM disk image with root:wheel ownership.",
 			len(manifest.Files),
 		)); err != nil {
 			return err

@@ -1,15 +1,15 @@
 #!/bin/bash
-# inject-as-root.sh - Run vz-macos provision with admin privileges (legacy name)
+# inject-as-root.sh - Run cove provision with admin privileges (legacy name)
 # Uses osascript to prompt for admin password via GUI dialog
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VZ_MACOS="$SCRIPT_DIR/vz-macos"
+VZ_MACOS="$SCRIPT_DIR/cove"
 
-# Check if vz-macos binary exists
+# Check if cove binary exists
 if [ ! -f "$VZ_MACOS" ]; then
-    echo "Error: vz-macos binary not found at $VZ_MACOS"
+    echo "Error: cove binary not found at $VZ_MACOS"
     echo "Build it first with: go build"
     exit 1
 fi
@@ -120,4 +120,4 @@ OSASCRIPT_CMD="${OSASCRIPT_CMD//\"/\\\"}"
 osascript -e "do shell script \"$OSASCRIPT_CMD\" with administrator privileges"
 
 echo ""
-echo "Provisioning complete. Run the VM with: ./vz-macos run"
+echo "Provisioning complete. Run the VM with: ./cove run"

@@ -18,7 +18,7 @@ func TestFormatControlSocketDialErrorNoSocket(t *testing.T) {
 	if !strings.Contains(got, "vm is not running") {
 		t.Fatalf("missing not-running hint: %q", got)
 	}
-	if !strings.Contains(got, "vz-macos -vm macos-3 run") {
+	if !strings.Contains(got, "cove -vm macos-3 run") {
 		t.Fatalf("missing vm-specific run hint: %q", got)
 	}
 }

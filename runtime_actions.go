@@ -151,7 +151,7 @@ func saveCurrentVMScreenshot(source string, control *ControlServer) {
 	}
 
 	panel := appkit.NewNSSavePanel()
-	defaultName := fmt.Sprintf("vz-macos_%s.png", time.Now().Format("20060102_150405"))
+	defaultName := fmt.Sprintf("cove_%s.png", time.Now().Format("20060102_150405"))
 	panel.SetNameFieldStringValue(defaultName)
 	panel.SetMessage("Save VM Screenshot")
 	pngType := uniformtypeidentifiers.NewTypeWithFilenameExtension("png")

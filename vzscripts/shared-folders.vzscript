@@ -18,7 +18,7 @@ if mount | grep -q "AppleVirtIOFS"; then
   ls "$MOUNT_BASE" 2>/dev/null && echo "Shared folders accessible." || echo "warning: mount exists but access denied (may need Full Disk Access or VM reboot)"
 else
   echo "warning: no VirtioFS mount found — shared folders must be configured before VM boot"
-  echo "  on host: vz-macos vm shared-folder add <path>"
+  echo "  on host: cove vm shared-folder add <path>"
   echo "  then reboot the VM"
   exit 1
 fi

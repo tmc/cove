@@ -75,7 +75,7 @@ func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.
 
 	t.registerDelegate()
 
-	t.toolbar = appkit.NewToolbarWithIdentifier("com.vz-macos.vmToolbar")
+	t.toolbar = appkit.NewToolbarWithIdentifier("com.cove.vmToolbar")
 	t.toolbar.SetDisplayMode(nsToolbarDisplayModeIconOnly)
 
 	delegateObj := appkit.NSToolbarDelegateObjectFromID(t.delegateID)

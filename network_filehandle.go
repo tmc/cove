@@ -50,7 +50,7 @@ func NewFileHandleNetworkSession(cfg FileHandleNetworkConfig) (*FileHandleNetwor
 
 func newFileHandleNetworkSessionFromFDs(hostFD, guestFD int, cfg FileHandleNetworkConfig) (*FileHandleNetworkSession, error) {
 	cfg = normalizeFileHandleNetworkConfig(cfg)
-	hostFile := os.NewFile(uintptr(hostFD), "vz-macos-filehandle-host")
+	hostFile := os.NewFile(uintptr(hostFD), "cove-filehandle-host")
 	if hostFile == nil {
 		_ = unix.Close(hostFD)
 		_ = unix.Close(guestFD)

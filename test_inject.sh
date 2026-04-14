@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_inject.sh - Integration tests for vz-macos inject command
+# test_inject.sh - Integration tests for cove inject command
 # Run: ./test_inject.sh
 #
 # These tests verify the inject command's validation and error handling.
@@ -34,7 +34,7 @@ skip() {
 }
 
 # Build first
-echo "Building vz-macos..."
+echo "Building cove..."
 go build || { echo "Build failed"; exit 1; }
 
 echo ""
@@ -43,14 +43,14 @@ echo ""
 
 # Test: Missing required flags
 echo "Test: Missing -user flag"
-if ./vz-macos inject -password test123 2>&1 | grep -q "missing required flag: -user"; then
+if ./cove inject -password test123 2>&1 | grep -q "missing required flag: -user"; then
     pass "Rejects missing -user flag"
 else
     fail "Should reject missing -user flag"
 fi
 
 echo "Test: Missing -password flag"
-if ./vz-macos inject -user testuser 2>&1 | grep -q "missing required flag: -password"; then
+if ./cove inject -user testuser 2>&1 | grep -q "missing required flag: -password"; then
     pass "Rejects missing -password flag"
 else
     fail "Should reject missing -password flag"
@@ -58,35 +58,35 @@ fi
 
 # Test: Invalid usernames
 echo "Test: Username with slash"
-if ./vz-macos inject -user "test/user" -password test123 2>&1 | grep -q "invalid username"; then
+if ./cove inject -user "test/user" -password test123 2>&1 | grep -q "invalid username"; then
     pass "Rejects username with slash"
 else
     fail "Should reject username with slash"
 fi
 
 echo "Test: Username with colon"
-if ./vz-macos inject -user "test:user" -password test123 2>&1 | grep -q "invalid username"; then
+if ./cove inject -user "test:user" -password test123 2>&1 | grep -q "invalid username"; then
     pass "Rejects username with colon"
 else
     fail "Should reject username with colon"
 fi
 
 echo "Test: Reserved username 'root'"
-if ./vz-macos inject -user "root" -password test123 2>&1 | grep -q "reserved by the system"; then
+if ./cove inject -user "root" -password test123 2>&1 | grep -q "reserved by the system"; then
     pass "Rejects reserved username 'root'"
 else
     fail "Should reject reserved username 'root'"
 fi
 
 echo "Test: Reserved username 'daemon'"
-if ./vz-macos inject -user "daemon" -password test123 2>&1 | grep -q "reserved by the system"; then
+if ./cove inject -user "daemon" -password test123 2>&1 | grep -q "reserved by the system"; then
     pass "Rejects reserved username 'daemon'"
 else
     fail "Should reject reserved username 'daemon'"
 fi
 
 echo "Test: Empty username"
-if ./vz-macos inject -user "" -password test123 2>&1 | grep -q "missing required flag: -user"; then
+if ./cove inject -user "" -password test123 2>&1 | grep -q "missing required flag: -user"; then
     pass "Rejects empty username"
 else
     fail "Should reject empty username"
@@ -98,7 +98,7 @@ echo "Test: Missing disk image"
 if [ -f ./vm/disk.img ]; then
     skip "Disk image exists, cannot test missing disk error"
 else
-    if ./vz-macos inject -user testuser -password test123 2>&1 | grep -q "disk image not found\|hdiutil attach failed"; then
+    if ./cove inject -user testuser -password test123 2>&1 | grep -q "disk image not found\|hdiutil attach failed"; then
         pass "Reports missing/invalid disk image"
     else
         fail "Should report missing disk image"
@@ -107,7 +107,7 @@ fi
 
 # Test: Help output
 echo "Test: Help includes all options"
-help_output=$(./vz-macos inject --help 2>&1)
+help_output=$(./cove inject --help 2>&1)
 missing_opts=""
 for opt in "-user" "-password" "-admin" "-skip-setup-assistant" "-auto-login" "-ssh-key" "-plist" "-v"; do
     if ! echo "$help_output" | grep -q -- "$opt"; then

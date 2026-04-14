@@ -1,6 +1,6 @@
 //go:build darwin
 
-// macgo integration for vz-macos.
+// macgo integration for cove.
 // Uses single-process mode: codesign + setActivationPolicy.
 // No .app bundle, no child process, no I/O forwarding.
 package main
@@ -33,8 +33,8 @@ func initMacgo() {
 	}
 
 	cfg := macgo.NewConfig()
-	cfg.AppName = "vz-macos"
-	cfg.BundleID = "com.tmc.vz-macos"
+	cfg.AppName = "cove"
+	cfg.BundleID = "com.tmc.cove"
 	cfg.WithSingleProcess()
 	cfg.WithCustom(
 		"com.apple.security.virtualization",

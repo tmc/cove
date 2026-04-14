@@ -27,12 +27,12 @@ func handleVMConfigCommand(args []string) error {
 		return nil
 	case "export":
 		if len(args) < 2 {
-			return fmt.Errorf("Usage: vz-macos vm config export <path>")
+			return fmt.Errorf("Usage: cove vm config export <path>")
 		}
 		return exportVMFrameworkConfig(args[1])
 	case "import":
 		if len(args) < 2 {
-			return fmt.Errorf("Usage: vz-macos vm config import <path>")
+			return fmt.Errorf("Usage: cove vm config import <path>")
 		}
 		return importVMFrameworkConfig(args[1])
 	default:

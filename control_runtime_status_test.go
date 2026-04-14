@@ -19,7 +19,7 @@ func TestControlServerRuntimeStatusCommands(t *testing.T) {
 		Enabled:     true,
 		Port:        5901,
 		State:       "running",
-		ServiceName: "vz-macos",
+		ServiceName: "cove",
 		Description: "VNC server ready",
 	})
 	s.SetDebugStubStatus(DebugStubStatus{
@@ -166,7 +166,7 @@ func TestControlRuntimeStatusDefaults(t *testing.T) {
 }
 
 func TestControlRuntimeStatusRoundTripJSON(t *testing.T) {
-	want := VNCStatus{Enabled: true, Port: 5901, State: "running", ServiceName: "vz-macos"}
+	want := VNCStatus{Enabled: true, Port: 5901, State: "running", ServiceName: "cove"}
 	data, err := json.Marshal(want)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

@@ -165,7 +165,7 @@ func installWindowsVM() error {
 	fmt.Println("After installation completes:")
 	fmt.Printf("  1. The VM will boot to the Windows desktop\n")
 	fmt.Printf("  2. Stop this process (Ctrl+C)\n")
-	fmt.Printf("  3. Run: ./vz-macos run -windows\n")
+	fmt.Printf("  3. Run: ./cove run -windows\n")
 	fmt.Println()
 
 	// Start VM
@@ -392,7 +392,7 @@ Download Windows 11 ARM64 from:
   Or use CrystalFetch: https://github.com/nicksulker/CrystalFetch
 
 Then run:
-  vz-macos install -windows -iso /path/to/Win11_ARM64.iso`)
+  cove install -windows -iso /path/to/Win11_ARM64.iso`)
 }
 
 // createAutounattendISO creates an ISO containing autounattend.xml and

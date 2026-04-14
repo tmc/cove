@@ -158,7 +158,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 }
 
 func printGCUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: vz-macos gc [options]
+	fmt.Fprintln(w, `Usage: cove gc [options]
 
 Delete disposable VM clones created with -disposable.
 
@@ -168,12 +168,12 @@ Options:
 }
 
 func printProxyUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: vz-macos run -proxy http://HOST:PORT
+	fmt.Fprintln(w, `Usage: cove run -proxy http://HOST:PORT
 
 Configure guest system HTTP/HTTPS proxy settings after boot.
 
 Behavior:
-  - Linux writes /etc/environment.d/99-vz-macos-proxy.conf and /etc/profile.d/99-vz-macos-proxy.sh
+  - Linux writes /etc/environment.d/99-cove-proxy.conf and /etc/profile.d/99-cove-proxy.sh
   - macOS configures proxy settings with networksetup through the guest user agent
   - clean shutdown restores the previous guest proxy state best-effort
 
@@ -184,13 +184,13 @@ Preflight:
   - Linux -no-agent only affects install/provisioning; existing VM runs use durable guest-agent state from config.json
 
 Troubleshooting:
-  - If preflight says the Linux guest lacks vz-agent, run: vz-macos provision-agent
+  - If preflight says the Linux guest lacks vz-agent, run: cove provision-agent
   - If macOS runtime probing cannot reach the user agent, log in graphically and retry
   - If .proxy-state.json remains in the VM directory, run doctor or boot again with the same -proxy and stop cleanly`)
 }
 
 func printTemplateUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: vz-macos template <command>
+	fmt.Fprintln(w, `Usage: cove template <command>
 
 Commands:
   save <name>                Save the active VM as a compressed template
@@ -204,7 +204,7 @@ Compressed templates take longer to save but use less disk space.`)
 }
 
 func printVMUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: vz-macos vm <command>
+	fmt.Fprintln(w, `Usage: cove vm <command>
 
 Commands:
   set <name>              Set the active VM
@@ -213,11 +213,11 @@ Commands:
   export <name> <path>    Export a VM to a tarball
   import <path> <name>    Import a VM from a tarball
   config <command>        Export/import a framework config snapshot
-  shared-folder ...       Manage shared folders (alias: vz-macos shared-folder ...)`)
+  shared-folder ...       Manage shared folders (alias: cove shared-folder ...)`)
 }
 
 func printVMConfigUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: vz-macos vm config <command>
+	fmt.Fprintln(w, `Usage: cove vm config <command>
 
 Commands:
   export <path>           Write the current framework config snapshot
@@ -229,7 +229,7 @@ raw config snapshot in the VM directory for later inspection.`)
 }
 
 func printSnapshotUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: vz-macos snapshot <command>
+	fmt.Fprintln(w, `Usage: cove snapshot <command>
 
 Commands:
   list                    List available snapshots
@@ -241,10 +241,10 @@ Snapshots are stored under ~/.vz/vms/<vm>/snapshots/.`)
 }
 
 func printSharedFolderUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: vz-macos shared-folder <command>
+	fmt.Fprintln(w, `Usage: cove shared-folder <command>
 
 Alias:
-  vz-macos vm shared-folder <command>
+  cove vm shared-folder <command>
 
 Commands:
   list

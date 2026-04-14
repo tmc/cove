@@ -189,7 +189,7 @@ func runProvisioningCommand(tb testing.TB, timeout time.Duration, bin string, ar
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	logFile, err := os.CreateTemp("", "vz-macos-provision-*.log")
+	logFile, err := os.CreateTemp("", "cove-provision-*.log")
 	if err != nil {
 		tb.Fatalf("create provisioning log: %v", err)
 	}

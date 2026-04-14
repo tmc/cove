@@ -180,9 +180,9 @@ func (c *vmGUIController) initWindow() error {
 	c.frameAutosave = frameAutosaveName
 	c.lastVisibleFrame = window.Frame()
 
-	procName := "vz-macos"
+	procName := "cove"
 	if vmName != "" && vmName != "default" {
-		procName = fmt.Sprintf("vz-macos (%s)", vmName)
+		procName = fmt.Sprintf("cove (%s)", vmName)
 	}
 	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
 	if vmName != "" && vmName != "default" {

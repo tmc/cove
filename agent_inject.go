@@ -170,7 +170,7 @@ func injectAgentOnly() error {
 		// Linux VMs use linux-disk.img
 		diskPath = filepath.Join(vmDir, "linux-disk.img")
 		if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-			return fmt.Errorf("disk image not found: %s (also checked linux-disk.img)\nRun 'vz-macos install' first to create a VM", filepath.Join(vmDir, "disk.img"))
+			return fmt.Errorf("disk image not found: %s (also checked linux-disk.img)\nRun 'cove install' first to create a VM", filepath.Join(vmDir, "disk.img"))
 		}
 	}
 	if err := checkDiskNotMounted(diskPath); err != nil {
@@ -265,7 +265,7 @@ func injectAgentOnly() error {
 		fmt.Printf("    - Write LaunchDaemon plist to %s (owner: root:wheel)\n", daemonPlistPath)
 		fmt.Printf("    - Write user agent plist to %s\n", agentPlistPath)
 		fmt.Println()
-		if err := runElevatedBash(tmpScriptPath, "vz-macos will copy the guest agent binary and LaunchDaemon plists into the VM disk image with root:wheel ownership."); err != nil {
+		if err := runElevatedBash(tmpScriptPath, "cove will copy the guest agent binary and LaunchDaemon plists into the VM disk image with root:wheel ownership."); err != nil {
 			return fmt.Errorf("agent inject: %w", err)
 		}
 	}
@@ -282,7 +282,7 @@ func injectAgentOnly() error {
 	fmt.Println("=== Agent Provisioning Complete ===")
 	fmt.Println("  - vz-agent daemon installed (vsock port 1024, root)")
 	fmt.Println("  - vz-agent user agent installed (vsock port 1025, user session)")
-	fmt.Println("Run the VM with: ./vz-macos run")
+	fmt.Println("Run the VM with: ./cove run")
 	if err := setVMAgentRequested(vmDir, detectVMAgentPlatform(vmDir), true, vmAgentSourceProvision); err != nil {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
@@ -328,7 +328,7 @@ func checkAgentAvailability(cs *ControlServer) {
 	fmt.Println("Note: vz-agent is not running in this VM.")
 	fmt.Println("  The agent enables remote command execution, file transfer, and SSH control.")
 	fmt.Println()
-	exe := "./vz-macos"
+	exe := "./cove"
 	vmFlag := ""
 	if vmName != "" && vmName != "default" {
 		vmFlag = " -vm " + vmName

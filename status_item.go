@@ -96,7 +96,7 @@ func (c *VMStatusItemController) registerDelegate() {
 }
 
 func (c *VMStatusItemController) autosaveName() string {
-	return "com.vz-macos.status." + c.name
+	return "com.cove.status." + c.name
 }
 
 func (c *VMStatusItemController) buttonTitle() string {
@@ -110,7 +110,7 @@ func (c *VMStatusItemController) buttonTitle() string {
 }
 
 func (c *VMStatusItemController) tooltipForState(state vz.VZVirtualMachineState) string {
-	return fmt.Sprintf("vz-macos %s — %s (%s)", c.name, vmStateName(state), c.presentationMode())
+	return fmt.Sprintf("cove %s — %s (%s)", c.name, vmStateName(state), c.presentationMode())
 }
 
 func (c *VMStatusItemController) setWindow(window appkit.NSWindow) {
@@ -287,7 +287,7 @@ func (c *VMStatusItemController) presentationModeWithWindow(window appkit.NSWind
 }
 
 func (c *VMStatusItemController) menuTitle() string {
-	return "vz-macos: " + c.name
+	return "cove: " + c.name
 }
 
 func (c *VMStatusItemController) buttonStatePrefix(state vz.VZVirtualMachineState) string {

@@ -308,7 +308,7 @@ func checkVMNotRunning() error {
 		return nil
 	}
 	conn.Close()
-	return fmt.Errorf("vm is currently running (control socket active: %s)\n  Stop the VM first, then retry.\n  To stop: ./vz-macos ctl shutdown", sock)
+	return fmt.Errorf("vm is currently running (control socket active: %s)\n  Stop the VM first, then retry.\n  To stop: ./cove ctl shutdown", sock)
 }
 
 // checkDiskNotMounted checks if the disk is already mounted via hdiutil.
@@ -348,7 +348,7 @@ func checkDiskNotMounted(diskPath string) error {
 		return nil
 	}
 
-	return fmt.Errorf("disk image is already mounted%s\n  Detach with: hdiutil detach %s -force\n  Or run: ./vz-macos disk-detach", hint, device)
+	return fmt.Errorf("disk image is already mounted%s\n  Detach with: hdiutil detach %s -force\n  Or run: ./cove disk-detach", hint, device)
 }
 
 // pendingInstall represents a file that needs to be copied to a root-owned
@@ -422,5 +422,5 @@ func fixOwnershipWithSudo(paths []string, dataPartition string, installs ...pend
 		return cmd.Run()
 	}
 
-	return runElevatedBash(tmpPath, "vz-macos needs to detach the VM disk image.")
+	return runElevatedBash(tmpPath, "cove needs to detach the VM disk image.")
 }

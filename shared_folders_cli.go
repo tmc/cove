@@ -35,7 +35,7 @@ func handleVMSharedFolderCommand(args []string) error {
 		return handleVMSharedFolderAdd(args[1:])
 	case "remove":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vz-macos shared-folder remove <tag-or-path>")
+			return fmt.Errorf("usage: cove shared-folder remove <tag-or-path>")
 		}
 		return handleVMSharedFolderRemove(args[1])
 	case "clear":
@@ -62,7 +62,7 @@ func handleVMSharedFolderCommand(args []string) error {
 
 func handleVMSharedFolderAdd(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: vz-macos shared-folder add <host-path> [tag] [ro|rw]")
+		return fmt.Errorf("usage: cove shared-folder add <host-path> [tag] [ro|rw]")
 	}
 	hostPath := args[0]
 	tag := ""
@@ -82,7 +82,7 @@ func handleVMSharedFolderAdd(args []string) error {
 		}
 	}
 	if len(args) > 3 {
-		return fmt.Errorf("usage: vz-macos shared-folder add <host-path> [tag] [ro|rw]")
+		return fmt.Errorf("usage: cove shared-folder add <host-path> [tag] [ro|rw]")
 	}
 
 	entry, added, err := addSharedFolderEntry(vmDir, hostPath, tag, readOnly)
@@ -123,7 +123,7 @@ func handleVMSharedFolderAdd(args []string) error {
 		if vmName == "" || vmName == "." || vmName == "/" {
 			vmName = "default"
 		}
-		fmt.Printf("         you can retry with: vz-macos -vm %s shared-folder mount %q\n", vmName, defaultSharedFoldersMountPoint)
+		fmt.Printf("         you can retry with: cove -vm %s shared-folder mount %q\n", vmName, defaultSharedFoldersMountPoint)
 		return nil
 	}
 	if mounted {

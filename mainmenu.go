@@ -15,9 +15,9 @@ func setupMainMenu(toolbarDelegate objc.ID) {
 
 	// App menu (macOS auto-populates the name from the process)
 	appMenu := appkit.NewMenuWithTitle("")
-	addMainMenuItem(appMenu, "About vz-macos", "orderFrontStandardAboutPanel:", "", 0)
+	addMainMenuItem(appMenu, "About cove", "orderFrontStandardAboutPanel:", "", 0)
 	addMainMenuSeparator(appMenu)
-	addMainMenuItem(appMenu, "Quit vz-macos", "terminate:", "q", 0)
+	addMainMenuItem(appMenu, "Quit cove", "terminate:", "q", 0)
 	appMenuItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("", 0, "")
 	appMenuItem.SetSubmenu(&appMenu)
 	mainMenu.AddItem(&appMenuItem)
@@ -126,9 +126,9 @@ func setupSelectorMenu(selectorTarget objc.ID) {
 
 	// App menu
 	appMenu := appkit.NewMenuWithTitle("")
-	addMainMenuItem(appMenu, "About vz-macos", "orderFrontStandardAboutPanel:", "", 0)
+	addMainMenuItem(appMenu, "About cove", "orderFrontStandardAboutPanel:", "", 0)
 	addMainMenuSeparator(appMenu)
-	addMainMenuItem(appMenu, "Quit vz-macos", "terminate:", "q", 0)
+	addMainMenuItem(appMenu, "Quit cove", "terminate:", "q", 0)
 	appMenuItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("", 0, "")
 	appMenuItem.SetSubmenu(&appMenu)
 	mainMenu.AddItem(&appMenuItem)

@@ -145,7 +145,7 @@ USAGE
 -----
 
 1. Boot into Recovery Mode:
-   vz-macos run -recovery -gui -usb /path/to/recovery-disk.img
+   cove run -recovery -gui -usb /path/to/recovery-disk.img
 
 2. Open Terminal:
    Utilities > Terminal

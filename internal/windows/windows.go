@@ -1,6 +1,6 @@
 //go:build ignore
 
-// Windows ARM64 VM support for vz-macos.
+// Windows ARM64 VM support for cove.
 //
 // STATUS: Blocked — Apple's Virtualization.framework cannot boot Windows (2026-02-08).
 //
@@ -214,7 +214,7 @@ func runWindowsVM() error {
 
 	// Verify the disk exists
 	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
-		return fmt.Errorf("windows disk image not found: %s\nRun 'vz-macos install -windows -iso <path>' first", resolvedDiskPath)
+		return fmt.Errorf("windows disk image not found: %s\nRun 'cove install -windows -iso <path>' first", resolvedDiskPath)
 	}
 
 	// Build VM configuration

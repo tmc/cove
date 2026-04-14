@@ -41,7 +41,7 @@ func formatControlSocketDialError(sock string, err error) error {
 func vmRunHintForSocket(sock string) string {
 	vmName := filepath.Base(filepath.Dir(sock))
 	if vmName == "" || vmName == "." || vmName == string(filepath.Separator) {
-		return "vz-macos run"
+		return "cove run"
 	}
-	return fmt.Sprintf("vz-macos -vm %s run", vmName)
+	return fmt.Sprintf("cove -vm %s run", vmName)
 }
