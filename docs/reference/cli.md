@@ -90,6 +90,8 @@ cove run [flags]
 | `-auto-mount-volumes` | true | Auto-mount tagged volumes via agent |
 | `-auto-upgrade-agent` | false | Auto-upgrade guest agent on version mismatch |
 | `-automation-backend <mode>` | auto | UI automation: auto, framebuffer, or window |
+| `-automation-capture-backend <mode>` | | Override screenshot backend: auto, framebuffer, or window |
+| `-automation-input-backend <mode>` | | Override input backend: auto, direct, or window |
 | `-debug-ocr` | false | Save OCR debug screenshots |
 | `-save-compress` | false | Compress suspend state |
 | `-save-encrypt` | false | Encrypt suspend state |
@@ -131,6 +133,10 @@ cove up [flags]
 | `-vm <name>` | | VM name |
 | `-linux` | false | Install Linux instead of macOS |
 | `-desktop` | false | Use Ubuntu Desktop (implies `-linux`) |
+| `-pprof <addr>` | | Serve pprof diagnostics (e.g., `6060`) |
+| `-automation-backend <mode>` | auto | UI automation: auto, framebuffer, or window |
+| `-automation-capture-backend <mode>` | | Override screenshot backend: auto, framebuffer, or window |
+| `-automation-input-backend <mode>` | | Override input backend: auto, direct, or window |
 | `-v` | false | Verbose output |
 
 ```bash
@@ -397,9 +403,13 @@ Run flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-v` | false | Verbose output |
-| `-timeout <dur>` | | Execution timeout |
+| `-timeout <dur>` | 10m | Execution timeout |
 | `-terminal` | false | Run in Terminal.app |
 | `-auto-approve` | false | Auto-click Allow/OK dialogs |
+| `-socket <path>` | | Control socket path (default: auto-detected) |
+| `-daemon` | false | Route guest commands through daemon agent (root) |
+| `-vm <name>` | | VM name (default: active VM or `default`) |
+| `-parallel` | false | Run independent recipes concurrently |
 
 ```bash
 cove vzscript list

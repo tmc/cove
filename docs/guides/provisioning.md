@@ -68,13 +68,13 @@ sudo cove provision -user me -password secret -no-bootstrap-recovery
 
 ### Method 2: GUI Automation
 
-Use runtime keyboard automation to navigate Setup Assistant:
+Use the `up` command to combine install, provision, and Setup Assistant automation:
 
 ```bash
-cove run -gui -provision-user testuser -provision-password secret
+cove up -user testuser -password secret -gui
 ```
 
-Or manually:
+Or drive Setup Assistant manually on a running VM:
 
 ```bash
 cove ctl detect                          # check current screen

@@ -22,6 +22,7 @@ The binary will be placed in `$GOPATH/bin` (or `$HOME/go/bin`).
 ```bash
 git clone https://github.com/tmc/vz-macos
 cd vz-macos
+# The repository is github.com/tmc/vz-macos but the binary is named "cove"
 go build -o cove .
 ```
 
