@@ -13,7 +13,12 @@ Install, provision, and boot in a single step:
 cove up -user myuser
 ```
 
-This downloads the latest macOS IPSW, installs it, provisions a user account, and boots the VM with a GUI window. Add vzscripts to configure the guest automatically:
+This downloads the latest macOS IPSW, installs it, provisions a user account, and boots the VM with a GUI window.
+
+> [!TIP]
+> Add `-headless` if you don't need a GUI window.
+
+Add vzscripts to configure the guest automatically:
 
 ```bash
 cove up -user myuser -vzscripts homebrew,golang
@@ -39,7 +44,10 @@ cove install -ipsw ~/Downloads/UniversalMac_15.0_RestoreImage.ipsw
 sudo cove provision -user myuser -skip-setup-assistant
 ```
 
-This mounts the VM disk, injects a LaunchDaemon that creates the user on first boot, configures auto-login, and skips Setup Assistant. Sudo is required because launchd requires root:wheel ownership on LaunchDaemon plists.
+This mounts the VM disk, injects a LaunchDaemon that creates the user on first boot, configures auto-login, and skips Setup Assistant.
+
+> [!NOTE]
+> `provision` requires `sudo` for proper LaunchDaemon ownership. launchd silently ignores plists not owned by root:wheel.
 
 ### 3. Boot the VM
 

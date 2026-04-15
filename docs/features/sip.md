@@ -5,6 +5,9 @@ title: SIP Management
 
 Manage System Integrity Protection (SIP) for VMs with automated recovery boot.
 
+> [!WARNING]
+> Disabling SIP reduces guest security. Only disable when needed for development or testing.
+
 ## Commands
 
 ```bash

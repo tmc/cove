@@ -30,7 +30,10 @@ echo '{"type":"snapshot","auth_token":"'$TOKEN'","snapshot":{"action":"save","na
 
 ## Disk Snapshots (APFS COW)
 
-Snapshot the disk image using APFS clonefile (copy-on-write). These are instant and space-efficient -- only changed blocks consume additional disk space.
+Snapshot the disk image using APFS clonefile (copy-on-write).
+
+> [!TIP]
+> Disk snapshots use APFS copy-on-write -- they're nearly free until you diverge from the snapshot.
 
 ```bash
 cove disk-snapshot save before-update

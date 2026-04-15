@@ -50,9 +50,12 @@ cove run -save-encrypt     # encrypt suspend state
 ~/.vz/vms/<name>/suspend.vmstate
 ```
 
-Delete this file manually to force a cold boot without using `-no-resume`.
+> [!NOTE]
+> Suspend state is saved to `~/.vz/vms/<name>/suspend.vmstate`. Delete this file to force a cold boot without using `-no-resume`.
 
 ## Limitations
 
-- Suspend state is tied to the exact VM configuration. Changing CPU count or memory after suspending requires a cold boot.
+> [!WARNING]
+> Changing VM configuration (CPU count, memory, devices) invalidates saved suspend state. The VM will cold boot instead of resuming.
+
 - VirtioFS shared folders must be present at VM boot time. Folders added after resume require a VM reboot.

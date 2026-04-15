@@ -61,5 +61,6 @@ These are registered as shared folders and mounted automatically when the script
 
 ## Limitations
 
-- VirtioFS devices must be present at VM boot time for guest-side mounting. Folders added after a resume from suspend require a VM reboot.
+> [!WARNING]
+> VirtioFS devices must be present at VM boot time. Folders added after suspend/resume require a VM reboot.
 - TCC blocks `vz-agent` from accessing VirtioFS mounts as a daemon. The agent lacks Full Disk Access. Users can `ls` from the GUI session, but `agent-exec` as daemon cannot traverse the mount.
