@@ -15,6 +15,8 @@ title: Comparison
 | Guest agent | vsock gRPC | vsock gRPC | No | SPICE agent |
 | SIP management | Automated | No | No | Manual |
 | Unattended provisioning | Disk injection + OCR | Cloud-init | Packer | Manual |
+| OCI Registry Push/Pull | ✅ (cove pull/push, lume-compatible pull) | ✅ (ghcr.io) | ✅ | ❌ |
+| AI Agent MCP Server | ✅ (stdio) | ✅ (stdio/SSE) | ❌ | ❌ |
 | Linux VMs | Yes | Yes | Yes | Yes (QEMU) |
 | x86 guests | No | No | No | Yes (QEMU) |
 | GUI | Native AppKit | Electron | None | Native AppKit |
@@ -27,7 +29,9 @@ title: Comparison
 
 Best for developers who want scriptable macOS VMs with fast iteration. Suspend/resume means no waiting for boot. VZScript and the guest agent enable automated provisioning and configuration without SSH. Pure Go makes it easy to extend.
 
-**Good for:** development environments, CI runners, scripted macOS testing, reproducible setups.
+cove is the only tool that combines APFS clonefile-based 0-ms local snapshot restore with OCI registry push/pull and a stdio MCP server for AI agents — useful for teams that want both instant local branching and remote image distribution in the same tool.
+
+**Good for:** development environments, CI runners, scripted macOS testing, reproducible setups, AI-agent-driven workflows.
 
 ### Lume
 

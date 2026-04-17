@@ -264,18 +264,18 @@ cove ctl [options] <command> [args...]
 | Command | Description |
 |---------|-------------|
 | `disk list` | List runtime storage devices |
-| `disk swap <n> <path[:ro\|rw]>` | Swap live disk backing |
-| `disk resize <n> <size>` | Resize live disk (e.g., `64G`) |
+| `disk swap <attachment-id> <path>` | Hot-swap the backing file of an attached disk |
+| `disk resize <path> <size-gb>` | Resize a disk image (in GB) |
 
 ### USB Commands
 
 | Command | Description |
 |---------|-------------|
 | `usb list` | List USB controllers and devices |
-| `usb attach-storage <path[:ro\|rw]>` | Attach USB mass storage |
+| `usb attach-storage <path> [--ro]` | Hot-attach USB mass storage |
 | `usb attach-host-service <id>` | Attach host USB by service ID |
 | `usb attach-host-location <id>` | Attach host USB by location ID |
-| `usb detach <device>` | Detach runtime USB device |
+| `usb detach <name>` | Detach a runtime USB device by name |
 
 ### Memory Commands
 
@@ -538,6 +538,88 @@ cove gc [flags]
 |------|---------|-------------|
 | `-dry-run` | false | Print without deleting |
 | `-older-than <dur>` | | Only delete clones older than duration |
+
+---
+
+## serve
+
+Run the HTTP and MCP gateway. Exposes VM control over HTTP (for multi-VM fleets and remote clients) and/or a stdio MCP server (for AI agent integrations such as Claude Code).
+
+```
+cove serve [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-http <addr>` | `:7777` (multi-VM) | HTTP listen address |
+| `-mcp` | false | Serve MCP over stdio |
+| `-token-file <path>` | | Auth token file (falls back to keychain) |
+| `-per-vm-auth` | false | Require strict per-VM tokens instead of a master token |
+| `-vms <allowlist>` | | Comma-separated list of VMs to expose |
+
+```bash
+cove serve -http 127.0.0.1:7777
+cove serve --mcp
+cove serve -http 127.0.0.1:7777 -per-vm-auth -vms ci-runner,dev-vm
+```
+
+---
+
+## pull
+
+Pull an OCI image into a VM disk. Streams the registry blob directly to `disk.img`. Supports [Lume](https://github.com/trycua/lume) images by translating their annotations.
+
+```
+cove pull <ref> [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--as <name>` | inferred from ref | Destination VM name |
+
+```bash
+cove pull ghcr.io/example/macos-sequoia:15.2
+cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia
+```
+
+---
+
+## push
+
+Push a VM disk as an OCI image. Supports delta pushes against a base image and a Lume-compatible annotation mode for cross-tool interop.
+
+```
+cove push <vm> <ref> [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--base <ref>` | | Base image for delta push |
+| `--chunk-size <mb>` | 512 | Chunk size in megabytes |
+| `--dry-run` | false | Print the plan without uploading |
+| `--lume-compat` | false | Emit dual annotations for Lume interop |
+| `--additional-tag <tag>` | | Additional tag to publish (repeatable) |
+
+```bash
+cove push dev-vm ghcr.io/me/dev-vm:v1
+cove push dev-vm ghcr.io/me/dev-vm:v2 --base ghcr.io/me/dev-vm:v1
+cove push dev-vm ghcr.io/me/dev-vm:v2 --lume-compat --additional-tag latest
+```
+
+---
+
+## compact
+
+Reclaim unused guest blocks on the VM disk. Agent-aware: runs `fstrim` on Linux guests and `diskutil apfs eraseFreeVolumeSpace` on macOS guests. Fails cleanly if the guest agent is disconnected.
+
+```
+cove compact <vm>
+```
+
+```bash
+cove compact default
+cove compact dev-vm
+```
 
 ---
 

@@ -97,15 +97,30 @@ Or delete the suspend state:
 rm ~/.vz/vms/default/suspend.vmstate
 ```
 
-### Shared Folders Not Accessible After Resume
+### VirtioFS Shared Folder Mount Fails After Resume
 
-**Cause:** VirtioFS devices must be present at VM boot time.
+**Symptom:** `mount_virtiofs: Operation not permitted` inside the guest when a shared folder was added while the VM was suspended.
 
-**Solution:** reboot the VM:
+**Cause:** VirtioFS devices must exist at VM boot time; they can't be hot-added after suspend/resume.
+
+**Fix:** Either add the folder before boot via `cove shared-folder add <path>`, or cold-boot with `cove run -no-resume`:
 
 ```bash
 cove ctl request-stop
 cove run -no-resume
+```
+
+### VM Refuses to Boot After Pull
+
+**Symptom:** `cove run <name>` errors with "incomplete disk" or similar; the VM directory contains `disk.img.partial`.
+
+**Cause:** `cove pull` was killed or crashed mid-download. A partial disk cannot be booted.
+
+**Fix:** delete the partial file and rerun `cove pull`:
+
+```bash
+rm ~/.vz/vms/<name>/disk.img.partial
+cove pull <ref> --as <name>
 ```
 
 ### Guest Agent Not Responding
@@ -128,11 +143,16 @@ Or upgrade an existing agent:
 cove agent-upgrade
 ```
 
-### TCC Blocks Agent Access to VirtioFS Mounts
+### Guest Agent Can't Access Shared-Folder Contents
 
-The daemon agent lacks Full Disk Access. Files on VirtioFS mounts can be accessed by the logged-in user but not by `agent-exec --daemon`.
+**Symptom:** vz-agent fails to read files on a VirtioFS mount even as root, while the GUI user session reads them fine.
 
-**Workaround:** use the user agent (default) or access files through SSH.
+**Cause:** TCC (macOS privacy) blocks the launchd daemon — vz-agent runs as a LaunchDaemon — from Full Disk Access.
+
+**Fix:** grant Full Disk Access to `/usr/local/libexec/cove/vz-agent` (or wherever it's installed) in System Settings → Privacy → Full Disk Access. Alternatives:
+
+- Disable SIP on the guest.
+- Proxy commands through a logged-in user session via `cove ctl agent-user-exec`.
 
 ## Network Issues
 
@@ -162,6 +182,18 @@ The daemon agent lacks Full Disk Access. Files on VirtioFS mounts can be accesse
 
 ```bash
 cove run -linux -serial stdout
+```
+
+### Cold-Boot Window ANR
+
+**Symptom:** VM window beachballs or becomes unresponsive during cold boot; macOS shows "cove is not responding".
+
+**Cause:** known issue with the NSApplication event loop pump during early boot, before `VZVirtualMachineView` starts rendering (tracked in the `gui_control.go` `runAppEventLoopUntil` refactor).
+
+**Workaround:** change startup order so the VM starts before the window opens:
+
+```bash
+cove run -launch-order start-first
 ```
 
 ### Window Position Lost
