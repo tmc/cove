@@ -36,5 +36,14 @@
 ## Architecture
 * [Overview](architecture/overview.md)
 
+## Design Docs
+* [Overview](designs/README.md)
+* [cove serve (HTTP + MCP)](designs/001-cove-serve-http-mcp.md)
+* [Disks & OCI](designs/002-cove-disks-oci.md)
+* [Build & Layer Caching](designs/003-cove-build-oci-caching.md)
+* [Churn Benchmark](designs/004-churn-benchmark-harness.md)
+* [v0.4 Secrets](designs/005-v04-secrets-architecture.md)
+* [Linux v0.2](designs/006-cove-linux-v02.md)
+
 ## Contributing
 * [purego Bindings](architecture/purego.md)
