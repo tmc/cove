@@ -7,6 +7,17 @@ macOS VMs that suspend, snapshot, and script.
 
 cove is a CLI for creating and managing macOS and Linux virtual machines on Apple Silicon using Apple's Virtualization.framework. Pure Go, cgo-free ([purego](https://github.com/ebitengine/purego)).
 
+## Get a VM running
+
+```bash
+brew install tmc/tap/cove
+cove up -user me
+```
+
+That downloads the latest macOS IPSW, installs, provisions a user named `me`, and boots to desktop. ~5 minutes on an M3.
+
+Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of installing from scratch? See [Push & Pull](getting-started/push-pull.md).
+
 ## Quick Links
 
 - [Installation](getting-started/install.md) -- brew, go install, or from source

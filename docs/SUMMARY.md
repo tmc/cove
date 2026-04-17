@@ -2,8 +2,9 @@
 
 ## Getting Started
 * [Introduction](README.md)
-* [Installation](getting-started/install.md)
 * [Quick Start](getting-started/quickstart.md)
+* [Installation](getting-started/install.md)
+* [Push & Pull](getting-started/push-pull.md)
 * [Comparison](getting-started/comparison.md)
 * [FAQ](getting-started/faq.md)
 

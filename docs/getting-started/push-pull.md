@@ -68,7 +68,7 @@ If you need a pushed image to be consumable by both cove and lume (mixed-tool te
 cove push my-vm ghcr.io/me/macos-15:tag --lume-compat
 ```
 
-The resulting manifest carries both annotation sets with identical values. Cove's default stays cove-native-only so our schema isn't coupled to lume's evolution -- `--lume-compat` is the one-flag escape valve when you need interop.
+The resulting manifest carries both annotation sets with identical values. Cove's default stays cove-native-only so our schema isn't coupled to lume's evolution -- `--lume-compat` is the one-flag escape valve when you need interop. See [`cove push` flags](../reference/cli.md#push) for the full syntax.
 
 ## Size reality
 

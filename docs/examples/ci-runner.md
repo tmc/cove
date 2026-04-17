@@ -135,3 +135,8 @@ exit $TEST_EXIT
 - **Multiple VMs**: Create several base VMs (`ci-runner-1`, `ci-runner-2`, ...) to run jobs in parallel on the same host.
 - **`-no-resume`** ensures each boot starts cold rather than resuming a suspended state from a previous run.
 - **Agent exec with `--daemon`** runs commands as root, useful for `xcode-select --install` or package installation.
+
+## See also
+
+- [Push & Pull](../getting-started/push-pull.md) -- push the prebuilt runner image to an OCI registry once, then `cove pull` on every CI host instead of reinstalling.
+- [Control Socket API](../reference/control-api.md) -- programmatic control if you need finer-grained orchestration than the CLI.

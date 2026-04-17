@@ -38,7 +38,7 @@ For multi-user hosts or when you want to hand one token to one automation, use s
 cove serve -per-vm-auth
 ```
 
-In strict mode, `/v1/vms/<name>/...` requires that VM's own token from `~/.vz/vms/<name>/control.token`.
+In strict mode, `/v1/vms/<name>/...` requires that VM's own per-VM bearer token. See [Control Socket API — Authentication](control-api.md#authentication) for token location, permissions, and rotation.
 
 > [!WARNING]
 > The master token grants full `agent_exec` in every running VM. Treat it like an SSH private key. On shared Mac minis or any host where more than one UID can read your keychain, run `cove serve -per-vm-auth`.
