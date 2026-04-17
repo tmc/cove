@@ -1,12 +1,27 @@
 # cove Linux support — making it fantastic
 
-**Status**: draft v5 (post-round-3 Council + honest rationale)
+**Status**: canonical v5 (Council round-2 signoff 2026-04-17)
 **Author**: cove team
-**Date**: 2026-04-16
+**Date**: 2026-04-16 (signed off 2026-04-17)
 **Target**: cove 0.2 (some items slip to 0.3)
 
 ## Changelog
 
+- **Council round-2 signoff (2026-04-17)**: No deltas, just signoff notes on the two v5 questions.
+  - **Drop-bidi-entirely**: concurred. Security rationale made explicit (long-lived bidi streams validate auth once at upgrade time — a leaked token can issue SIGKILL indefinitely while the socket stays open; unary forces stateless per-call auth). Systems Engineer separately flagged that localhost µs RTTs make the bidi-vs-unary latency argument moot.
+  - **Bootstrap story**: `go build` must be zero-dependency; protoc-gen-es et al. must not be required for `make` or `go build`. Concrete Makefile:
+    ```makefile
+    .PHONY: proto
+    proto:  # only for contributors editing proto/*.proto — commits Go stubs
+    	go run github.com/bufbuild/buf/cmd/buf@latest generate \
+    		--template proto/buf.gen.yaml --path proto/
+
+    .PHONY: release-clients
+    release-clients:  # CI-only target, generates TS/Swift into release tarball
+    	npm install -g @bufbuild/protoc-gen-es @connectrpc/protoc-gen-connect-es
+    	buf generate --template proto/buf.gen.clients.yaml --path proto/
+    ```
+    Generated Go stubs (`proto/agentpb/*.go`, `proto/agentpbconnect/*.go`) remain committed. TypeScript/Swift clients are built only in the `Release` GitHub Actions workflow and archived as `cove-clients-v0.2.tgz` alongside the binary. Standard `go build` touches neither npm nor network — contributor bootstrap stays ~10 seconds.
 - **v5 (post-round-3 Council + honest rationale)**: Fifth-round amendments, all confined to Pillar 4e and the Transport subsection:
   - **Dropped the `ExecInteract` bidi RPC.** The v4 proto additions, client `Interact` session interface, and cove-linux-shell capability-probe / fallback machinery are all removed. Kept the v3 unary additions (exec_id + tty on ExecRequest, ResizeExecTTY, SignalExec, SetTime) and the existing server-streaming `ExecStream` for stdout/stderr. One shape, no fallback path, no capability negotiation.
   - **Rationale shift (honest version).** v4 justified the bidi path with "proxies break bidi". That's partially stale for 2026 — managed cloud LBs (AWS ALB since Nov 2023, Cloudflare since 2019, GCP for years) handle bidi fine. The honest v5 reasons for staying unary are: (a) no localhost latency win — 99% of cove traffic is localhost at µs RTTs where unary vs bidi is invisible; (b) simpler auth model — unary RPCs get per-call auth, a held-open bidi stream means one auth check covers every signal including SIGKILL, a strictly worse security posture; (c) the real bidi-fragility edge case is corporate egress (Zscaler, Netskope, Island, on-prem nginx <1.13.10 that request-body-buffers and silently hangs rather than returning a clean Unimplemented), relevant to the "cove CLI → remote cove serve over corporate network" future use case; (d) bidi is strictly additive later — if v0.4 telemetry shows remote-serve users benefit, we add `ExecInteract` as opt-in without breaking v0.2 clients.
