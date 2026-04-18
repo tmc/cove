@@ -79,20 +79,31 @@ func runElevatedBashNative(scriptPath, prompt string) error {
 		return fmt.Errorf("authorization script path: %w", err)
 	}
 
+	// authorizationItem.name is a C string (NUL-terminated): Security.framework
+	// calls strlen() on it. A bare []byte conversion is NOT NUL-terminated and
+	// causes SIGBUS when strlen walks past the buffer into unmapped pages.
+	rightName, err := syscall.BytePtrFromString(kAuthorizationRightExecute)
+	if err != nil {
+		return fmt.Errorf("authorization right name: %w", err)
+	}
+	envKey, err := syscall.BytePtrFromString(kAuthorizationEnvironmentPrompt)
+	if err != nil {
+		return fmt.Errorf("authorization env key: %w", err)
+	}
+
 	// Build rights for the privileged tool itself.
-	rightName := []byte(kAuthorizationRightExecute)
 	rightItem := authorizationItem{
-		name:        &rightName[0],
+		name:        rightName,
 		valueLength: uint32(len("/bin/bash")),
 		value:       unsafe.Pointer(toolPath),
 	}
 	rights := authorizationItemSet{count: 1, items: &rightItem}
 
-	// Build environment with prompt text.
+	// Build environment with prompt text. The prompt value is a UTF-8 string
+	// whose length excludes any terminator, per Security.framework docs.
 	promptBytes := []byte(prompt)
-	envKey := []byte(kAuthorizationEnvironmentPrompt)
 	promptItem := authorizationItem{
-		name:        &envKey[0],
+		name:        envKey,
 		valueLength: uint32(len(promptBytes)),
 		value:       unsafe.Pointer(&promptBytes[0]),
 	}
