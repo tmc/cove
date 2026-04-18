@@ -1279,6 +1279,18 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			fmt.Printf("  cove ctl -socket %s gui open\n", sock)
 		}
 	}
+	if runHTTPAddr != "" {
+		name := vmName
+		if name == "" {
+			name = "default"
+		}
+		ln, err := controlServer.StartHTTP(runHTTPAddr, name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: start http: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "cove HTTP API listening at http://%s\n", ln.Addr())
+		}
+	}
 	startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 	startControlRuntimeInfrastructure(controlServer)
 
@@ -1700,6 +1712,18 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			fmt.Printf("  cove ctl -socket %s screenshot -o screen.jpg\n", sock)
 			fmt.Printf("  TOKEN=$(cat %s)\n", GetControlTokenPathForVM(vmDir))
 			fmt.Printf("  echo '{\"type\":\"screenshot\",\"auth_token\":\"'$TOKEN'\"}' | nc -U %s\n", sock)
+		}
+	}
+	if runHTTPAddr != "" {
+		name := vmName
+		if name == "" {
+			name = "default"
+		}
+		ln, err := controlServer.StartHTTP(runHTTPAddr, name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: start http: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "cove HTTP API listening at http://%s\n", ln.Addr())
 		}
 	}
 	if launchOrder != "window-first" {

@@ -65,6 +65,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printSharedFolderUsage(os.Stderr)
 		case "vzscript":
 			printVzscriptUsage(os.Stderr)
+		case "serve":
+			printServeUsage()
 		case "network":
 			fmt.Println(NetworkModeHelp())
 		case "proxy":
@@ -151,6 +153,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printVzscriptUsage(os.Stderr)
 			return true, usageExitCode(subargs)
+		}
+	case "serve":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printServeUsage()
+			return true, 0
 		}
 	}
 

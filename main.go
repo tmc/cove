@@ -129,6 +129,8 @@ var (
 	forceDFU          bool
 	stopInIBootStage1 bool
 	stopInIBootStage2 bool
+	// HTTP listener address for cove run -http.
+	runHTTPAddr string
 )
 
 func init() {
@@ -204,6 +206,7 @@ func init() {
 	flag.BoolVar(&forceDFU, "force-dfu", false, "start a macOS VM in DFU mode using private start options")
 	flag.BoolVar(&stopInIBootStage1, "iboot-stage1", false, "start a macOS VM and stop in iBoot stage 1")
 	flag.BoolVar(&stopInIBootStage2, "iboot-stage2", false, "start a macOS VM and stop in iBoot stage 2")
+	flag.StringVar(&runHTTPAddr, "http", "", "expose VM HTTP API on TCP address (e.g. 127.0.0.1:7777 or :0 for random port)")
 	// Unattended install
 	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (disk provisioning, OCR fallback)")
 	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to vzscript automation file for custom setup")
@@ -470,6 +473,12 @@ func main() {
 		}
 
 		switch cmd {
+		case "serve":
+			if err := runServeCmd(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "install":
 			installVM = true
 			var err error
@@ -661,6 +670,10 @@ Shared Folders:
 Snapshots:
   snapshot        Manage VM state snapshots (list/save/restore/delete)
   disk-snapshot   Manage disk-level snapshots (APFS clonefile, COW)
+
+HTTP & MCP:
+  serve           Multi-VM HTTP gateway on localhost:7777 (cove serve -h for options)
+  run -http :7777 Per-VM HTTP API alongside the Unix socket
 
 Runtime Control:
   ctl             Control running VM via socket (screenshot, key, text, mouse, ...)
