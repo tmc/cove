@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/ebitengine/purego v0.11.0-alpha.1.0.20260318130922-386f7c8fb549
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/tmc/apple v0.5.3
 	github.com/tmc/macgo v0.1.1
