@@ -78,6 +78,7 @@ type ControlServer struct {
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
 	activeConnections atomic.Int32
+	httpListeners     *httpListeners // TCP listeners started by StartHTTP
 }
 
 // agentHealthState tracks proactive agent health monitoring.
@@ -218,6 +219,9 @@ func (s *ControlServer) Stop() {
 	}
 	if s.portForwards != nil {
 		s.portForwards.StopAll()
+	}
+	if s.httpListeners != nil {
+		s.httpListeners.closeAll()
 	}
 	if s.listener != nil {
 		s.listener.Close()
