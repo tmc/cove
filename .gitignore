@@ -1,5 +1,6 @@
 # Binaries
 vz-macos
+cove
 /vz-agent
 cmd/vz-agent/vz-agent
 
