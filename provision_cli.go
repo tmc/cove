@@ -80,7 +80,7 @@ func handleProvision(args []string) error {
 		}
 	})
 	if *user == "" && agentExplicit && *enableAgent {
-		return injectAgentOnly()
+		return provisionAgent()
 	}
 
 	if *user == "" {

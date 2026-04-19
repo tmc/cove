@@ -377,14 +377,14 @@ func main() {
 			}
 			return
 		case "provision-agent":
-			if err := injectAgentOnly(); err != nil {
+			if err := provisionAgent(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		case "inject-agent":
 			fmt.Fprintf(os.Stderr, "note: 'inject-agent' has been renamed to 'provision-agent'\n")
-			if err := injectAgentOnly(); err != nil {
+			if err := provisionAgent(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
@@ -650,7 +650,7 @@ Lifecycle:
 
 Provisioning:
   provision       Write provisioning files into VM disk (self-contained)
-  provision-agent Write only vz-agent daemon (no user provisioning)
+  provision-agent Provision vz-agent daemon (idempotent; uses running-VM vsock when possible)
   agent-upgrade   Live-upgrade vz-agent in a running VM (build, copy, restart)
   verify          Verify provisioning files in VM disk (alias: doctor)
   sip             SIP management (enable/disable/status + recovery automation)

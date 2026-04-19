@@ -158,6 +158,62 @@ func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pend
 	return nil
 }
 
+// provisionAgent provisions the guest agent into the VM, choosing between
+// the running-VM (vsock) path and the offline-disk (mount) path automatically.
+// Idempotent: if the running VM already has the same agent version, returns
+// without rebuilding.
+func provisionAgent() error {
+	sock := GetControlSocketPath()
+	if isVMRunning(sock) {
+		fmt.Println("Updating agent in running VM via vsock...")
+		return provisionAgentRunning(sock)
+	}
+	fmt.Println("Mounting disk for offline injection...")
+	return injectAgentOnly()
+}
+
+// provisionAgentRunning provisions the agent into a running VM via the
+// existing vsock connection. If the agent is reachable and its version
+// matches the host, returns success without rebuilding (fast path). On
+// version mismatch it builds, pushes, and restarts the agent in place.
+func provisionAgentRunning(sock string) error {
+	pingReq := &controlpb.ControlRequest{Type: "agent-ping"}
+	resp, err := ctlSendRequest(sock, pingReq, 5*time.Second, "agent-ping")
+	if err != nil {
+		return fmt.Errorf("agent not reachable on running vm: %w\n  the vm is running but the guest agent is not responding\n  try: cove run -gui (then log in and check /var/log/vz-agent.log)\n  or stop the vm and re-run this command for offline injection", err)
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("agent ping failed: %s", resp.Error)
+	}
+	guestVer := ""
+	if r := resp.GetAgentPing(); r != nil {
+		guestVer = r.Version
+	}
+	hostVer := hostVersion()
+	if agentVersionsEqual(hostVer, guestVer) {
+		fmt.Printf("Agent already up to date (version %s).\n", guestVer)
+		if err := markVMAgentVerifiedForSocket(sock, vmAgentSourceProvision); err != nil && verbose {
+			fmt.Printf("warning: record guest agent capability: %v\n", err)
+		}
+		return nil
+	}
+	fmt.Printf("Agent version %s != host %s, upgrading...\n", guestVer, hostVer)
+	return upgradeAgent()
+}
+
+// agentVersionsEqual reports whether host and guest agent versions should be
+// treated as equivalent for the idempotent fast path. Empty/dev/unknown
+// values mean we cannot prove equivalence and must rebuild.
+func agentVersionsEqual(host, guest string) bool {
+	if host == "" || host == "dev" || host == "unknown" {
+		return false
+	}
+	if guest == "" || guest == "dev" || guest == "unknown" {
+		return false
+	}
+	return host == guest
+}
+
 // injectAgentOnly mounts the VM disk and injects the vz-agent binary,
 // LaunchDaemon plist (port 1024), and LaunchAgent plist (port 1025).
 // No user provisioning is performed.
