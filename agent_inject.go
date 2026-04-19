@@ -68,6 +68,26 @@ func buildAgentBinary(outputPath string) error {
 		return fmt.Errorf("build agent: %w", err)
 	}
 	fmt.Printf("Built: %s\n", outputPath)
+
+	if targetOS == "darwin" {
+		if err := codesignAdHoc(outputPath); err != nil {
+			return fmt.Errorf("codesign agent binary: %w", err)
+		}
+	}
+	return nil
+}
+
+// codesignAdHoc applies an ad-hoc signature to a Mach-O binary. macOS
+// Sequoia and later kill unsigned binaries at exec time via amfid, so
+// the guest agent must be signed before being copied into the VM disk.
+func codesignAdHoc(path string) error {
+	cmd := exec.Command("codesign", "-s", "-", "-f", path)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	fmt.Printf("Signed: %s (ad-hoc)\n", path)
 	return nil
 }
 
