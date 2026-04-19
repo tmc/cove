@@ -73,6 +73,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printProxyUsage(os.Stderr)
 		case "rosetta":
 			fmt.Println(RosettaHelp())
+		case "helper":
+			_ = helperUsage()
 		default:
 			fmt.Fprintf(os.Stderr, "unknown help topic: %s\n", subargs[0])
 			return true, 2
@@ -158,6 +160,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printServeUsage()
 			return true, 0
+		}
+	case "helper":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			_ = helperUsage()
+			return true, usageExitCode(subargs)
 		}
 	}
 

@@ -542,6 +542,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "helper":
+			if err := runHelperCmd(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command: %s\nRun 'cove -help' for usage.\n", cmd)
 			os.Exit(1)

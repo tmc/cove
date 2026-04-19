@@ -138,6 +138,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -759,10 +760,29 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 	return nil
 }
 
-// runElevatedBash runs a bash script with root privileges using native
-// Authorization Services. It does not read the host admin password in app code.
+// runElevatedBash runs a bash script with root privileges. It first tries the
+// installed cove helper (one prompt at install time, none thereafter) and
+// falls back to the native Authorization Services dialog if the helper is
+// unavailable. After the fallback succeeds, it suggests installing the helper
+// so future runs don't prompt.
 func runElevatedBash(scriptPath, prompt string) error {
-	return runElevatedBashNative(scriptPath, prompt)
+	handled, err := runElevatedBashViaHelper(scriptPath)
+	if handled {
+		return err
+	}
+	if err != nil && !errors.Is(err, errHelperUnavailable) {
+		fmt.Fprintf(os.Stderr, "cove helper present but unreachable: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Falling back to admin password prompt.")
+	}
+	if nerr := runElevatedBashNative(scriptPath, prompt); nerr != nil {
+		return nerr
+	}
+	if !helperInstalled() {
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Tip: install the cove helper to skip this prompt next time:")
+		fmt.Fprintln(os.Stderr, "  cove helper install")
+	}
+	return nil
 }
 
 // stageAgent cross-compiles the vz-agent binary and stages it along with
