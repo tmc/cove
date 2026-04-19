@@ -318,6 +318,17 @@ func injectAgentOnly() error {
 		}
 		return fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
 	}
+
+	// In restricted environments (Claude Code, sandboxed shell), we cannot
+	// show the macOS authorization dialog, hold a disk mount across user
+	// action, or guarantee temp files survive cleanup defers. Build the
+	// agent and a self-contained installer script into a stable location
+	// the user can re-run by hand, then bail with clear instructions. The
+	// generated script does its own mount + copy + detach.
+	if restrictedEnvironment() && os.Getuid() != 0 && !helperInstalled() {
+		return injectAgentOnlyRestricted(diskPath)
+	}
+
 	if err := checkDiskNotMounted(diskPath); err != nil {
 		return err
 	}
@@ -432,6 +443,163 @@ func injectAgentOnly() error {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
 	return nil
+}
+
+// injectAgentOnlyRestricted handles agent injection when cove is running in
+// a restricted environment (sandboxed shell, no controlling tty for password
+// dialog). It builds the agent and writes a self-contained installer script
+// into ~/.vz/pending-elevation/<timestamp>/ that the user can re-run by hand
+// in a real terminal. The script does its own mount + copy + detach.
+func injectAgentOnlyRestricted(diskPath string) error {
+	fmt.Println("=== Provisioning Guest Agent (restricted environment) ===")
+	fmt.Println("Detected sandboxed environment; preparing self-contained installer.")
+
+	stagingRoot := filepath.Join(os.Getenv("HOME"), ".vz", "pending-elevation")
+	if err := os.MkdirAll(stagingRoot, 0755); err != nil {
+		return fmt.Errorf("create staging root: %w", err)
+	}
+	staging, err := os.MkdirTemp(stagingRoot, "agent-")
+	if err != nil {
+		return fmt.Errorf("create staging dir: %w", err)
+	}
+
+	binPath := filepath.Join(staging, agentBinaryName)
+	if err := buildAgentBinary(binPath); err != nil {
+		return err
+	}
+
+	daemonPlistPath := filepath.Join(staging, agentLaunchDaemonLabel+".plist")
+	if err := os.WriteFile(daemonPlistPath, []byte(agentLaunchDaemonPlist), 0644); err != nil {
+		return fmt.Errorf("write daemon plist: %w", err)
+	}
+	agentPlistPath := filepath.Join(staging, agentLaunchAgentLabel+".plist")
+	if err := os.WriteFile(agentPlistPath, []byte(agentLaunchAgentPlist), 0644); err != nil {
+		return fmt.Errorf("write agent plist: %w", err)
+	}
+
+	scriptPath := filepath.Join(staging, "install.sh")
+	script := fmt.Sprintf(`#!/bin/bash
+# cove agent installer — generated for %s
+# Run this with sudo. It mounts the VM disk, copies the agent and plists
+# with root:wheel ownership, then detaches the disk.
+set -euo pipefail
+
+DISK=%q
+STAGE=%q
+
+if [ "$(id -u)" != "0" ]; then
+  echo "must run as root: sudo bash $0" >&2
+  exit 1
+fi
+
+echo "==> Attaching disk: $DISK"
+ATTACH_OUT=$(hdiutil attach "$DISK" -nobrowse -noverify -noautoopen -plist 2>&1) || {
+  echo "hdiutil attach failed:" >&2
+  echo "$ATTACH_OUT" >&2
+  exit 1
+}
+
+DEVICE=$(echo "$ATTACH_OUT" | /usr/bin/plutil -convert xml1 -o - - | \
+  /usr/bin/awk '/<key>dev-entry<\/key>/{getline; gsub(/.*<string>|<\/string>.*/,""); print; exit}')
+if [ -z "${DEVICE:-}" ]; then
+  echo "could not determine device node from attach output" >&2
+  echo "$ATTACH_OUT" >&2
+  exit 1
+fi
+echo "==> Container device: $DEVICE"
+
+DATA_PART=""
+for p in $(diskutil list "$DEVICE" | awk '/Data/ && /APFS Volume/ {print $NF}'); do
+  if diskutil info "$p" 2>/dev/null | grep -q "Volume Name:.*Data"; then
+    DATA_PART="$p"
+    break
+  fi
+done
+if [ -z "$DATA_PART" ]; then
+  DATA_PART=$(diskutil list "$DEVICE" | awk '/APFS Volume.*Data/ {print $NF; exit}')
+fi
+if [ -z "$DATA_PART" ]; then
+  echo "could not find Data volume in $DEVICE" >&2
+  diskutil list "$DEVICE" >&2
+  hdiutil detach "$DEVICE" || true
+  exit 1
+fi
+echo "==> Data partition: /dev/$DATA_PART"
+
+diskutil mount /dev/"$DATA_PART" >/dev/null
+MOUNT=$(diskutil info /dev/"$DATA_PART" | awk -F: '/Mount Point/ {gsub(/^ +/,"",$2); print $2; exit}')
+if [ -z "$MOUNT" ]; then
+  echo "could not determine mount point for /dev/$DATA_PART" >&2
+  hdiutil detach "$DEVICE" || true
+  exit 1
+fi
+echo "==> Mount point: $MOUNT"
+
+cleanup() {
+  echo "==> Detaching $DEVICE"
+  hdiutil detach "$DEVICE" || diskutil unmountDisk force "$DEVICE" || true
+}
+trap cleanup EXIT
+
+diskutil enableOwnership /dev/"$DATA_PART"
+
+BIN_DIR="$MOUNT/usr/local/bin"
+DAEMON_DIR="$MOUNT/Library/LaunchDaemons"
+AGENT_DIR="$MOUNT/Library/LaunchAgents"
+mkdir -p "$BIN_DIR" "$DAEMON_DIR" "$AGENT_DIR"
+
+cp "$STAGE/%s" "$BIN_DIR/%s"
+chmod 755 "$BIN_DIR/%s"
+chown root:wheel "$BIN_DIR/%s"
+echo "    wrote $BIN_DIR/%s"
+
+cp "$STAGE/%s" "$DAEMON_DIR/%s"
+chmod 644 "$DAEMON_DIR/%s"
+chown root:wheel "$DAEMON_DIR/%s"
+echo "    wrote $DAEMON_DIR/%s"
+
+cp "$STAGE/%s" "$AGENT_DIR/%s"
+chmod 644 "$AGENT_DIR/%s"
+chown root:wheel "$AGENT_DIR/%s"
+echo "    wrote $AGENT_DIR/%s"
+
+echo
+echo "=== Agent injection complete ==="
+echo "Boot the VM with: cove -vm <name> run"
+`,
+		diskPath,
+		diskPath,
+		staging,
+		agentBinaryName, agentBinaryName, agentBinaryName, agentBinaryName, agentBinaryName,
+		agentLaunchDaemonLabel+".plist", agentLaunchDaemonLabel+".plist",
+		agentLaunchDaemonLabel+".plist", agentLaunchDaemonLabel+".plist",
+		agentLaunchDaemonLabel+".plist",
+		agentLaunchAgentLabel+".plist", agentLaunchAgentLabel+".plist",
+		agentLaunchAgentLabel+".plist", agentLaunchAgentLabel+".plist",
+		agentLaunchAgentLabel+".plist",
+	)
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		return fmt.Errorf("write installer script: %w", err)
+	}
+
+	if err := setVMAgentRequested(vmDir, detectVMAgentPlatform(vmDir), true, vmAgentSourceProvision); err != nil && verbose {
+		fmt.Printf("warning: save guest agent config: %v\n", err)
+	}
+
+	fmt.Println()
+	fmt.Println("Cannot complete injection here (no terminal for password dialog).")
+	fmt.Println("All build steps done; run this in a real terminal to finish:")
+	fmt.Println()
+	fmt.Printf("  sudo bash %s\n", scriptPath)
+	fmt.Println()
+	fmt.Println("The script is self-contained: it mounts the disk, copies the signed")
+	fmt.Println("agent + plists with root:wheel ownership, then detaches the disk.")
+	fmt.Println()
+	fmt.Printf("Staging directory (safe to delete after success): %s\n", staging)
+	fmt.Println()
+	fmt.Println("To skip this step in the future, install the cove helper once:")
+	fmt.Println("  sudo cove helper install")
+	return errRestrictedNoElevation
 }
 
 // checkAgentAvailability runs in the background after VM start. It waits

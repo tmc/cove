@@ -765,6 +765,11 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 // falls back to the native Authorization Services dialog if the helper is
 // unavailable. After the fallback succeeds, it suggests installing the helper
 // so future runs don't prompt.
+//
+// In restricted environments (Claude Code, sandboxed shells, no controlling
+// tty), the native dialog cannot appear — instead of failing with a cryptic
+// AuthorizationCreate error, print the exact command the user can run by
+// hand and return errRestrictedNoElevation.
 func runElevatedBash(scriptPath, prompt string) error {
 	handled, err := runElevatedBashViaHelper(scriptPath)
 	if handled {
@@ -773,6 +778,10 @@ func runElevatedBash(scriptPath, prompt string) error {
 	if err != nil && !errors.Is(err, errHelperUnavailable) {
 		fmt.Fprintf(os.Stderr, "cove helper present but unreachable: %v\n", err)
 		fmt.Fprintln(os.Stderr, "Falling back to admin password prompt.")
+	}
+	if restrictedEnvironment() {
+		printManualElevation(scriptPath, prompt)
+		return errRestrictedNoElevation
 	}
 	if nerr := runElevatedBashNative(scriptPath, prompt); nerr != nil {
 		return nerr
@@ -783,6 +792,49 @@ func runElevatedBash(scriptPath, prompt string) error {
 		fmt.Fprintln(os.Stderr, "  cove helper install")
 	}
 	return nil
+}
+
+// errRestrictedNoElevation is returned when cove is invoked from a restricted
+// environment (Claude Code, sandboxed shell) where the native authorization
+// dialog cannot appear and no helper is available. Callers receiving this
+// error should propagate it as-is; the relevant remediation has already been
+// printed to stderr.
+var errRestrictedNoElevation = errors.New("cannot prompt for elevation in restricted environment; run the printed command in a real terminal")
+
+// restrictedEnvironment reports whether cove is running in a context that
+// cannot show the native macOS authorization dialog. Detection is conservative:
+// it returns true only when an unambiguous signal is present.
+func restrictedEnvironment() bool {
+	if os.Getenv("CLAUDECODE") == "1" {
+		return true
+	}
+	if os.Getenv("IS_SANDBOX") == "1" {
+		return true
+	}
+	if os.Getenv("COVE_FORCE_MANUAL_ELEVATION") == "1" {
+		return true
+	}
+	return false
+}
+
+// printManualElevation writes the exact command the user can run in a real
+// terminal to complete the elevated step.
+func printManualElevation(scriptPath, prompt string) {
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Cannot show password dialog in this environment (sandboxed).")
+	if prompt != "" {
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "  "+prompt)
+	}
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Run this in a real terminal to complete the elevated step:")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  sudo bash %s\n", scriptPath)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Or install the cove helper once for future hands-off runs:")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "  sudo cove helper install")
+	fmt.Fprintln(os.Stderr)
 }
 
 // stageAgent cross-compiles the vz-agent binary and stages it along with
