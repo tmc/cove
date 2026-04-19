@@ -110,6 +110,8 @@ Guest agent (gRPC over vsock):
   agent-sshd <on|off|status>  Manage SSH remote login
   agent-mount-volumes         Mount tagged VirtioFS volumes in guest
   agent-status                Agent health status (daemon + user agent)
+  ready [--require <names>]   Run readiness checks (xcode-cli, go, homebrew, ...)
+                              Exit 0 = all pass, 1 = some failed, 2 = agent unreachable
 
 Port forwarding:
   port-forward start <hostPort:guestPort>  Forward host TCP to guest vsock
@@ -148,6 +150,8 @@ Examples:
   cove ctl -wait 60s agent-ping
   cove ctl agent-exec ls /tmp
   cove ctl agent-exec --daemon whoami
+  cove ctl ready --require xcode-cli,go,homebrew
+  cove ctl ready --require go --json
 `)
 }
 
@@ -176,6 +180,19 @@ func ctlCommand(args []string) error {
 	// modify the slice without aliasing fs.Args()'s backing array.
 	cmdType := fs.Arg(0)
 	subArgs := append([]string{}, fs.Args()[1:]...)
+
+	// Subcommands that own their flag parsing (including --daemon, -o, --) get
+	// the raw subArgs before the generic strippers below mangle them.
+	if cmdType == "ready" {
+		sock := *socketPath
+		if sock == "" {
+			sock = GetControlSocketPath()
+		}
+		if strings.TrimSpace(*token) != "" {
+			os.Setenv(controlTokenEnvVar, strings.TrimSpace(*token))
+		}
+		return ctlReady(sock, subArgs)
+	}
 
 	// Handle flags that appear after the subcommand (e.g. "screenshot -o file.jpg").
 	// Go's flag parser stops at the first non-flag arg, so flags after the subcommand
