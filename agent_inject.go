@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -47,7 +48,13 @@ func buildAgentBinary(outputPath string) error {
 		targetOS = "linux"
 	}
 
+	moduleDir, err := findCoveModuleDir()
+	if err != nil {
+		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)
+	}
+
 	cmd := exec.Command("go", "build", "-o", outputPath, agentPkg)
+	cmd.Dir = moduleDir
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",
 		"GOOS="+targetOS,
@@ -56,12 +63,73 @@ func buildAgentBinary(outputPath string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	fmt.Printf("Building %s (%s/arm64)...\n", agentBinaryName, targetOS)
+	fmt.Printf("Building %s (%s/arm64) from %s...\n", agentBinaryName, targetOS, moduleDir)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build agent: %w", err)
 	}
 	fmt.Printf("Built: %s\n", outputPath)
 	return nil
+}
+
+// findCoveModuleDir locates the vz-macos module source directory so the
+// guest agent can be cross-compiled from any working directory.
+//
+// Resolution order:
+//  1. $COVE_SRC env var (explicit override)
+//  2. `go list -m -f {{.Dir}} github.com/tmc/vz-macos` from the working dir
+//  3. `go list -m -f {{.Dir}} github.com/tmc/vz-macos` from $GOPATH/src/github.com/tmc/vz-macos
+//  4. $GOPATH/src/github.com/tmc/vz-macos if it contains go.mod
+//
+// Returns the directory containing go.mod, or an error if none of the above
+// resolve to a valid module root.
+func findCoveModuleDir() (string, error) {
+	if env := os.Getenv("COVE_SRC"); env != "" {
+		if _, err := os.Stat(filepath.Join(env, "go.mod")); err == nil {
+			return env, nil
+		}
+		return "", fmt.Errorf("COVE_SRC=%s does not contain go.mod", env)
+	}
+
+	if dir, err := goListModuleDir(""); err == nil {
+		return dir, nil
+	}
+
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			gopath = filepath.Join(home, "go")
+		}
+	}
+	if gopath != "" {
+		candidate := filepath.Join(gopath, "src", "github.com", "tmc", "vz-macos")
+		if _, err := os.Stat(filepath.Join(candidate, "go.mod")); err == nil {
+			return candidate, nil
+		}
+		if dir, err := goListModuleDir(candidate); err == nil {
+			return dir, nil
+		}
+	}
+
+	return "", fmt.Errorf("vz-macos module not found in working dir, GOPATH, or COVE_SRC")
+}
+
+func goListModuleDir(workingDir string) (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/tmc/vz-macos")
+	if workingDir != "" {
+		cmd.Dir = workingDir
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return "", fmt.Errorf("empty module dir")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+		return "", fmt.Errorf("module dir has no go.mod: %s", dir)
+	}
+	return dir, nil
 }
 
 // injectAgent cross-compiles the vz-agent binary and injects it into the
