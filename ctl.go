@@ -27,6 +27,7 @@ func newCtlFlagSet() (*flag.FlagSet, *string, *time.Duration, *string, *bool, *t
 	fs := flag.NewFlagSet("ctl", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	socketPath := fs.String("socket", "", "Control socket path (default: auto-detected from VM dir)")
+	vmFlag := fs.String("vm", "", "VM name; resolves -socket from ~/.vz/vms/<name>/control.sock")
 	timeout := fs.Duration("timeout", 10*time.Second, "Command timeout")
 	outputFile := fs.String("o", "", "Output file for screenshot data (default: stdout)")
 	raw := fs.Bool("raw", false, "Output raw JSON response")
@@ -35,8 +36,19 @@ func newCtlFlagSet() (*flag.FlagSet, *string, *time.Duration, *string, *bool, *t
 	fs.Usage = func() {
 		printCtlUsage(os.Stderr, fs)
 	}
+	// Resolve -vm to -socket lazily at parse time. Done in ctlCommand because
+	// the flag set returns pointers parsed later.
+	_ = vmFlag
+	// Stash the vm flag pointer in a closure-friendly way: we return it via
+	// an env var bridge here to keep the existing return signature.
+	ctlVMFlag = vmFlag
 	return fs, socketPath, timeout, outputFile, raw, wait, token
 }
+
+// ctlVMFlag holds the most recent -vm flag pointer so ctlCommand can resolve
+// it after fs.Parse without changing newCtlFlagSet's return signature
+// (which is also called from cli_help.go).
+var ctlVMFlag *string
 
 func printCtlUsage(w io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintf(w, `Usage: cove ctl [options] <command> [args...]
@@ -150,6 +162,7 @@ Examples:
   cove ctl -wait 60s agent-ping
   cove ctl agent-exec ls /tmp
   cove ctl agent-exec --daemon whoami
+  cove ctl -vm smoke ping
   cove ctl ready --require xcode-cli,go,homebrew
   cove ctl ready --require go --json
 `)
@@ -169,6 +182,15 @@ func ctlCommand(args []string) error {
 			return nil
 		}
 		return err
+	}
+
+	// If -vm was given and -socket was not, resolve the socket from the VM dir.
+	if ctlVMFlag != nil && *ctlVMFlag != "" && *socketPath == "" {
+		dir := GetVMPath(*ctlVMFlag)
+		if dir == "" {
+			return fmt.Errorf("vm not found: %s", *ctlVMFlag)
+		}
+		*socketPath = GetControlSocketPathForVM(dir)
 	}
 
 	if fs.NArg() < 1 {
