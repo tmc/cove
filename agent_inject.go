@@ -291,11 +291,12 @@ func injectAgentOnly() error {
 	}
 	diskPath := filepath.Join(vmDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		// Linux VMs use linux-disk.img
-		diskPath = filepath.Join(vmDir, "linux-disk.img")
-		if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-			return fmt.Errorf("disk image not found: %s (also checked linux-disk.img)\nRun 'cove install' first to create a VM", filepath.Join(vmDir, "disk.img"))
+		linuxDisk := filepath.Join(vmDir, "linux-disk.img")
+		if _, lerr := os.Stat(linuxDisk); lerr == nil {
+			return fmt.Errorf("offline agent inject is not supported for Linux VMs (found %s)\n  Linux VMs install the agent via cloud-init at install time.\n  Options:\n    - Reinstall: cove install -linux\n    - Boot the VM and install the agent over SSH manually\n    - Track the embedded-cidata fix at task #17",
+				linuxDisk)
 		}
+		return fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
 	}
 	if err := checkDiskNotMounted(diskPath); err != nil {
 		return err
