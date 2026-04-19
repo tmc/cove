@@ -26,6 +26,7 @@ type upConfig struct {
 	vmDir                    string
 	ipswPath                 string
 	vzscripts                string
+	setupScriptPath          string
 	cpuCount                 uint
 	memoryGB                 uint64
 	diskSizeGB               uint64
@@ -101,6 +102,13 @@ func parseUpFlags(args []string) (upConfig, error) {
 		}
 	}
 
+	// Validate setup script is readable before doing any heavy work.
+	if cfg.setupScriptPath != "" {
+		if _, err := os.Stat(cfg.setupScriptPath); err != nil {
+			return upConfig{}, fmt.Errorf("setup-script: %w", err)
+		}
+	}
+
 	// Resolve VM directory.
 	if cfg.vmName != "" {
 		dir, err := EnsureVMDir(cfg.vmName)
@@ -137,6 +145,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.StringVar(&cfg.user, "user", "", "Username for the provisioned user (required)")
 	fs.StringVar(&cfg.password, "password", "", "Password for the provisioned user (prompts if empty)")
 	fs.StringVar(&cfg.vzscripts, "vzscripts", "", "Comma-separated vzscript recipes to run after boot (e.g. homebrew,openclaw)")
+	fs.StringVar(&cfg.setupScriptPath, "setup-script", "", "Path to a plain text script: each non-blank, non-# line runs via the guest agent after boot")
 	fs.StringVar(&cfg.ipswPath, "ipsw", "", "Path to IPSW restore image (downloads latest if empty)")
 	fs.BoolVar(&cfg.force, "force", false, "Force install even if the VM disk already exists")
 	fs.BoolVar(&cfg.gui, "gui", true, "Show VM display in a window")
@@ -174,6 +183,7 @@ Options:
 Examples:
   cove up -user me                                        # macOS VM
   cove up -user me -vzscripts homebrew,openclaw            # macOS + recipes
+  cove up -user me -setup-script ./setup.sh                # macOS + plain script
   cove up -user me -ipsw ~/restore.ipsw                   # macOS with IPSW
   cove up -linux                                           # Linux Server (ubuntu/ubuntu)
   cove up -linux -user tmc -password secret                # Linux with custom user
@@ -279,13 +289,22 @@ func runUpPipeline(cfg upConfig) error {
 		fmt.Println("=== Step 2/3: Provisioning (already done) ===")
 	}
 
-	// Step 3: Boot VM and optionally run vzscripts.
+	// Step 3: Boot VM and optionally run vzscripts and/or setup-script.
 	recipes := splitRecipes(cfg.vzscripts)
-	if len(recipes) > 0 {
-		savePostInstallRecipes(vmDir, cfg.vzscripts)
+	if len(recipes) > 0 || cfg.setupScriptPath != "" {
+		if len(recipes) > 0 {
+			savePostInstallRecipes(vmDir, cfg.vzscripts)
+		}
 		fmt.Println()
-		fmt.Printf("=== Step 3/3: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
-		return runUpWithVZScripts(recipes, cfg.noShutdown, cfg.verbose)
+		switch {
+		case len(recipes) > 0 && cfg.setupScriptPath != "":
+			fmt.Printf("=== Step 3/3: Boot + vzscripts (%s) + setup-script (%s) ===\n", cfg.vzscripts, cfg.setupScriptPath)
+		case len(recipes) > 0:
+			fmt.Printf("=== Step 3/3: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
+		default:
+			fmt.Printf("=== Step 3/3: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
+		}
+		return runUpWithVZScripts(recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose)
 	}
 
 	fmt.Println()
@@ -294,10 +313,10 @@ func runUpPipeline(cfg upConfig) error {
 }
 
 // runUpWithVZScripts boots the VM in a goroutine, runs the given vzscript
-// recipes, and either shuts down the VM or leaves it running based on
-// noShutdown. If the VM exits unexpectedly during script execution, the
-// error is returned immediately.
-func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
+// recipes followed by an optional plain setup-script, and either shuts down
+// the VM or leaves it running based on noShutdown. If the VM exits
+// unexpectedly during script execution, the error is returned immediately.
+func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verboseMode bool) error {
 	// Validate all recipes before booting.
 	for _, name := range recipes {
 		if _, err := loadVZScriptData(name); err != nil {
@@ -353,8 +372,17 @@ func runUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
 			fmt.Printf("=== Done: %s ===\n", name)
 		}
 
+		if setupScript != "" {
+			fmt.Printf("\n=== Running setup-script: %s ===\n", setupScript)
+			if err := runSetupScript(setupScript); err != nil {
+				scriptsDone <- err
+				return
+			}
+			fmt.Printf("=== Done: setup-script ===\n")
+		}
+
 		if noShutdown {
-			fmt.Println("\nAll vzscripts complete. VM is still running.")
+			fmt.Println("\nAll post-boot scripts complete. VM is still running.")
 			fmt.Println("Use 'cove ctl stop' to shut it down.")
 			scriptsDone <- nil
 			return
@@ -398,13 +426,22 @@ func runLinuxUpPipeline(cfg upConfig) error {
 		}
 	}
 
-	// Step 2: Boot VM and optionally run vzscripts.
+	// Step 2: Boot VM and optionally run vzscripts and/or setup-script.
 	recipes := splitRecipes(cfg.vzscripts)
-	if len(recipes) > 0 {
-		savePostInstallRecipes(vmDir, cfg.vzscripts)
+	if len(recipes) > 0 || cfg.setupScriptPath != "" {
+		if len(recipes) > 0 {
+			savePostInstallRecipes(vmDir, cfg.vzscripts)
+		}
 		fmt.Println()
-		fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
-		return runLinuxUpWithVZScripts(recipes, cfg.noShutdown, cfg.verbose)
+		switch {
+		case len(recipes) > 0 && cfg.setupScriptPath != "":
+			fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) + setup-script (%s) ===\n", cfg.vzscripts, cfg.setupScriptPath)
+		case len(recipes) > 0:
+			fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
+		default:
+			fmt.Printf("=== Step 2/2: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
+		}
+		return runLinuxUpWithVZScripts(recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose)
 	}
 
 	fmt.Println()
@@ -412,8 +449,9 @@ func runLinuxUpPipeline(cfg upConfig) error {
 	return runLinuxVM()
 }
 
-// runLinuxUpWithVZScripts boots a Linux VM and runs vzscript recipes.
-func runLinuxUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) error {
+// runLinuxUpWithVZScripts boots a Linux VM, runs vzscript recipes and an
+// optional plain setup-script, then shuts down (unless noShutdown).
+func runLinuxUpWithVZScripts(recipes []string, setupScript string, noShutdown, verboseMode bool) error {
 	for _, name := range recipes {
 		if _, err := loadVZScriptData(name); err != nil {
 			return fmt.Errorf("recipe %q: %w", name, err)
@@ -463,8 +501,17 @@ func runLinuxUpWithVZScripts(recipes []string, noShutdown, verboseMode bool) err
 			fmt.Printf("=== Done: %s ===\n", name)
 		}
 
+		if setupScript != "" {
+			fmt.Printf("\n=== Running setup-script: %s ===\n", setupScript)
+			if err := runSetupScript(setupScript); err != nil {
+				scriptsDone <- err
+				return
+			}
+			fmt.Printf("=== Done: setup-script ===\n")
+		}
+
 		if noShutdown {
-			fmt.Println("\nAll vzscripts complete. VM is still running.")
+			fmt.Println("\nAll post-boot scripts complete. VM is still running.")
 			fmt.Println("Use 'cove ctl stop' to shut it down.")
 			scriptsDone <- nil
 			return
