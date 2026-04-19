@@ -760,7 +760,12 @@ func createCloudInitISO(config LinuxProvisionConfig) (string, string, error) {
 // buildAgentBinaryTo cross-compiles the vz-agent binary to the given path.
 func buildAgentBinaryTo(outputPath, targetOS, targetArch string) error {
 	agentPkg := "github.com/tmc/vz-macos/cmd/vz-agent"
+	moduleDir, err := findCoveModuleDir()
+	if err != nil {
+		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)
+	}
 	cmd := exec.Command("go", "build", "-o", outputPath, agentPkg)
+	cmd.Dir = moduleDir
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",
 		"GOOS="+targetOS,
@@ -768,7 +773,7 @@ func buildAgentBinaryTo(outputPath, targetOS, targetArch string) error {
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	fmt.Printf("Building vz-agent (%s/%s)...\n", targetOS, targetArch)
+	fmt.Printf("Building vz-agent (%s/%s) from %s...\n", targetOS, targetArch, moduleDir)
 	return cmd.Run()
 }
 
