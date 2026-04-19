@@ -898,22 +898,27 @@ func handleList() {
 
 // handleClone handles the clone subcommand.
 func handleClone(args []string) {
-	// Parse: clone [source] <target> [--linked]
-	// If only one arg, source is default/active VM
+	// Parse: clone [source] <target> [--linked] [--with-agent]
 	var source, target string
+	withAgent := false
 
 	nonFlagArgs := []string{}
 	for _, arg := range args {
-		if arg == "--linked" || arg == "-linked" {
+		switch arg {
+		case "--linked", "-linked":
 			cloneLinked = true
-		} else if len(arg) > 0 && arg[0] != '-' {
-			nonFlagArgs = append(nonFlagArgs, arg)
+		case "--with-agent", "-with-agent":
+			withAgent = true
+		default:
+			if len(arg) > 0 && arg[0] != '-' {
+				nonFlagArgs = append(nonFlagArgs, arg)
+			}
 		}
 	}
 
 	switch len(nonFlagArgs) {
 	case 0:
-		fmt.Fprintln(os.Stderr, "Usage: cove clone [source] <target> [--linked]")
+		fmt.Fprintln(os.Stderr, "Usage: cove clone [source] <target> [--linked] [--with-agent]")
 		os.Exit(1)
 	case 1:
 		source = GetActiveVM()
@@ -932,6 +937,17 @@ func handleClone(args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+
+	if withAgent {
+		fmt.Println()
+		fmt.Println("=== Provisioning agent into clone ===")
+		// provisionAgent operates on vmDir; point it at the new clone.
+		vmDir = GetVMPath(target)
+		if err := provisionAgent(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: provision agent in clone: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
 
