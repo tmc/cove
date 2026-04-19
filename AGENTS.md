@@ -1,40 +1,33 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+Project conventions for AI coding agents working in this repo.
 
-## Quick Reference
+## Build & Sign
+
+After every Go build, re-sign the binary with the virtualization entitlement:
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
-## Landing the Plane (Session Completion)
+Without re-signing, the binary will fail with sandbox/entitlement errors at runtime.
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+## Style
 
-**MANDATORY WORKFLOW:**
+Russ Cox style: small interfaces, stdlib-first, no panics in APIs, no
+backwards-compat hacks, lowercase error messages wrapped with `fmt.Errorf`.
+Default to no comments — code should be self-explanatory; comments only when
+the *why* is non-obvious.
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+## Testing
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+- Table-driven tests with `[]struct{name, input, want}`.
+- Example tests with `// Output:` comments for exported APIs.
+- Script-based integration tests via `rsc.io/script` for CLI flows.
 
+## Landing Work
+
+1. Run quality gates: `go build ./...`, `go test ./...`.
+2. Atomic commits — stage related changes together, never `git add -A`.
+3. `git push` before handing off. Work is not complete until it lands on the remote.
