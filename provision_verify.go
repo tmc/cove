@@ -241,6 +241,8 @@ func verifyStopped(verbose, fix bool) error {
 		{"private/var/db/.AppleSetupDone", "any", false, "Setup Assistant skip marker"},
 		{"private/etc/kcpassword", "root:wheel", false, "Auto-login password (kcpassword)"},
 		{"Library/Preferences/com.apple.loginwindow.plist", "root:wheel", false, "Login window preferences"},
+		{autoLoginScriptRelativePath, "root:wheel", false, "Auto-login repair script"},
+		{autoLoginLaunchDaemonRelativePath, "root:wheel", false, "Auto-login repair LaunchDaemon"},
 		{"private/var/db/.vz-provisioned", "any", false, "Provisioning completed marker"},
 		{"private/var/db/vz-guest-tools.pkg", "root:wheel", false, "SPICE guest tools package (pending install)"},
 		{"private/var/db/.vz-guest-tools-installed", "any", false, "SPICE guest tools installed marker"},

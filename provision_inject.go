@@ -20,6 +20,11 @@ import (
 	"github.com/tmc/apple/x/plist"
 )
 
+const (
+	autoLoginScriptRelativePath       = "private/var/db/vz-autologin.sh"
+	autoLoginLaunchDaemonRelativePath = "Library/LaunchDaemons/com.github.tmc.vz-macos.autologin.plist"
+)
+
 // --- Username validation ---
 
 // validateUsername checks if a username is valid for macOS
@@ -151,6 +156,16 @@ func generateEmbeddedProvisionScript(config ProvisionConfig) (string, error) {
 	return result, nil
 }
 
+func generateEmbeddedAutoLoginScript(username string) (string, error) {
+	result, err := renderAutoLoginScript(autoLoginTemplateData{
+		Username: shellEscape(username),
+	})
+	if err != nil {
+		return "", fmt.Errorf("render autologin script: %w", err)
+	}
+	return result, nil
+}
+
 // --- Auto-login injection ---
 
 // injectAutoLogin configures automatic login by creating kcpassword and loginwindow.plist.
@@ -191,6 +206,30 @@ func injectAutoLogin(mountPoint, username, password string, rootFiles *[]string)
 	chownRootWheel(loginWindowPath, rootFiles)
 	fmt.Printf("Written: %s\n", loginWindowPath)
 
+	autoLoginScript, err := generateEmbeddedAutoLoginScript(username)
+	if err != nil {
+		return err
+	}
+	autoLoginScriptPath := filepath.Join(mountPoint, filepath.FromSlash(autoLoginScriptRelativePath))
+	if err := os.MkdirAll(filepath.Dir(autoLoginScriptPath), 0755); err != nil {
+		return fmt.Errorf("create autologin script directory: %w", err)
+	}
+	if err := os.WriteFile(autoLoginScriptPath, []byte(autoLoginScript), 0755); err != nil {
+		return fmt.Errorf("write autologin script: %w", err)
+	}
+	chownRootWheel(autoLoginScriptPath, rootFiles)
+	fmt.Printf("Written: %s\n", autoLoginScriptPath)
+
+	autoLoginPlistPath := filepath.Join(mountPoint, filepath.FromSlash(autoLoginLaunchDaemonRelativePath))
+	if err := os.MkdirAll(filepath.Dir(autoLoginPlistPath), 0755); err != nil {
+		return fmt.Errorf("create autologin LaunchDaemon directory: %w", err)
+	}
+	if err := os.WriteFile(autoLoginPlistPath, []byte(autoLoginLaunchDaemonPlist), 0644); err != nil {
+		return fmt.Errorf("write autologin LaunchDaemon plist: %w", err)
+	}
+	chownRootWheel(autoLoginPlistPath, rootFiles)
+	fmt.Printf("Written: %s\n", autoLoginPlistPath)
+
 	return nil
 }
 
@@ -209,6 +248,18 @@ func stageAutoLogin(stagingDir, username, password string, manifest *ProvisionMa
 	}
 	if err := stageFile(stagingDir, filepath.Join("Library", "Preferences", "com.apple.loginwindow.plist"),
 		plistData, 0644, "root:wheel", manifest); err != nil {
+		return err
+	}
+	autoLoginScript, err := generateEmbeddedAutoLoginScript(username)
+	if err != nil {
+		return err
+	}
+	if err := stageFile(stagingDir, filepath.FromSlash(autoLoginScriptRelativePath),
+		[]byte(autoLoginScript), 0755, "root:wheel", manifest); err != nil {
+		return err
+	}
+	if err := stageFile(stagingDir, filepath.FromSlash(autoLoginLaunchDaemonRelativePath),
+		[]byte(autoLoginLaunchDaemonPlist), 0644, "root:wheel", manifest); err != nil {
 		return err
 	}
 	return nil
