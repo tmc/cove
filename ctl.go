@@ -1579,18 +1579,15 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 	if err == nil && resp.Success {
 		fmt.Printf("Password reset for %s (via guest agent)\n", username)
 		// Also update kcpassword for auto-login consistency.
-		escapedPassword := shellEscape(password)
+		refreshCmd, cmdErr := autoLoginRefreshCommand(username, password)
+		if cmdErr != nil {
+			return cmdErr
+		}
 		kcReq := &controlpb.ControlRequest{
 			Type: "agent-exec",
 			Command: &controlpb.ControlRequest_AgentExec{
 				AgentExec: &controlpb.AgentExecCommand{
-					Args: []string{"bash", "-c",
-						fmt.Sprintf("printf %%s %s | /usr/bin/python3 -c \""+
-							"import sys; key=[0x7D,0x89,0x52,0x23,0xD2,0xBC,0xDD,0xEA,0xA3,0xB9,0x1F]; "+
-							"pw=sys.stdin.buffer.read(); pw+=b'\\x00'*(11-len(pw)%%11); "+
-							"sys.stdout.buffer.write(bytes(b^key[i%%len(key)] for i,b in enumerate(pw)))\" > /etc/kcpassword",
-							escapedPassword),
-					},
+					Args: []string{"bash", "-c", refreshCmd},
 				},
 			},
 		}
@@ -1621,15 +1618,11 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 
 	// Update loginwindow.plist autoLoginUser.
 	lwPath := filepath.Join(mountPoint, "Library", "Preferences", "com.apple.loginwindow.plist")
-	lwPlist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>autoLoginUser</key>
-	<string>%s</string>
-</dict>
-</plist>`, username)
-	if writeErr := os.WriteFile(lwPath, []byte(lwPlist), 0644); writeErr != nil {
+	lwData, err := EncodeLoginWindowPlist(CreateLoginWindowPlist(username))
+	if err != nil {
+		return fmt.Errorf("encode loginwindow plist: %w", err)
+	}
+	if writeErr := os.WriteFile(lwPath, lwData, 0644); writeErr != nil {
 		return fmt.Errorf("write loginwindow.plist: %w", writeErr)
 	}
 
@@ -1670,11 +1663,12 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 		os.Chown(scriptPath, 0, 0)
 		os.Chown(plistPath, 0, 0)
 		os.Chown(kcPath, 0, 0)
+		os.Chown(lwPath, 0, 0)
 	} else {
 		// Set root:wheel ownership on the password reset files so launchd loads them.
 		tmpScript, tmpErr := os.CreateTemp("", "vz-pwreset-chown-*.sh")
 		if tmpErr == nil {
-			fmt.Fprintf(tmpScript, "#!/bin/bash\nchown root:wheel %q %q %q\n", scriptPath, plistPath, kcPath)
+			fmt.Fprintf(tmpScript, "#!/bin/bash\nchown root:wheel %q %q %q %q\n", scriptPath, plistPath, kcPath, lwPath)
 			tmpScript.Close()
 			os.Chmod(tmpScript.Name(), 0755)
 			fmt.Println()
@@ -1682,8 +1676,8 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 			fmt.Printf("on password reset files so launchd will load them on next boot.\n")
 			fmt.Println()
 			runElevatedBash(tmpScript.Name(), fmt.Sprintf(
-				"cove will chown root:wheel on 3 password reset files: %s, %s, %s",
-				filepath.Base(scriptPath), filepath.Base(plistPath), filepath.Base(kcPath),
+				"cove will chown root:wheel on 4 password reset files: %s, %s, %s, %s",
+				filepath.Base(scriptPath), filepath.Base(plistPath), filepath.Base(kcPath), filepath.Base(lwPath),
 			))
 			os.Remove(tmpScript.Name())
 		}
@@ -1691,6 +1685,23 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 
 	fmt.Printf("Password reset staged for %s (will apply on next boot)\n", username)
 	return nil
+}
+
+func autoLoginRefreshCommand(username, password string) (string, error) {
+	loginWindowData, err := EncodeLoginWindowPlist(CreateLoginWindowPlist(username))
+	if err != nil {
+		return "", fmt.Errorf("encode loginwindow plist: %w", err)
+	}
+	kcpasswordB64 := shellEscape(base64.StdEncoding.EncodeToString(EncodeKCPassword(password)))
+	loginWindowB64 := shellEscape(base64.StdEncoding.EncodeToString(loginWindowData))
+	return fmt.Sprintf(
+		"printf %%s %s | base64 -D > /etc/kcpassword && chmod 600 /etc/kcpassword && chown root:wheel /etc/kcpassword && "+
+			"printf %%s %s | base64 -D > /Library/Preferences/com.apple.loginwindow.plist && "+
+			"chmod 644 /Library/Preferences/com.apple.loginwindow.plist && "+
+			"chown root:wheel /Library/Preferences/com.apple.loginwindow.plist",
+		kcpasswordB64,
+		loginWindowB64,
+	), nil
 }
 
 // ctlSetupAssist runs the Setup Assistant automation
