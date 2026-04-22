@@ -261,6 +261,35 @@ func TestStageLaunchDaemonProvisioning(t *testing.T) {
 	}
 }
 
+func TestStageAutoLogin(t *testing.T) {
+	stagingDir := t.TempDir()
+	manifest := &ProvisionManifest{Version: 1}
+
+	if err := stageAutoLogin(stagingDir, "stagetest", "pass123", manifest); err != nil {
+		t.Fatalf("stageAutoLogin: %v", err)
+	}
+	if len(manifest.Files) != 4 {
+		t.Fatalf("manifest has %d files, want 4", len(manifest.Files))
+	}
+
+	for _, rel := range []string{
+		filepath.Join("private", "etc", "kcpassword"),
+		filepath.Join("Library", "Preferences", "com.apple.loginwindow.plist"),
+		filepath.FromSlash(autoLoginScriptRelativePath),
+		filepath.FromSlash(autoLoginLaunchDaemonRelativePath),
+	} {
+		if _, err := os.Stat(filepath.Join(stagingDir, rel)); err != nil {
+			t.Fatalf("staged file missing: %s: %v", rel, err)
+		}
+	}
+
+	for _, f := range manifest.Files {
+		if f.Owner != "root:wheel" {
+			t.Errorf("file %s: owner = %q, want root:wheel", f.Path, f.Owner)
+		}
+	}
+}
+
 // TestProvisionPasswordRoundTrip verifies that password hashing produces verifiable results.
 func TestProvisionPasswordRoundTrip(t *testing.T) {
 	passwords := []string{"simple", "p@$$w0rd!", "with spaces", "unicöde"}

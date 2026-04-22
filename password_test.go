@@ -207,6 +207,12 @@ func TestCreateLoginWindowPlist(t *testing.T) {
 	if lwp.GuestEnabled {
 		t.Error("GuestEnabled should be false")
 	}
+	if lwp.SHOWFULLNAME {
+		t.Error("SHOWFULLNAME should be false")
+	}
+	if lwp.AutoLoginUserScreenLocked {
+		t.Error("AutoLoginUserScreenLocked should be false")
+	}
 
 	data, err := EncodeLoginWindowPlist(lwp)
 	if err != nil {

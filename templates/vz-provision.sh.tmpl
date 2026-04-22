@@ -182,6 +182,9 @@ log "LaunchDaemon and script removed (self-cleanup)"
 # Configure automatic login for the created user
 log "Configuring automatic login..."
 defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser "$USERNAME" 2>/dev/null || true
+defaults delete /Library/Preferences/com.apple.loginwindow lastUser 2>/dev/null || true
+defaults delete /Library/Preferences/com.apple.loginwindow lastUserName 2>/dev/null || true
+defaults delete /Library/Preferences/com.apple.loginwindow autoLoginUserScreenLocked 2>/dev/null || true
 log "Auto-login configured for: $USERNAME"
 
 log "=== Provisioning complete ==="
@@ -191,5 +194,6 @@ log "=== Provisioning complete ==="
 # shows the login screen on first boot.
 log "Restarting loginwindow for auto-login..."
 killall loginwindow 2>/dev/null || true
+launchctl kickstart -k system/com.github.tmc.vz-macos.autologin 2>/dev/null || true
 
 exit 0

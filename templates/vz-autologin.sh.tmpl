@@ -1,0 +1,80 @@
+#!/bin/bash
+# vz-macos durable autologin reconciler
+set -eu
+
+USERNAME={{.Username}}
+LOG="/var/log/vz-autologin.log"
+LOGINWINDOW_PREFS="/Library/Preferences/com.apple.loginwindow"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"
+}
+
+console_user() {
+    stat -f '%Su' /dev/console 2>/dev/null || true
+}
+
+reconcile_loginwindow() {
+    defaults write "$LOGINWINDOW_PREFS" autoLoginUser "$USERNAME" >/dev/null 2>&1 || true
+    defaults write "$LOGINWINDOW_PREFS" GuestEnabled -bool false >/dev/null 2>&1 || true
+    defaults write "$LOGINWINDOW_PREFS" SHOWFULLNAME -bool false >/dev/null 2>&1 || true
+    defaults write "$LOGINWINDOW_PREFS" DisableFDEAutoLogin -bool false >/dev/null 2>&1 || true
+    defaults delete "$LOGINWINDOW_PREFS" lastUser >/dev/null 2>&1 || true
+    defaults delete "$LOGINWINDOW_PREFS" lastUserName >/dev/null 2>&1 || true
+    defaults delete "$LOGINWINDOW_PREFS" autoLoginUserScreenLocked >/dev/null 2>&1 || true
+    chown root:wheel "${LOGINWINDOW_PREFS}.plist" >/dev/null 2>&1 || true
+    chmod 0644 "${LOGINWINDOW_PREFS}.plist" >/dev/null 2>&1 || true
+}
+
+reconcile_kcpassword() {
+    if [ ! -f /etc/kcpassword ]; then
+        log "kcpassword missing; autologin cannot complete"
+        return
+    fi
+    chown root:wheel /etc/kcpassword >/dev/null 2>&1 || true
+    chmod 0600 /etc/kcpassword >/dev/null 2>&1 || true
+}
+
+log "Starting autologin reconcile for $USERNAME"
+
+for attempt in 1 2 3 4; do
+    reconcile_loginwindow
+    reconcile_kcpassword
+
+    for _ in 1 2 3 4 5; do
+        CURRENT_USER="$(console_user)"
+        if [ "$CURRENT_USER" = "$USERNAME" ]; then
+            log "Console user is $USERNAME; autologin is healthy"
+            exit 0
+        fi
+        if pgrep -x loginwindow >/dev/null 2>&1; then
+            break
+        fi
+        sleep 2
+    done
+
+    CURRENT_USER="$(console_user)"
+    if [ "$CURRENT_USER" = "$USERNAME" ]; then
+        log "Console user is $USERNAME after wait; autologin is healthy"
+        exit 0
+    fi
+
+    if ! pgrep -x loginwindow >/dev/null 2>&1; then
+        log "loginwindow not running yet (attempt $attempt)"
+        sleep 5
+        continue
+    fi
+
+    log "Restarting loginwindow for autologin (attempt $attempt, console user=${CURRENT_USER:-unknown})"
+    killall loginwindow >/dev/null 2>&1 || true
+    sleep 10
+done
+
+CURRENT_USER="$(console_user)"
+if [ "$CURRENT_USER" = "$USERNAME" ]; then
+    log "Autologin recovered after retries"
+else
+    log "Autologin reconcile timed out; console user=${CURRENT_USER:-unknown}"
+fi
+
+exit 0

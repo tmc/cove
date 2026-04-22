@@ -37,6 +37,7 @@ func TestGenerateEmbeddedProvisionScript(t *testing.T) {
 		{"marker", `MARKER="/var/db/.vz-provisioned"`},
 		{"sysadminctl", "sysadminctl -addUser"},
 		{"self_cleanup", "rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist"},
+		{"autologin_kickstart", "launchctl kickstart -k system/com.github.tmc.vz-macos.autologin"},
 	}
 
 	for _, c := range checks {
@@ -102,6 +103,24 @@ func TestGenerateEmbeddedLaunchDaemonPlist(t *testing.T) {
 	for _, want := range checks {
 		if !strings.Contains(plist, want) {
 			t.Errorf("plist missing %q", want)
+		}
+	}
+}
+
+func TestGenerateEmbeddedAutoLoginScript(t *testing.T) {
+	script, err := generateEmbeddedAutoLoginScript("testuser")
+	if err != nil {
+		t.Fatalf("generateEmbeddedAutoLoginScript: %v", err)
+	}
+	checks := []string{
+		"USERNAME='testuser'",
+		"autoLoginUserScreenLocked",
+		"killall loginwindow",
+		"Console user is $USERNAME",
+	}
+	for _, want := range checks {
+		if !strings.Contains(script, want) {
+			t.Errorf("autologin script missing %q", want)
 		}
 	}
 }

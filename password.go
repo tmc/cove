@@ -316,20 +316,21 @@ func EncodeUserPlist(up *UserPlist) ([]byte, error) {
 
 // LoginWindowPlist represents com.apple.loginwindow.plist
 type LoginWindowPlist struct {
-	AutoLoginUser       string `plist:"autoLoginUser,omitempty"`
-	GuestEnabled        bool   `plist:"GuestEnabled"`
-	SHOWFULLNAME        bool   `plist:"SHOWFULLNAME,omitempty"`
-	lastUserName        string `plist:"lastUserName,omitempty"`
-	DisableFDEAutoLogin bool   `plist:"DisableFDEAutoLogin,omitempty"`
+	AutoLoginUser             string `plist:"autoLoginUser,omitempty"`
+	GuestEnabled              bool   `plist:"GuestEnabled"`
+	SHOWFULLNAME              bool   `plist:"SHOWFULLNAME,omitempty"`
+	AutoLoginUserScreenLocked bool   `plist:"autoLoginUserScreenLocked"`
+	DisableFDEAutoLogin       bool   `plist:"DisableFDEAutoLogin,omitempty"`
 }
 
 // CreateLoginWindowPlist creates a loginwindow plist for auto-login
 func CreateLoginWindowPlist(username string) *LoginWindowPlist {
 	return &LoginWindowPlist{
-		AutoLoginUser:       username,
-		GuestEnabled:        false,
-		SHOWFULLNAME:        true,
-		DisableFDEAutoLogin: false,
+		AutoLoginUser:             username,
+		GuestEnabled:              false,
+		SHOWFULLNAME:              false,
+		AutoLoginUserScreenLocked: false,
+		DisableFDEAutoLogin:       false,
 	}
 }
 
