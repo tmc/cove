@@ -161,19 +161,16 @@ func (c *vmGUIController) configureProcessIdentity() {
 }
 
 func (c *vmGUIController) initDetachedView() error {
-	if c.window.ID != 0 && c.vmView.ID != 0 {
+	if c.vmView.ID == 0 {
+		c.vmView = c.newVMView()
+	}
+	if c.window.ID != 0 {
 		c.window.OrderOut(nil)
-		c.headed = false
-		if c.bindings != nil {
-			c.bindings.SetVMViewWithWindow(c.vmView, c.window)
-		}
-		return nil
 	}
-	if err := c.initWindow(); err != nil {
-		return err
-	}
-	c.window.OrderOut(nil)
 	c.headed = false
+	if c.bindings != nil {
+		c.bindings.SetVMViewWithWindow(c.vmView, c.window)
+	}
 	return nil
 }
 
