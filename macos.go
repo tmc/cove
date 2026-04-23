@@ -389,6 +389,9 @@ func runMacOSVM() error {
 	if resolvedDiskPath == "" {
 		resolvedDiskPath = target.diskPath()
 	}
+	if err := checkIncompletePullDisk(target.Directory, resolvedDiskPath); err != nil {
+		return err
+	}
 
 	_, diskStatErr := os.Stat(resolvedDiskPath)
 	diskExists := diskStatErr == nil

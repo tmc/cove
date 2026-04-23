@@ -449,6 +449,9 @@ func runLinuxVM() error {
 	if resolvedDiskPath == "" {
 		resolvedDiskPath = filepath.Join(vmDir, "linux-disk.img")
 	}
+	if err := checkIncompletePullDisk(vmDir, resolvedDiskPath); err != nil {
+		return err
+	}
 
 	// Create disk if it doesn't exist
 	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
