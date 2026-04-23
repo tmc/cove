@@ -16,6 +16,7 @@ func runProvisioningAutomation(cs *ControlServer) {
 	fmt.Printf("Username: %s\n", provisionUser)
 	fmt.Printf("Admin: %v\n", provisionAdmin)
 	fmt.Println()
+	vmDirectory := cs.effectiveVMDir()
 
 	prevInputBackend := cs.inputBackend()
 	targetInputBackend := prevInputBackend
@@ -38,7 +39,7 @@ func runProvisioningAutomation(cs *ControlServer) {
 	}
 
 	ocr := NewOCRService(verbose)
-	debugDir := filepath.Join(vmDir, "provision_screenshots")
+	debugDir := filepath.Join(vmDirectory, "provision_screenshots")
 	if debugOCR {
 		fmt.Printf("OCR debug screenshots: %s\n", debugDir)
 	}
@@ -55,7 +56,7 @@ func runProvisioningAutomation(cs *ControlServer) {
 		fmt.Printf("Setup Assistant automation failed: %v\n", err)
 		fmt.Println("Attempting login screen fallback...")
 
-		socketPath := GetControlSocketPathForVM(cs.effectiveVMDir())
+		socketPath := GetControlSocketPathForVM(vmDirectory)
 		creds := loginScreenCredentials{Username: provisionUser, Password: provisionPassword}
 		if loginErr := tryLoginFallback(socketPath, creds, false); loginErr != nil {
 			fmt.Printf("Login fallback also failed: %v\n", loginErr)
