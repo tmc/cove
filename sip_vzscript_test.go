@@ -11,10 +11,10 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 	got := generateSIPVZScript("disable", "admin", "secret", true, true)
 
 	wantSnippets := []string{
-		`ocr-wait 'Options' 60s`,
-		`startup-options`,
-		`recovery-continue`,
+		`startup-options 180s`,
+		`recovery-continue 180s`,
 		`key cmd+shift+t`,
+		`ocr-wait '-bash-3.2#' 30s`,
 		`type 'csrutil disable'`,
 		`[text-visible:Are+you+sure] type-keycodes 'y'`,
 		`[text-visible:%5By%2Fn%5D] type-keycodes 'y'`,
