@@ -14,9 +14,16 @@ import (
 // ErrOperationNotFound is returned when an operation ID is not found in the registry.
 var ErrOperationNotFound = errors.New("operation not found")
 
+const (
+	operationStatusPending   = "pending"
+	operationStatusRunning   = "running"
+	operationStatusSucceeded = "succeeded"
+	operationStatusFailed    = "failed"
+)
+
 // isTerminal reports whether status is a terminal (non-progressing) state.
 func isTerminal(status string) bool {
-	return status == "succeeded" || status == "failed"
+	return status == operationStatusSucceeded || status == operationStatusFailed
 }
 
 // opEntry holds the in-memory state for one operation plus its subscriber list.
@@ -72,7 +79,7 @@ func (r *OperationRegistry) Create(resource string) (*Operation, error) {
 	op := &Operation{
 		ID:        id,
 		Resource:  resource,
-		Status:    "pending",
+		Status:    operationStatusPending,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -112,6 +119,39 @@ func (r *OperationRegistry) List() []*Operation {
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
 	})
 	return out
+}
+
+// Start marks the operation as running.
+func (r *OperationRegistry) Start(id string) error {
+	return r.Update(id, func(o *Operation) {
+		o.Status = operationStatusRunning
+		o.Error = nil
+	})
+}
+
+// SetProgress records progress for an operation.
+func (r *OperationRegistry) SetProgress(id string, progress OperationProgress) error {
+	return r.Update(id, func(o *Operation) {
+		progress := progress
+		o.Progress = &progress
+	})
+}
+
+// Succeed marks the operation as succeeded and records result.
+func (r *OperationRegistry) Succeed(id string, result map[string]any) error {
+	return r.Update(id, func(o *Operation) {
+		o.Status = operationStatusSucceeded
+		o.Result = cloneOperationResult(result)
+		o.Error = nil
+	})
+}
+
+// Fail marks the operation as failed and records an error code and message.
+func (r *OperationRegistry) Fail(id, code, message string) error {
+	return r.Update(id, func(o *Operation) {
+		o.Status = operationStatusFailed
+		o.Error = &OperationError{Code: code, Message: message}
+	})
 }
 
 // Update applies mutator to a copy of the named operation, persists it, and
@@ -171,6 +211,17 @@ func (r *OperationRegistry) Update(id string, mutator func(*Operation)) error {
 		}
 	}
 	return nil
+}
+
+func cloneOperationResult(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]any, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }
 
 // Subscribe returns a buffered channel that receives Operation snapshots on

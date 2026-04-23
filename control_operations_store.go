@@ -148,8 +148,8 @@ func (s *FileOperationStore) Load() ([]*Operation, error) {
 
 	now := time.Now()
 	for _, op := range ops {
-		if op.Status == "pending" || op.Status == "running" {
-			op.Status = "failed"
+		if op.Status == operationStatusPending || op.Status == operationStatusRunning {
+			op.Status = operationStatusFailed
 			op.UpdatedAt = now
 			op.Error = &OperationError{
 				Code:    "server_restart",

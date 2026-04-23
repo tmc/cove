@@ -411,13 +411,11 @@ func (g *Gateway) handleCreateVM(w http.ResponseWriter, _ *http.Request) {
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		g.ops.Update(op.ID, func(o *Operation) {
-			o.Status = "failed"
-			o.Error = &OperationError{
-				Code:    "not_implemented",
-				Message: "create_vm via HTTP API is deferred to v0.2; use 'cove install' from the CLI (see docs/designs/001a-defer-create-vm-to-v02.md)",
-			}
-		})
+		_ = g.ops.Fail(
+			op.ID,
+			"not_implemented",
+			"create_vm via HTTP API is deferred to v0.2; use 'cove install' from the CLI (see docs/designs/001a-defer-create-vm-to-v02.md)",
+		)
 	}()
 }
 
