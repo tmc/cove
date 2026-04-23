@@ -125,13 +125,34 @@ type proxyFileBackup struct {
 	Data    []byte `json:"data,omitempty"`
 }
 
-type proxyRuntime interface {
+type proxyRuntimeInfo interface {
 	VMDir() string
 	IsLinux() bool
+}
+
+type proxyGuestExec interface {
 	Exec(context.Context, []string, map[string]string, string) (*pb.ExecResponse, error)
+}
+
+type proxyUserExec interface {
 	UserExec(context.Context, []string, map[string]string, string) (*pb.ExecResponse, error)
+}
+
+type proxyGuestFiles interface {
 	ReadFile(context.Context, string) ([]byte, error)
 	WriteFile(context.Context, string, []byte, uint32) error
+}
+
+type proxyLinuxRuntime interface {
+	proxyGuestExec
+	proxyGuestFiles
+}
+
+type proxyRuntime interface {
+	proxyRuntimeInfo
+	proxyGuestExec
+	proxyUserExec
+	proxyGuestFiles
 }
 
 type proxyRuntimeClient struct {
@@ -647,7 +668,7 @@ func captureProxyState(ctx context.Context, rt proxyRuntime) (*proxyState, error
 	return state, nil
 }
 
-func captureMacOSProxyState(ctx context.Context, rt proxyRuntime) (*macOSProxyState, error) {
+func captureMacOSProxyState(ctx context.Context, rt proxyUserExec) (*macOSProxyState, error) {
 	services, err := listMacOSNetworkServices(ctx, rt)
 	if err != nil {
 		return nil, err
@@ -675,7 +696,7 @@ func captureMacOSProxyState(ctx context.Context, rt proxyRuntime) (*macOSProxySt
 	return state, nil
 }
 
-func captureLinuxProxyState(ctx context.Context, rt proxyRuntime) (*linuxProxyState, error) {
+func captureLinuxProxyState(ctx context.Context, rt proxyGuestFiles) (*linuxProxyState, error) {
 	files := []string{
 		filepath.Join("/etc", "environment.d", proxyEnvFileName),
 		filepath.Join("/etc", "profile.d", proxyProfileFileName),
@@ -691,7 +712,7 @@ func captureLinuxProxyState(ctx context.Context, rt proxyRuntime) (*linuxProxySt
 	return state, nil
 }
 
-func applyMacOSProxy(ctx context.Context, rt proxyRuntime, state *macOSProxyState, spec proxySpec) (*macOSProxyState, error) {
+func applyMacOSProxy(ctx context.Context, rt proxyUserExec, state *macOSProxyState, spec proxySpec) (*macOSProxyState, error) {
 	if state == nil {
 		state = &macOSProxyState{}
 	}
@@ -732,7 +753,7 @@ func applyMacOSProxy(ctx context.Context, rt proxyRuntime, state *macOSProxyStat
 	return state, nil
 }
 
-func restoreMacOSProxy(ctx context.Context, rt proxyRuntime, state *macOSProxyState) error {
+func restoreMacOSProxy(ctx context.Context, rt proxyUserExec, state *macOSProxyState) error {
 	if state == nil {
 		return nil
 	}
@@ -744,7 +765,7 @@ func restoreMacOSProxy(ctx context.Context, rt proxyRuntime, state *macOSProxySt
 	return nil
 }
 
-func applyLinuxProxy(ctx context.Context, rt proxyRuntime, state *linuxProxyState, spec proxySpec) error {
+func applyLinuxProxy(ctx context.Context, rt proxyGuestFiles, state *linuxProxyState, spec proxySpec) error {
 	if state == nil {
 		state = &linuxProxyState{}
 	}
@@ -761,7 +782,7 @@ func applyLinuxProxy(ctx context.Context, rt proxyRuntime, state *linuxProxyStat
 	return nil
 }
 
-func restoreLinuxProxy(ctx context.Context, rt proxyRuntime, state *linuxProxyState) error {
+func restoreLinuxProxy(ctx context.Context, rt proxyLinuxRuntime, state *linuxProxyState) error {
 	if state == nil {
 		return nil
 	}
@@ -817,7 +838,7 @@ type proxyServiceStatus struct {
 	Port    int
 }
 
-func listMacOSNetworkServices(ctx context.Context, rt proxyRuntime) ([]string, error) {
+func listMacOSNetworkServices(ctx context.Context, rt proxyUserExec) ([]string, error) {
 	out, err := runProxyUserCommand(ctx, rt, "/usr/sbin/networksetup", "-listallnetworkservices")
 	if err != nil {
 		return nil, err
@@ -839,7 +860,7 @@ func listMacOSNetworkServices(ctx context.Context, rt proxyRuntime) ([]string, e
 	return services, nil
 }
 
-func getMacOSProxyStatus(ctx context.Context, rt proxyRuntime, service, kind string) (proxyServiceStatus, error) {
+func getMacOSProxyStatus(ctx context.Context, rt proxyUserExec, service, kind string) (proxyServiceStatus, error) {
 	var args []string
 	switch kind {
 	case "web":
@@ -856,7 +877,7 @@ func getMacOSProxyStatus(ctx context.Context, rt proxyRuntime, service, kind str
 	return parseNetworkSetupProxyStatus(out)
 }
 
-func setMacOSProxyService(ctx context.Context, rt proxyRuntime, service string, spec proxySpec) error {
+func setMacOSProxyService(ctx context.Context, rt proxyUserExec, service string, spec proxySpec) error {
 	port := strconv.Itoa(spec.Port)
 	for _, args := range [][]string{
 		{"/usr/sbin/networksetup", "-setwebproxy", service, spec.Host, port, "on"},
@@ -871,7 +892,7 @@ func setMacOSProxyService(ctx context.Context, rt proxyRuntime, service string, 
 	return nil
 }
 
-func restoreMacOSProxyService(ctx context.Context, rt proxyRuntime, state macOSProxyServiceState) error {
+func restoreMacOSProxyService(ctx context.Context, rt proxyUserExec, state macOSProxyServiceState) error {
 	restore := func(kind string, enabled bool, server string, port int) error {
 		if enabled {
 			if server == "" || port == 0 {
@@ -947,7 +968,7 @@ func parseNetworkSetupProxyStatus(out string) (proxyServiceStatus, error) {
 	return status, nil
 }
 
-func runProxyUserCommand(ctx context.Context, rt proxyRuntime, args ...string) (string, error) {
+func runProxyUserCommand(ctx context.Context, rt proxyUserExec, args ...string) (string, error) {
 	resp, err := rt.UserExec(ctx, args, nil, "")
 	if err != nil {
 		return "", err
@@ -965,7 +986,7 @@ func runProxyUserCommand(ctx context.Context, rt proxyRuntime, args ...string) (
 	return string(resp.GetStdout()), nil
 }
 
-func readProxyFileBackup(ctx context.Context, rt proxyRuntime, path string) (proxyFileBackup, error) {
+func readProxyFileBackup(ctx context.Context, rt proxyGuestFiles, path string) (proxyFileBackup, error) {
 	data, err := rt.ReadFile(ctx, path)
 	if err != nil {
 		if isNotFoundError(err) {
@@ -981,7 +1002,7 @@ func readProxyFileBackup(ctx context.Context, rt proxyRuntime, path string) (pro
 	}, nil
 }
 
-func removeProxyFile(ctx context.Context, rt proxyRuntime, path string) error {
+func removeProxyFile(ctx context.Context, rt proxyGuestExec, path string) error {
 	_, err := rt.Exec(ctx, []string{"/bin/rm", "-f", path}, nil, "")
 	return err
 }
