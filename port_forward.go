@@ -25,12 +25,17 @@ type PortForward struct {
 // PortForwardManager tracks active port forwards.
 type PortForwardManager struct {
 	mu       sync.Mutex
+	ctx      context.Context
 	forwards map[int]*PortForward // keyed by host port
 }
 
 // NewPortForwardManager creates a new manager.
-func NewPortForwardManager() *PortForwardManager {
+func NewPortForwardManager(ctx context.Context) *PortForwardManager {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &PortForwardManager{
+		ctx:      ctx,
 		forwards: make(map[int]*PortForward),
 	}
 }
@@ -53,7 +58,7 @@ func (m *PortForwardManager) Start(connector guestPortConnector, hostPort int, g
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(m.ctx)
 	pf := &PortForward{
 		HostPort:  hostPort,
 		GuestPort: guestPort,
@@ -170,7 +175,7 @@ func (pf *PortForward) handleConn(ctx context.Context, hostConn net.Conn) {
 // handlePortForward dispatches port-forward commands.
 func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *controlpb.ControlResponse {
 	if s.portForwards == nil {
-		s.portForwards = NewPortForwardManager()
+		s.portForwards = NewPortForwardManager(s.lifecycleContext())
 	}
 
 	switch cmd.Action {
