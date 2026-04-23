@@ -379,6 +379,10 @@ func chownRootWheel(path string, failedPaths *[]string) {
 // APFS volumes from disk images have ownership disabled by default — without
 // enableOwnership, chown silently does nothing even with sudo.
 func fixOwnershipWithSudo(paths []string, dataPartition string, installs ...pendingInstall) error {
+	return fixOwnershipWithSudoForVM(currentVMSelection(), paths, dataPartition, installs...)
+}
+
+func fixOwnershipWithSudoForVM(target vmSelection, paths []string, dataPartition string, installs ...pendingInstall) error {
 	if len(paths) == 0 && len(installs) == 0 {
 		return nil
 	}
@@ -408,6 +412,6 @@ func fixOwnershipWithSudo(paths []string, dataPartition string, installs ...pend
 	}
 
 	return runElevated(em, elevationPrompt(
-		fmt.Sprintf("Fix file ownership on VM %q.", elevationVMLabel()),
+		fmt.Sprintf("Fix file ownership on VM %q.", target.elevationLabel()),
 	))
 }
