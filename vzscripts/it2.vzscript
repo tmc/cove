@@ -1,29 +1,35 @@
 # it2 — Install it2 (iTerm2 CLI) in the guest
 # requires: golang
+# runs-on: daemon
 
 guest-ping
 guest-shell install-it2.sh
 
 -- install-it2.sh --
 #!/bin/bash
-set -e
+set -eu
 
-# Check if already installed.
-if command -v it2 &>/dev/null; then
-  echo "it2 already installed: $(which it2)"
-  it2 version 2>/dev/null || true
-  exit 0
-fi
-
-echo "Installing it2..."
-go install github.com/tmc/it2/cmd/it2@latest
-
-# Verify.
-if command -v it2 &>/dev/null; then
-  echo "it2 installed: $(which it2)"
-  it2 version 2>/dev/null || true
-else
-  echo "error: it2 not found in PATH after install"
-  echo "  ensure ~/go/bin is in PATH"
+GOUSER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$GOUSER" ]; then
+  echo "error: no admin user found" >&2
   exit 1
 fi
+echo "Installing it2 as user: $GOUSER"
+
+su -l "$GOUSER" -c '
+  export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+  if command -v it2 >/dev/null 2>&1; then
+    echo "it2 already installed: $(which it2)"
+    it2 version 2>/dev/null || true
+    exit 0
+  fi
+  echo "Installing it2..."
+  go install github.com/tmc/it2/cmd/it2@latest
+  if [ -x "$HOME/go/bin/it2" ]; then
+    echo "it2 installed: $HOME/go/bin/it2"
+    "$HOME/go/bin/it2" version 2>/dev/null || true
+  else
+    echo "error: it2 not found at $HOME/go/bin/it2 after install" >&2
+    exit 1
+  fi
+'

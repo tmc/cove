@@ -3,6 +3,7 @@
 
 guest-ping
 guest-shell install-go.sh
+append-path /usr/local/go/bin
 
 -- install-go.sh --
 #!/bin/bash
@@ -22,9 +23,6 @@ URL="https://go.dev/dl/${PKG}"
 curl -fsSL -o "/tmp/${PKG}" "$URL"
 installer -pkg "/tmp/${PKG}" -target /
 rm -f "/tmp/${PKG}"
-
-# Add Go to system PATH via /etc/paths.d (works for all users and shells).
-echo '/usr/local/go/bin' > /etc/paths.d/go
 
 # Set up GOPATH for the admin user so it's created with correct ownership,
 # and add ~/go/bin to their shell PATH.

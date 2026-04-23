@@ -3,6 +3,9 @@
 # runs-on: daemon
 
 guest-ping
+? host-cp ~/ml-explore/mlx-go /tmp/vz-host-src/mlx-go
+? host-cp /Volumes/tmc/go/src/github.com/tmc/mlx-go-ane /tmp/vz-host-src/mlx-go-ane
+? host-cp /Volumes/tmc/go/src/github.com/tmc/apple /tmp/vz-host-src/apple
 guest-shell install-mlx-go.sh
 
 -- install-mlx-go.sh --
@@ -23,119 +26,126 @@ fi
 
 install -d -o "$GOUSER" -g staff "$USER_HOME/go/bin" "$USER_HOME/src/github.com/tmc" "$USER_HOME/Library/Caches"
 
-cat > /tmp/vzscript-install-mlx-go-user.sh <<EOF
-#!/bin/bash
-set -euo pipefail
-
-export PATH=/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin
-export GIT_TERMINAL_PROMPT=0
-
-USER_HOME=${USER_HOME}
-WORKROOT="\$USER_HOME/src/github.com/tmc"
-GOBIN="\$USER_HOME/go/bin"
+{
+printf '#!/bin/bash\n'
+printf 'set -euo pipefail\n\n'
+printf 'export PATH=/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin\n'
+printf 'export GIT_TERMINAL_PROMPT=0\n\n'
+printf 'USER_HOME=%q\n' "$USER_HOME"
+cat <<'USER_SCRIPT'
+WORKROOT="$USER_HOME/src/github.com/tmc"
+GOBIN="$USER_HOME/go/bin"
+STAGED_ROOT="/tmp/vz-host-src"
 SHARE_ROOT="/Volumes/My Shared Files"
 
 find_shared_module_dir() {
-  local module="\$1"
+  local module="$1"
   local gomod
-  [ -d "\$SHARE_ROOT" ] || return 1
+  [ -d "$SHARE_ROOT" ] || return 1
   while IFS= read -r -d '' gomod; do
-    if grep -qx "module \$module" "\$gomod" 2>/dev/null; then
-      dirname "\$gomod"
+    if grep -qx "module $module" "$gomod" 2>/dev/null; then
+      dirname "$gomod"
       return 0
     fi
-  done < <(find "\$SHARE_ROOT" -type f -name go.mod -print0 2>/dev/null)
+  done < <(find "$SHARE_ROOT" -type f -name go.mod -print0 2>/dev/null)
   return 1
 }
 
 sync_tree() {
-  local src="\$1"
-  local dst="\$2"
-  rm -rf "\$dst"
-  mkdir -p "\$(dirname "\$dst")"
-  ditto "\$src" "\$dst"
+  local src="$1"
+  local dst="$2"
+  rm -rf "$dst"
+  mkdir -p "$(dirname "$dst")"
+  ditto "$src" "$dst"
 }
 
 sync_repo() {
-  local name="\$1"
-  local module="\$2"
-  local url="\$3"
-  local dst="\$WORKROOT/\$name"
+  local name="$1"
+  local module="$2"
+  local url="$3"
+  local dst="$WORKROOT/$name"
+  local staged="$STAGED_ROOT/$name"
   local shared
 
-  if [ -d "\$dst/.git" ]; then
-    echo "Updating \$name from \$url"
-    git -C "\$dst" fetch --depth 1 origin
+  if [ -d "$dst/.git" ]; then
+    echo "Updating $name from $url"
+    git -C "$dst" fetch --depth 1 origin
     local head
-    head=\$(git -C "\$dst" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
-    if [ -n "\$head" ]; then
-      git -C "\$dst" reset --hard "\$head"
+    head=$(git -C "$dst" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+    if [ -n "$head" ]; then
+      git -C "$dst" reset --hard "$head"
     else
-      git -C "\$dst" reset --hard FETCH_HEAD
+      git -C "$dst" reset --hard FETCH_HEAD
     fi
     return 0
   fi
 
-  rm -rf "\$dst"
-  echo "Cloning \$name from \$url"
-  if git clone --depth 1 "\$url" "\$dst"; then
+  if [ -d "$staged" ]; then
+    echo "Copying $name from host staging: $staged"
+    sync_tree "$staged" "$dst"
     return 0
   fi
 
-  if shared=\$(find_shared_module_dir "\$module"); then
-    echo "Clone failed; copying \$name from shared folder: \$shared"
-    sync_tree "\$shared" "\$dst"
+  if shared=$(find_shared_module_dir "$module"); then
+    echo "Copying $name from shared folder: $shared"
+    sync_tree "$shared" "$dst"
     return 0
   fi
 
-  echo "error: could not clone or locate shared repo for \$name" >&2
+  rm -rf "$dst"
+  echo "Cloning $name from $url"
+  if git clone --depth 1 "$url" "$dst"; then
+    return 0
+  fi
+
+  echo "error: could not clone or locate shared repo for $name" >&2
   return 1
 }
 
 link_hf_cache() {
-  local mounted="\$SHARE_ROOT/huggingface"
-  local cache="\$USER_HOME/.cache/huggingface"
-  [ -d "\$mounted" ] || return 0
-  mkdir -p "\$USER_HOME/.cache"
-  if [ -e "\$cache" ] && [ ! -L "\$cache" ]; then
-    echo "Leaving existing Hugging Face cache in place: \$cache"
+  local mounted="$SHARE_ROOT/huggingface"
+  local cache="$USER_HOME/.cache/huggingface"
+  [ -d "$mounted" ] || return 0
+  mkdir -p "$USER_HOME/.cache"
+  if [ -e "$cache" ] && [ ! -L "$cache" ]; then
+    echo "Leaving existing Hugging Face cache in place: $cache"
     return 0
   fi
-  rm -rf "\$cache"
-  ln -s "\$mounted" "\$cache"
-  echo "Linked Hugging Face cache: \$cache -> \$mounted"
+  rm -rf "$cache"
+  ln -s "$mounted" "$cache"
+  echo "Linked Hugging Face cache: $cache -> $mounted"
 }
 
 install_mlx_go() {
   sync_repo mlx-go github.com/tmc/mlx-go https://github.com/tmc/mlx-go.git
 
-  local libdir="\$WORKROOT/mlx-go/mlxc/lib"
-  local distdir="\$libdir/dist/darwin-arm64"
-  local headers="\$libdir/build-mlx-c-darwin/mlx-c/mlx/c/mlx.h"
-  if [ -f "\$distdir/libmlxc.dylib" ] && [ ! -f "\$libdir/libmlxc.dylib" ]; then
-    ln -sf "\$distdir/libmlxc.dylib" "\$libdir/libmlxc.dylib"
+  local libdir="$WORKROOT/mlx-go/mlxc/lib"
+  local distdir="$libdir/dist/darwin-arm64"
+  local headers="$libdir/build-mlx-c-darwin/mlx-c/mlx/c/mlx.h"
+  if [ -f "$distdir/libmlxc.dylib" ] && [ ! -f "$libdir/libmlxc.dylib" ]; then
+    ln -sf "$distdir/libmlxc.dylib" "$libdir/libmlxc.dylib"
   fi
-  if [ -f "\$distdir/libmlx.dylib" ] && [ ! -f "\$libdir/libmlx.dylib" ]; then
-    ln -sf "\$distdir/libmlx.dylib" "\$libdir/libmlx.dylib"
+  if [ -f "$distdir/libmlx.dylib" ] && [ ! -f "$libdir/libmlx.dylib" ]; then
+    ln -sf "$distdir/libmlx.dylib" "$libdir/libmlx.dylib"
   fi
-  if [ -f "\$distdir/mlx.metallib" ] && [ ! -f "\$libdir/mlx.metallib" ]; then
-    ln -sf "\$distdir/mlx.metallib" "\$libdir/mlx.metallib"
+  if [ -f "$distdir/mlx.metallib" ] && [ ! -f "$libdir/mlx.metallib" ]; then
+    ln -sf "$distdir/mlx.metallib" "$libdir/mlx.metallib"
   fi
-  if [ ! -f "\$libdir/libmlxc.dylib" ] || [ ! -f "\$libdir/libmlx.dylib" ] || [ ! -f "\$headers" ]; then
+  if [ ! -f "$libdir/libmlxc.dylib" ] || [ ! -f "$libdir/libmlx.dylib" ] || [ ! -f "$headers" ]; then
     echo "Bootstrapping MLX native libraries (this can take a while)..."
     (
-      cd "\$libdir"
+      cd "$libdir"
       GOWORK=off go run generate.go
     )
-    ln -sf "\$distdir/libmlxc.dylib" "\$libdir/libmlxc.dylib"
-    ln -sf "\$distdir/libmlx.dylib" "\$libdir/libmlx.dylib"
-    ln -sf "\$distdir/mlx.metallib" "\$libdir/mlx.metallib"
+    ln -sf "$distdir/libmlxc.dylib" "$libdir/libmlxc.dylib"
+    ln -sf "$distdir/libmlx.dylib" "$libdir/libmlx.dylib"
+    ln -sf "$distdir/mlx.metallib" "$libdir/mlx.metallib"
   fi
 
   echo "Building mlx-lm-generate..."
   (
-    cd "\$WORKROOT/mlx-go/examples/mlx-go-lm"
-    GOWORK=off go build -o "\$GOBIN/mlx-lm-generate" ./cmd/mlx-lm-generate
+    cd "$WORKROOT/mlx-go/examples/mlx-go-lm"
+    GOWORK=off go build -o "$GOBIN/mlx-lm-generate" ./cmd/mlx-lm-generate
   )
 }
 
@@ -144,17 +154,17 @@ install_mlx_ane() {
   sync_repo apple github.com/tmc/apple https://github.com/tmc/apple.git
 
   (
-    cd "\$WORKROOT/mlx-go-ane"
+    cd "$WORKROOT/mlx-go-ane"
     go mod edit -replace github.com/tmc/mlx-go=../mlx-go
     go mod edit -replace github.com/tmc/mlx-go-lm=../mlx-go/examples/mlx-go-lm
     go mod edit -replace github.com/tmc/apple=../apple
     go mod tidy
-    GOWORK=off go build -tags ane_appleneuralengine -o "\$GOBIN/mlx-ane-generate" ./cmd/mlx-ane-generate
+    GOWORK=off go build -tags ane_appleneuralengine -o "$GOBIN/mlx-ane-generate" ./cmd/mlx-ane-generate
   )
 }
 
 write_wrapper() {
-  cat > "\$GOBIN/mlx-go-infer" <<'WRAP'
+  cat > "$GOBIN/mlx-go-infer" <<'WRAP'
 #!/bin/bash
 set -euo pipefail
 
@@ -179,7 +189,7 @@ fi
 
 exec "$HOME/go/bin/mlx-lm-generate" "$@"
 WRAP
-  chmod 0755 "\$GOBIN/mlx-go-infer"
+  chmod 0755 "$GOBIN/mlx-go-infer"
 }
 
 link_hf_cache
@@ -189,22 +199,23 @@ if install_mlx_ane; then
   echo "Built mlx-ane-generate with ane_appleneuralengine support."
 else
   echo "warning: mlx-ane-generate build failed; mlx-go-infer will use mlx-lm-generate instead" >&2
-  rm -f "\$GOBIN/mlx-ane-generate"
+  rm -f "$GOBIN/mlx-ane-generate"
 fi
 
 write_wrapper
 
 echo
 echo "Installed commands:"
-echo "  \$GOBIN/mlx-lm-generate"
-if [ -x "\$GOBIN/mlx-ane-generate" ]; then
-  echo "  \$GOBIN/mlx-ane-generate"
+echo "  $GOBIN/mlx-lm-generate"
+if [ -x "$GOBIN/mlx-ane-generate" ]; then
+  echo "  $GOBIN/mlx-ane-generate"
 fi
-echo "  \$GOBIN/mlx-go-infer"
+echo "  $GOBIN/mlx-go-infer"
 echo
 echo "Try:"
 echo "  mlx-go-infer --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --prompt 'hello from the VM' --max-tokens 32"
-EOF
+USER_SCRIPT
+} > /tmp/vzscript-install-mlx-go-user.sh
 
 chmod 0755 /tmp/vzscript-install-mlx-go-user.sh
 su -l "$GOUSER" -c /tmp/vzscript-install-mlx-go-user.sh

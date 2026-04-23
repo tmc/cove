@@ -1,0 +1,36 @@
+# hermes-agent — Install Nous Research's Hermes Agent via the native installer
+# requires: developer-tools
+# runs-on: daemon
+
+guest-ping
+guest-shell install-hermes.sh
+
+-- install-hermes.sh --
+#!/bin/bash
+set -eu
+
+BREW_USER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$BREW_USER" ]; then
+  echo "error: no admin user found" >&2
+  exit 1
+fi
+echo "Installing Hermes Agent as user: $BREW_USER"
+
+su -l "$BREW_USER" -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup'
+
+# The installer drops the binary somewhere on PATH after sourcing rc files.
+# Try the common locations; fall back to "command -v hermes" via login shell.
+INSTALLED=$(su -l "$BREW_USER" -c '
+  for p in "$HOME/.local/bin/hermes" "/opt/homebrew/bin/hermes" "/usr/local/bin/hermes"; do
+    if [ -x "$p" ]; then "$p" --version; exit 0; fi
+  done
+  if command -v hermes >/dev/null 2>&1; then hermes --version; exit 0; fi
+  echo "hermes binary not found on PATH after install" >&2
+  exit 1
+')
+echo "Installed: hermes $INSTALLED"
+
+# Ensure ~/.local/bin is on PATH for future interactive shells (mirrors claude-code).
+su -l "$BREW_USER" -c '
+  grep -q ".local/bin" ~/.zshrc 2>/dev/null || echo '\''export PATH="$HOME/.local/bin:$PATH"'\'' >> ~/.zshrc
+'
