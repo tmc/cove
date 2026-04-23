@@ -10,21 +10,49 @@ import (
 	"path/filepath"
 )
 
-// DeleteVM deletes a VM by name.
+// DeleteVM deletes a VM by name. If the directory exists but does not contain
+// a valid VM (e.g. an orphan left over from a prior failure), the directory is
+// still removed so users can clean up without editing ~/.vz/vms by hand.
+//
+// If the named VM is the active VM, deletion is allowed when the VM is stopped
+// or is an orphan (missing disk image). The active-VM marker is cleared in the
+// same step. Deletion is refused only when the VM is currently running.
 func DeleteVM(name string) error {
 	vmPath := GetVMPath(name)
+	info, err := os.Stat(vmPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("vm not found: %s", name)
+		}
+		return fmt.Errorf("stat VM dir: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("not a VM directory: %s", vmPath)
+	}
+
+	// Refuse to delete a VM that is currently running, regardless of whether
+	// it is the active VM or not. Stop it first.
+	if isVMRunningAt(vmPath) {
+		return fmt.Errorf("cannot delete VM '%s': it is currently running (stop it first)", name)
+	}
+
+	wasActive := GetActiveVM() == name
+
 	if !ValidateVM(vmPath) {
-		return fmt.Errorf("vm not found: %s", name)
+		fmt.Printf("Deleting orphan VM directory '%s' (no disk image found)...\n", name)
+	} else {
+		fmt.Printf("Deleting VM '%s'...\n", name)
 	}
-
-	// Check if it's the active VM
-	if GetActiveVM() == name {
-		return fmt.Errorf("cannot delete active VM; use 'vm set' to switch first")
-	}
-
-	fmt.Printf("Deleting VM '%s'...\n", name)
 	if err := os.RemoveAll(vmPath); err != nil {
 		return fmt.Errorf("delete VM: %w", err)
+	}
+
+	if wasActive {
+		if err := UnsetActiveVM(); err != nil {
+			fmt.Printf("warning: clear active VM marker: %v\n", err)
+		} else {
+			fmt.Println("Cleared active-VM marker.")
+		}
 	}
 
 	fmt.Println("VM deleted.")

@@ -37,12 +37,23 @@ Snapshot the disk image using APFS clonefile (copy-on-write).
 
 ```bash
 cove disk-snapshot save before-update
+cove disk-snapshot run before-update
 cove disk-snapshot list
 cove disk-snapshot restore before-update
 cove disk-snapshot delete before-update
 ```
 
 Disk snapshots work whether the VM is running or stopped. They snapshot the actual disk contents, not the VM state.
+
+For throwaway rollback runs, boot a disposable clone directly from the saved
+snapshot:
+
+```bash
+cove disk-snapshot run before-update
+```
+
+This leaves the base VM untouched and deletes the temporary clone when the run
+ends.
 
 ## When to Use Which
 

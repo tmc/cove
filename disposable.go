@@ -21,11 +21,12 @@ type DisposableClone struct {
 
 // DisposableSetupOptions configures disposable clone creation.
 type DisposableSetupOptions struct {
-	Source        string
-	Linked        bool
-	CopyMachineID bool
-	Now           func() time.Time
-	Clone         func(CloneOptions) error
+	Source         string
+	Linked         bool
+	CopyMachineID  bool
+	SourceDiskPath string
+	Now            func() time.Time
+	Clone          func(CloneOptions) error
 }
 
 // DisposableGCOptions configures disposable VM garbage collection.
@@ -91,10 +92,11 @@ func SetupDisposableClone(opts DisposableSetupOptions) (DisposableClone, error) 
 		cloneFn = CloneVM
 	}
 	cloneOpts := CloneOptions{
-		Source:        opts.Source,
-		Target:        cloneName,
-		Linked:        opts.Linked,
-		CopyMachineID: opts.CopyMachineID,
+		Source:         opts.Source,
+		Target:         cloneName,
+		Linked:         opts.Linked,
+		CopyMachineID:  opts.CopyMachineID,
+		SourceDiskPath: opts.SourceDiskPath,
 	}
 	if err := cloneFn(cloneOpts); err != nil {
 		return DisposableClone{}, fmt.Errorf("create disposable clone: %w", err)

@@ -327,6 +327,8 @@ func handleDiskSnapshotCommand(args []string) error {
 	switch args[0] {
 	case "save":
 		return handleDiskSnapshotSave(mgr, args[1:])
+	case "run":
+		return handleDiskSnapshotRun(args[1:])
 	case "restore":
 		return handleDiskSnapshotRestore(mgr, args[1:])
 	case "list":
@@ -352,6 +354,9 @@ Commands:
   save <name> [-system] [-desc "..."]
       Save disk snapshot
 
+  run <name> [-ram]
+      Boot a disposable clone from the snapshot and discard changes on exit
+
   restore <name> [-system]
       Restore disks from snapshot
 
@@ -364,6 +369,12 @@ Commands:
 Examples:
   # Snapshot system disk
   cove disk-snapshot save checkpoint1
+
+  # Run once from a snapshot and throw changes away
+  cove disk-snapshot run checkpoint1
+
+  # Use a temporary RAM-backed system-disk attachment for the run
+  cove disk-snapshot run checkpoint1 -ram
 
   # List all disk snapshots
   cove disk-snapshot list
@@ -419,6 +430,46 @@ func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) error {
 		return err
 	}
 	return nil
+}
+
+func handleDiskSnapshotRun(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("snapshot name required")
+	}
+	if disposableMode {
+		return fmt.Errorf("disk-snapshot run already creates a disposable clone; do not combine it with -disposable")
+	}
+
+	name := args[0]
+	ram := false
+	for _, arg := range args[1:] {
+		switch arg {
+		case "-ram":
+			ram = true
+		default:
+			return fmt.Errorf("unknown disk-snapshot run option: %s", arg)
+		}
+	}
+	fmt.Printf("Running disposable clone from disk snapshot '%s'...\n", name)
+	if ram {
+		snapshotDiskPath := filepath.Join(vmDir, "disk-snapshots", name, "disk.img")
+		if _, err := os.Stat(snapshotDiskPath); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("disk snapshot '%s' not found", name)
+			}
+			return fmt.Errorf("stat snapshot disk: %w", err)
+		}
+		fmt.Println("Using temporary RAM system-disk attachment.")
+		return runDisposableCloneFromDiskPath(selectedVMSourceName(), snapshotDiskPath, systemDiskAttachmentTemporaryRAM)
+	}
+
+	prev := rollbackSnapshotName
+	rollbackSnapshotName = name
+	defer func() {
+		rollbackSnapshotName = prev
+	}()
+
+	return runCurrentVM()
 }
 
 func handleDiskSnapshotList(mgr *DiskSnapshotManager) error {
