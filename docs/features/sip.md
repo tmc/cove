@@ -28,7 +28,7 @@ cove sip disable-auto -user admin -password secret -confirm
 # Boot into recovery with the automation
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \
-  -boot-commands ~/.vz/vms/default/sip-disable-commands.txt
+  -boot-commands ~/.vz/vms/default/sip-disable.vzscript
 ```
 
 The `-confirm` flag handles the "Are you sure" prompt that some Recovery builds show.
@@ -40,13 +40,13 @@ cove sip enable-auto -user admin -password secret
 
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \
-  -boot-commands ~/.vz/vms/default/sip-enable-commands.txt
+  -boot-commands ~/.vz/vms/default/sip-enable.vzscript
 ```
 
 ## How It Works
 
 1. `cove sip create-disk` creates a recovery tools disk image containing `csrutil-enable.sh` and `csrutil-disable.sh` scripts
-2. `cove sip disable-auto` generates a vzscript boot automation file that navigates Recovery Terminal, types the csrutil command, and handles password prompts via OCR
+2. `cove sip disable-auto` generates a vzscript boot automation file that selects Recovery Options, opens Terminal from the Utilities menu, types the csrutil command, and handles password prompts via OCR
 3. The VM boots into recovery mode with the tools disk attached as USB storage
 4. The boot automation script drives the recovery UI using OCR-based text detection
 
