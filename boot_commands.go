@@ -392,7 +392,7 @@ func (e *automationExecutor) hasHostMenuTitle(title string) bool {
 	}
 
 	var found bool
-	DispatchSync(GetMainDispatchQueue(), func() {
+	runOnUIThreadSync(func() {
 		mainMenu := appkit.NSMenuFromID(getSharedApp().MainMenu().GetID())
 		if mainMenu.ID == 0 {
 			if e.verbose {
@@ -422,7 +422,7 @@ func (e *automationExecutor) clickHostMenuItem(menuTitle, itemTitle string) bool
 
 	var clicked bool
 	var reason string
-	DispatchSync(GetMainDispatchQueue(), func() {
+	runOnUIThreadSync(func() {
 		app := getSharedApp()
 		mainMenu := appkit.NSMenuFromID(app.MainMenu().GetID())
 		if mainMenu.ID == 0 {

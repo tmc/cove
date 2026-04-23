@@ -13,8 +13,11 @@ fi
 
 echo "Installing vz-agent to $MOUNT..."
 
-# Enable APFS ownership
+# Enable APFS ownership and remount in place so chown actually applies.
+# enableOwnership only takes effect on next mount; without `mount -uo owners`
+# the live noowners mount silently no-ops every chown.
 diskutil enableOwnership "$DATA_PART" >/dev/null 2>&1 || true
+mount -uo owners "$DATA_PART" 2>/dev/null || true
 
 # Create directories
 mkdir -p "$MOUNT/usr/local/bin"

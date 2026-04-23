@@ -257,8 +257,11 @@ func runUpPipeline(cfg upConfig) error {
 
 	// Step 2: Inject provisioning files.
 	// The install step may have already injected (via stopVMAndInject) in
-	// headless mode. Skip if injection already succeeded.
-	if !didInjectSucceed() && !(installed && !cfg.force) {
+	// headless mode and stamped the marker. If the marker is missing, the
+	// inject was either never attempted or failed mid-flight — retry it
+	// either way. The staging dir is reused if present (stageProvisioningFiles
+	// is idempotent).
+	if !didInjectSucceed() {
 		fmt.Println()
 		fmt.Println("=== Step 2/3: Provisioning VM ===")
 		opts := InjectOptions{
@@ -317,11 +320,8 @@ func runUpPipeline(cfg upConfig) error {
 // the VM or leaves it running based on noShutdown. If the VM exits
 // unexpectedly during script execution, the error is returned immediately.
 func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verboseMode bool) error {
-	// Validate all recipes before booting.
-	for _, name := range recipes {
-		if _, err := loadVZScriptData(name); err != nil {
-			return fmt.Errorf("recipe %q: %w", name, err)
-		}
+	if err := validateVZScriptRecipes(recipes); err != nil {
+		return err
 	}
 
 	sock := GetControlSocketPath()
@@ -348,28 +348,13 @@ func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verbos
 			return
 		}
 
-		// Run each recipe in order.
-		for _, name := range recipes {
-			fmt.Printf("\n=== Running vzscript: %s ===\n", name)
-			data, err := loadVZScriptData(name)
-			if err != nil {
+		if len(recipes) > 0 {
+			fmt.Printf("\n=== Running vzscripts: %s ===\n", strings.Join(recipes, ", "))
+			if err := runVZScriptWithDeps(recipes, cfg); err != nil {
 				scriptsDone <- err
 				return
 			}
-			ar := txtar.Parse(data)
-			meta := parseScriptMeta(ar.Comment)
-			if len(meta.mounts) > 0 {
-				if err := applyMountDirectives(meta.mounts, cfg.socketPath, cfg.verbose); err != nil {
-					scriptsDone <- fmt.Errorf("recipe %s: mount: %w", name, err)
-					return
-				}
-			}
-			rcfg := cfgForRecipe(cfg, meta)
-			if err := runVZScript(data, name, rcfg); err != nil {
-				scriptsDone <- fmt.Errorf("%s: %w", name, err)
-				return
-			}
-			fmt.Printf("=== Done: %s ===\n", name)
+			fmt.Println("=== Done: vzscripts ===")
 		}
 
 		if setupScript != "" {
@@ -452,10 +437,8 @@ func runLinuxUpPipeline(cfg upConfig) error {
 // runLinuxUpWithVZScripts boots a Linux VM, runs vzscript recipes and an
 // optional plain setup-script, then shuts down (unless noShutdown).
 func runLinuxUpWithVZScripts(recipes []string, setupScript string, noShutdown, verboseMode bool) error {
-	for _, name := range recipes {
-		if _, err := loadVZScriptData(name); err != nil {
-			return fmt.Errorf("recipe %q: %w", name, err)
-		}
+	if err := validateVZScriptRecipes(recipes); err != nil {
+		return err
 	}
 
 	sock := GetControlSocketPath()
@@ -478,27 +461,13 @@ func runLinuxUpWithVZScripts(recipes []string, setupScript string, noShutdown, v
 			return
 		}
 
-		for _, name := range recipes {
-			fmt.Printf("\n=== Running vzscript: %s ===\n", name)
-			data, err := loadVZScriptData(name)
-			if err != nil {
+		if len(recipes) > 0 {
+			fmt.Printf("\n=== Running vzscripts: %s ===\n", strings.Join(recipes, ", "))
+			if err := runVZScriptWithDeps(recipes, cfg); err != nil {
 				scriptsDone <- err
 				return
 			}
-			ar := txtar.Parse(data)
-			meta := parseScriptMeta(ar.Comment)
-			if len(meta.mounts) > 0 {
-				if err := applyMountDirectives(meta.mounts, cfg.socketPath, cfg.verbose); err != nil {
-					scriptsDone <- fmt.Errorf("recipe %s: mount: %w", name, err)
-					return
-				}
-			}
-			rcfg := cfgForRecipe(cfg, meta)
-			if err := runVZScript(data, name, rcfg); err != nil {
-				scriptsDone <- fmt.Errorf("%s: %w", name, err)
-				return
-			}
-			fmt.Printf("=== Done: %s ===\n", name)
+			fmt.Println("=== Done: vzscripts ===")
 		}
 
 		if setupScript != "" {
@@ -568,6 +537,49 @@ func splitRecipes(s string) []string {
 		}
 	}
 	return names
+}
+
+func validateVZScriptRecipes(recipes []string) error {
+	seen := map[string]bool{}
+	inProgress := map[string]bool{}
+
+	var walk func(name, requiredBy string) error
+	walk = func(name, requiredBy string) error {
+		if seen[name] {
+			return nil
+		}
+		if inProgress[name] {
+			return fmt.Errorf("dependency cycle detected at %s", name)
+		}
+
+		data, err := loadVZScriptData(name)
+		if err != nil {
+			if requiredBy != "" {
+				return fmt.Errorf("dependency %q (required by %s) cannot be resolved: %w", name, requiredBy, err)
+			}
+			return fmt.Errorf("recipe %q: %w", name, err)
+		}
+
+		inProgress[name] = true
+		defer delete(inProgress, name)
+
+		meta := parseScriptMeta(txtar.Parse(data).Comment)
+		for _, dep := range meta.requires {
+			if err := walk(dep, name); err != nil {
+				return err
+			}
+		}
+
+		seen[name] = true
+		return nil
+	}
+
+	for _, name := range recipes {
+		if err := walk(name, ""); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // stageVZScriptInjects loads the named vzscript recipes and their transitive

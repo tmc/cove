@@ -17,6 +17,7 @@ const (
 	KeyCodeCapsLock   uint16 = 57
 	KeyCodeOption     uint16 = 58
 	KeyCodeControl    uint16 = 59
+	KeyCodeF5         uint16 = 96
 	KeyCodeLeftArrow  uint16 = 123
 	KeyCodeRightArrow uint16 = 124
 	KeyCodeDownArrow  uint16 = 125

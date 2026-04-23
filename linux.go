@@ -78,16 +78,13 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// Storage - main disk
-	diskURL := foundation.NewURLFileURLWithPath(diskImagePath)
-	// Create disk attachment
-	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(diskURL, false)
+	diskAttachment, err := createSystemDiskAttachment(diskImagePath, false)
 	if err != nil {
 		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("failed to create disk attachment: %w", err)
 	}
-	diskAttachment.Retain()
 
 	// Create block device custom config
-	storageConfig := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment.VZStorageDeviceAttachment)
+	storageConfig := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment)
 	storageConfig.Retain()
 
 	// If ISO is provided, add it as second storage device (read-only)
@@ -476,6 +473,7 @@ func runLinuxVM() error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 	fmt.Println("  ✓ Configuration valid")
+	updateSaveRestoreSupport(config)
 
 	// Note: Avoid calling getter methods on config as they may crash due to selector issues
 	fmt.Printf("  Configured: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)

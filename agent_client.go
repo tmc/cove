@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -27,36 +28,53 @@ const userAgentPort = 1025
 
 // AgentClient wraps the connect-go client for the guest agent.
 type AgentClient struct {
-	client agentpbconnect.AgentClient
-	conn   net.Conn
+	client    agentpbconnect.AgentClient
+	transport *http2.Transport
+	closeFn   func()
+	closeOnce sync.Once
 }
 
 // NewAgentClient creates a client connected to the guest agent.
 // The netConn should be obtained from VZVirtioSocketDevice.ConnectToPort.
 func NewAgentClient(netConn net.Conn) (*AgentClient, error) {
-	httpClient := &http.Client{
-		Transport: &http2.Transport{
-			AllowHTTP: true,
-			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-				return netConn, nil
-			},
-		},
+	dial, closeFn, err := newOneShotConnDialer(netConn)
+	if err != nil {
+		return nil, err
 	}
+	return NewAgentClientWithDial(dial, closeFn)
+}
+
+// NewAgentClientWithDial creates a client that dials a fresh connection as needed.
+func NewAgentClientWithDial(dial func(context.Context) (net.Conn, error), closeFns ...func()) (*AgentClient, error) {
+	if dial == nil {
+		return nil, fmt.Errorf("nil dialer")
+	}
+	httpClient, transport := newH2CClientWithDial(dial)
 	client := agentpbconnect.NewAgentClient(
 		httpClient,
 		"http://vsock-guest",
 		connect.WithGRPC(),
 	)
-	return &AgentClient{client: client, conn: netConn}, nil
+	var closeFn func()
+	if len(closeFns) > 0 {
+		closeFn = closeFns[0]
+	}
+	return &AgentClient{client: client, transport: transport, closeFn: closeFn}, nil
 }
 
 // Close closes the underlying vsock connection.
 func (c *AgentClient) Close() {
-	if c == nil || c.conn == nil {
+	if c == nil {
 		return
 	}
-	c.conn.Close()
-	c.conn = nil
+	c.closeOnce.Do(func() {
+		if c.closeFn != nil {
+			c.closeFn()
+		}
+		if c.transport != nil {
+			c.transport.CloseIdleConnections()
+		}
+	})
 }
 
 // Ping checks that the agent is alive.
@@ -338,35 +356,52 @@ func (c *AgentClient) Reboot(ctx context.Context) error {
 
 // UserAgentClient wraps the connect-go client for the user session agent (port 1025).
 type UserAgentClient struct {
-	client agentpbconnect.UserAgentClient
-	conn   net.Conn
+	client    agentpbconnect.UserAgentClient
+	transport *http2.Transport
+	closeFn   func()
+	closeOnce sync.Once
 }
 
 // NewUserAgentClient creates a client connected to the user agent on port 1025.
 func NewUserAgentClient(netConn net.Conn) (*UserAgentClient, error) {
-	httpClient := &http.Client{
-		Transport: &http2.Transport{
-			AllowHTTP: true,
-			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-				return netConn, nil
-			},
-		},
+	dial, closeFn, err := newOneShotConnDialer(netConn)
+	if err != nil {
+		return nil, err
 	}
+	return NewUserAgentClientWithDial(dial, closeFn)
+}
+
+// NewUserAgentClientWithDial creates a user-agent client that dials a fresh connection as needed.
+func NewUserAgentClientWithDial(dial func(context.Context) (net.Conn, error), closeFns ...func()) (*UserAgentClient, error) {
+	if dial == nil {
+		return nil, fmt.Errorf("nil dialer")
+	}
+	httpClient, transport := newH2CClientWithDial(dial)
 	client := agentpbconnect.NewUserAgentClient(
 		httpClient,
 		"http://vsock-guest-user",
 		connect.WithGRPC(),
 	)
-	return &UserAgentClient{client: client, conn: netConn}, nil
+	var closeFn func()
+	if len(closeFns) > 0 {
+		closeFn = closeFns[0]
+	}
+	return &UserAgentClient{client: client, transport: transport, closeFn: closeFn}, nil
 }
 
 // Close closes the underlying vsock connection.
 func (c *UserAgentClient) Close() {
-	if c == nil || c.conn == nil {
+	if c == nil {
 		return
 	}
-	c.conn.Close()
-	c.conn = nil
+	c.closeOnce.Do(func() {
+		if c.closeFn != nil {
+			c.closeFn()
+		}
+		if c.transport != nil {
+			c.transport.CloseIdleConnections()
+		}
+	})
 }
 
 // logCopyProgress logs periodic transfer progress.
@@ -416,4 +451,51 @@ func (c *UserAgentClient) UserExecStream(ctx context.Context, args []string, env
 		return nil, err
 	}
 	return &execStreamReceiver{stream: stream}, nil
+}
+
+func newH2CClientWithDial(dial func(context.Context) (net.Conn, error)) (*http.Client, *http2.Transport) {
+	transport := &http2.Transport{
+		AllowHTTP: true,
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return dial(ctx)
+		},
+	}
+	return &http.Client{Transport: transport}, transport
+}
+
+func newOneShotConnDialer(netConn net.Conn) (func(context.Context) (net.Conn, error), func(), error) {
+	if netConn == nil {
+		return nil, nil, fmt.Errorf("nil conn")
+	}
+	var (
+		mu     sync.Mutex
+		conn   = netConn
+		used   bool
+		closed bool
+	)
+	dial := func(ctx context.Context) (net.Conn, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if closed {
+			return nil, fmt.Errorf("client closed")
+		}
+		if used {
+			return nil, fmt.Errorf("connection already used")
+		}
+		used = true
+		return conn, nil
+	}
+	closeFn := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		closed = true
+		if !used && conn != nil {
+			conn.Close()
+			conn = nil
+		}
+	}
+	return dial, closeFn, nil
 }

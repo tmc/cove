@@ -46,9 +46,9 @@ func TestKeyboardEventUnicodeString(t *testing.T) {
 		want string
 	}{
 		{
-			name: "return has no unicode fallback",
+			name: "return",
 			cmd:  &controlpb.KeyCommand{KeyCode: 36},
-			want: "",
+			want: "\r",
 		},
 		{
 			name: "tab",

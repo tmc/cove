@@ -331,6 +331,10 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 			writeResponse(conn, s.handleDiskJSONRequest([]byte(line)))
 			continue
 		}
+		if req.Type == "pit" {
+			writeResponse(conn, s.handlePITJSONRequest([]byte(line)))
+			continue
+		}
 		if req.Type == "usb" {
 			writeResponse(conn, s.handleRuntimeUSBJSONRequest([]byte(line)))
 			continue
@@ -992,14 +996,11 @@ func (s *ControlServer) sendKeyEventPrivate(cmd *controlpb.KeyCommand) *controlp
 // as real keyboard input). The VM window must be key and frontmost.
 func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
 	// Activate and focus the VM window on the main thread first.
-	done := make(chan struct{})
-	DispatchAsync(GetMainDispatchQueue(), func() {
-		defer close(done)
+	runOnUIThreadSync(func() {
 		appkit.GetNSApplicationClass().SharedApplication().Activate()
 		s.window.MakeKeyAndOrderFront(nil)
 		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
 	})
-	<-done
 
 	event, err := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
 	if err != nil {
@@ -1010,6 +1011,10 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 	}
 	defer corefoundation.CFRelease(corefoundation.CFTypeRef(event))
 
+	chars := keyboardEventUnicodeString(cmd)
+	if chars != "" {
+		CGEventKeyboardSetUnicodeString(event, chars)
+	}
 	if cmd.Modifiers != 0 {
 		CGEventSetFlags(event, uint64(cmd.Modifiers))
 	}
@@ -1020,7 +1025,7 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CG: %v", err)}
 	}
 	if verbose {
-		fmt.Printf("[key-cgevent] posted keyCode=%d down=%v via kCGHIDEventTap\n", cmd.KeyCode, cmd.KeyDown)
+		fmt.Printf("[key-cgevent] posted keyCode=%d down=%v chars=%q via kCGHIDEventTap\n", cmd.KeyCode, cmd.KeyDown, chars)
 	}
 
 	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
@@ -1036,10 +1041,7 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 
 	// Convert CGEvent to NSEvent and deliver to VZVirtualMachineView on the main thread.
 	var resp *controlpb.ControlResponse
-	done := make(chan struct{})
-	DispatchAsync(GetMainDispatchQueue(), func() {
-		defer close(done)
-
+	runOnUIThreadSync(func() {
 		// Make sure the VM view is first responder.
 		s.window.MakeKeyAndOrderFront(nil)
 		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
@@ -1065,7 +1067,6 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 
 		resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 	})
-	<-done
 	return resp
 }
 
@@ -1105,6 +1106,8 @@ func keyboardEventUnicodeString(cmd *controlpb.KeyCommand) string {
 		return cmd.Character
 	}
 	switch cmd.KeyCode {
+	case 36:
+		return "\r"
 	case 48:
 		return "\t"
 	case 51:
@@ -1198,16 +1201,40 @@ func mapWindowCapturePointToViewPoint(x, y float64, captureW, captureH int, boun
 	return viewX, viewY
 }
 
+func mapNormalizedWindowCapturePointToViewPoint(x, y float64, captureW, captureH int, boundsW, contentH float64) (viewX, viewY float64) {
+	if captureW <= 0 || captureH <= 0 {
+		return x * boundsW, (1.0 - y) * contentH
+	}
+	return mapWindowCapturePointToViewPoint(
+		x*float64(captureW),
+		y*float64(captureH),
+		captureW,
+		captureH,
+		boundsW,
+		contentH,
+	)
+}
+
+func needsWindowCapturePointMapping(mode automationBackendMode, captureW, captureH int, boundsW, contentH float64) bool {
+	if captureW <= 0 || captureH <= 0 {
+		return false
+	}
+	if mode == automationBackendWindow {
+		return true
+	}
+	if mode != automationBackendAuto {
+		return false
+	}
+	return float64(captureW) != boundsW || float64(captureH) != contentH
+}
+
 // sendMouseEventVMDirect creates an NSEvent and sends it directly to the
 // VZVirtualMachine via the private sendPointerNSEvent:pointingDeviceIndex:.
 // If that selector is unavailable, it falls back to routing through
 // VZVirtualMachineView's mouse event handlers.
 func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *controlpb.ControlResponse {
 	var resp *controlpb.ControlResponse
-	done := make(chan struct{})
-	DispatchAsync(GetMainDispatchQueue(), func() {
-		defer close(done)
-
+	runOnUIThreadSync(func() {
 		bounds := vmViewAsNSView(s.vmView).Bounds()
 
 		// Calculate view-local coordinates.
@@ -1223,17 +1250,23 @@ func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *con
 			contentH = bounds.Size.Height // fallback if not set
 		}
 		var viewX, viewY float64
+		captureW, captureH := s.lastCaptureBounds()
+		useWindowMapping := needsWindowCapturePointMapping(s.captureBackend(), captureW, captureH, bounds.Size.Width, contentH)
+
 		if cmd.Absolute {
-			if s.captureBackend() == automationBackendWindow {
-				captureW, captureH := s.lastCaptureBounds()
+			if useWindowMapping {
 				viewX, viewY = mapWindowCapturePointToViewPoint(cmd.X, cmd.Y, captureW, captureH, bounds.Size.Width, contentH)
 			} else {
 				viewX = cmd.X
 				viewY = contentH - cmd.Y
 			}
 		} else {
-			viewX = cmd.X * bounds.Size.Width
-			viewY = (1.0 - cmd.Y) * contentH
+			if useWindowMapping {
+				viewX, viewY = mapNormalizedWindowCapturePointToViewPoint(cmd.X, cmd.Y, captureW, captureH, bounds.Size.Width, contentH)
+			} else {
+				viewX = cmd.X * bounds.Size.Width
+				viewY = (1.0 - cmd.Y) * contentH
+			}
 		}
 
 		if verbose {
@@ -1312,7 +1345,6 @@ func (s *ControlServer) sendMouseEventVMDirect(cmd *controlpb.MouseCommand) *con
 		}
 		resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 	})
-	<-done
 	return resp
 }
 
@@ -1322,16 +1354,13 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 	var windowFrame corefoundation.CGRect
 	var bounds corefoundation.CGRect
 	var screenHeight float64
-	done := make(chan struct{})
-	DispatchAsync(GetMainDispatchQueue(), func() {
-		defer close(done)
+	runOnUIThreadSync(func() {
 		s.window.MakeKeyAndOrderFront(nil)
 		windowFrame = s.window.Frame()
 		bounds = vmViewAsNSView(s.vmView).Bounds()
 		mainScreen := appkit.GetNSScreenClass().MainScreen()
 		screenHeight = mainScreen.Frame().Size.Height
 	})
-	<-done
 
 	var viewX, viewY float64
 	if cmd.Absolute {
@@ -1840,6 +1869,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			"agentExecStream":    true,
 			"screenshotDiff":     true,
 			"snapshots":          true,
+			"pitSnapshots":       true,
 			"memoryBalloon":      true,
 			"guiAttach":          guiAvailable,
 			"vncStatus":          true,
@@ -1851,7 +1881,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 			"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
 			"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
-			"vnc-status", "debug-stub-status", "disk", "usb",
+			"vnc-status", "debug-stub-status", "disk", "pit", "usb",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 			"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 			"agent-sshd", "agent-mount-volumes", "agent-status",
@@ -1861,7 +1891,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
 		"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
-		"vnc-status", "debug-stub-status", "disk", "usb",
+		"vnc-status", "debug-stub-status", "disk", "pit", "usb",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 		"agent-sshd", "agent-mount-volumes", "agent-status",
@@ -1870,6 +1900,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"agentExecStream":    true,
 		"screenshotDiff":     true,
 		"snapshots":          true,
+		"pitSnapshots":       true,
 		"memoryBalloon":      true,
 		"guiAttach":          guiAvailable,
 		"vncStatus":          true,

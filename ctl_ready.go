@@ -220,7 +220,7 @@ func runReadyCheck(sock string, c readyCheck, timeout time.Duration, useDaemon b
 		Type:      cmdType,
 		AuthToken: resolveControlTokenForSocket(sock),
 		Command: &controlpb.ControlRequest_AgentExec{
-			AgentExec: &controlpb.AgentExecCommand{Args: c.Args},
+			AgentExec: &controlpb.AgentExecCommand{Args: readyExecArgs(c.Args, useDaemon)},
 		},
 	}
 	resp, err := ctlSendRequest(sock, req, timeout, cmdType)
@@ -262,6 +262,24 @@ func readyResultFromData(name, data string) readyResult {
 	}
 	ok := parsed.ExitCode == 0
 	return readyResult{Name: name, OK: ok, Detail: pickReadyDetail(parsed.Stdout, parsed.Stderr, parsed.ExitCode)}
+}
+
+// readyExecArgs prepares a readiness probe command for execution in the guest.
+// User-session checks run through a login shell so PATH additions from
+// ~/.zprofile are visible. Daemon checks keep direct exec semantics.
+func readyExecArgs(args []string, useDaemon bool) []string {
+	if useDaemon || len(args) == 0 {
+		return append([]string(nil), args...)
+	}
+	return []string{"/bin/zsh", "-lc", shellQuoteArgs(args)}
+}
+
+func shellQuoteArgs(args []string) string {
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		quoted = append(quoted, shellQuote(arg))
+	}
+	return strings.Join(quoted, " ")
 }
 
 // pickReadyDetail returns the most useful single-line detail string for a check.

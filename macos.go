@@ -39,12 +39,20 @@ func setAppIcon(app *appkit.NSApplication) {
 
 // suspendStatePath returns the path to the automatic suspend state file.
 func suspendStatePath() string {
-	return filepath.Join(vmDir, "suspend.vmstate")
+	return suspendStatePathForVM(vmDir)
 }
 
 // suspendConfigPath returns the path to the saved config fingerprint.
 func suspendConfigPath() string {
-	return filepath.Join(vmDir, "suspend.config.json")
+	return suspendConfigPathForVM(vmDir)
+}
+
+func suspendStatePathForVM(vmDirectory string) string {
+	return filepath.Join(vmDirectory, "suspend.vmstate")
+}
+
+func suspendConfigPathForVM(vmDirectory string) string {
+	return filepath.Join(vmDirectory, "suspend.config.json")
 }
 
 // hasSuspendState checks if a suspend state file exists from a previous session.
@@ -79,6 +87,24 @@ func removeCorruptSuspendState(path string) {
 		return
 	}
 	fmt.Fprintln(os.Stderr, "warning: corrupt suspend state removed, performing cold boot")
+}
+
+// moveAsideSuspendState renames suspend.vmstate to suspend.vmstate.broken-<timestamp>
+// so the next boot cold-starts without auto-restoring the bad state. The saved
+// config fingerprint is removed unconditionally — it only matches a state file
+// that no longer exists. reason is used in the log line.
+func moveAsideSuspendState(reason string) {
+	path := suspendStatePath()
+	backup := fmt.Sprintf("%s.broken-%s", path, time.Now().UTC().Format("20060102T150405Z"))
+	if err := os.Rename(path, backup); err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "warning: could not move aside suspend state (%s): %v\n", reason, err)
+			os.Remove(path)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "warning: suspend state moved aside (%s): %s\n", reason, backup)
+	}
+	os.Remove(suspendConfigPath())
 }
 
 // suspendConfigFingerprint captures the VM config params that must match between save and restore.
@@ -214,12 +240,36 @@ func checkSuspendConfigMatch() error {
 // canSaveRestore tracks whether the VM configuration supports save/restore.
 var canSaveRestore bool
 
+func updateSaveRestoreSupport(config vz.VZVirtualMachineConfiguration) {
+	ok, err := config.ValidateSaveRestoreSupportWithError()
+	if ok {
+		canSaveRestore = true
+		if verbose {
+			fmt.Println("  Save/restore support: enabled")
+		}
+		return
+	}
+
+	canSaveRestore = false
+	if verbose {
+		reason := "unknown"
+		if err != nil {
+			reason = err.Error()
+		}
+		fmt.Printf("  Save/restore support: disabled (%s)\n", reason)
+	}
+}
+
 // utmAuxStoragePath overrides the default aux.img path when loading a UTM bundle.
 // Set by runUTMBundle to point at the UTM bundle's AuxiliaryStorage file.
 var utmAuxStoragePath string
 
 // appFinishedLaunching guards against calling FinishLaunching more than once.
 var appFinishedLaunching bool
+
+// preparedHeadlessGUIController holds the detached AppKit presentation created
+// before headless VM start so the live VM reuses the same view after launch.
+var preparedHeadlessGUIController *vmGUIController
 
 // Default VM window dimensions.
 const (
@@ -229,7 +279,9 @@ const (
 
 // runMacOSVM runs a macOS VM with the configured settings.
 func runMacOSVM() error {
-	fmt.Println("=== macOS VM Runner ===")
+	if verbose {
+		fmt.Println("=== macOS VM Runner ===")
+	}
 	preferPasswordDialog = guiMode && !headlessMode
 
 	stopAppleLogStream := maybeStartAppleLogStream()
@@ -295,30 +347,39 @@ func runMacOSVM() error {
 		return fmt.Errorf("disk busy: %w", err)
 	}
 
+	if err := writeLoginScreenCredentialsCache(vmDir, loginScreenCredentials{
+		Username: provisionUser,
+		Password: provisionPassword,
+	}); err != nil && verbose {
+		fmt.Printf("[login-watchdog] cache credentials: %v\n", err)
+	}
+
+	bootLoginScreenCredentials = loginScreenCredentials{}
+	if !headlessMode && diskExists {
+		creds, err := loadBootLoginScreenCredentials(vmDir, resolvedDiskPath)
+		if err != nil {
+			if verbose {
+				fmt.Printf("[login-watchdog] cached credentials unavailable: %v\n", err)
+			}
+		} else if creds.Valid() {
+			bootLoginScreenCredentials = creds
+			if verbose {
+				fmt.Printf("[login-watchdog] cached credentials loaded for %s\n", creds.Username)
+			}
+		}
+	}
+
 	// Build VM configuration
-	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
+	if verbose {
+		fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
+	}
 	config, err := buildVMConfiguration(resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
 	}
 	config.Retain()
 
-	// Check if save/restore is supported for this configuration
-	if ok, err := config.ValidateSaveRestoreSupportWithError(); ok {
-		canSaveRestore = true
-		if verbose {
-			fmt.Println("  Save/restore support: enabled")
-		}
-	} else {
-		canSaveRestore = false
-		if verbose {
-			reason := "unknown"
-			if err != nil {
-				reason = err.Error()
-			}
-			fmt.Printf("  Save/restore support: disabled (%s)\n", reason)
-		}
-	}
+	updateSaveRestoreSupport(config)
 
 	// Create dispatch queue for VM operations
 	vmQueue := dispatch.QueueCreate("com.appledocs.vz.vmqueue")
@@ -562,17 +623,13 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	config.SetBootLoader(&bootloader.VZBootLoader)
 
 	// Storage
-	diskURL := foundation.NewURLFileURLWithPath(diskImagePath)
-	diskURL.Retain() // Prevent premature deallocation
-	// Create disk attachment
-	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(diskURL, false)
+	diskAttachment, err := createSystemDiskAttachment(diskImagePath, false)
 	if err != nil {
 		return config, fmt.Errorf("failed to create disk attachment: %w", err)
 	}
-	diskAttachment.Retain()
 
 	// Create block device custom config
-	storageConfig := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment.VZStorageDeviceAttachment)
+	storageConfig := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment)
 	storageConfig.Retain()
 	setStorageDevices(config, storageConfig)
 
@@ -982,6 +1039,7 @@ func createSharedFoldersDevice(folders []SharedFolderEntry) vz.VZVirtioFileSyste
 			continue
 		}
 		url := foundation.NewURLFileURLWithPath(f.Path)
+		url.Retain()
 		sharedDir := vz.NewSharedDirectoryWithURLReadOnly(url, f.ReadOnly)
 		sharedDir.Retain()
 		nsKey := objc.String(f.Tag)
@@ -1048,9 +1106,15 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// Headless mode now relies on a hidden AppKit presentation for GUI attach
 	// and framebuffer screenshots. Initialize NSApplication before starting or
 	// restoring the VM so resume paths do not bootstrap AppKit against a live VM.
-	ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
+	app := ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
+	guiController, err := newHeadlessGUIController(app, vm, queue, nil, false)
+	if err != nil {
+		return fmt.Errorf("headless presentation: %w", err)
+	}
+	preparedHeadlessGUIController = guiController
 
 	if err := startConfiguredVM(vm, queue, true); err != nil {
+		preparedHeadlessGUIController = nil
 		return err
 	}
 
@@ -1080,8 +1144,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		if err := checkSuspendConfigMatch(); err != nil {
 			fmt.Printf("Cannot restore suspend state: %v\n", err)
 			fmt.Println("Performing cold boot...")
-			os.Remove(suspendStatePath())
-			os.Remove(suspendConfigPath())
+			moveAsideSuspendState("config-mismatch")
 		} else {
 			if info, err := os.Stat(stateFile); err == nil {
 				fmt.Printf("Restoring VM from suspended state (%s)...\n", FormatSize(info.Size()))
@@ -1095,9 +1158,8 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 			} else {
 				fmt.Printf("Suspend restore failed: %v\n", err)
 				fmt.Println("Performing cold boot...")
+				moveAsideSuspendState("restore-failed")
 			}
-			os.Remove(suspendStatePath())
-			os.Remove(suspendConfigPath())
 		}
 	}
 
@@ -1262,13 +1324,18 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return fmt.Errorf("runtime features: %w", err)
 	}
 	controlServer.SetRuntimeFeatureState(runtimeFeatures)
-	guiController, err := newHeadlessGUIController(app, vm, queue, controlServer, false)
-	if err != nil {
-		if restoreTerminal != nil {
-			restoreTerminal()
+	guiController := preparedHeadlessGUIController
+	preparedHeadlessGUIController = nil
+	if guiController == nil {
+		guiController, err = newHeadlessGUIController(app, vm, queue, nil, false)
+		if err != nil {
+			if restoreTerminal != nil {
+				restoreTerminal()
+			}
+			return fmt.Errorf("headless presentation: %w", err)
 		}
-		return fmt.Errorf("headless presentation: %w", err)
 	}
+	guiController.setControlServer(controlServer)
 	controlServer.SetGUIController(guiController)
 	if err := controlServer.Start(); err != nil {
 		fmt.Printf("warning: control socket: %v\n", err)
@@ -1302,6 +1369,18 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		ctx, cancelAutoMount := context.WithCancel(context.Background())
 		defer cancelAutoMount()
 		go autoMountTaggedVolumes(ctx, controlServer, getEffectiveVolumes())
+	}
+
+	if unattended {
+		go func() {
+			if err := runUnattendedSetup(controlServer); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: unattended setup failed: %v\n", err)
+			}
+		}()
+	} else if provisionUser != "" && shouldRunGUIAutomation() {
+		go runProvisioningAutomation(controlServer)
+	} else if creds := resolveLoginScreenWatchdogCredentials(); creds.Valid() {
+		go runLoginScreenWatchdog(controlServer, creds)
 	}
 
 	type vmStateUpdate struct {
@@ -1386,7 +1465,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		stateUpdate.mu.Unlock()
 		cleanupOnce.Do(cleanup)
 	}
-	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, guiController.window, guiController, guiController.toolbar, quitRuntime)
+	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, appkit.NSWindow{}, guiController, nil, quitRuntime)
 	setupSignalHandler(func() {
 		quitRuntime()
 	})
@@ -1405,7 +1484,6 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					if state >= 0 {
 						guiController.updateStateOnMain(state)
 						statusItem.UpdateState(state)
-						statusItem.setWindow(guiController.window)
 					}
 					if terminate {
 						os.Remove(suspendStatePath())
@@ -1692,7 +1770,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	window.MakeFirstResponder(vmViewAsNSView(vmView).NSResponder)
 	app.Activate()
 
-	fmt.Println("VM display window opened.")
+	if verbose {
+		fmt.Println("VM display window opened.")
+	}
 
 	// Start control socket for screenshots, keyboard, mouse control
 	sock := GetControlSocketPathForVM(vmDir)
@@ -1758,6 +1838,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		}()
 	} else if provisionUser != "" && shouldRunGUIAutomation() {
 		go runProvisioningAutomation(controlServer)
+	} else if creds := resolveLoginScreenWatchdogCredentials(); creds.Valid() {
+		// Disk inject already provisioned the user, but kcpassword auto-login
+		// can still fail in headed boots. Watch for a login screen in the
+		// background; if one appears, type the cached password.
+		go runLoginScreenWatchdog(controlServer, creds)
 	}
 
 	// Shared state for background → main thread communication.

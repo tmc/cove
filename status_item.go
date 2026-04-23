@@ -162,6 +162,10 @@ func (c *VMStatusItemController) handleMenuNeedsUpdate(_ objc.ID, _ objc.SEL, me
 	window := c.window
 	toolbar := c.toolbar
 	c.mu.Unlock()
+	if c.gui != nil {
+		window = c.gui.Window()
+		toolbar = c.gui.Toolbar()
+	}
 
 	menu.SetTitle(c.menuTitle())
 	header := appkit.NewMenuItemWithTitleActionKeyEquivalent("VM: "+c.name, 0, "")

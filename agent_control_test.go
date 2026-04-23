@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestAgentMountVolumesResponseSuccess(t *testing.T) {
 	resp := agentMountVolumesResponse([]map[string]interface{}{
@@ -25,11 +29,11 @@ func TestAgentMountVolumesResponseFailure(t *testing.T) {
 
 func TestParseConsoleOwnerOutput(t *testing.T) {
 	tests := []struct {
-		name    string
-		stdout  string
+		name     string
+		stdout   string
 		wantUser string
-		wantUID int
-		wantErr bool
+		wantUID  int
+		wantErr  bool
 	}{
 		{name: "user", stdout: "user 501\n", wantUser: "user", wantUID: 501},
 		{name: "root", stdout: "root 0\n", wantErr: true},
@@ -53,5 +57,15 @@ func TestParseConsoleOwnerOutput(t *testing.T) {
 				t.Fatalf("parseConsoleOwnerOutput(%q): got (%q, %d), want (%q, %d)", tt.stdout, gotUser, gotUID, tt.wantUser, tt.wantUID)
 			}
 		})
+	}
+}
+
+func TestResponseTextValidUTF8(t *testing.T) {
+	got := responseText([]byte{0xff, 'o', 'k'})
+	if !utf8.ValidString(got) {
+		t.Fatalf("responseText returned invalid UTF-8: %q", got)
+	}
+	if !strings.Contains(got, "ok") {
+		t.Fatalf("responseText(%v) = %q, want replacement plus payload", []byte{0xff, 'o', 'k'}, got)
 	}
 }

@@ -129,6 +129,16 @@ func clearInjectSucceeded() { os.Remove(injectSucceededMarker()) }
 // didInjectSucceed reports whether disk injection succeeded for this VM.
 func didInjectSucceed() bool { _, err := os.Stat(injectSucceededMarker()); return err == nil }
 
+// installerWindowTitle is the NSWindow title for the macOS installation
+// window. Includes the VM name when one is set so users running multiple
+// installs in parallel can tell windows apart.
+func installerWindowTitle() string {
+	if vmName != "" {
+		return fmt.Sprintf("macOS VM Installation — %s", vmName)
+	}
+	return "macOS VM Installation"
+}
+
 // stopVMAndInject stops a running VM, waits for the disk to be released, and
 // optionally injects provisioning files if provisionUser/provisionPassword are set.
 func stopVMAndInject(vm *virtualMachine) {
@@ -178,21 +188,32 @@ func stopVMAndInject(vm *virtualMachine) {
 		InjectAgent:        sandboxAllowsAgentProvision(),
 		InjectGuestTools:   !sandboxActive(),
 	}
-	if err := injectProvisioningFilesWithOptions(injectOpts); err != nil {
+	// Use the staged provisioning path: stage all files locally (no root
+	// needed), then apply with one elevation. applyProvisioningFiles writes
+	// the success marker and records agent state itself; the OLD inject path
+	// would silently warn on elevation failures and leave the inject marker
+	// set, leading to "Provisioning (already done)" with nothing actually
+	// provisioned.
+	provisionFailed := func(err error) {
 		fmt.Printf("warning: disk provisioning failed: %v\n", err)
 		if provisionStrategy == "auto" {
 			fmt.Println("Will fall back to GUI automation on first boot.")
-		} else {
-			exe, _ := os.Executable()
-			fmt.Println("You can provision later with:")
-			fmt.Printf("  %s", exe)
-			if vmName != "" {
-				fmt.Printf(" -vm %s", vmName)
-			}
-			fmt.Printf(" provision -user %s -password <password> -skip-setup-assistant\n", provisionUser)
+			return
 		}
-	} else {
-		markInjectSucceeded()
+		exe, _ := os.Executable()
+		fmt.Println("You can provision later with:")
+		fmt.Printf("  %s", exe)
+		if vmName != "" {
+			fmt.Printf(" -vm %s", vmName)
+		}
+		fmt.Printf(" provision -user %s -password <password> -skip-setup-assistant\n", provisionUser)
+	}
+	if _, err := stageProvisioningFiles(injectOpts); err != nil {
+		provisionFailed(err)
+		return
+	}
+	if err := applyProvisioningFiles(); err != nil {
+		provisionFailed(err)
 	}
 	fmt.Println()
 }
@@ -626,7 +647,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					)
 					vmWindow.SetTitleVisibility(appkit.NSWindowTitleVisible)
 					vmWindow.SetTitlebarAppearsTransparent(false)
-					vmWindow.SetTitle("macOS VM Installation")
+					vmWindow.SetTitle(installerWindowTitle())
 					vmWindow.SetContentView(vmViewAsNSView(vmView))
 					vmWindow.Center()
 

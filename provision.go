@@ -141,10 +141,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -183,7 +181,9 @@ func stageFile(stagingDir, relativePath string, data []byte, mode os.FileMode, o
 		Mode:  fmt.Sprintf("0%o", mode),
 		Owner: owner,
 	})
-	fmt.Printf("  Staged: %s\n", relativePath)
+	if verbose {
+		fmt.Printf("  staged: %s\n", relativePath)
+	}
 	return nil
 }
 
@@ -207,6 +207,65 @@ func readManifest(stagingDir string) (*ProvisionManifest, error) {
 		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
 	return &m, nil
+}
+
+// stagingFingerprint summarizes the inputs that determined the staged files.
+// If two stages produce the same fingerprint, their staged outputs are
+// equivalent — so the second can reuse the first instead of re-staging.
+type stagingFingerprint struct {
+	Username           string `json:"username"`
+	Admin              bool   `json:"admin"`
+	BootstrapRecovery  bool   `json:"bootstrapRecovery"`
+	SkipSetupAssistant bool   `json:"skipSetupAssistant"`
+	AutoLogin          bool   `json:"autoLogin"`
+	CreateUserPlist    bool   `json:"createUserPlist"`
+	InjectAgent        bool   `json:"injectAgent"`
+	InjectGuestTools   bool   `json:"injectGuestTools"`
+	EnableSSHD         bool   `json:"enableSSHD"`
+	SSHKeyPath         string `json:"sshKeyPath,omitempty"`
+}
+
+func makeStagingFingerprint(opts InjectOptions) stagingFingerprint {
+	return stagingFingerprint{
+		Username:           opts.Config.Username,
+		Admin:              opts.Config.Admin,
+		BootstrapRecovery:  opts.Config.BootstrapRecovery,
+		SkipSetupAssistant: opts.SkipSetupAssistant,
+		AutoLogin:          opts.AutoLogin,
+		CreateUserPlist:    opts.CreateUserPlist,
+		InjectAgent:        opts.InjectAgent,
+		InjectGuestTools:   opts.InjectGuestTools,
+		EnableSSHD:         opts.EnableSSHD,
+		SSHKeyPath:         opts.SSHKeyPath,
+	}
+}
+
+// writeStagingFingerprint records the fingerprint alongside the manifest so
+// later stage-or-reuse decisions can compare without re-deriving it.
+func writeStagingFingerprint(stagingDir string, fp stagingFingerprint) error {
+	data, err := json.MarshalIndent(fp, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(stagingDir, "fingerprint.json"), data, 0644)
+}
+
+// stagingMatchesOptions reports whether stagingDir contains a complete prior
+// stage that matches the given options. A matching stage can be reused
+// without rebuilding any artifacts.
+func stagingMatchesOptions(stagingDir string, opts InjectOptions) (bool, error) {
+	if _, err := os.Stat(filepath.Join(stagingDir, "manifest.json")); err != nil {
+		return false, err
+	}
+	data, err := os.ReadFile(filepath.Join(stagingDir, "fingerprint.json"))
+	if err != nil {
+		return false, err
+	}
+	var existing stagingFingerprint
+	if err := json.Unmarshal(data, &existing); err != nil {
+		return false, err
+	}
+	return existing == makeStagingFingerprint(opts), nil
 }
 
 // ProvisionConfig holds the user provisioning configuration
@@ -258,227 +317,6 @@ func cleanVM() error {
 	return nil
 }
 
-// injectProvisioningFilesWithOptions mounts the VM disk and injects provisioning files
-// with full configuration options including auto-login and direct user plist creation.
-func injectProvisioningFilesWithOptions(opts InjectOptions) error {
-	// Validate username
-	if err := validateUsername(opts.Config.Username); err != nil {
-		return fmt.Errorf("invalid username: %w", err)
-	}
-
-	// Check password is not empty
-	if opts.Config.Password == "" {
-		return fmt.Errorf("password cannot be empty")
-	}
-
-	if err := checkVMNotRunning(); err != nil {
-		return err
-	}
-
-	diskPath := filepath.Join(vmDir, "disk.img")
-	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		return fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
-	}
-
-	// Check disk is not already mounted
-	if err := checkDiskNotMounted(diskPath); err != nil {
-		return err
-	}
-
-	fmt.Println("=== Injecting Provisioning Files ===")
-	fmt.Printf("Username: %s\n", opts.Config.Username)
-	fmt.Printf("Admin: %v\n", opts.Config.Admin)
-	fmt.Printf("Skip Setup Assistant: %v\n", opts.SkipSetupAssistant)
-	if opts.SkipSetupAssistant && !opts.Config.BootstrapRecovery {
-		fmt.Println("  Note: Setup Assistant bypassed without bootstrap recovery.")
-		fmt.Println("  The provision script will run 'diskutil apfs updatePreboot /'")
-		fmt.Println("  but recovery auth may not work. Consider using -bootstrap-recovery.")
-	}
-	fmt.Printf("Auto-Login: %v\n", opts.AutoLogin)
-	fmt.Printf("Create User Plist: %v\n", opts.CreateUserPlist)
-	fmt.Printf("Guest Tools: %v\n", opts.InjectGuestTools)
-	fmt.Printf("Enable SSHD: %v\n", opts.EnableSSHD)
-	if opts.SSHKeyPath != "" {
-		fmt.Printf("SSH Key: %s\n", opts.SSHKeyPath)
-	}
-	fmt.Println()
-
-	// Step 1: Attach and mount the Data volume
-	mountPoint, device, dataPart, err := attachAndMountDataVolume(diskPath)
-	if err != nil {
-		return fmt.Errorf("mount data volume: %w", err)
-	}
-	defer detachDisk(device)
-
-	// Ensure disk is detached on Ctrl+C / SIGTERM. Without this, a
-	// mid-inject interrupt leaves the disk attached, causing "storage
-	// device attachment is invalid" on the next `run`.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	interrupted := make(chan struct{})
-	injectDone := make(chan struct{})
-	go func() {
-		select {
-		case <-sigCh:
-			fmt.Fprintln(os.Stderr, "\ninterrupted — detaching disk before exit...")
-			close(interrupted)
-		case <-injectDone:
-		}
-	}()
-	defer func() {
-		signal.Stop(sigCh)
-		close(injectDone)
-	}()
-	isInterrupted := func() bool {
-		select {
-		case <-interrupted:
-			return true
-		default:
-			return false
-		}
-	}
-
-	// Collect files that need root:wheel ownership. If we're not running as root,
-	// os.Chown will fail silently and paths accumulate here. At the end we run a
-	// single targeted "sudo chown root:wheel <files>" so only that one command
-	// needs elevated privileges.
-	var rootFiles []string
-	// Collect files that need to be copied to root-owned directories
-	// (e.g. /usr/local/bin which is owned by root). These are staged to temp
-	// and installed via the elevated script.
-	var pendingInstalls []pendingInstall
-
-	if isInterrupted() {
-		return fmt.Errorf("interrupted")
-	}
-
-	if opts.CreateUserPlist {
-		// Advanced mode: Create user plist directly with password hash
-		if err := injectUserPlist(mountPoint, opts); err != nil {
-			return fmt.Errorf("inject user plist: %w", err)
-		}
-	} else {
-		// Standard mode: Use LaunchDaemon to run sysadminctl on first boot
-		if err := injectLaunchDaemonProvisioning(mountPoint, opts.Config, &rootFiles); err != nil {
-			return fmt.Errorf("inject LaunchDaemon: %w", err)
-		}
-	}
-
-	// Optionally create .AppleSetupDone to skip Setup Assistant
-	if opts.SkipSetupAssistant {
-		// Create .AppleSetupDone to skip main Setup Assistant
-		setupDonePath := filepath.Join(mountPoint, "private", "var", "db", ".AppleSetupDone")
-		if err := os.WriteFile(setupDonePath, []byte{}, 0644); err != nil {
-			fmt.Printf("warning: could not create .AppleSetupDone: %v\n", err)
-		} else {
-			fmt.Printf("Written: %s\n", setupDonePath)
-		}
-
-		// Create .skipbuddy in User Template to suppress first-login dialogs
-		// (iCloud setup, Siri setup, etc.)
-		userTemplateDir := filepath.Join(mountPoint, "Library", "User Template", "English.lproj")
-		if err := os.MkdirAll(userTemplateDir, 0755); err != nil {
-			provisionLog("warning: could not create User Template directory: %v", err)
-		} else {
-			skipBuddyPath := filepath.Join(userTemplateDir, ".skipbuddy")
-			if err := os.WriteFile(skipBuddyPath, []byte{}, 0644); err != nil {
-				provisionLog("warning: could not create .skipbuddy: %v", err)
-			} else {
-				provisionLog("Written: %s (suppresses first-login dialogs)", skipBuddyPath)
-			}
-		}
-	}
-
-	// Optionally configure auto-login
-	if opts.AutoLogin {
-		if err := injectAutoLogin(mountPoint, opts.Config.Username, opts.Config.Password, &rootFiles); err != nil {
-			fmt.Printf("warning: auto-login configuration failed: %v\n", err)
-		}
-	}
-
-	// Optionally inject SSH key for remote access
-	if opts.SSHKeyPath != "" {
-		if err := injectSSHKey(mountPoint, opts.Config.Username, opts.SSHKeyPath); err != nil {
-			fmt.Printf("warning: SSH key injection failed: %v\n", err)
-		}
-	}
-
-	// Optionally cross-compile and inject the vz-agent GRPC daemon
-	if opts.InjectAgent {
-		if err := injectAgent(mountPoint, &rootFiles, &pendingInstalls); err != nil {
-			return fmt.Errorf("inject agent: %w", err)
-		}
-	}
-
-	// Optionally download and inject SPICE guest tools for clipboard sharing
-	if opts.InjectGuestTools {
-		if err := injectGuestTools(mountPoint, &rootFiles); err != nil {
-			fmt.Printf("warning: guest tools injection failed: %v\n", err)
-			fmt.Println("  Clipboard sharing will not work until guest tools are installed manually.")
-		}
-	}
-
-	if isInterrupted() {
-		return fmt.Errorf("interrupted")
-	}
-
-	// Fix ownership on files that need root:wheel, and copy any files
-	// that were staged because their target directories are root-owned.
-	// If already running as root, both lists will be empty.
-	if err := fixOwnershipWithSudo(rootFiles, dataPart, pendingInstalls...); err != nil {
-		if strings.Contains(err.Error(), "interrupted") {
-			fmt.Printf("\n%v\n", err)
-			return err // defer detachDisk will run
-		}
-		fmt.Printf("warning: could not fix file ownership: %v\n", err)
-		fmt.Println("  LaunchDaemons may not load on first boot.")
-		fmt.Println("  Fix manually with: sudo chown root:wheel <files>")
-	}
-	// Clean up temp files from pending installs.
-	for _, inst := range pendingInstalls {
-		os.Remove(inst.Src)
-	}
-
-	fmt.Println()
-	fmt.Println("=== Injection Complete ===")
-	if opts.CreateUserPlist {
-		fmt.Printf("User '%s' created directly in user database.\n", opts.Config.Username)
-	} else {
-		fmt.Println("On first boot, the provisioning script will:")
-		fmt.Printf("  - Create user '%s'\n", opts.Config.Username)
-		if opts.Config.Admin {
-			fmt.Println("  - Grant admin privileges")
-		}
-		fmt.Println("  - Self-cleanup (remove script and LaunchDaemon)")
-	}
-	if opts.SkipSetupAssistant {
-		fmt.Println("  - Skip Setup Assistant entirely")
-	}
-	if opts.AutoLogin {
-		fmt.Printf("  - Auto-login as '%s'\n", opts.Config.Username)
-	}
-	if opts.SSHKeyPath != "" {
-		fmt.Printf("  - SSH key added to %s's authorized_keys\n", opts.Config.Username)
-	}
-	if opts.InjectAgent {
-		fmt.Println("  - vz-agent GRPC daemon installed (vsock port 1024)")
-	}
-	if opts.InjectGuestTools {
-		fmt.Println("  - SPICE guest tools (clipboard sharing) will install on first boot")
-	}
-	if opts.Config.BootstrapRecovery {
-		fmt.Println("  - Two-user bootstrap: hidden admin created first for recovery auth")
-	}
-	if opts.EnableSSHD {
-		fmt.Println("  - SSH daemon (Remote Login) will be enabled on first boot")
-	}
-	fmt.Println()
-
-	fmt.Println("Run the VM with: ./cove run")
-
-	return nil
-}
-
 // stageProvisioningFiles performs all expensive operations (builds, downloads,
 // file generation) and writes them to a staging directory. No root access needed.
 // The staged files can then be applied to the disk with applyProvisioningFiles.
@@ -498,6 +336,18 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 
 	stagingDir := provisionStagingDir()
 
+	// If a complete staging directory already exists for the same user, reuse
+	// it. This makes provisioning resumable: an interrupted apply can re-run
+	// without rebuilding the agent or re-staging unchanged files.
+	if reusable, err := stagingMatchesOptions(stagingDir, opts); err == nil && reusable {
+		if verbose {
+			fmt.Printf("Reusing staged files (delete %s to force re-stage).\n", stagingDir)
+		} else {
+			fmt.Println("Reusing staged provisioning files.")
+		}
+		return stagingDir, nil
+	}
+
 	// Clean any previous staging directory.
 	os.RemoveAll(stagingDir)
 	if err := os.MkdirAll(stagingDir, 0755); err != nil {
@@ -510,23 +360,20 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 		Created: time.Now(),
 	}
 
-	fmt.Println("=== Staging Provisioning Files ===")
-	fmt.Printf("Username: %s\n", opts.Config.Username)
-	fmt.Printf("Admin: %v\n", opts.Config.Admin)
-	fmt.Printf("Skip Setup Assistant: %v\n", opts.SkipSetupAssistant)
-	if opts.SkipSetupAssistant && !opts.Config.BootstrapRecovery {
-		fmt.Println("  Note: Setup Assistant bypassed without bootstrap recovery.")
-		fmt.Println("  The provision script will run 'diskutil apfs updatePreboot /'")
-		fmt.Println("  but recovery auth may not work. Consider using -bootstrap-recovery.")
+	if verbose {
+		fmt.Printf("Staging provisioning for user %q (admin=%v, autologin=%v).\n",
+			opts.Config.Username, opts.Config.Admin, opts.AutoLogin)
+		fmt.Printf("  skip-setup-assistant=%v create-user-plist=%v guest-tools=%v sshd=%v\n",
+			opts.SkipSetupAssistant, opts.CreateUserPlist, opts.InjectGuestTools, opts.EnableSSHD)
+		if opts.SSHKeyPath != "" {
+			fmt.Printf("  ssh-key=%s\n", opts.SSHKeyPath)
+		}
+		if opts.SkipSetupAssistant && !opts.Config.BootstrapRecovery {
+			fmt.Println("  note: setup-assistant bypassed without bootstrap-recovery (recovery auth may fail)")
+		}
+	} else {
+		fmt.Printf("Staging provisioning for %q...\n", opts.Config.Username)
 	}
-	fmt.Printf("Auto-Login: %v\n", opts.AutoLogin)
-	fmt.Printf("Create User Plist: %v\n", opts.CreateUserPlist)
-	fmt.Printf("Guest Tools: %v\n", opts.InjectGuestTools)
-	fmt.Printf("Enable SSHD: %v\n", opts.EnableSSHD)
-	if opts.SSHKeyPath != "" {
-		fmt.Printf("SSH Key: %s\n", opts.SSHKeyPath)
-	}
-	fmt.Println()
 
 	// Stage LaunchDaemon provisioning (or user plist).
 	if opts.CreateUserPlist {
@@ -584,8 +431,13 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 	if err := writeManifest(stagingDir, manifest); err != nil {
 		return "", fmt.Errorf("write manifest: %w", err)
 	}
+	if err := writeStagingFingerprint(stagingDir, makeStagingFingerprint(opts)); err != nil {
+		return "", fmt.Errorf("write fingerprint: %w", err)
+	}
 
-	fmt.Printf("\nStaged %d file(s) to %s\n", len(manifest.Files), stagingDir)
+	if verbose {
+		fmt.Printf("Staged %d files in %s.\n", len(manifest.Files), filepath.Base(stagingDir))
+	}
 	return stagingDir, nil
 }
 
@@ -609,9 +461,9 @@ func applyProvisioningFiles() error {
 		return err
 	}
 
-	fmt.Println("=== Applying Provisioning Files ===")
-	fmt.Printf("VM: %s\n", vmDir)
-	fmt.Printf("Files to apply: %d\n\n", len(manifest.Files))
+	if verbose {
+		fmt.Printf("Applying %d provisioning files to %s.\n", len(manifest.Files), filepath.Base(vmDir))
+	}
 
 	// Mount the Data volume.
 	mountPoint, device, dataPart, err := attachAndMountDataVolume(diskPath)
@@ -662,9 +514,7 @@ func applyProvisioningFiles() error {
 		}
 	}
 
-	fmt.Println()
-	fmt.Println("=== Provisioning Applied Successfully ===")
-	fmt.Println("Run the VM with: ./cove run")
+	fmt.Println("Provisioning applied.")
 	return nil
 }
 
@@ -687,111 +537,93 @@ func manifestIncludesAgent(manifest *ProvisionManifest) bool {
 // mount point, sets permissions and ownership. If not running as root, the
 // entire operation runs via a native Security.framework authorization prompt.
 func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *ProvisionManifest) error {
-	// Build a shell script that does everything in one elevated pass:
-	// 1. Enable APFS ownership on the partition
-	// 2. Create directories
-	// 3. Copy each file
-	// 4. Set mode and ownership
-	var script strings.Builder
-	script.WriteString("#!/bin/bash\n")
-	script.WriteString("set -e\n")
-	script.WriteString(fmt.Sprintf("diskutil enableOwnership %s >/dev/null 2>&1\n", dataPart))
+	// Pick a representative file we can post-verify chowned correctly. We
+	// need at least one file with Owner=root:wheel to validate that the
+	// owners-mount actually took effect.
+	var verifyTarget string
+	for _, f := range manifest.Files {
+		if f.Owner == "root:wheel" {
+			verifyTarget = filepath.Join(mountPoint, f.Path)
+			break
+		}
+	}
 
+	successMarker := tmpPathFor("vz-provision-apply-ok-")
+
+	em := &elevatedManifest{
+		RemountOwners:     []string{dataPart},
+		VerifyChownTarget: verifyTarget,
+		SuccessMarker:     successMarker,
+	}
 	for _, f := range manifest.Files {
 		src := filepath.Join(stagingDir, f.Path)
 		dst := filepath.Join(mountPoint, f.Path)
-
-		script.WriteString(fmt.Sprintf("mkdir -p %q\n", filepath.Dir(dst)))
-		script.WriteString(fmt.Sprintf("cp %q %q\n", src, dst))
-		if f.Mode != "" {
-			script.WriteString(fmt.Sprintf("chmod %s %q\n", f.Mode, dst))
-		}
-		if f.Owner == "root:wheel" {
-			script.WriteString(fmt.Sprintf("chown root:wheel %q\n", dst))
-		}
+		em.MkdirAll = append(em.MkdirAll, filepath.Dir(dst))
+		em.CopyFiles = append(em.CopyFiles, elevatedCopy{
+			Src:   src,
+			Dst:   dst,
+			Mode:  f.Mode,
+			Owner: f.Owner,
+		})
 	}
 
-	// Write the script to a temp file so the privileged launcher only needs
-	// to run a short, fixed command line.
-	tmpScript, err := os.CreateTemp("", "vz-provision-apply-*.sh")
-	if err != nil {
-		return fmt.Errorf("create temp script: %w", err)
+	if err := runElevated(em, elevationPrompt(
+		fmt.Sprintf("Provision VM %q: write %d files (user account, agent, auto-login).", elevationVMLabel(), len(manifest.Files)),
+	)); err != nil {
+		return err
 	}
-	tmpPath := tmpScript.Name()
-	defer os.Remove(tmpPath)
 
-	if _, err := tmpScript.WriteString(script.String()); err != nil {
-		tmpScript.Close()
-		return fmt.Errorf("write temp script: %w", err)
+	// Verify the privileged operation ran to completion. The success marker
+	// is touched as the last manifest step, so its absence means we exited
+	// before that point.
+	if _, err := os.Stat(successMarker); err != nil {
+		return fmt.Errorf("provisioning did not complete (missing success marker %s); check the error above for cause", successMarker)
 	}
-	tmpScript.Close()
-	os.Chmod(tmpPath, 0755)
+	os.Remove(successMarker)
 
-	if os.Getuid() == 0 {
-		fmt.Println("Running as root, applying files directly...")
-		cmd := exec.Command("bash", tmpPath)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("apply files: %w", err)
-		}
-	} else {
-		fmt.Println()
-		fmt.Println("Administrator privileges required to write provisioning files")
-		fmt.Println("into the VM disk image with correct root:wheel ownership.")
-		fmt.Println()
-		fmt.Println("  What this will do:")
-		fmt.Printf("    - Enable APFS ownership on %s\n", dataPart)
+	if verbose {
 		for _, f := range manifest.Files {
-			fmt.Printf("    - Write %s (owner: %s, mode: %s)\n", f.Path, f.Owner, f.Mode)
+			fmt.Printf("  applied: %s\n", f.Path)
 		}
-		fmt.Println()
-		if err := runElevatedBash(tmpPath, fmt.Sprintf(
-			"cove will write %d provisioning files (user account, agent, LaunchDaemons) into the VM disk image with root:wheel ownership.",
-			len(manifest.Files),
-		)); err != nil {
-			return err
-		}
-	}
-
-	for _, f := range manifest.Files {
-		fmt.Printf("  Applied: %s\n", f.Path)
 	}
 	return nil
 }
 
-// runElevatedBash runs a bash script with root privileges. It first tries the
-// installed cove helper (one prompt at install time, none thereafter) and
-// falls back to the native Authorization Services dialog if the helper is
-// unavailable. After the fallback succeeds, it suggests installing the helper
-// so future runs don't prompt.
-//
-// In restricted environments (Claude Code, sandboxed shells, no controlling
-// tty), the native dialog cannot appear — instead of failing with a cryptic
-// AuthorizationCreate error, print the exact command the user can run by
-// hand and return errRestrictedNoElevation.
-func runElevatedBash(scriptPath, prompt string) error {
-	handled, err := runElevatedBashViaHelper(scriptPath)
-	if handled {
-		return err
+// tmpPathFor returns a unique temporary file path with the given prefix.
+// The file is not created; this is just a path generator for use as a
+// success-marker file checked by the caller after a privileged script runs.
+func tmpPathFor(prefix string) string {
+	f, err := os.CreateTemp("", prefix+"*")
+	if err != nil {
+		// Fall back to a deterministic-but-unique-enough path if temp dir
+		// is wedged. Caller will see the "marker missing" error either way.
+		return filepath.Join(os.TempDir(), fmt.Sprintf("%s%d", prefix, time.Now().UnixNano()))
 	}
-	if err != nil && !errors.Is(err, errHelperUnavailable) {
-		fmt.Fprintf(os.Stderr, "cove helper present but unreachable: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Falling back to admin password prompt.")
+	path := f.Name()
+	f.Close()
+	os.Remove(path) // we just want the path; the script will create it
+	return path
+}
+
+// elevationPrompt formats a single-sentence action description for the native
+// authorization dialog. SecurityAgent prepends "cove wants to make changes"
+// and the password field follows; the returned string appears between them.
+// Keep the action under ~100 chars — SecurityAgent truncates longer strings.
+func elevationPrompt(action string) string {
+	const max = 140
+	if len(action) > max {
+		action = action[:max-1] + "…"
 	}
-	if restrictedEnvironment() {
-		printManualElevation(scriptPath, prompt)
-		return errRestrictedNoElevation
+	return action
+}
+
+// elevationVMLabel returns the VM name to show in auth dialogs, defaulting to
+// "default" when no VM is selected yet.
+func elevationVMLabel() string {
+	if vmName != "" {
+		return vmName
 	}
-	if nerr := runElevatedBashNative(scriptPath, prompt); nerr != nil {
-		return nerr
-	}
-	if !helperInstalled() {
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Tip: install the cove helper to skip this prompt next time:")
-		fmt.Fprintln(os.Stderr, "  cove helper install")
-	}
-	return nil
+	return "default"
 }
 
 // errRestrictedNoElevation is returned when cove is invoked from a restricted
@@ -817,32 +649,9 @@ func restrictedEnvironment() bool {
 	return false
 }
 
-// printManualElevation writes the exact command the user can run in a real
-// terminal to complete the elevated step.
-func printManualElevation(scriptPath, prompt string) {
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Cannot show password dialog in this environment (sandboxed).")
-	if prompt != "" {
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "  "+prompt)
-	}
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Run this in a real terminal to complete the elevated step:")
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "  sudo bash %s\n", scriptPath)
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Or install the cove helper once for future hands-off runs:")
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "  sudo cove helper install")
-	fmt.Fprintln(os.Stderr)
-}
-
 // stageAgent cross-compiles the vz-agent binary and stages it along with
 // its LaunchDaemon plist. The build happens here (no root needed).
 func stageAgent(stagingDir string, manifest *ProvisionManifest) error {
-	fmt.Println()
-	fmt.Println("=== Building Guest Agent ===")
-
 	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
 	defer os.Remove(tmpBinary)
 
@@ -871,9 +680,6 @@ func stageAgent(stagingDir string, manifest *ProvisionManifest) error {
 // stageGuestTools downloads the guest tools package and stages it along with
 // its installer script and LaunchDaemon. The download happens here (no root needed).
 func stageGuestTools(stagingDir string, manifest *ProvisionManifest) error {
-	fmt.Println()
-	fmt.Println("=== Downloading SPICE Guest Tools ===")
-
 	pkgPath, err := ensureGuestToolsPkg()
 	if err != nil {
 		return err

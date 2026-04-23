@@ -24,7 +24,7 @@ func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 		errMsg  string
 	)
 
-	DispatchSync(GetMainDispatchQueue(), func() {
+	runOnUIThreadSync(func() {
 		pool := foundation.NewNSAutoreleasePool()
 		defer pool.Drain()
 

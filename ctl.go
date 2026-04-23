@@ -1565,6 +1565,29 @@ func ctlDetectScreen(socketPath string) error {
 // ctlResetPassword resets a user's password. If the VM is running and the
 // guest agent is reachable, it uses dscl inside the guest. Otherwise it
 // re-injects kcpassword via disk mount for auto-login with the new password.
+func requireAgentExecSuccess(action string, resp *controlpb.ControlResponse) error {
+	if resp == nil {
+		return fmt.Errorf("%s: empty response", action)
+	}
+	if !resp.Success {
+		if msg := strings.TrimSpace(resp.Error); msg != "" {
+			return fmt.Errorf("%s: %s", action, msg)
+		}
+		return fmt.Errorf("%s: request failed", action)
+	}
+	if exec := resp.GetAgentExecResult(); exec != nil {
+		if exec.GetExitCode() == 0 {
+			return nil
+		}
+		return fmt.Errorf("%s: %s", action, pickReadyDetail(exec.GetStdout(), exec.GetStderr(), int(exec.GetExitCode())))
+	}
+	result := readyResultFromData(action, resp.Data)
+	if result.OK {
+		return nil
+	}
+	return fmt.Errorf("%s: %s", action, result.Detail)
+}
+
 func ctlResetPassword(sock string, timeout time.Duration, username, password string) error {
 	// Try agent first (VM running).
 	req := &controlpb.ControlRequest{
@@ -1577,7 +1600,9 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 	}
 	resp, err := ctlSendRequest(sock, req, timeout, "agent-exec")
 	if err == nil && resp.Success {
-		fmt.Printf("Password reset for %s (via guest agent)\n", username)
+		if err := requireAgentExecSuccess("reset password", resp); err != nil {
+			return err
+		}
 		// Also update kcpassword for auto-login consistency.
 		refreshCmd, cmdErr := autoLoginRefreshCommand(username, password)
 		if cmdErr != nil {
@@ -1591,7 +1616,20 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 				},
 			},
 		}
-		ctlSendRequest(sock, kcReq, timeout, "agent-exec")
+		kcResp, err := ctlSendRequest(sock, kcReq, timeout, "agent-exec")
+		if err != nil {
+			return fmt.Errorf("refresh autologin artifacts: %w", err)
+		}
+		if err := requireAgentExecSuccess("refresh autologin artifacts", kcResp); err != nil {
+			return err
+		}
+		if err := writeLoginScreenCredentialsCache(vmDir, loginScreenCredentials{
+			Username: username,
+			Password: password,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: cache autologin credentials: %v\n", err)
+		}
+		fmt.Printf("Password reset for %s (via guest agent)\n", username)
 		return nil
 	}
 
@@ -1666,21 +1704,30 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 		os.Chown(lwPath, 0, 0)
 	} else {
 		// Set root:wheel ownership on the password reset files so launchd loads them.
-		tmpScript, tmpErr := os.CreateTemp("", "vz-pwreset-chown-*.sh")
-		if tmpErr == nil {
-			fmt.Fprintf(tmpScript, "#!/bin/bash\nchown root:wheel %q %q %q %q\n", scriptPath, plistPath, kcPath, lwPath)
-			tmpScript.Close()
-			os.Chmod(tmpScript.Name(), 0755)
-			fmt.Println()
-			fmt.Println("Administrator privileges required to set root:wheel ownership")
-			fmt.Printf("on password reset files so launchd will load them on next boot.\n")
-			fmt.Println()
-			runElevatedBash(tmpScript.Name(), fmt.Sprintf(
-				"cove will chown root:wheel on 4 password reset files: %s, %s, %s, %s",
-				filepath.Base(scriptPath), filepath.Base(plistPath), filepath.Base(kcPath), filepath.Base(lwPath),
-			))
-			os.Remove(tmpScript.Name())
+		fmt.Println()
+		fmt.Println("Administrator privileges required to set root:wheel ownership")
+		fmt.Printf("on password reset files so launchd will load them on next boot.\n")
+		fmt.Println()
+		em := &elevatedManifest{
+			ChownFiles: []elevatedChown{
+				{Path: scriptPath, Owner: "root:wheel"},
+				{Path: plistPath, Owner: "root:wheel"},
+				{Path: kcPath, Owner: "root:wheel"},
+				{Path: lwPath, Owner: "root:wheel"},
+			},
 		}
+		if err := runElevated(em, elevationPrompt(
+			fmt.Sprintf("Reset password on VM %q.", elevationVMLabel()),
+		)); err != nil {
+			fmt.Fprintf(os.Stderr, "ownership fix failed: %v\n", err)
+		}
+	}
+
+	if err := writeLoginScreenCredentialsCache(vmDir, loginScreenCredentials{
+		Username: username,
+		Password: password,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cache autologin credentials: %v\n", err)
 	}
 
 	fmt.Printf("Password reset staged for %s (will apply on next boot)\n", username)

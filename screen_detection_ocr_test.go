@@ -37,7 +37,7 @@ func TestDetectScreenStateOCR_BlankImage(t *testing.T) {
 func TestSetupAssistantPageMarkers(t *testing.T) {
 	// Verify all expected pages have markers defined
 	expectedPages := []string{
-		"language", "country_region", "accessibility", "wifi",
+		"language", "country_region", "voiceover_tutorial", "accessibility", "wifi",
 		"migration", "apple_id", "terms", "user_account",
 		"express_setup", "analytics", "screen_time", "siri",
 		"appearance", "touch_id", "filevault", "icloud_keychain",
@@ -141,5 +141,42 @@ func TestOCRPageDetectionOrder_HasEntries(t *testing.T) {
 		if len(entry.markers) == 0 {
 			t.Errorf("no markers for page %q in ocrPageDetectionOrder", entry.page)
 		}
+	}
+}
+
+func TestDetectSetupAssistantPageFromOCRText(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "voiceover tutorial wins over accessibility footer text",
+			text: "VoiceOver Tutorial\nThe VoiceOver Modifier\nPress Command-Option-F5 to view accessibility options.",
+			want: "voiceover_tutorial",
+		},
+		{
+			name: "generic accessibility page remains accessibility",
+			text: "Accessibility\nUse accessibility options to set up your Mac.",
+			want: "accessibility",
+		},
+		{
+			name: "country region is detected",
+			text: "Select Your Country or Region\nUnited States\nContinue",
+			want: "country_region",
+		},
+	}
+
+	for _, tt := range tests {
+		if got := detectSetupAssistantPageFromOCRText(tt.text); got != tt.want {
+			t.Errorf("%s: detectSetupAssistantPageFromOCRText() = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestDetectScreenStateFromOCRText(t *testing.T) {
+	got := detectScreenStateFromOCRText("VoiceOver Tutorial\nThe VoiceOver Modifier")
+	if got != ScreenStateSetupAssistant {
+		t.Fatalf("detectScreenStateFromOCRText(voiceover tutorial) = %v, want %v", got, ScreenStateSetupAssistant)
 	}
 }
