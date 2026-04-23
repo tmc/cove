@@ -162,9 +162,9 @@ func (c *VMStatusItemController) handleMenuNeedsUpdate(_ objc.ID, _ objc.SEL, me
 	window := c.window
 	toolbar := c.toolbar
 	c.mu.Unlock()
-	if c.gui != nil {
-		window = c.gui.Window()
-		toolbar = c.gui.Toolbar()
+	if gui, ok := c.gui.(vmGUIWindowProvider); ok {
+		window = gui.Window()
+		toolbar = gui.Toolbar()
 	}
 
 	menu.SetTitle(c.menuTitle())

@@ -32,6 +32,9 @@ type VMGUIController interface {
 	Close() error
 	Status() GUIStatus
 	Shutdown()
+}
+
+type vmGUIWindowProvider interface {
 	Window() appkit.NSWindow
 	Toolbar() *VMToolbar
 }
