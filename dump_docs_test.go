@@ -10,8 +10,8 @@ func TestBuildDumpDocsAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildDumpDocs(all): %v", err)
 	}
-	if docs.CLI == nil || docs.API == nil {
-		t.Fatalf("expected cli/api docs, got %#v", docs)
+	if docs.CLI == nil || docs.API == nil || docs.MCP == nil {
+		t.Fatalf("expected cli/api/mcp docs, got %#v", docs)
 	}
 	if docs.Version == "" {
 		t.Fatal("expected version in docs bundle")
@@ -23,6 +23,9 @@ func TestBuildDumpDocsAll(t *testing.T) {
 	}
 	if got := apiEndpointByPath(docs.API.Endpoints, "POST", "/v1/vms/{name}/snapshot"); got == nil {
 		t.Fatal("missing snapshot API endpoint")
+	}
+	if got := mcpToolByName(docs.MCP.Tools, "vm_snapshot_save"); got == nil {
+		t.Fatal("missing vm_snapshot_save MCP tool")
 	}
 }
 
@@ -37,7 +40,7 @@ func TestBuildDumpDocsTypeSelector(t *testing.T) {
 	}{
 		{name: "cli", kind: "cli", wantCLI: true},
 		{name: "api", kind: "api", wantAPI: true},
-		{name: "mcp", kind: "mcp", wantErr: true},
+		{name: "mcp", kind: "mcp", wantMCP: true},
 		{name: "bad", kind: "wat", wantErr: true},
 	}
 
@@ -83,9 +86,19 @@ func TestBuildCLIDocsIncludesCapturedUsage(t *testing.T) {
 	}
 }
 
-func TestBuildMCPDocsUnavailableByDefault(t *testing.T) {
-	if docs := buildMCPDocs(); docs != nil {
-		t.Fatalf("buildMCPDocs() = %#v, want nil", docs)
+func TestBuildMCPDocsIncludesSchemas(t *testing.T) {
+	docs := buildMCPDocs()
+	if docs.ProtocolVersion != mcpProtocolVersion {
+		t.Fatalf("protocol version = %q, want %q", docs.ProtocolVersion, mcpProtocolVersion)
+	}
+	for _, name := range []string{"vm_pause", "vm_resume", "vm_snapshot_save"} {
+		tool := mcpToolByName(docs.Tools, name)
+		if tool == nil {
+			t.Fatalf("missing MCP tool %q", name)
+		}
+		if tool.InputSchema == nil {
+			t.Fatalf("MCP tool %q input schema is nil", name)
+		}
 	}
 }
 
@@ -102,6 +115,15 @@ func apiEndpointByPath(endpoints []apiEndpointDoc, method, path string) *apiEndp
 	for i := range endpoints {
 		if endpoints[i].Method == method && endpoints[i].Path == path {
 			return &endpoints[i]
+		}
+	}
+	return nil
+}
+
+func mcpToolByName(tools []mcpToolDoc, name string) *mcpToolDoc {
+	for i := range tools {
+		if tools[i].Name == name {
+			return &tools[i]
 		}
 	}
 	return nil
