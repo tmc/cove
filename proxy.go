@@ -464,7 +464,10 @@ func configureRequestedProxy(cs *ControlServer) error {
 	if strings.TrimSpace(proxyURL) == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), proxyRuntimeWaitTimeout)
+	if cs == nil {
+		return fmt.Errorf("proxy runtime unavailable")
+	}
+	ctx, cancel := cs.timeoutContext(proxyRuntimeWaitTimeout)
 	defer cancel()
 	return configureGuestProxy(ctx, cs, proxyURL)
 }
@@ -477,7 +480,7 @@ func configureRequestedProxyAfterBoot(cs *ControlServer) {
 		if proxyLastValidation != nil && proxyLastValidation.Capability.Status == proxyCapabilityUnknown {
 			fmt.Println("Proxy preflight unknown: proceeding to runtime probe.")
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), proxyRuntimeWaitTimeout)
+		ctx, cancel := cs.timeoutContext(proxyRuntimeWaitTimeout)
 		defer cancel()
 		if err := waitForProxyRuntime(ctx, cs); err != nil {
 			fmt.Printf("warning: configure guest proxy: %v\n", err)
@@ -503,7 +506,7 @@ func teardownRequestedProxy(cs *ControlServer) {
 	if strings.TrimSpace(proxyURL) == "" || cs == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), proxyRuntimeTeardownTimeout)
+	ctx, cancel := cs.timeoutContext(proxyRuntimeTeardownTimeout)
 	defer cancel()
 	if err := teardownGuestProxy(ctx, cs); err != nil {
 		printProxyRestoreFailure(cs.effectiveVMDir(), err)
