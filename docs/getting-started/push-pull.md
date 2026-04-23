@@ -80,7 +80,7 @@ Where you win:
 - **Zero-chunk sparse handling.** Long zero regions from a fresh install get a well-known zero digest, never cross the wire, and restore as sparse holes on the puller.
 - **Parallel range fetches.** A 20 GB pull on a fast link is bounded by your pipe, not by a single TCP stream.
 
-Run [`cove compact`](../features/snapshots.md) before a push to zero-fill free space in the guest; the sparse-chunk detector then drops those regions from the upload.
+Run [`cove compact`](../reference/cli.md#compact) before a push to zero-fill free space in the guest; the sparse-chunk detector then drops those regions from the upload.
 
 ## Auth
 

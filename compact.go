@@ -116,7 +116,7 @@ func compactCommand(platform string) ([]string, error) {
 	case vmAgentPlatformLinux:
 		return []string{"fstrim", "-v", "/"}, nil
 	case vmAgentPlatformMacOS:
-		return []string{"diskutil", "apfs", "eraseFreeVolumeSpace", "free", "/"}, nil
+		return []string{"diskutil", "secureErase", "freespace", "0", "/"}, nil
 	default:
 		return nil, fmt.Errorf("unsupported guest platform %q", platform)
 	}
