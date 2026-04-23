@@ -155,6 +155,7 @@ func installerWindowTitle() string {
 // stopVMAndInject stops a running VM, waits for the disk to be released, and
 // optionally injects provisioning files if provisionUser/provisionPassword are set.
 func stopVMAndInject(vm *virtualMachine) {
+	target := currentVMSelection()
 	fmt.Println("Stopping VM...")
 	if err := stopInstallerVM(vm); err != nil {
 		fmt.Printf("warning: %v\n", err)
@@ -162,12 +163,12 @@ func stopVMAndInject(vm *virtualMachine) {
 
 	// Wait for the disk to be released instead of a fixed sleep. The VZ
 	// framework may hold the file handle briefly after stop returns.
-	diskFile := filepath.Join(vmDir, "disk.img")
+	diskFile := target.diskPath()
 	if _, err := os.Stat(diskFile); err != nil {
 		fmt.Printf("warning: disk not found after VM stop: %s (%v)\n", diskFile, err)
-		fmt.Printf("  vmDir=%s\n", vmDir)
+		fmt.Printf("  vmDir=%s\n", target.Directory)
 		// List what's actually in the directory.
-		if entries, derr := os.ReadDir(vmDir); derr == nil {
+		if entries, derr := os.ReadDir(target.Directory); derr == nil {
 			for _, e := range entries {
 				fmt.Printf("  - %s\n", e.Name())
 			}
@@ -216,16 +217,16 @@ func stopVMAndInject(vm *virtualMachine) {
 		exe, _ := os.Executable()
 		fmt.Println("You can provision later with:")
 		fmt.Printf("  %s", exe)
-		if vmName != "" {
-			fmt.Printf(" -vm %s", vmName)
+		if flag := target.hintFlag(); flag != "" {
+			fmt.Printf("%s", flag)
 		}
 		fmt.Printf(" provision -user %s -password <password> -skip-setup-assistant\n", provisionUser)
 	}
-	if _, err := stageProvisioningFiles(injectOpts); err != nil {
+	if _, err := stageProvisioningFilesForVM(target, injectOpts); err != nil {
 		provisionFailed(err)
 		return
 	}
-	if err := applyProvisioningFiles(); err != nil {
+	if err := applyProvisioningFilesForVM(target); err != nil {
 		provisionFailed(err)
 	}
 	fmt.Println()
@@ -439,7 +440,7 @@ func installMacOSLikeVZ(ctx context.Context) error {
 	}
 
 	// If GUI provisioning is needed, auto-boot with GUI.
-	if provisionUser != "" && (provisionStrategy == "gui" || (provisionStrategy == "auto" && !didInjectSucceed())) {
+	if provisionUser != "" && (provisionStrategy == "gui" || (provisionStrategy == "auto" && !didInjectSucceedForVM(currentVMSelection()))) {
 		fmt.Println("Booting VM for GUI provisioning...")
 		guiMode = true
 		return runMacOSVM()
