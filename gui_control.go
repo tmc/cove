@@ -159,11 +159,19 @@ func (c *vmGUIController) configureProcessIdentity() {
 }
 
 func (c *vmGUIController) initDetachedView() error {
-	c.vmView = c.newVMView()
-	c.configureProcessIdentity()
-	if c.bindings != nil {
-		c.bindings.SetVMViewWithWindow(c.vmView, appkit.NSWindow{})
+	if c.window.ID != 0 && c.vmView.ID != 0 {
+		c.window.OrderOut(nil)
+		c.headed = false
+		if c.bindings != nil {
+			c.bindings.SetVMViewWithWindow(c.vmView, c.window)
+		}
+		return nil
 	}
+	if err := c.initWindow(); err != nil {
+		return err
+	}
+	c.window.OrderOut(nil)
+	c.headed = false
 	return nil
 }
 
@@ -278,23 +286,13 @@ func (c *vmGUIController) hideOnMain() error {
 			c.lastVisibleFrame = c.window.Frame()
 			c.window.SaveFrameUsingName(c.frameAutosave)
 		}
-		c.shuttingDown = true
 		c.window.OrderOut(nil)
-		c.window.Close()
-		c.shuttingDown = false
 	}
-	c.window = appkit.NSWindow{}
-	c.toolbar = nil
-	c.windowDelegate = appkit.NSWindowDelegateObject{}
-	c.appDelegate = appkit.NSApplicationDelegateObject{}
 	c.app.SetActivationPolicy(appkit.NSApplicationActivationPolicyAccessory)
 	c.app.Deactivate()
 	c.headed = false
-	if c.vmView.ID == 0 {
-		return c.initDetachedView()
-	}
 	if c.bindings != nil {
-		c.bindings.SetVMViewWithWindow(c.vmView, appkit.NSWindow{})
+		c.bindings.SetVMViewWithWindow(c.vmView, c.window)
 	}
 	return nil
 }
