@@ -90,7 +90,7 @@ cove -vm sandbox sip disable-auto -user analyst -password analyst -confirm
 # Boot into recovery with the automation script
 cove -vm sandbox run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/sandbox/recovery-disk.img \
-  -boot-commands ~/.vz/vms/sandbox/sip-disable-commands.txt
+  -boot-commands ~/.vz/vms/sandbox/sip-disable.vzscript
 ```
 
 After recovery reboots the VM, verify:

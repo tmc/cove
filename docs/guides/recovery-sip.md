@@ -25,7 +25,7 @@ cove sip disable-auto -user admin -password secret -confirm
 
 This creates:
 - A recovery tools disk at `~/.vz/vms/<name>/recovery-disk.img`
-- A boot automation script at `~/.vz/vms/<name>/sip-disable-commands.txt`
+- A boot automation script at `~/.vz/vms/<name>/sip-disable.vzscript`
 
 The `-confirm` flag handles the "Are you sure" confirmation prompt that some Recovery builds show.
 
@@ -34,11 +34,11 @@ The `-confirm` flag handles the "Are you sure" confirmation prompt that some Rec
 ```bash
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \
-  -boot-commands ~/.vz/vms/default/sip-disable-commands.txt
+  -boot-commands ~/.vz/vms/default/sip-disable.vzscript
 ```
 
 The automation script:
-1. Navigates to Utilities > Terminal in Recovery
+1. Selects Recovery Options, continues through the Recovery screen, and opens Utilities > Terminal
 2. Types the `csrutil disable` command
 3. Handles password prompts via OCR text detection
 4. Reboots the VM
@@ -58,7 +58,7 @@ cove sip enable-auto -user admin -password secret
 
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \
-  -boot-commands ~/.vz/vms/default/sip-enable-commands.txt
+  -boot-commands ~/.vz/vms/default/sip-enable.vzscript
 ```
 
 ## SIP Manual Instructions
@@ -115,5 +115,5 @@ This avoids hardcoding prompt order while keeping the syntax shell-like.
 |-------|-------|---------|
 | "Authentication failure" | User lacks recovery authorization | Reprovision with `-bootstrap-recovery` |
 | "User interaction required" | Account state problem | Verify provisioning completed in guest |
-| Terminal doesn't open | Menu click timing | Re-run the automation |
+| Terminal doesn't open | Recovery menu not ready | Re-run the automation with `-gui` and keep the window focused |
 | Agent unavailable | Expected in Recovery | Agent doesn't run in Recovery mode |

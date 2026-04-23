@@ -70,7 +70,7 @@ Disable or enable System Integrity Protection with automated recovery boot.
 
 ```bash
 cove sip disable-auto -user admin -password secret -confirm
-cove run -recovery -gui -unattended -boot-commands ~/.vz/vms/default/sip-disable-commands.txt
+cove run -recovery -gui -unattended -boot-commands ~/.vz/vms/default/sip-disable.vzscript
 ```
 
 ### Guest Agent
@@ -156,7 +156,7 @@ echo '{"type":"screenshot","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/c
 cove sip disable-auto -user admin -password secret -confirm
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \
-  -boot-commands ~/.vz/vms/default/sip-disable-commands.txt
+  -boot-commands ~/.vz/vms/default/sip-disable.vzscript
 ```
 
 ## Architecture

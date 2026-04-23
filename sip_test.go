@@ -9,7 +9,7 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot_Order(t *testing.T
 	got := generateSIPVZScript("disable", "admin", "secret", true, true)
 
 	wantOrder := []string{
-		`key cmd+shift+t`,
+		`click-menu-item Utilities Terminal 60s`,
 		`type 'csrutil disable'`,
 		`[text-visible:Are+you+sure] type-keycodes 'y'`,
 		`[text-visible:Authorized+user] type 'admin'`,
