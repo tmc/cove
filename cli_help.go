@@ -49,6 +49,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printCompactUsage(os.Stderr)
 		case "push":
 			printPushUsage(os.Stderr)
+		case "pull":
+			printPullUsage(os.Stderr)
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
@@ -148,6 +150,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "push":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printPushUsage(os.Stderr)
+			return true, 0
+		}
+	case "pull":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printPullUsage(os.Stderr)
 			return true, 0
 		}
 	case "provision", "inject":

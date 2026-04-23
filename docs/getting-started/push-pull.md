@@ -18,9 +18,14 @@ Cove's pull path accepts both cove-native and lume-produced manifests, so migrat
 ## Pull
 
 ```bash
-cove pull <ref>                         # pull into VM named from the repo
-cove pull <ref> --as my-macos           # name the new VM
+cove pull <ref> --dry-run                         # validate the pull target
+cove pull <ref> --as my-macos --dry-run           # name the new VM
+cove pull <ref> --dry-run --manifest manifest.json # validate a local manifest
 ```
+
+Current implementation supports dry-run validation only. Registry manifest
+fetch, chunk download, decompression, and disk writes land in the next transport
+slice.
 
 What happens:
 

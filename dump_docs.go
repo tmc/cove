@@ -237,6 +237,9 @@ var cliDocSpecs = []cliDocSpec{
 	{Name: "push", Summary: "Plan or push a VM disk as an OCI image.", Usage: func() string {
 		return captureWriter(printPushUsage)
 	}},
+	{Name: "pull", Summary: "Validate or pull an OCI VM image.", Usage: func() string {
+		return captureWriter(printPullUsage)
+	}},
 	{Name: "template", Summary: "Manage VM templates.", Usage: func() string {
 		return captureWriter(printTemplateUsage)
 	}},

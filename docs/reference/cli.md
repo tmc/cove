@@ -568,7 +568,9 @@ cove serve -http 127.0.0.1:7777 -per-vm-auth -vms ci-runner,dev-vm
 
 ## pull
 
-Pull an OCI image into a VM disk. Streams the registry blob directly to `disk.img`. Supports [Lume](https://github.com/trycua/lume) images by translating their annotations.
+Validate or pull an OCI image into a VM disk. Current implementation supports
+`--dry-run` with a local manifest JSON; registry download lands in the next OCI
+transport slice.
 
 ```
 cove pull <ref> [flags]
@@ -577,10 +579,12 @@ cove pull <ref> [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--as <name>` | inferred from ref | Destination VM name |
+| `--dry-run` | false | Validate inputs without writing a disk |
+| `--manifest <path>` | | Local OCI manifest JSON for dry-run validation |
 
 ```bash
-cove pull ghcr.io/example/macos-sequoia:15.2
-cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia
+cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
+cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --manifest manifest.json
 ```
 
 ---
