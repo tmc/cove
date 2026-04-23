@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // newServeTestRegistry returns an in-memory OperationRegistry for testing.
@@ -196,6 +199,160 @@ func TestGatewayPerVMAuth(t *testing.T) {
 			t.Error("per-VM token should pass auth, got 401")
 		}
 	})
+}
+
+func TestGatewaySnapshotRoutesProxyControlRequest(t *testing.T) {
+	vmDir, err := os.MkdirTemp("", "gwsnap*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(vmDir) })
+
+	const (
+		vmName = "vm"
+		token  = "master-token"
+	)
+	vmSubDir := filepath.Join(vmDir, vmName)
+	if err := os.MkdirAll(vmSubDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	reqCh := make(chan *controlpb.ControlRequest, 8)
+	errCh := make(chan error, 1)
+	done := make(chan struct{})
+	sockPath := filepath.Join(vmSubDir, "control.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		close(done)
+		ln.Close()
+	})
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				select {
+				case <-done:
+				default:
+					errCh <- err
+				}
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+				scanner := bufio.NewScanner(conn)
+				if !scanner.Scan() {
+					return
+				}
+				var got controlpb.ControlRequest
+				if err := protojsonUnmarshaler.Unmarshal(scanner.Bytes(), &got); err != nil {
+					errCh <- err
+					return
+				}
+				reqCh <- &got
+				resp := &controlpb.ControlResponse{
+					Success: true,
+					Result:  &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "ok"}},
+				}
+				data, err := protojsonMarshaler.Marshal(resp)
+				if err != nil {
+					errCh <- err
+					return
+				}
+				fmt.Fprintf(conn, "%s\n", data)
+			}(conn)
+		}
+	}()
+
+	gw, err := NewGateway(vmDir, token, false, nil, newServeTestRegistry(t))
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+	gw.mu.RLock()
+	_, ok := gw.routes[vmName]
+	gw.mu.RUnlock()
+	if !ok {
+		t.Fatal("route not registered")
+	}
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		wantAction string
+		wantName   string
+	}{
+		{
+			name:       "save",
+			method:     http.MethodPost,
+			path:       "/v1/vms/vm/snapshot",
+			body:       `{"name":"checkpoint1"}`,
+			wantAction: "save",
+			wantName:   "checkpoint1",
+		},
+		{
+			name:       "list",
+			method:     http.MethodGet,
+			path:       "/v1/vms/vm/snapshots",
+			wantAction: "list",
+		},
+		{
+			name:       "restore",
+			method:     http.MethodPost,
+			path:       "/v1/vms/vm/snapshots/checkpoint1/restore",
+			wantAction: "restore",
+			wantName:   "checkpoint1",
+		},
+		{
+			name:       "delete",
+			method:     http.MethodDelete,
+			path:       "/v1/vms/vm/snapshots/checkpoint1",
+			wantAction: "delete",
+			wantName:   "checkpoint1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Authorization", "Bearer "+token)
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			gw.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s %s: got %d, want 200; body: %s", tt.method, tt.path, rec.Code, rec.Body.String())
+			}
+
+			var got *controlpb.ControlRequest
+			select {
+			case got = <-reqCh:
+			case err := <-errCh:
+				t.Fatalf("socket server: %v", err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("timeout waiting for proxied control request")
+			}
+			if got.Type != "snapshot" {
+				t.Fatalf("request type = %q, want snapshot", got.Type)
+			}
+			snapshot := got.GetSnapshot()
+			if snapshot == nil {
+				t.Fatal("snapshot payload is nil")
+			}
+			if snapshot.Action != tt.wantAction {
+				t.Fatalf("snapshot action = %q, want %q", snapshot.Action, tt.wantAction)
+			}
+			if snapshot.Name != tt.wantName {
+				t.Fatalf("snapshot name = %q, want %q", snapshot.Name, tt.wantName)
+			}
+		})
+	}
 }
 
 // TestGatewayLROCreateVM verifies POST /v1/vms returns 202 + op ID,
