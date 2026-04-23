@@ -21,16 +21,42 @@ var (
 	teardownRequestedProxyHook           = teardownRequestedProxy
 )
 
-func runCurrentVM() error {
-	originalVMName := vmName
-	originalVMDir := vmDir
+type RunConfig struct {
+	VM                       vmSelection
+	Linux                    bool
+	Disposable               bool
+	RollbackSnapshot         string
+	DisposableSourceDiskPath string
+	SystemDiskAttachment     systemDiskAttachmentMode
+	SystemDiskPathOverride   string
+}
 
-	if disposableMode && rollbackSnapshotName != "" {
+func currentRunConfig() RunConfig {
+	return RunConfig{
+		VM:                       currentVMSelection(),
+		Linux:                    linuxMode,
+		Disposable:               disposableMode,
+		RollbackSnapshot:         rollbackSnapshotName,
+		DisposableSourceDiskPath: disposableSourceDiskPath,
+		SystemDiskAttachment:     runtimeSystemDiskAttachment,
+		SystemDiskPathOverride:   runtimeSystemDiskPathOverride,
+	}
+}
+
+func runCurrentVM() error {
+	return runVMWithConfig(currentRunConfig())
+}
+
+func runVMWithConfig(cfg RunConfig) error {
+	originalVMName := cfg.VM.Name
+	originalVMDir := cfg.VM.Directory
+
+	if cfg.Disposable && cfg.RollbackSnapshot != "" {
 		return fmt.Errorf("rollback snapshot runs already create a disposable clone")
 	}
 
 	var clone DisposableClone
-	temporaryClone := disposableMode || rollbackSnapshotName != ""
+	temporaryClone := cfg.Disposable || cfg.RollbackSnapshot != ""
 	if temporaryClone {
 		source := originalVMName
 		if source == "" {
@@ -40,17 +66,17 @@ func runCurrentVM() error {
 			created DisposableClone
 			err     error
 		)
-		if rollbackSnapshotName != "" {
+		if cfg.RollbackSnapshot != "" {
 			created, err = setupRollbackSnapshotCloneHook(RollbackSnapshotCloneOptions{
 				Source:   source,
-				Snapshot: rollbackSnapshotName,
+				Snapshot: cfg.RollbackSnapshot,
 			})
 		} else {
 			created, err = setupDisposableCloneHook(DisposableSetupOptions{
 				Source:         source,
 				Linked:         true,
 				CopyMachineID:  false,
-				SourceDiskPath: disposableSourceDiskPath,
+				SourceDiskPath: cfg.DisposableSourceDiskPath,
 			})
 		}
 		if err != nil {
@@ -59,22 +85,22 @@ func runCurrentVM() error {
 		clone = created
 		vmName = clone.Name
 		vmDir = clone.Path
-		if runtimeSystemDiskAttachment == systemDiskAttachmentTemporaryRAM && strings.TrimSpace(runtimeSystemDiskPathOverride) == "" {
+		if cfg.SystemDiskAttachment == systemDiskAttachmentTemporaryRAM && strings.TrimSpace(cfg.SystemDiskPathOverride) == "" {
 			runtimeSystemDiskPathOverride = vmPrimaryDiskPath(clone.Path)
 			defer func() {
 				runtimeSystemDiskPathOverride = ""
 			}()
 		}
-		if rollbackSnapshotName != "" {
-			fmt.Printf("Rollback snapshot: %s\n", rollbackSnapshotName)
+		if cfg.RollbackSnapshot != "" {
+			fmt.Printf("Rollback snapshot: %s\n", cfg.RollbackSnapshot)
 			fmt.Printf("Rollback clone: %s\n", clone.Name)
 			fmt.Printf("Rollback path: %s\n", clone.Path)
 		} else {
 			fmt.Printf("Disposable clone: %s\n", clone.Name)
 			fmt.Printf("Disposable path: %s\n", clone.Path)
 		}
-		if runtimeSystemDiskAttachment == systemDiskAttachmentTemporaryRAM {
-			fmt.Printf("System disk attachment: %s\n", runtimeSystemDiskAttachment)
+		if cfg.SystemDiskAttachment == systemDiskAttachmentTemporaryRAM {
+			fmt.Printf("System disk attachment: %s\n", cfg.SystemDiskAttachment)
 		}
 		defer func() {
 			vmName = originalVMName
@@ -83,7 +109,7 @@ func runCurrentVM() error {
 	}
 
 	var runErr error
-	if linuxMode {
+	if cfg.Linux {
 		runErr = runLinuxVMHook()
 	} else {
 		runErr = runMacOSVMHook()
@@ -92,7 +118,7 @@ func runCurrentVM() error {
 	if temporaryClone {
 		if cleanupErr := cleanupDisposableCloneHook(clone.Path); cleanupErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: cleanup disposable clone: %v\n", cleanupErr)
-		} else if rollbackSnapshotName != "" {
+		} else if cfg.RollbackSnapshot != "" {
 			fmt.Printf("Rollback clone removed: %s\n", clone.Name)
 		} else {
 			fmt.Printf("Disposable clone removed: %s\n", clone.Name)
