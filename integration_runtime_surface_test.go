@@ -4,8 +4,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +15,15 @@ import (
 )
 
 func testRuntimeSurface(t *testing.T, vm *testVM) {
+	t.Run("parallel-agent-exec", func(t *testing.T) {
+		assertParallelAgentExec(t, vm, "agent-exec")
+	})
+
+	t.Run("parallel-agent-user-exec", func(t *testing.T) {
+		requireUserAgent(t, vm)
+		assertParallelAgentExec(t, vm, "agent-user-exec")
+	})
+
 	t.Run("capabilities", func(t *testing.T) {
 		resp := ctlDo(t, vm, &controlpb.ControlRequest{Type: "capabilities"})
 		caps := resp.GetCapabilities()
@@ -26,7 +37,7 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 			t.Fatal("capabilities auth_required = false, want true")
 		}
 		for _, cmd := range []string{"capabilities", "disk", "usb", "vnc-status", "debug-stub-status"} {
-			if !containsString(caps.GetCommands(), cmd) {
+			if !runtimeSurfaceContainsString(caps.GetCommands(), cmd) {
 				t.Fatalf("capabilities missing command %q", cmd)
 			}
 		}
@@ -227,11 +238,80 @@ func runtimeSurfaceDiskFileName(vm *testVM) string {
 	return "disk.img"
 }
 
-func containsString(list []string, want string) bool {
+func runtimeSurfaceContainsString(list []string, want string) bool {
 	for _, got := range list {
 		if got == want {
 			return true
 		}
 	}
 	return false
+}
+
+func assertParallelAgentExec(t *testing.T, vm *testVM, reqType string) {
+	t.Helper()
+
+	type testCase struct {
+		name string
+		args []string
+	}
+	cases := []testCase{
+		{name: "alpha", args: []string{"/bin/sh", "-lc", "sleep 2; echo alpha"}},
+		{name: "beta", args: []string{"/bin/sh", "-lc", "sleep 2; echo beta"}},
+		{name: "gamma", args: []string{"/bin/sh", "-lc", "sleep 2; echo gamma"}},
+	}
+
+	type result struct {
+		name string
+		resp *controlpb.AgentExecResponse
+		err  error
+	}
+
+	start := time.Now()
+	results := make(chan result, len(cases))
+	var wg sync.WaitGroup
+	for _, tc := range cases {
+		tc := tc
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := &controlpb.ControlRequest{
+				Type:      reqType,
+				AuthToken: vm.token,
+				Command: &controlpb.ControlRequest_AgentExec{
+					AgentExec: &controlpb.AgentExecCommand{Args: tc.args},
+				},
+			}
+			resp, err := ctlSendRequest(vm.sock, req, 30*time.Second, reqType)
+			if err != nil {
+				results <- result{name: tc.name, err: err}
+				return
+			}
+			if !resp.Success {
+				results <- result{name: tc.name, err: fmt.Errorf("%s", resp.Error)}
+				return
+			}
+			results <- result{name: tc.name, resp: resp.GetAgentExecResult()}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("%s elapsed = %s, want parallel completion under 5s", reqType, elapsed)
+	}
+
+	for res := range results {
+		if res.err != nil {
+			t.Fatalf("%s %s: %v", reqType, res.name, res.err)
+		}
+		if res.resp == nil {
+			t.Fatalf("%s %s: missing typed response", reqType, res.name)
+		}
+		if res.resp.GetExitCode() != 0 {
+			t.Fatalf("%s %s: exit %d\nstdout:\n%s\nstderr:\n%s", reqType, res.name, res.resp.GetExitCode(), res.resp.GetStdout(), res.resp.GetStderr())
+		}
+		if got := res.resp.GetStdout(); got != res.name+"\n" {
+			t.Fatalf("%s %s stdout = %q, want %q", reqType, res.name, got, res.name+"\n")
+		}
+	}
 }

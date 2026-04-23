@@ -148,22 +148,29 @@ func (s *ControlServer) connectUserAgentLocked() error {
 }
 
 func (s *ControlServer) connectUserAgentPortLocked() error {
-	mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
+	client, err := NewUserAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
+		if err != nil {
+			return nil, fmt.Errorf("vsock device: %w", err)
+		}
+		conn, err := mgr.ConnectToAgent(userAgentPort)
+		if err != nil {
+			return nil, fmt.Errorf("connect user agent port %d: %w (user agent may not be running; check /tmp/vz-agent-user.log inside the vm)", userAgentPort, err)
+		}
+		return conn, nil
+	})
 	if err != nil {
-		return fmt.Errorf("vsock device: %w", err)
-	}
-
-	conn, err := mgr.ConnectToAgent(userAgentPort)
-	if err != nil {
-		return fmt.Errorf("connect user agent port %d: %w (user agent may not be running; check /tmp/vz-agent-user.log inside the vm)", userAgentPort, err)
-	}
-
-	client, err := NewUserAgentClient(conn)
-	if err != nil {
-		conn.Close()
 		return fmt.Errorf("user agent client: %w", err)
 	}
-
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := client.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err != nil {
+		client.Close()
+		return err
+	}
 	s.userAgent = client
 	return nil
 }
@@ -237,6 +244,16 @@ func (s *ControlServer) consoleUserLocked() (string, int, error) {
 	return parseConsoleOwnerOutput(string(result.Stdout))
 }
 
+func (s *ControlServer) consoleUser() (string, int, error) {
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
+
+	if err := s.connectAgentLocked(); err != nil {
+		return "", 0, fmt.Errorf("connect daemon agent: %w", err)
+	}
+	return s.consoleUserLocked()
+}
+
 func parseConsoleOwnerOutput(stdout string) (string, int, error) {
 	fields := strings.Fields(strings.TrimSpace(stdout))
 	if len(fields) != 2 {
@@ -250,6 +267,13 @@ func parseConsoleOwnerOutput(stdout string) (string, int, error) {
 		return "", 0, fmt.Errorf("no logged-in GUI user on /dev/console")
 	}
 	return fields[0], uid, nil
+}
+
+func responseText(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	return strings.ToValidUTF8(string(data), "\uFFFD")
 }
 
 func (s *ControlServer) currentVMState() (vz.VZVirtualMachineState, error) {
@@ -284,22 +308,29 @@ func (s *ControlServer) connectAgentLocked() error {
 		return nil // already connected
 	}
 
-	mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
+	client, err := NewAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
+		if err != nil {
+			return nil, fmt.Errorf("vsock device: %w", err)
+		}
+		conn, err := mgr.ConnectToAgent(agentPort)
+		if err != nil {
+			return nil, fmt.Errorf("connect agent: %w (guest may still be booting; check /var/log/vz-agent.log inside the vm)", err)
+		}
+		return conn, nil
+	})
 	if err != nil {
-		return fmt.Errorf("vsock device: %w", err)
-	}
-
-	conn, err := mgr.ConnectToAgent(agentPort)
-	if err != nil {
-		return fmt.Errorf("connect agent: %w (guest may still be booting; check /var/log/vz-agent.log inside the vm)", err)
-	}
-
-	client, err := NewAgentClient(conn)
-	if err != nil {
-		conn.Close()
 		return fmt.Errorf("agent client: %w", err)
 	}
-
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := client.Ping(ctx); err != nil {
+		client.Close()
+		return err
+	}
 	s.agent = client
 	return nil
 }
@@ -392,8 +423,8 @@ func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *co
 	}
 	data, _ := json.Marshal(map[string]interface{}{
 		"exitCode": result.ExitCode,
-		"stdout":   string(result.Stdout),
-		"stderr":   string(result.Stderr),
+		"stdout":   responseText(result.Stdout),
+		"stderr":   responseText(result.Stderr),
 		"duration": result.DurationSeconds,
 	})
 	return &controlpb.ControlResponse{
@@ -401,8 +432,8 @@ func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *co
 		Data:    string(data),
 		Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
 			ExitCode:        result.ExitCode,
-			Stdout:          string(result.Stdout),
-			Stderr:          string(result.Stderr),
+			Stdout:          responseText(result.Stdout),
+			Stderr:          responseText(result.Stderr),
 			DurationSeconds: result.DurationSeconds,
 		}},
 	}
@@ -632,14 +663,34 @@ func (s *ControlServer) AgentHealthSummary() string {
 		return "Agent: reconnecting..."
 	case "disconnected":
 		if h.lastPing.IsZero() {
-			// Never connected — still booting up.
-			return "Agent: connecting..."
+			return s.agentNeverConnectedSummary()
 		}
 		return "Agent: disconnected"
 	default:
 		// No health check has run yet.
+		if h.lastPing.IsZero() {
+			return s.agentNeverConnectedSummary()
+		}
 		return "Agent: connecting..."
 	}
+}
+
+// agentNeverConnectedSummary describes the pre-first-connect state. It uses
+// VM agent config to differentiate "fresh install, agent will appear after
+// first boot" from "agent expected, currently waiting" and "no agent
+// configured for this VM."
+func (s *ControlServer) agentNeverConnectedSummary() string {
+	cfg, err := LoadVMConfig(s.vmDir)
+	if err != nil || cfg == nil || cfg.Agent == nil {
+		return "Agent: not installed"
+	}
+	if !cfg.Agent.Requested {
+		return "Agent: not installed"
+	}
+	if !cfg.Agent.Verified {
+		return "Agent: starting (first boot)"
+	}
+	return "Agent: connecting..."
 }
 
 func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
@@ -713,8 +764,8 @@ func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *contro
 	}
 	data, _ := json.Marshal(map[string]interface{}{
 		"exitCode": result.ExitCode,
-		"stdout":   string(result.Stdout),
-		"stderr":   string(result.Stderr),
+		"stdout":   responseText(result.Stdout),
+		"stderr":   responseText(result.Stderr),
 		"duration": result.DurationSeconds,
 	})
 	return &controlpb.ControlResponse{
@@ -722,8 +773,8 @@ func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *contro
 		Data:    string(data),
 		Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
 			ExitCode:        result.ExitCode,
-			Stdout:          string(result.Stdout),
-			Stderr:          string(result.Stderr),
+			Stdout:          responseText(result.Stdout),
+			Stderr:          responseText(result.Stderr),
 			DurationSeconds: result.DurationSeconds,
 		}},
 	}
@@ -824,16 +875,16 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 	}
 	data, _ := json.Marshal(map[string]interface{}{
 		"exitCode": result.ExitCode,
-		"stdout":   string(result.Stdout),
-		"stderr":   string(result.Stderr),
+		"stdout":   responseText(result.Stdout),
+		"stderr":   responseText(result.Stderr),
 	})
 	return &controlpb.ControlResponse{
 		Success: true,
 		Data:    string(data),
 		Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
 			ExitCode: result.ExitCode,
-			Stdout:   string(result.Stdout),
-			Stderr:   string(result.Stderr),
+			Stdout:   responseText(result.Stdout),
+			Stderr:   responseText(result.Stderr),
 		}},
 	}
 }

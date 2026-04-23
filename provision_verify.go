@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -374,42 +373,20 @@ func verifyStopped(verbose, fix bool) error {
 				daemonDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
 				plistPath := filepath.Join(daemonDir, agentLaunchDaemonLabel+".plist")
 
-				// Use elevated script for ownership + copy.
-				script := fmt.Sprintf(
-					"diskutil enableOwnership %s"+
-						" && mkdir -p %q %q"+
-						" && cp %q %q && chmod 755 %q && chown root:wheel %q"+
-						" && cp %q %q && chmod 644 %q && chown root:wheel %q",
-					dataPartition,
-					binDir, daemonDir,
-					tmpBinary, binPath, binPath, binPath,
-					tmpPlist, plistPath, plistPath, plistPath,
-				)
-				tmpScript, tmpErr := os.CreateTemp("", "vz-doctor-fix-*.sh")
-				if tmpErr != nil {
-					fmt.Printf("  Fix failed: %v\n", tmpErr)
+				em := &elevatedManifest{
+					RemountOwners: []string{dataPartition},
+					MkdirAll:      []string{binDir, daemonDir},
+					CopyFiles: []elevatedCopy{
+						{Src: tmpBinary, Dst: binPath, Mode: "0755", Owner: "root:wheel"},
+						{Src: tmpPlist, Dst: plistPath, Mode: "0644", Owner: "root:wheel"},
+					},
+				}
+				if err := runElevated(em, elevationPrompt(
+					fmt.Sprintf("Re-provision VM %q: fix file ownership.", elevationVMLabel()),
+				)); err != nil {
+					fmt.Printf("  Agent inject failed: %v\n", err)
 				} else {
-					fmt.Fprintf(tmpScript, "#!/bin/bash\nset -e\n%s\n", script)
-					tmpScript.Close()
-					os.Chmod(tmpScript.Name(), 0755)
-					defer os.Remove(tmpScript.Name())
-
-					if os.Getuid() == 0 {
-						cmd := exec.Command("bash", tmpScript.Name())
-						cmd.Stdout = os.Stdout
-						cmd.Stderr = os.Stderr
-						if err := cmd.Run(); err != nil {
-							fmt.Printf("  Agent inject failed: %v\n", err)
-						} else {
-							fmt.Println("  Agent injected successfully")
-						}
-					} else {
-						if err := runElevatedBash(tmpScript.Name(), "cove needs to fix file ownership (chown root:wheel) in the VM disk image."); err != nil {
-							fmt.Printf("  Agent inject failed: %v\n", err)
-						} else {
-							fmt.Println("  Agent injected successfully")
-						}
-					}
+					fmt.Println("  Agent injected successfully")
 				}
 			}
 		} else if len(badOwnerPaths) > 0 {

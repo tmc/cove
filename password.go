@@ -120,6 +120,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/hex"
@@ -226,6 +227,18 @@ func EncodeKCPassword(password string) []byte {
 	}
 
 	return encoded
+}
+
+// DecodeKCPassword decodes the contents of /etc/kcpassword.
+func DecodeKCPassword(encoded []byte) string {
+	decoded := make([]byte, len(encoded))
+	for i := range encoded {
+		decoded[i] = encoded[i] ^ kcpasswordKey[i%len(kcpasswordKey)]
+	}
+	if i := bytes.IndexByte(decoded, 0); i >= 0 {
+		decoded = decoded[:i]
+	}
+	return string(decoded)
 }
 
 // UserPlist represents the structure of a macOS user plist

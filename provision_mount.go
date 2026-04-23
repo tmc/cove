@@ -73,7 +73,7 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 		return "", "", "", fmt.Errorf("could not attach disk image: empty device")
 	}
 
-	fmt.Printf("Attached disk image to %s\n", device)
+	provisionLog("Attached disk image to %s", device)
 
 	// Step 2: Find the Data volume using diskutil list (without specifying device)
 	// This shows ALL volumes including those in synthesized APFS containers
@@ -107,7 +107,7 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 			// This section references our physical disk
 			if matches := containerRe.FindStringSubmatch(section); matches != nil {
 				containerDisk = matches[1]
-				fmt.Printf("Found APFS container: /dev/%s\n", containerDisk)
+				provisionLog("Found APFS container: /dev/%s", containerDisk)
 				break
 			}
 		}
@@ -192,7 +192,7 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 		return "", "", "", fmt.Errorf("could not find Data partition for disk %s", device)
 	}
 
-	fmt.Printf("Found Data partition: %s\n", dataPartition)
+	provisionLog("Found Data partition: %s", dataPartition)
 
 	// Step 3: Mount the Data partition
 	cmd = exec.Command("diskutil", "mount", dataPartition)
@@ -234,7 +234,7 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 		return "", "", "", fmt.Errorf("mount point %s does not exist", mountPoint)
 	}
 
-	fmt.Printf("Data volume mounted at: %s\n", mountPoint)
+	provisionLog("Data volume mounted at: %s", mountPoint)
 	return mountPoint, device, dataPartition, nil
 }
 
@@ -381,46 +381,28 @@ func fixOwnershipWithSudo(paths []string, dataPartition string, installs ...pend
 	total := len(paths) + len(installs)
 	fmt.Printf("\n%d file(s) need root privileges.\n", total)
 
-	// Build a shell script that enables ownership, copies pending files,
-	// then chowns everything.
-	var script strings.Builder
-	script.WriteString(fmt.Sprintf("diskutil enableOwnership %s\n", dataPartition))
-
-	// Create directories and copy staged files.
+	// enableOwnership only persists the setting; the live mount keeps its
+	// noowners flag until remounted. Without the in-place remount, every
+	// chown silently no-ops and launchd later refuses the daemon because
+	// the plist isn't owned by root:wheel. The typed manifest does the
+	// remount, then copies, then chowns existing files in one elevated pass.
+	em := &elevatedManifest{
+		RemountOwners: []string{dataPartition},
+	}
 	for _, inst := range installs {
-		script.WriteString(fmt.Sprintf("mkdir -p %q\n", filepath.Dir(inst.Dest)))
-		script.WriteString(fmt.Sprintf("cp %q %q\n", inst.Src, inst.Dest))
-		script.WriteString(fmt.Sprintf("chmod %o %q\n", inst.Mode, inst.Dest))
-		script.WriteString(fmt.Sprintf("chown root:wheel %q\n", inst.Dest))
+		em.MkdirAll = append(em.MkdirAll, filepath.Dir(inst.Dest))
+		em.CopyFiles = append(em.CopyFiles, elevatedCopy{
+			Src:   inst.Src,
+			Dst:   inst.Dest,
+			Mode:  fmt.Sprintf("%o", inst.Mode),
+			Owner: "root:wheel",
+		})
+	}
+	for _, p := range paths {
+		em.ChownFiles = append(em.ChownFiles, elevatedChown{Path: p, Owner: "root:wheel"})
 	}
 
-	// Chown existing files that were written but have wrong ownership.
-	if len(paths) > 0 {
-		script.WriteString("chown root:wheel")
-		for _, p := range paths {
-			script.WriteString(fmt.Sprintf(" %q", p))
-		}
-		script.WriteString("\n")
-	}
-
-	// Write script to temp file for execution.
-	tmpScript, err := os.CreateTemp("", "vz-provision-chown-*.sh")
-	if err != nil {
-		return fmt.Errorf("create temp script: %w", err)
-	}
-	tmpPath := tmpScript.Name()
-	defer os.Remove(tmpPath)
-	fmt.Fprintf(tmpScript, "#!/bin/bash\nset -e\n%s", script.String())
-	tmpScript.Close()
-	os.Chmod(tmpPath, 0755)
-
-	if os.Getuid() == 0 {
-		fmt.Println("Running as root, applying directly...")
-		cmd := exec.Command("bash", tmpPath)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-
-	return runElevatedBash(tmpPath, "cove needs to detach the VM disk image.")
+	return runElevated(em, elevationPrompt(
+		fmt.Sprintf("Fix file ownership on VM %q.", elevationVMLabel()),
+	))
 }

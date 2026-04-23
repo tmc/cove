@@ -18,7 +18,15 @@ func runProvisioningAutomation(cs *ControlServer) {
 	fmt.Println()
 
 	prevInputBackend := cs.inputBackend()
-	cs.setInputBackend(automationBackendFramebuffer)
+	targetInputBackend := prevInputBackend
+	if targetInputBackend == automationBackendAuto {
+		if cs.window.ID != 0 {
+			targetInputBackend = automationBackendWindow
+		} else {
+			targetInputBackend = automationBackendFramebuffer
+		}
+	}
+	cs.setInputBackend(targetInputBackend)
 	defer cs.setInputBackend(prevInputBackend)
 
 	// Wait for the VM window to be ready for screenshots.
@@ -48,7 +56,8 @@ func runProvisioningAutomation(cs *ControlServer) {
 		fmt.Println("Attempting login screen fallback...")
 
 		socketPath := GetControlSocketPathForVM(cs.effectiveVMDir())
-		if loginErr := tryLoginFallback(socketPath); loginErr != nil {
+		creds := loginScreenCredentials{Username: provisionUser, Password: provisionPassword}
+		if loginErr := tryLoginFallback(socketPath, creds, false); loginErr != nil {
 			fmt.Printf("Login fallback also failed: %v\n", loginErr)
 			fmt.Println("Manual intervention may be required.")
 			return
@@ -89,8 +98,72 @@ func waitForVMScreenReady(cs *ControlServer, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for VM screen")
 }
 
+// runLoginScreenWatchdog waits for the VM screen to be capturable, then polls
+// for a login screen for up to 3 minutes. If one appears, it types the cached
+// password. This is the auto-login fallback for headed boots where the guest
+// reaches a password prompt instead of the desktop.
+//
+// The watchdog exits silently if it never sees a login screen — that means
+// kcpassword worked and the desktop appeared directly.
+func runLoginScreenWatchdog(cs *ControlServer, creds loginScreenCredentials) {
+	if err := waitForVMScreenReady(cs, 120*time.Second); err != nil {
+		if verbose {
+			fmt.Printf("[login-watchdog] VM screen not ready: %v\n", err)
+		}
+		return
+	}
+
+	socketPath := GetControlSocketPathForVM(cs.effectiveVMDir())
+	client := NewControlClient(socketPath)
+
+	deadline := time.Now().Add(3 * time.Minute)
+	loggedAtLogin := false
+	for time.Now().Before(deadline) {
+		_, state, err := client.DetectScreen()
+		if err != nil {
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		if state == ScreenStateDesktop {
+			if _, _, err := cs.consoleUser(); err != nil {
+				if verbose {
+					fmt.Printf("[login-watchdog] desktop classification but no console user: %v\n", err)
+				}
+				state = ScreenStateLoginScreen
+			} else {
+				if verbose {
+					fmt.Println("[login-watchdog] desktop reached, exiting")
+				}
+				return
+			}
+		}
+		if state == ScreenStateLoginScreen {
+			if !loggedAtLogin {
+				fmt.Println("\n=== Login screen detected — typing cached password ===")
+				loggedAtLogin = true
+			}
+			if err := tryLoginFallback(socketPath, creds, true); err != nil {
+				if verbose {
+					fmt.Printf("[login-watchdog] login attempt: %v\n", err)
+				}
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			return
+		}
+		time.Sleep(3 * time.Second)
+	}
+	if verbose {
+		fmt.Println("[login-watchdog] timeout — desktop never reached")
+	}
+}
+
 // tryLoginFallback attempts to login at the login screen using keyboard automation.
-func tryLoginFallback(socketPath string) error {
+func tryLoginFallback(socketPath string, creds loginScreenCredentials, force bool) error {
+	if !creds.Valid() {
+		return fmt.Errorf("no cached login credentials")
+	}
+
 	client := NewControlClient(socketPath)
 
 	if err := client.WaitForConnection(30 * time.Second); err != nil {
@@ -102,13 +175,22 @@ func tryLoginFallback(socketPath string) error {
 		return fmt.Errorf("screen detection failed: %w", err)
 	}
 
-	if state != ScreenStateLoginScreen {
+	if state != ScreenStateLoginScreen && !(force && state == ScreenStateDesktop) {
 		return fmt.Errorf("not at login screen (current state: %s)", state)
 	}
 
-	fmt.Println("Detected login screen - attempting keyboard login...")
+	if force && state == ScreenStateDesktop {
+		fmt.Println("Desktop classified without a console user - attempting keyboard login...")
+	} else {
+		fmt.Println("Detected login screen - attempting keyboard login...")
+	}
 
-	if err := client.TypeText(provisionPassword); err != nil {
+	if err := client.MouseClick(0.5, 0.78); err != nil && verbose {
+		fmt.Printf("warning: focus password field: %v\n", err)
+	}
+	time.Sleep(250 * time.Millisecond)
+
+	if err := client.TypeText(creds.Password); err != nil {
 		return fmt.Errorf("type password: %w", err)
 	}
 	time.Sleep(500 * time.Millisecond)
@@ -129,12 +211,12 @@ func tryLoginFallback(socketPath string) error {
 	}
 
 	fmt.Println("Still at login screen - trying to click user and retry...")
-	if err := client.SendMouseClick(300, 300); err != nil {
+	if err := client.MouseClick(0.5, 0.78); err != nil {
 		fmt.Printf("warning: mouse click failed: %v\n", err)
 	}
 	time.Sleep(500 * time.Millisecond)
 
-	if err := client.TypeText(provisionPassword); err != nil {
+	if err := client.TypeText(creds.Password); err != nil {
 		return fmt.Errorf("type password (retry): %w", err)
 	}
 	time.Sleep(500 * time.Millisecond)

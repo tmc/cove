@@ -167,7 +167,7 @@ func (s *SetupAssistant) navigateSetupAssistant() error {
 
 		if stuckCount >= maxStuckCount {
 			s.log("Stuck on page %s, attempting recovery...", page)
-			if s.attemptRecovery(step) {
+			if s.attemptRecovery(step, page) {
 				stuckCount = 0
 				continue
 			}
@@ -208,49 +208,75 @@ func (s *SetupAssistant) handlePage(page string) bool {
 	case "language":
 		s.log("Handling language screen - accepting default (English)")
 		// DO NOT click language names — it changes the UI language.
-		// English is selected by default; activate the primary next-step button.
-		// OCR is unreliable here because the control renders as a mostly-iconic
-		// arrow, so use the known bottom-right button geometry first.
-		for _, pt := range [][2]float64{
-			{0.832, 0.841},
-			{0.846, 0.841},
-			{0.818, 0.841},
-		} {
-			s.clickNormalized(pt[0], pt[1])
-			time.Sleep(700 * time.Millisecond)
+		// English is selected by default. Prefer keyboard activation here: the
+		// dedicated setup-assistant.vzscript uses Return for this page, and
+		// pointer activation has been less reliable across first-boot variants.
+		s.pressKey(KeyCodeReturn)
+		time.Sleep(1500 * time.Millisecond)
+		if s.detectPage() != "language" {
+			return true
+		}
+		s.log("Return did not advance language page; trying Tab + Return")
+		s.pressKey(KeyCodeTab)
+		time.Sleep(200 * time.Millisecond)
+		s.pressKey(KeyCodeReturn)
+		time.Sleep(1500 * time.Millisecond)
+		if s.detectPage() != "language" {
+			return true
+		}
+		// Fall back to OCR/clicks if keyboard focus was lost.
+		// Fall back to OCR if the button text is rendered instead of the arrow.
+		if s.tryOCRClick("→", 3*time.Second) == nil {
+			time.Sleep(1500 * time.Millisecond)
 			if s.detectPage() != "language" {
 				return true
 			}
 		}
-		// Fall back to OCR if the button text is rendered instead of the arrow.
-		if s.tryOCRClick("→", 3*time.Second) == nil {
-			return true
-		}
 		if s.tryOCRClick("Continue", 3*time.Second) == nil {
+			time.Sleep(1500 * time.Millisecond)
+			if s.detectPage() != "language" {
+				return true
+			}
+		}
+		s.log("OCR did not advance language page; trying direct continue-button clicks")
+		if s.clickUntilPageChanges("language", 1500*time.Millisecond,
+			[2]float64{0.86, 0.88},
+			[2]float64{0.82, 0.88},
+			[2]float64{0.90, 0.88},
+		) {
 			return true
 		}
-		// Final fallback: move focus from the language list to the primary button.
-		s.log("Trying keyboard focus advance")
-		s.pressKey(KeyCodeTab)
-		time.Sleep(200 * time.Millisecond)
-		s.pressKey(KeyCodeReturn)
-		time.Sleep(time.Second)
-		if s.detectPage() != "language" {
-			return true
-		}
-		time.Sleep(time.Second)
-		return true
+		s.log("Language page did not advance after keyboard and click fallbacks")
+		return false
 
 	case "country_region":
 		s.log("Handling country/region screen")
-		// Try Continue or → arrow
+		s.pressKey(KeyCodeReturn)
+		time.Sleep(1500 * time.Millisecond)
+		if s.detectPage() != "country_region" {
+			return true
+		}
+		s.log("Return did not advance country/region page; trying Tab + Return")
+		s.pressKey(KeyCodeTab)
+		time.Sleep(200 * time.Millisecond)
+		s.pressKey(KeyCodeReturn)
+		time.Sleep(1500 * time.Millisecond)
+		if s.detectPage() != "country_region" {
+			return true
+		}
+		if s.tryOCRClickRegion("Continue", 2*time.Second, "0.72,0.77,0.96,0.92") == nil {
+			return true
+		}
 		if s.tryOCRClick("Continue", 2*time.Second) == nil {
 			return true
 		}
-		if s.tryOCRClick("→", 2*time.Second) == nil {
-			return true
+		return true
+
+	case "voiceover_tutorial":
+		s.log("Handling VoiceOver Tutorial window - closing it")
+		if err := s.closeVoiceOverTutorial(); err != nil {
+			s.log("warning: close VoiceOver Tutorial: %v", err)
 		}
-		s.pressKey(KeyCodeReturn)
 		time.Sleep(time.Second)
 		return true
 
@@ -716,39 +742,33 @@ func (s *SetupAssistant) genericNavigate() {
 }
 
 // attemptRecovery tries various escape sequences when stuck.
-func (s *SetupAssistant) attemptRecovery(step int) bool {
+func (s *SetupAssistant) attemptRecovery(step int, currentPage string) bool {
 	s.log("Attempting recovery sequence...")
 	s.saveDebugScreenshot(fmt.Sprintf("recovery_%02d", step))
 
-	// Try 1: Press Escape to dismiss dialogs
-	s.log("Recovery: trying Escape")
-	s.pressKey(KeyCodeEscape)
+	if currentPage == "voiceover_tutorial" || s.pageContainsText("VoiceOver Tutorial") {
+		s.log("Recovery: VoiceOver Tutorial detected, closing it")
+		if err := s.closeVoiceOverTutorial(); err == nil {
+			return true
+		}
+	}
+
+	// Try 1: Cmd+. (Cancel)
+	s.log("Recovery: trying Cmd+.")
+	s.pressKeyWithModifiers(KeyCodePeriod, ModifierCommand)
 	time.Sleep(500 * time.Millisecond)
 
-	page := s.detectPage()
-	if page == "desktop" || page == "login" {
+	if page := s.detectPage(); page != currentPage {
 		return true
 	}
-
-	// Try 2: Cmd+. (Cancel)
-	s.log("Recovery: trying Cmd+.")
-	if s.client != nil {
-		s.client.KeyPressWithModifiers(KeyCodePeriod, ModifierCommand)
-	} else if s.cs != nil {
-		s.cs.sendKeyEvent(&controlpb.KeyCommand{
-			KeyCode:   uint32(KeyCodePeriod),
-			KeyDown:   true,
-			Modifiers: uint32(ModifierCommand),
-		})
-		s.cs.sendKeyEvent(&controlpb.KeyCommand{
-			KeyCode:   uint32(KeyCodePeriod),
-			KeyDown:   false,
-			Modifiers: uint32(ModifierCommand),
-		})
+	if s.pageContainsText("VoiceOver Tutorial") {
+		s.log("Recovery: Cmd+. surfaced VoiceOver Tutorial, closing it")
+		if err := s.closeVoiceOverTutorial(); err == nil {
+			return true
+		}
 	}
-	time.Sleep(500 * time.Millisecond)
 
-	// Try 3: Tab cycle through buttons then Return
+	// Try 2: Tab cycle through buttons then Return
 	s.log("Recovery: trying Tab cycle")
 	for i := 0; i < 5; i++ {
 		s.pressKey(KeyCodeTab)
@@ -757,7 +777,15 @@ func (s *SetupAssistant) attemptRecovery(step int) bool {
 	s.pressKey(KeyCodeReturn)
 	time.Sleep(time.Second)
 
-	return false
+	page := s.detectPage()
+	if page == "voiceover_tutorial" {
+		s.log("Recovery: Tab cycle landed in VoiceOver Tutorial, closing it")
+		if err := s.closeVoiceOverTutorial(); err == nil {
+			return true
+		}
+		return false
+	}
+	return page != currentPage
 }
 
 // fillUserAccountForm fills in the user account creation form.
@@ -969,6 +997,17 @@ func (s *SetupAssistant) clickNormalized(x, y float64) {
 	}
 }
 
+func (s *SetupAssistant) clickUntilPageChanges(page string, delay time.Duration, points ...[2]float64) bool {
+	for _, pt := range points {
+		s.clickNormalized(pt[0], pt[1])
+		time.Sleep(delay)
+		if s.detectPage() != page {
+			return true
+		}
+	}
+	return false
+}
+
 // pressKey presses and releases a key via either path.
 func (s *SetupAssistant) pressKey(keyCode uint16) {
 	if s.cs != nil {
@@ -1004,6 +1043,38 @@ func (s *SetupAssistant) pressKeyWithModifiers(keyCode uint16, modifiers uint) {
 			s.log("warning: modified key press failed: %v", err)
 		}
 	}
+}
+
+func (s *SetupAssistant) closeVoiceOverTutorial() error {
+	if !s.pageContainsText("VoiceOver Tutorial") && !s.pageContainsText("VoiceOver Modifier") {
+		return nil
+	}
+
+	s.pressKeyWithModifiers(KeyCodeF5, ModifierCommand)
+	time.Sleep(1200 * time.Millisecond)
+	if !s.pageContainsText("VoiceOver Tutorial") {
+		return nil
+	}
+
+	s.pressKeyWithModifiers(KeyCodeW, ModifierCommand)
+	time.Sleep(700 * time.Millisecond)
+	if !s.pageContainsText("VoiceOver Tutorial") {
+		return nil
+	}
+
+	for _, pt := range [][2]float64{
+		{0.085, 0.201},
+		{0.100, 0.201},
+		{0.085, 0.220},
+	} {
+		s.clickNormalized(pt[0], pt[1])
+		time.Sleep(700 * time.Millisecond)
+		if !s.pageContainsText("VoiceOver Tutorial") {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("VoiceOver Tutorial still visible")
 }
 
 func (s *SetupAssistant) clearFocusedField() {

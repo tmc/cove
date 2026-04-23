@@ -502,6 +502,11 @@ func (c *ControlClient) NetworkInfo() (*controlpb.NetworkInfoResponse, error) {
 
 // AgentExecTyped runs a command in the guest and returns typed result.
 func (c *ControlClient) AgentExecTyped(args []string, env map[string]string, workDir string) (*controlpb.AgentExecResponse, error) {
+	return c.AgentExecTypedTimeout(args, env, workDir, 10*time.Minute)
+}
+
+// AgentExecTypedTimeout runs a command in the guest and returns typed result.
+func (c *ControlClient) AgentExecTypedTimeout(args []string, env map[string]string, workDir string, timeout time.Duration) (*controlpb.AgentExecResponse, error) {
 	req := &controlpb.ControlRequest{
 		Type: "agent-exec",
 		Command: &controlpb.ControlRequest_AgentExec{
@@ -514,7 +519,10 @@ func (c *ControlClient) AgentExecTyped(args []string, env map[string]string, wor
 	}
 
 	oldTimeout := c.timeout
-	c.timeout = 10 * time.Minute
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	c.timeout = timeout
 	defer func() { c.timeout = oldTimeout }()
 
 	resp, err := c.sendRequest(req)

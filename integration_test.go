@@ -54,6 +54,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("agent", func(t *testing.T) { testAgent(t, vm) })
 	t.Run("ctl", func(t *testing.T) { testCtl(t, vm) })
 	t.Run("runtime-surface", func(t *testing.T) { testRuntimeSurface(t, vm) })
+	t.Run("virtiofs-reliability", func(t *testing.T) { testVirtioFSReliability(t, vm) })
 	t.Run("network", func(t *testing.T) { testNetwork(t, vm) })
 	t.Run("port-forward", func(t *testing.T) { testPortForward(t, vm) })
 	t.Run("vm-config", func(t *testing.T) { testVMConfig(t, vm) })
@@ -595,6 +596,30 @@ func userAgentExec(t *testing.T, vm *testVM, args ...string) string {
 	return userAgentExecExpectCode(t, vm, 0, args...).GetStdout()
 }
 
+func userAgentExecResultTimeoutTB(tb testing.TB, vm *testVM, timeout time.Duration, args ...string) *controlpb.AgentExecResponse {
+	tb.Helper()
+
+	req := &controlpb.ControlRequest{
+		Type:      "agent-user-exec",
+		AuthToken: vm.token,
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{Args: args},
+		},
+	}
+	resp, err := ctlSendRequest(vm.sock, req, timeout, req.Type)
+	if err != nil {
+		tb.Fatalf("agent-user-exec %v: %v", args, err)
+	}
+	if !resp.Success {
+		tb.Fatalf("agent-user-exec %v: %s", args, resp.Error)
+	}
+	result := resp.GetAgentExecResult()
+	if result == nil {
+		tb.Fatalf("agent-user-exec %v: missing typed response", args)
+	}
+	return result
+}
+
 func agentRead(t *testing.T, vm *testVM, path string) []byte {
 	t.Helper()
 
@@ -757,6 +782,13 @@ func buildIntegrationBinary(tb testing.TB) string {
 			integrationBinaryErr = fmt.Errorf("go build: %v\n%s", err, out)
 			return
 		}
+		signCmd := exec.Command("codesign", "-s", "-", "-f", "--entitlements", "internal/autosign/vz.entitlements", path)
+		signCmd.Dir = "/Volumes/tmc/go/src/github.com/tmc/vz-macos"
+		out, err = signCmd.CombinedOutput()
+		if err != nil {
+			integrationBinaryErr = fmt.Errorf("codesign integration binary: %v\n%s", err, out)
+			return
+		}
 		integrationBinaryPath = path
 	})
 
@@ -828,7 +860,13 @@ func integrationCloneName(name string) string {
 	if name == "" {
 		name = "vm"
 	}
-	return fmt.Sprintf("test-clone-%s-%d", name, time.Now().UnixNano()%100000)
+	if len(name) > 24 {
+		name = strings.Trim(name[:24], "-")
+	}
+	if name == "" {
+		name = "vm"
+	}
+	return fmt.Sprintf("it-%s-%05d", name, time.Now().UnixNano()%100000)
 }
 
 func clonedTestVM(t *testing.T, cloneName string, linux bool) *testVM {

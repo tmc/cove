@@ -74,6 +74,25 @@ func TestEncodeKCPassword(t *testing.T) {
 	}
 }
 
+func TestDecodeKCPassword(t *testing.T) {
+	tests := []struct {
+		password string
+	}{
+		{""},
+		{"test"},
+		{"password123"},
+		{"with spaces"},
+		{"abcdefghijklmnop"},
+	}
+
+	for _, tt := range tests {
+		encoded := EncodeKCPassword(tt.password)
+		if got := DecodeKCPassword(encoded); got != tt.password {
+			t.Fatalf("DecodeKCPassword(EncodeKCPassword(%q)) = %q, want %q", tt.password, got, tt.password)
+		}
+	}
+}
+
 func TestEncodeKCPasswordKnownValue(t *testing.T) {
 	// Test with a known password and its expected XOR result
 	// Password "test" + null byte:

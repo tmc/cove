@@ -125,6 +125,30 @@ func TestResolveReadyCheckUnknownFallsBackToWhich(t *testing.T) {
 	}
 }
 
+func TestReadyExecArgsUserUsesLoginShell(t *testing.T) {
+	got := readyExecArgs([]string{"go", "version"}, false)
+	want := []string{"/bin/zsh", "-lc", "'go' 'version'"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("readyExecArgs(go version, false) = %#v, want %#v", got, want)
+	}
+}
+
+func TestReadyExecArgsDaemonUsesDirectExec(t *testing.T) {
+	got := readyExecArgs([]string{"go", "version"}, true)
+	want := []string{"go", "version"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("readyExecArgs(go version, true) = %#v, want %#v", got, want)
+	}
+}
+
+func TestShellQuoteArgs(t *testing.T) {
+	got := shellQuoteArgs([]string{"echo", "o'hai", ""})
+	want := `'echo' 'o'"'"'hai' ''`
+	if got != want {
+		t.Fatalf("shellQuoteArgs = %q, want %q", got, want)
+	}
+}
+
 func TestPickReadyDetail(t *testing.T) {
 	cases := []struct {
 		name     string

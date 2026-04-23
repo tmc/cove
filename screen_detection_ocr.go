@@ -13,28 +13,29 @@ var helloContinueMarkers = []string{
 
 // setupAssistantPageMarkers maps page names to their characteristic text.
 var setupAssistantPageMarkers = map[string][]string{
-	"language":          {"English", "Deutsch", "Francais"},
-	"country_region":    {"Select Your Country", "Country or Region"},
-	"accessibility":     {"Accessibility"},
-	"wifi":              {"Wi-Fi", "Select a Wi-Fi Network"},
-	"location_services": {"Location Services", "Enable Location Services"},
-	"migration":         {"Migration Assistant", "Transfer Information"},
-	"apple_id":          {"Apple ID", "Sign In with Your Apple"},
-	"terms":             {"Terms and Conditions"},
-	"user_account":      {"Create a Computer Account", "Create a Mac Account", "Full Name"},
-	"express_setup":     {"Express Set Up"},
-	"analytics":         {"Analytics", "Help Apple Improve"},
-	"screen_time":       {"Screen Time"},
-	"siri":              {"Siri"},
-	"siri_voice":        {"Select a Siri Voice"},
-	"siri_dictation":    {"Improve Siri & Dictation", "Improve Siri"},
-	"time_zone":         {"Select Your Time Zone", "Time Zone"},
-	"appearance":        {"Choose Your Look", "Light", "Dark", "Auto"},
-	"touch_id":          {"Touch ID"},
-	"filevault":         {"FileVault"},
-	"update_mac":        {"Update Mac Automatically", "Keep Your Mac Up to Date"},
-	"welcome":           {"Get Started"},
-	"icloud_keychain":   {"iCloud Keychain"},
+	"language":           {"English", "Deutsch", "Francais"},
+	"country_region":     {"Select Your Country", "Country or Region"},
+	"voiceover_tutorial": {"VoiceOver Tutorial", "VoiceOver Modifier"},
+	"accessibility":      {"Accessibility", "Accessibility Options"},
+	"wifi":               {"Wi-Fi", "Select a Wi-Fi Network"},
+	"location_services":  {"Location Services", "Enable Location Services"},
+	"migration":          {"Migration Assistant", "Transfer Information"},
+	"apple_id":           {"Apple ID", "Sign In with Your Apple"},
+	"terms":              {"Terms and Conditions"},
+	"user_account":       {"Create a Computer Account", "Create a Mac Account", "Full Name"},
+	"express_setup":      {"Express Set Up"},
+	"analytics":          {"Analytics", "Help Apple Improve"},
+	"screen_time":        {"Screen Time"},
+	"siri":               {"Siri"},
+	"siri_voice":         {"Select a Siri Voice"},
+	"siri_dictation":     {"Improve Siri & Dictation", "Improve Siri"},
+	"time_zone":          {"Select Your Time Zone", "Time Zone"},
+	"appearance":         {"Choose Your Look", "Light", "Dark", "Auto"},
+	"touch_id":           {"Touch ID"},
+	"filevault":          {"FileVault"},
+	"update_mac":         {"Update Mac Automatically", "Keep Your Mac Up to Date"},
+	"welcome":            {"Get Started"},
+	"icloud_keychain":    {"iCloud Keychain"},
 }
 
 // DetectScreenStateOCR uses OCR to determine the current screen state.
@@ -50,33 +51,9 @@ func DetectScreenStateOCR(img image.Image, ocr *OCRService) ScreenState {
 		return DetectScreenState(img)
 	}
 
-	lower := strings.ToLower(text)
-
-	// Desktop detection — look for Finder menu bar text
-	if strings.Contains(lower, "finder") && strings.Contains(lower, "file") {
-		return ScreenStateDesktop
+	if state := detectScreenStateFromOCRText(text); state != ScreenStateUnknown {
+		return state
 	}
-
-	// Login screen — look for password field indicator
-	if strings.Contains(lower, "enter password") || strings.Contains(lower, "login window") {
-		return ScreenStateLoginScreen
-	}
-
-	// Recovery mode
-	if strings.Contains(lower, "recovery") && strings.Contains(lower, "reinstall") {
-		return ScreenStateRecoveryMode
-	}
-
-	// Setup Assistant — check for any known page marker
-	for _, markers := range setupAssistantPageMarkers {
-		for _, marker := range markers {
-			if strings.Contains(lower, strings.ToLower(marker)) {
-				return ScreenStateSetupAssistant
-			}
-		}
-	}
-
-	// Fall back to pixel heuristics
 	return DetectScreenState(img)
 }
 
@@ -92,6 +69,7 @@ var ocrPageDetectionOrder = []struct {
 	{"migration", []string{"migration assistant", "transfer information", "transfer your data", "data to this mac"}},
 	{"apple_id", []string{"apple id", "sign in with your apple"}},
 	{"country_region", []string{"select your country", "country or region"}},
+	{"voiceover_tutorial", []string{"voiceover tutorial", "voiceover modifier"}},
 	{"location_services", []string{"enable location services", "location services"}},
 	{"time_zone", []string{"select your time zone"}},
 	{"express_setup", []string{"express set up"}},
@@ -126,34 +104,7 @@ func OCRDetectSetupAssistantPage(img image.Image, ocr *OCRService) string {
 		return "unknown"
 	}
 
-	lower := strings.ToLower(text)
-
-	// Check for desktop or login (not Setup Assistant pages)
-	if strings.Contains(lower, "finder") && strings.Contains(lower, "file") {
-		return "desktop"
-	}
-	if strings.Contains(lower, "enter password") || strings.Contains(lower, "login window") {
-		return "login"
-	}
-
-	// Check pages in priority order
-	for _, entry := range ocrPageDetectionOrder {
-		for _, marker := range entry.markers {
-			if strings.Contains(lower, marker) {
-				return entry.page
-			}
-		}
-	}
-
-	// The multilingual Hello screen can OCR as a short greeting plus a translated
-	// Continue button, without any stable "hello" token. If all we can reliably
-	// see is a Continue-like button and no stronger page marker matched above,
-	// treat it as the hello page so the dedicated handler can advance.
-	if containsAny(lower, helloContinueMarkers) {
-		return "hello"
-	}
-
-	return "unknown"
+	return detectSetupAssistantPageFromOCRText(text)
 }
 
 func containsAny(s string, markers []string) bool {
@@ -163,4 +114,44 @@ func containsAny(s string, markers []string) bool {
 		}
 	}
 	return false
+}
+
+func detectScreenStateFromOCRText(text string) ScreenState {
+	lower := strings.ToLower(text)
+
+	if strings.Contains(lower, "finder") && strings.Contains(lower, "file") {
+		return ScreenStateDesktop
+	}
+	if strings.Contains(lower, "enter password") || strings.Contains(lower, "login window") {
+		return ScreenStateLoginScreen
+	}
+	if strings.Contains(lower, "recovery") && strings.Contains(lower, "reinstall") {
+		return ScreenStateRecoveryMode
+	}
+	if detectSetupAssistantPageFromOCRText(text) != "unknown" {
+		return ScreenStateSetupAssistant
+	}
+	return ScreenStateUnknown
+}
+
+func detectSetupAssistantPageFromOCRText(text string) string {
+	lower := strings.ToLower(text)
+
+	if strings.Contains(lower, "finder") && strings.Contains(lower, "file") {
+		return "desktop"
+	}
+	if strings.Contains(lower, "enter password") || strings.Contains(lower, "login window") {
+		return "login"
+	}
+
+	for _, entry := range ocrPageDetectionOrder {
+		if containsAny(lower, entry.markers) {
+			return entry.page
+		}
+	}
+
+	if containsAny(lower, helloContinueMarkers) {
+		return "hello"
+	}
+	return "unknown"
 }

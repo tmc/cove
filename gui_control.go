@@ -15,11 +15,6 @@ import (
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-const (
-	headlessOffscreenX = -32000
-	headlessOffscreenY = -32000
-)
-
 type GUIStatus struct {
 	Supported         bool   `json:"supported"`
 	Headed            bool   `json:"headed"`
@@ -37,6 +32,8 @@ type VMGUIController interface {
 	Close() error
 	Status() GUIStatus
 	Shutdown()
+	Window() appkit.NSWindow
+	Toolbar() *VMToolbar
 }
 
 type vmGUIController struct {
@@ -62,6 +59,7 @@ type vmGUIController struct {
 }
 
 func ensureAppReady(policy appkit.NSApplicationActivationPolicy) appkit.NSApplication {
+	registerUIThread()
 	app := getSharedApp()
 	app.SetActivationPolicy(policy)
 	if policy == appkit.NSApplicationActivationPolicyRegular {
@@ -84,19 +82,18 @@ func ensureAppLaunched(app appkit.NSApplication) {
 		appFinishedLaunching = true
 	}
 
-	if foundation.GetThreadClass().CurrentThread().IsMainThread() {
-		launch()
-		return
-	}
-	DispatchSync(GetMainDispatchQueue(), launch)
+	registerUIThread()
+	launch()
 }
 
 // runAppEventLoopUntil mirrors NSApplication.Run's nextEvent/sendEvent loop
 // while letting CLI lifecycles stop without entering a long-lived app.Run.
 func runAppEventLoopUntil(app appkit.NSApplication, stop func() bool) {
+	registerUIThread()
 	mode := foundation.NewStringWithString(foundation.RunLoopDefaultMode)
 	defer mode.Release()
 	for !stop() {
+		drainUIThreadTasks()
 		objc.AutoreleasePool(func() {
 			limit := foundation.GetNSDateClass().DateWithTimeIntervalSinceNow(0.05)
 			event := app.NextEventMatchingMaskUntilDateInModeDequeue(nsEventMaskAny, limit, mode, true)
@@ -106,6 +103,7 @@ func runAppEventLoopUntil(app appkit.NSApplication, stop func() bool) {
 			app.SendEvent(event)
 			app.UpdateWindows()
 		})
+		drainUIThreadTasks()
 	}
 }
 
@@ -119,7 +117,7 @@ func newHeadlessGUIController(app appkit.NSApplication, vm vz.VZVirtualMachine, 
 		headed:      initiallyHeaded,
 	}
 	c.windowTitleBase = controllerWindowTitle()
-	if err := c.initWindow(); err != nil {
+	if err := c.initDetachedView(); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -136,11 +134,43 @@ func controllerWindowTitle() string {
 	return fmt.Sprintf("%s — %s", osLabel, vmName)
 }
 
-func (c *vmGUIController) initWindow() error {
+func (c *vmGUIController) newVMView() vz.VZVirtualMachineView {
 	vmView := vz.NewVZVirtualMachineView()
 	vmView.SetVirtualMachine(&c.vm)
 	vmView.SetCapturesSystemKeys(false)
 	vmView.SetAutomaticallyReconfiguresDisplay(true)
+	vmViewAsNSView(vmView).SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{},
+		Size:   corefoundation.CGSize{Width: defaultWindowWidth, Height: defaultWindowHeight},
+	})
+	return vmView
+}
+
+func (c *vmGUIController) configureProcessIdentity() {
+	procName := "cove"
+	if vmName != "" && vmName != "default" {
+		procName = fmt.Sprintf("cove (%s)", vmName)
+	}
+	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
+	if vmName != "" && vmName != "default" {
+		dockTile := c.app.DockTile()
+		dockTile.SetBadgeLabel(vmName)
+	}
+}
+
+func (c *vmGUIController) initDetachedView() error {
+	c.vmView = c.newVMView()
+	c.configureProcessIdentity()
+	if c.control != nil {
+		c.control.SetVMViewWithWindow(c.vmView, appkit.NSWindow{})
+	}
+	return nil
+}
+
+func (c *vmGUIController) initWindow() error {
+	if c.vmView.ID == 0 {
+		c.vmView = c.newVMView()
+	}
 
 	contentRect := corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 100, Y: 100},
@@ -167,28 +197,14 @@ func (c *vmGUIController) initWindow() error {
 	window.SetReleasedWhenClosed(false)
 
 	restoredFrame, frameAutosaveName := configureWindowFramePersistence(window)
-	vmViewAsNSView(vmView).SetFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{},
-		Size:   contentRect.Size,
-	})
-	window.SetContentView(vmViewAsNSView(vmView))
+	window.SetContentView(vmViewAsNSView(c.vmView))
 	if !restoredFrame {
 		window.Center()
 	}
 	c.window = window
-	c.vmView = vmView
 	c.frameAutosave = frameAutosaveName
 	c.lastVisibleFrame = window.Frame()
-
-	procName := "cove"
-	if vmName != "" && vmName != "default" {
-		procName = fmt.Sprintf("cove (%s)", vmName)
-	}
-	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
-	if vmName != "" && vmName != "default" {
-		dockTile := c.app.DockTile()
-		dockTile.SetBadgeLabel(vmName)
-	}
+	c.configureProcessIdentity()
 
 	c.windowDelegate = appkit.NewNSWindowDelegate(appkit.NSWindowDelegateConfig{
 		ShouldClose: func(_ appkit.NSWindow) bool {
@@ -218,16 +234,13 @@ func (c *vmGUIController) initWindow() error {
 	})
 	c.app.SetDelegate(c.appDelegate)
 
-	c.control.SetVMViewWithWindow(vmView, window)
-	toolbar := NewVMToolbar(window, vmView, c.vm, c.vmQueue, c.control, c.vmDirectory)
-	toolbar.UpdateState(vz.VZVirtualMachineState(c.vm.State()))
-	c.toolbar = toolbar
-
-	if c.headed {
-		c.openOnMain()
-	} else {
-		c.hideOnMain()
+	if c.control != nil {
+		c.control.SetVMViewWithWindow(c.vmView, window)
+		toolbar := NewVMToolbar(window, c.vmView, c.vm, c.vmQueue, c.control, c.vmDirectory)
+		toolbar.UpdateState(vz.VZVirtualMachineState(c.vm.State()))
+		c.toolbar = toolbar
 	}
+
 	return nil
 }
 
@@ -236,15 +249,6 @@ func (c *vmGUIController) captureMode() string {
 		return "window"
 	}
 	return "private-framebuffer"
-}
-
-func (c *vmGUIController) offscreenFrame() corefoundation.CGRect {
-	frame := c.lastVisibleFrame
-	if frame.Size.Width <= 0 || frame.Size.Height <= 0 {
-		frame = c.window.Frame()
-	}
-	frame.Origin = corefoundation.CGPoint{X: headlessOffscreenX, Y: headlessOffscreenY}
-	return frame
 }
 
 func (c *vmGUIController) openOnMain() {
@@ -268,23 +272,7 @@ func (c *vmGUIController) openOnMain() {
 	c.updateStateOnMain(vz.VZVirtualMachineState(c.vm.State()))
 }
 
-func (c *vmGUIController) hideOnMain() {
-	if c.window.ID == 0 {
-		return
-	}
-	if c.headed {
-		c.lastVisibleFrame = c.window.Frame()
-		c.window.SaveFrameUsingName(c.frameAutosave)
-	}
-	c.window.SetFrameDisplay(c.offscreenFrame(), false)
-	c.window.OrderFrontRegardless()
-	c.window.DisplayIfNeeded()
-	c.app.SetActivationPolicy(appkit.NSApplicationActivationPolicyAccessory)
-	c.app.Deactivate()
-	c.headed = false
-}
-
-func (c *vmGUIController) rebuildHiddenPresentationOnMain() error {
+func (c *vmGUIController) hideOnMain() error {
 	if c.window.ID != 0 {
 		if c.headed {
 			c.lastVisibleFrame = c.window.Frame()
@@ -296,12 +284,19 @@ func (c *vmGUIController) rebuildHiddenPresentationOnMain() error {
 		c.shuttingDown = false
 	}
 	c.window = appkit.NSWindow{}
-	c.vmView = vz.VZVirtualMachineView{}
 	c.toolbar = nil
 	c.windowDelegate = appkit.NSWindowDelegateObject{}
 	c.appDelegate = appkit.NSApplicationDelegateObject{}
+	c.app.SetActivationPolicy(appkit.NSApplicationActivationPolicyAccessory)
+	c.app.Deactivate()
 	c.headed = false
-	return c.initWindow()
+	if c.vmView.ID == 0 {
+		return c.initDetachedView()
+	}
+	if c.control != nil {
+		c.control.SetVMViewWithWindow(c.vmView, appkit.NSWindow{})
+	}
+	return nil
 }
 
 func (c *vmGUIController) updateStateOnMain(state vz.VZVirtualMachineState) {
@@ -330,20 +325,27 @@ func (c *vmGUIController) shutdownOnMain() {
 }
 
 func (c *vmGUIController) Open() error {
-	DispatchSync(GetMainDispatchQueue(), func() {
+	var err error
+	runOnUIThreadSync(func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
+		if c.window.ID == 0 {
+			err = c.initWindow()
+			if err != nil {
+				return
+			}
+		}
 		c.openOnMain()
 	})
-	return nil
+	return err
 }
 
 func (c *vmGUIController) Close() error {
 	var err error
-	DispatchSync(GetMainDispatchQueue(), func() {
+	runOnUIThreadSync(func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		err = c.rebuildHiddenPresentationOnMain()
+		err = c.hideOnMain()
 	})
 	return err
 }
@@ -360,9 +362,36 @@ func (c *vmGUIController) Status() GUIStatus {
 }
 
 func (c *vmGUIController) Shutdown() {
-	DispatchSync(GetMainDispatchQueue(), func() {
+	runOnUIThreadSync(func() {
 		c.shutdownOnMain()
 	})
+}
+
+func (c *vmGUIController) Window() appkit.NSWindow {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.window
+}
+
+func (c *vmGUIController) Toolbar() *VMToolbar {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.toolbar
+}
+
+func (c *vmGUIController) setControlServer(control *ControlServer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.control = control
+	if c.control == nil || c.vmView.ID == 0 {
+		return
+	}
+	c.control.SetVMViewWithWindow(c.vmView, c.window)
+	if c.window.ID != 0 && c.toolbar == nil {
+		toolbar := NewVMToolbar(c.window, c.vmView, c.vm, c.vmQueue, c.control, c.vmDirectory)
+		toolbar.UpdateState(vz.VZVirtualMachineState(c.vm.State()))
+		c.toolbar = toolbar
+	}
 }
 
 func (s *ControlServer) SetGUIController(ctrl VMGUIController) {
