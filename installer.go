@@ -114,20 +114,33 @@ var errRestartVM = errors.New("restart VM")
 
 // injectSucceededMarker returns the path to the marker file that records
 // whether disk injection completed successfully.
-func injectSucceededMarker() string { return filepath.Join(vmDir, ".inject-succeeded") }
+func injectSucceededMarker() string { return injectSucceededMarkerForVM(currentVMSelection()) }
+
+func injectSucceededMarkerForVM(target vmSelection) string { return target.injectSucceededMarker() }
 
 // markInjectSucceeded creates the inject success marker file.
 func markInjectSucceeded() {
-	if err := os.WriteFile(injectSucceededMarker(), nil, 0644); err != nil {
+	markInjectSucceededForVM(currentVMSelection())
+}
+
+func markInjectSucceededForVM(target vmSelection) {
+	if err := os.WriteFile(injectSucceededMarkerForVM(target), nil, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: mark inject succeeded: %v\n", err)
 	}
 }
 
 // clearInjectSucceeded removes the inject success marker file.
-func clearInjectSucceeded() { os.Remove(injectSucceededMarker()) }
+func clearInjectSucceeded() { clearInjectSucceededForVM(currentVMSelection()) }
+
+func clearInjectSucceededForVM(target vmSelection) { os.Remove(injectSucceededMarkerForVM(target)) }
 
 // didInjectSucceed reports whether disk injection succeeded for this VM.
-func didInjectSucceed() bool { _, err := os.Stat(injectSucceededMarker()); return err == nil }
+func didInjectSucceed() bool { return didInjectSucceedForVM(currentVMSelection()) }
+
+func didInjectSucceedForVM(target vmSelection) bool {
+	_, err := os.Stat(injectSucceededMarkerForVM(target))
+	return err == nil
+}
 
 // installerWindowTitle is the NSWindow title for the macOS installation
 // window. Includes the VM name when one is set so users running multiple

@@ -134,6 +134,10 @@ func (s vmSelection) provisionStagingDir() string {
 	return filepath.Join(s.Directory, ".provision")
 }
 
+func (s vmSelection) injectSucceededMarker() string {
+	return filepath.Join(s.Directory, ".inject-succeeded")
+}
+
 func (s vmSelection) elevationLabel() string {
 	if s.Name != "" {
 		return s.Name
