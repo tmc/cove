@@ -86,7 +86,7 @@ func TestHelperPeerUIDReject(t *testing.T) {
 	}
 }
 
-func TestHelperExecScriptRoundTrip(t *testing.T) {
+func TestHelperPingRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	sockPath := filepath.Join(dir, "test.sock")
 	l, err := net.Listen("unix", sockPath)
@@ -111,10 +111,7 @@ func TestHelperExecScriptRoundTrip(t *testing.T) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	if err := json.NewEncoder(conn).Encode(helperRequest{
-		Op:     "exec_script",
-		Script: "#!/bin/bash\necho hello\n",
-	}); err != nil {
+	if err := json.NewEncoder(conn).Encode(helperRequest{Op: "ping"}); err != nil {
 		t.Fatal(err)
 	}
 	var resp helperResponse
@@ -122,9 +119,6 @@ func TestHelperExecScriptRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !resp.OK {
-		t.Fatalf("script failed: %+v", resp)
-	}
-	if resp.Stdout != "hello\n" {
-		t.Fatalf("unexpected stdout: %q", resp.Stdout)
+		t.Fatalf("ping failed: %+v", resp)
 	}
 }

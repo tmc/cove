@@ -222,6 +222,13 @@ func init() {
 }
 
 func main() {
+	// Hidden re-exec entrypoint used by AuthorizationExecuteWithPrivileges.
+	// AEWP only grants the launched tool permission to call setuid(0), it
+	// does not run it as root. We re-exec cove itself with a typed manifest
+	// (no arbitrary script execution path). Must run before flag.Parse so
+	// the hidden subcommand isn't misinterpreted as a flag.
+	maybeRunElevatedOp()
+
 	flag.Parse()
 	maybeStartPprofServer()
 
