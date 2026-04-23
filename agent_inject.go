@@ -295,7 +295,7 @@ func provisionAgentRunning(sock string) error {
 		return nil
 	}
 	fmt.Printf("Agent version %s != host %s, upgrading...\n", guestVer, hostVer)
-	return upgradeAgent()
+	return upgradeAgentAt(sock)
 }
 
 // agentVersionsEqual reports whether host and guest agent versions should be
@@ -707,8 +707,10 @@ func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
 // via the control socket. It copies the binary, restarts the service, and
 // verifies the new version is running.
 func upgradeAgent() error {
-	sock := GetControlSocketPath()
+	return upgradeAgentAt(currentVMSelection().controlSocketPath())
+}
 
+func upgradeAgentAt(sock string) error {
 	// Check current agent version.
 	pingReq := &controlpb.ControlRequest{Type: "agent-ping"}
 	resp, err := ctlSendRequest(sock, pingReq, 5*time.Second, "agent-ping")
