@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 )
 
 func runServeCmd(args []string) error {
@@ -19,12 +18,12 @@ func runServeCmd(args []string) error {
 	fs.Usage = printServeUsage
 
 	var (
-		httpAddr   string
-		listenURL  string
-		tokenFile  string
-		perVMAuth  bool
-		vmList     string
-		mcpMode    bool
+		httpAddr  string
+		listenURL string
+		tokenFile string
+		perVMAuth bool
+		vmList    string
+		mcpMode   bool
 	)
 	fs.StringVar(&httpAddr, "http", "127.0.0.1:7777", "HTTP listen address (host:port or :port)")
 	fs.StringVar(&listenURL, "listen", "", "listen URL: tcp://host:port or unix:///path (overrides -http)")
@@ -249,18 +248,4 @@ func startHTTPForRun(cs *ControlServer, addr, name string) (net.Listener, error)
 		}
 	}()
 	return ln, nil
-}
-
-// gcOperationsLoop purges terminal operations older than 1 hour in the background.
-func gcOperationsLoop(registry *OperationRegistry, stop <-chan struct{}) {
-	ticker := time.NewTicker(10 * time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			registry.PurgeOlderThan(time.Hour)
-		case <-stop:
-			return
-		}
-	}
 }
