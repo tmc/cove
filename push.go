@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tmc/vz-macos/internal/ociimage"
 )
@@ -33,6 +34,9 @@ type pushPlan struct {
 	ZeroBytes  int64
 	LumeCompat bool
 	ExtraTags  []string
+	Blobs      []ociimage.Blob
+	Manifest   ociimage.Manifest
+	ConfigJSON []byte
 }
 
 type stringList []string
@@ -125,6 +129,20 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 	if err != nil {
 		return nil, err
 	}
+	blobs, err := pushMetadataBlobs(vmDirectory, diskPath)
+	if err != nil {
+		return nil, err
+	}
+	manifest, configJSON, err := ociimage.BuildManifest(ociimage.ManifestOptions{
+		UploadTime: time.Now().UTC().Format(time.RFC3339),
+		DiskSize:   info.Size(),
+		Chunks:     chunks,
+		Blobs:      blobs,
+		LumeCompat: opts.LumeCompat,
+	})
+	if err != nil {
+		return nil, err
+	}
 	plan := &pushPlan{
 		VMName:     vmName,
 		VMDir:      vmDirectory,
@@ -136,6 +154,9 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		Chunks:     chunks,
 		LumeCompat: opts.LumeCompat,
 		ExtraTags:  append([]string(nil), opts.AdditionalTags...),
+		Blobs:      blobs,
+		Manifest:   manifest,
+		ConfigJSON: configJSON,
 	}
 	for _, c := range chunks {
 		if c.Zero {
@@ -144,6 +165,29 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func pushMetadataBlobs(vmDirectory, diskPath string) ([]ociimage.Blob, error) {
+	if filepath.Base(diskPath) != "disk.img" {
+		return nil, nil
+	}
+	specs := []struct {
+		name string
+		role string
+	}{
+		{name: "aux.img", role: "nvram"},
+		{name: "hw.model", role: "hw-model"},
+	}
+	blobs := make([]ociimage.Blob, 0, len(specs))
+	for _, spec := range specs {
+		blob, err := ociimage.DigestFile(filepath.Join(vmDirectory, spec.name))
+		if err != nil {
+			return nil, fmt.Errorf("macOS push requires %s: %w", spec.name, err)
+		}
+		blob.Role = spec.role
+		blobs = append(blobs, blob)
+	}
+	return blobs, nil
 }
 
 func validatePushReferences(ref string, opts pushOptions) error {
