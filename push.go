@@ -97,6 +97,9 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 	if opts.ChunkSize <= 0 {
 		return nil, fmt.Errorf("invalid chunk size %d", opts.ChunkSize)
 	}
+	if err := validatePushReferences(ref, opts); err != nil {
+		return nil, err
+	}
 	vmDirectory := GetVMPath(vmName)
 	if !ValidateVM(vmDirectory) {
 		return nil, fmt.Errorf("vm not found or invalid: %s", vmDirectory)
@@ -141,6 +144,34 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func validatePushReferences(ref string, opts pushOptions) error {
+	target, err := ociimage.ParseReference(ref)
+	if err != nil {
+		return fmt.Errorf("cove push: invalid target ref %q: %w", ref, err)
+	}
+	if target.Tag == "" {
+		return fmt.Errorf("cove push: target ref %q must include a tag", ref)
+	}
+	if target.Digest != "" {
+		return fmt.Errorf("cove push: target ref %q must not include a digest", ref)
+	}
+	if opts.BaseRef != "" {
+		base, err := ociimage.ParseReference(opts.BaseRef)
+		if err != nil {
+			return fmt.Errorf("cove push: invalid base ref %q: %w", opts.BaseRef, err)
+		}
+		if base.Tag == "" && base.Digest == "" {
+			return fmt.Errorf("cove push: base ref %q must include a tag or digest", opts.BaseRef)
+		}
+	}
+	for _, tag := range opts.AdditionalTags {
+		if err := ociimage.ValidateTag(tag); err != nil {
+			return fmt.Errorf("cove push: invalid additional tag %q: %w", tag, err)
+		}
+	}
+	return nil
 }
 
 func ensurePushSourceInactive(vmDirectory string) error {
