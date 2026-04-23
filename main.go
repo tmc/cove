@@ -533,8 +533,17 @@ func main() {
 		case "vm":
 			handleVMCommand(args)
 			return
+		case "rm", "remove", "destroy":
+			handleVMCommand(append([]string{"delete"}, args...))
+			return
 		case "snapshot":
 			handleSnapshotCommand(args)
+			return
+		case "pit":
+			if err := handlePITCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
 			return
 		case "disk-snapshot":
 			if err := handleDiskSnapshotCommand(args); err != nil {
@@ -666,7 +675,7 @@ Provisioning:
 
 VM Management:
   vm set <name>           Set active VM
-  vm delete <name>        Delete a VM
+  vm delete <name>        Delete a VM (aliases: rm, remove, destroy)
   vm rename <old> <new>   Rename a VM
   vm export <name> <path> Export VM to tarball
   vm import <path> <name> Import VM from tarball
@@ -684,6 +693,7 @@ Shared Folders:
 
 Snapshots:
   snapshot        Manage VM state snapshots (list/save/restore/delete)
+  pit             Experimental point-in-time save, restore, run, and swap
   disk-snapshot   Manage disk-level snapshots (APFS clonefile, COW)
 
 HTTP & MCP:
@@ -903,6 +913,18 @@ func handleList() {
 		}
 		w.Flush()
 	}
+
+	// Surface orphan VM directories (dirs without a valid disk image)
+	// so users can clean them up with `cove vm delete <name>`.
+	if orphans, err := ListOrphanVMs(); err == nil && len(orphans) > 0 {
+		fmt.Println()
+		fmt.Println("Orphans (missing disk image):")
+		for _, name := range orphans {
+			fmt.Printf("  %s\t(orphan: missing disk)\n", name)
+		}
+		fmt.Println()
+		fmt.Println("Remove with: cove vm delete <name>")
+	}
 }
 
 // handleClone handles the clone subcommand.
@@ -1070,14 +1092,29 @@ func handleVMCommand(args []string) {
 		return
 	case "set":
 		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: cove vm set <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove vm set <name>  (use \"\" or 'cove vm unset' to clear)")
 			os.Exit(1)
+		}
+		if subargs[0] == "" {
+			if err := UnsetActiveVM(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Active VM cleared.")
+			return
 		}
 		if err := SetActiveVM(subargs[0]); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("Active VM set to '%s'.\n", subargs[0])
+
+	case "unset":
+		if err := UnsetActiveVM(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Active VM cleared.")
 
 	case "delete":
 		if len(subargs) < 1 {

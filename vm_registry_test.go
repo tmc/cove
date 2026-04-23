@@ -8,6 +8,67 @@ import (
 	"time"
 )
 
+func TestGetVMPathPrefersExistingLegacyVM(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	legacyPath := filepath.Join(filepath.Dir(GetVMBaseDir()), "legacy")
+	if err := os.MkdirAll(legacyPath, 0755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", legacyPath, err)
+	}
+	legacyPath = resolvePath(legacyPath)
+
+	if got := GetVMPath("legacy"); got != legacyPath {
+		t.Fatalf("GetVMPath(%q) = %q, want %q", "legacy", got, legacyPath)
+	}
+}
+
+func TestEnsureVMDirCreatesAliasForLegacyVM(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	legacyPath := filepath.Join(filepath.Dir(GetVMBaseDir()), "legacy")
+	if err := os.MkdirAll(legacyPath, 0755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", legacyPath, err)
+	}
+	legacyPath = resolvePath(legacyPath)
+
+	got, err := EnsureVMDir("legacy")
+	if err != nil {
+		t.Fatalf("EnsureVMDir() error = %v", err)
+	}
+	if got != legacyPath {
+		t.Fatalf("EnsureVMDir() = %q, want %q", got, legacyPath)
+	}
+
+	aliasPath := filepath.Join(GetVMBaseDir(), "legacy")
+	link, err := os.Readlink(aliasPath)
+	if err != nil {
+		t.Fatalf("Readlink(%q) error = %v", aliasPath, err)
+	}
+	if link != legacyPath {
+		t.Fatalf("vm alias target = %q, want %q", link, legacyPath)
+	}
+}
+
+func TestEnsureVMDirCreatesRegistryDirForNewVM(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	got, err := EnsureVMDir("fresh")
+	if err != nil {
+		t.Fatalf("EnsureVMDir() error = %v", err)
+	}
+	want := resolvePath(filepath.Join(GetVMBaseDir(), "fresh"))
+	if got != want {
+		t.Fatalf("EnsureVMDir() = %q, want %q", got, want)
+	}
+	info, err := os.Stat(want)
+	if err != nil {
+		t.Fatalf("Stat(%q) error = %v", want, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("Stat(%q).IsDir = false, want true", want)
+	}
+}
+
 func TestGetVMInfoState(t *testing.T) {
 	t.Run("stopped", func(t *testing.T) {
 		vmPath := makeTestVMDir(t)

@@ -290,6 +290,33 @@ func ListVMs() ([]VMInfo, error) {
 	return vms, nil
 }
 
+// ListOrphanVMs returns directory names under ~/.vz/vms that look like VM dirs
+// but are not valid (missing disk image, etc.). These are surfaced by `cove list`
+// so users can clean them up with `cove vm delete`.
+func ListOrphanVMs() ([]string, error) {
+	baseDir := GetVMBaseDir()
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read base dir: %w", err)
+	}
+	var orphans []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		vmPath := filepath.Join(baseDir, entry.Name())
+		if ValidateVM(vmPath) {
+			continue
+		}
+		orphans = append(orphans, entry.Name())
+	}
+	sort.Strings(orphans)
+	return orphans, nil
+}
+
 // GetActiveVM returns the name of the currently active VM.
 func GetActiveVM() string {
 	linkPath := GetCurrentVMLink()
@@ -320,9 +347,48 @@ func SetActiveVM(name string) error {
 	return nil
 }
 
+// UnsetActiveVM removes the active-VM symlink so no VM is selected by default.
+// Returns nil if no active VM was set.
+func UnsetActiveVM() error {
+	linkPath := GetCurrentVMLink()
+	if err := os.Remove(linkPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("remove active VM link: %w", err)
+	}
+	return nil
+}
+
 // GetVMPath returns the path to a VM by name.
 func GetVMPath(name string) string {
+	if existing, ok := existingVMPath(name); ok {
+		return existing
+	}
 	return filepath.Join(GetVMBaseDir(), name)
+}
+
+func existingVMPath(name string) (string, bool) {
+	if name == "" {
+		return "", false
+	}
+	for _, candidate := range vmPathCandidates(name) {
+		info, err := os.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		return resolvePath(candidate), true
+	}
+	return "", false
+}
+
+func vmPathCandidates(name string) []string {
+	baseDir := GetVMBaseDir()
+	homeDir := filepath.Dir(baseDir)
+	return []string{
+		filepath.Join(baseDir, name),
+		filepath.Join(homeDir, name),
+	}
 }
 
 // MigrateIfNeeded migrates from flat structure to new multi-VM structure.
@@ -405,7 +471,7 @@ func ResolveVMDir(vmName string) string {
 
 	// If vmName is specified, use it
 	if vmName != "" {
-		return filepath.Join(GetVMBaseDir(), vmName)
+		return GetVMPath(vmName)
 	}
 
 	// If vmDir is not the default, use it directly (backwards compatibility)
@@ -456,7 +522,34 @@ func EnsureVMDir(vmName string) (string, error) {
 		return "", fmt.Errorf("create VM dir: %w", err)
 	}
 
+	if err := ensureVMAlias(vmName, resolvedDir); err != nil {
+		return "", err
+	}
+
 	return resolvePath(resolvedDir), nil
+}
+
+func ensureVMAlias(vmName, resolvedDir string) error {
+	if vmName == "" {
+		return nil
+	}
+	aliasPath := filepath.Join(GetVMBaseDir(), vmName)
+	targetPath := resolvePath(resolvedDir)
+	if resolvePath(aliasPath) == targetPath {
+		return nil
+	}
+	if _, err := os.Lstat(aliasPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat vm alias %q: %w", aliasPath, err)
+	}
+	if err := os.MkdirAll(GetVMBaseDir(), 0755); err != nil {
+		return fmt.Errorf("create vm base dir: %w", err)
+	}
+	if err := os.Symlink(targetPath, aliasPath); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("create vm alias %q -> %q: %w", aliasPath, targetPath, err)
+	}
+	return nil
 }
 
 // detectOSType determines the OS type of a VM by checking for characteristic files.

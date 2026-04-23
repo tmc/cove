@@ -48,6 +48,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
+		case "provision-agent", "inject-agent":
+			printProvisionAgentUsage(os.Stderr)
 		case "doctor", "verify":
 			fs, _, _ := newVerifyFlagSet()
 			fs.Usage()
@@ -61,6 +63,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			}
 		case "snapshot":
 			printSnapshotUsage(os.Stderr)
+		case "pit":
+			printPITUsageHelp(os.Stderr)
 		case "shared-folder", "shared-folders":
 			printSharedFolderUsage(os.Stderr)
 		case "vzscript":
@@ -75,8 +79,25 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fmt.Println(RosettaHelp())
 		case "helper":
 			_ = helperUsage()
+		case "install":
+			printInstallUsage(os.Stderr)
+		case "run":
+			printRunUsage(os.Stderr)
+		case "list":
+			printListUsage(os.Stderr)
+		case "clean":
+			printCleanUsage(os.Stderr)
+		case "clone":
+			printCloneUsage(os.Stderr)
+		case "agent-upgrade", "upgrade-agent":
+			printAgentUpgradeUsage(os.Stderr)
+		case "disk-detach":
+			printDiskDetachUsage(os.Stderr)
+		case "disk-snapshot":
+			printDiskSnapshotUsageHelp(os.Stderr)
 		default:
-			fmt.Fprintf(os.Stderr, "unknown help topic: %s\n", subargs[0])
+			fmt.Fprintf(os.Stderr, "unknown help topic: %s\n\n", subargs[0])
+			usage()
 			return true, 2
 		}
 		return true, 0
@@ -121,6 +142,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fs.Usage()
 			return true, 0
 		}
+	case "provision-agent", "inject-agent":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printProvisionAgentUsage(os.Stderr)
+			return true, 0
+		}
 	case "doctor", "verify":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			fs, _, _ := newVerifyFlagSet()
@@ -146,6 +172,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printSnapshotUsage(os.Stderr)
 			return true, usageExitCode(subargs)
 		}
+	case "pit":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printPITUsageHelp(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
 	case "shared-folder", "shared-folders":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printSharedFolderUsage(os.Stderr)
@@ -166,9 +197,63 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			_ = helperUsage()
 			return true, usageExitCode(subargs)
 		}
+	case "install":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printInstallUsage(os.Stderr)
+			return true, 0
+		}
+	case "run":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printRunUsage(os.Stderr)
+			return true, 0
+		}
+	case "list":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printListUsage(os.Stderr)
+			return true, 0
+		}
+	case "clean":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printCleanUsage(os.Stderr)
+			return true, 0
+		}
+	case "clone":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printCloneUsage(os.Stderr)
+			return true, 0
+		}
+	case "agent-upgrade", "upgrade-agent":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printAgentUpgradeUsage(os.Stderr)
+			return true, 0
+		}
+	case "disk-detach":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskDetachUsage(os.Stderr)
+			return true, 0
+		}
+	case "disk-snapshot":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotUsageHelp(os.Stderr)
+			return true, 0
+		}
 	}
 
 	return false, 0
+}
+
+func printProvisionAgentUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove provision-agent
+
+Provision the vz-agent daemon into the selected VM. If the VM is running
+and reachable on its control socket, the agent is pushed over vsock and
+restarted in place. Otherwise, the disk is mounted offline and the agent
+is written to /usr/local/bin and /Library/LaunchDaemons.
+
+Idempotent: if the guest agent version already matches the host, the
+command returns without rebuilding.
+
+Use -vm <name> (before the subcommand) to target a specific VM.`)
 }
 
 func printGCUsage(w io.Writer) {
@@ -221,7 +306,8 @@ func printVMUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove vm <command>
 
 Commands:
-  set <name>              Set the active VM
+  set <name>              Set the active VM (pass "" to clear)
+  unset                   Clear the active-VM marker
   delete <name>           Delete a VM
   rename <old> <new>      Rename a VM
   export <name> <path>    Export a VM to a tarball
@@ -254,6 +340,23 @@ Commands:
 Snapshots are stored under ~/.vz/vms/<vm>/snapshots/.`)
 }
 
+func printPITUsageHelp(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove pit <command>
+
+Experimental point-in-time save and recovery.
+
+Commands:
+  save <name>             Save a coordinated VM-state + disk + config snapshot
+  list                    List saved PIT snapshots
+  restore <name>          Stage a PIT snapshot for resume on the next run
+  run <name> [-ram]       Boot a disposable clone from the PIT disk
+  swap <name> [-ram]      Live-swap disk 0 to the PIT disk
+  delete <name>           Delete a PIT snapshot
+
+The save path requires a running VM with the control socket active.
+Restore writes disk.img and suspend.vmstate in the selected VM directory.`)
+}
+
 func printSharedFolderUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove shared-folder <command>
 
@@ -267,4 +370,141 @@ Commands:
   remove <tag-or-path>
   clear
   mount [mount-point]`)
+}
+
+func printInstallUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove install [flags]
+
+Install a new VM. macOS by default; pass -linux for Ubuntu.
+
+Common flags:
+  -ipsw <path>            macOS restore image (downloaded if omitted)
+  -linux                  install Ubuntu Server ARM64 instead of macOS
+  -desktop                with -linux, install Ubuntu Desktop
+  -iso <path>             use a local ISO instead of auto-download
+  -cpu N                  CPU count (default 2)
+  -memory N               memory in GB (default 4)
+  -disk-size N            disk size in GB (default 64)
+  -force                  overwrite an existing VM disk
+  -provision-user <name>  create user during install
+  -provision-password <p> password for provisioned user
+  -vzscripts a,b,c        run vzscript recipes after install
+  -vm <name>              target VM name (default: active VM)
+
+Examples:
+  cove install -ipsw ~/.cache/vz/restore.ipsw
+  cove install -linux -provision-user me`)
+}
+
+func printRunUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove run [flags]
+
+Boot the selected VM (resumes from suspend state if present).
+
+Common flags:
+  -gui / -headless        show or hide the VM display window
+  -linux                  run a Linux VM
+  -recovery               boot macOS into recovery mode
+  -no-resume / -cold-boot discard saved suspend state and cold boot
+  -network <mode>         nat (default), bridged:<iface>, vmnet, filehandle, none
+  -vol /host[:tag][:ro]   mount a host directory (repeatable)
+  -usb /path/disk.img[:ro] attach a USB mass-storage device (repeatable)
+  -display WxH[@PPI]      set display resolution (repeatable)
+  -http <addr>            expose per-VM HTTP API (e.g. :7777)
+  -unattended             fully unattended setup (disk + OCR fallback)
+  -boot-commands <file>   custom boot automation vzscript
+  -vm <name>              target VM (default: active VM)
+
+Examples:
+  cove run -gui
+  cove run -linux -gui -vol ~/code:code`)
+}
+
+func printListUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove list
+
+List installed VMs (with state and size), templates, and any orphan
+directories under ~/.vz/vms that no longer contain a valid disk image.
+
+The active VM is marked with '*' in the ACTIVE column. Orphans can
+be removed with: cove vm delete <name>
+
+Example:
+  cove list`)
+}
+
+func printCleanUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove clean [-vm <name>]
+
+Remove the per-VM artifacts (disk.img, aux.img, hw.model, machine.id,
+boot-args.txt, .inject-succeeded) and the provisioning staging
+directory from the selected VM. The VM directory itself is kept.
+
+Use 'cove vm delete <name>' to remove the entire VM directory.
+
+Examples:
+  cove clean
+  cove -vm test-vm clean`)
+}
+
+func printCloneUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove clone [source] <target> [--linked] [--with-agent]
+
+Clone a VM. If [source] is omitted, the active VM is cloned.
+
+Flags:
+  --linked                use APFS copy-on-write (instant, share blocks)
+  --with-agent            provision vz-agent into the new clone
+
+Examples:
+  cove clone work-vm
+  cove clone macos-base scratch --linked --with-agent`)
+}
+
+func printAgentUpgradeUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove agent-upgrade [-vm <name>]
+
+Build a fresh vz-agent binary from the current source tree, copy it to
+the running VM via the control socket, restart the LaunchDaemon, and
+verify the new version is reachable.
+
+The target VM must be running and have an existing vz-agent
+installation (use 'cove provision-agent' for offline install).
+
+Aliases: upgrade-agent
+
+Example:
+  cove agent-upgrade`)
+}
+
+func printDiskDetachUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove disk-detach [-vm <name>]
+
+Detach the VM's disk image if it is still attached on the host (e.g.
+left over from a crashed provision or verify run). Safe to run when
+the disk is not attached — it is a no-op in that case.
+
+Example:
+  cove disk-detach`)
+}
+
+func printDiskSnapshotUsageHelp(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove disk-snapshot <command>
+
+Disk-level snapshots using APFS clonefile (copy-on-write).
+Unlike VM state snapshots, these snapshot the actual disk contents.
+
+Commands:
+  save <name> [-system] [-desc "..."]   Save disk snapshot
+  run <name> [-ram]                     Boot a disposable clone from snapshot
+  restore <name> [-system]              Restore disks from snapshot
+  list                                  List all disk snapshots
+  delete <name>                         Delete a disk snapshot
+
+Examples:
+  cove disk-snapshot save checkpoint1
+  cove disk-snapshot run checkpoint1 -ram
+  cove disk-snapshot list
+
+Note: VM should be stopped for consistent disk snapshots.`)
 }
