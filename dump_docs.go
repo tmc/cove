@@ -231,6 +231,9 @@ var cliDocSpecs = []cliDocSpec{
 	{Name: "gc", Summary: "Delete old disposable clones and cached artifacts.", Usage: func() string {
 		return captureWriter(printGCUsage)
 	}},
+	{Name: "compact", Summary: "Zero guest free space for smaller OCI pushes.", Usage: func() string {
+		return captureWriter(printCompactUsage)
+	}},
 	{Name: "template", Summary: "Manage VM templates.", Usage: func() string {
 		return captureWriter(printTemplateUsage)
 	}},

@@ -611,15 +611,20 @@ cove push dev-vm ghcr.io/me/dev-vm:v2 --lume-compat --additional-tag latest
 
 ## compact
 
-Reclaim unused guest blocks on the VM disk. Agent-aware: runs `fstrim` on Linux guests and `diskutil apfs eraseFreeVolumeSpace` on macOS guests. Fails cleanly if the guest agent is disconnected.
+Reclaim unused guest blocks on the VM disk. Agent-aware: runs `fstrim` on Linux guests and `diskutil secureErase freespace 0 /` on macOS guests. Fails cleanly if the guest agent is disconnected.
 
 ```
-cove compact <vm>
+cove compact [options] [vm]
 ```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-vm <name>` | active VM | Target VM name |
 
 ```bash
-cove compact default
+cove compact
 cove compact dev-vm
+cove compact -vm dev-vm
 ```
 
 ---
