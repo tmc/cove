@@ -118,6 +118,65 @@ func TestBuildPushPlanRejectsActiveVM(t *testing.T) {
 	}
 }
 
+func TestValidatePushReferences(t *testing.T) {
+	tests := []struct {
+		name    string
+		ref     string
+		opts    pushOptions
+		wantErr string
+	}{
+		{
+			name: "valid",
+			ref:  "ghcr.io/me/dev-vm:v1",
+			opts: pushOptions{
+				BaseRef:        "ghcr.io/me/base@sha256:abcd",
+				AdditionalTags: stringList{"latest"},
+			},
+		},
+		{
+			name:    "target missing tag",
+			ref:     "ghcr.io/me/dev-vm",
+			wantErr: "must include a tag",
+		},
+		{
+			name:    "target digest",
+			ref:     "ghcr.io/me/dev-vm:v1@sha256:abcd",
+			wantErr: "must not include a digest",
+		},
+		{
+			name:    "target missing registry",
+			ref:     "me/dev-vm:v1",
+			wantErr: "invalid target ref",
+		},
+		{
+			name:    "base missing tag",
+			ref:     "ghcr.io/me/dev-vm:v1",
+			opts:    pushOptions{BaseRef: "ghcr.io/me/base"},
+			wantErr: "must include a tag or digest",
+		},
+		{
+			name:    "bad additional tag",
+			ref:     "ghcr.io/me/dev-vm:v1",
+			opts:    pushOptions{AdditionalTags: stringList{"bad/tag"}},
+			wantErr: "invalid additional tag",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePushReferences(tt.ref, tt.opts)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validatePushReferences() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("validatePushReferences() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestParsePushArgs(t *testing.T) {
 	opts, pos, err := parsePushArgs([]string{
 		"--base", "base",
