@@ -1128,7 +1128,9 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *AgentClient, 
 
 	// Always clean up the temp tar, even on failure.
 	defer func() {
-		a.Exec(context.Background(), []string{"rm", "-f", tmpTar}, nil, "")
+		ctx, cancel := s.timeoutContext(5 * time.Second)
+		defer cancel()
+		a.Exec(ctx, []string{"rm", "-f", tmpTar}, nil, "")
 	}()
 
 	pr, pw := io.Pipe()
