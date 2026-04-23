@@ -448,6 +448,7 @@ cove disk-snapshot <command> [args]
 | Command | Description |
 |---------|-------------|
 | `save <name>` | Save disk snapshot |
+| `run <name>` | Boot a disposable clone from the snapshot |
 | `list` | List disk snapshots |
 | `restore <name>` | Restore disk snapshot |
 | `delete <name>` | Delete disk snapshot |

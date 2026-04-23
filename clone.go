@@ -13,10 +13,11 @@ import (
 
 // CloneOptions configures VM cloning behavior.
 type CloneOptions struct {
-	Source        string // Source VM name
-	Target        string // Target VM name
-	Linked        bool   // Use APFS clonefile for the primary disk image (copy-on-write)
-	CopyMachineID bool   // Keep same machine identity (default: false)
+	Source         string // Source VM name
+	Target         string // Target VM name
+	Linked         bool   // Use APFS clonefile for the primary disk image (copy-on-write)
+	CopyMachineID  bool   // Keep same machine identity (default: false)
+	SourceDiskPath string // Override the source system disk path; empty uses the source VM disk
 }
 
 // CloneVM creates a copy of a VM.
@@ -45,6 +46,9 @@ func CloneVM(opts CloneOptions) error {
 
 	for _, f := range filesToCopy {
 		srcFile := filepath.Join(srcPath, f.name)
+		if f.name == "disk.img" && opts.SourceDiskPath != "" {
+			srcFile = opts.SourceDiskPath
+		}
 		dstFile := filepath.Join(dstPath, f.name)
 
 		// Skip machine.id if we're generating a new one
@@ -143,7 +147,7 @@ func cloneRequiredFiles(sourceOS string) []struct {
 }
 
 func cloneOptionalFiles(sourceOS string) []string {
-	files := []string{"boot-args.txt", "control.token", "config.json", "shared_folders.json"}
+	files := []string{"boot-args.txt", "control.token", "config.json", "shared_folders.json", loginScreenCredentialsFile}
 	if sourceOS == "Linux" {
 		files = append(files, "efi.nvram", "linux-installed", "cloud-init.iso", "vmlinuz", "initrd", linuxRootUUIDFileName)
 	}

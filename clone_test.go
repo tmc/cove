@@ -82,3 +82,51 @@ func TestCloneVMLinux(t *testing.T) {
 		t.Fatalf("unexpected macOS disk clone artifact: %v", err)
 	}
 }
+
+func TestCloneVMUsesSourceDiskOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src := filepath.Join(GetVMBaseDir(), "src-macos")
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"disk.img":    []byte("live-disk"),
+		"aux.img":     []byte("aux"),
+		"hw.model":    []byte("hw"),
+		"machine.id":  []byte("machine"),
+		"config.json": []byte("{\"memoryGB\":4}\n"),
+	} {
+		if err := os.WriteFile(filepath.Join(src, name), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	snapshotDir := filepath.Join(src, "disk-snapshots", "clean-base")
+	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	snapshotDisk := filepath.Join(snapshotDir, "disk.img")
+	if err := os.WriteFile(snapshotDisk, []byte("snapshot-disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CloneVM(CloneOptions{
+		Source:         "src-macos",
+		Target:         "dst-macos",
+		CopyMachineID:  true,
+		SourceDiskPath: snapshotDisk,
+	}); err != nil {
+		t.Fatalf("CloneVM() error = %v", err)
+	}
+
+	dst := filepath.Join(GetVMBaseDir(), "dst-macos")
+	got, err := os.ReadFile(filepath.Join(dst, "disk.img"))
+	if err != nil {
+		t.Fatalf("ReadFile(dst disk): %v", err)
+	}
+	if string(got) != "snapshot-disk" {
+		t.Fatalf("cloned disk = %q, want %q", got, "snapshot-disk")
+	}
+}

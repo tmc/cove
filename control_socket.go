@@ -158,11 +158,16 @@ func (s *ControlServer) SetVMViewWithWindow(view vz.VZVirtualMachineView, window
 	defer s.mu.Unlock()
 	s.vmView = view
 	s.window = window
-	// Cache window number for thread-safe access (avoids main-thread dispatch).
-	s.windowNum = int(window.WindowNumber())
-	// Cache view content height for title bar cropping in screenshots.
-	// This runs on the main thread so we can safely read NSView bounds.
-	s.viewContentHeight = int(vmViewAsNSView(view).Bounds().Size.Height)
+	if window.ID != 0 {
+		s.windowNum = int(window.WindowNumber())
+	} else {
+		s.windowNum = 0
+	}
+	if view.ID != 0 {
+		s.viewContentHeight = int(vmViewAsNSView(view).Bounds().Size.Height)
+	} else {
+		s.viewContentHeight = 0
+	}
 	if verbose {
 		fmt.Printf("[control] SetVMViewWithWindow: vmView=%x window=%x windowNum=%d viewH=%d\n",
 			view.ID, window.ID, s.windowNum, s.viewContentHeight)
