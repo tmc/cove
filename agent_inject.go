@@ -662,7 +662,7 @@ func checkAgentAvailability(cs *ControlServer) {
 	for attempt := 0; attempt < 3; attempt++ {
 		_, err := cs.getAgent()
 		if err == nil {
-			if err := markVMAgentVerified(cs.effectiveVMDir(), currentVMAgentPlatform(), vmAgentSourceRuntime, time.Now()); err != nil && verbose {
+			if err := markVMAgentVerified(cs.effectiveVMDir(), detectVMAgentPlatform(cs.effectiveVMDir()), vmAgentSourceRuntime, time.Now()); err != nil && verbose {
 				fmt.Printf("warning: record guest agent capability: %v\n", err)
 			}
 			if verbose {
