@@ -41,6 +41,7 @@ type vmGUIController struct {
 	vm              vz.VZVirtualMachine
 	vmQueue         dispatch.Queue
 	bindings        vmGUIBindings
+	target          vmSelection
 	vmDirectory     string
 	windowTitleBase string
 
@@ -107,31 +108,32 @@ func runAppEventLoopUntil(app appkit.NSApplication, stop func() bool) {
 	}
 }
 
-func newHeadlessGUIController(app appkit.NSApplication, vm vz.VZVirtualMachine, queue dispatch.Queue, bindings vmGUIBindings, initiallyHeaded bool) (*vmGUIController, error) {
+func newHeadlessGUIController(app appkit.NSApplication, target vmSelection, vm vz.VZVirtualMachine, queue dispatch.Queue, bindings vmGUIBindings, initiallyHeaded bool) (*vmGUIController, error) {
 	c := &vmGUIController{
 		app:         app,
 		vm:          vm,
 		vmQueue:     queue,
 		bindings:    bindings,
-		vmDirectory: vmDir,
+		target:      target,
+		vmDirectory: target.Directory,
 		headed:      initiallyHeaded,
 	}
-	c.windowTitleBase = controllerWindowTitle()
+	c.windowTitleBase = controllerWindowTitle(target)
 	if err := c.initDetachedView(); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func controllerWindowTitle() string {
+func controllerWindowTitle(target vmSelection) string {
 	osLabel := "macOS VM"
 	if linuxMode {
 		osLabel = "Linux VM"
 	}
-	if vmName == "" || vmName == "default" {
+	if target.Name == "" || target.Name == "default" {
 		return osLabel
 	}
-	return fmt.Sprintf("%s — %s", osLabel, vmName)
+	return fmt.Sprintf("%s — %s", osLabel, target.Name)
 }
 
 func (c *vmGUIController) newVMView() vz.VZVirtualMachineView {
@@ -148,13 +150,13 @@ func (c *vmGUIController) newVMView() vz.VZVirtualMachineView {
 
 func (c *vmGUIController) configureProcessIdentity() {
 	procName := "cove"
-	if vmName != "" && vmName != "default" {
-		procName = fmt.Sprintf("cove (%s)", vmName)
+	if c.target.Name != "" && c.target.Name != "default" {
+		procName = fmt.Sprintf("cove (%s)", c.target.Name)
 	}
 	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
-	if vmName != "" && vmName != "default" {
+	if c.target.Name != "" && c.target.Name != "default" {
 		dockTile := c.app.DockTile()
-		dockTile.SetBadgeLabel(vmName)
+		dockTile.SetBadgeLabel(c.target.Name)
 	}
 }
 
