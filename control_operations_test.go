@@ -106,6 +106,52 @@ func TestUpdate_StatusTransition(t *testing.T) {
 	}
 }
 
+func TestOperationRegistryTransitions(t *testing.T) {
+	r := newTestRegistry(t)
+	op, _ := r.Create("vm/transitions")
+
+	if err := r.Start(op.ID); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	got, _ := r.Get(op.ID)
+	if got.Status != operationStatusRunning {
+		t.Errorf("status = %q, want %q", got.Status, operationStatusRunning)
+	}
+
+	if err := r.SetProgress(op.ID, OperationProgress{Phase: "install", Percent: 40, Message: "copying"}); err != nil {
+		t.Fatalf("SetProgress: %v", err)
+	}
+	got, _ = r.Get(op.ID)
+	if got.Progress == nil || got.Progress.Phase != "install" || got.Progress.Percent != 40 {
+		t.Errorf("progress = %+v, want install/40", got.Progress)
+	}
+
+	result := map[string]any{"ip": "192.168.64.2"}
+	if err := r.Succeed(op.ID, result); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
+	result["ip"] = "changed"
+	got, _ = r.Get(op.ID)
+	if got.Status != operationStatusSucceeded {
+		t.Errorf("status = %q, want %q", got.Status, operationStatusSucceeded)
+	}
+	if got.Result["ip"] != "192.168.64.2" {
+		t.Errorf("result ip = %v, want 192.168.64.2", got.Result["ip"])
+	}
+
+	failed, _ := r.Create("vm/failed")
+	if err := r.Fail(failed.ID, "boom", "failed for test"); err != nil {
+		t.Fatalf("Fail: %v", err)
+	}
+	got, _ = r.Get(failed.ID)
+	if got.Status != operationStatusFailed {
+		t.Errorf("status = %q, want %q", got.Status, operationStatusFailed)
+	}
+	if got.Error == nil || got.Error.Code != "boom" || got.Error.Message != "failed for test" {
+		t.Errorf("error = %+v, want boom", got.Error)
+	}
+}
+
 func TestUpdate_PersistsViaStore(t *testing.T) {
 	store := NewMemOperationStore()
 	r, _ := NewOperationRegistry(store)
