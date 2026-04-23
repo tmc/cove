@@ -31,15 +31,20 @@ func runServeCmd(args []string) error {
 	fs.StringVar(&tokenFile, "token-file", "", "master token file path; empty = keychain default")
 	fs.BoolVar(&perVMAuth, "per-vm-auth", false, "strict mode: require per-VM token for each VM route")
 	fs.StringVar(&vmList, "vms", "", "comma-separated VM name allowlist (empty = all running VMs)")
-	fs.BoolVar(&mcpMode, "mcp", false, "stdio MCP mode (not yet implemented)")
+	fs.BoolVar(&mcpMode, "mcp", false, "stdio MCP transport: JSON-RPC 2.0 over stdin/stdout")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if mcpMode {
-		fmt.Fprintln(os.Stderr, "cove serve: MCP mode not yet implemented")
-		return nil
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("home dir: %w", err)
+		}
+		vmDir := filepath.Join(home, ".vz", "vms")
+		fmt.Fprintln(os.Stderr, "cove serve: MCP stdio transport; reading JSON-RPC on stdin")
+		return runMCPStdio(vmDir)
 	}
 
 	masterToken, err := LoadOrCreateMasterToken(tokenFile)
@@ -197,7 +202,7 @@ Options:
   -token-file <path>   Master token file path; empty = macOS keychain default
   -per-vm-auth         Strict mode: require per-VM control.token for each VM route
   -vms <list>          Comma-separated VM allowlist (default: all running VMs)
-  -mcp                 stdio MCP mode (not yet implemented)
+  -mcp                 stdio MCP transport: JSON-RPC 2.0 over stdin/stdout
 
 Auth:
   Default: master token in macOS keychain (service=cove-gateway).
