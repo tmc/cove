@@ -100,7 +100,7 @@ func markCurrentVMAgentVerified(source string) error {
 	if strings.TrimSpace(vmDir) == "" {
 		return nil
 	}
-	return markVMAgentVerified(vmDir, currentVMAgentPlatform(), source, time.Now())
+	return markVMAgentVerified(vmDir, detectVMAgentPlatform(vmDir), source, time.Now())
 }
 
 func markVMAgentVerifiedForSocket(sock, source string) error {
@@ -109,11 +109,4 @@ func markVMAgentVerifiedForSocket(sock, source string) error {
 	}
 	vmDirectory := filepath.Dir(sock)
 	return markVMAgentVerified(vmDirectory, detectVMAgentPlatform(vmDirectory), source, time.Now())
-}
-
-func currentVMAgentPlatform() string {
-	if linuxMode {
-		return vmAgentPlatformLinux
-	}
-	return vmAgentPlatformMacOS
 }

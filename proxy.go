@@ -503,7 +503,7 @@ func waitForProxyRuntime(ctx context.Context, cs *ControlServer) error {
 			_, err = cs.getUserAgent()
 		}
 		if err == nil {
-			if markErr := markVMAgentVerified(cs.effectiveVMDir(), currentVMAgentPlatform(), vmAgentSourceRuntime, time.Now()); markErr != nil && verbose {
+			if markErr := markVMAgentVerified(cs.effectiveVMDir(), detectVMAgentPlatform(cs.effectiveVMDir()), vmAgentSourceRuntime, time.Now()); markErr != nil && verbose {
 				fmt.Printf("warning: record guest agent capability: %v\n", markErr)
 			}
 			return nil
