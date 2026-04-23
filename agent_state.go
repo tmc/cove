@@ -43,6 +43,14 @@ func detectVMAgentPlatform(vmDirectory string) string {
 	return vmAgentPlatformMacOS
 }
 
+func vmAgentPlatform(vmDirectory string) string {
+	cfg, err := LoadVMConfig(vmDirectory)
+	if err == nil && cfg.Agent != nil && cfg.Agent.Platform != "" {
+		return cfg.Agent.Platform
+	}
+	return detectVMAgentPlatform(vmDirectory)
+}
+
 func updateVMAgentConfig(vmDirectory string, update func(*VMAgentConfig)) error {
 	cfg, err := LoadVMConfig(vmDirectory)
 	if err != nil {

@@ -45,6 +45,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fs.Usage()
 		case "gc":
 			printGCUsage(os.Stderr)
+		case "compact":
+			printCompactUsage(os.Stderr)
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
@@ -135,6 +137,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printGCUsage(os.Stderr)
 			return true, usageExitCode(subargs)
+		}
+	case "compact":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printCompactUsage(os.Stderr)
+			return true, 0
 		}
 	case "provision", "inject":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
@@ -264,6 +271,17 @@ Delete disposable VM clones created with -disposable.
 Options:
   -dry-run              Print disposable clones without deleting them
   -older-than duration  Only delete disposable clones older than the given age`)
+}
+
+func printCompactUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove compact [options] [vm]
+
+Zero free space inside a running guest so later OCI pushes upload less data.
+
+Options:
+  -vm name   Target VM name (default: active VM)
+
+Requires a running VM with the root vz-agent reachable on its control socket.`)
 }
 
 func printProxyUsage(w io.Writer) {
