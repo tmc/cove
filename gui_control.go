@@ -40,7 +40,7 @@ type vmGUIController struct {
 	app             appkit.NSApplication
 	vm              vz.VZVirtualMachine
 	vmQueue         dispatch.Queue
-	control         *ControlServer
+	bindings        vmGUIBindings
 	vmDirectory     string
 	windowTitleBase string
 
@@ -107,12 +107,12 @@ func runAppEventLoopUntil(app appkit.NSApplication, stop func() bool) {
 	}
 }
 
-func newHeadlessGUIController(app appkit.NSApplication, vm vz.VZVirtualMachine, queue dispatch.Queue, control *ControlServer, initiallyHeaded bool) (*vmGUIController, error) {
+func newHeadlessGUIController(app appkit.NSApplication, vm vz.VZVirtualMachine, queue dispatch.Queue, bindings vmGUIBindings, initiallyHeaded bool) (*vmGUIController, error) {
 	c := &vmGUIController{
 		app:         app,
 		vm:          vm,
 		vmQueue:     queue,
-		control:     control,
+		bindings:    bindings,
 		vmDirectory: vmDir,
 		headed:      initiallyHeaded,
 	}
@@ -161,8 +161,8 @@ func (c *vmGUIController) configureProcessIdentity() {
 func (c *vmGUIController) initDetachedView() error {
 	c.vmView = c.newVMView()
 	c.configureProcessIdentity()
-	if c.control != nil {
-		c.control.SetVMViewWithWindow(c.vmView, appkit.NSWindow{})
+	if c.bindings != nil {
+		c.bindings.SetVMViewWithWindow(c.vmView, appkit.NSWindow{})
 	}
 	return nil
 }
@@ -234,9 +234,9 @@ func (c *vmGUIController) initWindow() error {
 	})
 	c.app.SetDelegate(c.appDelegate)
 
-	if c.control != nil {
-		c.control.SetVMViewWithWindow(c.vmView, window)
-		toolbar := NewVMToolbar(window, c.vmView, c.vm, c.vmQueue, c.control, c.vmDirectory)
+	if c.bindings != nil {
+		c.bindings.SetVMViewWithWindow(c.vmView, window)
+		toolbar := NewVMToolbar(window, c.vmView, c.vm, c.vmQueue, c.bindings, c.vmDirectory)
 		toolbar.UpdateState(vz.VZVirtualMachineState(c.vm.State()))
 		c.toolbar = toolbar
 	}
@@ -293,8 +293,8 @@ func (c *vmGUIController) hideOnMain() error {
 	if c.vmView.ID == 0 {
 		return c.initDetachedView()
 	}
-	if c.control != nil {
-		c.control.SetVMViewWithWindow(c.vmView, appkit.NSWindow{})
+	if c.bindings != nil {
+		c.bindings.SetVMViewWithWindow(c.vmView, appkit.NSWindow{})
 	}
 	return nil
 }
@@ -379,16 +379,16 @@ func (c *vmGUIController) Toolbar() *VMToolbar {
 	return c.toolbar
 }
 
-func (c *vmGUIController) setControlServer(control *ControlServer) {
+func (c *vmGUIController) setControlBindings(bindings vmGUIBindings) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.control = control
-	if c.control == nil || c.vmView.ID == 0 {
+	c.bindings = bindings
+	if c.bindings == nil || c.vmView.ID == 0 {
 		return
 	}
-	c.control.SetVMViewWithWindow(c.vmView, c.window)
+	c.bindings.SetVMViewWithWindow(c.vmView, c.window)
 	if c.window.ID != 0 && c.toolbar == nil {
-		toolbar := NewVMToolbar(c.window, c.vmView, c.vm, c.vmQueue, c.control, c.vmDirectory)
+		toolbar := NewVMToolbar(c.window, c.vmView, c.vm, c.vmQueue, c.bindings, c.vmDirectory)
 		toolbar.UpdateState(vz.VZVirtualMachineState(c.vm.State()))
 		c.toolbar = toolbar
 	}

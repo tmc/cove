@@ -8,16 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // SetupAssistant automates the macOS first-run experience using OCR-driven
 // screen detection and click targeting. Falls back to keyboard navigation
 // when OCR is unavailable.
 type SetupAssistant struct {
-	cs        *ControlServer // direct server reference for in-process use
-	client    *ControlClient // socket client for out-of-process use (ctl command)
+	transport setupAssistantTransport
 	ocr       *OCRService
 	config    ProvisionConfig
 	verbose   bool
@@ -47,8 +44,8 @@ func NewSetupAssistant(opts SetupAssistantOptions) *SetupAssistant {
 	client.SetTimeout(60 * time.Second)
 
 	return &SetupAssistant{
-		client: client,
-		ocr:    NewOCRService(opts.Verbose),
+		transport: socketSetupAssistantTransport{client: client},
+		ocr:       NewOCRService(opts.Verbose),
 		config: ProvisionConfig{
 			Username: opts.Username,
 			Password: opts.Password,
@@ -63,12 +60,12 @@ func NewSetupAssistant(opts SetupAssistantOptions) *SetupAssistant {
 
 // NewSetupAssistantInProcess creates a setup assistant that uses the
 // ControlServer directly, avoiding socket overhead for in-process automation.
-func NewSetupAssistantInProcess(cs *ControlServer, ocr *OCRService, config ProvisionConfig, verbose bool, saveDir string) *SetupAssistant {
+func NewSetupAssistantInProcess(server setupAssistantServer, ocr *OCRService, config ProvisionConfig, verbose bool, saveDir string) *SetupAssistant {
 	if config.Fullname == "" {
 		config.Fullname = config.Username
 	}
 	return &SetupAssistant{
-		cs:        cs,
+		transport: inProcessSetupAssistantTransport{server: server},
 		ocr:       ocr,
 		config:    config,
 		verbose:   verbose,
@@ -82,13 +79,12 @@ func (s *SetupAssistant) Run() error {
 	s.log("Starting Setup Assistant automation")
 	s.log("Target user: %s", s.config.Username)
 
-	// Wait for control socket to be available (only for socket-based mode)
-	if s.client != nil {
-		s.log("Waiting for control socket...")
-		if err := s.client.WaitForConnection(60 * time.Second); err != nil {
-			return fmt.Errorf("control socket not available: %w", err)
+	if s.transport != nil {
+		s.log("Waiting for automation transport...")
+		if err := s.transport.WaitForConnection(60 * time.Second); err != nil {
+			return fmt.Errorf("automation transport not available: %w", err)
 		}
-		s.log("Control socket connected")
+		s.log("Automation transport ready")
 	}
 
 	// Wait for screen to stabilize (VM is booting)
@@ -595,12 +591,8 @@ func (s *SetupAssistant) handlePage(page string) bool {
 // tryOCRClick attempts to find and click text using OCR.
 // Returns nil on success, error on failure (text not found or click failed).
 func (s *SetupAssistant) tryOCRClick(text string, timeout time.Duration) error {
-	if s.cs != nil && s.ocr != nil {
-		return s.cs.OCRClickText(s.ocr, text, timeout)
-	}
-	// Socket-based mode: take screenshot, find text, click
-	if s.client != nil && s.ocr != nil {
-		return s.ocrClickViaClient(text, timeout)
+	if s.transport != nil && s.ocr != nil {
+		return s.transport.OCRClickText(s.ocr, text, timeout)
 	}
 	return fmt.Errorf("no OCR or control path available")
 }
@@ -610,63 +602,23 @@ func (s *SetupAssistant) tryOCRClickRegion(text string, timeout time.Duration, r
 	if err != nil {
 		return err
 	}
-	if s.cs != nil && s.ocr != nil {
-		return s.cs.OCRClickTextWithOptions(s.ocr, text, timeout, opts)
-	}
-	if s.client != nil && s.ocr != nil {
-		deadline := time.Now().Add(timeout)
-		for time.Now().Before(deadline) {
-			img, err := s.client.Screenshot()
-			if err != nil {
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
-			normX, normY, found := s.ocr.FindTextNormalizedWithOptions(img, text, opts)
-			if found {
-				s.log("OCR found %q in %s at (%.3f, %.3f) — clicking", text, regionSpec, normX, normY)
-				return s.client.MouseClick(normX, normY)
-			}
-			time.Sleep(500 * time.Millisecond)
+	if s.transport != nil && s.ocr != nil {
+		if err := s.transport.OCRClickTextWithOptions(s.ocr, text, timeout, opts); err != nil {
+			return fmt.Errorf("%s: %w", regionSpec, err)
 		}
-		return fmt.Errorf("timeout: text %q not found in %s", text, regionSpec)
+		return nil
 	}
 	return fmt.Errorf("no OCR or control path available")
 }
 
-// ocrClickViaClient uses the socket client for screenshot + OCR + click.
-func (s *SetupAssistant) ocrClickViaClient(text string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		img, err := s.client.Screenshot()
-		if err != nil {
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		normX, normY, found := s.ocr.FindTextNormalized(img, text)
-		if found {
-			s.log("OCR found %q at (%.3f, %.3f) — clicking", text, normX, normY)
-			return s.client.MouseClick(normX, normY)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return fmt.Errorf("timeout: text %q not found", text)
-}
-
 // detectPage uses OCR to identify the current Setup Assistant page.
 func (s *SetupAssistant) detectPage() string {
-	if s.cs != nil && s.ocr != nil {
-		return s.cs.OCRDetectPage(s.ocr)
-	}
-	if s.client != nil && s.ocr != nil {
-		img, err := s.client.Screenshot()
-		if err != nil {
-			return "unknown"
-		}
-		return OCRDetectSetupAssistantPage(img, s.ocr)
+	if s.transport != nil && s.ocr != nil {
+		return s.transport.OCRDetectPage(s.ocr)
 	}
 	// Fallback to pixel-based detection
-	if s.client != nil {
-		img, err := s.client.ScreenshotScaled(0.5)
+	if s.transport != nil {
+		img, err := s.transport.ScreenshotScaled(0.5)
 		if err != nil {
 			return "unknown"
 		}
@@ -677,30 +629,27 @@ func (s *SetupAssistant) detectPage() string {
 
 // detectCurrentScreenOCR detects screen state using OCR when available.
 func (s *SetupAssistant) detectCurrentScreenOCR() ScreenState {
-	if s.cs != nil {
-		img, errMsg := s.cs.captureDisplayImage()
-		if errMsg != "" {
+	if s.transport == nil {
+		return ScreenStateUnknown
+	}
+	if s.ocr != nil {
+		img, err := s.transport.Screenshot()
+		if err != nil {
 			return ScreenStateUnknown
 		}
 		return DetectScreenStateOCR(img, s.ocr)
 	}
-	if s.client != nil {
-		img, err := s.client.ScreenshotScaled(0.5)
-		if err != nil {
-			return ScreenStateUnknown
-		}
-		if s.ocr != nil {
-			return DetectScreenStateOCR(img, s.ocr)
-		}
-		return DetectScreenState(img)
+	img, err := s.transport.ScreenshotScaled(0.5)
+	if err != nil {
+		return ScreenStateUnknown
 	}
-	return ScreenStateUnknown
+	return DetectScreenState(img)
 }
 
 // waitForPageChange polls until the detected page differs from currentPage.
 func (s *SetupAssistant) waitForPageChange(currentPage string, timeout time.Duration) {
-	if s.cs != nil && s.ocr != nil {
-		s.cs.OCRWaitForPageChange(s.ocr, currentPage, timeout)
+	if s.transport != nil && s.ocr != nil {
+		s.transport.OCRWaitForPageChange(s.ocr, currentPage, timeout)
 		return
 	}
 	deadline := time.Now().Add(timeout)
@@ -795,7 +744,11 @@ func (s *SetupAssistant) attemptRecovery(step int, currentPage string) bool {
 // dialog. Clicking "Go Back" dismisses it and focuses the Full Name field
 // with a blue border, making keyboard input work reliably.
 func (s *SetupAssistant) fillUserAccountForm() error {
-	s.log("Filling user account form... (cs=%v, client=%v)", s.cs != nil, s.client != nil)
+	backend := "unknown"
+	if s.transport != nil {
+		backend = s.transport.InputBackendName()
+	}
+	s.log("Filling user account form... (backend=%s)", backend)
 
 	if s.pageContainsText("Creating account...") {
 		s.log("Account creation already in progress; waiting")
@@ -857,26 +810,15 @@ func (s *SetupAssistant) fillUserAccountForm() error {
 }
 
 func (s *SetupAssistant) pageContainsText(text string) bool {
-	if s.ocr == nil {
+	if s.ocr == nil || s.transport == nil {
 		return false
 	}
-	if s.cs != nil {
-		img, errMsg := s.cs.captureDisplayImage()
-		if errMsg != "" || img == nil {
-			return false
-		}
-		_, _, found := s.ocr.FindText(img, text)
-		return found
+	img, err := s.transport.Screenshot()
+	if err != nil || img == nil {
+		return false
 	}
-	if s.client != nil {
-		img, err := s.client.Screenshot()
-		if err != nil || img == nil {
-			return false
-		}
-		_, _, found := s.ocr.FindText(img, text)
-		return found
-	}
-	return false
+	_, _, found := s.ocr.FindText(img, text)
+	return found
 }
 
 // loginWithCredentials attempts to log in at the login screen.
@@ -962,18 +904,8 @@ func (s *SetupAssistant) waitForStableScreen(timeout time.Duration) error {
 
 // screenshotScaled captures a scaled screenshot via either path.
 func (s *SetupAssistant) screenshotScaled(scale float64) image.Image {
-	if s.cs != nil {
-		img, errMsg := s.cs.captureDisplayImage()
-		if errMsg != "" {
-			return nil
-		}
-		if scale < 1 {
-			return scaleImage(img, scale)
-		}
-		return img
-	}
-	if s.client != nil {
-		img, err := s.client.ScreenshotScaled(scale)
+	if s.transport != nil {
+		img, err := s.transport.ScreenshotScaled(scale)
 		if err != nil {
 			return nil
 		}
@@ -984,14 +916,8 @@ func (s *SetupAssistant) screenshotScaled(scale float64) image.Image {
 
 // clickNormalized clicks at normalized coordinates (0-1, top-left origin).
 func (s *SetupAssistant) clickNormalized(x, y float64) {
-	if s.cs != nil {
-		s.cs.sendMouseEvent(&controlpb.MouseCommand{
-			X: x, Y: y, Button: 0, Action: "click",
-		})
-		return
-	}
-	if s.client != nil {
-		if err := s.client.MouseClick(x, y); err != nil {
+	if s.transport != nil {
+		if err := s.transport.MouseClick(x, y); err != nil {
 			s.log("warning: click at (%.3f, %.3f) failed: %v", x, y, err)
 		}
 	}
@@ -1010,36 +936,16 @@ func (s *SetupAssistant) clickUntilPageChanges(page string, delay time.Duration,
 
 // pressKey presses and releases a key via either path.
 func (s *SetupAssistant) pressKey(keyCode uint16) {
-	if s.cs != nil {
-		s.cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: uint32(keyCode), KeyDown: true})
-		time.Sleep(50 * time.Millisecond)
-		s.cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: uint32(keyCode), KeyDown: false})
-		return
-	}
-	if s.client != nil {
-		if err := s.client.KeyPress(keyCode); err != nil {
+	if s.transport != nil {
+		if err := s.transport.KeyPress(keyCode); err != nil {
 			s.log("warning: key press failed: %v", err)
 		}
 	}
 }
 
 func (s *SetupAssistant) pressKeyWithModifiers(keyCode uint16, modifiers uint) {
-	if s.cs != nil {
-		s.cs.sendKeyEvent(&controlpb.KeyCommand{
-			KeyCode:   uint32(keyCode),
-			KeyDown:   true,
-			Modifiers: uint32(modifiers),
-		})
-		time.Sleep(50 * time.Millisecond)
-		s.cs.sendKeyEvent(&controlpb.KeyCommand{
-			KeyCode:   uint32(keyCode),
-			KeyDown:   false,
-			Modifiers: uint32(modifiers),
-		})
-		return
-	}
-	if s.client != nil {
-		if err := s.client.KeyPressWithModifiers(keyCode, modifiers); err != nil {
+	if s.transport != nil {
+		if err := s.transport.KeyPressWithModifiers(keyCode, modifiers); err != nil {
 			s.log("warning: modified key press failed: %v", err)
 		}
 	}
@@ -1087,13 +993,9 @@ func (s *SetupAssistant) clearFocusedField() {
 // typeText types a string via either path.
 // For in-process mode, it follows the configured automation backend.
 func (s *SetupAssistant) typeText(text string) {
-	if s.cs != nil {
-		s.log("typeText(%s): %q", s.cs.inputBackend().inputString(), text)
-		s.cs.typeText(&controlpb.TextCommand{Text: text})
-		return
-	}
-	if s.client != nil {
-		if err := s.client.TypeText(text); err != nil {
+	if s.transport != nil {
+		s.log("typeText(%s): %q", s.transport.InputBackendName(), text)
+		if err := s.transport.TypeText(text); err != nil {
 			s.log("warning: type text failed: %v", err)
 		}
 	}
@@ -1110,22 +1012,12 @@ func (s *SetupAssistant) saveDebugScreenshot(name string) {
 		return
 	}
 
-	var img image.Image
-	if s.cs != nil {
-		captured, errMsg := s.cs.captureDisplayImage()
-		if errMsg != "" {
-			s.log("warning: failed to capture screenshot: %s", errMsg)
-			return
-		}
-		img = captured
-	} else if s.client != nil {
-		captured, err := s.client.Screenshot()
-		if err != nil {
-			s.log("warning: failed to capture screenshot: %v", err)
-			return
-		}
-		img = captured
-	} else {
+	if s.transport == nil {
+		return
+	}
+	img, err := s.transport.Screenshot()
+	if err != nil {
+		s.log("warning: failed to capture screenshot: %v", err)
 		return
 	}
 

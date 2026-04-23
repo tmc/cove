@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
@@ -11,6 +12,15 @@ import (
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
+
+type sharedFolderRuntimeApplier struct {
+	vm    vz.VZVirtualMachine
+	queue dispatch.Queue
+}
+
+func newSharedFolderRuntimeApplier(vm vz.VZVirtualMachine, queue dispatch.Queue) sharedFolderRuntimeApplier {
+	return sharedFolderRuntimeApplier{vm: vm, queue: queue}
+}
 
 func (s *ControlServer) handleSharedFoldersApply() *controlpb.ControlResponse {
 	folders := LoadSharedFolders(s.effectiveVMDir())
@@ -27,10 +37,17 @@ func (s *ControlServer) handleSharedFoldersApply() *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) applySharedFoldersToRunningVM(folders []SharedFolderEntry) (int, error) {
-	if s.vm.ID == 0 {
+	s.mu.Lock()
+	applier := newSharedFolderRuntimeApplier(s.vm, s.vmQueue)
+	s.mu.Unlock()
+	return applier.Apply(folders)
+}
+
+func (a sharedFolderRuntimeApplier) Apply(folders []SharedFolderEntry) (int, error) {
+	if a.vm.ID == 0 {
 		return 0, fmt.Errorf("vm not initialized")
 	}
-	if s.vmQueue.Handle() == 0 {
+	if a.queue.Handle() == 0 {
 		return 0, fmt.Errorf("vm queue not initialized")
 	}
 
@@ -39,14 +56,14 @@ func (s *ControlServer) applySharedFoldersToRunningVM(folders []SharedFolderEntr
 		applyErr error
 	)
 
-	DispatchSync(uintptr(s.vmQueue.Handle()), func() {
-		state := vz.VZVirtualMachineState(s.vm.State())
+	DispatchSync(uintptr(a.queue.Handle()), func() {
+		state := vz.VZVirtualMachineState(a.vm.State())
 		if state != vz.VZVirtualMachineStateRunning && state != vz.VZVirtualMachineStatePaused {
 			applyErr = fmt.Errorf("vm not running (state=%s)", vmStateLabel(state))
 			return
 		}
 
-		devices := s.vm.DirectorySharingDevices()
+		devices := a.vm.DirectorySharingDevices()
 		if len(devices) == 0 {
 			applyErr = fmt.Errorf("no directory sharing devices configured")
 			return
