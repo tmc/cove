@@ -45,7 +45,7 @@ In v0.1 the fix is always: delete `disk.img.partial` and rerun `cove pull`. Resu
 cove push <vm> <ref>                            # push disk.img as OCI tag
 cove push <vm> <ref> --base <base-ref>          # delta push (skip unchanged chunks)
 cove push <vm> <ref> --chunk-size 256           # override 512 MB default
-cove push <vm> <ref> --dry-run                  # chunk + compress locally, no upload
+cove push <vm> <ref> --dry-run                  # chunk and summarize locally, no upload
 cove push <vm> <ref> --lume-compat              # emit dual cove + lume annotations
 ```
 
@@ -53,7 +53,7 @@ Push chunks `disk.img` into 512 MB fixed-offset chunks, LZ4-compresses each chun
 
 Delta push with `--base <ref>` pulls the base manifest first and only uploads chunks whose uncompressed content digest differs. Typical result: a fresh Xcode install on top of a vanilla macOS base uploads single-digit GBs instead of 60.
 
-Use `--dry-run` to see how many chunks and bytes a push would produce without touching the network.
+Current implementation supports `--dry-run` to see how many chunks and bytes a push would produce without touching the network. Registry upload and compression land in the next transport slice.
 
 ## Lume compatibility
 

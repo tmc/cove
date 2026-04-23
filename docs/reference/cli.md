@@ -587,7 +587,7 @@ cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia
 
 ## push
 
-Push a VM disk as an OCI image. Supports delta pushes against a base image and a Lume-compatible annotation mode for cross-tool interop.
+Plan or push a VM disk as an OCI image. Current implementation supports `--dry-run` only; registry upload lands in the next OCI transport slice.
 
 ```
 cove push <vm> <ref> [flags]
@@ -605,6 +605,7 @@ cove push <vm> <ref> [flags]
 cove push dev-vm ghcr.io/me/dev-vm:v1
 cove push dev-vm ghcr.io/me/dev-vm:v2 --base ghcr.io/me/dev-vm:v1
 cove push dev-vm ghcr.io/me/dev-vm:v2 --lume-compat --additional-tag latest
+cove push dev-vm ghcr.io/me/dev-vm:v1 --dry-run
 ```
 
 ---

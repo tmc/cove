@@ -234,6 +234,9 @@ var cliDocSpecs = []cliDocSpec{
 	{Name: "compact", Summary: "Zero guest free space for smaller OCI pushes.", Usage: func() string {
 		return captureWriter(printCompactUsage)
 	}},
+	{Name: "push", Summary: "Plan or push a VM disk as an OCI image.", Usage: func() string {
+		return captureWriter(printPushUsage)
+	}},
 	{Name: "template", Summary: "Manage VM templates.", Usage: func() string {
 		return captureWriter(printTemplateUsage)
 	}},
