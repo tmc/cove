@@ -523,7 +523,7 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 
 	// Clean up staging directory on success.
 	os.RemoveAll(stagingDir)
-	markInjectSucceeded()
+	markInjectSucceededForVM(target)
 	if manifestIncludesAgent(manifest) {
 		if err := setVMAgentRequested(target.Directory, detectVMAgentPlatform(target.Directory), true, vmAgentSourceProvision); err != nil {
 			fmt.Printf("warning: save guest agent config: %v\n", err)

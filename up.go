@@ -238,11 +238,12 @@ func vmAlreadyInstalled(dir string, linux bool) bool {
 // If the VM is already installed (disk exists) and -force is not set,
 // it skips install and provisioning and proceeds to boot + vzscripts.
 func runUpPipeline(cfg upConfig) error {
+	target := currentVMSelection()
 	if cfg.linux {
 		return runLinuxUpPipeline(cfg)
 	}
 
-	installed := vmAlreadyInstalled(vmDir, false)
+	installed := vmAlreadyInstalled(target.Directory, false)
 
 	// Step 1: Install macOS (skip if already installed).
 	if installed && !cfg.force {
@@ -261,7 +262,7 @@ func runUpPipeline(cfg upConfig) error {
 	// inject was either never attempted or failed mid-flight — retry it
 	// either way. The staging dir is reused if present (stageProvisioningFiles
 	// is idempotent).
-	if !didInjectSucceed() {
+	if !didInjectSucceedForVM(target) {
 		fmt.Println()
 		fmt.Println("=== Step 2/3: Provisioning VM ===")
 		opts := InjectOptions{
@@ -275,16 +276,16 @@ func runUpPipeline(cfg upConfig) error {
 			InjectAgent:        sandboxAllowsAgentProvision(),
 			InjectGuestTools:   !sandboxActive(),
 		}
-		if _, err := stageProvisioningFiles(opts); err != nil {
+		if _, err := stageProvisioningFilesForVM(target, opts); err != nil {
 			return fmt.Errorf("stage provisioning: %w", err)
 		}
 		// Stage inject directives from vzscript recipes before applying.
 		if cfg.vzscripts != "" {
-			if err := stageVZScriptInjects(splitRecipes(cfg.vzscripts)); err != nil {
+			if err := stageVZScriptInjectsForVM(target, splitRecipes(cfg.vzscripts)); err != nil {
 				return fmt.Errorf("stage vzscript injects: %w", err)
 			}
 		}
-		if err := applyProvisioningFiles(); err != nil {
+		if err := applyProvisioningFilesForVM(target); err != nil {
 			return fmt.Errorf("apply provisioning: %w", err)
 		}
 	} else {
@@ -296,7 +297,7 @@ func runUpPipeline(cfg upConfig) error {
 	recipes := splitRecipes(cfg.vzscripts)
 	if len(recipes) > 0 || cfg.setupScriptPath != "" {
 		if len(recipes) > 0 {
-			savePostInstallRecipes(vmDir, cfg.vzscripts)
+			savePostInstallRecipes(target.Directory, cfg.vzscripts)
 		}
 		fmt.Println()
 		switch {
@@ -588,7 +589,11 @@ func validateVZScriptRecipes(recipes []string) error {
 // directory. This runs between stageProvisioningFiles and applyProvisioningFiles
 // so the inject files are included in the same disk-write pass.
 func stageVZScriptInjects(recipes []string) error {
-	stagingDir := provisionStagingDir()
+	return stageVZScriptInjectsForVM(currentVMSelection(), recipes)
+}
+
+func stageVZScriptInjectsForVM(target vmSelection, recipes []string) error {
+	stagingDir := provisionStagingDirForVM(target)
 	manifest, err := readManifest(stagingDir)
 	if err != nil {
 		return fmt.Errorf("read staging manifest: %w", err)

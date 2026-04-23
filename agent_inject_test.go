@@ -41,6 +41,7 @@ func TestVMSelectionHelpers(t *testing.T) {
 		wantDisk     string
 		wantLinux    string
 		wantStaging  string
+		wantMarker   string
 	}{
 		{
 			name:         "default vm",
@@ -51,6 +52,7 @@ func TestVMSelectionHelpers(t *testing.T) {
 			wantDisk:     "/tmp/vms/default/disk.img",
 			wantLinux:    "/tmp/vms/default/linux-disk.img",
 			wantStaging:  "/tmp/vms/default/.provision",
+			wantMarker:   "/tmp/vms/default/.inject-succeeded",
 		},
 		{
 			name:         "named vm",
@@ -61,6 +63,7 @@ func TestVMSelectionHelpers(t *testing.T) {
 			wantDisk:     "/tmp/vms/work/disk.img",
 			wantLinux:    "/tmp/vms/work/linux-disk.img",
 			wantStaging:  "/tmp/vms/work/.provision",
+			wantMarker:   "/tmp/vms/work/.inject-succeeded",
 		},
 	}
 
@@ -83,6 +86,9 @@ func TestVMSelectionHelpers(t *testing.T) {
 			}
 			if got := tt.selection.provisionStagingDir(); got != tt.wantStaging {
 				t.Fatalf("provisionStagingDir() = %q, want %q", got, tt.wantStaging)
+			}
+			if got := tt.selection.injectSucceededMarker(); got != tt.wantMarker {
+				t.Fatalf("injectSucceededMarker() = %q, want %q", got, tt.wantMarker)
 			}
 		})
 	}
