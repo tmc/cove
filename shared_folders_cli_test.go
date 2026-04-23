@@ -1,10 +1,17 @@
 package main
 
 import (
+	"bufio"
+	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -308,6 +315,311 @@ func TestSharedFoldersMountedAndSynced(t *testing.T) {
 				t.Fatalf("sharedFoldersMountedAndSynced() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMountSharedFoldersInGuestMountedLSTimeoutIsBounded(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := filepath.Join(t.TempDir(), "alpha")
+	if err := os.MkdirAll(hostDir, 0755); err != nil {
+		t.Fatalf("mkdir host dir: %v", err)
+	}
+	if _, _, err := addSharedFolderEntry(vmDir, hostDir, "alpha", false); err != nil {
+		t.Fatalf("addSharedFolderEntry(): %v", err)
+	}
+
+	steps := []sharedFolderControlStep{
+		{
+			wantType: "agent-ping",
+			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "/dev/virtiofs on " + defaultSharedFoldersMountPoint + " (virtiofs)\n",
+				}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"ls", "-1", defaultSharedFoldersMountPoint},
+			delay:    250 * time.Millisecond,
+		},
+	}
+	verify := serveSharedFolderControlSteps(t, vmDir, "test-token", steps)
+
+	start := time.Now()
+	_, err := mountSharedFoldersInGuestWithTimeouts(vmDir, defaultSharedFoldersMountPoint, sharedFolderMountTimeouts{
+		agentPing: 200 * time.Millisecond,
+		mkdir:     200 * time.Millisecond,
+		mounts:    200 * time.Millisecond,
+		listTags:  40 * time.Millisecond,
+		unmount:   200 * time.Millisecond,
+		mount:     200 * time.Millisecond,
+	})
+	elapsed := time.Since(start)
+	verify()
+
+	if err == nil {
+		t.Fatalf("mountSharedFoldersInGuestWithTimeouts(): got nil error, want bounded inspect error")
+	}
+	if !strings.Contains(err.Error(), "inspect mounted shared folders at") {
+		t.Fatalf("mountSharedFoldersInGuestWithTimeouts() error = %v, want inspect error", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("mountSharedFoldersInGuestWithTimeouts() took %s, want bounded failure", elapsed)
+	}
+}
+
+func TestMountSharedFoldersInGuestMountedStaleTagsRemounts(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+
+	vmDir := shortSharedFolderVMDir(t)
+	hostA := filepath.Join(t.TempDir(), "alpha")
+	hostB := filepath.Join(t.TempDir(), "beta")
+	if err := os.MkdirAll(hostA, 0755); err != nil {
+		t.Fatalf("mkdir alpha: %v", err)
+	}
+	if err := os.MkdirAll(hostB, 0755); err != nil {
+		t.Fatalf("mkdir beta: %v", err)
+	}
+	if _, _, err := addSharedFolderEntry(vmDir, hostA, "alpha", false); err != nil {
+		t.Fatalf("addSharedFolderEntry(alpha): %v", err)
+	}
+	if _, _, err := addSharedFolderEntry(vmDir, hostB, "beta", false); err != nil {
+		t.Fatalf("addSharedFolderEntry(beta): %v", err)
+	}
+
+	verify := serveSharedFolderControlSteps(t, vmDir, "test-token", []sharedFolderControlStep{
+		{
+			wantType: "agent-ping",
+			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "/dev/virtiofs on " + defaultSharedFoldersMountPoint + " (virtiofs)\n",
+				}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"ls", "-1", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "alpha\n",
+				}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"umount", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount_virtiofs", SharedFoldersVirtioFSTag, defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+	})
+
+	mounted, err := mountSharedFoldersInGuestWithTimeouts(vmDir, defaultSharedFoldersMountPoint, sharedFolderMountTimeouts{
+		agentPing: 200 * time.Millisecond,
+		mkdir:     200 * time.Millisecond,
+		mounts:    200 * time.Millisecond,
+		listTags:  200 * time.Millisecond,
+		unmount:   200 * time.Millisecond,
+		mount:     200 * time.Millisecond,
+	})
+	verify()
+
+	if err != nil {
+		t.Fatalf("mountSharedFoldersInGuestWithTimeouts(): %v", err)
+	}
+	if !mounted {
+		t.Fatalf("mountSharedFoldersInGuestWithTimeouts() = false, want true after remount")
+	}
+}
+
+func TestControlClientAgentExecTypedTimeoutHonorsOverride(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+
+	vmDir := shortSharedFolderVMDir(t)
+	verify := serveSharedFolderControlSteps(t, vmDir, "test-token", []sharedFolderControlStep{
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"echo", "hello"},
+			delay:    250 * time.Millisecond,
+		},
+	})
+
+	client := NewControlClient(GetControlSocketPathForVM(vmDir))
+	start := time.Now()
+	_, err := client.AgentExecTypedTimeout([]string{"echo", "hello"}, nil, "", 40*time.Millisecond)
+	elapsed := time.Since(start)
+	verify()
+
+	if err == nil {
+		t.Fatalf("AgentExecTypedTimeout(): got nil error, want timeout")
+	}
+	if elapsed > time.Second {
+		t.Fatalf("AgentExecTypedTimeout() took %s, want timeout override to bound the request", elapsed)
+	}
+}
+
+func shortSharedFolderVMDir(t *testing.T) string {
+	t.Helper()
+
+	dir, err := os.MkdirTemp(os.TempDir(), "vzsf-")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+type sharedFolderControlStep struct {
+	wantType string
+	wantArgs []string
+	delay    time.Duration
+	resp     *controlpb.ControlResponse
+}
+
+func serveSharedFolderControlSteps(t *testing.T, vmDir, token string, steps []sharedFolderControlStep) func() {
+	t.Helper()
+
+	tokenPath := GetControlTokenPathForVM(vmDir)
+	if err := os.WriteFile(tokenPath, []byte(token+"\n"), 0600); err != nil {
+		t.Fatalf("write control token: %v", err)
+	}
+
+	sock := GetControlSocketPathForVM(vmDir)
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen %q: %v", sock, err)
+	}
+
+	var (
+		mu    sync.Mutex
+		index int
+	)
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+
+				line, err := bufio.NewReader(conn).ReadString('\n')
+				if err != nil {
+					t.Errorf("read control request: %v", err)
+					return
+				}
+
+				var req controlpb.ControlRequest
+				if err := protojson.Unmarshal([]byte(line), &req); err != nil {
+					t.Errorf("unmarshal control request: %v", err)
+					return
+				}
+				if req.GetAuthToken() != token {
+					t.Errorf("auth token = %q, want %q", req.GetAuthToken(), token)
+					return
+				}
+
+				mu.Lock()
+				if index >= len(steps) {
+					mu.Unlock()
+					t.Errorf("unexpected request type %q", req.GetType())
+					return
+				}
+				step := steps[index]
+				index++
+				mu.Unlock()
+
+				if req.GetType() != step.wantType {
+					t.Errorf("request type = %q, want %q", req.GetType(), step.wantType)
+					return
+				}
+				if step.wantArgs != nil {
+					got := req.GetAgentExec().GetArgs()
+					if !reflect.DeepEqual(got, step.wantArgs) {
+						t.Errorf("agent-exec args = %v, want %v", got, step.wantArgs)
+						return
+					}
+				}
+				if step.delay > 0 {
+					time.Sleep(step.delay)
+				}
+				if step.resp == nil {
+					return
+				}
+
+				data, err := protojsonMarshaler.Marshal(step.resp)
+				if err != nil {
+					t.Errorf("marshal control response: %v", err)
+					return
+				}
+				if _, err := conn.Write(append(data, '\n')); err != nil {
+					t.Errorf("write control response: %v", err)
+				}
+			}(conn)
+		}
+	}()
+
+	return func() {
+		t.Helper()
+		ln.Close()
+
+		mu.Lock()
+		defer mu.Unlock()
+		if index != len(steps) {
+			t.Fatalf("handled %d control requests, want %d", index, len(steps))
+		}
 	}
 }
 

@@ -81,6 +81,7 @@ func (s *ControlServer) applySharedFoldersToRunningVM(folders []SharedFolderEntr
 			}
 
 			url := foundation.NewURLFileURLWithPath(f.Path)
+			url.Retain()
 			sharedDir := vz.NewSharedDirectoryWithURLReadOnly(url, f.ReadOnly)
 			objc.Send[objc.ID](sharedDir.ID, objc.Sel("retain"))
 
