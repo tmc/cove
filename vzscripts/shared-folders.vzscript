@@ -1,4 +1,19 @@
-# shared-folders — Mount VirtioFS shared folders in the guest
+# shared-folders — Mount the user's standard VirtioFS shared folders
+#
+# Declares three host directories as shared folders via the "# mount:"
+# directive: ~/ml-explore, /Volumes/tmc, and ~/.cache/huggingface/hub.
+# The vzscript runner registers them with the VM, hot-plugs them into a
+# running VM (best-effort), and mounts them in the guest under
+# /Volumes/My Shared Files.
+#
+# CAVEAT: VirtioFS hot-add after a resumed VM often fails with
+# "Operation not permitted" (see MEMORY.md). If you see that, cold-boot
+# the VM (cove run -no-resume) and re-run this recipe. TCC may also
+# block the vz-agent from reading the mount; a logged-in user shell can.
+#
+# mount: ~/ml-explore rw
+# mount: /Volumes/tmc rw
+# mount: ~/.cache/huggingface/hub rw
 
 guest-ping
 guest-shell mount-shares.sh
@@ -9,16 +24,24 @@ set -e
 
 MOUNT_BASE="/Volumes/My Shared Files"
 
-# The Virtualization framework automounts all VirtioFS shares under
-# /Volumes/My Shared Files at boot time. Verify the mount exists and
-# list contents.
+# The Virtualization framework mounts every VirtioFS share under
+# /Volumes/My Shared Files. The "# mount:" directives above register the
+# host paths and hot-plug the devices; the runner then mounts them in
+# the guest. Verify that the mount is actually reachable here.
 
 if mount | grep -q "AppleVirtIOFS"; then
   echo "VirtioFS mounted at: $MOUNT_BASE"
-  ls "$MOUNT_BASE" 2>/dev/null && echo "Shared folders accessible." || echo "warning: mount exists but access denied (may need Full Disk Access or VM reboot)"
+  if ls "$MOUNT_BASE" >/dev/null 2>&1; then
+    echo "Shared folders accessible:"
+    ls "$MOUNT_BASE"
+  else
+    echo "warning: mount exists but access denied — vz-agent may need Full Disk Access (TCC)"
+    echo "  workaround: open a Terminal in the GUI and ls \"$MOUNT_BASE\""
+  fi
 else
-  echo "warning: no VirtioFS mount found — shared folders must be configured before VM boot"
-  echo "  on host: cove vm shared-folder add <path>"
-  echo "  then reboot the VM"
+  echo "warning: no VirtioFS mount found"
+  echo "  hot-add may have failed (Operation not permitted on resumed VMs)"
+  echo "  cold-boot the VM with: cove run -no-resume"
+  echo "  then re-run: cove vzscript run shared-folders"
   exit 1
 fi

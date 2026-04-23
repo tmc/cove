@@ -1,5 +1,4 @@
-# claude-code — Install Claude Code CLI
-# requires: homebrew
+# claude-code — Install Claude Code CLI via the native installer
 # runs-on: daemon
 
 guest-ping
@@ -16,18 +15,12 @@ if [ -z "$BREW_USER" ]; then
 fi
 echo "Installing Claude Code as user: $BREW_USER"
 
-# Ensure Node.js 18+ is present.
-NODE_VERSION=$(su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)"; node --version 2>/dev/null' || echo "")
-if [ -z "$NODE_VERSION" ]; then
-  echo "Node.js not found, installing via Homebrew..."
-  su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && brew install node'
-fi
+su -l "$BREW_USER" -c 'curl -fsSL https://claude.ai/install.sh | bash'
 
-# Install claude-code globally.
-su -l "$BREW_USER" -c '
-  eval "$(/opt/homebrew/bin/brew shellenv)"
-  npm install -g @anthropic-ai/claude-code@latest
-'
-
-INSTALLED=$(su -l "$BREW_USER" -c 'eval "$(/opt/homebrew/bin/brew shellenv)"; claude --version')
+INSTALLED=$(su -l "$BREW_USER" -c '$HOME/.local/bin/claude --version')
 echo "Installed: claude $INSTALLED"
+
+# Ensure ~/.local/bin is on PATH for future interactive shells.
+su -l "$BREW_USER" -c '
+  grep -q ".local/bin" ~/.zshrc 2>/dev/null || echo '\''export PATH="$HOME/.local/bin:$PATH"'\'' >> ~/.zshrc
+'

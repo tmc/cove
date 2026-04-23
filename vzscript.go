@@ -163,13 +163,23 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 	}
 }
 
-// guestWaitCmd waits for the VM control socket and guest agent to be reachable.
+// guestWaitCmd waits for the VM to be ready for real work: the daemon agent
+// must be reachable, AND provisioning must have completed (i.e. the user
+// exists and has been added to admin). On a fresh boot the agent comes up
+// well before the LaunchDaemon's sysadminctl finishes; without this second
+// gate, vzscripts that look up the admin user race past the user-create
+// step and fail with "no admin user found".
+//
+// Provisioning-complete is signalled by /var/db/.vz-provisioned. If that
+// marker never appears (the VM wasn't provisioned by cove), fall back to
+// agent-ping after a short grace period so non-provisioned VMs still work.
+//
 // Usage: guest-wait [timeout]
-// Default timeout is 10m. Polls every 5s until the agent responds to a ping.
+// Default timeout is 10m. Polls every 5s.
 func guestWaitCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
-			Summary: "wait for VM to boot and guest agent to be reachable",
+			Summary: "wait for VM boot, agent reachable, and provisioning complete",
 			Args:    "[timeout]",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
@@ -184,24 +194,74 @@ func guestWaitCmd(cfg vzscriptConfig) script.Cmd {
 
 			deadline := time.Now().Add(timeout)
 			attempt := 0
+			agentReadyAt := time.Time{}
+			// If the marker never appears (existing VM, not cove-provisioned),
+			// fall through after this grace period past agent-ready.
+			const provisionGrace = 30 * time.Second
 			for time.Now().Before(deadline) {
 				attempt++
+				if attempt == 1 {
+					s.Logf("waiting for guest agent and provisioning (timeout %s)...\n", timeout)
+				}
+
 				resp, err := ctlSendRequest(cfg.socketPath,
 					&controlpb.ControlRequest{Type: "agent-ping"},
 					10*time.Second, "agent-ping")
-				if err == nil && resp.Success {
+				if err != nil || !resp.Success {
+					time.Sleep(5 * time.Second)
+					continue
+				}
+				if agentReadyAt.IsZero() {
+					agentReadyAt = time.Now()
+				}
+
+				// Agent is up; now check for the provisioning marker via
+				// daemon-exec (root daemon answers regardless of login state).
+				done, derr := provisionMarkerPresent(cfg)
+				if derr == nil && done {
 					return func(*script.State) (string, string, error) {
-						return fmt.Sprintf("agent ready after %d attempt(s)\n", attempt), "", nil
+						return fmt.Sprintf("agent ready and provisioned after %d attempt(s)\n", attempt), "", nil
 					}, nil
 				}
-				if attempt == 1 {
-					s.Logf("waiting for guest agent (timeout %s)...\n", timeout)
+				if time.Since(agentReadyAt) > provisionGrace {
+					return func(*script.State) (string, string, error) {
+						return fmt.Sprintf("agent ready after %d attempt(s) (no .vz-provisioned marker after %s; assuming non-provisioned VM)\n", attempt, provisionGrace), "", nil
+					}, nil
 				}
 				time.Sleep(5 * time.Second)
 			}
-			return nil, fmt.Errorf("timeout after %s waiting for guest agent", timeout)
+			return nil, fmt.Errorf("timeout after %s waiting for guest agent and provisioning", timeout)
 		},
 	)
+}
+
+// provisionMarkerPresent checks for /var/db/.vz-provisioned via the daemon
+// agent (which runs as root and is available before any user logs in).
+// Returns (true, nil) if the marker exists, (false, nil) if it does not,
+// or (false, err) if the check itself failed.
+func provisionMarkerPresent(cfg vzscriptConfig) (bool, error) {
+	req := &controlpb.ControlRequest{
+		Type: "agent-exec",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{
+				Args: []string{"/bin/test", "-f", "/var/db/.vz-provisioned"},
+			},
+		},
+	}
+	resp, err := ctlSendRequest(cfg.socketPath, req, 10*time.Second, "agent-exec")
+	if err != nil {
+		return false, err
+	}
+	if !resp.Success {
+		return false, fmt.Errorf("%s", resp.Error)
+	}
+	var result struct {
+		ExitCode int `json:"exitCode"`
+	}
+	if err := json.Unmarshal([]byte(resp.Data), &result); err != nil {
+		return false, err
+	}
+	return result.ExitCode == 0, nil
 }
 
 func guestPingCmd(cfg vzscriptConfig) script.Cmd {
@@ -597,7 +657,7 @@ func guestCpCmd(cfg vzscriptConfig) script.Cmd {
 			if len(args) != 2 {
 				return nil, script.ErrUsage
 			}
-			hostPath := s.Path(args[0])
+			hostPath := s.Path(expandTilde(args[0]))
 			guestPath := args[1]
 
 			req := &controlpb.ControlRequest{
@@ -663,7 +723,7 @@ func hostCpCmd(cfg vzscriptConfig) script.Cmd {
 			if len(args) != 2 {
 				return nil, script.ErrUsage
 			}
-			hostPath := args[0]
+			hostPath := s.Path(expandTilde(args[0]))
 			guestPath := args[1]
 
 			if info, err := os.Stat(hostPath); err == nil {

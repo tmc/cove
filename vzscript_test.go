@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -150,6 +151,41 @@ func TestNormalizeVisibleText(t *testing.T) {
 	want := "system integrity protection is off."
 	if got != want {
 		t.Fatalf("normalizeVisibleText() = %q, want %q", got, want)
+	}
+}
+
+func TestRunVZScriptWithDeps_LocalScripts(t *testing.T) {
+	dir := t.TempDir()
+	dep := filepath.Join(dir, "dep.vzscript")
+	root := filepath.Join(dir, "root.vzscript")
+
+	if err := os.WriteFile(dep, []byte("# dependency\necho dep-output\n"), 0644); err != nil {
+		t.Fatalf("write dep: %v", err)
+	}
+	rootBody := fmt.Sprintf("# requires: %s\necho root-output\n", dep)
+	if err := os.WriteFile(root, []byte(rootBody), 0644); err != nil {
+		t.Fatalf("write root: %v", err)
+	}
+
+	var log bytes.Buffer
+	cfg := vzscriptConfig{
+		verbose:   true,
+		logWriter: &log,
+		streamOut: &log,
+		streamErr: &log,
+	}
+	if err := runVZScriptWithDeps([]string{root}, cfg); err != nil {
+		t.Fatalf("runVZScriptWithDeps: %v", err)
+	}
+
+	out := log.String()
+	depAt := strings.Index(out, "dep-output")
+	rootAt := strings.Index(out, "root-output")
+	if depAt < 0 || rootAt < 0 {
+		t.Fatalf("expected both dependency and root output in log:\n%s", out)
+	}
+	if depAt > rootAt {
+		t.Fatalf("dependency ran after root:\n%s", out)
 	}
 }
 

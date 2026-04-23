@@ -238,7 +238,9 @@ func vzscriptRun(args []string) error {
 }
 
 // runVZScriptWithDeps resolves dependencies for the given recipes and runs
-// them in topological order. Each recipe is run at most once.
+// them in topological order. Each recipe is run at most once. Cycles are
+// detected and reported as errors, and missing dependencies fail loudly
+// before any recipe body runs.
 func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 	// Start background auto-approver if enabled (shared across all recipes).
 	if cfg.autoApprove {
@@ -247,22 +249,36 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 	}
 
 	completed := map[string]bool{}
-	var run func(name string) error
-	run = func(name string) error {
+	inProgress := map[string]bool{}
+	var run func(name, requiredBy string) error
+	run = func(name, requiredBy string) error {
 		if completed[name] {
 			return nil
 		}
+		if inProgress[name] {
+			return fmt.Errorf("dependency cycle detected at %s", name)
+		}
 		data, err := loadVZScriptData(name)
 		if err != nil {
+			if requiredBy != "" {
+				return fmt.Errorf("dependency %q (required by %s) cannot be resolved: %w", name, requiredBy, err)
+			}
 			return err
 		}
 		ar := txtar.Parse(data)
 		meta := parseScriptMeta(ar.Comment)
 
+		inProgress[name] = true
+		defer delete(inProgress, name)
+
 		// Run dependencies first.
 		for _, dep := range meta.requires {
-			if err := run(dep); err != nil {
-				return fmt.Errorf("dependency %s (required by %s): %w", dep, name, err)
+			if completed[dep] {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "running dependency: %s (required by %s)\n", dep, name)
+			if err := run(dep, name); err != nil {
+				return err
 			}
 		}
 
@@ -287,7 +303,7 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 	}
 
 	for _, recipe := range recipes {
-		if err := run(recipe); err != nil {
+		if err := run(recipe, ""); err != nil {
 			return err
 		}
 	}
@@ -352,13 +368,16 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 	// Load and resolve all recipes (including transitive deps).
 	all := map[string]*resolvedRecipe{}
 	var order []string
-	var resolve func(name string) error
-	resolve = func(name string) error {
+	var resolve func(name, requiredBy string) error
+	resolve = func(name, requiredBy string) error {
 		if all[name] != nil {
 			return nil
 		}
 		data, err := loadVZScriptData(name)
 		if err != nil {
+			if requiredBy != "" {
+				return fmt.Errorf("dependency %q (required by %s) cannot be resolved: %w", name, requiredBy, err)
+			}
 			return err
 		}
 		ar := txtar.Parse(data)
@@ -371,8 +390,8 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 		}
 		all[name] = r
 		for _, dep := range meta.requires {
-			if err := resolve(dep); err != nil {
-				return fmt.Errorf("dependency %s (required by %s): %w", dep, name, err)
+			if err := resolve(dep, name); err != nil {
+				return err
 			}
 			r.depNames = append(r.depNames, dep)
 		}
@@ -380,7 +399,7 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 		return nil
 	}
 	for _, name := range names {
-		if err := resolve(name); err != nil {
+		if err := resolve(name, ""); err != nil {
 			return err
 		}
 	}
