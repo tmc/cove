@@ -164,6 +164,166 @@ The lab work should validate which of these are necessary:
 The implementation should not assume which command is authoritative until the
 CCC lab confirms the behavior on a current SIP-enabled guest.
 
+## Initial CCC findings
+
+The first CCC reversing pass on 2026-04-23 materially narrowed the design.
+
+Environment used:
+
+1. VM `ccc-apfs-lab-20260423`
+2. macOS Tahoe guest
+3. SIP disabled for the lab run
+4. Carbon Copy Cloner 7.1.5 (build 8335) from Bombich's official download page
+
+Static bundle findings:
+
+1. The snapshot-heavy logic is concentrated in
+   `Contents/Frameworks/CloneKit.framework`.
+2. The packaged XPC service
+   `Contents/Frameworks/CloneKit.framework/.../CloneKitService.xpc` carries the
+   entitlement `com.apple.developer.vfs.snapshot = true`.
+3. `CloneKitService.xpc` also has `com.apple.security.files.all = true`.
+4. The packaged privileged helper `com.bombich.ccc.helper` exists separately as
+   a root Mach service bundle, but it is not the only snapshot-relevant
+   component.
+5. First launch of CCC does not immediately install the privileged helper into
+   `/Library/PrivilegedHelperTools`; the app can launch and enter the task UI
+   without that installation step.
+
+Snapshot API findings from strings:
+
+1. `CloneKitService` contains direct references to:
+   - `fs_snapshot_create`
+   - `fs_snapshot_mount`
+   - `fs_snapshot_delete`
+   - `fs_snapshot_rename`
+2. `CloneKitService` exposes a `SnapshotServiceProtocol` with methods for:
+   - create
+   - mount
+   - unmount
+   - delete
+   - rename
+   - enumerate
+   - compute snapshot disk usage
+   - prune snapshots with a retention policy
+3. `CloneKitService` also references:
+   - `/usr/sbin/diskutil`
+   - `/usr/sbin/bless`
+   - `clonefile`
+4. Snapshot labels and classes are first-class concepts in the service:
+   - `CCC SafetyNet Snapshot`
+   - `CCC Transient Snapshot`
+   - `CCC Checkpoint Snapshot`
+   - `com.bombich.ccc.permanent`
+
+Observed live behavior:
+
+1. With Full Disk Access granted and `com.bombich.ccc.helper` active, the
+   bundled CLI can create a protected snapshot directly:
+
+   ```text
+   ccc --create /System/Volumes/Data "codex-lab-20260423"
+   ```
+
+2. CCC reported the created snapshot as:
+
+   ```text
+   🔒 CCC Snapshot (by user:'tmc' notes:'codex-lab-20260423')
+   ```
+
+3. `diskutil apfs listSnapshots /System/Volumes/Data` showed the native APFS
+   snapshot name as:
+
+   ```text
+   com.bombich.ccc.permanent.<payload>.2026-04-23-015727
+   ```
+
+4. The `<payload>` component is not opaque random data. It is:
+   - base64
+   - of a raw DEFLATE stream
+   - containing JSON metadata
+
+5. For the test snapshot created in the lab, the decoded JSON was:
+
+   ```json
+   {"l":"com.bombich.ccc.2026-04-23-015727","n":"codex-lab-20260423","u":"tmc"}
+   ```
+
+6. The practical meaning appears to be:
+   - `l`: internal CCC logical label
+   - `n`: user-visible notes/comment
+   - `u`: user name
+
+Public Apple tool findings:
+
+1. `diskutil apfs` does **not** expose a snapshot create verb. It exposes:
+   - `listSnapshots`
+   - `deleteSnapshot`
+2. `tmutil localsnapshot` can create a snapshot on the startup disk, but:
+   - the name is system-generated
+   - there is no free-form comment field
+   - the snapshot is explicitly treated as purgeable
+3. `bless --create-snapshot` exists, but its surface is oriented around boot
+   snapshot management and not free-form named/commented snapshots.
+
+Entitlement gate findings:
+
+1. A minimal lab-built binary calling `fs_snapshot_create()` works without the
+   entitlement in the sense that it launches, but it gets `EPERM`.
+2. Adding `com.apple.developer.vfs.snapshot` to an ad hoc-signed binary causes
+   AMFI to kill the process before launch.
+3. The guest log makes the failure explicit: restricted entitlements on an
+   invalid or ad hoc code signature are rejected fatally.
+4. That means a self-signed helper is not enough. A working direct
+   `fs_snapshot_*` implementation requires a properly provisioned binary with a
+   real entitlement grant.
+
+Implications:
+
+1. CCC is not just wrapping `tmutil localsnapshot`.
+2. Full-control snapshot behavior appears to rely on the VFS snapshot
+   entitlement plus direct `fs_snapshot_*` calls.
+3. `diskutil` and `bless` are still part of the overall workflow, especially
+   around APFS groups, preboot, and bootability, but they are not the only
+   snapshot mechanism.
+4. For `cove`, a shell-only design is unlikely to match CCC semantics for
+   create/mount/delete/rename with stable labels and XIDs.
+5. The entitlement is in practice gated. A custom ad hoc helper in the lab
+   cannot simply opt into `com.apple.developer.vfs.snapshot`.
+6. If `cove` needs CCC-style named/commented snapshots without depending on
+   CCC, we likely need one of two models:
+   - a public-tools implementation with external metadata, accepting that the
+     native APFS snapshot will not be CCC-style
+   - a properly provisioned helper with Apple-granted snapshot entitlement
+
+Developer forum signal:
+
+Public Apple Developer Forums search results line up with the lab findings.
+Notable threads seen on 2026-04-23:
+
+1. 2025-06-03:
+   [How to create file system snapshots?](https://developer.apple.com/forums/thread/786595)
+   The public search snippet shows a developer hitting the same failure we saw:
+   adding `com.apple.developer.vfs.snapshot` caused Xcode to report that the
+   provisioning profile did not include that entitlement.
+2. 2017-era:
+   [fs_snapshot_create required entitlement…](https://developer.apple.com/forums/thread/89635)
+   The public search snippet says full snapshot control requires
+   `com.apple.developer.vfs.snapshot`.
+3. 2020-06-20:
+   [APFS take a snapshot](https://developer.apple.com/forums/thread/79038)
+   The public search snippet says the older `apfs_snapshot` tooling is gone and
+   that entitlement access was required for snapshot API support.
+4. 2018-era:
+   [Keep APFS snapshots](https://developer.apple.com/forums/thread/89977)
+   The public search snippet points back to the same special-entitlement
+   requirement.
+
+This is not primary evidence of the entitlement policy by itself, but it
+matches both Apple's public managed-capability documentation and the direct
+ASC/Developer Portal behavior observed in the lab: there is no public
+`vfs.snapshot` capability exposed for self-service enablement.
+
 ## Reverse-engineering plan
 
 Create a dedicated macOS lab VM with SIP enabled and install Carbon Copy
@@ -179,12 +339,12 @@ Cloner 7. Observe behavior; do not depend on CCC for shipping functionality.
 
 ### Carbon Copy Cloner acquisition
 
-Use Bombich’s official distribution path. As of 2026-04-22, the current
-Homebrew cask metadata points to CCC 7.1.5 build 8335 from Bombich’s official
-distribution host and can serve as a reproducible lookup source for the lab:
+Use Bombich’s official distribution path. As of 2026-04-23, Bombich’s official
+download page advertises CCC 7.1.5 for Ventura 13.1+, Sonoma 14, Sequoia 15,
+and Tahoe 26:
 
-- [Homebrew Cask API](https://formulae.brew.sh/api/cask/carbon-copy-cloner.json)
 - [Bombich download landing page](https://bombich.com/download/get)
+- [Bombich download page](https://bombich.com/download)
 
 ### Observation checklist
 
@@ -239,6 +399,19 @@ Deliverable:
 1. a short internal spec of how CCC creates and manages APFS snapshots on a
    current SIP-enabled guest
 
+Current answer after the first pass:
+
+1. snapshot orchestration lives in `CloneKit.framework`
+2. direct snapshot operations are exposed by `CloneKitService.xpc`
+3. the service is entitled for `com.apple.developer.vfs.snapshot`
+4. direct `fs_snapshot_*` calls are present and likely central
+5. `diskutil`, `bless`, and `clonefile` are supporting mechanisms, not the
+   whole implementation
+6. CCC stores user comment metadata inside the native snapshot name via a
+   compressed JSON payload
+7. public Apple CLI tools do not appear to offer the same named/commented
+   snapshot surface
+
 ### Phase 2: guest-assisted `cove apfs-snapshot`
 
 1. implement `create`
@@ -250,6 +423,17 @@ Deliverable:
 Deliverable:
 
 1. manual APFS snapshot management via the guest agent on a running macOS VM
+
+Updated design pressure from the CCC pass:
+
+1. If public shell tools prove insufficient, Phase 2 likely needs a small
+   guest-side helper binary rather than more `diskutil` parsing.
+2. The helper boundary should be explicit from the start so we can swap between:
+   - public shell tools only
+   - a custom snapshot helper
+   - an experimental entitlement-bearing helper in the lab
+3. The CLI surface should not hardcode CCC-like retention behavior in v1.
+   Snapshot create/list/delete remain the right first scope.
 
 ### Phase 3: validation and future hooks
 
