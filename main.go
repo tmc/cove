@@ -443,6 +443,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "push":
+			if err := handlePush(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "vzscript":
 			if err := vzscriptCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -688,6 +694,7 @@ VM Management:
   vm config ...           Export/import framework config snapshots
   clone           Clone a VM (cove clone [source] <target> [--linked])
   compact         Zero guest free space for smaller pushes
+  push            Plan a VM disk OCI push (dry-run)
   gc              Delete old disposable VM clones
   template        Manage VM templates (save/list/create)
 

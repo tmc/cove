@@ -91,6 +91,13 @@ func TestBuildCLIDocsIncludesCapturedUsage(t *testing.T) {
 	if want := "Usage: cove compact"; !strings.Contains(compact.Usage, want) {
 		t.Fatalf("compact usage missing %q", want)
 	}
+	push := cliCommandByName(docs.Commands, "push")
+	if push == nil {
+		t.Fatal("missing push command")
+	}
+	if want := "Usage: cove push"; !strings.Contains(push.Usage, want) {
+		t.Fatalf("push usage missing %q", want)
+	}
 }
 
 func TestBuildMCPDocsIncludesSchemas(t *testing.T) {
