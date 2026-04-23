@@ -1,8 +1,11 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/objc"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -88,5 +91,25 @@ func TestKeyboardEventUnicodeString(t *testing.T) {
 				t.Fatalf("keyboardEventUnicodeString() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSendKeyEventPrimitiveFramebufferRefusesHostFallback(t *testing.T) {
+	t.Setenv("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD", "")
+
+	cs := &ControlServer{
+		window: appkit.NSWindowFromID(objc.ID(1)),
+	}
+	cs.setInputBackend(automationBackendFramebuffer)
+
+	resp := cs.sendKeyEventPrimitive(&controlpb.KeyCommand{KeyCode: 17, KeyDown: true, Character: "t"})
+	if resp == nil {
+		t.Fatalf("sendKeyEventPrimitive() = nil, want error response")
+	}
+	if resp.Success {
+		t.Fatalf("sendKeyEventPrimitive() unexpectedly succeeded")
+	}
+	if !strings.Contains(resp.Error, "refusing host window-server fallback") {
+		t.Fatalf("error = %q, want host fallback refusal", resp.Error)
 	}
 }

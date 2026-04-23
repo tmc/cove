@@ -817,10 +817,7 @@ func (s *ControlServer) sendKeyEventPrimitive(cmd *controlpb.KeyCommand) *contro
 		if allowExperimentalHIDKeyboard() {
 			return s.sendKeyEventPrivate(cmd)
 		}
-		if s.window.ID != 0 {
-			return s.sendKeyEventCGEvent(cmd)
-		}
-		return &controlpb.ControlResponse{Error: "direct private keyboard injection is disabled; set VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD=1 to re-enable the experimental private API path"}
+		return &controlpb.ControlResponse{Error: "framebuffer keyboard input requires VM-local injection; refusing host window-server fallback; set VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD=1 to re-enable the experimental private API path"}
 	}
 	if cmd.UseCgEvent {
 		return s.sendKeyEventMultiPath(cmd, false)
