@@ -613,22 +613,35 @@ func httpPathToControlType(vmName string, w http.ResponseWriter, r *http.Request
 	case rest == "/agent/cp" && r.Method == http.MethodPost:
 		return "agent-cp", body, nil
 	case rest == "/snapshot" && r.Method == http.MethodPost:
-		return "snapshot-save", body, nil
+		return "snapshot", snapshotControlPayload("save", snapshotNameFromBody(body)), nil
 	case rest == "/snapshots" && r.Method == http.MethodGet:
-		return "snapshot-list", nil, nil
+		return "snapshot", snapshotControlPayload("list", ""), nil
 	}
 
 	if strings.HasPrefix(rest, "/snapshots/") {
 		parts := strings.Split(strings.TrimPrefix(rest, "/snapshots/"), "/")
 		if len(parts) == 1 && r.Method == http.MethodDelete {
-			return "snapshot-delete", map[string]any{"name": parts[0]}, nil
+			return "snapshot", snapshotControlPayload("delete", parts[0]), nil
 		}
 		if len(parts) == 2 && parts[1] == "restore" && r.Method == http.MethodPost {
-			return "snapshot-restore", map[string]any{"name": parts[0]}, nil
+			return "snapshot", snapshotControlPayload("restore", parts[0]), nil
 		}
 	}
 
 	err := fmt.Errorf("unhandled: %s %s", r.Method, r.URL.Path)
 	http.Error(w, err.Error(), http.StatusNotFound)
 	return "", nil, err
+}
+
+func snapshotControlPayload(action, name string) map[string]any {
+	payload := map[string]any{"action": action}
+	if name != "" {
+		payload["name"] = name
+	}
+	return map[string]any{"snapshot": payload}
+}
+
+func snapshotNameFromBody(body map[string]any) string {
+	name, _ := body["name"].(string)
+	return name
 }
