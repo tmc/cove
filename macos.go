@@ -365,6 +365,7 @@ func runMacOSVM() error {
 	if verbose {
 		fmt.Println("=== macOS VM Runner ===")
 	}
+	target := currentVMSelection()
 	preferPasswordDialog = guiMode && !headlessMode
 
 	stopAppleLogStream := maybeStartAppleLogStream()
@@ -376,17 +377,17 @@ func runMacOSVM() error {
 	}
 
 	// Persist CPU/memory config for subsequent boots
-	saveHardwareConfig(vmDir)
+	saveHardwareConfig(target.Directory)
 
 	// Ensure VM directory exists
-	if err := os.MkdirAll(vmDir, 0755); err != nil {
+	if err := os.MkdirAll(target.Directory, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
 
 	// Resolve disk path
 	resolvedDiskPath := diskPath
 	if resolvedDiskPath == "" {
-		resolvedDiskPath = filepath.Join(vmDir, "disk.img")
+		resolvedDiskPath = target.diskPath()
 	}
 
 	_, diskStatErr := os.Stat(resolvedDiskPath)
@@ -415,7 +416,7 @@ func runMacOSVM() error {
 	// Pre-flight: check if another cove process is already using this VM.
 	// A stale control socket or running process can cause "storage device
 	// attachment is invalid" when the VZ framework tries to open the disk.
-	sock := GetControlSocketPath()
+	sock := target.controlSocketPath()
 	if conn, err := net.DialTimeout("unix", sock, 500*time.Millisecond); err == nil {
 		conn.Close()
 		return fmt.Errorf("another cove process is already running this VM (control socket active at %s)\nStop it first, or use a different -vm name", sock)
@@ -430,7 +431,7 @@ func runMacOSVM() error {
 		return fmt.Errorf("disk busy: %w", err)
 	}
 
-	if err := writeLoginScreenCredentialsCache(vmDir, loginScreenCredentials{
+	if err := writeLoginScreenCredentialsCache(target.Directory, loginScreenCredentials{
 		Username: provisionUser,
 		Password: provisionPassword,
 	}); err != nil && verbose {
@@ -439,7 +440,7 @@ func runMacOSVM() error {
 
 	bootLoginScreenCredentials = loginScreenCredentials{}
 	if !headlessMode && diskExists {
-		creds, err := loadBootLoginScreenCredentials(vmDir, resolvedDiskPath)
+		creds, err := loadBootLoginScreenCredentials(target.Directory, resolvedDiskPath)
 		if err != nil {
 			if verbose {
 				fmt.Printf("[login-watchdog] cached credentials unavailable: %v\n", err)
