@@ -447,6 +447,14 @@ func main() {
 			fmt.Fprintf(os.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'cove vzscript' instead.\n")
 			os.Exit(0)
 			return
+		case "serve":
+			// serve uses its own flag set; skip the top-level re-parse so
+			// flags like -token-file and -mcp aren't rejected here.
+			if err := runServeCmd(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
@@ -480,12 +488,6 @@ func main() {
 		}
 
 		switch cmd {
-		case "serve":
-			if err := runServeCmd(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
 		case "install":
 			installVM = true
 			var err error

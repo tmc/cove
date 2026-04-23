@@ -370,3 +370,83 @@ func TestLoadFromStore_ReindexesPriorOps(t *testing.T) {
 		t.Error("expected server_restart error code after reload")
 	}
 }
+
+// TestFileStore_DurabilityAcrossRestart covers the richer durability case:
+// a succeeded op round-trips with Result and Progress intact, a running op
+// in the same directory is failed with server_restart, and both survive a
+// process restart simulated by constructing a fresh store+registry.
+func TestFileStore_DurabilityAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+
+	store, err := NewFileOperationStore(dir)
+	if err != nil {
+		t.Fatalf("NewFileOperationStore: %v", err)
+	}
+	r1, err := NewOperationRegistry(store)
+	if err != nil {
+		t.Fatalf("NewOperationRegistry: %v", err)
+	}
+
+	doneOp, _ := r1.Create("vm/done")
+	if err := r1.Update(doneOp.ID, func(o *Operation) {
+		o.Status = "succeeded"
+		o.Progress = &OperationProgress{Phase: "finalize", Percent: 100}
+		o.Result = map[string]any{"ip": "10.0.0.1", "disk_bytes": float64(1024)}
+	}); err != nil {
+		t.Fatalf("Update done: %v", err)
+	}
+
+	runOp, _ := r1.Create("vm/running")
+	if err := r1.Update(runOp.ID, func(o *Operation) {
+		o.Status = "running"
+		o.Progress = &OperationProgress{Phase: "install", Percent: 42}
+	}); err != nil {
+		t.Fatalf("Update running: %v", err)
+	}
+
+	// Simulate process restart — build a new store+registry over the same dir.
+	store2, err := NewFileOperationStore(dir)
+	if err != nil {
+		t.Fatalf("NewFileOperationStore (restart): %v", err)
+	}
+	r2, err := NewOperationRegistry(store2)
+	if err != nil {
+		t.Fatalf("NewOperationRegistry (restart): %v", err)
+	}
+
+	gotDone, ok := r2.Get(doneOp.ID)
+	if !ok {
+		t.Fatal("succeeded op missing after restart")
+	}
+	if gotDone.Status != "succeeded" {
+		t.Errorf("done status = %q, want succeeded", gotDone.Status)
+	}
+	if gotDone.Progress == nil || gotDone.Progress.Percent != 100 {
+		t.Errorf("done progress not preserved: %+v", gotDone.Progress)
+	}
+	if ip, _ := gotDone.Result["ip"].(string); ip != "10.0.0.1" {
+		t.Errorf("done result.ip = %v, want 10.0.0.1", gotDone.Result["ip"])
+	}
+
+	gotRun, ok := r2.Get(runOp.ID)
+	if !ok {
+		t.Fatal("running op missing after restart")
+	}
+	if gotRun.Status != "failed" {
+		t.Errorf("running-after-restart status = %q, want failed", gotRun.Status)
+	}
+	if gotRun.Error == nil || gotRun.Error.Code != "server_restart" {
+		t.Errorf("running-after-restart error = %+v, want code=server_restart", gotRun.Error)
+	}
+
+	// A third cycle must be idempotent: the failed op must stay failed.
+	store3, _ := NewFileOperationStore(dir)
+	r3, err := NewOperationRegistry(store3)
+	if err != nil {
+		t.Fatalf("NewOperationRegistry (third): %v", err)
+	}
+	again, _ := r3.Get(runOp.ID)
+	if again.Status != "failed" || again.Error == nil || again.Error.Code != "server_restart" {
+		t.Errorf("third-load op = %+v, want stable failed/server_restart", again)
+	}
+}
