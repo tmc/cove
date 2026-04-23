@@ -238,13 +238,16 @@ func (s *ControlServer) Start() error {
 // Stop closes the control server
 func (s *ControlServer) Stop() {
 	s.running.Store(false)
+	if s.iterm2Proxy != nil {
+		ctx, cancel := s.timeoutContext(5 * time.Second)
+		s.iterm2Proxy.Stop(ctx)
+		cancel()
+		s.iterm2Proxy = nil
+	}
 	if s.lifecycleCancel != nil {
 		s.lifecycleCancel()
 		s.lifecycleCancel = nil
 		s.lifecycleCtx = nil
-	}
-	if s.iterm2Proxy != nil {
-		s.iterm2Proxy.Stop()
 	}
 	if s.portForwards != nil {
 		s.portForwards.StopAll()
