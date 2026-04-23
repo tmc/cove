@@ -1787,6 +1787,7 @@ func hardStopVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 
 // runVMWithGUI shows a GUI window with the VM display and runs the NSApplication event loop.
 func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
+	target := currentVMSelection()
 	// Transform the process into a foreground app so the window server
 	// routes events to us. This is required for ForceDirectExecution
 	// (bare binary) where SetActivationPolicy alone doesn't work.
@@ -1847,8 +1848,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		osLabel = "Linux VM"
 	}
 	windowTitle := osLabel
-	if vmName != "" && vmName != "default" {
-		windowTitle = fmt.Sprintf("%s — %s", osLabel, vmName)
+	if target.Name != "" && target.Name != "default" {
+		windowTitle = fmt.Sprintf("%s — %s", osLabel, target.Name)
 	}
 	window.SetTitle(windowTitle)
 	restoredFrame, frameAutosaveName := configureWindowFramePersistence(window)
@@ -1862,15 +1863,15 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Set process name for Cmd-Tab display
 	procName := "cove"
-	if vmName != "" && vmName != "default" {
-		procName = fmt.Sprintf("cove (%s)", vmName)
+	if target.Name != "" && target.Name != "default" {
+		procName = fmt.Sprintf("cove (%s)", target.Name)
 	}
 	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
 
 	// Show VM name on the dock icon badge.
-	if vmName != "" && vmName != "default" {
+	if target.Name != "" && target.Name != "default" {
 		dockTile := app.DockTile()
-		dockTile.SetBadgeLabel(vmName)
+		dockTile.SetBadgeLabel(target.Name)
 	}
 
 	// Set the VM view frame to match the content rect
@@ -1903,8 +1904,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 
 	// Start control socket for screenshots, keyboard, mouse control
-	sock := GetControlSocketPathForVM(vmDir)
-	controlServer := NewControlServerWithVMDir(sock, vmDir)
+	sock := target.controlSocketPath()
+	controlServer := NewControlServerWithVMDir(sock, target.Directory)
 	controlServer.SetVMViewWithWindow(vmView, window)
 	controlServer.SetVM(vm, queue)
 	runtimeFeatures, err := newRuntimeFeatureState()
@@ -1918,15 +1919,12 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		fmt.Printf("Control socket: %s\n", sock)
 		if verbose {
 			fmt.Printf("  cove ctl -socket %s screenshot -o screen.jpg\n", sock)
-			fmt.Printf("  TOKEN=$(cat %s)\n", GetControlTokenPathForVM(vmDir))
+			fmt.Printf("  TOKEN=$(cat %s)\n", GetControlTokenPathForVM(target.Directory))
 			fmt.Printf("  echo '{\"type\":\"screenshot\",\"auth_token\":\"'$TOKEN'\"}' | nc -U %s\n", sock)
 		}
 	}
 	if runHTTPAddr != "" {
-		name := vmName
-		if name == "" {
-			name = "default"
-		}
+		name := target.elevationLabel()
 		ln, err := controlServer.StartHTTP(runHTTPAddr, name)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: start http: %v\n", err)
@@ -1940,10 +1938,10 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	startControlRuntimeInfrastructure(controlServer)
 
 	// Check if vz-agent is available in the guest (background, non-blocking).
-	go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, vmName))
+	go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
 
 	// Create and attach toolbar
-	vmToolbar := NewVMToolbar(window, vmView, vm, queue, controlServer, vmDir)
+	vmToolbar := NewVMToolbar(window, vmView, vm, queue, controlServer, target.Directory)
 
 	// Setup main menu bar
 	setupMainMenu(vmToolbar.delegateID)
