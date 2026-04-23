@@ -50,6 +50,13 @@ type ManifestOptions struct {
 	LumeCompat   bool
 }
 
+// ParsedManifest is the normalized disk and sidecar metadata from a manifest.
+type ParsedManifest struct {
+	Annotations ManifestAnnotations
+	Chunks      []Chunk
+	Blobs       []Descriptor
+}
+
 // BuildManifest builds a deterministic OCI manifest and its config JSON.
 func BuildManifest(opts ManifestOptions) (Manifest, []byte, error) {
 	var manifest Manifest
@@ -127,6 +134,80 @@ func BuildManifest(opts ManifestOptions) (Manifest, []byte, error) {
 		Layers:      layers,
 		Annotations: annotations,
 	}, configJSON, nil
+}
+
+// ParseManifest validates an OCI manifest and returns cove-normalized metadata.
+func ParseManifest(m Manifest) (ParsedManifest, error) {
+	var out ParsedManifest
+	if m.SchemaVersion != 2 {
+		return out, fmt.Errorf("parse manifest: schema version %d, want 2", m.SchemaVersion)
+	}
+	annotations, err := NormalizeManifestAnnotations(m.Annotations)
+	if err != nil {
+		return out, fmt.Errorf("parse manifest: %w", err)
+	}
+	out.Annotations = annotations
+
+	chunksByIndex := make(map[int]Chunk)
+	chunkTotal := -1
+	for _, layer := range m.Layers {
+		ann, err := NormalizeLayerAnnotations(layer.Annotations)
+		if err != nil {
+			return out, fmt.Errorf("parse manifest layer: %w", err)
+		}
+		if ann.UncompressedContentDigest == "" {
+			if ann.Role != "" {
+				out.Blobs = append(out.Blobs, layer)
+			}
+			continue
+		}
+		if ann.Role != "" && ann.Role != "disk" {
+			return out, fmt.Errorf("parse manifest layer: chunk role %q, want disk", ann.Role)
+		}
+		if ann.ChunkTotal <= 0 {
+			return out, fmt.Errorf("parse manifest layer: invalid chunk total %d", ann.ChunkTotal)
+		}
+		if ann.ChunkIndex < 0 || ann.ChunkIndex >= ann.ChunkTotal {
+			return out, fmt.Errorf("parse manifest layer: chunk index %d out of range %d", ann.ChunkIndex, ann.ChunkTotal)
+		}
+		if chunkTotal == -1 {
+			chunkTotal = ann.ChunkTotal
+		} else if chunkTotal != ann.ChunkTotal {
+			return out, fmt.Errorf("parse manifest layer: chunk total %d, want %d", ann.ChunkTotal, chunkTotal)
+		}
+		if _, ok := chunksByIndex[ann.ChunkIndex]; ok {
+			return out, fmt.Errorf("parse manifest layer: duplicate chunk index %d", ann.ChunkIndex)
+		}
+		chunksByIndex[ann.ChunkIndex] = Chunk{
+			Index:  ann.ChunkIndex,
+			Size:   ann.UncompressedSize,
+			Digest: ann.UncompressedContentDigest,
+		}
+	}
+	if chunkTotal == -1 {
+		if annotations.UncompressedDiskSize != 0 {
+			return out, fmt.Errorf("parse manifest: no disk chunks")
+		}
+		return out, nil
+	}
+	if len(chunksByIndex) != chunkTotal {
+		return out, fmt.Errorf("parse manifest: chunks %d, want %d", len(chunksByIndex), chunkTotal)
+	}
+	out.Chunks = make([]Chunk, chunkTotal)
+	var offset int64
+	for i := 0; i < chunkTotal; i++ {
+		chunk, ok := chunksByIndex[i]
+		if !ok {
+			return out, fmt.Errorf("parse manifest: missing chunk %d", i)
+		}
+		chunk.Offset = offset
+		out.Chunks[i] = chunk
+		offset += chunk.Size
+	}
+	if offset != annotations.UncompressedDiskSize {
+		return out, fmt.Errorf("parse manifest: chunk bytes %d, want disk size %d", offset, annotations.UncompressedDiskSize)
+	}
+	return out, nil
 }
 
 // DigestFile returns the sha256 digest and size of path.
