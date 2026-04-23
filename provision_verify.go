@@ -41,12 +41,13 @@ func handleVerify(args []string) error {
 	}
 
 	// Check if VM is running.
-	sock := GetControlSocketPath()
+	target := currentVMSelection()
+	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
-		return verifyRunning(sock, *verboseFlag)
+		return verifyRunningForVM(target, sock, *verboseFlag)
 	}
 
-	return verifyStopped(*verboseFlag, *fixFlag)
+	return verifyStoppedForVM(target, *verboseFlag, *fixFlag)
 }
 
 func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool) {
@@ -98,8 +99,12 @@ func isVMRunning(sock string) bool {
 
 // verifyRunning performs checks against a running VM via the control socket.
 func verifyRunning(sock string, verbose bool) error {
+	return verifyRunningForVM(currentVMSelection(), sock, verbose)
+}
+
+func verifyRunningForVM(target vmSelection, sock string, verbose bool) error {
 	fmt.Println("=== Verifying VM (Running) ===")
-	fmt.Printf("VM: %s\n", vmDir)
+	fmt.Printf("VM: %s\n", target.Directory)
 	fmt.Printf("Control socket: %s\n\n", sock)
 
 	allOK := true
@@ -188,7 +193,7 @@ func verifyRunning(sock string, verbose bool) error {
 		}
 	}
 
-	reportProxyRecoveryState(os.Stdout, vmDir, &allOK)
+	reportProxyRecoveryState(os.Stdout, target.Directory, &allOK)
 	fmt.Println()
 	if allOK {
 		fmt.Println("Verification passed")
@@ -201,7 +206,11 @@ func verifyRunning(sock string, verbose bool) error {
 // verifyStopped mounts the disk and inspects files directly.
 // If fix is true, attempts to repair issues found.
 func verifyStopped(verbose, fix bool) error {
-	diskPath := filepath.Join(vmDir, "disk.img")
+	return verifyStoppedForVM(currentVMSelection(), verbose, fix)
+}
+
+func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
+	diskPath := target.diskPath()
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
 		return fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
 	}
@@ -211,13 +220,13 @@ func verifyStopped(verbose, fix bool) error {
 	}
 
 	fmt.Println("=== Verifying Provisioning Files (Disk) ===")
-	fmt.Printf("VM: %s\n\n", vmDir)
+	fmt.Printf("VM: %s\n\n", target.Directory)
 
 	mountPoint, device, dataPartition, err := attachAndMountDataVolume(diskPath)
 	if err != nil {
 		return fmt.Errorf("mount data volume: %w", err)
 	}
-	defer detachDisk(device)
+	defer detachDiskForPath(device, diskPath)
 
 	// Check if provisioning already completed (self-cleaning scripts are gone).
 	provisionedMarker := filepath.Join(mountPoint, "private", "var", "db", ".vz-provisioned")
@@ -335,7 +344,7 @@ func verifyStopped(verbose, fix bool) error {
 		}
 	}
 
-	reportProxyRecoveryState(os.Stdout, vmDir, &allOK)
+	reportProxyRecoveryState(os.Stdout, target.Directory, &allOK)
 	fmt.Println()
 	if criticalFail {
 		fmt.Println("VERIFICATION FAILED: Critical files missing or have wrong ownership")
@@ -382,7 +391,7 @@ func verifyStopped(verbose, fix bool) error {
 					},
 				}
 				if err := runElevated(em, elevationPrompt(
-					fmt.Sprintf("Re-provision VM %q: fix file ownership.", elevationVMLabel()),
+					fmt.Sprintf("Re-provision VM %q: fix file ownership.", target.elevationLabel()),
 				)); err != nil {
 					fmt.Printf("  Agent inject failed: %v\n", err)
 				} else {
@@ -391,7 +400,7 @@ func verifyStopped(verbose, fix bool) error {
 			}
 		} else if len(badOwnerPaths) > 0 {
 			fmt.Printf("Fixing ownership on %d file(s)...\n", len(badOwnerPaths))
-			if err := fixOwnershipWithSudo(badOwnerPaths, dataPartition); err != nil {
+			if err := fixOwnershipWithSudoForVM(target, badOwnerPaths, dataPartition); err != nil {
 				fmt.Printf("  Ownership fix failed: %v\n", err)
 			} else {
 				fmt.Println("  Ownership fixed")
