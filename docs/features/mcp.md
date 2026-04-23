@@ -3,7 +3,7 @@ title: MCP (Model Context Protocol)
 ---
 # MCP (Model Context Protocol)
 
-`cove serve --mcp` speaks the Model Context Protocol over stdio, so AI agents like Claude Code, Cursor, and Cline can list, boot, screenshot, and drive VMs as tools.
+`cove serve --mcp` speaks the Model Context Protocol over stdio, so AI agents like Claude Code, Cursor, and Cline can list, inspect, screenshot, snapshot, pause, resume, and drive running VMs as tools.
 
 ```bash
 cove serve --mcp
@@ -36,82 +36,40 @@ Cursor and Cline follow the same pattern with their own settings files; any MCP 
 
 ## Tools
 
-Each tool takes a JSON object matching the `input` schema and returns a JSON object matching the `output` schema.
+Each tool takes a JSON object matching the advertised `inputSchema`. Use `cove dump-docs -type mcp` for the machine-readable source of truth.
 
-### list_vms
+| Tool | Purpose | Required input |
+|------|---------|----------------|
+| `vm_list` | List VMs with reachable control sockets. | none |
+| `vm_status` | Report lifecycle state and capabilities. | `name` |
+| `vm_pause` | Pause a running VM. | `name` |
+| `vm_resume` | Resume a paused VM. | `name` |
+| `vm_stop` | Gracefully stop a running VM. | `name` |
+| `vm_screenshot` | Capture the VM display as MCP image content. | `name` |
+| `vm_type` | Type text into the VM. | `name`, `text` |
+| `vm_key` | Send a keyboard event by macOS virtual key code. | `name`, `code` |
+| `vm_mouse` | Send a mouse event at normalized coordinates. | `name`, `x`, `y` |
+| `vm_agent_exec` | Run a guest command through the vz-agent daemon. | `name`, `cmd` |
+| `vm_agent_read` | Read a guest file. | `name`, `path` |
+| `vm_agent_write` | Write a guest file. | `name`, `path`, `data` |
+| `vm_snapshot_save` | Save a VM state snapshot. | `name`, `snapshot` |
+| `vm_snapshot_list` | List VM state snapshots. | `name` |
+| `vm_snapshot_restore` | Restore a VM state snapshot. | `name`, `snapshot` |
+| `vm_snapshot_delete` | Delete a VM state snapshot. | `name`, `snapshot` |
 
-List all VMs and their current states.
+Most tools return a text content block containing the typed control response JSON. `vm_screenshot` returns MCP image content instead, with `mimeType` set to `image/png` or `image/jpeg`.
 
-- **Input**: `{}`
-- **Output**: `{"vms": [{"name": string, "state": string, "cpu": int, "memory_gb": number}]}`
-
-### run_vm
-
-Boot a VM. Returns when the VM is running (or fails).
-
-- **Input**: `{"name": string, "options": {"headless": bool, "gui": bool, "no_resume": bool}}`
-- **Output**: `{"name": string, "state": "running"}`
-
-### stop_vm
-
-Request graceful shutdown. If the agent is available the guest is asked to shut down; otherwise a stop is requested via the framework.
-
-- **Input**: `{"name": string}`
-- **Output**: `{"name": string, "state": "stopped"}`
-
-### screenshot
-
-Capture the VM display. Returned as a base64 PNG so the agent can include it in its context.
-
-- **Input**: `{"name": string, "scale": number}`
-- **Output**: `{"name": string, "format": "png", "data": "<base64>"}`
-
-### exec
-
-Run a command in the guest via the guest agent.
-
-- **Input**: `{"name": string, "cmd": string, "args": [string], "as_user": bool}`
-- **Output**: `{"exit_code": int, "stdout": string, "stderr": string}`
-
-`as_user: false` (default) routes through the root daemon agent on port 1024; `as_user: true` routes through the user session agent, which has TCC/FDA access from a logged-in GUI session.
-
-### agent_read
-
-Read a file from the guest.
-
-- **Input**: `{"name": string, "path": string}`
-- **Output**: `{"path": string, "data": "<base64>"}`
-
-### agent_write
-
-Write a file to the guest.
-
-- **Input**: `{"name": string, "path": string, "data": "<base64>", "mode": int}`
-- **Output**: `{"path": string, "bytes_written": int}`
-
-### status
-
-VM state and capabilities.
-
-- **Input**: `{"name": string}`
-- **Output**: `{"state": string, "can_pause": bool, "can_resume": bool, "can_stop": bool}`
-
-### vzscript_run
-
-Run a built-in or custom [vzscript](vzscript.md) recipe inside the VM. Blocks until the recipe finishes; returns the recipe's aggregated output.
-
-- **Input**: `{"name": string, "recipe": string}`
-- **Output**: `{"recipe": string, "exit_code": int, "log": string}`
+Snapshot tools operate on VM state snapshots, not APFS disk snapshots. Disk snapshots remain available through the CLI (`cove disk-snapshot ...`).
 
 ## Safety notes
 
 - **Stdout is MCP only.** All cove logging, verbose output, and diagnostics go to stderr. This is enforced in MCP mode -- printing to stdout from anywhere in the process would corrupt the framing and detach the client. If you see a client disconnect seconds after startup, check for a rogue log line.
 - **Authentication.** MCP runs in-process under whatever account spawned `cove serve --mcp`, so access is implicitly scoped to that user's VMs in `~/.vz/vms/`. Unlike the HTTP gateway, MCP does not carry a separate bearer token -- the transport is the security boundary.
-- **Tool permissions.** The default tool set is full-access (including `exec` and `agent_write`). Agents that should only observe can be given a narrower client-side allowlist; cove itself exposes the full set.
+- **Tool permissions.** The default tool set is full-access (including `vm_agent_exec` and `vm_agent_write`). Agents that should only observe can be given a narrower client-side allowlist; cove itself exposes the full set.
 
 ## Related
 
 - [Node.js MCP client example](../examples/nodejs-mcp-client.md) -- driving cove from a Node MCP client.
 - [HTTP API](../reference/http-api.md) -- the HTTP transport over the same dispatch.
-- [VZScript Engine](vzscript.md) -- the recipe format used by `vzscript_run`.
-- [Guest Agent](guest-agent.md) -- how `exec`, `agent_read`, and `agent_write` reach the guest.
+- [VZScript Engine](vzscript.md) -- the recipe format used by CLI automation.
+- [Guest Agent](guest-agent.md) -- how `vm_agent_exec`, `vm_agent_read`, and `vm_agent_write` reach the guest.
