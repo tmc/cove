@@ -26,6 +26,9 @@ func TestBuildPushPlan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
 		t.Fatalf("WriteFile(aux.img) error = %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
 
 	plan, err := buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", pushOptions{
 		BaseRef:        "ghcr.io/me/base:v1",
@@ -49,6 +52,18 @@ func TestBuildPushPlan(t *testing.T) {
 	if plan.Chunks[1].Digest != pushTestDigest(disk[4:8]) {
 		t.Fatalf("chunk digest = %q, want %q", plan.Chunks[1].Digest, pushTestDigest(disk[4:8]))
 	}
+	if got, want := len(plan.Blobs), 2; got != want {
+		t.Fatalf("blobs = %d, want %d", got, want)
+	}
+	if plan.Manifest.Annotations[ociimage.CoveAuxDigest] != pushTestDigest([]byte("aux")) {
+		t.Fatalf("manifest aux digest = %q", plan.Manifest.Annotations[ociimage.CoveAuxDigest])
+	}
+	if _, ok := plan.Manifest.Annotations[ociimage.LumeUncompressedDiskSize]; !ok {
+		t.Fatalf("manifest missing lume compatibility annotations: %#v", plan.Manifest.Annotations)
+	}
+	if len(plan.ConfigJSON) == 0 {
+		t.Fatal("ConfigJSON is empty")
+	}
 }
 
 func TestHandlePushDryRunOutput(t *testing.T) {
@@ -62,6 +77,9 @@ func TestHandlePushDryRunOutput(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
 		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
 	}
 
 	out, err := captureStdoutResult(t, func() error {
@@ -106,6 +124,9 @@ func TestBuildPushPlanRejectsActiveVM(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
 		t.Fatalf("WriteFile(aux.img) error = %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
 	ln := listenPushControlSocket(t, vmPath)
 	defer ln.Close()
 
@@ -115,6 +136,28 @@ func TestBuildPushPlanRejectsActiveVM(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), `cannot push an active VM "dev-vm"`) {
 		t.Fatalf("buildPushPlan() error = %v, want active VM", err)
+	}
+}
+
+func TestBuildPushPlanRequiresMacMetadata(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), []byte{1, 2, 3}, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+
+	_, err := buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", pushOptions{
+		ChunkSize: 4,
+		DryRun:    true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "macOS push requires hw.model") {
+		t.Fatalf("buildPushPlan() error = %v, want hw.model requirement", err)
 	}
 }
 
