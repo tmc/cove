@@ -482,8 +482,14 @@ func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 // agentHealthMonitor runs in the background, pinging the agent every 10 seconds.
 // On failure, it marks the agent as disconnected and attempts reconnection with backoff.
 func (s *ControlServer) agentHealthMonitor() {
+	ctx := s.lifecycleContext()
+
 	// Wait a bit for the VM to boot before starting health checks.
-	time.Sleep(5 * time.Second)
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(5 * time.Second):
+	}
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -494,13 +500,17 @@ func (s *ControlServer) agentHealthMonitor() {
 			return
 		}
 
-		s.healthCheckOnce(&failCount)
+		s.healthCheckOnce(ctx, &failCount)
 
-		<-ticker.C
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 
-func (s *ControlServer) healthCheckOnce(failCount *int) {
+func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 	state, err := s.currentVMState()
 	if err != nil || agentUnavailableForVMState(state) != nil {
 		s.setHealthStatus("disconnected", "", "vm not running")
@@ -513,14 +523,14 @@ func (s *ControlServer) healthCheckOnce(failCount *int) {
 	s.agentMu.RUnlock()
 
 	if a != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		agentVer, err := a.Ping(ctx)
+		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		agentVer, err := a.Ping(pingCtx)
 		cancel()
 		if err == nil {
 			*failCount = 0
 			s.setHealthStatus("connected", agentVer, "")
 			s.checkAgentVersion(agentVer)
-			s.healthCheckUserAgent()
+			s.healthCheckUserAgent(ctx)
 			return
 		}
 	}
@@ -548,15 +558,15 @@ func (s *ControlServer) healthCheckOnce(failCount *int) {
 	s.agentMu.RUnlock()
 
 	if a != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		agentVer, err := a.Ping(ctx)
+		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		agentVer, err := a.Ping(pingCtx)
 		cancel()
 		if err == nil {
 			*failCount = 0
 			s.setHealthStatus("connected", agentVer, "")
 			log.Printf("agent-health: reconnected (version %s)", agentVer)
 			s.checkAgentVersion(agentVer)
-			s.healthCheckUserAgent()
+			s.healthCheckUserAgent(ctx)
 			return
 		}
 		s.setHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
@@ -625,7 +635,7 @@ func (s *ControlServer) checkAgentVersion(agentVer string) {
 	}()
 }
 
-func (s *ControlServer) healthCheckUserAgent() {
+func (s *ControlServer) healthCheckUserAgent(ctx context.Context) {
 	ua, err := s.getUserAgent()
 	if err != nil {
 		s.healthMu.Lock()
@@ -634,8 +644,8 @@ func (s *ControlServer) healthCheckUserAgent() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	_, err = ua.UserExec(ctx, []string{"true"}, nil, "")
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	_, err = ua.UserExec(pingCtx, []string{"true"}, nil, "")
 	cancel()
 	s.healthMu.Lock()
 	if err == nil {
