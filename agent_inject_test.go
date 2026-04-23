@@ -40,6 +40,7 @@ func TestVMSelectionHelpers(t *testing.T) {
 		wantSocket   string
 		wantDisk     string
 		wantLinux    string
+		wantStaging  string
 	}{
 		{
 			name:         "default vm",
@@ -49,6 +50,7 @@ func TestVMSelectionHelpers(t *testing.T) {
 			wantSocket:   "/tmp/vms/default/control.sock",
 			wantDisk:     "/tmp/vms/default/disk.img",
 			wantLinux:    "/tmp/vms/default/linux-disk.img",
+			wantStaging:  "/tmp/vms/default/.provision",
 		},
 		{
 			name:         "named vm",
@@ -58,6 +60,7 @@ func TestVMSelectionHelpers(t *testing.T) {
 			wantSocket:   "/tmp/vms/work/control.sock",
 			wantDisk:     "/tmp/vms/work/disk.img",
 			wantLinux:    "/tmp/vms/work/linux-disk.img",
+			wantStaging:  "/tmp/vms/work/.provision",
 		},
 	}
 
@@ -77,6 +80,9 @@ func TestVMSelectionHelpers(t *testing.T) {
 			}
 			if got := tt.selection.linuxDiskPath(); got != tt.wantLinux {
 				t.Fatalf("linuxDiskPath() = %q, want %q", got, tt.wantLinux)
+			}
+			if got := tt.selection.provisionStagingDir(); got != tt.wantStaging {
+				t.Fatalf("provisionStagingDir() = %q, want %q", got, tt.wantStaging)
 			}
 		})
 	}

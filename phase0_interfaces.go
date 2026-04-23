@@ -130,6 +130,10 @@ func (s vmSelection) linuxDiskPath() string {
 	return filepath.Join(s.Directory, "linux-disk.img")
 }
 
+func (s vmSelection) provisionStagingDir() string {
+	return filepath.Join(s.Directory, ".provision")
+}
+
 func (s vmSelection) elevationLabel() string {
 	if s.Name != "" {
 		return s.Name

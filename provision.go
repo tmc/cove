@@ -164,7 +164,11 @@ type ProvisionManifestFile struct {
 
 // provisionStagingDir returns the staging directory for the current VM.
 func provisionStagingDir() string {
-	return filepath.Join(vmDir, ".provision")
+	return provisionStagingDirForVM(currentVMSelection())
+}
+
+func provisionStagingDirForVM(target vmSelection) string {
+	return target.provisionStagingDir()
 }
 
 // stageFile writes data to the staging directory and appends a manifest entry.
@@ -281,7 +285,11 @@ type ProvisionConfig struct {
 
 // cleanVM removes all VM files from vmDir
 func cleanVM() error {
-	fmt.Printf("Cleaning VM directory: %s\n", vmDir)
+	return cleanVMForVM(currentVMSelection())
+}
+
+func cleanVMForVM(target vmSelection) error {
+	fmt.Printf("Cleaning VM directory: %s\n", target.Directory)
 
 	files := []string{
 		"disk.img",
@@ -293,7 +301,7 @@ func cleanVM() error {
 	}
 
 	for _, f := range files {
-		path := filepath.Join(vmDir, f)
+		path := filepath.Join(target.Directory, f)
 		if _, err := os.Stat(path); err == nil {
 			if err := os.Remove(path); err != nil {
 				fmt.Printf("warning: could not remove %s: %v\n", path, err)
@@ -304,7 +312,7 @@ func cleanVM() error {
 	}
 
 	// Remove provisioning staging directory.
-	stagingDir := provisionStagingDir()
+	stagingDir := provisionStagingDirForVM(target)
 	if _, err := os.Stat(stagingDir); err == nil {
 		if err := os.RemoveAll(stagingDir); err != nil {
 			fmt.Printf("warning: could not remove %s: %v\n", stagingDir, err)
@@ -321,6 +329,10 @@ func cleanVM() error {
 // file generation) and writes them to a staging directory. No root access needed.
 // The staged files can then be applied to the disk with applyProvisioningFiles.
 func stageProvisioningFiles(opts InjectOptions) (string, error) {
+	return stageProvisioningFilesForVM(currentVMSelection(), opts)
+}
+
+func stageProvisioningFilesForVM(target vmSelection, opts InjectOptions) (string, error) {
 	// Validate username
 	if err := validateUsername(opts.Config.Username); err != nil {
 		return "", fmt.Errorf("invalid username: %w", err)
@@ -329,12 +341,12 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 		return "", fmt.Errorf("password cannot be empty")
 	}
 
-	diskPath := filepath.Join(vmDir, "disk.img")
+	diskPath := target.diskPath()
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
 	}
 
-	stagingDir := provisionStagingDir()
+	stagingDir := provisionStagingDirForVM(target)
 
 	// If a complete staging directory already exists for the same user, reuse
 	// it. This makes provisioning resumable: an interrupted apply can re-run
@@ -356,7 +368,7 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 
 	manifest := &ProvisionManifest{
 		Version: 1,
-		VMDir:   vmDir,
+		VMDir:   target.Directory,
 		Created: time.Now(),
 	}
 
@@ -445,14 +457,18 @@ func stageProvisioningFiles(opts InjectOptions) (string, error) {
 // copies all staged files to the Data volume with correct ownership.
 // This is the only step that may require elevated privileges.
 func applyProvisioningFiles() error {
-	stagingDir := provisionStagingDir()
+	return applyProvisioningFilesForVM(currentVMSelection())
+}
+
+func applyProvisioningFilesForVM(target vmSelection) error {
+	stagingDir := provisionStagingDirForVM(target)
 
 	manifest, err := readManifest(stagingDir)
 	if err != nil {
 		return fmt.Errorf("no staged provisioning files found: %w\n  run 'cove inject -user <username> -skip-setup-assistant' to stage and apply", err)
 	}
 
-	diskPath := filepath.Join(vmDir, "disk.img")
+	diskPath := target.diskPath()
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
 		return fmt.Errorf("disk image not found: %s", diskPath)
 	}
@@ -462,7 +478,7 @@ func applyProvisioningFiles() error {
 	}
 
 	if verbose {
-		fmt.Printf("Applying %d provisioning files to %s.\n", len(manifest.Files), filepath.Base(vmDir))
+		fmt.Printf("Applying %d provisioning files to %s.\n", len(manifest.Files), filepath.Base(target.Directory))
 	}
 
 	// Mount the Data volume.
@@ -501,7 +517,7 @@ func applyProvisioningFiles() error {
 	// and ownership in one elevated pass. This avoids the problem where APFS
 	// ownership is disabled (default for disk images) and we can't even
 	// create files in system directories without root.
-	if err := applyStagedFiles(stagingDir, mountPoint, dataPart, manifest); err != nil {
+	if err := applyStagedFiles(target, stagingDir, mountPoint, dataPart, manifest); err != nil {
 		return err
 	}
 
@@ -509,7 +525,7 @@ func applyProvisioningFiles() error {
 	os.RemoveAll(stagingDir)
 	markInjectSucceeded()
 	if manifestIncludesAgent(manifest) {
-		if err := setVMAgentRequested(vmDir, detectVMAgentPlatform(vmDir), true, vmAgentSourceProvision); err != nil {
+		if err := setVMAgentRequested(target.Directory, detectVMAgentPlatform(target.Directory), true, vmAgentSourceProvision); err != nil {
 			fmt.Printf("warning: save guest agent config: %v\n", err)
 		}
 	}
@@ -536,7 +552,7 @@ func manifestIncludesAgent(manifest *ProvisionManifest) bool {
 // applyStagedFiles enables APFS ownership, copies all staged files to the
 // mount point, sets permissions and ownership. If not running as root, the
 // entire operation runs via a native Security.framework authorization prompt.
-func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *ProvisionManifest) error {
+func applyStagedFiles(target vmSelection, stagingDir, mountPoint, dataPart string, manifest *ProvisionManifest) error {
 	// Pick a representative file we can post-verify chowned correctly. We
 	// need at least one file with Owner=root:wheel to validate that the
 	// owners-mount actually took effect.
@@ -568,7 +584,7 @@ func applyStagedFiles(stagingDir, mountPoint, dataPart string, manifest *Provisi
 	}
 
 	if err := runElevated(em, elevationPrompt(
-		fmt.Sprintf("Provision VM %q: write %d files (user account, agent, auto-login).", elevationVMLabel(), len(manifest.Files)),
+		fmt.Sprintf("Provision VM %q: write %d files (user account, agent, auto-login).", target.elevationLabel(), len(manifest.Files)),
 	)); err != nil {
 		return err
 	}
@@ -620,10 +636,7 @@ func elevationPrompt(action string) string {
 // elevationVMLabel returns the VM name to show in auth dialogs, defaulting to
 // "default" when no VM is selected yet.
 func elevationVMLabel() string {
-	if vmName != "" {
-		return vmName
-	}
-	return "default"
+	return currentVMSelection().elevationLabel()
 }
 
 // errRestrictedNoElevation is returned when cove is invoked from a restricted
