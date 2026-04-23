@@ -3,7 +3,7 @@ title: Node.js MCP Client for cove
 ---
 # Node.js MCP Client for cove
 
-A minimal TypeScript program that connects to `cove serve --mcp` over stdio using the official Model Context Protocol SDK, lists VMs, captures a screenshot, and runs a shell command inside the guest.
+A minimal TypeScript program that connects to `cove serve --mcp` over stdio using the official Model Context Protocol SDK, lists running VMs, captures a screenshot, and runs a shell command inside the guest.
 
 ## Prerequisites
 
@@ -42,12 +42,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { writeFile } from "node:fs/promises";
 
-// Shape of a cove VM entry returned by `list_vms`.
+// Shape of a cove VM entry returned by `vm_list`.
 interface VMEntry {
   name: string;
-  state: string;
-  cpu?: number;
-  memoryGB?: number;
+  status: string;
+}
+
+interface VMListResponse {
+  vms: VMEntry[];
 }
 
 // Helper: extract the first text content block from a tool response.
@@ -57,6 +59,17 @@ function firstText(result: { content: Array<{ type: string; text?: string }> }):
     throw new Error("tool response contained no text content");
   }
   return block.text;
+}
+
+// Helper: extract the first image content block from a tool response.
+function firstImage(result: {
+  content: Array<{ type: string; data?: string; mimeType?: string }>;
+}): { data: string; mimeType: string } {
+  const block = result.content.find((c) => c.type === "image");
+  if (!block || !block.data) {
+    throw new Error("tool response contained no image content");
+  }
+  return { data: block.data, mimeType: block.mimeType ?? "image/png" };
 }
 
 async function main(): Promise<void> {
@@ -85,8 +98,9 @@ async function main(): Promise<void> {
 
   try {
     // 3. List VMs. The tool returns a JSON string in a text block.
-    const listResult = await client.callTool({ name: "list_vms", arguments: {} });
-    const vms: VMEntry[] = JSON.parse(firstText(listResult));
+    const listResult = await client.callTool({ name: "vm_list", arguments: {} });
+    const listBody: VMListResponse = JSON.parse(firstText(listResult));
+    const vms = listBody.vms;
 
     if (vms.length === 0) {
       console.error("no VMs found. Create one with: cove up -user me");
@@ -94,26 +108,28 @@ async function main(): Promise<void> {
     }
 
     const target = vms[0];
-    console.log(`found ${vms.length} VM(s); using '${target.name}' (state=${target.state})`);
+    console.log(`found ${vms.length} VM(s); using '${target.name}' (status=${target.status})`);
 
-    // 4. Take a screenshot. The tool returns a base64-encoded PNG in a text block.
+    // 4. Take a screenshot. The tool returns MCP image content.
     const shotResult = await client.callTool({
-      name: "screenshot",
-      arguments: { vm: target.name },
+      name: "vm_screenshot",
+      arguments: { name: target.name },
     });
-    const pngBase64 = firstText(shotResult);
-    const pngBytes = Buffer.from(pngBase64, "base64");
+    const shot = firstImage(shotResult);
+    const pngBytes = Buffer.from(shot.data, "base64");
     const shotPath = "/tmp/vm-shot.png";
     await writeFile(shotPath, pngBytes);
-    console.log(`saved screenshot (${pngBytes.length} bytes) to ${shotPath}`);
+    console.log(`saved screenshot (${shot.mimeType}, ${pngBytes.length} bytes) to ${shotPath}`);
 
-    // 5. Run `uname -a` inside the guest via the exec tool.
+    // 5. Run `uname -a` inside the guest via the guest agent tool.
     const execResult = await client.callTool({
-      name: "exec",
-      arguments: { vm: target.name, command: "uname -a" },
+      name: "vm_agent_exec",
+      arguments: { name: target.name, cmd: "uname", args: ["-a"] },
     });
+    const execBody = JSON.parse(firstText(execResult));
+    const execPayload = execBody.agentExecResult ?? {};
     console.log("uname -a output:");
-    console.log(firstText(execResult).trimEnd());
+    console.log((execPayload.stdout ?? execBody.data ?? "").trimEnd());
   } catch (err) {
     console.error("tool call failed:", err);
     process.exitCode = 3;
@@ -139,8 +155,8 @@ npx tsx client.ts
 ## Expected output
 
 ```
-found 1 VM(s); using 'default' (state=running)
-saved screenshot (184213 bytes) to /tmp/vm-shot.png
+found 1 VM(s); using 'default' (status=running)
+saved screenshot (image/png, 184213 bytes) to /tmp/vm-shot.png
 uname -a output:
 Darwin default 24.1.0 Darwin Kernel Version 24.1.0: ... arm64
 ```
@@ -150,7 +166,7 @@ Open `/tmp/vm-shot.png` to confirm the capture.
 ## Troubleshooting
 
 - **`cove serve --mcp` exits immediately**: the `cove` binary is not on `$PATH`, or the MCP server hit an authentication error. Verify with `cove --version` and `cove list`. If needed, pass an absolute path via `command: "/usr/local/bin/cove"` in the transport options.
-- **No VMs found**: the client reports zero entries from `list_vms`. Create one with `cove up -user me` or register an existing disk with `cove add`. Then retry.
+- **No VMs found**: the client reports zero entries from `vm_list`. Create one with `cove up -user me` or register an existing disk with `cove add`. Then retry.
 - **SDK version mismatch**: MCP is young and the TypeScript SDK still makes breaking changes between minor versions. Pin `@modelcontextprotocol/sdk` to the exact version in `package.json` above rather than using a caret range. Bump deliberately and re-test.
 
 ## A note on MCP stability

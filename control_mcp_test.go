@@ -112,7 +112,24 @@ func TestMCP_ToolsList(t *testing.T) {
 			t.Errorf("tool %q missing inputSchema", name)
 		}
 	}
-	want := []string{"vm_list", "vm_status", "vm_pause", "vm_resume", "vm_screenshot"}
+	want := []string{
+		"vm_list",
+		"vm_status",
+		"vm_pause",
+		"vm_resume",
+		"vm_stop",
+		"vm_screenshot",
+		"vm_type",
+		"vm_key",
+		"vm_mouse",
+		"vm_agent_exec",
+		"vm_agent_read",
+		"vm_agent_write",
+		"vm_snapshot_save",
+		"vm_snapshot_list",
+		"vm_snapshot_restore",
+		"vm_snapshot_delete",
+	}
 	for _, w := range want {
 		if !seen[w] {
 			t.Errorf("tool %q not advertised (seen=%v)", w, seen)
