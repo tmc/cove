@@ -51,6 +51,7 @@ func provisionLog(format string, args ...interface{}) {
 func handleProvision(args []string) error {
 	// Check environment variable for debug mode
 	provisionVerbose = os.Getenv("VZ_DEBUG_INJECT") == "1"
+	target := currentVMSelection()
 
 	fs, user, password, admin, skipSetup, autoLogin, noAutoLogin, createUserPlist, uid, sshKeyPath, installXcodeCLI, verboseFlag, applyOnly, stageOnly, enableAgent, enableGuestTools, enableSSHD, bootstrapRecovery, noBootstrapRecovery := newInjectFlagSet()
 
@@ -68,7 +69,7 @@ func handleProvision(args []string) error {
 
 	// Apply-only mode: read manifest and apply staged files to disk.
 	if *applyOnly {
-		return applyProvisioningFiles()
+		return applyProvisioningFilesForVM(target)
 	}
 
 	// Agent-only mode: if -agent was explicitly passed but no -user, just
@@ -111,7 +112,7 @@ func handleProvision(args []string) error {
 	provisionLog("  SSHKeyPath: %s", *sshKeyPath)
 	provisionLog("  EnableGuestTools: %v", *enableGuestTools)
 	provisionLog("  StageOnly: %v", *stageOnly)
-	provisionLog("  VM Dir: %s", vmDir)
+	provisionLog("  VM Dir: %s", target.Directory)
 
 	effectiveBootstrap := *bootstrapRecovery && !*noBootstrapRecovery
 	config := ProvisionConfig{
@@ -138,17 +139,14 @@ func handleProvision(args []string) error {
 	}
 
 	// Phase 1: Stage all files (builds, downloads, generates — no root needed).
-	if _, err := stageProvisioningFiles(opts); err != nil {
+	if _, err := stageProvisioningFilesForVM(target, opts); err != nil {
 		return err
 	}
 
 	if *stageOnly {
 		fmt.Println()
 		fmt.Println("Files staged successfully. To apply to the VM disk, run:")
-		vmFlag := ""
-		if vmName != "" {
-			vmFlag = fmt.Sprintf(" -vm %s", vmName)
-		}
+		vmFlag := target.hintFlag()
 		fmt.Printf("  sudo ./cove%s provision -apply\n", vmFlag)
 		fmt.Println()
 		fmt.Println("Or without sudo (will show a native macOS authorization prompt):")
@@ -157,7 +155,7 @@ func handleProvision(args []string) error {
 	}
 
 	// Phase 2: Apply staged files to the VM disk.
-	return applyProvisioningFiles()
+	return applyProvisioningFilesForVM(target)
 }
 
 func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *bool, *bool, *int, *string, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool) {
