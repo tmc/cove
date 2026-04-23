@@ -1589,6 +1589,10 @@ func requireAgentExecSuccess(action string, resp *controlpb.ControlResponse) err
 }
 
 func ctlResetPassword(sock string, timeout time.Duration, username, password string) error {
+	return ctlResetPasswordForVM(currentVMSelection(), sock, timeout, username, password)
+}
+
+func ctlResetPasswordForVM(target vmSelection, sock string, timeout time.Duration, username, password string) error {
 	// Try agent first (VM running).
 	req := &controlpb.ControlRequest{
 		Type: "agent-exec",
@@ -1623,7 +1627,7 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 		if err := requireAgentExecSuccess("refresh autologin artifacts", kcResp); err != nil {
 			return err
 		}
-		if err := writeLoginScreenCredentialsCache(vmDir, loginScreenCredentials{
+		if err := writeLoginScreenCredentialsCache(target.Directory, loginScreenCredentials{
 			Username: username,
 			Password: password,
 		}); err != nil {
@@ -1635,7 +1639,7 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 
 	// Agent not available — try offline disk injection.
 	fmt.Println("Guest agent not reachable, attempting offline password reset...")
-	diskPath := filepath.Join(vmDir, "disk.img")
+	diskPath := target.diskPath()
 	if _, statErr := os.Stat(diskPath); os.IsNotExist(statErr) {
 		return fmt.Errorf("vm disk not found: %s", diskPath)
 	}
@@ -1644,7 +1648,7 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 	if mountErr != nil {
 		return fmt.Errorf("mount data volume: %w", mountErr)
 	}
-	defer detachDisk(device)
+	defer detachDiskForPath(device, diskPath)
 
 	// Update kcpassword.
 	kcData := EncodeKCPassword(password)
@@ -1717,13 +1721,13 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 			},
 		}
 		if err := runElevated(em, elevationPrompt(
-			fmt.Sprintf("Reset password on VM %q.", elevationVMLabel()),
+			fmt.Sprintf("Reset password on VM %q.", target.elevationLabel()),
 		)); err != nil {
 			fmt.Fprintf(os.Stderr, "ownership fix failed: %v\n", err)
 		}
 	}
 
-	if err := writeLoginScreenCredentialsCache(vmDir, loginScreenCredentials{
+	if err := writeLoginScreenCredentialsCache(target.Directory, loginScreenCredentials{
 		Username: username,
 		Password: password,
 	}); err != nil {
