@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +89,35 @@ func TestHandlePushRequiresDryRun(t *testing.T) {
 	}
 }
 
+func TestBuildPushPlanRejectsActiveVM(t *testing.T) {
+	home, err := os.MkdirTemp("/tmp", "vzpush-")
+	if err != nil {
+		t.Fatalf("MkdirTemp() error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	t.Setenv("HOME", home)
+	vmPath := filepath.Join(home, ".vz", "vms", "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), []byte{1, 2, 3}, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	ln := listenPushControlSocket(t, vmPath)
+	defer ln.Close()
+
+	_, err = buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", pushOptions{
+		ChunkSize: 4,
+		DryRun:    true,
+	})
+	if err == nil || !strings.Contains(err.Error(), `cannot push an active VM "dev-vm"`) {
+		t.Fatalf("buildPushPlan() error = %v, want active VM", err)
+	}
+}
+
 func TestParsePushArgs(t *testing.T) {
 	opts, pos, err := parsePushArgs([]string{
 		"--base", "base",
@@ -139,4 +170,25 @@ func (ioDiscard) Write(p []byte) (int, error) {
 func pushTestDigest(b []byte) string {
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func listenPushControlSocket(t *testing.T, vmPath string) net.Listener {
+	t.Helper()
+
+	ln, err := net.Listen("unix", GetControlSocketPathForVM(vmPath))
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if _, err := bufio.NewReader(conn).ReadBytes('\n'); err != nil {
+			return
+		}
+		_, _ = conn.Write([]byte(`{"success":true}` + "\n"))
+	}()
+	return ln
 }

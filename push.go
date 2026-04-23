@@ -101,6 +101,9 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 	if !ValidateVM(vmDirectory) {
 		return nil, fmt.Errorf("vm not found or invalid: %s", vmDirectory)
 	}
+	if err := ensurePushSourceInactive(vmDirectory); err != nil {
+		return nil, err
+	}
 	diskPath, err := pushDiskPath(vmDirectory)
 	if err != nil {
 		return nil, err
@@ -138,6 +141,18 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func ensurePushSourceInactive(vmDirectory string) error {
+	active, err := probeControlSocket(GetControlSocketPathForVM(vmDirectory), pullTargetProbeTimeout)
+	if err != nil {
+		return err
+	}
+	if active {
+		name := filepath.Base(vmDirectory)
+		return fmt.Errorf("cove push: cannot push an active VM %q. Stop the VM first: cove ctl stop %s", name, name)
+	}
+	return nil
 }
 
 func pushDiskPath(vmDirectory string) (string, error) {
