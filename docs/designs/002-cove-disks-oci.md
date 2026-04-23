@@ -198,7 +198,7 @@ The pull path accepts both cove-native and lume annotation sets. When a lume-pro
 | `org.trycua.lume.upload-time`                  | `org.tmc.cove.upload-time`              | manifest   |
 | `org.trycua.lume.uncompressed-disk-size`       | `org.tmc.cove.uncompressed-disk-size`   | manifest   |
 
-Translation is one-way (pull only). If both sets appear on the same manifest (unlikely), cove-native wins; lume keys are ignored with a debug log. The translation table lives in `registry/annotations.go` and is covered by golden tests using a canonical lume-produced manifest fixture.
+Translation is one-way (pull only). If both sets appear on the same manifest (unlikely), cove-native wins; lume keys are ignored with a debug log. The translation table starts in `internal/ociimage/annotations.go` and is covered by golden tests using a canonical lume-produced manifest fixture.
 
 ### Chunking
 
@@ -439,7 +439,7 @@ So the defaults optimize for the common cases — frictionless migration in, ind
 | cove pull into a running VM would orphan inode via APFS rename-while-open | Control-socket probe with 500ms deadline at pull start; fatal if VM responds, cleanup-and-proceed if stale sock |
 | Store blobs fill the disk (v0.2) | `cove store gc` + size-capped cache with LRU eviction; warn at 80% |
 | APFS clonefile fails (non-APFS, cross-volume) | Fall back to `io.Copy` with warning; log volume info |
-| Lume annotation schema drifts | Pin lume keys in `registry/annotations.go` translation table; CI golden-test against a canonical lume image fixture |
+| Lume annotation schema drifts | Pin lume keys in `internal/ociimage/annotations.go` translation table; CI golden-test against a canonical lume image fixture |
 | Large pull on bad network | Parallel range requests; integrity via digest; v0.2 adds resume |
 | Zero-chunk false-positive | Explicit zero-digest layers; sparse `WriteAt` skips zero chunks correctly |
 | **GC deletes in-flight blobs (v0.2)** | **flock + 1h mtime grace (P0 add)** |
@@ -456,7 +456,7 @@ So the defaults optimize for the common cases — frictionless migration in, ind
 |---|---|---|---|
 | `registry/oci_client.go` — push/pull via go-containerregistry | ~400 | 2 | v0.1 |
 | `registry/chunker.go` — fixed-size LZ4 chunker + zero-detect | ~200 | 1 | v0.1 |
-| `registry/manifest.go` — cove-native schema + lume translation table | ~200 | 0.75 | v0.1 |
+| `internal/ociimage/annotations.go` — cove-native schema + lume translation table | ~200 | 0.75 | v0.1 |
 | `registry/direct_writer.go` — streaming decompress + `WriteAt` into `disk.img` | ~150 | 0.5 | v0.1 |
 | `images.go` — `cove images list/rm` subcommand | ~100 | 0.5 | v0.1 |
 | `compact.go` — agent-aware `cove compact` | ~150 | 0.5 | v0.1 |
