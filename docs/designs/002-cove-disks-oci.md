@@ -273,7 +273,7 @@ Docs explicitly call out the credential helper requirement and setup instruction
 
 ### Library choice
 
-[`go-containerregistry`](https://github.com/google/go-containerregistry) — handles manifests, blob uploads, auth (including keychain helpers), reference parsing. Net-new cove code is ~400 LOC (chunker, zero-detect, annotation schema). Everything else is library calls.
+[`go-containerregistry`](https://github.com/google/go-containerregistry) — handles manifests, blob uploads, auth (including keychain helpers), reference parsing. Net-new cove code is ~400 LOC (chunk metadata, zero-detect, annotation schema). Everything else is library calls.
 
 ---
 
@@ -455,7 +455,7 @@ So the defaults optimize for the common cases — frictionless migration in, ind
 | Piece | LOC | Days | Milestone |
 |---|---|---|---|
 | `registry/oci_client.go` — push/pull via go-containerregistry | ~400 | 2 | v0.1 |
-| `registry/chunker.go` — fixed-size LZ4 chunker + zero-detect | ~200 | 1 | v0.1 |
+| `internal/ociimage/chunks.go` — fixed-size chunk metadata + zero-detect | ~200 | 1 | v0.1 |
 | `internal/ociimage/annotations.go` — cove-native schema + lume translation table | ~200 | 0.75 | v0.1 |
 | `registry/direct_writer.go` — streaming decompress + `WriteAt` into `disk.img` | ~150 | 0.5 | v0.1 |
 | `images.go` — `cove images list/rm` subcommand | ~100 | 0.5 | v0.1 |
