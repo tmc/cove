@@ -13,6 +13,26 @@ import (
 
 const defaultSharedFoldersMountPoint = "/Volumes/My Shared Files"
 
+type sharedFolderMountTimeouts struct {
+	agentPing time.Duration
+	mkdir     time.Duration
+	mounts    time.Duration
+	listTags  time.Duration
+	unmount   time.Duration
+	mount     time.Duration
+}
+
+func defaultSharedFolderMountTimeouts() sharedFolderMountTimeouts {
+	return sharedFolderMountTimeouts{
+		agentPing: 5 * time.Second,
+		mkdir:     10 * time.Second,
+		mounts:    10 * time.Second,
+		listTags:  5 * time.Second,
+		unmount:   10 * time.Second,
+		mount:     15 * time.Second,
+	}
+}
+
 func handleVMSharedFolderCommand(args []string) error {
 	if len(args) == 0 {
 		printSharedFolderUsage(os.Stderr)
@@ -331,38 +351,58 @@ func removeSharedFolderEntry(vmDirectory, selector string) (bool, error) {
 }
 
 func mountSharedFoldersInGuest(vmDirectory, mountPoint string) (bool, error) {
-	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
-	client.SetTimeout(20 * time.Second)
+	return mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint, defaultSharedFolderMountTimeouts())
+}
 
+func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeouts sharedFolderMountTimeouts) (bool, error) {
+	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
+
+	client.SetTimeout(timeouts.agentPing)
 	if _, err := client.AgentPingTyped(); err != nil {
 		return false, fmt.Errorf("guest agent unavailable: %w", err)
 	}
 
-	if _, err := client.AgentExecTyped([]string{"mkdir", "-p", mountPoint}, nil, ""); err != nil {
+	if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
 		return false, fmt.Errorf("create mount point %q: %w", mountPoint, err)
 	}
 
-	mountRes, err := client.AgentExecTyped([]string{"mount"}, nil, "")
+	mountRes, err := client.AgentExecTypedTimeout([]string{"mount"}, nil, "", timeouts.mounts)
 	if err != nil {
 		return false, fmt.Errorf("query mounts: %w", err)
 	}
 	tags := expectedSharedFolderTags(vmDirectory)
 	if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
-		lsRes, lsErr := client.AgentExecTyped([]string{"ls", "-1", mountPoint}, nil, "")
+		lsRes, lsErr := client.AgentExecTypedTimeout([]string{"ls", "-1", mountPoint}, nil, "", timeouts.listTags)
 		if sharedFoldersMountedAndSynced(mountRes.Stdout, mountPoint, tags, lsRes, lsErr) {
 			return false, nil
 		}
+		if lsErr != nil {
+			return false, fmt.Errorf("inspect mounted shared folders at %q: %w", mountPoint, lsErr)
+		}
+		if lsRes == nil {
+			return false, fmt.Errorf("inspect mounted shared folders at %q: missing response", mountPoint)
+		}
+		if lsRes.ExitCode != 0 {
+			msg := strings.TrimSpace(lsRes.Stderr)
+			if msg == "" {
+				msg = strings.TrimSpace(lsRes.Stdout)
+			}
+			if msg == "" {
+				msg = "unknown error"
+			}
+			return false, fmt.Errorf("inspect mounted shared folders at %q: exit %d: %s", mountPoint, lsRes.ExitCode, msg)
+		}
 
 		// Refresh mounted view to pick up newly hotplugged or removed tags.
-		if _, err := client.AgentExecTyped([]string{"umount", mountPoint}, nil, ""); err != nil && !strings.Contains(strings.ToLower(err.Error()), "not currently mounted") {
+		if _, err := client.AgentExecTypedTimeout([]string{"umount", mountPoint}, nil, "", timeouts.unmount); err != nil && !strings.Contains(strings.ToLower(err.Error()), "not currently mounted") {
 			return false, fmt.Errorf("remount shared folders: unmount %q: %w", mountPoint, err)
 		}
-		if _, err := client.AgentExecTyped([]string{"mkdir", "-p", mountPoint}, nil, ""); err != nil {
+		if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
 			return false, fmt.Errorf("recreate mount point %q: %w", mountPoint, err)
 		}
 	}
 
-	res, err := client.AgentExecTyped([]string{"mount_virtiofs", SharedFoldersVirtioFSTag, mountPoint}, nil, "")
+	res, err := client.AgentExecTypedTimeout([]string{"mount_virtiofs", SharedFoldersVirtioFSTag, mountPoint}, nil, "", timeouts.mount)
 	if err != nil {
 		return false, fmt.Errorf("mount shared folders: %w", err)
 	}
