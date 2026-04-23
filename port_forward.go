@@ -16,13 +16,13 @@ type PortForward struct {
 	HostPort  int
 	GuestPort uint32
 	listener  net.Listener
-	cs        *ControlServer
+	connector guestPortConnector
 	cancel    context.CancelFunc
 	mu        sync.Mutex
 	conns     int // active connection count
 }
 
-// PortForwardManager tracks active port forwards for a ControlServer.
+// PortForwardManager tracks active port forwards.
 type PortForwardManager struct {
 	mu       sync.Mutex
 	forwards map[int]*PortForward // keyed by host port
@@ -36,12 +36,15 @@ func NewPortForwardManager() *PortForwardManager {
 }
 
 // Start begins forwarding from hostPort to guest vsock guestPort.
-func (m *PortForwardManager) Start(cs *ControlServer, hostPort int, guestPort uint32) error {
+func (m *PortForwardManager) Start(connector guestPortConnector, hostPort int, guestPort uint32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if _, exists := m.forwards[hostPort]; exists {
 		return fmt.Errorf("host port %d already forwarded", hostPort)
+	}
+	if connector == nil {
+		return fmt.Errorf("guest connector unavailable")
 	}
 
 	addr := fmt.Sprintf("localhost:%d", hostPort)
@@ -55,7 +58,7 @@ func (m *PortForwardManager) Start(cs *ControlServer, hostPort int, guestPort ui
 		HostPort:  hostPort,
 		GuestPort: guestPort,
 		listener:  ln,
-		cs:        cs,
+		connector: connector,
 		cancel:    cancel,
 	}
 	m.forwards[hostPort] = pf
@@ -137,13 +140,7 @@ func (pf *PortForward) handleConn(ctx context.Context, hostConn net.Conn) {
 		pf.mu.Unlock()
 	}()
 
-	// Connect to guest vsock port via the Virtualization framework.
-	mgr, err := NewVsockDeviceManager(pf.cs.vm, pf.cs.vmQueue)
-	if err != nil {
-		fmt.Printf("[port-forward] vsock device: %v\n", err)
-		return
-	}
-	vsockConn, err := mgr.ConnectToAgent(pf.GuestPort)
+	vsockConn, err := pf.connector.ConnectToGuestPort(pf.GuestPort)
 	if err != nil {
 		fmt.Printf("[port-forward] vsock connect %d: %v\n", pf.GuestPort, err)
 		return
@@ -181,7 +178,7 @@ func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *co
 		if cmd.HostPort == 0 || cmd.GuestPort == 0 {
 			return &controlpb.ControlResponse{Error: "host_port and guest_port required"}
 		}
-		if err := s.portForwards.Start(s, int(cmd.HostPort), cmd.GuestPort); err != nil {
+		if err := s.portForwards.Start(newControlServerGuestConnector(s), int(cmd.HostPort), cmd.GuestPort); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		msg := fmt.Sprintf("forwarding localhost:%d -> vsock:%d", cmd.HostPort, cmd.GuestPort)

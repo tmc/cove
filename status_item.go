@@ -18,17 +18,17 @@ import (
 var statusItemDelegateSerial uint64
 
 type VMStatusItemController struct {
-	app        appkit.NSApplication
-	statusBar  appkit.NSStatusBar
-	statusItem appkit.NSStatusItem
-	menu       appkit.NSMenu
-	name       string
-	vm         vz.VZVirtualMachine
-	vmQueue    dispatch.Queue
-	control    *ControlServer
-	gui        VMGUIController
-	toolbar    *VMToolbar
-	quit       func()
+	app         appkit.NSApplication
+	statusBar   appkit.NSStatusBar
+	statusItem  appkit.NSStatusItem
+	menu        appkit.NSMenu
+	name        string
+	vm          vz.VZVirtualMachine
+	vmQueue     dispatch.Queue
+	screenshots vmScreenshotProvider
+	gui         VMGUIController
+	toolbar     *VMToolbar
+	quit        func()
 
 	mu         sync.Mutex
 	window     appkit.NSWindow
@@ -36,18 +36,18 @@ type VMStatusItemController struct {
 	delegateID objc.ID
 }
 
-func NewVMStatusItemController(app appkit.NSApplication, vm vz.VZVirtualMachine, queue dispatch.Queue, control *ControlServer, window appkit.NSWindow, gui VMGUIController, toolbar *VMToolbar, quit func()) *VMStatusItemController {
+func NewVMStatusItemController(app appkit.NSApplication, vm vz.VZVirtualMachine, queue dispatch.Queue, screenshots vmScreenshotProvider, window appkit.NSWindow, gui VMGUIController, toolbar *VMToolbar, quit func()) *VMStatusItemController {
 	c := &VMStatusItemController{
-		app:     app,
-		name:    statusItemVMName(),
-		vm:      vm,
-		vmQueue: queue,
-		control: control,
-		window:  window,
-		gui:     gui,
-		toolbar: toolbar,
-		quit:    quit,
-		state:   vz.VZVirtualMachineState(vm.State()),
+		app:         app,
+		name:        statusItemVMName(),
+		vm:          vm,
+		vmQueue:     queue,
+		screenshots: screenshots,
+		window:      window,
+		gui:         gui,
+		toolbar:     toolbar,
+		quit:        quit,
+		state:       vz.VZVirtualMachineState(vm.State()),
 	}
 	c.initOnMain()
 	return c
@@ -423,7 +423,7 @@ func (c *VMStatusItemController) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID)
 
 func (c *VMStatusItemController) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		saveCurrentVMScreenshot("Status item", c.control)
+		saveCurrentVMScreenshot("Status item", c.screenshots)
 	})
 }
 

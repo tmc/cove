@@ -1427,7 +1427,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			return fmt.Errorf("headless presentation: %w", err)
 		}
 	}
-	guiController.setControlServer(controlServer)
+	guiController.setControlBindings(controlServer)
 	controlServer.SetGUIController(guiController)
 	if err := controlServer.Start(); err != nil {
 		fmt.Printf("warning: control socket: %v\n", err)

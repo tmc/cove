@@ -56,13 +56,13 @@ type VMToolbar struct {
 	vmDirectory    string
 	delegateID     objc.ID
 	items          map[string]appkit.NSToolbarItem
-	control        *ControlServer
+	screenshots    vmScreenshotProvider
 	captureEnabled bool
 	installing     bool // true during installation (disables most VM controls)
 }
 
 // NewVMToolbar creates and attaches a toolbar to the VM window.
-func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.VZVirtualMachine, queue dispatch.Queue, control *ControlServer, vmDirectory string) *VMToolbar {
+func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.VZVirtualMachine, queue dispatch.Queue, screenshots vmScreenshotProvider, vmDirectory string) *VMToolbar {
 	t := &VMToolbar{
 		window:      window,
 		vmView:      vmView,
@@ -70,7 +70,7 @@ func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.
 		vmQueue:     queue,
 		vmDirectory: vmDirectory,
 		items:       make(map[string]appkit.NSToolbarItem),
-		control:     control,
+		screenshots: screenshots,
 	}
 
 	t.registerDelegate()
@@ -442,7 +442,7 @@ func (t *VMToolbar) handleCaptureInput(_ objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func (t *VMToolbar) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	saveCurrentVMScreenshot("Toolbar", t.control)
+	saveCurrentVMScreenshot("Toolbar", t.screenshots)
 }
 
 // handleAddSharedFolder opens an NSOpenPanel to pick a directory,
@@ -555,67 +555,18 @@ func (t *VMToolbar) saveAndApplySharedFolders(folders []SharedFolderEntry) {
 // It finds the first directory sharing device and sets a VZMultipleDirectoryShare
 // containing all configured folders.
 func (t *VMToolbar) applySharedFoldersToVM(folders []SharedFolderEntry) {
-	DispatchAsyncQueue(t.vmQueue, func() {
-		state := vz.VZVirtualMachineState(t.vm.State())
-		if state != vz.VZVirtualMachineStateRunning && state != vz.VZVirtualMachineStatePaused {
-			fmt.Println("Toolbar: VM not running, shares will apply on next boot")
+	go func() {
+		applied, err := newSharedFolderRuntimeApplier(t.vm, t.vmQueue).Apply(folders)
+		if err != nil {
+			fmt.Printf("Toolbar: %v\n", err)
 			return
 		}
-
-		devices := t.vm.DirectorySharingDevices()
-		if len(devices) == 0 {
-			fmt.Println("Toolbar: no directory sharing devices configured")
-			return
-		}
-
-		// Find the dedicated shared folders device by tag.
-		var device vz.VZVirtioFileSystemDevice
-		for _, d := range devices {
-			dev := vz.VZVirtioFileSystemDeviceFromID(d.ID)
-			if dev.Tag() == SharedFoldersVirtioFSTag {
-				device = dev
-				break
-			}
-		}
-		if device.ID == 0 {
-			fmt.Println("Toolbar: shared folders device not found (restart VM to enable)")
-			return
-		}
-
-		if len(folders) == 0 {
-			// Set an empty share
-			emptyDict := foundation.NewNSDictionary()
-			emptyShare := vz.NewMultipleDirectoryShareWithDirectories(&emptyDict)
-			device.SetShare(&emptyShare.VZDirectoryShare)
+		if applied == 0 {
 			fmt.Println("Toolbar: cleared all shared folders on running VM")
 			return
 		}
-
-		// Build NSDictionary: tag → VZSharedDirectory
-		keys := make([]objectivec.IObject, 0, len(folders))
-		values := make([]objectivec.IObject, 0, len(folders))
-		for _, f := range folders {
-			if _, err := os.Stat(f.Path); err != nil {
-				fmt.Printf("Toolbar: skipping missing folder: %s\n", f.Path)
-				continue
-			}
-			url := foundation.NewURLFileURLWithPath(f.Path)
-			sharedDir := vz.NewSharedDirectoryWithURLReadOnly(url, f.ReadOnly)
-			objc.Send[objc.ID](sharedDir.ID, objc.Sel("retain"))
-			nsKey := objc.String(f.Tag)
-			keys = append(keys, objectivec.ObjectFromID(nsKey))
-			values = append(values, objectivec.ObjectFromID(sharedDir.ID))
-		}
-
-		if len(keys) == 0 {
-			return
-		}
-
-		dict := newDictFromSlices(values, keys)
-		share := vz.NewMultipleDirectoryShareWithDirectories(&dict)
-		device.SetShare(&share.VZDirectoryShare)
-		fmt.Printf("Toolbar: hotplugged %d shared folder(s) into running VM\n", len(keys))
-	})
+		fmt.Printf("Toolbar: hotplugged %d shared folder(s) into running VM\n", applied)
+	}()
 }
 
 func (t *VMToolbar) ensureGuestSharedFoldersMounted() {

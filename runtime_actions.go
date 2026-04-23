@@ -149,14 +149,14 @@ func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 	}()
 }
 
-func saveCurrentVMScreenshot(source string, control *ControlServer) {
+func saveCurrentVMScreenshot(source string, provider vmScreenshotProvider) {
 	label := actionSourceLabel(source)
-	if control == nil {
-		fmt.Printf("%s: no control server for screenshot\n", label)
+	if provider == nil {
+		fmt.Printf("%s: screenshot unavailable\n", label)
 		return
 	}
 
-	img, errMsg := control.captureDisplayImage()
+	img, errMsg := provider.captureDisplayImage()
 	if errMsg != "" {
 		fmt.Fprintf(os.Stderr, "error: screenshot: %s\n", errMsg)
 		return
