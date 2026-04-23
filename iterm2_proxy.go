@@ -105,14 +105,12 @@ func (p *ITerm2Proxy) Start() error {
 }
 
 // Stop shuts down the proxy server.
-func (p *ITerm2Proxy) Stop() error {
+func (p *ITerm2Proxy) Stop(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	err := p.server.Shutdown(ctx)
 	p.running = false
 	return err
@@ -278,7 +276,9 @@ func (s *ControlServer) handleITerm2ProxyStop() *controlpb.ControlResponse {
 			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "iterm2 proxy not running"}}}
 	}
 
-	if err := s.iterm2Proxy.Stop(); err != nil {
+	ctx, cancel := s.timeoutContext(5 * time.Second)
+	defer cancel()
+	if err := s.iterm2Proxy.Stop(ctx); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("stop iterm2 proxy: %v", err)}
 	}
 	s.iterm2Proxy = nil
