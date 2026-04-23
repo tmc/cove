@@ -259,7 +259,10 @@ func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pend
 // Idempotent: if the running VM already has the same agent version, returns
 // without rebuilding.
 func provisionAgent() error {
-	target := currentVMSelection()
+	return provisionAgentForVM(currentVMSelection())
+}
+
+func provisionAgentForVM(target vmSelection) error {
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
 		fmt.Println("Updating agent in running VM via vsock...")
