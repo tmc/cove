@@ -10,6 +10,7 @@ Architectural proposals for cove features, post-review. Each doc has been throug
 4. [Churn benchmark harness](004-churn-benchmark-harness.md) — pre-v0.3 — the 20-cell experiment that picks the default `compact_mode` and gates the cross-machine cache-from story.
 5. [v0.4 secrets architecture](005-v04-secrets-architecture.md) — v0.4 — Council-consultation brief recommending URI delegation for external secret stores (1Password, Vault, SOPS, age).
 6. [cove Linux support](006-cove-linux-v02.md) — v0.2 — Linux guest support: nested virt (M3/M4 gated), 4 distros, agent unary RPCs (ResizeExecTTY/SignalExec/SetTime), connect-go polyglot server, Docker-shaped HTTP URLs.
+7. [beat lume roadmap](011-beat-lume-roadmap.md) — 0.1 -> 0.4 — strategic roadmap: win on local state, guest-agent control, Linux developer workflows, and `cove build`; use interop only at the boundary.
 
 ## How to amend
 
