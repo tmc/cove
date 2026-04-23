@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -97,6 +98,52 @@ func TestHandlePushDryRunOutput(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output %q missing %q", out, want)
 		}
+	}
+}
+
+func TestHandlePushDryRunWritesManifest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), []byte{1, 2, 3}, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+
+	_, err := captureStdoutResult(t, func() error {
+		return handlePush([]string{
+			"--dry-run",
+			"--chunk-size", "1",
+			"--manifest-out", manifestPath,
+			"dev-vm",
+			"ghcr.io/me/dev-vm:v1",
+		})
+	})
+	if err != nil {
+		t.Fatalf("handlePush(): %v", err)
+	}
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	var manifest ociimage.Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("Unmarshal(manifest) error = %v", err)
+	}
+	parsed, err := ociimage.ParseManifest(manifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(): %v", err)
+	}
+	if got, want := len(parsed.Chunks), 1; got != want {
+		t.Fatalf("chunks = %d, want %d", got, want)
 	}
 }
 
@@ -228,6 +275,7 @@ func TestParsePushArgs(t *testing.T) {
 		"--lume-compat",
 		"--additional-tag", "latest",
 		"--additional-tag", "stable",
+		"--manifest-out", "manifest.json",
 		"vm",
 		"ref",
 	}, ioDiscard{})
@@ -239,6 +287,9 @@ func TestParsePushArgs(t *testing.T) {
 	}
 	if !opts.DryRun || !opts.LumeCompat || opts.BaseRef != "base" {
 		t.Fatalf("opts = %#v", opts)
+	}
+	if opts.ManifestOut != "manifest.json" {
+		t.Fatalf("ManifestOut = %q, want manifest.json", opts.ManifestOut)
 	}
 	if got := strings.Join(opts.AdditionalTags, ","); got != "latest,stable" {
 		t.Fatalf("AdditionalTags = %q, want latest,stable", got)

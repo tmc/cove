@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,24 +20,26 @@ type pushOptions struct {
 	DryRun         bool
 	LumeCompat     bool
 	AdditionalTags stringList
+	ManifestOut    string
 }
 
 type pushPlan struct {
-	VMName     string
-	VMDir      string
-	DiskPath   string
-	Ref        string
-	BaseRef    string
-	ChunkSize  int64
-	DiskSize   int64
-	Chunks     []ociimage.Chunk
-	ZeroChunks int
-	ZeroBytes  int64
-	LumeCompat bool
-	ExtraTags  []string
-	Blobs      []ociimage.Blob
-	Manifest   ociimage.Manifest
-	ConfigJSON []byte
+	VMName      string
+	VMDir       string
+	DiskPath    string
+	Ref         string
+	BaseRef     string
+	ChunkSize   int64
+	DiskSize    int64
+	Chunks      []ociimage.Chunk
+	ZeroChunks  int
+	ZeroBytes   int64
+	LumeCompat  bool
+	ExtraTags   []string
+	ManifestOut string
+	Blobs       []ociimage.Blob
+	Manifest    ociimage.Manifest
+	ConfigJSON  []byte
 }
 
 type stringList []string
@@ -70,6 +73,11 @@ func handlePush(args []string) error {
 	if err != nil {
 		return err
 	}
+	if opts.ManifestOut != "" {
+		if err := writePushManifest(opts.ManifestOut, plan.Manifest); err != nil {
+			return err
+		}
+	}
 	printPushDryRun(os.Stdout, plan)
 	return nil
 }
@@ -83,6 +91,7 @@ func parsePushArgs(args []string, w io.Writer) (pushOptions, []string, error) {
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the plan without uploading")
 	fs.BoolVar(&opts.LumeCompat, "lume-compat", false, "emit dual cove and lume annotations")
 	fs.Var(&opts.AdditionalTags, "additional-tag", "additional tag to publish")
+	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write dry-run OCI manifest JSON to path")
 	fs.Usage = func() { printPushUsage(w) }
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -144,19 +153,20 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		return nil, err
 	}
 	plan := &pushPlan{
-		VMName:     vmName,
-		VMDir:      vmDirectory,
-		DiskPath:   diskPath,
-		Ref:        ref,
-		BaseRef:    opts.BaseRef,
-		ChunkSize:  opts.ChunkSize,
-		DiskSize:   info.Size(),
-		Chunks:     chunks,
-		LumeCompat: opts.LumeCompat,
-		ExtraTags:  append([]string(nil), opts.AdditionalTags...),
-		Blobs:      blobs,
-		Manifest:   manifest,
-		ConfigJSON: configJSON,
+		VMName:      vmName,
+		VMDir:       vmDirectory,
+		DiskPath:    diskPath,
+		Ref:         ref,
+		BaseRef:     opts.BaseRef,
+		ChunkSize:   opts.ChunkSize,
+		DiskSize:    info.Size(),
+		Chunks:      chunks,
+		LumeCompat:  opts.LumeCompat,
+		ExtraTags:   append([]string(nil), opts.AdditionalTags...),
+		ManifestOut: opts.ManifestOut,
+		Blobs:       blobs,
+		Manifest:    manifest,
+		ConfigJSON:  configJSON,
 	}
 	for _, c := range chunks {
 		if c.Zero {
@@ -165,6 +175,18 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func writePushManifest(path string, manifest ociimage.Manifest) error {
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal manifest: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write manifest: %w", err)
+	}
+	return nil
 }
 
 func pushMetadataBlobs(vmDirectory, diskPath string) ([]ociimage.Blob, error) {
@@ -276,5 +298,6 @@ Flags:
   --chunk-size <mb>         Chunk size in megabytes (default 512)
   --dry-run                 Print the chunk plan without uploading
   --lume-compat             Plan dual cove and lume annotations
-  --additional-tag <tag>    Additional tag to publish (repeatable)`)
+  --additional-tag <tag>    Additional tag to publish (repeatable)
+  --manifest-out <path>     Write dry-run OCI manifest JSON to path`)
 }
