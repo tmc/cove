@@ -13,30 +13,40 @@ import (
 	"syscall"
 )
 
-func runServeCmd(args []string) error {
+type ServeConfig struct {
+	HTTPAddr  string
+	ListenURL string
+	TokenFile string
+	VMList    string
+	PerVMAuth bool
+	MCPMode   bool
+}
+
+func parseServeConfig(args []string) (ServeConfig, error) {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.Usage = printServeUsage
 
-	var (
-		httpAddr  string
-		listenURL string
-		tokenFile string
-		perVMAuth bool
-		vmList    string
-		mcpMode   bool
-	)
-	fs.StringVar(&httpAddr, "http", "127.0.0.1:7777", "HTTP listen address (host:port or :port)")
-	fs.StringVar(&listenURL, "listen", "", "listen URL: tcp://host:port or unix:///path (overrides -http)")
-	fs.StringVar(&tokenFile, "token-file", "", "master token file path; empty = keychain default")
-	fs.BoolVar(&perVMAuth, "per-vm-auth", false, "strict mode: require per-VM token for each VM route")
-	fs.StringVar(&vmList, "vms", "", "comma-separated VM name allowlist (empty = all running VMs)")
-	fs.BoolVar(&mcpMode, "mcp", false, "stdio MCP transport: JSON-RPC 2.0 over stdin/stdout")
+	cfg := ServeConfig{HTTPAddr: "127.0.0.1:7777"}
+	fs.StringVar(&cfg.HTTPAddr, "http", cfg.HTTPAddr, "HTTP listen address (host:port or :port)")
+	fs.StringVar(&cfg.ListenURL, "listen", "", "listen URL: tcp://host:port or unix:///path (overrides -http)")
+	fs.StringVar(&cfg.TokenFile, "token-file", "", "master token file path; empty = keychain default")
+	fs.BoolVar(&cfg.PerVMAuth, "per-vm-auth", false, "strict mode: require per-VM token for each VM route")
+	fs.StringVar(&cfg.VMList, "vms", "", "comma-separated VM name allowlist (empty = all running VMs)")
+	fs.BoolVar(&cfg.MCPMode, "mcp", false, "stdio MCP transport: JSON-RPC 2.0 over stdin/stdout")
 
 	if err := fs.Parse(args); err != nil {
+		return ServeConfig{}, err
+	}
+	return cfg, nil
+}
+
+func runServeCmd(args []string) error {
+	cfg, err := parseServeConfig(args)
+	if err != nil {
 		return err
 	}
 
-	if mcpMode {
+	if cfg.MCPMode {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return fmt.Errorf("home dir: %w", err)
@@ -46,12 +56,12 @@ func runServeCmd(args []string) error {
 		return runMCPStdio(vmDir)
 	}
 
-	masterToken, err := LoadOrCreateMasterToken(tokenFile)
+	masterToken, err := LoadOrCreateMasterToken(cfg.TokenFile)
 	if err != nil {
 		return fmt.Errorf("load master token: %w", err)
 	}
 
-	checkSharedHost(perVMAuth, tokenFile, nil)
+	checkSharedHost(cfg.PerVMAuth, cfg.TokenFile, nil)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -68,8 +78,8 @@ func runServeCmd(args []string) error {
 	}
 
 	var allowlist []string
-	if vmList != "" {
-		for _, name := range strings.Split(vmList, ",") {
+	if cfg.VMList != "" {
+		for _, name := range strings.Split(cfg.VMList, ",") {
 			if t := strings.TrimSpace(name); t != "" {
 				allowlist = append(allowlist, t)
 			}
@@ -77,14 +87,14 @@ func runServeCmd(args []string) error {
 	}
 
 	vmDir := filepath.Join(home, ".vz", "vms")
-	gw, err := NewGateway(vmDir, masterToken, perVMAuth, allowlist, registry)
+	gw, err := NewGateway(vmDir, masterToken, cfg.PerVMAuth, allowlist, registry)
 	if err != nil {
 		return fmt.Errorf("create gateway: %w", err)
 	}
 
-	addr := httpAddr
-	if listenURL != "" {
-		addr, err = parseListenURL(listenURL)
+	addr := cfg.HTTPAddr
+	if cfg.ListenURL != "" {
+		addr, err = parseListenURL(cfg.ListenURL)
 		if err != nil {
 			return fmt.Errorf("parse -listen: %w", err)
 		}
@@ -95,7 +105,7 @@ func runServeCmd(args []string) error {
 		return fmt.Errorf("start gateway: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "cove serve: listening at http://%s\n", ln.Addr())
-	fmt.Fprintf(os.Stderr, "cove serve: token file: %s\n", resolveTokenFilePath(tokenFile))
+	fmt.Fprintf(os.Stderr, "cove serve: token file: %s\n", resolveTokenFilePath(cfg.TokenFile))
 
 	// Run HTTP server in background; block on signal.
 	errCh := make(chan error, 1)
