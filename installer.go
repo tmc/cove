@@ -146,8 +146,12 @@ func didInjectSucceedForVM(target vmSelection) bool {
 // window. Includes the VM name when one is set so users running multiple
 // installs in parallel can tell windows apart.
 func installerWindowTitle() string {
-	if vmName != "" {
-		return fmt.Sprintf("macOS VM Installation — %s", vmName)
+	return installerWindowTitleForVM(currentVMSelection())
+}
+
+func installerWindowTitleForVM(target vmSelection) string {
+	if target.Name != "" {
+		return fmt.Sprintf("macOS VM Installation — %s", target.Name)
 	}
 	return "macOS VM Installation"
 }

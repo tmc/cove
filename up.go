@@ -400,7 +400,8 @@ func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verbos
 // runLinuxUpPipeline executes the install -> run pipeline for Linux VMs.
 // Cloud-init handles user provisioning during install, so no inject step is needed.
 func runLinuxUpPipeline(cfg upConfig) error {
-	installed := vmAlreadyInstalled(vmDir, true)
+	target := currentVMSelection()
+	installed := vmAlreadyInstalled(target.Directory, true)
 
 	// Step 1: Install Linux VM (skip if already installed).
 	if installed && !cfg.force {
@@ -416,7 +417,7 @@ func runLinuxUpPipeline(cfg upConfig) error {
 	recipes := splitRecipes(cfg.vzscripts)
 	if len(recipes) > 0 || cfg.setupScriptPath != "" {
 		if len(recipes) > 0 {
-			savePostInstallRecipes(vmDir, cfg.vzscripts)
+			savePostInstallRecipes(target.Directory, cfg.vzscripts)
 		}
 		fmt.Println()
 		switch {
