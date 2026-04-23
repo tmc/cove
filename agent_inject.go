@@ -642,11 +642,18 @@ echo "Boot the VM with: cove -vm <name> run"
 // for the guest to reach Running state, allows time for the OS to boot,
 // then tries to connect to the vz-agent with retries. If the agent is
 // not reachable after all attempts, it prints a hint.
-func checkAgentAvailability(cs *ControlServer) {
+func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
+	if target == nil {
+		return
+	}
+
 	// Wait for the VM to reach Running state (up to 60s).
 	for i := 0; i < 120; i++ {
 		time.Sleep(500 * time.Millisecond)
-		state := vz.VZVirtualMachineState(cs.vm.State())
+		state, err := target.currentVMState()
+		if err != nil {
+			return
+		}
 		if state == vz.VZVirtualMachineStateRunning {
 			break
 		}
@@ -660,9 +667,10 @@ func checkAgentAvailability(cs *ControlServer) {
 
 	// Retry agent connection a few times (launchd may still be starting).
 	for attempt := 0; attempt < 3; attempt++ {
-		_, err := cs.getAgent()
+		_, err := target.getAgent()
 		if err == nil {
-			if err := markVMAgentVerified(cs.effectiveVMDir(), detectVMAgentPlatform(cs.effectiveVMDir()), vmAgentSourceRuntime, time.Now()); err != nil && verbose {
+			vmDirectory := target.effectiveVMDir()
+			if err := markVMAgentVerified(vmDirectory, detectVMAgentPlatform(vmDirectory), vmAgentSourceRuntime, time.Now()); err != nil && verbose {
 				fmt.Printf("warning: record guest agent capability: %v\n", err)
 			}
 			if verbose {
@@ -678,10 +686,7 @@ func checkAgentAvailability(cs *ControlServer) {
 	fmt.Println("  The agent enables remote command execution, file transfer, and SSH control.")
 	fmt.Println()
 	exe := "./cove"
-	vmFlag := ""
-	if vmName != "" && vmName != "default" {
-		vmFlag = " -vm " + vmName
-	}
+	vmFlag := target.vmHintFlag()
 	fmt.Println("  To fix, stop the VM and re-provision:")
 	fmt.Println()
 	fmt.Printf("    %s%s provision -user <username> -skip-setup-assistant\n", exe, vmFlag)
