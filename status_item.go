@@ -221,7 +221,7 @@ func (c *VMStatusItemController) handleMenuNeedsUpdate(_ objc.ID, _ objc.SEL, me
 
 	suspendItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("Suspend", objc.Sel("suspendVM:"), "")
 	suspendItem.SetTarget(objectivec.ObjectFromID(c.delegateID))
-	suspendItem.SetEnabled(canSaveRestore && !c.stateBusy(state) && state != vz.VZVirtualMachineStateStopped)
+	suspendItem.SetEnabled(canSaveRestore && activeBootSessionAllowsSuspend() && !c.stateBusy(state) && state != vz.VZVirtualMachineStateStopped)
 	menu.AddItem(&suspendItem)
 
 	restartItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("Restart", objc.Sel("restartVM:"), "")
