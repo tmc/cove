@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -579,7 +578,7 @@ func (s *ControlServer) handlePITSwap(name string, ram bool) *controlpb.ControlR
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
 	if err := storagehotplug.SetAttachment(ctx, vmruntime.WrapQueue(s.vmQueue), entry.Device, attachment); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("swap pit disk attachment: %v", err)}
