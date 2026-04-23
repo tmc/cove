@@ -1454,7 +1454,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	startControlRuntimeInfrastructure(controlServer)
 
 	// Check if vz-agent is available in the guest (background, non-blocking).
-	go checkAgentAvailability(controlServer)
+	go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, vmName))
 
 	// Auto-mount tagged volumes in guest if requested.
 	if autoMountVolumes {
@@ -1941,7 +1941,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	startControlRuntimeInfrastructure(controlServer)
 
 	// Check if vz-agent is available in the guest (background, non-blocking).
-	go checkAgentAvailability(controlServer)
+	go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, vmName))
 
 	// Create and attach toolbar
 	vmToolbar := NewVMToolbar(window, vmView, vm, queue, controlServer, vmDir)

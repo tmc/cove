@@ -30,9 +30,21 @@ type guestPortConnector interface {
 	ConnectToGuestPort(port uint32) (net.Conn, error)
 }
 
+type runtimeAgentAvailabilityTarget interface {
+	currentVMState() (vz.VZVirtualMachineState, error)
+	getAgent() (*AgentClient, error)
+	effectiveVMDir() string
+	vmHintFlag() string
+}
+
 type controlServerGuestConnector struct {
 	vm    vz.VZVirtualMachine
 	queue dispatch.Queue
+}
+
+type controlServerAgentAvailabilityTarget struct {
+	server *ControlServer
+	flag   string
 }
 
 func newControlServerGuestConnector(s *ControlServer) controlServerGuestConnector {
@@ -44,6 +56,13 @@ func newControlServerGuestConnector(s *ControlServer) controlServerGuestConnecto
 	return controlServerGuestConnector{
 		vm:    s.vm,
 		queue: s.vmQueue,
+	}
+}
+
+func newControlServerAgentAvailabilityTarget(s *ControlServer, vmName string) controlServerAgentAvailabilityTarget {
+	return controlServerAgentAvailabilityTarget{
+		server: s,
+		flag:   vmHintFlag(vmName),
 	}
 }
 
@@ -59,6 +78,38 @@ func (c controlServerGuestConnector) ConnectToGuestPort(port uint32) (net.Conn, 
 		return nil, err
 	}
 	return mgr.ConnectToAgent(port)
+}
+
+func (c controlServerAgentAvailabilityTarget) currentVMState() (vz.VZVirtualMachineState, error) {
+	if c.server == nil {
+		return 0, fmt.Errorf("agent availability target unavailable")
+	}
+	return c.server.currentVMState()
+}
+
+func (c controlServerAgentAvailabilityTarget) getAgent() (*AgentClient, error) {
+	if c.server == nil {
+		return nil, fmt.Errorf("agent availability target unavailable")
+	}
+	return c.server.getAgent()
+}
+
+func (c controlServerAgentAvailabilityTarget) effectiveVMDir() string {
+	if c.server == nil {
+		return ""
+	}
+	return c.server.effectiveVMDir()
+}
+
+func (c controlServerAgentAvailabilityTarget) vmHintFlag() string {
+	return c.flag
+}
+
+func vmHintFlag(vmName string) string {
+	if vmName == "" || vmName == "default" {
+		return ""
+	}
+	return " -vm " + vmName
 }
 
 type setupAssistantTransport interface {
