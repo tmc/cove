@@ -79,6 +79,8 @@ type ControlServer struct {
 	inputMode         atomic.Int32
 	activeConnections atomic.Int32
 	httpListeners     *httpListeners // TCP listeners started by StartHTTP
+	lifecycleCtx      context.Context
+	lifecycleCancel   context.CancelFunc
 }
 
 // agentHealthState tracks proactive agent health monitoring.
@@ -102,14 +104,24 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 	if vmDirectory == "" {
 		vmDirectory = vmDir
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &ControlServer{
-		socketPath: socketPath,
-		vmDir:      vmDirectory,
+		socketPath:      socketPath,
+		vmDir:           vmDirectory,
+		lifecycleCtx:    ctx,
+		lifecycleCancel: cancel,
 	}
 	capture, input := resolveAutomationBackends()
 	s.setCaptureBackend(capture)
 	s.setInputBackend(input)
 	return s
+}
+
+func (s *ControlServer) lifecycleContext() context.Context {
+	if s.lifecycleCtx == nil {
+		return context.Background()
+	}
+	return s.lifecycleCtx
 }
 
 func (s *ControlServer) captureBackend() automationBackendMode {
@@ -184,6 +196,9 @@ func (s *ControlServer) SetVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 
 // Start begins listening on the Unix socket
 func (s *ControlServer) Start() error {
+	if s.lifecycleCtx == nil || s.lifecycleCancel == nil {
+		s.lifecycleCtx, s.lifecycleCancel = context.WithCancel(context.Background())
+	}
 	if s.authToken == "" {
 		token, err := EnsureControlTokenForVM(s.effectiveVMDir())
 		if err != nil {
@@ -219,11 +234,17 @@ func (s *ControlServer) Start() error {
 // Stop closes the control server
 func (s *ControlServer) Stop() {
 	s.running.Store(false)
+	if s.lifecycleCancel != nil {
+		s.lifecycleCancel()
+		s.lifecycleCancel = nil
+		s.lifecycleCtx = nil
+	}
 	if s.iterm2Proxy != nil {
 		s.iterm2Proxy.Stop()
 	}
 	if s.portForwards != nil {
 		s.portForwards.StopAll()
+		s.portForwards = nil
 	}
 	if s.httpListeners != nil {
 		s.httpListeners.closeAll()
