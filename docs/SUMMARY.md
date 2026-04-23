@@ -45,6 +45,7 @@
 * [Churn Benchmark](designs/004-churn-benchmark-harness.md)
 * [v0.4 Secrets](designs/005-v04-secrets-architecture.md)
 * [Linux v0.2](designs/006-cove-linux-v02.md)
+* [Beat Lume Roadmap](designs/011-beat-lume-roadmap.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
