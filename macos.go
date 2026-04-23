@@ -2306,11 +2306,15 @@ func transformToForegroundApp() {
 // we auto-upgrade to GUI automation so that -provision-user works as expected
 // without requiring -provision-strategy gui.
 func shouldRunGUIAutomation() bool {
+	return shouldRunGUIAutomationForVM(currentVMSelection())
+}
+
+func shouldRunGUIAutomationForVM(target vmSelection) bool {
 	switch provisionStrategy {
 	case "gui":
 		return true
 	case "auto":
-		return !didInjectSucceed()
+		return !didInjectSucceedForVM(target)
 	case "disk":
 		// During "run", disk provisioning is not applicable — auto-upgrade to GUI.
 		if !installVM {
