@@ -1191,7 +1191,7 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// and framebuffer screenshots. Initialize NSApplication before starting or
 	// restoring the VM so resume paths do not bootstrap AppKit against a live VM.
 	app := ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
-	guiController, err := newHeadlessGUIController(app, vm, queue, nil, false)
+	guiController, err := newHeadlessGUIController(app, currentVMSelection(), vm, queue, nil, false)
 	if err != nil {
 		return fmt.Errorf("headless presentation: %w", err)
 	}
@@ -1421,7 +1421,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	guiController := preparedHeadlessGUIController
 	preparedHeadlessGUIController = nil
 	if guiController == nil {
-		guiController, err = newHeadlessGUIController(app, vm, queue, nil, false)
+		guiController, err = newHeadlessGUIController(app, currentVMSelection(), vm, queue, nil, false)
 		if err != nil {
 			if restoreTerminal != nil {
 				restoreTerminal()
