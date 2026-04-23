@@ -82,6 +82,9 @@ Commands:
   usb detach <device> [controller]                Detach runtime USB device
   memory info           Get memory balloon info
   memory set <GB>       Set memory target (for example: memory set 8)
+  power status          Show guest macOS sleep/display-sleep settings
+  power keep-awake      Disable guest display sleep, system sleep, and screen saver
+  power allow-sleep [minutes]  Restore guest sleep timers (default: 10)
   snapshot list         List snapshots
   snapshot save <name>  Save snapshot
   snapshot restore <name> Restore snapshot
@@ -353,6 +356,8 @@ func ctlCommand(args []string) error {
 		return ctlRuntimeDiskCommand(sock, subArgs, *timeout, *raw)
 	case "usb":
 		return ctlRuntimeUSBCommand(sock, subArgs, *timeout, *raw)
+	case "power":
+		return ctlPowerCommand(sock, subArgs, *timeout, *raw)
 	}
 
 	// Build proto request
