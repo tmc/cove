@@ -51,6 +51,7 @@ cove push <vm> <ref>                            # push disk.img as OCI tag
 cove push <vm> <ref> --base <base-ref>          # delta push (skip unchanged chunks)
 cove push <vm> <ref> --chunk-size 256           # override 512 MB default
 cove push <vm> <ref> --dry-run                  # chunk and summarize locally, no upload
+cove push <vm> <ref> --dry-run --manifest-out manifest.json
 cove push <vm> <ref> --lume-compat              # emit dual cove + lume annotations
 ```
 
