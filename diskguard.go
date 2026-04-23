@@ -20,7 +20,9 @@ func ensureDiskDetached(diskPath string) error {
 	if err := disk.EnsureDetached(diskPath); err != nil {
 		return err
 	}
-	fmt.Println("Disk detached successfully.")
+	if verbose {
+		fmt.Println("Disk detached successfully.")
+	}
 	return nil
 }
 

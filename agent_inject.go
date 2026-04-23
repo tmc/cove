@@ -63,11 +63,15 @@ func buildAgentBinary(outputPath string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	fmt.Printf("Building %s (%s/arm64) from %s...\n", agentBinaryName, targetOS, moduleDir)
+	if verbose {
+		fmt.Printf("Building %s (%s/arm64) from %s...\n", agentBinaryName, targetOS, moduleDir)
+	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build agent: %w", err)
 	}
-	fmt.Printf("Built: %s\n", outputPath)
+	if verbose {
+		fmt.Printf("Built: %s\n", outputPath)
+	}
 
 	if targetOS == "darwin" {
 		if err := codesignAdHoc(outputPath); err != nil {
@@ -82,12 +86,16 @@ func buildAgentBinary(outputPath string) error {
 // the guest agent must be signed before being copied into the VM disk.
 func codesignAdHoc(path string) error {
 	cmd := exec.Command("codesign", "-s", "-", "-f", path)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-	fmt.Printf("Signed: %s (ad-hoc)\n", path)
+	if verbose {
+		fmt.Printf("Signed: %s (ad-hoc)\n", path)
+	}
 	return nil
 }
 
@@ -378,41 +386,7 @@ func injectAgentOnly() error {
 	daemonPlistPath := filepath.Join(daemonDir, agentLaunchDaemonLabel+".plist")
 	agentPlistPath := filepath.Join(agentDir, agentLaunchAgentLabel+".plist")
 
-	// Use a single elevated shell script to enable ownership, copy files,
-	// and set permissions — avoids needing sudo for the entire command.
-	script := fmt.Sprintf(
-		"diskutil enableOwnership %s"+
-			" && mkdir -p %q %q %q"+
-			" && cp %q %q && chmod 755 %q && chown root:wheel %q"+
-			" && cp %q %q && chmod 644 %q && chown root:wheel %q"+
-			" && cp %q %q && chmod 644 %q && chown root:wheel %q",
-		dataPart,
-		binDir, daemonDir, agentDir,
-		tmpBinary, binPath, binPath, binPath,
-		tmpDaemonPlist, daemonPlistPath, daemonPlistPath, daemonPlistPath,
-		tmpAgentPlist, agentPlistPath, agentPlistPath, agentPlistPath,
-	)
-
-	// Write script to temp file for execution.
-	tmpScript, err := os.CreateTemp("", "vz-agent-inject-*.sh")
-	if err != nil {
-		return fmt.Errorf("create temp script: %w", err)
-	}
-	tmpScriptPath := tmpScript.Name()
-	defer os.Remove(tmpScriptPath)
-	fmt.Fprintf(tmpScript, "#!/bin/bash\nset -e\n%s\n", script)
-	tmpScript.Close()
-	os.Chmod(tmpScriptPath, 0755)
-
-	if os.Getuid() == 0 {
-		fmt.Println("Running as root, copying files directly...")
-		cmd := exec.Command("bash", tmpScriptPath)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("copy files: %w", err)
-		}
-	} else {
+	if os.Getuid() != 0 {
 		fmt.Println()
 		fmt.Println("Administrator privileges required to inject the guest agent.")
 		fmt.Println()
@@ -421,9 +395,21 @@ func injectAgentOnly() error {
 		fmt.Printf("    - Write LaunchDaemon plist to %s (owner: root:wheel)\n", daemonPlistPath)
 		fmt.Printf("    - Write user agent plist to %s\n", agentPlistPath)
 		fmt.Println()
-		if err := runElevatedBash(tmpScriptPath, "cove will copy the guest agent binary and LaunchDaemon plists into the VM disk image with root:wheel ownership."); err != nil {
-			return fmt.Errorf("agent inject: %w", err)
-		}
+	}
+
+	em := &elevatedManifest{
+		RemountOwners: []string{dataPart},
+		MkdirAll:      []string{binDir, daemonDir, agentDir},
+		CopyFiles: []elevatedCopy{
+			{Src: tmpBinary, Dst: binPath, Mode: "0755", Owner: "root:wheel"},
+			{Src: tmpDaemonPlist, Dst: daemonPlistPath, Mode: "0644", Owner: "root:wheel"},
+			{Src: tmpAgentPlist, Dst: agentPlistPath, Mode: "0644", Owner: "root:wheel"},
+		},
+	}
+	if err := runElevated(em, elevationPrompt(
+		fmt.Sprintf("Install guest agent into VM %q.", elevationVMLabel()),
+	)); err != nil {
+		return fmt.Errorf("agent inject: %w", err)
 	}
 
 	info, err := os.Stat(binPath)
@@ -492,10 +478,59 @@ if [ "$(id -u)" != "0" ]; then
   exit 1
 fi
 
+# Pre-flight: another process (usually a running cove VM) holding the disk
+# will make hdiutil attach fail with a cryptic "Resource temporarily
+# unavailable". Name the holder so the user knows what to stop.
+HOLDERS=$({ /usr/sbin/lsof -- "$DISK" 2>/dev/null || true; } | /usr/bin/awk 'NR>1 {print $2":"$1}' | sort -u)
+if [ -n "$HOLDERS" ]; then
+  echo "cannot attach VM disk for offline agent injection: $DISK" >&2
+  echo "disk is open by another process:" >&2
+  for h in $HOLDERS; do
+    pid=${h%%:*}
+    cmd=${h#*:}
+    elapsed=$(/bin/ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+    if [ -n "$elapsed" ]; then
+      echo "  pid=$pid cmd=$cmd elapsed=$elapsed" >&2
+    else
+      echo "  pid=$pid cmd=$cmd" >&2
+    fi
+  done
+  echo >&2
+  echo "stop the VM (or kill the cove process) and re-run this script." >&2
+  exit 1
+fi
+
+# Pre-flight: check for a stale hdiutil attach from a crashed cove. If the
+# disk is already attached we cannot safely continue, but detaching might
+# clobber live state — tell the user and let them decide.
+STALE_NODE=$(/usr/bin/hdiutil info 2>/dev/null | /usr/bin/awk -v d="$DISK" '
+  $0 ~ /^image-path/ { path=$0; sub(/^image-path[ \t]*:[ \t]*/, "", path) }
+  $1 == "/dev/disk" && path == d { print $1; exit }
+  /^\/dev\/disk[0-9]+/ && path == d { print $1; exit }
+')
+if [ -n "$STALE_NODE" ]; then
+  echo "cannot attach VM disk for offline agent injection: $DISK" >&2
+  echo "a stale hdiutil attach already exists at $STALE_NODE" >&2
+  echo "(probably from a previous crashed cove). If nothing is using it, detach with:" >&2
+  echo "  sudo hdiutil detach $STALE_NODE" >&2
+  echo "then re-run this script." >&2
+  exit 1
+fi
+
 echo "==> Attaching disk: $DISK"
 ATTACH_OUT=$(hdiutil attach "$DISK" -nobrowse -noverify -noautoopen -plist 2>&1) || {
-  echo "hdiutil attach failed:" >&2
+  echo "attach VM disk for offline agent injection failed ($DISK):" >&2
   echo "$ATTACH_OUT" >&2
+  # Re-scan for a stale attach that appeared between pre-flight and attach.
+  STALE_NODE=$(/usr/bin/hdiutil info 2>/dev/null | /usr/bin/awk -v d="$DISK" '
+    $0 ~ /^image-path/ { path=$0; sub(/^image-path[ \t]*:[ \t]*/, "", path) }
+    /^\/dev\/disk[0-9]+/ && path == d { print $1; exit }
+  ')
+  if [ -n "$STALE_NODE" ]; then
+    echo >&2
+    echo "stale attach detected at $STALE_NODE — detach with:" >&2
+    echo "  sudo hdiutil detach $STALE_NODE" >&2
+  fi
   exit 1
 }
 
@@ -542,6 +577,7 @@ cleanup() {
 trap cleanup EXIT
 
 diskutil enableOwnership /dev/"$DATA_PART"
+mount -uo owners /dev/"$DATA_PART"
 
 BIN_DIR="$MOUNT/usr/local/bin"
 DAEMON_DIR="$MOUNT/Library/LaunchDaemons"

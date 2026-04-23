@@ -6,14 +6,16 @@
 // and even when it works it prompts for credentials on every run.
 //
 // The helper is a small LaunchDaemon that runs as root and listens on
-// /var/run/cove-helper.sock. It accepts a single op (exec_script) that runs a
-// bash script as root. Authentication is by peer UID: only the user who
-// installed the helper can talk to it. Installation requires one admin auth
-// (via runElevatedBashNative) and persists across reboots.
+// /var/run/cove-helper.sock. It accepts typed manifests (apply_manifest op,
+// see elevated_exec.go) and dispatches them to the same Go file-op runner
+// the AEWP path uses — no shell, no arbitrary script execution.
+// Authentication is by peer UID: only the user who installed the helper
+// can talk to it. Installation requires one admin auth (via the AEWP path)
+// and persists across reboots.
 //
-// Trust model: the helper is "cove's elevated half." Once installed, it trusts
-// the installing user's cove binary to send sensible scripts. This is no worse
-// than a passwordless sudoers rule for cove.
+// Trust model: the helper is "cove's elevated half." Once installed, it
+// trusts the installing user's cove binary to send sensible manifests, but
+// the manifest schema strictly bounds what it can do — no exec hatch.
 package main
 
 import (
@@ -24,7 +26,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -44,8 +45,8 @@ const (
 
 // helperRequest is the JSON request format accepted by the helper.
 type helperRequest struct {
-	Op     string `json:"op"`
-	Script string `json:"script,omitempty"` // for exec_script: bash script contents
+	Op       string          `json:"op"`
+	Manifest json.RawMessage `json:"manifest,omitempty"` // for apply_manifest: encoded elevatedManifest
 }
 
 // helperResponse is the JSON response format returned by the helper.
@@ -56,18 +57,13 @@ type helperResponse struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// runElevatedBashViaHelper attempts to run scriptPath via the helper. It
-// returns (true, err) if the helper handled the request (err may be non-nil if
-// the script itself failed), or (false, err) if the helper is not available
-// and the caller should fall back to a different path.
-func runElevatedBashViaHelper(scriptPath string) (handled bool, err error) {
+// runManifestViaHelper attempts to run a typed elevation manifest via the
+// helper. It returns (true, err) if the helper handled the request (err may
+// be non-nil if the manifest itself failed), or (false, err) if the helper
+// is not available and the caller should fall back to a different path.
+func runManifestViaHelper(manifestJSON []byte) (handled bool, err error) {
 	if runtime.GOOS != "darwin" {
 		return false, nil
-	}
-
-	scriptBytes, err := os.ReadFile(scriptPath)
-	if err != nil {
-		return false, fmt.Errorf("read script: %w", err)
 	}
 
 	conn, dialErr := dialHelper()
@@ -79,7 +75,7 @@ func runElevatedBashViaHelper(scriptPath string) (handled bool, err error) {
 	conn.SetDeadline(time.Now().Add(5 * time.Minute))
 
 	enc := json.NewEncoder(conn)
-	if err := enc.Encode(helperRequest{Op: "exec_script", Script: string(scriptBytes)}); err != nil {
+	if err := enc.Encode(helperRequest{Op: "apply_manifest", Manifest: manifestJSON}); err != nil {
 		return true, fmt.Errorf("send request: %w", err)
 	}
 
@@ -227,40 +223,16 @@ func helperInstall() error {
 	fmt.Fprintf(tmpUID, "%d\n", uid)
 	tmpUID.Close()
 
-	script := fmt.Sprintf(`#!/bin/bash
-set -e
-mkdir -p %q
-cp %q %q
-chmod 755 %q
-chown root:wheel %q
-
-cp %q %q
-chmod 644 %q
-chown root:wheel %q
-
-cp %q %q
-chmod 644 %q
-chown root:wheel %q
-
-# Reload daemon if it was already loaded.
-launchctl bootout system/%s 2>/dev/null || true
-launchctl bootstrap system %q
-`,
-		filepath.Dir(helperBinaryPath),
-		myPath, helperBinaryPath, helperBinaryPath, helperBinaryPath,
-		tmpPlist.Name(), helperPlistPath, helperPlistPath, helperPlistPath,
-		tmpUID.Name(), helperUIDPath, helperUIDPath, helperUIDPath,
-		helperLabel, helperPlistPath,
-	)
-
-	tmpScript, err := os.CreateTemp("", "cove-helper-install-*.sh")
-	if err != nil {
-		return err
+	manifest := &elevatedManifest{
+		MkdirAll: []string{filepath.Dir(helperBinaryPath)},
+		CopyFiles: []elevatedCopy{
+			{Src: myPath, Dst: helperBinaryPath, Mode: "0755", Owner: "root:wheel"},
+			{Src: tmpPlist.Name(), Dst: helperPlistPath, Mode: "0644", Owner: "root:wheel"},
+			{Src: tmpUID.Name(), Dst: helperUIDPath, Mode: "0644", Owner: "root:wheel"},
+		},
+		LaunchctlBootout:   []string{helperLabel},
+		LaunchctlBootstrap: []string{helperPlistPath},
 	}
-	defer os.Remove(tmpScript.Name())
-	tmpScript.WriteString(script)
-	tmpScript.Close()
-	os.Chmod(tmpScript.Name(), 0755)
 
 	fmt.Println("Installing cove privileged helper.")
 	fmt.Println("You will be prompted once for your admin password. After this, cove")
@@ -268,8 +240,8 @@ launchctl bootstrap system %q
 	fmt.Println("require further prompts.")
 	fmt.Println()
 
-	if err := runElevatedBashNative(tmpScript.Name(),
-		"cove is installing a privileged helper so future operations don't need a password."); err != nil {
+	if err := runElevated(manifest,
+		elevationPrompt("Install cove privileged helper (skips future password prompts).")); err != nil {
 		return fmt.Errorf("install helper: %w", err)
 	}
 
@@ -287,22 +259,17 @@ launchctl bootstrap system %q
 
 // helperUninstall removes the LaunchDaemon and helper binary. Requires admin.
 func helperUninstall() error {
-	script := fmt.Sprintf(`#!/bin/bash
-launchctl bootout system/%s 2>/dev/null || true
-rm -f %q %q %q %q
-`, helperLabel, helperPlistPath, helperBinaryPath, helperUIDPath, helperSocketPath)
-
-	tmpScript, err := os.CreateTemp("", "cove-helper-uninstall-*.sh")
-	if err != nil {
-		return err
+	manifest := &elevatedManifest{
+		LaunchctlBootout: []string{helperLabel},
+		RemoveFiles: []string{
+			helperPlistPath,
+			helperBinaryPath,
+			helperUIDPath,
+			helperSocketPath,
+		},
 	}
-	defer os.Remove(tmpScript.Name())
-	tmpScript.WriteString(script)
-	tmpScript.Close()
-	os.Chmod(tmpScript.Name(), 0755)
-
-	if err := runElevatedBashNative(tmpScript.Name(),
-		"cove is removing the privileged helper."); err != nil {
+	if err := runElevated(manifest,
+		elevationPrompt("Remove cove privileged helper.")); err != nil {
 		return fmt.Errorf("uninstall helper: %w", err)
 	}
 	fmt.Println("Helper uninstalled.")
@@ -421,8 +388,8 @@ func handleHelperConn(conn net.Conn, allowedUID int) {
 	}
 
 	switch req.Op {
-	case "exec_script":
-		runHelperScript(conn, req.Script)
+	case "apply_manifest":
+		runHelperManifest(conn, req.Manifest)
 	case "ping":
 		json.NewEncoder(conn).Encode(helperResponse{OK: true})
 	default:
@@ -430,39 +397,21 @@ func handleHelperConn(conn net.Conn, allowedUID int) {
 	}
 }
 
-func runHelperScript(conn net.Conn, script string) {
-	if script == "" {
-		writeHelperError(conn, "empty script")
+func runHelperManifest(conn net.Conn, manifestJSON []byte) {
+	if len(manifestJSON) == 0 {
+		writeHelperError(conn, "empty manifest")
 		return
 	}
-	tmp, err := os.CreateTemp("", "cove-helper-script-*.sh")
-	if err != nil {
-		writeHelperError(conn, fmt.Sprintf("temp file: %v", err))
+	var m elevatedManifest
+	if err := json.Unmarshal(manifestJSON, &m); err != nil {
+		writeHelperError(conn, fmt.Sprintf("parse manifest: %v", err))
 		return
 	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(script); err != nil {
-		writeHelperError(conn, fmt.Sprintf("write script: %v", err))
+	if err := runElevatedManifest(&m); err != nil {
+		writeHelperError(conn, err.Error())
 		return
 	}
-	tmp.Close()
-	os.Chmod(tmp.Name(), 0700)
-
-	cmd := exec.Command("/bin/bash", tmp.Name())
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	runErr := cmd.Run()
-
-	resp := helperResponse{
-		OK:     runErr == nil,
-		Stdout: stdout.String(),
-		Stderr: stderr.String(),
-	}
-	if runErr != nil {
-		resp.Error = runErr.Error()
-	}
-	json.NewEncoder(conn).Encode(resp)
+	json.NewEncoder(conn).Encode(helperResponse{OK: true})
 }
 
 func writeHelperError(w io.Writer, msg string) {

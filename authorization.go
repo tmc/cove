@@ -7,7 +7,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -16,9 +19,12 @@ import (
 var (
 	securityLib     uintptr
 	authCreate      func(rights uintptr, environment uintptr, flags uint32, authRef *uintptr) int32
-	authExecute     func(authRef uintptr, pathToTool uintptr, options uint32, arguments uintptr, communicationsPipe uintptr) int32
+	authExecute     func(authRef uintptr, pathToTool uintptr, options uint32, arguments uintptr, communicationsPipe *uintptr) int32
 	authFree        func(authRef uintptr, flags uint32) int32
 	authInitialized bool
+
+	libcFread  func(buf uintptr, size uintptr, n uintptr, fp uintptr) uintptr
+	libcFclose func(fp uintptr) int32
 )
 
 func initAuthorizationServices() {
@@ -36,6 +42,12 @@ func initAuthorizationServices() {
 	purego.RegisterLibFunc(&authCreate, securityLib, "AuthorizationCreate")
 	purego.RegisterLibFunc(&authExecute, securityLib, "AuthorizationExecuteWithPrivileges")
 	purego.RegisterLibFunc(&authFree, securityLib, "AuthorizationFree")
+
+	libc, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_LAZY)
+	if err == nil {
+		purego.RegisterLibFunc(&libcFread, libc, "fread")
+		purego.RegisterLibFunc(&libcFclose, libc, "fclose")
+	}
 }
 
 const (
@@ -62,21 +74,42 @@ type authorizationItemSet struct {
 	items *authorizationItem
 }
 
-// runElevatedBashNative shows the native macOS authorization dialog and then
-// executes the script as root via AuthorizationExecuteWithPrivileges.
-func runElevatedBashNative(scriptPath, prompt string) error {
+// runElevatedManifestNative shows the native macOS authorization dialog and
+// then re-execs cove with __elevated-op, which becomes root via setuid(0) and
+// runs the typed manifest. The manifest content is hashed by the parent;
+// the elevated child verifies the file still matches that hash before acting,
+// closing the TOCTOU window where an attacker could swap manifest contents
+// between staging and execution.
+//
+// The prompt argument is shown to the user inside the dialog body, after the
+// SecurityAgent's own "<app> wants to make changes" line. Keep it short and
+// action-oriented (one sentence). Name the affected VM when relevant so the
+// user can tell what they are approving.
+func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
 	initAuthorizationServices()
 	if authCreate == nil || authExecute == nil {
 		return fmt.Errorf("authorization services not available")
 	}
 
-	toolPath, err := syscall.BytePtrFromString("/bin/bash")
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate cove binary for elevated exec: %w", err)
+	}
+	toolPath, err := syscall.BytePtrFromString(exePath)
 	if err != nil {
 		return fmt.Errorf("authorization tool path: %w", err)
 	}
-	scriptArg, err := syscall.BytePtrFromString(scriptPath)
+	subcmdArg, err := syscall.BytePtrFromString(elevatedOpArg)
 	if err != nil {
-		return fmt.Errorf("authorization script path: %w", err)
+		return fmt.Errorf("authorization subcmd arg: %w", err)
+	}
+	manifestArg, err := syscall.BytePtrFromString(manifestPath)
+	if err != nil {
+		return fmt.Errorf("authorization manifest path: %w", err)
+	}
+	hashArg, err := syscall.BytePtrFromString(sha256Hex)
+	if err != nil {
+		return fmt.Errorf("authorization manifest hash: %w", err)
 	}
 
 	// authorizationItem.name is a C string (NUL-terminated): Security.framework
@@ -94,28 +127,75 @@ func runElevatedBashNative(scriptPath, prompt string) error {
 	// Build rights for the privileged tool itself.
 	rightItem := authorizationItem{
 		name:        rightName,
-		valueLength: uint32(len("/bin/bash")),
+		valueLength: uint32(len(exePath)),
 		value:       unsafe.Pointer(toolPath),
 	}
 	rights := authorizationItemSet{count: 1, items: &rightItem}
 
 	// Build environment with prompt text. The prompt value is a UTF-8 string
 	// whose length excludes any terminator, per Security.framework docs.
-	promptBytes := []byte(prompt)
+	// Use BytePtrFromString to guarantee NUL-termination — Security.framework
+	// has been observed calling strlen() on the value, which SIGBUSes when a
+	// bare []byte runs up against an unmapped page.
+	promptPtr, err := syscall.BytePtrFromString(prompt)
+	if err != nil {
+		return fmt.Errorf("authorization prompt: %w", err)
+	}
 	promptItem := authorizationItem{
 		name:        envKey,
-		valueLength: uint32(len(promptBytes)),
-		value:       unsafe.Pointer(&promptBytes[0]),
+		valueLength: uint32(len(prompt)),
+		value:       unsafe.Pointer(promptPtr),
 	}
 	env := authorizationItemSet{count: 1, items: &promptItem}
 
+	// AuthorizationCreate can wedge inside its XPC call to authd in some
+	// states (observed: setItemSet → xpc_dictionary_set_data hanging
+	// indefinitely with no SecurityAgent ever spawning). Watchdog the call
+	// so a stuck authd does not freeze cove forever — surface a clear error
+	// instead and let the caller fall back to a different elevation path.
 	var authRef uintptr
-	status := authCreate(
-		uintptr(unsafe.Pointer(&rights)),
-		uintptr(unsafe.Pointer(&env)),
-		kAuthorizationFlagInteractionAllowed|kAuthorizationFlagExtendRights|kAuthorizationFlagPreAuthorize,
-		&authRef,
-	)
+	var status int32
+	done := make(chan struct{})
+	go func() {
+		status = authCreate(
+			uintptr(unsafe.Pointer(&rights)),
+			uintptr(unsafe.Pointer(&env)),
+			kAuthorizationFlagInteractionAllowed|kAuthorizationFlagExtendRights|kAuthorizationFlagPreAuthorize,
+			&authRef,
+		)
+		close(done)
+	}()
+	const authCreateNoUITimeout = 90 * time.Second
+	const authCreatePromptTimeout = 15 * time.Minute
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	start := time.Now()
+	promptSeenAt := time.Time{}
+	waitingForApprovalLogged := false
+	for {
+		select {
+		case <-done:
+			goto authCreateDone
+		case <-ticker.C:
+			if authorizationPromptVisible() {
+				if promptSeenAt.IsZero() {
+					promptSeenAt = time.Now()
+				}
+				if !waitingForApprovalLogged {
+					fmt.Fprintln(os.Stderr, "Waiting for macOS admin-password dialog approval...")
+					waitingForApprovalLogged = true
+				}
+				if time.Since(promptSeenAt) > authCreatePromptTimeout {
+					return fmt.Errorf("authorization dialog still pending after %s; approve or cancel the macOS prompt and retry", authCreatePromptTimeout)
+				}
+				continue
+			}
+			if time.Since(start) > authCreateNoUITimeout {
+				return fmt.Errorf("AuthorizationCreate wedged after %s (likely authd/SecurityAgent unresponsive); try logging out and back in, or run the script manually as root", authCreateNoUITimeout)
+			}
+		}
+	}
+authCreateDone:
 	if status == errAuthorizationCanceled {
 		return fmt.Errorf("interrupted: user cancelled authorization")
 	}
@@ -124,13 +204,21 @@ func runElevatedBashNative(scriptPath, prompt string) error {
 	}
 	defer authFree(authRef, kAuthorizationFlagDestroyRights)
 
-	argv := []*byte{scriptArg, nil}
+	// AuthorizationExecuteWithPrivileges launches the privileged tool
+	// asynchronously and returns immediately. Without `communicationsPipe`,
+	// callers cannot tell when the child finishes — and any deferred cleanup
+	// (e.g. removing the bash script) races the child. Pass a real pipe so
+	// the child's stdout is connected; reading until EOF blocks until the
+	// child closes its end (i.e. exits). This makes the call synchronous
+	// from the caller's perspective.
+	argv := []*byte{subcmdArg, manifestArg, hashArg, nil}
+	var commPipe uintptr
 	status = authExecute(
 		authRef,
 		uintptr(unsafe.Pointer(toolPath)),
 		0,
 		uintptr(unsafe.Pointer(&argv[0])),
-		0,
+		&commPipe,
 	)
 	if status == errAuthorizationCanceled {
 		return fmt.Errorf("interrupted: user cancelled authorization")
@@ -138,5 +226,27 @@ func runElevatedBashNative(scriptPath, prompt string) error {
 	if status != 0 {
 		return fmt.Errorf("AuthorizationExecuteWithPrivileges: status %d", status)
 	}
+	if commPipe != 0 && libcFread != nil {
+		var buf [4096]byte
+		for {
+			n := libcFread(uintptr(unsafe.Pointer(&buf[0])), 1, uintptr(len(buf)), commPipe)
+			if n == 0 {
+				break
+			}
+			os.Stdout.Write(buf[:n])
+		}
+		if libcFclose != nil {
+			libcFclose(commPipe)
+		}
+	}
 	return nil
+}
+
+func authorizationPromptVisible() bool {
+	for _, name := range []string{"SecurityAgent", "authorizationhost"} {
+		if err := exec.Command("pgrep", "-x", name).Run(); err == nil {
+			return true
+		}
+	}
+	return false
 }
