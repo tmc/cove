@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -236,7 +235,7 @@ func (s *ControlServer) handleDiskSwap(req RuntimeDiskActionRequest) *controlpb.
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("create disk attachment: %v", err)}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
 
 	if err := storagehotplug.SetAttachment(ctx, vmruntime.WrapQueue(s.vmQueue), entry.Device, attachment.VZStorageDeviceAttachment); err != nil {
