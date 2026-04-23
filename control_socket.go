@@ -1947,6 +1947,3 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		}},
 	}
 }
-
-// Global control server instance
-var controlServer *ControlServer
