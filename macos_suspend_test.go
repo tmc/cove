@@ -100,6 +100,7 @@ func TestCurrentConfigFingerprintIncludesVirtioRuntimeSurface(t *testing.T) {
 	oldUSBDevices := usbDevices
 	oldEnableClipboard := enableClipboard
 	oldSerialOutput := serialOutput
+	oldBootMode := currentBootSessionMode()
 	t.Cleanup(func() {
 		vmDir = oldVMDir
 		runtimeProfile = oldRuntimeProfile
@@ -112,6 +113,7 @@ func TestCurrentConfigFingerprintIncludesVirtioRuntimeSurface(t *testing.T) {
 		usbDevices = oldUSBDevices
 		enableClipboard = oldEnableClipboard
 		serialOutput = oldSerialOutput
+		setActiveBootSessionMode(oldBootMode)
 	})
 
 	vmDir = t.TempDir()
@@ -125,6 +127,7 @@ func TestCurrentConfigFingerprintIncludesVirtioRuntimeSurface(t *testing.T) {
 	usbDevices = USBStorageSlice{{Path: "/tmp/disk1.img"}}
 	enableClipboard = true
 	serialOutput = "stdout"
+	setActiveBootSessionMode(bootSessionModeRecovery)
 
 	got := currentConfigFingerprint()
 	if got.DirectorySharingDevices != 2 {
@@ -141,6 +144,9 @@ func TestCurrentConfigFingerprintIncludesVirtioRuntimeSurface(t *testing.T) {
 	}
 	if !got.Serial {
 		t.Fatal("currentConfigFingerprint().Serial = false, want true")
+	}
+	if got.BootMode != "recovery" {
+		t.Fatalf("currentConfigFingerprint().BootMode = %q, want recovery", got.BootMode)
 	}
 }
 
@@ -277,5 +283,185 @@ func TestCheckSuspendConfigMatchDetectsVirtioRuntimeSurfaceChange(t *testing.T) 
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("checkSuspendConfigMatch() = %q, want substring %q", err, want)
 		}
+	}
+}
+
+func TestRunRequiresColdBoot(t *testing.T) {
+	oldRecoveryMode := recoveryMode
+	oldBootCommandsFile := bootCommandsFile
+	oldForceDFU := forceDFU
+	oldStopInIBootStage1 := stopInIBootStage1
+	oldStopInIBootStage2 := stopInIBootStage2
+	t.Cleanup(func() {
+		recoveryMode = oldRecoveryMode
+		bootCommandsFile = oldBootCommandsFile
+		forceDFU = oldForceDFU
+		stopInIBootStage1 = oldStopInIBootStage1
+		stopInIBootStage2 = oldStopInIBootStage2
+	})
+
+	tests := []struct {
+		name             string
+		recovery         bool
+		bootCommandsFile string
+		forceDFU         bool
+		want             bool
+		wantReason       string
+	}{
+		{name: "normal", wantReason: "current run mode"},
+		{name: "recovery", recovery: true, want: true, wantReason: "recovery mode"},
+		{name: "boot commands", bootCommandsFile: "/tmp/script.vzscript", want: true, wantReason: "boot automation"},
+		{name: "recovery with boot commands", recovery: true, bootCommandsFile: "/tmp/script.vzscript", want: true, wantReason: "recovery mode with boot automation"},
+		{name: "private start", forceDFU: true, want: true, wantReason: "private macOS boot options"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recoveryMode = tt.recovery
+			bootCommandsFile = tt.bootCommandsFile
+			forceDFU = tt.forceDFU
+			stopInIBootStage1 = false
+			stopInIBootStage2 = false
+
+			if got := runRequiresColdBoot(); got != tt.want {
+				t.Fatalf("runRequiresColdBoot() = %v, want %v", got, tt.want)
+			}
+			if got := coldBootReason(); got != tt.wantReason {
+				t.Fatalf("coldBootReason() = %q, want %q", got, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestCheckSuspendConfigMatchTreatsMissingBootModeAsNormal(t *testing.T) {
+	oldVMDir := vmDir
+	oldRuntimeProfile := runtimeProfile
+	oldCPUCount := cpuCount
+	oldMemoryGB := memoryGB
+	oldNetworkMode := networkMode
+	oldDisplays := displays
+	oldVolumes := volumes
+	oldShareDir := shareDir
+	oldUSBDevices := usbDevices
+	oldEnableClipboard := enableClipboard
+	oldSerialOutput := serialOutput
+	oldBootMode := currentBootSessionMode()
+	t.Cleanup(func() {
+		vmDir = oldVMDir
+		runtimeProfile = oldRuntimeProfile
+		cpuCount = oldCPUCount
+		memoryGB = oldMemoryGB
+		networkMode = oldNetworkMode
+		displays = oldDisplays
+		volumes = oldVolumes
+		shareDir = oldShareDir
+		usbDevices = oldUSBDevices
+		enableClipboard = oldEnableClipboard
+		serialOutput = oldSerialOutput
+		setActiveBootSessionMode(oldBootMode)
+	})
+
+	vmDir = t.TempDir()
+	runtimeProfile = "full"
+	cpuCount = 2
+	memoryGB = 4
+	networkMode = "nat"
+	displays = nil
+	volumes = nil
+	shareDir = ""
+	usbDevices = nil
+	enableClipboard = false
+	serialOutput = "stdout"
+	setActiveBootSessionMode(bootSessionModeNormal)
+
+	legacyFingerprint := `{
+  "cpus": 2,
+  "memoryGB": 4,
+  "network": "nat",
+  "displays": 1,
+  "volumes": 0,
+  "directorySharingDevices": 1,
+  "usbDevices": 0,
+  "usbControllers": 1,
+  "socketDevices": 1,
+  "balloonDevices": 1,
+  "clipboard": false,
+  "serial": true
+}`
+	if err := os.WriteFile(filepath.Join(vmDir, "suspend.config.json"), []byte(legacyFingerprint), 0644); err != nil {
+		t.Fatalf("write suspend config: %v", err)
+	}
+
+	if err := checkSuspendConfigMatch(); err != nil {
+		t.Fatalf("checkSuspendConfigMatch() = %v, want nil", err)
+	}
+}
+
+func TestCheckSuspendConfigMatchDetectsBootModeChange(t *testing.T) {
+	oldVMDir := vmDir
+	oldRuntimeProfile := runtimeProfile
+	oldCPUCount := cpuCount
+	oldMemoryGB := memoryGB
+	oldNetworkMode := networkMode
+	oldDisplays := displays
+	oldVolumes := volumes
+	oldShareDir := shareDir
+	oldUSBDevices := usbDevices
+	oldEnableClipboard := enableClipboard
+	oldSerialOutput := serialOutput
+	oldBootMode := currentBootSessionMode()
+	t.Cleanup(func() {
+		vmDir = oldVMDir
+		runtimeProfile = oldRuntimeProfile
+		cpuCount = oldCPUCount
+		memoryGB = oldMemoryGB
+		networkMode = oldNetworkMode
+		displays = oldDisplays
+		volumes = oldVolumes
+		shareDir = oldShareDir
+		usbDevices = oldUSBDevices
+		enableClipboard = oldEnableClipboard
+		serialOutput = oldSerialOutput
+		setActiveBootSessionMode(oldBootMode)
+	})
+
+	vmDir = t.TempDir()
+	runtimeProfile = "full"
+	cpuCount = 2
+	memoryGB = 4
+	networkMode = "nat"
+	displays = nil
+	volumes = nil
+	shareDir = ""
+	usbDevices = nil
+	enableClipboard = false
+	serialOutput = "stdout"
+	setActiveBootSessionMode(bootSessionModeNormal)
+
+	fingerprint := `{
+  "cpus": 2,
+  "memoryGB": 4,
+  "network": "nat",
+  "displays": 1,
+  "volumes": 0,
+  "directorySharingDevices": 1,
+  "usbDevices": 0,
+  "usbControllers": 1,
+  "socketDevices": 1,
+  "balloonDevices": 1,
+  "clipboard": false,
+  "serial": true,
+  "bootMode": "recovery"
+}`
+	if err := os.WriteFile(filepath.Join(vmDir, "suspend.config.json"), []byte(fingerprint), 0644); err != nil {
+		t.Fatalf("write suspend config: %v", err)
+	}
+
+	err := checkSuspendConfigMatch()
+	if err == nil {
+		t.Fatal("checkSuspendConfigMatch() = nil, want mismatch error")
+	}
+	if !strings.Contains(err.Error(), "boot mode: recovery -> normal") {
+		t.Fatalf("checkSuspendConfigMatch() = %q, want boot mode mismatch", err)
 	}
 }

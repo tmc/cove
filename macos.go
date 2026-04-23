@@ -119,11 +119,90 @@ type suspendConfigFingerprint struct {
 	USBDevices              int    `json:"usbDevices"`
 	// USBControllers captures the guest-visible USB topology used by the
 	// runtime profile. Save/restore requires device counts to match exactly.
-	USBControllers int  `json:"usbControllers"`
-	SocketDevices  int  `json:"socketDevices"`
-	BalloonDevices int  `json:"balloonDevices"`
-	Clipboard      bool `json:"clipboard"`
-	Serial         bool `json:"serial"`
+	USBControllers int    `json:"usbControllers"`
+	SocketDevices  int    `json:"socketDevices"`
+	BalloonDevices int    `json:"balloonDevices"`
+	Clipboard      bool   `json:"clipboard"`
+	Serial         bool   `json:"serial"`
+	BootMode       string `json:"bootMode,omitempty"`
+}
+
+type bootSessionMode uint32
+
+const (
+	bootSessionModeNormal bootSessionMode = iota
+	bootSessionModeRecovery
+	bootSessionModePrivateStart
+)
+
+var activeBootSessionMode atomic.Uint32
+
+func requestedBootSessionMode() bootSessionMode {
+	switch {
+	case recoveryMode:
+		return bootSessionModeRecovery
+	case privateMacStartOptionsEnabled():
+		return bootSessionModePrivateStart
+	default:
+		return bootSessionModeNormal
+	}
+}
+
+func currentBootSessionMode() bootSessionMode {
+	return bootSessionMode(activeBootSessionMode.Load())
+}
+
+func setActiveBootSessionMode(mode bootSessionMode) {
+	activeBootSessionMode.Store(uint32(mode))
+}
+
+func bootSessionModeString(mode bootSessionMode) string {
+	switch mode {
+	case bootSessionModeRecovery:
+		return "recovery"
+	case bootSessionModePrivateStart:
+		return "private-start"
+	default:
+		return "normal"
+	}
+}
+
+func normalizeBootSessionMode(mode string) string {
+	if mode == "" {
+		return bootSessionModeString(bootSessionModeNormal)
+	}
+	return mode
+}
+
+func activeBootSessionAllowsSuspend() bool {
+	return currentBootSessionMode() == bootSessionModeNormal
+}
+
+func shouldSuspendCurrentSession() bool {
+	return canSaveRestore && activeBootSessionAllowsSuspend()
+}
+
+func runRequiresColdBoot() bool {
+	return bootCommandsFile != "" || requestedBootSessionMode() != bootSessionModeNormal
+}
+
+func coldBootReason() string {
+	switch {
+	case recoveryMode && bootCommandsFile != "":
+		return "recovery mode with boot automation"
+	case recoveryMode:
+		return "recovery mode"
+	case bootCommandsFile != "":
+		return "boot automation"
+	case privateMacStartOptionsEnabled():
+		return "private macOS boot options"
+	default:
+		return "current run mode"
+	}
+}
+
+func shouldStopOnAutomationFailure() bool {
+	return bootCommandsFile != "" || requestedBootSessionMode() != bootSessionModeNormal
 }
 
 func currentConfigFingerprint() suspendConfigFingerprint {
@@ -140,6 +219,7 @@ func currentConfigFingerprint() suspendConfigFingerprint {
 		BalloonDevices:          currentBalloonDeviceFingerprintCount(),
 		Clipboard:               enableClipboard,
 		Serial:                  serialOutput != "none",
+		BootMode:                bootSessionModeString(currentBootSessionMode()),
 	}
 }
 
@@ -229,6 +309,9 @@ func checkSuspendConfigMatch() error {
 	}
 	if saved.Serial != current.Serial {
 		diffs = append(diffs, fmt.Sprintf("serial: %v -> %v", saved.Serial, current.Serial))
+	}
+	if normalizeBootSessionMode(saved.BootMode) != normalizeBootSessionMode(current.BootMode) {
+		diffs = append(diffs, fmt.Sprintf("boot mode: %s -> %s", normalizeBootSessionMode(saved.BootMode), normalizeBootSessionMode(current.BootMode)))
 	}
 	if len(diffs) > 0 {
 		return fmt.Errorf("vm config changed since suspend (%s); delete %s to cold boot",
@@ -1139,7 +1222,11 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		os.Remove(suspendStatePath())
 		os.Remove(suspendConfigPath())
 	}
-	if canSaveRestore && !recoveryMode && !privateMacStartOptionsEnabled() && hasSuspendState() {
+	if hasSuspendState() && !skipResume && runRequiresColdBoot() {
+		fmt.Printf("%s requires a cold boot; moving aside saved suspend state...\n", coldBootReason())
+		moveAsideSuspendState(coldBootReason())
+	}
+	if canSaveRestore && !runRequiresColdBoot() && hasSuspendState() {
 		stateFile := suspendStatePath()
 		if err := checkSuspendConfigMatch(); err != nil {
 			fmt.Printf("Cannot restore suspend state: %v\n", err)
@@ -1152,6 +1239,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 				fmt.Println("Restoring VM from suspended state...")
 			}
 			if err := restoreAndResumeVM(vm, queue); err == nil {
+				setActiveBootSessionMode(bootSessionModeNormal)
 				fmt.Println("VM resumed from saved state")
 				os.Remove(suspendConfigPath())
 				return nil
@@ -1212,6 +1300,7 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 				startErr <- fmt.Errorf("private macOS boot options require a stopped VM; stop it first")
 				return
 			}
+			setActiveBootSessionMode(bootSessionModeNormal)
 			vm.ResumeWithCompletionHandler(startHandlerFn)
 			return
 		case vz.VZVirtualMachineStateStarting, vz.VZVirtualMachineStateResuming, vz.VZVirtualMachineStateRestoring:
@@ -1223,13 +1312,16 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 		}
 		if recoveryMode {
 			fmt.Println("Starting VM in recovery mode...")
+			setActiveBootSessionMode(bootSessionModeRecovery)
 			startVMWithRuntimeOptions(vm, startHandlerFn)
 			return
 		}
 		if privateMacStartOptionsEnabled() {
+			setActiveBootSessionMode(bootSessionModePrivateStart)
 			startVMWithRuntimeOptions(vm, startHandlerFn)
 			return
 		}
+		setActiveBootSessionMode(bootSessionModeNormal)
 		vm.StartWithCompletionHandler(startHandlerFn)
 	})
 
@@ -1371,11 +1463,44 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		go autoMountTaggedVolumes(ctx, controlServer, getEffectiveVolumes())
 	}
 
+	var runErrMu sync.Mutex
+	var runErr error
+	setRunErr := func(err error) {
+		if err == nil {
+			return
+		}
+		runErrMu.Lock()
+		if runErr == nil {
+			runErr = err
+		}
+		runErrMu.Unlock()
+	}
+	getRunErr := func() error {
+		runErrMu.Lock()
+		defer runErrMu.Unlock()
+		return runErr
+	}
+	var automationStopOnce sync.Once
+	handleUnattendedError := func(err error) {
+		if err == nil {
+			return
+		}
+		wrapped := fmt.Errorf("unattended setup failed: %w", err)
+		if !shouldStopOnAutomationFailure() {
+			fmt.Fprintf(os.Stderr, "warning: %v\n", wrapped)
+			return
+		}
+		automationStopOnce.Do(func() {
+			setRunErr(wrapped)
+			fmt.Fprintf(os.Stderr, "error: %v\n", wrapped)
+			fmt.Fprintln(os.Stderr, "Stopping VM without suspend so the next run can cold boot cleanly.")
+			hardStopVM(vm, queue)
+		})
+	}
+
 	if unattended {
 		go func() {
-			if err := runUnattendedSetup(controlServer); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: unattended setup failed: %v\n", err)
-			}
+			handleUnattendedError(runUnattendedSetup(controlServer))
 		}()
 	} else if provisionUser != "" && shouldRunGUIAutomation() {
 		go runProvisioningAutomation(controlServer)
@@ -1443,7 +1568,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		if restoreTerminal != nil {
 			restoreTerminal()
 		}
-		if canSaveRestore {
+		if shouldSuspendCurrentSession() {
 			fmt.Println("\nSuspending VM...")
 			if err := suspendVM(vm, queue); err != nil {
 				fmt.Printf("Suspend failed: %v, stopping VM...\n", err)
@@ -1452,7 +1577,11 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 				fmt.Println("VM suspended")
 			}
 		} else {
-			fmt.Println("\nStopping VM...")
+			if mode := currentBootSessionMode(); mode != bootSessionModeNormal {
+				fmt.Printf("\nStopping VM without suspend (%s mode)...\n", bootSessionModeString(mode))
+			} else {
+				fmt.Println("\nStopping VM...")
+			}
 			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
@@ -1517,7 +1646,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	clearInjectSucceeded()
 	closeSerialOutputFile()
 	fmt.Println("VM stopped")
-	return nil
+	return getRunErr()
 }
 
 // restoreAndResumeVM restores VM state from the suspend file and resumes execution.
@@ -1827,14 +1956,47 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		go autoMountTaggedVolumes(ctx, controlServer, getEffectiveVolumes())
 	}
 
+	var runErrMu sync.Mutex
+	var runErr error
+	setRunErr := func(err error) {
+		if err == nil {
+			return
+		}
+		runErrMu.Lock()
+		if runErr == nil {
+			runErr = err
+		}
+		runErrMu.Unlock()
+	}
+	getRunErr := func() error {
+		runErrMu.Lock()
+		defer runErrMu.Unlock()
+		return runErr
+	}
+	var automationStopOnce sync.Once
+	handleUnattendedError := func(err error) {
+		if err == nil {
+			return
+		}
+		wrapped := fmt.Errorf("unattended setup failed: %w", err)
+		if !shouldStopOnAutomationFailure() {
+			fmt.Fprintf(os.Stderr, "warning: %v\n", wrapped)
+			return
+		}
+		automationStopOnce.Do(func() {
+			setRunErr(wrapped)
+			fmt.Fprintf(os.Stderr, "error: %v\n", wrapped)
+			fmt.Fprintln(os.Stderr, "Stopping VM without suspend so the next run can cold boot cleanly.")
+			hardStopVM(vm, queue)
+		})
+	}
+
 	// Start unattended or provisioning automation if requested.
 	// Unattended mode uses OCR for reliable detection; the older
 	// provisioning path uses pixel heuristics.
 	if unattended {
 		go func() {
-			if err := runUnattendedSetup(controlServer); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: unattended setup failed: %v\n", err)
-			}
+			handleUnattendedError(runUnattendedSetup(controlServer))
 		}()
 	} else if provisionUser != "" && shouldRunGUIAutomation() {
 		go runProvisioningAutomation(controlServer)
@@ -1859,7 +2021,6 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	var stateUpdate vmStateUpdate
 	stateUpdate.newState = -1
 	var startResult <-chan error
-	var runErr error
 	if launchOrder == "window-first" {
 		ch := make(chan error, 1)
 		startResult = ch
@@ -1915,7 +2076,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	cleanup := func() {
 		close(monitorDone)
 		stopControlRuntimeInfrastructure(controlServer)
-		if canSaveRestore {
+		if shouldSuspendCurrentSession() {
 			fmt.Println("\nSuspending VM...")
 			if err := suspendVM(vm, queue); err != nil {
 				fmt.Printf("Suspend failed: %v, stopping VM...\n", err)
@@ -1924,7 +2085,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 				fmt.Println("VM suspended (will resume on next launch)")
 			}
 		} else {
-			fmt.Println("\nStopping VM...")
+			if mode := currentBootSessionMode(); mode != bootSessionModeNormal {
+				fmt.Printf("\nStopping VM without suspend (%s mode)...\n", bootSessionModeString(mode))
+			} else {
+				fmt.Println("\nStopping VM...")
+			}
 			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
@@ -1998,7 +2163,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					case err := <-startResult:
 						startResult = nil
 						if err != nil {
-							runErr = err
+							setRunErr(err)
 							stateUpdate.mu.Lock()
 							stateUpdate.terminate = true
 							stateUpdate.changed = true
@@ -2108,7 +2273,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		statusItem.Shutdown()
 	}
 
-	return runErr
+	return getRunErr()
 }
 
 // transformToForegroundApp tells the window server that this process is a

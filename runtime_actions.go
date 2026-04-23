@@ -53,6 +53,7 @@ func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Qu
 			})
 		case vz.VZVirtualMachineStatePaused:
 			fmt.Printf("%s: resuming VM...\n", label)
+			setActiveBootSessionMode(bootSessionModeNormal)
 			vm.ResumeWithCompletionHandler(func(err error) {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error: vm resume: %v\n", err)
@@ -60,6 +61,7 @@ func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Qu
 			})
 		case vz.VZVirtualMachineStateStopped:
 			fmt.Printf("%s: starting VM...\n", label)
+			setActiveBootSessionMode(bootSessionModeNormal)
 			vm.StartWithCompletionHandler(func(err error) {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
@@ -79,6 +81,7 @@ func restartVM(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
 				return
 			}
 			fmt.Printf("%s: VM stopped, starting again...\n", label)
+			setActiveBootSessionMode(bootSessionModeNormal)
 			vm.StartWithCompletionHandler(func(err error) {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error: vm start during restart: %v\n", err)
@@ -93,6 +96,11 @@ func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 	fmt.Printf("%s: booting to recovery mode...\n", label)
 	DispatchAsyncQueue(queue, func() {
 		startRecovery := func() {
+			if hasSuspendState() {
+				fmt.Printf("%s: recovery mode requires a cold boot; moving aside saved suspend state...\n", label)
+				moveAsideSuspendState("recovery-mode")
+			}
+			setActiveBootSessionMode(bootSessionModeRecovery)
 			opts := vz.NewVZMacOSVirtualMachineStartOptions()
 			opts.SetStartUpFromMacOSRecovery(true)
 			vm.StartWithOptionsCompletionHandler(
@@ -125,6 +133,10 @@ func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 	label := actionSourceLabel(source)
 	if !canSaveRestore {
 		fmt.Printf("%s: save/restore not supported for this VM configuration\n", label)
+		return
+	}
+	if !activeBootSessionAllowsSuspend() {
+		fmt.Printf("%s: suspend unavailable while running in %s mode\n", label, bootSessionModeString(currentBootSessionMode()))
 		return
 	}
 	fmt.Printf("%s: suspending VM...\n", label)
