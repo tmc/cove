@@ -53,7 +53,7 @@ func (s *ControlServer) getAgent() (*AgentClient, error) {
 	if a := s.agent; a != nil {
 		s.agentMu.RUnlock()
 		// Quick health check outside any lock.
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := s.timeoutContext(2 * time.Second)
 		defer cancel()
 		if _, err := a.Ping(ctx); err == nil {
 			return a, nil
@@ -68,7 +68,7 @@ func (s *ControlServer) getAgent() (*AgentClient, error) {
 	defer s.agentMu.Unlock()
 	// Double-check after acquiring write lock.
 	if s.agent != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := s.timeoutContext(2 * time.Second)
 		defer cancel()
 		if _, err := s.agent.Ping(ctx); err == nil {
 			return s.agent, nil
@@ -97,7 +97,7 @@ func (s *ControlServer) getUserAgent() (*UserAgentClient, error) {
 	s.agentMu.RLock()
 	if ua := s.userAgent; ua != nil {
 		s.agentMu.RUnlock()
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := s.timeoutContext(2 * time.Second)
 		defer cancel()
 		if _, err := ua.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
 			return ua, nil
@@ -110,7 +110,7 @@ func (s *ControlServer) getUserAgent() (*UserAgentClient, error) {
 	s.agentMu.Lock()
 	defer s.agentMu.Unlock()
 	if s.userAgent != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := s.timeoutContext(2 * time.Second)
 		defer cancel()
 		if _, err := s.userAgent.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
 			return s.userAgent, nil
@@ -165,7 +165,7 @@ func (s *ControlServer) connectUserAgentPortLocked() error {
 	if err != nil {
 		return fmt.Errorf("user agent client: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := s.timeoutContext(5 * time.Second)
 	defer cancel()
 	if _, err := client.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err != nil {
 		client.Close()
@@ -189,7 +189,7 @@ func (s *ControlServer) bootstrapUserAgentLocked() error {
 	}
 
 	plistPath := "/Library/LaunchAgents/" + agentLaunchAgentLabel + ".plist"
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := s.timeoutContext(20 * time.Second)
 	defer cancel()
 
 	if err := s.agent.WriteFile(ctx, plistPath, []byte(agentLaunchAgentPlist), 0644); err != nil {
@@ -224,7 +224,7 @@ launchctl kickstart -k gui/%d/%s
 }
 
 func (s *ControlServer) consoleUserLocked() (string, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := s.timeoutContext(5 * time.Second)
 	defer cancel()
 
 	result, err := s.agent.Exec(ctx, []string{"stat", "-f", "%Su %u", "/dev/console"}, nil, "")
@@ -325,7 +325,7 @@ func (s *ControlServer) connectAgentLocked() error {
 	if err != nil {
 		return fmt.Errorf("agent client: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := s.timeoutContext(5 * time.Second)
 	defer cancel()
 	if _, err := client.Ping(ctx); err != nil {
 		client.Close()
@@ -415,7 +415,7 @@ func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *co
 	if len(cmd.Args) == 0 {
 		return &controlpb.ControlResponse{Error: "args required"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := s.timeoutContext(10 * time.Minute)
 	defer cancel()
 	result, err := ua.UserExec(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
 	if err != nil {
@@ -721,7 +721,7 @@ func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := s.timeoutContext(5 * time.Second)
 	defer cancel()
 	version, err := a.Ping(ctx)
 	if err != nil {
@@ -739,7 +739,7 @@ func (s *ControlServer) handleAgentInfo() *controlpb.ControlResponse {
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := s.timeoutContext(10 * time.Second)
 	defer cancel()
 	info, err := a.Info(ctx)
 	if err != nil {
@@ -766,7 +766,7 @@ func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *contro
 	if len(cmd.Args) == 0 {
 		return &controlpb.ControlResponse{Error: "args required"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := s.timeoutContext(10 * time.Minute)
 	defer cancel()
 	result, err := a.Exec(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
 	if err != nil {
@@ -798,7 +798,7 @@ func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *co
 	if cmd.Path == "" {
 		return &controlpb.ControlResponse{Error: "path required"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
 	data, err := a.ReadFile(ctx, cmd.Path)
 	if err != nil {
@@ -827,7 +827,7 @@ func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *
 	if mode == 0 {
 		mode = 0644
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
 	if err := a.WriteFile(ctx, cmd.Path, data, mode); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("write: %v", err)}
@@ -840,7 +840,7 @@ func (s *ControlServer) handleAgentShutdown(cmd *controlpb.AgentShutdownCommand)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := s.timeoutContext(10 * time.Second)
 	defer cancel()
 	if err := a.Shutdown(ctx, cmd.Force); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("shutdown: %v", err)}
@@ -853,7 +853,7 @@ func (s *ControlServer) handleAgentReboot() *controlpb.ControlResponse {
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := s.timeoutContext(10 * time.Second)
 	defer cancel()
 	if err := a.Reboot(ctx); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("reboot: %v", err)}
@@ -877,7 +877,7 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 	default:
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown sshd action: %s (use on, off, or status)", cmd.Action)}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
 	result, err := a.Exec(ctx, args, nil, "")
 	if err != nil {
@@ -922,11 +922,11 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 			mountPoint = "/mnt/" + m.Tag
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := s.timeoutContext(10 * time.Second)
 		a.Exec(ctx, []string{"mkdir", "-p", mountPoint}, nil, "")
 		cancel()
 
-		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel = s.timeoutContext(10 * time.Second)
 		result, err := a.Exec(ctx, []string{"mount_virtiofs", m.Tag, mountPoint}, nil, "")
 		cancel()
 
@@ -974,7 +974,7 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := s.timeoutContext(10 * time.Minute)
 	defer cancel()
 
 	var stream ExecStreamReceiver
@@ -1058,7 +1058,7 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 			timeout = 30 * time.Minute
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := s.timeoutContext(timeout)
 	defer cancel()
 
 	if cmd.ToGuest {

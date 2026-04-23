@@ -124,6 +124,10 @@ func (s *ControlServer) lifecycleContext() context.Context {
 	return s.lifecycleCtx
 }
 
+func (s *ControlServer) timeoutContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(s.lifecycleContext(), timeout)
+}
+
 func (s *ControlServer) captureBackend() automationBackendMode {
 	return automationBackendMode(s.captureMode.Load())
 }
@@ -1847,7 +1851,7 @@ func (s *ControlServer) handleNetworkInfo() *controlpb.ControlResponse {
 
 	// Try to get guest IP via agent (best-effort, short timeout)
 	if a, err := s.getAgent(); err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := s.timeoutContext(5 * time.Second)
 		defer cancel()
 		result, err := a.Exec(ctx, []string{"ipconfig", "getifaddr", "en0"}, nil, "")
 		if err == nil && result.ExitCode == 0 {
