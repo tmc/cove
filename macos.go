@@ -1398,6 +1398,7 @@ func currentVMState(vm vz.VZVirtualMachine, queue dispatch.Queue) (vz.VZVirtualM
 
 // runVMHeadless runs the VM in headless mode with serial console and signal handling.
 func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
+	target := currentVMSelection()
 	// Put terminal in raw mode for serial console interaction
 	var restoreTerminal func()
 	if serialOutput == "stdout" {
@@ -1406,8 +1407,8 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	app := ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
 
-	sock := GetControlSocketPathForVM(vmDir)
-	controlServer := NewControlServerWithVMDir(sock, vmDir)
+	sock := target.controlSocketPath()
+	controlServer := NewControlServerWithVMDir(sock, target.Directory)
 	controlServer.SetVM(vm, queue)
 	runtimeFeatures, err := newRuntimeFeatureState()
 	if err != nil {
@@ -1440,10 +1441,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		}
 	}
 	if runHTTPAddr != "" {
-		name := vmName
-		if name == "" {
-			name = "default"
-		}
+		name := target.elevationLabel()
 		ln, err := controlServer.StartHTTP(runHTTPAddr, name)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: start http: %v\n", err)
@@ -1455,7 +1453,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	startControlRuntimeInfrastructure(controlServer)
 
 	// Check if vz-agent is available in the guest (background, non-blocking).
-	go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, vmName))
+	go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
 
 	// Auto-mount tagged volumes in guest if requested.
 	if autoMountVolumes {
