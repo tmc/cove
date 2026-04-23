@@ -283,10 +283,11 @@ func attachDiskImageNoMountDI2(diskPath string) (string, error) {
 // detachDisk safely detaches a disk device and verifies it is no longer
 // attached. Falls back to escalating detach strategies if needed.
 func detachDisk(device string) {
-	fmt.Printf("Detaching %s...\n", device)
+	detachDiskForPath(device, filepath.Join(vmDir, "disk.img"))
+}
 
-	// Find the disk image path so we can verify detach.
-	diskPath := filepath.Join(vmDir, "disk.img")
+func detachDiskForPath(device, diskPath string) {
+	fmt.Printf("Detaching %s...\n", device)
 
 	if err := detachDiskVerified(device, diskPath); err != nil {
 		fmt.Printf("warning: %v\n", err)
@@ -298,7 +299,11 @@ func detachDisk(device string) {
 // the control socket. Returns a clear error if the VM is active, preventing
 // disk operations that would corrupt a running VM.
 func checkVMNotRunning() error {
-	sock := GetControlSocketPath()
+	return checkVMNotRunningAt(vmDir)
+}
+
+func checkVMNotRunningAt(vmDirectory string) error {
+	sock := GetControlSocketPathForVM(vmDirectory)
 	if _, err := os.Stat(sock); os.IsNotExist(err) {
 		return nil // no socket, VM not running
 	}

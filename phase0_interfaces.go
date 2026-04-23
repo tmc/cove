@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"net"
+	"path/filepath"
 	"time"
 
 	"github.com/tmc/apple/appkit"
@@ -35,6 +36,11 @@ type runtimeAgentAvailabilityTarget interface {
 	getAgent() (*AgentClient, error)
 	effectiveVMDir() string
 	vmHintFlag() string
+}
+
+type vmSelection struct {
+	Directory string
+	Name      string
 }
 
 type controlServerGuestConnector struct {
@@ -103,6 +109,36 @@ func (c controlServerAgentAvailabilityTarget) effectiveVMDir() string {
 
 func (c controlServerAgentAvailabilityTarget) vmHintFlag() string {
 	return c.flag
+}
+
+func currentVMSelection() vmSelection {
+	return vmSelection{
+		Directory: vmDir,
+		Name:      vmName,
+	}
+}
+
+func (s vmSelection) controlSocketPath() string {
+	return GetControlSocketPathForVM(s.Directory)
+}
+
+func (s vmSelection) diskPath() string {
+	return filepath.Join(s.Directory, "disk.img")
+}
+
+func (s vmSelection) linuxDiskPath() string {
+	return filepath.Join(s.Directory, "linux-disk.img")
+}
+
+func (s vmSelection) elevationLabel() string {
+	if s.Name != "" {
+		return s.Name
+	}
+	return "default"
+}
+
+func (s vmSelection) hintFlag() string {
+	return vmHintFlag(s.Name)
 }
 
 func vmHintFlag(vmName string) string {

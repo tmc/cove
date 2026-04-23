@@ -259,13 +259,14 @@ func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pend
 // Idempotent: if the running VM already has the same agent version, returns
 // without rebuilding.
 func provisionAgent() error {
-	sock := GetControlSocketPath()
+	target := currentVMSelection()
+	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
 		fmt.Println("Updating agent in running VM via vsock...")
 		return provisionAgentRunning(sock)
 	}
 	fmt.Println("Mounting disk for offline injection...")
-	return injectAgentOnly()
+	return injectAgentOnlyForVM(target)
 }
 
 // provisionAgentRunning provisions the agent into a running VM via the
@@ -314,12 +315,16 @@ func agentVersionsEqual(host, guest string) bool {
 // LaunchDaemon plist (port 1024), and LaunchAgent plist (port 1025).
 // No user provisioning is performed.
 func injectAgentOnly() error {
-	if err := checkVMNotRunning(); err != nil {
+	return injectAgentOnlyForVM(currentVMSelection())
+}
+
+func injectAgentOnlyForVM(target vmSelection) error {
+	if err := checkVMNotRunningAt(target.Directory); err != nil {
 		return err
 	}
-	diskPath := filepath.Join(vmDir, "disk.img")
+	diskPath := target.diskPath()
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		linuxDisk := filepath.Join(vmDir, "linux-disk.img")
+		linuxDisk := target.linuxDiskPath()
 		if _, lerr := os.Stat(linuxDisk); lerr == nil {
 			return fmt.Errorf("offline agent inject is not supported for Linux VMs (found %s)\n  Linux VMs install the agent via cloud-init at install time.\n  Options:\n    - Reinstall: cove install -linux\n    - Boot the VM and install the agent over SSH manually\n    - Track the embedded-cidata fix at task #17",
 				linuxDisk)
@@ -334,7 +339,7 @@ func injectAgentOnly() error {
 	// the user can re-run by hand, then bail with clear instructions. The
 	// generated script does its own mount + copy + detach.
 	if restrictedEnvironment() && os.Getuid() != 0 && !helperInstalled() {
-		return injectAgentOnlyRestricted(diskPath)
+		return injectAgentOnlyRestricted(target, diskPath)
 	}
 
 	if err := checkDiskNotMounted(diskPath); err != nil {
@@ -367,14 +372,14 @@ func injectAgentOnly() error {
 	if err != nil {
 		return fmt.Errorf("mount data volume: %w", err)
 	}
-	defer detachDisk(device)
+	defer detachDiskForPath(device, diskPath)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
 		fmt.Println("\nInterrupted — detaching disk before exit...")
-		detachDisk(device)
+		detachDiskForPath(device, diskPath)
 		os.Exit(1)
 	}()
 	defer signal.Stop(sigCh)
@@ -407,7 +412,7 @@ func injectAgentOnly() error {
 		},
 	}
 	if err := runElevated(em, elevationPrompt(
-		fmt.Sprintf("Install guest agent into VM %q.", elevationVMLabel()),
+		fmt.Sprintf("Install guest agent into VM %q.", target.elevationLabel()),
 	)); err != nil {
 		return fmt.Errorf("agent inject: %w", err)
 	}
@@ -424,8 +429,8 @@ func injectAgentOnly() error {
 	fmt.Println("=== Agent Provisioning Complete ===")
 	fmt.Println("  - vz-agent daemon installed (vsock port 1024, root)")
 	fmt.Println("  - vz-agent user agent installed (vsock port 1025, user session)")
-	fmt.Println("Run the VM with: ./cove run")
-	if err := setVMAgentRequested(vmDir, detectVMAgentPlatform(vmDir), true, vmAgentSourceProvision); err != nil {
+	fmt.Printf("Run the VM with: ./cove%s run\n", target.hintFlag())
+	if err := setVMAgentRequested(target.Directory, detectVMAgentPlatform(target.Directory), true, vmAgentSourceProvision); err != nil {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
 	return nil
@@ -436,7 +441,7 @@ func injectAgentOnly() error {
 // dialog). It builds the agent and writes a self-contained installer script
 // into ~/.vz/pending-elevation/<timestamp>/ that the user can re-run by hand
 // in a real terminal. The script does its own mount + copy + detach.
-func injectAgentOnlyRestricted(diskPath string) error {
+func injectAgentOnlyRestricted(target vmSelection, diskPath string) error {
 	fmt.Println("=== Provisioning Guest Agent (restricted environment) ===")
 	fmt.Println("Detected sandboxed environment; preparing self-contained installer.")
 
@@ -601,9 +606,9 @@ echo "    wrote $AGENT_DIR/%s"
 
 echo
 echo "=== Agent injection complete ==="
-echo "Boot the VM with: cove -vm <name> run"
+echo "Boot the VM with: cove%s run"
 `,
-		diskPath,
+		target.elevationLabel(),
 		diskPath,
 		staging,
 		agentBinaryName, agentBinaryName, agentBinaryName, agentBinaryName, agentBinaryName,
@@ -613,12 +618,13 @@ echo "Boot the VM with: cove -vm <name> run"
 		agentLaunchAgentLabel+".plist", agentLaunchAgentLabel+".plist",
 		agentLaunchAgentLabel+".plist", agentLaunchAgentLabel+".plist",
 		agentLaunchAgentLabel+".plist",
+		target.hintFlag(),
 	)
 	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write installer script: %w", err)
 	}
 
-	if err := setVMAgentRequested(vmDir, detectVMAgentPlatform(vmDir), true, vmAgentSourceProvision); err != nil && verbose {
+	if err := setVMAgentRequested(target.Directory, detectVMAgentPlatform(target.Directory), true, vmAgentSourceProvision); err != nil && verbose {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
 
