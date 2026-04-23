@@ -123,7 +123,7 @@ func (r *OperationRegistry) List() []*Operation {
 
 // Start marks the operation as running.
 func (r *OperationRegistry) Start(id string) error {
-	return r.Update(id, func(o *Operation) {
+	return r.update(id, func(o *Operation) {
 		o.Status = operationStatusRunning
 		o.Error = nil
 	})
@@ -131,7 +131,7 @@ func (r *OperationRegistry) Start(id string) error {
 
 // SetProgress records progress for an operation.
 func (r *OperationRegistry) SetProgress(id string, progress OperationProgress) error {
-	return r.Update(id, func(o *Operation) {
+	return r.update(id, func(o *Operation) {
 		progress := progress
 		o.Progress = &progress
 	})
@@ -139,7 +139,7 @@ func (r *OperationRegistry) SetProgress(id string, progress OperationProgress) e
 
 // Succeed marks the operation as succeeded and records result.
 func (r *OperationRegistry) Succeed(id string, result map[string]any) error {
-	return r.Update(id, func(o *Operation) {
+	return r.update(id, func(o *Operation) {
 		o.Status = operationStatusSucceeded
 		o.Result = cloneOperationResult(result)
 		o.Error = nil
@@ -148,16 +148,16 @@ func (r *OperationRegistry) Succeed(id string, result map[string]any) error {
 
 // Fail marks the operation as failed and records an error code and message.
 func (r *OperationRegistry) Fail(id, code, message string) error {
-	return r.Update(id, func(o *Operation) {
+	return r.update(id, func(o *Operation) {
 		o.Status = operationStatusFailed
 		o.Error = &OperationError{Code: code, Message: message}
 	})
 }
 
-// Update applies mutator to a copy of the named operation, persists it, and
+// update applies mutator to a copy of the named operation, persists it, and
 // broadcasts a snapshot to all subscribers. On terminal status the subscriber
 // channels are closed. If persist fails the in-memory state is not updated.
-func (r *OperationRegistry) Update(id string, mutator func(*Operation)) error {
+func (r *OperationRegistry) update(id string, mutator func(*Operation)) error {
 	r.mu.Lock()
 	e, ok := r.ops[id]
 	if !ok {
@@ -225,7 +225,7 @@ func cloneOperationResult(m map[string]any) map[string]any {
 }
 
 // Subscribe returns a buffered channel that receives Operation snapshots on
-// every Update call. The channel closes when the operation reaches a terminal
+// every state change. The channel closes when the operation reaches a terminal
 // state or when ctx is done.
 //
 // If the operation is already in a terminal state a closed channel is returned
@@ -249,7 +249,7 @@ func (r *OperationRegistry) Subscribe(ctx context.Context, id string) (<-chan *O
 	e.subs = append(e.subs, ch)
 	r.mu.Unlock()
 
-	// Close the channel when ctx is done (unless already closed by terminal Update).
+	// Close the channel when ctx is done (unless already closed by a terminal state).
 	go func() {
 		<-ctx.Done()
 		r.mu.Lock()

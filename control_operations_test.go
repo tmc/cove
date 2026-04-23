@@ -87,15 +87,15 @@ func TestGetList(t *testing.T) {
 	}
 }
 
-func TestUpdate_StatusTransition(t *testing.T) {
+func TestOperationRegistry_StatusTransition(t *testing.T) {
 	r := newTestRegistry(t)
 	op, _ := r.Create("vm/x")
 
-	if err := r.Update(op.ID, func(o *Operation) {
-		o.Status = "running"
-		o.Progress = &OperationProgress{Phase: "start", Percent: 10}
-	}); err != nil {
-		t.Fatalf("Update: %v", err)
+	if err := r.Start(op.ID); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := r.SetProgress(op.ID, OperationProgress{Phase: "start", Percent: 10}); err != nil {
+		t.Fatalf("SetProgress: %v", err)
 	}
 	got, _ := r.Get(op.ID)
 	if got.Status != "running" {
@@ -152,15 +152,14 @@ func TestOperationRegistryTransitions(t *testing.T) {
 	}
 }
 
-func TestUpdate_PersistsViaStore(t *testing.T) {
+func TestOperationRegistry_PersistsViaStore(t *testing.T) {
 	store := NewMemOperationStore()
 	r, _ := NewOperationRegistry(store)
 	op, _ := r.Create("vm/persist")
 
-	r.Update(op.ID, func(o *Operation) {
-		o.Status = "succeeded"
-		o.Result = map[string]any{"ip": "192.168.1.1"}
-	})
+	if err := r.Succeed(op.ID, map[string]any{"ip": "192.168.1.1"}); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
 
 	// Load directly from store to confirm persistence.
 	ops, _ := store.Load()
@@ -171,16 +170,16 @@ func TestUpdate_PersistsViaStore(t *testing.T) {
 		}
 	}
 	if found == nil {
-		t.Fatal("op not found in store after Update")
+		t.Fatal("op not found in store after Succeed")
 	}
 	if found.Status != "succeeded" {
 		t.Errorf("stored status = %q, want succeeded", found.Status)
 	}
 }
 
-func TestUpdate_NonExistent(t *testing.T) {
+func TestOperationRegistry_NonExistentTransition(t *testing.T) {
 	r := newTestRegistry(t)
-	err := r.Update("op_deadbeef", func(o *Operation) {})
+	err := r.Start("op_deadbeef")
 	if !errors.Is(err, ErrOperationNotFound) {
 		t.Errorf("expected ErrOperationNotFound, got %v", err)
 	}
@@ -198,7 +197,7 @@ func TestSubscribe_ReceivesUpdate(t *testing.T) {
 		t.Fatalf("Subscribe: %v", err)
 	}
 
-	go r.Update(op.ID, func(o *Operation) { o.Status = "running" })
+	go r.Start(op.ID)
 
 	select {
 	case snap, ok := <-ch:
@@ -216,7 +215,9 @@ func TestSubscribe_ReceivesUpdate(t *testing.T) {
 func TestSubscribe_TerminalOpReturnsClosed(t *testing.T) {
 	r := newTestRegistry(t)
 	op, _ := r.Create("vm/done")
-	r.Update(op.ID, func(o *Operation) { o.Status = "succeeded" })
+	if err := r.Succeed(op.ID, nil); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
 
 	ch, err := r.Subscribe(context.Background(), op.ID)
 	if err != nil {
@@ -249,7 +250,9 @@ func TestSubscribe_TerminalClosesChannel(t *testing.T) {
 	defer cancel()
 
 	ch, _ := r.Subscribe(ctx, op.ID)
-	r.Update(op.ID, func(o *Operation) { o.Status = "failed" })
+	if err := r.Fail(op.ID, "test_failed", "failed for test"); err != nil {
+		t.Fatalf("Fail: %v", err)
+	}
 
 	// Drain until closed.
 	for range ch {
@@ -288,9 +291,7 @@ func TestConcurrent_NoDeadlock(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			r.Update(op.ID, func(o *Operation) {
-				o.Progress = &OperationProgress{Percent: i % 100}
-			})
+			r.SetProgress(op.ID, OperationProgress{Percent: i % 100})
 		}(i)
 	}
 
@@ -327,12 +328,12 @@ func TestSlowSubscriber_RegistryNeverBlocks(t *testing.T) {
 
 	// Fire 20 updates without reading from ch (buffer is 16).
 	for i := 0; i < 20; i++ {
-		r.Update(op.ID, func(o *Operation) {
-			o.Progress = &OperationProgress{Percent: 50}
-		})
+		r.SetProgress(op.ID, OperationProgress{Percent: 50})
 	}
 	// Mark terminal so we can drain cleanly.
-	r.Update(op.ID, func(o *Operation) { o.Status = "succeeded" })
+	if err := r.Succeed(op.ID, nil); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
 
 	// Drain channel — it must be closed eventually.
 	select {
@@ -349,21 +350,22 @@ func TestSlowSubscriber_RegistryNeverBlocks(t *testing.T) {
 
 func TestPurgeOlderThan(t *testing.T) {
 	r := newTestRegistry(t)
-	past := func(op *Operation) {
-		op.UpdatedAt = time.Now().Add(-2 * time.Hour)
-		op.Status = "succeeded"
-	}
-
 	a, _ := r.Create("vm/a")
 	b, _ := r.Create("vm/b")
 	c, _ := r.Create("vm/c") // running, should NOT be purged
 
-	r.Update(a.ID, func(o *Operation) { past(o) })
-	r.Update(b.ID, func(o *Operation) { past(o) })
-	r.Update(c.ID, func(o *Operation) { o.Status = "running" })
+	if err := r.Succeed(a.ID, nil); err != nil {
+		t.Fatalf("Succeed a: %v", err)
+	}
+	if err := r.Succeed(b.ID, nil); err != nil {
+		t.Fatalf("Succeed b: %v", err)
+	}
+	if err := r.Start(c.ID); err != nil {
+		t.Fatalf("Start c: %v", err)
+	}
 
 	// Manually backdate the in-memory UpdatedAt for a and b.
-	// (Update sets UpdatedAt = now, so override after the fact via a second Update.)
+	// Transitions set UpdatedAt = now; this test needs old terminal operations.
 	r.mu.Lock()
 	r.ops[a.ID].op.UpdatedAt = time.Now().Add(-2 * time.Hour)
 	r.ops[b.ID].op.UpdatedAt = time.Now().Add(-2 * time.Hour)
@@ -396,7 +398,9 @@ func TestLoadFromStore_ReindexesPriorOps(t *testing.T) {
 	}
 	r1, _ := NewOperationRegistry(store)
 	op, _ := r1.Create("vm/reload")
-	r1.Update(op.ID, func(o *Operation) { o.Status = "running" })
+	if err := r1.Start(op.ID); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
 
 	// Simulate process restart: a new registry calling Load() coerces in-flight ops.
 	store2, _ := NewFileOperationStore(dir)
@@ -434,20 +438,19 @@ func TestFileStore_DurabilityAcrossRestart(t *testing.T) {
 	}
 
 	doneOp, _ := r1.Create("vm/done")
-	if err := r1.Update(doneOp.ID, func(o *Operation) {
-		o.Status = "succeeded"
-		o.Progress = &OperationProgress{Phase: "finalize", Percent: 100}
-		o.Result = map[string]any{"ip": "10.0.0.1", "disk_bytes": float64(1024)}
-	}); err != nil {
-		t.Fatalf("Update done: %v", err)
+	if err := r1.SetProgress(doneOp.ID, OperationProgress{Phase: "finalize", Percent: 100}); err != nil {
+		t.Fatalf("SetProgress done: %v", err)
+	}
+	if err := r1.Succeed(doneOp.ID, map[string]any{"ip": "10.0.0.1", "disk_bytes": float64(1024)}); err != nil {
+		t.Fatalf("Succeed done: %v", err)
 	}
 
 	runOp, _ := r1.Create("vm/running")
-	if err := r1.Update(runOp.ID, func(o *Operation) {
-		o.Status = "running"
-		o.Progress = &OperationProgress{Phase: "install", Percent: 42}
-	}); err != nil {
-		t.Fatalf("Update running: %v", err)
+	if err := r1.Start(runOp.ID); err != nil {
+		t.Fatalf("Start running: %v", err)
+	}
+	if err := r1.SetProgress(runOp.ID, OperationProgress{Phase: "install", Percent: 42}); err != nil {
+		t.Fatalf("SetProgress running: %v", err)
 	}
 
 	// Simulate process restart — build a new store+registry over the same dir.

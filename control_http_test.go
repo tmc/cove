@@ -255,10 +255,8 @@ func TestHTTPOperationSSE(t *testing.T) {
 	// Give the SSE handler a moment to subscribe.
 	time.Sleep(50 * time.Millisecond)
 
-	// Update to terminal state — this should close the SSE stream.
-	if err := reg.Update(op.ID, func(o *Operation) {
-		o.Status = "succeeded"
-	}); err != nil {
+	// Move to a terminal state; this should close the SSE stream.
+	if err := reg.Succeed(op.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -287,6 +285,6 @@ type sseRecorder struct {
 }
 
 func (r *sseRecorder) Header() http.Header         { return r.header }
-func (r *sseRecorder) WriteHeader(code int)         { r.code = code }
-func (r *sseRecorder) Flush()                       {}
-func (r *sseRecorder) Write(p []byte) (int, error)  { return r.w.Write(p) }
+func (r *sseRecorder) WriteHeader(code int)        { r.code = code }
+func (r *sseRecorder) Flush()                      {}
+func (r *sseRecorder) Write(p []byte) (int, error) { return r.w.Write(p) }
