@@ -179,10 +179,18 @@ func buildAPIDocs() *apiDocs {
 }
 
 func buildMCPDocs() *mcpDocs {
-	if dumpDocsMCP.ProtocolVersion == "" && len(dumpDocsMCP.Tools) == 0 {
-		return nil
+	tools := make([]mcpToolDoc, 0, len(mcpToolTable))
+	for _, tool := range mcpToolTable {
+		tools = append(tools, mcpToolDoc{
+			Name:        tool.Name,
+			Description: tool.Description,
+			InputSchema: cloneMap(tool.Schema),
+		})
 	}
-	return cloneMCPDocs(&dumpDocsMCP)
+	return &mcpDocs{
+		ProtocolVersion: mcpProtocolVersion,
+		Tools:           tools,
+	}
 }
 
 type cliDocSpec struct {
@@ -191,8 +199,6 @@ type cliDocSpec struct {
 	Aliases []string
 	Usage   func() string
 }
-
-var dumpDocsMCP mcpDocs
 
 var cliDocSpecs = []cliDocSpec{
 	{Name: "up", Summary: "Install, provision, and boot a VM in one command.", Usage: func() string {
@@ -325,24 +331,6 @@ func cloneMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
 		out[k] = cloneValue(v)
-	}
-	return out
-}
-
-func cloneMCPDocs(in *mcpDocs) *mcpDocs {
-	if in == nil {
-		return nil
-	}
-	out := &mcpDocs{
-		ProtocolVersion: in.ProtocolVersion,
-		Tools:           make([]mcpToolDoc, len(in.Tools)),
-	}
-	for i := range in.Tools {
-		out.Tools[i] = mcpToolDoc{
-			Name:        in.Tools[i].Name,
-			Description: in.Tools[i].Description,
-			InputSchema: cloneMap(in.Tools[i].InputSchema),
-		}
 	}
 	return out
 }
