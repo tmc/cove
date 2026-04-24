@@ -108,6 +108,22 @@ func TestPullDiskDownloadsRegistryChunks(t *testing.T) {
 	if string(provenance) != "sha256:manifest\n" {
 		t.Fatalf("provenance = %q, want sha256:manifest", string(provenance))
 	}
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{name: "aux.img", want: "aux"},
+		{name: "hw.model", want: "hw"},
+		{name: "machine.id", want: "machine"},
+	} {
+		got, err := os.ReadFile(filepath.Join(vmDir, tt.name))
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", tt.name, err)
+		}
+		if string(got) != tt.want {
+			t.Fatalf("%s = %q, want %q", tt.name, string(got), tt.want)
+		}
+	}
 }
 
 func TestPullDiskLeavesPartialOnBlobFailure(t *testing.T) {
@@ -281,17 +297,39 @@ func pullCompressedTestManifest(t *testing.T, disk []byte) (ociimage.Manifest, m
 	if err != nil {
 		t.Fatalf("PrepareChunkLayer(): %v", err)
 	}
+	layers := []ociimage.Descriptor{prepared.Descriptor}
+	blobs := map[string][]byte{
+		prepared.Descriptor.Digest: prepared.Data,
+	}
+	for _, blob := range []struct {
+		role string
+		data []byte
+	}{
+		{role: "nvram", data: []byte("aux")},
+		{role: "hw-model", data: []byte("hw")},
+		{role: "machine-id", data: []byte("machine")},
+	} {
+		desc := ociimage.Descriptor{
+			MediaType: ociimage.MediaTypeLayer,
+			Size:      int64(len(blob.data)),
+			Digest:    pushTestDigest(blob.data),
+			Annotations: map[string]string{
+				ociimage.CoveRole: blob.role,
+			},
+		}
+		layers = append(layers, desc)
+		blobs[desc.Digest] = blob.data
+	}
+
 	manifest := ociimage.Manifest{
 		SchemaVersion: 2,
 		MediaType:     ociimage.MediaTypeImageManifest,
 		Annotations: map[string]string{
 			ociimage.CoveUncompressedDiskSize: fmt.Sprint(len(disk)),
 		},
-		Layers: []ociimage.Descriptor{prepared.Descriptor},
+		Layers: layers,
 	}
-	return manifest, map[string][]byte{
-		prepared.Descriptor.Digest: prepared.Data,
-	}
+	return manifest, blobs
 }
 
 func pullTestRegistry(t *testing.T, manifest ociimage.Manifest, blobs map[string][]byte) *httptest.Server {

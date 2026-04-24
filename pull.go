@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -201,6 +203,9 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 			return fmt.Errorf("close blob: %w", closeErr)
 		}
 	}
+	if err := pullMetadataBlobs(ctx, client, plan); err != nil {
+		return err
+	}
 	if err := disk.Sync(); err != nil {
 		return fmt.Errorf("sync partial disk: %w", err)
 	}
@@ -216,6 +221,85 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}
 	if err := syncPullDir(plan.VMDir); err != nil {
 		return fmt.Errorf("fsync VM directory: %w", err)
+	}
+	return nil
+}
+
+func pullMetadataBlobs(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan) error {
+	for _, desc := range plan.Manifest.Blobs {
+		name, ok, err := pullMetadataFileName(desc)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		path := filepath.Join(plan.VMDir, name)
+		if err := pullBlobToFile(ctx, client, plan.Ref, desc, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func pullMetadataFileName(desc ociimage.Descriptor) (string, bool, error) {
+	ann, err := ociimage.NormalizeLayerAnnotations(desc.Annotations)
+	if err != nil {
+		return "", false, fmt.Errorf("parse metadata layer: %w", err)
+	}
+	switch ann.Role {
+	case "nvram":
+		return "aux.img", true, nil
+	case "hw-model":
+		return "hw.model", true, nil
+	case "machine-id":
+		return "machine.id", true, nil
+	default:
+		return "", false, nil
+	}
+}
+
+func pullBlobToFile(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, desc ociimage.Descriptor, path string) error {
+	if desc.Digest == "" {
+		return fmt.Errorf("pull metadata blob: missing digest")
+	}
+	if desc.Size < 0 {
+		return fmt.Errorf("pull metadata blob: negative size %d", desc.Size)
+	}
+	body, err := client.FetchBlob(ctx, ref, desc.Digest)
+	if err != nil {
+		return err
+	}
+	defer body.Close()
+
+	tmpPath := path + ".tmp"
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("open metadata blob: %w", err)
+	}
+	h := sha256.New()
+	n, copyErr := io.Copy(f, io.TeeReader(body, h))
+	if copyErr != nil {
+		f.Close()
+		return fmt.Errorf("write metadata blob: %w", copyErr)
+	}
+	if n != desc.Size {
+		f.Close()
+		return fmt.Errorf("write metadata blob: size %d, want %d", n, desc.Size)
+	}
+	if got := "sha256:" + hex.EncodeToString(h.Sum(nil)); got != desc.Digest {
+		f.Close()
+		return fmt.Errorf("write metadata blob: digest %s, want %s", got, desc.Digest)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("sync metadata blob: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close metadata blob: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("rename metadata blob: %w", err)
 	}
 	return nil
 }
