@@ -2,6 +2,7 @@ package ociimage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,6 +14,35 @@ type RegistryClient struct {
 	Client  *http.Client
 	BaseURL string
 	Token   string
+}
+
+// FetchManifest fetches and decodes ref's OCI image manifest.
+func (c RegistryClient) FetchManifest(ctx context.Context, ref Reference) (Manifest, string, error) {
+	var manifest Manifest
+	target := ref.Tag
+	if ref.Digest != "" {
+		target = ref.Digest
+	}
+	if target == "" {
+		return manifest, "", fmt.Errorf("fetch manifest: reference must include tag or digest")
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, ref, "manifests/"+target)
+	if err != nil {
+		return manifest, "", err
+	}
+	req.Header.Set("Accept", MediaTypeImageManifest)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return manifest, "", fmt.Errorf("fetch manifest: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return manifest, "", fmt.Errorf("fetch manifest: registry returned %s", resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+		return manifest, "", fmt.Errorf("fetch manifest: decode: %w", err)
+	}
+	return manifest, resp.Header.Get("Docker-Content-Digest"), nil
 }
 
 // BlobExists reports whether ref's registry already has digest.
