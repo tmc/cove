@@ -147,10 +147,7 @@ func readPullManifest(path string) (ociimage.ParsedManifest, error) {
 
 func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOptions) (ociimage.ParsedManifest, string, error) {
 	var out ociimage.ParsedManifest
-	client := ociimage.RegistryClient{
-		BaseURL: opts.RegistryBaseURL,
-		Token:   pullRegistryToken(ref, opts),
-	}
+	client := pullRegistryClient(ref, opts)
 	manifest, digest, err := client.FetchManifest(ctx, ref)
 	if err != nil {
 		return out, "", err
@@ -160,6 +157,74 @@ func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOpt
 		return out, "", fmt.Errorf("parse registry manifest: %w", err)
 	}
 	return out, digest, nil
+}
+
+func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
+	if plan == nil {
+		return fmt.Errorf("cove pull: missing pull plan")
+	}
+	if len(plan.Manifest.DiskLayers) == 0 {
+		return fmt.Errorf("cove pull: manifest has no disk chunks")
+	}
+	if err := checkPullTarget(plan.VMDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(plan.VMDir, 0755); err != nil {
+		return fmt.Errorf("create VM directory: %w", err)
+	}
+
+	partialPath := filepath.Join(plan.VMDir, "disk.img.partial")
+	diskPath := filepath.Join(plan.VMDir, "disk.img")
+	disk, err := ociimage.CreatePartialDisk(partialPath, plan.Manifest.Annotations.UncompressedDiskSize)
+	if err != nil {
+		return err
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			disk.Close()
+		}
+	}()
+
+	client := pullRegistryClient(plan.Ref, opts)
+	for _, layer := range plan.Manifest.DiskLayers {
+		body, err := client.FetchBlob(ctx, plan.Ref, layer.Descriptor.Digest)
+		if err != nil {
+			return err
+		}
+		err = ociimage.WriteCompressedChunkAt(disk, layer.Chunk, layer.Descriptor, body)
+		closeErr := body.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close blob: %w", closeErr)
+		}
+	}
+	if err := disk.Sync(); err != nil {
+		return fmt.Errorf("sync partial disk: %w", err)
+	}
+	if err := disk.Close(); err != nil {
+		return fmt.Errorf("close partial disk: %w", err)
+	}
+	closed = true
+	if err := os.Rename(partialPath, diskPath); err != nil {
+		return fmt.Errorf("rename partial disk: %w", err)
+	}
+	if err := writePullProvenance(plan.VMDir, plan.ManifestDigest); err != nil {
+		return err
+	}
+	if err := syncPullDir(plan.VMDir); err != nil {
+		return fmt.Errorf("fsync VM directory: %w", err)
+	}
+	return nil
+}
+
+func pullRegistryClient(ref ociimage.Reference, opts pullOptions) ociimage.RegistryClient {
+	return ociimage.RegistryClient{
+		BaseURL: opts.RegistryBaseURL,
+		Token:   pullRegistryToken(ref, opts),
+	}
 }
 
 func pullRegistryToken(ref ociimage.Reference, opts pullOptions) string {
@@ -173,6 +238,42 @@ func pullRegistryToken(ref ociimage.Reference, opts pullOptions) string {
 		return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 	}
 	return ""
+}
+
+func writePullProvenance(vmDir, digest string) error {
+	if digest == "" {
+		return nil
+	}
+	tmpPath := filepath.Join(vmDir, "disk.provenance.tmp")
+	finalPath := filepath.Join(vmDir, "disk.provenance")
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("open provenance: %w", err)
+	}
+	if _, err := f.WriteString(digest + "\n"); err != nil {
+		f.Close()
+		return fmt.Errorf("write provenance: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("sync provenance: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close provenance: %w", err)
+	}
+	if err := os.Rename(tmpPath, finalPath); err != nil {
+		return fmt.Errorf("rename provenance: %w", err)
+	}
+	return nil
+}
+
+func syncPullDir(path string) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 func pullNameFromReference(ref ociimage.Reference) string {

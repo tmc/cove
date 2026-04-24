@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -67,6 +70,75 @@ func TestBuildPullPlanDryRunFetchesManifest(t *testing.T) {
 	}
 	if got, want := len(plan.Manifest.Chunks), 1; got != want {
 		t.Fatalf("chunks = %d, want %d", got, want)
+	}
+}
+
+func TestPullDiskDownloadsRegistryChunks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	diskData := []byte("bootable")
+	manifest, blobs := pullCompressedTestManifest(t, diskData)
+	srv := pullTestRegistry(t, manifest, blobs)
+	defer srv.Close()
+
+	opts := pullOptions{RegistryBaseURL: srv.URL}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(): %v", err)
+	}
+
+	vmDir := filepath.Join(home, ".vz", "vms", "dev-vm")
+	got, err := os.ReadFile(filepath.Join(vmDir, "disk.img"))
+	if err != nil {
+		t.Fatalf("ReadFile(disk.img): %v", err)
+	}
+	if !bytes.Equal(got, diskData) {
+		t.Fatalf("disk = %v, want %v", got, diskData)
+	}
+	if _, err := os.Stat(filepath.Join(vmDir, "disk.img.partial")); !os.IsNotExist(err) {
+		t.Fatalf("partial stat error = %v, want not exist", err)
+	}
+	provenance, err := os.ReadFile(filepath.Join(vmDir, "disk.provenance"))
+	if err != nil {
+		t.Fatalf("ReadFile(disk.provenance): %v", err)
+	}
+	if string(provenance) != "sha256:manifest\n" {
+		t.Fatalf("provenance = %q, want sha256:manifest", string(provenance))
+	}
+}
+
+func TestPullDiskLeavesPartialOnBlobFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	manifest, blobs := pullCompressedTestManifest(t, []byte("bootable"))
+	for digest := range blobs {
+		blobs[digest] = []byte("corrupt")
+	}
+	srv := pullTestRegistry(t, manifest, blobs)
+	defer srv.Close()
+
+	opts := pullOptions{RegistryBaseURL: srv.URL}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	err = pullDisk(context.Background(), plan, opts)
+	if err == nil {
+		t.Fatal("pullDisk() error = nil, want blob failure")
+	}
+
+	vmDir := filepath.Join(home, ".vz", "vms", "dev-vm")
+	if _, err := os.Stat(filepath.Join(vmDir, "disk.img.partial")); err != nil {
+		t.Fatalf("partial stat error = %v, want partial disk", err)
+	}
+	if _, err := os.Stat(filepath.Join(vmDir, "disk.img")); !os.IsNotExist(err) {
+		t.Fatalf("disk stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(vmDir, "disk.provenance")); !os.IsNotExist(err) {
+		t.Fatalf("provenance stat error = %v, want not exist", err)
 	}
 }
 
@@ -194,4 +266,62 @@ func pullTestManifest(t *testing.T) ociimage.Manifest {
 		t.Fatalf("BuildManifest(): %v", err)
 	}
 	return manifest
+}
+
+func pullCompressedTestManifest(t *testing.T, disk []byte) (ociimage.Manifest, map[string][]byte) {
+	t.Helper()
+
+	chunk := ociimage.Chunk{
+		Index:  0,
+		Offset: 0,
+		Size:   int64(len(disk)),
+		Digest: pushTestDigest(disk),
+	}
+	prepared, err := ociimage.PrepareChunkLayer(bytes.NewReader(disk), chunk, 1, false)
+	if err != nil {
+		t.Fatalf("PrepareChunkLayer(): %v", err)
+	}
+	manifest := ociimage.Manifest{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageManifest,
+		Annotations: map[string]string{
+			ociimage.CoveUncompressedDiskSize: fmt.Sprint(len(disk)),
+		},
+		Layers: []ociimage.Descriptor{prepared.Descriptor},
+	}
+	return manifest, map[string][]byte{
+		prepared.Descriptor.Digest: prepared.Data,
+	}
+}
+
+func pullTestRegistry(t *testing.T, manifest ociimage.Manifest, blobs map[string][]byte) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/me/dev-vm/manifests/v1":
+			if r.Method != http.MethodGet {
+				t.Fatalf("manifest method = %s, want GET", r.Method)
+			}
+			w.Header().Set("Docker-Content-Digest", "sha256:manifest")
+			if err := json.NewEncoder(w).Encode(manifest); err != nil {
+				t.Fatalf("Encode() error = %v", err)
+			}
+		default:
+			const prefix = "/v2/me/dev-vm/blobs/"
+			if !strings.HasPrefix(r.URL.Path, prefix) {
+				t.Fatalf("path = %q", r.URL.Path)
+			}
+			if r.Method != http.MethodGet {
+				t.Fatalf("blob method = %s, want GET", r.Method)
+			}
+			digest := strings.TrimPrefix(r.URL.Path, prefix)
+			data, ok := blobs[digest]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write(data)
+		}
+	}))
 }
