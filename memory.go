@@ -78,8 +78,3 @@ func (s *ControlServer) handleMemoryCommand(cmd *controlpb.MemoryCommand) *contr
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown memory action: %s (use 'info' or 'set')", cmd.Action)}
 	}
 }
-
-// addMemoryBalloonDevice adds a memory balloon device to a VM config.
-func addMemoryBalloonDevice(config vz.VZVirtualMachineConfiguration) {
-	balloonx.AddDevice(config)
-}

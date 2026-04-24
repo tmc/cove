@@ -140,12 +140,7 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 	//
 	// The old behavior assumed the delta was always host title bar chrome.
 	// Live Recovery captures show that assumption is false.
-	return goImageFromCGImage(cgImage, 0)
-}
-
-// goImageFromCGImage converts a CGImageRef to a Go image with BGRA→RGBA conversion.
-func goImageFromCGImage(cgImage coregraphics.CGImageRef, cropTopPx int) (image.Image, string) {
-	img, err := capture.GoImageFromCGImage(cgImage, cropTopPx)
+	img, err := capture.GoImageFromCGImage(cgImage, 0)
 	if err != nil {
 		return nil, err.Error()
 	}
