@@ -1,9 +1,6 @@
 package main
 
-import (
-	"fmt"
-	"runtime/debug"
-)
+import buildversion "github.com/tmc/vz-macos/internal/version"
 
 // version, commit, and date are set by goreleaser or ldflags at build time.
 //
@@ -14,37 +11,17 @@ var (
 	date    = "unknown"
 )
 
-// resolveVersion populates commit and date from build info if still at defaults.
-func resolveVersion() {
-	if version == "dev" {
-		if info, ok := debug.ReadBuildInfo(); ok {
-			for _, s := range info.Settings {
-				if s.Key == "vcs.revision" && len(s.Value) >= 8 {
-					commit = s.Value[:8]
-				}
-				if s.Key == "vcs.time" {
-					date = s.Value
-				}
-			}
-		}
-	}
+func resolvedVersion() buildversion.Info {
+	return buildversion.Resolve(version, commit, date)
 }
 
 // versionInfo returns a formatted version string.
 func versionInfo() string {
-	resolveVersion()
-	return fmt.Sprintf("cove %s (commit %s, built %s)", version, commit, date)
+	return buildversion.Format("cove", resolvedVersion())
 }
 
 // hostVersion returns the host binary's resolved version string.
 // In dev mode, this is the git commit hash (8 chars).
 func hostVersion() string {
-	resolveVersion()
-	if version != "dev" {
-		return version
-	}
-	if commit != "unknown" {
-		return commit
-	}
-	return "dev"
+	return buildversion.Host(resolvedVersion())
 }
