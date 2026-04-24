@@ -2,6 +2,9 @@ package ociimage
 
 import (
 	"bytes"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -94,4 +97,138 @@ func TestDecompressChunkDataRejectsDigestMismatch(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "digest") {
 		t.Fatalf("DecompressChunkData() error = %v, want digest mismatch", err)
 	}
+}
+
+func TestWriteCompressedChunkAt(t *testing.T) {
+	data := []byte("abc")
+	compressed, desc := compressedTestLayer(t, data)
+	chunk := Chunk{
+		Index:  1,
+		Offset: 2,
+		Size:   int64(len(data)),
+		Digest: testDigest(data),
+	}
+	path := filepath.Join(t.TempDir(), "disk.img.partial")
+	f, err := CreatePartialDisk(path, 8)
+	if err != nil {
+		t.Fatalf("CreatePartialDisk(): %v", err)
+	}
+	defer f.Close()
+
+	if err := WriteCompressedChunkAt(f, chunk, desc, bytes.NewReader(compressed)); err != nil {
+		t.Fatalf("WriteCompressedChunkAt(): %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(): %v", err)
+	}
+	want := []byte{0, 0, 'a', 'b', 'c', 0, 0, 0}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("disk bytes = %v, want %v", got, want)
+	}
+}
+
+func TestWriteCompressedChunkAtRejectsBadInput(t *testing.T) {
+	data := []byte("abc")
+	compressed, desc := compressedTestLayer(t, data)
+	chunk := Chunk{Index: 1, Size: int64(len(data)), Digest: testDigest(data)}
+
+	tests := []struct {
+		name    string
+		chunk   Chunk
+		desc    Descriptor
+		writer  io.WriterAt
+		wantErr string
+	}{
+		{
+			name:    "compressed digest",
+			chunk:   chunk,
+			desc:    descriptorWithDigest(desc, testDigest([]byte("bad"))),
+			writer:  tempDiskWriter(t, int64(len(data))),
+			wantErr: "compressed digest",
+		},
+		{
+			name:    "compressed size",
+			chunk:   chunk,
+			desc:    descriptorWithSize(desc, desc.Size+1),
+			writer:  tempDiskWriter(t, int64(len(data))),
+			wantErr: "compressed size",
+		},
+		{
+			name:    "uncompressed digest",
+			chunk:   Chunk{Index: 1, Size: int64(len(data)), Digest: testDigest([]byte("bad"))},
+			desc:    desc,
+			writer:  tempDiskWriter(t, int64(len(data))),
+			wantErr: "digest",
+		},
+		{
+			name:    "uncompressed size",
+			chunk:   Chunk{Index: 1, Size: int64(len(data)) + 1, Digest: testDigest(data)},
+			desc:    desc,
+			writer:  tempDiskWriter(t, int64(len(data))+1),
+			wantErr: "size",
+		},
+		{
+			name:    "short write",
+			chunk:   chunk,
+			desc:    desc,
+			writer:  &recordingWriterAt{},
+			wantErr: "short write",
+		},
+		{
+			name:    "media type",
+			chunk:   chunk,
+			desc:    descriptorWithMediaType(desc, MediaTypeLayer),
+			writer:  tempDiskWriter(t, int64(len(data))),
+			wantErr: "media type",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := WriteCompressedChunkAt(tt.writer, tt.chunk, tt.desc, bytes.NewReader(compressed))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("WriteCompressedChunkAt() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func compressedTestLayer(t *testing.T, data []byte) ([]byte, Descriptor) {
+	t.Helper()
+
+	compressed, err := CompressChunkData(data)
+	if err != nil {
+		t.Fatalf("CompressChunkData(): %v", err)
+	}
+	return compressed, Descriptor{
+		MediaType: MediaTypeLayerLZ4,
+		Size:      int64(len(compressed)),
+		Digest:    testDigest(compressed),
+	}
+}
+
+func tempDiskWriter(t *testing.T, size int64) io.WriterAt {
+	t.Helper()
+
+	f, err := CreatePartialDisk(filepath.Join(t.TempDir(), "disk.img.partial"), size)
+	if err != nil {
+		t.Fatalf("CreatePartialDisk(): %v", err)
+	}
+	t.Cleanup(func() { f.Close() })
+	return f
+}
+
+func descriptorWithDigest(d Descriptor, digest string) Descriptor {
+	d.Digest = digest
+	return d
+}
+
+func descriptorWithSize(d Descriptor, size int64) Descriptor {
+	d.Size = size
+	return d
+}
+
+func descriptorWithMediaType(d Descriptor, mediaType string) Descriptor {
+	d.MediaType = mediaType
+	return d
 }
