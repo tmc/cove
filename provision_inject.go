@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/tmc/apple/x/plist"
+	pw "github.com/tmc/vz-macos/internal/password"
 )
 
 const (
@@ -180,7 +181,7 @@ func injectAutoLogin(mountPoint, username, password string, rootFiles *[]string)
 	}
 
 	kcpasswordPath := filepath.Join(etcDir, "kcpassword")
-	encodedPassword := EncodeKCPassword(password)
+	encodedPassword := pw.EncodeKC(password)
 	if err := os.WriteFile(kcpasswordPath, encodedPassword, 0600); err != nil {
 		return fmt.Errorf("write kcpassword: %w", err)
 	}
@@ -193,8 +194,8 @@ func injectAutoLogin(mountPoint, username, password string, rootFiles *[]string)
 		return fmt.Errorf("create preferences directory: %w", err)
 	}
 
-	loginWindowPlist := CreateLoginWindowPlist(username)
-	plistData, err := EncodeLoginWindowPlist(loginWindowPlist)
+	loginWindowPlist := pw.CreateLoginWindowPlist(username)
+	plistData, err := pw.EncodeLoginWindowPlist(loginWindowPlist)
 	if err != nil {
 		return fmt.Errorf("encode loginwindow plist: %w", err)
 	}
@@ -235,14 +236,14 @@ func injectAutoLogin(mountPoint, username, password string, rootFiles *[]string)
 
 // stageAutoLogin stages kcpassword and loginwindow.plist to the staging directory.
 func stageAutoLogin(stagingDir, username, password string, manifest *ProvisionManifest) error {
-	encodedPassword := EncodeKCPassword(password)
+	encodedPassword := pw.EncodeKC(password)
 	if err := stageFile(stagingDir, filepath.Join("private", "etc", "kcpassword"),
 		encodedPassword, 0600, "root:wheel", manifest); err != nil {
 		return err
 	}
 
-	loginWindowPlist := CreateLoginWindowPlist(username)
-	plistData, err := EncodeLoginWindowPlist(loginWindowPlist)
+	loginWindowPlist := pw.CreateLoginWindowPlist(username)
+	plistData, err := pw.EncodeLoginWindowPlist(loginWindowPlist)
 	if err != nil {
 		return fmt.Errorf("encode loginwindow plist: %w", err)
 	}
@@ -272,13 +273,13 @@ func injectUserPlist(mountPoint string, opts InjectOptions) error {
 	config := opts.Config
 
 	// Create the user plist with proper password hash
-	userPlist, err := CreateUserPlist(config.Username, config.Fullname, config.Password, opts.UID, config.Admin)
+	userPlist, err := pw.CreateUserPlist(config.Username, config.Fullname, config.Password, opts.UID, config.Admin)
 	if err != nil {
 		return fmt.Errorf("create user plist: %w", err)
 	}
 
 	// Encode to binary plist format
-	plistData, err := EncodeUserPlist(userPlist)
+	plistData, err := pw.EncodeUserPlist(userPlist)
 	if err != nil {
 		return fmt.Errorf("encode user plist: %w", err)
 	}
@@ -302,7 +303,7 @@ func injectUserPlist(mountPoint string, opts InjectOptions) error {
 	}
 
 	// Create standard subdirectories
-	if err := CreateHomeDirectoryStructure(homeDir, opts.UID, 20); err != nil {
+	if err := pw.CreateHomeDirectoryStructure(homeDir, opts.UID, 20); err != nil {
 		fmt.Printf("warning: home directory structure incomplete: %v\n", err)
 	}
 	fmt.Printf("Created home directory: %s\n", homeDir)
@@ -381,11 +382,11 @@ func addUserToAdminGroup(mountPoint, username string) error {
 func stageUserPlist(stagingDir string, opts InjectOptions, manifest *ProvisionManifest) error {
 	config := opts.Config
 
-	userPlist, err := CreateUserPlist(config.Username, config.Fullname, config.Password, opts.UID, config.Admin)
+	userPlist, err := pw.CreateUserPlist(config.Username, config.Fullname, config.Password, opts.UID, config.Admin)
 	if err != nil {
 		return fmt.Errorf("create user plist: %w", err)
 	}
-	plistData, err := EncodeUserPlist(userPlist)
+	plistData, err := pw.EncodeUserPlist(userPlist)
 	if err != nil {
 		return fmt.Errorf("encode user plist: %w", err)
 	}

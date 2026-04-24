@@ -115,9 +115,9 @@
 //
 // Encode password for auto-login:
 //
-//	encoded := EncodeKcpassword("secretpassword")
+//	encoded := password.EncodeKC("secretpassword")
 //	os.WriteFile("/Volumes/Data/private/etc/kcpassword", encoded, 0600)
-package main
+package password
 
 import (
 	"bytes"
@@ -207,9 +207,9 @@ func GenerateUUID() (string, error) {
 // kcpassword encoding key used by macOS for auto-login
 var kcpasswordKey = []byte{0x7D, 0x89, 0x52, 0x23, 0xD2, 0xBC, 0xDD, 0xEA, 0xA3, 0xB9, 0x1F}
 
-// EncodeKCPassword encodes a password for /etc/kcpassword auto-login
-// The kcpassword file uses a simple XOR cipher with a fixed key
-func EncodeKCPassword(password string) []byte {
+// EncodeKC encodes a password for /etc/kcpassword auto-login.
+// The kcpassword file uses a simple XOR cipher with a fixed key.
+func EncodeKC(password string) []byte {
 	// Password must be null-terminated
 	passBytes := append([]byte(password), 0)
 
@@ -229,8 +229,8 @@ func EncodeKCPassword(password string) []byte {
 	return encoded
 }
 
-// DecodeKCPassword decodes the contents of /etc/kcpassword.
-func DecodeKCPassword(encoded []byte) string {
+// DecodeKC decodes the contents of /etc/kcpassword.
+func DecodeKC(encoded []byte) string {
 	decoded := make([]byte, len(encoded))
 	for i := range encoded {
 		decoded[i] = encoded[i] ^ kcpasswordKey[i%len(kcpasswordKey)]

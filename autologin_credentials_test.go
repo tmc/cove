@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	pw "github.com/tmc/vz-macos/internal/password"
 )
 
 func TestReadLoginScreenCredentials(t *testing.T) {
@@ -14,10 +16,10 @@ func TestReadLoginScreenCredentials(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "Library", "Preferences"), 0755); err != nil {
 		t.Fatalf("MkdirAll prefs dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "private", "etc", "kcpassword"), EncodeKCPassword("secret123"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "private", "etc", "kcpassword"), pw.EncodeKC("secret123"), 0600); err != nil {
 		t.Fatalf("WriteFile kcpassword: %v", err)
 	}
-	data, err := EncodeLoginWindowPlist(CreateLoginWindowPlist("testuser"))
+	data, err := pw.EncodeLoginWindowPlist(pw.CreateLoginWindowPlist("testuser"))
 	if err != nil {
 		t.Fatalf("EncodeLoginWindowPlist: %v", err)
 	}

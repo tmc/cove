@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tmc/apple/x/plist"
+	"github.com/tmc/vz-macos/internal/password"
 )
 
 type loginScreenCredentials struct {
@@ -82,14 +83,14 @@ func readLoginScreenCredentials(root string) (loginScreenCredentials, error) {
 		return loginScreenCredentials{}, fmt.Errorf("read loginwindow plist: %w", err)
 	}
 
-	var prefs LoginWindowPlist
+	var prefs password.LoginWindowPlist
 	if _, err := plist.Unmarshal(loginWindowData, &prefs); err != nil {
 		return loginScreenCredentials{}, fmt.Errorf("parse loginwindow plist: %w", err)
 	}
 
 	creds := loginScreenCredentials{
 		Username: strings.TrimSpace(prefs.AutoLoginUser),
-		Password: DecodeKCPassword(kcData),
+		Password: password.DecodeKC(kcData),
 	}
 	if !creds.Valid() {
 		return loginScreenCredentials{}, nil
