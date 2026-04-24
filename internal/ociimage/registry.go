@@ -55,10 +55,18 @@ func (c RegistryClient) FetchManifest(ctx context.Context, ref Reference) (Manif
 	if resp.StatusCode != http.StatusOK {
 		return manifest, "", fmt.Errorf("fetch manifest: registry returned %s", resp.Status)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return manifest, "", fmt.Errorf("fetch manifest: read: %w", err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
 		return manifest, "", fmt.Errorf("fetch manifest: decode: %w", err)
 	}
-	return manifest, resp.Header.Get("Docker-Content-Digest"), nil
+	digest := resp.Header.Get("Docker-Content-Digest")
+	if digest == "" {
+		digest = digestBytes(data)
+	}
+	return manifest, digest, nil
 }
 
 // FetchBlob opens ref's blob digest for streaming.
@@ -182,6 +190,40 @@ func (c RegistryClient) BlobExists(ctx context.Context, ref Reference, digest st
 		return false, nil
 	default:
 		return false, fmt.Errorf("blob exists: registry returned %s", resp.Status)
+	}
+}
+
+// MountBlob mounts desc's digest from source into ref's repository.
+func (c RegistryClient) MountBlob(ctx context.Context, ref Reference, source Reference, desc Descriptor) (bool, error) {
+	if source.Registry != "" && source.Registry != ref.Registry {
+		return false, nil
+	}
+	if source.Repository == "" {
+		return false, fmt.Errorf("mount blob: empty source repository")
+	}
+	if desc.Digest == "" {
+		return false, fmt.Errorf("mount blob: empty digest")
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, ref, "blobs/uploads/")
+	if err != nil {
+		return false, err
+	}
+	q := req.URL.Query()
+	q.Set("mount", desc.Digest)
+	q.Set("from", source.Repository)
+	req.URL.RawQuery = q.Encode()
+	resp, err := c.do(req, ref, "push")
+	if err != nil {
+		return false, fmt.Errorf("mount blob: %w", err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusCreated:
+		return true, nil
+	case http.StatusAccepted:
+		return false, nil
+	default:
+		return false, fmt.Errorf("mount blob: registry returned %s", resp.Status)
 	}
 }
 

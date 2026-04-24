@@ -33,6 +33,10 @@ type pushPlan struct {
 	DiskPath    string
 	Ref         string
 	BaseRef     string
+	BaseSource  ociimage.Reference
+	BaseLayers  []bool
+	BaseChunks  int
+	BaseBytes   int64
 	ChunkSize   int64
 	DiskSize    int64
 	Chunks      []ociimage.Chunk
@@ -75,13 +79,20 @@ func handlePush(args []string) error {
 		return err
 	}
 	if opts.ManifestOut != "" {
-		if err := writePushManifest(opts.ManifestOut, plan.Manifest); err != nil {
-			return err
+		if opts.DryRun {
+			if err := writePushManifest(opts.ManifestOut, plan.Manifest); err != nil {
+				return err
+			}
 		}
 	}
 	if !opts.DryRun {
 		if err := pushImage(context.Background(), plan, opts); err != nil {
 			return err
+		}
+		if opts.ManifestOut != "" {
+			if err := writePushManifest(opts.ManifestOut, plan.Manifest); err != nil {
+				return err
+			}
 		}
 		printPushResult(os.Stdout, plan)
 		return nil
@@ -99,7 +110,7 @@ func parsePushArgs(args []string, w io.Writer) (pushOptions, []string, error) {
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the plan without uploading")
 	fs.BoolVar(&opts.LumeCompat, "lume-compat", false, "emit dual cove and lume annotations")
 	fs.Var(&opts.AdditionalTags, "additional-tag", "additional tag to publish")
-	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write dry-run OCI manifest JSON to path")
+	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write OCI manifest JSON to path")
 	fs.Usage = func() { printPushUsage(w) }
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -219,6 +230,11 @@ func pushImage(ctx context.Context, plan *pushPlan, opts pushOptions) error {
 		return fmt.Errorf("cove push: invalid target ref %q: %w", plan.Ref, err)
 	}
 	client := pushRegistryClient(ref, opts)
+	if plan.BaseRef != "" {
+		if err := applyPushBase(ctx, plan, ref, opts); err != nil {
+			return err
+		}
+	}
 	if err := uploadBytesBlob(ctx, client, ref, plan.Manifest.Config, plan.ConfigJSON); err != nil {
 		return err
 	}
@@ -232,9 +248,18 @@ func pushImage(ctx context.Context, plan *pushPlan, opts pushOptions) error {
 			return err
 		}
 	}
-	for _, chunk := range plan.Prepared {
+	for i, chunk := range plan.Prepared {
 		if chunk.SkipUpload {
-			continue
+			if !plan.usesBaseLayer(i) {
+				continue
+			}
+			reused, err := ensurePushBaseBlob(ctx, client, ref, plan.BaseSource, chunk.Descriptor)
+			if err != nil {
+				return err
+			}
+			if reused {
+				continue
+			}
 		}
 		if err := uploadBytesBlob(ctx, client, ref, chunk.Descriptor, chunk.Data); err != nil {
 			return err
@@ -251,6 +276,74 @@ func pushImage(ctx context.Context, plan *pushPlan, opts pushOptions) error {
 		}
 	}
 	return nil
+}
+
+func (plan *pushPlan) usesBaseLayer(i int) bool {
+	return i >= 0 && i < len(plan.BaseLayers) && plan.BaseLayers[i]
+}
+
+func ensurePushBaseBlob(ctx context.Context, client ociimage.RegistryClient, target ociimage.Reference, source ociimage.Reference, desc ociimage.Descriptor) (bool, error) {
+	if target.Repository == source.Repository {
+		exists, err := client.BlobExists(ctx, target, desc.Digest)
+		if err != nil {
+			return false, err
+		}
+		return exists, nil
+	}
+	return client.MountBlob(ctx, target, source, desc)
+}
+
+func applyPushBase(ctx context.Context, plan *pushPlan, target ociimage.Reference, opts pushOptions) error {
+	base, err := ociimage.ParseReference(plan.BaseRef)
+	if err != nil {
+		return fmt.Errorf("cove push: invalid base ref %q: %w", plan.BaseRef, err)
+	}
+	client := pushRegistryClient(base, opts)
+	manifest, digest, err := client.FetchManifest(ctx, base)
+	if err != nil {
+		return err
+	}
+	parsed, err := ociimage.ParseManifest(manifest)
+	if err != nil {
+		return fmt.Errorf("parse base manifest: %w", err)
+	}
+	if parsed.Annotations.UncompressedDiskSize != plan.DiskSize {
+		return fmt.Errorf("cove push: base disk size %d, want %d", parsed.Annotations.UncompressedDiskSize, plan.DiskSize)
+	}
+	if len(parsed.DiskLayers) != len(plan.Prepared) {
+		return fmt.Errorf("cove push: base chunks %d, want %d", len(parsed.DiskLayers), len(plan.Prepared))
+	}
+	if plan.Manifest.Annotations == nil {
+		plan.Manifest.Annotations = map[string]string{}
+	}
+	plan.Manifest.Annotations[ociimage.CoveBaseManifest] = digest
+	if base.Registry != target.Registry {
+		return nil
+	}
+	plan.BaseSource = base
+	plan.BaseLayers = make([]bool, len(plan.Prepared))
+	for i, chunk := range plan.Prepared {
+		if chunk.SkipUpload || i >= len(parsed.DiskLayers) {
+			continue
+		}
+		baseLayer := parsed.DiskLayers[i]
+		if !samePushBaseChunk(chunk.Chunk, baseLayer.Chunk) || !samePushBaseDescriptor(chunk.Descriptor, baseLayer.Descriptor) {
+			continue
+		}
+		plan.Prepared[i].SkipUpload = true
+		plan.BaseLayers[i] = true
+		plan.BaseChunks++
+		plan.BaseBytes += chunk.Chunk.Size
+	}
+	return nil
+}
+
+func samePushBaseChunk(a, b ociimage.Chunk) bool {
+	return a.Index == b.Index && a.Offset == b.Offset && a.Size == b.Size && a.Digest == b.Digest
+}
+
+func samePushBaseDescriptor(a, b ociimage.Descriptor) bool {
+	return a.MediaType == b.MediaType && a.Size == b.Size && a.Digest == b.Digest
 }
 
 func pushRegistryClient(ref ociimage.Reference, opts pushOptions) ociimage.RegistryClient {
@@ -393,6 +486,10 @@ func printPushResult(w io.Writer, plan *pushPlan) {
 	fmt.Fprintln(w, "Push complete")
 	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
 	fmt.Fprintf(w, "  ref: %s\n", plan.Ref)
+	if plan.BaseRef != "" {
+		fmt.Fprintf(w, "  base: %s\n", plan.BaseRef)
+		fmt.Fprintf(w, "  base chunks reused: %d (%s)\n", plan.BaseChunks, FormatSize(plan.BaseBytes))
+	}
 	if len(plan.ExtraTags) > 0 {
 		fmt.Fprintf(w, "  additional tags: %s\n", strings.Join(plan.ExtraTags, ", "))
 	}
@@ -425,9 +522,9 @@ func printPushUsage(w io.Writer) {
 Plan or push a VM disk as an OCI image.
 
 Push compresses non-zero disk chunks as LZ4 OCI layers, skips sparse zero
-chunks, uploads missing blobs, and publishes the manifest tag. Use --dry-run to
-inspect the chunk plan without uploading. Base-manifest delta fetch is wired in
-a later OCI slice.
+chunks, uploads missing blobs, and publishes the manifest tag. With --base,
+push fetches the base manifest and reuses matching chunk blobs from the same
+registry. Use --dry-run to inspect the local chunk plan without network access.
 
 Flags:
   --base <ref>              Base image for delta push
@@ -435,5 +532,5 @@ Flags:
   --dry-run                 Print the chunk plan without uploading
   --lume-compat             Plan dual cove and lume annotations
   --additional-tag <tag>    Additional tag to publish (repeatable)
-  --manifest-out <path>     Write dry-run OCI manifest JSON to path`)
+  --manifest-out <path>     Write OCI manifest JSON to path`)
 }
