@@ -43,14 +43,18 @@ func handlePull(args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: cove pull <ref> [flags]")
 	}
-	if !opts.DryRun {
-		return fmt.Errorf("cove pull: disk download is not implemented yet; use --dry-run to validate a manifest")
-	}
 	plan, err := buildPullPlan(pos[0], opts)
 	if err != nil {
 		return err
 	}
-	printPullDryRun(os.Stdout, plan)
+	if opts.DryRun {
+		printPullDryRun(os.Stdout, plan)
+		return nil
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		return err
+	}
+	printPullResult(os.Stdout, plan)
 	return nil
 }
 
@@ -382,14 +386,22 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	fmt.Fprintf(w, "  metadata blobs: %d\n", len(plan.Manifest.Blobs))
 }
 
+func printPullResult(w io.Writer, plan *pullPlan) {
+	fmt.Fprintln(w, "Pull complete")
+	fmt.Fprintf(w, "  ref: %s\n", plan.Ref.String())
+	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
+	fmt.Fprintf(w, "  target: %s\n", plan.VMDir)
+}
+
 func printPullUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove pull <ref> [flags]
 
 Validate or pull an OCI VM image.
 
-Current implementation supports --dry-run manifest validation. Without
---manifest, dry-run fetches the registry manifest. Chunk download,
-decompression, and disk writes are wired in later OCI slices.
+Pull fetches the registry manifest, streams verified LZ4 disk chunks into
+disk.img.partial, restores macOS identity metadata, and atomically renames the
+verified disk into place. Use --dry-run to validate the manifest and target
+without writing a disk.
 
 Flags:
   --as <name>          Destination VM name

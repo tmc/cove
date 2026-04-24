@@ -185,10 +185,10 @@ func TestHandlePullDryRunOutput(t *testing.T) {
 	}
 }
 
-func TestHandlePullRequiresDryRun(t *testing.T) {
-	err := handlePull([]string{"ghcr.io/me/dev-vm:v1"})
-	if err == nil || !strings.Contains(err.Error(), "use --dry-run") {
-		t.Fatalf("handlePull() error = %v, want dry-run guidance", err)
+func TestHandlePullRequiresRef(t *testing.T) {
+	err := handlePull([]string{"--dry-run"})
+	if err == nil || !strings.Contains(err.Error(), "usage: cove pull") {
+		t.Fatalf("handlePull() error = %v, want usage", err)
 	}
 }
 

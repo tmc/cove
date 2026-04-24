@@ -568,10 +568,10 @@ cove serve -http 127.0.0.1:7777 -per-vm-auth -vms ci-runner,dev-vm
 
 ## pull
 
-Validate or pull an OCI image into a VM disk. Current implementation supports
-`--dry-run` manifest validation. Without `--manifest`, dry-run fetches the
-registry manifest; chunk download and disk writes land in the next OCI
-transport slice.
+Validate or pull an OCI image into a VM disk. Pull fetches the registry
+manifest, streams verified LZ4 disk chunks into `disk.img.partial`, restores
+macOS identity metadata, and atomically renames the verified disk into place.
+Use `--dry-run` to validate the manifest and target without writing a disk.
 
 ```
 cove pull <ref> [flags]
