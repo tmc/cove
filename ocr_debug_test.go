@@ -37,9 +37,9 @@ func TestSaveOCRDebugScreenshot(t *testing.T) {
 		},
 	}
 
-	err := saveOCRDebugScreenshot(img, observations, dir, "test")
+	err := ocrx.SaveDebugScreenshot(img, observations, dir, "test")
 	if err != nil {
-		t.Fatalf("saveOCRDebugScreenshot: %v", err)
+		t.Fatalf("ocrx.SaveDebugScreenshot: %v", err)
 	}
 
 	// Check that PNG and JSON files were created
@@ -85,9 +85,9 @@ func TestSaveOCRDebugScreenshot_EmptyObservations(t *testing.T) {
 	dir := t.TempDir()
 	img := newSolidImage(100, 100, color.RGBA{50, 50, 50, 255})
 
-	err := saveOCRDebugScreenshot(img, nil, dir, "empty")
+	err := ocrx.SaveDebugScreenshot(img, nil, dir, "empty")
 	if err != nil {
-		t.Fatalf("saveOCRDebugScreenshot with nil observations: %v", err)
+		t.Fatalf("ocrx.SaveDebugScreenshot with nil observations: %v", err)
 	}
 }
 
@@ -96,9 +96,9 @@ func TestSaveOCRDebugScreenshot_CreatesDir(t *testing.T) {
 	dir := filepath.Join(base, "nested", "debug")
 	img := newSolidImage(100, 100, color.RGBA{50, 50, 50, 255})
 
-	err := saveOCRDebugScreenshot(img, nil, dir, "nested")
+	err := ocrx.SaveDebugScreenshot(img, nil, dir, "nested")
 	if err != nil {
-		t.Fatalf("saveOCRDebugScreenshot with nested dir: %v", err)
+		t.Fatalf("ocrx.SaveDebugScreenshot with nested dir: %v", err)
 	}
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -111,7 +111,7 @@ func TestDrawRect(t *testing.T) {
 	green := color.RGBA{0, 255, 0, 200}
 
 	// Should not panic
-	drawRect(img, 10, 10, 50, 50, green)
+	ocrx.DrawRect(img, 10, 10, 50, 50, green)
 
 	// Verify a corner pixel was drawn
 	got := img.RGBAAt(10, 10)
@@ -122,7 +122,7 @@ func TestDrawRect(t *testing.T) {
 	// Verify interior pixel was not drawn
 	interior := img.RGBAAt(30, 30)
 	if interior == green {
-		t.Error("interior pixel should not be drawn by drawRect")
+		t.Error("interior pixel should not be drawn by ocrx.DrawRect")
 	}
 }
 
@@ -131,5 +131,5 @@ func TestDrawRect_Clamping(t *testing.T) {
 	green := color.RGBA{0, 255, 0, 200}
 
 	// Should not panic with out-of-bounds coords
-	drawRect(img, -5, -5, 100, 100, green)
+	ocrx.DrawRect(img, -5, -5, 100, 100, green)
 }

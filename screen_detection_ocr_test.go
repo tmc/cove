@@ -4,6 +4,8 @@ import (
 	"image"
 	"image/color"
 	"testing"
+
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
 func TestDetectScreenStateOCR_NilOCR(t *testing.T) {
@@ -16,7 +18,7 @@ func TestDetectScreenStateOCR_NilOCR(t *testing.T) {
 }
 
 func TestDetectScreenStateOCR_NilImage(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	state := DetectScreenStateOCR(nil, ocr)
 	// nil image → pixel-based fallback → ScreenStateUnknown
 	if state != ScreenStateUnknown {
@@ -26,7 +28,7 @@ func TestDetectScreenStateOCR_NilImage(t *testing.T) {
 
 func TestDetectScreenStateOCR_BlankImage(t *testing.T) {
 	// Blank image → no text → falls back to pixel-based heuristics
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	img := newSolidImage(1024, 768, color.RGBA{0, 0, 0, 255})
 	state := DetectScreenStateOCR(img, ocr)
 	if state != ScreenStateBlack {
@@ -107,7 +109,7 @@ func TestCountInputFields_Uniform(t *testing.T) {
 }
 
 func TestOCRDetectSetupAssistantPage_NilInputs(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 
 	if page := OCRDetectSetupAssistantPage(nil, ocr); page != "unknown" {
 		t.Errorf("OCRDetectSetupAssistantPage(nil, ocr) = %q, want %q", page, "unknown")
@@ -120,7 +122,7 @@ func TestOCRDetectSetupAssistantPage_NilInputs(t *testing.T) {
 }
 
 func TestOCRDetectSetupAssistantPage_BlankImage(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	img := newSolidImage(800, 600, color.RGBA{255, 255, 255, 255})
 	page := OCRDetectSetupAssistantPage(img, ocr)
 	// Blank white image has no text, should return "unknown"

@@ -20,7 +20,7 @@ import (
 //
 // It can also run user-provided boot command scripts for custom automation.
 func runUnattendedSetup(cs *ControlServer) error {
-	ocr := NewOCRService(verbose)
+	ocr := ocrx.NewService(verbose)
 	debugDir := ""
 	if debugOCR {
 		debugDir = filepath.Join(vmDir, "debug")
@@ -122,7 +122,7 @@ func runDefaultUnattendedFlow(cs *ControlServer, ocr *ocrx.Service, debugDir str
 
 		if debugOCR && debugDir != "" {
 			observations, _ := ocr.RecognizeText(img)
-			saveOCRDebugScreenshot(img, observations, debugDir, fmt.Sprintf("boot-%s", state))
+			ocrx.SaveDebugScreenshot(img, observations, debugDir, fmt.Sprintf("boot-%s", state))
 		}
 
 		switch state {

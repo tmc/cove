@@ -1185,7 +1185,7 @@ func parseOCROptions(args []string) (string, error) {
 	if fs.NArg() != 0 {
 		return "", fmt.Errorf("ocr: unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
-	if _, err := ParseOCRSearchOptions(*region); err != nil {
+	if _, err := ocrx.ParseSearchOptions(*region); err != nil {
 		return "", err
 	}
 	return *region, nil
@@ -1219,7 +1219,7 @@ func parseClickTextOptions(args []string) (text, region string, timeout time.Dur
 	if len(textParts) == 0 {
 		return "", "", 0, fmt.Errorf("click-text requires text argument")
 	}
-	if _, err := ParseOCRSearchOptions(region); err != nil {
+	if _, err := ocrx.ParseSearchOptions(region); err != nil {
 		return "", "", 0, err
 	}
 	return strings.Join(textParts, " "), region, timeout, nil
@@ -1260,8 +1260,8 @@ func ctlOCR(socketPath, regionSpec string) error {
 		return fmt.Errorf("screenshot: %w", err)
 	}
 
-	ocr := NewOCRService(false)
-	opts, err := ParseOCRSearchOptions(regionSpec)
+	ocr := ocrx.NewService(false)
+	opts, err := ocrx.ParseSearchOptions(regionSpec)
 	if err != nil {
 		return err
 	}
@@ -1311,7 +1311,7 @@ func ctlClickText(socketPath, text, region string, timeout time.Duration) error 
 func ctlClickMenu(socketPath, menu, item string, timeout time.Duration) error {
 	client := NewControlClient(socketPath)
 	client.SetTimeout(timeout + 10*time.Second)
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	return clickMenuItemViaClient(client, ocr, menu, item, timeout)
 }
 
@@ -1430,7 +1430,7 @@ func continueRecoveryLanguageViaClient(client *ControlClient, ocr *ocrx.Service,
 			continue
 		}
 
-		if _, _, found := ocr.FindTextWithOptions(img, "Utilities", OCRMenuSearchOptions()); found {
+		if _, _, found := ocr.FindTextWithOptions(img, "Utilities", ocrx.MenuSearchOptions()); found {
 			return nil
 		}
 
@@ -1473,7 +1473,7 @@ func continueRecoveryLanguageViaClient(client *ControlClient, ocr *ocrx.Service,
 }
 
 func clickMenuItemViaClient(client *ControlClient, ocr *ocrx.Service, menu, item string, timeout time.Duration) error {
-	opts := OCRMenuSearchOptions()
+	opts := ocrx.MenuSearchOptions()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		// Step 1: click the menu title.
@@ -1552,7 +1552,7 @@ func ctlDetectScreen(socketPath string) error {
 	fmt.Printf("Detected screen state (pixel): %s\n", state)
 
 	// OCR-based detection
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	ocrState := DetectScreenStateOCR(img, ocr)
 	fmt.Printf("Detected screen state (OCR):   %s\n", ocrState)
 

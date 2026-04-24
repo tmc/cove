@@ -1,6 +1,3 @@
-// ocr_search_options.go - OCR search region and options.
-//
-// Delegates to github.com/tmc/apple/x/vzkit/ocr for the implementation.
 package main
 
 import (
@@ -8,16 +5,6 @@ import (
 
 	"github.com/tmc/apple/x/vzkit/ocr"
 )
-
-// OCRMenuSearchOptions returns options tuned for menu bar targeting.
-func OCRMenuSearchOptions() ocr.SearchOptions {
-	return ocr.MenuSearchOptions()
-}
-
-// ParseOCRSearchOptions parses a region selector for OCR commands.
-func ParseOCRSearchOptions(regionSpec string) (ocr.SearchOptions, error) {
-	return ocr.ParseSearchOptions(regionSpec)
-}
 
 // observationInSearchRegion checks if an observation falls within the search region.
 func observationInSearchRegion(obs ocr.TextObservation, bounds image.Rectangle, region *ocr.Region) bool {

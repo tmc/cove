@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
+
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
 // runProvisioningAutomation starts the Setup Assistant automation using
@@ -38,7 +40,7 @@ func runProvisioningAutomation(cs *ControlServer) {
 		fmt.Println("Continuing anyway — automation may recover during page detection.")
 	}
 
-	ocr := NewOCRService(verbose)
+	ocr := ocrx.NewService(verbose)
 	debugDir := filepath.Join(vmDirectory, "provision_screenshots")
 	if debugOCR {
 		fmt.Printf("OCR debug screenshots: %s\n", debugDir)

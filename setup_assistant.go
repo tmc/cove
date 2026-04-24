@@ -47,7 +47,7 @@ func NewSetupAssistant(opts SetupAssistantOptions) *SetupAssistant {
 
 	return &SetupAssistant{
 		transport: socketSetupAssistantTransport{client: client},
-		ocr:       NewOCRService(opts.Verbose),
+		ocr:       ocrx.NewService(opts.Verbose),
 		config: ProvisionConfig{
 			Username: opts.Username,
 			Password: opts.Password,
@@ -600,7 +600,7 @@ func (s *SetupAssistant) tryOCRClick(text string, timeout time.Duration) error {
 }
 
 func (s *SetupAssistant) tryOCRClickRegion(text string, timeout time.Duration, regionSpec string) error {
-	opts, err := ParseOCRSearchOptions(regionSpec)
+	opts, err := ocrx.ParseSearchOptions(regionSpec)
 	if err != nil {
 		return err
 	}

@@ -7,7 +7,7 @@ import (
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
-func TestParseOCRSearchOptions(t *testing.T) {
+func TestOCRParseSearchOptions(t *testing.T) {
 	tests := []struct {
 		name       string
 		spec       string
@@ -24,18 +24,18 @@ func TestParseOCRSearchOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts, err := ParseOCRSearchOptions(tt.spec)
+			opts, err := ocrx.ParseSearchOptions(tt.spec)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("ParseOCRSearchOptions(%q) err=%v wantErr=%v", tt.spec, err, tt.wantErr)
+				t.Fatalf("ocrx.ParseSearchOptions(%q) err=%v wantErr=%v", tt.spec, err, tt.wantErr)
 			}
 			if tt.wantErr {
 				return
 			}
 			if (opts.Region != nil) != tt.wantRegion {
-				t.Fatalf("ParseOCRSearchOptions(%q) region nil=%v wantRegion=%v", tt.spec, opts.Region == nil, tt.wantRegion)
+				t.Fatalf("ocrx.ParseSearchOptions(%q) region nil=%v wantRegion=%v", tt.spec, opts.Region == nil, tt.wantRegion)
 			}
 			if opts.PreferTop != tt.wantTop {
-				t.Fatalf("ParseOCRSearchOptions(%q) preferTop=%v want=%v", tt.spec, opts.PreferTop, tt.wantTop)
+				t.Fatalf("ocrx.ParseSearchOptions(%q) preferTop=%v want=%v", tt.spec, opts.PreferTop, tt.wantTop)
 			}
 		})
 	}
@@ -48,18 +48,18 @@ func TestBestMatchWithOptions(t *testing.T) {
 	}
 	bounds := image.Rect(0, 0, 1000, 1000)
 
-	got, ok := bestMatchWithOptions(observations, "Utilities", ocrx.SearchOptions{}, bounds)
+	got, ok := ocrx.BestMatch(observations, "Utilities", ocrx.SearchOptions{}, bounds)
 	if !ok {
-		t.Fatal("bestMatchWithOptions() no match")
+		t.Fatal("ocrx.BestMatch() no match")
 	}
 	if got.Center.Y != 500 {
 		t.Fatalf("default match Y=%d want 500 (bottom bias)", got.Center.Y)
 	}
 
-	menuOpts := OCRMenuSearchOptions()
-	got, ok = bestMatchWithOptions(observations, "Utilities", menuOpts, bounds)
+	menuOpts := ocrx.MenuSearchOptions()
+	got, ok = ocrx.BestMatch(observations, "Utilities", menuOpts, bounds)
 	if !ok {
-		t.Fatal("bestMatchWithOptions(menu) no match")
+		t.Fatal("ocrx.BestMatch(menu) no match")
 	}
 	if got.Center.Y != 50 {
 		t.Fatalf("menu match Y=%d want 50 (top bias)", got.Center.Y)
@@ -70,7 +70,7 @@ func TestObservationInSearchRegion(t *testing.T) {
 	bounds := image.Rect(0, 0, 1000, 1000)
 	top := ocrx.TextObservation{Center: image.Point{X: 500, Y: 50}}
 	bottom := ocrx.TextObservation{Center: image.Point{X: 500, Y: 900}}
-	opts := OCRMenuSearchOptions()
+	opts := ocrx.MenuSearchOptions()
 
 	if !observationInSearchRegion(top, bounds, opts.Region) {
 		t.Fatal("top point should be inside menu region")
