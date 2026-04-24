@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -43,6 +44,26 @@ func (c RegistryClient) FetchManifest(ctx context.Context, ref Reference) (Manif
 		return manifest, "", fmt.Errorf("fetch manifest: decode: %w", err)
 	}
 	return manifest, resp.Header.Get("Docker-Content-Digest"), nil
+}
+
+// FetchBlob opens ref's blob digest for streaming.
+func (c RegistryClient) FetchBlob(ctx context.Context, ref Reference, digest string) (io.ReadCloser, error) {
+	if digest == "" {
+		return nil, fmt.Errorf("fetch blob: empty digest")
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, ref, "blobs/"+digest)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch blob: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("fetch blob: registry returned %s", resp.Status)
+	}
+	return resp.Body, nil
 }
 
 // BlobExists reports whether ref's registry already has digest.
