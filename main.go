@@ -561,6 +561,9 @@ func main() {
 		case "rm", "remove", "destroy":
 			handleVMCommand(append([]string{"delete"}, args...))
 			return
+		case "rename", "export", "import", "config":
+			handleVMCommand(append([]string{cmd}, args...))
+			return
 		case "snapshot":
 			handleSnapshotCommand(args)
 			return
@@ -701,10 +704,10 @@ Provisioning:
 VM Management:
   vm set <name>           Set active VM
   vm delete <name>        Delete a VM (aliases: rm, remove, destroy)
-  vm rename <old> <new>   Rename a VM
-  vm export <name> <path> Export VM to tarball
-  vm import <path> <name> Import VM from tarball
-  vm config ...           Export/import framework config snapshots
+  vm rename <old> <new>   Rename a VM (alias: rename)
+  vm export <name> <path> Export VM to tarball (alias: export)
+  vm import <path> <name> Import VM from tarball (alias: import)
+  vm config ...           Export/import framework config snapshots (alias: config)
   clone           Clone a VM (cove clone [source] <target> [--linked])
   compact         Zero guest free space for smaller pushes
   push            Plan a VM disk OCI push (dry-run)
