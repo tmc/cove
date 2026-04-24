@@ -568,6 +568,68 @@ func TestRegistryClientBlobExists(t *testing.T) {
 	}
 }
 
+func TestRegistryClientMountBlob(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	source := Reference{Registry: "registry.example.com", Repository: "team/base", Tag: "v1"}
+	desc := Descriptor{Digest: "sha256:abcd"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v2/team/vm/blobs/uploads/" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("mount"); got != desc.Digest {
+			t.Fatalf("mount = %q, want %q", got, desc.Digest)
+		}
+		if got := r.URL.Query().Get("from"); got != source.Repository {
+			t.Fatalf("from = %q, want %q", got, source.Repository)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	got, err := (RegistryClient{BaseURL: srv.URL}).MountBlob(context.Background(), ref, source, desc)
+	if err != nil {
+		t.Fatalf("MountBlob(): %v", err)
+	}
+	if !got {
+		t.Fatal("MountBlob() = false, want true")
+	}
+}
+
+func TestRegistryClientMountBlobFallsBackOnAccepted(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	source := Reference{Registry: "registry.example.com", Repository: "team/base", Tag: "v1"}
+	desc := Descriptor{Digest: "sha256:abcd"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	got, err := (RegistryClient{BaseURL: srv.URL}).MountBlob(context.Background(), ref, source, desc)
+	if err != nil {
+		t.Fatalf("MountBlob(): %v", err)
+	}
+	if got {
+		t.Fatal("MountBlob() = true, want false")
+	}
+}
+
+func TestRegistryClientMountBlobRejectsDifferentRegistry(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	source := Reference{Registry: "other.example.com", Repository: "team/base", Tag: "v1"}
+	desc := Descriptor{Digest: "sha256:abcd"}
+
+	got, err := (RegistryClient{}).MountBlob(context.Background(), ref, source, desc)
+	if err != nil {
+		t.Fatalf("MountBlob(): %v", err)
+	}
+	if got {
+		t.Fatal("MountBlob() = true, want false")
+	}
+}
+
 func TestRegistryClientBlobExistsRejectsRegistryError(t *testing.T) {
 	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

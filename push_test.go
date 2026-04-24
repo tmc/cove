@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -271,6 +272,239 @@ func TestPushImageUploadsRegistryContent(t *testing.T) {
 	}
 }
 
+func TestPushImageWithBaseMountsMatchingChunks(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	disk := []byte{1, 2, 3, 4, 9, 9, 9, 9}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), disk, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
+	}
+
+	baseManifest := pushTestManifestForDisk(t, []byte{1, 2, 3, 4, 5, 5, 5, 5}, 4)
+	parsedBase, err := ociimage.ParseManifest(baseManifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(base): %v", err)
+	}
+	mounted := false
+	uploaded := map[string][]byte{}
+	var pushed ociimage.Manifest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const targetBlobPrefix = "/v2/me/dev-vm/blobs/"
+		const targetUploadPrefix = "/v2/me/dev-vm/blobs/uploads/"
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/me/base/manifests/v1":
+			w.Header().Set("Docker-Content-Digest", "sha256:base")
+			_ = json.NewEncoder(w).Encode(baseManifest)
+		case r.Method == http.MethodHead && strings.HasPrefix(r.URL.Path, targetBlobPrefix):
+			digest := strings.TrimPrefix(r.URL.Path, targetBlobPrefix)
+			if _, ok := uploaded[digest]; ok {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == targetUploadPrefix && r.URL.Query().Get("mount") != "":
+			if got, want := r.URL.Query().Get("mount"), parsedBase.DiskLayers[0].Descriptor.Digest; got != want {
+				t.Fatalf("mount = %q, want %q", got, want)
+			}
+			if got, want := r.URL.Query().Get("from"), "me/base"; got != want {
+				t.Fatalf("from = %q, want %q", got, want)
+			}
+			mounted = true
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPost && r.URL.Path == targetUploadPrefix:
+			w.Header().Set("Location", targetUploadPrefix+"upload-id")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && r.URL.Path == targetUploadPrefix+"upload-id":
+			digest := r.URL.Query().Get("digest")
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			uploaded[digest] = data
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPut && r.URL.Path == "/v2/me/dev-vm/manifests/v2":
+			if err := json.NewDecoder(r.Body).Decode(&pushed); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("%s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer srv.Close()
+
+	opts := pushOptions{
+		BaseRef:         "ghcr.io/me/base:v1",
+		ChunkSize:       4,
+		RegistryBaseURL: srv.URL,
+	}
+	plan, err := buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v2", opts)
+	if err != nil {
+		t.Fatalf("buildPushPlan(): %v", err)
+	}
+	if err := pushImage(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pushImage(): %v", err)
+	}
+	if !mounted {
+		t.Fatal("base chunk was not mounted")
+	}
+	if _, ok := uploaded[parsedBase.DiskLayers[0].Descriptor.Digest]; ok {
+		t.Fatal("mounted base chunk was uploaded")
+	}
+	if _, ok := uploaded[plan.Prepared[1].Descriptor.Digest]; !ok {
+		t.Fatalf("changed chunk digest %s was not uploaded", plan.Prepared[1].Descriptor.Digest)
+	}
+	if got := plan.Manifest.Annotations[ociimage.CoveBaseManifest]; got != "sha256:base" {
+		t.Fatalf("base annotation = %q, want sha256:base", got)
+	}
+	if got := pushed.Annotations[ociimage.CoveBaseManifest]; got != "sha256:base" {
+		t.Fatalf("pushed base annotation = %q, want sha256:base", got)
+	}
+	if plan.BaseChunks != 1 || plan.BaseBytes != 4 {
+		t.Fatalf("base reuse = (%d, %d), want (1, 4)", plan.BaseChunks, plan.BaseBytes)
+	}
+}
+
+func TestPushImageWithBaseUploadsWhenMountFallsBack(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	disk := []byte{1, 2, 3, 4}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), disk, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
+	}
+
+	baseManifest := pushTestManifestForDisk(t, disk, 4)
+	parsedBase, err := ociimage.ParseManifest(baseManifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(base): %v", err)
+	}
+	mountFallback := false
+	uploaded := map[string][]byte{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const targetBlobPrefix = "/v2/me/dev-vm/blobs/"
+		const targetUploadPrefix = "/v2/me/dev-vm/blobs/uploads/"
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/me/base/manifests/v1":
+			w.Header().Set("Docker-Content-Digest", "sha256:base")
+			_ = json.NewEncoder(w).Encode(baseManifest)
+		case r.Method == http.MethodHead && strings.HasPrefix(r.URL.Path, targetBlobPrefix):
+			digest := strings.TrimPrefix(r.URL.Path, targetBlobPrefix)
+			if _, ok := uploaded[digest]; ok {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == targetUploadPrefix && r.URL.Query().Get("mount") != "":
+			mountFallback = true
+			w.Header().Set("Location", targetUploadPrefix+"mount-upload-id")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPost && r.URL.Path == targetUploadPrefix:
+			w.Header().Set("Location", targetUploadPrefix+"upload-id")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && r.URL.Path == targetUploadPrefix+"upload-id":
+			digest := r.URL.Query().Get("digest")
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			uploaded[digest] = data
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPut && r.URL.Path == "/v2/me/dev-vm/manifests/v2":
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("%s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer srv.Close()
+
+	opts := pushOptions{
+		BaseRef:         "ghcr.io/me/base:v1",
+		ChunkSize:       4,
+		RegistryBaseURL: srv.URL,
+	}
+	plan, err := buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v2", opts)
+	if err != nil {
+		t.Fatalf("buildPushPlan(): %v", err)
+	}
+	if err := pushImage(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pushImage(): %v", err)
+	}
+	if !mountFallback {
+		t.Fatal("mount fallback was not attempted")
+	}
+	if _, ok := uploaded[parsedBase.DiskLayers[0].Descriptor.Digest]; !ok {
+		t.Fatalf("base chunk digest %s was not uploaded after mount fallback", parsedBase.DiskLayers[0].Descriptor.Digest)
+	}
+}
+
+func TestPushImageWithBaseRejectsMismatchedManifest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), []byte{1, 2, 3, 4}, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
+	}
+
+	baseManifest := pushTestManifestForDisk(t, []byte{1, 2, 3, 4, 5, 6, 7, 8}, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v2/me/base/manifests/v1" {
+			_ = json.NewEncoder(w).Encode(baseManifest)
+			return
+		}
+		t.Fatalf("%s %s", r.Method, r.URL.String())
+	}))
+	defer srv.Close()
+
+	opts := pushOptions{
+		BaseRef:         "ghcr.io/me/base:v1",
+		ChunkSize:       4,
+		RegistryBaseURL: srv.URL,
+	}
+	plan, err := buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v2", opts)
+	if err != nil {
+		t.Fatalf("buildPushPlan(): %v", err)
+	}
+	err = pushImage(context.Background(), plan, opts)
+	if err == nil || !strings.Contains(err.Error(), "base disk size") {
+		t.Fatalf("pushImage() error = %v, want base disk size error", err)
+	}
+}
+
 func TestHandlePushRequiresArgs(t *testing.T) {
 	err := handlePush([]string{"dev-vm"})
 	if err == nil || !strings.Contains(err.Error(), "usage: cove push") {
@@ -450,6 +684,38 @@ func (ioDiscard) Write(p []byte) (int, error) {
 func pushTestDigest(b []byte) string {
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func pushTestManifestForDisk(t *testing.T, disk []byte, chunkSize int64) ociimage.Manifest {
+	t.Helper()
+
+	chunks, err := ociimage.DescribeChunks(bytes.NewReader(disk), chunkSize)
+	if err != nil {
+		t.Fatalf("DescribeChunks() error = %v", err)
+	}
+	prepared, descriptors, err := preparePushChunkLayers(bytes.NewReader(disk), chunks, false)
+	if err != nil {
+		t.Fatalf("preparePushChunkLayers() error = %v", err)
+	}
+	for i, chunk := range prepared {
+		if chunk.SkipUpload {
+			descriptors[i] = ociimage.Descriptor{
+				MediaType: ociimage.MediaTypeLayer,
+				Size:      0,
+				Digest:    chunk.Chunk.Digest,
+			}
+		}
+	}
+	manifest, _, err := ociimage.BuildManifest(ociimage.ManifestOptions{
+		UploadTime:       "2026-04-23T00:00:00Z",
+		DiskSize:         int64(len(disk)),
+		Chunks:           chunks,
+		ChunkDescriptors: descriptors,
+	})
+	if err != nil {
+		t.Fatalf("BuildManifest() error = %v", err)
+	}
+	return manifest
 }
 
 func listenPushControlSocket(t *testing.T, vmPath string) net.Listener {

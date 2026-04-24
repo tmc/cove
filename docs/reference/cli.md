@@ -607,7 +607,7 @@ cove push <vm> <ref> [flags]
 | `--dry-run` | false | Print the plan without uploading |
 | `--lume-compat` | false | Emit dual annotations for Lume interop |
 | `--additional-tag <tag>` | | Additional tag to publish (repeatable) |
-| `--manifest-out <path>` | | Write dry-run OCI manifest JSON to path |
+| `--manifest-out <path>` | | Write OCI manifest JSON to path |
 
 ```bash
 cove push dev-vm ghcr.io/me/dev-vm:v1
