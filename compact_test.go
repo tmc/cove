@@ -8,6 +8,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -44,8 +45,8 @@ func TestCompactCommand(t *testing.T) {
 
 func TestCompactVMWithClient(t *testing.T) {
 	vmPath := makeTestVMDir(t)
-	if err := SaveVMConfig(vmPath, &VMConfig{Agent: &VMAgentConfig{Platform: agentstate.PlatformLinux}}); err != nil {
-		t.Fatalf("SaveVMConfig() error = %v", err)
+	if err := vmconfig.Save(vmPath, &vmconfig.Config{Agent: &vmconfig.AgentConfig{Platform: agentstate.PlatformLinux}}); err != nil {
+		t.Fatalf("vmconfig.Save() error = %v", err)
 	}
 
 	client := &fakeCompactClient{
@@ -95,8 +96,8 @@ func TestCompactVMWithClientExitFailure(t *testing.T) {
 
 func TestVMAgentPlatformUsesConfig(t *testing.T) {
 	vmPath := makeTestVMDir(t)
-	if err := SaveVMConfig(vmPath, &VMConfig{Agent: &VMAgentConfig{Platform: agentstate.PlatformLinux}}); err != nil {
-		t.Fatalf("SaveVMConfig() error = %v", err)
+	if err := vmconfig.Save(vmPath, &vmconfig.Config{Agent: &vmconfig.AgentConfig{Platform: agentstate.PlatformLinux}}); err != nil {
+		t.Fatalf("vmconfig.Save() error = %v", err)
 	}
 	if got := agentstate.Platform(vmPath); got != agentstate.PlatformLinux {
 		t.Fatalf("Platform() = %q, want %q", got, agentstate.PlatformLinux)

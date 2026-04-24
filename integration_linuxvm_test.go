@@ -10,6 +10,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -124,16 +125,16 @@ func testLinuxNetwork(t *testing.T, vm *testVM) {
 		}
 		clone := clonedTestVM(t, cloneName, true)
 
-		cfg, err := LoadVMConfig(clone.dir)
+		cfg, err := vmconfig.Load(clone.dir)
 		if err != nil {
-			t.Fatalf("LoadVMConfig() error = %v", err)
+			t.Fatalf("vmconfig.Load() error = %v", err)
 		}
-		cfg.Agent = &VMAgentConfig{
+		cfg.Agent = &vmconfig.AgentConfig{
 			Platform: agentstate.PlatformLinux,
 			Source:   agentstate.SourceInstall,
 		}
-		if err := SaveVMConfig(clone.dir, cfg); err != nil {
-			t.Fatalf("SaveVMConfig() error = %v", err)
+		if err := vmconfig.Save(clone.dir, cfg); err != nil {
+			t.Fatalf("vmconfig.Save() error = %v", err)
 		}
 
 		bin := buildIntegrationBinary(t)

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	pb "github.com/tmc/vz-macos/proto/agentpb"
 )
 
@@ -62,7 +63,7 @@ func TestResolveProxyValidationFor(t *testing.T) {
 				RawURL:         "http://127.0.0.1:8080",
 				NetworkMode:    "nat",
 				RuntimeProfile: "full",
-				AgentConfig: &VMAgentConfig{
+				AgentConfig: &vmconfig.AgentConfig{
 					Platform:  agentstate.PlatformMacOS,
 					Requested: true,
 				},
@@ -89,7 +90,7 @@ func TestResolveProxyValidationFor(t *testing.T) {
 				RawURL:      "http://127.0.0.1:8080",
 				NetworkMode: "nat",
 				Linux:       true,
-				AgentConfig: &VMAgentConfig{
+				AgentConfig: &vmconfig.AgentConfig{
 					Platform: agentstate.PlatformLinux,
 					Verified: true,
 				},
@@ -104,7 +105,7 @@ func TestResolveProxyValidationFor(t *testing.T) {
 				RawURL:      "http://127.0.0.1:8080",
 				NetworkMode: "nat",
 				Linux:       true,
-				AgentConfig: &VMAgentConfig{
+				AgentConfig: &vmconfig.AgentConfig{
 					Platform:  agentstate.PlatformLinux,
 					Requested: true,
 				},
@@ -119,7 +120,7 @@ func TestResolveProxyValidationFor(t *testing.T) {
 				RawURL:      "http://127.0.0.1:8080",
 				NetworkMode: "nat",
 				Linux:       true,
-				AgentConfig: &VMAgentConfig{
+				AgentConfig: &vmconfig.AgentConfig{
 					Platform: agentstate.PlatformLinux,
 				},
 			},
@@ -231,13 +232,13 @@ func TestValidateProxyFlagsUsesExistingLinuxAgentState(t *testing.T) {
 	})
 
 	vmDir = t.TempDir()
-	if err := SaveVMConfig(vmDir, &VMConfig{
-		Agent: &VMAgentConfig{
+	if err := vmconfig.Save(vmDir, &vmconfig.Config{
+		Agent: &vmconfig.AgentConfig{
 			Platform:  agentstate.PlatformLinux,
 			Requested: true,
 		},
 	}); err != nil {
-		t.Fatalf("SaveVMConfig() error = %v", err)
+		t.Fatalf("vmconfig.Save() error = %v", err)
 	}
 
 	proxyURL = "http://127.0.0.1:8080"
@@ -298,7 +299,7 @@ func TestConfigureAndTeardownMacOSProxy(t *testing.T) {
 		RawURL:         specRaw,
 		NetworkMode:    "nat",
 		RuntimeProfile: "full",
-		AgentConfig: &VMAgentConfig{
+		AgentConfig: &vmconfig.AgentConfig{
 			Platform:  agentstate.PlatformMacOS,
 			Requested: true,
 		},
@@ -348,7 +349,7 @@ func TestConfigureAndTeardownLinuxProxy(t *testing.T) {
 		RawURL:      specRaw,
 		NetworkMode: "nat",
 		Linux:       true,
-		AgentConfig: &VMAgentConfig{
+		AgentConfig: &vmconfig.AgentConfig{
 			Platform:  agentstate.PlatformLinux,
 			Requested: true,
 		},
@@ -385,7 +386,7 @@ func TestConfigureGuestProxyLinuxRollsBackOnFailure(t *testing.T) {
 		RawURL:      "http://127.0.0.1:8080",
 		NetworkMode: "nat",
 		Linux:       true,
-		AgentConfig: &VMAgentConfig{
+		AgentConfig: &vmconfig.AgentConfig{
 			Platform:  agentstate.PlatformLinux,
 			Requested: true,
 		},
@@ -413,7 +414,7 @@ func TestConfigureGuestProxyMacOSRollsBackOnFailure(t *testing.T) {
 		RawURL:         "http://192.168.64.1:8080",
 		NetworkMode:    "nat",
 		RuntimeProfile: "full",
-		AgentConfig: &VMAgentConfig{
+		AgentConfig: &vmconfig.AgentConfig{
 			Platform:  agentstate.PlatformMacOS,
 			Requested: true,
 		},
@@ -443,7 +444,7 @@ func TestTeardownGuestProxyRetainsRollbackStateOnFailure(t *testing.T) {
 		RawURL:      specRaw,
 		NetworkMode: "nat",
 		Linux:       true,
-		AgentConfig: &VMAgentConfig{
+		AgentConfig: &vmconfig.AgentConfig{
 			Platform:  agentstate.PlatformLinux,
 			Requested: true,
 		},
