@@ -11,9 +11,6 @@ import (
 	virtiofsx "github.com/tmc/apple/x/vzkit/virtiofs"
 )
 
-// VolumeMount represents a host-to-guest volume mount configuration.
-type VolumeMount = virtiofsx.Mount
-
 // volumeSlice implements flag.Value for collecting multiple -v flags.
 type volumeSlice []VolumeMount
 

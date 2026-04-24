@@ -19,15 +19,6 @@ const (
 	vmAgentSourceRuntime   = "runtime"
 )
 
-// VMAgentConfig records durable guest-agent capability state in config.json.
-type VMAgentConfig struct {
-	Platform   string    `json:"platform,omitempty"`
-	Requested  bool      `json:"requested,omitempty"`
-	Verified   bool      `json:"verified,omitempty"`
-	VerifiedAt time.Time `json:"verifiedAt,omitempty"`
-	Source     string    `json:"source,omitempty"`
-}
-
 func cloneVMAgentConfig(cfg *VMAgentConfig) *VMAgentConfig {
 	if cfg == nil {
 		return nil
