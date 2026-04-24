@@ -8,12 +8,13 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestGetVMPathPrefersExistingLegacyVM(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	legacyPath := filepath.Join(filepath.Dir(GetVMBaseDir()), "legacy")
+	legacyPath := filepath.Join(filepath.Dir(vmconfig.BaseDir()), "legacy")
 	if err := os.MkdirAll(legacyPath, 0755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", legacyPath, err)
 	}
@@ -27,7 +28,7 @@ func TestGetVMPathPrefersExistingLegacyVM(t *testing.T) {
 func TestEnsureVMDirCreatesAliasForLegacyVM(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	legacyPath := filepath.Join(filepath.Dir(GetVMBaseDir()), "legacy")
+	legacyPath := filepath.Join(filepath.Dir(vmconfig.BaseDir()), "legacy")
 	if err := os.MkdirAll(legacyPath, 0755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", legacyPath, err)
 	}
@@ -41,7 +42,7 @@ func TestEnsureVMDirCreatesAliasForLegacyVM(t *testing.T) {
 		t.Fatalf("EnsureVMDir() = %q, want %q", got, legacyPath)
 	}
 
-	aliasPath := filepath.Join(GetVMBaseDir(), "legacy")
+	aliasPath := filepath.Join(vmconfig.BaseDir(), "legacy")
 	link, err := os.Readlink(aliasPath)
 	if err != nil {
 		t.Fatalf("Readlink(%q) error = %v", aliasPath, err)
@@ -58,7 +59,7 @@ func TestEnsureVMDirCreatesRegistryDirForNewVM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureVMDir() error = %v", err)
 	}
-	want := resolvePath(filepath.Join(GetVMBaseDir(), "fresh"))
+	want := resolvePath(filepath.Join(vmconfig.BaseDir(), "fresh"))
 	if got != want {
 		t.Fatalf("EnsureVMDir() = %q, want %q", got, want)
 	}

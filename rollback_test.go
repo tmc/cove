@@ -5,13 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestSetupRollbackSnapshotCloneUsesInjectedClone(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	source := filepath.Join(GetVMBaseDir(), "research-base")
+	source := filepath.Join(vmconfig.BaseDir(), "research-base")
 	if err := os.MkdirAll(filepath.Join(source, "disk-snapshots", "clean-base"), 0755); err != nil {
 		t.Fatal(err)
 	}
