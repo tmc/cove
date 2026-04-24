@@ -93,41 +93,6 @@ type VMInfo struct {
 	OSType   string    // "macOS", "Linux", or "unknown"
 }
 
-// VMFiles are the files that make up a VM.
-var VMFiles = []string{
-	"disk.img",
-	"aux.img",
-	"hw.model",
-	"machine.id",
-}
-
-// VMFilesRequired are the minimum files needed for a valid VM.
-var VMFilesRequired = []string{
-	"disk.img",
-	"aux.img",
-}
-
-// ValidateVM checks if a directory contains a valid VM.
-// Accepts either macOS files (disk.img + aux.img) or Linux files (linux-disk.img).
-func ValidateVM(vmPath string) bool {
-	// macOS VM: disk.img + aux.img
-	macOSValid := true
-	for _, f := range VMFilesRequired {
-		if _, err := os.Stat(filepath.Join(vmPath, f)); os.IsNotExist(err) {
-			macOSValid = false
-			break
-		}
-	}
-	if macOSValid {
-		return true
-	}
-	// Linux VM: linux-disk.img is sufficient
-	if _, err := os.Stat(filepath.Join(vmPath, "linux-disk.img")); err == nil {
-		return true
-	}
-	return false
-}
-
 // GetVMInfo returns information about a specific VM.
 func GetVMInfo(vmPath string) (*VMInfo, error) {
 	if !ValidateVM(vmPath) {
@@ -217,76 +182,6 @@ func ListVMs() ([]VMInfo, error) {
 	})
 
 	return vms, nil
-}
-
-// ListOrphanVMs returns directory names under ~/.vz/vms that look like VM dirs
-// but are not valid (missing disk image, etc.). These are surfaced by `cove list`
-// so users can clean them up with `cove vm delete`.
-func ListOrphanVMs() ([]string, error) {
-	baseDir := GetVMBaseDir()
-	entries, err := os.ReadDir(baseDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read base dir: %w", err)
-	}
-	var orphans []string
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		vmPath := filepath.Join(baseDir, entry.Name())
-		if ValidateVM(vmPath) {
-			continue
-		}
-		orphans = append(orphans, entry.Name())
-	}
-	sort.Strings(orphans)
-	return orphans, nil
-}
-
-// GetActiveVM returns the name of the currently active VM.
-func GetActiveVM() string {
-	linkPath := GetCurrentVMLink()
-	target, err := os.Readlink(linkPath)
-	if err != nil {
-		return "default"
-	}
-	return filepath.Base(target)
-}
-
-// SetActiveVM sets the active VM by updating the symlink.
-func SetActiveVM(name string) error {
-	vmPath := filepath.Join(GetVMBaseDir(), name)
-	if !ValidateVM(vmPath) {
-		return fmt.Errorf("vm not found or invalid: %s", name)
-	}
-
-	linkPath := GetCurrentVMLink()
-
-	// Remove existing symlink if it exists
-	os.Remove(linkPath)
-
-	// Create new symlink
-	if err := os.Symlink(vmPath, linkPath); err != nil {
-		return fmt.Errorf("create symlink: %w", err)
-	}
-
-	return nil
-}
-
-// UnsetActiveVM removes the active-VM symlink so no VM is selected by default.
-// Returns nil if no active VM was set.
-func UnsetActiveVM() error {
-	linkPath := GetCurrentVMLink()
-	if err := os.Remove(linkPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("remove active VM link: %w", err)
-	}
-	return nil
 }
 
 // MigrateIfNeeded migrates from flat structure to new multi-VM structure.
