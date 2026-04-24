@@ -1,4 +1,4 @@
-package main
+package pcap
 
 import (
 	"bytes"
@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-func TestPCAPWriterWritesHeaderAndPacket(t *testing.T) {
+func TestWriterWritesHeaderAndPacket(t *testing.T) {
 	var buf bytes.Buffer
-	w, err := NewPCAPWriter(&buf, 16)
+	w, err := NewWriter(&buf, 16)
 	if err != nil {
 		t.Fatalf("new pcap writer: %v", err)
 	}
@@ -59,9 +59,9 @@ func TestPCAPWriterWritesHeaderAndPacket(t *testing.T) {
 	}
 }
 
-func TestPCAPWriterTruncatesToSnaplen(t *testing.T) {
+func TestWriterTruncatesToSnaplen(t *testing.T) {
 	var buf bytes.Buffer
-	w, err := NewPCAPWriter(&buf, 4)
+	w, err := NewWriter(&buf, 4)
 	if err != nil {
 		t.Fatalf("new pcap writer: %v", err)
 	}

@@ -1,4 +1,5 @@
-package main
+// Package pcap writes classic libpcap captures with the Ethernet link type.
+package pcap
 
 import (
 	"encoding/binary"
@@ -8,16 +9,18 @@ import (
 	"time"
 )
 
+// DefaultSnaplen is the default maximum capture length per packet.
+const DefaultSnaplen = 65535
+
 const (
 	pcapMagicLittleEndian = 0xa1b2c3d4
 	pcapVersionMajor      = 2
 	pcapVersionMinor      = 4
 	pcapLinkTypeEthernet  = 1
-	pcapDefaultSnaplen    = 65535
 )
 
-// PCAPWriter writes classic libpcap captures with Ethernet link type.
-type PCAPWriter struct {
+// Writer writes classic libpcap captures with Ethernet link type.
+type Writer struct {
 	mu        sync.Mutex
 	w         io.Writer
 	snaplen   int
@@ -25,18 +28,18 @@ type PCAPWriter struct {
 	wroteHead bool
 }
 
-// NewPCAPWriter creates a writer that emits a PCAP global header on first use.
-func NewPCAPWriter(w io.Writer, snaplen int) (*PCAPWriter, error) {
+// NewWriter creates a writer that emits a pcap global header on first use.
+func NewWriter(w io.Writer, snaplen int) (*Writer, error) {
 	if w == nil {
 		return nil, fmt.Errorf("pcap writer: nil output")
 	}
 	if snaplen <= 0 {
-		snaplen = pcapDefaultSnaplen
+		snaplen = DefaultSnaplen
 	}
-	if snaplen > pcapDefaultSnaplen {
-		snaplen = pcapDefaultSnaplen
+	if snaplen > DefaultSnaplen {
+		snaplen = DefaultSnaplen
 	}
-	return &PCAPWriter{
+	return &Writer{
 		w:       w,
 		snaplen: snaplen,
 		network: pcapLinkTypeEthernet,
@@ -44,7 +47,7 @@ func NewPCAPWriter(w io.Writer, snaplen int) (*PCAPWriter, error) {
 }
 
 // WritePacket writes one packet to the capture.
-func (p *PCAPWriter) WritePacket(ts time.Time, packet []byte) error {
+func (p *Writer) WritePacket(ts time.Time, packet []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -77,14 +80,14 @@ func (p *PCAPWriter) WritePacket(ts time.Time, packet []byte) error {
 }
 
 // Close flushes the writer if it exposes a Close method.
-func (p *PCAPWriter) Close() error {
+func (p *Writer) Close() error {
 	if closer, ok := p.w.(io.Closer); ok {
 		return closer.Close()
 	}
 	return nil
 }
 
-func (p *PCAPWriter) writeHeader() error {
+func (p *Writer) writeHeader() error {
 	var hdr [24]byte
 	binary.LittleEndian.PutUint32(hdr[0:4], pcapMagicLittleEndian)
 	binary.LittleEndian.PutUint16(hdr[4:6], pcapVersionMajor)

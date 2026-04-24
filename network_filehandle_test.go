@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/pcap"
 	"golang.org/x/sys/unix"
 )
 
@@ -114,8 +115,8 @@ func TestNormalizeFileHandleNetworkConfig(t *testing.T) {
 	if cfg.MTU != defaultFileHandleMTU {
 		t.Fatalf("mtu = %d, want %d", cfg.MTU, defaultFileHandleMTU)
 	}
-	if cfg.Snaplen != pcapDefaultSnaplen {
-		t.Fatalf("snaplen = %d, want %d", cfg.Snaplen, pcapDefaultSnaplen)
+	if cfg.Snaplen != pcap.DefaultSnaplen {
+		t.Fatalf("snaplen = %d, want %d", cfg.Snaplen, pcap.DefaultSnaplen)
 	}
 }
 
