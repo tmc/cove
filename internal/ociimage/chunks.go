@@ -49,13 +49,17 @@ func DescribeChunks(r io.Reader, chunkSize int64) ([]Chunk, error) {
 
 // ChunkLayerAnnotations returns cove annotations for a disk chunk layer.
 func ChunkLayerAnnotations(c Chunk, total int) map[string]string {
-	return map[string]string{
+	out := map[string]string{
 		CoveRole:                      "disk",
 		CoveUncompressedSize:          fmt.Sprint(c.Size),
 		CoveUncompressedContentDigest: c.Digest,
 		CoveChunkIndex:                fmt.Sprint(c.Index),
 		CoveChunkTotal:                fmt.Sprint(total),
 	}
+	if c.Zero {
+		out[CoveZeroChunk] = "true"
+	}
+	return out
 }
 
 func describeChunk(r io.Reader, index int, offset, chunkSize int64, buf []byte) (Chunk, error) {

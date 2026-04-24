@@ -102,6 +102,7 @@ func TestNormalizeLayerAnnotations(t *testing.T) {
 				CoveUncompressedContentDigest: "sha256:chunk",
 				CoveChunkIndex:                "2",
 				CoveChunkTotal:                "10",
+				CoveZeroChunk:                 "true",
 			},
 			want: LayerAnnotations{
 				Role:                      "disk",
@@ -109,6 +110,7 @@ func TestNormalizeLayerAnnotations(t *testing.T) {
 				UncompressedContentDigest: "sha256:chunk",
 				ChunkIndex:                2,
 				ChunkTotal:                10,
+				ZeroChunk:                 true,
 			},
 		},
 		{

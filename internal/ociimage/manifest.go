@@ -190,6 +190,7 @@ func ParseManifest(m Manifest) (ParsedManifest, error) {
 				Index:  ann.ChunkIndex,
 				Size:   ann.UncompressedSize,
 				Digest: ann.UncompressedContentDigest,
+				Zero:   ann.ZeroChunk,
 			},
 			Descriptor: layer,
 		}

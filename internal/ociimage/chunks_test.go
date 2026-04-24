@@ -79,6 +79,14 @@ func TestChunkLayerAnnotations(t *testing.T) {
 	}
 }
 
+func TestChunkLayerAnnotationsZeroChunk(t *testing.T) {
+	chunk := Chunk{Index: 0, Size: 3, Digest: testDigest([]byte{0, 0, 0}), Zero: true}
+	got := ChunkLayerAnnotations(chunk, 1)
+	if got[CoveZeroChunk] != "true" {
+		t.Fatalf("zero annotation = %q, want true", got[CoveZeroChunk])
+	}
+}
+
 func testDigest(b []byte) string {
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
