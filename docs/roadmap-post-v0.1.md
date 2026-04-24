@@ -4,11 +4,13 @@ Navigation aid for everything deferred from v0.1.0. Not a design doc.
 
 Source of truth for release strategy: `docs/designs/011-beat-lume-roadmap.md`.
 
-## Already-deferred (on `next` branch)
+## Already-deferred (parked on the `next` branch)
 
 Full reproduction and root-cause hypotheses live in
 `docs/blockers-next.md` on the `next` branch
-(`git show next:docs/blockers-next.md`).
+(`git show next:docs/blockers-next.md`). See "Branch hygiene" below
+for the plan to surface these as a draft PR rather than a long-lived
+staging branch.
 
 1. **`cove up` fresh install produces no disk.** Install reports 100%,
    then provisioning fails because `~/.vz/vms/<name>/` never
@@ -21,8 +23,8 @@ Full reproduction and root-cause hypotheses live in
 
 ## 0.2 candidates (not yet started)
 
-Branch work off `next`, merge back to `next`, then `next` becomes the
-0.2 release candidate.
+Branch off `main`, open a (draft) PR per item, merge back to `main` when
+green. "Suggested branch" column is just a name hint.
 
 | Item | Motivation | Acceptance | Suggested branch |
 |------|------------|------------|------------------|
@@ -88,19 +90,37 @@ From `docs/designs/011-beat-lume-roadmap.md`:
   shared-host auth hardening, agent fleet hygiene, optional browser
   display bridge.
 
-## Branch hygiene (proposal)
+## Branch hygiene
 
-- **`main`** = ship-ready. Only docs and merges from `next` land here
-  outside of emergency fixes.
-- **`next`** = parked work that didn't make the current release cut.
-  Deferred blockers, half-baked experiments.
-- **Feature branches** off `next` for 0.2 work. Merge back to `next`,
-  not `main`, until 0.2 ships.
-- **0.2 release** = merge `next` → `main`, tag `v0.2.0`. `next` then
-  becomes the staging branch for 0.3 work.
+Trunk-based with draft PRs for parked work. Solo maintainer; a long-lived
+`next` staging branch is overhead without payoff (rebases against `main`,
+two places to look for "current state").
 
-This is a proposal — you may prefer a simpler `main`/feature-branch
-model or trunk-based. The current setup (tag `v0.1.0` on `main`, park
-deferred on `next`) makes the most sense when `next` has work you
-intend to finish; if `next` turns into a graveyard, collapse back to
-single-trunk.
+- **`main`** = trunk. All work lands here. Tags cut from `main`.
+- **Feature branches** off `main`. Open PR (draft if not ready) → merge
+  back to `main` when green.
+- **Parked work** = a draft PR that doesn't get merged yet. The PR is the
+  visible "this is deferred" signal; the branch lives on `origin` but
+  isn't merged.
+
+### What happens to the existing `next` branch
+
+`next` currently holds two real reproductions in `docs/blockers-next.md`
+plus the smoke-test history. To migrate:
+
+```bash
+git push origin next                            # if not already there
+gh pr create --base main --head next --draft \
+  --title "deferred from v0.1: cove up + lume-format pull" \
+  --body-file docs/blockers-next.md
+```
+
+The PR sits open as the bookmark for those blockers. When 0.2 work picks
+up either item, branch off `main` (not `next`), reference the draft PR,
+and close the draft once superseded.
+
+If you actively prefer the staging-branch model (e.g., 0.2 grows to
+multiple intertwined features that want to stabilize together before
+hitting `main`), the original proposal — `next` as merge target,
+feature branches off `next`, `next` → `main` for the release — is a
+known-good fallback. Don't reach for it preemptively.
