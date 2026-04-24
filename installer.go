@@ -20,6 +20,7 @@ import (
 	"github.com/tmc/apple/symbols"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
+	"github.com/tmc/apple/x/vzkit/disk"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
@@ -181,7 +182,7 @@ func stopVMAndInject(vm *virtualMachine) {
 			fmt.Printf("  cannot list vmDir: %v\n", derr)
 		}
 	}
-	if err := waitForDiskAvailable(diskFile, 15*time.Second); err != nil {
+	if err := disk.WaitForAvailable(diskFile, 15*time.Second); err != nil {
 		fmt.Printf("warning: %v\n", err)
 	}
 

@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	di2 "github.com/tmc/apple/private/diskimages2"
+	"github.com/tmc/apple/x/vzkit/disk"
 )
 
 // attachAndMountDataVolume attaches the disk image and mounts the Data volume.
@@ -289,7 +290,7 @@ func detachDisk(device string) {
 func detachDiskForPath(device, diskPath string) {
 	fmt.Printf("Detaching %s...\n", device)
 
-	if err := detachDiskVerified(device, diskPath); err != nil {
+	if err := disk.EnsureDetached(diskPath); err != nil {
 		fmt.Printf("warning: %v\n", err)
 		fmt.Printf("  Manual fix: hdiutil detach %s -force\n", device)
 	}
@@ -319,7 +320,7 @@ func checkVMNotRunningAt(vmDirectory string) error {
 // checkDiskNotMounted checks if the disk is already mounted via hdiutil.
 // If mounted and stdin is a terminal, offers to detach interactively.
 func checkDiskNotMounted(diskPath string) error {
-	device, found, err := findAttachedDisk(diskPath)
+	device, found, err := disk.FindAttachedDisk(diskPath)
 	if err != nil {
 		// Log but don't block — if hdiutil info fails we proceed and let
 		// hdiutil attach fail with a clearer error.
@@ -345,7 +346,7 @@ func checkDiskNotMounted(diskPath string) error {
 		fmt.Printf("Detaching %s...\n", device)
 		detachDisk(device)
 		// Verify it's gone.
-		if _, stillFound, _ := findAttachedDisk(diskPath); stillFound {
+		if _, stillFound, _ := disk.FindAttachedDisk(diskPath); stillFound {
 			fmt.Println("Normal detach failed, trying force...")
 			cmd := exec.Command("hdiutil", "detach", device, "-force")
 			cmd.Run()

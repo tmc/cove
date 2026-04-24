@@ -22,6 +22,7 @@ import (
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
+	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/vz-macos/internal/bytefmt"
@@ -432,8 +433,11 @@ func runMacOSVM() error {
 	// Pre-flight: ensure disk is not still attached from a previous
 	// inject/verify. The VZ framework cannot open a disk that is already
 	// held by hdiutil.
-	if err := ensureDiskDetached(resolvedDiskPath); err != nil {
+	if err := disk.EnsureDetached(resolvedDiskPath); err != nil {
 		return fmt.Errorf("disk busy: %w", err)
+	}
+	if verbose {
+		fmt.Println("Disk detached successfully.")
 	}
 
 	if err := writeLoginScreenCredentialsCache(target.Directory, loginScreenCredentials{
@@ -1273,7 +1277,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		if diskFile == "" {
 			diskFile = filepath.Join(vmDir, "disk.img")
 		}
-		if _, found, _ := findAttachedDisk(diskFile); found {
+		if _, found, _ := disk.FindAttachedDisk(diskFile); found {
 			fmt.Println()
 			fmt.Println("Hint: the disk image is still mounted from a previous inject/verify.")
 			fmt.Println("  Run: ./cove disk-detach")
