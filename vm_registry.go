@@ -28,21 +28,12 @@ func applyVMConfig(dir string) {
 		}
 	})
 
-	changed := false
-
-	if !cpuSet && cfg.CPU > 0 {
-		cpuCount = cfg.CPU
-	} else if cpuSet && cfg.CPU != cpuCount {
-		cfg.CPU = cpuCount
-		changed = true
-	}
-
-	if !memSet && cfg.MemoryGB > 0 {
-		memoryGB = cfg.MemoryGB
-	} else if memSet && cfg.MemoryGB != memoryGB {
-		cfg.MemoryGB = memoryGB
-		changed = true
-	}
+	hardware, changed := vmconfigApplyHardware(cfg,
+		vmconfigHardware{CPU: cpuCount, MemoryGB: memoryGB},
+		vmconfigHardwareExplicit{CPU: cpuSet, MemoryGB: memSet},
+	)
+	cpuCount = hardware.CPU
+	memoryGB = hardware.MemoryGB
 
 	if changed {
 		if err := SaveVMConfig(dir, cfg); err != nil {
