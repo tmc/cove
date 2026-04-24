@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +35,38 @@ func TestBuildPullPlanDryRunManifest(t *testing.T) {
 	}
 	if plan.Manifest.Annotations.UncompressedDiskSize != 3 {
 		t.Fatalf("disk size = %d, want 3", plan.Manifest.Annotations.UncompressedDiskSize)
+	}
+}
+
+func TestBuildPullPlanDryRunFetchesManifest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	manifest := pullTestManifest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/v2/me/dev-vm/manifests/v1" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		w.Header().Set("Docker-Content-Digest", "sha256:manifest")
+		if err := json.NewEncoder(w).Encode(manifest); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
+		DryRun:          true,
+		RegistryBaseURL: srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if plan.ManifestDigest != "sha256:manifest" {
+		t.Fatalf("ManifestDigest = %q, want sha256:manifest", plan.ManifestDigest)
+	}
+	if got, want := len(plan.Manifest.Chunks), 1; got != want {
+		t.Fatalf("chunks = %d, want %d", got, want)
 	}
 }
 
@@ -112,7 +146,41 @@ func TestBuildPullPlanRejectsIncompleteTarget(t *testing.T) {
 	}
 }
 
+func TestPullRegistryToken(t *testing.T) {
+	ref := ociimage.Reference{Registry: "ghcr.io"}
+	if got := pullRegistryToken(ref, pullOptions{RegistryToken: "explicit"}); got != "explicit" {
+		t.Fatalf("token = %q, want explicit", got)
+	}
+	t.Setenv("COVE_REGISTRY_TOKEN", "cove-token")
+	if got := pullRegistryToken(ref, pullOptions{}); got != "cove-token" {
+		t.Fatalf("token = %q, want cove-token", got)
+	}
+	t.Setenv("COVE_REGISTRY_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "github-token")
+	if got := pullRegistryToken(ref, pullOptions{}); got != "github-token" {
+		t.Fatalf("token = %q, want github-token", got)
+	}
+	if got := pullRegistryToken(ociimage.Reference{Registry: "registry.example.com"}, pullOptions{}); got != "" {
+		t.Fatalf("token = %q, want empty", got)
+	}
+}
+
 func writePullTestManifest(t *testing.T) string {
+	t.Helper()
+
+	manifest := pullTestManifest(t)
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return path
+}
+
+func pullTestManifest(t *testing.T) ociimage.Manifest {
 	t.Helper()
 
 	manifest, _, err := ociimage.BuildManifest(ociimage.ManifestOptions{
@@ -125,13 +193,5 @@ func writePullTestManifest(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("BuildManifest(): %v", err)
 	}
-	data, err := json.Marshal(manifest)
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-	path := filepath.Join(t.TempDir(), "manifest.json")
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	return path
+	return manifest
 }

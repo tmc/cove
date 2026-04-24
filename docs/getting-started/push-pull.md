@@ -23,9 +23,9 @@ cove pull <ref> --as my-macos --dry-run           # name the new VM
 cove pull <ref> --dry-run --manifest manifest.json # validate a local manifest
 ```
 
-Current implementation supports dry-run validation only. Registry manifest
-fetch, chunk download, decompression, and disk writes land in the next transport
-slice.
+Current implementation supports dry-run validation only. Dry-run fetches the
+registry manifest unless `--manifest` points at local JSON. Chunk download,
+decompression, and disk writes land in the next transport slice.
 
 What happens:
 

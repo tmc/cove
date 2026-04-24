@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -9,21 +10,27 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tmc/vz-macos/internal/ociimage"
 )
 
+const pullManifestFetchTimeout = 30 * time.Second
+
 type pullOptions struct {
-	As           string
-	DryRun       bool
-	ManifestPath string
+	As              string
+	DryRun          bool
+	ManifestPath    string
+	RegistryBaseURL string
+	RegistryToken   string
 }
 
 type pullPlan struct {
-	Ref      ociimage.Reference
-	VMName   string
-	VMDir    string
-	Manifest ociimage.ParsedManifest
+	Ref            ociimage.Reference
+	VMName         string
+	VMDir          string
+	Manifest       ociimage.ParsedManifest
+	ManifestDigest string
 }
 
 func handlePull(args []string) error {
@@ -35,7 +42,7 @@ func handlePull(args []string) error {
 		return fmt.Errorf("usage: cove pull <ref> [flags]")
 	}
 	if !opts.DryRun {
-		return fmt.Errorf("cove pull: registry download is not implemented yet; use --dry-run --manifest <path> to validate a manifest")
+		return fmt.Errorf("cove pull: disk download is not implemented yet; use --dry-run to validate a manifest")
 	}
 	plan, err := buildPullPlan(pos[0], opts)
 	if err != nil {
@@ -51,7 +58,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.SetOutput(w)
 	fs.StringVar(&opts.As, "as", "", "destination VM name")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "validate inputs without writing a disk")
-	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON for dry-run validation")
+	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.Usage = func() { printPullUsage(w) }
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -82,18 +89,29 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		return nil, err
 	}
 
-	var parsed ociimage.ParsedManifest
+	var (
+		parsed         ociimage.ParsedManifest
+		manifestDigest string
+	)
 	if opts.ManifestPath != "" {
 		parsed, err = readPullManifest(opts.ManifestPath)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), pullManifestFetchTimeout)
+		defer cancel()
+		parsed, manifestDigest, err = fetchPullManifest(ctx, ref, opts)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &pullPlan{
-		Ref:      ref,
-		VMName:   name,
-		VMDir:    vmDirectory,
-		Manifest: parsed,
+		Ref:            ref,
+		VMName:         name,
+		VMDir:          vmDirectory,
+		Manifest:       parsed,
+		ManifestDigest: manifestDigest,
 	}, nil
 }
 
@@ -127,6 +145,36 @@ func readPullManifest(path string) (ociimage.ParsedManifest, error) {
 	return out, nil
 }
 
+func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOptions) (ociimage.ParsedManifest, string, error) {
+	var out ociimage.ParsedManifest
+	client := ociimage.RegistryClient{
+		BaseURL: opts.RegistryBaseURL,
+		Token:   pullRegistryToken(ref, opts),
+	}
+	manifest, digest, err := client.FetchManifest(ctx, ref)
+	if err != nil {
+		return out, "", err
+	}
+	out, err = ociimage.ParseManifest(manifest)
+	if err != nil {
+		return out, "", fmt.Errorf("parse registry manifest: %w", err)
+	}
+	return out, digest, nil
+}
+
+func pullRegistryToken(ref ociimage.Reference, opts pullOptions) string {
+	if opts.RegistryToken != "" {
+		return opts.RegistryToken
+	}
+	if token := strings.TrimSpace(os.Getenv("COVE_REGISTRY_TOKEN")); token != "" {
+		return token
+	}
+	if ref.Registry == "ghcr.io" {
+		return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	}
+	return ""
+}
+
 func pullNameFromReference(ref ociimage.Reference) string {
 	parts := strings.Split(ref.Repository, "/")
 	return parts[len(parts)-1]
@@ -137,6 +185,9 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	fmt.Fprintf(w, "  ref: %s\n", plan.Ref.String())
 	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
 	fmt.Fprintf(w, "  target: %s\n", plan.VMDir)
+	if plan.ManifestDigest != "" {
+		fmt.Fprintf(w, "  manifest digest: %s\n", plan.ManifestDigest)
+	}
 	if len(plan.Manifest.Chunks) == 0 && plan.Manifest.Annotations.UncompressedDiskSize == 0 {
 		fmt.Fprintln(w, "  manifest: not provided")
 		return
@@ -151,12 +202,12 @@ func printPullUsage(w io.Writer) {
 
 Validate or pull an OCI VM image.
 
-Current implementation supports --dry-run with a local manifest JSON. Registry
-fetch, chunk download, decompression, and disk writes are wired in later OCI
-slices.
+Current implementation supports --dry-run manifest validation. Without
+--manifest, dry-run fetches the registry manifest. Chunk download,
+decompression, and disk writes are wired in later OCI slices.
 
 Flags:
   --as <name>          Destination VM name
   --dry-run            Validate inputs without writing a disk
-  --manifest <path>    Local OCI manifest JSON for dry-run validation`)
+  --manifest <path>    Local OCI manifest JSON instead of fetching the registry`)
 }
