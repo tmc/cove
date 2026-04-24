@@ -130,10 +130,10 @@ func makeTestVMDir(t *testing.T) string {
 
 func TestVMConfigRoundTripAgentState(t *testing.T) {
 	vmPath := makeTestVMDir(t)
-	want := &VMConfig{
+	want := &vmconfig.Config{
 		CPU:      4,
 		MemoryGB: 8,
-		Agent: &VMAgentConfig{
+		Agent: &vmconfig.AgentConfig{
 			Platform:   agentstate.PlatformLinux,
 			Requested:  true,
 			Verified:   true,
@@ -141,20 +141,20 @@ func TestVMConfigRoundTripAgentState(t *testing.T) {
 			Source:     agentstate.SourceRuntime,
 		},
 	}
-	if err := SaveVMConfig(vmPath, want); err != nil {
-		t.Fatalf("SaveVMConfig() error = %v", err)
+	if err := vmconfig.Save(vmPath, want); err != nil {
+		t.Fatalf("vmconfig.Save() error = %v", err)
 	}
-	got, err := LoadVMConfig(vmPath)
+	got, err := vmconfig.Load(vmPath)
 	if err != nil {
-		t.Fatalf("LoadVMConfig() error = %v", err)
+		t.Fatalf("vmconfig.Load() error = %v", err)
 	}
 	if got.Agent == nil {
-		t.Fatal("LoadVMConfig().Agent = nil, want value")
+		t.Fatal("vmconfig.Load().Agent = nil, want value")
 	}
 	if got.Agent.Platform != want.Agent.Platform || !got.Agent.Requested || !got.Agent.Verified || got.Agent.Source != want.Agent.Source {
-		t.Fatalf("LoadVMConfig().Agent = %#v, want %#v", got.Agent, want.Agent)
+		t.Fatalf("vmconfig.Load().Agent = %#v, want %#v", got.Agent, want.Agent)
 	}
 	if !got.Agent.VerifiedAt.Equal(want.Agent.VerifiedAt) {
-		t.Fatalf("LoadVMConfig().Agent.VerifiedAt = %v, want %v", got.Agent.VerifiedAt, want.Agent.VerifiedAt)
+		t.Fatalf("vmconfig.Load().Agent.VerifiedAt = %v, want %v", got.Agent.VerifiedAt, want.Agent.VerifiedAt)
 	}
 }

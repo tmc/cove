@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestConfiguredMemoryBytes(t *testing.T) {
@@ -25,8 +27,8 @@ func TestConfiguredMemoryBytes(t *testing.T) {
 			setup: func(t *testing.T) string {
 				t.Helper()
 				dir := t.TempDir()
-				if err := SaveVMConfig(dir, &VMConfig{MemoryGB: 6}); err != nil {
-					t.Fatalf("SaveVMConfig: %v", err)
+				if err := vmconfig.Save(dir, &vmconfig.Config{MemoryGB: 6}); err != nil {
+					t.Fatalf("vmconfig.Save: %v", err)
 				}
 				return dir
 			},

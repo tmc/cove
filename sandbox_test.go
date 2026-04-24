@@ -223,8 +223,8 @@ func TestGetEffectiveVolumesRespectsSandboxForSavedConfig(t *testing.T) {
 	sandboxLevel = ""
 
 	want := vmconfig.VolumeMount{HostPath: "/tmp/saved", Tag: "saved"}
-	if err := SaveVMConfig(vmDir, &VMConfig{Volumes: []vmconfig.VolumeMount{want}}); err != nil {
-		t.Fatalf("SaveVMConfig() error = %v", err)
+	if err := vmconfig.Save(vmDir, &vmconfig.Config{Volumes: []vmconfig.VolumeMount{want}}); err != nil {
+		t.Fatalf("vmconfig.Save() error = %v", err)
 	}
 
 	got := getEffectiveVolumes()
