@@ -22,6 +22,7 @@ import (
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
+	balloonx "github.com/tmc/apple/x/vzkit/balloon"
 	"github.com/tmc/apple/x/vzkit/clipboard"
 	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
@@ -800,7 +801,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 
 	if !minimalProfile {
 		// Memory balloon device for runtime memory control
-		addMemoryBalloonDevice(config)
+		balloonx.AddDevice(config)
 
 		// Virtio socket device (vsock for host-guest communication)
 		vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()

@@ -11,6 +11,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
+	"github.com/tmc/apple/x/vzkit/capture"
 )
 
 func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
@@ -90,5 +91,9 @@ func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 	if verbose {
 		fmt.Printf("[screenshot] using %s capture\n", mode)
 	}
-	return goImageFromCGImage(cgImage, 0)
+	img, err := capture.GoImageFromCGImage(cgImage, 0)
+	if err != nil {
+		return nil, err.Error()
+	}
+	return img, ""
 }
