@@ -13,7 +13,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -69,18 +69,23 @@ func main() {
 		}
 	}
 
-	prefix := "vz-agent"
+	component := "vz-agent"
 	if *mode == "agent" {
-		prefix = "vz-agent[user]"
+		component = "vz-agent[user]"
 	}
-	log.SetPrefix(prefix + ": ")
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil)).With(slog.String("component", component))
+	slog.SetDefault(logger)
 
-	log.Printf("starting %s in %s mode on vsock port %d", agentVersionInfo(), *mode, *port)
+	slog.Info("starting",
+		slog.String("version", agentVersionInfo()),
+		slog.String("mode", *mode),
+		slog.Int("port", *port),
+	)
 
 	lis, err := listenVsock(uint32(*port))
 	if err != nil {
-		log.Fatalf("listen vsock: %v", err)
+		slog.Error("listen vsock", slog.Any("err", err))
+		os.Exit(1)
 	}
 	defer lis.Close()
 
@@ -102,7 +107,7 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		log.Println("shutting down")
+		slog.Info("shutting down")
 		srv.Shutdown(context.Background())
 	}()
 
@@ -115,17 +120,18 @@ func main() {
 	for _, spec := range relays {
 		vport, addr, err := parseRelaySpec(spec)
 		if err != nil {
-			log.Printf("invalid relay spec %q: %v", spec, err)
+			slog.Error("invalid relay spec", slog.String("spec", spec), slog.Any("err", err))
 			continue
 		}
 		if _, err := StartTCPRelay(ctx, vport, addr); err != nil {
-			log.Printf("start relay %s: %v", spec, err)
+			slog.Error("start relay", slog.String("spec", spec), slog.Any("err", err))
 		}
 	}
 
-	log.Printf("listening on vsock port %d", *port)
+	slog.Info("listening", slog.Int("port", *port))
 	if err := srv.Serve(lis); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("serve: %v", err)
+		slog.Error("serve", slog.Any("err", err))
+		os.Exit(1)
 	}
 }
 

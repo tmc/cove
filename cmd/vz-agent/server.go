@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
@@ -417,7 +417,7 @@ func (s *agentServer) CopyOut(_ context.Context, req *connect.Request[pb.CopyOut
 }
 
 func (s *agentServer) Shutdown(_ context.Context, req *connect.Request[pb.ShutdownRequest]) (*connect.Response[pb.ShutdownResponse], error) {
-	log.Println("shutdown requested")
+	slog.Info("shutdown requested")
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		args := []string{"now"}
@@ -430,7 +430,7 @@ func (s *agentServer) Shutdown(_ context.Context, req *connect.Request[pb.Shutdo
 }
 
 func (s *agentServer) Reboot(_ context.Context, _ *connect.Request[pb.RebootRequest]) (*connect.Response[pb.RebootResponse], error) {
-	log.Println("reboot requested")
+	slog.Info("reboot requested")
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		exec.Command("shutdown", "-r", "now").Run()

@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 )
 
@@ -15,14 +15,16 @@ const iterm2VsockPort = 1912
 func startITerm2Relay(ctx context.Context) {
 	lis, err := listenVsock(iterm2VsockPort)
 	if err != nil {
-		log.Printf("iterm2 relay: listen vsock %d: %v", iterm2VsockPort, err)
+		slog.Error("iterm2 relay: listen vsock",
+			slog.Int("port", iterm2VsockPort),
+			slog.Any("err", err))
 		return
 	}
 	go func() {
 		<-ctx.Done()
 		lis.Close()
 	}()
-	log.Printf("iterm2 relay: listening on vsock port %d", iterm2VsockPort)
+	slog.Info("iterm2 relay: listening", slog.Int("port", iterm2VsockPort))
 
 	for {
 		conn, err := lis.Accept()
@@ -30,7 +32,7 @@ func startITerm2Relay(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("iterm2 relay: accept: %v", err)
+			slog.Error("iterm2 relay: accept", slog.Any("err", err))
 			return
 		}
 		go relayToITerm2(conn)
@@ -42,7 +44,9 @@ func relayToITerm2(vsockConn net.Conn) {
 
 	tcpConn, err := net.Dial("tcp", "localhost:1912")
 	if err != nil {
-		log.Printf("iterm2 relay: dial localhost:1912: %v", err)
+		slog.Error("iterm2 relay: dial",
+			slog.String("target", "localhost:1912"),
+			slog.Any("err", err))
 		return
 	}
 	defer tcpConn.Close()
