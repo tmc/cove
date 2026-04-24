@@ -7,6 +7,7 @@ require (
 	github.com/ebitengine/purego v0.11.0-alpha.1.0.20260318130922-386f7c8fb549
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/pierrec/lz4/v4 v4.1.26
 	github.com/tmc/apple v0.5.3
 	github.com/tmc/macgo v0.1.1
 	golang.org/x/crypto v0.49.0
