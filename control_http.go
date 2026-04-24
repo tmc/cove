@@ -47,6 +47,7 @@ func (h *httpHandler) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /v1/vms/{name}/pause", h.auth(h.handlePause))
 	mux.HandleFunc("POST /v1/vms/{name}/resume", h.auth(h.handleResume))
 	mux.HandleFunc("POST /v1/vms/{name}/stop", h.auth(h.handleStop))
+	mux.HandleFunc("POST /v1/vms/{name}/request-stop", h.auth(h.handleRequestStop))
 	mux.HandleFunc("GET /v1/vms/{name}/screenshot", h.auth(h.handleScreenshot))
 	mux.HandleFunc("POST /v1/vms/{name}/type", h.auth(h.handleType))
 	mux.HandleFunc("POST /v1/vms/{name}/key", h.auth(h.handleKey))
@@ -165,6 +166,17 @@ func (h *httpHandler) handleStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, ok := h.dispatch(w, &controlpb.ControlRequest{Type: "stop"})
+	if !ok {
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
+func (h *httpHandler) handleRequestStop(w http.ResponseWriter, r *http.Request) {
+	if !h.checkVMName(w, r) {
+		return
+	}
+	resp, ok := h.dispatch(w, &controlpb.ControlRequest{Type: "request-stop"})
 	if !ok {
 		return
 	}

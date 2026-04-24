@@ -118,6 +118,7 @@ func TestMCP_ToolsList(t *testing.T) {
 		"vm_pause",
 		"vm_resume",
 		"vm_stop",
+		"vm_request_stop",
 		"vm_screenshot",
 		"vm_type",
 		"vm_key",
@@ -136,6 +137,35 @@ func TestMCP_ToolsList(t *testing.T) {
 		if !seen[w] {
 			t.Errorf("tool %q not advertised (seen=%v)", w, seen)
 		}
+	}
+}
+
+func TestMCPPowerToolsBuildControlRequests(t *testing.T) {
+	tests := []struct {
+		name     string
+		toolName string
+		wantType string
+	}{
+		{name: "stop", toolName: "vm_stop", wantType: "stop"},
+		{name: "request stop", toolName: "vm_request_stop", wantType: "request-stop"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool, ok := lookupMCPTool(tt.toolName)
+			if !ok {
+				t.Fatalf("lookupMCPTool(%q) not found", tt.toolName)
+			}
+			req, err := tool.build(json.RawMessage(`{"name":"dev"}`), "token")
+			if err != nil {
+				t.Fatalf("build() error = %v", err)
+			}
+			if req.Type != tt.wantType {
+				t.Fatalf("ControlRequest.Type = %q, want %q", req.Type, tt.wantType)
+			}
+			if req.AuthToken != "token" {
+				t.Fatalf("ControlRequest.AuthToken = %q, want token", req.AuthToken)
+			}
+		})
 	}
 }
 

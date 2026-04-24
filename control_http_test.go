@@ -69,6 +69,7 @@ func TestHTTPAuthMissing(t *testing.T) {
 		{"POST", "/v1/vms/test/pause"},
 		{"POST", "/v1/vms/test/resume"},
 		{"POST", "/v1/vms/test/stop"},
+		{"POST", "/v1/vms/test/request-stop"},
 		{"GET", "/v1/vms/test/screenshot"},
 		{"POST", "/v1/vms/test/type"},
 		{"POST", "/v1/vms/test/key"},

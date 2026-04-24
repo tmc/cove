@@ -44,7 +44,8 @@ Each tool takes a JSON object matching the advertised `inputSchema`. Use `cove d
 | `vm_status` | Report lifecycle state and capabilities. | `name` |
 | `vm_pause` | Pause a running VM. | `name` |
 | `vm_resume` | Resume a paused VM. | `name` |
-| `vm_stop` | Gracefully stop a running VM. | `name` |
+| `vm_stop` | Force-stop a running VM. | `name` |
+| `vm_request_stop` | Request graceful guest shutdown with an ACPI power button event. | `name` |
 | `vm_screenshot` | Capture the VM display as MCP image content. | `name` |
 | `vm_type` | Type text into the VM. | `name`, `text` |
 | `vm_key` | Send a keyboard event by macOS virtual key code. | `name`, `code` |
