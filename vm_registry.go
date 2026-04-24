@@ -2,7 +2,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -11,52 +10,6 @@ import (
 	"sort"
 	"time"
 )
-
-// VMConfig holds persistent configuration for a VM.
-// Stored as config.json in the VM directory.
-type VMConfig struct {
-	CPU                uint           `json:"cpu,omitempty"`
-	MemoryGB           uint64         `json:"memoryGB,omitempty"`
-	Volumes            []VolumeMount  `json:"volumes,omitempty"`
-	PostInstallRecipes string         `json:"postInstallRecipes,omitempty"`
-	Agent              *VMAgentConfig `json:"agent,omitempty"`
-}
-
-// LoadVMConfig reads the VM configuration from vmDir/config.json.
-// Returns an empty config (not an error) if the file does not exist.
-func LoadVMConfig(vmDir string) (*VMConfig, error) {
-	path := filepath.Join(vmDir, "config.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &VMConfig{}, nil
-		}
-		return nil, fmt.Errorf("read vm config: %w", err)
-	}
-	var cfg VMConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse vm config: %w", err)
-	}
-	return &cfg, nil
-}
-
-// SaveVMConfig writes the VM configuration to vmDir/config.json.
-func SaveVMConfig(vmDir string, cfg *VMConfig) error {
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal vm config: %w", err)
-	}
-	path := filepath.Join(vmDir, "config.json")
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, append(data, '\n'), 0644); err != nil {
-		return fmt.Errorf("write vm config: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("rename vm config: %w", err)
-	}
-	return nil
-}
 
 // applyVMConfig loads saved VM config and applies defaults for flags
 // not explicitly set by the user. When the user does pass -cpu or -memory,
