@@ -21,6 +21,7 @@ import (
 	"github.com/tmc/apple/objectivec"
 
 	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 
 	"golang.org/x/tools/txtar"
@@ -1217,7 +1218,7 @@ func (s *VMSelector) initialSelectionRow() int {
 func NewVMSelector(vms []VMInfo, onSelect func(VMInfo, bool), onInstall func()) *VMSelector {
 	s := &VMSelector{
 		vms:         vms,
-		activeVM:    GetActiveVM(),
+		activeVM:    vmconfig.ActiveName(),
 		selectedRow: -1,
 		onSelect:    onSelect,
 		onInstall:   onInstall,
@@ -1886,7 +1887,7 @@ func (s *VMSelector) reloadVMList() error {
 		return err
 	}
 	s.vms = vms
-	s.activeVM = GetActiveVM()
+	s.activeVM = vmconfig.ActiveName()
 	s.updateListState()
 	objc.Send[objc.ID](s.tableView.ID, objc.Sel("reloadData"))
 
@@ -2108,7 +2109,7 @@ func performSelectorAction(action selectorAction) error {
 		}
 
 		if errors.Is(err, errRestartVM) {
-			if setErr := SetActiveVM(vmName); setErr != nil {
+			if setErr := vmconfig.SetActive(vmName); setErr != nil {
 				return fmt.Errorf("set active VM: %w", setErr)
 			}
 			if postInstallRecipes != "" {
@@ -2119,7 +2120,7 @@ func performSelectorAction(action selectorAction) error {
 		if err != nil {
 			return withVMLimitHint(err, vmName)
 		}
-		if setErr := SetActiveVM(vmName); setErr != nil {
+		if setErr := vmconfig.SetActive(vmName); setErr != nil {
 			return fmt.Errorf("set active VM: %w", setErr)
 		}
 		if postInstallRecipes != "" {

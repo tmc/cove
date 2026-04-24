@@ -14,8 +14,3 @@ var GetVMBaseDir = vmconfig.BaseDir
 var GetVMPath = vmconfig.Path
 
 var ValidateVM = vmconfig.Validate
-var ListOrphanVMs = vmconfig.ListOrphans
-var GetActiveVM = vmconfig.ActiveName
-var SetActiveVM = vmconfig.SetActive
-var UnsetActiveVM = vmconfig.UnsetActive
-var MigrateIfNeeded = vmconfig.MigrateIfNeeded

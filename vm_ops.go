@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // DeleteVM deletes a VM by name. If the directory exists but does not contain
@@ -36,7 +38,7 @@ func DeleteVM(name string) error {
 		return fmt.Errorf("cannot delete VM '%s': it is currently running (stop it first)", name)
 	}
 
-	wasActive := GetActiveVM() == name
+	wasActive := vmconfig.ActiveName() == name
 
 	if !ValidateVM(vmPath) {
 		fmt.Printf("Deleting orphan VM directory '%s' (no disk image found)...\n", name)
@@ -48,7 +50,7 @@ func DeleteVM(name string) error {
 	}
 
 	if wasActive {
-		if err := UnsetActiveVM(); err != nil {
+		if err := vmconfig.UnsetActive(); err != nil {
 			fmt.Printf("warning: clear active VM marker: %v\n", err)
 		} else {
 			fmt.Println("Cleared active-VM marker.")
@@ -78,8 +80,8 @@ func RenameVM(oldName, newName string) error {
 	}
 
 	// Update active VM symlink if needed
-	if GetActiveVM() == oldName {
-		if err := SetActiveVM(newName); err != nil {
+	if vmconfig.ActiveName() == oldName {
+		if err := vmconfig.SetActive(newName); err != nil {
 			fmt.Printf("warning: could not update active VM symlink: %v\n", err)
 		}
 	}
