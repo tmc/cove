@@ -1037,7 +1037,7 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
 	})
 
-	event, err := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	event, err := input.CreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
 	}
@@ -1048,10 +1048,10 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 
 	chars := keyboardEventUnicodeString(cmd)
 	if chars != "" {
-		CGEventKeyboardSetUnicodeString(event, chars)
+		input.SetUnicodeString(event, chars)
 	}
 	if cmd.Modifiers != 0 {
-		CGEventSetFlags(event, uint64(cmd.Modifiers))
+		input.SetFlags(event, uint64(cmd.Modifiers))
 	}
 
 	// Try both delivery methods: first activate the app, then post through
@@ -1060,7 +1060,7 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CG: %v", err)}
 	}
 	if verbose {
-		fmt.Printf("[key-cgevent] posted keyCode=%d down=%v chars=%q via kCGHIDEventTap\n", cmd.KeyCode, cmd.KeyDown, chars)
+		fmt.Printf("[key-cgevent] posted keyCode=%d down=%v chars=%q via HID event tap\n", cmd.KeyCode, cmd.KeyDown, chars)
 	}
 
 	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
@@ -1106,20 +1106,20 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 }
 
 func (s *ControlServer) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NSEvent, error) {
-	cgEvent, err := CGEventCreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	cgEvent, err := input.CreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
 	if err != nil {
 		return appkit.NSEvent{}, fmt.Errorf("create CGEvent: %v", err)
 	}
 	if cgEvent == 0 {
-		return appkit.NSEvent{}, fmt.Errorf("CGEventCreateKeyboardEvent returned nil")
+		return appkit.NSEvent{}, fmt.Errorf("create CGEvent returned nil")
 	}
 
 	chars := keyboardEventUnicodeString(cmd)
 	if chars != "" {
-		CGEventKeyboardSetUnicodeString(cgEvent, chars)
+		input.SetUnicodeString(cgEvent, chars)
 	}
 	if cmd.Modifiers != 0 {
-		CGEventSetFlags(cgEvent, uint64(cmd.Modifiers))
+		input.SetFlags(cgEvent, uint64(cmd.Modifiers))
 	}
 
 	eventID := objc.Send[objc.ID](
@@ -1444,22 +1444,22 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 	var mouseButton uint32 = uint32(cmd.Button)
 	switch cmd.Action {
 	case "move":
-		eventType = kCGEventMouseMoved
+		eventType = input.EventMouseMoved
 	case "down":
 		switch cmd.Button {
 		case 0:
-			eventType = kCGEventLeftMouseDown
+			eventType = input.EventLeftMouseDown
 		case 1:
-			eventType = kCGEventRightMouseDown
+			eventType = input.EventRightMouseDown
 		default:
 			return &controlpb.ControlResponse{Error: "only left (0) and right (1) buttons supported"}
 		}
 	case "up":
 		switch cmd.Button {
 		case 0:
-			eventType = kCGEventLeftMouseUp
+			eventType = input.EventLeftMouseUp
 		case 1:
-			eventType = kCGEventRightMouseUp
+			eventType = input.EventRightMouseUp
 		default:
 			return &controlpb.ControlResponse{Error: "only left (0) and right (1) buttons supported"}
 		}
@@ -1468,7 +1468,7 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 	}
 
 	// Create and post CGEvent
-	event, err := CGEventCreateMouseEvent(0, eventType, position, mouseButton)
+	event, err := input.CreateMouseEvent(0, eventType, position, mouseButton)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
 	}
