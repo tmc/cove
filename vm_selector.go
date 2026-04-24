@@ -67,10 +67,10 @@ type VMSelector struct {
 	detailDate    appkit.NSTextField
 	detailPath    appkit.NSTextField
 	selectedRow   int
-	vms           []VMInfo
+	vms           []vmconfig.Info
 	activeVM      string
 	delegateID    objc.ID
-	onSelect      func(VMInfo, bool)
+	onSelect      func(vmconfig.Info, bool)
 	onInstall     func()
 }
 
@@ -84,7 +84,7 @@ const (
 
 type selectorAction struct {
 	kind     selectorActionKind
-	vm       VMInfo
+	vm       vmconfig.Info
 	coldBoot bool
 	newVM    newVMOptions
 }
@@ -131,7 +131,7 @@ func selectorVMCountText(count int) string {
 	return fmt.Sprintf("%d VM%s", count, suffix)
 }
 
-func selectorRowTitle(vm VMInfo, activeVM string) string {
+func selectorRowTitle(vm vmconfig.Info, activeVM string) string {
 	title := vm.Name
 	if vm.Name == activeVM {
 		title += " *"
@@ -139,7 +139,7 @@ func selectorRowTitle(vm VMInfo, activeVM string) string {
 	return title
 }
 
-func selectorRowSubtitle(vm VMInfo) string {
+func selectorRowSubtitle(vm vmconfig.Info) string {
 	return fmt.Sprintf("%s | %s | %s", vm.OSType, bytefmt.Size(vm.DiskSize), vm.Created.Format("2006-01-02"))
 }
 
@@ -191,7 +191,7 @@ type selectorScriptRunner struct {
 	popup     appkit.NSPopUpButton
 	textView  appkit.NSTextView
 	runButton appkit.NSButton
-	vm        VMInfo
+	vm        vmconfig.Info
 	delegate  objc.ID
 	logCh     chan string
 	doneCh    chan error
@@ -199,7 +199,7 @@ type selectorScriptRunner struct {
 	closed    bool
 }
 
-func newSelectorScriptRunner(vm VMInfo, recipes []string) *selectorScriptRunner {
+func newSelectorScriptRunner(vm vmconfig.Info, recipes []string) *selectorScriptRunner {
 	r := &selectorScriptRunner{
 		vm:     vm,
 		logCh:  make(chan string, 1024),
@@ -397,7 +397,7 @@ func (r *selectorScriptRunner) handleClose(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	r.window.Close()
 }
 
-func runVZScriptRecipeOnRunningVM(vm VMInfo, recipe string, out io.Writer) error {
+func runVZScriptRecipeOnRunningVM(vm vmconfig.Info, recipe string, out io.Writer) error {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -1124,7 +1124,7 @@ func promptForNewVMOptions() (newVMOptions, bool) {
 	}
 }
 
-func runButtonTitle(vm *VMInfo) string {
+func runButtonTitle(vm *vmconfig.Info) string {
 	if vm == nil {
 		return "Run"
 	}
@@ -1137,7 +1137,7 @@ func runButtonTitle(vm *VMInfo) string {
 	return "Run"
 }
 
-func selectorStateText(vm VMInfo) string {
+func selectorStateText(vm vmconfig.Info) string {
 	switch vm.State {
 	case "running":
 		return "Running"
@@ -1215,7 +1215,7 @@ func (s *VMSelector) initialSelectionRow() int {
 }
 
 // NewVMSelector creates and configures the VM selector window.
-func NewVMSelector(vms []VMInfo, onSelect func(VMInfo, bool), onInstall func()) *VMSelector {
+func NewVMSelector(vms []vmconfig.Info, onSelect func(vmconfig.Info, bool), onInstall func()) *VMSelector {
 	s := &VMSelector{
 		vms:         vms,
 		activeVM:    vmconfig.ActiveName(),
@@ -1831,11 +1831,11 @@ func (s *VMSelector) updateButtonStates() {
 	s.updateDetailsPanel(vm)
 }
 
-func canOpenVZScriptRunner(vm *VMInfo) bool {
+func canOpenVZScriptRunner(vm *vmconfig.Info) bool {
 	return vm != nil && vm.State == "running"
 }
 
-func (s *VMSelector) updateDetailsPanel(vm *VMInfo) {
+func (s *VMSelector) updateDetailsPanel(vm *vmconfig.Info) {
 	if vm == nil {
 		s.detailTitle.SetStringValue("No VM Selected")
 		s.detailState.SetStringValue("-")
@@ -1908,7 +1908,7 @@ func (s *VMSelector) reloadVMList() error {
 }
 
 // selectedVM returns the currently selected VM, or nil if none.
-func (s *VMSelector) selectedVM() *VMInfo {
+func (s *VMSelector) selectedVM() *vmconfig.Info {
 	row := int(objc.Send[int64](s.tableView.ID, objc.Sel("selectedRow")))
 	if row < 0 || row >= len(s.vms) {
 		return nil
@@ -2132,7 +2132,7 @@ func performSelectorAction(action selectorAction) error {
 	}
 }
 
-func refreshSelectorVMs() ([]VMInfo, error) {
+func refreshSelectorVMs() ([]vmconfig.Info, error) {
 	vms, err := ListVMs()
 	if err != nil {
 		return nil, err
@@ -2157,7 +2157,7 @@ func selectorErrorTitle(action selectorAction) string {
 }
 
 // showVMSelectorWindow creates and shows the VM selector as the main application window.
-func showVMSelectorWindow(vms []VMInfo) {
+func showVMSelectorWindow(vms []vmconfig.Info) {
 	transformToForegroundApp()
 
 	app := getSharedApp()
@@ -2171,7 +2171,7 @@ func showVMSelectorWindow(vms []VMInfo) {
 
 		// Declare selector before the closures that reference it.
 		var selector *VMSelector
-		selector = NewVMSelector(vms, func(vm VMInfo, coldBoot bool) {
+		selector = NewVMSelector(vms, func(vm vmconfig.Info, coldBoot bool) {
 			action = selectorAction{
 				kind:     selectorActionRun,
 				vm:       vm,

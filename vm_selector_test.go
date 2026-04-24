@@ -3,6 +3,8 @@ package main
 import (
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestValidateNewVMOptions(t *testing.T) {
@@ -95,7 +97,7 @@ func TestValidateNewVMOptions(t *testing.T) {
 func TestRunButtonTitle(t *testing.T) {
 	tests := []struct {
 		name string
-		vm   *VMInfo
+		vm   *vmconfig.Info
 		want string
 	}{
 		{
@@ -104,21 +106,21 @@ func TestRunButtonTitle(t *testing.T) {
 		},
 		{
 			name: "stopped vm",
-			vm: &VMInfo{
+			vm: &vmconfig.Info{
 				State: "stopped",
 			},
 			want: "Run",
 		},
 		{
 			name: "suspended vm",
-			vm: &VMInfo{
+			vm: &vmconfig.Info{
 				State: "suspended",
 			},
 			want: "Resume",
 		},
 		{
 			name: "running vm",
-			vm: &VMInfo{
+			vm: &vmconfig.Info{
 				State: "running",
 			},
 			want: "Running",
@@ -137,22 +139,22 @@ func TestRunButtonTitle(t *testing.T) {
 func TestSelectorStateText(t *testing.T) {
 	tests := []struct {
 		name string
-		vm   VMInfo
+		vm   vmconfig.Info
 		want string
 	}{
 		{
 			name: "running",
-			vm:   VMInfo{State: "running"},
+			vm:   vmconfig.Info{State: "running"},
 			want: "Running",
 		},
 		{
 			name: "suspended",
-			vm:   VMInfo{State: "suspended"},
+			vm:   vmconfig.Info{State: "suspended"},
 			want: "Suspended",
 		},
 		{
 			name: "stopped",
-			vm:   VMInfo{State: "stopped"},
+			vm:   vmconfig.Info{State: "stopped"},
 			want: "Stopped",
 		},
 	}
@@ -201,18 +203,18 @@ func TestSelectorVMCountText(t *testing.T) {
 func TestSelectorRowTitle(t *testing.T) {
 	tests := []struct {
 		name     string
-		vm       VMInfo
+		vm       vmconfig.Info
 		activeVM string
 		want     string
 	}{
 		{
 			name: "inactive",
-			vm:   VMInfo{Name: "default"},
+			vm:   vmconfig.Info{Name: "default"},
 			want: "default",
 		},
 		{
 			name:     "active",
-			vm:       VMInfo{Name: "default"},
+			vm:       vmconfig.Info{Name: "default"},
 			activeVM: "default",
 			want:     "default *",
 		},
@@ -228,7 +230,7 @@ func TestSelectorRowTitle(t *testing.T) {
 }
 
 func TestSelectorRowSubtitle(t *testing.T) {
-	vm := VMInfo{
+	vm := vmconfig.Info{
 		OSType:   "macOS",
 		DiskSize: 64 * 1024 * 1024 * 1024,
 		Created:  time.Date(2026, time.March, 28, 1, 11, 33, 0, time.UTC),
@@ -244,7 +246,7 @@ func TestSelectorRowSubtitle(t *testing.T) {
 func TestCanOpenVZScriptRunner(t *testing.T) {
 	tests := []struct {
 		name string
-		vm   *VMInfo
+		vm   *vmconfig.Info
 		want bool
 	}{
 		{
@@ -253,17 +255,17 @@ func TestCanOpenVZScriptRunner(t *testing.T) {
 		},
 		{
 			name: "stopped vm",
-			vm:   &VMInfo{State: "stopped"},
+			vm:   &vmconfig.Info{State: "stopped"},
 			want: false,
 		},
 		{
 			name: "suspended vm",
-			vm:   &VMInfo{State: "suspended"},
+			vm:   &vmconfig.Info{State: "suspended"},
 			want: false,
 		},
 		{
 			name: "running vm",
-			vm:   &VMInfo{State: "running"},
+			vm:   &vmconfig.Info{State: "running"},
 			want: true,
 		},
 	}
@@ -280,7 +282,7 @@ func TestCanOpenVZScriptRunner(t *testing.T) {
 func TestInitialSelectionRow(t *testing.T) {
 	tests := []struct {
 		name     string
-		vms      []VMInfo
+		vms      []vmconfig.Info
 		activeVM string
 		want     int
 	}{
@@ -290,7 +292,7 @@ func TestInitialSelectionRow(t *testing.T) {
 		},
 		{
 			name: "first row fallback",
-			vms: []VMInfo{
+			vms: []vmconfig.Info{
 				{Name: "default"},
 				{Name: "macos-2"},
 			},
@@ -298,7 +300,7 @@ func TestInitialSelectionRow(t *testing.T) {
 		},
 		{
 			name: "active vm selected",
-			vms: []VMInfo{
+			vms: []vmconfig.Info{
 				{Name: "default"},
 				{Name: "macos-2"},
 			},
