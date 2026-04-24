@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
 )
@@ -199,7 +200,7 @@ func vzscriptRun(args []string) error {
 	sock := *socketPath
 	if sock == "" {
 		if *vm != "" {
-			dir, err := EnsureVMDir(*vm)
+			dir, err := vmconfig.EnsureDir(*vm, vmDir)
 			if err != nil {
 				return err
 			}

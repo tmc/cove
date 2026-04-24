@@ -25,7 +25,7 @@ func TestGetVMPathPrefersExistingLegacyVM(t *testing.T) {
 	}
 }
 
-func TestEnsureVMDirCreatesAliasForLegacyVM(t *testing.T) {
+func TestVMConfigEnsureDirCreatesAliasForLegacyVM(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	legacyPath := filepath.Join(filepath.Dir(vmconfig.BaseDir()), "legacy")
@@ -34,12 +34,12 @@ func TestEnsureVMDirCreatesAliasForLegacyVM(t *testing.T) {
 	}
 	legacyPath = resolvePath(legacyPath)
 
-	got, err := EnsureVMDir("legacy")
+	got, err := vmconfig.EnsureDir("legacy", vmDir)
 	if err != nil {
-		t.Fatalf("EnsureVMDir() error = %v", err)
+		t.Fatalf("vmconfig.EnsureDir() error = %v", err)
 	}
 	if got != legacyPath {
-		t.Fatalf("EnsureVMDir() = %q, want %q", got, legacyPath)
+		t.Fatalf("vmconfig.EnsureDir() = %q, want %q", got, legacyPath)
 	}
 
 	aliasPath := filepath.Join(vmconfig.BaseDir(), "legacy")
@@ -52,16 +52,16 @@ func TestEnsureVMDirCreatesAliasForLegacyVM(t *testing.T) {
 	}
 }
 
-func TestEnsureVMDirCreatesRegistryDirForNewVM(t *testing.T) {
+func TestVMConfigEnsureDirCreatesRegistryDirForNewVM(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	got, err := EnsureVMDir("fresh")
+	got, err := vmconfig.EnsureDir("fresh", vmDir)
 	if err != nil {
-		t.Fatalf("EnsureVMDir() error = %v", err)
+		t.Fatalf("vmconfig.EnsureDir() error = %v", err)
 	}
 	want := resolvePath(filepath.Join(vmconfig.BaseDir(), "fresh"))
 	if got != want {
-		t.Fatalf("EnsureVMDir() = %q, want %q", got, want)
+		t.Fatalf("vmconfig.EnsureDir() = %q, want %q", got, want)
 	}
 	info, err := os.Stat(want)
 	if err != nil {
@@ -72,15 +72,15 @@ func TestEnsureVMDirCreatesRegistryDirForNewVM(t *testing.T) {
 	}
 }
 
-func TestGetVMInfoState(t *testing.T) {
+func TestVMInfoState(t *testing.T) {
 	t.Run("stopped", func(t *testing.T) {
 		vmPath := makeTestVMDir(t)
-		info, err := GetVMInfo(vmPath)
+		info, err := vmconfig.InfoFor(vmPath, detectVMState)
 		if err != nil {
-			t.Fatalf("GetVMInfo() error = %v", err)
+			t.Fatalf("vmconfig.InfoFor() error = %v", err)
 		}
 		if info.State != "stopped" {
-			t.Fatalf("GetVMInfo().State = %q, want %q", info.State, "stopped")
+			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "stopped")
 		}
 	})
 
@@ -89,12 +89,12 @@ func TestGetVMInfoState(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(vmPath, "suspend.vmstate"), []byte("state"), 0644); err != nil {
 			t.Fatalf("WriteFile(suspend.vmstate) error = %v", err)
 		}
-		info, err := GetVMInfo(vmPath)
+		info, err := vmconfig.InfoFor(vmPath, detectVMState)
 		if err != nil {
-			t.Fatalf("GetVMInfo() error = %v", err)
+			t.Fatalf("vmconfig.InfoFor() error = %v", err)
 		}
 		if info.State != "suspended" {
-			t.Fatalf("GetVMInfo().State = %q, want %q", info.State, "suspended")
+			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "suspended")
 		}
 	})
 
@@ -106,12 +106,12 @@ func TestGetVMInfoState(t *testing.T) {
 			t.Fatalf("Listen(%s) error = %v", sock, err)
 		}
 		defer ln.Close()
-		info, err := GetVMInfo(vmPath)
+		info, err := vmconfig.InfoFor(vmPath, detectVMState)
 		if err != nil {
-			t.Fatalf("GetVMInfo() error = %v", err)
+			t.Fatalf("vmconfig.InfoFor() error = %v", err)
 		}
 		if info.State != "running" {
-			t.Fatalf("GetVMInfo().State = %q, want %q", info.State, "running")
+			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "running")
 		}
 	})
 }

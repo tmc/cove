@@ -1149,7 +1149,7 @@ func selectorStateText(vm vmconfig.Info) string {
 }
 
 func runningVMNames(excludeName string) []string {
-	vms, err := ListVMs()
+	vms, err := vmconfig.List(detectVMState)
 	if err != nil {
 		return nil
 	}
@@ -1882,7 +1882,7 @@ func (s *VMSelector) reloadVMList() error {
 		selectedName = selected.Name
 	}
 
-	vms, err := ListVMs()
+	vms, err := vmconfig.List(detectVMState)
 	if err != nil {
 		return err
 	}
@@ -2133,12 +2133,12 @@ func performSelectorAction(action selectorAction) error {
 }
 
 func refreshSelectorVMs() ([]vmconfig.Info, error) {
-	vms, err := ListVMs()
+	vms, err := vmconfig.List(detectVMState)
 	if err != nil {
 		return nil, err
 	}
 	if len(vms) == 0 {
-		if info, err := GetVMInfo(vmDir); err == nil {
+		if info, err := vmconfig.InfoFor(vmDir, detectVMState); err == nil {
 			vms = append(vms, *info)
 		}
 	}

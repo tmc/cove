@@ -60,11 +60,6 @@ func saveHardwareConfig(dir string) {
 	}
 }
 
-// GetVMInfo returns information about a specific VM.
-func GetVMInfo(vmPath string) (*vmconfig.Info, error) {
-	return vmconfig.InfoFor(vmPath, detectVMState)
-}
-
 func detectVMState(vmPath string) string {
 	if isVMRunningAt(vmPath) {
 		return "running"
@@ -83,21 +78,4 @@ func isVMRunningAt(vmPath string) bool {
 	}
 	conn.Close()
 	return true
-}
-
-// ListVMs returns all VMs in the base directory.
-func ListVMs() ([]vmconfig.Info, error) {
-	return vmconfig.List(detectVMState)
-}
-
-// ResolveVMDir returns the VM directory to use.
-// If a specific VM name is given (via -vm flag), use that.
-// Otherwise, use the vmDir flag value or the active VM.
-func ResolveVMDir(vmName string) string {
-	return vmconfig.ResolveDir(vmName, vmDir)
-}
-
-// EnsureVMDir ensures the VM directory exists and runs migration if needed.
-func EnsureVMDir(vmName string) (string, error) {
-	return vmconfig.EnsureDir(vmName, vmDir)
 }

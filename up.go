@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 	"golang.org/x/tools/txtar"
 )
@@ -111,7 +112,7 @@ func parseUpFlags(args []string) (upConfig, error) {
 
 	// Resolve VM directory.
 	if cfg.vmName != "" {
-		dir, err := EnsureVMDir(cfg.vmName)
+		dir, err := vmconfig.EnsureDir(cfg.vmName, vmDir)
 		if err != nil {
 			return upConfig{}, err
 		}
