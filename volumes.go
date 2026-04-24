@@ -9,6 +9,7 @@ import (
 
 	vz "github.com/tmc/apple/virtualization"
 	virtiofsx "github.com/tmc/apple/x/vzkit/virtiofs"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // volumeSlice implements flag.Value for collecting multiple -v flags.
@@ -153,7 +154,7 @@ func getEffectiveVolumes() []VolumeMount {
 	}
 
 	// No CLI volumes: load saved volumes from config.
-	cfg, err := LoadVMConfig(vmDir)
+	cfg, err := vmconfig.Load(vmDir)
 	if err != nil {
 		fmt.Printf("warning: load volume config: %v\n", err)
 		return nil
@@ -166,7 +167,7 @@ func getEffectiveVolumes() []VolumeMount {
 
 // saveVolumesToConfig persists volume mounts to the VM config file.
 func saveVolumesToConfig(dir string, mounts []VolumeMount) error {
-	return vmconfigSetVolumes(dir, mounts)
+	return vmconfig.SetVolumes(dir, mounts)
 }
 
 // taggedVolumes returns only the volumes that have custom tags (not auto-mount).
