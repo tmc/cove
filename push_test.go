@@ -56,6 +56,19 @@ func TestBuildPushPlan(t *testing.T) {
 	if plan.Chunks[1].Digest != pushTestDigest(disk[4:8]) {
 		t.Fatalf("chunk digest = %q, want %q", plan.Chunks[1].Digest, pushTestDigest(disk[4:8]))
 	}
+	if got, want := len(plan.Prepared), len(plan.Chunks); got != want {
+		t.Fatalf("prepared chunks = %d, want %d", got, want)
+	}
+	parsed, err := ociimage.ParseManifest(plan.Manifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(): %v", err)
+	}
+	if !parsed.Chunks[0].Zero || !parsed.Chunks[2].Zero {
+		t.Fatalf("zero chunks = %#v, want chunks 0 and 2 sparse", parsed.Chunks)
+	}
+	if parsed.DiskLayers[1].Descriptor.MediaType != ociimage.MediaTypeLayerLZ4 {
+		t.Fatalf("non-zero layer media type = %q, want %q", parsed.DiskLayers[1].Descriptor.MediaType, ociimage.MediaTypeLayerLZ4)
+	}
 	if got, want := len(plan.Blobs), 3; got != want {
 		t.Fatalf("blobs = %d, want %d", got, want)
 	}

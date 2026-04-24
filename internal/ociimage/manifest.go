@@ -48,12 +48,13 @@ type DiskLayer struct {
 
 // ManifestOptions controls manifest construction.
 type ManifestOptions struct {
-	UploadTime   string
-	DiskSize     int64
-	Chunks       []Chunk
-	Blobs        []Blob
-	BaseManifest string
-	LumeCompat   bool
+	UploadTime       string
+	DiskSize         int64
+	Chunks           []Chunk
+	ChunkDescriptors []Descriptor
+	Blobs            []Blob
+	BaseManifest     string
+	LumeCompat       bool
 }
 
 // ParsedManifest is the normalized disk and sidecar metadata from a manifest.
@@ -69,6 +70,9 @@ func BuildManifest(opts ManifestOptions) (Manifest, []byte, error) {
 	var manifest Manifest
 	if opts.DiskSize < 0 {
 		return manifest, nil, fmt.Errorf("build manifest: negative disk size %d", opts.DiskSize)
+	}
+	if len(opts.ChunkDescriptors) != 0 && len(opts.ChunkDescriptors) != len(opts.Chunks) {
+		return manifest, nil, fmt.Errorf("build manifest: chunk descriptors %d, want %d", len(opts.ChunkDescriptors), len(opts.Chunks))
 	}
 	configJSON, err := json.Marshal(imageConfig{
 		Created: opts.UploadTime,
@@ -117,10 +121,22 @@ func BuildManifest(opts ManifestOptions) (Manifest, []byte, error) {
 			Annotations: annotations,
 		})
 	}
-	for _, c := range opts.Chunks {
+	for i, c := range opts.Chunks {
 		annotations := ChunkLayerAnnotations(c, len(opts.Chunks))
 		if opts.LumeCompat {
 			annotations = AddLumeCompatibility(annotations)
+		}
+		if len(opts.ChunkDescriptors) != 0 {
+			desc := opts.ChunkDescriptors[i]
+			if desc.MediaType == "" {
+				desc.MediaType = MediaTypeLayer
+			}
+			if desc.Digest == "" {
+				desc.Digest = c.Digest
+			}
+			desc.Annotations = annotations
+			layers = append(layers, desc)
+			continue
 		}
 		layers = append(layers, Descriptor{
 			MediaType:   MediaTypeLayer,

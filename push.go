@@ -38,6 +38,7 @@ type pushPlan struct {
 	ExtraTags   []string
 	ManifestOut string
 	Blobs       []ociimage.Blob
+	Prepared    []ociimage.PreparedChunk
 	Manifest    ociimage.Manifest
 	ConfigJSON  []byte
 }
@@ -142,12 +143,17 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 	if err != nil {
 		return nil, err
 	}
+	prepared, descriptors, err := preparePushChunkLayers(f, chunks, opts.LumeCompat)
+	if err != nil {
+		return nil, err
+	}
 	manifest, configJSON, err := ociimage.BuildManifest(ociimage.ManifestOptions{
-		UploadTime: time.Now().UTC().Format(time.RFC3339),
-		DiskSize:   info.Size(),
-		Chunks:     chunks,
-		Blobs:      blobs,
-		LumeCompat: opts.LumeCompat,
+		UploadTime:       time.Now().UTC().Format(time.RFC3339),
+		DiskSize:         info.Size(),
+		Chunks:           chunks,
+		ChunkDescriptors: descriptors,
+		Blobs:            blobs,
+		LumeCompat:       opts.LumeCompat,
 	})
 	if err != nil {
 		return nil, err
@@ -165,6 +171,7 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		ExtraTags:   append([]string(nil), opts.AdditionalTags...),
 		ManifestOut: opts.ManifestOut,
 		Blobs:       blobs,
+		Prepared:    prepared,
 		Manifest:    manifest,
 		ConfigJSON:  configJSON,
 	}
@@ -175,6 +182,28 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func preparePushChunkLayers(r io.ReaderAt, chunks []ociimage.Chunk, lumeCompat bool) ([]ociimage.PreparedChunk, []ociimage.Descriptor, error) {
+	prepared := make([]ociimage.PreparedChunk, len(chunks))
+	descriptors := make([]ociimage.Descriptor, len(chunks))
+	for i, chunk := range chunks {
+		p, err := ociimage.PrepareChunkLayer(r, chunk, len(chunks), lumeCompat)
+		if err != nil {
+			return nil, nil, err
+		}
+		prepared[i] = p
+		if p.SkipUpload {
+			descriptors[i] = ociimage.Descriptor{
+				MediaType: ociimage.MediaTypeLayer,
+				Size:      0,
+				Digest:    chunk.Digest,
+			}
+			continue
+		}
+		descriptors[i] = p.Descriptor
+	}
+	return prepared, descriptors, nil
 }
 
 func writePushManifest(path string, manifest ociimage.Manifest) error {
