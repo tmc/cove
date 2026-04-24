@@ -11,6 +11,7 @@ import (
 
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/vz-macos/internal/pcap"
 	"golang.org/x/sys/unix"
 )
 
@@ -26,7 +27,7 @@ type FileHandleNetworkSession struct {
 	deviceConfig vz.VZVirtioNetworkDeviceConfiguration
 
 	pcapFile *os.File
-	pcap     *PCAPWriter
+	pcap     *pcap.Writer
 
 	stats fileHandleNetworkStats
 
@@ -98,7 +99,7 @@ func newFileHandleNetworkSessionFromFDs(hostFD, guestFD int, cfg FileHandleNetwo
 			session.Close()
 			return nil, fmt.Errorf("open pcap %s: %w", cfg.PCAPPath, err)
 		}
-		writer, err := NewPCAPWriter(pcapFile, cfg.Snaplen)
+		writer, err := pcap.NewWriter(pcapFile, cfg.Snaplen)
 		if err != nil {
 			pcapFile.Close()
 			session.Close()
@@ -117,7 +118,7 @@ func normalizeFileHandleNetworkConfig(cfg FileHandleNetworkConfig) FileHandleNet
 		cfg.MTU = defaultFileHandleMTU
 	}
 	if cfg.Snaplen <= 0 {
-		cfg.Snaplen = pcapDefaultSnaplen
+		cfg.Snaplen = pcap.DefaultSnaplen
 	}
 	return cfg
 }
