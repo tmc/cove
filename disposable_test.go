@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestDisposableCloneNameRoundTrip(t *testing.T) {
@@ -29,7 +31,7 @@ func TestDisposableCloneNameRoundTrip(t *testing.T) {
 }
 
 func TestSetupDisposableCloneUsesInjectedClone(t *testing.T) {
-	os.RemoveAll(GetVMBaseDir())
+	os.RemoveAll(vmconfig.BaseDir())
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -97,12 +99,12 @@ func TestCleanupDisposableClone(t *testing.T) {
 }
 
 func TestGCDisposableClones(t *testing.T) {
-	os.RemoveAll(GetVMBaseDir())
+	os.RemoveAll(vmconfig.BaseDir())
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	baseDir := GetVMBaseDir()
+	baseDir := vmconfig.BaseDir()
 	now := time.Date(2026, 3, 29, 12, 0, 0, 0, time.Local)
 	oldName := disposableCloneName("research-base", now.Add(-48*time.Hour))
 	newName := disposableCloneName("research-base", now.Add(-2*time.Hour))
@@ -162,7 +164,7 @@ func TestHandleGCCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	baseDir := GetVMBaseDir()
+	baseDir := vmconfig.BaseDir()
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		t.Fatalf("mkdir vm base dir: %v", err)
 	}

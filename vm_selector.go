@@ -1072,7 +1072,7 @@ func newVMAccessoryView(opts newVMOptions, recipes []recipeInfo) (appkit.NSView,
 }
 
 func promptForNewVMOptions() (newVMOptions, bool) {
-	baseDir := GetVMBaseDir()
+	baseDir := vmconfig.BaseDir()
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		showSelectorAlert("Cannot Create VM", fmt.Sprintf("Could not create %s: %v", baseDir, err))
 		return newVMOptions{}, false

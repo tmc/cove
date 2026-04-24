@@ -17,11 +17,12 @@ import (
 	"testing"
 
 	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestBuildPushPlan(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -90,7 +91,7 @@ func TestBuildPushPlan(t *testing.T) {
 
 func TestHandlePushDryRunOutput(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -127,7 +128,7 @@ func TestHandlePushDryRunOutput(t *testing.T) {
 
 func TestHandlePushDryRunWritesManifest(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -176,7 +177,7 @@ func TestHandlePushDryRunWritesManifest(t *testing.T) {
 
 func TestPushImageUploadsRegistryContent(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -274,7 +275,7 @@ func TestPushImageUploadsRegistryContent(t *testing.T) {
 
 func TestPushImageWithBaseMountsMatchingChunks(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -379,7 +380,7 @@ func TestPushImageWithBaseMountsMatchingChunks(t *testing.T) {
 
 func TestPushImageWithBaseUploadsWhenMountFallsBack(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -463,7 +464,7 @@ func TestPushImageWithBaseUploadsWhenMountFallsBack(t *testing.T) {
 
 func TestPushImageWithBaseRejectsMismatchedManifest(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -549,7 +550,7 @@ func TestBuildPushPlanRejectsActiveVM(t *testing.T) {
 
 func TestBuildPushPlanRequiresMacMetadata(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}

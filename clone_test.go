@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestSupportsClonefile(t *testing.T) {
@@ -49,7 +51,7 @@ func TestCloneVMLinux(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	src := filepath.Join(GetVMBaseDir(), "src-linux")
+	src := filepath.Join(vmconfig.BaseDir(), "src-linux")
 	if err := os.MkdirAll(src, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +74,7 @@ func TestCloneVMLinux(t *testing.T) {
 		t.Fatalf("CloneVM() error = %v", err)
 	}
 
-	dst := filepath.Join(GetVMBaseDir(), "dst-linux")
+	dst := filepath.Join(vmconfig.BaseDir(), "dst-linux")
 	for _, name := range []string{"linux-disk.img", "linux-machine.id", "config.json", "control.token"} {
 		if _, err := os.Stat(filepath.Join(dst, name)); err != nil {
 			t.Fatalf("cloned file %q missing: %v", name, err)
@@ -87,7 +89,7 @@ func TestCloneVMUsesSourceDiskOverride(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	src := filepath.Join(GetVMBaseDir(), "src-macos")
+	src := filepath.Join(vmconfig.BaseDir(), "src-macos")
 	if err := os.MkdirAll(src, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +123,7 @@ func TestCloneVMUsesSourceDiskOverride(t *testing.T) {
 		t.Fatalf("CloneVM() error = %v", err)
 	}
 
-	dst := filepath.Join(GetVMBaseDir(), "dst-macos")
+	dst := filepath.Join(vmconfig.BaseDir(), "dst-macos")
 	got, err := os.ReadFile(filepath.Join(dst, "disk.img"))
 	if err != nil {
 		t.Fatalf("ReadFile(dst disk): %v", err)

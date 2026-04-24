@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 const disposableCloneStampFormat = "20060102-150405"
@@ -129,7 +131,7 @@ func CleanupDisposableClone(path string) error {
 func GCDisposableClones(opts DisposableGCOptions) (DisposableGCResult, error) {
 	baseDir := opts.BaseDir
 	if baseDir == "" {
-		baseDir = GetVMBaseDir()
+		baseDir = vmconfig.BaseDir()
 	}
 	now := opts.Now
 	if now == nil {

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestRunCurrentVMWithDisposableClone(t *testing.T) {
@@ -374,7 +376,7 @@ func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	source := filepath.Join(GetVMBaseDir(), "linux-src")
+	source := filepath.Join(vmconfig.BaseDir(), "linux-src")
 	if err := os.MkdirAll(source, 0755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", source, err)
 	}
@@ -388,7 +390,7 @@ func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 
 	clone := DisposableClone{
 		Name: "linux-src-d-20260422-123456",
-		Path: filepath.Join(GetVMBaseDir(), "linux-src-d-20260422-123456"),
+		Path: filepath.Join(vmconfig.BaseDir(), "linux-src-d-20260422-123456"),
 	}
 	var ranLinux bool
 
