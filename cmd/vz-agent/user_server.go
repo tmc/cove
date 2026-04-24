@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os/exec"
 	"time"
 
@@ -41,7 +41,8 @@ func (s *userAgentServer) UserExec(ctx context.Context, req *connect.Request[pb.
 	}
 	// Do NOT call setUser — run as the current user to inherit TCC/FDA.
 	if r.User != nil {
-		log.Printf("user-exec: ignoring user field %q (runs as current user)", *r.User)
+		slog.Info("user-exec: ignoring user field (runs as current user)",
+			slog.String("requested_user", *r.User))
 	}
 
 	var stdout, stderr bytes.Buffer

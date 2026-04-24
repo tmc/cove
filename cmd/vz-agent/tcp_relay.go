@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 )
 
@@ -31,7 +31,9 @@ func StartTCPRelay(ctx context.Context, vsockPort uint32, tcpAddr string) (*TCPR
 		r.Close()
 	}()
 	go r.serve(ctx)
-	log.Printf("tcp relay: vsock:%d -> %s", vsockPort, tcpAddr)
+	slog.Info("tcp relay started",
+		slog.Int("vsock_port", int(vsockPort)),
+		slog.String("tcp_addr", tcpAddr))
 	return r, nil
 }
 
@@ -42,7 +44,9 @@ func (r *TCPRelay) serve(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("tcp relay vsock:%d: accept: %v", r.vsockPort, err)
+			slog.Error("tcp relay: accept",
+				slog.Int("vsock_port", int(r.vsockPort)),
+				slog.Any("err", err))
 			return
 		}
 		go r.relay(conn)
@@ -54,7 +58,10 @@ func (r *TCPRelay) relay(vsockConn net.Conn) {
 
 	tcpConn, err := net.Dial("tcp", r.tcpAddr)
 	if err != nil {
-		log.Printf("tcp relay vsock:%d: dial %s: %v", r.vsockPort, r.tcpAddr, err)
+		slog.Error("tcp relay: dial",
+			slog.Int("vsock_port", int(r.vsockPort)),
+			slog.String("tcp_addr", r.tcpAddr),
+			slog.Any("err", err))
 		return
 	}
 	defer tcpConn.Close()
