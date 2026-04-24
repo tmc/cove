@@ -61,12 +61,14 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fs.Usage()
 		case "template":
 			printTemplateUsage(os.Stderr)
-		case "vm":
+		case "vm", "rename", "export", "import":
 			if len(subargs) > 1 && subargs[1] == "config" {
 				printVMConfigUsage(os.Stderr)
 			} else {
 				printVMUsage(os.Stderr)
 			}
+		case "config":
+			printVMConfigUsage(os.Stderr)
 		case "snapshot":
 			printSnapshotUsage(os.Stderr)
 		case "pit":
