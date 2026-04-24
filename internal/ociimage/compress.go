@@ -2,7 +2,10 @@ package ociimage
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 
 	"github.com/pierrec/lz4/v4"
@@ -101,4 +104,96 @@ func DecompressChunkData(c Chunk, data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("decompress chunk %d: digest %s, want %s", c.Index, got, c.Digest)
 	}
 	return out, nil
+}
+
+// WriteCompressedChunkAt verifies, decompresses, and writes one compressed disk chunk.
+func WriteCompressedChunkAt(w io.WriterAt, c Chunk, desc Descriptor, compressed io.Reader) error {
+	if c.Size < 0 {
+		return fmt.Errorf("write compressed chunk %d: negative size %d", c.Index, c.Size)
+	}
+	if c.Digest == "" {
+		return fmt.Errorf("write compressed chunk %d: missing digest", c.Index)
+	}
+	if desc.Digest == "" {
+		return fmt.Errorf("write compressed chunk %d: missing compressed digest", c.Index)
+	}
+	if desc.Size < 0 {
+		return fmt.Errorf("write compressed chunk %d: negative compressed size %d", c.Index, desc.Size)
+	}
+	if desc.MediaType != "" && desc.MediaType != MediaTypeLayerLZ4 {
+		return fmt.Errorf("write compressed chunk %d: media type %q, want %q", c.Index, desc.MediaType, MediaTypeLayerLZ4)
+	}
+
+	cr := &digestReader{r: compressed, h: sha256.New()}
+	cw := &chunkStreamWriter{w: w, chunk: c, h: sha256.New()}
+	if _, err := io.Copy(cw, lz4.NewReader(cr)); err != nil {
+		return fmt.Errorf("write compressed chunk %d: %w", c.Index, err)
+	}
+	if _, err := io.Copy(io.Discard, cr); err != nil {
+		return fmt.Errorf("write compressed chunk %d: read compressed data: %w", c.Index, err)
+	}
+	if cr.n != desc.Size {
+		return fmt.Errorf("write compressed chunk %d: compressed size %d, want %d", c.Index, cr.n, desc.Size)
+	}
+	if got := digestSum(cr.h); got != desc.Digest {
+		return fmt.Errorf("write compressed chunk %d: compressed digest %s, want %s", c.Index, got, desc.Digest)
+	}
+	if cw.n != c.Size {
+		return fmt.Errorf("write compressed chunk %d: size %d, want %d", c.Index, cw.n, c.Size)
+	}
+	if got := digestSum(cw.h); got != c.Digest {
+		return fmt.Errorf("write compressed chunk %d: digest %s, want %s", c.Index, got, c.Digest)
+	}
+	return nil
+}
+
+type digestReader struct {
+	r io.Reader
+	h hash.Hash
+	n int64
+}
+
+func (r *digestReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if n > 0 {
+		_, _ = r.h.Write(p[:n])
+		r.n += int64(n)
+	}
+	return n, err
+}
+
+type chunkStreamWriter struct {
+	w     io.WriterAt
+	chunk Chunk
+	h     hash.Hash
+	n     int64
+}
+
+func (w *chunkStreamWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if int64(len(p)) > w.chunk.Size-w.n {
+		return 0, fmt.Errorf("write chunk %d: uncompressed size exceeds %d", w.chunk.Index, w.chunk.Size)
+	}
+	if w.chunk.Zero {
+		if !allZero(p) {
+			return 0, fmt.Errorf("write chunk %d: non-zero data for zero chunk", w.chunk.Index)
+		}
+	} else {
+		n, err := w.w.WriteAt(p, w.chunk.Offset+w.n)
+		if err != nil {
+			return n, fmt.Errorf("write chunk %d: %w", w.chunk.Index, err)
+		}
+		if n != len(p) {
+			return n, fmt.Errorf("write chunk %d: %w", w.chunk.Index, io.ErrShortWrite)
+		}
+	}
+	_, _ = w.h.Write(p)
+	w.n += int64(len(p))
+	return len(p), nil
+}
+
+func digestSum(h hash.Hash) string {
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
