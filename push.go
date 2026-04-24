@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -15,12 +17,14 @@ import (
 )
 
 type pushOptions struct {
-	BaseRef        string
-	ChunkSize      int64
-	DryRun         bool
-	LumeCompat     bool
-	AdditionalTags stringList
-	ManifestOut    string
+	BaseRef         string
+	ChunkSize       int64
+	DryRun          bool
+	LumeCompat      bool
+	AdditionalTags  stringList
+	ManifestOut     string
+	RegistryBaseURL string
+	RegistryToken   string
 }
 
 type pushPlan struct {
@@ -66,10 +70,6 @@ func handlePush(args []string) error {
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: cove push <vm> <ref> [flags]")
 	}
-	if !opts.DryRun {
-		return fmt.Errorf("cove push: registry upload is not implemented yet; use --dry-run to inspect the chunk plan")
-	}
-
 	plan, err := buildPushPlan(pos[0], pos[1], opts)
 	if err != nil {
 		return err
@@ -78,6 +78,13 @@ func handlePush(args []string) error {
 		if err := writePushManifest(opts.ManifestOut, plan.Manifest); err != nil {
 			return err
 		}
+	}
+	if !opts.DryRun {
+		if err := pushImage(context.Background(), plan, opts); err != nil {
+			return err
+		}
+		printPushResult(os.Stdout, plan)
+		return nil
 	}
 	printPushDryRun(os.Stdout, plan)
 	return nil
@@ -206,6 +213,106 @@ func preparePushChunkLayers(r io.ReaderAt, chunks []ociimage.Chunk, lumeCompat b
 	return prepared, descriptors, nil
 }
 
+func pushImage(ctx context.Context, plan *pushPlan, opts pushOptions) error {
+	ref, err := ociimage.ParseReference(plan.Ref)
+	if err != nil {
+		return fmt.Errorf("cove push: invalid target ref %q: %w", plan.Ref, err)
+	}
+	client := pushRegistryClient(ref, opts)
+	if err := uploadBytesBlob(ctx, client, ref, plan.Manifest.Config, plan.ConfigJSON); err != nil {
+		return err
+	}
+	for _, blob := range plan.Blobs {
+		name, ok := pushMetadataFileName(blob.Role)
+		if !ok {
+			continue
+		}
+		desc := ociimage.Descriptor{MediaType: ociimage.MediaTypeLayer, Size: blob.Size, Digest: blob.Digest}
+		if err := uploadFileBlob(ctx, client, ref, desc, filepath.Join(plan.VMDir, name)); err != nil {
+			return err
+		}
+	}
+	for _, chunk := range plan.Prepared {
+		if chunk.SkipUpload {
+			continue
+		}
+		if err := uploadBytesBlob(ctx, client, ref, chunk.Descriptor, chunk.Data); err != nil {
+			return err
+		}
+	}
+	if _, err := client.PushManifest(ctx, ref, plan.Manifest); err != nil {
+		return err
+	}
+	for _, tag := range plan.ExtraTags {
+		extra := ref
+		extra.Tag = tag
+		if _, err := client.PushManifest(ctx, extra, plan.Manifest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func pushRegistryClient(ref ociimage.Reference, opts pushOptions) ociimage.RegistryClient {
+	return ociimage.RegistryClient{
+		BaseURL: opts.RegistryBaseURL,
+		Token:   pushRegistryToken(ref, opts),
+	}
+}
+
+func pushRegistryToken(ref ociimage.Reference, opts pushOptions) string {
+	if opts.RegistryToken != "" {
+		return opts.RegistryToken
+	}
+	if token := strings.TrimSpace(os.Getenv("COVE_REGISTRY_TOKEN")); token != "" {
+		return token
+	}
+	if ref.Registry == "ghcr.io" {
+		return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	}
+	return ""
+}
+
+func uploadBytesBlob(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, desc ociimage.Descriptor, data []byte) error {
+	exists, err := client.BlobExists(ctx, ref, desc.Digest)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return client.UploadBlob(ctx, ref, desc, bytes.NewReader(data))
+}
+
+func uploadFileBlob(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, desc ociimage.Descriptor, path string) error {
+	exists, err := client.BlobExists(ctx, ref, desc.Digest)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open blob: %w", err)
+	}
+	defer f.Close()
+	return client.UploadBlob(ctx, ref, desc, f)
+}
+
+func pushMetadataFileName(role string) (string, bool) {
+	switch role {
+	case "nvram":
+		return "aux.img", true
+	case "hw-model":
+		return "hw.model", true
+	case "machine-id":
+		return "machine.id", true
+	default:
+		return "", false
+	}
+}
+
 func writePushManifest(path string, manifest ociimage.Manifest) error {
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -294,6 +401,15 @@ func pushDiskPath(vmDirectory string) (string, error) {
 	return "", fmt.Errorf("disk image not found in %s", vmDirectory)
 }
 
+func printPushResult(w io.Writer, plan *pushPlan) {
+	fmt.Fprintln(w, "Push complete")
+	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
+	fmt.Fprintf(w, "  ref: %s\n", plan.Ref)
+	if len(plan.ExtraTags) > 0 {
+		fmt.Fprintf(w, "  additional tags: %s\n", strings.Join(plan.ExtraTags, ", "))
+	}
+}
+
 func printPushDryRun(w io.Writer, plan *pushPlan) {
 	fmt.Fprintln(w, "Push dry run")
 	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
@@ -320,8 +436,10 @@ func printPushUsage(w io.Writer) {
 
 Plan or push a VM disk as an OCI image.
 
-Current implementation supports --dry-run only. Registry upload, compression,
-base-manifest fetch, and tag publication are wired in later OCI slices.
+Push compresses non-zero disk chunks as LZ4 OCI layers, skips sparse zero
+chunks, uploads missing blobs, and publishes the manifest tag. Use --dry-run to
+inspect the chunk plan without uploading. Base-manifest delta fetch is wired in
+a later OCI slice.
 
 Flags:
   --base <ref>              Base image for delta push

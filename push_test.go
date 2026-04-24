@@ -2,10 +2,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,10 +173,108 @@ func TestHandlePushDryRunWritesManifest(t *testing.T) {
 	}
 }
 
-func TestHandlePushRequiresDryRun(t *testing.T) {
-	err := handlePush([]string{"dev-vm", "ghcr.io/me/dev-vm:v1"})
-	if err == nil || !strings.Contains(err.Error(), "use --dry-run") {
-		t.Fatalf("handlePush() error = %v, want dry-run guidance", err)
+func TestPushImageUploadsRegistryContent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vmPath := filepath.Join(GetVMBaseDir(), "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	disk := []byte{0, 0, 0, 0, 1, 2, 3, 4}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), disk, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
+	}
+
+	uploaded := map[string][]byte{}
+	manifests := map[string]ociimage.Manifest{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const blobPrefix = "/v2/me/dev-vm/blobs/"
+		const uploadPrefix = "/v2/me/dev-vm/blobs/uploads/"
+		const manifestPrefix = "/v2/me/dev-vm/manifests/"
+		switch {
+		case r.Method == http.MethodHead && strings.HasPrefix(r.URL.Path, blobPrefix):
+			digest := strings.TrimPrefix(r.URL.Path, blobPrefix)
+			if _, ok := uploaded[digest]; ok {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == uploadPrefix:
+			w.Header().Set("Location", uploadPrefix+"upload-id")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && r.URL.Path == uploadPrefix+"upload-id":
+			digest := r.URL.Query().Get("digest")
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			uploaded[digest] = data
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, manifestPrefix):
+			tag := strings.TrimPrefix(r.URL.Path, manifestPrefix)
+			var manifest ociimage.Manifest
+			if err := json.NewDecoder(r.Body).Decode(&manifest); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			manifests[tag] = manifest
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("%s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer srv.Close()
+
+	opts := pushOptions{
+		ChunkSize:       4,
+		AdditionalTags:  stringList{"latest"},
+		RegistryBaseURL: srv.URL,
+	}
+	plan, err := buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPushPlan(): %v", err)
+	}
+	if err := pushImage(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pushImage(): %v", err)
+	}
+	if _, ok := manifests["v1"]; !ok {
+		t.Fatal("missing v1 manifest")
+	}
+	if _, ok := manifests["latest"]; !ok {
+		t.Fatal("missing latest manifest")
+	}
+	if _, ok := uploaded[plan.Manifest.Config.Digest]; !ok {
+		t.Fatalf("config digest %s was not uploaded", plan.Manifest.Config.Digest)
+	}
+	for _, blob := range plan.Blobs {
+		if _, ok := uploaded[blob.Digest]; !ok {
+			t.Fatalf("metadata digest %s was not uploaded", blob.Digest)
+		}
+	}
+	for _, chunk := range plan.Prepared {
+		if chunk.SkipUpload {
+			if _, ok := uploaded[chunk.Chunk.Digest]; ok {
+				t.Fatalf("zero chunk digest %s was uploaded", chunk.Chunk.Digest)
+			}
+			continue
+		}
+		if _, ok := uploaded[chunk.Descriptor.Digest]; !ok {
+			t.Fatalf("chunk digest %s was not uploaded", chunk.Descriptor.Digest)
+		}
+	}
+}
+
+func TestHandlePushRequiresArgs(t *testing.T) {
+	err := handlePush([]string{"dev-vm"})
+	if err == nil || !strings.Contains(err.Error(), "usage: cove push") {
+		t.Fatalf("handlePush() error = %v, want usage", err)
 	}
 }
 
