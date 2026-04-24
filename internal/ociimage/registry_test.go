@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -121,6 +122,108 @@ func TestRegistryClientFetchBlobRejectsErrors(t *testing.T) {
 	defer srv.Close()
 	if _, err := (RegistryClient{BaseURL: srv.URL}).FetchBlob(context.Background(), ref, "sha256:abcd"); err == nil {
 		t.Fatal("FetchBlob() error = nil, want registry error")
+	}
+}
+
+func TestRegistryClientUploadBlob(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	data := []byte("blob-data")
+	desc := Descriptor{Size: int64(len(data)), Digest: testDigest(data)}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/team/vm/blobs/uploads/":
+			w.Header().Set("Location", "/v2/team/vm/blobs/uploads/upload-id")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && r.URL.Path == "/v2/team/vm/blobs/uploads/upload-id":
+			if got := r.URL.Query().Get("digest"); got != desc.Digest {
+				t.Fatalf("digest query = %q, want %q", got, desc.Digest)
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			if string(body) != string(data) {
+				t.Fatalf("body = %q, want %q", string(body), string(data))
+			}
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("%s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer srv.Close()
+
+	err := (RegistryClient{BaseURL: srv.URL, Token: "token"}).UploadBlob(context.Background(), ref, desc, strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("UploadBlob(): %v", err)
+	}
+}
+
+func TestRegistryClientUploadBlobRejectsErrors(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	if err := (RegistryClient{}).UploadBlob(context.Background(), ref, Descriptor{}, strings.NewReader("")); err == nil {
+		t.Fatal("UploadBlob() error = nil, want missing digest")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	desc := Descriptor{Size: 1, Digest: testDigest([]byte{1})}
+	if err := (RegistryClient{BaseURL: srv.URL}).UploadBlob(context.Background(), ref, desc, strings.NewReader("x")); err == nil {
+		t.Fatal("UploadBlob() error = nil, want registry error")
+	}
+}
+
+func TestRegistryClientPushManifest(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	manifest := Manifest{SchemaVersion: 2, MediaType: MediaTypeImageManifest}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("method = %s, want PUT", r.Method)
+		}
+		if r.URL.Path != "/v2/team/vm/manifests/latest" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if r.Header.Get("Content-Type") != MediaTypeImageManifest {
+			t.Fatalf("Content-Type = %q", r.Header.Get("Content-Type"))
+		}
+		var got Manifest
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		if got.SchemaVersion != manifest.SchemaVersion {
+			t.Fatalf("manifest = %#v", got)
+		}
+		w.Header().Set("Docker-Content-Digest", "sha256:manifest")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	digest, err := (RegistryClient{BaseURL: srv.URL}).PushManifest(context.Background(), ref, manifest)
+	if err != nil {
+		t.Fatalf("PushManifest(): %v", err)
+	}
+	if digest != "sha256:manifest" {
+		t.Fatalf("digest = %q, want sha256:manifest", digest)
+	}
+}
+
+func TestRegistryClientPushManifestRejectsErrors(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm"}
+	if _, err := (RegistryClient{}).PushManifest(context.Background(), ref, Manifest{}); err == nil {
+		t.Fatal("PushManifest() error = nil, want missing tag or digest")
+	}
+
+	ref.Tag = "latest"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	if _, err := (RegistryClient{BaseURL: srv.URL}).PushManifest(context.Background(), ref, Manifest{}); err == nil {
+		t.Fatal("PushManifest() error = nil, want registry error")
 	}
 }
 
