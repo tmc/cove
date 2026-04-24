@@ -243,3 +243,44 @@ useful. Shipping 0.1 with a broken fresh-install flagship would be
 worse than deferring it — users would hit the FAIL on first run.
 Lume-format pull interop is a nice-to-have for 0.1, not the whole
 product.
+
+## Reduced smoke test on hermes VM (2026-04-24)
+
+Target: `~/.vz/hermes-mlx-go-60g-v10` (running). Binary: `./cove` rebuilt
+and re-signed at commit `e23339f` + dirty (docs).
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `ctl ping` | **PASS** — `pong` |
+| 2 | `ctl status` (running) | **PASS** — `state=running canPause=true canStop=true` |
+| 3 | `ctl pause` | **PASS** — `paused`; status confirmed `state=paused canResume=true` |
+| 4 | `ctl resume` | **PASS** — `resumed` |
+| 5 | `ctl snapshot save release-smoke-1777069347` | **PASS** (after retry with extended timeout) — snapshot created, 9.4 GB on disk. Note: initial `save` returned `i/o timeout` on the client side after the default socket deadline, but the server completed the operation successfully. Long-running ops over the control socket need a larger default timeout or async status. |
+| 6 | `ctl snapshot list` | **PASS** — lists the new snapshot with size/created/vmState metadata |
+| 7 | `ctl snapshot delete release-smoke-…` | **PASS** — `snapshot 'release-smoke-…' deleted`; list returns `null` |
+| 8 | `dump-docs -type cli` | **PASS** — `.cli.commands` length = **31** |
+| 9 | `dump-docs -type mcp` | **PASS** — `.mcp.tools` length = **19** |
+| 10 | `dump-docs -type api` | **PASS** — `.api.endpoints` length = **26** |
+| 11 | `serve -http 127.0.0.1:17777` background + `curl /healthz` | **PASS** — 200 OK |
+| 12 | `serve` `/v1/vms` with bearer token | **PASS** — returns `{"vms": []}` (auth accepted, route functional) |
+
+All reduced-gate items pass. `go test ./...` green (13 packages, ~7s).
+hermes VM untouched (resumed at end of test).
+
+### Warts surfaced by the reduced smoke (non-blocking)
+
+1. **Snapshot save client-side timeout too short.** The default `ctl`
+   socket read deadline fires well before a 9 GB `.vmstate` file has been
+   written, so `snapshot save` returns `i/o timeout` client-side even
+   though the server finishes the save. Workaround: `-timeout 120s`.
+   Real fix would be an async operation ID + polling (already in the
+   codebase at `/v1/operations/*`; the CLI snapshot path should use it).
+2. **`cove serve` VM discovery polls `~/.vz/vms/*/control.sock` only.**
+   Running VMs that live at `~/.vz/<name>/control.sock` (like the hermes
+   VMs on this machine) are not discovered by the gateway. This is the
+   same path-resolution theme as blocker #1 in `docs/blockers-next.md`
+   and suggests a single `vmconfig` resolver is needed. Not a 0.1 blocker
+   because a user who runs `cove up` or `cove install` lands under
+   `~/.vz/vms/`; only hand-placed / legacy VM dirs miss discovery.
+3. **`cove serve -port 0` is not a valid flag.** The flag is `-http
+   <addr>`. Minor DX, not a functional issue.
