@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	pb "github.com/tmc/vz-macos/proto/agentpb"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -261,7 +262,7 @@ func currentProxyFlags() (proxyFlags, error) {
 	if err != nil {
 		return cfg, fmt.Errorf("load vm config: %w", err)
 	}
-	cfg.AgentConfig = cloneVMAgentConfig(vmcfg.Agent)
+	cfg.AgentConfig = agentstate.CloneConfig(vmcfg.Agent)
 	return cfg, nil
 }
 
@@ -310,12 +311,12 @@ func resolveProxyCapability(ctx context.Context, cfg proxyFlags) proxyCapability
 		}
 		capability := probe(ctx, cfg)
 		if capability.Status == proxyCapabilityReady && strings.TrimSpace(cfg.VMDir) != "" {
-			_ = markVMAgentVerified(cfg.VMDir, proxyPlatformForFlags(cfg), vmAgentSourceRuntime, time.Now())
+			_ = agentstate.MarkVerified(cfg.VMDir, proxyPlatformForFlags(cfg), agentstate.SourceRuntime, time.Now())
 		}
 		return capability
 	}
 
-	if agent := cloneVMAgentConfig(cfg.AgentConfig); agent != nil {
+	if agent := agentstate.CloneConfig(cfg.AgentConfig); agent != nil {
 		if agent.Platform == "" || agent.Platform == proxyPlatformForFlags(cfg) {
 			if agent.Verified {
 				return proxyCapability{Status: proxyCapabilityReady, Source: proxyCapabilityConfig, Reason: "agent_verified"}
@@ -527,7 +528,7 @@ func waitForProxyRuntime(ctx context.Context, cs *ControlServer) error {
 			_, err = cs.getUserAgent()
 		}
 		if err == nil {
-			if markErr := markVMAgentVerified(cs.effectiveVMDir(), detectVMAgentPlatform(cs.effectiveVMDir()), vmAgentSourceRuntime, time.Now()); markErr != nil && verbose {
+			if markErr := agentstate.MarkVerified(cs.effectiveVMDir(), agentstate.DetectPlatform(cs.effectiveVMDir()), agentstate.SourceRuntime, time.Now()); markErr != nil && verbose {
 				fmt.Printf("warning: record guest agent capability: %v\n", markErr)
 			}
 			return nil

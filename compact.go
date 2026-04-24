@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -80,7 +81,7 @@ func compactVMWithClient(vmDirectory string, client compactClient) (*compactResu
 		return nil, fmt.Errorf("guest agent unavailable: %w", err)
 	}
 
-	platform := vmAgentPlatform(vmDirectory)
+	platform := agentstate.Platform(vmDirectory)
 	args, err := compactCommand(platform)
 	if err != nil {
 		return nil, err
@@ -113,9 +114,9 @@ func compactVMWithClient(vmDirectory string, client compactClient) (*compactResu
 
 func compactCommand(platform string) ([]string, error) {
 	switch platform {
-	case vmAgentPlatformLinux:
+	case agentstate.PlatformLinux:
 		return []string{"fstrim", "-v", "/"}, nil
-	case vmAgentPlatformMacOS:
+	case agentstate.PlatformMacOS:
 		return []string{"diskutil", "secureErase", "freespace", "0", "/"}, nil
 	default:
 		return nil, fmt.Errorf("unsupported guest platform %q", platform)

@@ -145,6 +145,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 )
 
 // ProvisionManifest describes staged provisioning files for the apply phase.
@@ -525,7 +527,7 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 	os.RemoveAll(stagingDir)
 	markInjectSucceededForVM(target)
 	if manifestIncludesAgent(manifest) {
-		if err := setVMAgentRequested(target.Directory, detectVMAgentPlatform(target.Directory), true, vmAgentSourceProvision); err != nil {
+		if err := agentstate.SetRequested(target.Directory, agentstate.DetectPlatform(target.Directory), true, agentstate.SourceProvision); err != nil {
 			fmt.Printf("warning: save guest agent config: %v\n", err)
 		}
 	}

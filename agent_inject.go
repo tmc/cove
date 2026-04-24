@@ -26,6 +26,7 @@ import (
 
 	vz "github.com/tmc/apple/virtualization"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -292,7 +293,7 @@ func provisionAgentRunning(sock string) error {
 	hostVer := hostVersion()
 	if agentVersionsEqual(hostVer, guestVer) {
 		fmt.Printf("Agent already up to date (version %s).\n", guestVer)
-		if err := markVMAgentVerifiedForSocket(sock, vmAgentSourceProvision); err != nil && verbose {
+		if err := agentstate.MarkVerifiedForSocket(sock, agentstate.SourceProvision); err != nil && verbose {
 			fmt.Printf("warning: record guest agent capability: %v\n", err)
 		}
 		return nil
@@ -433,7 +434,7 @@ func injectAgentOnlyForVM(target vmSelection) error {
 	fmt.Println("  - vz-agent daemon installed (vsock port 1024, root)")
 	fmt.Println("  - vz-agent user agent installed (vsock port 1025, user session)")
 	fmt.Printf("Run the VM with: ./cove%s run\n", target.hintFlag())
-	if err := setVMAgentRequested(target.Directory, detectVMAgentPlatform(target.Directory), true, vmAgentSourceProvision); err != nil {
+	if err := agentstate.SetRequested(target.Directory, agentstate.DetectPlatform(target.Directory), true, agentstate.SourceProvision); err != nil {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
 	return nil
@@ -627,7 +628,7 @@ echo "Boot the VM with: cove%s run"
 		return fmt.Errorf("write installer script: %w", err)
 	}
 
-	if err := setVMAgentRequested(target.Directory, detectVMAgentPlatform(target.Directory), true, vmAgentSourceProvision); err != nil && verbose {
+	if err := agentstate.SetRequested(target.Directory, agentstate.DetectPlatform(target.Directory), true, agentstate.SourceProvision); err != nil && verbose {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
 
@@ -679,7 +680,7 @@ func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
 		_, err := target.getAgent()
 		if err == nil {
 			vmDirectory := target.effectiveVMDir()
-			if err := markVMAgentVerified(vmDirectory, detectVMAgentPlatform(vmDirectory), vmAgentSourceRuntime, time.Now()); err != nil && verbose {
+			if err := agentstate.MarkVerified(vmDirectory, agentstate.DetectPlatform(vmDirectory), agentstate.SourceRuntime, time.Now()); err != nil && verbose {
 				fmt.Printf("warning: record guest agent capability: %v\n", err)
 			}
 			if verbose {
@@ -800,7 +801,7 @@ func upgradeAgentAt(sock string) error {
 	if r := resp.GetAgentPing(); r != nil {
 		newVersion = r.Version
 	}
-	if err := markVMAgentVerifiedForSocket(sock, vmAgentSourceUpgrade); err != nil && verbose {
+	if err := agentstate.MarkVerifiedForSocket(sock, agentstate.SourceUpgrade); err != nil && verbose {
 		fmt.Printf("warning: record guest agent capability: %v\n", err)
 	}
 	fmt.Printf("Upgraded: %s → %s\n", oldVersion, newVersion)
