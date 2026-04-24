@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
+)
 
 const (
 	bytesPerMiB = uint64(1024 * 1024)
@@ -13,7 +17,7 @@ func bytesToGB(size uint64) float64 {
 
 func configuredMemoryBytes(vmDirectory string) (uint64, error) {
 	if vmDirectory != "" {
-		cfg, err := LoadVMConfig(vmDirectory)
+		cfg, err := vmconfig.Load(vmDirectory)
 		if err != nil {
 			return 0, fmt.Errorf("load vm config: %w", err)
 		}
