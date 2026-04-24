@@ -123,6 +123,32 @@ func TestApplyHardware(t *testing.T) {
 	}
 }
 
+func TestSetHardware(t *testing.T) {
+	dir := t.TempDir()
+	changed, err := SetHardware(dir, Hardware{CPU: 4, MemoryGB: 8})
+	if err != nil {
+		t.Fatalf("SetHardware() error = %v", err)
+	}
+	if !changed {
+		t.Fatal("SetHardware() changed = false, want true")
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.CPU != 4 || got.MemoryGB != 8 {
+		t.Fatalf("hardware = cpu %d memory %d, want cpu 4 memory 8", got.CPU, got.MemoryGB)
+	}
+
+	changed, err = SetHardware(dir, Hardware{CPU: 4, MemoryGB: 8})
+	if err != nil {
+		t.Fatalf("SetHardware() error = %v", err)
+	}
+	if changed {
+		t.Fatal("SetHardware() changed = true, want false")
+	}
+}
+
 func TestSetPostInstallRecipes(t *testing.T) {
 	dir := t.TempDir()
 	if err := SetPostInstallRecipes(dir, "base,tools"); err != nil {

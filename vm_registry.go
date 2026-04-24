@@ -52,16 +52,8 @@ func savePostInstallRecipes(dir, recipes string) {
 
 // saveHardwareConfig persists the current CPU and memory settings.
 func saveHardwareConfig(dir string) {
-	cfg, err := LoadVMConfig(dir)
-	if err != nil {
-		return
-	}
-	if cfg.CPU == cpuCount && cfg.MemoryGB == memoryGB {
-		return
-	}
-	cfg.CPU = cpuCount
-	cfg.MemoryGB = memoryGB
-	if err := SaveVMConfig(dir, cfg); err != nil {
+	changed, err := vmconfigSetHardware(dir, vmconfigHardware{CPU: cpuCount, MemoryGB: memoryGB})
+	if err != nil && changed {
 		fmt.Printf("warning: save vm config: %v\n", err)
 	}
 }

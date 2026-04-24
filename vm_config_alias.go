@@ -12,6 +12,7 @@ type vmconfigHardwareExplicit = vmconfig.HardwareExplicit
 var LoadVMConfig = vmconfig.Load
 var SaveVMConfig = vmconfig.Save
 var vmconfigApplyHardware = vmconfig.ApplyHardware
+var vmconfigSetHardware = vmconfig.SetHardware
 var vmconfigSetPostInstallRecipes = vmconfig.SetPostInstallRecipes
 var vmconfigSetVolumes = vmconfig.SetVolumes
 var vmconfigInfoFor = vmconfig.InfoFor
