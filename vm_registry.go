@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 )
 
@@ -83,43 +82,9 @@ func saveHardwareConfig(dir string) {
 	}
 }
 
-// VMInfo holds information about a virtual machine.
-type VMInfo struct {
-	Name     string    // VM name (directory name)
-	Path     string    // Full path to VM directory
-	DiskSize int64     // Disk image size in bytes (sparse size)
-	Created  time.Time // Creation time (from disk.img mtime)
-	State    string    // "running", "stopped", or "suspended"
-	OSType   string    // "macOS", "Linux", or "unknown"
-}
-
 // GetVMInfo returns information about a specific VM.
 func GetVMInfo(vmPath string) (*VMInfo, error) {
-	if !ValidateVM(vmPath) {
-		return nil, fmt.Errorf("invalid VM: %s", vmPath)
-	}
-
-	name := filepath.Base(vmPath)
-	diskPath := filepath.Join(vmPath, "disk.img")
-	// Fall back to linux-disk.img for Linux VMs
-	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		diskPath = filepath.Join(vmPath, "linux-disk.img")
-	}
-
-	// Get disk info
-	diskInfo, err := os.Stat(diskPath)
-	if err != nil {
-		return nil, fmt.Errorf("stat disk.img: %w", err)
-	}
-
-	return &VMInfo{
-		Name:     name,
-		Path:     vmPath,
-		DiskSize: diskInfo.Size(),
-		Created:  diskInfo.ModTime(),
-		State:    detectVMState(vmPath),
-		OSType:   detectOSType(vmPath),
-	}, nil
+	return vmconfigInfoFor(vmPath, detectVMState)
 }
 
 func detectVMState(vmPath string) string {
@@ -144,39 +109,7 @@ func isVMRunningAt(vmPath string) bool {
 
 // ListVMs returns all VMs in the base directory.
 func ListVMs() ([]VMInfo, error) {
-	baseDir := GetVMBaseDir()
-
-	// Create base directory if it doesn't exist
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
-		return nil, fmt.Errorf("create base dir: %w", err)
-	}
-
-	entries, err := os.ReadDir(baseDir)
-	if err != nil {
-		return nil, fmt.Errorf("read base dir: %w", err)
-	}
-
-	var vms []VMInfo
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		vmPath := filepath.Join(baseDir, entry.Name())
-		info, err := GetVMInfo(vmPath)
-		if err != nil {
-			continue // Skip invalid VMs
-		}
-
-		vms = append(vms, *info)
-	}
-
-	// Sort by name
-	sort.Slice(vms, func(i, j int) bool {
-		return vms[i].Name < vms[j].Name
-	})
-
-	return vms, nil
+	return vmconfigList(detectVMState)
 }
 
 // ResolveVMDir returns the VM directory to use.
