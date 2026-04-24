@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/tmc/apple/x/plist"
+	displayx "github.com/tmc/apple/x/vzkit/display"
 )
 
 // UTMConfig represents the parsed UTM configuration.
@@ -36,7 +37,7 @@ type UTMConfig struct {
 	HWModel    []byte // VZMacHardwareModel data representation
 	MachineID  []byte // VZMacMachineIdentifier data representation
 	AuxStorage string // path to auxiliary storage
-	Displays   []DisplayConfig
+	Displays   []displayx.Config
 	MACAddress string
 }
 
@@ -95,7 +96,7 @@ func LoadUTMBundle(bundlePath string) (*UTMConfig, error) {
 	auxStoragePath := plist.String(pl, "System", "MacPlatform", "AuxiliaryStoragePath")
 
 	// Get display configuration
-	var parsedDisplays []DisplayConfig
+	var parsedDisplays []displayx.Config
 	displayArray := plist.Array(pl, "Display")
 	for _, d := range displayArray {
 		dm, ok := d.(map[string]any)
@@ -109,7 +110,7 @@ func LoadUTMBundle(bundlePath string) (*UTMConfig, error) {
 			if ppi == 0 {
 				ppi = 144
 			}
-			parsedDisplays = append(parsedDisplays, DisplayConfig{
+			parsedDisplays = append(parsedDisplays, displayx.Config{
 				Width:  width,
 				Height: height,
 				PPI:    ppi,
@@ -200,7 +201,7 @@ func runUTMBundle(bundlePath string) error {
 
 	// Apply display configuration from UTM bundle
 	if len(cfg.Displays) > 0 {
-		displays = DisplaySlice(cfg.Displays)
+		displays = displayx.Slice(cfg.Displays)
 	}
 
 	// Apply MAC address from UTM bundle so DHCP leases are preserved

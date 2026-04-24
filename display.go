@@ -11,20 +11,14 @@ import (
 	displayx "github.com/tmc/apple/x/vzkit/display"
 )
 
-// DisplayConfig is an alias for the vzkit display configuration type.
-type DisplayConfig = displayx.Config
-
-// DisplaySlice is an alias for the vzkit display slice type.
-type DisplaySlice = displayx.Slice
-
 // DefaultDisplayConfig returns the default display configuration.
-func DefaultDisplayConfig() DisplayConfig {
+func DefaultDisplayConfig() displayx.Config {
 	return displayx.DefaultConfig()
 }
 
 // CreateMacGraphicsConfig creates a macOS graphics device configuration
 // with the specified displays (single or multiple).
-func CreateMacGraphicsConfig(displays []DisplayConfig) (vz.VZMacGraphicsDeviceConfiguration, error) {
+func CreateMacGraphicsConfig(displays []displayx.Config) (vz.VZMacGraphicsDeviceConfiguration, error) {
 	graphicsConfig, err := displayx.CreateMacGraphicsConfig(displays)
 	if err != nil {
 		return graphicsConfig, err
@@ -39,12 +33,12 @@ func CreateMacGraphicsConfig(displays []DisplayConfig) (vz.VZMacGraphicsDeviceCo
 
 // CreateVirtioGraphicsConfig creates a Linux/generic graphics device configuration
 // with the specified displays (for VirtIO GPU).
-func CreateVirtioGraphicsConfig(displays []DisplayConfig) (vz.VZVirtioGraphicsDeviceConfiguration, error) {
+func CreateVirtioGraphicsConfig(displays []displayx.Config) (vz.VZVirtioGraphicsDeviceConfiguration, error) {
 	return displayx.CreateVirtioGraphicsConfig(displays)
 }
 
 // GetDefaultDisplayForVM returns the appropriate default display for a VM type.
-func GetDefaultDisplayForVM(isLinux bool) DisplayConfig {
+func GetDefaultDisplayForVM(isLinux bool) displayx.Config {
 	if isLinux {
 		return displayx.DefaultLinuxConfig()
 	}

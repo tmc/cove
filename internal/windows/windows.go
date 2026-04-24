@@ -35,6 +35,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	displayx "github.com/tmc/apple/x/vzkit/display"
 )
 
 // buildWindowsVMConfiguration builds a VZVirtualMachineConfiguration for Windows.
@@ -77,9 +78,9 @@ func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfi
 	})
 
 	// Graphics - Virtio with multi-display support
-	displayConfigs := []DisplayConfig(displays)
+	displayConfigs := []displayx.Config(displays)
 	if len(displayConfigs) == 0 {
-		displayConfigs = []DisplayConfig{GetDefaultDisplayForVM(true)}
+		displayConfigs = []displayx.Config{GetDefaultDisplayForVM(true)}
 	}
 	graphicsConfig, err := CreateVirtioGraphicsConfig(displayConfigs)
 	if err != nil {

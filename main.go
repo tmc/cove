@@ -14,6 +14,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	displayx "github.com/tmc/apple/x/vzkit/display"
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -76,7 +77,7 @@ var (
 	// USB storage devices
 	usbDevices USBStorageSlice
 	// Display configurations
-	displays DisplaySlice
+	displays displayx.Slice
 	// Rosetta for Linux VMs
 	enableRosetta bool
 	// Clipboard sharing (SPICE agent)
