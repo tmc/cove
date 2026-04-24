@@ -646,7 +646,7 @@ func nextNewVMName() string {
 	const base = "macos"
 	name := base
 	for i := 2; ; i++ {
-		if _, err := os.Stat(GetVMPath(name)); os.IsNotExist(err) {
+		if _, err := os.Stat(vmconfig.Path(name)); os.IsNotExist(err) {
 			return name
 		}
 		name = fmt.Sprintf("%s-%d", base, i)
@@ -1111,7 +1111,7 @@ func promptForNewVMOptions() (newVMOptions, bool) {
 			continue
 		}
 
-		vmPath := GetVMPath(opts.Name)
+		vmPath := vmconfig.Path(opts.Name)
 		if _, err := os.Stat(vmPath); err == nil {
 			showSelectorAlert("VM Already Exists", fmt.Sprintf("A VM named %q already exists.", opts.Name))
 			continue
@@ -2091,7 +2091,7 @@ func performSelectorAction(action selectorAction) error {
 		return withVMLimitHint(runMacOSVM(), vmName)
 	case selectorActionInstall:
 		vmName = action.newVM.Name
-		vmDir = resolvePath(GetVMPath(action.newVM.Name))
+		vmDir = resolvePath(vmconfig.Path(action.newVM.Name))
 		guiMode = true
 		linuxMode = false
 		postInstallRecipes := strings.TrimSpace(action.newVM.PostInstallRecipes)

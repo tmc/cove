@@ -24,13 +24,13 @@ type CloneOptions struct {
 // CloneVM creates a copy of a VM.
 func CloneVM(opts CloneOptions) error {
 	// Validate source exists
-	srcPath := GetVMPath(opts.Source)
-	if !ValidateVM(srcPath) {
+	srcPath := vmconfig.Path(opts.Source)
+	if !vmconfig.Validate(srcPath) {
 		return fmt.Errorf("source VM not found: %s", opts.Source)
 	}
 
 	// Validate target doesn't exist
-	dstPath := GetVMPath(opts.Target)
+	dstPath := vmconfig.Path(opts.Target)
 	if _, err := os.Stat(dstPath); !os.IsNotExist(err) {
 		return fmt.Errorf("target VM already exists: %s", opts.Target)
 	}

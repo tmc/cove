@@ -20,7 +20,7 @@ import (
 // or is an orphan (missing disk image). The active-VM marker is cleared in the
 // same step. Deletion is refused only when the VM is currently running.
 func DeleteVM(name string) error {
-	vmPath := GetVMPath(name)
+	vmPath := vmconfig.Path(name)
 	info, err := os.Stat(vmPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -40,7 +40,7 @@ func DeleteVM(name string) error {
 
 	wasActive := vmconfig.ActiveName() == name
 
-	if !ValidateVM(vmPath) {
+	if !vmconfig.Validate(vmPath) {
 		fmt.Printf("Deleting orphan VM directory '%s' (no disk image found)...\n", name)
 	} else {
 		fmt.Printf("Deleting VM '%s'...\n", name)
@@ -63,10 +63,10 @@ func DeleteVM(name string) error {
 
 // RenameVM renames a VM.
 func RenameVM(oldName, newName string) error {
-	oldPath := GetVMPath(oldName)
-	newPath := GetVMPath(newName)
+	oldPath := vmconfig.Path(oldName)
+	newPath := vmconfig.Path(newName)
 
-	if !ValidateVM(oldPath) {
+	if !vmconfig.Validate(oldPath) {
 		return fmt.Errorf("vm not found: %s", oldName)
 	}
 
@@ -92,8 +92,8 @@ func RenameVM(oldName, newName string) error {
 
 // ExportVM exports a VM to a tar.gz archive.
 func ExportVM(name, destPath string) error {
-	vmPath := GetVMPath(name)
-	if !ValidateVM(vmPath) {
+	vmPath := vmconfig.Path(name)
+	if !vmconfig.Validate(vmPath) {
 		return fmt.Errorf("vm not found: %s", name)
 	}
 
@@ -180,7 +180,7 @@ func ImportVM(archivePath, name string) error {
 	}
 
 	// Check VM doesn't exist
-	vmPath := GetVMPath(name)
+	vmPath := vmconfig.Path(name)
 	if _, err := os.Stat(vmPath); !os.IsNotExist(err) {
 		return fmt.Errorf("vm already exists: %s", name)
 	}
@@ -256,7 +256,7 @@ func ImportVM(archivePath, name string) error {
 	}
 
 	// Validate the imported VM
-	if !ValidateVM(vmPath) {
+	if !vmconfig.Validate(vmPath) {
 		os.RemoveAll(vmPath)
 		return fmt.Errorf("imported archive does not contain a valid VM")
 	}

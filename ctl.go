@@ -18,6 +18,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -190,7 +191,7 @@ func ctlCommand(args []string) error {
 
 	// If -vm was given and -socket was not, resolve the socket from the VM dir.
 	if ctlVMFlag != nil && *ctlVMFlag != "" && *socketPath == "" {
-		dir := GetVMPath(*ctlVMFlag)
+		dir := vmconfig.Path(*ctlVMFlag)
 		if dir == "" {
 			return fmt.Errorf("vm not found: %s", *ctlVMFlag)
 		}
