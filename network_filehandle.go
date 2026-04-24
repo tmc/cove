@@ -252,12 +252,6 @@ func (s *FileHandleNetworkSession) Summary() string {
 	return s.stats.snapshot().summary(s.cfg)
 }
 
-// ShutdownSummary is an alias for Summary for call sites that want an explicit
-// shutdown-oriented name.
-func (s *FileHandleNetworkSession) ShutdownSummary() string {
-	return s.Summary()
-}
-
 // Close releases the host resources owned by the session.
 func (s *FileHandleNetworkSession) Close() error {
 	if s == nil {
