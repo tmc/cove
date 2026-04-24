@@ -5,9 +5,12 @@ import "github.com/tmc/vz-macos/internal/vmconfig"
 type VMConfig = vmconfig.Config
 type VMAgentConfig = vmconfig.AgentConfig
 type VolumeMount = vmconfig.VolumeMount
+type VMInfo = vmconfig.Info
 
 var LoadVMConfig = vmconfig.Load
 var SaveVMConfig = vmconfig.Save
+var vmconfigInfoFor = vmconfig.InfoFor
+var vmconfigList = vmconfig.List
 
 var GetVMBaseDir = vmconfig.BaseDir
 var GetTemplateDir = vmconfig.TemplateDir
