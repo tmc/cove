@@ -10,6 +10,7 @@ import (
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -164,10 +165,10 @@ type setupAssistantTransport interface {
 	KeyPress(keyCode uint16) error
 	KeyPressWithModifiers(keyCode uint16, modifiers uint) error
 	TypeText(text string) error
-	OCRClickText(ocr *OCRService, text string, timeout time.Duration) error
-	OCRClickTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error
-	OCRDetectPage(ocr *OCRService) string
-	OCRWaitForPageChange(ocr *OCRService, currentPage string, timeout time.Duration) error
+	OCRClickText(ocr *ocrx.Service, text string, timeout time.Duration) error
+	OCRClickTextWithOptions(ocr *ocrx.Service, text string, timeout time.Duration, opts ocrx.SearchOptions) error
+	OCRDetectPage(ocr *ocrx.Service) string
+	OCRWaitForPageChange(ocr *ocrx.Service, currentPage string, timeout time.Duration) error
 	InputBackendName() string
 }
 
@@ -176,10 +177,10 @@ type setupAssistantServer interface {
 	sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.ControlResponse
 	sendKeyEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse
 	typeText(cmd *controlpb.TextCommand) *controlpb.ControlResponse
-	OCRClickText(ocr *OCRService, text string, timeout time.Duration) error
-	OCRClickTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error
-	OCRDetectPage(ocr *OCRService) string
-	OCRWaitForPageChange(ocr *OCRService, currentPage string, timeout time.Duration) error
+	OCRClickText(ocr *ocrx.Service, text string, timeout time.Duration) error
+	OCRClickTextWithOptions(ocr *ocrx.Service, text string, timeout time.Duration, opts ocrx.SearchOptions) error
+	OCRDetectPage(ocr *ocrx.Service) string
+	OCRWaitForPageChange(ocr *ocrx.Service, currentPage string, timeout time.Duration) error
 	inputBackend() automationBackendMode
 }
 
@@ -280,28 +281,28 @@ func (t inProcessSetupAssistantTransport) TypeText(text string) error {
 	return fmt.Errorf("type text failed: %s", resp.Error)
 }
 
-func (t inProcessSetupAssistantTransport) OCRClickText(ocr *OCRService, text string, timeout time.Duration) error {
+func (t inProcessSetupAssistantTransport) OCRClickText(ocr *ocrx.Service, text string, timeout time.Duration) error {
 	if t.server == nil {
 		return fmt.Errorf("setup assistant transport unavailable")
 	}
 	return t.server.OCRClickText(ocr, text, timeout)
 }
 
-func (t inProcessSetupAssistantTransport) OCRClickTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (t inProcessSetupAssistantTransport) OCRClickTextWithOptions(ocr *ocrx.Service, text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	if t.server == nil {
 		return fmt.Errorf("setup assistant transport unavailable")
 	}
 	return t.server.OCRClickTextWithOptions(ocr, text, timeout, opts)
 }
 
-func (t inProcessSetupAssistantTransport) OCRDetectPage(ocr *OCRService) string {
+func (t inProcessSetupAssistantTransport) OCRDetectPage(ocr *ocrx.Service) string {
 	if t.server == nil {
 		return "unknown"
 	}
 	return t.server.OCRDetectPage(ocr)
 }
 
-func (t inProcessSetupAssistantTransport) OCRWaitForPageChange(ocr *OCRService, currentPage string, timeout time.Duration) error {
+func (t inProcessSetupAssistantTransport) OCRWaitForPageChange(ocr *ocrx.Service, currentPage string, timeout time.Duration) error {
 	if t.server == nil {
 		return fmt.Errorf("setup assistant transport unavailable")
 	}
@@ -368,11 +369,11 @@ func (t socketSetupAssistantTransport) TypeText(text string) error {
 	return t.client.TypeText(text)
 }
 
-func (t socketSetupAssistantTransport) OCRClickText(ocr *OCRService, text string, timeout time.Duration) error {
-	return t.OCRClickTextWithOptions(ocr, text, timeout, OCRSearchOptions{})
+func (t socketSetupAssistantTransport) OCRClickText(ocr *ocrx.Service, text string, timeout time.Duration) error {
+	return t.OCRClickTextWithOptions(ocr, text, timeout, ocrx.SearchOptions{})
 }
 
-func (t socketSetupAssistantTransport) OCRClickTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (t socketSetupAssistantTransport) OCRClickTextWithOptions(ocr *ocrx.Service, text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	if t.client == nil || ocr == nil {
 		return fmt.Errorf("setup assistant transport unavailable")
 	}
@@ -392,7 +393,7 @@ func (t socketSetupAssistantTransport) OCRClickTextWithOptions(ocr *OCRService, 
 	return fmt.Errorf("timeout: text %q not found", text)
 }
 
-func (t socketSetupAssistantTransport) OCRDetectPage(ocr *OCRService) string {
+func (t socketSetupAssistantTransport) OCRDetectPage(ocr *ocrx.Service) string {
 	if t.client == nil || ocr == nil {
 		return "unknown"
 	}
@@ -403,7 +404,7 @@ func (t socketSetupAssistantTransport) OCRDetectPage(ocr *OCRService) string {
 	return OCRDetectSetupAssistantPage(img, ocr)
 }
 
-func (t socketSetupAssistantTransport) OCRWaitForPageChange(ocr *OCRService, currentPage string, timeout time.Duration) error {
+func (t socketSetupAssistantTransport) OCRWaitForPageChange(ocr *ocrx.Service, currentPage string, timeout time.Duration) error {
 	if t.client == nil || ocr == nil {
 		return fmt.Errorf("setup assistant transport unavailable")
 	}

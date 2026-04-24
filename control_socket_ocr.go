@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"time"
 
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // OCRClickText takes a screenshot, finds the given text via OCR, and clicks its center.
 // Retries until text is found or timeout expires.
-func (s *ControlServer) OCRClickText(ocr *OCRService, text string, timeout time.Duration) error {
-	return s.OCRClickTextWithOptions(ocr, text, timeout, OCRSearchOptions{})
+func (s *ControlServer) OCRClickText(ocr *ocrx.Service, text string, timeout time.Duration) error {
+	return s.OCRClickTextWithOptions(ocr, text, timeout, ocrx.SearchOptions{})
 }
 
 // OCRClickTextWithOptions takes a screenshot, finds text via OCR options, and clicks its center.
-func (s *ControlServer) OCRClickTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (s *ControlServer) OCRClickTextWithOptions(ocr *ocrx.Service, text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img, errMsg := s.captureDisplayImage()
@@ -47,12 +48,12 @@ func (s *ControlServer) OCRClickTextWithOptions(ocr *OCRService, text string, ti
 }
 
 // OCRWaitForText polls screenshots until the given text appears or timeout expires.
-func (s *ControlServer) OCRWaitForText(ocr *OCRService, text string, timeout time.Duration) error {
-	return s.OCRWaitForTextWithOptions(ocr, text, timeout, OCRSearchOptions{})
+func (s *ControlServer) OCRWaitForText(ocr *ocrx.Service, text string, timeout time.Duration) error {
+	return s.OCRWaitForTextWithOptions(ocr, text, timeout, ocrx.SearchOptions{})
 }
 
 // OCRWaitForTextWithOptions polls screenshots until text appears or timeout expires.
-func (s *ControlServer) OCRWaitForTextWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (s *ControlServer) OCRWaitForTextWithOptions(ocr *ocrx.Service, text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img, errMsg := s.captureDisplayImage()
@@ -75,12 +76,12 @@ func (s *ControlServer) OCRWaitForTextWithOptions(ocr *OCRService, text string, 
 }
 
 // OCRWaitAndClick waits for text to appear, then clicks it.
-func (s *ControlServer) OCRWaitAndClick(ocr *OCRService, text string, timeout time.Duration) error {
-	return s.OCRWaitAndClickWithOptions(ocr, text, timeout, OCRSearchOptions{})
+func (s *ControlServer) OCRWaitAndClick(ocr *ocrx.Service, text string, timeout time.Duration) error {
+	return s.OCRWaitAndClickWithOptions(ocr, text, timeout, ocrx.SearchOptions{})
 }
 
 // OCRWaitAndClickWithOptions waits for text using options, then clicks it.
-func (s *ControlServer) OCRWaitAndClickWithOptions(ocr *OCRService, text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (s *ControlServer) OCRWaitAndClickWithOptions(ocr *ocrx.Service, text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	if err := s.OCRWaitForTextWithOptions(ocr, text, timeout, opts); err != nil {
 		return err
 	}
@@ -90,7 +91,7 @@ func (s *ControlServer) OCRWaitAndClickWithOptions(ocr *OCRService, text string,
 }
 
 // OCRAllText takes a screenshot and returns all recognized text.
-func (s *ControlServer) OCRAllText(ocr *OCRService) (string, error) {
+func (s *ControlServer) OCRAllText(ocr *ocrx.Service) (string, error) {
 	img, errMsg := s.captureDisplayImage()
 	if errMsg != "" {
 		return "", fmt.Errorf("capture: %s", errMsg)
@@ -99,7 +100,7 @@ func (s *ControlServer) OCRAllText(ocr *OCRService) (string, error) {
 }
 
 // OCRDetectPage takes a screenshot and identifies the Setup Assistant page.
-func (s *ControlServer) OCRDetectPage(ocr *OCRService) string {
+func (s *ControlServer) OCRDetectPage(ocr *ocrx.Service) string {
 	img, errMsg := s.captureDisplayImage()
 	if errMsg != "" {
 		return "unknown"
@@ -108,7 +109,7 @@ func (s *ControlServer) OCRDetectPage(ocr *OCRService) string {
 }
 
 // OCRWaitForPageChange polls until the detected page differs from currentPage.
-func (s *ControlServer) OCRWaitForPageChange(ocr *OCRService, currentPage string, timeout time.Duration) error {
+func (s *ControlServer) OCRWaitForPageChange(ocr *ocrx.Service, currentPage string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img, errMsg := s.captureDisplayImage()

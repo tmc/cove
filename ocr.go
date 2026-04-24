@@ -10,18 +10,12 @@ import (
 	"github.com/tmc/apple/x/vzkit/ocr"
 )
 
-// TextObservation is an alias for ocr.TextObservation.
-type TextObservation = ocr.TextObservation
-
-// OCRService is an alias for ocr.Service.
-type OCRService = ocr.Service
-
 // NewOCRService creates a new OCR service.
-func NewOCRService(verbose bool) *OCRService {
+func NewOCRService(verbose bool) *ocr.Service {
 	return ocr.NewService(verbose)
 }
 
 // bestMatchWithOptions delegates to ocr.BestMatch.
-func bestMatchWithOptions(observations []TextObservation, needle string, opts OCRSearchOptions, bounds image.Rectangle) (TextObservation, bool) {
+func bestMatchWithOptions(observations []ocr.TextObservation, needle string, opts ocr.SearchOptions, bounds image.Rectangle) (ocr.TextObservation, bool) {
 	return ocr.BestMatch(observations, needle, opts, bounds)
 }

@@ -10,19 +10,20 @@ import (
 	"time"
 
 	"github.com/tmc/apple/appkit"
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // automationExecutor runs Recovery automation steps against a VM.
 type automationExecutor struct {
-	ocr      *OCRService
+	ocr      *ocrx.Service
 	cs       *ControlServer
 	verbose  bool
 	debugDir string // if set, save debug screenshots here
 }
 
 // newAutomationExecutor creates a new executor.
-func newAutomationExecutor(ocr *OCRService, cs *ControlServer, verbose bool, debugDir string) *automationExecutor {
+func newAutomationExecutor(ocr *ocrx.Service, cs *ControlServer, verbose bool, debugDir string) *automationExecutor {
 	return &automationExecutor{
 		ocr:      ocr,
 		cs:       cs,
@@ -32,10 +33,10 @@ func newAutomationExecutor(ocr *OCRService, cs *ControlServer, verbose bool, deb
 }
 
 func (e *automationExecutor) waitForText(text string, timeout time.Duration) error {
-	return e.waitForTextWithOptions(text, timeout, OCRSearchOptions{})
+	return e.waitForTextWithOptions(text, timeout, ocrx.SearchOptions{})
 }
 
-func (e *automationExecutor) waitForTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (e *automationExecutor) waitForTextWithOptions(text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -53,10 +54,10 @@ func (e *automationExecutor) waitForTextWithOptions(text string, timeout time.Du
 }
 
 func (e *automationExecutor) clickText(text string, timeout time.Duration) error {
-	return e.clickTextWithOptions(text, timeout, OCRSearchOptions{})
+	return e.clickTextWithOptions(text, timeout, ocrx.SearchOptions{})
 }
 
-func (e *automationExecutor) clickTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (e *automationExecutor) clickTextWithOptions(text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -73,7 +74,7 @@ func (e *automationExecutor) clickTextWithOptions(text string, timeout time.Dura
 	return fmt.Errorf("timeout waiting for text %q to click", text)
 }
 
-func (e *automationExecutor) hostClickTextWithOptions(text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (e *automationExecutor) hostClickTextWithOptions(text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -90,7 +91,7 @@ func (e *automationExecutor) hostClickTextWithOptions(text string, timeout time.
 	return fmt.Errorf("timeout waiting for text %q to host-click", text)
 }
 
-func (e *automationExecutor) hostClickTextIfPresent(text string, timeout time.Duration, opts OCRSearchOptions) error {
+func (e *automationExecutor) hostClickTextIfPresent(text string, timeout time.Duration, opts ocrx.SearchOptions) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		img := e.captureScreen()
@@ -127,7 +128,7 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 			continue
 		}
 
-		if continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{}); continueFound && continueBelongsToOptions(width, continueX) {
+		if continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); continueFound && continueBelongsToOptions(width, continueX) {
 			if err := e.sendKey("return"); err == nil {
 				time.Sleep(500 * time.Millisecond)
 				return nil
@@ -150,7 +151,7 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 			}
 			width = float64(img.Bounds().Dx())
 			height = float64(img.Bounds().Dy())
-			continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+			continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
 			if continueFound && continueBelongsToOptions(width, continueX) {
 				if err := e.sendKey("return"); err == nil {
 					time.Sleep(500 * time.Millisecond)
@@ -167,7 +168,7 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 			}
 		}
 
-		optX, optY, found := e.ocr.FindTextWithOptions(img, "Options", OCRSearchOptions{})
+		optX, optY, found := e.ocr.FindTextWithOptions(img, "Options", ocrx.SearchOptions{})
 		if !found {
 			time.Sleep(time.Second)
 			continue
@@ -188,7 +189,7 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 
 			img = e.captureScreen()
 			if img != nil {
-				continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+				continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
 				if continueFound && continueBelongsToOptions(width, continueX) {
 					if err := e.sendKey("return"); err == nil {
 						time.Sleep(500 * time.Millisecond)
@@ -209,7 +210,7 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 
 			img = e.captureScreen()
 			if img != nil {
-				continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+				continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
 				if continueFound && continueBelongsToOptions(width, continueX) {
 					if err := e.sendKey("return"); err == nil {
 						time.Sleep(500 * time.Millisecond)
@@ -270,7 +271,7 @@ func continueBelongsToOptions(width, continueX float64) bool {
 	return continueX >= width*0.5
 }
 
-func ocrTexts(ocr *OCRService, img image.Image) []string {
+func ocrTexts(ocr *ocrx.Service, img image.Image) []string {
 	if ocr == nil || img == nil {
 		return nil
 	}
@@ -305,14 +306,14 @@ func (e *automationExecutor) continueRecoveryLanguage(timeout time.Duration) err
 			return nil
 		}
 
-		if continueX, continueY, found := e.ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{}); found {
+		if continueX, continueY, found := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found {
 			if err := e.sendKey("return"); err != nil {
 				return err
 			}
 			time.Sleep(500 * time.Millisecond)
 			next := e.captureScreen()
 			if next != nil {
-				if _, _, stillVisible := e.ocr.FindTextWithOptions(next, "Continue", OCRSearchOptions{}); stillVisible {
+				if _, _, stillVisible := e.ocr.FindTextWithOptions(next, "Continue", ocrx.SearchOptions{}); stillVisible {
 					if err := e.clickAt(continueX, continueY, img.Bounds().Dx(), img.Bounds().Dy()); err != nil {
 						return err
 					}
@@ -323,7 +324,7 @@ func (e *automationExecutor) continueRecoveryLanguage(timeout time.Duration) err
 			continue
 		}
 
-		if _, _, found := e.ocr.FindTextWithOptions(img, "Language", OCRSearchOptions{}); !found {
+		if _, _, found := e.ocr.FindTextWithOptions(img, "Language", ocrx.SearchOptions{}); !found {
 			if advanced {
 				return nil
 			}
@@ -575,7 +576,7 @@ func (e *automationExecutor) typeAndReturnIfText(needle, value string, timeout t
 	return nil
 }
 
-func promptClearedOCR(ocr *OCRService, img image.Image, needle string) bool {
+func promptClearedOCR(ocr *ocrx.Service, img image.Image, needle string) bool {
 	if img == nil {
 		return false
 	}
@@ -585,7 +586,7 @@ func promptClearedOCR(ocr *OCRService, img image.Image, needle string) bool {
 	return pageContainsAnyOCR(ocr, img, promptClearTexts(needle)...)
 }
 
-func pageContainsAnyOCR(ocr *OCRService, img image.Image, texts ...string) bool {
+func pageContainsAnyOCR(ocr *ocrx.Service, img image.Image, texts ...string) bool {
 	for _, text := range texts {
 		if _, _, found := ocr.FindText(img, text); found {
 			return true
