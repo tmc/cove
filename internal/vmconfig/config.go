@@ -32,6 +32,18 @@ type Config struct {
 	Agent              *AgentConfig  `json:"agent,omitempty"`
 }
 
+// Hardware holds CPU and memory settings for a VM.
+type Hardware struct {
+	CPU      uint
+	MemoryGB uint64
+}
+
+// HardwareExplicit records which hardware fields were explicitly requested.
+type HardwareExplicit struct {
+	CPU      bool
+	MemoryGB bool
+}
+
 // Load reads dir/config.json. It returns an empty config if the file is missing.
 func Load(dir string) (*Config, error) {
 	path := filepath.Join(dir, "config.json")
@@ -65,6 +77,30 @@ func Save(dir string, cfg *Config) error {
 		return fmt.Errorf("rename vm config: %w", err)
 	}
 	return nil
+}
+
+// ApplyHardware resolves runtime hardware settings against cfg.
+//
+// Saved values are used when the matching field was not explicitly requested.
+// Explicit runtime values update cfg and report changed=true when persistence
+// is needed.
+func ApplyHardware(cfg *Config, current Hardware, explicit HardwareExplicit) (Hardware, bool) {
+	changed := false
+	next := current
+	if !explicit.CPU && cfg.CPU > 0 {
+		next.CPU = cfg.CPU
+	} else if explicit.CPU && cfg.CPU != current.CPU {
+		cfg.CPU = current.CPU
+		changed = true
+	}
+
+	if !explicit.MemoryGB && cfg.MemoryGB > 0 {
+		next.MemoryGB = cfg.MemoryGB
+	} else if explicit.MemoryGB && cfg.MemoryGB != current.MemoryGB {
+		cfg.MemoryGB = current.MemoryGB
+		changed = true
+	}
+	return next, changed
 }
 
 // SetPostInstallRecipes persists the selected post-install recipes.

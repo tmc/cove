@@ -62,6 +62,67 @@ func TestSaveLoad(t *testing.T) {
 	}
 }
 
+func TestApplyHardware(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          Config
+		current      Hardware
+		explicit     HardwareExplicit
+		wantHardware Hardware
+		wantConfig   Config
+		wantChanged  bool
+	}{
+		{
+			name:         "use saved values by default",
+			cfg:          Config{CPU: 4, MemoryGB: 8},
+			current:      Hardware{CPU: 2, MemoryGB: 4},
+			wantHardware: Hardware{CPU: 4, MemoryGB: 8},
+			wantConfig:   Config{CPU: 4, MemoryGB: 8},
+		},
+		{
+			name:         "persist explicit values",
+			cfg:          Config{CPU: 4, MemoryGB: 8},
+			current:      Hardware{CPU: 6, MemoryGB: 12},
+			explicit:     HardwareExplicit{CPU: true, MemoryGB: true},
+			wantHardware: Hardware{CPU: 6, MemoryGB: 12},
+			wantConfig:   Config{CPU: 6, MemoryGB: 12},
+			wantChanged:  true,
+		},
+		{
+			name:         "persist only explicit cpu",
+			cfg:          Config{CPU: 4, MemoryGB: 8},
+			current:      Hardware{CPU: 6, MemoryGB: 12},
+			explicit:     HardwareExplicit{CPU: true},
+			wantHardware: Hardware{CPU: 6, MemoryGB: 8},
+			wantConfig:   Config{CPU: 6, MemoryGB: 8},
+			wantChanged:  true,
+		},
+		{
+			name:         "unchanged explicit values",
+			cfg:          Config{CPU: 6, MemoryGB: 12},
+			current:      Hardware{CPU: 6, MemoryGB: 12},
+			explicit:     HardwareExplicit{CPU: true, MemoryGB: true},
+			wantHardware: Hardware{CPU: 6, MemoryGB: 12},
+			wantConfig:   Config{CPU: 6, MemoryGB: 12},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.cfg
+			got, changed := ApplyHardware(&cfg, tt.current, tt.explicit)
+			if got != tt.wantHardware {
+				t.Fatalf("ApplyHardware() hardware = %#v, want %#v", got, tt.wantHardware)
+			}
+			if changed != tt.wantChanged {
+				t.Fatalf("ApplyHardware() changed = %v, want %v", changed, tt.wantChanged)
+			}
+			if cfg.CPU != tt.wantConfig.CPU || cfg.MemoryGB != tt.wantConfig.MemoryGB {
+				t.Fatalf("config = %#v, want %#v", cfg, tt.wantConfig)
+			}
+		})
+	}
+}
+
 func TestSetPostInstallRecipes(t *testing.T) {
 	dir := t.TempDir()
 	if err := SetPostInstallRecipes(dir, "base,tools"); err != nil {
