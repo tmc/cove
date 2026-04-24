@@ -16,6 +16,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
@@ -106,9 +107,9 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// Graphics - use Virtio for Linux with multi-display support
-	displayConfigs := []DisplayConfig(displays)
+	displayConfigs := []displayx.Config(displays)
 	if len(displayConfigs) == 0 {
-		displayConfigs = []DisplayConfig{GetDefaultDisplayForVM(true)}
+		displayConfigs = []displayx.Config{GetDefaultDisplayForVM(true)}
 	}
 	graphicsConfig, err := CreateVirtioGraphicsConfig(displayConfigs)
 	if err != nil {

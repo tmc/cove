@@ -22,6 +22,7 @@ import (
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
+	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/vz-macos/internal/bytefmt"
 )
@@ -722,9 +723,9 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	setStorageDevices(config, storageConfig)
 
 	// Graphics with multi-display support
-	displayConfigs := []DisplayConfig(displays)
+	displayConfigs := []displayx.Config(displays)
 	if len(displayConfigs) == 0 {
-		displayConfigs = []DisplayConfig{DefaultDisplayConfig()}
+		displayConfigs = []displayx.Config{DefaultDisplayConfig()}
 	}
 	graphicsConfig, err := CreateMacGraphicsConfig(displayConfigs)
 	if err != nil {
