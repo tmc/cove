@@ -51,3 +51,95 @@ for smoke passes before tagging:
 
 - Fresh `cove up -user smoketest` to a booted macOS desktop.
 - `cove pull` against a known lume-produced image.
+
+## Smoke test: cove pull (lume image)
+
+**Date:** 2026-04-24. **Binary:** `./cove` at commit `441b9b7`.
+
+**Image refs attempted:**
+- `ghcr.io/trycua/ubuntu-noble-vanilla:latest` (dry-run, anonymous pull)
+- Manifest for `ghcr.io/trycua/macos-sequoia-vanilla:latest` also inspected
+  via raw `ghcr.io/v2/...` API (not fed to `cove pull`; same schema).
+
+**Pull outcome:** FAILURE at manifest-parse stage, before any blob fetch.
+
+```
+$ ./cove pull --dry-run --as lume-smoke ghcr.io/trycua/ubuntu-noble-vanilla:latest
+error: parse registry manifest: parse manifest: missing annotation
+  org.tmc.cove.uncompressed-disk-size or org.trycua.lume.uncompressed-disk-size
+```
+
+A prior invocation with `docker://` scheme also failed: `reference must not
+include a URL scheme`. (Minor DX wart — lume's own docs commonly show
+`docker://`-prefixed refs. Not a correctness issue.)
+
+**Boot outcome:** not attempted — pull did not produce a disk.
+
+**Diagnosis:** **lume schema drift. This is not a cove bug, and not a missing
+image.** The real trycua lume manifests on ghcr.io look nothing like what
+`internal/ociimage/annotations.go` maps. Observed schema of
+`ghcr.io/trycua/ubuntu-noble-vanilla:latest`:
+
+- Manifest-level annotations: only `org.opencontainers.image.created`. No
+  `org.trycua.lume.uncompressed-disk-size`, `…hw-model-digest`, `…aux-digest`,
+  or any other lume/cove-namespaced key.
+- Layer mediaTypes: `application/vnd.oci.image.layer.v1.tar;part.number=N;part.total=41`
+  (a parameterised tar split), not an LZ4-compressed chunk.
+- Layer annotations: only `org.opencontainers.image.title` set to filenames
+  `disk.img.part.aa` … `disk.img.part.bo`, `nvram.bin`, `config.json`.
+- No `org.trycua.lume.chunk-index` / `chunk-total` / `uncompressed-size` /
+  `role` anywhere in the manifest — verified across both the ubuntu and the
+  macos-sequoia-vanilla manifests (84 layers).
+
+Cove's pull path requires `CoveUncompressedDiskSize` at manifest level
+(`NormalizeManifestAnnotations`, `annotations.go:75-78`) and per-layer
+`CoveUncompressedSize`/`CoveChunkIndex`/`CoveChunkTotal`/`CoveRole`
+(`annotations.go:97-121`, `pull.go:322-336`). Lume's public images set none
+of these. The `coveToLume`/`lumeToCove` bidirectional map in
+`annotations.go:32-50` was written against a schema lume either no longer uses
+or never used at ghcr — either way, the compatibility layer is non-functional
+against today's registry.
+
+Schema differences that make "add a few more aliases" insufficient:
+
+1. **Disk layout:** lume ships `disk.img` split into named 500 MB `tar`
+   parts reassembled by filename; cove expects LZ4-compressed, sha256-verified
+   chunks addressed by `chunk-index`/`chunk-total` annotations and written
+   at computed `offset`s via `WriteCompressedChunkAt`. Different compression,
+   different addressing, different verification.
+2. **Identity metadata:** lume ships `nvram.bin` and `config.json` as
+   separate layers keyed by `image.title`; cove keys them by a `role`
+   annotation (`nvram`/`hw-model`/`machine-id`). Lume has no `hw-model` or
+   `machine-id` blob at all — macOS hardware identity lives inside
+   `config.json`, which cove does not parse.
+3. **No size / digest hints:** without `uncompressed-size` and
+   `uncompressed-content-digest` on each layer, cove cannot preallocate
+   `disk.img.partial` or verify final output.
+
+**Severity for 0.1 ship: MAJOR, but NOT blocker** — contingent on
+interpretation of roadmap §114–124 item #6 ("`cove pull` of a lume-produced
+image boots in cove"):
+
+- If "lume-produced" means **public ghcr.io/trycua/* images shipped by the
+  upstream lume project**: this is a **blocker**. It does not work and will
+  not work without a second import path that speaks lume's tar-split +
+  config.json format.
+- If "lume-produced" means **any image produced by running `lume push`
+  against cove's own registry schema** (i.e., a hypothetical lume fork or
+  build that already emits cove-shaped manifests): the code path is
+  structurally sound (manifest parse, chunk streaming, metadata restore,
+  atomic rename all implemented) but cannot be verified today without such
+  an image in hand. Treat as **major — unverified**.
+
+Recommended action before tagging 0.1: pick one of —
+
+(a) Restrict the ship-gate wording to "cove-format OCI images" and mark #6
+    as verified-by-inspection (status quo, already PASS in the audit table);
+(b) Land a lume-tar-split importer (new `pull` code path keyed on
+    `org.opencontainers.image.title` + `mediaType` part.number/part.total)
+    before 0.1; medium effort, ~1–2 days including a real boot test;
+(c) Ship 0.1 without lume interop and document it as "roadmap: 0.2."
+
+No VMs were created or modified during this test. `hermes-mlx-go-60g-v10`
+untouched. No registry writes. `go test ./internal/ociimage/...` still
+passes.
