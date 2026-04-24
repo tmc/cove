@@ -8,31 +8,25 @@ import (
 	networkx "github.com/tmc/apple/x/vzkit/network"
 )
 
-// NetworkMode represents the type of network configuration.
-type NetworkMode = networkx.Mode
-
 const (
-	NetworkModeNAT                    = networkx.ModeNAT
-	NetworkModeBridged                = networkx.ModeBridged
-	NetworkModeHostOnly               = networkx.ModeHostOnly
-	NetworkModeVMNet                  = networkx.ModeVMNet
-	NetworkModeNone                   = networkx.ModeNone
-	NetworkModeFileHandle NetworkMode = "filehandle"
+	NetworkModeNAT                      = networkx.ModeNAT
+	NetworkModeBridged                  = networkx.ModeBridged
+	NetworkModeHostOnly                 = networkx.ModeHostOnly
+	NetworkModeVMNet                    = networkx.ModeVMNet
+	NetworkModeNone                     = networkx.ModeNone
+	NetworkModeFileHandle networkx.Mode = "filehandle"
 )
 
-// NetworkConfig holds network configuration settings.
-type NetworkConfig = networkx.Config
-
 // ParseNetworkMode parses a network mode string.
-func ParseNetworkMode(s string) (NetworkConfig, error) {
+func ParseNetworkMode(s string) (networkx.Config, error) {
 	if s == string(NetworkModeFileHandle) {
-		return NetworkConfig{Mode: NetworkModeFileHandle}, nil
+		return networkx.Config{Mode: NetworkModeFileHandle}, nil
 	}
 	return networkx.Parse(s)
 }
 
 // CreateNetworkDeviceConfiguration creates a complete network device configuration.
-func CreateNetworkDeviceConfiguration(config NetworkConfig) (vz.VZVirtioNetworkDeviceConfiguration, error) {
+func CreateNetworkDeviceConfiguration(config networkx.Config) (vz.VZVirtioNetworkDeviceConfiguration, error) {
 	if config.Mode == NetworkModeFileHandle {
 		return prepareFileHandleNetworkDevice()
 	}
