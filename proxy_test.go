@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	pb "github.com/tmc/vz-macos/proto/agentpb"
 )
 
@@ -62,7 +63,7 @@ func TestResolveProxyValidationFor(t *testing.T) {
 				NetworkMode:    "nat",
 				RuntimeProfile: "full",
 				AgentConfig: &VMAgentConfig{
-					Platform:  vmAgentPlatformMacOS,
+					Platform:  agentstate.PlatformMacOS,
 					Requested: true,
 				},
 			},
@@ -89,7 +90,7 @@ func TestResolveProxyValidationFor(t *testing.T) {
 				NetworkMode: "nat",
 				Linux:       true,
 				AgentConfig: &VMAgentConfig{
-					Platform: vmAgentPlatformLinux,
+					Platform: agentstate.PlatformLinux,
 					Verified: true,
 				},
 			},
@@ -104,7 +105,7 @@ func TestResolveProxyValidationFor(t *testing.T) {
 				NetworkMode: "nat",
 				Linux:       true,
 				AgentConfig: &VMAgentConfig{
-					Platform:  vmAgentPlatformLinux,
+					Platform:  agentstate.PlatformLinux,
 					Requested: true,
 				},
 			},
@@ -119,7 +120,7 @@ func TestResolveProxyValidationFor(t *testing.T) {
 				NetworkMode: "nat",
 				Linux:       true,
 				AgentConfig: &VMAgentConfig{
-					Platform: vmAgentPlatformLinux,
+					Platform: agentstate.PlatformLinux,
 				},
 			},
 			wantErr: "provision-agent",
@@ -232,7 +233,7 @@ func TestValidateProxyFlagsUsesExistingLinuxAgentState(t *testing.T) {
 	vmDir = t.TempDir()
 	if err := SaveVMConfig(vmDir, &VMConfig{
 		Agent: &VMAgentConfig{
-			Platform:  vmAgentPlatformLinux,
+			Platform:  agentstate.PlatformLinux,
 			Requested: true,
 		},
 	}); err != nil {
@@ -298,7 +299,7 @@ func TestConfigureAndTeardownMacOSProxy(t *testing.T) {
 		NetworkMode:    "nat",
 		RuntimeProfile: "full",
 		AgentConfig: &VMAgentConfig{
-			Platform:  vmAgentPlatformMacOS,
+			Platform:  agentstate.PlatformMacOS,
 			Requested: true,
 		},
 	}
@@ -348,7 +349,7 @@ func TestConfigureAndTeardownLinuxProxy(t *testing.T) {
 		NetworkMode: "nat",
 		Linux:       true,
 		AgentConfig: &VMAgentConfig{
-			Platform:  vmAgentPlatformLinux,
+			Platform:  agentstate.PlatformLinux,
 			Requested: true,
 		},
 	}
@@ -385,7 +386,7 @@ func TestConfigureGuestProxyLinuxRollsBackOnFailure(t *testing.T) {
 		NetworkMode: "nat",
 		Linux:       true,
 		AgentConfig: &VMAgentConfig{
-			Platform:  vmAgentPlatformLinux,
+			Platform:  agentstate.PlatformLinux,
 			Requested: true,
 		},
 	})
@@ -413,7 +414,7 @@ func TestConfigureGuestProxyMacOSRollsBackOnFailure(t *testing.T) {
 		NetworkMode:    "nat",
 		RuntimeProfile: "full",
 		AgentConfig: &VMAgentConfig{
-			Platform:  vmAgentPlatformMacOS,
+			Platform:  agentstate.PlatformMacOS,
 			Requested: true,
 		},
 	})
@@ -443,7 +444,7 @@ func TestTeardownGuestProxyRetainsRollbackStateOnFailure(t *testing.T) {
 		NetworkMode: "nat",
 		Linux:       true,
 		AgentConfig: &VMAgentConfig{
-			Platform:  vmAgentPlatformLinux,
+			Platform:  agentstate.PlatformLinux,
 			Requested: true,
 		},
 	}
