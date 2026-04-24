@@ -569,7 +569,8 @@ cove serve -http 127.0.0.1:7777 -per-vm-auth -vms ci-runner,dev-vm
 ## pull
 
 Validate or pull an OCI image into a VM disk. Current implementation supports
-`--dry-run` with a local manifest JSON; registry download lands in the next OCI
+`--dry-run` manifest validation. Without `--manifest`, dry-run fetches the
+registry manifest; chunk download and disk writes land in the next OCI
 transport slice.
 
 ```
@@ -580,7 +581,7 @@ cove pull <ref> [flags]
 |------|---------|-------------|
 | `--as <name>` | inferred from ref | Destination VM name |
 | `--dry-run` | false | Validate inputs without writing a disk |
-| `--manifest <path>` | | Local OCI manifest JSON for dry-run validation |
+| `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
 
 ```bash
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
