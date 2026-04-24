@@ -127,6 +127,8 @@ func TestMCP_ToolsList(t *testing.T) {
 		"vm_agent_write",
 		"vm_snapshot_save",
 		"vm_snapshot_list",
+		"vm_disk_snapshot_list",
+		"vm_pit_snapshot_list",
 		"vm_snapshot_restore",
 		"vm_snapshot_delete",
 	}

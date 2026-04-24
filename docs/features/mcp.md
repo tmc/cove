@@ -54,12 +54,14 @@ Each tool takes a JSON object matching the advertised `inputSchema`. Use `cove d
 | `vm_agent_write` | Write a guest file. | `name`, `path`, `data` |
 | `vm_snapshot_save` | Save a VM state snapshot. | `name`, `snapshot` |
 | `vm_snapshot_list` | List VM state snapshots. | `name` |
+| `vm_disk_snapshot_list` | List APFS disk snapshots without requiring a running VM. | `name` |
+| `vm_pit_snapshot_list` | List point-in-time snapshots without requiring a running VM. | `name` |
 | `vm_snapshot_restore` | Restore a VM state snapshot. | `name`, `snapshot` |
 | `vm_snapshot_delete` | Delete a VM state snapshot. | `name`, `snapshot` |
 
 Most tools return a text content block containing the typed control response JSON. `vm_screenshot` returns MCP image content instead, with `mimeType` set to `image/png` or `image/jpeg`.
 
-Snapshot tools operate on VM state snapshots, not APFS disk snapshots. Disk snapshots remain available through the CLI (`cove disk-snapshot ...`).
+State snapshot tools operate on running VM state. Disk and PIT inventory tools read snapshot metadata from the VM directory and do not mutate the VM.
 
 ## Safety notes
 

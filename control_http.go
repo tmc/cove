@@ -63,6 +63,8 @@ func (h *httpHandler) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /v1/vms/{name}/snapshots", h.auth(h.handleSnapshotList))
 	mux.HandleFunc("POST /v1/vms/{name}/snapshots/{snap}/restore", h.auth(h.handleSnapshotRestore))
 	mux.HandleFunc("DELETE /v1/vms/{name}/snapshots/{snap}", h.auth(h.handleSnapshotDelete))
+	mux.HandleFunc("GET /v1/vms/{name}/disk-snapshots", h.auth(h.handleDiskSnapshotList))
+	mux.HandleFunc("GET /v1/vms/{name}/pit-snapshots", h.auth(h.handlePITSnapshotList))
 
 	// Events SSE.
 	mux.HandleFunc("GET /v1/vms/{name}/events", h.auth(h.handleEvents))
@@ -461,6 +463,30 @@ func (h *httpHandler) handleSnapshotDelete(w http.ResponseWriter, r *http.Reques
 	writeProtoJSON(w, resp)
 }
 
+func (h *httpHandler) handleDiskSnapshotList(w http.ResponseWriter, r *http.Request) {
+	if !h.checkVMName(w, r) {
+		return
+	}
+	snapshots, err := NewDiskSnapshotManager(h.cs.effectiveVMDir()).List()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"snapshots": snapshots})
+}
+
+func (h *httpHandler) handlePITSnapshotList(w http.ResponseWriter, r *http.Request) {
+	if !h.checkVMName(w, r) {
+		return
+	}
+	snapshots, err := NewPITSnapshotManager(h.cs.effectiveVMDir()).List()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"snapshots": snapshots})
+}
+
 func (h *httpHandler) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if !h.checkVMName(w, r) {
 		return
@@ -595,6 +621,17 @@ func writeJSONError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	fmt.Fprintf(w, `{"error":%q}`, msg)
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "marshal error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(append(data, '\n')) //nolint
 }
 
 // decodeJSON reads the request body into v. On error it writes a 400 and returns false.
