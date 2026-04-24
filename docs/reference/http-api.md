@@ -298,6 +298,8 @@ POST   /v1/vms/:name/snapshot                # body: {"name": "checkpoint1"}
 GET    /v1/vms/:name/snapshots
 POST   /v1/vms/:name/snapshots/:snap/restore
 DELETE /v1/vms/:name/snapshots/:snap
+GET    /v1/vms/:name/disk-snapshots          # read-only APFS disk snapshot inventory
+GET    /v1/vms/:name/pit-snapshots           # read-only point-in-time snapshot inventory
 ```
 
 ```bash
@@ -308,6 +310,12 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 curl -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:7777/v1/vms/default/snapshots
+
+curl -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:7777/v1/vms/default/disk-snapshots
+
+curl -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:7777/v1/vms/default/pit-snapshots
 ```
 
 ## Events (SSE)

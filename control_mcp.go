@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -392,6 +393,34 @@ func vmArgs(args json.RawMessage, v any) error {
 	return json.Unmarshal(args, v)
 }
 
+func mcpVMDirectory(root string, args json.RawMessage) (string, error) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := vmArgs(args, &in); err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		return "", fmt.Errorf(`missing required argument: "name"`)
+	}
+	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("invalid vm name %q", name)
+	}
+	dir := filepath.Join(root, name)
+	info, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf(`vm %q not found`, name)
+		}
+		return "", fmt.Errorf("stat vm %q: %w", name, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("vm %q is not a directory", name)
+	}
+	return dir, nil
+}
+
 // mcpToolTable lists every tool exposed over MCP. Keep this in lockstep with
 // the HTTP routes in control_http.go so the two transports stay symmetric.
 var mcpToolTable = []mcpTool{
@@ -664,6 +693,40 @@ var mcpToolTable = []mcpTool{
 				AuthToken: token,
 				Command:   &controlpb.ControlRequest_Snapshot{Snapshot: &controlpb.SnapshotCommand{Action: "list"}},
 			}, nil
+		},
+	},
+	{
+		Name:        "vm_disk_snapshot_list",
+		Description: "List disk-level snapshots for a VM without modifying it.",
+		Schema:      objectSchema(map[string]any{"name": schemaVMName()}, "name"),
+		local: func(s *mcpServer, args json.RawMessage) (string, error) {
+			dir, err := mcpVMDirectory(s.VMDir, args)
+			if err != nil {
+				return "", err
+			}
+			snapshots, err := NewDiskSnapshotManager(dir).List()
+			if err != nil {
+				return "", err
+			}
+			data, err := json.Marshal(map[string]any{"snapshots": snapshots})
+			return string(data), err
+		},
+	},
+	{
+		Name:        "vm_pit_snapshot_list",
+		Description: "List point-in-time snapshots for a VM without modifying it.",
+		Schema:      objectSchema(map[string]any{"name": schemaVMName()}, "name"),
+		local: func(s *mcpServer, args json.RawMessage) (string, error) {
+			dir, err := mcpVMDirectory(s.VMDir, args)
+			if err != nil {
+				return "", err
+			}
+			snapshots, err := NewPITSnapshotManager(dir).List()
+			if err != nil {
+				return "", err
+			}
+			data, err := json.Marshal(map[string]any{"snapshots": snapshots})
+			return string(data), err
 		},
 	},
 	{

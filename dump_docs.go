@@ -184,6 +184,8 @@ func buildAPIDocs() *apiDocs {
 			{Method: "GET", Path: "/v1/vms/{name}/snapshots", Description: "List VM state snapshots.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms/{name}/snapshots/{snap}/restore", Description: "Restore a VM state snapshot.", Auth: "bearer"},
 			{Method: "DELETE", Path: "/v1/vms/{name}/snapshots/{snap}", Description: "Delete a VM state snapshot.", Auth: "bearer"},
+			{Method: "GET", Path: "/v1/vms/{name}/disk-snapshots", Description: "List disk-level snapshots without modifying VM state.", Auth: "bearer"},
+			{Method: "GET", Path: "/v1/vms/{name}/pit-snapshots", Description: "List point-in-time snapshots without modifying VM state.", Auth: "bearer"},
 			{Method: "GET", Path: "/v1/vms/{name}/events", Description: "Subscribe to per-VM event stream via SSE.", Auth: "bearer"},
 			{Method: "GET", Path: "/v1/operations", Description: "List known long-running operations.", Auth: "bearer"},
 			{Method: "GET", Path: "/v1/operations/{id}", Description: "Get one long-running operation.", Auth: "bearer"},
