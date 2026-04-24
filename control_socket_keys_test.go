@@ -94,6 +94,19 @@ func TestKeyboardEventUnicodeString(t *testing.T) {
 	}
 }
 
+func TestTypeTextRequiresGUIMode(t *testing.T) {
+	// Headless VMs have no vmView/window; typeText must fail fast rather
+	// than silently consume the characters (ROADMAP bug #24).
+	cs := &ControlServer{}
+	resp := cs.typeText(&controlpb.TextCommand{Text: "hi"})
+	if resp == nil || resp.Success {
+		t.Fatalf("typeText() = %+v, want GUI-mode error", resp)
+	}
+	if !strings.Contains(resp.Error, "requires GUI mode") {
+		t.Fatalf("error = %q, want GUI-mode guard", resp.Error)
+	}
+}
+
 func TestSendKeyEventPrimitiveFramebufferRefusesHostFallback(t *testing.T) {
 	t.Setenv("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD", "")
 
