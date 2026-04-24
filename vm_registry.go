@@ -54,12 +54,7 @@ func applyVMConfig(dir string) {
 // savePostInstallRecipes persists the selected post-install recipes
 // so they can be retried if installation or scripting fails.
 func savePostInstallRecipes(dir, recipes string) {
-	cfg, err := LoadVMConfig(dir)
-	if err != nil {
-		cfg = &VMConfig{}
-	}
-	cfg.PostInstallRecipes = recipes
-	if err := SaveVMConfig(dir, cfg); err != nil {
+	if err := vmconfigSetPostInstallRecipes(dir, recipes); err != nil {
 		fmt.Printf("warning: save vzscript config: %v\n", err)
 	}
 }
