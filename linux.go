@@ -16,6 +16,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // buildLinuxVMConfiguration builds a VZVirtualMachineConfiguration for Linux.
@@ -572,7 +573,7 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 	// If user specified an ISO path, use that directly
 	if isoPath != "" {
 		if isURL(isoPath) {
-			cacheDir := GetCacheDir()
+			cacheDir := vmconfig.CacheDir()
 			if err := os.MkdirAll(cacheDir, 0755); err != nil {
 				return "", fmt.Errorf("create cache dir: %w", err)
 			}
@@ -589,7 +590,7 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 	}
 
 	// Determine variant-specific cache file name
-	cacheDir := GetCacheDir()
+	cacheDir := vmconfig.CacheDir()
 	var cacheFile string
 	var downloadURL string
 	if variant == LinuxVariantDesktop {
