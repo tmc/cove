@@ -90,19 +90,9 @@ func vzlog(format string, args ...interface{}) {
 	}
 }
 
-// GetMainDispatchQueue returns the main dispatch queue handle.
-func GetMainDispatchQueue() uintptr {
-	return uintptr(dispatch.MainQueue().Handle())
-}
-
 // DispatchSync executes a block synchronously on a raw dispatch queue handle.
 func DispatchSync(queue uintptr, fn func()) {
 	dispatch.QueueFromHandle(queue).Sync(fn)
-}
-
-// DispatchAsync schedules a block to run on a raw dispatch queue handle.
-func DispatchAsync(queue uintptr, fn func()) {
-	dispatch.QueueFromHandle(queue).Async(fn)
 }
 
 // DispatchAsyncQueue schedules a block to run on a dispatch.Queue.
