@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestParseSandboxLevel(t *testing.T) {
@@ -48,10 +50,10 @@ func TestParseSandboxLevel(t *testing.T) {
 func TestSandboxPolicyEffectiveBehavior(t *testing.T) {
 	t.Parallel()
 
-	cliVolumes := []VolumeMount{
+	cliVolumes := []vmconfig.VolumeMount{
 		{HostPath: "/tmp/cli", Tag: "cli"},
 	}
-	savedVolumes := []VolumeMount{
+	savedVolumes := []vmconfig.VolumeMount{
 		{HostPath: "/tmp/saved", Tag: "saved"},
 	}
 	savedFolders := []SharedFolderEntry{
@@ -191,8 +193,8 @@ func TestSandboxPolicyCopiesInput(t *testing.T) {
 	t.Parallel()
 
 	policy := SandboxPolicy{}
-	cliVolumes := []VolumeMount{{HostPath: "/tmp/cli", Tag: "cli"}}
-	savedVolumes := []VolumeMount{{HostPath: "/tmp/saved", Tag: "saved"}}
+	cliVolumes := []vmconfig.VolumeMount{{HostPath: "/tmp/cli", Tag: "cli"}}
+	savedVolumes := []vmconfig.VolumeMount{{HostPath: "/tmp/saved", Tag: "saved"}}
 	got := policy.EffectiveVolumes(cliVolumes, savedVolumes)
 	if !reflect.DeepEqual(got, cliVolumes) {
 		t.Fatalf("EffectiveVolumes() = %#v, want %#v", got, cliVolumes)
@@ -220,14 +222,14 @@ func TestGetEffectiveVolumesRespectsSandboxForSavedConfig(t *testing.T) {
 	shareDir = ""
 	sandboxLevel = ""
 
-	want := VolumeMount{HostPath: "/tmp/saved", Tag: "saved"}
-	if err := SaveVMConfig(vmDir, &VMConfig{Volumes: []VolumeMount{want}}); err != nil {
+	want := vmconfig.VolumeMount{HostPath: "/tmp/saved", Tag: "saved"}
+	if err := SaveVMConfig(vmDir, &VMConfig{Volumes: []vmconfig.VolumeMount{want}}); err != nil {
 		t.Fatalf("SaveVMConfig() error = %v", err)
 	}
 
 	got := getEffectiveVolumes()
-	if !reflect.DeepEqual(got, []VolumeMount{want}) {
-		t.Fatalf("getEffectiveVolumes() = %#v, want %#v", got, []VolumeMount{want})
+	if !reflect.DeepEqual(got, []vmconfig.VolumeMount{want}) {
+		t.Fatalf("getEffectiveVolumes() = %#v, want %#v", got, []vmconfig.VolumeMount{want})
 	}
 
 	sandboxLevel = "minimal"

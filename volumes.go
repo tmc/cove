@@ -13,7 +13,7 @@ import (
 )
 
 // volumeSlice implements flag.Value for collecting multiple -v flags.
-type volumeSlice []VolumeMount
+type volumeSlice []vmconfig.VolumeMount
 
 func (v *volumeSlice) String() string {
 	if v == nil || len(*v) == 0 {
@@ -47,7 +47,7 @@ func (v *volumeSlice) Set(value string) error {
 
 // createVolumeConfigs creates VirtioFS configurations for all volume mounts
 // and prints mount instructions for each volume.
-func createVolumeConfigs(mounts []VolumeMount) ([]vz.VZVirtioFileSystemDeviceConfiguration, error) {
+func createVolumeConfigs(mounts []vmconfig.VolumeMount) ([]vz.VZVirtioFileSystemDeviceConfiguration, error) {
 	if len(mounts) == 0 {
 		return nil, nil
 	}
@@ -62,7 +62,7 @@ func createVolumeConfigs(mounts []VolumeMount) ([]vz.VZVirtioFileSystemDeviceCon
 }
 
 // printVolumeMountInfo prints mount instructions for each volume.
-func printVolumeMountInfo(mounts []VolumeMount) {
+func printVolumeMountInfo(mounts []vmconfig.VolumeMount) {
 	if len(mounts) == 0 {
 		return
 	}
@@ -112,14 +112,14 @@ func printVolumeMountInfo(mounts []VolumeMount) {
 // When -vol flags are provided on the command line, they are used and saved
 // to the VM config for future runs. When no -vol flags are given, saved
 // volumes from the VM config are loaded instead.
-func getEffectiveVolumes() []VolumeMount {
+func getEffectiveVolumes() []vmconfig.VolumeMount {
 	policy, err := currentSandboxPolicy()
 	if err != nil {
 		fmt.Printf("warning: sandbox policy: %v\n", err)
 		return nil
 	}
 
-	cliVolumes := make([]VolumeMount, len(volumes))
+	cliVolumes := make([]vmconfig.VolumeMount, len(volumes))
 	copy(cliVolumes, volumes)
 
 	// Add legacy -share-dir as a volume if specified
@@ -134,7 +134,7 @@ func getEffectiveVolumes() []VolumeMount {
 			}
 		}
 		if !alreadyMounted {
-			cliVolumes = append(cliVolumes, VolumeMount{
+			cliVolumes = append(cliVolumes, vmconfig.VolumeMount{
 				HostPath: absShareDir,
 				Tag:      "",
 				ReadOnly: false,
@@ -166,13 +166,13 @@ func getEffectiveVolumes() []VolumeMount {
 }
 
 // saveVolumesToConfig persists volume mounts to the VM config file.
-func saveVolumesToConfig(dir string, mounts []VolumeMount) error {
+func saveVolumesToConfig(dir string, mounts []vmconfig.VolumeMount) error {
 	return vmconfig.SetVolumes(dir, mounts)
 }
 
 // taggedVolumes returns only the volumes that have custom tags (not auto-mount).
-func taggedVolumes(mounts []VolumeMount) []VolumeMount {
-	var tagged []VolumeMount
+func taggedVolumes(mounts []vmconfig.VolumeMount) []vmconfig.VolumeMount {
+	var tagged []vmconfig.VolumeMount
 	for _, m := range mounts {
 		if m.Tag != "" {
 			tagged = append(tagged, m)
@@ -185,7 +185,7 @@ func taggedVolumes(mounts []VolumeMount) []VolumeMount {
 // VirtioFS volumes. It retries the agent connection with backoff until
 // ctx is cancelled. This is intended to be run in a background goroutine
 // after VM start.
-func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []VolumeMount) {
+func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmconfig.VolumeMount) {
 	tagged := taggedVolumes(mounts)
 	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 {
 		return
@@ -261,7 +261,7 @@ func waitForAgentLoss(ctx context.Context, cs *ControlServer) error {
 	}
 }
 
-func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []VolumeMount) {
+func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmconfig.VolumeMount) {
 	for _, m := range tagged {
 		mountPoint := "/mnt/" + m.Tag
 		if linuxMode {
@@ -324,7 +324,7 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []Vol
 	}
 }
 
-func virtioFSMountArgs(m VolumeMount, mountPoint string, linuxGuest bool) []string {
+func virtioFSMountArgs(m vmconfig.VolumeMount, mountPoint string, linuxGuest bool) []string {
 	if linuxGuest {
 		opts := append([]string{}, m.MountOpts...)
 		if m.ReadOnly {
