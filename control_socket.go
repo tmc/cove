@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -391,11 +392,11 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 func writeResponse(conn net.Conn, resp *controlpb.ControlResponse) error {
 	data, err := protojsonMarshaler.Marshal(resp)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "control socket: marshal response: %v\n", err)
+		slog.Error("control socket: marshal response", slog.Any("err", err))
 		return err
 	}
 	if _, err := conn.Write(append(data, '\n')); err != nil {
-		fmt.Fprintf(os.Stderr, "control socket: write response: %v\n", err)
+		slog.Error("control socket: write response", slog.Any("err", err))
 		return err
 	}
 	return nil

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -234,6 +235,9 @@ func main() {
 	maybeRunElevatedOp()
 
 	flag.Parse()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)).With(slog.String("component", "cove")))
+
 	maybeStartPprofServer()
 
 	// -desktop implies -linux

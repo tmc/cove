@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"sync"
 )
 
@@ -44,7 +44,9 @@ func (s *ControlServer) StartHTTP(addr, vmName string) (net.Listener, error) {
 	s.httpListeners.add(ln)
 	go func() {
 		if err := http.Serve(ln, handler); err != nil && !isClosedError(err) {
-			fmt.Fprintf(os.Stderr, "cove: http server: %v\n", err)
+			slog.Error("http server",
+				slog.String("vm", vmName),
+				slog.Any("err", err))
 		}
 	}()
 	return ln, nil
