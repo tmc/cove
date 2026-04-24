@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -102,7 +103,7 @@ func forceBootCommandAutomationBackends(cs *ControlServer) func() {
 //  2. Check if we're at desktop (injection succeeded) — done
 //  3. Check if we're at login screen — type password, done
 //  4. Check if we're at Setup Assistant — run OCR-guided navigation
-func runDefaultUnattendedFlow(cs *ControlServer, ocr *OCRService, debugDir string) error {
+func runDefaultUnattendedFlow(cs *ControlServer, ocr *ocrx.Service, debugDir string) error {
 	fmt.Println("Waiting for VM to boot...")
 
 	// Wait up to 5 minutes for the screen to leave black/Apple logo
@@ -151,7 +152,7 @@ func runDefaultUnattendedFlow(cs *ControlServer, ocr *OCRService, debugDir strin
 }
 
 // attemptLogin types the provisioning password at the login screen.
-func attemptLogin(cs *ControlServer, ocr *OCRService) error {
+func attemptLogin(cs *ControlServer, ocr *ocrx.Service) error {
 	if provisionPassword == "" {
 		return fmt.Errorf("at login screen but no -provision-password set")
 	}
@@ -187,7 +188,7 @@ func attemptLogin(cs *ControlServer, ocr *OCRService) error {
 
 // runOCRSetupAssistant navigates Setup Assistant using OCR text detection.
 // This is the fallback path when disk injection didn't skip Setup Assistant.
-func runOCRSetupAssistant(cs *ControlServer, ocr *OCRService, debugDir string) error {
+func runOCRSetupAssistant(cs *ControlServer, ocr *ocrx.Service, debugDir string) error {
 	fmt.Println("Using OCR-driven Setup Assistant navigation...")
 	sa := NewSetupAssistantInProcess(cs, ocr, ProvisionConfig{
 		Username: provisionUser,

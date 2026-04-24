@@ -26,6 +26,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/input"
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	"github.com/tmc/apple/x/vzkit/vm"
 	"github.com/tmc/apple/x/vzkit/vminput"
 
@@ -65,7 +66,7 @@ type ControlServer struct {
 	lastCaptureHeight int                 // last screenshot height used for OCR/click mapping
 	agent             *AgentClient        // GRPC client to guest agent daemon (nil until connected)
 	userAgent         *UserAgentClient    // GRPC client to guest user agent (nil until connected)
-	ocr               *OCRService         // lazily created OCR service for server-side OCR commands
+	ocr               *ocrx.Service       // lazily created OCR service for server-side OCR commands
 	iterm2Proxy       *ITerm2Proxy        // WebSocket-to-vsock relay for iTerm2 API (nil until started)
 	portForwards      *PortForwardManager // host TCP -> guest vsock port forwards (nil until first use)
 	vncStatus         VNCStatus
@@ -498,7 +499,7 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 }
 
 // getOCR returns the lazily-initialized OCR service.
-func (s *ControlServer) getOCR() *OCRService {
+func (s *ControlServer) getOCR() *ocrx.Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ocr == nil {

@@ -3,6 +3,8 @@ package main
 import (
 	"image"
 	"testing"
+
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
 func TestParseOCRSearchOptions(t *testing.T) {
@@ -40,13 +42,13 @@ func TestParseOCRSearchOptions(t *testing.T) {
 }
 
 func TestBestMatchWithOptions(t *testing.T) {
-	observations := []TextObservation{
+	observations := []ocrx.TextObservation{
 		{Text: "Utilities", Center: image.Point{X: 100, Y: 50}},  // top
 		{Text: "Utilities", Center: image.Point{X: 100, Y: 500}}, // bottom
 	}
 	bounds := image.Rect(0, 0, 1000, 1000)
 
-	got, ok := bestMatchWithOptions(observations, "Utilities", OCRSearchOptions{}, bounds)
+	got, ok := bestMatchWithOptions(observations, "Utilities", ocrx.SearchOptions{}, bounds)
 	if !ok {
 		t.Fatal("bestMatchWithOptions() no match")
 	}
@@ -66,8 +68,8 @@ func TestBestMatchWithOptions(t *testing.T) {
 
 func TestObservationInSearchRegion(t *testing.T) {
 	bounds := image.Rect(0, 0, 1000, 1000)
-	top := TextObservation{Center: image.Point{X: 500, Y: 50}}
-	bottom := TextObservation{Center: image.Point{X: 500, Y: 900}}
+	top := ocrx.TextObservation{Center: image.Point{X: 500, Y: 50}}
+	bottom := ocrx.TextObservation{Center: image.Point{X: 500, Y: 900}}
 	opts := OCRMenuSearchOptions()
 
 	if !observationInSearchRegion(top, bounds, opts.Region) {

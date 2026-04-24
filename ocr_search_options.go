@@ -9,24 +9,18 @@ import (
 	"github.com/tmc/apple/x/vzkit/ocr"
 )
 
-// OCRRegion is an alias for ocr.Region.
-type OCRRegion = ocr.Region
-
-// OCRSearchOptions is an alias for ocr.SearchOptions.
-type OCRSearchOptions = ocr.SearchOptions
-
 // OCRMenuSearchOptions returns options tuned for menu bar targeting.
-func OCRMenuSearchOptions() OCRSearchOptions {
+func OCRMenuSearchOptions() ocr.SearchOptions {
 	return ocr.MenuSearchOptions()
 }
 
 // ParseOCRSearchOptions parses a region selector for OCR commands.
-func ParseOCRSearchOptions(regionSpec string) (OCRSearchOptions, error) {
+func ParseOCRSearchOptions(regionSpec string) (ocr.SearchOptions, error) {
 	return ocr.ParseSearchOptions(regionSpec)
 }
 
 // observationInSearchRegion checks if an observation falls within the search region.
-func observationInSearchRegion(obs TextObservation, bounds image.Rectangle, region *OCRRegion) bool {
+func observationInSearchRegion(obs ocr.TextObservation, bounds image.Rectangle, region *ocr.Region) bool {
 	// Use BestMatch with a single observation to check region membership.
 	// This is a simple proxy since observationInRegion is unexported in vzkit/ocr.
 	if region == nil {

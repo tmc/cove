@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -1332,7 +1333,7 @@ func ctlBootScript(socketPath, scriptPath string) error {
 	return runVZScript(data, filepath.Base(scriptPath), cfg)
 }
 
-func activateStartupOptionsViaClient(client *ControlClient, ocr *OCRService, timeout time.Duration) error {
+func activateStartupOptionsViaClient(client *ControlClient, ocr *ocrx.Service, timeout time.Duration) error {
 	if err := client.SetGUIInputBackend("direct"); err != nil {
 		return fmt.Errorf("set input backend direct: %w", err)
 	}
@@ -1355,7 +1356,7 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *OCRService, tim
 			continue
 		}
 
-		if continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{}); continueFound && continueBelongsToOptions(width, continueX) {
+		if continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); continueFound && continueBelongsToOptions(width, continueX) {
 			if err := client.KeyPress(KeyCodeReturn); err == nil {
 				time.Sleep(500 * time.Millisecond)
 				return nil
@@ -1374,7 +1375,7 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *OCRService, tim
 			if err == nil {
 				width = float64(img.Bounds().Dx())
 				height = float64(img.Bounds().Dy())
-				continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+				continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
 				if continueFound && continueBelongsToOptions(width, continueX) {
 					if err := client.KeyPress(KeyCodeReturn); err == nil {
 						time.Sleep(500 * time.Millisecond)
@@ -1389,7 +1390,7 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *OCRService, tim
 			}
 		}
 
-		optX, optY, found := ocr.FindTextWithOptions(img, "Options", OCRSearchOptions{})
+		optX, optY, found := ocr.FindTextWithOptions(img, "Options", ocrx.SearchOptions{})
 		if !found {
 			time.Sleep(time.Second)
 			continue
@@ -1403,7 +1404,7 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *OCRService, tim
 			if err == nil {
 				width = float64(img.Bounds().Dx())
 				height = float64(img.Bounds().Dy())
-				continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", OCRSearchOptions{})
+				continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
 				if continueFound && continueBelongsToOptions(width, continueX) {
 					if err := client.KeyPress(KeyCodeReturn); err == nil {
 						time.Sleep(500 * time.Millisecond)
@@ -1419,7 +1420,7 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *OCRService, tim
 	return fmt.Errorf("timeout activating Recovery Startup Options")
 }
 
-func continueRecoveryLanguageViaClient(client *ControlClient, ocr *OCRService, timeout time.Duration) error {
+func continueRecoveryLanguageViaClient(client *ControlClient, ocr *ocrx.Service, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	advanced := false
 	for time.Now().Before(deadline) {
@@ -1433,14 +1434,14 @@ func continueRecoveryLanguageViaClient(client *ControlClient, ocr *OCRService, t
 			return nil
 		}
 
-		if normX, normY, found := ocr.FindTextNormalizedWithOptions(img, "Continue", OCRSearchOptions{}); found {
+		if normX, normY, found := ocr.FindTextNormalizedWithOptions(img, "Continue", ocrx.SearchOptions{}); found {
 			if err := client.KeyPress(KeyCodeReturn); err != nil {
 				return err
 			}
 			time.Sleep(500 * time.Millisecond)
 			next, err := client.Screenshot()
 			if err == nil {
-				if _, _, stillVisible := ocr.FindTextWithOptions(next, "Continue", OCRSearchOptions{}); stillVisible {
+				if _, _, stillVisible := ocr.FindTextWithOptions(next, "Continue", ocrx.SearchOptions{}); stillVisible {
 					if err := client.MouseClick(normX, normY); err != nil {
 						return err
 					}
@@ -1451,7 +1452,7 @@ func continueRecoveryLanguageViaClient(client *ControlClient, ocr *OCRService, t
 			continue
 		}
 
-		if _, _, found := ocr.FindTextWithOptions(img, "Language", OCRSearchOptions{}); !found {
+		if _, _, found := ocr.FindTextWithOptions(img, "Language", ocrx.SearchOptions{}); !found {
 			if advanced {
 				return nil
 			}
@@ -1471,7 +1472,7 @@ func continueRecoveryLanguageViaClient(client *ControlClient, ocr *OCRService, t
 	return nil
 }
 
-func clickMenuItemViaClient(client *ControlClient, ocr *OCRService, menu, item string, timeout time.Duration) error {
+func clickMenuItemViaClient(client *ControlClient, ocr *ocrx.Service, menu, item string, timeout time.Duration) error {
 	opts := OCRMenuSearchOptions()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

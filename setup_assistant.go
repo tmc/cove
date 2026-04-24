@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
 // SetupAssistant automates the macOS first-run experience using OCR-driven
@@ -15,7 +17,7 @@ import (
 // when OCR is unavailable.
 type SetupAssistant struct {
 	transport setupAssistantTransport
-	ocr       *OCRService
+	ocr       *ocrx.Service
 	config    ProvisionConfig
 	verbose   bool
 	saveDir   string // directory to save screenshots for debugging
@@ -60,7 +62,7 @@ func NewSetupAssistant(opts SetupAssistantOptions) *SetupAssistant {
 
 // NewSetupAssistantInProcess creates a setup assistant that uses the
 // ControlServer directly, avoiding socket overhead for in-process automation.
-func NewSetupAssistantInProcess(server setupAssistantServer, ocr *OCRService, config ProvisionConfig, verbose bool, saveDir string) *SetupAssistant {
+func NewSetupAssistantInProcess(server setupAssistantServer, ocr *ocrx.Service, config ProvisionConfig, verbose bool, saveDir string) *SetupAssistant {
 	if config.Fullname == "" {
 		config.Fullname = config.Username
 	}

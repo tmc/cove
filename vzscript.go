@@ -72,6 +72,7 @@ import (
 	"strings"
 	"time"
 
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	"google.golang.org/protobuf/proto"
 	"rsc.io/script"
 
@@ -985,7 +986,7 @@ func vzOCRGoneCmd(cfg vzscriptConfig) script.Cmd {
 			}
 			if exec := newScriptBootExecutor(cfg); exec != nil && (region == "" || region == "screen" || region == "menu") {
 				deadline := time.Now().Add(d)
-				opts := OCRSearchOptions{}
+				opts := ocrx.SearchOptions{}
 				if region == "menu" {
 					opts = OCRMenuSearchOptions()
 				}
@@ -1229,7 +1230,7 @@ func vzRecoveryContinueCmd(cfg vzscriptConfig) script.Cmd {
 	)
 }
 
-func recoveryAuthFailedOCR(ocr *OCRService, img image.Image) bool {
+func recoveryAuthFailedOCR(ocr *ocrx.Service, img image.Image) bool {
 	return pageContainsAnyOCR(ocr, img,
 		"Authentication failure",
 		"Failed to authenticate",

@@ -9,13 +9,14 @@ import (
 	"testing"
 
 	"github.com/tmc/apple/corefoundation"
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
 func TestSaveOCRDebugScreenshot(t *testing.T) {
 	dir := t.TempDir()
 	img := newSolidImage(200, 200, color.RGBA{100, 100, 100, 255})
 
-	observations := []TextObservation{
+	observations := []ocrx.TextObservation{
 		{
 			Text:       "Hello",
 			Confidence: 0.95,
@@ -59,7 +60,7 @@ func TestSaveOCRDebugScreenshot(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read json: %v", err)
 			}
-			var entry OCRDebugEntry
+			var entry ocrx.DebugEntry
 			if err := json.Unmarshal(data, &entry); err != nil {
 				t.Fatalf("unmarshal json: %v", err)
 			}

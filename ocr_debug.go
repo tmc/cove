@@ -10,11 +10,8 @@ import (
 	"github.com/tmc/apple/x/vzkit/ocr"
 )
 
-// OCRDebugEntry is an alias for ocr.DebugEntry.
-type OCRDebugEntry = ocr.DebugEntry
-
 // saveOCRDebugScreenshot saves a screenshot with OCR bounding boxes overlaid.
-func saveOCRDebugScreenshot(img image.Image, observations []TextObservation, dir, prefix string) error {
+func saveOCRDebugScreenshot(img image.Image, observations []ocr.TextObservation, dir, prefix string) error {
 	return ocr.SaveDebugScreenshot(img, observations, dir, prefix)
 }
 

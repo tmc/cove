@@ -4,6 +4,8 @@ package main
 import (
 	"image"
 	"strings"
+
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
 var helloContinueMarkers = []string{
@@ -40,7 +42,7 @@ var setupAssistantPageMarkers = map[string][]string{
 
 // DetectScreenStateOCR uses OCR to determine the current screen state.
 // Falls back to pixel-based detection if OCR doesn't match.
-func DetectScreenStateOCR(img image.Image, ocr *OCRService) ScreenState {
+func DetectScreenStateOCR(img image.Image, ocr *ocrx.Service) ScreenState {
 	if ocr == nil {
 		return DetectScreenState(img)
 	}
@@ -94,7 +96,7 @@ var ocrPageDetectionOrder = []struct {
 // OCRDetectSetupAssistantPage uses OCR to identify the current Setup Assistant page.
 // Returns a page name string (e.g., "language", "migration", "user_account")
 // or "unknown" if no known page is detected.
-func OCRDetectSetupAssistantPage(img image.Image, ocr *OCRService) string {
+func OCRDetectSetupAssistantPage(img image.Image, ocr *ocrx.Service) string {
 	if ocr == nil || img == nil {
 		return "unknown"
 	}
