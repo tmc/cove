@@ -11,12 +11,8 @@ var LoadVMConfig = vmconfig.Load
 var SaveVMConfig = vmconfig.Save
 
 var GetVMBaseDir = vmconfig.BaseDir
-var GetTemplateDir = vmconfig.TemplateDir
-var GetCurrentVMLink = vmconfig.CurrentLink
 var GetVMPath = vmconfig.Path
 
-var VMFiles = vmconfig.Files
-var VMFilesRequired = vmconfig.RequiredFiles
 var ValidateVM = vmconfig.Validate
 var ListOrphanVMs = vmconfig.ListOrphans
 var GetActiveVM = vmconfig.ActiveName

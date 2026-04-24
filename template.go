@@ -21,23 +21,24 @@ import (
 	"sort"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
 
 // TemplateInfo holds information about a template.
 type TemplateInfo struct {
-	Name        string    // Template name (directory name)
-	Path        string    // Full path to template directory
-	DiskSize    int64     // Disk image size (compressed or uncompressed)
-	Created     time.Time // Creation time
-	FastMode bool // True if template uses clonefile (uncompressed)
+	Name     string    // Template name (directory name)
+	Path     string    // Full path to template directory
+	DiskSize int64     // Disk image size (compressed or uncompressed)
+	Created  time.Time // Creation time
+	FastMode bool      // True if template uses clonefile (uncompressed)
 }
 
 // SaveTemplateOptions configures template creation behavior.
 type SaveTemplateOptions struct {
-	VMName          string // Source VM name
-	TemplateName    string // Template name to create
-	FastMode bool // Use clonefile instead of compression (instant but more disk space)
+	VMName       string // Source VM name
+	TemplateName string // Template name to create
+	FastMode     bool   // Use clonefile instead of compression (instant but more disk space)
 }
 
 // TemplateFiles are the files that make up a compressed template.
@@ -90,7 +91,7 @@ func SaveTemplateWithOptions(opts SaveTemplateOptions) error {
 	}
 
 	// Check template doesn't exist
-	templatePath := filepath.Join(GetTemplateDir(), opts.TemplateName)
+	templatePath := filepath.Join(vmconfig.TemplateDir(), opts.TemplateName)
 	if _, err := os.Stat(templatePath); !os.IsNotExist(err) {
 		return fmt.Errorf("template already exists: %s", opts.TemplateName)
 	}
@@ -173,7 +174,7 @@ func cloneFileWithFallback(src, dst string) error {
 
 // ListTemplates returns all available templates.
 func ListTemplates() ([]TemplateInfo, error) {
-	templateDir := GetTemplateDir()
+	templateDir := vmconfig.TemplateDir()
 
 	// Create template directory if it doesn't exist
 	if err := os.MkdirAll(templateDir, 0755); err != nil {
@@ -254,9 +255,9 @@ func getTemplateInfo(templatePath string) (*TemplateInfo, error) {
 
 // CreateFromTemplateOptions configures VM creation from template.
 type CreateFromTemplateOptions struct {
-	TemplateName    string // Source template name
-	VMName          string // Target VM name
-	UseClonefile bool // Use clonefile even if template is compressed (decompress once, then clone)
+	TemplateName string // Source template name
+	VMName       string // Target VM name
+	UseClonefile bool   // Use clonefile even if template is compressed (decompress once, then clone)
 }
 
 // CreateFromTemplate creates a new VM from a template.
@@ -270,7 +271,7 @@ func CreateFromTemplate(templateName, vmName string) error {
 // CreateFromTemplateWithOptions creates a new VM from a template with configurable options.
 func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
 	// Validate template exists
-	templatePath := filepath.Join(GetTemplateDir(), opts.TemplateName)
+	templatePath := filepath.Join(vmconfig.TemplateDir(), opts.TemplateName)
 	templateInfo, err := getTemplateInfo(templatePath)
 	if err != nil {
 		return fmt.Errorf("template not found or invalid: %s: %w", opts.TemplateName, err)
@@ -350,7 +351,7 @@ func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
 
 // DeleteTemplate deletes a template.
 func DeleteTemplate(templateName string) error {
-	templatePath := filepath.Join(GetTemplateDir(), templateName)
+	templatePath := filepath.Join(vmconfig.TemplateDir(), templateName)
 
 	// Verify it's a valid template
 	if _, err := getTemplateInfo(templatePath); err != nil {
