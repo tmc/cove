@@ -1,4 +1,4 @@
-package main
+package password
 
 import (
 	"encoding/hex"
@@ -44,7 +44,7 @@ func TestGenerateShadowHashData(t *testing.T) {
 	}
 }
 
-func TestEncodeKCPassword(t *testing.T) {
+func TestEncodeKC(t *testing.T) {
 	tests := []struct {
 		password string
 	}{
@@ -56,25 +56,25 @@ func TestEncodeKCPassword(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		encoded := EncodeKCPassword(tt.password)
+		encoded := EncodeKC(tt.password)
 
 		// Verify the encoded password has the right length
 		// Must be padded to multiple of 11 (key length)
 		if len(encoded)%11 != 0 {
-			t.Errorf("EncodeKCPassword(%q) length = %d, not multiple of 11", tt.password, len(encoded))
+			t.Errorf("EncodeKC(%q) length = %d, not multiple of 11", tt.password, len(encoded))
 		}
 
 		// Verify minimum length (password + null + padding)
 		minLen := len(tt.password) + 1
 		if len(encoded) < minLen {
-			t.Errorf("EncodeKCPassword(%q) length = %d, want >= %d", tt.password, len(encoded), minLen)
+			t.Errorf("EncodeKC(%q) length = %d, want >= %d", tt.password, len(encoded), minLen)
 		}
 
-		t.Logf("EncodeKCPassword(%q) = %s", tt.password, hex.EncodeToString(encoded))
+		t.Logf("EncodeKC(%q) = %s", tt.password, hex.EncodeToString(encoded))
 	}
 }
 
-func TestDecodeKCPassword(t *testing.T) {
+func TestDecodeKC(t *testing.T) {
 	tests := []struct {
 		password string
 	}{
@@ -86,14 +86,14 @@ func TestDecodeKCPassword(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		encoded := EncodeKCPassword(tt.password)
-		if got := DecodeKCPassword(encoded); got != tt.password {
-			t.Fatalf("DecodeKCPassword(EncodeKCPassword(%q)) = %q, want %q", tt.password, got, tt.password)
+		encoded := EncodeKC(tt.password)
+		if got := DecodeKC(encoded); got != tt.password {
+			t.Fatalf("DecodeKC(EncodeKC(%q)) = %q, want %q", tt.password, got, tt.password)
 		}
 	}
 }
 
-func TestEncodeKCPasswordKnownValue(t *testing.T) {
+func TestEncodeKCKnownValue(t *testing.T) {
 	// Test with a known password and its expected XOR result
 	// Password "test" + null byte:
 	// 't' ^ 0x7D = 0x74 ^ 0x7D = 0x09
@@ -101,16 +101,14 @@ func TestEncodeKCPasswordKnownValue(t *testing.T) {
 	// 's' ^ 0x52 = 0x73 ^ 0x52 = 0x21
 	// 't' ^ 0x23 = 0x74 ^ 0x23 = 0x57
 	// '\0' ^ 0xD2 = 0x00 ^ 0xD2 = 0xD2
-	// Then padding...
 
-	encoded := EncodeKCPassword("test")
+	encoded := EncodeKC("test")
 
-	// First 5 bytes should be:
 	expected := []byte{0x09, 0xEC, 0x21, 0x57, 0xD2}
 
 	for i, exp := range expected {
 		if encoded[i] != exp {
-			t.Errorf("EncodeKCPassword('test')[%d] = %02x, want %02x", i, encoded[i], exp)
+			t.Errorf("EncodeKC('test')[%d] = %02x, want %02x", i, encoded[i], exp)
 		}
 	}
 }

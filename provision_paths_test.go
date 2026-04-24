@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/password"
 )
 
 // TestProvisionScriptGeneration verifies the generated provision script structure.
@@ -293,16 +295,16 @@ func TestStageAutoLogin(t *testing.T) {
 // TestProvisionPasswordRoundTrip verifies that password hashing produces verifiable results.
 func TestProvisionPasswordRoundTrip(t *testing.T) {
 	passwords := []string{"simple", "p@$$w0rd!", "with spaces", "unicöde"}
-	for _, pw := range passwords {
-		t.Run(pw, func(t *testing.T) {
-			shd, err := GenerateShadowHashData(pw)
+	for _, p := range passwords {
+		t.Run(p, func(t *testing.T) {
+			shd, err := password.GenerateShadowHashData(p)
 			if err != nil {
 				t.Fatalf("GenerateShadowHashData: %v", err)
 			}
-			if !VerifyPassword(pw, shd) {
+			if !password.VerifyPassword(p, shd) {
 				t.Error("password verification failed")
 			}
-			if VerifyPassword(pw+"wrong", shd) {
+			if password.VerifyPassword(p+"wrong", shd) {
 				t.Error("wrong password should not verify")
 			}
 		})
@@ -311,16 +313,16 @@ func TestProvisionPasswordRoundTrip(t *testing.T) {
 
 // TestProvisionUserPlistAdminVsNonAdmin verifies group membership differences.
 func TestProvisionUserPlistAdminVsNonAdmin(t *testing.T) {
-	admin, err := CreateUserPlist("admin1", "Admin One", "pass", 501, true)
+	admin, err := password.CreateUserPlist("admin1", "Admin One", "pass", 501, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	regular, err := CreateUserPlist("user1", "User One", "pass", 502, false)
+	regular, err := password.CreateUserPlist("user1", "User One", "pass", 502, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	hasGroup := func(up *UserPlist, group string) bool {
+	hasGroup := func(up *password.UserPlist, group string) bool {
 		for _, g := range up.GroupMembership {
 			if g == group {
 				return true
@@ -348,21 +350,21 @@ func TestProvisionKCPasswordRoundTrip(t *testing.T) {
 	key := []byte{0x7D, 0x89, 0x52, 0x23, 0xD2, 0xBC, 0xDD, 0xEA, 0xA3, 0xB9, 0x1F}
 
 	passwords := []string{"test", "password123", "a", "hello world!"}
-	for _, pw := range passwords {
-		t.Run(pw, func(t *testing.T) {
-			encoded := EncodeKCPassword(pw)
+	for _, p := range passwords {
+		t.Run(p, func(t *testing.T) {
+			encoded := password.EncodeKC(p)
 
 			// Decode and verify.
-			decoded := make([]byte, len(pw)+1)
+			decoded := make([]byte, len(p)+1)
 			for i := range decoded {
 				decoded[i] = encoded[i] ^ key[i%len(key)]
 			}
-			got := string(decoded[:len(pw)])
-			if got != pw {
-				t.Errorf("round-trip mismatch: got %q, want %q", got, pw)
+			got := string(decoded[:len(p)])
+			if got != p {
+				t.Errorf("round-trip mismatch: got %q, want %q", got, p)
 			}
 			// Null terminator.
-			if decoded[len(pw)] != 0 {
+			if decoded[len(p)] != 0 {
 				t.Error("missing null terminator after password")
 			}
 		})
@@ -372,7 +374,7 @@ func TestProvisionKCPasswordRoundTrip(t *testing.T) {
 // TestCreateHomeDirectoryStructure verifies directory creation.
 func TestCreateHomeDirectoryStructure(t *testing.T) {
 	homeDir := filepath.Join(t.TempDir(), "testuser")
-	if err := CreateHomeDirectoryStructure(homeDir, 501, 20); err != nil {
+	if err := password.CreateHomeDirectoryStructure(homeDir, 501, 20); err != nil {
 		t.Fatalf("CreateHomeDirectoryStructure: %v", err)
 	}
 

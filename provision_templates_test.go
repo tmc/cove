@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/password"
 )
 
 func TestGenerateEmbeddedProvisionScript(t *testing.T) {
@@ -63,10 +65,10 @@ func TestGenerateEmbeddedProvisionScriptFullnameDefault(t *testing.T) {
 
 func TestKCPasswordDoesNotContainPlaintext(t *testing.T) {
 	passwords := []string{"secret123", "p@ssw0rd!", "hunter2"}
-	for _, pw := range passwords {
-		encoded := EncodeKCPassword(pw)
-		if strings.Contains(string(encoded), pw) {
-			t.Errorf("kcpassword for %q contains plaintext", pw)
+	for _, p := range passwords {
+		encoded := password.EncodeKC(p)
+		if strings.Contains(string(encoded), p) {
+			t.Errorf("kcpassword for %q contains plaintext", p)
 		}
 	}
 }

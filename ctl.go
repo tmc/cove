@@ -19,6 +19,7 @@ import (
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	pw "github.com/tmc/vz-macos/internal/password"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -1659,7 +1660,7 @@ func ctlResetPasswordForVM(target vmSelection, sock string, timeout time.Duratio
 	defer detachDiskForPath(device, diskPath)
 
 	// Update kcpassword.
-	kcData := EncodeKCPassword(password)
+	kcData := pw.EncodeKC(password)
 	kcPath := filepath.Join(mountPoint, "private", "etc", "kcpassword")
 	if writeErr := os.WriteFile(kcPath, kcData, 0600); writeErr != nil {
 		return fmt.Errorf("write kcpassword: %w", writeErr)
@@ -1668,7 +1669,7 @@ func ctlResetPasswordForVM(target vmSelection, sock string, timeout time.Duratio
 
 	// Update loginwindow.plist autoLoginUser.
 	lwPath := filepath.Join(mountPoint, "Library", "Preferences", "com.apple.loginwindow.plist")
-	lwData, err := EncodeLoginWindowPlist(CreateLoginWindowPlist(username))
+	lwData, err := pw.EncodeLoginWindowPlist(pw.CreateLoginWindowPlist(username))
 	if err != nil {
 		return fmt.Errorf("encode loginwindow plist: %w", err)
 	}
@@ -1747,11 +1748,11 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 }
 
 func autoLoginRefreshCommand(username, password string) (string, error) {
-	loginWindowData, err := EncodeLoginWindowPlist(CreateLoginWindowPlist(username))
+	loginWindowData, err := pw.EncodeLoginWindowPlist(pw.CreateLoginWindowPlist(username))
 	if err != nil {
 		return "", fmt.Errorf("encode loginwindow plist: %w", err)
 	}
-	kcpasswordB64 := shellEscape(base64.StdEncoding.EncodeToString(EncodeKCPassword(password)))
+	kcpasswordB64 := shellEscape(base64.StdEncoding.EncodeToString(pw.EncodeKC(password)))
 	loginWindowB64 := shellEscape(base64.StdEncoding.EncodeToString(loginWindowData))
 	return fmt.Sprintf(
 		"printf %%s %s | base64 -D > /etc/kcpassword && chmod 600 /etc/kcpassword && chown root:wheel /etc/kcpassword && "+
