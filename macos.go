@@ -2024,8 +2024,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Shared state for background → main thread communication.
 	// Background goroutine writes state changes; the timer reads them on
-	// the main thread. This avoids DispatchAsync(GetMainDispatchQueue()) which
-	// can cause purego callback GC issues in long-running scenarios.
+	// the main thread. This avoids dispatching blocks to the main queue,
+	// which can cause purego callback GC issues in long-running scenarios.
 	type vmStateUpdate struct {
 		mu            sync.Mutex
 		newState      vz.VZVirtualMachineState

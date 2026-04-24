@@ -458,8 +458,9 @@ func installMacOSLikeVZ(ctx context.Context) error {
 // 1. A compact progress window during download/preparation
 // 2. The full VM window during installation and first boot
 //
-// UI updates use a polling pattern instead of DispatchAsync(GetMainDispatchQueue())
-// to avoid purego callback GC stack corruption ("bad pointer in reflect.Value.call").
+// UI updates use a polling pattern instead of dispatching blocks to the main
+// queue, avoiding purego callback GC stack corruption ("bad pointer in
+// reflect.Value.call").
 // Background goroutines write to a shared guiUpdate struct; the main thread reads
 // it each iteration of the event loop and applies changes directly.
 func runFullInstallWithGUI(ctx context.Context) error {
@@ -1851,8 +1852,8 @@ func downloadRestoreImageVZ(ctx context.Context, destPath string) error {
 // polls these and stops the AppKit event pump when done.
 
 // NSTimer polls progress and completion at ~2 Hz, applies UI changes
-// on the main thread. Avoids DispatchAsync(GetMainDispatchQueue())
-// purego callback GC stack corruption.
+// on the main thread. Avoids dispatching blocks to the main queue, which can
+// trigger purego callback GC stack corruption.
 
 // Update progress.
 
