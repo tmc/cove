@@ -208,3 +208,38 @@ before tagging 0.1.
 **Test artifacts:** log at `/private/tmp/.../tasks/b0nzggawh.output`.
 hermes-mlx-go-60g-v10 untouched. No cleanup needed (smoketest-vm dir is
 already gone).
+
+## Scope cut for 0.1 (2026-04-24)
+
+After the smoke tests above, two ship-gate items moved out of 0.1 scope
+rather than blocking a release. Both are tracked on the `next` branch
+(`docs/blockers-next.md`) with full reproduction, hypotheses, and TODO
+lists.
+
+**Moved from 0.1 → 0.2:**
+
+1. Item #1 — `cove up -user <name>` fresh install to desktop.
+   Empirical FAIL (see "Smoke test: cove up" above). The cove-up command
+   on an already-installed VM remains functional; only the fresh-install
+   path is broken.
+2. Item #6 — `cove pull` of an upstream lume-produced image.
+   Empirical FAIL (see "Smoke test: cove pull" above). Cove-format pull
+   still works; only lume-schema interop is deferred.
+
+**What remains in 0.1 (the reduced gate):**
+
+- `cove run -headless` does not create a GUI window (PASS by inspection).
+- `cove serve --mcp` and `cove serve -http` operate a pre-existing VM
+  end-to-end (PASS by inspection + MCP/HTTP contract review).
+- Agents can invoke snapshots and pause/resume directly over HTTP/MCP
+  (PASS, live-probed on hermes).
+- Recovery/SIP automation path works on a real VM (PASS by inspection;
+  not re-exercised in this session).
+- `cove dump-docs` emits structured CLI/API/MCP data (PASS, empirically).
+
+**Rationale.** Shipping 0.1 as an "operate a pre-existing VM" product
+with a solid HTTP/MCP/CLI control surface is honest and immediately
+useful. Shipping 0.1 with a broken fresh-install flagship would be
+worse than deferring it — users would hit the FAIL on first run.
+Lume-format pull interop is a nice-to-have for 0.1, not the whole
+product.
