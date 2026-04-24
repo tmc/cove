@@ -6,19 +6,9 @@ type VMConfig = vmconfig.Config
 type VMAgentConfig = vmconfig.AgentConfig
 type VolumeMount = vmconfig.VolumeMount
 type VMInfo = vmconfig.Info
-type vmconfigHardware = vmconfig.Hardware
-type vmconfigHardwareExplicit = vmconfig.HardwareExplicit
 
 var LoadVMConfig = vmconfig.Load
 var SaveVMConfig = vmconfig.Save
-var vmconfigApplyHardware = vmconfig.ApplyHardware
-var vmconfigSetHardware = vmconfig.SetHardware
-var vmconfigSetPostInstallRecipes = vmconfig.SetPostInstallRecipes
-var vmconfigSetVolumes = vmconfig.SetVolumes
-var vmconfigInfoFor = vmconfig.InfoFor
-var vmconfigList = vmconfig.List
-var vmconfigResolveDir = vmconfig.ResolveDir
-var vmconfigEnsureDir = vmconfig.EnsureDir
 
 var GetVMBaseDir = vmconfig.BaseDir
 var GetTemplateDir = vmconfig.TemplateDir
