@@ -1,7 +1,6 @@
 // ocr.go - Vision framework OCR for screen text recognition.
 //
 // Delegates to github.com/tmc/apple/x/vzkit/ocr for the implementation.
-// Type aliases maintain backwards compatibility with existing callsites.
 package main
 
 import (

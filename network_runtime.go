@@ -79,7 +79,7 @@ func stopPreparedFileHandleNetwork() {
 		}
 	}
 	if session != nil {
-		fmt.Println(session.ShutdownSummary())
+		fmt.Println(session.Summary())
 		_ = session.Close()
 	}
 }
