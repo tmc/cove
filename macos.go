@@ -22,6 +22,7 @@ import (
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
+	"github.com/tmc/apple/x/vzkit/clipboard"
 	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/assets"
@@ -840,8 +841,10 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 			fmt.Println("warning: ignoring -clipboard with -runtime-profile minimal")
 		}
 	} else if enableClipboard {
-		clipboardDevice := createClipboardConfig()
-		if clipboardDevice.ID != 0 {
+		clipboardDevice, err := clipboard.NewConfig()
+		if err != nil {
+			fmt.Printf("  warning: clipboard: %v\n", err)
+		} else if clipboardDevice.ID != 0 {
 			config.SetConsoleDevices([]vz.VZConsoleDeviceConfiguration{
 				vz.VZConsoleDeviceConfigurationFromID(clipboardDevice.ID),
 			})
