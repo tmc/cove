@@ -40,6 +40,12 @@ type Blob struct {
 	Digest string
 }
 
+// DiskLayer pairs a disk chunk with its OCI layer descriptor.
+type DiskLayer struct {
+	Chunk      Chunk
+	Descriptor Descriptor
+}
+
 // ManifestOptions controls manifest construction.
 type ManifestOptions struct {
 	UploadTime   string
@@ -54,6 +60,7 @@ type ManifestOptions struct {
 type ParsedManifest struct {
 	Annotations ManifestAnnotations
 	Chunks      []Chunk
+	DiskLayers  []DiskLayer
 	Blobs       []Descriptor
 }
 
@@ -148,7 +155,7 @@ func ParseManifest(m Manifest) (ParsedManifest, error) {
 	}
 	out.Annotations = annotations
 
-	chunksByIndex := make(map[int]Chunk)
+	diskLayersByIndex := make(map[int]DiskLayer)
 	chunkTotal := -1
 	for _, layer := range m.Layers {
 		ann, err := NormalizeLayerAnnotations(layer.Annotations)
@@ -175,13 +182,16 @@ func ParseManifest(m Manifest) (ParsedManifest, error) {
 		} else if chunkTotal != ann.ChunkTotal {
 			return out, fmt.Errorf("parse manifest layer: chunk total %d, want %d", ann.ChunkTotal, chunkTotal)
 		}
-		if _, ok := chunksByIndex[ann.ChunkIndex]; ok {
+		if _, ok := diskLayersByIndex[ann.ChunkIndex]; ok {
 			return out, fmt.Errorf("parse manifest layer: duplicate chunk index %d", ann.ChunkIndex)
 		}
-		chunksByIndex[ann.ChunkIndex] = Chunk{
-			Index:  ann.ChunkIndex,
-			Size:   ann.UncompressedSize,
-			Digest: ann.UncompressedContentDigest,
+		diskLayersByIndex[ann.ChunkIndex] = DiskLayer{
+			Chunk: Chunk{
+				Index:  ann.ChunkIndex,
+				Size:   ann.UncompressedSize,
+				Digest: ann.UncompressedContentDigest,
+			},
+			Descriptor: layer,
 		}
 	}
 	if chunkTotal == -1 {
@@ -190,18 +200,22 @@ func ParseManifest(m Manifest) (ParsedManifest, error) {
 		}
 		return out, nil
 	}
-	if len(chunksByIndex) != chunkTotal {
-		return out, fmt.Errorf("parse manifest: chunks %d, want %d", len(chunksByIndex), chunkTotal)
+	if len(diskLayersByIndex) != chunkTotal {
+		return out, fmt.Errorf("parse manifest: chunks %d, want %d", len(diskLayersByIndex), chunkTotal)
 	}
 	out.Chunks = make([]Chunk, chunkTotal)
+	out.DiskLayers = make([]DiskLayer, chunkTotal)
 	var offset int64
 	for i := 0; i < chunkTotal; i++ {
-		chunk, ok := chunksByIndex[i]
+		layer, ok := diskLayersByIndex[i]
 		if !ok {
 			return out, fmt.Errorf("parse manifest: missing chunk %d", i)
 		}
+		chunk := layer.Chunk
 		chunk.Offset = offset
 		out.Chunks[i] = chunk
+		layer.Chunk = chunk
+		out.DiskLayers[i] = layer
 		offset += chunk.Size
 	}
 	if offset != annotations.UncompressedDiskSize {

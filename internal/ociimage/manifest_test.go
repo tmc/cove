@@ -117,6 +117,12 @@ func TestParseManifest(t *testing.T) {
 	if !reflect.DeepEqual(got.Chunks, chunks) {
 		t.Fatalf("chunks = %#v, want %#v", got.Chunks, chunks)
 	}
+	if len(got.DiskLayers) != len(chunks) {
+		t.Fatalf("disk layers = %d, want %d", len(got.DiskLayers), len(chunks))
+	}
+	if !reflect.DeepEqual(got.DiskLayers[0].Chunk, chunks[0]) || got.DiskLayers[0].Descriptor.Digest != manifest.Layers[1].Digest {
+		t.Fatalf("disk layer 0 = %#v, want chunk %#v descriptor %#v", got.DiskLayers[0], chunks[0], manifest.Layers[1])
+	}
 	if len(got.Blobs) != 1 || got.Blobs[0].Annotations[CoveRole] != "nvram" {
 		t.Fatalf("blobs = %#v", got.Blobs)
 	}
@@ -149,6 +155,9 @@ func TestParseManifestAcceptsLumeAnnotations(t *testing.T) {
 	want := []Chunk{{Index: 0, Offset: 0, Size: 3, Digest: digest}}
 	if !reflect.DeepEqual(got.Chunks, want) {
 		t.Fatalf("chunks = %#v, want %#v", got.Chunks, want)
+	}
+	if len(got.DiskLayers) != 1 || !reflect.DeepEqual(got.DiskLayers[0].Chunk, want[0]) {
+		t.Fatalf("disk layers = %#v, want chunk %#v", got.DiskLayers, want[0])
 	}
 }
 
