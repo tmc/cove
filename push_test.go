@@ -30,6 +30,9 @@ func TestBuildPushPlan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
 		t.Fatalf("WriteFile(hw.model) error = %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
+	}
 
 	plan, err := buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", pushOptions{
 		BaseRef:        "ghcr.io/me/base:v1",
@@ -53,7 +56,7 @@ func TestBuildPushPlan(t *testing.T) {
 	if plan.Chunks[1].Digest != pushTestDigest(disk[4:8]) {
 		t.Fatalf("chunk digest = %q, want %q", plan.Chunks[1].Digest, pushTestDigest(disk[4:8]))
 	}
-	if got, want := len(plan.Blobs), 2; got != want {
+	if got, want := len(plan.Blobs), 3; got != want {
 		t.Fatalf("blobs = %d, want %d", got, want)
 	}
 	if plan.Manifest.Annotations[ociimage.CoveAuxDigest] != pushTestDigest([]byte("aux")) {
@@ -81,6 +84,9 @@ func TestHandlePushDryRunOutput(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
 		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
 	}
 
 	out, err := captureStdoutResult(t, func() error {
@@ -115,6 +121,9 @@ func TestHandlePushDryRunWritesManifest(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
 		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
 	}
 	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
 
@@ -173,6 +182,9 @@ func TestBuildPushPlanRejectsActiveVM(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
 		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
 	}
 	ln := listenPushControlSocket(t, vmPath)
 	defer ln.Close()
