@@ -27,3 +27,5 @@ var UnsetActiveVM = vmconfig.UnsetActive
 var MigrateIfNeeded = vmconfig.MigrateIfNeeded
 
 var ensureVMAlias = vmconfig.EnsureAlias
+var hasSuspendStateAt = vmconfig.HasSuspendState
+var detectOSType = vmconfig.DetectOSType

@@ -132,11 +132,6 @@ func detectVMState(vmPath string) string {
 	return "stopped"
 }
 
-func hasSuspendStateAt(vmPath string) bool {
-	_, err := os.Stat(filepath.Join(vmPath, "suspend.vmstate"))
-	return err == nil
-}
-
 func isVMRunningAt(vmPath string) bool {
 	sock := GetControlSocketPathForVM(vmPath)
 	conn, err := net.DialTimeout("unix", sock, 200*time.Millisecond)
@@ -241,22 +236,4 @@ func EnsureVMDir(vmName string) (string, error) {
 	}
 
 	return resolvePath(resolvedDir), nil
-}
-
-// detectOSType determines the OS type of a VM by checking for characteristic files.
-// hw.model → macOS, efi.nvram/efi-vars.img → Linux, otherwise unknown.
-func detectOSType(vmPath string) string {
-	if _, err := os.Stat(filepath.Join(vmPath, "hw.model")); err == nil {
-		return "macOS"
-	}
-	if _, err := os.Stat(filepath.Join(vmPath, "linux-disk.img")); err == nil {
-		return "Linux"
-	}
-	if _, err := os.Stat(filepath.Join(vmPath, "efi.nvram")); err == nil {
-		return "Linux"
-	}
-	if _, err := os.Stat(filepath.Join(vmPath, "efi-vars.img")); err == nil {
-		return "Linux"
-	}
-	return "unknown"
 }
