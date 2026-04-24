@@ -24,3 +24,6 @@ var ListOrphanVMs = vmconfig.ListOrphans
 var GetActiveVM = vmconfig.ActiveName
 var SetActiveVM = vmconfig.SetActive
 var UnsetActiveVM = vmconfig.UnsetActive
+var MigrateIfNeeded = vmconfig.MigrateIfNeeded
+
+var ensureVMAlias = vmconfig.EnsureAlias

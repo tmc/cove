@@ -184,76 +184,6 @@ func ListVMs() ([]VMInfo, error) {
 	return vms, nil
 }
 
-// MigrateIfNeeded migrates from flat structure to new multi-VM structure.
-// Old: ~/.vz/vms/disk.img, ~/.vz/vms/aux.img, etc.
-// New: ~/.vz/vms/default/disk.img, ~/.vz/vms/default/aux.img, etc.
-func MigrateIfNeeded() error {
-	baseDir := GetVMBaseDir()
-
-	// Check if migration is needed (flat files exist in base dir)
-	diskPath := filepath.Join(baseDir, "disk.img")
-	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		return nil // No migration needed
-	}
-
-	fmt.Println("Migrating VM files to new directory structure...")
-
-	// Create default VM directory
-	defaultDir := filepath.Join(baseDir, "default")
-	if err := os.MkdirAll(defaultDir, 0755); err != nil {
-		return fmt.Errorf("create default dir: %w", err)
-	}
-
-	// Move files
-	for _, f := range VMFiles {
-		oldPath := filepath.Join(baseDir, f)
-		newPath := filepath.Join(defaultDir, f)
-
-		if _, err := os.Stat(oldPath); err == nil {
-			if err := os.Rename(oldPath, newPath); err != nil {
-				return fmt.Errorf("move %s: %w", f, err)
-			}
-			fmt.Printf("  Moved: %s -> default/%s\n", f, f)
-		}
-	}
-
-	// Move optional VM files (not IPSW - that goes to cache)
-	optionalFiles := []string{"boot-args.txt"}
-	for _, f := range optionalFiles {
-		oldPath := filepath.Join(baseDir, f)
-		newPath := filepath.Join(defaultDir, f)
-
-		if _, err := os.Stat(oldPath); err == nil {
-			if err := os.Rename(oldPath, newPath); err != nil {
-				fmt.Printf("  warning: could not move %s: %v\n", f, err)
-			} else {
-				fmt.Printf("  Moved: %s -> default/%s\n", f, f)
-			}
-		}
-	}
-
-	// Move IPSW to shared cache directory
-	cacheDir := GetCacheDir()
-	os.MkdirAll(cacheDir, 0755)
-	ipswOld := filepath.Join(baseDir, "RestoreImage.ipsw")
-	ipswNew := filepath.Join(cacheDir, "RestoreImage.ipsw")
-	if _, err := os.Stat(ipswOld); err == nil {
-		if err := os.Rename(ipswOld, ipswNew); err != nil {
-			fmt.Printf("  warning: could not move IPSW to cache: %v\n", err)
-		} else {
-			fmt.Printf("  Moved: RestoreImage.ipsw -> cache/RestoreImage.ipsw\n")
-		}
-	}
-
-	// Set default as active VM
-	if err := SetActiveVM("default"); err != nil {
-		fmt.Printf("  warning: could not set active VM: %v\n", err)
-	}
-
-	fmt.Println("Migration complete. Active VM is now 'default'.")
-	return nil
-}
-
 // ResolveVMDir returns the VM directory to use.
 // If a specific VM name is given (via -vm flag), use that.
 // Otherwise, use the vmDir flag value or the active VM.
@@ -311,29 +241,6 @@ func EnsureVMDir(vmName string) (string, error) {
 	}
 
 	return resolvePath(resolvedDir), nil
-}
-
-func ensureVMAlias(vmName, resolvedDir string) error {
-	if vmName == "" {
-		return nil
-	}
-	aliasPath := filepath.Join(GetVMBaseDir(), vmName)
-	targetPath := resolvePath(resolvedDir)
-	if resolvePath(aliasPath) == targetPath {
-		return nil
-	}
-	if _, err := os.Lstat(aliasPath); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat vm alias %q: %w", aliasPath, err)
-	}
-	if err := os.MkdirAll(GetVMBaseDir(), 0755); err != nil {
-		return fmt.Errorf("create vm base dir: %w", err)
-	}
-	if err := os.Symlink(targetPath, aliasPath); err != nil && !os.IsExist(err) {
-		return fmt.Errorf("create vm alias %q -> %q: %w", aliasPath, targetPath, err)
-	}
-	return nil
 }
 
 // detectOSType determines the OS type of a VM by checking for characteristic files.
