@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestLinuxProvisionArtifacts(t *testing.T) {
@@ -18,7 +20,7 @@ func TestLinuxProvisionArtifacts(t *testing.T) {
 	}
 	ensureIntegrationBaseVM(t, name, true)
 
-	vmDir := resolvePath(GetVMPath(name))
+	vmDir := resolvePath(vmconfig.Path(name))
 	diskPath := filepath.Join(vmDir, "linux-disk.img")
 	devices, err := attachLinuxDiskReadOnly(diskPath)
 	if err != nil {
@@ -117,7 +119,7 @@ func TestLinuxVMConfigIntegration(t *testing.T) {
 	ensureIntegrationBaseVM(t, name, true)
 	vm := &testVM{
 		name:  name,
-		dir:   resolvePath(GetVMPath(name)),
+		dir:   resolvePath(vmconfig.Path(name)),
 		linux: true,
 	}
 	testVMConfig(t, vm)

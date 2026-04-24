@@ -20,7 +20,7 @@ func TestGetVMPathPrefersExistingLegacyVM(t *testing.T) {
 	}
 	legacyPath = resolvePath(legacyPath)
 
-	if got := GetVMPath("legacy"); got != legacyPath {
+	if got := vmconfig.Path("legacy"); got != legacyPath {
 		t.Fatalf("GetVMPath(%q) = %q, want %q", "legacy", got, legacyPath)
 	}
 }

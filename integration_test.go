@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -94,7 +95,7 @@ func acquireLinuxTestVM(t *testing.T) *testVM {
 	}
 	fresh := ensureIntegrationBaseVM(t, name, true)
 
-	dir := resolvePath(GetVMPath(name))
+	dir := resolvePath(vmconfig.Path(name))
 
 	tokenPath := GetControlTokenPathForVM(dir)
 	token, err := LoadControlTokenFromPath(tokenPath)
@@ -130,7 +131,7 @@ func acquireIntegrationVM(tb testing.TB) *testVM {
 	}
 	fresh := ensureIntegrationBaseVM(tb, name, false)
 
-	dir := resolvePath(GetVMPath(name))
+	dir := resolvePath(vmconfig.Path(name))
 
 	tokenPath := GetControlTokenPathForVM(dir)
 	token, err := LoadControlTokenFromPath(tokenPath)
@@ -872,7 +873,7 @@ func integrationCloneName(name string) string {
 func clonedTestVM(t *testing.T, cloneName string, linux bool) *testVM {
 	t.Helper()
 
-	dir := resolvePath(GetVMPath(cloneName))
+	dir := resolvePath(vmconfig.Path(cloneName))
 	tokenPath := GetControlTokenPathForVM(dir)
 
 	// CloneVM copies control.token as an optional file.

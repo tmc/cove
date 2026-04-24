@@ -9,7 +9,3 @@ type VMInfo = vmconfig.Info
 
 var LoadVMConfig = vmconfig.Load
 var SaveVMConfig = vmconfig.Save
-
-var GetVMPath = vmconfig.Path
-
-var ValidateVM = vmconfig.Validate

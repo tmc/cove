@@ -45,7 +45,7 @@ func envBoolDefault(name string, def bool) bool {
 func ensureIntegrationBaseVM(tb testing.TB, name string, linux bool) bool {
 	tb.Helper()
 
-	dir := resolvePath(GetVMPath(name))
+	dir := resolvePath(vmconfig.Path(name))
 	fresh := false
 	key := fmt.Sprintf("%t:%s", linux, name)
 	_, alreadyProvisionedThisRun := integrationProvisionedVMs.Load(key)
@@ -89,7 +89,7 @@ func ensureIntegrationBaseVM(tb testing.TB, name string, linux bool) bool {
 }
 
 func integrationBaseReady(dir string, linux bool) bool {
-	if !ValidateVM(dir) {
+	if !vmconfig.Validate(dir) {
 		return false
 	}
 	if linux {

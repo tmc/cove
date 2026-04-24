@@ -35,7 +35,7 @@ func TestSetupRollbackSnapshotCloneUsesInjectedClone(t *testing.T) {
 	var gotOpts CloneOptions
 	clone := func(opts CloneOptions) error {
 		gotOpts = opts
-		target := GetVMPath(opts.Target)
+		target := vmconfig.Path(opts.Target)
 		if err := os.MkdirAll(target, 0755); err != nil {
 			return err
 		}
@@ -58,8 +58,8 @@ func TestSetupRollbackSnapshotCloneUsesInjectedClone(t *testing.T) {
 	if got.Name != wantName {
 		t.Fatalf("SetupRollbackSnapshotClone() name = %q, want %q", got.Name, wantName)
 	}
-	if got.Path != GetVMPath(wantName) {
-		t.Fatalf("SetupRollbackSnapshotClone() path = %q, want %q", got.Path, GetVMPath(wantName))
+	if got.Path != vmconfig.Path(wantName) {
+		t.Fatalf("SetupRollbackSnapshotClone() path = %q, want %q", got.Path, vmconfig.Path(wantName))
 	}
 	if got.Source != "research-base" {
 		t.Fatalf("SetupRollbackSnapshotClone() source = %q, want %q", got.Source, "research-base")
