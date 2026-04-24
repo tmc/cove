@@ -103,6 +103,23 @@ func ApplyHardware(cfg *Config, current Hardware, explicit HardwareExplicit) (Ha
 	return next, changed
 }
 
+// SetHardware persists CPU and memory settings.
+func SetHardware(dir string, hardware Hardware) (bool, error) {
+	cfg, err := Load(dir)
+	if err != nil {
+		return false, err
+	}
+	if cfg.CPU == hardware.CPU && cfg.MemoryGB == hardware.MemoryGB {
+		return false, nil
+	}
+	cfg.CPU = hardware.CPU
+	cfg.MemoryGB = hardware.MemoryGB
+	if err := Save(dir, cfg); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
 // SetPostInstallRecipes persists the selected post-install recipes.
 func SetPostInstallRecipes(dir, recipes string) error {
 	cfg, err := Load(dir)
