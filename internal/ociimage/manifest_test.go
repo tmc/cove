@@ -161,6 +161,39 @@ func TestParseManifestAcceptsLumeAnnotations(t *testing.T) {
 	}
 }
 
+func TestParseManifestPreservesZeroChunks(t *testing.T) {
+	digest := testDigest([]byte{0, 0, 0})
+	manifest := Manifest{
+		SchemaVersion: 2,
+		Annotations: map[string]string{
+			CoveUncompressedDiskSize: "3",
+		},
+		Layers: []Descriptor{
+			{
+				Annotations: map[string]string{
+					CoveRole:                      "disk",
+					CoveUncompressedSize:          "3",
+					CoveUncompressedContentDigest: digest,
+					CoveChunkIndex:                "0",
+					CoveChunkTotal:                "1",
+					CoveZeroChunk:                 "true",
+				},
+			},
+		},
+	}
+
+	got, err := ParseManifest(manifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(): %v", err)
+	}
+	if len(got.Chunks) != 1 || !got.Chunks[0].Zero {
+		t.Fatalf("chunks = %#v, want zero chunk", got.Chunks)
+	}
+	if len(got.DiskLayers) != 1 || !got.DiskLayers[0].Chunk.Zero {
+		t.Fatalf("disk layers = %#v, want zero chunk", got.DiskLayers)
+	}
+}
+
 func TestParseManifestRejectsInvalid(t *testing.T) {
 	digest := testDigest([]byte{1, 2, 3})
 	base := Manifest{

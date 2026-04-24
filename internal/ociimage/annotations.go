@@ -11,6 +11,7 @@ const (
 	CoveUncompressedContentDigest = "org.tmc.cove.uncompressed-content-digest"
 	CoveChunkIndex                = "org.tmc.cove.chunk-index"
 	CoveChunkTotal                = "org.tmc.cove.chunk-total"
+	CoveZeroChunk                 = "org.tmc.cove.zero-chunk"
 	CoveRole                      = "org.tmc.cove.role"
 	CoveUploadTime                = "org.tmc.cove.upload-time"
 	CoveUncompressedDiskSize      = "org.tmc.cove.uncompressed-disk-size"
@@ -64,6 +65,7 @@ type LayerAnnotations struct {
 	UncompressedContentDigest string
 	ChunkIndex                int
 	ChunkTotal                int
+	ZeroChunk                 bool
 }
 
 // NormalizeManifestAnnotations reads cove annotations, accepting legacy Lume
@@ -129,6 +131,13 @@ func NormalizeLayerAnnotations(in map[string]string) (LayerAnnotations, error) {
 	total, err := parseIntAnnotation(CoveChunkTotal, totalText)
 	if err != nil {
 		return out, err
+	}
+	if zeroText, ok := annotationValue(in, CoveZeroChunk); ok {
+		zero, err := strconv.ParseBool(zeroText)
+		if err != nil {
+			return out, fmt.Errorf("parse annotation %s: %w", CoveZeroChunk, err)
+		}
+		out.ZeroChunk = zero
 	}
 
 	out.UncompressedSize = size

@@ -194,6 +194,9 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 
 	client := pullRegistryClient(plan.Ref, opts)
 	for _, layer := range plan.Manifest.DiskLayers {
+		if layer.Chunk.Zero {
+			continue
+		}
 		body, err := client.FetchBlob(ctx, plan.Ref, layer.Descriptor.Digest)
 		if err != nil {
 			return err
