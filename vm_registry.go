@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // applyVMConfig loads saved VM config and applies defaults for flags
@@ -67,7 +69,7 @@ func detectVMState(vmPath string) string {
 	if isVMRunningAt(vmPath) {
 		return "running"
 	}
-	if hasSuspendStateAt(vmPath) {
+	if vmconfig.HasSuspendState(vmPath) {
 		return "suspended"
 	}
 	return "stopped"

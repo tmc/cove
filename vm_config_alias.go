@@ -26,8 +26,6 @@ var GetCacheDir = vmconfig.CacheDir
 var GetCurrentVMLink = vmconfig.CurrentLink
 var GetVMPath = vmconfig.Path
 
-var isSubdir = vmconfig.IsSubdir
-
 var VMFiles = vmconfig.Files
 var VMFilesRequired = vmconfig.RequiredFiles
 var ValidateVM = vmconfig.Validate
@@ -36,6 +34,3 @@ var GetActiveVM = vmconfig.ActiveName
 var SetActiveVM = vmconfig.SetActive
 var UnsetActiveVM = vmconfig.UnsetActive
 var MigrateIfNeeded = vmconfig.MigrateIfNeeded
-
-var ensureVMAlias = vmconfig.EnsureAlias
-var hasSuspendStateAt = vmconfig.HasSuspendState
