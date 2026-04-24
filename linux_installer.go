@@ -28,6 +28,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 )
 
 // LinuxProvisionConfig holds configuration for Linux VM provisioning.
@@ -145,7 +146,7 @@ func installLinuxVM() error {
 		provConfig.Password = provisionPassword
 	}
 	provConfig.InstallAgent = !noAgent && sandboxAllowsAgentProvision()
-	if err := setVMAgentRequested(vmDir, vmAgentPlatformLinux, provConfig.InstallAgent, vmAgentSourceInstall); err != nil {
+	if err := agentstate.SetRequested(vmDir, agentstate.PlatformLinux, provConfig.InstallAgent, agentstate.SourceInstall); err != nil {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -130,7 +131,7 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool) error {
 	} else {
 		fmt.Printf("  Agent: connected\n")
 		agentOK = true
-		if err := markVMAgentVerifiedForSocket(sock, vmAgentSourceVerify); err != nil && verbose {
+		if err := agentstate.MarkVerifiedForSocket(sock, agentstate.SourceVerify); err != nil && verbose {
 			fmt.Printf("warning: record guest agent capability: %v\n", err)
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -1166,7 +1167,7 @@ func markAgentCapabilityForCommand(sock, cmdType string, resp *controlpb.Control
 	}
 	switch cmdType {
 	case "agent-ping":
-		return markVMAgentVerifiedForSocket(sock, vmAgentSourceRuntime)
+		return agentstate.MarkVerifiedForSocket(sock, agentstate.SourceRuntime)
 	default:
 		return nil
 	}
