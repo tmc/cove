@@ -35,6 +35,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit/clipboard"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 )
 
@@ -138,8 +139,10 @@ func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfi
 
 	// Clipboard sharing (SPICE agent)
 	if enableClipboard {
-		clipboardDevice := createClipboardConfig()
-		if clipboardDevice.ID != 0 {
+		clipboardDevice, err := clipboard.NewConfig()
+		if err != nil {
+			fmt.Printf("  warning: clipboard: %v\n", err)
+		} else if clipboardDevice.ID != 0 {
 			config.SetConsoleDevices([]vz.VZConsoleDeviceConfiguration{
 				vz.VZConsoleDeviceConfigurationFromID(clipboardDevice.ID),
 			})
