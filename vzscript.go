@@ -869,7 +869,7 @@ func parseOCROptionalTimeoutRegion(args []string, defaultTimeout string) (text, 
 		timeout = args[1]
 		if len(args) == 3 {
 			region = args[2]
-			if _, regionErr := ParseOCRSearchOptions(region); regionErr != nil {
+			if _, regionErr := ocrx.ParseSearchOptions(region); regionErr != nil {
 				return "", "", "", regionErr
 			}
 		}
@@ -883,7 +883,7 @@ func parseOCROptionalTimeoutRegion(args []string, defaultTimeout string) (text, 
 			return "", "", "", fmt.Errorf("invalid timeout %q", timeout)
 		}
 	}
-	if _, parseErr := ParseOCRSearchOptions(region); parseErr != nil {
+	if _, parseErr := ocrx.ParseSearchOptions(region); parseErr != nil {
 		return "", "", "", parseErr
 	}
 	return text, timeout, region, nil
@@ -912,7 +912,7 @@ func vzOCRClickCmd(cfg vzscriptConfig) script.Cmd {
 				case "", "screen":
 					return nil, exec.clickText(text, d)
 				case "menu":
-					return nil, exec.hostClickTextWithOptions(text, d, OCRMenuSearchOptions())
+					return nil, exec.hostClickTextWithOptions(text, d, ocrx.MenuSearchOptions())
 				}
 			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-click", text, timeout, region, d+10*time.Second)
@@ -952,7 +952,7 @@ func vzOCRWaitCmd(cfg vzscriptConfig) script.Cmd {
 				case "", "screen":
 					return nil, exec.waitForText(text, d)
 				case "menu":
-					return nil, exec.waitForTextWithOptions(text, d, OCRMenuSearchOptions())
+					return nil, exec.waitForTextWithOptions(text, d, ocrx.MenuSearchOptions())
 				}
 			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-wait", text, timeout, region, d+10*time.Second)
@@ -988,7 +988,7 @@ func vzOCRGoneCmd(cfg vzscriptConfig) script.Cmd {
 				deadline := time.Now().Add(d)
 				opts := ocrx.SearchOptions{}
 				if region == "menu" {
-					opts = OCRMenuSearchOptions()
+					opts = ocrx.MenuSearchOptions()
 				}
 				for time.Now().Before(deadline) {
 					img := exec.captureScreen()
@@ -1089,7 +1089,7 @@ func newScriptBootExecutor(cfg vzscriptConfig) *automationExecutor {
 	if debugOCR {
 		debugDir = filepath.Join(vmDir, "debug")
 	}
-	return newAutomationExecutor(NewOCRService(cfg.verbose), cfg.controlSrv, cfg.verbose, debugDir)
+	return newAutomationExecutor(ocrx.NewService(cfg.verbose), cfg.controlSrv, cfg.verbose, debugDir)
 }
 
 func vzWaitMenuTextCmd(cfg vzscriptConfig) script.Cmd {
@@ -1112,7 +1112,7 @@ func vzWaitMenuTextCmd(cfg vzscriptConfig) script.Cmd {
 				return nil, fmt.Errorf("invalid timeout %q: %w", timeout, err)
 			}
 			if exec := newScriptBootExecutor(cfg); exec != nil {
-				return nil, exec.waitForTextWithOptions(text, d, OCRMenuSearchOptions())
+				return nil, exec.waitForTextWithOptions(text, d, ocrx.MenuSearchOptions())
 			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-wait", text, timeout, "menu", d+10*time.Second)
 			if err != nil {
@@ -1167,7 +1167,7 @@ func vzClickMenuItemCmd(cfg vzscriptConfig) script.Cmd {
 				_ = client.SetGUICaptureBackend("auto")
 				_ = client.SetGUIInputBackend("auto")
 			}()
-			ocr := NewOCRService(cfg.verbose)
+			ocr := ocrx.NewService(cfg.verbose)
 			return nil, clickMenuItemViaClient(client, ocr, menu, item, timeout)
 		},
 	)
@@ -1195,7 +1195,7 @@ func vzStartupOptionsCmd(cfg vzscriptConfig) script.Cmd {
 			}
 			client := NewControlClient(cfg.socketPath)
 			client.SetTimeout(timeout)
-			ocr := NewOCRService(cfg.verbose)
+			ocr := ocrx.NewService(cfg.verbose)
 			return nil, activateStartupOptionsViaClient(client, ocr, timeout)
 		},
 	)
@@ -1224,7 +1224,7 @@ func vzRecoveryContinueCmd(cfg vzscriptConfig) script.Cmd {
 			}
 			client := NewControlClient(cfg.socketPath)
 			client.SetTimeout(timeout)
-			ocr := NewOCRService(cfg.verbose)
+			ocr := ocrx.NewService(cfg.verbose)
 			return nil, continueRecoveryLanguageViaClient(client, ocr, timeout)
 		},
 	)
@@ -1396,7 +1396,7 @@ func vzWaitPromptClearCmd(cfg vzscriptConfig) script.Cmd {
 
 			client := NewControlClient(cfg.socketPath)
 			client.SetTimeout(timeout + 10*time.Second)
-			ocr := NewOCRService(cfg.verbose)
+			ocr := ocrx.NewService(cfg.verbose)
 			deadline := time.Now().Add(timeout)
 			lowerNeedle := strings.ToLower(needle)
 			for time.Now().Before(deadline) {

@@ -302,7 +302,7 @@ func (e *automationExecutor) continueRecoveryLanguage(timeout time.Duration) err
 			continue
 		}
 
-		if _, _, found := e.ocr.FindTextWithOptions(img, "Utilities", OCRMenuSearchOptions()); found {
+		if _, _, found := e.ocr.FindTextWithOptions(img, "Utilities", ocrx.MenuSearchOptions()); found {
 			return nil
 		}
 
@@ -351,7 +351,7 @@ func (e *automationExecutor) clickMenuItem(menu, item string, timeout time.Durat
 		return nil
 	}
 
-	opts := OCRMenuSearchOptions()
+	opts := ocrx.MenuSearchOptions()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if err := e.waitForTextWithOptions(menu, 3*time.Second, opts); err != nil {
@@ -753,7 +753,7 @@ func (e *automationExecutor) saveScreenshot() error {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: OCR recognition failed: %v\n", err)
 		}
-		saveOCRDebugScreenshot(img, observations, e.debugDir, "boot-cmd")
+		ocrx.SaveDebugScreenshot(img, observations, e.debugDir, "boot-cmd")
 	}
 	return nil
 }

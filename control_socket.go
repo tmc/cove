@@ -503,7 +503,7 @@ func (s *ControlServer) getOCR() *ocrx.Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ocr == nil {
-		s.ocr = NewOCRService(verbose)
+		s.ocr = ocrx.NewService(verbose)
 	}
 	return s.ocr
 }
@@ -538,7 +538,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		if p.Text == "" {
 			return &controlpb.ControlResponse{Error: "ocr-click requires text"}, true
 		}
-		opts, err := ParseOCRSearchOptions(p.Region)
+		opts, err := ocrx.ParseSearchOptions(p.Region)
 		if err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}
@@ -559,7 +559,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		if p.Text == "" {
 			return &controlpb.ControlResponse{Error: "ocr-wait requires text"}, true
 		}
-		opts, err := ParseOCRSearchOptions(p.Region)
+		opts, err := ocrx.ParseSearchOptions(p.Region)
 		if err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}
@@ -580,7 +580,7 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 		if p.Text == "" {
 			return &controlpb.ControlResponse{Error: "ocr-gone requires text"}, true
 		}
-		opts, err := ParseOCRSearchOptions(p.Region)
+		opts, err := ocrx.ParseSearchOptions(p.Region)
 		if err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}, true
 		}

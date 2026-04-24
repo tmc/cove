@@ -5,10 +5,12 @@ import (
 	"image/color"
 	"image/draw"
 	"testing"
+
+	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
 func TestOCRService_RecognizeText_NilImage(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	_, err := ocr.RecognizeText(nil)
 	if err == nil {
 		t.Fatal("expected error for nil image")
@@ -16,7 +18,7 @@ func TestOCRService_RecognizeText_NilImage(t *testing.T) {
 }
 
 func TestOCRService_RecognizeText_BlankImage(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	img := image.NewRGBA(image.Rect(0, 0, 200, 200))
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.Point{}, draw.Src)
 
@@ -31,7 +33,7 @@ func TestOCRService_RecognizeText_BlankImage(t *testing.T) {
 }
 
 func TestOCRService_FindText_NilImage(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	_, _, found := ocr.FindText(nil, "hello")
 	if found {
 		t.Error("expected found=false for nil image")
@@ -39,7 +41,7 @@ func TestOCRService_FindText_NilImage(t *testing.T) {
 }
 
 func TestOCRService_AllText_NilImage(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	result := ocr.AllText(nil)
 	if result != "" {
 		t.Errorf("expected empty string for nil image, got %q", result)
@@ -48,7 +50,7 @@ func TestOCRService_AllText_NilImage(t *testing.T) {
 
 func TestOCRService_FindText_CaseInsensitive(t *testing.T) {
 	// FindText should be case-insensitive (it lowercases the needle)
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
 
 	// With a blank image, nothing should be found regardless of case
@@ -60,7 +62,7 @@ func TestOCRService_FindText_CaseInsensitive(t *testing.T) {
 
 func TestOCRService_Verbose(t *testing.T) {
 	// Verify verbose mode doesn't panic
-	ocr := NewOCRService(true)
+	ocr := ocrx.NewService(true)
 	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
 	ocr.RecognizeText(img)
 	ocr.FindText(img, "test")
@@ -68,7 +70,7 @@ func TestOCRService_Verbose(t *testing.T) {
 }
 
 func TestOCRService_FindTextNormalized_NilImage(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	_, _, found := ocr.FindTextNormalized(nil, "hello")
 	if found {
 		t.Error("expected found=false for nil image")
@@ -76,7 +78,7 @@ func TestOCRService_FindTextNormalized_NilImage(t *testing.T) {
 }
 
 func TestOCRService_FindTextNormalized_BlankImage(t *testing.T) {
-	ocr := NewOCRService(false)
+	ocr := ocrx.NewService(false)
 	img := image.NewRGBA(image.Rect(0, 0, 800, 600))
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.Point{}, draw.Src)
 
@@ -85,4 +87,3 @@ func TestOCRService_FindTextNormalized_BlankImage(t *testing.T) {
 		t.Error("expected found=false for blank image")
 	}
 }
-
