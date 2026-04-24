@@ -109,9 +109,9 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	// Graphics - use Virtio for Linux with multi-display support
 	displayConfigs := []displayx.Config(displays)
 	if len(displayConfigs) == 0 {
-		displayConfigs = []displayx.Config{GetDefaultDisplayForVM(true)}
+		displayConfigs = []displayx.Config{displayx.DefaultLinuxConfig()}
 	}
-	graphicsConfig, err := CreateVirtioGraphicsConfig(displayConfigs)
+	graphicsConfig, err := displayx.CreateVirtioGraphicsConfig(displayConfigs)
 	if err != nil {
 		return config, fmt.Errorf("create graphics config: %w", err)
 	}

@@ -729,11 +729,16 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	// Graphics with multi-display support
 	displayConfigs := []displayx.Config(displays)
 	if len(displayConfigs) == 0 {
-		displayConfigs = []displayx.Config{DefaultDisplayConfig()}
+		displayConfigs = []displayx.Config{displayx.DefaultConfig()}
 	}
-	graphicsConfig, err := CreateMacGraphicsConfig(displayConfigs)
+	graphicsConfig, err := displayx.CreateMacGraphicsConfig(displayConfigs)
 	if err != nil {
 		return config, fmt.Errorf("create graphics config: %w", err)
+	}
+	if verbose {
+		for i, d := range displayConfigs {
+			fmt.Printf("  Display %d: %dx%d @ %d PPI\n", i+1, d.Width, d.Height, d.PPI)
+		}
 	}
 	setGraphicsDevices(config, graphicsConfig)
 
