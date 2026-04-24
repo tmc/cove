@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/control/operations"
 )
 
 // stubControlServer returns a ControlServer configured with a dummy vmName
@@ -19,7 +21,7 @@ func stubControlServer(t *testing.T) *ControlServer {
 	}
 }
 
-func newTestHandler(t *testing.T, ops *OperationRegistry) (http.Handler, *ControlServer) {
+func newTestHandler(t *testing.T, ops *operations.OperationRegistry) (http.Handler, *ControlServer) {
 	t.Helper()
 	cs := stubControlServer(t)
 	h := NewHTTPHandler(cs, "test", "test-token", ops)
@@ -119,8 +121,8 @@ func TestHTTPPathMismatch(t *testing.T) {
 }
 
 func TestHTTPOperationsRoundTrip(t *testing.T) {
-	store := NewMemOperationStore()
-	reg, err := NewOperationRegistry(store)
+	store := operations.NewMemOperationStore()
+	reg, err := operations.NewOperationRegistry(store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +144,7 @@ func TestHTTPOperationsRoundTrip(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d; body: %s", rec.Code, rec.Body.String())
 	}
-	var got Operation
+	var got operations.Operation
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -158,8 +160,8 @@ func TestHTTPOperationsRoundTrip(t *testing.T) {
 }
 
 func TestHTTPOperationNotFound(t *testing.T) {
-	store := NewMemOperationStore()
-	reg, err := NewOperationRegistry(store)
+	store := operations.NewMemOperationStore()
+	reg, err := operations.NewOperationRegistry(store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,8 +179,8 @@ func TestHTTPOperationNotFound(t *testing.T) {
 }
 
 func TestHTTPOperationList(t *testing.T) {
-	store := NewMemOperationStore()
-	reg, err := NewOperationRegistry(store)
+	store := operations.NewMemOperationStore()
+	reg, err := operations.NewOperationRegistry(store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +199,7 @@ func TestHTTPOperationList(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", rec.Code)
 	}
-	var ops []*Operation
+	var ops []*operations.Operation
 	if err := json.Unmarshal(rec.Body.Bytes(), &ops); err != nil {
 		t.Fatal(err)
 	}
@@ -207,8 +209,8 @@ func TestHTTPOperationList(t *testing.T) {
 }
 
 func TestHTTPOperationSSE(t *testing.T) {
-	store := NewMemOperationStore()
-	reg, err := NewOperationRegistry(store)
+	store := operations.NewMemOperationStore()
+	reg, err := operations.NewOperationRegistry(store)
 	if err != nil {
 		t.Fatal(err)
 	}

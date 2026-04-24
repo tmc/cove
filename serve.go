@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/tmc/vz-macos/internal/control/operations"
 )
 
 type ServeConfig struct {
@@ -88,11 +90,11 @@ func runServeCmd(args []string) error {
 		return fmt.Errorf("home dir: %w", err)
 	}
 	opsDir := filepath.Join(home, ".vz", "operations")
-	store, err := NewFileOperationStore(opsDir)
+	store, err := operations.NewFileOperationStore(opsDir)
 	if err != nil {
 		return fmt.Errorf("operations store: %w", err)
 	}
-	registry, err := NewOperationRegistry(store)
+	registry, err := operations.NewOperationRegistry(store)
 	if err != nil {
 		return fmt.Errorf("operations registry: %w", err)
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/tmc/vz-macos/internal/control/operations"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -26,7 +27,7 @@ type Gateway struct {
 	masterToken string
 	perVMAuth   bool
 	allowlist   map[string]bool // empty = allow all
-	ops         *OperationRegistry
+	ops         *operations.OperationRegistry
 
 	mu      sync.RWMutex
 	routes  map[string]*vmRoute // name -> route
@@ -49,7 +50,7 @@ type vmRoute struct {
 // NewGateway builds a gateway for the VMs rooted at vmDir. It performs an
 // initial route enumeration immediately. The fsnotify watcher and liveness
 // ticker start on Start.
-func NewGateway(vmDir, masterToken string, perVMAuth bool, allowlist []string, ops *OperationRegistry) (*Gateway, error) {
+func NewGateway(vmDir, masterToken string, perVMAuth bool, allowlist []string, ops *operations.OperationRegistry) (*Gateway, error) {
 	al := make(map[string]bool, len(allowlist))
 	for _, name := range allowlist {
 		al[name] = true
