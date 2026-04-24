@@ -11,6 +11,8 @@ var LoadVMConfig = vmconfig.Load
 var SaveVMConfig = vmconfig.Save
 var vmconfigInfoFor = vmconfig.InfoFor
 var vmconfigList = vmconfig.List
+var vmconfigResolveDir = vmconfig.ResolveDir
+var vmconfigEnsureDir = vmconfig.EnsureDir
 
 var GetVMBaseDir = vmconfig.BaseDir
 var GetTemplateDir = vmconfig.TemplateDir

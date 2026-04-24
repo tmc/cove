@@ -57,3 +57,38 @@ func TestIsSubdir(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	legacyPath := filepath.Join(filepath.Dir(BaseDir()), "legacy")
+	if err := os.MkdirAll(legacyPath, 0755); err != nil {
+		t.Fatalf("MkdirAll(legacy) error = %v", err)
+	}
+	if got := ResolveDir("legacy", ""); got != resolvePath(legacyPath) {
+		t.Fatalf("ResolveDir(legacy) = %q, want %q", got, resolvePath(legacyPath))
+	}
+
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	if got := ResolveDir("", explicit); got != explicit {
+		t.Fatalf("ResolveDir(explicit) = %q, want %q", got, explicit)
+	}
+}
+
+func TestEnsureDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	got, err := EnsureDir("fresh", "")
+	if err != nil {
+		t.Fatalf("EnsureDir() error = %v", err)
+	}
+	want := resolvePath(filepath.Join(BaseDir(), "fresh"))
+	if got != want {
+		t.Fatalf("EnsureDir() = %q, want %q", got, want)
+	}
+	if info, err := os.Stat(want); err != nil {
+		t.Fatalf("Stat(%q) error = %v", want, err)
+	} else if !info.IsDir() {
+		t.Fatalf("Stat(%q).IsDir = false, want true", want)
+	}
+}
