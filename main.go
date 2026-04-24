@@ -14,6 +14,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 	"github.com/tmc/vz-macos/internal/bytefmt"
@@ -423,9 +424,12 @@ func main() {
 			return
 		case "disk-detach":
 			diskFile := filepath.Join(vmDir, "disk.img")
-			if err := ensureDiskDetached(diskFile); err != nil {
+			if err := disk.EnsureDetached(diskFile); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
+			}
+			if verbose {
+				fmt.Println("Disk detached successfully.")
 			}
 			return
 		case "up":
