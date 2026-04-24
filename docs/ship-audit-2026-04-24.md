@@ -144,3 +144,67 @@ Recommended action before tagging 0.1: pick one of —
 No VMs were created or modified during this test. `hermes-mlx-go-60g-v10`
 untouched. No registry writes. `go test ./internal/ociimage/...` still
 passes.
+
+## Smoke test: cove up (fresh install)
+
+**Date:** 2026-04-24. **Binary:** `./cove` version `4599ce29`. **IPSW:**
+`~/.vz/cache/RestoreImage.ipsw` (17.6 GB).
+
+**Command:**
+```
+./cove up -user smoketest -password smokepass123 -vm smoketest-vm \
+  -ipsw ~/.vz/cache/RestoreImage.ipsw -headless -disk-size 48 -no-shutdown
+```
+
+**Result: FAIL.** Install phase reported 100% complete, then provisioning
+aborted because the VM disk was missing. Log excerpt:
+
+```
+=== Step 1/3: Installing macOS ===
+…  0.0% … 100.0%
+=== Installation Complete ===
+
+Stopping VM...
+VM stopped.
+warning: disk not found after VM stop: /Users/tmc/.vz/vms/smoketest-vm/disk.img
+  vmDir=/Users/tmc/.vz/vms/smoketest-vm
+  cannot list vmDir: open /Users/tmc/.vz/vms/smoketest-vm: no such file or directory
+
+Provisioning VM disk...
+warning: disk provisioning failed: disk image not found: …/smoketest-vm/disk.img
+…
+
+=== Step 2/3: Provisioning VM ===
+error: stage provisioning: disk image not found: …/smoketest-vm/disk.img
+```
+
+**Post-condition:** entire `/Users/tmc/.vz/vms/smoketest-vm/` directory is
+missing. No `disk.img`, no `aux.img`, no `config.json` — the directory was
+never created under that path, or was removed before the stop handler ran.
+`find /Users/tmc/.vz -name 'smoketest*'` returns nothing.
+
+**Diagnosis:** path-resolution mismatch or install-target divergence in the
+`up` pipeline. Install reports success against a VM target, but the path
+that `stopVMAndInject` (`installer.go:161-187`) stats post-stop
+(`target.Directory` → `~/.vz/vms/<name>/disk.img`) does not exist. Existing
+VMs on disk (e.g., `hermes-mlx-go-60g-v10`) live directly under `~/.vz/<name>/`
+not under `~/.vz/vms/<name>/`, suggesting either (a) the `-vm <name>` target
+resolver pointed install at one path and post-install cleanup at another,
+or (b) install materialized the disk under a temp dir that was cleaned up
+by the installer completion handler before provisioning ran.
+
+**Ship-gate impact on item #1 (`cove up -user <name>` reaches desktop
+without SA handholding):** downgraded from PASS-by-inspection to **FAIL —
+empirical**. The `provisionStrategy=disk` + `SkipSetupAssistant=true` +
+`AutoLogin=true` hardcoding in `up.go:217,275-276` is correct, but the
+install→provision handoff does not reach that code path on a fresh `-vm
+<new-name>` invocation.
+
+**Severity for 0.1 ship: BLOCKER.** This is the flagship command of 0.1.
+A fresh `cove up -user X -vm Y` must produce a bootable provisioned VM;
+today it produces a missing directory. Root cause needs investigation
+before tagging 0.1.
+
+**Test artifacts:** log at `/private/tmp/.../tasks/b0nzggawh.output`.
+hermes-mlx-go-60g-v10 untouched. No cleanup needed (smoketest-vm dir is
+already gone).
