@@ -5,8 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -116,23 +114,7 @@ func ListVMs() ([]VMInfo, error) {
 // If a specific VM name is given (via -vm flag), use that.
 // Otherwise, use the vmDir flag value or the active VM.
 func ResolveVMDir(vmName string) string {
-	// If vmDir is explicitly set to something other than default, use it directly
-	homeDir, _ := os.UserHomeDir()
-	defaultVMDir := filepath.Join(homeDir, ".vz", "vms")
-
-	// If vmName is specified, use it
-	if vmName != "" {
-		return GetVMPath(vmName)
-	}
-
-	// If vmDir is not the default, use it directly (backwards compatibility)
-	if vmDir != "" && vmDir != defaultVMDir && !isSubdir(vmDir, defaultVMDir) {
-		return vmDir
-	}
-
-	// Use active VM or default to "default"
-	activeVM := GetActiveVM()
-	return filepath.Join(GetVMBaseDir(), activeVM)
+	return vmconfigResolveDir(vmName, vmDir)
 }
 
 // FormatSize formats bytes as human-readable size.
@@ -151,22 +133,5 @@ func FormatSize(bytes int64) string {
 
 // EnsureVMDir ensures the VM directory exists and runs migration if needed.
 func EnsureVMDir(vmName string) (string, error) {
-	// Run migration first
-	if err := MigrateIfNeeded(); err != nil {
-		return "", fmt.Errorf("migration failed: %w", err)
-	}
-
-	// Resolve the VM directory
-	resolvedDir := ResolveVMDir(vmName)
-
-	// Create if it doesn't exist
-	if err := os.MkdirAll(resolvedDir, 0755); err != nil {
-		return "", fmt.Errorf("create VM dir: %w", err)
-	}
-
-	if err := ensureVMAlias(vmName, resolvedDir); err != nil {
-		return "", err
-	}
-
-	return resolvePath(resolvedDir), nil
+	return vmconfigEnsureDir(vmName, vmDir)
 }

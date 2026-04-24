@@ -1,6 +1,7 @@
 package vmconfig
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -60,6 +61,33 @@ func PathCandidates(name string) []string {
 		filepath.Join(baseDir, name),
 		filepath.Join(homeDir, name),
 	}
+}
+
+// ResolveDir returns the VM directory for vmName or currentDir.
+func ResolveDir(vmName, currentDir string) string {
+	defaultDir := BaseDir()
+	if vmName != "" {
+		return Path(vmName)
+	}
+	if currentDir != "" && currentDir != defaultDir && !IsSubdir(currentDir, defaultDir) {
+		return currentDir
+	}
+	return filepath.Join(BaseDir(), ActiveName())
+}
+
+// EnsureDir ensures the resolved VM directory exists and returns its real path.
+func EnsureDir(vmName, currentDir string) (string, error) {
+	if err := MigrateIfNeeded(); err != nil {
+		return "", fmt.Errorf("migration failed: %w", err)
+	}
+	resolvedDir := ResolveDir(vmName, currentDir)
+	if err := os.MkdirAll(resolvedDir, 0755); err != nil {
+		return "", fmt.Errorf("create VM dir: %w", err)
+	}
+	if err := EnsureAlias(vmName, resolvedDir); err != nil {
+		return "", err
+	}
+	return resolvePath(resolvedDir), nil
 }
 
 // IsSubdir reports whether path is below base.
