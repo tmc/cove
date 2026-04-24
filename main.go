@@ -282,7 +282,7 @@ func main() {
 	// })
 	// Resolve VM directory using registry (handles migration and VM selection)
 	var err error
-	vmDir, err = EnsureVMDir(vmName)
+	vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -505,7 +505,7 @@ func main() {
 
 		// Re-resolve vmDir if -vm flag was provided after subcommand
 		if vmName != "" {
-			vmDir, err = EnsureVMDir(vmName)
+			vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
@@ -607,13 +607,13 @@ func main() {
 //   - non-GUI mode with 1 VM: run it directly
 //   - non-GUI mode with 2+ VMs: show native VM selector window
 func handleDefaultAction() {
-	vms, err := ListVMs()
+	vms, err := vmconfig.List(detectVMState)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: listing VMs: %v\n", err)
 		os.Exit(1)
 	}
 	if len(vms) == 0 {
-		if info, err := GetVMInfo(vmDir); err == nil {
+		if info, err := vmconfig.InfoFor(vmDir, detectVMState); err == nil {
 			vms = append(vms, *info)
 		}
 	}
@@ -896,7 +896,7 @@ func confirmDeletef(format string, args ...any) (bool, error) {
 // handleList shows all VMs and templates.
 func handleList() {
 	// List VMs
-	vms, err := ListVMs()
+	vms, err := vmconfig.List(detectVMState)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: listing VMs: %v\n", err)
 		os.Exit(1)
