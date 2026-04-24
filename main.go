@@ -595,8 +595,12 @@ func main() {
 			}
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "unknown command: %s\nRun 'cove -help' for usage.\n", cmd)
-			os.Exit(1)
+			if s := suggestCommand(cmd); s != "" {
+				fmt.Fprintf(os.Stderr, "cove: unknown command %q. Did you mean %q?\n", cmd, s)
+			} else {
+				fmt.Fprintf(os.Stderr, "cove: unknown command %q.\nRun 'cove -help' for usage.\n", cmd)
+			}
+			os.Exit(2)
 		}
 	}
 
