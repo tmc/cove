@@ -151,31 +151,3 @@ func goImageFromCGImage(cgImage coregraphics.CGImageRef, cropTopPx int) (image.I
 	}
 	return img, ""
 }
-
-// generateDiff creates a diff image highlighting changes between two images.
-func generateDiff(old, new image.Image) image.Image {
-	return capture.GenerateDiff(old, new)
-}
-
-// scaleImage resizes an image by the given scale factor.
-func scaleImage(img image.Image, scale float64) image.Image {
-	return capture.ScaleImage(img, scale)
-}
-
-// encodeJPEGBytes encodes an image as JPEG with the given quality.
-func encodeJPEGBytes(img image.Image, quality int) ([]byte, string) {
-	data, err := capture.EncodeJPEG(img, quality)
-	if err != nil {
-		return nil, err.Error()
-	}
-	return data, ""
-}
-
-// encodePNGBytes encodes an image as PNG.
-func encodePNGBytes(img image.Image) ([]byte, string) {
-	data, err := capture.EncodePNG(img)
-	if err != nil {
-		return nil, err.Error()
-	}
-	return data, ""
-}

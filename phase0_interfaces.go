@@ -10,6 +10,7 @@ import (
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit/capture"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -209,7 +210,7 @@ func (t inProcessSetupAssistantTransport) ScreenshotScaled(scale float64) (image
 		return nil, err
 	}
 	if scale < 1 {
-		return scaleImage(img, scale), nil
+		return capture.ScaleImage(img, scale), nil
 	}
 	return img, nil
 }
