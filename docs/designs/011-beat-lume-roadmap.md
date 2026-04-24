@@ -116,8 +116,9 @@ disk injection, and the guest agent.
 - `cove up -user <name>` reaches a usable macOS desktop from a fresh install
   without Setup Assistant handholding.
 - `cove run -headless` does not create a GUI window.
-- `cove serve --mcp` and `cove serve -http` both drive a real VM end-to-end.
-- Agents can invoke snapshots and suspend/resume directly over HTTP/MCP.
+- `cove serve --mcp` and `cove serve -http` both operate a pre-existing VM
+  end-to-end (create-VM is a CLI-only path for 0.1).
+- Agents can invoke snapshots and pause/resume directly over HTTP/MCP.
 - `cove pull` of a lume-produced image boots successfully in cove.
 - The Recovery automation path can disable and re-enable SIP on a real VM.
 - `cove dump-docs` emits enough structured data for a client or agent wrapper to
