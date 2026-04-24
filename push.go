@@ -257,6 +257,7 @@ func pushRegistryClient(ref ociimage.Reference, opts pushOptions) ociimage.Regis
 	return ociimage.RegistryClient{
 		BaseURL:       opts.RegistryBaseURL,
 		Authorization: registryAuthorization(ref, opts.RegistryToken),
+		TokenCache:    ociimage.NewRegistryTokenCache(),
 	}
 }
 
