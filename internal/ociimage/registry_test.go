@@ -3,6 +3,7 @@ package ociimage
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -74,6 +75,52 @@ func TestRegistryClientFetchManifestRejectsErrors(t *testing.T) {
 	defer srv.Close()
 	if _, _, err := (RegistryClient{BaseURL: srv.URL}).FetchManifest(context.Background(), ref); err == nil {
 		t.Fatal("FetchManifest() error = nil, want registry error")
+	}
+}
+
+func TestRegistryClientFetchBlob(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/v2/team/vm/blobs/sha256:abcd" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte("blob-data"))
+	}))
+	defer srv.Close()
+
+	body, err := (RegistryClient{BaseURL: srv.URL, Token: "token"}).FetchBlob(context.Background(), ref, "sha256:abcd")
+	if err != nil {
+		t.Fatalf("FetchBlob(): %v", err)
+	}
+	defer body.Close()
+
+	data, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if string(data) != "blob-data" {
+		t.Fatalf("body = %q, want blob-data", string(data))
+	}
+}
+
+func TestRegistryClientFetchBlobRejectsErrors(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	if _, err := (RegistryClient{}).FetchBlob(context.Background(), ref, ""); err == nil {
+		t.Fatal("FetchBlob() error = nil, want empty digest")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	if _, err := (RegistryClient{BaseURL: srv.URL}).FetchBlob(context.Background(), ref, "sha256:abcd"); err == nil {
+		t.Fatal("FetchBlob() error = nil, want registry error")
 	}
 }
 
