@@ -13,6 +13,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	pb "github.com/tmc/vz-macos/proto/agentpb"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -76,7 +77,7 @@ type proxyFlags struct {
 	Running         bool
 	RunningKnown    bool
 	InjectSucceeded bool
-	AgentConfig     *VMAgentConfig
+	AgentConfig     *vmconfig.AgentConfig
 	CapabilityProbe func(context.Context, proxyFlags) proxyCapability
 }
 
@@ -258,7 +259,7 @@ func currentProxyFlags() (proxyFlags, error) {
 	if cfg.RunningKnown {
 		cfg.Running = isVMRunningAt(vmDir)
 	}
-	vmcfg, err := LoadVMConfig(vmDir)
+	vmcfg, err := vmconfig.Load(vmDir)
 	if err != nil {
 		return cfg, fmt.Errorf("load vm config: %w", err)
 	}

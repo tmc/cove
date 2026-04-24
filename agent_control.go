@@ -33,6 +33,7 @@ import (
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -690,7 +691,7 @@ func (s *ControlServer) AgentHealthSummary() string {
 // first boot" from "agent expected, currently waiting" and "no agent
 // configured for this VM."
 func (s *ControlServer) agentNeverConnectedSummary() string {
-	cfg, err := LoadVMConfig(s.vmDir)
+	cfg, err := vmconfig.Load(s.vmDir)
 	if err != nil || cfg == nil || cfg.Agent == nil {
 		return "Agent: not installed"
 	}
@@ -905,7 +906,7 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 
-	cfg, err := LoadVMConfig(s.effectiveVMDir())
+	cfg, err := vmconfig.Load(s.effectiveVMDir())
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("load config: %v", err)}
 	}
