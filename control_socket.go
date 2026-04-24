@@ -81,6 +81,7 @@ type ControlServer struct {
 	httpListeners     *httpListeners // TCP listeners started by StartHTTP
 	lifecycleCtx      context.Context
 	lifecycleCancel   context.CancelFunc
+	lifecycleWG       sync.WaitGroup
 }
 
 // agentHealthState tracks proactive agent health monitoring.
@@ -230,8 +231,15 @@ func (s *ControlServer) Start() error {
 		fmt.Printf("Control auth token: %s\n", GetControlTokenPathForVM(s.effectiveVMDir()))
 	}
 
-	go s.acceptLoop()
-	go s.agentHealthMonitor()
+	s.lifecycleWG.Add(2)
+	go func() {
+		defer s.lifecycleWG.Done()
+		s.acceptLoop()
+	}()
+	go func() {
+		defer s.lifecycleWG.Done()
+		s.agentHealthMonitor()
+	}()
 	return nil
 }
 
@@ -259,6 +267,7 @@ func (s *ControlServer) Stop() {
 	if s.listener != nil {
 		s.listener.Close()
 	}
+	s.lifecycleWG.Wait()
 	os.Remove(s.socketPath)
 }
 
