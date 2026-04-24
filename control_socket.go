@@ -468,8 +468,12 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		if cmd == nil {
 			return &controlpb.ControlResponse{Error: "missing text command payload"}
 		}
-		// Use CGEvent typing via window server (same path as real keyboard input).
-		return s.typeText(cmd)
+		// typeText acquires s.mu per key event to match ctl-key cadence;
+		// the outer lock is released for the duration of the call.
+		s.mu.Unlock()
+		resp := s.typeText(cmd)
+		s.mu.Lock()
+		return resp
 	case "pause":
 		return s.pauseVM()
 	case "resume":
@@ -1487,7 +1491,8 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 
 // typeText types text into the VM character by character. Each character is
 // mapped to its macOS virtual keycode and delivered through the configured
-// automation backend.
+// automation backend. The caller must not hold s.mu; typeText acquires it
+// per key event so each send observes the same state as a fresh key RPC.
 func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlResponse {
 	if s.vmView.ID == 0 || s.window.ID == 0 {
 		return &controlpb.ControlResponse{Error: "text input requires GUI mode (run with -gui)"}
@@ -1495,6 +1500,12 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 
 	if verbose {
 		fmt.Printf("[typeText] typing %d chars: %q\n", len([]rune(cmd.Text)), cmd.Text)
+	}
+
+	send := func(kc *controlpb.KeyCommand) *controlpb.ControlResponse {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.sendKeyEvent(kc)
 	}
 
 	for _, ch := range cmd.Text {
@@ -1517,7 +1528,7 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 			Modifiers: mods,
 			Character: string(ch),
 		}
-		if resp := s.sendKeyEvent(downCmd); resp.Error != "" {
+		if resp := send(downCmd); resp.Error != "" {
 			return resp
 		}
 		time.Sleep(30 * time.Millisecond)
@@ -1528,7 +1539,7 @@ func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlR
 			Modifiers: mods,
 			Character: string(ch),
 		}
-		if resp := s.sendKeyEvent(upCmd); resp.Error != "" {
+		if resp := send(upCmd); resp.Error != "" {
 			return resp
 		}
 		time.Sleep(50 * time.Millisecond)
