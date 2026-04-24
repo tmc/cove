@@ -66,3 +66,23 @@ func Save(dir string, cfg *Config) error {
 	}
 	return nil
 }
+
+// SetPostInstallRecipes persists the selected post-install recipes.
+func SetPostInstallRecipes(dir, recipes string) error {
+	cfg, err := Load(dir)
+	if err != nil {
+		cfg = &Config{}
+	}
+	cfg.PostInstallRecipes = recipes
+	return Save(dir, cfg)
+}
+
+// SetVolumes persists volume mounts.
+func SetVolumes(dir string, mounts []VolumeMount) error {
+	cfg, err := Load(dir)
+	if err != nil {
+		return err
+	}
+	cfg.Volumes = mounts
+	return Save(dir, cfg)
+}

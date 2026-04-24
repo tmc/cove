@@ -9,6 +9,8 @@ type VMInfo = vmconfig.Info
 
 var LoadVMConfig = vmconfig.Load
 var SaveVMConfig = vmconfig.Save
+var vmconfigSetPostInstallRecipes = vmconfig.SetPostInstallRecipes
+var vmconfigSetVolumes = vmconfig.SetVolumes
 var vmconfigInfoFor = vmconfig.InfoFor
 var vmconfigList = vmconfig.List
 var vmconfigResolveDir = vmconfig.ResolveDir

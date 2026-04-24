@@ -61,3 +61,34 @@ func TestSaveLoad(t *testing.T) {
 		t.Fatalf("Load().Agent.VerifiedAt = %v, want %v", got.Agent.VerifiedAt, want.Agent.VerifiedAt)
 	}
 }
+
+func TestSetPostInstallRecipes(t *testing.T) {
+	dir := t.TempDir()
+	if err := SetPostInstallRecipes(dir, "base,tools"); err != nil {
+		t.Fatalf("SetPostInstallRecipes() error = %v", err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.PostInstallRecipes != "base,tools" {
+		t.Fatalf("PostInstallRecipes = %q, want base,tools", got.PostInstallRecipes)
+	}
+}
+
+func TestSetVolumes(t *testing.T) {
+	dir := t.TempDir()
+	mounts := []VolumeMount{
+		{HostPath: "/tmp/share", Tag: "share", ReadOnly: true},
+	}
+	if err := SetVolumes(dir, mounts); err != nil {
+		t.Fatalf("SetVolumes() error = %v", err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(got.Volumes) != 1 || got.Volumes[0].HostPath != "/tmp/share" || got.Volumes[0].Tag != "share" || !got.Volumes[0].ReadOnly {
+		t.Fatalf("Volumes = %#v, want %#v", got.Volumes, mounts)
+	}
+}

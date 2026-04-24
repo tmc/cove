@@ -166,12 +166,7 @@ func getEffectiveVolumes() []VolumeMount {
 
 // saveVolumesToConfig persists volume mounts to the VM config file.
 func saveVolumesToConfig(dir string, mounts []VolumeMount) error {
-	cfg, err := LoadVMConfig(dir)
-	if err != nil {
-		return err
-	}
-	cfg.Volumes = mounts
-	return SaveVMConfig(dir, cfg)
+	return vmconfigSetVolumes(dir, mounts)
 }
 
 // taggedVolumes returns only the volumes that have custom tags (not auto-mount).
