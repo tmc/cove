@@ -40,6 +40,26 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	return cfg, nil
 }
 
+func (cfg ServeConfig) Allowlist() []string {
+	if cfg.VMList == "" {
+		return nil
+	}
+	var allowlist []string
+	for _, name := range strings.Split(cfg.VMList, ",") {
+		if t := strings.TrimSpace(name); t != "" {
+			allowlist = append(allowlist, t)
+		}
+	}
+	return allowlist
+}
+
+func (cfg ServeConfig) ListenAddr() (string, error) {
+	if cfg.ListenURL == "" {
+		return cfg.HTTPAddr, nil
+	}
+	return parseListenURL(cfg.ListenURL)
+}
+
 func runServeCmd(args []string) error {
 	cfg, err := parseServeConfig(args)
 	if err != nil {
@@ -77,27 +97,15 @@ func runServeCmd(args []string) error {
 		return fmt.Errorf("operations registry: %w", err)
 	}
 
-	var allowlist []string
-	if cfg.VMList != "" {
-		for _, name := range strings.Split(cfg.VMList, ",") {
-			if t := strings.TrimSpace(name); t != "" {
-				allowlist = append(allowlist, t)
-			}
-		}
-	}
-
 	vmDir := filepath.Join(home, ".vz", "vms")
-	gw, err := NewGateway(vmDir, masterToken, cfg.PerVMAuth, allowlist, registry)
+	gw, err := NewGateway(vmDir, masterToken, cfg.PerVMAuth, cfg.Allowlist(), registry)
 	if err != nil {
 		return fmt.Errorf("create gateway: %w", err)
 	}
 
-	addr := cfg.HTTPAddr
-	if cfg.ListenURL != "" {
-		addr, err = parseListenURL(cfg.ListenURL)
-		if err != nil {
-			return fmt.Errorf("parse -listen: %w", err)
-		}
+	addr, err := cfg.ListenAddr()
+	if err != nil {
+		return fmt.Errorf("parse -listen: %w", err)
 	}
 
 	ln, err := gw.Start(addr)
