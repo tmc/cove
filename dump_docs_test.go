@@ -26,6 +26,9 @@ func TestBuildDumpDocsAll(t *testing.T) {
 	if got := apiEndpointByPath(docs.API.Endpoints, "POST", "/v1/vms/{name}/snapshot"); got == nil {
 		t.Fatal("missing snapshot API endpoint")
 	}
+	if got := apiEndpointByPath(docs.API.Endpoints, "POST", "/v1/vms/{name}/request-stop"); got == nil {
+		t.Fatal("missing request-stop API endpoint")
+	}
 	if got := apiEndpointByPath(docs.API.Endpoints, "GET", "/v1/vms/{name}/disk-snapshots"); got == nil {
 		t.Fatal("missing disk snapshot API endpoint")
 	}
@@ -158,7 +161,7 @@ func TestBuildMCPDocsIncludesSchemas(t *testing.T) {
 	if docs.ProtocolVersion != mcpProtocolVersion {
 		t.Fatalf("protocol version = %q, want %q", docs.ProtocolVersion, mcpProtocolVersion)
 	}
-	for _, name := range []string{"vm_pause", "vm_resume", "vm_snapshot_save", "vm_disk_snapshot_list", "vm_pit_snapshot_list"} {
+	for _, name := range []string{"vm_pause", "vm_resume", "vm_request_stop", "vm_snapshot_save", "vm_disk_snapshot_list", "vm_pit_snapshot_list"} {
 		tool := mcpToolByName(docs.Tools, name)
 		if tool == nil {
 			t.Fatalf("missing MCP tool %q", name)

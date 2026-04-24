@@ -478,10 +478,18 @@ var mcpToolTable = []mcpTool{
 	},
 	{
 		Name:        "vm_stop",
-		Description: "Gracefully stop a running VM.",
+		Description: "Force-stop a running VM.",
 		Schema:      objectSchema(map[string]any{"name": schemaVMName()}, "name"),
 		build: func(args json.RawMessage, token string) (*controlpb.ControlRequest, error) {
 			return &controlpb.ControlRequest{Type: "stop", AuthToken: token}, nil
+		},
+	},
+	{
+		Name:        "vm_request_stop",
+		Description: "Request graceful guest shutdown with an ACPI power button event.",
+		Schema:      objectSchema(map[string]any{"name": schemaVMName()}, "name"),
+		build: func(args json.RawMessage, token string) (*controlpb.ControlRequest, error) {
+			return &controlpb.ControlRequest{Type: "request-stop", AuthToken: token}, nil
 		},
 	},
 	{

@@ -58,7 +58,8 @@ GET    /v1/vms                               # list VMs + states
 GET    /v1/vms/:name/status                  # state + capabilities
 POST   /v1/vms/:name/pause
 POST   /v1/vms/:name/resume
-POST   /v1/vms/:name/stop                    # no body; graceful stop
+POST   /v1/vms/:name/request-stop            # no body; graceful ACPI power button
+POST   /v1/vms/:name/stop                    # no body; force stop
 GET    /v1/vms/:name/screenshot              # image/png
 POST   /v1/vms/:name/type                    # body: {"text": "..."}
 POST   /v1/vms/:name/key                     # body: {"code": N, "modifiers": M, "key_down": true}
@@ -120,6 +121,13 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:7777/v1/vms/default/resume
+```
+
+### Example: graceful shutdown
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:7777/v1/vms/default/request-stop
 ```
 
 ### Example: send input
