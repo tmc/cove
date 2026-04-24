@@ -15,13 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/control/operations"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // newServeTestRegistry returns an in-memory OperationRegistry for testing.
-func newServeTestRegistry(t *testing.T) *OperationRegistry {
+func newServeTestRegistry(t *testing.T) *operations.OperationRegistry {
 	t.Helper()
-	reg, err := NewOperationRegistry(NewMemOperationStore())
+	reg, err := operations.NewOperationRegistry(operations.NewMemOperationStore())
 	if err != nil {
 		t.Fatalf("NewOperationRegistry: %v", err)
 	}
@@ -380,7 +381,7 @@ func TestGatewayLROCreateVM(t *testing.T) {
 		t.Fatalf("Location header: %q", loc)
 	}
 
-	var opResp Operation
+	var opResp operations.Operation
 	if err := json.NewDecoder(rec.Body).Decode(&opResp); err != nil {
 		t.Fatalf("decode 202 body: %v", err)
 	}
@@ -460,7 +461,7 @@ func TestGatewayGetOperation(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /v1/operations/%s: got %d", op.ID, rec.Code)
 	}
-	var got Operation
+	var got operations.Operation
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}

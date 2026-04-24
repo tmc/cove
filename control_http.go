@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/control/operations"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -19,7 +20,7 @@ import (
 // per-VM ControlServer + its auth token. The vmName parameter is the VM
 // identifier exposed in URL paths (e.g. /v1/vms/<vmName>/status). Operations
 // registry may be nil (per-VM mode); in gateway mode, pass a shared registry.
-func NewHTTPHandler(cs *ControlServer, vmName string, authToken string, ops *OperationRegistry) http.Handler {
+func NewHTTPHandler(cs *ControlServer, vmName string, authToken string, ops *operations.OperationRegistry) http.Handler {
 	h := &httpHandler{
 		cs:        cs,
 		vmName:    vmName,
@@ -33,7 +34,7 @@ type httpHandler struct {
 	cs        *ControlServer
 	vmName    string
 	authToken string
-	ops       *OperationRegistry
+	ops       *operations.OperationRegistry
 }
 
 func (h *httpHandler) buildMux() *http.ServeMux {
@@ -584,7 +585,7 @@ func (h *httpHandler) handleOperationEvents(w http.ResponseWriter, r *http.Reque
 	ctx := r.Context()
 	ch, err := h.ops.Subscribe(ctx, id)
 	if err != nil {
-		if errors.Is(err, ErrOperationNotFound) {
+		if errors.Is(err, operations.ErrOperationNotFound) {
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
 		}
