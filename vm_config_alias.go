@@ -16,3 +16,11 @@ var GetCurrentVMLink = vmconfig.CurrentLink
 var GetVMPath = vmconfig.Path
 
 var isSubdir = vmconfig.IsSubdir
+
+var VMFiles = vmconfig.Files
+var VMFilesRequired = vmconfig.RequiredFiles
+var ValidateVM = vmconfig.Validate
+var ListOrphanVMs = vmconfig.ListOrphans
+var GetActiveVM = vmconfig.ActiveName
+var SetActiveVM = vmconfig.SetActive
+var UnsetActiveVM = vmconfig.UnsetActive
