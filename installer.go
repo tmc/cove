@@ -20,6 +20,7 @@ import (
 	"github.com/tmc/apple/symbols"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // guiUpdate holds pending UI changes that background goroutines request.
@@ -913,7 +914,7 @@ func ipswLooksComplete(path string) bool {
 func resolveOrDownloadIPSW(ctx context.Context) (string, error) {
 	restoreImagePath := ipswPath
 	if restoreImagePath == "" {
-		cacheIPSW := filepath.Join(GetCacheDir(), "RestoreImage.ipsw")
+		cacheIPSW := filepath.Join(vmconfig.CacheDir(), "RestoreImage.ipsw")
 		if ipswLooksComplete(cacheIPSW) {
 			restoreImagePath = cacheIPSW
 		} else {
@@ -922,7 +923,7 @@ func resolveOrDownloadIPSW(ctx context.Context) (string, error) {
 			if ipswLooksComplete(legacyCacheIPSW) {
 				restoreImagePath = legacyCacheIPSW
 			} else {
-				os.MkdirAll(GetCacheDir(), 0755)
+				os.MkdirAll(vmconfig.CacheDir(), 0755)
 				restoreImagePath = cacheIPSW
 				fmt.Println("No cached restore image found, downloading...")
 				fmt.Println()
@@ -948,7 +949,7 @@ func resolveOrDownloadIPSWWithProgress(ctx context.Context, progress progressFun
 		return resolvePath(restoreImagePath), nil
 	}
 
-	cacheIPSW := filepath.Join(GetCacheDir(), "RestoreImage.ipsw")
+	cacheIPSW := filepath.Join(vmconfig.CacheDir(), "RestoreImage.ipsw")
 	if ipswLooksComplete(cacheIPSW) {
 		progress("Found cached restore image", 100)
 		fmt.Printf("  Using cached IPSW: %s\n", cacheIPSW)
@@ -964,7 +965,7 @@ func resolveOrDownloadIPSWWithProgress(ctx context.Context, progress progressFun
 	}
 
 	// No cached image — need to download.
-	os.MkdirAll(GetCacheDir(), 0755)
+	os.MkdirAll(vmconfig.CacheDir(), 0755)
 	restoreImagePath = cacheIPSW
 
 	progress("Fetching restore image URL from Apple...", -1)

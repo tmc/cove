@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -161,7 +162,7 @@ func provisionMacOSIntegrationVM(tb testing.TB, name string) {
 	}
 	ipsw := strings.TrimSpace(*flagIntegrationIPSW)
 	if ipsw == "" {
-		cached := filepath.Join(GetCacheDir(), "RestoreImage.ipsw")
+		cached := filepath.Join(vmconfig.CacheDir(), "RestoreImage.ipsw")
 		if _, err := os.Stat(cached); err == nil {
 			ipsw = cached
 		}
