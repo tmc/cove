@@ -199,6 +199,7 @@ func pushMetadataBlobs(vmDirectory, diskPath string) ([]ociimage.Blob, error) {
 	}{
 		{name: "aux.img", role: "nvram"},
 		{name: "hw.model", role: "hw-model"},
+		{name: "machine.id", role: "machine-id"},
 	}
 	blobs := make([]ociimage.Blob, 0, len(specs))
 	for _, spec := range specs {
