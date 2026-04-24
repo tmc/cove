@@ -997,7 +997,7 @@ func handleClone(args []string) {
 		fmt.Println()
 		fmt.Println("=== Provisioning agent into clone ===")
 		if err := provisionAgentForVM(vmSelection{
-			Directory: GetVMPath(target),
+			Directory: vmconfig.Path(target),
 			Name:      target,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "error: provision agent in clone: %v\n", err)

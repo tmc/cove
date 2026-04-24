@@ -17,6 +17,7 @@ import (
 
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 const (
@@ -95,7 +96,7 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 	if name == "" {
 		return nil, fmt.Errorf("cove pull: destination VM name is empty")
 	}
-	vmDirectory := GetVMPath(name)
+	vmDirectory := vmconfig.Path(name)
 	if err := checkPullTarget(vmDirectory); err != nil {
 		return nil, err
 	}

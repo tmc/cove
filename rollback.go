@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 var (
@@ -33,8 +35,8 @@ func SetupRollbackSnapshotClone(opts RollbackSnapshotCloneOptions) (DisposableCl
 		return DisposableClone{}, err
 	}
 
-	sourcePath := GetVMPath(source)
-	if !ValidateVM(sourcePath) {
+	sourcePath := vmconfig.Path(source)
+	if !vmconfig.Validate(sourcePath) {
 		return DisposableClone{}, fmt.Errorf("source vm not found: %s", source)
 	}
 
@@ -67,13 +69,13 @@ func SetupRollbackSnapshotClone(opts RollbackSnapshotCloneOptions) (DisposableCl
 	if err := cloneFn(cloneOpts); err != nil {
 		return DisposableClone{}, fmt.Errorf("create rollback clone: %w", err)
 	}
-	if err := os.Remove(proxyStatePath(GetVMPath(cloneName))); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(proxyStatePath(vmconfig.Path(cloneName))); err != nil && !os.IsNotExist(err) {
 		return DisposableClone{}, fmt.Errorf("clear proxy state from rollback clone: %w", err)
 	}
 
 	return DisposableClone{
 		Name:      cloneName,
-		Path:      GetVMPath(cloneName),
+		Path:      vmconfig.Path(cloneName),
 		Source:    source,
 		CreatedAt: createdAt,
 	}, nil

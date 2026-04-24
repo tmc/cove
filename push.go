@@ -15,6 +15,7 @@ import (
 
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 type pushOptions struct {
@@ -133,8 +134,8 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 	if err := validatePushReferences(ref, opts); err != nil {
 		return nil, err
 	}
-	vmDirectory := GetVMPath(vmName)
-	if !ValidateVM(vmDirectory) {
+	vmDirectory := vmconfig.Path(vmName)
+	if !vmconfig.Validate(vmDirectory) {
 		return nil, fmt.Errorf("vm not found or invalid: %s", vmDirectory)
 	}
 	if err := ensurePushSourceInactive(vmDirectory); err != nil {

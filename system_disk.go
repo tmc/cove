@@ -117,7 +117,7 @@ func runDisposableCloneFromDiskPath(source, diskPath string, attachmentMode syst
 	disposableSourceDiskPath = diskPath
 	runtimeSystemDiskPathOverride = ""
 	runtimeSystemDiskAttachment = attachmentMode
-	linuxMode = vmconfig.DetectOSType(GetVMPath(source)) == "Linux"
+	linuxMode = vmconfig.DetectOSType(vmconfig.Path(source)) == "Linux"
 	defer func() {
 		disposableMode = prevDisposableMode
 		disposableSourceDiskPath = prevDisposableSourceDiskPath

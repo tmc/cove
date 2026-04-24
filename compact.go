@@ -10,6 +10,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -48,9 +49,9 @@ func handleCompact(args []string) error {
 
 	vmDirectory := vmDir
 	if *target != "" {
-		vmDirectory = GetVMPath(*target)
+		vmDirectory = vmconfig.Path(*target)
 	}
-	if !ValidateVM(vmDirectory) {
+	if !vmconfig.Validate(vmDirectory) {
 		return fmt.Errorf("vm not found or invalid: %s", vmDirectory)
 	}
 

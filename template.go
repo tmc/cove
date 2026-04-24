@@ -85,8 +85,8 @@ func SaveTemplateFast(vmName, templateName string) error {
 // SaveTemplateWithOptions saves a VM as a template with configurable options.
 func SaveTemplateWithOptions(opts SaveTemplateOptions) error {
 	// Validate source VM
-	vmPath := GetVMPath(opts.VMName)
-	if !ValidateVM(vmPath) {
+	vmPath := vmconfig.Path(opts.VMName)
+	if !vmconfig.Validate(vmPath) {
 		return fmt.Errorf("source VM not found: %s", opts.VMName)
 	}
 
@@ -284,7 +284,7 @@ func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
 	}
 
 	// Check VM doesn't exist
-	vmPath := GetVMPath(opts.VMName)
+	vmPath := vmconfig.Path(opts.VMName)
 	if _, err := os.Stat(vmPath); !os.IsNotExist(err) {
 		return fmt.Errorf("vm already exists: %s", opts.VMName)
 	}
