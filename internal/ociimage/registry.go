@@ -1,6 +1,7 @@
 package ociimage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -66,6 +67,85 @@ func (c RegistryClient) FetchBlob(ctx context.Context, ref Reference, digest str
 	return resp.Body, nil
 }
 
+// UploadBlob uploads desc using the OCI monolithic blob upload flow.
+func (c RegistryClient) UploadBlob(ctx context.Context, ref Reference, desc Descriptor, r io.Reader) error {
+	if desc.Digest == "" {
+		return fmt.Errorf("upload blob: missing digest")
+	}
+	if desc.Size < 0 {
+		return fmt.Errorf("upload blob: negative size %d", desc.Size)
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, ref, "blobs/uploads/")
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("upload blob: start: %w", err)
+	}
+	location := resp.Header.Get("Location")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("upload blob: start registry returned %s", resp.Status)
+	}
+	if location == "" {
+		return fmt.Errorf("upload blob: missing upload location")
+	}
+	u, err := uploadURL(resp.Request.URL, location, desc.Digest)
+	if err != nil {
+		return err
+	}
+	put, err := http.NewRequestWithContext(ctx, http.MethodPut, u, r)
+	if err != nil {
+		return fmt.Errorf("upload blob: request: %w", err)
+	}
+	put.ContentLength = desc.Size
+	if c.Token != "" {
+		put.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	put.Header.Set("Content-Type", "application/octet-stream")
+	resp, err = c.httpClient().Do(put)
+	if err != nil {
+		return fmt.Errorf("upload blob: commit: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("upload blob: commit registry returned %s", resp.Status)
+	}
+	return nil
+}
+
+// PushManifest writes manifest to ref's tag or digest.
+func (c RegistryClient) PushManifest(ctx context.Context, ref Reference, manifest Manifest) (string, error) {
+	target := ref.Tag
+	if ref.Digest != "" {
+		target = ref.Digest
+	}
+	if target == "" {
+		return "", fmt.Errorf("push manifest: reference must include tag or digest")
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return "", fmt.Errorf("push manifest: encode: %w", err)
+	}
+	req, err := c.newRequest(ctx, http.MethodPut, ref, "manifests/"+target)
+	if err != nil {
+		return "", err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(data))
+	req.ContentLength = int64(len(data))
+	req.Header.Set("Content-Type", MediaTypeImageManifest)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("push manifest: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("push manifest: registry returned %s", resp.Status)
+	}
+	return resp.Header.Get("Docker-Content-Digest"), nil
+}
+
 // BlobExists reports whether ref's registry already has digest.
 func (c RegistryClient) BlobExists(ctx context.Context, ref Reference, digest string) (bool, error) {
 	if digest == "" {
@@ -123,6 +203,20 @@ func (c RegistryClient) registryURL(ref Reference, suffix string) (string, error
 	u.Path = strings.TrimRight(u.Path, "/") + "/v2/" + ref.Repository + "/" + strings.TrimLeft(suffix, "/")
 	u.RawQuery = ""
 	u.Fragment = ""
+	return u.String(), nil
+}
+
+func uploadURL(base *url.URL, location, digest string) (string, error) {
+	u, err := url.Parse(location)
+	if err != nil {
+		return "", fmt.Errorf("upload blob: parse upload location: %w", err)
+	}
+	if !u.IsAbs() {
+		u = base.ResolveReference(u)
+	}
+	q := u.Query()
+	q.Set("digest", digest)
+	u.RawQuery = q.Encode()
 	return u.String(), nil
 }
 
