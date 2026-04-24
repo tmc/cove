@@ -24,14 +24,15 @@ Full `go test ./...` run: all 13 packages pass, 0 failures (log:
 
 ### Incidental findings
 
-- **`-verbose` ObjC main-thread crash:** not reproduced in this audit; previous
-  report attributed it to `setMainMenu:` firing off-main. `setMainMenu:`
-  is called at `mainmenu.go:91` and `mainmenu.go:152`. Main-thread
-  discipline is enforced via `runOnUIThreadSync` / `drainUIThreadTasks`
-  (`ui_thread.go`), so any call path that reaches `setMainMenu` from a
-  goroutine would trigger the same "API misuse" assertion. Most likely a
-  verbose-gated log path that builds menu items off-thread — needs
-  repro + stack, not in scope here.
+- **`-verbose` ObjC main-thread crash:** **NOT REPRODUCIBLE** on current
+  tip (commit `384b711`, 2026-04-24). Tested both
+  `./cove -verbose run -vm-dir /tmp/fresh -headless` and
+  `./cove -verbose run -vm-dir /tmp/fresh -gui` against an empty VM
+  directory — both reach `VM state transition: Unknown(-1) -> Running`
+  and survive until `SIGTERM`. No `API misuse`, `main thread`,
+  `setMainMenu`, or `NSException` strings in stderr. The earlier
+  session's crash report appears to have been stale or misattributed;
+  no code change required. Left as-is.
 - **Import cycles / dead code:** `go test ./...` passed cleanly; no build
   errors. No cycles flagged.
 - **Test suite:** 13 packages, all green; runtime ~8s.
