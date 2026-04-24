@@ -234,25 +234,6 @@ func TestBuildPullPlanRejectsIncompleteTarget(t *testing.T) {
 	}
 }
 
-func TestPullRegistryToken(t *testing.T) {
-	ref := ociimage.Reference{Registry: "ghcr.io"}
-	if got := pullRegistryToken(ref, pullOptions{RegistryToken: "explicit"}); got != "explicit" {
-		t.Fatalf("token = %q, want explicit", got)
-	}
-	t.Setenv("COVE_REGISTRY_TOKEN", "cove-token")
-	if got := pullRegistryToken(ref, pullOptions{}); got != "cove-token" {
-		t.Fatalf("token = %q, want cove-token", got)
-	}
-	t.Setenv("COVE_REGISTRY_TOKEN", "")
-	t.Setenv("GITHUB_TOKEN", "github-token")
-	if got := pullRegistryToken(ref, pullOptions{}); got != "github-token" {
-		t.Fatalf("token = %q, want github-token", got)
-	}
-	if got := pullRegistryToken(ociimage.Reference{Registry: "registry.example.com"}, pullOptions{}); got != "" {
-		t.Fatalf("token = %q, want empty", got)
-	}
-}
-
 func writePullTestManifest(t *testing.T) string {
 	t.Helper()
 

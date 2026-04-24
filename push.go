@@ -255,22 +255,9 @@ func pushImage(ctx context.Context, plan *pushPlan, opts pushOptions) error {
 
 func pushRegistryClient(ref ociimage.Reference, opts pushOptions) ociimage.RegistryClient {
 	return ociimage.RegistryClient{
-		BaseURL: opts.RegistryBaseURL,
-		Token:   pushRegistryToken(ref, opts),
+		BaseURL:       opts.RegistryBaseURL,
+		Authorization: registryAuthorization(ref, opts.RegistryToken),
 	}
-}
-
-func pushRegistryToken(ref ociimage.Reference, opts pushOptions) string {
-	if opts.RegistryToken != "" {
-		return opts.RegistryToken
-	}
-	if token := strings.TrimSpace(os.Getenv("COVE_REGISTRY_TOKEN")); token != "" {
-		return token
-	}
-	if ref.Registry == "ghcr.io" {
-		return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
-	}
-	return ""
 }
 
 func uploadBytesBlob(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, desc ociimage.Descriptor, data []byte) error {

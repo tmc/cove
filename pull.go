@@ -313,22 +313,9 @@ func pullBlobToFile(ctx context.Context, client ociimage.RegistryClient, ref oci
 
 func pullRegistryClient(ref ociimage.Reference, opts pullOptions) ociimage.RegistryClient {
 	return ociimage.RegistryClient{
-		BaseURL: opts.RegistryBaseURL,
-		Token:   pullRegistryToken(ref, opts),
+		BaseURL:       opts.RegistryBaseURL,
+		Authorization: registryAuthorization(ref, opts.RegistryToken),
 	}
-}
-
-func pullRegistryToken(ref ociimage.Reference, opts pullOptions) string {
-	if opts.RegistryToken != "" {
-		return opts.RegistryToken
-	}
-	if token := strings.TrimSpace(os.Getenv("COVE_REGISTRY_TOKEN")); token != "" {
-		return token
-	}
-	if ref.Registry == "ghcr.io" {
-		return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
-	}
-	return ""
 }
 
 func writePullProvenance(vmDir, digest string) error {

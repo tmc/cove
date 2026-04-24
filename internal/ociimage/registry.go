@@ -13,9 +13,10 @@ import (
 
 // RegistryClient talks to an OCI distribution registry.
 type RegistryClient struct {
-	Client  *http.Client
-	BaseURL string
-	Token   string
+	Client        *http.Client
+	BaseURL       string
+	Token         string
+	Authorization string
 }
 
 // FetchManifest fetches and decodes ref's OCI image manifest.
@@ -100,9 +101,7 @@ func (c RegistryClient) UploadBlob(ctx context.Context, ref Reference, desc Desc
 		return fmt.Errorf("upload blob: request: %w", err)
 	}
 	put.ContentLength = desc.Size
-	if c.Token != "" {
-		put.Header.Set("Authorization", "Bearer "+c.Token)
-	}
+	c.setAuthorization(put)
 	put.Header.Set("Content-Type", "application/octet-stream")
 	resp, err = c.httpClient().Do(put)
 	if err != nil {
@@ -179,10 +178,17 @@ func (c RegistryClient) newRequest(ctx context.Context, method string, ref Refer
 	if err != nil {
 		return nil, fmt.Errorf("registry request: %w", err)
 	}
-	if c.Token != "" {
+	c.setAuthorization(req)
+	return req, nil
+}
+
+func (c RegistryClient) setAuthorization(req *http.Request) {
+	switch {
+	case c.Authorization != "":
+		req.Header.Set("Authorization", c.Authorization)
+	case c.Token != "":
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	return req, nil
 }
 
 func (c RegistryClient) registryURL(ref Reference, suffix string) (string, error) {
