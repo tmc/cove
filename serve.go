@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -264,7 +265,9 @@ func startHTTPForRun(cs *ControlServer, addr, name string) (net.Listener, error)
 	}
 	go func() {
 		if err := http.Serve(ln, handler); err != nil && !isClosedError(err) {
-			fmt.Fprintf(os.Stderr, "cove: http server: %v\n", err)
+			slog.Error("http server",
+				slog.String("vm", name),
+				slog.Any("err", err))
 		}
 	}()
 	return ln, nil
