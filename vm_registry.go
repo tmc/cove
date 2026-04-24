@@ -61,7 +61,7 @@ func saveHardwareConfig(dir string) {
 }
 
 // GetVMInfo returns information about a specific VM.
-func GetVMInfo(vmPath string) (*VMInfo, error) {
+func GetVMInfo(vmPath string) (*vmconfig.Info, error) {
 	return vmconfig.InfoFor(vmPath, detectVMState)
 }
 
@@ -86,7 +86,7 @@ func isVMRunningAt(vmPath string) bool {
 }
 
 // ListVMs returns all VMs in the base directory.
-func ListVMs() ([]VMInfo, error) {
+func ListVMs() ([]vmconfig.Info, error) {
 	return vmconfig.List(detectVMState)
 }
 
