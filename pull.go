@@ -12,12 +12,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/ociimage"
 )
 
-const pullManifestFetchTimeout = 30 * time.Second
+const (
+	pullManifestFetchTimeout = 30 * time.Second
+	pullChunkWorkers         = 4
+)
 
 type pullOptions struct {
 	As              string
@@ -193,22 +197,8 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}()
 
 	client := pullRegistryClient(plan.Ref, opts)
-	for _, layer := range plan.Manifest.DiskLayers {
-		if layer.Chunk.Zero {
-			continue
-		}
-		body, err := client.FetchBlob(ctx, plan.Ref, layer.Descriptor.Digest)
-		if err != nil {
-			return err
-		}
-		err = ociimage.WriteCompressedChunkAt(disk, layer.Chunk, layer.Descriptor, body)
-		closeErr := body.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close blob: %w", closeErr)
-		}
+	if err := pullDiskChunks(ctx, client, plan, disk); err != nil {
+		return err
 	}
 	if err := pullMetadataBlobs(ctx, client, plan); err != nil {
 		return err
@@ -228,6 +218,84 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}
 	if err := syncPullDir(plan.VMDir); err != nil {
 		return fmt.Errorf("fsync VM directory: %w", err)
+	}
+	return nil
+}
+
+func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, disk io.WriterAt) error {
+	layers := nonZeroDiskLayers(plan.Manifest.DiskLayers)
+	if len(layers) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan ociimage.DiskLayer)
+	errc := make(chan error, 1)
+	var wg sync.WaitGroup
+	workers := pullChunkWorkers
+	if len(layers) < workers {
+		workers = len(layers)
+	}
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for layer := range jobs {
+				if err := pullDiskChunk(ctx, client, plan.Ref, disk, layer); err != nil {
+					select {
+					case errc <- err:
+					default:
+					}
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+send:
+	for _, layer := range layers {
+		select {
+		case jobs <- layer:
+		case <-ctx.Done():
+			break send
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	select {
+	case err := <-errc:
+		return err
+	default:
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func nonZeroDiskLayers(layers []ociimage.DiskLayer) []ociimage.DiskLayer {
+	out := make([]ociimage.DiskLayer, 0, len(layers))
+	for _, layer := range layers {
+		if !layer.Chunk.Zero {
+			out = append(out, layer)
+		}
+	}
+	return out
+}
+
+func pullDiskChunk(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, disk io.WriterAt, layer ociimage.DiskLayer) error {
+	body, err := client.FetchBlob(ctx, ref, layer.Descriptor.Digest)
+	if err != nil {
+		return err
+	}
+	err = ociimage.WriteCompressedChunkAt(disk, layer.Chunk, layer.Descriptor, body)
+	closeErr := body.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close blob: %w", closeErr)
 	}
 	return nil
 }
