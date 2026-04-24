@@ -25,7 +25,6 @@ import (
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/apple/x/vzkit/input"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	"github.com/tmc/apple/x/vzkit/vm"
 	"github.com/tmc/apple/x/vzkit/vminput"
@@ -1037,7 +1036,7 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
 	})
 
-	event, err := input.CreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	event, err := createKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
 	}
@@ -1048,15 +1047,15 @@ func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlp
 
 	chars := keyboardEventUnicodeString(cmd)
 	if chars != "" {
-		input.SetUnicodeString(event, chars)
+		setEventUnicodeString(event, chars)
 	}
 	if cmd.Modifiers != 0 {
-		input.SetFlags(event, uint64(cmd.Modifiers))
+		setEventFlags(event, uint64(cmd.Modifiers))
 	}
 
 	// Try both delivery methods: first activate the app, then post through
 	// the HID event tap (window server path). Also post to PID as fallback.
-	if err := input.Post(input.HIDEventTap, event); err != nil {
+	if err := postEvent(cgHIDEventTap, event); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CG: %v", err)}
 	}
 	if verbose {
@@ -1106,7 +1105,7 @@ func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlp
 }
 
 func (s *ControlServer) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NSEvent, error) {
-	cgEvent, err := input.CreateKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	cgEvent, err := createKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
 	if err != nil {
 		return appkit.NSEvent{}, fmt.Errorf("create CGEvent: %v", err)
 	}
@@ -1116,10 +1115,10 @@ func (s *ControlServer) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NS
 
 	chars := keyboardEventUnicodeString(cmd)
 	if chars != "" {
-		input.SetUnicodeString(cgEvent, chars)
+		setEventUnicodeString(cgEvent, chars)
 	}
 	if cmd.Modifiers != 0 {
-		input.SetFlags(cgEvent, uint64(cmd.Modifiers))
+		setEventFlags(cgEvent, uint64(cmd.Modifiers))
 	}
 
 	eventID := objc.Send[objc.ID](
@@ -1444,22 +1443,22 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 	var mouseButton uint32 = uint32(cmd.Button)
 	switch cmd.Action {
 	case "move":
-		eventType = input.EventMouseMoved
+		eventType = cgEventMouseMoved
 	case "down":
 		switch cmd.Button {
 		case 0:
-			eventType = input.EventLeftMouseDown
+			eventType = cgEventLeftMouseDown
 		case 1:
-			eventType = input.EventRightMouseDown
+			eventType = cgEventRightMouseDown
 		default:
 			return &controlpb.ControlResponse{Error: "only left (0) and right (1) buttons supported"}
 		}
 	case "up":
 		switch cmd.Button {
 		case 0:
-			eventType = input.EventLeftMouseUp
+			eventType = cgEventLeftMouseUp
 		case 1:
-			eventType = input.EventRightMouseUp
+			eventType = cgEventRightMouseUp
 		default:
 			return &controlpb.ControlResponse{Error: "only left (0) and right (1) buttons supported"}
 		}
@@ -1468,7 +1467,7 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 	}
 
 	// Create and post CGEvent
-	event, err := input.CreateMouseEvent(0, eventType, position, mouseButton)
+	event, err := createMouseEvent(0, eventType, position, mouseButton)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
 	}
@@ -1479,7 +1478,7 @@ func (s *ControlServer) sendMouseEventCGEvent(cmd *controlpb.MouseCommand) *cont
 
 	// Post through the system HID event tap so events travel the same
 	// path as real mouse input (window server → focused app → key window).
-	if err := input.Post(input.HIDEventTap, event); err != nil {
+	if err := postEvent(cgHIDEventTap, event); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CG: %v", err)}
 	}
 

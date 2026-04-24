@@ -7,11 +7,10 @@ import (
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/objc"
-	"github.com/tmc/apple/x/vzkit/input"
 )
 
 func ensureInputInit() error {
-	event, err := input.CreateKeyboardEvent(0, 0, false)
+	event, err := createKeyboardEvent(0, 0, false)
 	if event != 0 {
 		corefoundation.CFRelease(corefoundation.CFTypeRef(event))
 	}
@@ -154,7 +153,7 @@ func TestPrivateHIDKeyboardEventConstruction(t *testing.T) {
 	for _, tc := range keycodes {
 		t.Run(tc.name, func(t *testing.T) {
 			// Key down.
-			cgDown, err := input.CreateKeyboardEvent(0, tc.keyCode, true)
+			cgDown, err := createKeyboardEvent(0, tc.keyCode, true)
 			if err != nil {
 				t.Fatalf("create key down: %v", err)
 			}
@@ -162,7 +161,7 @@ func TestPrivateHIDKeyboardEventConstruction(t *testing.T) {
 				t.Fatal("CreateKeyboardEvent returned nil for key down")
 			}
 			if tc.char != "" {
-				if err := input.SetUnicodeString(cgDown, tc.char); err != nil {
+				if err := setEventUnicodeString(cgDown, tc.char); err != nil {
 					t.Fatalf("set unicode string: %v", err)
 				}
 			}
@@ -180,7 +179,7 @@ func TestPrivateHIDKeyboardEventConstruction(t *testing.T) {
 			// Verify keyCode is preserved through the CGEvent->NSEvent path.
 			// This is the critical test: objc.Send corrupts keyCode when it's
 			// passed at argument position 10 in keyEventWithType:..., but
-			// input.CreateKeyboardEvent (C function via purego) passes it correctly.
+			// createKeyboardEvent (C function via purego) passes it correctly.
 			gotKeyCode := objc.Send[uint16](nsDown, objc.Sel("keyCode"))
 			t.Logf("keyCode: want=%d got=%d", tc.keyCode, gotKeyCode)
 			if gotKeyCode != tc.keyCode {
@@ -188,7 +187,7 @@ func TestPrivateHIDKeyboardEventConstruction(t *testing.T) {
 			}
 
 			// Key up.
-			cgUp, err := input.CreateKeyboardEvent(0, tc.keyCode, false)
+			cgUp, err := createKeyboardEvent(0, tc.keyCode, false)
 			if err != nil {
 				t.Fatalf("create key up: %v", err)
 			}
@@ -240,7 +239,7 @@ func TestPrivateHIDNSArrayEventFormat(t *testing.T) {
 		t.Fatalf("CGEvent init: %v", err)
 	}
 
-	cgEvent, err := input.CreateMouseEvent(0, input.EventMouseMoved, corefoundation.CGPoint{X: 100, Y: 100}, 0)
+	cgEvent, err := createMouseEvent(0, uint32(cgEventMouseMoved), corefoundation.CGPoint{X: 100, Y: 100}, 0)
 	if err != nil {
 		t.Fatalf("create mouse event: %v", err)
 	}
@@ -340,7 +339,7 @@ func TestPrivateHIDCGEventToNSEventRoundTrip(t *testing.T) {
 
 	t.Run("MouseMoved", func(t *testing.T) {
 		pos := corefoundation.CGPoint{X: 200.5, Y: 300.75}
-		cg, err := input.CreateMouseEvent(0, input.EventMouseMoved, pos, 0)
+		cg, err := createMouseEvent(0, uint32(cgEventMouseMoved), pos, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -360,7 +359,7 @@ func TestPrivateHIDCGEventToNSEventRoundTrip(t *testing.T) {
 
 	t.Run("LeftMouseDown", func(t *testing.T) {
 		pos := corefoundation.CGPoint{X: 100, Y: 200}
-		cg, err := input.CreateMouseEvent(0, input.EventLeftMouseDown, pos, 0)
+		cg, err := createMouseEvent(0, uint32(cgEventLeftMouseDown), pos, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -379,7 +378,7 @@ func TestPrivateHIDCGEventToNSEventRoundTrip(t *testing.T) {
 
 	t.Run("KeyDownWithKeyCode", func(t *testing.T) {
 		// Test that keyCode 36 (Return) survives the round-trip.
-		cg, err := input.CreateKeyboardEvent(0, 36, true)
+		cg, err := createKeyboardEvent(0, 36, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -399,13 +398,13 @@ func TestPrivateHIDCGEventToNSEventRoundTrip(t *testing.T) {
 
 	t.Run("KeyDownWithModifiers", func(t *testing.T) {
 		// Test Shift+A (keyCode=0, shift flag).
-		cg, err := input.CreateKeyboardEvent(0, 0, true)
+		cg, err := createKeyboardEvent(0, 0, true)
 		if err != nil {
 			t.Fatal(err)
 		}
 		// Set shift modifier (1 << 17 = 0x20000 = NSEventModifierFlagShift).
-		input.SetFlags(cg, 1<<17)
-		input.SetUnicodeString(cg, "A")
+		setEventFlags(cg, 1<<17)
+		setEventUnicodeString(cg, "A")
 
 		ns := objc.Send[objc.ID](
 			objc.ID(objc.GetClass("NSEvent")),
