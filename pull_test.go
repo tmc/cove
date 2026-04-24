@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/tmc/vz-macos/internal/ociimage"
 )
@@ -123,6 +125,82 @@ func TestPullDiskDownloadsRegistryChunks(t *testing.T) {
 		if string(got) != tt.want {
 			t.Fatalf("%s = %q, want %q", tt.name, string(got), tt.want)
 		}
+	}
+}
+
+func TestPullDiskDownloadsChunksConcurrently(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	diskData := []byte("aaaabbbbccccdddd")
+	manifest, blobs, diskDigests := pullCompressedChunkedTestManifest(t, diskData, 4)
+
+	var (
+		mu         sync.Mutex
+		active     int
+		concurrent bool
+	)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/me/dev-vm/manifests/v1":
+			w.Header().Set("Docker-Content-Digest", "sha256:manifest")
+			if err := json.NewEncoder(w).Encode(manifest); err != nil {
+				t.Fatalf("Encode() error = %v", err)
+			}
+		default:
+			const prefix = "/v2/me/dev-vm/blobs/"
+			if !strings.HasPrefix(r.URL.Path, prefix) {
+				t.Fatalf("path = %q", r.URL.Path)
+			}
+			digest := strings.TrimPrefix(r.URL.Path, prefix)
+			data, ok := blobs[digest]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			if diskDigests[digest] {
+				mu.Lock()
+				active++
+				if active > 1 {
+					concurrent = true
+					releaseOnce.Do(func() { close(release) })
+				}
+				mu.Unlock()
+				select {
+				case <-release:
+				case <-time.After(250 * time.Millisecond):
+					releaseOnce.Do(func() { close(release) })
+				}
+				mu.Lock()
+				active--
+				mu.Unlock()
+			}
+			_, _ = w.Write(data)
+		}
+	}))
+	defer srv.Close()
+
+	opts := pullOptions{RegistryBaseURL: srv.URL}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(): %v", err)
+	}
+	mu.Lock()
+	gotConcurrent := concurrent
+	mu.Unlock()
+	if !gotConcurrent {
+		t.Fatal("disk chunks were not fetched concurrently")
+	}
+	got, err := os.ReadFile(filepath.Join(home, ".vz", "vms", "dev-vm", "disk.img"))
+	if err != nil {
+		t.Fatalf("ReadFile(disk.img): %v", err)
+	}
+	if !bytes.Equal(got, diskData) {
+		t.Fatalf("disk = %q, want %q", got, diskData)
 	}
 }
 
@@ -268,19 +346,28 @@ func pullTestManifest(t *testing.T) ociimage.Manifest {
 func pullCompressedTestManifest(t *testing.T, disk []byte) (ociimage.Manifest, map[string][]byte) {
 	t.Helper()
 
-	chunk := ociimage.Chunk{
-		Index:  0,
-		Offset: 0,
-		Size:   int64(len(disk)),
-		Digest: pushTestDigest(disk),
-	}
-	prepared, err := ociimage.PrepareChunkLayer(bytes.NewReader(disk), chunk, 1, false)
+	manifest, blobs, _ := pullCompressedChunkedTestManifest(t, disk, int64(len(disk)))
+	return manifest, blobs
+}
+
+func pullCompressedChunkedTestManifest(t *testing.T, disk []byte, chunkSize int64) (ociimage.Manifest, map[string][]byte, map[string]bool) {
+	t.Helper()
+
+	chunks, err := ociimage.DescribeChunks(bytes.NewReader(disk), chunkSize)
 	if err != nil {
-		t.Fatalf("PrepareChunkLayer(): %v", err)
+		t.Fatalf("DescribeChunks() error = %v", err)
 	}
-	layers := []ociimage.Descriptor{prepared.Descriptor}
-	blobs := map[string][]byte{
-		prepared.Descriptor.Digest: prepared.Data,
+	layers := make([]ociimage.Descriptor, 0, len(chunks)+3)
+	blobs := map[string][]byte{}
+	diskDigests := map[string]bool{}
+	for _, chunk := range chunks {
+		prepared, err := ociimage.PrepareChunkLayer(bytes.NewReader(disk), chunk, len(chunks), false)
+		if err != nil {
+			t.Fatalf("PrepareChunkLayer(): %v", err)
+		}
+		layers = append(layers, prepared.Descriptor)
+		blobs[prepared.Descriptor.Digest] = prepared.Data
+		diskDigests[prepared.Descriptor.Digest] = true
 	}
 	for _, blob := range []struct {
 		role string
@@ -310,7 +397,7 @@ func pullCompressedTestManifest(t *testing.T, disk []byte) (ociimage.Manifest, m
 		},
 		Layers: layers,
 	}
-	return manifest, blobs
+	return manifest, blobs, diskDigests
 }
 
 func pullTestRegistry(t *testing.T, manifest ociimage.Manifest, blobs map[string][]byte) *httptest.Server {
