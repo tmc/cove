@@ -23,6 +23,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
 	"github.com/tmc/vz-macos/internal/assets"
+	"github.com/tmc/vz-macos/internal/bytefmt"
 )
 
 var errVMStartupInProgress = errors.New("vm startup already in progress")
@@ -1238,7 +1239,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 			moveAsideSuspendState("config-mismatch")
 		} else {
 			if info, err := os.Stat(stateFile); err == nil {
-				fmt.Printf("Restoring VM from suspended state (%s)...\n", FormatSize(info.Size()))
+				fmt.Printf("Restoring VM from suspended state (%s)...\n", bytefmt.Size(info.Size()))
 			} else {
 				fmt.Println("Restoring VM from suspended state...")
 			}
@@ -1768,7 +1769,7 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 
 	if info, err := os.Stat(stateFile); err == nil {
-		fmt.Printf("VM state saved (%s)\n", FormatSize(info.Size()))
+		fmt.Printf("VM state saved (%s)\n", bytefmt.Size(info.Size()))
 	}
 
 	// Save config fingerprint so we can detect mismatches on restore.

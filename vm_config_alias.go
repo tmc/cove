@@ -1,9 +1,6 @@
 package main
 
-import (
-	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-)
+import "github.com/tmc/vz-macos/internal/vmconfig"
 
 type VMConfig = vmconfig.Config
 type VMAgentConfig = vmconfig.AgentConfig
@@ -14,7 +11,6 @@ type vmconfigHardwareExplicit = vmconfig.HardwareExplicit
 
 var LoadVMConfig = vmconfig.Load
 var SaveVMConfig = vmconfig.Save
-var formatByteSize = bytefmt.Size
 var vmconfigApplyHardware = vmconfig.ApplyHardware
 var vmconfigSetHardware = vmconfig.SetHardware
 var vmconfigSetPostInstallRecipes = vmconfig.SetPostInstallRecipes

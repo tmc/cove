@@ -20,6 +20,7 @@ import (
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 
+	"github.com/tmc/vz-macos/internal/bytefmt"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 
 	"golang.org/x/tools/txtar"
@@ -138,7 +139,7 @@ func selectorRowTitle(vm VMInfo, activeVM string) string {
 }
 
 func selectorRowSubtitle(vm VMInfo) string {
-	return fmt.Sprintf("%s | %s | %s", vm.OSType, FormatSize(vm.DiskSize), vm.Created.Format("2006-01-02"))
+	return fmt.Sprintf("%s | %s | %s", vm.OSType, bytefmt.Size(vm.DiskSize), vm.Created.Format("2006-01-02"))
 }
 
 func selectorLabel(
@@ -1851,7 +1852,7 @@ func (s *VMSelector) updateDetailsPanel(vm *VMInfo) {
 	s.detailTitle.SetStringValue(title)
 	s.detailState.SetStringValue(selectorStateText(*vm))
 	s.detailOS.SetStringValue(vm.OSType)
-	s.detailSize.SetStringValue(FormatSize(vm.DiskSize))
+	s.detailSize.SetStringValue(bytefmt.Size(vm.DiskSize))
 	s.detailDate.SetStringValue(vm.Created.Format("2006-01-02 15:04"))
 	s.detailPath.SetStringValue(vm.Path)
 }
@@ -1945,7 +1946,7 @@ func (s *VMSelector) objectValueForColumn(_ objc.ID, _ objc.SEL, _ objc.ID, colI
 	case "os":
 		value = vm.OSType
 	case "size":
-		value = FormatSize(vm.DiskSize)
+		value = bytefmt.Size(vm.DiskSize)
 	case "created":
 		value = vm.Created.Format("2006-01-02")
 	}

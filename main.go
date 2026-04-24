@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
+	"github.com/tmc/vz-macos/internal/bytefmt"
 	"golang.org/x/term"
 )
 
@@ -912,7 +913,7 @@ func handleList() {
 				vm.Name,
 				vm.OSType,
 				vm.State,
-				FormatSize(vm.DiskSize),
+				bytefmt.Size(vm.DiskSize),
 				vm.Created.Format("2006-01-02"),
 				active)
 		}
@@ -929,7 +930,7 @@ func handleList() {
 		for _, t := range templates {
 			fmt.Fprintf(w, "  %s\t%s\t%s\n",
 				t.Name,
-				FormatSize(t.DiskSize),
+				bytefmt.Size(t.DiskSize),
 				t.Created.Format("2006-01-02"))
 		}
 		w.Flush()
@@ -1065,7 +1066,7 @@ func handleTemplate(args []string) {
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 				t.Name,
-				FormatSize(t.DiskSize),
+				bytefmt.Size(t.DiskSize),
 				mode,
 				t.Created.Format("2006-01-02"))
 		}
@@ -1237,7 +1238,7 @@ func handleSnapshotCommand(args []string) {
 		for _, s := range snapshots {
 			fmt.Fprintf(w, "%s\t%s\t%s\n",
 				s.Name,
-				FormatSize(s.Size),
+				bytefmt.Size(s.Size),
 				s.Created.Format("2006-01-02 15:04"))
 		}
 		w.Flush()

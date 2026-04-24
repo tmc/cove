@@ -10,6 +10,7 @@ import (
 
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/configcodec"
+	"github.com/tmc/vz-macos/internal/bytefmt"
 )
 
 const vmFrameworkConfigFileName = "framework-config.vzcfg"
@@ -303,7 +304,7 @@ func summarizeExportedFrameworkConfig(config vz.VZVirtualMachineConfiguration) f
 func printFrameworkConfigSummary(label string, summary frameworkConfigSummary) {
 	fmt.Println(label + ":")
 	fmt.Printf("  cpu: %d\n", summary.CPU)
-	fmt.Printf("  memory: %s\n", FormatSize(int64(summary.MemoryBytes)))
+	fmt.Printf("  memory: %s\n", bytefmt.Size(int64(summary.MemoryBytes)))
 	fmt.Printf("  boot loader: %s\n", emptyIfBlank(summary.BootLoader))
 	fmt.Printf("  platform: %s\n", emptyIfBlank(summary.Platform))
 	fmt.Printf("  devices: storage=%d graphics=%d network=%d console=%d serial=%d entropy=%d audio=%d shared=%d keyboards=%d pointing=%d usb=%d sockets=%d balloon=%d\n",

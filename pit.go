@@ -16,6 +16,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/configcodec"
 	"github.com/tmc/apple/x/vzkit/storagehotplug"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
+	"github.com/tmc/vz-macos/internal/bytefmt"
 	"golang.org/x/sys/unix"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -808,5 +809,5 @@ func formatPITSize(size int64) string {
 	if size <= 0 {
 		return "-"
 	}
-	return FormatSize(size)
+	return bytefmt.Size(size)
 }
