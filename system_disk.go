@@ -8,6 +8,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	pvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 type systemDiskAttachmentMode int
@@ -33,7 +34,7 @@ func (m systemDiskAttachmentMode) String() string {
 }
 
 func vmPrimaryDiskPath(vmPath string) string {
-	if detectOSType(vmPath) == "Linux" {
+	if vmconfig.DetectOSType(vmPath) == "Linux" {
 		return filepath.Join(vmPath, "linux-disk.img")
 	}
 	return filepath.Join(vmPath, "disk.img")
@@ -116,7 +117,7 @@ func runDisposableCloneFromDiskPath(source, diskPath string, attachmentMode syst
 	disposableSourceDiskPath = diskPath
 	runtimeSystemDiskPathOverride = ""
 	runtimeSystemDiskAttachment = attachmentMode
-	linuxMode = detectOSType(GetVMPath(source)) == "Linux"
+	linuxMode = vmconfig.DetectOSType(GetVMPath(source)) == "Linux"
 	defer func() {
 		disposableMode = prevDisposableMode
 		disposableSourceDiskPath = prevDisposableSourceDiskPath

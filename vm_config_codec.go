@@ -11,6 +11,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/configcodec"
 	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 const vmFrameworkConfigFileName = "framework-config.vzcfg"
@@ -174,7 +175,7 @@ func frameworkConfigVMType() string {
 	if linuxMode {
 		return "Linux"
 	}
-	return detectOSType(vmDir)
+	return vmconfig.DetectOSType(vmDir)
 }
 
 func marshalFrameworkConfigSnapshot(format configcodec.Format, payload []byte) []byte {
