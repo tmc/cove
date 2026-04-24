@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -23,6 +25,12 @@ func TestBuildDumpDocsAll(t *testing.T) {
 	}
 	if got := apiEndpointByPath(docs.API.Endpoints, "POST", "/v1/vms/{name}/snapshot"); got == nil {
 		t.Fatal("missing snapshot API endpoint")
+	}
+	if got := apiEndpointByPath(docs.API.Endpoints, "GET", "/v1/vms"); got == nil {
+		t.Fatal("missing VM list API endpoint")
+	}
+	if got := apiEndpointByPath(docs.API.Endpoints, "POST", "/v1/vms"); got == nil {
+		t.Fatal("missing VM create API endpoint")
 	}
 	if got := mcpToolByName(docs.MCP.Tools, "vm_snapshot_save"); got == nil {
 		t.Fatal("missing vm_snapshot_save MCP tool")
@@ -98,12 +106,38 @@ func TestBuildCLIDocsIncludesCapturedUsage(t *testing.T) {
 	if want := "Usage: cove push"; !strings.Contains(push.Usage, want) {
 		t.Fatalf("push usage missing %q", want)
 	}
+	if got := cliFlagByName(push.Flags, "--base"); got == nil {
+		t.Fatal("push docs missing --base flag")
+	}
+	if got := cliFlagByName(push.Flags, "--additional-tag"); got == nil {
+		t.Fatal("push docs missing --additional-tag flag")
+	} else if !got.Repeatable {
+		t.Fatal("push --additional-tag flag is not marked repeatable")
+	}
+	if len(push.Examples) == 0 {
+		t.Fatal("push docs missing examples")
+	}
 	pull := cliCommandByName(docs.Commands, "pull")
 	if pull == nil {
 		t.Fatal("missing pull command")
 	}
 	if want := "Usage: cove pull"; !strings.Contains(pull.Usage, want) {
 		t.Fatalf("pull usage missing %q", want)
+	}
+	if got := cliFlagByName(pull.Flags, "--manifest"); got == nil {
+		t.Fatal("pull docs missing --manifest flag")
+	}
+	if len(pull.Examples) == 0 {
+		t.Fatal("pull docs missing examples")
+	}
+}
+
+func TestBuildCLIDocsDoesNotWriteStderr(t *testing.T) {
+	got := captureStderrForTest(func() {
+		_ = buildCLIDocs()
+	})
+	if got != "" {
+		t.Fatalf("buildCLIDocs wrote stderr: %q", got)
 	}
 }
 
@@ -136,6 +170,33 @@ func apiEndpointByPath(endpoints []apiEndpointDoc, method, path string) *apiEndp
 	for i := range endpoints {
 		if endpoints[i].Method == method && endpoints[i].Path == path {
 			return &endpoints[i]
+		}
+	}
+	return nil
+}
+
+func captureStderrForTest(fn func()) string {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return ""
+	}
+	old := os.Stderr
+	os.Stderr = w
+	fn()
+	_ = w.Close()
+	os.Stderr = old
+	defer r.Close()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func cliFlagByName(flags []cliFlagDoc, name string) *cliFlagDoc {
+	for i := range flags {
+		if flags[i].Name == name {
+			return &flags[i]
 		}
 	}
 	return nil

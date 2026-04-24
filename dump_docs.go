@@ -38,10 +38,20 @@ type cliDocs struct {
 }
 
 type cliCommandDoc struct {
-	Name    string   `json:"name"`
-	Summary string   `json:"summary"`
-	Aliases []string `json:"aliases,omitempty"`
-	Usage   string   `json:"usage,omitempty"`
+	Name     string       `json:"name"`
+	Summary  string       `json:"summary"`
+	Aliases  []string     `json:"aliases,omitempty"`
+	Usage    string       `json:"usage,omitempty"`
+	Flags    []cliFlagDoc `json:"flags,omitempty"`
+	Examples []string     `json:"examples,omitempty"`
+}
+
+type cliFlagDoc struct {
+	Name       string `json:"name"`
+	Argument   string `json:"argument,omitempty"`
+	Summary    string `json:"summary"`
+	Default    string `json:"default,omitempty"`
+	Repeatable bool   `json:"repeatable,omitempty"`
 }
 
 type apiDocs struct {
@@ -140,10 +150,12 @@ func buildCLIDocs() *cliDocs {
 	}
 	for _, spec := range cliDocSpecs {
 		doc := cliCommandDoc{
-			Name:    spec.Name,
-			Summary: spec.Summary,
-			Aliases: spec.Aliases,
-			Usage:   strings.TrimSpace(spec.Usage()),
+			Name:     spec.Name,
+			Summary:  spec.Summary,
+			Aliases:  append([]string(nil), spec.Aliases...),
+			Usage:    strings.TrimSpace(spec.Usage()),
+			Flags:    append([]cliFlagDoc(nil), spec.Flags...),
+			Examples: append([]string(nil), spec.Examples...),
 		}
 		docs.Commands = append(docs.Commands, doc)
 	}
@@ -154,6 +166,8 @@ func buildAPIDocs() *apiDocs {
 	return &apiDocs{
 		Endpoints: []apiEndpointDoc{
 			{Method: "GET", Path: "/healthz", Description: "Health check.", Auth: "none"},
+			{Method: "GET", Path: "/v1/vms", Description: "List VMs currently reachable through the gateway.", Auth: "bearer"},
+			{Method: "POST", Path: "/v1/vms", Description: "Create a VM as a long-running operation. Deferred builds return not_implemented.", Auth: "bearer"},
 			{Method: "GET", Path: "/v1/vms/{name}/status", Description: "Report lifecycle state and capabilities of one VM.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms/{name}/pause", Description: "Pause a running VM.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms/{name}/resume", Description: "Resume a paused VM.", Auth: "bearer"},
@@ -194,16 +208,21 @@ func buildMCPDocs() *mcpDocs {
 }
 
 type cliDocSpec struct {
-	Name    string
-	Summary string
-	Aliases []string
-	Usage   func() string
+	Name     string
+	Summary  string
+	Aliases  []string
+	Usage    func() string
+	Flags    []cliFlagDoc
+	Examples []string
 }
 
 var cliDocSpecs = []cliDocSpec{
 	{Name: "up", Summary: "Install, provision, and boot a VM in one command.", Usage: func() string {
 		fs, _, _ := newUpFlagSet()
-		return captureWriter(func(w io.Writer) { printUpUsage(w, fs) })
+		return captureWriter(func(w io.Writer) {
+			fs.SetOutput(w)
+			printUpUsage(w, fs)
+		})
 	}},
 	{Name: "install", Summary: "Install an operating system into a VM directory.", Usage: captureInstallUsage},
 	{Name: "run", Summary: "Boot the selected VM.", Usage: captureRunUsage},
@@ -211,7 +230,10 @@ var cliDocSpecs = []cliDocSpec{
 	{Name: "clean", Summary: "Remove per-VM artifacts while keeping the directory.", Usage: captureCleanUsage},
 	{Name: "provision", Summary: "Write provisioning files into the VM disk.", Aliases: []string{"inject"}, Usage: func() string {
 		fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
-		return captureWriter(func(w io.Writer) { printInjectUsage(w, fs) })
+		return captureWriter(func(w io.Writer) {
+			fs.SetOutput(w)
+			printInjectUsage(w, fs)
+		})
 	}},
 	{Name: "provision-agent", Summary: "Provision vz-agent into a VM.", Aliases: []string{"inject-agent"}, Usage: func() string {
 		return captureWriter(printProvisionAgentUsage)
@@ -221,7 +243,10 @@ var cliDocSpecs = []cliDocSpec{
 	}},
 	{Name: "verify", Summary: "Diagnose provisioning, agent, and file ownership health.", Aliases: []string{"doctor"}, Usage: func() string {
 		fs, _, _ := newVerifyFlagSet()
-		return captureWriter(func(w io.Writer) { printVerifyUsage(w, fs) })
+		return captureWriter(func(w io.Writer) {
+			fs.SetOutput(w)
+			printVerifyUsage(w, fs)
+		})
 	}},
 	{Name: "sip", Summary: "Manage System Integrity Protection and recovery automation.", Usage: func() string { return "" }},
 	{Name: "vm", Summary: "Manage VM selection, export/import, and metadata.", Usage: func() string {
@@ -236,9 +261,26 @@ var cliDocSpecs = []cliDocSpec{
 	}},
 	{Name: "push", Summary: "Plan or push a VM disk as an OCI image.", Usage: func() string {
 		return captureWriter(printPushUsage)
+	}, Flags: []cliFlagDoc{
+		{Name: "--base", Argument: "<ref>", Summary: "Base image for delta push."},
+		{Name: "--chunk-size", Argument: "<mb>", Summary: "Chunk size in megabytes.", Default: "512"},
+		{Name: "--dry-run", Summary: "Print the chunk plan without uploading."},
+		{Name: "--lume-compat", Summary: "Emit dual cove and lume annotations."},
+		{Name: "--additional-tag", Argument: "<tag>", Summary: "Additional tag to publish.", Repeatable: true},
+		{Name: "--manifest-out", Argument: "<path>", Summary: "Write OCI manifest JSON to path."},
+	}, Examples: []string{
+		"cove push dev-vm ghcr.io/me/dev-vm:v1 --dry-run",
+		"cove push dev-vm ghcr.io/me/dev-vm:v2 --base ghcr.io/me/dev-vm:v1",
 	}},
 	{Name: "pull", Summary: "Validate or pull an OCI VM image.", Usage: func() string {
 		return captureWriter(printPullUsage)
+	}, Flags: []cliFlagDoc{
+		{Name: "--as", Argument: "<name>", Summary: "Destination VM name."},
+		{Name: "--dry-run", Summary: "Validate inputs without writing a disk."},
+		{Name: "--manifest", Argument: "<path>", Summary: "Local OCI manifest JSON instead of fetching the registry."},
+	}, Examples: []string{
+		"cove pull ghcr.io/me/dev-vm:v1 --dry-run",
+		"cove pull ghcr.io/me/dev-vm:v1 --as restored-vm",
 	}},
 	{Name: "template", Summary: "Manage VM templates.", Usage: func() string {
 		return captureWriter(printTemplateUsage)
@@ -260,7 +302,10 @@ var cliDocSpecs = []cliDocSpec{
 	}},
 	{Name: "ctl", Summary: "Drive a running VM through the control socket.", Usage: func() string {
 		fs, _, _, _, _, _, _ := newCtlFlagSet()
-		return captureWriter(func(w io.Writer) { printCtlUsage(w, fs) })
+		return captureWriter(func(w io.Writer) {
+			fs.SetOutput(w)
+			printCtlUsage(w, fs)
+		})
 	}},
 	{Name: "vzscript", Summary: "Run guest-agent and UI automation scripts.", Usage: func() string {
 		return captureWriter(printVzscriptUsage)
