@@ -934,7 +934,7 @@ func keyNameToCode(name string) uint16 {
 		return 28
 	case "9":
 		return 25
-	// Punctuation
+	// Punctuation (unshifted)
 	case "slash":
 		return 44
 	case "backslash":
@@ -955,8 +955,51 @@ func keyNameToCode(name string) uint16 {
 		return 33
 	case "rightbracket", "rbracket":
 		return 30
-	case "grave", "backtick", "tilde":
+	case "grave", "backtick":
 		return 50
+	// Shifted variants (keycode is the same; shift must be held separately).
+	case "question", "questionmark":
+		return 44
+	case "pipe", "bar":
+		return 42
+	case "colon":
+		return 41
+	case "doublequote":
+		return 39
+	case "underscore":
+		return 27
+	case "plus":
+		return 24
+	case "leftbrace", "lbrace":
+		return 33
+	case "rightbrace", "rbrace":
+		return 30
+	case "tilde":
+		return 50
+	case "less", "lessthan":
+		return 43
+	case "greater", "greaterthan":
+		return 47
+	case "exclamation", "exclaim", "bang":
+		return 18
+	case "at":
+		return 19
+	case "hash", "pound":
+		return 20
+	case "dollar":
+		return 21
+	case "percent":
+		return 23
+	case "caret":
+		return 22
+	case "ampersand":
+		return 26
+	case "asterisk", "star":
+		return 28
+	case "leftparen", "lparen":
+		return 25
+	case "rightparen", "rparen":
+		return 29
 	default:
 		// Try to parse as a numeric keycode
 		if code, err := strconv.ParseUint(name, 10, 16); err == nil {

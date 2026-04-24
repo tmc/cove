@@ -33,6 +33,63 @@ func TestParseKeySpec(t *testing.T) {
 	}
 }
 
+func TestKeyNameToCodePunctuation(t *testing.T) {
+	// Lock in punctuation aliases. Shifted variants share keycodes with
+	// their unshifted forms; callers supply the shift modifier separately.
+	tests := []struct {
+		name string
+		want uint16
+	}{
+		{"slash", 44},
+		{"question", 44},
+		{"questionmark", 44},
+		{"backslash", 42},
+		{"pipe", 42},
+		{"bar", 42},
+		{"semicolon", 41},
+		{"colon", 41},
+		{"quote", 39},
+		{"apostrophe", 39},
+		{"doublequote", 39},
+		{"minus", 27},
+		{"underscore", 27},
+		{"equals", 24},
+		{"plus", 24},
+		{"leftbracket", 33},
+		{"leftbrace", 33},
+		{"rightbracket", 30},
+		{"rightbrace", 30},
+		{"grave", 50},
+		{"backtick", 50},
+		{"tilde", 50},
+		{"comma", 43},
+		{"less", 43},
+		{"period", 47},
+		{"dot", 47},
+		{"greater", 47},
+		{"exclamation", 18},
+		{"bang", 18},
+		{"at", 19},
+		{"hash", 20},
+		{"pound", 20},
+		{"dollar", 21},
+		{"percent", 23},
+		{"caret", 22},
+		{"ampersand", 26},
+		{"asterisk", 28},
+		{"star", 28},
+		{"leftparen", 25},
+		{"rightparen", 29},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := keyNameToCode(tt.name); got != tt.want {
+				t.Errorf("keyNameToCode(%q) = %d, want %d", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsValidKeySpec(t *testing.T) {
 	tests := []struct {
 		spec string
