@@ -16,6 +16,7 @@ import (
 
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/term"
 )
 
@@ -896,7 +897,7 @@ func handleList() {
 		os.Exit(1)
 	}
 
-	activeVM := GetActiveVM()
+	activeVM := vmconfig.ActiveName()
 
 	if len(vms) == 0 {
 		fmt.Println("No VMs found. Run 'cove install' to create one.")
@@ -938,7 +939,7 @@ func handleList() {
 
 	// Surface orphan VM directories (dirs without a valid disk image)
 	// so users can clean them up with `cove vm delete <name>`.
-	if orphans, err := ListOrphanVMs(); err == nil && len(orphans) > 0 {
+	if orphans, err := vmconfig.ListOrphans(); err == nil && len(orphans) > 0 {
 		fmt.Println()
 		fmt.Println("Orphans (missing disk image):")
 		for _, name := range orphans {
@@ -974,7 +975,7 @@ func handleClone(args []string) {
 		fmt.Fprintln(os.Stderr, "Usage: cove clone [source] <target> [--linked] [--with-agent]")
 		os.Exit(1)
 	case 1:
-		source = GetActiveVM()
+		source = vmconfig.ActiveName()
 		target = nonFlagArgs[0]
 	default:
 		source = nonFlagArgs[0]
@@ -1024,7 +1025,7 @@ func handleTemplate(args []string) {
 			fmt.Fprintln(os.Stderr, "Usage: cove template save <name>")
 			os.Exit(1)
 		}
-		source := GetActiveVM()
+		source := vmconfig.ActiveName()
 		if vmName != "" {
 			source = vmName
 		}
@@ -1038,7 +1039,7 @@ func handleTemplate(args []string) {
 			fmt.Fprintln(os.Stderr, "Usage: cove template save-fast <name>")
 			os.Exit(1)
 		}
-		source := GetActiveVM()
+		source := vmconfig.ActiveName()
 		if vmName != "" {
 			source = vmName
 		}
@@ -1119,21 +1120,21 @@ func handleVMCommand(args []string) {
 			os.Exit(1)
 		}
 		if subargs[0] == "" {
-			if err := UnsetActiveVM(); err != nil {
+			if err := vmconfig.UnsetActive(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			fmt.Println("Active VM cleared.")
 			return
 		}
-		if err := SetActiveVM(subargs[0]); err != nil {
+		if err := vmconfig.SetActive(subargs[0]); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("Active VM set to '%s'.\n", subargs[0])
 
 	case "unset":
-		if err := UnsetActiveVM(); err != nil {
+		if err := vmconfig.UnsetActive(); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
