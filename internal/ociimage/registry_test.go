@@ -110,6 +110,27 @@ func TestRegistryClientFetchBlob(t *testing.T) {
 	}
 }
 
+func TestRegistryClientAuthorizationHeader(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Basic abc" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte("blob-data"))
+	}))
+	defer srv.Close()
+
+	body, err := (RegistryClient{
+		BaseURL:       srv.URL,
+		Token:         "token",
+		Authorization: "Basic abc",
+	}).FetchBlob(context.Background(), ref, "sha256:abcd")
+	if err != nil {
+		t.Fatalf("FetchBlob(): %v", err)
+	}
+	body.Close()
+}
+
 func TestRegistryClientFetchBlobRejectsErrors(t *testing.T) {
 	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
 	if _, err := (RegistryClient{}).FetchBlob(context.Background(), ref, ""); err == nil {
