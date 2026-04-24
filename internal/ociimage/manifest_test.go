@@ -69,12 +69,36 @@ func TestBuildManifest(t *testing.T) {
 	}
 }
 
+func TestBuildManifestUsesChunkDescriptors(t *testing.T) {
+	chunk := Chunk{Index: 0, Size: 3, Digest: testDigest([]byte{1, 2, 3})}
+	desc := Descriptor{MediaType: MediaTypeLayerLZ4, Size: 2, Digest: testDigest([]byte("lz"))}
+	manifest, _, err := BuildManifest(ManifestOptions{
+		DiskSize:         3,
+		Chunks:           []Chunk{chunk},
+		ChunkDescriptors: []Descriptor{desc},
+	})
+	if err != nil {
+		t.Fatalf("BuildManifest(): %v", err)
+	}
+	if got := manifest.Layers[0]; got.MediaType != desc.MediaType || got.Size != desc.Size || got.Digest != desc.Digest {
+		t.Fatalf("layer = %#v, want descriptor %#v", got, desc)
+	}
+	parsed, err := ParseManifest(manifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(): %v", err)
+	}
+	if parsed.Chunks[0].Digest != chunk.Digest || parsed.DiskLayers[0].Descriptor.Digest != desc.Digest {
+		t.Fatalf("parsed = %#v", parsed)
+	}
+}
+
 func TestBuildManifestRejectsInvalid(t *testing.T) {
 	tests := []struct {
 		name string
 		opts ManifestOptions
 	}{
 		{name: "negative disk", opts: ManifestOptions{DiskSize: -1}},
+		{name: "descriptor count", opts: ManifestOptions{Chunks: []Chunk{{}}, ChunkDescriptors: []Descriptor{{}, {}}}},
 		{name: "missing role", opts: ManifestOptions{Blobs: []Blob{{Digest: testDigest(nil)}}}},
 		{name: "missing digest", opts: ManifestOptions{Blobs: []Blob{{Role: "nvram"}}}},
 		{name: "negative blob", opts: ManifestOptions{Blobs: []Blob{{Role: "nvram", Size: -1, Digest: testDigest(nil)}}}},
