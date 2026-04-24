@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
 
@@ -41,7 +42,7 @@ func CloneVM(opts CloneOptions) error {
 		return fmt.Errorf("create target dir: %w", err)
 	}
 
-	sourceOS := detectOSType(srcPath)
+	sourceOS := vmconfig.DetectOSType(srcPath)
 	filesToCopy := cloneRequiredFiles(sourceOS)
 
 	for _, f := range filesToCopy {

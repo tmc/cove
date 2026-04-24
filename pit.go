@@ -17,6 +17,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/storagehotplug"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/sys/unix"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -95,7 +96,7 @@ func (m *PITSnapshotManager) statePath(name string) string {
 }
 
 func (m *PITSnapshotManager) diskFileName() string {
-	if detectOSType(m.vmDir) == "Linux" {
+	if vmconfig.DetectOSType(m.vmDir) == "Linux" {
 		return "linux-disk.img"
 	}
 	return "disk.img"
