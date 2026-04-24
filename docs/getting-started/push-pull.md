@@ -59,7 +59,10 @@ Push chunks `disk.img` into 512 MB fixed-offset chunks, LZ4-compresses each chun
 
 Delta push with `--base <ref>` pulls the base manifest first and only uploads chunks whose uncompressed content digest differs. Typical result: a fresh Xcode install on top of a vanilla macOS base uploads single-digit GBs instead of 60.
 
-Current implementation supports `--dry-run` to see how many chunks and bytes a push would produce without touching the network. Registry upload and compression land in the next transport slice.
+Push compresses non-zero disk chunks as LZ4 OCI layers, skips sparse zero
+chunks, uploads missing blobs, and publishes the manifest tag. Use `--dry-run`
+to see how many chunks and bytes a push would produce without touching the
+network.
 
 ## Lume compatibility
 

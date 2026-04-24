@@ -592,7 +592,9 @@ cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --m
 
 ## push
 
-Plan or push a VM disk as an OCI image. Current implementation supports `--dry-run` only; registry upload lands in the next OCI transport slice.
+Plan or push a VM disk as an OCI image. Push compresses non-zero disk chunks as
+LZ4 OCI layers, skips sparse zero chunks, uploads missing blobs, and publishes
+the manifest tag. Use `--dry-run` to inspect the plan without uploading.
 
 ```
 cove push <vm> <ref> [flags]
