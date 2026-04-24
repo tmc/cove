@@ -107,30 +107,6 @@ var VMFilesRequired = []string{
 	"aux.img",
 }
 
-// GetVMBaseDir returns the base directory for all VMs (~/.vz/vms).
-func GetVMBaseDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "vms")
-}
-
-// GetTemplateDir returns the directory for templates (~/.vz/templates).
-func GetTemplateDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "templates")
-}
-
-// GetCacheDir returns the cache directory (~/.vz/cache).
-func GetCacheDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "cache")
-}
-
-// GetCurrentVMLink returns the path to the current VM symlink (~/.vz/current).
-func GetCurrentVMLink() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "current")
-}
-
 // ValidateVM checks if a directory contains a valid VM.
 // Accepts either macOS files (disk.img + aux.img) or Linux files (linux-disk.img).
 func ValidateVM(vmPath string) bool {
@@ -313,37 +289,6 @@ func UnsetActiveVM() error {
 	return nil
 }
 
-// GetVMPath returns the path to a VM by name.
-func GetVMPath(name string) string {
-	if existing, ok := existingVMPath(name); ok {
-		return existing
-	}
-	return filepath.Join(GetVMBaseDir(), name)
-}
-
-func existingVMPath(name string) (string, bool) {
-	if name == "" {
-		return "", false
-	}
-	for _, candidate := range vmPathCandidates(name) {
-		info, err := os.Stat(candidate)
-		if err != nil || !info.IsDir() {
-			continue
-		}
-		return resolvePath(candidate), true
-	}
-	return "", false
-}
-
-func vmPathCandidates(name string) []string {
-	baseDir := GetVMBaseDir()
-	homeDir := filepath.Dir(baseDir)
-	return []string{
-		filepath.Join(baseDir, name),
-		filepath.Join(homeDir, name),
-	}
-}
-
 // MigrateIfNeeded migrates from flat structure to new multi-VM structure.
 // Old: ~/.vz/vms/disk.img, ~/.vz/vms/aux.img, etc.
 // New: ~/.vz/vms/default/disk.img, ~/.vz/vms/default/aux.img, etc.
@@ -435,15 +380,6 @@ func ResolveVMDir(vmName string) string {
 	// Use active VM or default to "default"
 	activeVM := GetActiveVM()
 	return filepath.Join(GetVMBaseDir(), activeVM)
-}
-
-// isSubdir checks if path is a subdirectory of base.
-func isSubdir(path, base string) bool {
-	rel, err := filepath.Rel(base, path)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !filepath.IsAbs(rel) && rel[0] != '.'
 }
 
 // FormatSize formats bytes as human-readable size.
