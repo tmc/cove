@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 )
 
 func TestGetVMPathPrefersExistingLegacyVM(t *testing.T) {
@@ -131,11 +133,11 @@ func TestVMConfigRoundTripAgentState(t *testing.T) {
 		CPU:      4,
 		MemoryGB: 8,
 		Agent: &VMAgentConfig{
-			Platform:   vmAgentPlatformLinux,
+			Platform:   agentstate.PlatformLinux,
 			Requested:  true,
 			Verified:   true,
 			VerifiedAt: time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC),
-			Source:     vmAgentSourceRuntime,
+			Source:     agentstate.SourceRuntime,
 		},
 	}
 	if err := SaveVMConfig(vmPath, want); err != nil {

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -128,8 +129,8 @@ func testLinuxNetwork(t *testing.T, vm *testVM) {
 			t.Fatalf("LoadVMConfig() error = %v", err)
 		}
 		cfg.Agent = &VMAgentConfig{
-			Platform: vmAgentPlatformLinux,
-			Source:   vmAgentSourceInstall,
+			Platform: agentstate.PlatformLinux,
+			Source:   agentstate.SourceInstall,
 		}
 		if err := SaveVMConfig(clone.dir, cfg); err != nil {
 			t.Fatalf("SaveVMConfig() error = %v", err)

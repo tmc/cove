@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -17,8 +18,8 @@ func TestCompactCommand(t *testing.T) {
 		want     []string
 		wantErr  string
 	}{
-		{name: "linux", platform: vmAgentPlatformLinux, want: []string{"fstrim", "-v", "/"}},
-		{name: "macos", platform: vmAgentPlatformMacOS, want: []string{"diskutil", "secureErase", "freespace", "0", "/"}},
+		{name: "linux", platform: agentstate.PlatformLinux, want: []string{"fstrim", "-v", "/"}},
+		{name: "macos", platform: agentstate.PlatformMacOS, want: []string{"diskutil", "secureErase", "freespace", "0", "/"}},
 		{name: "unknown", platform: "windows", wantErr: "unsupported guest platform"},
 	}
 
@@ -43,7 +44,7 @@ func TestCompactCommand(t *testing.T) {
 
 func TestCompactVMWithClient(t *testing.T) {
 	vmPath := makeTestVMDir(t)
-	if err := SaveVMConfig(vmPath, &VMConfig{Agent: &VMAgentConfig{Platform: vmAgentPlatformLinux}}); err != nil {
+	if err := SaveVMConfig(vmPath, &VMConfig{Agent: &VMAgentConfig{Platform: agentstate.PlatformLinux}}); err != nil {
 		t.Fatalf("SaveVMConfig() error = %v", err)
 	}
 
@@ -66,7 +67,7 @@ func TestCompactVMWithClient(t *testing.T) {
 	if client.execTimeout != compactTimeout {
 		t.Fatalf("compactVMWithClient() timeout = %s, want %s", client.execTimeout, compactTimeout)
 	}
-	if got.Platform != vmAgentPlatformLinux || got.Stdout != "trimmed" {
+	if got.Platform != agentstate.PlatformLinux || got.Stdout != "trimmed" {
 		t.Fatalf("compactVMWithClient() = %#v", got)
 	}
 }
@@ -94,11 +95,11 @@ func TestCompactVMWithClientExitFailure(t *testing.T) {
 
 func TestVMAgentPlatformUsesConfig(t *testing.T) {
 	vmPath := makeTestVMDir(t)
-	if err := SaveVMConfig(vmPath, &VMConfig{Agent: &VMAgentConfig{Platform: vmAgentPlatformLinux}}); err != nil {
+	if err := SaveVMConfig(vmPath, &VMConfig{Agent: &VMAgentConfig{Platform: agentstate.PlatformLinux}}); err != nil {
 		t.Fatalf("SaveVMConfig() error = %v", err)
 	}
-	if got := vmAgentPlatform(vmPath); got != vmAgentPlatformLinux {
-		t.Fatalf("vmAgentPlatform() = %q, want %q", got, vmAgentPlatformLinux)
+	if got := agentstate.Platform(vmPath); got != agentstate.PlatformLinux {
+		t.Fatalf("Platform() = %q, want %q", got, agentstate.PlatformLinux)
 	}
 }
 
