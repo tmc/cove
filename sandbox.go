@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // SandboxLevel selects an isolation policy for a VM run.
@@ -129,7 +131,7 @@ func (p SandboxPolicy) EffectiveNetworkMode(requested string, explicit bool) (st
 }
 
 // EffectiveVolumes returns the volume mounts that should be applied.
-func (p SandboxPolicy) EffectiveVolumes(cli, saved []VolumeMount) []VolumeMount {
+func (p SandboxPolicy) EffectiveVolumes(cli, saved []vmconfig.VolumeMount) []vmconfig.VolumeMount {
 	if !p.AllowsVolumes() {
 		return nil
 	}
@@ -301,11 +303,11 @@ func flagWasSet(name string) bool {
 	return seen
 }
 
-func cloneVolumeMounts(in []VolumeMount) []VolumeMount {
+func cloneVolumeMounts(in []vmconfig.VolumeMount) []vmconfig.VolumeMount {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]VolumeMount, len(in))
+	out := make([]vmconfig.VolumeMount, len(in))
 	copy(out, in)
 	return out
 }

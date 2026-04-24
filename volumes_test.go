@@ -3,10 +3,12 @@ package main
 import (
 	"reflect"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestVirtioFSMountArgsLinux(t *testing.T) {
-	m := VolumeMount{
+	m := vmconfig.VolumeMount{
 		Tag:       "work",
 		ReadOnly:  true,
 		MountOpts: []string{"nodev", "noatime"},
@@ -19,7 +21,7 @@ func TestVirtioFSMountArgsLinux(t *testing.T) {
 }
 
 func TestVirtioFSMountArgsMacOS(t *testing.T) {
-	m := VolumeMount{
+	m := vmconfig.VolumeMount{
 		Tag:       "work",
 		ReadOnly:  true,
 		MountOpts: []string{"noatime", "cache=none"},
@@ -32,7 +34,7 @@ func TestVirtioFSMountArgsMacOS(t *testing.T) {
 }
 
 func TestVirtioFSMountArgsMacOSReadWrite(t *testing.T) {
-	m := VolumeMount{Tag: "data"}
+	m := vmconfig.VolumeMount{Tag: "data"}
 	got := virtioFSMountArgs(m, "/Volumes/data", false)
 	want := []string{"mount_virtiofs", "data", "/Volumes/data"}
 	if !reflect.DeepEqual(got, want) {
