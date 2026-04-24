@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/ociimage"
 )
 
@@ -488,7 +489,7 @@ func printPushResult(w io.Writer, plan *pushPlan) {
 	fmt.Fprintf(w, "  ref: %s\n", plan.Ref)
 	if plan.BaseRef != "" {
 		fmt.Fprintf(w, "  base: %s\n", plan.BaseRef)
-		fmt.Fprintf(w, "  base chunks reused: %d (%s)\n", plan.BaseChunks, FormatSize(plan.BaseBytes))
+		fmt.Fprintf(w, "  base chunks reused: %d (%s)\n", plan.BaseChunks, bytefmt.Size(plan.BaseBytes))
 	}
 	if len(plan.ExtraTags) > 0 {
 		fmt.Fprintf(w, "  additional tags: %s\n", strings.Join(plan.ExtraTags, ", "))
@@ -500,11 +501,11 @@ func printPushDryRun(w io.Writer, plan *pushPlan) {
 	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
 	fmt.Fprintf(w, "  ref: %s\n", plan.Ref)
 	fmt.Fprintf(w, "  disk: %s\n", plan.DiskPath)
-	fmt.Fprintf(w, "  disk size: %s\n", FormatSize(plan.DiskSize))
-	fmt.Fprintf(w, "  chunk size: %s\n", FormatSize(plan.ChunkSize))
+	fmt.Fprintf(w, "  disk size: %s\n", bytefmt.Size(plan.DiskSize))
+	fmt.Fprintf(w, "  chunk size: %s\n", bytefmt.Size(plan.ChunkSize))
 	fmt.Fprintf(w, "  chunks: %d\n", len(plan.Chunks))
-	fmt.Fprintf(w, "  zero chunks: %d (%s)\n", plan.ZeroChunks, FormatSize(plan.ZeroBytes))
-	fmt.Fprintf(w, "  non-zero bytes: %s\n", FormatSize(plan.DiskSize-plan.ZeroBytes))
+	fmt.Fprintf(w, "  zero chunks: %d (%s)\n", plan.ZeroChunks, bytefmt.Size(plan.ZeroBytes))
+	fmt.Fprintf(w, "  non-zero bytes: %s\n", bytefmt.Size(plan.DiskSize-plan.ZeroBytes))
 	if plan.BaseRef != "" {
 		fmt.Fprintf(w, "  base: %s (not fetched in dry-run)\n", plan.BaseRef)
 	}

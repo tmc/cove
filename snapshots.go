@@ -23,6 +23,7 @@ import (
 
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
+	"github.com/tmc/vz-macos/internal/bytefmt"
 	"golang.org/x/sys/unix"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -488,7 +489,7 @@ func handleDiskSnapshotList(mgr *DiskSnapshotManager) error {
 	for _, s := range snapshots {
 		systemStr := "-"
 		if s.SystemSize > 0 {
-			systemStr = FormatSize(s.SystemSize)
+			systemStr = bytefmt.Size(s.SystemSize)
 		}
 
 		fmt.Printf("  %-20s  %-12s  %s\n",

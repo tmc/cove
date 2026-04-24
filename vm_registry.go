@@ -95,11 +95,6 @@ func ResolveVMDir(vmName string) string {
 	return vmconfigResolveDir(vmName, vmDir)
 }
 
-// FormatSize formats bytes as human-readable size.
-func FormatSize(bytes int64) string {
-	return formatByteSize(bytes)
-}
-
 // EnsureVMDir ensures the VM directory exists and runs migration if needed.
 func EnsureVMDir(vmName string) (string, error) {
 	return vmconfigEnsureDir(vmName, vmDir)

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/ociimage"
 )
 
@@ -440,7 +441,7 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 		fmt.Fprintln(w, "  manifest: not provided")
 		return
 	}
-	fmt.Fprintf(w, "  disk size: %s\n", FormatSize(plan.Manifest.Annotations.UncompressedDiskSize))
+	fmt.Fprintf(w, "  disk size: %s\n", bytefmt.Size(plan.Manifest.Annotations.UncompressedDiskSize))
 	fmt.Fprintf(w, "  chunks: %d\n", len(plan.Manifest.Chunks))
 	fmt.Fprintf(w, "  metadata blobs: %d\n", len(plan.Manifest.Blobs))
 }

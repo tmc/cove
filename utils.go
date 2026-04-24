@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/vz-macos/internal/bytefmt"
 	"golang.org/x/sys/unix"
 )
 
@@ -57,7 +58,7 @@ func checkDiskSpace(dir string, needBytes int64) error {
 	}
 	available := int64(stat.Bavail) * int64(stat.Bsize)
 	if available < needBytes {
-		return fmt.Errorf("insufficient disk space: need %s, have %s available", FormatSize(needBytes), FormatSize(available))
+		return fmt.Errorf("insufficient disk space: need %s, have %s available", bytefmt.Size(needBytes), bytefmt.Size(available))
 	}
 	return nil
 }
