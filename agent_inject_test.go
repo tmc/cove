@@ -2,6 +2,43 @@ package main
 
 import "testing"
 
+func TestAgentVersionCompare(t *testing.T) {
+	tests := []struct {
+		name  string
+		host  string
+		guest string
+		want  versionRelation
+	}{
+		{"identical release", "v0.2.3", "v0.2.3", versionEqual},
+		{"identical commit", "abc12345", "abc12345", versionEqual},
+		{"guest older patch", "v0.2.3", "v0.2.2", versionGuestOlder},
+		{"guest older minor", "v0.3.0", "v0.2.9", versionGuestOlder},
+		{"guest older major", "v1.0.0", "v0.9.9", versionGuestOlder},
+		{"guest newer patch", "v0.2.2", "v0.2.3", versionGuestNewer},
+		{"guest newer minor", "v0.2.3", "v0.3.0", versionGuestNewer},
+		{"guest newer major", "v0.9.9", "v1.0.0", versionGuestNewer},
+		{"semver without v prefix", "0.2.2", "0.2.3", versionGuestNewer},
+		{"semver with prerelease equal majmin", "v0.2.3-rc1", "v0.2.3-rc2", versionEqual},
+		{"two distinct commits (not semver)", "abc12345", "def67890", versionDifferent},
+		{"semver vs commit", "v0.2.3", "abc12345", versionDifferent},
+		{"host empty", "", "v0.2.3", versionUnknown},
+		{"guest empty", "v0.2.3", "", versionUnknown},
+		{"both empty", "", "", versionUnknown},
+		{"host dev", "dev", "v0.2.3", versionUnknown},
+		{"guest dev", "v0.2.3", "dev", versionUnknown},
+		{"both dev", "dev", "dev", versionUnknown},
+		{"host unknown", "unknown", "v0.2.3", versionUnknown},
+		{"guest unknown", "v0.2.3", "unknown", versionUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := agentVersionCompare(tt.host, tt.guest); got != tt.want {
+				t.Errorf("agentVersionCompare(%q, %q) = %d, want %d", tt.host, tt.guest, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAgentVersionsEqual(t *testing.T) {
 	tests := []struct {
 		name  string
