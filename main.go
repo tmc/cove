@@ -816,7 +816,7 @@ Volume Mounting (-vol flag):
     -vol ~/code:code:ro                        Mount at /Volumes/code (read-only)
     -vol /path/to/dir:MyData                   Mount at /Volumes/MyData (rw)
     -vol /path/to/dir:MyData:ro                Mount at /Volumes/MyData (read-only)
-    -vol /path/to/dir:MyData:cache=none        Disable VirtioFS caching (Linux)
+    -vol /path/to/dir:MyData:cache=metadata    Override Linux VirtioFS cache mode (default: cache=none)
     -vol ~/code:Code -vol ~/data:Data          Multiple volumes
 
 Flags:
