@@ -786,9 +786,10 @@ func TestGatewayFSNotifyRemovesRoute(t *testing.T) {
 }
 
 // TestGatewayAsyncSnapshotSave verifies POST /v1/vms/<name>/snapshot?async=true
-// returns 202 + op-id immediately, then completes via the LRO once the slow
-// save (simulated here with a 200ms delay) finishes. Acceptance #2 from the
-// brief: HTTP path no longer blocks on the 30s proxy deadline for large saves.
+// proxies to the per-VM control socket with SnapshotCommand.async=true and
+// returns 202 + op id sourced from the per-VM SnapshotActionResponse. The
+// gateway no longer maintains its own LRO for snapshot saves — the per-VM
+// registry is the single source of truth.
 func TestGatewayAsyncSnapshotSave(t *testing.T) {
 	vmDir, err := os.MkdirTemp("", "gwasync*")
 	if err != nil {
@@ -800,6 +801,7 @@ func TestGatewayAsyncSnapshotSave(t *testing.T) {
 		vmName   = "vm"
 		token    = "master-token"
 		snapName = "checkpoint1"
+		fakeOpID = "op_abc123"
 	)
 	vmSubDir := filepath.Join(vmDir, vmName)
 	if err := os.MkdirAll(vmSubDir, 0700); err != nil {
@@ -816,9 +818,9 @@ func TestGatewayAsyncSnapshotSave(t *testing.T) {
 		ln.Close()
 	})
 
-	// Fake control socket that takes 200ms to "save" then returns success.
-	// Slow enough to observe running→succeeded transition without flakiness.
-	const fakeSaveDelay = 200 * time.Millisecond
+	// Fake control socket that asserts SnapshotCommand.async=true on the
+	// inbound request, then returns immediately with op_id (mirroring the
+	// real per-VM control socket's handleSnapshotSaveAsync path).
 	gotReq := make(chan *controlpb.ControlRequest, 1)
 	go func() {
 		for {
@@ -838,11 +840,13 @@ func TestGatewayAsyncSnapshotSave(t *testing.T) {
 					return
 				}
 				gotReq <- &got
-				time.Sleep(fakeSaveDelay)
 				resp := &controlpb.ControlResponse{
 					Success: true,
 					Result: &controlpb.ControlResponse_SnapshotAction{
-						SnapshotAction: &controlpb.SnapshotActionResponse{Message: "snapshot saved"},
+						SnapshotAction: &controlpb.SnapshotActionResponse{
+							Message: "snapshot save running asynchronously",
+							OpId:    fakeOpID,
+						},
 					},
 				}
 				data, _ := protojsonMarshaler.Marshal(resp)
@@ -869,70 +873,45 @@ func TestGatewayAsyncSnapshotSave(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	start := time.Now()
 	rec := httptest.NewRecorder()
 	gw.ServeHTTP(rec, req)
-	elapsed := time.Since(start)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("got %d, want 202; body=%q", rec.Code, rec.Body.String())
 	}
-	// Acceptance #1 (HTTP variant): return immediately, well under the fake save delay.
-	if elapsed > fakeSaveDelay/2 {
-		t.Errorf("async response took %v, expected <%v (the fake save itself takes %v)", elapsed, fakeSaveDelay/2, fakeSaveDelay)
+	wantLoc := fmt.Sprintf("/v1/vms/%s/operations/%s", vmName, fakeOpID)
+	if got := rec.Header().Get("Location"); got != wantLoc {
+		t.Errorf("Location header = %q, want %q", got, wantLoc)
 	}
-	loc := rec.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/v1/operations/op_") {
-		t.Fatalf("Location header: %q", loc)
-	}
-	var opResp operations.Operation
-	if err := json.NewDecoder(rec.Body).Decode(&opResp); err != nil {
+	var bodyResp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&bodyResp); err != nil {
 		t.Fatalf("decode 202 body: %v", err)
 	}
-	wantResource := fmt.Sprintf("vms/%s/snapshots/%s", vmName, snapName)
-	if opResp.Resource != wantResource {
-		t.Errorf("resource = %q, want %q", opResp.Resource, wantResource)
+	if bodyResp["op_id"] != fakeOpID || bodyResp["vm"] != vmName || bodyResp["snapshot"] != snapName {
+		t.Errorf("body = %+v", bodyResp)
 	}
 
-	// Confirm the control socket received a snapshot save request.
+	// Confirm the control socket saw async=true on the proxied request.
 	select {
 	case got := <-gotReq:
 		if got.Type != "snapshot" {
 			t.Errorf("control request type = %q, want snapshot", got.Type)
 		}
 		snap := got.GetSnapshot()
-		if snap == nil || snap.Action != "save" || snap.Name != snapName {
-			t.Errorf("snapshot cmd = %+v", snap)
+		if snap == nil || snap.Action != "save" || snap.Name != snapName || !snap.Async {
+			t.Errorf("snapshot cmd = %+v, want action=save name=%q async=true", snap, snapName)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for control request")
 	}
-
-	// Poll for terminal success.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		op, ok := reg.Get(opResp.ID)
-		if !ok {
-			t.Fatalf("operation %s vanished", opResp.ID)
-		}
-		if op.Status == "succeeded" {
-			if op.Result["snapshot"] != snapName || op.Result["vm"] != vmName {
-				t.Errorf("result = %+v", op.Result)
-			}
-			return
-		}
-		if op.Status == "failed" {
-			t.Fatalf("operation failed: %+v", op.Error)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Error("operation did not reach succeeded within 2s")
 }
 
-// TestGatewayAsyncSnapshotSaveFailurePropagates verifies that when the
-// underlying control socket reports an error, the LRO transitions to failed
-// with the message preserved (acceptance #3 from the brief).
-func TestGatewayAsyncSnapshotSaveFailurePropagates(t *testing.T) {
+// TestGatewayAsyncSnapshotSaveAcceptError verifies the gateway surfaces a
+// 502 when the per-VM control socket rejects the SnapshotCommand at accept
+// time (e.g., the VM is paused so async save can't start). After the
+// unification, terminal failures during a running save surface via the
+// per-VM operations registry, not via the gateway's response.
+func TestGatewayAsyncSnapshotSaveAcceptError(t *testing.T) {
 	vmDir, err := os.MkdirTemp("", "gwasyncfail*")
 	if err != nil {
 		t.Fatal(err)
@@ -943,7 +922,7 @@ func TestGatewayAsyncSnapshotSaveFailurePropagates(t *testing.T) {
 		vmName   = "vm"
 		token    = "master-token"
 		snapName = "broken"
-		errMsg   = "disk full"
+		errMsg   = "VM not configured"
 	)
 	vmSubDir := filepath.Join(vmDir, vmName)
 	if err := os.MkdirAll(vmSubDir, 0700); err != nil {
@@ -980,8 +959,7 @@ func TestGatewayAsyncSnapshotSaveFailurePropagates(t *testing.T) {
 		}
 	}()
 
-	reg := newServeTestRegistry(t)
-	gw, err := NewGateway(vmDir, token, false, nil, reg)
+	gw, err := NewGateway(vmDir, token, false, nil, newServeTestRegistry(t))
 	if err != nil {
 		t.Fatalf("NewGateway: %v", err)
 	}
@@ -992,26 +970,105 @@ func TestGatewayAsyncSnapshotSaveFailurePropagates(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	gw.ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("got %d, want 202", rec.Code)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("got %d, want 502; body=%q", rec.Code, rec.Body.String())
 	}
-	var opResp operations.Operation
-	if err := json.NewDecoder(rec.Body).Decode(&opResp); err != nil {
-		t.Fatalf("decode: %v", err)
+	if !strings.Contains(rec.Body.String(), errMsg) {
+		t.Errorf("body = %q, want it to contain %q", rec.Body.String(), errMsg)
+	}
+}
+
+// TestGatewayPerVMOperationsProxy verifies that GET /v1/vms/<name>/operations/<id>
+// proxies an OperationsCommand{action:get, id:...} to the control socket and
+// surfaces the per-VM OperationInfo. This is how clients poll the LRO that
+// SnapshotCommand{async=true} created.
+func TestGatewayPerVMOperationsProxy(t *testing.T) {
+	vmDir, err := os.MkdirTemp("", "gwopsproxy*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(vmDir) })
+
+	const (
+		vmName = "vm"
+		token  = "master-token"
+		opID   = "op_deadbeef"
+	)
+	vmSubDir := filepath.Join(vmDir, vmName)
+	if err := os.MkdirAll(vmSubDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sockPath := filepath.Join(vmSubDir, "control.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		close(done)
+		ln.Close()
+	})
+
+	gotReq := make(chan *controlpb.ControlRequest, 1)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+				scanner := bufio.NewScanner(conn)
+				if !scanner.Scan() {
+					return
+				}
+				var got controlpb.ControlRequest
+				if err := protojsonUnmarshaler.Unmarshal(scanner.Bytes(), &got); err == nil {
+					gotReq <- &got
+				}
+				resp := &controlpb.ControlResponse{
+					Success: true,
+					Result: &controlpb.ControlResponse_Operation{
+						Operation: &controlpb.OperationInfo{
+							Id:       opID,
+							Resource: "snapshots/test",
+							Status:   "succeeded",
+						},
+					},
+				}
+				data, _ := protojsonMarshaler.Marshal(resp)
+				fmt.Fprintf(conn, "%s\n", data)
+			}(conn)
+		}
+	}()
+
+	gw, err := NewGateway(vmDir, token, false, nil, newServeTestRegistry(t))
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+	gw.refresh()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/vms/"+vmName+"/operations/"+opID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	gw.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200; body=%q", rec.Code, rec.Body.String())
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		op, _ := reg.Get(opResp.ID)
-		if op != nil && op.Status == "failed" {
-			if op.Error == nil || op.Error.Message != errMsg || op.Error.Code != "snapshot_save" {
-				t.Errorf("error = %+v, want code=snapshot_save message=%q", op.Error, errMsg)
-			}
-			return
+	select {
+	case got := <-gotReq:
+		if got.Type != "operations" {
+			t.Errorf("control request type = %q, want operations", got.Type)
 		}
-		time.Sleep(20 * time.Millisecond)
+		ops := got.GetOperations()
+		if ops == nil || ops.Action != "get" || ops.Id != opID {
+			t.Errorf("operations cmd = %+v, want action=get id=%q", ops, opID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for control request")
 	}
-	t.Error("operation did not reach failed within 2s")
 }
 
 // TestGatewaySnapshotSaveSyncStillWorks verifies the existing synchronous
