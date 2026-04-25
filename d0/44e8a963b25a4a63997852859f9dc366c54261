@@ -1,0 +1,8 @@
+claude-code: feat(serve): async snapshot save via LRO; commit 1 of likely 2-3 (HTTP only)
+date: 2026-04-24
+model: claude-opus-4-7[1m]
+tty: not a tty
+pid: 8927
+iterm: w0t7p10:EDDC36F6-8C46-4A3F-A55B-7D3211BF0C9C
+acceptance: #2 PASS (HTTP returns op-id, transitions running→succeeded), #3 PASS (failure propagates with code=snapshot_save), #4 PASS (sync still blocks). #1 (CLI -async) deliberately NOT in this commit — needs per-VM registry, separate scope.
+worktree: /Volumes/tmc/go/src/github.com/tmc/vz-macos-snapshot-async (isolated)
