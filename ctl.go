@@ -175,6 +175,36 @@ Examples:
 `)
 }
 
+// extractCtlSubcommandFlags pulls the ctl-level flags ("-o <file>", "--daemon")
+// from subArgs and reports whether --daemon was set. Scanning stops at the
+// conventional "--" separator (which is consumed) so flag-shaped values that
+// follow it are passed through verbatim to the subcommand's payload — for
+// example "agent-exec -- ls --color" forwards "ls" "--color" to the guest
+// instead of stealing --color or treating "--" itself as the command name.
+func extractCtlSubcommandFlags(subArgs []string, outputFile *string) ([]string, bool) {
+	useDaemon := false
+	out := subArgs[:0]
+	stop := false
+	for i := 0; i < len(subArgs); i++ {
+		if stop {
+			out = append(out, subArgs[i])
+			continue
+		}
+		switch {
+		case subArgs[i] == "--":
+			stop = true
+		case subArgs[i] == "-o" && i+1 < len(subArgs):
+			*outputFile = subArgs[i+1]
+			i++
+		case subArgs[i] == "--daemon" || subArgs[i] == "-daemon":
+			useDaemon = true
+		default:
+			out = append(out, subArgs[i])
+		}
+	}
+	return out, useDaemon
+}
+
 // ctlCommand handles the "ctl" subcommand for control socket interaction
 func ctlCommand(args []string) error {
 	fs, socketPath, timeout, outputFile, raw, wait, token := newCtlFlagSet()
