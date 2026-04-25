@@ -111,6 +111,48 @@ func TestGenerateUserDataDesktopWithAgent(t *testing.T) {
 	}
 }
 
+// TestGenerateUserDataDeclaresNoInteractiveSections verifies the autoinstall
+// YAML carries an explicit `interactive-sections: []`. Without this,
+// Subiquity defaults to inferring interactive sections from missing config
+// keys and may prompt mid-install — defeats the point of autoinstall.
+// See ROADMAP #26.
+func TestGenerateUserDataDeclaresNoInteractiveSections(t *testing.T) {
+	got := generateUserData(LinuxProvisionConfig{
+		Username: "u", Password: "p", Hostname: "h",
+		TimeZone: "UTC", Locale: "en_US.UTF-8",
+		Variant: LinuxVariantServer,
+	}, false, "")
+	if !strings.Contains(got, "interactive-sections: []") {
+		t.Fatalf("autoinstall YAML missing `interactive-sections: []`\n%s", got)
+	}
+}
+
+// TestLinuxInstallCommandLinePlacesAutoinstallAfterSeparator verifies the
+// kernel cmdline puts `autoinstall` AFTER the `---` separator, which is
+// where Subiquity (Ubuntu 22.04+) expects to find it for prompt
+// suppression. Args before `---` go to the kernel; args after `---` go to
+// userspace init / Subiquity.
+func TestLinuxInstallCommandLinePlacesAutoinstallAfterSeparator(t *testing.T) {
+	got := linuxInstallCommandLine("192.168.64.1:1234")
+	sepIdx := strings.Index(got, " --- ")
+	if sepIdx < 0 {
+		t.Fatalf("cmdline missing `---` separator: %q", got)
+	}
+	postSep := got[sepIdx+len(" --- "):]
+	if !strings.Contains(postSep, "autoinstall") {
+		t.Fatalf("autoinstall must appear after `---`; got %q (post-sep: %q)", got, postSep)
+	}
+	preSep := got[:sepIdx]
+	if strings.Contains(preSep, " autoinstall") || strings.HasPrefix(preSep, "autoinstall ") {
+		t.Errorf("autoinstall must NOT appear before `---` (Subiquity ignores it there); got %q", got)
+	}
+	// The cloud-init datasource pointer (ds=nocloud-net) belongs in the
+	// kernel arg portion so cloud-init's initramfs hook picks it up.
+	if !strings.Contains(preSep, "ds=nocloud-net") {
+		t.Errorf("ds=nocloud-net must remain in kernel args (pre-`---`); got %q", got)
+	}
+}
+
 func TestBuildLinuxCloudInitData(t *testing.T) {
 	config := LinuxProvisionConfig{
 		Username: "ubuntu",
@@ -147,7 +189,7 @@ func TestBuildLinuxCloudInitData(t *testing.T) {
 }
 
 func TestLinuxInstallCommandLine(t *testing.T) {
-	if got, want := linuxInstallCommandLine("192.168.64.1:3003"), "boot=casper autoinstall ip=dhcp ds=nocloud-net;s=http://192.168.64.1:3003/ console=tty0"; got != want {
+	if got, want := linuxInstallCommandLine("192.168.64.1:3003"), "boot=casper ip=dhcp ds=nocloud-net;s=http://192.168.64.1:3003/ console=tty0 --- autoinstall"; got != want {
 		t.Fatalf("linuxInstallCommandLine() = %q, want %q", got, want)
 	}
 }
