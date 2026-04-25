@@ -338,6 +338,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if isAsyncSnapshotSave(r) {
+			g.handleAsyncSnapshotSave(route, w, r)
+			return
+		}
 		g.proxyToSocket(route, w, r)
 		return
 	}
@@ -526,6 +530,109 @@ func (g *Gateway) handleOpEvents(w http.ResponseWriter, r *http.Request, id stri
 	}
 }
 
+// isAsyncSnapshotSave reports whether r is POST /v1/vms/<name>/snapshot with
+// ?async=true (or async=1). Only this single endpoint accepts async today —
+// other long-running operations can opt in by extending this matcher.
+func isAsyncSnapshotSave(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	if !strings.HasSuffix(r.URL.Path, "/snapshot") {
+		return false
+	}
+	v := r.URL.Query().Get("async")
+	return v == "true" || v == "1"
+}
+
+// handleAsyncSnapshotSave delegates to the per-VM operations registry by
+// proxying SnapshotCommand{async=true} to the control socket. The per-VM
+// process creates and tracks the LRO; the gateway echoes the resulting
+// op id back to the client as 202 + Location: /v1/vms/<name>/operations/<id>.
+//
+// This collapses two LRO codepaths (gateway-side ops + per-VM ops) onto the
+// per-VM registry. Clients query /v1/vms/<name>/operations/<id> through the
+// gateway, which proxies an OperationsCommand to the same VM.
+func (g *Gateway) handleAsyncSnapshotSave(route *vmRoute, w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	snapName := snapshotNameFromBody(body)
+	if snapName == "" {
+		http.Error(w, "snapshot name required", http.StatusBadRequest)
+		return
+	}
+
+	req := &controlpb.ControlRequest{
+		Type:      "snapshot",
+		AuthToken: route.perVMToken,
+		Command: &controlpb.ControlRequest_Snapshot{
+			Snapshot: &controlpb.SnapshotCommand{
+				Action: "save",
+				Name:   snapName,
+				Async:  true,
+			},
+		},
+	}
+	resp, err := g.dialControl(route, req, 5*time.Second)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("connect to vm %q: %v", route.name, err), http.StatusBadGateway)
+		return
+	}
+	if resp.Error != "" {
+		http.Error(w, resp.Error, http.StatusBadGateway)
+		return
+	}
+	sa := resp.GetSnapshotAction()
+	if sa == nil || sa.OpId == "" {
+		http.Error(w, "vm did not return op_id for async snapshot save", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Location", fmt.Sprintf("/v1/vms/%s/operations/%s", route.name, sa.OpId))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"op_id":    sa.OpId,
+		"vm":       route.name,
+		"snapshot": snapName,
+		"location": fmt.Sprintf("/v1/vms/%s/operations/%s", route.name, sa.OpId),
+	})
+}
+
+// dialControl is a small helper that dials route.socketPath, sends one
+// ControlRequest as a single JSON line, and reads back one ControlResponse.
+// It exists so handleAsyncSnapshotSave can drive a control-socket round-trip
+// without going through proxyToSocket's HTTP-response coupling.
+func (g *Gateway) dialControl(route *vmRoute, req *controlpb.ControlRequest, deadline time.Duration) (*controlpb.ControlResponse, error) {
+	reqBytes, err := protojsonMarshaler.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
+	}
+	conn, err := net.DialTimeout("unix", route.socketPath, 1*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(deadline))
+	if _, err := fmt.Fprintf(conn, "%s\n", reqBytes); err != nil {
+		return nil, fmt.Errorf("send: %w", err)
+	}
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	if !scanner.Scan() {
+		if scanErr := scanner.Err(); scanErr != nil {
+			return nil, fmt.Errorf("read: %w", scanErr)
+		}
+		return nil, fmt.Errorf("vm closed connection without response")
+	}
+	var resp controlpb.ControlResponse
+	if err := protojsonUnmarshaler.Unmarshal(scanner.Bytes(), &resp); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
+	}
+	return &resp, nil
+}
+
 // proxyToSocket translates an HTTP request to a ControlRequest JSON line,
 // dials the VM's Unix socket, and writes the response back.
 func (g *Gateway) proxyToSocket(route *vmRoute, w http.ResponseWriter, r *http.Request) {
@@ -667,6 +774,15 @@ func httpPathToControlType(vmName string, w http.ResponseWriter, r *http.Request
 		return "snapshot", snapshotControlPayload("save", snapshotNameFromBody(body)), nil
 	case rest == "/snapshots" && r.Method == http.MethodGet:
 		return "snapshot", snapshotControlPayload("list", ""), nil
+	case rest == "/operations" && r.Method == http.MethodGet:
+		return "operations", operationsControlPayload("list", ""), nil
+	}
+
+	if strings.HasPrefix(rest, "/operations/") && r.Method == http.MethodGet {
+		id := strings.TrimPrefix(rest, "/operations/")
+		if id != "" && !strings.Contains(id, "/") {
+			return "operations", operationsControlPayload("get", id), nil
+		}
 	}
 
 	if strings.HasPrefix(rest, "/snapshots/") {
@@ -695,4 +811,12 @@ func snapshotControlPayload(action, name string) map[string]any {
 func snapshotNameFromBody(body map[string]any) string {
 	name, _ := body["name"].(string)
 	return name
+}
+
+func operationsControlPayload(action, id string) map[string]any {
+	payload := map[string]any{"action": action}
+	if id != "" {
+		payload["id"] = id
+	}
+	return map[string]any{"operations": payload}
 }

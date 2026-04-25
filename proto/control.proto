@@ -31,6 +31,7 @@ message ControlRequest {
     AgentShutdownCommand agent_shutdown = 23;
     AgentSSHDCommand agent_sshd = 24;
     AgentCopyCommand agent_cp = 25;
+    OperationsCommand operations = 26;
   }
 }
 
@@ -60,6 +61,8 @@ message ControlResponse {
     AgentPingResponse agent_ping = 23;
     OCRTextResponse ocr_text = 24;
     ScreenDetectionResponse screen_detection = 25;
+    OperationInfo operation = 26;
+    OperationsListResponse operations_list = 27;
   }
 }
 
@@ -104,6 +107,18 @@ message ScreenshotCommand {
 message SnapshotCommand {
   string action = 1;
   string name = 2;
+  // When true, the server returns immediately with a long-running operation
+  // ID (in SnapshotActionResponse.op_id) and runs the save/restore in the
+  // background. Clients poll OperationsCommand.get / get the op via the
+  // gateway's /v1/operations/<id>. Only honored for action=save today.
+  bool async = 3;
+}
+
+// OperationsCommand inspects long-running operations on the per-VM control
+// socket. Action values: "get" (id required), "list" (id ignored).
+message OperationsCommand {
+  string action = 1;
+  string id = 2;
 }
 
 // MemoryCommand manages runtime memory balloon.
@@ -216,6 +231,25 @@ message SnapshotListResponse {
 // SnapshotActionResponse carries the result of a snapshot save/restore/delete.
 message SnapshotActionResponse {
   string message = 1;
+  // op_id is set when the request was async (SnapshotCommand.async=true);
+  // it identifies the long-running operation to poll via OperationsCommand.
+  string op_id = 2;
+}
+
+// OperationInfo summarizes one long-running operation.
+message OperationInfo {
+  string id = 1;
+  string resource = 2;
+  string status = 3; // pending|running|succeeded|failed
+  string created_at = 4; // RFC3339
+  string updated_at = 5; // RFC3339
+  string error_code = 6;
+  string error_message = 7;
+}
+
+// OperationsListResponse wraps a list of OperationInfo records.
+message OperationsListResponse {
+  repeated OperationInfo operations = 1;
 }
 
 // MessageResponse carries a simple string message.
