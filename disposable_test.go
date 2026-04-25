@@ -31,8 +31,10 @@ func TestDisposableCloneNameRoundTrip(t *testing.T) {
 }
 
 func TestSetupDisposableCloneUsesInjectedClone(t *testing.T) {
-	os.RemoveAll(vmconfig.BaseDir())
-
+	// HOME must be set BEFORE any vmconfig.BaseDir() call. An earlier
+	// version of this test called os.RemoveAll(vmconfig.BaseDir()) here,
+	// which resolved against the real HOME and wiped the developer's VM
+	// tree mid-install when run in parallel with `cove up`.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -99,8 +101,9 @@ func TestCleanupDisposableClone(t *testing.T) {
 }
 
 func TestGCDisposableClones(t *testing.T) {
-	os.RemoveAll(vmconfig.BaseDir())
-
+	// HOME must be set BEFORE any vmconfig.BaseDir() call — see
+	// TestSetupDisposableCloneUsesInjectedClone above for the original
+	// regression context.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
