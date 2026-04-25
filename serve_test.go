@@ -784,3 +784,66 @@ func TestGatewayFSNotifyRemovesRoute(t *testing.T) {
 		t.Error("route not removed within 2s of socket removal")
 	}
 }
+
+// TestGatewayListDiscoversLegacyLayout verifies GET /v1/vms surfaces VMs
+// living under the legacy ~/.vz/<name>/ peer layout in addition to the
+// canonical ~/.vz/vms/<name>/ layout. Independent of socket reachability:
+// callers fetch /v1/vms/<name>/status for live state.
+func TestGatewayListDiscoversLegacyLayout(t *testing.T) {
+	parent := t.TempDir()
+	canonicalDir := filepath.Join(parent, "vms")
+
+	mkVM := func(dir string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"disk.img", "aux.img"} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	mkVM(filepath.Join(canonicalDir, "canonical-vm"))
+	mkVM(filepath.Join(parent, "legacy-vm"))
+	// Bare directory under the legacy root with no disk — must be skipped.
+	if err := os.MkdirAll(filepath.Join(parent, "not-a-vm"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	const tok = "list-tok"
+	gw, err := NewGateway(canonicalDir, tok, false, nil, newServeTestRegistry(t))
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/vms", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	gw.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/vms: got %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		VMs []struct {
+			Name string `json:"name"`
+		} `json:"vms"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	got := make(map[string]bool, len(resp.VMs))
+	for _, v := range resp.VMs {
+		got[v.Name] = true
+	}
+	for _, want := range []string{"canonical-vm", "legacy-vm"} {
+		if !got[want] {
+			t.Errorf("vm %q missing from list; got %+v", want, resp.VMs)
+		}
+	}
+	if got["not-a-vm"] {
+		t.Errorf("non-VM directory leaked into list: %+v", resp.VMs)
+	}
+}
