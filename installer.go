@@ -162,6 +162,7 @@ func installerWindowTitleForVM(target vmSelection) string {
 // optionally injects provisioning files if provisionUser/provisionPassword are set.
 func stopVMAndInject(vm *virtualMachine) {
 	target := currentVMSelection()
+	vzlog("stopVMAndInject: enter target.Directory=%q target.Name=%q (globals: vmDir=%q vmName=%q)", target.Directory, target.Name, vmDir, vmName)
 	fmt.Println("Stopping VM...")
 	if err := stopInstallerVM(vm); err != nil {
 		fmt.Printf("warning: %v\n", err)
@@ -170,6 +171,7 @@ func stopVMAndInject(vm *virtualMachine) {
 	// Wait for the disk to be released instead of a fixed sleep. The VZ
 	// framework may hold the file handle briefly after stop returns.
 	diskFile := target.diskPath()
+	vzlog("stopVMAndInject: post-stop diskFile=%q", diskFile)
 	if _, err := os.Stat(diskFile); err != nil {
 		fmt.Printf("warning: disk not found after VM stop: %s (%v)\n", diskFile, err)
 		fmt.Printf("  vmDir=%s\n", target.Directory)
@@ -180,6 +182,15 @@ func stopVMAndInject(vm *virtualMachine) {
 			}
 		} else {
 			fmt.Printf("  cannot list vmDir: %v\n", derr)
+		}
+		// Walk the parent to see if install wrote elsewhere.
+		if parent := filepath.Dir(target.Directory); parent != "" && parent != "." {
+			if parentEntries, perr := os.ReadDir(parent); perr == nil {
+				fmt.Printf("  parent (%s) contents:\n", parent)
+				for _, e := range parentEntries {
+					fmt.Printf("    - %s\n", e.Name())
+				}
+			}
 		}
 	}
 	if err := disk.WaitForAvailable(diskFile, 15*time.Second); err != nil {
@@ -564,6 +575,19 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					lifecycleErr = err
 					lifecycleErrMu.Unlock()
 					return
+				}
+				if vzDebugInstall {
+					diskFile := filepath.Join(vmDir, "disk.img")
+					if info, statErr := os.Stat(diskFile); statErr != nil {
+						vzlog("runFullInstallWithGUI: post-install disk.img STAT FAILED: %v", statErr)
+					} else {
+						vzlog("runFullInstallWithGUI: post-install disk.img size=%d", info.Size())
+					}
+					if info, statErr := os.Stat(vmDir); statErr != nil {
+						vzlog("runFullInstallWithGUI: post-install vmDir STAT FAILED: %v (vmDir=%q)", statErr, vmDir)
+					} else {
+						vzlog("runFullInstallWithGUI: post-install vmDir mode=%v", info.Mode())
+					}
 				}
 				fmt.Println("=== Installation Complete ===")
 				ui.requestSetVMWindowTitle("macOS VM Installation - Stopping VM...")
@@ -1707,6 +1731,22 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 				return fmt.Errorf("installation failed: %w", err)
 			}
 			vzlog("runInstallation: installation complete!")
+			// Diagnostic bracket: confirm the disk and vmDir survived the
+			// install. If either disappears between here and stopVMAndInject,
+			// the framework completion path is responsible.
+			if vzDebugInstall {
+				diskFile := filepath.Join(vmDir, "disk.img")
+				if info, statErr := os.Stat(diskFile); statErr != nil {
+					vzlog("runInstallation: post-install disk.img STAT FAILED: %v", statErr)
+				} else {
+					vzlog("runInstallation: post-install disk.img size=%d", info.Size())
+				}
+				if info, statErr := os.Stat(vmDir); statErr != nil {
+					vzlog("runInstallation: post-install vmDir STAT FAILED: %v (vmDir=%q)", statErr, vmDir)
+				} else {
+					vzlog("runInstallation: post-install vmDir mode=%v", info.Mode())
+				}
+			}
 			fmt.Println("=== Installation Complete ===")
 			fmt.Println()
 
