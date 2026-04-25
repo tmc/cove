@@ -166,7 +166,7 @@ func buildAPIDocs() *apiDocs {
 	return &apiDocs{
 		Endpoints: []apiEndpointDoc{
 			{Method: "GET", Path: "/healthz", Description: "Health check.", Auth: "none"},
-			{Method: "GET", Path: "/v1/vms", Description: "List VMs currently reachable through the gateway.", Auth: "bearer"},
+			{Method: "GET", Path: "/v1/vms", Description: "List VMs configured on the host (canonical and legacy layouts). Live state is available via /v1/vms/{name}/status.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms", Description: "Create a VM as a long-running operation. Deferred builds return not_implemented.", Auth: "bearer"},
 			{Method: "GET", Path: "/v1/vms/{name}/status", Description: "Report lifecycle state and capabilities of one VM.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms/{name}/pause", Description: "Pause a running VM.", Auth: "bearer"},
