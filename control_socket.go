@@ -30,6 +30,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/vm"
 	"github.com/tmc/apple/x/vzkit/vminput"
 
+	"github.com/tmc/vz-macos/internal/control/operations"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -83,6 +84,9 @@ type ControlServer struct {
 	lifecycleCtx      context.Context
 	lifecycleCancel   context.CancelFunc
 	lifecycleWG       sync.WaitGroup
+
+	opsMu  sync.Mutex                      // guards opsReg lazy init
+	opsReg *operations.OperationRegistry   // file-backed at <vmDir>/operations/, lazy
 }
 
 // agentHealthState tracks proactive agent health monitoring.
@@ -447,6 +451,12 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 			return &controlpb.ControlResponse{Error: "missing port-forward command payload"}
 		}
 		return s.handlePortForward(cmd)
+	case "operations":
+		cmd := req.GetOperations()
+		if cmd == nil {
+			return &controlpb.ControlResponse{Error: "missing operations command payload"}
+		}
+		return s.handleOperationsCommand(cmd)
 	}
 
 	s.mu.Lock()
