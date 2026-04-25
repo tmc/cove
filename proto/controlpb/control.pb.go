@@ -24,6 +24,8 @@ const (
 // ControlRequest is the envelope for all control socket requests.
 // Every JSON line sent to the socket is unmarshaled into this message.
 // The "type" field selects the handler; the oneof carries the payload.
+// Some requests, such as "vnc-status" and "debug-stub-status", are handled
+// as flat request types and return JSON in ControlResponse.data.
 type ControlRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Command type string for dispatch (e.g. "key", "screenshot", "ping").
@@ -46,6 +48,7 @@ type ControlRequest struct {
 	//	*ControlRequest_AgentShutdown
 	//	*ControlRequest_AgentSshd
 	//	*ControlRequest_AgentCp
+	//	*ControlRequest_Operations
 	Command       isControlRequest_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -228,6 +231,15 @@ func (x *ControlRequest) GetAgentCp() *AgentCopyCommand {
 	return nil
 }
 
+func (x *ControlRequest) GetOperations() *OperationsCommand {
+	if x != nil {
+		if x, ok := x.Command.(*ControlRequest_Operations); ok {
+			return x.Operations
+		}
+	}
+	return nil
+}
+
 type isControlRequest_Command interface {
 	isControlRequest_Command()
 }
@@ -288,6 +300,10 @@ type ControlRequest_AgentCp struct {
 	AgentCp *AgentCopyCommand `protobuf:"bytes,25,opt,name=agent_cp,json=agentCp,proto3,oneof"`
 }
 
+type ControlRequest_Operations struct {
+	Operations *OperationsCommand `protobuf:"bytes,26,opt,name=operations,proto3,oneof"`
+}
+
 func (*ControlRequest_Key) isControlRequest_Command() {}
 
 func (*ControlRequest_Mouse) isControlRequest_Command() {}
@@ -315,6 +331,8 @@ func (*ControlRequest_AgentShutdown) isControlRequest_Command() {}
 func (*ControlRequest_AgentSshd) isControlRequest_Command() {}
 
 func (*ControlRequest_AgentCp) isControlRequest_Command() {}
+
+func (*ControlRequest_Operations) isControlRequest_Command() {}
 
 // ControlResponse is the envelope for all control socket responses.
 // The "data" field (3) is kept for backward compatibility. New clients
@@ -344,6 +362,8 @@ type ControlResponse struct {
 	//	*ControlResponse_AgentPing
 	//	*ControlResponse_OcrText
 	//	*ControlResponse_ScreenDetection
+	//	*ControlResponse_Operation
+	//	*ControlResponse_OperationsList
 	Result        isControlResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -542,6 +562,24 @@ func (x *ControlResponse) GetScreenDetection() *ScreenDetectionResponse {
 	return nil
 }
 
+func (x *ControlResponse) GetOperation() *OperationInfo {
+	if x != nil {
+		if x, ok := x.Result.(*ControlResponse_Operation); ok {
+			return x.Operation
+		}
+	}
+	return nil
+}
+
+func (x *ControlResponse) GetOperationsList() *OperationsListResponse {
+	if x != nil {
+		if x, ok := x.Result.(*ControlResponse_OperationsList); ok {
+			return x.OperationsList
+		}
+	}
+	return nil
+}
+
 type isControlResponse_Result interface {
 	isControlResponse_Result()
 }
@@ -606,6 +644,14 @@ type ControlResponse_ScreenDetection struct {
 	ScreenDetection *ScreenDetectionResponse `protobuf:"bytes,25,opt,name=screen_detection,json=screenDetection,proto3,oneof"`
 }
 
+type ControlResponse_Operation struct {
+	Operation *OperationInfo `protobuf:"bytes,26,opt,name=operation,proto3,oneof"`
+}
+
+type ControlResponse_OperationsList struct {
+	OperationsList *OperationsListResponse `protobuf:"bytes,27,opt,name=operations_list,json=operationsList,proto3,oneof"`
+}
+
 func (*ControlResponse_Status) isControlResponse_Result() {}
 
 func (*ControlResponse_Capabilities) isControlResponse_Result() {}
@@ -635,6 +681,10 @@ func (*ControlResponse_AgentPing) isControlResponse_Result() {}
 func (*ControlResponse_OcrText) isControlResponse_Result() {}
 
 func (*ControlResponse_ScreenDetection) isControlResponse_Result() {}
+
+func (*ControlResponse_Operation) isControlResponse_Result() {}
+
+func (*ControlResponse_OperationsList) isControlResponse_Result() {}
 
 // KeyCommand sends a keyboard event to the VM.
 type KeyCommand struct {
@@ -922,9 +972,14 @@ func (x *ScreenshotCommand) GetFormat() string {
 
 // SnapshotCommand manages VM state snapshots.
 type SnapshotCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Action string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	Name   string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// When true, the server returns immediately with a long-running operation
+	// ID (in SnapshotActionResponse.op_id) and runs the save/restore in the
+	// background. Clients poll OperationsCommand.get / get the op via the
+	// gateway's /v1/operations/<id>. Only honored for action=save today.
+	Async         bool `protobuf:"varint,3,opt,name=async,proto3" json:"async,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -973,6 +1028,67 @@ func (x *SnapshotCommand) GetName() string {
 	return ""
 }
 
+func (x *SnapshotCommand) GetAsync() bool {
+	if x != nil {
+		return x.Async
+	}
+	return false
+}
+
+// OperationsCommand inspects long-running operations on the per-VM control
+// socket. Action values: "get" (id required), "list" (id ignored).
+type OperationsCommand struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationsCommand) Reset() {
+	*x = OperationsCommand{}
+	mi := &file_control_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationsCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationsCommand) ProtoMessage() {}
+
+func (x *OperationsCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_control_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationsCommand.ProtoReflect.Descriptor instead.
+func (*OperationsCommand) Descriptor() ([]byte, []int) {
+	return file_control_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *OperationsCommand) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *OperationsCommand) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 // MemoryCommand manages runtime memory balloon.
 type MemoryCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -984,7 +1100,7 @@ type MemoryCommand struct {
 
 func (x *MemoryCommand) Reset() {
 	*x = MemoryCommand{}
-	mi := &file_control_proto_msgTypes[7]
+	mi := &file_control_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -996,7 +1112,7 @@ func (x *MemoryCommand) String() string {
 func (*MemoryCommand) ProtoMessage() {}
 
 func (x *MemoryCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[7]
+	mi := &file_control_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1009,7 +1125,7 @@ func (x *MemoryCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MemoryCommand.ProtoReflect.Descriptor instead.
 func (*MemoryCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{7}
+	return file_control_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MemoryCommand) GetAction() string {
@@ -1041,7 +1157,7 @@ type OCRCommand struct {
 
 func (x *OCRCommand) Reset() {
 	*x = OCRCommand{}
-	mi := &file_control_proto_msgTypes[8]
+	mi := &file_control_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1053,7 +1169,7 @@ func (x *OCRCommand) String() string {
 func (*OCRCommand) ProtoMessage() {}
 
 func (x *OCRCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[8]
+	mi := &file_control_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1066,7 +1182,7 @@ func (x *OCRCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OCRCommand.ProtoReflect.Descriptor instead.
 func (*OCRCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{8}
+	return file_control_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *OCRCommand) GetAction() string {
@@ -1105,7 +1221,7 @@ type PortForwardCommand struct {
 
 func (x *PortForwardCommand) Reset() {
 	*x = PortForwardCommand{}
-	mi := &file_control_proto_msgTypes[9]
+	mi := &file_control_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1117,7 +1233,7 @@ func (x *PortForwardCommand) String() string {
 func (*PortForwardCommand) ProtoMessage() {}
 
 func (x *PortForwardCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[9]
+	mi := &file_control_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1130,7 +1246,7 @@ func (x *PortForwardCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortForwardCommand.ProtoReflect.Descriptor instead.
 func (*PortForwardCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{9}
+	return file_control_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PortForwardCommand) GetAction() string {
@@ -1166,7 +1282,7 @@ type AgentExecCommand struct {
 
 func (x *AgentExecCommand) Reset() {
 	*x = AgentExecCommand{}
-	mi := &file_control_proto_msgTypes[10]
+	mi := &file_control_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1178,7 +1294,7 @@ func (x *AgentExecCommand) String() string {
 func (*AgentExecCommand) ProtoMessage() {}
 
 func (x *AgentExecCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[10]
+	mi := &file_control_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1191,7 +1307,7 @@ func (x *AgentExecCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentExecCommand.ProtoReflect.Descriptor instead.
 func (*AgentExecCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{10}
+	return file_control_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AgentExecCommand) GetArgs() []string {
@@ -1225,7 +1341,7 @@ type AgentFileReadCommand struct {
 
 func (x *AgentFileReadCommand) Reset() {
 	*x = AgentFileReadCommand{}
-	mi := &file_control_proto_msgTypes[11]
+	mi := &file_control_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1237,7 +1353,7 @@ func (x *AgentFileReadCommand) String() string {
 func (*AgentFileReadCommand) ProtoMessage() {}
 
 func (x *AgentFileReadCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[11]
+	mi := &file_control_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1250,7 +1366,7 @@ func (x *AgentFileReadCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentFileReadCommand.ProtoReflect.Descriptor instead.
 func (*AgentFileReadCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{11}
+	return file_control_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AgentFileReadCommand) GetPath() string {
@@ -1272,7 +1388,7 @@ type AgentFileWriteCommand struct {
 
 func (x *AgentFileWriteCommand) Reset() {
 	*x = AgentFileWriteCommand{}
-	mi := &file_control_proto_msgTypes[12]
+	mi := &file_control_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1284,7 +1400,7 @@ func (x *AgentFileWriteCommand) String() string {
 func (*AgentFileWriteCommand) ProtoMessage() {}
 
 func (x *AgentFileWriteCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[12]
+	mi := &file_control_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1297,7 +1413,7 @@ func (x *AgentFileWriteCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentFileWriteCommand.ProtoReflect.Descriptor instead.
 func (*AgentFileWriteCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{12}
+	return file_control_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *AgentFileWriteCommand) GetPath() string {
@@ -1331,7 +1447,7 @@ type AgentShutdownCommand struct {
 
 func (x *AgentShutdownCommand) Reset() {
 	*x = AgentShutdownCommand{}
-	mi := &file_control_proto_msgTypes[13]
+	mi := &file_control_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1343,7 +1459,7 @@ func (x *AgentShutdownCommand) String() string {
 func (*AgentShutdownCommand) ProtoMessage() {}
 
 func (x *AgentShutdownCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[13]
+	mi := &file_control_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1356,7 +1472,7 @@ func (x *AgentShutdownCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentShutdownCommand.ProtoReflect.Descriptor instead.
 func (*AgentShutdownCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{13}
+	return file_control_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *AgentShutdownCommand) GetForce() bool {
@@ -1376,7 +1492,7 @@ type AgentSSHDCommand struct {
 
 func (x *AgentSSHDCommand) Reset() {
 	*x = AgentSSHDCommand{}
-	mi := &file_control_proto_msgTypes[14]
+	mi := &file_control_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1388,7 +1504,7 @@ func (x *AgentSSHDCommand) String() string {
 func (*AgentSSHDCommand) ProtoMessage() {}
 
 func (x *AgentSSHDCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[14]
+	mi := &file_control_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1401,7 +1517,7 @@ func (x *AgentSSHDCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentSSHDCommand.ProtoReflect.Descriptor instead.
 func (*AgentSSHDCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{14}
+	return file_control_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AgentSSHDCommand) GetAction() string {
@@ -1427,7 +1543,7 @@ type AgentCopyCommand struct {
 
 func (x *AgentCopyCommand) Reset() {
 	*x = AgentCopyCommand{}
-	mi := &file_control_proto_msgTypes[15]
+	mi := &file_control_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1439,7 +1555,7 @@ func (x *AgentCopyCommand) String() string {
 func (*AgentCopyCommand) ProtoMessage() {}
 
 func (x *AgentCopyCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[15]
+	mi := &file_control_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1452,7 +1568,7 @@ func (x *AgentCopyCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentCopyCommand.ProtoReflect.Descriptor instead.
 func (*AgentCopyCommand) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{15}
+	return file_control_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *AgentCopyCommand) GetHostPath() string {
@@ -1504,7 +1620,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_control_proto_msgTypes[16]
+	mi := &file_control_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1516,7 +1632,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[16]
+	mi := &file_control_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1529,7 +1645,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{16}
+	return file_control_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *StatusResponse) GetState() string {
@@ -1581,7 +1697,7 @@ type CapabilitiesResponse struct {
 
 func (x *CapabilitiesResponse) Reset() {
 	*x = CapabilitiesResponse{}
-	mi := &file_control_proto_msgTypes[17]
+	mi := &file_control_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1593,7 +1709,7 @@ func (x *CapabilitiesResponse) String() string {
 func (*CapabilitiesResponse) ProtoMessage() {}
 
 func (x *CapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[17]
+	mi := &file_control_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1606,7 +1722,7 @@ func (x *CapabilitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*CapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{17}
+	return file_control_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CapabilitiesResponse) GetProtocolVersion() string {
@@ -1660,7 +1776,7 @@ type ScreenshotResponse struct {
 
 func (x *ScreenshotResponse) Reset() {
 	*x = ScreenshotResponse{}
-	mi := &file_control_proto_msgTypes[18]
+	mi := &file_control_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1672,7 +1788,7 @@ func (x *ScreenshotResponse) String() string {
 func (*ScreenshotResponse) ProtoMessage() {}
 
 func (x *ScreenshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[18]
+	mi := &file_control_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1685,7 +1801,7 @@ func (x *ScreenshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScreenshotResponse.ProtoReflect.Descriptor instead.
 func (*ScreenshotResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{18}
+	return file_control_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ScreenshotResponse) GetImageData() []byte {
@@ -1725,7 +1841,7 @@ type EmptyResponse struct {
 
 func (x *EmptyResponse) Reset() {
 	*x = EmptyResponse{}
-	mi := &file_control_proto_msgTypes[19]
+	mi := &file_control_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1737,7 +1853,7 @@ func (x *EmptyResponse) String() string {
 func (*EmptyResponse) ProtoMessage() {}
 
 func (x *EmptyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[19]
+	mi := &file_control_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1750,7 +1866,7 @@ func (x *EmptyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EmptyResponse.ProtoReflect.Descriptor instead.
 func (*EmptyResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{19}
+	return file_control_proto_rawDescGZIP(), []int{20}
 }
 
 // SnapshotListResponse wraps a list of snapshot metadata.
@@ -1763,7 +1879,7 @@ type SnapshotListResponse struct {
 
 func (x *SnapshotListResponse) Reset() {
 	*x = SnapshotListResponse{}
-	mi := &file_control_proto_msgTypes[20]
+	mi := &file_control_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1775,7 +1891,7 @@ func (x *SnapshotListResponse) String() string {
 func (*SnapshotListResponse) ProtoMessage() {}
 
 func (x *SnapshotListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[20]
+	mi := &file_control_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1788,7 +1904,7 @@ func (x *SnapshotListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SnapshotListResponse.ProtoReflect.Descriptor instead.
 func (*SnapshotListResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{20}
+	return file_control_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SnapshotListResponse) GetSnapshots() []*SnapshotInfo {
@@ -1800,15 +1916,18 @@ func (x *SnapshotListResponse) GetSnapshots() []*SnapshotInfo {
 
 // SnapshotActionResponse carries the result of a snapshot save/restore/delete.
 type SnapshotActionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Message string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	// op_id is set when the request was async (SnapshotCommand.async=true);
+	// it identifies the long-running operation to poll via OperationsCommand.
+	OpId          string `protobuf:"bytes,2,opt,name=op_id,json=opId,proto3" json:"op_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SnapshotActionResponse) Reset() {
 	*x = SnapshotActionResponse{}
-	mi := &file_control_proto_msgTypes[21]
+	mi := &file_control_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1820,7 +1939,7 @@ func (x *SnapshotActionResponse) String() string {
 func (*SnapshotActionResponse) ProtoMessage() {}
 
 func (x *SnapshotActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[21]
+	mi := &file_control_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1833,7 +1952,7 @@ func (x *SnapshotActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SnapshotActionResponse.ProtoReflect.Descriptor instead.
 func (*SnapshotActionResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{21}
+	return file_control_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SnapshotActionResponse) GetMessage() string {
@@ -1841,6 +1960,151 @@ func (x *SnapshotActionResponse) GetMessage() string {
 		return x.Message
 	}
 	return ""
+}
+
+func (x *SnapshotActionResponse) GetOpId() string {
+	if x != nil {
+		return x.OpId
+	}
+	return ""
+}
+
+// OperationInfo summarizes one long-running operation.
+type OperationInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Resource      string                 `protobuf:"bytes,2,opt,name=resource,proto3" json:"resource,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                        // pending|running|succeeded|failed
+	CreatedAt     string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // RFC3339
+	UpdatedAt     string                 `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"` // RFC3339
+	ErrorCode     string                 `protobuf:"bytes,6,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,7,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationInfo) Reset() {
+	*x = OperationInfo{}
+	mi := &file_control_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationInfo) ProtoMessage() {}
+
+func (x *OperationInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_control_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationInfo.ProtoReflect.Descriptor instead.
+func (*OperationInfo) Descriptor() ([]byte, []int) {
+	return file_control_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *OperationInfo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *OperationInfo) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *OperationInfo) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *OperationInfo) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *OperationInfo) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+func (x *OperationInfo) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *OperationInfo) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+// OperationsListResponse wraps a list of OperationInfo records.
+type OperationsListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operations    []*OperationInfo       `protobuf:"bytes,1,rep,name=operations,proto3" json:"operations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationsListResponse) Reset() {
+	*x = OperationsListResponse{}
+	mi := &file_control_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationsListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationsListResponse) ProtoMessage() {}
+
+func (x *OperationsListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_control_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationsListResponse.ProtoReflect.Descriptor instead.
+func (*OperationsListResponse) Descriptor() ([]byte, []int) {
+	return file_control_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *OperationsListResponse) GetOperations() []*OperationInfo {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
 }
 
 // MessageResponse carries a simple string message.
@@ -1853,7 +2117,7 @@ type MessageResponse struct {
 
 func (x *MessageResponse) Reset() {
 	*x = MessageResponse{}
-	mi := &file_control_proto_msgTypes[22]
+	mi := &file_control_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1865,7 +2129,7 @@ func (x *MessageResponse) String() string {
 func (*MessageResponse) ProtoMessage() {}
 
 func (x *MessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[22]
+	mi := &file_control_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1878,7 +2142,7 @@ func (x *MessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageResponse.ProtoReflect.Descriptor instead.
 func (*MessageResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{22}
+	return file_control_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *MessageResponse) GetMessage() string {
@@ -1898,7 +2162,7 @@ type MemoryInfoResponse struct {
 
 func (x *MemoryInfoResponse) Reset() {
 	*x = MemoryInfoResponse{}
-	mi := &file_control_proto_msgTypes[23]
+	mi := &file_control_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1910,7 +2174,7 @@ func (x *MemoryInfoResponse) String() string {
 func (*MemoryInfoResponse) ProtoMessage() {}
 
 func (x *MemoryInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[23]
+	mi := &file_control_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1923,7 +2187,7 @@ func (x *MemoryInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MemoryInfoResponse.ProtoReflect.Descriptor instead.
 func (*MemoryInfoResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{23}
+	return file_control_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *MemoryInfoResponse) GetInfo() *MemoryInfo {
@@ -1945,7 +2209,7 @@ type NetworkInfoResponse struct {
 
 func (x *NetworkInfoResponse) Reset() {
 	*x = NetworkInfoResponse{}
-	mi := &file_control_proto_msgTypes[24]
+	mi := &file_control_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1957,7 +2221,7 @@ func (x *NetworkInfoResponse) String() string {
 func (*NetworkInfoResponse) ProtoMessage() {}
 
 func (x *NetworkInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[24]
+	mi := &file_control_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1970,7 +2234,7 @@ func (x *NetworkInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkInfoResponse.ProtoReflect.Descriptor instead.
 func (*NetworkInfoResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{24}
+	return file_control_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *NetworkInfoResponse) GetMacAddress() string {
@@ -2007,7 +2271,7 @@ type MemoryInfo struct {
 
 func (x *MemoryInfo) Reset() {
 	*x = MemoryInfo{}
-	mi := &file_control_proto_msgTypes[25]
+	mi := &file_control_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2019,7 +2283,7 @@ func (x *MemoryInfo) String() string {
 func (*MemoryInfo) ProtoMessage() {}
 
 func (x *MemoryInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[25]
+	mi := &file_control_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2032,7 +2296,7 @@ func (x *MemoryInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MemoryInfo.ProtoReflect.Descriptor instead.
 func (*MemoryInfo) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{25}
+	return file_control_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *MemoryInfo) GetConfiguredGb() float64 {
@@ -2077,7 +2341,7 @@ type SnapshotInfo struct {
 
 func (x *SnapshotInfo) Reset() {
 	*x = SnapshotInfo{}
-	mi := &file_control_proto_msgTypes[26]
+	mi := &file_control_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2089,7 +2353,7 @@ func (x *SnapshotInfo) String() string {
 func (*SnapshotInfo) ProtoMessage() {}
 
 func (x *SnapshotInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[26]
+	mi := &file_control_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2102,7 +2366,7 @@ func (x *SnapshotInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SnapshotInfo.ProtoReflect.Descriptor instead.
 func (*SnapshotInfo) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{26}
+	return file_control_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SnapshotInfo) GetName() string {
@@ -2153,7 +2417,7 @@ type AgentExecResponse struct {
 
 func (x *AgentExecResponse) Reset() {
 	*x = AgentExecResponse{}
-	mi := &file_control_proto_msgTypes[27]
+	mi := &file_control_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2165,7 +2429,7 @@ func (x *AgentExecResponse) String() string {
 func (*AgentExecResponse) ProtoMessage() {}
 
 func (x *AgentExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[27]
+	mi := &file_control_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2178,7 +2442,7 @@ func (x *AgentExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentExecResponse.ProtoReflect.Descriptor instead.
 func (*AgentExecResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{27}
+	return file_control_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *AgentExecResponse) GetExitCode() int32 {
@@ -2222,7 +2486,7 @@ type AgentFileResponse struct {
 
 func (x *AgentFileResponse) Reset() {
 	*x = AgentFileResponse{}
-	mi := &file_control_proto_msgTypes[28]
+	mi := &file_control_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2234,7 +2498,7 @@ func (x *AgentFileResponse) String() string {
 func (*AgentFileResponse) ProtoMessage() {}
 
 func (x *AgentFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[28]
+	mi := &file_control_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2247,7 +2511,7 @@ func (x *AgentFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentFileResponse.ProtoReflect.Descriptor instead.
 func (*AgentFileResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{28}
+	return file_control_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AgentFileResponse) GetData() []byte {
@@ -2279,7 +2543,7 @@ type AgentInfoResponse struct {
 
 func (x *AgentInfoResponse) Reset() {
 	*x = AgentInfoResponse{}
-	mi := &file_control_proto_msgTypes[29]
+	mi := &file_control_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2291,7 +2555,7 @@ func (x *AgentInfoResponse) String() string {
 func (*AgentInfoResponse) ProtoMessage() {}
 
 func (x *AgentInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[29]
+	mi := &file_control_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2304,7 +2568,7 @@ func (x *AgentInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentInfoResponse.ProtoReflect.Descriptor instead.
 func (*AgentInfoResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{29}
+	return file_control_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *AgentInfoResponse) GetHostname() string {
@@ -2352,7 +2616,7 @@ type AgentPingResponse struct {
 
 func (x *AgentPingResponse) Reset() {
 	*x = AgentPingResponse{}
-	mi := &file_control_proto_msgTypes[30]
+	mi := &file_control_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2364,7 +2628,7 @@ func (x *AgentPingResponse) String() string {
 func (*AgentPingResponse) ProtoMessage() {}
 
 func (x *AgentPingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[30]
+	mi := &file_control_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2377,7 +2641,7 @@ func (x *AgentPingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentPingResponse.ProtoReflect.Descriptor instead.
 func (*AgentPingResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{30}
+	return file_control_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *AgentPingResponse) GetVersion() string {
@@ -2400,7 +2664,7 @@ type OCRTextResponse struct {
 
 func (x *OCRTextResponse) Reset() {
 	*x = OCRTextResponse{}
-	mi := &file_control_proto_msgTypes[31]
+	mi := &file_control_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2412,7 +2676,7 @@ func (x *OCRTextResponse) String() string {
 func (*OCRTextResponse) ProtoMessage() {}
 
 func (x *OCRTextResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[31]
+	mi := &file_control_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2425,7 +2689,7 @@ func (x *OCRTextResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OCRTextResponse.ProtoReflect.Descriptor instead.
 func (*OCRTextResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{31}
+	return file_control_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *OCRTextResponse) GetText() string {
@@ -2457,7 +2721,7 @@ type OCRMatch struct {
 
 func (x *OCRMatch) Reset() {
 	*x = OCRMatch{}
-	mi := &file_control_proto_msgTypes[32]
+	mi := &file_control_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2469,7 +2733,7 @@ func (x *OCRMatch) String() string {
 func (*OCRMatch) ProtoMessage() {}
 
 func (x *OCRMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[32]
+	mi := &file_control_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2482,7 +2746,7 @@ func (x *OCRMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OCRMatch.ProtoReflect.Descriptor instead.
 func (*OCRMatch) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{32}
+	return file_control_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *OCRMatch) GetText() string {
@@ -2531,7 +2795,7 @@ type ScreenDetectionResponse struct {
 
 func (x *ScreenDetectionResponse) Reset() {
 	*x = ScreenDetectionResponse{}
-	mi := &file_control_proto_msgTypes[33]
+	mi := &file_control_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2543,7 +2807,7 @@ func (x *ScreenDetectionResponse) String() string {
 func (*ScreenDetectionResponse) ProtoMessage() {}
 
 func (x *ScreenDetectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_control_proto_msgTypes[33]
+	mi := &file_control_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2556,7 +2820,7 @@ func (x *ScreenDetectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScreenDetectionResponse.ProtoReflect.Descriptor instead.
 func (*ScreenDetectionResponse) Descriptor() ([]byte, []int) {
-	return file_control_proto_rawDescGZIP(), []int{33}
+	return file_control_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ScreenDetectionResponse) GetState() string {
@@ -2570,7 +2834,7 @@ var File_control_proto protoreflect.FileDescriptor
 
 const file_control_proto_rawDesc = "" +
 	"\n" +
-	"\rcontrol.proto\x12\rvz.control.v1\"\xb4\a\n" +
+	"\rcontrol.proto\x12\rvz.control.v1\"\xf8\a\n" +
 	"\x0eControlRequest\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1d\n" +
 	"\n" +
@@ -2595,8 +2859,12 @@ const file_control_proto_rawDesc = "" +
 	"\x0eagent_shutdown\x18\x17 \x01(\v2#.vz.control.v1.AgentShutdownCommandH\x00R\ragentShutdown\x12@\n" +
 	"\n" +
 	"agent_sshd\x18\x18 \x01(\v2\x1f.vz.control.v1.AgentSSHDCommandH\x00R\tagentSshd\x12<\n" +
-	"\bagent_cp\x18\x19 \x01(\v2\x1f.vz.control.v1.AgentCopyCommandH\x00R\aagentCpB\t\n" +
-	"\acommand\"\xff\b\n" +
+	"\bagent_cp\x18\x19 \x01(\v2\x1f.vz.control.v1.AgentCopyCommandH\x00R\aagentCp\x12B\n" +
+	"\n" +
+	"operations\x18\x1a \x01(\v2 .vz.control.v1.OperationsCommandH\x00R\n" +
+	"operationsB\t\n" +
+	"\acommand\"\x8f\n" +
+	"\n" +
 	"\x0fControlResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x12\n" +
@@ -2620,7 +2888,9 @@ const file_control_proto_rawDesc = "" +
 	"\n" +
 	"agent_ping\x18\x17 \x01(\v2 .vz.control.v1.AgentPingResponseH\x00R\tagentPing\x12;\n" +
 	"\bocr_text\x18\x18 \x01(\v2\x1e.vz.control.v1.OCRTextResponseH\x00R\aocrText\x12S\n" +
-	"\x10screen_detection\x18\x19 \x01(\v2&.vz.control.v1.ScreenDetectionResponseH\x00R\x0fscreenDetectionB\b\n" +
+	"\x10screen_detection\x18\x19 \x01(\v2&.vz.control.v1.ScreenDetectionResponseH\x00R\x0fscreenDetection\x12<\n" +
+	"\toperation\x18\x1a \x01(\v2\x1c.vz.control.v1.OperationInfoH\x00R\toperation\x12P\n" +
+	"\x0foperations_list\x18\x1b \x01(\v2%.vz.control.v1.OperationsListResponseH\x00R\x0eoperationsListB\b\n" +
 	"\x06result\"\xa0\x01\n" +
 	"\n" +
 	"KeyCommand\x12\x19\n" +
@@ -2644,10 +2914,14 @@ const file_control_proto_rawDesc = "" +
 	"\x04diff\x18\x01 \x01(\bR\x04diff\x12\x14\n" +
 	"\x05scale\x18\x02 \x01(\x01R\x05scale\x12\x18\n" +
 	"\aquality\x18\x03 \x01(\x05R\aquality\x12\x16\n" +
-	"\x06format\x18\x04 \x01(\tR\x06format\"=\n" +
+	"\x06format\x18\x04 \x01(\tR\x06format\"S\n" +
 	"\x0fSnapshotCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"@\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05async\x18\x03 \x01(\bR\x05async\";\n" +
+	"\x11OperationsCommand\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"@\n" +
 	"\rMemoryCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x17\n" +
 	"\asize_gb\x18\x02 \x01(\x01R\x06sizeGb\"R\n" +
@@ -2710,9 +2984,25 @@ const file_control_proto_rawDesc = "" +
 	"\x06height\x18\x04 \x01(\x05R\x06height\"\x0f\n" +
 	"\rEmptyResponse\"Q\n" +
 	"\x14SnapshotListResponse\x129\n" +
-	"\tsnapshots\x18\x01 \x03(\v2\x1b.vz.control.v1.SnapshotInfoR\tsnapshots\"2\n" +
+	"\tsnapshots\x18\x01 \x03(\v2\x1b.vz.control.v1.SnapshotInfoR\tsnapshots\"G\n" +
 	"\x16SnapshotActionResponse\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\"+\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12\x13\n" +
+	"\x05op_id\x18\x02 \x01(\tR\x04opId\"\xd5\x01\n" +
+	"\rOperationInfo\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bresource\x18\x02 \x01(\tR\bresource\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x05 \x01(\tR\tupdatedAt\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x06 \x01(\tR\terrorCode\x12#\n" +
+	"\rerror_message\x18\a \x01(\tR\ferrorMessage\"V\n" +
+	"\x16OperationsListResponse\x12<\n" +
+	"\n" +
+	"operations\x18\x01 \x03(\v2\x1c.vz.control.v1.OperationInfoR\n" +
+	"operations\"+\n" +
 	"\x0fMessageResponse\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\"C\n" +
 	"\x12MemoryInfoResponse\x12-\n" +
@@ -2776,7 +3066,7 @@ func file_control_proto_rawDescGZIP() []byte {
 	return file_control_proto_rawDescData
 }
 
-var file_control_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_control_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_control_proto_goTypes = []any{
 	(*ControlRequest)(nil),          // 0: vz.control.v1.ControlRequest
 	(*ControlResponse)(nil),         // 1: vz.control.v1.ControlResponse
@@ -2785,35 +3075,38 @@ var file_control_proto_goTypes = []any{
 	(*TextCommand)(nil),             // 4: vz.control.v1.TextCommand
 	(*ScreenshotCommand)(nil),       // 5: vz.control.v1.ScreenshotCommand
 	(*SnapshotCommand)(nil),         // 6: vz.control.v1.SnapshotCommand
-	(*MemoryCommand)(nil),           // 7: vz.control.v1.MemoryCommand
-	(*OCRCommand)(nil),              // 8: vz.control.v1.OCRCommand
-	(*PortForwardCommand)(nil),      // 9: vz.control.v1.PortForwardCommand
-	(*AgentExecCommand)(nil),        // 10: vz.control.v1.AgentExecCommand
-	(*AgentFileReadCommand)(nil),    // 11: vz.control.v1.AgentFileReadCommand
-	(*AgentFileWriteCommand)(nil),   // 12: vz.control.v1.AgentFileWriteCommand
-	(*AgentShutdownCommand)(nil),    // 13: vz.control.v1.AgentShutdownCommand
-	(*AgentSSHDCommand)(nil),        // 14: vz.control.v1.AgentSSHDCommand
-	(*AgentCopyCommand)(nil),        // 15: vz.control.v1.AgentCopyCommand
-	(*StatusResponse)(nil),          // 16: vz.control.v1.StatusResponse
-	(*CapabilitiesResponse)(nil),    // 17: vz.control.v1.CapabilitiesResponse
-	(*ScreenshotResponse)(nil),      // 18: vz.control.v1.ScreenshotResponse
-	(*EmptyResponse)(nil),           // 19: vz.control.v1.EmptyResponse
-	(*SnapshotListResponse)(nil),    // 20: vz.control.v1.SnapshotListResponse
-	(*SnapshotActionResponse)(nil),  // 21: vz.control.v1.SnapshotActionResponse
-	(*MessageResponse)(nil),         // 22: vz.control.v1.MessageResponse
-	(*MemoryInfoResponse)(nil),      // 23: vz.control.v1.MemoryInfoResponse
-	(*NetworkInfoResponse)(nil),     // 24: vz.control.v1.NetworkInfoResponse
-	(*MemoryInfo)(nil),              // 25: vz.control.v1.MemoryInfo
-	(*SnapshotInfo)(nil),            // 26: vz.control.v1.SnapshotInfo
-	(*AgentExecResponse)(nil),       // 27: vz.control.v1.AgentExecResponse
-	(*AgentFileResponse)(nil),       // 28: vz.control.v1.AgentFileResponse
-	(*AgentInfoResponse)(nil),       // 29: vz.control.v1.AgentInfoResponse
-	(*AgentPingResponse)(nil),       // 30: vz.control.v1.AgentPingResponse
-	(*OCRTextResponse)(nil),         // 31: vz.control.v1.OCRTextResponse
-	(*OCRMatch)(nil),                // 32: vz.control.v1.OCRMatch
-	(*ScreenDetectionResponse)(nil), // 33: vz.control.v1.ScreenDetectionResponse
-	nil,                             // 34: vz.control.v1.AgentExecCommand.EnvEntry
-	nil,                             // 35: vz.control.v1.CapabilitiesResponse.FeaturesEntry
+	(*OperationsCommand)(nil),       // 7: vz.control.v1.OperationsCommand
+	(*MemoryCommand)(nil),           // 8: vz.control.v1.MemoryCommand
+	(*OCRCommand)(nil),              // 9: vz.control.v1.OCRCommand
+	(*PortForwardCommand)(nil),      // 10: vz.control.v1.PortForwardCommand
+	(*AgentExecCommand)(nil),        // 11: vz.control.v1.AgentExecCommand
+	(*AgentFileReadCommand)(nil),    // 12: vz.control.v1.AgentFileReadCommand
+	(*AgentFileWriteCommand)(nil),   // 13: vz.control.v1.AgentFileWriteCommand
+	(*AgentShutdownCommand)(nil),    // 14: vz.control.v1.AgentShutdownCommand
+	(*AgentSSHDCommand)(nil),        // 15: vz.control.v1.AgentSSHDCommand
+	(*AgentCopyCommand)(nil),        // 16: vz.control.v1.AgentCopyCommand
+	(*StatusResponse)(nil),          // 17: vz.control.v1.StatusResponse
+	(*CapabilitiesResponse)(nil),    // 18: vz.control.v1.CapabilitiesResponse
+	(*ScreenshotResponse)(nil),      // 19: vz.control.v1.ScreenshotResponse
+	(*EmptyResponse)(nil),           // 20: vz.control.v1.EmptyResponse
+	(*SnapshotListResponse)(nil),    // 21: vz.control.v1.SnapshotListResponse
+	(*SnapshotActionResponse)(nil),  // 22: vz.control.v1.SnapshotActionResponse
+	(*OperationInfo)(nil),           // 23: vz.control.v1.OperationInfo
+	(*OperationsListResponse)(nil),  // 24: vz.control.v1.OperationsListResponse
+	(*MessageResponse)(nil),         // 25: vz.control.v1.MessageResponse
+	(*MemoryInfoResponse)(nil),      // 26: vz.control.v1.MemoryInfoResponse
+	(*NetworkInfoResponse)(nil),     // 27: vz.control.v1.NetworkInfoResponse
+	(*MemoryInfo)(nil),              // 28: vz.control.v1.MemoryInfo
+	(*SnapshotInfo)(nil),            // 29: vz.control.v1.SnapshotInfo
+	(*AgentExecResponse)(nil),       // 30: vz.control.v1.AgentExecResponse
+	(*AgentFileResponse)(nil),       // 31: vz.control.v1.AgentFileResponse
+	(*AgentInfoResponse)(nil),       // 32: vz.control.v1.AgentInfoResponse
+	(*AgentPingResponse)(nil),       // 33: vz.control.v1.AgentPingResponse
+	(*OCRTextResponse)(nil),         // 34: vz.control.v1.OCRTextResponse
+	(*OCRMatch)(nil),                // 35: vz.control.v1.OCRMatch
+	(*ScreenDetectionResponse)(nil), // 36: vz.control.v1.ScreenDetectionResponse
+	nil,                             // 37: vz.control.v1.AgentExecCommand.EnvEntry
+	nil,                             // 38: vz.control.v1.CapabilitiesResponse.FeaturesEntry
 }
 var file_control_proto_depIdxs = []int32{
 	2,  // 0: vz.control.v1.ControlRequest.key:type_name -> vz.control.v1.KeyCommand
@@ -2821,40 +3114,44 @@ var file_control_proto_depIdxs = []int32{
 	4,  // 2: vz.control.v1.ControlRequest.text:type_name -> vz.control.v1.TextCommand
 	5,  // 3: vz.control.v1.ControlRequest.screenshot:type_name -> vz.control.v1.ScreenshotCommand
 	6,  // 4: vz.control.v1.ControlRequest.snapshot:type_name -> vz.control.v1.SnapshotCommand
-	7,  // 5: vz.control.v1.ControlRequest.memory:type_name -> vz.control.v1.MemoryCommand
-	8,  // 6: vz.control.v1.ControlRequest.ocr:type_name -> vz.control.v1.OCRCommand
-	9,  // 7: vz.control.v1.ControlRequest.port_forward:type_name -> vz.control.v1.PortForwardCommand
-	10, // 8: vz.control.v1.ControlRequest.agent_exec:type_name -> vz.control.v1.AgentExecCommand
-	11, // 9: vz.control.v1.ControlRequest.agent_read:type_name -> vz.control.v1.AgentFileReadCommand
-	12, // 10: vz.control.v1.ControlRequest.agent_write:type_name -> vz.control.v1.AgentFileWriteCommand
-	13, // 11: vz.control.v1.ControlRequest.agent_shutdown:type_name -> vz.control.v1.AgentShutdownCommand
-	14, // 12: vz.control.v1.ControlRequest.agent_sshd:type_name -> vz.control.v1.AgentSSHDCommand
-	15, // 13: vz.control.v1.ControlRequest.agent_cp:type_name -> vz.control.v1.AgentCopyCommand
-	16, // 14: vz.control.v1.ControlResponse.status:type_name -> vz.control.v1.StatusResponse
-	17, // 15: vz.control.v1.ControlResponse.capabilities:type_name -> vz.control.v1.CapabilitiesResponse
-	18, // 16: vz.control.v1.ControlResponse.screenshot_result:type_name -> vz.control.v1.ScreenshotResponse
-	19, // 17: vz.control.v1.ControlResponse.empty:type_name -> vz.control.v1.EmptyResponse
-	20, // 18: vz.control.v1.ControlResponse.snapshot_list:type_name -> vz.control.v1.SnapshotListResponse
-	21, // 19: vz.control.v1.ControlResponse.snapshot_action:type_name -> vz.control.v1.SnapshotActionResponse
-	22, // 20: vz.control.v1.ControlResponse.message:type_name -> vz.control.v1.MessageResponse
-	24, // 21: vz.control.v1.ControlResponse.network_info:type_name -> vz.control.v1.NetworkInfoResponse
-	23, // 22: vz.control.v1.ControlResponse.memory_info:type_name -> vz.control.v1.MemoryInfoResponse
-	27, // 23: vz.control.v1.ControlResponse.agent_exec_result:type_name -> vz.control.v1.AgentExecResponse
-	28, // 24: vz.control.v1.ControlResponse.agent_file:type_name -> vz.control.v1.AgentFileResponse
-	29, // 25: vz.control.v1.ControlResponse.agent_info:type_name -> vz.control.v1.AgentInfoResponse
-	30, // 26: vz.control.v1.ControlResponse.agent_ping:type_name -> vz.control.v1.AgentPingResponse
-	31, // 27: vz.control.v1.ControlResponse.ocr_text:type_name -> vz.control.v1.OCRTextResponse
-	33, // 28: vz.control.v1.ControlResponse.screen_detection:type_name -> vz.control.v1.ScreenDetectionResponse
-	34, // 29: vz.control.v1.AgentExecCommand.env:type_name -> vz.control.v1.AgentExecCommand.EnvEntry
-	35, // 30: vz.control.v1.CapabilitiesResponse.features:type_name -> vz.control.v1.CapabilitiesResponse.FeaturesEntry
-	26, // 31: vz.control.v1.SnapshotListResponse.snapshots:type_name -> vz.control.v1.SnapshotInfo
-	25, // 32: vz.control.v1.MemoryInfoResponse.info:type_name -> vz.control.v1.MemoryInfo
-	32, // 33: vz.control.v1.OCRTextResponse.matches:type_name -> vz.control.v1.OCRMatch
-	34, // [34:34] is the sub-list for method output_type
-	34, // [34:34] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	8,  // 5: vz.control.v1.ControlRequest.memory:type_name -> vz.control.v1.MemoryCommand
+	9,  // 6: vz.control.v1.ControlRequest.ocr:type_name -> vz.control.v1.OCRCommand
+	10, // 7: vz.control.v1.ControlRequest.port_forward:type_name -> vz.control.v1.PortForwardCommand
+	11, // 8: vz.control.v1.ControlRequest.agent_exec:type_name -> vz.control.v1.AgentExecCommand
+	12, // 9: vz.control.v1.ControlRequest.agent_read:type_name -> vz.control.v1.AgentFileReadCommand
+	13, // 10: vz.control.v1.ControlRequest.agent_write:type_name -> vz.control.v1.AgentFileWriteCommand
+	14, // 11: vz.control.v1.ControlRequest.agent_shutdown:type_name -> vz.control.v1.AgentShutdownCommand
+	15, // 12: vz.control.v1.ControlRequest.agent_sshd:type_name -> vz.control.v1.AgentSSHDCommand
+	16, // 13: vz.control.v1.ControlRequest.agent_cp:type_name -> vz.control.v1.AgentCopyCommand
+	7,  // 14: vz.control.v1.ControlRequest.operations:type_name -> vz.control.v1.OperationsCommand
+	17, // 15: vz.control.v1.ControlResponse.status:type_name -> vz.control.v1.StatusResponse
+	18, // 16: vz.control.v1.ControlResponse.capabilities:type_name -> vz.control.v1.CapabilitiesResponse
+	19, // 17: vz.control.v1.ControlResponse.screenshot_result:type_name -> vz.control.v1.ScreenshotResponse
+	20, // 18: vz.control.v1.ControlResponse.empty:type_name -> vz.control.v1.EmptyResponse
+	21, // 19: vz.control.v1.ControlResponse.snapshot_list:type_name -> vz.control.v1.SnapshotListResponse
+	22, // 20: vz.control.v1.ControlResponse.snapshot_action:type_name -> vz.control.v1.SnapshotActionResponse
+	25, // 21: vz.control.v1.ControlResponse.message:type_name -> vz.control.v1.MessageResponse
+	27, // 22: vz.control.v1.ControlResponse.network_info:type_name -> vz.control.v1.NetworkInfoResponse
+	26, // 23: vz.control.v1.ControlResponse.memory_info:type_name -> vz.control.v1.MemoryInfoResponse
+	30, // 24: vz.control.v1.ControlResponse.agent_exec_result:type_name -> vz.control.v1.AgentExecResponse
+	31, // 25: vz.control.v1.ControlResponse.agent_file:type_name -> vz.control.v1.AgentFileResponse
+	32, // 26: vz.control.v1.ControlResponse.agent_info:type_name -> vz.control.v1.AgentInfoResponse
+	33, // 27: vz.control.v1.ControlResponse.agent_ping:type_name -> vz.control.v1.AgentPingResponse
+	34, // 28: vz.control.v1.ControlResponse.ocr_text:type_name -> vz.control.v1.OCRTextResponse
+	36, // 29: vz.control.v1.ControlResponse.screen_detection:type_name -> vz.control.v1.ScreenDetectionResponse
+	23, // 30: vz.control.v1.ControlResponse.operation:type_name -> vz.control.v1.OperationInfo
+	24, // 31: vz.control.v1.ControlResponse.operations_list:type_name -> vz.control.v1.OperationsListResponse
+	37, // 32: vz.control.v1.AgentExecCommand.env:type_name -> vz.control.v1.AgentExecCommand.EnvEntry
+	38, // 33: vz.control.v1.CapabilitiesResponse.features:type_name -> vz.control.v1.CapabilitiesResponse.FeaturesEntry
+	29, // 34: vz.control.v1.SnapshotListResponse.snapshots:type_name -> vz.control.v1.SnapshotInfo
+	23, // 35: vz.control.v1.OperationsListResponse.operations:type_name -> vz.control.v1.OperationInfo
+	28, // 36: vz.control.v1.MemoryInfoResponse.info:type_name -> vz.control.v1.MemoryInfo
+	35, // 37: vz.control.v1.OCRTextResponse.matches:type_name -> vz.control.v1.OCRMatch
+	38, // [38:38] is the sub-list for method output_type
+	38, // [38:38] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_control_proto_init() }
@@ -2877,6 +3174,7 @@ func file_control_proto_init() {
 		(*ControlRequest_AgentShutdown)(nil),
 		(*ControlRequest_AgentSshd)(nil),
 		(*ControlRequest_AgentCp)(nil),
+		(*ControlRequest_Operations)(nil),
 	}
 	file_control_proto_msgTypes[1].OneofWrappers = []any{
 		(*ControlResponse_Status)(nil),
@@ -2894,6 +3192,8 @@ func file_control_proto_init() {
 		(*ControlResponse_AgentPing)(nil),
 		(*ControlResponse_OcrText)(nil),
 		(*ControlResponse_ScreenDetection)(nil),
+		(*ControlResponse_Operation)(nil),
+		(*ControlResponse_OperationsList)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2901,7 +3201,7 @@ func file_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_control_proto_rawDesc), len(file_control_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   36,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

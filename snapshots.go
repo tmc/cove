@@ -264,6 +264,9 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if cmd.Name == "" {
 			return &controlpb.ControlResponse{Error: "snapshot name required"}
 		}
+		if cmd.Async {
+			return s.handleSnapshotSaveAsync(mgr, cmd.Name)
+		}
 		if err := mgr.Save(s.vm, vmruntime.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
@@ -310,6 +313,48 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 
 	default:
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown snapshot action: %s", cmd.Action)}
+	}
+}
+
+// handleSnapshotSaveAsync starts a snapshot save in a background goroutine
+// and returns the operation ID immediately. The op record is persisted at
+// <vmDir>/operations/<id>.json so it survives cove restarts (orphaned
+// pending/running ops are reaped to "failed" with code "server_restart" by
+// FileOperationStore.Load on the next process startup).
+//
+// Caller invariant: ControlServer.handleRequest holds s.mu when this returns.
+// The spawned goroutine does NOT acquire s.mu — mgr.Save blocks on the VM
+// dispatch queue (vmQueue), not the control-socket mutex.
+func (s *ControlServer) handleSnapshotSaveAsync(mgr *snapshotx.Manager, name string) *controlpb.ControlResponse {
+	reg, err := s.ensureOps()
+	if err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
+	}
+	op, err := reg.Create(fmt.Sprintf("snapshots/%s", name))
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("create operation: %v", err)}
+	}
+	if err := reg.Start(op.ID); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("start operation: %v", err)}
+	}
+
+	vm := s.vm
+	queue := s.vmQueue
+	go func() {
+		if err := mgr.Save(vm, vmruntime.WrapQueue(queue), name); err != nil {
+			_ = reg.Fail(op.ID, "snapshot_save", err.Error())
+			return
+		}
+		_ = reg.Succeed(op.ID, map[string]any{"snapshot": name})
+	}()
+
+	msg := fmt.Sprintf("snapshot '%s' save running asynchronously (op %s)", name, op.ID)
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    msg,
+		Result: &controlpb.ControlResponse_SnapshotAction{
+			SnapshotAction: &controlpb.SnapshotActionResponse{Message: msg, OpId: op.ID},
+		},
 	}
 }
 
