@@ -57,12 +57,25 @@ type ManifestOptions struct {
 	LumeCompat       bool
 }
 
+// ManifestFormat identifies how the disk image is laid out across layers.
+type ManifestFormat int
+
+const (
+	// FormatCove is the LZ4-chunk-with-offset-annotation layout cove writes.
+	FormatCove ManifestFormat = iota
+	// FormatLume is the tar-split layout used by lume's ghcr.io images.
+	FormatLume
+)
+
 // ParsedManifest is the normalized disk and sidecar metadata from a manifest.
 type ParsedManifest struct {
+	Format      ManifestFormat
 	Annotations ManifestAnnotations
 	Chunks      []Chunk
 	DiskLayers  []DiskLayer
 	Blobs       []Descriptor
+	// Lume is populated when Format == FormatLume.
+	Lume LumeManifest
 }
 
 // BuildManifest builds a deterministic OCI manifest and its config JSON.
@@ -160,10 +173,22 @@ func BuildManifest(opts ManifestOptions) (Manifest, []byte, error) {
 }
 
 // ParseManifest validates an OCI manifest and returns cove-normalized metadata.
+// If the manifest is in lume's tar-split format (no cove annotations + tar
+// part layers), Format is set to FormatLume and Lume is populated; the cove
+// chunk fields stay empty.
 func ParseManifest(m Manifest) (ParsedManifest, error) {
 	var out ParsedManifest
 	if m.SchemaVersion != 2 {
 		return out, fmt.Errorf("parse manifest: schema version %d, want 2", m.SchemaVersion)
+	}
+	if IsLumeManifest(m) {
+		lume, err := ParseLumeManifest(m)
+		if err != nil {
+			return out, err
+		}
+		out.Format = FormatLume
+		out.Lume = lume
+		return out, nil
 	}
 	annotations, err := NormalizeManifestAnnotations(m.Annotations)
 	if err != nil {

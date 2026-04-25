@@ -57,8 +57,15 @@ func handlePull(args []string) error {
 		printPullDryRun(os.Stdout, plan)
 		return nil
 	}
-	if err := pullDisk(context.Background(), plan, opts); err != nil {
-		return err
+	switch plan.Manifest.Format {
+	case ociimage.FormatLume:
+		if err := lumePullDisk(context.Background(), plan, opts); err != nil {
+			return err
+		}
+	default:
+		if err := pullDisk(context.Background(), plan, opts); err != nil {
+			return err
+		}
 	}
 	printPullResult(os.Stdout, plan)
 	return nil
@@ -438,10 +445,28 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	if plan.ManifestDigest != "" {
 		fmt.Fprintf(w, "  manifest digest: %s\n", plan.ManifestDigest)
 	}
+	switch plan.Manifest.Format {
+	case ociimage.FormatLume:
+		fmt.Fprintf(w, "  format: lume (tar-split)\n")
+		fmt.Fprintf(w, "  disk parts: %d\n", len(plan.Manifest.Lume.DiskParts))
+		var compressed int64
+		for _, p := range plan.Manifest.Lume.DiskParts {
+			compressed += p.Descriptor.Size
+		}
+		fmt.Fprintf(w, "  compressed bytes: %s\n", bytefmt.Size(compressed))
+		if plan.Manifest.Lume.NvramLayer != nil {
+			fmt.Fprintf(w, "  nvram.bin: %s\n", bytefmt.Size(plan.Manifest.Lume.NvramLayer.Size))
+		}
+		if plan.Manifest.Lume.ConfigLayer != nil {
+			fmt.Fprintf(w, "  config.json: %s\n", bytefmt.Size(plan.Manifest.Lume.ConfigLayer.Size))
+		}
+		return
+	}
 	if len(plan.Manifest.Chunks) == 0 && plan.Manifest.Annotations.UncompressedDiskSize == 0 {
 		fmt.Fprintln(w, "  manifest: not provided")
 		return
 	}
+	fmt.Fprintf(w, "  format: cove\n")
 	fmt.Fprintf(w, "  disk size: %s\n", bytefmt.Size(plan.Manifest.Annotations.UncompressedDiskSize))
 	fmt.Fprintf(w, "  chunks: %d\n", len(plan.Manifest.Chunks))
 	fmt.Fprintf(w, "  metadata blobs: %d\n", len(plan.Manifest.Blobs))
