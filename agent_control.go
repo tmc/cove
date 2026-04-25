@@ -575,8 +575,9 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 }
 
 // checkAgentVersion compares the guest agent version with the host version.
-// Logs a warning on mismatch. If autoUpgradeAgent is enabled and this is the
-// first mismatch detected, triggers a background upgrade.
+// On a comparable mismatch where the guest is older, triggers a background
+// upgrade (if autoUpgradeAgent is enabled). A newer guest is left alone with
+// a warning — we never downgrade. Equal/unknown versions are no-ops.
 func (s *ControlServer) checkAgentVersion(agentVer string) {
 	s.healthMu.RLock()
 	checked := s.agentHealth.versionChecked
@@ -591,17 +592,17 @@ func (s *ControlServer) checkAgentVersion(agentVer string) {
 
 	hostVer := hostVersion()
 
-	// Skip comparison if either version is unresolvable.
-	if agentVer == "" || agentVer == "dev" || agentVer == "unknown" {
+	switch agentVersionCompare(hostVer, agentVer) {
+	case versionUnknown:
 		return
-	}
-	if hostVer == "" || hostVer == "dev" || hostVer == "unknown" {
-		return
-	}
-
-	if agentVer == hostVer {
+	case versionEqual:
 		log.Printf("agent-health: version match (%s)", agentVer)
 		return
+	case versionGuestNewer:
+		log.Printf("agent-health: guest agent %s is newer than host %s; not downgrading", agentVer, hostVer)
+		return
+	case versionGuestOlder, versionDifferent:
+		// fall through to upgrade path
 	}
 
 	log.Printf("agent-health: version mismatch: host=%s guest=%s", hostVer, agentVer)
