@@ -62,19 +62,12 @@ Branch work off `next`, merge back to `next`, then `next` becomes the
 - **When to revisit:** 0.3, bundled with the actual control-socket →
   Connect migration.
 
-### Hardcoded `Status: "running"` in VM listing — **RECOMMEND: fix before tag**
+### Hardcoded `Status: "running"` in VM listing — **fixed in v0.1**
 
-- **Where:** `serve_gateway.go:388`
-- **What's wrong:** `GET /v1/vms` reports every registered VM as
-  `"running"`, even if paused/stopped.
-- **Kill-vs-fix:** Fix — either query `g.routes[name].status()` or
-  strip the `Status` field entirely. Stripping is ~2 loc and more
-  honest than lying. Fixing properly is ~15 loc (needs per-route status
-  accessor, may not exist today).
-- **Recommended minimal fix:** Strip the field. `GET /v1/vms` becomes
-  `{"vms": [{"name": "..."}]}`. Clients that need status call
-  `GET /v1/vms/<name>/status`.
-- **Time:** ~5 minutes + a test update.
+Stripped the lying field. `GET /v1/vms` now returns
+`{"vms": [{"name": "..."}]}`; clients that need state call
+`GET /v1/vms/<name>/status`. A future `/v1/vms` revision could re-add
+state once we have a real per-route status accessor — defer to 0.2+.
 
 ## 0.3+ themes (high-level only)
 
