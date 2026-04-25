@@ -90,9 +90,13 @@ Commands:
   power keep-awake      Disable guest display sleep, system sleep, and screen saver
   power allow-sleep [minutes]  Restore guest sleep timers (default: 10)
   snapshot list         List snapshots
-  snapshot save <name>  Save snapshot
+  snapshot save <name>  Save snapshot (sync; blocks until complete)
+  snapshot save -async <name>  Save snapshot in background; prints op id
   snapshot restore <name> Restore snapshot
   snapshot delete <name>  Delete snapshot
+  operations get <id>   Print state of a long-running operation
+  operations list       List all known long-running operations
+  operations wait <id>  Block until <id> reaches succeeded or failed
   key <keycode> [down|up]  Send keyboard event
   mouse <x> <y> <action>   Send mouse event (action: move|down|up|click)
   text <string>         Type text string
@@ -395,14 +399,56 @@ func ctlCommand(args []string) error {
 			return fmt.Errorf("snapshot requires action: list, save, restore, or delete")
 		}
 		action := subArgs[0]
-		cmd := &controlpb.SnapshotCommand{Action: action}
+		rest := subArgs[1:]
+		// Strip optional flags from the action's positional args. Currently
+		// only "save" recognises -async; flags may appear before or after
+		// the snapshot name so scripts can be written either way.
+		var async bool
+		var positional []string
+		for _, a := range rest {
+			switch a {
+			case "-async", "--async":
+				async = true
+			default:
+				positional = append(positional, a)
+			}
+		}
+		cmd := &controlpb.SnapshotCommand{Action: action, Async: async}
 		if action != "list" {
-			if len(subArgs) < 2 {
+			if len(positional) < 1 {
 				return fmt.Errorf("snapshot %s requires a name", action)
 			}
-			cmd.Name = subArgs[1]
+			cmd.Name = positional[0]
+		}
+		if async && action != "save" {
+			return fmt.Errorf("snapshot %s does not support -async (only save)", action)
 		}
 		req.Command = &controlpb.ControlRequest_Snapshot{Snapshot: cmd}
+
+	case "operations":
+		if len(subArgs) < 1 {
+			return fmt.Errorf("operations requires action: get <id>, list, or wait <id>")
+		}
+		action := subArgs[0]
+		switch action {
+		case "list":
+			req.Command = &controlpb.ControlRequest_Operations{
+				Operations: &controlpb.OperationsCommand{Action: "list"},
+			}
+		case "get", "wait":
+			if len(subArgs) < 2 {
+				return fmt.Errorf("operations %s requires an op id", action)
+			}
+			// "wait" is a CLI-side polling loop; on the wire we send "get".
+			req.Command = &controlpb.ControlRequest_Operations{
+				Operations: &controlpb.OperationsCommand{Action: "get", Id: subArgs[1]},
+			}
+			if action == "wait" {
+				return runOperationsWait(sock, subArgs[1], *timeout, *raw, *outputFile)
+			}
+		default:
+			return fmt.Errorf("unknown operations action: %s", action)
+		}
 
 	case "screenshot":
 		// Accept positional path: "ctl screenshot /tmp/screen.jpg"
@@ -2112,6 +2158,50 @@ func ctlITerm2Proxy(sock string, args []string, raw bool) error {
 	}
 	fmt.Println(resp.Data)
 	return nil
+}
+
+// runOperationsWait polls the per-VM operations registry every 500ms until
+// the named op reaches a terminal state (succeeded|failed) or the per-call
+// timeout is exceeded. Each poll reuses ctlSendRequest with its own dial,
+// so transient socket errors during a long-running save (e.g., the VM
+// briefly pauses on its dispatch queue) don't abort the wait.
+func runOperationsWait(sock, opID string, timeout time.Duration, raw bool, outputFile string) error {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	const pollInterval = 500 * time.Millisecond
+	deadline := time.Now().Add(1 * time.Hour) // wait up to an hour for huge saves; per-call timeout still applies
+	for {
+		req := &controlpb.ControlRequest{
+			Type:      "operations",
+			AuthToken: resolveControlTokenForSocket(sock),
+			Command: &controlpb.ControlRequest_Operations{
+				Operations: &controlpb.OperationsCommand{Action: "get", Id: opID},
+			},
+		}
+		resp, err := ctlSendRequest(sock, req, timeout, "operations")
+		if err == nil && resp.Error == "" {
+			info := resp.GetOperation()
+			if info != nil {
+				switch info.Status {
+				case "succeeded":
+					return ctlPrintResponse(resp, "operations", raw, outputFile)
+				case "failed":
+					if err := ctlPrintResponse(resp, "operations", raw, outputFile); err != nil {
+						return err
+					}
+					if info.ErrorMessage != "" {
+						return fmt.Errorf("operation %s failed: %s", opID, info.ErrorMessage)
+					}
+					return fmt.Errorf("operation %s failed", opID)
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("operation %s did not complete within %v", opID, time.Since(deadline.Add(-1*time.Hour)))
+		}
+		time.Sleep(pollInterval)
+	}
 }
 
 // ctlITerm2ProxyCommand sends a simple iterm2-proxy-* command.
