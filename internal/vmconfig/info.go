@@ -62,10 +62,16 @@ func List(state StateFunc) ([]Info, error) {
 
 	var vms []Info
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
 		vmPath := filepath.Join(baseDir, entry.Name())
+		if !entry.IsDir() {
+			if entry.Type()&os.ModeSymlink == 0 {
+				continue
+			}
+			target, err := os.Stat(vmPath)
+			if err != nil || !target.IsDir() {
+				continue
+			}
+		}
 		info, err := InfoFor(vmPath, state)
 		if err != nil {
 			continue
