@@ -94,3 +94,48 @@ func TestListFollowsSymlinks(t *testing.T) {
 		t.Fatalf("List() = %#v, want one entry named legacy-vm", got)
 	}
 }
+
+// TestListDiscoversLegacyLayout ensures List() finds VMs under the legacy
+// ~/.vz/<name>/ layout even when no alias has been planted under BaseDir,
+// and plants the alias as a side effect so subsequent lists work via the
+// normal BaseDir scan.
+func TestListDiscoversLegacyLayout(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	for _, name := range []string{"legacy-mac", "legacy-linux"} {
+		dir := filepath.Join(home, ".vz", name)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", name, err)
+		}
+		if name == "legacy-mac" {
+			for _, f := range []string{"disk.img", "aux.img"} {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0644); err != nil {
+					t.Fatalf("WriteFile(%s) error = %v", f, err)
+				}
+			}
+		} else {
+			if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("x"), 0644); err != nil {
+				t.Fatalf("WriteFile(linux-disk.img) error = %v", err)
+			}
+		}
+	}
+
+	got, err := List(nil)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != 2 || got[0].Name != "legacy-linux" || got[1].Name != "legacy-mac" {
+		t.Fatalf("List() = %#v, want both legacy VMs", got)
+	}
+	for _, name := range []string{"legacy-mac", "legacy-linux"} {
+		alias := filepath.Join(BaseDir(), name)
+		info, err := os.Lstat(alias)
+		if err != nil {
+			t.Fatalf("alias %q not planted: %v", name, err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("alias %q not a symlink (mode %v)", name, info.Mode())
+		}
+	}
+}
