@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -302,17 +303,100 @@ func provisionAgentRunning(sock string) error {
 	return upgradeAgentAt(sock)
 }
 
+// versionRelation describes how host and guest agent versions order.
+// Used by the auto-upgrade decision: only versionGuestOlder is a safe upgrade.
+type versionRelation int
+
+const (
+	// versionUnknown means we cannot rule out a downgrade. No auto-upgrade.
+	versionUnknown versionRelation = iota
+	// versionEqual means versions match exactly. No-op.
+	versionEqual
+	// versionGuestOlder means the guest is older than the host (semver compare).
+	// Safe to auto-upgrade.
+	versionGuestOlder
+	// versionGuestNewer means the guest is newer than the host. Do NOT downgrade;
+	// log a warning instead.
+	versionGuestNewer
+	// versionDifferent means we have two non-empty, non-comparable version
+	// strings (e.g., two dev commit shas, or one tag and one sha). Treat as a
+	// signal to upgrade since the host is the source of truth, but callers may
+	// want to gate it more conservatively for production builds.
+	versionDifferent
+)
+
+// agentVersionCompare reports how host and guest versions order.
+// "" / "dev" / "unknown" on either side returns versionUnknown.
+// Equal strings return versionEqual.
+// If both look like semver (vX.Y.Z[...]) and differ, returns Older or Newer.
+// Otherwise returns versionDifferent.
+func agentVersionCompare(host, guest string) versionRelation {
+	if host == "" || host == "dev" || host == "unknown" {
+		return versionUnknown
+	}
+	if guest == "" || guest == "dev" || guest == "unknown" {
+		return versionUnknown
+	}
+	if host == guest {
+		return versionEqual
+	}
+	hostParts, hostOK := parseSemver(host)
+	guestParts, guestOK := parseSemver(guest)
+	if hostOK && guestOK {
+		switch {
+		case semverLess(guestParts, hostParts):
+			return versionGuestOlder
+		case semverLess(hostParts, guestParts):
+			return versionGuestNewer
+		default:
+			return versionEqual
+		}
+	}
+	return versionDifferent
+}
+
 // agentVersionsEqual reports whether host and guest agent versions should be
 // treated as equivalent for the idempotent fast path. Empty/dev/unknown
 // values mean we cannot prove equivalence and must rebuild.
 func agentVersionsEqual(host, guest string) bool {
-	if host == "" || host == "dev" || host == "unknown" {
-		return false
+	return agentVersionCompare(host, guest) == versionEqual
+}
+
+// parseSemver extracts the major.minor.patch components of a vX.Y.Z[-pre]
+// string. The leading "v" is optional. Pre-release suffixes are ignored for
+// ordering — they only matter when X.Y.Z is identical and we already return
+// versionEqual on identical strings.
+func parseSemver(s string) ([3]int, bool) {
+	var out [3]int
+	if strings.HasPrefix(s, "v") {
+		s = s[1:]
 	}
-	if guest == "" || guest == "dev" || guest == "unknown" {
-		return false
+	// Strip pre-release / build metadata: keep up to first '-' or '+'.
+	if i := strings.IndexAny(s, "-+"); i >= 0 {
+		s = s[:i]
 	}
-	return host == guest
+	parts := strings.Split(s, ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
+
+// semverLess reports whether a < b in major.minor.patch order.
+func semverLess(a, b [3]int) bool {
+	for i := 0; i < 3; i++ {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return false
 }
 
 // injectAgentOnly mounts the VM disk and injects the vz-agent binary,
