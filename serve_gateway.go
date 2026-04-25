@@ -336,6 +336,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if isAsyncSnapshotSave(r) {
+			g.handleAsyncSnapshotSave(route, w, r)
+			return
+		}
 		g.proxyToSocket(route, w, r)
 		return
 	}
@@ -474,6 +478,118 @@ func (g *Gateway) handleOpEvents(w http.ResponseWriter, r *http.Request, id stri
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 	}
+}
+
+// isAsyncSnapshotSave reports whether r is POST /v1/vms/<name>/snapshot with
+// ?async=true (or async=1). Only this single endpoint accepts async today —
+// other long-running operations can opt in by extending this matcher.
+func isAsyncSnapshotSave(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	if !strings.HasSuffix(r.URL.Path, "/snapshot") {
+		return false
+	}
+	v := r.URL.Query().Get("async")
+	return v == "true" || v == "1"
+}
+
+// handleAsyncSnapshotSave creates an LRO for a snapshot save and proxies the
+// save request to the VM's control socket in a background goroutine. Returns
+// 202 + Location header immediately so clients escape the 30s proxy deadline
+// that breaks 9 GiB+ saves on the sync path. The goroutine uses a long
+// deadline (1h) to cover even very large saves; clients poll
+// /v1/operations/<id> for completion.
+func (g *Gateway) handleAsyncSnapshotSave(route *vmRoute, w http.ResponseWriter, r *http.Request) {
+	if g.ops == nil {
+		http.Error(w, "operations registry not available", http.StatusInternalServerError)
+		return
+	}
+
+	var body map[string]any
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	snapName := snapshotNameFromBody(body)
+	if snapName == "" {
+		http.Error(w, "snapshot name required", http.StatusBadRequest)
+		return
+	}
+
+	op, err := g.ops.Create(fmt.Sprintf("vms/%s/snapshots/%s", route.name, snapName))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("create operation: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Location", "/v1/operations/"+op.ID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(op)
+
+	go g.runAsyncSnapshotSave(op.ID, route, snapName)
+}
+
+// runAsyncSnapshotSave drives one async snapshot save through to terminal
+// state. Marks the LRO running, dials the control socket with a long deadline,
+// writes the SnapshotCommand, reads the response, and records success/failure.
+func (g *Gateway) runAsyncSnapshotSave(opID string, route *vmRoute, snapName string) {
+	if err := g.ops.Start(opID); err != nil {
+		return
+	}
+
+	req := &controlpb.ControlRequest{
+		Type:      "snapshot",
+		AuthToken: route.perVMToken,
+	}
+	payload := snapshotControlPayload("save", snapName)
+	if err := mergeControlPayload(req, payload); err != nil {
+		_ = g.ops.Fail(opID, "build_request", err.Error())
+		return
+	}
+	reqBytes, err := protojsonMarshaler.Marshal(req)
+	if err != nil {
+		_ = g.ops.Fail(opID, "marshal_request", err.Error())
+		return
+	}
+
+	conn, err := net.DialTimeout("unix", route.socketPath, 1*time.Second)
+	if err != nil {
+		_ = g.ops.Fail(opID, "connect", err.Error())
+		return
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(1 * time.Hour))
+
+	if _, err := fmt.Fprintf(conn, "%s\n", reqBytes); err != nil {
+		_ = g.ops.Fail(opID, "send_request", err.Error())
+		return
+	}
+
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			_ = g.ops.Fail(opID, "read_response", err.Error())
+		} else {
+			_ = g.ops.Fail(opID, "read_response", "vm closed connection without response")
+		}
+		return
+	}
+
+	var resp controlpb.ControlResponse
+	if err := protojsonUnmarshaler.Unmarshal(scanner.Bytes(), &resp); err != nil {
+		_ = g.ops.Fail(opID, "parse_response", err.Error())
+		return
+	}
+	if resp.Error != "" {
+		_ = g.ops.Fail(opID, "snapshot_save", resp.Error)
+		return
+	}
+	result := map[string]any{"vm": route.name, "snapshot": snapName}
+	if sa := resp.GetSnapshotAction(); sa != nil && sa.Message != "" {
+		result["message"] = sa.Message
+	}
+	_ = g.ops.Succeed(opID, result)
 }
 
 // proxyToSocket translates an HTTP request to a ControlRequest JSON line,

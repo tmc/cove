@@ -784,3 +784,317 @@ func TestGatewayFSNotifyRemovesRoute(t *testing.T) {
 		t.Error("route not removed within 2s of socket removal")
 	}
 }
+
+// TestGatewayAsyncSnapshotSave verifies POST /v1/vms/<name>/snapshot?async=true
+// returns 202 + op-id immediately, then completes via the LRO once the slow
+// save (simulated here with a 200ms delay) finishes. Acceptance #2 from the
+// brief: HTTP path no longer blocks on the 30s proxy deadline for large saves.
+func TestGatewayAsyncSnapshotSave(t *testing.T) {
+	vmDir, err := os.MkdirTemp("", "gwasync*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(vmDir) })
+
+	const (
+		vmName   = "vm"
+		token    = "master-token"
+		snapName = "checkpoint1"
+	)
+	vmSubDir := filepath.Join(vmDir, vmName)
+	if err := os.MkdirAll(vmSubDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sockPath := filepath.Join(vmSubDir, "control.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		close(done)
+		ln.Close()
+	})
+
+	// Fake control socket that takes 200ms to "save" then returns success.
+	// Slow enough to observe running→succeeded transition without flakiness.
+	const fakeSaveDelay = 200 * time.Millisecond
+	gotReq := make(chan *controlpb.ControlRequest, 1)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+				scanner := bufio.NewScanner(conn)
+				if !scanner.Scan() {
+					return
+				}
+				var got controlpb.ControlRequest
+				if err := protojsonUnmarshaler.Unmarshal(scanner.Bytes(), &got); err != nil {
+					return
+				}
+				gotReq <- &got
+				time.Sleep(fakeSaveDelay)
+				resp := &controlpb.ControlResponse{
+					Success: true,
+					Result: &controlpb.ControlResponse_SnapshotAction{
+						SnapshotAction: &controlpb.SnapshotActionResponse{Message: "snapshot saved"},
+					},
+				}
+				data, _ := protojsonMarshaler.Marshal(resp)
+				fmt.Fprintf(conn, "%s\n", data)
+			}(conn)
+		}
+	}()
+
+	reg := newServeTestRegistry(t)
+	gw, err := NewGateway(vmDir, token, false, nil, reg)
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+	gw.refresh()
+	gw.mu.RLock()
+	_, ok := gw.routes[vmName]
+	gw.mu.RUnlock()
+	if !ok {
+		t.Fatal("route not registered after refresh")
+	}
+
+	body := bytes.NewBufferString(fmt.Sprintf(`{"name":%q}`, snapName))
+	req := httptest.NewRequest(http.MethodPost, "/v1/vms/"+vmName+"/snapshot?async=true", body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	start := time.Now()
+	rec := httptest.NewRecorder()
+	gw.ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("got %d, want 202; body=%q", rec.Code, rec.Body.String())
+	}
+	// Acceptance #1 (HTTP variant): return immediately, well under the fake save delay.
+	if elapsed > fakeSaveDelay/2 {
+		t.Errorf("async response took %v, expected <%v (the fake save itself takes %v)", elapsed, fakeSaveDelay/2, fakeSaveDelay)
+	}
+	loc := rec.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/v1/operations/op_") {
+		t.Fatalf("Location header: %q", loc)
+	}
+	var opResp operations.Operation
+	if err := json.NewDecoder(rec.Body).Decode(&opResp); err != nil {
+		t.Fatalf("decode 202 body: %v", err)
+	}
+	wantResource := fmt.Sprintf("vms/%s/snapshots/%s", vmName, snapName)
+	if opResp.Resource != wantResource {
+		t.Errorf("resource = %q, want %q", opResp.Resource, wantResource)
+	}
+
+	// Confirm the control socket received a snapshot save request.
+	select {
+	case got := <-gotReq:
+		if got.Type != "snapshot" {
+			t.Errorf("control request type = %q, want snapshot", got.Type)
+		}
+		snap := got.GetSnapshot()
+		if snap == nil || snap.Action != "save" || snap.Name != snapName {
+			t.Errorf("snapshot cmd = %+v", snap)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for control request")
+	}
+
+	// Poll for terminal success.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		op, ok := reg.Get(opResp.ID)
+		if !ok {
+			t.Fatalf("operation %s vanished", opResp.ID)
+		}
+		if op.Status == "succeeded" {
+			if op.Result["snapshot"] != snapName || op.Result["vm"] != vmName {
+				t.Errorf("result = %+v", op.Result)
+			}
+			return
+		}
+		if op.Status == "failed" {
+			t.Fatalf("operation failed: %+v", op.Error)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Error("operation did not reach succeeded within 2s")
+}
+
+// TestGatewayAsyncSnapshotSaveFailurePropagates verifies that when the
+// underlying control socket reports an error, the LRO transitions to failed
+// with the message preserved (acceptance #3 from the brief).
+func TestGatewayAsyncSnapshotSaveFailurePropagates(t *testing.T) {
+	vmDir, err := os.MkdirTemp("", "gwasyncfail*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(vmDir) })
+
+	const (
+		vmName   = "vm"
+		token    = "master-token"
+		snapName = "broken"
+		errMsg   = "disk full"
+	)
+	vmSubDir := filepath.Join(vmDir, vmName)
+	if err := os.MkdirAll(vmSubDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sockPath := filepath.Join(vmSubDir, "control.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		close(done)
+		ln.Close()
+	})
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+				scanner := bufio.NewScanner(conn)
+				if !scanner.Scan() {
+					return
+				}
+				resp := &controlpb.ControlResponse{Error: errMsg}
+				data, _ := protojsonMarshaler.Marshal(resp)
+				fmt.Fprintf(conn, "%s\n", data)
+			}(conn)
+		}
+	}()
+
+	reg := newServeTestRegistry(t)
+	gw, err := NewGateway(vmDir, token, false, nil, reg)
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+	gw.refresh()
+
+	body := bytes.NewBufferString(fmt.Sprintf(`{"name":%q}`, snapName))
+	req := httptest.NewRequest(http.MethodPost, "/v1/vms/"+vmName+"/snapshot?async=true", body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	gw.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("got %d, want 202", rec.Code)
+	}
+	var opResp operations.Operation
+	if err := json.NewDecoder(rec.Body).Decode(&opResp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		op, _ := reg.Get(opResp.ID)
+		if op != nil && op.Status == "failed" {
+			if op.Error == nil || op.Error.Message != errMsg || op.Error.Code != "snapshot_save" {
+				t.Errorf("error = %+v, want code=snapshot_save message=%q", op.Error, errMsg)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Error("operation did not reach failed within 2s")
+}
+
+// TestGatewaySnapshotSaveSyncStillWorks verifies the existing synchronous
+// path (no ?async) is unchanged — acceptance #4: scripts that don't opt in
+// keep blocking-on-completion semantics.
+func TestGatewaySnapshotSaveSyncStillWorks(t *testing.T) {
+	vmDir, err := os.MkdirTemp("", "gwsyncsnap*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(vmDir) })
+
+	const (
+		vmName   = "vm"
+		token    = "master-token"
+		snapName = "syncsnap"
+	)
+	vmSubDir := filepath.Join(vmDir, vmName)
+	if err := os.MkdirAll(vmSubDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sockPath := filepath.Join(vmSubDir, "control.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		close(done)
+		ln.Close()
+	})
+	gotReq := make(chan *controlpb.ControlRequest, 1)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+				scanner := bufio.NewScanner(conn)
+				if !scanner.Scan() {
+					return
+				}
+				var got controlpb.ControlRequest
+				if err := protojsonUnmarshaler.Unmarshal(scanner.Bytes(), &got); err == nil {
+					gotReq <- &got
+				}
+				resp := &controlpb.ControlResponse{
+					Success: true,
+					Result: &controlpb.ControlResponse_SnapshotAction{
+						SnapshotAction: &controlpb.SnapshotActionResponse{Message: "ok"},
+					},
+				}
+				data, _ := protojsonMarshaler.Marshal(resp)
+				fmt.Fprintf(conn, "%s\n", data)
+			}(conn)
+		}
+	}()
+
+	gw, err := NewGateway(vmDir, token, false, nil, newServeTestRegistry(t))
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+	gw.refresh()
+
+	body := bytes.NewBufferString(fmt.Sprintf(`{"name":%q}`, snapName))
+	req := httptest.NewRequest(http.MethodPost, "/v1/vms/"+vmName+"/snapshot", body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	gw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sync save: got %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	select {
+	case got := <-gotReq:
+		snap := got.GetSnapshot()
+		if snap == nil || snap.Action != "save" || snap.Name != snapName {
+			t.Errorf("snapshot cmd = %+v", snap)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for control request")
+	}
+}
