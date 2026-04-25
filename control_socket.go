@@ -90,6 +90,7 @@ type agentHealthState struct {
 	daemonStatus     string    // "connected", "disconnected", "reconnecting"
 	userStatus       string    // "connected", "disconnected", "unknown"
 	lastPing         time.Time // last successful daemon ping
+	disconnectAt     time.Time // first ping failure since the last successful ping; zero when connected
 	lastErr          string    // last ping error (empty if healthy)
 	version          string    // agent version from last successful ping
 	versionChecked   bool      // true after first version comparison
