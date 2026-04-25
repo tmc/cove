@@ -85,7 +85,16 @@ func (v LinuxVariant) installISOVariant() LinuxVariant {
 }
 
 func linuxInstallCommandLine(seedAddress string) string {
-	return fmt.Sprintf("boot=casper autoinstall ip=dhcp ds=nocloud-net;s=http://%s/ console=tty0", seedAddress)
+	// Subiquity (Ubuntu 22.04+) skips the "Continue with autoinstall? (yes/no)"
+	// prompt only when it observes the bare token `autoinstall` in
+	// /proc/cmdline AFTER the `---` separator, which is the documented
+	// boundary for kernel-vs-init args. With direct kernel boot we control
+	// the full cmdline, so the format below mirrors what Ubuntu's GRUB
+	// autoinstall menu entry produces. Pairs with the `interactive-sections: []`
+	// declaration in generateAutoinstallData so even if the kernel arg fails
+	// to suppress the prompt on a future Subiquity version, the empty list
+	// prevents per-section "Continue?" prompts from firing.
+	return fmt.Sprintf("boot=casper ip=dhcp ds=nocloud-net;s=http://%s/ console=tty0 --- autoinstall", seedAddress)
 }
 
 // DefaultLinuxProvisionConfig returns default provisioning settings.
@@ -249,7 +258,8 @@ func installLinuxVM() error {
 		fmt.Println("Using EFI boot from ISO.")
 		fmt.Println("The GRUB bootloader will start automatically after ~5 seconds.")
 		fmt.Println("Cloud-init will detect the autoinstall configuration.")
-		fmt.Println("NOTE: You may need to type 'yes' at the autoinstall confirmation prompt.")
+		fmt.Println("NOTE: this path uses the ISO's GRUB; if the bundled GRUB does not pass `autoinstall` to the kernel,")
+		fmt.Println("Subiquity may prompt with \"Continue with autoinstall?\" — answer \"yes\" once to proceed.")
 	}
 	fmt.Printf("  Username: %s\n", provConfig.Username)
 	fmt.Printf("  Hostname: %s\n", provConfig.Hostname)
@@ -468,7 +478,11 @@ func createLinuxInstallBootLoader(kernelPath, initrdPath, cmdLine string) (vz.VZ
 	}
 
 	if cmdLine == "" {
-		cmdLine = "boot=casper autoinstall ds=nocloud console=hvc0 console=tty0"
+		// `autoinstall` belongs after `---` for Subiquity's prompt-suppression
+		// rules (see linuxInstallCommandLine). This fallback is only used when
+		// the caller didn't pass an explicit cmdline; the http-seed-aware
+		// builder above is preferred for installs.
+		cmdLine = "boot=casper ds=nocloud console=hvc0 console=tty0 --- autoinstall"
 	}
 	bootloader.SetCommandLine(cmdLine)
 
@@ -1041,6 +1055,7 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
 
 	return fmt.Sprintf(`autoinstall:
   version: 1
+  interactive-sections: []
   locale: %s
   keyboard:
     layout: us
