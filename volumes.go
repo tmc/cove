@@ -327,6 +327,16 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 func virtioFSMountArgs(m vmconfig.VolumeMount, mountPoint string, linuxGuest bool) []string {
 	if linuxGuest {
 		opts := append([]string{}, m.MountOpts...)
+		// Default Linux guests to cache=none. Apple's VirtioFS host has no
+		// cache-coherency / sync mode, so guest-side caching produces stale
+		// directory listings — host edits don't surface in `ls` until the
+		// guest's dentry/page cache happens to expire. cache=none makes
+		// every lookup hit the host, which is the only way `ls` after a
+		// host-side write reflects the new state. Users who explicitly
+		// pass cache=<other> (e.g. metadata, always) keep their setting.
+		if !hasCacheOpt(opts) {
+			opts = append([]string{"cache=none"}, opts...)
+		}
 		if m.ReadOnly {
 			opts = append([]string{"ro"}, opts...)
 		}
@@ -344,4 +354,15 @@ func virtioFSMountArgs(m vmconfig.VolumeMount, mountPoint string, linuxGuest boo
 	// macOS mount_virtiofs only documents -r, -u, and -g. Generic MountOpts are
 	// Linux-only today; passing -o here would be invalid.
 	return append(args, m.Tag, mountPoint)
+}
+
+// hasCacheOpt reports whether opts already contains a cache=... entry.
+// Used to decide whether to inject the cache=none default for Linux guests.
+func hasCacheOpt(opts []string) bool {
+	for _, o := range opts {
+		if strings.HasPrefix(o, "cache=") {
+			return true
+		}
+	}
+	return false
 }
