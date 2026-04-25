@@ -841,8 +841,32 @@ func upgradeAgentAt(sock string) error {
 	}
 	fmt.Println("Copied.")
 
-	// Restart the agent service via launchctl kickstart.
-	fmt.Println("Restarting agent service...")
+	// Restart the user agent (port 1025) before the daemon — once we kickstart
+	// the daemon below, the connection drops and we lose the chance to send
+	// further commands. The bounce script reads the GUI user's uid from the
+	// console owner so it works even when no specific user was provisioned.
+	// Both labels are bounced via launchctl kickstart -k.
+	fmt.Println("Restarting user agent service (port 1025)...")
+	bounceUserAgent := &controlpb.ControlRequest{
+		Type: "agent-exec",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{
+				Args: []string{
+					"sh", "-c",
+					fmt.Sprintf(`uid=$(stat -f %%u /dev/console); `+
+						`if [ -n "$uid" ] && [ "$uid" != "0" ]; then `+
+						`  launchctl asuser "$uid" launchctl kickstart -k "gui/$uid/%s" 2>/dev/null || true; `+
+						`fi`, agentLaunchAgentLabel),
+				},
+			},
+		},
+	}
+	if _, err := ctlSendRequest(sock, bounceUserAgent, 10*time.Second, "agent-exec"); err != nil && verbose {
+		fmt.Printf("warning: bounce user agent: %v\n", err)
+	}
+
+	// Restart the agent daemon via launchctl kickstart.
+	fmt.Println("Restarting agent daemon (port 1024)...")
 	execReq := &controlpb.ControlRequest{
 		Type: "agent-exec",
 		Command: &controlpb.ControlRequest_AgentExec{
