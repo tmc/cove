@@ -427,6 +427,15 @@ func installMacOSLikeVZ(ctx context.Context) error {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
 
+	// Watch vmDir + parent for unexpected remove/rename events while the
+	// install is running. Diagnoses blockers-next.md #1: vmDir vanishes
+	// between MkdirAll and stopVMAndInject. Watcher is gated by VZ_DEBUG_INSTALL
+	// internally via vzlog and runs only when that env var is set.
+	if vzDebugInstall {
+		watcher := startVMDirWatcher(vmDir)
+		defer watcher.Stop()
+	}
+
 	// In GUI mode, the entire lifecycle (download → install → first boot)
 	// happens within a single window. Hand off to the GUI installer early.
 	if guiMode {
