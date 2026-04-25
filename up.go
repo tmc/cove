@@ -112,11 +112,13 @@ func parseUpFlags(args []string) (upConfig, error) {
 
 	// Resolve VM directory.
 	if cfg.vmName != "" {
+		vzlog("parseUpFlags: resolving cfg.vmName=%q with global vmDir=%q", cfg.vmName, vmDir)
 		dir, err := vmconfig.EnsureDir(cfg.vmName, vmDir)
 		if err != nil {
 			return upConfig{}, err
 		}
 		cfg.vmDir = dir
+		vzlog("parseUpFlags: resolved cfg.vmDir=%q", cfg.vmDir)
 	}
 
 	// Prompt for password if not provided (skip for Linux with defaults).
@@ -196,10 +198,12 @@ Examples:
 // applyUpConfig sets the package-level globals that installMacOSLikeVZ,
 // stageProvisioningFiles, applyProvisioningFiles, and runMacOSVM read.
 func applyUpConfig(cfg upConfig) {
+	vzlog("applyUpConfig: cfg.vmName=%q cfg.vmDir=%q (pre globals: vmDir=%q vmName=%q)", cfg.vmName, cfg.vmDir, vmDir, vmName)
 	if cfg.vmName != "" {
 		vmName = cfg.vmName
 		vmDir = cfg.vmDir
 	}
+	vzlog("applyUpConfig: post globals: vmDir=%q vmName=%q", vmDir, vmName)
 	if cfg.ipswPath != "" {
 		ipswPath = cfg.ipswPath
 	}
