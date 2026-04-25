@@ -1019,8 +1019,14 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 		a.Exec(ctx, []string{"mkdir", "-p", mountPoint}, nil, "")
 		cancel()
 
+		// Dispatch the right mount command for the guest OS. Linux uses
+		// `mount -t virtiofs` (with cache=none injected for VirtioFS
+		// coherency); macOS uses `mount_virtiofs`. Sharing
+		// virtioFSMountArgs with the host-side install path keeps the
+		// option-injection rules in one place — see volumes.go.
+		mountArgs := virtioFSMountArgs(m, mountPoint, linuxMode)
 		ctx, cancel = s.timeoutContext(10 * time.Second)
-		result, err := a.Exec(ctx, []string{"mount_virtiofs", m.Tag, mountPoint}, nil, "")
+		result, err := a.Exec(ctx, mountArgs, nil, "")
 		cancel()
 
 		entry := map[string]interface{}{
