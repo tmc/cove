@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/tmc/vz-macos/internal/control/operations"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -372,12 +374,7 @@ func bearerToken(r *http.Request) string {
 }
 
 func (g *Gateway) handleListVMs(w http.ResponseWriter, _ *http.Request) {
-	g.mu.RLock()
-	names := make([]string, 0, len(g.routes))
-	for name := range g.routes {
-		names = append(names, name)
-	}
-	g.mu.RUnlock()
+	names := g.discoverConfiguredVMs()
 
 	type vmEntry struct {
 		Name   string `json:"name"`
@@ -390,6 +387,59 @@ func (g *Gateway) handleListVMs(w http.ResponseWriter, _ *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"vms": vms})
+}
+
+// discoverConfiguredVMs returns the names of all VMs visible to the gateway,
+// scanning both the canonical g.vmDir layout (~/.vz/vms/<name>/) and the
+// legacy peer layout (~/.vz/<name>/) used by older builds. Names from the
+// canonical layout win when both exist. Allowlist gating is honored.
+func (g *Gateway) discoverConfiguredVMs() []string {
+	seen := make(map[string]bool)
+	var names []string
+
+	add := func(name string) {
+		if seen[name] {
+			return
+		}
+		if len(g.allowlist) > 0 && !g.allowlist[name] {
+			return
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+
+	if entries, err := os.ReadDir(g.vmDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			if !vmconfig.Validate(filepath.Join(g.vmDir, entry.Name())) {
+				continue
+			}
+			add(entry.Name())
+		}
+	}
+
+	legacyRoot := filepath.Dir(g.vmDir)
+	canonicalBase := filepath.Base(g.vmDir)
+	if entries, err := os.ReadDir(legacyRoot); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if name == canonicalBase {
+				continue
+			}
+			if !vmconfig.Validate(filepath.Join(legacyRoot, name)) {
+				continue
+			}
+			add(name)
+		}
+	}
+
+	sort.Strings(names)
+	return names
 }
 
 // handleCreateVM accepts POST /v1/vms, creates an LRO, and immediately marks
