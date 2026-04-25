@@ -63,3 +63,34 @@ func TestList(t *testing.T) {
 		t.Fatalf("List() = %#v", got)
 	}
 }
+
+// TestListFollowsSymlinks ensures alias symlinks created by EnsureAlias for
+// VMs resolved outside BaseDir (legacy ~/.vz/<name> layout) are visible to
+// List() — the migration code plants symlinks here on every name resolution.
+func TestListFollowsSymlinks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	legacyDir := filepath.Join(home, ".vz", "legacy-vm")
+	if err := os.MkdirAll(legacyDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(legacy) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "linux-disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatalf("WriteFile(legacy/linux-disk.img) error = %v", err)
+	}
+
+	if err := os.MkdirAll(BaseDir(), 0755); err != nil {
+		t.Fatalf("MkdirAll(BaseDir) error = %v", err)
+	}
+	if err := os.Symlink(legacyDir, filepath.Join(BaseDir(), "legacy-vm")); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+
+	got, err := List(nil)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "legacy-vm" {
+		t.Fatalf("List() = %#v, want one entry named legacy-vm", got)
+	}
+}
