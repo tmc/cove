@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -480,8 +481,45 @@ func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 	}
 }
 
-// agentHealthMonitor runs in the background, pinging the agent every 10 seconds.
-// On failure, it marks the agent as disconnected and attempts reconnection with backoff.
+// defaultAgentHealthInterval is the tick cadence the agent health monitor
+// uses when COVE_AGENT_HEALTH_INTERVAL is unset or unparseable. Picked at
+// 30s as the brief's default — short enough to recover quickly from a
+// guest-side restart, long enough not to spam the dispatch queue.
+const defaultAgentHealthInterval = 30 * time.Second
+
+// agentHealthIntervalEnv lets operators override the tick cadence at boot
+// time. Accepts any string Go's time.ParseDuration handles (e.g. "10s",
+// "1m"). Set to a positive duration to override; anything <= 0 falls back
+// to defaultAgentHealthInterval.
+const agentHealthIntervalEnv = "COVE_AGENT_HEALTH_INTERVAL"
+
+// resolveAgentHealthInterval returns the tick cadence for the agent health
+// monitor. Reads agentHealthIntervalEnv first; on parse failure or
+// non-positive duration, returns defaultAgentHealthInterval.
+func resolveAgentHealthInterval() time.Duration {
+	raw := os.Getenv(agentHealthIntervalEnv)
+	if raw == "" {
+		return defaultAgentHealthInterval
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		slog.Warn("agent-health: ignoring unparseable interval, falling back to default",
+			"env", agentHealthIntervalEnv, "value", raw, "default", defaultAgentHealthInterval)
+		return defaultAgentHealthInterval
+	}
+	return d
+}
+
+// agentHealthMonitor runs in the background pinging the agent at the
+// configured interval (defaultAgentHealthInterval, overridable via
+// COVE_AGENT_HEALTH_INTERVAL). On failure it transitions through the
+// healthCheckOnce reconnect path and emits slog records:
+//
+//   - DEBUG on each successful ping (cardinality every interval, mostly
+//     noise unless the operator opts in to verbose logging)
+//   - INFO on a successful reconnect, with elapsed time since the first
+//     failure ("agent reconnected after Xs")
+//   - WARN on each ping failure during a disconnect streak
 func (s *ControlServer) agentHealthMonitor() {
 	ctx := s.lifecycleContext()
 
@@ -492,8 +530,10 @@ func (s *ControlServer) agentHealthMonitor() {
 	case <-time.After(5 * time.Second):
 	}
 
-	ticker := time.NewTicker(10 * time.Second)
+	interval := resolveAgentHealthInterval()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	slog.Debug("agent-health: monitor started", "interval", interval)
 
 	failCount := 0
 	for {
@@ -529,16 +569,18 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 		cancel()
 		if err == nil {
 			*failCount = 0
-			s.setHealthStatus("connected", agentVer, "")
+			s.markAgentConnected(agentVer)
 			s.checkAgentVersion(agentVer)
 			s.healthCheckUserAgent(ctx)
 			return
 		}
+		slog.Warn("agent-health: ping failed",
+			"err", err, "attempt", *failCount+1)
 	}
 
 	// Ping failed or no connection. Attempt reconnect.
 	*failCount++
-	s.setHealthStatus("reconnecting", "", fmt.Sprintf("ping failed (attempt %d)", *failCount))
+	s.markAgentReconnecting(fmt.Sprintf("ping failed (attempt %d)", *failCount))
 
 	s.agentMu.Lock()
 	if s.agent != nil {
@@ -564,14 +606,56 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 		cancel()
 		if err == nil {
 			*failCount = 0
-			s.setHealthStatus("connected", agentVer, "")
-			log.Printf("agent-health: reconnected (version %s)", agentVer)
+			s.markAgentConnected(agentVer)
 			s.checkAgentVersion(agentVer)
 			s.healthCheckUserAgent(ctx)
 			return
 		}
 		s.setHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
 	}
+}
+
+// markAgentConnected transitions the agent into the "connected" state. If
+// the previous state recorded a disconnect (disconnectAt non-zero), this is
+// the recovery edge — emit an INFO log with elapsed downtime so operators
+// can see how long the agent was unreachable.
+func (s *ControlServer) markAgentConnected(version string) {
+	now := time.Now()
+	s.healthMu.Lock()
+	wasDisconnected := !s.agentHealth.disconnectAt.IsZero()
+	downtime := time.Duration(0)
+	if wasDisconnected {
+		downtime = now.Sub(s.agentHealth.disconnectAt)
+	}
+	s.agentHealth.daemonStatus = "connected"
+	if version != "" {
+		s.agentHealth.version = version
+	}
+	s.agentHealth.lastErr = ""
+	s.agentHealth.lastPing = now
+	s.agentHealth.disconnectAt = time.Time{}
+	s.healthMu.Unlock()
+
+	if wasDisconnected {
+		slog.Info("agent-health: reconnected",
+			"version", version, "downtime", downtime.Round(time.Millisecond))
+		return
+	}
+	slog.Debug("agent-health: ping ok", "version", version)
+}
+
+// markAgentReconnecting transitions the agent into the "reconnecting"
+// state. Captures the first-failure timestamp so the eventual recovery edge
+// can report accurate downtime.
+func (s *ControlServer) markAgentReconnecting(reason string) {
+	now := time.Now()
+	s.healthMu.Lock()
+	if s.agentHealth.disconnectAt.IsZero() {
+		s.agentHealth.disconnectAt = now
+	}
+	s.agentHealth.daemonStatus = "reconnecting"
+	s.agentHealth.lastErr = reason
+	s.healthMu.Unlock()
 }
 
 // checkAgentVersion compares the guest agent version with the host version.
@@ -712,8 +796,15 @@ func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
 		s.agentHealth.version = version
 	}
 	s.agentHealth.lastErr = lastErr
-	if status == "connected" {
-		s.agentHealth.lastPing = time.Now()
+	now := time.Now()
+	switch status {
+	case "connected":
+		s.agentHealth.lastPing = now
+		s.agentHealth.disconnectAt = time.Time{}
+	case "disconnected", "reconnecting":
+		if s.agentHealth.disconnectAt.IsZero() {
+			s.agentHealth.disconnectAt = now
+		}
 	}
 }
 
