@@ -22,8 +22,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // lumePullDisk downloads, concatenates, and untars a lume image into the
@@ -42,10 +45,17 @@ func lumePullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	client := pullRegistryClient(plan.Ref, opts)
 
 	// Sidecars first — they're cheap and let us fail fast on auth issues.
+	// Lume's config.json is preserved verbatim as lume-config.json so we
+	// don't overwrite cove's own config.json (which is the VM's hardware
+	// settings file). The fields from lume's config that map onto cove's
+	// schema are extracted into cove's config.json below.
 	if err := lumePullSidecar(ctx, client, plan, plan.Manifest.Lume.NvramLayer, "nvram.bin"); err != nil {
 		return err
 	}
-	if err := lumePullSidecar(ctx, client, plan, plan.Manifest.Lume.ConfigLayer, "config.json"); err != nil {
+	if err := lumePullSidecar(ctx, client, plan, plan.Manifest.Lume.ConfigLayer, "lume-config.json"); err != nil {
+		return err
+	}
+	if err := lumeWriteCoveConfig(plan); err != nil {
 		return err
 	}
 
@@ -188,6 +198,93 @@ func lumeStreamDisk(ctx context.Context, client ociimage.RegistryClient, plan *p
 	}
 	closed = true
 	return nil
+}
+
+// lumeWriteCoveConfig reads the lume sidecar config that lumePullSidecar
+// dropped into VMDir/lume-config.json and projects the fields that map onto
+// cove's vmconfig.Config (CPU, memory). Lume-only fields (machineIdentifier,
+// hardwareModel, MAC, disk size, OS) stay in lume-config.json untouched —
+// cove's runtime reads those from disk on first boot, not from config.json.
+//
+// Missing or unparseable fields are skipped rather than treated as errors:
+// a partial map is better than no map, and cove falls back to defaults for
+// unset fields.
+func lumeWriteCoveConfig(plan *pullPlan) error {
+	path := filepath.Join(plan.VMDir, "lume-config.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read lume-config.json: %w", err)
+	}
+	lc, err := ociimage.DecodeLumeConfig(data)
+	if err != nil {
+		return err
+	}
+	cfg, err := vmconfig.Load(plan.VMDir)
+	if err != nil {
+		return err
+	}
+	if cfg == nil {
+		cfg = &vmconfig.Config{}
+	}
+	if lc.CPU > 0 {
+		cfg.CPU = uint(lc.CPU)
+	}
+	if mem, ok := parseLumeMemory(lc.Memory); ok {
+		cfg.MemoryGB = mem
+	}
+	return vmconfig.Save(plan.VMDir, cfg)
+}
+
+// parseLumeMemory reads lume's memory string ("4G", "4GB", "4096M", "4096MB",
+// or a bare byte count) and returns the value in whole gigabytes. The returned
+// bool reports whether the input was understood; an empty string or unknown
+// suffix yields false so callers can leave the destination field at its zero
+// value.
+//
+// Cove's vmconfig.Config.MemoryGB is uint64 gigabytes. Sub-GB lume sizes round
+// down to zero and are reported as not-ok so the caller doesn't silently
+// downgrade a VM to 0 GB.
+func parseLumeMemory(s string) (uint64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	// Split numeric prefix from suffix.
+	end := 0
+	for end < len(s) && (s[end] >= '0' && s[end] <= '9') {
+		end++
+	}
+	if end == 0 {
+		return 0, false
+	}
+	num, err := strconv.ParseUint(s[:end], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	suffix := strings.ToUpper(strings.TrimSpace(s[end:]))
+	var bytes uint64
+	switch suffix {
+	case "", "B":
+		bytes = num
+	case "K", "KB":
+		bytes = num * 1024
+	case "M", "MB":
+		bytes = num * 1024 * 1024
+	case "G", "GB":
+		bytes = num * 1024 * 1024 * 1024
+	case "T", "TB":
+		bytes = num * 1024 * 1024 * 1024 * 1024
+	default:
+		return 0, false
+	}
+	gb := bytes / (1024 * 1024 * 1024)
+	if gb == 0 {
+		return 0, false
+	}
+	return gb, true
 }
 
 // lumeFeedTarStream copies each disk part body, in part-number order, into w.
