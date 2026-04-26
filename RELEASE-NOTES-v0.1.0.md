@@ -124,6 +124,18 @@ local build.
   in those cases, so the helper runs cleanly under root with no
   `HOME`. (`fix/cove-helper-daemon-home`)
 
+### VM forking
+
+- `cove fork <src> <child>` clones a VM via APFS clonefile (`ForkVMDisk`
+  primitive), generates a fresh `machine.id` for the child, and shares
+  storage copy-on-write with the source until first divergent write.
+  A CoW divergence test pins the semantics. Disk-snapshot restore is
+  reframed in the docs as a special case of this fork primitive.
+  (`feat/cove-run-restore-snapshot`, design `docs/designs/013-vm-fork.md`)
+- `cove run -restore <name>` — explicit named-snapshot restore on VM
+  start, mutually exclusive with `-no-resume`. Lives on the same
+  branch as `cove fork` and ships together.
+
 ### CLI quality of life
 
 - `cove rename | export | import | config` as top-level aliases for
@@ -188,14 +200,6 @@ reproduction, evidence, and root-cause hypotheses.
   diagnostics has not yet been completed against this tag. Resolver
   flow is instrumented and a regression test is in place. `cove up`
   on an already-installed VM still works.
-- **`cove fork` CLI + `ForkVMDisk` clonefile primitive.** Reframes
-  disk-snapshot restore as a fork primitive: a forked VM gets a
-  fresh machine identity and a copy-on-write disk via APFS
-  clonefile. Implementation is on `feat/cove-run-restore-snapshot`
-  but is not in this tag.
-- **`cove run -restore <name>`.** Explicit named-snapshot restore
-  on VM start, mutually exclusive with `-no-resume`. On the same
-  branch as `cove fork`, deferred together to 0.2.
 
 ## Known warts (non-blocking)
 
@@ -211,13 +215,6 @@ The two warts called out at the first 0.1 cut — synchronous
 snapshot-save `i/o timeout` on large `.vmstate` files, and `cove
 serve` only scanning `~/.vz/vms/*` — are both resolved in this tag
 (see "Async operations (LRO)" and "CLI quality of life" above).
-
-## In flight for 0.2
-
-Branches that did not make this tag:
-
-- **`cove fork` + `cove run -restore <name>`** on
-  `feat/cove-run-restore-snapshot` — see "What's out" above.
 
 ## Commits included
 
@@ -235,6 +232,9 @@ tag time and lists every commit in this release. Highlights:
   unattended cloud-init.
 - Privileged-helper hardening (`cove-helper` no longer crash-loops
   on VM-dir-independent subcommands).
+- `cove fork` + `ForkVMDisk` APFS-clonefile primitive with fresh
+  per-child machine identity; `cove run -restore <name>` for
+  explicit named-snapshot restore on start.
 - Smoke-blocker fixes: legacy `~/.vz/<name>/` discovery in `cove
   list` and `cove serve`; `Status: running` lie removed from
   `/v1/vms`; `cove up` resolver instrumentation; disposable tests
