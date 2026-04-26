@@ -561,6 +561,9 @@ func main() {
 		case "clone":
 			handleClone(args)
 			return
+		case "fork":
+			handleFork(args)
+			return
 		case "template":
 			handleTemplate(args)
 			return
@@ -722,6 +725,7 @@ VM Management:
   vm import <path> <name> Import VM from tarball (alias: import)
   vm config ...           Export/import framework config snapshots (alias: config)
   clone           Clone a VM (cove clone [source] <target> [--linked])
+  fork            CoW-fork a VM with a fresh identity (cove fork <parent> <child>)
   compact         Zero guest free space for smaller pushes
   push            Plan a VM disk OCI push (dry-run)
   pull            Validate an OCI pull plan (dry-run)
@@ -1024,6 +1028,35 @@ func handleClone(args []string) {
 			fmt.Fprintf(os.Stderr, "error: provision agent in clone: %v\n", err)
 			os.Exit(1)
 		}
+	}
+}
+
+// handleFork handles the fork subcommand: creates a CoW clone of an
+// existing VM with a fresh machine identity. See ForkVM in fork.go.
+func handleFork(args []string) {
+	nonFlagArgs := []string{}
+	for _, arg := range args {
+		switch arg {
+		case "-h", "--help", "help":
+			fmt.Println("Usage: cove fork <parent> <child>")
+			fmt.Println()
+			fmt.Println("Create a child VM as an APFS copy-on-write fork of <parent>.")
+			fmt.Println("The child gets a fresh machine identity and MAC; the disk")
+			fmt.Println("shares blocks with the parent until either side writes.")
+			return
+		default:
+			if len(arg) > 0 && arg[0] != '-' {
+				nonFlagArgs = append(nonFlagArgs, arg)
+			}
+		}
+	}
+	if len(nonFlagArgs) != 2 {
+		fmt.Fprintln(os.Stderr, "Usage: cove fork <parent> <child>")
+		os.Exit(1)
+	}
+	if err := ForkVM(nonFlagArgs[0], nonFlagArgs[1]); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 }
 
