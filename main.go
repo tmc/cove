@@ -56,6 +56,8 @@ var (
 	utmBundlePath string
 	// List VMs flag
 	listVMs bool
+	// Print version and exit
+	showVersion bool
 	// Shared directory path for VirtioFS (deprecated, use -v)
 	shareDir string
 	// Volume mounts (docker-style -v flag)
@@ -166,6 +168,7 @@ func init() {
 	flag.StringVar(&bootArgs, "boot-args", "", "boot arguments (e.g., 'serial=3 -v'); saved to vm-dir/boot-args.txt for use inside guest")
 	flag.StringVar(&utmBundlePath, "utm", "", "path to UTM bundle (.utm) to run, or 'list' for menu")
 	flag.BoolVar(&listVMs, "list", false, "deprecated: use the list command")
+	flag.BoolVar(&showVersion, "version", false, "print version information and exit")
 	flag.Var(&volumes, "v", "alias for -vol")
 	flag.Var(&volumes, "vol", "mount host directory: /host/path[:tag][:ro|rw][:opt=val,...] (repeatable; default tag is the host directory name)")
 	flag.StringVar(&shareDir, "share-dir", "", "deprecated alias for -vol /host/path")
@@ -235,6 +238,11 @@ func main() {
 	maybeRunElevatedOp()
 
 	flag.Parse()
+
+	if showVersion {
+		fmt.Println(versionInfo())
+		return
+	}
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)).With(slog.String("component", "cove")))
 

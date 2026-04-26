@@ -98,10 +98,10 @@ disk injection, and the guest agent.
 **Must ship**
 
 1. Harden `cove serve` HTTP + MCP and treat it as product, not prototype.
-   Snapshot, suspend/resume, and rollback primitives must be visible to agents,
+   Snapshot, pause/resume, and rollback primitives must be visible to agents,
    not just lifecycle basics.
-2. Ship OCI pull/push with one-way lume pull compatibility and explicit
-   compatibility mode only where needed.
+2. Ship OCI pull/push for cove-format images. One-way lume-format pull
+   interop is deferred to 0.2 (see `docs/blockers-next.md`).
 3. Fix local reliability bugs that undermine the "better than lume" claim:
    `-headless` must never open a window, and SIP/recovery automation must
    reliably clear the Recovery `Options` picker path.
@@ -113,16 +113,21 @@ disk injection, and the guest agent.
 
 **Ship gate**
 
-- `cove up -user <name>` reaches a usable macOS desktop from a fresh install
-  without Setup Assistant handholding.
 - `cove run -headless` does not create a GUI window.
 - `cove serve --mcp` and `cove serve -http` both operate a pre-existing VM
   end-to-end (create-VM is a CLI-only path for 0.1).
 - Agents can invoke snapshots and pause/resume directly over HTTP/MCP.
-- `cove pull` of a lume-produced image boots successfully in cove.
 - The Recovery automation path can disable and re-enable SIP on a real VM.
 - `cove dump-docs` emits enough structured data for a client or agent wrapper to
   discover the CLI/API/MCP surface without scraping help text.
+
+**Deferred to 0.2** (tracked on `next` branch, see `docs/blockers-next.md`):
+
+- `cove up -user <name>` reaching a usable desktop from a fresh install.
+  Fresh-install path has a known path-resolution bug; `cove up` on an
+  already-installed VM still works.
+- `cove pull` of an upstream lume-produced image booting in cove. Lume's
+  tar-split schema is not yet importable; cove-format pull works.
 
 ### cove 0.2 - Linux developer workstation moat
 
@@ -160,6 +165,14 @@ that boots."
   paths.
 - Shared-folder workflow does not require manual chmod games for the primary
   guest user.
+
+**Carried over from 0.1** (deferred blockers, see `docs/blockers-next.md`):
+
+- `cove up -user <name>` reaches a usable macOS desktop from a fresh install
+  without Setup Assistant handholding. Root-cause fix for install→provision
+  path-resolution bug.
+- `cove pull` of a lume-produced image boots successfully in cove. Requires
+  tar-split importer for upstream lume ghcr images.
 
 ### cove 0.3 - Build and caching moat
 
