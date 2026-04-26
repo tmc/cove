@@ -531,7 +531,7 @@ Unlike VM state snapshots, these snapshot the actual disk contents.
 Commands:
   save <name> [-system] [-desc "..."]   Save disk snapshot
   run <name> [-ram]                     Boot a disposable clone from snapshot
-  restore <name> [-system]              Restore disks from snapshot
+  restore <name> [-system]              Fork the live disk from snapshot (CoW; snapshot preserved)
   list                                  List all disk snapshots
   delete <name>                         Delete a disk snapshot
 

@@ -142,8 +142,15 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 	return nil
 }
 
-// Restore restores disk(s) from a snapshot.
-// VM must be stopped before restoring.
+// Restore replaces the live disk(s) with a fresh CoW clone of the named
+// snapshot. VM must be stopped first.
+//
+// Semantics: this is the fork primitive. Restoring is "fork the VM forward
+// from this snapshot", not "rewind the VM to this point in time" — the
+// snapshot itself is never mutated and the live disk becomes a new
+// copy-on-write divergence from it. See docs/designs/013-vm-fork.md
+// (Model A — Persistent fork) for the full model; ForkVMDisk in fork.go
+// is the underlying single-file primitive.
 func (m *DiskSnapshotManager) Restore(name string, target DiskSnapshotTarget) error {
 	if err := validateSnapshotName(name); err != nil {
 		return err
@@ -404,7 +411,7 @@ Commands:
       Boot a disposable clone from the snapshot and discard changes on exit
 
   restore <name> [-system]
-      Restore disks from snapshot
+      Fork the live disk from a snapshot (CoW clone; snapshot is preserved)
 
   list
       List all disk snapshots
