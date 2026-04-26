@@ -284,16 +284,21 @@ func main() {
 	// foundation.NSSetUncaughtExceptionHandler(func(e foundation.NSException) {
 	// 	panic("Exiting due to uncaught exception.")
 	// })
-	// Resolve VM directory using registry (handles migration and VM selection)
+	// Resolve VM directory using registry (handles migration and VM selection).
+	// Skip for subcommands that don't operate on a specific VM — notably
+	// `helper daemon`, which runs as root via launchd. As root, $HOME is
+	// /var/root, which is on the SIP-sealed root volume (EROFS).
 	var err error
-	vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
+	if !subcommandSkipsVMDir(flag.Args()) {
+		vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
-	// Load saved VM config and apply defaults for flags not explicitly set.
-	applyVMConfig(vmDir)
+		// Load saved VM config and apply defaults for flags not explicitly set.
+		applyVMConfig(vmDir)
+	}
 	if err := applySandboxDefaults(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
