@@ -62,6 +62,10 @@ func handlePull(args []string) error {
 		if err := lumePullDisk(context.Background(), plan, opts); err != nil {
 			return err
 		}
+	case ociimage.FormatTart:
+		if err := tartPullDisk(context.Background(), plan, opts); err != nil {
+			return err
+		}
 	default:
 		if err := pullDisk(context.Background(), plan, opts); err != nil {
 			return err
@@ -459,6 +463,21 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 		}
 		if plan.Manifest.Lume.ConfigLayer != nil {
 			fmt.Fprintf(w, "  config.json: %s\n", bytefmt.Size(plan.Manifest.Lume.ConfigLayer.Size))
+		}
+		return
+	case ociimage.FormatTart:
+		fmt.Fprintf(w, "  format: tart (apple-lz4)\n")
+		fmt.Fprintf(w, "  disk size: %s\n", bytefmt.Size(plan.Manifest.Tart.UncompressedDiskSize))
+		fmt.Fprintf(w, "  disk layers: %d\n", len(plan.Manifest.Tart.DiskLayers))
+		var compressed int64
+		for _, l := range plan.Manifest.Tart.DiskLayers {
+			compressed += l.Descriptor.Size
+		}
+		fmt.Fprintf(w, "  compressed bytes: %s\n", bytefmt.Size(compressed))
+		fmt.Fprintf(w, "  nvram: %s\n", bytefmt.Size(plan.Manifest.Tart.NVRAMLayer.Size))
+		fmt.Fprintf(w, "  config: %s\n", bytefmt.Size(plan.Manifest.Tart.ConfigLayer.Size))
+		if plan.Manifest.Tart.UploadTime != "" {
+			fmt.Fprintf(w, "  upload time: %s\n", plan.Manifest.Tart.UploadTime)
 		}
 		return
 	}
