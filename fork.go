@@ -14,6 +14,8 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // ForkVMDisk creates child as a copy-on-write clone of parent using APFS
@@ -43,4 +45,40 @@ func ForkVMDisk(parent, child string) error {
 		return fmt.Errorf("fork: clonefile %s -> %s: %w", parent, child, err)
 	}
 	return nil
+}
+
+// ForkVM creates a child VM as a CoW fork of parent. The child gets:
+//   - disk.img cloned via APFS clonefile (or full copy if filesystem
+//     does not support clonefile and linked is false)
+//   - aux.img and hw.model byte-copied from parent (required for VZ
+//     hardware-model identity match)
+//   - a fresh machine.id (unique platform identifier)
+//   - no copied mac.address (a fresh MAC is allocated on first boot)
+//   - no copied suspend.vmstate (deterministic cold boot)
+//
+// parent must exist and child must not. Lineage metadata
+// (parent_vm / forked_at on the child config) is not written yet —
+// see Phase 4 in docs/designs/013-vm-fork.md.
+//
+// This is a thin convenience wrapper over CloneVM that hard-codes
+// fork semantics: linked-by-default (CoW) and never copy machine.id.
+func ForkVM(parent, child string) error {
+	if parent == "" {
+		return errors.New("fork: parent VM name required")
+	}
+	if child == "" {
+		return errors.New("fork: child VM name required")
+	}
+	if parent == child {
+		return errors.New("fork: parent and child must differ")
+	}
+	if !vmconfig.Validate(vmconfig.Path(parent)) {
+		return fmt.Errorf("fork: parent VM not found: %s", parent)
+	}
+	return CloneVM(CloneOptions{
+		Source:        parent,
+		Target:        child,
+		Linked:        true,
+		CopyMachineID: false,
+	})
 }

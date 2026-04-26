@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func sha256File(t *testing.T, path string) string {
@@ -125,4 +127,94 @@ func TestForkVMDisk_RejectsEmptyPaths(t *testing.T) {
 	if err := ForkVMDisk("parent", ""); err == nil {
 		t.Error("expected error for empty child")
 	}
+}
+
+// TestForkVM_CreatesChildWithUniqueIdentity proves the high-level fork
+// command's contract: the child gets its own machine.id (fresh identity)
+// while disk/aux/hw.model start identical to the parent. Only the
+// machine.id differs at fork time.
+func TestForkVM_CreatesChildWithUniqueIdentity(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	parent := "parent-vm"
+	parentDir := filepath.Join(vmconfig.BaseDir(), parent)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatalf("mkdir parent: %v", err)
+	}
+	files := map[string][]byte{
+		"disk.img":   bytes64KCounting(),
+		"aux.img":    []byte("parent-aux-bytes"),
+		"hw.model":   []byte("parent-hw-model"),
+		"machine.id": []byte("PARENT-MACHINE-ID-VALUE-32BYTES!"),
+	}
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(parentDir, name), data, 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	if err := ForkVM(parent, "child-vm"); err != nil {
+		t.Fatalf("ForkVM: %v", err)
+	}
+
+	childDir := filepath.Join(vmconfig.BaseDir(), "child-vm")
+
+	for _, name := range []string{"disk.img", "aux.img", "hw.model"} {
+		got, err := os.ReadFile(filepath.Join(childDir, name))
+		if err != nil {
+			t.Fatalf("read child %s: %v", name, err)
+		}
+		want := files[name]
+		if string(got) != string(want) {
+			t.Errorf("child %s differs from parent: got %d bytes, want %d", name, len(got), len(want))
+		}
+	}
+
+	childID, err := os.ReadFile(filepath.Join(childDir, "machine.id"))
+	if err != nil {
+		t.Fatalf("read child machine.id: %v", err)
+	}
+	if string(childID) == string(files["machine.id"]) {
+		t.Errorf("child machine.id matches parent — must be regenerated; got %q", childID)
+	}
+	if len(childID) == 0 {
+		t.Errorf("child machine.id is empty")
+	}
+
+	macPath := filepath.Join(childDir, "mac.address")
+	if _, err := os.Stat(macPath); err == nil {
+		t.Errorf("child mac.address must not exist after fork; first boot allocates it")
+	}
+
+	suspendPath := filepath.Join(childDir, "suspend.vmstate")
+	if _, err := os.Stat(suspendPath); err == nil {
+		t.Errorf("child suspend.vmstate must not exist after fork (cold boot is intended)")
+	}
+}
+
+func TestForkVM_RejectsBadArgs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := ForkVM("", "child"); err == nil {
+		t.Error("expected error for empty parent")
+	}
+	if err := ForkVM("parent", ""); err == nil {
+		t.Error("expected error for empty child")
+	}
+	if err := ForkVM("same", "same"); err == nil {
+		t.Error("expected error when parent == child")
+	}
+	if err := ForkVM("does-not-exist", "child"); err == nil {
+		t.Error("expected error when parent VM is missing")
+	}
+}
+
+func bytes64KCounting() []byte {
+	b := make([]byte, 64*1024)
+	for i := range b {
+		b[i] = byte(i % 251)
+	}
+	return b
 }
