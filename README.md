@@ -216,7 +216,7 @@ cove/
 
 | Maturity | Features |
 |----------|----------|
-| GA | install, run, provisioning (inject), vzscripts, suspend/resume |
+| GA | install, run (auto-suspend on quit, resume on next run), provisioning (inject), vzscripts |
 | Beta | snapshots, guest agent, clipboard sharing, shared folders |
 | Experimental | UTM import, memory balloon, Windows stub |
 

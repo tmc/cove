@@ -381,12 +381,11 @@ func (g *Gateway) handleListVMs(w http.ResponseWriter, _ *http.Request) {
 	names := g.discoverConfiguredVMs()
 
 	type vmEntry struct {
-		Name   string `json:"name"`
-		Status string `json:"status"`
+		Name string `json:"name"`
 	}
 	vms := make([]vmEntry, 0, len(names))
 	for _, name := range names {
-		vms = append(vms, vmEntry{Name: name, Status: "running"})
+		vms = append(vms, vmEntry{Name: name})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
