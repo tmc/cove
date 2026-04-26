@@ -97,6 +97,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printCleanUsage(os.Stderr)
 		case "clone":
 			printCloneUsage(os.Stderr)
+		case "fork":
+			printForkUsage(os.Stderr)
 		case "agent-upgrade", "upgrade-agent":
 			printAgentUpgradeUsage(os.Stderr)
 		case "disk-detach":
@@ -243,6 +245,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "clone":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printCloneUsage(os.Stderr)
+			return true, 0
+		}
+	case "fork":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printForkUsage(os.Stderr)
 			return true, 0
 		}
 	case "agent-upgrade", "upgrade-agent":
@@ -493,6 +500,20 @@ Flags:
 Examples:
   cove clone work-vm
   cove clone macos-base scratch --linked --with-agent`)
+}
+
+func printForkUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove fork <parent> <child>
+
+Create a child VM as an APFS copy-on-write fork of <parent>. The child
+shares disk blocks with the parent until either side writes, and gets a
+fresh machine identity and MAC address. Both arguments are required.
+
+This is "cove clone --linked" with explicit lineage and forced fresh
+identity — see docs/designs/013-vm-fork.md for the model.
+
+Example:
+  cove fork macos-base scratch-1`)
 }
 
 func printAgentUpgradeUsage(w io.Writer) {
