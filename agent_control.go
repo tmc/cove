@@ -884,16 +884,25 @@ func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *contro
 }
 
 func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *controlpb.ControlResponse {
-	a, err := s.getAgent()
-	if err != nil {
-		return &controlpb.ControlResponse{Error: err.Error()}
-	}
 	if cmd.Path == "" {
 		return &controlpb.ControlResponse{Error: "path required"}
 	}
 	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
-	data, err := a.ReadFile(ctx, cmd.Path)
+
+	var data []byte
+	var err error
+	if agentRouteFor("read", cmd.Path, linuxMode) == routeUser {
+		log.Printf("agent-route: read %s -> user agent (TCC path)", cmd.Path)
+		data, err = s.userAgentReadFile(ctx, cmd.Path)
+	} else {
+		var a *AgentClient
+		a, err = s.getAgent()
+		if err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}
+		}
+		data, err = a.ReadFile(ctx, cmd.Path)
+	}
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("read: %v", err)}
 	}
@@ -904,11 +913,29 @@ func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *co
 	}
 }
 
-func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *controlpb.ControlResponse {
-	a, err := s.getAgent()
+// userAgentReadFile shells out via the user agent (port 1025) to read a file
+// in the logged-in user's TCC scope. The user agent has only UserExec, so we
+// pipe the file through base64 to keep binary-safe and length-bounded.
+func (s *ControlServer) userAgentReadFile(ctx context.Context, path string) ([]byte, error) {
+	ua, err := s.getUserAgent()
 	if err != nil {
-		return &controlpb.ControlResponse{Error: err.Error()}
+		return nil, fmt.Errorf("user agent: %w", err)
 	}
+	result, err := ua.UserExec(ctx, []string{"/usr/bin/base64", "-i", path}, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return nil, fmt.Errorf("base64 -i %s: exit %d: %s", path, result.ExitCode, strings.TrimSpace(string(result.Stderr)))
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(result.Stdout)))
+	if err != nil {
+		return nil, fmt.Errorf("decode user-agent base64 of %s: %w", path, err)
+	}
+	return decoded, nil
+}
+
+func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *controlpb.ControlResponse {
 	if cmd.Path == "" {
 		return &controlpb.ControlResponse{Error: "path required"}
 	}
@@ -922,10 +949,59 @@ func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *
 	}
 	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
-	if err := a.WriteFile(ctx, cmd.Path, data, mode); err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("write: %v", err)}
+
+	if agentRouteFor("write", cmd.Path, linuxMode) == routeUser {
+		log.Printf("agent-route: write %s -> user agent (TCC path)", cmd.Path)
+		if err := s.userAgentWriteFile(ctx, cmd.Path, data, mode); err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("write: %v", err)}
+		}
+	} else {
+		a, err := s.getAgent()
+		if err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}
+		}
+		if err := a.WriteFile(ctx, cmd.Path, data, mode); err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("write: %v", err)}
+		}
 	}
 	return &controlpb.ControlResponse{Success: true, Data: "ok", Result: &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: "ok"}}}
+}
+
+// userAgentWriteFile shells out via the user agent to write data to path,
+// inheriting the logged-in user's TCC scope. The data is passed as a single
+// base64-encoded argv element and decoded by the guest shell.
+func (s *ControlServer) userAgentWriteFile(ctx context.Context, path string, data []byte, mode uint32) error {
+	ua, err := s.getUserAgent()
+	if err != nil {
+		return fmt.Errorf("user agent: %w", err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	script := `set -e; mkdir -p "$1"; printf %s "$3" | /usr/bin/base64 -d > "$2"; chmod "$4" "$2"`
+	args := []string{
+		"/bin/sh", "-c", script, "vz-agent-write",
+		guestDir(path), path, encoded, fmt.Sprintf("%o", mode&0o777),
+	}
+	result, err := ua.UserExec(ctx, args, nil, "")
+	if err != nil {
+		return err
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("user-agent write %s: exit %d: %s", path, result.ExitCode, strings.TrimSpace(string(result.Stderr)))
+	}
+	return nil
+}
+
+// guestDir returns the directory component of a guest (POSIX) path. We don't
+// use path/filepath because it applies host separators; agent paths are
+// always POSIX regardless of the host.
+func guestDir(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		if i == 0 {
+			return "/"
+		}
+		return p[:i]
+	}
+	return "."
 }
 
 func (s *ControlServer) handleAgentShutdown(cmd *controlpb.AgentShutdownCommand) *controlpb.ControlResponse {
