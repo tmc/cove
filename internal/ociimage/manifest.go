@@ -65,6 +65,10 @@ const (
 	FormatCove ManifestFormat = iota
 	// FormatLume is the tar-split layout used by lume's ghcr.io images.
 	FormatLume
+	// FormatTart is the cirruslabs/tart layout: disk-v2 chunks compressed
+	// with Apple's framed LZ4, plus a config and nvram layer. See
+	// docs/research/cove-tart-compat.md.
+	FormatTart
 )
 
 // ParsedManifest is the normalized disk and sidecar metadata from a manifest.
@@ -76,6 +80,8 @@ type ParsedManifest struct {
 	Blobs       []Descriptor
 	// Lume is populated when Format == FormatLume.
 	Lume LumeManifest
+	// Tart is populated when Format == FormatTart.
+	Tart TartManifest
 }
 
 // BuildManifest builds a deterministic OCI manifest and its config JSON.
@@ -173,9 +179,10 @@ func BuildManifest(opts ManifestOptions) (Manifest, []byte, error) {
 }
 
 // ParseManifest validates an OCI manifest and returns cove-normalized metadata.
-// If the manifest is in lume's tar-split format (no cove annotations + tar
-// part layers), Format is set to FormatLume and Lume is populated; the cove
-// chunk fields stay empty.
+// Dispatch order is Lume → Tart → Cove: lume's tar-split layers and tart's
+// cirruslabs media types are mutually exclusive, but both reject any cove
+// markers, so checking lume first keeps a cove-tagged manifest from being
+// misclassified if it happens to also carry a non-cove layer.
 func ParseManifest(m Manifest) (ParsedManifest, error) {
 	var out ParsedManifest
 	if m.SchemaVersion != 2 {
@@ -188,6 +195,15 @@ func ParseManifest(m Manifest) (ParsedManifest, error) {
 		}
 		out.Format = FormatLume
 		out.Lume = lume
+		return out, nil
+	}
+	if IsTartManifest(m) {
+		tart, err := ParseTartManifest(m)
+		if err != nil {
+			return out, err
+		}
+		out.Format = FormatTart
+		out.Tart = tart
 		return out, nil
 	}
 	annotations, err := NormalizeManifestAnnotations(m.Annotations)
