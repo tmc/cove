@@ -17,6 +17,7 @@ var knownCommands = []string{
 	"disk-snapshot",
 	"doctor",
 	"export",
+	"fork",
 	"gc",
 	"helper",
 	"help",
