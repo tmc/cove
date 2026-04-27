@@ -123,3 +123,41 @@ func TestHelperPingRoundTrip(t *testing.T) {
 		t.Fatalf("ping failed: %+v", resp)
 	}
 }
+
+func TestHelperInstallOwnerUID(t *testing.T) {
+	tests := []struct {
+		name    string
+		uid     int
+		env     map[string]string
+		want    int
+		wantErr bool
+	}{
+		{name: "normal user", uid: 501, want: 501},
+		{name: "sudo user", uid: 0, env: map[string]string{"SUDO_UID": "501"}, want: 501},
+		{name: "sudo uid trims spaces", uid: 0, env: map[string]string{"SUDO_UID": " 502\n"}, want: 502},
+		{name: "root without sudo owner", uid: 0, wantErr: true},
+		{name: "bad sudo uid", uid: 0, env: map[string]string{"SUDO_UID": "nope"}, wantErr: true},
+		{name: "root sudo uid", uid: 0, env: map[string]string{"SUDO_UID": "0"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := helperInstallOwnerUID(tt.uid, func(key string) (string, bool) {
+				v, ok := tt.env[key]
+				return v, ok
+			})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("helperInstallOwnerUID() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("helperInstallOwnerUID(): %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("helperInstallOwnerUID() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
