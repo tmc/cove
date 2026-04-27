@@ -47,6 +47,7 @@
 * [v0.4 Secrets](designs/005-v04-secrets-architecture.md)
 * [Linux v0.2](designs/006-cove-linux-v02.md)
 * [Beat Lume Roadmap](designs/011-beat-lume-roadmap.md)
+* [Soft-reset Empirical Result](designs/015-soft-reset-empirical.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
