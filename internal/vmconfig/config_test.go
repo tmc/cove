@@ -29,6 +29,9 @@ func TestSaveLoad(t *testing.T) {
 			{HostPath: "/tmp/share", Tag: "share", ReadOnly: true},
 		},
 		PostInstallRecipes: "base",
+		ParentVM:           "base-vm",
+		ParentSnapshot:     "clean",
+		ForkedAt:           time.Date(2026, time.April, 24, 9, 30, 0, 0, time.UTC),
 		Agent: &AgentConfig{
 			Platform:   "linux",
 			Requested:  true,
@@ -50,6 +53,12 @@ func TestSaveLoad(t *testing.T) {
 	}
 	if got.CPU != want.CPU || got.MemoryGB != want.MemoryGB || got.PostInstallRecipes != want.PostInstallRecipes {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
+	}
+	if got.ParentVM != want.ParentVM || got.ParentSnapshot != want.ParentSnapshot {
+		t.Fatalf("Load() lineage = parent %q snapshot %q, want parent %q snapshot %q", got.ParentVM, got.ParentSnapshot, want.ParentVM, want.ParentSnapshot)
+	}
+	if !got.ForkedAt.Equal(want.ForkedAt) {
+		t.Fatalf("Load().ForkedAt = %v, want %v", got.ForkedAt, want.ForkedAt)
 	}
 	if len(got.Volumes) != 1 || got.Volumes[0].HostPath != "/tmp/share" || got.Volumes[0].Tag != "share" || !got.Volumes[0].ReadOnly {
 		t.Fatalf("Load().Volumes = %#v", got.Volumes)

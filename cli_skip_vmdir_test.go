@@ -16,6 +16,8 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"helper daemon", []string{"helper", "daemon"}, true},
 		{"helper status", []string{"helper", "status"}, true},
 		{"version", []string{"version"}, true},
+		{"vm tree", []string{"vm", "tree"}, true},
+		{"vm tree extra args still skips startup VM dir", []string{"vm", "tree", "extra"}, true},
 		{"run is not allowlisted", []string{"run"}, false},
 		{"install is not allowlisted", []string{"install"}, false},
 		{"vm is not allowlisted", []string{"vm", "list"}, false},

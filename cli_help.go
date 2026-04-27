@@ -353,6 +353,7 @@ Commands:
   rename <old> <new>      Rename a VM
   export <name> <path>    Export a VM to a tarball
   import <path> <name>    Import a VM from a tarball
+  tree                    Print fork lineage
   config <command>        Export/import a framework config snapshot
   shared-folder ...       Manage shared folders (alias: cove shared-folder ...)`)
 }
