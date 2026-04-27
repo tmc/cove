@@ -1195,6 +1195,13 @@ func ctlPrintResponse(resp *controlpb.ControlResponse, cmdType string, raw bool,
 		return nil
 	}
 
+	// Newer commands carry results in typed proto Result fields rather than
+	// the legacy resp.Data string. Render those before falling back to Data.
+	if rendered := formatOperationsResponse(resp); rendered != "" {
+		fmt.Print(rendered)
+		return nil
+	}
+
 	// Print response data
 	if resp.Data != "" {
 		// Try to pretty print JSON
@@ -1210,6 +1217,49 @@ func ctlPrintResponse(resp *controlpb.ControlResponse, cmdType string, raw bool,
 	}
 
 	return nil
+}
+
+// formatOperationsResponse renders Result.Operation (single-op get/wait) or
+// Result.OperationsList (operations list) as a human-readable text block.
+// Returns "" when the response carries neither field, signalling the caller
+// to fall through to legacy resp.Data rendering.
+func formatOperationsResponse(resp *controlpb.ControlResponse) string {
+	if op := resp.GetOperation(); op != nil {
+		return formatOperationInfo(op)
+	}
+	if list := resp.GetOperationsList(); list != nil {
+		ops := list.GetOperations()
+		if len(ops) == 0 {
+			return "no operations\n"
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "%-22s %-10s %-24s %s\n", "ID", "STATUS", "RESOURCE", "UPDATED")
+		for _, op := range ops {
+			fmt.Fprintf(&b, "%-22s %-10s %-24s %s\n", op.GetId(), op.GetStatus(), op.GetResource(), op.GetUpdatedAt())
+		}
+		return b.String()
+	}
+	return ""
+}
+
+func formatOperationInfo(op *controlpb.OperationInfo) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "id:        %s\n", op.GetId())
+	fmt.Fprintf(&b, "status:    %s\n", op.GetStatus())
+	fmt.Fprintf(&b, "resource:  %s\n", op.GetResource())
+	if v := op.GetCreatedAt(); v != "" {
+		fmt.Fprintf(&b, "created:   %s\n", v)
+	}
+	if v := op.GetUpdatedAt(); v != "" {
+		fmt.Fprintf(&b, "updated:   %s\n", v)
+	}
+	if v := op.GetErrorCode(); v != "" {
+		fmt.Fprintf(&b, "errorCode: %s\n", v)
+	}
+	if v := op.GetErrorMessage(); v != "" {
+		fmt.Fprintf(&b, "error:     %s\n", v)
+	}
+	return b.String()
 }
 
 // ctlAgentWithRetry retries an agent command until it succeeds or the wait deadline expires.
