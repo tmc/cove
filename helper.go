@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -381,7 +382,25 @@ func helperStatus() error {
 
 // helperDaemon runs the helper event loop. Invoked by launchd via
 // `cove helper daemon`. Must be run as root.
+// initHelperLogger installs a daemon-scoped slog default tagged with
+// component=cove-helper. Defaults to TextHandler on stderr (which the
+// LaunchDaemon plist redirects to /var/log/cove-helper.log); set
+// COVE_HELPER_LOG_JSON=1 for JSONHandler output.
+func initHelperLogger() *slog.Logger {
+	var h slog.Handler
+	if os.Getenv("COVE_HELPER_LOG_JSON") == "1" {
+		h = slog.NewJSONHandler(os.Stderr, nil)
+	} else {
+		h = slog.NewTextHandler(os.Stderr, nil)
+	}
+	logger := slog.New(h).With(slog.String("component", "cove-helper"))
+	slog.SetDefault(logger)
+	return logger
+}
+
 func helperDaemon() error {
+	logger := initHelperLogger()
+
 	if os.Getuid() != 0 {
 		return fmt.Errorf("helper daemon must run as root (got uid %d)", os.Getuid())
 	}
@@ -405,16 +424,18 @@ func helperDaemon() error {
 		return fmt.Errorf("chmod socket: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "cove-helper: listening on %s, allowed uid=%d\n",
-		helperSocketPath, allowedUID)
+	logger.Info("listening",
+		slog.String("socket", helperSocketPath),
+		slog.Int("allowedUid", allowedUID),
+	)
 
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cove-helper: accept error: %v\n", err)
+			logger.Error("accept", slog.Any("err", err))
 			continue
 		}
-		go handleHelperConn(conn, allowedUID)
+		go handleHelperConn(logger, conn, allowedUID)
 	}
 }
 
@@ -430,60 +451,76 @@ func readHelperUID() (int, error) {
 	return uid, nil
 }
 
-func handleHelperConn(conn net.Conn, allowedUID int) {
+func handleHelperConn(parent *slog.Logger, conn net.Conn, allowedUID int) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(10 * time.Minute))
 
+	// Request-scoped logger; gains peer-uid and op as soon as we know them.
+	log := parent
+
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
-		writeHelperError(conn, "expected unix conn")
+		writeHelperError(log, conn, "expected unix conn")
 		return
 	}
 	peerUID, err := unixPeerUID(uc)
 	if err != nil {
-		writeHelperError(conn, fmt.Sprintf("peer uid: %v", err))
+		writeHelperError(log, conn, fmt.Sprintf("peer uid: %v", err))
 		return
 	}
+	log = log.With(slog.Int("peerUid", peerUID))
 	if peerUID != allowedUID {
-		writeHelperError(conn, fmt.Sprintf("peer uid %d not authorized (allowed: %d)",
-			peerUID, allowedUID))
+		writeHelperError(log, conn,
+			fmt.Sprintf("peer uid %d not authorized (allowed: %d)", peerUID, allowedUID))
 		return
 	}
 
 	var req helperRequest
 	if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&req); err != nil {
-		writeHelperError(conn, fmt.Sprintf("decode request: %v", err))
+		writeHelperError(log, conn, fmt.Sprintf("decode request: %v", err))
 		return
 	}
+	log = log.With(slog.String("op", req.Op))
 
 	switch req.Op {
 	case "apply_manifest":
-		runHelperManifest(conn, req.Manifest)
+		runHelperManifest(log, conn, req.Manifest)
 	case "ping":
+		log.Info("ping")
 		json.NewEncoder(conn).Encode(helperResponse{OK: true})
 	default:
-		writeHelperError(conn, fmt.Sprintf("unknown op: %s", req.Op))
+		writeHelperError(log, conn, fmt.Sprintf("unknown op: %s", req.Op))
 	}
 }
 
-func runHelperManifest(conn net.Conn, manifestJSON []byte) {
+func runHelperManifest(log *slog.Logger, conn net.Conn, manifestJSON []byte) {
+	log = log.With(slog.Int("manifestBytes", len(manifestJSON)))
 	if len(manifestJSON) == 0 {
-		writeHelperError(conn, "empty manifest")
+		writeHelperError(log, conn, "empty manifest")
 		return
 	}
 	var m elevatedManifest
 	if err := json.Unmarshal(manifestJSON, &m); err != nil {
-		writeHelperError(conn, fmt.Sprintf("parse manifest: %v", err))
+		writeHelperError(log, conn, fmt.Sprintf("parse manifest: %v", err))
 		return
 	}
 	if err := runElevatedManifest(&m); err != nil {
-		writeHelperError(conn, err.Error())
+		writeHelperError(log, conn, err.Error())
 		return
 	}
+	log.Info("manifest applied")
 	json.NewEncoder(conn).Encode(helperResponse{OK: true})
 }
 
-func writeHelperError(w io.Writer, msg string) {
+// writeHelperError sends an error response to the peer and logs the same
+// message at warn level so /var/log/cove-helper.log captures rejection
+// reasons (peer-uid mismatch, decode failures, manifest errors). log is
+// expected to carry per-request context (peerUid, op) by the time we get
+// here, so the message itself stays terse.
+func writeHelperError(log *slog.Logger, w io.Writer, msg string) {
+	if log != nil {
+		log.Warn("reject", slog.String("err", msg))
+	}
 	json.NewEncoder(w).Encode(helperResponse{OK: false, Error: msg})
 }
 
