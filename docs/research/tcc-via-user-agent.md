@@ -73,34 +73,75 @@ existing connection, then `connectUserAgentLocked`, which falls through to
   with no bootstrap attempt; the helper's `linuxMode` guard means we never
   reach this code path for read/write today, but it remains as a safety net.
 
-## Empirical verification (CLOSES ROADMAP #21)
+## Empirical verification (post-v0.1.0 result)
 
-Status: **deferred to a live VM run.**
+Status: **routing-only is not sufficient; manual FDA grant required.**
 
-The worktree environment cannot exercise a running guest from a host pane.
-The empirical close criterion — "does VirtioFS-mount of a `~/Documents` path
-succeed via the user agent without a manual TCC grant?" — needs a VM with the
-LaunchAgent shipping and a logged-in user. The verification protocol:
+The v0.1.0 smoke test (B32D, 2026-04-26) ran the verification protocol on
+a real VM (`hermes-mlx-go-60g-v9`, five VirtioFS shares, both daemon and
+user agent connected, console user logged in via auto-login). Steps 4–6
+all timed out:
 
-1. `cove up -user tmc -password tmc` — fresh VM, user logged in.
-2. `cove volumes add /Users/tmc/Documents docs` — tag a host VirtioFS share.
-3. Wait for auto-mount.
-4. `cove ctl agent-exec --daemon ls /Volumes/docs` — should fail with
-   "Operation not permitted" (proves the TCC bite still exists).
-5. `cove ctl agent-exec ls /Volumes/docs` — should succeed (user agent default,
-   inherits TCC).
-6. `cove ctl agent-write /Volumes/docs/test.txt 'hello'` — should succeed
-   (path-aware routing picks user agent).
-7. Confirm `test.txt` appears on the host.
+| Step | Probe                                                | Result          |
+|------|------------------------------------------------------|-----------------|
+| 4    | `agent-exec --daemon ls /Volumes/<share>`            | timeout (TCC bite, expected) |
+| 5    | `agent-exec ls /Volumes/<share>` (user agent)        | **timeout (≥90s)** |
+| 6    | `agent-write /Volumes/<share>/test.txt`              | timeout         |
+| —    | `stat /Volumes/<share>` via user agent               | succeeds in 4.5ms |
+| —    | `mount` (via user agent) shows the share is mounted  | succeeds        |
 
-Expected outcome: steps 5–7 succeed without any manual TCC grant in System
-Settings, closing #21. If they fail, the LaunchAgent has a TCC gap of its own
-(e.g., the `vz-agent-user` binary needs Full Disk Access too) and the brief
-should be amended with the unblocking step.
+The split between `stat` (succeeds) and `readdir` (times out) confirms
+the gap: macOS TCC blocks directory enumeration on non-system /Volumes
+mounts but not metadata lookups. The user agent has the same gap as the
+daemon for these paths.
 
-The macOSWorld harness D1ECD40A is unblocking is the natural acceptance vehicle
-— its M1 user-setup checklist removes the manual Accessibility grant once #21
-is empirically green.
+### Why routing alone does not close the gap
+
+TCC's Full Disk Access is granted **per binary path**, not per user
+session. macOS keys grants in `/Library/Application Support/com.apple
+.TCC/TCC.db` on the binary's signing identity (or path, for unsigned
+binaries) plus the requesting service. A LaunchAgent running in the
+Aqua session inherits user-id and the user's keychain, but FDA is a
+separate consent that must be granted explicitly to `/usr/local/bin/
+vz-agent` (the in-guest path the user agent runs from).
+
+`tccutil` only supports `reset`, not `grant`. PPPC `.mobileconfig`
+profiles can grant FDA but require MDM enrollment to install silently
+on macOS 11+ (`profiles install` is deprecated). There is no fully
+unattended path for FDA grant on a stock SIP-enabled guest.
+
+### v0.1.1 manual workaround
+
+Until a tighter path lands, users must grant FDA to the in-guest
+`vz-agent-user` binary by hand on first install:
+
+1. `cove up …` to install macOS and provision the guest agents.
+2. Inside the guest GUI: open **System Settings → Privacy &
+   Security → Full Disk Access**.
+3. Click `+`, navigate (`Cmd+Shift+G`) to `/usr/local/bin/`,
+   select `vz-agent`, and toggle the switch on.
+4. `cove ctl agent-exec ls /Volumes/<share>` should now succeed.
+
+`cove ctl agent-status` reports `daemon=connected, user=connected`
+even before the FDA grant — TCC failures are silent timeouts on
+readdir, not connection errors. A future `cove doctor` check could
+detect this by attempting a `readdir` probe and surfacing the FDA
+prompt. Tracked as a follow-up.
+
+### Tighter unattended paths (follow-ups, not landed)
+
+- Bundle the in-guest agent inside a TCC-aware app (signing identity
+  + FDA pre-grant via DEP) — heavy lift, requires Apple Developer
+  account and MDM.
+- Trigger an FDA prompt during `cove up` (`vz-agent` attempts a
+  protected op on first run) so the user gets a one-shot system
+  dialog instead of a hidden Settings step.
+- Use VirtioFS `cache=none` plus a launchd `BootstrapBootstrap` flag
+  so the mount is owned by the user session — investigation pending.
+
+The macOSWorld harness D1ECD40A is unblocking is the natural acceptance
+vehicle for the FDA-prompt path; its M1 user-setup checklist already
+needs a manual Accessibility grant, so adding FDA is a small extension.
 
 ## Gaps deferred
 
