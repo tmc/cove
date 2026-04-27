@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ func TestHelperPeerUIDAccept(t *testing.T) {
 		if err != nil {
 			return
 		}
-		handleHelperConn(conn, myUID)
+		handleHelperConn(slog.Default(), conn, myUID)
 	}()
 
 	conn, err := net.DialTimeout("unix", sockPath, time.Second)
@@ -64,7 +65,7 @@ func TestHelperPeerUIDReject(t *testing.T) {
 		if err != nil {
 			return
 		}
-		handleHelperConn(conn, -999)
+		handleHelperConn(slog.Default(), conn, -999)
 	}()
 
 	conn, err := net.DialTimeout("unix", sockPath, time.Second)
@@ -101,7 +102,7 @@ func TestHelperPingRoundTrip(t *testing.T) {
 		if err != nil {
 			return
 		}
-		handleHelperConn(conn, myUID)
+		handleHelperConn(slog.Default(), conn, myUID)
 	}()
 
 	conn, err := net.DialTimeout("unix", sockPath, time.Second)
