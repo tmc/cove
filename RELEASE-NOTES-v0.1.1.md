@@ -49,6 +49,14 @@ filling with create-VM errors. v0.1.1:
 If you are running a v0.1.0 helper, install v0.1.1 and run
 `sudo cove helper install` once to pick up the new plist.
 
+The helper daemon also gains structured `log/slog` output. Each line
+in `/var/log/cove-helper.log` now carries `component=cove-helper`
+plus per-request `peerUid`, `op`, and `manifestBytes` fields, and
+every rejection path (peer-UID mismatch, decode error, malformed
+manifest) is logged at `WARN` instead of being silent. Set
+`COVE_HELPER_LOG_JSON=1` in the LaunchDaemon plist environment for
+JSON output if you forward the log to a parser.
+
 ### Documentation: TCC routing is scaffolding, not a complete fix
 
 The v0.1.0 release notes described path-aware TCC routing as the
