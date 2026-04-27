@@ -95,9 +95,18 @@ local build.
 - `vz-agent` runs as a LaunchDaemon inside the guest over vsock port
   1024 and as a per-user LaunchAgent on port 1025. Exec, read, write,
   cp, self-upgrade, version reporting.
-- TCC-protected file operations (VirtioFS mounts, user home access)
-  are path-routed through the user agent on 1025; the daemon on 1024
-  remains for system-scope work. (`feat/route-tcc-through-user-agent`)
+- Path-aware routing scaffolding for TCC-protected file operations
+  (VirtioFS mounts, user home access): host code dispatches to the
+  user agent on 1025 by default and the daemon on 1024 for explicit
+  root work. (`feat/route-tcc-through-user-agent`)
+  **Caveat (verified post-tag, 2026-04-26):** routing alone does not
+  unblock VirtioFS readdir from the user agent — TCC's Full Disk
+  Access is granted per-binary, not per-session, so `vz-agent-user`
+  needs an explicit FDA grant before `cove ctl agent-exec ls
+  /Volumes/<share>` succeeds. See
+  [docs/research/tcc-via-user-agent.md](docs/research/tcc-via-user-agent.md)
+  for the manual grant step. v0.1.1 documents this; a tighter
+  unattended path is tracked as a follow-up.
 - Self-upgrade bounces both LaunchAgent and LaunchDaemon; directional
   version compare prevents auto-downgrade.
   (`feat/agent-auto-upgrade`)
