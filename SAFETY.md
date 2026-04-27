@@ -53,6 +53,10 @@ cove depends on public Virtualization.framework APIs and on macOS provisioning b
 
 Deleting and recreating users inside a warm macOS guest is not equivalent to a fresh VM. TCC, System Keychain state, Apple Account limits, GlobalPreferences, FileVault SecureToken propagation, and orphaned LaunchDaemons can outlive a user account. Privacy-critical evals should use VM fork or restore, not UID recycling.
 
+The 2026-04-27 matrix confirmed this empirically: zero passes, three fails,
+and three limits. See `bench/soft-reset/results-20260427.md` and
+`docs/designs/015-soft-reset-empirical.md`.
+
 ### Shared folders expose host paths you choose
 
 VirtioFS shares make selected host paths visible to the guest. Treat a shared folder as a deliberate trust-boundary crossing, especially when running untrusted code in the guest.
