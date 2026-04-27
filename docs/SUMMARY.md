@@ -33,6 +33,7 @@
 * [CI Runner](examples/ci-runner.md)
 * [Dev Environment](examples/dev-environment.md)
 * [Security Sandbox](examples/security-sandbox.md)
+* [OpenAI Agents SDK](examples/openai-agents.md)
 
 ## Architecture
 * [Overview](architecture/overview.md)
