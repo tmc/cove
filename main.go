@@ -732,6 +732,7 @@ VM Management:
   vm export <name> <path> Export VM to tarball (alias: export)
   vm import <path> <name> Import VM from tarball (alias: import)
   vm config ...           Export/import framework config snapshots (alias: config)
+  vm tree                 Print fork lineage
   clone           Clone a VM (cove clone [source] <target> [--linked])
   fork            CoW-fork a VM with a fresh identity (cove fork <parent> <child>)
   compact         Zero guest free space for smaller pushes
@@ -1201,6 +1202,22 @@ func handleVMCommand(args []string) {
 			os.Exit(1)
 		}
 		fmt.Println("Active VM cleared.")
+
+	case "tree":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Println("Usage: cove vm tree")
+			fmt.Println()
+			fmt.Println("Print VM fork lineage.")
+			return
+		}
+		if len(subargs) > 0 {
+			fmt.Fprintln(os.Stderr, "Usage: cove vm tree")
+			os.Exit(1)
+		}
+		if err := PrintVMTree(os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
 	case "delete":
 		if len(subargs) < 1 {

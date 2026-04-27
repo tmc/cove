@@ -30,6 +30,9 @@ type Config struct {
 	Volumes            []VolumeMount `json:"volumes,omitempty"`
 	PostInstallRecipes string        `json:"postInstallRecipes,omitempty"`
 	Agent              *AgentConfig  `json:"agent,omitempty"`
+	ParentVM           string        `json:"parentVM,omitempty"`
+	ParentSnapshot     string        `json:"parentSnapshot,omitempty"`
+	ForkedAt           time.Time     `json:"forkedAt,omitempty"`
 }
 
 // Hardware holds CPU and memory settings for a VM.

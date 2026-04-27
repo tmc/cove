@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -56,9 +57,8 @@ func ForkVMDisk(parent, child string) error {
 //   - no copied mac.address (a fresh MAC is allocated on first boot)
 //   - no copied suspend.vmstate (deterministic cold boot)
 //
-// parent must exist and child must not. Lineage metadata
-// (parent_vm / forked_at on the child config) is not written yet —
-// see Phase 4 in docs/designs/013-vm-fork.md.
+// parent must exist and child must not. The child's config records lineage
+// metadata so cove vm tree and future GC policy can trace fork ancestry.
 //
 // This is a thin convenience wrapper over CloneVM that hard-codes
 // fork semantics: linked-by-default (CoW) and never copy machine.id.
@@ -75,10 +75,28 @@ func ForkVM(parent, child string) error {
 	if !vmconfig.Validate(vmconfig.Path(parent)) {
 		return fmt.Errorf("fork: parent VM not found: %s", parent)
 	}
-	return CloneVM(CloneOptions{
+	if err := CloneVM(CloneOptions{
 		Source:        parent,
 		Target:        child,
 		Linked:        true,
 		CopyMachineID: false,
-	})
+	}); err != nil {
+		return err
+	}
+	if err := recordForkLineage(parent, child, "", time.Now().UTC()); err != nil {
+		return fmt.Errorf("fork: record lineage: %w", err)
+	}
+	return nil
+}
+
+func recordForkLineage(parent, child, snapshot string, forkedAt time.Time) error {
+	dir := vmconfig.Path(child)
+	cfg, err := vmconfig.Load(dir)
+	if err != nil {
+		return err
+	}
+	cfg.ParentVM = parent
+	cfg.ParentSnapshot = snapshot
+	cfg.ForkedAt = forkedAt
+	return vmconfig.Save(dir, cfg)
 }

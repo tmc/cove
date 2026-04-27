@@ -191,6 +191,20 @@ func TestForkVM_CreatesChildWithUniqueIdentity(t *testing.T) {
 	if _, err := os.Stat(suspendPath); err == nil {
 		t.Errorf("child suspend.vmstate must not exist after fork (cold boot is intended)")
 	}
+
+	cfg, err := vmconfig.Load(childDir)
+	if err != nil {
+		t.Fatalf("load child config: %v", err)
+	}
+	if cfg.ParentVM != parent {
+		t.Errorf("child ParentVM = %q, want %q", cfg.ParentVM, parent)
+	}
+	if cfg.ParentSnapshot != "" {
+		t.Errorf("child ParentSnapshot = %q, want empty", cfg.ParentSnapshot)
+	}
+	if cfg.ForkedAt.IsZero() {
+		t.Errorf("child ForkedAt is zero")
+	}
 }
 
 func TestForkVM_RejectsBadArgs(t *testing.T) {

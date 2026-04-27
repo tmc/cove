@@ -21,5 +21,8 @@ func subcommandSkipsVMDir(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
+	if args[0] == "vm" && len(args) > 1 && args[1] == "tree" {
+		return true
+	}
 	return vmDirIndependentCommands[args[0]]
 }
