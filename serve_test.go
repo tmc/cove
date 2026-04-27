@@ -88,6 +88,82 @@ func TestGatewayNonListeningSocket(t *testing.T) {
 	}
 }
 
+// TestGatewaySymlinkVMDir verifies that VMs surfacing under g.vmDir as
+// symlinks pointing at peer dirs (the legacy ~/.vz/<name>/ layout) still
+// get registered as routes. Regression for v0.1.0 bug where
+// /v1/vms listed legacy-symlinked VMs but /v1/vms/<name>/* returned 404.
+func TestGatewaySymlinkVMDir(t *testing.T) {
+	// Use os.MkdirTemp directly (not t.TempDir) to keep the path short
+	// — Unix sockets are capped at 104 chars on Darwin.
+	root, err := os.MkdirTemp("", "gwsym*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+
+	// Mirror the layout: real VM dir at root/<name>, then root/vms/<name>
+	// symlink pointing at it (canonical g.vmDir is root/vms).
+	const vmName = "legacy-vm"
+	realVMDir := filepath.Join(root, vmName)
+	if err := os.MkdirAll(realVMDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bind a real Unix socket so the route registration probe succeeds.
+	sockPath := filepath.Join(realVMDir, "control.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+
+	vmDir := filepath.Join(root, "vms")
+	if err := os.MkdirAll(vmDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realVMDir, filepath.Join(vmDir, vmName)); err != nil {
+		t.Fatal(err)
+	}
+
+	gw, err := NewGateway(vmDir, "tok", false, nil, newServeTestRegistry(t))
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+
+	gw.mu.RLock()
+	_, found := gw.routes[vmName]
+	gw.mu.RUnlock()
+	if !found {
+		t.Fatalf("symlinked VM %q not registered as route; got routes=%v", vmName, mapKeys(gw.routes))
+	}
+
+	// And the proxy endpoint must not 404 with "vm not found" for a registered VM.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/vms/"+vmName+"/status", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	gw.ServeHTTP(rec, req)
+	if rec.Code == http.StatusNotFound {
+		t.Errorf("proxy returned 404 for symlinked VM %q (route registration failed); body=%q", vmName, rec.Body.String())
+	}
+}
+
+func mapKeys(m map[string]*vmRoute) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 // TestGatewayMasterAuth verifies that authenticated routes reject missing/wrong tokens.
 func TestGatewayMasterAuth(t *testing.T) {
 	dir := t.TempDir()

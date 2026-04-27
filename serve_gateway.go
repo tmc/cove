@@ -200,7 +200,12 @@ func (g *Gateway) initialScan() {
 
 	reachable := make(map[string]*vmRoute)
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		// os.Stat (not entry.IsDir) so symlinks pointing at legacy
+		// ~/.vz/<name>/ dirs are followed. Without this, legacy-symlinked
+		// VMs are listed by /v1/vms but their proxy routes never register.
+		entryPath := filepath.Join(g.vmDir, entry.Name())
+		info, err := os.Stat(entryPath)
+		if err != nil || !info.IsDir() {
 			continue
 		}
 		name := entry.Name()
@@ -210,7 +215,7 @@ func (g *Gateway) initialScan() {
 		// Watch every VM subdirectory for control.sock create/remove events,
 		// even if the socket isn't present yet — otherwise a VM that starts
 		// later will be invisible until the next liveness tick.
-		_ = g.watcher.Add(filepath.Join(g.vmDir, name))
+		_ = g.watcher.Add(entryPath)
 		sockPath := filepath.Join(g.vmDir, name, "control.sock")
 		if !socketIsReachable(sockPath) {
 			continue
@@ -413,10 +418,14 @@ func (g *Gateway) discoverConfiguredVMs() []string {
 
 	if entries, err := os.ReadDir(g.vmDir); err == nil {
 		for _, entry := range entries {
-			if !entry.IsDir() {
+			// os.Stat follows symlinks; legacy VMs surface in g.vmDir as
+			// symlinks to ~/.vz/<name>/ and would otherwise be skipped.
+			entryPath := filepath.Join(g.vmDir, entry.Name())
+			info, err := os.Stat(entryPath)
+			if err != nil || !info.IsDir() {
 				continue
 			}
-			if !vmconfig.Validate(filepath.Join(g.vmDir, entry.Name())) {
+			if !vmconfig.Validate(entryPath) {
 				continue
 			}
 			add(entry.Name())
