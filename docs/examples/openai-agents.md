@@ -5,7 +5,8 @@ title: OpenAI Agents SDK
 
 Use `cove-sandbox` when an Agents SDK run needs a real local macOS guest instead
 of a hosted or Linux sandbox. The adapter exposes cove as a local `ComputerTool`
-runtime and keeps control on the host you own.
+runtime and as a `SandboxRunConfig` client/session backend while keeping control
+on the host you own.
 
 ## Install
 
@@ -52,3 +53,35 @@ with CoveSandbox.from_fork(parent="macos-base", name="eval-001") as sandbox:
 ```
 
 The context manager stops the guest. It does not delete the VM bundle.
+
+## SandboxRunConfig backend
+
+For `SandboxAgent` workflows, let the Agents SDK create a live cove session:
+
+```python
+from agents import RunConfig, Runner
+from agents.sandbox import SandboxAgent, SandboxRunConfig
+from cove_sandbox import CoveSandboxClient, CoveSandboxClientOptions
+
+agent = SandboxAgent(
+    name="macOS workspace",
+    instructions="Use the cove-backed VM for shell and file work.",
+)
+
+run_config = RunConfig(
+    sandbox=SandboxRunConfig(
+        client=CoveSandboxClient(),
+        options=CoveSandboxClientOptions(
+            parent="macos-base",
+            name="eval-001",
+            delete_on_close=True,
+        ),
+    )
+)
+
+result = await Runner.run(agent, "Run sw_vers.", run_config=run_config)
+print(result.final_output)
+```
+
+`parent` creates a fork with `cove fork <parent> <name>`. Use `vm="macos-eval"`
+to attach to an existing VM instead.

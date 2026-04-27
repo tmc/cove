@@ -92,6 +92,7 @@ class CoveClient:
         *,
         env: Mapping[str, str] | None = None,
         cwd: str = "",
+        timeout: float | None = None,
     ) -> ExecResult:
         args = ["/bin/zsh", "-lc", command] if isinstance(command, str) else list(command)
         resp = self.control(
@@ -103,7 +104,7 @@ class CoveClient:
                     "working_dir": cwd,
                 },
             },
-            timeout=max(self.timeout, 600),
+            timeout=timeout or max(self.timeout, 600),
         )
         data = resp.get("agent_exec_result") or {}
         if not data and isinstance(resp.get("data"), str):
@@ -126,13 +127,13 @@ class CoveClient:
         return base64.b64decode(data)
 
     def write_file(self, path: str, data: bytes | str, *, mode: int = 0o644) -> None:
-        payload = data if isinstance(data, str) else data.decode()
+        raw = data.encode() if isinstance(data, str) else data
         self.control(
             {
                 "type": "agent-write",
                 "agent_write": {
                     "path": path,
-                    "data": payload,
+                    "data": base64.b64encode(raw).decode("ascii"),
                     "mode": mode,
                 },
             }
@@ -219,6 +220,12 @@ class CoveClient:
             cmd = " ".join(shlex.quote(x) for x in [self.cove, *args])
             raise CoveError(f"{cmd}: {proc.stderr.strip()}")
         return proc.stdout
+
+    def delete_vm(self, vm: str | None = None) -> None:
+        name = vm or self.vm
+        if not name:
+            raise CoveError("delete_vm requires a VM name")
+        self.run_cove(["vm", "delete", name], timeout=max(self.timeout, 120))
 
     def _load_token(self) -> str:
         token = os.environ.get("VZ_MACOS_CTL_TOKEN")
