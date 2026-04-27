@@ -269,7 +269,10 @@ func helperInstall() error {
 		return fmt.Errorf("resolve cove binary: %w", err)
 	}
 
-	uid := os.Getuid()
+	uid, err := helperInstallOwnerUID(os.Getuid(), os.LookupEnv)
+	if err != nil {
+		return err
+	}
 	plist := helperLaunchdPlist(helperLabel, helperBinaryPath)
 
 	tmpPlist, err := os.CreateTemp("", "cove-helper-*.plist")
@@ -449,6 +452,24 @@ func readHelperUID() (int, error) {
 		return 0, fmt.Errorf("parse uid: %w", err)
 	}
 	return uid, nil
+}
+
+func helperInstallOwnerUID(uid int, lookup func(string) (string, bool)) (int, error) {
+	if uid != 0 {
+		return uid, nil
+	}
+	sudoUID, ok := lookup("SUDO_UID")
+	if !ok || strings.TrimSpace(sudoUID) == "" {
+		return 0, fmt.Errorf("helper install needs a non-root owner uid; run cove helper install as your user or via sudo")
+	}
+	ownerUID, err := strconv.Atoi(strings.TrimSpace(sudoUID))
+	if err != nil {
+		return 0, fmt.Errorf("parse SUDO_UID: %w", err)
+	}
+	if ownerUID <= 0 {
+		return 0, fmt.Errorf("helper install needs a non-root owner uid; got SUDO_UID=%d", ownerUID)
+	}
+	return ownerUID, nil
 }
 
 func handleHelperConn(parent *slog.Logger, conn net.Conn, allowedUID int) {
