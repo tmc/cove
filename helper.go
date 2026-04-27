@@ -20,6 +20,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -162,6 +164,94 @@ prompts.`)
 	return nil
 }
 
+// helperLaunchdPlist returns the LaunchDaemon plist body for the helper.
+//
+// KeepAlive is conditional on SuccessfulExit=false, so a daemon that exits 0
+// is not respawned — only crashes are. ThrottleInterval=30 caps respawn rate
+// so a stale or broken binary cannot churn the icon at ~6/min the way the
+// unconditional KeepAlive=true plist did before v0.1.1.
+func helperLaunchdPlist(label, binaryPath string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>%s</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>%s</string>
+    <string>helper</string>
+    <string>daemon</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/var/log/cove-helper.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/cove-helper.log</string>
+</dict>
+</plist>
+`, label, binaryPath)
+}
+
+// fileSHA256 returns the lowercase hex SHA256 of the file at path. Returns
+// an error if the file cannot be read.
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// helperBinaryFreshness compares the SHA256 of the installed helper binary
+// against the SHA256 of the running cove binary. It returns whether the two
+// are identical, a short summary suitable for "cove helper status", and any
+// error encountered while reading either binary.
+//
+// "stale" is the common case during upgrades: the user replaced /usr/local/bin/cove
+// with a newer build but didn't re-run `sudo cove helper install`, so the
+// LaunchDaemon at /usr/local/libexec/cove-helper still runs the old version.
+// A stale binary that crash-loops can hammer launchd; warning loudly here is
+// the cheapest path to a clear remediation prompt.
+func helperBinaryFreshness() (matches bool, summary string, err error) {
+	myPath, err := os.Executable()
+	if err != nil {
+		return false, "", fmt.Errorf("locate running binary: %w", err)
+	}
+	myPath, _ = filepath.EvalSymlinks(myPath)
+
+	mySum, err := fileSHA256(myPath)
+	if err != nil {
+		return false, "", fmt.Errorf("hash running binary: %w", err)
+	}
+	installedSum, err := fileSHA256(helperBinaryPath)
+	if err != nil {
+		return false, "", fmt.Errorf("hash installed helper: %w", err)
+	}
+	if mySum == installedSum {
+		return true, fmt.Sprintf("up to date (sha256:%s)", mySum[:12]), nil
+	}
+	return false, fmt.Sprintf(
+		"stale: installed sha256:%s, current sha256:%s\n"+
+			"  re-run `sudo cove helper install` to refresh",
+		installedSum[:12], mySum[:12]), nil
+}
+
 // helperInstall installs the helper binary and LaunchDaemon plist with one
 // admin auth dialog. The current cove binary is copied to /usr/local/libexec.
 func helperInstall() error {
@@ -179,31 +269,7 @@ func helperInstall() error {
 	}
 
 	uid := os.Getuid()
-	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>%s</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>%s</string>
-    <string>helper</string>
-    <string>daemon</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>ProcessType</key>
-  <string>Background</string>
-  <key>StandardOutPath</key>
-  <string>/var/log/cove-helper.log</string>
-  <key>StandardErrorPath</key>
-  <string>/var/log/cove-helper.log</string>
-</dict>
-</plist>
-`, helperLabel, helperBinaryPath)
+	plist := helperLaunchdPlist(helperLabel, helperBinaryPath)
 
 	tmpPlist, err := os.CreateTemp("", "cove-helper-*.plist")
 	if err != nil {
@@ -287,6 +353,9 @@ func helperStatus() error {
 	fmt.Printf("Binary:  %s\n", helperBinaryPath)
 	if _, err := os.Stat(helperBinaryPath); err == nil {
 		fmt.Println("  installed")
+		if _, summary, err := helperBinaryFreshness(); err == nil {
+			fmt.Printf("  %s\n", summary)
+		}
 	} else {
 		fmt.Println("  missing")
 	}
