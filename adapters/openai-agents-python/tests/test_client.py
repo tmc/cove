@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 from cove_sandbox import CoveClient, CoveComputer, CoveError
+from cove_sandbox import backend as backend_module
+from cove_sandbox.backend import CoveSandboxClientOptions, CoveSandboxSessionState
 from cove_sandbox.computer import _resolve_keys
 
 
@@ -73,6 +75,56 @@ def test_control_error(tmp_path: Path) -> None:
     server.start()
     with pytest.raises(CoveError, match="nope"):
         CoveClient(socket_path=sock).control({"type": "ping"})
+
+
+def test_write_file_sends_base64(tmp_path: Path) -> None:
+    del tmp_path
+    sock = _short_socket_path()
+    server = _UnixServer(sock, {"success": True})
+    server.start()
+    CoveClient(socket_path=sock).write_file("/tmp/file", b"\x00hello")
+    assert server.request["agent_write"]["data"] == _b64(b"\x00hello")
+    assert server.request["agent_write"]["mode"] == 0o644
+
+
+def test_backend_options_round_trip_without_agents() -> None:
+    opts = CoveSandboxClientOptions(
+        parent="base",
+        name="eval-001",
+        workspace_root="/tmp/work",
+        gui=True,
+        extra_run_args=("-disposable",),
+    )
+    assert opts.model_dump()["type"] == "cove"
+    assert opts.model_dump()["parent"] == "base"
+    assert opts.model_dump()["extra_run_args"] == ("-disposable",)
+
+
+def test_backend_state_round_trip_without_agents() -> None:
+    kwargs = _state_kwargs()
+    state = CoveSandboxSessionState(**kwargs)
+    payload = state.model_dump()
+    restored = CoveSandboxSessionState.model_validate(payload)
+    assert restored.type == "cove"
+    assert restored.vm == "eval-001"
+    assert restored.workspace_root == "/tmp/work"
+    assert restored.owned is True
+
+
+def _state_kwargs() -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "vm": "eval-001",
+        "workspace_root": "/tmp/work",
+        "owned": True,
+        "delete_on_close": True,
+    }
+    if backend_module._AGENTS_AVAILABLE:
+        from agents.sandbox.manifest import Manifest
+        from agents.sandbox.snapshot import resolve_snapshot
+
+        kwargs["manifest"] = Manifest(root="/tmp/work")
+        kwargs["snapshot"] = resolve_snapshot(None, "test")
+    return kwargs
 
 
 def _b64(data: bytes) -> str:

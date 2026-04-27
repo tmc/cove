@@ -69,3 +69,38 @@ print(run.stdout)
 
 The adapter uses the guest agent for shell execution and the control socket for
 GUI actions.
+
+## SandboxRunConfig
+
+The v2 backend implements the Agents SDK sandbox client/session interfaces, so
+`SandboxAgent` can create or resume a cove-backed sandbox through
+`RunConfig(sandbox=SandboxRunConfig(...))`.
+
+```python
+from agents import RunConfig, Runner
+from agents.sandbox import SandboxAgent, SandboxRunConfig
+from cove_sandbox import CoveSandboxClient, CoveSandboxClientOptions
+
+agent = SandboxAgent(
+    name="macOS workspace",
+    instructions="Inspect the workspace and report concise results.",
+)
+
+run_config = RunConfig(
+    sandbox=SandboxRunConfig(
+        client=CoveSandboxClient(),
+        options=CoveSandboxClientOptions(
+            parent="macos-base",
+            name="eval-001",
+            gui=False,
+            delete_on_close=True,
+        ),
+    )
+)
+
+result = await Runner.run(agent, "Run sw_vers in the sandbox.", run_config=run_config)
+```
+
+`parent` forks a fresh VM with `cove fork`. Use `vm=` instead when you want to
+attach to an existing VM. The backend maps SDK `exec`, `read`, `write`, and
+workspace persistence calls onto the cove control socket and guest agent.
