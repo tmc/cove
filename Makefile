@@ -1,18 +1,19 @@
+BINARY  ?= cove
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+COMMIT  ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 .PHONY: build sign agent test clean lint proto proto-go proto-swift release-check
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o vz-macos .
+	go build -buildvcs=true -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 agent:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o cmd/vz-agent/vz-agent ./cmd/vz-agent
 
 sign:
-	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./vz-macos
+	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./$(BINARY)
 
 test:
 	go test -v ./...
@@ -26,7 +27,7 @@ release-check:
 	GOWORK=off goreleaser release --snapshot --clean --skip=publish
 
 clean:
-	rm -f vz-macos cmd/vz-agent/vz-agent
+	rm -f cove vz-macos cmd/vz-agent/vz-agent
 
 # Proto generation targets.
 # Requires: protoc (v6+), protoc-gen-go, protoc-gen-connect-go
