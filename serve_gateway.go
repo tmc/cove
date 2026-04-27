@@ -36,8 +36,8 @@ type Gateway struct {
 	watcher *fsnotify.Watcher
 	stop    chan struct{}
 
-	// livenessInterval controls how often the watcher rescans VM sockets
-	// to catch removals that fsnotify misses (e.g. Unix sockets on darwin).
+	// livenessInterval controls how often the watcher reconciles VM sockets
+	// to catch changes that fsnotify misses (e.g. symlinks and Unix sockets on darwin).
 	// Tests may override before Start; production defaults to 30s.
 	livenessInterval time.Duration
 }
@@ -191,7 +191,8 @@ func (g *Gateway) handleFSEvent(event fsnotify.Event) {
 }
 
 // initialScan scans vmDir for control sockets, dials each (200ms timeout), and
-// populates the route table. Called once at construction.
+// populates the route table. It is used at construction and by the liveness
+// reconciler.
 func (g *Gateway) initialScan() {
 	entries, err := os.ReadDir(g.vmDir)
 	if err != nil {
@@ -234,30 +235,11 @@ func (g *Gateway) initialScan() {
 	g.mu.Unlock()
 }
 
-// checkLiveness dials all currently-known routes and drops any that are
-// no longer accepting connections. This is the 30s belt-and-suspenders check
-// for VMs that died without removing their socket file (fsnotify won't fire).
+// checkLiveness reconciles reachable VM sockets with the route table. This is
+// the 30s belt-and-suspenders check for VMs that start or stop in ways fsnotify
+// misses, including symlinked legacy VM dirs on darwin.
 func (g *Gateway) checkLiveness() {
-	g.mu.RLock()
-	names := make([]string, 0, len(g.routes))
-	for name := range g.routes {
-		names = append(names, name)
-	}
-	g.mu.RUnlock()
-
-	for _, name := range names {
-		g.mu.RLock()
-		route, ok := g.routes[name]
-		g.mu.RUnlock()
-		if !ok {
-			continue
-		}
-		if !socketIsReachable(route.socketPath) {
-			g.mu.Lock()
-			delete(g.routes, name)
-			g.mu.Unlock()
-		}
-	}
+	g.initialScan()
 }
 
 // refresh is kept for test compatibility; it delegates to initialScan.

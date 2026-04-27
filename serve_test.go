@@ -794,6 +794,80 @@ func TestGatewayFSNotifyAddsRoute(t *testing.T) {
 	}
 }
 
+// TestGatewayLivenessAddsSymlinkRoute verifies the liveness reconciler picks
+// up a legacy symlinked VM whose socket becomes reachable after gateway start.
+func TestGatewayLivenessAddsSymlinkRoute(t *testing.T) {
+	root, err := os.MkdirTemp("", "gwlivesym*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+
+	const vmName = "legacy-vm"
+	realVMDir := filepath.Join(root, vmName)
+	if err := os.MkdirAll(realVMDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	vmDir := filepath.Join(root, "vms")
+	if err := os.MkdirAll(vmDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realVMDir, filepath.Join(vmDir, vmName)); err != nil {
+		t.Fatal(err)
+	}
+
+	gw, err := NewGateway(vmDir, "tok", false, nil, newServeTestRegistry(t))
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+	gw.livenessInterval = 100 * time.Millisecond
+	go gw.watch()
+	defer gw.Stop()
+
+	gw.mu.RLock()
+	_, found := gw.routes[vmName]
+	gw.mu.RUnlock()
+	if found {
+		t.Fatal("expected no route before socket is listening")
+	}
+
+	sockPath := filepath.Join(realVMDir, "control.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		gw.mu.RLock()
+		_, ok := gw.routes[vmName]
+		gw.mu.RUnlock()
+		if ok {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	gw.mu.RLock()
+	route, found := gw.routes[vmName]
+	gw.mu.RUnlock()
+	if !found {
+		t.Fatal("symlinked route not added by liveness reconciliation")
+	}
+	if route.socketPath != filepath.Join(vmDir, vmName, "control.sock") {
+		t.Fatalf("route.socketPath = %q, want symlink path", route.socketPath)
+	}
+}
+
 // TestGatewayFSNotifyRemovesRoute verifies that removing a socket file causes
 // the gateway to drop the route via fsnotify.
 func TestGatewayFSNotifyRemovesRoute(t *testing.T) {
