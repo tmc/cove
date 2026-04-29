@@ -1486,10 +1486,10 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *ocrx.Service, t
 
 		if continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); continueFound && continueBelongsToOptions(width, continueX) {
 			if err := client.KeyPress(KeyCodeReturn); err == nil {
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				return nil
 			}
-			time.Sleep(350 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			return client.MouseClick(continueX/width, continueY/height)
 		}
 
@@ -1498,26 +1498,26 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *ocrx.Service, t
 			time.Sleep(time.Second)
 			continue
 		}
-		for _, pt := range startupOptionsTilePoints(width, height, optX, optY) {
-			if err := client.MouseClick(startupNorm(pt.X, width), startupNorm(pt.Y, height)); err != nil {
-				return err
-			}
-			continueX, continueY, continueFound := waitForStartupOptionsContinueViaClient(client, ocr, 2*time.Second)
-			if continueFound {
-				if err := client.MouseClick(startupNorm(continueX, width), startupNorm(continueY, height)); err == nil {
-					time.Sleep(500 * time.Millisecond)
-					return nil
-				}
-				if err := client.KeyPress(KeyCodeReturn); err == nil {
-					time.Sleep(500 * time.Millisecond)
-					return nil
-				}
-			}
-		}
 		if ok, err := activateStartupOptionsWithKeyboardViaClient(client, ocr); err != nil {
 			return err
 		} else if ok {
 			return nil
+		}
+		for _, pt := range startupOptionsTilePoints(width, height, optX, optY) {
+			if err := client.MouseClick(startupNorm(pt.X, width), startupNorm(pt.Y, height)); err != nil {
+				return err
+			}
+			continueX, continueY, continueFound := waitForStartupOptionsContinueViaClient(client, ocr, 750*time.Millisecond)
+			if continueFound {
+				if err := client.MouseClick(startupNorm(continueX, width), startupNorm(continueY, height)); err == nil {
+					time.Sleep(100 * time.Millisecond)
+					return nil
+				}
+				if err := client.KeyPress(KeyCodeReturn); err == nil {
+					time.Sleep(100 * time.Millisecond)
+					return nil
+				}
+			}
 		}
 	}
 
@@ -1529,33 +1529,15 @@ func activateStartupOptionsWithKeyboardViaClient(client *ControlClient, ocr *ocr
 		if err := client.KeyPress(key); err != nil {
 			return false, err
 		}
-		time.Sleep(350 * time.Millisecond)
-		img, err := client.Screenshot()
-		if err != nil {
-			continue
-		}
-		width := float64(img.Bounds().Dx())
-		if x, _, found := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
+		if _, _, found := waitForStartupOptionsContinueViaClient(client, ocr, 750*time.Millisecond); found {
 			if err := client.KeyPress(KeyCodeReturn); err != nil {
 				return false, err
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			return true, nil
 		}
 	}
 
-	if err := client.KeyPress(KeyCodeReturn); err != nil {
-		return false, err
-	}
-	time.Sleep(500 * time.Millisecond)
-	img, err := client.Screenshot()
-	if err != nil || len(ocrTexts(ocr, img)) == 0 {
-		return true, nil
-	}
-	width := float64(img.Bounds().Dx())
-	if x, _, found := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
-		return true, nil
-	}
 	return false, nil
 }
 

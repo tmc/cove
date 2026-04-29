@@ -130,6 +130,26 @@ func TestRecoveryAuthFailureMessage(t *testing.T) {
 	}
 }
 
+func TestStartupOptionsTilePointsStartAboveOCRLabel(t *testing.T) {
+	const (
+		width  = 1440
+		height = 900
+		optX   = 823
+		optY   = 475
+	)
+
+	points := startupOptionsTilePoints(width, height, optX, optY)
+	if len(points) == 0 {
+		t.Fatal("startupOptionsTilePoints returned no points")
+	}
+	if points[0].X != optX || points[0].Y >= optY {
+		t.Fatalf("first point = (%v, %v), want above OCR label", points[0].X, points[0].Y)
+	}
+	if points[0].Y != optY-0.09*height {
+		t.Fatalf("first y = %v, want %v", points[0].Y, optY-0.09*height)
+	}
+}
+
 func TestPromptClearTexts(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -139,17 +159,17 @@ func TestPromptClearTexts(t *testing.T) {
 		{
 			name:   "confirm prompt",
 			needle: "[y/n]",
-			want:   []string{"Authorized user", "Password", "System Integrity Protection is", "-bash-3.2#"},
+			want:   []string{"Authorized user", "Password", "System Integrity Protection is"},
 		},
 		{
 			name:   "username prompt",
 			needle: "Authorized user",
-			want:   []string{"Password", "Unknown user", "System Integrity Protection is", "-bash-3.2#"},
+			want:   []string{"Password", "Unknown user", "System Integrity Protection is"},
 		},
 		{
 			name:   "password prompt",
 			needle: "Password",
-			want:   []string{"Authentication failure", "System Integrity Protection is", "-bash-3.2#"},
+			want:   []string{"Authentication failure", "System Integrity Protection is"},
 		},
 		{
 			name:   "ordinary prompt",
@@ -168,6 +188,9 @@ func TestPromptClearTexts(t *testing.T) {
 				if !containsString(got, want) {
 					t.Fatalf("promptClearTexts(%q)=%v, missing %q", tt.needle, got, want)
 				}
+			}
+			if containsString(got, "-bash-3.2#") {
+				t.Fatalf("promptClearTexts(%q)=%v, should not use stale shell prompt as progress", tt.needle, got)
 			}
 		})
 	}

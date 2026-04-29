@@ -32,7 +32,7 @@
 //	label-push <text>          Push a script label onto the VM window title
 //	label-pop                  Pop the current script label
 //	label-clear                Clear all script labels
-//	answer-visible [-optional] [-skip-empty] [-timeout duration] [-progress text] <prompt> <answer>...
+//	answer-visible [-optional] [-skip-empty] [-timeout duration] [-delay duration] [-progress text] <prompt> <answer>...
 //	type <text>                 Type text into the VM
 //	type-keycodes <text>        Type text using per-key keycode events
 //	key <spec>                  Send key event (e.g. "return", "tab", "cmd+v")
@@ -1431,6 +1431,7 @@ func setVZScriptWindowLabel(cfg vzscriptConfig, label string, s *script.State) {
 
 type answerVisibleArgs struct {
 	timeout   time.Duration
+	delay     time.Duration
 	optional  bool
 	skipEmpty bool
 	progress  []string
@@ -1446,7 +1447,7 @@ func vzAnswerVisibleCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
 			Summary: "answer the first visible prompt from a set of alternatives",
-			Args:    "[-optional] [-skip-empty] [-timeout duration] [-progress text] <prompt> <answer>...",
+			Args:    "[-optional] [-skip-empty] [-timeout duration] [-delay duration] [-progress text] <prompt> <answer>...",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
 			opts, err := parseAnswerVisibleArgs(args)
@@ -1496,7 +1497,7 @@ func vzAnswerVisibleCmd(cfg vzscriptConfig) script.Cmd {
 }
 
 func parseAnswerVisibleArgs(args []string) (answerVisibleArgs, error) {
-	opts := answerVisibleArgs{timeout: 30 * time.Second}
+	opts := answerVisibleArgs{timeout: 30 * time.Second, delay: 1500 * time.Millisecond}
 	i := 0
 	for i < len(args) {
 		switch args[i] {
@@ -1516,6 +1517,17 @@ func parseAnswerVisibleArgs(args []string) (answerVisibleArgs, error) {
 				return opts, fmt.Errorf("invalid timeout %q: %w", args[i], err)
 			}
 			opts.timeout = d
+			i++
+		case "-delay":
+			i++
+			if i >= len(args) {
+				return opts, fmt.Errorf("-delay requires a value")
+			}
+			d, err := time.ParseDuration(args[i])
+			if err != nil {
+				return opts, fmt.Errorf("invalid delay %q: %w", args[i], err)
+			}
+			opts.delay = d
 			i++
 		case "-progress":
 			i++
@@ -1566,7 +1578,7 @@ func runAnswerVisible(s *script.State, ocr *ocrx.Service, capture func() image.I
 			if s != nil {
 				s.Logf("answer-visible matched %q\n", pair.prompt)
 			}
-			if err := answerVisiblePrompt(typeKeycodes, key, pair.answer); err != nil {
+			if err := answerVisiblePrompt(typeKeycodes, key, pair.answer, opts.delay); err != nil {
 				return err
 			}
 			return waitAnswerProgress(ocr, capture, pair.prompt, opts.progress, 20*time.Second)
@@ -1589,8 +1601,10 @@ func visiblePrompt(ocr *ocrx.Service, img image.Image, pairs []promptAnswer) (pr
 	return promptAnswer{}, false
 }
 
-func answerVisiblePrompt(typeKeycodes func(string) error, key func(string) error, text string) error {
-	time.Sleep(1500 * time.Millisecond)
+func answerVisiblePrompt(typeKeycodes func(string) error, key func(string) error, text string, delay time.Duration) error {
+	if delay > 0 {
+		time.Sleep(delay)
+	}
 	if err := typeKeycodes(text); err != nil {
 		return fmt.Errorf("answer prompt: %w", err)
 	}
