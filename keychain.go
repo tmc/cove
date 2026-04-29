@@ -16,6 +16,7 @@ import (
 var (
 	keychainSecLib      uintptr
 	keychainCFLib       uintptr
+	keychainLibC        uintptr
 	keychainInitialized bool
 
 	// Security.framework
@@ -31,6 +32,8 @@ var (
 	cfRelease                 func(cf uintptr)
 	cfDataGetBytePtr          func(d uintptr) *byte
 	cfDataGetLength           func(d uintptr) int
+
+	libcMemcpy func(dst *uintptr, src uintptr, n uintptr) uintptr
 
 	// kSec* key globals loaded via Dlsym (CFStringRef constants exported by Security.framework)
 	secKeyClass       uintptr // kSecClass
@@ -84,6 +87,12 @@ func initKeychain() {
 	}
 	keychainCFLib = cf
 
+	libc, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_LAZY)
+	if err != nil {
+		return
+	}
+	keychainLibC = libc
+
 	purego.RegisterLibFunc(&secItemAdd, keychainSecLib, "SecItemAdd")
 	purego.RegisterLibFunc(&secItemCopyMatching, keychainSecLib, "SecItemCopyMatching")
 	purego.RegisterLibFunc(&secItemDelete, keychainSecLib, "SecItemDelete")
@@ -95,8 +104,9 @@ func initKeychain() {
 	purego.RegisterLibFunc(&cfRelease, keychainCFLib, "CFRelease")
 	purego.RegisterLibFunc(&cfDataGetBytePtr, keychainCFLib, "CFDataGetBytePtr")
 	purego.RegisterLibFunc(&cfDataGetLength, keychainCFLib, "CFDataGetLength")
+	purego.RegisterLibFunc(&libcMemcpy, keychainLibC, "memcpy")
 
-	// Load CFStringRef globals by Dlsym then dereference the pointer-to-CFStringRef.
+	// Load CFStringRef globals by Dlsym then copy the pointer-sized value.
 	secKeyClass = loadCFStringGlobal(keychainSecLib, "kSecClass")
 	secKeyService = loadCFStringGlobal(keychainSecLib, "kSecAttrService")
 	secKeyAccount = loadCFStringGlobal(keychainSecLib, "kSecAttrAccount")
@@ -111,14 +121,9 @@ func initKeychain() {
 	kCFBooleanTrue = loadPtrGlobal(keychainCFLib, "kCFBooleanTrue")
 }
 
-// loadCFStringGlobal loads a `const CFStringRef` exported symbol — the symbol IS
-// a CFStringRef (pointer), so Dlsym returns the address of the pointer; dereference once.
+// loadCFStringGlobal loads a const CFStringRef exported symbol.
 func loadCFStringGlobal(lib uintptr, name string) uintptr {
-	addr, err := purego.Dlsym(lib, name)
-	if err != nil || addr == 0 {
-		return 0
-	}
-	return *(*uintptr)(unsafe.Pointer(addr)) //nolint:unsafeptr
+	return loadPtrGlobal(lib, name)
 }
 
 // loadAddrGlobal returns the address of a symbol (for struct-valued globals like callbacks).
@@ -130,13 +135,15 @@ func loadAddrGlobal(lib uintptr, name string) uintptr {
 	return addr
 }
 
-// loadPtrGlobal dereferences a pointer-sized global (like kCFBooleanTrue which is a CFBooleanRef).
+// loadPtrGlobal copies a pointer-sized global, such as kCFBooleanTrue.
 func loadPtrGlobal(lib uintptr, name string) uintptr {
 	addr, err := purego.Dlsym(lib, name)
-	if err != nil || addr == 0 {
+	if err != nil || addr == 0 || libcMemcpy == nil {
 		return 0
 	}
-	return *(*uintptr)(unsafe.Pointer(addr)) //nolint:unsafeptr
+	var v uintptr
+	libcMemcpy(&v, addr, unsafe.Sizeof(v))
+	return v
 }
 
 func keychainAvailableNative() bool {
