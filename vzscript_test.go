@@ -27,7 +27,7 @@ func TestVZScriptEngineCommands(t *testing.T) {
 		"screenshot", "ocr", "ocr-click", "ocr-wait", "ocr-gone",
 		"wait-menu-text", "click-menu-item", "reboot-to-recovery",
 		"recovery-options", "startup-options", "recovery-continue",
-		"answer-visible", "wait-prompt-clear",
+		"label-push", "label-pop", "label-clear", "answer-visible", "wait-prompt-clear",
 		"type", "type-keycodes", "key", "click", "wait", "detect-page", "detect-screen",
 		// Standard commands.
 		"echo", "cat", "cp", "env", "exists", "sleep", "stdout", "stderr",
@@ -36,6 +36,31 @@ func TestVZScriptEngineCommands(t *testing.T) {
 	for _, name := range wantCmds {
 		if _, ok := engine.Cmds[name]; !ok {
 			t.Errorf("missing command: %s", name)
+		}
+	}
+}
+
+func TestVZScriptLabelsLogAndPop(t *testing.T) {
+	var log bytes.Buffer
+	cfg := vzscriptConfig{
+		verbose:   true,
+		logWriter: &log,
+	}
+	src := []byte("label-push install\nlabel-push \"quoted label\"\nlabel-push recovery\nlabel-pop\nlabel-clear\n")
+	if err := runVZScript(src, "labels.vzscript", cfg); err != nil {
+		t.Fatal(err)
+	}
+	got := log.String()
+	want := []string{
+		`label-push "install" -> "install"`,
+		`label-push "quoted label" -> "install / quoted label"`,
+		`label-push "recovery" -> "install / quoted label / recovery"`,
+		`label-pop -> "install / quoted label"`,
+		`label-clear`,
+	}
+	for _, w := range want {
+		if !strings.Contains(got, w) {
+			t.Fatalf("log missing %q\n%s", w, got)
 		}
 	}
 }

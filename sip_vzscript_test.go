@@ -15,12 +15,15 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 
 	wantSnippets := []string{
 		`recovery-options 180s`,
+		`label-push 'Recovery picker'`,
 		`recovery-continue 240s`,
 		`wait-menu-text Utilities 180s`,
+		`label-push 'Recovery Terminal'`,
 		`key cmd+shift+t`,
 		`ocr-wait '-bash-3.2#' 60s`,
 		`key cmd+k`,
 		`type-keycodes 'csrutil disable'`,
+		`label-push 'csrutil prompts'`,
 		`answer-visible -timeout 45s`,
 		`'y/n' 'y'`,
 		`'security level to full boot security' 'y'`,
@@ -64,6 +67,8 @@ func TestGenerateSIPVZScript_UsesCustomVZScriptCommandsAndConds(t *testing.T) {
 		"wait-menu-text",
 		"ocr-wait",
 		"type-keycodes",
+		"label-push",
+		"label-pop",
 		"answer-visible",
 	}
 	for _, name := range wantCmds {
