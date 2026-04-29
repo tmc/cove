@@ -97,6 +97,35 @@ func TestGenerateSIPVZScript_NoReboot(t *testing.T) {
 	}
 }
 
+func TestSIPTemplateCanRenderWithVZScriptTemplateVars(t *testing.T) {
+	data, err := loadVZScriptData("sip-recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := renderVZScriptTemplate(data, "sip-recovery", map[string]any{
+		"Mode":     "disable",
+		"Username": "admin",
+		"Password": "secret",
+		"Confirm":  true,
+		"Reboot":   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	for _, want := range []string{
+		`label-push 'SIP disable'`,
+		`type-keycodes 'csrutil disable'`,
+		`'Authorized user' 'admin'`,
+		`'Password' 'secret'`,
+		`[text-visible:System+Integrity+Protection+is+off.] type-keycodes 'reboot'`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered template missing %q\n%s", want, text)
+		}
+	}
+}
+
 func TestWriteVZScriptForSIP(t *testing.T) {
 	tmpDir := t.TempDir()
 	script, err := generateSIPVZScript("enable", "admin", "secret", false, true)

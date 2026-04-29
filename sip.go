@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"text/template"
 	"time"
 )
 
@@ -179,45 +176,18 @@ func generateSIPVZScript(mode, username, password string, confirm, reboot bool) 
 	if err != nil {
 		return "", fmt.Errorf("read sip recovery template: %w", err)
 	}
-	tmpl, err := template.New("sip-recovery").Parse(string(data))
+	vars := map[string]any{
+		"Mode":     mode,
+		"Confirm":  confirm,
+		"Username": username,
+		"Password": password,
+		"Reboot":   reboot,
+	}
+	out, err := renderVZScriptTemplate(data, "sip-recovery", vars)
 	if err != nil {
-		return "", fmt.Errorf("parse sip recovery template: %w", err)
+		return "", fmt.Errorf("render sip recovery template: %w", err)
 	}
-	args := struct {
-		Mode                 string
-		CSRUtilCommand       string
-		Confirm              bool
-		Username             string
-		Password             string
-		SuccessText          string
-		SuccessTextCondition string
-		Reboot               bool
-	}{
-		Mode:                 mode,
-		CSRUtilCommand:       scriptQuote("csrutil " + mode),
-		Confirm:              confirm,
-		Username:             scriptQuoteNonEmpty(username),
-		Password:             scriptQuoteNonEmpty(password),
-		SuccessText:          scriptQuote(sipSuccessText(mode)),
-		SuccessTextCondition: url.QueryEscape(sipSuccessText(mode)),
-		Reboot:               reboot,
-	}
-	var out bytes.Buffer
-	if err := tmpl.Execute(&out, args); err != nil {
-		return "", fmt.Errorf("execute sip recovery template: %w", err)
-	}
-	return out.String(), nil
-}
-
-func scriptQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-func scriptQuoteNonEmpty(s string) string {
-	if s == "" {
-		return ""
-	}
-	return scriptQuote(s)
+	return string(out), nil
 }
 
 func writeVZScriptForSIP(vmDirectory, mode, script string) (string, error) {

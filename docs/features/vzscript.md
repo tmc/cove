@@ -22,6 +22,7 @@ cove vzscript run -v homebrew             # verbose output
 cove vzscript run -timeout 30m golang     # custom timeout
 cove vzscript run -terminal homebrew      # run in Terminal.app (visible in VM)
 cove vzscript run -auto-approve golang    # auto-click Allow/OK dialogs via OCR
+cove vzscript run -template -var Mode=disable ./sip.vzscript.tmpl
 ```
 
 ## Script Format
@@ -70,6 +71,26 @@ Scripts that need root (e.g., installing packages, writing to `/etc`) should dec
 ```
 
 This routes commands through the root daemon agent (port 1024) instead of the user agent.
+
+## Templates
+
+`vzscript run -template` renders recipes as Go `text/template` files before
+metadata parsing and execution. Pass values with repeated `-var name=value`
+flags. The renderer provides `quote`, `queryescape`, and `env` functions.
+
+```
+label-push {{quote (printf "SIP %s" .Mode)}}
+type-keycodes {{quote .Command}}
+[text-visible:{{queryescape .SuccessText}}] screenshot
+```
+
+```
+cove vzscript run -template \
+  -var Mode=disable \
+  -var Command="csrutil disable" \
+  -var SuccessText="System Integrity Protection is off." \
+  ./sip.vzscript.tmpl
+```
 
 ## Built-in Recipes
 

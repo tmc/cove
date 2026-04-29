@@ -5,6 +5,10 @@ title: VZScript Commands
 
 Complete reference for all commands and conditions available in vzscript recipes.
 
+Run templated scripts with `vzscript run -template` and repeated
+`-var name=value` flags. Templates are rendered with Go `text/template` before
+the script metadata and command body are parsed.
+
 ## Guest Commands
 
 Commands that interact with the guest VM via the agent over vsock.
