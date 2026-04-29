@@ -305,17 +305,21 @@ click-menu-item <menu> <item>
 click-menu-item Utilities Terminal
 ```
 
-### startup-options
+### recovery-options
 
-Enter startup options (for recovery boot).
+Select Options in the Recovery startup picker. Use this after starting the VM
+with `cove run -recovery`; the start option boots to the picker, and this
+command advances into Recovery.
 
 ```
-startup-options
+recovery-options
 ```
+
+`startup-options` is kept as an alias for older scripts.
 
 ### recovery-continue
 
-Continue from recovery selection screen.
+Continue from Recovery setup screens, such as the language or continue prompt.
 
 ```
 recovery-continue

@@ -14,7 +14,7 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 	}
 
 	wantSnippets := []string{
-		`startup-options 180s`,
+		`recovery-options 180s`,
 		`recovery-continue 240s`,
 		`wait-menu-text Utilities 180s`,
 		`key cmd+shift+t`,
@@ -57,7 +57,7 @@ func TestGenerateSIPVZScript_UsesCustomVZScriptCommandsAndConds(t *testing.T) {
 
 	engine := newVZScriptEngine(vzscriptConfig{})
 	wantCmds := []string{
-		"startup-options",
+		"recovery-options",
 		"recovery-continue",
 		"wait-menu-text",
 		"ocr-wait",
