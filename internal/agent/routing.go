@@ -12,35 +12,35 @@
 // SIP-enabled guest, and the only zero-touch path to one (PPPC profile signed
 // by an MDM cert) is closed on macOS 11+. See docs/research/tcc-via-user-agent.md.
 //
-// agentRouteFor reads the op type and (when relevant) the path, and returns the
+// RouteFor reads the op type and (when relevant) the path, and returns the
 // route. Callers that produce or read TCC-protected paths should use this
 // helper rather than calling getAgent / getUserAgent directly. Linux guests
-// always get routeDaemon — there is no UserAgent service.
+// always get RouteDaemon — there is no UserAgent service.
 
-package main
+package agent
 
 import "strings"
 
-// agentRoute selects which guest agent should service an op.
-type agentRoute int
+// Route selects which guest agent should service an op.
+type Route int
 
 const (
-	routeDaemon agentRoute = iota // vsock 1024, root, no TCC/FDA
-	routeUser                     // vsock 1025, user session, TCC/FDA inherited
+	RouteDaemon Route = iota // vsock 1024, root, no TCC/FDA
+	RouteUser                // vsock 1025, user session, TCC/FDA inherited
 )
 
-func (r agentRoute) String() string {
+func (r Route) String() string {
 	switch r {
-	case routeUser:
+	case RouteUser:
 		return "user"
 	default:
 		return "daemon"
 	}
 }
 
-// agentRouteFor returns the appropriate route for op. path may be empty for
+// RouteFor returns the appropriate route for op. path may be empty for
 // ops that do not address a guest path (exec, mount, etc.). For Linux guests,
-// the user agent is unavailable and routeDaemon is always returned.
+// the user agent is unavailable and RouteDaemon is always returned.
 //
 // The "auto" suffix on op selects the path-aware route — system paths stay on
 // the daemon, user paths go to the user agent. Explicit ops keep their home:
@@ -49,32 +49,32 @@ func (r agentRoute) String() string {
 //
 // op is the control-socket request type (without the agent- prefix). path is
 // the guest path the op will touch, if any.
-func agentRouteFor(op, path string, linuxGuest bool) agentRoute {
+func RouteFor(op, path string, linuxGuest bool) Route {
 	if linuxGuest {
-		return routeDaemon
+		return RouteDaemon
 	}
 	switch op {
 	case "user-exec", "user-exec-stream", "user-exec-auto":
-		return routeUser
+		return RouteUser
 	case "mount-volumes":
 		// mount_virtiofs itself requires root and stays on the daemon. The
 		// TCC restriction only bites file operations *through* the mount;
 		// callers that read or write inside /Volumes/<tag> use the path-aware
 		// route below.
-		return routeDaemon
+		return RouteDaemon
 	case "exec", "exec-stream", "ping", "info", "shutdown", "reboot",
 		"sshd", "connect", "status":
-		return routeDaemon
+		return RouteDaemon
 	case "read", "write", "cp":
-		if isUserPath(path) {
-			return routeUser
+		if IsUserPath(path) {
+			return RouteUser
 		}
-		return routeDaemon
+		return RouteDaemon
 	}
-	return routeDaemon
+	return RouteDaemon
 }
 
-// isUserPath reports whether p is a guest path that requires user-context
+// IsUserPath reports whether p is a guest path that requires user-context
 // (TCC/FDA) to access. The daemon agent runs as root and can read most of
 // /Users — but TCC adds a second layer that blocks even root on:
 //
@@ -88,7 +88,7 @@ func agentRouteFor(op, path string, linuxGuest bool) agentRoute {
 //
 // /tmp, /var, /Library (system Library), /System, /private and /usr always
 // stay on the daemon.
-func isUserPath(p string) bool {
+func IsUserPath(p string) bool {
 	if p == "" {
 		return false
 	}

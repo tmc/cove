@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -245,24 +244,6 @@ func normalizeSharedFolderPath(path string) (string, error) {
 		return "", fmt.Errorf("path is not a directory: %s", abs)
 	}
 	return abs, nil
-}
-
-func saveSharedFolders(vmDirectory string, folders []SharedFolderEntry) error {
-	configPath := filepath.Join(vmDirectory, "shared_folders.json")
-	if len(folders) == 0 {
-		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove shared folder config: %w", err)
-		}
-		return nil
-	}
-	data, err := json.MarshalIndent(folders, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode shared folders: %w", err)
-	}
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("write shared folder config: %w", err)
-	}
-	return nil
 }
 
 func listSharedFolders(vmDirectory string) error {

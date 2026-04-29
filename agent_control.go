@@ -34,6 +34,7 @@ import (
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -41,7 +42,7 @@ import (
 
 // getAgent returns the current agent client, connecting if necessary.
 // It holds agentMu only briefly for connection setup, not during RPCs.
-func (s *ControlServer) getAgent() (*AgentClient, error) {
+func (s *ControlServer) getAgent() (*agentstate.AgentClient, error) {
 	state, err := s.currentVMState()
 	if err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func (s *ControlServer) getAgent() (*AgentClient, error) {
 
 // getUserAgent returns the user session agent client, connecting if necessary.
 // If the LaunchAgent is missing in a macOS guest, it is bootstrapped on demand.
-func (s *ControlServer) getUserAgent() (*UserAgentClient, error) {
+func (s *ControlServer) getUserAgent() (*agentstate.UserAgentClient, error) {
 	state, err := s.currentVMState()
 	if err != nil {
 		return nil, err
@@ -150,7 +151,7 @@ func (s *ControlServer) connectUserAgentLocked() error {
 }
 
 func (s *ControlServer) connectUserAgentPortLocked() error {
-	client, err := NewUserAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
+	client, err := agentstate.NewUserAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -158,9 +159,9 @@ func (s *ControlServer) connectUserAgentPortLocked() error {
 		if err != nil {
 			return nil, fmt.Errorf("vsock device: %w", err)
 		}
-		conn, err := mgr.ConnectToAgent(userAgentPort)
+		conn, err := mgr.ConnectToAgent(agentstate.UserPort)
 		if err != nil {
-			return nil, fmt.Errorf("connect user agent port %d: %w (user agent may not be running; check /tmp/vz-agent-user.log inside the vm)", userAgentPort, err)
+			return nil, fmt.Errorf("connect user agent port %d: %w (user agent may not be running; check /tmp/vz-agent-user.log inside the vm)", agentstate.UserPort, err)
 		}
 		return conn, nil
 	})
@@ -310,7 +311,7 @@ func (s *ControlServer) connectAgentLocked() error {
 		return nil // already connected
 	}
 
-	client, err := NewAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
+	client, err := agentstate.NewAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -318,7 +319,7 @@ func (s *ControlServer) connectAgentLocked() error {
 		if err != nil {
 			return nil, fmt.Errorf("vsock device: %w", err)
 		}
-		conn, err := mgr.ConnectToAgent(agentPort)
+		conn, err := mgr.ConnectToAgent(agentstate.DaemonPort)
 		if err != nil {
 			return nil, fmt.Errorf("connect agent: %w (guest may still be booting; check /var/log/vz-agent.log inside the vm)", err)
 		}
@@ -892,11 +893,11 @@ func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *co
 
 	var data []byte
 	var err error
-	if agentRouteFor("read", cmd.Path, linuxMode) == routeUser {
+	if agentstate.RouteFor("read", cmd.Path, linuxMode) == agentstate.RouteUser {
 		log.Printf("agent-route: read %s -> user agent (TCC path)", cmd.Path)
 		data, err = s.userAgentReadFile(ctx, cmd.Path)
 	} else {
-		var a *AgentClient
+		var a *agentstate.AgentClient
 		a, err = s.getAgent()
 		if err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
@@ -950,7 +951,7 @@ func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *
 	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
 
-	if agentRouteFor("write", cmd.Path, linuxMode) == routeUser {
+	if agentstate.RouteFor("write", cmd.Path, linuxMode) == agentstate.RouteUser {
 		log.Printf("agent-route: write %s -> user agent (TCC path)", cmd.Path)
 		if err := s.userAgentWriteFile(ctx, cmd.Path, data, mode); err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("write: %v", err)}
@@ -1152,7 +1153,7 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 	ctx, cancel := s.timeoutContext(10 * time.Minute)
 	defer cancel()
 
-	var stream ExecStreamReceiver
+	var stream agentstate.ExecStreamReceiver
 	var connErr error
 	if req.Type == "agent-user-exec-stream" {
 		ua, err := s.getUserAgent()
@@ -1279,7 +1280,7 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 // handleAgentCopyDir copies a host directory to the guest by streaming a tar
 // archive over the CopyIn RPC, then extracting it on the guest side.
 // If overwrite is false and the destination already exists, the copy is skipped.
-func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *AgentClient, hostDir, guestDir string, overwrite bool) *controlpb.ControlResponse {
+func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.AgentClient, hostDir, guestDir string, overwrite bool) *controlpb.ControlResponse {
 	// Skip if destination already exists (unless overwrite is set).
 	if !overwrite {
 		checkResult, _ := a.Exec(ctx, []string{"/bin/test", "-d", guestDir}, nil, "")
