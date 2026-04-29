@@ -41,6 +41,8 @@ type upConfig struct {
 	linux                    bool
 	desktop                  bool
 	distro                   string
+	nested                   bool
+	cpuExplicit              bool
 }
 
 // handleUp implements the "up" subcommand: install -> inject -> run -> vzscripts.
@@ -76,13 +78,21 @@ func parseUpFlags(args []string) (upConfig, error) {
 		}
 		return upConfig{}, err
 	}
-	// -desktop implies -linux.
-	if cfg.desktop {
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "cpu" {
+			cfg.cpuExplicit = true
+		}
+	})
+	// -desktop and -nested imply -linux.
+	if cfg.desktop || cfg.nested {
 		cfg.linux = true
 	}
 	variant, err := parseLinuxVariant(cfg.distro, cfg.desktop)
 	if err != nil {
 		return upConfig{}, err
+	}
+	if cfg.nested && !cfg.cpuExplicit && cfg.cpuCount < 4 {
+		cfg.cpuCount = 4
 	}
 	// For Linux, user is optional.
 	if cfg.user == "" && !cfg.linux {
@@ -171,6 +181,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.BoolVar(&cfg.linux, "linux", false, "Install a Linux VM instead of macOS")
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
 	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
+	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	fs.Usage = func() {
 		printUpUsage(os.Stderr, fs)
 	}
@@ -196,6 +207,7 @@ Examples:
   cove up -user me -ipsw ~/restore.ipsw                   # macOS with IPSW
   cove up -linux                                           # Ubuntu Server (ubuntu/ubuntu)
   cove up -linux -distro alpine                            # Alpine (alpine/alpine)
+  cove up -linux -nested                                   # Linux with KVM on supported hosts
   cove up -linux -user tmc -password secret                # Linux with custom user
   cove up -linux -desktop -user me                         # Ubuntu Desktop
   cove up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
@@ -234,6 +246,10 @@ func applyUpConfig(cfg upConfig) {
 	if cfg.distro != "" {
 		linuxDistro = cfg.distro
 	}
+	if cfg.nested {
+		linuxNested = true
+	}
+	cpuExplicit = cfg.cpuExplicit
 }
 
 // vmAlreadyInstalled reports whether the VM disk already exists, meaning

@@ -1,0 +1,27 @@
+# kvm-test — verify nested KVM inside a Linux guest
+# runs-on: daemon
+
+guest-exec sh -lc 'test -e /dev/kvm'
+guest-exec sh -lc 'lsmod | grep -E "kvm|kvm_arm"'
+guest-shell kvm-test.sh
+
+-- kvm-test.sh --
+#!/bin/sh
+set -eu
+
+if command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -q
+  apt-get install -y qemu-system-arm libvirt-daemon-system libvirt-clients bridge-utils virtinst
+elif command -v dnf >/dev/null 2>&1; then
+  dnf -y install qemu-system-aarch64 libvirt virt-install
+elif command -v apk >/dev/null 2>&1; then
+  apk add qemu-system-aarch64 libvirt-daemon virt-install
+else
+  echo "unsupported guest package manager" >&2
+  exit 1
+fi
+
+modprobe kvm >/dev/null 2>&1 || true
+modprobe kvm_arm >/dev/null 2>&1 || modprobe kvm_arm64 >/dev/null 2>&1 || true
+test -e /dev/kvm

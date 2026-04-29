@@ -26,6 +26,13 @@ Ubuntu Desktop:
 cove up -linux -desktop -user myuser
 ```
 
+Nested KVM on supported hosts:
+
+```bash
+cove up -linux -nested
+cove vzscript run kvm-test
+```
+
 ## Installation
 
 The installer creates the right unattended seed for each distro:
@@ -117,6 +124,24 @@ cove rosetta status
 cove rosetta install
 cove rosetta setup          # show guest setup instructions
 ```
+
+## Nested KVM
+
+Nested virtualization is available only on M3/M4 Apple Silicon hosts running macOS 15 or newer. M1/M2 hardware does not expose the required capability.
+
+Use `-nested` on `cove run` or `cove up`:
+
+```bash
+cove run -linux -nested
+```
+
+If the host does not support nested virtualization, cove fails before VM start with:
+
+```text
+nested virtualization requires M3/M4 chip on macOS 15+. Run without --nested to boot a standard VM (KVM will be disabled).
+```
+
+Nested guests share memory and CPU with the outer Linux VM. A nested guest cannot itself nest another VM.
 
 ## Architecture
 
