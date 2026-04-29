@@ -1,6 +1,6 @@
 # cove disk handling & OCI — design doc
 
-**Status**: draft v5 (post-Council round-3 final + liveness-gate refinement)
+**Status**: draft v6 (post-CDC trade-off review)
 **Author**: cove team
 **Date**: 2026-04-16
 **Target**: cove 0.1 (OCI v0 path) → 0.2 (content-addressed store)
@@ -29,6 +29,9 @@ Applied Council round-3 (v4):
 
 Applied v5 refinement:
 - Liveness gate now uses a **control-socket probe** (dial `~/.vz/vms/<name>/control.sock` with a 500ms deadline and expect a status-ping reply) rather than a PID-alive or socket-exists check. A stale `control.sock` left by a crashed `cove run` would wrongly block the pull under a PID/existence check; the probe correctly distinguishes "VM is actually serving" from "sock file happens to exist." On probe failure, the stale sock is cleaned up and the pull proceeds.
+
+Applied design-review pass A1 (v6):
+- **CDC evaluated and rejected for v0.2/v0.3 defaults.** The cove workload is "mint rarely, pull often" for ML-eval images; fixed-offset chunks give simpler resumability, deterministic random writes, and enough dedup when paired with explicit bases, zero-chunk elision, compact, and the v0.2 store. Content-defined chunking stays a measured post-v0.3 candidate only if dry-run telemetry shows boundary-shift waste large enough to justify the extra format and CPU cost.
 
 ---
 
@@ -204,8 +207,34 @@ Translation is one-way (pull only). If both sets appear on the same manifest (un
 
 - **512 MB fixed-offset chunks** by default. Matches lume default at `Push.swift:28` and `ImageContainerRegistry.swift:3077` — purely because that's a reasonable size, not for compatibility (we don't produce lume images).
 - **LZ4 frame compression** per chunk.
-- **Fixed-offset, not content-defined.** Rabin-style rolling hash would get better dedup but is too slow in pure Go without CGO/SIMD. Fixed offsets make resumable uploads and parallel HTTP range requests trivial. Defer rolling-hash to v0.3 if dedup pressure justifies it.
+- **Fixed-offset, not content-defined.** Fixed offsets make resumable uploads, deterministic sparse `WriteAt`, parallel HTTP range requests, and the v0.2 store format straightforward. Content-defined chunking is not in v0.2 or v0.3; see the trade-off decision below.
 - **Sparse-zero chunks** get a well-known zero-digest; never uploaded twice. Registry-side dedup plus local skip.
+
+### CDC vs fixed-offset decision (v6)
+
+**Decision: keep 512 MB fixed-offset chunks as the cove format through v0.2 and v0.3.** Do not build content-defined chunking (CDC) into the v0.2 store or the v0.3 `cove build` cache path. Revisit only after measured push/pull dry-run data shows boundary-shift waste that fixed-offset chunks, compaction, and explicit base manifests cannot address.
+
+The workload matters. Cove's ML-eval images are not a backup stream with frequent small insertions. They are curated base images and occasional toolchain images minted by maintainers, then pulled many times by local developers, CI workers, and agent runners. Locally, forks and snapshots stay on APFS `clonefile`; OCI chunking is only for registry crossings and local store reuse. The main product requirement is predictable pulls and simple cache correctness, not maximum theoretical delta compression.
+
+| Dimension | Fixed-offset chunks | CDC | Decision |
+|---|---|---|---|
+| Pull path | Offset is `chunk-index * chunk-size`; stream, verify, `WriteAt`, rename. | Manifest must carry every variable offset and length; assembly must trust and validate a larger chunk map. | Fixed-offset keeps the safety-critical pull path smaller. |
+| Resume and range fetch | Missing chunk set is index-addressed; HTTP ranges and worker partitioning are trivial. | Parallelism is still possible, but only after parsing the full variable chunk table. | Fixed-offset is simpler for v0.2 resumability. |
+| Local store | Store keys are compressed blob digests plus manifest chunk indexes; GC graph is compact. | More, smaller blobs and larger manifests increase GC and metadata surface. | Fixed-offset reduces v0.2 store blast radius. |
+| Dedup value | Strong when images share bases, unchanged regions, and zero holes; `--base` skips unchanged chunks. | Better when byte insertions shift all later boundaries. | Cove VM disks mostly rewrite block ranges rather than insert bytes into a linear archive. |
+| CPU cost | One sequential hash/compress pass over 512 MB buffers. | Rolling-hash boundary detection over 60-200 GB disks before compression. | Pure Go CPU and implementation cost are not justified yet. |
+| Format stability | Already documented, implemented, and compatible with existing annotations. | Requires new annotations for variable offsets/lengths and migration rules. | Avoid format churn before v1.0. |
+
+CDC remains attractive for one narrow case: two disk images whose meaningful changes shift byte positions while preserving most downstream bytes. That is common in file archives. It is less convincing for raw APFS-backed VM disks, where package installs and OS churn update allocation metadata, logs, caches, SQLite stores, and sparse regions across the block device. For cove, the higher-leverage work is to reduce churn before diffing (`cove compact`, targeted build compaction, zero-chunk elision) and to reuse explicit base manifests.
+
+Revisit CDC only if all of the following are true:
+
+1. `cove push --dry-run` or the churn benchmark shows fixed-offset uploads or stores at least 25% more non-zero compressed bytes than a CDC prototype on representative macOS eval chains.
+2. The gain appears on the 19th-cell workstation chain from `004-churn-benchmark-harness.md`, not only on synthetic insertion workloads.
+3. A pure-Go prototype can chunk and hash a 100 GB disk at at least 300 MB/s on the baseline Apple Silicon runner without cgo or SIMD-specific dependencies.
+4. The variable-chunk manifest can be added as a new media-type or manifest version without weakening v0.1/v0.2 fixed-offset pull compatibility.
+
+Until those gates are met, `--chunk-size` is the only tuning knob. Keep the default at 512 MB, and use `--base`, compact, and the v0.2 store for practical dedup.
 
 ### `cove pull` (v0.1 — streaming direct-to-disk, no store)
 
@@ -477,7 +506,7 @@ So the defaults optimize for the common cases — frictionless migration in, ind
 v0.2 additions from v3 review:
 - **Signed `disk.provenance`** via Ed25519 key embedded in `aux.img`. Verifies VM directory integrity for compliance/CI use cases where an unsigned marker is insufficient.
 
-v0.3 (out of scope): content-defined chunking, Apple-native lazy assembly (FileProvider/NFS), cross-host suspend-state transfer.
+v0.3 (out of scope): Apple-native lazy assembly (FileProvider/NFS), cross-host suspend-state transfer. Content-defined chunking is post-v0.3 only if the v6 revisit gates above pass.
 
 ---
 
