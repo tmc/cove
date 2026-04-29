@@ -25,8 +25,9 @@
 //	ocr                         Run OCR on current screen; stdout is all text
 //	screenshot [file]           Capture VM screen to file
 //	wait-menu-text <text> [timeout]  Wait for menu bar text
-//	startup-options [timeout]   Hold power until startup options appear
-//	recovery-continue [timeout] Continue from startup options into Recovery
+//	recovery-options [timeout] Select Options in the Recovery startup picker
+//	startup-options [timeout]  Alias for recovery-options
+//	recovery-continue [timeout] Continue from Recovery setup screens
 //	type <text>                 Type text into the VM
 //	type-keycodes <text>        Type text using per-key keycode events
 //	key <spec>                  Send key event (e.g. "return", "tab", "cmd+v")
@@ -131,7 +132,8 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"screenshot":        vzScreenshotCmd(cfg),
 		"wait-menu-text":    vzWaitMenuTextCmd(cfg),
 		"click-menu-item":   vzClickMenuItemCmd(cfg),
-		"startup-options":   vzStartupOptionsCmd(cfg),
+		"recovery-options":  vzRecoveryOptionsCmd(cfg),
+		"startup-options":   vzRecoveryOptionsCmd(cfg),
 		"recovery-continue": vzRecoveryContinueCmd(cfg),
 		"type":              vzTypeCmd(cfg),
 		"type-keycodes":     vzTypeKeycodesCmd(cfg),
@@ -1176,10 +1178,10 @@ func vzClickMenuItemCmd(cfg vzscriptConfig) script.Cmd {
 	)
 }
 
-func vzStartupOptionsCmd(cfg vzscriptConfig) script.Cmd {
+func vzRecoveryOptionsCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
-			Summary: "activate Recovery Options from the Apple Silicon startup picker",
+			Summary: "select Options in the Apple Silicon Recovery startup picker",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
 			if len(args) > 1 {

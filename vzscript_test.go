@@ -25,7 +25,7 @@ func TestVZScriptEngineCommands(t *testing.T) {
 		"guest-terminal", "guest-write", "guest-read", "guest-cp", "host-cp",
 		// UI automation commands.
 		"screenshot", "ocr", "ocr-click", "ocr-wait", "ocr-gone",
-		"wait-menu-text", "click-menu-item", "startup-options", "recovery-continue",
+		"wait-menu-text", "click-menu-item", "recovery-options", "startup-options", "recovery-continue",
 		"wait-prompt-clear",
 		"type", "type-keycodes", "key", "click", "wait", "detect-page", "detect-screen",
 		// Standard commands.
