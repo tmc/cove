@@ -31,6 +31,7 @@ var (
 
 	linuxMode    bool
 	linuxDesktop bool
+	linuxDistro  string
 	cpuCount     uint
 	memoryGB     uint64
 	diskPath     string
@@ -150,6 +151,7 @@ func init() {
 
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
+	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
 	flag.UintVar(&cpuCount, "cpu", 2, "number of CPUs")
@@ -251,6 +253,12 @@ func main() {
 	// -desktop implies -linux
 	if linuxDesktop {
 		linuxMode = true
+	}
+	if linuxMode {
+		if _, err := parseLinuxVariant(linuxDistro, linuxDesktop); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Validate mutually exclusive flags.
@@ -512,6 +520,12 @@ func main() {
 
 		if linuxDesktop {
 			linuxMode = true
+		}
+		if linuxMode {
+			if _, err := parseLinuxVariant(linuxDistro, linuxDesktop); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		// --headless overrides --gui after subcommand re-parse
@@ -817,10 +831,13 @@ Provisioning Strategy (-provision-strategy):
                     Assistant via keyboard automation. No admin needed.
   auto              Try disk first. If it fails, fall back to gui.
 
-Linux VM (Ubuntu):
-  Install and run Ubuntu ARM64 using cloud-init autoinstall:
+Linux VM:
+  Install and run Ubuntu, Debian, Fedora, or Alpine ARM64:
 
   cove install -linux                                    # Ubuntu Server (default)
+  cove install -linux -distro debian                     # Debian
+  cove install -linux -distro fedora                     # Fedora
+  cove install -linux -distro alpine                     # Alpine
   cove install -linux -desktop                           # Ubuntu Desktop
   cove install -linux -iso /path/to/ubuntu.iso           # Use local ISO
   cove install -linux -provision-user me -provision-password pw  # With user

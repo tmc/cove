@@ -64,7 +64,15 @@ cove install -linux
 cove run -linux -gui
 ```
 
-Or with cloud-init provisioning:
+Choose another distro:
+
+```bash
+cove install -linux -distro alpine
+cove install -linux -distro debian
+cove install -linux -distro fedora
+```
+
+Or with unattended provisioning:
 
 ```bash
 cove install -linux -provision-user ubuntu -provision-password secret

@@ -428,11 +428,12 @@ Commands:
 func printInstallUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove install [flags]
 
-Install a new VM. macOS by default; pass -linux for Ubuntu.
+Install a new VM. macOS by default; pass -linux for Linux.
 
 Common flags:
   -ipsw <path>            macOS restore image (downloaded if omitted)
-  -linux                  install Ubuntu Server ARM64 instead of macOS
+  -linux                  install Linux instead of macOS
+  -distro <name>          Linux distro: ubuntu, debian, fedora, alpine
   -desktop                with -linux, install Ubuntu Desktop
   -iso <path>             use a local ISO instead of auto-download
   -cpu N                  CPU count (default 2)
@@ -446,6 +447,7 @@ Common flags:
 
 Examples:
   cove install -ipsw ~/.cache/vz/restore.ipsw
+  cove install -linux -distro alpine
   cove install -linux -provision-user me`)
 }
 

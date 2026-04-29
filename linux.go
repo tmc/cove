@@ -525,17 +525,25 @@ func setVirtioScanouts(config vz.VZVirtioGraphicsDeviceConfiguration, scanout vz
 const (
 	UbuntuServerARM64URL  = "https://cdimage.ubuntu.com/releases/24.04.3/release/ubuntu-24.04.3-live-server-arm64.iso"
 	UbuntuDesktopARM64URL = "https://cdimage.ubuntu.com/releases/24.04.3/release/ubuntu-24.04.3-desktop-arm64.iso"
+	DebianARM64URL        = "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-13.4.0-arm64-netinst.iso"
+	FedoraARM64URL        = "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Server/aarch64/iso/Fedora-Server-netinst-aarch64-43-1.6.iso"
+	AlpineARM64URL        = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/alpine-virt-3.23.4-aarch64.iso"
 )
 
+type linuxISODescriptor struct {
+	cacheName string
+	url       string
+	minSize   int64
+	label     string
+}
+
 // downloadLinuxISO downloads a Linux ISO for installation with progress display.
-func downloadLinuxISO(urlStr, path string) error {
-	// Check if file already exists and has reasonable size (> 500MB)
+func downloadLinuxISO(urlStr, path string, minSize int64) error {
 	if info, err := os.Stat(path); err == nil {
-		if info.Size() > 500*1024*1024 {
+		if info.Size() > minSize {
 			fmt.Printf("Using existing ISO: %s (%.1f GB)\n", path, float64(info.Size())/(1024*1024*1024))
 			return nil
 		}
-		// Partial download exists - curl will resume
 		fmt.Printf("Found partial download: %s (%.1f MB), resuming...\n", path, float64(info.Size())/(1024*1024))
 	}
 
@@ -557,7 +565,7 @@ func downloadLinuxISO(urlStr, path string) error {
 	if err != nil {
 		return fmt.Errorf("downloaded file not found: %w", err)
 	}
-	if info.Size() < 500*1024*1024 {
+	if info.Size() < minSize {
 		return fmt.Errorf("downloaded file too small (%.1f MB), may be incomplete or error page", float64(info.Size())/(1024*1024))
 	}
 
@@ -574,6 +582,10 @@ func ensureLinuxISO() (string, error) {
 }
 
 func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
+	desc, err := linuxISODescriptorForVariant(variant)
+	if err != nil {
+		return "", err
+	}
 	// If user specified an ISO path, use that directly
 	if isoPath != "" {
 		if isURL(isoPath) {
@@ -581,8 +593,8 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 			if err := os.MkdirAll(cacheDir, 0755); err != nil {
 				return "", fmt.Errorf("create cache dir: %w", err)
 			}
-			cacheFile := filepath.Join(cacheDir, "linux.iso")
-			if err := downloadLinuxISO(isoPath, cacheFile); err != nil {
+			cacheFile := filepath.Join(cacheDir, desc.cacheName)
+			if err := downloadLinuxISO(isoPath, cacheFile, desc.minSize); err != nil {
 				return "", err
 			}
 			return cacheFile, nil
@@ -593,20 +605,11 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 		return isoPath, nil
 	}
 
-	// Determine variant-specific cache file name
 	cacheDir := vmconfig.CacheDir()
-	var cacheFile string
-	var downloadURL string
-	if variant == LinuxVariantDesktop {
-		cacheFile = filepath.Join(cacheDir, "linux-desktop.iso")
-		downloadURL = UbuntuDesktopARM64URL
-	} else {
-		cacheFile = filepath.Join(cacheDir, "linux-server.iso")
-		downloadURL = UbuntuServerARM64URL
-	}
+	cacheFile := filepath.Join(cacheDir, desc.cacheName)
 
 	// Check variant-specific cache.
-	if info, err := os.Stat(cacheFile); err == nil && info.Size() > 500*1024*1024 {
+	if info, err := os.Stat(cacheFile); err == nil && info.Size() > desc.minSize {
 		fmt.Printf("Using cached ISO: %s (%.1f GB)\n", cacheFile, float64(info.Size())/(1024*1024*1024))
 		return cacheFile, nil
 	}
@@ -615,37 +618,50 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 	// requested variant. The historical linux.iso name did not encode
 	// Server vs Desktop, so blindly reusing it can boot the wrong installer.
 	legacyCache := filepath.Join(cacheDir, "linux.iso")
-	if info, err := os.Stat(legacyCache); err == nil && info.Size() > 500*1024*1024 {
+	if info, err := os.Stat(legacyCache); err == nil && info.Size() > desc.minSize {
 		if linuxISOMatchesVariant(legacyCache, variant) {
 			fmt.Printf("Using cached ISO: %s (%.1f GB)\n", legacyCache, float64(info.Size())/(1024*1024*1024))
 			return legacyCache, nil
 		}
-		fmt.Printf("Ignoring cached ISO: %s (does not match Ubuntu %s)\n", legacyCache, variant)
+		fmt.Printf("Ignoring cached ISO: %s (does not match %s)\n", legacyCache, desc.label)
 	}
 
 	// Fall back to per-VM directory for existing installs
 	legacyFile := filepath.Join(vmDir, "linux.iso")
-	if info, err := os.Stat(legacyFile); err == nil && info.Size() > 500*1024*1024 {
+	if info, err := os.Stat(legacyFile); err == nil && info.Size() > desc.minSize {
 		if linuxISOMatchesVariant(legacyFile, variant) {
 			fmt.Printf("Using existing ISO: %s (%.1f GB)\n", legacyFile, float64(info.Size())/(1024*1024*1024))
 			return legacyFile, nil
 		}
-		fmt.Printf("Ignoring existing ISO: %s (does not match Ubuntu %s)\n", legacyFile, variant)
+		fmt.Printf("Ignoring existing ISO: %s (does not match %s)\n", legacyFile, desc.label)
 	}
 
 	// Download to variant-specific cache
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return "", fmt.Errorf("create cache dir: %w", err)
 	}
-	name := "Server"
-	if variant == LinuxVariantDesktop {
-		name = "Desktop"
-	}
-	fmt.Printf("No ISO specified, downloading Ubuntu %s 24.04 ARM64...\n", name)
-	if err := downloadLinuxISO(downloadURL, cacheFile); err != nil {
+	fmt.Printf("No ISO specified, downloading %s ARM64...\n", desc.label)
+	if err := downloadLinuxISO(desc.url, cacheFile, desc.minSize); err != nil {
 		return "", err
 	}
 	return cacheFile, nil
+}
+
+func linuxISODescriptorForVariant(variant LinuxVariant) (linuxISODescriptor, error) {
+	switch variant {
+	case LinuxVariantServer:
+		return linuxISODescriptor{cacheName: "linux-ubuntu.iso", url: UbuntuServerARM64URL, minSize: 500 * 1024 * 1024, label: "Ubuntu Server 24.04"}, nil
+	case LinuxVariantDesktop:
+		return linuxISODescriptor{cacheName: "linux-ubuntu-desktop.iso", url: UbuntuDesktopARM64URL, minSize: 2 * 1024 * 1024 * 1024, label: "Ubuntu Desktop 24.04"}, nil
+	case LinuxVariantDebian:
+		return linuxISODescriptor{cacheName: "linux-debian.iso", url: DebianARM64URL, minSize: 300 * 1024 * 1024, label: "Debian 13"}, nil
+	case LinuxVariantFedora:
+		return linuxISODescriptor{cacheName: "linux-fedora.iso", url: FedoraARM64URL, minSize: 500 * 1024 * 1024, label: "Fedora Server 43"}, nil
+	case LinuxVariantAlpine:
+		return linuxISODescriptor{cacheName: "linux-alpine.iso", url: AlpineARM64URL, minSize: 30 * 1024 * 1024, label: "Alpine 3.23 virt"}, nil
+	default:
+		return linuxISODescriptor{}, fmt.Errorf("unsupported linux distro %q", variant)
+	}
 }
 
 func linuxISOMatchesVariant(path string, want LinuxVariant) bool {
@@ -656,9 +672,17 @@ func linuxISOMatchesVariant(path string, want LinuxVariant) bool {
 	info := strings.ToLower(string(out))
 	switch want {
 	case LinuxVariantDesktop:
-		return strings.Contains(info, "desktop")
+		return strings.Contains(info, "ubuntu") && strings.Contains(info, "desktop")
+	case LinuxVariantServer:
+		return strings.Contains(info, "ubuntu") && strings.Contains(info, "server")
+	case LinuxVariantDebian:
+		return strings.Contains(info, "debian")
+	case LinuxVariantFedora:
+		return strings.Contains(info, "fedora")
+	case LinuxVariantAlpine:
+		return strings.Contains(info, "alpine")
 	default:
-		return strings.Contains(info, "server")
+		return false
 	}
 }
 

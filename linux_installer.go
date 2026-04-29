@@ -12,7 +12,9 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
@@ -44,12 +46,17 @@ type LinuxProvisionConfig struct {
 	Variant      LinuxVariant
 }
 
-// LinuxVariant identifies the Ubuntu install source to provision.
+// LinuxVariant identifies the Linux install source to provision.
 type LinuxVariant string
 
 const (
-	LinuxVariantServer  LinuxVariant = "server"
-	LinuxVariantDesktop LinuxVariant = "desktop"
+	LinuxVariantServer        LinuxVariant = "ubuntu"
+	LinuxVariantDesktop       LinuxVariant = "ubuntu-desktop"
+	LinuxVariantDebian        LinuxVariant = "debian"
+	LinuxVariantFedora        LinuxVariant = "fedora"
+	LinuxVariantAlpine        LinuxVariant = "alpine"
+	LinuxVariantUbuntuServer               = LinuxVariantServer
+	LinuxVariantUbuntuDesktop              = LinuxVariantDesktop
 )
 
 const linuxAutoinstallPath = "autoinstall.yaml"
@@ -60,18 +67,69 @@ const (
 )
 
 func currentLinuxVariant() LinuxVariant {
-	if linuxDesktop {
-		return LinuxVariantDesktop
+	variant, err := parseLinuxVariant(linuxDistro, linuxDesktop)
+	if err == nil {
+		return variant
 	}
-	return LinuxVariantServer
+	return LinuxVariant(strings.ToLower(strings.TrimSpace(linuxDistro)))
+}
+
+func parseLinuxVariant(distro string, desktop bool) (LinuxVariant, error) {
+	name := strings.ToLower(strings.TrimSpace(distro))
+	if desktop {
+		switch name {
+		case "", "ubuntu", "server", "ubuntu-server", "desktop", "ubuntu-desktop":
+			return LinuxVariantDesktop, nil
+		default:
+			return "", fmt.Errorf("-desktop only supports ubuntu, not %q", name)
+		}
+	}
+	switch name {
+	case "", "ubuntu", "server", "ubuntu-server":
+		return LinuxVariantServer, nil
+	case "desktop", "ubuntu-desktop":
+		return LinuxVariantDesktop, nil
+	case "debian":
+		return LinuxVariantDebian, nil
+	case "fedora":
+		return LinuxVariantFedora, nil
+	case "alpine":
+		return LinuxVariantAlpine, nil
+	default:
+		return "", fmt.Errorf("unsupported linux distro %q (supported: ubuntu, debian, fedora, alpine)", name)
+	}
+}
+
+func defaultLinuxUser(variant LinuxVariant) string {
+	switch variant {
+	case LinuxVariantDebian:
+		return "debian"
+	case LinuxVariantFedora:
+		return "fedora"
+	case LinuxVariantAlpine:
+		return "alpine"
+	default:
+		return "ubuntu"
+	}
+}
+
+func (v LinuxVariant) distroName() string {
+	switch v {
+	case LinuxVariantDesktop:
+		return "ubuntu"
+	default:
+		return string(v)
+	}
 }
 
 func (v LinuxVariant) sourceID() string {
 	switch v {
 	case LinuxVariantDesktop:
 		return ""
-	default:
+	case LinuxVariantServer:
 		return "ubuntu-server"
+	default:
+		return ""
 	}
 }
 
@@ -81,6 +139,39 @@ func (v LinuxVariant) installISOVariant() LinuxVariant {
 		return LinuxVariantServer
 	default:
 		return v
+	}
+}
+
+func (v LinuxVariant) displayName() string {
+	switch v {
+	case LinuxVariantDesktop:
+		return "Ubuntu Desktop"
+	case LinuxVariantDebian:
+		return "Debian"
+	case LinuxVariantFedora:
+		return "Fedora"
+	case LinuxVariantAlpine:
+		return "Alpine"
+	default:
+		return "Ubuntu Server"
+	}
+}
+
+func validateLinuxVariant(v LinuxVariant) error {
+	_, err := parseLinuxVariant(string(v), false)
+	return err
+}
+
+func linuxInstallCommandLineForVariant(variant LinuxVariant, seedAddress string) string {
+	switch variant {
+	case LinuxVariantDebian:
+		return fmt.Sprintf("auto=true priority=critical preseed/url=http://%s/preseed.cfg debian-installer=en_US.UTF-8 locale=en_US.UTF-8 keyboard-configuration/xkb-keymap=us netcfg/choose_interface=auto interface=auto console=tty0", seedAddress)
+	case LinuxVariantFedora:
+		return fmt.Sprintf("inst.ks=http://%s/ks.cfg inst.text console=tty0", seedAddress)
+	case LinuxVariantAlpine:
+		return fmt.Sprintf("modules=loop,squashfs,sd-mod,usb-storage quiet console=tty0 apkovl=http://%s/cove.apkovl.tar.gz cove_answers=http://%s/setup-alpine.answers", seedAddress, seedAddress)
+	default:
+		return linuxInstallCommandLine(seedAddress)
 	}
 }
 
@@ -99,14 +190,16 @@ func linuxInstallCommandLine(seedAddress string) string {
 
 // DefaultLinuxProvisionConfig returns default provisioning settings.
 func DefaultLinuxProvisionConfig() LinuxProvisionConfig {
+	variant := currentLinuxVariant()
+	user := defaultLinuxUser(variant)
 	return LinuxProvisionConfig{
-		Username:     "ubuntu",
-		Password:     "ubuntu",
-		Hostname:     "ubuntu-vm",
+		Username:     user,
+		Password:     user,
+		Hostname:     variant.distroName() + "-vm",
 		TimeZone:     "UTC",
 		Locale:       "en_US.UTF-8",
 		InstallAgent: false,
-		Variant:      currentLinuxVariant(),
+		Variant:      variant,
 	}
 }
 
@@ -148,6 +241,9 @@ func installLinuxVM() error {
 
 	// Configure provisioning
 	provConfig := DefaultLinuxProvisionConfig()
+	if err := validateLinuxVariant(provConfig.Variant); err != nil {
+		return err
+	}
 	if provisionUser != "" {
 		provConfig.Username = provisionUser
 	}
@@ -158,6 +254,8 @@ func installLinuxVM() error {
 	if err := agentstate.SetRequested(vmDir, agentstate.PlatformLinux, provConfig.InstallAgent, agentstate.SourceInstall); err != nil {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
+
+	fmt.Printf("Installing distro: %s\n", provConfig.Variant.displayName())
 
 	// Get ISO (download if needed)
 	resolvedISO, err := ensureLinuxISOForVariant(provConfig.Variant.installISOVariant())
@@ -215,7 +313,7 @@ func installLinuxVM() error {
 		}
 		defer seedCloser.Close()
 		if installCmdLine == "" {
-			installCmdLine = linuxInstallCommandLine(seedAddress)
+			installCmdLine = linuxInstallCommandLineForVariant(provConfig.Variant, seedAddress)
 		}
 		if verbose {
 			fmt.Printf("  Serving NoCloud seed via http://%s/\n", seedAddress)
@@ -251,7 +349,7 @@ func installLinuxVM() error {
 
 	// Print installation instructions
 	fmt.Println()
-	fmt.Println("=== Ubuntu Installation Starting ===")
+	fmt.Printf("=== %s Installation Starting ===\n", provConfig.Variant.displayName())
 	if useDirectBoot {
 		fmt.Println("Using direct kernel boot with autoinstall (no confirmation prompt).")
 	} else {
@@ -505,6 +603,9 @@ func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
 	}{
 		{"casper/vmlinuz", "casper/initrd"},
 		{"casper/hwe-vmlinuz", "casper/hwe-initrd"},
+		{"install.a64/vmlinuz", "install.a64/initrd.gz"},
+		{"images/pxeboot/vmlinuz", "images/pxeboot/initrd.img"},
+		{"boot/vmlinuz-virt", "boot/initramfs-virt"},
 	}
 	for _, c := range candidates {
 		dstKernel := filepath.Join(vmDir, "vmlinuz")
@@ -635,16 +736,237 @@ type linuxCloudInitData struct {
 	metaData        string
 	vendorData      string
 	autoinstallData string
+	files           map[string][]byte
 }
 
 func buildLinuxCloudInitData(config LinuxProvisionConfig, includeAgent bool, agentURL string) linuxCloudInitData {
+	metaData := generateMetaData(config)
+	vendorData := "#cloud-config\n{}\n"
+	switch config.Variant {
+	case LinuxVariantDebian:
+		preseed := generateDebianPreseed(config, includeAgent, agentURL)
+		return linuxCloudInitData{
+			userData:   vendorData,
+			metaData:   metaData,
+			vendorData: vendorData,
+			files: map[string][]byte{
+				"user-data":   []byte(vendorData),
+				"meta-data":   []byte(metaData),
+				"vendor-data": []byte(vendorData),
+				"preseed.cfg": []byte(preseed),
+			},
+		}
+	case LinuxVariantFedora:
+		kickstart := generateFedoraKickstart(config, includeAgent, agentURL)
+		return linuxCloudInitData{
+			userData:   vendorData,
+			metaData:   metaData,
+			vendorData: vendorData,
+			files: map[string][]byte{
+				"user-data":   []byte(vendorData),
+				"meta-data":   []byte(metaData),
+				"vendor-data": []byte(vendorData),
+				"ks.cfg":      []byte(kickstart),
+			},
+		}
+	case LinuxVariantAlpine:
+		answers := generateAlpineAnswers(config)
+		apkovl, err := buildAlpineAPKOVL()
+		if err != nil {
+			apkovl = nil
+		}
+		files := map[string][]byte{
+			"user-data":            []byte(vendorData),
+			"meta-data":            []byte(metaData),
+			"vendor-data":          []byte(vendorData),
+			"setup-alpine.answers": []byte(answers),
+		}
+		if apkovl != nil {
+			files["cove.apkovl.tar.gz"] = apkovl
+		}
+		return linuxCloudInitData{
+			userData:   vendorData,
+			metaData:   metaData,
+			vendorData: vendorData,
+			files:      files,
+		}
+	}
 	autoinstallData := generateAutoinstallData(config, includeAgent, agentURL)
 	return linuxCloudInitData{
 		userData:        "#cloud-config\n" + autoinstallData,
-		metaData:        generateMetaData(config),
-		vendorData:      "#cloud-config\n{}\n",
+		metaData:        metaData,
+		vendorData:      vendorData,
 		autoinstallData: autoinstallData,
+		files: map[string][]byte{
+			"user-data":          []byte("#cloud-config\n" + autoinstallData),
+			"meta-data":          []byte(metaData),
+			"vendor-data":        []byte(vendorData),
+			linuxAutoinstallPath: []byte(autoinstallData),
+		},
 	}
+}
+
+func generateDebianPreseed(config LinuxProvisionConfig, includeAgent bool, agentURL string) string {
+	late := "in-target systemctl enable ssh"
+	if includeAgent {
+		late = late + "; " + agentInstallShell("/target", agentURL, "apt-get update && apt-get install -y ca-certificates curl wget")
+	}
+	return fmt.Sprintf(`d-i debian-installer/locale string %s
+d-i keyboard-configuration/xkb-keymap select us
+d-i netcfg/choose_interface select auto
+d-i netcfg/get_hostname string %s
+d-i passwd/root-login boolean false
+d-i passwd/user-fullname string %s
+d-i passwd/username string %s
+d-i passwd/user-password password %s
+d-i passwd/user-password-again password %s
+d-i clock-setup/utc boolean true
+d-i time/zone string %s
+d-i partman-auto/method string regular
+d-i partman-auto/choose_recipe select atomic
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+d-i pkgsel/include string openssh-server sudo ca-certificates curl wget
+d-i grub-installer/only_debian boolean true
+d-i finish-install/reboot_in_progress note
+d-i preseed/late_command string %s
+`, config.Locale, config.Hostname, config.Username, config.Username, config.Password, config.Password, config.TimeZone, late)
+}
+
+func generateFedoraKickstart(config LinuxProvisionConfig, includeAgent bool, agentURL string) string {
+	post := "systemctl enable sshd"
+	if includeAgent {
+		post = post + "\n" + agentInstallShell("", agentURL, "dnf -y install ca-certificates curl wget")
+	}
+	return fmt.Sprintf(`text
+reboot
+lang %s
+keyboard us
+timezone %s --utc
+network --bootproto=dhcp --device=link --activate --hostname=%s
+rootpw --lock
+user --name=%s --password=%s --plaintext --groups=wheel
+zerombr
+clearpart --all --initlabel
+autopart --type=plain --fstype=ext4
+bootloader --location=mbr
+%%packages
+@core
+openssh-server
+sudo
+curl
+wget
+%%end
+%%post --log=/root/cove-post.log
+%s
+%%end
+`, config.Locale, config.TimeZone, config.Hostname, config.Username, config.Password, post)
+}
+
+func generateAlpineAnswers(config LinuxProvisionConfig) string {
+	return fmt.Sprintf(`KEYMAPOPTS="us us"
+HOSTNAMEOPTS="-n %s"
+INTERFACESOPTS="auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet dhcp"
+DNSOPTS="-d local -n 1.1.1.1"
+TIMEZONEOPTS="-z %s"
+PROXYOPTS="none"
+APKREPOSOPTS="-1"
+SSHDOPTS="-c openssh"
+NTPOPTS="-c chrony"
+DISKOPTS="-m sys /dev/vda"
+USEROPTS="-a -u %s"
+ROOTPW="%s"
+`, config.Hostname, config.TimeZone, config.Username, config.Password)
+}
+
+func buildAlpineAPKOVL() ([]byte, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	entries := []struct {
+		name string
+		mode int64
+		body string
+	}{
+		{"etc/local.d/cove.start", 0755, alpineSetupScript()},
+		{"etc/runlevels/default/local", 0777, ""},
+	}
+	for _, e := range entries {
+		hdr := &tar.Header{Name: e.name, Mode: e.mode}
+		if e.name == "etc/runlevels/default/local" {
+			hdr.Typeflag = tar.TypeSymlink
+			hdr.Linkname = "/etc/init.d/local"
+		} else {
+			hdr.Size = int64(len(e.body))
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return nil, err
+		}
+		if e.body != "" {
+			if _, err := tw.Write([]byte(e.body)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func alpineSetupScript() string {
+	return `#!/bin/sh
+set -eu
+marker=/var/lib/cove-setup.done
+test -e "$marker" && exit 0
+url=$(sed -n 's/.*cove_answers=\([^ ]*\).*/\1/p' /proc/cmdline)
+test -n "$url"
+wget -O /tmp/setup-alpine.answers "$url"
+setup-alpine -f /tmp/setup-alpine.answers
+touch "$marker"
+poweroff
+`
+}
+
+func agentInstallShell(target, agentURL, installDeps string) string {
+	prefix := ""
+	if target != "" {
+		prefix = target
+	}
+	install := fmt.Sprintf(`%s || true
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL -o %s/usr/local/bin/vz-agent %q
+elif command -v wget >/dev/null 2>&1; then
+  wget -O %s/usr/local/bin/vz-agent %q
+fi
+chmod 755 %s/usr/local/bin/vz-agent
+mkdir -p %s/etc/systemd/system
+cat > %s/etc/systemd/system/vz-agent.service <<'EOF'
+[Unit]
+Description=cove Guest Agent
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vz-agent -mode daemon
+Restart=always
+RestartSec=2
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable vz-agent`, installDeps, prefix, agentURL, prefix, agentURL, prefix, prefix, prefix)
+	if agentURL == "" {
+		return "true"
+	}
+	return install
 }
 
 func startCloudInitHTTPServer(seedDir string) (string, io.Closer, error) {
@@ -693,6 +1015,9 @@ func startCloudInitGoHTTPServer(seedDir string) (string, io.Closer, error) {
 func createCloudInitISO(config LinuxProvisionConfig) (string, string, error) {
 	// Create temporary directory for cloud-init files
 	cloudInitDir := filepath.Join(vmDir, "cloud-init-data")
+	if err := os.RemoveAll(cloudInitDir); err != nil {
+		return "", "", fmt.Errorf("reset cloud-init directory: %w", err)
+	}
 	if err := os.MkdirAll(cloudInitDir, 0755); err != nil {
 		return "", "", fmt.Errorf("create cloud-init directory: %w", err)
 	}
@@ -711,26 +1036,14 @@ func createCloudInitISO(config LinuxProvisionConfig) (string, string, error) {
 		}
 	}
 
-	userDataPath := filepath.Join(cloudInitDir, "user-data")
 	seed := buildLinuxCloudInitData(config, agentIncluded, "")
-	if err := os.WriteFile(userDataPath, []byte(seed.userData), 0644); err != nil {
-		return "", "", fmt.Errorf("write user-data: %w", err)
-	}
-	autoinstallPath := filepath.Join(cloudInitDir, linuxAutoinstallPath)
-	if err := os.WriteFile(autoinstallPath, []byte(seed.autoinstallData), 0644); err != nil {
-		return "", "", fmt.Errorf("write %s: %w", linuxAutoinstallPath, err)
-	}
-
-	// Generate meta-data (instance identification)
-	metaDataPath := filepath.Join(cloudInitDir, "meta-data")
-	if err := os.WriteFile(metaDataPath, []byte(seed.metaData), 0644); err != nil {
-		return "", "", fmt.Errorf("write meta-data: %w", err)
-	}
-
-	// Write a vendor-data file (required by some cloud-init versions).
-	vendorDataPath := filepath.Join(cloudInitDir, "vendor-data")
-	if err := os.WriteFile(vendorDataPath, []byte(seed.vendorData), 0644); err != nil {
-		return "", "", fmt.Errorf("write vendor-data: %w", err)
+	for name, data := range seed.files {
+		if strings.Contains(name, string(os.PathSeparator)) || name == "" {
+			return "", "", fmt.Errorf("invalid seed file %q", name)
+		}
+		if err := os.WriteFile(filepath.Join(cloudInitDir, name), data, 0644); err != nil {
+			return "", "", fmt.Errorf("write %s: %w", name, err)
+		}
 	}
 
 	// Create ISO9660 CIDATA image. Cloud-init's NoCloud datasource scans

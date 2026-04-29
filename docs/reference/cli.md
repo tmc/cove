@@ -28,6 +28,7 @@ cove install [flags]
 |------|---------|-------------|
 | `-ipsw <path>` | | Path to IPSW restore image (downloads latest if empty) |
 | `-linux` | false | Install Linux instead of macOS |
+| `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
 | `-desktop` | false | Use Ubuntu Desktop ISO (implies `-linux`) |
 | `-iso <path>` | | Path to ISO image for Linux EFI boot |
 | `-cpu <n>` | 2 | Number of CPUs |
@@ -132,6 +133,7 @@ cove up [flags]
 | `-no-shutdown` | false | Leave VM running after vzscripts complete |
 | `-vm <name>` | | VM name |
 | `-linux` | false | Install Linux instead of macOS |
+| `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
 | `-desktop` | false | Use Ubuntu Desktop (implies `-linux`) |
 | `-pprof <addr>` | | Serve pprof diagnostics (e.g., `6060`) |
 | `-automation-backend <mode>` | auto | UI automation: auto, framebuffer, or window |
