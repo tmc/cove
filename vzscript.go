@@ -29,6 +29,7 @@
 //	recovery-options [timeout] Select Options in the Recovery startup picker
 //	startup-options [timeout]  Alias for recovery-options
 //	recovery-continue [timeout] Continue from Recovery setup screens
+//	answer-visible [-optional] [-timeout duration] [-progress text] <prompt> <answer>...
 //	type <text>                 Type text into the VM
 //	type-keycodes <text>        Type text using per-key keycode events
 //	key <spec>                  Send key event (e.g. "return", "tab", "cmd+v")
@@ -137,6 +138,7 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"recovery-options":   vzRecoveryOptionsCmd(cfg),
 		"startup-options":    vzRecoveryOptionsCmd(cfg),
 		"recovery-continue":  vzRecoveryContinueCmd(cfg),
+		"answer-visible":     vzAnswerVisibleCmd(cfg),
 		"type":               vzTypeCmd(cfg),
 		"type-keycodes":      vzTypeKeycodesCmd(cfg),
 		"key":                vzKeyCmd(cfg),
@@ -1291,6 +1293,177 @@ func recoveryAuthFailedOCR(ocr *ocrx.Service, img image.Image) bool {
 	)
 }
 
+type answerVisibleArgs struct {
+	timeout  time.Duration
+	optional bool
+	progress []string
+	pairs    []promptAnswer
+}
+
+type promptAnswer struct {
+	prompt string
+	answer string
+}
+
+func vzAnswerVisibleCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "answer the first visible prompt from a set of alternatives",
+			Args:    "[-optional] [-timeout duration] [-progress text] <prompt> <answer>...",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			opts, err := parseAnswerVisibleArgs(args)
+			if err != nil {
+				return nil, err
+			}
+			if cfg.verbose {
+				s.Logf("answer-visible (%d prompts, timeout %s)\n", len(opts.pairs), opts.timeout)
+			}
+
+			if exec := newScriptBootExecutor(cfg); exec != nil {
+				err := runAnswerVisible(
+					s,
+					exec.ocr,
+					exec.captureScreen,
+					exec.typeTextKeycodes,
+					exec.sendKey,
+					opts,
+				)
+				return nil, err
+			}
+
+			client := NewControlClient(cfg.socketPath)
+			client.SetTimeout(60 * time.Second)
+			ocr := ocrx.NewService(cfg.verbose)
+			err = runAnswerVisible(
+				s,
+				ocr,
+				func() image.Image {
+					img, err := client.Screenshot()
+					if err != nil {
+						return nil
+					}
+					return img
+				},
+				func(text string) error {
+					return typeTextKeycodesViaClient(client, text)
+				},
+				func(spec string) error {
+					return sendKeySpecViaClient(client, spec)
+				},
+				opts,
+			)
+			return nil, err
+		},
+	)
+}
+
+func parseAnswerVisibleArgs(args []string) (answerVisibleArgs, error) {
+	opts := answerVisibleArgs{timeout: 30 * time.Second}
+	i := 0
+	for i < len(args) {
+		switch args[i] {
+		case "-optional":
+			opts.optional = true
+			i++
+		case "-timeout":
+			i++
+			if i >= len(args) {
+				return opts, fmt.Errorf("-timeout requires a value")
+			}
+			d, err := time.ParseDuration(args[i])
+			if err != nil {
+				return opts, fmt.Errorf("invalid timeout %q: %w", args[i], err)
+			}
+			opts.timeout = d
+			i++
+		case "-progress":
+			i++
+			if i >= len(args) {
+				return opts, fmt.Errorf("-progress requires a value")
+			}
+			opts.progress = append(opts.progress, args[i])
+			i++
+		default:
+			goto pairs
+		}
+	}
+pairs:
+	rest := args[i:]
+	if len(rest) == 0 || len(rest)%2 != 0 {
+		return opts, script.ErrUsage
+	}
+	for i := 0; i < len(rest); i += 2 {
+		opts.pairs = append(opts.pairs, promptAnswer{prompt: rest[i], answer: rest[i+1]})
+	}
+	return opts, nil
+}
+
+func runAnswerVisible(s *script.State, ocr *ocrx.Service, capture func() image.Image, typeKeycodes func(string) error, key func(string) error, opts answerVisibleArgs) error {
+	if ocr == nil {
+		return fmt.Errorf("answer-visible: missing ocr service")
+	}
+	deadline := time.Now().Add(opts.timeout)
+	for time.Now().Before(deadline) {
+		img := capture()
+		if img == nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if pair, ok := visiblePrompt(ocr, img, opts.pairs); ok {
+			if s != nil {
+				s.Logf("answer-visible matched %q\n", pair.prompt)
+			}
+			if err := answerVisiblePrompt(typeKeycodes, key, pair.answer); err != nil {
+				return err
+			}
+			return waitAnswerProgress(ocr, capture, pair.prompt, opts.progress, 20*time.Second)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if opts.optional {
+		return nil
+	}
+	return fmt.Errorf("timeout waiting for visible prompt")
+}
+
+func visiblePrompt(ocr *ocrx.Service, img image.Image, pairs []promptAnswer) (promptAnswer, bool) {
+	text := normalizeVisibleText(ocr.AllText(img))
+	for _, pair := range pairs {
+		if strings.Contains(text, normalizeVisibleText(pair.prompt)) {
+			return pair, true
+		}
+	}
+	return promptAnswer{}, false
+}
+
+func answerVisiblePrompt(typeKeycodes func(string) error, key func(string) error, text string) error {
+	time.Sleep(1500 * time.Millisecond)
+	if err := typeKeycodes(text); err != nil {
+		return fmt.Errorf("answer prompt: %w", err)
+	}
+	if err := key("return"); err != nil {
+		return fmt.Errorf("submit prompt: %w", err)
+	}
+	return nil
+}
+
+func waitAnswerProgress(ocr *ocrx.Service, capture func() image.Image, prompt string, progress []string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img := capture()
+		if img == nil {
+			time.Sleep(250 * time.Millisecond)
+			continue
+		}
+		if promptClearedOCR(ocr, img, prompt) || pageContainsAnyOCR(ocr, img, progress...) {
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for prompt %q to progress", prompt)
+}
+
 func vzTypeCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
@@ -1508,6 +1681,18 @@ func typeTextKeycodesViaClient(client *ControlClient, text string) error {
 		}
 	}
 	return nil
+}
+
+func sendKeySpecViaClient(client *ControlClient, spec string) error {
+	if !isValidKeySpec(spec) {
+		return fmt.Errorf("invalid key spec %q", spec)
+	}
+	keyCode, modifiers := parseKeySpec(spec)
+	if err := client.sendKeyEvent(uint16(keyCode), true, uint(modifiers), true); err != nil {
+		return err
+	}
+	time.Sleep(50 * time.Millisecond)
+	return client.sendKeyEvent(uint16(keyCode), false, uint(modifiers), true)
 }
 
 func vzClickCmd(cfg vzscriptConfig) script.Cmd {

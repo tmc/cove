@@ -15,10 +15,13 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot_Order(t *testing.T
 		`wait-menu-text Utilities 180s`,
 		`key cmd+shift+t`,
 		`type-keycodes 'csrutil disable'`,
-		`[text-visible:Are+you+sure] type-keycodes 'y'`,
-		`[text-visible:Authorized+user] type-keycodes 'admin'`,
-		`[text-visible:Password] type-keycodes 'secret'`,
-		`type-keycodes 'reboot'`,
+		`answer-visible -timeout 45s`,
+		`'Are you sure' 'y'`,
+		`answer-visible -optional -timeout 5s`,
+		`'Authorized user' 'admin'`,
+		`answer-visible -timeout 45s`,
+		`'Password' 'secret'`,
+		`[text-visible:System+Integrity+Protection+is+off.] type-keycodes 'reboot'`,
 	}
 	assertOrderedSnippets(t, got, wantOrder)
 }
