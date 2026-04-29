@@ -28,7 +28,7 @@ type VerifyResult struct {
 
 // handleVerify verifies provisioning files in a VM disk
 func handleVerify(args []string) error {
-	fs, verboseFlag, fixFlag := newVerifyFlagSet()
+	fs, verboseFlag, fixFlag, tccPathFlag := newVerifyFlagSet()
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -45,21 +45,22 @@ func handleVerify(args []string) error {
 	target := currentVMSelection()
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
-		return verifyRunningForVM(target, sock, *verboseFlag)
+		return verifyRunningForVM(target, sock, *verboseFlag, *tccPathFlag)
 	}
 
 	return verifyStoppedForVM(target, *verboseFlag, *fixFlag)
 }
 
-func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool) {
+func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string) {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	verboseFlag := fs.Bool("v", false, "Verbose output")
 	fixFlag := fs.Bool("fix", false, "Attempt to fix issues automatically")
+	tccPathFlag := fs.String("tcc-path", "", "Guest path to use for Full Disk Access probe (default: first non-system /Volumes mount)")
 	fs.Usage = func() {
 		printVerifyUsage(os.Stderr, fs)
 	}
-	return fs, verboseFlag, fixFlag
+	return fs, verboseFlag, fixFlag, tccPathFlag
 }
 
 func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
@@ -81,6 +82,7 @@ Options:
 Examples:
   cove doctor
   cove doctor --fix
+  cove doctor --tcc-path /Volumes/work
   cove doctor -v
 `)
 }
@@ -100,10 +102,10 @@ func isVMRunning(sock string) bool {
 
 // verifyRunning performs checks against a running VM via the control socket.
 func verifyRunning(sock string, verbose bool) error {
-	return verifyRunningForVM(currentVMSelection(), sock, verbose)
+	return verifyRunningForVM(currentVMSelection(), sock, verbose, "")
 }
 
-func verifyRunningForVM(target vmSelection, sock string, verbose bool) error {
+func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbePath string) error {
 	fmt.Println("=== Verifying VM (Running) ===")
 	fmt.Printf("VM: %s\n", target.Directory)
 	fmt.Printf("Control socket: %s\n\n", sock)
@@ -191,6 +193,13 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool) error {
 			fmt.Printf("  + vz-agent process: running\n")
 		} else {
 			fmt.Printf("  - vz-agent process: not running\n")
+		}
+
+		if agentstate.Platform(target.Directory) == agentstate.PlatformMacOS {
+			fmt.Println()
+			if !verifyTCCFDAProbe(sock, tccProbePath, verbose) {
+				allOK = false
+			}
 		}
 	}
 
