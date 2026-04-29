@@ -1,0 +1,141 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestParseBuildScriptMeta(t *testing.T) {
+	data := []byte(`# test
+# cache-env: BUILD_NUMBER, FEATURE
+# cache-url: https://example.test/version
+# cache-file: ./go.mod ./go.sum
+# cache-ttl: 7d
+# secret: GITHUB_TOKEN OPENAI_API_KEY
+# compact: thorough
+
+exec echo ok
+`)
+	got, err := parseBuildScriptMeta(data)
+	if err != nil {
+		t.Fatalf("parseBuildScriptMeta(): %v", err)
+	}
+	if !reflect.DeepEqual(got.CacheEnv, []string{"BUILD_NUMBER", "FEATURE"}) {
+		t.Fatalf("CacheEnv = %#v", got.CacheEnv)
+	}
+	if got.CacheTTL != 7*24*time.Hour {
+		t.Fatalf("CacheTTL = %s, want 168h", got.CacheTTL)
+	}
+	if got.Compact != "thorough" {
+		t.Fatalf("Compact = %q", got.Compact)
+	}
+	if !reflect.DeepEqual(got.Secrets, []string{"GITHUB_TOKEN", "OPENAI_API_KEY"}) {
+		t.Fatalf("Secrets = %#v", got.Secrets)
+	}
+}
+
+func TestBuildCacheKeySortsDeclaredInputs(t *testing.T) {
+	t.Setenv("A", "1")
+	t.Setenv("B", "2")
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.txt")
+	fileB := filepath.Join(dir, "b.txt")
+	if err := os.WriteFile(fileA, []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fileB, []byte("b"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, strings.TrimPrefix(r.URL.Path, "/"))
+	}))
+	defer srv.Close()
+
+	data := []byte("exec echo ok\n")
+	stepA := buildStep{Name: "test", Source: "test.vzscript", Data: data, Meta: buildScriptMeta{
+		CacheEnv:  []string{"B", "A"},
+		CacheURL:  []string{srv.URL + "/b", srv.URL + "/a"},
+		CacheFile: []string{fileB, fileA},
+		Secrets:   []string{"Z", "A"},
+		Compact:   "targeted",
+	}}
+	stepB := buildStep{Name: "test", Source: "test.vzscript", Data: data, Meta: buildScriptMeta{
+		CacheEnv:  []string{"A", "B"},
+		CacheURL:  []string{srv.URL + "/a", srv.URL + "/b"},
+		CacheFile: []string{fileA, fileB},
+		Secrets:   []string{"A", "Z"},
+		Compact:   "targeted",
+	}}
+	stepA.Meta.CacheEnv = uniqueSorted(stepA.Meta.CacheEnv)
+	stepA.Meta.CacheURL = uniqueSorted(stepA.Meta.CacheURL)
+	stepA.Meta.CacheFile = uniqueSorted(stepA.Meta.CacheFile)
+	stepA.Meta.Secrets = uniqueSorted(stepA.Meta.Secrets)
+	stepB.Meta.CacheEnv = uniqueSorted(stepB.Meta.CacheEnv)
+	stepB.Meta.CacheURL = uniqueSorted(stepB.Meta.CacheURL)
+	stepB.Meta.CacheFile = uniqueSorted(stepB.Meta.CacheFile)
+	stepB.Meta.Secrets = uniqueSorted(stepB.Meta.Secrets)
+	keyA, _, err := buildCacheKey(context.Background(), "sha256:parent", stepA, srv.Client())
+	if err != nil {
+		t.Fatalf("buildCacheKey(A): %v", err)
+	}
+	keyB, _, err := buildCacheKey(context.Background(), "sha256:parent", stepB, srv.Client())
+	if err != nil {
+		t.Fatalf("buildCacheKey(B): %v", err)
+	}
+	if keyA != keyB {
+		t.Fatalf("keys differ for sorted-equivalent inputs:\nA=%s\nB=%s", keyA, keyB)
+	}
+}
+
+func TestBuildCacheKeyRejectsMount(t *testing.T) {
+	step := testBuildStep(`# mount: ~/src ro
+
+exec echo ok
+`)
+	_, _, err := buildCacheKey(context.Background(), "sha256:parent", step, nil)
+	if err == nil {
+		t.Fatal("buildCacheKey() error = nil, want mount rejection")
+	}
+	if !strings.Contains(err.Error(), "not allowed in `cove build` context") {
+		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestBuildDryPlanChainsKeys(t *testing.T) {
+	dir := t.TempDir()
+	step1 := filepath.Join(dir, "one.vzscript")
+	step2 := filepath.Join(dir, "two.vzscript")
+	if err := os.WriteFile(step1, []byte("exec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(step2, []byte("exec echo two\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:base", Scripts: []string{step1, step2}, Compact: "targeted"}
+	plan, err := buildDryPlan(context.Background(), "vm", opts, nil)
+	if err != nil {
+		t.Fatalf("buildDryPlan(): %v", err)
+	}
+	if len(plan.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(plan.Steps))
+	}
+	if plan.Steps[0].Key == plan.Steps[1].Key {
+		t.Fatalf("chained step keys should differ: %s", plan.Steps[0].Key)
+	}
+}
+
+func testBuildStep(data string) buildStep {
+	meta, err := parseBuildScriptMeta([]byte(data))
+	if err != nil {
+		panic(err)
+	}
+	return buildStep{Name: "test", Source: "test.vzscript", Data: []byte(data), Meta: meta}
+}

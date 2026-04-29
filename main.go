@@ -481,6 +481,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "build":
+			if err := handleBuild(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "push":
 			if err := handlePush(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -764,6 +770,7 @@ VM Management:
   clone           Clone a VM (cove clone [source] <target> [--linked])
   fork            CoW-fork a VM with a fresh identity (cove fork <parent> <child>)
   compact         Zero guest free space for smaller pushes
+  build           Chain vzscript steps into a cache-keyed VM image
   push            Plan a VM disk OCI push (dry-run)
   pull            Validate an OCI pull plan (dry-run)
   store           Manage the local OCI blob store

@@ -47,6 +47,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printGCUsage(os.Stderr)
 		case "compact":
 			printCompactUsage(os.Stderr)
+		case "build":
+			printBuildUsage(os.Stderr)
 		case "push":
 			printPushUsage(os.Stderr)
 		case "pull":
