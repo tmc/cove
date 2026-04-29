@@ -229,10 +229,12 @@ Commands:
   cove rosetta setup    Show guest setup instructions
 
 Usage:
-  cove run -linux -rosetta   Run Linux VM with Rosetta enabled
+  cove run -linux                 Run Linux VM with Rosetta enabled
+  cove run -linux -rosetta=false  Disable Rosetta for this run
 
-The guest must mount the Rosetta virtiofs share and register the
-binfmt handler. See 'cove rosetta setup' for instructions.`
+cove auto-mounts the Rosetta virtiofs share and registers the
+binfmt handler through the guest agent. See 'cove rosetta setup'
+for the manual guest commands.`
 }
 
 // handleRosettaCommand handles the rosetta subcommand

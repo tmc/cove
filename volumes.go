@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -187,7 +188,7 @@ func taggedVolumes(mounts []vmconfig.VolumeMount) []vmconfig.VolumeMount {
 // after VM start.
 func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmconfig.VolumeMount) {
 	tagged := taggedVolumes(mounts)
-	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 {
+	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 && (!linuxMode || !enableRosetta) {
 		return
 	}
 
@@ -200,7 +201,11 @@ func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmc
 
 		if len(tagged) > 0 {
 			fmt.Println("Auto-mounting tagged volumes in guest...")
-			mountTaggedVolumesOnce(ctx, cs, tagged)
+			mountTaggedVolumesOnce(ctx, cs, tagged, linuxVirtioFSOwner(vmDir))
+		}
+
+		if linuxMode && enableRosetta {
+			setupRosettaInGuest(ctx, cs)
 		}
 
 		sharedConfigured := len(effectiveSharedFolders(vmDir)) > 0
@@ -261,7 +266,7 @@ func waitForAgentLoss(ctx context.Context, cs *ControlServer) error {
 	}
 }
 
-func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmconfig.VolumeMount) {
+func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmconfig.VolumeMount, owner virtioFSOwner) {
 	for _, m := range tagged {
 		mountPoint := "/mnt/" + m.Tag
 		if linuxMode {
@@ -299,7 +304,7 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 		}
 
 		// Mount the VirtioFS tag using guest-native mount semantics.
-		mountArgs := virtioFSMountArgs(m, mountPoint, linuxMode)
+		mountArgs := virtioFSMountArgsWithOwner(m, mountPoint, linuxMode, owner)
 
 		cs.mu.Lock()
 		mountCtx, mountCancel := context.WithTimeout(ctx, 10*time.Second)
@@ -324,7 +329,69 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 	}
 }
 
+func setupRosettaInGuest(ctx context.Context, cs *ControlServer) {
+	args := []string{"sh", "-lc", rosettaGuestSetupScript}
+
+	cs.mu.Lock()
+	runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	result, err := cs.agent.Exec(runCtx, args, nil, "")
+	cancel()
+	cs.mu.Unlock()
+
+	if err != nil {
+		fmt.Printf("auto-mount Rosetta: %v\n", err)
+		return
+	}
+	if result.ExitCode != 0 {
+		fmt.Printf("auto-mount Rosetta failed (exit %d): %s\n", result.ExitCode, strings.TrimSpace(string(result.Stderr)))
+		return
+	}
+	if verbose {
+		fmt.Println("Rosetta mounted and registered in guest")
+	}
+}
+
+const rosettaGuestSetupScript = `set -eu
+mkdir -p /run/rosetta
+if ! mount | grep -q '^rosetta on /run/rosetta '; then
+	mount -t virtiofs -o ro rosetta /run/rosetta
+fi
+if [ -x /run/rosetta/rosetta ]; then
+	/run/rosetta/rosetta --register
+fi`
+
 func virtioFSMountArgs(m vmconfig.VolumeMount, mountPoint string, linuxGuest bool) []string {
+	return virtioFSMountArgsWithOwner(m, mountPoint, linuxGuest, defaultLinuxVirtioFSOwner())
+}
+
+type virtioFSOwner struct {
+	UID uint32
+	GID uint32
+}
+
+func defaultLinuxVirtioFSOwner() virtioFSOwner {
+	return virtioFSOwner{UID: 1000, GID: 1000}
+}
+
+func linuxVirtioFSOwner(dir string) virtioFSOwner {
+	owner := defaultLinuxVirtioFSOwner()
+	cfg, err := vmconfig.Load(dir)
+	if err != nil {
+		if verbose {
+			fmt.Printf("warning: load guest user mapping: %v\n", err)
+		}
+		return owner
+	}
+	if cfg.GuestUserUID != 0 {
+		owner.UID = cfg.GuestUserUID
+	}
+	if cfg.GuestUserGID != 0 {
+		owner.GID = cfg.GuestUserGID
+	}
+	return owner
+}
+
+func virtioFSMountArgsWithOwner(m vmconfig.VolumeMount, mountPoint string, linuxGuest bool, owner virtioFSOwner) []string {
 	if linuxGuest {
 		opts := append([]string{}, m.MountOpts...)
 		// Default Linux guests to cache=none. Apple's VirtioFS host has no
@@ -336,6 +403,12 @@ func virtioFSMountArgs(m vmconfig.VolumeMount, mountPoint string, linuxGuest boo
 		// pass cache=<other> (e.g. metadata, always) keep their setting.
 		if !hasCacheOpt(opts) {
 			opts = append([]string{"cache=none"}, opts...)
+		}
+		if !hasOptPrefix(opts, "uid=") {
+			opts = append(opts, "uid="+strconv.FormatUint(uint64(owner.UID), 10))
+		}
+		if !hasOptPrefix(opts, "gid=") {
+			opts = append(opts, "gid="+strconv.FormatUint(uint64(owner.GID), 10))
 		}
 		if m.ReadOnly {
 			opts = append([]string{"ro"}, opts...)
@@ -359,8 +432,12 @@ func virtioFSMountArgs(m vmconfig.VolumeMount, mountPoint string, linuxGuest boo
 // hasCacheOpt reports whether opts already contains a cache=... entry.
 // Used to decide whether to inject the cache=none default for Linux guests.
 func hasCacheOpt(opts []string) bool {
+	return hasOptPrefix(opts, "cache=")
+}
+
+func hasOptPrefix(opts []string, prefix string) bool {
 	for _, o := range opts {
-		if strings.HasPrefix(o, "cache=") {
+		if strings.HasPrefix(o, prefix) {
 			return true
 		}
 	}

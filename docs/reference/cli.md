@@ -70,7 +70,7 @@ cove run [flags]
 | `-network <mode>` | nat | Network mode: nat, bridged:\<iface\>, vmnet, filehandle, none |
 | `-v <mount>` / `-vol <mount>` | | Host directory mount: /host[:tag][:ro\|rw] (repeatable) |
 | `-usb <path>` | | USB storage: /path/to/disk.img[:ro] (repeatable) |
-| `-rosetta` | false | Enable Rosetta x86-64 translation (Linux VMs) |
+| `-rosetta` | true | Enable Rosetta x86-64 translation (Linux VMs) |
 | `-clipboard` | true | Host-guest clipboard sharing |
 | `-serial <dest>` | stdout | Serial output: stdout, none, or file path |
 | `-proxy <url>` | | Configure guest HTTP/HTTPS proxy |
@@ -138,6 +138,7 @@ cove up [flags]
 | `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
 | `-desktop` | false | Use Ubuntu Desktop (implies `-linux`) |
 | `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
+| `-rosetta` | true | Enable Rosetta translation support for Linux |
 | `-pprof <addr>` | | Serve pprof diagnostics (e.g., `6060`) |
 | `-automation-backend <mode>` | auto | UI automation: auto, framebuffer, or window |
 | `-automation-capture-backend <mode>` | | Override screenshot backend: auto, framebuffer, or window |

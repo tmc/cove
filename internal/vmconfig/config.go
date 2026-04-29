@@ -27,6 +27,8 @@ type AgentConfig struct {
 type Config struct {
 	CPU                uint          `json:"cpu,omitempty"`
 	MemoryGB           uint64        `json:"memoryGB,omitempty"`
+	GuestUserUID       uint32        `json:"guestUserUID,omitempty"`
+	GuestUserGID       uint32        `json:"guestUserGID,omitempty"`
 	Volumes            []VolumeMount `json:"volumes,omitempty"`
 	PostInstallRecipes string        `json:"postInstallRecipes,omitempty"`
 	Agent              *AgentConfig  `json:"agent,omitempty"`
@@ -121,6 +123,16 @@ func SetHardware(dir string, hardware Hardware) (bool, error) {
 		return true, err
 	}
 	return true, nil
+}
+
+func SetGuestUser(dir string, uid, gid uint32) error {
+	cfg, err := Load(dir)
+	if err != nil {
+		return err
+	}
+	cfg.GuestUserUID = uid
+	cfg.GuestUserGID = gid
+	return Save(dir, cfg)
 }
 
 // SetPostInstallRecipes persists the selected post-install recipes.
