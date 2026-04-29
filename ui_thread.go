@@ -25,7 +25,7 @@ func currentUIThreadID() uintptr {
 }
 
 func registerUIThread() {
-	uiThreadID.Store(currentUIThreadID())
+	uiThreadID.CompareAndSwap(0, currentUIThreadID())
 }
 
 func onUIThread() bool {

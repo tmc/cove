@@ -355,10 +355,6 @@ var utmAuxStoragePath string
 // appFinishedLaunching guards against calling FinishLaunching more than once.
 var appFinishedLaunching bool
 
-// preparedHeadlessGUIController holds the detached AppKit presentation created
-// before headless VM start so the live VM reuses the same view after launch.
-var preparedHeadlessGUIController *vmGUIController
-
 // Default VM window dimensions.
 const (
 	defaultWindowWidth  = 1024
@@ -1205,18 +1201,9 @@ func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return runVMWithGUI(vm, queue)
 	}
 
-	// Headless mode keeps a detached VM view for GUI attach and framebuffer
-	// screenshots. Initialize NSApplication before starting or restoring the VM
-	// so resume paths do not bootstrap AppKit against a live VM.
-	app := ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
-	guiController, err := newHeadlessGUIController(app, currentVMSelection(), vm, queue, nil, false)
-	if err != nil {
-		return fmt.Errorf("headless presentation: %w", err)
-	}
-	preparedHeadlessGUIController = guiController
+	ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
 
 	if err := startConfiguredVM(vm, queue, true); err != nil {
-		preparedHeadlessGUIController = nil
 		return err
 	}
 
@@ -1436,16 +1423,12 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return fmt.Errorf("runtime features: %w", err)
 	}
 	controlServer.SetRuntimeFeatureState(runtimeFeatures)
-	guiController := preparedHeadlessGUIController
-	preparedHeadlessGUIController = nil
-	if guiController == nil {
-		guiController, err = newHeadlessGUIController(app, currentVMSelection(), vm, queue, nil, false)
-		if err != nil {
-			if restoreTerminal != nil {
-				restoreTerminal()
-			}
-			return fmt.Errorf("headless presentation: %w", err)
+	guiController, err := newHeadlessGUIController(app, currentVMSelection(), vm, queue, nil, false)
+	if err != nil {
+		if restoreTerminal != nil {
+			restoreTerminal()
 		}
+		return fmt.Errorf("headless presentation: %w", err)
 	}
 	guiController.setControlBindings(controlServer)
 	controlServer.SetGUIController(guiController)
@@ -1470,8 +1453,9 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 	startControlRuntimeInfrastructure(controlServer)
 
-	// Check if vz-agent is available in the guest (background, non-blocking).
-	go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
+	if !recoveryMode {
+		go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
+	}
 
 	// Auto-mount tagged volumes in guest if requested.
 	if autoMountVolumes {
@@ -1955,8 +1939,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 	startControlRuntimeInfrastructure(controlServer)
 
-	// Check if vz-agent is available in the guest (background, non-blocking).
-	go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
+	if !recoveryMode {
+		go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
+	}
 
 	// Create and attach toolbar
 	vmToolbar := NewVMToolbar(window, vmView, vm, queue, controlServer, target.Directory)

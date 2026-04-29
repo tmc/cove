@@ -285,6 +285,7 @@ func main() {
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	registerUIThread()
 
 	// Note: NSSetUncaughtExceptionHandler disabled — purego cannot marshal
 	// struct types through callbacks (NSException is a Go struct wrapper).
