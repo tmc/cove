@@ -143,6 +143,13 @@ func TestReachableFromVMsUsesStoredManifest(t *testing.T) {
 	}
 }
 
+func TestStoreManifestRejectsInvalidDigest(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.StoreManifest("sha256:not-a-real-digest", []byte("{}")); err == nil {
+		t.Fatal("StoreManifest() error = nil, want invalid digest error")
+	}
+}
+
 func TestReachableFromBuildCache(t *testing.T) {
 	s := New(t.TempDir())
 	want := testDigest([]byte("layer"))

@@ -47,6 +47,7 @@ func TestBuildPullPlanDryRunManifest(t *testing.T) {
 func TestBuildPullPlanDryRunFetchesManifest(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	manifest := pullTestManifest(t)
+	manifestData, manifestDigest := pullTestManifestData(t, manifest)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Fatalf("method = %s, want GET", r.Method)
@@ -54,10 +55,8 @@ func TestBuildPullPlanDryRunFetchesManifest(t *testing.T) {
 		if r.URL.Path != "/v2/me/dev-vm/manifests/v1" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
-		w.Header().Set("Docker-Content-Digest", "sha256:manifest")
-		if err := json.NewEncoder(w).Encode(manifest); err != nil {
-			t.Fatalf("Encode() error = %v", err)
-		}
+		w.Header().Set("Docker-Content-Digest", manifestDigest)
+		_, _ = w.Write(manifestData)
 	}))
 	defer srv.Close()
 
@@ -68,8 +67,8 @@ func TestBuildPullPlanDryRunFetchesManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPullPlan(): %v", err)
 	}
-	if plan.ManifestDigest != "sha256:manifest" {
-		t.Fatalf("ManifestDigest = %q, want sha256:manifest", plan.ManifestDigest)
+	if plan.ManifestDigest != manifestDigest {
+		t.Fatalf("ManifestDigest = %q, want %s", plan.ManifestDigest, manifestDigest)
 	}
 	if got, want := len(plan.Manifest.Chunks), 1; got != want {
 		t.Fatalf("chunks = %d, want %d", got, want)
@@ -89,6 +88,7 @@ func TestPullDiskDownloadsRegistryChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPullPlan(): %v", err)
 	}
+	manifestDigest := plan.ManifestDigest
 	if err := pullDisk(context.Background(), plan, opts); err != nil {
 		t.Fatalf("pullDisk(): %v", err)
 	}
@@ -108,8 +108,8 @@ func TestPullDiskDownloadsRegistryChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(disk.provenance): %v", err)
 	}
-	if string(provenance) != "sha256:manifest\n" {
-		t.Fatalf("provenance = %q, want sha256:manifest", string(provenance))
+	if string(provenance) != manifestDigest+"\n" {
+		t.Fatalf("provenance = %q, want %s", string(provenance), manifestDigest)
 	}
 	for _, tt := range []struct {
 		name string
@@ -134,14 +134,13 @@ func TestPullDiskReusesStoredBlobs(t *testing.T) {
 	t.Setenv("HOME", home)
 	diskData := []byte("bootable")
 	manifest, blobs := pullCompressedTestManifest(t, diskData)
+	manifestData, manifestDigest := pullTestManifestData(t, manifest)
 	var blobGets atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/me/dev-vm/manifests/v1":
-			w.Header().Set("Docker-Content-Digest", "sha256:manifest")
-			if err := json.NewEncoder(w).Encode(manifest); err != nil {
-				t.Fatalf("Encode() error = %v", err)
-			}
+			w.Header().Set("Docker-Content-Digest", manifestDigest)
+			_, _ = w.Write(manifestData)
 		default:
 			const prefix = "/v2/me/dev-vm/blobs/"
 			if !strings.HasPrefix(r.URL.Path, prefix) {
@@ -190,6 +189,7 @@ func TestPullDiskDownloadsChunksConcurrently(t *testing.T) {
 	t.Setenv("HOME", home)
 	diskData := []byte("aaaabbbbccccdddd")
 	manifest, blobs, diskDigests := pullCompressedChunkedTestManifest(t, diskData, 4)
+	manifestData, manifestDigest := pullTestManifestData(t, manifest)
 
 	var (
 		mu         sync.Mutex
@@ -201,10 +201,8 @@ func TestPullDiskDownloadsChunksConcurrently(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/me/dev-vm/manifests/v1":
-			w.Header().Set("Docker-Content-Digest", "sha256:manifest")
-			if err := json.NewEncoder(w).Encode(manifest); err != nil {
-				t.Fatalf("Encode() error = %v", err)
-			}
+			w.Header().Set("Docker-Content-Digest", manifestDigest)
+			_, _ = w.Write(manifestData)
 		default:
 			const prefix = "/v2/me/dev-vm/blobs/"
 			if !strings.HasPrefix(r.URL.Path, prefix) {
@@ -459,6 +457,7 @@ func pullCompressedChunkedTestManifest(t *testing.T, disk []byte, chunkSize int6
 
 func pullTestRegistry(t *testing.T, manifest ociimage.Manifest, blobs map[string][]byte) *httptest.Server {
 	t.Helper()
+	manifestData, manifestDigest := pullTestManifestData(t, manifest)
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -466,10 +465,8 @@ func pullTestRegistry(t *testing.T, manifest ociimage.Manifest, blobs map[string
 			if r.Method != http.MethodGet {
 				t.Fatalf("manifest method = %s, want GET", r.Method)
 			}
-			w.Header().Set("Docker-Content-Digest", "sha256:manifest")
-			if err := json.NewEncoder(w).Encode(manifest); err != nil {
-				t.Fatalf("Encode() error = %v", err)
-			}
+			w.Header().Set("Docker-Content-Digest", manifestDigest)
+			_, _ = w.Write(manifestData)
 		default:
 			const prefix = "/v2/me/dev-vm/blobs/"
 			if !strings.HasPrefix(r.URL.Path, prefix) {
@@ -487,4 +484,13 @@ func pullTestRegistry(t *testing.T, manifest ociimage.Manifest, blobs map[string
 			_, _ = w.Write(data)
 		}
 	}))
+}
+
+func pullTestManifestData(t *testing.T, manifest ociimage.Manifest) ([]byte, string) {
+	t.Helper()
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	return data, digestData(data)
 }

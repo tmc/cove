@@ -170,6 +170,16 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 	}
 }
 
+func TestHandleBuildRequiresDryRun(t *testing.T) {
+	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "vm"})
+	if err == nil {
+		t.Fatal("handleBuild() error = nil, want dry-run-only error")
+	}
+	if !strings.Contains(err.Error(), "only --dry-run is implemented") {
+		t.Fatalf("handleBuild() error = %q", err)
+	}
+}
+
 func testBuildStep(data string) buildStep {
 	meta, err := parseBuildScriptMeta([]byte(data))
 	if err != nil {
