@@ -91,19 +91,21 @@ import (
 
 // vzscriptConfig holds configuration for the vzscript engine.
 type vzscriptConfig struct {
-	socketPath  string
-	execTimeout time.Duration
-	verbose     bool
-	terminal    bool // force guest-shell/guest-exec to run in Terminal.app
-	autoApprove bool // auto-click "Allow"/"OK" on system dialogs via OCR
-	daemon      bool // use daemon agent (root) instead of user agent
-	logWriter   io.Writer
-	streamOut   io.Writer
-	streamErr   io.Writer
-	env         []string // extra environment variables (KEY=VALUE)
-	hostLogFile *os.File // persistent log file in VM directory
-	controlSrv  *ControlServer
-	labels      *vzscriptLabelStack
+	socketPath   string
+	execTimeout  time.Duration
+	verbose      bool
+	terminal     bool // force guest-shell/guest-exec to run in Terminal.app
+	autoApprove  bool // auto-click "Allow"/"OK" on system dialogs via OCR
+	daemon       bool // use daemon agent (root) instead of user agent
+	logWriter    io.Writer
+	streamOut    io.Writer
+	streamErr    io.Writer
+	env          []string // extra environment variables (KEY=VALUE)
+	hostLogFile  *os.File // persistent log file in VM directory
+	controlSrv   *ControlServer
+	labels       *vzscriptLabelStack
+	template     bool
+	templateVars map[string]any
 }
 
 // execStreamType returns the control request type for streaming exec commands.

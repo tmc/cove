@@ -112,6 +112,7 @@ Examples:
   cove vzscript run developer-tools
   cove vzscript run homebrew golang openclaw
   cove vzscript run ./custom.vzscript
+  cove vzscript run -template -var Mode=disable -var Reboot=true ./custom.vzscript.tmpl
 `)
 }
 
@@ -120,6 +121,7 @@ func vzscriptList() error {
 		name, desc string
 		requires   []string
 		mounts     int
+		template   bool
 	}
 	var entries []entry
 
@@ -128,7 +130,7 @@ func vzscriptList() error {
 		return err
 	}
 	for _, f := range files {
-		if f.IsDir() || !strings.HasSuffix(f.Name(), ".vzscript") {
+		if f.IsDir() || (!strings.HasSuffix(f.Name(), ".vzscript") && !strings.HasSuffix(f.Name(), ".vzscript.tmpl")) {
 			continue
 		}
 		data, err := builtinScripts.ReadFile("vzscripts/" + f.Name())
@@ -139,9 +141,10 @@ func vzscriptList() error {
 		meta := parseScriptMeta(ar.Comment)
 		name := meta.name
 		if name == "" {
-			name = strings.TrimSuffix(f.Name(), ".vzscript")
+			name = strings.TrimSuffix(f.Name(), ".vzscript.tmpl")
+			name = strings.TrimSuffix(name, ".vzscript")
 		}
-		entries = append(entries, entry{name, meta.desc, meta.requires, len(meta.mounts)})
+		entries = append(entries, entry{name, meta.desc, meta.requires, len(meta.mounts), strings.HasSuffix(f.Name(), ".tmpl")})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 
@@ -156,6 +159,9 @@ func vzscriptList() error {
 		}
 		if e.mounts > 0 {
 			line += fmt.Sprintf(" (mounts: %d)", e.mounts)
+		}
+		if e.template {
+			line += " (template)"
 		}
 		fmt.Println(line)
 	}
@@ -190,6 +196,9 @@ func vzscriptRun(args []string) error {
 	daemon := rf.Bool("daemon", false, "Route guest commands through daemon agent (root) instead of user agent")
 	vm := rf.String("vm", "", "VM name (default: active VM or 'default')")
 	parallel := rf.Bool("parallel", false, "Run independent recipes concurrently")
+	renderTemplate := rf.Bool("template", false, "Render recipes as Go text/templates before running")
+	templateVars := templateVarFlag{}
+	rf.Var(&templateVars, "var", "Template variable name=value (repeatable)")
 	if err := rf.Parse(args); err != nil {
 		return err
 	}
@@ -212,12 +221,14 @@ func vzscriptRun(args []string) error {
 	}
 
 	cfg := vzscriptConfig{
-		socketPath:  sock,
-		execTimeout: *timeout,
-		verbose:     *verbose,
-		terminal:    *terminal,
-		autoApprove: *autoApprove,
-		daemon:      *daemon,
+		socketPath:   sock,
+		execTimeout:  *timeout,
+		verbose:      *verbose,
+		terminal:     *terminal,
+		autoApprove:  *autoApprove,
+		daemon:       *daemon,
+		template:     *renderTemplate,
+		templateVars: templateVars,
 	}
 
 	// Open a persistent log file in the VM directory.
@@ -267,6 +278,10 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 			}
 			return err
 		}
+		data, err = maybeRenderVZScript(data, name, cfg)
+		if err != nil {
+			return fmt.Errorf("recipe %s: template: %w", name, err)
+		}
 		ar := txtar.Parse(data)
 		meta := parseScriptMeta(ar.Comment)
 
@@ -297,6 +312,7 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 			fmt.Fprintf(os.Stderr, "--- running recipe: %s ---\n", name)
 		}
 		rcfg := cfgForRecipe(cfg, meta)
+		rcfg.template = false
 		if err := runVZScript(data, name, rcfg); err != nil {
 			return err
 		}
@@ -382,6 +398,10 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 			}
 			return err
 		}
+		data, err = maybeRenderVZScript(data, name, cfg)
+		if err != nil {
+			return fmt.Errorf("recipe %s: template: %w", name, err)
+		}
 		ar := txtar.Parse(data)
 		meta := parseScriptMeta(ar.Comment)
 		r := &resolvedRecipe{
@@ -445,6 +465,7 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 				fmt.Fprintf(os.Stderr, "--- running recipe: %s ---\n", r.name)
 			}
 			rcfg := cfgForRecipe(cfg, r.meta)
+			rcfg.template = false
 			if err := runVZScript(r.data, r.name, rcfg); err != nil {
 				errCh <- fmt.Errorf("%s: %w", r.name, err)
 			}
@@ -472,6 +493,11 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 }
 
 func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
+	var err error
+	data, err = maybeRenderVZScript(data, name, cfg)
+	if err != nil {
+		return fmt.Errorf("template: %w", err)
+	}
 	ar := txtar.Parse(data)
 	start := time.Now()
 
@@ -719,7 +745,7 @@ func reorderArgsForFlags(args []string) []string {
 // flagTakesValue returns true for vzscript run flags that take a value argument.
 func flagTakesValue(name string) bool {
 	switch name {
-	case "socket", "timeout", "vm":
+	case "socket", "timeout", "vm", "var":
 		return true
 	}
 	return false
@@ -737,18 +763,40 @@ func loadVZScriptData(nameOrPath string) ([]byte, error) {
 	if _, err := os.Stat(nameOrPath); err == nil {
 		return os.ReadFile(nameOrPath)
 	}
-	name := nameOrPath
-	if !strings.HasSuffix(name, ".vzscript") {
-		name += ".vzscript"
-	}
-	data, err := builtinScripts.ReadFile("vzscripts/" + name)
-	if err != nil {
-		data, err = builtinScripts.ReadFile("vzscripts/" + filepath.Base(name))
-		if err != nil {
-			return nil, fmt.Errorf("recipe not found: %s (not a file and not a built-in)", nameOrPath)
+	for _, name := range vzscriptBuiltinNames(nameOrPath) {
+		if data, err := builtinScripts.ReadFile("vzscripts/" + name); err == nil {
+			return data, nil
 		}
 	}
-	return data, nil
+	return nil, fmt.Errorf("recipe not found: %s (not a file and not a built-in)", nameOrPath)
+}
+
+func vzscriptBuiltinNames(name string) []string {
+	var names []string
+	add := func(s string) {
+		for _, old := range names {
+			if old == s {
+				return
+			}
+		}
+		names = append(names, s)
+	}
+	switch {
+	case strings.HasSuffix(name, ".vzscript.tmpl"):
+		add(name)
+		add(filepath.Base(name))
+	case strings.HasSuffix(name, ".vzscript"):
+		add(name)
+		add(filepath.Base(name))
+		add(strings.TrimSuffix(name, ".vzscript") + ".vzscript.tmpl")
+		add(strings.TrimSuffix(filepath.Base(name), ".vzscript") + ".vzscript.tmpl")
+	default:
+		add(name + ".vzscript")
+		add(filepath.Base(name) + ".vzscript")
+		add(name + ".vzscript.tmpl")
+		add(filepath.Base(name) + ".vzscript.tmpl")
+	}
+	return names
 }
 
 // cfgForRecipe returns a copy of cfg with per-recipe overrides applied.

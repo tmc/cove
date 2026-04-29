@@ -134,6 +134,8 @@ func TestLoadVZScriptData(t *testing.T) {
 		{"builtin by name", "setup-assistant", false},
 		{"builtin with ext", "setup-assistant.vzscript", false},
 		{"builtin homebrew", "homebrew", false},
+		{"builtin template by name", "sip-recovery", false},
+		{"builtin template with ext", "sip-recovery.vzscript.tmpl", false},
 		{"nonexistent", "does-not-exist", true},
 	}
 	for _, tt := range tests {
@@ -152,6 +154,40 @@ func TestLoadVZScriptData(t *testing.T) {
 				t.Error("empty data")
 			}
 		})
+	}
+}
+
+func TestRunVZScriptTemplate(t *testing.T) {
+	var log bytes.Buffer
+	cfg := vzscriptConfig{
+		verbose:      true,
+		logWriter:    &log,
+		template:     true,
+		templateVars: map[string]any{"Word": "hello"},
+	}
+	if err := runVZScript([]byte("echo {{.Word}}\n"), "template.vzscript", cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := log.String(); !strings.Contains(got, "hello") {
+		t.Fatalf("log missing rendered output:\n%s", got)
+	}
+}
+
+func TestRenderVZScriptTemplateFuncs(t *testing.T) {
+	got, err := renderVZScriptTemplate(
+		[]byte("type-keycodes {{quote .Command}}\n[text-visible:{{queryescape .Success}}] screenshot\n"),
+		"funcs.vzscript.tmpl",
+		map[string]any{
+			"Command": "csrutil disable",
+			"Success": "System Integrity Protection is off.",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "type-keycodes 'csrutil disable'\n[text-visible:System+Integrity+Protection+is+off.] screenshot\n"
+	if string(got) != want {
+		t.Fatalf("rendered template = %q, want %q", got, want)
 	}
 }
 
