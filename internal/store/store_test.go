@@ -1,0 +1,176 @@
+package store
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/tmc/vz-macos/internal/ociimage"
+)
+
+func TestPutOpenVerified(t *testing.T) {
+	s := New(t.TempDir())
+	data := []byte("compressed chunk")
+	digest := testDigest(data)
+	if err := s.Put(digest, int64(len(data)), bytes.NewReader(data)); err != nil {
+		t.Fatalf("Put(): %v", err)
+	}
+	f, err := s.OpenVerified(digest, int64(len(data)))
+	if err != nil {
+		t.Fatalf("OpenVerified(): %v", err)
+	}
+	defer f.Close()
+	got := make([]byte, len(data))
+	if _, err := f.Read(got); err != nil {
+		t.Fatalf("Read(): %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatalf("blob = %q, want %q", got, data)
+	}
+}
+
+func TestGCRespectsSharedPullLockAndGrace(t *testing.T) {
+	s := New(t.TempDir())
+	oldData := []byte("old")
+	oldDigest := testDigest(oldData)
+	if err := s.Put(oldDigest, int64(len(oldData)), bytes.NewReader(oldData)); err != nil {
+		t.Fatalf("Put(old): %v", err)
+	}
+	oldPath, err := s.BlobPath(oldDigest)
+	if err != nil {
+		t.Fatalf("BlobPath(old): %v", err)
+	}
+	oldTime := time.Now().Add(-2 * GCGrace)
+	if err := os.Chtimes(oldPath, oldTime, oldTime); err != nil {
+		t.Fatalf("Chtimes(old): %v", err)
+	}
+
+	youngData := []byte("young")
+	youngDigest := testDigest(youngData)
+	if err := s.Put(youngDigest, int64(len(youngData)), bytes.NewReader(youngData)); err != nil {
+		t.Fatalf("Put(young): %v", err)
+	}
+
+	unlock, err := s.LockShared()
+	if err != nil {
+		t.Fatalf("LockShared(): %v", err)
+	}
+	done := make(chan GCResult, 1)
+	errc := make(chan error, 1)
+	go func() {
+		res, err := s.GC(nil, GCGrace)
+		if err != nil {
+			errc <- err
+			return
+		}
+		done <- res
+	}()
+	select {
+	case <-done:
+		t.Fatal("GC completed while shared pull lock was held")
+	case err := <-errc:
+		t.Fatalf("GC error while waiting: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := unlock(); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+
+	var res GCResult
+	select {
+	case res = <-done:
+	case err := <-errc:
+		t.Fatalf("GC(): %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("GC did not finish after shared lock release")
+	}
+	if res.Deleted != 1 || res.KeptYoung != 1 {
+		t.Fatalf("GC result = %+v, want one deleted and one young", res)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old blob stat error = %v, want not exist", err)
+	}
+	youngPath, err := s.BlobPath(youngDigest)
+	if err != nil {
+		t.Fatalf("BlobPath(young): %v", err)
+	}
+	if _, err := os.Stat(youngPath); err != nil {
+		t.Fatalf("young blob stat: %v", err)
+	}
+}
+
+func TestReachableFromVMsUsesStoredManifest(t *testing.T) {
+	s := New(t.TempDir())
+	blobDigest := testDigest([]byte("blob"))
+	manifest := ociimage.Manifest{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageManifest,
+		Layers: []ociimage.Descriptor{{
+			MediaType: ociimage.MediaTypeLayer,
+			Size:      4,
+			Digest:    blobDigest,
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal(): %v", err)
+	}
+	manifestDigest := testDigest(data)
+	if err := s.StoreManifest(manifestDigest, data); err != nil {
+		t.Fatalf("StoreManifest(): %v", err)
+	}
+	vms := t.TempDir()
+	vmDir := filepath.Join(vms, "vm")
+	if err := os.MkdirAll(vmDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "disk.provenance"), []byte(manifestDigest+"\n"), 0644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	reachable, err := s.ReachableFromVMs(vms)
+	if err != nil {
+		t.Fatalf("ReachableFromVMs(): %v", err)
+	}
+	if !reachable[blobDigest] {
+		t.Fatalf("reachable[%s] = false", blobDigest)
+	}
+}
+
+func TestEnsureRefetchesCorruptBlob(t *testing.T) {
+	s := New(t.TempDir())
+	good := []byte("good")
+	digest := testDigest(good)
+	if err := s.Put(digest, int64(len(good)), bytes.NewReader(good)); err != nil {
+		t.Fatalf("Put(): %v", err)
+	}
+	path, err := s.BlobPath(digest)
+	if err != nil {
+		t.Fatalf("BlobPath(): %v", err)
+	}
+	if err := os.WriteFile(path, []byte("bad!"), 0644); err != nil {
+		t.Fatalf("corrupt blob: %v", err)
+	}
+	called := false
+	err = s.Ensure(context.Background(), digest, int64(len(good)), func(context.Context) (io.ReadCloser, error) {
+		called = true
+		return io.NopCloser(bytes.NewReader(good)), nil
+	})
+	if err != nil {
+		t.Fatalf("Ensure(): %v", err)
+	}
+	if !called {
+		t.Fatal("Ensure did not refetch corrupt blob")
+	}
+}
+
+func testDigest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}

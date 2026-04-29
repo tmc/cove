@@ -17,6 +17,7 @@ import (
 
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/vz-macos/internal/store"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
@@ -38,6 +39,7 @@ type pullPlan struct {
 	VMName         string
 	VMDir          string
 	Manifest       ociimage.ParsedManifest
+	ManifestRaw    []byte
 	ManifestDigest string
 }
 
@@ -115,16 +117,18 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 	var (
 		parsed         ociimage.ParsedManifest
 		manifestDigest string
+		manifestRaw    []byte
 	)
 	if opts.ManifestPath != "" {
-		parsed, err = readPullManifest(opts.ManifestPath)
+		parsed, manifestDigest, err = readPullManifest(opts.ManifestPath)
 		if err != nil {
 			return nil, err
 		}
+		manifestRaw, _ = os.ReadFile(opts.ManifestPath)
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), pullManifestFetchTimeout)
 		defer cancel()
-		parsed, manifestDigest, err = fetchPullManifest(ctx, ref, opts)
+		parsed, manifestDigest, manifestRaw, err = fetchPullManifest(ctx, ref, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -134,6 +138,7 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		VMName:         name,
 		VMDir:          vmDirectory,
 		Manifest:       parsed,
+		ManifestRaw:    manifestRaw,
 		ManifestDigest: manifestDigest,
 	}, nil
 }
@@ -151,35 +156,39 @@ func checkPullTarget(vmDirectory string) error {
 	return checkIncompletePullDisk(vmDirectory, diskPath)
 }
 
-func readPullManifest(path string) (ociimage.ParsedManifest, error) {
+func readPullManifest(path string) (ociimage.ParsedManifest, string, error) {
 	var out ociimage.ParsedManifest
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return out, fmt.Errorf("read manifest: %w", err)
+		return out, "", fmt.Errorf("read manifest: %w", err)
 	}
 	var manifest ociimage.Manifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return out, fmt.Errorf("parse manifest JSON: %w", err)
+		return out, "", fmt.Errorf("parse manifest JSON: %w", err)
 	}
 	out, err = ociimage.ParseManifest(manifest)
 	if err != nil {
-		return out, err
+		return out, "", err
 	}
-	return out, nil
+	return out, digestData(data), nil
 }
 
-func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOptions) (ociimage.ParsedManifest, string, error) {
+func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOptions) (ociimage.ParsedManifest, string, []byte, error) {
 	var out ociimage.ParsedManifest
 	client := pullRegistryClient(ref, opts)
 	manifest, digest, err := client.FetchManifest(ctx, ref)
 	if err != nil {
-		return out, "", err
+		return out, "", nil, err
 	}
 	out, err = ociimage.ParseManifest(manifest)
 	if err != nil {
-		return out, "", fmt.Errorf("parse registry manifest: %w", err)
+		return out, "", nil, fmt.Errorf("parse registry manifest: %w", err)
 	}
-	return out, digest, nil
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return out, "", nil, fmt.Errorf("encode registry manifest: %w", err)
+	}
+	return out, digest, data, nil
 }
 
 func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
@@ -194,6 +203,17 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}
 	if err := os.MkdirAll(plan.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
+	}
+	blobStore := store.New("")
+	unlock, err := blobStore.LockShared()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if len(plan.ManifestRaw) > 0 {
+		if err := blobStore.StoreManifest(plan.ManifestDigest, plan.ManifestRaw); err != nil {
+			return err
+		}
 	}
 
 	partialPath := filepath.Join(plan.VMDir, "disk.img.partial")
@@ -210,10 +230,10 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}()
 
 	client := pullRegistryClient(plan.Ref, opts)
-	if err := pullDiskChunks(ctx, client, plan, disk); err != nil {
+	if err := pullDiskChunks(ctx, client, plan, disk, blobStore); err != nil {
 		return err
 	}
-	if err := pullMetadataBlobs(ctx, client, plan); err != nil {
+	if err := pullMetadataBlobs(ctx, client, plan, blobStore); err != nil {
 		return err
 	}
 	if err := disk.Sync(); err != nil {
@@ -235,7 +255,7 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	return nil
 }
 
-func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, disk io.WriterAt) error {
+func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, disk io.WriterAt, blobStore store.Store) error {
 	layers := nonZeroDiskLayers(plan.Manifest.DiskLayers)
 	if len(layers) == 0 {
 		return nil
@@ -255,7 +275,7 @@ func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *p
 		go func() {
 			defer wg.Done()
 			for layer := range jobs {
-				if err := pullDiskChunk(ctx, client, plan.Ref, disk, layer); err != nil {
+				if err := pullDiskChunk(ctx, client, plan.Ref, disk, layer, blobStore); err != nil {
 					select {
 					case errc <- err:
 					default:
@@ -297,23 +317,25 @@ func nonZeroDiskLayers(layers []ociimage.DiskLayer) []ociimage.DiskLayer {
 	return out
 }
 
-func pullDiskChunk(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, disk io.WriterAt, layer ociimage.DiskLayer) error {
-	body, err := client.FetchBlob(ctx, ref, layer.Descriptor.Digest)
+func pullDiskChunk(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, disk io.WriterAt, layer ociimage.DiskLayer, blobStore store.Store) error {
+	err := blobStore.Ensure(ctx, layer.Descriptor.Digest, layer.Descriptor.Size, func(ctx context.Context) (io.ReadCloser, error) {
+		return client.FetchBlob(ctx, ref, layer.Descriptor.Digest)
+	})
 	if err != nil {
 		return err
 	}
-	err = ociimage.WriteCompressedChunkAt(disk, layer.Chunk, layer.Descriptor, body)
-	closeErr := body.Close()
+	body, err := blobStore.OpenVerified(layer.Descriptor.Digest, layer.Descriptor.Size)
 	if err != nil {
 		return err
 	}
-	if closeErr != nil {
-		return fmt.Errorf("close blob: %w", closeErr)
+	defer body.Close()
+	if err := ociimage.WriteCompressedChunkAt(disk, layer.Chunk, layer.Descriptor, body); err != nil {
+		return err
 	}
 	return nil
 }
 
-func pullMetadataBlobs(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan) error {
+func pullMetadataBlobs(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, blobStore store.Store) error {
 	for _, desc := range plan.Manifest.Blobs {
 		name, ok, err := pullMetadataFileName(desc)
 		if err != nil {
@@ -323,7 +345,7 @@ func pullMetadataBlobs(ctx context.Context, client ociimage.RegistryClient, plan
 			continue
 		}
 		path := filepath.Join(plan.VMDir, name)
-		if err := pullBlobToFile(ctx, client, plan.Ref, desc, path); err != nil {
+		if err := pullBlobToFile(ctx, client, plan.Ref, desc, path, blobStore); err != nil {
 			return err
 		}
 	}
@@ -347,14 +369,19 @@ func pullMetadataFileName(desc ociimage.Descriptor) (string, bool, error) {
 	}
 }
 
-func pullBlobToFile(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, desc ociimage.Descriptor, path string) error {
+func pullBlobToFile(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, desc ociimage.Descriptor, path string, blobStore store.Store) error {
 	if desc.Digest == "" {
 		return fmt.Errorf("pull metadata blob: missing digest")
 	}
 	if desc.Size < 0 {
 		return fmt.Errorf("pull metadata blob: negative size %d", desc.Size)
 	}
-	body, err := client.FetchBlob(ctx, ref, desc.Digest)
+	if err := blobStore.Ensure(ctx, desc.Digest, desc.Size, func(ctx context.Context) (io.ReadCloser, error) {
+		return client.FetchBlob(ctx, ref, desc.Digest)
+	}); err != nil {
+		return err
+	}
+	body, err := blobStore.OpenVerified(desc.Digest, desc.Size)
 	if err != nil {
 		return err
 	}
@@ -398,6 +425,11 @@ func pullRegistryClient(ref ociimage.Reference, opts pullOptions) ociimage.Regis
 		Authorization: registryAuthorization(ref, opts.RegistryToken),
 		TokenCache:    ociimage.NewRegistryTokenCache(),
 	}
+}
+
+func digestData(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func writePullProvenance(vmDir, digest string) error {

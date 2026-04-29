@@ -31,7 +31,7 @@ What happens:
 
 1. The manifest is fetched and its annotations are parsed (cove-native or lume -- both work).
 2. `~/.vz/vms/<name>/disk.img.partial` is pre-allocated sparse at the full uncompressed disk size.
-3. Chunks are pulled in parallel (4 at a time), LZ4-decompressed, digest-verified, and `WriteAt`-ed at their fixed offsets. Zero chunks skip the write entirely and stay as holes.
+3. Chunks are pulled in parallel (4 at a time) into `~/.vz/store/blobs/sha256/`, then LZ4-decompressed, digest-verified, and `WriteAt`-ed at their fixed offsets. Zero chunks skip the write entirely and stay as holes.
 4. `aux.img`, `hw.model`, and VM config are written.
 5. On success, `disk.img.partial` is atomically renamed to `disk.img` and `disk.provenance` is written with the source manifest digest.
 
@@ -42,7 +42,19 @@ cove: VM <name> has incomplete disk (pull was interrupted).
 Delete <path> and rerun cove pull, or use cove pull --resume <ref> to continue.
 ```
 
-In v0.1 the fix is always: delete `disk.img.partial` and rerun `cove pull`. Resumable pulls (`--resume`) arrive in v0.2 with the content-addressed store.
+Rerunning `cove pull` reuses any verified blobs already present in `~/.vz/store/`, so an interrupted pull does not redownload chunks that landed before the failure.
+
+## Local Store
+
+`cove pull` stores cove-native OCI blobs under `~/.vz/store/blobs/sha256/<digest>`. Blob writes are atomic: cove writes a temp file, verifies the SHA-256 digest and byte size, fsyncs, and renames into place. Multiple VMs pulled from images sharing chunks reuse the same local blob files.
+
+Garbage collect unreferenced blobs with:
+
+```bash
+cove store gc
+```
+
+GC takes an exclusive `~/.vz/store/gc.lock`. Pulls take the same lock in shared mode, so GC cannot delete in-flight blobs. GC also keeps blobs modified within the last hour, which protects recently interrupted pulls before their provenance graph is complete.
 
 ## Push
 

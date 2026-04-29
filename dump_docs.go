@@ -287,6 +287,11 @@ var cliDocSpecs = []cliDocSpec{
 		"cove pull ghcr.io/me/dev-vm:v1 --dry-run",
 		"cove pull ghcr.io/me/dev-vm:v1 --as restored-vm",
 	}},
+	{Name: "store", Summary: "Manage the local content-addressed OCI blob store.", Usage: func() string {
+		return captureWriter(printStoreUsage)
+	}, Examples: []string{
+		"cove store gc",
+	}},
 	{Name: "template", Summary: "Manage VM templates.", Usage: func() string {
 		return captureWriter(printTemplateUsage)
 	}},
