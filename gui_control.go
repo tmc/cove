@@ -63,13 +63,15 @@ type vmGUIController struct {
 }
 
 func ensureAppReady(policy appkit.NSApplicationActivationPolicy) appkit.NSApplication {
-	registerUIThread()
-	app := getSharedApp()
-	app.SetActivationPolicy(policy)
-	if policy == appkit.NSApplicationActivationPolicyRegular {
-		setAppIcon(&app)
-	}
-	ensureAppLaunched(app)
+	var app appkit.NSApplication
+	runOnUIThreadSync(func() {
+		app = getSharedApp()
+		app.SetActivationPolicy(policy)
+		if policy == appkit.NSApplicationActivationPolicyRegular {
+			setAppIcon(&app)
+		}
+		ensureAppLaunched(app)
+	})
 	return app
 }
 
@@ -86,8 +88,7 @@ func ensureAppLaunched(app appkit.NSApplication) {
 		appFinishedLaunching = true
 	}
 
-	registerUIThread()
-	launch()
+	runOnUIThreadSync(launch)
 }
 
 // runAppEventLoopUntil mirrors NSApplication.Run's nextEvent/sendEvent loop
@@ -167,9 +168,12 @@ func (c *vmGUIController) initDetachedView() error {
 	if c.vmView.ID == 0 {
 		c.vmView = c.newVMView()
 	}
-	if c.window.ID != 0 {
-		c.window.OrderOut(nil)
+	if c.window.ID == 0 {
+		if err := c.initWindow(); err != nil {
+			return err
+		}
 	}
+	c.window.OrderOut(nil)
 	c.headed = false
 	if c.bindings != nil {
 		c.bindings.SetVMViewWithWindow(c.vmView, c.window)
