@@ -37,11 +37,13 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	machineID := loadOrCreateGenericMachineIdentifier()
 	platformConfig.SetMachineIdentifier(&machineID)
 
-	// Leave nested virtualization disabled by default. Recent Ubuntu ARM64
-	// installers can trip into undefined-instruction crashes in overlayfs
-	// when the guest sees a richer virtual CPU feature set than it can
-	// safely use in this environment.
-	if vz.GetVZGenericPlatformConfigurationClass().NestedVirtualizationSupported() {
+	if linuxNested {
+		if err := validateNestedVirtualizationSupported(); err != nil {
+			return config, err
+		}
+		platformConfig.SetNestedVirtualizationEnabled(true)
+		fmt.Println("  Nested virtualization enabled")
+	} else if nestedVirtualizationSupported() {
 		fmt.Println("  Nested virtualization disabled")
 	}
 

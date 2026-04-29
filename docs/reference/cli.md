@@ -30,6 +30,7 @@ cove install [flags]
 | `-linux` | false | Install Linux instead of macOS |
 | `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
 | `-desktop` | false | Use Ubuntu Desktop ISO (implies `-linux`) |
+| `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
 | `-iso <path>` | | Path to ISO image for Linux EFI boot |
 | `-cpu <n>` | 2 | Number of CPUs |
 | `-memory <n>` | 4 | Memory in GB |
@@ -62,6 +63,7 @@ cove run [flags]
 | `-no-resume` / `-cold-boot` | false | Discard saved suspend state |
 | `-recovery` | false | Boot into macOS recovery mode |
 | `-linux` | false | Run a Linux VM |
+| `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
 | `-cpu <n>` | 2 | Number of CPUs |
 | `-memory <n>` | 4 | Memory in GB |
 | `-display <spec>` | | Display config: WxH[@PPI] or preset (4k, 1080p, 720p, retina) |
@@ -135,6 +137,7 @@ cove up [flags]
 | `-linux` | false | Install Linux instead of macOS |
 | `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
 | `-desktop` | false | Use Ubuntu Desktop (implies `-linux`) |
+| `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
 | `-pprof <addr>` | | Serve pprof diagnostics (e.g., `6060`) |
 | `-automation-backend <mode>` | auto | UI automation: auto, framebuffer, or window |
 | `-automation-capture-backend <mode>` | | Override screenshot backend: auto, framebuffer, or window |

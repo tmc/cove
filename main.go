@@ -32,7 +32,9 @@ var (
 	linuxMode    bool
 	linuxDesktop bool
 	linuxDistro  string
+	linuxNested  bool
 	cpuCount     uint
+	cpuExplicit  bool
 	memoryGB     uint64
 	diskPath     string
 	diskSizeGB   uint64
@@ -152,6 +154,7 @@ func init() {
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
+	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
 	flag.UintVar(&cpuCount, "cpu", 2, "number of CPUs")
@@ -250,8 +253,8 @@ func main() {
 
 	maybeStartPprofServer()
 
-	// -desktop implies -linux
-	if linuxDesktop {
+	// -desktop and -nested imply -linux
+	if linuxDesktop || linuxNested {
 		linuxMode = true
 	}
 	if linuxMode {
@@ -260,6 +263,8 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	cpuExplicit = flagWasProvided(flag.CommandLine, "cpu")
+	applyNestedLinuxDefaults()
 
 	// Validate mutually exclusive flags.
 	if headlessMode && guiMode {
@@ -518,7 +523,7 @@ func main() {
 		// (e.g., "cove run -gui" parses -gui here).
 		flag.CommandLine.Parse(args)
 
-		if linuxDesktop {
+		if linuxDesktop || linuxNested {
 			linuxMode = true
 		}
 		if linuxMode {
@@ -527,6 +532,8 @@ func main() {
 				os.Exit(1)
 			}
 		}
+		cpuExplicit = flagWasProvided(flag.CommandLine, "cpu")
+		applyNestedLinuxDefaults()
 
 		// --headless overrides --gui after subcommand re-parse
 		if headlessMode {
@@ -832,13 +839,14 @@ Provisioning Strategy (-provision-strategy):
   auto              Try disk first. If it fails, fall back to gui.
 
 Linux VM:
-  Install and run Ubuntu, Debian, Fedora, or Alpine ARM64:
+	  Install and run Ubuntu, Debian, Fedora, or Alpine ARM64:
 
-  cove install -linux                                    # Ubuntu Server (default)
-  cove install -linux -distro debian                     # Debian
-  cove install -linux -distro fedora                     # Fedora
-  cove install -linux -distro alpine                     # Alpine
-  cove install -linux -desktop                           # Ubuntu Desktop
+	  cove install -linux                                    # Ubuntu Server (default)
+	  cove install -linux -distro debian                     # Debian
+	  cove install -linux -distro fedora                     # Fedora
+	  cove install -linux -distro alpine                     # Alpine
+	  cove run -linux -nested                                # KVM on supported hosts
+	  cove install -linux -desktop                           # Ubuntu Desktop
   cove install -linux -iso /path/to/ubuntu.iso           # Use local ISO
   cove install -linux -provision-user me -provision-password pw  # With user
   cove run -linux                                        # Run installed VM
@@ -868,6 +876,9 @@ Flags:
 }
 
 func validateLaunchOptions() error {
+	if linuxNested && !linuxMode {
+		return fmt.Errorf("-nested requires -linux")
+	}
 	switch provisionStrategy {
 	case "disk", "gui", "auto":
 	case "inject":
@@ -932,6 +943,22 @@ func validateLaunchOptions() error {
 		return err
 	}
 	return nil
+}
+
+func flagWasProvided(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
+func applyNestedLinuxDefaults() {
+	if linuxNested && !cpuExplicit && cpuCount < 4 {
+		cpuCount = 4
+	}
 }
 
 func confirmDeletef(format string, args ...any) (bool, error) {

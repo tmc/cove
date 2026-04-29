@@ -435,6 +435,7 @@ Common flags:
   -linux                  install Linux instead of macOS
   -distro <name>          Linux distro: ubuntu, debian, fedora, alpine
   -desktop                with -linux, install Ubuntu Desktop
+  -nested                 with -linux, enable nested virtualization on supported hosts
   -iso <path>             use a local ISO instead of auto-download
   -cpu N                  CPU count (default 2)
   -memory N               memory in GB (default 4)
@@ -459,6 +460,7 @@ Boot the selected VM (resumes from suspend state if present).
 Common flags:
   -gui / -headless        show or hide the VM display window
   -linux                  run a Linux VM
+  -nested                 with -linux, enable nested virtualization on supported hosts
   -recovery               boot macOS into recovery mode
   -no-resume / -cold-boot discard saved suspend state and cold boot
   -network <mode>         nat (default), bridged:<iface>, vmnet, filehandle, none
