@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot_Order(t *testing.T) {
-	got, err := generateSIPVZScript("disable", "admin", "secret", true, true)
+func TestGenerateSIPVZScript_DisableWithPassword_Order(t *testing.T) {
+	got, err := generateSIPVZScript("disable", "admin", "secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -15,27 +15,27 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot_Order(t *testing.T
 		`wait-menu-text Utilities 180s`,
 		`key cmd+shift+t`,
 		`type-keycodes 'csrutil disable'`,
-		`answer-visible -timeout 45s`,
+		`answer-visible -optional -timeout 45s`,
 		`'Are you sure' 'y'`,
-		`answer-visible -optional -timeout 5s`,
-		`'Authorized user' 'admin'`,
-		`answer-visible -timeout 45s`,
-		`'Password' 'secret'`,
+		`answer-visible -optional -skip-empty -timeout 5s`,
+		`'Authorized user' $SIP_USER`,
+		`answer-visible -optional -skip-empty -timeout 45s`,
+		`'Password' $SIP_PASSWORD`,
 		`[text-visible:System+Integrity+Protection+is+off.] type-keycodes 'reboot'`,
 	}
 	assertOrderedSnippets(t, got, wantOrder)
 }
 
-func TestGenerateSIPVZScript_DisableWithoutConfirm(t *testing.T) {
-	got, err := generateSIPVZScript("disable", "", "secret", false, true)
+func TestGenerateSIPVZScript_DisableHandlesConfirmOptionally(t *testing.T) {
+	got, err := generateSIPVZScript("disable", "", "secret")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(got, "Are you sure") {
-		t.Fatalf("did not expect confirm prompt handling when confirm=false\n%s", got)
+	if !strings.Contains(got, "answer-visible -optional") {
+		t.Fatalf("expected optional prompt handling\n%s", got)
 	}
-	if strings.Contains(got, "[y/n]") {
-		t.Fatalf("did not expect [y/n] prompt handling when confirm=false\n%s", got)
+	if !strings.Contains(got, "'Are you sure' 'y'") {
+		t.Fatalf("expected optional confirmation handling\n%s", got)
 	}
 }
 

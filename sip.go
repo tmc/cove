@@ -94,8 +94,6 @@ func sipAuto(mode string, args []string) error {
 	fs := flag.NewFlagSet("sip "+mode+"-auto", flag.ExitOnError)
 	user := fs.String("user", "", "admin username for recovery authentication (optional)")
 	pass := fs.String("password", "", "admin password for recovery authentication (optional)")
-	confirm := fs.Bool("confirm", false, "answer y after authentication (only for builds that prompt confirmation)")
-	noReboot := fs.Bool("no-reboot", false, "do not append reboot command (for iterative debugging)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -105,7 +103,7 @@ func sipAuto(mode string, args []string) error {
 		return fmt.Errorf("create recovery disk: %w", err)
 	}
 
-	scriptData, err := generateSIPVZScript(mode, *user, *pass, *confirm, !*noReboot)
+	scriptData, err := generateSIPVZScript(mode, *user, *pass)
 	if err != nil {
 		return fmt.Errorf("generate sip automation script: %w", err)
 	}
@@ -171,23 +169,20 @@ func sipCreateDisk() error {
 	return nil
 }
 
-func generateSIPVZScript(mode, username, password string, confirm, reboot bool) (string, error) {
-	data, err := builtinScripts.ReadFile("vzscripts/sip-recovery.vzscript.tmpl")
+func generateSIPVZScript(mode, username, password string) (string, error) {
+	data, err := builtinScripts.ReadFile("vzscripts/sip-" + mode + ".vzscript")
 	if err != nil {
-		return "", fmt.Errorf("read sip recovery template: %w", err)
+		return "", fmt.Errorf("read sip %s script: %w", mode, err)
 	}
-	vars := map[string]any{
-		"Mode":     mode,
-		"Confirm":  confirm,
-		"Username": username,
-		"Password": password,
-		"Reboot":   reboot,
+	var b strings.Builder
+	if username != "" {
+		fmt.Fprintf(&b, "env SIP_USER=%s\n", scriptQuote(username))
 	}
-	out, err := renderVZScriptTemplate(data, "sip-recovery", vars)
-	if err != nil {
-		return "", fmt.Errorf("render sip recovery template: %w", err)
+	if password != "" {
+		fmt.Fprintf(&b, "env SIP_PASSWORD=%s\n", scriptQuote(password))
 	}
-	return string(out), nil
+	b.Write(data)
+	return b.String(), nil
 }
 
 func writeVZScriptForSIP(vmDirectory, mode, script string) (string, error) {
@@ -197,17 +192,6 @@ func writeVZScriptForSIP(vmDirectory, mode, script string) (string, error) {
 		return "", err
 	}
 	return path, nil
-}
-
-func sipSuccessText(mode string) string {
-	switch mode {
-	case "disable":
-		return "System Integrity Protection is off."
-	case "enable":
-		return "System Integrity Protection is on."
-	default:
-		return "System Integrity Protection"
-	}
 }
 
 func sipTargetVMName() string {
@@ -232,7 +216,6 @@ Commands:
 
 Examples:
   cove -vm macos-3 sip enable-auto -user user -password secret
-  cove -vm macos-3 sip disable-auto -password secret -confirm
-  cove -vm macos-3 sip enable-auto -no-reboot
+  cove -vm macos-3 sip disable-auto -password secret
   cove -vm macos-3 run -recovery -no-resume -gui -unattended -usb ~/.vz/vms/macos-3/recovery-disk.img -boot-commands ~/.vz/vms/macos-3/sip-enable.vzscript
 `

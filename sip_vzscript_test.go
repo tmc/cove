@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
-	got, err := generateSIPVZScript("disable", "admin", "secret", true, true)
+func TestGenerateSIPVZScript_DisableWithPassword(t *testing.T) {
+	got, err := generateSIPVZScript("disable", "admin", "secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,14 +24,16 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 		`key cmd+k`,
 		`type-keycodes 'csrutil disable'`,
 		`label-push 'csrutil prompts'`,
-		`answer-visible -timeout 45s`,
+		`answer-visible -optional -timeout 45s`,
 		`'y/n' 'y'`,
 		`'security level to full boot security' 'y'`,
-		`answer-visible -optional -timeout 5s`,
-		`'Authorized user' 'admin'`,
-		`'user name' 'admin'`,
-		`'Password' 'secret'`,
-		`'password for user' 'secret'`,
+		`answer-visible -optional -skip-empty -timeout 5s`,
+		`env SIP_USER='admin'`,
+		`env SIP_PASSWORD='secret'`,
+		`'Authorized user' $SIP_USER`,
+		`'user name' $SIP_USER`,
+		`'Password' $SIP_PASSWORD`,
+		`'password for user' $SIP_PASSWORD`,
 		`ocr-wait 'System Integrity Protection is off.' 60s`,
 		`[text-visible:System+Integrity+Protection+is+off.] screenshot`,
 		`[text-visible:System+Integrity+Protection+is+off.] type-keycodes 'reboot'`,
@@ -52,7 +54,7 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 }
 
 func TestGenerateSIPVZScript_UsesCustomVZScriptCommandsAndConds(t *testing.T) {
-	got, err := generateSIPVZScript("disable", "admin", "secret", true, true)
+	got, err := generateSIPVZScript("disable", "admin", "secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,47 +90,37 @@ func TestGenerateSIPVZScript_UsesCustomVZScriptCommandsAndConds(t *testing.T) {
 }
 
 func TestGenerateSIPVZScript_NoReboot(t *testing.T) {
-	got, err := generateSIPVZScript("disable", "", "", false, false)
+	got, err := generateSIPVZScript("disable", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(got, "reboot") {
-		t.Fatalf("unexpected reboot command in no-reboot script\n%s", got)
+	if !strings.Contains(got, "type-keycodes 'reboot'") {
+		t.Fatalf("generated script should always reboot\n%s", got)
 	}
 }
 
-func TestSIPTemplateCanRenderWithVZScriptTemplateVars(t *testing.T) {
-	data, err := loadVZScriptData("sip-recovery")
+func TestLoadPlainSIPVZScripts(t *testing.T) {
+	data, err := loadVZScriptData("sip-disable")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := renderVZScriptTemplate(data, "sip-recovery", map[string]any{
-		"Mode":     "disable",
-		"Username": "admin",
-		"Password": "secret",
-		"Confirm":  true,
-		"Reboot":   true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(got)
+	text := string(data)
 	for _, want := range []string{
 		`label-push 'SIP disable'`,
 		`type-keycodes 'csrutil disable'`,
-		`'Authorized user' 'admin'`,
-		`'Password' 'secret'`,
+		`'Authorized user' $SIP_USER`,
+		`'Password' $SIP_PASSWORD`,
 		`[text-visible:System+Integrity+Protection+is+off.] type-keycodes 'reboot'`,
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("rendered template missing %q\n%s", want, text)
+			t.Fatalf("plain script missing %q\n%s", want, text)
 		}
 	}
 }
 
 func TestWriteVZScriptForSIP(t *testing.T) {
 	tmpDir := t.TempDir()
-	script, err := generateSIPVZScript("enable", "admin", "secret", false, true)
+	script, err := generateSIPVZScript("enable", "admin", "secret")
 	if err != nil {
 		t.Fatal(err)
 	}

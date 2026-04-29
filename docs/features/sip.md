@@ -23,7 +23,7 @@ Generate boot automation scripts and execute them in recovery mode:
 
 ```bash
 # Generate the automation script
-cove sip disable-auto -user admin -password secret -confirm
+cove sip disable-auto -user admin -password secret
 
 # Boot into recovery with the automation
 cove run -recovery -no-resume -gui -unattended \
@@ -31,7 +31,7 @@ cove run -recovery -no-resume -gui -unattended \
   -boot-commands ~/.vz/vms/default/sip-disable.vzscript
 ```
 
-The `-confirm` flag handles the "Are you sure" prompt that some Recovery builds show.
+The script answers Recovery confirmation prompts when they appear.
 
 ## Automated SIP Enable
 

@@ -20,14 +20,14 @@ Recovery mode gives access to Terminal, Disk Utility, and the csrutil command fo
 ### Step 1: Generate Automation
 
 ```bash
-cove sip disable-auto -user admin -password secret -confirm
+cove sip disable-auto -user admin -password secret
 ```
 
 This creates:
 - A recovery tools disk at `~/.vz/vms/<name>/recovery-disk.img`
 - A boot automation script at `~/.vz/vms/<name>/sip-disable.vzscript`
 
-The `-confirm` flag handles the "Are you sure" confirmation prompt that some Recovery builds show.
+The script answers Recovery confirmation prompts when they appear.
 
 ### Step 2: Run Automation
 

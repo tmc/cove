@@ -85,7 +85,7 @@ Some analysis requires disabling System Integrity Protection to attach debuggers
 
 ```bash
 # Generate SIP disable automation
-cove -vm sandbox sip disable-auto -user analyst -password analyst -confirm
+cove -vm sandbox sip disable-auto -user analyst -password analyst
 
 # Boot into recovery with the automation script
 cove -vm sandbox run -recovery -no-resume -gui -unattended \

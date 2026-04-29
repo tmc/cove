@@ -62,8 +62,6 @@ func prepareSIPDisableArtifacts(t *testing.T, vm *testVM) (recoveryDisk, bootCom
 			"disable",
 			*flagIntegrationSIPUser,
 			*flagIntegrationSIPPassword,
-			*flagIntegrationSIPConfirm,
-			true,
 		)
 		if err != nil {
 			t.Fatalf("generate SIP vzscript: %v", err)

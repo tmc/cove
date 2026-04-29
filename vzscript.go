@@ -32,7 +32,7 @@
 //	label-push <text>          Push a script label onto the VM window title
 //	label-pop                  Pop the current script label
 //	label-clear                Clear all script labels
-//	answer-visible [-optional] [-timeout duration] [-progress text] <prompt> <answer>...
+//	answer-visible [-optional] [-skip-empty] [-timeout duration] [-progress text] <prompt> <answer>...
 //	type <text>                 Type text into the VM
 //	type-keycodes <text>        Type text using per-key keycode events
 //	key <spec>                  Send key event (e.g. "return", "tab", "cmd+v")
@@ -1430,10 +1430,11 @@ func setVZScriptWindowLabel(cfg vzscriptConfig, label string, s *script.State) {
 }
 
 type answerVisibleArgs struct {
-	timeout  time.Duration
-	optional bool
-	progress []string
-	pairs    []promptAnswer
+	timeout   time.Duration
+	optional  bool
+	skipEmpty bool
+	progress  []string
+	pairs     []promptAnswer
 }
 
 type promptAnswer struct {
@@ -1445,7 +1446,7 @@ func vzAnswerVisibleCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
 			Summary: "answer the first visible prompt from a set of alternatives",
-			Args:    "[-optional] [-timeout duration] [-progress text] <prompt> <answer>...",
+			Args:    "[-optional] [-skip-empty] [-timeout duration] [-progress text] <prompt> <answer>...",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
 			opts, err := parseAnswerVisibleArgs(args)
@@ -1502,6 +1503,9 @@ func parseAnswerVisibleArgs(args []string) (answerVisibleArgs, error) {
 		case "-optional":
 			opts.optional = true
 			i++
+		case "-skip-empty":
+			opts.skipEmpty = true
+			i++
 		case "-timeout":
 			i++
 			if i >= len(args) {
@@ -1530,7 +1534,16 @@ pairs:
 		return opts, script.ErrUsage
 	}
 	for i := 0; i < len(rest); i += 2 {
+		if opts.skipEmpty && rest[i+1] == "" {
+			continue
+		}
 		opts.pairs = append(opts.pairs, promptAnswer{prompt: rest[i], answer: rest[i+1]})
+	}
+	if len(opts.pairs) == 0 && opts.optional {
+		return opts, nil
+	}
+	if len(opts.pairs) == 0 {
+		return opts, script.ErrUsage
 	}
 	return opts, nil
 }
@@ -1538,6 +1551,9 @@ pairs:
 func runAnswerVisible(s *script.State, ocr *ocrx.Service, capture func() image.Image, typeKeycodes func(string) error, key func(string) error, opts answerVisibleArgs) error {
 	if ocr == nil {
 		return fmt.Errorf("answer-visible: missing ocr service")
+	}
+	if len(opts.pairs) == 0 && opts.optional {
+		return nil
 	}
 	deadline := time.Now().Add(opts.timeout)
 	for time.Now().Before(deadline) {

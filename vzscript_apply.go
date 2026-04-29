@@ -22,7 +22,7 @@ import (
 	"rsc.io/script"
 )
 
-//go:embed vzscripts/*.vzscript vzscripts/sip-recovery.vzscript.tmpl
+//go:embed vzscripts/*.vzscript
 var builtinScripts embed.FS
 
 // vzscriptCommand handles the "vzscript" subcommand.
