@@ -147,7 +147,7 @@ func (s Store) BlobPath(digest string) (string, error) {
 func (s Store) StoreManifest(digest string, data []byte) error {
 	_, hexDigest, err := splitDigest(digest)
 	if err != nil {
-		return nil
+		return err
 	}
 	dir := filepath.Join(s.Dir, "manifests", "sha256")
 	if err := os.MkdirAll(dir, 0755); err != nil {

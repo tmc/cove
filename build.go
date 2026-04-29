@@ -65,16 +65,16 @@ func handleBuild(args []string) error {
 	if opts.Base == "" {
 		return fmt.Errorf("cove build: --base is required")
 	}
+	if !opts.DryRun {
+		return fmt.Errorf("cove build: only --dry-run is implemented")
+	}
 	ctx := context.Background()
 	plan, err := buildDryPlan(ctx, fs.Arg(0), opts, http.DefaultClient)
 	if err != nil {
 		return err
 	}
-	if opts.DryRun {
-		printBuildPlan(os.Stdout, plan, opts)
-		return nil
-	}
-	return fmt.Errorf("cove build: execution path not yet implemented; use --dry-run to inspect cache keys")
+	printBuildPlan(os.Stdout, plan, opts)
+	return nil
 }
 
 func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *http.Client) (buildPlan, error) {
@@ -162,7 +162,8 @@ func printBuildPlan(w io.Writer, plan buildPlan, opts buildOptions) {
 func printBuildUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove build <name> --base <ref> --script <step> [flags]
 
-Build a VM image by chaining vzscript steps with content-addressed cache keys.
+Plan a VM image build by chaining vzscript steps with content-addressed cache keys.
+Execution is not implemented yet; use --dry-run.
 
 Flags:
   --base <ref>              Base OCI image reference. Digest refs avoid network lookup.
