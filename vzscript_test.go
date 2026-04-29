@@ -130,7 +130,11 @@ func TestLoadVZScriptData(t *testing.T) {
 }
 
 func TestGenerateSIPVZScript_Syntax(t *testing.T) {
-	data := []byte(generateSIPVZScript("disable", "admin", "secret", true, false))
+	script, err := generateSIPVZScript("disable", "admin", "secret", true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(script)
 	if err := executeVZScriptSyntaxOnly(t, "sip-disable.vzscript", data); err != nil {
 		t.Fatal(err)
 	}
