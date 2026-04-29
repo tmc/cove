@@ -1,6 +1,6 @@
 # cove codebase cleanup plan
 
-**Status**: draft
+**Status**: draft; status verified 2026-04-29
 **Author**: Codex
 **Date**: 2026-04-22
 **Scope**: repository-internal cleanup; no intended user-facing feature changes
@@ -15,6 +15,21 @@ global state, and makes server, GUI, provisioning, runtime, and CLI concerns dep
 on each other directly.
 
 The cleanup should fix that without a flag day rewrite.
+
+## Status verification (2026-04-29)
+
+This pass reconciles the plan against `origin/main` at `097997d`.
+
+| Area | Current status | Evidence | v0.2 implication |
+|---|---|---|---|
+| Root package size | Not improved yet | root has 127 non-test Go files and 115 test files; `control_socket.go` is 1,981 lines. | Keep root-package shrink as a later outcome, not an immediate v0.2 gate. |
+| `internal/control/operations` | Done | `internal/control/operations/` owns the registry, file store, tests, explicit `Start`, `SetProgress`, `Succeed`, and `Fail` transitions. Root `control_operations.go` is now a thin `ControlServer` adapter. | Do not redo operations extraction in v0.2; build on the package that exists. |
+| `internal/vmconfig` | Partial | `internal/vmconfig/` owns config, registry, paths, migration, detection, and info helpers. Root `vm_selector.go`, `shared_folders_*`, and `volumes.go` still carry VM config behavior and globals. | v0.2 phase 1 should finish shared folders, volumes, and selector seams rather than start from config codec. |
+| `internal/agent` | Partial | `internal/agent/` currently owns persisted agent state only. `agent_client.go`, `agent_control.go`, and `agent_inject.go` remain in root and still hang off `ControlServer`. | v0.2 phase 2 remains open; extract client/bootstrap/upgrade behind a small service API. |
+| Control server decomposition | Not started in package terms | `ControlServer` still has 129 methods across root files and the request edge still dispatches raw `req.Type` strings. | Phase 3 stays v0.3; v0.2 should only prepare seams needed by vmconfig/agent extraction. |
+| Lifecycle plumbing | Partial | server stop/join and agent health lifecycle work landed, but ownership is still rooted in `ControlServer`. | Preserve and reuse existing context/stop paths during extraction. |
+
+Conclusion: the roadmap's v0.2 "ControlServer decomposition — phases 1+2" should mean **finish `internal/vmconfig` and extract `internal/agent`**, while treating `internal/control/operations` as already shipped. Phase 3 (`internal/control`) remains a separate v0.3 item.
 
 ## Current problems to address
 
