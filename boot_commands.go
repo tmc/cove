@@ -139,35 +139,6 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 			}
 		}
 
-		for _, key := range []string{"right", "right", "return"} {
-			if err := e.sendKey(key); err != nil {
-				return err
-			}
-			time.Sleep(350 * time.Millisecond)
-
-			img = e.captureScreen()
-			if img == nil {
-				continue
-			}
-			width = float64(img.Bounds().Dx())
-			height = float64(img.Bounds().Dy())
-			continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
-			if continueFound && continueBelongsToOptions(width, continueX) {
-				if err := e.sendKey("return"); err == nil {
-					time.Sleep(500 * time.Millisecond)
-					return nil
-				}
-				if err := e.clickAt(continueX, continueY, img.Bounds().Dx(), img.Bounds().Dy()); err == nil {
-					time.Sleep(350 * time.Millisecond)
-					return nil
-				}
-				return nil
-			}
-			if len(ocrTexts(e.ocr, img)) == 0 {
-				return nil
-			}
-		}
-
 		optX, optY, found := e.ocr.FindTextWithOptions(img, "Options", ocrx.SearchOptions{})
 		if !found {
 			time.Sleep(time.Second)
@@ -185,63 +156,81 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 				return err
 			}
 			clicked = true
-			time.Sleep(350 * time.Millisecond)
-
-			img = e.captureScreen()
-			if img != nil {
-				continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
-				if continueFound && continueBelongsToOptions(width, continueX) {
-					if err := e.sendKey("return"); err == nil {
-						time.Sleep(500 * time.Millisecond)
-						return nil
-					}
-					time.Sleep(350 * time.Millisecond)
-					return e.clickAt(continueX, continueY, int(width), int(height))
+			continueX, continueY, continueFound := e.waitForStartupOptionsContinue(2 * time.Second)
+			if continueFound {
+				if err := e.clickAt(continueX, continueY, int(width), int(height)); err == nil {
+					time.Sleep(500 * time.Millisecond)
+					return nil
 				}
-			}
-
-			// Startup Options behaves like a tile selector. After selecting the
-			// tile, Return is often the reliable activation gesture even when the
-			// Continue button is not yet OCR-visible.
-			if err := e.sendKey("return"); err != nil {
-				return err
-			}
-			time.Sleep(500 * time.Millisecond)
-
-			img = e.captureScreen()
-			if img != nil {
-				continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
-				if continueFound && continueBelongsToOptions(width, continueX) {
-					if err := e.sendKey("return"); err == nil {
-						time.Sleep(500 * time.Millisecond)
-						return nil
-					}
-					time.Sleep(350 * time.Millisecond)
-					return e.clickAt(continueX, continueY, int(width), int(height))
-				}
-				if len(ocrTexts(e.ocr, img)) == 0 {
+				if err := e.sendKey("return"); err == nil {
+					time.Sleep(500 * time.Millisecond)
 					return nil
 				}
 			}
 		}
+		if ok, err := e.activateStartupOptionsWithKeyboard(); err != nil {
+			return err
+		} else if ok {
+			return nil
+		}
 		if clicked {
-			blankSince := time.Now()
-			for time.Since(blankSince) < 4*time.Second {
-				img = e.captureScreen()
-				if img == nil {
-					time.Sleep(250 * time.Millisecond)
-					continue
-				}
-				if len(ocrTexts(e.ocr, img)) == 0 {
-					return nil
-				}
-				time.Sleep(250 * time.Millisecond)
-			}
 			time.Sleep(800 * time.Millisecond)
 		}
 	}
 
 	return fmt.Errorf("timeout activating Recovery Startup Options")
+}
+
+func (e *automationExecutor) activateStartupOptionsWithKeyboard() (bool, error) {
+	for _, key := range []string{"right", "right"} {
+		if err := e.sendKey(key); err != nil {
+			return false, err
+		}
+		time.Sleep(350 * time.Millisecond)
+		img := e.captureScreen()
+		if img == nil {
+			continue
+		}
+		width := float64(img.Bounds().Dx())
+		if x, _, found := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
+			if err := e.sendKey("return"); err != nil {
+				return false, err
+			}
+			time.Sleep(500 * time.Millisecond)
+			return true, nil
+		}
+	}
+
+	if err := e.sendKey("return"); err != nil {
+		return false, err
+	}
+	time.Sleep(500 * time.Millisecond)
+	img := e.captureScreen()
+	if img == nil || len(ocrTexts(e.ocr, img)) == 0 {
+		return true, nil
+	}
+	width := float64(img.Bounds().Dx())
+	if x, _, found := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
+		return true, nil
+	}
+	return false, nil
+}
+
+func (e *automationExecutor) waitForStartupOptionsContinue(timeout time.Duration) (float64, float64, bool) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img := e.captureScreen()
+		if img == nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		width := float64(img.Bounds().Dx())
+		if x, y, found := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
+			return x, y, true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return 0, 0, false
 }
 
 type startupClickPoint struct {

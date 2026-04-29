@@ -1464,8 +1464,8 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *ocrx.Service, t
 	if err := client.SetGUIInputBackend("direct"); err != nil {
 		return fmt.Errorf("set input backend direct: %w", err)
 	}
-	if err := client.SetGUICaptureBackend("window"); err != nil {
-		return fmt.Errorf("set capture backend window: %w", err)
+	if err := client.SetGUICaptureBackend("framebuffer"); err != nil {
+		return fmt.Errorf("set capture backend framebuffer: %w", err)
 	}
 
 	deadline := time.Now().Add(timeout)
@@ -1492,59 +1492,101 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *ocrx.Service, t
 			return client.MouseClick(continueX/width, continueY/height)
 		}
 
-		for _, key := range []uint16{KeyCodeRightArrow, KeyCodeRightArrow, KeyCodeReturn} {
-			if err := client.KeyPress(key); err != nil {
-				return err
-			}
-			time.Sleep(350 * time.Millisecond)
-
-			img, err = client.Screenshot()
-			if err == nil {
-				width = float64(img.Bounds().Dx())
-				height = float64(img.Bounds().Dy())
-				continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
-				if continueFound && continueBelongsToOptions(width, continueX) {
-					if err := client.KeyPress(KeyCodeReturn); err == nil {
-						time.Sleep(500 * time.Millisecond)
-						return nil
-					}
-					time.Sleep(350 * time.Millisecond)
-					return client.MouseClick(continueX/width, continueY/height)
-				}
-				if len(ocrTexts(ocr, img)) == 0 {
-					return nil
-				}
-			}
-		}
-
 		optX, optY, found := ocr.FindTextWithOptions(img, "Options", ocrx.SearchOptions{})
 		if !found {
 			time.Sleep(time.Second)
 			continue
 		}
 		for _, pt := range startupOptionsTilePoints(width, height, optX, optY) {
-			if err := client.MouseClick(pt.X/width, pt.Y/height); err != nil {
+			if err := client.MouseClick(startupNorm(pt.X, width), startupNorm(pt.Y, height)); err != nil {
 				return err
 			}
-			time.Sleep(350 * time.Millisecond)
-			img, err = client.Screenshot()
-			if err == nil {
-				width = float64(img.Bounds().Dx())
-				height = float64(img.Bounds().Dy())
-				continueX, continueY, continueFound := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{})
-				if continueFound && continueBelongsToOptions(width, continueX) {
-					if err := client.KeyPress(KeyCodeReturn); err == nil {
-						time.Sleep(500 * time.Millisecond)
-						return nil
-					}
-					time.Sleep(350 * time.Millisecond)
-					return client.MouseClick(continueX/width, continueY/height)
+			continueX, continueY, continueFound := waitForStartupOptionsContinueViaClient(client, ocr, 2*time.Second)
+			if continueFound {
+				if err := client.MouseClick(startupNorm(continueX, width), startupNorm(continueY, height)); err == nil {
+					time.Sleep(500 * time.Millisecond)
+					return nil
+				}
+				if err := client.KeyPress(KeyCodeReturn); err == nil {
+					time.Sleep(500 * time.Millisecond)
+					return nil
 				}
 			}
+		}
+		if ok, err := activateStartupOptionsWithKeyboardViaClient(client, ocr); err != nil {
+			return err
+		} else if ok {
+			return nil
 		}
 	}
 
 	return fmt.Errorf("timeout activating Recovery Startup Options")
+}
+
+func activateStartupOptionsWithKeyboardViaClient(client *ControlClient, ocr *ocrx.Service) (bool, error) {
+	for _, key := range []uint16{KeyCodeRightArrow, KeyCodeRightArrow} {
+		if err := client.KeyPress(key); err != nil {
+			return false, err
+		}
+		time.Sleep(350 * time.Millisecond)
+		img, err := client.Screenshot()
+		if err != nil {
+			continue
+		}
+		width := float64(img.Bounds().Dx())
+		if x, _, found := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
+			if err := client.KeyPress(KeyCodeReturn); err != nil {
+				return false, err
+			}
+			time.Sleep(500 * time.Millisecond)
+			return true, nil
+		}
+	}
+
+	if err := client.KeyPress(KeyCodeReturn); err != nil {
+		return false, err
+	}
+	time.Sleep(500 * time.Millisecond)
+	img, err := client.Screenshot()
+	if err != nil || len(ocrTexts(ocr, img)) == 0 {
+		return true, nil
+	}
+	width := float64(img.Bounds().Dx())
+	if x, _, found := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
+		return true, nil
+	}
+	return false, nil
+}
+
+func waitForStartupOptionsContinueViaClient(client *ControlClient, ocr *ocrx.Service, timeout time.Duration) (float64, float64, bool) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		img, err := client.Screenshot()
+		if err != nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		width := float64(img.Bounds().Dx())
+		if x, y, found := ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
+			return x, y, true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return 0, 0, false
+}
+
+func startupNorm(v, size float64) float64 {
+	if size <= 0 {
+		return 0
+	}
+	n := v / size
+	if n < 0 {
+		return 0
+	}
+	if n > 1 {
+		return 1
+	}
+	return n
 }
 
 func continueRecoveryLanguageViaClient(client *ControlClient, ocr *ocrx.Service, timeout time.Duration) error {
