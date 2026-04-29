@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/store"
 )
 
 func TestParseBuildScriptMeta(t *testing.T) {
@@ -129,6 +131,42 @@ func TestBuildDryPlanChainsKeys(t *testing.T) {
 	}
 	if plan.Steps[0].Key == plan.Steps[1].Key {
 		t.Fatalf("chained step keys should differ: %s", plan.Steps[0].Key)
+	}
+}
+
+func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(filepath.Join(dir, "store"))
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:base", Scripts: []string{script}, Compact: "targeted"}
+	plan, err := buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(): %v", err)
+	}
+	if len(plan.Steps) != 1 {
+		t.Fatalf("steps = %d, want 1", len(plan.Steps))
+	}
+	layer := digestBytes([]byte("layer"))
+	if err := saveBuildCacheEntry(s, buildCacheEntry{Key: plan.Steps[0].Key, LayerDigest: layer}); err != nil {
+		t.Fatalf("saveBuildCacheEntry(): %v", err)
+	}
+	plan, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(): %v", err)
+	}
+	if !plan.Steps[0].CacheHit || plan.Steps[0].LayerDigest != layer {
+		t.Fatalf("cache hit = %v layer = %q, want hit %q", plan.Steps[0].CacheHit, plan.Steps[0].LayerDigest, layer)
+	}
+	opts.NoCache = true
+	plan, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(no-cache): %v", err)
+	}
+	if plan.Steps[0].CacheHit {
+		t.Fatal("CacheHit = true with NoCache")
 	}
 }
 
