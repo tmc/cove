@@ -30,6 +30,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/vm"
 	"github.com/tmc/apple/x/vzkit/vminput"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/control/operations"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -62,14 +63,14 @@ type ControlServer struct {
 	agentMu           sync.RWMutex // protects agent connection setup; RLock for concurrent RPCs
 	screenshotMu      sync.Mutex   // protects lastScreenshot for diff mode
 	running           atomic.Bool
-	lastScreenshot    image.Image         // For diff mode
-	lastCaptureWidth  int                 // last screenshot width used for OCR/click mapping
-	lastCaptureHeight int                 // last screenshot height used for OCR/click mapping
-	agent             *AgentClient        // GRPC client to guest agent daemon (nil until connected)
-	userAgent         *UserAgentClient    // GRPC client to guest user agent (nil until connected)
-	ocr               *ocrx.Service       // lazily created OCR service for server-side OCR commands
-	iterm2Proxy       *ITerm2Proxy        // WebSocket-to-vsock relay for iTerm2 API (nil until started)
-	portForwards      *PortForwardManager // host TCP -> guest vsock port forwards (nil until first use)
+	lastScreenshot    image.Image                 // For diff mode
+	lastCaptureWidth  int                         // last screenshot width used for OCR/click mapping
+	lastCaptureHeight int                         // last screenshot height used for OCR/click mapping
+	agent             *agentstate.AgentClient     // GRPC client to guest agent daemon (nil until connected)
+	userAgent         *agentstate.UserAgentClient // GRPC client to guest user agent (nil until connected)
+	ocr               *ocrx.Service               // lazily created OCR service for server-side OCR commands
+	iterm2Proxy       *ITerm2Proxy                // WebSocket-to-vsock relay for iTerm2 API (nil until started)
+	portForwards      *PortForwardManager         // host TCP -> guest vsock port forwards (nil until first use)
 	vncStatus         VNCStatus
 	debugStubStatus   DebugStubStatus
 	windowNum         int              // cached window number for thread-safe screenshot
@@ -85,8 +86,8 @@ type ControlServer struct {
 	lifecycleCancel   context.CancelFunc
 	lifecycleWG       sync.WaitGroup
 
-	opsMu  sync.Mutex                      // guards opsReg lazy init
-	opsReg *operations.OperationRegistry   // file-backed at <vmDir>/operations/, lazy
+	opsMu  sync.Mutex                    // guards opsReg lazy init
+	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
 }
 
 // agentHealthState tracks proactive agent health monitoring.

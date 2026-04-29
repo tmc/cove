@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/capture"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -35,7 +36,7 @@ type guestPortConnector interface {
 
 type runtimeAgentAvailabilityTarget interface {
 	currentVMState() (vz.VZVirtualMachineState, error)
-	getAgent() (*AgentClient, error)
+	getAgent() (*agentstate.AgentClient, error)
 	effectiveVMDir() string
 	vmHintFlag() string
 }
@@ -95,7 +96,7 @@ func (c controlServerAgentAvailabilityTarget) currentVMState() (vz.VZVirtualMach
 	return c.server.currentVMState()
 }
 
-func (c controlServerAgentAvailabilityTarget) getAgent() (*AgentClient, error) {
+func (c controlServerAgentAvailabilityTarget) getAgent() (*agentstate.AgentClient, error) {
 	if c.server == nil {
 		return nil, fmt.Errorf("agent availability target unavailable")
 	}

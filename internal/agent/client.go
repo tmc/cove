@@ -2,7 +2,7 @@
 //
 // Connects to the vz-agent daemon running inside the guest via
 // VZVirtioSocketDevice on vsock port 1024.
-package main
+package agent
 
 import (
 	"context"
@@ -24,8 +24,8 @@ import (
 	"github.com/tmc/vz-macos/proto/agentpbconnect"
 )
 
-const agentPort = 1024
-const userAgentPort = 1025
+const DaemonPort = 1024
+const UserPort = 1025
 
 // AgentClient wraps the connect-go client for the guest agent.
 type AgentClient struct {

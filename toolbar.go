@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -523,19 +522,9 @@ func (t *VMToolbar) handleRemoveAllSharedFolders(_ objc.ID, _ objc.SEL, _ objc.I
 
 // saveAndApplySharedFolders persists the folder list and hotplugs into the running VM.
 func (t *VMToolbar) saveAndApplySharedFolders(folders []SharedFolderEntry) {
-	configPath := filepath.Join(t.vmDirectory, "shared_folders.json")
-	if len(folders) == 0 {
-		os.Remove(configPath)
-	} else {
-		data, err := json.MarshalIndent(folders, "", "  ")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: encoding shared folders: %v\n", err)
-			return
-		}
-		if err := os.WriteFile(configPath, data, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "error: saving shared folders: %v\n", err)
-			return
-		}
+	if err := saveSharedFolders(t.vmDirectory, folders); err != nil {
+		fmt.Fprintf(os.Stderr, "error: saving shared folders: %v\n", err)
+		return
 	}
 
 	// Refresh the toolbar dropdown menu (it doesn't use menuNeedsUpdate:).
@@ -594,74 +583,4 @@ func (t *VMToolbar) ensureGuestSharedFoldersMounted() {
 		break
 	}
 	fmt.Printf("Toolbar: could not mount shared folders in guest: %v\n", lastErr)
-}
-
-// SharedFolderEntry represents a persisted shared folder configuration.
-type SharedFolderEntry struct {
-	Path     string `json:"path"`
-	Tag      string `json:"tag"`
-	ReadOnly bool   `json:"readOnly"`
-}
-
-// LoadSharedFolders loads persisted shared folder entries from the VM directory.
-func LoadSharedFolders(vmDirectory string) []SharedFolderEntry {
-	configPath := filepath.Join(vmDirectory, "shared_folders.json")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil
-	}
-	var folders []SharedFolderEntry
-	if err := json.Unmarshal(data, &folders); err != nil {
-		return nil
-	}
-	return folders
-}
-
-// uniqueTag returns a VirtioFS tag that doesn't collide with existing entries.
-// If "data" is taken, returns "data-2", "data-3", etc.
-func uniqueTag(base string, existing []SharedFolderEntry) string {
-	base = sanitizeSharedFolderTag(base)
-	taken := make(map[string]bool, len(existing))
-	for _, f := range existing {
-		taken[f.Tag] = true
-	}
-	if !taken[base] {
-		return base
-	}
-	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s-%d", base, i)
-		if !taken[candidate] {
-			return candidate
-		}
-	}
-}
-
-func sanitizeSharedFolderTag(base string) string {
-	base = strings.TrimSpace(base)
-	if base == "" {
-		return "share"
-	}
-	var b strings.Builder
-	lastDash := false
-	for _, r := range base {
-		switch {
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r + ('a' - 'A'))
-			lastDash = false
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			lastDash = false
-		default:
-			if b.Len() == 0 || lastDash {
-				continue
-			}
-			b.WriteByte('-')
-			lastDash = true
-		}
-	}
-	tag := strings.Trim(b.String(), "-")
-	if tag == "" {
-		return "share"
-	}
-	return tag
 }
