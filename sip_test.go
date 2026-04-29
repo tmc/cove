@@ -6,7 +6,10 @@ import (
 )
 
 func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot_Order(t *testing.T) {
-	got := generateSIPVZScript("disable", "admin", "secret", true, true)
+	got, err := generateSIPVZScript("disable", "admin", "secret", true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	wantOrder := []string{
 		`wait-menu-text Utilities 180s`,
@@ -21,7 +24,10 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot_Order(t *testing.T
 }
 
 func TestGenerateSIPVZScript_DisableWithoutConfirm(t *testing.T) {
-	got := generateSIPVZScript("disable", "", "secret", false, true)
+	got, err := generateSIPVZScript("disable", "", "secret", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(got, "Are you sure") {
 		t.Fatalf("did not expect confirm prompt handling when confirm=false\n%s", got)
 	}

@@ -58,13 +58,16 @@ func prepareSIPDisableArtifacts(t *testing.T, vm *testVM) (recoveryDisk, bootCom
 		if err != nil {
 			t.Fatalf("ensure recovery disk: %v", err)
 		}
-		script := generateSIPVZScript(
+		script, err := generateSIPVZScript(
 			"disable",
 			*flagIntegrationSIPUser,
 			*flagIntegrationSIPPassword,
 			*flagIntegrationSIPConfirm,
 			true,
 		)
+		if err != nil {
+			t.Fatalf("generate SIP vzscript: %v", err)
+		}
 		bootCommands, err = writeVZScriptForSIP(vm.dir, "disable", script)
 		if err != nil {
 			t.Fatalf("write SIP vzscript: %v", err)

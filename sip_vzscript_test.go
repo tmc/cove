@@ -8,7 +8,10 @@ import (
 )
 
 func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
-	got := generateSIPVZScript("disable", "admin", "secret", true, true)
+	got, err := generateSIPVZScript("disable", "admin", "secret", true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	wantSnippets := []string{
 		`startup-options 180s`,
@@ -44,7 +47,10 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 }
 
 func TestGenerateSIPVZScript_NoReboot(t *testing.T) {
-	got := generateSIPVZScript("disable", "", "", false, false)
+	got, err := generateSIPVZScript("disable", "", "", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(got, "reboot") {
 		t.Fatalf("unexpected reboot command in no-reboot script\n%s", got)
 	}
@@ -52,7 +58,10 @@ func TestGenerateSIPVZScript_NoReboot(t *testing.T) {
 
 func TestWriteVZScriptForSIP(t *testing.T) {
 	tmpDir := t.TempDir()
-	script := generateSIPVZScript("enable", "admin", "secret", false, true)
+	script, err := generateSIPVZScript("enable", "admin", "secret", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	path, err := writeVZScriptForSIP(tmpDir, "enable", script)
 	if err != nil {
