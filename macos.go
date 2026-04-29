@@ -2434,7 +2434,7 @@ func createMessageOverlay(size corefoundation.CGSize, title, subtitle string, wh
 	whiteColor := objc.Send[objc.ID](
 		objc.ID(objc.GetClass("NSColor")),
 		objc.Sel("colorWithWhite:alpha:"),
-		1.0, 0.7,
+		1.0, 0.62,
 	)
 	objc.Send[objc.ID](label.ID, objc.Sel("setTextColor:"), whiteColor)
 	objc.Send[objc.ID](label.ID, objc.Sel("setBezeled:"), false)
@@ -2455,7 +2455,7 @@ func createMessageOverlay(size corefoundation.CGSize, title, subtitle string, wh
 		subtitleColor := objc.Send[objc.ID](
 			objc.ID(objc.GetClass("NSColor")),
 			objc.Sel("colorWithWhite:alpha:"),
-			1.0, 0.55,
+			1.0, 0.38,
 		)
 		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setTextColor:"), subtitleColor)
 		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setBezeled:"), false)
