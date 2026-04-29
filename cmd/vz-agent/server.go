@@ -13,10 +13,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/tmc/vz-macos/proto/agentpb"
@@ -38,10 +40,18 @@ type systemInfo struct {
 
 type agentServer struct {
 	agentpbconnect.UnimplementedAgentHandler
+	mu    sync.Mutex
+	execs map[string]*activeExec
+}
+
+type activeExec struct {
+	pid   int
+	tty   bool
+	ttyFD int
 }
 
 func newAgentServer() *agentServer {
-	return &agentServer{}
+	return &agentServer{execs: make(map[string]*activeExec)}
 }
 
 func (s *agentServer) Ping(_ context.Context, _ *connect.Request[pb.PingRequest]) (*connect.Response[pb.PingResponse], error) {
@@ -101,7 +111,12 @@ func (s *agentServer) Exec(ctx context.Context, req *connect.Request[pb.ExecRequ
 	cmd.Stderr = &stderr
 
 	start := time.Now()
-	err = cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("start: %v", err))
+	}
+	s.trackExec(r, cmd)
+	err = cmd.Wait()
+	s.untrackExec(r.GetExecId())
 	duration := time.Since(start).Seconds()
 
 	exitCode := 0
@@ -140,6 +155,8 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 	if err := cmd.Start(); err != nil {
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("start: %v", err))
 	}
+	s.trackExec(r, cmd)
+	defer s.untrackExec(r.GetExecId())
 
 	done := make(chan error, 2)
 	go streamPipe(stream, stdoutPipe, pb.ExecOutput_STDOUT, done)
@@ -154,6 +171,95 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 		}
 	}
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
+}
+
+func (s *agentServer) ResizeExecTTY(_ context.Context, req *connect.Request[pb.ResizeExecTTYRequest]) (*connect.Response[pb.ResizeExecTTYResponse], error) {
+	r := req.Msg
+	if r.GetExecId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exec_id required"))
+	}
+	if r.GetRows() == 0 || r.GetCols() == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("rows and cols required"))
+	}
+	exec, ok := s.lookupExec(r.GetExecId())
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("exec not found"))
+	}
+	if !exec.tty || exec.ttyFD < 0 {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("exec has no tty"))
+	}
+	ws := &unix.Winsize{Row: uint16(r.GetRows()), Col: uint16(r.GetCols())}
+	if err := unix.IoctlSetWinsize(exec.ttyFD, unix.TIOCSWINSZ, ws); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resize tty: %v", err))
+	}
+	return connect.NewResponse(&pb.ResizeExecTTYResponse{}), nil
+}
+
+func (s *agentServer) SignalExec(_ context.Context, req *connect.Request[pb.SignalExecRequest]) (*connect.Response[pb.SignalExecResponse], error) {
+	r := req.Msg
+	if r.GetExecId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exec_id required"))
+	}
+	if !allowedExecSignal(r.GetSignal()) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported signal"))
+	}
+	exec, ok := s.lookupExec(r.GetExecId())
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("exec not found"))
+	}
+	if err := syscall.Kill(-exec.pid, syscall.Signal(r.GetSignal())); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("signal exec: %v", err))
+	}
+	return connect.NewResponse(&pb.SignalExecResponse{}), nil
+}
+
+func (s *agentServer) SetTime(_ context.Context, req *connect.Request[pb.SetTimeRequest]) (*connect.Response[pb.SetTimeResponse], error) {
+	ts := req.Msg.GetTime()
+	if ts == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("time required"))
+	}
+	if err := ts.CheckValid(); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid time: %v", err))
+	}
+	tv := unix.NsecToTimeval(ts.AsTime().UnixNano())
+	if err := unix.Settimeofday(&tv); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("set time: %v", err))
+	}
+	return connect.NewResponse(&pb.SetTimeResponse{}), nil
+}
+
+func (s *agentServer) trackExec(r *pb.ExecRequest, cmd *exec.Cmd) {
+	if r.GetExecId() == "" || cmd.Process == nil {
+		return
+	}
+	s.mu.Lock()
+	s.execs[r.GetExecId()] = &activeExec{pid: cmd.Process.Pid, tty: r.GetTty(), ttyFD: -1}
+	s.mu.Unlock()
+}
+
+func (s *agentServer) untrackExec(execID string) {
+	if execID == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.execs, execID)
+	s.mu.Unlock()
+}
+
+func (s *agentServer) lookupExec(execID string) (*activeExec, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	exec, ok := s.execs[execID]
+	return exec, ok
+}
+
+func allowedExecSignal(sig int32) bool {
+	switch sig {
+	case int32(syscall.SIGINT), int32(syscall.SIGTERM), int32(syscall.SIGKILL):
+		return true
+	default:
+		return false
+	}
 }
 
 func newExecCommand(ctx context.Context, r *pb.ExecRequest) (*exec.Cmd, error) {
@@ -175,6 +281,9 @@ func newExecCommand(ctx context.Context, r *pb.ExecRequest) (*exec.Cmd, error) {
 		if err := setUser(cmd, *r.User); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("set user: %v", err))
 		}
+	}
+	if r.GetExecId() != "" {
+		ensureSysProcAttr(cmd).Setpgid = true
 	}
 	if r.Stdin != nil {
 		cmd.Stdin = bytes.NewReader(r.Stdin)
@@ -446,11 +555,16 @@ func setUser(cmd *exec.Cmd, username string) error {
 	var uid, gid uint32
 	fmt.Sscanf(u.Uid, "%d", &uid)
 	fmt.Sscanf(u.Gid, "%d", &gid)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid: uid,
-			Gid: gid,
-		},
+	ensureSysProcAttr(cmd).Credential = &syscall.Credential{
+		Uid: uid,
+		Gid: gid,
 	}
 	return nil
+}
+
+func ensureSysProcAttr(cmd *exec.Cmd) *syscall.SysProcAttr {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	return cmd.SysProcAttr
 }
