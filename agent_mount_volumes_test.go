@@ -74,6 +74,32 @@ func TestAgentMountVolumesDispatchPerGuestOS(t *testing.T) {
 	}
 }
 
+func TestLinuxVirtioFSMountArgsMapGuestUser(t *testing.T) {
+	got := virtioFSMountArgsWithOwner(
+		vmconfig.VolumeMount{Tag: "work", MountOpts: []string{"cache=metadata"}},
+		"/mnt/work",
+		true,
+		virtioFSOwner{UID: 1001, GID: 1002},
+	)
+	want := []string{"mount", "-t", "virtiofs", "-o", "cache=metadata,uid=1001,gid=1002", "work", "/mnt/work"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("linux mount args = %v, want %v", got, want)
+	}
+}
+
+func TestLinuxVirtioFSMountArgsKeepExplicitOwner(t *testing.T) {
+	got := virtioFSMountArgsWithOwner(
+		vmconfig.VolumeMount{Tag: "work", MountOpts: []string{"uid=2000", "gid=2000"}},
+		"/mnt/work",
+		true,
+		virtioFSOwner{UID: 1001, GID: 1002},
+	)
+	want := []string{"mount", "-t", "virtiofs", "-o", "cache=none,uid=2000,gid=2000", "work", "/mnt/work"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("linux mount args = %v, want %v", got, want)
+	}
+}
+
 func firstOrEmpty(s []string) string {
 	if len(s) == 0 {
 		return ""

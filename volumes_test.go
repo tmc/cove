@@ -14,38 +14,43 @@ func TestVirtioFSMountArgsLinux(t *testing.T) {
 		MountOpts: []string{"nodev", "noatime"},
 	}
 	got := virtioFSMountArgs(m, "/mnt/work", true)
-	want := []string{"mount", "-t", "virtiofs", "-o", "ro,cache=none,nodev,noatime", "work", "/mnt/work"}
+	want := []string{"mount", "-t", "virtiofs", "-o", "ro,cache=none,nodev,noatime,uid=1000,gid=1000", "work", "/mnt/work"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("virtioFSMountArgs(linux) = %#v, want %#v", got, want)
 	}
 }
 
-// TestVirtioFSMountArgsLinuxDefaultsCacheNone verifies that with NO user
-// opts, Linux mounts still get cache=none injected. This is the path the
-// brief targets: `cove run -linux -vol ~/code:work` should give a
-// cache-coherent guest mount without the user knowing about the option.
 func TestVirtioFSMountArgsLinuxDefaultsCacheNone(t *testing.T) {
 	m := vmconfig.VolumeMount{Tag: "work"}
 	got := virtioFSMountArgs(m, "/mnt/work", true)
-	want := []string{"mount", "-t", "virtiofs", "-o", "cache=none", "work", "/mnt/work"}
+	want := []string{"mount", "-t", "virtiofs", "-o", "cache=none,uid=1000,gid=1000", "work", "/mnt/work"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("virtioFSMountArgs(linux default) = %#v, want %#v", got, want)
 	}
 }
 
-// TestVirtioFSMountArgsLinuxRespectsExplicitCache verifies that a user who
-// deliberately picks a different cache mode (e.g. cache=metadata for a
-// read-mostly workload) keeps their setting; the helper does not silently
-// double-inject cache=none.
 func TestVirtioFSMountArgsLinuxRespectsExplicitCache(t *testing.T) {
 	m := vmconfig.VolumeMount{
 		Tag:       "work",
 		MountOpts: []string{"cache=metadata", "noatime"},
 	}
 	got := virtioFSMountArgs(m, "/mnt/work", true)
-	want := []string{"mount", "-t", "virtiofs", "-o", "cache=metadata,noatime", "work", "/mnt/work"}
+	want := []string{"mount", "-t", "virtiofs", "-o", "cache=metadata,noatime,uid=1000,gid=1000", "work", "/mnt/work"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("virtioFSMountArgs(linux explicit cache) = %#v, want %#v", got, want)
+	}
+}
+
+func TestLinuxVirtioFSOwner(t *testing.T) {
+	dir := t.TempDir()
+	if got := linuxVirtioFSOwner(dir); got.UID != 1000 || got.GID != 1000 {
+		t.Fatalf("empty owner = %d:%d, want 1000:1000", got.UID, got.GID)
+	}
+	if err := vmconfig.SetGuestUser(dir, 1001, 1002); err != nil {
+		t.Fatalf("SetGuestUser() error = %v", err)
+	}
+	if got := linuxVirtioFSOwner(dir); got.UID != 1001 || got.GID != 1002 {
+		t.Fatalf("saved owner = %d:%d, want 1001:1002", got.UID, got.GID)
 	}
 }
 

@@ -104,18 +104,23 @@ cove run -linux -serial /tmp/serial.log  # write to file
 Run x86-64 Linux binaries on ARM64 via Apple's Rosetta:
 
 ```bash
-cove run -linux -rosetta
+cove rosetta install
+cove run -linux
 ```
 
-Guest setup (inside the Linux VM):
+Rosetta is attached by default for Linux guests. cove auto-mounts `/run/rosetta`
+and registers the binfmt handler through the guest agent when it is available.
+Disable it with `-rosetta=false` if the guest should not receive the Rosetta
+share.
+
+If Rosetta is not installed on the host, cove prints a warning and boots the VM
+without x86-64 translation. Install it once:
 
 ```bash
-sudo mkdir -p /run/rosetta
-sudo mount -t virtiofs rosetta /run/rosetta
-sudo /run/rosetta/rosetta --register
+cove rosetta install
 ```
 
-After setup, x86-64 binaries run transparently.
+After registration, x86-64 binaries run transparently.
 
 Check status and install:
 
@@ -142,6 +147,18 @@ nested virtualization requires M3/M4 chip on macOS 15+. Run without --nested to 
 ```
 
 Nested guests share memory and CPU with the outer Linux VM. A nested guest cannot itself nest another VM.
+
+## VirtioFS Volumes
+
+Tagged `-vol` mounts are auto-mounted in Linux guests under `/mnt/<tag>` when the
+guest agent is running. cove adds `uid=<guest-user-uid>,gid=<guest-user-gid>` to
+the Linux VirtioFS mount options, so the provisioned user can write host files
+without `chmod`. New Linux VMs record `1000:1000` in `config.json`; older VMs
+fall back to the same first-user convention.
+
+Only the primary provisioned user receives write ownership on the auto-mapped
+mount. Secondary users can read the files but need guest-side group permissions
+or a separate mount with explicit `uid=`/`gid=` options.
 
 ## Architecture
 

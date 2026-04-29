@@ -43,6 +43,7 @@ type upConfig struct {
 	distro                   string
 	nested                   bool
 	cpuExplicit              bool
+	rosetta                  bool
 }
 
 // handleUp implements the "up" subcommand: install -> inject -> run -> vzscripts.
@@ -182,6 +183,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
 	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
+	fs.BoolVar(&cfg.rosetta, "rosetta", true, "Enable Rosetta translation support for Linux VMs")
 	fs.Usage = func() {
 		printUpUsage(os.Stderr, fs)
 	}
@@ -240,6 +242,7 @@ func applyUpConfig(cfg upConfig) {
 	if cfg.linux {
 		linuxMode = true
 	}
+	enableRosetta = cfg.rosetta
 	if cfg.desktop {
 		linuxDesktop = true
 	}

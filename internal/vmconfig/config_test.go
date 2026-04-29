@@ -23,8 +23,10 @@ func TestLoadMissing(t *testing.T) {
 func TestSaveLoad(t *testing.T) {
 	dir := t.TempDir()
 	want := &Config{
-		CPU:      4,
-		MemoryGB: 8,
+		CPU:          4,
+		MemoryGB:     8,
+		GuestUserUID: 1000,
+		GuestUserGID: 1000,
 		Volumes: []VolumeMount{
 			{HostPath: "/tmp/share", Tag: "share", ReadOnly: true},
 		},
@@ -51,7 +53,7 @@ func TestSaveLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got.CPU != want.CPU || got.MemoryGB != want.MemoryGB || got.PostInstallRecipes != want.PostInstallRecipes {
+	if got.CPU != want.CPU || got.MemoryGB != want.MemoryGB || got.GuestUserUID != want.GuestUserUID || got.GuestUserGID != want.GuestUserGID || got.PostInstallRecipes != want.PostInstallRecipes {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
 	if got.ParentVM != want.ParentVM || got.ParentSnapshot != want.ParentSnapshot {
@@ -68,6 +70,20 @@ func TestSaveLoad(t *testing.T) {
 	}
 	if !got.Agent.VerifiedAt.Equal(want.Agent.VerifiedAt) {
 		t.Fatalf("Load().Agent.VerifiedAt = %v, want %v", got.Agent.VerifiedAt, want.Agent.VerifiedAt)
+	}
+}
+
+func TestSetGuestUser(t *testing.T) {
+	dir := t.TempDir()
+	if err := SetGuestUser(dir, 1001, 1002); err != nil {
+		t.Fatalf("SetGuestUser() error = %v", err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.GuestUserUID != 1001 || got.GuestUserGID != 1002 {
+		t.Fatalf("guest user = %d:%d, want 1001:1002", got.GuestUserUID, got.GuestUserGID)
 	}
 }
 

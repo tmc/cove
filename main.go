@@ -199,7 +199,7 @@ func init() {
 	// Display configuration
 	flag.Var(&displays, "display", "display config: WIDTHxHEIGHT[@PPI] or preset (4k, 1080p, 720p)")
 	// Rosetta for Linux
-	flag.BoolVar(&enableRosetta, "rosetta", false, "enable Rosetta translation support when running Linux VMs")
+	flag.BoolVar(&enableRosetta, "rosetta", true, "enable Rosetta translation support when running Linux VMs")
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
 	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
@@ -859,6 +859,8 @@ Volume Mounting (-vol flag):
 
   If tag is omitted, the guest tag defaults to the host directory name.
   On macOS guests, tagged mounts are auto-mounted at /Volumes/<tag>.
+  On Linux guests, tagged mounts are auto-mounted at /mnt/<tag> with the
+  provisioned user's uid/gid (default 1000:1000) for writable host files.
   '/Volumes/My Shared Files' is the shared-folder flow, not the -vol flow.
   Parts containing "=" are guest mount options; they are primarily useful on Linux.
 
