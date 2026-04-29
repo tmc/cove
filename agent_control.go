@@ -677,16 +677,16 @@ func (s *ControlServer) checkAgentVersion(agentVer string) {
 
 	hostVer := hostVersion()
 
-	switch agentVersionCompare(hostVer, agentVer) {
-	case versionUnknown:
+	switch agentstate.CompareVersions(hostVer, agentVer) {
+	case agentstate.VersionUnknown:
 		return
-	case versionEqual:
+	case agentstate.VersionEqual:
 		log.Printf("agent-health: version match (%s)", agentVer)
 		return
-	case versionGuestNewer:
+	case agentstate.VersionGuestNewer:
 		log.Printf("agent-health: guest agent %s is newer than host %s; not downgrading", agentVer, hostVer)
 		return
-	case versionGuestOlder, versionDifferent:
+	case agentstate.VersionGuestOlder, agentstate.VersionDifferent:
 		// fall through to upgrade path
 	}
 
