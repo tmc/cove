@@ -130,11 +130,11 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 
 		if continueX, continueY, continueFound := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); continueFound && continueBelongsToOptions(width, continueX) {
 			if err := e.sendKey("return"); err == nil {
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				return nil
 			}
 			if err := e.clickAt(continueX, continueY, int(width), int(height)); err == nil {
-				time.Sleep(350 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				return nil
 			}
 		}
@@ -143,6 +143,12 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 		if !found {
 			time.Sleep(time.Second)
 			continue
+		}
+
+		if ok, err := e.activateStartupOptionsWithKeyboard(); err != nil {
+			return err
+		} else if ok {
+			return nil
 		}
 
 		clicked := false
@@ -156,22 +162,17 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 				return err
 			}
 			clicked = true
-			continueX, continueY, continueFound := e.waitForStartupOptionsContinue(2 * time.Second)
+			continueX, continueY, continueFound := e.waitForStartupOptionsContinue(750 * time.Millisecond)
 			if continueFound {
 				if err := e.clickAt(continueX, continueY, int(width), int(height)); err == nil {
-					time.Sleep(500 * time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 					return nil
 				}
 				if err := e.sendKey("return"); err == nil {
-					time.Sleep(500 * time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 					return nil
 				}
 			}
-		}
-		if ok, err := e.activateStartupOptionsWithKeyboard(); err != nil {
-			return err
-		} else if ok {
-			return nil
 		}
 		if clicked {
 			time.Sleep(800 * time.Millisecond)
@@ -186,33 +187,15 @@ func (e *automationExecutor) activateStartupOptionsWithKeyboard() (bool, error) 
 		if err := e.sendKey(key); err != nil {
 			return false, err
 		}
-		time.Sleep(350 * time.Millisecond)
-		img := e.captureScreen()
-		if img == nil {
-			continue
-		}
-		width := float64(img.Bounds().Dx())
-		if x, _, found := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
+		if _, _, found := e.waitForStartupOptionsContinue(750 * time.Millisecond); found {
 			if err := e.sendKey("return"); err != nil {
 				return false, err
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			return true, nil
 		}
 	}
 
-	if err := e.sendKey("return"); err != nil {
-		return false, err
-	}
-	time.Sleep(500 * time.Millisecond)
-	img := e.captureScreen()
-	if img == nil || len(ocrTexts(e.ocr, img)) == 0 {
-		return true, nil
-	}
-	width := float64(img.Bounds().Dx())
-	if x, _, found := e.ocr.FindTextWithOptions(img, "Continue", ocrx.SearchOptions{}); found && continueBelongsToOptions(width, x) {
-		return true, nil
-	}
 	return false, nil
 }
 
@@ -240,19 +223,24 @@ type startupClickPoint struct {
 
 func startupOptionsTilePoints(width, height, optX, optY float64) []startupClickPoint {
 	points := []startupClickPoint{
-		{X: 0.61 * width, Y: 0.45 * height},
-		{X: 0.61 * width, Y: 0.48 * height},
-		{X: 0.58 * width, Y: 0.45 * height},
-		{X: 0.64 * width, Y: 0.45 * height},
+		{X: optX, Y: optY - 0.09*height},
+		{X: optX, Y: optY - 0.07*height},
+		{X: optX, Y: optY - 0.11*height},
 	}
-	for _, xOffsetNorm := range []float64{0.00, -0.02, 0.02} {
-		for _, yOffsetNorm := range []float64{0.11, 0.09, 0.07} {
+	for _, xOffsetNorm := range []float64{-0.02, 0.02} {
+		for _, yOffsetNorm := range []float64{0.09, 0.07, 0.11} {
 			points = append(points, startupClickPoint{
 				X: optX + xOffsetNorm*width,
 				Y: optY - yOffsetNorm*height,
 			})
 		}
 	}
+	points = append(points,
+		startupClickPoint{X: 0.61 * width, Y: 0.45 * height},
+		startupClickPoint{X: 0.61 * width, Y: 0.48 * height},
+		startupClickPoint{X: 0.58 * width, Y: 0.45 * height},
+		startupClickPoint{X: 0.64 * width, Y: 0.45 * height},
+	)
 	return points
 }
 
@@ -599,7 +587,6 @@ func promptClearTexts(needle string) []string {
 			"System Integrity Protection is off",
 			"System Integrity Protection is enabled",
 			"Restart the machine",
-			"-bash-3.2#",
 		}
 	}
 	if strings.Contains(lowerNeedle, "authorized user") ||
@@ -615,7 +602,6 @@ func promptClearTexts(needle string) []string {
 			"System Integrity Protection is off",
 			"System Integrity Protection is enabled",
 			"Restart the machine",
-			"-bash-3.2#",
 		}
 	}
 	if strings.Contains(lowerNeedle, "password") {
@@ -625,7 +611,6 @@ func promptClearTexts(needle string) []string {
 			"System Integrity Protection is off",
 			"System Integrity Protection is enabled",
 			"Restart the machine",
-			"-bash-3.2#",
 		}
 	}
 	return nil

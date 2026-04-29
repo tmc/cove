@@ -1,7 +1,6 @@
 # sip-enable - Recovery automation for enabling SIP
 
 label-push 'SIP enable'
-wait 20s
 label-push 'Recovery picker'
 recovery-options 180s
 recovery-continue 240s
@@ -14,21 +13,17 @@ key cmd+k
 wait 500ms
 type-keycodes 'csrutil enable'
 key return
-wait 2s
 label-pop
 label-push 'csrutil prompts'
-answer-visible -optional -timeout 45s -progress 'Authorized user' -progress 'Enter username' -progress 'user name' -progress 'Password' -progress 'Enter password' -progress 'password for user' -progress 'System Integrity Protection is on.' 'y/n' 'y' 'Are you sure' 'y' 'security level to full boot security' 'y'
-wait 1s
-answer-visible -optional -skip-empty -timeout 5s -progress 'Password' -progress 'Enter password' -progress 'password for user' -progress 'System Integrity Protection is on.' 'Authorized user' $SIP_USER 'Enter username' $SIP_USER 'user name' $SIP_USER
-wait 1s
-answer-visible -optional -skip-empty -timeout 45s -progress 'System Integrity Protection is on.' -progress '-bash-3.2#' 'Password' $SIP_PASSWORD 'Enter password' $SIP_PASSWORD 'password for user' $SIP_PASSWORD
-wait 2s
+answer-visible -optional -timeout 45s -delay 500ms -progress 'Authorized user' -progress 'Enter username' -progress 'user name' -progress 'Password' -progress 'Enter password' -progress 'password for user' -progress 'System Integrity Protection is on.' 'y/n' 'y' 'Are you sure' 'y' 'security level to full boot security' 'y'
+answer-visible -optional -skip-empty -timeout 5s -delay 500ms -progress 'Password' -progress 'Enter password' -progress 'password for user' -progress 'System Integrity Protection is on.' 'Authorized user' $SIP_USER 'Enter username' $SIP_USER 'user name' $SIP_USER
+answer-visible -optional -skip-empty -timeout 45s -delay 500ms -progress 'System Integrity Protection is on.' -progress '-bash-3.2#' 'Password' $SIP_PASSWORD 'Enter password' $SIP_PASSWORD 'password for user' $SIP_PASSWORD
 ocr-wait 'System Integrity Protection is on.' 60s
 [text-visible:System+Integrity+Protection+is+on.] screenshot
 label-pop
 label-push 'Reboot'
 [text-visible:System+Integrity+Protection+is+on.] type-keycodes 'reboot'
 [text-visible:System+Integrity+Protection+is+on.] key return
-wait 2s
+wait 500ms
 label-pop
 label-pop

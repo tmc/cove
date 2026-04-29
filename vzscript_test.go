@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
@@ -69,6 +70,7 @@ func TestParseAnswerVisibleSkipEmpty(t *testing.T) {
 	got, err := parseAnswerVisibleArgs([]string{
 		"-optional",
 		"-skip-empty",
+		"-delay", "500ms",
 		"Authorized user", "",
 		"Password", "secret",
 	})
@@ -80,6 +82,9 @@ func TestParseAnswerVisibleSkipEmpty(t *testing.T) {
 	}
 	if got.pairs[0] != (promptAnswer{prompt: "Password", answer: "secret"}) {
 		t.Fatalf("pair = %#v", got.pairs[0])
+	}
+	if got.delay != 500*time.Millisecond {
+		t.Fatalf("delay = %v, want 500ms", got.delay)
 	}
 
 	got, err = parseAnswerVisibleArgs([]string{"-optional", "-skip-empty", "Password", ""})

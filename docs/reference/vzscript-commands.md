@@ -309,11 +309,12 @@ Wait for the first visible prompt from a set of alternatives, type its answer
 with keycode events, press Return, and wait for the prompt to clear or progress.
 
 ```
-answer-visible [-optional] [-skip-empty] [-timeout duration] [-progress text] <prompt> <answer>...
+answer-visible [-optional] [-skip-empty] [-timeout duration] [-delay duration] [-progress text] <prompt> <answer>...
 ```
 
 ```
 answer-visible -timeout 30s -progress "Password" "[y/n]" y "Are you sure" y
+answer-visible -timeout 30s -delay 500ms "[y/n]" y
 answer-visible -optional -timeout 5s "Authorized user" admin "user name" admin
 answer-visible -optional -skip-empty "Password" $SIP_PASSWORD
 ```
