@@ -99,8 +99,11 @@ func (s *ControlServer) captureDisplayImage() (image.Image, string) {
 		if !status.Headed {
 			if img, errMsg := s.capturePrivateGraphicsDisplay(); errMsg == "" {
 				return remember(img, "")
-			} else if verbose {
-				fmt.Printf("[screenshot] private capture unavailable: %s\n", errMsg)
+			} else {
+				if verbose {
+					fmt.Printf("[screenshot] private capture unavailable: %s\n", errMsg)
+				}
+				return remember(nil, errMsg)
 			}
 		}
 	}
