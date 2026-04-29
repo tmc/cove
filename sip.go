@@ -125,7 +125,7 @@ func sipAuto(mode string, args []string) error {
 	fmt.Println()
 	fmt.Println("Run this to execute automation:")
 	fmt.Println()
-	fmt.Printf("  cove -vm %s run -recovery -no-resume -gui -unattended -usb %q -boot-commands %q\n",
+	fmt.Printf("  VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD=1 cove -vm %s run -recovery -no-resume -gui -unattended -usb %q -boot-commands %q\n",
 		sipTargetVMName(), recoveryPath, bootCmdsPath)
 	fmt.Println()
 	fmt.Printf("After reboot, verify with:\n  cove -vm %s sip status\n", sipTargetVMName())
@@ -177,10 +177,14 @@ func generateSIPVZScript(mode, username, password string, confirm, reboot bool) 
 		"",
 		"wait 20s",
 		"startup-options 180s",
-		"recovery-continue 180s",
-		"click-menu-item Utilities Terminal 60s",
+		"recovery-continue 240s",
+		"wait-menu-text Utilities 180s",
+		"key cmd+shift+t",
 		"ocr-wait "+scriptQuote("-bash-3.2#")+" 60s",
-		"type "+scriptQuote("csrutil "+mode),
+		"key cmd+k",
+		"wait 500ms",
+		"ocr-wait "+scriptQuote("-bash-3.2#")+" 30s",
+		"type-keycodes "+scriptQuote("csrutil "+mode),
 		"key return",
 		"wait 2s",
 	)
@@ -190,15 +194,15 @@ func generateSIPVZScript(mode, username, password string, confirm, reboot bool) 
 	}
 	if username != "" {
 		lines = append(lines,
-			textVisibleCmd("Authorized user", "type "+scriptQuote(username)),
+			textVisibleCmd("Authorized user", "type-keycodes "+scriptQuote(username)),
 			textVisibleCmd("Authorized user", "key return"),
-			textVisibleCmd("Authorized user", "wait-prompt-clear "+scriptQuote("Authorized user")),
-			textVisibleCmd("Enter username", "type "+scriptQuote(username)),
+			textVisibleCmd("Authorized user", "wait-prompt-clear "+scriptQuote("Authorized user")+" 20s"),
+			textVisibleCmd("Enter username", "type-keycodes "+scriptQuote(username)),
 			textVisibleCmd("Enter username", "key return"),
-			textVisibleCmd("Enter username", "wait-prompt-clear "+scriptQuote("Enter username")+" 1s"),
-			textVisibleCmd("user name", "type "+scriptQuote(username)),
+			textVisibleCmd("Enter username", "wait-prompt-clear "+scriptQuote("Enter username")+" 5s"),
+			textVisibleCmd("user name", "type-keycodes "+scriptQuote(username)),
 			textVisibleCmd("user name", "key return"),
-			textVisibleCmd("user name", "wait-prompt-clear "+scriptQuote("user name")+" 1s"),
+			textVisibleCmd("user name", "wait-prompt-clear "+scriptQuote("user name")+" 5s"),
 			"wait 1s",
 		)
 	}
@@ -206,21 +210,22 @@ func generateSIPVZScript(mode, username, password string, confirm, reboot bool) 
 		lines = append(lines,
 			textVisibleCmd("Password", "type-keycodes "+scriptQuote(password)),
 			textVisibleCmd("Password", "key return"),
-			textVisibleCmd("Password", "wait-prompt-clear "+scriptQuote("Password")),
+			textVisibleCmd("Password", "wait-prompt-clear "+scriptQuote("Password")+" 20s"),
 			textVisibleCmd("Enter password", "type-keycodes "+scriptQuote(password)),
 			textVisibleCmd("Enter password", "key return"),
-			textVisibleCmd("Enter password", "wait-prompt-clear "+scriptQuote("Enter password")+" 1s"),
+			textVisibleCmd("Enter password", "wait-prompt-clear "+scriptQuote("Enter password")+" 5s"),
 			textVisibleCmd("password for user", "type-keycodes "+scriptQuote(password)),
 			textVisibleCmd("password for user", "key return"),
-			textVisibleCmd("password for user", "wait-prompt-clear "+scriptQuote("password for user")+" 1s"),
-			"wait 3s",
+			textVisibleCmd("password for user", "wait-prompt-clear "+scriptQuote("password for user")+" 20s"),
+			"wait 10s",
 		)
 	}
 	lines = append(lines, textVisibleCmd(sipSuccessText(mode), "screenshot"))
 	if reboot {
 		lines = append(lines,
-			textVisibleCmd(sipSuccessText(mode), "type reboot"),
-			textVisibleCmd(sipSuccessText(mode), "key return"),
+			"type-keycodes "+scriptQuote("reboot"),
+			"key return",
+			"wait 2s",
 		)
 	}
 	lines = append(lines, "")
@@ -231,10 +236,10 @@ func sipConfirmVZScriptLines() []string {
 	return []string{
 		textVisibleCmd("Are you sure", "type-keycodes "+scriptQuote("y")),
 		textVisibleCmd("Are you sure", "key return"),
-		textVisibleCmd("Are you sure", "wait-prompt-clear "+scriptQuote("Are you sure")),
+		textVisibleCmd("Are you sure", "wait-prompt-clear "+scriptQuote("Are you sure")+" 20s"),
 		textVisibleCmd("[y/n]", "type-keycodes "+scriptQuote("y")),
 		textVisibleCmd("[y/n]", "key return"),
-		textVisibleCmd("[y/n]", "wait-prompt-clear "+scriptQuote("[y/n]")),
+		textVisibleCmd("[y/n]", "wait-prompt-clear "+scriptQuote("[y/n]")+" 20s"),
 		"wait 1s",
 	}
 }

@@ -12,19 +12,21 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 
 	wantSnippets := []string{
 		`startup-options 180s`,
-		`recovery-continue 180s`,
-		`click-menu-item Utilities Terminal 60s`,
+		`recovery-continue 240s`,
+		`wait-menu-text Utilities 180s`,
+		`key cmd+shift+t`,
 		`ocr-wait '-bash-3.2#' 60s`,
-		`type 'csrutil disable'`,
+		`key cmd+k`,
+		`type-keycodes 'csrutil disable'`,
 		`[text-visible:Are+you+sure] type-keycodes 'y'`,
 		`[text-visible:%5By%2Fn%5D] type-keycodes 'y'`,
-		`[text-visible:Authorized+user] type 'admin'`,
-		`[text-visible:Authorized+user] wait-prompt-clear 'Authorized user'`,
-		`[text-visible:Enter+username] wait-prompt-clear 'Enter username' 1s`,
+		`[text-visible:Authorized+user] type-keycodes 'admin'`,
+		`[text-visible:Authorized+user] wait-prompt-clear 'Authorized user' 20s`,
+		`[text-visible:Enter+username] wait-prompt-clear 'Enter username' 5s`,
 		`[text-visible:Password] type-keycodes 'secret'`,
-		`[text-visible:Enter+password] wait-prompt-clear 'Enter password' 1s`,
+		`[text-visible:Enter+password] wait-prompt-clear 'Enter password' 5s`,
 		`[text-visible:System+Integrity+Protection+is+off.] screenshot`,
-		`[text-visible:System+Integrity+Protection+is+off.] type reboot`,
+		`type-keycodes 'reboot'`,
 	}
 	for _, want := range wantSnippets {
 		if !strings.Contains(got, want) {
@@ -43,7 +45,7 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 
 func TestGenerateSIPVZScript_NoReboot(t *testing.T) {
 	got := generateSIPVZScript("disable", "", "", false, false)
-	if strings.Contains(got, "type reboot") {
+	if strings.Contains(got, "reboot") {
 		t.Fatalf("unexpected reboot command in no-reboot script\n%s", got)
 	}
 }
