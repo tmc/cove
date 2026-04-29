@@ -299,9 +299,10 @@ func runUpPipeline(cfg upConfig) error {
 		fmt.Println("=== Step 2/3: Provisioning VM ===")
 		opts := InjectOptions{
 			Config: ProvisionConfig{
-				Username: cfg.user,
-				Password: cfg.password,
-				Admin:    true,
+				Username:          cfg.user,
+				Password:          cfg.password,
+				Admin:             true,
+				BootstrapRecovery: true,
 			},
 			SkipSetupAssistant: true,
 			AutoLogin:          true,

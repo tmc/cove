@@ -210,9 +210,10 @@ func stopVMAndInject(vm *virtualMachine) {
 	fmt.Println("Provisioning VM disk...")
 	injectOpts := InjectOptions{
 		Config: ProvisionConfig{
-			Username: provisionUser,
-			Password: provisionPassword,
-			Admin:    provisionAdmin,
+			Username:          provisionUser,
+			Password:          provisionPassword,
+			Admin:             provisionAdmin,
+			BootstrapRecovery: true,
 		},
 		SkipSetupAssistant: true,
 		AutoLogin:          true,
