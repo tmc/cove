@@ -124,18 +124,21 @@ Until a tighter path lands, users must grant FDA to the in-guest
 
 `cove ctl agent-status` reports `daemon=connected, user=connected`
 even before the FDA grant — TCC failures are silent timeouts on
-readdir, not connection errors. A future `cove doctor` check could
-detect this by attempting a `readdir` probe and surfacing the FDA
-prompt. Tracked as a follow-up.
+readdir, not connection errors.
+
+`cove doctor` now detects this while the VM is running. It uses the user
+agent to find the first non-system `/Volumes` mount, runs a bounded
+`ls` probe against that path, and reports the Full Disk Access grant
+steps if the probe times out or fails. Use `cove doctor --tcc-path
+/Volumes/<tag>` to force a specific VirtioFS mount.
 
 ### Tighter unattended paths (follow-ups, not landed)
 
 - Bundle the in-guest agent inside a TCC-aware app (signing identity
   + FDA pre-grant via DEP) — heavy lift, requires Apple Developer
   account and MDM.
-- Trigger an FDA prompt during `cove up` (`vz-agent` attempts a
-  protected op on first run) so the user gets a one-shot system
-  dialog instead of a hidden Settings step.
+- Trigger the same FDA probe during `cove up` once a guest desktop and
+  user agent are known to be available.
 - Use VirtioFS `cache=none` plus a launchd `BootstrapBootstrap` flag
   so the mount is owned by the user session — investigation pending.
 

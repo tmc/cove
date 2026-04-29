@@ -208,10 +208,12 @@ cove doctor [flags]
 |------|---------|-------------|
 | `-v` | false | Verbose output |
 | `-fix` | false | Attempt to fix issues automatically |
+| `-tcc-path` | first non-system `/Volumes` mount | Guest path to use for the Full Disk Access probe |
 
 ```bash
 cove doctor
 cove doctor --fix
+cove doctor --tcc-path /Volumes/work
 ```
 
 ---

@@ -39,7 +39,7 @@ Any change that adds a privileged operation, network egress path, host-guest fil
 
 ### TCC and VirtioFS
 
-macOS TCC can block background agents from traversing protected user paths and VirtioFS mounts, even as root. v0.1.1 documents the current state: routing through the user agent is scaffolding, but VirtioFS `readdir` still requires a manual Full Disk Access grant for the in-guest agent binary. See `docs/research/tcc-via-user-agent.md`.
+macOS TCC can block background agents from traversing protected user paths and VirtioFS mounts, even as root. `cove doctor` probes non-system `/Volumes` mounts through the in-guest user agent and surfaces the Full Disk Access grant path when directory enumeration is blocked. See `docs/research/tcc-via-user-agent.md`.
 
 ### Apple virtualization license limits
 

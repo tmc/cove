@@ -149,7 +149,9 @@ cove agent-upgrade
 
 **Cause:** TCC (macOS privacy) blocks the launchd daemon — vz-agent runs as a LaunchDaemon — from Full Disk Access.
 
-**Fix:** grant Full Disk Access to `/usr/local/libexec/cove/vz-agent` (or wherever it's installed) in System Settings → Privacy → Full Disk Access. Alternatives:
+**Fix:** run `cove doctor` while the VM is running. It probes the first non-system `/Volumes` mount through the user agent and reports the Full Disk Access grant path if directory enumeration is blocked. You can also probe a specific path with `cove doctor --tcc-path /Volumes/<tag>`.
+
+If the probe fails, grant Full Disk Access to `/usr/local/bin/vz-agent` inside the guest in System Settings → Privacy & Security → Full Disk Access. Alternatives:
 
 - Disable SIP on the guest.
 - Proxy commands through a logged-in user session via `cove ctl agent-user-exec`.
