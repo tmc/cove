@@ -77,6 +77,7 @@ UI automation commands (via control socket):
   ocr-gone <text> [timeout] [region]   Wait until text disappears from screen
   ocr                         Run OCR; stdout is all recognized text
   screenshot [file]           Capture VM screen to JPEG file
+  reboot-to-recovery [timeout] Stop VM and start macOS Recovery
   type <text>                 Type text into the VM
   key <spec>                  Send key event (return, tab, cmd+v, etc.)
   click <x> <y>              Click at normalized coordinates (0-1)

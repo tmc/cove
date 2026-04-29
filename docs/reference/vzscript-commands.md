@@ -317,6 +317,17 @@ recovery-options
 
 `startup-options` is kept as an alias for older scripts.
 
+### reboot-to-recovery
+
+Stop the running VM and start macOS Recovery using Virtualization's Recovery
+start option. After this command, use `recovery-options` to advance from the
+startup picker into Recovery.
+
+```
+reboot-to-recovery
+recovery-options
+```
+
 ### recovery-continue
 
 Continue from Recovery setup screens, such as the language or continue prompt.
