@@ -480,6 +480,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "store":
+			if err := handleStoreCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "vzscript":
 			if err := vzscriptCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -739,6 +745,7 @@ VM Management:
   compact         Zero guest free space for smaller pushes
   push            Plan a VM disk OCI push (dry-run)
   pull            Validate an OCI pull plan (dry-run)
+  store           Manage the local OCI blob store
   gc              Delete old disposable VM clones
   template        Manage VM templates (save/list/create)
 

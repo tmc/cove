@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -125,6 +126,62 @@ func TestPullDiskDownloadsRegistryChunks(t *testing.T) {
 		if string(got) != tt.want {
 			t.Fatalf("%s = %q, want %q", tt.name, string(got), tt.want)
 		}
+	}
+}
+
+func TestPullDiskReusesStoredBlobs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	diskData := []byte("bootable")
+	manifest, blobs := pullCompressedTestManifest(t, diskData)
+	var blobGets atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/me/dev-vm/manifests/v1":
+			w.Header().Set("Docker-Content-Digest", "sha256:manifest")
+			if err := json.NewEncoder(w).Encode(manifest); err != nil {
+				t.Fatalf("Encode() error = %v", err)
+			}
+		default:
+			const prefix = "/v2/me/dev-vm/blobs/"
+			if !strings.HasPrefix(r.URL.Path, prefix) {
+				t.Fatalf("path = %q", r.URL.Path)
+			}
+			blobGets.Add(1)
+			digest := strings.TrimPrefix(r.URL.Path, prefix)
+			data, ok := blobs[digest]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write(data)
+		}
+	}))
+	defer srv.Close()
+
+	opts := pullOptions{RegistryBaseURL: srv.URL, As: "first"}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(first): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(first): %v", err)
+	}
+	firstBlobGets := blobGets.Load()
+	if firstBlobGets == 0 {
+		t.Fatal("first pull did not fetch any blobs")
+	}
+
+	opts.As = "second"
+	plan, err = buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(second): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(second): %v", err)
+	}
+	if got := blobGets.Load(); got != firstBlobGets {
+		t.Fatalf("blob GETs after second pull = %d, want %d", got, firstBlobGets)
 	}
 }
 
