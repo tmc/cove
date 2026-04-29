@@ -435,6 +435,8 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.getVMStatus()
 	case "capabilities":
 		return s.getCapabilities()
+	case "reboot-to-recovery", "boot-recovery":
+		return s.rebootToRecovery()
 	case "shared-folders-apply":
 		return s.handleSharedFoldersApply()
 	case "iterm2-proxy-stop":
@@ -1840,6 +1842,66 @@ func (s *ControlServer) stopVM() *controlpb.ControlResponse {
 	}
 }
 
+func (s *ControlServer) rebootToRecovery() *controlpb.ControlResponse {
+	s.mu.Lock()
+	vm := s.vm
+	queue := s.vmQueue
+	s.mu.Unlock()
+	if vm.ID == 0 || queue.Handle() == 0 {
+		return &controlpb.ControlResponse{Error: "VM not configured"}
+	}
+
+	done := make(chan error, 1)
+	DispatchAsyncQueue(queue, func() {
+		startRecovery := func() {
+			if hasSuspendState() {
+				moveAsideSuspendState("recovery-mode")
+			}
+			setActiveBootSessionMode(bootSessionModeRecovery)
+			opts := vz.NewVZMacOSVirtualMachineStartOptions()
+			opts.SetStartUpFromMacOSRecovery(true)
+			vm.StartWithOptionsCompletionHandler(&opts.VZVirtualMachineStartOptions, func(err error) {
+				done <- snapshotNSError(err)
+			})
+		}
+
+		state := vz.VZVirtualMachineState(vm.State())
+		switch state {
+		case vz.VZVirtualMachineStateStopped:
+			startRecovery()
+		case vz.VZVirtualMachineStateRunning, vz.VZVirtualMachineStatePaused:
+			if !vm.CanStop() {
+				done <- fmt.Errorf("cannot stop VM in state: %s", state.String())
+				return
+			}
+			vm.StopWithCompletionHandler(func(err error) {
+				if err := snapshotNSError(err); err != nil {
+					done <- fmt.Errorf("stop before recovery: %w", err)
+					return
+				}
+				startRecovery()
+			})
+		default:
+			done <- fmt.Errorf("cannot boot recovery from state: %s", state.String())
+		}
+	})
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("reboot to recovery failed: %v", err)}
+		}
+		msg := "booted to recovery mode"
+		return &controlpb.ControlResponse{
+			Success: true,
+			Data:    msg,
+			Result:  &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}},
+		}
+	case <-time.After(2 * time.Minute):
+		return &controlpb.ControlResponse{Error: "reboot to recovery timed out"}
+	}
+}
+
 // requestStopVM sends an ACPI power button event for graceful shutdown.
 func (s *ControlServer) requestStopVM() *controlpb.ControlResponse {
 	if s.vm.ID == 0 || s.vmQueue.Handle() == 0 {
@@ -1937,7 +1999,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		},
 		"commands": []string{
 			"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
-			"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
+			"pause", "resume", "stop", "request-stop", "reboot-to-recovery", "snapshot", "memory", "network-info",
 			"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
 			"vnc-status", "debug-stub-status", "disk", "pit", "usb",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
@@ -1947,7 +2009,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 	}
 	commands := []string{
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
-		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
+		"pause", "resume", "stop", "request-stop", "reboot-to-recovery", "snapshot", "memory", "network-info",
 		"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
 		"vnc-status", "debug-stub-status", "disk", "pit", "usb",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",

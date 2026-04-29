@@ -67,6 +67,7 @@ Commands:
   resume                Resume paused VM
   stop                  Force stop VM
   request-stop          Send ACPI power button (graceful shutdown)
+  reboot-to-recovery    Stop VM and start macOS Recovery
   network-info          Get VM network info (MAC address, guest IP, mode)
   gui status            Report whether the VM is currently headed or headless
   gui open              Show the live VM window for a headless runtime
@@ -403,7 +404,7 @@ func ctlCommand(args []string) error {
 	req.AuthToken = resolveControlTokenForSocket(sock)
 
 	switch cmdType {
-	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "network-info", "shared-folders-apply":
+	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "reboot-to-recovery", "boot-recovery", "network-info", "shared-folders-apply":
 		// No payload needed
 
 	case "memory":

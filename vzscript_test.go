@@ -25,7 +25,8 @@ func TestVZScriptEngineCommands(t *testing.T) {
 		"guest-terminal", "guest-write", "guest-read", "guest-cp", "host-cp",
 		// UI automation commands.
 		"screenshot", "ocr", "ocr-click", "ocr-wait", "ocr-gone",
-		"wait-menu-text", "click-menu-item", "recovery-options", "startup-options", "recovery-continue",
+		"wait-menu-text", "click-menu-item", "reboot-to-recovery",
+		"recovery-options", "startup-options", "recovery-continue",
 		"wait-prompt-clear",
 		"type", "type-keycodes", "key", "click", "wait", "detect-page", "detect-screen",
 		// Standard commands.
@@ -136,6 +137,18 @@ func TestGenerateSIPVZScript_Syntax(t *testing.T) {
 	}
 	data := []byte(script)
 	if err := executeVZScriptSyntaxOnly(t, "sip-disable.vzscript", data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVZScriptSyntax_RebootToRecoveryFlow(t *testing.T) {
+	data := []byte(`# normal runtime can reboot to Recovery before Recovery UI steps
+reboot-to-recovery 2m
+recovery-options 180s
+recovery-continue 240s
+wait-menu-text Utilities 180s
+`)
+	if err := executeVZScriptSyntaxOnly(t, "reboot-recovery.vzscript", data); err != nil {
 		t.Fatal(err)
 	}
 }

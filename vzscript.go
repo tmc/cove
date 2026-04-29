@@ -25,6 +25,7 @@
 //	ocr                         Run OCR on current screen; stdout is all text
 //	screenshot [file]           Capture VM screen to file
 //	wait-menu-text <text> [timeout]  Wait for menu bar text
+//	reboot-to-recovery [timeout] Stop VM and start macOS Recovery
 //	recovery-options [timeout] Select Options in the Recovery startup picker
 //	startup-options [timeout]  Alias for recovery-options
 //	recovery-continue [timeout] Continue from Recovery setup screens
@@ -125,24 +126,25 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"append-path":    appendPathCmd(cfg),
 
 		// UI automation commands (via control socket).
-		"ocr-click":         vzOCRClickCmd(cfg),
-		"ocr-wait":          vzOCRWaitCmd(cfg),
-		"ocr-gone":          vzOCRGoneCmd(cfg),
-		"ocr":               vzOCRCmd(cfg),
-		"screenshot":        vzScreenshotCmd(cfg),
-		"wait-menu-text":    vzWaitMenuTextCmd(cfg),
-		"click-menu-item":   vzClickMenuItemCmd(cfg),
-		"recovery-options":  vzRecoveryOptionsCmd(cfg),
-		"startup-options":   vzRecoveryOptionsCmd(cfg),
-		"recovery-continue": vzRecoveryContinueCmd(cfg),
-		"type":              vzTypeCmd(cfg),
-		"type-keycodes":     vzTypeKeycodesCmd(cfg),
-		"key":               vzKeyCmd(cfg),
-		"click":             vzClickCmd(cfg),
-		"wait-prompt-clear": vzWaitPromptClearCmd(cfg),
-		"wait":              vzWaitCmd(),
-		"detect-page":       vzDetectPageCmd(cfg),
-		"detect-screen":     vzDetectScreenCmd(cfg),
+		"ocr-click":          vzOCRClickCmd(cfg),
+		"ocr-wait":           vzOCRWaitCmd(cfg),
+		"ocr-gone":           vzOCRGoneCmd(cfg),
+		"ocr":                vzOCRCmd(cfg),
+		"screenshot":         vzScreenshotCmd(cfg),
+		"wait-menu-text":     vzWaitMenuTextCmd(cfg),
+		"click-menu-item":    vzClickMenuItemCmd(cfg),
+		"reboot-to-recovery": vzRebootToRecoveryCmd(cfg),
+		"recovery-options":   vzRecoveryOptionsCmd(cfg),
+		"startup-options":    vzRecoveryOptionsCmd(cfg),
+		"recovery-continue":  vzRecoveryContinueCmd(cfg),
+		"type":               vzTypeCmd(cfg),
+		"type-keycodes":      vzTypeKeycodesCmd(cfg),
+		"key":                vzKeyCmd(cfg),
+		"click":              vzClickCmd(cfg),
+		"wait-prompt-clear":  vzWaitPromptClearCmd(cfg),
+		"wait":               vzWaitCmd(),
+		"detect-page":        vzDetectPageCmd(cfg),
+		"detect-screen":      vzDetectScreenCmd(cfg),
 
 		// Standard commands.
 		"cat":    defaults["cat"],
@@ -1174,6 +1176,52 @@ func vzClickMenuItemCmd(cfg vzscriptConfig) script.Cmd {
 			}()
 			ocr := ocrx.NewService(cfg.verbose)
 			return nil, clickMenuItemViaClient(client, ocr, menu, item, timeout)
+		},
+	)
+}
+
+func vzRebootToRecoveryCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "stop the VM and start macOS Recovery",
+			Args:    "[timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			timeout := 2 * time.Minute
+			if len(args) > 1 {
+				return nil, script.ErrUsage
+			}
+			if len(args) == 1 {
+				d, err := time.ParseDuration(args[0])
+				if err != nil {
+					return nil, fmt.Errorf("invalid timeout %q: %w", args[0], err)
+				}
+				timeout = d
+			}
+			if cfg.controlSrv != nil {
+				done := make(chan *controlpb.ControlResponse, 1)
+				go func() {
+					done <- cfg.controlSrv.rebootToRecovery()
+				}()
+				select {
+				case resp := <-done:
+					if !resp.Success {
+						return nil, fmt.Errorf("%s", resp.Error)
+					}
+					return nil, nil
+				case <-time.After(timeout):
+					return nil, fmt.Errorf("reboot to recovery timed out")
+				}
+			}
+			req := &controlpb.ControlRequest{Type: "reboot-to-recovery"}
+			resp, err := ctlSendRequest(cfg.socketPath, req, timeout, "reboot-to-recovery")
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success {
+				return nil, fmt.Errorf("%s", resp.Error)
+			}
+			return nil, nil
 		},
 	)
 }
