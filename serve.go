@@ -85,6 +85,7 @@ func runServeCmd(args []string) error {
 	}
 
 	checkSharedHost(cfg.PerVMAuth, cfg.TokenFile, nil)
+	warnIfDHCPLeaseTimeLong(os.Stderr)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
