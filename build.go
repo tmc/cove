@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/store"
 )
 
 type buildOptions struct {
@@ -23,6 +26,7 @@ type buildOptions struct {
 	KeepIntermediate bool
 	ChunkSizeMB      int
 	Compact          string
+	StoreDir         string
 }
 
 func handleBuild(args []string) error {
@@ -74,6 +78,10 @@ func handleBuild(args []string) error {
 }
 
 func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *http.Client) (buildPlan, error) {
+	return buildDryPlanWithStore(ctx, name, opts, client, store.New(opts.StoreDir))
+}
+
+func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, client *http.Client, blobStore store.Store) (buildPlan, error) {
 	_, parentDigest, err := resolveBuildBaseDigest(ctx, opts.Base)
 	if err != nil {
 		return buildPlan{}, fmt.Errorf("resolve base: %w", err)
@@ -92,7 +100,17 @@ func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *h
 		if err != nil {
 			return plan, err
 		}
-		plan.Steps = append(plan.Steps, buildPlanStep{Name: step.Name, Key: key, Meta: step.Meta})
+		planStep := buildPlanStep{Name: step.Name, Key: key, Meta: step.Meta}
+		if !opts.NoCache {
+			entry, err := loadBuildCacheEntry(blobStore, key)
+			if err == nil {
+				planStep.CacheHit = true
+				planStep.LayerDigest = entry.LayerDigest
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return plan, err
+			}
+		}
+		plan.Steps = append(plan.Steps, planStep)
 		currentParent = key
 	}
 	return plan, nil
@@ -111,6 +129,17 @@ func printBuildPlan(w io.Writer, plan buildPlan, opts buildOptions) {
 	for i, step := range plan.Steps {
 		fmt.Fprintf(w, "  step %d/%d: %s\n", i+1, len(plan.Steps), step.Name)
 		fmt.Fprintf(w, "    key: %s\n", step.Key)
+		if step.CacheHit {
+			fmt.Fprintf(w, "    cache: hit")
+			if step.LayerDigest != "" {
+				fmt.Fprintf(w, " (%s)", step.LayerDigest)
+			}
+			fmt.Fprintln(w)
+		} else if opts.NoCache {
+			fmt.Fprintln(w, "    cache: disabled")
+		} else {
+			fmt.Fprintln(w, "    cache: miss")
+		}
 		fmt.Fprintf(w, "    compact: %s\n", step.Meta.Compact)
 		if len(step.Meta.CacheEnv) > 0 {
 			fmt.Fprintf(w, "    cache-env: %s\n", strings.Join(step.Meta.CacheEnv, ", "))
