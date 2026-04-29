@@ -3,12 +3,13 @@ title: Linux VMs
 ---
 # Linux VMs
 
-Ubuntu Server and Desktop with cloud-init automated installation.
+Turnkey ARM64 Linux VMs with unattended installers for Ubuntu, Debian, Fedora, and Alpine.
 
 ## Quick Start
 
 ```bash
 cove install -linux                                # auto-downloads Ubuntu Server 24.04 ARM64
+cove install -linux -distro alpine                 # fast Alpine virt install
 cove run -linux -gui
 ```
 
@@ -27,14 +28,42 @@ cove up -linux -desktop -user myuser
 
 ## Installation
 
-The installer creates a cloud-init NoCloud datasource ISO with autoinstall configuration:
+The installer creates the right unattended seed for each distro:
+
+### Ubuntu
+
+Ubuntu uses Subiquity autoinstall with cloud-init NoCloud data.
 
 ```bash
 cove install -linux                                # downloads ISO automatically
 cove install -linux -iso ~/ubuntu-24.04-live-server-arm64.iso  # use local ISO
 ```
 
-The cloud-init configuration creates the user, enables SSH, and sets up LVM storage.
+### Debian
+
+Debian uses d-i preseed.
+
+```bash
+cove install -linux -distro debian
+```
+
+### Fedora
+
+Fedora uses kickstart.
+
+```bash
+cove install -linux -distro fedora
+```
+
+### Alpine
+
+Alpine uses a `setup-alpine` answers file loaded through an apkovl boot overlay.
+
+```bash
+cove install -linux -distro alpine
+```
+
+All four installers create the user, enable SSH, and partition the VM disk without prompting.
 
 ## Boot Modes
 
@@ -95,7 +124,7 @@ Linux VMs use:
 - **VZGenericPlatformConfiguration** -- generic platform for non-macOS guests
 - **VZEFIBootLoader** -- EFI boot with NVRAM variable store
 - **VZVirtioGraphicsDeviceConfiguration** -- Virtio GPU for display
-- **Cloud-init NoCloud** -- automated installation via user-data/meta-data ISO
+- **Cloud-init, preseed, kickstart, setup-alpine** -- distro-native unattended install data
 
 ## Known Issues
 

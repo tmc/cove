@@ -40,6 +40,7 @@ type upConfig struct {
 	verbose                  bool
 	linux                    bool
 	desktop                  bool
+	distro                   string
 }
 
 // handleUp implements the "up" subcommand: install -> inject -> run -> vzscripts.
@@ -79,12 +80,16 @@ func parseUpFlags(args []string) (upConfig, error) {
 	if cfg.desktop {
 		cfg.linux = true
 	}
-	// For Linux, user is optional (defaults to ubuntu/ubuntu).
+	variant, err := parseLinuxVariant(cfg.distro, cfg.desktop)
+	if err != nil {
+		return upConfig{}, err
+	}
+	// For Linux, user is optional.
 	if cfg.user == "" && !cfg.linux {
 		return upConfig{}, fmt.Errorf("missing required flag: -user")
 	}
 	if cfg.linux && cfg.user == "" {
-		cfg.user = "ubuntu"
+		cfg.user = defaultLinuxUser(variant)
 	}
 	if *headless {
 		cfg.gui = false
@@ -165,6 +170,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
 	fs.BoolVar(&cfg.linux, "linux", false, "Install a Linux VM instead of macOS")
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
+	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	fs.Usage = func() {
 		printUpUsage(os.Stderr, fs)
 	}
@@ -188,7 +194,8 @@ Examples:
   cove up -user me -vzscripts homebrew,openclaw            # macOS + recipes
   cove up -user me -setup-script ./setup.sh                # macOS + plain script
   cove up -user me -ipsw ~/restore.ipsw                   # macOS with IPSW
-  cove up -linux                                           # Linux Server (ubuntu/ubuntu)
+  cove up -linux                                           # Ubuntu Server (ubuntu/ubuntu)
+  cove up -linux -distro alpine                            # Alpine (alpine/alpine)
   cove up -linux -user tmc -password secret                # Linux with custom user
   cove up -linux -desktop -user me                         # Ubuntu Desktop
   cove up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
@@ -223,6 +230,9 @@ func applyUpConfig(cfg upConfig) {
 	}
 	if cfg.desktop {
 		linuxDesktop = true
+	}
+	if cfg.distro != "" {
+		linuxDistro = cfg.distro
 	}
 }
 

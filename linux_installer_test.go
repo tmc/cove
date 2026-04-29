@@ -188,6 +188,80 @@ func TestBuildLinuxCloudInitData(t *testing.T) {
 	}
 }
 
+func TestBuildLinuxInstallSeedDataForDistros(t *testing.T) {
+	tests := []struct {
+		name    string
+		variant LinuxVariant
+		file    string
+		want    []string
+	}{
+		{
+			name:    "debian",
+			variant: LinuxVariantDebian,
+			file:    "preseed.cfg",
+			want:    []string{"d-i netcfg/get_hostname string debian-vm", "pkgsel/include string openssh-server", "partman-auto/method string regular"},
+		},
+		{
+			name:    "fedora",
+			variant: LinuxVariantFedora,
+			file:    "ks.cfg",
+			want:    []string{"text", "network --bootproto=dhcp", "user --name=fedora"},
+		},
+		{
+			name:    "alpine",
+			variant: LinuxVariantAlpine,
+			file:    "setup-alpine.answers",
+			want:    []string{"HOSTNAMEOPTS=\"-n alpine-vm\"", "DISKOPTS=\"-m sys /dev/vda\"", "USEROPTS=\"-a -u alpine\""},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			user := defaultLinuxUser(tc.variant)
+			seed := buildLinuxCloudInitData(LinuxProvisionConfig{
+				Username: user,
+				Password: user,
+				Hostname: tc.name + "-vm",
+				TimeZone: "UTC",
+				Locale:   "en_US.UTF-8",
+				Variant:  tc.variant,
+			}, false, "")
+			got := string(seed.files[tc.file])
+			if got == "" {
+				t.Fatalf("missing seed file %s in %#v", tc.file, seed.files)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("%s missing %q\n%s", tc.file, want, got)
+				}
+			}
+			if seed.files["user-data"] == nil || seed.files["meta-data"] == nil {
+				t.Fatalf("seed files missing cloud-init compatibility files")
+			}
+		})
+	}
+}
+
+func TestLinuxInstallCommandLineForVariant(t *testing.T) {
+	tests := []struct {
+		name    string
+		variant LinuxVariant
+		want    string
+	}{
+		{"ubuntu", LinuxVariantServer, "ds=nocloud-net;s=http://192.168.64.1:3003/"},
+		{"debian", LinuxVariantDebian, "preseed/url=http://192.168.64.1:3003/preseed.cfg"},
+		{"fedora", LinuxVariantFedora, "inst.ks=http://192.168.64.1:3003/ks.cfg"},
+		{"alpine", LinuxVariantAlpine, "apkovl=http://192.168.64.1:3003/cove.apkovl.tar.gz"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := linuxInstallCommandLineForVariant(tc.variant, "192.168.64.1:3003")
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("linuxInstallCommandLineForVariant(%s) missing %q in %q", tc.variant, tc.want, got)
+			}
+		})
+	}
+}
+
 func TestLinuxInstallCommandLine(t *testing.T) {
 	if got, want := linuxInstallCommandLine("192.168.64.1:3003"), "boot=casper ip=dhcp ds=nocloud-net;s=http://192.168.64.1:3003/ console=tty0 --- autoinstall"; got != want {
 		t.Fatalf("linuxInstallCommandLine() = %q, want %q", got, want)
@@ -195,6 +269,11 @@ func TestLinuxInstallCommandLine(t *testing.T) {
 }
 
 func TestDefaultLinuxProvisionConfig(t *testing.T) {
+	oldDistro, oldDesktop := linuxDistro, linuxDesktop
+	linuxDistro, linuxDesktop = "", false
+	defer func() {
+		linuxDistro, linuxDesktop = oldDistro, oldDesktop
+	}()
 	got := DefaultLinuxProvisionConfig()
 	if got.InstallAgent {
 		t.Fatalf("DefaultLinuxProvisionConfig InstallAgent = true, want false")
@@ -204,12 +283,101 @@ func TestDefaultLinuxProvisionConfig(t *testing.T) {
 	}
 }
 
+func TestParseLinuxVariant(t *testing.T) {
+	tests := []struct {
+		name    string
+		distro  string
+		desktop bool
+		want    LinuxVariant
+		wantErr bool
+	}{
+		{"default", "", false, LinuxVariantServer, false},
+		{"ubuntu", "ubuntu", false, LinuxVariantServer, false},
+		{"desktop", "ubuntu", true, LinuxVariantDesktop, false},
+		{"debian", "debian", false, LinuxVariantDebian, false},
+		{"fedora", "fedora", false, LinuxVariantFedora, false},
+		{"alpine", "alpine", false, LinuxVariantAlpine, false},
+		{"desktop mismatch", "fedora", true, "", true},
+		{"unknown", "arch", false, "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseLinuxVariant(tc.distro, tc.desktop)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseLinuxVariant(%q, %v) err = nil, want error", tc.distro, tc.desktop)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseLinuxVariant(%q, %v): %v", tc.distro, tc.desktop, err)
+			}
+			if got != tc.want {
+				t.Fatalf("parseLinuxVariant(%q, %v) = %q, want %q", tc.distro, tc.desktop, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseUpFlagsLinuxDistroDefaultUser(t *testing.T) {
+	cfg, err := parseUpFlags([]string{"-linux", "-distro", "alpine", "-headless"})
+	if err != nil {
+		t.Fatalf("parseUpFlags: %v", err)
+	}
+	if cfg.user != "alpine" {
+		t.Fatalf("cfg.user = %q, want alpine", cfg.user)
+	}
+	if cfg.password != "alpine" {
+		t.Fatalf("cfg.password = %q, want alpine", cfg.password)
+	}
+	if cfg.distro != "alpine" {
+		t.Fatalf("cfg.distro = %q, want alpine", cfg.distro)
+	}
+	if cfg.gui {
+		t.Fatalf("cfg.gui = true, want false")
+	}
+}
+
 func TestLinuxVariantInstallISOVariant(t *testing.T) {
 	if got, want := LinuxVariantDesktop.installISOVariant(), LinuxVariantServer; got != want {
 		t.Fatalf("LinuxVariantDesktop.installISOVariant() = %q, want %q", got, want)
 	}
 	if got, want := LinuxVariantServer.installISOVariant(), LinuxVariantServer; got != want {
 		t.Fatalf("LinuxVariantServer.installISOVariant() = %q, want %q", got, want)
+	}
+	for _, variant := range []LinuxVariant{LinuxVariantDebian, LinuxVariantFedora, LinuxVariantAlpine} {
+		if got := variant.installISOVariant(); got != variant {
+			t.Fatalf("%s.installISOVariant() = %q, want %q", variant, got, variant)
+		}
+	}
+}
+
+func TestLinuxISODescriptorForVariant(t *testing.T) {
+	tests := []struct {
+		variant LinuxVariant
+		cache   string
+		minSize int64
+	}{
+		{LinuxVariantServer, "linux-ubuntu.iso", 500 * 1024 * 1024},
+		{LinuxVariantDesktop, "linux-ubuntu-desktop.iso", 2 * 1024 * 1024 * 1024},
+		{LinuxVariantDebian, "linux-debian.iso", 300 * 1024 * 1024},
+		{LinuxVariantFedora, "linux-fedora.iso", 500 * 1024 * 1024},
+		{LinuxVariantAlpine, "linux-alpine.iso", 30 * 1024 * 1024},
+	}
+	for _, tc := range tests {
+		desc, err := linuxISODescriptorForVariant(tc.variant)
+		if err != nil {
+			t.Fatalf("linuxISODescriptorForVariant(%s): %v", tc.variant, err)
+		}
+		if desc.cacheName != tc.cache {
+			t.Fatalf("linuxISODescriptorForVariant(%s).cacheName = %q, want %q", tc.variant, desc.cacheName, tc.cache)
+		}
+		if desc.minSize != tc.minSize {
+			t.Fatalf("linuxISODescriptorForVariant(%s).minSize = %d, want %d", tc.variant, desc.minSize, tc.minSize)
+		}
+		if desc.url == "" {
+			t.Fatalf("linuxISODescriptorForVariant(%s).url is empty", tc.variant)
+		}
 	}
 }
 

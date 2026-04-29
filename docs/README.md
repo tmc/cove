@@ -36,7 +36,7 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 | **Guest Agent** | vsock gRPC agent for command execution, file transfer, clipboard |
 | **SIP Management** | Automated recovery boot for enabling/disabling SIP |
 | **Provisioning** | Disk injection or GUI automation for unattended setup |
-| **Linux VMs** | Ubuntu with cloud-init, EFI boot, Rosetta x86-64 translation |
+| **Linux VMs** | Ubuntu, Debian, Fedora, and Alpine with unattended install, EFI boot, Rosetta x86-64 translation |
 | **Native GUI** | AppKit window with toolbar, menu bar, multi-display |
 
 ## Architecture
