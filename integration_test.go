@@ -27,7 +27,6 @@ var (
 	flagIntegrationSIP         = flag.Bool("integration.sip", envBool("VZ_TEST_SIP"), "run SIP recovery integration test")
 	flagIntegrationSIPUser     = flag.String("integration.sip-user", os.Getenv("VZ_TEST_SIP_USER"), "recovery auth username for SIP integration test")
 	flagIntegrationSIPPassword = flag.String("integration.sip-password", os.Getenv("VZ_TEST_SIP_PASSWORD"), "recovery auth password for SIP integration test")
-	flagIntegrationSIPConfirm  = flag.Bool("integration.sip-confirm", envBoolDefault("VZ_TEST_SIP_CONFIRM", true), "answer recovery confirmation prompts during SIP integration test")
 )
 
 type testVM struct {

@@ -65,6 +65,32 @@ func TestVZScriptLabelsLogAndPop(t *testing.T) {
 	}
 }
 
+func TestParseAnswerVisibleSkipEmpty(t *testing.T) {
+	got, err := parseAnswerVisibleArgs([]string{
+		"-optional",
+		"-skip-empty",
+		"Authorized user", "",
+		"Password", "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.pairs) != 1 {
+		t.Fatalf("pairs = %d, want 1", len(got.pairs))
+	}
+	if got.pairs[0] != (promptAnswer{prompt: "Password", answer: "secret"}) {
+		t.Fatalf("pair = %#v", got.pairs[0])
+	}
+
+	got, err = parseAnswerVisibleArgs([]string{"-optional", "-skip-empty", "Password", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.pairs) != 0 {
+		t.Fatalf("pairs = %d, want 0", len(got.pairs))
+	}
+}
+
 func TestVZScriptEngineConditions(t *testing.T) {
 	cfg := vzscriptConfig{}
 	engine := newVZScriptEngine(cfg)
@@ -134,8 +160,8 @@ func TestLoadVZScriptData(t *testing.T) {
 		{"builtin by name", "setup-assistant", false},
 		{"builtin with ext", "setup-assistant.vzscript", false},
 		{"builtin homebrew", "homebrew", false},
-		{"builtin template by name", "sip-recovery", false},
-		{"builtin template with ext", "sip-recovery.vzscript.tmpl", false},
+		{"builtin sip enable", "sip-enable", false},
+		{"builtin sip disable", "sip-disable.vzscript", false},
 		{"nonexistent", "does-not-exist", true},
 	}
 	for _, tt := range tests {
@@ -192,7 +218,7 @@ func TestRenderVZScriptTemplateFuncs(t *testing.T) {
 }
 
 func TestGenerateSIPVZScript_Syntax(t *testing.T) {
-	script, err := generateSIPVZScript("disable", "admin", "secret", true, false)
+	script, err := generateSIPVZScript("disable", "admin", "secret")
 	if err != nil {
 		t.Fatal(err)
 	}

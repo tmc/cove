@@ -387,7 +387,7 @@ cove sip <command> [flags]
 
 ```bash
 cove sip status
-cove sip disable-auto -user admin -password secret -confirm
+cove sip disable-auto -user admin -password secret
 ```
 
 ---
