@@ -23,6 +23,10 @@ import (
 	"golang.org/x/term"
 )
 
+func init() {
+	runtime.LockOSThread()
+}
+
 var (
 	fetchLatest bool
 	runVM       bool // Deprecated: kept for compatibility, now handled by commands
@@ -297,7 +301,6 @@ func main() {
 	initMacgo()
 
 	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	registerUIThread()
 
 	// Note: NSSetUncaughtExceptionHandler disabled — purego cannot marshal
