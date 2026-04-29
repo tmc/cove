@@ -143,6 +143,85 @@ func TestReachableFromVMsUsesStoredManifest(t *testing.T) {
 	}
 }
 
+func TestReachableFromBuildCache(t *testing.T) {
+	s := New(t.TempDir())
+	want := testDigest([]byte("layer"))
+	path := filepath.Join(s.Dir, "build-cache", "keys", "key.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	data := []byte(`{"layer_digest":"` + want + `","chunks":["sha256:not-a-real-digest"]}`)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	reachable, err := s.ReachableFromBuildCache()
+	if err != nil {
+		t.Fatalf("ReachableFromBuildCache(): %v", err)
+	}
+	if !reachable[want] {
+		t.Fatalf("reachable[%s] = false", want)
+	}
+	if reachable["sha256:not-a-real-digest"] {
+		t.Fatal("invalid digest marked reachable")
+	}
+}
+
+func TestGCKeepsBuildCacheReachableBlob(t *testing.T) {
+	s := New(t.TempDir())
+	keptData := []byte("kept")
+	keptDigest := testDigest(keptData)
+	if err := s.Put(keptDigest, int64(len(keptData)), bytes.NewReader(keptData)); err != nil {
+		t.Fatalf("Put(kept): %v", err)
+	}
+	deletedData := []byte("deleted")
+	deletedDigest := testDigest(deletedData)
+	if err := s.Put(deletedDigest, int64(len(deletedData)), bytes.NewReader(deletedData)); err != nil {
+		t.Fatalf("Put(deleted): %v", err)
+	}
+	old := time.Now().Add(-2 * GCGrace)
+	for _, digest := range []string{keptDigest, deletedDigest} {
+		path, err := s.BlobPath(digest)
+		if err != nil {
+			t.Fatalf("BlobPath(): %v", err)
+		}
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatalf("Chtimes(): %v", err)
+		}
+	}
+	cachePath := filepath.Join(s.Dir, "build-cache", "layers", "layer.json")
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(cachePath, []byte(`{"blob":"`+keptDigest+`"}`), 0644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	reachable, err := s.ReachableFromBuildCache()
+	if err != nil {
+		t.Fatalf("ReachableFromBuildCache(): %v", err)
+	}
+	res, err := s.GC(reachable, GCGrace)
+	if err != nil {
+		t.Fatalf("GC(): %v", err)
+	}
+	if res.Deleted != 1 {
+		t.Fatalf("Deleted = %d, want 1", res.Deleted)
+	}
+	keptPath, err := s.BlobPath(keptDigest)
+	if err != nil {
+		t.Fatalf("BlobPath(kept): %v", err)
+	}
+	if _, err := os.Stat(keptPath); err != nil {
+		t.Fatalf("kept blob stat: %v", err)
+	}
+	deletedPath, err := s.BlobPath(deletedDigest)
+	if err != nil {
+		t.Fatalf("BlobPath(deleted): %v", err)
+	}
+	if _, err := os.Stat(deletedPath); !os.IsNotExist(err) {
+		t.Fatalf("deleted blob stat error = %v, want not exist", err)
+	}
+}
+
 func TestEnsureRefetchesCorruptBlob(t *testing.T) {
 	s := New(t.TempDir())
 	good := []byte("good")

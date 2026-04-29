@@ -261,6 +261,53 @@ func (s Store) ReachableFromVMs(vmsDir string) (map[string]bool, error) {
 	return reachable, nil
 }
 
+func (s Store) ReachableFromBuildCache() (map[string]bool, error) {
+	reachable := map[string]bool{}
+	root := filepath.Join(s.Dir, "build-cache")
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ".json" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var v any
+		if err := json.Unmarshal(data, &v); err != nil {
+			return fmt.Errorf("parse build cache %s: %w", path, err)
+		}
+		markDigestStrings(reachable, v)
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return reachable, nil
+	}
+	return reachable, err
+}
+
+func markDigestStrings(reachable map[string]bool, v any) {
+	switch v := v.(type) {
+	case string:
+		if _, _, err := splitDigest(v); err == nil {
+			reachable[v] = true
+		}
+	case []any:
+		for _, x := range v {
+			markDigestStrings(reachable, x)
+		}
+	case map[string]any:
+		for _, x := range v {
+			markDigestStrings(reachable, x)
+		}
+	}
+}
+
 func (s Store) markManifest(reachable map[string]bool, digest string) error {
 	_, hexDigest, err := splitDigest(digest)
 	if err != nil {

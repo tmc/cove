@@ -42,6 +42,13 @@ func handleStoreGC(args []string) error {
 	if err != nil {
 		return err
 	}
+	buildReachable, err := s.ReachableFromBuildCache()
+	if err != nil {
+		return err
+	}
+	for digest := range buildReachable {
+		reachable[digest] = true
+	}
 	res, err := s.GC(reachable, store.GCGrace)
 	if err != nil {
 		return err
