@@ -81,6 +81,26 @@ cove ctl agent-exec cat /var/log/vz-provision.log
 
 ## Runtime Issues
 
+### DHCP Lease Pool Exhaustion
+
+**Symptom:** high-throughput fork/run cycles stop getting NAT addresses, or
+`cove serve` warns that macOS Internet Sharing DHCP leases are still one day.
+
+**Cause:** macOS `bootpd` defaults to 86,400-second DHCP leases. Ephemeral VMs
+can consume the small NAT pool faster than leases expire.
+
+**Fix:** reduce the host-wide lease time to 10 minutes:
+
+```bash
+sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.InternetSharing.default.plist bootpd -dict DHCPLeaseTimeSecs -int 600
+```
+
+If stale one-day leases already filled the pool:
+
+```bash
+sudo rm /var/db/dhcpd_leases
+```
+
 ### VM Won't Resume
 
 **Cause:** suspend state doesn't match current configuration (e.g., changed CPU count).
