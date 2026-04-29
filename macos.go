@@ -1905,12 +1905,14 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		window.Center()
 	}
 
-	// Add a boot overlay that fades out once the VM reaches Running state.
-	// If the VM is already running (e.g. after install → restart), skip the overlay.
+	bootOverlayTitle, bootOverlaySubtitle, holdBootOverlay := bootOverlayMessage()
+
+	// Add a boot overlay while the VM starts. First-boot login/provisioning
+	// flows keep it visible until cove sees the user agent.
 	var bootOverlay appkit.NSView
 	currentState := vz.VZVirtualMachineState(vm.State())
 	if currentState != vz.VZVirtualMachineStateRunning {
-		bootOverlay = createBootOverlay(currentVMViewSize(vmView, contentRect.Size))
+		bootOverlay = createBootOverlay(currentVMViewSize(vmView, contentRect.Size), bootOverlayTitle, bootOverlaySubtitle)
 		vmViewAsNSView(vmView).AddSubview(&bootOverlay)
 	}
 
@@ -2205,8 +2207,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						if stateUpdate.newState == vz.VZVirtualMachineStateRunning {
 							startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 						}
-						// Start fading the boot overlay once the VM is running.
-						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && overlayFadeStep == -1 && bootOverlay.ID != 0 {
+						// Start fading the boot overlay once the VM is running, unless
+						// a first-boot automation path is still hiding transient UI.
+						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && !holdBootOverlay && overlayFadeStep == -1 && bootOverlay.ID != 0 {
 							overlayFadeStep = 15 // ~0.5s fade at 30 Hz
 						}
 
@@ -2283,6 +2286,10 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						lastHealthSubtitle = subtitle
 						window.SetSubtitle(subtitle)
 					}
+					if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 && subtitle == "Agent: connected" {
+						holdBootOverlay = false
+						overlayFadeStep = 15
+					}
 				}
 
 				// Reschedule for next frame.
@@ -2357,6 +2364,22 @@ func shouldRunGUIAutomationForVM(target vmSelection) bool {
 	}
 }
 
+func bootOverlayMessage() (title, subtitle string, hold bool) {
+	if currentBootSessionMode() != bootSessionModeNormal {
+		return "Booting...", "", false
+	}
+	if unattended {
+		return "Preparing macOS", "Running first-boot automation.", true
+	}
+	if provisionUser != "" && shouldRunGUIAutomation() {
+		return "Preparing macOS", "Completing user setup.", true
+	}
+	if creds := resolveLoginScreenWatchdogCredentials(); creds.Valid() {
+		return "Preparing macOS", "Finishing first boot and signing in.", true
+	}
+	return "Booting...", "", false
+}
+
 func currentVMViewSize(vmView vz.VZVirtualMachineView, fallback corefoundation.CGSize) corefoundation.CGSize {
 	bounds := vmViewAsNSView(vmView).Bounds().Size
 	if bounds.Width > 0 && bounds.Height > 0 {
@@ -2365,9 +2388,12 @@ func currentVMViewSize(vmView vz.VZVirtualMachineView, fallback corefoundation.C
 	return fallback
 }
 
-// createBootOverlay creates a dark overlay with a "Booting..." label,
-// shown over the VM view while the VM starts up.
-func createBootOverlay(size corefoundation.CGSize) appkit.NSView {
+// createBootOverlay creates a dark overlay shown over the VM view while the VM starts up.
+func createBootOverlay(size corefoundation.CGSize, title, subtitle string) appkit.NSView {
+	return createMessageOverlay(size, title, subtitle, 0.08, 0.95, 22)
+}
+
+func createMessageOverlay(size corefoundation.CGSize, title, subtitle string, white, alpha, fontSize float64) appkit.NSView {
 	frame := corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 0, Y: 0},
 		Size:   size,
@@ -2377,22 +2403,32 @@ func createBootOverlay(size corefoundation.CGSize) appkit.NSView {
 	// Keep overlay synced to VM view size on live window resizes.
 	objc.Send[objc.ID](overlay.ID, objc.Sel("setAutoresizingMask:"), uint(2|16))
 
-	// Dark background via CALayer.
 	layer := objc.Send[objc.ID](overlay.ID, objc.Sel("layer"))
 	if layer != 0 {
 		bgColor := objc.Send[objc.ID](
 			objc.ID(objc.GetClass("NSColor")),
 			objc.Sel("colorWithWhite:alpha:"),
-			0.08, 0.95,
+			white, alpha,
 		)
 		cgColor := objc.Send[objc.ID](bgColor, objc.Sel("CGColor"))
 		objc.Send[objc.ID](layer, objc.Sel("setBackgroundColor:"), cgColor)
 	}
 
-	// Centered label.
-	label := appkit.NewTextFieldLabelWithString("Booting...")
+	if title == "" {
+		title = "Working..."
+	}
+	titleHeight := 34.0
+	subtitleHeight := 22.0
+	gap := 8.0
+	totalHeight := titleHeight
+	if subtitle != "" {
+		totalHeight += gap + subtitleHeight
+	}
+	y := (size.Height - totalHeight) / 2
+
+	label := appkit.NewTextFieldLabelWithString(title)
 	fontClass := appkit.GetNSFontClass()
-	font := fontClass.SystemFontOfSizeWeight(22, -0.4) // Light weight
+	font := fontClass.SystemFontOfSizeWeight(fontSize, -0.4)
 	label.SetFont(font)
 	label.SetAlignment(appkit.NSTextAlignmentCenter)
 	whiteColor := objc.Send[objc.ID](
@@ -2405,12 +2441,33 @@ func createBootOverlay(size corefoundation.CGSize) appkit.NSView {
 	objc.Send[objc.ID](label.ID, objc.Sel("setDrawsBackground:"), false)
 	objc.Send[objc.ID](label.ID, objc.Sel("setEditable:"), false)
 	label.SetFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 0, Y: (size.Height - 36) / 2},
-		Size:   corefoundation.CGSize{Width: size.Width, Height: 36},
+		Origin: corefoundation.CGPoint{X: 0, Y: y + totalHeight - titleHeight},
+		Size:   corefoundation.CGSize{Width: size.Width, Height: titleHeight},
 	})
-	// Stretch label width and keep it vertically centered as the overlay grows.
 	objc.Send[objc.ID](label.ID, objc.Sel("setAutoresizingMask:"), uint(2|8|32))
 	overlay.AddSubview(&label.NSView)
+
+	if subtitle != "" {
+		subtitleLabel := appkit.NewTextFieldLabelWithString(subtitle)
+		subtitleFont := fontClass.SystemFontOfSizeWeight(14, -0.2)
+		subtitleLabel.SetFont(subtitleFont)
+		subtitleLabel.SetAlignment(appkit.NSTextAlignmentCenter)
+		subtitleColor := objc.Send[objc.ID](
+			objc.ID(objc.GetClass("NSColor")),
+			objc.Sel("colorWithWhite:alpha:"),
+			1.0, 0.55,
+		)
+		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setTextColor:"), subtitleColor)
+		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setBezeled:"), false)
+		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setDrawsBackground:"), false)
+		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setEditable:"), false)
+		subtitleLabel.SetFrame(corefoundation.CGRect{
+			Origin: corefoundation.CGPoint{X: 0, Y: y},
+			Size:   corefoundation.CGSize{Width: size.Width, Height: subtitleHeight},
+		})
+		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setAutoresizingMask:"), uint(2|8|32))
+		overlay.AddSubview(&subtitleLabel.NSView)
+	}
 	return overlay
 }
 

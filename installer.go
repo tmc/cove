@@ -1911,54 +1911,9 @@ func downloadRestoreImageVZ(ctx context.Context, destPath string) error {
 
 // The AppKit event pump drains both the GCD main queue and CFRunLoop.
 
-// createInstallOverlay creates a dark overlay view with a "Starting installation..." label.
+// createInstallOverlay creates a dark overlay view shown before install progress appears.
 func createInstallOverlay(size corefoundation.CGSize) appkit.NSView {
-	frame := corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 0, Y: 0},
-		Size:   size,
-	}
-
-	overlay := appkit.NewViewWithFrame(frame)
-	objc.Send[objc.ID](overlay.ID, objc.Sel("setWantsLayer:"), true)
-
-	// Dark semi-transparent background via CALayer
-	layer := objc.Send[objc.ID](overlay.ID, objc.Sel("layer"))
-	if layer != 0 {
-		// [layer setBackgroundColor:CGColorCreateGenericRGB(0, 0, 0, 0.85)]
-		bgColor := objc.Send[objc.ID](
-			objc.ID(objc.GetClass("NSColor")),
-			objc.Sel("colorWithWhite:alpha:"),
-			0.1, 0.9,
-		)
-		cgColor := objc.Send[objc.ID](bgColor, objc.Sel("CGColor"))
-		objc.Send[objc.ID](layer, objc.Sel("setBackgroundColor:"), cgColor)
-	}
-
-	// Create label — fill the overlay and center-align the text
-	label := appkit.NewTextFieldLabelWithString("Starting installation...")
-	fontClass := appkit.GetNSFontClass()
-	font := fontClass.SystemFontOfSizeWeight(24, -0.4) // NSFontWeightLight
-	label.SetFont(font)
-	label.SetAlignment(appkit.NSTextAlignmentCenter)
-	whiteColor := objc.Send[objc.ID](
-		objc.ID(objc.GetClass("NSColor")),
-		objc.Sel("whiteColor"),
-	)
-	objc.Send[objc.ID](label.ID, objc.Sel("setTextColor:"), whiteColor)
-	objc.Send[objc.ID](label.ID, objc.Sel("setBezeled:"), false)
-	objc.Send[objc.ID](label.ID, objc.Sel("setDrawsBackground:"), false)
-	objc.Send[objc.ID](label.ID, objc.Sel("setEditable:"), false)
-	// Position label centered vertically, spanning full width
-	label.SetFrame(corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{
-			X: 0,
-			Y: (size.Height - 40) / 2,
-		},
-		Size: corefoundation.CGSize{Width: size.Width, Height: 40},
-	})
-
-	addSubview(overlay, label.NSView)
-	return overlay
+	return createMessageOverlay(size, "Starting installation...", "", 0.1, 0.9, 24)
 }
 
 // postDummyEvent posts an application-defined event to unblock the AppKit
