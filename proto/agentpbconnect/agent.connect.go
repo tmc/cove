@@ -43,6 +43,12 @@ const (
 	AgentExecProcedure = "/vz.agent.v1.Agent/Exec"
 	// AgentExecStreamProcedure is the fully-qualified name of the Agent's ExecStream RPC.
 	AgentExecStreamProcedure = "/vz.agent.v1.Agent/ExecStream"
+	// AgentResizeExecTTYProcedure is the fully-qualified name of the Agent's ResizeExecTTY RPC.
+	AgentResizeExecTTYProcedure = "/vz.agent.v1.Agent/ResizeExecTTY"
+	// AgentSignalExecProcedure is the fully-qualified name of the Agent's SignalExec RPC.
+	AgentSignalExecProcedure = "/vz.agent.v1.Agent/SignalExec"
+	// AgentSetTimeProcedure is the fully-qualified name of the Agent's SetTime RPC.
+	AgentSetTimeProcedure = "/vz.agent.v1.Agent/SetTime"
 	// AgentCopyInProcedure is the fully-qualified name of the Agent's CopyIn RPC.
 	AgentCopyInProcedure = "/vz.agent.v1.Agent/CopyIn"
 	// AgentCopyOutProcedure is the fully-qualified name of the Agent's CopyOut RPC.
@@ -78,6 +84,9 @@ type AgentClient interface {
 	Exec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// ExecStream runs a command with streaming stdout/stderr.
 	ExecStream(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error)
+	ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error)
+	SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error)
+	SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error)
 	// CopyIn transfers a file from the host into the guest.
 	CopyIn(context.Context) *connect.ClientStreamForClient[agentpb.CopyInChunk, agentpb.CopyInResponse]
 	// CopyOut transfers a file from the guest to the host.
@@ -131,6 +140,24 @@ func NewAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...conne
 			httpClient,
 			baseURL+AgentExecStreamProcedure,
 			connect.WithSchema(agentMethods.ByName("ExecStream")),
+			connect.WithClientOptions(opts...),
+		),
+		resizeExecTTY: connect.NewClient[agentpb.ResizeExecTTYRequest, agentpb.ResizeExecTTYResponse](
+			httpClient,
+			baseURL+AgentResizeExecTTYProcedure,
+			connect.WithSchema(agentMethods.ByName("ResizeExecTTY")),
+			connect.WithClientOptions(opts...),
+		),
+		signalExec: connect.NewClient[agentpb.SignalExecRequest, agentpb.SignalExecResponse](
+			httpClient,
+			baseURL+AgentSignalExecProcedure,
+			connect.WithSchema(agentMethods.ByName("SignalExec")),
+			connect.WithClientOptions(opts...),
+		),
+		setTime: connect.NewClient[agentpb.SetTimeRequest, agentpb.SetTimeResponse](
+			httpClient,
+			baseURL+AgentSetTimeProcedure,
+			connect.WithSchema(agentMethods.ByName("SetTime")),
 			connect.WithClientOptions(opts...),
 		),
 		copyIn: connect.NewClient[agentpb.CopyInChunk, agentpb.CopyInResponse](
@@ -192,19 +219,22 @@ func NewAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...conne
 
 // agentClient implements AgentClient.
 type agentClient struct {
-	ping       *connect.Client[agentpb.PingRequest, agentpb.PingResponse]
-	info       *connect.Client[agentpb.InfoRequest, agentpb.InfoResponse]
-	exec       *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
-	execStream *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
-	copyIn     *connect.Client[agentpb.CopyInChunk, agentpb.CopyInResponse]
-	copyOut    *connect.Client[agentpb.CopyOutRequest, agentpb.CopyOutChunk]
-	writeFile  *connect.Client[agentpb.WriteFileRequest, agentpb.WriteFileResponse]
-	readFile   *connect.Client[agentpb.ReadFileRequest, agentpb.ReadFileResponse]
-	mkdir      *connect.Client[agentpb.MkdirRequest, agentpb.MkdirResponse]
-	mount      *connect.Client[agentpb.MountRequest, agentpb.MountResponse]
-	unmount    *connect.Client[agentpb.UnmountRequest, agentpb.UnmountResponse]
-	shutdown   *connect.Client[agentpb.ShutdownRequest, agentpb.ShutdownResponse]
-	reboot     *connect.Client[agentpb.RebootRequest, agentpb.RebootResponse]
+	ping          *connect.Client[agentpb.PingRequest, agentpb.PingResponse]
+	info          *connect.Client[agentpb.InfoRequest, agentpb.InfoResponse]
+	exec          *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
+	execStream    *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
+	resizeExecTTY *connect.Client[agentpb.ResizeExecTTYRequest, agentpb.ResizeExecTTYResponse]
+	signalExec    *connect.Client[agentpb.SignalExecRequest, agentpb.SignalExecResponse]
+	setTime       *connect.Client[agentpb.SetTimeRequest, agentpb.SetTimeResponse]
+	copyIn        *connect.Client[agentpb.CopyInChunk, agentpb.CopyInResponse]
+	copyOut       *connect.Client[agentpb.CopyOutRequest, agentpb.CopyOutChunk]
+	writeFile     *connect.Client[agentpb.WriteFileRequest, agentpb.WriteFileResponse]
+	readFile      *connect.Client[agentpb.ReadFileRequest, agentpb.ReadFileResponse]
+	mkdir         *connect.Client[agentpb.MkdirRequest, agentpb.MkdirResponse]
+	mount         *connect.Client[agentpb.MountRequest, agentpb.MountResponse]
+	unmount       *connect.Client[agentpb.UnmountRequest, agentpb.UnmountResponse]
+	shutdown      *connect.Client[agentpb.ShutdownRequest, agentpb.ShutdownResponse]
+	reboot        *connect.Client[agentpb.RebootRequest, agentpb.RebootResponse]
 }
 
 // Ping calls vz.agent.v1.Agent.Ping.
@@ -225,6 +255,21 @@ func (c *agentClient) Exec(ctx context.Context, req *connect.Request[agentpb.Exe
 // ExecStream calls vz.agent.v1.Agent.ExecStream.
 func (c *agentClient) ExecStream(ctx context.Context, req *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error) {
 	return c.execStream.CallServerStream(ctx, req)
+}
+
+// ResizeExecTTY calls vz.agent.v1.Agent.ResizeExecTTY.
+func (c *agentClient) ResizeExecTTY(ctx context.Context, req *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error) {
+	return c.resizeExecTTY.CallUnary(ctx, req)
+}
+
+// SignalExec calls vz.agent.v1.Agent.SignalExec.
+func (c *agentClient) SignalExec(ctx context.Context, req *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error) {
+	return c.signalExec.CallUnary(ctx, req)
+}
+
+// SetTime calls vz.agent.v1.Agent.SetTime.
+func (c *agentClient) SetTime(ctx context.Context, req *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error) {
+	return c.setTime.CallUnary(ctx, req)
 }
 
 // CopyIn calls vz.agent.v1.Agent.CopyIn.
@@ -282,6 +327,9 @@ type AgentHandler interface {
 	Exec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// ExecStream runs a command with streaming stdout/stderr.
 	ExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error
+	ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error)
+	SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error)
+	SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error)
 	// CopyIn transfers a file from the host into the guest.
 	CopyIn(context.Context, *connect.ClientStream[agentpb.CopyInChunk]) (*connect.Response[agentpb.CopyInResponse], error)
 	// CopyOut transfers a file from the guest to the host.
@@ -331,6 +379,24 @@ func NewAgentHandler(svc AgentHandler, opts ...connect.HandlerOption) (string, h
 		AgentExecStreamProcedure,
 		svc.ExecStream,
 		connect.WithSchema(agentMethods.ByName("ExecStream")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentResizeExecTTYHandler := connect.NewUnaryHandler(
+		AgentResizeExecTTYProcedure,
+		svc.ResizeExecTTY,
+		connect.WithSchema(agentMethods.ByName("ResizeExecTTY")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentSignalExecHandler := connect.NewUnaryHandler(
+		AgentSignalExecProcedure,
+		svc.SignalExec,
+		connect.WithSchema(agentMethods.ByName("SignalExec")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentSetTimeHandler := connect.NewUnaryHandler(
+		AgentSetTimeProcedure,
+		svc.SetTime,
+		connect.WithSchema(agentMethods.ByName("SetTime")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentCopyInHandler := connect.NewClientStreamHandler(
@@ -397,6 +463,12 @@ func NewAgentHandler(svc AgentHandler, opts ...connect.HandlerOption) (string, h
 			agentExecHandler.ServeHTTP(w, r)
 		case AgentExecStreamProcedure:
 			agentExecStreamHandler.ServeHTTP(w, r)
+		case AgentResizeExecTTYProcedure:
+			agentResizeExecTTYHandler.ServeHTTP(w, r)
+		case AgentSignalExecProcedure:
+			agentSignalExecHandler.ServeHTTP(w, r)
+		case AgentSetTimeProcedure:
+			agentSetTimeHandler.ServeHTTP(w, r)
 		case AgentCopyInProcedure:
 			agentCopyInHandler.ServeHTTP(w, r)
 		case AgentCopyOutProcedure:
@@ -438,6 +510,18 @@ func (UnimplementedAgentHandler) Exec(context.Context, *connect.Request[agentpb.
 
 func (UnimplementedAgentHandler) ExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.ExecStream is not implemented"))
+}
+
+func (UnimplementedAgentHandler) ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.ResizeExecTTY is not implemented"))
+}
+
+func (UnimplementedAgentHandler) SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.SignalExec is not implemented"))
+}
+
+func (UnimplementedAgentHandler) SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.SetTime is not implemented"))
 }
 
 func (UnimplementedAgentHandler) CopyIn(context.Context, *connect.ClientStream[agentpb.CopyInChunk]) (*connect.Response[agentpb.CopyInResponse], error) {

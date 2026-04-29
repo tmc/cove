@@ -126,6 +126,33 @@ func assertParallelExecs(t *testing.T, exec execFunc, started <-chan string, rel
 	}
 }
 
+func TestAgentClientExecControlRPCs(t *testing.T) {
+	h := &controlAgentHandler{}
+	client := newTestAgentClient(t, h)
+
+	ctx := context.Background()
+	if err := client.ResizeExec(ctx, "exec-1", 24, 80); err != nil {
+		t.Fatalf("ResizeExec: %v", err)
+	}
+	if err := client.SignalExec(ctx, "exec-1", 2); err != nil {
+		t.Fatalf("SignalExec: %v", err)
+	}
+	wantTime := time.Unix(1700000000, 123000000).UTC()
+	if err := client.SetTime(ctx, wantTime); err != nil {
+		t.Fatalf("SetTime: %v", err)
+	}
+
+	if h.resizeExecID != "exec-1" || h.resizeRows != 24 || h.resizeCols != 80 {
+		t.Fatalf("resize = (%q, %d, %d), want (exec-1, 24, 80)", h.resizeExecID, h.resizeRows, h.resizeCols)
+	}
+	if h.signalExecID != "exec-1" || h.signal != 2 {
+		t.Fatalf("signal = (%q, %d), want (exec-1, 2)", h.signalExecID, h.signal)
+	}
+	if !h.setTime.Equal(wantTime) {
+		t.Fatalf("setTime = %v, want %v", h.setTime, wantTime)
+	}
+}
+
 type testAgentHandler struct {
 	agentpbconnect.UnimplementedAgentHandler
 	started chan string
@@ -147,6 +174,34 @@ type testUserAgentHandler struct {
 	agentpbconnect.UnimplementedUserAgentHandler
 	started chan string
 	release chan struct{}
+}
+
+type controlAgentHandler struct {
+	agentpbconnect.UnimplementedAgentHandler
+	resizeExecID string
+	resizeRows   uint32
+	resizeCols   uint32
+	signalExecID string
+	signal       int32
+	setTime      time.Time
+}
+
+func (h *controlAgentHandler) ResizeExecTTY(ctx context.Context, req *connect.Request[pb.ResizeExecTTYRequest]) (*connect.Response[pb.ResizeExecTTYResponse], error) {
+	h.resizeExecID = req.Msg.GetExecId()
+	h.resizeRows = req.Msg.GetRows()
+	h.resizeCols = req.Msg.GetCols()
+	return connect.NewResponse(&pb.ResizeExecTTYResponse{}), nil
+}
+
+func (h *controlAgentHandler) SignalExec(ctx context.Context, req *connect.Request[pb.SignalExecRequest]) (*connect.Response[pb.SignalExecResponse], error) {
+	h.signalExecID = req.Msg.GetExecId()
+	h.signal = req.Msg.GetSignal()
+	return connect.NewResponse(&pb.SignalExecResponse{}), nil
+}
+
+func (h *controlAgentHandler) SetTime(ctx context.Context, req *connect.Request[pb.SetTimeRequest]) (*connect.Response[pb.SetTimeResponse], error) {
+	h.setTime = req.Msg.GetTime().AsTime()
+	return connect.NewResponse(&pb.SetTimeResponse{}), nil
 }
 
 func (h *testUserAgentHandler) UserExec(ctx context.Context, req *connect.Request[pb.ExecRequest]) (*connect.Response[pb.ExecResponse], error) {

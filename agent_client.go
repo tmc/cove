@@ -18,6 +18,7 @@ import (
 
 	"connectrpc.com/connect"
 	"golang.org/x/net/http2"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/tmc/vz-macos/proto/agentpb"
 	"github.com/tmc/vz-macos/proto/agentpbconnect"
@@ -136,24 +137,49 @@ func (c *AgentClient) ExecStream(ctx context.Context, args []string, env map[str
 
 // ExecStreamAs runs a command in the guest as the specified user and streams output.
 func (c *AgentClient) ExecStreamAs(ctx context.Context, user string, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
+	return c.ExecStreamControl(ctx, "", false, user, args, env, workDir)
+}
+
+func (c *AgentClient) ExecStreamControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
 	req := &pb.ExecRequest{
 		Args:       args,
 		Env:        env,
 		WorkingDir: workDir,
+		ExecId:     execID,
+		Tty:        tty,
 	}
 	if user != "" {
 		req.User = &user
 	}
-	stream, err := c.client.ExecStream(ctx, connect.NewRequest(&pb.ExecRequest{
-		Args:       req.Args,
-		Env:        req.Env,
-		WorkingDir: req.WorkingDir,
-		User:       req.User,
-	}))
+	stream, err := c.client.ExecStream(ctx, connect.NewRequest(req))
 	if err != nil {
 		return nil, err
 	}
 	return &execStreamReceiver{stream: stream}, nil
+}
+
+func (c *AgentClient) ResizeExec(ctx context.Context, execID string, rows, cols uint32) error {
+	_, err := c.client.ResizeExecTTY(ctx, connect.NewRequest(&pb.ResizeExecTTYRequest{
+		ExecId: execID,
+		Rows:   rows,
+		Cols:   cols,
+	}))
+	return err
+}
+
+func (c *AgentClient) SignalExec(ctx context.Context, execID string, signal int32) error {
+	_, err := c.client.SignalExec(ctx, connect.NewRequest(&pb.SignalExecRequest{
+		ExecId: execID,
+		Signal: signal,
+	}))
+	return err
+}
+
+func (c *AgentClient) SetTime(ctx context.Context, t time.Time) error {
+	_, err := c.client.SetTime(ctx, connect.NewRequest(&pb.SetTimeRequest{
+		Time: timestamppb.New(t),
+	}))
+	return err
 }
 
 // ExecAs runs a command in the guest as the specified user.
