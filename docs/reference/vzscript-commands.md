@@ -269,6 +269,36 @@ wait-prompt-clear <text> [timeout]
 wait-prompt-clear "Password" 30s
 ```
 
+### label-push
+
+Push a label onto the script label stack. The current stack is logged and, for
+headed VMs, appended to the VM window title.
+
+```
+label-push <text>
+```
+
+```
+label-push "SIP disable"
+label-push "Recovery Terminal"
+```
+
+### label-pop
+
+Pop the current script label and update the log and window title.
+
+```
+label-pop
+```
+
+### label-clear
+
+Clear all script labels and remove the script suffix from the window title.
+
+```
+label-clear
+```
+
 ### answer-visible
 
 Wait for the first visible prompt from a set of alternatives, type its answer

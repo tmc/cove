@@ -1870,7 +1870,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	if target.Name != "" && target.Name != "default" {
 		windowTitle = fmt.Sprintf("%s — %s", osLabel, target.Name)
 	}
-	window.SetTitle(windowTitle)
+	lastWindowTitle := windowTitle
+	window.SetTitle(lastWindowTitle)
 	restoredFrame, frameAutosaveName := configureWindowFramePersistence(window)
 	if verbose {
 		if restoredFrame {
@@ -1925,6 +1926,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// Start control socket for screenshots, keyboard, mouse control
 	sock := target.controlSocketPath()
 	controlServer := NewControlServerWithVMDir(sock, target.Directory)
+	controlServer.SetWindowTitleBase(windowTitle)
+	lastWindowTitle = controlServer.WindowTitle()
+	window.SetTitle(lastWindowTitle)
 	controlServer.SetVMViewWithWindow(vmView, window)
 	controlServer.SetVM(vm, queue)
 	runtimeFeatures, err := newRuntimeFeatureState()
@@ -2197,7 +2201,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					if stateUpdate.newState >= 0 {
 						vmToolbar.UpdateState(stateUpdate.newState)
 						statusItem.UpdateState(stateUpdate.newState)
-						window.SetTitle(fmt.Sprintf("%s — %s", windowTitle, vmStateName(stateUpdate.newState)))
+						controlServer.SetWindowTitleState(vmStateName(stateUpdate.newState))
 						if stateUpdate.newState == vz.VZVirtualMachineStateRunning {
 							startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 						}
@@ -2245,6 +2249,10 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					}
 				}
 				stateUpdate.mu.Unlock()
+				if title := controlServer.WindowTitle(); title != "" && title != lastWindowTitle {
+					lastWindowTitle = title
+					window.SetTitle(title)
+				}
 
 				// Animate boot overlay fade-out.
 				if overlayFadeStep >= 0 && bootOverlay.ID != 0 {

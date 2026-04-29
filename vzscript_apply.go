@@ -482,6 +482,9 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 
 	// Wrap output writers with recipe name prefix for clarity.
 	cfg = prefixOutputWriters(cfg, name)
+	if cfg.labels == nil {
+		cfg.labels = &vzscriptLabelStack{}
+	}
 	engine := newVZScriptEngine(cfg)
 
 	workdir, err := os.MkdirTemp("", "vzscript-*")
@@ -514,6 +517,7 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 	}
 
 	err = engine.Execute(state, name, bufio.NewReader(bytes.NewReader(ar.Comment)), out)
+	setVZScriptWindowLabel(cfg, "", nil)
 	if !cfg.verbose && logBuf.Len() > 0 {
 		os.Stderr.Write(logBuf.Bytes())
 	}

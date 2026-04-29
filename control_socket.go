@@ -77,6 +77,10 @@ type ControlServer struct {
 	viewContentHeight int              // cached view content height in pixels (excludes title bar)
 	healthMu          sync.RWMutex     // protects agentHealth
 	agentHealth       agentHealthState // proactive health monitoring state
+	windowTitleMu     sync.RWMutex
+	windowTitleBase   string
+	windowTitleState  string
+	windowTitleLabel  string
 	gui               VMGUIController
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
@@ -204,6 +208,40 @@ func (s *ControlServer) SetVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 	defer s.mu.Unlock()
 	s.vm = vm
 	s.vmQueue = queue
+}
+
+func (s *ControlServer) SetWindowTitleBase(base string) {
+	s.windowTitleMu.Lock()
+	defer s.windowTitleMu.Unlock()
+	s.windowTitleBase = strings.TrimSpace(base)
+}
+
+func (s *ControlServer) SetWindowTitleState(state string) {
+	s.windowTitleMu.Lock()
+	defer s.windowTitleMu.Unlock()
+	s.windowTitleState = strings.TrimSpace(state)
+}
+
+func (s *ControlServer) SetWindowTitleLabel(label string) {
+	s.windowTitleMu.Lock()
+	defer s.windowTitleMu.Unlock()
+	s.windowTitleLabel = strings.TrimSpace(label)
+}
+
+func (s *ControlServer) WindowTitle() string {
+	s.windowTitleMu.RLock()
+	defer s.windowTitleMu.RUnlock()
+	var parts []string
+	if s.windowTitleBase != "" {
+		parts = append(parts, s.windowTitleBase)
+	}
+	if s.windowTitleState != "" {
+		parts = append(parts, s.windowTitleState)
+	}
+	if s.windowTitleLabel != "" {
+		parts = append(parts, s.windowTitleLabel)
+	}
+	return strings.Join(parts, " — ")
 }
 
 // Start begins listening on the Unix socket
@@ -435,6 +473,13 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.getVMStatus()
 	case "capabilities":
 		return s.getCapabilities()
+	case "window-label":
+		label := ""
+		if cmd := req.GetText(); cmd != nil {
+			label = cmd.Text
+		}
+		s.SetWindowTitleLabel(label)
+		return &controlpb.ControlResponse{Success: true, Data: label, Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: label}}}
 	case "reboot-to-recovery", "boot-recovery":
 		return s.rebootToRecovery()
 	case "shared-folders-apply":

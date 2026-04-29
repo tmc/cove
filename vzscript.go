@@ -29,6 +29,9 @@
 //	recovery-options [timeout] Select Options in the Recovery startup picker
 //	startup-options [timeout]  Alias for recovery-options
 //	recovery-continue [timeout] Continue from Recovery setup screens
+//	label-push <text>          Push a script label onto the VM window title
+//	label-pop                  Pop the current script label
+//	label-clear                Clear all script labels
 //	answer-visible [-optional] [-timeout duration] [-progress text] <prompt> <answer>...
 //	type <text>                 Type text into the VM
 //	type-keycodes <text>        Type text using per-key keycode events
@@ -76,6 +79,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
@@ -99,6 +103,7 @@ type vzscriptConfig struct {
 	env         []string // extra environment variables (KEY=VALUE)
 	hostLogFile *os.File // persistent log file in VM directory
 	controlSrv  *ControlServer
+	labels      *vzscriptLabelStack
 }
 
 // execStreamType returns the control request type for streaming exec commands.
@@ -112,6 +117,9 @@ func (c vzscriptConfig) execStreamType() string {
 // newVZScriptEngine returns a script engine with guest VM commands and
 // UI automation commands. Both command sets communicate over the control socket.
 func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
+	if cfg.labels == nil {
+		cfg.labels = &vzscriptLabelStack{}
+	}
 	defaults := script.DefaultCmds()
 	cmds := map[string]script.Cmd{
 		// Guest commands.
@@ -138,6 +146,9 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"recovery-options":   vzRecoveryOptionsCmd(cfg),
 		"startup-options":    vzRecoveryOptionsCmd(cfg),
 		"recovery-continue":  vzRecoveryContinueCmd(cfg),
+		"label-push":         vzLabelPushCmd(cfg),
+		"label-pop":          vzLabelPopCmd(cfg),
+		"label-clear":        vzLabelClearCmd(cfg),
 		"answer-visible":     vzAnswerVisibleCmd(cfg),
 		"type":               vzTypeCmd(cfg),
 		"type-keycodes":      vzTypeKeycodesCmd(cfg),
@@ -1291,6 +1302,129 @@ func recoveryAuthFailedOCR(ocr *ocrx.Service, img image.Image) bool {
 		"Failed to authenticate",
 		"failed to set credential",
 	)
+}
+
+type vzscriptLabelStack struct {
+	mu     sync.Mutex
+	labels []string
+}
+
+func (l *vzscriptLabelStack) push(label string) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	label = cleanVZScriptLabel(label)
+	if label != "" {
+		l.labels = append(l.labels, label)
+	}
+	return strings.Join(l.labels, " / ")
+}
+
+func (l *vzscriptLabelStack) pop() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.labels) > 0 {
+		l.labels = l.labels[:len(l.labels)-1]
+	}
+	return strings.Join(l.labels, " / ")
+}
+
+func (l *vzscriptLabelStack) clear() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.labels = nil
+	return ""
+}
+
+func cleanVZScriptLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if len(label) < 2 {
+		return label
+	}
+	quote := label[0]
+	if quote != '\'' && quote != '"' {
+		return label
+	}
+	if label[len(label)-1] != quote {
+		return label
+	}
+	return strings.TrimSpace(label[1 : len(label)-1])
+}
+
+func vzLabelPushCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "push a label onto the VM window title",
+			Args:    "text",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) == 0 {
+				return nil, script.ErrUsage
+			}
+			label := strings.Join(args, " ")
+			current := cfg.labels.push(label)
+			s.Logf("label-push %q -> %q\n", cleanVZScriptLabel(label), current)
+			setVZScriptWindowLabel(cfg, current, s)
+			return nil, nil
+		},
+	)
+}
+
+func vzLabelPopCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{Summary: "pop the current VM window title label"},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) != 0 {
+				return nil, script.ErrUsage
+			}
+			current := cfg.labels.pop()
+			s.Logf("label-pop -> %q\n", current)
+			setVZScriptWindowLabel(cfg, current, s)
+			return nil, nil
+		},
+	)
+}
+
+func vzLabelClearCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{Summary: "clear VM window title labels"},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if len(args) != 0 {
+				return nil, script.ErrUsage
+			}
+			cfg.labels.clear()
+			s.Logf("label-clear\n")
+			setVZScriptWindowLabel(cfg, "", s)
+			return nil, nil
+		},
+	)
+}
+
+func setVZScriptWindowLabel(cfg vzscriptConfig, label string, s *script.State) {
+	if cfg.controlSrv != nil {
+		cfg.controlSrv.SetWindowTitleLabel(label)
+		return
+	}
+	if cfg.socketPath == "" {
+		return
+	}
+	req := &controlpb.ControlRequest{
+		Type: "window-label",
+		Command: &controlpb.ControlRequest_Text{
+			Text: &controlpb.TextCommand{Text: label},
+		},
+	}
+	resp, err := ctlSendRequest(cfg.socketPath, req, 5*time.Second, "window-label")
+	if err != nil {
+		if s != nil {
+			s.Logf("label window update skipped: %v\n", err)
+		}
+		return
+	}
+	if !resp.Success {
+		if s != nil {
+			s.Logf("label window update skipped: %s\n", resp.Error)
+		}
+	}
 }
 
 type answerVisibleArgs struct {
