@@ -24,6 +24,9 @@
 //	ocr-gone <text> [timeout] [region]   Wait until text disappears
 //	ocr                         Run OCR on current screen; stdout is all text
 //	screenshot [file]           Capture VM screen to file
+//	wait-menu-text <text> [timeout]  Wait for menu bar text
+//	startup-options [timeout]   Hold power until startup options appear
+//	recovery-continue [timeout] Continue from startup options into Recovery
 //	type <text>                 Type text into the VM
 //	type-keycodes <text>        Type text using per-key keycode events
 //	key <spec>                  Send key event (e.g. "return", "tab", "cmd+v")

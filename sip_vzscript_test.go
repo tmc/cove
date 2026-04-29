@@ -46,6 +46,40 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 	}
 }
 
+func TestGenerateSIPVZScript_UsesCustomVZScriptCommandsAndConds(t *testing.T) {
+	got, err := generateSIPVZScript("disable", "admin", "secret", true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := executeVZScriptSyntaxOnly(t, "sip-disable.vzscript", []byte(got)); err != nil {
+		t.Fatal(err)
+	}
+
+	engine := newVZScriptEngine(vzscriptConfig{})
+	wantCmds := []string{
+		"startup-options",
+		"recovery-continue",
+		"wait-menu-text",
+		"ocr-wait",
+		"type-keycodes",
+		"wait-prompt-clear",
+	}
+	for _, name := range wantCmds {
+		if _, ok := engine.Cmds[name]; !ok {
+			t.Fatalf("missing vzscript command %q", name)
+		}
+		if !strings.Contains(got, name) {
+			t.Fatalf("generated script does not use command %q\n%s", name, got)
+		}
+	}
+	if _, ok := engine.Conds["text-visible"]; !ok {
+		t.Fatal("missing text-visible condition")
+	}
+	if !strings.Contains(got, "[text-visible:") {
+		t.Fatalf("generated script does not use text-visible condition\n%s", got)
+	}
+}
+
 func TestGenerateSIPVZScript_NoReboot(t *testing.T) {
 	got, err := generateSIPVZScript("disable", "", "", false, false)
 	if err != nil {
