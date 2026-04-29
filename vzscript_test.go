@@ -27,7 +27,7 @@ func TestVZScriptEngineCommands(t *testing.T) {
 		"screenshot", "ocr", "ocr-click", "ocr-wait", "ocr-gone",
 		"wait-menu-text", "click-menu-item", "reboot-to-recovery",
 		"recovery-options", "startup-options", "recovery-continue",
-		"wait-prompt-clear",
+		"answer-visible", "wait-prompt-clear",
 		"type", "type-keycodes", "key", "click", "wait", "detect-page", "detect-screen",
 		// Standard commands.
 		"echo", "cat", "cp", "env", "exists", "sleep", "stdout", "stderr",

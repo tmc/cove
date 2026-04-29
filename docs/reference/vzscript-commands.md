@@ -269,6 +269,20 @@ wait-prompt-clear <text> [timeout]
 wait-prompt-clear "Password" 30s
 ```
 
+### answer-visible
+
+Wait for the first visible prompt from a set of alternatives, type its answer
+with keycode events, press Return, and wait for the prompt to clear or progress.
+
+```
+answer-visible [-optional] [-timeout duration] [-progress text] <prompt> <answer>...
+```
+
+```
+answer-visible -timeout 30s -progress "Password" "[y/n]" y "Are you sure" y
+answer-visible -optional -timeout 5s "Authorized user" admin "user name" admin
+```
+
 ### detect-page
 
 Detect the current Setup Assistant page via OCR. Returns the page name.

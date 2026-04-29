@@ -21,15 +21,17 @@ func TestGenerateSIPVZScript_DisableWithPasswordConfirmReboot(t *testing.T) {
 		`ocr-wait '-bash-3.2#' 60s`,
 		`key cmd+k`,
 		`type-keycodes 'csrutil disable'`,
-		`[text-visible:Are+you+sure] type-keycodes 'y'`,
-		`[text-visible:%5By%2Fn%5D] type-keycodes 'y'`,
-		`[text-visible:Authorized+user] type-keycodes 'admin'`,
-		`[text-visible:Authorized+user] wait-prompt-clear 'Authorized user' 20s`,
-		`[text-visible:Enter+username] wait-prompt-clear 'Enter username' 5s`,
-		`[text-visible:Password] type-keycodes 'secret'`,
-		`[text-visible:Enter+password] wait-prompt-clear 'Enter password' 5s`,
+		`answer-visible -timeout 45s`,
+		`'y/n' 'y'`,
+		`'security level to full boot security' 'y'`,
+		`answer-visible -optional -timeout 5s`,
+		`'Authorized user' 'admin'`,
+		`'user name' 'admin'`,
+		`'Password' 'secret'`,
+		`'password for user' 'secret'`,
+		`ocr-wait 'System Integrity Protection is off.' 60s`,
 		`[text-visible:System+Integrity+Protection+is+off.] screenshot`,
-		`type-keycodes 'reboot'`,
+		`[text-visible:System+Integrity+Protection+is+off.] type-keycodes 'reboot'`,
 	}
 	for _, want := range wantSnippets {
 		if !strings.Contains(got, want) {
@@ -62,7 +64,7 @@ func TestGenerateSIPVZScript_UsesCustomVZScriptCommandsAndConds(t *testing.T) {
 		"wait-menu-text",
 		"ocr-wait",
 		"type-keycodes",
-		"wait-prompt-clear",
+		"answer-visible",
 	}
 	for _, name := range wantCmds {
 		if _, ok := engine.Cmds[name]; !ok {

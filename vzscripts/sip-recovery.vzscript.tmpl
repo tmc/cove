@@ -9,46 +9,25 @@ key cmd+shift+t
 ocr-wait '-bash-3.2#' 60s
 key cmd+k
 wait 500ms
-ocr-wait '-bash-3.2#' 30s
 type-keycodes {{.CSRUtilCommand}}
 key return
 wait 2s
 {{ if .Confirm }}
-[text-visible:Are+you+sure] type-keycodes 'y'
-[text-visible:Are+you+sure] key return
-[text-visible:Are+you+sure] wait-prompt-clear 'Are you sure' 20s
-[text-visible:%5By%2Fn%5D] type-keycodes 'y'
-[text-visible:%5By%2Fn%5D] key return
-[text-visible:%5By%2Fn%5D] wait-prompt-clear '[y/n]' 20s
+answer-visible -timeout 45s -progress 'Authorized user' -progress 'Enter username' -progress 'user name' -progress 'Password' -progress 'Enter password' -progress 'password for user' -progress {{.SuccessText}} 'y/n' 'y' 'Are you sure' 'y' 'security level to full boot security' 'y'
 wait 1s
 {{ end }}
 {{ if .Username }}
-[text-visible:Authorized+user] type-keycodes {{.Username}}
-[text-visible:Authorized+user] key return
-[text-visible:Authorized+user] wait-prompt-clear 'Authorized user' 20s
-[text-visible:Enter+username] type-keycodes {{.Username}}
-[text-visible:Enter+username] key return
-[text-visible:Enter+username] wait-prompt-clear 'Enter username' 5s
-[text-visible:user+name] type-keycodes {{.Username}}
-[text-visible:user+name] key return
-[text-visible:user+name] wait-prompt-clear 'user name' 5s
+answer-visible -optional -timeout 5s -progress 'Password' -progress 'Enter password' -progress 'password for user' -progress {{.SuccessText}} 'Authorized user' {{.Username}} 'Enter username' {{.Username}} 'user name' {{.Username}}
 wait 1s
 {{ end }}
 {{ if .Password }}
-[text-visible:Password] type-keycodes {{.Password}}
-[text-visible:Password] key return
-[text-visible:Password] wait-prompt-clear 'Password' 20s
-[text-visible:Enter+password] type-keycodes {{.Password}}
-[text-visible:Enter+password] key return
-[text-visible:Enter+password] wait-prompt-clear 'Enter password' 5s
-[text-visible:password+for+user] type-keycodes {{.Password}}
-[text-visible:password+for+user] key return
-[text-visible:password+for+user] wait-prompt-clear 'password for user' 20s
-wait 10s
+answer-visible -timeout 45s -progress {{.SuccessText}} -progress '-bash-3.2#' 'Password' {{.Password}} 'Enter password' {{.Password}} 'password for user' {{.Password}}
+wait 2s
 {{ end }}
+ocr-wait {{.SuccessText}} 60s
 [text-visible:{{.SuccessTextCondition}}] screenshot
 {{ if .Reboot }}
-type-keycodes 'reboot'
-key return
+[text-visible:{{.SuccessTextCondition}}] type-keycodes 'reboot'
+[text-visible:{{.SuccessTextCondition}}] key return
 wait 2s
 {{ end }}

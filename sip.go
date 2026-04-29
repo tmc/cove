@@ -189,6 +189,7 @@ func generateSIPVZScript(mode, username, password string, confirm, reboot bool) 
 		Confirm              bool
 		Username             string
 		Password             string
+		SuccessText          string
 		SuccessTextCondition string
 		Reboot               bool
 	}{
@@ -197,6 +198,7 @@ func generateSIPVZScript(mode, username, password string, confirm, reboot bool) 
 		Confirm:              confirm,
 		Username:             scriptQuoteNonEmpty(username),
 		Password:             scriptQuoteNonEmpty(password),
+		SuccessText:          scriptQuote(sipSuccessText(mode)),
 		SuccessTextCondition: url.QueryEscape(sipSuccessText(mode)),
 		Reboot:               reboot,
 	}
@@ -232,7 +234,7 @@ func sipSuccessText(mode string) string {
 	case "disable":
 		return "System Integrity Protection is off."
 	case "enable":
-		return "System Integrity Protection is enabled."
+		return "System Integrity Protection is on."
 	default:
 		return "System Integrity Protection"
 	}
