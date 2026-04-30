@@ -12,11 +12,17 @@ not a marketing plan. Every branch should be based directly on `origin/main`,
 not on another speedrun branch, and should be small enough to review without
 dragging unrelated roadmap work into the diff.
 
-The current `cove build` command remains dry-run-only until slice 3 lands. Slice
-1 and slice 2 may add internal execution machinery, but they must not advertise
-non-dry-run builds as supported.
+This roadmap began while `cove build` was dry-run-only. Slices 1-6 have since
+landed on the roadmap build branch for local VM bases: cache hits skip guest
+execution, misses run in scratch VMs, secrets mount through guest-only tmpfs or
+RAM disk, compaction runs before diffing, and adapter/benchmark hardening is
+checked in. Registry-base execution and registry cache import/export remain
+deferred.
 
 ## Slice 1: build executor scaffold
+
+**Landed**: yes; the dry-run-only gate described here was removed later by
+Slice 3 for local VM bases.
 
 **Branch**: `feat/v03-build-executor-scaffold`
 **Detailed plan**: [018](018-v03-build-executor-scaffold.md)
@@ -50,6 +56,9 @@ non-dry-run builds as supported.
 - Add a short changelog note only if internal scaffolding is worth tracking.
 
 ## Slice 2: cache-hit materialization
+
+**Landed**: yes; public docs were updated later by Slice 3 when local-base
+execution became supported.
 
 **Branch**: `feat/v03-build-cache-hit-apply`
 **Detailed plan**: [019](019-v03-cache-hit-materialization.md)
