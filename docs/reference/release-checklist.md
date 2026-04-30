@@ -64,6 +64,19 @@ The third command must fail with:
 cove build: --push is not implemented
 ```
 
+Then verify local-base execution with a disposable VM directory:
+
+- Run one tiny recipe against a local VM base with `--compact fast`.
+- Repeat the same command and confirm `cache hits: 1/1`.
+- Run the same tiny recipe with `--compact targeted` and `--compact thorough`
+  on disposable copies of the base, confirming the build reaches `Build
+  complete`.
+- Run a recipe declaring `# secret: COVE_RELEASE_MISSING_SECRET` with that
+  environment variable unset, and confirm it fails before guest start and writes
+  no cache entry.
+- Run `cove push <reported-final-vm-dir> <ref> --dry-run` and confirm it plans
+  from the build output directory.
+
 ## Docs Gates
 
 ```bash
@@ -77,7 +90,8 @@ Check that:
 - `docs/reference/cli.md` matches the command help.
 - `docs/designs/ROADMAP.md` does not mark unfinished work as shipped.
 - Public docs say non-dry-run `cove build` requires a local VM base directory
-  and that `--push` remains gated.
+  for execution, registry bases remain planning-only, build output can be
+  handed to `cove push`, and `--push` remains gated.
 
 ## Tag And Publish
 
