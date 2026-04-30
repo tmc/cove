@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,6 +171,78 @@ func TestReachableFromBuildCache(t *testing.T) {
 	}
 	if reachable["sha256:not-a-real-digest"] {
 		t.Fatal("invalid digest marked reachable")
+	}
+}
+
+func TestReachableFromBuildCacheFollowsParentManifest(t *testing.T) {
+	s := New(t.TempDir())
+	configDigest := testDigest([]byte("config"))
+	layerDigest := testDigest([]byte("layer"))
+	manifest := ociimage.Manifest{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageManifest,
+		Config: ociimage.Descriptor{
+			MediaType: ociimage.MediaTypeImageConfig,
+			Size:      6,
+			Digest:    configDigest,
+		},
+		Layers: []ociimage.Descriptor{{
+			MediaType: ociimage.MediaTypeLayer,
+			Size:      5,
+			Digest:    layerDigest,
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal(): %v", err)
+	}
+	manifestDigest := testDigest(data)
+	if err := s.StoreManifest(manifestDigest, data); err != nil {
+		t.Fatalf("StoreManifest(): %v", err)
+	}
+	path := filepath.Join(s.Dir, "build-cache", "keys", "key.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	data = []byte(`{"parent_digest":"` + manifestDigest + `","layer_digest":"` + testDigest([]byte("build layer")) + `"}`)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	reachable, err := s.ReachableFromBuildCache()
+	if err != nil {
+		t.Fatalf("ReachableFromBuildCache(): %v", err)
+	}
+	for _, digest := range []string{manifestDigest, configDigest, layerDigest} {
+		if !reachable[digest] {
+			t.Fatalf("reachable[%s] = false", digest)
+		}
+	}
+}
+
+func TestReachableFromBuildCacheFollowsLayerManifest(t *testing.T) {
+	s := New(t.TempDir())
+	blockDigest := testDigest([]byte("block"))
+	layerDigest := testDigest([]byte("build layer manifest"))
+	keyPath := filepath.Join(s.Dir, "build-cache", "keys", "key.json")
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(keyPath, []byte(`{"layer_digest":"`+layerDigest+`"}`), 0644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	layerPath := filepath.Join(s.Dir, "build-cache", "layers", strings.TrimPrefix(layerDigest, "sha256:")+".json")
+	if err := os.MkdirAll(filepath.Dir(layerPath), 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(layerPath, []byte(`{"digest":"`+layerDigest+`","blocks":[{"digest":"`+blockDigest+`"}]}`), 0644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	reachable, err := s.ReachableFromBuildCache()
+	if err != nil {
+		t.Fatalf("ReachableFromBuildCache(): %v", err)
+	}
+	if !reachable[layerDigest] || !reachable[blockDigest] {
+		t.Fatalf("reachable layer = %v block = %v, want true", reachable[layerDigest], reachable[blockDigest])
 	}
 }
 
