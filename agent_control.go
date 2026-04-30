@@ -487,6 +487,7 @@ func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 // 30s as the brief's default — short enough to recover quickly from a
 // guest-side restart, long enough not to spam the dispatch queue.
 const defaultAgentHealthInterval = 30 * time.Second
+const startupAgentHealthInterval = 2 * time.Second
 
 // agentHealthIntervalEnv lets operators override the tick cadence at boot
 // time. Accepts any string Go's time.ParseDuration handles (e.g. "10s",
@@ -511,9 +512,10 @@ func resolveAgentHealthInterval() time.Duration {
 	return d
 }
 
-// agentHealthMonitor runs in the background pinging the agent at the
-// configured interval (defaultAgentHealthInterval, overridable via
-// COVE_AGENT_HEALTH_INTERVAL). On failure it transitions through the
+// agentHealthMonitor runs in the background pinging the agent. It polls
+// quickly while the VM is booting or the user agent is still coming up, then
+// falls back to the configured interval (defaultAgentHealthInterval,
+// overridable via COVE_AGENT_HEALTH_INTERVAL). On failure it transitions through the
 // healthCheckOnce reconnect path and emits slog records:
 //
 //   - DEBUG on each successful ping (cardinality every interval, mostly
@@ -524,16 +526,14 @@ func resolveAgentHealthInterval() time.Duration {
 func (s *ControlServer) agentHealthMonitor() {
 	ctx := s.lifecycleContext()
 
-	// Wait a bit for the VM to boot before starting health checks.
+	// Wait briefly for the VM to boot before starting health checks.
 	select {
 	case <-ctx.Done():
 		return
-	case <-time.After(5 * time.Second):
+	case <-time.After(startupAgentHealthInterval):
 	}
 
 	interval := resolveAgentHealthInterval()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
 	slog.Debug("agent-health: monitor started", "interval", interval)
 
 	failCount := 0
@@ -544,12 +544,24 @@ func (s *ControlServer) agentHealthMonitor() {
 
 		s.healthCheckOnce(ctx, &failCount)
 
+		next := s.nextAgentHealthInterval(interval)
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(next):
 		}
 	}
+}
+
+func (s *ControlServer) nextAgentHealthInterval(steady time.Duration) time.Duration {
+	s.healthMu.RLock()
+	daemon := s.agentHealth.daemonStatus
+	user := s.agentHealth.userStatus
+	s.healthMu.RUnlock()
+	if daemon == "connected" && user == "connected" {
+		return steady
+	}
+	return startupAgentHealthInterval
 }
 
 func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {

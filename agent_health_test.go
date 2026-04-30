@@ -32,6 +32,24 @@ func TestResolveAgentHealthInterval(t *testing.T) {
 	}
 }
 
+func TestNextAgentHealthInterval(t *testing.T) {
+	cs := &ControlServer{}
+	if got := cs.nextAgentHealthInterval(time.Minute); got != startupAgentHealthInterval {
+		t.Fatalf("nextAgentHealthInterval before connect = %v, want %v", got, startupAgentHealthInterval)
+	}
+
+	cs.agentHealth.daemonStatus = "connected"
+	cs.agentHealth.userStatus = "disconnected"
+	if got := cs.nextAgentHealthInterval(time.Minute); got != startupAgentHealthInterval {
+		t.Fatalf("nextAgentHealthInterval before user agent = %v, want %v", got, startupAgentHealthInterval)
+	}
+
+	cs.agentHealth.userStatus = "connected"
+	if got := cs.nextAgentHealthInterval(time.Minute); got != time.Minute {
+		t.Fatalf("nextAgentHealthInterval after connect = %v, want 1m", got)
+	}
+}
+
 // TestMarkAgentReconnectingRecordsFirstFailure verifies that the first
 // reconnect attempt sets disconnectAt, and that subsequent calls during the
 // same disconnect streak do NOT overwrite it. Without this invariant, the
