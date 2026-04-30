@@ -3,9 +3,17 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/proto/controlpb"
+
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
+)
+
+const (
+	loginConsoleUserTimeout = 90 * time.Second
+	loginScreenRetryDelay   = 8 * time.Second
 )
 
 // runProvisioningAutomation starts the Setup Assistant automation using
@@ -201,16 +209,12 @@ func tryLoginFallback(socketPath string, creds loginScreenCredentials, force boo
 	if err := client.SendKey(36); err != nil {
 		return fmt.Errorf("press return: %w", err)
 	}
-	time.Sleep(5 * time.Second)
 
-	_, newState, err := client.DetectScreen()
-	if err != nil {
-		return fmt.Errorf("screen detection after login: %w", err)
-	}
-
-	if newState == ScreenStateDesktop {
+	if err := waitForLoginConsoleUser(client, creds.Username, loginConsoleUserTimeout, true); err == nil {
 		fmt.Println("Login successful - reached desktop")
 		return nil
+	} else if verbose {
+		fmt.Printf("[login-watchdog] first login attempt did not reach desktop: %v\n", err)
 	}
 
 	fmt.Println("Still at login screen - trying to click user and retry...")
@@ -227,17 +231,68 @@ func tryLoginFallback(socketPath string, creds loginScreenCredentials, force boo
 	if err := client.SendKey(36); err != nil {
 		return fmt.Errorf("press return (retry): %w", err)
 	}
-	time.Sleep(5 * time.Second)
 
-	_, finalState, err := client.DetectScreen()
-	if err != nil {
-		return fmt.Errorf("final screen detection: %w", err)
-	}
-
-	if finalState != ScreenStateDesktop {
-		return fmt.Errorf("login failed - still at %s", finalState)
+	if err := waitForLoginConsoleUser(client, creds.Username, loginConsoleUserTimeout, true); err != nil {
+		_, finalState, screenErr := client.DetectScreen()
+		if screenErr != nil {
+			return fmt.Errorf("login failed: %w; final screen detection: %v", err, screenErr)
+		}
+		return fmt.Errorf("login failed: %w; final screen state: %s", err, finalState)
 	}
 
 	fmt.Println("Login successful after retry")
 	return nil
+}
+
+func waitForLoginConsoleUser(client *ControlClient, username string, timeout time.Duration, stopAtLoginScreen bool) error {
+	deadline := time.Now().Add(timeout)
+	loginScreenDeadline := time.Now().Add(loginScreenRetryDelay)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		user, err := loginConsoleUser(client)
+		if err == nil {
+			if user == username {
+				return nil
+			}
+			return fmt.Errorf("console user is %q, want %q", user, username)
+		}
+		lastErr = err
+
+		if stopAtLoginScreen && time.Now().After(loginScreenDeadline) {
+			if _, state, err := client.DetectScreen(); err == nil && state == ScreenStateLoginScreen {
+				return fmt.Errorf("still at login screen: %w", lastErr)
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("console user did not become %q: %w", username, lastErr)
+	}
+	return fmt.Errorf("console user did not become %q", username)
+}
+
+func loginConsoleUser(client *ControlClient) (string, error) {
+	result, err := client.AgentExecTypedTimeout([]string{"stat", "-f", "%Su %u", "/dev/console"}, nil, "", 8*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("query console user: %w", err)
+	}
+	return loginConsoleUserFromExec(result)
+}
+
+func loginConsoleUserFromExec(result *controlpb.AgentExecResponse) (string, error) {
+	if result == nil {
+		return "", fmt.Errorf("query console user: missing response")
+	}
+	if result.ExitCode != 0 {
+		msg := strings.TrimSpace(result.Stderr)
+		if msg == "" {
+			msg = strings.TrimSpace(result.Stdout)
+		}
+		if msg == "" {
+			msg = "unknown error"
+		}
+		return "", fmt.Errorf("query console user: %s", msg)
+	}
+	user, _, err := parseConsoleOwnerOutput(result.Stdout)
+	return user, err
 }

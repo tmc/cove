@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/tmc/vz-macos/proto/controlpb"
+)
 
 func TestValidateUsername(t *testing.T) {
 	tests := []struct {
@@ -38,6 +42,37 @@ func TestValidateUsername(t *testing.T) {
 			err := validateUsername(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateUsername(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoginConsoleUserFromExec(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  *controlpb.AgentExecResponse
+		want    string
+		wantErr bool
+	}{
+		{name: "user", result: &controlpb.AgentExecResponse{Stdout: "overlaytest 502\n"}, want: "overlaytest"},
+		{name: "root", result: &controlpb.AgentExecResponse{Stdout: "root 0\n"}, wantErr: true},
+		{name: "exec failure stderr", result: &controlpb.AgentExecResponse{ExitCode: 1, Stderr: "stat failed\n"}, wantErr: true},
+		{name: "nil", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := loginConsoleUserFromExec(tt.result)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("loginConsoleUserFromExec() got nil error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loginConsoleUserFromExec(): %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("loginConsoleUserFromExec() = %q, want %q", got, tt.want)
 			}
 		})
 	}
