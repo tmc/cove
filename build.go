@@ -70,15 +70,29 @@ func handleBuild(args []string) error {
 	if opts.Base == "" {
 		return fmt.Errorf("cove build: --base is required")
 	}
+	if !opts.DryRun && opts.Push {
+		return fmt.Errorf("cove build: --push is not implemented")
+	}
 	if !opts.DryRun {
-		return fmt.Errorf("cove build: only --dry-run is implemented")
+		if _, ok := localBuildBaseDir(opts.Base); !ok {
+			return fmt.Errorf("cove build: non-dry-run requires local VM base directory")
+		}
 	}
 	ctx := context.Background()
-	plan, err := buildDryPlan(ctx, posArgs[0], opts, http.DefaultClient)
+	blobStore := store.New(opts.StoreDir)
+	plan, err := buildDryPlanWithStore(ctx, posArgs[0], opts, http.DefaultClient, blobStore)
 	if err != nil {
 		return err
 	}
-	printBuildPlan(os.Stdout, plan, opts)
+	if opts.DryRun {
+		printBuildPlan(os.Stdout, plan, opts)
+		return nil
+	}
+	exec := newBuildExecutor(plan, opts, blobStore)
+	if err := exec.Execute(ctx); err != nil {
+		return err
+	}
+	printBuildResult(os.Stdout, plan, exec.Result(), opts)
 	return nil
 }
 
@@ -141,7 +155,11 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 	if err != nil {
 		return buildPlan{}, fmt.Errorf("resolve base: %w", err)
 	}
-	plan := buildPlan{Name: name, Base: opts.Base, ParentDigest: parentDigest, Tags: append([]string(nil), opts.Tags...)}
+	base := opts.Base
+	if dir, ok := localBuildBaseDir(opts.Base); ok {
+		base = dir
+	}
+	plan := buildPlan{Name: name, Base: base, ParentDigest: parentDigest, Tags: append([]string(nil), opts.Tags...)}
 	currentParent := parentDigest
 	for _, scriptName := range opts.Scripts {
 		step, err := loadBuildScript(scriptName)
@@ -220,6 +238,25 @@ func printBuildPlan(w io.Writer, plan buildPlan, opts buildOptions) {
 		if step.Meta.CacheTTL > 0 {
 			fmt.Fprintf(w, "    cache-ttl: %s\n", step.Meta.CacheTTL.Round(time.Second))
 		}
+	}
+}
+
+func printBuildResult(w io.Writer, plan buildPlan, result buildExecutionResult, opts buildOptions) {
+	fmt.Fprintf(w, "Build complete\n")
+	fmt.Fprintf(w, "  name: %s\n", plan.Name)
+	fmt.Fprintf(w, "  base: %s\n", plan.Base)
+	if result.VMDir != "" {
+		fmt.Fprintf(w, "  vm: %s\n", result.VMDir)
+	}
+	if result.DiskPath != "" {
+		fmt.Fprintf(w, "  disk: %s\n", result.DiskPath)
+	}
+	for _, tag := range plan.Tags {
+		fmt.Fprintf(w, "  tag: %s\n", tag)
+	}
+	fmt.Fprintf(w, "  steps: %d\n", len(result.Steps))
+	if opts.KeepIntermediate {
+		fmt.Fprintln(w, "  intermediate: kept")
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/store"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 func TestParseBuildScriptMeta(t *testing.T) {
@@ -333,12 +334,69 @@ func TestSplitBuildArgs(t *testing.T) {
 	}
 }
 
-func TestHandleBuildRequiresDryRun(t *testing.T) {
+func TestHandleBuildRunsLocalBase(t *testing.T) {
+	restoreControl := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restoreControl()
+	oldStart := defaultBuildGuestStart
+	defer func() { defaultBuildGuestStart = oldStart }()
+	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	parentDir := filepath.Join(home, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := filepath.Join(home, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdoutResult(t, func() error {
+		return handleBuild([]string{
+			"test-image",
+			"--base", parentDir,
+			"--script", script,
+			"--store-dir", filepath.Join(home, "store"),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handleBuild(): %v", err)
+	}
+	if !strings.Contains(out, "Build complete") || !strings.Contains(out, "steps: 1") {
+		t.Fatalf("output missing build result:\n%s", out)
+	}
+}
+
+func TestHandleBuildNonDryRunRequiresLocalBase(t *testing.T) {
 	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "vm"})
 	if err == nil {
-		t.Fatal("handleBuild() error = nil, want dry-run-only error")
+		t.Fatal("handleBuild() error = nil, want local-base error")
 	}
-	if !strings.Contains(err.Error(), "only --dry-run is implemented") {
+	if !strings.Contains(err.Error(), "requires local VM base directory") {
+		t.Fatalf("handleBuild() error = %q", err)
+	}
+}
+
+func TestHandleBuildPushStillGated(t *testing.T) {
+	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "--push", "vm"})
+	if err == nil {
+		t.Fatal("handleBuild() error = nil, want push error")
+	}
+	if !strings.Contains(err.Error(), "--push is not implemented") {
 		t.Fatalf("handleBuild() error = %q", err)
 	}
 }

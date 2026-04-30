@@ -346,9 +346,14 @@ func expandHome(path string) string {
 	return path
 }
 
-func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Reference, string, error) {
+func localBuildBaseDir(refText string) (string, bool) {
 	path := expandHome(refText)
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
+	info, err := os.Stat(path)
+	return path, err == nil && info.IsDir()
+}
+
+func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Reference, string, error) {
+	if path, ok := localBuildBaseDir(refText); ok {
 		digest, err := digestLocalBuildBase(path)
 		if err != nil {
 			return ociimage.Reference{}, "", err
