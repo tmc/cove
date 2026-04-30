@@ -81,6 +81,8 @@ Then verify local-base execution with a disposable VM directory:
 - Run a recipe declaring `# secret: COVE_RELEASE_MISSING_SECRET` with that
   environment variable unset, and confirm it fails before guest start and writes
   no cache entry.
+- Run a Linux guest recipe declaring a present `# secret:` while guest swap is
+  active, and confirm the build fails before the script body runs.
 - Run `cove push <reported-final-vm-dir> <ref> --dry-run` and confirm it plans
   from the build output directory.
 - Run a local-base build with `--tag <ref> --push` against a disposable registry

@@ -21,6 +21,7 @@ type buildExecutor struct {
 	scratchRoot  string
 	startGuest   buildGuestStarter
 	compactGuest buildCompactor
+	mountSecrets buildSecretMounter
 	now          func() time.Time
 	pid          int
 	result       buildExecutionResult
@@ -34,6 +35,7 @@ type buildExecutionResult struct {
 
 type buildMissRunner func(context.Context, buildPlanStep, buildScratch) error
 type buildCompactor func(context.Context, buildScratch, string) error
+type buildSecretMounter func(context.Context, buildPlanStep, buildScratch, string) (buildGuestCleanup, error)
 
 func newBuildExecutor(plan buildPlan, opts buildOptions, s store.Store) *buildExecutor {
 	return &buildExecutor{

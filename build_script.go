@@ -28,6 +28,15 @@ func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPla
 	if err := waitBuildAgent(ctx, socketPath, 2*time.Minute); err != nil {
 		return fmt.Errorf("run build step %q: %w", step.Name, err)
 	}
+	secretCleanup, secretErr := e.mountBuildStepSecrets(ctx, step, sc, socketPath)
+	if secretCleanup != nil {
+		defer func() {
+			err = errors.Join(err, secretCleanup(ctx))
+		}()
+	}
+	if secretErr != nil {
+		return fmt.Errorf("run build step %q: %w", step.Name, secretErr)
+	}
 	err = e.runBuildStepScript(ctx, step, socketPath)
 	if err == nil {
 		err = e.compactBuildGuest(ctx, step, sc)
@@ -60,6 +69,24 @@ func (e *buildExecutor) compactBuildGuest(ctx context.Context, step buildPlanSte
 		return fmt.Errorf("run build step %q: compact %s: %w", step.Name, mode, err)
 	}
 	return nil
+}
+
+func (e *buildExecutor) mountBuildStepSecrets(ctx context.Context, step buildPlanStep, sc buildScratch, socketPath string) (buildGuestCleanup, error) {
+	if len(step.Meta.Secrets) == 0 {
+		return nil, nil
+	}
+	mount := e.mountSecrets
+	if mount == nil {
+		mount = defaultBuildSecretMount
+	}
+	if mount == nil {
+		return nil, fmt.Errorf("secret mount unavailable")
+	}
+	cleanup, err := mount(ctx, step, sc, socketPath)
+	if err != nil {
+		return cleanup, fmt.Errorf("mount secrets: %w", err)
+	}
+	return cleanup, nil
 }
 
 func (e *buildExecutor) runBuildStepScript(ctx context.Context, step buildPlanStep, socketPath string) error {

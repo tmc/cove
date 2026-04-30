@@ -686,8 +686,12 @@ least one `--tag` and pushes the reported final VM directory after a successful
 local-base build.
 
 Scripts may declare `# secret:` names for host environment variables that must
-exist before guest execution starts. Use `# cache-env:` only for non-secret cache
-inputs; names that look like tokens, passwords, secrets, or keys emit a warning.
+exist before guest execution starts. During the step, declared values are written
+as `0600` files under `/tmp/cove-secrets/<NAME>` in a guest tmpfs or RAM disk,
+then unmounted after the script finishes. Linux guests fail closed if swap cannot
+be disabled before secrets are mounted. Use `# cache-env:` only for non-secret
+cache inputs; names that look like tokens, passwords, secrets, or keys emit a
+warning.
 
 ---
 

@@ -20,6 +20,7 @@ var (
 	sendBuildControlRequest buildControlSender = ctlSendRequest
 	defaultBuildGuestStart  buildGuestStarter  = startScratchBuildGuest
 	defaultBuildCompact     buildCompactor     = compactBuildScratch
+	defaultBuildSecretMount buildSecretMounter = mountBuildStepSecrets
 )
 
 func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
