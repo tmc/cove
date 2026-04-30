@@ -9,6 +9,7 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -271,17 +272,42 @@ func compactBuildScratch(ctx context.Context, sc buildScratch, mode string) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if mode == "fast" {
-		return nil
-	}
 	if err := validateCompactMode(mode); err != nil {
 		return err
 	}
 	if sc.Dir == "" {
 		return fmt.Errorf("build compact: scratch vm dir required")
 	}
-	if _, err := compactVM(sc.Dir); err != nil {
+	switch mode {
+	case "fast":
+		return nil
+	case "targeted":
+		return compactBuildScratchTargeted(ctx, sc)
+	case "thorough":
+		if _, err := compactVM(sc.Dir); err != nil {
+			return err
+		}
+		return ctx.Err()
+	default:
+		return fmt.Errorf("compact: invalid mode %q", mode)
+	}
+}
+
+func compactBuildScratchTargeted(ctx context.Context, sc buildScratch) error {
+	script, err := targetedBuildCompactScript(agentstate.Platform(sc.Dir))
+	if err != nil {
 		return err
 	}
-	return ctx.Err()
+	return runBuildAgentShell(ctx, GetControlSocketPathForVM(sc.Dir), script)
+}
+
+func targetedBuildCompactScript(platform string) (string, error) {
+	switch platform {
+	case agentstate.PlatformLinux:
+		return "set +e; rm -rf /var/log/* /var/cache/* /tmp/*; sync", nil
+	case agentstate.PlatformMacOS:
+		return "set +e; rm -rf /private/var/log/* /var/log/* /var/db/diagnostics/* /private/var/folders/*/C/*; sync", nil
+	default:
+		return "", fmt.Errorf("unsupported guest platform %q", platform)
+	}
 }

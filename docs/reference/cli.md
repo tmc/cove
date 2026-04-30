@@ -693,6 +693,10 @@ be disabled before secrets are mounted. Use `# cache-env:` only for non-secret
 cache inputs; names that look like tokens, passwords, secrets, or keys emit a
 warning.
 
+Build compaction modes are step-local: `fast` skips guest cleanup, `targeted`
+clears common churn paths before the diff, and `thorough` runs the full
+agent-aware free-space compactor.
+
 ---
 
 ## Other Commands

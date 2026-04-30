@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -169,6 +170,66 @@ func TestShutdownBuildGuestReportsFailure(t *testing.T) {
 	err := shutdownBuildGuest(context.Background(), "sock")
 	if err == nil || !strings.Contains(err.Error(), "denied") {
 		t.Fatalf("shutdownBuildGuest() = %v, want denial", err)
+	}
+}
+
+func TestCompactBuildScratchTargetedLinux(t *testing.T) {
+	root := t.TempDir()
+	sc := buildScratch{Dir: filepath.Join(root, "scratch")}
+	if err := os.MkdirAll(sc.Dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sc.Dir, "linux-disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		if cmdType != "agent-exec" {
+			t.Fatalf("cmdType = %q, want agent-exec", cmdType)
+		}
+		got = strings.Join(req.GetAgentExec().GetArgs(), " ")
+		return &controlpb.ControlResponse{
+			Success: true,
+			Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{}},
+		}, nil
+	})
+	defer restore()
+	if err := compactBuildScratch(context.Background(), sc, "targeted"); err != nil {
+		t.Fatalf("compactBuildScratch(targeted): %v", err)
+	}
+	for _, want := range []string{"/var/log/*", "/var/cache/*", "/tmp/*", "sync"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("targeted compact script missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestTargetedBuildCompactScript(t *testing.T) {
+	tests := []struct {
+		platform string
+		want     string
+		wantErr  string
+	}{
+		{platform: "linux", want: "/var/cache/*"},
+		{platform: "macos", want: "/var/db/diagnostics/*"},
+		{platform: "windows", wantErr: "unsupported guest platform"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			got, err := targetedBuildCompactScript(tt.platform)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("targetedBuildCompactScript() = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("targetedBuildCompactScript(): %v", err)
+			}
+			if !strings.Contains(got, tt.want) {
+				t.Fatalf("targetedBuildCompactScript() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
