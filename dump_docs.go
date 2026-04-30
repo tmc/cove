@@ -283,7 +283,7 @@ var cliDocSpecs = []cliDocSpec{
 		"cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --dry-run",
 		"cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1",
 	}},
-	{Name: "push", Summary: "Plan or push a VM disk as an OCI image.", Usage: func() string {
+	{Name: "push", Summary: "Plan or push a VM disk as an OCI image. Source may be a VM name or local VM directory.", Usage: func() string {
 		return captureWriter(printPushUsage)
 	}, Flags: []cliFlagDoc{
 		{Name: "--base", Argument: "<ref>", Summary: "Base image for delta push."},
@@ -294,6 +294,7 @@ var cliDocSpecs = []cliDocSpec{
 		{Name: "--manifest-out", Argument: "<path>", Summary: "Write OCI manifest JSON to path."},
 	}, Examples: []string{
 		"cove push dev-vm ghcr.io/me/dev-vm:v1 --dry-run",
+		"cove push ~/.vz/build-scratch/20260430T120000Z-deadbeef ghcr.io/me/dev-vm:v1 --dry-run",
 		"cove push dev-vm ghcr.io/me/dev-vm:v2 --base ghcr.io/me/dev-vm:v1",
 	}},
 	{Name: "pull", Summary: "Validate or pull an OCI VM image.", Usage: func() string {
