@@ -65,6 +65,14 @@ Run unit coverage first:
 python -m pytest adapters/openai-agents-python/tests
 ```
 
+With Python 3.10 or newer, check packaging without publishing:
+
+```bash
+tmp=$(mktemp -d)
+python -m pip wheel adapters/openai-agents-python -w "$tmp"
+ls "$tmp"/cove_sandbox-*.whl
+```
+
 Then run a live fork-backed smoke against a stopped parent VM:
 
 ```bash
