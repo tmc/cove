@@ -153,7 +153,9 @@ func TestBuildExecutorExecuteSecondRunUsesCache(t *testing.T) {
 		AgentProtocolVersion: agentProtocolVersion,
 		Meta:                 buildScriptMeta{Compact: "targeted"},
 	}
+	storeDir := filepath.Join(root, "store")
 	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.store = store.New(storeDir)
 	exec.plan.Base = parentDir
 	exec.plan.Steps = []buildPlanStep{step}
 	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
@@ -168,7 +170,7 @@ func TestBuildExecutorExecuteSecondRunUsesCache(t *testing.T) {
 	}
 
 	second := testBuildExecutor(filepath.Join(root, "scratch2"))
-	second.store = exec.store
+	second.store = store.New(storeDir)
 	second.plan.Base = parentDir
 	step.CacheHit = true
 	step.LayerDigest = entry.LayerDigest
