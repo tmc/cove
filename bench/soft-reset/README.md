@@ -1,6 +1,10 @@
 # cove soft-reset isolation matrix
 
-This is the B6 roadmap harness from `docs/designs/014-roadmap-update-post-v0.1.md`. It exists to decide whether per-eval user-account reset is a real isolation primitive or only a best-effort throughput optimization.
+This is the soft-reset isolation harness referenced by `docs/designs/ROADMAP.md`
+and resolved by `docs/designs/015-soft-reset-empirical.md`. The first measured
+matrix showed that per-eval user-account reset is not an isolation primitive;
+the harness remains useful only for future rechecks and low-risk throughput
+experiments.
 
 Do not run these probes against a VM you care about. Use a forked disposable VM and expect the run to create users, change preferences, touch TCC, mutate Keychain state, and install a test LaunchDaemon.
 
