@@ -426,6 +426,9 @@ func testBuildExecutor(root string) *buildExecutor {
 			return time.Date(2026, 4, 30, 3, 30, 0, 0, time.UTC)
 		},
 		pid: 1234,
+		compactGuest: func(context.Context, buildScratch, string) error {
+			return nil
+		},
 	}
 }
 

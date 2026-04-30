@@ -29,10 +29,37 @@ func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPla
 		return fmt.Errorf("run build step %q: %w", step.Name, err)
 	}
 	err = e.runBuildStepScript(ctx, step, socketPath)
+	if err == nil {
+		err = e.compactBuildGuest(ctx, step, sc)
+	}
 	if shutdownErr := shutdownBuildGuest(ctx, socketPath); shutdownErr != nil {
 		err = errors.Join(err, shutdownErr)
 	}
 	return err
+}
+
+func (e *buildExecutor) compactBuildGuest(ctx context.Context, step buildPlanStep, sc buildScratch) error {
+	mode := step.Meta.Compact
+	if mode == "" {
+		mode = "targeted"
+	}
+	if err := validateCompactMode(mode); err != nil {
+		return fmt.Errorf("run build step %q: %w", step.Name, err)
+	}
+	if mode == "fast" {
+		return nil
+	}
+	compact := e.compactGuest
+	if compact == nil {
+		compact = defaultBuildCompact
+	}
+	if compact == nil {
+		return nil
+	}
+	if err := compact(ctx, sc, mode); err != nil {
+		return fmt.Errorf("run build step %q: compact %s: %w", step.Name, mode, err)
+	}
+	return nil
 }
 
 func (e *buildExecutor) runBuildStepScript(ctx context.Context, step buildPlanStep, socketPath string) error {

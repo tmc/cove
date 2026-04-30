@@ -19,6 +19,7 @@ type buildGuestStarter func(context.Context, buildScratch) (buildGuestCleanup, e
 var (
 	sendBuildControlRequest buildControlSender = ctlSendRequest
 	defaultBuildGuestStart  buildGuestStarter  = startScratchBuildGuest
+	defaultBuildCompact     buildCompactor     = compactBuildScratch
 )
 
 func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
@@ -260,4 +261,26 @@ func shutdownBuildGuest(ctx context.Context, socketPath string) error {
 		return fmt.Errorf("build shutdown: %s", resp.Error)
 	}
 	return nil
+}
+
+func compactBuildScratch(ctx context.Context, sc buildScratch, mode string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if mode == "fast" {
+		return nil
+	}
+	if err := validateCompactMode(mode); err != nil {
+		return err
+	}
+	if sc.Dir == "" {
+		return fmt.Errorf("build compact: scratch vm dir required")
+	}
+	if _, err := compactVM(sc.Dir); err != nil {
+		return err
+	}
+	return ctx.Err()
 }

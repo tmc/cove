@@ -15,14 +15,15 @@ import (
 var errBuildCacheMissExecutionNotImplemented = errors.New("cove build: cache miss execution not yet implemented")
 
 type buildExecutor struct {
-	plan        buildPlan
-	opts        buildOptions
-	store       store.Store
-	scratchRoot string
-	startGuest  buildGuestStarter
-	now         func() time.Time
-	pid         int
-	result      buildExecutionResult
+	plan         buildPlan
+	opts         buildOptions
+	store        store.Store
+	scratchRoot  string
+	startGuest   buildGuestStarter
+	compactGuest buildCompactor
+	now          func() time.Time
+	pid          int
+	result       buildExecutionResult
 }
 
 type buildExecutionResult struct {
@@ -32,6 +33,7 @@ type buildExecutionResult struct {
 }
 
 type buildMissRunner func(context.Context, buildPlanStep, buildScratch) error
+type buildCompactor func(context.Context, buildScratch, string) error
 
 func newBuildExecutor(plan buildPlan, opts buildOptions, s store.Store) *buildExecutor {
 	return &buildExecutor{

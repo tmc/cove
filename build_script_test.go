@@ -74,6 +74,87 @@ func TestRunBuildStepInScratchWaitsAndShutsDown(t *testing.T) {
 	}
 }
 
+func TestRunBuildStepInScratchCompactsBeforeShutdown(t *testing.T) {
+	var calls []string
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		calls = append(calls, cmdType)
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	exec := testBuildExecutor(t.TempDir())
+	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+		calls = append(calls, "start")
+		return func(context.Context) error {
+			calls = append(calls, "stop")
+			return nil
+		}, nil
+	}
+	exec.compactGuest = func(ctx context.Context, sc buildScratch, mode string) error {
+		calls = append(calls, "compact:"+mode)
+		return nil
+	}
+	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	step := buildPlanStep{Name: "ok", Data: []byte("echo ok\n"), Meta: buildScriptMeta{Compact: "thorough"}}
+	if err := exec.runBuildStepInScratch(context.Background(), step, sc); err != nil {
+		t.Fatalf("runBuildStepInScratch(): %v", err)
+	}
+	want := []string{"start", "agent-ping", "compact:thorough", "agent-shutdown", "stop"}
+	if strings.Join(calls, ",") != strings.Join(want, ",") {
+		t.Fatalf("calls = %v, want %v", calls, want)
+	}
+}
+
+func TestRunBuildStepInScratchSkipsFastCompaction(t *testing.T) {
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	exec := testBuildExecutor(t.TempDir())
+	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	exec.compactGuest = func(context.Context, buildScratch, string) error {
+		t.Fatal("fast compact called compactor")
+		return nil
+	}
+	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	step := buildPlanStep{Name: "ok", Data: []byte("echo ok\n"), Meta: buildScriptMeta{Compact: "fast"}}
+	if err := exec.runBuildStepInScratch(context.Background(), step, sc); err != nil {
+		t.Fatalf("runBuildStepInScratch(): %v", err)
+	}
+}
+
+func TestRunBuildStepInScratchReportsCompactFailure(t *testing.T) {
+	var calls []string
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		calls = append(calls, cmdType)
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	exec := testBuildExecutor(t.TempDir())
+	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+		calls = append(calls, "start")
+		return func(context.Context) error {
+			calls = append(calls, "stop")
+			return nil
+		}, nil
+	}
+	exec.compactGuest = func(context.Context, buildScratch, string) error {
+		calls = append(calls, "compact")
+		return errors.New("compact failed")
+	}
+	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	step := buildPlanStep{Name: "bad-compact", Data: []byte("echo ok\n"), Meta: buildScriptMeta{Compact: "targeted"}}
+	err := exec.runBuildStepInScratch(context.Background(), step, sc)
+	if err == nil || !strings.Contains(err.Error(), "compact targeted") {
+		t.Fatalf("runBuildStepInScratch() = %v, want compact failure", err)
+	}
+	want := []string{"start", "agent-ping", "compact", "agent-shutdown", "stop"}
+	if strings.Join(calls, ",") != strings.Join(want, ",") {
+		t.Fatalf("calls = %v, want %v", calls, want)
+	}
+}
+
 func TestRunBuildStepInScratchCleansUpAfterScriptFailure(t *testing.T) {
 	var stopped bool
 	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {

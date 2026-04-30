@@ -23,12 +23,17 @@ func TestBuildCLIScriptLocalBaseCacheHit(t *testing.T) {
 	})
 	defer restoreControl()
 	oldStart := defaultBuildGuestStart
-	defer func() { defaultBuildGuestStart = oldStart }()
+	oldCompact := defaultBuildCompact
+	defer func() {
+		defaultBuildGuestStart = oldStart
+		defaultBuildCompact = oldCompact
+	}()
 	starts := 0
 	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
 		starts++
 		return func(context.Context) error { return nil }, nil
 	}
+	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
 
 	root := t.TempDir()
 	t.Setenv("HOME", root)
@@ -73,12 +78,17 @@ func TestBuildCLIScriptFailureScratchPolicy(t *testing.T) {
 	})
 	defer restoreControl()
 	oldStart := defaultBuildGuestStart
-	defer func() { defaultBuildGuestStart = oldStart }()
+	oldCompact := defaultBuildCompact
+	defer func() {
+		defaultBuildGuestStart = oldStart
+		defaultBuildCompact = oldCompact
+	}()
 	starts := 0
 	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
 		starts++
 		return func(context.Context) error { return nil }, nil
 	}
+	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
 
 	root := t.TempDir()
 	t.Setenv("HOME", root)

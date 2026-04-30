@@ -340,10 +340,15 @@ func TestHandleBuildRunsLocalBase(t *testing.T) {
 	})
 	defer restoreControl()
 	oldStart := defaultBuildGuestStart
-	defer func() { defaultBuildGuestStart = oldStart }()
+	oldCompact := defaultBuildCompact
+	defer func() {
+		defaultBuildGuestStart = oldStart
+		defaultBuildCompact = oldCompact
+	}()
 	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
+	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
