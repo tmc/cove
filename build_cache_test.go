@@ -249,6 +249,47 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 	}
 }
 
+func TestBuildDryPlanExpiresLocalCacheHit(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("# cache-ttl: 1h\nexec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(filepath.Join(dir, "store"))
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:base", Scripts: []string{script}, Compact: "targeted"}
+	plan, err := buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(): %v", err)
+	}
+	layer := digestBytes([]byte("layer"))
+	entry := buildCacheEntry{
+		Key:         plan.Steps[0].Key,
+		LayerDigest: layer,
+		CreatedAt:   time.Now().Add(-2 * time.Hour).UTC(),
+	}
+	if err := saveBuildCacheEntry(s, entry); err != nil {
+		t.Fatalf("saveBuildCacheEntry(): %v", err)
+	}
+	plan, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(expired): %v", err)
+	}
+	if plan.Steps[0].CacheHit {
+		t.Fatalf("CacheHit = true for expired entry created at %s", entry.CreatedAt)
+	}
+	entry.CreatedAt = time.Now().UTC()
+	if err := saveBuildCacheEntry(s, entry); err != nil {
+		t.Fatalf("saveBuildCacheEntry(fresh): %v", err)
+	}
+	plan, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(fresh): %v", err)
+	}
+	if !plan.Steps[0].CacheHit || plan.Steps[0].LayerDigest != layer {
+		t.Fatalf("cache hit = %v layer = %q, want hit %q", plan.Steps[0].CacheHit, plan.Steps[0].LayerDigest, layer)
+	}
+}
+
 func TestBuildPlanWarnings(t *testing.T) {
 	plan := buildPlan{Steps: []buildPlanStep{{
 		Name: "env",

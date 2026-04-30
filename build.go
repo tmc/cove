@@ -185,6 +185,7 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 	}
 	plan := buildPlan{Name: name, Base: base, ParentDigest: parentDigest, Tags: append([]string(nil), opts.Tags...)}
 	currentParent := parentDigest
+	now := time.Now().UTC()
 	for _, scriptName := range opts.Scripts {
 		step, err := loadBuildScript(scriptName)
 		if err != nil {
@@ -210,8 +211,10 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 		if !opts.NoCache {
 			entry, err := loadBuildCacheEntry(blobStore, key)
 			if err == nil {
-				planStep.CacheHit = true
-				planStep.LayerDigest = entry.LayerDigest
+				if buildCacheEntryFresh(entry, step.Meta.CacheTTL, now) {
+					planStep.CacheHit = true
+					planStep.LayerDigest = entry.LayerDigest
+				}
 			} else if !errors.Is(err, os.ErrNotExist) {
 				return plan, err
 			}
@@ -220,6 +223,16 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 		currentParent = key
 	}
 	return plan, nil
+}
+
+func buildCacheEntryFresh(entry buildCacheEntry, ttl time.Duration, now time.Time) bool {
+	if ttl <= 0 {
+		return true
+	}
+	if entry.CreatedAt.IsZero() {
+		return false
+	}
+	return now.Before(entry.CreatedAt.Add(ttl))
 }
 
 func printBuildPlan(w io.Writer, plan buildPlan, opts buildOptions) {
