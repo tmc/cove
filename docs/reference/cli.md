@@ -646,6 +646,41 @@ cove compact -vm dev-vm
 
 ---
 
+## build
+
+Plan cache-keyed VM image builds from vzscript steps. This command currently
+ships dry-run planning only: it resolves the base image, parses build step
+metadata, computes cache keys, and reports local cache hits without booting a
+scratch VM.
+
+```
+cove build <name> --base <ref> --script <step> [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--base <ref>` | | Base OCI image reference |
+| `--script <name\|path>` | | Built-in vzscript recipe or .vzscript path (repeatable) |
+| `--tag <ref>` | | Output OCI image tag (repeatable) |
+| `--push` | false | Push output tags after build; requires future execution support |
+| `--dry-run` | false | Print the resolved build plan and cache keys only |
+| `--no-cache` | false | Re-run every step instead of restoring cached layers |
+| `--cache-from <ref>` | | Registry cache source (repeatable) |
+| `--cache-to <ref>` | | Registry cache destination (repeatable) |
+| `--keep-intermediate` | false | Leave scratch VMs behind for debugging; requires future execution support |
+| `--chunk-size <mb>` | 512 | Chunk size in MiB |
+| `--compact <mode>` | targeted | Compaction mode: fast, targeted, or thorough |
+
+```bash
+cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --dry-run
+cove build macos-agent --base ghcr.io/me/base:v1 --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --dry-run
+```
+
+Non-dry-run builds fail with `cove build: only --dry-run is implemented` until
+the v0.3 VM execution path lands.
+
+---
+
 ## Other Commands
 
 | Command | Description |

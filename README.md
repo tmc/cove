@@ -233,8 +233,8 @@ cove/
 | Maturity | Features |
 |----------|----------|
 | GA | install, run (auto-suspend on quit, resume on next run), provisioning (inject), vzscripts |
-| Beta | snapshots, guest agent, clipboard sharing, shared folders |
-| Experimental | UTM import, memory balloon, Windows stub |
+| Beta | snapshots, guest agent, clipboard sharing, shared folders, Linux guests, OCI push/pull, VM fork/restore, `cove compact`, local content-addressed store |
+| Experimental | `cove build --dry-run` cache planning, UTM import, memory balloon, Windows stub |
 
 ## Security
 
