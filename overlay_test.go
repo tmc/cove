@@ -51,3 +51,23 @@ func TestBootOverlayMessage(t *testing.T) {
 		t.Fatalf("bootOverlayMessage() recovery = %q, %q, %v", title, subtitle, hold)
 	}
 }
+
+func TestBootOverlayReadyToFade(t *testing.T) {
+	tests := []struct {
+		summary string
+		want    bool
+	}{
+		{summary: "Agent: connected", want: true},
+		{summary: "Agent: connected (no user session)", want: true},
+		{summary: "Agent: connecting...", want: false},
+		{summary: "Agent: reconnecting...", want: false},
+		{summary: "Agent: starting (first boot)", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.summary, func(t *testing.T) {
+			if got := bootOverlayReadyToFade(tt.summary); got != tt.want {
+				t.Fatalf("bootOverlayReadyToFade(%q) = %v, want %v", tt.summary, got, tt.want)
+			}
+		})
+	}
+}

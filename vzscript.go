@@ -198,7 +198,8 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 // agent-ping after a short grace period so non-provisioned VMs still work.
 //
 // Usage: guest-wait [timeout]
-// Default timeout is 10m. Polls every 5s.
+// Default timeout is 10m. Polls quickly after the daemon agent appears so
+// first-boot provisioning can hand off as soon as the marker is written.
 func guestWaitCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
@@ -221,6 +222,8 @@ func guestWaitCmd(cfg vzscriptConfig) script.Cmd {
 			// If the marker never appears (existing VM, not cove-provisioned),
 			// fall through after this grace period past agent-ready.
 			const provisionGrace = 30 * time.Second
+			const agentPoll = 2 * time.Second
+			const provisionPoll = time.Second
 			for time.Now().Before(deadline) {
 				attempt++
 				if attempt == 1 {
@@ -229,9 +232,9 @@ func guestWaitCmd(cfg vzscriptConfig) script.Cmd {
 
 				resp, err := ctlSendRequest(cfg.socketPath,
 					&controlpb.ControlRequest{Type: "agent-ping"},
-					10*time.Second, "agent-ping")
+					3*time.Second, "agent-ping")
 				if err != nil || !resp.Success {
-					time.Sleep(5 * time.Second)
+					time.Sleep(agentPoll)
 					continue
 				}
 				if agentReadyAt.IsZero() {
@@ -251,7 +254,7 @@ func guestWaitCmd(cfg vzscriptConfig) script.Cmd {
 						return fmt.Sprintf("agent ready after %d attempt(s) (no .vz-provisioned marker after %s; assuming non-provisioned VM)\n", attempt, provisionGrace), "", nil
 					}, nil
 				}
-				time.Sleep(5 * time.Second)
+				time.Sleep(provisionPoll)
 			}
 			return nil, fmt.Errorf("timeout after %s waiting for guest agent and provisioning", timeout)
 		},

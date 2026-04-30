@@ -1908,7 +1908,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	bootOverlayTitle, bootOverlaySubtitle, holdBootOverlay := bootOverlayMessage()
 
 	// Add a boot overlay while the VM starts. First-boot login/provisioning
-	// flows keep it visible until cove sees the user agent.
+	// flows keep it visible until cove sees the daemon agent; if the user
+	// session is still absent, the login watchdog needs to see the guest UI.
 	var bootOverlay appkit.NSView
 	currentState := vz.VZVirtualMachineState(vm.State())
 	if currentState != vz.VZVirtualMachineStateRunning {
@@ -2286,7 +2287,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						lastHealthSubtitle = subtitle
 						window.SetSubtitle(subtitle)
 					}
-					if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 && subtitle == "Agent: connected" {
+					if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 && bootOverlayReadyToFade(subtitle) {
 						holdBootOverlay = false
 						overlayFadeStep = 15
 					}
@@ -2380,6 +2381,15 @@ func bootOverlayMessage() (title, subtitle string, hold bool) {
 	return "Booting...", "", false
 }
 
+func bootOverlayReadyToFade(agentSummary string) bool {
+	switch agentSummary {
+	case "Agent: connected", "Agent: connected (no user session)":
+		return true
+	default:
+		return false
+	}
+}
+
 func currentVMViewSize(vmView vz.VZVirtualMachineView, fallback corefoundation.CGSize) corefoundation.CGSize {
 	bounds := vmViewAsNSView(vmView).Bounds().Size
 	if bounds.Width > 0 && bounds.Height > 0 {
@@ -2390,7 +2400,7 @@ func currentVMViewSize(vmView vz.VZVirtualMachineView, fallback corefoundation.C
 
 // createBootOverlay creates a dark overlay shown over the VM view while the VM starts up.
 func createBootOverlay(size corefoundation.CGSize, title, subtitle string) appkit.NSView {
-	return createMessageOverlay(size, title, subtitle, 0.08, 0.95, 22)
+	return createMessageOverlay(size, title, subtitle, 0.08, 0.88, 22)
 }
 
 func createMessageOverlay(size corefoundation.CGSize, title, subtitle string, white, alpha, fontSize float64) appkit.NSView {

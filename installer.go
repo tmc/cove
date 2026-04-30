@@ -1913,7 +1913,7 @@ func downloadRestoreImageVZ(ctx context.Context, destPath string) error {
 
 // createInstallOverlay creates a dark overlay view shown before install progress appears.
 func createInstallOverlay(size corefoundation.CGSize) appkit.NSView {
-	return createMessageOverlay(size, "Starting installation...", "", 0.1, 0.9, 24)
+	return createMessageOverlay(size, "Starting installation...", "", 0.1, 0.86, 24)
 }
 
 // postDummyEvent posts an application-defined event to unblock the AppKit
