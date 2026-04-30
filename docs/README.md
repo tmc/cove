@@ -25,6 +25,7 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 - [CLI Reference](reference/cli.md) -- every command and flag
 - [VZScript Commands](reference/vzscript-commands.md) -- guest agent and OCR automation
 - [Control Socket API](reference/control-api.md) -- programmatic VM control
+- [License and Virtualization Limits](reference/license-comparison.md) -- Apple SLA and project-license comparison
 - [Release Checklist](reference/release-checklist.md) -- pre-tag and publish gates
 
 ## Feature Highlights

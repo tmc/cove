@@ -11,11 +11,13 @@ an item ships, mark its row `done` and leave the row in place.
 
 This roadmap is the post-integration, post-review rollup of the notebook-backed
 strategy in [012](012-product-roadmap-2026.md), the v0.1 handoff in
-[014](014-roadmap-update-post-v0.1.md), and the soft-reset empirical result in
-[015](015-soft-reset-empirical.md). The 012 source used NotebookLM notebook
-`79a32e96-8e1c-4e89-9385-20193e3a8209` as a sparring partner. Date-sensitive
-market claims from that notebook stay research inputs, not release claims, until
-they are reverified.
+[014](014-roadmap-update-post-v0.1.md), the soft-reset empirical result in
+[015](015-soft-reset-empirical.md), and the post-integration NotebookLM refresh
+in [016](016-notebooklm-roadmap-refresh-2026-04-30.md). The 012 and 016 sources
+used NotebookLM notebook `79a32e96-8e1c-4e89-9385-20193e3a8209` as a sparring
+partner. Date-sensitive market, legal, license, pricing, and competitor claims
+from that notebook stay research inputs, not release claims, until they are
+reverified against primary sources.
 
 The current product bet is narrower than "another macOS VM CLI": cove should be
 the local, MIT-licensed Apple-Silicon macOS agent substrate with fork/restore,
@@ -119,6 +121,7 @@ protect that wedge instead of chasing disconnected features.
 ## Recent changes
 
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
+- **2026-04-30**: Synced the post-integration repo state into NotebookLM and added the 016 refresh plus license/SLA reference docs.
 - **2026-04-30**: Promoted the published fork-only benchmark to done and kept boot-to-agent timing as the remaining F1 measurement gate.
 - **2026-04-30**: Clarified that `cove compact` has shipped; v0.3 still needs build-pipeline compaction integration.
 - **2026-04-29**: Rebased and integrated the v0.1.2, v0.2, and early v0.3 branch work onto main.

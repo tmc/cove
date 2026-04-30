@@ -42,15 +42,7 @@ On first launch, cove auto-signs itself with the required Virtualization.framewo
 
 cove is MIT-licensed. macOS guests still run under Apple's macOS Software License Agreement: the current [macOS Tahoe 26 SLA](https://www.apple.com/legal/sla/docs/macOSTahoe.pdf) section 2B(iii) permits up to two additional virtualized macOS instances on each Apple-branded computer you own or control, for the listed development, testing, macOS Server, or personal non-commercial purposes. Cove does not bypass or expand that Apple limit; fleet capacity is hardware capacity.
 
-This is a product note, not legal advice. Read the applicable Apple SLA for the macOS version you run: <https://www.apple.com/legal/sla/>.
-
-| Tool | Project license | macOS virtualization limit/cost trigger |
-|---|---|---|
-| cove | MIT | No cove license fee or cap; Apple SLA still limits macOS guests per Mac host. |
-| Lume | MIT | No Lume license fee or cap; Apple SLA still applies to macOS guests. |
-| Tart | Fair Source 0.9 | Commercial license required above Tart's 100-CPU Fair Source limit. |
-| Orchard | Fair Source 0.9 | Commercial license required above Orchard's 4-device Fair Source limit. |
-| tart-guest-agent | FSL-1.1-Apache-2.0 | Competing-use restriction during the FSL delay period; Apache-2.0 after conversion. |
+This is a product note, not legal advice. Read the applicable Apple SLA for the macOS version you run: <https://www.apple.com/legal/sla/>. See [License and Virtualization Limits](docs/reference/license-comparison.md) for the cove, Lume, Tart, Orchard, and tart-guest-agent comparison.
 
 ## Features
 

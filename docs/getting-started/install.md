@@ -58,3 +58,20 @@ Required entitlements:
 ```bash
 cove version
 ```
+
+## Apple SLA Note
+
+macOS guests are governed by Apple's macOS Software License Agreement, not just
+cove's MIT license. The current
+[macOS Tahoe 26 SLA](https://www.apple.com/legal/sla/docs/macOSTahoe.pdf)
+section 2B(iii) permits up to two additional virtualized macOS copies or
+instances on each Apple-branded computer you own or control, for the listed
+development, testing, macOS Server, or personal non-commercial purposes. Except
+as separately permitted by Apple, it also excludes service bureau, time-sharing,
+terminal sharing, relay service, and similar services.
+
+cove does not work around that limit. Read the applicable SLA for the macOS
+version you run: <https://www.apple.com/legal/sla/>. See
+[License and Virtualization Limits](../reference/license-comparison.md) for the
+cove, Lume, Tart, Orchard, and tart-guest-agent comparison. This section is a
+product disclosure, not legal advice.

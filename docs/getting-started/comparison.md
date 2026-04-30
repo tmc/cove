@@ -21,7 +21,7 @@ title: Comparison
 | x86 guests | No | No | No | Yes (QEMU) |
 | GUI | Native AppKit | Electron | None | Native AppKit |
 | Control API | Unix socket (protobuf JSON) | HTTP REST | None | AppleScript |
-| Open source | MIT | Apache-2.0 | AGPL-3.0 | Apache-2.0 |
+| Open source | MIT | MIT | Fair Source 0.9 | Apache-2.0 |
 
 ## When to Choose Each
 
@@ -29,7 +29,7 @@ title: Comparison
 
 Best for developers who want scriptable macOS VMs with fast iteration. Suspend/resume means no waiting for boot. VZScript and the guest agent enable automated provisioning and configuration without SSH. Pure Go makes it easy to extend.
 
-cove is the only tool that combines APFS clonefile-based 0-ms local snapshot restore with OCI registry push/pull and a stdio MCP server for AI agents — useful for teams that want both instant local branching and remote image distribution in the same tool.
+cove's wedge is the combination of named VM-state snapshots, APFS copy-on-write disk forks, OCI registry push/pull, and a stdio MCP server for AI agents. APFS clonefile itself is not exclusive to cove; the product bet is the integrated fork/restore and automation workflow around it.
 
 **Good for:** development environments, CI runners, scripted macOS testing, reproducible setups, AI-agent-driven workflows.
 
@@ -44,6 +44,8 @@ REST API-oriented VM manager targeting AI agent use cases. Good if you need HTTP
 Packer-compatible VM images for CI. Tart focuses on OCI image distribution and Cirrus CI integration. No GUI, no suspend/resume.
 
 **Good for:** CI/CD pipelines, OCI-based image distribution, Cirrus Labs ecosystem.
+
+See [License and Virtualization Limits](../reference/license-comparison.md) before making project-license or fleet-size decisions.
 
 ### UTM
 

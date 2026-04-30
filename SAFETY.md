@@ -43,7 +43,7 @@ macOS TCC can block background agents from traversing protected user paths and V
 
 ### Apple virtualization license limits
 
-cove is MIT-licensed, but macOS guests are governed by Apple's macOS Software License Agreement. The standard SLA language permits two additional virtualized macOS instances per Apple-branded host for the listed purposes. cove does not bypass that limit. See `INSTALL.md`.
+cove is MIT-licensed, but macOS guests are governed by Apple's macOS Software License Agreement. The standard SLA language permits two additional virtualized macOS instances per Apple-branded host for the listed purposes. cove does not bypass that limit. See `INSTALL.md` and `docs/reference/license-comparison.md`.
 
 ### Apple platform behavior can change
 
