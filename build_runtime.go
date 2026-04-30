@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -25,6 +26,52 @@ func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildScratch) (b
 		return e.startGuest(ctx, sc)
 	}
 	return func(context.Context) error { return nil }, nil
+}
+
+func withBuildRuntimeGlobals(sc buildScratch, fn func() error) error {
+	if sc.Dir == "" {
+		return fmt.Errorf("build runtime: scratch vm dir required")
+	}
+	if sc.DiskPath == "" {
+		return fmt.Errorf("build runtime: scratch disk path required")
+	}
+	oldVMDir := vmDir
+	oldDiskPath := diskPath
+	oldLinuxMode := linuxMode
+	oldGUIMode := guiMode
+	oldHeadlessMode := headlessMode
+	oldSkipResume := skipResume
+	oldRecoveryMode := recoveryMode
+	oldBootArgs := bootArgs
+	oldRunHTTPAddr := runHTTPAddr
+	oldAutoMountVolumes := autoMountVolumes
+	oldSerialOutput := serialOutput
+	defer func() {
+		vmDir = oldVMDir
+		diskPath = oldDiskPath
+		linuxMode = oldLinuxMode
+		guiMode = oldGUIMode
+		headlessMode = oldHeadlessMode
+		skipResume = oldSkipResume
+		recoveryMode = oldRecoveryMode
+		bootArgs = oldBootArgs
+		runHTTPAddr = oldRunHTTPAddr
+		autoMountVolumes = oldAutoMountVolumes
+		serialOutput = oldSerialOutput
+	}()
+
+	vmDir = sc.Dir
+	diskPath = sc.DiskPath
+	linuxMode = filepath.Base(sc.DiskPath) == "linux-disk.img"
+	guiMode = false
+	headlessMode = true
+	skipResume = true
+	recoveryMode = false
+	bootArgs = ""
+	runHTTPAddr = ""
+	autoMountVolumes = false
+	serialOutput = "none"
+	return fn()
 }
 
 func waitBuildAgent(ctx context.Context, socketPath string, timeout time.Duration) error {

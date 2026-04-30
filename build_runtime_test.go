@@ -3,12 +3,94 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
+
+func TestWithBuildRuntimeGlobalsSetsAndRestores(t *testing.T) {
+	oldVMDir := vmDir
+	oldDiskPath := diskPath
+	oldLinuxMode := linuxMode
+	oldGUIMode := guiMode
+	oldHeadlessMode := headlessMode
+	oldSkipResume := skipResume
+	oldRecoveryMode := recoveryMode
+	oldBootArgs := bootArgs
+	oldRunHTTPAddr := runHTTPAddr
+	oldAutoMountVolumes := autoMountVolumes
+	oldSerialOutput := serialOutput
+	t.Cleanup(func() {
+		vmDir = oldVMDir
+		diskPath = oldDiskPath
+		linuxMode = oldLinuxMode
+		guiMode = oldGUIMode
+		headlessMode = oldHeadlessMode
+		skipResume = oldSkipResume
+		recoveryMode = oldRecoveryMode
+		bootArgs = oldBootArgs
+		runHTTPAddr = oldRunHTTPAddr
+		autoMountVolumes = oldAutoMountVolumes
+		serialOutput = oldSerialOutput
+	})
+
+	vmDir = "old-vm"
+	diskPath = "old-disk"
+	linuxMode = false
+	guiMode = true
+	headlessMode = false
+	skipResume = false
+	recoveryMode = true
+	bootArgs = "debug"
+	runHTTPAddr = ":0"
+	autoMountVolumes = true
+	serialOutput = "stdout"
+
+	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch"), DiskPath: filepath.Join(t.TempDir(), "scratch", "linux-disk.img")}
+	err := withBuildRuntimeGlobals(sc, func() error {
+		if vmDir != sc.Dir || diskPath != sc.DiskPath {
+			return fmt.Errorf("paths = %q/%q, want %q/%q", vmDir, diskPath, sc.Dir, sc.DiskPath)
+		}
+		if !linuxMode || guiMode || !headlessMode || !skipResume || recoveryMode || bootArgs != "" || runHTTPAddr != "" || autoMountVolumes || serialOutput != "none" {
+			return fmt.Errorf("unexpected runtime globals")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vmDir != "old-vm" || diskPath != "old-disk" || linuxMode || !guiMode || headlessMode || skipResume || !recoveryMode || bootArgs != "debug" || runHTTPAddr != ":0" || !autoMountVolumes || serialOutput != "stdout" {
+		t.Fatalf("runtime globals were not restored")
+	}
+}
+
+func TestWithBuildRuntimeGlobalsRestoresAfterError(t *testing.T) {
+	oldVMDir := vmDir
+	t.Cleanup(func() { vmDir = oldVMDir })
+	vmDir = "old-vm"
+	wantErr := errors.New("failed")
+	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch"), DiskPath: filepath.Join(t.TempDir(), "scratch", "disk.img")}
+	err := withBuildRuntimeGlobals(sc, func() error { return wantErr })
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("withBuildRuntimeGlobals() = %v, want %v", err, wantErr)
+	}
+	if vmDir != "old-vm" {
+		t.Fatalf("vmDir = %q, want restored old-vm", vmDir)
+	}
+}
+
+func TestWithBuildRuntimeGlobalsRejectsIncompleteScratch(t *testing.T) {
+	if err := withBuildRuntimeGlobals(buildScratch{}, func() error { return nil }); err == nil {
+		t.Fatal("withBuildRuntimeGlobals() error = nil, want missing dir")
+	}
+	if err := withBuildRuntimeGlobals(buildScratch{Dir: "scratch"}, func() error { return nil }); err == nil {
+		t.Fatal("withBuildRuntimeGlobals() error = nil, want missing disk")
+	}
+}
 
 func TestWaitBuildAgentRetriesUntilSuccess(t *testing.T) {
 	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
