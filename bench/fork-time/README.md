@@ -1,6 +1,8 @@
 # cove fork-time benchmark
 
-This harness measures the F1 roadmap claim from `docs/designs/014-roadmap-update-post-v0.1.md`: how long `cove fork` takes, and optionally how long a forked child takes to become reachable via `agent-ping`.
+This harness measures the F1 roadmap claim tracked in `docs/designs/ROADMAP.md`:
+how long `cove fork` takes, and optionally how long a forked child takes to
+become reachable via `agent-ping`.
 
 The harness is black-box on purpose. It invokes the built `cove` binary instead of importing VM internals, so measurements include the same CLI path users run.
 

@@ -2,6 +2,12 @@
 
 Architectural proposals for cove features, post-review. Each doc has been through multi-agent Council review and (for most) a second-opinion pass from an independent reviewer role. Status and review rounds are in each doc's frontmatter.
 
+## Living roadmap
+
+[ROADMAP](ROADMAP.md) is the active roadmap. It rolls up the notebook-backed
+strategy, the post-v0.1 handoff, the soft-reset empirical result, and the latest
+implementation review. Start there before choosing new work.
+
 ## Current set
 
 1. [cove serve — HTTP & MCP](001-cove-serve-http-mcp.md) — v0.1 — HTTP and MCP subcommand exposing per-VM control socket. Master-token keychain auth. LRO persistence.
@@ -10,8 +16,13 @@ Architectural proposals for cove features, post-review. Each doc has been throug
 4. [Churn benchmark harness](004-churn-benchmark-harness.md) — pre-v0.3 — the 20-cell experiment that picks the default `compact_mode` and gates the cross-machine cache-from story.
 5. [v0.4 secrets architecture](005-v04-secrets-architecture.md) — v0.4 — Council-consultation brief recommending URI delegation for external secret stores (1Password, Vault, SOPS, age).
 6. [cove Linux support](006-cove-linux-v02.md) — v0.2 — Linux guest support: nested virt (M3/M4 gated), 4 distros, agent unary RPCs (ResizeExecTTY/SignalExec/SetTime), connect-go polyglot server, Docker-shaped HTTP URLs.
-7. [beat lume roadmap](011-beat-lume-roadmap.md) — 0.1 -> 0.4 — strategic roadmap: win on local state, guest-agent control, Linux developer workflows, and `cove build`; use interop only at the boundary.
-8. [soft-reset empirical result](015-soft-reset-empirical.md) — post-v0.1 — soft reset is not an isolation primitive; privacy-critical evals use VM fork/restore.
+7. [soft-reset empirical result](015-soft-reset-empirical.md) — post-v0.1 — soft reset is not an isolation primitive; privacy-critical evals use VM fork/restore.
+
+## Strategy inputs
+
+- [beat lume roadmap](011-beat-lume-roadmap.md) — 0.1 -> 0.4 — strategic roadmap input: win on local state, guest-agent control, Linux developer workflows, and `cove build`; use interop only at the boundary.
+- [product roadmap 2026](012-product-roadmap-2026.md) — notebook-backed strategy source for fork/restore, build, agent adapters, and registry sequencing.
+- [roadmap update post-v0.1](014-roadmap-update-post-v0.1.md) — post-v0.1 handoff; superseded where it conflicts with [015](015-soft-reset-empirical.md) and [ROADMAP](ROADMAP.md).
 
 ## How to amend
 

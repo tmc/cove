@@ -7,12 +7,42 @@ This document is the single source of truth for cove's planned work. It does not
 duplicate the design docs: each item links to the design doc that owns it. When
 an item ships, mark its row `done` and leave the row in place.
 
+## Strategy source
+
+This roadmap is the post-integration, post-review rollup of the notebook-backed
+strategy in [012](012-product-roadmap-2026.md), the v0.1 handoff in
+[014](014-roadmap-update-post-v0.1.md), and the soft-reset empirical result in
+[015](015-soft-reset-empirical.md). The 012 source used NotebookLM notebook
+`79a32e96-8e1c-4e89-9385-20193e3a8209` as a sparring partner. Date-sensitive
+market claims from that notebook stay research inputs, not release claims, until
+they are reverified.
+
+The current product bet is narrower than "another macOS VM CLI": cove should be
+the local, MIT-licensed Apple-Silicon macOS agent substrate with fork/restore,
+vsock control, OCI-backed images, and agent adapters. The next work should
+protect that wedge instead of chasing disconnected features.
+
 ## Status legend
 
 - **must**: required for the version to ship as a coherent release
 - **should**: high value, target the version but do not block on it
 - **maybe**: surfaced for awareness, may slip
 - **done**: shipped, kept for provenance
+
+## Review decisions
+
+- The prior implementation review findings are closed: malformed manifest
+  digests now return validation errors, and `cove build` is explicitly
+  dry-run-only until VM execution lands.
+- Soft reset failed as an isolation boundary. Use fork/restore for
+  privacy-critical evals; do not publish "thousands per hour" style soft-reset
+  claims. See [015](015-soft-reset-empirical.md).
+- `cove` is not clean for public software/registry branding based on the
+  preliminary USPTO search. Public registry, signed image distribution, and
+  product-name claims need a legal/product decision first.
+- v0.3 work stops at `cove build` dry-run planning unless the execution path
+  actually runs steps in a VM, skips cache-hit steps, persists metadata, and
+  produces pushable image state.
 
 ## v0.1.2 - Reliability & Stale-State Cleanup
 
@@ -40,13 +70,38 @@ an item ships, mark its row `done` and leave the row in place.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| `cove build` with content-addressed cache keys | must | v0.2 store | [003](003-cove-build-oci-caching.md) | Dry-run cache-key planning, block-delta primitives, delta blob storage, and build-cache metadata have landed. VM execution remains intentionally gated behind `--dry-run`. |
-| Secrets via tmpfs (`# secret:` directive) with guest swap disabled | must | none | prior roadmap | Prevents secret leakage into pushed OCI block diffs. |
-| Agent-aware `cove compact` | must | none | [002](002-cove-disks-oci.md) | Zeroes free space before diffing and pushing images. |
+| `cove build` VM execution path | must | v0.2 store + dry-run planner | [003](003-cove-build-oci-caching.md) | Turns the landed dry-run planner into a real build: create scratch VM, restore/cache-hit layers, execute misses, persist metadata, and leave pushable image state. |
+| Secrets via tmpfs (`# secret:` directive) with guest swap disabled | must | build execution | [003](003-cove-build-oci-caching.md) | Prevents secret leakage into pushed OCI block diffs. |
+| Agent-aware `cove compact` | must | build execution | [002](002-cove-disks-oci.md), [003](003-cove-build-oci-caching.md) | Zeroes free space before diffing and pushing images. |
+| Fork-time benchmark publication | must | existing fork support | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench](../../bench/fork-time/README.md) | Publishes measured fork-only and boot-to-agent numbers now that soft reset is not the isolation primitive. |
 | ControlServer decomposition - phase 3 (`internal/control`) | should | v0.2 phases 1+2 | [008](008-codebase-cleanup-plan.md) | Completes the cleanup arc started in v0.2. |
-| Anthropic sandbox-runtime adapter | should | none | prior roadmap | Expands agent integrations beyond the OpenAI Agents SDK adapter. |
-| Curated agentkit base images | should | v0.2 store + `cove build` | prior roadmap | Prepares the v1.0 public registry story. |
+| OpenAI Agents SDK adapter v1 | should | fork/restore + control socket | [012](012-product-roadmap-2026.md) | Proves the agent-substrate pitch with a fork-first five-line example. |
+| Anthropic sandbox-runtime adapter | should | OpenAI adapter lessons | [012](012-product-roadmap-2026.md) | Expands agent integrations after the first adapter proves the shape. |
+| Curated agentkit base images | should | build execution + trademark decision | [012](012-product-roadmap-2026.md) | Prepares the v1.0 registry story without publishing under a blocked name. |
 | Packer plugin shim decision | maybe | none | gap vs tart Packer integration | Decide whether a shim accelerates adoption or distracts from the `cove build` moat. |
+
+## v0.3 execution order
+
+1. Finish `cove build` execution before adding more planner surface area.
+2. Add secret handling and compaction only after the build path has real VM
+   state to protect and shrink.
+3. Publish fork benchmarks and revise product language to measured numbers.
+4. Build the first agent adapter against fork/restore, not soft reset.
+5. Defer agentkit image publication until the name/legal decision and build
+   execution are both resolved.
+
+## Validation gates
+
+- `cove build`: cache hits skip guest execution; misses execute in a VM;
+  metadata survives restart; pushed state does not contain secret material.
+- Fork isolation: benchmark reports fork-only time and boot-to-agent time on
+  named host hardware, with slower-than-target runs published instead of hidden.
+- Agent adapter: a fresh install can run an Agents-SDK-compatible agent against
+  a cove VM in five lines, using fork/restore for sensitive examples.
+- Registry: no public `cove` registry or signed agentkit image channel ships
+  until trademark counsel clears the name or a rename lands.
+- External claims: any public post that cites competitor dates, partner lists,
+  pricing, or license positioning must reverify those facts near publication.
 
 ## Product Decisions
 
@@ -62,6 +117,7 @@ an item ships, mark its row `done` and leave the row in place.
 
 ## Recent changes
 
+- **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
 - **2026-04-29**: Rebased and integrated the v0.1.2, v0.2, and early v0.3 branch work onto main.
 - **2026-04-29**: Landed `cove build` dry-run cache planning and kept execution gated until the VM build path is implemented.
 - **2026-04-29**: Recorded preliminary USPTO trademark screen; `cove` needs legal/product decision before public registry use.
