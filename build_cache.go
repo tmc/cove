@@ -14,11 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/ociimage"
 	"golang.org/x/tools/txtar"
 )
 
-const agentProtocolVersion = "1"
+const agentProtocolVersion = agent.ProtocolVersion
 
 type buildStep struct {
 	Name   string
