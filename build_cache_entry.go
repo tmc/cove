@@ -22,8 +22,8 @@ type buildCacheEntry struct {
 }
 
 func saveBuildLayerManifest(s store.Store, manifest buildLayerManifest) error {
-	if manifest.Digest == "" {
-		return fmt.Errorf("save build layer: empty digest")
+	if err := validateBuildLayerManifest(manifest); err != nil {
+		return fmt.Errorf("save build layer: %w", err)
 	}
 	return writeBuildCacheJSON(filepath.Join(s.Dir, "build-cache", "layers", digestFileName(manifest.Digest)+".json"), manifest)
 }
@@ -43,14 +43,14 @@ func loadBuildLayerManifest(s store.Store, digest string) (buildLayerManifest, e
 	if manifest.Digest != digest {
 		return manifest, fmt.Errorf("load build layer: digest %s, want %s", manifest.Digest, digest)
 	}
+	if err := validateBuildLayerManifest(manifest); err != nil {
+		return manifest, fmt.Errorf("load build layer: %w", err)
+	}
 	return manifest, nil
 }
 
 func saveBuildCacheEntry(s store.Store, entry buildCacheEntry) error {
-	if entry.Key == "" {
-		return fmt.Errorf("save build cache entry: empty key")
-	}
-	if _, _, err := splitStoreDigest(entry.Key); err != nil {
+	if err := validateBuildCacheEntry(entry); err != nil {
 		return fmt.Errorf("save build cache entry: %w", err)
 	}
 	if entry.CreatedAt.IsZero() {
@@ -74,7 +74,61 @@ func loadBuildCacheEntry(s store.Store, key string) (buildCacheEntry, error) {
 	if entry.Key != key {
 		return entry, fmt.Errorf("load build cache entry: key %s, want %s", entry.Key, key)
 	}
+	if err := validateBuildCacheEntry(entry); err != nil {
+		return entry, fmt.Errorf("load build cache entry: %w", err)
+	}
 	return entry, nil
+}
+
+func validateBuildCacheEntry(entry buildCacheEntry) error {
+	if entry.Key == "" {
+		return fmt.Errorf("empty key")
+	}
+	if _, _, err := splitStoreDigest(entry.Key); err != nil {
+		return err
+	}
+	if entry.LayerDigest == "" {
+		return fmt.Errorf("empty layer digest")
+	}
+	if _, _, err := splitStoreDigest(entry.LayerDigest); err != nil {
+		return fmt.Errorf("layer digest: %w", err)
+	}
+	for name, digest := range map[string]string{
+		"parent digest": entry.ParentDigest,
+		"script digest": entry.ScriptDigest,
+	} {
+		if digest == "" {
+			continue
+		}
+		if _, _, err := splitStoreDigest(digest); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func validateBuildLayerManifest(manifest buildLayerManifest) error {
+	if _, _, err := splitStoreDigest(manifest.Digest); err != nil {
+		return fmt.Errorf("digest: %w", err)
+	}
+	if manifest.BlockSize <= 0 {
+		return fmt.Errorf("invalid block size %d", manifest.BlockSize)
+	}
+	if manifest.DiskSize < 0 {
+		return fmt.Errorf("invalid disk size %d", manifest.DiskSize)
+	}
+	for i, block := range manifest.Blocks {
+		if block.Offset < 0 {
+			return fmt.Errorf("block %d: invalid offset %d", i, block.Offset)
+		}
+		if block.Size <= 0 {
+			return fmt.Errorf("block %d: invalid size %d", i, block.Size)
+		}
+		if _, _, err := splitStoreDigest(block.Digest); err != nil {
+			return fmt.Errorf("block %d digest: %w", i, err)
+		}
+	}
+	return nil
 }
 
 func writeBuildCacheJSON(path string, v any) error {
