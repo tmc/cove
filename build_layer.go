@@ -37,12 +37,21 @@ func StoreDiskDelta(s store.Store, delta *diskDelta) (buildLayerManifest, error)
 		}
 		manifest.Blocks = append(manifest.Blocks, buildLayerBlock{Offset: block.Offset, Size: int64(len(block.Data)), Digest: digest})
 	}
-	data, err := json.Marshal(manifest)
+	digest, err := digestBuildLayerManifest(manifest)
 	if err != nil {
 		return manifest, fmt.Errorf("store delta manifest: %w", err)
 	}
-	manifest.Digest = digestBytes(data)
+	manifest.Digest = digest
 	return manifest, nil
+}
+
+func digestBuildLayerManifest(manifest buildLayerManifest) (string, error) {
+	manifest.Digest = ""
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return "", fmt.Errorf("digest build layer: %w", err)
+	}
+	return digestBytes(data), nil
 }
 
 func ApplyStoredDiskDelta(ctx context.Context, s store.Store, parentPath, childPath string, manifest buildLayerManifest) error {

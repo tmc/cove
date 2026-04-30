@@ -33,7 +33,12 @@ func TestBuildCacheEntryRoundTrip(t *testing.T) {
 
 func TestBuildLayerManifestRoundTrip(t *testing.T) {
 	s := store.New(t.TempDir())
-	manifest := buildLayerManifest{Digest: digestBytes([]byte("manifest")), BlockSize: 65536, DiskSize: 123, Blocks: []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}}}
+	manifest := buildLayerManifest{BlockSize: 65536, DiskSize: 123, Blocks: []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}}}
+	digest, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Digest = digest
 	if err := saveBuildLayerManifest(s, manifest); err != nil {
 		t.Fatalf("saveBuildLayerManifest(): %v", err)
 	}
@@ -117,6 +122,19 @@ func TestSaveBuildLayerManifestRejectsInvalidDigest(t *testing.T) {
 	}
 }
 
+func TestSaveBuildLayerManifestRejectsDigestMismatch(t *testing.T) {
+	s := store.New(t.TempDir())
+	manifest := buildLayerManifest{
+		Digest:    digestBytes([]byte("manifest")),
+		BlockSize: 65536,
+		DiskSize:  123,
+		Blocks:    []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}},
+	}
+	if err := saveBuildLayerManifest(s, manifest); err == nil {
+		t.Fatal("saveBuildLayerManifest() error = nil, want digest mismatch")
+	}
+}
+
 func TestLoadBuildLayerManifestRejectsInvalidBlockDigest(t *testing.T) {
 	s := store.New(t.TempDir())
 	digest := digestBytes([]byte("manifest"))
@@ -136,6 +154,29 @@ func TestLoadBuildLayerManifestRejectsInvalidBlockDigest(t *testing.T) {
 	_, err := loadBuildLayerManifest(s, digest)
 	if err == nil {
 		t.Fatal("loadBuildLayerManifest() error = nil, want invalid block digest")
+	}
+}
+
+func TestLoadBuildLayerManifestRejectsDigestMismatch(t *testing.T) {
+	s := store.New(t.TempDir())
+	manifest := buildLayerManifest{
+		BlockSize: 65536,
+		DiskSize:  123,
+		Blocks:    []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}},
+	}
+	digest, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Digest = digest
+	manifest.DiskSize = 456
+	path := filepath.Join(s.Dir, "build-cache", "layers", digestFileName(digest)+".json")
+	if err := writeBuildCacheJSON(path, manifest); err != nil {
+		t.Fatal(err)
+	}
+	_, err = loadBuildLayerManifest(s, digest)
+	if err == nil {
+		t.Fatal("loadBuildLayerManifest() error = nil, want digest mismatch")
 	}
 }
 

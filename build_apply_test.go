@@ -61,9 +61,7 @@ func TestApplyCacheHitValidatesBlocksBeforeScratch(t *testing.T) {
 	exec := testBuildExecutor(filepath.Join(root, "scratch"))
 	exec.store = store.New(filepath.Join(root, "store"))
 	key := "sha256:" + strings.Repeat("a", 64)
-	layer := "sha256:" + strings.Repeat("b", 64)
 	manifest := buildLayerManifest{
-		Digest:    layer,
 		BlockSize: buildDeltaBlockSize,
 		DiskSize:  4,
 		Blocks: []buildLayerBlock{{
@@ -72,6 +70,11 @@ func TestApplyCacheHitValidatesBlocksBeforeScratch(t *testing.T) {
 			Digest: "sha256:" + strings.Repeat("c", 64),
 		}},
 	}
+	layer, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Digest = layer
 	if err := saveBuildLayerManifest(exec.store, manifest); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +82,7 @@ func TestApplyCacheHitValidatesBlocksBeforeScratch(t *testing.T) {
 	if err := saveBuildCacheEntry(exec.store, testCacheEntryForStep(step, layer)); err != nil {
 		t.Fatal(err)
 	}
-	_, err := exec.applyCacheHit(context.Background(), step, "parent.img")
+	_, err = exec.applyCacheHit(context.Background(), step, "parent.img")
 	if err == nil {
 		t.Fatal("applyCacheHit() error = nil, want missing block")
 	}

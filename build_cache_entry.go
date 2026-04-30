@@ -134,6 +134,13 @@ func validateBuildLayerManifest(manifest buildLayerManifest) error {
 			return fmt.Errorf("block %d digest: %w", i, err)
 		}
 	}
+	want, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		return err
+	}
+	if manifest.Digest != want {
+		return fmt.Errorf("digest %s, want %s", manifest.Digest, want)
+	}
 	return nil
 }
 
