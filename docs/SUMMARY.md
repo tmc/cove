@@ -22,6 +22,7 @@
 * [CLI Reference](reference/cli.md)
 * [Control Socket API](reference/control-api.md)
 * [VZScript Commands](reference/vzscript-commands.md)
+* [License and Virtualization Limits](reference/license-comparison.md)
 * [Changelog](reference/changelog.md)
 * [Release Checklist](reference/release-checklist.md)
 
@@ -49,6 +50,7 @@
 * [Linux v0.2](designs/006-cove-linux-v02.md)
 * [Beat Lume Roadmap](designs/011-beat-lume-roadmap.md)
 * [Soft-reset Empirical Result](designs/015-soft-reset-empirical.md)
+* [NotebookLM Roadmap Refresh](designs/016-notebooklm-roadmap-refresh-2026-04-30.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
