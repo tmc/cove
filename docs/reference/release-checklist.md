@@ -51,6 +51,7 @@ For `cove build`, verify the production boundary before tagging:
 ./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript vm
 ./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript --tag ghcr.io/acme/vm:test --push vm
 ./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript --push vm
+./cove build vm --base ghcr.io/acme/base@sha256:base --script missing.vzscript --cache-from ghcr.io/acme/cache:build --dry-run
 ```
 
 The second command must fail before script loading with:
@@ -71,10 +72,18 @@ The fourth command must fail before script loading with:
 cove build: --push requires at least one --tag
 ```
 
+The fifth command must fail before script loading with:
+
+```text
+cove build: --cache-from registry cache is not implemented yet
+```
+
 Then verify local-base execution with a disposable VM directory:
 
 - Run one tiny recipe against a local VM base with `--compact fast`.
 - Repeat the same command and confirm `cache hits: 1/1`.
+- Run one tiny recipe with `# cache-ttl: 1s`, wait at least two seconds, repeat
+  it, and confirm the expired entry is treated as a cache miss.
 - Run the same tiny recipe with `--compact targeted` and `--compact thorough`
   on disposable copies of the base, confirming the build reaches `Build
   complete`.
