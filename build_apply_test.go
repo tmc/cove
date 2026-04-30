@@ -45,10 +45,11 @@ func TestApplyCacheHitValidatesLayerBeforeScratch(t *testing.T) {
 	exec := testBuildExecutor(filepath.Join(root, "scratch"))
 	exec.store = store.New(filepath.Join(root, "store"))
 	key := "sha256:" + strings.Repeat("a", 64)
-	if err := saveBuildCacheEntry(exec.store, buildCacheEntry{Key: key, LayerDigest: "sha256:" + strings.Repeat("b", 64)}); err != nil {
+	step := testBuildPlanStep("missing", key)
+	if err := saveBuildCacheEntry(exec.store, testCacheEntryForStep(step, "sha256:"+strings.Repeat("b", 64))); err != nil {
 		t.Fatal(err)
 	}
-	_, err := exec.applyCacheHit(context.Background(), buildPlanStep{Name: "missing", Key: key}, "parent.img")
+	_, err := exec.applyCacheHit(context.Background(), step, "parent.img")
 	if err == nil {
 		t.Fatal("applyCacheHit() error = nil, want missing layer")
 	}
@@ -74,10 +75,11 @@ func TestApplyCacheHitValidatesBlocksBeforeScratch(t *testing.T) {
 	if err := saveBuildLayerManifest(exec.store, manifest); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveBuildCacheEntry(exec.store, buildCacheEntry{Key: key, LayerDigest: layer}); err != nil {
+	step := testBuildPlanStep("missing-block", key)
+	if err := saveBuildCacheEntry(exec.store, testCacheEntryForStep(step, layer)); err != nil {
 		t.Fatal(err)
 	}
-	_, err := exec.applyCacheHit(context.Background(), buildPlanStep{Name: "missing-block", Key: key}, "parent.img")
+	_, err := exec.applyCacheHit(context.Background(), step, "parent.img")
 	if err == nil {
 		t.Fatal("applyCacheHit() error = nil, want missing block")
 	}
@@ -517,10 +519,12 @@ func makeCacheHitFixture(t *testing.T, keep bool) (parent string, want []byte, s
 		t.Fatal(err)
 	}
 	key := "sha256:" + strings.Repeat("a", 64)
-	if err := saveBuildCacheEntry(exec.store, buildCacheEntry{Key: key, LayerDigest: manifest.Digest}); err != nil {
+	step = testBuildPlanStep("cached", key)
+	step.CacheHit = true
+	step.LayerDigest = manifest.Digest
+	if err := saveBuildCacheEntry(exec.store, testCacheEntryForStep(step, manifest.Digest)); err != nil {
 		t.Fatal(err)
 	}
-	step = buildPlanStep{Name: "cached", Key: key, CacheHit: true, LayerDigest: manifest.Digest}
 	return parent, want, step, exec
 }
 
@@ -541,10 +545,13 @@ func storeCacheLayer(t *testing.T, s store.Store, key, parent string, childData 
 	if err := saveBuildLayerManifest(s, manifest); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveBuildCacheEntry(s, buildCacheEntry{Key: key, LayerDigest: manifest.Digest}); err != nil {
+	step := testBuildPlanStep("cached", key)
+	step.CacheHit = true
+	step.LayerDigest = manifest.Digest
+	if err := saveBuildCacheEntry(s, testCacheEntryForStep(step, manifest.Digest)); err != nil {
 		t.Fatal(err)
 	}
-	return buildPlanStep{Name: "cached", Key: key, CacheHit: true, LayerDigest: manifest.Digest}
+	return step
 }
 
 func assertEmptyDir(t *testing.T, dir string) {

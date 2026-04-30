@@ -66,11 +66,26 @@ func TestLoadBuildCacheEntryRejectsMismatchedKey(t *testing.T) {
 func TestSaveBuildCacheEntryRejectsInvalidLayerDigest(t *testing.T) {
 	s := store.New(t.TempDir())
 	entry := buildCacheEntry{
-		Key:         digestBytes([]byte("key")),
-		LayerDigest: "sha256:not-a-real-digest",
+		Key:                  digestBytes([]byte("key")),
+		ParentDigest:         digestBytes([]byte("parent")),
+		ScriptDigest:         digestBytes([]byte("script")),
+		AgentProtocolVersion: agentProtocolVersion,
+		Compact:              "targeted",
+		LayerDigest:          "sha256:not-a-real-digest",
 	}
 	if err := saveBuildCacheEntry(s, entry); err == nil {
 		t.Fatal("saveBuildCacheEntry() error = nil, want invalid layer digest")
+	}
+}
+
+func TestSaveBuildCacheEntryRejectsMissingMetadata(t *testing.T) {
+	s := store.New(t.TempDir())
+	entry := buildCacheEntry{
+		Key:         digestBytes([]byte("key")),
+		LayerDigest: digestBytes([]byte("layer")),
+	}
+	if err := saveBuildCacheEntry(s, entry); err == nil {
+		t.Fatal("saveBuildCacheEntry() error = nil, want missing metadata")
 	}
 }
 
@@ -129,5 +144,27 @@ func TestLoadBuildCacheEntryMissing(t *testing.T) {
 	_, err := loadBuildCacheEntry(s, digestBytes([]byte("missing")))
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("error = %v, want os.ErrNotExist", err)
+	}
+}
+
+func testBuildPlanStep(name, key string) buildPlanStep {
+	return buildPlanStep{
+		Name:                 name,
+		Key:                  key,
+		ParentDigest:         digestBytes([]byte(name + "-parent")),
+		ScriptDigest:         digestBytes([]byte(name + "-script")),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}
+}
+
+func testCacheEntryForStep(step buildPlanStep, layer string) buildCacheEntry {
+	return buildCacheEntry{
+		Key:                  step.Key,
+		ParentDigest:         step.ParentDigest,
+		ScriptDigest:         step.ScriptDigest,
+		AgentProtocolVersion: step.AgentProtocolVersion,
+		Compact:              step.Meta.Compact,
+		LayerDigest:          layer,
 	}
 }

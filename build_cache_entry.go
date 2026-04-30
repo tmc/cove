@@ -98,11 +98,17 @@ func validateBuildCacheEntry(entry buildCacheEntry) error {
 		"script digest": entry.ScriptDigest,
 	} {
 		if digest == "" {
-			continue
+			return fmt.Errorf("empty %s", name)
 		}
 		if _, _, err := splitStoreDigest(digest); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
+	}
+	if entry.AgentProtocolVersion == "" {
+		return fmt.Errorf("empty agent protocol version")
+	}
+	if err := validateCompactMode(entry.Compact); err != nil {
+		return fmt.Errorf("compact: %w", err)
 	}
 	return nil
 }

@@ -122,7 +122,7 @@ func TestBuildDryPlanChainsKeys(t *testing.T) {
 	if err := os.WriteFile(step2, []byte("exec echo two\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:base", Scripts: []string{step1, step2}, Compact: "targeted"}
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), Scripts: []string{step1, step2}, Compact: "targeted"}
 	plan, err := buildDryPlan(context.Background(), "vm", opts, nil)
 	if err != nil {
 		t.Fatalf("buildDryPlan(): %v", err)
@@ -220,7 +220,7 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := store.New(filepath.Join(dir, "store"))
-	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:base", Scripts: []string{script}, Compact: "targeted"}
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), Scripts: []string{script}, Compact: "targeted"}
 	plan, err := buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
 	if err != nil {
 		t.Fatalf("buildDryPlanWithStore(): %v", err)
@@ -229,7 +229,7 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 		t.Fatalf("steps = %d, want 1", len(plan.Steps))
 	}
 	layer := digestBytes([]byte("layer"))
-	if err := saveBuildCacheEntry(s, buildCacheEntry{Key: plan.Steps[0].Key, LayerDigest: layer}); err != nil {
+	if err := saveBuildCacheEntry(s, testCacheEntryForStep(plan.Steps[0], layer)); err != nil {
 		t.Fatalf("saveBuildCacheEntry(): %v", err)
 	}
 	plan, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
@@ -256,17 +256,14 @@ func TestBuildDryPlanExpiresLocalCacheHit(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := store.New(filepath.Join(dir, "store"))
-	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:base", Scripts: []string{script}, Compact: "targeted"}
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), Scripts: []string{script}, Compact: "targeted"}
 	plan, err := buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
 	if err != nil {
 		t.Fatalf("buildDryPlanWithStore(): %v", err)
 	}
 	layer := digestBytes([]byte("layer"))
-	entry := buildCacheEntry{
-		Key:         plan.Steps[0].Key,
-		LayerDigest: layer,
-		CreatedAt:   time.Now().Add(-2 * time.Hour).UTC(),
-	}
+	entry := testCacheEntryForStep(plan.Steps[0], layer)
+	entry.CreatedAt = time.Now().Add(-2 * time.Hour).UTC()
 	if err := saveBuildCacheEntry(s, entry); err != nil {
 		t.Fatalf("saveBuildCacheEntry(): %v", err)
 	}
@@ -350,7 +347,7 @@ func TestHandleBuildReportsCacheHitWithStoreDir(t *testing.T) {
 		t.Fatalf("buildDryPlan(): %v", err)
 	}
 	layer := digestBytes([]byte("layer"))
-	if err := saveBuildCacheEntry(store.New(storeDir), buildCacheEntry{Key: plan.Steps[0].Key, LayerDigest: layer}); err != nil {
+	if err := saveBuildCacheEntry(store.New(storeDir), testCacheEntryForStep(plan.Steps[0], layer)); err != nil {
 		t.Fatalf("saveBuildCacheEntry(): %v", err)
 	}
 	out, err := captureStdoutResult(t, func() error {
