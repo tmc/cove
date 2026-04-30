@@ -130,6 +130,15 @@ func validateBuildLayerManifest(manifest buildLayerManifest) error {
 		if block.Size <= 0 {
 			return fmt.Errorf("block %d: invalid size %d", i, block.Size)
 		}
+		if block.Size > manifest.BlockSize {
+			return fmt.Errorf("block %d: size %d exceeds block size %d", i, block.Size, manifest.BlockSize)
+		}
+		if block.Offset%manifest.BlockSize != 0 {
+			return fmt.Errorf("block %d: unaligned offset %d", i, block.Offset)
+		}
+		if block.Offset+block.Size > manifest.DiskSize {
+			return fmt.Errorf("block %d: range exceeds disk size", i)
+		}
 		if _, _, err := splitStoreDigest(block.Digest); err != nil {
 			return fmt.Errorf("block %d digest: %w", i, err)
 		}

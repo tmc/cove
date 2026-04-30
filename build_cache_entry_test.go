@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,6 +133,52 @@ func TestSaveBuildLayerManifestRejectsDigestMismatch(t *testing.T) {
 	}
 	if err := saveBuildLayerManifest(s, manifest); err == nil {
 		t.Fatal("saveBuildLayerManifest() error = nil, want digest mismatch")
+	}
+}
+
+func TestSaveBuildLayerManifestRejectsInvalidBlockRange(t *testing.T) {
+	s := store.New(t.TempDir())
+	tests := []struct {
+		name  string
+		block buildLayerBlock
+		want  string
+	}{
+		{
+			name:  "oversized",
+			block: buildLayerBlock{Offset: 0, Size: 5, Digest: digestBytes([]byte("blob"))},
+			want:  "exceeds block size",
+		},
+		{
+			name:  "unaligned",
+			block: buildLayerBlock{Offset: 2, Size: 1, Digest: digestBytes([]byte("blob"))},
+			want:  "unaligned offset",
+		},
+		{
+			name:  "past-disk",
+			block: buildLayerBlock{Offset: 4, Size: 4, Digest: digestBytes([]byte("blob"))},
+			want:  "range exceeds disk size",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := buildLayerManifest{
+				BlockSize: 4,
+				DiskSize:  6,
+				Blocks:    []buildLayerBlock{tt.block},
+			}
+			digest, err := digestBuildLayerManifest(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest.Digest = digest
+			err = saveBuildLayerManifest(s, manifest)
+			if err == nil {
+				t.Fatal("saveBuildLayerManifest() error = nil, want invalid block range")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("saveBuildLayerManifest() = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 
