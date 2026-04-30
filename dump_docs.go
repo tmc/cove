@@ -278,6 +278,7 @@ var cliDocSpecs = []cliDocSpec{
 		{Name: "--keep-intermediate", Summary: "Leave scratch VMs behind for debugging. Requires future execution support."},
 		{Name: "--chunk-size", Argument: "<mb>", Summary: "Chunk size in MiB.", Default: "512"},
 		{Name: "--compact", Argument: "<mode>", Summary: "Compaction mode: fast, targeted, or thorough.", Default: "targeted"},
+		{Name: "--store-dir", Argument: "<dir>", Summary: "Content store directory.", Default: "~/.vz/store"},
 	}, Examples: []string{
 		"cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --dry-run",
 		"cove build macos-agent --base ghcr.io/me/base:v1 --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --dry-run",

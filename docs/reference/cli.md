@@ -670,6 +670,7 @@ cove build <name> --base <ref> --script <step> [flags]
 | `--keep-intermediate` | false | Leave scratch VMs behind for debugging; requires future execution support |
 | `--chunk-size <mb>` | 512 | Chunk size in MiB |
 | `--compact <mode>` | targeted | Compaction mode: fast, targeted, or thorough |
+| `--store-dir <dir>` | `~/.vz/store` | Content store directory |
 
 ```bash
 cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --dry-run
