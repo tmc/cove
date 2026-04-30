@@ -96,7 +96,8 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 2. Cache-hit materialization, so cached layers can apply without guest boot. See
    [019](019-v03-cache-hit-materialization.md).
 3. Cache-miss VM execution, block diff production, metadata persistence, and
-   the point where non-dry-run `cove build` becomes supported.
+   the point where non-dry-run `cove build` becomes supported. See
+   [020](020-v03-cache-miss-execution.md).
 4. `# secret:` tmpfs handling with guest no-swap verification.
 5. Build-pipeline compaction integration and measured default selection.
 6. Boot-to-agent benchmark publication plus OpenAI adapter release hardening.
@@ -140,6 +141,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 ## Recent changes
 
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
+- **2026-04-30**: Added the Slice 3 cache-miss execution plan and started the metadata persistence implementation.
 - **2026-04-30**: Added the Slice 2 cache-hit materialization plan, including validation-before-scratch and failure-atomicity rules.
 - **2026-04-30**: Added the Slice 1 build-executor scaffold plan, including scratch lifecycle tests and the side-effect-free dry-run rule.
 - **2026-04-30**: Added the v0.3 execution-slice roadmap and corrected OpenAI adapter v1 status to done; remaining adapter work is release hardening.

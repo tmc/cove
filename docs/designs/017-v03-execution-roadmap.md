@@ -85,6 +85,7 @@ non-dry-run builds as supported.
 ## Slice 3: cache-miss VM execution
 
 **Branch**: `feat/v03-build-vm-execution`
+**Detailed plan**: [020](020-v03-cache-miss-execution.md)
 
 **Scope**:
 

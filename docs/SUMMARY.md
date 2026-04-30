@@ -54,6 +54,7 @@
 * [v0.3 Execution Roadmap](designs/017-v03-execution-roadmap.md)
 * [v0.3 Build Executor Scaffold](designs/018-v03-build-executor-scaffold.md)
 * [v0.3 Cache-Hit Materialization](designs/019-v03-cache-hit-materialization.md)
+* [v0.3 Cache-Miss Execution](designs/020-v03-cache-miss-execution.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
