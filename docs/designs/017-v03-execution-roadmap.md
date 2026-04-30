@@ -52,6 +52,7 @@ non-dry-run builds as supported.
 ## Slice 2: cache-hit materialization
 
 **Branch**: `feat/v03-build-cache-hit-apply`
+**Detailed plan**: [019](019-v03-cache-hit-materialization.md)
 
 **Scope**:
 
