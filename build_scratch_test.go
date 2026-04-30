@@ -118,6 +118,10 @@ func TestBuildExecutorExecuteRunsLocalVMBuild(t *testing.T) {
 	if err := exec.Execute(context.Background()); err != nil {
 		t.Fatalf("Execute(): %v", err)
 	}
+	result := exec.Result()
+	if result.VMDir == "" || result.DiskPath == "" || len(result.Steps) != 1 {
+		t.Fatalf("Result() = %#v, want final vm result", result)
+	}
 	if _, err := loadBuildCacheEntry(exec.store, exec.plan.Steps[0].Key); err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +185,10 @@ func TestBuildExecutorExecuteSecondRunUsesCache(t *testing.T) {
 	}
 	if err := second.Execute(context.Background()); err != nil {
 		t.Fatalf("second Execute(): %v", err)
+	}
+	result := second.Result()
+	if result.VMDir == "" || result.DiskPath == "" || len(result.Steps) != 1 {
+		t.Fatalf("Result() = %#v, want final vm result", result)
 	}
 }
 

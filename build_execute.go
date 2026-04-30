@@ -20,6 +20,7 @@ type buildExecutor struct {
 	startGuest  buildGuestStarter
 	now         func() time.Time
 	pid         int
+	result      buildExecutionResult
 }
 
 type buildExecutionResult struct {
@@ -66,8 +67,17 @@ func (e *buildExecutor) Execute(ctx context.Context) error {
 	if !info.IsDir() {
 		return fmt.Errorf("cove build: base vm dir %s is not a directory", e.plan.Base)
 	}
-	_, err = e.executeVMBuild(ctx, e.plan.Base)
-	return err
+	e.result = buildExecutionResult{}
+	result, err := e.executeVMBuild(ctx, e.plan.Base)
+	if err != nil {
+		return err
+	}
+	e.result = result
+	return nil
+}
+
+func (e *buildExecutor) Result() buildExecutionResult {
+	return e.result
 }
 
 func (e *buildExecutor) executeCacheHits(ctx context.Context, parentDisk string) (buildExecutionResult, error) {
