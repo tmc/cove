@@ -249,6 +249,31 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 	}
 }
 
+func TestBuildPlanWarnings(t *testing.T) {
+	plan := buildPlan{Steps: []buildPlanStep{{
+		Name: "env",
+		Meta: buildScriptMeta{
+			CacheEnv: []string{"BUILD_NUMBER", "GITHUB_TOKEN", "OPENAI_API_KEY", "DB_PASSWORD"},
+			Compact:  "targeted",
+		},
+	}, {
+		Name: "fast-secret",
+		Meta: buildScriptMeta{
+			Secrets: []string{"SIGNING_KEY"},
+			Compact: "fast",
+		},
+	}}}
+	warnings := buildPlanWarnings(plan)
+	for _, want := range []string{"GITHUB_TOKEN", "OPENAI_API_KEY", "DB_PASSWORD", "compact: fast"} {
+		if !containsBuildWarning(warnings, want) {
+			t.Fatalf("warnings missing %q: %#v", want, warnings)
+		}
+	}
+	if containsBuildWarning(warnings, "BUILD_NUMBER") {
+		t.Fatalf("warnings included non-secret cache env: %#v", warnings)
+	}
+}
+
 func TestHandleBuildAcceptsDocumentedFlagOrder(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "hello.vzscript")
@@ -488,4 +513,13 @@ func testBuildStep(data string) buildStep {
 		panic(err)
 	}
 	return buildStep{Name: "test", Source: "test.vzscript", Data: []byte(data), Meta: meta}
+}
+
+func containsBuildWarning(list []string, substr string) bool {
+	for _, s := range list {
+		if strings.Contains(s, substr) {
+			return true
+		}
+	}
+	return false
 }

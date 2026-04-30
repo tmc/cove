@@ -685,6 +685,10 @@ Non-dry-run registry-base builds fail with
 least one `--tag` and pushes the reported final VM directory after a successful
 local-base build.
 
+Scripts may declare `# secret:` names for host environment variables that must
+exist before guest execution starts. Use `# cache-env:` only for non-secret cache
+inputs; names that look like tokens, passwords, secrets, or keys emit a warning.
+
 ---
 
 ## Other Commands

@@ -87,6 +87,7 @@ func handleBuild(args []string) error {
 	if err != nil {
 		return err
 	}
+	printBuildWarnings(os.Stderr, plan)
 	if opts.DryRun {
 		printBuildPlan(os.Stdout, plan, opts)
 		return nil
@@ -245,6 +246,40 @@ func printBuildPlan(w io.Writer, plan buildPlan, opts buildOptions) {
 			fmt.Fprintf(w, "    cache-ttl: %s\n", step.Meta.CacheTTL.Round(time.Second))
 		}
 	}
+}
+
+func printBuildWarnings(w io.Writer, plan buildPlan) {
+	for _, warning := range buildPlanWarnings(plan) {
+		fmt.Fprintf(w, "warning: %s\n", warning)
+	}
+}
+
+func buildPlanWarnings(plan buildPlan) []string {
+	var warnings []string
+	for _, step := range plan.Steps {
+		for _, name := range step.Meta.CacheEnv {
+			if secretLikeCacheEnvName(name) {
+				warnings = append(warnings, fmt.Sprintf("step %q cache-env %s looks secret; use # secret: for tokens, passwords, and keys", step.Name, name))
+			}
+		}
+		if len(step.Meta.Secrets) > 0 && step.Meta.Compact == "fast" {
+			warnings = append(warnings, fmt.Sprintf("step %q declares # secret: with # compact: fast; guest swap may retain plaintext", step.Name))
+		}
+	}
+	return warnings
+}
+
+func secretLikeCacheEnvName(name string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	if upper == "" {
+		return false
+	}
+	for _, suffix := range []string{"TOKEN", "PASSWORD", "SECRET", "KEY"} {
+		if upper == suffix || strings.HasSuffix(upper, "_"+suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func printBuildResult(w io.Writer, plan buildPlan, result buildExecutionResult, opts buildOptions) {
