@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/store"
@@ -70,6 +71,9 @@ func (e *buildExecutor) Execute(ctx context.Context) error {
 	e.result = buildExecutionResult{}
 	result, err := e.executeVMBuild(ctx, e.plan.Base)
 	if err != nil {
+		return err
+	}
+	if err := finalizeBuildResult(result); err != nil {
 		return err
 	}
 	e.result = result
@@ -231,4 +235,15 @@ func buildStepFailureError(step buildPlanStep, sc buildScratch, err error, kept 
 		return fmt.Errorf("cove build: step %q failed; scratch kept at %s: %w", step.Name, sc.Dir, err)
 	}
 	return fmt.Errorf("cove build: step %q failed: %w", step.Name, err)
+}
+
+func finalizeBuildResult(result buildExecutionResult) error {
+	if result.VMDir == "" {
+		return nil
+	}
+	pidPath := filepath.Join(result.VMDir, "build.pid")
+	if err := os.Remove(pidPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("finalize build result: %w", err)
+	}
+	return nil
 }

@@ -122,8 +122,61 @@ func TestBuildExecutorExecuteRunsLocalVMBuild(t *testing.T) {
 	if result.VMDir == "" || result.DiskPath == "" || len(result.Steps) != 1 {
 		t.Fatalf("Result() = %#v, want final vm result", result)
 	}
+	if _, err := os.Stat(filepath.Join(result.VMDir, "build.pid")); !os.IsNotExist(err) {
+		t.Fatalf("final build pid exists after promotion: %v", err)
+	}
 	if _, err := loadBuildCacheEntry(exec.store, exec.plan.Steps[0].Key); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuildExecutorExecutePromotesFinalVM(t *testing.T) {
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "echo",
+		Source:               "echo.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute(): %v", err)
+	}
+	result := exec.Result()
+	if result.VMDir == "" {
+		t.Fatalf("Result() = %#v, want final vm dir", result)
+	}
+	if err := gcBuildScratch(exec.scratchRoot, func(int) bool { return false }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(result.VMDir); err != nil {
+		t.Fatalf("final VM removed by scratch gc: %v", err)
 	}
 }
 
