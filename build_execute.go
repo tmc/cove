@@ -19,6 +19,7 @@ type buildExecutor struct {
 	opts        buildOptions
 	store       store.Store
 	scratchRoot string
+	startGuest  buildGuestStarter
 	now         func() time.Time
 	pid         int
 }

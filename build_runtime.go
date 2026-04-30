@@ -9,8 +9,23 @@ import (
 )
 
 type buildControlSender func(string, *controlpb.ControlRequest, time.Duration, string) (*controlpb.ControlResponse, error)
+type buildGuestCleanup func(context.Context) error
+type buildGuestStarter func(context.Context, buildScratch) (buildGuestCleanup, error)
 
 var sendBuildControlRequest buildControlSender = ctlSendRequest
+
+func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if e.startGuest != nil {
+		return e.startGuest(ctx, sc)
+	}
+	return func(context.Context) error { return nil }, nil
+}
 
 func waitBuildAgent(ctx context.Context, socketPath string, timeout time.Duration) error {
 	if ctx == nil {

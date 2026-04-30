@@ -11,15 +11,24 @@ func (e *buildExecutor) executeVMBuild(ctx context.Context, parentDir string) (b
 	return e.executeVMWithMissRunner(ctx, parentDir, e.runBuildStepInScratch)
 }
 
-func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPlanStep, sc buildScratch) error {
+func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPlanStep, sc buildScratch) (err error) {
 	if sc.Dir == "" {
 		return fmt.Errorf("run build step %q: scratch vm dir required", step.Name)
 	}
+	cleanup, err := e.startBuildGuest(ctx, sc)
+	if err != nil {
+		return fmt.Errorf("run build step %q: %w", step.Name, err)
+	}
+	defer func() {
+		if cleanup != nil {
+			err = errors.Join(err, cleanup(ctx))
+		}
+	}()
 	socketPath := GetControlSocketPathForVM(sc.Dir)
 	if err := waitBuildAgent(ctx, socketPath, 2*time.Minute); err != nil {
 		return fmt.Errorf("run build step %q: %w", step.Name, err)
 	}
-	err := e.runBuildStepScript(ctx, step, socketPath)
+	err = e.runBuildStepScript(ctx, step, socketPath)
 	if shutdownErr := shutdownBuildGuest(ctx, socketPath); shutdownErr != nil {
 		err = errors.Join(err, shutdownErr)
 	}
