@@ -157,6 +157,8 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 		}
 		planStep := buildPlanStep{
 			Name:                 step.Name,
+			Source:               step.Source,
+			Data:                 append([]byte(nil), step.Data...),
 			Key:                  key,
 			ParentDigest:         keyInput.ParentDigest,
 			ScriptDigest:         keyInput.ScriptDigest,

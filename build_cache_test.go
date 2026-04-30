@@ -141,6 +141,12 @@ func TestBuildDryPlanChainsKeys(t *testing.T) {
 	if plan.Steps[0].ScriptDigest == "" || plan.Steps[1].ScriptDigest == "" {
 		t.Fatalf("script digests = %q, %q; want non-empty", plan.Steps[0].ScriptDigest, plan.Steps[1].ScriptDigest)
 	}
+	if plan.Steps[0].Source != step1 || string(plan.Steps[0].Data) != "exec echo one\n" {
+		t.Fatalf("step 1 source/data = %q/%q, want script contents", plan.Steps[0].Source, plan.Steps[0].Data)
+	}
+	if plan.Steps[1].Source != step2 || string(plan.Steps[1].Data) != "exec echo two\n" {
+		t.Fatalf("step 2 source/data = %q/%q, want script contents", plan.Steps[1].Source, plan.Steps[1].Data)
+	}
 }
 
 func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {

@@ -51,6 +51,8 @@ type buildCacheKeyInput struct {
 
 type buildPlanStep struct {
 	Name                 string
+	Source               string
+	Data                 []byte
 	Key                  string
 	ParentDigest         string
 	ScriptDigest         string
