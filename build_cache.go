@@ -380,7 +380,11 @@ func digestLocalBuildBase(dir string) (string, error) {
 		sourceOS = "Linux"
 	}
 	names := []string{filepath.Base(disk)}
+	required := map[string]bool{filepath.Base(disk): true}
 	for _, spec := range cloneRequiredFiles(sourceOS) {
+		if spec.required {
+			required[spec.name] = true
+		}
 		if spec.name != filepath.Base(disk) {
 			names = append(names, spec.name)
 		}
@@ -396,11 +400,17 @@ func digestLocalBuildBase(dir string) (string, error) {
 		info, err := os.Stat(path)
 		if err != nil {
 			if os.IsNotExist(err) {
+				if required[name] {
+					return "", fmt.Errorf("local build base %s: %w", name, err)
+				}
 				continue
 			}
 			return "", fmt.Errorf("local build base %s: %w", name, err)
 		}
 		if !info.Mode().IsRegular() {
+			if required[name] {
+				return "", fmt.Errorf("local build base %s is not a regular file", name)
+			}
 			continue
 		}
 		digest, err := hashFile(path)

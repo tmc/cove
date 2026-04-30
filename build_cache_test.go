@@ -189,6 +189,29 @@ func TestBuildDryPlanAcceptsLocalBaseDir(t *testing.T) {
 	}
 }
 
+func TestBuildDryPlanLocalBaseRequiresMetadata(t *testing.T) {
+	dir := t.TempDir()
+	parentDir := filepath.Join(dir, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(parentDir, "disk.img"), []byte("base image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	opts := buildOptions{Base: parentDir, Scripts: []string{script}, Compact: "targeted"}
+	_, err := buildDryPlan(context.Background(), "vm", opts, nil)
+	if err == nil {
+		t.Fatal("buildDryPlan() error = nil, want missing metadata")
+	}
+	if !strings.Contains(err.Error(), "aux.img") {
+		t.Fatalf("buildDryPlan() = %v, want missing aux.img", err)
+	}
+}
+
 func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "one.vzscript")
