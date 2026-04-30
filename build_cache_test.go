@@ -170,6 +170,51 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 	}
 }
 
+func TestHandleBuildAcceptsDocumentedFlagOrder(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := handleBuild([]string{
+		"test-image",
+		"--base", "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64),
+		"--script", script,
+		"--dry-run",
+	})
+	if err != nil {
+		t.Fatalf("handleBuild(): %v", err)
+	}
+}
+
+func TestSplitBuildArgs(t *testing.T) {
+	args := []string{
+		"test-image",
+		"--base", "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64),
+		"--script=one",
+		"--script", "two",
+		"--dry-run",
+		"--tag", "out",
+	}
+	flagArgs, posArgs, err := splitBuildArgs(args)
+	if err != nil {
+		t.Fatalf("splitBuildArgs(): %v", err)
+	}
+	if !reflect.DeepEqual(posArgs, []string{"test-image"}) {
+		t.Fatalf("posArgs = %#v", posArgs)
+	}
+	wantFlags := []string{
+		"--base", "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64),
+		"--script=one",
+		"--script", "two",
+		"--dry-run",
+		"--tag", "out",
+	}
+	if !reflect.DeepEqual(flagArgs, wantFlags) {
+		t.Fatalf("flagArgs = %#v, want %#v", flagArgs, wantFlags)
+	}
+}
+
 func TestHandleBuildRequiresDryRun(t *testing.T) {
 	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "vm"})
 	if err == nil {
