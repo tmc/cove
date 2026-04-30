@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -163,6 +164,88 @@ func TestExecuteCacheHitsStopsAtMissAndCleansScratch(t *testing.T) {
 		t.Fatalf("executeCacheHits() = %v, want miss error", err)
 	}
 	assertEmptyDir(t, exec.scratchRoot)
+}
+
+func TestExecuteWithMissRunnerRecordsAndChains(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent.img")
+	if err := os.WriteFile(parent, []byte("base image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(filepath.Join(root, "store"))
+	hit := storeCacheLayer(t, s, "sha256:"+strings.Repeat("1", 64), parent, []byte("cached image\n"))
+	miss := buildPlanStep{
+		Name:                 "miss",
+		Key:                  "sha256:" + strings.Repeat("2", 64),
+		ParentDigest:         hit.Key,
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.store = s
+	exec.opts.KeepIntermediate = false
+	exec.plan.Steps = []buildPlanStep{hit, miss}
+	result, err := exec.executeWithMissRunner(context.Background(), parent, func(ctx context.Context, step buildPlanStep, sc buildScratch) error {
+		got, err := os.ReadFile(sc.DiskPath)
+		if err != nil {
+			return err
+		}
+		if string(got) != "cached image\n" {
+			return fmt.Errorf("scratch parent = %q, want cached image", got)
+		}
+		return os.WriteFile(sc.DiskPath, []byte("built image\n"), 0644)
+	})
+	if err != nil {
+		t.Fatalf("executeWithMissRunner(): %v", err)
+	}
+	if len(result.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(result.Steps))
+	}
+	got, err := os.ReadFile(result.DiskPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "built image\n" {
+		t.Fatalf("final disk = %q, want built image", got)
+	}
+	entry, err := loadBuildCacheEntry(s, miss.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.ParentDigest != miss.ParentDigest || entry.ScriptDigest != miss.ScriptDigest {
+		t.Fatalf("entry = %#v", entry)
+	}
+	entries, err := os.ReadDir(exec.scratchRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("scratch entries = %d, want final scratch only", len(entries))
+	}
+}
+
+func TestExecuteWithMissRunnerFailureCleansScratch(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent.img")
+	if err := os.WriteFile(parent, []byte("base image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	miss := buildPlanStep{Name: "miss", Key: "sha256:" + strings.Repeat("2", 64)}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.opts.KeepIntermediate = false
+	exec.plan.Steps = []buildPlanStep{miss}
+	wantErr := errors.New("guest failed")
+	_, err := exec.executeWithMissRunner(context.Background(), parent, func(context.Context, buildPlanStep, buildScratch) error {
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("executeWithMissRunner() = %v, want guest failure", err)
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+	if _, err := loadBuildCacheEntry(exec.store, miss.Key); err == nil {
+		t.Fatal("cache entry exists after miss failure")
+	}
 }
 
 func makeCacheHitFixture(t *testing.T, keep bool) (parent string, want []byte, step buildPlanStep, exec *buildExecutor) {

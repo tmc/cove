@@ -28,6 +28,8 @@ type buildExecutionResult struct {
 	Steps    []buildApplyResult
 }
 
+type buildMissRunner func(context.Context, buildPlanStep, buildScratch) error
+
 func newBuildExecutor(plan buildPlan, opts buildOptions, s store.Store) *buildExecutor {
 	return &buildExecutor{
 		plan:        plan,
@@ -52,6 +54,10 @@ func (e *buildExecutor) Execute(ctx context.Context) error {
 }
 
 func (e *buildExecutor) executeCacheHits(ctx context.Context, parentDisk string) (buildExecutionResult, error) {
+	return e.executeWithMissRunner(ctx, parentDisk, nil)
+}
+
+func (e *buildExecutor) executeWithMissRunner(ctx context.Context, parentDisk string, runMiss buildMissRunner) (buildExecutionResult, error) {
 	var result buildExecutionResult
 	if ctx == nil {
 		ctx = context.Background()
@@ -61,11 +67,7 @@ func (e *buildExecutor) executeCacheHits(ctx context.Context, parentDisk string)
 	}
 	currentDisk := parentDisk
 	for _, step := range e.plan.Steps {
-		if !step.CacheHit {
-			e.cleanupIntermediate(result)
-			return result, errBuildCacheMissExecutionNotImplemented
-		}
-		applied, err := e.applyCacheHit(ctx, step, currentDisk)
+		applied, err := e.executeStep(ctx, step, currentDisk, runMiss)
 		if err != nil {
 			e.cleanupIntermediate(result)
 			return result, err
@@ -78,6 +80,41 @@ func (e *buildExecutor) executeCacheHits(ctx context.Context, parentDisk string)
 		currentDisk = applied.DiskPath
 	}
 	return result, nil
+}
+
+func (e *buildExecutor) executeStep(ctx context.Context, step buildPlanStep, parentDisk string, runMiss buildMissRunner) (buildApplyResult, error) {
+	if step.CacheHit {
+		return e.applyCacheHit(ctx, step, parentDisk)
+	}
+	if runMiss == nil {
+		return buildApplyResult{}, errBuildCacheMissExecutionNotImplemented
+	}
+	sc, err := e.createScratch(parentDisk)
+	if err != nil {
+		return buildApplyResult{}, err
+	}
+	if err := runMiss(ctx, step, sc); err != nil {
+		if e.opts.KeepIntermediate {
+			return buildApplyResult{Step: step.Name, Key: step.Key, Scratch: sc, DiskPath: sc.DiskPath}, err
+		}
+		if cleanupErr := e.cleanupScratch(sc); cleanupErr != nil {
+			return buildApplyResult{}, errors.Join(err, cleanupErr)
+		}
+		return buildApplyResult{}, err
+	}
+	applied, err := e.recordCacheMissLayer(ctx, step, parentDisk, sc.DiskPath)
+	if err != nil {
+		if e.opts.KeepIntermediate {
+			applied.Scratch = sc
+			return applied, err
+		}
+		if cleanupErr := e.cleanupScratch(sc); cleanupErr != nil {
+			return buildApplyResult{}, errors.Join(err, cleanupErr)
+		}
+		return buildApplyResult{}, err
+	}
+	applied.Scratch = sc
+	return applied, nil
 }
 
 func (e *buildExecutor) cleanupIntermediate(result buildExecutionResult) {
