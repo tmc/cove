@@ -50,11 +50,14 @@ type buildCacheKeyInput struct {
 }
 
 type buildPlanStep struct {
-	Name        string
-	Key         string
-	LayerDigest string
-	CacheHit    bool
-	Meta        buildScriptMeta
+	Name                 string
+	Key                  string
+	ParentDigest         string
+	ScriptDigest         string
+	AgentProtocolVersion string
+	LayerDigest          string
+	CacheHit             bool
+	Meta                 buildScriptMeta
 }
 
 type buildPlan struct {

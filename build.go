@@ -151,11 +151,18 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 		if step.Meta.Compact == "targeted" && opts.Compact != "targeted" {
 			step.Meta.Compact = opts.Compact
 		}
-		key, _, err := buildCacheKey(ctx, currentParent, step, client)
+		key, keyInput, err := buildCacheKey(ctx, currentParent, step, client)
 		if err != nil {
 			return plan, err
 		}
-		planStep := buildPlanStep{Name: step.Name, Key: key, Meta: step.Meta}
+		planStep := buildPlanStep{
+			Name:                 step.Name,
+			Key:                  key,
+			ParentDigest:         keyInput.ParentDigest,
+			ScriptDigest:         keyInput.ScriptDigest,
+			AgentProtocolVersion: keyInput.AgentProtocolVersion,
+			Meta:                 step.Meta,
+		}
 		if !opts.NoCache {
 			entry, err := loadBuildCacheEntry(blobStore, key)
 			if err == nil {

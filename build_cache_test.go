@@ -132,6 +132,15 @@ func TestBuildDryPlanChainsKeys(t *testing.T) {
 	if plan.Steps[0].Key == plan.Steps[1].Key {
 		t.Fatalf("chained step keys should differ: %s", plan.Steps[0].Key)
 	}
+	if plan.Steps[0].ParentDigest != plan.ParentDigest {
+		t.Fatalf("step 1 parent digest = %q, want %q", plan.Steps[0].ParentDigest, plan.ParentDigest)
+	}
+	if plan.Steps[1].ParentDigest != plan.Steps[0].Key {
+		t.Fatalf("step 2 parent digest = %q, want %q", plan.Steps[1].ParentDigest, plan.Steps[0].Key)
+	}
+	if plan.Steps[0].ScriptDigest == "" || plan.Steps[1].ScriptDigest == "" {
+		t.Fatalf("script digests = %q, %q; want non-empty", plan.Steps[0].ScriptDigest, plan.Steps[1].ScriptDigest)
+	}
 }
 
 func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
