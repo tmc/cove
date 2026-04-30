@@ -18,6 +18,9 @@ func (e *buildExecutor) recordCacheMissLayer(ctx context.Context, step buildPlan
 	if _, _, err := splitStoreDigest(step.Key); err != nil {
 		return result, fmt.Errorf("record cache miss: key: %w", err)
 	}
+	if err := validateBuildCacheStepMetadata(step); err != nil {
+		return result, fmt.Errorf("record cache miss: %w", err)
+	}
 	if parentDisk == "" {
 		return result, fmt.Errorf("record cache miss: parent disk path required")
 	}
@@ -55,4 +58,25 @@ func (e *buildExecutor) recordCacheMissLayer(ctx context.Context, step buildPlan
 		LayerDigest: manifest.Digest,
 		DiskPath:    childDisk,
 	}, nil
+}
+
+func validateBuildCacheStepMetadata(step buildPlanStep) error {
+	for name, digest := range map[string]string{
+		"parent digest": step.ParentDigest,
+		"script digest": step.ScriptDigest,
+	} {
+		if digest == "" {
+			return fmt.Errorf("empty %s", name)
+		}
+		if _, _, err := splitStoreDigest(digest); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	if step.AgentProtocolVersion == "" {
+		return fmt.Errorf("empty agent protocol version")
+	}
+	if err := validateCompactMode(step.Meta.Compact); err != nil {
+		return fmt.Errorf("compact: %w", err)
+	}
+	return nil
 }

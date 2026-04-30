@@ -83,6 +83,27 @@ func TestRecordCacheMissLayerValidatesBeforeStore(t *testing.T) {
 	assertEmptyDir(t, filepath.Join(exec.store.Dir, "build-cache"))
 }
 
+func TestRecordCacheMissLayerValidatesMetadataBeforeStore(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent.img")
+	child := filepath.Join(root, "child.img")
+	if err := os.WriteFile(parent, []byte("base"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte("child"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.store = store.New(filepath.Join(root, "store"))
+	step := testBuildPlanStep("missing-metadata", "sha256:"+strings.Repeat("1", 64))
+	step.ParentDigest = ""
+	_, err := exec.recordCacheMissLayer(context.Background(), step, parent, child)
+	if err == nil {
+		t.Fatal("recordCacheMissLayer() error = nil, want missing metadata")
+	}
+	assertEmptyDir(t, filepath.Join(exec.store.Dir, "build-cache"))
+}
+
 func TestRecordCacheMissLayerHonorsContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
