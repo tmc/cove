@@ -94,6 +94,64 @@ func (e *buildExecutor) createScratch(parentDisk string) (buildScratch, error) {
 	return sc, nil
 }
 
+func (e *buildExecutor) createScratchVM(parentDir string) (buildScratch, error) {
+	if parentDir == "" {
+		return buildScratch{}, fmt.Errorf("create build scratch vm: parent vm dir required")
+	}
+	parentDisk, err := pushDiskPath(parentDir)
+	if err != nil {
+		return buildScratch{}, fmt.Errorf("create build scratch vm: %w", err)
+	}
+	sc, err := e.createScratch("")
+	if err != nil {
+		return buildScratch{}, err
+	}
+	sc.DiskPath = filepath.Join(sc.Dir, filepath.Base(parentDisk))
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = e.cleanupScratch(sc)
+		}
+	}()
+	if err := ForkVMDisk(parentDisk, sc.DiskPath); err != nil {
+		return buildScratch{}, err
+	}
+	sourceOS := "macOS"
+	if filepath.Base(parentDisk) == "linux-disk.img" {
+		sourceOS = "Linux"
+	}
+	for _, spec := range cloneRequiredFiles(sourceOS) {
+		if spec.name == filepath.Base(parentDisk) {
+			continue
+		}
+		if err := copyBuildScratchFile(parentDir, sc.Dir, spec.name, spec.required); err != nil {
+			return buildScratch{}, err
+		}
+	}
+	for _, name := range cloneOptionalFiles(sourceOS) {
+		if err := copyBuildScratchFile(parentDir, sc.Dir, name, false); err != nil {
+			return buildScratch{}, err
+		}
+	}
+	cleanup = false
+	return sc, nil
+}
+
+func copyBuildScratchFile(srcDir, dstDir, name string, required bool) error {
+	src := filepath.Join(srcDir, name)
+	dst := filepath.Join(dstDir, name)
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) && !required {
+			return nil
+		}
+		return fmt.Errorf("copy build scratch %s: %w", name, err)
+	}
+	if err := copyFile(src, dst); err != nil {
+		return fmt.Errorf("copy build scratch %s: %w", name, err)
+	}
+	return nil
+}
+
 func (e *buildExecutor) cleanupScratch(sc buildScratch) error {
 	if sc.Dir == "" {
 		return nil

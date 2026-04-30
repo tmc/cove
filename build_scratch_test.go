@@ -129,6 +129,59 @@ func TestCreateScratchClonesParentDisk(t *testing.T) {
 	}
 }
 
+func TestCreateScratchVMClonesDiskAndCopiesMetadata(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":      "parent-disk",
+		"aux.img":       "aux",
+		"hw.model":      "hw",
+		"machine.id":    "machine",
+		"config.json":   "{}",
+		"control.token": "token",
+	} {
+		if err := os.WriteFile(filepath.Join(parent, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	sc, err := exec.createScratchVM(parent)
+	if err != nil {
+		t.Skipf("clonefile unsupported for scratch vm test: %v", err)
+	}
+	if filepath.Base(sc.DiskPath) != "disk.img" {
+		t.Fatalf("scratch disk path = %q, want disk.img", sc.DiskPath)
+	}
+	for name, want := range map[string]string{
+		"disk.img":      "parent-disk",
+		"aux.img":       "aux",
+		"hw.model":      "hw",
+		"machine.id":    "machine",
+		"config.json":   "{}",
+		"control.token": "token",
+	} {
+		if got := readFile(t, filepath.Join(sc.Dir, name)); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestCreateScratchVMRequiresParentDisk(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	if _, err := exec.createScratchVM(parent); err == nil {
+		t.Fatal("createScratchVM() error = nil, want missing disk")
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+}
+
 func testBuildExecutor(root string) *buildExecutor {
 	return &buildExecutor{
 		plan: buildPlan{
