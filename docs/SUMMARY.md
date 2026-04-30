@@ -23,6 +23,7 @@
 * [Control Socket API](reference/control-api.md)
 * [VZScript Commands](reference/vzscript-commands.md)
 * [Changelog](reference/changelog.md)
+* [Release Checklist](reference/release-checklist.md)
 
 ## Guides
 * [Provisioning](guides/provisioning.md)

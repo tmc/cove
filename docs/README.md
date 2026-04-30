@@ -25,6 +25,7 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 - [CLI Reference](reference/cli.md) -- every command and flag
 - [VZScript Commands](reference/vzscript-commands.md) -- guest agent and OCR automation
 - [Control Socket API](reference/control-api.md) -- programmatic VM control
+- [Release Checklist](reference/release-checklist.md) -- pre-tag and publish gates
 
 ## Feature Highlights
 
@@ -70,5 +71,5 @@ graph TD
 | Level | Features |
 |-------|----------|
 | GA | install, run, provisioning, vzscripts, suspend/resume |
-| Beta | snapshots, guest agent, clipboard sharing, shared folders |
-| Experimental | UTM import, memory balloon, Windows stub |
+| Beta | snapshots, guest agent, clipboard sharing, shared folders, Linux guests, OCI push/pull, VM fork/restore, `cove compact`, local content-addressed store |
+| Experimental | `cove build --dry-run` cache planning, UTM import, memory balloon, Windows stub |

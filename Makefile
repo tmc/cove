@@ -4,7 +4,7 @@ COMMIT  ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build sign agent test clean lint proto proto-go proto-swift release-check
+.PHONY: build sign agent test clean lint proto proto-go proto-swift release-tools release-check
 
 build:
 	go build -buildvcs=true -ldflags "$(LDFLAGS)" -o $(BINARY) .
@@ -21,7 +21,13 @@ test:
 lint:
 	golangci-lint run ./...
 
-release-check:
+release-tools:
+	@command -v goreleaser >/dev/null 2>&1 || { \
+		echo "goreleaser not found; install with: brew install goreleaser"; \
+		exit 127; \
+	}
+
+release-check: release-tools
 	GOWORK=off go test -short ./...
 	GOWORK=off go vet ./...
 	GOWORK=off goreleaser release --snapshot --clean --skip=publish
