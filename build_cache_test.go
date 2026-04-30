@@ -329,6 +329,30 @@ func TestHandleBuildReportsCacheHitWithStoreDir(t *testing.T) {
 	}
 }
 
+func TestHandleBuildRejectsRegistryCacheRefs(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := handleBuild([]string{
+		"test-image",
+		"--base", "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64),
+		"--script", script,
+		"--cache-from", "ghcr.io/acme/build-cache:cache",
+		"--cache-to", "ghcr.io/acme/build-cache:cache",
+		"--dry-run",
+	})
+	if err == nil {
+		t.Fatal("handleBuild() error = nil, want unsupported registry cache error")
+	}
+	for _, want := range []string{"--cache-from", "--cache-to", "not implemented"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("handleBuild() error = %q, want %q", err, want)
+		}
+	}
+}
+
 func TestSplitBuildArgs(t *testing.T) {
 	args := []string{
 		"test-image",

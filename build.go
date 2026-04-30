@@ -67,6 +67,9 @@ func handleBuild(args []string) error {
 	opts.Tags = tags
 	opts.CacheFrom = cacheFrom
 	opts.CacheTo = cacheTo
+	if err := validateBuildRegistryCache(opts); err != nil {
+		return err
+	}
 	if len(opts.Scripts) == 0 {
 		return fmt.Errorf("cove build: at least one --script is required")
 	}
@@ -151,6 +154,20 @@ func splitBuildArgs(args []string) (flagArgs, posArgs []string, err error) {
 		}
 	}
 	return flagArgs, posArgs, nil
+}
+
+func validateBuildRegistryCache(opts buildOptions) error {
+	var flags []string
+	if len(opts.CacheFrom) > 0 {
+		flags = append(flags, "--cache-from")
+	}
+	if len(opts.CacheTo) > 0 {
+		flags = append(flags, "--cache-to")
+	}
+	if len(flags) == 0 {
+		return nil
+	}
+	return fmt.Errorf("cove build: %s registry cache is not implemented yet", strings.Join(flags, " and "))
 }
 
 func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *http.Client) (buildPlan, error) {
@@ -329,8 +346,8 @@ Flags:
   --push                    Push output tags after build.
   --dry-run                 Print the resolved build plan and cache keys only.
   --no-cache                Re-run every step instead of restoring cached layers.
-  --cache-from <ref>        Registry cache source. Repeatable.
-  --cache-to <ref>          Registry cache destination. Repeatable.
+  --cache-from <ref>        Reserved for registry cache import. Repeatable.
+  --cache-to <ref>          Reserved for registry cache export. Repeatable.
   --keep-intermediate       Keep scratch VMs for debugging.
   --chunk-size <mb>         Chunk size in MiB. Default 512.
   --compact <mode>          fast, targeted, or thorough. Default targeted.

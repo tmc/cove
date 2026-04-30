@@ -667,8 +667,8 @@ cove build <name> --base <ref> --script <step> [flags]
 | `--push` | false | Push output tags after build |
 | `--dry-run` | false | Print the resolved build plan and cache keys only |
 | `--no-cache` | false | Re-run every step instead of restoring cached layers |
-| `--cache-from <ref>` | | Registry cache source (repeatable) |
-| `--cache-to <ref>` | | Registry cache destination (repeatable) |
+| `--cache-from <ref>` | | Reserved for registry cache import (repeatable) |
+| `--cache-to <ref>` | | Reserved for registry cache export (repeatable) |
 | `--keep-intermediate` | false | Leave scratch VMs behind for debugging |
 | `--chunk-size <mb>` | 512 | Chunk size in MiB |
 | `--compact <mode>` | targeted | Compaction mode: fast, targeted, or thorough |
@@ -684,6 +684,10 @@ Non-dry-run registry-base builds fail with
 `cove build: non-dry-run requires local VM base directory`. `--push` requires at
 least one `--tag` and pushes the reported final VM directory after a successful
 local-base build.
+
+Registry cache import/export is not implemented yet. Builds that pass
+`--cache-from` or `--cache-to` fail before planning instead of silently ignoring
+the remote cache ref.
 
 Scripts may declare `# secret:` names for host environment variables that must
 exist before guest execution starts. During the step, declared values are written
