@@ -347,6 +347,14 @@ func expandHome(path string) string {
 }
 
 func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Reference, string, error) {
+	path := expandHome(refText)
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		digest, err := digestLocalBuildBase(path)
+		if err != nil {
+			return ociimage.Reference{}, "", err
+		}
+		return ociimage.Reference{}, digest, nil
+	}
 	ref, err := ociimage.ParseReference(refText)
 	if err != nil {
 		return ref, "", err
@@ -360,4 +368,47 @@ func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Refer
 		return ref, "", err
 	}
 	return ref, digest, nil
+}
+
+func digestLocalBuildBase(dir string) (string, error) {
+	disk, err := pushDiskPath(dir)
+	if err != nil {
+		return "", fmt.Errorf("local build base: %w", err)
+	}
+	sourceOS := "macOS"
+	if filepath.Base(disk) == "linux-disk.img" {
+		sourceOS = "Linux"
+	}
+	names := []string{filepath.Base(disk)}
+	for _, spec := range cloneRequiredFiles(sourceOS) {
+		if spec.name != filepath.Base(disk) {
+			names = append(names, spec.name)
+		}
+	}
+	names = append(names, cloneOptionalFiles(sourceOS)...)
+	names = uniqueSorted(names)
+
+	var b strings.Builder
+	writeKV(&b, "type", "local-vm")
+	writeKV(&b, "os", sourceOS)
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", fmt.Errorf("local build base %s: %w", name, err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		digest, err := hashFile(path)
+		if err != nil {
+			return "", fmt.Errorf("local build base %s: %w", name, err)
+		}
+		writeKV(&b, "file", name)
+		writeKV(&b, "digest", digest)
+	}
+	return digestBytes([]byte(b.String())), nil
 }

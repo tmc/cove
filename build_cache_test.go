@@ -149,6 +149,46 @@ func TestBuildDryPlanChainsKeys(t *testing.T) {
 	}
 }
 
+func TestBuildDryPlanAcceptsLocalBaseDir(t *testing.T) {
+	dir := t.TempDir()
+	parentDir := filepath.Join(dir, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	opts := buildOptions{Base: parentDir, Scripts: []string{script}, Compact: "targeted"}
+	plan, err := buildDryPlan(context.Background(), "vm", opts, nil)
+	if err != nil {
+		t.Fatalf("buildDryPlan(): %v", err)
+	}
+	if plan.ParentDigest == "" || plan.Steps[0].ParentDigest != plan.ParentDigest {
+		t.Fatalf("parent digest = %q step parent = %q", plan.ParentDigest, plan.Steps[0].ParentDigest)
+	}
+	if err := os.WriteFile(filepath.Join(parentDir, "disk.img"), []byte("changed image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := buildDryPlan(context.Background(), "vm", opts, nil)
+	if err != nil {
+		t.Fatalf("buildDryPlan(changed): %v", err)
+	}
+	if changed.ParentDigest == plan.ParentDigest {
+		t.Fatalf("parent digest did not change after disk mutation: %s", plan.ParentDigest)
+	}
+}
+
 func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "one.vzscript")
