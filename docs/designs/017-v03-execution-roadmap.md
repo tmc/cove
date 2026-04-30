@@ -19,6 +19,7 @@ non-dry-run builds as supported.
 ## Slice 1: build executor scaffold
 
 **Branch**: `feat/v03-build-executor-scaffold`
+**Detailed plan**: [018](018-v03-build-executor-scaffold.md)
 
 **Scope**:
 

@@ -92,7 +92,7 @@ and should not stack on each other. Each slice should be reviewable by itself;
 see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 1. Build executor scaffold and scratch VM lifecycle, with non-dry-run still
-   gated.
+   gated. See [018](018-v03-build-executor-scaffold.md).
 2. Cache-hit materialization, so cached layers can apply without guest boot.
 3. Cache-miss VM execution, block diff production, metadata persistence, and
    the point where non-dry-run `cove build` becomes supported.
@@ -139,6 +139,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 ## Recent changes
 
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
+- **2026-04-30**: Added the Slice 1 build-executor scaffold plan, including scratch lifecycle tests and the side-effect-free dry-run rule.
 - **2026-04-30**: Added the v0.3 execution-slice roadmap and corrected OpenAI adapter v1 status to done; remaining adapter work is release hardening.
 - **2026-04-30**: Synced the post-integration repo state into NotebookLM and added the 016 refresh plus license/SLA reference docs.
 - **2026-04-30**: Promoted the published fork-only benchmark to done and kept boot-to-agent timing as the remaining F1 measurement gate.
