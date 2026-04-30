@@ -13,11 +13,12 @@ This roadmap is the post-integration, post-review rollup of the notebook-backed
 strategy in [012](012-product-roadmap-2026.md), the v0.1 handoff in
 [014](014-roadmap-update-post-v0.1.md), the soft-reset empirical result in
 [015](015-soft-reset-empirical.md), and the post-integration NotebookLM refresh
-in [016](016-notebooklm-roadmap-refresh-2026-04-30.md). The 012 and 016 sources
-used NotebookLM notebook `79a32e96-8e1c-4e89-9385-20193e3a8209` as a sparring
-partner. Date-sensitive market, legal, license, pricing, and competitor claims
-from that notebook stay research inputs, not release claims, until they are
-reverified against primary sources.
+in [016](016-notebooklm-roadmap-refresh-2026-04-30.md). The v0.3 execution
+slices are tracked in [017](017-v03-execution-roadmap.md). The 012, 016, and
+017 sources used NotebookLM notebook `79a32e96-8e1c-4e89-9385-20193e3a8209` as
+a sparring partner. Date-sensitive market, legal, license, pricing, and
+competitor claims from that notebook stay research inputs, not release claims,
+until they are reverified against primary sources.
 
 The current product bet is narrower than "another macOS VM CLI": cove should be
 the local, MIT-licensed Apple-Silicon macOS agent substrate with fork/restore,
@@ -78,18 +79,35 @@ protect that wedge instead of chasing disconnected features.
 | Fork-only benchmark publication | done | existing fork support | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-20260427.md) | Published 132-140 ms stopped-VM fork measurements on the M4 smoke host after soft reset failed as the isolation primitive. |
 | Boot-to-agent fork benchmark publication | must | existing fork support + reachable agent base image | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench](../../bench/fork-time/README.md) | Publishes the product-relevant time from fork command to agent reachability. This remains the honest F1 ship-gate number. |
 | ControlServer decomposition - phase 3 (`internal/control`) | should | v0.2 phases 1+2 | [008](008-codebase-cleanup-plan.md) | Completes the cleanup arc started in v0.2. |
-| OpenAI Agents SDK adapter v1 | should | fork/restore + control socket | [012](012-product-roadmap-2026.md) | Proves the agent-substrate pitch with a fork-first five-line example. |
+| OpenAI Agents SDK adapter v1 | done | fork/restore + control socket | [012](012-product-roadmap-2026.md), [OpenAI example](../examples/openai-agents.md) | Proves the agent-substrate pitch with a fork-first local adapter under `adapters/openai-agents-python`. |
+| OpenAI adapter release hardening | should | adapter v1 + boot-to-agent benchmark | [012](012-product-roadmap-2026.md), [017](017-v03-execution-roadmap.md) | Adds live smoke coverage, packaging checks, and README polish before treating the adapter as a release surface. |
 | Anthropic sandbox-runtime adapter | should | OpenAI adapter lessons | [012](012-product-roadmap-2026.md) | Expands agent integrations after the first adapter proves the shape. |
 | Curated agentkit base images | should | build execution + trademark decision | [012](012-product-roadmap-2026.md) | Prepares the v1.0 registry story without publishing under a blocked name. |
 | Packer plugin shim decision | maybe | none | gap vs tart Packer integration | Decide whether a shim accelerates adoption or distracts from the `cove build` moat. |
 
+## v0.3 implementation slices
+
+The next implementation branches should stay directly based on `origin/main`
+and should not stack on each other. Each slice should be reviewable by itself;
+see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
+
+1. Build executor scaffold and scratch VM lifecycle, with non-dry-run still
+   gated.
+2. Cache-hit materialization, so cached layers can apply without guest boot.
+3. Cache-miss VM execution, block diff production, metadata persistence, and
+   the point where non-dry-run `cove build` becomes supported.
+4. `# secret:` tmpfs handling with guest no-swap verification.
+5. Build-pipeline compaction integration and measured default selection.
+6. Boot-to-agent benchmark publication plus OpenAI adapter release hardening.
+
 ## v0.3 execution order
 
-1. Finish `cove build` execution before adding more planner surface area.
+1. Finish the first three `cove build` slices before adding more planner surface
+   area.
 2. Add secret handling and compaction only after the build path has real VM
    state to protect and shrink.
 3. Publish fork benchmarks and revise product language to measured numbers.
-4. Build the first agent adapter against fork/restore, not soft reset.
+4. Harden the first agent adapter against fork/restore, not soft reset.
 5. Defer agentkit image publication until the name/legal decision and build
    execution are both resolved.
 
@@ -121,6 +139,7 @@ protect that wedge instead of chasing disconnected features.
 ## Recent changes
 
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
+- **2026-04-30**: Added the v0.3 execution-slice roadmap and corrected OpenAI adapter v1 status to done; remaining adapter work is release hardening.
 - **2026-04-30**: Synced the post-integration repo state into NotebookLM and added the 016 refresh plus license/SLA reference docs.
 - **2026-04-30**: Promoted the published fork-only benchmark to done and kept boot-to-agent timing as the remaining F1 measurement gate.
 - **2026-04-30**: Clarified that `cove compact` has shipped; v0.3 still needs build-pipeline compaction integration.

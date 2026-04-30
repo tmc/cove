@@ -18,12 +18,13 @@ implementation review. Start there before choosing new work.
 6. [cove Linux support](006-cove-linux-v02.md) — v0.2 — Linux guest support: nested virt (M3/M4 gated), 4 distros, agent unary RPCs (ResizeExecTTY/SignalExec/SetTime), connect-go polyglot server, Docker-shaped HTTP URLs.
 7. [soft-reset empirical result](015-soft-reset-empirical.md) — post-v0.1 — soft reset is not an isolation primitive; privacy-critical evals use VM fork/restore.
 8. [NotebookLM roadmap refresh](016-notebooklm-roadmap-refresh-2026-04-30.md) — post-integration docs pass — production-docs corrections and next-roadmap ordering after the v0.1.2/v0.2/v0.3 branch integration.
+9. [v0.3 execution roadmap](017-v03-execution-roadmap.md) — implementation slices for `cove build`, secrets, compaction, boot-to-agent benchmarks, and adapter hardening.
 
 ## Strategy inputs
 
 - [beat lume roadmap](011-beat-lume-roadmap.md) — 0.1 -> 0.4 — strategic roadmap input: win on local state, guest-agent control, Linux developer workflows, and `cove build`; use interop only at the boundary.
 - [product roadmap 2026](012-product-roadmap-2026.md) — notebook-backed strategy source for fork/restore, build, agent adapters, and registry sequencing.
-- [roadmap update post-v0.1](014-roadmap-update-post-v0.1.md) — post-v0.1 handoff; superseded where it conflicts with [015](015-soft-reset-empirical.md), [016](016-notebooklm-roadmap-refresh-2026-04-30.md), and [ROADMAP](ROADMAP.md).
+- [roadmap update post-v0.1](014-roadmap-update-post-v0.1.md) — post-v0.1 handoff; superseded where it conflicts with [015](015-soft-reset-empirical.md), [016](016-notebooklm-roadmap-refresh-2026-04-30.md), [017](017-v03-execution-roadmap.md), and [ROADMAP](ROADMAP.md).
 
 ## How to amend
 
