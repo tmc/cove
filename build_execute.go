@@ -3,16 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/store"
 )
 
-var (
-	errBuildExecutionNotImplemented          = errors.New("cove build: execution path not yet implemented")
-	errBuildCacheMissExecutionNotImplemented = errors.New("cove build: cache miss execution not yet implemented")
-)
+var errBuildCacheMissExecutionNotImplemented = errors.New("cove build: cache miss execution not yet implemented")
 
 type buildExecutor struct {
 	plan        buildPlan
@@ -52,7 +50,24 @@ func (e *buildExecutor) Execute(ctx context.Context) error {
 		return ctx.Err()
 	default:
 	}
-	return errBuildExecutionNotImplemented
+	if e.scratchRoot == "" {
+		e.scratchRoot = defaultBuildScratchRoot()
+	}
+	if err := gcBuildScratch(e.scratchRoot, nil); err != nil {
+		return err
+	}
+	if e.plan.Base == "" {
+		return errors.New("cove build: base vm dir required")
+	}
+	info, err := os.Stat(e.plan.Base)
+	if err != nil {
+		return fmt.Errorf("cove build: base vm dir: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("cove build: base vm dir %s is not a directory", e.plan.Base)
+	}
+	_, err = e.executeVMBuild(ctx, e.plan.Base)
+	return err
 }
 
 func (e *buildExecutor) executeCacheHits(ctx context.Context, parentDisk string) (buildExecutionResult, error) {

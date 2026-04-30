@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/store"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 func TestBuildScratchCreateWritesMetadata(t *testing.T) {
@@ -79,12 +80,73 @@ func TestGCBuildScratch(t *testing.T) {
 	}
 }
 
-func TestBuildExecutorExecuteStillNotImplemented(t *testing.T) {
-	exec := testBuildExecutor(t.TempDir())
-	err := exec.Execute(context.Background())
-	if !errors.Is(err, errBuildExecutionNotImplemented) {
-		t.Fatalf("Execute() = %v, want %v", err, errBuildExecutionNotImplemented)
+func TestBuildExecutorExecuteRunsLocalVMBuild(t *testing.T) {
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
 	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "echo",
+		Source:               "echo.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute(): %v", err)
+	}
+	if _, err := loadBuildCacheEntry(exec.store, exec.plan.Steps[0].Key); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildExecutorExecuteCollectsStaleScratch(t *testing.T) {
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(parentDir, "disk.img"), []byte("base image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	dead := filepath.Join(root, "scratch", "dead")
+	writeScratchPID(t, dead, "999999")
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = nil
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute(): %v", err)
+	}
+	if _, err := os.Stat(dead); !os.IsNotExist(err) {
+		t.Fatalf("stale scratch still exists: %v", err)
+	}
+}
+
+func TestBuildExecutorExecuteHonorsCanceledContext(t *testing.T) {
+	exec := testBuildExecutor(t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := exec.Execute(ctx); !errors.Is(err, context.Canceled) {
