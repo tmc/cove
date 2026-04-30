@@ -29,15 +29,13 @@ func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPla
 		return fmt.Errorf("run build step %q: %w", step.Name, err)
 	}
 	secretCleanup, secretErr := e.mountBuildStepSecrets(ctx, step, sc, socketPath)
-	if secretCleanup != nil {
-		defer func() {
-			err = errors.Join(err, secretCleanup(ctx))
-		}()
-	}
 	if secretErr != nil {
 		return fmt.Errorf("run build step %q: %w", step.Name, secretErr)
 	}
 	err = e.runBuildStepScript(ctx, step, socketPath)
+	if secretCleanup != nil {
+		err = errors.Join(err, secretCleanup(ctx))
+	}
 	if err == nil {
 		err = e.compactBuildGuest(ctx, step, sc)
 	}
