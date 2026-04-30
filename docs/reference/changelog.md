@@ -15,6 +15,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Linux guest support for Ubuntu, Debian, Fedora, and Alpine, including Rosetta defaults and nested virtualization where supported
 - Local content-addressed store under `~/.vz/store/` with build-cache reachability for GC
 - `cove build --dry-run` cache-key planning, local cache-hit reporting, block-delta primitives, and persistent build-cache metadata
+- `cove build` non-dry-run execution for local VM base directories, leaving a final scratch VM directory for `cove push`
 - Internal `cove build` executor scratch lifecycle and cache-hit materialization scaffolding
 - VM fork/restore tooling and fork-time benchmark harness
 - Agent-aware `cove compact` for zeroing guest free space before OCI pushes
@@ -54,7 +55,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Build-cache entries and layer manifests now reject malformed digests before saving or reporting cache hits
 - `cove build <name> --base ... --script ... --dry-run` now accepts the documented command order
 - `cove build --dry-run` can use `--store-dir` to inspect cache hits in a specific content store
-- `cove build` non-dry-run use is gated as dry-run-only until the v0.3 VM execution path lands
+- `cove build` registry-base non-dry-run use remains gated until base materialization lands, and `--push` is still rejected
 - Removed title-bar cropping from screenshots; tracks capture bounds instead
 - Corrupt suspend state is now dropped before resume attempt
 - Aborted curl downloads for IPSW are now killed

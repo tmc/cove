@@ -49,12 +49,19 @@ For `cove build`, verify the production boundary before tagging:
 ```bash
 ./cove help build
 ./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript vm
+./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript --push vm
 ```
 
-The second command must fail with:
+The second command must fail before script loading with:
 
 ```text
-cove build: only --dry-run is implemented
+cove build: non-dry-run requires local VM base directory
+```
+
+The third command must fail with:
+
+```text
+cove build: --push is not implemented
 ```
 
 ## Docs Gates
@@ -69,7 +76,8 @@ Check that:
 - `docs/reference/changelog.md` describes the release surface.
 - `docs/reference/cli.md` matches the command help.
 - `docs/designs/ROADMAP.md` does not mark unfinished work as shipped.
-- Public docs call `cove build` dry-run planning until VM execution lands.
+- Public docs say non-dry-run `cove build` requires a local VM base directory
+  and that `--push` remains gated.
 
 ## Tag And Publish
 

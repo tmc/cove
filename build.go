@@ -263,14 +263,14 @@ func printBuildResult(w io.Writer, plan buildPlan, result buildExecutionResult, 
 func printBuildUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove build <name> --base <ref> --script <step> [flags]
 
-Plan a VM image build by chaining vzscript steps with content-addressed cache keys.
-Execution is not implemented yet; use --dry-run.
+Build a VM image by chaining vzscript steps with content-addressed cache keys.
+Use --dry-run to print the resolved plan without running a scratch VM.
 
 Flags:
-  --base <ref>              Base OCI image reference. Digest refs avoid network lookup.
+  --base <ref|dir>          Base OCI image reference or local VM directory.
   --script <name|path>      Built-in vzscript recipe or .vzscript path. Repeat per step.
   --tag <ref>               Output image tag. Repeat for multiple tags.
-  --push                    Push output tags after build.
+  --push                    Push output tags after build. Not implemented yet.
   --dry-run                 Print the resolved build plan and cache keys only.
   --no-cache                Re-run every step instead of restoring cached layers.
   --cache-from <ref>        Registry cache source. Repeatable.

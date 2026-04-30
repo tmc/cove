@@ -121,8 +121,8 @@ func TestBuildCLIDocsIncludesCapturedUsage(t *testing.T) {
 	if want := "Usage: cove build"; !strings.Contains(build.Usage, want) {
 		t.Fatalf("build usage missing %q", want)
 	}
-	if want := "Execution is not implemented yet; use --dry-run."; !strings.Contains(build.Usage, want) {
-		t.Fatalf("build usage missing dry-run gate %q", want)
+	if want := "Use --dry-run to print the resolved plan without running a scratch VM."; !strings.Contains(build.Usage, want) {
+		t.Fatalf("build usage missing dry-run guidance %q", want)
 	}
 	if got := cliFlagByName(build.Flags, "--script"); got == nil {
 		t.Fatal("build docs missing --script flag")
