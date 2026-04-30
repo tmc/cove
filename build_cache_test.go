@@ -249,6 +249,33 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 	}
 }
 
+func TestBuildDryPlanRejectsMismatchedLocalCacheHit(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(filepath.Join(dir, "store"))
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), Scripts: []string{script}, Compact: "targeted"}
+	plan, err := buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(): %v", err)
+	}
+	layer := digestBytes([]byte("layer"))
+	entry := testCacheEntryForStep(plan.Steps[0], layer)
+	entry.ScriptDigest = digestBytes([]byte("other script"))
+	if err := saveBuildCacheEntry(s, entry); err != nil {
+		t.Fatalf("saveBuildCacheEntry(): %v", err)
+	}
+	_, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err == nil {
+		t.Fatal("buildDryPlanWithStore() error = nil, want script digest mismatch")
+	}
+	if !strings.Contains(err.Error(), "script digest") {
+		t.Fatalf("buildDryPlanWithStore() = %v, want script digest mismatch", err)
+	}
+}
+
 func TestBuildDryPlanExpiresLocalCacheHit(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "one.vzscript")

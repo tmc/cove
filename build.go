@@ -212,6 +212,9 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 			entry, err := loadBuildCacheEntry(blobStore, key)
 			if err == nil {
 				if buildCacheEntryFresh(entry, step.Meta.CacheTTL, now) {
+					if err := validateBuildCacheEntryForStep(entry, planStep); err != nil {
+						return plan, fmt.Errorf("build cache entry %s: %w", key, err)
+					}
 					planStep.CacheHit = true
 					planStep.LayerDigest = entry.LayerDigest
 				}
