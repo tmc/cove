@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,64 @@ func TestApplyCacheHitFailureKeepsScratch(t *testing.T) {
 	}
 }
 
+func TestExecuteCacheHitsChainsLayers(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent.img")
+	if err := os.WriteFile(parent, []byte("base image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	storeDir := filepath.Join(root, "store")
+	s := store.New(storeDir)
+	step1 := storeCacheLayer(t, s, "sha256:"+strings.Repeat("1", 64), parent, []byte("layer one\n"))
+	step2Parent := filepath.Join(root, "step1.img")
+	if err := os.WriteFile(step2Parent, []byte("layer one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	step2 := storeCacheLayer(t, s, "sha256:"+strings.Repeat("2", 64), step2Parent, []byte("layer two\n"))
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.store = s
+	exec.opts.KeepIntermediate = false
+	exec.plan.Steps = []buildPlanStep{step1, step2}
+	result, err := exec.executeCacheHits(context.Background(), parent)
+	if err != nil {
+		t.Fatalf("executeCacheHits(): %v", err)
+	}
+	got, err := os.ReadFile(result.DiskPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "layer two\n" {
+		t.Fatalf("final disk = %q, want layer two", got)
+	}
+	entries, err := os.ReadDir(exec.scratchRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("scratch entries = %d, want final scratch only", len(entries))
+	}
+}
+
+func TestExecuteCacheHitsStopsAtMissAndCleansScratch(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent.img")
+	if err := os.WriteFile(parent, []byte("base image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(filepath.Join(root, "store"))
+	hit := storeCacheLayer(t, s, "sha256:"+strings.Repeat("1", 64), parent, []byte("layer one\n"))
+	miss := buildPlanStep{Name: "miss", Key: "sha256:" + strings.Repeat("2", 64)}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.store = s
+	exec.opts.KeepIntermediate = false
+	exec.plan.Steps = []buildPlanStep{hit, miss}
+	_, err := exec.executeCacheHits(context.Background(), parent)
+	if !errors.Is(err, errBuildCacheMissExecutionNotImplemented) {
+		t.Fatalf("executeCacheHits() = %v, want miss error", err)
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+}
+
 func makeCacheHitFixture(t *testing.T, keep bool) (parent string, want []byte, step buildPlanStep, exec *buildExecutor) {
 	t.Helper()
 	root := t.TempDir()
@@ -138,6 +197,29 @@ func makeCacheHitFixture(t *testing.T, keep bool) (parent string, want []byte, s
 	}
 	step = buildPlanStep{Name: "cached", Key: key, CacheHit: true, LayerDigest: manifest.Digest}
 	return parent, want, step, exec
+}
+
+func storeCacheLayer(t *testing.T, s store.Store, key, parent string, childData []byte) buildPlanStep {
+	t.Helper()
+	child := filepath.Join(t.TempDir(), "child.img")
+	if err := os.WriteFile(child, childData, 0644); err != nil {
+		t.Fatal(err)
+	}
+	delta, err := DiffDisks(parent, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := StoreDiskDelta(s, delta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveBuildLayerManifest(s, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveBuildCacheEntry(s, buildCacheEntry{Key: key, LayerDigest: manifest.Digest}); err != nil {
+		t.Fatal(err)
+	}
+	return buildPlanStep{Name: "cached", Key: key, CacheHit: true, LayerDigest: manifest.Digest}
 }
 
 func assertEmptyDir(t *testing.T, dir string) {
