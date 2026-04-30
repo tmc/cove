@@ -49,6 +49,7 @@ For `cove build`, verify the production boundary before tagging:
 ```bash
 ./cove help build
 ./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript vm
+./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript --tag ghcr.io/acme/vm:test --push vm
 ./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript --push vm
 ```
 
@@ -58,10 +59,16 @@ The second command must fail before script loading with:
 cove build: non-dry-run requires local VM base directory
 ```
 
-The third command must fail with:
+The third command must fail before script loading with:
 
 ```text
-cove build: --push is not implemented
+cove build: non-dry-run requires local VM base directory
+```
+
+The fourth command must fail before script loading with:
+
+```text
+cove build: --push requires at least one --tag
 ```
 
 Then verify local-base execution with a disposable VM directory:
@@ -76,6 +83,8 @@ Then verify local-base execution with a disposable VM directory:
   no cache entry.
 - Run `cove push <reported-final-vm-dir> <ref> --dry-run` and confirm it plans
   from the build output directory.
+- Run a local-base build with `--tag <ref> --push` against a disposable registry
+  target and confirm the pushed tag matches the reported final VM directory.
 
 ## Docs Gates
 
@@ -91,7 +100,7 @@ Check that:
 - `docs/designs/ROADMAP.md` does not mark unfinished work as shipped.
 - Public docs say non-dry-run `cove build` requires a local VM base directory
   for execution, registry bases remain planning-only, build output can be
-  handed to `cove push`, and `--push` remains gated.
+  handed to `cove push`, and `--push` requires at least one output tag.
 
 ## Tag And Publish
 

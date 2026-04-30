@@ -60,6 +60,9 @@ func handleBuild(args []string) error {
 	if err := validateCompactMode(opts.Compact); err != nil {
 		return err
 	}
+	if opts.ChunkSizeMB <= 0 {
+		return fmt.Errorf("cove build: --chunk-size must be positive")
+	}
 	opts.Scripts = scripts
 	opts.Tags = tags
 	opts.CacheFrom = cacheFrom
@@ -70,8 +73,8 @@ func handleBuild(args []string) error {
 	if opts.Base == "" {
 		return fmt.Errorf("cove build: --base is required")
 	}
-	if !opts.DryRun && opts.Push {
-		return fmt.Errorf("cove build: --push is not implemented")
+	if opts.Push && len(opts.Tags) == 0 {
+		return fmt.Errorf("cove build: --push requires at least one --tag")
 	}
 	if !opts.DryRun {
 		if _, ok := localBuildBaseDir(opts.Base); !ok {
@@ -90,6 +93,9 @@ func handleBuild(args []string) error {
 	}
 	exec := newBuildExecutor(plan, opts, blobStore)
 	if err := exec.Execute(ctx); err != nil {
+		return err
+	}
+	if err := pushBuildResult(ctx, exec.Result(), opts); err != nil {
 		return err
 	}
 	printBuildResult(os.Stdout, plan, exec.Result(), opts)
@@ -254,6 +260,9 @@ func printBuildResult(w io.Writer, plan buildPlan, result buildExecutionResult, 
 	for _, tag := range plan.Tags {
 		fmt.Fprintf(w, "  tag: %s\n", tag)
 	}
+	if opts.Push {
+		fmt.Fprintf(w, "  pushed: %d\n", len(plan.Tags))
+	}
 	hits := 0
 	for _, step := range result.Steps {
 		if step.Step != "" && step.Key != "" {
@@ -282,7 +291,7 @@ Flags:
   --base <ref|dir>          Base OCI image reference or local VM directory.
   --script <name|path>      Built-in vzscript recipe or .vzscript path. Repeat per step.
   --tag <ref>               Output image tag. Repeat for multiple tags.
-  --push                    Push output tags after build. Not implemented yet.
+  --push                    Push output tags after build.
   --dry-run                 Print the resolved build plan and cache keys only.
   --no-cache                Re-run every step instead of restoring cached layers.
   --cache-from <ref>        Registry cache source. Repeatable.

@@ -386,6 +386,82 @@ func TestHandleBuildRunsLocalBase(t *testing.T) {
 	}
 }
 
+func TestHandleBuildPushesTags(t *testing.T) {
+	restoreControl := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restoreControl()
+	oldStart := defaultBuildGuestStart
+	oldCompact := defaultBuildCompact
+	oldPusher := defaultBuildResultPusher
+	defer func() {
+		defaultBuildGuestStart = oldStart
+		defaultBuildCompact = oldCompact
+		defaultBuildResultPusher = oldPusher
+	}()
+	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
+	var pushed []string
+	var pushedDir string
+	var pushedChunkSize int64
+	defaultBuildResultPusher = func(ctx context.Context, vmDir, ref string, opts pushOptions) error {
+		pushedDir = vmDir
+		pushed = append(pushed, ref)
+		pushedChunkSize = opts.ChunkSize
+		return nil
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	parentDir := filepath.Join(home, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := filepath.Join(home, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdoutResult(t, func() error {
+		return handleBuild([]string{
+			"test-image",
+			"--base", parentDir,
+			"--script", script,
+			"--tag", "ghcr.io/me/test:v1",
+			"--tag", "ghcr.io/me/test:latest",
+			"--push",
+			"--chunk-size", "1",
+			"--store-dir", filepath.Join(home, "store"),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handleBuild(): %v", err)
+	}
+	if !reflect.DeepEqual(pushed, []string{"ghcr.io/me/test:v1", "ghcr.io/me/test:latest"}) {
+		t.Fatalf("pushed refs = %#v", pushed)
+	}
+	if pushedDir == "" {
+		t.Fatal("pushed vm dir is empty")
+	}
+	if pushedChunkSize != 1<<20 {
+		t.Fatalf("pushed chunk size = %d, want %d", pushedChunkSize, int64(1<<20))
+	}
+	if !strings.Contains(out, "pushed: 2") {
+		t.Fatalf("output missing push count:\n%s", out)
+	}
+}
+
 func TestHandleBuildNonDryRunRequiresLocalBase(t *testing.T) {
 	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "vm"})
 	if err == nil {
@@ -396,12 +472,12 @@ func TestHandleBuildNonDryRunRequiresLocalBase(t *testing.T) {
 	}
 }
 
-func TestHandleBuildPushStillGated(t *testing.T) {
+func TestHandleBuildPushRequiresTag(t *testing.T) {
 	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "--push", "vm"})
 	if err == nil {
-		t.Fatal("handleBuild() error = nil, want push error")
+		t.Fatal("handleBuild() error = nil, want tag error")
 	}
-	if !strings.Contains(err.Error(), "--push is not implemented") {
+	if !strings.Contains(err.Error(), "--push requires at least one --tag") {
 		t.Fatalf("handleBuild() error = %q", err)
 	}
 }

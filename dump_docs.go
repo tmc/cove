@@ -270,7 +270,7 @@ var cliDocSpecs = []cliDocSpec{
 		{Name: "--base", Argument: "<ref|dir>", Summary: "Base OCI image reference or local VM directory."},
 		{Name: "--script", Argument: "<name|path>", Summary: "Built-in vzscript recipe or .vzscript path.", Repeatable: true},
 		{Name: "--tag", Argument: "<ref>", Summary: "Output OCI image tag.", Repeatable: true},
-		{Name: "--push", Summary: "Push output tags after build. Not implemented yet."},
+		{Name: "--push", Summary: "Push output tags after build."},
 		{Name: "--dry-run", Summary: "Print the resolved build plan and cache keys only."},
 		{Name: "--no-cache", Summary: "Run every step even when a cache entry exists."},
 		{Name: "--cache-from", Argument: "<ref>", Summary: "Registry cache source.", Repeatable: true},
@@ -282,6 +282,7 @@ var cliDocSpecs = []cliDocSpec{
 	}, Examples: []string{
 		"cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --dry-run",
 		"cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1",
+		"cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --push",
 	}},
 	{Name: "push", Summary: "Plan or push a VM disk as an OCI image. Source may be a VM name or local VM directory.", Usage: func() string {
 		return captureWriter(printPushUsage)
