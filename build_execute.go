@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/store"
@@ -152,6 +153,9 @@ func (e *buildExecutor) executeStep(ctx context.Context, step buildPlanStep, par
 	if runMiss == nil {
 		return buildApplyResult{}, errBuildCacheMissExecutionNotImplemented
 	}
+	if err := validateBuildStepSecrets(step); err != nil {
+		return buildApplyResult{}, err
+	}
 	sc, err := e.createScratch(parentDisk)
 	if err != nil {
 		return buildApplyResult{}, err
@@ -187,6 +191,9 @@ func (e *buildExecutor) executeVMStep(ctx context.Context, step buildPlanStep, p
 	}
 	if runMiss == nil {
 		return buildApplyResult{}, errBuildCacheMissExecutionNotImplemented
+	}
+	if err := validateBuildStepSecrets(step); err != nil {
+		return buildApplyResult{}, err
 	}
 	parentDisk, err := pushDiskPath(parentDir)
 	if err != nil {
@@ -235,6 +242,19 @@ func buildStepFailureError(step buildPlanStep, sc buildScratch, err error, kept 
 		return fmt.Errorf("cove build: step %q failed; scratch kept at %s: %w", step.Name, sc.Dir, err)
 	}
 	return fmt.Errorf("cove build: step %q failed: %w", step.Name, err)
+}
+
+func validateBuildStepSecrets(step buildPlanStep) error {
+	var missing []string
+	for _, name := range step.Meta.Secrets {
+		if _, ok := os.LookupEnv(name); !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("cove build: step %q missing secret environment variable(s): %s", step.Name, strings.Join(missing, ", "))
 }
 
 func finalizeBuildResult(result buildExecutionResult) error {

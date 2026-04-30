@@ -245,6 +245,51 @@ func TestBuildExecutorExecuteSecondRunUsesCache(t *testing.T) {
 	}
 }
 
+func TestBuildExecutorExecuteMissingSecretBeforeScratch(t *testing.T) {
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "secret",
+		Source:               "secret.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta: buildScriptMeta{
+			Compact: "targeted",
+			Secrets: []string{"COVE_TEST_MISSING_SECRET"},
+		},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		t.Fatal("missing secret started guest")
+		return nil, nil
+	}
+	err := exec.Execute(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "COVE_TEST_MISSING_SECRET") {
+		t.Fatalf("Execute() = %v, want missing secret error", err)
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+	if _, err := loadBuildCacheEntry(exec.store, exec.plan.Steps[0].Key); err == nil {
+		t.Fatal("cache entry written for missing secret")
+	}
+}
+
 func TestBuildExecutorExecuteCollectsStaleScratch(t *testing.T) {
 	root := t.TempDir()
 	parentDir := filepath.Join(root, "parent")
