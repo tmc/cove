@@ -123,6 +123,65 @@ func TestBuildExecutorExecuteRunsLocalVMBuild(t *testing.T) {
 	}
 }
 
+func TestBuildExecutorExecuteSecondRunUsesCache(t *testing.T) {
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step := buildPlanStep{
+		Name:                 "echo",
+		Source:               "echo.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{step}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("first Execute(): %v", err)
+	}
+	entry, err := loadBuildCacheEntry(exec.store, step.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second := testBuildExecutor(filepath.Join(root, "scratch2"))
+	second.store = exec.store
+	second.plan.Base = parentDir
+	step.CacheHit = true
+	step.LayerDigest = entry.LayerDigest
+	second.plan.Steps = []buildPlanStep{step}
+	second.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		t.Fatal("cache-hit build started guest")
+		return nil, nil
+	}
+	if err := second.Execute(context.Background()); err != nil {
+		t.Fatalf("second Execute(): %v", err)
+	}
+}
+
 func TestBuildExecutorExecuteCollectsStaleScratch(t *testing.T) {
 	root := t.TempDir()
 	parentDir := filepath.Join(root, "parent")
