@@ -292,6 +292,48 @@ func TestBuildExecutorExecuteMissingSecretBeforeScratch(t *testing.T) {
 	}
 }
 
+func TestBuildExecutorExecuteInvalidSecretBeforeScratch(t *testing.T) {
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "secret",
+		Source:               "secret.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta: buildScriptMeta{
+			Compact: "targeted",
+			Secrets: []string{"../TOKEN"},
+		},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		t.Fatal("invalid secret started guest")
+		return nil, nil
+	}
+	err := exec.Execute(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "invalid secret name") {
+		t.Fatalf("Execute() = %v, want invalid secret error", err)
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+}
+
 func TestBuildExecutorSecretValueNotPersisted(t *testing.T) {
 	const secretName = "COVE_TEST_TOKEN"
 	const secretValue = "super-secret-build-token"

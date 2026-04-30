@@ -90,7 +90,7 @@ func cleanupBuildSecretsGuestDir(ctx context.Context, socketPath, platform strin
 }
 
 func writeBuildSecret(ctx context.Context, socketPath, name string, value []byte) error {
-	if strings.Contains(name, "/") || name == "" {
+	if !validBuildSecretName(name) {
 		return fmt.Errorf("invalid secret name %q", name)
 	}
 	req := &controlpb.ControlRequest{

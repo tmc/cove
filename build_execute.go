@@ -251,6 +251,9 @@ func buildStepFailureError(step buildPlanStep, sc buildScratch, err error, kept 
 func validateBuildStepSecrets(step buildPlanStep) error {
 	var missing []string
 	for _, name := range step.Meta.Secrets {
+		if !validBuildSecretName(name) {
+			return fmt.Errorf("cove build: step %q invalid secret name %q", step.Name, name)
+		}
 		if _, ok := os.LookupEnv(name); !ok {
 			missing = append(missing, name)
 		}
@@ -259,6 +262,10 @@ func validateBuildStepSecrets(step buildPlanStep) error {
 		return nil
 	}
 	return fmt.Errorf("cove build: step %q missing secret environment variable(s): %s", step.Name, strings.Join(missing, ", "))
+}
+
+func validBuildSecretName(name string) bool {
+	return name != "" && !strings.Contains(name, "/")
 }
 
 func finalizeBuildResult(result buildExecutionResult) error {
