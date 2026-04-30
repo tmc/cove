@@ -86,6 +86,28 @@ func TestApplyCacheHitValidatesBlocksBeforeScratch(t *testing.T) {
 	assertEmptyDir(t, exec.scratchRoot)
 }
 
+func TestApplyCacheHitValidatesEntryMetadataBeforeScratch(t *testing.T) {
+	root := t.TempDir()
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.store = store.New(filepath.Join(root, "store"))
+	key := "sha256:" + strings.Repeat("a", 64)
+	layer := "sha256:" + strings.Repeat("b", 64)
+	step := testBuildPlanStep("mismatch", key)
+	entry := testCacheEntryForStep(step, layer)
+	entry.ScriptDigest = digestBytes([]byte("other script"))
+	if err := saveBuildCacheEntry(exec.store, entry); err != nil {
+		t.Fatal(err)
+	}
+	_, err := exec.applyCacheHit(context.Background(), step, "parent.img")
+	if err == nil {
+		t.Fatal("applyCacheHit() error = nil, want metadata mismatch")
+	}
+	if !strings.Contains(err.Error(), "script digest") {
+		t.Fatalf("applyCacheHit() error = %v, want script digest mismatch", err)
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+}
+
 func TestApplyCacheHitFailureCleansScratch(t *testing.T) {
 	_, _, step, exec := makeCacheHitFixture(t, false)
 	_, err := exec.applyCacheHit(context.Background(), step, filepath.Join(t.TempDir(), "missing.img"))

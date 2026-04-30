@@ -96,6 +96,9 @@ func (e *buildExecutor) loadCacheHitLayer(ctx context.Context, step buildPlanSte
 	if err != nil {
 		return entry, manifest, err
 	}
+	if err := validateBuildCacheEntryForStep(entry, step); err != nil {
+		return entry, manifest, fmt.Errorf("apply cache hit: %w", err)
+	}
 	manifest, err = loadBuildLayerManifest(e.store, entry.LayerDigest)
 	if err != nil {
 		return entry, manifest, err
@@ -104,6 +107,22 @@ func (e *buildExecutor) loadCacheHitLayer(ctx context.Context, step buildPlanSte
 		return entry, manifest, err
 	}
 	return entry, manifest, nil
+}
+
+func validateBuildCacheEntryForStep(entry buildCacheEntry, step buildPlanStep) error {
+	if entry.ParentDigest != step.ParentDigest {
+		return fmt.Errorf("parent digest %s, want %s", entry.ParentDigest, step.ParentDigest)
+	}
+	if entry.ScriptDigest != step.ScriptDigest {
+		return fmt.Errorf("script digest %s, want %s", entry.ScriptDigest, step.ScriptDigest)
+	}
+	if entry.AgentProtocolVersion != step.AgentProtocolVersion {
+		return fmt.Errorf("agent protocol version %s, want %s", entry.AgentProtocolVersion, step.AgentProtocolVersion)
+	}
+	if entry.Compact != step.Meta.Compact {
+		return fmt.Errorf("compact %s, want %s", entry.Compact, step.Meta.Compact)
+	}
+	return nil
 }
 
 func validateBuildLayerBlobs(ctx context.Context, s store.Store, manifest buildLayerManifest) error {
