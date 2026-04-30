@@ -55,8 +55,8 @@ func digestBuildLayerManifest(manifest buildLayerManifest) (string, error) {
 }
 
 func ApplyStoredDiskDelta(ctx context.Context, s store.Store, parentPath, childPath string, manifest buildLayerManifest) error {
-	if manifest.BlockSize <= 0 {
-		return fmt.Errorf("apply stored delta: invalid block size %d", manifest.BlockSize)
+	if err := validateBuildLayerManifest(manifest); err != nil {
+		return fmt.Errorf("apply stored delta: %w", err)
 	}
 	delta := &diskDelta{BlockSize: manifest.BlockSize, Size: manifest.DiskSize}
 	for _, block := range manifest.Blocks {
