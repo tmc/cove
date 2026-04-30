@@ -144,8 +144,9 @@ func (e *buildExecutor) executeStep(ctx context.Context, step buildPlanStep, par
 	}
 	if err := runMiss(ctx, step, sc); err != nil {
 		if e.opts.KeepIntermediate {
-			return buildApplyResult{Step: step.Name, Key: step.Key, Scratch: sc, DiskPath: sc.DiskPath}, err
+			return buildApplyResult{Step: step.Name, Key: step.Key, Scratch: sc, DiskPath: sc.DiskPath}, buildStepFailureError(step, sc, err, true)
 		}
+		err = buildStepFailureError(step, sc, err, false)
 		if cleanupErr := e.cleanupScratch(sc); cleanupErr != nil {
 			return buildApplyResult{}, errors.Join(err, cleanupErr)
 		}
@@ -183,8 +184,9 @@ func (e *buildExecutor) executeVMStep(ctx context.Context, step buildPlanStep, p
 	}
 	if err := runMiss(ctx, step, sc); err != nil {
 		if e.opts.KeepIntermediate {
-			return buildApplyResult{Step: step.Name, Key: step.Key, Scratch: sc, DiskPath: sc.DiskPath}, err
+			return buildApplyResult{Step: step.Name, Key: step.Key, Scratch: sc, DiskPath: sc.DiskPath}, buildStepFailureError(step, sc, err, true)
 		}
+		err = buildStepFailureError(step, sc, err, false)
 		if cleanupErr := e.cleanupScratch(sc); cleanupErr != nil {
 			return buildApplyResult{}, errors.Join(err, cleanupErr)
 		}
@@ -212,4 +214,11 @@ func (e *buildExecutor) cleanupIntermediate(result buildExecutionResult) {
 	for _, step := range result.Steps {
 		_ = e.cleanupScratch(step.Scratch)
 	}
+}
+
+func buildStepFailureError(step buildPlanStep, sc buildScratch, err error, kept bool) error {
+	if kept && sc.Dir != "" {
+		return fmt.Errorf("cove build: step %q failed; scratch kept at %s: %w", step.Name, sc.Dir, err)
+	}
+	return fmt.Errorf("cove build: step %q failed: %w", step.Name, err)
 }
