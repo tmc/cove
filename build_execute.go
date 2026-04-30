@@ -24,6 +24,7 @@ type buildExecutor struct {
 }
 
 type buildExecutionResult struct {
+	VMDir    string
 	DiskPath string
 	Steps    []buildApplyResult
 }
@@ -82,6 +83,38 @@ func (e *buildExecutor) executeWithMissRunner(ctx context.Context, parentDisk st
 	return result, nil
 }
 
+func (e *buildExecutor) executeVMWithMissRunner(ctx context.Context, parentDir string, runMiss buildMissRunner) (buildExecutionResult, error) {
+	var result buildExecutionResult
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if parentDir == "" {
+		return result, errors.New("cove build: parent vm dir required")
+	}
+	currentDir := parentDir
+	currentDisk, err := pushDiskPath(currentDir)
+	if err != nil {
+		return result, err
+	}
+	for _, step := range e.plan.Steps {
+		applied, err := e.executeVMStep(ctx, step, currentDir, runMiss)
+		if err != nil {
+			e.cleanupIntermediate(result)
+			return result, err
+		}
+		if len(result.Steps) > 0 && !e.opts.KeepIntermediate {
+			_ = e.cleanupScratch(result.Steps[len(result.Steps)-1].Scratch)
+		}
+		result.Steps = append(result.Steps, applied)
+		result.VMDir = applied.Scratch.Dir
+		result.DiskPath = applied.DiskPath
+		currentDir = applied.Scratch.Dir
+		currentDisk = applied.DiskPath
+	}
+	result.DiskPath = currentDisk
+	return result, nil
+}
+
 func (e *buildExecutor) executeStep(ctx context.Context, step buildPlanStep, parentDisk string, runMiss buildMissRunner) (buildApplyResult, error) {
 	if step.CacheHit {
 		return e.applyCacheHit(ctx, step, parentDisk)
@@ -90,6 +123,45 @@ func (e *buildExecutor) executeStep(ctx context.Context, step buildPlanStep, par
 		return buildApplyResult{}, errBuildCacheMissExecutionNotImplemented
 	}
 	sc, err := e.createScratch(parentDisk)
+	if err != nil {
+		return buildApplyResult{}, err
+	}
+	if err := runMiss(ctx, step, sc); err != nil {
+		if e.opts.KeepIntermediate {
+			return buildApplyResult{Step: step.Name, Key: step.Key, Scratch: sc, DiskPath: sc.DiskPath}, err
+		}
+		if cleanupErr := e.cleanupScratch(sc); cleanupErr != nil {
+			return buildApplyResult{}, errors.Join(err, cleanupErr)
+		}
+		return buildApplyResult{}, err
+	}
+	applied, err := e.recordCacheMissLayer(ctx, step, parentDisk, sc.DiskPath)
+	if err != nil {
+		if e.opts.KeepIntermediate {
+			applied.Scratch = sc
+			return applied, err
+		}
+		if cleanupErr := e.cleanupScratch(sc); cleanupErr != nil {
+			return buildApplyResult{}, errors.Join(err, cleanupErr)
+		}
+		return buildApplyResult{}, err
+	}
+	applied.Scratch = sc
+	return applied, nil
+}
+
+func (e *buildExecutor) executeVMStep(ctx context.Context, step buildPlanStep, parentDir string, runMiss buildMissRunner) (buildApplyResult, error) {
+	if step.CacheHit {
+		return e.applyCacheHitVM(ctx, step, parentDir)
+	}
+	if runMiss == nil {
+		return buildApplyResult{}, errBuildCacheMissExecutionNotImplemented
+	}
+	parentDisk, err := pushDiskPath(parentDir)
+	if err != nil {
+		return buildApplyResult{}, err
+	}
+	sc, err := e.createScratchVM(parentDir)
 	if err != nil {
 		return buildApplyResult{}, err
 	}

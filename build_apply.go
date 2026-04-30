@@ -20,18 +20,8 @@ func (e *buildExecutor) applyCacheHit(ctx context.Context, step buildPlanStep, p
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if _, _, err := splitStoreDigest(step.Key); err != nil {
-		return result, fmt.Errorf("apply cache hit: key: %w", err)
-	}
-	entry, err := loadBuildCacheEntry(e.store, step.Key)
+	entry, manifest, err := e.loadCacheHitLayer(ctx, step)
 	if err != nil {
-		return result, err
-	}
-	manifest, err := loadBuildLayerManifest(e.store, entry.LayerDigest)
-	if err != nil {
-		return result, err
-	}
-	if err := validateBuildLayerBlobs(ctx, e.store, manifest); err != nil {
 		return result, err
 	}
 	sc, err := e.createScratch("")
@@ -55,6 +45,65 @@ func (e *buildExecutor) applyCacheHit(ctx context.Context, step buildPlanStep, p
 		return result, err
 	}
 	return result, nil
+}
+
+func (e *buildExecutor) applyCacheHitVM(ctx context.Context, step buildPlanStep, parentDir string) (buildApplyResult, error) {
+	var result buildApplyResult
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	entry, manifest, err := e.loadCacheHitLayer(ctx, step)
+	if err != nil {
+		return result, err
+	}
+	parentDisk, err := pushDiskPath(parentDir)
+	if err != nil {
+		return result, err
+	}
+	sc, err := e.createScratchVM(parentDir)
+	if err != nil {
+		return result, err
+	}
+	result = buildApplyResult{
+		Step:        step.Name,
+		Key:         step.Key,
+		LayerDigest: entry.LayerDigest,
+		Scratch:     sc,
+		DiskPath:    sc.DiskPath,
+	}
+	if err := ApplyStoredDiskDelta(ctx, e.store, parentDisk, sc.DiskPath, manifest); err != nil {
+		if e.opts.KeepIntermediate {
+			return result, err
+		}
+		if cleanupErr := e.cleanupScratch(sc); cleanupErr != nil {
+			return result, fmt.Errorf("%v; cleanup: %w", err, cleanupErr)
+		}
+		return result, err
+	}
+	return result, nil
+}
+
+func (e *buildExecutor) loadCacheHitLayer(ctx context.Context, step buildPlanStep) (buildCacheEntry, buildLayerManifest, error) {
+	var entry buildCacheEntry
+	var manifest buildLayerManifest
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, _, err := splitStoreDigest(step.Key); err != nil {
+		return entry, manifest, fmt.Errorf("apply cache hit: key: %w", err)
+	}
+	entry, err := loadBuildCacheEntry(e.store, step.Key)
+	if err != nil {
+		return entry, manifest, err
+	}
+	manifest, err = loadBuildLayerManifest(e.store, entry.LayerDigest)
+	if err != nil {
+		return entry, manifest, err
+	}
+	if err := validateBuildLayerBlobs(ctx, e.store, manifest); err != nil {
+		return entry, manifest, err
+	}
+	return entry, manifest, nil
 }
 
 func validateBuildLayerBlobs(ctx context.Context, s store.Store, manifest buildLayerManifest) error {
