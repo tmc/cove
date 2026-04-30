@@ -46,10 +46,14 @@ func handleBuild(args []string) error {
 	fs.IntVar(&opts.ChunkSizeMB, "chunk-size", 512, "chunk size in MiB")
 	fs.StringVar(&opts.Compact, "compact", "targeted", "compaction mode: fast, targeted, thorough")
 	fs.Usage = func() { printBuildUsage(os.Stderr) }
-	if err := fs.Parse(args); err != nil {
+	flagArgs, posArgs, err := splitBuildArgs(args)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
+	if len(posArgs) != 1 {
 		return fmt.Errorf("usage: cove build <name> --base <ref> --script <step> [--tag <ref>]")
 	}
 	if err := validateCompactMode(opts.Compact); err != nil {
@@ -69,12 +73,61 @@ func handleBuild(args []string) error {
 		return fmt.Errorf("cove build: only --dry-run is implemented")
 	}
 	ctx := context.Background()
-	plan, err := buildDryPlan(ctx, fs.Arg(0), opts, http.DefaultClient)
+	plan, err := buildDryPlan(ctx, posArgs[0], opts, http.DefaultClient)
 	if err != nil {
 		return err
 	}
 	printBuildPlan(os.Stdout, plan, opts)
 	return nil
+}
+
+func splitBuildArgs(args []string) (flagArgs, posArgs []string, err error) {
+	valueFlags := map[string]bool{
+		"base":       true,
+		"script":     true,
+		"tag":        true,
+		"cache-from": true,
+		"cache-to":   true,
+		"chunk-size": true,
+		"compact":    true,
+	}
+	boolFlags := map[string]bool{
+		"push":              true,
+		"dry-run":           true,
+		"no-cache":          true,
+		"keep-intermediate": true,
+	}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			posArgs = append(posArgs, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			posArgs = append(posArgs, arg)
+			continue
+		}
+		name := strings.TrimLeft(arg, "-")
+		if name == "" {
+			posArgs = append(posArgs, arg)
+			continue
+		}
+		if before, _, ok := strings.Cut(name, "="); ok {
+			name = before
+		}
+		flagArgs = append(flagArgs, arg)
+		if strings.Contains(arg, "=") || boolFlags[name] {
+			continue
+		}
+		if valueFlags[name] {
+			if i+1 >= len(args) {
+				return nil, nil, fmt.Errorf("flag needs an argument: -%s", name)
+			}
+			i++
+			flagArgs = append(flagArgs, args[i])
+		}
+	}
+	return flagArgs, posArgs, nil
 }
 
 func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *http.Client) (buildPlan, error) {
