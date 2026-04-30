@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,6 +292,61 @@ func TestBuildExecutorExecuteMissingSecretBeforeScratch(t *testing.T) {
 	}
 }
 
+func TestBuildExecutorSecretValueNotPersisted(t *testing.T) {
+	const secretName = "COVE_TEST_TOKEN"
+	const secretValue = "super-secret-build-token"
+	t.Setenv(secretName, secretValue)
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "secret",
+		Source:               "secret.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta: buildScriptMeta{
+			Compact: "targeted",
+			Secrets: []string{secretName},
+		},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute(): %v", err)
+	}
+	result := exec.Result()
+	if result.VMDir == "" {
+		t.Fatal("Result().VMDir is empty")
+	}
+	for _, root := range []string{exec.store.Dir, result.VMDir} {
+		if err := assertJSONFilesDoNotContain(root, secretValue); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestBuildExecutorExecuteCollectsStaleScratch(t *testing.T) {
 	root := t.TempDir()
 	parentDir := filepath.Join(root, "parent")
@@ -449,4 +506,23 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func assertJSONFilesDoNotContain(root, value string) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".json" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), value) {
+			return fmt.Errorf("%s contains secret value", path)
+		}
+		return nil
+	})
 }
