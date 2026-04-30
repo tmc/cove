@@ -2478,7 +2478,66 @@ func createMessageOverlay(size corefoundation.CGSize, title, subtitle string, wh
 		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setAutoresizingMask:"), uint(2|8|32))
 		overlay.AddSubview(&subtitleLabel.NSView)
 	}
+	addMessageOverlayDismissButton(overlay, size)
 	return overlay
+}
+
+var (
+	messageOverlayDismissOnce     sync.Once
+	messageOverlayDismissDelegate objc.ID
+)
+
+func messageOverlayDismissTarget() objc.ID {
+	messageOverlayDismissOnce.Do(func() {
+		cls, err := objc.RegisterClass(
+			"CoveMessageOverlayDismissDelegate",
+			objc.GetClass("NSObject"),
+			nil, nil,
+			[]objc.MethodDef{
+				{Cmd: objc.RegisterName("dismissMessageOverlay:"), Fn: dismissMessageOverlay},
+			},
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not register message overlay dismiss delegate: %v\n", err)
+			return
+		}
+		messageOverlayDismissDelegate = objc.Send[objc.ID](objc.ID(cls), objc.Sel("alloc"))
+		messageOverlayDismissDelegate = objc.Send[objc.ID](messageOverlayDismissDelegate, objc.Sel("init"))
+	})
+	if messageOverlayDismissDelegate == 0 {
+		return 0
+	}
+	return messageOverlayDismissDelegate
+}
+
+func dismissMessageOverlay(_ objc.ID, _ objc.SEL, sender objc.ID) {
+	overlay := objc.Send[objc.ID](sender, objc.Sel("superview"))
+	if overlay == 0 {
+		return
+	}
+	objc.Send[struct{}](overlay, objc.Sel("removeFromSuperview"))
+}
+
+func addMessageOverlayDismissButton(overlay appkit.NSView, size corefoundation.CGSize) {
+	target := messageOverlayDismissTarget()
+	if target == 0 {
+		return
+	}
+	buttonSize := 22.0
+	margin := 14.0
+	button := appkit.NewButtonWithTitleTargetAction("x", objectivec.ObjectFromID(target), objc.Sel("dismissMessageOverlay:"))
+	button.SetFrame(corefoundation.CGRect{
+		Origin: corefoundation.CGPoint{X: size.Width - buttonSize - margin, Y: size.Height - buttonSize - margin},
+		Size:   corefoundation.CGSize{Width: buttonSize, Height: buttonSize},
+	})
+	button.SetFont(appkit.GetNSFontClass().SystemFontOfSizeWeight(13, -0.2))
+	objc.Send[objc.ID](button.ID, objc.Sel("setBordered:"), true)
+	objc.Send[objc.ID](button.ID, objc.Sel("setBezelStyle:"), int(1))
+	objc.Send[objc.ID](button.ID, objc.Sel("setShowsBorderOnlyWhileMouseInside:"), true)
+	objc.Send[objc.ID](button.ID, objc.Sel("setToolTip:"), objc.String("Dismiss overlay"))
+	objc.Send[objc.ID](button.ID, objc.Sel("setAlphaValue:"), 0.55)
+	objc.Send[objc.ID](button.ID, objc.Sel("setAutoresizingMask:"), uint(1|4))
+	overlay.AddSubview(&button.NSView)
 }
 
 // createPauseOverlay creates a semi-transparent overlay shown when the VM is paused or saving.
