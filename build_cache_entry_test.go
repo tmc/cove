@@ -63,6 +63,67 @@ func TestLoadBuildCacheEntryRejectsMismatchedKey(t *testing.T) {
 	}
 }
 
+func TestSaveBuildCacheEntryRejectsInvalidLayerDigest(t *testing.T) {
+	s := store.New(t.TempDir())
+	entry := buildCacheEntry{
+		Key:         digestBytes([]byte("key")),
+		LayerDigest: "sha256:not-a-real-digest",
+	}
+	if err := saveBuildCacheEntry(s, entry); err == nil {
+		t.Fatal("saveBuildCacheEntry() error = nil, want invalid layer digest")
+	}
+}
+
+func TestLoadBuildCacheEntryRejectsInvalidLayerDigest(t *testing.T) {
+	s := store.New(t.TempDir())
+	key := digestBytes([]byte("key"))
+	path := filepath.Join(s.Dir, "build-cache", "keys", digestFileName(key)+".json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"key":"`+key+`","layer_digest":"sha256:not-a-real-digest"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadBuildCacheEntry(s, key)
+	if err == nil {
+		t.Fatal("loadBuildCacheEntry() error = nil, want invalid layer digest")
+	}
+}
+
+func TestSaveBuildLayerManifestRejectsInvalidDigest(t *testing.T) {
+	s := store.New(t.TempDir())
+	manifest := buildLayerManifest{
+		Digest:    "sha256:not-a-real-digest",
+		BlockSize: 65536,
+		DiskSize:  123,
+	}
+	if err := saveBuildLayerManifest(s, manifest); err == nil {
+		t.Fatal("saveBuildLayerManifest() error = nil, want invalid digest")
+	}
+}
+
+func TestLoadBuildLayerManifestRejectsInvalidBlockDigest(t *testing.T) {
+	s := store.New(t.TempDir())
+	digest := digestBytes([]byte("manifest"))
+	path := filepath.Join(s.Dir, "build-cache", "layers", digestFileName(digest)+".json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`{
+		"digest":"` + digest + `",
+		"block_size":65536,
+		"disk_size":123,
+		"blocks":[{"offset":0,"size":4,"digest":"sha256:not-a-real-digest"}]
+	}`)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadBuildLayerManifest(s, digest)
+	if err == nil {
+		t.Fatal("loadBuildLayerManifest() error = nil, want invalid block digest")
+	}
+}
+
 func TestLoadBuildCacheEntryMissing(t *testing.T) {
 	s := store.New(t.TempDir())
 	_, err := loadBuildCacheEntry(s, digestBytes([]byte("missing")))
