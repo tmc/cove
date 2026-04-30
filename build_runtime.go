@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
+	"github.com/tmc/apple/dispatch"
+	vz "github.com/tmc/apple/virtualization"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -13,7 +16,10 @@ type buildControlSender func(string, *controlpb.ControlRequest, time.Duration, s
 type buildGuestCleanup func(context.Context) error
 type buildGuestStarter func(context.Context, buildScratch) (buildGuestCleanup, error)
 
-var sendBuildControlRequest buildControlSender = ctlSendRequest
+var (
+	sendBuildControlRequest buildControlSender = ctlSendRequest
+	defaultBuildGuestStart  buildGuestStarter  = startScratchBuildGuest
+)
 
 func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
 	if ctx == nil {
@@ -25,7 +31,7 @@ func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildScratch) (b
 	if e.startGuest != nil {
 		return e.startGuest(ctx, sc)
 	}
-	return func(context.Context) error { return nil }, nil
+	return defaultBuildGuestStart(ctx, sc)
 }
 
 func withBuildRuntimeGlobals(sc buildScratch, fn func() error) error {
@@ -72,6 +78,123 @@ func withBuildRuntimeGlobals(sc buildScratch, fn func() error) error {
 	autoMountVolumes = false
 	serialOutput = "none"
 	return fn()
+}
+
+func startScratchBuildGuest(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var runtime *scratchBuildGuestRuntime
+	err := withBuildRuntimeGlobals(sc, func() error {
+		config, err := buildSelectedVMFrameworkConfiguration(sc.DiskPath)
+		if err != nil {
+			return fmt.Errorf("build configuration: %w", err)
+		}
+		config.Retain()
+		updateSaveRestoreSupport(config)
+
+		queue := dispatch.QueueCreate("com.appledocs.vz.build.vmqueue")
+		vm := vz.NewVirtualMachineWithConfigurationQueue(&config, queue)
+		if vm.ID == 0 {
+			return fmt.Errorf("failed to create virtual machine")
+		}
+		vm.Retain()
+
+		sock := GetControlSocketPathForVM(sc.Dir)
+		controlServer := NewControlServerWithVMDir(sock, sc.Dir)
+		controlServer.SetVM(vm, queue)
+		if err := controlServer.Start(); err != nil {
+			return fmt.Errorf("control socket: %w", err)
+		}
+		startControlRuntimeInfrastructure(controlServer)
+		runtime = &scratchBuildGuestRuntime{
+			vm:            vm,
+			queue:         queue,
+			controlServer: controlServer,
+		}
+		if err := startConfiguredVM(vm, queue, true); err != nil {
+			return fmt.Errorf("start vm: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		if runtime != nil {
+			_ = runtime.cleanup(ctx)
+		}
+		return nil, err
+	}
+	return runtime.cleanup, nil
+}
+
+type scratchBuildGuestRuntime struct {
+	vm            vz.VZVirtualMachine
+	queue         dispatch.Queue
+	controlServer *ControlServer
+	stopOnce      sync.Once
+	stopErr       error
+}
+
+func (r *scratchBuildGuestRuntime) cleanup(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	r.stopOnce.Do(func() {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		stopControlRuntimeInfrastructure(r.controlServer)
+		if err := stopScratchBuildVM(ctx, r.vm, r.queue); err != nil {
+			r.stopErr = err
+		}
+	})
+	return r.stopErr
+}
+
+func stopScratchBuildVM(ctx context.Context, vm vz.VZVirtualMachine, queue dispatch.Queue) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	state, err := currentVMState(vm, queue)
+	if err != nil {
+		return fmt.Errorf("build vm state: %w", err)
+	}
+	switch state {
+	case vz.VZVirtualMachineStateStopped, vz.VZVirtualMachineStateError:
+		return nil
+	}
+	hardStopVM(vm, queue)
+	return waitScratchBuildVMStopped(ctx, vm, queue, 30*time.Second)
+}
+
+func waitScratchBuildVMStopped(ctx context.Context, vm vz.VZVirtualMachine, queue dispatch.Queue, timeout time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		state, err := currentVMState(vm, queue)
+		if err != nil {
+			return fmt.Errorf("build vm state: %w", err)
+		}
+		switch state {
+		case vz.VZVirtualMachineStateStopped, vz.VZVirtualMachineStateError:
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("build vm stop: %w", ctx.Err())
+		case <-tick.C:
+		}
+	}
 }
 
 func waitBuildAgent(ctx context.Context, socketPath string, timeout time.Duration) error {

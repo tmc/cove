@@ -133,6 +133,9 @@ func TestExecuteVMBuildRunsScriptAndRecordsLayer(t *testing.T) {
 		}
 	}
 	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
 	exec.plan.Steps = []buildPlanStep{{
 		Name:                 "echo",
 		Source:               "echo.vzscript",

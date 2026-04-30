@@ -92,6 +92,29 @@ func TestWithBuildRuntimeGlobalsRejectsIncompleteScratch(t *testing.T) {
 	}
 }
 
+func TestStartBuildGuestUsesDefaultStarter(t *testing.T) {
+	old := defaultBuildGuestStart
+	defer func() { defaultBuildGuestStart = old }()
+
+	var got buildScratch
+	defaultBuildGuestStart = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+		got = sc
+		return func(context.Context) error { return nil }, nil
+	}
+	exec := testBuildExecutor(t.TempDir())
+	sc := buildScratch{Dir: "scratch", DiskPath: "disk.img"}
+	cleanup, err := exec.startBuildGuest(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleanup == nil {
+		t.Fatal("cleanup = nil")
+	}
+	if got != sc {
+		t.Fatalf("scratch = %#v, want %#v", got, sc)
+	}
+}
+
 func TestWaitBuildAgentRetriesUntilSuccess(t *testing.T) {
 	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
 		*call++
