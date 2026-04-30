@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -14,7 +15,15 @@ func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPla
 	if sc.Dir == "" {
 		return fmt.Errorf("run build step %q: scratch vm dir required", step.Name)
 	}
-	return e.runBuildStepScript(ctx, step, GetControlSocketPathForVM(sc.Dir))
+	socketPath := GetControlSocketPathForVM(sc.Dir)
+	if err := waitBuildAgent(ctx, socketPath, 2*time.Minute); err != nil {
+		return fmt.Errorf("run build step %q: %w", step.Name, err)
+	}
+	err := e.runBuildStepScript(ctx, step, socketPath)
+	if shutdownErr := shutdownBuildGuest(ctx, socketPath); shutdownErr != nil {
+		err = errors.Join(err, shutdownErr)
+	}
+	return err
 }
 
 func (e *buildExecutor) runBuildStepScript(ctx context.Context, step buildPlanStep, socketPath string) error {

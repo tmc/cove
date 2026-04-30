@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 func TestRunBuildStepScript(t *testing.T) {
@@ -45,7 +48,30 @@ func TestRunBuildStepInScratchRequiresDir(t *testing.T) {
 	}
 }
 
+func TestRunBuildStepInScratchWaitsAndShutsDown(t *testing.T) {
+	var calls []string
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		calls = append(calls, cmdType)
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	exec := testBuildExecutor(t.TempDir())
+	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	step := buildPlanStep{Name: "ok", Data: []byte("echo ok\n")}
+	if err := exec.runBuildStepInScratch(context.Background(), step, sc); err != nil {
+		t.Fatalf("runBuildStepInScratch(): %v", err)
+	}
+	want := []string{"agent-ping", "agent-shutdown"}
+	if strings.Join(calls, ",") != strings.Join(want, ",") {
+		t.Fatalf("control calls = %v, want %v", calls, want)
+	}
+}
+
 func TestExecuteVMBuildRunsScriptAndRecordsLayer(t *testing.T) {
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
 	root := t.TempDir()
 	parentDir := filepath.Join(root, "parent")
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
