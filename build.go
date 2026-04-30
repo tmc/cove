@@ -254,7 +254,19 @@ func printBuildResult(w io.Writer, plan buildPlan, result buildExecutionResult, 
 	for _, tag := range plan.Tags {
 		fmt.Fprintf(w, "  tag: %s\n", tag)
 	}
+	hits := 0
+	for _, step := range result.Steps {
+		if step.Step != "" && step.Key != "" {
+			for _, planStep := range plan.Steps {
+				if planStep.Key == step.Key && planStep.CacheHit {
+					hits++
+					break
+				}
+			}
+		}
+	}
 	fmt.Fprintf(w, "  steps: %d\n", len(result.Steps))
+	fmt.Fprintf(w, "  cache hits: %d/%d\n", hits, len(result.Steps))
 	if opts.KeepIntermediate {
 		fmt.Fprintln(w, "  intermediate: kept")
 	}
