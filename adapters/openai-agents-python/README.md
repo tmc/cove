@@ -57,6 +57,30 @@ with CoveSandbox.from_fork(parent="macos-base", name="eval-001") as sandbox:
 deletion is a product decision; the context manager stops the guest but does not
 delete the VM bundle.
 
+## Live Smoke
+
+Run unit coverage first:
+
+```bash
+python -m pytest adapters/openai-agents-python/tests
+```
+
+Then run a live fork-backed smoke against a stopped parent VM:
+
+```bash
+python -m pip install -e adapters/openai-agents-python[agents]
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+COVE_PARENT_VM=macos-base \
+COVE_CHILD_VM=openai-agents-smoke-$(date +%s) \
+COVE_BIN=./cove \
+python adapters/openai-agents-python/examples/computer_tool.py
+```
+
+The smoke uses `CoveSandbox.from_fork`, boots the child in GUI mode, waits for
+the guest agent, and then runs an Agents SDK `ComputerTool` request. Delete the
+child VM after inspecting logs or screenshots you want to keep.
+
 ## Shell Helpers
 
 ```python
