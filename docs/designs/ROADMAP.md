@@ -72,7 +72,7 @@ protect that wedge instead of chasing disconnected features.
 |---|---|---|---|---|
 | `cove build` VM execution path | must | v0.2 store + dry-run planner | [003](003-cove-build-oci-caching.md) | Turns the landed dry-run planner into a real build: create scratch VM, restore/cache-hit layers, execute misses, persist metadata, and leave pushable image state. |
 | Secrets via tmpfs (`# secret:` directive) with guest swap disabled | must | build execution | [003](003-cove-build-oci-caching.md) | Prevents secret leakage into pushed OCI block diffs. |
-| Agent-aware `cove compact` | must | build execution | [002](002-cove-disks-oci.md), [003](003-cove-build-oci-caching.md) | Zeroes free space before diffing and pushing images. |
+| `cove build` compaction integration | must | build execution | [002](002-cove-disks-oci.md), [003](003-cove-build-oci-caching.md) | Wires the shipped agent-aware `cove compact` behavior into the build pipeline before diffing and pushing images. |
 | Fork-only benchmark publication | done | existing fork support | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-20260427.md) | Published 132-140 ms stopped-VM fork measurements on the M4 smoke host after soft reset failed as the isolation primitive. |
 | Boot-to-agent fork benchmark publication | must | existing fork support + reachable agent base image | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench](../../bench/fork-time/README.md) | Publishes the product-relevant time from fork command to agent reachability. This remains the honest F1 ship-gate number. |
 | ControlServer decomposition - phase 3 (`internal/control`) | should | v0.2 phases 1+2 | [008](008-codebase-cleanup-plan.md) | Completes the cleanup arc started in v0.2. |
@@ -120,6 +120,7 @@ protect that wedge instead of chasing disconnected features.
 
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
 - **2026-04-30**: Promoted the published fork-only benchmark to done and kept boot-to-agent timing as the remaining F1 measurement gate.
+- **2026-04-30**: Clarified that `cove compact` has shipped; v0.3 still needs build-pipeline compaction integration.
 - **2026-04-29**: Rebased and integrated the v0.1.2, v0.2, and early v0.3 branch work onto main.
 - **2026-04-29**: Landed `cove build` dry-run cache planning and kept execution gated until the VM build path is implemented.
 - **2026-04-29**: Recorded preliminary USPTO trademark screen; `cove` needs legal/product decision before public registry use.
