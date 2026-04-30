@@ -53,6 +53,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ### Fixed
 - Malformed build/store manifest digests now return validation errors instead of silent success
 - Build-cache entries and layer manifests now reject malformed digests before saving or reporting cache hits
+- Build cache hits now require complete step metadata, verify it before applying a layer, and honor `# cache-ttl:` expiry
 - `cove build <name> --base ... --script ... --dry-run` now accepts the documented command order
 - `cove build --dry-run` can use `--store-dir` to inspect cache hits in a specific content store
 - `cove build` registry-base non-dry-run use remains gated until base materialization lands, and `--push` is still rejected
