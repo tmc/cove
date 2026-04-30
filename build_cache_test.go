@@ -187,6 +187,44 @@ func TestHandleBuildAcceptsDocumentedFlagOrder(t *testing.T) {
 	}
 }
 
+func TestHandleBuildReportsCacheHitWithStoreDir(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	storeDir := filepath.Join(dir, "store")
+	opts := buildOptions{
+		Base:     "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64),
+		Scripts:  []string{script},
+		Compact:  "targeted",
+		StoreDir: storeDir,
+	}
+	plan, err := buildDryPlan(context.Background(), "test-image", opts, nil)
+	if err != nil {
+		t.Fatalf("buildDryPlan(): %v", err)
+	}
+	layer := digestBytes([]byte("layer"))
+	if err := saveBuildCacheEntry(store.New(storeDir), buildCacheEntry{Key: plan.Steps[0].Key, LayerDigest: layer}); err != nil {
+		t.Fatalf("saveBuildCacheEntry(): %v", err)
+	}
+	out, err := captureStdoutResult(t, func() error {
+		return handleBuild([]string{
+			"test-image",
+			"--base", opts.Base,
+			"--script", script,
+			"--store-dir", storeDir,
+			"--dry-run",
+		})
+	})
+	if err != nil {
+		t.Fatalf("handleBuild(): %v", err)
+	}
+	if !strings.Contains(out, "cache: hit ("+layer+")") {
+		t.Fatalf("output missing cache hit %q:\n%s", layer, out)
+	}
+}
+
 func TestSplitBuildArgs(t *testing.T) {
 	args := []string{
 		"test-image",
@@ -195,6 +233,7 @@ func TestSplitBuildArgs(t *testing.T) {
 		"--script", "two",
 		"--dry-run",
 		"--tag", "out",
+		"--store-dir", "/tmp/store",
 	}
 	flagArgs, posArgs, err := splitBuildArgs(args)
 	if err != nil {
@@ -209,6 +248,7 @@ func TestSplitBuildArgs(t *testing.T) {
 		"--script", "two",
 		"--dry-run",
 		"--tag", "out",
+		"--store-dir", "/tmp/store",
 	}
 	if !reflect.DeepEqual(flagArgs, wantFlags) {
 		t.Fatalf("flagArgs = %#v, want %#v", flagArgs, wantFlags)

@@ -45,6 +45,7 @@ func handleBuild(args []string) error {
 	fs.BoolVar(&opts.KeepIntermediate, "keep-intermediate", false, "leave scratch VMs behind for debugging")
 	fs.IntVar(&opts.ChunkSizeMB, "chunk-size", 512, "chunk size in MiB")
 	fs.StringVar(&opts.Compact, "compact", "targeted", "compaction mode: fast, targeted, thorough")
+	fs.StringVar(&opts.StoreDir, "store-dir", "", "content store directory")
 	fs.Usage = func() { printBuildUsage(os.Stderr) }
 	flagArgs, posArgs, err := splitBuildArgs(args)
 	if err != nil {
@@ -90,6 +91,7 @@ func splitBuildArgs(args []string) (flagArgs, posArgs []string, err error) {
 		"cache-to":   true,
 		"chunk-size": true,
 		"compact":    true,
+		"store-dir":  true,
 	}
 	boolFlags := map[string]bool{
 		"push":              true,
@@ -229,5 +231,6 @@ Flags:
   --cache-to <ref>          Registry cache destination. Repeatable.
   --keep-intermediate       Keep scratch VMs for debugging.
   --chunk-size <mb>         Chunk size in MiB. Default 512.
-  --compact <mode>          fast, targeted, or thorough. Default targeted.`)
+  --compact <mode>          fast, targeted, or thorough. Default targeted.
+  --store-dir <dir>         Content store directory. Default ~/.vz/store.`)
 }

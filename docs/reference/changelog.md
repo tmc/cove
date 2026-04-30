@@ -53,6 +53,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Malformed build/store manifest digests now return validation errors instead of silent success
 - Build-cache entries and layer manifests now reject malformed digests before saving or reporting cache hits
 - `cove build <name> --base ... --script ... --dry-run` now accepts the documented command order
+- `cove build --dry-run` can use `--store-dir` to inspect cache hits in a specific content store
 - `cove build` non-dry-run use is gated as dry-run-only until the v0.3 VM execution path lands
 - Removed title-bar cropping from screenshots; tracks capture bounds instead
 - Corrupt suspend state is now dropped before resume attempt
