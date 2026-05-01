@@ -81,6 +81,13 @@ var (
 	cloneLinked bool
 	// Disposable run mode; boots from a temporary linked clone.
 	disposableMode bool
+	// Ephemeral fork mode (cove run -fork-from <parent>): boots a
+	// short-lived sibling that shares the parent's disk.img read-only
+	// via RAM-overlay. vmDir is auto-removed on exit unless -keep is
+	// set. See design 013 Phase 3 / fork_ephemeral.go.
+	ephemeralForkParent string
+	ephemeralForkName   string
+	ephemeralForkKeep   bool
 	// Network mode (nat, bridged:<iface>, vmnet, none)
 	networkMode string
 	// Sandbox policy for safer research runs.
@@ -193,6 +200,10 @@ func init() {
 	// Clone options
 	flag.BoolVar(&cloneLinked, "linked", false, "create linked clone using APFS copy-on-write")
 	flag.BoolVar(&disposableMode, "disposable", false, "run from a disposable linked clone and delete it after shutdown")
+	// Ephemeral fork (design 013 Phase 3)
+	flag.StringVar(&ephemeralForkParent, "fork-from", "", "boot an ephemeral sibling of the named parent VM (RAM-overlay; auto-deleted on exit)")
+	flag.StringVar(&ephemeralForkName, "fork-name", "", "explicit name for the ephemeral sibling (default: <parent>-eph-<timestamp>)")
+	flag.BoolVar(&ephemeralForkKeep, "keep", false, "with -fork-from, retain the ephemeral vmDir after exit")
 	// Network mode
 	flag.StringVar(&networkMode, "network", "nat", "network mode: nat, bridged:<iface>, vmnet, filehandle, none")
 	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal or strict")

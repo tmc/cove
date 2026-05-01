@@ -93,11 +93,13 @@ We already have the primitive: `pvz.NewVZTemporaryRAMStorageDeviceAttachmentWith
 (system_disk.go:71). It backs writes with anonymous RAM; the underlying file is
 opened read-only.
 
-**Open question — does VZ allow N read-only attachments to the same file?**
-Apple's docs are ambiguous. `flock(LOCK_SH)` would permit it, `flock(LOCK_EX)`
-would not. Empirical test required (see Validation below). If it doesn't, fall
-back to `clonefile` of `disk.img` per child — still cheap, but no longer
-zero-cost.
+**Empirical answer — VZ allows N read-only attachments and takes no file lock.**
+Validation #1 (validation1_test.go) confirmed that creating two
+`VZTemporaryRAMStorageDeviceAttachmentWithURLReadOnly` attachments against
+the same `disk.img` succeeds, and a host-side `flock(LOCK_EX|LOCK_NB)` probe
+against the file while both attachments are held also succeeds. VZ does not
+hold even `LOCK_SH` at attachment-creation time. Phase 3 ships Model B as
+the only path; no clonefile-per-child fallback is required.
 
 Each child still needs:
 - Its own vmDir (for control.sock, screenshots, logs)
@@ -233,8 +235,9 @@ fork to child, boot child to login window, snapshot diff.
 3. **Phase 2** (~150 LOC): `cove fork -snapshot <name>` — A1 with A2 fallback.
    Includes the empirical aux-replay test from Validation #2.
 4. **Phase 3** (~300 LOC): `cove run -fork-from <parent>` ephemeral mode.
-   Pending Validation #1 result; if Model B doesn't work, falls back to
-   per-run clonefile (still cheap, just not zero-cost).
+   Validation #1 returned PASS with no file lock — Model B ships as the
+   only path; no clonefile-per-child fallback. `-snapshot` is deferred
+   until a future identity-preserving fork option lands.
 5. **Phase 4** (~100 LOC): `cove vm tree`, lineage metadata, GC awareness.
 
 Stop after any phase if the validation fails; phases 1-2 are useful on their
