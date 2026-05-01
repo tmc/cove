@@ -474,9 +474,20 @@ Common flags:
   -boot-commands <file>   custom boot automation vzscript
   -vm <name>              target VM (default: active VM)
 
+Ephemeral fork (design 013 Phase 3):
+  -fork-from <parent>     boot a short-lived sibling sharing the parent's
+                          disk.img read-only via RAM-overlay; auto-deleted
+                          on exit. Parent VM must be stopped.
+  -fork-name <name>       explicit name for the ephemeral sibling
+                          (default: <parent>-eph-<timestamp>)
+  -keep                   with -fork-from, retain the ephemeral vmDir
+                          after exit so logs / control.sock persist
+
 Examples:
   cove run -gui
-  cove run -linux -gui -vol ~/code:code`)
+  cove run -linux -gui -vol ~/code:code
+  cove run -fork-from base-vm -gui
+  cove run -fork-from base-vm -fork-name scratch-1 -keep`)
 }
 
 func printListUsage(w io.Writer) {

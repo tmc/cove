@@ -184,7 +184,7 @@ func TestHandleGCCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleGCCommand(dry-run) error = %v", err)
 	}
-	if !strings.Contains(out, "would remove "+oldPath) {
+	if !strings.Contains(out, "would remove disposable "+oldPath) {
 		t.Fatalf("dry-run output = %q, want removal line for %q", out, oldPath)
 	}
 	if _, err := os.Stat(oldPath); err != nil {
@@ -197,7 +197,7 @@ func TestHandleGCCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleGCCommand(remove) error = %v", err)
 	}
-	if !strings.Contains(out, "removed "+oldPath) {
+	if !strings.Contains(out, "removed disposable "+oldPath) {
 		t.Fatalf("remove output = %q, want removal line for %q", out, oldPath)
 	}
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
