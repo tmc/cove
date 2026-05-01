@@ -530,6 +530,12 @@ fresh machine identity and MAC address. Both arguments are required.
 This is "cove clone --linked" with explicit lineage and forced fresh
 identity — see docs/designs/013-vm-fork.md for the model.
 
+While parent is running, this is best-effort: APFS clonefile snapshots
+parent's disk at clone time, but subsequent parent writes during the
+call may produce inconsistent state in rare cases. Use
+"cove fork -snapshot <name>" (Phase 2, not yet implemented) for
+guaranteed-consistent forks of running parents.
+
 Example:
   cove fork macos-base scratch-1`)
 }

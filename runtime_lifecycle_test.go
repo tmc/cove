@@ -13,6 +13,7 @@ import (
 )
 
 func TestRunCurrentVMWithDisposableClone(t *testing.T) {
+	stubAcquireRunLockHook(t)
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -103,6 +104,7 @@ func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 }
 
 func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
+	stubAcquireRunLockHook(t)
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -168,6 +170,7 @@ func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 }
 
 func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
+	stubAcquireRunLockHook(t)
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -262,6 +265,7 @@ func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
 }
 
 func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
+	stubAcquireRunLockHook(t)
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -342,6 +346,7 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 }
 
 func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
+	stubAcquireRunLockHook(t)
 	oldHome, homeErr := os.UserHomeDir()
 	if homeErr != nil {
 		t.Fatalf("UserHomeDir: %v", homeErr)
