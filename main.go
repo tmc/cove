@@ -526,6 +526,11 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "fork":
+			// fork has its own flag set (-from, -snapshot); skip the
+			// top-level re-parse so those flags are not rejected here.
+			handleFork(args)
+			return
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
@@ -605,9 +610,6 @@ func main() {
 			return
 		case "clone":
 			handleClone(args)
-			return
-		case "fork":
-			handleFork(args)
 			return
 		case "template":
 			handleTemplate(args)
@@ -1105,32 +1107,125 @@ func handleClone(args []string) {
 }
 
 // handleFork handles the fork subcommand: creates a CoW clone of an
-// existing VM with a fresh machine identity. See ForkVM in fork.go.
+// existing VM with a fresh machine identity. See ForkVM and
+// ForkVMWithSnapshot in fork.go.
+//
+// Two CLI surfaces, sharing one implementation:
+//
+//	cove fork <parent> <child> [-snapshot <name>]
+//	cove fork --from <parent[@snapshot]> <child> [-snapshot <name>]
+//
+// When both --from and -snapshot are given, their snapshot must agree
+// (or --from must omit @ and let -snapshot fill in).
 func handleFork(args []string) {
-	nonFlagArgs := []string{}
 	for _, arg := range args {
-		switch arg {
-		case "-h", "--help", "help":
-			fmt.Println("Usage: cove fork <parent> <child>")
-			fmt.Println()
-			fmt.Println("Create a child VM as an APFS copy-on-write fork of <parent>.")
-			fmt.Println("The child gets a fresh machine identity and MAC; the disk")
-			fmt.Println("shares blocks with the parent until either side writes.")
+		if arg == "-h" || arg == "--help" || arg == "help" {
+			printForkUsage(os.Stdout)
 			return
-		default:
-			if len(arg) > 0 && arg[0] != '-' {
-				nonFlagArgs = append(nonFlagArgs, arg)
-			}
 		}
 	}
-	if len(nonFlagArgs) != 2 {
-		fmt.Fprintln(os.Stderr, "Usage: cove fork <parent> <child>")
-		os.Exit(1)
-	}
-	if err := ForkVM(nonFlagArgs[0], nonFlagArgs[1]); err != nil {
+	flagArgs, posArgs, err := splitForkArgs(args)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+	fs := flag.NewFlagSet("fork", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	var (
+		fromRef  string
+		snapshot string
+	)
+	fs.StringVar(&fromRef, "from", "", "fork from parent[@snapshot] (alternative to positional <parent>)")
+	fs.StringVar(&snapshot, "snapshot", "", "seed child suspend.vmstate from parent's named snapshot")
+	fs.Usage = func() { printForkUsage(os.Stderr) }
+	if err := fs.Parse(flagArgs); err != nil {
+		os.Exit(2)
+	}
+
+	parent, child, snap, err := resolveForkInvocation(fromRef, snapshot, posArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := ForkVMWithSnapshot(ForkVMOptions{Parent: parent, Child: child, Snapshot: snap}); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// splitForkArgs separates flag args from positional args, handling the
+// case where positionals appear before flags (cove fork p c -snapshot s).
+// Mirrors splitBuildArgs but for the fork-specific flag set: -from and
+// -snapshot both take values; no bool flags.
+func splitForkArgs(args []string) (flagArgs, posArgs []string, err error) {
+	valueFlags := map[string]bool{"from": true, "snapshot": true}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			posArgs = append(posArgs, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			posArgs = append(posArgs, arg)
+			continue
+		}
+		name := strings.TrimLeft(arg, "-")
+		if name == "" {
+			posArgs = append(posArgs, arg)
+			continue
+		}
+		if before, _, ok := strings.Cut(name, "="); ok {
+			name = before
+		}
+		flagArgs = append(flagArgs, arg)
+		if strings.Contains(arg, "=") {
+			continue
+		}
+		if valueFlags[name] {
+			if i+1 >= len(args) {
+				return nil, nil, fmt.Errorf("flag needs an argument: -%s", name)
+			}
+			i++
+			flagArgs = append(flagArgs, args[i])
+		}
+	}
+	return flagArgs, posArgs, nil
+}
+
+// resolveForkInvocation merges the --from ref (if any), -snapshot flag
+// (if any), and positional args into the parent/child/snapshot triple
+// for ForkVMWithSnapshot. Errors describe the specific shape mismatch
+// so users can correct the invocation.
+func resolveForkInvocation(fromRef, snapshotFlag string, posArgs []string) (parent, child, snapshot string, err error) {
+	if fromRef == "" {
+		// Positional form: cove fork <parent> <child>
+		if len(posArgs) != 2 {
+			return "", "", "", fmt.Errorf("usage: cove fork <parent> <child> [-snapshot <name>]  OR  cove fork --from <parent[@snap]> <child>")
+		}
+		return posArgs[0], posArgs[1], snapshotFlag, nil
+	}
+	// --from form: child is the sole positional arg.
+	if len(posArgs) != 1 {
+		return "", "", "", fmt.Errorf("--from requires exactly one positional <child>; got %d positional args", len(posArgs))
+	}
+	parent, refSnap, parseErr := parseForkRef(fromRef)
+	if parseErr != nil {
+		return "", "", "", parseErr
+	}
+	child = posArgs[0]
+	switch {
+	case refSnap == "" && snapshotFlag == "":
+		snapshot = ""
+	case refSnap == "":
+		snapshot = snapshotFlag
+	case snapshotFlag == "":
+		snapshot = refSnap
+	case refSnap == snapshotFlag:
+		snapshot = refSnap
+	default:
+		return "", "", "", fmt.Errorf("--from snapshot %q conflicts with -snapshot %q", refSnap, snapshotFlag)
+	}
+	return parent, child, snapshot, nil
 }
 
 // handleTemplate handles the template subcommand.

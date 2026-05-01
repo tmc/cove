@@ -521,23 +521,48 @@ Examples:
 }
 
 func printForkUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove fork <parent> <child>
+	fmt.Fprintln(w, `Usage: cove fork <parent> <child> [-snapshot <name>]
+       cove fork --from <parent[@snapshot]> <child> [-snapshot <name>]
 
 Create a child VM as an APFS copy-on-write fork of <parent>. The child
 shares disk blocks with the parent until either side writes, and gets a
-fresh machine identity and MAC address. Both arguments are required.
+fresh machine identity and MAC address.
 
 This is "cove clone --linked" with explicit lineage and forced fresh
 identity — see docs/designs/013-vm-fork.md for the model.
 
-While parent is running, this is best-effort: APFS clonefile snapshots
-parent's disk at clone time, but subsequent parent writes during the
-call may produce inconsistent state in rare cases. Use
-"cove fork -snapshot <name>" (Phase 2, not yet implemented) for
-guaranteed-consistent forks of running parents.
+Plain fork (no -snapshot, no @snap):
+  Permitted while parent is running, but best-effort: APFS clonefile
+  snapshots parent's disk at clone time, and subsequent parent writes
+  during the call may produce inconsistent state in rare cases. Use
+  -snapshot for guaranteed-consistent forks.
 
-Example:
-  cove fork macos-base scratch-1`)
+Snapshot-seeded fork (-snapshot <name> or --from parent@<name>):
+  Seeds the child's suspend.vmstate from parent/snapshots/<name>.vmstate
+  so the child boots straight to the snapshot point on first run
+  (instant resume). Requires:
+
+    - parent VM stopped (the fork acquires parent's run.lock exclusively
+      for the duration of the copy)
+    - parent has a saved snapshot — create one first while the parent
+      is running with: cove snapshot save <name>
+
+  If the seeded suspend.vmstate is rejected on first boot (config
+  mismatch, etc.), the child cold-boots from the cloned disk
+  automatically. The snapshot must be the latest state of the parent
+  for instant resume to apply; if the parent ran further after saving
+  the snapshot, the cold-boot fallback is the likely outcome.
+
+Identity trade-off:
+  Snapshot-seeded forks restore the parent's machine.id from the
+  vmstate, so siblings boot as "the same Mac" (shared SEP identity).
+  Use 'cove run -recover-identity' on the child if iCloud / Find-My-Mac
+  collisions matter.
+
+Examples:
+  cove fork macos-base scratch-1
+  cove fork macos-base scratch-1 -snapshot clean
+  cove fork --from macos-base@clean scratch-1`)
 }
 
 func printAgentUpgradeUsage(w io.Writer) {
