@@ -98,6 +98,10 @@ func (e *buildExecutor) runBuildStepScript(ctx context.Context, step buildPlanSt
 	cfg := vzscriptConfig{
 		socketPath:  socketPath,
 		execTimeout: 10 * time.Minute,
+		// Build runs against a headless scratch VM with no logged-in user,
+		// so the user agent (port 1025) cannot bootstrap. Route guest
+		// commands through the daemon agent (root, port 1024) by default.
+		daemon: true,
 	}
 	if err := runVZScriptContext(ctx, step.Data, name, cfg); err != nil {
 		return fmt.Errorf("run build step %q: %w", step.Name, err)
