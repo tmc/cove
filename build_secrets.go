@@ -60,10 +60,15 @@ func prepareBuildSecretsGuestDir(ctx context.Context, socketPath, platform strin
 		}
 		return runBuildAgentShell(ctx, socketPath, "rm -rf "+shellQuote(buildSecretsGuestDir)+"; mkdir -p "+shellQuote(buildSecretsGuestDir)+"; mount -t tmpfs -o rw,noexec,nosuid,nodev,mode=0700,noswap tmpfs "+shellQuote(buildSecretsGuestDir))
 	case agentstate.PlatformMacOS:
+		// `hdiutil attach -nomount ram://N` prints a line like "/dev/disk4          "
+		// with trailing whitespace, so trim before passing the device to
+		// `diskutil erasevolume`. Without the trim, erasevolume fails with
+		// "Unable to find disk for /dev/disk4 ".
 		script := strings.Join([]string{
 			"set -e",
 			"rm -rf " + shellQuote(buildSecretsGuestDir),
-			"dev=$(hdiutil attach -nomount ram://131072)",
+			"dev=$(hdiutil attach -nomount ram://131072 | awk 'NR==1{print $1}')",
+			"test -n \"$dev\"",
 			"diskutil erasevolume APFS cove_secrets \"$dev\" >/dev/null",
 			"ln -s /Volumes/cove_secrets " + shellQuote(buildSecretsGuestDir),
 		}, "; ")
