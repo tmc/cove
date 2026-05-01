@@ -94,6 +94,21 @@ func TestCompactVMWithClientExitFailure(t *testing.T) {
 	}
 }
 
+func TestPrecheckCompactCapacityLinuxSkips(t *testing.T) {
+	// Linux uses fstrim in-place; precheck should be a no-op even with no
+	// disk.img present.
+	if err := precheckCompactCapacity(t.TempDir(), agentstate.PlatformLinux); err != nil {
+		t.Fatalf("precheckCompactCapacity(linux) = %v, want nil", err)
+	}
+}
+
+func TestPrecheckCompactCapacityMissingDisk(t *testing.T) {
+	err := precheckCompactCapacity(t.TempDir(), agentstate.PlatformMacOS)
+	if err == nil || !strings.Contains(err.Error(), "disk.img") {
+		t.Fatalf("precheckCompactCapacity(missing disk) = %v, want disk.img error", err)
+	}
+}
+
 func TestVMAgentPlatformUsesConfig(t *testing.T) {
 	vmPath := makeTestVMDir(t)
 	if err := vmconfig.Save(vmPath, &vmconfig.Config{Agent: &vmconfig.AgentConfig{Platform: agentstate.PlatformLinux}}); err != nil {

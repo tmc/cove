@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
@@ -83,6 +85,9 @@ func compactVMWithClient(vmDirectory string, client compactClient) (*compactResu
 	}
 
 	platform := agentstate.Platform(vmDirectory)
+	if err := precheckCompactCapacity(vmDirectory, platform); err != nil {
+		return nil, err
+	}
 	args, err := compactCommand(platform)
 	if err != nil {
 		return nil, err
@@ -144,6 +149,48 @@ func compactCommand(platform string) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unsupported guest platform %q", platform)
 	}
+}
+
+// precheckCompactCapacity verifies the host has enough free space to hold
+// a fully-inflated copy of the guest disk image before launching the
+// guest-side zero-fill. APFS only reclaims sectors at the end of the dd, and
+// during the run the sparse disk image grows toward its logical cap. Failing
+// the host's volume mid-write would be confusing; bail early with a clear
+// message instead. Linux guests skip this check — fstrim is in-place.
+func precheckCompactCapacity(vmDirectory, platform string) error {
+	if platform != agentstate.PlatformMacOS {
+		return nil
+	}
+	diskPath := filepath.Join(vmDirectory, "disk.img")
+	st, err := os.Stat(diskPath)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", diskPath, err)
+	}
+	logical := st.Size()
+	stat, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("stat %s: unexpected sys type %T", diskPath, st.Sys())
+	}
+	// Stat_t.Blocks is in 512-byte units regardless of the underlying fs.
+	physical := int64(stat.Blocks) * 512
+	need := logical - physical
+	if need <= 0 {
+		// Image is already fully materialized (rare). Nothing to inflate.
+		return nil
+	}
+	var fsstat syscall.Statfs_t
+	if err := syscall.Statfs(filepath.Dir(diskPath), &fsstat); err != nil {
+		return fmt.Errorf("statfs %s: %w", filepath.Dir(diskPath), err)
+	}
+	free := int64(fsstat.Bavail) * int64(fsstat.Bsize)
+	if free >= need {
+		return nil
+	}
+	return fmt.Errorf(
+		"thorough compaction temporarily inflates the sparse disk image to its full logical size (~%dG) before TRIM punches holes; host has only ~%dG free. Run `cove compact -compact targeted` instead, or free disk space and retry",
+		(logical+(1<<30)-1)>>30,
+		(free+(1<<30)-1)>>30,
+	)
 }
 
 func printCompactResult(w io.Writer, result *compactResult) {
