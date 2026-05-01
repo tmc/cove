@@ -44,8 +44,28 @@ protect that wedge instead of chasing disconnected features.
 - `cove` is not clean for public software/registry branding based on the
   preliminary USPTO search. Public registry, signed image distribution, and
   product-name claims need a legal/product decision first.
-- Registry-base build execution and registry cache import/export remain
-  deferred; non-dry-run builds require a local VM base directory.
+
+## RC scope: what ships and what's deferred
+
+This boundary is canonical and must agree with the CLI reference, changelog,
+release checklist, [016](016-notebooklm-roadmap-refresh-2026-04-30.md), and
+[017](017-v03-execution-roadmap.md).
+
+**Ships in this RC.** `cove build` non-dry-run execution against a local VM
+directory base (cache hits validate metadata and skip guest execution; misses
+fork a scratch VM, run vzscript steps through the agent, and persist verified
+layer manifests); `# secret:` tmpfs handling with guest swap disabled; build
+pipeline compaction (`fast`, `targeted`, `thorough`); cache TTL and full
+metadata validation before apply; published fork-only and boot-to-agent fork
+benchmarks on named M4 hardware; OpenAI Agents SDK adapter v1 with live-smoke
+and package-check documentation.
+
+**Explicitly deferred.** Registry-base `cove build` execution; registry cache
+import/export (`--cache-from`, `--cache-to`); public curated `cove` image
+registry and signed agentkit image channels; external secret stores
+(1Password, Vault, SOPS, age); BuildKit-style parallel step execution; Packer
+plugin shim; product-name resolution before any public registry or signed
+channel.
 
 ## v0.1.2 - Reliability & Stale-State Cleanup
 
@@ -140,6 +160,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-04-30**: Reconciled docs with branch reality for the RC: `cove build` local-base execution, `# secret:` tmpfs, build-pipeline compaction, fork benchmarks, and OpenAI adapter hardening are all marked landed; deferred-items boundary made canonical and consistent across CLI reference, changelog, ROADMAP, 016, 017, and the release checklist.
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
 - **2026-04-30**: Added the Slice 3 cache-miss execution plan and started the metadata persistence implementation.
 - **2026-04-30**: Added the Slice 2 cache-hit materialization plan, including validation-before-scratch and failure-atomicity rules.
