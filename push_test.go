@@ -89,6 +89,39 @@ func TestBuildPushPlan(t *testing.T) {
 	}
 }
 
+func TestBuildPushPlanAcceptsLocalVMDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vmPath := filepath.Join(t.TempDir(), "build-output")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), []byte{1, 2, 3}, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "hw.model"), []byte("hw"), 0644); err != nil {
+		t.Fatalf("WriteFile(hw.model) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
+		t.Fatalf("WriteFile(machine.id) error = %v", err)
+	}
+	plan, err := buildPushPlan(vmPath, "ghcr.io/me/dev-vm:v1", pushOptions{
+		ChunkSize: 4,
+		DryRun:    true,
+	})
+	if err != nil {
+		t.Fatalf("buildPushPlan(): %v", err)
+	}
+	if plan.VMDir != resolvePath(vmPath) {
+		t.Fatalf("VMDir = %q, want %q", plan.VMDir, resolvePath(vmPath))
+	}
+	if plan.DiskPath != filepath.Join(resolvePath(vmPath), "disk.img") {
+		t.Fatalf("DiskPath = %q", plan.DiskPath)
+	}
+}
+
 func TestHandlePushDryRunOutput(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")

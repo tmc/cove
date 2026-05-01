@@ -288,7 +288,13 @@ func (s Store) ReachableFromBuildCache() (map[string]bool, error) {
 	if os.IsNotExist(err) {
 		return reachable, nil
 	}
-	return reachable, err
+	if err != nil {
+		return reachable, err
+	}
+	if err := s.expandBuildCacheReferences(reachable); err != nil {
+		return nil, err
+	}
+	return reachable, nil
 }
 
 func markDigestStrings(reachable map[string]bool, v any) {
@@ -306,6 +312,42 @@ func markDigestStrings(reachable map[string]bool, v any) {
 			markDigestStrings(reachable, x)
 		}
 	}
+}
+
+func (s Store) expandBuildCacheReferences(reachable map[string]bool) error {
+	var digests []string
+	for digest := range reachable {
+		digests = append(digests, digest)
+	}
+	for _, digest := range digests {
+		if err := s.markManifest(reachable, digest); err != nil {
+			return err
+		}
+		if err := s.markBuildLayer(reachable, digest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s Store) markBuildLayer(reachable map[string]bool, digest string) error {
+	_, hexDigest, err := splitDigest(digest)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(s.Dir, "build-cache", "layers", hexDigest+".json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return fmt.Errorf("parse build layer %s: %w", digest, err)
+	}
+	markDigestStrings(reachable, v)
+	return nil
 }
 
 func (s Store) markManifest(reachable map[string]bool, digest string) error {

@@ -60,7 +60,39 @@ func TestApplyStoredDiskDeltaRejectsMissingBlob(t *testing.T) {
 	}
 	s := store.New(filepath.Join(dir, "store"))
 	manifest := buildLayerManifest{BlockSize: 4, DiskSize: 6, Blocks: []buildLayerBlock{{Offset: 0, Size: 1, Digest: digestBytes([]byte("x"))}}}
+	digest, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Digest = digest
 	if err := ApplyStoredDiskDelta(context.Background(), s, parent, child, manifest); err == nil {
 		t.Fatal("ApplyStoredDiskDelta() error = nil, want missing blob")
+	}
+}
+
+func TestApplyStoredDiskDeltaRejectsInvalidManifestBeforePartial(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "parent.img")
+	child := filepath.Join(dir, "child.img")
+	if err := os.WriteFile(parent, []byte("parent"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(filepath.Join(dir, "store"))
+	manifest := buildLayerManifest{
+		BlockSize: 4,
+		DiskSize:  6,
+		Blocks:    []buildLayerBlock{{Offset: 2, Size: 1, Digest: digestBytes([]byte("x"))}},
+	}
+	digest, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Digest = digest
+	err = ApplyStoredDiskDelta(context.Background(), s, parent, child, manifest)
+	if err == nil {
+		t.Fatal("ApplyStoredDiskDelta() error = nil, want invalid manifest")
+	}
+	if _, err := os.Stat(child + ".partial"); !os.IsNotExist(err) {
+		t.Fatalf("partial stat error = %v, want not exist", err)
 	}
 }

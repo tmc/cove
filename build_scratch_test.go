@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/store"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 func TestBuildScratchCreateWritesMetadata(t *testing.T) {
@@ -79,12 +82,337 @@ func TestGCBuildScratch(t *testing.T) {
 	}
 }
 
-func TestBuildExecutorExecuteStillNotImplemented(t *testing.T) {
-	exec := testBuildExecutor(t.TempDir())
-	err := exec.Execute(context.Background())
-	if !errors.Is(err, errBuildExecutionNotImplemented) {
-		t.Fatalf("Execute() = %v, want %v", err, errBuildExecutionNotImplemented)
+func TestBuildExecutorExecuteRunsLocalVMBuild(t *testing.T) {
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
 	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "echo",
+		Source:               "echo.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute(): %v", err)
+	}
+	result := exec.Result()
+	if result.VMDir == "" || result.DiskPath == "" || len(result.Steps) != 1 {
+		t.Fatalf("Result() = %#v, want final vm result", result)
+	}
+	if _, err := os.Stat(filepath.Join(result.VMDir, "build.pid")); !os.IsNotExist(err) {
+		t.Fatalf("final build pid exists after promotion: %v", err)
+	}
+	if _, err := loadBuildCacheEntry(exec.store, exec.plan.Steps[0].Key); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildExecutorExecutePromotesFinalVM(t *testing.T) {
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "echo",
+		Source:               "echo.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute(): %v", err)
+	}
+	result := exec.Result()
+	if result.VMDir == "" {
+		t.Fatalf("Result() = %#v, want final vm dir", result)
+	}
+	if err := gcBuildScratch(exec.scratchRoot, func(int) bool { return false }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(result.VMDir); err != nil {
+		t.Fatalf("final VM removed by scratch gc: %v", err)
+	}
+}
+
+func TestBuildExecutorExecuteSecondRunUsesCache(t *testing.T) {
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step := buildPlanStep{
+		Name:                 "echo",
+		Source:               "echo.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}
+	storeDir := filepath.Join(root, "store")
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.store = store.New(storeDir)
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{step}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("first Execute(): %v", err)
+	}
+	entry, err := loadBuildCacheEntry(exec.store, step.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second := testBuildExecutor(filepath.Join(root, "scratch2"))
+	second.store = store.New(storeDir)
+	second.plan.Base = parentDir
+	step.CacheHit = true
+	step.LayerDigest = entry.LayerDigest
+	second.plan.Steps = []buildPlanStep{step}
+	second.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		t.Fatal("cache-hit build started guest")
+		return nil, nil
+	}
+	if err := second.Execute(context.Background()); err != nil {
+		t.Fatalf("second Execute(): %v", err)
+	}
+	result := second.Result()
+	if result.VMDir == "" || result.DiskPath == "" || len(result.Steps) != 1 {
+		t.Fatalf("Result() = %#v, want final vm result", result)
+	}
+}
+
+func TestBuildExecutorExecuteMissingSecretBeforeScratch(t *testing.T) {
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "secret",
+		Source:               "secret.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta: buildScriptMeta{
+			Compact: "targeted",
+			Secrets: []string{"COVE_TEST_MISSING_SECRET"},
+		},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		t.Fatal("missing secret started guest")
+		return nil, nil
+	}
+	err := exec.Execute(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "COVE_TEST_MISSING_SECRET") {
+		t.Fatalf("Execute() = %v, want missing secret error", err)
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+	if _, err := loadBuildCacheEntry(exec.store, exec.plan.Steps[0].Key); err == nil {
+		t.Fatal("cache entry written for missing secret")
+	}
+}
+
+func TestBuildExecutorExecuteInvalidSecretBeforeScratch(t *testing.T) {
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "secret",
+		Source:               "secret.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta: buildScriptMeta{
+			Compact: "targeted",
+			Secrets: []string{"../TOKEN"},
+		},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		t.Fatal("invalid secret started guest")
+		return nil, nil
+	}
+	err := exec.Execute(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "invalid secret name") {
+		t.Fatalf("Execute() = %v, want invalid secret error", err)
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+}
+
+func TestBuildExecutorSecretValueNotPersisted(t *testing.T) {
+	const secretName = "COVE_TEST_TOKEN"
+	const secretValue = "super-secret-build-token"
+	t.Setenv(secretName, secretValue)
+	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restore()
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = []buildPlanStep{{
+		Name:                 "secret",
+		Source:               "secret.vzscript",
+		Data:                 []byte("echo ok\n"),
+		Key:                  "sha256:" + strings.Repeat("1", 64),
+		ParentDigest:         "sha256:" + strings.Repeat("2", 64),
+		ScriptDigest:         "sha256:" + strings.Repeat("3", 64),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta: buildScriptMeta{
+			Compact: "targeted",
+			Secrets: []string{secretName},
+		},
+	}}
+	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute(): %v", err)
+	}
+	result := exec.Result()
+	if result.VMDir == "" {
+		t.Fatal("Result().VMDir is empty")
+	}
+	for _, root := range []string{exec.store.Dir, result.VMDir} {
+		if err := assertJSONFilesDoNotContain(root, secretValue); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestBuildExecutorExecuteCollectsStaleScratch(t *testing.T) {
+	root := t.TempDir()
+	parentDir := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(parentDir, "disk.img"), []byte("base image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	dead := filepath.Join(root, "scratch", "dead")
+	writeScratchPID(t, dead, "999999")
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	exec.plan.Base = parentDir
+	exec.plan.Steps = nil
+	if err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute(): %v", err)
+	}
+	if _, err := os.Stat(dead); !os.IsNotExist(err) {
+		t.Fatalf("stale scratch still exists: %v", err)
+	}
+}
+
+func TestBuildExecutorExecuteHonorsCanceledContext(t *testing.T) {
+	exec := testBuildExecutor(t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := exec.Execute(ctx); !errors.Is(err, context.Canceled) {
@@ -129,6 +457,59 @@ func TestCreateScratchClonesParentDisk(t *testing.T) {
 	}
 }
 
+func TestCreateScratchVMClonesDiskAndCopiesMetadata(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":      "parent-disk",
+		"aux.img":       "aux",
+		"hw.model":      "hw",
+		"machine.id":    "machine",
+		"config.json":   "{}",
+		"control.token": "token",
+	} {
+		if err := os.WriteFile(filepath.Join(parent, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	sc, err := exec.createScratchVM(parent)
+	if err != nil {
+		t.Skipf("clonefile unsupported for scratch vm test: %v", err)
+	}
+	if filepath.Base(sc.DiskPath) != "disk.img" {
+		t.Fatalf("scratch disk path = %q, want disk.img", sc.DiskPath)
+	}
+	for name, want := range map[string]string{
+		"disk.img":      "parent-disk",
+		"aux.img":       "aux",
+		"hw.model":      "hw",
+		"machine.id":    "machine",
+		"config.json":   "{}",
+		"control.token": "token",
+	} {
+		if got := readFile(t, filepath.Join(sc.Dir, name)); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestCreateScratchVMRequiresParentDisk(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	exec := testBuildExecutor(filepath.Join(root, "scratch"))
+	if _, err := exec.createScratchVM(parent); err == nil {
+		t.Fatal("createScratchVM() error = nil, want missing disk")
+	}
+	assertEmptyDir(t, exec.scratchRoot)
+}
+
 func testBuildExecutor(root string) *buildExecutor {
 	return &buildExecutor{
 		plan: buildPlan{
@@ -144,6 +525,9 @@ func testBuildExecutor(root string) *buildExecutor {
 			return time.Date(2026, 4, 30, 3, 30, 0, 0, time.UTC)
 		},
 		pid: 1234,
+		compactGuest: func(context.Context, buildScratch, string) error {
+			return nil
+		},
 	}
 }
 
@@ -164,4 +548,23 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func assertJSONFilesDoNotContain(root, value string) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".json" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), value) {
+			return fmt.Errorf("%s contains secret value", path)
+		}
+		return nil
+	})
 }

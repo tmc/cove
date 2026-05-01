@@ -38,6 +38,30 @@ builds:
       - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
 
+# Sign the cove binary with Developer ID, embed the virtualization
+# entitlements, then notarize with notarytool. The keychain identity is
+# imported by the release workflow (.github/workflows/release.yml) and
+# resolved through MACOS_SIGN_IDENTITY before goreleaser starts.
+#
+# Notarization uses the App Store Connect notarytool API. The required
+# secrets are documented in docs/release-pipeline.md:
+#   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_APP_PASSWORD.
+notarize:
+  macos:
+    - ids:
+        - cove
+      enabled: "{{ if index .Env \"MACOS_SIGN_IDENTITY\" }}true{{ else }}false{{ end }}"
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_IDENTITY }}"
+        password: ""
+        entitlements: internal/autosign/vz.entitlements
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_TEAM_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_APPLE_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_APP_PASSWORD }}"
+        wait: true
+        timeout: 20m
+
 archives:
   - id: cove
     ids:
@@ -71,6 +95,10 @@ changelog:
       - "^ci:"
       - "Merge pull request"
 
+# The Homebrew cask points at the tar.gz so users get a fast brew install.
+# A signed + notarized DMG is uploaded as a separate release artifact by
+# the workflow's `package-dmg` step (see .github/workflows/release.yml);
+# the cask `caveats:` mentions it for users who prefer drag-install.
 homebrew_casks:
   - name: cove
     ids:
@@ -87,15 +115,14 @@ homebrew_casks:
       owner: tmc
       name: homebrew-tap
       branch: "{{.ProjectName}}-{{.Version}}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     commit_author:
       name: github-actions
       email: 41898282+github-actions[bot]@users.noreply.github.com
     caveats: |
-      cove requires virtualization entitlements to run. On first execution,
-      it automatically signs itself with the required entitlements.
-
-      If auto-signing fails, manually sign:
-        codesign -s - -f --entitlements $(brew --prefix)/Caskroom/cove/current/internal/autosign/vz.entitlements $(brew --prefix)/bin/cove
+      cove is signed with Developer ID and notarized, so it runs without
+      Gatekeeper prompts. Drag-install users can grab cove-{{ .Version }}.dmg
+      from the GitHub release page instead of using brew.
 
 release:
   github:
@@ -104,6 +131,11 @@ release:
   draft: false
   prerelease: auto
   name_template: "{{.Tag}}"
+  # The DMG is built and uploaded by a workflow step running after goreleaser.
+  # If you add a manually-built DMG to ./dist/ before invoking goreleaser, this
+  # block will pick it up; otherwise it is a no-op.
+  extra_files:
+    - glob: ./dist/cove-*.dmg
   header: |
     ## cove {{ .Tag }}
 
@@ -115,10 +147,12 @@ release:
     # Via Homebrew
     brew install tmc/tap/cove
 
-    # Or download and extract
-    tar xzf cove_{{ .Version }}_darwin_arm64.tar.gz
+    # Or download the signed + notarized DMG
+    # (drag cove onto /usr/local/bin)
+    open cove-{{ .Version }}.dmg
 
-    # Install (the binary self-signs with required entitlements on first run)
+    # Or extract the tar.gz
+    tar xzf cove_{{ .Version }}_darwin_arm64.tar.gz
     sudo install cove /usr/local/bin/
     ```
 

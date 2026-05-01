@@ -40,8 +40,8 @@ func handleBuild(args []string) error {
 	fs.BoolVar(&opts.Push, "push", false, "push output tags after build")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print plan and cache keys without running VMs")
 	fs.BoolVar(&opts.NoCache, "no-cache", false, "run every step even when a cache entry exists")
-	fs.Var(&cacheFrom, "cache-from", "registry cache source (repeatable)")
-	fs.Var(&cacheTo, "cache-to", "registry cache destination (repeatable)")
+	fs.Var(&cacheFrom, "cache-from", "reserved for registry cache import (repeatable)")
+	fs.Var(&cacheTo, "cache-to", "reserved for registry cache export (repeatable)")
 	fs.BoolVar(&opts.KeepIntermediate, "keep-intermediate", false, "leave scratch VMs behind for debugging")
 	fs.IntVar(&opts.ChunkSizeMB, "chunk-size", 512, "chunk size in MiB")
 	fs.StringVar(&opts.Compact, "compact", "targeted", "compaction mode: fast, targeted, thorough")
@@ -60,25 +60,49 @@ func handleBuild(args []string) error {
 	if err := validateCompactMode(opts.Compact); err != nil {
 		return err
 	}
+	if opts.ChunkSizeMB <= 0 {
+		return fmt.Errorf("cove build: --chunk-size must be positive")
+	}
 	opts.Scripts = scripts
 	opts.Tags = tags
 	opts.CacheFrom = cacheFrom
 	opts.CacheTo = cacheTo
+	if err := validateBuildRegistryCache(opts); err != nil {
+		return err
+	}
 	if len(opts.Scripts) == 0 {
 		return fmt.Errorf("cove build: at least one --script is required")
 	}
 	if opts.Base == "" {
 		return fmt.Errorf("cove build: --base is required")
 	}
+	if opts.Push && len(opts.Tags) == 0 {
+		return fmt.Errorf("cove build: --push requires at least one --tag")
+	}
 	if !opts.DryRun {
-		return fmt.Errorf("cove build: only --dry-run is implemented")
+		if _, ok := localBuildBaseDir(opts.Base); !ok {
+			return fmt.Errorf("cove build: non-dry-run requires local VM base directory")
+		}
 	}
 	ctx := context.Background()
-	plan, err := buildDryPlan(ctx, posArgs[0], opts, http.DefaultClient)
+	blobStore := store.New(opts.StoreDir)
+	plan, err := buildDryPlanWithStore(ctx, posArgs[0], opts, http.DefaultClient, blobStore)
 	if err != nil {
 		return err
 	}
-	printBuildPlan(os.Stdout, plan, opts)
+	printBuildWarnings(os.Stderr, plan)
+	if opts.DryRun {
+		printBuildPlan(os.Stdout, plan, opts)
+		return nil
+	}
+	exec := newBuildExecutor(plan, opts, blobStore)
+	if err := exec.Execute(ctx); err != nil {
+		return err
+	}
+	if err := pushBuildResult(ctx, exec.Result(), opts); err != nil {
+		return err
+	}
+	printBuildResult(os.Stdout, plan, exec.Result(), opts)
 	return nil
 }
 
@@ -132,6 +156,20 @@ func splitBuildArgs(args []string) (flagArgs, posArgs []string, err error) {
 	return flagArgs, posArgs, nil
 }
 
+func validateBuildRegistryCache(opts buildOptions) error {
+	var flags []string
+	if len(opts.CacheFrom) > 0 {
+		flags = append(flags, "--cache-from")
+	}
+	if len(opts.CacheTo) > 0 {
+		flags = append(flags, "--cache-to")
+	}
+	if len(flags) == 0 {
+		return nil
+	}
+	return fmt.Errorf("cove build: %s registry cache is not implemented yet", strings.Join(flags, " and "))
+}
+
 func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *http.Client) (buildPlan, error) {
 	return buildDryPlanWithStore(ctx, name, opts, client, store.New(opts.StoreDir))
 }
@@ -141,8 +179,13 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 	if err != nil {
 		return buildPlan{}, fmt.Errorf("resolve base: %w", err)
 	}
-	plan := buildPlan{Name: name, Base: opts.Base, ParentDigest: parentDigest, Tags: append([]string(nil), opts.Tags...)}
+	base := opts.Base
+	if dir, ok := localBuildBaseDir(opts.Base); ok {
+		base = dir
+	}
+	plan := buildPlan{Name: name, Base: base, ParentDigest: parentDigest, Tags: append([]string(nil), opts.Tags...)}
 	currentParent := parentDigest
+	now := time.Now().UTC()
 	for _, scriptName := range opts.Scripts {
 		step, err := loadBuildScript(scriptName)
 		if err != nil {
@@ -151,16 +194,30 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 		if step.Meta.Compact == "targeted" && opts.Compact != "targeted" {
 			step.Meta.Compact = opts.Compact
 		}
-		key, _, err := buildCacheKey(ctx, currentParent, step, client)
+		key, keyInput, err := buildCacheKey(ctx, currentParent, step, client)
 		if err != nil {
 			return plan, err
 		}
-		planStep := buildPlanStep{Name: step.Name, Key: key, Meta: step.Meta}
+		planStep := buildPlanStep{
+			Name:                 step.Name,
+			Source:               step.Source,
+			Data:                 append([]byte(nil), step.Data...),
+			Key:                  key,
+			ParentDigest:         keyInput.ParentDigest,
+			ScriptDigest:         keyInput.ScriptDigest,
+			AgentProtocolVersion: keyInput.AgentProtocolVersion,
+			Meta:                 step.Meta,
+		}
 		if !opts.NoCache {
 			entry, err := loadBuildCacheEntry(blobStore, key)
 			if err == nil {
-				planStep.CacheHit = true
-				planStep.LayerDigest = entry.LayerDigest
+				if buildCacheEntryFresh(entry, step.Meta.CacheTTL, now) {
+					if err := validateBuildCacheEntryForStep(entry, planStep); err != nil {
+						return plan, fmt.Errorf("build cache entry %s: %w", key, err)
+					}
+					planStep.CacheHit = true
+					planStep.LayerDigest = entry.LayerDigest
+				}
 			} else if !errors.Is(err, os.ErrNotExist) {
 				return plan, err
 			}
@@ -169,6 +226,16 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 		currentParent = key
 	}
 	return plan, nil
+}
+
+func buildCacheEntryFresh(entry buildCacheEntry, ttl time.Duration, now time.Time) bool {
+	if ttl <= 0 {
+		return true
+	}
+	if entry.CreatedAt.IsZero() {
+		return false
+	}
+	return now.Before(entry.CreatedAt.Add(ttl))
 }
 
 func printBuildPlan(w io.Writer, plan buildPlan, opts buildOptions) {
@@ -214,21 +281,89 @@ func printBuildPlan(w io.Writer, plan buildPlan, opts buildOptions) {
 	}
 }
 
+func printBuildWarnings(w io.Writer, plan buildPlan) {
+	for _, warning := range buildPlanWarnings(plan) {
+		fmt.Fprintf(w, "warning: %s\n", warning)
+	}
+}
+
+func buildPlanWarnings(plan buildPlan) []string {
+	var warnings []string
+	for _, step := range plan.Steps {
+		for _, name := range step.Meta.CacheEnv {
+			if secretLikeCacheEnvName(name) {
+				warnings = append(warnings, fmt.Sprintf("step %q cache-env %s looks secret; use # secret: for tokens, passwords, and keys", step.Name, name))
+			}
+		}
+		if len(step.Meta.Secrets) > 0 && step.Meta.Compact == "fast" {
+			warnings = append(warnings, fmt.Sprintf("step %q declares # secret: with # compact: fast; guest swap may retain plaintext", step.Name))
+		}
+	}
+	return warnings
+}
+
+func secretLikeCacheEnvName(name string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	if upper == "" {
+		return false
+	}
+	for _, suffix := range []string{"TOKEN", "PASSWORD", "SECRET", "KEY"} {
+		if upper == suffix || strings.HasSuffix(upper, "_"+suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func printBuildResult(w io.Writer, plan buildPlan, result buildExecutionResult, opts buildOptions) {
+	fmt.Fprintf(w, "Build complete\n")
+	fmt.Fprintf(w, "  name: %s\n", plan.Name)
+	fmt.Fprintf(w, "  base: %s\n", plan.Base)
+	if result.VMDir != "" {
+		fmt.Fprintf(w, "  vm: %s\n", result.VMDir)
+	}
+	if result.DiskPath != "" {
+		fmt.Fprintf(w, "  disk: %s\n", result.DiskPath)
+	}
+	for _, tag := range plan.Tags {
+		fmt.Fprintf(w, "  tag: %s\n", tag)
+	}
+	if opts.Push {
+		fmt.Fprintf(w, "  pushed: %d\n", len(plan.Tags))
+	}
+	hits := 0
+	for _, step := range result.Steps {
+		if step.Step != "" && step.Key != "" {
+			for _, planStep := range plan.Steps {
+				if planStep.Key == step.Key && planStep.CacheHit {
+					hits++
+					break
+				}
+			}
+		}
+	}
+	fmt.Fprintf(w, "  steps: %d\n", len(result.Steps))
+	fmt.Fprintf(w, "  cache hits: %d/%d\n", hits, len(result.Steps))
+	if opts.KeepIntermediate {
+		fmt.Fprintln(w, "  intermediate: kept")
+	}
+}
+
 func printBuildUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove build <name> --base <ref> --script <step> [flags]
 
-Plan a VM image build by chaining vzscript steps with content-addressed cache keys.
-Execution is not implemented yet; use --dry-run.
+Build a VM image by chaining vzscript steps with content-addressed cache keys.
+Use --dry-run to print the resolved plan without running a scratch VM.
 
 Flags:
-  --base <ref>              Base OCI image reference. Digest refs avoid network lookup.
+  --base <ref|dir>          Base OCI image reference or local VM directory.
   --script <name|path>      Built-in vzscript recipe or .vzscript path. Repeat per step.
   --tag <ref>               Output image tag. Repeat for multiple tags.
   --push                    Push output tags after build.
   --dry-run                 Print the resolved build plan and cache keys only.
   --no-cache                Re-run every step instead of restoring cached layers.
-  --cache-from <ref>        Registry cache source. Repeatable.
-  --cache-to <ref>          Registry cache destination. Repeatable.
+  --cache-from <ref>        Reserved for registry cache import. Repeatable.
+  --cache-to <ref>          Reserved for registry cache export. Repeatable.
   --keep-intermediate       Keep scratch VMs for debugging.
   --chunk-size <mb>         Chunk size in MiB. Default 512.
   --compact <mode>          fast, targeted, or thorough. Default targeted.

@@ -18,7 +18,7 @@ This revision addresses Council round-1 + round-2 verdicts, a second-opinion rev
 ### v1 (post-round-1 Council + user interview)
 
 - **P0 — Secrets handling rewritten.** v0's `# cache-env:` was correctly flagged by Council as a security hole (tokens leaking into pushed OCI layers via bash history, unified logs, swap). v1 introduces a new `# secret:` directive backed by a guest-side tmpfs mount; `# cache-env:` is retained but narrowed to non-secret cache-influencing variables, with loud documentation.
-- **P0 — APFS boot churn / compaction.** v0 ignored the fact that a plain shutdown leaves gigabytes of log/swap/diagnostic churn in the block diff. v1 adds a tiered compaction step (`fast`/`targeted`/`thorough`) with a benchmark-driven default, overridable per-step via `# compact:`.
+- **P0 — APFS boot churn / compaction.** v0 ignored the fact that a plain shutdown leaves gigabytes of log/swap/diagnostic churn in the block diff. v1 adds a tiered compaction step (`fast`/`targeted`/`thorough`) with a `targeted` default, overridable per-step via `# compact:`.
 - **P1 — `# mount:` is now a build-time error.** Host mounts violate OCI portability; the parser rejects them in build context with a pointer to `# cache-file:` / `# inject:` alternatives.
 - **P1 — Strict parent hashing.** Cache key now consumes the parent's OCI manifest SHA-256 digest, never a local name/tag. Upstream base updates invalidate the chain correctly.
 - **P2 — Scope reset.** Total bumped to ~3000 LOC / 15 days to cover secret-mount, compaction integration, ban-mount parser changes, and the benchmark harness.
@@ -127,7 +127,11 @@ The cache key uses `agent_protocol_version` (a semver string from `agent/version
 
 > **⚠️ Cross-machine layer-digest equality is not guaranteed.** Block-diff operates on APFS extent placement, inode numbers, and catalog state — none of which are deterministic across independent macOS installs. Two runners running the same build script against the same parent may produce identical cache KEYS but different cache LAYER BYTES. The benchmark harness (see companion doc) will quantify this before v0.3 ships.
 
-Implication for `--cache-from / --cache-to`: these flags enable cross-runner cache POPULATION; layer-digest equality across machines is not guaranteed in v0.3 — consult the benchmark results for measured stability.
+Implication for registry cache import/export: the CLI reserves `--cache-from`
+and `--cache-to`, but the current v0.3 execution path fails fast when either
+flag is used. Local cache hits are supported; cross-runner cache population is
+deferred until the registry cache format and cross-machine benchmark results
+are checked in.
 
 ### New vzscript header directives
 
@@ -224,16 +228,16 @@ Under `thorough` compaction, before the block-diff runs, the guest's swapfile is
 - **Linux**: `swapoff /swapfile && dd if=/dev/zero of=/swapfile bs=1M count=$(stat -c %s /swapfile | awk '{print $1/1048576}') && mkswap /swapfile && swapon /swapfile`
 - **macOS guest**: host swap is handled separately (the macOS VM dynamic swap store lives under `/private/var/vm/` and is cleared by `eraseFreeVolumeSpace`).
 
-### Default mode — TBD, benchmark-driven
+### Default mode — targeted
 
-User flagged concern that `thorough` adds 30–60s per step, which could dominate an otherwise cache-friendly 5-step build. `targeted` is much cheaper but incomplete. We defer the default selection to a **separate benchmark harness doc** that will run representative workloads (`homebrew`, `golang`, `claude-code`, mixed) across all three modes and report:
+User flagged concern that `thorough` adds 30–60s per step, which could dominate an otherwise cache-friendly 5-step build. `targeted` is much cheaper but incomplete. The current CLI default is `targeted`; benchmark work can still replace that default if measured build-size savings justify the added latency. The benchmark harness should run representative workloads (`homebrew`, `golang`, `claude-code`, mixed) across all three modes and report:
 
 - Per-step overhead added by compaction
 - Per-step delta size reduction
 - End-to-end push size for a realistic 5-step workstation build
 - **Same-machine** cross-run layer-digest stability (does the same script produce the same delta across two runs on the same host?) — cross-machine stability is a known limitation, not a measurement goal; see the "Known limitation" callout in the Cache key section
 
-The benchmark result picks the default. Until then, the implementation supports all three modes behind `--compact <mode>` with no default set at the CLI layer (orchestrator defaults to `targeted` as a placeholder; final default TBD).
+The implementation supports all three modes behind `--compact <mode>`.
 
 ### Per-step override
 
@@ -317,11 +321,11 @@ cove build <name> \
     [--push]                        # push after build
     [--dry-run]                     # plan steps + keys, don't run
     [--no-cache]                    # skip cache, re-run every step
-    [--cache-from <ref>]            # pull cache layers from this image before build
-    [--cache-to <ref>]              # push cache layers to this image after build
+    [--cache-from <ref>]            # reserved; registry cache import is deferred
+    [--cache-to <ref>]              # reserved; registry cache export is deferred
     [--keep-intermediate]           # leave scratch VMs behind for debugging
     [--chunk-size <mb>]             # passed to chunker; default 512
-    [--compact <mode>]              # fast | targeted | thorough (default: benchmark-driven)
+    [--compact <mode>]              # fast | targeted | thorough (default: targeted)
 ```
 
 ### Example
@@ -335,8 +339,6 @@ cove build macos-workstation \
     --script cove-itself \
     --tag ghcr.io/tmc/macos-15-workstation:latest \
     --tag ghcr.io/tmc/macos-15-workstation:$(git rev-parse --short HEAD) \
-    --cache-from ghcr.io/tmc/macos-15-workstation:cache \
-    --cache-to ghcr.io/tmc/macos-15-workstation:cache \
     --push
 ```
 
@@ -365,10 +367,14 @@ On second build with nothing changed: `~30s` total (4 cache hits, no VM boots, n
 ### Cache population modes
 
 - **Local-only** (default): hits/misses check `~/.vz/store/build-cache/`.
-- **`--cache-from <ref>`**: additionally, on cache miss, try `HEAD /v2/<repo>/blobs/<cache-key>` on the remote. This is how CI shares caches across runners.
-- **`--cache-to <ref>`**: after the build, push any newly-produced cache layers to the remote cache ref.
+- **Registry import/export**: `--cache-from <ref>` and `--cache-to <ref>` are
+  reserved for a future registry cache backend. Current builds reject them
+  before planning instead of silently ignoring a remote cache ref.
 
-This mirrors BuildKit's registry cache backend. A CI setup with `--cache-from + --cache-to` to a dedicated `:cache` tag enables cross-runner cache POPULATION; layer-digest equality across machines is not guaranteed in v0.3 — consult the benchmark results for measured stability (see the "Known limitation" callout in the Cache key section).
+The intended registry backend mirrors BuildKit's cache backend: a CI setup with
+`--cache-from + --cache-to` to a dedicated `:cache` tag enables cross-runner
+cache POPULATION. That work remains deferred until the cache object layout and
+cross-machine stability measurements are committed.
 
 ---
 
@@ -435,7 +441,7 @@ Mitigations:
 | Scratch VM leaks on crash | `cove build` writes a lockfile + PID; recovery on next run GCs scratch dirs |
 | Guest state that escapes `disk.img` | Document: only `disk.img` changes are captured. Shared folders, clipboard, NVRAM delta handled separately (aux.img is a declared layer in v0.1 manifest) |
 | Agent protocol version mismatch | `agent_protocol_version` is in the cache key; major-version bumps invalidate, minors are backwards-compatible. CI lint ties proto changes to version bumps |
-| Block-diff produces different bytes across machines for same script | Benchmark harness quantifies; if instability >5%, `--cache-from` across runners is population-only, not dedup-equivalent |
+| Block-diff produces different bytes across machines for same script | Benchmark harness quantifies before registry cache ships; if instability >5%, future `--cache-from` across runners is population-only, not dedup-equivalent |
 | Parallel `cove build` on same base | Scratch dirs are UUID-named; no collision. Lock only needed on the final manifest write |
 | Secrets leaking into pushed layers | `# secret:` → tmpfs-only; `# cache-env:` docs flag it loudly as non-secret-only; parser warns on heuristic matches (`*_TOKEN`, `*_KEY`, `*_PASSWORD`) in `# cache-env:` |
 | Users put secrets in `# cache-env:` anyway | Build-time lint: if a `# cache-env:` name matches heuristics above, emit warning with pointer to `# secret:` |
@@ -451,7 +457,7 @@ Mitigations:
 | Piece | LOC | Days |
 |---|---|---|
 | `build.go` — subcommand, orchestrator, progress output | ~400 | 2 |
-| `build_cache.go` — cache key, local lookup, remote lookup via `--cache-from` | ~300 | 1.5 |
+| `build_cache.go` — cache key and local lookup; registry lookup is deferred | ~300 | 1.5 |
 | `block_diff.go` — parallel SHA-256 block diff with SEEK_HOLE | ~250 | 1.5 |
 | `build_apply.go` — clonefile + delta apply for cache-hit path | ~180 | 1 |
 | vzscript header extensions (`cache-env`, `cache-url`, `cache-file`, `cache-ttl`, `secret`, `compact`) | ~150 | 1 |

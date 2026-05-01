@@ -7,6 +7,9 @@ import (
 
 type VersionRelation int
 
+// ProtocolVersion is the cache-facing guest-agent protocol version.
+const ProtocolVersion = "1"
+
 const (
 	VersionUnknown VersionRelation = iota
 	VersionEqual

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,12 @@ func TestBuildCacheEntryRoundTrip(t *testing.T) {
 
 func TestBuildLayerManifestRoundTrip(t *testing.T) {
 	s := store.New(t.TempDir())
-	manifest := buildLayerManifest{Digest: digestBytes([]byte("manifest")), BlockSize: 65536, DiskSize: 123, Blocks: []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}}}
+	manifest := buildLayerManifest{BlockSize: 65536, DiskSize: 123, Blocks: []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}}}
+	digest, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Digest = digest
 	if err := saveBuildLayerManifest(s, manifest); err != nil {
 		t.Fatalf("saveBuildLayerManifest(): %v", err)
 	}
@@ -66,11 +72,26 @@ func TestLoadBuildCacheEntryRejectsMismatchedKey(t *testing.T) {
 func TestSaveBuildCacheEntryRejectsInvalidLayerDigest(t *testing.T) {
 	s := store.New(t.TempDir())
 	entry := buildCacheEntry{
-		Key:         digestBytes([]byte("key")),
-		LayerDigest: "sha256:not-a-real-digest",
+		Key:                  digestBytes([]byte("key")),
+		ParentDigest:         digestBytes([]byte("parent")),
+		ScriptDigest:         digestBytes([]byte("script")),
+		AgentProtocolVersion: agentProtocolVersion,
+		Compact:              "targeted",
+		LayerDigest:          "sha256:not-a-real-digest",
 	}
 	if err := saveBuildCacheEntry(s, entry); err == nil {
 		t.Fatal("saveBuildCacheEntry() error = nil, want invalid layer digest")
+	}
+}
+
+func TestSaveBuildCacheEntryRejectsMissingMetadata(t *testing.T) {
+	s := store.New(t.TempDir())
+	entry := buildCacheEntry{
+		Key:         digestBytes([]byte("key")),
+		LayerDigest: digestBytes([]byte("layer")),
+	}
+	if err := saveBuildCacheEntry(s, entry); err == nil {
+		t.Fatal("saveBuildCacheEntry() error = nil, want missing metadata")
 	}
 }
 
@@ -102,6 +123,65 @@ func TestSaveBuildLayerManifestRejectsInvalidDigest(t *testing.T) {
 	}
 }
 
+func TestSaveBuildLayerManifestRejectsDigestMismatch(t *testing.T) {
+	s := store.New(t.TempDir())
+	manifest := buildLayerManifest{
+		Digest:    digestBytes([]byte("manifest")),
+		BlockSize: 65536,
+		DiskSize:  123,
+		Blocks:    []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}},
+	}
+	if err := saveBuildLayerManifest(s, manifest); err == nil {
+		t.Fatal("saveBuildLayerManifest() error = nil, want digest mismatch")
+	}
+}
+
+func TestSaveBuildLayerManifestRejectsInvalidBlockRange(t *testing.T) {
+	s := store.New(t.TempDir())
+	tests := []struct {
+		name  string
+		block buildLayerBlock
+		want  string
+	}{
+		{
+			name:  "oversized",
+			block: buildLayerBlock{Offset: 0, Size: 5, Digest: digestBytes([]byte("blob"))},
+			want:  "exceeds block size",
+		},
+		{
+			name:  "unaligned",
+			block: buildLayerBlock{Offset: 2, Size: 1, Digest: digestBytes([]byte("blob"))},
+			want:  "unaligned offset",
+		},
+		{
+			name:  "past-disk",
+			block: buildLayerBlock{Offset: 4, Size: 4, Digest: digestBytes([]byte("blob"))},
+			want:  "range exceeds disk size",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := buildLayerManifest{
+				BlockSize: 4,
+				DiskSize:  6,
+				Blocks:    []buildLayerBlock{tt.block},
+			}
+			digest, err := digestBuildLayerManifest(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest.Digest = digest
+			err = saveBuildLayerManifest(s, manifest)
+			if err == nil {
+				t.Fatal("saveBuildLayerManifest() error = nil, want invalid block range")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("saveBuildLayerManifest() = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadBuildLayerManifestRejectsInvalidBlockDigest(t *testing.T) {
 	s := store.New(t.TempDir())
 	digest := digestBytes([]byte("manifest"))
@@ -124,10 +204,55 @@ func TestLoadBuildLayerManifestRejectsInvalidBlockDigest(t *testing.T) {
 	}
 }
 
+func TestLoadBuildLayerManifestRejectsDigestMismatch(t *testing.T) {
+	s := store.New(t.TempDir())
+	manifest := buildLayerManifest{
+		BlockSize: 65536,
+		DiskSize:  123,
+		Blocks:    []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}},
+	}
+	digest, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Digest = digest
+	manifest.DiskSize = 456
+	path := filepath.Join(s.Dir, "build-cache", "layers", digestFileName(digest)+".json")
+	if err := writeBuildCacheJSON(path, manifest); err != nil {
+		t.Fatal(err)
+	}
+	_, err = loadBuildLayerManifest(s, digest)
+	if err == nil {
+		t.Fatal("loadBuildLayerManifest() error = nil, want digest mismatch")
+	}
+}
+
 func TestLoadBuildCacheEntryMissing(t *testing.T) {
 	s := store.New(t.TempDir())
 	_, err := loadBuildCacheEntry(s, digestBytes([]byte("missing")))
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("error = %v, want os.ErrNotExist", err)
+	}
+}
+
+func testBuildPlanStep(name, key string) buildPlanStep {
+	return buildPlanStep{
+		Name:                 name,
+		Key:                  key,
+		ParentDigest:         digestBytes([]byte(name + "-parent")),
+		ScriptDigest:         digestBytes([]byte(name + "-script")),
+		AgentProtocolVersion: agentProtocolVersion,
+		Meta:                 buildScriptMeta{Compact: "targeted"},
+	}
+}
+
+func testCacheEntryForStep(step buildPlanStep, layer string) buildCacheEntry {
+	return buildCacheEntry{
+		Key:                  step.Key,
+		ParentDigest:         step.ParentDigest,
+		ScriptDigest:         step.ScriptDigest,
+		AgentProtocolVersion: step.AgentProtocolVersion,
+		Compact:              step.Meta.Compact,
+		LayerDigest:          layer,
 	}
 }

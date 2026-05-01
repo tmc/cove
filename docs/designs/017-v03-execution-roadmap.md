@@ -12,11 +12,18 @@ not a marketing plan. Every branch should be based directly on `origin/main`,
 not on another speedrun branch, and should be small enough to review without
 dragging unrelated roadmap work into the diff.
 
-The current `cove build` command remains dry-run-only until slice 3 lands. Slice
-1 and slice 2 may add internal execution machinery, but they must not advertise
-non-dry-run builds as supported.
+This roadmap began while `cove build` was dry-run-only. Slices 1-6 have since
+landed on the roadmap build branch for local VM bases: cache hits skip guest
+execution, misses run in scratch VMs, secrets mount through guest-only tmpfs or
+RAM disk, compaction runs before diffing, layer manifests and cache entries are
+verified before apply, and adapter/benchmark hardening is checked in. Registry-
+base execution and registry cache import/export remain deferred — see the
+defer list at the bottom for the full RC boundary.
 
 ## Slice 1: build executor scaffold
+
+**Landed**: yes; the dry-run-only gate described here was removed later by
+Slice 3 for local VM bases.
 
 **Branch**: `feat/v03-build-executor-scaffold`
 **Detailed plan**: [018](018-v03-build-executor-scaffold.md)
@@ -51,6 +58,9 @@ non-dry-run builds as supported.
 
 ## Slice 2: cache-hit materialization
 
+**Landed**: yes; public docs were updated later by Slice 3 when local-base
+execution became supported.
+
 **Branch**: `feat/v03-build-cache-hit-apply`
 **Detailed plan**: [019](019-v03-cache-hit-materialization.md)
 
@@ -84,7 +94,12 @@ non-dry-run builds as supported.
 
 ## Slice 3: cache-miss VM execution
 
+**Landed**: yes; the public non-dry-run gate was removed for local VM
+directory bases. Registry-base execution still fails with
+`cove build: non-dry-run requires local VM base directory`.
+
 **Branch**: `feat/v03-build-vm-execution`
+**Detailed plan**: [020](020-v03-cache-miss-execution.md)
 
 **Scope**:
 
@@ -125,6 +140,11 @@ non-dry-run builds as supported.
 
 ## Slice 4: tmpfs build secrets
 
+**Landed**: yes; `# secret:` directives validate names early, mount through a
+guest tmpfs or macOS RAM disk, fail closed on Linux when swap cannot be
+disabled, and unmount before compaction and the layer diff. External secret
+stores remain deferred to v0.4.
+
 **Branch**: `feat/v03-build-secrets-tmpfs`
 
 **Scope**:
@@ -162,6 +182,10 @@ non-dry-run builds as supported.
 
 ## Slice 5: build compaction integration
 
+**Landed**: yes; `fast`, `targeted`, and `thorough` compaction run between
+guest execution and the layer diff, the compact mode is part of the cache
+key, and `targeted` is the documented default.
+
 **Branch**: `feat/v03-build-compaction`
 
 **Scope**:
@@ -194,6 +218,11 @@ non-dry-run builds as supported.
 - Add release-checklist coverage for secret plus compaction combinations.
 
 ## Slice 6: benchmark and adapter hardening
+
+**Landed**: yes; fork-only and boot-to-agent fork benchmark results are
+checked in under `bench/fork-time/`, the OpenAI Agents SDK adapter has
+documented live-smoke and package-check instructions, and adapter examples
+remain fork-first. `cove-sandbox` is not yet published as a package.
 
 **Branch**: `feat/v03-benchmark-adapter-hardening`
 
@@ -228,15 +257,22 @@ non-dry-run builds as supported.
 - Keep adapter docs explicit that VM state remains local.
 - Do not add public registry or signed image instructions.
 
-## Defer list
+## Defer list (RC boundary)
 
-- Public `cove` registry, signed agentkit image channels, and public curated
-  macOS image publishing until trademark counsel clears the name or a rename
-  lands.
+The following are explicitly deferred for this RC. Public docs must keep this
+list visible and consistent:
+
+- Registry-base `cove build` execution. Non-dry-run builds require a local VM
+  directory base; registry refs stay planning-only.
+- Registry cache import/export (`--cache-from`, `--cache-to`). The flags are
+  reserved and fail before planning if used.
+- Public curated `cove` image registry and signed agentkit image channels until
+  trademark counsel clears the name or a rename lands.
 - External secret stores such as 1Password, Vault, SOPS, and age. v0.3 secrets
   are host environment variables mounted through tmpfs only.
 - BuildKit-style parallel step execution. v0.3 build execution is sequential.
 - Packer plugin shim work unless `cove build` execution is already stable and a
   maintainer explicitly reorders the roadmap.
+- Product-name resolution before any public registry or signed channel ships.
 - Soft-reset throughput claims for privacy-sensitive evals.
 - Tart maintenance claims that have not been freshly verified.

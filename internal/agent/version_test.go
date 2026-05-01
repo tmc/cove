@@ -3,6 +3,9 @@ package agent
 import "testing"
 
 func TestCompareVersions(t *testing.T) {
+	if ProtocolVersion == "" {
+		t.Fatal("ProtocolVersion is empty")
+	}
 	tests := []struct {
 		name  string
 		host  string
