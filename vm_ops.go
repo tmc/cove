@@ -8,18 +8,40 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
-// DeleteVM deletes a VM by name. If the directory exists but does not contain
-// a valid VM (e.g. an orphan left over from a prior failure), the directory is
-// still removed so users can clean up without editing ~/.vz/vms by hand.
-//
-// If the named VM is the active VM, deletion is allowed when the VM is stopped
-// or is an orphan (missing disk image). The active-VM marker is cleared in the
-// same step. Deletion is refused only when the VM is currently running.
+// DeleteVMOptions configures DeleteVMWithOptions. Cascade descends to
+// children before removing the named VM, mirroring rm -r semantics.
+// Without Cascade, a VM with live children is refused.
+type DeleteVMOptions struct {
+	Cascade bool
+}
+
+// DeleteVM deletes a VM by name (no cascade). See DeleteVMWithOptions
+// for the cascade-aware form.
 func DeleteVM(name string) error {
+	return DeleteVMWithOptions(name, DeleteVMOptions{})
+}
+
+// DeleteVMWithOptions deletes a VM by name. If the directory exists
+// but does not contain a valid VM (e.g. an orphan left over from a
+// prior failure), the directory is still removed so users can clean
+// up without editing ~/.vz/vms by hand.
+//
+// If the named VM is the active VM, deletion is allowed when the VM
+// is stopped or is an orphan (missing disk image). The active-VM
+// marker is cleared in the same step. Deletion is refused only when
+// the VM is currently running.
+//
+// If the named VM is the parent of any other VM (lineage recorded by
+// fork paths in vmconfig.ParentVM) and opts.Cascade is false,
+// deletion is refused with a list of dependent children. With
+// Cascade, children are deleted first (recursively).
+func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	vmPath := vmconfig.Path(name)
 	info, err := os.Stat(vmPath)
 	if err != nil {
@@ -32,10 +54,25 @@ func DeleteVM(name string) error {
 		return fmt.Errorf("not a VM directory: %s", vmPath)
 	}
 
-	// Refuse to delete a VM that is currently running, regardless of whether
-	// it is the active VM or not. Stop it first.
 	if isVMRunningAt(vmPath) {
 		return fmt.Errorf("cannot delete VM '%s': it is currently running (stop it first)", name)
+	}
+
+	children, err := childVMNames(name)
+	if err != nil {
+		return err
+	}
+	if len(children) > 0 {
+		if !opts.Cascade {
+			return fmt.Errorf("VM '%s' has %d fork descendant(s): %s — pass --cascade to delete them too", name, len(children), strings.Join(children, ", "))
+		}
+		// Cascade: delete children first. This refuses if any child
+		// is itself running, surfacing the original error.
+		for _, child := range children {
+			if err := DeleteVMWithOptions(child, opts); err != nil {
+				return fmt.Errorf("cascade delete child '%s': %w", child, err)
+			}
+		}
 	}
 
 	wasActive := vmconfig.ActiveName() == name
@@ -59,6 +96,32 @@ func DeleteVM(name string) error {
 
 	fmt.Println("VM deleted.")
 	return nil
+}
+
+// childVMNames returns the sorted names of VMs whose ParentVM
+// matches parent. An empty slice (no children) means delete is
+// safe with respect to lineage.
+func childVMNames(parent string) ([]string, error) {
+	vms, err := vmconfig.List(nil)
+	if err != nil {
+		return nil, fmt.Errorf("list VMs: %w", err)
+	}
+	var children []string
+	for _, vm := range vms {
+		if vm.Name == parent {
+			continue
+		}
+		cfg, err := vmconfig.Load(vm.Path)
+		if err != nil {
+			// Skip unreadable configs; they can't claim parentage.
+			continue
+		}
+		if cfg.ParentVM == parent {
+			children = append(children, vm.Name)
+		}
+	}
+	sort.Strings(children)
+	return children, nil
 }
 
 // RenameVM renames a VM.
