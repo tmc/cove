@@ -98,11 +98,17 @@ func validateBuildCacheEntry(entry buildCacheEntry) error {
 		"script digest": entry.ScriptDigest,
 	} {
 		if digest == "" {
-			continue
+			return fmt.Errorf("empty %s", name)
 		}
 		if _, _, err := splitStoreDigest(digest); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
+	}
+	if entry.AgentProtocolVersion == "" {
+		return fmt.Errorf("empty agent protocol version")
+	}
+	if err := validateCompactMode(entry.Compact); err != nil {
+		return fmt.Errorf("compact: %w", err)
 	}
 	return nil
 }
@@ -124,9 +130,25 @@ func validateBuildLayerManifest(manifest buildLayerManifest) error {
 		if block.Size <= 0 {
 			return fmt.Errorf("block %d: invalid size %d", i, block.Size)
 		}
+		if block.Size > manifest.BlockSize {
+			return fmt.Errorf("block %d: size %d exceeds block size %d", i, block.Size, manifest.BlockSize)
+		}
+		if block.Offset%manifest.BlockSize != 0 {
+			return fmt.Errorf("block %d: unaligned offset %d", i, block.Offset)
+		}
+		if block.Offset+block.Size > manifest.DiskSize {
+			return fmt.Errorf("block %d: range exceeds disk size", i)
+		}
 		if _, _, err := splitStoreDigest(block.Digest); err != nil {
 			return fmt.Errorf("block %d digest: %w", i, err)
 		}
+	}
+	want, err := digestBuildLayerManifest(manifest)
+	if err != nil {
+		return err
+	}
+	if manifest.Digest != want {
+		return fmt.Errorf("digest %s, want %s", manifest.Digest, want)
 	}
 	return nil
 }

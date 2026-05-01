@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/store"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 func TestParseBuildScriptMeta(t *testing.T) {
@@ -121,7 +122,7 @@ func TestBuildDryPlanChainsKeys(t *testing.T) {
 	if err := os.WriteFile(step2, []byte("exec echo two\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:base", Scripts: []string{step1, step2}, Compact: "targeted"}
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), Scripts: []string{step1, step2}, Compact: "targeted"}
 	plan, err := buildDryPlan(context.Background(), "vm", opts, nil)
 	if err != nil {
 		t.Fatalf("buildDryPlan(): %v", err)
@@ -132,6 +133,84 @@ func TestBuildDryPlanChainsKeys(t *testing.T) {
 	if plan.Steps[0].Key == plan.Steps[1].Key {
 		t.Fatalf("chained step keys should differ: %s", plan.Steps[0].Key)
 	}
+	if plan.Steps[0].ParentDigest != plan.ParentDigest {
+		t.Fatalf("step 1 parent digest = %q, want %q", plan.Steps[0].ParentDigest, plan.ParentDigest)
+	}
+	if plan.Steps[1].ParentDigest != plan.Steps[0].Key {
+		t.Fatalf("step 2 parent digest = %q, want %q", plan.Steps[1].ParentDigest, plan.Steps[0].Key)
+	}
+	if plan.Steps[0].ScriptDigest == "" || plan.Steps[1].ScriptDigest == "" {
+		t.Fatalf("script digests = %q, %q; want non-empty", plan.Steps[0].ScriptDigest, plan.Steps[1].ScriptDigest)
+	}
+	if plan.Steps[0].Source != step1 || string(plan.Steps[0].Data) != "exec echo one\n" {
+		t.Fatalf("step 1 source/data = %q/%q, want script contents", plan.Steps[0].Source, plan.Steps[0].Data)
+	}
+	if plan.Steps[1].Source != step2 || string(plan.Steps[1].Data) != "exec echo two\n" {
+		t.Fatalf("step 2 source/data = %q/%q, want script contents", plan.Steps[1].Source, plan.Steps[1].Data)
+	}
+}
+
+func TestBuildDryPlanAcceptsLocalBaseDir(t *testing.T) {
+	dir := t.TempDir()
+	parentDir := filepath.Join(dir, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	opts := buildOptions{Base: parentDir, Scripts: []string{script}, Compact: "targeted"}
+	plan, err := buildDryPlan(context.Background(), "vm", opts, nil)
+	if err != nil {
+		t.Fatalf("buildDryPlan(): %v", err)
+	}
+	if plan.ParentDigest == "" || plan.Steps[0].ParentDigest != plan.ParentDigest {
+		t.Fatalf("parent digest = %q step parent = %q", plan.ParentDigest, plan.Steps[0].ParentDigest)
+	}
+	if err := os.WriteFile(filepath.Join(parentDir, "disk.img"), []byte("changed image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := buildDryPlan(context.Background(), "vm", opts, nil)
+	if err != nil {
+		t.Fatalf("buildDryPlan(changed): %v", err)
+	}
+	if changed.ParentDigest == plan.ParentDigest {
+		t.Fatalf("parent digest did not change after disk mutation: %s", plan.ParentDigest)
+	}
+}
+
+func TestBuildDryPlanLocalBaseRequiresMetadata(t *testing.T) {
+	dir := t.TempDir()
+	parentDir := filepath.Join(dir, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(parentDir, "disk.img"), []byte("base image\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	opts := buildOptions{Base: parentDir, Scripts: []string{script}, Compact: "targeted"}
+	_, err := buildDryPlan(context.Background(), "vm", opts, nil)
+	if err == nil {
+		t.Fatal("buildDryPlan() error = nil, want missing metadata")
+	}
+	if !strings.Contains(err.Error(), "aux.img") {
+		t.Fatalf("buildDryPlan() = %v, want missing aux.img", err)
+	}
 }
 
 func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
@@ -141,7 +220,7 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := store.New(filepath.Join(dir, "store"))
-	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:base", Scripts: []string{script}, Compact: "targeted"}
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), Scripts: []string{script}, Compact: "targeted"}
 	plan, err := buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
 	if err != nil {
 		t.Fatalf("buildDryPlanWithStore(): %v", err)
@@ -150,7 +229,7 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 		t.Fatalf("steps = %d, want 1", len(plan.Steps))
 	}
 	layer := digestBytes([]byte("layer"))
-	if err := saveBuildCacheEntry(s, buildCacheEntry{Key: plan.Steps[0].Key, LayerDigest: layer}); err != nil {
+	if err := saveBuildCacheEntry(s, testCacheEntryForStep(plan.Steps[0], layer)); err != nil {
 		t.Fatalf("saveBuildCacheEntry(): %v", err)
 	}
 	plan, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
@@ -167,6 +246,96 @@ func TestBuildDryPlanReportsLocalCacheHit(t *testing.T) {
 	}
 	if plan.Steps[0].CacheHit {
 		t.Fatal("CacheHit = true with NoCache")
+	}
+}
+
+func TestBuildDryPlanRejectsMismatchedLocalCacheHit(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(filepath.Join(dir, "store"))
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), Scripts: []string{script}, Compact: "targeted"}
+	plan, err := buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(): %v", err)
+	}
+	layer := digestBytes([]byte("layer"))
+	entry := testCacheEntryForStep(plan.Steps[0], layer)
+	entry.ScriptDigest = digestBytes([]byte("other script"))
+	if err := saveBuildCacheEntry(s, entry); err != nil {
+		t.Fatalf("saveBuildCacheEntry(): %v", err)
+	}
+	_, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err == nil {
+		t.Fatal("buildDryPlanWithStore() error = nil, want script digest mismatch")
+	}
+	if !strings.Contains(err.Error(), "script digest") {
+		t.Fatalf("buildDryPlanWithStore() = %v, want script digest mismatch", err)
+	}
+}
+
+func TestBuildDryPlanExpiresLocalCacheHit(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "one.vzscript")
+	if err := os.WriteFile(script, []byte("# cache-ttl: 1h\nexec echo one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(filepath.Join(dir, "store"))
+	opts := buildOptions{Base: "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), Scripts: []string{script}, Compact: "targeted"}
+	plan, err := buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(): %v", err)
+	}
+	layer := digestBytes([]byte("layer"))
+	entry := testCacheEntryForStep(plan.Steps[0], layer)
+	entry.CreatedAt = time.Now().Add(-2 * time.Hour).UTC()
+	if err := saveBuildCacheEntry(s, entry); err != nil {
+		t.Fatalf("saveBuildCacheEntry(): %v", err)
+	}
+	plan, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(expired): %v", err)
+	}
+	if plan.Steps[0].CacheHit {
+		t.Fatalf("CacheHit = true for expired entry created at %s", entry.CreatedAt)
+	}
+	entry.CreatedAt = time.Now().UTC()
+	if err := saveBuildCacheEntry(s, entry); err != nil {
+		t.Fatalf("saveBuildCacheEntry(fresh): %v", err)
+	}
+	plan, err = buildDryPlanWithStore(context.Background(), "vm", opts, nil, s)
+	if err != nil {
+		t.Fatalf("buildDryPlanWithStore(fresh): %v", err)
+	}
+	if !plan.Steps[0].CacheHit || plan.Steps[0].LayerDigest != layer {
+		t.Fatalf("cache hit = %v layer = %q, want hit %q", plan.Steps[0].CacheHit, plan.Steps[0].LayerDigest, layer)
+	}
+}
+
+func TestBuildPlanWarnings(t *testing.T) {
+	plan := buildPlan{Steps: []buildPlanStep{{
+		Name: "env",
+		Meta: buildScriptMeta{
+			CacheEnv: []string{"BUILD_NUMBER", "GITHUB_TOKEN", "OPENAI_API_KEY", "DB_PASSWORD"},
+			Compact:  "targeted",
+		},
+	}, {
+		Name: "fast-secret",
+		Meta: buildScriptMeta{
+			Secrets: []string{"SIGNING_KEY"},
+			Compact: "fast",
+		},
+	}}}
+	warnings := buildPlanWarnings(plan)
+	for _, want := range []string{"GITHUB_TOKEN", "OPENAI_API_KEY", "DB_PASSWORD", "compact: fast"} {
+		if !containsBuildWarning(warnings, want) {
+			t.Fatalf("warnings missing %q: %#v", want, warnings)
+		}
+	}
+	if containsBuildWarning(warnings, "BUILD_NUMBER") {
+		t.Fatalf("warnings included non-secret cache env: %#v", warnings)
 	}
 }
 
@@ -205,7 +374,7 @@ func TestHandleBuildReportsCacheHitWithStoreDir(t *testing.T) {
 		t.Fatalf("buildDryPlan(): %v", err)
 	}
 	layer := digestBytes([]byte("layer"))
-	if err := saveBuildCacheEntry(store.New(storeDir), buildCacheEntry{Key: plan.Steps[0].Key, LayerDigest: layer}); err != nil {
+	if err := saveBuildCacheEntry(store.New(storeDir), testCacheEntryForStep(plan.Steps[0], layer)); err != nil {
 		t.Fatalf("saveBuildCacheEntry(): %v", err)
 	}
 	out, err := captureStdoutResult(t, func() error {
@@ -222,6 +391,30 @@ func TestHandleBuildReportsCacheHitWithStoreDir(t *testing.T) {
 	}
 	if !strings.Contains(out, "cache: hit ("+layer+")") {
 		t.Fatalf("output missing cache hit %q:\n%s", layer, out)
+	}
+}
+
+func TestHandleBuildRejectsRegistryCacheRefs(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("exec echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := handleBuild([]string{
+		"test-image",
+		"--base", "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64),
+		"--script", script,
+		"--cache-from", "ghcr.io/acme/build-cache:cache",
+		"--cache-to", "ghcr.io/acme/build-cache:cache",
+		"--dry-run",
+	})
+	if err == nil {
+		t.Fatal("handleBuild() error = nil, want unsupported registry cache error")
+	}
+	for _, want := range []string{"--cache-from", "--cache-to", "not implemented"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("handleBuild() error = %q, want %q", err, want)
+		}
 	}
 }
 
@@ -255,12 +448,150 @@ func TestSplitBuildArgs(t *testing.T) {
 	}
 }
 
-func TestHandleBuildRequiresDryRun(t *testing.T) {
+func TestHandleBuildRunsLocalBase(t *testing.T) {
+	restoreControl := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restoreControl()
+	oldStart := defaultBuildGuestStart
+	oldCompact := defaultBuildCompact
+	defer func() {
+		defaultBuildGuestStart = oldStart
+		defaultBuildCompact = oldCompact
+	}()
+	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	parentDir := filepath.Join(home, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := filepath.Join(home, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdoutResult(t, func() error {
+		return handleBuild([]string{
+			"test-image",
+			"--base", parentDir,
+			"--script", script,
+			"--store-dir", filepath.Join(home, "store"),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handleBuild(): %v", err)
+	}
+	if !strings.Contains(out, "Build complete") || !strings.Contains(out, "steps: 1") {
+		t.Fatalf("output missing build result:\n%s", out)
+	}
+}
+
+func TestHandleBuildPushesTags(t *testing.T) {
+	restoreControl := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restoreControl()
+	oldStart := defaultBuildGuestStart
+	oldCompact := defaultBuildCompact
+	oldPusher := defaultBuildResultPusher
+	defer func() {
+		defaultBuildGuestStart = oldStart
+		defaultBuildCompact = oldCompact
+		defaultBuildResultPusher = oldPusher
+	}()
+	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
+	var pushed []string
+	var pushedDir string
+	var pushedChunkSize int64
+	defaultBuildResultPusher = func(ctx context.Context, vmDir, ref string, opts pushOptions) error {
+		pushedDir = vmDir
+		pushed = append(pushed, ref)
+		pushedChunkSize = opts.ChunkSize
+		return nil
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	parentDir := filepath.Join(home, "parent")
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"disk.img":   "base image\n",
+		"aux.img":    "aux",
+		"hw.model":   "hw",
+		"machine.id": "machine",
+	} {
+		if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := filepath.Join(home, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdoutResult(t, func() error {
+		return handleBuild([]string{
+			"test-image",
+			"--base", parentDir,
+			"--script", script,
+			"--tag", "ghcr.io/me/test:v1",
+			"--tag", "ghcr.io/me/test:latest",
+			"--push",
+			"--chunk-size", "1",
+			"--store-dir", filepath.Join(home, "store"),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handleBuild(): %v", err)
+	}
+	if !reflect.DeepEqual(pushed, []string{"ghcr.io/me/test:v1", "ghcr.io/me/test:latest"}) {
+		t.Fatalf("pushed refs = %#v", pushed)
+	}
+	if pushedDir == "" {
+		t.Fatal("pushed vm dir is empty")
+	}
+	if pushedChunkSize != 1<<20 {
+		t.Fatalf("pushed chunk size = %d, want %d", pushedChunkSize, int64(1<<20))
+	}
+	if !strings.Contains(out, "pushed: 2") {
+		t.Fatalf("output missing push count:\n%s", out)
+	}
+}
+
+func TestHandleBuildNonDryRunRequiresLocalBase(t *testing.T) {
 	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "vm"})
 	if err == nil {
-		t.Fatal("handleBuild() error = nil, want dry-run-only error")
+		t.Fatal("handleBuild() error = nil, want local-base error")
 	}
-	if !strings.Contains(err.Error(), "only --dry-run is implemented") {
+	if !strings.Contains(err.Error(), "requires local VM base directory") {
+		t.Fatalf("handleBuild() error = %q", err)
+	}
+}
+
+func TestHandleBuildPushRequiresTag(t *testing.T) {
+	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "--push", "vm"})
+	if err == nil {
+		t.Fatal("handleBuild() error = nil, want tag error")
+	}
+	if !strings.Contains(err.Error(), "--push requires at least one --tag") {
 		t.Fatalf("handleBuild() error = %q", err)
 	}
 }
@@ -271,4 +602,13 @@ func testBuildStep(data string) buildStep {
 		panic(err)
 	}
 	return buildStep{Name: "test", Source: "test.vzscript", Data: []byte(data), Meta: meta}
+}
+
+func containsBuildWarning(list []string, substr string) bool {
+	for _, s := range list {
+		if strings.Contains(s, substr) {
+			return true
+		}
+	}
+	return false
 }

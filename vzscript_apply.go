@@ -493,6 +493,13 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 }
 
 func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
+	return runVZScriptContext(context.Background(), data, name, cfg)
+}
+
+func runVZScriptContext(ctx context.Context, data []byte, name string, cfg vzscriptConfig) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var err error
 	data, err = maybeRenderVZScript(data, name, cfg)
 	if err != nil {
@@ -521,7 +528,7 @@ func runVZScript(data []byte, name string, cfg vzscriptConfig) error {
 
 	env := os.Environ()
 	env = append(env, cfg.env...)
-	state, err := script.NewState(context.Background(), workdir, env)
+	state, err := script.NewState(ctx, workdir, env)
 	if err != nil {
 		return err
 	}

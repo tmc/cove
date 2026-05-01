@@ -264,26 +264,27 @@ var cliDocSpecs = []cliDocSpec{
 	{Name: "compact", Summary: "Zero guest free space for smaller OCI pushes.", Usage: func() string {
 		return captureWriter(printCompactUsage)
 	}},
-	{Name: "build", Summary: "Plan cache-keyed VM image builds from vzscript steps. Dry-run planning only until VM execution lands.", Usage: func() string {
+	{Name: "build", Summary: "Build VM images from vzscript steps with content-addressed cache keys. Non-dry-run execution requires a local VM base directory.", Usage: func() string {
 		return captureWriter(printBuildUsage)
 	}, Flags: []cliFlagDoc{
-		{Name: "--base", Argument: "<ref>", Summary: "Base OCI image reference."},
+		{Name: "--base", Argument: "<ref|dir>", Summary: "Base OCI image reference or local VM directory."},
 		{Name: "--script", Argument: "<name|path>", Summary: "Built-in vzscript recipe or .vzscript path.", Repeatable: true},
 		{Name: "--tag", Argument: "<ref>", Summary: "Output OCI image tag.", Repeatable: true},
-		{Name: "--push", Summary: "Push output tags after build. Requires future execution support."},
+		{Name: "--push", Summary: "Push output tags after build."},
 		{Name: "--dry-run", Summary: "Print the resolved build plan and cache keys only."},
 		{Name: "--no-cache", Summary: "Run every step even when a cache entry exists."},
-		{Name: "--cache-from", Argument: "<ref>", Summary: "Registry cache source.", Repeatable: true},
-		{Name: "--cache-to", Argument: "<ref>", Summary: "Registry cache destination.", Repeatable: true},
-		{Name: "--keep-intermediate", Summary: "Leave scratch VMs behind for debugging. Requires future execution support."},
+		{Name: "--cache-from", Argument: "<ref>", Summary: "Reserved for registry cache import.", Repeatable: true},
+		{Name: "--cache-to", Argument: "<ref>", Summary: "Reserved for registry cache export.", Repeatable: true},
+		{Name: "--keep-intermediate", Summary: "Leave scratch VMs behind for debugging."},
 		{Name: "--chunk-size", Argument: "<mb>", Summary: "Chunk size in MiB.", Default: "512"},
 		{Name: "--compact", Argument: "<mode>", Summary: "Compaction mode: fast, targeted, or thorough.", Default: "targeted"},
 		{Name: "--store-dir", Argument: "<dir>", Summary: "Content store directory.", Default: "~/.vz/store"},
 	}, Examples: []string{
 		"cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --dry-run",
-		"cove build macos-agent --base ghcr.io/me/base:v1 --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --dry-run",
+		"cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1",
+		"cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --push",
 	}},
-	{Name: "push", Summary: "Plan or push a VM disk as an OCI image.", Usage: func() string {
+	{Name: "push", Summary: "Plan or push a VM disk as an OCI image. Source may be a VM name or local VM directory.", Usage: func() string {
 		return captureWriter(printPushUsage)
 	}, Flags: []cliFlagDoc{
 		{Name: "--base", Argument: "<ref>", Summary: "Base image for delta push."},
@@ -294,6 +295,7 @@ var cliDocSpecs = []cliDocSpec{
 		{Name: "--manifest-out", Argument: "<path>", Summary: "Write OCI manifest JSON to path."},
 	}, Examples: []string{
 		"cove push dev-vm ghcr.io/me/dev-vm:v1 --dry-run",
+		"cove push ~/.vz/build-scratch/20260430T120000Z-deadbeef ghcr.io/me/dev-vm:v1 --dry-run",
 		"cove push dev-vm ghcr.io/me/dev-vm:v2 --base ghcr.io/me/dev-vm:v1",
 	}},
 	{Name: "pull", Summary: "Validate or pull an OCI VM image.", Usage: func() string {

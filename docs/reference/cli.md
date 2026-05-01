@@ -602,10 +602,11 @@ cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --m
 
 Plan or push a VM disk as an OCI image. Push compresses non-zero disk chunks as
 LZ4 OCI layers, skips sparse zero chunks, uploads missing blobs, and publishes
-the manifest tag. Use `--dry-run` to inspect the plan without uploading.
+the manifest tag. The source can be a VM name or an existing VM directory. Use
+`--dry-run` to inspect the plan without uploading.
 
 ```
-cove push <vm> <ref> [flags]
+cove push <vm|dir> <ref> [flags]
 ```
 
 | Flag | Default | Description |
@@ -619,6 +620,7 @@ cove push <vm> <ref> [flags]
 
 ```bash
 cove push dev-vm ghcr.io/me/dev-vm:v1
+cove push ~/.vz/build-scratch/20260430T120000Z-deadbeef ghcr.io/me/dev-vm:v1 --dry-run
 cove push dev-vm ghcr.io/me/dev-vm:v2 --base ghcr.io/me/dev-vm:v1
 cove push dev-vm ghcr.io/me/dev-vm:v2 --lume-compat --additional-tag latest
 cove push dev-vm ghcr.io/me/dev-vm:v1 --dry-run --manifest-out manifest.json
@@ -648,10 +650,10 @@ cove compact -vm dev-vm
 
 ## build
 
-Plan cache-keyed VM image builds from vzscript steps. This command currently
-ships dry-run planning only: it resolves the base image, parses build step
-metadata, computes cache keys, and reports local cache hits without booting a
-scratch VM.
+Build VM images from vzscript steps with content-addressed cache keys. `--dry-run`
+prints the resolved plan, cache keys, and local cache hits without booting a
+scratch VM. Non-dry-run execution currently requires a local VM directory as the
+base; registry bases remain planning-only until base materialization lands.
 
 ```
 cove build <name> --base <ref> --script <step> [flags]
@@ -659,26 +661,45 @@ cove build <name> --base <ref> --script <step> [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--base <ref>` | | Base OCI image reference |
+| `--base <ref\|dir>` | | Base OCI image reference or local VM directory |
 | `--script <name\|path>` | | Built-in vzscript recipe or .vzscript path (repeatable) |
 | `--tag <ref>` | | Output OCI image tag (repeatable) |
-| `--push` | false | Push output tags after build; requires future execution support |
+| `--push` | false | Push output tags after build |
 | `--dry-run` | false | Print the resolved build plan and cache keys only |
 | `--no-cache` | false | Re-run every step instead of restoring cached layers |
-| `--cache-from <ref>` | | Registry cache source (repeatable) |
-| `--cache-to <ref>` | | Registry cache destination (repeatable) |
-| `--keep-intermediate` | false | Leave scratch VMs behind for debugging; requires future execution support |
+| `--cache-from <ref>` | | Reserved for registry cache import (repeatable) |
+| `--cache-to <ref>` | | Reserved for registry cache export (repeatable) |
+| `--keep-intermediate` | false | Leave scratch VMs behind for debugging |
 | `--chunk-size <mb>` | 512 | Chunk size in MiB |
 | `--compact <mode>` | targeted | Compaction mode: fast, targeted, or thorough |
 | `--store-dir <dir>` | `~/.vz/store` | Content store directory |
 
 ```bash
 cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --dry-run
-cove build macos-agent --base ghcr.io/me/base:v1 --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --dry-run
+cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1
+cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --push
 ```
 
-Non-dry-run builds fail with `cove build: only --dry-run is implemented` until
-the v0.3 VM execution path lands.
+Non-dry-run registry-base builds fail with
+`cove build: non-dry-run requires local VM base directory`. `--push` requires at
+least one `--tag` and pushes the reported final VM directory after a successful
+local-base build.
+
+Registry cache import/export is not implemented yet. Builds that pass
+`--cache-from` or `--cache-to` fail before planning instead of silently ignoring
+the remote cache ref.
+
+Scripts may declare `# secret:` names for host environment variables that must
+exist before guest execution starts. During the step, declared values are written
+as `0600` files under `/tmp/cove-secrets/<NAME>` in a guest tmpfs or RAM disk,
+then unmounted after the script finishes. Linux guests fail closed if swap cannot
+be disabled before secrets are mounted. Use `# cache-env:` only for non-secret
+cache inputs; names that look like tokens, passwords, secrets, or keys emit a
+warning.
+
+Build compaction modes are step-local: `fast` skips guest cleanup, `targeted`
+clears common churn paths before the diff, and `thorough` runs the full
+agent-aware free-space compactor.
 
 ---
 

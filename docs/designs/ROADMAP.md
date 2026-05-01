@@ -35,17 +35,37 @@ protect that wedge instead of chasing disconnected features.
 ## Review decisions
 
 - The prior implementation review findings are closed: malformed manifest
-  digests now return validation errors, and `cove build` is explicitly
-  dry-run-only until VM execution lands.
+  digests now return validation errors, and `cove build` local-base execution
+  now runs VM steps, skips cache-hit steps, persists metadata, and leaves
+  pushable image state.
 - Soft reset failed as an isolation boundary. Use fork/restore for
   privacy-critical evals; do not publish "thousands per hour" style soft-reset
   claims. See [015](015-soft-reset-empirical.md).
 - `cove` is not clean for public software/registry branding based on the
   preliminary USPTO search. Public registry, signed image distribution, and
   product-name claims need a legal/product decision first.
-- v0.3 work stops at `cove build` dry-run planning unless the execution path
-  actually runs steps in a VM, skips cache-hit steps, persists metadata, and
-  produces pushable image state.
+
+## RC scope: what ships and what's deferred
+
+This boundary is canonical and must agree with the CLI reference, changelog,
+release checklist, [016](016-notebooklm-roadmap-refresh-2026-04-30.md), and
+[017](017-v03-execution-roadmap.md).
+
+**Ships in this RC.** `cove build` non-dry-run execution against a local VM
+directory base (cache hits validate metadata and skip guest execution; misses
+fork a scratch VM, run vzscript steps through the agent, and persist verified
+layer manifests); `# secret:` tmpfs handling with guest swap disabled; build
+pipeline compaction (`fast`, `targeted`, `thorough`); cache TTL and full
+metadata validation before apply; published fork-only and boot-to-agent fork
+benchmarks on named M4 hardware; OpenAI Agents SDK adapter v1 with live-smoke
+and package-check documentation.
+
+**Explicitly deferred.** Registry-base `cove build` execution; registry cache
+import/export (`--cache-from`, `--cache-to`); public curated `cove` image
+registry and signed agentkit image channels; external secret stores
+(1Password, Vault, SOPS, age); BuildKit-style parallel step execution; Packer
+plugin shim; product-name resolution before any public registry or signed
+channel.
 
 ## v0.1.2 - Reliability & Stale-State Cleanup
 
@@ -73,14 +93,14 @@ protect that wedge instead of chasing disconnected features.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| `cove build` VM execution path | must | v0.2 store + dry-run planner | [003](003-cove-build-oci-caching.md) | Turns the landed dry-run planner into a real build: create scratch VM, restore/cache-hit layers, execute misses, persist metadata, and leave pushable image state. |
-| Secrets via tmpfs (`# secret:` directive) with guest swap disabled | must | build execution | [003](003-cove-build-oci-caching.md) | Prevents secret leakage into pushed OCI block diffs. |
-| `cove build` compaction integration | must | build execution | [002](002-cove-disks-oci.md), [003](003-cove-build-oci-caching.md) | Wires the shipped agent-aware `cove compact` behavior into the build pipeline before diffing and pushing images. |
+| `cove build` VM execution path | done | v0.2 store + dry-run planner | [003](003-cove-build-oci-caching.md) | Local-base builds create scratch VMs, restore cache-hit layers, execute misses, persist metadata, and leave pushable image state. Registry-base execution remains deferred. |
+| Secrets via tmpfs (`# secret:` directive) with guest swap disabled | done | build execution | [003](003-cove-build-oci-caching.md) | Prevents secret leakage into pushed OCI block diffs. |
+| `cove build` compaction integration | done | build execution | [002](002-cove-disks-oci.md), [003](003-cove-build-oci-caching.md) | Wires `fast`, `targeted`, and `thorough` build compaction into the pipeline before diffing and pushing images. |
 | Fork-only benchmark publication | done | existing fork support | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-20260427.md) | Published 132-140 ms stopped-VM fork measurements on the M4 smoke host after soft reset failed as the isolation primitive. |
-| Boot-to-agent fork benchmark publication | must | existing fork support + reachable agent base image | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench](../../bench/fork-time/README.md) | Publishes the product-relevant time from fork command to agent reachability. This remains the honest F1 ship-gate number. |
+| Boot-to-agent fork benchmark publication | done | existing fork support + reachable agent base image | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-agent-20260430.md) | Published the product-relevant time from fork command to agent reachability on named M4 Max hardware. |
 | ControlServer decomposition - phase 3 (`internal/control`) | should | v0.2 phases 1+2 | [008](008-codebase-cleanup-plan.md) | Completes the cleanup arc started in v0.2. |
 | OpenAI Agents SDK adapter v1 | done | fork/restore + control socket | [012](012-product-roadmap-2026.md), [OpenAI example](../examples/openai-agents.md) | Proves the agent-substrate pitch with a fork-first local adapter under `adapters/openai-agents-python`. |
-| OpenAI adapter release hardening | should | adapter v1 + boot-to-agent benchmark | [012](012-product-roadmap-2026.md), [017](017-v03-execution-roadmap.md) | Adds live smoke coverage, packaging checks, and README polish before treating the adapter as a release surface. |
+| OpenAI adapter release hardening | done | adapter v1 + boot-to-agent benchmark | [012](012-product-roadmap-2026.md), [017](017-v03-execution-roadmap.md) | Added live smoke instructions, package checks, and fork-first example polish before treating the adapter as a release surface. |
 | Anthropic sandbox-runtime adapter | should | OpenAI adapter lessons | [012](012-product-roadmap-2026.md) | Expands agent integrations after the first adapter proves the shape. |
 | Curated agentkit base images | should | build execution + trademark decision | [012](012-product-roadmap-2026.md) | Prepares the v1.0 registry story without publishing under a blocked name. |
 | Packer plugin shim decision | maybe | none | gap vs tart Packer integration | Decide whether a shim accelerates adoption or distracts from the `cove build` moat. |
@@ -96,9 +116,10 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 2. Cache-hit materialization, so cached layers can apply without guest boot. See
    [019](019-v03-cache-hit-materialization.md).
 3. Cache-miss VM execution, block diff production, metadata persistence, and
-   the point where non-dry-run `cove build` becomes supported.
+   the point where non-dry-run `cove build` becomes supported. See
+   [020](020-v03-cache-miss-execution.md).
 4. `# secret:` tmpfs handling with guest no-swap verification.
-5. Build-pipeline compaction integration and measured default selection.
+5. Build-pipeline compaction integration with `targeted` as the current default.
 6. Boot-to-agent benchmark publication plus OpenAI adapter release hardening.
 
 ## v0.3 execution order
@@ -139,7 +160,9 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-04-30**: Reconciled docs with branch reality for the RC: `cove build` local-base execution, `# secret:` tmpfs, build-pipeline compaction, fork benchmarks, and OpenAI adapter hardening are all marked landed; deferred-items boundary made canonical and consistent across CLI reference, changelog, ROADMAP, 016, 017, and the release checklist.
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
+- **2026-04-30**: Added the Slice 3 cache-miss execution plan and started the metadata persistence implementation.
 - **2026-04-30**: Added the Slice 2 cache-hit materialization plan, including validation-before-scratch and failure-atomicity rules.
 - **2026-04-30**: Added the Slice 1 build-executor scaffold plan, including scratch lifecycle tests and the side-effect-free dry-run rule.
 - **2026-04-30**: Added the v0.3 execution-slice roadmap and corrected OpenAI adapter v1 status to done; remaining adapter work is release hardening.

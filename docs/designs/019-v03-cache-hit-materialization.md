@@ -18,9 +18,10 @@ scratch lifecycle and the existing disk-delta functions:
 - `loadBuildLayerManifest`
 - `ApplyStoredDiskDelta`
 
-The public command remains dry-run-only until Slice 3. Slice 2 code should be
-reachable from unit tests and internal executor tests, not from the public
-non-dry-run CLI path.
+At the time of this slice, the public command remained dry-run-only until Slice
+3. Slice 2 code was intended to be reachable from unit tests and internal
+executor tests, not from the public non-dry-run CLI path. Slice 3 has since
+landed local-base execution.
 
 ## Internal shape
 
@@ -124,9 +125,10 @@ Virtualization.framework, and real VM dependencies.
 
 ## Docs
 
-Public CLI docs should continue to say that non-dry-run `cove build` is not
-implemented. Update `docs/designs/003-cove-build-oci-caching.md` only if the
-implementation intentionally changes the block-delta or manifest format.
+This was true while Slice 2 was in progress: public CLI docs should continue to
+say that non-dry-run `cove build` is not implemented. Slice 3 has since landed
+local-base execution, so current public docs now describe the local-base
+execution path and keep registry bases planning-only.
 
 An internal changelog note is optional; do not imply user-visible build
 execution is available.

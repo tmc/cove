@@ -72,5 +72,5 @@ graph TD
 | Level | Features |
 |-------|----------|
 | GA | install, run, provisioning, vzscripts, suspend/resume |
-| Beta | snapshots, guest agent, clipboard sharing, shared folders, Linux guests, OCI push/pull, VM fork/restore, `cove compact`, local content-addressed store |
-| Experimental | `cove build --dry-run` cache planning, UTM import, memory balloon, Windows stub |
+| Beta | snapshots, guest agent, clipboard sharing, shared folders, Linux guests, OCI push/pull, VM fork/restore, `cove compact`, local content-addressed store, `cove build` for local VM-directory bases (cache-aware execution, `# secret:` tmpfs, compaction) |
+| Experimental | `cove build` registry-base execution and registry cache import/export (planning-only), UTM import, memory balloon, Windows stub |

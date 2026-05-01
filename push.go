@@ -148,7 +148,7 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 	if err := validatePushReferences(ref, opts); err != nil {
 		return nil, err
 	}
-	vmDirectory := vmconfig.Path(vmName)
+	vmDirectory := pushSourceDir(vmName)
 	if !vmconfig.Validate(vmDirectory) {
 		return nil, fmt.Errorf("vm not found or invalid: %s", vmDirectory)
 	}
@@ -216,6 +216,22 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func pushSourceDir(name string) string {
+	if path, ok := localVMDirectory(name); ok {
+		return path
+	}
+	return vmconfig.Path(name)
+}
+
+func localVMDirectory(name string) (string, bool) {
+	path := expandHome(name)
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() || !vmconfig.Validate(path) {
+		return "", false
+	}
+	return resolvePath(path), true
 }
 
 func preparePushChunkLayers(r io.ReaderAt, chunks []ociimage.Chunk, lumeCompat bool) ([]ociimage.PreparedChunk, []ociimage.Descriptor, error) {
@@ -533,14 +549,15 @@ func printPushDryRun(w io.Writer, plan *pushPlan) {
 }
 
 func printPushUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove push <vm> <ref> [flags]
+	fmt.Fprintln(w, `Usage: cove push <vm|dir> <ref> [flags]
 
 Plan or push a VM disk as an OCI image.
 
 Push compresses non-zero disk chunks as LZ4 OCI layers, skips sparse zero
 chunks, uploads missing blobs, and publishes the manifest tag. With --base,
 push fetches the base manifest and reuses matching chunk blobs from the same
-registry. Use --dry-run to inspect the local chunk plan without network access.
+registry. The source can be a VM name or an existing VM directory. Use --dry-run
+to inspect the local chunk plan without network access.
 
 Flags:
   --base <ref>              Base image for delta push

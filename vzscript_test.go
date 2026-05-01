@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -63,6 +64,15 @@ func TestVZScriptLabelsLogAndPop(t *testing.T) {
 		if !strings.Contains(got, w) {
 			t.Fatalf("log missing %q\n%s", w, got)
 		}
+	}
+}
+
+func TestRunVZScriptContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := runVZScriptContext(ctx, []byte("echo hello\n"), "cancel.vzscript", vzscriptConfig{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runVZScriptContext() = %v, want context.Canceled", err)
 	}
 }
 

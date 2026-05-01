@@ -27,3 +27,8 @@ nohup.out
 # IDE/tool config
 .claude/
 *.cstemp
+
+# Python adapter
+__pycache__/
+*.pyc
+.pytest_cache/

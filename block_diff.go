@@ -92,16 +92,25 @@ func ApplyDiskDelta(parentPath, childPath string, delta *diskDelta) error {
 	if delta.Size < 0 {
 		return fmt.Errorf("apply delta: invalid size %d", delta.Size)
 	}
-	if err := cloneFile(parentPath, childPath); err != nil {
-		if err := copyFile(parentPath, childPath); err != nil {
+	partialPath := childPath + ".partial"
+	if err := os.Remove(partialPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("apply delta: remove partial: %w", err)
+	}
+	if err := cloneFile(parentPath, partialPath); err != nil {
+		if err := copyFile(parentPath, partialPath); err != nil {
 			return fmt.Errorf("apply delta: copy parent: %w", err)
 		}
 	}
-	f, err := os.OpenFile(childPath, os.O_RDWR, 0)
+	f, err := os.OpenFile(partialPath, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("apply delta: open child: %w", err)
 	}
-	defer f.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			f.Close()
+		}
+	}()
 	if err := f.Truncate(delta.Size); err != nil {
 		return fmt.Errorf("apply delta: truncate: %w", err)
 	}
@@ -122,6 +131,13 @@ func ApplyDiskDelta(parentPath, childPath string, delta *diskDelta) error {
 	}
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("apply delta: sync: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("apply delta: close: %w", err)
+	}
+	closed = true
+	if err := os.Rename(partialPath, childPath); err != nil {
+		return fmt.Errorf("apply delta: rename partial: %w", err)
 	}
 	return nil
 }

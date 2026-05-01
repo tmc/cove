@@ -14,11 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/ociimage"
 	"golang.org/x/tools/txtar"
 )
 
-const agentProtocolVersion = "1"
+const agentProtocolVersion = agent.ProtocolVersion
 
 type buildStep struct {
 	Name   string
@@ -50,11 +51,16 @@ type buildCacheKeyInput struct {
 }
 
 type buildPlanStep struct {
-	Name        string
-	Key         string
-	LayerDigest string
-	CacheHit    bool
-	Meta        buildScriptMeta
+	Name                 string
+	Source               string
+	Data                 []byte
+	Key                  string
+	ParentDigest         string
+	ScriptDigest         string
+	AgentProtocolVersion string
+	LayerDigest          string
+	CacheHit             bool
+	Meta                 buildScriptMeta
 }
 
 type buildPlan struct {
@@ -341,7 +347,20 @@ func expandHome(path string) string {
 	return path
 }
 
+func localBuildBaseDir(refText string) (string, bool) {
+	path := expandHome(refText)
+	info, err := os.Stat(path)
+	return path, err == nil && info.IsDir()
+}
+
 func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Reference, string, error) {
+	if path, ok := localBuildBaseDir(refText); ok {
+		digest, err := digestLocalBuildBase(path)
+		if err != nil {
+			return ociimage.Reference{}, "", err
+		}
+		return ociimage.Reference{}, digest, nil
+	}
 	ref, err := ociimage.ParseReference(refText)
 	if err != nil {
 		return ref, "", err
@@ -355,4 +374,57 @@ func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Refer
 		return ref, "", err
 	}
 	return ref, digest, nil
+}
+
+func digestLocalBuildBase(dir string) (string, error) {
+	disk, err := pushDiskPath(dir)
+	if err != nil {
+		return "", fmt.Errorf("local build base: %w", err)
+	}
+	sourceOS := "macOS"
+	if filepath.Base(disk) == "linux-disk.img" {
+		sourceOS = "Linux"
+	}
+	names := []string{filepath.Base(disk)}
+	required := map[string]bool{filepath.Base(disk): true}
+	for _, spec := range cloneRequiredFiles(sourceOS) {
+		if spec.required {
+			required[spec.name] = true
+		}
+		if spec.name != filepath.Base(disk) {
+			names = append(names, spec.name)
+		}
+	}
+	names = append(names, cloneOptionalFiles(sourceOS)...)
+	names = uniqueSorted(names)
+
+	var b strings.Builder
+	writeKV(&b, "type", "local-vm")
+	writeKV(&b, "os", sourceOS)
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				if required[name] {
+					return "", fmt.Errorf("local build base %s: %w", name, err)
+				}
+				continue
+			}
+			return "", fmt.Errorf("local build base %s: %w", name, err)
+		}
+		if !info.Mode().IsRegular() {
+			if required[name] {
+				return "", fmt.Errorf("local build base %s is not a regular file", name)
+			}
+			continue
+		}
+		digest, err := hashFile(path)
+		if err != nil {
+			return "", fmt.Errorf("local build base %s: %w", name, err)
+		}
+		writeKV(&b, "file", name)
+		writeKV(&b, "digest", digest)
+	}
+	return digestBytes([]byte(b.String())), nil
 }

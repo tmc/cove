@@ -20,7 +20,7 @@ func TestCompactCommand(t *testing.T) {
 		wantErr  string
 	}{
 		{name: "linux", platform: agentstate.PlatformLinux, want: []string{"fstrim", "-v", "/"}},
-		{name: "macos", platform: agentstate.PlatformMacOS, want: []string{"diskutil", "secureErase", "freespace", "0", "/"}},
+		{name: "macos", platform: agentstate.PlatformMacOS, want: []string{"sh", "-c", macOSCompactScript}},
 		{name: "unknown", platform: "windows", wantErr: "unsupported guest platform"},
 	}
 
@@ -91,6 +91,21 @@ func TestCompactVMWithClientExitFailure(t *testing.T) {
 	_, err := compactVMWithClient(makeTestVMDir(t), client)
 	if err == nil || !strings.Contains(err.Error(), "exit 2: not enough space") {
 		t.Fatalf("compactVMWithClient() error = %v, want exit stderr", err)
+	}
+}
+
+func TestPrecheckCompactCapacityLinuxSkips(t *testing.T) {
+	// Linux uses fstrim in-place; precheck should be a no-op even with no
+	// disk.img present.
+	if err := precheckCompactCapacity(t.TempDir(), agentstate.PlatformLinux); err != nil {
+		t.Fatalf("precheckCompactCapacity(linux) = %v, want nil", err)
+	}
+}
+
+func TestPrecheckCompactCapacityMissingDisk(t *testing.T) {
+	err := precheckCompactCapacity(t.TempDir(), agentstate.PlatformMacOS)
+	if err == nil || !strings.Contains(err.Error(), "disk.img") {
+		t.Fatalf("precheckCompactCapacity(missing disk) = %v, want disk.img error", err)
 	}
 }
 

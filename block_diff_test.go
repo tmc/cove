@@ -68,4 +68,33 @@ func TestApplyDiskDeltaRejectsInvalidBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatal("ApplyDiskDelta() error = nil, want invalid block")
 	}
+	if _, err := os.Stat(child); !os.IsNotExist(err) {
+		t.Fatalf("child stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(child + ".partial"); err != nil {
+		t.Fatalf("partial stat: %v", err)
+	}
+}
+
+func TestApplyDiskDeltaFailurePreservesExistingChild(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "parent.img")
+	child := filepath.Join(dir, "child.img")
+	if err := os.WriteFile(parent, []byte("parent"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte("old child"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := ApplyDiskDelta(parent, child, &diskDelta{BlockSize: 4, Size: 2, Blocks: []diskDeltaBlock{{Offset: 4, Data: []byte{1}}}})
+	if err == nil {
+		t.Fatal("ApplyDiskDelta() error = nil, want invalid block")
+	}
+	got, err := os.ReadFile(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "old child" {
+		t.Fatalf("child = %q, want old child", got)
+	}
 }
