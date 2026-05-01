@@ -19,6 +19,7 @@ var (
 	stopPreparedFileHandleNetworkHook    = stopPreparedFileHandleNetwork
 	configureRequestedProxyAfterBootHook = configureRequestedProxyAfterBoot
 	teardownRequestedProxyHook           = teardownRequestedProxy
+	acquireRunLockHook                   = AcquireRunLock
 )
 
 type RunConfig struct {
@@ -107,6 +108,16 @@ func runVMWithConfig(cfg RunConfig) error {
 			vmDir = originalVMDir
 		}()
 	}
+
+	lock, err := acquireRunLockHook(vmDir)
+	if err != nil {
+		return fmt.Errorf("cove run: %w", err)
+	}
+	defer func() {
+		if releaseErr := lock.Release(); releaseErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
+		}
+	}()
 
 	var runErr error
 	if cfg.Linux {
