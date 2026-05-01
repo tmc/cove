@@ -113,17 +113,34 @@ func compactVMWithClient(vmDirectory string, client compactClient) (*compactResu
 	}, nil
 }
 
+// macOSCompactZeroPath is the location of the throw-away zero-fill file used
+// to coax APFS into freeing blocks. It lives on the writable Data volume
+// (`/` is read-only on Big Sur+), under `/private/var/tmp` so it is hidden,
+// auto-cleaned, and on a path that doesn't show up in Spotlight.
+const macOSCompactZeroPath = "/System/Volumes/Data/private/var/tmp/.cove-zero"
+
+// macOSCompactScript is the guest-side zero-fill pipeline. APFS rejects
+// `diskutil secureErase freespace` outright (-69489: "makes no sense due to
+// its possibly-unbounded size"), so the standard recipe is to dd /dev/zero
+// to a throwaway file until the volume runs out of space, sync, then unlink.
+// The unused blocks are then zero-content and virtio-blk's discard/unmap
+// forwards a TRIM to the host disk image, which APFS turns into a
+// `F_PUNCHHOLE` to reclaim physical sectors.
+//
+// `|| true` covers the expected ENOSPC at the end of dd. `sync` flushes
+// pending writes before the unlink so blocks aren't reclaimed by the
+// volume before they hit the discard path.
+const macOSCompactScript = `set -u; ` +
+	`dd if=/dev/zero of=` + macOSCompactZeroPath + ` bs=1m 2>/dev/null || true; ` +
+	`sync; ` +
+	`rm -f ` + macOSCompactZeroPath
+
 func compactCommand(platform string) ([]string, error) {
 	switch platform {
 	case agentstate.PlatformLinux:
 		return []string{"fstrim", "-v", "/"}, nil
 	case agentstate.PlatformMacOS:
-		// Big Sur+ split the system volume: `/` is the read-only signed
-		// system snapshot, and writable user data lives on `Data`.
-		// `diskutil secureErase freespace` requires a writable target, so
-		// zero-fill against `/System/Volumes/Data`. macOS 11 is the floor
-		// for guests on the Virtualization framework, so this is safe.
-		return []string{"diskutil", "secureErase", "freespace", "0", "/System/Volumes/Data"}, nil
+		return []string{"sh", "-c", macOSCompactScript}, nil
 	default:
 		return nil, fmt.Errorf("unsupported guest platform %q", platform)
 	}

@@ -20,7 +20,7 @@ func TestCompactCommand(t *testing.T) {
 		wantErr  string
 	}{
 		{name: "linux", platform: agentstate.PlatformLinux, want: []string{"fstrim", "-v", "/"}},
-		{name: "macos", platform: agentstate.PlatformMacOS, want: []string{"diskutil", "secureErase", "freespace", "0", "/System/Volumes/Data"}},
+		{name: "macos", platform: agentstate.PlatformMacOS, want: []string{"sh", "-c", macOSCompactScript}},
 		{name: "unknown", platform: "windows", wantErr: "unsupported guest platform"},
 	}
 
