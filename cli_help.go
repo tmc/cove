@@ -362,11 +362,17 @@ func printVMUsage(w io.Writer) {
 Commands:
   set <name>              Set the active VM (pass "" to clear)
   unset                   Clear the active-VM marker
-  delete <name>           Delete a VM
+  delete [--cascade] <name>
+                          Delete a VM. Refuses if the VM has fork
+                          descendants unless --cascade is set; with
+                          --cascade, descendants are deleted first.
   rename <old> <new>      Rename a VM
   export <name> <path>    Export a VM to a tarball
   import <path> <name>    Import a VM from a tarball
-  tree                    Print fork lineage
+  tree [--json] [--orphans]
+                          Print fork lineage. --json emits structured
+                          output; --orphans lists only VMs whose
+                          parent is missing.
   config <command>        Export/import a framework config snapshot
   shared-folder ...       Manage shared folders (alias: cove shared-folder ...)`)
 }

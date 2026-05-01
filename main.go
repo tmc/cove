@@ -1375,26 +1375,55 @@ func handleVMCommand(args []string) {
 
 	case "tree":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			fmt.Println("Usage: cove vm tree")
+			fmt.Println("Usage: cove vm tree [--json] [--orphans]")
 			fmt.Println()
 			fmt.Println("Print VM fork lineage.")
+			fmt.Println()
+			fmt.Println("Flags:")
+			fmt.Println("  --json     emit a structured forest for scripting")
+			fmt.Println("  --orphans  list only VMs whose parent is missing")
 			return
 		}
-		if len(subargs) > 0 {
-			fmt.Fprintln(os.Stderr, "Usage: cove vm tree")
+		treeFS := flag.NewFlagSet("vm tree", flag.ContinueOnError)
+		treeFS.SetOutput(os.Stderr)
+		treeJSON := treeFS.Bool("json", false, "emit a structured forest for scripting")
+		treeOrphans := treeFS.Bool("orphans", false, "list only VMs whose parent is missing")
+		if err := treeFS.Parse(subargs); err != nil {
+			os.Exit(2)
+		}
+		if treeFS.NArg() > 0 {
+			fmt.Fprintln(os.Stderr, "Usage: cove vm tree [--json] [--orphans]")
 			os.Exit(1)
 		}
-		if err := PrintVMTree(os.Stdout); err != nil {
+		if err := PrintVMTreeWithOptions(os.Stdout, VMTreeOptions{
+			JSON:    *treeJSON,
+			Orphans: *treeOrphans,
+		}); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
 	case "delete":
-		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: cove vm delete <name>")
+		delFS := flag.NewFlagSet("vm delete", flag.ContinueOnError)
+		delFS.SetOutput(os.Stderr)
+		delCascade := delFS.Bool("cascade", false, "recursively delete fork descendants too")
+		if err := delFS.Parse(subargs); err != nil {
+			os.Exit(2)
+		}
+		if delFS.NArg() < 1 {
+			fmt.Fprintln(os.Stderr, "Usage: cove vm delete [--cascade] <name>")
 			os.Exit(1)
 		}
-		ok, err := confirmDeletef("Delete VM %q? This cannot be undone. [y/N] ", subargs[0])
+		target := delFS.Arg(0)
+		prompt := fmt.Sprintf("Delete VM %q? This cannot be undone. [y/N] ", target)
+		if *delCascade {
+			children, _ := childVMNames(target)
+			if len(children) > 0 {
+				prompt = fmt.Sprintf("Delete VM %q AND its %d fork descendant(s) (%s)? This cannot be undone. [y/N] ",
+					target, len(children), strings.Join(children, ", "))
+			}
+		}
+		ok, err := confirmDeletef("%s", prompt)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -1402,7 +1431,7 @@ func handleVMCommand(args []string) {
 		if !ok {
 			return
 		}
-		if err := DeleteVM(subargs[0]); err != nil {
+		if err := DeleteVMWithOptions(target, DeleteVMOptions{Cascade: *delCascade}); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
