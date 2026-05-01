@@ -1,0 +1,140 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./... -count=1
+
+      - name: Import Developer ID certificate
+        env:
+          MACOS_DEVELOPER_ID_CERT_P12_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERT_P12_BASE64 }}
+          MACOS_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/cove-release.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          CERT_PATH="$RUNNER_TEMP/cove-developer-id.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$MACOS_DEVELOPER_ID_CERT_P12_BASE64" | base64 -d > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_DEVELOPER_ID_CERT_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+          rm "$CERT_PATH"
+
+          # Surface the resolved identity for goreleaser to consume.
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::no Developer ID Application identity found in imported keychain"
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          echo "MACOS_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "MACOS_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      # Build, sign, notarize, archive everything except the GitHub upload.
+      # We pause here so we can slot the DMG into ./dist/ before the upload
+      # step picks it up via the .goreleaser.yml `release.extra_files` glob.
+      - name: Goreleaser build + notarize
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean --skip=publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_NOTARY_APP_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_PASSWORD }}
+
+      - name: Build, sign, notarize, staple DMG
+        env:
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_NOTARY_APP_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # Locate the notarized binary. goreleaser writes it to
+          # dist/cove_darwin_arm64_v<version>/cove or similar; glob to be
+          # tolerant of the GOAMD64-style suffix.
+          BINARY=$(ls dist/cove_darwin_arm64*/cove 2>/dev/null | head -1 || true)
+          if [[ -z "$BINARY" ]]; then
+            echo "::error::no notarized cove binary found in dist/"
+            find dist -maxdepth 2 -type f | head -20
+            exit 1
+          fi
+
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          OUT="dist/cove-${VERSION}.dmg"
+
+          ./scripts/build-dmg.sh "$BINARY" "$VERSION" "$OUT"
+
+          # Sign the DMG itself so Gatekeeper accepts a downloaded .dmg without
+          # the user re-running spctl.
+          codesign --sign "$MACOS_SIGN_IDENTITY" --timestamp "$OUT"
+
+          # Notarize the DMG via the App Store Connect profile we set up in the
+          # imported keychain.
+          xcrun notarytool store-credentials cove-release-profile \
+            --apple-id "$MACOS_NOTARY_APPLE_ID" \
+            --team-id "$MACOS_NOTARY_TEAM_ID" \
+            --password "$MACOS_NOTARY_APP_PASSWORD" \
+            --keychain "$MACOS_KEYCHAIN_PATH"
+          xcrun notarytool submit "$OUT" \
+            --keychain-profile cove-release-profile \
+            --keychain "$MACOS_KEYCHAIN_PATH" \
+            --wait
+          xcrun stapler staple "$OUT"
+          xcrun stapler validate "$OUT"
+
+      # Publish to GitHub Releases (this picks up the DMG via release.extra_files
+      # and pushes the cask to homebrew-tap). Skips all the upstream stages we
+      # already ran above.
+      - name: Goreleaser publish
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --skip=before,build,archive,sign,validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          if [[ -n "${MACOS_KEYCHAIN_PATH:-}" && -f "$MACOS_KEYCHAIN_PATH" ]]; then
+            security delete-keychain "$MACOS_KEYCHAIN_PATH" || true
+          fi

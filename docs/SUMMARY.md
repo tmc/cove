@@ -25,6 +25,7 @@
 * [License and Virtualization Limits](reference/license-comparison.md)
 * [Changelog](reference/changelog.md)
 * [Release Checklist](reference/release-checklist.md)
+* [Release Pipeline](release-pipeline.md)
 
 ## Guides
 * [Provisioning](guides/provisioning.md)
