@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,11 +9,15 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 var (
 	setupDisposableCloneHook             = SetupDisposableClone
 	cleanupDisposableCloneHook           = CleanupDisposableClone
+	setupEphemeralForkHook               = SetupEphemeralFork
+	cleanupEphemeralForkHook             = CleanupEphemeralFork
 	runMacOSVMHook                       = runMacOSVM
 	runLinuxVMHook                       = runLinuxVM
 	startPreparedFileHandleNetworkHook   = startPreparedFileHandleNetwork
@@ -30,6 +35,13 @@ type RunConfig struct {
 	DisposableSourceDiskPath string
 	SystemDiskAttachment     systemDiskAttachmentMode
 	SystemDiskPathOverride   string
+	// EphemeralForkParent triggers Phase 3 RAM-overlay ephemeral mode:
+	// boot a short-lived sibling that shares the parent's disk.img
+	// read-only and discards writes on shutdown. Mutually exclusive
+	// with Disposable and RollbackSnapshot.
+	EphemeralForkParent string
+	EphemeralForkName   string
+	EphemeralForkKeep   bool
 }
 
 func currentRunConfig() RunConfig {
@@ -41,6 +53,9 @@ func currentRunConfig() RunConfig {
 		DisposableSourceDiskPath: disposableSourceDiskPath,
 		SystemDiskAttachment:     runtimeSystemDiskAttachment,
 		SystemDiskPathOverride:   runtimeSystemDiskPathOverride,
+		EphemeralForkParent:      ephemeralForkParent,
+		EphemeralForkName:        ephemeralForkName,
+		EphemeralForkKeep:        ephemeralForkKeep,
 	}
 }
 
@@ -54,6 +69,13 @@ func runVMWithConfig(cfg RunConfig) error {
 
 	if cfg.Disposable && cfg.RollbackSnapshot != "" {
 		return fmt.Errorf("rollback snapshot runs already create a disposable clone")
+	}
+	if cfg.EphemeralForkParent != "" && (cfg.Disposable || cfg.RollbackSnapshot != "") {
+		return fmt.Errorf("-fork-from is not compatible with -disposable or rollback snapshot runs")
+	}
+
+	if cfg.EphemeralForkParent != "" {
+		return runEphemeralForkWithConfig(cfg, originalVMName, originalVMDir)
 	}
 
 	var clone DisposableClone
@@ -170,4 +192,90 @@ func filepathBase(path string) string {
 	default:
 		return base
 	}
+}
+
+// runEphemeralForkWithConfig boots a Phase 3 ephemeral sibling: an
+// in-memory child that shares the parent's disk.img read-only via
+// VZTemporaryRAMStorageDeviceAttachment. The child's vmDir is
+// auto-removed on exit unless cfg.EphemeralForkKeep is set.
+func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir string) error {
+	parentDir := vmconfig.Path(cfg.EphemeralForkParent)
+	if !vmconfig.Validate(parentDir) {
+		return fmt.Errorf("cove run -fork-from: parent VM not found: %s", cfg.EphemeralForkParent)
+	}
+
+	// Probe-and-release the parent's run.lock. If we can't acquire
+	// LOCK_EX, the parent is running and we refuse to attach to its
+	// disk.img. Validation #1 showed VZ takes no file lock at attach
+	// time, so this guard is enforced on our side.
+	parentLock, err := acquireRunLockHook(parentDir)
+	if err != nil {
+		if errors.Is(err, ErrRunLockHeld) {
+			return fmt.Errorf("cove run -fork-from: parent VM %q is running; ephemeral fork requires parent stopped", cfg.EphemeralForkParent)
+		}
+		return fmt.Errorf("cove run -fork-from: probe parent run.lock: %w", err)
+	}
+	if releaseErr := parentLock.Release(); releaseErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: release parent run.lock: %v\n", releaseErr)
+	}
+
+	fork, err := setupEphemeralForkHook(EphemeralForkOptions{
+		Parent: cfg.EphemeralForkParent,
+		Name:   cfg.EphemeralForkName,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Ephemeral fork: %s\n", fork.Name)
+	fmt.Printf("Ephemeral path: %s\n", fork.Path)
+	fmt.Printf("Parent disk:    %s (RAM-overlay, read-only)\n", vmPrimaryDiskPath(parentDir))
+
+	parentDisk := vmPrimaryDiskPath(parentDir)
+	prevAttachment := runtimeSystemDiskAttachment
+	prevOverride := runtimeSystemDiskPathOverride
+	runtimeSystemDiskAttachment = systemDiskAttachmentTemporaryRAM
+	runtimeSystemDiskPathOverride = parentDisk
+	defer func() {
+		runtimeSystemDiskAttachment = prevAttachment
+		runtimeSystemDiskPathOverride = prevOverride
+	}()
+
+	vmName = fork.Name
+	vmDir = fork.Path
+	defer func() {
+		vmName = originalVMName
+		vmDir = originalVMDir
+	}()
+
+	lock, err := acquireRunLockHook(vmDir)
+	if err != nil {
+		// Lock acquisition failed before booting; remove the dir so
+		// no orphan is left behind (it won't have been used).
+		_ = cleanupEphemeralForkHook(fork.Path)
+		return fmt.Errorf("cove run -fork-from: %w", err)
+	}
+	defer func() {
+		if releaseErr := lock.Release(); releaseErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
+		}
+	}()
+
+	var runErr error
+	if cfg.Linux {
+		runErr = runLinuxVMHook()
+	} else {
+		runErr = runMacOSVMHook()
+	}
+
+	if cfg.EphemeralForkKeep {
+		fmt.Printf("Ephemeral fork retained (-keep): %s\n", fork.Path)
+		return runErr
+	}
+	if cleanupErr := cleanupEphemeralForkHook(fork.Path); cleanupErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: cleanup ephemeral fork: %v\n", cleanupErr)
+	} else {
+		fmt.Printf("Ephemeral fork removed: %s\n", fork.Name)
+	}
+	return runErr
 }

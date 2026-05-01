@@ -10,40 +10,58 @@ import (
 func handleGCCommand(args []string) error {
 	fs := flag.NewFlagSet("gc", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	dryRun := fs.Bool("dry-run", false, "print disposable clones without deleting them")
+	dryRun := fs.Bool("dry-run", false, "print VMs without deleting them")
 	olderThan := fs.Duration("older-than", 0, "only delete disposable clones older than this duration")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	result, err := GCDisposableClones(DisposableGCOptions{
+	disposable, err := GCDisposableClones(DisposableGCOptions{
 		OlderThan: *olderThan,
 		DryRun:    *dryRun,
 	})
 	if err != nil {
 		return err
 	}
-
-	for _, path := range result.Paths {
+	for _, path := range disposable.Paths {
 		if *dryRun {
-			fmt.Printf("would remove %s\n", path)
+			fmt.Printf("would remove disposable %s\n", path)
 			continue
 		}
-		fmt.Printf("removed %s\n", path)
+		fmt.Printf("removed disposable %s\n", path)
 	}
-	if len(result.Paths) == 0 {
-		state := "No disposable clones matched."
+
+	ephemeral, err := GCEphemeralForks(EphemeralGCOptions{DryRun: *dryRun})
+	if err != nil {
+		return err
+	}
+	for _, path := range ephemeral.Paths {
 		if *dryRun {
-			state = "No disposable clones would be removed."
+			fmt.Printf("would remove ephemeral %s\n", path)
+			continue
+		}
+		fmt.Printf("removed ephemeral %s\n", path)
+	}
+
+	if len(disposable.Paths) == 0 && len(ephemeral.Paths) == 0 {
+		state := "No disposable clones or ephemeral forks matched."
+		if *dryRun {
+			state = "No disposable clones or ephemeral forks would be removed."
 		}
 		fmt.Println(state)
 	}
-	fmt.Printf("scanned=%d candidates=%d removed=%d skipped-active=%d older-than=%s\n",
-		result.Scanned,
-		result.Candidates,
-		result.Removed,
-		result.SkippedAlive,
+	fmt.Printf("disposable: scanned=%d candidates=%d removed=%d skipped-active=%d older-than=%s\n",
+		disposable.Scanned,
+		disposable.Candidates,
+		disposable.Removed,
+		disposable.SkippedAlive,
 		olderThanString(*olderThan),
+	)
+	fmt.Printf("ephemeral:  scanned=%d candidates=%d removed=%d skipped-active=%d\n",
+		ephemeral.Scanned,
+		ephemeral.Candidates,
+		ephemeral.Removed,
+		ephemeral.SkippedAlive,
 	)
 	return nil
 }
