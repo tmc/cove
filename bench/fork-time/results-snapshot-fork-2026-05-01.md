@@ -38,7 +38,7 @@ parent: …TECID 137d fdf7 2397 60f2 a7…
 child:  …TECID 1400 0000 0000 0000 00 b4 0b6f d8fb cd53 …  (regenerated)
 ```
 
-This is intentional Phase 2 behavior (per dispatch STOP-AND-ASK #2 resolution: no `-recover-identity` auto-apply, `printForkUsage` documents that siblings boot as the same Mac for plain fork). The snapshot-seeded fork inherits the same identity-rotation policy.
+This is intentional Phase 2 behavior (per dispatch STOP-AND-ASK #2 resolution: no `-recover-identity` auto-apply, `printForkUsage` documents that plain fork rotates identity so siblings boot as distinct Macs). The snapshot-seeded fork inherits the same identity-rotation policy.
 
 ## A1/A2 design implications
 

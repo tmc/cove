@@ -539,25 +539,21 @@ Plain fork (no -snapshot, no @snap):
 
 Snapshot-seeded fork (-snapshot <name> or --from parent@<name>):
   Seeds the child's suspend.vmstate from parent/snapshots/<name>.vmstate
-  so the child boots straight to the snapshot point on first run
-  (instant resume). Requires:
+  and attempts a VZ state restore on first boot. Requires:
 
     - parent VM stopped (the fork acquires parent's run.lock exclusively
       for the duration of the copy)
     - parent has a saved snapshot — create one first while the parent
       is running with: cove snapshot save <name>
 
-  If the seeded suspend.vmstate is rejected on first boot (config
-  mismatch, etc.), the child cold-boots from the cloned disk
-  automatically. The snapshot must be the latest state of the parent
-  for instant resume to apply; if the parent ran further after saving
-  the snapshot, the cold-boot fallback is the likely outcome.
-
-Identity trade-off:
-  Snapshot-seeded forks restore the parent's machine.id from the
-  vmstate, so siblings boot as "the same Mac" (shared SEP identity).
-  Use 'cove run -recover-identity' on the child if iCloud / Find-My-Mac
-  collisions matter.
+  Current behavior (Phase 2): the child's machine.id is rotated like
+  any fork, so VZ rejects the seeded state and the existing
+  suspend-restore fallback in macos.go moves the seed aside and
+  cold-boots from the cloned disk. The seeded state is best-effort
+  today; reaching instant-resume requires a future identity-preserving
+  fork option that copies the parent's machine.id alongside the
+  vmstate. See docs/designs/013-vm-fork.md and the Phase 2 bench notes
+  for details.
 
 Examples:
   cove fork macos-base scratch-1

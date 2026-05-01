@@ -111,9 +111,10 @@ type ForkVMOptions struct {
 	Snapshot string
 }
 
-// ForkVMWithSnapshot creates a child VM as a CoW fork of parent, optionally
-// seeded with a saved VM-state snapshot for instant-resume on first boot
-// (Model A1 in docs/designs/013-vm-fork.md). When Snapshot is non-empty:
+// ForkVMWithSnapshot creates a child VM as a CoW fork of parent and,
+// when Snapshot is non-empty, seeds the child's suspend.vmstate from
+// the parent's saved snapshot at vmDir/snapshots/<name>.vmstate.
+// When Snapshot is non-empty:
 //
 //   - The parent must be stopped: ForkVMWithSnapshot acquires the parent's
 //     run.lock exclusively for the duration of the copy. Concurrent cove run
@@ -121,10 +122,14 @@ type ForkVMOptions struct {
 //   - The parent's snapshots/<name>.vmstate must exist; create one with
 //     "cove snapshot save <name>" while the parent is running first.
 //   - The seeded suspend.vmstate is paired with the parent's aux.img
-//     (copied byte-for-byte). On first child boot, VZ restores the saved
-//     state. If the seeded state is rejected (config mismatch, corrupt
-//     state, etc.), the existing suspend-restore fallback in macos.go
-//     moves it aside and the child cold-boots from the cloned disk (A2).
+//     (copied byte-for-byte). On first child boot, VZ attempts a state
+//     restore. In current Phase 2, the child's machine.id is rotated
+//     by CloneVM, which causes VZ to reject the restore; the existing
+//     suspend-restore fallback in macos.go then moves the seed aside
+//     and the child cold-boots from the cloned disk. Reaching the
+//     instant-resume path (design 013 Model A1) requires a future
+//     identity-preserving fork option that keeps the parent's
+//     machine.id alongside the seeded vmstate.
 //
 // When Snapshot is empty, this defers to ForkVM and inherits its
 // best-effort semantics against a running parent (no lock acquired).
