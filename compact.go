@@ -118,7 +118,12 @@ func compactCommand(platform string) ([]string, error) {
 	case agentstate.PlatformLinux:
 		return []string{"fstrim", "-v", "/"}, nil
 	case agentstate.PlatformMacOS:
-		return []string{"diskutil", "secureErase", "freespace", "0", "/"}, nil
+		// Big Sur+ split the system volume: `/` is the read-only signed
+		// system snapshot, and writable user data lives on `Data`.
+		// `diskutil secureErase freespace` requires a writable target, so
+		// zero-fill against `/System/Volumes/Data`. macOS 11 is the floor
+		// for guests on the Virtualization framework, so this is safe.
+		return []string{"diskutil", "secureErase", "freespace", "0", "/System/Volumes/Data"}, nil
 	default:
 		return nil, fmt.Errorf("unsupported guest platform %q", platform)
 	}
