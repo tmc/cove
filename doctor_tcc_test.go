@@ -43,10 +43,32 @@ func TestTCCVolumeDiscoverySkipsSystemVolumes(t *testing.T) {
 	for _, want := range []string{
 		`"Macintosh HD"`,
 		`"Macintosh HD - Data"`,
+		`"VZRECOVERY"`,
 		`printf '%s\n' "$p"`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("tccVolumeDiscoveryScript missing %q:\n%s", want, script)
 		}
+	}
+}
+
+func TestIsENOENTStderr(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"empty", "", false},
+		{"fda-blocked", "ls: /Users/me/Documents: Operation not permitted", false},
+		{"enoent", "ls: /Volumes/missing: No such file or directory", true},
+		{"enoent-mixed-case", "No Such File Or Directory", true},
+		{"timeout", "timed out waiting for Full Disk Access approval", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isENOENTStderr(tt.in); got != tt.want {
+				t.Fatalf("isENOENTStderr(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
 	}
 }
