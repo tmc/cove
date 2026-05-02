@@ -9,7 +9,7 @@
 
 This plan responds to the design review in `/tmp/vz-macos-design-review.md` and the
 current repository shape. Today the module has only a handful of packages, but the
-root `package main` still contains **115 non-test Go files** and most of the product
+root `package main` still contains **127 non-test Go files** and most of the product
 logic. That flat shape is the main problem. It hides ownership, encourages package
 global state, and makes server, GUI, provisioning, runtime, and CLI concerns depend
 on each other directly.
