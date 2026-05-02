@@ -8,7 +8,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/pierrec/lz4/v4 v4.1.26
-	github.com/tmc/apple v0.5.3
+	github.com/tmc/apple v0.5.5
 	github.com/tmc/macgo v0.1.1
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
@@ -23,5 +23,3 @@ require (
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 )
-
-replace github.com/tmc/apple => /Users/tmc/go/src/github.com/tmc/apple
