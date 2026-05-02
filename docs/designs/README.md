@@ -25,9 +25,9 @@ implementation review. Start there before choosing new work.
 
 ## Strategy inputs
 
-- [beat lume roadmap](011-beat-lume-roadmap.md) — 0.1 -> 0.4 — strategic roadmap input: win on local state, guest-agent control, Linux developer workflows, and `cove build`; use interop only at the boundary.
-- [product roadmap 2026](012-product-roadmap-2026.md) — notebook-backed strategy source for fork/restore, build, agent adapters, and registry sequencing.
-- [roadmap update post-v0.1](014-roadmap-update-post-v0.1.md) — post-v0.1 handoff; superseded where it conflicts with [015](015-soft-reset-empirical.md), [016](016-notebooklm-roadmap-refresh-2026-04-30.md), [017](017-v03-execution-roadmap.md), [018](018-v03-build-executor-scaffold.md), [019](019-v03-cache-hit-materialization.md), [020](020-v03-cache-miss-execution.md), and [ROADMAP](ROADMAP.md).
+- [beat lume roadmap](archive/011-beat-lume-roadmap.md) — 0.1 -> 0.4 — strategic roadmap input: win on local state, guest-agent control, Linux developer workflows, and `cove build`; use interop only at the boundary.
+- [product roadmap 2026](archive/012-product-roadmap-2026.md) — notebook-backed strategy source for fork/restore, build, agent adapters, and registry sequencing.
+- [roadmap update post-v0.1](archive/014-roadmap-update-post-v0.1.md) — post-v0.1 handoff; superseded where it conflicts with [015](015-soft-reset-empirical.md), [016](016-notebooklm-roadmap-refresh-2026-04-30.md), [017](017-v03-execution-roadmap.md), [018](018-v03-build-executor-scaffold.md), [019](019-v03-cache-hit-materialization.md), [020](020-v03-cache-miss-execution.md), and [ROADMAP](ROADMAP.md).
 
 ## How to amend
 

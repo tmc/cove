@@ -49,7 +49,7 @@
 * [Churn Benchmark](designs/004-churn-benchmark-harness.md)
 * [v0.4 Secrets](designs/005-v04-secrets-architecture.md)
 * [Linux v0.2](designs/006-cove-linux-v02.md)
-* [Beat Lume Roadmap](designs/011-beat-lume-roadmap.md)
+* [Beat Lume Roadmap](designs/archive/011-beat-lume-roadmap.md)
 * [Soft-reset Empirical Result](designs/015-soft-reset-empirical.md)
 * [NotebookLM Roadmap Refresh](designs/016-notebooklm-roadmap-refresh-2026-04-30.md)
 * [v0.3 Execution Roadmap](designs/017-v03-execution-roadmap.md)
