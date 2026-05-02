@@ -106,11 +106,29 @@ func setRawMode() func() {
 	}
 }
 
+// mainSigCh is the channel installed by setupSignalHandler. Exposed at
+// package scope so subsystems (e.g. the Linux shell wrapper) can detach
+// SIGINT via signal.Reset and later reclaim it via reclaimMainSignals.
+// nil until setupSignalHandler runs.
+var mainSigCh chan os.Signal
+
+// reclaimMainSignals re-subscribes the main signal handler to the given
+// signals. Call after a subsystem that took over a signal (via
+// signal.Reset) has finished, to restore default cove behavior. Idempotent
+// and a no-op if setupSignalHandler has not been called.
+func reclaimMainSignals(signals ...os.Signal) {
+	if mainSigCh == nil || len(signals) == 0 {
+		return
+	}
+	signal.Notify(mainSigCh, signals...)
+}
+
 // setupSignalHandler sets up signal handling for graceful cleanup.
 // SIGINT/SIGTERM: suspend and exit.
 // SIGHUP: suspend, then re-exec the binary (picks up rebuilt binary, resumes from saved state).
 func setupSignalHandler(cleanup func()) {
 	sigCh := make(chan os.Signal, 1)
+	mainSigCh = sigCh
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGUSR1)
 	go func() {
 		sig := <-sigCh

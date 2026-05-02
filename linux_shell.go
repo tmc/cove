@@ -87,12 +87,19 @@ func runLinuxShellSession(ctx context.Context, cs *ControlServer) error {
 	// translate to the corresponding unary RPC. We use buffered channels of
 	// size 1 because bursts collapse into the most recent event for both
 	// signals (SIGWINCH coalesces; SIGINT is idempotent on the guest side).
+	//
+	// Detach the main shutdown handler from SIGINT first so the user's first
+	// Ctrl-C in the shell goes only to the guest process group via
+	// SignalExec. The main handler is reclaimed once the shell exits so
+	// future Ctrl-Cs (after the shell ends) still cleanly stop the VM.
 	winchCh := make(chan os.Signal, 1)
 	intCh := make(chan os.Signal, 1)
 	signal.Notify(winchCh, syscall.SIGWINCH)
+	signal.Reset(syscall.SIGINT)
 	signal.Notify(intCh, syscall.SIGINT)
 	defer signal.Stop(winchCh)
 	defer signal.Stop(intCh)
+	defer reclaimMainSignals(syscall.SIGINT)
 
 	signalCtx, cancelSignals := context.WithCancel(ctx)
 	defer cancelSignals()
