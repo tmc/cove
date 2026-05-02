@@ -8,6 +8,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove run -linux -shell`: attach the host terminal to an interactive guest shell after boot. Allocates a PTY in the guest via the agent, forwards host SIGWINCH to `ResizeExecTTY` and host SIGINT to `SignalExec(SIGINT)` (with the main cove shutdown handler temporarily detached so the first Ctrl-C reaches the guest only). v0.2 stdin is read-only -- bidirectional stdin and a standalone `cove shell <vm>` subcommand are deferred to design 023.
 - Multi-page documentation site with mdBook
 - Custom CSS for branded docs
 - Integration test infrastructure for headed mode and shared folders

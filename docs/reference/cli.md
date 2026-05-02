@@ -64,6 +64,7 @@ cove run [flags]
 | `-recovery` | false | Boot into macOS recovery mode |
 | `-linux` | false | Run a Linux VM |
 | `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
+| `-shell` | false | Attach the host terminal to a guest shell after boot (Linux only; mutually exclusive with `-headless`). Output-only in v0.2 -- see [Linux VMs > Guest Shell](../features/linux.md#guest-shell--shell). |
 | `-cpu <n>` | 2 | Number of CPUs |
 | `-memory <n>` | 4 | Memory in GB |
 | `-display <spec>` | | Display config: WxH[@PPI] or preset (4k, 1080p, 720p, retina) |
@@ -107,6 +108,7 @@ cove run
 cove run -headless -cpu 4 -memory 8
 cove run -display 4k -v ~/projects
 cove run -linux -rosetta -serial /tmp/serial.log
+cove run -linux -shell                         # pipe a guest shell to the host terminal
 cove run -recovery -no-resume -gui -usb ~/recovery.img
 ```
 
