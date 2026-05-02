@@ -10,8 +10,8 @@ an item ships, mark its row `done` and leave the row in place.
 ## Strategy source
 
 This roadmap is the post-integration, post-review rollup of the notebook-backed
-strategy in [012](012-product-roadmap-2026.md), the v0.1 handoff in
-[014](014-roadmap-update-post-v0.1.md), the soft-reset empirical result in
+strategy in [012](archive/012-product-roadmap-2026.md), the v0.1 handoff in
+[014](archive/014-roadmap-update-post-v0.1.md), the soft-reset empirical result in
 [015](015-soft-reset-empirical.md), and the post-integration NotebookLM refresh
 in [016](016-notebooklm-roadmap-refresh-2026-04-30.md). The v0.3 execution
 slices are tracked in [017](017-v03-execution-roadmap.md). The 012, 016, and
@@ -71,7 +71,7 @@ channel.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| `cove up` fresh-install path-resolution fix | done | none | [roadmap-post-v0.1](../roadmap-post-v0.1.md), `fix/cove-up-fresh-install` | Fixes the headline UX bug where install reported success but provisioning failed because the target VM directory was never materialized. |
+| `cove up` fresh-install path-resolution fix | done | none | [roadmap-post-v0.1](archive/roadmap-post-v0.1.md), `fix/cove-up-fresh-install` | Fixes the headline UX bug where install reported success but provisioning failed because the target VM directory was never materialized. |
 | CDC vs fixed-offset chunking trade-off study | done | none | [002](002-cove-disks-oci.md) | Settles whether content-defined chunking is worth the cost before committing the v0.2 store design. |
 | `cove doctor` TCC/FDA probe | done | none | [TCC research](../research/tcc-via-user-agent.md) | Triggers/diagnoses Full Disk Access state before VirtioFS access silently fails. |
 | Verify 008 codebase-cleanup status | done | none | [008](008-codebase-cleanup-plan.md) | Confirms which cleanup phases already landed and gates v0.2 work. |
@@ -96,13 +96,13 @@ channel.
 | `cove build` VM execution path | done | v0.2 store + dry-run planner | [003](003-cove-build-oci-caching.md) | Local-base builds create scratch VMs, restore cache-hit layers, execute misses, persist metadata, and leave pushable image state. Registry-base execution remains deferred. |
 | Secrets via tmpfs (`# secret:` directive) with guest swap disabled | done | build execution | [003](003-cove-build-oci-caching.md) | Prevents secret leakage into pushed OCI block diffs. |
 | `cove build` compaction integration | done | build execution | [002](002-cove-disks-oci.md), [003](003-cove-build-oci-caching.md) | Wires `fast`, `targeted`, and `thorough` build compaction into the pipeline before diffing and pushing images. |
-| Fork-only benchmark publication | done | existing fork support | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-20260427.md) | Published 132-140 ms stopped-VM fork measurements on the M4 smoke host after soft reset failed as the isolation primitive. |
-| Boot-to-agent fork benchmark publication | done | existing fork support + reachable agent base image | [012](012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-agent-20260430.md) | Published the product-relevant time from fork command to agent reachability on named M4 Max hardware. |
+| Fork-only benchmark publication | done | existing fork support | [012](archive/012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-20260427.md) | Published 132-140 ms stopped-VM fork measurements on the M4 smoke host after soft reset failed as the isolation primitive. |
+| Boot-to-agent fork benchmark publication | done | existing fork support + reachable agent base image | [012](archive/012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-agent-20260430.md) | Published the product-relevant time from fork command to agent reachability on named M4 Max hardware. |
 | ControlServer decomposition - phase 3 (`internal/control`) | should | v0.2 phases 1+2 | [008](008-codebase-cleanup-plan.md) | Completes the cleanup arc started in v0.2. |
-| OpenAI Agents SDK adapter v1 | done | fork/restore + control socket | [012](012-product-roadmap-2026.md), [OpenAI example](../examples/openai-agents.md) | Proves the agent-substrate pitch with a fork-first local adapter under `adapters/openai-agents-python`. |
-| OpenAI adapter release hardening | done | adapter v1 + boot-to-agent benchmark | [012](012-product-roadmap-2026.md), [017](017-v03-execution-roadmap.md) | Added live smoke instructions, package checks, and fork-first example polish before treating the adapter as a release surface. |
-| Anthropic sandbox-runtime adapter | should | OpenAI adapter lessons | [012](012-product-roadmap-2026.md) | Expands agent integrations after the first adapter proves the shape. |
-| Curated agentkit base images | should | build execution + trademark decision | [012](012-product-roadmap-2026.md) | Prepares the v1.0 registry story without publishing under a blocked name. |
+| OpenAI Agents SDK adapter v1 | done | fork/restore + control socket | [012](archive/012-product-roadmap-2026.md), [OpenAI example](../examples/openai-agents.md) | Proves the agent-substrate pitch with a fork-first local adapter under `adapters/openai-agents-python`. |
+| OpenAI adapter release hardening | done | adapter v1 + boot-to-agent benchmark | [012](archive/012-product-roadmap-2026.md), [017](017-v03-execution-roadmap.md) | Added live smoke instructions, package checks, and fork-first example polish before treating the adapter as a release surface. |
+| Anthropic sandbox-runtime adapter | should | OpenAI adapter lessons | [012](archive/012-product-roadmap-2026.md) | Expands agent integrations after the first adapter proves the shape. |
+| Curated agentkit base images | should | build execution + trademark decision | [012](archive/012-product-roadmap-2026.md) | Prepares the v1.0 registry story without publishing under a blocked name. |
 | Packer plugin shim decision | maybe | none | gap vs tart Packer integration | Decide whether a shim accelerates adoption or distracts from the `cove build` moat. |
 
 ## v0.3 implementation slices
