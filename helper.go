@@ -171,6 +171,16 @@ prompts.`)
 // is not respawned — only crashes are. ThrottleInterval=30 caps respawn rate
 // so a stale or broken binary cannot churn the icon at ~6/min the way the
 // unconditional KeepAlive=true plist did before v0.1.1.
+//
+// EnvironmentVariables sets HOME=/var/root because launchd does not propagate
+// HOME to system daemons. Without it, os.UserHomeDir() returns "" and any
+// code path that resolves ~/.vz ends up doing mkdir .vz against cwd / (EROFS),
+// which crashes the daemon and triggers a respawn loop.
+//
+// PATH excludes /usr/local/bin: the helper runs as root and invokes launchctl,
+// diskutil, and mount by bare name (see runElevatedManifest). /usr/local/bin
+// is admin-writable, so a malicious local-admin process could plant a shim
+// there and hijack a root-priv exec. The helper invokes no homebrew binaries.
 func helperLaunchdPlist(label, binaryPath string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -193,6 +203,13 @@ func helperLaunchdPlist(label, binaryPath string) string {
   </dict>
   <key>ThrottleInterval</key>
   <integer>30</integer>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/var/root</string>
+    <key>PATH</key>
+    <string>/usr/sbin:/sbin:/usr/bin:/bin</string>
+  </dict>
   <key>ProcessType</key>
   <string>Background</string>
   <key>StandardOutPath</key>
@@ -406,6 +423,15 @@ func helperDaemon() error {
 
 	if os.Getuid() != 0 {
 		return fmt.Errorf("helper daemon must run as root (got uid %d)", os.Getuid())
+	}
+
+	// launchd does not propagate HOME to system daemons. The plist sets
+	// HOME=/var/root, but if a stale plist from before that fix is still
+	// installed, exit cleanly so the SuccessfulExit=false KeepAlive does
+	// not respawn us in a tight loop. The user must reinstall the helper.
+	if home := os.Getenv("HOME"); home == "" {
+		logger.Error("HOME unset; refusing to start. Run: sudo cove helper install")
+		os.Exit(0)
 	}
 
 	allowedUID, err := readHelperUID()
