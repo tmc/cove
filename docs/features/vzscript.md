@@ -96,7 +96,7 @@ cove vzscript run -template \
 
 Recipes are embedded in the cove binary. Use `cove vzscript list` to see all available recipes.
 
-Common recipes: `homebrew`, `golang`, `developer-tools`, `claude-code`, `openclaw`, `rosetta`, `ssh-server`, `workstation`.
+Common recipes: `homebrew`, `golang`, `developer-tools`, `claude-code`, `openclaw`, `rosetta`, `ssh-server`, `workstation`, `github-runner`.
 
 ## Full Command Reference
 

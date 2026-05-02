@@ -1,0 +1,106 @@
+# github-runner — Install and register a self-hosted GitHub Actions runner
+# runs-on: daemon
+
+guest-ping
+guest-write /tmp/install-runner.sh install-runner.sh
+# Host vars ($GH_REPO etc.) are expanded by the vzscript engine before being
+# sent to the guest. Empty values pass through and are validated inside the
+# script. We pass values as positional args to avoid quoting issues.
+guest-exec /bin/bash /tmp/install-runner.sh '__VZSCRIPT_GH_RUNNER_ARGS__' $GH_REPO $GH_TOKEN $RUNNER_LABEL $RUNNER_NAME
+
+-- install-runner.sh --
+#!/bin/bash
+# Self-hosted GitHub Actions runner installer.
+#
+# Args (positional, expanded from host env by the vzscript engine):
+#   $1  marker (must be __VZSCRIPT_GH_RUNNER_ARGS__)
+#   $2  GH_REPO    (required, e.g. "tmc/cove")
+#   $3  GH_TOKEN   (required, registration token)
+#   $4  RUNNER_LABEL (optional, default "cove-vm")
+#   $5  RUNNER_NAME  (optional, default "$(hostname)-cove")
+set -eu
+
+if [ "${1:-}" != "__VZSCRIPT_GH_RUNNER_ARGS__" ]; then
+  echo "error: unexpected argv (marker mismatch); was the script invoked correctly?" >&2
+  exit 2
+fi
+GH_REPO="${2:-}"
+GH_TOKEN="${3:-}"
+RUNNER_LABEL="${4:-cove-vm}"
+RUNNER_NAME="${5:-$(hostname -s)-cove}"
+
+if [ -z "$GH_REPO" ] || [ -z "$GH_TOKEN" ]; then
+  cat >&2 <<EOF
+error: GH_REPO and GH_TOKEN are required.
+
+Set them on the HOST before running the recipe, e.g.:
+  GH_REPO=tmc/cove GH_TOKEN=<reg-token> cove vzscript run github-runner
+
+Get a registration token from:
+  https://github.com/${GH_REPO:-<owner>/<repo>}/settings/actions/runners/new
+EOF
+  exit 1
+fi
+
+# Locate the first admin (non-root, non-system) user to own the runner.
+RUNNER_USER=$(dscl . -read /Groups/admin GroupMembership 2>/dev/null \
+  | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$RUNNER_USER" ]; then
+  echo "error: no admin user found to own the runner" >&2
+  exit 1
+fi
+RUNNER_HOME=$(dscl . -read "/Users/$RUNNER_USER" NFSHomeDirectory \
+  | awk '{print $2}')
+RUNNER_DIR="$RUNNER_HOME/actions-runner"
+
+if [ -f "$RUNNER_DIR/.runner" ]; then
+  echo "Runner already configured at $RUNNER_DIR. Refusing to re-register."
+  echo "Remove $RUNNER_DIR (after './svc.sh uninstall' and './config.sh remove') to reinstall."
+  if [ -x "$RUNNER_DIR/svc.sh" ]; then
+    ( cd "$RUNNER_DIR" && ./svc.sh status ) || true
+  fi
+  exit 0
+fi
+
+echo "Installing GitHub Actions runner for $GH_REPO as user $RUNNER_USER"
+
+# Discover latest stable runner release. macOS has no jq by default, so parse
+# tag_name with sed.
+TAG=$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest \
+  | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+  | head -1)
+if [ -z "$TAG" ]; then
+  echo "error: could not determine latest actions/runner release tag" >&2
+  exit 1
+fi
+VER="${TAG#v}"
+ARCHIVE="actions-runner-osx-arm64-${VER}.tar.gz"
+URL="https://github.com/actions/runner/releases/download/${TAG}/${ARCHIVE}"
+echo "Runner version: $TAG"
+
+# Stage the runner under the admin user's home, owned by them.
+install -d -o "$RUNNER_USER" -g staff -m 0755 "$RUNNER_DIR"
+( cd "$RUNNER_DIR" && curl -fsSL -o "$ARCHIVE" "$URL" && tar xzf "$ARCHIVE" && rm -f "$ARCHIVE" )
+chown -R "$RUNNER_USER":staff "$RUNNER_DIR"
+
+# Grant temporary passwordless sudo for the registration steps (config.sh
+# and svc.sh need it). Mirror the homebrew.vzscript cleanup pattern.
+SUDOERS=/etc/sudoers.d/github-runner-install
+trap 'rm -f "$SUDOERS"' EXIT
+echo "$RUNNER_USER ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS"
+chmod 0440 "$SUDOERS"
+
+# Register with GitHub. --replace lets re-runs against the same name overwrite.
+LABELS="self-hosted,macOS,ARM64,${RUNNER_LABEL}"
+su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./config.sh --unattended \
+  --url 'https://github.com/${GH_REPO}' \
+  --token '${GH_TOKEN}' \
+  --name '${RUNNER_NAME}' \
+  --labels '${LABELS}' \
+  --replace"
+
+# Install and start the launchd service. svc.sh must run with sudo.
+( cd "$RUNNER_DIR" && ./svc.sh install "$RUNNER_USER" && ./svc.sh start )
+( cd "$RUNNER_DIR" && ./svc.sh status ) || true
+
+echo "Runner '${RUNNER_NAME}' registered for ${GH_REPO} with labels: ${LABELS}"
