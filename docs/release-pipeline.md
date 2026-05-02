@@ -58,8 +58,8 @@ configured.
 
 3. **Create a tap PAT.**
    Generate a fine-grained personal access token scoped only to
-   `tmc/homebrew-tap` with `contents: write`. Paste into
-   `HOMEBREW_TAP_TOKEN`.
+   `tmc/homebrew-tap` with `contents: write` and `pull_requests: write`.
+   Paste into `HOMEBREW_TAP_TOKEN`.
 
 4. **Smoke-test on a pre-release tag.**
    The first run is the riskiest; cut a `vX.Y.Z-rc1` tag against a branch
