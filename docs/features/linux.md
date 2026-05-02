@@ -99,6 +99,37 @@ cove run -linux -serial none             # disable serial
 cove run -linux -serial /tmp/serial.log  # write to file
 ```
 
+## Guest Shell (`-shell`)
+
+`cove run -linux -shell` attaches the host terminal to an interactive shell
+in the guest after the VM boots. It opens an `ExecStream` against the
+guest agent with `tty=true`, allocates a PTY in the guest via the agent's
+PTY support, and pipes the master side to the host terminal. Host
+SIGWINCH forwards as `ResizeExecTTY`; host SIGINT forwards as
+`SignalExec(SIGINT)` to the guest process group only -- the main cove
+shutdown handler is detached from SIGINT for the duration of the shell so
+your first Ctrl-C does not also stop the VM.
+
+```bash
+cove run -linux -shell                         # bash -l with PTY, GUI window
+cove run -linux -shell -gui                    # explicit GUI mode
+cove run -linux -shell -cpu 4 -memory 8        # bigger guest, same wrapper
+```
+
+Constraints:
+- Requires `-linux`. Refused for macOS guests until the macOS user agent
+  grows the same PTY path.
+- Mutually exclusive with `-headless`. The host terminal is the shell, so
+  cove needs a TTY to write to.
+- The default guest command is `/bin/bash -l`.
+
+Limitation in v0.2: stdin is **read-only**. The wrapper does not stream
+host keystrokes into the guest because the agent's `ExecStream` RPC is
+server-streaming only. Use this flag for tail-style observation -- watching
+boot logs, following journald output, viewing a long-running guest process.
+Bidirectional stdin and a standalone `cove shell <vm>` subcommand are
+deferred to v0.2.1 / v0.3 under design 023 (Docker-shaped exec UX).
+
 ## Rosetta (x86-64 Translation)
 
 Run x86-64 Linux binaries on ARM64 via Apple's Rosetta:
