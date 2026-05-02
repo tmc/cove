@@ -71,7 +71,7 @@ channel.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| `cove up` fresh-install path-resolution fix | done | none | [roadmap-post-v0.1](archive/roadmap-post-v0.1.md), `fix/cove-up-fresh-install` | Fixes the headline UX bug where install reported success but provisioning failed because the target VM directory was never materialized. |
+| `cove up` fresh-install path-resolution fix | done | none | [roadmap-post-v0.1](archive/roadmap-post-v0.1.md), `03fb38f fix(up): resolve up target before install` | Fixes the headline UX bug where install reported success but provisioning failed because the target VM directory was never materialized. Shipped on `main` as `03fb38f`. |
 | CDC vs fixed-offset chunking trade-off study | done | none | [002](002-cove-disks-oci.md) | Settles whether content-defined chunking is worth the cost before committing the v0.2 store design. |
 | `cove doctor` TCC/FDA probe | done | none | [TCC research](../research/tcc-via-user-agent.md) | Triggers/diagnoses Full Disk Access state before VirtioFS access silently fails. |
 | Verify 008 codebase-cleanup status | done | none | [008](008-codebase-cleanup-plan.md) | Confirms which cleanup phases already landed and gates v0.2 work. |
