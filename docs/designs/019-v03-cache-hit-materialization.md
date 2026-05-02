@@ -1,6 +1,6 @@
 # v0.3 cache-hit materialization
 
-**Status**: accepted planning input.
+**Status**: implemented (Slice 2 shipped).
 **Source**: NotebookLM notebook `79a32e96-8e1c-4e89-9385-20193e3a8209`,
 conversation `90dd1dda-c60b-4994-886f-547205ddf126`, synced source
 `049fafcb-5297-482a-aacf-53c2ec416568`
@@ -123,6 +123,8 @@ Add tests before any VM execution exists:
 Use `t.TempDir` for store and scratch roots. Avoid registry, network,
 Virtualization.framework, and real VM dependencies.
 
+**Note (post-ship)**: 6/8 named tests landed verbatim. `TestApplyCacheHitSkipsGuestExecution` is structurally covered by `TestExecuteCacheHitsChainsLayers` (uses nil runMiss). `TestHandleBuildNonDryRunStillGated` is covered by the local-base gate test under a different name. Cosmetic.
+
 ## Docs
 
 This was true while Slice 2 was in progress: public CLI docs should continue to
@@ -134,6 +136,8 @@ An internal changelog note is optional; do not imply user-visible build
 execution is available.
 
 ## Non-goals
+
+(Slice 2 non-goals — since superseded by Slice 3 and follow-ons.)
 
 - No VM boot.
 - No guest-agent calls.
@@ -148,15 +152,15 @@ execution is available.
 
 ## Handoff to Slice 3
 
-Slice 3 can build on this by adding the miss path:
+Slice 3 built on this by adding the miss path (see [020](020-v03-cache-miss-execution.md)):
 
-1. Materialize or fork the parent disk into scratch state.
-2. Boot the scratch VM.
-3. Run the missed vzscript step through the guest agent.
+1. Materialized or forked the parent disk into scratch state.
+2. Booted the scratch VM.
+3. Ran the missed vzscript step through the guest agent.
 4. Shut down cleanly.
-5. Diff parent and child with `DiffDisks`.
-6. Store the delta with `StoreDiskDelta`.
-7. Save the layer manifest and cache entry only after the full miss path
-   succeeds.
+5. Diffed parent and child with `DiffDisks`.
+6. Stored the delta with `StoreDiskDelta`.
+7. Saved the layer manifest and cache entry only after the full miss path
+   succeeded.
 
-That is also the slice that may remove the public non-dry-run gate.
+That is also the slice where the dry-run-only gate evolved into a local-base requirement (registry-cache support remains deferred).

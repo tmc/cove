@@ -4,6 +4,7 @@
 **Author**: cove team
 **Date**: 2026-04-16
 **Target**: cove 0.3 (depends on 0.1 OCI push/pull + 0.2 content-addressed store)
+**Status**: implemented through Slice 5 on `origin/main` 8559c9a; remaining work is registry cache import/export (deferred to v0.4).
 
 ## Changes since v0
 
@@ -230,7 +231,7 @@ Under `thorough` compaction, before the block-diff runs, the guest's swapfile is
 
 ### Default mode — targeted
 
-User flagged concern that `thorough` adds 30–60s per step, which could dominate an otherwise cache-friendly 5-step build. `targeted` is much cheaper but incomplete. The current CLI default is `targeted`; benchmark work can still replace that default if measured build-size savings justify the added latency. The benchmark harness should run representative workloads (`homebrew`, `golang`, `claude-code`, mixed) across all three modes and report:
+User flagged concern that `thorough` adds 30–60s per step, which could dominate an otherwise cache-friendly 5-step build. `targeted` is much cheaper but incomplete. The current CLI default is `targeted`; benchmark work can still replace that default if measured build-size savings justify the added latency. Targeted default validated against B4/B6 benchmark scaffold (2026-04-25). The benchmark harness should run representative workloads (`homebrew`, `golang`, `claude-code`, mixed) across all three modes and report:
 
 - Per-step overhead added by compaction
 - Per-step delta size reduction
@@ -483,12 +484,12 @@ Mitigations:
 6. **Scratch VM isolation.** Should scratch VMs be fully headless and network-restricted by default? Gives determinism (no clipboard interference, no random Bonjour discovery) but breaks scripts that legitimately need network. Lean: network on, GUI off; `# build-network: none` header opt-out for scripts that want isolation.
 7. **Parallel step execution.** BuildKit parallelizes independent steps in a DAG. vzscript `# deps:` already declares a DAG. Do we respect it in `cove build`, or execute in CLI-declared order only? Lean: CLI order in v0, DAG-parallel in v0.4.
 8. **Interop with lume.** Lume has no `build` — but images produced by `cove build` are standard OCI, so lume's `pull` gets them as plain images (no cache semantics, just the final disk state). Does this matter enough to call out? Lean: document it as a feature ("cove builds, everyone runs").
-9. **v0.4 signed secret manifests — which architecture?** v0.3 ships tmpfs-only, sourcing secret values from host env vars. v0.4 wants to support external secret stores so CI doesn't have to materialize tokens in its own env. Three candidate designs for Council round-2 to weigh in on:
+9. **v0.4 signed secret manifests — which architecture?** **v0.4 carry-over.** v0.3 shipped tmpfs-only, sourcing secret values from host env vars. v0.4 wants to support external secret stores so CI doesn't have to materialize tokens in its own env. Three candidate designs for Council round-2 to weigh in on:
     - **(A) URI scheme in script header.** `# secret-from: GITHUB_TOKEN=1password://vault/item/field` — cove shells out to an existing CLI (`op`, `vault`, `sops`, `age`) to resolve. Pro: zero new code to own; users already have these tools. Con: orchestrator becomes a fan-out shell invoker; trust model is "whatever the CLI does."
     - **(B) Age-encrypted sidecar OCI layer.** The image ships a small encrypted layer containing a secret manifest; consumers pull the image, decrypt with their private key, cove plumbs values into tmpfs. Pro: self-contained image, no runtime deps on external stores. Con: build is a credentials flow (who holds the recipient public keys?); rotation requires a rebuild.
     - **(C) Go plugin API for secret providers.** `type SecretProvider interface { Fetch(name string) ([]byte, error) }` with built-ins for env, 1Password, Vault, SOPS, age. Pro: extensible, testable, cove owns the trust model. Con: most code to write; a plugin ecosystem is an ongoing commitment.
-    - **User preference**: wants Council's input before committing.
-10. **Default `# compact:` mode.** Held pending benchmark harness results. See compaction section. Candidate defaults: `targeted` (safe middle), `thorough` (smallest layers, slowest), or `fast` (fastest, largest layers — only viable if cache hit rate is near 100% in practice).
+    - **User preference**: held for Council's input in v0.4.
+10. **Default `# compact:` mode.** **RESOLVED**: targeted is the v0.3 default; B6 soft-reset matrix scaffold landed (2026-04-25); replacement of default deferred to a future revision. See compaction section. Candidate defaults: `targeted` (safe middle), `thorough` (smallest layers, slowest), or `fast` (fastest, largest layers — only viable if cache hit rate is near 100% in practice).
 
 ---
 

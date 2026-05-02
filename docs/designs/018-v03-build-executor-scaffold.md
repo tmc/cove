@@ -1,6 +1,6 @@
 # v0.3 build executor scaffold
 
-**Status**: accepted planning input.
+**Status**: implemented (Slice 1 shipped).
 **Source**: NotebookLM notebook `79a32e96-8e1c-4e89-9385-20193e3a8209`,
 conversation `90dd1dda-c60b-4994-886f-547205ddf126`, plus local code review of
 `build.go`, `build_cache.go`, `build_layer.go`, `fork.go`, and `clone.go`.
@@ -13,13 +13,13 @@ execution, without exposing non-dry-run builds yet. This slice should make the
 next branch easier to review by settling scratch directory layout, ownership,
 lock files, stale cleanup, and tests.
 
-The public command remains:
+The public command remained, until Slice 3 landed local-base execution:
 
 ```text
 cove build: only --dry-run is implemented
 ```
 
-until Slice 3 actually runs a missed step inside a VM and persists a usable
+until Slice 3 actually ran a missed step inside a VM and persisted a usable
 layer.
 
 ## Internal shape
@@ -53,9 +53,11 @@ func (e *buildExecutor) cleanupScratch(sc buildScratch) error
 func gcBuildScratch(root string, isLive func(int) bool) error
 ```
 
-`Execute` in this slice should be callable from tests only. It may create and
-tear down scratch directories, but it must return a not-implemented error before
-VM boot, cache application, block diffing, or metadata commit.
+`Execute` in this slice was callable from tests only. It could create and
+tear down scratch directories, but it returned a not-implemented error before
+VM boot, cache application, block diffing, or metadata commit. (The
+`errBuildCacheMissExecutionNotImplemented` sentinel still exists but only fires
+when `runMiss == nil`, unreachable from production paths after Slice 3.)
 
 ## Scratch layout
 
@@ -114,10 +116,10 @@ For tests that do not run on APFS, keep a pure metadata path:
 Dry-run must stay side-effect free. Do not run scratch GC or create scratch
 directories from the public `--dry-run` path.
 
-Non-dry-run remains gated in `handleBuild`, so production users cannot trigger
-scratch creation in this slice. Tests may construct `buildExecutor` directly.
+Non-dry-run remained gated in `handleBuild` during Slice 1, so production users
+could not trigger scratch creation. Tests could construct `buildExecutor` directly.
 
-When Slice 3 removes the gate, the executor path should:
+When Slice 3 removed the gate (now: local-base execution required), the executor path now does:
 
 1. Run `gcBuildScratch` at the start of non-dry-run execution.
 2. Create one scratch directory per active step attempt.
@@ -162,6 +164,8 @@ network, registry, Virtualization.framework, and real VM dependencies.
 
 ## Non-goals
 
+(Slice 1 non-goals — since superseded by Slices 2–4, except external secret-store URI work which is v0.4.)
+
 - No VM boot.
 - No guest-agent calls.
 - No cache-hit layer application.
@@ -174,8 +178,8 @@ network, registry, Virtualization.framework, and real VM dependencies.
 
 ## Handoff to Slice 2
 
-Slice 2 can build on this by replacing the "not implemented" executor step with
-cache-hit materialization:
+Slice 2 built on this by replacing the "not implemented" executor step with
+cache-hit materialization (see [019](019-v03-cache-hit-materialization.md)):
 
 1. Resolve a cache entry.
 2. Load and validate the layer manifest.

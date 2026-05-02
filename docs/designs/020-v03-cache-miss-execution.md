@@ -1,17 +1,18 @@
 # v0.3 cache-miss execution
 
-**Status**: accepted implementation contract.
+**Status**: implemented (Slice 3 shipped on `origin/main` 8559c9a).
 **Roadmap slice**: [017](017-v03-execution-roadmap.md) Slice 3.
-**Branch**: `feat/v03-build-vm-execution`
+**Branch**: `feat/v03-build-vm-execution` (merged to main)
 
 ## Purpose
 
-Slice 3 is the point where `cove build` stops being a planner only. It must run
-missed vzscript steps inside a scratch VM, persist the resulting layer metadata,
-and leave final image state that the existing push path can consume.
+Slice 3 was the point where `cove build` stopped being a planner only. It runs
+missed vzscript steps inside a scratch VM, persists the resulting layer metadata,
+and leaves final image state that the existing push path can consume.
 
-Do not remove the public non-dry-run gate until all acceptance gates in this doc
-are passing.
+All acceptance gates in this doc passed before the public dry-run-only gate
+evolved into the local-base requirement; pushing registry-cache support remains
+deferred.
 
 ## Execution contract
 
@@ -80,6 +81,6 @@ store only, but it must not invent a second image format for build output.
 
 ## Follow-on work
 
-Secrets and compaction are Slice 4 and Slice 5. Slice 3 must preserve their
-metadata hooks, but it should not add new public directives beyond what the
-planner already accepts.
+Secrets (Slice 4) and compaction (Slice 5) shipped after Slice 3, building on
+its metadata hooks. No new public directives were added beyond what the planner
+already accepted.
