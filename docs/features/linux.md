@@ -123,12 +123,26 @@ Constraints:
   cove needs a TTY to write to.
 - The default guest command is `/bin/bash -l`.
 
-Limitation in v0.2: stdin is **read-only**. The wrapper does not stream
-host keystrokes into the guest because the agent's `ExecStream` RPC is
-server-streaming only. Use this flag for tail-style observation -- watching
-boot logs, following journald output, viewing a long-running guest process.
-Bidirectional stdin and a standalone `cove shell <vm>` subcommand are
-deferred to v0.2.1 / v0.3 under design 023 (Docker-shaped exec UX).
+### v0.2 readiness: what's IN
+
+- `cove run -linux -shell` -- in-process interactive shell during
+  `cove run`. Host SIGWINCH resizes the guest TTY; host SIGINT signals
+  the guest process group, **not** cove itself.
+- Agent-side PTY allocation via `creack/pty` (`cmd/vz-agent/server.go`).
+- Ubuntu LTS only for the smoke-tested path. Other distros boot but the
+  shell wrapper has only been integration-tested against Ubuntu so far.
+
+### v0.2 readiness: what's OUT (deferred)
+
+- Standalone `cove shell <vm>` command. Tracked in **design 023**
+  (Docker-shaped exec UX); planned for v0.2.1 or v0.3 depending on
+  proto-change scheduling.
+- **Bidirectional stdin.** The agent's `ExecStream` RPC is server-
+  streaming only, so the wrapper cannot type into the guest. Use
+  `-shell` for tail-style observation (boot logs, journald, long-
+  running output). Bidi stdin requires a proto change scoped to v0.3.
+- Phase B (OCI image distribution + per-distro CI matrix). Deferred to
+  v0.2.1 per the v0.2 audit.
 
 ## Rosetta (x86-64 Translation)
 
