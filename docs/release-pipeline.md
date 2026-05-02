@@ -4,122 +4,195 @@ title: Release pipeline
 
 # Release pipeline
 
-The release pipeline is tag-driven. Pushing a tag matching `v*` to GitHub
-triggers `.github/workflows/release.yml`, which runs goreleaser on a
-`macos-14` runner to produce signed + notarized artifacts:
+Releases are cut from a maintainer workstation. CI only runs tests on tag
+pushes; signing and notarization happen locally so the Developer ID
+certificate and the App Store Connect app-specific password never leave
+the machine that holds them.
+
+A successful run produces:
 
 - `cove_<version>_darwin_arm64.tar.gz` — tar.gz archive (Homebrew + manual install).
 - `cove-<version>.dmg` — drag-install DMG, signed and notarized.
 - `vz-agent_<version>_<os>_<arch>.tar.gz` — guest agent for darwin/arm64 and linux/arm64.
 - `checksums.txt` — SHA256 sums.
-- A cask update PR opened against `tmc/homebrew-tap` (default branch: `master`).
 
-The DMG is built by `scripts/build-dmg.sh` from the post-notarize binary;
-the cask currently points at the tar.gz for fast `brew install`, with the
-DMG offered as a drag-install alternative in the cask `caveats`.
+The DMG is built by `scripts/build-dmg.sh` from the post-notarize binary
+and stapled before upload.
 
-## Required GitHub repository secrets
+## Why local-only signing
 
-Set these in **Settings → Secrets and variables → Actions** on the
-`tmc/vz-macos` repository before cutting the first release tag.
+Storing a `.p12` of the Developer ID identity in GitHub Actions secrets
+is a real supply-chain risk: anyone who can land a workflow change or
+escalate via a compromised dependency can exfiltrate the certificate.
+The trade-off is the maintainer becomes the bottleneck per release and
+the Homebrew cask must be bumped manually. For a single-maintainer tool
+that releases on a human cadence, the trade is worth it.
 
-| Secret | What it is |
-|---|---|
-| `MACOS_DEVELOPER_ID_CERT_P12_BASE64` | Base64-encoded `.p12` export of the **Developer ID Application** certificate + private key. Generate with `security export -k login.keychain-db -t certs -f pkcs12 -P <password> -o cert.p12 && base64 < cert.p12 \| pbcopy`. |
-| `MACOS_DEVELOPER_ID_CERT_PASSWORD` | The password used during the `.p12` export. |
-| `MACOS_NOTARY_APPLE_ID` | The Apple ID of the account enrolled in the Apple Developer program (e.g. `release@example.com`). Used as the notarytool key ID. |
-| `MACOS_NOTARY_TEAM_ID` | The 10-character Team ID from the Apple Developer membership page. Used as the notarytool issuer ID. |
-| `MACOS_NOTARY_APP_PASSWORD` | An **app-specific password** generated at <https://appleid.apple.com/account/manage> → "App-Specific Passwords". Used as the notarytool key. |
-| `HOMEBREW_TAP_TOKEN` | A scoped GitHub PAT with `contents: write` and `pull_requests: write` on `tmc/homebrew-tap`. Required so goreleaser can push the side branch and open the cask PR. |
+CI is only used to verify that a tag still builds and tests pass. No
+secrets are configured on the repository.
 
-`GITHUB_TOKEN` is provided automatically by Actions and does not need to be
-configured.
+## One-time keychain setup
 
-## First-time setup
+These steps run once per workstation, before the first release.
 
-1. **Export the Developer ID certificate.**
-   On a workstation with the cert in the login keychain:
+1. **Confirm the Developer ID identity is in the login keychain.**
 
    ```bash
    security find-identity -v -p codesigning login.keychain-db
-   # Look for "Developer ID Application: Your Name (TEAMID)"
-   security export -k login.keychain-db -t identities -f pkcs12 \
-     -P "<choose-a-password>" -o ~/cove-developer-id.p12
-   base64 < ~/cove-developer-id.p12 | pbcopy
-   # Paste into MACOS_DEVELOPER_ID_CERT_P12_BASE64
-   # Paste the password into MACOS_DEVELOPER_ID_CERT_PASSWORD
-   rm ~/cove-developer-id.p12
+   # Expect a line like:
+   #   1) ABCD1234... "Developer ID Application: Your Name (TEAMID)"
    ```
 
-2. **Generate an app-specific password for notarytool.**
-   Sign in at <https://appleid.apple.com/account/manage>, generate a new
-   app-specific password labelled "cove-notarytool", and paste it into
-   `MACOS_NOTARY_APP_PASSWORD`.
+   If the identity is missing, request it from the Apple Developer
+   portal and import the resulting `.cer` plus the private key from
+   the original CSR.
 
-3. **Create a tap PAT.**
-   Generate a fine-grained personal access token scoped only to
-   `tmc/homebrew-tap` with `contents: write` and `pull_requests: write`.
-   Paste into `HOMEBREW_TAP_TOKEN`.
+2. **Store notarytool credentials in the keychain.**
 
-4. **Smoke-test on a pre-release tag.**
-   The first run is the riskiest; cut a `vX.Y.Z-rc1` tag against a branch
-   and inspect the produced release. The workflow automatically marks
-   pre-release tags via goreleaser's `prerelease: auto`.
+   Generate an app-specific password at
+   <https://appleid.apple.com/account/manage> labelled
+   `cove-notarytool`, then:
+
+   ```bash
+   xcrun notarytool store-credentials cove-notarytool \
+       --apple-id <apple-id> \
+       --team-id <TEAMID> \
+       --password <app-specific-password>
+   ```
+
+   The credentials live in the login keychain under the profile name
+   `cove-notarytool` and are referenced by name from then on.
+
+3. **Export `DEVELOPER_ID` to your shell environment.**
+
+   ```bash
+   export DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
+   ```
+
+   Add to `.zshrc` / `.bashrc` for persistence. The release script
+   refuses to run without it.
 
 ## Cutting a release
 
+The release script enforces a clean working tree and refuses to run on
+a non-tag commit, so the order matters: commit first, tag second, run
+the script third.
+
 ```bash
-# 1. Land the changelog edits and version bump on main.
-# 2. Tag with the standard prefix.
-git tag -s v0.1.3 -m "cove v0.1.3"
-git push origin v0.1.3
-# 3. Watch the run.
+# 1. Land the changelog and version bump on main.
+# 2. Sign and push the tag.
+git tag -s v0.1.4 -m "cove v0.1.4"
+git push origin v0.1.4
+
+# 3. Wait for CI to confirm the tag builds and tests pass.
 gh run watch
-# 4. After the run lands, find and merge the cask PR.
-gh pr list -R tmc/homebrew-tap
-gh pr merge -R tmc/homebrew-tap <PR-number> --squash
-# 5. Smoke-test the published cask.
+
+# 4. Build, sign, notarize, and staple locally.
+make release-local
+# (or: scripts/release-local.sh)
+
+# 5. Upload the artifacts to the GitHub release.
+gh release create v0.1.4 \
+    --title "cove v0.1.4" \
+    --notes-file CHANGELOG.md \
+    dist/cove_0.1.4_darwin_arm64.tar.gz \
+    dist/cove-0.1.4.dmg \
+    dist/checksums.txt \
+    dist/vz-agent_0.1.4_darwin_arm64.tar.gz \
+    dist/vz-agent_0.1.4_linux_arm64.tar.gz
+
+# 6. Bump the Homebrew cask manually (see "Manual cask bump" below).
+
+# 7. Smoke-test the published cask.
 brew update
 brew install tmc/tap/cove
 cove version
 ```
 
-The cask PR's branch (`cove-<version>`) is opened against the tap's default
-branch (`master`). Until the PR is merged, `brew install tmc/tap/cove` will
-still resolve to the previous version; merging is part of the cut, not an
-optional follow-up.
+## What `release-local` does
 
-The workflow runs in three logical phases:
+`scripts/release-local.sh` runs seven steps in order. Each step refuses
+to start if its precondition is not met.
 
-1. **Setup**: checkout, set up Go (version pinned via `go.mod`), import
-   the Developer ID cert into a temporary keychain, resolve
-   `MACOS_SIGN_IDENTITY`.
-2. **Build + notarize**: goreleaser builds, signs, and notarizes the
-   `cove` binary using the entitlements at
-   `internal/autosign/vz.entitlements`. The `vz-agent` builds for
-   darwin/arm64 and linux/arm64 (no signing required).
-3. **DMG package + publish**: `scripts/build-dmg.sh` packages the
-   notarized binary into a DMG; the DMG is then signed, notarized, and
-   stapled. A second goreleaser run uploads everything to GitHub
-   Releases and pushes the cask update.
+1. **Guards.** Bail if the working tree has uncommitted changes, if
+   `HEAD` is not on a tag matching `v*`, if `$DEVELOPER_ID` is unset or
+   missing from the keychain, or if the `cove-notarytool` keychain
+   profile is invalid.
+2. **Build.** `goreleaser release --snapshot --clean --skip=publish`
+   produces unsigned archives plus the unsigned `cove` binary at
+   `dist/cove_darwin_arm64*/cove`.
+3. **Codesign the binary.** `codesign --sign "$DEVELOPER_ID"
+   --options runtime --timestamp --force --entitlements
+   internal/autosign/vz.entitlements <binary>`. Hardened runtime + a
+   secure timestamp + the virtualization entitlements are all required
+   for notarization to accept the binary.
+4. **Notarize the binary.** Wrap the binary with `ditto -c -k
+   --keepParent` (notarytool only takes `.zip` / `.pkg` / `.dmg`),
+   submit with `xcrun notarytool submit --keychain-profile
+   cove-notarytool --wait`, and confirm the response is `Accepted`.
+   Stapling a raw binary is not supported by Apple — the ticket is
+   recorded by hash and Gatekeeper looks it up online when the binary
+   first runs.
+5. **Build, sign, notarize, and staple the DMG.** `scripts/build-dmg.sh`
+   produces `dist/cove-<version>.dmg`; `codesign` signs it with the
+   same identity; `xcrun notarytool submit --wait` notarizes it; and
+   `xcrun stapler staple` attaches the ticket so an offline downloader
+   can verify the DMG without contacting Apple.
+6. **Re-pack `cove_<version>_darwin_arm64.tar.gz`.** goreleaser archived
+   the unsigned binary; we rebuild the tar.gz over the signed binary
+   and refresh `checksums.txt` against all final artifacts.
+7. **Verify.** `codesign -dvv` on the binary plus
+   `spctl -a -vv -t install` on the DMG. Either failing aborts the
+   release before it leaves the machine.
+
+After step 7 the script prints the artifact paths and the suggested
+`gh release create` invocation.
+
+## Manual cask bump
+
+The cask used to be auto-PRed by goreleaser. With local-only signing,
+the maintainer opens the PR against `tmc/homebrew-tap` by hand:
+
+```bash
+# 1. Compute the SHA256 of the published tar.gz.
+shasum -a 256 dist/cove_0.1.4_darwin_arm64.tar.gz
+# Or pull from the published checksums.txt:
+gh release view v0.1.4 -R tmc/cove --json assets \
+    --jq '.assets[] | select(.name=="checksums.txt").url' \
+    | xargs curl -sL
+
+# 2. Edit Casks/cove.rb in tmc/homebrew-tap, updating:
+#      version "0.1.4"
+#      sha256  "<shasum-of-tar.gz>"
+#      url     "https://github.com/tmc/cove/releases/download/v0.1.4/cove_0.1.4_darwin_arm64.tar.gz"
+
+# 3. Open the PR.
+git checkout -b cove-0.1.4
+git commit -am "cove 0.1.4"
+git push -u origin cove-0.1.4
+gh pr create --base master --title "cove 0.1.4" --body ""
+```
+
+Until the PR is merged, `brew install tmc/tap/cove` still resolves to
+the previous version; merging is part of the cut, not an optional
+follow-up.
 
 ## Smoke-testing the DMG build offline
 
 `scripts/build-dmg.sh` does not require any signing keys; it only uses
-`hdiutil` and `ln`. You can dry-run the DMG step against a locally-built
-binary before cutting a tag:
+`hdiutil` and `ln`. Dry-run before the real cut:
 
 ```bash
 GOWORK=off go build -o /tmp/cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements /tmp/cove
-./scripts/build-dmg.sh /tmp/cove 0.1.3-dryrun /tmp/cove-dryrun.dmg
+./scripts/build-dmg.sh /tmp/cove 0.1.4-dryrun /tmp/cove-dryrun.dmg
 hdiutil verify /tmp/cove-dryrun.dmg
 ```
 
 The `hdiutil verify` step confirms the DMG is well-formed; the resulting
-`.dmg` will be ad-hoc-signed only and **not notarized**, so do not publish
-it. The release workflow re-builds the DMG against the post-notarize
-binary and signs+notarizes the DMG itself before upload.
+`.dmg` will be ad-hoc-signed only and **not notarized**, so do not
+publish it. `release-local.sh` re-builds the DMG against the
+post-notarize binary and signs+notarizes the DMG itself.
 
 ## Verifying a release locally
 
@@ -140,36 +213,45 @@ xcrun stapler validate cove-<version>.dmg
 ## Public release gate
 
 The cove binary and project name remain under a USPTO conflict review
-documented in `docs/research/trademark-cove.md`. Until counsel clears the
-name or a rename lands, this pipeline is fine for `v0.x.y` and `v0.x.y-rcN`
-pre-releases against the existing repository, but **a v1.0 public release
-must not ship under the cove name** without the trademark gate cleared.
+documented in `docs/research/trademark-cove.md`. Until counsel clears
+the name or a rename lands, this pipeline is fine for `v0.x.y` and
+`v0.x.y-rcN` pre-releases against the existing repository, but **a v1.0
+public release must not ship under the cove name** without the
+trademark gate cleared.
 
-This document explicitly does not propose alternative names; that work is
-tracked separately. The release pipeline itself is name-agnostic — only
-the user-visible strings in `.goreleaser.yml`, `README.md`, and cask
-metadata would need renaming if the project moves to a different name.
+This document explicitly does not propose alternative names; that work
+is tracked separately. The release pipeline itself is name-agnostic —
+only the user-visible strings in `.goreleaser.yml`, `README.md`, and
+cask metadata would need renaming if the project moves to a different
+name.
 
 ## Troubleshooting
 
-### `no Developer ID Application identity found in imported keychain`
+### `error: DEVELOPER_ID is unset`
 
-The `.p12` export did not include the **identity** (cert + private key
-pair). Use `security export -t identities` rather than `-t certs`. If the
-private key is missing from your local login keychain, you need to
-re-download the cert from the Apple Developer portal — the private key is
-generated at CSR time and cannot be re-exported.
+Export the full identity string in your shell, e.g.
+`export DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"`.
+Match it character-for-character against the second column of
+`security find-identity -v -p codesigning`.
 
-### Notarization hangs past the 20-minute timeout
+### `error: notarytool keychain profile 'cove-notarytool' is missing`
 
-App Store Connect occasionally has multi-hour queues. Re-run the workflow;
-the goreleaser `notarize.macos.notarize.timeout` is configured at 20m for
-the binary and `xcrun notarytool submit --wait` for the DMG. If
-queue-induced failure becomes routine, switch to async notarization plus a
-follow-up `stapler staple` step.
+Run the `xcrun notarytool store-credentials` command from the one-time
+setup above. If the password rotates, re-run the same command — it
+overwrites the existing entry.
 
-### `homebrew-tap` PR not opened
+### Notarization hangs
 
-The most common cause is `HOMEBREW_TAP_TOKEN` not having `contents: write`
-on the tap repo, or the tap repo missing the target branch. Verify both
-before re-running.
+App Store Connect occasionally has multi-hour queues; `--wait` blocks
+indefinitely. If it stalls, kill the script with Ctrl-C and resume by
+re-running it — the build is incremental and notarytool will surface
+the status of any in-flight submission with `xcrun notarytool history
+--keychain-profile cove-notarytool`.
+
+### `codesign` complains about an expired certificate
+
+Developer ID Application certificates expire after five years. Generate
+a new CSR from Keychain Access, request a fresh cert in the Apple
+Developer portal, install it, and update the value of `$DEVELOPER_ID`.
+Existing notarized releases stay valid; only future signs need the new
+identity.
