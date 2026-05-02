@@ -53,6 +53,23 @@ func TestHelperLaunchdPlistShape(t *testing.T) {
 	if keepAliveIdx < 0 || successfulExitIdx < 0 || successfulExitIdx < keepAliveIdx {
 		t.Errorf("SuccessfulExit must follow KeepAlive in plist; got:\n%s", got)
 	}
+
+	// Hardening: EnvironmentVariables must set HOME so os.UserHomeDir()
+	// resolves and ~/.vz path resolution does not fall back to mkdir .vz
+	// against cwd / (EROFS). Regression for project_cove_helper_crashloop.
+	if !strings.Contains(got, "<key>EnvironmentVariables</key>") {
+		t.Errorf("plist missing EnvironmentVariables; got:\n%s", got)
+	}
+	if !strings.Contains(got, "<key>HOME</key>") || !strings.Contains(got, "<string>/var/root</string>") {
+		t.Errorf("plist must set HOME=/var/root in EnvironmentVariables; got:\n%s", got)
+	}
+
+	// Hardening: PATH must exclude /usr/local/bin. The helper runs as root and
+	// invokes launchctl/diskutil/mount by bare name; /usr/local/bin is
+	// admin-writable and would let a local admin hijack a root-priv exec.
+	if !strings.Contains(got, "<string>/usr/sbin:/sbin:/usr/bin:/bin</string>") {
+		t.Errorf("plist PATH must be /usr/sbin:/sbin:/usr/bin:/bin (no /usr/local/bin); got:\n%s", got)
+	}
 }
 
 // TestHelperLaunchdPlistInterpolation verifies the label and binary path
