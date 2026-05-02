@@ -63,6 +63,13 @@ func TestHelperLaunchdPlistShape(t *testing.T) {
 	if !strings.Contains(got, "<key>HOME</key>") || !strings.Contains(got, "<string>/var/root</string>") {
 		t.Errorf("plist must set HOME=/var/root in EnvironmentVariables; got:\n%s", got)
 	}
+
+	// Hardening: PATH must exclude /usr/local/bin. The helper runs as root and
+	// invokes launchctl/diskutil/mount by bare name; /usr/local/bin is
+	// admin-writable and would let a local admin hijack a root-priv exec.
+	if !strings.Contains(got, "<string>/usr/sbin:/sbin:/usr/bin:/bin</string>") {
+		t.Errorf("plist PATH must be /usr/sbin:/sbin:/usr/bin:/bin (no /usr/local/bin); got:\n%s", got)
+	}
 }
 
 // TestHelperLaunchdPlistInterpolation verifies the label and binary path
