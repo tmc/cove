@@ -1,0 +1,48 @@
+# nix — Install Nix package manager (Determinate Systems multi-user installer)
+# runs-on: daemon
+
+guest-ping
+guest-shell install-nix.sh
+
+-- install-nix.sh --
+#!/bin/bash
+set -eu
+
+# Determinate Systems' installer is run as root in daemon mode and configures
+# users automatically, so unlike Homebrew we don't need a temporary sudoers
+# grant. We still resolve an admin user to verify the install end-to-end.
+NIX_USER=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$NIX_USER" ]; then
+  echo "error: no admin user found" >&2
+  exit 1
+fi
+echo "Installing Nix; will verify as user: $NIX_USER"
+
+# Skip if Nix is already present (idempotent re-runs).
+if [ -e /nix/var/nix/profiles/default/bin/nix ] || command -v nix >/dev/null 2>&1; then
+  echo "Nix already installed, skipping installer."
+else
+  # Determinate Systems installer:
+  # - Multi-user daemon mode is the default (no flag needed).
+  # - --determinate selects the Determinate flavor (better uninstall via
+  #   `/nix/nix-installer uninstall`, auto-handles synthetic.conf and the
+  #   /nix APFS volume on macOS).
+  # - --no-confirm runs unattended.
+  curl -fsSL https://install.determinate.systems/nix \
+    | /bin/bash -s -- install --determinate --no-confirm
+fi
+
+# Determinate edits /etc/zshrc and /etc/bashrc to source the daemon profile,
+# so a fresh login shell picks up nix on PATH.
+NIX_PROFILE_SH=/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+if [ ! -r "$NIX_PROFILE_SH" ]; then
+  echo "error: nix-daemon profile not found at $NIX_PROFILE_SH" >&2
+  exit 1
+fi
+
+# Verify the daemon-mode install: nix on PATH for the admin user.
+su -l "$NIX_USER" -c ". $NIX_PROFILE_SH && nix --version"
+
+# Smoke test: run a flake from nixpkgs as the admin user. This exercises the
+# daemon, the /nix store, and the user's profile end-to-end.
+su -l "$NIX_USER" -c ". $NIX_PROFILE_SH && nix --extra-experimental-features 'nix-command flakes' run nixpkgs#hello"
