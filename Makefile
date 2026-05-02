@@ -4,7 +4,7 @@ COMMIT  ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build sign agent test clean lint proto proto-go proto-swift release-tools release-check
+.PHONY: build sign agent test clean lint proto proto-go proto-swift release-tools release-check release-local
 
 build:
 	go build -buildvcs=true -ldflags "$(LDFLAGS)" -o $(BINARY) .
@@ -31,6 +31,11 @@ release-check: release-tools
 	GOWORK=off go test -short ./...
 	GOWORK=off go vet ./...
 	GOWORK=off goreleaser release --snapshot --clean --skip=publish
+
+# Local signed + notarized release. Requires DEVELOPER_ID and a notarytool
+# keychain profile named "cove-notarytool". See docs/release-pipeline.md.
+release-local: release-tools
+	./scripts/release-local.sh
 
 clean:
 	rm -f cove vz-macos cmd/vz-agent/vz-agent
