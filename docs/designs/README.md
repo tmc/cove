@@ -25,6 +25,7 @@ implementation review. Start there before choosing new work.
 13. [v0.4 CI executors](021-v04-ci-executors-tracks.md) — v0.4 — GitHub Actions and GitLab executors as wrappers over `cove run -fork-from`, the control socket, and the guest agent. Slice 1 GHA action, Slice 2 GitLab shell-runner shim.
 14. [v0.4 Anthropic adapter](022-v04-anthropic-adapter.md) — v0.4 — Anthropic computer-use adapter mirroring the OpenAI Agents SDK adapter shape. Slice 1 SDK survey (Anthropic has no `ComputerTool` analogue; adapter drives the Messages API agent loop directly). Slice 2 `cove-claude-sandbox` Python package.
 15. [cove shell — Docker-shaped exec UX](023-cove-shell-exec-ux.md) — v0.2.1 / v0.3 — standalone `cove shell <vm>` subcommand brokering exec through the per-VM control socket because vsock requires VM-owner-process. Slice 1 control-socket extension (`agent-exec-attach/-resize/-signal`); Slice 2 `cove shell` client; Slice 3 v0.3 proto `ExecAttach` bidi RPC for true interactive stdin.
+16. [cove runner images — publish & fork-from](024-cove-runner-images.md) — v0.2.1 / v0.4 — publish VM disk images as OCI artifacts and fork-from to spawn ephemeral CI runners. Slice 1 `cove image build` + local image store; Slice 2 push/pull behind a privacy gate; Slice 3 public-registry promotion contingent on the cove repo flipping public.
 
 ## Strategy inputs
 
