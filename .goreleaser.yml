@@ -38,29 +38,11 @@ builds:
       - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
 
-# Sign the cove binary with Developer ID, embed the virtualization
-# entitlements, then notarize with notarytool. The keychain identity is
-# imported by the release workflow (.github/workflows/release.yml) and
-# resolved through MACOS_SIGN_IDENTITY before goreleaser starts.
-#
-# Notarization uses the App Store Connect notarytool API. The required
-# secrets are documented in docs/release-pipeline.md:
-#   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_APP_PASSWORD.
-notarize:
-  macos:
-    - ids:
-        - cove
-      enabled: "{{ if index .Env \"MACOS_SIGN_IDENTITY\" }}true{{ else }}false{{ end }}"
-      sign:
-        certificate: "{{ .Env.MACOS_SIGN_IDENTITY }}"
-        password: ""
-        entitlements: internal/autosign/vz.entitlements
-      notarize:
-        issuer_id: "{{ .Env.MACOS_NOTARY_TEAM_ID }}"
-        key_id: "{{ .Env.MACOS_NOTARY_APPLE_ID }}"
-        key: "{{ .Env.MACOS_NOTARY_APP_PASSWORD }}"
-        wait: true
-        timeout: 20m
+# Signing and notarization happen outside goreleaser — see
+# scripts/release-local.sh and docs/release-pipeline.md. goreleaser is used
+# here only for build + archive + checksum, both in `make release-check`
+# (snapshot dry-run) and from inside scripts/release-local.sh before the
+# manual codesign / notarytool / stapler pass.
 
 archives:
   - id: cove
@@ -95,42 +77,9 @@ changelog:
       - "^ci:"
       - "Merge pull request"
 
-# The Homebrew cask points at the tar.gz so users get a fast brew install.
-# A signed + notarized DMG is uploaded as a separate release artifact by
-# the workflow's `package-dmg` step (see .github/workflows/release.yml);
-# the cask `caveats:` mentions it for users who prefer drag-install.
-homebrew_casks:
-  - name: cove
-    ids:
-      - cove
-    binaries:
-      - cove
-    homepage: https://github.com/tmc/vz-macos
-    description: macOS and Linux VM management using Apple's Virtualization framework
-    directory: Casks
-    custom_block: |
-      depends_on macos: ">= :monterey"
-      depends_on arch: :arm64
-    repository:
-      owner: tmc
-      name: homebrew-tap
-      branch: "{{.ProjectName}}-{{.Version}}"
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-      # The tap's default branch is "master". The release workflow pushes the
-      # cask to a side branch (above) and opens a PR against master so the
-      # update is reviewed before users see it on `brew install`.
-      pull_request:
-        enabled: true
-        base:
-          branch: master
-    commit_author:
-      name: github-actions
-      email: 41898282+github-actions[bot]@users.noreply.github.com
-    # Caveats must be a single string: goreleaser emits each newline as a
-    # separate Ruby statement inside `caveats do ... end`, and Ruby returns
-    # only the last expression — multi-line YAML would silently drop all but
-    # the final line.
-    caveats: "cove is signed with Developer ID and notarized, so it runs without Gatekeeper prompts. Drag-install users can also grab cove-{{ .Version }}.dmg from the GitHub release page."
+# Homebrew cask publishing was removed when signing moved off CI. The cask
+# at tmc/homebrew-tap is now bumped manually after each release; see
+# docs/release-pipeline.md for the procedure.
 
 release:
   github:
