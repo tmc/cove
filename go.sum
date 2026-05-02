@@ -10,6 +10,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/pierrec/lz4/v4 v4.1.26 h1:GrpZw1gZttORinvzBdXPUXATeqlJjqUG/D87TKMnhjY=
 github.com/pierrec/lz4/v4 v4.1.26/go.mod h1:EoQMVJgeeEOMsCqCzqFm2O0cJvljX2nGZjcRIPL34O4=
+github.com/tmc/apple v0.5.5 h1:OCa/FgijExw3gA+WU9g6usgDD2XNOPEE23pl1fDVP3o=
+github.com/tmc/apple v0.5.5/go.mod h1:yy3A4tLBZYBCTu5xG52ZdtaAfzpRdTsuH5sXZn3MjSs=
 github.com/tmc/macgo v0.1.1 h1:9EB+5EQfyhGoRqexfj+5hU7FHIhIv+XYY1pLtOjnMas=
 github.com/tmc/macgo v0.1.1/go.mod h1:X6P77neg6ent0JsJDbnhC64pks1izaAANCU5J21PH34=
 golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=
