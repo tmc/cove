@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/creack/pty"
+	"golang.org/x/sys/unix"
+
 	pb "github.com/tmc/vz-macos/proto/agentpb"
 )
 
@@ -55,5 +58,45 @@ func TestResizeExecTTYRequiresTTY(t *testing.T) {
 	}))
 	if err == nil || !strings.Contains(err.Error(), "exec has no tty") {
 		t.Fatalf("ResizeExecTTY error = %v", err)
+	}
+}
+
+// TestResizeExecTTYAppliesWinsize allocates a real PTY pair, registers it as
+// an active exec, and verifies that ResizeExecTTY issues TIOCSWINSZ visibly
+// on the slave side. This is the smoke test that the hardcoded ttyFD: -1
+// stub has been replaced with real PTY allocation.
+func TestResizeExecTTYAppliesWinsize(t *testing.T) {
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		t.Fatalf("pty.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		ptmx.Close()
+		tty.Close()
+	})
+
+	s := newAgentServer()
+	s.execs["exec-1"] = &activeExec{
+		pid:   syscall.Getpid(),
+		tty:   true,
+		ttyFD: int(ptmx.Fd()),
+		ptmx:  ptmx,
+	}
+
+	const wantRows, wantCols = 42, 137
+	if _, err := s.ResizeExecTTY(context.Background(), connect.NewRequest(&pb.ResizeExecTTYRequest{
+		ExecId: "exec-1",
+		Rows:   wantRows,
+		Cols:   wantCols,
+	})); err != nil {
+		t.Fatalf("ResizeExecTTY: %v", err)
+	}
+
+	got, err := unix.IoctlGetWinsize(int(tty.Fd()), unix.TIOCGWINSZ)
+	if err != nil {
+		t.Fatalf("IoctlGetWinsize: %v", err)
+	}
+	if got.Row != wantRows || got.Col != wantCols {
+		t.Fatalf("winsize after resize = %dx%d, want %dx%d", got.Row, got.Col, wantRows, wantCols)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -48,6 +49,10 @@ type activeExec struct {
 	pid   int
 	tty   bool
 	ttyFD int
+	// ptmx holds the PTY master file when the exec was launched with tty=true
+	// via pty.Start. The agent retains it so reads can be drained into the
+	// output stream and so the master fd survives until untrackExec closes it.
+	ptmx *os.File
 }
 
 func newAgentServer() *agentServer {
@@ -143,6 +148,10 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 		return err
 	}
 
+	if r.GetTty() {
+		return s.execStreamPTY(r, cmd, stream)
+	}
+
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("stdout pipe: %v", err))
@@ -170,6 +179,34 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 			exitCode = int32(exitErr.ExitCode())
 		}
 	}
+	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
+}
+
+// execStreamPTY runs cmd attached to a freshly allocated pseudo-terminal and
+// forwards the master side into stream as STDOUT chunks. The kernel folds
+// child stderr into the same pty, so a separate stderr stream is unnecessary.
+// The PTY master fd is recorded in activeExec.ttyFD so ResizeExecTTY can
+// issue TIOCSWINSZ against it; the master *os.File is closed by untrackExec.
+func (s *agentServer) execStreamPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.ServerStream[pb.ExecOutput]) error {
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("pty start: %v", err))
+	}
+	s.trackExecWithPty(r, cmd, ptmx)
+	defer s.untrackExec(r.GetExecId())
+
+	done := make(chan error, 1)
+	go streamPipe(stream, ptmx, pb.ExecOutput_STDOUT, done)
+
+	exitCode := int32(0)
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = int32(exitErr.ExitCode())
+		}
+	}
+	// Closing the master from untrackExec causes the pipe reader to return
+	// EOF/EIO; either is fine — we just need to drain it before returning.
+	<-done
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
 }
 
@@ -237,13 +274,34 @@ func (s *agentServer) trackExec(r *pb.ExecRequest, cmd *exec.Cmd) {
 	s.mu.Unlock()
 }
 
+// trackExecWithPty records an exec that owns a PTY master file. The fd is
+// stored so ResizeExecTTY can issue TIOCSWINSZ; the *os.File is held so
+// untrackExec can close it after the process exits.
+func (s *agentServer) trackExecWithPty(r *pb.ExecRequest, cmd *exec.Cmd, ptmx *os.File) {
+	if r.GetExecId() == "" || cmd.Process == nil {
+		return
+	}
+	s.mu.Lock()
+	s.execs[r.GetExecId()] = &activeExec{
+		pid:   cmd.Process.Pid,
+		tty:   true,
+		ttyFD: int(ptmx.Fd()),
+		ptmx:  ptmx,
+	}
+	s.mu.Unlock()
+}
+
 func (s *agentServer) untrackExec(execID string) {
 	if execID == "" {
 		return
 	}
 	s.mu.Lock()
+	entry := s.execs[execID]
 	delete(s.execs, execID)
 	s.mu.Unlock()
+	if entry != nil && entry.ptmx != nil {
+		entry.ptmx.Close()
+	}
 }
 
 func (s *agentServer) lookupExec(execID string) (*activeExec, bool) {
