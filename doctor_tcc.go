@@ -44,8 +44,18 @@ func verifyTCCFDAProbe(sock, explicitPath string, verbose bool) bool {
 		stderr = fmt.Sprintf("exit %d", result.ExitCode)
 	}
 	fmt.Printf("  ! %s: not readable via user agent (%s)\n", path, stderr)
+	if isENOENTStderr(stderr) {
+		fmt.Printf("    path not found in guest: %s\n", path)
+		fmt.Println("    pass --tcc-path <existing-guest-path> to probe a real path")
+		return false
+	}
 	printFDAHint()
 	return false
+}
+
+func isENOENTStderr(stderr string) bool {
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "no such file or directory")
 }
 
 func discoverTCCProbePath(sock string, verbose bool) (string, bool) {
@@ -90,7 +100,7 @@ func tccVolumeDiscoveryScript() string {
 	[ -d "$p" ] || continue
 	name=${p##*/}
 	case "$name" in
-		"Macintosh HD"|"Macintosh HD - Data"|"Preboot"|"Recovery"|"VM") continue ;;
+		"Macintosh HD"|"Macintosh HD - Data"|"Preboot"|"Recovery"|"VM"|"VZRECOVERY") continue ;;
 	esac
 	printf '%s\n' "$p"
 	exit 0
