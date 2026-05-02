@@ -116,13 +116,21 @@ homebrew_casks:
       name: homebrew-tap
       branch: "{{.ProjectName}}-{{.Version}}"
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      # The tap's default branch is "master". The release workflow pushes the
+      # cask to a side branch (above) and opens a PR against master so the
+      # update is reviewed before users see it on `brew install`.
+      pull_request:
+        enabled: true
+        base:
+          branch: master
     commit_author:
       name: github-actions
       email: 41898282+github-actions[bot]@users.noreply.github.com
-    caveats: |
-      cove is signed with Developer ID and notarized, so it runs without
-      Gatekeeper prompts. Drag-install users can grab cove-{{ .Version }}.dmg
-      from the GitHub release page instead of using brew.
+    # Caveats must be a single string: goreleaser emits each newline as a
+    # separate Ruby statement inside `caveats do ... end`, and Ruby returns
+    # only the last expression — multi-line YAML would silently drop all but
+    # the final line.
+    caveats: "cove is signed with Developer ID and notarized, so it runs without Gatekeeper prompts. Drag-install users can also grab cove-{{ .Version }}.dmg from the GitHub release page."
 
 release:
   github:

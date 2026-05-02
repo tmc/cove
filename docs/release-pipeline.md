@@ -12,7 +12,7 @@ triggers `.github/workflows/release.yml`, which runs goreleaser on a
 - `cove-<version>.dmg` — drag-install DMG, signed and notarized.
 - `vz-agent_<version>_<os>_<arch>.tar.gz` — guest agent for darwin/arm64 and linux/arm64.
 - `checksums.txt` — SHA256 sums.
-- A cask update PR opened against `tmc/homebrew-tap`.
+- A cask update PR opened against `tmc/homebrew-tap` (default branch: `master`).
 
 The DMG is built by `scripts/build-dmg.sh` from the post-notarize binary;
 the cask currently points at the tar.gz for fast `brew install`, with the
@@ -30,7 +30,7 @@ Set these in **Settings → Secrets and variables → Actions** on the
 | `MACOS_NOTARY_APPLE_ID` | The Apple ID of the account enrolled in the Apple Developer program (e.g. `release@example.com`). Used as the notarytool key ID. |
 | `MACOS_NOTARY_TEAM_ID` | The 10-character Team ID from the Apple Developer membership page. Used as the notarytool issuer ID. |
 | `MACOS_NOTARY_APP_PASSWORD` | An **app-specific password** generated at <https://appleid.apple.com/account/manage> → "App-Specific Passwords". Used as the notarytool key. |
-| `HOMEBREW_TAP_TOKEN` | A scoped GitHub PAT with `contents: write` on `tmc/homebrew-tap` (no other scopes). Required for goreleaser to push the cask update. |
+| `HOMEBREW_TAP_TOKEN` | A scoped GitHub PAT with `contents: write` and `pull_requests: write` on `tmc/homebrew-tap`. Required so goreleaser can push the side branch and open the cask PR. |
 
 `GITHUB_TOKEN` is provided automatically by Actions and does not need to be
 configured.
@@ -58,8 +58,8 @@ configured.
 
 3. **Create a tap PAT.**
    Generate a fine-grained personal access token scoped only to
-   `tmc/homebrew-tap` with `contents: write`. Paste into
-   `HOMEBREW_TAP_TOKEN`.
+   `tmc/homebrew-tap` with `contents: write` and `pull_requests: write`.
+   Paste into `HOMEBREW_TAP_TOKEN`.
 
 4. **Smoke-test on a pre-release tag.**
    The first run is the riskiest; cut a `vX.Y.Z-rc1` tag against a branch
@@ -71,13 +71,23 @@ configured.
 ```bash
 # 1. Land the changelog edits and version bump on main.
 # 2. Tag with the standard prefix.
-git tag -s v0.2.0 -m "cove v0.2.0"
-git push origin v0.2.0
+git tag -s v0.1.3 -m "cove v0.1.3"
+git push origin v0.1.3
 # 3. Watch the run.
 gh run watch
-# 4. After the run lands, verify the cask PR in tmc/homebrew-tap merged.
+# 4. After the run lands, find and merge the cask PR.
 gh pr list -R tmc/homebrew-tap
+gh pr merge -R tmc/homebrew-tap <PR-number> --squash
+# 5. Smoke-test the published cask.
+brew update
+brew install tmc/tap/cove
+cove version
 ```
+
+The cask PR's branch (`cove-<version>`) is opened against the tap's default
+branch (`master`). Until the PR is merged, `brew install tmc/tap/cove` will
+still resolve to the previous version; merging is part of the cut, not an
+optional follow-up.
 
 The workflow runs in three logical phases:
 
@@ -92,6 +102,24 @@ The workflow runs in three logical phases:
    notarized binary into a DMG; the DMG is then signed, notarized, and
    stapled. A second goreleaser run uploads everything to GitHub
    Releases and pushes the cask update.
+
+## Smoke-testing the DMG build offline
+
+`scripts/build-dmg.sh` does not require any signing keys; it only uses
+`hdiutil` and `ln`. You can dry-run the DMG step against a locally-built
+binary before cutting a tag:
+
+```bash
+GOWORK=off go build -o /tmp/cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements /tmp/cove
+./scripts/build-dmg.sh /tmp/cove 0.1.3-dryrun /tmp/cove-dryrun.dmg
+hdiutil verify /tmp/cove-dryrun.dmg
+```
+
+The `hdiutil verify` step confirms the DMG is well-formed; the resulting
+`.dmg` will be ad-hoc-signed only and **not notarized**, so do not publish
+it. The release workflow re-builds the DMG against the post-notarize
+binary and signs+notarizes the DMG itself before upload.
 
 ## Verifying a release locally
 
