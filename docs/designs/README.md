@@ -22,8 +22,9 @@ implementation review. Start there before choosing new work.
 10. [v0.3 build executor scaffold](018-v03-build-executor-scaffold.md) — Slice 1 implementation contract for scratch lifecycle, locks, cleanup, and tests while keeping non-dry-run gated.
 11. [v0.3 cache-hit materialization](019-v03-cache-hit-materialization.md) — Slice 2 implementation contract for applying cached build layers without VM boot.
 12. [v0.3 cache-miss execution](020-v03-cache-miss-execution.md) — Slice 3 implementation contract for VM execution, layer persistence, and the point where non-dry-run builds become supported.
-13. [v0.4 CI executors](021-v04-ci-executors-tracks.md) — v0.4 — GitHub Actions, GitLab, and Buildkite executors as wrappers over `cove run -fork-from`, the control socket, and the guest agent. Slice 1 GHA action, Slice 2 GitLab shell-runner shim, Slice 3 Buildkite plugin.
+13. [v0.4 CI executors](021-v04-ci-executors-tracks.md) — v0.4 — GitHub Actions and GitLab executors as wrappers over `cove run -fork-from`, the control socket, and the guest agent. Slice 1 GHA action, Slice 2 GitLab shell-runner shim.
 14. [v0.4 Anthropic adapter](022-v04-anthropic-adapter.md) — v0.4 — Anthropic computer-use adapter mirroring the OpenAI Agents SDK adapter shape. Slice 1 SDK survey (Anthropic has no `ComputerTool` analogue; adapter drives the Messages API agent loop directly). Slice 2 `cove-claude-sandbox` Python package.
+15. [cove shell — Docker-shaped exec UX](023-cove-shell-exec-ux.md) — v0.2.1 / v0.3 — standalone `cove shell <vm>` subcommand brokering exec through the per-VM control socket because vsock requires VM-owner-process. Slice 1 control-socket extension (`agent-exec-attach/-resize/-signal`); Slice 2 `cove shell` client; Slice 3 v0.3 proto `ExecAttach` bidi RPC for true interactive stdin.
 
 ## Strategy inputs
 
