@@ -1,4 +1,4 @@
-# v0.4 CI executors (GitHub Actions, GitLab, Buildkite)
+# v0.4 CI executors (GitHub Actions, GitLab)
 
 **Status**: accepted planning input.
 **Source**: `/tmp/cove-v04-audit-a4k2.md` (audit at `4511a60`), plus local
@@ -13,7 +13,7 @@ are intended to populate it.
 ## Goal
 
 cove provides a CI executor abstraction that runs jobs in cove-managed
-VMs across GitHub Actions, GitLab CI, and Buildkite. Each executor is a
+VMs across GitHub Actions and GitLab CI. Each executor is a
 thin wrapper around the v0.3 primitives — `cove run -fork-from`, the
 per-VM control socket, the guest agent gRPC — and reuses the OpenAI
 adapter's "client lives outside the cove runtime" shape. New code in
@@ -24,9 +24,9 @@ build-executor changes, no new agent RPCs.
 
 ```text
 CI runner ──► executor wrapper ──► cove run -fork-from
-(GHA /         (action / shim /                │
- GitLab /       plugin entrypoint)             ▼
- Buildkite)             │                scratch VM fork
+(GHA /         (action / shim                  │
+ GitLab)        entrypoint)                    ▼
+                        │                scratch VM fork
                         │ control.sock          │
                         └──────────────►  guest agent
                                                 │
@@ -67,7 +67,7 @@ A small Go package under `adapters/ci-executors/executor/` defines:
 
 - `JobConfig` — base image, vzscript, commands, secret refs, env,
   artifact globs, timeout. Loaded from `cove-job.yaml` at the repo root
-  so the same descriptor drives all three platforms.
+  so the same descriptor drives both platforms.
 - `DispatchResult` — layer digest (or empty for ephemeral jobs), log
   path, exit code, duration, artifact paths.
 - `Executor` interface with one method, `Dispatch(ctx, JobConfig)
@@ -84,11 +84,8 @@ rather than introducing a parallel grammar.
 |                 | from `cmd/cove-gha-runner/`.                         |                        |
 | GitLab CI       | Shell-runner shim invoked from `.gitlab-ci.yml`;     | OCI image + raw binary |
 |                 | no Custom Executor protocol in v0.4.                 |                        |
-| Buildkite       | Plugin in `plugins/cove-buildkite/` with the         | Plugin repo (GitHub)   |
-|                 | standard `plugin.yml` plus `pre-command`,            |                        |
-|                 | `command`, `post-command` hooks.                     |                        |
 
-All three shims invoke the same `executor.Dispatch` and translate
+Both shims invoke the same `executor.Dispatch` and translate
 platform-specific I/O at the edges.
 
 ## Slice 1: GitHub Actions executor (~600 LOC)
@@ -147,21 +144,6 @@ out of scope for v0.4.
 Tests: `TestGitLabRunnerParsesEnv`, `TestGitLabRunnerStreamsStdout`,
 `TestGitLabRunnerArtifactsLayout`.
 
-## Slice 3: Buildkite plugin (~250 LOC)
-
-Layout under `plugins/cove-buildkite/`: `plugin.yml`,
-`hooks/{pre-command,command,post-command}`,
-`cmd/cove-buildkite-helper/`, `examples/pipeline.yml`, `README.md`.
-
-Buildkite's plugin contract is shell-hook-based, so the plugin is a
-thin shell wrapper around a single Go helper that does the actual
-dispatch. The helper reuses the shared `executor` package.
-
-Tests: `TestBuildkiteHelperDispatch` (helper invoked with
-`BUILDKITE_*` env produces the same `DispatchResult` shape as Slices 1
-and 2), `TestBuildkiteHelperTeardownOnFailure` (post-command hook runs
-teardown even when the command hook fails).
-
 ## Failure rules
 
 - Job command exits non-zero → wrapper exits non-zero, forwarding the
@@ -200,7 +182,6 @@ external surfaces are stubbed.
   Linux guest support only.
 - No multi-VM jobs. Slice 1 = single fork per job.
 - No GitLab Custom Executor protocol. Shell-runner shim only in v0.4.
-- No `buildkite-agent` native protocol. Wrap the existing daemon.
 - No registry-base execution. Each executor consumes a local cove
   VM/image by name; pulling from an OCI registry is gated on
   [002](002-cove-disks-oci.md) follow-up work.
@@ -221,21 +202,18 @@ Each slice has its own gate; ship one at a time.
   on PATH runs the shim end-to-end inside the published Docker image;
   artifacts land under the documented path; integration test asserts
   on artifact contents.
-- **Slice 3 (Buildkite)**: a sample `pipeline.yml` runs the plugin via
-  `bk run` (or the Buildkite plugin tester), and a forced command-hook
-  failure still triggers `post-command` teardown.
 
-Cross-slice gate (one-time, before declaring v0.4 done): all three
-shims dispatch the same trivial job (a vzscript that installs `cowsay`
-and runs it) and produce identical exit codes, log output, and
-artifact digests modulo timestamps.
+Cross-slice gate (one-time, before declaring v0.4 done): both shims
+dispatch the same trivial job (a vzscript that installs `cowsay` and
+runs it) and produce identical exit codes, log output, and artifact
+digests modulo timestamps.
 
 ## Open questions
 
 1. **Log streaming parity**. GitHub Actions buffers per-step output;
-   GitLab and Buildkite stream in real time. Accept the UX gap, or
-   invest in a chunked-progress shim for GHA in v0.4? Recommendation:
-   accept the gap; revisit if users complain.
+   GitLab streams in real time. Accept the UX gap, or invest in a
+   chunked-progress shim for GHA in v0.4? Recommendation: accept the
+   gap; revisit if users complain.
 2. **Secret precedence**. If a job declares `secrets: op://foo/bar`
    *and* the CI platform also injects an env var named `FOO_BAR`,
    which wins? Recommendation: cove-resolved URIs always win;
