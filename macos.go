@@ -1526,6 +1526,31 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		go runLoginScreenWatchdog(controlServer, creds)
 	}
 
+	// `-shell` (Linux only): pipe a guest shell to the host terminal once the
+	// agent is up. Validation in validateLaunchOptions guarantees -linux and
+	// not -headless. The session goroutine triggers VM shutdown on exit so
+	// the user gets a single integrated session. We use an atomic.Pointer to
+	// inject quitRuntime after it is defined below — the goroutine spends
+	// seconds in waitForAgentReady before it can race the assignment, but
+	// the atomic read keeps us correct under the race detector.
+	var shellQuit atomic.Pointer[func()]
+	var shellCancel context.CancelFunc
+	if linuxShell && linuxMode {
+		var shellCtx context.Context
+		shellCtx, shellCancel = context.WithCancel(context.Background())
+		go func() {
+			err := runLinuxShellSession(shellCtx, controlServer)
+			if err != nil {
+				setRunErr(fmt.Errorf("guest shell: %w", err))
+			}
+			postDummyEvent(app)
+			if fn := shellQuit.Load(); fn != nil {
+				(*fn)()
+			}
+		}()
+		defer shellCancel()
+	}
+
 	type vmStateUpdate struct {
 		mu            sync.Mutex
 		newState      vz.VZVirtualMachineState
@@ -1612,6 +1637,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		stateUpdate.mu.Unlock()
 		cleanupOnce.Do(cleanup)
 	}
+	shellQuit.Store(&quitRuntime)
 	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, appkit.NSWindow{}, guiController, nil, quitRuntime)
 	setupSignalHandler(func() {
 		quitRuntime()

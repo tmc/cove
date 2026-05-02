@@ -37,6 +37,7 @@ var (
 	linuxDesktop bool
 	linuxDistro  string
 	linuxNested  bool
+	linuxShell   bool
 	cpuCount     uint
 	cpuExplicit  bool
 	memoryGB     uint64
@@ -166,6 +167,7 @@ func init() {
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
+	flag.BoolVar(&linuxShell, "shell", false, "after Linux guest boots, attach the host terminal to a guest shell via the agent (requires -linux; mutually exclusive with -headless)")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
 	flag.UintVar(&cpuCount, "cpu", 2, "number of CPUs")
@@ -903,6 +905,14 @@ Flags:
 func validateLaunchOptions() error {
 	if linuxNested && !linuxMode {
 		return fmt.Errorf("-nested requires -linux")
+	}
+	if linuxShell {
+		if !linuxMode {
+			return fmt.Errorf("-shell requires -linux")
+		}
+		if headlessMode {
+			return fmt.Errorf("-shell is mutually exclusive with -headless (the host terminal is used for the shell)")
+		}
 	}
 	switch provisionStrategy {
 	case "disk", "gui", "auto":
