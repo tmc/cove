@@ -1,6 +1,6 @@
 # Custom ephemeral self-hosted runners
 
-**Status**: planning input, v2 (2026-05-03). Owns the bridge between the
+**Status**: planning input, v2.5 (2026-05-03 round-2-folded). Owns the bridge between the
 existing long-lived `vzscripts/github-runner.vzscript` (registration-mode
 runner inside a permanent VM) and the v0.4 `cove-gha-runner` GHA wrapper
 from design [021](021-v04-ci-executors-tracks.md). Ships the slices that
@@ -122,6 +122,17 @@ JIT bytes flow: HTTP response body → in-process `[]byte` →
 a host shell, never appears in process args visible to `ps`, never
 expands through `os.Environ()`.
 
+**v2 round-2 review (2026-05-03)**: NotebookLM critique against the cove
+design corpus (31 sources scoped) returned **SHIP-AS-IS-WITH-CQ-FIXES**.
+The five follow-up questions surfaced two refinements folded into v2.5
+patches below: (a) JIT-bytes write-then-exec leaves a 0600 file on disk
+between RPCs — Slice 0 ships acceptable as-is, but `tmpfs` mount + the
+v0.3 `ExecAttach` stdin pipe (per [023](023-cove-shell-exec-ux.md)) closes
+the gap; (b) the image-residue mitigation now has its own §"Image
+authoring contract" subsection so authors discover it without reading
+the runtime-risks list. CQ3 (Slice 1 LOC budget) and CQ4 (failure-rule
+addendum) were already in v2 and confirmed sound.
+
 ## Slices
 
 ### Slice 0 (v0.2.2 candidate, ~150-180 LOC Go): `cove runner job`
@@ -211,6 +222,17 @@ tears down. Exit code = runner exit code.
   Slice 0 either adds a `--output-format json` flag to `cove run` (~30
   LOC), or scrapes the unstructured log lines (fragile). See open
   question 5.
+- JIT-bytes window-of-disclosure: `WriteFile(/tmp/jit-config, bytes,
+  0600)` then `Exec(bash -c "cat && rm")` leaves the file on disk for
+  the round-trip duration (typically <100 ms). The guest is an
+  ephemeral fork with only the runner user present, so 0600 + ephemeral
+  context is acceptable for v0.2.2. **Tighter v0.3 path**: when
+  `ExecAttach` lands (per [023](023-cove-shell-exec-ux.md) Slice 3 +
+  v0.3 proto bump), pipe JIT bytes via stdin and skip the disk
+  round-trip entirely. Alternative for v0.2.2 if disk-window is
+  unacceptable: write to a `tmpfs` mount (per design [005](005-v04-secrets-architecture.md)
+  / [021](021-v04-ci-executors-tracks.md) §secrets) so the bytes never
+  hit the APFS-backed fork delta.
 
 ### Slice 1 (v0.3 candidate, ~250-300 LOC Go + tests): `cove runner serve`
 
@@ -355,15 +377,50 @@ review:
    forks from the SAME parent.** Design 015 proved warm soft-reset
    fails 3 of 6 isolation probes. Fork-from IS the right isolation
    primitive — but only if the parent image is built from a clean,
-   never-job-run snapshot. The user's current setup
-   (`gha-runner-mlx-go-v1`) has been running jobs for hours; baking
-   an image from it inherits all the residue (keychain entries from
-   registration, ~/.runner state, registered LaunchDaemons). Every
-   fork inherits it. **Mitigation**: image-build cookbook MUST
-   include `./config.sh remove` + keychain cleanup + LaunchDaemon
-   uninstall steps before `cove image build`. Add an
-   `image build --strict-clean` flag (future v0.4 work) that runs
-   these checks automatically.
+   never-job-run snapshot. See §"Image authoring contract" below for
+   the cleanup checklist this design REQUIRES of any pre-baked runner
+   image.
+
+## Image authoring contract (load-bearing)
+
+Pre-baked runner images that will serve as fork-parents for `cove
+runner job` MUST be built from a clean snapshot. Design 015 measured
+0/3 pass on warm-guest isolation probes (System Keychain,
+GlobalPreferences, orphan LaunchDaemons) without a fresh
+fork+restore. Forks inherit every byte of the parent's delta state,
+including:
+
+- **Registered runners** (`~/.runner` state directory, GitHub-side
+  registration entries that reuse the same machine fingerprint).
+- **Keychain entries** captured during runner registration
+  (`./config.sh` writes credentials to System Keychain).
+- **Loaded LaunchDaemons** (`./svc.sh install` registers a
+  per-user LaunchDaemon that persists across forks).
+- **Last-shell history files** that may contain `GH_PAT` / `GH_TOKEN`
+  exports.
+- **Cached HTTP credentials** in `~/.config/gh`, `~/.git-credentials`,
+  `~/Library/Caches/com.github.runner`.
+
+The image-build cookbook MUST run, before `cove image build`:
+
+```bash
+# Inside the VM that will be sealed as the runner image:
+./config.sh remove --token "$GH_REMOVE_TOKEN"   # Drops ~/.runner + GH-side registration
+./svc.sh uninstall                              # Drops the LaunchDaemon plist
+sudo security delete-certificate -c "GitHub Actions" /Library/Keychains/System.keychain || true
+rm -rf ~/.config/gh ~/.git-credentials ~/Library/Caches/com.github.runner
+rm -f ~/.zsh_history ~/.bash_history /private/var/log/system.log*
+sudo rm -rf /tmp/* /private/var/folders/*/T/*
+```
+
+**Future automation** (v0.4 work, NOT in this design's slices): a
+`cove image build --strict-clean` flag that automates these checks
+and refuses to seal an image with detectable runner residue. Until
+that ships, the cookbook is the contract.
+
+Without this vacuum, fork residue carries between jobs and silently
+breaks the per-job isolation guarantee that motivates the entire
+design.
 
 ## Privacy and trademark gates
 
@@ -414,8 +471,17 @@ review:
    - **5c**: Slice 0 uses `cove vm list --json` polling after fork
      (find the newest `<parent>-fork-N` VM). Race-prone but no
      subprocess coupling.
+   - **5d**: Pre-allocate the child name in Slice 0 and pass via `cove
+     run -fork-from <img> -ephemeral -name <slice-allocated>`. The
+     `EphemeralForkName` field already exists at
+     `runtime_lifecycle.go:45` and is plumbed through to
+     `image_fork.go:51` and `run_bundle.go:334`. So the wiring is
+     ~5 LOC. Downside: doesn't establish reusable structured-output
+     infra that future commands (cove image inspect, cove vm tree,
+     etc.) would benefit from.
    **Lean**: 5a. Adds reusable structured-output infrastructure that
-   future commands can adopt.
+   future commands can adopt; 5d is a viable fallback if
+   `--output-format json` slips out of Slice 0 scope.
 
 ## References
 
