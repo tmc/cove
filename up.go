@@ -281,10 +281,14 @@ func applyUpConfig(cfg upConfig) {
 // vmAlreadyInstalled reports whether the VM disk already exists, meaning
 // a previous install completed. When true, up can skip directly to boot.
 func vmAlreadyInstalled(dir string, linux bool) bool {
-	name := "disk.img"
 	if linux {
-		name = "linux-disk.img"
+		if _, ok := loadInstalledLinuxBootArtifacts(dir); ok {
+			return true
+		}
+		info, err := os.Stat(linuxInstalledMarkerPath(dir))
+		return err == nil && info.Size() > 0
 	}
+	name := "disk.img"
 	info, err := os.Stat(filepath.Join(dir, name))
 	return err == nil && info.Size() > 0
 }
