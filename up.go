@@ -40,6 +40,7 @@ type upConfig struct {
 	verbose                  bool
 	linux                    bool
 	desktop                  bool
+	desktopInstaller         string
 	distro                   string
 	nested                   bool
 	cpuExplicit              bool
@@ -181,6 +182,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
 	fs.BoolVar(&cfg.linux, "linux", false, "Install a Linux VM instead of macOS")
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
+	fs.StringVar(&cfg.desktopInstaller, "desktop-installer", "server", "ubuntu desktop install path: 'server' (default, reliable) or 'oem' (Desktop ISO autoinstall, faster)")
 	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	fs.BoolVar(&cfg.rosetta, "rosetta", true, "Enable Rosetta translation support for Linux VMs")
@@ -245,6 +247,9 @@ func applyUpConfig(cfg upConfig) {
 	enableRosetta = cfg.rosetta
 	if cfg.desktop {
 		linuxDesktop = true
+	}
+	if cfg.desktopInstaller != "" {
+		linuxDesktopInstaller = cfg.desktopInstaller
 	}
 	if cfg.distro != "" {
 		linuxDistro = cfg.distro
