@@ -1,0 +1,93 @@
+# gitlab-runner — Install and register a self-hosted GitLab Runner
+# runs-on: daemon
+
+guest-ping
+guest-write /tmp/install-gitlab-runner.sh install-gitlab-runner.sh
+# Host vars ($GITLAB_URL etc.) are expanded by the vzscript engine before being
+# sent to the guest. Empty values pass through and are validated inside the
+# script. We pass values as positional args to avoid quoting issues.
+guest-exec /bin/bash /tmp/install-gitlab-runner.sh '__VZSCRIPT_GITLAB_RUNNER_ARGS__' $GITLAB_URL $GITLAB_TOKEN $RUNNER_TAGS $RUNNER_NAME
+
+-- install-gitlab-runner.sh --
+#!/bin/bash
+# Self-hosted GitLab Runner installer (shell executor on macOS arm64).
+#
+# Args (positional, expanded from host env by the vzscript engine):
+#   $1  marker (must be __VZSCRIPT_GITLAB_RUNNER_ARGS__)
+#   $2  GITLAB_URL    (required, e.g. "https://gitlab.com")
+#   $3  GITLAB_TOKEN  (required, registration or auth token)
+#   $4  RUNNER_TAGS   (optional, default "cove-vm,macos,arm64")
+#   $5  RUNNER_NAME   (optional, default "$(hostname)-cove")
+set -eu
+
+if [ "${1:-}" != "__VZSCRIPT_GITLAB_RUNNER_ARGS__" ]; then
+  echo "error: unexpected argv (marker mismatch); was the script invoked correctly?" >&2
+  exit 2
+fi
+GITLAB_URL="${2:-}"
+GITLAB_TOKEN="${3:-}"
+RUNNER_TAGS="${4:-cove-vm,macos,arm64}"
+RUNNER_NAME="${5:-$(hostname -s)-cove}"
+
+if [ -z "$GITLAB_URL" ] || [ -z "$GITLAB_TOKEN" ]; then
+  cat >&2 <<EOF
+error: GITLAB_URL and GITLAB_TOKEN are required.
+
+Set them on the HOST before running the recipe, e.g.:
+  GITLAB_URL=https://gitlab.com GITLAB_TOKEN=<token> cove vzscript run gitlab-runner
+
+Get a registration or runner authentication token from your project's
+Settings -> CI/CD -> Runners page.
+EOF
+  exit 1
+fi
+
+# Locate the first admin (non-root, non-system) user to own the runner.
+RUNNER_USER=$(dscl . -read /Groups/admin GroupMembership 2>/dev/null \
+  | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$RUNNER_USER" ]; then
+  echo "error: no admin user found to own the runner" >&2
+  exit 1
+fi
+RUNNER_HOME=$(dscl . -read "/Users/$RUNNER_USER" NFSHomeDirectory \
+  | awk '{print $2}')
+RUNNER_DIR="$RUNNER_HOME/gitlab-runner"
+BINARY="$RUNNER_DIR/gitlab-runner"
+CONFIG="$RUNNER_DIR/config.toml"
+
+if [ -f "$CONFIG" ]; then
+  echo "Runner already configured at $CONFIG. Refusing to re-register."
+  echo "To reinstall: stop the service, remove $RUNNER_DIR, and re-run."
+  if [ -x "$BINARY" ]; then
+    su -l "$RUNNER_USER" -c "'$BINARY' status" || true
+  fi
+  exit 0
+fi
+
+echo "Installing GitLab Runner for $GITLAB_URL as user $RUNNER_USER"
+
+# Download latest stable gitlab-runner binary for darwin/arm64.
+URL="https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-darwin-arm64"
+
+install -d -o "$RUNNER_USER" -g staff -m 0755 "$RUNNER_DIR"
+curl -fsSL -o "$BINARY" "$URL"
+chmod 0755 "$BINARY"
+chown -R "$RUNNER_USER":staff "$RUNNER_DIR"
+
+# Register the runner with shell executor. Per-user install, no system service.
+su -l "$RUNNER_USER" -c "'$BINARY' register \
+  --non-interactive \
+  --url '${GITLAB_URL}' \
+  --token '${GITLAB_TOKEN}' \
+  --executor shell \
+  --name '${RUNNER_NAME}' \
+  --tag-list '${RUNNER_TAGS}' \
+  --config '${CONFIG}'"
+
+# Install as a per-user launchd service. The gitlab-runner install command
+# writes a LaunchAgent under ~/Library/LaunchAgents.
+su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && '$BINARY' install --config '${CONFIG}'"
+su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && '$BINARY' start" || true
+su -l "$RUNNER_USER" -c "'$BINARY' status" || true
+
+echo "Runner '${RUNNER_NAME}' registered with ${GITLAB_URL} (tags: ${RUNNER_TAGS})"
