@@ -109,10 +109,17 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 		setStorageDevices(config, storageConfig)
 	}
 
-	// Graphics - use Virtio for Linux with multi-display support
+	// Graphics - use Virtio for Linux with multi-display support.
+	// Default the framebuffer to the host window size (1024x768) so the
+	// guest renders 1:1 instead of being scaled from displayx.DefaultLinux's
+	// 1920x1080. Users who want higher resolution pass -display.
 	displayConfigs := []displayx.Config(displays)
 	if len(displayConfigs) == 0 {
-		displayConfigs = []displayx.Config{displayx.DefaultLinuxConfig()}
+		displayConfigs = []displayx.Config{{
+			Width:  defaultWindowWidth,
+			Height: defaultWindowHeight,
+			PPI:    144,
+		}}
 	}
 	graphicsConfig, err := displayx.CreateVirtioGraphicsConfig(displayConfigs)
 	if err != nil {

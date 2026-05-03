@@ -251,6 +251,13 @@ func installLinuxVM() error {
 	if provisionPassword != "" {
 		provConfig.Password = provisionPassword
 	}
+	// Desktop variant: enable GDM autologin so `cove run -linux -gui` boots
+	// straight to the Ubuntu desktop without a manual password entry.
+	// linuxAutoLoginLateCommand writes /target/etc/gdm3/custom.conf only
+	// when both AutoLogin and Variant==Desktop are set.
+	if provConfig.Variant == LinuxVariantDesktop {
+		provConfig.AutoLogin = true
+	}
 	if err := vmconfig.SetGuestUser(vmDir, 1000, 1000); err != nil {
 		fmt.Printf("warning: save linux guest user mapping: %v\n", err)
 	}
@@ -477,9 +484,12 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 		vz.VZStorageDeviceConfigurationFromID(isoUSB.ID),
 	})
 
-	// Graphics
+	// Graphics. Use the same scanout dimensions as runLinuxVM so the framebuffer
+	// matches the host window 1:1. Subiquity's installer renders fine at this
+	// size; larger framebuffers get scaled by the NSWindow on macOS hosts and
+	// hurt readability.
 	graphicsConfig := vz.NewVZVirtioGraphicsDeviceConfiguration()
-	scanout := vz.NewVirtioGraphicsScanoutConfigurationWithWidthInPixelsHeightInPixels(1920, 1200)
+	scanout := vz.NewVirtioGraphicsScanoutConfigurationWithWidthInPixelsHeightInPixels(defaultWindowWidth, defaultWindowHeight)
 	if scanout.ID != 0 {
 		setVirtioScanouts(graphicsConfig, scanout)
 	}
