@@ -33,19 +33,20 @@ var (
 	installVM   bool // Deprecated: kept for compatibility, now handled by commands
 	guiMode     bool
 
-	linuxMode    bool
-	windowsMode  bool
-	linuxDesktop bool
-	linuxDistro  string
-	linuxNested  bool
-	linuxShell   bool
-	cpuCount     uint
-	cpuExplicit  bool
-	memoryGB     uint64
-	diskPath     string
-	diskSizeGB   uint64
-	ipswPath     string
-	vmDir        string
+	linuxMode             bool
+	windowsMode           bool
+	linuxDesktop          bool
+	linuxDistro           string
+	linuxNested           bool
+	linuxShell            bool
+	linuxDesktopInstaller string
+	cpuCount              uint
+	cpuExplicit           bool
+	memoryGB              uint64
+	diskPath              string
+	diskSizeGB            uint64
+	ipswPath              string
+	vmDir                 string
 	// Linux-specific flags
 	kernelPath string
 	initrdPath string
@@ -175,6 +176,7 @@ func init() {
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
+	flag.StringVar(&linuxDesktopInstaller, "desktop-installer", "server", "ubuntu desktop install path: 'server' (boot Server ISO + apt install ubuntu-desktop, reliable) or 'oem' (boot Desktop ISO with OEM autoinstall, faster)")
 	flag.BoolVar(&linuxShell, "shell", false, "after Linux guest boots, attach the host terminal to a guest shell via the agent (requires -linux; mutually exclusive with -headless)")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
@@ -228,7 +230,7 @@ func init() {
 	flag.BoolVar(&enableRosetta, "rosetta", true, "enable Rosetta translation support when running Linux VMs")
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
-	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "linear-framebuffer", "Windows graphics mode: linear-framebuffer or virtio")
+	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "virtio", "Windows graphics mode: virtio or linear-framebuffer")
 	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
 	flag.BoolVar(&skipResume, "cold-boot", false, "same as -no-resume")
 	flag.StringVar(&launchOrder, "launch-order", "window-first", "GUI launch order: window-first or start-first")
@@ -920,7 +922,7 @@ Linux VM:
 Windows VM (experimental):
   cove install -windows -iso /path/to/Win11_ARM64.iso
   cove run -windows
-  cove run -windows -windows-graphics virtio             # use old public VirtIO GPU path
+  cove run -windows -windows-graphics linear-framebuffer # use private framebuffer experiment
 
 Volume Mounting (-vol flag):
   Docker-style volume mounts. Format: /host/path[:tag][:ro|rw][:opt=val,...]
