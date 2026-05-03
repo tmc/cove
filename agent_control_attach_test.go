@@ -1,0 +1,357 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	agentstate "github.com/tmc/vz-macos/internal/agent"
+	pb "github.com/tmc/vz-macos/proto/agentpb"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+)
+
+// fakeAttachAgent satisfies the attachAgent interface with canned behaviour
+// so the Slice 1 attach handlers can be exercised without a live VM or
+// connect-go server.
+type fakeAttachAgent struct {
+	mu        sync.Mutex
+	streams   chan *fakeExecStream
+	resize    func(execID string, rows, cols uint32) error
+	signal    func(execID string, sig int32) error
+	openErr   error
+	resizeLog []resizeCall
+	signalLog []signalCall
+}
+
+type resizeCall struct {
+	execID     string
+	rows, cols uint32
+}
+
+type signalCall struct {
+	execID string
+	sig    int32
+}
+
+func (f *fakeAttachAgent) ExecStreamControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (agentstate.ExecStreamReceiver, error) {
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
+	if !tty {
+		return nil, errors.New("expected tty=true")
+	}
+	stream := &fakeExecStream{frames: make(chan *pb.ExecOutput, 4)}
+	if args[0] == "echo" && len(args) > 1 {
+		// Synthesize stdout from echo args + newline, then exit 0.
+		stream.queue(&pb.ExecOutput{Stream: 0, Data: []byte(strings.Join(args[1:], " ") + "\n")})
+		exit := int32(0)
+		stream.queue(&pb.ExecOutput{ExitCode: &exit})
+	} else if f.streams != nil {
+		f.streams <- stream
+	}
+	stream.close()
+	return stream, nil
+}
+
+func (f *fakeAttachAgent) ResizeExec(ctx context.Context, execID string, rows, cols uint32) error {
+	f.mu.Lock()
+	f.resizeLog = append(f.resizeLog, resizeCall{execID, rows, cols})
+	f.mu.Unlock()
+	if f.resize != nil {
+		return f.resize(execID, rows, cols)
+	}
+	return nil
+}
+
+func (f *fakeAttachAgent) SignalExec(ctx context.Context, execID string, sig int32) error {
+	f.mu.Lock()
+	f.signalLog = append(f.signalLog, signalCall{execID, sig})
+	f.mu.Unlock()
+	if f.signal != nil {
+		return f.signal(execID, sig)
+	}
+	return nil
+}
+
+type fakeExecStream struct {
+	frames chan *pb.ExecOutput
+	closed bool
+	mu     sync.Mutex
+}
+
+func (s *fakeExecStream) queue(out *pb.ExecOutput) {
+	s.frames <- out
+}
+
+func (s *fakeExecStream) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.closed = true
+	close(s.frames)
+}
+
+func (s *fakeExecStream) Recv() (*pb.ExecOutput, error) {
+	out, ok := <-s.frames
+	if !ok {
+		return nil, io.EOF
+	}
+	return out, nil
+}
+
+// TestServeAgentExecAttachEchoesStdoutAndExit drives the inner attach handler
+// directly through a net.Pipe so we can read the JSON-line response framing
+// without spinning up the real listener / VM stack.
+func TestServeAgentExecAttachEchoesStdoutAndExit(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	cs := &ControlServer{}
+	agent := &fakeAttachAgent{}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		raw, _ := json.Marshal(map[string]any{
+			"type": "agent-exec-attach",
+			"args": []string{"echo", "hi"},
+		})
+		cs.serveAgentExecAttach(server, raw, agent)
+		server.Close()
+	}()
+
+	frames := readAttachFrames(t, client, 5*time.Second)
+	<-done
+
+	if len(frames) < 3 {
+		t.Fatalf("expected >=3 frames (attached, stdout, done), got %d: %#v", len(frames), frames)
+	}
+
+	first := frames[0]
+	if first.GetError() != "" {
+		t.Fatalf("first frame error: %q", first.GetError())
+	}
+	var attached map[string]any
+	mustJSON(t, first.GetData(), &attached)
+	if attached["attached"] != true {
+		t.Fatalf("first frame missing attached=true: %v", attached)
+	}
+	if id, _ := attached["exec_id"].(string); id == "" {
+		t.Fatalf("first frame missing exec_id: %v", attached)
+	}
+
+	var sawStdout bool
+	for _, f := range frames[1 : len(frames)-1] {
+		var chunk map[string]any
+		mustJSON(t, f.GetData(), &chunk)
+		if chunk["stream"] == "stdout" {
+			data, _ := chunk["data"].(string)
+			decoded, err := base64.StdEncoding.DecodeString(data)
+			if err != nil {
+				t.Fatalf("decode stdout: %v", err)
+			}
+			if string(decoded) != "hi\n" {
+				t.Fatalf("stdout = %q, want %q", decoded, "hi\n")
+			}
+			sawStdout = true
+		}
+	}
+	if !sawStdout {
+		t.Fatalf("no stdout frame observed: %#v", frames)
+	}
+
+	last := frames[len(frames)-1]
+	var done2 map[string]any
+	mustJSON(t, last.GetData(), &done2)
+	if done2["done"] != true {
+		t.Fatalf("last frame missing done=true: %v", done2)
+	}
+	if exit, _ := done2["exitCode"].(float64); exit != 0 {
+		t.Fatalf("exitCode = %v, want 0", exit)
+	}
+}
+
+// TestServeAgentExecAttachRejectsEmptyArgs guards the args==0 path; the
+// handler should write an error frame and return without calling into the
+// agent.
+func TestServeAgentExecAttachRejectsEmptyArgs(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	cs := &ControlServer{}
+	agent := &fakeAttachAgent{}
+
+	go func() {
+		raw, _ := json.Marshal(map[string]any{"type": "agent-exec-attach"})
+		cs.serveAgentExecAttach(server, raw, agent)
+		server.Close()
+	}()
+
+	frames := readAttachFrames(t, client, 2*time.Second)
+	if len(frames) != 1 || frames[0].GetError() == "" {
+		t.Fatalf("expected single error frame, got %#v", frames)
+	}
+	if !strings.Contains(frames[0].GetError(), "args required") {
+		t.Fatalf("error = %q, want args required", frames[0].GetError())
+	}
+}
+
+func TestHandleAgentExecResizeForwardsToAgent(t *testing.T) {
+	agent := &fakeAttachAgent{}
+	raw := []byte(`{"type":"agent-exec-resize","exec_id":"xyz","cols":120,"rows":40}`)
+	resp := handleAgentExecResize(context.Background(), agent, raw)
+	if resp.Error != "" {
+		t.Fatalf("error: %q", resp.Error)
+	}
+	if !resp.Success {
+		t.Fatalf("success = false")
+	}
+	if len(agent.resizeLog) != 1 {
+		t.Fatalf("resize calls = %d, want 1", len(agent.resizeLog))
+	}
+	got := agent.resizeLog[0]
+	if got.execID != "xyz" || got.cols != 120 || got.rows != 40 {
+		t.Fatalf("resize call = %+v, want {xyz 40 120}", got)
+	}
+}
+
+func TestHandleAgentExecResizeRejectsZeroDimensions(t *testing.T) {
+	agent := &fakeAttachAgent{}
+	resp := handleAgentExecResize(context.Background(), agent, []byte(`{"exec_id":"x","cols":0,"rows":24}`))
+	if resp.Error == "" {
+		t.Fatalf("expected error for cols=0")
+	}
+	if len(agent.resizeLog) != 0 {
+		t.Fatalf("resize was called despite invalid input")
+	}
+}
+
+func TestHandleAgentExecResizeRequiresExecID(t *testing.T) {
+	agent := &fakeAttachAgent{}
+	resp := handleAgentExecResize(context.Background(), agent, []byte(`{"cols":80,"rows":24}`))
+	if resp.Error == "" || !strings.Contains(resp.Error, "exec_id required") {
+		t.Fatalf("error = %q, want exec_id required", resp.Error)
+	}
+}
+
+func TestHandleAgentExecSignalForwardsToAgent(t *testing.T) {
+	agent := &fakeAttachAgent{}
+	raw := []byte(`{"type":"agent-exec-signal","exec_id":"abc","signal":2}`)
+	resp := handleAgentExecSignal(context.Background(), agent, raw)
+	if resp.Error != "" {
+		t.Fatalf("error: %q", resp.Error)
+	}
+	if len(agent.signalLog) != 1 {
+		t.Fatalf("signal calls = %d, want 1", len(agent.signalLog))
+	}
+	got := agent.signalLog[0]
+	if got.execID != "abc" || got.sig != 2 {
+		t.Fatalf("signal call = %+v, want {abc 2}", got)
+	}
+}
+
+func TestHandleAgentExecSignalRejectsZero(t *testing.T) {
+	agent := &fakeAttachAgent{}
+	resp := handleAgentExecSignal(context.Background(), agent, []byte(`{"exec_id":"x","signal":0}`))
+	if resp.Error == "" {
+		t.Fatalf("expected error for signal=0")
+	}
+}
+
+// TestAgentExecResizeRejectsBadToken exercises the full control-socket path
+// to confirm authorizeRequest gates the new commands.
+func TestAgentExecResizeRejectsBadToken(t *testing.T) {
+	// os.MkdirTemp keeps the path short — unix socket paths are capped
+	// at 104 chars on Darwin and t.TempDir() routinely overshoots.
+	dir, err := os.MkdirTemp("", "ctlat*")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	sockPath := filepath.Join(dir, "c.sock")
+	cs := NewControlServerWithVMDir(sockPath, dir)
+	cs.authToken = "secret"
+
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	cs.listener = ln
+	cs.running.Store(true)
+	defer cs.running.Store(false)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		cs.handleConnection(conn)
+	}()
+
+	conn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+
+	req := `{"type":"agent-exec-resize","auth_token":"wrong","exec_id":"x","cols":80,"rows":24}` + "\n"
+	if _, err := conn.Write([]byte(req)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	r := bufio.NewReader(conn)
+	line, err := r.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	resp := &controlpb.ControlResponse{}
+	if err := protojsonUnmarshaler.Unmarshal([]byte(line), resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.GetError() != "unauthorized" {
+		t.Fatalf("expected unauthorized, got error=%q success=%v", resp.GetError(), resp.GetSuccess())
+	}
+}
+
+// readAttachFrames decodes JSON-line ControlResponse frames from r until r
+// is closed or the deadline elapses.
+func readAttachFrames(t *testing.T, r net.Conn, timeout time.Duration) []*controlpb.ControlResponse {
+	t.Helper()
+	_ = r.SetReadDeadline(time.Now().Add(timeout))
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	var out []*controlpb.ControlResponse
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		resp := &controlpb.ControlResponse{}
+		if err := protojsonUnmarshaler.Unmarshal(line, resp); err != nil {
+			t.Fatalf("decode frame: %v (line=%q)", err, line)
+		}
+		out = append(out, resp)
+	}
+	return out
+}
+
+func mustJSON(t *testing.T, data string, dst any) {
+	t.Helper()
+	if err := json.Unmarshal([]byte(data), dst); err != nil {
+		t.Fatalf("decode %q: %v", data, err)
+	}
+}

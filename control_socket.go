@@ -373,6 +373,17 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 			continue
 		}
 
+		// agent-exec-attach is a long-lived connection: clear the
+		// per-request deadline so the exec can run as long as the client
+		// keeps the socket open. (Slice 1 of design 023.)
+		if req.Type == "agent-exec-attach" {
+			if err := conn.SetDeadline(time.Time{}); err != nil {
+				return
+			}
+			s.handleAgentExecAttachConnection(conn, []byte(line))
+			return
+		}
+
 		// Handle typed OCR command from proto oneof.
 		if req.Type == "ocr" {
 			if ocrCmd := req.GetOcr(); ocrCmd != nil {
@@ -419,6 +430,18 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 		}
 		if req.Type == "usb" {
 			writeResponse(conn, s.handleRuntimeUSBJSONRequest([]byte(line)))
+			continue
+		}
+		// agent-exec-resize / agent-exec-signal carry fields (exec_id,
+		// cols, rows, signal) that aren't in the controlpb schema yet
+		// (Slice 1 ships no proto bump per design 023). Parse the raw
+		// JSON line, same pattern as disk/pit/usb.
+		if req.Type == "agent-exec-resize" {
+			writeResponse(conn, s.handleAgentExecResizeJSON([]byte(line)))
+			continue
+		}
+		if req.Type == "agent-exec-signal" {
+			writeResponse(conn, s.handleAgentExecSignalJSON([]byte(line)))
 			continue
 		}
 
@@ -2048,6 +2071,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
 			"vnc-status", "debug-stub-status", "disk", "pit", "usb",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
+			"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
 			"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 			"agent-sshd", "agent-mount-volumes", "agent-status",
 		},
@@ -2058,6 +2082,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
 		"vnc-status", "debug-stub-status", "disk", "pit", "usb",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
+		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 		"agent-sshd", "agent-mount-volumes", "agent-status",
 	}
