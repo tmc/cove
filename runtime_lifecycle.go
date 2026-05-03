@@ -42,6 +42,9 @@ type RunConfig struct {
 	EphemeralForkParent string
 	EphemeralForkName   string
 	EphemeralForkKeep   bool
+	// Ephemeral marks an image-fork-from child for destroy-on-stop
+	// using the .ephemeral sentinel. Slice 1 of design 024.
+	Ephemeral bool
 }
 
 func currentRunConfig() RunConfig {
@@ -56,6 +59,7 @@ func currentRunConfig() RunConfig {
 		EphemeralForkParent:      ephemeralForkParent,
 		EphemeralForkName:        ephemeralForkName,
 		EphemeralForkKeep:        ephemeralForkKeep,
+		Ephemeral:                runEphemeral,
 	}
 }
 
@@ -75,6 +79,13 @@ func runVMWithConfig(cfg RunConfig) error {
 	}
 
 	if cfg.EphemeralForkParent != "" {
+		// If <ref> resolves to a local image (and not a VM name), take
+		// the image-fork-from path: clonefile-materialize a fresh bundle
+		// and boot it. Falls through to the legacy RAM-overlay path when
+		// the ref is a VM name.
+		if isImageForkFromRef(cfg.EphemeralForkParent) {
+			return runImageForkFromWithConfig(cfg, originalVMName, originalVMDir)
+		}
 		return runEphemeralForkWithConfig(cfg, originalVMName, originalVMDir)
 	}
 

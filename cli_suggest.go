@@ -21,6 +21,7 @@ var knownCommands = []string{
 	"gc",
 	"helper",
 	"help",
+	"image",
 	"import",
 	"inject",
 	"inject-agent",
