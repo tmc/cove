@@ -2,11 +2,14 @@
 //
 // `cove image push <ref> <file>` tars a built image directory into a single
 // file (suitable for scp / external storage). `cove image load <file>`
-// extracts it back into ~/.vz/images/<ref>/. No HTTP, no OCI registry.
+// extracts it back into ~/.vz/images/<ref>/. Pass `-` for either side to
+// stream via stdin/stdout (e.g. `cove image push x:1 - | ssh host cove
+// image load -`). No HTTP, no OCI registry.
 package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
@@ -16,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // imageDataFiles is the deterministic write order for the four sidecar
@@ -43,6 +48,16 @@ func runImagePush(args []string) error {
 		return err
 	}
 	dst := fs.Arg(1)
+	if dst == "-" {
+		if term.IsTerminal(int(os.Stdout.Fd())) {
+			return fmt.Errorf("image push: refusing to write tarball to a TTY (redirect stdout or pass a file path)")
+		}
+		if err := WriteImageTar(ref, os.Stdout, *gz); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Pushed image %s to stdout\n", ref)
+		return nil
+	}
 	if err := PushImageToFile(ref, dst, *gz); err != nil {
 		return err
 	}
@@ -53,21 +68,6 @@ func runImagePush(args []string) error {
 // PushImageToFile tars an image directory to dst. Writes to dst+".tmp"
 // and renames on success; cleans the temp file on any error.
 func PushImageToFile(ref ImageRef, dst string, gzipOut bool) error {
-	if !ImageExists(ref) {
-		return fmt.Errorf("image push: %s not found in store", ref)
-	}
-	imgDir := ref.Path()
-
-	manifestPath := filepath.Join(imgDir, "manifest.json")
-	if _, err := os.Stat(manifestPath); err != nil {
-		return fmt.Errorf("image push: manifest missing: %w", err)
-	}
-	for _, name := range imageDataFiles {
-		if _, err := os.Stat(filepath.Join(imgDir, name)); err != nil {
-			return fmt.Errorf("image push: source missing %s: %w", name, err)
-		}
-	}
-
 	tmp := dst + ".tmp"
 	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
@@ -81,14 +81,49 @@ func PushImageToFile(ref ImageRef, dst string, gzipOut bool) error {
 			cleanup()
 		}
 	}()
+	if err := WriteImageTar(ref, out, gzipOut); err != nil {
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		return fmt.Errorf("image push: sync: %w", err)
+	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("image push: close: %w", err)
+	}
+	closed = true
+	if err := os.Rename(tmp, dst); err != nil {
+		cleanup()
+		return fmt.Errorf("image push: rename: %w", err)
+	}
+	return nil
+}
 
-	var w io.Writer = out
+// WriteImageTar streams an image directory tarball to w. Used by both
+// the file path (PushImageToFile) and the stdout (`cove image push <ref> -`)
+// code paths. The same strict deterministic write order is preserved.
+func WriteImageTar(ref ImageRef, w io.Writer, gzipOut bool) error {
+	if !ImageExists(ref) {
+		return fmt.Errorf("image push: %s not found in store", ref)
+	}
+	imgDir := ref.Path()
+	manifestPath := filepath.Join(imgDir, "manifest.json")
+	if _, err := os.Stat(manifestPath); err != nil {
+		return fmt.Errorf("image push: manifest missing: %w", err)
+	}
+	for _, name := range imageDataFiles {
+		if _, err := os.Stat(filepath.Join(imgDir, name)); err != nil {
+			return fmt.Errorf("image push: source missing %s: %w", name, err)
+		}
+	}
+
+	var tw *tar.Writer
 	var gz *gzip.Writer
 	if gzipOut {
-		gz = gzip.NewWriter(out)
-		w = gz
+		gz = gzip.NewWriter(w)
+		tw = tar.NewWriter(gz)
+	} else {
+		tw = tar.NewWriter(w)
 	}
-	tw := tar.NewWriter(w)
 
 	if err := writeFileToTar(tw, imgDir, "manifest.json"); err != nil {
 		return fmt.Errorf("image push: %w", err)
@@ -105,17 +140,6 @@ func PushImageToFile(ref ImageRef, dst string, gzipOut bool) error {
 		if err := gz.Close(); err != nil {
 			return fmt.Errorf("image push: close gzip: %w", err)
 		}
-	}
-	if err := out.Sync(); err != nil {
-		return fmt.Errorf("image push: sync: %w", err)
-	}
-	if err := out.Close(); err != nil {
-		return fmt.Errorf("image push: close: %w", err)
-	}
-	closed = true
-	if err := os.Rename(tmp, dst); err != nil {
-		cleanup()
-		return fmt.Errorf("image push: rename: %w", err)
 	}
 	return nil
 }
@@ -160,7 +184,19 @@ func runImageLoad(args []string) error {
 		fs.Usage()
 		return fmt.Errorf("image load requires <file>")
 	}
-	ref, err := LoadImageFromFile(fs.Arg(0), *tag, *force)
+	src := fs.Arg(0)
+	if src == "-" {
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			return fmt.Errorf("image load: refusing to read tarball from a TTY (redirect stdin or pass a file path)")
+		}
+		ref, err := ReadImageTar(os.Stdin, *tag, *force)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Loaded image %s\n", ref)
+		return nil
+	}
+	ref, err := LoadImageFromFile(src, *tag, *force)
 	if err != nil {
 		return err
 	}
@@ -188,6 +224,44 @@ func LoadImageFromFile(src, overrideTag string, force bool) (ImageRef, error) {
 		defer gz.Close()
 		r = gz
 	}
+	return readImageTarStream(r, overrideTag, force)
+}
+
+// ReadImageTar extracts an image tarball from r into the local image store.
+// Mirrors LoadImageFromFile's auto-gzip detection by sniffing the first two
+// bytes for the gzip magic before handing off to the tar parser.
+func ReadImageTar(r io.Reader, overrideTag string, force bool) (ImageRef, error) {
+	br, err := maybeGunzip(r)
+	if err != nil {
+		return ImageRef{}, err
+	}
+	return readImageTarStream(br, overrideTag, force)
+}
+
+// maybeGunzip peeks the first two bytes; if they match the gzip magic,
+// wraps r in a gzip.Reader. The peeked bytes are spliced back via
+// io.MultiReader so the downstream parser sees the full stream regardless
+// of branch.
+func maybeGunzip(r io.Reader) (io.Reader, error) {
+	buf := make([]byte, 2)
+	n, err := io.ReadFull(r, buf)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return nil, fmt.Errorf("image load: peek: %w", err)
+	}
+	combined := io.MultiReader(bytes.NewReader(buf[:n]), r)
+	if n == 2 && buf[0] == 0x1f && buf[1] == 0x8b {
+		gz, err := gzip.NewReader(combined)
+		if err != nil {
+			return nil, fmt.Errorf("image load: gzip: %w", err)
+		}
+		return gz, nil
+	}
+	return combined, nil
+}
+
+// readImageTarStream is the shared core for LoadImageFromFile / ReadImageTar.
+// It assumes any gzip framing has already been peeled.
+func readImageTarStream(r io.Reader, overrideTag string, force bool) (ImageRef, error) {
 	tr := tar.NewReader(r)
 
 	hdr, err := tr.Next()
