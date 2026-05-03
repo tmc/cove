@@ -1,17 +1,27 @@
 # Custom ephemeral self-hosted runners
 
-**Status**: planning input. Owns the bridge between the existing
-long-lived `vzscripts/github-runner.vzscript` (registration-mode runner
-inside a permanent VM) and the v0.4 `cove-gha-runner` GHA wrapper from
-design [021](021-v04-ci-executors-tracks.md). This doc covers the
-slices that ship BEFORE 021's full GHA wrapper lands, so users with a
-working manual runner today can switch to fork-per-job ephemeral runners
-without waiting on v0.4.
+**Status**: planning input, v2 (2026-05-03). Owns the bridge between the
+existing long-lived `vzscripts/github-runner.vzscript` (registration-mode
+runner inside a permanent VM) and the v0.4 `cove-gha-runner` GHA wrapper
+from design [021](021-v04-ci-executors-tracks.md). Ships the slices that
+arrive BEFORE 021's full GHA wrapper, so users with a working manual
+runner today can switch to fork-per-job ephemeral runners without
+waiting on v0.4.
 
 **Scope-source**: user prompt 2026-05-03 — "I have a VM that has manual
 runners running in it right now but would like to get it to be faster /
 more ephemeral." This is the on-ramp design 021's Slice 1 + design 024's
 Slice 1 collectively imply but do not document end-to-end.
+
+**v2 changes**: Slice 0 in v1 (vzscript-only) was killed by three
+verified flaws (no `-env` flag on `cove run`, `# runs-on: daemon` runs
+sequentially-blocking through `rsc.io/script`, `# secret:` directive
+ships in `build_cache.go` for `cove build` only — NOT in
+`vzscript_apply.go`'s `parseScriptMeta`). v2 replaces Slice 0 with `cove
+runner job`: a one-shot Go subcommand that does `acquire JIT → fork →
+inject token → run → teardown` atomically. Same LOC class (~150 LOC),
+different layer, sidesteps every flaw. See "Lessons learned in v2"
+below.
 
 ## Problem statement
 
@@ -31,18 +41,21 @@ Today's path:
 
 The desired state:
 
-1. The user runs ONE command per CI host: `cove runner serve --image
-   cove-runner-macos:14.5 --repo tmc/cove --token <reg-token>`.
-2. The host process polls the GitHub Actions queue API or registers a
-   long-poll listener. When a job is dispatched, the host:
-   a. forks a fresh ephemeral child from `cove-runner-macos:14.5` via
-      the existing `cove run -fork-from <ref> -ephemeral` codepath;
-   b. injects a JIT runner config into the child;
-   c. waits for the runner inside the child to claim and execute the
-      job;
-   d. destroys the child when the job completes (or hits timeout /
-      crashes).
-3. Every job sees a fresh guest. No residue. Throughput limited only by
+1. The user runs ONE command per job: `cove runner job --image
+   cove-runner-macos:14.5 --repo tmc/cove --token <GH_PAT>`.
+2. That command:
+   a. acquires a JIT runner config from GitHub
+      (`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`);
+   b. forks an ephemeral child from the named image via the existing
+      `cove run -fork-from <ref> -ephemeral` codepath (subprocess);
+   c. waits for the agent to come up in the child, writes the JIT token
+      to a guest path via `WriteFile` RPC, then `Exec`s
+      `./run.sh --jitconfig "$(cat /tmp/jit-config)"` and blocks until
+      the runner exits;
+   d. tears the child down on exit (success, runner failure, signal).
+3. For multi-job behavior: shell loop. `while true; do cove runner job
+   ...; done`. No daemon. No state files. No orphan-cleanup logic.
+4. Every job sees a fresh guest. No residue. Throughput limited only by
    parent-image fork rate (~140 ms per fork-only on M4, per
    [bench/fork-time/results-20260427.md](../../bench/fork-time/results-20260427.md))
    plus boot-to-agent (~6-10 s on a vsock-reachable base image).
@@ -64,99 +77,218 @@ fork-per-job loop with GitHub's runner registration API, so users can
 operate a Cirrus-tier ephemeral runner fleet on a single Mac without
 writing orchestration glue.
 
+## Lessons learned in v2
+
+The v1 Slice 0 was vzscript-only. Three verified flaws:
+
+1. **`-env` flag does not exist on `cove run`.** `grep '"-env"' main.go`
+   → zero. The cookbook syntax `cove run -fork-from … -env JIT_CONFIG=…`
+   was dead syntax.
+2. **`-vzscripts` flag is install-only on `cove run`.** `main.go:622`
+   wires `installVZScripts` only inside `case "install":`; `case "run":`
+   silently ignores the flag value (`main.go:629`). The cookbook one-liner
+   was broken on TWO counts, not one.
+3. **`# runs-on: daemon` is sequential-blocking through `rsc.io/script`.**
+   Confirmed at `vzscript_apply.go:810-816` (`cfgForRecipe` sets
+   `cfg.daemon = true`) and `vzscript_apply.go:467-469` (`runVZScript`
+   blocks synchronously on the goroutine). A `guest-exec ./run.sh
+   --jitconfig` step would block the script engine indefinitely because
+   `./run.sh --jitconfig` IS the runner listener loop. The existing
+   `github-runner.vzscript:103` works because `./svc.sh install &&
+   ./svc.sh start` creates a LaunchDaemon and returns immediately;
+   launchd owns the listener process. JIT mode has no equivalent escape:
+   GitHub's runner does not support service-mode + JIT config
+   simultaneously.
+4. **`# secret:` directive lives in `build_cache.go`, not
+   `vzscript_apply.go`.** `parseBuildScriptMeta` recognizes
+   `case "secret":` at `build_cache.go:123`; `parseScriptMeta` at
+   `vzscript_apply.go:849-925` does not. `cove vzscript run` cannot
+   mount secrets via `# secret:`. Task #74 was completed correctly for
+   `cove build`; vzscript-side secret injection remains unimplemented.
+5. **`AgentExecCommand.env` is never populated by vzscript.go.**
+   `vzscript.go:479-483` constructs `AgentExecCommand{Args: args}` with
+   no `Env` field. Per `project_vzscript_env_passthrough.md`, env
+   pass-through is purely host-side substitution via `os.Environ()`
+   before the args are sent. Any future "pass JIT_CONFIG through
+   vzscript args" path would substitute base64 bytes into an unquoted
+   token, which breaks on shell metachars (`+/=`).
+
+v2's Slice 0 (`cove runner job`) sidesteps all five by living entirely
+in Go — no script engine, no env substitution, no `# secret:` directive.
+JIT bytes flow: HTTP response body → in-process `[]byte` →
+`AgentClient.WriteFile()` (control-socket plumbing already shipped in
+[023](023-cove-shell-exec-ux.md) Slice 1) → guest path → `bash -c
+"./run.sh --jitconfig $(cat /tmp/jit-config)"`. The token never touches
+a host shell, never appears in process args visible to `ps`, never
+expands through `os.Environ()`.
+
 ## Slices
 
-### Slice 0 (v0.2.2 candidate, ~80 LOC vzscript-only): ephemeral runner mode
+### Slice 0 (v0.2.2 candidate, ~150-180 LOC Go): `cove runner job`
 
-**Goal**: extend `vzscripts/github-runner.vzscript` with an `--ephemeral`
-mode that uses GitHub's [JIT runner config][gh-jit] instead of
-persistent registration. Lets users with TODAY'S long-lived VM script
-switch to single-use registration WITHOUT requiring `cove runner serve`.
-
-**Files**:
-
-- `vzscripts/github-runner.vzscript` (modify) — add `JIT_CONFIG` env
-  var path; if set, `./run.sh --jitconfig "$JIT_CONFIG"` instead of
-  `./svc.sh install`. ~30 LOC change to `install-runner.sh`.
-- `docs/examples/ephemeral-github-runner.md` (new) — cookbook walking
-  through the fork-once flow:
-  ```
-  TOKEN=$(curl -X POST -H "Authorization: bearer $GH_PAT" \
-    https://api.github.com/repos/tmc/cove/actions/runners/generate-jitconfig \
-    -d '{"name":"cove-fork-1","runner_group_id":1,"labels":["cove-vm"],"work_folder":"_work"}' \
-    | jq -r '.encoded_jit_config')
-
-  cove run -fork-from cove-runner-macos:14.5 -ephemeral \
-    -vzscripts github-runner -env JIT_CONFIG="$TOKEN"
-  ```
-
-**Why ship this first**: zero Go code, no new subcommand, no proto bump.
-Unlocks the core ephemeral pattern for users (you) who already have a
-manual runner working. Pure additive change to an existing vzscript.
-
-**Risks**: GitHub's JIT config API is in public beta as of 2025-09;
-need to verify endpoint shape against current docs before shipping.
-
-### Slice 1 (v0.3 candidate, ~350 LOC + tests): `cove runner serve`
-
-**Goal**: a long-running host-side daemon that polls GitHub's queue,
-forks-per-job, and tears down ephemeral children automatically.
+**Goal**: one-shot ephemeral runner command. Replaces v1's Slice 0
+vzscript edit. Acquires a JIT config, forks the named image as
+ephemeral, injects the token via in-process agent RPC, runs ONE job,
+tears down. Exit code = runner exit code.
 
 **Files**:
 
-- `runner.go` (new) — subcommand dispatch, config parsing, signal
-  handling. ~80 LOC.
-- `runner_serve.go` (new) — main loop:
-  1. Acquire a JIT config from GitHub (using `GH_PAT` or GitHub App
-     credentials).
-  2. Spawn an ephemeral fork via the existing `cove run -fork-from
-     <image> -ephemeral` codepath (re-use, do not re-implement the fork
-     logic).
-  3. Inject the JIT config via the in-VM agent's `AgentExecCommand`
-     RPC (existing — see `proto/agent.proto`), with the job's working
-     directory mounted via VirtioFS share.
-  4. Wait for the fork to terminate (job done, agent disconnect, or
-     timeout).
-  5. Loop. ~200 LOC.
-- `runner_serve_test.go` — table-driven tests for: JIT acquisition
-  failure, fork failure (parent missing / clonefile fails), agent
-  disconnect mid-job, timeout-then-shutdown. ~70 LOC.
-- `cli_help.go` (modify) — add `cove runner` to the subcommand index.
-- `docs/reference/cli.md` (modify) — `cove runner serve` reference.
+- `runner.go` (new, ~30 LOC) — subcommand dispatch (`cove runner
+  <verb>`); v0.2.2 only registers `job`.
+- `runner_job.go` (new, ~150 LOC) — full one-shot:
+  ```
+  parseFlags(--image, --repo, --token, --labels, --name, --workdir, --timeout)
+  jitConfig, err := acquireJITConfig(ctx, repo, token, name, labels)
+    → POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig
+    → returns 201 with { encoded_jit_config: "<base64>" }
+  child := forkEphemeral(ctx, image)
+    → exec.CommandContext("cove", "run", "-fork-from", image, "-ephemeral")
+    → capture child VM name from structured stdout (NEW; see "open question 5")
+    → spawn in goroutine; pipe stdout/stderr to host
+  agent := waitForAgent(ctx, child, 60*time.Second)
+    → poll control-socket until agent connect succeeds
+  err = agent.WriteFile(ctx, "/tmp/jit-config", jitConfig, 0600)
+  err = agent.Exec(ctx, []string{"bash", "-c",
+        "./run.sh --jitconfig \"$(cat /tmp/jit-config && rm /tmp/jit-config)\""},
+        timeout)
+    → blocks until runner exits
+  defer teardown(child) → cove vm delete <child>
+  return runnerExitCode
+  ```
+- `runner_job_test.go` (new, ~70 LOC) — table-driven:
+  - `TestRunnerJob_HappyPath` — stub HTTP server returns JIT config;
+    stub `cove` on PATH echoes a fake child name; verify WriteFile +
+    Exec invocations + teardown.
+  - `TestRunnerJob_JITAcquireFailure` — stub returns 403; verify exit
+    code 1, no fork attempt.
+  - `TestRunnerJob_AgentTimeout` — agent never appears within 60s;
+    verify teardown still runs, exit code 4.
+- `main.go` (+10 LOC) — `case "runner":` → `handleRunnerCommand(args)`.
+- `cli_help.go` (+5 LOC) — `cove runner` to subcommand index.
+- `docs/reference/cli.md` (+15 LOC) — `cove runner job` reference.
+- `docs/examples/ephemeral-github-runner.md` (new, ~40 LOC) — cookbook:
+
+  ```
+  # One-shot:
+  cove runner job \
+    --image cove-runner-macos:14.5 \
+    --repo tmc/cove \
+    --token "$GH_PAT" \
+    --labels self-hosted,cove-vm,macos-14
+
+  # Multi-job loop (replace svc.sh install pattern):
+  while true; do
+    cove runner job \
+      --image cove-runner-macos:14.5 \
+      --repo tmc/cove \
+      --token "$GH_PAT" \
+      --labels self-hosted,cove-vm,macos-14 \
+      --timeout 6h
+    sleep 2  # GitHub queue backoff
+  done
+  ```
+
+**Why ship this first**:
+
+- Atomic command, shell-loopable. The user's actual ask ("faster / more
+  ephemeral") is met without a daemon.
+- Sidesteps every v1-Slice-0 flaw by living in Go, not vzscript.
+- Same LOC class as v1 (~150 vs ~80) but actually correct.
+- Slice 1's daemon becomes a thin wrapper around the same primitive:
+  `runner serve` is a goroutine pool of `runner job` invocations + a
+  GitHub queue poller + state-file management. No re-architecture.
+
+**Risks** (Slice 0 specific):
+
+- JIT config TTL: GitHub's JIT config tokens expire ~60 seconds from
+  the API call (not formally documented, observed in practice).
+  Slice 0's full path (acquire → fork → boot → agent → exec) is
+  8-12 s on a warm pre-baked image, comfortably inside the TTL.
+  But: if the parent image needs cold-boot rather than fork (no
+  pre-baked image yet), add 30-60 s — likely TTL violation.
+- Subprocess control: `cove run -fork-from -ephemeral` currently does
+  not emit structured stdout (child VM name, control-socket path).
+  Slice 0 either adds a `--output-format json` flag to `cove run` (~30
+  LOC), or scrapes the unstructured log lines (fragile). See open
+  question 5.
+
+### Slice 1 (v0.3 candidate, ~250-300 LOC Go + tests): `cove runner serve`
+
+**Goal**: long-running host-side daemon that polls GitHub's queue,
+forks-per-job (one at a time), and tears down ephemeral children
+automatically. Wraps Slice 0's `runner job` primitive in a poll loop +
+state-file management.
+
+**LOC budget revision from v1**: v1 estimated 350 LOC. The agent
+review found that the "reuse `runImageForkFromWithConfig` directly"
+claim is aspirational — that function reads package-level globals from
+`flag.StringVar` (`runtime_lifecycle.go:225`, `main.go:210-213`), so
+the only safe library call is subprocess. Real budget: 250-300 LOC for
+the daemon proper, since Slice 0 already absorbs the
+subprocess-management LOC.
+
+**Files**:
+
+- `runner.go` (modify, +30 LOC) — register `serve` verb alongside `job`.
+- `runner_serve.go` (new, ~200 LOC) — main loop:
+  1. Poll `GET /repos/{owner}/{repo}/actions/runs?status=queued` (or use
+     long-poll registration if available).
+  2. When a job is queued for one of our labels, call into
+     `runOneJob(ctx, image, repo, token)` — same code path as Slice 0
+     but as a library function, not the CLI handler.
+  3. State file: `~/.vz/runners/<runner-name>/state/<job-id>.json` —
+     atomic temp+rename writes per `project_lro_pattern.md` (design 001
+     LRO precedent: `~/.vz/operations/<op_id>.json`).
+  4. SIGTERM handling: drain currently-running fork to completion
+     (configurable `--drain-timeout`, default 10m), then exit.
+- `runner_serve_test.go` (new, ~80 LOC) — table-driven (see Tests below).
+- `cli_help.go` (modify, +5 LOC) — extend `cove runner` help with
+  `serve`.
+- `docs/reference/cli.md` (modify, +20 LOC) — `cove runner serve`
+  reference.
 
 **Concurrency model**: Slice 1 = ONE fork at a time. The host process
 serializes fork attempts. Slice 2 adds a `--max-parallel N` flag.
 
 **State on disk**:
 
-- `~/.vz/runners/<runner-name>/config.json` — image ref, repo, token,
-  labels, max-parallel.
-- `~/.vz/runners/<runner-name>/state/<job-id>/` — per-job log + child
-  VM name (for cleanup if the host crashes mid-job).
+- `~/.vz/runners/<runner-name>/config.json` — image ref, repo, token
+  reference (URI per design 005, NOT the literal token), labels,
+  max-parallel.
+- `~/.vz/runners/<runner-name>/state/<job-id>.json` — per-job state
+  (started_at, child_vm_name, exit_code, finished_at). Atomic
+  temp+rename.
 
-**Failure invariants** (mirror design 021 §"Failure rules"):
+**Failure invariants** (faithful inheritance from design 021
+[§"Failure rules" lines 149-163](021-v04-ci-executors-tracks.md)):
 
-- JIT acquisition fails → log + retry with backoff; do NOT spawn a
-  fork.
-- Fork fails → fail-fast, log the parent VM name + error, surface to
-  the GitHub side as job-cancelled (best-effort).
-- Agent disconnect mid-job → terminate the fork (`cove ctl shutdown -force`),
-  mark the job as failed in local state, continue serving.
-- Host process exits cleanly (SIGTERM) → drain currently-running fork
-  to completion (configurable timeout, default 10m), then exit.
-- Host process crashes → on next start, scan `~/.vz/runners/<name>/state/`
-  for orphan VMs and clean them up via `cove vm delete <child>` before
-  accepting new jobs.
+| Failure mode | Slice 1 behavior | Source |
+|---|---|---|
+| JIT acquisition fails | log + exponential backoff (1s, 2s, 4s, … cap 60s); do NOT spawn a fork | 026-only (021 assumes pre-job setup is platform-managed) |
+| Fork failure (parent missing, APFS clonefile, scratch root unwritable) | bail BEFORE guest boot; error names parent VM + scratch path; no partial state | 021 §rule 2 |
+| Secret mount failure (JIT WriteFile RPC fails) | abort with exit 2, surfacing error from agent; do NOT fall back to env vars | 021 §rule 3 — **was missing in v1** |
+| Job command exits non-zero | wrapper exits non-zero, forwarding runner exit code | 021 §rule 1 — **was missing in v1** |
+| Timeout (per-job, default 6h) | SIGTERM the guest exec, wait min(10s, remaining_timeout), then `cove ctl shutdown -force`; always run teardown | 021 §rule 4 |
+| Teardown failure (`cove vm delete <child>` fails post-job) | log + exit non-zero EVEN IF the job itself succeeded; the next run cannot rely on a clean parent | 021 §rule 5 — **was missing in v1** |
+| Agent disconnect mid-job | terminate the fork (`cove ctl shutdown -force`), mark job failed in state file, continue serving (in serve mode) or exit non-zero (in job mode) | 026-only |
+| Host process exits cleanly (SIGTERM) | drain currently-running fork to completion (`--drain-timeout`, default 10m), then exit | 026-only |
+| Host process crashes | on next start, scan `~/.vz/runners/<name>/state/` for orphan VMs and clean them up via `cove vm delete <child>` before accepting new jobs | 026-only |
+| Cancelled-job mechanics | If a fork fails before the runner registers, GitHub has no runner for that job — the job stays queued until GitHub's default 6h timeout expires. There is no in-band "job cancelled" signal we can send. Document this plainly in the Slice 1 cookbook. | 026-only — was glossed as "(best-effort)" in v1; now stated plainly |
 
 **Tests** (in addition to per-function):
 
-- `TestRunnerServe_HappyPath` — fake GitHub queue, stub `cove run -fork-from`,
+- `TestRunnerServe_HappyPath` — fake GitHub queue, stub `cove` PATH,
   verify one full cycle.
 - `TestRunnerServe_OrphanCleanupOnRestart` — leave a fake orphan VM in
   state dir; restart; verify cleanup before next loop iteration.
 - `TestRunnerServe_TimeoutForcesShutdown` — fork that doesn't exit;
   verify `cove ctl shutdown -force` invocation after the configured
   timeout.
+- `TestRunnerServe_TeardownFailureExitsNonZero` — Slice 1's faithful
+  inheritance from 021 §rule 5; stub `cove vm delete` to return error;
+  verify daemon exits non-zero even though the job succeeded.
+- `TestRunnerServe_DrainOnSIGTERM` — start with one in-flight job, send
+  SIGTERM, verify daemon waits for fork exit before shutting down.
 
 ### Slice 2 (v0.4 candidate, ~150 LOC): parallel fan-out + observability
 
@@ -167,9 +299,9 @@ command.
 - `--max-parallel N` flag — semaphore-gated fork attempts.
 - `--prom-port N` flag — exposes job-counter, fork-time-histogram,
   active-job gauge metrics on `0.0.0.0:N/metrics`.
-- `cove runner status` subcommand — reads `~/.vz/runners/<name>/state/`
-  + queries the live host process (vsock or unix socket TBD) for
-  in-flight jobs.
+- `cove runner status` subcommand — reads
+  `~/.vz/runners/<name>/state/` + queries the live host process (vsock
+  or unix socket TBD) for in-flight jobs.
 - Reuses Slice 1's failure invariants per-fork.
 
 ### Slice 3 (deferred): GitLab parity
@@ -187,68 +319,132 @@ spawns a `tart clone` + `tart run`, the runner inside the clone picks
 up the job, GitLab tears down. Same shape as our Slice 1, but tied to
 GitLab's executor protocol.
 
-Our Slice 1 sits on the GitHub side (where Cirrus has Cirrus CI itself
-as the alternative, not a self-hosted-runner fork) and ships the
-host-daemon shape that no Cirrus equivalent provides for GitHub
-Actions. Combined with [015](015-soft-reset-empirical.md)'s empirical
-basis for fork/restore being the only working isolation primitive, this
-is a measurable safety + perf claim no competitor matches:
+Our Slice 0 (`cove runner job`) is the smallest unit — a one-shot fork
+that no Tart/Lume equivalent ships. Tart users self-hosting GitHub
+runners must script their own `tart clone` + `actions-runner
+--jitconfig` glue. Lume users have no fork primitive at all. Our Slice
+1 (`cove runner serve`) sits on the GitHub side (where Cirrus has
+Cirrus CI itself as the alternative, not a self-hosted-runner fork)
+and ships the host-daemon shape that no Cirrus equivalent provides for
+GitHub Actions. Combined with [015](015-soft-reset-empirical.md)'s
+empirical basis for fork/restore being the only working isolation
+primitive, this is a measurable safety + perf claim no competitor
+matches.
 
-- Tart users self-hosting GitHub runners must script their own
-  `tart clone` + `actions-runner --jitconfig` glue. No `tart runner serve`.
-- Lume users have no fork primitive at all.
+## Top runtime risks (NEW in v2 — not in v1)
+
+These show up when the user actually runs this in anger, not in design
+review:
+
+1. **JIT config TTL expiration before fork boots** (Slice 0 risk
+   already noted; Slice 1 risk is worse with parallel forks competing
+   for boot bandwidth). Mitigations: prefer warm pre-baked images;
+   acquire JIT token AT fork-time, not at job-dispatch-time; document
+   TTL probe in cookbook.
+2. **Runner binary version in the baked image goes stale.** GitHub's
+   JIT mode does NOT auto-update the runner binary (auto-update
+   requires the service-mode lifecycle). A pre-baked image captures
+   one runner version. After ~3 months, GitHub will reject the runner
+   as too old and `./run.sh --jitconfig` will fail. The existing
+   `github-runner.vzscript:69-75` avoids this by fetching the latest
+   runner at registration time — but that's incompatible with
+   pre-baked images. **Mitigation**: document a periodic `cove image
+   build` schedule in the cookbook; flag in `cove image inspect` if
+   the runner binary inside is older than 90 days (future v0.4 work).
+3. **Residue in keychain and LaunchDaemon slots between ephemeral
+   forks from the SAME parent.** Design 015 proved warm soft-reset
+   fails 3 of 6 isolation probes. Fork-from IS the right isolation
+   primitive — but only if the parent image is built from a clean,
+   never-job-run snapshot. The user's current setup
+   (`gha-runner-mlx-go-v1`) has been running jobs for hours; baking
+   an image from it inherits all the residue (keychain entries from
+   registration, ~/.runner state, registered LaunchDaemons). Every
+   fork inherits it. **Mitigation**: image-build cookbook MUST
+   include `./config.sh remove` + keychain cleanup + LaunchDaemon
+   uninstall steps before `cove image build`. Add an
+   `image build --strict-clean` flag (future v0.4 work) that runs
+   these checks automatically.
 
 ## Privacy and trademark gates
 
-- All work in this design is LOCAL. No registry pushes. No public-facing
-  surface beyond what GitHub already exposes for self-hosted runners.
-- Slice 1+2 ship under the same private-repo regime as the rest of v0.3.
+- All work in this design is LOCAL. No registry pushes. No
+  public-facing surface beyond what GitHub already exposes for
+  self-hosted runners.
+- Slice 1+2 ship under the same private-repo regime as the rest of
+  v0.3.
 - No `cove` brand surface that hits a public registry until trademark
   counsel clears the name (per ROADMAP `Product Decisions`).
 
 ## Open questions
 
-1. **GitHub App vs PAT for JIT acquisition**: PAT is simpler for v0.2.2
+1. **GitHub App vs PAT for JIT acquisition**: PAT is simpler for
    Slice 0 cookbook; GitHub App is required for org-wide deployments
    (avoids per-user token expiry). Strawman: support both via
    `GH_TOKEN` (PAT path) OR `GH_APP_ID`+`GH_APP_PRIVATE_KEY` env vars
-   (App path). Decide in Slice 1 implementation.
-2. **State store format**: JSON files per job is the simplest shape but
-   doesn't survive concurrent writes well. Strawman: one JSON per
-   job_id, write atomically via temp+rename, never modify in place.
+   (App path). Decide in Slice 1 implementation. **Lean (per agent
+   review)**: route both through design 005's URI delegation
+   (`1password://`, `env://`) rather than building token-refresh
+   lifecycles into the runner daemon itself.
+2. **State store format**: JSON files per job is the simplest shape
+   but doesn't survive concurrent writes well. Strawman: one JSON
+   per job_id, write atomically via temp+rename, never modify in
+   place. **Confirmed**: matches design 001 LRO pattern at
+   `~/.vz/operations/<op_id>.json`. Use that exact shape.
 3. **Slice 1 vs `cove-gha-runner` from 021**: 021 Slice 1 is a GHA
-   *Action* (job-step). This design's Slice 1 is a GHA *runner* (host
-   daemon). They compose: 021 runs INSIDE jobs that arrive via the
-   runner this design serves. No conflict, but they MUST be released
-   in the right order: this design's Slice 1 (runner) before 021's
-   Slice 1 (action), since the action needs a runner to run on.
-4. **Where does `vzscripts/github-runner.vzscript` go after Slice 1
+   *Action* (job-step). This design's Slice 1 is a GHA *runner*
+   (host daemon). They compose: 021 runs INSIDE jobs that arrive
+   via the runner this design serves. No conflict, but they MUST
+   be released in the right order: this design's Slice 0/1 (runner)
+   before 021's Slice 1 (action), since the action needs a runner
+   to run on.
+4. **Where does `vzscripts/github-runner.vzscript` go after Slice 0
    ships**: keep it. The vzscript is the "I just want a long-lived
-   runner" path; `cove runner serve` is the "I want fork-per-job"
-   path. Both are valid. Document the trade-off in the cookbook.
+   runner inside a permanent VM" path; `cove runner job` is the "I
+   want fork-per-job" path. Both are valid. Document the trade-off
+   in the cookbook.
+5. **Structured stdout from `cove run -fork-from -ephemeral`**: Slice
+   0's subprocess management needs the child VM name (and ideally the
+   control-socket path) emitted in machine-parseable form. Today the
+   logs are unstructured. Options:
+   - **5a**: Add `cove run --output-format json` flag (~30 LOC change
+     to `runtime_lifecycle.go`). Emits `{"event":"vm_started","name":
+     "...","control_socket":"..."}` lines on stderr. Cleanest.
+   - **5b**: Slice 0 scrapes existing log lines. Fragile; will break
+     on any log-format change.
+   - **5c**: Slice 0 uses `cove vm list --json` polling after fork
+     (find the newest `<parent>-fork-N` VM). Race-prone but no
+     subprocess coupling.
+   **Lean**: 5a. Adds reusable structured-output infrastructure that
+   future commands can adopt.
 
 ## References
 
+- [001](001-cove-serve.md) — LRO state file pattern at
+  `~/.vz/operations/<op_id>.json`. Slice 1's state store mirrors this
+  exactly.
+- [005](005-uri-delegation.md) — URI-based secret delegation. Slice 1's
+  `--token` flag should accept URIs (e.g. `1password://op/cove/gh-pat`).
 - [013](013-vm-fork.md) — fork-from semantics, Phase 4 lineage.
 - [015](015-soft-reset-empirical.md) — load-bearing for the
   "fork/restore is the only isolation primitive" claim.
 - [021](021-v04-ci-executors-tracks.md) — v0.4 CI executors. This
   design ships the runner daemon; 021 Slice 1 ships the action that
-  runs ON that daemon.
-- [023](023-cove-shell-exec-ux.md) — `cove shell` exec UX. The runner
-  daemon reuses the same `agent-exec-attach` plumbing for in-fork
-  command execution.
-- [024](024-cove-runner-images.md) — image surface (`cove image build`,
-  `fork-from <ref>`, `-ephemeral`). Slice 1 of this design composes
-  on top of 024's already-shipped Slice 1.
+  runs ON that daemon. Failure rules at lines 149-163 are the
+  authoritative source for v2's Slice 1 failure-invariant table.
+- [023](023-cove-shell-exec-ux.md) — `cove shell` exec UX. Slice 0
+  reuses the `agent-exec-attach` plumbing (`AgentClient.WriteFile` +
+  `AgentClient.Exec`) shipped in 023 Slice 1.
+- [024](024-cove-runner-images.md) — image surface (`cove image
+  build`, `fork-from <ref>`, `-ephemeral`). Slice 0 of this design
+  composes on top of 024's already-shipped Slice 1.
 - [025](025-cove-action-security.md) — security architecture.
-  Token-handling rules apply unchanged: the runner daemon NEVER mounts
-  the JIT config or `GH_PAT` as a guest env var; injection happens via
-  agent RPC after the fork is up, and the in-guest runner consumes the
-  JIT config from a tmpfs path that the host unmounts before declaring
-  the job done.
+  Token-handling rules apply unchanged: the runner NEVER mounts the
+  JIT config or `GH_PAT` as a guest env var; injection happens via
+  agent RPC, and the in-guest runner consumes the JIT config from a
+  guest path that is `rm`'d in the same `bash -c` invocation that
+  reads it.
 - [`vzscripts/github-runner.vzscript`](../../vzscripts/github-runner.vzscript)
-  — the existing manual-runner script that Slice 0 augments with
-  `--ephemeral` mode.
+  — the existing manual-runner script. Stays in tree as the
+  long-lived alternative to `cove runner job`.
 
 [gh-jit]: https://docs.github.com/en/rest/actions/self-hosted-runners?apiVersion=2022-11-28#create-configuration-for-a-just-in-time-runner-for-a-repository
