@@ -485,11 +485,15 @@ cove clone <source> <destination> [flags]
 
 ## image
 
-Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stopped VM bundle (manifest + clonefile-backed disk + identity files) so `cove run -fork-from <image-ref> -ephemeral` can spawn disposable VMs from a saved baseline. Local-only in this release; push/pull and signing are future slices (see [design 024](../designs/024-cove-runner-images.md)).
+Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stopped VM bundle (manifest + clonefile-backed disk + identity files) so `cove run -fork-from <image-ref> -ephemeral` can spawn disposable VMs from a saved baseline. Local-only in this release; push/pull to a public registry are future slices (see [design 024](../designs/024-cove-runner-images.md)). `push`/`load` move images as plain tarballs; no HTTP, no OCI registry.
 
 ```
 cove image build -from <vm> -tag <name[:tag]>
 cove image list
+cove image inspect <name[:tag]> [-json]
+cove image push <name[:tag]> <file> [-gzip]
+cove image load <file> [-tag <name[:tag]>] [-force]
+cove image gc [-dry-run] [-yes] [-older-than <duration>]
 cove image rm <name[:tag]>
 ```
 
@@ -497,14 +501,28 @@ cove image rm <name[:tag]>
 |------------|-------------|
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy). vmstate is excluded; cold-boot only. |
 | `list` | Show stored images with size + creation time + source VM. |
+| `inspect <ref> [-json]` | Print manifest (size, sha256, base image, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. |
+| `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. |
+| `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. |
+| `gc [-dry-run] [-yes] [-older-than D]` | Sweep images with zero live forks. `-dry-run` plans only; `-yes` skips the confirmation prompt; `-older-than` filters by manifest `createdAt`. Re-checks fork count immediately before deletion to close the planning -> remove TOCTOU window. |
 | `rm <ref>` | Delete an image. Refuses while any forked VM still references the image (`ParentImage` on the child's `config.json` is the gate). |
 
 ```bash
 cove image build -from macos-base -tag macos-runner:14.5
+cove image inspect macos-runner:14.5 -json
+cove image push macos-runner:14.5 /tmp/macos-runner.tar.gz -gzip
+cove image load /tmp/macos-runner.tar.gz -tag macos-runner:imported
+cove image gc -dry-run -older-than 168h
 cove image list
 cove run -fork-from macos-runner:14.5 -ephemeral -name worker-1
 cove image rm macos-runner:14.5
 ```
+
+Computer-use bridges that drive a running VM through the control socket
+ship as Python helpers under `adapters/`. See
+[Anthropic Computer Use](../examples/anthropic-computer-use.md) and
+[Gemini Computer Use](../examples/gemini-computer-use.md) for end-to-end
+walkthroughs.
 
 ---
 
