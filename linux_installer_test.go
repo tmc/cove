@@ -397,6 +397,8 @@ func TestGenerateUserDataDesktopOEM(t *testing.T) {
 		"useradd -m -s /bin/bash",
 		"usermod -aG adm,cdrom,sudo,dip,plugdev,users,lpadmin",
 		"gnome-initial-setup-done",
+		"cloud-init.disabled",
+		"90-installer-network.cfg",
 		"AutomaticLoginEnable=true",
 		"AutomaticLogin=me",
 	} {
