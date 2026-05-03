@@ -13,6 +13,7 @@ package main
 var vmDirIndependentCommands = map[string]bool{
 	"helper":  true,
 	"version": true,
+	"shell":   true,
 }
 
 // subcommandSkipsVMDir reports whether the first non-flag argument names a

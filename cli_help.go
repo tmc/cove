@@ -40,6 +40,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "ctl":
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
 			fs.Usage()
+		case "shell":
+			printShellUsage(os.Stderr)
 		case "up":
 			fs, _, _ := newUpFlagSet()
 			fs.Usage()
@@ -137,6 +139,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
 			fs.Usage()
+			return true, usageExitCode(subargs)
+		}
+	case "shell":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printShellUsage(os.Stderr)
 			return true, usageExitCode(subargs)
 		}
 	case "up":
