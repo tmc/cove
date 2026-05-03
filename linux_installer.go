@@ -331,20 +331,6 @@ func installLinuxVM() error {
 	}
 	if useDirectBoot {
 		seedDir := filepath.Join(vmDir, "cloud-init-data")
-		autoinstallPath := filepath.Join(seedDir, linuxAutoinstallPath)
-		if _, err := os.Stat(autoinstallPath); err == nil {
-			injectedInitrd, err := injectAutoinstallIntoInitrd(installInitrdPath, autoinstallPath)
-			if err != nil {
-				return fmt.Errorf("inject autoinstall into initrd: %w", err)
-			}
-			installInitrdPath = injectedInitrd
-			if verbose {
-				fmt.Printf("  Injected autoinstall config into initrd: %s\n", injectedInitrd)
-			}
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("stat autoinstall config: %w", err)
-		}
-
 		seedAddress, seedCloser, err := startCloudInitHTTPServer(seedDir)
 		if err != nil {
 			return fmt.Errorf("start cloud-init HTTP server: %w", err)
