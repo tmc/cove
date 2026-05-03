@@ -363,6 +363,18 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 		return &controlpb.ControlResponse{
 			Error: "agent-exec-stream requires streaming transport (use one request per connection)",
 		}, true
+	case "agent-exec-attach":
+		return &controlpb.ControlResponse{
+			Error: "agent-exec-attach requires streaming transport (use one request per connection)",
+		}, true
+	case "agent-exec-resize", "agent-exec-signal":
+		// Handled in the main socket loop directly off the raw JSON line
+		// (see control_socket.go). If we got here the dispatcher missed
+		// the command — surface a clear error rather than silently
+		// returning ok=false.
+		return &controlpb.ControlResponse{
+			Error: fmt.Sprintf("%s expects raw JSON dispatch; use the unix control socket", req.Type),
+		}, true
 	case "agent-read":
 		cmd := req.GetAgentRead()
 		if cmd == nil {
