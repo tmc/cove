@@ -47,6 +47,7 @@ func withBuildRuntimeGlobals(sc buildScratch, fn func() error) error {
 	oldVMDir := vmDir
 	oldDiskPath := diskPath
 	oldLinuxMode := linuxMode
+	oldWindowsMode := windowsMode
 	oldGUIMode := guiMode
 	oldHeadlessMode := headlessMode
 	oldSkipResume := skipResume
@@ -59,6 +60,7 @@ func withBuildRuntimeGlobals(sc buildScratch, fn func() error) error {
 		vmDir = oldVMDir
 		diskPath = oldDiskPath
 		linuxMode = oldLinuxMode
+		windowsMode = oldWindowsMode
 		guiMode = oldGUIMode
 		headlessMode = oldHeadlessMode
 		skipResume = oldSkipResume
@@ -71,7 +73,9 @@ func withBuildRuntimeGlobals(sc buildScratch, fn func() error) error {
 
 	vmDir = sc.Dir
 	diskPath = sc.DiskPath
-	linuxMode = filepath.Base(sc.DiskPath) == "linux-disk.img"
+	diskBase := filepath.Base(sc.DiskPath)
+	linuxMode = diskBase == "linux-disk.img"
+	windowsMode = diskBase == "windows-disk.img"
 	guiMode = false
 	headlessMode = true
 	skipResume = true

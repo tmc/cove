@@ -34,8 +34,11 @@ func (m systemDiskAttachmentMode) String() string {
 }
 
 func vmPrimaryDiskPath(vmPath string) string {
-	if vmconfig.DetectOSType(vmPath) == "Linux" {
+	switch vmconfig.DetectOSType(vmPath) {
+	case "Linux":
 		return filepath.Join(vmPath, "linux-disk.img")
+	case "Windows":
+		return filepath.Join(vmPath, "windows-disk.img")
 	}
 	return filepath.Join(vmPath, "disk.img")
 }
@@ -113,17 +116,21 @@ func runDisposableCloneFromDiskPath(source, diskPath string, attachmentMode syst
 	prevDiskPathOverride := runtimeSystemDiskPathOverride
 	prevAttachmentMode := runtimeSystemDiskAttachment
 	prevLinuxMode := linuxMode
+	prevWindowsMode := windowsMode
 	disposableMode = true
 	disposableSourceDiskPath = diskPath
 	runtimeSystemDiskPathOverride = ""
 	runtimeSystemDiskAttachment = attachmentMode
-	linuxMode = vmconfig.DetectOSType(vmconfig.Path(source)) == "Linux"
+	sourceOS := vmconfig.DetectOSType(vmconfig.Path(source))
+	linuxMode = sourceOS == "Linux"
+	windowsMode = sourceOS == "Windows"
 	defer func() {
 		disposableMode = prevDisposableMode
 		disposableSourceDiskPath = prevDisposableSourceDiskPath
 		runtimeSystemDiskPathOverride = prevDiskPathOverride
 		runtimeSystemDiskAttachment = prevAttachmentMode
 		linuxMode = prevLinuxMode
+		windowsMode = prevWindowsMode
 	}()
 
 	return runCurrentVM()
