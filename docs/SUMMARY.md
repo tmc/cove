@@ -65,6 +65,7 @@
 * [v0.4 Anthropic Adapter](designs/022-v04-anthropic-adapter.md)
 * [cove shell exec UX](designs/023-cove-shell-exec-ux.md)
 * [cove runner images (publish + fork-from)](designs/024-cove-runner-images.md)
+* [cove-action security architecture](designs/025-cove-action-security.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
