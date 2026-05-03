@@ -41,6 +41,7 @@ type upConfig struct {
 	linux                    bool
 	desktop                  bool
 	desktopInstaller         string
+	diskSync                 string
 	distro                   string
 	nested                   bool
 	cpuExplicit              bool
@@ -183,6 +184,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.BoolVar(&cfg.linux, "linux", false, "Install a Linux VM instead of macOS")
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
 	fs.StringVar(&cfg.desktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (default Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
+	fs.StringVar(&cfg.diskSync, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
 	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	fs.BoolVar(&cfg.rosetta, "rosetta", true, "Enable Rosetta translation support for Linux VMs")
@@ -202,7 +204,22 @@ Linux: install (cloud-init provisions) -> run [-> vzscripts]
 
 Options:
 `)
-	fs.PrintDefaults()
+	fs.VisitAll(func(f *flag.Flag) {
+		if f.Name == "disk-sync" {
+			return
+		}
+		fmt.Fprintf(w, "  -%s", f.Name)
+		if f.DefValue != "false" && f.DefValue != "" {
+			fmt.Fprintf(w, " %s", f.DefValue)
+		}
+		if f.Usage != "" {
+			fmt.Fprintf(w, "\n    \t%s", f.Usage)
+		}
+		if f.DefValue != "" && f.DefValue != "false" {
+			fmt.Fprintf(w, " (default %q)", f.DefValue)
+		}
+		fmt.Fprintln(w)
+	})
 	fmt.Fprintf(w, `
 Examples:
   cove up -user me                                        # macOS VM
@@ -251,6 +268,7 @@ func applyUpConfig(cfg upConfig) {
 	if cfg.desktopInstaller != "" {
 		linuxDesktopInstaller = cfg.desktopInstaller
 	}
+	diskSyncMode = cfg.diskSync
 	if cfg.distro != "" {
 		linuxDistro = cfg.distro
 	}
