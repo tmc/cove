@@ -150,10 +150,10 @@ func TestLinuxInstallCommandLinePlacesAutoinstallAfterSeparator(t *testing.T) {
 	if strings.Contains(preSep, " autoinstall") || strings.HasPrefix(preSep, "autoinstall ") {
 		t.Errorf("autoinstall must NOT appear before `---` (Subiquity ignores it there); got %q", got)
 	}
-	// The cloud-init datasource pointer (ds=nocloud-net) belongs in the
-	// kernel arg portion so cloud-init's initramfs hook picks it up.
-	if !strings.Contains(preSep, "ds=nocloud-net") {
-		t.Errorf("ds=nocloud-net must remain in kernel args (pre-`---`); got %q", got)
+	// The cloud-init datasource pointer belongs in the kernel arg portion
+	// so cloud-init's initramfs hook scans the attached CIDATA ISO.
+	if !strings.Contains(preSep, "ds=nocloud") {
+		t.Errorf("ds=nocloud must remain in kernel args (pre-`---`); got %q", got)
 	}
 }
 
@@ -251,7 +251,7 @@ func TestLinuxInstallCommandLineForVariant(t *testing.T) {
 		variant LinuxVariant
 		want    string
 	}{
-		{"ubuntu", LinuxVariantServer, "ds=nocloud-net;s=http://192.168.64.1:3003/"},
+		{"ubuntu", LinuxVariantServer, "ds=nocloud"},
 		{"debian", LinuxVariantDebian, "preseed/url=http://192.168.64.1:3003/preseed.cfg"},
 		{"fedora", LinuxVariantFedora, "inst.ks=http://192.168.64.1:3003/ks.cfg"},
 		{"alpine", LinuxVariantAlpine, "apkovl=http://192.168.64.1:3003/cove.apkovl.tar.gz"},
@@ -267,7 +267,7 @@ func TestLinuxInstallCommandLineForVariant(t *testing.T) {
 }
 
 func TestLinuxInstallCommandLine(t *testing.T) {
-	if got, want := linuxInstallCommandLine("192.168.64.1:3003"), "boot=casper ip=dhcp ds=nocloud-net;s=http://192.168.64.1:3003/ console=tty0 --- autoinstall"; got != want {
+	if got, want := linuxInstallCommandLine("192.168.64.1:3003"), "boot=casper ds=nocloud console=tty0 --- autoinstall"; got != want {
 		t.Fatalf("linuxInstallCommandLine() = %q, want %q", got, want)
 	}
 }

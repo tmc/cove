@@ -199,7 +199,8 @@ func linuxInstallCommandLine(seedAddress string) string {
 	// declaration in generateAutoinstallData so even if the kernel arg fails
 	// to suppress the prompt on a future Subiquity version, the empty list
 	// prevents per-section "Continue?" prompts from firing.
-	return fmt.Sprintf("boot=casper ip=dhcp ds=nocloud-net;s=http://%s/ console=tty0 --- autoinstall", seedAddress)
+	_ = seedAddress
+	return "boot=casper ds=nocloud console=tty0 --- autoinstall"
 }
 
 // DefaultLinuxProvisionConfig returns default provisioning settings.
