@@ -111,6 +111,8 @@ var (
 	windowsGraphicsMode string
 	// Experimental Windows serial port device.
 	windowsSerialMode string
+	// Experimental Windows EFI ROM image.
+	windowsEFIRomPath string
 	// vzscripts to run after install (comma-separated recipe names)
 	installVZScripts string
 	// Headless mode (disables GUI)
@@ -180,7 +182,7 @@ func init() {
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
-	flag.StringVar(&linuxDesktopInstaller, "desktop-installer", "server", "ubuntu desktop install path: 'server' (boot Server ISO + apt install ubuntu-desktop, reliable) or 'oem' (boot Desktop ISO with OEM autoinstall, faster)")
+	flag.StringVar(&linuxDesktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
 	flag.BoolVar(&linuxShell, "shell", false, "after Linux guest boots, attach the host terminal to a guest shell via the agent (requires -linux; mutually exclusive with -headless)")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
@@ -237,6 +239,7 @@ func init() {
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
 	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "virtio", "Windows graphics mode: virtio or linear-framebuffer")
 	flag.StringVar(&windowsSerialMode, "windows-serial", "virtio", "Windows serial port: virtio, pl011, or 16550")
+	flag.StringVar(&windowsEFIRomPath, "windows-efi-rom", "", "Windows EFI ROM image for private VZEFIBootLoader experiment")
 	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
 	flag.BoolVar(&skipResume, "cold-boot", false, "same as -no-resume")
 	flag.StringVar(&launchOrder, "launch-order", "window-first", "GUI launch order: window-first or start-first")
