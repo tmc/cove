@@ -38,6 +38,7 @@
 * [Security Sandbox](examples/security-sandbox.md)
 * [OpenAI Agents SDK](examples/openai-agents.md)
 * [Anthropic Computer Use](examples/anthropic-computer-use.md)
+* [Gemini Computer Use](examples/gemini-computer-use.md)
 * [Tailscale Mesh VM](examples/tailscale-mesh.md)
 
 ## Architecture
