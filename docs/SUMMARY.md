@@ -37,6 +37,7 @@
 * [Dev Environment](examples/dev-environment.md)
 * [Security Sandbox](examples/security-sandbox.md)
 * [OpenAI Agents SDK](examples/openai-agents.md)
+* [Tailscale Mesh VM](examples/tailscale-mesh.md)
 
 ## Architecture
 * [Overview](architecture/overview.md)
