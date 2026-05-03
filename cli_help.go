@@ -376,10 +376,13 @@ Commands:
   rename <old> <new>      Rename a VM
   export <name> <path>    Export a VM to a tarball
   import <path> <name>    Import a VM from a tarball
-  tree [--json] [--orphans]
+  tree [--json] [--orphans] [--reachable-from <image-ref>]
                           Print fork lineage. --json emits structured
                           output; --orphans lists only VMs whose
-                          parent is missing.
+                          parent is missing; --reachable-from <ref>
+                          shows VMs forked from the given image as a
+                          one-hop tree (mutually exclusive with
+                          --orphans).
   config <command>        Export/import a framework config snapshot
   shared-folder ...       Manage shared folders (alias: cove shared-folder ...)`)
 }

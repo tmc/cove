@@ -1404,30 +1404,45 @@ func handleVMCommand(args []string) {
 
 	case "tree":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			fmt.Println("Usage: cove vm tree [--json] [--orphans]")
+			fmt.Println("Usage: cove vm tree [--json] [--orphans] [--reachable-from <image-ref>]")
 			fmt.Println()
 			fmt.Println("Print VM fork lineage.")
 			fmt.Println()
 			fmt.Println("Flags:")
-			fmt.Println("  --json     emit a structured forest for scripting")
-			fmt.Println("  --orphans  list only VMs whose parent is missing")
+			fmt.Println("  --json                       emit a structured forest for scripting")
+			fmt.Println("  --orphans                    list only VMs whose parent is missing")
+			fmt.Println("  --reachable-from <ref>       show VMs forked from the given image (one hop)")
 			return
 		}
 		treeFS := flag.NewFlagSet("vm tree", flag.ContinueOnError)
 		treeFS.SetOutput(os.Stderr)
 		treeJSON := treeFS.Bool("json", false, "emit a structured forest for scripting")
 		treeOrphans := treeFS.Bool("orphans", false, "list only VMs whose parent is missing")
+		treeReachable := treeFS.String("reachable-from", "", "show VMs forked from the given image ref (mutually exclusive with --orphans)")
 		if err := treeFS.Parse(subargs); err != nil {
 			os.Exit(2)
 		}
 		if treeFS.NArg() > 0 {
-			fmt.Fprintln(os.Stderr, "Usage: cove vm tree [--json] [--orphans]")
+			fmt.Fprintln(os.Stderr, "Usage: cove vm tree [--json] [--orphans] [--reachable-from <image-ref>]")
 			os.Exit(1)
 		}
-		if err := PrintVMTreeWithOptions(os.Stdout, VMTreeOptions{
+		treeOpts := VMTreeOptions{
 			JSON:    *treeJSON,
 			Orphans: *treeOrphans,
-		}); err != nil {
+		}
+		if *treeReachable != "" {
+			if *treeOrphans {
+				fmt.Fprintln(os.Stderr, "vm tree: --reachable-from and --orphans are mutually exclusive")
+				os.Exit(1)
+			}
+			ref, err := ParseImageRef(*treeReachable)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			treeOpts.ReachableFromImage = &ref
+		}
+		if err := PrintVMTreeWithOptions(os.Stdout, treeOpts); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

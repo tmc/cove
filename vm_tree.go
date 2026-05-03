@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -28,6 +29,11 @@ type VMTreeOptions struct {
 	// VM. The orphans are listed flat (no children walked, no roots
 	// shown), which is the natural shape for a "what's broken?" sweep.
 	Orphans bool
+	// ReachableFromImage, when set, restricts output to a one-hop
+	// image-rooted view: the image is the synthetic root and child VMs
+	// (those whose ParentImage matches the ref) are direct children.
+	// Mutually exclusive with Orphans.
+	ReachableFromImage *ImageRef
 }
 
 // PrintVMTree writes the VM fork lineage tree with default options
@@ -39,6 +45,12 @@ func PrintVMTree(w io.Writer) error {
 
 // PrintVMTreeWithOptions writes the VM fork lineage tree honoring opts.
 func PrintVMTreeWithOptions(w io.Writer, opts VMTreeOptions) error {
+	if opts.ReachableFromImage != nil && opts.Orphans {
+		return errors.New("vm tree: --reachable-from and --orphans are mutually exclusive")
+	}
+	if opts.ReachableFromImage != nil {
+		return renderReachableFromImage(w, *opts.ReachableFromImage, opts.JSON)
+	}
 	roots, orphans, err := loadVMTree()
 	if err != nil {
 		return err
@@ -229,4 +241,112 @@ func vmTreeLabel(node *vmTreeNode) string {
 		return node.name
 	}
 	return node.name + " (" + strings.Join(tags, ", ") + ")"
+}
+
+// reachableChildJSON is the on-the-wire shape for one VM under an
+// image-rooted reachability view. Kept flat: this is a one-hop query,
+// not a recursive forest.
+type reachableChildJSON struct {
+	Name     string `json:"name"`
+	ForkedAt string `json:"forkedAt,omitempty"`
+	Orphan   bool   `json:"orphan,omitempty"`
+}
+
+// reachableImageJSON is the JSON shape emitted by `cove vm tree
+// --reachable-from <ref> --json`.
+type reachableImageJSON struct {
+	Image    string               `json:"image"`
+	Children []reachableChildJSON `json:"children"`
+}
+
+// renderReachableFromImage emits the image-rooted reachability view:
+// the image as a synthetic root and its direct child VMs (one-hop).
+// Errors out if the image does not exist on disk.
+func renderReachableFromImage(w io.Writer, ref ImageRef, asJSON bool) error {
+	if !ImageExists(ref) {
+		return fmt.Errorf("image %s not found", ref)
+	}
+	names, err := VMsForkedFromImage(ref)
+	if err != nil {
+		return err
+	}
+
+	// Walk each child's config to surface forkedAt + orphan flag. Orphan
+	// here mirrors Phase 4 semantics: a non-empty ParentVM that does not
+	// resolve to any VM in the inventory.
+	inv, err := vmconfig.List(nil)
+	if err != nil {
+		return err
+	}
+	known := make(map[string]struct{}, len(inv))
+	for _, vm := range inv {
+		known[vm.Name] = struct{}{}
+	}
+
+	type childInfo struct {
+		name     string
+		forkedAt time.Time
+		orphan   bool
+	}
+	children := make([]childInfo, 0, len(names))
+	for _, name := range names {
+		path := vmconfig.Path(name)
+		cfg, lerr := vmconfig.Load(path)
+		if lerr != nil {
+			// Skip unreadable configs but don't fail the whole render;
+			// the name is still surfaced via VMsForkedFromImage.
+			children = append(children, childInfo{name: name})
+			continue
+		}
+		c := childInfo{name: name, forkedAt: cfg.ForkedAt}
+		if cfg.ParentVM != "" {
+			if _, ok := known[cfg.ParentVM]; !ok {
+				c.orphan = true
+			}
+		}
+		children = append(children, c)
+	}
+	sort.Slice(children, func(i, j int) bool { return children[i].name < children[j].name })
+
+	if asJSON {
+		out := reachableImageJSON{
+			Image:    ref.String(),
+			Children: make([]reachableChildJSON, 0, len(children)),
+		}
+		for _, c := range children {
+			entry := reachableChildJSON{Name: c.name, Orphan: c.orphan}
+			if !c.forkedAt.IsZero() {
+				entry.ForkedAt = c.forkedAt.UTC().Format(time.RFC3339)
+			}
+			out.Children = append(out.Children, entry)
+		}
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+
+	if len(children) == 0 {
+		fmt.Fprintf(w, "No VMs forked from %s.\n", ref)
+		return nil
+	}
+	fmt.Fprintf(w, "%s (image)\n", ref)
+	for i, c := range children {
+		branch := "|-- "
+		if i == len(children)-1 {
+			branch = "`-- "
+		}
+		var parts []string
+		if !c.forkedAt.IsZero() {
+			parts = append(parts, "forked "+c.forkedAt.UTC().Format(time.RFC3339))
+		}
+		if c.orphan {
+			parts = append(parts, "orphan")
+		}
+		if len(parts) == 0 {
+			fmt.Fprintf(w, "%s%s\n", branch, c.name)
+		} else {
+			fmt.Fprintf(w, "%s%s (%s)\n", branch, c.name, strings.Join(parts, ", "))
+		}
+	}
+	return nil
 }

@@ -581,9 +581,17 @@ cove vm <command> [args]
 | `rename <old> <new>` | Rename a VM |
 | `export <name> <path>` | Export VM to tarball |
 | `import <path> <name>` | Import VM from tarball |
+| `tree [--json] [--orphans] [--reachable-from <ref>]` | Print fork lineage. `--orphans` lists only VMs whose parent is missing. `--reachable-from <image-ref>` shows VMs forked from the given image as a one-hop tree rooted at the image (mutually exclusive with `--orphans`; compatible with `--json`). |
 | `config export <path>` | Export framework config snapshot |
 | `config import <path>` | Import framework config snapshot |
 | `shared-folder ...` | Manage shared folders |
+
+```bash
+cove vm tree
+cove vm tree --orphans
+cove vm tree --reachable-from macos-runner:14.5
+cove vm tree --reachable-from macos-runner:14.5 --json
+```
 
 ---
 
