@@ -89,6 +89,17 @@ channel.
 | DHCP lease exhaustion warnings | done | none | gap vs tart DHCP lease handling | Warns high-throughput fork users before macOS VM networking degrades from long DHCP leases. |
 | USPTO trademark search for "cove" | done | none | product/legal hygiene | Finds live/pending software-class COVE conflicts before public registry work. |
 
+## v0.2.1 - Shell + Image Surface (post-v0.2 polish)
+
+| Item | Priority | Depends on | Source | Why |
+|---|---|---|---|---|
+| `cove shell <vm>` standalone exec UX (Slice 1, server-side) | should | v0.2 in-process `cove run -linux -shell` | [023](023-cove-shell-exec-ux.md) | Ships Docker-shaped exec via control-socket extension; no proto bump in Slice 1; stdin /dev/null. |
+| Local image store + `cove image build/list/rm` (Slice 1) | should | fork-from + APFS clonefile | [024](024-cove-runner-images.md) | Pre-baked, forkable VM images on disk for ephemeral CI runners; pure local in Slice 1. |
+| `cove run -fork-from <local-image-ref>` + `-ephemeral` | should | image store Slice 1 | [024](024-cove-runner-images.md) | Wires image store into existing fork-from codepath so users can spawn disposable VMs from a saved baseline. |
+| github-runner vzscript | done | none | gap vs Cirrus tart workflow | Self-hosted GHA runner inside a long-lived cove VM; primary billing-block escape hatch. |
+| gitlab-runner vzscript | done | none | parity with github-runner | Same-shape recipe for GitLab CI projects. |
+| tailscale vzscript | done | homebrew vzscript | gap for users wanting stable remote access | Brings up Tailscale daemon on guest with `--ssh`; idempotent. |
+
 ## v0.3 - `cove build` + Caching + Agent Adapters
 
 | Item | Priority | Depends on | Source | Why |
@@ -160,6 +171,8 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-05-02**: Added v0.2.1 milestone covering `cove shell <vm>` Slice 1 (design [023](023-cove-shell-exec-ux.md)), local image store + `cove image build/list/rm` Slice 1 (design [024](024-cove-runner-images.md)), and three CI/networking vzscripts (github-runner, gitlab-runner, tailscale).
+- **2026-05-02**: Trimmed Buildkite track from v0.4 design [021](021-v04-ci-executors-tracks.md); v0.4 CI work now covers GHA + GitLab only.
 - **2026-04-30**: Reconciled docs with branch reality for the RC: `cove build` local-base execution, `# secret:` tmpfs, build-pipeline compaction, fork benchmarks, and OpenAI adapter hardening are all marked landed; deferred-items boundary made canonical and consistent across CLI reference, changelog, ROADMAP, 016, 017, and the release checklist.
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
 - **2026-04-30**: Added the Slice 3 cache-miss execution plan and started the metadata persistence implementation.
