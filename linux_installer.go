@@ -302,6 +302,15 @@ func installLinuxVM() error {
 		resolvedDiskPath = filepath.Join(vmDir, "linux-disk.img")
 	}
 
+	if _, err := os.Stat(resolvedDiskPath); err == nil {
+		if ok, err := completeExistingLinuxInstall(vmDir, resolvedDiskPath, provConfig.Variant); err != nil {
+			fmt.Printf("warning: inspect existing linux disk: %v\n", err)
+		} else if ok {
+			fmt.Println("Existing Linux installation is bootable; using it.")
+			return nil
+		}
+	}
+
 	// Create disk image if it doesn't exist
 	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
 		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, diskSizeGB)
@@ -1479,8 +1488,23 @@ func writeLinuxInstalledMarker(vmDir string, variant LinuxVariant) error {
 	return os.WriteFile(linuxInstalledMarkerPath(vmDir), []byte(string(variant)+"\n"), 0644)
 }
 
+func completeExistingLinuxInstall(vmDir, diskPath string, variant LinuxVariant) (bool, error) {
+	if _, err := os.Stat(linuxInstalledMarkerPath(vmDir)); err == nil {
+		return true, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := verifyLinuxInstallBootable(diskPath); err != nil {
+		return false, nil
+	}
+	if err := writeLinuxInstalledMarker(vmDir, variant); err != nil {
+		return false, fmt.Errorf("write install marker: %w", err)
+	}
+	return true, nil
+}
+
 func verifyLinuxInstallBootable(diskPath string) error {
-	devices, err := attachLinuxDiskReadOnly(diskPath)
+	devices, err := attachLinuxDiskReadOnlyWithRetry(diskPath, 45*time.Second)
 	if err != nil {
 		return fmt.Errorf("attach installed disk: %w", err)
 	}
@@ -1506,6 +1530,22 @@ func verifyLinuxInstallBootable(diskPath string) error {
 		return err
 	}
 	return nil
+}
+
+func attachLinuxDiskReadOnlyWithRetry(diskPath string, timeout time.Duration) ([]string, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		devices, err := attachLinuxDiskReadOnly(diskPath)
+		if err == nil {
+			return devices, nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return nil, lastErr
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func stageInstalledLinuxBootArtifacts(vmDir, mountPoint string) error {
