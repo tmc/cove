@@ -97,7 +97,7 @@ cove run -fork-from cove-runner-macos:14.5 -ephemeral -vzscripts github-runner
 4. Wrap in an OCI manifest with the cove mediaType.
 5. Optionally cosign-sign locally if `cosign` is on PATH (Slice 1: not
    required; Slice 3: required for public push).
-6. Output: `~/.cove/images/<repo>/<tag>` plus content-addressed blobs.
+6. Output: `~/.vz/images/<repo>/<tag>` plus content-addressed blobs.
 
 ### Pull / push (`cove image push|pull`)
 
@@ -153,8 +153,9 @@ This section is load-bearing. See
   `-ephemeral`. No push/pull. No public-registry interaction. Ships
   the core wedge under privacy gate (iii) in the notebook decision —
   cove repo can stay private through this slice. **SHIPPED `8a106dc` 2026-05-02**.
-  Image store at `~/.vz/images/<name>/<tag>/` (chosen over the strawman
-  `~/.cove/images/` to match `vmconfig.BaseDir`'s `~/.vz/vms/`). Excludes
+  Image store at `~/.vz/images/<name>/<tag>/` (chosen over an early
+  `.cove/`-rooted proposal to match `vmconfig.BaseDir`'s
+  `~/.vz/vms/`). Excludes
   `suspend.vmstate` per the identity-binding rule. Cold-boot only.
   ParentImage on child config.json gates `cove image rm` from deleting
   while live forks reference the image. 8 tests cover parse, build,

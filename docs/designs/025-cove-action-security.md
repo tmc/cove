@@ -316,8 +316,8 @@ or secret.
 
 - Path: `~/.vz/cove-action/runs/<run-id>-<attempt>.json`. Mirrors
   the existing `~/.vz/vms/<name>/` layout
-  ([024](024-cove-runner-images.md) chose `~/.vz/images/` over
-  `~/.cove/images/` for the same reason).
+  ([024](024-cove-runner-images.md) chose `~/.vz/images/` over an
+  early `.cove/`-rooted proposal for the same reason).
 - Format: JSON, one file per job. Easy to ship to a SIEM if the
   operator wants to.
 - Retention: cove-action does not GC these by default; operator
