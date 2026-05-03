@@ -94,7 +94,7 @@ channel.
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
 | `cove shell <vm>` server-side commands (Slice 1) | done | v0.2 in-process `cove run -linux -shell` | [023](023-cove-shell-exec-ux.md) | Ships agent-exec-attach/-resize/-signal control-socket commands. No proto bump. Landed 17211bd. |
-| `cove shell <vm>` standalone client (Slice 2) | should | Slice 1 server commands | [023](023-cove-shell-exec-ux.md) | Standalone client subcommand using server-side commands. ~150 LOC. Stdin /dev/null until Slice 3. |
+| `cove shell <vm>` standalone client (Slice 2) | done | Slice 1 server commands | [023](023-cove-shell-exec-ux.md) | Standalone client subcommand. Landed 33fbe7e (~303 LOC, 7 tests). Stdin /dev/null until Slice 3 v0.3 proto bump. |
 | Local image store + `cove image build/list/rm` (Slice 1) | done | fork-from + APFS clonefile | [024](024-cove-runner-images.md) | Pre-baked, forkable VM images at ~/.vz/images/. Landed 8a106dc, 1027 LOC, 8 tests green. |
 | `cove run -fork-from <local-image-ref>` + `-ephemeral` | done | image store Slice 1 | [024](024-cove-runner-images.md) | Wires image store into existing fork-from codepath so users can spawn disposable VMs from a saved baseline. Shipped with image Slice 1 at 8a106dc. |
 | github-runner vzscript | done | none | gap vs Cirrus tart workflow | Self-hosted GHA runner inside a long-lived cove VM; primary billing-block escape hatch. |
