@@ -24,6 +24,15 @@ func CacheDir() string {
 	return filepath.Join(homeDir, ".vz", "cache")
 }
 
+// RunsDir returns the per-run artifact bundle root.
+// Each `cove run -fork-from` invocation lazily creates a
+// <RunsDir()>/<run-id>/ subdirectory holding manifest.json,
+// events.jsonl, stdout.log, stderr.log, and screenshots/.
+func RunsDir() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".vz", "runs")
+}
+
 // CurrentLink returns the path to the current VM symlink.
 func CurrentLink() string {
 	homeDir, _ := os.UserHomeDir()

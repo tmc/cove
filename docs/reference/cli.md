@@ -86,7 +86,7 @@ cove run [flags]
 | `-sandbox-level <level>` | | Research isolation: minimal or strict |
 | `-pcap <path>` | | Write PCAP when using `-network filehandle` |
 | `-disposable` | false | Run from a disposable linked clone |
-| `-fork-from <ref>` | | Boot a fresh VM forked from a parent VM name or local image ref (`<name>` or `<name>:<tag>`); see [`cove image`](#image). |
+| `-fork-from <ref>` | | Boot a fresh VM forked from a parent VM name or local image ref (`<name>` or `<name>:<tag>`); see [`cove image`](#image). Auto-bundles per-run artifacts (`manifest.json`, `events.jsonl`, `stdout.log`, `stderr.log`, `screenshots/`) under `~/.vz/runs/<run-id>/` for post-mortem inspection. |
 | `-ephemeral` | false | Mark a forked VM as disposable: removed on stop and swept by `cove gc`. Required for ephemeral CI runners; see [design 024](../designs/024-cove-runner-images.md). |
 | `-launch-order <mode>` | window-first | GUI startup order: window-first or start-first |
 | `-runtime-profile <mode>` | full | macOS device profile: full or minimal |

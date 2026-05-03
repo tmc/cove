@@ -447,6 +447,7 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 
 		resp := s.handleRequest(&req)
 		writeResponse(conn, resp)
+		teeControlEvent(req.Type, resp)
 		if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
 			return
 		}
