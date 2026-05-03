@@ -1,6 +1,6 @@
 # v0.4 CI executors (GitHub Actions, GitLab)
 
-**Status**: accepted planning input.
+**Status**: accepted planning input. Slice 1 implementation (cove-action GHA wrapper) is **gated on design 025 (cove-action security architecture) landing first** per user 2026-05-02.
 **Source**: `/tmp/cove-v04-audit-a4k2.md` (audit at `4511a60`), plus local
 review of the v0.3 build executor (`build.go`, `build_execute.go`,
 `build_scratch.go`, `fork.go`) and the OpenAI Agents SDK adapter at
