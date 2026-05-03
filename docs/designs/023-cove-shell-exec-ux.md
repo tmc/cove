@@ -1,6 +1,6 @@
 # cove shell — Docker-shaped exec UX
 
-**Status**: Slice 1 shipped (`17211bd`, 2026-05-02). Slice 2 in flight. Slice 3 deferred to v0.3 proto bump.
+**Status**: Slices 1 + 2 shipped (`17211bd` + `33fbe7e`, 2026-05-02). Slice 3 (proto bidi `ExecAttach` + bidi stdin) deferred to v0.3 proto bump.
 **Source**: [/tmp/cove-loop-roadmap-cursor.md](../../tmp/cove-loop-roadmap-cursor.md)
 plus the linux-shell-host T3 step 2 pre-flight findings (the sub-agent
 that landed [`63d3234`](../../) and called out the vsock-ownership
@@ -111,7 +111,7 @@ Slice 1 wires stdin to /dev/null (matches the v0.2 limitation in
 `linux_shell.go:6`). Plumbing is end-to-end; bidi stdin waits for
 Slice 3. No client binary yet. Tests reuse `control_socket_test.go`.
 
-## Slice 2 — `cove shell` client (~100–150 LOC)
+## Slice 2 — `cove shell` client (~100–150 LOC est; shipped at ~303 LOC) — SHIPPED `33fbe7e`
 
 New subcommand `cove shell <vm> [-- <args>]`. Default `bash -l`
 (matches `linuxShellCommand` in `linux_shell.go:29`).
