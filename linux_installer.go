@@ -1159,7 +1159,10 @@ func linuxDesktopUserLateCommands(config LinuxProvisionConfig, hashedPassword st
       mkdir -p /target/home/%[4]s/.config /target/var/lib/AccountsService/users
       touch /target/home/%[4]s/.config/gnome-initial-setup-done
       chroot /target chown -R %[1]s:%[1]s /home/%[4]s/.config
-      printf '%%s\n' '[User]' 'SystemAccount=false' > /target/var/lib/AccountsService/users/%[4]s`, username, password, gecos, config.Username)
+      printf '%%s\n' '[User]' 'SystemAccount=false' > /target/var/lib/AccountsService/users/%[4]s
+      rm -f /target/etc/cloud/cloud.cfg.d/90-installer-network.cfg
+      mkdir -p /target/etc/cloud
+      printf 'Disabled by cove after OEM desktop provisioning.\n' > /target/etc/cloud/cloud-init.disabled`, username, password, gecos, config.Username)
 }
 
 func linuxDesktopPackagesSection(config LinuxProvisionConfig) string {
