@@ -150,6 +150,23 @@ sudo cove inject -user ci -password secret -skip-setup-assistant
 cove run -headless -cpu 4 -memory 8
 ```
 
+Self-hosted GitHub Actions or GitLab runner inside a long-lived VM:
+
+```bash
+GH_REPO=tmc/cove GH_TOKEN=<reg-token> \
+  cove vzscript run github-runner
+
+GITLAB_URL=https://gitlab.com GITLAB_TOKEN=<token> \
+  cove vzscript run gitlab-runner
+```
+
+### Tailscale Mesh Access
+
+```bash
+TS_AUTHKEY=tskey-auth-... cove vzscript run tailscale
+# VM joins your tailnet with --ssh; reach it from anywhere.
+```
+
 ### Control a Running VM
 
 ```bash
