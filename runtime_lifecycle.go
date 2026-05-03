@@ -79,14 +79,27 @@ func runVMWithConfig(cfg RunConfig) error {
 	}
 
 	if cfg.EphemeralForkParent != "" {
+		// Per-run artifact bundling is enabled only for the ephemeral
+		// fork-from paths — these are short-lived jobs the operator
+		// later wants to bisect. Plain `cove run <vm>` is a long-lived
+		// workstation and is intentionally excluded.
+		bundle, err := beginRunBundle(cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: run bundle init: %v\n", err)
+		}
+
 		// If <ref> resolves to a local image (and not a VM name), take
 		// the image-fork-from path: clonefile-materialize a fresh bundle
 		// and boot it. Falls through to the legacy RAM-overlay path when
 		// the ref is a VM name.
+		var runErr error
 		if isImageForkFromRef(cfg.EphemeralForkParent) {
-			return runImageForkFromWithConfig(cfg, originalVMName, originalVMDir)
+			runErr = runImageForkFromWithConfig(cfg, originalVMName, originalVMDir)
+		} else {
+			runErr = runEphemeralForkWithConfig(cfg, originalVMName, originalVMDir)
 		}
-		return runEphemeralForkWithConfig(cfg, originalVMName, originalVMDir)
+		finishRunBundle(bundle, runErr)
+		return runErr
 	}
 
 	var clone DisposableClone
