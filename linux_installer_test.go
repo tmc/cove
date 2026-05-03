@@ -59,6 +59,10 @@ func TestGenerateUserDataServer(t *testing.T) {
 }
 
 func TestGenerateUserDataDesktopWithAgent(t *testing.T) {
+	old := linuxDesktopInstaller
+	t.Cleanup(func() { linuxDesktopInstaller = old })
+	linuxDesktopInstaller = "server"
+
 	config := LinuxProvisionConfig{
 		Username:  "me",
 		Password:  "secret",
@@ -339,7 +343,7 @@ func TestParseUpFlagsLinuxDistroDefaultUser(t *testing.T) {
 }
 
 func TestLinuxVariantInstallISOVariant(t *testing.T) {
-	if got, want := LinuxVariantDesktop.installISOVariant(), LinuxVariantServer; got != want {
+	if got, want := LinuxVariantDesktop.installISOVariant(), LinuxVariantDesktop; got != want {
 		t.Fatalf("LinuxVariantDesktop.installISOVariant() = %q, want %q", got, want)
 	}
 	if got, want := LinuxVariantServer.installISOVariant(), LinuxVariantServer; got != want {
