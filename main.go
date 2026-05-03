@@ -89,6 +89,10 @@ var (
 	ephemeralForkParent string
 	ephemeralForkName   string
 	ephemeralForkKeep   bool
+	// runEphemeral marks an image-fork-from child for destroy-on-stop
+	// using the .ephemeral sentinel from fork_ephemeral.go. Slice 1 of
+	// design 024.
+	runEphemeral bool
 	// Network mode (nat, bridged:<iface>, vmnet, none)
 	networkMode string
 	// Sandbox policy for safer research runs.
@@ -206,6 +210,7 @@ func init() {
 	flag.StringVar(&ephemeralForkParent, "fork-from", "", "boot an ephemeral sibling of the named parent VM (RAM-overlay; auto-deleted on exit)")
 	flag.StringVar(&ephemeralForkName, "fork-name", "", "explicit name for the ephemeral sibling (default: <parent>-eph-<timestamp>)")
 	flag.BoolVar(&ephemeralForkKeep, "keep", false, "with -fork-from, retain the ephemeral vmDir after exit")
+	flag.BoolVar(&runEphemeral, "ephemeral", false, "with -fork-from <image-ref>, destroy the materialized child on stop and skip vm tree registration")
 	// Network mode
 	flag.StringVar(&networkMode, "network", "nat", "network mode: nat, bridged:<iface>, vmnet, filehandle, none")
 	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal or strict")
@@ -544,6 +549,12 @@ func main() {
 			// top-level re-parse so those flags are not rejected here.
 			handleFork(args)
 			return
+		case "image":
+			if err := handleImageCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
@@ -787,6 +798,7 @@ VM Management:
   vm tree                 Print fork lineage
   clone           Clone a VM (cove clone [source] <target> [--linked])
   fork            CoW-fork a VM with a fresh identity (cove fork <parent> <child>)
+  image           Local VM image store (build/list/rm); see 'cove image -h'
   compact         Zero guest free space for smaller pushes
   build           Chain vzscript steps into a cache-keyed VM image
   push            Plan a VM disk OCI push (dry-run)

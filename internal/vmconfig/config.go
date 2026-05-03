@@ -34,6 +34,7 @@ type Config struct {
 	Agent              *AgentConfig  `json:"agent,omitempty"`
 	ParentVM           string        `json:"parentVM,omitempty"`
 	ParentSnapshot     string        `json:"parentSnapshot,omitempty"`
+	ParentImage        string        `json:"parentImage,omitempty"`
 	ForkedAt           time.Time     `json:"forkedAt,omitempty"`
 }
 
