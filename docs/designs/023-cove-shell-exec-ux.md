@@ -1,6 +1,6 @@
 # cove shell — Docker-shaped exec UX
 
-**Status**: accepted planning input.
+**Status**: Slice 1 shipped (`17211bd`, 2026-05-02). Slice 2 in flight. Slice 3 deferred to v0.3 proto bump.
 **Source**: [/tmp/cove-loop-roadmap-cursor.md](../../tmp/cove-loop-roadmap-cursor.md)
 plus the linux-shell-host T3 step 2 pre-flight findings (the sub-agent
 that landed [`63d3234`](../../) and called out the vsock-ownership
@@ -93,7 +93,7 @@ new exec session (fresh shell, new `exec_id`). No multiplexing in
 v1. The agent's `activeExec` map already keys on `exec_id`, so
 multiple sessions coexist today. Same behaviour as `docker exec`.
 
-## Slice 1 — control-socket extension (~150–200 LOC)
+## Slice 1 — control-socket extension (~150–200 LOC) — SHIPPED `17211bd`
 
 Add the three command types to `control_socket_commands.go` and
 dispatch in `agent_control.go:341`. The VM-owning cove process

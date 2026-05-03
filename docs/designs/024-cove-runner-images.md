@@ -1,8 +1,8 @@
 # cove runner images: publish & fork-from
 
-**Status**: draft. Slice/scope-gated. Slice 1 (image build + private-only
-flow) targets v0.2.1; Slice 2 (push/pull) targets v0.4 and is contingent
-on the cove repo flipping public.
+**Status**: Slice 1 shipped (`8a106dc`, 2026-05-02; 1027 LOC, 8 tests
+green). Slice 2 (push/pull) targets v0.4. Slice 3 (drop public-registry
+refusal + cosign) is contingent on the cove repo flipping public.
 **Source**: notebook scope-B verdict; the user prompt "i think cirrus
 publishes images to use as github runners, can we do the same?". Scope A
 (immediate vzscript-based runner provisioning) shipped at
@@ -146,11 +146,17 @@ This section is load-bearing. See
 
 ## Slices
 
-- **Slice 1 (v0.2.1, ~400 LOC, no proto bump)**: `cove image build` +
+- **Slice 1 (v0.2.1, ~400 LOC budget; shipped at 1027 LOC, no proto bump)**: `cove image build` +
   local image store + `cove run -fork-from <local-image-ref>` +
   `-ephemeral`. No push/pull. No public-registry interaction. Ships
   the core wedge under privacy gate (iii) in the notebook decision —
-  cove repo can stay private through this slice.
+  cove repo can stay private through this slice. **SHIPPED `8a106dc` 2026-05-02**.
+  Image store at `~/.vz/images/<name>/<tag>/` (chosen over the strawman
+  `~/.cove/images/` to match `vmconfig.BaseDir`'s `~/.vz/vms/`). Excludes
+  `suspend.vmstate` per the identity-binding rule. Cold-boot only.
+  ParentImage on child config.json gates `cove image rm` from deleting
+  while live forks reference the image. 8 tests cover parse, build,
+  list, materialize-with-fresh-identity, fork-from-image, delete-while-fork-live.
 - **Slice 2 (v0.4, ~300 LOC)**: `cove image push|pull`. OCI artifact
   wire format finalized. `oras-go` (or distribution-spec) integration.
   Docker auth reuse. Public-registry refusal still active while cove
