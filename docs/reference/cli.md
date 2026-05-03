@@ -86,6 +86,8 @@ cove run [flags]
 | `-sandbox-level <level>` | | Research isolation: minimal or strict |
 | `-pcap <path>` | | Write PCAP when using `-network filehandle` |
 | `-disposable` | false | Run from a disposable linked clone |
+| `-fork-from <ref>` | | Boot a fresh VM forked from a parent VM name or local image ref (`<name>` or `<name>:<tag>`); see [`cove image`](#image). |
+| `-ephemeral` | false | Mark a forked VM as disposable: removed on stop and swept by `cove gc`. Required for ephemeral CI runners; see [design 024](../designs/024-cove-runner-images.md). |
 | `-launch-order <mode>` | window-first | GUI startup order: window-first or start-first |
 | `-runtime-profile <mode>` | full | macOS device profile: full or minimal |
 | `-apple-log` | false | Stream Apple unified logs |
@@ -109,6 +111,8 @@ cove run -headless -cpu 4 -memory 8
 cove run -display 4k -v ~/projects
 cove run -linux -rosetta -serial /tmp/serial.log
 cove run -linux -shell                         # pipe a guest shell to the host terminal
+cove run -fork-from macos-base -name worker-1  # fork from a stopped VM
+cove run -fork-from macos-runner:14.5 -ephemeral # ephemeral CI runner from an image
 cove run -recovery -no-resume -gui -usb ~/recovery.img
 ```
 
@@ -476,6 +480,52 @@ cove clone <source> <destination> [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-linked` | false | Create linked clone (APFS copy-on-write) |
+
+---
+
+## image
+
+Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stopped VM bundle (manifest + clonefile-backed disk + identity files) so `cove run -fork-from <image-ref> -ephemeral` can spawn disposable VMs from a saved baseline. Local-only in this release; push/pull and signing are future slices (see [design 024](../designs/024-cove-runner-images.md)).
+
+```
+cove image build -from <vm> -tag <name[:tag]>
+cove image list
+cove image rm <name[:tag]>
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy). vmstate is excluded; cold-boot only. |
+| `list` | Show stored images with size + creation time + source VM. |
+| `rm <ref>` | Delete an image. Refuses while any forked VM still references the image (`ParentImage` on the child's `config.json` is the gate). |
+
+```bash
+cove image build -from macos-base -tag macos-runner:14.5
+cove image list
+cove run -fork-from macos-runner:14.5 -ephemeral -name worker-1
+cove image rm macos-runner:14.5
+```
+
+---
+
+## shell
+
+Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Stdin remains read-only in this release (Slice 3 / v0.3 will ship bidirectional stdin). See [design 023](../designs/023-cove-shell-exec-ux.md).
+
+```
+cove shell <vm> [-- <argv>...]
+```
+
+- Forwards SIGWINCH to `agent-exec-resize` on each terminal resize.
+- Detaches the main cove SIGINT handler so Ctrl-C reaches the guest, not the host.
+- Propagates the guest exit code.
+- Friendly errors for VM-not-running, bad token, agent unreachable.
+
+```bash
+cove shell my-vm                                # interactive bash -l
+cove shell my-vm -- ls /tmp                     # one-shot
+cove shell my-vm -- /bin/bash -c 'echo hi >&2; exit 7'
+```
 
 ---
 

@@ -582,6 +582,59 @@ result, err := client.AgentExecTyped([]string{"ls", "/tmp"}, nil, "")
 fmt.Println(string(result.Stdout))
 ```
 
+#### agent-exec-attach
+
+Open a long-lived attach to a guest exec session with PTY allocation. The server streams JSON-line frames (`{"type":"attached"}`, `{"type":"stdout","data":"<base64>"}`, `{"type":"stderr","data":"<base64>"}`, `{"type":"done","exit":N}`). Stdin frames (`{"type":"stdin","data":"<base64>"}`) are decoded and discarded in this slice; bidirectional stdin is the v0.3 proto bump (see [design 023](../designs/023-cove-shell-exec-ux.md) Slice 3).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `args` | string[] | (required) | Command and arguments |
+| `env` | object | `{}` | Environment variables |
+| `working_dir` | string | `""` | Working directory |
+| `tty` | bool | `false` | Allocate a PTY in the guest |
+
+The `cove shell <vm>` client (see [`cove shell`](cli.md#shell)) is the canonical consumer.
+
+##### Shell
+
+```bash
+echo '{"type":"agent-exec-attach","auth_token":"'$TOKEN'","agent_exec":{"args":["bash","-l"],"tty":true}}' \
+  | nc -U ~/.vz/vms/default/control.sock
+```
+
+#### agent-exec-resize
+
+Resize the PTY of an active exec session.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `exec_id` | string | (required) | Exec session ID returned by `agent-exec-attach` |
+| `cols` | int | (required) | New column count |
+| `rows` | int | (required) | New row count |
+
+##### Shell
+
+```bash
+echo '{"type":"agent-exec-resize","auth_token":"'$TOKEN'","exec_id":"'$EID'","cols":120,"rows":40}' \
+  | nc -U ~/.vz/vms/default/control.sock
+```
+
+#### agent-exec-signal
+
+Send a signal to an active exec session's process group.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `exec_id` | string | (required) | Exec session ID returned by `agent-exec-attach` |
+| `signal` | int | (required) | Unix signal number (e.g. `2` for SIGINT, `15` for SIGTERM) |
+
+##### Shell
+
+```bash
+echo '{"type":"agent-exec-signal","auth_token":"'$TOKEN'","exec_id":"'$EID'","signal":2}' \
+  | nc -U ~/.vz/vms/default/control.sock
+```
+
 #### agent-read
 
 Read a file from the guest.
