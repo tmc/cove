@@ -17,7 +17,7 @@ func TestParseWindowsGraphicsMode(t *testing.T) {
 		want    windowsGraphics
 		wantErr bool
 	}{
-		{name: "default", input: "", want: windowsGraphicsLinearFramebuffer},
+		{name: "default", input: "", want: windowsGraphicsVirtio},
 		{name: "linear framebuffer", input: "linear-framebuffer", want: windowsGraphicsLinearFramebuffer},
 		{name: "linear alias", input: "linear", want: windowsGraphicsLinearFramebuffer},
 		{name: "virtio", input: "virtio", want: windowsGraphicsVirtio},
@@ -39,6 +39,32 @@ func TestParseWindowsGraphicsMode(t *testing.T) {
 				t.Fatalf("parseWindowsGraphicsMode(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestWindowsISOLabel(t *testing.T) {
+	got := windowsISOLabel("/tmp/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd")
+	const want = "26100.4349.250607-1500"
+	if got != want {
+		t.Fatalf("windowsISOLabel() = %q, want %q", got, want)
+	}
+}
+
+func TestLooksWindowsISOName(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{name: "windows.iso", want: true},
+		{name: "Win11_ARM64.iso", want: true},
+		{name: "26100.4349_CLIENTCONSUMER_RET_A64FRE_en-us.iso", want: true},
+		{name: "darwin.iso", want: false},
+		{name: "ubuntu.iso", want: false},
+	}
+	for _, tt := range tests {
+		if got := looksWindowsISOName(tt.name); got != tt.want {
+			t.Fatalf("looksWindowsISOName(%q) = %v, want %v", tt.name, got, tt.want)
+		}
 	}
 }
 
