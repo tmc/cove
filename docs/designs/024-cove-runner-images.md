@@ -1,8 +1,10 @@
 # cove runner images: publish & fork-from
 
 **Status**: Slice 1 shipped (`8a106dc`, 2026-05-02; 1027 LOC, 8 tests
-green). Slice 2 (push/pull) targets v0.4. Slice 3 (drop public-registry
-refusal + cosign) is contingent on the cove repo flipping public.
+green). Slice 2 (push/pull, private registries only) targets v0.4. Slice
+3 (drop public-registry refusal + cosign) is **deferred indefinitely**
+per user 2026-05-02 — cove repo stays private; revisit only when the
+user explicitly requests a public flip.
 **Source**: notebook scope-B verdict; the user prompt "i think cirrus
 publishes images to use as github runners, can we do the same?". Scope A
 (immediate vzscript-based runner provisioning) shipped at
@@ -161,11 +163,13 @@ This section is load-bearing. See
   wire format finalized. `oras-go` (or distribution-spec) integration.
   Docker auth reuse. Public-registry refusal still active while cove
   is private.
-- **Slice 3 (v0.4, ~150 LOC, public-flip dependent)**: drop the
-  public-registry refusal once the user confirms the repo is public.
-  Add cosign sign/verify as a default. Document the promotion path
-  to `ghcr.io/tmc/cove-runner-image:<tag>`. Strict dependency on the
-  user-driven public flip; this slice does not start before then.
+- **Slice 3 (DEFERRED INDEFINITELY, ~150 LOC, public-flip dependent)**:
+  drop the public-registry refusal once the user confirms the repo is
+  public. Add cosign sign/verify as a default. Document the promotion
+  path to `ghcr.io/tmc/cove-runner-image:<tag>`. Strict dependency on
+  the user-driven public flip; this slice does not start before then.
+  Per user 2026-05-02: stay private for now; this slice has no target
+  release.
 
 ## Open questions
 
