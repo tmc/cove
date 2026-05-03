@@ -453,7 +453,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 
 	// Main disk
 	diskURL := foundation.NewURLFileURLWithPath(diskPath)
-	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(diskURL, false)
+	diskAttachment, err := newDiskAttachment(diskURL, false, DiskCacheEphemeral)
 	if err != nil {
 		return config, fmt.Errorf("create disk attachment: %w", err)
 	}
@@ -466,7 +466,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	// block device won't be visible to cloud-init. USB mass storage is
 	// universally supported in the initramfs.
 	cloudInitURL := foundation.NewURLFileURLWithPath(cloudInitISO)
-	cloudInitAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(cloudInitURL, true)
+	cloudInitAttachment, err := newDiskAttachment(cloudInitURL, true, DiskCacheReadOnly)
 	if err != nil {
 		return config, fmt.Errorf("create cloud-init attachment: %w", err)
 	}
@@ -476,7 +476,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 
 	// Installation ISO as USB mass storage (EFI firmware can boot from USB)
 	isoURL := foundation.NewURLFileURLWithPath(installISO)
-	isoAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(isoURL, true)
+	isoAttachment, err := newDiskAttachment(isoURL, true, DiskCacheReadOnly)
 	if err != nil {
 		return config, fmt.Errorf("create ISO attachment: %w", err)
 	}
@@ -555,7 +555,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 				serialPort := vz.NewVZVirtioConsoleDeviceSerialPortConfiguration()
 				serialPort.SetAttachment(&serialAttachment.VZSerialPortAttachment)
 				if serialPort.ID != 0 {
-					setSerialPorts(config, serialPort)
+					setSerialPorts(config, vz.VZSerialPortConfigurationFromID(serialPort.ID))
 					if verbose {
 						fmt.Printf("  Serial console logging to %s\n", serialLogPath)
 					}

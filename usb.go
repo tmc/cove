@@ -63,8 +63,11 @@ func CreateUSBStorageDevice(config USBStorageConfig) (vz.VZUSBMassStorageDeviceC
 	}
 	url.Retain()
 
-	// Create disk attachment
-	attachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(url, config.ReadOnly)
+	policy := DiskCacheDurable
+	if config.ReadOnly {
+		policy = DiskCacheReadOnly
+	}
+	attachment, err := newDiskAttachment(url, config.ReadOnly, policy)
 	if err != nil {
 		return vz.VZUSBMassStorageDeviceConfiguration{}, fmt.Errorf("create USB attachment: %w", err)
 	}

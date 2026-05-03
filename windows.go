@@ -17,6 +17,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	winsetup "github.com/tmc/vz-macos/internal/windows"
 	"github.com/tmc/vz-macos/internal/windows/esd"
 )
 
@@ -27,6 +28,14 @@ const (
 	windowsGraphicsVirtio            windowsGraphics = "virtio"
 )
 
+type windowsSerial string
+
+const (
+	windowsSerialVirtio windowsSerial = "virtio"
+	windowsSerialPL011  windowsSerial = "pl011"
+	windowsSerial16550  windowsSerial = "16550"
+)
+
 func parseWindowsGraphicsMode(s string) (windowsGraphics, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", string(windowsGraphicsVirtio):
@@ -35,6 +44,19 @@ func parseWindowsGraphicsMode(s string) (windowsGraphics, error) {
 		return windowsGraphicsLinearFramebuffer, nil
 	default:
 		return "", fmt.Errorf("invalid -windows-graphics %q (must be linear-framebuffer or virtio)", s)
+	}
+}
+
+func parseWindowsSerialMode(s string) (windowsSerial, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", string(windowsSerialVirtio):
+		return windowsSerialVirtio, nil
+	case string(windowsSerialPL011):
+		return windowsSerialPL011, nil
+	case string(windowsSerial16550):
+		return windowsSerial16550, nil
+	default:
+		return "", fmt.Errorf("invalid -windows-serial %q (must be virtio, pl011, or 16550)", s)
 	}
 }
 
@@ -90,11 +112,29 @@ func buildWindowsInstallConfiguration(diskImagePath, windowsISO string) (vz.VZVi
 	if err != nil {
 		return config, fmt.Errorf("attach windows ISO: %w", err)
 	}
+	autounattendISO, err := winsetup.CreateAutounattendISO(vmDir, winsetup.DefaultProvisionConfig())
+	if err != nil {
+		return config, fmt.Errorf("create windows autounattend ISO: %w", err)
+	}
+	autounattendStorage, err := windowsUSBStorageDevice(autounattendISO, true)
+	if err != nil {
+		return config, fmt.Errorf("attach windows autounattend ISO: %w", err)
+	}
+	virtioISO, err := winsetup.EnsureVirtIODriversISO("")
+	if err != nil {
+		return config, fmt.Errorf("ensure windows virtio drivers ISO: %w", err)
+	}
+	virtioStorage, err := windowsUSBStorageDevice(virtioISO, true)
+	if err != nil {
+		return config, fmt.Errorf("attach windows virtio drivers ISO: %w", err)
+	}
 
 	config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{
-		bootStorage,
 		diskStorage,
+		bootStorage,
 		isoStorage,
+		virtioStorage,
+		autounattendStorage,
 	})
 	return config, nil
 }
@@ -157,7 +197,10 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 		}
 	}
 
-	serialConfig := createSerialConsoleConfig()
+	serialConfig, err := createWindowsSerialConsoleConfig()
+	if err != nil {
+		return config, err
+	}
 	if serialConfig.ID != 0 {
 		setSerialPorts(config, serialConfig)
 		fmt.Println("  Serial console attached")
@@ -167,6 +210,50 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 		return config, err
 	}
 	return config, nil
+}
+
+func createWindowsSerialConsoleConfig() (vz.VZSerialPortConfiguration, error) {
+	mode, err := parseWindowsSerialMode(windowsSerialMode)
+	if err != nil {
+		return vz.VZSerialPortConfiguration{}, err
+	}
+	if mode == windowsSerialVirtio {
+		return createSerialConsoleConfig(), nil
+	}
+	attachment, ok := createSerialPortAttachment()
+	if !ok {
+		return vz.VZSerialPortConfiguration{}, nil
+	}
+	switch mode {
+	case windowsSerialPL011:
+		if privvz.GetVZPL011SerialPortConfigurationClass().Class() == 0 {
+			return vz.VZSerialPortConfiguration{}, fmt.Errorf("private PL011 serial port configuration is unavailable")
+		}
+		serialConfig := privvz.NewVZPL011SerialPortConfiguration()
+		if serialConfig.ID == 0 {
+			return vz.VZSerialPortConfiguration{}, fmt.Errorf("create PL011 serial port configuration")
+		}
+		serialConfig.Retain()
+		serial := vz.VZSerialPortConfigurationFromID(serialConfig.ID)
+		serial.SetAttachment(&attachment.VZSerialPortAttachment)
+		fmt.Println("  Windows serial: PL011")
+		return serial, nil
+	case windowsSerial16550:
+		if privvz.GetVZ16550SerialPortConfigurationClass().Class() == 0 {
+			return vz.VZSerialPortConfiguration{}, fmt.Errorf("private 16550 serial port configuration is unavailable")
+		}
+		serialConfig := privvz.NewVZ16550SerialPortConfiguration()
+		if serialConfig.ID == 0 {
+			return vz.VZSerialPortConfiguration{}, fmt.Errorf("create 16550 serial port configuration")
+		}
+		serialConfig.Retain()
+		serial := vz.VZSerialPortConfigurationFromID(serialConfig.ID)
+		serial.SetAttachment(&attachment.VZSerialPortAttachment)
+		fmt.Println("  Windows serial: 16550")
+		return serial, nil
+	default:
+		return vz.VZSerialPortConfiguration{}, fmt.Errorf("unsupported Windows serial mode: %s", mode)
+	}
 }
 
 func setWindowsGraphicsDevices(config vz.VZVirtualMachineConfiguration) error {
@@ -241,7 +328,11 @@ func windowsUSBStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConf
 	}
 	url.Retain()
 
-	attachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(url, readOnly)
+	policy := DiskCacheDurable
+	if readOnly {
+		policy = DiskCacheReadOnly
+	}
+	attachment, err := newDiskAttachment(url, readOnly, policy)
 	if err != nil {
 		return vz.VZStorageDeviceConfiguration{}, err
 	}

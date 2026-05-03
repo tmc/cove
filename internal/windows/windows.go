@@ -39,6 +39,27 @@ import (
 	displayx "github.com/tmc/apple/x/vzkit/display"
 )
 
+type diskCachePolicy int
+
+const (
+	diskCacheDurable diskCachePolicy = iota
+	diskCacheEphemeral
+	diskCacheReadOnly
+)
+
+func newDiskAttachment(url foundation.INSURL, readOnly bool, policy diskCachePolicy) (vz.VZDiskImageStorageDeviceAttachment, error) {
+	caching := vz.VZDiskImageCachingModeCached
+	sync := vz.VZDiskImageSynchronizationModeFsync
+	switch policy {
+	case diskCacheEphemeral:
+		sync = vz.VZDiskImageSynchronizationModeNone
+	case diskCacheReadOnly:
+		caching = vz.VZDiskImageCachingModeAutomatic
+		sync = vz.VZDiskImageSynchronizationModeFull
+	}
+	return vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyCachingModeSynchronizationModeError(url, readOnly, caching, sync)
+}
+
 // buildWindowsVMConfiguration builds a VZVirtualMachineConfiguration for Windows.
 func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
 	config := vz.NewVZVirtualMachineConfiguration()
@@ -65,7 +86,7 @@ func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfi
 
 	// Storage - main disk (NVMe — Windows ARM64 EFI has built-in NVMe drivers)
 	diskURL := foundation.NewURLFileURLWithPath(diskImagePath)
-	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&diskURL, false)
+	diskAttachment, err := newDiskAttachment(&diskURL, false, diskCacheDurable)
 	if err != nil {
 		return config, fmt.Errorf("create disk attachment: %w", err)
 	}
