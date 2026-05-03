@@ -109,6 +109,8 @@ var (
 	enableClipboard bool
 	// Experimental Windows VM graphics device.
 	windowsGraphicsMode string
+	// Experimental Windows serial port device.
+	windowsSerialMode string
 	// vzscripts to run after install (comma-separated recipe names)
 	installVZScripts string
 	// Headless mode (disables GUI)
@@ -144,6 +146,8 @@ var (
 	vncAddress string
 	// Optional PCAP output when using -network filehandle.
 	pcapPath string
+	// Optional disk synchronization override for disk-image attachments.
+	diskSyncMode string
 	// Private VNC password.
 	vncPassword string
 	// Optional Bonjour service name for private VNC.
@@ -222,6 +226,7 @@ func init() {
 	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal or strict")
 	flag.StringVar(&proxyURL, "proxy", "", "configure guest system HTTP/HTTPS proxy after boot (for example http://192.168.64.1:8080)")
 	flag.StringVar(&pcapPath, "pcap", "", "write captured Ethernet frames to a PCAP file when using -network filehandle")
+	flag.StringVar(&diskSyncMode, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
 	// USB storage
 	flag.Var(&usbDevices, "usb", "USB storage device: /path/to/disk.img[:ro] (can be repeated)")
 	// Display configuration
@@ -231,6 +236,7 @@ func init() {
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
 	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "virtio", "Windows graphics mode: virtio or linear-framebuffer")
+	flag.StringVar(&windowsSerialMode, "windows-serial", "virtio", "Windows serial port: virtio, pl011, or 16550")
 	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
 	flag.BoolVar(&skipResume, "cold-boot", false, "same as -no-resume")
 	flag.StringVar(&launchOrder, "launch-order", "window-first", "GUI launch order: window-first or start-first")
@@ -944,7 +950,26 @@ Volume Mounting (-vol flag):
 
 Flags:
 `)
-	flag.PrintDefaults()
+	printCommandDefaults(os.Stdout, flag.CommandLine)
+}
+
+func printCommandDefaults(w *os.File, fs *flag.FlagSet) {
+	fs.VisitAll(func(f *flag.Flag) {
+		if f.Name == "disk-sync" {
+			return
+		}
+		fmt.Fprintf(w, "  -%s", f.Name)
+		if f.DefValue != "false" && f.DefValue != "" {
+			fmt.Fprintf(w, " %s", f.DefValue)
+		}
+		if f.Usage != "" {
+			fmt.Fprintf(w, "\n    \t%s", f.Usage)
+		}
+		if f.DefValue != "" && f.DefValue != "false" {
+			fmt.Fprintf(w, " (default %q)", f.DefValue)
+		}
+		fmt.Fprintln(w)
+	})
 }
 
 func validateLaunchOptions() error {

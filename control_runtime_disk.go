@@ -230,7 +230,7 @@ func (s *ControlServer) handleDiskSwap(req RuntimeDiskActionRequest) *controlpb.
 	}
 
 	path := req.targetPath()
-	attachment, err := storagehotplug.NewDiskImageAttachment(path, req.readOnlyValue())
+	attachment, err := newRuntimeDiskImageAttachment(path, req.readOnlyValue())
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("create disk attachment: %v", err)}
 	}

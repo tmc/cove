@@ -224,7 +224,7 @@ func buildWindowsInstallConfiguration(diskPath, windowsISO, virtioISO, autounatt
 
 	// Main disk (VirtIO block, read-write)
 	diskURL := foundation.NewURLFileURLWithPath(diskPath)
-	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&diskURL, false)
+	diskAttachment, err := newDiskAttachment(&diskURL, false, diskCacheEphemeral)
 	if err != nil {
 		return config, fmt.Errorf("create disk attachment: %w", err)
 	}
@@ -240,7 +240,7 @@ func buildWindowsInstallConfiguration(diskPath, windowsISO, virtioISO, autounatt
 		return config, fmt.Errorf("create EFI boot image: %w", err)
 	}
 	efiBootURL := foundation.NewURLFileURLWithPath(efiBootImg)
-	efiBootAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&efiBootURL, true)
+	efiBootAttachment, err := newDiskAttachment(&efiBootURL, true, diskCacheReadOnly)
 	if err != nil {
 		return config, fmt.Errorf("create EFI boot attachment: %w", err)
 	}
@@ -252,7 +252,7 @@ func buildWindowsInstallConfiguration(diskPath, windowsISO, virtioISO, autounatt
 
 	// Windows ISO (USB mass storage, read-only) — Setup reads install.wim from here
 	winISOURL := foundation.NewURLFileURLWithPath(windowsISO)
-	winISOAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&winISOURL, true)
+	winISOAttachment, err := newDiskAttachment(&winISOURL, true, diskCacheReadOnly)
 	if err != nil {
 		return config, fmt.Errorf("create Windows ISO attachment: %w", err)
 	}
@@ -265,7 +265,7 @@ func buildWindowsInstallConfiguration(diskPath, windowsISO, virtioISO, autounatt
 	// VirtIO drivers ISO (USB, read-only)
 	if virtioISO != "" {
 		virtioISOURL := foundation.NewURLFileURLWithPath(virtioISO)
-		virtioISOAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&virtioISOURL, true)
+		virtioISOAttachment, err := newDiskAttachment(&virtioISOURL, true, diskCacheReadOnly)
 		if err != nil {
 			fmt.Printf("warning: could not attach VirtIO drivers ISO: %v\n", err)
 		} else {
@@ -280,7 +280,7 @@ func buildWindowsInstallConfiguration(diskPath, windowsISO, virtioISO, autounatt
 	// Autounattend ISO (USB, read-only)
 	if autounattendISO != "" {
 		autoISOURL := foundation.NewURLFileURLWithPath(autounattendISO)
-		autoISOAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(&autoISOURL, true)
+		autoISOAttachment, err := newDiskAttachment(&autoISOURL, true, diskCacheReadOnly)
 		if err != nil {
 			fmt.Printf("warning: could not attach autounattend ISO: %v\n", err)
 		} else {

@@ -95,7 +95,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	// If ISO is provided, add it as second storage device (read-only)
 	if isoPath != "" {
 		isoURL := foundation.NewURLFileURLWithPath(isoPath)
-		isoAttachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(isoURL, true)
+		isoAttachment, err := newDiskAttachment(isoURL, true, DiskCacheReadOnly)
 		if err != nil {
 			return config, fmt.Errorf("failed to create ISO attachment: %w", err)
 		}

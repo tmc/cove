@@ -79,7 +79,11 @@ func createRuntimeStorageDeviceAttachment(path string, readOnly bool, mode syste
 		return attachment.VZStorageDeviceAttachment, nil
 	}
 
-	attachment, err := vz.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(url, readOnly)
+	policy := DiskCacheDurable
+	if readOnly {
+		policy = DiskCacheReadOnly
+	}
+	attachment, err := newDiskAttachment(url, readOnly, policy)
 	if err != nil {
 		return pvz.VZStorageDeviceAttachment{}, fmt.Errorf("create disk image attachment: %w", err)
 	}
