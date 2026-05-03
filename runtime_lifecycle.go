@@ -20,6 +20,7 @@ var (
 	cleanupEphemeralForkHook             = CleanupEphemeralFork
 	runMacOSVMHook                       = runMacOSVM
 	runLinuxVMHook                       = runLinuxVM
+	runWindowsVMHook                     = runWindowsVM
 	startPreparedFileHandleNetworkHook   = startPreparedFileHandleNetwork
 	stopPreparedFileHandleNetworkHook    = stopPreparedFileHandleNetwork
 	configureRequestedProxyAfterBootHook = configureRequestedProxyAfterBoot
@@ -30,6 +31,7 @@ var (
 type RunConfig struct {
 	VM                       vmSelection
 	Linux                    bool
+	Windows                  bool
 	Disposable               bool
 	RollbackSnapshot         string
 	DisposableSourceDiskPath string
@@ -51,6 +53,7 @@ func currentRunConfig() RunConfig {
 	return RunConfig{
 		VM:                       currentVMSelection(),
 		Linux:                    linuxMode,
+		Windows:                  windowsMode,
 		Disposable:               disposableMode,
 		RollbackSnapshot:         rollbackSnapshotName,
 		DisposableSourceDiskPath: disposableSourceDiskPath,
@@ -166,7 +169,9 @@ func runVMWithConfig(cfg RunConfig) error {
 	}()
 
 	var runErr error
-	if cfg.Linux {
+	if cfg.Windows {
+		runErr = runWindowsVMHook()
+	} else if cfg.Linux {
 		runErr = runLinuxVMHook()
 	} else {
 		runErr = runMacOSVMHook()
@@ -286,7 +291,9 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	}()
 
 	var runErr error
-	if cfg.Linux {
+	if cfg.Windows {
+		runErr = runWindowsVMHook()
+	} else if cfg.Linux {
 		runErr = runLinuxVMHook()
 	} else {
 		runErr = runMacOSVMHook()

@@ -2085,7 +2085,10 @@ func performSelectorAction(action selectorAction) error {
 		guiMode = true
 		skipResume = action.coldBoot
 		linuxMode = action.vm.OSType == "Linux"
-		if linuxMode {
+		windowsMode = action.vm.OSType == "Windows"
+		if windowsMode {
+			return withVMLimitHint(runWindowsVM(), vmName)
+		} else if linuxMode {
 			return withVMLimitHint(runLinuxVM(), vmName)
 		}
 		return withVMLimitHint(runMacOSVM(), vmName)
@@ -2094,6 +2097,7 @@ func performSelectorAction(action selectorAction) error {
 		vmDir = resolvePath(vmconfig.Path(action.newVM.Name))
 		guiMode = true
 		linuxMode = false
+		windowsMode = false
 		postInstallRecipes := strings.TrimSpace(action.newVM.PostInstallRecipes)
 		provisionUser = action.newVM.ProvisionUser
 		provisionPassword = action.newVM.ProvisionPassword

@@ -355,7 +355,7 @@ func applyPrivateVMConfiguration(config vz.VZVirtualMachineConfiguration) error 
 }
 
 func startVMWithRuntimeOptions(machine vz.VZVirtualMachine, completion func(error)) {
-	if !linuxMode && (recoveryMode || privateMacStartOptionsEnabled()) {
+	if !linuxMode && !windowsMode && (recoveryMode || privateMacStartOptionsEnabled()) {
 		opts := vz.NewVZMacOSVirtualMachineStartOptions()
 		opts.SetStartUpFromMacOSRecovery(recoveryMode)
 		if privateMacStartOptionsEnabled() {
@@ -416,10 +416,10 @@ func validatePrivateRuntimeOptions() error {
 	if gdbListenAll && !debugStubEnabled() {
 		return fmt.Errorf("-gdb-listen-all requires -gdb")
 	}
-	if linuxMode && recoveryMode {
+	if (linuxMode || windowsMode) && recoveryMode {
 		return fmt.Errorf("-recovery is only valid for macOS VMs")
 	}
-	if linuxMode && privateMacStartOptionsEnabled() {
+	if (linuxMode || windowsMode) && privateMacStartOptionsEnabled() {
 		return fmt.Errorf("macOS-only start options require a macOS VM")
 	}
 	if stopInIBootStage1 && stopInIBootStage2 {

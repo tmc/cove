@@ -34,6 +34,7 @@ var (
 	guiMode     bool
 
 	linuxMode    bool
+	windowsMode  bool
 	linuxDesktop bool
 	linuxDistro  string
 	linuxNested  bool
@@ -105,6 +106,8 @@ var (
 	enableRosetta bool
 	// Clipboard sharing (SPICE agent)
 	enableClipboard bool
+	// Experimental Windows VM graphics device.
+	windowsGraphicsMode string
 	// vzscripts to run after install (comma-separated recipe names)
 	installVZScripts string
 	// Headless mode (disables GUI)
@@ -168,6 +171,7 @@ func init() {
 	flag.BoolVar(&headlessMode, "headless", false, "run without GUI window")
 
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
+	flag.BoolVar(&windowsMode, "windows", false, "run a Windows ARM64 VM instead of macOS (experimental)")
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
@@ -224,6 +228,7 @@ func init() {
 	flag.BoolVar(&enableRosetta, "rosetta", true, "enable Rosetta translation support when running Linux VMs")
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
+	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "linear-framebuffer", "Windows graphics mode: linear-framebuffer or virtio")
 	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
 	flag.BoolVar(&skipResume, "cold-boot", false, "same as -no-resume")
 	flag.StringVar(&launchOrder, "launch-order", "window-first", "GUI launch order: window-first or start-first")
@@ -278,6 +283,10 @@ func main() {
 	// -desktop and -nested imply -linux
 	if linuxDesktop || linuxNested {
 		linuxMode = true
+	}
+	if windowsMode && linuxMode {
+		fmt.Fprintf(os.Stderr, "error: -windows and -linux are mutually exclusive\n")
+		os.Exit(1)
 	}
 	if linuxMode {
 		if _, err := parseLinuxVariant(linuxDistro, linuxDesktop); err != nil {
@@ -378,7 +387,9 @@ func main() {
 	if installVM {
 		fmt.Fprintf(os.Stderr, "warning: -install flag is deprecated, use 'cove install' command instead\n")
 		var err error
-		if linuxMode {
+		if windowsMode {
+			err = installWindowsVM()
+		} else if linuxMode {
 			err = handleLinuxInstall()
 		} else {
 			err = installMacOSLikeVZ(context.Background())
@@ -570,6 +581,10 @@ func main() {
 		if linuxDesktop || linuxNested {
 			linuxMode = true
 		}
+		if windowsMode && linuxMode {
+			fmt.Fprintf(os.Stderr, "error: -windows and -linux are mutually exclusive\n")
+			os.Exit(1)
+		}
 		if linuxMode {
 			if _, err := parseLinuxVariant(linuxDistro, linuxDesktop); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -605,7 +620,9 @@ func main() {
 		case "install":
 			installVM = true
 			var err error
-			if linuxMode {
+			if windowsMode {
+				err = installWindowsVM()
+			} else if linuxMode {
 				err = handleLinuxInstall()
 			} else {
 				err = installMacOSLikeVZ(context.Background())
@@ -735,6 +752,8 @@ func handleDefaultAction() {
 		guiMode = true
 		if vms[0].OSType == "Linux" {
 			linuxMode = true
+		} else if vms[0].OSType == "Windows" {
+			windowsMode = true
 		}
 		handleRun()
 	default:
@@ -898,6 +917,11 @@ Linux VM:
   cove up -linux -user me                                # Server: install + boot
   cove up -linux -desktop -user me                       # Desktop: install + boot
 
+Windows VM (experimental):
+  cove install -windows -iso /path/to/Win11_ARM64.iso
+  cove run -windows
+  cove run -windows -windows-graphics virtio             # use old public VirtIO GPU path
+
 Volume Mounting (-vol flag):
   Docker-style volume mounts. Format: /host/path[:tag][:ro|rw][:opt=val,...]
 
@@ -922,8 +946,14 @@ Flags:
 }
 
 func validateLaunchOptions() error {
+	if windowsMode && linuxMode {
+		return fmt.Errorf("-windows and -linux are mutually exclusive")
+	}
 	if linuxNested && !linuxMode {
 		return fmt.Errorf("-nested requires -linux")
+	}
+	if linuxDesktop && windowsMode {
+		return fmt.Errorf("-desktop requires -linux")
 	}
 	if linuxShell {
 		if !linuxMode {
@@ -952,6 +982,9 @@ func validateLaunchOptions() error {
 	case "full", "minimal":
 	default:
 		return fmt.Errorf("invalid -runtime-profile %q (must be full or minimal)", runtimeProfile)
+	}
+	if _, err := parseWindowsGraphicsMode(windowsGraphicsMode); err != nil {
+		return err
 	}
 	if _, err := parseAutomationBackend(automationBackend); err != nil {
 		return err

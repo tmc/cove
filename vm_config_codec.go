@@ -101,9 +101,12 @@ func currentVMFrameworkDiskPath() (string, error) {
 		if vmDir == "" {
 			return "", fmt.Errorf("vm directory not set")
 		}
-		if frameworkConfigVMType() == "Linux" {
+		switch frameworkConfigVMType() {
+		case "Linux":
 			path = filepath.Join(vmDir, "linux-disk.img")
-		} else {
+		case "Windows":
+			path = filepath.Join(vmDir, "windows-disk.img")
+		default:
 			path = filepath.Join(vmDir, "disk.img")
 		}
 	}
@@ -116,6 +119,8 @@ func currentVMFrameworkDiskPath() (string, error) {
 
 func buildSelectedVMFrameworkConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
 	switch frameworkConfigVMType() {
+	case "Windows":
+		return buildWindowsVMConfiguration(diskImagePath)
 	case "Linux":
 		return buildLinuxVMConfiguration(diskImagePath)
 	case "macOS":
@@ -165,6 +170,12 @@ func ensureFrameworkConfigInputs() error {
 				return err
 			}
 		}
+	case "Windows":
+		for _, name := range []string{"windows-disk.img", "windows-machine.id", "efi.nvram"} {
+			if err := ensureReadableFile(filepath.Join(vmDir, name)); err != nil {
+				return err
+			}
+		}
 	default:
 		return fmt.Errorf("cannot determine vm type for %s", vmDir)
 	}
@@ -174,6 +185,9 @@ func ensureFrameworkConfigInputs() error {
 func frameworkConfigVMType() string {
 	if linuxMode {
 		return "Linux"
+	}
+	if windowsMode {
+		return "Windows"
 	}
 	return vmconfig.DetectOSType(vmDir)
 }

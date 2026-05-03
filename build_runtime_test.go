@@ -17,6 +17,7 @@ func TestWithBuildRuntimeGlobalsSetsAndRestores(t *testing.T) {
 	oldVMDir := vmDir
 	oldDiskPath := diskPath
 	oldLinuxMode := linuxMode
+	oldWindowsMode := windowsMode
 	oldGUIMode := guiMode
 	oldHeadlessMode := headlessMode
 	oldSkipResume := skipResume
@@ -29,6 +30,7 @@ func TestWithBuildRuntimeGlobalsSetsAndRestores(t *testing.T) {
 		vmDir = oldVMDir
 		diskPath = oldDiskPath
 		linuxMode = oldLinuxMode
+		windowsMode = oldWindowsMode
 		guiMode = oldGUIMode
 		headlessMode = oldHeadlessMode
 		skipResume = oldSkipResume
@@ -42,6 +44,7 @@ func TestWithBuildRuntimeGlobalsSetsAndRestores(t *testing.T) {
 	vmDir = "old-vm"
 	diskPath = "old-disk"
 	linuxMode = false
+	windowsMode = false
 	guiMode = true
 	headlessMode = false
 	skipResume = false
@@ -56,7 +59,7 @@ func TestWithBuildRuntimeGlobalsSetsAndRestores(t *testing.T) {
 		if vmDir != sc.Dir || diskPath != sc.DiskPath {
 			return fmt.Errorf("paths = %q/%q, want %q/%q", vmDir, diskPath, sc.Dir, sc.DiskPath)
 		}
-		if !linuxMode || guiMode || !headlessMode || !skipResume || recoveryMode || bootArgs != "" || runHTTPAddr != "" || autoMountVolumes || serialOutput != "none" {
+		if !linuxMode || windowsMode || guiMode || !headlessMode || !skipResume || recoveryMode || bootArgs != "" || runHTTPAddr != "" || autoMountVolumes || serialOutput != "none" {
 			return fmt.Errorf("unexpected runtime globals")
 		}
 		return nil
@@ -64,7 +67,7 @@ func TestWithBuildRuntimeGlobalsSetsAndRestores(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if vmDir != "old-vm" || diskPath != "old-disk" || linuxMode || !guiMode || headlessMode || skipResume || !recoveryMode || bootArgs != "debug" || runHTTPAddr != ":0" || !autoMountVolumes || serialOutput != "stdout" {
+	if vmDir != "old-vm" || diskPath != "old-disk" || linuxMode || windowsMode || !guiMode || headlessMode || skipResume || !recoveryMode || bootArgs != "debug" || runHTTPAddr != ":0" || !autoMountVolumes || serialOutput != "stdout" {
 		t.Fatalf("runtime globals were not restored")
 	}
 }

@@ -1891,6 +1891,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	osLabel := "macOS VM"
 	if linuxMode {
 		osLabel = "Linux VM"
+	} else if windowsMode {
+		osLabel = "Windows VM"
 	}
 	windowTitle := osLabel
 	if target.Name != "" && target.Name != "default" {
