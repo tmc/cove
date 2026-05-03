@@ -31,9 +31,12 @@ func InfoFor(dir string, state StateFunc) (*Info, error) {
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
 		diskPath = filepath.Join(dir, "linux-disk.img")
 	}
+	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
+		diskPath = filepath.Join(dir, "windows-disk.img")
+	}
 	diskInfo, err := os.Stat(diskPath)
 	if err != nil {
-		return nil, fmt.Errorf("stat disk.img: %w", err)
+		return nil, fmt.Errorf("stat VM disk: %w", err)
 	}
 	vmState := defaultState(dir)
 	if state != nil {

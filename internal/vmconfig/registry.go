@@ -36,6 +36,9 @@ func Validate(dir string) bool {
 	if _, err := os.Stat(filepath.Join(dir, "linux-disk.img")); err == nil {
 		return true
 	}
+	if _, err := os.Stat(filepath.Join(dir, "windows-disk.img")); err == nil {
+		return true
+	}
 	return false
 }
 

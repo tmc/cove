@@ -20,6 +20,20 @@ func TestInfoFor(t *testing.T) {
 	}
 }
 
+func TestInfoForWindows(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "windows-disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatalf("WriteFile(windows-disk.img) error = %v", err)
+	}
+	got, err := InfoFor(dir, nil)
+	if err != nil {
+		t.Fatalf("InfoFor() error = %v", err)
+	}
+	if got.OSType != "Windows" || got.DiskSize != 4 {
+		t.Fatalf("InfoFor() = %#v", got)
+	}
+}
+
 func TestInfoForDefaultState(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "disk.img"), []byte("disk"), 0644); err != nil {
