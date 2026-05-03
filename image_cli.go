@@ -25,6 +25,10 @@ func handleImageCommand(args []string) error {
 		return runImageInspect(rest)
 	case "rm", "remove", "delete":
 		return runImageRm(rest)
+	case "push":
+		return runImagePush(rest)
+	case "load":
+		return runImageLoad(rest)
 	default:
 		printImageUsage(os.Stderr)
 		return fmt.Errorf("unknown image subcommand: %s", sub)
@@ -39,6 +43,8 @@ Subcommands:
   list                                 List local images
   inspect <name[:tag]> [-json]         Show manifest details and downstream forks
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
+  push <name[:tag]> <file> [-gzip]     Tar an image dir to a single file
+  load <file> [-tag <name[:tag]>] [-force]  Extract a tarball into the image store
 
 Examples:
   cove image build -from base -tag cove-runner-macos:14.5
