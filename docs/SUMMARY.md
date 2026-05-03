@@ -39,6 +39,7 @@
 * [OpenAI Agents SDK](examples/openai-agents.md)
 * [Anthropic Computer Use](examples/anthropic-computer-use.md)
 * [Gemini Computer Use](examples/gemini-computer-use.md)
+* [Vertex AI Computer Use](examples/vertex-ai-computer-use.md)
 * [Tailscale Mesh VM](examples/tailscale-mesh.md)
 
 ## Architecture
