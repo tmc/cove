@@ -1142,6 +1142,26 @@ func linuxAutoLoginLateCommand(config LinuxProvisionConfig) string {
       printf '%%s\n' '[daemon]' 'AutomaticLoginEnable=true' %q > /target/etc/gdm3/custom.conf`, "AutomaticLogin="+config.Username)
 }
 
+func linuxDesktopUserLateCommands(config LinuxProvisionConfig, hashedPassword string) string {
+	if config.Variant != LinuxVariantDesktop || !strings.EqualFold(linuxDesktopInstaller, "oem") {
+		return ""
+	}
+	username := shellQuote(config.Username)
+	password := shellQuote(hashedPassword)
+	gecos := shellQuote(config.Username)
+	return fmt.Sprintf(`
+    - |
+      if ! chroot /target id -u %[1]s >/dev/null 2>&1; then
+        chroot /target useradd -m -s /bin/bash -c %[3]s %[1]s
+      fi
+      chroot /target usermod -p %[2]s %[1]s
+      chroot /target usermod -aG adm,cdrom,sudo,dip,plugdev,users,lpadmin %[1]s
+      mkdir -p /target/home/%[4]s/.config /target/var/lib/AccountsService/users
+      touch /target/home/%[4]s/.config/gnome-initial-setup-done
+      chroot /target chown -R %[1]s:%[1]s /home/%[4]s/.config
+      printf '%%s\n' '[User]' 'SystemAccount=false' > /target/var/lib/AccountsService/users/%[4]s`, username, password, gecos, config.Username)
+}
+
 func linuxDesktopPackagesSection(config LinuxProvisionConfig) string {
 	if config.Variant != LinuxVariantDesktop {
 		return ""
@@ -1415,6 +1435,7 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
 	bootloaderLateCommands := linuxBootloaderLateCommands()
 	desktopLateCommands := linuxDesktopLateCommands(config)
 	oemSection := linuxOEMInstallSection(config)
+	desktopUserLateCommands := linuxDesktopUserLateCommands(config, hashedPassword)
 
 	return fmt.Sprintf(`autoinstall:
   version: 1
@@ -1431,14 +1452,14 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
 %s
 %s
   late-commands:
-    - curtin in-target --target=/target -- systemctl enable ssh%s%s%s%s
+    - curtin in-target --target=/target -- systemctl enable ssh%s%s%s%s%s
   error-commands:
     - cat /var/log/installer/curtin-install.log | tail -200 > /dev/hvc0 2>&1 || true
     - cat /var/crash/*.crash > /dev/hvc0 2>&1 || true
   user-data:
     disable_root: false
     timezone: %s
-`, config.Locale, packagesSection, sourceSection, oemSection, config.Hostname, config.Username, hashedPassword, sshSection, earlyCommandsSection, storageSection, bootloaderLateCommands, desktopLateCommands, agentLateCommands, autoLoginLateCommands, config.TimeZone)
+`, config.Locale, packagesSection, sourceSection, oemSection, config.Hostname, config.Username, hashedPassword, sshSection, earlyCommandsSection, storageSection, bootloaderLateCommands, desktopLateCommands, agentLateCommands, desktopUserLateCommands, autoLoginLateCommands, config.TimeZone)
 }
 
 // generateUserData creates the cloud-init user-data file with autoinstall config.

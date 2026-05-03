@@ -394,6 +394,9 @@ func TestGenerateUserDataDesktopOEM(t *testing.T) {
 		"oem:",
 		"install: true",
 		"id: ubuntu-desktop",
+		"useradd -m -s /bin/bash",
+		"usermod -aG adm,cdrom,sudo,dip,plugdev,users,lpadmin",
+		"gnome-initial-setup-done",
 		"AutomaticLoginEnable=true",
 		"AutomaticLogin=me",
 	} {
