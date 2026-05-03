@@ -21,3 +21,13 @@ func TestParseUpFlagsLinuxRosettaFalse(t *testing.T) {
 		t.Fatal("rosetta = true, want false")
 	}
 }
+
+func TestParseUpFlagsDiskSync(t *testing.T) {
+	cfg, err := parseUpFlags([]string{"-linux", "-headless", "-disk-sync=none"})
+	if err != nil {
+		t.Fatalf("parseUpFlags() error = %v", err)
+	}
+	if cfg.diskSync != "none" {
+		t.Fatalf("diskSync = %q, want none", cfg.diskSync)
+	}
+}
