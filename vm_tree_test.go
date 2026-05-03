@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,5 +180,138 @@ func writeTreeVM(t *testing.T, name string, cfg vmconfig.Config) {
 	}
 	if err := vmconfig.Save(dir, &cfg); err != nil {
 		t.Fatalf("vmconfig.Save(%s) error = %v", name, err)
+	}
+}
+
+// stageImageDir writes a minimal image directory at ~/.vz/images/<ref>/
+// with just enough on disk for ImageExists + LoadImageManifest. Used by
+// the --reachable-from tests to avoid depending on the full BuildImage
+// path (which mutates the source VM bundle).
+func stageImageDir(t *testing.T, ref ImageRef) {
+	t.Helper()
+	dir := ref.Path()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", dir, err)
+	}
+	manifest := ImageManifest{
+		SchemaVersion: 1,
+		Name:          ref.Name,
+		Tag:           ref.Tag,
+		DiskSHA256:    "stub",
+		DiskSize:      0,
+		CreatedAt:     time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC),
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+}
+
+func TestVMTree_ReachableFromImage_Forest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref := ImageRef{Name: "base", Tag: "v1"}
+	stageImageDir(t, ref)
+	writeTreeVM(t, "eval-001", vmconfig.Config{
+		ParentImage: ref.String(),
+		ForkedAt:    time.Date(2026, 5, 3, 12, 34, 0, 0, time.UTC),
+	})
+	writeTreeVM(t, "eval-002", vmconfig.Config{
+		ParentImage: ref.String(),
+		ForkedAt:    time.Date(2026, 5, 3, 12, 35, 14, 0, time.UTC),
+	})
+	writeTreeVM(t, "unrelated", vmconfig.Config{})
+
+	var buf bytes.Buffer
+	if err := PrintVMTreeWithOptions(&buf, VMTreeOptions{ReachableFromImage: &ref}); err != nil {
+		t.Fatalf("PrintVMTreeWithOptions(ReachableFrom): %v", err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "base:v1 (image)") {
+		t.Errorf("missing synthetic image root; got:\n%s", got)
+	}
+	for _, want := range []string{"eval-001", "eval-002"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in output:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "unrelated") {
+		t.Errorf("output unexpectedly contains 'unrelated':\n%s", got)
+	}
+}
+
+func TestVMTree_ReachableFromImage_JSON(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref := ImageRef{Name: "base", Tag: "v1"}
+	stageImageDir(t, ref)
+	for _, name := range []string{"eval-001", "eval-002", "eval-003-orphan"} {
+		cfg := vmconfig.Config{
+			ParentImage: ref.String(),
+			ForkedAt:    time.Date(2026, 5, 3, 12, 36, 0, 0, time.UTC),
+		}
+		if name == "eval-003-orphan" {
+			cfg.ParentVM = "long-gone-parent"
+		}
+		writeTreeVM(t, name, cfg)
+	}
+
+	var buf bytes.Buffer
+	if err := PrintVMTreeWithOptions(&buf, VMTreeOptions{ReachableFromImage: &ref, JSON: true}); err != nil {
+		t.Fatalf("PrintVMTreeWithOptions(ReachableFrom, JSON): %v", err)
+	}
+
+	var got reachableImageJSON
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, buf.String())
+	}
+	if got.Image != "base:v1" {
+		t.Errorf("image = %q, want base:v1", got.Image)
+	}
+	if len(got.Children) != 3 {
+		t.Fatalf("len(children) = %d, want 3:\n%s", len(got.Children), buf.String())
+	}
+	byName := map[string]reachableChildJSON{}
+	for _, c := range got.Children {
+		byName[c.Name] = c
+	}
+	orphan, ok := byName["eval-003-orphan"]
+	if !ok {
+		t.Fatalf("missing eval-003-orphan: %s", buf.String())
+	}
+	if !orphan.Orphan {
+		t.Errorf("eval-003-orphan.Orphan = false, want true")
+	}
+	if normal := byName["eval-001"]; normal.Orphan {
+		t.Errorf("eval-001.Orphan = true, want false")
+	}
+}
+
+func TestVMTree_ReachableFromImage_NotFound(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	missing := ImageRef{Name: "ghost", Tag: "v1"}
+	err := PrintVMTreeWithOptions(io.Discard, VMTreeOptions{ReachableFromImage: &missing})
+	if err == nil {
+		t.Fatal("PrintVMTreeWithOptions on missing image succeeded; want error")
+	}
+	if !strings.Contains(err.Error(), "ghost:v1") || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error %q does not flag missing image", err)
+	}
+}
+
+func TestVMTree_ReachableFromImage_OrphansFlagConflict(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref := ImageRef{Name: "base", Tag: "v1"}
+	stageImageDir(t, ref)
+	err := PrintVMTreeWithOptions(io.Discard, VMTreeOptions{
+		ReachableFromImage: &ref,
+		Orphans:            true,
+	})
+	if err == nil {
+		t.Fatal("PrintVMTreeWithOptions accepted both flags; want conflict error")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error %q does not flag the conflict", err)
 	}
 }
