@@ -23,6 +23,8 @@ func handleImageCommand(args []string) error {
 		return runImageList(rest)
 	case "inspect":
 		return runImageInspect(rest)
+	case "gc":
+		return runImageGC(rest)
 	case "rm", "remove", "delete":
 		return runImageRm(rest)
 	case "push":
@@ -42,6 +44,7 @@ Subcommands:
   build -from <vm> -tag <name[:tag]>   Snapshot a stopped VM into the image store
   list                                 List local images
   inspect <name[:tag]> [-json]         Show manifest details and downstream forks
+  gc   [-dry-run] [-yes] [-older-than D]  Sweep images with zero live forks
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
   push <name[:tag]> <file> [-gzip]     Tar an image dir to a single file
   load <file> [-tag <name[:tag]>] [-force]  Extract a tarball into the image store
