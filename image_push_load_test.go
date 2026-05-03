@@ -297,3 +297,85 @@ func mustStatSize(t *testing.T, path string) int64 {
 	}
 	return st.Size()
 }
+
+// TestWriteImageTar_StdoutRoundTrip drives the stdin/stdout streaming
+// path: WriteImageTar -> bytes.Buffer -> ReadImageTar. This is the
+// in-process equivalent of `cove image push x:1 - | cove image load -`.
+// TTY refusal is enforced one layer up (in runImagePush / runImageLoad);
+// not unit-tested here because term.IsTerminal(int) requires a real fd.
+func TestWriteImageTar_StdoutRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref := buildSampleImage(t, "src", "stream:v1")
+
+	originals := map[string][]byte{}
+	for _, name := range append([]string{"manifest.json"}, imageDataFiles...) {
+		b, err := os.ReadFile(filepath.Join(ref.Path(), name))
+		if err != nil {
+			t.Fatalf("read original %s: %v", name, err)
+		}
+		originals[name] = b
+	}
+
+	var buf bytes.Buffer
+	if err := WriteImageTar(ref, &buf, false); err != nil {
+		t.Fatalf("WriteImageTar: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("WriteImageTar produced 0 bytes")
+	}
+
+	if err := os.RemoveAll(ref.Path()); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	loaded, err := ReadImageTar(&buf, "", false)
+	if err != nil {
+		t.Fatalf("ReadImageTar: %v", err)
+	}
+	if loaded.String() != ref.String() {
+		t.Errorf("loaded ref = %s, want %s", loaded, ref)
+	}
+	for name, want := range originals {
+		got, err := os.ReadFile(filepath.Join(loaded.Path(), name))
+		if err != nil {
+			t.Errorf("read loaded %s: %v", name, err)
+			continue
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s differs after stream round-trip", name)
+		}
+	}
+}
+
+// TestWriteImageTar_GzipStreamRoundTrip checks that gzip framing also
+// survives a memory-backed round-trip. The receiver's gzip detection is
+// magic-byte sniffing (not filename suffix) so this is the only path
+// where the auto-gunzip in maybeGunzip gets exercised.
+func TestWriteImageTar_GzipStreamRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref := buildSampleImage(t, "src", "gzstream:v1")
+
+	var buf bytes.Buffer
+	if err := WriteImageTar(ref, &buf, true); err != nil {
+		t.Fatalf("WriteImageTar gzip: %v", err)
+	}
+	head := buf.Bytes()
+	if len(head) < 2 || head[0] != 0x1f || head[1] != 0x8b {
+		t.Fatal("WriteImageTar -gzip output missing gzip magic")
+	}
+
+	if err := os.RemoveAll(ref.Path()); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	loaded, err := ReadImageTar(&buf, "", false)
+	if err != nil {
+		t.Fatalf("ReadImageTar gzip: %v", err)
+	}
+	if loaded.String() != "gzstream:v1" {
+		t.Errorf("loaded.String() = %s, want gzstream:v1", loaded)
+	}
+	for _, name := range imageDataFiles {
+		if _, err := os.Stat(filepath.Join(loaded.Path(), name)); err != nil {
+			t.Errorf("loaded image missing %s: %v", name, err)
+		}
+	}
+}

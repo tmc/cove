@@ -502,8 +502,8 @@ cove image rm <name[:tag]>
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy). vmstate is excluded; cold-boot only. |
 | `list` | Show stored images with size + creation time + source VM. |
 | `inspect <ref> [-json]` | Print manifest (size, sha256, base image, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. |
-| `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. |
-| `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. |
+| `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
+| `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
 | `gc [-dry-run] [-yes] [-older-than D]` | Sweep images with zero live forks. `-dry-run` plans only; `-yes` skips the confirmation prompt; `-older-than` filters by manifest `createdAt`. Re-checks fork count immediately before deletion to close the planning -> remove TOCTOU window. |
 | `rm <ref>` | Delete an image. Refuses while any forked VM still references the image (`ParentImage` on the child's `config.json` is the gate). |
 
@@ -516,6 +516,7 @@ cove image gc -dry-run -older-than 168h
 cove image list
 cove run -fork-from macos-runner:14.5 -ephemeral -name worker-1
 cove image rm macos-runner:14.5
+cove image push macos-runner:14.5 - | ssh other-mac cove image load -
 ```
 
 Computer-use bridges that drive a running VM through the control socket
