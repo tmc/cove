@@ -93,9 +93,10 @@ channel.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| `cove shell <vm>` standalone exec UX (Slice 1, server-side) | should | v0.2 in-process `cove run -linux -shell` | [023](023-cove-shell-exec-ux.md) | Ships Docker-shaped exec via control-socket extension; no proto bump in Slice 1; stdin /dev/null. |
-| Local image store + `cove image build/list/rm` (Slice 1) | should | fork-from + APFS clonefile | [024](024-cove-runner-images.md) | Pre-baked, forkable VM images on disk for ephemeral CI runners; pure local in Slice 1. |
-| `cove run -fork-from <local-image-ref>` + `-ephemeral` | should | image store Slice 1 | [024](024-cove-runner-images.md) | Wires image store into existing fork-from codepath so users can spawn disposable VMs from a saved baseline. |
+| `cove shell <vm>` server-side commands (Slice 1) | done | v0.2 in-process `cove run -linux -shell` | [023](023-cove-shell-exec-ux.md) | Ships agent-exec-attach/-resize/-signal control-socket commands. No proto bump. Landed 17211bd. |
+| `cove shell <vm>` standalone client (Slice 2) | should | Slice 1 server commands | [023](023-cove-shell-exec-ux.md) | Standalone client subcommand using server-side commands. ~150 LOC. Stdin /dev/null until Slice 3. |
+| Local image store + `cove image build/list/rm` (Slice 1) | done | fork-from + APFS clonefile | [024](024-cove-runner-images.md) | Pre-baked, forkable VM images at ~/.vz/images/. Landed 8a106dc, 1027 LOC, 8 tests green. |
+| `cove run -fork-from <local-image-ref>` + `-ephemeral` | done | image store Slice 1 | [024](024-cove-runner-images.md) | Wires image store into existing fork-from codepath so users can spawn disposable VMs from a saved baseline. Shipped with image Slice 1 at 8a106dc. |
 | github-runner vzscript | done | none | gap vs Cirrus tart workflow | Self-hosted GHA runner inside a long-lived cove VM; primary billing-block escape hatch. |
 | gitlab-runner vzscript | done | none | parity with github-runner | Same-shape recipe for GitLab CI projects. |
 | tailscale vzscript | done | homebrew vzscript | gap for users wanting stable remote access | Brings up Tailscale daemon on guest with `--ssh`; idempotent. |
@@ -171,6 +172,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-05-02**: v0.2.1 Slice 1 implementations shipped: design [023](023-cove-shell-exec-ux.md) server-side at 17211bd (289 LOC, 7 tests); design [024](024-cove-runner-images.md) image surface at 8a106dc (1027 LOC, 8 tests). Slice 2 of 023 (standalone `cove shell <vm>` client, ~150 LOC) is the only remaining v0.2.1 implementation.
 - **2026-05-02**: Added v0.2.1 milestone covering `cove shell <vm>` Slice 1 (design [023](023-cove-shell-exec-ux.md)), local image store + `cove image build/list/rm` Slice 1 (design [024](024-cove-runner-images.md)), and three CI/networking vzscripts (github-runner, gitlab-runner, tailscale).
 - **2026-05-02**: Trimmed Buildkite track from v0.4 design [021](021-v04-ci-executors-tracks.md); v0.4 CI work now covers GHA + GitLab only.
 - **2026-04-30**: Reconciled docs with branch reality for the RC: `cove build` local-base execution, `# secret:` tmpfs, build-pipeline compaction, fork benchmarks, and OpenAI adapter hardening are all marked landed; deferred-items boundary made canonical and consistent across CLI reference, changelog, ROADMAP, 016, 017, and the release checklist.
