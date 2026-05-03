@@ -1,0 +1,146 @@
+# tailscale — Install and bring up Tailscale on a macOS guest VM
+# runs-on: daemon
+# requires: homebrew
+
+guest-ping
+guest-write /tmp/install-tailscale.sh install-tailscale.sh
+# Host vars ($TS_AUTHKEY etc.) are expanded by the vzscript engine before
+# being sent to the guest. Empty values pass through and are validated
+# inside the script. We pass values as positional args to avoid quoting.
+guest-exec /bin/bash /tmp/install-tailscale.sh '__VZSCRIPT_TAILSCALE_ARGS__' $TS_AUTHKEY $TS_HOSTNAME $TS_TAGS
+
+-- install-tailscale.sh --
+#!/bin/bash
+# Tailscale installer using the open-source CLI (not the Mac App Store
+# GUI app). The CLI ships as a bottle in homebrew core.
+#
+# Args (positional, expanded from host env by the vzscript engine):
+#   $1  marker (must be __VZSCRIPT_TAILSCALE_ARGS__)
+#   $2  TS_AUTHKEY  (optional; if empty, prints a one-time login URL)
+#   $3  TS_HOSTNAME (optional, default "$(hostname)-cove")
+#   $4  TS_TAGS     (optional, comma-separated, e.g. "tag:cove-vm,tag:dev")
+set -eu
+
+if [ "${1:-}" != "__VZSCRIPT_TAILSCALE_ARGS__" ]; then
+  echo "error: unexpected argv (marker mismatch); was the script invoked correctly?" >&2
+  exit 2
+fi
+TS_AUTHKEY="${2:-}"
+TS_HOSTNAME="${3:-$(hostname -s)-cove}"
+TS_TAGS="${4:-}"
+
+# Locate the first admin (non-root, non-system) user — homebrew is per-user.
+ADMIN_USER=$(dscl . -read /Groups/admin GroupMembership 2>/dev/null \
+  | tr ' ' '\n' | grep -v -E '^(GroupMembership:|root|_)' | head -1)
+if [ -z "$ADMIN_USER" ]; then
+  echo "error: no admin user found to drive homebrew" >&2
+  exit 1
+fi
+
+# Resolve homebrew prefix (Apple Silicon default is /opt/homebrew).
+BREW_PREFIX="/opt/homebrew"
+if [ ! -x "$BREW_PREFIX/bin/brew" ]; then
+  BREW_PREFIX="/usr/local"
+  if [ ! -x "$BREW_PREFIX/bin/brew" ]; then
+    echo "error: brew not found in /opt/homebrew or /usr/local — run vzscript 'homebrew' first" >&2
+    exit 1
+  fi
+fi
+TS="$BREW_PREFIX/bin/tailscale"
+TSD="$BREW_PREFIX/bin/tailscaled"
+
+if [ ! -x "$TS" ] || [ ! -x "$TSD" ]; then
+  echo "Installing tailscale via homebrew (as $ADMIN_USER)..."
+  su -l "$ADMIN_USER" -c "$BREW_PREFIX/bin/brew install tailscale"
+fi
+
+# tailscaled needs to run as root. brew formula installs a sample
+# LaunchDaemon plist; copy it into place and load.
+PLIST_SRC="$BREW_PREFIX/Cellar/tailscale/$($BREW_PREFIX/bin/brew list --versions tailscale | awk '{print $2}')/homebrew.mxcl.tailscale.plist"
+PLIST_DST="/Library/LaunchDaemons/com.tailscale.tailscaled.plist"
+
+if [ ! -f "$PLIST_DST" ]; then
+  if [ -f "$PLIST_SRC" ]; then
+    install -m 0644 -o root -g wheel "$PLIST_SRC" "$PLIST_DST"
+  else
+    # Synthesize a minimal plist if the formula's sample isn't present.
+    cat > "$PLIST_DST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tailscale.tailscaled</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$TSD</string>
+    <string>--state=/var/lib/tailscale/tailscaled.state</string>
+    <string>--socket=/var/run/tailscale/tailscaled.sock</string>
+    <string>--port=41641</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/var/log/tailscaled.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/tailscaled.log</string>
+</dict>
+</plist>
+EOF
+    chown root:wheel "$PLIST_DST"
+    chmod 0644 "$PLIST_DST"
+  fi
+fi
+
+install -d -o root -g wheel -m 0755 /var/lib/tailscale /var/run/tailscale
+
+if ! launchctl list com.tailscale.tailscaled >/dev/null 2>&1; then
+  launchctl load -w "$PLIST_DST"
+fi
+
+# Wait for the socket to appear before calling `tailscale up`.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if [ -S /var/run/tailscale/tailscaled.sock ]; then
+    break
+  fi
+  sleep 1
+done
+if [ ! -S /var/run/tailscale/tailscaled.sock ]; then
+  echo "error: tailscaled socket did not appear after 10s" >&2
+  exit 1
+fi
+
+# Already up? Don't re-up unless explicitly forced.
+if "$TS" status --json 2>/dev/null | grep -q '"BackendState": "Running"'; then
+  echo "tailscale already up:"
+  "$TS" status
+  exit 0
+fi
+
+UP_ARGS=(--hostname="$TS_HOSTNAME" --accept-routes --ssh)
+if [ -n "$TS_TAGS" ]; then
+  UP_ARGS+=(--advertise-tags="$TS_TAGS")
+fi
+if [ -n "$TS_AUTHKEY" ]; then
+  UP_ARGS+=(--authkey="$TS_AUTHKEY")
+  echo "Bringing up tailscale with auth key..."
+  "$TS" up "${UP_ARGS[@]}"
+else
+  echo "Bringing up tailscale (no auth key supplied; opens browser-login URL):"
+  "$TS" up "${UP_ARGS[@]}" &
+  TS_PID=$!
+  # Print the login URL — `tailscale up` writes it to stderr.
+  wait "$TS_PID" || true
+fi
+
+echo "tailscale status:"
+"$TS" status || true
+echo "tailscale ip:"
+"$TS" ip || true
