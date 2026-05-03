@@ -126,6 +126,12 @@ func (v LinuxVariant) distroName() string {
 func (v LinuxVariant) sourceID() string {
 	switch v {
 	case LinuxVariantDesktop:
+		// Server-ISO path: leave source empty so Subiquity falls back to its
+		// default and ubuntu-desktop layers via apt.
+		// OEM path: select the desktop source baked into the Desktop ISO.
+		if strings.EqualFold(linuxDesktopInstaller, "oem") {
+			return "ubuntu-desktop"
+		}
 		return ""
 	case LinuxVariantServer:
 		return "ubuntu-server"
@@ -137,6 +143,13 @@ func (v LinuxVariant) sourceID() string {
 func (v LinuxVariant) installISOVariant() LinuxVariant {
 	switch v {
 	case LinuxVariantDesktop:
+		// "oem" mode boots the desktop ISO directly and runs Subiquity's OEM
+		// autoinstall (Ubuntu 23.04+). The default "server" mode boots the
+		// server ISO and apt-installs ubuntu-desktop on top — slower at install
+		// time but the most-tested cove path.
+		if strings.EqualFold(linuxDesktopInstaller, "oem") {
+			return LinuxVariantDesktop
+		}
 		return LinuxVariantServer
 	default:
 		return v
@@ -1133,9 +1146,31 @@ func linuxDesktopPackagesSection(config LinuxProvisionConfig) string {
 	if config.Variant != LinuxVariantDesktop {
 		return ""
 	}
+	// OEM mode boots the Desktop ISO so ubuntu-desktop is already baked in.
+	// The Server-ISO path needs to apt-install it during provisioning.
+	if strings.EqualFold(linuxDesktopInstaller, "oem") {
+		return ""
+	}
 	return `
   packages:
     - ubuntu-desktop`
+}
+
+// linuxOEMInstallSection emits the autoinstall `oem` block when the user
+// opted into the Desktop-ISO/OEM install path. Subiquity 23.04+ recognises
+// `oem: install: true` as a request to run the OEM postinstall hooks (locale,
+// keyboard, hostname pre-configured but the GNOME Initial Setup wizard is
+// suppressed for the cove-provisioned identity).
+func linuxOEMInstallSection(config LinuxProvisionConfig) string {
+	if config.Variant != LinuxVariantDesktop {
+		return ""
+	}
+	if !strings.EqualFold(linuxDesktopInstaller, "oem") {
+		return ""
+	}
+	return `
+  oem:
+    install: true`
 }
 
 func linuxSourceSection(config LinuxProvisionConfig) string {
@@ -1379,6 +1414,7 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
 	storageSection := linuxStorageSection()
 	bootloaderLateCommands := linuxBootloaderLateCommands()
 	desktopLateCommands := linuxDesktopLateCommands(config)
+	oemSection := linuxOEMInstallSection(config)
 
 	return fmt.Sprintf(`autoinstall:
   version: 1
@@ -1386,7 +1422,7 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
   locale: %s
   keyboard:
     layout: us
-%s%s
+%s%s%s
   identity:
     hostname: %s
     username: %s
@@ -1402,7 +1438,7 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
   user-data:
     disable_root: false
     timezone: %s
-`, config.Locale, packagesSection, sourceSection, config.Hostname, config.Username, hashedPassword, sshSection, earlyCommandsSection, storageSection, bootloaderLateCommands, desktopLateCommands, agentLateCommands, autoLoginLateCommands, config.TimeZone)
+`, config.Locale, packagesSection, sourceSection, oemSection, config.Hostname, config.Username, hashedPassword, sshSection, earlyCommandsSection, storageSection, bootloaderLateCommands, desktopLateCommands, agentLateCommands, autoLoginLateCommands, config.TimeZone)
 }
 
 // generateUserData creates the cloud-init user-data file with autoinstall config.

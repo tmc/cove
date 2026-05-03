@@ -352,6 +352,58 @@ func TestLinuxVariantInstallISOVariant(t *testing.T) {
 	}
 }
 
+// TestLinuxVariantInstallISOVariantOEM verifies that opting in to the OEM
+// installer keeps the Desktop ISO instead of falling back to the Server ISO.
+func TestLinuxVariantInstallISOVariantOEM(t *testing.T) {
+	old := linuxDesktopInstaller
+	t.Cleanup(func() { linuxDesktopInstaller = old })
+	linuxDesktopInstaller = "oem"
+	if got, want := LinuxVariantDesktop.installISOVariant(), LinuxVariantDesktop; got != want {
+		t.Fatalf("oem mode: LinuxVariantDesktop.installISOVariant() = %q, want %q", got, want)
+	}
+	// Server variant unaffected.
+	if got, want := LinuxVariantServer.installISOVariant(), LinuxVariantServer; got != want {
+		t.Fatalf("oem mode: LinuxVariantServer.installISOVariant() = %q, want %q", got, want)
+	}
+}
+
+// TestGenerateUserDataDesktopOEM verifies that the OEM-mode autoinstall YAML
+// emits `oem: install: true`, drops the `packages: ubuntu-desktop` block
+// (already in the Desktop ISO), and selects `source: id: ubuntu-desktop`.
+func TestGenerateUserDataDesktopOEM(t *testing.T) {
+	old := linuxDesktopInstaller
+	t.Cleanup(func() { linuxDesktopInstaller = old })
+	linuxDesktopInstaller = "oem"
+
+	config := LinuxProvisionConfig{
+		Username:  "me",
+		Password:  "secret",
+		Hostname:  "desktop-vm",
+		TimeZone:  "UTC",
+		Locale:    "en_US.UTF-8",
+		Variant:   LinuxVariantDesktop,
+		AutoLogin: true,
+	}
+	got := generateUserData(config, false, "")
+
+	for _, want := range []string{
+		"oem:",
+		"install: true",
+		"id: ubuntu-desktop",
+		"AutomaticLoginEnable=true",
+		"AutomaticLogin=me",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("oem-mode YAML missing %q\n%s", want, got)
+		}
+	}
+	// The Server-ISO `packages: ubuntu-desktop` block must NOT appear in OEM mode
+	// — the desktop is already on the live ISO.
+	if strings.Contains(got, "- ubuntu-desktop\n") {
+		t.Fatalf("oem-mode YAML unexpectedly contains apt-install of ubuntu-desktop\n%s", got)
+	}
+}
+
 func TestLinuxISODescriptorForVariant(t *testing.T) {
 	tests := []struct {
 		variant LinuxVariant
