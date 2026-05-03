@@ -222,6 +222,21 @@ func DefaultLinuxProvisionConfig() LinuxProvisionConfig {
 func installLinuxVM() error {
 	fmt.Println("=== Linux VM Installer ===")
 
+	resolvedDiskPath := diskPath
+	if resolvedDiskPath == "" {
+		resolvedDiskPath = filepath.Join(vmDir, "linux-disk.img")
+	}
+	if !forceInstall {
+		if _, err := os.Stat(resolvedDiskPath); err == nil {
+			if ok, err := completeExistingLinuxInstall(vmDir, resolvedDiskPath, currentLinuxVariant()); err != nil {
+				fmt.Printf("warning: inspect existing linux disk: %v\n", err)
+			} else if ok {
+				fmt.Println("Existing Linux installation is bootable; using it.")
+				return nil
+			}
+		}
+	}
+
 	// Safety check: refuse to overwrite existing VM disk unless -force is specified.
 	if err := checkExistingVM(vmDir, "linux-disk.img"); err != nil {
 		return err
@@ -296,18 +311,14 @@ func installLinuxVM() error {
 	}
 	fmt.Printf("Created cloud-init ISO: %s\n", cloudInitISO)
 
-	// Resolve disk path
-	resolvedDiskPath := diskPath
-	if resolvedDiskPath == "" {
-		resolvedDiskPath = filepath.Join(vmDir, "linux-disk.img")
-	}
-
-	if _, err := os.Stat(resolvedDiskPath); err == nil {
-		if ok, err := completeExistingLinuxInstall(vmDir, resolvedDiskPath, provConfig.Variant); err != nil {
-			fmt.Printf("warning: inspect existing linux disk: %v\n", err)
-		} else if ok {
-			fmt.Println("Existing Linux installation is bootable; using it.")
-			return nil
+	if !forceInstall {
+		if _, err := os.Stat(resolvedDiskPath); err == nil {
+			if ok, err := completeExistingLinuxInstall(vmDir, resolvedDiskPath, provConfig.Variant); err != nil {
+				fmt.Printf("warning: inspect existing linux disk: %v\n", err)
+			} else if ok {
+				fmt.Println("Existing Linux installation is bootable; using it.")
+				return nil
+			}
 		}
 	}
 
