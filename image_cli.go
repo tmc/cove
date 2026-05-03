@@ -21,6 +21,8 @@ func handleImageCommand(args []string) error {
 		return runImageBuild(rest)
 	case "list", "ls":
 		return runImageList(rest)
+	case "inspect":
+		return runImageInspect(rest)
 	case "rm", "remove", "delete":
 		return runImageRm(rest)
 	default:
@@ -35,6 +37,7 @@ func printImageUsage(w io.Writer) {
 Subcommands:
   build -from <vm> -tag <name[:tag]>   Snapshot a stopped VM into the image store
   list                                 List local images
+  inspect <name[:tag]> [-json]         Show manifest details and downstream forks
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
 
 Examples:
