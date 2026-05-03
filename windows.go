@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,8 @@ import (
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/windows/esd"
 )
 
 type windowsGraphics string
@@ -26,10 +29,10 @@ const (
 
 func parseWindowsGraphicsMode(s string) (windowsGraphics, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", string(windowsGraphicsLinearFramebuffer), "linear", "framebuffer":
-		return windowsGraphicsLinearFramebuffer, nil
-	case string(windowsGraphicsVirtio):
+	case "", string(windowsGraphicsVirtio):
 		return windowsGraphicsVirtio, nil
+	case string(windowsGraphicsLinearFramebuffer), "linear", "framebuffer":
+		return windowsGraphicsLinearFramebuffer, nil
 	default:
 		return "", fmt.Errorf("invalid -windows-graphics %q (must be linear-framebuffer or virtio)", s)
 	}
@@ -279,11 +282,11 @@ func runWindowsVM() error {
 	if err := validateVMSettings(); err != nil {
 		return err
 	}
-	saveHardwareConfig(vmDir)
 
 	if err := os.MkdirAll(vmDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
+	saveHardwareConfig(vmDir)
 
 	resolvedDiskPath := diskPath
 	if resolvedDiskPath == "" {
@@ -327,11 +330,11 @@ func installWindowsVM() error {
 	if err := validateVMSettings(); err != nil {
 		return err
 	}
-	saveHardwareConfig(vmDir)
 
 	if err := os.MkdirAll(vmDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
+	saveHardwareConfig(vmDir)
 
 	windowsISO, err := ensureWindowsISO()
 	if err != nil {
@@ -398,18 +401,17 @@ func ensureWindowsISO() (string, error) {
 		return absPath, nil
 	}
 
-	home, _ := os.UserHomeDir()
+	cacheDir := vmconfig.CacheDir()
 	searchPaths := []string{
 		filepath.Join(vmDir, "windows.iso"),
-		filepath.Join(home, ".vz", "cache", "windows.iso"),
+		filepath.Join(cacheDir, "windows.iso"),
 	}
-	cacheDir := filepath.Join(home, ".vz", "cache")
 	if entries, err := os.ReadDir(cacheDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() || strings.ToLower(filepath.Ext(e.Name())) != ".iso" {
 				continue
 			}
-			if strings.Contains(strings.ToLower(e.Name()), "win") {
+			if looksWindowsISOName(e.Name()) {
 				searchPaths = append(searchPaths, filepath.Join(cacheDir, e.Name()))
 			}
 		}
@@ -420,7 +422,109 @@ func ensureWindowsISO() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no windows ISO specified; use -iso /path/to/Win11_ARM64.iso")
+	return fetchWindowsISOFromESD(context.Background())
+}
+
+func looksWindowsISOName(name string) bool {
+	name = strings.ToLower(name)
+	return strings.Contains(name, "windows") ||
+		strings.Contains(name, "win10") ||
+		strings.Contains(name, "win11") ||
+		strings.Contains(name, "clientconsumer") ||
+		strings.Contains(name, "clientbusiness")
+}
+
+func fetchWindowsISOFromESD(ctx context.Context) (string, error) {
+	cacheDir := vmconfig.CacheDir()
+	result, err := esd.FetchLatest(ctx, esd.Options{
+		CacheDir: cacheDir,
+		Output:   os.Stderr,
+	})
+	if err != nil {
+		return "", fmt.Errorf("fetch windows esd: %w", err)
+	}
+
+	isoPath := strings.TrimSuffix(result.Path, filepath.Ext(result.Path)) + ".iso"
+	if info, err := os.Stat(isoPath); err == nil && info.Size() > 1*1024*1024*1024 {
+		fmt.Printf("Using converted Windows ISO: %s (%.1f GB)\n", isoPath, float64(info.Size())/(1024*1024*1024))
+		return isoPath, nil
+	}
+
+	fmt.Printf("Converting Windows ESD to ISO: %s\n", isoPath)
+	if err := convertWindowsESDToISO(result.Path, isoPath); err != nil {
+		return "", fmt.Errorf("windows esd downloaded to %s; install CrystalFetch or put esd2iso.sh, wimlib-imagex, and mkisofs in PATH, then rerun: %w", result.Path, err)
+	}
+	if info, err := os.Stat(isoPath); err != nil {
+		return "", fmt.Errorf("stat converted ISO: %w", err)
+	} else if info.Size() < 1*1024*1024*1024 {
+		return "", fmt.Errorf("converted ISO too small: %s", isoPath)
+	}
+	return isoPath, nil
+}
+
+func convertWindowsESDToISO(esdPath, isoPath string) error {
+	script, err := findESD2ISO()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(script, "-v", esdPath, isoPath, windowsISOLabel(esdPath))
+	cmd.Dir = filepath.Dir(isoPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), "keepDownloads=1")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run esd2iso: %w", err)
+	}
+	return nil
+}
+
+func findESD2ISO() (string, error) {
+	if script := strings.TrimSpace(os.Getenv("COVE_ESD2ISO")); script != "" {
+		if _, err := os.Stat(script); err != nil {
+			return "", fmt.Errorf("COVE_ESD2ISO: %w", err)
+		}
+		if err := checkESD2ISOTools(); err != nil {
+			return "", err
+		}
+		return script, nil
+	}
+	for _, name := range []string{"esd2iso.sh", "w11arm_esd2iso"} {
+		if script, err := exec.LookPath(name); err == nil {
+			if err := checkESD2ISOTools(); err != nil {
+				return "", err
+			}
+			return script, nil
+		}
+	}
+	script := "/Applications/CrystalFetch.app/Contents/Resources/esd2iso.sh"
+	if _, err := os.Stat(script); err == nil {
+		if err := checkESD2ISOTools(); err != nil {
+			return "", err
+		}
+		return script, nil
+	}
+	return "", fmt.Errorf("esd2iso.sh not found")
+}
+
+func checkESD2ISOTools() error {
+	for _, name := range []string{"wimlib-imagex", "mkisofs"} {
+		if _, err := exec.LookPath(name); err != nil {
+			return fmt.Errorf("%s not found in PATH", name)
+		}
+	}
+	return nil
+}
+
+func windowsISOLabel(esdPath string) string {
+	parts := strings.Split(filepath.Base(esdPath), ".")
+	label := strings.TrimSuffix(filepath.Base(esdPath), filepath.Ext(esdPath))
+	if len(parts) >= 3 {
+		label = strings.Join(parts[:3], ".")
+	}
+	if len(label) > 32 {
+		label = label[:32]
+	}
+	return label
 }
 
 func ensureWindowsEFIBootImage(windowsISO string) (string, error) {
