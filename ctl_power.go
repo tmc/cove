@@ -13,7 +13,7 @@ func ctlPowerCommand(sock string, args []string, timeout time.Duration, raw bool
 		return fmt.Errorf("power requires action: status, keep-awake, or allow-sleep")
 	}
 	if ctlGuestIsLinux(sock) {
-		return fmt.Errorf("power: not supported for Linux guests")
+		return fmt.Errorf("power: not supported for Linux guests; use systemd-inhibit directly via agent-exec --daemon")
 	}
 
 	var script string
