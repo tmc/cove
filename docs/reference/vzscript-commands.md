@@ -66,14 +66,9 @@ curl -fsSL https://example.com/setup.sh | bash
 
 ### guest-terminal
 
-Run a script in a visible terminal inside the guest. On macOS guests this uses
-Terminal.app. On Linux graphical guests this uses the active `loginctl`
-session on `seat0` and starts the first installed terminal from:
-`gnome-terminal`, `kgx`, `konsole`, `xterm`.
-
-Linux guests must have an active Wayland or X11 desktop login. If no graphical
-session or supported terminal is available, cove returns an actionable error
-instead of silently running headless.
+Opens a visible terminal window in the guest (macOS Terminal.app, or Linux
+GNOME Terminal / GNOME Console / Konsole / xterm via the active graphical
+session).
 
 ```
 guest-terminal <script-file>
