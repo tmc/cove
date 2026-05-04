@@ -43,7 +43,7 @@ func TestCtlPowerRefusesLinuxGuest(t *testing.T) {
 	if err == nil {
 		t.Fatal("ctlPowerCommand() error = nil, want linux refusal")
 	}
-	if !strings.Contains(err.Error(), "power: not supported for Linux guests") {
+	if !strings.Contains(err.Error(), "power: not supported for Linux guests; use systemd-inhibit directly via agent-exec --daemon") {
 		t.Fatalf("ctlPowerCommand() error = %v", err)
 	}
 }
