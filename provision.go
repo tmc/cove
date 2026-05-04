@@ -532,7 +532,7 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 		}
 	}
 
-	fmt.Println("Provisioning applied.")
+	fmt.Println("Provisioning files applied; guest user will be verified after boot.")
 	return nil
 }
 
