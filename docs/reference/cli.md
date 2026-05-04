@@ -607,6 +607,7 @@ cove shared-folder <command> [args]
 |---------|-------------|
 | `list` | List configured folders |
 | `status [mount-point]` | Check mount status |
+| `pending [vm]` | List configured folders not mounted in the running guest |
 | `add <host-path> [tag] [ro\|rw]` | Add a folder |
 | `remove <tag-or-path>` | Remove a folder |
 | `clear` | Remove all folders |
