@@ -185,6 +185,7 @@ func init() {
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
+	flag.BoolVar(&linuxNVMe, "nvme", false, "attach Linux root disk through NVMe instead of virtio-blk")
 	flag.StringVar(&linuxDesktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
 	flag.BoolVar(&linuxShell, "shell", false, "after Linux guest boots, attach the host terminal to a guest shell via the agent (requires -linux; mutually exclusive with -headless)")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
@@ -593,7 +594,7 @@ func main() {
 		// (e.g., "cove run -gui" parses -gui here).
 		flag.CommandLine.Parse(args)
 
-		if linuxDesktop || linuxNested {
+		if linuxDesktop || linuxNested || linuxNVMe {
 			linuxMode = true
 		}
 		if windowsMode && linuxMode {
@@ -965,6 +966,9 @@ func printCommandDefaults(w *os.File, fs *flag.FlagSet) {
 		if f.Name == "disk-sync" {
 			return
 		}
+		if f.Name == "nvme" {
+			return
+		}
 		fmt.Fprintf(w, "  -%s", f.Name)
 		if f.DefValue != "false" && f.DefValue != "" {
 			fmt.Fprintf(w, " %s", f.DefValue)
@@ -985,6 +989,9 @@ func validateLaunchOptions() error {
 	}
 	if linuxNested && !linuxMode {
 		return fmt.Errorf("-nested requires -linux")
+	}
+	if linuxNVMe && !linuxMode {
+		return fmt.Errorf("-nvme requires -linux")
 	}
 	if linuxDesktop && windowsMode {
 		return fmt.Errorf("-desktop requires -linux")

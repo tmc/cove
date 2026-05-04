@@ -53,3 +53,13 @@ func TestParseUpFlagsNestedImpliesLinuxAndBumpsCPU(t *testing.T) {
 		t.Fatalf("explicit cpuCount = %d, want 2", cfg.cpuCount)
 	}
 }
+
+func TestParseUpFlagsNVMeImpliesLinux(t *testing.T) {
+	cfg, err := parseUpFlags([]string{"-nvme", "-headless"})
+	if err != nil {
+		t.Fatalf("parseUpFlags: %v", err)
+	}
+	if !cfg.linux || !cfg.nvme {
+		t.Fatalf("linux=%v nvme=%v, want both true", cfg.linux, cfg.nvme)
+	}
+}

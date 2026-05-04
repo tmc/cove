@@ -44,6 +44,7 @@ type upConfig struct {
 	diskSync                 string
 	distro                   string
 	nested                   bool
+	nvme                     bool
 	cpuExplicit              bool
 	rosetta                  bool
 }
@@ -86,8 +87,8 @@ func parseUpFlags(args []string) (upConfig, error) {
 			cfg.cpuExplicit = true
 		}
 	})
-	// -desktop and -nested imply -linux.
-	if cfg.desktop || cfg.nested {
+	// -desktop, -nested, and -nvme imply -linux.
+	if cfg.desktop || cfg.nested || cfg.nvme {
 		cfg.linux = true
 	}
 	variant, err := parseLinuxVariant(cfg.distro, cfg.desktop)
@@ -187,6 +188,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.StringVar(&cfg.diskSync, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
 	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
 	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
+	fs.BoolVar(&cfg.nvme, "nvme", false, "Attach Linux root disk through NVMe instead of virtio-blk")
 	fs.BoolVar(&cfg.rosetta, "rosetta", true, "Enable Rosetta translation support for Linux VMs")
 	fs.Usage = func() {
 		printUpUsage(os.Stderr, fs)
@@ -206,6 +208,9 @@ Options:
 `)
 	fs.VisitAll(func(f *flag.Flag) {
 		if f.Name == "disk-sync" {
+			return
+		}
+		if f.Name == "nvme" {
 			return
 		}
 		fmt.Fprintf(w, "  -%s", f.Name)
@@ -274,6 +279,9 @@ func applyUpConfig(cfg upConfig) {
 	}
 	if cfg.nested {
 		linuxNested = true
+	}
+	if cfg.nvme {
+		linuxNVMe = true
 	}
 	cpuExplicit = cfg.cpuExplicit
 }
