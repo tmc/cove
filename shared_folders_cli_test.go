@@ -278,15 +278,13 @@ func TestSharedFolderAddSkipsHotApplyWithoutVirtioFS(t *testing.T) {
 		return handleVMSharedFolderAdd(vmDir, []string{hostDir, "work", "rw"})
 	})
 	for _, want := range []string{
-		"Added shared folder:",
-		"shared folder saved; will mount on next boot",
-		"live shared folders are unavailable: no directory sharing devices configured",
+		"shared folder saved; will mount on next boot of " + filepath.Base(vmDir) + " (this VM was not booted with VirtioFS device, so live attach is not possible)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "could not hot-apply") || strings.Contains(out, "Applied to running VM") {
+	if strings.Contains(out, "Added shared folder:") || strings.Contains(out, "could not hot-apply") || strings.Contains(out, "Applied to running VM") {
 		t.Fatalf("output attempted hot apply:\n%s", out)
 	}
 }

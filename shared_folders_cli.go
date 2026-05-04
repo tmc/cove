@@ -140,23 +140,16 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if added {
-		mode := "rw"
-		if entry.ReadOnly {
-			mode = "ro"
-		}
-		fmt.Printf("Added shared folder: %s (tag=%s, %s)\n", entry.Path, entry.Tag, mode)
-	} else {
-		fmt.Printf("Shared folder already configured: %s (tag=%s)\n", entry.Path, entry.Tag)
-	}
 
 	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
 	client.SetTimeout(15 * time.Second)
 	status, err := client.SharedFoldersRuntimeStatus()
 	if err != nil || !status.VirtioFS {
-		fmt.Printf("shared folder saved; will mount on next boot of %s (live shared folders are unavailable: %s)\n", sharedFolderVMName(vmDirectory), sharedFolderRuntimeStatusMessage(status, err))
+		fmt.Printf("shared folder saved; will mount on next boot of %s (this VM was not booted with VirtioFS device, so live attach is not possible)\n", sharedFolderVMName(vmDirectory))
 		return nil
 	}
+
+	printSharedFolderAddResult(entry, added)
 	if msg, err := client.SharedFoldersApply(); err == nil {
 		fmt.Printf("Applied to running VM: %s\n", msg)
 	} else {
@@ -187,17 +180,16 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	return nil
 }
 
-func sharedFolderRuntimeStatusMessage(status sharedFoldersRuntimeStatus, err error) string {
-	if err != nil {
-		return err.Error()
+func printSharedFolderAddResult(entry SharedFolderEntry, added bool) {
+	if added {
+		mode := "rw"
+		if entry.ReadOnly {
+			mode = "ro"
+		}
+		fmt.Printf("Added shared folder: %s (tag=%s, %s)\n", entry.Path, entry.Tag, mode)
+		return
 	}
-	if status.Message != "" {
-		return status.Message
-	}
-	if !status.Running {
-		return "no live VM connected"
-	}
-	return "this VM was not booted with VirtioFS device, so live attach is not possible"
+	fmt.Printf("Shared folder already configured: %s (tag=%s)\n", entry.Path, entry.Tag)
 }
 
 func handleVMSharedFolderRemove(vmDirectory, selector string) error {
