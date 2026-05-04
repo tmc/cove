@@ -114,6 +114,51 @@ func TestPumpShellFramesPropagatesServerError(t *testing.T) {
 	}
 }
 
+func TestWriteShellStdinFrames(t *testing.T) {
+	var out bytes.Buffer
+	if err := writeShellStdinFrames(context.Background(), &out, "exec-1", strings.NewReader("abc")); err != nil {
+		t.Fatalf("writeShellStdinFrames: %v", err)
+	}
+	var frame agentExecStdinFrame
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &frame); err != nil {
+		t.Fatalf("decode stdin frame: %v", err)
+	}
+	if frame.Type != "stdin" || frame.ExecID != "exec-1" {
+		t.Fatalf("frame = %+v, want stdin exec-1", frame)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(frame.Data)
+	if err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if string(decoded) != "abc" {
+		t.Fatalf("stdin data = %q, want abc", decoded)
+	}
+}
+
+func TestPumpShellFramesIgnoresAttachWarningPayload(t *testing.T) {
+	frames := []string{
+		mustResponse(t, map[string]any{
+			"attached": true,
+			"exec_id":  "exec-1",
+			"stdin":    false,
+			"warning":  "guest agent does not support ExecAttach; stdin disabled",
+		}),
+		mustResponse(t, map[string]any{
+			"done":     true,
+			"exitCode": 0,
+		}),
+	}
+	r := bufio.NewReader(strings.NewReader(strings.Join(frames, "\n") + "\n"))
+	var out, errOut bytes.Buffer
+	exit, err := pumpShellFrames(r, &out, &errOut)
+	if err != nil {
+		t.Fatalf("pumpShellFrames err = %v", err)
+	}
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+}
+
 // TestMapAttachErrorVariants covers the friendly-error rewriter for the
 // three named server-side error strings the dispatcher can return.
 func TestMapAttachErrorVariants(t *testing.T) {

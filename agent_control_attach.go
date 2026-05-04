@@ -9,9 +9,10 @@
 //
 //	agent-exec-attach  - Open ExecStreamControl with tty=true; pump
 //	                     ExecOutput frames back to the client. Stdin frames
-//	                     are accepted on the same connection but discarded
-//	                     in Slice 1 (matches the v0.2 limitation in
-//	                     linux_shell.go:6). Bidi stdin lands in Slice 3.
+//	                     are forwarded through ExecAttach when the guest
+//	                     agent advertises the v0.3 exec_attach feature.
+//	                     Older agents fall back to ExecStreamControl and
+//	                     read-only stdin.
 //	agent-exec-resize  - Forward {exec_id, cols, rows} to ResizeExec.
 //	agent-exec-signal  - Forward {exec_id, signal} to SignalExec.
 //
@@ -41,6 +42,8 @@ import (
 // handlers need. Defined as an interface so tests can substitute a fake
 // without standing up a connect-go server.
 type attachAgent interface {
+	ExecAttachSupported(ctx context.Context) (bool, error)
+	ExecAttachControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (agentstate.ExecAttachStream, error)
 	ExecStreamControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (agentstate.ExecStreamReceiver, error)
 	ResizeExec(ctx context.Context, execID string, rows, cols uint32) error
 	SignalExec(ctx context.Context, execID string, signal int32) error
@@ -72,8 +75,8 @@ type agentExecSignalRequest struct {
 }
 
 // agentExecStdinFrame is the inbound frame the client may send on the
-// attach connection. Slice 1 reads and discards these (stdin = /dev/null);
-// Slice 3 will pipe the bytes to the guest pty.
+// attach connection. In v0.3 it is forwarded to the guest through ExecAttach;
+// older agents fall back to read-only stdin.
 type agentExecStdinFrame struct {
 	Type   string `json:"type"`
 	ExecID string `json:"exec_id"`
@@ -84,7 +87,7 @@ type agentExecStdinFrame struct {
 // long-lived connection: it opens a tty=true exec stream against the agent
 // and pumps ExecOutput frames back to the client until the stream ends or
 // the client disconnects. Stdin frames from the client are read concurrently
-// and discarded in Slice 1.
+// and forwarded when the agent supports ExecAttach.
 func (s *ControlServer) handleAgentExecAttachConnection(conn net.Conn, raw []byte) {
 	a, err := s.getAgent()
 	if err != nil {
@@ -113,7 +116,27 @@ func (s *ControlServer) serveAgentExecAttach(conn net.Conn, raw []byte, a attach
 	ctx, cancel := context.WithCancel(s.lifecycleContext())
 	defer cancel()
 
-	stream, err := a.ExecStreamControl(ctx, req.ExecID, true, req.User, req.Args, req.Env, req.WorkingDir)
+	var (
+		stream      agentstate.ExecStreamReceiver
+		stdin       agentstate.ExecAttachStream
+		stdinOK     bool
+		warningText string
+		err         error
+	)
+	stdinOK, err = a.ExecAttachSupported(ctx)
+	if err != nil {
+		stdinOK = false
+		warningText = fmt.Sprintf("guest agent feature probe failed; stdin disabled: %v", err)
+	}
+	if stdinOK {
+		stdin, err = a.ExecAttachControl(ctx, req.ExecID, true, req.User, req.Args, req.Env, req.WorkingDir)
+		stream = stdin
+	} else {
+		stream, err = a.ExecStreamControl(ctx, req.ExecID, true, req.User, req.Args, req.Env, req.WorkingDir)
+		if warningText == "" {
+			warningText = "guest agent does not support ExecAttach; stdin disabled"
+		}
+	}
 	if err != nil {
 		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("exec attach: %v", err)})
 		return
@@ -124,15 +147,18 @@ func (s *ControlServer) serveAgentExecAttach(conn net.Conn, raw []byte, a attach
 	startPayload, _ := json.Marshal(map[string]any{
 		"attached": true,
 		"exec_id":  req.ExecID,
+		"stdin":    stdinOK,
+		"warning":  warningText,
 	})
 	if err := writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(startPayload)}); err != nil {
 		return
 	}
 
-	// Drain incoming stdin frames in the background. Slice 1 discards them;
-	// the goroutine exits when the connection closes or the parent ctx is
-	// cancelled (defer cancel() above runs after the recv loop returns).
-	go drainAttachStdin(ctx, conn)
+	if stdinOK {
+		go forwardAttachStdin(ctx, conn, req.ExecID, stdin)
+	} else {
+		go drainAttachStdin(ctx, conn)
+	}
 
 	var finalExitCode int32
 	for {
@@ -173,10 +199,9 @@ func (s *ControlServer) serveAgentExecAttach(conn net.Conn, raw []byte, a attach
 	writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(donePayload)})
 }
 
-// drainAttachStdin reads JSON-line frames from conn and discards anything
-// that isn't a recognized stdin frame. Slice 1 doesn't forward stdin to the
-// guest; this exists so a future client can already send frames without
-// breaking the protocol. Returns when ctx is done or conn closes.
+// drainAttachStdin reads JSON-line frames from conn and discards them. It is
+// used only when the guest agent is old enough that stdin must degrade to
+// read-only behavior.
 func drainAttachStdin(ctx context.Context, conn net.Conn) {
 	dec := json.NewDecoder(conn)
 	for {
@@ -190,6 +215,30 @@ func drainAttachStdin(ctx context.Context, conn net.Conn) {
 		// Slice 1: stdin discarded. Decoded only to confirm it parses so a
 		// malformed frame surfaces quickly during client development.
 		_ = frame
+	}
+}
+
+func forwardAttachStdin(ctx context.Context, conn net.Conn, execID string, stream agentstate.ExecAttachStream) {
+	defer stream.CloseStdin()
+	dec := json.NewDecoder(conn)
+	for {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		var frame agentExecStdinFrame
+		if err := dec.Decode(&frame); err != nil {
+			return
+		}
+		if frame.Type != "stdin" || frame.ExecID != execID || frame.Data == "" {
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(frame.Data)
+		if err != nil {
+			return
+		}
+		if err := stream.SendStdin(data); err != nil {
+			return
+		}
 	}
 }
 
