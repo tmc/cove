@@ -34,6 +34,31 @@ func stageMacOSVMForImage(t *testing.T, name string) string {
 	return dir
 }
 
+func stageLinuxVMForImage(t *testing.T, name string) string {
+	t.Helper()
+	dir := filepath.Join(vmconfig.BaseDir(), name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir vm: %v", err)
+	}
+	files := map[string][]byte{
+		"linux-disk.img":      []byte("linux-image-source-disk-bytes"),
+		"linux-machine.id":    []byte("LINUX-SRC-MACHINE-IDENTIFIER-OK"),
+		"vmlinuz":             []byte("kernel"),
+		"initrd":              []byte("initrd"),
+		linuxRootUUIDFileName: []byte("root=UUID=test\n"),
+	}
+	for n, b := range files {
+		if err := os.WriteFile(filepath.Join(dir, n), b, 0o644); err != nil {
+			t.Fatalf("write %s: %v", n, err)
+		}
+	}
+	cfg := &vmconfig.Config{Agent: &vmconfig.AgentConfig{Platform: "linux", Requested: true}}
+	if err := vmconfig.Save(dir, cfg); err != nil {
+		t.Fatalf("save linux config: %v", err)
+	}
+	return dir
+}
+
 func TestParseImageRef(t *testing.T) {
 	cases := []struct {
 		in       string
@@ -44,13 +69,17 @@ func TestParseImageRef(t *testing.T) {
 		{"foo", "foo", "latest", false},
 		{"foo:bar", "foo", "bar", false},
 		{"my-img:1.2.3", "my-img", "1.2.3", false},
+		{"agentkit/linux-base:v1", "agentkit/linux-base", "v1", false},
 		{"", "", "", true},
 		{":bar", "", "", true},
 		{"foo:", "", "", true},
 		{"a:b:c", "", "", true},
-		{"foo/bar:tag", "", "", true},
+		{"/foo:tag", "", "", true},
+		{"foo/:tag", "", "", true},
+		{"foo//bar:tag", "", "", true},
 		{"foo:bad tag", "", "", true},
 		{"..:tag", "", "", true},
+		{"agentkit/..:tag", "", "", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
@@ -152,7 +181,7 @@ func TestBuildImage_RefusesDuplicate(t *testing.T) {
 func TestListImages(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stageMacOSVMForImage(t, "src")
-	for _, tag := range []string{"a:1", "a:2", "b:1"} {
+	for _, tag := range []string{"a:1", "a:2", "agentkit/linux-base:latest", "b:1"} {
 		ref, _ := ParseImageRef(tag)
 		if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
 			t.Fatalf("BuildImage %s: %v", tag, err)
@@ -162,10 +191,10 @@ func TestListImages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListImages: %v", err)
 	}
-	if len(entries) != 3 {
-		t.Fatalf("ListImages returned %d entries, want 3", len(entries))
+	if len(entries) != 4 {
+		t.Fatalf("ListImages returned %d entries, want 4", len(entries))
 	}
-	want := []string{"a:1", "a:2", "b:1"}
+	want := []string{"a:1", "a:2", "agentkit/linux-base:latest", "b:1"}
 	for i, e := range entries {
 		if e.Ref.String() != want[i] {
 			t.Errorf("entries[%d] = %s, want %s", i, e.Ref, want[i])
@@ -173,6 +202,64 @@ func TestListImages(t *testing.T) {
 		if e.Manifest.DiskSize <= 0 {
 			t.Errorf("entries[%d].Manifest.DiskSize = %d, want > 0", i, e.Manifest.DiskSize)
 		}
+	}
+}
+
+func TestBuildImage_LinuxNamespacedAgentkitLayout(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageLinuxVMForImage(t, "linux-src")
+	ref, err := ParseImageRef("agentkit/linux-base:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	manifest, err := BuildImage(BuildImageOptions{SourceVM: "linux-src", Ref: ref})
+	if err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	if manifest.OSType != "Linux" {
+		t.Errorf("manifest.OSType = %q, want Linux", manifest.OSType)
+	}
+	if ref.Path() != filepath.Join(ImagesBaseDir(), "agentkit", "linux-base", "v1") {
+		t.Errorf("ref.Path = %q, want agentkit layout", ref.Path())
+	}
+	for _, name := range []string{"manifest.json", "linux-disk.img", "vmlinuz", "initrd", linuxRootUUIDFileName, "config.json"} {
+		if _, err := os.Stat(filepath.Join(ref.Path(), name)); err != nil {
+			t.Errorf("image missing %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(ref.Path(), "disk.img")); !os.IsNotExist(err) {
+		t.Errorf("linux image unexpectedly has disk.img: %v", err)
+	}
+}
+
+func TestMaterializeImage_LinuxImage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageLinuxVMForImage(t, "linux-src")
+	ref, _ := ParseImageRef("agentkit/linux-base:v1")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "linux-src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	childDir, err := MaterializeImage(MaterializeImageOptions{Ref: ref, ChildName: "linux-worker"})
+	if err != nil {
+		t.Fatalf("MaterializeImage: %v", err)
+	}
+	for _, name := range []string{"linux-disk.img", "vmlinuz", "initrd", linuxRootUUIDFileName, "config.json"} {
+		if _, err := os.Stat(filepath.Join(childDir, name)); err != nil {
+			t.Errorf("child missing %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(childDir, "linux-machine.id")); !os.IsNotExist(err) {
+		t.Errorf("linux-machine.id = %v, want absent before first boot", err)
+	}
+	cfg, err := vmconfig.Load(childDir)
+	if err != nil {
+		t.Fatalf("load child config: %v", err)
+	}
+	if cfg.ParentImage != "agentkit/linux-base:v1" {
+		t.Errorf("child ParentImage = %q, want agentkit/linux-base:v1", cfg.ParentImage)
+	}
+	if cfg.Agent == nil || cfg.Agent.Platform != "linux" {
+		t.Errorf("child agent config = %#v, want linux agent config", cfg.Agent)
 	}
 }
 

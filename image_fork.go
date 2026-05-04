@@ -45,6 +45,11 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if !ImageExists(ref) {
 		return fmt.Errorf("cove run -fork-from <image>: image %s not found", ref)
 	}
+	manifest, err := LoadImageManifest(ref)
+	if err != nil {
+		return fmt.Errorf("cove run -fork-from <image>: %w", err)
+	}
+	cfg = runConfigForImageManifest(cfg, manifest)
 
 	childPath, err := MaterializeImage(MaterializeImageOptions{
 		Ref:       ref,
@@ -102,4 +107,19 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		fmt.Printf("Ephemeral image fork removed: %s\n", childName)
 	}
 	return runErr
+}
+
+func runConfigForImageManifest(cfg RunConfig, manifest *ImageManifest) RunConfig {
+	if manifest == nil {
+		return cfg
+	}
+	switch manifest.OSType {
+	case "Linux":
+		cfg.Linux = true
+		cfg.Windows = false
+	case "Windows":
+		cfg.Windows = true
+		cfg.Linux = false
+	}
+	return cfg
 }
