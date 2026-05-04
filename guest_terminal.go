@@ -85,7 +85,9 @@ func linuxTerminalLaunchArgs(session linuxGraphicalSession, program string, comm
 	args = append(args, session.Env...)
 	args = append(args, program)
 	switch program {
-	case "gnome-terminal", "kgx":
+	case "gnome-terminal":
+		args = append(args, "--window", "--")
+	case "kgx":
 		args = append(args, "--")
 	default:
 		args = append(args, "-e")

@@ -78,7 +78,7 @@ func TestLinuxTerminalLaunchArgsWayland(t *testing.T) {
 		"XDG_RUNTIME_DIR=/run/user/1000",
 		"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
 		"WAYLAND_DISPLAY=wayland-0",
-		"gnome-terminal", "--", "bash", "-lc", "'bash' '-c' 'echo COVE_T1_LIVE_OK; sleep 30'",
+		"gnome-terminal", "--window", "--", "bash", "-lc", "'bash' '-c' 'echo COVE_T1_LIVE_OK; sleep 30'",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("linuxTerminalLaunchArgs() = %#v, want %#v", got, want)
