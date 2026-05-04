@@ -24,6 +24,7 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 - [Quick Start](getting-started/quickstart.md) -- three paths to a running VM
 - [CLI Reference](reference/cli.md) -- every command and flag
 - [VZScript Commands](reference/vzscript-commands.md) -- guest agent and OCR automation
+- [Shared Folders Reference](reference/shared-folders.md) -- persist-vs-live VirtioFS behavior
 - [Control Socket API](reference/control-api.md) -- programmatic VM control
 - [License and Virtualization Limits](reference/license-comparison.md) -- Apple SLA and project-license comparison
 - [Release Checklist](reference/release-checklist.md) -- pre-tag and publish gates

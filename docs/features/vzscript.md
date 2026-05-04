@@ -64,7 +64,9 @@ Scripts can declare host directories to mount via VirtioFS:
 # mount: /data ro
 ```
 
-Paths support `~/` expansion. Mounts are registered as shared folders, hot-plugged into the running VM, and mounted in the guest automatically.
+Paths support `~/` expansion. Mounts are registered as shared folders and apply
+when the VM boots with the corresponding VirtioFS device. Live hot-add is not
+currently supported.
 
 ## Run Mode
 

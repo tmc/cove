@@ -31,6 +31,7 @@ Manage shared folders for the active VM:
 ```bash
 cove shared-folder list                    # list configured folders
 cove shared-folder status                  # check mount status
+cove shared-folder pending                 # list saved folders not mounted now
 cove shared-folder add ~/newdir            # add a folder
 cove shared-folder add ~/newdir mytag rw   # add with tag and mode
 cove shared-folder remove mytag            # remove by tag or path
@@ -38,15 +39,14 @@ cove shared-folder clear                   # remove all folders
 cove shared-folder mount                   # mount in guest via agent
 ```
 
-## Hot-Add to Running VM
+## Persisted Configuration
 
-Apply shared folder changes to a running VM:
+`cove shared-folder add` persists the folder in the VM configuration and applies
+it on the next boot. VirtioFS devices must be present when the VM starts; cove
+does not currently live hot-add a new VirtioFS device to an already-running VM.
 
-```bash
-cove ctl shared-folders-apply
-```
-
-This reloads `shared_folders.json` into the running VM. The guest agent auto-mounts tagged volumes if `-auto-mount-volumes` is enabled (default: true).
+Use `cove shared-folder pending` to see configured folders that are not mounted
+in the running guest.
 
 ## VZScript Host Mounts
 
@@ -57,7 +57,8 @@ VZScript recipes can declare host directories:
 # mount: /data ro
 ```
 
-These are registered as shared folders and mounted automatically when the script runs.
+These are registered as shared folders and mounted when the VM boots with the
+corresponding VirtioFS device.
 
 ## Limitations
 
