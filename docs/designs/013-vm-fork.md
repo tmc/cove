@@ -243,6 +243,8 @@ fork to child, boot child to login window, snapshot diff.
 Stop after any phase if the validation fails; phases 1-2 are useful on their
 own.
 
+Audit 2026-05-04: clean for abandoned preserve-identity stubs in `run_bundle.go`, `image_fork.go`, and `runtime_lifecycle.go`; A1 identity preservation remains deferred per the Phase 2 bench notes and `project_a1_snapshot_fidelity` finding referenced by design 024.
+
 ## What this replaces / consolidates
 
 - `clone.go` becomes `cove fork` under the hood.
