@@ -120,3 +120,17 @@ func TestEnsurePrivateRegistryPush(t *testing.T) {
 		})
 	}
 }
+
+func TestRunImagePushRefusesPublicRegistry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("COVE_ALLOW_PUBLIC_PUSH", "")
+	ref := buildSampleImage(t, "src", "public:v1")
+
+	err := runImagePush([]string{ref.String(), "ghcr.io/acme/vm:v1"})
+	if err == nil {
+		t.Fatal("runImagePush succeeded; want public registry refusal")
+	}
+	if !strings.Contains(err.Error(), "refusing public registry ghcr.io") {
+		t.Fatalf("error = %q, want ghcr public registry refusal", err)
+	}
+}
