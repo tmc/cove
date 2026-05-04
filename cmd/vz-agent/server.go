@@ -355,7 +355,7 @@ func newExecCommand(ctx context.Context, r *pb.ExecRequest) (*exec.Cmd, error) {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("set user: %v", err))
 		}
 	}
-	if r.GetExecId() != "" {
+	if r.GetExecId() != "" && !r.GetTty() {
 		configureProcessGroup(cmd)
 	}
 	if r.Stdin != nil {

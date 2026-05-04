@@ -40,6 +40,20 @@ func TestNewExecCommandWithExecIDCreatesProcessGroup(t *testing.T) {
 	}
 }
 
+func TestNewExecCommandTTYWithExecIDLeavesPTYSessionAttrs(t *testing.T) {
+	cmd, err := newExecCommand(context.Background(), &pb.ExecRequest{
+		Args:   []string{"/usr/bin/true"},
+		ExecId: "exec-1",
+		Tty:    true,
+	})
+	if err != nil {
+		t.Fatalf("newExecCommand: %v", err)
+	}
+	if cmd.SysProcAttr != nil && cmd.SysProcAttr.Setpgid {
+		t.Fatalf("SysProcAttr.Setpgid = true for tty exec; pty.Start owns session setup")
+	}
+}
+
 func TestInfoAdvertisesExecAttach(t *testing.T) {
 	s := newAgentServer()
 	resp, err := s.Info(context.Background(), connect.NewRequest(&pb.InfoRequest{}))
