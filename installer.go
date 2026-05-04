@@ -1394,7 +1394,7 @@ func createGraphicsDeviceConfiguration() (vz.VZMacGraphicsDeviceConfiguration, e
 // createBlockDeviceConfiguration creates disk storage configuration.
 func createBlockDeviceConfiguration(ctx context.Context, diskPath string) (vz.VZVirtioBlockDeviceConfiguration, error) {
 	// Create disk if needed
-	if err := createDiskImage(diskPath, diskSizeGB); err != nil {
+	if err := createInstallDiskImage(diskPath, diskSizeGB); err != nil {
 		if !os.IsExist(err) {
 			return vz.VZVirtioBlockDeviceConfiguration{}, err
 		}

@@ -61,6 +61,21 @@ func TestCreateDiskImageBytesExistingIsNoop(t *testing.T) {
 	}
 }
 
+func TestCreateInstallDiskImageHonorsRawDiskFlag(t *testing.T) {
+	old := rawDisk
+	defer func() { rawDisk = old }()
+
+	rawDisk = true
+	path := filepath.Join(t.TempDir(), "disk.img")
+	if err := createInstallDiskImageBytes(path, 16*1024*1024); err != nil {
+		t.Fatalf("createInstallDiskImage: %v", err)
+	}
+	blocks := allocatedBlocks(t, path)
+	if blocks == 0 {
+		t.Fatalf("allocated blocks = 0, want raw preallocation")
+	}
+}
+
 func allocatedBlocks(t *testing.T, path string) int64 {
 	t.Helper()
 	var st syscall.Stat_t

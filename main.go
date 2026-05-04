@@ -46,6 +46,7 @@ var (
 	memoryGB              uint64
 	diskPath              string
 	diskSizeGB            uint64
+	rawDisk               bool
 	ipswPath              string
 	vmDir                 string
 	// Linux-specific flags
@@ -194,6 +195,7 @@ func init() {
 	flag.Uint64Var(&memoryGB, "memory", 4, "memory in GB")
 	flag.StringVar(&diskPath, "disk", "", "path to disk image")
 	flag.Uint64Var(&diskSizeGB, "disk-size", 64, "disk size in GB for new disk images")
+	flag.BoolVar(&rawDisk, "raw-disk", false, "preallocate new install disk images")
 	flag.StringVar(&ipswPath, "ipsw", "", "path to IPSW restore image")
 	flag.StringVar(&vmDir, "vm-dir", "", "directory for VM files (default: ~/.vz/vms/)")
 	// Linux-specific flags
@@ -967,6 +969,9 @@ func printCommandDefaults(w *os.File, fs *flag.FlagSet) {
 			return
 		}
 		if f.Name == "nvme" {
+			return
+		}
+		if f.Name == "raw-disk" {
 			return
 		}
 		fmt.Fprintf(w, "  -%s", f.Name)

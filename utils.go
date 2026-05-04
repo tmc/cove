@@ -37,6 +37,18 @@ func createDiskImage(path string, sizeGB uint64) error {
 	return createSparseDiskImageBytes(path, sizeBytes)
 }
 
+func createInstallDiskImage(path string, sizeGB uint64) error {
+	sizeBytes := int64(sizeGB) * 1024 * 1024 * 1024
+	return createInstallDiskImageBytes(path, sizeBytes)
+}
+
+func createInstallDiskImageBytes(path string, sizeBytes int64) error {
+	if rawDisk {
+		return createRawDiskImageBytes(path, sizeBytes)
+	}
+	return createSparseDiskImageBytes(path, sizeBytes)
+}
+
 func createSparseDiskImageBytes(path string, sizeBytes int64) error {
 	if err := checkDiskSpace(filepath.Dir(path), sizeBytes); err != nil {
 		return err
