@@ -95,6 +95,7 @@ func (s *agentServer) Info(ctx context.Context, _ *connect.Request[pb.InfoReques
 	resp.AgentCommit = c
 	resp.AgentBuildDate = d
 	resp.AgentSha256 = selfSHA256()
+	resp.Features = []string{"exec_attach"}
 
 	return connect.NewResponse(resp), nil
 }
@@ -161,6 +162,64 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 	}
 	s.trackExec(r, cmd)
 	defer s.untrackExec(r.GetExecId())
+
+	done := make(chan error, 2)
+	go streamPipe(stream, stdoutPipe, pb.ExecOutput_STDOUT, done)
+	go streamPipe(stream, stderrPipe, pb.ExecOutput_STDERR, done)
+	<-done
+	<-done
+
+	exitCode := int32(0)
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = int32(exitErr.ExitCode())
+		}
+	}
+	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
+}
+
+func (s *agentServer) ExecAttach(ctx context.Context, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecOutput]) error {
+	first, err := stream.Receive()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("first message must be start"))
+		}
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("receive start: %v", err))
+	}
+	r := first.GetStart()
+	if r == nil {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("first message must be start"))
+	}
+	cmd, err := newExecCommand(ctx, r)
+	if err != nil {
+		return err
+	}
+	if r.GetTty() {
+		return s.execAttachPTY(r, cmd, stream)
+	}
+	return s.execAttachPipes(r, cmd, stream)
+}
+
+func (s *agentServer) execAttachPipes(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecOutput]) error {
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("stdin pipe: %v", err))
+	}
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("stdout pipe: %v", err))
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("stderr pipe: %v", err))
+	}
+	if err := cmd.Start(); err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("start: %v", err))
+	}
+	s.trackExec(r, cmd)
+	defer s.untrackExec(r.GetExecId())
+
+	go receiveExecAttachStdin(stream, stdinPipe)
 
 	done := make(chan error, 2)
 	go streamPipe(stream, stdoutPipe, pb.ExecOutput_STDOUT, done)
@@ -305,7 +364,11 @@ func newExecCommand(ctx context.Context, r *pb.ExecRequest) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-func streamPipe(stream *connect.ServerStream[pb.ExecOutput], pipe io.ReadCloser, which pb.ExecOutput_Stream, done chan<- error) {
+type execOutputSender interface {
+	Send(*pb.ExecOutput) error
+}
+
+func streamPipe(stream execOutputSender, pipe io.ReadCloser, which pb.ExecOutput_Stream, done chan<- error) {
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := pipe.Read(buf)
@@ -320,6 +383,27 @@ func streamPipe(stream *connect.ServerStream[pb.ExecOutput], pipe io.ReadCloser,
 		}
 		if err != nil {
 			done <- err
+			return
+		}
+	}
+}
+
+type execAttachReceiver interface {
+	Receive() (*pb.ExecAttachRequest, error)
+}
+
+func receiveExecAttachStdin(stream execAttachReceiver, dst io.WriteCloser) {
+	defer dst.Close()
+	for {
+		req, err := stream.Receive()
+		if err != nil {
+			return
+		}
+		data := req.GetStdin()
+		if len(data) == 0 {
+			continue
+		}
+		if _, err := dst.Write(data); err != nil {
 			return
 		}
 	}

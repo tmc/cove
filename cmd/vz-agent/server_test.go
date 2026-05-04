@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"strings"
 	"syscall"
 	"testing"
@@ -36,6 +37,32 @@ func TestNewExecCommandWithExecIDCreatesProcessGroup(t *testing.T) {
 	}
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		t.Fatalf("SysProcAttr.Setpgid = false, want true")
+	}
+}
+
+func TestInfoAdvertisesExecAttach(t *testing.T) {
+	s := newAgentServer()
+	resp, err := s.Info(context.Background(), connect.NewRequest(&pb.InfoRequest{}))
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if !containsString(resp.Msg.GetFeatures(), "exec_attach") {
+		t.Fatalf("features = %v, want exec_attach", resp.Msg.GetFeatures())
+	}
+}
+
+func TestReceiveExecAttachStdinWritesFrames(t *testing.T) {
+	stream := &fakeExecAttachReceiver{reqs: []*pb.ExecAttachRequest{
+		{Request: &pb.ExecAttachRequest_Stdin{Stdin: []byte("hello")}},
+		{Request: &pb.ExecAttachRequest_Stdin{Stdin: []byte(" world")}},
+	}}
+	dst := &recordWriteCloser{}
+	receiveExecAttachStdin(stream, dst)
+	if got, want := dst.String(), "hello world"; got != want {
+		t.Fatalf("stdin writes = %q, want %q", got, want)
+	}
+	if !dst.closed {
+		t.Fatal("stdin destination was not closed")
 	}
 }
 
@@ -101,4 +128,36 @@ func TestResizeExecTTYAppliesWinsize(t *testing.T) {
 	if got.Row != wantRows || got.Col != wantCols {
 		t.Fatalf("winsize after resize = %dx%d, want %dx%d", got.Row, got.Col, wantRows, wantCols)
 	}
+}
+
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+type fakeExecAttachReceiver struct {
+	reqs []*pb.ExecAttachRequest
+}
+
+func (f *fakeExecAttachReceiver) Receive() (*pb.ExecAttachRequest, error) {
+	if len(f.reqs) == 0 {
+		return nil, io.EOF
+	}
+	req := f.reqs[0]
+	f.reqs = f.reqs[1:]
+	return req, nil
+}
+
+type recordWriteCloser struct {
+	strings.Builder
+	closed bool
+}
+
+func (r *recordWriteCloser) Close() error {
+	r.closed = true
+	return nil
 }
