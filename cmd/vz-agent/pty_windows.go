@@ -12,3 +12,7 @@ import (
 func (s *agentServer) execStreamPTY(*pb.ExecRequest, *exec.Cmd, *connect.ServerStream[pb.ExecOutput]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("tty exec unsupported on windows"))
 }
+
+func (s *agentServer) execAttachPTY(*pb.ExecRequest, *exec.Cmd, *connect.BidiStream[pb.ExecAttachRequest, pb.ExecOutput]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("tty exec unsupported on windows"))
+}
