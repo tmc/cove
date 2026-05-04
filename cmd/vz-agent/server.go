@@ -9,17 +9,13 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/creack/pty"
-	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/tmc/vz-macos/proto/agentpb"
@@ -85,10 +81,9 @@ func (s *agentServer) Info(ctx context.Context, _ *connect.Request[pb.InfoReques
 	resp.LoadAvg_15 = si.LoadAvg15
 	resp.UptimeSeconds = si.UptimeSeconds
 
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs("/", &stat); err == nil {
-		resp.DiskTotal = stat.Blocks * uint64(stat.Bsize)
-		resp.DiskAvailable = stat.Bavail * uint64(stat.Bsize)
+	if total, available, err := statFilesystem("/"); err == nil {
+		resp.DiskTotal = total
+		resp.DiskAvailable = available
 	}
 
 	if users, err := listLocalUsers(ctx); err == nil {
@@ -182,34 +177,6 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
 }
 
-// execStreamPTY runs cmd attached to a freshly allocated pseudo-terminal and
-// forwards the master side into stream as STDOUT chunks. The kernel folds
-// child stderr into the same pty, so a separate stderr stream is unnecessary.
-// The PTY master fd is recorded in activeExec.ttyFD so ResizeExecTTY can
-// issue TIOCSWINSZ against it; the master *os.File is closed by untrackExec.
-func (s *agentServer) execStreamPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.ServerStream[pb.ExecOutput]) error {
-	ptmx, err := pty.Start(cmd)
-	if err != nil {
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("pty start: %v", err))
-	}
-	s.trackExecWithPty(r, cmd, ptmx)
-	defer s.untrackExec(r.GetExecId())
-
-	done := make(chan error, 1)
-	go streamPipe(stream, ptmx, pb.ExecOutput_STDOUT, done)
-
-	exitCode := int32(0)
-	if err := cmd.Wait(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = int32(exitErr.ExitCode())
-		}
-	}
-	// Closing the master from untrackExec causes the pipe reader to return
-	// EOF/EIO; either is fine — we just need to drain it before returning.
-	<-done
-	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
-}
-
 func (s *agentServer) ResizeExecTTY(_ context.Context, req *connect.Request[pb.ResizeExecTTYRequest]) (*connect.Response[pb.ResizeExecTTYResponse], error) {
 	r := req.Msg
 	if r.GetExecId() == "" {
@@ -225,8 +192,7 @@ func (s *agentServer) ResizeExecTTY(_ context.Context, req *connect.Request[pb.R
 	if !exec.tty || exec.ttyFD < 0 {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("exec has no tty"))
 	}
-	ws := &unix.Winsize{Row: uint16(r.GetRows()), Col: uint16(r.GetCols())}
-	if err := unix.IoctlSetWinsize(exec.ttyFD, unix.TIOCSWINSZ, ws); err != nil {
+	if err := resizeTTY(exec.ttyFD, r.GetRows(), r.GetCols()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resize tty: %v", err))
 	}
 	return connect.NewResponse(&pb.ResizeExecTTYResponse{}), nil
@@ -244,7 +210,7 @@ func (s *agentServer) SignalExec(_ context.Context, req *connect.Request[pb.Sign
 	if !ok {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("exec not found"))
 	}
-	if err := syscall.Kill(-exec.pid, syscall.Signal(r.GetSignal())); err != nil {
+	if err := signalExec(exec.pid, r.GetSignal()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("signal exec: %v", err))
 	}
 	return connect.NewResponse(&pb.SignalExecResponse{}), nil
@@ -258,8 +224,7 @@ func (s *agentServer) SetTime(_ context.Context, req *connect.Request[pb.SetTime
 	if err := ts.CheckValid(); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid time: %v", err))
 	}
-	tv := unix.NsecToTimeval(ts.AsTime().UnixNano())
-	if err := unix.Settimeofday(&tv); err != nil {
+	if err := setSystemTime(ts.AsTime()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("set time: %v", err))
 	}
 	return connect.NewResponse(&pb.SetTimeResponse{}), nil
@@ -311,15 +276,6 @@ func (s *agentServer) lookupExec(execID string) (*activeExec, bool) {
 	return exec, ok
 }
 
-func allowedExecSignal(sig int32) bool {
-	switch sig {
-	case int32(syscall.SIGINT), int32(syscall.SIGTERM), int32(syscall.SIGKILL):
-		return true
-	default:
-		return false
-	}
-}
-
 func newExecCommand(ctx context.Context, r *pb.ExecRequest) (*exec.Cmd, error) {
 	if len(r.Args) == 0 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("args required"))
@@ -341,7 +297,7 @@ func newExecCommand(ctx context.Context, r *pb.ExecRequest) (*exec.Cmd, error) {
 		}
 	}
 	if r.GetExecId() != "" {
-		ensureSysProcAttr(cmd).Setpgid = true
+		configureProcessGroup(cmd)
 	}
 	if r.Stdin != nil {
 		cmd.Stdin = bytes.NewReader(r.Stdin)
@@ -603,26 +559,4 @@ func (s *agentServer) Reboot(_ context.Context, _ *connect.Request[pb.RebootRequ
 		exec.Command("shutdown", "-r", "now").Run()
 	}()
 	return connect.NewResponse(&pb.RebootResponse{}), nil
-}
-
-func setUser(cmd *exec.Cmd, username string) error {
-	u, err := user.Lookup(username)
-	if err != nil {
-		return fmt.Errorf("lookup user %q: %w", username, err)
-	}
-	var uid, gid uint32
-	fmt.Sscanf(u.Uid, "%d", &uid)
-	fmt.Sscanf(u.Gid, "%d", &gid)
-	ensureSysProcAttr(cmd).Credential = &syscall.Credential{
-		Uid: uid,
-		Gid: gid,
-	}
-	return nil
-}
-
-func ensureSysProcAttr(cmd *exec.Cmd) *syscall.SysProcAttr {
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	return cmd.SysProcAttr
 }

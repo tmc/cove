@@ -5,8 +5,7 @@
 //   - daemon (default, port 1024): runs as root LaunchDaemon, system ops
 //   - agent (port 1025): runs as logged-in user LaunchAgent, inherits TCC/FDA
 //
-// Platform-specific vsock listener is in vsock_darwin.go / vsock_linux.go.
-// Platform-specific system info is in info_darwin.go / info_linux.go.
+// Platform-specific listeners and system info live in OS-specific files.
 package main
 
 import (
@@ -44,6 +43,7 @@ const (
 func main() {
 	mode := flag.String("mode", "", "run mode: daemon (root, port 1024) or agent (user, port 1025)")
 	port := flag.Int("port", 0, "vsock port to listen on (overrides mode default)")
+	tcpListen := flag.String("tcp-listen", os.Getenv("VZ_AGENT_TCP_LISTEN"), "TCP address to listen on (windows default :port)")
 	showVersion := flag.Bool("version", false, "print version information")
 	var relays relaySpecs
 	flag.Var(&relays, "relay", "TCP relay: vsockPort:tcpAddr (e.g. 2222:localhost:22)")
@@ -82,9 +82,9 @@ func main() {
 		slog.Int("port", *port),
 	)
 
-	lis, err := listenVsock(uint32(*port))
+	lis, err := listenAgent(uint32(*port), *tcpListen)
 	if err != nil {
-		slog.Error("listen vsock", slog.Any("err", err))
+		slog.Error("listen", slog.Any("err", err))
 		os.Exit(1)
 	}
 	defer lis.Close()
@@ -128,7 +128,11 @@ func main() {
 		}
 	}
 
-	slog.Info("listening", slog.Int("port", *port))
+	slog.Info("listening",
+		slog.Int("port", *port),
+		slog.String("addr", lis.Addr().String()),
+		slog.String("network", lis.Addr().Network()),
+	)
 	if err := srv.Serve(lis); err != nil && err != http.ErrServerClosed {
 		slog.Error("serve", slog.Any("err", err))
 		os.Exit(1)
