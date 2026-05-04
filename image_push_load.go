@@ -217,6 +217,27 @@ func runImageLoad(args []string) error {
 	return nil
 }
 
+func runImagePull(args []string) error {
+	fs := flag.NewFlagSet("image pull", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	tag := fs.String("tag", "", "override image ref on pull (name[:tag])")
+	force := fs.Bool("force", false, "overwrite if image already exists")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return fmt.Errorf("image pull requires <registry/ref:tag>")
+	}
+	ref, desc, err := PullImageFromRegistry(context.Background(), fs.Arg(0), *tag, *force)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Pulled image %s from %s\n", ref, fs.Arg(0))
+	fmt.Printf("  digest: %s\n", desc.Digest)
+	return nil
+}
+
 // LoadImageFromFile extracts a tarball into the local image store and
 // returns the ref under which the image was registered. The first tar
 // entry must be manifest.json; the embedded name+tag (or overrideTag)

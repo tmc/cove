@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -132,5 +134,66 @@ func TestRunImagePushRefusesPublicRegistry(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "refusing public registry ghcr.io") {
 		t.Fatalf("error = %q, want ghcr public registry refusal", err)
+	}
+}
+
+func TestPullImageFromTargetRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	src := buildSampleImage(t, "src", "pullsrc:v1")
+	store := memory.New()
+	if _, err := PushImageToTarget(context.Background(), src, store, "pull-v1"); err != nil {
+		t.Fatalf("PushImageToTarget: %v", err)
+	}
+
+	originals := map[string][]byte{}
+	for _, name := range append([]string{"manifest.json"}, imageDataFiles...) {
+		b, err := os.ReadFile(filepath.Join(src.Path(), name))
+		if err != nil {
+			t.Fatalf("read original %s: %v", name, err)
+		}
+		originals[name] = b
+	}
+	if err := os.RemoveAll(src.Path()); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+
+	got, _, err := PullImageFromTarget(context.Background(), store, "pull-v1", "", false)
+	if err != nil {
+		t.Fatalf("PullImageFromTarget: %v", err)
+	}
+	if got.String() != src.String() {
+		t.Fatalf("pulled ref = %s, want %s", got, src)
+	}
+	for name, want := range originals {
+		gotBytes, err := os.ReadFile(filepath.Join(got.Path(), name))
+		if err != nil {
+			t.Fatalf("read pulled %s: %v", name, err)
+		}
+		if string(gotBytes) != string(want) {
+			t.Fatalf("%s differs after pull", name)
+		}
+	}
+}
+
+func TestPullImageFromTargetRenameAndDuplicate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	src := buildSampleImage(t, "src", "pullrename:v1")
+	store := memory.New()
+	if _, err := PushImageToTarget(context.Background(), src, store, "pull-rename"); err != nil {
+		t.Fatalf("PushImageToTarget: %v", err)
+	}
+
+	renamed, _, err := PullImageFromTarget(context.Background(), store, "pull-rename", "renamed:v2", false)
+	if err != nil {
+		t.Fatalf("PullImageFromTarget rename: %v", err)
+	}
+	if renamed.String() != "renamed:v2" {
+		t.Fatalf("renamed ref = %s, want renamed:v2", renamed)
+	}
+	if _, _, err := PullImageFromTarget(context.Background(), store, "pull-rename", "renamed:v2", false); err == nil {
+		t.Fatal("PullImageFromTarget duplicate succeeded; want error")
+	}
+	if _, _, err := PullImageFromTarget(context.Background(), store, "pull-rename", "renamed:v2", true); err != nil {
+		t.Fatalf("PullImageFromTarget force: %v", err)
 	}
 }

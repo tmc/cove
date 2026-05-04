@@ -114,6 +114,22 @@ func PushImageToRegistry(ctx context.Context, ref ImageRef, dst string) (ocispec
 	return PushImageToTarget(ctx, ref, repo, remoteRef.Reference.ReferenceOrDefault())
 }
 
+func PullImageFromRegistry(ctx context.Context, src, overrideTag string, force bool) (ImageRef, ocispec.Descriptor, error) {
+	remoteRef, err := parseRegistryImageRef(src)
+	if err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, err
+	}
+	repo, err := newImageRepository(remoteRef)
+	if err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, err
+	}
+	ref, desc, err := PullImageFromTarget(ctx, repo, remoteRef.Reference.ReferenceOrDefault(), overrideTag, force)
+	if err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, err
+	}
+	return ref, desc, nil
+}
+
 func PushImageToTarget(ctx context.Context, ref ImageRef, target oras.Target, targetRef string) (ocispec.Descriptor, error) {
 	if !ImageExists(ref) {
 		return ocispec.Descriptor{}, fmt.Errorf("image push: %s not found in store", ref)
@@ -170,6 +186,117 @@ func PushImageToTarget(ctx context.Context, ref ImageRef, target oras.Target, ta
 		return ocispec.Descriptor{}, fmt.Errorf("image push: tag %s: %w", targetRef, err)
 	}
 	return root, nil
+}
+
+func PullImageFromTarget(ctx context.Context, target oras.ReadOnlyTarget, srcRef, overrideTag string, force bool) (ImageRef, ocispec.Descriptor, error) {
+	if srcRef == "" {
+		return ImageRef{}, ocispec.Descriptor{}, errors.New("image pull: source ref required")
+	}
+	root, err := target.Resolve(ctx, srcRef)
+	if err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: resolve %s: %w", srcRef, err)
+	}
+	manifestBytes, err := content.FetchAll(ctx, target, root)
+	if err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: fetch oci manifest: %w", err)
+	}
+	var ociManifest ocispec.Manifest
+	if err := json.Unmarshal(manifestBytes, &ociManifest); err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: parse oci manifest: %w", err)
+	}
+	if ociManifest.ArtifactType != coveImageArtifactType {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: artifact type %q is not %q", ociManifest.ArtifactType, coveImageArtifactType)
+	}
+	if ociManifest.Config.MediaType != coveImageConfigType {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: config media type %q is not %q", ociManifest.Config.MediaType, coveImageConfigType)
+	}
+	configBytes, err := content.FetchAll(ctx, target, ociManifest.Config)
+	if err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: fetch image metadata: %w", err)
+	}
+	var m ImageManifest
+	if err := json.Unmarshal(configBytes, &m); err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: parse image metadata: %w", err)
+	}
+
+	refSpec := m.Name + ":" + m.Tag
+	if overrideTag != "" {
+		refSpec = overrideTag
+	}
+	ref, err := ParseImageRef(refSpec)
+	if err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: invalid ref %q: %w", refSpec, err)
+	}
+	if ImageExists(ref) && !force {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: %s already exists (use -force to overwrite)", ref)
+	}
+
+	dstDir := ref.Path()
+	tmpDir := dstDir + ".tmp"
+	if err := os.RemoveAll(tmpDir); err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: clear staging: %w", err)
+	}
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: mkdir staging: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			os.RemoveAll(tmpDir)
+		}
+	}()
+
+	m.Name = ref.Name
+	m.Tag = ref.Tag
+	manifestOut, err := json.MarshalIndent(&m, "", "  ")
+	if err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: marshal image metadata: %w", err)
+	}
+	manifestOut = append(manifestOut, '\n')
+	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), manifestOut, 0o644); err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: write manifest: %w", err)
+	}
+
+	needed := map[string]bool{}
+	for _, name := range imageDataFiles {
+		needed[name] = true
+	}
+	for _, layer := range ociManifest.Layers {
+		title := layer.Annotations[ociTitleAnnotation]
+		switch {
+		case layer.MediaType == coveImageDiskType || title == "disk.img.gz":
+			if err := fetchCompressedDiskLayer(ctx, target, layer, filepath.Join(tmpDir, "disk.img")); err != nil {
+				return ImageRef{}, ocispec.Descriptor{}, err
+			}
+			delete(needed, "disk.img")
+		case needed[title]:
+			if err := fetchLayerFile(ctx, target, layer, filepath.Join(tmpDir, title), title); err != nil {
+				return ImageRef{}, ocispec.Descriptor{}, err
+			}
+			delete(needed, title)
+		}
+	}
+	if len(needed) > 0 {
+		missing := make([]string, 0, len(needed))
+		for name := range needed {
+			missing = append(missing, name)
+		}
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: oci artifact missing required files: %s", strings.Join(missing, ", "))
+	}
+
+	if force && ImageExists(ref) {
+		if err := os.RemoveAll(dstDir); err != nil {
+			return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: remove existing: %w", err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(dstDir), 0o755); err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: mkdir parent: %w", err)
+	}
+	if err := os.Rename(tmpDir, dstDir); err != nil {
+		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: rename: %w", err)
+	}
+	committed = true
+	return ref, root, nil
 }
 
 func pushCompressedDisk(ctx context.Context, target oras.Target, path string) (ocispec.Descriptor, func(), error) {
@@ -235,6 +362,51 @@ func pushImageFile(ctx context.Context, target oras.Target, path, title, mediaTy
 func pushTargetBlob(ctx context.Context, target oras.Target, desc ocispec.Descriptor, r io.Reader) error {
 	if err := target.Push(ctx, desc, r); err != nil && !errors.Is(err, errdef.ErrAlreadyExists) {
 		return err
+	}
+	return nil
+}
+
+func fetchCompressedDiskLayer(ctx context.Context, target oras.ReadOnlyTarget, layer ocispec.Descriptor, dst string) error {
+	rc, err := target.Fetch(ctx, layer)
+	if err != nil {
+		return fmt.Errorf("image pull: fetch disk.img.gz: %w", err)
+	}
+	defer rc.Close()
+	gz, err := gzip.NewReader(rc)
+	if err != nil {
+		return fmt.Errorf("image pull: gzip disk.img: %w", err)
+	}
+	defer gz.Close()
+	return writePulledLayer(dst, "disk.img", gz)
+}
+
+func fetchLayerFile(ctx context.Context, target oras.ReadOnlyTarget, layer ocispec.Descriptor, dst, title string) error {
+	rc, err := target.Fetch(ctx, layer)
+	if err != nil {
+		return fmt.Errorf("image pull: fetch %s: %w", title, err)
+	}
+	defer rc.Close()
+	return writePulledLayer(dst, title, rc)
+}
+
+func writePulledLayer(dst, title string, r io.Reader) error {
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("image pull: open %s: %w", title, err)
+	}
+	if _, err := io.Copy(out, io.LimitReader(r, imageEntryMaxBytes+1)); err != nil {
+		out.Close()
+		return fmt.Errorf("image pull: write %s: %w", title, err)
+	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("image pull: close %s: %w", title, err)
+	}
+	st, err := os.Stat(dst)
+	if err != nil {
+		return fmt.Errorf("image pull: stat %s: %w", title, err)
+	}
+	if st.Size() > imageEntryMaxBytes {
+		return fmt.Errorf("image pull: %s exceeds %d byte cap", title, imageEntryMaxBytes)
 	}
 	return nil
 }

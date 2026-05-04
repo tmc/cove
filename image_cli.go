@@ -29,6 +29,8 @@ func handleImageCommand(args []string) error {
 		return runImageRm(rest)
 	case "push":
 		return runImagePush(rest)
+	case "pull":
+		return runImagePull(rest)
 	case "load":
 		return runImageLoad(rest)
 	default:
@@ -48,6 +50,7 @@ Subcommands:
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
   push <name[:tag]> <file> [-gzip]     Tar an image dir to a single file
   push <name[:tag]> <registry/ref:tag> Push an image to a private OCI registry
+  pull <registry/ref:tag> [-tag <name[:tag]>] [-force]  Pull an image from an OCI registry
   load <file> [-tag <name[:tag]>] [-force]  Extract a tarball into the image store
 
 Examples:
