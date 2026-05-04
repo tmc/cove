@@ -341,6 +341,17 @@ func TestRunVZScriptWithDeps_LocalScripts(t *testing.T) {
 	}
 }
 
+func TestRunVZScriptWithDepsGuestOSRefusal(t *testing.T) {
+	err := runVZScriptWithDeps([]string{"homebrew"}, vzscriptConfig{guestOS: "linux"})
+	if err == nil {
+		t.Fatal("expected guest OS refusal")
+	}
+	want := "vzscript: recipe 'homebrew' is for darwin guests only; this VM is Linux"
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
 func executeVZScriptSyntaxOnly(t *testing.T, name string, data []byte) error {
 	t.Helper()
 
