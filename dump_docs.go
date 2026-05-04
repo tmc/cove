@@ -231,7 +231,7 @@ var cliDocSpecs = []cliDocSpec{
 	}},
 	{Name: "install", Summary: "Install an operating system into a VM directory.", Usage: captureInstallUsage},
 	{Name: "run", Summary: "Boot the selected VM.", Usage: captureRunUsage},
-	{Name: "list", Summary: "List installed VMs and templates.", Usage: captureListUsage},
+	{Name: "list", Summary: "List installed VMs and templates.", Aliases: []string{"ls"}, Usage: captureListUsage},
 	{Name: "clean", Summary: "Remove per-VM artifacts while keeping the directory.", Usage: captureCleanUsage},
 	{Name: "provision", Summary: "Write provisioning files into the VM disk.", Aliases: []string{"inject"}, Usage: func() string {
 		fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()

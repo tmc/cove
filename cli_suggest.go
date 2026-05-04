@@ -27,6 +27,7 @@ var knownCommands = []string{
 	"inject-agent",
 	"install",
 	"list",
+	"ls",
 	"network",
 	"pit",
 	"provision",
