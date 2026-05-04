@@ -664,6 +664,12 @@ func main() {
 		case "run":
 			handleRun()
 			return
+		case "status":
+			if err := statusCommand(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "list", "ls":
 			handleList()
 			return
