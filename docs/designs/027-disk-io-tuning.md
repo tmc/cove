@@ -133,9 +133,9 @@ Hidden by default; documented in `docs/runbooks/disk-tuning.md`.
 3. **Crash safety smoke:** start a VM with `DiskCacheDurable`, `kill -9` cove, confirm guest filesystem mounts cleanly on next boot.
 4. **No regression:** existing macOS install + run path unchanged in user-visible behavior, just faster.
 
-## Out of scope (future slices)
+## Follow-up slices
 
-- **Slice 2 — NVMe controller for Linux** (matches UTM's `isNvme` flag): wraps `VZNVMExpressControllerDeviceConfiguration`. Deferred — unclear if Linux 6.8 NVMe driver is faster than virtio-blk for our workload; needs benchmark first.
+- **Slice 2 — NVMe controller for Linux** (implemented 2026-05-04): hidden `-nvme` flag on Linux run/install paths, wrapping root disk attachments with `VZNVMExpressControllerDeviceConfiguration` instead of virtio-blk. The install benchmark is still pending a free host VM slot.
 - **Slice 3 — Pre-allocated RAW images** instead of sparse: `hdiutil create -fs UDIF` writes a sparse bundle; switching to `dd if=/dev/zero` style raw allocation eliminates APFS first-write pauses. Cost: disk image is its full size on host immediately. Worth it for benchmark images, not for casual user disks.
 - **Slice 4 — Block device passthrough** (`VZDiskBlockDeviceStorageDeviceAttachment`): bypass APFS entirely, attach `/dev/rdiskN`. Needs root helper (we already have `cove-helper`); biggest architectural lift; max performance.
 
@@ -152,6 +152,12 @@ Hidden by default; documented in `docs/runbooks/disk-tuning.md`.
 - [ ] `-disk-sync` flag wired on `cove run` and `cove install`
 - [ ] Benchmark recorded in `docs/benchmarks/disk-io.md`: before-N, after-N, on M-series host
 - [ ] Ubuntu 24.04 desktop install completes in <10 min on idle host (was 20-30 min)
+
+## Slice 2 acceptance
+
+- [x] Linux root disks can be attached through NVMe with `VZNVMExpressControllerDeviceConfiguration`
+- [x] Hidden `-nvme` flag wired on Linux run/install paths
+- [ ] Ubuntu Desktop install benchmark recorded for virtio-blk vs. NVMe on this host
 
 ## References
 

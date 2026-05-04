@@ -42,9 +42,29 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 | --- | --- | ---: | --- |
 | Baseline from design 027 | Framework default, Automatic + Full | 20-30 min | Ubuntu Desktop install on `linux-gui-debug`; guest `iostat -x 5` saw about 17 MB/s writes during unpacking. |
 | After, fresh run | Install disk `DiskCacheEphemeral`, Cached + None | 18m44s | `real 1124.40`; VM `disk-io-after-20260503-2145`; marker `linux-installed` written at 2026-05-03T22:04:08-0700. |
+| Slice 2 NVMe | Install disk `DiskCacheEphemeral`, Cached + None, NVMe controller | deferred | Not run on 2026-05-04 because the host's active VM slots were occupied by `gha-runner-mlx-go-v1` and `gha-runner-mlx-go-libs-2`. Stopping those workers is out of scope. |
 
 The after run completed successfully and wrote `ubuntu-desktop` to
 `linux-installed`.
+
+## Pending NVMe Run
+
+Run this when a host VM slot is free:
+
+```sh
+/usr/bin/time -p ./cove install -linux -desktop -nvme \
+  -vm disk-io-nvme-YYYYMMDD-HHMM \
+  -cpu 4 -memory 8 -disk-size 64 \
+  -iso /Users/tmc/.vz/cache/linux-ubuntu-desktop.iso \
+  -force
+```
+
+Before the run, rebuild and re-sign:
+
+```sh
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+```
 
 ## Interpretation
 
