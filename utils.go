@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -33,6 +34,10 @@ func resolvePath(path string) string {
 // createDiskImage creates a sparse disk image using truncate (same as vz library).
 func createDiskImage(path string, sizeGB uint64) error {
 	sizeBytes := int64(sizeGB) * 1024 * 1024 * 1024
+	return createSparseDiskImageBytes(path, sizeBytes)
+}
+
+func createSparseDiskImageBytes(path string, sizeBytes int64) error {
 	if err := checkDiskSpace(filepath.Dir(path), sizeBytes); err != nil {
 		return err
 	}
@@ -46,6 +51,60 @@ func createDiskImage(path string, sizeGB uint64) error {
 	defer f.Close()
 
 	return f.Truncate(sizeBytes)
+}
+
+func createRawDiskImage(path string, sizeGB uint64) error {
+	sizeBytes := int64(sizeGB) * 1024 * 1024 * 1024
+	return createRawDiskImageBytes(path, sizeBytes)
+}
+
+func createRawDiskImageBytes(path string, sizeBytes int64) error {
+	if err := checkDiskSpace(filepath.Dir(path), sizeBytes); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	if err := preallocateFile(f, sizeBytes); err != nil {
+		os.Remove(path)
+		return err
+	}
+	return nil
+}
+
+func preallocateFile(f *os.File, sizeBytes int64) error {
+	if sizeBytes < 0 {
+		return fmt.Errorf("negative disk size %d", sizeBytes)
+	}
+	const blockSize = 8 * 1024 * 1024
+	zero := make([]byte, blockSize)
+	remaining := sizeBytes
+	for remaining > 0 {
+		n := int64(len(zero))
+		if remaining < n {
+			n = remaining
+		}
+		if _, err := f.Write(zero[:n]); err != nil {
+			return fmt.Errorf("write zeros: %w", err)
+		}
+		remaining -= n
+	}
+	if err := f.Truncate(sizeBytes); err != nil {
+		return fmt.Errorf("truncate: %w", err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync: %w", err)
+	}
+	return nil
 }
 
 func checkDiskSpace(dir string, needBytes int64) error {
