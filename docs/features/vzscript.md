@@ -9,6 +9,7 @@ Declarative recipes for guest VM configuration. Built on [rsc.io/script](https:/
 
 ```bash
 cove vzscript list                        # list built-in recipes
+cove vzscript list -os linux              # list recipes for Linux guests
 cove vzscript show homebrew               # print recipe contents
 cove vzscript run homebrew                # run a recipe
 cove vzscript run homebrew golang         # run multiple (deps resolved)
@@ -54,6 +55,22 @@ Scripts declare dependencies with a header directive:
 ```
 
 Dependencies are resolved automatically. Each recipe runs at most once, even when specified by multiple dependents.
+
+## Guest OS
+
+Recipes declare the guest OS they support:
+
+```
+# guest-os: darwin
+```
+
+Valid values are `darwin`, `linux`, and `both`. Recipes without the directive
+default to `darwin` for compatibility with older macOS-oriented recipes.
+
+`cove vzscript list -os darwin` and `cove vzscript list -os linux` filter the
+built-in recipe list. When `-vm` is set and `-os` is omitted, `vzscript list`
+filters to that VM's configured guest OS. `vzscript run` refuses before running
+commands when a recipe does not match the target VM's OS.
 
 ## Host Mounts
 
