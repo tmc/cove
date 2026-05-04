@@ -97,7 +97,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printInstallUsage(os.Stderr)
 		case "run":
 			printRunUsage(os.Stderr)
-		case "list":
+		case "list", "ls":
 			printListUsage(os.Stderr)
 		case "clean":
 			printCleanUsage(os.Stderr)
@@ -252,7 +252,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printRunUsage(os.Stderr)
 			return true, 0
 		}
-	case "list":
+	case "list", "ls":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printListUsage(os.Stderr)
 			return true, 0
