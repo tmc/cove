@@ -437,6 +437,7 @@ Alias:
 Commands:
   list
   status [mount-point]
+  pending [vm]
   add <host-path> [tag] [ro|rw]
   remove <tag-or-path>
   clear

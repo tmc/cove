@@ -289,6 +289,88 @@ func TestSharedFolderAddSkipsHotApplyWithoutVirtioFS(t *testing.T) {
 	}
 }
 
+func TestPendingSharedFoldersWithoutLiveVMListsConfiguredFolders(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := t.TempDir()
+	if _, _, err := addSharedFolderEntry(vmDir, hostDir, "work", false); err != nil {
+		t.Fatalf("addSharedFolderEntry() error = %v", err)
+	}
+
+	out := captureStdout(t, func() error {
+		return pendingSharedFolders(vmDir, defaultSharedFoldersMountPoint)
+	})
+	for _, want := range []string{
+		"Running VM mount status unavailable:",
+		"Pending shared folders for next boot of " + filepath.Base(vmDir) + ":",
+		"work\trw\t" + resolvePath(hostDir),
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestPendingSharedFoldersOmitsMountedTags(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := t.TempDir()
+	otherDir := t.TempDir()
+	if _, _, err := addSharedFolderEntry(vmDir, hostDir, "work", false); err != nil {
+		t.Fatalf("addSharedFolderEntry(work) error = %v", err)
+	}
+	if _, _, err := addSharedFolderEntry(vmDir, otherDir, "other", true); err != nil {
+		t.Fatalf("addSharedFolderEntry(other) error = %v", err)
+	}
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "shared-folders-runtime-status",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Data:    `{"running":true,"virtiofs":true,"message":"shared folders VirtioFS device present"}`,
+			},
+		},
+		{
+			wantType: "agent-ping",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test"}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "/dev/virtiofs on " + defaultSharedFoldersMountPoint + " (virtiofs)\n",
+				}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"ls", "-1", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "work\n",
+				}},
+			},
+		},
+	})
+	defer stop()
+
+	out := captureStdout(t, func() error {
+		return pendingSharedFolders(vmDir, defaultSharedFoldersMountPoint)
+	})
+	if strings.Contains(out, "work\trw") {
+		t.Fatalf("output listed mounted tag:\n%s", out)
+	}
+	if !strings.Contains(out, "other\tro\t"+resolvePath(otherDir)) {
+		t.Fatalf("output missing pending tag:\n%s", out)
+	}
+}
+
 func TestHandleVMSharedFolderCommandUnknown(t *testing.T) {
 	if err := handleVMSharedFolderCommand([]string{"bogus"}); err == nil {
 		t.Fatalf("handleVMSharedFolderCommand() error = nil, want error")

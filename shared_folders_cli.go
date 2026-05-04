@@ -58,6 +58,18 @@ func handleVMSharedFolderCommand(args []string) error {
 			mountPoint = args[1]
 		}
 		return sharedFolderStatus(targetDir, mountPoint)
+	case "pending":
+		if len(args) > 2 {
+			return fmt.Errorf("usage: cove shared-folder pending [vm]")
+		}
+		if len(args) == 2 {
+			var err error
+			targetDir, err = vmconfig.EnsureDir(args[1], vmDir)
+			if err != nil {
+				return err
+			}
+		}
+		return pendingSharedFolders(targetDir, defaultSharedFoldersMountPoint)
 	case "add":
 		return handleVMSharedFolderAdd(targetDir, args[1:])
 	case "remove":
@@ -83,7 +95,7 @@ func handleVMSharedFolderCommand(args []string) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("unknown shared-folder command: %s\nValid commands: help, list, status, add, remove, clear, mount", args[0])
+		return fmt.Errorf("unknown shared-folder command: %s\nValid commands: help, list, status, pending, add, remove, clear, mount", args[0])
 	}
 }
 
@@ -335,6 +347,85 @@ func sharedFolderStatus(vmDirectory, mountPoint string) error {
 	}
 	fmt.Printf("Guest mount: not mounted at %s\n", mountPoint)
 	return nil
+}
+
+func pendingSharedFolders(vmDirectory, mountPoint string) error {
+	folders := LoadSharedFolders(vmDirectory)
+	if len(folders) == 0 {
+		fmt.Println("No shared folders configured.")
+		return nil
+	}
+
+	mounted, err := mountedSharedFolderTags(vmDirectory, mountPoint)
+	if err != nil {
+		fmt.Printf("Running VM mount status unavailable: %v\n", err)
+		mounted = map[string]bool{}
+	}
+
+	pending := make([]SharedFolderEntry, 0, len(folders))
+	for _, f := range folders {
+		if !mounted[f.Tag] {
+			pending = append(pending, f)
+		}
+	}
+	if len(pending) == 0 {
+		fmt.Println("No pending shared folders.")
+		return nil
+	}
+
+	fmt.Printf("Pending shared folders for next boot of %s:\n", sharedFolderVMName(vmDirectory))
+	for _, f := range pending {
+		mode := "rw"
+		if f.ReadOnly {
+			mode = "ro"
+		}
+		fmt.Printf("  %s\t%s\t%s\n", f.Tag, mode, f.Path)
+	}
+	return nil
+}
+
+func mountedSharedFolderTags(vmDirectory, mountPoint string) (map[string]bool, error) {
+	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
+	client.SetTimeout(10 * time.Second)
+	status, err := client.SharedFoldersRuntimeStatus()
+	if err != nil {
+		return nil, err
+	}
+	if !status.VirtioFS {
+		return map[string]bool{}, nil
+	}
+	if _, err := client.AgentPingTyped(); err != nil {
+		return nil, fmt.Errorf("guest agent unavailable: %w", err)
+	}
+	mountRes, err := client.AgentExecTyped([]string{"mount"}, nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("query mounts: %w", err)
+	}
+	if !strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
+		return map[string]bool{}, nil
+	}
+	lsRes, err := client.AgentExecTyped([]string{"ls", "-1", mountPoint}, nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("list mounted shared folders: %w", err)
+	}
+	if lsRes.ExitCode != 0 {
+		msg := strings.TrimSpace(lsRes.Stderr)
+		if msg == "" {
+			msg = strings.TrimSpace(lsRes.Stdout)
+		}
+		if msg == "" {
+			msg = "unknown error"
+		}
+		return nil, fmt.Errorf("list mounted shared folders: exit %d: %s", lsRes.ExitCode, msg)
+	}
+	mounted := map[string]bool{}
+	for _, line := range strings.Split(lsRes.Stdout, "\n") {
+		tag := strings.TrimSpace(line)
+		if tag != "" {
+			mounted[tag] = true
+		}
+	}
+	return mounted, nil
 }
 
 func removeSharedFolderEntry(vmDirectory, selector string) (bool, error) {
