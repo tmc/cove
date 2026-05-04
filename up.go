@@ -329,6 +329,7 @@ func runUpPipeline(cfg upConfig) error {
 	// inject was either never attempted or failed mid-flight — retry it
 	// either way. The staging dir is reused if present (stageProvisioningFiles
 	// is idempotent).
+	verifyProvisionedUser := ""
 	if !didInjectSucceedForVM(target) {
 		fmt.Println()
 		fmt.Println("=== Step 2/3: Provisioning VM ===")
@@ -356,6 +357,7 @@ func runUpPipeline(cfg upConfig) error {
 		if err := applyProvisioningFilesForVM(target); err != nil {
 			return fmt.Errorf("apply provisioning: %w", err)
 		}
+		verifyProvisionedUser = cfg.user
 	} else {
 		fmt.Println()
 		fmt.Println("=== Step 2/3: Provisioning (already done) ===")
@@ -376,19 +378,19 @@ func runUpPipeline(cfg upConfig) error {
 		default:
 			fmt.Printf("=== Step 3/3: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
 		}
-		return runUpWithVZScripts(recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose)
+		return runUpWithVZScripts(recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose, verifyProvisionedUser)
 	}
 
 	fmt.Println()
 	fmt.Println("=== Step 3/3: Booting VM ===")
-	return runMacOSVM()
+	return runUpMacOSVM(verifyProvisionedUser, cfg.verbose)
 }
 
 // runUpWithVZScripts boots the VM in a goroutine, runs the given vzscript
 // recipes followed by an optional plain setup-script, and either shuts down
 // the VM or leaves it running based on noShutdown. If the VM exits
 // unexpectedly during script execution, the error is returned immediately.
-func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verboseMode bool) error {
+func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verboseMode bool, verifyUser string) error {
 	if err := validateVZScriptRecipes(recipes); err != nil {
 		return err
 	}
@@ -414,6 +416,11 @@ func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verbos
 		waitScript := []byte("guest-wait 15m\n")
 		if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
 			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
+			return
+		}
+		if err := verifyProvisioningForUp(sock, verifyUser); err != nil {
+			_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
+			scriptsDone <- err
 			return
 		}
 
@@ -456,13 +463,63 @@ func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verbos
 	// Check if scripts reported an error before VM exited.
 	select {
 	case err := <-scriptsDone:
-		if err != nil && vmErr == nil {
+		if err != nil {
 			return err
 		}
 	default:
 	}
 
 	return vmErr
+}
+
+func runUpMacOSVM(verifyUser string, verboseMode bool) error {
+	if strings.TrimSpace(verifyUser) == "" {
+		return runMacOSVM()
+	}
+	sock := GetControlSocketPath()
+	cfg := vzscriptConfig{
+		socketPath:  sock,
+		execTimeout: 30 * time.Minute,
+		verbose:     verboseMode,
+	}
+	verifyDone := make(chan error, 1)
+	go func() {
+		fmt.Println("Waiting for VM to boot and guest agent...")
+		waitScript := []byte("guest-wait 15m\n")
+		if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
+			verifyDone <- fmt.Errorf("wait-for-agent: %w", err)
+			return
+		}
+		if err := verifyProvisioningForUp(sock, verifyUser); err != nil {
+			_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
+			verifyDone <- err
+			return
+		}
+		verifyDone <- nil
+	}()
+
+	vmErr := runMacOSVM()
+	select {
+	case err := <-verifyDone:
+		if err != nil {
+			return err
+		}
+	default:
+	}
+	return vmErr
+}
+
+func verifyProvisioningForUp(sock, user string) error {
+	if strings.TrimSpace(user) == "" {
+		return nil
+	}
+	client := NewControlClient(sock)
+	info, err := verifyProvisionedGuestUser(client, user)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Provisioning verified: user %s uid=%d home=%s\n", user, info.UID, info.Home)
+	return nil
 }
 
 // runLinuxUpPipeline executes the install -> run pipeline for Linux VMs.
