@@ -32,7 +32,7 @@ func TestSuggestCommand(t *testing.T) {
 
 func TestKnownCommandsCoverAliases(t *testing.T) {
 	required := []string{
-		"run", "install", "list", "shared-folder", "shared-folders",
+		"run", "install", "list", "ls", "shared-folder", "shared-folders",
 		"vm", "rename", "export", "import", "config", "rm",
 		"verify", "doctor", "provision", "inject",
 	}

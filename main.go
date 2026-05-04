@@ -660,7 +660,7 @@ func main() {
 		case "run":
 			handleRun()
 			return
-		case "list":
+		case "list", "ls":
 			handleList()
 			return
 		case "clean":

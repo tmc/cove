@@ -508,6 +508,7 @@ Examples:
 
 func printListUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove list
+       cove ls
 
 List installed VMs (with state and size), templates, and any orphan
 directories under ~/.vz/vms that no longer contain a valid disk image.
@@ -516,7 +517,7 @@ The active VM is marked with '*' in the ACTIVE column. Orphans can
 be removed with: cove vm delete <name>
 
 Example:
-  cove list`)
+  cove ls`)
 }
 
 func printCleanUsage(w io.Writer) {
