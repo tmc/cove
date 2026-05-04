@@ -260,6 +260,37 @@ func TestApplySharedFoldersWarningNamesTargetVM(t *testing.T) {
 	}
 }
 
+func TestSharedFolderAddSkipsHotApplyWithoutVirtioFS(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := t.TempDir()
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "shared-folders-runtime-status",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Data:    `{"running":true,"virtiofs":false,"message":"no directory sharing devices configured"}`,
+			},
+		},
+	})
+	defer stop()
+
+	out := captureStdout(t, func() error {
+		return handleVMSharedFolderAdd(vmDir, []string{hostDir, "work", "rw"})
+	})
+	for _, want := range []string{
+		"Added shared folder:",
+		"shared folder saved; will mount on next boot",
+		"live shared folders are unavailable: no directory sharing devices configured",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "could not hot-apply") || strings.Contains(out, "Applied to running VM") {
+		t.Fatalf("output attempted hot apply:\n%s", out)
+	}
+}
+
 func TestHandleVMSharedFolderCommandUnknown(t *testing.T) {
 	if err := handleVMSharedFolderCommand([]string{"bogus"}); err == nil {
 		t.Fatalf("handleVMSharedFolderCommand() error = nil, want error")
