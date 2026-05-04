@@ -1,0 +1,6 @@
+# agentkit-linux-base — Verify a Linux VM is ready for agentkit image baking
+# runs-on: daemon
+
+guest-ping
+guest-exec sh -lc 'test -x /usr/local/bin/vz-agent || command -v vz-agent >/dev/null'
+guest-exec sh -lc 'uname -s | grep -q Linux'

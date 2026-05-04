@@ -1,0 +1,40 @@
+# agentkit-linux-claude-ready — Install Claude Code CLI in a Linux agentkit image
+# runs-on: daemon
+
+guest-ping
+guest-shell install-claude-code-linux.sh
+
+-- install-claude-code-linux.sh --
+#!/bin/sh
+set -eu
+
+if command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -q
+  apt-get install -y ca-certificates curl
+elif command -v dnf >/dev/null 2>&1; then
+  dnf -y install ca-certificates curl
+elif command -v apk >/dev/null 2>&1; then
+  apk add ca-certificates curl
+fi
+
+AGENT_USER=""
+if getent passwd 1000 >/dev/null 2>&1; then
+  AGENT_USER=$(getent passwd 1000 | cut -d: -f1)
+elif [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+  AGENT_USER=$SUDO_USER
+fi
+if [ -z "$AGENT_USER" ]; then
+  AGENT_USER=root
+fi
+
+if [ "$AGENT_USER" = root ]; then
+  curl -fsSL https://claude.ai/install.sh | bash
+  install -d /root/.local/bin
+  /root/.local/bin/claude --version
+  exit 0
+fi
+
+su - "$AGENT_USER" -c 'curl -fsSL https://claude.ai/install.sh | bash'
+su - "$AGENT_USER" -c '$HOME/.local/bin/claude --version'
+su - "$AGENT_USER" -c 'grep -q ".local/bin" ~/.profile 2>/dev/null || echo '\''export PATH="$HOME/.local/bin:$PATH"'\'' >> ~/.profile'

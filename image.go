@@ -7,6 +7,8 @@
 // (repo/tag) so Slice 2 can later wrap it in real OCI artifacts.
 //
 // Layout: ~/.vz/images/<name>/<tag>/
+// Names may contain slash-separated components, for example
+// ~/.vz/images/agentkit/linux-base/latest/.
 //
 //	manifest.json    — schema below
 //	disk.img         — APFS clonefile of source VM disk (sparse-preserving)
@@ -69,7 +71,9 @@ func (r ImageRef) String() string { return r.Name + ":" + r.Tag }
 
 // Path returns the on-disk directory for this image ref.
 func (r ImageRef) Path() string {
-	return filepath.Join(ImagesBaseDir(), r.Name, r.Tag)
+	parts := append([]string{ImagesBaseDir()}, strings.Split(r.Name, "/")...)
+	parts = append(parts, r.Tag)
+	return filepath.Join(parts...)
 }
 
 // ParseImageRef parses "name" or "name:tag" into an ImageRef. Default
@@ -93,13 +97,25 @@ func ParseImageRef(s string) (ImageRef, error) {
 	if tag == "" {
 		return ImageRef{}, fmt.Errorf("image ref %q has empty tag", s)
 	}
-	if err := validateImageComponent(name); err != nil {
+	if err := validateImageName(name); err != nil {
 		return ImageRef{}, fmt.Errorf("image name: %w", err)
 	}
 	if err := validateImageComponent(tag); err != nil {
 		return ImageRef{}, fmt.Errorf("image tag: %w", err)
 	}
 	return ImageRef{Name: name, Tag: tag}, nil
+}
+
+func validateImageName(s string) error {
+	if strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") || strings.Contains(s, "//") {
+		return fmt.Errorf("%q must be slash-separated path components", s)
+	}
+	for _, part := range strings.Split(s, "/") {
+		if err := validateImageComponent(part); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateImageComponent is intentionally strict: alnum, '-', '_', '.';
@@ -169,11 +185,6 @@ func BuildImage(opts BuildImageOptions) (*ImageManifest, error) {
 		return nil, fmt.Errorf("image build: source VM not found: %s", opts.SourceVM)
 	}
 	osType := vmconfig.DetectOSType(srcDir)
-	if osType == "Linux" {
-		// Slice 1 keeps the shape macOS-specific to avoid forked semantics.
-		// Linux images can land in Slice 2 alongside the wire format.
-		return nil, fmt.Errorf("image build: Linux source VMs are not supported in Slice 1 (OSType=%s)", osType)
-	}
 
 	// Refuse to snapshot a running VM. Probe-and-release the run.lock.
 	srcLock, err := acquireRunLockHook(srcDir)
@@ -196,38 +207,16 @@ func BuildImage(opts BuildImageOptions) (*ImageManifest, error) {
 	}
 	cleanup := func() { os.RemoveAll(imgDir) }
 
-	// Disk: prefer clonefile; fall back to byte-copy if the underlying
-	// filesystem refuses (non-APFS image store, separate volume).
-	srcDisk := filepath.Join(srcDir, "disk.img")
-	dstDisk := filepath.Join(imgDir, "disk.img")
-	if err := cloneFile(srcDisk, dstDisk); err != nil {
-		if copyErr := copyFile(srcDisk, dstDisk); copyErr != nil {
-			cleanup()
-			return nil, fmt.Errorf("image build: clone disk: %w (copy fallback: %v)", err, copyErr)
-		}
-	}
-
-	// Identity files: byte copy.
-	for _, f := range []string{"aux.img", "hw.model", "machine.id"} {
-		src := filepath.Join(srcDir, f)
-		if _, err := os.Stat(src); err != nil {
-			if f == "machine.id" {
-				continue // optional in source; image cold-boots fine without one
-			}
-			cleanup()
-			return nil, fmt.Errorf("image build: source missing %s: %w", f, err)
-		}
-		if err := copyFile(src, filepath.Join(imgDir, f)); err != nil {
-			cleanup()
-			return nil, fmt.Errorf("image build: copy %s: %w", f, err)
-		}
+	if err := copyImageFiles(srcDir, imgDir, osType); err != nil {
+		cleanup()
+		return nil, err
 	}
 
 	now := opts.Now
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
-	hash, size, err := sha256AndSize(dstDisk)
+	hash, size, err := sha256AndSize(vmPrimaryDiskPath(imgDir))
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("image build: hash disk: %w", err)
@@ -253,6 +242,40 @@ func BuildImage(opts BuildImageOptions) (*ImageManifest, error) {
 		return nil, err
 	}
 	return manifest, nil
+}
+
+func copyImageFiles(srcDir, imgDir, osType string) error {
+	for _, f := range cloneRequiredFiles(osType) {
+		src := filepath.Join(srcDir, f.name)
+		if _, err := os.Stat(src); err != nil {
+			if !f.required {
+				continue
+			}
+			return fmt.Errorf("image build: source missing %s: %w", f.name, err)
+		}
+		dst := filepath.Join(imgDir, f.name)
+		if f.useClone {
+			if err := cloneFile(src, dst); err != nil {
+				if copyErr := copyFile(src, dst); copyErr != nil {
+					return fmt.Errorf("image build: clone %s: %w (copy fallback: %v)", f.name, err, copyErr)
+				}
+			}
+			continue
+		}
+		if err := copyFile(src, dst); err != nil {
+			return fmt.Errorf("image build: copy %s: %w", f.name, err)
+		}
+	}
+	for _, name := range cloneOptionalFiles(osType) {
+		src := filepath.Join(srcDir, name)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if err := copyFile(src, filepath.Join(imgDir, name)); err != nil {
+			return fmt.Errorf("image build: copy %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func writeImageManifest(dir string, m *ImageManifest) error {
@@ -296,33 +319,42 @@ type ImageEntry struct {
 // (name, tag) pair that has a readable manifest.json.
 func ListImages() ([]ImageEntry, error) {
 	root := ImagesBaseDir()
-	names, err := os.ReadDir(root)
+	_, err := os.Stat(root)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read images dir: %w", err)
+		return nil, fmt.Errorf("stat images dir: %w", err)
 	}
 	var out []ImageEntry
-	for _, ne := range names {
-		if !ne.IsDir() {
-			continue
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
 		}
-		tags, err := os.ReadDir(filepath.Join(root, ne.Name()))
+		if path == root {
+			return nil
+		}
+		if _, err := os.Stat(filepath.Join(path, "manifest.json")); err != nil {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
 		if err != nil {
-			continue
+			return nil
 		}
-		for _, te := range tags {
-			if !te.IsDir() {
-				continue
-			}
-			ref := ImageRef{Name: ne.Name(), Tag: te.Name()}
-			m, err := LoadImageManifest(ref)
-			if err != nil {
-				continue
-			}
-			out = append(out, ImageEntry{Ref: ref, Manifest: m})
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		if len(parts) < 2 {
+			return nil
 		}
+		ref := ImageRef{Name: strings.Join(parts[:len(parts)-1], "/"), Tag: parts[len(parts)-1]}
+		m, err := LoadImageManifest(ref)
+		if err != nil {
+			return nil
+		}
+		out = append(out, ImageEntry{Ref: ref, Manifest: m})
+		return filepath.SkipDir
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk images dir: %w", err)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Ref.Name != out[j].Ref.Name {
@@ -379,10 +411,15 @@ func DeleteImage(ref ImageRef) error {
 	if err := os.RemoveAll(ref.Path()); err != nil {
 		return fmt.Errorf("remove image: %w", err)
 	}
-	// Best-effort: remove the parent name dir if it became empty.
+	// Best-effort: remove empty parent name dirs.
 	parent := filepath.Dir(ref.Path())
-	if entries, err := os.ReadDir(parent); err == nil && len(entries) == 0 {
+	for parent != ImagesBaseDir() && strings.HasPrefix(parent, ImagesBaseDir()) {
+		entries, err := os.ReadDir(parent)
+		if err != nil || len(entries) != 0 {
+			break
+		}
 		os.Remove(parent)
+		parent = filepath.Dir(parent)
 	}
 	return nil
 }
@@ -422,27 +459,14 @@ func MaterializeImage(opts MaterializeImageOptions) (string, error) {
 	}
 	cleanup := func() { os.RemoveAll(childDir) }
 
-	imgDir := opts.Ref.Path()
-	srcDisk := filepath.Join(imgDir, "disk.img")
-	dstDisk := filepath.Join(childDir, "disk.img")
-	if err := cloneFile(srcDisk, dstDisk); err != nil {
-		if copyErr := copyFile(srcDisk, dstDisk); copyErr != nil {
-			cleanup()
-			return "", fmt.Errorf("materialize: clone disk: %w (copy fallback: %v)", err, copyErr)
-		}
-	}
-	for _, f := range []string{"aux.img", "hw.model"} {
-		if err := copyFile(filepath.Join(imgDir, f), filepath.Join(childDir, f)); err != nil {
-			cleanup()
-			return "", fmt.Errorf("materialize: copy %s: %w", f, err)
-		}
-	}
-	// Generate fresh machine identity for the child. Mirrors CloneVM's
-	// CopyMachineID:false path so `cove image rm` and `cove fork` produce
-	// indistinguishable per-VM identity.
-	if err := generateMachineID(childDir); err != nil {
+	manifest, err := LoadImageManifest(opts.Ref)
+	if err != nil {
 		cleanup()
-		return "", fmt.Errorf("materialize: generate machine ID: %w", err)
+		return "", err
+	}
+	if err := materializeImageFiles(opts.Ref.Path(), childDir, manifest.OSType); err != nil {
+		cleanup()
+		return "", err
 	}
 
 	cfg, err := vmconfig.Load(childDir)
@@ -468,4 +492,49 @@ func MaterializeImage(opts MaterializeImageOptions) (string, error) {
 		}
 	}
 	return childDir, nil
+}
+
+func materializeImageFiles(imgDir, childDir, osType string) error {
+	for _, f := range cloneRequiredFiles(osType) {
+		if f.name == "machine.id" || f.name == "linux-machine.id" {
+			continue
+		}
+		src := filepath.Join(imgDir, f.name)
+		if _, err := os.Stat(src); err != nil {
+			if !f.required {
+				continue
+			}
+			return fmt.Errorf("materialize: source missing %s: %w", f.name, err)
+		}
+		dst := filepath.Join(childDir, f.name)
+		if f.useClone {
+			if err := cloneFile(src, dst); err != nil {
+				if copyErr := copyFile(src, dst); copyErr != nil {
+					return fmt.Errorf("materialize: clone %s: %w (copy fallback: %v)", f.name, err, copyErr)
+				}
+			}
+			continue
+		}
+		if err := copyFile(src, dst); err != nil {
+			return fmt.Errorf("materialize: copy %s: %w", f.name, err)
+		}
+	}
+	for _, name := range cloneOptionalFiles(osType) {
+		src := filepath.Join(imgDir, name)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if err := copyFile(src, filepath.Join(childDir, name)); err != nil {
+			return fmt.Errorf("materialize: copy %s: %w", name, err)
+		}
+	}
+	switch osType {
+	case "Linux":
+		// Linux creates linux-machine.id on first boot when absent.
+	default:
+		if err := generateMachineID(childDir); err != nil {
+			return fmt.Errorf("materialize: generate machine ID: %w", err)
+		}
+	}
+	return nil
 }
