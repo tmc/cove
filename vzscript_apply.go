@@ -33,7 +33,7 @@ func vzscriptCommand(args []string) error {
 	}
 	switch args[0] {
 	case "list":
-		return vzscriptList()
+		return vzscriptList(args[1:])
 	case "show":
 		return vzscriptShow(args[1:])
 	case "run":
@@ -52,7 +52,7 @@ func printVzscriptUsage(w io.Writer) {
 	fmt.Fprintf(w, `Usage: cove vzscript <command> [args...]
 
 Commands:
-  list                    List built-in recipes
+  list [-os darwin|linux] List built-in recipes
   show <recipe>           Print recipe contents
   run [-v] [-timeout d] <recipe...>  Run one or more recipes against a running VM
 
@@ -117,9 +117,38 @@ Examples:
 `)
 }
 
-func vzscriptList() error {
+func vzscriptList(args []string) error {
+	fs := flag.NewFlagSet("vzscript list", flag.ExitOnError)
+	osFilter := fs.String("os", "", "Filter recipes by guest OS: darwin or linux")
+	vm := fs.String("vm", "", "VM name; defaults -os from the VM platform when -os is omitted")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	filterOS := normalizeVZScriptGuestOS(*osFilter)
+	if *osFilter != "" && filterOS == "" {
+		return fmt.Errorf("invalid guest OS %q (use darwin or linux)", *osFilter)
+	}
+	if filterOS == "" {
+		vmForFilter := *vm
+		if vmForFilter == "" {
+			vmForFilter = vmName
+		}
+		if vmForFilter != "" {
+			dir, err := vmconfig.EnsureDir(vmForFilter, vmDir)
+			if err != nil {
+				return err
+			}
+			filterOS = vzscriptGuestOSFromPlatform(agentstate.Platform(dir))
+		}
+	}
+
+	return vzscriptListWithGuestOS(filterOS)
+}
+
+func vzscriptListWithGuestOS(filterOS string) error {
 	type entry struct {
 		name, desc string
+		guestOS    string
 		requires   []string
 		mounts     int
 		template   bool
@@ -145,7 +174,10 @@ func vzscriptList() error {
 			name = strings.TrimSuffix(f.Name(), ".vzscript.tmpl")
 			name = strings.TrimSuffix(name, ".vzscript")
 		}
-		entries = append(entries, entry{name, meta.desc, meta.requires, len(meta.mounts), strings.HasSuffix(f.Name(), ".tmpl")})
+		if filterOS != "" && !vzscriptGuestOSMatches(meta.guestOS, filterOS) {
+			continue
+		}
+		entries = append(entries, entry{name, meta.desc, meta.guestOS, meta.requires, len(meta.mounts), strings.HasSuffix(f.Name(), ".tmpl")})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 
@@ -163,6 +195,9 @@ func vzscriptList() error {
 		}
 		if e.template {
 			line += " (template)"
+		}
+		if e.guestOS != "" {
+			line += fmt.Sprintf(" [os: %s]", e.guestOS)
 		}
 		fmt.Println(line)
 	}
