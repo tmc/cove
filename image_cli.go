@@ -47,6 +47,7 @@ Subcommands:
   gc   [-dry-run] [-yes] [-older-than D]  Sweep images with zero live forks
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
   push <name[:tag]> <file> [-gzip]     Tar an image dir to a single file
+  push <name[:tag]> <registry/ref:tag> Push an image to a private OCI registry
   load <file> [-tag <name[:tag]>] [-force]  Extract a tarball into the image store
 
 Examples:

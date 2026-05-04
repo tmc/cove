@@ -11,6 +11,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -48,6 +49,18 @@ func runImagePush(args []string) error {
 		return err
 	}
 	dst := fs.Arg(1)
+	if isRegistryReference(dst) {
+		if *gz {
+			return fmt.Errorf("image push: -gzip is only valid for tarball export")
+		}
+		desc, err := PushImageToRegistry(context.Background(), ref, dst)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Pushed image %s to %s\n", ref, dst)
+		fmt.Printf("  digest: %s\n", desc.Digest)
+		return nil
+	}
 	if dst == "-" {
 		if term.IsTerminal(int(os.Stdout.Fd())) {
 			return fmt.Errorf("image push: refusing to write tarball to a TTY (redirect stdout or pass a file path)")
