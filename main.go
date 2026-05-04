@@ -996,6 +996,21 @@ func validateLaunchOptions() error {
 			return fmt.Errorf("-shell is mutually exclusive with -headless (the host terminal is used for the shell)")
 		}
 	}
+	if len(blockDevices) > 0 {
+		if !linuxMode {
+			return fmt.Errorf("-block requires -linux")
+		}
+		if !helperInstalled() {
+			return fmt.Errorf("block devices require an up-to-date cove-helper; run: sudo cove helper install")
+		}
+		fresh, _, err := helperBinaryFreshness()
+		if err != nil {
+			return fmt.Errorf("check cove-helper freshness: %w", err)
+		}
+		if !fresh {
+			return fmt.Errorf("block devices require an up-to-date cove-helper; run: sudo cove helper install")
+		}
+	}
 	switch provisionStrategy {
 	case "disk", "gui", "auto":
 	case "inject":
