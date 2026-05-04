@@ -40,6 +40,12 @@ func TestParseGuestIPStripsCIDR(t *testing.T) {
 	}
 }
 
+func TestParseGuestMAC(t *testing.T) {
+	if got, want := parseGuestMAC("AA:BB:CC:DD:EE:FF\n"), "aa:bb:cc:dd:ee:ff"; got != want {
+		t.Fatalf("parseGuestMAC() = %q, want %q", got, want)
+	}
+}
+
 func TestCtlNetworkInfoBackfillsLinuxIPAndMAC(t *testing.T) {
 	vmDir := shortSharedFolderVMDir(t)
 	if err := os.WriteFile(filepath.Join(vmDir, "linux-disk.img"), nil, 0644); err != nil {
@@ -66,7 +72,7 @@ func TestCtlNetworkInfoBackfillsLinuxIPAndMAC(t *testing.T) {
 		},
 		{
 			wantType: "agent-exec",
-			wantArgs: []string{"sh", "-lc", "cat /sys/class/net/eth0/address 2>/dev/null || true"},
+			wantArgs: linuxGuestMACProbeArgs(),
 			resp: &controlpb.ControlResponse{
 				Success: true,
 				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{

@@ -1751,10 +1751,17 @@ func (s *ControlServer) handleNetworkInfo() *controlpb.ControlResponse {
 		info.MacAddress = strings.TrimSpace(string(data))
 	}
 
-	// Try to get guest IP via agent (best-effort, short timeout)
 	if a, err := s.getAgent(); err == nil {
 		ctx, cancel := s.timeoutContext(5 * time.Second)
 		defer cancel()
+		if info.MacAddress == "" && linuxMode {
+			if result, err := a.Exec(ctx, linuxGuestMACProbeArgs(), nil, ""); err == nil && result.ExitCode == 0 {
+				info.MacAddress = parseGuestMAC(responseText(result.Stdout))
+				if info.MacAddress != "" {
+					_ = os.WriteFile(macPath, []byte(info.MacAddress+"\n"), 0644)
+				}
+			}
+		}
 		result, err := a.Exec(ctx, guestIPProbeArgs(linuxMode), nil, "")
 		if err == nil && result.ExitCode == 0 {
 			info.GuestIp = parseGuestIP(responseText(result.Stdout))
@@ -1776,11 +1783,23 @@ func guestIPProbeArgs(linuxGuest bool) []string {
 	return []string{"ipconfig", "getifaddr", "en0"}
 }
 
+func linuxGuestMACProbeArgs() []string {
+	return []string{"sh", "-lc", linuxGuestMACProbeScript}
+}
+
 const linuxGuestIPProbeScript = `ip=$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' | head -1)
 if [ -z "$ip" ]; then
 	ip=$(hostname -I 2>/dev/null | awk '{print $1}')
 fi
 printf '%s\n' "$ip"`
+
+const linuxGuestMACProbeScript = `iface=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+if [ -z "$iface" ]; then
+	iface=$(ls /sys/class/net 2>/dev/null | awk '$1 != "lo" {print $1; exit}')
+fi
+if [ -n "$iface" ] && [ -r "/sys/class/net/$iface/address" ]; then
+	cat "/sys/class/net/$iface/address"
+fi`
 
 func parseGuestIP(out string) string {
 	ip := strings.TrimSpace(out)
@@ -1788,6 +1807,10 @@ func parseGuestIP(out string) string {
 		ip = ip[:i]
 	}
 	return strings.TrimSpace(ip)
+}
+
+func parseGuestMAC(out string) string {
+	return strings.ToLower(strings.TrimSpace(out))
 }
 
 func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
