@@ -1,6 +1,6 @@
 # Design 028: Block Device Passthrough
 
-Status: Draft
+Status: Implemented (2026-05-04)
 Author: Travis Cline
 Date: 2026-05-03
 
@@ -166,4 +166,3 @@ Do not require a physical USB drive in CI.
   shelling out to `diskutil`.
 - Whether a future destructive install path should support `cove install -linux
   -target /dev/rdiskN` or a separate `cove disk write` command.
-
