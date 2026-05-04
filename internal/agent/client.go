@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 
 const DaemonPort = 1024
 const UserPort = 1025
+const defaultAgentExecArgvLimit = 16 * 1024
+const agentExecArgvLimitEnv = "COVE_AGENT_EXEC_ARGV_LIMIT"
 
 // AgentClient wraps the connect-go client for the guest agent.
 type AgentClient struct {
@@ -33,6 +36,35 @@ type AgentClient struct {
 	transport *http2.Transport
 	closeFn   func()
 	closeOnce sync.Once
+}
+
+func checkAgentExecArgv(args []string) error {
+	limit := agentExecArgvLimit()
+	got := argvBytes(args)
+	if got <= limit {
+		return nil
+	}
+	return fmt.Errorf("agent-exec: argv exceeds %d bytes (got %d); use 'cove agent-cp' or 'cove agent-write' for large blobs, or pipe via stdin if your command supports it", limit, got)
+}
+
+func agentExecArgvLimit() int {
+	raw := os.Getenv(agentExecArgvLimitEnv)
+	if raw == "" {
+		return defaultAgentExecArgvLimit
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return defaultAgentExecArgvLimit
+	}
+	return n
+}
+
+func argvBytes(args []string) int {
+	var n int
+	for _, arg := range args {
+		n += len(arg)
+	}
+	return n
 }
 
 // NewAgentClient creates a client connected to the guest agent.
@@ -98,6 +130,9 @@ func (c *AgentClient) Info(ctx context.Context) (*pb.InfoResponse, error) {
 
 // Exec runs a command in the guest and returns its output.
 func (c *AgentClient) Exec(ctx context.Context, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
+	if err := checkAgentExecArgv(args); err != nil {
+		return nil, err
+	}
 	resp, err := c.client.Exec(ctx, connect.NewRequest(&pb.ExecRequest{
 		Args:       args,
 		Env:        env,
@@ -169,6 +204,9 @@ func (c *AgentClient) ExecStreamAs(ctx context.Context, user string, args []stri
 }
 
 func (c *AgentClient) ExecStreamControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
+	if err := checkAgentExecArgv(args); err != nil {
+		return nil, err
+	}
 	req := &pb.ExecRequest{
 		Args:       args,
 		Env:        env,
@@ -200,6 +238,9 @@ func (c *AgentClient) ExecAttachSupported(ctx context.Context) (bool, error) {
 }
 
 func (c *AgentClient) ExecAttachControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (ExecAttachStream, error) {
+	if err := checkAgentExecArgv(args); err != nil {
+		return nil, err
+	}
 	req := &pb.ExecRequest{
 		Args:       args,
 		Env:        env,
@@ -245,6 +286,9 @@ func (c *AgentClient) SetTime(ctx context.Context, t time.Time) error {
 
 // ExecAs runs a command in the guest as the specified user.
 func (c *AgentClient) ExecAs(ctx context.Context, user string, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
+	if err := checkAgentExecArgv(args); err != nil {
+		return nil, err
+	}
 	resp, err := c.client.Exec(ctx, connect.NewRequest(&pb.ExecRequest{
 		Args:       args,
 		Env:        env,
@@ -516,6 +560,9 @@ func logCopyDone(name string, sent int64, start time.Time) {
 
 // UserExec runs a command in the user session context (inherits TCC/FDA).
 func (c *UserAgentClient) UserExec(ctx context.Context, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
+	if err := checkAgentExecArgv(args); err != nil {
+		return nil, err
+	}
 	resp, err := c.client.UserExec(ctx, connect.NewRequest(&pb.ExecRequest{
 		Args:       args,
 		Env:        env,
@@ -529,6 +576,9 @@ func (c *UserAgentClient) UserExec(ctx context.Context, args []string, env map[s
 
 // UserExecStream runs a command in user context with streaming output.
 func (c *UserAgentClient) UserExecStream(ctx context.Context, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
+	if err := checkAgentExecArgv(args); err != nil {
+		return nil, err
+	}
 	stream, err := c.client.UserExecStream(ctx, connect.NewRequest(&pb.ExecRequest{
 		Args:       args,
 		Env:        env,

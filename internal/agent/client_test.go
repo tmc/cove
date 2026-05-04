@@ -59,6 +59,40 @@ func TestAgentClientExecSupportsParallelRPCs(t *testing.T) {
 	)
 }
 
+func TestAgentClientExecArgvLimit(t *testing.T) {
+	t.Setenv(agentExecArgvLimitEnv, "")
+
+	handler := &echoAgentHandler{}
+	client := newTestAgentClient(t, handler)
+	defer client.Close()
+
+	ctx := context.Background()
+	limitArg := strings.Repeat("x", defaultAgentExecArgvLimit)
+	if _, err := client.Exec(ctx, []string{limitArg}, nil, ""); err != nil {
+		t.Fatalf("Exec at argv limit: %v", err)
+	}
+
+	oversizeArg := strings.Repeat("x", defaultAgentExecArgvLimit+1)
+	_, err := client.Exec(ctx, []string{oversizeArg}, nil, "")
+	if err == nil {
+		t.Fatal("Exec over argv limit succeeded")
+	}
+	want := "agent-exec: argv exceeds 16384 bytes (got 16385); use 'cove agent-cp' or 'cove agent-write' for large blobs, or pipe via stdin if your command supports it"
+	if err.Error() != want {
+		t.Fatalf("Exec error = %q, want %q", err.Error(), want)
+	}
+	if handler.calls != 1 {
+		t.Fatalf("handler calls = %d, want 1", handler.calls)
+	}
+}
+
+func TestAgentExecArgvLimitConfig(t *testing.T) {
+	t.Setenv(agentExecArgvLimitEnv, "32")
+	if got := agentExecArgvLimit(); got != 32 {
+		t.Fatalf("agentExecArgvLimit() = %d, want 32", got)
+	}
+}
+
 func TestUserAgentClientExecSupportsParallelRPCs(t *testing.T) {
 	t.Parallel()
 
@@ -159,6 +193,11 @@ type testAgentHandler struct {
 	release chan struct{}
 }
 
+type echoAgentHandler struct {
+	agentpbconnect.UnimplementedAgentHandler
+	calls int
+}
+
 func (h *testAgentHandler) Ping(context.Context, *connect.Request[pb.PingRequest]) (*connect.Response[pb.PingResponse], error) {
 	return connect.NewResponse(&pb.PingResponse{Version: "test"}), nil
 }
@@ -168,6 +207,11 @@ func (h *testAgentHandler) Exec(ctx context.Context, req *connect.Request[pb.Exe
 		ExitCode: 0,
 		Stdout:   []byte(h.wait(req.Msg.Args)),
 	}), nil
+}
+
+func (h *echoAgentHandler) Exec(ctx context.Context, req *connect.Request[pb.ExecRequest]) (*connect.Response[pb.ExecResponse], error) {
+	h.calls++
+	return connect.NewResponse(&pb.ExecResponse{ExitCode: 0}), nil
 }
 
 type testUserAgentHandler struct {
