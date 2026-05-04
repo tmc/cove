@@ -130,6 +130,34 @@ type ExecStreamReceiver interface {
 	Recv() (*pb.ExecOutput, error)
 }
 
+type execAttachStream struct {
+	stream *connect.BidiStreamForClient[pb.ExecAttachRequest, pb.ExecOutput]
+}
+
+func (s *execAttachStream) Recv() (*pb.ExecOutput, error) {
+	msg, err := s.stream.Receive()
+	if err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+func (s *execAttachStream) SendStdin(data []byte) error {
+	return s.stream.Send(&pb.ExecAttachRequest{
+		Request: &pb.ExecAttachRequest_Stdin{Stdin: data},
+	})
+}
+
+func (s *execAttachStream) CloseStdin() error {
+	return s.stream.CloseRequest()
+}
+
+type ExecAttachStream interface {
+	ExecStreamReceiver
+	SendStdin([]byte) error
+	CloseStdin() error
+}
+
 // ExecStream runs a command in the guest and streams stdout/stderr chunks.
 func (c *AgentClient) ExecStream(ctx context.Context, args []string, env map[string]string, workDir string) (ExecStreamReceiver, error) {
 	return c.ExecStreamAs(ctx, "", args, env, workDir)
@@ -156,6 +184,39 @@ func (c *AgentClient) ExecStreamControl(ctx context.Context, execID string, tty 
 		return nil, err
 	}
 	return &execStreamReceiver{stream: stream}, nil
+}
+
+func (c *AgentClient) ExecAttachSupported(ctx context.Context) (bool, error) {
+	info, err := c.Info(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range info.GetFeatures() {
+		if f == "exec_attach" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *AgentClient) ExecAttachControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (ExecAttachStream, error) {
+	req := &pb.ExecRequest{
+		Args:       args,
+		Env:        env,
+		WorkingDir: workDir,
+		ExecId:     execID,
+		Tty:        tty,
+	}
+	if user != "" {
+		req.User = &user
+	}
+	stream := c.client.ExecAttach(ctx)
+	if err := stream.Send(&pb.ExecAttachRequest{
+		Request: &pb.ExecAttachRequest_Start{Start: req},
+	}); err != nil {
+		return nil, err
+	}
+	return &execAttachStream{stream: stream}, nil
 }
 
 func (c *AgentClient) ResizeExec(ctx context.Context, execID string, rows, cols uint32) error {

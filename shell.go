@@ -5,10 +5,6 @@
 // to ~/.vz/vms/<vm>/control.sock. The VM-owning cove process brokers each
 // frame to the in-process guest agent (Slice 1, agent_control_attach.go);
 // this client owns the host TTY, signal forwarding, and stream pumping.
-//
-// Limitation: stdin is not yet forwarded to the guest. Slice 3 ships the
-// proto bidi extension (ExecAttach) and full bidi stdin. Until then this
-// matches the v0.2 `cove run -linux -shell` UX (linux_shell.go:6).
 package main
 
 import (
@@ -108,9 +104,6 @@ func resolveShellSocket(vmName string) (string, error) {
 // frames, install signal forwarders, restore TTY on exit. Returns the
 // guest exit code (0 on clean exit) and an error (nil on a clean session
 // even if exit code is non-zero — the exit code carries that signal).
-//
-// stdin is currently consulted only for term.MakeRaw and SIGWINCH sizing;
-// bytes are not forwarded to the guest in Slice 2 (see file header).
 func runShellSession(ctx context.Context, sock, token, vmName string, argv []string, stdin, stdout, stderr *os.File) (int32, error) {
 	conn, err := net.DialTimeout("unix", sock, 10*time.Second)
 	if err != nil {
@@ -148,11 +141,16 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 	var attached struct {
 		Attached bool   `json:"attached"`
 		ExecID   string `json:"exec_id"`
+		Stdin    bool   `json:"stdin"`
+		Warning  string `json:"warning"`
 	}
 	if err := json.Unmarshal([]byte(startResp.GetData()), &attached); err != nil || !attached.Attached || attached.ExecID == "" {
 		return 0, fmt.Errorf("unexpected attach handshake: %s", startResp.GetData())
 	}
 	execID := attached.ExecID
+	if attached.Warning != "" {
+		fmt.Fprintf(stderr, "cove shell: %s\n", attached.Warning)
+	}
 
 	// Optionally enter raw mode + install signal forwarders if stdin is a
 	// real terminal. When stdin is a pipe (e.g. `cove shell vm -- ls`),
@@ -173,7 +171,12 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 		}
 		restoreSignals = installShellSignalForwarders(ctx, sock, token, execID, stdinFD, stderr)
 	}
+	stdinCtx, cancelStdin := context.WithCancel(ctx)
+	if attached.Stdin {
+		go pumpShellStdin(stdinCtx, conn, execID, stdin, stderr)
+	}
 	defer func() {
+		cancelStdin()
 		if restoreSignals != nil {
 			restoreSignals()
 		}
@@ -187,6 +190,44 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 		return exitCode, err
 	}
 	return exitCode, nil
+}
+
+func pumpShellStdin(ctx context.Context, conn net.Conn, execID string, stdin io.Reader, stderr io.Writer) {
+	if err := writeShellStdinFrames(ctx, conn, execID, stdin); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintf(stderr, "cove shell: stdin: %v\n", err)
+	}
+	if cw, ok := conn.(interface{ CloseWrite() error }); ok {
+		_ = cw.CloseWrite()
+	}
+}
+
+func writeShellStdinFrames(ctx context.Context, w io.Writer, execID string, stdin io.Reader) error {
+	buf := make([]byte, 32*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, err := stdin.Read(buf)
+		if n > 0 {
+			frame, marshalErr := json.Marshal(agentExecStdinFrame{
+				Type:   "stdin",
+				ExecID: execID,
+				Data:   base64.StdEncoding.EncodeToString(buf[:n]),
+			})
+			if marshalErr != nil {
+				return fmt.Errorf("marshal stdin frame: %w", marshalErr)
+			}
+			if _, writeErr := w.Write(append(frame, '\n')); writeErr != nil {
+				return fmt.Errorf("send stdin frame: %w", writeErr)
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read stdin: %w", err)
+		}
+	}
 }
 
 // pumpShellFrames decodes JSON-line ControlResponse frames from r,
@@ -368,7 +409,7 @@ Examples:
   cove shell my-vm -- ls /tmp            # one-shot command, prints output
   cove shell my-vm -- /bin/sh -c 'echo'
 
-Limitations (Slice 2):
-  - stdin is not forwarded to the guest yet (Slice 3 / v0.3 proto bump)
-  - the VM must be running with vz-agent reachable on its control socket`)
+The VM must be running with vz-agent reachable on its control socket.
+If the guest agent predates ExecAttach, cove falls back to the v0.2
+read-only stdin path and prints a warning.`)
 }

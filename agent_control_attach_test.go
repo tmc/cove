@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 type fakeAttachAgent struct {
 	mu        sync.Mutex
 	streams   chan *fakeExecStream
+	attach    bool
 	resize    func(execID string, rows, cols uint32) error
 	signal    func(execID string, sig int32) error
 	openErr   error
@@ -43,7 +45,19 @@ type signalCall struct {
 	sig    int32
 }
 
+func (f *fakeAttachAgent) ExecAttachSupported(ctx context.Context) (bool, error) {
+	return f.attach, nil
+}
+
+func (f *fakeAttachAgent) ExecAttachControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (agentstate.ExecAttachStream, error) {
+	return f.openStream(ctx, execID, tty, user, args, env, workDir)
+}
+
 func (f *fakeAttachAgent) ExecStreamControl(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (agentstate.ExecStreamReceiver, error) {
+	return f.openStream(ctx, execID, tty, user, args, env, workDir)
+}
+
+func (f *fakeAttachAgent) openStream(ctx context.Context, execID string, tty bool, user string, args []string, env map[string]string, workDir string) (*fakeExecStream, error) {
 	if f.openErr != nil {
 		return nil, f.openErr
 	}
@@ -85,6 +99,7 @@ func (f *fakeAttachAgent) SignalExec(ctx context.Context, execID string, sig int
 
 type fakeExecStream struct {
 	frames chan *pb.ExecOutput
+	stdin  bytes.Buffer
 	closed bool
 	mu     sync.Mutex
 }
@@ -109,6 +124,17 @@ func (s *fakeExecStream) Recv() (*pb.ExecOutput, error) {
 		return nil, io.EOF
 	}
 	return out, nil
+}
+
+func (s *fakeExecStream) SendStdin(data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.stdin.Write(data)
+	return err
+}
+
+func (s *fakeExecStream) CloseStdin() error {
+	return nil
 }
 
 // TestServeAgentExecAttachEchoesStdoutAndExit drives the inner attach handler
@@ -181,6 +207,34 @@ func TestServeAgentExecAttachEchoesStdoutAndExit(t *testing.T) {
 	}
 	if exit, _ := done2["exitCode"].(float64); exit != 0 {
 		t.Fatalf("exitCode = %v, want 0", exit)
+	}
+}
+
+func TestForwardAttachStdinSendsDecodedFrames(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	stream := &fakeExecStream{frames: make(chan *pb.ExecOutput)}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		forwardAttachStdin(context.Background(), server, "exec-1", stream)
+	}()
+
+	frame, _ := json.Marshal(agentExecStdinFrame{
+		Type:   "stdin",
+		ExecID: "exec-1",
+		Data:   base64.StdEncoding.EncodeToString([]byte("abc")),
+	})
+	if _, err := client.Write(append(frame, '\n')); err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+	client.Close()
+	<-done
+
+	if got := stream.stdin.String(); got != "abc" {
+		t.Fatalf("stdin = %q, want abc", got)
 	}
 }
 
