@@ -1,4 +1,5 @@
 # iterm2 — Install iTerm2.app and configure API access in the guest
+# guest-os: darwin
 # requires: it2
 
 guest-ping

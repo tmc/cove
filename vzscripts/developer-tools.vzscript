@@ -1,4 +1,5 @@
 # developer-tools — Install Xcode Command Line Tools (headless)
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping

@@ -1,4 +1,5 @@
 # setup-user — Create a user account in Setup Assistant
+# guest-os: darwin
 
 # Requires $FULLNAME, $USERNAME, and $PASSWORD environment variables.
 # Run after setup-assistant reaches the user account screen.

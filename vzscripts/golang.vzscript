@@ -1,4 +1,5 @@
 # golang — Install Go programming language
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping

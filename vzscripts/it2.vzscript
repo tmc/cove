@@ -1,4 +1,5 @@
 # it2 — Install it2 (iTerm2 CLI) in the guest
+# guest-os: darwin
 # requires: golang
 # runs-on: daemon
 

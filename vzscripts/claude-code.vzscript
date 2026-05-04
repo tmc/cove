@@ -1,4 +1,5 @@
 # claude-code — Install Claude Code CLI via the native installer
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping

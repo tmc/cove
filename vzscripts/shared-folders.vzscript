@@ -1,4 +1,5 @@
 # shared-folders — Mount the user's standard VirtioFS shared folders
+# guest-os: darwin
 #
 # Declares three host directories as shared folders via the "# mount:"
 # directive: ~/ml-explore, /Volumes/tmc, and ~/.cache/huggingface/hub.

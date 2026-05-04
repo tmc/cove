@@ -1,4 +1,5 @@
 # agentkit-linux-claude-ready — Install Claude Code CLI in a Linux agentkit image
+# guest-os: linux
 # runs-on: daemon
 
 guest-ping

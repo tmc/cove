@@ -1,4 +1,5 @@
 # tailscale — Install and bring up Tailscale on a macOS guest VM
+# guest-os: darwin
 # runs-on: daemon
 # requires: homebrew
 

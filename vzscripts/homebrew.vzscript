@@ -1,4 +1,5 @@
 # homebrew — Install Homebrew package manager
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping

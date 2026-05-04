@@ -1,4 +1,5 @@
 # deploy-agent — Deploy updated vz-agent binary to the guest
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping
