@@ -1,6 +1,6 @@
 # Design 027: Disk I/O Performance Tuning
 
-Status: Implemented (2026-05-04)
+Status: Implemented (2026-05-04; Slices 1-3 shipped, Slice 4 pending)
 Author: Travis Cline
 Date: 2026-05-03
 
@@ -136,7 +136,7 @@ Hidden by default; documented in `docs/runbooks/disk-tuning.md`.
 ## Follow-up slices
 
 - **Slice 2 — NVMe controller for Linux**: Implemented (benchmark deferred). Hidden `-nvme` flag on Linux run/install paths, wrapping root disk attachments with `VZNVMExpressControllerDeviceConfiguration` instead of virtio-blk. The install benchmark is still pending a free host VM slot.
-- **Slice 3 — Pre-allocated RAW images** instead of sparse: `hdiutil create -fs UDIF` writes a sparse bundle; switching to `dd if=/dev/zero` style raw allocation eliminates APFS first-write pauses. Cost: disk image is its full size on host immediately. Worth it for benchmark images, not for casual user disks.
+- **Slice 3 — Pre-allocated RAW images** instead of sparse: Implemented (2026-05-04). Hidden `cove install -raw-disk` uses dd-style zero preallocation for new install disk images instead of the default sparse truncate path. Cost: disk image is its full size on host immediately. Worth it for benchmark images and ephemeral installers, not for casual user disks. Host-only benchmark recorded in `docs/benchmarks/disk-io.md`.
 - **Slice 4 — Block device passthrough** (`VZDiskBlockDeviceStorageDeviceAttachment`): bypass APFS entirely, attach `/dev/rdiskN`. Needs root helper (we already have `cove-helper`); biggest architectural lift; max performance.
 
 ## Risks
@@ -158,6 +158,13 @@ Hidden by default; documented in `docs/runbooks/disk-tuning.md`.
 - [x] Linux root disks can be attached through NVMe with `VZNVMExpressControllerDeviceConfiguration`
 - [x] Hidden `-nvme` flag wired on Linux run/install paths
 - [ ] Ubuntu Desktop install benchmark recorded for virtio-blk vs. NVMe on this host
+
+## Slice 3 acceptance
+
+- [x] Hidden `-raw-disk` flag wired on install paths
+- [x] Default install disk creation remains sparse
+- [x] Raw path preallocates host blocks up front
+- [x] Host-only benchmark recorded for image creation plus first 1 GiB write
 
 ## References
 
