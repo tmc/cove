@@ -86,7 +86,7 @@ func linuxTerminalLaunchArgs(session linuxGraphicalSession, program string, comm
 	args = append(args, program)
 	switch program {
 	case "gnome-terminal":
-		args = append(args, "--window", "--")
+		args = append(args, "--window", "--active", "--maximize", "--")
 	case "kgx":
 		args = append(args, "--")
 	default:
