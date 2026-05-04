@@ -124,6 +124,56 @@ func TestHelperPingRoundTrip(t *testing.T) {
 	}
 }
 
+func TestHelperOpenBlockDeviceRejectsUnsafePath(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "cove-helper-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sockPath := filepath.Join(dir, "test.sock")
+	l, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		handleHelperConn(slog.Default(), conn, os.Getuid())
+	}()
+
+	conn, err := net.DialTimeout("unix", sockPath, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
+
+	req := helperRequest{
+		Op: "open_block_device",
+		OpenBlockDevice: &blockDeviceRequest{
+			Path:     "/tmp/disk.img",
+			ReadOnly: false,
+		},
+	}
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		t.Fatal(err)
+	}
+	var resp helperResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.OK {
+		t.Fatalf("open_block_device accepted unsafe path")
+	}
+	if resp.Error != "block device /tmp/disk.img is not under /dev" {
+		t.Fatalf("error = %q", resp.Error)
+	}
+}
+
 func TestHelperInstallOwnerUID(t *testing.T) {
 	tests := []struct {
 		name    string
