@@ -231,6 +231,24 @@ func TestLoadVZScriptData(t *testing.T) {
 	}
 }
 
+func TestVZScriptListRejectsInvalidOS(t *testing.T) {
+	err := vzscriptList([]string{"-os", "windows"})
+	if err == nil {
+		t.Fatal("expected invalid guest OS error")
+	}
+	if got, want := err.Error(), `invalid guest OS "windows" (use darwin or linux)`; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestPrintVZScriptUsageIncludesListOSFlag(t *testing.T) {
+	var buf bytes.Buffer
+	printVzscriptUsage(&buf)
+	if !strings.Contains(buf.String(), "list [-os darwin|linux]") {
+		t.Fatalf("usage missing list OS flag:\n%s", buf.String())
+	}
+}
+
 func TestRunVZScriptTemplate(t *testing.T) {
 	var log bytes.Buffer
 	cfg := vzscriptConfig{
