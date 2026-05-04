@@ -84,14 +84,10 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// Storage - main disk
-	diskAttachment, err := createSystemDiskAttachment(diskImagePath, false)
+	storageConfig, err := createLinuxRootStorageDevice(diskImagePath, false)
 	if err != nil {
-		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("failed to create disk attachment: %w", err)
+		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("create root storage device: %w", err)
 	}
-
-	// Create block device custom config
-	storageConfig := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment)
-	storageConfig.Retain()
 
 	// If ISO is provided, add it as second storage device (read-only)
 	if isoPath != "" {
@@ -103,11 +99,15 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 		isoAttachment.Retain()
 
 		isoStorage := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&isoAttachment.VZStorageDeviceAttachment)
+		isoStorage.Retain()
 
 		// Add both storage devices
-		setStorageDevicesMultiple(config, storageConfig, isoStorage)
+		config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{
+			storageConfig,
+			vz.VZStorageDeviceConfigurationFromID(isoStorage.ID),
+		})
 	} else {
-		setStorageDevices(config, storageConfig)
+		config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{storageConfig})
 	}
 
 	// Graphics - use Virtio for Linux with multi-display support.
@@ -523,6 +523,32 @@ func runLinuxVM() error {
 	// Start VM
 	fmt.Println("Starting virtual machine...")
 	return startVMWithQueue(vm, vmQueue)
+}
+
+func createLinuxRootStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConfiguration, error) {
+	attachment, err := createSystemDiskAttachment(path, readOnly)
+	if err != nil {
+		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create disk attachment: %w", err)
+	}
+	return createLinuxStorageDeviceWithAttachment(attachment)
+}
+
+func createLinuxStorageDeviceWithAttachment(attachment vz.VZStorageDeviceAttachment) (vz.VZStorageDeviceConfiguration, error) {
+	if linuxNVMe {
+		device := vz.NewNVMExpressControllerDeviceConfigurationWithAttachment(attachment)
+		if device.ID == 0 {
+			return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create NVMe storage device")
+		}
+		device.Retain()
+		return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
+	}
+
+	device := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&attachment)
+	if device.ID == 0 {
+		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create virtio block storage device")
+	}
+	device.Retain()
+	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 }
 
 // Helper functions for Linux-specific array properties using generated slice setters.

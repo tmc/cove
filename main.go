@@ -38,6 +38,7 @@ var (
 	linuxDesktop          bool
 	linuxDistro           string
 	linuxNested           bool
+	linuxNVMe             bool
 	linuxShell            bool
 	linuxDesktopInstaller string
 	cpuCount              uint

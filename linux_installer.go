@@ -468,7 +468,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	}
 
 	// Storage devices:
-	// 1. Main disk (Virtio block, becomes /dev/vda)
+	// 1. Main disk (Virtio block or NVMe)
 	// 2. Cloud-init ISO (Virtio block, becomes /dev/vdb or sr0)
 	// 3. Installation ISO (USB mass storage — matches Code-Hex/vz pattern)
 
@@ -479,8 +479,10 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 		return config, fmt.Errorf("create disk attachment: %w", err)
 	}
 	diskAttachment.Retain()
-	diskStorage := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment.VZStorageDeviceAttachment)
-	diskStorage.Retain()
+	diskStorage, err := createLinuxStorageDeviceWithAttachment(diskAttachment.VZStorageDeviceAttachment)
+	if err != nil {
+		return config, fmt.Errorf("create disk storage device: %w", err)
+	}
 
 	// Cloud-init data as USB mass storage. The casper live environment's
 	// initrd may not include virtio block drivers, so CIDATA on a Virtio
@@ -513,7 +515,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 		fmt.Printf("    ISO USB: ID=%x attachment=%x\n", isoUSB.ID, isoAttachment.ID)
 	}
 	config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{
-		vz.VZStorageDeviceConfigurationFromID(diskStorage.ID),
+		diskStorage,
 		vz.VZStorageDeviceConfigurationFromID(cloudInitUSB.ID),
 		vz.VZStorageDeviceConfigurationFromID(isoUSB.ID),
 	})
