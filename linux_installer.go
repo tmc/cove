@@ -325,7 +325,7 @@ func installLinuxVM() error {
 	// Create disk image if it doesn't exist
 	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
 		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, diskSizeGB)
-		if err := createDiskImage(resolvedDiskPath, diskSizeGB); err != nil {
+		if err := createInstallDiskImage(resolvedDiskPath, diskSizeGB); err != nil {
 			return fmt.Errorf("create disk image: %w", err)
 		}
 	}
