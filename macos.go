@@ -1116,9 +1116,9 @@ func setAudioDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtio
 	})
 }
 
-func setSerialPorts(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioConsoleDeviceSerialPortConfiguration) {
+func setSerialPorts(config vz.VZVirtualMachineConfiguration, device vz.VZSerialPortConfiguration) {
 	config.SetSerialPorts([]vz.VZSerialPortConfiguration{
-		vz.VZSerialPortConfigurationFromID(device.ID),
+		device,
 	})
 }
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
+	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/clipboard"
 	displayx "github.com/tmc/apple/x/vzkit/display"
@@ -360,6 +361,19 @@ func createEFIBootLoader() (vz.VZEFIBootLoader, error) {
 	if efiStore.ID != 0 {
 		efiStore.Retain()
 		bootloader.SetVariableStore(&efiStore)
+	}
+	if windowsMode && strings.TrimSpace(windowsEFIRomPath) != "" {
+		romPath := resolvePath(windowsEFIRomPath)
+		if _, err := os.Stat(romPath); err != nil {
+			return bootloader, fmt.Errorf("windows EFI ROM not found: %w", err)
+		}
+		romURL := foundation.NewURLFileURLWithPath(romPath)
+		if romURL.ID == 0 {
+			return bootloader, fmt.Errorf("create windows EFI ROM url")
+		}
+		romURL.Retain()
+		privvz.VZEFIBootLoaderFromID(bootloader.ID).SetROMImageURL(romURL)
+		fmt.Printf("  Windows EFI ROM: %s\n", romPath)
 	}
 
 	return bootloader, nil

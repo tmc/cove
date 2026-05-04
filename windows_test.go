@@ -42,6 +42,38 @@ func TestParseWindowsGraphicsMode(t *testing.T) {
 	}
 }
 
+func TestParseWindowsSerialMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    windowsSerial
+		wantErr bool
+	}{
+		{name: "default", input: "", want: windowsSerialVirtio},
+		{name: "virtio", input: "virtio", want: windowsSerialVirtio},
+		{name: "pl011", input: "pl011", want: windowsSerialPL011},
+		{name: "16550", input: "16550", want: windowsSerial16550},
+		{name: "bad", input: "com1", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseWindowsSerialMode(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseWindowsSerialMode(%q) error = nil", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseWindowsSerialMode(%q): %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Fatalf("parseWindowsSerialMode(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWindowsISOLabel(t *testing.T) {
 	got := windowsISOLabel("/tmp/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd")
 	const want = "26100.4349.250607-1500"
@@ -108,6 +140,7 @@ func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConf
 	oldMemory := memoryGB
 	oldNetwork := networkMode
 	oldSerial := serialOutput
+	oldWindowsSerial := windowsSerialMode
 	oldGDB := gdbAddress
 	oldVNC := vncAddress
 	oldVNCBonjour := vncBonjourService
@@ -117,6 +150,7 @@ func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConf
 		memoryGB = oldMemory
 		networkMode = oldNetwork
 		serialOutput = oldSerial
+		windowsSerialMode = oldWindowsSerial
 		gdbAddress = oldGDB
 		vncAddress = oldVNC
 		vncBonjourService = oldVNCBonjour
@@ -127,6 +161,7 @@ func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConf
 	memoryGB = 4
 	networkMode = "none"
 	serialOutput = "none"
+	windowsSerialMode = string(windowsSerialVirtio)
 	gdbAddress = ""
 	vncAddress = ""
 	vncBonjourService = ""
