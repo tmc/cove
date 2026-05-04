@@ -400,6 +400,8 @@ func ctlCommand(args []string) error {
 		return ctlRuntimeUSBCommand(sock, subArgs, *timeout, *raw)
 	case "power":
 		return ctlPowerCommand(sock, subArgs, *timeout, *raw)
+	case "network-info":
+		return ctlNetworkInfoCommand(sock, *timeout, *raw)
 	}
 
 	// Build proto request
@@ -407,7 +409,7 @@ func ctlCommand(args []string) error {
 	req.AuthToken = resolveControlTokenForSocket(sock)
 
 	switch cmdType {
-	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "reboot-to-recovery", "boot-recovery", "network-info", "shared-folders-apply":
+	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "reboot-to-recovery", "boot-recovery", "shared-folders-apply":
 		// No payload needed
 
 	case "memory":
@@ -773,6 +775,72 @@ func ctlSimpleCommand(sock, cmdType string, timeout time.Duration, raw bool) err
 		return err
 	}
 	return ctlPrintResponse(resp, cmdType, raw, "")
+}
+
+func ctlNetworkInfoCommand(sock string, timeout time.Duration, raw bool) error {
+	req := &controlpb.ControlRequest{
+		Type:      "network-info",
+		AuthToken: resolveControlTokenForSocket(sock),
+	}
+	resp, err := ctlSendRequest(sock, req, timeout, "network-info")
+	if err != nil {
+		return err
+	}
+	info := networkInfoFromResponse(resp)
+	if ctlGuestIsLinux(sock) {
+		client := NewControlClient(sock)
+		client.SetTimeout(timeout)
+		if info.GuestIp == "" {
+			if res, err := client.AgentExecTypedTimeout(guestIPProbeArgs(true), nil, "", 5*time.Second); err == nil && res.GetExitCode() == 0 {
+				info.GuestIp = parseGuestIP(res.GetStdout())
+			}
+		}
+		if info.MacAddress == "" {
+			info.MacAddress = linuxNetworkInfoMAC(sock, client)
+		}
+	}
+	if info != nil {
+		data, _ := protojsonMarshaler.Marshal(info)
+		resp.Data = string(data)
+		resp.Result = &controlpb.ControlResponse_NetworkInfo{NetworkInfo: info}
+	}
+	return ctlPrintResponse(resp, "network-info", raw, "")
+}
+
+func networkInfoFromResponse(resp *controlpb.ControlResponse) *controlpb.NetworkInfoResponse {
+	if resp == nil {
+		return nil
+	}
+	if info := resp.GetNetworkInfo(); info != nil {
+		return info
+	}
+	info := &controlpb.NetworkInfoResponse{}
+	if resp.Data != "" {
+		_ = protojson.Unmarshal([]byte(resp.Data), info)
+	}
+	return info
+}
+
+func linuxNetworkInfoMAC(sock string, client *ControlClient) string {
+	vmDirectory := filepath.Dir(sock)
+	macPath := filepath.Join(vmDirectory, "mac.address")
+	if data, err := os.ReadFile(macPath); err == nil {
+		if mac := strings.TrimSpace(string(data)); mac != "" {
+			return mac
+		}
+	}
+	res, err := client.AgentExecTypedTimeout([]string{"sh", "-lc", "cat /sys/class/net/eth0/address 2>/dev/null || true"}, nil, "", 5*time.Second)
+	if err != nil || res.GetExitCode() != 0 {
+		return ""
+	}
+	mac := strings.TrimSpace(res.GetStdout())
+	if mac == "" {
+		return ""
+	}
+	if err := os.WriteFile(macPath, []byte(mac+"\n"), 0644); err != nil && verbose {
+		fmt.Fprintf(os.Stderr, "warning: save linux MAC address: %v\n", err)
+	}
+	return mac
 }
 
 func ctlRuntimeDiskCommand(sock string, args []string, timeout time.Duration, raw bool) error {
