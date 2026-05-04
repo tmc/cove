@@ -20,6 +20,15 @@ The JSON records the parent, fork name, URL, wall-clock seconds, frame count,
 screenshot dimensions, and screenshot SHA-256. It does not store screenshot
 pixels.
 
+## Live Acceptance
+
+The initial live acceptance run was deferred on 2026-05-04 because the host's
+macOS VM slots were occupied by the long-running `gha-runner-mlx-go-v1` and
+`gha-runner-mlx-go-libs-2` workers. Stopping those workers is out of scope for
+this harness. Run the smoke when a VM slot is free and commit the generated
+`adapters/parity-smoke/results/<adapter>-<date>.json` if a recorded acceptance
+artifact is needed.
+
 ## Run
 
 Use a stopped macOS parent VM with the cove guest agent installed:
