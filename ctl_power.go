@@ -12,6 +12,9 @@ func ctlPowerCommand(sock string, args []string, timeout time.Duration, raw bool
 	if len(args) < 1 {
 		return fmt.Errorf("power requires action: status, keep-awake, or allow-sleep")
 	}
+	if ctlGuestIsLinux(sock) {
+		return fmt.Errorf("power: not supported for Linux guests")
+	}
 
 	var script string
 	switch args[0] {

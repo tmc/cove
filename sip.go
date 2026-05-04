@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 )
 
 // handleSIPCommand dispatches SIP management subcommands.
@@ -18,16 +20,34 @@ func handleSIPCommand(args []string) error {
 
 	switch args[0] {
 	case "enable":
+		if err := requireMacOSSIPTarget(); err != nil {
+			return err
+		}
 		return sipEnable()
 	case "enable-auto":
+		if err := requireMacOSSIPTarget(); err != nil {
+			return err
+		}
 		return sipAuto("enable", args[1:])
 	case "disable":
+		if err := requireMacOSSIPTarget(); err != nil {
+			return err
+		}
 		return sipDisable()
 	case "disable-auto":
+		if err := requireMacOSSIPTarget(); err != nil {
+			return err
+		}
 		return sipAuto("disable", args[1:])
 	case "status":
+		if err := requireMacOSSIPTarget(); err != nil {
+			return err
+		}
 		return sipStatus()
 	case "create-disk":
+		if err := requireMacOSSIPTarget(); err != nil {
+			return err
+		}
 		return sipCreateDisk()
 	case "help":
 		fmt.Print(sipUsage)
@@ -35,6 +55,13 @@ func handleSIPCommand(args []string) error {
 	default:
 		return fmt.Errorf("unknown sip command: %s\n\n%s", args[0], sipUsage)
 	}
+}
+
+func requireMacOSSIPTarget() error {
+	if agentstate.Platform(vmDir) == agentstate.PlatformLinux {
+		return fmt.Errorf("sip is only supported for macOS VMs")
+	}
+	return nil
 }
 
 func sipEnable() error {
