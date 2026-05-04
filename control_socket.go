@@ -428,6 +428,8 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.rebootToRecovery()
 	case "shared-folders-apply":
 		return s.handleSharedFoldersApply()
+	case "shared-folders-runtime-status":
+		return s.handleSharedFoldersRuntimeStatus()
 	case "iterm2-proxy-stop":
 		return s.handleITerm2ProxyStop()
 	case "iterm2-proxy-status":
@@ -1802,7 +1804,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 		"commands": []string{
 			"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 			"pause", "resume", "stop", "request-stop", "reboot-to-recovery", "snapshot", "memory", "network-info",
-			"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
+			"shared-folders-apply", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
 			"vnc-status", "debug-stub-status", "disk", "pit", "usb",
 			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 			"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
@@ -1813,7 +1815,7 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 	commands := []string{
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "reboot-to-recovery", "snapshot", "memory", "network-info",
-		"shared-folders-apply", "gui-open", "gui-close", "gui-status", "port-forward",
+		"shared-folders-apply", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
 		"vnc-status", "debug-stub-status", "disk", "pit", "usb",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",

@@ -152,6 +152,11 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 
 	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
 	client.SetTimeout(15 * time.Second)
+	status, err := client.SharedFoldersRuntimeStatus()
+	if err != nil || !status.VirtioFS {
+		fmt.Printf("shared folder saved; will mount on next boot of %s (live shared folders are unavailable: %s)\n", sharedFolderVMName(vmDirectory), sharedFolderRuntimeStatusMessage(status, err))
+		return nil
+	}
 	if msg, err := client.SharedFoldersApply(); err == nil {
 		fmt.Printf("Applied to running VM: %s\n", msg)
 	} else {
@@ -180,6 +185,19 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	}
 	fmt.Printf("Guest path for this folder: %s/%s\n", defaultSharedFoldersMountPoint, entry.Tag)
 	return nil
+}
+
+func sharedFolderRuntimeStatusMessage(status sharedFoldersRuntimeStatus, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if status.Message != "" {
+		return status.Message
+	}
+	if !status.Running {
+		return "no live VM connected"
+	}
+	return "this VM was not booted with VirtioFS device, so live attach is not possible"
 }
 
 func handleVMSharedFolderRemove(vmDirectory, selector string) error {

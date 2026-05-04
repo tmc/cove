@@ -813,6 +813,28 @@ func (c *ControlClient) SharedFoldersApply() (string, error) {
 	return resp.Data, nil
 }
 
+func (c *ControlClient) SharedFoldersRuntimeStatus() (sharedFoldersRuntimeStatus, error) {
+	resp, err := c.sendRequest(&controlpb.ControlRequest{Type: "shared-folders-runtime-status"})
+	if err != nil {
+		return sharedFoldersRuntimeStatus{}, err
+	}
+	if !resp.Success {
+		return sharedFoldersRuntimeStatus{}, fmt.Errorf("shared-folders-runtime-status: %s", resp.Error)
+	}
+	var status sharedFoldersRuntimeStatus
+	if resp.Data != "" {
+		if err := json.Unmarshal([]byte(resp.Data), &status); err != nil {
+			return sharedFoldersRuntimeStatus{}, fmt.Errorf("parse shared-folders-runtime-status: %w", err)
+		}
+	}
+	if status.Message == "" {
+		if msg := resp.GetMessage(); msg != nil {
+			status.Message = msg.Message
+		}
+	}
+	return status, nil
+}
+
 // Pause pauses the VM.
 func (c *ControlClient) Pause() error {
 	resp, err := c.sendRequest(&controlpb.ControlRequest{Type: "pause"})
