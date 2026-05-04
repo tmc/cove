@@ -8,10 +8,35 @@ defaults to explicit cache and synchronization policies.
 - Machine: MacBook Pro, Apple M4 Max
 - CPU: 16 cores, 12 performance and 4 efficiency
 - Memory: 128 GB
+- OS: macOS 26.4.1 (25E253), arm64
 - OS firmware: 18000.101.7
-- Date: 2026-05-03
+- Date: 2026-05-04
 
-## Workload
+## Slice 3 Host-Only Workload
+
+Design 027 Slice 3 is about host allocation behavior, so this benchmark does
+not boot a VM. It compares:
+
+- Before-style sparse image: `hdiutil create -size 8g -type SPARSE -fs 'Case-sensitive APFS'`
+- After-style raw image: `dd if=/dev/zero of=raw.img bs=8m count=1024`
+- First-write workload for both: overwrite the first 1 GiB with `dd bs=1m count=1024 conv=notrunc`, then `sync`.
+
+The 8 GiB image size keeps the benchmark short while still measuring APFS block
+allocation behavior. The first-write size is 1 GiB as requested.
+
+## Slice 3 Results
+
+| Run | Create command | Create real | First 1 GiB write real | Total through first write | Host disk used |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Sparse image | `hdiutil create -size 8g -type SPARSE -fs 'Case-sensitive APFS'` | 2.05s | 0.43s | 2.48s | 1.0 GiB after first write |
+| Preallocated raw | `dd if=/dev/zero of=raw.img bs=8m count=1024` | 1.82s | 0.26s | 2.08s | 8.0 GiB immediately |
+
+Raw preallocation reduced the measured first 1 GiB write from 0.43s to 0.26s
+on this host, a 40% reduction for the allocation-heavy first-write portion. It
+also used the full 8 GiB up front, which is why `-raw-disk` stays hidden and
+default-off.
+
+## Slice 1 Install Workload
 
 Ubuntu 24.04 Desktop autoinstall from the cached desktop ISO:
 
@@ -36,7 +61,7 @@ go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
-## Results
+## Slice 1 Results
 
 | Run | Disk policy | Wall clock | Notes |
 | --- | --- | ---: | --- |
