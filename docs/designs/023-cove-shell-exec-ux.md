@@ -1,6 +1,6 @@
 # cove shell — Docker-shaped exec UX
 
-**Status**: Slices 1 + 2 shipped (`17211bd` + `33fbe7e`, 2026-05-02). Slice 3 (proto bidi `ExecAttach` + bidi stdin) deferred to v0.3 proto bump.
+**Status**: Slices 1 + 2 shipped (`17211bd` + `33fbe7e`, 2026-05-02). Slice 3 shipped as the v0.3 proto bump (`4d9043a`, `8e550d4`, `5d5876f`, 2026-05-04): additive bidi `ExecAttach` plus fallback to the v0.2 unary/`ExecStream` path for older agents.
 **Source**: [/tmp/cove-loop-roadmap-cursor.md](../../tmp/cove-loop-roadmap-cursor.md)
 plus the linux-shell-host T3 step 2 pre-flight findings (the sub-agent
 that landed [`63d3234`](../../) and called out the vsock-ownership
@@ -130,7 +130,7 @@ New subcommand `cove shell <vm> [-- <args>]`. Default `bash -l`
 Tests reuse `linux_shell_test.go` and
 `integration_linux_shell_test.go` patterns.
 
-## Slice 3 — proto bidi extension (~50 LOC + generated)
+## Slice 3 — proto bidi extension (~50 LOC + generated) — SHIPPED `4d9043a` + `8e550d4` + `5d5876f`
 
 `proto/agent.proto` gets a new RPC:
 
@@ -152,7 +152,7 @@ fall back to `ExecStream`. v0.3 client + v0.2 agent → fall back to
 a warning. Tests cover both directions.
 
 This slice is the v0.3 proto bump; it makes `cove shell` a true
-interactive shell rather than a tail.
+interactive shell rather than a tail. `ExecStream` remains unchanged.
 
 ## Failure rules
 
