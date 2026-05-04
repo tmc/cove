@@ -829,11 +829,11 @@ func linuxNetworkInfoMAC(sock string, client *ControlClient) string {
 			return mac
 		}
 	}
-	res, err := client.AgentExecTypedTimeout([]string{"sh", "-lc", "cat /sys/class/net/eth0/address 2>/dev/null || true"}, nil, "", 5*time.Second)
+	res, err := client.AgentExecTypedTimeout(linuxGuestMACProbeArgs(), nil, "", 5*time.Second)
 	if err != nil || res.GetExitCode() != 0 {
 		return ""
 	}
-	mac := strings.TrimSpace(res.GetStdout())
+	mac := parseGuestMAC(res.GetStdout())
 	if mac == "" {
 		return ""
 	}
