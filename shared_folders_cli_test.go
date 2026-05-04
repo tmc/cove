@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -205,6 +206,57 @@ func TestNormalizeSharedFolderPathRejectsFiles(t *testing.T) {
 func TestApplySharedFoldersAndPrintWithoutRunningVM(t *testing.T) {
 	if err := applySharedFoldersAndPrint(t.TempDir()); err != nil {
 		t.Fatalf("applySharedFoldersAndPrint() error = %v, want nil", err)
+	}
+}
+
+func TestSharedFolderCommandVMDirHonorsVMFlag(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "ubuntu-gh-runner-headed"
+	vmDir = "default"
+
+	got, err := sharedFolderCommandVMDir()
+	if err != nil {
+		t.Fatalf("sharedFolderCommandVMDir() error = %v", err)
+	}
+	want := resolvePath(filepath.Join(vmconfig.BaseDir(), "ubuntu-gh-runner-headed"))
+	if got != want {
+		t.Fatalf("sharedFolderCommandVMDir() = %q, want %q", got, want)
+	}
+	if sock := GetControlSocketPathForVM(got); sock != filepath.Join(want, "control.sock") {
+		t.Fatalf("socket path = %q", sock)
+	}
+}
+
+func TestApplySharedFoldersWarningNamesTargetVM(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "ubuntu-gh-runner-headed"
+	vmDir = "default"
+	vmDirectory, err := sharedFolderCommandVMDir()
+	if err != nil {
+		t.Fatalf("sharedFolderCommandVMDir() error = %v", err)
+	}
+
+	out := captureStdout(t, func() error {
+		return applySharedFoldersAndPrint(vmDirectory)
+	})
+	for _, want := range []string{
+		`VM "ubuntu-gh-runner-headed"`,
+		filepath.Join(vmDirectory, "control.sock"),
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, filepath.Join("vz-macos", "default", "control.sock")) {
+		t.Fatalf("output used cwd-relative default socket:\n%s", out)
 	}
 }
 

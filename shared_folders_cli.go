@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -37,34 +38,41 @@ func handleVMSharedFolderCommand(args []string) error {
 		printSharedFolderUsage(os.Stderr)
 		return fmt.Errorf("command required")
 	}
-
 	switch args[0] {
 	case "help", "-h", "--help":
 		printSharedFolderUsage(os.Stderr)
 		return nil
+	}
+
+	targetDir, err := sharedFolderCommandVMDir()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
 	case "list":
-		return listSharedFolders(vmDir)
+		return listSharedFolders(targetDir)
 	case "status":
 		mountPoint := defaultSharedFoldersMountPoint
 		if len(args) >= 2 {
 			mountPoint = args[1]
 		}
-		return sharedFolderStatus(vmDir, mountPoint)
+		return sharedFolderStatus(targetDir, mountPoint)
 	case "add":
-		return handleVMSharedFolderAdd(args[1:])
+		return handleVMSharedFolderAdd(targetDir, args[1:])
 	case "remove":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: cove shared-folder remove <tag-or-path>")
 		}
-		return handleVMSharedFolderRemove(args[1])
+		return handleVMSharedFolderRemove(targetDir, args[1])
 	case "clear":
-		return handleVMSharedFolderClear()
+		return handleVMSharedFolderClear(targetDir)
 	case "mount":
 		mountPoint := defaultSharedFoldersMountPoint
 		if len(args) >= 2 {
 			mountPoint = args[1]
 		}
-		mounted, err := mountSharedFoldersInGuest(vmDir, mountPoint)
+		mounted, err := mountSharedFoldersInGuest(targetDir, mountPoint)
 		if err != nil {
 			return err
 		}
@@ -79,7 +87,31 @@ func handleVMSharedFolderCommand(args []string) error {
 	}
 }
 
-func handleVMSharedFolderAdd(args []string) error {
+func sharedFolderCommandVMDir() (string, error) {
+	if vmName != "" {
+		return vmconfig.EnsureDir(vmName, vmDir)
+	}
+	if vmDir == "" {
+		return vmconfig.EnsureDir("", vmDir)
+	}
+	if filepath.IsAbs(vmDir) {
+		return vmDir, nil
+	}
+	return vmconfig.Path(vmDir), nil
+}
+
+func sharedFolderVMName(vmDirectory string) string {
+	if vmName != "" {
+		return vmName
+	}
+	name := filepath.Base(vmDirectory)
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return "default"
+	}
+	return name
+}
+
+func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: cove shared-folder add <host-path> [tag] [ro|rw]")
 	}
@@ -104,7 +136,7 @@ func handleVMSharedFolderAdd(args []string) error {
 		return fmt.Errorf("usage: cove shared-folder add <host-path> [tag] [ro|rw]")
 	}
 
-	entry, added, err := addSharedFolderEntry(vmDir, hostPath, tag, readOnly)
+	entry, added, err := addSharedFolderEntry(vmDirectory, hostPath, tag, readOnly)
 	if err != nil {
 		return err
 	}
@@ -118,7 +150,7 @@ func handleVMSharedFolderAdd(args []string) error {
 		fmt.Printf("Shared folder already configured: %s (tag=%s)\n", entry.Path, entry.Tag)
 	}
 
-	client := NewControlClient(GetControlSocketPathForVM(vmDir))
+	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
 	client.SetTimeout(15 * time.Second)
 	if msg, err := client.SharedFoldersApply(); err == nil {
 		fmt.Printf("Applied to running VM: %s\n", msg)
@@ -130,19 +162,15 @@ func handleVMSharedFolderAdd(args []string) error {
 			handled = true
 		}
 		if !handled {
-			fmt.Printf("warning: could not hot-apply to running VM: %v\n", err)
+			fmt.Printf("warning: could not hot-apply shared folders to VM %q: %v\n", sharedFolderVMName(vmDirectory), err)
 		}
 		fmt.Println("         share is saved and will apply on next boot")
 	}
 
-	mounted, err := mountSharedFoldersInGuest(vmDir, defaultSharedFoldersMountPoint)
+	mounted, err := mountSharedFoldersInGuest(vmDirectory, defaultSharedFoldersMountPoint)
 	if err != nil {
 		fmt.Printf("warning: could not mount in guest: %v\n", err)
-		vmName := filepath.Base(vmDir)
-		if vmName == "" || vmName == "." || vmName == "/" {
-			vmName = "default"
-		}
-		fmt.Printf("         you can retry with: cove -vm %s shared-folder mount %q\n", vmName, defaultSharedFoldersMountPoint)
+		fmt.Printf("         you can retry with: cove -vm %s shared-folder mount %q\n", sharedFolderVMName(vmDirectory), defaultSharedFoldersMountPoint)
 		return nil
 	}
 	if mounted {
@@ -154,8 +182,8 @@ func handleVMSharedFolderAdd(args []string) error {
 	return nil
 }
 
-func handleVMSharedFolderRemove(selector string) error {
-	removed, err := removeSharedFolderEntry(vmDir, selector)
+func handleVMSharedFolderRemove(vmDirectory, selector string) error {
+	removed, err := removeSharedFolderEntry(vmDirectory, selector)
 	if err != nil {
 		return err
 	}
@@ -163,15 +191,15 @@ func handleVMSharedFolderRemove(selector string) error {
 		return fmt.Errorf("no shared folder matches %q", selector)
 	}
 	fmt.Printf("Removed shared folder %q\n", selector)
-	return applySharedFoldersAndPrint(vmDir)
+	return applySharedFoldersAndPrint(vmDirectory)
 }
 
-func handleVMSharedFolderClear() error {
-	if err := saveSharedFolders(vmDir, nil); err != nil {
+func handleVMSharedFolderClear(vmDirectory string) error {
+	if err := saveSharedFolders(vmDirectory, nil); err != nil {
 		return err
 	}
 	fmt.Println("Cleared all shared folders")
-	return applySharedFoldersAndPrint(vmDir)
+	return applySharedFoldersAndPrint(vmDirectory)
 }
 
 func applySharedFoldersAndPrint(vmDirectory string) error {
@@ -185,7 +213,7 @@ func applySharedFoldersAndPrint(vmDirectory string) error {
 			fmt.Println("warning: running VM control server does not support shared-folders-apply")
 			fmt.Println("         restart VM with the latest binary to hot-apply in this session")
 		} else {
-			fmt.Printf("warning: could not hot-apply to running VM: %v\n", err)
+			fmt.Printf("warning: could not hot-apply shared folders to VM %q: %v\n", sharedFolderVMName(vmDirectory), err)
 		}
 		fmt.Println("         changes are saved and will apply on next boot")
 		return nil
