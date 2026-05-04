@@ -43,6 +43,8 @@ const (
 	AgentExecProcedure = "/vz.agent.v1.Agent/Exec"
 	// AgentExecStreamProcedure is the fully-qualified name of the Agent's ExecStream RPC.
 	AgentExecStreamProcedure = "/vz.agent.v1.Agent/ExecStream"
+	// AgentExecAttachProcedure is the fully-qualified name of the Agent's ExecAttach RPC.
+	AgentExecAttachProcedure = "/vz.agent.v1.Agent/ExecAttach"
 	// AgentResizeExecTTYProcedure is the fully-qualified name of the Agent's ResizeExecTTY RPC.
 	AgentResizeExecTTYProcedure = "/vz.agent.v1.Agent/ResizeExecTTY"
 	// AgentSignalExecProcedure is the fully-qualified name of the Agent's SignalExec RPC.
@@ -84,6 +86,8 @@ type AgentClient interface {
 	Exec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// ExecStream runs a command with streaming stdout/stderr.
 	ExecStream(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error)
+	// ExecAttach runs a command with bidirectional stdin/stdout/stderr.
+	ExecAttach(context.Context) *connect.BidiStreamForClient[agentpb.ExecAttachRequest, agentpb.ExecOutput]
 	ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error)
 	SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error)
 	SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error)
@@ -140,6 +144,12 @@ func NewAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...conne
 			httpClient,
 			baseURL+AgentExecStreamProcedure,
 			connect.WithSchema(agentMethods.ByName("ExecStream")),
+			connect.WithClientOptions(opts...),
+		),
+		execAttach: connect.NewClient[agentpb.ExecAttachRequest, agentpb.ExecOutput](
+			httpClient,
+			baseURL+AgentExecAttachProcedure,
+			connect.WithSchema(agentMethods.ByName("ExecAttach")),
 			connect.WithClientOptions(opts...),
 		),
 		resizeExecTTY: connect.NewClient[agentpb.ResizeExecTTYRequest, agentpb.ResizeExecTTYResponse](
@@ -223,6 +233,7 @@ type agentClient struct {
 	info          *connect.Client[agentpb.InfoRequest, agentpb.InfoResponse]
 	exec          *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
 	execStream    *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
+	execAttach    *connect.Client[agentpb.ExecAttachRequest, agentpb.ExecOutput]
 	resizeExecTTY *connect.Client[agentpb.ResizeExecTTYRequest, agentpb.ResizeExecTTYResponse]
 	signalExec    *connect.Client[agentpb.SignalExecRequest, agentpb.SignalExecResponse]
 	setTime       *connect.Client[agentpb.SetTimeRequest, agentpb.SetTimeResponse]
@@ -255,6 +266,11 @@ func (c *agentClient) Exec(ctx context.Context, req *connect.Request[agentpb.Exe
 // ExecStream calls vz.agent.v1.Agent.ExecStream.
 func (c *agentClient) ExecStream(ctx context.Context, req *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error) {
 	return c.execStream.CallServerStream(ctx, req)
+}
+
+// ExecAttach calls vz.agent.v1.Agent.ExecAttach.
+func (c *agentClient) ExecAttach(ctx context.Context) *connect.BidiStreamForClient[agentpb.ExecAttachRequest, agentpb.ExecOutput] {
+	return c.execAttach.CallBidiStream(ctx)
 }
 
 // ResizeExecTTY calls vz.agent.v1.Agent.ResizeExecTTY.
@@ -327,6 +343,8 @@ type AgentHandler interface {
 	Exec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// ExecStream runs a command with streaming stdout/stderr.
 	ExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error
+	// ExecAttach runs a command with bidirectional stdin/stdout/stderr.
+	ExecAttach(context.Context, *connect.BidiStream[agentpb.ExecAttachRequest, agentpb.ExecOutput]) error
 	ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error)
 	SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error)
 	SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error)
@@ -379,6 +397,12 @@ func NewAgentHandler(svc AgentHandler, opts ...connect.HandlerOption) (string, h
 		AgentExecStreamProcedure,
 		svc.ExecStream,
 		connect.WithSchema(agentMethods.ByName("ExecStream")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentExecAttachHandler := connect.NewBidiStreamHandler(
+		AgentExecAttachProcedure,
+		svc.ExecAttach,
+		connect.WithSchema(agentMethods.ByName("ExecAttach")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentResizeExecTTYHandler := connect.NewUnaryHandler(
@@ -463,6 +487,8 @@ func NewAgentHandler(svc AgentHandler, opts ...connect.HandlerOption) (string, h
 			agentExecHandler.ServeHTTP(w, r)
 		case AgentExecStreamProcedure:
 			agentExecStreamHandler.ServeHTTP(w, r)
+		case AgentExecAttachProcedure:
+			agentExecAttachHandler.ServeHTTP(w, r)
 		case AgentResizeExecTTYProcedure:
 			agentResizeExecTTYHandler.ServeHTTP(w, r)
 		case AgentSignalExecProcedure:
@@ -510,6 +536,10 @@ func (UnimplementedAgentHandler) Exec(context.Context, *connect.Request[agentpb.
 
 func (UnimplementedAgentHandler) ExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.ExecStream is not implemented"))
+}
+
+func (UnimplementedAgentHandler) ExecAttach(context.Context, *connect.BidiStream[agentpb.ExecAttachRequest, agentpb.ExecOutput]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.ExecAttach is not implemented"))
 }
 
 func (UnimplementedAgentHandler) ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error) {

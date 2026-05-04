@@ -19,6 +19,8 @@ service Agent {
   rpc Exec(ExecRequest) returns (ExecResponse);
   // ExecStream runs a command with streaming stdout/stderr.
   rpc ExecStream(ExecRequest) returns (stream ExecOutput);
+  // ExecAttach runs a command with bidirectional stdin/stdout/stderr.
+  rpc ExecAttach(stream ExecAttachRequest) returns (stream ExecOutput);
   rpc ResizeExecTTY(ResizeExecTTYRequest) returns (ResizeExecTTYResponse);
   rpc SignalExec(SignalExecRequest) returns (SignalExecResponse);
   rpc SetTime(SetTimeRequest) returns (SetTimeResponse);
@@ -75,6 +77,7 @@ message InfoResponse {
   string agent_commit = 15;
   string agent_build_date = 16;
   string agent_sha256 = 17;
+  repeated string features = 18;
 }
 
 // Exec
@@ -105,6 +108,13 @@ message ExecOutput {
   bytes data = 2;
   // Set on the final message.
   optional int32 exit_code = 3;
+}
+
+message ExecAttachRequest {
+  oneof request {
+    ExecRequest start = 1;
+    bytes stdin = 2;
+  }
 }
 
 message ResizeExecTTYRequest {
