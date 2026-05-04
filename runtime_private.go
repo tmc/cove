@@ -340,16 +340,20 @@ func privateSaveOptionsEnabled() bool {
 }
 
 func applyPrivateVMConfiguration(config vz.VZVirtualMachineConfiguration) error {
-	if !debugStubEnabled() {
-		return nil
+	if len(blockDevices) > 0 {
+		if err := addBlockDevicesToConfig(config, blockDevices); err != nil {
+			return fmt.Errorf("add block devices: %w", err)
+		}
 	}
-	port, err := parsePortSpec(gdbAddress)
-	if err != nil {
-		return err
-	}
-	privConfig := pvz.VZVirtualMachineConfigurationFromID(config.ID)
-	if err := debugstubx.AttachGDB(privConfig, port, gdbListenAll); err != nil {
-		return fmt.Errorf("attach gdb debug stub: %w", err)
+	if debugStubEnabled() {
+		port, err := parsePortSpec(gdbAddress)
+		if err != nil {
+			return err
+		}
+		privConfig := pvz.VZVirtualMachineConfigurationFromID(config.ID)
+		if err := debugstubx.AttachGDB(privConfig, port, gdbListenAll); err != nil {
+			return fmt.Errorf("attach gdb debug stub: %w", err)
+		}
 	}
 	return nil
 }
