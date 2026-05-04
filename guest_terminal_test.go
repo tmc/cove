@@ -43,10 +43,10 @@ func TestFindLinuxTerminalProgramPreference(t *testing.T) {
 	if got != "kgx" {
 		t.Fatalf("findLinuxTerminalProgram() = %q, want kgx", got)
 	}
-	if !reflect.DeepEqual(agent.args[0], []string{"command", "-v", "gnome-terminal"}) {
+	if !reflect.DeepEqual(agent.args[0], []string{"/bin/sh", "-c", "command -v 'gnome-terminal'"}) {
 		t.Fatalf("first lookup = %#v", agent.args[0])
 	}
-	if !reflect.DeepEqual(agent.args[1], []string{"command", "-v", "kgx"}) {
+	if !reflect.DeepEqual(agent.args[1], []string{"/bin/sh", "-c", "command -v 'kgx'"}) {
 		t.Fatalf("second lookup = %#v", agent.args[1])
 	}
 }
