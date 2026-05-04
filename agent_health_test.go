@@ -50,6 +50,40 @@ func TestNextAgentHealthInterval(t *testing.T) {
 	}
 }
 
+func TestAgentHealthSummaryWithLinuxGUISession(t *testing.T) {
+	h := agentHealthState{
+		daemonStatus:     "connected",
+		userStatus:       "disconnected",
+		guiSession:       guiSession{User: "desk", Seat: "seat0", Kind: "wayland"},
+		guiSessionActive: true,
+	}
+	want := "daemon connected; GUI session active (user=desk, seat=seat0, wayland); user agent unavailable"
+	if got := agentHealthSummary(h); got != want {
+		t.Fatalf("agentHealthSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestAgentHealthSummaryWithMacOSGUISession(t *testing.T) {
+	h := agentHealthState{
+		daemonStatus:     "connected",
+		userStatus:       "connected",
+		guiSession:       guiSession{User: "me", Seat: "console", Kind: "console"},
+		guiSessionActive: true,
+	}
+	want := "daemon connected; GUI session active (user=me, console)"
+	if got := agentHealthSummary(h); got != want {
+		t.Fatalf("agentHealthSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestAgentHealthSummaryWithoutGUISession(t *testing.T) {
+	h := agentHealthState{daemonStatus: "connected", userStatus: "disconnected"}
+	want := "daemon connected; user agent unavailable"
+	if got := agentHealthSummary(h); got != want {
+		t.Fatalf("agentHealthSummary() = %q, want %q", got, want)
+	}
+}
+
 // TestMarkAgentReconnectingRecordsFirstFailure verifies that the first
 // reconnect attempt sets disconnectAt, and that subsequent calls during the
 // same disconnect streak do NOT overwrite it. Without this invariant, the

@@ -2410,6 +2410,9 @@ func bootOverlayMessage() (title, subtitle string, hold bool) {
 }
 
 func bootOverlayReadyToFade(agentSummary string) bool {
+	if strings.HasPrefix(agentSummary, "daemon connected") {
+		return true
+	}
 	switch agentSummary {
 	case "Agent: connected", "Agent: connected (no user session)":
 		return true

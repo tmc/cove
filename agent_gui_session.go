@@ -38,6 +38,34 @@ func probeLinuxGUISession(ctx context.Context, exec guiSessionExec) (guiSession,
 	return parseLinuxLoginctlSessions(resp.GetStdout())
 }
 
+func probeMacOSGUISession(ctx context.Context, exec guiSessionExec) (guiSession, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	resp, err := exec.Exec(ctx, []string{"sh", "-lc", macOSGUISessionScript()}, nil, "")
+	if err != nil {
+		return guiSession{}, false, fmt.Errorf("query gui session: %w", err)
+	}
+	if resp.GetExitCode() != 0 {
+		return guiSession{}, false, nil
+	}
+	user := strings.TrimSpace(string(resp.GetStdout()))
+	if user == "" {
+		return guiSession{}, false, nil
+	}
+	return guiSession{User: user, Seat: "console", Kind: "console"}, true, nil
+}
+
+func macOSGUISessionScript() string {
+	return `user=$(stat -f %Su /dev/console) || exit 1
+uid=$(stat -f %u /dev/console) || exit 1
+if [ "$user" = root ] || [ "$uid" = 0 ]; then
+	exit 2
+fi
+launchctl print "gui/$uid" >/dev/null || exit 3
+printf '%s\n' "$user"`
+}
+
 func parseLinuxLoginctlSessions(data []byte) (guiSession, bool, error) {
 	var rows []struct {
 		User  string `json:"user"`

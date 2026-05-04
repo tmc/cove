@@ -477,7 +477,15 @@ func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 		"daemon":   h.daemonStatus,
 		"user":     h.userStatus,
 		"lastPing": h.lastPing.Format(time.RFC3339),
+		"summary":  agentHealthSummary(h),
 		"version":  h.version,
+	}
+	if h.guiSessionActive {
+		status["guiSession"] = map[string]string{
+			"user": h.guiSession.User,
+			"seat": h.guiSession.Seat,
+			"type": h.guiSession.Kind,
+		}
 	}
 	if h.lastErr != "" {
 		status["lastError"] = h.lastErr
@@ -597,6 +605,7 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 			s.markAgentConnected(agentVer)
 			s.checkAgentVersion(agentVer)
 			s.healthCheckUserAgent(ctx)
+			s.healthCheckGUISession(ctx)
 			return
 		}
 		slog.Warn("agent-health: ping failed",
@@ -634,6 +643,7 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 			s.markAgentConnected(agentVer)
 			s.checkAgentVersion(agentVer)
 			s.healthCheckUserAgent(ctx)
+			s.healthCheckGUISession(ctx)
 			return
 		}
 		s.setHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
@@ -767,6 +777,37 @@ func (s *ControlServer) healthCheckUserAgent(ctx context.Context) {
 	s.healthMu.Unlock()
 }
 
+func (s *ControlServer) healthCheckGUISession(ctx context.Context) {
+	s.agentMu.RLock()
+	a := s.agent
+	s.agentMu.RUnlock()
+	if a == nil {
+		return
+	}
+
+	var (
+		session guiSession
+		ok      bool
+		err     error
+	)
+	switch agentstate.Platform(s.vmDir) {
+	case agentstate.PlatformLinux:
+		session, ok, err = probeLinuxGUISession(ctx, a)
+	case agentstate.PlatformMacOS:
+		session, ok, err = probeMacOSGUISession(ctx, a)
+	default:
+		return
+	}
+	if err != nil {
+		slog.Debug("agent-health: gui session probe failed", "err", err)
+		return
+	}
+	s.healthMu.Lock()
+	s.agentHealth.guiSession = session
+	s.agentHealth.guiSessionActive = ok
+	s.healthMu.Unlock()
+}
+
 // AgentHealthSummary returns a short status string for UI display.
 // Thread-safe; intended for main-thread polling.
 func (s *ControlServer) AgentHealthSummary() string {
@@ -774,26 +815,45 @@ func (s *ControlServer) AgentHealthSummary() string {
 	h := s.agentHealth
 	s.healthMu.RUnlock()
 
+	return agentHealthSummaryWithNeverConnected(h, s.agentNeverConnectedSummary())
+}
+
+func agentHealthSummary(h agentHealthState) string {
+	return agentHealthSummaryWithNeverConnected(h, "Agent: not installed")
+}
+
+func agentHealthSummaryWithNeverConnected(h agentHealthState, neverConnected string) string {
 	switch h.daemonStatus {
 	case "connected":
-		if h.userStatus == "connected" {
-			return "Agent: connected"
+		parts := []string{"daemon connected"}
+		if h.guiSessionActive {
+			parts = append(parts, formatGUISessionSummary(h.guiSession))
 		}
-		return "Agent: connected (no user session)"
+		if h.userStatus == "disconnected" {
+			parts = append(parts, "user agent unavailable")
+		}
+		return strings.Join(parts, "; ")
 	case "reconnecting":
 		return "Agent: reconnecting..."
 	case "disconnected":
 		if h.lastPing.IsZero() {
-			return s.agentNeverConnectedSummary()
+			return neverConnected
 		}
 		return "Agent: disconnected"
 	default:
 		// No health check has run yet.
 		if h.lastPing.IsZero() {
-			return s.agentNeverConnectedSummary()
+			return neverConnected
 		}
 		return "Agent: connecting..."
 	}
+}
+
+func formatGUISessionSummary(session guiSession) string {
+	if session.Seat == "console" && session.Kind == "console" {
+		return fmt.Sprintf("GUI session active (user=%s, console)", session.User)
+	}
+	return fmt.Sprintf("GUI session active (user=%s, seat=%s, %s)", session.User, session.Seat, session.Kind)
 }
 
 // agentNeverConnectedSummary describes the pre-first-connect state. It uses

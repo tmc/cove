@@ -90,8 +90,10 @@ type ControlServer struct {
 
 // agentHealthState tracks proactive agent health monitoring.
 type agentHealthState struct {
-	daemonStatus     string    // "connected", "disconnected", "reconnecting"
-	userStatus       string    // "connected", "disconnected", "unknown"
+	daemonStatus     string // "connected", "disconnected", "reconnecting"
+	userStatus       string // "connected", "disconnected", "unknown"
+	guiSession       guiSession
+	guiSessionActive bool
 	lastPing         time.Time // last successful daemon ping
 	disconnectAt     time.Time // first ping failure since the last successful ping; zero when connected
 	lastErr          string    // last ping error (empty if healthy)

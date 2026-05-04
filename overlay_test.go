@@ -59,6 +59,7 @@ func TestBootOverlayReadyToFade(t *testing.T) {
 	}{
 		{summary: "Agent: connected", want: true},
 		{summary: "Agent: connected (no user session)", want: true},
+		{summary: "daemon connected; GUI session active (user=desk, seat=seat0, wayland); user agent unavailable", want: true},
 		{summary: "Agent: connecting...", want: false},
 		{summary: "Agent: reconnecting...", want: false},
 		{summary: "Agent: starting (first boot)", want: false},
