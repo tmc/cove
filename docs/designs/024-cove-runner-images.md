@@ -1,17 +1,19 @@
 # cove runner images: publish & fork-from
 
 **Status**: Slice 1 shipped (`8a106dc`, 2026-05-02; 1027 LOC, 8 tests
-green). Slice 2 (push/pull, private registries only) targets v0.4. Slice
-3 (drop public-registry refusal + cosign) is **deferred indefinitely**
-per user 2026-05-02 — cove repo stays private; revisit only when the
-user explicitly requests a public flip.
+green). Slice 2 shipped (`02acc3d`, `cf6a506`, `0349570`, 2026-05-04):
+`cove image push|pull` use `oras-go`, Docker auth, compressed disk
+layers, and existing per-image metadata. Slice 3 (drop public-registry
+refusal + cosign) is **deferred indefinitely** per user 2026-05-02 —
+cove repo stays private; revisit only when the user explicitly requests
+a public flip.
 **Source**: notebook scope-B verdict; the user prompt "i think cirrus
 publishes images to use as github runners, can we do the same?". Scope A
 (immediate vzscript-based runner provisioning) shipped at
 [`7c315fc`](../../vzscripts/github-runner.vzscript) as
 `T-GHA-RUNNER #90`. This doc covers Scope B (publishable images).
-**Roadmap**: v0.2.1 (Slice 1) → v0.4 (Slices 2–3).
-**Branch**: planning.
+**Roadmap**: v0.2.1 (Slice 1) → v0.4 (Slice 2). Slice 3 is deferred.
+**Branch**: main.
 
 ## Goal
 
@@ -37,8 +39,8 @@ and the empirical isolation story on top.
 
 ```text
 cove image build -from <vm-name> -tag cove-runner-macos:14.5
-cove image push   cove-runner-macos:14.5 [registry]   # gated
-cove image pull   cove-runner-macos:14.5
+cove image push   cove-runner-macos:14.5 registry.example.com/team/cove-runner-macos:14.5
+cove image pull   registry.example.com/team/cove-runner-macos:14.5 -tag cove-runner-macos:14.5
 cove run -fork-from cove-runner-macos:14.5 -ephemeral -vzscripts github-runner
 ```
 
@@ -160,10 +162,13 @@ This section is load-bearing. See
   ParentImage on child config.json gates `cove image rm` from deleting
   while live forks reference the image. 8 tests cover parse, build,
   list, materialize-with-fresh-identity, fork-from-image, delete-while-fork-live.
-- **Slice 2 (v0.4, ~300 LOC)**: `cove image push|pull`. OCI artifact
-  wire format finalized. `oras-go` (or distribution-spec) integration.
-  Docker auth reuse. Public-registry refusal still active while cove
-  is private.
+- **Slice 2 (v0.4)**: **SHIPPED `02acc3d`, `cf6a506`, `0349570`
+  2026-05-04**. `cove image push|pull` use OCI image manifests through
+  `oras-go`. The config blob carries `manifest.json`; layers carry
+  gzip-compressed `disk.img` plus `aux.img`, `hw.model`, and
+  `machine.id`. Docker auth is reused from `~/.docker/config.json`.
+  Public-registry refusal still applies to push while cove is private,
+  with `COVE_ALLOW_PUBLIC_PUSH=1` as an explicit operator escape hatch.
 - **Slice 3 (DEFERRED INDEFINITELY, ~150 LOC, public-flip dependent)**:
   drop the public-registry refusal once the user confirms the repo is
   public. Add cosign sign/verify as a default. Document the promotion
