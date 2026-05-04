@@ -72,7 +72,7 @@ func launchLinuxGuestTerminal(client guestTerminalAgent, user string, command []
 
 func findLinuxTerminalProgram(client guestTerminalAgent) (string, error) {
 	for _, program := range linuxTerminalPrograms {
-		resp, err := client.AgentExecTypedTimeout([]string{"command", "-v", program}, nil, "", 5*time.Second)
+		resp, err := client.AgentExecTypedTimeout([]string{"/bin/sh", "-c", "command -v " + shellEscape(program)}, nil, "", 5*time.Second)
 		if err == nil && resp.GetExitCode() == 0 && strings.TrimSpace(resp.GetStdout()) != "" {
 			return program, nil
 		}
