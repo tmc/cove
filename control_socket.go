@@ -1755,9 +1755,9 @@ func (s *ControlServer) handleNetworkInfo() *controlpb.ControlResponse {
 	if a, err := s.getAgent(); err == nil {
 		ctx, cancel := s.timeoutContext(5 * time.Second)
 		defer cancel()
-		result, err := a.Exec(ctx, []string{"ipconfig", "getifaddr", "en0"}, nil, "")
+		result, err := a.Exec(ctx, guestIPProbeArgs(linuxMode), nil, "")
 		if err == nil && result.ExitCode == 0 {
-			info.GuestIp = strings.TrimSpace(string(result.Stdout))
+			info.GuestIp = parseGuestIP(responseText(result.Stdout))
 		}
 	}
 
@@ -1767,6 +1767,27 @@ func (s *ControlServer) handleNetworkInfo() *controlpb.ControlResponse {
 		Data:    string(data),
 		Result:  &controlpb.ControlResponse_NetworkInfo{NetworkInfo: info},
 	}
+}
+
+func guestIPProbeArgs(linuxGuest bool) []string {
+	if linuxGuest {
+		return []string{"sh", "-lc", linuxGuestIPProbeScript}
+	}
+	return []string{"ipconfig", "getifaddr", "en0"}
+}
+
+const linuxGuestIPProbeScript = `ip=$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' | head -1)
+if [ -z "$ip" ]; then
+	ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+printf '%s\n' "$ip"`
+
+func parseGuestIP(out string) string {
+	ip := strings.TrimSpace(out)
+	if i := strings.IndexByte(ip, '/'); i >= 0 {
+		ip = ip[:i]
+	}
+	return strings.TrimSpace(ip)
 }
 
 func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
