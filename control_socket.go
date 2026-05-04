@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -10,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -20,7 +18,6 @@ import (
 	"time"
 
 	"github.com/tmc/apple/objc"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
@@ -31,17 +28,9 @@ import (
 	"github.com/tmc/apple/x/vzkit/vminput"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	controlx "github.com/tmc/vz-macos/internal/control"
 	"github.com/tmc/vz-macos/internal/control/operations"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
-)
-
-var (
-	protojsonMarshaler = protojson.MarshalOptions{
-		UseProtoNames: true,
-	}
-	protojsonUnmarshaler = protojson.UnmarshalOptions{
-		DiscardUnknown: true,
-	}
 )
 
 const (
@@ -49,11 +38,17 @@ const (
 	controlTokenEnvVar   = "VZ_MACOS_CTL_TOKEN"
 )
 
+var (
+	protojsonMarshaler   = controlx.ProtoJSONMarshaler
+	protojsonUnmarshaler = controlx.ProtoJSONUnmarshaler
+)
+
 // ControlServer manages the Unix socket for VM control
 type ControlServer struct {
 	socketPath        string
 	vmDir             string
 	authToken         string
+	controlServer     *controlx.Server
 	listener          net.Listener
 	vmView            vz.VZVirtualMachineView
 	window            appkit.NSWindow
@@ -88,7 +83,6 @@ type ControlServer struct {
 	httpListeners     *httpListeners // TCP listeners started by StartHTTP
 	lifecycleCtx      context.Context
 	lifecycleCancel   context.CancelFunc
-	lifecycleWG       sync.WaitGroup
 
 	opsMu  sync.Mutex                    // guards opsReg lazy init
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
@@ -257,35 +251,24 @@ func (s *ControlServer) Start() error {
 		s.authToken = token
 	}
 
-	// Remove existing socket file
-	os.Remove(s.socketPath)
-
-	listener, err := net.Listen("unix", s.socketPath)
-	if err != nil {
-		return fmt.Errorf("listen on socket: %w", err)
+	s.controlServer = &controlx.Server{
+		SocketPath:    s.socketPath,
+		Verbose:       verbose,
+		AuthTokenPath: GetControlTokenPathForVM(s.effectiveVMDir()),
+		Handler:       s,
+		HealthMonitor: s.agentHealthMonitor,
+		AcceptError: func(err error) {
+			fmt.Printf("Accept error: %v\n", err)
+		},
+		Started: func() {
+			if verbose {
+				fmt.Printf("Control socket listening at: %s\n", s.socketPath)
+				fmt.Printf("Control auth token: %s\n", GetControlTokenPathForVM(s.effectiveVMDir()))
+			}
+		},
 	}
-	if err := os.Chmod(s.socketPath, 0600); err != nil {
-		listener.Close()
-		return fmt.Errorf("chmod socket: %w", err)
-	}
-	s.listener = listener
 	s.running.Store(true)
-
-	if verbose {
-		fmt.Printf("Control socket listening at: %s\n", s.socketPath)
-		fmt.Printf("Control auth token: %s\n", GetControlTokenPathForVM(s.effectiveVMDir()))
-	}
-
-	s.lifecycleWG.Add(2)
-	go func() {
-		defer s.lifecycleWG.Done()
-		s.acceptLoop()
-	}()
-	go func() {
-		defer s.lifecycleWG.Done()
-		s.agentHealthMonitor()
-	}()
-	return nil
+	return s.controlServer.Start(s.lifecycleCtx)
 }
 
 // Stop closes the control server
@@ -312,162 +295,97 @@ func (s *ControlServer) Stop() {
 	if s.listener != nil {
 		s.listener.Close()
 	}
-	s.lifecycleWG.Wait()
-	os.Remove(s.socketPath)
-}
-
-func (s *ControlServer) acceptLoop() {
-	for s.running.Load() {
-		conn, err := s.listener.Accept()
-		if err != nil {
-			if s.running.Load() {
-				fmt.Printf("Accept error: %v\n", err)
-			}
-			continue
-		}
-		if s.activeConnections.Add(1) > 64 {
-			s.activeConnections.Add(-1)
-			conn.Close()
-			continue
-		}
-		go s.handleConnection(conn)
+	if s.controlServer != nil {
+		s.controlServer.Stop()
+		s.controlServer = nil
+	} else {
+		os.Remove(s.socketPath)
 	}
 }
 
 func (s *ControlServer) handleConnection(conn net.Conn) {
-	defer s.activeConnections.Add(-1)
-	defer conn.Close()
-
-	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
-		return
-	}
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		var req controlpb.ControlRequest
-		if err := protojsonUnmarshaler.Unmarshal([]byte(line), &req); err != nil {
-			writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("invalid JSON: %v", err)})
-			continue
-		}
-		populateLegacyRequestPayloads(line, &req)
-		if !s.authorizeRequest(req.AuthToken) {
-			writeResponse(conn, &controlpb.ControlResponse{Error: "unauthorized"})
-			continue
-		}
-
-		if req.Type == "agent-exec-stream" || req.Type == "agent-user-exec-stream" {
-			if err := conn.SetDeadline(time.Time{}); err != nil {
-				return
-			}
-			s.handleAgentExecStreamConnection(conn, &req)
-			if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
-				return
-			}
-			continue
-		}
-
-		// agent-exec-attach is a long-lived connection: clear the
-		// per-request deadline so the exec can run as long as the client
-		// keeps the socket open. (Slice 1 of design 023.)
-		if req.Type == "agent-exec-attach" {
-			if err := conn.SetDeadline(time.Time{}); err != nil {
-				return
-			}
-			s.handleAgentExecAttachConnection(conn, []byte(line))
-			return
-		}
-
-		// Handle typed OCR command from proto oneof.
-		if req.Type == "ocr" {
-			if ocrCmd := req.GetOcr(); ocrCmd != nil {
-				// Map proto OCR action to legacy command type for unified handling.
-				mapped := &controlpb.ControlRequest{Type: "ocr-" + ocrCmd.Action}
-				fakeJSON, _ := json.Marshal(map[string]any{
-					"type": "ocr-" + ocrCmd.Action,
-					"data": map[string]string{"text": ocrCmd.Text, "timeout": ocrCmd.Timeout},
-				})
-				if resp, ok := s.handleOCRSocketCommand(mapped, fakeJSON); ok {
-					writeResponse(conn, resp)
-					continue
-				}
-			}
-			writeResponse(conn, &controlpb.ControlResponse{Error: "missing ocr command payload"})
-			continue
-		}
-
-		// OCR commands use the raw JSON line to extract the "data" field
-		// since these commands aren't in the protobuf schema.
-		if resp, ok := s.handleOCRSocketCommand(&req, []byte(line)); ok {
-			writeResponse(conn, resp)
-			continue
-		}
-
-		// iterm2-proxy-start with optional port from raw JSON data field.
-		if req.Type == "iterm2-proxy-start" {
-			port := parseITerm2ProxyPort([]byte(line))
-			if port > 0 {
-				writeResponse(conn, s.handleITerm2ProxyStartWithPort(port))
-			} else {
-				writeResponse(conn, s.handleITerm2ProxyStart())
-			}
-			continue
-		}
-
-		if req.Type == "disk" {
-			writeResponse(conn, s.handleDiskJSONRequest([]byte(line)))
-			continue
-		}
-		if req.Type == "pit" {
-			writeResponse(conn, s.handlePITJSONRequest([]byte(line)))
-			continue
-		}
-		if req.Type == "usb" {
-			writeResponse(conn, s.handleRuntimeUSBJSONRequest([]byte(line)))
-			continue
-		}
-		// agent-exec-resize / agent-exec-signal carry fields (exec_id,
-		// cols, rows, signal) that aren't in the controlpb schema yet
-		// (Slice 1 ships no proto bump per design 023). Parse the raw
-		// JSON line, same pattern as disk/pit/usb.
-		if req.Type == "agent-exec-resize" {
-			writeResponse(conn, s.handleAgentExecResizeJSON([]byte(line)))
-			continue
-		}
-		if req.Type == "agent-exec-signal" {
-			writeResponse(conn, s.handleAgentExecSignalJSON([]byte(line)))
-			continue
-		}
-
-		resp := s.handleRequest(&req)
-		writeResponse(conn, resp)
-		teeControlEvent(req.Type, resp)
-		if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
-			return
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("read request: %v", err)})
-	}
+	controlx.ServeConnection(conn, s)
 }
 
 func writeResponse(conn net.Conn, resp *controlpb.ControlResponse) error {
-	data, err := protojsonMarshaler.Marshal(resp)
-	if err != nil {
-		slog.Error("control socket: marshal response", slog.Any("err", err))
-		return err
+	return controlx.WriteResponse(conn, resp)
+}
+
+func populateLegacyRequestPayloads(line string, req *controlpb.ControlRequest) {
+	controlx.PopulateLegacyRequestPayloads(line, req)
+}
+
+func (s *ControlServer) Authorize(token string) bool {
+	return s.authorizeRequest(token)
+}
+
+func (s *ControlServer) HandleStream(conn net.Conn, req *controlpb.ControlRequest, raw []byte) (bool, bool) {
+	if req.Type == "agent-exec-stream" || req.Type == "agent-user-exec-stream" {
+		if err := conn.SetDeadline(time.Time{}); err != nil {
+			return true, true
+		}
+		s.handleAgentExecStreamConnection(conn, req)
+		return true, false
 	}
-	if _, err := conn.Write(append(data, '\n')); err != nil {
-		slog.Error("control socket: write response", slog.Any("err", err))
-		return err
+
+	if req.Type == "agent-exec-attach" {
+		if err := conn.SetDeadline(time.Time{}); err != nil {
+			return true, true
+		}
+		s.handleAgentExecAttachConnection(conn, raw)
+		return true, true
 	}
-	return nil
+	return false, false
+}
+
+func (s *ControlServer) HandleRaw(req *controlpb.ControlRequest, raw []byte) (*controlpb.ControlResponse, bool) {
+	if req.Type == "ocr" {
+		if ocrCmd := req.GetOcr(); ocrCmd != nil {
+			mapped := &controlpb.ControlRequest{Type: "ocr-" + ocrCmd.Action}
+			fakeJSON, _ := json.Marshal(map[string]any{
+				"type": "ocr-" + ocrCmd.Action,
+				"data": map[string]string{"text": ocrCmd.Text, "timeout": ocrCmd.Timeout},
+			})
+			if resp, ok := s.handleOCRSocketCommand(mapped, fakeJSON); ok {
+				return resp, true
+			}
+		}
+		return &controlpb.ControlResponse{Error: "missing ocr command payload"}, true
+	}
+
+	if resp, ok := s.handleOCRSocketCommand(req, raw); ok {
+		return resp, true
+	}
+
+	if req.Type == "iterm2-proxy-start" {
+		port := parseITerm2ProxyPort(raw)
+		if port > 0 {
+			return s.handleITerm2ProxyStartWithPort(port), true
+		}
+		return s.handleITerm2ProxyStart(), true
+	}
+
+	switch req.Type {
+	case "disk":
+		return s.handleDiskJSONRequest(raw), true
+	case "pit":
+		return s.handlePITJSONRequest(raw), true
+	case "usb":
+		return s.handleRuntimeUSBJSONRequest(raw), true
+	case "agent-exec-resize":
+		return s.handleAgentExecResizeJSON(raw), true
+	case "agent-exec-signal":
+		return s.handleAgentExecSignalJSON(raw), true
+	}
+	return nil, false
+}
+
+func (s *ControlServer) Handle(req *controlpb.ControlRequest) *controlpb.ControlResponse {
+	return s.handleRequest(req)
+}
+
+func (s *ControlServer) Event(reqType string, resp *controlpb.ControlResponse) {
+	teeControlEvent(reqType, resp)
 }
 
 func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.ControlResponse {
@@ -718,199 +636,12 @@ func (s *ControlServer) handleOCRSocketCommand(req *controlpb.ControlRequest, ra
 	return nil, false
 }
 
-func populateLegacyRequestPayloads(line string, req *controlpb.ControlRequest) {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(line), &raw); err != nil {
-		return
-	}
-	populateLegacyAuthToken(raw, req)
-
-	switch req.Type {
-	case "screenshot":
-		populateLegacyScreenshot(raw, req)
-	case "snapshot":
-		populateLegacySnapshot(raw, req)
-	case "memory":
-		populateLegacyMemory(raw, req)
-	case "agent-exec", "agent-exec-stream":
-		populateLegacyAgentExec(raw, req)
-	}
-}
-
-func populateLegacyAuthToken(raw map[string]json.RawMessage, req *controlpb.ControlRequest) {
-	if req.AuthToken != "" {
-		return
-	}
-	if blob, ok := raw["token"]; ok {
-		var v string
-		if err := json.Unmarshal(blob, &v); err == nil {
-			req.AuthToken = v
-		}
-	}
-}
-
 func (s *ControlServer) authorizeRequest(token string) bool {
 	if s.authToken == "" {
 		return true
 	}
 	provided := strings.TrimSpace(token)
 	return subtle.ConstantTimeCompare([]byte(provided), []byte(s.authToken)) == 1
-}
-
-func populateLegacyScreenshot(raw map[string]json.RawMessage, req *controlpb.ControlRequest) {
-	if req.GetScreenshot() != nil {
-		return
-	}
-	cmd := &controlpb.ScreenshotCommand{}
-	seen := false
-
-	if blob, ok := raw["screenshot"]; ok {
-		if err := json.Unmarshal(blob, cmd); err == nil {
-			seen = true
-		}
-	}
-
-	if blob, ok := raw["diff"]; ok {
-		var v bool
-		if err := json.Unmarshal(blob, &v); err == nil {
-			cmd.Diff = v
-			seen = true
-		}
-	}
-	if blob, ok := raw["scale"]; ok {
-		var v float64
-		if err := json.Unmarshal(blob, &v); err == nil {
-			cmd.Scale = v
-			seen = true
-		}
-	}
-	if blob, ok := raw["quality"]; ok {
-		var v int32
-		if err := json.Unmarshal(blob, &v); err == nil {
-			cmd.Quality = v
-			seen = true
-		}
-	}
-	if blob, ok := raw["format"]; ok {
-		var v string
-		if err := json.Unmarshal(blob, &v); err == nil {
-			cmd.Format = v
-			seen = true
-		}
-	}
-
-	if seen {
-		req.Command = &controlpb.ControlRequest_Screenshot{Screenshot: cmd}
-	}
-}
-
-func populateLegacySnapshot(raw map[string]json.RawMessage, req *controlpb.ControlRequest) {
-	if req.GetSnapshot() != nil {
-		return
-	}
-	cmd := &controlpb.SnapshotCommand{}
-	seen := false
-
-	if blob, ok := raw["snapshot"]; ok {
-		if err := json.Unmarshal(blob, cmd); err == nil {
-			seen = true
-		}
-	}
-
-	type snapshotPayload struct {
-		Action string `json:"action"`
-		Name   string `json:"name"`
-	}
-	if blob, ok := raw["data"]; ok {
-		var payload snapshotPayload
-		if err := json.Unmarshal(blob, &payload); err == nil {
-			if payload.Action != "" {
-				cmd.Action = payload.Action
-			}
-			if payload.Name != "" {
-				cmd.Name = payload.Name
-			}
-			seen = seen || payload.Action != "" || payload.Name != ""
-		}
-	}
-
-	if seen {
-		req.Command = &controlpb.ControlRequest_Snapshot{Snapshot: cmd}
-	}
-}
-
-func populateLegacyMemory(raw map[string]json.RawMessage, req *controlpb.ControlRequest) {
-	if req.GetMemory() != nil {
-		return
-	}
-	cmd := &controlpb.MemoryCommand{}
-	seen := false
-
-	if blob, ok := raw["memory"]; ok {
-		if err := json.Unmarshal(blob, cmd); err == nil {
-			seen = true
-		}
-	}
-
-	type memoryPayload struct {
-		Action string  `json:"action"`
-		SizeGB float64 `json:"size_gb"`
-	}
-	if blob, ok := raw["data"]; ok {
-		var payload memoryPayload
-		if err := json.Unmarshal(blob, &payload); err == nil {
-			if payload.Action != "" {
-				cmd.Action = payload.Action
-			}
-			if payload.SizeGB != 0 {
-				cmd.SizeGb = payload.SizeGB
-			}
-			seen = seen || payload.Action != "" || payload.SizeGB != 0
-		}
-	}
-
-	if seen {
-		req.Command = &controlpb.ControlRequest_Memory{Memory: cmd}
-	}
-}
-
-func populateLegacyAgentExec(raw map[string]json.RawMessage, req *controlpb.ControlRequest) {
-	if req.GetAgentExec() != nil {
-		return
-	}
-	cmd := &controlpb.AgentExecCommand{}
-	seen := false
-
-	if blob, ok := raw["agent_exec"]; ok {
-		if err := json.Unmarshal(blob, cmd); err == nil {
-			seen = true
-		}
-	}
-	if blob, ok := raw["args"]; ok {
-		var v []string
-		if err := json.Unmarshal(blob, &v); err == nil {
-			cmd.Args = v
-			seen = true
-		}
-	}
-	if blob, ok := raw["env"]; ok {
-		var v map[string]string
-		if err := json.Unmarshal(blob, &v); err == nil {
-			cmd.Env = v
-			seen = true
-		}
-	}
-	if blob, ok := raw["working_dir"]; ok {
-		var v string
-		if err := json.Unmarshal(blob, &v); err == nil {
-			cmd.WorkingDir = v
-			seen = true
-		}
-	}
-
-	if seen {
-		req.Command = &controlpb.ControlRequest_AgentExec{AgentExec: cmd}
-	}
 }
 
 // sendKeyEvent sends a keyboard event to the VM.
