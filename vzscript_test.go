@@ -166,6 +166,39 @@ func TestVZScriptEmbeddedScripts(t *testing.T) {
 	}
 }
 
+func TestXcodeVZScriptHostCopyFallback(t *testing.T) {
+	data, err := builtinScripts.ReadFile("vzscripts/xcode.vzscript")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+
+	for _, app := range []string{
+		"/Applications/Xcode.app",
+		"/Applications/Xcode-rc.app",
+		"/Applications/Xcode-beta.app",
+	} {
+		line := "? host-cp " + app + " " + app
+		if !strings.Contains(script, line) {
+			t.Fatalf("xcode recipe missing optional host copy %q", line)
+		}
+	}
+
+	for _, text := range []string{
+		"error: no Xcode found in guest /Applications",
+		"cove vzscript run xcode-mas",
+		"cove ctl agent-cp /Applications/Xcode.app /Applications/Xcode.app",
+	} {
+		if !strings.Contains(script, text) {
+			t.Fatalf("xcode recipe missing fallback text %q", text)
+		}
+	}
+
+	if err := executeVZScriptSyntaxOnly(t, "xcode.vzscript", data); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadVZScriptData(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -10,6 +10,7 @@ guest-ping
 # detects it and skips redundant work.
 ? host-cp /Applications/Xcode.app /Applications/Xcode.app
 ? host-cp /Applications/Xcode-rc.app /Applications/Xcode-rc.app
+? host-cp /Applications/Xcode-beta.app /Applications/Xcode-beta.app
 
 # Set up Xcode: select, accept license, run first launch.
 guest-shell setup-xcode.sh
@@ -28,15 +29,21 @@ for app in /Applications/Xcode.app /Applications/Xcode-rc.app /Applications/Xcod
 done
 
 if [ -z "$XCODE" ]; then
-  echo "error: no Xcode found in /Applications/" >&2
+  echo "error: no Xcode found in guest /Applications" >&2
   echo "" >&2
-  echo "Ensure Xcode is installed on the HOST at one of:" >&2
+  echo "The xcode recipe first tries to copy Xcode from the host when present." >&2
+  echo "No guest Xcode was found after checking:" >&2
   echo "  /Applications/Xcode.app" >&2
   echo "  /Applications/Xcode-rc.app" >&2
+  echo "  /Applications/Xcode-beta.app" >&2
   echo "" >&2
-  echo "Then re-run: cove vzscript run xcode" >&2
+  echo "Install Xcode on the host at one of those paths and re-run:" >&2
+  echo "  cove vzscript run xcode" >&2
   echo "" >&2
-  echo "Or install manually:" >&2
+  echo "Or install from the Mac App Store inside the guest:" >&2
+  echo "  cove vzscript run xcode-mas" >&2
+  echo "" >&2
+  echo "Or copy an existing app manually:" >&2
   echo "  cove ctl agent-cp /Applications/Xcode.app /Applications/Xcode.app" >&2
   exit 1
 fi
