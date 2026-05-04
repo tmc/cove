@@ -75,6 +75,7 @@ Commands:
   gui backend <mode>    Set automation backend: auto, framebuffer, or window
   gui capture-backend <mode>  Set screenshot backend: auto, framebuffer, or window
   gui input-backend <mode>    Set input backend: auto, direct, or window
+  gui terminal [--user <user>] -- <cmd>  Open a visible guest terminal
   vnc status            Report VNC server status
   debug-stub status     Report debug stub status
   disk list             List runtime storage devices
@@ -331,7 +332,7 @@ func ctlCommand(args []string) error {
 		return ctlITerm2ProxyCommand(sock, "iterm2-proxy-status", *raw)
 	case "gui":
 		if len(subArgs) < 1 {
-			return fmt.Errorf("gui requires action: status, open, close, backend, capture-backend, or input-backend")
+			return fmt.Errorf("gui requires action: status, open, close, backend, capture-backend, input-backend, or terminal")
 		}
 		action := subArgs[0]
 		switch action {
@@ -368,8 +369,10 @@ func ctlCommand(args []string) error {
 				return err
 			}
 			return ctlSimpleCommand(sock, "gui-input-backend-"+mode.inputString(), *timeout, *raw)
+		case "terminal":
+			return ctlGUITerminal(sock, subArgs[1:])
 		default:
-			return fmt.Errorf("unknown gui action: %s (use status, open, close, backend, capture-backend, or input-backend)", action)
+			return fmt.Errorf("unknown gui action: %s (use status, open, close, backend, capture-backend, input-backend, or terminal)", action)
 		}
 	case "vnc":
 		if len(subArgs) < 1 {
@@ -1317,6 +1320,42 @@ func parseOCROptions(args []string) (string, error) {
 		return "", err
 	}
 	return *region, nil
+}
+
+func parseGUITerminalOptions(args []string) (string, []string, error) {
+	var user string
+	for len(args) > 0 {
+		switch args[0] {
+		case "--":
+			args = args[1:]
+			if len(args) == 0 {
+				return "", nil, fmt.Errorf("gui terminal requires command after --")
+			}
+			return user, args, nil
+		case "--user", "-user":
+			if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+				return "", nil, fmt.Errorf("gui terminal --user requires a username")
+			}
+			user = args[1]
+			args = args[2:]
+		default:
+			return user, args, nil
+		}
+	}
+	return "", nil, fmt.Errorf("gui terminal requires command after --")
+}
+
+func ctlGUITerminal(socketPath string, args []string) error {
+	user, command, err := parseGUITerminalOptions(args)
+	if err != nil {
+		return err
+	}
+	client := NewControlClient(socketPath)
+	if err := launchGuestTerminal(client, user, command); err != nil {
+		return err
+	}
+	fmt.Println("opened guest terminal")
+	return nil
 }
 
 func parseClickTextOptions(args []string) (text, region string, timeout time.Duration, err error) {
