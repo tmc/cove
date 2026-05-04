@@ -950,7 +950,11 @@ func saveMachineIdentifier(machineID vz.VZMacMachineIdentifier, path string) err
 
 // loadOrCreateMACAddress loads an existing MAC address or creates a new one.
 func loadOrCreateMACAddress() vz.VZMACAddress {
-	macPath := filepath.Join(vmDir, "mac.address")
+	return loadOrCreateMACAddressForVM(vmDir)
+}
+
+func loadOrCreateMACAddressForVM(vmDirectory string) vz.VZMACAddress {
+	macPath := filepath.Join(vmDirectory, "mac.address")
 
 	if data, err := os.ReadFile(macPath); err == nil && len(data) > 0 {
 		macStr := strings.TrimSpace(string(data))

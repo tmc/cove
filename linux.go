@@ -138,6 +138,10 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
+		macAddr := loadOrCreateMACAddressForVM(vmDir)
+		if macAddr.ID != 0 {
+			networkDeviceConfig.SetMACAddress(&macAddr)
+		}
 		setNetworkDevices(config, networkDeviceConfig)
 	}
 

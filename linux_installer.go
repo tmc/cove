@@ -535,7 +535,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	natAttachment := vz.NewVZNATNetworkDeviceAttachment()
 	networkConfig := vz.NewVZVirtioNetworkDeviceConfiguration()
 	networkConfig.SetAttachment(&natAttachment.VZNetworkDeviceAttachment)
-	macAddr := vz.GetVZMACAddressClass().RandomLocallyAdministeredAddress()
+	macAddr := loadOrCreateMACAddressForVM(vmDir)
 	if macAddr.ID != 0 {
 		networkConfig.SetMACAddress(&macAddr)
 	}
