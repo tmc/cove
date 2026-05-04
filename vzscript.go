@@ -10,7 +10,7 @@
 //	guest-ping                  Check agent connectivity
 //	guest-exec <args...>        Run a command in the guest
 //	guest-shell <file>          Run a local script file in the guest via bash
-//	guest-terminal <file>       Run a local script file in Terminal.app (visible to user)
+//	guest-terminal <file>       Run a local script file in the guest terminal (visible to user)
 //	guest-write <dst> <src>     Copy a local file to the guest
 //	guest-read <path>           Read a guest file to stdout
 //	guest-cp <host> <guest>     Copy a file or directory host→guest (streaming)
@@ -94,7 +94,7 @@ type vzscriptConfig struct {
 	socketPath   string
 	execTimeout  time.Duration
 	verbose      bool
-	terminal     bool // force guest-shell/guest-exec to run in Terminal.app
+	terminal     bool // force guest-shell/guest-exec to run in the guest terminal
 	autoApprove  bool // auto-click "Allow"/"OK" on system dialogs via OCR
 	daemon       bool // use daemon agent (root) instead of user agent
 	logWriter    io.Writer
@@ -573,14 +573,26 @@ func stdoutOrStderrWrite(buf *bytes.Buffer, sink func([]byte), chunk []byte) {
 	}
 }
 
-// guestExecInTerminal runs a script in Terminal.app so the user can watch.
-// It launches Terminal with "open -a Terminal <wrapper>" as the console user.
-// This avoids AppleEvents automation prompts from osascript while still
-// executing the target script with root privileges via sudo.
-//
-// To avoid sudo password prompts, a temporary NOPASSWD entry is created
-// in /etc/sudoers.d/ before the script runs.
+// guestExecInTerminal runs a script in the guest GUI terminal so the user can watch.
 func guestExecInTerminal(cfg vzscriptConfig, guestPath string) (script.WaitFunc, error) {
+	client := NewControlClient(cfg.socketPath)
+	osName, err := detectGuestOS(client)
+	if err != nil {
+		return nil, err
+	}
+	if osName == guestOSLinux {
+		return func(*script.State) (string, string, error) {
+			err := launchLinuxGuestTerminal(client, "", []string{"/bin/bash", guestPath})
+			if err != nil {
+				return "", "", err
+			}
+			return "opened guest terminal\n", "", nil
+		}, nil
+	}
+	if osName != guestOSDarwin {
+		return nil, fmt.Errorf("guest terminal launch is not implemented for %s", osName)
+	}
+
 	user, err := guestConsoleUser(cfg)
 	if err != nil {
 		// No console user — run directly as root (won't open Terminal).
