@@ -101,6 +101,8 @@ var (
 	sandboxLevel string
 	// USB storage devices
 	usbDevices USBStorageSlice
+	// Raw block devices
+	blockDevices blockDeviceSlice
 	// Display configurations
 	displays displayx.Slice
 	// Rosetta for Linux VMs
@@ -231,6 +233,7 @@ func init() {
 	flag.StringVar(&diskSyncMode, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
 	// USB storage
 	flag.Var(&usbDevices, "usb", "USB storage device: /path/to/disk.img[:ro] (can be repeated)")
+	flag.Var(&blockDevices, "block", "raw block device: /dev/rdiskN:ro|rw[:sync=full|none] (can be repeated)")
 	// Display configuration
 	flag.Var(&displays, "display", "display config: WIDTHxHEIGHT[@PPI] or preset (4k, 1080p, 720p)")
 	// Rosetta for Linux

@@ -23,12 +23,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -48,8 +50,14 @@ const (
 
 // helperRequest is the JSON request format accepted by the helper.
 type helperRequest struct {
-	Op       string          `json:"op"`
-	Manifest json.RawMessage `json:"manifest,omitempty"` // for apply_manifest: encoded elevatedManifest
+	Op              string              `json:"op"`
+	Manifest        json.RawMessage     `json:"manifest,omitempty"` // for apply_manifest: encoded elevatedManifest
+	OpenBlockDevice *blockDeviceRequest `json:"openBlockDevice,omitempty"`
+}
+
+type blockDeviceRequest struct {
+	Path     string `json:"path"`
+	ReadOnly bool   `json:"readOnly"`
 }
 
 // helperResponse is the JSON response format returned by the helper.
@@ -532,6 +540,8 @@ func handleHelperConn(parent *slog.Logger, conn net.Conn, allowedUID int) {
 	switch req.Op {
 	case "apply_manifest":
 		runHelperManifest(log, conn, req.Manifest)
+	case "open_block_device":
+		runHelperOpenBlockDevice(log, uc, req.OpenBlockDevice)
 	case "ping":
 		log.Info("ping")
 		json.NewEncoder(conn).Encode(helperResponse{OK: true})
@@ -557,6 +567,130 @@ func runHelperManifest(log *slog.Logger, conn net.Conn, manifestJSON []byte) {
 	}
 	log.Info("manifest applied")
 	json.NewEncoder(conn).Encode(helperResponse{OK: true})
+}
+
+func runHelperOpenBlockDevice(log *slog.Logger, conn *net.UnixConn, req *blockDeviceRequest) {
+	if req == nil {
+		writeHelperError(log, conn, "missing block device request")
+		return
+	}
+	if err := validateBlockDevicePath(req.Path, req.ReadOnly); err != nil {
+		writeHelperError(log, conn, err.Error())
+		return
+	}
+	if err := validateBlockDeviceNode(req.Path); err != nil {
+		writeHelperError(log, conn, err.Error())
+		return
+	}
+	if !req.ReadOnly {
+		if err := validateBlockDeviceUnmounted(req.Path); err != nil {
+			writeHelperError(log, conn, err.Error())
+			return
+		}
+	}
+
+	f, err := os.OpenFile(req.Path, blockDeviceOpenFlags(req.ReadOnly), 0)
+	if err != nil {
+		writeHelperError(log, conn, fmt.Sprintf("open block device %s: %v", req.Path, err))
+		return
+	}
+	defer f.Close()
+
+	rights := unix.UnixRights(int(f.Fd()))
+	if _, _, err := conn.WriteMsgUnix([]byte("ok\n"), rights, nil); err != nil {
+		log.Warn("send block device fd", slog.String("err", err.Error()))
+		return
+	}
+	log.Info("block device opened", slog.String("path", req.Path), slog.Bool("readOnly", req.ReadOnly))
+}
+
+func validateBlockDevicePath(path string, readOnly bool) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("block device path is required")
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("block device %s must be absolute", path)
+	}
+	clean := filepath.Clean(path)
+	if !strings.HasPrefix(clean, "/dev/") {
+		return fmt.Errorf("block device %s is not under /dev", path)
+	}
+	base := filepath.Base(clean)
+	if !readOnly && !strings.HasPrefix(base, "rdisk") {
+		return fmt.Errorf("writable block device %s must use /dev/rdiskN", path)
+	}
+	if readOnly && !strings.HasPrefix(base, "rdisk") && !strings.HasPrefix(base, "disk") {
+		return fmt.Errorf("read-only block device %s must use /dev/diskN or /dev/rdiskN", path)
+	}
+	return nil
+}
+
+func validateBlockDeviceNode(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat block device %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeDevice == 0 {
+		return fmt.Errorf("block device %s is not a device node", path)
+	}
+	return nil
+}
+
+var diskutilInfoPlist = func(path string) ([]byte, error) {
+	return exec.Command("diskutil", "info", "-plist", path).Output()
+}
+
+func validateBlockDeviceUnmounted(path string) error {
+	out, err := diskutilInfoPlist(path)
+	if err != nil {
+		return fmt.Errorf("inspect block device %s mount state: %w", path, err)
+	}
+	mounted, err := plistBool(out, "Mounted")
+	if err != nil {
+		return fmt.Errorf("parse block device %s mount state: %w", path, err)
+	}
+	if mounted {
+		return fmt.Errorf("block device %s is mounted", path)
+	}
+	return nil
+}
+
+type plistNode struct {
+	XMLName  xml.Name
+	Text     string      `xml:",chardata"`
+	Children []plistNode `xml:",any"`
+}
+
+func plistBool(data []byte, key string) (bool, error) {
+	var root plistNode
+	if err := xml.Unmarshal(data, &root); err != nil {
+		return false, err
+	}
+	return plistBoolNode(root, key)
+}
+
+func plistBoolNode(node plistNode, key string) (bool, error) {
+	for i := 0; i < len(node.Children); i++ {
+		child := node.Children[i]
+		if child.XMLName.Local == "key" && strings.TrimSpace(child.Text) == key {
+			if i+1 >= len(node.Children) {
+				return false, fmt.Errorf("key %s has no value", key)
+			}
+			switch node.Children[i+1].XMLName.Local {
+			case "true":
+				return true, nil
+			case "false":
+				return false, nil
+			default:
+				return false, fmt.Errorf("key %s is not a bool", key)
+			}
+		}
+		if got, err := plistBoolNode(child, key); err == nil {
+			return got, nil
+		}
+	}
+	return false, fmt.Errorf("key %s not found", key)
 }
 
 // writeHelperError sends an error response to the peer and logs the same
