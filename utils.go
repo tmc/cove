@@ -204,57 +204,55 @@ var serialOutputFile *os.File
 // createSerialConsoleConfig creates a serial console configuration based on the -serial flag.
 // Options: 'stdout' (default), 'none' (disable), or a file path.
 // Note: This relies on the global 'serialOutput' flag from main.go
-func createSerialConsoleConfig() vz.VZVirtioConsoleDeviceSerialPortConfiguration {
-	// Handle "none" - no serial console
+func createSerialConsoleConfig() vz.VZSerialPortConfiguration {
+	attachment, ok := createSerialPortAttachment()
+	if !ok {
+		return vz.VZSerialPortConfiguration{}
+	}
+
+	serialConfig := vz.NewVZVirtioConsoleDeviceSerialPortConfiguration()
+	if serialConfig.ID == 0 {
+		fmt.Println("  warning: could not create serial port configuration")
+		return vz.VZSerialPortConfiguration{}
+	}
+	serialConfig.SetAttachment(&attachment.VZSerialPortAttachment)
+	return vz.VZSerialPortConfigurationFromID(serialConfig.ID)
+}
+
+func createSerialPortAttachment() (vz.VZFileHandleSerialPortAttachment, bool) {
 	if serialOutput == "none" {
-		return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
+		return vz.VZFileHandleSerialPortAttachment{}, false
 	}
 
 	var readFd, writeFd int
 
-	// Input is always stdin (for interactive console)
 	readFd = int(os.Stdin.Fd())
 
-	// Output can be stdout or a file
 	if serialOutput == "stdout" {
 		writeFd = int(os.Stdout.Fd())
 	} else {
-		// Open file for writing serial output
 		var err error
 		serialOutputFile, err = os.OpenFile(serialOutput, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			fmt.Printf("  warning: could not open serial output file %s: %v\n", serialOutput, err)
-			return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
+			return vz.VZFileHandleSerialPortAttachment{}, false
 		}
 		writeFd = int(serialOutputFile.Fd())
 		fmt.Printf("  Serial output will be written to: %s\n", serialOutput)
 	}
 
-	// Create the attachment using direct objc calls
-	// fileHandleForReading = what guest reads FROM (stdin - we type, guest receives)
-	// fileHandleForWriting = what guest writes TO (stdout/file - guest outputs)
 	readHandle := foundation.NewFileHandleWithFileDescriptor(readFd)
 	readHandle.Retain()
 	writeHandle := foundation.NewFileHandleWithFileDescriptor(writeFd)
 	writeHandle.Retain()
 
-	// Create file handle serial port attachment
 	attachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(readHandle, writeHandle)
 	if attachment.ID == 0 {
 		fmt.Printf("  warning: could not create serial port attachment\n")
-		return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
+		return vz.VZFileHandleSerialPortAttachment{}, false
 	}
 	attachment.Retain()
-
-	// Create the serial port configuration
-	serialConfig := vz.NewVZVirtioConsoleDeviceSerialPortConfiguration()
-	if serialConfig.ID == 0 {
-		fmt.Println("  warning: could not create serial port configuration")
-		return vz.VZVirtioConsoleDeviceSerialPortConfiguration{}
-	}
-
-	serialConfig.SetAttachment(&attachment.VZSerialPortAttachment)
-	return serialConfig
+	return attachment, true
 }
 
 // closeSerialOutputFile closes the serial output file if one was opened
