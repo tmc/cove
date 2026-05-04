@@ -135,7 +135,7 @@ Hidden by default; documented in `docs/runbooks/disk-tuning.md`.
 
 ## Follow-up slices
 
-- **Slice 2 — NVMe controller for Linux** (implemented 2026-05-04): hidden `-nvme` flag on Linux run/install paths, wrapping root disk attachments with `VZNVMExpressControllerDeviceConfiguration` instead of virtio-blk. The install benchmark is still pending a free host VM slot.
+- **Slice 2 — NVMe controller for Linux**: Implemented (benchmark deferred). Hidden `-nvme` flag on Linux run/install paths, wrapping root disk attachments with `VZNVMExpressControllerDeviceConfiguration` instead of virtio-blk. The install benchmark is still pending a free host VM slot.
 - **Slice 3 — Pre-allocated RAW images** instead of sparse: `hdiutil create -fs UDIF` writes a sparse bundle; switching to `dd if=/dev/zero` style raw allocation eliminates APFS first-write pauses. Cost: disk image is its full size on host immediately. Worth it for benchmark images, not for casual user disks.
 - **Slice 4 — Block device passthrough** (`VZDiskBlockDeviceStorageDeviceAttachment`): bypass APFS entirely, attach `/dev/rdiskN`. Needs root helper (we already have `cove-helper`); biggest architectural lift; max performance.
 
