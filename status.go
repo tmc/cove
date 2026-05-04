@@ -51,7 +51,26 @@ func probeLinuxGUISessionControl(client *ControlClient) (guiSession, bool, error
 		}
 		return guiSession{}, false, fmt.Errorf("query gui sessions: %s", msg)
 	}
-	return parseLinuxLoginctlSessions([]byte(resp.GetStdout()))
+	rows, err := parseLinuxLoginctlSessionRows([]byte(resp.GetStdout()))
+	if err != nil {
+		return guiSession{}, false, err
+	}
+	if session, ok := activeGraphicalLoginctlSession(rows); ok {
+		return session, true, nil
+	}
+	for _, row := range rows {
+		if row.State != "active" || row.ID == "" {
+			continue
+		}
+		show, err := client.AgentExecTypedTimeout([]string{"loginctl", "show-session", row.ID, "-p", "Name", "-p", "User", "-p", "Seat", "-p", "State", "-p", "Type", "--no-pager"}, nil, "", 5*time.Second)
+		if err != nil || show.GetExitCode() != 0 {
+			continue
+		}
+		if session, ok := parseLoginctlShowGUISession(row.ID, show.GetStdout()); ok {
+			return session, true, nil
+		}
+	}
+	return guiSession{}, false, nil
 }
 
 func probeMacOSGUISessionControl(client *ControlClient) (guiSession, bool, error) {

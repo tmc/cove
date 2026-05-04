@@ -14,7 +14,7 @@ func TestParseLinuxLoginctlSessionsActiveWayland(t *testing.T) {
 	if !ok {
 		t.Fatal("no session found")
 	}
-	want := guiSession{User: "desk", Seat: "seat0", Kind: "wayland"}
+	want := guiSession{ID: "1", User: "desk", Seat: "seat0", Kind: "wayland"}
 	if got != want {
 		t.Fatalf("session = %#v, want %#v", got, want)
 	}
@@ -31,7 +31,7 @@ func TestParseLinuxLoginctlSessionsActiveX11NameFallback(t *testing.T) {
 	if !ok {
 		t.Fatal("no session found")
 	}
-	want := guiSession{User: "qa", Seat: "seat0", Kind: "x11"}
+	want := guiSession{ID: "3", User: "qa", Seat: "seat0", Kind: "x11"}
 	if got != want {
 		t.Fatalf("session = %#v, want %#v", got, want)
 	}
@@ -54,5 +54,16 @@ func TestParseLinuxLoginctlSessionsSkipsNonGraphical(t *testing.T) {
 func TestParseLinuxLoginctlSessionsRejectsMalformedJSON(t *testing.T) {
 	if _, _, err := parseLinuxLoginctlSessions([]byte(`not-json`)); err == nil {
 		t.Fatal("expected parse error")
+	}
+}
+
+func TestParseLoginctlShowGUISession(t *testing.T) {
+	got, ok := parseLoginctlShowGUISession("1", "Name=desk\nUser=1000\nSeat=seat0\nState=active\nType=wayland\n")
+	if !ok {
+		t.Fatal("no session found")
+	}
+	want := guiSession{ID: "1", User: "desk", Seat: "seat0", Kind: "wayland"}
+	if got != want {
+		t.Fatalf("session = %#v, want %#v", got, want)
 	}
 }
