@@ -1,4 +1,5 @@
 # mlx-go — Build mlx-go inference tools in a macOS guest
+# guest-os: darwin
 # requires: developer-tools, golang, cmake
 # runs-on: daemon
 

@@ -241,6 +241,35 @@ func TestVZScriptListRejectsInvalidOS(t *testing.T) {
 	}
 }
 
+func TestVZScriptListLinuxRecipes(t *testing.T) {
+	var buf bytes.Buffer
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	err = vzscriptListWithGuestOS("linux")
+	w.Close()
+	os.Stdout = old
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"agentkit-linux-base", "agentkit-linux-claude-ready"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("linux list missing %q:\n%s", want, out)
+		}
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if got, want := len(lines)-1, 2; got != want {
+		t.Fatalf("linux recipe count = %d, want %d:\n%s", got, want, out)
+	}
+}
+
 func TestPrintVZScriptUsageIncludesListOSFlag(t *testing.T) {
 	var buf bytes.Buffer
 	printVzscriptUsage(&buf)

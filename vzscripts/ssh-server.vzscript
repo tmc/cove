@@ -1,4 +1,5 @@
 # ssh-server — Enable and configure SSH remote login
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping

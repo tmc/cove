@@ -1,4 +1,5 @@
 # login — Log in at the macOS login screen
+# guest-os: darwin
 
 # Requires $PASSWORD environment variable.
 # Optionally set $USERNAME to click a specific user first.

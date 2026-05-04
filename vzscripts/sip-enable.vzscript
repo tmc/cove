@@ -1,4 +1,5 @@
 # sip-enable - Recovery automation for enabling SIP
+# guest-os: darwin
 
 label-push 'SIP enable'
 label-push 'Recovery picker'

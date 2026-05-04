@@ -1,4 +1,5 @@
 # openclaw — Install OpenClaw personal AI assistant
+# guest-os: darwin
 # requires: homebrew
 # runs-on: daemon
 

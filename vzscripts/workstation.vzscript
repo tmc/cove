@@ -1,4 +1,5 @@
 # workstation — Full development workstation with pre-boot setup
+# guest-os: darwin
 # requires: login
 # runs-on: daemon
 # inject: Library/LaunchDaemons/com.vz.workstation-setup.plist setup-daemon.plist 0644 root:wheel

@@ -1,4 +1,5 @@
 # metal-toolchain — Download Metal shader compiler toolchain
+# guest-os: darwin
 # requires: xcode
 
 guest-ping

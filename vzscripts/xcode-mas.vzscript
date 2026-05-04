@@ -1,4 +1,5 @@
 # xcode-mas — Install Xcode from Mac App Store (slow, ~35 GB)
+# guest-os: darwin
 # requires: homebrew
 # runs-on: daemon
 

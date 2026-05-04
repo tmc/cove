@@ -1,4 +1,5 @@
 # github-runner — Install and register a self-hosted GitHub Actions runner
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping

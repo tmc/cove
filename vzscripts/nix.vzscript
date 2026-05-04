@@ -1,4 +1,5 @@
 # nix — Install Nix package manager (Determinate Systems multi-user installer)
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping

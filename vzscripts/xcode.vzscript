@@ -1,4 +1,5 @@
 # xcode — Install full Xcode in the guest
+# guest-os: darwin
 # requires: developer-tools
 
 guest-ping

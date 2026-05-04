@@ -1,4 +1,5 @@
 # full-setup — Navigate Setup Assistant and install developer tools
+# guest-os: darwin
 #
 # Combines OCR-driven GUI automation with guest agent provisioning
 # in a single script. Requires -gui mode for Phase 1 and the guest

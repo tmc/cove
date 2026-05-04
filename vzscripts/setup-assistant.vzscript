@@ -1,4 +1,5 @@
 # setup-assistant — Navigate macOS Setup Assistant to desktop
+# guest-os: darwin
 
 # Wait for the VM to boot and show Setup Assistant
 ocr-wait Continue 120s

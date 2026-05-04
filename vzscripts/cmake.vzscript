@@ -1,4 +1,5 @@
 # cmake — Install CMake build system
+# guest-os: darwin
 # requires: homebrew
 # runs-on: daemon
 

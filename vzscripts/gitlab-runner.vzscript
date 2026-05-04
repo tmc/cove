@@ -1,4 +1,5 @@
 # gitlab-runner — Install and register a self-hosted GitLab Runner
+# guest-os: darwin
 # runs-on: daemon
 
 guest-ping

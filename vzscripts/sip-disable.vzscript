@@ -1,4 +1,5 @@
 # sip-disable - Recovery automation for disabling SIP
+# guest-os: darwin
 
 label-push 'SIP disable'
 label-push 'Recovery picker'

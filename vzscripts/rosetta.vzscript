@@ -1,4 +1,5 @@
 # rosetta — Install Rosetta 2 for x86-64 compatibility
+# guest-os: darwin
 
 guest-ping
 guest-exec softwareupdate --install-rosetta --agree-to-license
