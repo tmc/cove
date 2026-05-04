@@ -1792,6 +1792,10 @@ func ctlResetPassword(sock string, timeout time.Duration, username, password str
 }
 
 func ctlResetPasswordForVM(target vmSelection, sock string, timeout time.Duration, username, password string) error {
+	if ctlGuestIsLinux(sock) {
+		return ctlResetLinuxPassword(sock, timeout, username, password)
+	}
+
 	// Try agent first (VM running).
 	req := &controlpb.ControlRequest{
 		Type: "agent-exec",
@@ -1937,6 +1941,30 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 	return nil
 }
 
+func ctlResetLinuxPassword(sock string, timeout time.Duration, username, password string) error {
+	req := &controlpb.ControlRequest{
+		Type: "agent-exec",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{
+				Args: []string{"sh", "-lc", linuxResetPasswordScript(username, password)},
+			},
+		},
+	}
+	resp, err := ctlSendRequest(sock, req, timeout, "agent-exec")
+	if err != nil {
+		return fmt.Errorf("linux reset-password requires a running guest agent: %w", err)
+	}
+	if err := requireAgentExecSuccess("reset password", resp); err != nil {
+		return err
+	}
+	fmt.Printf("Password reset for %s (via Linux guest agent)\n", username)
+	return nil
+}
+
+func linuxResetPasswordScript(username, password string) string {
+	return fmt.Sprintf("printf %%s\\\\n %s | chpasswd", shellEscape(username+":"+password))
+}
+
 func autoLoginRefreshCommand(username, password string) (string, error) {
 	loginWindowData, err := pw.EncodeLoginWindowPlist(pw.CreateLoginWindowPlist(username))
 	if err != nil {
@@ -1956,6 +1984,10 @@ func autoLoginRefreshCommand(username, password string) (string, error) {
 
 // ctlSetupAssist runs the Setup Assistant automation
 func ctlSetupAssist(socketPath, username, password string) error {
+	if ctlGuestIsLinux(socketPath) {
+		return fmt.Errorf("setup-assist is only supported for macOS guests; for Linux use cloud-init or cove up provisioning")
+	}
+
 	fmt.Println("=== Setup Assistant Automation ===")
 	fmt.Printf("Username: %s\n", username)
 	fmt.Println()

@@ -27,6 +27,50 @@ func TestAgentMountVolumesResponseFailure(t *testing.T) {
 	}
 }
 
+func TestAgentSSHDArgsByGuestOS(t *testing.T) {
+	tests := []struct {
+		name      string
+		action    string
+		linuxMode bool
+		want      []string
+	}{
+		{
+			name:   "macos status",
+			action: "status",
+			want:   []string{"systemsetup", "-getremotelogin"},
+		},
+		{
+			name:      "linux status",
+			action:    "status",
+			linuxMode: true,
+			want:      []string{"sh", "-lc", "systemctl status ssh --no-pager || systemctl status sshd --no-pager"},
+		},
+		{
+			name:      "linux on",
+			action:    "on",
+			linuxMode: true,
+			want:      []string{"sh", "-lc", "systemctl enable --now ssh || systemctl enable --now sshd"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := agentSSHDArgs(tt.action, tt.linuxMode)
+			if err != nil {
+				t.Fatalf("agentSSHDArgs() error = %v", err)
+			}
+			if strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {
+				t.Fatalf("agentSSHDArgs() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentSSHDArgsRejectsUnknown(t *testing.T) {
+	if _, err := agentSSHDArgs("bogus", true); err == nil {
+		t.Fatal("agentSSHDArgs() error = nil, want error")
+	}
+}
+
 func TestParseConsoleOwnerOutput(t *testing.T) {
 	tests := []struct {
 		name     string

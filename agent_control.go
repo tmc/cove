@@ -1120,15 +1120,8 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-	var args []string
-	switch cmd.Action {
-	case "on":
-		args = []string{"launchctl", "load", "-w", "/System/Library/LaunchDaemons/ssh.plist"}
-	case "off":
-		args = []string{"launchctl", "unload", "-w", "/System/Library/LaunchDaemons/ssh.plist"}
-	case "status":
-		args = []string{"systemsetup", "-getremotelogin"}
-	default:
+	args, err := agentSSHDArgs(cmd.Action, linuxMode)
+	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown sshd action: %s (use on, off, or status)", cmd.Action)}
 	}
 	ctx, cancel := s.timeoutContext(30 * time.Second)
@@ -1150,6 +1143,31 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 			Stdout:   responseText(result.Stdout),
 			Stderr:   responseText(result.Stderr),
 		}},
+	}
+}
+
+func agentSSHDArgs(action string, linuxGuest bool) ([]string, error) {
+	if linuxGuest {
+		switch action {
+		case "on":
+			return []string{"sh", "-lc", "systemctl enable --now ssh || systemctl enable --now sshd"}, nil
+		case "off":
+			return []string{"sh", "-lc", "systemctl disable --now ssh || systemctl disable --now sshd"}, nil
+		case "status":
+			return []string{"sh", "-lc", "systemctl status ssh --no-pager || systemctl status sshd --no-pager"}, nil
+		default:
+			return nil, fmt.Errorf("unknown sshd action")
+		}
+	}
+	switch action {
+	case "on":
+		return []string{"launchctl", "load", "-w", "/System/Library/LaunchDaemons/ssh.plist"}, nil
+	case "off":
+		return []string{"launchctl", "unload", "-w", "/System/Library/LaunchDaemons/ssh.plist"}, nil
+	case "status":
+		return []string{"systemsetup", "-getremotelogin"}, nil
+	default:
+		return nil, fmt.Errorf("unknown sshd action")
 	}
 }
 
