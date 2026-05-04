@@ -692,6 +692,7 @@ type sharedFolderControlStep struct {
 
 func serveSharedFolderControlSteps(t *testing.T, vmDir, token string, steps []sharedFolderControlStep) func() {
 	t.Helper()
+	t.Setenv(controlTokenEnvVar, token)
 
 	tokenPath := GetControlTokenPathForVM(vmDir)
 	if err := os.WriteFile(tokenPath, []byte(token+"\n"), 0600); err != nil {
