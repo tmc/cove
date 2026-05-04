@@ -20,10 +20,14 @@ cove vzscript run ./custom.vzscript       # run a custom script file
 ```bash
 cove vzscript run -v homebrew             # verbose output
 cove vzscript run -timeout 30m golang     # custom timeout
-cove vzscript run -terminal homebrew      # run in Terminal.app (visible in VM)
+cove vzscript run -terminal homebrew      # run in a visible guest terminal
 cove vzscript run -auto-approve golang    # auto-click Allow/OK dialogs via OCR
 cove vzscript run -template -var Mode=disable ./sip.vzscript.tmpl
 ```
+
+`-terminal` is platform-aware. macOS guests use Terminal.app. Linux graphical
+guests use the active `loginctl` Wayland or X11 session and launch
+`gnome-terminal`, `kgx`, `konsole`, or `xterm` as the desktop user.
 
 ## Script Format
 
