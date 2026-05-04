@@ -172,6 +172,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-05-04**: designs [027](027-disk-io-tuning.md) and [028](028-block-device-passthrough.md) shipped. Disk I/O tuning landed at `fc7ff1e` and `a459076`; block device passthrough landed across `b522ab3`, `a78e891`, `74d9527`, and `cede792` with follow-up hardening.
 - **2026-05-02**: design [025](025-cove-action-security.md) cove-action security architecture landed at `1db4830` (411 LOC). Threat model + token lifecycle + isolation invariants for the v0.4 cove-action GHA wrapper. Clears the security-gate prerequisite on design [021](021-v04-ci-executors-tracks.md) Slice 1 implementation. Per user 2026-05-02: Slice 1 still v0.4-targeted; cove repo stays private; design [024](024-cove-runner-images.md) Slice 3 deferred indefinitely.
 - **2026-05-02**: v0.2.1 Slice 1 implementations shipped: design [023](023-cove-shell-exec-ux.md) server-side at 17211bd (289 LOC, 7 tests); design [024](024-cove-runner-images.md) image surface at 8a106dc (1027 LOC, 8 tests). Slice 2 of 023 (standalone `cove shell <vm>` client, ~150 LOC) is the only remaining v0.2.1 implementation.
 - **2026-05-02**: Added v0.2.1 milestone covering `cove shell <vm>` Slice 1 (design [023](023-cove-shell-exec-ux.md)), local image store + `cove image build/list/rm` Slice 1 (design [024](024-cove-runner-images.md)), and three CI/networking vzscripts (github-runner, gitlab-runner, tailscale).
