@@ -73,13 +73,99 @@ guest-exec /bin/echo hello
 
 func TestParseScriptMetaEmpty(t *testing.T) {
 	meta := parseScriptMeta(nil)
-	if meta.name != "" || len(meta.requires) != 0 || len(meta.inject) != 0 {
+	if meta.name != "" || meta.guestOS != "darwin" || len(meta.requires) != 0 || len(meta.inject) != 0 {
 		t.Errorf("empty input should produce zero-value meta, got %+v", meta)
 	}
 
 	meta = parseScriptMeta([]byte("guest-ping\n"))
 	if meta.name != "" {
 		t.Errorf("no-comment input: name = %q, want empty", meta.name)
+	}
+}
+
+func TestParseScriptMetaGuestOS(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name: "default darwin",
+			input: `# homebrew - Install Homebrew
+
+guest-ping
+`,
+			want: "darwin",
+		},
+		{
+			name: "linux",
+			input: `# linux-setup - Linux setup
+# guest-os: linux
+
+guest-ping
+`,
+			want: "linux",
+		},
+		{
+			name: "both",
+			input: `# portable - Portable setup
+# guest-os: both
+
+guest-ping
+`,
+			want: "both",
+		},
+		{
+			name: "mac alias",
+			input: `# mac-setup - Mac setup
+# guest-os: macos
+
+guest-ping
+`,
+			want: "darwin",
+		},
+		{
+			name: "invalid ignored",
+			input: `# odd - Odd setup
+# guest-os: plan9
+
+guest-ping
+`,
+			want: "darwin",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := parseScriptMeta([]byte(tt.input))
+			if meta.guestOS != tt.want {
+				t.Fatalf("guestOS = %q, want %q", meta.guestOS, tt.want)
+			}
+		})
+	}
+}
+
+func TestVZScriptGuestOSMatches(t *testing.T) {
+	tests := []struct {
+		recipe string
+		target string
+		want   bool
+	}{
+		{"darwin", "darwin", true},
+		{"darwin", "linux", false},
+		{"linux", "linux", true},
+		{"linux", "darwin", false},
+		{"both", "linux", true},
+		{"both", "darwin", true},
+		{"", "darwin", true},
+		{"", "linux", false},
+		{"darwin", "", true},
+	}
+	for _, tt := range tests {
+		got := vzscriptGuestOSMatches(tt.recipe, tt.target)
+		if got != tt.want {
+			t.Errorf("vzscriptGuestOSMatches(%q, %q) = %v, want %v", tt.recipe, tt.target, got, tt.want)
+		}
 	}
 }
 

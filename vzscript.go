@@ -92,6 +92,7 @@ import (
 // vzscriptConfig holds configuration for the vzscript engine.
 type vzscriptConfig struct {
 	socketPath   string
+	guestOS      string
 	execTimeout  time.Duration
 	verbose      bool
 	terminal     bool // force guest-shell/guest-exec to run in the guest terminal

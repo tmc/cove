@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
@@ -229,6 +230,7 @@ func vzscriptRun(args []string) error {
 		daemon:       *daemon,
 		template:     *renderTemplate,
 		templateVars: templateVars,
+		guestOS:      vzscriptGuestOSForSocket(sock),
 	}
 
 	// Open a persistent log file in the VM directory.
@@ -284,6 +286,9 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 		}
 		ar := txtar.Parse(data)
 		meta := parseScriptMeta(ar.Comment)
+		if err := checkVZScriptGuestOS(name, meta, cfg.guestOS); err != nil {
+			return err
+		}
 
 		inProgress[name] = true
 		defer delete(inProgress, name)
@@ -404,6 +409,9 @@ func runVZScriptsParallel(names []string, cfg vzscriptConfig) error {
 		}
 		ar := txtar.Parse(data)
 		meta := parseScriptMeta(ar.Comment)
+		if err := checkVZScriptGuestOS(name, meta, cfg.guestOS); err != nil {
+			return err
+		}
 		r := &resolvedRecipe{
 			name:   name,
 			data:   data,
@@ -833,6 +841,7 @@ type mountDirective struct {
 type scriptMeta struct {
 	name     string
 	desc     string
+	guestOS  string            // darwin, linux, or both
 	requires []string          // recipe names this script depends on
 	runsOn   string            // "daemon" to run as root via daemon agent
 	inject   []injectDirective // files to inject into VM disk
@@ -843,11 +852,12 @@ type scriptMeta struct {
 // Recognized headers:
 //
 //	# name — description   (first non-blank comment line)
+//	# guest-os: darwin|linux|both
 //	# requires: a, b       (dependency list)
 //	# runs-on: daemon      (run as root via daemon agent)
 //	# inject: guest-path txtar-file [mode] [owner]
 func parseScriptMeta(comment []byte) scriptMeta {
-	var m scriptMeta
+	m := scriptMeta{guestOS: "darwin"}
 	s := bufio.NewScanner(bytes.NewReader(comment))
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
@@ -858,6 +868,14 @@ func parseScriptMeta(comment []byte) scriptMeta {
 			break
 		}
 		text := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+
+		// Check for "guest-os:" directive.
+		if strings.HasPrefix(strings.ToLower(text), "guest-os:") {
+			if osName := normalizeVZScriptGuestOS(strings.TrimSpace(text[len("guest-os:"):])); osName != "" {
+				m.guestOS = osName
+			}
+			continue
+		}
 
 		// Check for "requires:" directive.
 		if strings.HasPrefix(strings.ToLower(text), "requires:") {
@@ -926,6 +944,63 @@ func parseScriptMeta(comment []byte) scriptMeta {
 		}
 	}
 	return m
+}
+
+func normalizeVZScriptGuestOS(osName string) string {
+	switch strings.ToLower(strings.TrimSpace(osName)) {
+	case "darwin", "macos", "mac":
+		return "darwin"
+	case "linux":
+		return "linux"
+	case "both", "all", "any":
+		return "both"
+	default:
+		return ""
+	}
+}
+
+func vzscriptGuestOSFromPlatform(platform string) string {
+	switch platform {
+	case agentstate.PlatformLinux:
+		return "linux"
+	default:
+		return "darwin"
+	}
+}
+
+func vzscriptGuestOSForSocket(socketPath string) string {
+	return vzscriptGuestOSFromPlatform(ctlGuestPlatform(socketPath))
+}
+
+func vzscriptGuestOSMatches(recipeOS, targetOS string) bool {
+	recipeOS = normalizeVZScriptGuestOS(recipeOS)
+	targetOS = normalizeVZScriptGuestOS(targetOS)
+	if recipeOS == "" {
+		recipeOS = "darwin"
+	}
+	return recipeOS == "both" || targetOS == "" || recipeOS == targetOS
+}
+
+func checkVZScriptGuestOS(name string, meta scriptMeta, targetOS string) error {
+	if vzscriptGuestOSMatches(meta.guestOS, targetOS) {
+		return nil
+	}
+	recipeOS := normalizeVZScriptGuestOS(meta.guestOS)
+	if recipeOS == "" {
+		recipeOS = "darwin"
+	}
+	return fmt.Errorf("vzscript: recipe '%s' is for %s guests only; this VM is %s", name, recipeOS, vzscriptGuestOSDisplay(targetOS))
+}
+
+func vzscriptGuestOSDisplay(osName string) string {
+	switch normalizeVZScriptGuestOS(osName) {
+	case "linux":
+		return "Linux"
+	case "darwin":
+		return "Darwin"
+	default:
+		return "unknown"
+	}
 }
 
 // expandTilde replaces a leading ~/ (or bare ~) with the current user's
