@@ -23,6 +23,8 @@ func TestParseBuildScriptMeta(t *testing.T) {
 # cache-file: ./go.mod ./go.sum
 # cache-ttl: 7d
 # secret: GITHUB_TOKEN OPENAI_API_KEY
+# secret-from: API_TOKEN=env://API_TOKEN
+# secret-from: SIGNING_KEY=file:///tmp/signing-key
 # compact: thorough
 
 exec echo ok
@@ -42,6 +44,34 @@ exec echo ok
 	}
 	if !reflect.DeepEqual(got.Secrets, []string{"GITHUB_TOKEN", "OPENAI_API_KEY"}) {
 		t.Fatalf("Secrets = %#v", got.Secrets)
+	}
+	wantRefs := []buildSecretRef{
+		{Name: "API_TOKEN", URI: "env://API_TOKEN", Line: 7},
+		{Name: "SIGNING_KEY", URI: "file:///tmp/signing-key", Line: 8},
+	}
+	if !reflect.DeepEqual(got.SecretFrom, wantRefs) {
+		t.Fatalf("SecretFrom = %#v, want %#v", got.SecretFrom, wantRefs)
+	}
+}
+
+func TestParseBuildScriptMetaSecretFromErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "missing equals", line: "# secret-from: TOKEN", want: "missing '='"},
+		{name: "empty name", line: "# secret-from: =env://TOKEN", want: `invalid secret name ""`},
+		{name: "invalid name", line: "# secret-from: BAD/NAME=env://TOKEN", want: `invalid secret name "BAD/NAME"`},
+		{name: "missing scheme", line: "# secret-from: TOKEN=TOKEN", want: `missing scheme`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseBuildScriptMeta([]byte(tt.line + "\n\nexec echo ok\n"))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("parseBuildScriptMeta() = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 
@@ -68,23 +98,33 @@ func TestBuildCacheKeySortsDeclaredInputs(t *testing.T) {
 		CacheURL:  []string{srv.URL + "/b", srv.URL + "/a"},
 		CacheFile: []string{fileB, fileA},
 		Secrets:   []string{"Z", "A"},
-		Compact:   "targeted",
+		SecretFrom: []buildSecretRef{
+			{Name: "REF_B", URI: "env://B"},
+			{Name: "REF_A", URI: "env://A"},
+		},
+		Compact: "targeted",
 	}}
 	stepB := buildStep{Name: "test", Source: "test.vzscript", Data: data, Meta: buildScriptMeta{
 		CacheEnv:  []string{"A", "B"},
 		CacheURL:  []string{srv.URL + "/a", srv.URL + "/b"},
 		CacheFile: []string{fileA, fileB},
 		Secrets:   []string{"A", "Z"},
-		Compact:   "targeted",
+		SecretFrom: []buildSecretRef{
+			{Name: "REF_A", URI: "env://A"},
+			{Name: "REF_B", URI: "env://B"},
+		},
+		Compact: "targeted",
 	}}
 	stepA.Meta.CacheEnv = uniqueSorted(stepA.Meta.CacheEnv)
 	stepA.Meta.CacheURL = uniqueSorted(stepA.Meta.CacheURL)
 	stepA.Meta.CacheFile = uniqueSorted(stepA.Meta.CacheFile)
 	stepA.Meta.Secrets = uniqueSorted(stepA.Meta.Secrets)
+	stepA.Meta.SecretFrom = sortedBuildSecretRefs(stepA.Meta.SecretFrom)
 	stepB.Meta.CacheEnv = uniqueSorted(stepB.Meta.CacheEnv)
 	stepB.Meta.CacheURL = uniqueSorted(stepB.Meta.CacheURL)
 	stepB.Meta.CacheFile = uniqueSorted(stepB.Meta.CacheFile)
 	stepB.Meta.Secrets = uniqueSorted(stepB.Meta.Secrets)
+	stepB.Meta.SecretFrom = sortedBuildSecretRefs(stepB.Meta.SecretFrom)
 	keyA, _, err := buildCacheKey(context.Background(), "sha256:parent", stepA, srv.Client())
 	if err != nil {
 		t.Fatalf("buildCacheKey(A): %v", err)
@@ -95,6 +135,48 @@ func TestBuildCacheKeySortsDeclaredInputs(t *testing.T) {
 	}
 	if keyA != keyB {
 		t.Fatalf("keys differ for sorted-equivalent inputs:\nA=%s\nB=%s", keyA, keyB)
+	}
+}
+
+func TestBuildCacheKeyIncludesSecretFromURIOnly(t *testing.T) {
+	t.Setenv("TOKEN", "one")
+	step := buildStep{Name: "test", Source: "test.vzscript", Data: []byte("exec echo ok\n"), Meta: buildScriptMeta{
+		SecretFrom: []buildSecretRef{{Name: "TOKEN", URI: "env://TOKEN"}},
+		Compact:    "targeted",
+	}}
+	keyA, inA, err := buildCacheKey(context.Background(), "sha256:parent", step, nil)
+	if err != nil {
+		t.Fatalf("buildCacheKey(A): %v", err)
+	}
+	t.Setenv("TOKEN", "two")
+	keyB, inB, err := buildCacheKey(context.Background(), "sha256:parent", step, nil)
+	if err != nil {
+		t.Fatalf("buildCacheKey(B): %v", err)
+	}
+	if keyA != keyB {
+		t.Fatalf("secret value changed cache key: %s != %s", keyA, keyB)
+	}
+	step.Meta.SecretFrom[0].URI = "env://OTHER"
+	keyC, _, err := buildCacheKey(context.Background(), "sha256:parent", step, nil)
+	if err != nil {
+		t.Fatalf("buildCacheKey(C): %v", err)
+	}
+	if keyC == keyA {
+		t.Fatal("secret URI change did not change cache key")
+	}
+	if !reflect.DeepEqual(inA.SecretFrom, []string{"TOKEN=env://TOKEN"}) || !reflect.DeepEqual(inB.SecretFrom, []string{"TOKEN=env://TOKEN"}) {
+		t.Fatalf("SecretFrom inputs = %#v %#v", inA.SecretFrom, inB.SecretFrom)
+	}
+}
+
+func TestValidateBuildStepSecretsSecretFromDuplicate(t *testing.T) {
+	t.Setenv("BUILD_SECRET", "legacy")
+	err := validateBuildStepSecrets(buildPlanStep{Name: "test", Meta: buildScriptMeta{
+		Secrets:    []string{"BUILD_SECRET"},
+		SecretFrom: []buildSecretRef{{Name: "BUILD_SECRET", URI: "env://OTHER", Line: 1}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "secret BUILD_SECRET declared more than once") {
+		t.Fatalf("validateBuildStepSecrets() = %v, want duplicate error", err)
 	}
 }
 

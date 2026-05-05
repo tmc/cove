@@ -250,12 +250,29 @@ func buildStepFailureError(step buildPlanStep, sc buildScratch, err error, kept 
 
 func validateBuildStepSecrets(step buildPlanStep) error {
 	var missing []string
+	seen := make(map[string]bool, len(step.Meta.Secrets)+len(step.Meta.SecretFrom))
 	for _, name := range step.Meta.Secrets {
 		if !validBuildSecretName(name) {
 			return fmt.Errorf("cove build: step %q invalid secret name %q", step.Name, name)
 		}
+		if seen[name] {
+			return fmt.Errorf("cove build: step %q secret %s declared more than once", step.Name, name)
+		}
+		seen[name] = true
 		if _, ok := os.LookupEnv(name); !ok {
 			missing = append(missing, name)
+		}
+	}
+	for _, ref := range step.Meta.SecretFrom {
+		if !validBuildSecretName(ref.Name) {
+			return fmt.Errorf("cove build: step %q invalid secret name %q", step.Name, ref.Name)
+		}
+		if seen[ref.Name] {
+			return fmt.Errorf("cove build: step %q secret %s declared more than once", step.Name, ref.Name)
+		}
+		seen[ref.Name] = true
+		if _, err := parseBuildSecretFrom(ref.Name+"="+ref.URI, ref.Line); err != nil {
+			return fmt.Errorf("cove build: step %q %w", step.Name, err)
 		}
 	}
 	if len(missing) == 0 {
