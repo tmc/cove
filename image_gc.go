@@ -12,9 +12,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
+
+const cacheImageDefaultTTL = 7 * 24 * time.Hour
 
 // ImageGCOptions configures GCImages.
 type ImageGCOptions struct {
@@ -47,6 +50,17 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 	now := time.Now()
 	for _, entry := range entries {
 		ref := entry.Ref
+		if cacheTTL, ok := cacheImageTTL(ref); ok {
+			created := imageCreatedAt(entry)
+			age := now.Sub(created)
+			if age < cacheTTL {
+				res.Skipped = append(res.Skipped, ImageGCSkipped{
+					Ref:    ref,
+					Reason: fmt.Sprintf("cache image newer than CACHE-TTL (age %s, ttl %s)", age.Round(time.Second), cacheTTL),
+				})
+				continue
+			}
+		}
 		if opts.OlderThan > 0 && entry.Manifest != nil {
 			age := now.Sub(entry.Manifest.CreatedAt)
 			if age < opts.OlderThan {
@@ -112,8 +126,41 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			continue
 		}
 		res.Removed = append(res.Removed, ref)
+		if isCacheImage(ref) {
+			emitMetricEvent("cache_evict", now, "ok", map[string]any{"cache_image": ref.String()})
+		}
 	}
 	return res, nil
+}
+
+func imageCreatedAt(entry ImageEntry) time.Time {
+	if entry.Manifest != nil && !entry.Manifest.CreatedAt.IsZero() {
+		return entry.Manifest.CreatedAt
+	}
+	info, err := os.Stat(filepath.Join(entry.Ref.Path(), "manifest.json"))
+	if err == nil {
+		return info.ModTime()
+	}
+	return time.Now()
+}
+
+func isCacheImage(ref ImageRef) bool {
+	return strings.HasPrefix(ref.Name, "cache/")
+}
+
+func cacheImageTTL(ref ImageRef) (time.Duration, bool) {
+	if !isCacheImage(ref) {
+		return 0, false
+	}
+	data, err := os.ReadFile(filepath.Join(ref.Path(), "CACHE-TTL"))
+	if err != nil {
+		return cacheImageDefaultTTL, true
+	}
+	ttl, err := time.ParseDuration(strings.TrimSpace(string(data)))
+	if err != nil || ttl <= 0 {
+		return cacheImageDefaultTTL, true
+	}
+	return ttl, true
 }
 
 // runImageGC implements `cove image gc [-dry-run] [-yes] [-older-than D]`.
@@ -126,6 +173,11 @@ func runImageGC(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	metricsRun, metricsErr := beginStandaloneMetricsRun("image-gc", "cache")
+	if metricsErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", metricsErr)
+	}
+	defer finishStandaloneMetricsRun(metricsRun)
 
 	plan, err := GCImages(ImageGCOptions{OlderThan: *olderThan, DryRun: true})
 	if err != nil {
