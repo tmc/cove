@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -139,4 +141,142 @@ func TestRunImageInspect_JSONFlag(t *testing.T) {
 	if roundTrip.Forks == nil {
 		t.Error("round-trip Forks is nil; want empty slice (json `forks` always present)")
 	}
+}
+
+func TestInspectImageDiff_IdenticalRefs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, _ := ParseImageRef("snap:v1")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+
+	diff, err := InspectImageDiff(ref, ref)
+	if err != nil {
+		t.Fatalf("InspectImageDiff: %v", err)
+	}
+	if len(diff.Changed) != 0 || len(diff.Added) != 0 || len(diff.Removed) != 0 {
+		t.Fatalf("diff changed=%v added=%v removed=%v, want none", diff.Changed, diff.Added, diff.Removed)
+	}
+	if len(diff.Layers) == 0 {
+		t.Fatal("Layers is empty")
+	}
+	for _, layer := range diff.Layers {
+		if layer.Status != "UNCHANGED" {
+			t.Fatalf("layer %s status = %s, want UNCHANGED", layer.Name, layer.Status)
+		}
+	}
+	var buf bytes.Buffer
+	if err := writeInspectDiffText(&buf, diff); err != nil {
+		t.Fatalf("writeInspectDiffText: %v", err)
+	}
+	if !strings.Contains(buf.String(), "[UNCHANGED]") {
+		t.Fatalf("text diff missing UNCHANGED marker:\n%s", buf.String())
+	}
+}
+
+func TestInspectImageDiff_ChangedFieldsAndLayers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src-a")
+	stageMacOSVMForImage(t, "src-b")
+	refA, _ := ParseImageRef("agentkit/linux-base:old")
+	refB, _ := ParseImageRef("agentkit/linux-base:new")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src-a", Ref: refA}); err != nil {
+		t.Fatalf("BuildImage old: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src-b", Ref: refB}); err != nil {
+		t.Fatalf("BuildImage new: %v", err)
+	}
+	patchManifest(t, refA, map[string]any{
+		"cove_commit":    "abc123",
+		"agent_features": []any{"shell.v1"},
+	})
+	patchManifest(t, refB, map[string]any{
+		"cove_commit":    "c390eb9",
+		"agent_features": []any{"shell.v1", "execattach.v3"},
+	})
+	if err := os.WriteFile(filepath.Join(refB.Path(), "disk.img"), []byte("different disk"), 0o644); err != nil {
+		t.Fatalf("write disk.img: %v", err)
+	}
+
+	diff, err := InspectImageDiff(refA, refB)
+	if err != nil {
+		t.Fatalf("InspectImageDiff: %v", err)
+	}
+	for _, field := range []string{"tag", "cove_commit", "agent_features"} {
+		if _, ok := diff.Changed[field]; !ok {
+			t.Fatalf("Changed[%q] missing; changed=%v", field, diff.Changed)
+		}
+	}
+	layer := findDiffLayer(t, diff, "disk.img")
+	if layer.Status != "CHANGED" {
+		t.Fatalf("disk.img status = %s, want CHANGED", layer.Status)
+	}
+	layer = findDiffLayer(t, diff, "aux.img")
+	if layer.Status != "UNCHANGED" {
+		t.Fatalf("aux.img status = %s, want UNCHANGED", layer.Status)
+	}
+	var buf bytes.Buffer
+	if err := writeInspectDiffText(&buf, diff); err != nil {
+		t.Fatalf("writeInspectDiffText: %v", err)
+	}
+	text := buf.String()
+	for _, want := range []string{"[CHANGED]", "[UNCHANGED]", "[shell.v1]", "[shell.v1, execattach.v3]"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text diff missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func patchManifest(t *testing.T, ref ImageRef, values map[string]any) {
+	t.Helper()
+	m := readManifestMapForTest(t, ref)
+	for k, v := range values {
+		m[k] = v
+	}
+	writeManifestMapForTest(t, ref, m)
+}
+
+func removeManifestFields(t *testing.T, ref ImageRef, fields ...string) {
+	t.Helper()
+	m := readManifestMapForTest(t, ref)
+	for _, field := range fields {
+		delete(m, field)
+	}
+	writeManifestMapForTest(t, ref, m)
+}
+
+func readManifestMapForTest(t *testing.T, ref ImageRef) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(ref.Path(), "manifest.json"))
+	if err != nil {
+		t.Fatalf("ReadFile manifest: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("Unmarshal manifest: %v", err)
+	}
+	return m
+}
+
+func writeManifestMapForTest(t *testing.T, ref ImageRef, m map[string]any) {
+	t.Helper()
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ref.Path(), "manifest.json"), append(data, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile manifest: %v", err)
+	}
+}
+
+func findDiffLayer(t *testing.T, diff imageInspectDiff, name string) imageInspectLayerDiff {
+	t.Helper()
+	for _, layer := range diff.Layers {
+		if layer.Name == name {
+			return layer
+		}
+	}
+	t.Fatalf("layer %s not found in %#v", name, diff.Layers)
+	return imageInspectLayerDiff{}
 }
