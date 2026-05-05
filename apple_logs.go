@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const defaultAppleLogPredicate = `subsystem == "com.apple.Virtualization" OR senderImagePath CONTAINS "Virtualization.framework" OR process CONTAINS "Virtual Machine Service"`
+const defaultAppleLogPredicate = `subsystem BEGINSWITH[c] "com.apple.virtualization" OR senderImagePath CONTAINS "Virtualization.framework" OR process CONTAINS "Virtual Machine Service" OR subsystem BEGINSWITH[c] "com.apple.MobileDevice" OR senderImagePath CONTAINS "MobileDevice.framework"`
 
 // maybeStartAppleLogStream starts `log stream` if -apple-log is set and returns
 // a stop function. The stop function is always safe to call.
