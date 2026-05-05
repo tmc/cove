@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -102,6 +104,30 @@ func TestLinuxVirtioFSOwner(t *testing.T) {
 	}
 }
 
+func TestMountTaggedVolumesOnceSurvivesAgentLoss(t *testing.T) {
+	oldLinux := linuxMode
+	linuxMode = true
+	defer func() { linuxMode = oldLinux }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	assertDoesNotPanic(t, func() {
+		mountTaggedVolumesOnce(ctx, &ControlServer{}, []vmconfig.VolumeMount{
+			{Tag: "work"},
+		}, defaultLinuxVirtioFSOwner())
+	})
+}
+
+func TestSetupRosettaInGuestSurvivesAgentLoss(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	assertDoesNotPanic(t, func() {
+		setupRosettaInGuest(ctx, &ControlServer{})
+	})
+}
+
 func TestVirtioFSMountArgsMacOS(t *testing.T) {
 	m := vmconfig.VolumeMount{
 		Tag:       "work",
@@ -122,4 +148,14 @@ func TestVirtioFSMountArgsMacOSReadWrite(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("virtioFSMountArgs(macOS rw) = %#v, want %#v", got, want)
 	}
+}
+
+func assertDoesNotPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("function panicked: %v", r)
+		}
+	}()
+	fn()
 }
