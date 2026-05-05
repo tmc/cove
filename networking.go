@@ -75,6 +75,11 @@ Named policies:
   lan              NAT with RFC1918-only audit intent
   open             Full egress, equivalent to nat
 
+Commands:
+  cove network list            List host interfaces for bridged mode
+  cove network audit <run-id>  Print a run's network.log
+  cove network logs <vm> [-f]  Print or follow the newest audit log for a VM
+
 Examples:
   --net nat                 Default NAT mode
   --net packages            Package-registry policy audit
