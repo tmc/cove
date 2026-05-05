@@ -80,6 +80,143 @@ func TestRunReturnsGuestExitCode(t *testing.T) {
 	}
 }
 
+func TestRunCacheHitUsesCacheImage(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 0)
+	stageActionCacheImage(t, dir, "go-main")
+	out := filepath.Join(dir, "out")
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", "go-main"}, []string{
+		"HOME=" + dir,
+		"GITHUB_OUTPUT=" + out,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+	}, os.Stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, want 0", code)
+	}
+	log := readFile(t, filepath.Join(dir, "log"))
+	if !strings.Contains(log, "run -fork-from cache/go-main:latest -fork-name cove-action-local-1 -ephemeral -headless") {
+		t.Fatalf("cache hit did not fork from cache image:\n%s", log)
+	}
+	if strings.Contains(log, "image build") {
+		t.Fatalf("cache hit saved unexpectedly:\n%s", log)
+	}
+	got := readFile(t, out)
+	for _, want := range []string{
+		"cache-hit=true",
+		"cache-image=cache/go-main:latest",
+		"cache-saved=false",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("outputs missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestRunCacheMissSavesImage(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 0)
+	out := filepath.Join(dir, "out")
+	code := run([]string{
+		"-cove-bin", stub,
+		"-image", "ubuntu-ci",
+		"-command", "echo ok",
+		"-cache-key", "go-main",
+		"-cache-paths", "/home/runner/.cache/go-build",
+	}, []string{
+		"HOME=" + dir,
+		"GITHUB_OUTPUT=" + out,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+	}, os.Stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, want 0", code)
+	}
+	log := readFile(t, filepath.Join(dir, "log"))
+	for _, want := range []string{
+		"run -fork-from ubuntu-ci -fork-name cove-action-local-1 -ephemeral -headless -keep",
+		"image build -from cove-action-local-1 -tag cache/go-main:latest",
+		"vm delete cove-action-local-1",
+	} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("log missing %q in:\n%s", want, log)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".vz", "images", "cache", "go-main", "latest", "CACHE-TTL")); err != nil {
+		t.Fatalf("CACHE-TTL marker missing: %v", err)
+	}
+	got := readFile(t, out)
+	for _, want := range []string{
+		"cache-hit=false",
+		"cache-image=cache/go-main:latest",
+		"cache-saved=true",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("outputs missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestRunCacheFailureDoesNotSave(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 9)
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "exit 9", "-cache-key", "go-main"}, []string{
+		"HOME=" + dir,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+	}, os.Stdout, os.Stderr)
+	if code != 9 {
+		t.Fatalf("run returned %d, want 9", code)
+	}
+	log := readFile(t, filepath.Join(dir, "log"))
+	if strings.Contains(log, "image build") {
+		t.Fatalf("failed run saved cache:\n%s", log)
+	}
+}
+
+func TestRunCacheDuplicateSaveIsNonfatal(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 0)
+	out := filepath.Join(dir, "out")
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", "go-main"}, []string{
+		"HOME=" + dir,
+		"GITHUB_OUTPUT=" + out,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+		"COVE_STUB_DUPLICATE_SAVE=1",
+	}, os.Stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, want 0", code)
+	}
+	log := readFile(t, filepath.Join(dir, "log"))
+	if !strings.Contains(log, "image build -from cove-action-local-1 -tag cache/go-main:latest") {
+		t.Fatalf("duplicate test did not attempt cache save:\n%s", log)
+	}
+	got := readFile(t, out)
+	if !strings.Contains(got, "cache-saved=false") {
+		t.Fatalf("duplicate save should not report cache-saved=true:\n%s", got)
+	}
+}
+
+func TestCacheImageRefNormalizesUnsafeKey(t *testing.T) {
+	got := cacheImageRef("linux/go main@abc")
+	if got != "cache/linux-go-main-abc:latest" {
+		t.Fatalf("cacheImageRef = %q, want cache/linux-go-main-abc:latest", got)
+	}
+}
+
 func TestParseConfigRequiresCommand(t *testing.T) {
 	_, err := parseConfig(nil, []string{"COVE_ACTION_IMAGE=ubuntu-ci"}, os.Stdout, os.Stderr)
 	if err == nil || !strings.Contains(err.Error(), "command or script is required") {
@@ -129,6 +266,36 @@ shell)
 ctl)
 	exit 0
 	;;
+image)
+	if [ "$2" != "build" ]; then exit 2; fi
+	from=""
+	tag=""
+	prev=""
+	for arg in "$@"; do
+		if [ "$prev" = "-from" ]; then from="$arg"; fi
+		if [ "$prev" = "-tag" ]; then tag="$arg"; fi
+		prev="$arg"
+	done
+	if [ "${COVE_STUB_DUPLICATE_SAVE:-}" = "1" ]; then
+		echo "image build: image $tag already exists" >&2
+		exit 1
+	fi
+	name=${tag%:*}
+	version=${tag##*:}
+	img_dir="$HOME/.vz/images/$name/$version"
+	if [ -e "$img_dir/manifest.json" ]; then
+		echo "image build: image $tag already exists" >&2
+		exit 1
+	fi
+	mkdir -p "$img_dir"
+	printf '{"name":"%s","tag":"%s","createdAt":"2026-05-05T00:00:00Z","diskSize":1}\n' "$name" "$version" > "$img_dir/manifest.json"
+	printf 'disk' > "$img_dir/disk.img"
+	echo "Built image $tag from $from"
+	exit 0
+	;;
+vm)
+	exit 0
+	;;
 *)
 	exit 2
 	;;
@@ -141,6 +308,17 @@ esac
 		t.Fatal(err)
 	}
 	return path
+}
+
+func stageActionCacheImage(t *testing.T, home, key string) {
+	t.Helper()
+	dir := filepath.Join(home, ".vz", "images", "cache", key, "latest")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"name":"cache/`+key+`","tag":"latest","createdAt":"2026-05-05T00:00:00Z"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func readEvents(t *testing.T, path string) map[string]bool {
