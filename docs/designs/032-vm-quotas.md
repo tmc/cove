@@ -107,3 +107,10 @@ existing install flags.
 - Quotas for shared-folder targets outside the VM directory.
 - Non-APFS host quota backends.
 - Runtime CPU hot-plug or live CPU throttling.
+
+## Cross-references
+
+- [`docs/designs/031-vm-lifecycle.md`](031-vm-lifecycle.md) for the policy
+  stop path that runs alongside quotas.
+- [`docs/designs/033-cove-daemon.md`](033-cove-daemon.md) for the daemon that
+  can schedule or report quota-related host work later.

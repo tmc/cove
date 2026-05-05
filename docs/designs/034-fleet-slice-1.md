@@ -116,3 +116,12 @@ fleet API.
 - SSH connection pooling.
 - Native Go SSH client.
 - State replication or leader election.
+
+## Cross-references
+
+- [`docs/designs/033-cove-daemon.md`](033-cove-daemon.md) for the single-host
+  coordinator that should not be confused with fleet routing.
+- [`docs/features/gha-executor.md`](../features/gha-executor.md) for the
+  private action surface that still runs on one trusted host at a time.
+- [`docs/quickstart/fleet.md`](../quickstart/fleet.md) for the operator-facing
+  fleet usage that this slice documents.
