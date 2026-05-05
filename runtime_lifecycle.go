@@ -91,6 +91,7 @@ func runVMWithConfig(cfg RunConfig) error {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: run bundle init: %v\n", err)
 		}
+		writeActiveNetworkPolicyAudit(bundle)
 
 		// If <ref> resolves to a local image (and not a VM name), take
 		// the image-fork-from path: clonefile-materialize a fresh bundle
@@ -110,6 +111,7 @@ func runVMWithConfig(cfg RunConfig) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", err)
 	}
+	writeActiveNetworkPolicyAudit(metricsRun)
 	defer finishStandaloneMetricsRun(metricsRun)
 
 	var clone DisposableClone

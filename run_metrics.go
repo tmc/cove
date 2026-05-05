@@ -53,6 +53,13 @@ func beginStandaloneMetricsRun(vmName, imageRef string) (*standaloneMetricsRun, 
 	return run, nil
 }
 
+func (r *standaloneMetricsRun) Dir() string {
+	if r == nil {
+		return ""
+	}
+	return r.dir
+}
+
 func finishStandaloneMetricsRun(run *standaloneMetricsRun) {
 	if run == nil {
 		return
