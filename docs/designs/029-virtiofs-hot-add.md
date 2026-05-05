@@ -1,6 +1,6 @@
 # Design 029: VirtioFS Hot-Add for Shared Folders
 
-Status: Draft
+Status: Implemented (2026-05-04)
 Author: Travis Cline
 Date: 2026-05-04
 
