@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -39,6 +39,18 @@ func softresetCommand(args []string) error {
 			return err
 		}
 		return writeSoftresetProbeSummary(os.Stdout, opts, results)
+	case "run-all":
+		opts, err := parseSoftresetRunAllArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		report, err := SoftResetRunAll(context.Background(), opts.VM, opts)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(report)
 	default:
 		return fmt.Errorf("unknown softreset command %q", args[0])
 	}
@@ -96,7 +108,7 @@ func parseSoftresetProbeList(value string) ([]string, error) {
 	seen := make(map[string]bool)
 	var out []string
 	for _, part := range strings.Split(value, ",") {
-		name := strings.TrimSpace(part)
+		name := normalizeSoftresetProbeName(strings.TrimSpace(part))
 		if name == "" {
 			continue
 		}
@@ -112,6 +124,21 @@ func parseSoftresetProbeList(value string) ([]string, error) {
 		return nil, fmt.Errorf("--probes must name at least one probe")
 	}
 	return out, nil
+}
+
+func normalizeSoftresetProbeName(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "fs":
+		return "filesystem"
+	case "proc":
+		return "process"
+	case "net":
+		return "network"
+	case "mem":
+		return "memory"
+	default:
+		return strings.ToLower(strings.TrimSpace(name))
+	}
 }
 
 func runSoftresetProbes(ctx context.Context, opts softresetProbeOptions) ([]softreset.Result, error) {
@@ -136,7 +163,7 @@ func runSoftresetProbes(ctx context.Context, opts softresetProbeOptions) ([]soft
 func runSoftresetProbe(ctx context.Context, name, vmDir string) (softreset.Result, error) {
 	switch name {
 	case "filesystem":
-		root := filepath.Join(os.TempDir(), "cove-softreset-"+filepath.Base(vmDir)+"-filesystem")
+		root := softresetScratchRoot(vmDir, "filesystem")
 		return (softreset.FilesystemAttributeProbe{Root: root}).Run(ctx)
 	case "process":
 		return (softreset.ProcessTableProbe{}).Run(ctx)
