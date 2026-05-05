@@ -41,6 +41,8 @@ The private action accepts these inputs:
 | `cove-bin` | no | `cove` | Host-side cove binary path. |
 | `vm-name` | no | generated | Ephemeral fork name. |
 | `keep` | no | `false` | Keep the ephemeral fork after the run for debugging. |
+| `cache-key` | no |  | Whole-VM cache key. Empty disables cache restore and save. |
+| `cache-paths` | no |  | Multiline guest paths expected to benefit from the whole-VM cache. Informational only; cove snapshots the whole disk. |
 
 Outputs:
 
@@ -51,6 +53,9 @@ Outputs:
 | `log-path` | Host path to the cove run log root. |
 | `metrics-path` | Host path to the action run `metrics.jsonl`, when discovered. |
 | `artifact-path` | Host path to the run artifact directory, when metrics are discovered. |
+| `cache-hit` | `true` when `cache-key` restored a local cache image. |
+| `cache-image` | Local cache image ref used for lookup or save. |
+| `cache-saved` | `true` when this run saved a cache image. |
 
 ## Runner Setup
 
@@ -131,6 +136,52 @@ jobs:
 The action path above is intentionally local. Until the public packaging
 decision is made, use this only from private repositories that vendor or
 reference the internal action source.
+
+## Cache
+
+Slice 2 adds optional local cross-run cache reuse. Set `cache-key` to restore
+and save a whole-VM cache image on the trusted runner host:
+
+```yaml
+      - uses: ./.github/actions/cove-action
+        id: cove
+        with:
+          image: ubuntu-runner
+          cache-key: linux-go-${{ hashFiles('go.sum') }}
+          cache-paths: |
+            /home/runner/.cache/go-build
+            /root/.npm
+          script: go test ./...
+```
+
+The cache image lives only in the local image store:
+
+```text
+~/.vz/images/cache/<cache-key>/latest/
+```
+
+On a hit, the action runs from `cache/<cache-key>:latest`. On a miss, it runs
+from `image`; if the guest command exits 0, the wrapper stops the fork, snapshots
+it with `cove image build -from <vm-name> -tag cache/<cache-key>:latest`, writes
+a `CACHE-TTL` marker with the default `168h` lifetime, and then deletes the
+temporary fork unless `keep: true` was set.
+
+Failed guest commands are not cached. If two runs race to save the same key, the
+first writer wins and the duplicate save is treated as nonfatal.
+
+`cache-paths` does not drive partial restore or extraction. It is a visible
+workflow hint for humans and metrics; the saved object is the entire stopped VM
+disk. Include lockfile hashes, toolchain versions, image versions, or other
+invalidation inputs in `cache-key`.
+
+Cache images are private to the host. The action never pushes cache images to a
+registry and never uploads them as workflow artifacts. Because a whole-VM cache
+can contain credentials written by the guest, do not write secrets to disk unless
+you are comfortable keeping them on the trusted runner host.
+
+`cove image gc` honors `CACHE-TTL` for `cache/*` images and removes expired cache
+images only when no fork still references them. Operators should schedule GC
+outside active CI windows.
 
 ## Secrets
 
