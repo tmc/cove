@@ -12,6 +12,7 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/registry"
+	"oras.land/oras-go/v2/registry/remote/auth"
 )
 
 func TestPushImageToTargetPacksCoveArtifact(t *testing.T) {
@@ -134,6 +135,47 @@ func TestRunImagePushRefusesPublicRegistry(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "refusing public registry ghcr.io") {
 		t.Fatalf("error = %q, want ghcr public registry refusal", err)
+	}
+}
+
+func TestNewImageRepositoryUsesDockerCredentialHelper(t *testing.T) {
+	clearRegistryAuthEnv(t)
+	binDir := t.TempDir()
+	helper := filepath.Join(binDir, "docker-credential-testhelper")
+	writeHelper(t, helper)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeDockerConfig(t, `{"credHelpers":{"ghcr.io":"testhelper"}}`)
+
+	repo, err := newImageRepository(registryImageRef{Reference: registry.Reference{Registry: "ghcr.io", Repository: "acme/vm", Reference: "v1"}})
+	if err != nil {
+		t.Fatalf("newImageRepository: %v", err)
+	}
+	client, ok := repo.Client.(*auth.Client)
+	if !ok {
+		t.Fatalf("repo.Client type = %T, want *auth.Client", repo.Client)
+	}
+	cred, err := client.Credential(context.Background(), "ghcr.io")
+	if err != nil {
+		t.Fatalf("client.Credential: %v", err)
+	}
+	if cred.Username != "helper-user" || cred.Password != "helper-secret" {
+		t.Fatalf("credential = %q/%q, want helper-user/helper-secret", cred.Username, cred.Password)
+	}
+}
+
+func TestNewImageRepositoryReportsDockerConfigError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("WriteFile(config.json): %v", err)
+	}
+	t.Setenv("DOCKER_CONFIG", dir)
+
+	_, err := newImageRepository(registryImageRef{Reference: registry.Reference{Registry: "ghcr.io", Repository: "acme/vm", Reference: "v1"}})
+	if err == nil {
+		t.Fatal("newImageRepository succeeded; want docker config error")
+	}
+	if !strings.Contains(err.Error(), "registry auth: load docker credentials") {
+		t.Fatalf("error = %q, want docker auth load failure", err)
 	}
 }
 
