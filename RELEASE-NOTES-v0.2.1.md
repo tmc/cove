@@ -3,7 +3,7 @@
 Image surface release. The local image store, fork-from-image, the
 `cove shell <vm>` exec client, and three computer-use adapter bridges
 land together. The v0.3 build pipeline ships as a runnable preview
-under `cove build`, gated to local VM bases. 40 commits since v0.1.3.
+under `cove build`, gated to local VM bases. 174 commits since v0.1.3.
 
 ## Highlights
 
@@ -140,6 +140,38 @@ registry cache import/export remain deferred. Non-dry-run still
 requires a local VM directory base and fails with `cove build:
 non-dry-run requires local VM base directory` for registry refs.
 
+### Secrets MVP
+
+The first external-secret adapter slice is present for build scripts.
+`# secret-from: KEY=<uri>` resolves secrets through a small URI
+registry, with two providers in this release:
+
+- `env://NAME` reads from the host environment.
+- `file:///path/to/secret` reads a local file after permission checks.
+
+`cove secret probe <uri>` checks whether a URI resolves and prints
+only the resolved byte length, not the secret value. This is an MVP
+surface for build-time secret resolution; 1Password, Vault, SOPS,
+rotation, and encrypted-at-rest storage are not included.
+
+### Stabilization fixes
+
+This tag also includes the post-v0.2.1 stabilization cluster that
+landed before release prep:
+
+- GUI delegate and iTerm2 proxy paths now snapshot shared state under
+  lock before use, closing concurrency races found in the T39 audit.
+- Linux installer VM configurations now attach the same Virtio socket
+  device as normal Linux runtime configurations, so control-socket
+  probes during install no longer fail with `no socket devices
+  configured on VM`.
+- Linux install disks use durable attachments, and the post-install
+  verifier reports an explicit "installer produced no partition table"
+  error with retry guidance when a blank disk is observed.
+- Disk I/O benchmark docs now record that the current Ubuntu Desktop
+  virtio-blk vs NVMe comparison is blocked by first-boot provisioning
+  reliability, so no throughput claim is made in this release.
+
 ### Nix package + module
 
 `flake.nix` and `nix/darwin-module.nix` for installing cove via
@@ -205,6 +237,16 @@ None. No CLI flags removed; no on-disk layouts changed.
   configured but does not retry against alternative auth sources;
   install `google-auth` or run `gcloud auth application-default
   login` first.
+- Ubuntu Desktop first-boot reliability is still being investigated
+  under T42. The installer/control substrate is more durable, but this
+  release does not claim a polished first-boot Ubuntu Desktop UX.
+- macOS first-boot provisioning has two open issues: #18 tracks the
+  Authorization Services dialog remaining visible while elevated work
+  completes, and #19 tracks auto-login falling back to the login-screen
+  watchdog on first boot.
+- The disk I/O benchmark remains blocked until Ubuntu Desktop reaches a
+  stable `agent: available` state; do not treat current runs as a
+  virtio-blk vs NVMe throughput comparison.
 - Public registry, signed agentkit channels, and any v1 announce
   remain blocked on the trademark / rename decision tracked in
   `docs/research/trademark-cove.md`.
@@ -217,7 +259,8 @@ None. No CLI flags removed; no on-disk layouts changed.
   Anthropic v0.4 SDK adapter (design 022).
 - **v0.4** — `cove image push` / `pull` to OCI registries (design
   024 Slice 2), gated behind `cove-action` security architecture
-  (design 025); CI executors (GH Actions + GitLab; design 021).
+  (design 025); CI executors (GH Actions + GitLab; design 021);
+  1Password, Vault, SOPS, and age secret providers.
 - **v1.0** — public curated `cove` image registry; signed agentkit
   base image channels. Both blocked on trademark counsel or a
   rename plan; do not ship under the `cove` name without resolution.
