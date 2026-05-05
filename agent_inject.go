@@ -42,12 +42,15 @@ const agentLaunchAgentLabel = "com.github.tmc.vz-macos.vz-agent-user"
 // buildAgentBinary cross-compiles the vz-agent binary for the guest.
 // It targets the appropriate OS/arch with CGO disabled for a static binary.
 func buildAgentBinary(outputPath string) error {
-	agentPkg := "github.com/tmc/vz-macos/cmd/vz-agent"
-
 	targetOS := "darwin"
 	if linuxMode {
 		targetOS = "linux"
 	}
+	return buildAgentBinaryForOS(outputPath, targetOS)
+}
+
+func buildAgentBinaryForOS(outputPath, targetOS string) error {
+	agentPkg := "github.com/tmc/vz-macos/cmd/vz-agent"
 
 	moduleDir, err := findCoveModuleDir()
 	if err != nil {
@@ -713,23 +716,32 @@ func upgradeAgentAt(sock string) error {
 		oldVersion = r.Version
 	}
 	fmt.Printf("Current agent version: %s\n", oldVersion)
+	guestOS := ""
+	infoReq := &controlpb.ControlRequest{Type: "agent-info"}
+	if infoResp, err := ctlSendRequest(sock, infoReq, 10*time.Second, "agent-info"); err == nil && infoResp.Error == "" {
+		if info := infoResp.GetAgentInfo(); info != nil {
+			guestOS = info.GetOs()
+		}
+	}
+	targetOS := agentBuildTargetOS(guestOS)
 
 	// Build new agent binary.
 	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
 	defer os.Remove(tmpBinary)
-	if err := buildAgentBinary(tmpBinary); err != nil {
+	if err := buildAgentBinaryForOS(tmpBinary, targetOS); err != nil {
 		return err
 	}
 
 	// Copy to guest via agent-cp.
 	absPath, _ := filepath.Abs(tmpBinary)
+	guestTmpPath := fmt.Sprintf("/tmp/%s-upgrade-%d", agentBinaryName, time.Now().UnixNano())
 	fmt.Println("Copying agent to guest...")
 	cpReq := &controlpb.ControlRequest{
 		Type: "agent-cp",
 		Command: &controlpb.ControlRequest_AgentCp{
 			AgentCp: &controlpb.AgentCopyCommand{
 				HostPath:  absPath,
-				GuestPath: "/usr/local/bin/" + agentBinaryName,
+				GuestPath: guestTmpPath,
 				ToGuest:   true,
 				Mode:      0755,
 			},
@@ -744,44 +756,77 @@ func upgradeAgentAt(sock string) error {
 	}
 	fmt.Println("Copied.")
 
-	// Restart the user agent (port 1025) before the daemon — once we kickstart
-	// the daemon below, the connection drops and we lose the chance to send
-	// further commands. The bounce script reads the GUI user's uid from the
-	// console owner so it works even when no specific user was provisioned.
-	// Both labels are bounced via launchctl kickstart -k.
-	fmt.Println("Restarting user agent service (port 1025)...")
-	bounceUserAgent := &controlpb.ControlRequest{
+	installReq := &controlpb.ControlRequest{
 		Type: "agent-exec",
 		Command: &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
-				Args: []string{
-					"sh", "-c",
-					fmt.Sprintf(`uid=$(stat -f %%u /dev/console); `+
-						`if [ -n "$uid" ] && [ "$uid" != "0" ]; then `+
-						`  launchctl asuser "$uid" launchctl kickstart -k "gui/$uid/%s" 2>/dev/null || true; `+
-						`fi`, agentLaunchAgentLabel),
+				Args: []string{"sh", "-c", guestAgentUpgradeInstallScript(guestTmpPath, "/usr/local/bin/"+agentBinaryName)},
+			},
+		},
+	}
+	resp, err = ctlSendRequest(sock, installReq, 30*time.Second, "agent-exec")
+	if err != nil {
+		return fmt.Errorf("install agent: %w", err)
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("install agent: %s", resp.Error)
+	}
+	if r := resp.GetAgentExecResult(); r != nil && r.ExitCode != 0 {
+		return fmt.Errorf("install agent: %s", strings.TrimSpace(r.Stderr))
+	}
+	fmt.Println("Installed.")
+
+	if isLinuxGuestOS(guestOS) {
+		fmt.Println("Restarting agent daemon (port 1024)...")
+		execReq := &controlpb.ControlRequest{
+			Type: "agent-exec",
+			Command: &controlpb.ControlRequest_AgentExec{
+				AgentExec: &controlpb.AgentExecCommand{
+					Args: []string{"systemctl", "restart", "vz-agent"},
 				},
 			},
-		},
-	}
-	if _, err := ctlSendRequest(sock, bounceUserAgent, 10*time.Second, "agent-exec"); err != nil && verbose {
-		fmt.Printf("warning: bounce user agent: %v\n", err)
-	}
-
-	// Restart the agent daemon via launchctl kickstart.
-	fmt.Println("Restarting agent daemon (port 1024)...")
-	execReq := &controlpb.ControlRequest{
-		Type: "agent-exec",
-		Command: &controlpb.ControlRequest_AgentExec{
-			AgentExec: &controlpb.AgentExecCommand{
-				Args: []string{"launchctl", "kickstart", "-k", "system/" + agentLaunchDaemonLabel},
+		}
+		ctlSendRequest(sock, execReq, 10*time.Second, "agent-exec")
+	} else {
+		// Restart the user agent (port 1025) before the daemon — once we kickstart
+		// the daemon below, the connection drops and we lose the chance to send
+		// further commands. The bounce script reads the GUI user's uid from the
+		// console owner so it works even when no specific user was provisioned.
+		// Both labels are bounced via launchctl kickstart -k.
+		fmt.Println("Restarting user agent service (port 1025)...")
+		bounceUserAgent := &controlpb.ControlRequest{
+			Type: "agent-exec",
+			Command: &controlpb.ControlRequest_AgentExec{
+				AgentExec: &controlpb.AgentExecCommand{
+					Args: []string{
+						"sh", "-c",
+						fmt.Sprintf(`uid=$(stat -f %%u /dev/console); `+
+							`if [ -n "$uid" ] && [ "$uid" != "0" ]; then `+
+							`  launchctl asuser "$uid" launchctl kickstart -k "gui/$uid/%s" 2>/dev/null || true; `+
+							`fi`, agentLaunchAgentLabel),
+					},
+				},
 			},
-		},
-	}
-	// The kickstart kills the agent, so the connection may drop — that's expected.
-	ctlSendRequest(sock, execReq, 10*time.Second, "agent-exec")
+		}
+		if _, err := ctlSendRequest(sock, bounceUserAgent, 10*time.Second, "agent-exec"); err != nil && verbose {
+			fmt.Printf("warning: bounce user agent: %v\n", err)
+		}
 
-	// Wait for launchd to restart the agent with KeepAlive.
+		// Restart the agent daemon via launchctl kickstart.
+		fmt.Println("Restarting agent daemon (port 1024)...")
+		execReq := &controlpb.ControlRequest{
+			Type: "agent-exec",
+			Command: &controlpb.ControlRequest_AgentExec{
+				AgentExec: &controlpb.AgentExecCommand{
+					Args: []string{"launchctl", "kickstart", "-k", "system/" + agentLaunchDaemonLabel},
+				},
+			},
+		}
+		// The kickstart kills the agent, so the connection may drop — that's expected.
+		ctlSendRequest(sock, execReq, 10*time.Second, "agent-exec")
+	}
+
+	// Wait for the service manager to restart the agent.
 	fmt.Println("Waiting for new agent...")
 	time.Sleep(5 * time.Second)
 
@@ -817,6 +862,33 @@ func upgradeAgentAt(sock string) error {
 	}
 	fmt.Printf("Upgraded: %s → %s\n", oldVersion, newVersion)
 	return nil
+}
+
+func guestAgentUpgradeInstallScript(tmpPath, destPath string) string {
+	return strings.Join([]string{
+		"set -eu",
+		"tmp=" + shellQuote(tmpPath),
+		"dest=" + shellQuote(destPath),
+		"chmod 755 \"$tmp\"",
+		"chown root:root \"$tmp\" 2>/dev/null || chown root:wheel \"$tmp\" 2>/dev/null || true",
+		"mv -f \"$tmp\" \"$dest\"",
+		"chmod 755 \"$dest\"",
+	}, "\n")
+}
+
+func isLinuxGuestOS(osVersion string) bool {
+	osVersion = strings.ToLower(osVersion)
+	return strings.Contains(osVersion, "linux") ||
+		strings.Contains(osVersion, "ubuntu") ||
+		strings.Contains(osVersion, "debian") ||
+		strings.Contains(osVersion, "fedora")
+}
+
+func agentBuildTargetOS(guestOS string) string {
+	if isLinuxGuestOS(guestOS) {
+		return "linux"
+	}
+	return "darwin"
 }
 
 // agentLaunchDaemonPlist is the launchd plist for the guest agent daemon.
