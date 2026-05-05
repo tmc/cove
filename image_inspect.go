@@ -160,6 +160,9 @@ func runImageInspect(args []string) error {
 		if err != nil {
 			return err
 		}
+		if *asJSON {
+			return writeInspectDiffJSON(os.Stdout, out)
+		}
 		return writeInspectDiffText(os.Stdout, out)
 	}
 	if fs.NArg() != 1 {
@@ -359,6 +362,17 @@ func inspectImageLayer(ref ImageRef, name string) (imageInspectLayerValue, bool,
 		return imageInspectLayerValue{}, false, err
 	}
 	return imageInspectLayerValue{Digest: "sha256:" + sum, Size: size}, true, nil
+}
+
+func writeInspectDiffJSON(w io.Writer, out imageInspectDiff) error {
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode inspect diff: %w", err)
+	}
+	if _, err := w.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
 }
 
 func writeInspectDiffText(w io.Writer, out imageInspectDiff) error {
