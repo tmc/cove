@@ -54,6 +54,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			created := imageCreatedAt(entry)
 			age := now.Sub(created)
 			if age < cacheTTL {
+				emitImageGCKeep(ref, "recent", now)
 				res.Skipped = append(res.Skipped, ImageGCSkipped{
 					Ref:    ref,
 					Reason: fmt.Sprintf("cache image newer than CACHE-TTL (age %s, ttl %s)", age.Round(time.Second), cacheTTL),
@@ -64,6 +65,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 		if opts.OlderThan > 0 && entry.Manifest != nil {
 			age := now.Sub(entry.Manifest.CreatedAt)
 			if age < opts.OlderThan {
+				emitImageGCKeep(ref, "recent", now)
 				res.Skipped = append(res.Skipped, ImageGCSkipped{
 					Ref:    ref,
 					Reason: fmt.Sprintf("newer than -older-than threshold (age %s)", age.Round(time.Second)),
@@ -80,6 +82,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			continue
 		}
 		if len(forks) > 0 {
+			emitImageGCKeep(ref, "in_use", now)
 			res.Skipped = append(res.Skipped, ImageGCSkipped{
 				Ref:    ref,
 				Reason: "has live forks: " + strings.Join(forks, ", "),
@@ -103,6 +106,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			continue
 		}
 		if len(recheck) > 0 {
+			emitImageGCKeep(ref, "in_use", now)
 			res.Skipped = append(res.Skipped, ImageGCSkipped{
 				Ref:    ref,
 				Reason: "fork raced into existence: " + strings.Join(recheck, ", "),
@@ -118,6 +122,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			})
 			continue
 		}
+		freed := pathSize(path)
 		if err := os.RemoveAll(path); err != nil {
 			res.Skipped = append(res.Skipped, ImageGCSkipped{
 				Ref:    ref,
@@ -126,11 +131,22 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			continue
 		}
 		res.Removed = append(res.Removed, ref)
-		if isCacheImage(ref) {
-			emitMetricEvent("cache_evict", now, "ok", map[string]any{"cache_image": ref.String()})
-		}
+		emitMetricEvent("image_gc_evict", now, "ok", map[string]any{
+			"image_ref":   ref.String(),
+			"bytes_freed": freed,
+		})
 	}
 	return res, nil
+}
+
+func emitImageGCKeep(ref ImageRef, reason string, started time.Time) {
+	if reason != "in_use" && reason != "recent" {
+		return
+	}
+	emitMetricEvent("image_gc_keep", started, "ok", map[string]any{
+		"image_ref": ref.String(),
+		"reason":    reason,
+	})
 }
 
 func imageCreatedAt(entry ImageEntry) time.Time {
@@ -142,6 +158,21 @@ func imageCreatedAt(entry ImageEntry) time.Time {
 		return info.ModTime()
 	}
 	return time.Now()
+}
+
+func pathSize(path string) int64 {
+	var total int64
+	_ = filepath.WalkDir(path, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
 }
 
 func isCacheImage(ref ImageRef) bool {
