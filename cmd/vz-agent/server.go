@@ -95,7 +95,7 @@ func (s *agentServer) Info(ctx context.Context, _ *connect.Request[pb.InfoReques
 	resp.AgentCommit = c
 	resp.AgentBuildDate = d
 	resp.AgentSha256 = selfSHA256()
-	resp.Features = []string{"exec_attach"}
+	resp.Features = []string{"exec_attach", "exec_attach_v3"}
 
 	return connect.NewResponse(resp), nil
 }
@@ -178,7 +178,7 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
 }
 
-func (s *agentServer) ExecAttach(ctx context.Context, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecOutput]) error {
+func (s *agentServer) ExecAttach(ctx context.Context, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecAttachOutput]) error {
 	first, err := stream.Receive()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -200,7 +200,7 @@ func (s *agentServer) ExecAttach(ctx context.Context, stream *connect.BidiStream
 	return s.execAttachPipes(r, cmd, stream)
 }
 
-func (s *agentServer) execAttachPipes(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecOutput]) error {
+func (s *agentServer) execAttachPipes(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecAttachOutput]) error {
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("stdin pipe: %v", err))
@@ -219,11 +219,11 @@ func (s *agentServer) execAttachPipes(r *pb.ExecRequest, cmd *exec.Cmd, stream *
 	s.trackExec(r, cmd)
 	defer s.untrackExec(r.GetExecId())
 
-	go receiveExecAttachStdin(stream, stdinPipe)
+	go s.receiveExecAttachControl(stream, stdinPipe, r.GetExecId(), false)
 
 	done := make(chan error, 2)
-	go streamPipe(stream, stdoutPipe, pb.ExecOutput_STDOUT, done)
-	go streamPipe(stream, stderrPipe, pb.ExecOutput_STDERR, done)
+	go streamAttachPipe(stream, stdoutPipe, pb.ExecOutput_STDOUT, done)
+	go streamAttachPipe(stream, stderrPipe, pb.ExecOutput_STDERR, done)
 	<-done
 	<-done
 
@@ -233,7 +233,9 @@ func (s *agentServer) execAttachPipes(r *pb.ExecRequest, cmd *exec.Cmd, stream *
 			exitCode = int32(exitErr.ExitCode())
 		}
 	}
-	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
+	return stream.Send(&pb.ExecAttachOutput{
+		Output: &pb.ExecAttachOutput_ExitStatus{ExitStatus: &pb.ExitStatus{ExitCode: exitCode}},
+	})
 }
 
 func (s *agentServer) ResizeExecTTY(_ context.Context, req *connect.Request[pb.ResizeExecTTYRequest]) (*connect.Response[pb.ResizeExecTTYResponse], error) {
@@ -392,19 +394,77 @@ type execAttachReceiver interface {
 	Receive() (*pb.ExecAttachRequest, error)
 }
 
-func receiveExecAttachStdin(stream execAttachReceiver, dst io.WriteCloser) {
+type execAttachOutputSender interface {
+	Send(*pb.ExecAttachOutput) error
+}
+
+func streamAttachPipe(stream execAttachOutputSender, pipe io.ReadCloser, which pb.ExecOutput_Stream, done chan<- error) {
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := pipe.Read(buf)
+		if n > 0 {
+			data := append([]byte(nil), buf[:n]...)
+			var out *pb.ExecAttachOutput
+			if which == pb.ExecOutput_STDERR {
+				out = &pb.ExecAttachOutput{Output: &pb.ExecAttachOutput_Stderr{Stderr: &pb.StderrChunk{Data: data}}}
+			} else {
+				out = &pb.ExecAttachOutput{Output: &pb.ExecAttachOutput_Stdout{Stdout: &pb.StdoutChunk{Data: data}}}
+			}
+			if sendErr := stream.Send(out); sendErr != nil {
+				done <- sendErr
+				return
+			}
+		}
+		if err != nil {
+			done <- err
+			return
+		}
+	}
+}
+
+func (s *agentServer) receiveExecAttachControl(stream execAttachReceiver, dst io.WriteCloser, execID string, tty bool) {
 	defer dst.Close()
 	for {
 		req, err := stream.Receive()
 		if err != nil {
 			return
 		}
-		data := req.GetStdin()
-		if len(data) == 0 {
-			continue
-		}
-		if _, err := dst.Write(data); err != nil {
+		switch frame := req.GetRequest().(type) {
+		case *pb.ExecAttachRequest_Stdin:
+			data := frame.Stdin.GetData()
+			if len(data) == 0 {
+				continue
+			}
+			if _, err := dst.Write(data); err != nil {
+				return
+			}
+		case *pb.ExecAttachRequest_CloseStdin:
 			return
+		case *pb.ExecAttachRequest_Resize:
+			if !tty {
+				continue
+			}
+			resize := frame.Resize
+			if resize.GetRows() == 0 || resize.GetCols() == 0 {
+				continue
+			}
+			exec, ok := s.lookupExec(execID)
+			if !ok || exec.ttyFD < 0 {
+				continue
+			}
+			_ = resizeTTY(exec.ttyFD, resize.GetRows(), resize.GetCols())
+		case *pb.ExecAttachRequest_Signal:
+			sig := frame.Signal.GetSignal()
+			if !allowedExecSignal(sig) {
+				continue
+			}
+			exec, ok := s.lookupExec(execID)
+			if !ok {
+				continue
+			}
+			_ = signalExec(exec.pid, sig)
+		default:
+			continue
 		}
 	}
 }

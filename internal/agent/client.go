@@ -166,7 +166,7 @@ type ExecStreamReceiver interface {
 }
 
 type execAttachStream struct {
-	stream *connect.BidiStreamForClient[pb.ExecAttachRequest, pb.ExecOutput]
+	stream *connect.BidiStreamForClient[pb.ExecAttachRequest, pb.ExecAttachOutput]
 }
 
 func (s *execAttachStream) Recv() (*pb.ExecOutput, error) {
@@ -174,22 +174,51 @@ func (s *execAttachStream) Recv() (*pb.ExecOutput, error) {
 	if err != nil {
 		return nil, err
 	}
-	return msg, nil
+	switch out := msg.GetOutput().(type) {
+	case *pb.ExecAttachOutput_Stdout:
+		return &pb.ExecOutput{Stream: pb.ExecOutput_STDOUT, Data: out.Stdout.GetData()}, nil
+	case *pb.ExecAttachOutput_Stderr:
+		return &pb.ExecOutput{Stream: pb.ExecOutput_STDERR, Data: out.Stderr.GetData()}, nil
+	case *pb.ExecAttachOutput_ExitStatus:
+		exit := out.ExitStatus.GetExitCode()
+		return &pb.ExecOutput{ExitCode: &exit}, nil
+	default:
+		return &pb.ExecOutput{}, nil
+	}
 }
 
 func (s *execAttachStream) SendStdin(data []byte) error {
 	return s.stream.Send(&pb.ExecAttachRequest{
-		Request: &pb.ExecAttachRequest_Stdin{Stdin: data},
+		Request: &pb.ExecAttachRequest_Stdin{Stdin: &pb.StdinChunk{Data: data}},
+	})
+}
+
+func (s *execAttachStream) SendResize(rows, cols uint32) error {
+	return s.stream.Send(&pb.ExecAttachRequest{
+		Request: &pb.ExecAttachRequest_Resize{Resize: &pb.ResizeRequest{Rows: rows, Cols: cols}},
+	})
+}
+
+func (s *execAttachStream) SendSignal(signal int32) error {
+	return s.stream.Send(&pb.ExecAttachRequest{
+		Request: &pb.ExecAttachRequest_Signal{Signal: &pb.SignalRequest{Signal: signal}},
 	})
 }
 
 func (s *execAttachStream) CloseStdin() error {
+	if err := s.stream.Send(&pb.ExecAttachRequest{
+		Request: &pb.ExecAttachRequest_CloseStdin{CloseStdin: &pb.CloseStdinRequest{}},
+	}); err != nil {
+		return err
+	}
 	return s.stream.CloseRequest()
 }
 
 type ExecAttachStream interface {
 	ExecStreamReceiver
 	SendStdin([]byte) error
+	SendResize(rows, cols uint32) error
+	SendSignal(signal int32) error
 	CloseStdin() error
 }
 
@@ -230,7 +259,7 @@ func (c *AgentClient) ExecAttachSupported(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	for _, f := range info.GetFeatures() {
-		if f == "exec_attach" {
+		if f == "exec_attach" || f == "exec_attach_v3" {
 			return true, nil
 		}
 	}
