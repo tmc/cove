@@ -1,0 +1,50 @@
+package main
+
+import (
+	"testing"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+)
+
+func TestCtlAgentExecUsesAutoRouteByDefault(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "agent-exec-auto",
+			wantArgs: []string{"ls", "/etc/os-release"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "PRETTY_NAME=Ubuntu\n",
+				}},
+			},
+		},
+	})
+	defer stop()
+
+	if err := ctlCommand([]string{"-socket", GetControlSocketPathForVM(vmDir), "agent-exec", "ls", "/etc/os-release"}); err != nil {
+		t.Fatalf("ctlCommand() error = %v", err)
+	}
+}
+
+func TestCtlAgentExecDaemonFlagForcesDaemon(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"ls", "/etc/os-release"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+				}},
+			},
+		},
+	})
+	defer stop()
+
+	if err := ctlCommand([]string{"-socket", GetControlSocketPathForVM(vmDir), "agent-exec", "--daemon", "ls", "/etc/os-release"}); err != nil {
+		t.Fatalf("ctlCommand() error = %v", err)
+	}
+}

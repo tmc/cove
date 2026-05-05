@@ -122,9 +122,9 @@ Guest agent (gRPC over vsock):
   agent-connect         Connect to guest agent
   agent-ping            Ping guest agent
   agent-info            Get guest system info
-  agent-exec <cmd> [args...]  Run command in guest (user session, has TCC/FDA)
+  agent-exec <cmd> [args...]  Run command in guest (auto-routed by path)
   agent-exec --daemon <cmd>   Run command via root daemon instead
-  agent-exec-stream <cmd> [args...]  Stream command output (user session)
+  agent-exec-stream <cmd> [args...]  Stream command output (auto-routed by path)
   agent-exec-stream --daemon <cmd>   Stream via root daemon instead
   agent-cp <host> <guest>     Copy file host→guest (streaming)
   agent-cp -from-guest <guest> <host>  Copy file guest→host
@@ -603,7 +603,7 @@ func ctlCommand(args []string) error {
 			return fmt.Errorf("agent-exec requires at least one argument")
 		}
 		if !useDaemon {
-			req.Type = "agent-user-exec"
+			req.Type = "agent-exec-auto"
 		}
 		req.Command = &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
@@ -692,7 +692,7 @@ func ctlCommand(args []string) error {
 			return fmt.Errorf("agent-exec-stream requires at least one argument")
 		}
 		if !useDaemon {
-			req.Type = "agent-user-exec-stream"
+			req.Type = "agent-exec-stream-auto"
 		}
 		req.Command = &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
