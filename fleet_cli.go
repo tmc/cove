@@ -1,0 +1,235 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+
+	fleetpkg "github.com/tmc/vz-macos/internal/fleet"
+)
+
+type fleetRunner interface {
+	Run(ctx context.Context, remote fleetpkg.Remote, args []string, stdout, stderr io.Writer) error
+}
+
+type sshFleetRunner struct{}
+
+func handleFleetCommand(args []string) error {
+	return runFleetCommand(args, fleetpkg.DefaultPath(), os.Stdout)
+}
+
+func runFleetCommand(args []string, path string, out io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("usage: cove fleet add <name> <user@host> [-vm <default>] | ls | rm <name>")
+	}
+	switch args[0] {
+	case "add":
+		return fleetAdd(args[1:], path)
+	case "ls", "list":
+		return fleetList(path, out)
+	case "rm", "remove":
+		return fleetRemove(args[1:], path)
+	default:
+		return fmt.Errorf("fleet: unknown command %q", args[0])
+	}
+}
+
+func fleetAdd(args []string, path string) error {
+	fs := flag.NewFlagSet("fleet add", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	defaultVM := fs.String("vm", "", "default VM for this remote")
+	if err := fs.Parse(moveFleetAddFlagsFirst(args)); err != nil {
+		return err
+	}
+	if fs.NArg() != 2 {
+		return errors.New("usage: cove fleet add <name> <user@host> [-vm <default>]")
+	}
+	remote, err := fleetpkg.ParseTarget(fs.Arg(1))
+	if err != nil {
+		return err
+	}
+	remote.DefaultVM = *defaultVM
+	cfg, err := fleetpkg.LoadPath(path)
+	if err != nil {
+		return err
+	}
+	if err := cfg.Add(fs.Arg(0), remote); err != nil {
+		return err
+	}
+	return fleetpkg.SavePath(path, cfg)
+}
+
+func moveFleetAddFlagsFirst(args []string) []string {
+	var flags, rest []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-vm", "--vm":
+			flags = append(flags, args[i])
+			if i+1 < len(args) {
+				flags = append(flags, args[i+1])
+				i++
+			}
+		default:
+			rest = append(rest, args[i])
+		}
+	}
+	return append(flags, rest...)
+}
+
+func fleetList(path string, out io.Writer) error {
+	cfg, err := fleetpkg.LoadPath(path)
+	if err != nil {
+		return err
+	}
+	entries := cfg.List()
+	if len(entries) == 0 {
+		fmt.Fprintln(out, "no fleet remotes")
+		return nil
+	}
+	for _, e := range entries {
+		target := e.Host
+		if e.User != "" {
+			target = e.User + "@" + e.Host
+		}
+		if e.DefaultVM != "" {
+			fmt.Fprintf(out, "%s\t%s\tdefault_vm=%s\n", e.Name, target, e.DefaultVM)
+		} else {
+			fmt.Fprintf(out, "%s\t%s\n", e.Name, target)
+		}
+	}
+	return nil
+}
+
+func fleetRemove(args []string, path string) error {
+	if len(args) != 1 {
+		return errors.New("usage: cove fleet rm <name>")
+	}
+	cfg, err := fleetpkg.LoadPath(path)
+	if err != nil {
+		return err
+	}
+	if err := cfg.Remove(args[0]); err != nil {
+		return err
+	}
+	return fleetpkg.SavePath(path, cfg)
+}
+
+func handleFleetRoute(ctx context.Context, name, cmd string, args []string) error {
+	return runFleetRoute(ctx, name, cmd, args, fleetpkg.DefaultPath(), sshFleetRunner{}, os.Stdout, os.Stderr)
+}
+
+func runFleetRoute(ctx context.Context, name, cmd string, args []string, path string, runner fleetRunner, stdout, stderr io.Writer) error {
+	cfg, err := fleetpkg.LoadPath(path)
+	if err != nil {
+		return err
+	}
+	remote, ok := cfg.Get(name)
+	if !ok {
+		return fmt.Errorf("fleet: remote %q not found", name)
+	}
+	argv, err := fleetRemoteArgs(cmd, args, remote)
+	if err != nil {
+		return err
+	}
+	return runner.Run(ctx, remote, argv, stdout, stderr)
+}
+
+func fleetRemoteArgs(cmd string, args []string, remote fleetpkg.Remote) ([]string, error) {
+	switch cmd {
+	case "ctl":
+		return append([]string{"ctl"}, ensureFleetVMArg(args, remote)...), nil
+	case "shell":
+		return append([]string{"shell"}, ensureFleetPositionalVM(args, remote)...), nil
+	case "cp":
+		return append([]string{"cp"}, args...), nil
+	case "logs":
+		return append([]string{"logs"}, ensureFleetPositionalVM(args, remote)...), nil
+	case "list", "ls":
+		return []string{"list"}, nil
+	case "vm":
+		if len(args) == 0 || args[0] == "list" || args[0] == "ls" {
+			return append([]string{"vm"}, args...), nil
+		}
+	case "image":
+		if len(args) > 0 && (args[0] == "list" || args[0] == "ls") {
+			return append([]string{"image"}, args...), nil
+		}
+	}
+	return nil, fmt.Errorf("fleet: command %q is not supported in slice 1", cmd)
+}
+
+func ensureFleetVMArg(args []string, remote fleetpkg.Remote) []string {
+	if hasFlagValue(args, "-vm") || hasFlagValue(args, "--vm") || hasFlagPrefix(args, "-vm=") || hasFlagPrefix(args, "--vm=") || remote.DefaultVM == "" {
+		return args
+	}
+	out := append([]string{"-vm", remote.DefaultVM}, args...)
+	return out
+}
+
+func ensureFleetPositionalVM(args []string, remote fleetpkg.Remote) []string {
+	if len(args) > 0 || remote.DefaultVM == "" {
+		return args
+	}
+	return []string{remote.DefaultVM}
+}
+
+func hasFlagValue(args []string, names ...string) bool {
+	set := make(map[string]bool, len(names))
+	for _, name := range names {
+		set[name] = true
+	}
+	for _, arg := range args {
+		if set[arg] {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFlagPrefix(args []string, prefixes ...string) bool {
+	for _, arg := range args {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(arg, prefix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (sshFleetRunner) Run(ctx context.Context, remote fleetpkg.Remote, args []string, stdout, stderr io.Writer) error {
+	sshArgs := append([]string{}, remote.SSHArgs...)
+	sshArgs = append(sshArgs, fleetRemoteTarget(remote), "cove")
+	sshArgs = append(sshArgs, shellJoinArgs(args))
+	cmd := exec.CommandContext(ctx, fleetSSHBinary(), sshArgs...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}
+
+func fleetSSHBinary() string {
+	if path := os.Getenv("COVE_FLEET_SSH"); path != "" {
+		return path
+	}
+	return "ssh"
+}
+
+func fleetRemoteTarget(remote fleetpkg.Remote) string {
+	if remote.User != "" {
+		return remote.User + "@" + remote.Host
+	}
+	return remote.Host
+}
+
+func shellJoinArgs(args []string) string {
+	parts := append([]string(nil), args...)
+	for i, arg := range parts {
+		parts[i] = shellQuote(arg)
+	}
+	return strings.Join(parts, " ")
+}
