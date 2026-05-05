@@ -1,6 +1,6 @@
 # Soft-reset empirical result
 
-**Status**: shipped (Phase D orchestrator)
+**Status**: shipped (Phase D orchestrator; empirical Phase C closed in `5fda53e`)
 **Author**: cove team
 **Date**: 2026-04-27
 **Supersedes**: the soft-reset positioning assumptions in `012-product-roadmap-2026.md` and `014-roadmap-update-post-v0.1.md`
@@ -9,6 +9,8 @@
 - `bench/soft-reset/README.md` — probe protocol
 - `SAFETY.md` — user-facing safety posture
 - `docs/research/tcc-via-user-agent.md` — TCC/FDA research note
+- `docs/research/softreset-empirical-2026-05-05.md` — Phase D orchestrator report
+- `docs/designs/013-vm-fork.md` — fork-from isolation boundary
 - `RELEASE-NOTES-v0.1.1.md` — v0.1.1 TCC correction
 
 ## Decision
