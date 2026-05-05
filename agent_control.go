@@ -1149,12 +1149,14 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 func agentSSHDArgs(action string, linuxGuest bool) ([]string, error) {
 	if linuxGuest {
 		switch action {
-		case "on":
-			return []string{"sh", "-lc", "systemctl enable --now ssh || systemctl enable --now sshd"}, nil
-		case "off":
-			return []string{"sh", "-lc", "systemctl disable --now ssh || systemctl disable --now sshd"}, nil
+		case "on", "start":
+			return []string{"systemctl", "start", "ssh"}, nil
+		case "off", "stop":
+			return []string{"systemctl", "stop", "ssh"}, nil
+		case "enable":
+			return []string{"systemctl", "enable", "ssh"}, nil
 		case "status":
-			return []string{"sh", "-lc", "systemctl status ssh --no-pager || systemctl status sshd --no-pager"}, nil
+			return []string{"systemctl", "is-active", "ssh"}, nil
 		default:
 			return nil, fmt.Errorf("unknown sshd action")
 		}

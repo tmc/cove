@@ -43,13 +43,25 @@ func TestAgentSSHDArgsByGuestOS(t *testing.T) {
 			name:      "linux status",
 			action:    "status",
 			linuxMode: true,
-			want:      []string{"sh", "-lc", "systemctl status ssh --no-pager || systemctl status sshd --no-pager"},
+			want:      []string{"systemctl", "is-active", "ssh"},
 		},
 		{
 			name:      "linux on",
 			action:    "on",
 			linuxMode: true,
-			want:      []string{"sh", "-lc", "systemctl enable --now ssh || systemctl enable --now sshd"},
+			want:      []string{"systemctl", "start", "ssh"},
+		},
+		{
+			name:      "linux off",
+			action:    "off",
+			linuxMode: true,
+			want:      []string{"systemctl", "stop", "ssh"},
+		},
+		{
+			name:      "linux enable",
+			action:    "enable",
+			linuxMode: true,
+			want:      []string{"systemctl", "enable", "ssh"},
 		},
 	}
 	for _, tt := range tests {

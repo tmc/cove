@@ -1267,6 +1267,13 @@ func ctlPrintResponse(resp *controlpb.ControlResponse, cmdType string, raw bool,
 		return nil
 	}
 
+	if cmdType == "agent-sshd" {
+		if rendered := formatAgentSSHDResponse(resp); rendered != "" {
+			fmt.Print(rendered)
+			return nil
+		}
+	}
+
 	// Newer commands carry results in typed proto Result fields rather than
 	// the legacy resp.Data string. Render those before falling back to Data.
 	if rendered := formatOperationsResponse(resp); rendered != "" {
@@ -1289,6 +1296,66 @@ func ctlPrintResponse(resp *controlpb.ControlResponse, cmdType string, raw bool,
 	}
 
 	return nil
+}
+
+func formatAgentSSHDResponse(resp *controlpb.ControlResponse) string {
+	exitCode, stdout, stderr, ok := agentSSHDResult(resp)
+	if !ok {
+		return ""
+	}
+	status := sshdStatusFromOutput(stdout, stderr)
+	if status == "" {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "status: %s\n", status)
+	fmt.Fprintf(&b, "exitCode: %d\n", exitCode)
+	if errText := strings.TrimSpace(stderr); errText != "" {
+		fmt.Fprintf(&b, "stderr: %s\n", errText)
+	}
+	return b.String()
+}
+
+func agentSSHDResult(resp *controlpb.ControlResponse) (int32, string, string, bool) {
+	if exec := resp.GetAgentExecResult(); exec != nil {
+		return exec.GetExitCode(), exec.GetStdout(), exec.GetStderr(), true
+	}
+	if strings.TrimSpace(resp.Data) == "" {
+		return 0, "", "", false
+	}
+	var result struct {
+		ExitCode int32  `json:"exitCode"`
+		Stdout   string `json:"stdout"`
+		Stderr   string `json:"stderr"`
+	}
+	if err := json.Unmarshal([]byte(resp.Data), &result); err != nil {
+		return 0, "", "", false
+	}
+	return result.ExitCode, result.Stdout, result.Stderr, true
+}
+
+func sshdStatusFromOutput(stdout, stderr string) string {
+	text := strings.TrimSpace(stdout)
+	if text == "" {
+		text = strings.TrimSpace(stderr)
+	}
+	if text == "" {
+		return ""
+	}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		switch line {
+		case "active", "inactive", "failed", "activating", "deactivating", "unknown":
+			return line
+		}
+		if strings.HasPrefix(line, "Active:") {
+			fields := strings.Fields(strings.TrimPrefix(line, "Active:"))
+			if len(fields) > 0 {
+				return fields[0]
+			}
+		}
+	}
+	return ""
 }
 
 // formatOperationsResponse renders Result.Operation (single-op get/wait) or
