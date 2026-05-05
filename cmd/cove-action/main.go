@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	runmetrics "github.com/tmc/vz-macos/internal/metrics"
 )
 
 var (
@@ -36,6 +40,11 @@ type config struct {
 	Environ    []string
 }
 
+type result struct {
+	Code        int
+	MetricsPath string
+}
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Environ(), os.Stdout, os.Stderr))
 }
@@ -46,20 +55,20 @@ func run(args, environ []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "cove-action: %v\n", err)
 		return 2
 	}
-	code, err := runJob(cfg)
+	res, err := runJob(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "cove-action: %v\n", err)
-		if code != 0 {
-			_ = writeOutputs(cfg, code, defaultLogPath(cfg.Environ))
-			return code
+		if res.Code != 0 {
+			_ = writeOutputs(cfg, res.Code, defaultLogPath(cfg.Environ), res.MetricsPath)
+			return res.Code
 		}
 		return 1
 	}
-	if err := writeOutputs(cfg, code, defaultLogPath(cfg.Environ)); err != nil {
+	if err := writeOutputs(cfg, res.Code, defaultLogPath(cfg.Environ), res.MetricsPath); err != nil {
 		fmt.Fprintf(stderr, "cove-action: write outputs: %v\n", err)
 		return 1
 	}
-	return code
+	return res.Code
 }
 
 func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, error) {
@@ -116,7 +125,8 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	return cfg, nil
 }
 
-func runJob(cfg config) (int, error) {
+func runJob(cfg config) (res result, err error) {
+	actionStarted := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 	defer cancel()
 
@@ -129,23 +139,40 @@ func runJob(cfg config) (int, error) {
 	runCmd.Stderr = cfg.Stderr
 	runCmd.Env = cfg.Environ
 	if err := runCmd.Start(); err != nil {
-		return 0, fmt.Errorf("start cove run: %w", err)
+		return result{}, fmt.Errorf("start cove run: %w", err)
 	}
 
 	runDone := make(chan error, 1)
 	go func() {
 		runDone <- runCmd.Wait()
 	}()
-	defer cleanup(cfg, runCmd, runDone)
+	defer func() {
+		status := "ok"
+		if err != nil {
+			status = err.Error()
+		}
+		emitActionMetric(res.MetricsPath, "action_complete", actionStarted, status, map[string]any{"exit_code": res.Code})
+		cleanup(cfg, runCmd, runDone)
+	}()
+
+	res.MetricsPath = waitForMetricsPath(ctx, cfg, actionStarted)
+	emitActionMetric(res.MetricsPath, "action_start", actionStarted, "ok", nil)
 
 	if err := waitReady(ctx, cfg); err != nil {
-		return 1, err
+		res.Code = 1
+		return res, err
 	}
 	code, err := execGuestCommand(ctx, cfg)
+	res.Code = code
+	status := "ok"
 	if err != nil {
-		return code, err
+		status = err.Error()
 	}
-	return code, nil
+	emitActionMetric(res.MetricsPath, "command_complete", actionStarted, status, map[string]any{"exit_code": code})
+	if err != nil {
+		return res, err
+	}
+	return res, nil
 }
 
 func waitReady(ctx context.Context, cfg config) error {
@@ -236,7 +263,7 @@ func cleanup(cfg config, runCmd *exec.Cmd, runDone <-chan error) {
 	}
 }
 
-func writeOutputs(cfg config, exitCode int, logPath string) error {
+func writeOutputs(cfg config, exitCode int, logPath, metricsPath string) error {
 	path := envValue(cfg.Environ, "GITHUB_OUTPUT", "")
 	if path == "" {
 		return nil
@@ -246,8 +273,94 @@ func writeOutputs(cfg config, exitCode int, logPath string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "vm-name=%s\nexit-code=%d\nlog-path=%s\n", cfg.VMName, exitCode, logPath)
+	_, err = fmt.Fprintf(f, "vm-name=%s\nexit-code=%d\nlog-path=%s\nmetrics-path=%s\n", cfg.VMName, exitCode, logPath, metricsPath)
 	return err
+}
+
+func waitForMetricsPath(ctx context.Context, cfg config, since time.Time) string {
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if path := findMetricsPath(cfg, since); path != "" {
+			return path
+		}
+		if time.Now().After(deadline) {
+			return ""
+		}
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
+func findMetricsPath(cfg config, since time.Time) string {
+	runsRoot := defaultLogPath(cfg.Environ)
+	entries, err := os.ReadDir(runsRoot)
+	if err != nil {
+		return ""
+	}
+	var bestPath string
+	var bestMod time.Time
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(runsRoot, entry.Name(), "metrics.jsonl")
+		info, err := os.Stat(path)
+		if err != nil || info.ModTime().Before(since.Add(-time.Second)) {
+			continue
+		}
+		if !metricsFileMatches(path, cfg) {
+			continue
+		}
+		if bestPath == "" || info.ModTime().After(bestMod) {
+			bestPath = path
+			bestMod = info.ModTime()
+		}
+	}
+	return bestPath
+}
+
+func metricsFileMatches(path string, cfg config) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		var event runmetrics.Event
+		if err := json.Unmarshal(scan.Bytes(), &event); err != nil {
+			continue
+		}
+		if event.VMName == cfg.VMName || event.ImageRef == cfg.Image {
+			return true
+		}
+	}
+	return false
+}
+
+func emitActionMetric(path, eventType string, started time.Time, status string, extra map[string]any) {
+	if path == "" {
+		return
+	}
+	sink, err := runmetrics.NewJSONLSink(path)
+	if err != nil {
+		return
+	}
+	defer sink.Close()
+	durationMS := int64(0)
+	if !started.IsZero() {
+		durationMS = time.Since(started).Milliseconds()
+	}
+	_ = sink.Emit(context.Background(), runmetrics.Event{
+		Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
+		EventType:  eventType,
+		DurationMS: durationMS,
+		Status:     status,
+		Extra:      extra,
+	})
 }
 
 func parseEnvBlock(s string) ([]string, error) {
