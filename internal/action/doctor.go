@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -99,6 +100,10 @@ type DoctorConfig struct {
 	VZDir        string
 	RunsDir      string
 	ForkFrom     string
+	VMName       string
+	Arch         string
+	CPUBrand     string
+	VersionFloor string
 	Runner       Runner
 	Statfs       StatfsFunc
 	AgentHook    HookFunc
@@ -136,6 +141,7 @@ func ParseDoctorArgs(args []string) (DoctorOptions, error) {
 	fs.StringVar(&opts.Config.VZDir, "vz-dir", "", "cove state directory")
 	fs.StringVar(&opts.Config.RunsDir, "runs-dir", "", "cove runs directory")
 	fs.StringVar(&opts.Config.ForkFrom, "fork-from", "", "optional image ref to inspect")
+	fs.StringVar(&opts.Config.VMName, "vm", "", "optional running VM for vsock latency probe")
 	if err := fs.Parse(args); err != nil {
 		return opts, err
 	}
@@ -152,10 +158,15 @@ func RunDoctor(ctx context.Context, cfg DoctorConfig) Report {
 	defer cancel()
 
 	var checks []CheckResult
+	checks = append(checks, checkAppleSilicon(ctx, cfg))
 	checks = append(checks, checkCodesign(ctx, cfg)...)
 	checks = append(checks, checkDisk(cfg))
 	checks = append(checks, checkRunsWritable(cfg))
 	checks = append(checks, checkNetwork(ctx, cfg))
+	checks = append(checks, checkCoveVersionFloor(ctx, cfg))
+	if cfg.VMName != "" {
+		checks = append(checks, checkVsockLatency(ctx, cfg))
+	}
 	if cfg.AgentHook != nil {
 		checks = append(checks, cfg.AgentHook(ctx, cfg))
 	}
@@ -196,7 +207,36 @@ func (cfg DoctorConfig) withDefaults() DoctorConfig {
 	if cfg.ForkFrom == "" {
 		cfg.ForkFrom = strings.TrimSpace(os.Getenv("COVE_ACTION_FORK_FROM"))
 	}
+	if cfg.VMName == "" {
+		cfg.VMName = strings.TrimSpace(os.Getenv("COVE_ACTION_VM"))
+	}
+	if cfg.Arch == "" {
+		cfg.Arch = runtime.GOARCH
+	}
+	if cfg.VersionFloor == "" {
+		cfg.VersionFloor = "T77"
+	}
 	return cfg
+}
+
+func checkAppleSilicon(ctx context.Context, cfg DoctorConfig) CheckResult {
+	if cfg.Arch != "arm64" {
+		return CheckResult{Name: "apple-silicon", Status: StatusFail, Message: fmt.Sprintf("host arch %s; cove action forks require Apple Silicon arm64", cfg.Arch)}
+	}
+	brand := strings.TrimSpace(cfg.CPUBrand)
+	if brand == "" {
+		out, err := cfg.Runner.Run(ctx, "sysctl", "-n", "machdep.cpu.brand_string")
+		if err == nil {
+			brand = strings.TrimSpace(out.Stdout + out.Stderr)
+		}
+	}
+	if brand != "" && !strings.Contains(strings.ToLower(brand), "apple") {
+		return CheckResult{Name: "apple-silicon", Status: StatusFail, Message: fmt.Sprintf("host CPU %q is not Apple Silicon", brand)}
+	}
+	if brand == "" {
+		return CheckResult{Name: "apple-silicon", Status: StatusWarn, Message: "arm64 host; CPU brand unavailable"}
+	}
+	return CheckResult{Name: "apple-silicon", Status: StatusPass, Message: brand}
 }
 
 func checkCodesign(ctx context.Context, cfg DoctorConfig) []CheckResult {
@@ -272,15 +312,40 @@ func checkNetwork(ctx context.Context, cfg DoctorConfig) CheckResult {
 	return CheckResult{Name: "network", Status: StatusPass, Message: firstLine(out)}
 }
 
+func checkCoveVersionFloor(ctx context.Context, cfg DoctorConfig) CheckResult {
+	out, err := cfg.Runner.Run(ctx, cfg.CoveBin, "version")
+	if err != nil {
+		return CheckResult{Name: "cove-version-floor", Status: StatusWarn, Message: "version unreadable: " + trimOutput(out, err)}
+	}
+	text := strings.TrimSpace(out.Stdout + out.Stderr)
+	if strings.Contains(text, "slice2-cache") || strings.Contains(text, "design030") || strings.Contains(text, "T77") {
+		return CheckResult{Name: "cove-version-floor", Status: StatusPass, Message: "build includes design 030 slice 2 cache marker"}
+	}
+	return CheckResult{Name: "cove-version-floor", Status: StatusWarn, Message: fmt.Sprintf("could not confirm design 030 slice 2 cache floor %s from %q", cfg.VersionFloor, text)}
+}
+
+func checkVsockLatency(ctx context.Context, cfg DoctorConfig) CheckResult {
+	start := time.Now()
+	out, err := cfg.Runner.Run(ctx, cfg.CoveBin, "ctl", "-vm", cfg.VMName, "agent-ping")
+	if err != nil {
+		return CheckResult{Name: "vsock-latency", Status: StatusFail, Message: "agent-ping failed: " + trimOutput(out, err)}
+	}
+	elapsed := time.Since(start)
+	if elapsed > 5*time.Millisecond {
+		return CheckResult{Name: "vsock-latency", Status: StatusWarn, Message: fmt.Sprintf("agent-ping round trip %s exceeds 5ms", elapsed.Round(time.Millisecond))}
+	}
+	return CheckResult{Name: "vsock-latency", Status: StatusPass, Message: fmt.Sprintf("agent-ping round trip %s", elapsed)}
+}
+
 func checkForkImage(ctx context.Context, cfg DoctorConfig, ref string) CheckResult {
 	out, err := cfg.Runner.Run(ctx, cfg.CoveBin, "image", "inspect", "-json", ref)
 	if err != nil {
-		return CheckResult{Name: "fork-from", Status: StatusFail, Message: fmt.Sprintf("inspect %s: %s", ref, trimOutput(out, err))}
+		return CheckResult{Name: "fork-from-cache", Status: StatusWarn, Message: fmt.Sprintf("%s cache cold or unavailable: %s", ref, trimOutput(out, err))}
 	}
 	if !strings.Contains(out.Stdout+out.Stderr, "agent") {
-		return CheckResult{Name: "fork-from", Status: StatusWarn, Message: fmt.Sprintf("%s manifest has no agent feature metadata", ref)}
+		return CheckResult{Name: "fork-from-cache", Status: StatusWarn, Message: fmt.Sprintf("%s cache warm but manifest has no agent feature metadata", ref)}
 	}
-	return CheckResult{Name: "fork-from", Status: StatusPass, Message: fmt.Sprintf("%s manifest includes agent metadata", ref)}
+	return CheckResult{Name: "fork-from-cache", Status: StatusPass, Message: fmt.Sprintf("%s cache warm with agent metadata", ref)}
 }
 
 func makeReport(checks []CheckResult) Report {
