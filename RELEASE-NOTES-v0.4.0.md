@@ -100,6 +100,12 @@ first-boot reliability work is still a live concern on some hosts. Treat this
 as documented operator behavior, not a promise that every desktop boot is fully
 polished.
 
+Post-install macOS provisioning also pre-warms the native authorization prompt
+before Data-volume attach, so the admin-password dialog appears at the start of
+the privileged step instead of late in disk injection. Auto-login staging now
+validates the exact `kcpassword` bytes and root-owned metadata alongside the
+`loginwindow.plist` checks.
+
 ## Migration from v0.3
 
 There are no intentional breaking CLI removals in this release.
@@ -128,9 +134,10 @@ Python `SandboxRunConfig` path.
 
 ## Known gaps
 
-- Ubuntu Desktop first-boot reliability still needs work. Track that in `#237`
-  instead of treating the release as a fully polished desktop-autoprovisioning
-  milestone.
+- Ubuntu Desktop first-boot reliability is improved, but still depends on host
+  and guest OS behavior during first boot. The v0.4 contract is stronger
+  artifact validation plus watchdog fallback, not a guarantee that every
+  desktop image skips every login-screen transition.
 - vmstate Phase 5 follow-on work is still open. Track that in `#232`.
 - Public OCI distribution and a public cove image channel remain private.
 - The Cirrus migration guide is a draft. It is documentation, not a shipped
