@@ -1754,6 +1754,15 @@ func handleNetworkCommand(args []string) {
 		printNetworkInterfaces()
 	case "help":
 		fmt.Println(NetworkModeHelp())
+	case "audit":
+		if len(args) != 2 {
+			fmt.Fprintln(os.Stderr, "Usage: cove network audit <run-id>")
+			os.Exit(1)
+		}
+		if err := PrintNetworkAudit(os.Stdout, args[1]); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown network command: %s\nRun 'cove -help' for usage.\n", args[0])
 		os.Exit(1)
