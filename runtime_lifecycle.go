@@ -12,6 +12,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmpolicy"
 )
 
 var (
@@ -218,6 +219,7 @@ func startRuntimeFeatureServices(runtimeFeatures *runtimeFeatureState, vm vz.VZV
 func startControlRuntimeInfrastructure(controlServer *ControlServer) {
 	startPreparedFileHandleNetworkHook()
 	configureRequestedProxyAfterBootHook(controlServer)
+	startVMLifecyclePolicyMonitor(controlServer)
 }
 
 func stopControlRuntimeInfrastructure(controlServer *ControlServer) {
@@ -236,6 +238,125 @@ func filepathBase(path string) string {
 		return ""
 	default:
 		return base
+	}
+}
+
+type lifecycleTicker interface {
+	C() <-chan time.Time
+	Stop()
+}
+
+type lifecycleClock interface {
+	Now() time.Time
+	NewTicker(time.Duration) lifecycleTicker
+}
+
+type systemLifecycleClock struct{}
+
+func (systemLifecycleClock) Now() time.Time { return time.Now() }
+
+func (systemLifecycleClock) NewTicker(d time.Duration) lifecycleTicker {
+	return &systemLifecycleTicker{Ticker: time.NewTicker(d)}
+}
+
+type systemLifecycleTicker struct {
+	*time.Ticker
+}
+
+func (t *systemLifecycleTicker) C() <-chan time.Time { return t.Ticker.C }
+
+var vmLifecycleClock lifecycleClock = systemLifecycleClock{}
+var lifecycleCurrentVMStateHook = func(s *ControlServer) (vz.VZVirtualMachineState, error) {
+	return s.currentVMState()
+}
+var lifecycleRequestStopHook = func(s *ControlServer) error {
+	resp := s.requestStopVM()
+	if resp != nil && resp.Error != "" {
+		return errors.New(resp.Error)
+	}
+	return nil
+}
+
+const vmPolicyMonitorInterval = 5 * time.Second
+
+func startVMLifecyclePolicyMonitor(controlServer *ControlServer) {
+	if controlServer == nil {
+		return
+	}
+	go controlServer.runVMLifecyclePolicyMonitor()
+}
+
+func (s *ControlServer) runVMLifecyclePolicyMonitor() {
+	ctx := s.lifecycleContext()
+	ticker := vmLifecycleClock.NewTicker(vmPolicyMonitorInterval)
+	defer ticker.Stop()
+
+	s.checkVMLifecyclePolicy()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C():
+			s.checkVMLifecyclePolicy()
+		}
+	}
+}
+
+func (s *ControlServer) checkVMLifecyclePolicy() {
+	policy, err := vmpolicy.Load(s.effectiveVMDir())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: vm policy load: %v\n", err)
+		return
+	}
+	if policy.Empty() {
+		return
+	}
+
+	state, err := lifecycleCurrentVMStateHook(s)
+	if err != nil {
+		return
+	}
+	if state != vz.VZVirtualMachineStateRunning && state != vz.VZVirtualMachineStatePaused {
+		return
+	}
+
+	startedAt, execCount, stopIssued := s.policySnapshot()
+	if stopIssued {
+		return
+	}
+
+	now := vmLifecycleClock.Now()
+	reason := ""
+	switch {
+	case policy.RunBudget > 0 && execCount >= int64(policy.RunBudget):
+		reason = "run_budget"
+	case policy.MaxAge > 0 && !startedAt.IsZero() && now.Sub(startedAt) >= policy.MaxAge:
+		reason = "max_age"
+	case policy.IdleTimeout > 0 && state == vz.VZVirtualMachineStateRunning:
+		s.healthMu.RLock()
+		lastPing := s.agentHealth.lastPing
+		s.healthMu.RUnlock()
+		if !lastPing.IsZero() && now.Sub(lastPing) >= policy.IdleTimeout {
+			reason = "idle"
+		}
+	}
+	if reason == "" {
+		return
+	}
+	if !s.markPolicyStopIssued() {
+		return
+	}
+
+	emitMetricEvent("vm_policy_stop", startedAt, "ok", map[string]any{
+		"reason":       reason,
+		"policy_path":  vmpolicy.Path(s.effectiveVMDir()),
+		"idle_timeout": policy.IdleTimeout.String(),
+		"max_age":      policy.MaxAge.String(),
+		"run_budget":   policy.RunBudget,
+		"exec_count":   execCount,
+	})
+	if err := lifecycleRequestStopHook(s); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: vm policy stop: %v\n", err)
 	}
 }
 

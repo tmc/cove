@@ -427,6 +427,7 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 }
 
 func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *controlpb.ControlResponse {
+	s.notePolicyExec()
 	ua, err := s.getUserAgent()
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("user agent: %v", err)}
@@ -659,7 +660,7 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 // the recovery edge — emit an INFO log with elapsed downtime so operators
 // can see how long the agent was unreachable.
 func (s *ControlServer) markAgentConnected(version string) {
-	now := time.Now()
+	now := vmLifecycleClock.Now()
 	s.healthMu.Lock()
 	wasDisconnected := !s.agentHealth.disconnectAt.IsZero()
 	downtime := time.Duration(0)
@@ -687,7 +688,7 @@ func (s *ControlServer) markAgentConnected(version string) {
 // state. Captures the first-failure timestamp so the eventual recovery edge
 // can report accurate downtime.
 func (s *ControlServer) markAgentReconnecting(reason string) {
-	now := time.Now()
+	now := vmLifecycleClock.Now()
 	s.healthMu.Lock()
 	if s.agentHealth.disconnectAt.IsZero() {
 		s.agentHealth.disconnectAt = now
@@ -886,7 +887,7 @@ func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
 		s.agentHealth.version = version
 	}
 	s.agentHealth.lastErr = lastErr
-	now := time.Now()
+	now := vmLifecycleClock.Now()
 	switch status {
 	case "connected":
 		s.agentHealth.lastPing = now
@@ -909,6 +910,7 @@ func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("ping: %v", err)}
 	}
+	s.markAgentConnected(version)
 	return &controlpb.ControlResponse{
 		Success: true,
 		Data:    fmt.Sprintf("agent version: %s", version),
@@ -946,6 +948,7 @@ func (s *ControlServer) handleAgentInfo() *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *controlpb.ControlResponse {
+	s.notePolicyExec()
 	a, err := s.getAgent()
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
