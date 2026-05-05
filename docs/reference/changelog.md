@@ -20,6 +20,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Published fork-only and boot-to-agent fork benchmarks on named M4 hardware under `bench/fork-time/`.
 - OpenAI Agents SDK adapter v1 plus live-smoke and package-check documentation under `adapters/openai-agents-python/`.
 - Anthropic sandbox-runtime adapter for computer-use workflows.
+- Run metrics for forked runs: `~/.vz/runs/<run-id>/metrics.jsonl` records structured lifecycle events for run start/end, fork materialization, VM start, and agent-ready timing. JSONL is the default local sink; OTLP export is available through `OTEL_EXPORTER_OTLP_ENDPOINT`. See [Run Metrics](../features/metrics.md).
+- Minimal network policy surface for `cove run` and `cove up`: `-network` / `--net` modes for `nat`, `bridged:<iface>`, `host-only`, and `none`, plus `cove ctl port-forward start|stop|list` for host-to-guest TCP access. See [Networking](../features/networking.md).
+- [Agent Sandbox Quickstart](../quickstart-agent-sandbox.md): a packaged computer-use quickstart covering OpenAI Agents SDK, Anthropic Claude computer use, Gemini computer use, fork-per-task isolation, and per-run artifacts.
+- Private GitHub Actions executor verification for `cove-action`: simple commands, multiline scripts, and intentional guest-command failure have all been exercised end-to-end with the expected exit-code surface.
 
 ### Deferred
 The following are explicitly deferred for this RC. Public docs keep this list
@@ -31,6 +35,7 @@ visible and consistent across CLI reference, roadmap, and release checklist:
 - BuildKit-style parallel step execution. v0.3 build execution is sequential.
 - Packer plugin shim.
 - Product-name resolution before any public registry or signed channel ships.
+- Fresh `agentkit/linux-base` image refresh is still in flight for this cycle and is not yet listed as shipped.
 
 ### Fixed
 - Malformed build/store manifest digests now return validation errors instead of silent success.
