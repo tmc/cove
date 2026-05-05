@@ -1,0 +1,40 @@
+# nixos-base — Install common NixOS development tools
+# guest-os: linux
+# runs-on: daemon
+
+guest-ping
+guest-shell nixos-base.sh
+
+-- nixos-base.sh --
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ ! -f /etc/NIXOS ]; then
+  echo "error: nixos-base requires a NixOS guest" >&2
+  exit 1
+fi
+
+if command -v nixos-rebuild >/dev/null 2>&1 && [ -w /etc/nixos/configuration.nix ]; then
+  python3 - <<'PY'
+from pathlib import Path
+
+path = Path("/etc/nixos/configuration.nix")
+text = path.read_text()
+packages = "environment.systemPackages = with pkgs; [ curl git htop jq vim ];"
+if "environment.systemPackages" in text:
+    print("configuration.nix already declares system packages")
+elif "\nsystem.stateVersion" in text:
+    path.write_text(text.replace("\nsystem.stateVersion", "\n  " + packages + "\n\n  system.stateVersion", 1))
+else:
+    raise SystemExit("configuration.nix missing system.stateVersion anchor")
+PY
+  nixos-rebuild switch
+  exit 0
+fi
+
+nix-env -iA \
+  nixos.curl \
+  nixos.git \
+  nixos.htop \
+  nixos.jq \
+  nixos.vim
