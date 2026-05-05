@@ -6,145 +6,33 @@ date: 2026-05-05
 
 # Migrate from Cirrus to cove
 
-Cirrus is shutting down its hosted CI service on 2026-06-01. This guide is the
-practical migration path for teams that already rely on Cirrus runners,
-`.cirrus.yml`, and VM-backed job isolation.
+Cirrus hosted CI shuts down on **2026-06-01**. This guide is the short path for a team moving a typical `.cirrus.yml` to cove while keeping VM-backed isolation and local control.
 
-The short version is:
+Cove is not a hosted queue. It replaces the VM image, fork-per-job, logs, and artifact substrate. Keep scheduling in GitHub Actions, your existing CI, or a small host-side runner script.
 
-- Cirrus tasks become `cove run -fork-from` jobs.
-- Cirrus worker images become `cove image build` artifacts.
-- Cirrus task wiring becomes `cove action` for GitHub Actions, or a direct
-  `cove run` invocation if you want to own the host runner yourself.
-- cove keeps the fork-per-job isolation model local and explicit.
+## Mapping
 
-This draft assumes you want the same operational shape Cirrus gave you, but
-with cove as the local execution substrate.
+| Cirrus | Cove |
+|---|---|
+| `task:` | one workflow step or shell script that invokes cove |
+| `container: image: foo` | `cove image build -from <vm> -tag foo` then `cove run -fork-from foo` |
+| `macos_instance:` / `linux_instance:` | explicit cove macOS or Linux runner image |
+| `script:` | command passed to the forked VM |
+| Cirrus cache | cove image cache plus Design 030 build cache |
+| persistent worker | `cove fleet add` for an operator-owned Mac host |
+| task logs | `~/.vz/runs/<run-id>/`, `cove runs list`, `cove runs show` |
 
-## What changes
-
-Cirrus bundled three things together:
-
-1. task declaration
-2. runner image distribution
-3. hosted execution
-
-cove separates those concerns:
-
-1. task declaration stays in your repo workflow or script
-2. runner images live in `~/.vz/images/<name>/<tag>/` and can be pushed to an
-   OCI registry
-3. execution happens on your operator-owned macOS host through cove forks
-
-That split is intentional. It keeps the VM boundary local, makes image
-freshness visible, and avoids depending on a hosted service for the critical
-job boundary.
-
-## Compatibility model
-
-This is not a drop-in replacement for Cirrus CI.
-
-It is a migration guide for the parts that matter operationally:
-
-- a reproducible VM image
-- a task runner
-- a clean per-job fork
-- logs, metrics, and artifacts
-
-If your Cirrus config depends on a hosted queue, Cirrus task templates, or
-Cirrus-specific cache behavior, you should treat that as a port, not a toggle.
-
-## Cirrus to cove mapping
-
-| Cirrus task | cove equivalent | Notes |
-| --- | --- | --- |
-| `.cirrus.yml` task | `cove action` or a shell script wrapped by `cove run -fork-from` | Keep task logic in shell or workflow YAML; cove owns the VM boundary. |
-| `linux_instance` / `instance_type` | `cove run -linux ...` / `cove up -linux ...` | Choose the guest shape directly instead of relying on Cirrus instance metadata. |
-| `macos_instance` | `cove run` / `cove up` on the macOS host | Use the host VM knobs already exposed by cove. |
-| `task_name:` | `cove action` step name, workflow job name, or run label | Name the run where you schedule it, not in the VM itself. |
-| Cirrus worker image | `cove image build -from <vm> -tag <name[:tag]>` | Build once, then reuse via image refs. |
-| Cirrus image pull | `cove image pull <registry/repo:tag> -tag <name[:tag]>` | Pull into the local image store before running jobs. |
-| Cirrus image push | `cove image push <name[:tag]> <registry/repo:tag>` | Use OCI registry transport. Docker credentials are reused. |
-| Cirrus startup script | `cove vzscript run ...` or `cove action` preflight | Put repeatable setup into a vzscript or a small wrapper. |
-| Cirrus script step | `cove run -fork-from <image> -- <cmd>` or `cove shell <vm>` | Use shell execution inside the forked VM. |
-| Cirrus cache | cove image layers, local VM forks, and host-side run artifacts | There is no Cirrus cache server equivalent here. |
-| Cirrus logs | `~/.vz/runs/<run-id>/` and `cove runs show` | Keep logs and metrics on the operator host. |
-| Cirrus rerun | `cove run -fork-from <image> -ephemeral` | Re-run from the same frozen image, not a warm reset. |
-| Cirrus persistent worker | operator-owned cove host + pinned image | Use this only when you actually want a long-lived machine. |
-
-## Recommended migration shape
-
-### 1. Freeze the runner image
-
-Build a runner image from a stopped VM:
+Run these checks before cutting over:
 
 ```bash
-cove image build -from ubuntu-runner -tag acme/runner:2026-05-05
+cove action doctor --fork-from acme/runner:latest
+cove action prepare-image acme/runner:latest
+cove image verify acme/runner:latest --strict --newer-than 7d
 ```
 
-If the image is meant to travel between hosts, push it to an OCI registry:
+For multi-host execution, register Macs with the fleet slice 1 commands in [Fleet Quickstart](quickstart/fleet.md). For strategy and competitive context, see [Competitive Matrix, May 2026](strategy/competitive-2026-05.md).
 
-```bash
-cove image push acme/runner:2026-05-05 ghcr.io/acme/runner:2026-05-05
-```
-
-Keep image verification in the release path:
-
-```bash
-cove image verify acme/runner:2026-05-05 --strict
-```
-
-### 2. Run each job in a fork
-
-Use the image as the parent of each job:
-
-```bash
-cove run -fork-from acme/runner:2026-05-05 -ephemeral -- bash -lc 'go test ./...'
-```
-
-That is the cove equivalent of a Cirrus task running in an isolated worker.
-
-### 3. Keep task logic outside the VM image
-
-Put job logic in one of two places:
-
-- a workflow step or script on the host
-- a vzscript recipe for repeatable guest-side setup
-
-Do not bury important task semantics inside the image build step unless the
-image is intentionally part of the contract.
-
-### 4. Treat image freshness as a gate
-
-The image manifest records provenance and freshness fields. Use them.
-
-Before you promote a runner image, verify:
-
-- the image parses
-- the manifest is current
-- `execattach.v3` is present
-- the image was built by the expected cove binary
-
-If verification fails, fix the image and rebuild it. Do not keep using a stale
-runner image just because it still boots.
-
-## Private distribution model
-
-cove remains a private repo and does not ship a public OCI image channel yet.
-
-That means the migration model is:
-
-- direct outreach to teams that need a replacement for Cirrus
-- private binary distribution of cove itself
-- private OCI registry use for runner images if you need cross-host transport
-- operator-owned hosts for execution
-
-Do not plan on a public Marketplace action or a public image catalog as part of
-this migration.
-
-## Cirrus task patterns and cove replacements
-
-### Simple build-and-test task
+## Example 1: simple build
 
 Cirrus:
 
@@ -156,61 +44,82 @@ test_task:
   script: go test ./...
 ```
 
-cove:
+Cove:
 
 ```bash
+cove up -linux -vm ubuntu-runner -user ubuntu -password ubuntu
+cove ctl -vm ubuntu-runner agent-exec --daemon -- bash -lc 'apt-get update && apt-get install -y golang'
 cove image build -from ubuntu-runner -tag acme/runner:go
 cove run -fork-from acme/runner:go -ephemeral -- bash -lc 'go test ./...'
 ```
 
-### Task with prep and artifact capture
+The package install moves into the image. Each job starts from a fresh fork of `acme/runner:go`.
 
-Cirrus often mixes setup, test, and artifact upload into one task. In cove,
-split those concerns:
+## Example 2: matrix
 
-1. prepare the image once
-2. run the job in a fresh fork
-3. collect logs and artifacts from `~/.vz/runs/<run-id>/`
+Cirrus:
 
-That makes the execution boundary visible and keeps reruns cheap.
+```yaml
+test_task:
+  matrix:
+    - env:
+        GO_VERSION: "1.24"
+    - env:
+        GO_VERSION: "1.25"
+  container:
+    image: golang:$GO_VERSION
+  script: go test ./...
+```
 
-### Task that expected hosted queueing
+Cove:
 
-If you depended on Cirrus as a hosted queue, you need a local scheduling
-decision now:
+```bash
+for go in 1.24 1.25; do
+  cove image build -from "go-${go}-runner" -tag "acme/runner:go-${go}"
+  cove run -fork-from "acme/runner:go-${go}" -ephemeral -- bash -lc 'go test ./...'
+done
+```
 
-- GitHub Actions on a self-hosted macOS runner
-- a plain host-side loop that invokes `cove run`
-- a wrapper script in your own CI system
+If the matrix spans multiple Macs, add each host once:
 
-cove provides the VM execution and isolation layer, not the queue.
+```bash
+cove fleet add studio tmc@mac-studio.local -vm ubuntu
+cove --fleet=studio image list
+```
 
-## Operational notes
+Then let your scheduler choose which host runs each image.
 
-- Use `cove action doctor` and `cove action prepare-image` before wiring a
-  workflow.
-- Keep `cove image verify` in the promotion path for runner images.
-- Keep `--net` and `-sandbox-level` explicit when a job needs restricted
-  networking.
-- Prefer `-ephemeral` for disposable CI jobs.
-- Use `cove runs list` and `cove runs show` to debug job history.
+## Example 3: cached dependencies
 
-## What not to migrate blindly
+Cirrus:
 
-- hosted Cirrus queue semantics
-- Cirrus-specific cache assumptions
-- warm-reset as an isolation boundary
-- any public distribution story that assumes cove has a public OCI channel
+```yaml
+deps_cache:
+  folder: ~/.cache/go-build
+  fingerprint_script: cat go.sum
 
-## Suggested first port
+test_task:
+  container:
+    image: golang:1.25
+  script: go test ./...
+```
 
-If you want the least risky migration path, start with one workflow:
+Cove:
 
-1. build a runner image from a known-good stopped VM
-2. run one job via `cove run -fork-from`
-3. compare logs, metrics, and artifact paths with the old Cirrus job
-4. only then port the rest of the workflow
+```bash
+cove build -from go-base -tag acme/runner:deps -script ci/deps.vzscript
+cove image verify acme/runner:deps --strict --newer-than 24h
+cove run -fork-from acme/runner:deps -ephemeral -- bash -lc 'go test ./...'
+```
 
-That keeps the migration anchored to a concrete job boundary rather than a
-platform rewrite.
+The dependency cache becomes part of the runner image or Design 030 build cache entry. Freshness is explicit through `cove image verify --newer-than` instead of hidden in a hosted cache service.
 
+## Cutover checklist
+
+1. Build one runner image from a known-good VM.
+2. Verify it with `cove image verify --strict --newer-than 7d`.
+3. Run one Cirrus task equivalent with `cove run -fork-from ... -ephemeral`.
+4. Compare logs under `~/.vz/runs/<run-id>/` to the old Cirrus task output.
+5. Add `cove action doctor` and `cove action prepare-image` to the workflow preflight.
+
+Do not migrate hosted queue semantics, Cirrus-specific cache assumptions, or warm-reset isolation claims directly. Cove's replacement boundary is a fresh VM fork from a verified image.
