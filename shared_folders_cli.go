@@ -162,19 +162,21 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	}
 
 	printSharedFolderAddResult(entry, added)
+	fmt.Println("shared folder saved; applying to running VM ...")
 	if msg, err := client.SharedFoldersApply(); err == nil {
-		fmt.Printf("Applied to running VM: %s\n", msg)
+		fmt.Printf("applied to running VM: %s\n", msg)
 	} else {
 		handled := false
 		if strings.Contains(err.Error(), "unknown command type: shared-folders-apply") {
 			fmt.Println("warning: running VM control server does not support shared-folders-apply")
-			fmt.Println("         restart VM with the latest binary to hot-apply in this session")
+			fmt.Println("         restart VM with the latest binary to live-apply in this session")
 			handled = true
 		}
 		if !handled {
-			fmt.Printf("warning: could not hot-apply shared folders to VM %q: %v\n", sharedFolderVMName(vmDirectory), err)
+			fmt.Printf("warning: could not live-apply shared folders to VM %q: %v\n", sharedFolderVMName(vmDirectory), err)
 		}
 		fmt.Println("         share is saved and will apply on next boot")
+		return nil
 	}
 
 	mounted, err := mountSharedFoldersInGuest(vmDirectory, defaultSharedFoldersMountPoint)
@@ -184,9 +186,9 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 		return nil
 	}
 	if mounted {
-		fmt.Printf("Mounted in guest at %s\n", defaultSharedFoldersMountPoint)
+		fmt.Printf("mounted in guest at %s\n", defaultSharedFoldersMountPoint)
 	} else {
-		fmt.Printf("Already mounted in guest at %s\n", defaultSharedFoldersMountPoint)
+		fmt.Printf("already mounted in guest at %s\n", defaultSharedFoldersMountPoint)
 	}
 	fmt.Printf("Guest path for this folder: %s/%s\n", defaultSharedFoldersMountPoint, entry.Tag)
 	return nil
@@ -228,14 +230,14 @@ func applySharedFoldersAndPrint(vmDirectory string) error {
 	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
 	client.SetTimeout(15 * time.Second)
 	if msg, err := client.SharedFoldersApply(); err == nil {
-		fmt.Printf("Applied to running VM: %s\n", msg)
+		fmt.Printf("applied to running VM: %s\n", msg)
 		return nil
 	} else {
 		if strings.Contains(err.Error(), "unknown command type: shared-folders-apply") {
 			fmt.Println("warning: running VM control server does not support shared-folders-apply")
-			fmt.Println("         restart VM with the latest binary to hot-apply in this session")
+			fmt.Println("         restart VM with the latest binary to live-apply in this session")
 		} else {
-			fmt.Printf("warning: could not hot-apply shared folders to VM %q: %v\n", sharedFolderVMName(vmDirectory), err)
+			fmt.Printf("warning: could not live-apply shared folders to VM %q: %v\n", sharedFolderVMName(vmDirectory), err)
 		}
 		fmt.Println("         changes are saved and will apply on next boot")
 		return nil
@@ -512,7 +514,8 @@ func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeo
 		}
 	}
 
-	res, err := client.AgentExecTypedTimeout([]string{"mount_virtiofs", SharedFoldersVirtioFSTag, mountPoint}, nil, "", timeouts.mount)
+	mountArgs := sharedFoldersVirtioFSMountArgs(vmDirectory, mountPoint)
+	res, err := client.AgentExecTypedTimeout(mountArgs, nil, "", timeouts.mount)
 	if err != nil {
 		return false, fmt.Errorf("mount shared folders: %w", err)
 	}
@@ -524,9 +527,16 @@ func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeo
 		if msg == "" {
 			msg = "unknown error"
 		}
-		return false, fmt.Errorf("mount_virtiofs exit %d: %s", res.ExitCode, msg)
+		return false, fmt.Errorf("%s exit %d: %s", mountArgs[0], res.ExitCode, msg)
 	}
 	return true, nil
+}
+
+func sharedFoldersVirtioFSMountArgs(vmDirectory, mountPoint string) []string {
+	linuxGuest := vmconfig.DetectOSType(vmDirectory) == "Linux"
+	return virtioFSMountArgsWithOwner(vmconfig.VolumeMount{
+		Tag: SharedFoldersVirtioFSTag,
+	}, mountPoint, linuxGuest, linuxVirtioFSOwner(vmDirectory))
 }
 
 func sharedFoldersMountedAndSynced(mountOutput, mountPoint string, tags []string, lsRes *controlpb.AgentExecResponse, lsErr error) bool {

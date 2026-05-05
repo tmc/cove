@@ -798,7 +798,7 @@ func (c *ControlClient) OCRClickText(text string, timeout time.Duration) error {
 	return nil
 }
 
-// SharedFoldersApply reloads shared_folders.json and hot-applies it to a running VM.
+// SharedFoldersApply reloads shared_folders.json and live-applies it to a running VM.
 func (c *ControlClient) SharedFoldersApply() (string, error) {
 	resp, err := c.sendRequest(&controlpb.ControlRequest{Type: "shared-folders-apply"})
 	if err != nil {

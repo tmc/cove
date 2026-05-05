@@ -284,8 +284,73 @@ func TestSharedFolderAddSkipsHotApplyWithoutVirtioFS(t *testing.T) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "Added shared folder:") || strings.Contains(out, "could not hot-apply") || strings.Contains(out, "Applied to running VM") {
-		t.Fatalf("output attempted hot apply:\n%s", out)
+	if strings.Contains(out, "Added shared folder:") || strings.Contains(out, "could not live-apply") || strings.Contains(out, "applied to running VM") {
+		t.Fatalf("output attempted live apply:\n%s", out)
+	}
+}
+
+func TestSharedFolderAddLiveAppliesAndMounts(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := t.TempDir()
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "shared-folders-runtime-status",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Data:    `{"running":true,"virtiofs":true,"message":"shared folders VirtioFS device present"}`,
+			},
+		},
+		{
+			wantType: "shared-folders-apply",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "applied 1 shared folder(s)"}},
+			},
+		},
+		{
+			wantType: "agent-ping",
+			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount_virtiofs", SharedFoldersVirtioFSTag, defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+	})
+	defer stop()
+
+	out := captureStdout(t, func() error {
+		return handleVMSharedFolderAdd(vmDir, []string{hostDir, "work", "rw"})
+	})
+	for _, want := range []string{
+		"Added shared folder: " + resolvePath(hostDir) + " (tag=work, rw)",
+		"shared folder saved; applying to running VM ...",
+		"applied to running VM: applied 1 shared folder(s)",
+		"mounted in guest at " + defaultSharedFoldersMountPoint,
+		"Guest path for this folder: " + defaultSharedFoldersMountPoint + "/work",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -643,6 +708,73 @@ func TestMountSharedFoldersInGuestMountedStaleTagsRemounts(t *testing.T) {
 	}
 	if !mounted {
 		t.Fatalf("mountSharedFoldersInGuestWithTimeouts() = false, want true after remount")
+	}
+}
+
+func TestMountSharedFoldersInGuestLinuxUsesMountVirtioFS(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+
+	vmDir := linuxTestVMDir(t)
+	cfg, err := vmconfig.Load(vmDir)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg.GuestUserUID = 1001
+	cfg.GuestUserGID = 1002
+	if err := vmconfig.Save(vmDir, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	hostDir := t.TempDir()
+	if _, _, err := addSharedFolderEntry(vmDir, hostDir, "work", false); err != nil {
+		t.Fatalf("addSharedFolderEntry(): %v", err)
+	}
+
+	verify := serveSharedFolderControlSteps(t, vmDir, "test-token", []sharedFolderControlStep{
+		{
+			wantType: "agent-ping",
+			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount", "-t", "virtiofs", "-o", "cache=none,uid=1001,gid=1002", SharedFoldersVirtioFSTag, defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+	})
+
+	mounted, err := mountSharedFoldersInGuestWithTimeouts(vmDir, defaultSharedFoldersMountPoint, sharedFolderMountTimeouts{
+		agentPing: 200 * time.Millisecond,
+		mkdir:     200 * time.Millisecond,
+		mounts:    200 * time.Millisecond,
+		listTags:  200 * time.Millisecond,
+		unmount:   200 * time.Millisecond,
+		mount:     200 * time.Millisecond,
+	})
+	verify()
+
+	if err != nil {
+		t.Fatalf("mountSharedFoldersInGuestWithTimeouts(): %v", err)
+	}
+	if !mounted {
+		t.Fatalf("mountSharedFoldersInGuestWithTimeouts() = false, want true")
 	}
 }
 
