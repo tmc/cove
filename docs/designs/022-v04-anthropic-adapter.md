@@ -1,7 +1,9 @@
-# v0.4 Anthropic adapter
+# v0.4 Anthropic adapter v2
 
-**Status**: accepted planning input. Slice 1 is itself a survey; Slice 2 is
-the adapter package.
+**Status**: v2 implementation target. Live API verification pending unless a
+running disposable VM and `ANTHROPIC_API_KEY` are available.
+**Supersedes**: Design 022 v1 in this file, accepted planning input for the
+Python `cove-claude-sandbox` package.
 **Source**: [/tmp/cove-v04-audit-a4k2.md](../../tmp/cove-v04-audit-a4k2.md)
 (read-only audit of v0.3 GA `main`).
 **Roadmap**: v0.4.
@@ -20,6 +22,66 @@ fork-per-run and teardown.
 The adapter is shaped so a single user can write
 `AnthropicSandbox(parent="macos-base").run(...)` the same way they already
 write `CoveSandbox(parent="macos-base")` for OpenAI.
+
+## v2 Goal
+
+Design 022 v2 moves the active Anthropic computer-use bridge into cove's Go
+runtime so `cove agent-sandbox run --provider anthropic` does not shell out to
+the older Python bridge. The Go adapter owns the Anthropic Messages API loop and
+dispatches tool calls through the cove control socket.
+
+The Python `adapters/anthropic-sandbox-python/` package remains useful as a
+library surface and reference implementation. The CLI path uses the Go adapter
+because it already owns fork-per-run lifecycle, run bundles, metrics, replay
+artifacts, and control-socket selection.
+
+## v2 Agent Loop
+
+The loop calls Anthropic Messages with the current computer-use beta enabled:
+
+```go
+client.Beta.Messages.New(ctx, anthropic.BetaMessageNewParams{
+    Betas: []anthropic.AnthropicBeta{"computer-use-2025-11-24"},
+    Tools: []anthropic.BetaToolUnionParam{{
+        Type: "computer_20251124",
+        Name: "computer",
+        DisplayWidthPx: width,
+        DisplayHeightPx: height,
+    }},
+    Messages: messages,
+})
+```
+
+The exact SDK field names are allowed to vary with `anthropic-sdk-go`; the
+wire contract is not:
+
+- beta header: `computer-use-2025-11-24`
+- tool type: `computer_20251124`
+- tool name: `computer`
+- display dimensions: read from the VM through the cove control socket
+- response handling: append assistant `tool_use` blocks, execute them, append
+  user `tool_result` blocks, repeat until no `tool_use` remains
+
+The adapter returns a transcript entry for every request, response, tool call,
+and tool result. Tool execution failures are not fatal to the loop; they are
+returned to Claude as `{"type":"tool_result","tool_use_id":id,"is_error":true,
+"content":"..."}` so the model can self-correct. API errors, context
+cancelation, and max-step exhaustion are fatal.
+
+## v2 Tool Mapping
+
+| Anthropic action | Cove control operation |
+|---|---|
+| `screenshot` | control socket screenshot, returned as PNG image content |
+| `left_click` / `click` | `mouse-click` at scaled host coordinates |
+| `type` | text injection |
+| `key` / `keypress` | key event with cove key-code mapping |
+| `scroll` | mouse-scroll when available, otherwise page-up/page-down key fallback |
+| `cursor_position` | mouse position query |
+
+Display dimensions come from the VM screen-size control command. If screen-size
+is unavailable, the adapter falls back to 1024x768 and records the limit in the
+transcript. Coordinates are scaled back to host pixels before dispatch.
 
 ## Why it's feasible
 
