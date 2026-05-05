@@ -2077,6 +2077,22 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 }
 
 func ctlResetLinuxPassword(sock string, timeout time.Duration, username, password string) error {
+	checkReq := &controlpb.ControlRequest{
+		Type: "agent-exec",
+		Command: &controlpb.ControlRequest_AgentExec{
+			AgentExec: &controlpb.AgentExecCommand{
+				Args: []string{"id", "-u", username},
+			},
+		},
+	}
+	checkResp, err := ctlSendRequest(sock, checkReq, timeout, "agent-exec")
+	if err != nil {
+		return fmt.Errorf("linux reset-password requires a running guest agent: %w", err)
+	}
+	if err := requireLinuxUserExists(username, checkResp); err != nil {
+		return err
+	}
+
 	req := &controlpb.ControlRequest{
 		Type: "agent-exec",
 		Command: &controlpb.ControlRequest_AgentExec{
@@ -2094,6 +2110,33 @@ func ctlResetLinuxPassword(sock string, timeout time.Duration, username, passwor
 	}
 	fmt.Printf("Password reset for %s (via Linux guest agent)\n", username)
 	return nil
+}
+
+func requireLinuxUserExists(username string, resp *controlpb.ControlResponse) error {
+	if resp == nil {
+		return fmt.Errorf("check linux user: empty response")
+	}
+	if !resp.Success {
+		if msg := strings.TrimSpace(resp.Error); msg != "" {
+			return fmt.Errorf("check linux user: %s", msg)
+		}
+		return fmt.Errorf("check linux user: request failed")
+	}
+	if exec := resp.GetAgentExecResult(); exec != nil {
+		if exec.GetExitCode() == 0 {
+			return nil
+		}
+		return linuxUserMissingError(username)
+	}
+	result := readyResultFromData("check linux user", resp.Data)
+	if result.OK {
+		return nil
+	}
+	return linuxUserMissingError(username)
+}
+
+func linuxUserMissingError(username string) error {
+	return fmt.Errorf("user %q does not exist on this VM; create it first with cove ctl agent-exec --daemon -- useradd -m %s", username, username)
 }
 
 func linuxResetPasswordScript(username, password string) string {

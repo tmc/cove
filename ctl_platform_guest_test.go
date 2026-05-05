@@ -52,6 +52,16 @@ func TestLinuxResetPasswordUsesChpasswd(t *testing.T) {
 	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
 		{
 			wantType: "agent-exec",
+			wantArgs: []string{"id", "-u", "desk"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+				}},
+			},
+		},
+		{
+			wantType: "agent-exec",
 			wantArgs: []string{
 				"sh",
 				"-lc",
@@ -72,5 +82,39 @@ func TestLinuxResetPasswordUsesChpasswd(t *testing.T) {
 	})
 	if !strings.Contains(out, "Password reset for desk (via Linux guest agent)") {
 		t.Fatalf("output = %q", out)
+	}
+}
+
+func TestLinuxResetPasswordMissingUserPreflight(t *testing.T) {
+	vmDir := linuxTestVMDir(t)
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"id", "-u", "testuser"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 1,
+					Stderr:   "id: 'testuser': no such user\n",
+				}},
+			},
+		},
+	})
+	defer stop()
+
+	err := ctlResetPasswordForVM(vmSelection{Directory: vmDir, Name: "linux"}, GetControlSocketPathForVM(vmDir), time.Second, "testuser", "new secret")
+	if err == nil {
+		t.Fatal("ctlResetPasswordForVM() error = nil, want missing-user error")
+	}
+	for _, want := range []string{
+		`user "testuser" does not exist on this VM`,
+		"create it first with cove ctl agent-exec --daemon -- useradd -m testuser",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "chpasswd") {
+		t.Fatalf("error leaked chpasswd output: %v", err)
 	}
 }
