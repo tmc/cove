@@ -96,3 +96,35 @@ func TestFormatOperationsResponseFallthrough(t *testing.T) {
 		t.Errorf("expected empty string for non-operations response, got %q", got)
 	}
 }
+
+func TestFormatAgentSSHDResponseIsActive(t *testing.T) {
+	resp := &controlpb.ControlResponse{
+		Success: true,
+		Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+			ExitCode: 0,
+			Stdout:   "active\n",
+		}},
+	}
+	got := formatAgentSSHDResponse(resp)
+	for _, want := range []string{"status: active", "exitCode: 0"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatAgentSSHDResponse() missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatAgentSSHDResponseLegacySystemctlStatus(t *testing.T) {
+	resp := &controlpb.ControlResponse{
+		Success: true,
+		Data:    `{"exitCode":0,"stdout":"● ssh.service - OpenBSD Secure Shell server\n     Active: active (running) since Tue 2026-05-05 01:47:33 UTC\n","stderr":""}`,
+	}
+	got := formatAgentSSHDResponse(resp)
+	for _, want := range []string{"status: active", "exitCode: 0"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatAgentSSHDResponse() missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "OpenBSD Secure Shell") {
+		t.Fatalf("formatAgentSSHDResponse() leaked raw systemd output:\n%s", got)
+	}
+}
