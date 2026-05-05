@@ -86,8 +86,8 @@ type AgentClient interface {
 	Exec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// ExecStream runs a command with streaming stdout/stderr.
 	ExecStream(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error)
-	// ExecAttach runs a command with bidirectional stdin/stdout/stderr.
-	ExecAttach(context.Context) *connect.BidiStreamForClient[agentpb.ExecAttachRequest, agentpb.ExecOutput]
+	// ExecAttach runs a command with bidirectional stdin/stdout/stderr/control.
+	ExecAttach(context.Context) *connect.BidiStreamForClient[agentpb.ExecAttachRequest, agentpb.ExecAttachOutput]
 	ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error)
 	SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error)
 	SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error)
@@ -146,7 +146,7 @@ func NewAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...conne
 			connect.WithSchema(agentMethods.ByName("ExecStream")),
 			connect.WithClientOptions(opts...),
 		),
-		execAttach: connect.NewClient[agentpb.ExecAttachRequest, agentpb.ExecOutput](
+		execAttach: connect.NewClient[agentpb.ExecAttachRequest, agentpb.ExecAttachOutput](
 			httpClient,
 			baseURL+AgentExecAttachProcedure,
 			connect.WithSchema(agentMethods.ByName("ExecAttach")),
@@ -233,7 +233,7 @@ type agentClient struct {
 	info          *connect.Client[agentpb.InfoRequest, agentpb.InfoResponse]
 	exec          *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
 	execStream    *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
-	execAttach    *connect.Client[agentpb.ExecAttachRequest, agentpb.ExecOutput]
+	execAttach    *connect.Client[agentpb.ExecAttachRequest, agentpb.ExecAttachOutput]
 	resizeExecTTY *connect.Client[agentpb.ResizeExecTTYRequest, agentpb.ResizeExecTTYResponse]
 	signalExec    *connect.Client[agentpb.SignalExecRequest, agentpb.SignalExecResponse]
 	setTime       *connect.Client[agentpb.SetTimeRequest, agentpb.SetTimeResponse]
@@ -269,7 +269,7 @@ func (c *agentClient) ExecStream(ctx context.Context, req *connect.Request[agent
 }
 
 // ExecAttach calls vz.agent.v1.Agent.ExecAttach.
-func (c *agentClient) ExecAttach(ctx context.Context) *connect.BidiStreamForClient[agentpb.ExecAttachRequest, agentpb.ExecOutput] {
+func (c *agentClient) ExecAttach(ctx context.Context) *connect.BidiStreamForClient[agentpb.ExecAttachRequest, agentpb.ExecAttachOutput] {
 	return c.execAttach.CallBidiStream(ctx)
 }
 
@@ -343,8 +343,8 @@ type AgentHandler interface {
 	Exec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// ExecStream runs a command with streaming stdout/stderr.
 	ExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error
-	// ExecAttach runs a command with bidirectional stdin/stdout/stderr.
-	ExecAttach(context.Context, *connect.BidiStream[agentpb.ExecAttachRequest, agentpb.ExecOutput]) error
+	// ExecAttach runs a command with bidirectional stdin/stdout/stderr/control.
+	ExecAttach(context.Context, *connect.BidiStream[agentpb.ExecAttachRequest, agentpb.ExecAttachOutput]) error
 	ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error)
 	SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error)
 	SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error)
@@ -538,7 +538,7 @@ func (UnimplementedAgentHandler) ExecStream(context.Context, *connect.Request[ag
 	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.ExecStream is not implemented"))
 }
 
-func (UnimplementedAgentHandler) ExecAttach(context.Context, *connect.BidiStream[agentpb.ExecAttachRequest, agentpb.ExecOutput]) error {
+func (UnimplementedAgentHandler) ExecAttach(context.Context, *connect.BidiStream[agentpb.ExecAttachRequest, agentpb.ExecAttachOutput]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.ExecAttach is not implemented"))
 }
 
