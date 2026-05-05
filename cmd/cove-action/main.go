@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -34,6 +36,8 @@ type config struct {
 	Timeout    time.Duration
 	ReadyEvery time.Duration
 	Keep       bool
+	CacheKey   string
+	CachePaths string
 	Env        []string
 	Stdout     io.Writer
 	Stderr     io.Writer
@@ -43,6 +47,9 @@ type config struct {
 type result struct {
 	Code        int
 	MetricsPath string
+	CacheHit    bool
+	CacheImage  string
+	CacheSaved  bool
 }
 
 func main() {
@@ -59,12 +66,12 @@ func run(args, environ []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "cove-action: %v\n", err)
 		if res.Code != 0 {
-			_ = writeOutputs(cfg, res.Code, defaultLogPath(cfg.Environ), res.MetricsPath)
+			_ = writeOutputs(cfg, res)
 			return res.Code
 		}
 		return 1
 	}
-	if err := writeOutputs(cfg, res.Code, defaultLogPath(cfg.Environ), res.MetricsPath); err != nil {
+	if err := writeOutputs(cfg, res); err != nil {
 		fmt.Fprintf(stderr, "cove-action: write outputs: %v\n", err)
 		return 1
 	}
@@ -86,6 +93,8 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	timeoutText := envValue(environ, "COVE_ACTION_TIMEOUT", envValue(environ, "COVE_TIMEOUT", "30m"))
 	keepText := envValue(environ, "COVE_ACTION_KEEP", "false")
 	envText := envValue(environ, "COVE_ACTION_ENV", "")
+	cfg.CacheKey = envValue(environ, "COVE_ACTION_CACHE_KEY", "")
+	cfg.CachePaths = envValue(environ, "COVE_ACTION_CACHE_PATHS", "")
 
 	fs := flag.NewFlagSet("cove-action", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -98,6 +107,8 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	fs.StringVar(&timeoutText, "timeout", timeoutText, "overall timeout")
 	fs.BoolVar(&cfg.Keep, "keep", parseBool(keepText), "keep ephemeral fork")
 	fs.StringVar(&envText, "env", envText, "newline-separated KEY=VALUE guest environment")
+	fs.StringVar(&cfg.CacheKey, "cache-key", cfg.CacheKey, "whole-VM cache key")
+	fs.StringVar(&cfg.CachePaths, "cache-paths", cfg.CachePaths, "newline-separated guest paths preserved by the whole-VM cache")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
@@ -130,8 +141,21 @@ func runJob(cfg config) (res result, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 	defer cancel()
 
-	runArgs := []string{"run", "-fork-from", cfg.Image, "-fork-name", cfg.VMName, "-ephemeral", "-headless"}
-	if cfg.Keep {
+	forkFrom := cfg.Image
+	cacheRef := ""
+	cacheKey := strings.TrimSpace(cfg.CacheKey)
+	if cacheKey != "" {
+		cacheRef = cacheImageRef(cacheKey)
+		res.CacheImage = cacheRef
+		if cacheImageExists(cfg, cacheRef) {
+			forkFrom = cacheRef
+			res.CacheHit = true
+		}
+	}
+
+	runArgs := []string{"run", "-fork-from", forkFrom, "-fork-name", cfg.VMName, "-ephemeral", "-headless"}
+	keepForCache := cacheKey != "" && !res.CacheHit
+	if cfg.Keep || keepForCache {
 		runArgs = append(runArgs, "-keep")
 	}
 	runCmd := execCommandContext(ctx, cfg.CoveBin, runArgs...)
@@ -146,17 +170,31 @@ func runJob(cfg config) (res result, err error) {
 	go func() {
 		runDone <- runCmd.Wait()
 	}()
+	cleaned := false
 	defer func() {
 		status := "ok"
 		if err != nil {
 			status = err.Error()
 		}
 		emitActionMetric(res.MetricsPath, "action_complete", actionStarted, status, map[string]any{"exit_code": res.Code})
-		cleanup(cfg, runCmd, runDone)
+		if !cleaned {
+			cleanup(cfg, runCmd, runDone)
+			if keepForCache && !cfg.Keep {
+				deleteVM(cfg)
+			}
+		}
 	}()
 
 	res.MetricsPath = waitForMetricsPath(ctx, cfg, actionStarted)
 	emitActionMetric(res.MetricsPath, "action_start", actionStarted, "ok", nil)
+	if cacheKey != "" {
+		emitActionMetric(res.MetricsPath, "cache_lookup", actionStarted, "ok", map[string]any{
+			"cache_key":   cacheKey,
+			"cache_image": cacheRef,
+			"hit":         res.CacheHit,
+			"cache_paths": parseCachePaths(cfg.CachePaths),
+		})
+	}
 
 	if err := waitReady(ctx, cfg); err != nil {
 		res.Code = 1
@@ -172,7 +210,142 @@ func runJob(cfg config) (res result, err error) {
 	if err != nil {
 		return res, err
 	}
+	if keepForCache && res.Code == 0 {
+		cleanup(cfg, runCmd, runDone)
+		cleaned = true
+		if err := saveCacheImage(ctx, cfg, cacheKey, cacheRef, actionStarted); err != nil {
+			if !cfg.Keep {
+				deleteVM(cfg)
+			}
+			if duplicateCacheSave(err) {
+				fmt.Fprintf(cfg.Stderr, "cove-action: cache image %s already exists; another writer won\n", cacheRef)
+				return res, nil
+			}
+			return res, err
+		}
+		res.CacheSaved = true
+		if !cfg.Keep {
+			deleteVM(cfg)
+		}
+	}
 	return res, nil
+}
+
+func cacheImageRef(key string) string {
+	key = strings.TrimSpace(key)
+	component := regexp.MustCompile(`[^A-Za-z0-9_.-]+`).ReplaceAllString(key, "-")
+	component = strings.Trim(component, "-.")
+	if component == "" || len(component) > 80 {
+		sum := sha256.Sum256([]byte(key))
+		component = hex.EncodeToString(sum[:])[:32]
+	}
+	return "cache/" + component + ":latest"
+}
+
+func cacheImageExists(cfg config, ref string) bool {
+	path, ok := localImagePath(cfg, ref)
+	if !ok {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(path, "manifest.json"))
+	return err == nil
+}
+
+func localImagePath(cfg config, ref string) (string, bool) {
+	name, tag, ok := strings.Cut(ref, ":")
+	if !ok || name == "" || tag == "" {
+		return "", false
+	}
+	home := envValue(cfg.Environ, "HOME", "")
+	if home == "" {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			return "", false
+		}
+	}
+	parts := append([]string{home, ".vz", "images"}, strings.Split(name, "/")...)
+	parts = append(parts, tag)
+	return filepath.Join(parts...), true
+}
+
+func saveCacheImage(ctx context.Context, cfg config, key, ref string, started time.Time) error {
+	cmd := execCommandContext(ctx, cfg.CoveBin, "image", "build", "-from", cfg.VMName, "-tag", ref)
+	cmd.Env = cfg.Environ
+	out, err := cmd.CombinedOutput()
+	if len(out) > 0 {
+		_, _ = cfg.Stdout.Write(out)
+	}
+	if err != nil {
+		emitActionMetric(cfgMetricsPath(cfg, started), "cache_save", started, err.Error(), map[string]any{
+			"cache_key":   key,
+			"cache_image": ref,
+		})
+		return fmt.Errorf("save cache image: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	size := cacheImageSize(cfg, ref)
+	writeCacheTTLMarker(cfg, ref)
+	emitActionMetric(cfgMetricsPath(cfg, started), "cache_save", started, "ok", map[string]any{
+		"cache_key":   key,
+		"cache_image": ref,
+		"image_size":  size,
+	})
+	return nil
+}
+
+func cfgMetricsPath(cfg config, since time.Time) string {
+	return findMetricsPath(cfg, since)
+}
+
+func cacheImageSize(cfg config, ref string) int64 {
+	path, ok := localImagePath(cfg, ref)
+	if !ok {
+		return 0
+	}
+	var total int64
+	filepath.WalkDir(path, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+func writeCacheTTLMarker(cfg config, ref string) {
+	path, ok := localImagePath(cfg, ref)
+	if !ok {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(path, "CACHE-TTL"), []byte("168h\n"), 0o644)
+}
+
+func duplicateCacheSave(err error) bool {
+	return strings.Contains(err.Error(), "already exists")
+}
+
+func deleteVM(cfg config) {
+	cmd := execCommandContext(context.Background(), cfg.CoveBin, "vm", "delete", cfg.VMName)
+	cmd.Stdin = strings.NewReader("y\n")
+	cmd.Stdout = cfg.Stdout
+	cmd.Stderr = cfg.Stderr
+	cmd.Env = cfg.Environ
+	_ = cmd.Run()
+}
+
+func parseCachePaths(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 func waitReady(ctx context.Context, cfg config) error {
@@ -263,7 +436,7 @@ func cleanup(cfg config, runCmd *exec.Cmd, runDone <-chan error) {
 	}
 }
 
-func writeOutputs(cfg config, exitCode int, logPath, metricsPath string) error {
+func writeOutputs(cfg config, res result) error {
 	path := envValue(cfg.Environ, "GITHUB_OUTPUT", "")
 	if path == "" {
 		return nil
@@ -273,7 +446,8 @@ func writeOutputs(cfg config, exitCode int, logPath, metricsPath string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "vm-name=%s\nexit-code=%d\nlog-path=%s\nmetrics-path=%s\n", cfg.VMName, exitCode, logPath, metricsPath)
+	_, err = fmt.Fprintf(f, "vm-name=%s\nexit-code=%d\nlog-path=%s\nmetrics-path=%s\ncache-hit=%t\ncache-image=%s\ncache-saved=%t\n",
+		cfg.VMName, res.Code, defaultLogPath(cfg.Environ), res.MetricsPath, res.CacheHit, res.CacheImage, res.CacheSaved)
 	return err
 }
 

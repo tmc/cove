@@ -115,6 +115,10 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if !cfg.Ephemeral {
 		return runErr
 	}
+	if cfg.EphemeralForkKeep {
+		fmt.Printf("Ephemeral image fork retained: %s\n", childName)
+		return runErr
+	}
 	if cleanupErr := cleanupEphemeralForkHook(childPath); cleanupErr != nil {
 		// The cleanup helper refuses any path missing the .ephemeral
 		// sentinel, which we wrote during MaterializeImage. Still log

@@ -37,6 +37,14 @@ inputs:
     description: Keep the ephemeral fork after the run.
     required: false
     default: "false"
+  cache-key:
+    description: Whole-VM local cache key. Empty disables cache restore and save.
+    required: false
+    default: ""
+  cache-paths:
+    description: Informational guest paths expected to benefit from the whole-VM cache.
+    required: false
+    default: ""
   secrets:
     description: Reserved for cove secret URI inputs. Not supported in Slice 1.
     required: false
@@ -58,6 +66,15 @@ outputs:
   artifact-path:
     description: Host-side cove run artifact bundle, when cove produced metrics.
     value: ${{ steps.metrics.outputs.artifact-path }}
+  cache-hit:
+    description: true when cache-key restored an existing local cache image.
+    value: ${{ steps.cove.outputs.cache-hit }}
+  cache-image:
+    description: Local cache image ref used for lookup or save.
+    value: ${{ steps.cove.outputs.cache-image }}
+  cache-saved:
+    description: true when this run saved a cache image.
+    value: ${{ steps.cove.outputs.cache-saved }}
 
 runs:
   using: composite
@@ -73,6 +90,8 @@ runs:
         COVE_ACTION_TIMEOUT: ${{ inputs.timeout }}
         COVE_ACTION_ENV: ${{ inputs.env }}
         COVE_ACTION_KEEP: ${{ inputs.keep }}
+        COVE_ACTION_CACHE_KEY: ${{ inputs.cache-key }}
+        COVE_ACTION_CACHE_PATHS: ${{ inputs.cache-paths }}
         COVE_ACTION_SECRETS: ${{ inputs.secrets }}
       run: |
         set -euo pipefail
