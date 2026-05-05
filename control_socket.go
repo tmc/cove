@@ -1817,6 +1817,8 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 	s.mu.Lock()
 	guiAvailable := s.gui != nil
 	s.mu.Unlock()
+	commands := controlCapabilityCommands(linuxMode, windowsMode)
+	features := controlCapabilityFeatures(guiAvailable, linuxMode, windowsMode)
 	payload := map[string]any{
 		"protocolVersion": "vz.control.v1",
 		"encoding":        "protojson",
@@ -1833,50 +1835,8 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			"agentExecFlatFields":  true,
 			"tokenField":           true,
 		},
-		"features": map[string]bool{
-			"agentExecStream":    true,
-			"screenshotDiff":     true,
-			"snapshots":          true,
-			"pitSnapshots":       true,
-			"memoryBalloon":      true,
-			"guiAttach":          guiAvailable,
-			"vncStatus":          true,
-			"debugStubStatus":    true,
-			"runtimeDiskControl": true,
-			"runtimeUSBControl":  true,
-		},
-		"commands": []string{
-			"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
-			"pause", "resume", "stop", "request-stop", "reboot-to-recovery", "snapshot", "memory", "network-info",
-			"shared-folders-apply", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
-			"vnc-status", "debug-stub-status", "disk", "pit", "usb",
-			"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
-			"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
-			"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
-			"agent-sshd", "agent-mount-volumes", "agent-status",
-		},
-	}
-	commands := []string{
-		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
-		"pause", "resume", "stop", "request-stop", "reboot-to-recovery", "snapshot", "memory", "network-info",
-		"shared-folders-apply", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
-		"vnc-status", "debug-stub-status", "disk", "pit", "usb",
-		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
-		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
-		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
-		"agent-sshd", "agent-mount-volumes", "agent-status",
-	}
-	features := map[string]bool{
-		"agentExecStream":    true,
-		"screenshotDiff":     true,
-		"snapshots":          true,
-		"pitSnapshots":       true,
-		"memoryBalloon":      true,
-		"guiAttach":          guiAvailable,
-		"vncStatus":          true,
-		"debugStubStatus":    true,
-		"runtimeDiskControl": true,
-		"runtimeUSBControl":  true,
+		"features": features,
+		"commands": commands,
 	}
 
 	data, _ := json.Marshal(payload)
@@ -1890,5 +1850,37 @@ func (s *ControlServer) getCapabilities() *controlpb.ControlResponse {
 			Features:        features,
 			AuthRequired:    s.authToken != "",
 		}},
+	}
+}
+
+func controlCapabilityCommands(linuxGuest, windowsGuest bool) []string {
+	commands := []string{
+		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
+		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
+		"shared-folders-apply", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
+		"vnc-status", "debug-stub-status", "disk", "pit", "usb",
+		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
+		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
+		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
+		"agent-sshd", "agent-mount-volumes", "agent-status",
+	}
+	if !linuxGuest && !windowsGuest {
+		commands = append(commands, "reboot-to-recovery")
+	}
+	return commands
+}
+
+func controlCapabilityFeatures(guiAvailable, linuxGuest, windowsGuest bool) map[string]bool {
+	return map[string]bool{
+		"agentExecStream":    true,
+		"screenshotDiff":     true,
+		"snapshots":          true,
+		"pitSnapshots":       true,
+		"memoryBalloon":      true,
+		"guiAttach":          guiAvailable,
+		"vncStatus":          true,
+		"debugStubStatus":    true,
+		"runtimeDiskControl": true,
+		"runtimeUSBControl":  true,
 	}
 }

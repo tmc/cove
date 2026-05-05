@@ -126,6 +126,63 @@ func TestControlServerCapabilitiesIncludeRuntimeStatusCommands(t *testing.T) {
 	}
 }
 
+func TestControlServerCapabilitiesFilterGuestOSCommands(t *testing.T) {
+	oldLinux, oldWindows := linuxMode, windowsMode
+	defer func() {
+		linuxMode = oldLinux
+		windowsMode = oldWindows
+	}()
+
+	tests := []struct {
+		name         string
+		linux        bool
+		windows      bool
+		wantRecovery bool
+	}{
+		{name: "macos", wantRecovery: true},
+		{name: "linux", linux: true},
+		{name: "windows", windows: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			linuxMode = tt.linux
+			windowsMode = tt.windows
+
+			resp := NewControlServerWithVMDir("", t.TempDir()).getCapabilities()
+			caps := resp.GetCapabilities()
+			if caps == nil {
+				t.Fatalf("missing capabilities result: %#v", resp)
+			}
+			if got := stringSliceContains(caps.Commands, "reboot-to-recovery"); got != tt.wantRecovery {
+				t.Fatalf("typed reboot-to-recovery present = %v, want %v in %#v", got, tt.wantRecovery, caps.Commands)
+			}
+
+			var payload struct {
+				Commands []string        `json:"commands"`
+				Features map[string]bool `json:"features"`
+			}
+			if err := json.Unmarshal([]byte(resp.Data), &payload); err != nil {
+				t.Fatalf("unmarshal json payload: %v", err)
+			}
+			if got := stringSliceContains(payload.Commands, "reboot-to-recovery"); got != tt.wantRecovery {
+				t.Fatalf("json reboot-to-recovery present = %v, want %v in %#v", got, tt.wantRecovery, payload.Commands)
+			}
+			if !payload.Features["runtimeDiskControl"] || !caps.Features["runtimeDiskControl"] {
+				t.Fatalf("features not preserved: typed=%#v json=%#v", caps.Features, payload.Features)
+			}
+		})
+	}
+}
+
+func stringSliceContains(list []string, target string) bool {
+	for _, s := range list {
+		if s == target {
+			return true
+		}
+	}
+	return false
+}
+
 func captureStdout(t *testing.T, fn func() error) string {
 	t.Helper()
 	oldStdout := os.Stdout
