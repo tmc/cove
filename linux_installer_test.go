@@ -192,6 +192,58 @@ func TestBuildLinuxCloudInitData(t *testing.T) {
 	}
 }
 
+func TestBuildLinuxInstallConfigurationSocketDevices(t *testing.T) {
+	oldVMDir := vmDir
+	oldCPUCount := cpuCount
+	oldMemoryGB := memoryGB
+	oldSandboxLevel := sandboxLevel
+	oldLinuxNVMe := linuxNVMe
+	t.Cleanup(func() {
+		vmDir = oldVMDir
+		cpuCount = oldCPUCount
+		memoryGB = oldMemoryGB
+		sandboxLevel = oldSandboxLevel
+		linuxNVMe = oldLinuxNVMe
+	})
+
+	dir := t.TempDir()
+	vmDir = dir
+	cpuCount = 2
+	memoryGB = 4
+	linuxNVMe = false
+
+	diskPath := filepath.Join(dir, "disk.img")
+	installISO := filepath.Join(dir, "install.iso")
+	cloudInitISO := filepath.Join(dir, "seed.iso")
+	for _, name := range []string{diskPath, installISO, cloudInitISO} {
+		if err := os.WriteFile(name, nil, 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	tests := []struct {
+		name         string
+		sandboxLevel string
+		want         int
+	}{
+		{name: "unset", sandboxLevel: "", want: 1},
+		{name: "minimal", sandboxLevel: "minimal", want: 1},
+		{name: "strict", sandboxLevel: "strict", want: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sandboxLevel = tc.sandboxLevel
+			config, err := buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, "", "", "", false)
+			if err != nil {
+				t.Fatalf("buildLinuxInstallConfiguration() error = %v", err)
+			}
+			if got := len(config.SocketDevices()); got != tc.want {
+				t.Fatalf("len(SocketDevices()) = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildLinuxInstallSeedDataForDistros(t *testing.T) {
 	tests := []struct {
 		name    string

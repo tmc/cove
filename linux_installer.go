@@ -564,6 +564,8 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 		vz.VZUSBControllerConfigurationFromID(usbController.ID),
 	})
 
+	addVirtioSocketDevice(config)
+
 	// Attach a serial console only when the kernel cmdline asks for hvc0.
 	// The live installer pauses on a serial-mode chooser when hvc0 is a console,
 	// so direct-boot autoinstall keeps the serial device detached.
