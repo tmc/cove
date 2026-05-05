@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	fleetpkg "github.com/tmc/vz-macos/internal/fleet"
 )
@@ -113,4 +114,69 @@ func printFleetAggregate(out io.Writer, rows []fleetAggregateRow) error {
 		}
 	}
 	return nil
+}
+
+func runFleetPSCommand(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
+	fs := flag.NewFlagSet("fleet ps", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOut := fs.Bool("json", false, "emit JSON")
+	watch := fs.Bool("watch", false, "refresh until interrupted")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: cove fleet ps [--json] [--watch]")
+	}
+	render := func() error {
+		rows, err := queryFleetText(ctx, path, runner, []string{"vm", "list"}, "ps")
+		if err != nil {
+			return err
+		}
+		rows = filterFleetRunningVMs(rows)
+		if *jsonOut {
+			enc := json.NewEncoder(out)
+			enc.SetIndent("", "  ")
+			return enc.Encode(rows)
+		}
+		return printFleetAggregate(out, rows)
+	}
+	if !*watch {
+		return render()
+	}
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		if err := render(); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			fmt.Fprintln(out)
+		}
+	}
+}
+
+func filterFleetRunningVMs(rows []fleetAggregateRow) []fleetAggregateRow {
+	out := make([]fleetAggregateRow, 0, len(rows))
+	for _, row := range rows {
+		if row.Error != "" {
+			out = append(out, row)
+			continue
+		}
+		var lines []string
+		for _, line := range strings.Split(row.Output, "\n") {
+			if fleetLineIsRunningVM(line) {
+				lines = append(lines, line)
+			}
+		}
+		row.Output = strings.Join(lines, "\n")
+		out = append(out, row)
+	}
+	return out
+}
+
+func fleetLineIsRunningVM(line string) bool {
+	return strings.Contains(strings.ToLower(line), "running")
 }
