@@ -11,7 +11,7 @@ func TestParseForwardReverseFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseForwardArgs: %v", err)
 	}
-	if !got.Reverse || got.VM != "vm1" || got.GuestPort != 8080 || got.HostPort != 3000 {
+	if !got.Reverse || got.VM != "vm1" || got.Protocol != "tcp" || got.GuestPort != 8080 || got.HostPort != 3000 {
 		t.Fatalf("spec = %#v, want reverse vm1 guest 8080 host 3000", got)
 	}
 	if got.RelayPort != uint32(forwardRelayBasePort+8080%forwardRelayPortWindow) {

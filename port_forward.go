@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -89,6 +90,8 @@ type PortForwardManager struct {
 	ctx      context.Context
 	forwards map[int]*PortForward // keyed by host port
 	reverse  map[int]*ReversePortForward
+	udp      map[int]*UDPForward
+	udpRev   map[int]*ReverseUDPForward
 }
 
 // NewPortForwardManager creates a new manager.
@@ -100,6 +103,8 @@ func NewPortForwardManager(ctx context.Context) *PortForwardManager {
 		ctx:      ctx,
 		forwards: make(map[int]*PortForward),
 		reverse:  make(map[int]*ReversePortForward),
+		udp:      make(map[int]*UDPForward),
+		udpRev:   make(map[int]*ReverseUDPForward),
 	}
 }
 
@@ -137,6 +142,32 @@ func (m *PortForwardManager) Start(connector guestPortConnector, hostPort int, g
 	return nil
 }
 
+func (m *PortForwardManager) StartUDP(connector guestPortConnector, hostPort int, guestPort uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.udp[hostPort]; exists {
+		return fmt.Errorf("host udp port %d already forwarded", hostPort)
+	}
+	if connector == nil {
+		return fmt.Errorf("guest connector unavailable")
+	}
+	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("127.0.0.1", strconv.Itoa(hostPort)))
+	if err != nil {
+		return fmt.Errorf("resolve udp %d: %w", hostPort, err)
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return fmt.Errorf("listen udp %d: %w", hostPort, err)
+	}
+	ctx, cancel := context.WithCancel(m.ctx)
+	uf := &UDPForward{HostPort: hostPort, GuestPort: guestPort, conn: conn, connector: connector, cancel: cancel}
+	m.udp[hostPort] = uf
+	go uf.serve(ctx)
+	fmt.Printf("[port-forward] udp localhost:%d -> vsock:%d\n", hostPort, guestPort)
+	return nil
+}
+
 // StartReverse begins forwarding from a guest TCP port to a host TCP port.
 func (m *PortForwardManager) StartReverse(hostPort int, guestPort int) error {
 	m.mu.Lock()
@@ -161,6 +192,26 @@ func (m *PortForwardManager) StartReverse(hostPort int, guestPort int) error {
 	m.reverse[guestPort] = rf
 	go rf.serve(ctx)
 	fmt.Printf("[port-forward] reverse vsock:%d -> localhost:%d\n", relayPort, hostPort)
+	return nil
+}
+
+func (m *PortForwardManager) StartReverseUDP(hostPort int, guestPort int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.udpRev[guestPort]; exists {
+		return fmt.Errorf("guest udp port %d already reverse-forwarded", guestPort)
+	}
+	relayPort := relayPortFor(guestPort)
+	ln, err := listenHostVsock(relayPort)
+	if err != nil {
+		return fmt.Errorf("listen vsock:%d: %w", relayPort, err)
+	}
+	ctx, cancel := context.WithCancel(m.ctx)
+	rf := &ReverseUDPForward{HostPort: hostPort, GuestPort: guestPort, RelayPort: relayPort, listener: ln, cancel: cancel}
+	m.udpRev[guestPort] = rf
+	go rf.serve(ctx)
+	fmt.Printf("[port-forward] reverse udp vsock:%d -> localhost:%d\n", relayPort, hostPort)
 	return nil
 }
 
@@ -198,6 +249,18 @@ func (m *PortForwardManager) List() []string {
 		rf.mu.Unlock()
 		result = append(result, fmt.Sprintf("vm:%d -> localhost:%d via vsock:%d (%d active)", rf.GuestPort, rf.HostPort, rf.RelayPort, conns))
 	}
+	for _, uf := range m.udp {
+		uf.mu.Lock()
+		conns := uf.conns
+		uf.mu.Unlock()
+		result = append(result, fmt.Sprintf("udp localhost:%d -> vsock:%d (%d packets)", uf.HostPort, uf.GuestPort, conns))
+	}
+	for _, rf := range m.udpRev {
+		rf.mu.Lock()
+		conns := rf.conns
+		rf.mu.Unlock()
+		result = append(result, fmt.Sprintf("udp vm:%d -> localhost:%d via vsock:%d (%d packets)", rf.GuestPort, rf.HostPort, rf.RelayPort, conns))
+	}
 	return result
 }
 
@@ -215,6 +278,16 @@ func (m *PortForwardManager) StopAll() {
 		rf.cancel()
 		rf.listener.Close()
 		delete(m.reverse, gp)
+	}
+	for hp, uf := range m.udp {
+		uf.cancel()
+		uf.conn.Close()
+		delete(m.udp, hp)
+	}
+	for gp, rf := range m.udpRev {
+		rf.cancel()
+		rf.listener.Close()
+		delete(m.udpRev, gp)
 	}
 }
 
@@ -234,6 +307,61 @@ func (pf *PortForward) serve(ctx context.Context) {
 	}
 }
 
+type UDPForward struct {
+	HostPort  int
+	GuestPort uint32
+	conn      *net.UDPConn
+	connector guestPortConnector
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	conns     int
+}
+
+func (uf *UDPForward) serve(ctx context.Context) {
+	buf := make([]byte, 65535)
+	for {
+		n, addr, err := uf.conn.ReadFromUDP(buf)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			fmt.Printf("[port-forward] udp read localhost:%d: %v\n", uf.HostPort, err)
+			return
+		}
+		pkt := append([]byte(nil), buf[:n]...)
+		go uf.handlePacket(addr, pkt)
+	}
+}
+
+func (uf *UDPForward) handlePacket(addr *net.UDPAddr, pkt []byte) {
+	uf.mu.Lock()
+	uf.conns++
+	uf.mu.Unlock()
+	defer func() {
+		uf.mu.Lock()
+		uf.conns--
+		uf.mu.Unlock()
+	}()
+	conn, err := uf.connector.ConnectToGuestPort(uf.GuestPort)
+	if err != nil {
+		fmt.Printf("[port-forward] udp vsock connect %d: %v\n", uf.GuestPort, err)
+		return
+	}
+	defer conn.Close()
+	if err := writeUDPFrame(conn, pkt); err != nil {
+		fmt.Printf("[port-forward] udp write frame: %v\n", err)
+		return
+	}
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for {
+		reply, err := readUDPFrame(conn)
+		if err != nil {
+			return
+		}
+		uf.conn.WriteToUDP(reply, addr)
+	}
+}
+
 // ReversePortForward represents an active guest TCP -> host TCP forwarding rule.
 type ReversePortForward struct {
 	HostPort  int
@@ -243,6 +371,73 @@ type ReversePortForward struct {
 	cancel    context.CancelFunc
 	mu        sync.Mutex
 	conns     int
+}
+
+type ReverseUDPForward struct {
+	HostPort  int
+	GuestPort int
+	RelayPort uint32
+	listener  net.Listener
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	conns     int
+}
+
+func (rf *ReverseUDPForward) serve(ctx context.Context) {
+	for {
+		conn, err := rf.listener.Accept()
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				fmt.Printf("[port-forward] accept reverse udp vsock:%d: %v\n", rf.RelayPort, err)
+				return
+			}
+		}
+		go rf.handleConn(conn)
+	}
+}
+
+func (rf *ReverseUDPForward) handleConn(vsockConn net.Conn) {
+	defer vsockConn.Close()
+	rf.mu.Lock()
+	rf.conns++
+	rf.mu.Unlock()
+	defer func() {
+		rf.mu.Lock()
+		rf.conns--
+		rf.mu.Unlock()
+	}()
+	pkt, err := readUDPFrame(vsockConn)
+	if err != nil {
+		return
+	}
+	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("127.0.0.1", strconv.Itoa(rf.HostPort)))
+	if err != nil {
+		fmt.Printf("[port-forward] reverse udp resolve localhost:%d: %v\n", rf.HostPort, err)
+		return
+	}
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		fmt.Printf("[port-forward] reverse udp dial localhost:%d: %v\n", rf.HostPort, err)
+		return
+	}
+	defer conn.Close()
+	if _, err := conn.Write(pkt); err != nil {
+		return
+	}
+	buf := make([]byte, 65535)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			return
+		}
+		if err := writeUDPFrame(vsockConn, buf[:n]); err != nil {
+			return
+		}
+	}
 }
 
 func (rf *ReversePortForward) serve(ctx context.Context) {
@@ -349,6 +544,17 @@ func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *co
 		return &controlpb.ControlResponse{Success: true, Data: msg,
 			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
 
+	case "start-udp":
+		if cmd.HostPort == 0 || cmd.GuestPort == 0 {
+			return &controlpb.ControlResponse{Error: "host_port and guest_port required"}
+		}
+		if err := portForwards.StartUDP(newControlServerGuestConnector(s), int(cmd.HostPort), cmd.GuestPort); err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}
+		}
+		msg := fmt.Sprintf("forwarding udp localhost:%d -> vsock:%d", cmd.HostPort, cmd.GuestPort)
+		return &controlpb.ControlResponse{Success: true, Data: msg,
+			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
+
 	case "start-reverse":
 		if cmd.HostPort == 0 || cmd.GuestPort == 0 {
 			return &controlpb.ControlResponse{Error: "host_port and guest_port required"}
@@ -357,6 +563,17 @@ func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *co
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		msg := fmt.Sprintf("reverse forwarding vm:%d -> localhost:%d", cmd.GuestPort, cmd.HostPort)
+		return &controlpb.ControlResponse{Success: true, Data: msg,
+			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
+
+	case "start-reverse-udp":
+		if cmd.HostPort == 0 || cmd.GuestPort == 0 {
+			return &controlpb.ControlResponse{Error: "host_port and guest_port required"}
+		}
+		if err := portForwards.StartReverseUDP(int(cmd.HostPort), int(cmd.GuestPort)); err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}
+		}
+		msg := fmt.Sprintf("reverse forwarding udp vm:%d -> localhost:%d", cmd.GuestPort, cmd.HostPort)
 		return &controlpb.ControlResponse{Success: true, Data: msg,
 			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
 
@@ -445,4 +662,28 @@ func joinLines(ss []string) string {
 		result += "  " + s + "\n"
 	}
 	return result
+}
+
+func writeUDPFrame(w io.Writer, pkt []byte) error {
+	if len(pkt) > 65535 {
+		return fmt.Errorf("udp packet too large: %d", len(pkt))
+	}
+	var hdr [2]byte
+	binary.BigEndian.PutUint16(hdr[:], uint16(len(pkt)))
+	if _, err := w.Write(hdr[:]); err != nil {
+		return err
+	}
+	_, err := w.Write(pkt)
+	return err
+}
+
+func readUDPFrame(r io.Reader) ([]byte, error) {
+	var hdr [2]byte
+	if _, err := io.ReadFull(r, hdr[:]); err != nil {
+		return nil, err
+	}
+	n := binary.BigEndian.Uint16(hdr[:])
+	pkt := make([]byte, n)
+	_, err := io.ReadFull(r, pkt)
+	return pkt, err
 }

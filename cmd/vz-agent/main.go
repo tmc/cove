@@ -47,8 +47,12 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version information")
 	var relays relaySpecs
 	flag.Var(&relays, "relay", "TCP relay: vsockPort:tcpAddr (e.g. 2222:localhost:22)")
+	var udpRelays relaySpecs
+	flag.Var(&udpRelays, "udp-relay", "UDP relay: vsockPort:udpAddr (e.g. 5353:localhost:53)")
 	var reverseRelays relaySpecs
 	flag.Var(&reverseRelays, "reverse-relay", "reverse TCP relay: tcpPort:vsockPort (e.g. 8080:22080)")
+	var udpReverseRelays relaySpecs
+	flag.Var(&udpReverseRelays, "udp-reverse-relay", "reverse UDP relay: udpPort:vsockPort (e.g. 5353:25353)")
 	flag.Parse()
 
 	if *showVersion {
@@ -129,6 +133,16 @@ func main() {
 			slog.Error("start relay", slog.String("spec", spec), slog.Any("err", err))
 		}
 	}
+	for _, spec := range udpRelays {
+		vport, addr, err := parseRelaySpec(spec)
+		if err != nil {
+			slog.Error("invalid udp relay spec", slog.String("spec", spec), slog.Any("err", err))
+			continue
+		}
+		if _, err := StartUDPRelay(ctx, vport, addr); err != nil {
+			slog.Error("start udp relay", slog.String("spec", spec), slog.Any("err", err))
+		}
+	}
 	for _, spec := range reverseRelays {
 		tcpPort, vport, err := parseReverseRelaySpec(spec)
 		if err != nil {
@@ -137,6 +151,16 @@ func main() {
 		}
 		if _, err := StartReverseTCPRelay(ctx, tcpPort, vport); err != nil {
 			slog.Error("start reverse relay", slog.String("spec", spec), slog.Any("err", err))
+		}
+	}
+	for _, spec := range udpReverseRelays {
+		udpPort, vport, err := parseReverseRelaySpec(spec)
+		if err != nil {
+			slog.Error("invalid udp reverse relay spec", slog.String("spec", spec), slog.Any("err", err))
+			continue
+		}
+		if _, err := StartReverseUDPRelay(ctx, udpPort, vport); err != nil {
+			slog.Error("start udp reverse relay", slog.String("spec", spec), slog.Any("err", err))
 		}
 	}
 
