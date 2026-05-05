@@ -12,6 +12,7 @@ import (
 )
 
 const defaultSharedFoldersMountPoint = "/Volumes/My Shared Files"
+const linuxSharedFoldersMountRoot = "/mnt/.cove-shared-folders"
 
 type sharedFolderMountTimeouts struct {
 	agentPing time.Duration
@@ -611,6 +612,28 @@ func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts share
 	}
 
 	mountedAny := false
+	rootMounted := strings.Contains(mountRes.Stdout, " on "+linuxSharedFoldersMountRoot+" ")
+	if !rootMounted {
+		if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", linuxSharedFoldersMountRoot}, nil, "", timeouts.mkdir); err != nil {
+			return false, fmt.Errorf("create mount point %q: %w", linuxSharedFoldersMountRoot, err)
+		}
+		res, err := client.AgentExecTypedTimeout([]string{"mount", "-t", "virtiofs", SharedFoldersVirtioFSTag, linuxSharedFoldersMountRoot}, nil, "", timeouts.mount)
+		if err != nil {
+			return false, fmt.Errorf("mount shared folders: %w", err)
+		}
+		if res.ExitCode != 0 {
+			msg := strings.TrimSpace(res.Stderr)
+			if msg == "" {
+				msg = strings.TrimSpace(res.Stdout)
+			}
+			if msg == "" {
+				msg = "unknown error"
+			}
+			return false, fmt.Errorf("mount %s exit %d: %s", SharedFoldersVirtioFSTag, res.ExitCode, msg)
+		}
+		mountedAny = true
+	}
+
 	for _, f := range LoadSharedFolders(vmDirectory) {
 		mountPoint := defaultSharedFolderMountPoint(vmDirectory, f.Tag)
 		if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
@@ -619,8 +642,8 @@ func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts share
 		if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
 			continue
 		}
-		mountArgs := sharedFolderVirtioFSMountArgs(vmDirectory, f.Tag, mountPoint)
-		res, err := client.AgentExecTypedTimeout(mountArgs, nil, "", timeouts.mount)
+		source := filepath.Join(linuxSharedFoldersMountRoot, f.Tag)
+		res, err := client.AgentExecTypedTimeout([]string{"mount", "--bind", source, mountPoint}, nil, "", timeouts.mount)
 		if err != nil {
 			return false, fmt.Errorf("mount shared folder %s: %w", f.Tag, err)
 		}
@@ -632,7 +655,7 @@ func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts share
 			if msg == "" {
 				msg = "unknown error"
 			}
-			return false, fmt.Errorf("%s %s exit %d: %s", mountArgs[0], f.Tag, res.ExitCode, msg)
+			return false, fmt.Errorf("mount %s exit %d: %s", f.Tag, res.ExitCode, msg)
 		}
 		mountedAny = true
 	}

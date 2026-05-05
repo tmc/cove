@@ -429,6 +429,22 @@ func TestSharedFolderAddLiveAppliesAndMountsLinuxPerTag(t *testing.T) {
 		},
 		{
 			wantType: "agent-exec",
+			wantArgs: []string{"mkdir", "-p", linuxSharedFoldersMountRoot},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount", "-t", "virtiofs", SharedFoldersVirtioFSTag, linuxSharedFoldersMountRoot},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
 			wantArgs: []string{"mkdir", "-p", "/mnt/work"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -437,7 +453,7 @@ func TestSharedFolderAddLiveAppliesAndMountsLinuxPerTag(t *testing.T) {
 		},
 		{
 			wantType: "agent-exec",
-			wantArgs: []string{"mount", "-t", "virtiofs", "-o", "cache=none,uid=1001,gid=1002", "work", "/mnt/work"},
+			wantArgs: []string{"mount", "--bind", linuxSharedFoldersMountRoot + "/work", "/mnt/work"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
 				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
@@ -896,6 +912,22 @@ func TestMountSharedFoldersInGuestLinuxUsesMountVirtioFS(t *testing.T) {
 		},
 		{
 			wantType: "agent-exec",
+			wantArgs: []string{"mkdir", "-p", linuxSharedFoldersMountRoot},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount", "-t", "virtiofs", SharedFoldersVirtioFSTag, linuxSharedFoldersMountRoot},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
 			wantArgs: []string{"mkdir", "-p", "/mnt/work"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -904,7 +936,7 @@ func TestMountSharedFoldersInGuestLinuxUsesMountVirtioFS(t *testing.T) {
 		},
 		{
 			wantType: "agent-exec",
-			wantArgs: []string{"mount", "-t", "virtiofs", "-o", "cache=none,uid=1001,gid=1002", "work", "/mnt/work"},
+			wantArgs: []string{"mount", "--bind", linuxSharedFoldersMountRoot + "/work", "/mnt/work"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
 				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
