@@ -1,8 +1,9 @@
 # cove-sandbox
 
-`cove-sandbox` is the first OpenAI Agents SDK adapter for cove. It lets an
-Agents SDK `ComputerTool` drive a local Apple-Silicon macOS VM through cove's
-control socket.
+`cove-sandbox` is the OpenAI Agents SDK adapter for cove. It lets an Agents SDK
+`ComputerTool` drive a local Apple-Silicon macOS VM through cove's control
+socket, and it also exposes a `SandboxRunConfig` helper for `SandboxAgent`
+workflows.
 
 This is a local adapter. It does not send VM state, screenshots, files, or
 commands to a hosted sandbox provider.
@@ -136,3 +137,6 @@ result = await Runner.run(agent, "Run sw_vers in the sandbox.", run_config=run_c
 `parent` forks a fresh VM with `cove fork`. Use `vm=` instead when you want to
 attach to an existing VM. The backend maps SDK `exec`, `read`, `write`, and
 workspace persistence calls onto the cove control socket and guest agent.
+
+For a copy-paste helper that returns the SDK `RunConfig` wrapper directly,
+import `sandbox_run_config` from `cove_sandbox`.

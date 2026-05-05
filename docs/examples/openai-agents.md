@@ -85,3 +85,6 @@ print(result.final_output)
 
 `parent` creates a fork with `cove fork <parent> <name>`. Use `vm="macos-eval"`
 to attach to an existing VM instead.
+
+If you want a copy-paste helper instead of constructing `RunConfig` directly,
+use `sandbox_run_config(...)` from `cove_sandbox`.
