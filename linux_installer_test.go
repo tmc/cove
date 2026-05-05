@@ -115,6 +115,64 @@ func TestGenerateUserDataDesktopWithAgent(t *testing.T) {
 	}
 }
 
+func TestLinuxAutoLoginLateCommand(t *testing.T) {
+	tests := []struct {
+		name   string
+		config LinuxProvisionConfig
+		want   []string
+		nowant []string
+	}{
+		{
+			name: "desktop",
+			config: LinuxProvisionConfig{
+				Username:  "me",
+				Variant:   LinuxVariantDesktop,
+				AutoLogin: true,
+			},
+			want: []string{
+				"mkdir -p /target/etc/gdm3",
+				"AutomaticLoginEnable=true",
+				"AutomaticLogin=me",
+				"> /target/etc/gdm3/custom.conf",
+			},
+		},
+		{
+			name: "server",
+			config: LinuxProvisionConfig{
+				Username:  "me",
+				Variant:   LinuxVariantServer,
+				AutoLogin: true,
+			},
+			nowant: []string{"AutomaticLoginEnable=true", "/target/etc/gdm3/custom.conf"},
+		},
+		{
+			name: "desktop disabled",
+			config: LinuxProvisionConfig{
+				Username:  "me",
+				Variant:   LinuxVariantDesktop,
+				AutoLogin: false,
+			},
+			nowant: []string{"AutomaticLoginEnable=true", "/target/etc/gdm3/custom.conf"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := linuxAutoLoginLateCommand(tt.config)
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("linuxAutoLoginLateCommand() missing %q\n%s", want, got)
+				}
+			}
+			for _, unwanted := range tt.nowant {
+				if strings.Contains(got, unwanted) {
+					t.Fatalf("linuxAutoLoginLateCommand() unexpectedly contains %q\n%s", unwanted, got)
+				}
+			}
+		})
+	}
+}
+
 // TestGenerateUserDataDeclaresNoInteractiveSections verifies the autoinstall
 // YAML carries an explicit `interactive-sections: []`. Without this,
 // Subiquity defaults to inferring interactive sections from missing config
