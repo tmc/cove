@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	vz "github.com/tmc/apple/virtualization"
 )
 
 func TestLoadInstalledLinuxBootArtifacts(t *testing.T) {
@@ -56,10 +56,7 @@ func TestCloneOptionalFilesLinuxIncludesBootArtifacts(t *testing.T) {
 }
 
 func TestLinuxVirtioFSDeviceConfigsAlwaysIncludesSharedFoldersDevice(t *testing.T) {
-	got, err := linuxVirtioFSDeviceConfigs(nil, nil)
-	if err != nil {
-		t.Fatalf("linuxVirtioFSDeviceConfigs() error = %v", err)
-	}
+	got := linuxVirtioFSDeviceConfigs(nil, nil)
 	if len(got) != 1 {
 		t.Fatalf("len(linuxVirtioFSDeviceConfigs()) = %d, want 1", len(got))
 	}
@@ -72,14 +69,8 @@ func TestLinuxVirtioFSDeviceConfigsAlwaysIncludesSharedFoldersDevice(t *testing.
 }
 
 func TestLinuxVirtioFSDeviceConfigsPreservesVolumes(t *testing.T) {
-	hostDir := t.TempDir()
-	got, err := linuxVirtioFSDeviceConfigs([]vmconfig.VolumeMount{{
-		HostPath: hostDir,
-		Tag:      "work",
-	}}, nil)
-	if err != nil {
-		t.Fatalf("linuxVirtioFSDeviceConfigs() error = %v", err)
-	}
+	volumeDevice := vz.NewVirtioFileSystemDeviceConfigurationWithTag("work")
+	got := linuxVirtioFSDeviceConfigs([]vz.VZVirtioFileSystemDeviceConfiguration{volumeDevice}, nil)
 	if len(got) != 2 {
 		t.Fatalf("len(linuxVirtioFSDeviceConfigs()) = %d, want 2", len(got))
 	}
