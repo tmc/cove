@@ -21,6 +21,9 @@ type AgentConfig struct {
 	Verified   bool      `json:"verified,omitempty"`
 	VerifiedAt time.Time `json:"verifiedAt,omitempty"`
 	Source     string    `json:"source,omitempty"`
+	Version    string    `json:"version,omitempty"`
+	Commit     string    `json:"commit,omitempty"`
+	Features   []string  `json:"features,omitempty"`
 }
 
 // Config holds persistent configuration for a VM.

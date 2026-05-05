@@ -3,11 +3,12 @@
 **Status**: Slice 1 shipped (`8a106dc`, 2026-05-02; 1027 LOC, 8 tests
 green). Slice 2 shipped (`02acc3d`, `cf6a506`, `0349570`, 2026-05-04)
 and is now contract-frozen: `cove image push|pull` use `oras-go` with
-Docker credential reuse, the tarball stdin/stdout path remains available
-for operator transport, and public-registry push still requires explicit
-operator opt-in. Slice 3 (drop public-registry refusal + cosign) is
-**deferred indefinitely** per user 2026-05-02 — cove repo stays
-private; revisit only when the user explicitly requests a public flip.
+Docker credential reuse, `cove image verify` is the freshness/provenance
+gate, the tarball stdin/stdout path remains available for operator
+transport, and public-registry push still requires explicit operator
+opt-in. Slice 3 (drop public-registry refusal + cosign) is **deferred
+indefinitely** per user 2026-05-02 — cove repo stays private; revisit
+only when the user explicitly requests a public flip.
 **Source**: notebook scope-B verdict; the user prompt "i think cirrus
 publishes images to use as github runners, can we do the same?". Scope A
 (immediate vzscript-based runner provisioning) shipped at
@@ -51,6 +52,8 @@ cove run -fork-from cove-runner-macos:14.5 -ephemeral -vzscripts github-runner
   registries while the cove repo is private (see Security).
 - `cove image pull` materializes a local image-store entry from a
   registry.
+- `cove image verify` checks a local image for freshness, provenance,
+  and layout before a fork-from or promotion step.
 - `cove run -fork-from <image-ref>` resolves the ref to a local image,
   realizes a scratch VM bundle, and reuses the existing fork-from
   codepath. `-ephemeral` (new flag) discards the child after first stop.
@@ -163,11 +166,14 @@ This section is load-bearing. See
   list, materialize-with-fresh-identity, fork-from-image, delete-while-fork-live.
 - **Slice 2 (v0.4)**: **SHIPPED `02acc3d`, `cf6a506`, `0349570`
   2026-05-04**. `cove image push|pull` use OCI image manifests through
-  `oras-go`. The config blob carries `manifest.json`; layers carry
-  gzip-compressed `disk.img` plus `aux.img`, `hw.model`, and
-  `machine.id`. Docker auth is reused from `~/.docker/config.json`.
-  Public-registry refusal still applies to push while cove is private,
-  with `COVE_ALLOW_PUBLIC_PUSH=1` as an explicit operator escape hatch.
+  `oras-go`. `cove image verify` reports PASS/WARN/FAIL and can be used
+  by `cove run -fork-from` to refuse stale images unless
+  `COVE_ALLOW_STALE_IMAGE=1` is set. The config blob carries
+  `manifest.json`; layers carry gzip-compressed `disk.img` plus
+  `aux.img`, `hw.model`, and `machine.id`. Docker auth is reused from
+  `~/.docker/config.json`. Public-registry refusal still applies to
+  push while cove is private, with `COVE_ALLOW_PUBLIC_PUSH=1` as an
+  explicit operator escape hatch.
 - **Slice 3 (DEFERRED INDEFINITELY, ~150 LOC, public-flip dependent)**:
   drop the public-registry refusal once the user confirms the repo is
   public. Add cosign sign/verify as a default. Document the promotion

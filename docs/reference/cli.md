@@ -486,12 +486,13 @@ cove clone <source> <destination> [flags]
 
 ## image
 
-Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stopped VM bundle (manifest + clonefile-backed disk + identity files) so `cove run -fork-from <image-ref> -ephemeral` can spawn disposable VMs from a saved baseline. Local-only in this release; push/pull to a public registry are future slices (see [design 024](../designs/024-cove-runner-images.md)). `push`/`load` move images as plain tarballs; no HTTP, no OCI registry.
+Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stopped VM bundle (manifest + clonefile-backed disk + identity files) so `cove run -fork-from <image-ref> -ephemeral` can spawn disposable VMs from a saved baseline. Slice 2 adds OCI registry push/pull with `oras-go`; tarball `push`/`load` remain available as operator transport. See [design 024](../designs/024-cove-runner-images.md).
 
 ```
 cove image build -from <vm> -tag <name[:tag]>
 cove image list
 cove image inspect <name[:tag]> [-json]
+cove image verify <name[:tag]> [-strict] [-json]
 cove image push <name[:tag]> <file> [-gzip]
 cove image load <file> [-tag <name[:tag]>] [-force]
 cove image gc [-dry-run] [-yes] [-older-than <duration>]
@@ -503,6 +504,7 @@ cove image rm <name[:tag]>
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy). vmstate is excluded; cold-boot only. |
 | `list` | Show stored images with size + creation time + source VM. |
 | `inspect <ref> [-json]` | Print manifest (size, sha256, base image, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. |
+| `verify <ref> [-strict] [-json]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
 | `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
 | `gc [-dry-run] [-yes] [-older-than D]` | Sweep images with zero live forks. `-dry-run` plans only; `-yes` skips the confirmation prompt; `-older-than` filters by manifest `createdAt`. Re-checks fork count immediately before deletion to close the planning -> remove TOCTOU window. |
@@ -521,6 +523,31 @@ cove image push macos-runner:14.5 - | ssh other-mac cove image load -
 ```
 
 ---
+
+## agent-sandbox
+
+Run a computer-use provider loop in a fresh fork from a local image.
+
+```
+cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> --task <prompt> [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--provider <name>` | | Provider loop: `openai`, `anthropic`, `gemini`, or `vertex` |
+| `--image <ref>` | | Local image ref to fork for the run |
+| `--task <prompt>` | | Provider task prompt |
+| `--screenshot-dir <dir>` | `~/.vz/runs/<run-id>/screenshots` | Directory for provider screenshots |
+| `--max-steps <n>` | 25 | Maximum provider tool-call rounds |
+| `--vm <name>` | generated | Ephemeral fork name |
+
+The command writes `~/.vz/runs/<run-id>/replay/` with numbered screenshots,
+OCR text, control events, final answer, and a `metrics.jsonl` symlink.
+
+```bash
+cove agent-sandbox run --provider anthropic --image macos-agent:latest --task "Describe the desktop."
+cove agent-sandbox run --provider gemini --image macos-agent:latest --task "Open Safari and read the title."
+```
 
 ---
 
@@ -558,6 +585,8 @@ cove action doctor --json
 cove action prepare-image macos-runner:14.5
 cove action prepare-image ubuntu-runner --json
 ```
+
+---
 
 ## runs
 

@@ -48,16 +48,24 @@ func ImagesBaseDir() string {
 // Field names use lowerCamel for forward-compat with the OCI annotation
 // shape Slice 2 will adopt.
 type ImageManifest struct {
-	SchemaVersion int              `json:"schemaVersion"`
-	Name          string           `json:"name"`
-	Tag           string           `json:"tag"`
-	OSType        string           `json:"osType,omitempty"`
-	SourceVM      string           `json:"sourceVM,omitempty"`
-	BaseImage     string           `json:"baseImage,omitempty"`
-	DiskSHA256    string           `json:"diskSHA256"`
-	DiskSize      int64            `json:"diskSize"`
-	CreatedAt     time.Time        `json:"createdAt"`
-	SourceConfig  *vmconfig.Config `json:"sourceConfig,omitempty"`
+	SchemaVersion  int              `json:"schemaVersion"`
+	Name           string           `json:"name"`
+	Tag            string           `json:"tag"`
+	OSType         string           `json:"osType,omitempty"`
+	SourceVM       string           `json:"sourceVM,omitempty"`
+	BaseImage      string           `json:"baseImage,omitempty"`
+	CoveCommit     string           `json:"cove_commit,omitempty"`
+	AgentCommit    string           `json:"agent_commit,omitempty"`
+	AgentFeatures  []string         `json:"agent_features,omitempty"`
+	BuildRecipe    string           `json:"build_recipe,omitempty"`
+	SourceImage    string           `json:"source_image,omitempty"`
+	BuiltAt        time.Time        `json:"built_at,omitempty"`
+	DefaultNetwork string           `json:"default_network,omitempty"`
+	DefaultSandbox string           `json:"default_sandbox,omitempty"`
+	DiskSHA256     string           `json:"diskSHA256"`
+	DiskSize       int64            `json:"diskSize"`
+	CreatedAt      time.Time        `json:"createdAt"`
+	SourceConfig   *vmconfig.Config `json:"sourceConfig,omitempty"`
 }
 
 // ImageRef is a parsed name[:tag] image reference.
@@ -167,9 +175,10 @@ func LoadImageManifest(ref ImageRef) (*ImageManifest, error) {
 
 // BuildImageOptions configures cove image build.
 type BuildImageOptions struct {
-	SourceVM string
-	Ref      ImageRef
-	Now      func() time.Time
+	SourceVM    string
+	Ref         ImageRef
+	BuildRecipe string
+	Now         func() time.Time
 }
 
 // BuildImage snapshots a stopped VM into the local image store. The
@@ -220,26 +229,56 @@ func BuildImage(opts BuildImageOptions) (*ImageManifest, error) {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
+	nowTime := now().UTC()
 	hash, size, err := sha256AndSize(vmPrimaryDiskPath(imgDir))
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("image build: hash disk: %w", err)
 	}
 	srcCfg, _ := vmconfig.Load(srcDir)
-	manifest := &ImageManifest{
-		SchemaVersion: 1,
-		Name:          opts.Ref.Name,
-		Tag:           opts.Ref.Tag,
-		OSType:        osType,
-		SourceVM:      opts.SourceVM,
-		BaseImage:     "",
-		DiskSHA256:    hash,
-		DiskSize:      size,
-		CreatedAt:     now(),
-		SourceConfig:  srcCfg,
+	sourceImage := ""
+	agentCommit := ""
+	agentFeatures := []string(nil)
+	if srcCfg != nil {
+		sourceImage = strings.TrimSpace(srcCfg.ParentImage)
+		if srcCfg.Agent != nil {
+			agentCommit = strings.TrimSpace(srcCfg.Agent.Commit)
+			if agentCommit == "" {
+				agentCommit = strings.TrimSpace(srcCfg.Agent.Version)
+			}
+			agentFeatures = normalizeAgentFeatures(srcCfg.Agent.Features)
+		}
 	}
-	if srcCfg != nil && srcCfg.ParentImage != "" {
-		manifest.BaseImage = srcCfg.ParentImage
+	if agentCommit == "" {
+		agentCommit = hostVersion()
+	}
+	buildRecipe := strings.TrimSpace(opts.BuildRecipe)
+	if buildRecipe == "" {
+		buildRecipe = fmt.Sprintf("cove image build -from %s -tag %s", opts.SourceVM, opts.Ref)
+	}
+	coveCommit := resolvedVersion().Commit
+	if coveCommit == "" || coveCommit == "unknown" {
+		coveCommit = resolvedVersion().Version
+	}
+	manifest := &ImageManifest{
+		SchemaVersion:  1,
+		Name:           opts.Ref.Name,
+		Tag:            opts.Ref.Tag,
+		OSType:         osType,
+		SourceVM:       opts.SourceVM,
+		BaseImage:      sourceImage,
+		CoveCommit:     coveCommit,
+		AgentCommit:    agentCommit,
+		AgentFeatures:  agentFeatures,
+		BuildRecipe:    buildRecipe,
+		SourceImage:    sourceImage,
+		BuiltAt:        nowTime,
+		DefaultNetwork: strings.TrimSpace(networkMode),
+		DefaultSandbox: effectiveSandboxMode(),
+		DiskSHA256:     hash,
+		DiskSize:       size,
+		CreatedAt:      nowTime,
+		SourceConfig:   srcCfg,
 	}
 	if err := writeImageManifest(imgDir, manifest); err != nil {
 		cleanup()
@@ -297,6 +336,56 @@ func writeImageManifest(dir string, m *ImageManifest) error {
 		return fmt.Errorf("rename manifest: %w", err)
 	}
 	return nil
+}
+
+func legacyImageManifest(m *ImageManifest) bool {
+	if m == nil {
+		return true
+	}
+	return strings.TrimSpace(m.CoveCommit) == "" &&
+		strings.TrimSpace(m.AgentCommit) == "" &&
+		len(m.AgentFeatures) == 0 &&
+		strings.TrimSpace(m.BuildRecipe) == "" &&
+		strings.TrimSpace(m.SourceImage) == "" &&
+		m.BuiltAt.IsZero() &&
+		strings.TrimSpace(m.DefaultNetwork) == "" &&
+		strings.TrimSpace(m.DefaultSandbox) == ""
+}
+
+func normalizeAgentFeatures(features []string) []string {
+	if len(features) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(features))
+	out := make([]string, 0, len(features))
+	for _, feature := range features {
+		feature = strings.TrimSpace(feature)
+		if feature == "" {
+			continue
+		}
+		switch feature {
+		case "exec_attach":
+			feature = "execattach.v1"
+		case "exec_attach_v3":
+			feature = "execattach.v3"
+		case "shell":
+			feature = "shell.v1"
+		}
+		if _, ok := seen[feature]; ok {
+			continue
+		}
+		seen[feature] = struct{}{}
+		out = append(out, feature)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func effectiveSandboxMode() string {
+	if mode := strings.TrimSpace(sandboxLevel); mode != "" {
+		return mode
+	}
+	return "default"
 }
 
 func sha256AndSize(path string) (string, int64, error) {

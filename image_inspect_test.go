@@ -49,6 +49,15 @@ func TestInspectImage_Manifest(t *testing.T) {
 	if len(out.MachineModelID) != 64 {
 		t.Errorf("MachineModelID len = %d, want 64", len(out.MachineModelID))
 	}
+	if out.LegacyManifest {
+		t.Fatal("LegacyManifest = true, want false for fresh image")
+	}
+	if out.CoveCommit == "" || out.AgentCommit == "" {
+		t.Fatalf("provenance incomplete: cove=%q agent=%q", out.CoveCommit, out.AgentCommit)
+	}
+	if !strings.Contains(out.BuildRecipe, "cove image build") {
+		t.Fatalf("BuildRecipe = %q, want build command", out.BuildRecipe)
+	}
 	if out.ForkCount != 0 || len(out.Forks) != 0 {
 		t.Errorf("ForkCount/Forks = %d/%v, want 0/[]", out.ForkCount, out.Forks)
 	}
@@ -123,6 +132,9 @@ func TestRunImageInspect_JSONFlag(t *testing.T) {
 	}
 	if roundTrip.DiskSHA256 != out.DiskSHA256 {
 		t.Errorf("round-trip DiskSHA256 mismatch")
+	}
+	if roundTrip.CoveCommit == "" || roundTrip.AgentCommit == "" {
+		t.Fatalf("round-trip provenance incomplete: %#v", roundTrip)
 	}
 	if roundTrip.Forks == nil {
 		t.Error("round-trip Forks is nil; want empty slice (json `forks` always present)")

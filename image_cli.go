@@ -24,6 +24,8 @@ func handleImageCommand(args []string) error {
 		return runImageList(rest)
 	case "inspect":
 		return runImageInspect(rest)
+	case "verify":
+		return runImageVerify(rest)
 	case "gc":
 		return runImageGC(rest)
 	case "rm", "remove", "delete":
@@ -47,6 +49,8 @@ Subcommands:
   build -from <vm> -tag <name[:tag]>   Snapshot a stopped VM into the image store
   list                                 List local images
   inspect <name[:tag]> [-json]         Show manifest details and downstream forks
+  verify <name[:tag]> [-strict] [-json]
+                                       Check freshness, provenance, and layout
   gc   [-dry-run] [-yes] [-older-than D]  Sweep images with zero live forks
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
   push <name[:tag]> <file|-|registry/ref:tag> [-gzip]
@@ -95,7 +99,11 @@ func runImageBuild(args []string) (err error) {
 		emitMetricEvent("run_complete", started, status, map[string]any{"command": "image build"})
 	}(time.Now())
 	buildStarted := time.Now()
-	manifest, err := BuildImage(BuildImageOptions{SourceVM: *from, Ref: ref})
+	manifest, err := BuildImage(BuildImageOptions{
+		SourceVM:    *from,
+		Ref:         ref,
+		BuildRecipe: fmt.Sprintf("cove image build -from %s -tag %s", *from, *tag),
+	})
 	if err != nil {
 		emitMetricEvent("vm_create", buildStarted, err.Error(), map[string]any{"source_vm": *from})
 		return err

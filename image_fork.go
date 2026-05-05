@@ -46,9 +46,20 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if !ImageExists(ref) {
 		return fmt.Errorf("cove run -fork-from <image>: image %s not found", ref)
 	}
-	manifest, err := LoadImageManifest(ref)
-	if err != nil {
-		return fmt.Errorf("cove run -fork-from <image>: %w", err)
+
+	verification := VerifyImage(ref, imageVerifyOptions{})
+	if verification.Verdict == imageVerifyFail && os.Getenv("COVE_ALLOW_STALE_IMAGE") != "1" {
+		return fmt.Errorf("cove run -fork-from <image>: image %s failed verify; run cove image verify %s for details", ref, ref)
+	}
+	if verification.Verdict == imageVerifyWarn {
+		fmt.Fprintf(os.Stderr, "warning: image %s verification returned WARN; continuing\n", ref)
+	}
+	manifest := verification.Manifest
+	if manifest == nil {
+		manifest, err = LoadImageManifest(ref)
+		if err != nil {
+			return fmt.Errorf("cove run -fork-from <image>: %w", err)
+		}
 	}
 	cfg = runConfigForImageManifest(cfg, manifest)
 
