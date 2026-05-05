@@ -170,13 +170,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 		setMemoryBalloonDevices(config, balloonConfig)
 	}
 
-	// Virtio socket device (vsock for host-guest communication)
-	if sandboxAllowsVsock() {
-		vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
-		if vsockConfig.ID != 0 {
-			setSocketDevices(config, vsockConfig)
-		}
-	}
+	addVirtioSocketDevice(config)
 
 	// Serial console
 	serialConfig := createSerialConsoleConfig()
@@ -766,4 +760,14 @@ func setSocketDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirti
 	config.SetSocketDevices([]vz.VZSocketDeviceConfiguration{
 		vz.VZSocketDeviceConfigurationFromID(device.ID),
 	})
+}
+
+func addVirtioSocketDevice(config vz.VZVirtualMachineConfiguration) {
+	if !sandboxAllowsVsock() {
+		return
+	}
+	vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
+	if vsockConfig.ID != 0 {
+		setSocketDevices(config, vsockConfig)
+	}
 }
