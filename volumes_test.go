@@ -128,6 +128,37 @@ func TestSetupRosettaInGuestSurvivesAgentLoss(t *testing.T) {
 	})
 }
 
+func TestRosettaRegisterFailureIsBenign(t *testing.T) {
+	tests := []struct {
+		name   string
+		stderr string
+		want   bool
+	}{
+		{
+			name:   "register treated as elf path",
+			stderr: "rosetta error: failed to open elf at --register\nTrace/breakpoint trap (core dumped)",
+			want:   true,
+		},
+		{
+			name:   "mount failure",
+			stderr: "mount: /run/rosetta: special device rosetta does not exist",
+			want:   false,
+		},
+		{
+			name:   "empty",
+			stderr: "",
+			want:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := rosettaRegisterFailureIsBenign(tt.stderr); got != tt.want {
+				t.Fatalf("rosettaRegisterFailureIsBenign(%q) = %v, want %v", tt.stderr, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestVirtioFSMountArgsMacOS(t *testing.T) {
 	m := vmconfig.VolumeMount{
 		Tag:       "work",
