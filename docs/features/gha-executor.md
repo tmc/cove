@@ -74,6 +74,33 @@ Example runner labels:
 runs-on: [self-hosted, macOS, ARM64, cove]
 ```
 
+Preflight the host and runner image before wiring a workflow:
+
+```bash
+cove action doctor
+cove action prepare-image ubuntu-runner
+```
+
+`cove action doctor` checks the host-side action prerequisites: `cove` is on
+`PATH`, the binary is signed with the virtualization entitlement, the `~/.vz`
+volume has enough free space, the network helper can list host interfaces, and
+the run artifact root is writable. It is read-only.
+
+`cove action prepare-image <ref>` checks that the local image ref is suitable for
+action jobs before a workflow uses it. It verifies the image exists, can be
+forked, has a current guest agent, can run a shell command through the agent, has
+runner dependencies present, has enough disk headroom for a job fork, and has no
+stale forks that would make operator intent ambiguous.
+
+Both commands accept `--json` for automation. Human output is for operators;
+JSON output is for CI gates. Exit codes are:
+
+| Code | Meaning |
+|---:|---|
+| `0` | All required checks passed. |
+| `1` | One or more preflight checks failed. The output lists the failing checks and hints. |
+| `2` | Warning-only result, such as low but still usable free disk space. |
+
 ## Usage
 
 Internal workflow example:
