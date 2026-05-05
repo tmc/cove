@@ -1,0 +1,112 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestParseAgentSandboxRunArgs(t *testing.T) {
+	opts, err := parseAgentSandboxRunArgs([]string{
+		"--provider", "anthropic",
+		"--image", "agentkit/macos:latest",
+		"--task", "describe the desktop",
+	})
+	if err != nil {
+		t.Fatalf("parseAgentSandboxRunArgs: %v", err)
+	}
+	if opts.provider != "anthropic" {
+		t.Fatalf("provider = %q", opts.provider)
+	}
+	if opts.image != "agentkit/macos:latest" {
+		t.Fatalf("image = %q", opts.image)
+	}
+	if opts.task != "describe the desktop" {
+		t.Fatalf("task = %q", opts.task)
+	}
+	if opts.maxSteps != 25 {
+		t.Fatalf("maxSteps = %d, want 25", opts.maxSteps)
+	}
+}
+
+func TestParseAgentSandboxRunArgsRejectsBadInput(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "provider", args: []string{"--image", "x:1", "--task", "t"}, want: "-provider is required"},
+		{name: "image", args: []string{"--provider", "anthropic", "--task", "t"}, want: "-image is required"},
+		{name: "task", args: []string{"--provider", "anthropic", "--image", "x:1"}, want: "-task is required"},
+		{name: "steps", args: []string{"--provider", "anthropic", "--image", "x:1", "--task", "t", "--max-steps", "0"}, want: "must be positive"},
+		{name: "provider value", args: []string{"--provider", "bogus", "--image", "x:1", "--task", "t"}, want: "unsupported provider"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseAgentSandboxRunArgs(tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestWriteReplayArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "screens")
+	replay := filepath.Join(dir, "replay")
+	dst := filepath.Join(replay, "screenshots")
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x00IEND\xaeB`\x82")
+	if err := os.WriteFile(filepath.Join(src, "step-001.png"), png, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeReplayArtifacts(replay, dst, src, "done"); err != nil {
+		t.Fatalf("writeReplayArtifacts: %v", err)
+	}
+	for _, rel := range []string{
+		"final-answer.md",
+		"ocr-text.txt",
+		filepath.Join("screenshots", "step-001.png"),
+	} {
+		if _, err := os.Stat(filepath.Join(replay, rel)); err != nil {
+			t.Fatalf("%s missing: %v", rel, err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(replay, "final-answer.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "done" {
+		t.Fatalf("final answer = %q", data)
+	}
+}
+
+func TestPrepareAgentSandboxReplay(t *testing.T) {
+	dir := t.TempDir()
+	replay := filepath.Join(dir, "replay")
+	screens := filepath.Join(replay, "screenshots")
+	events := filepath.Join(replay, "control-events.jsonl")
+	if err := prepareAgentSandboxReplay(replay, screens, events); err != nil {
+		t.Fatalf("prepareAgentSandboxReplay: %v", err)
+	}
+	if _, err := os.Stat(screens); err != nil {
+		t.Fatalf("screenshots dir missing: %v", err)
+	}
+	info, err := os.Stat(events)
+	if err != nil {
+		t.Fatalf("control events missing: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("control events size = %d, want 0", info.Size())
+	}
+	target, err := os.Readlink(filepath.Join(replay, "metrics.jsonl"))
+	if err != nil {
+		t.Fatalf("metrics link missing: %v", err)
+	}
+	if target != filepath.Join("..", "metrics.jsonl") {
+		t.Fatalf("metrics link = %q", target)
+	}
+}

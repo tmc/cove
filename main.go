@@ -611,6 +611,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "agent-sandbox":
+			if err := handleAgentSandboxCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
@@ -916,6 +922,7 @@ Runtime Control:
   ctl disk list   Inspect runtime storage devices
   ctl usb list    Inspect runtime USB controllers and devices
   shell           Open a Docker-shaped exec session in a running VM (cove shell <vm>)
+  agent-sandbox   Run a computer-use provider loop in a fresh VM fork
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
   run -headless -vnc :5901            Expose a private VNC console
   run -gdb :1234                      Attach a private GDB debug stub
