@@ -60,7 +60,7 @@ func TestCtlNetworkInfoBackfillsLinuxIPAndMAC(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: guestIPProbeArgs(true),
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -71,7 +71,7 @@ func TestCtlNetworkInfoBackfillsLinuxIPAndMAC(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: linuxGuestMACProbeArgs(),
 			resp: &controlpb.ControlResponse{
 				Success: true,

@@ -507,8 +507,16 @@ func (c *ControlClient) AgentExecTyped(args []string, env map[string]string, wor
 
 // AgentExecTypedTimeout runs a command in the guest and returns typed result.
 func (c *ControlClient) AgentExecTypedTimeout(args []string, env map[string]string, workDir string, timeout time.Duration) (*controlpb.AgentExecResponse, error) {
+	return c.agentExecTypedTimeout("agent-exec-auto", args, env, workDir, timeout)
+}
+
+func (c *ControlClient) AgentDaemonExecTypedTimeout(args []string, env map[string]string, workDir string, timeout time.Duration) (*controlpb.AgentExecResponse, error) {
+	return c.agentExecTypedTimeout("agent-exec", args, env, workDir, timeout)
+}
+
+func (c *ControlClient) agentExecTypedTimeout(reqType string, args []string, env map[string]string, workDir string, timeout time.Duration) (*controlpb.AgentExecResponse, error) {
 	req := &controlpb.ControlRequest{
-		Type: "agent-exec",
+		Type: reqType,
 		Command: &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
 				Args:       args,

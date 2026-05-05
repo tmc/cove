@@ -540,7 +540,7 @@ func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeo
 		return false, fmt.Errorf("guest agent unavailable: %w", err)
 	}
 
-	if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
+	if _, err := client.AgentDaemonExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
 		return false, fmt.Errorf("create mount point %q: %w", mountPoint, err)
 	}
 
@@ -572,16 +572,16 @@ func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeo
 		}
 
 		// Refresh mounted view to pick up newly hotplugged or removed tags.
-		if _, err := client.AgentExecTypedTimeout([]string{"umount", mountPoint}, nil, "", timeouts.unmount); err != nil && !strings.Contains(strings.ToLower(err.Error()), "not currently mounted") {
+		if _, err := client.AgentDaemonExecTypedTimeout([]string{"umount", mountPoint}, nil, "", timeouts.unmount); err != nil && !strings.Contains(strings.ToLower(err.Error()), "not currently mounted") {
 			return false, fmt.Errorf("remount shared folders: unmount %q: %w", mountPoint, err)
 		}
-		if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
+		if _, err := client.AgentDaemonExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
 			return false, fmt.Errorf("recreate mount point %q: %w", mountPoint, err)
 		}
 	}
 
 	mountArgs := sharedFoldersVirtioFSMountArgs(vmDirectory, mountPoint)
-	res, err := client.AgentExecTypedTimeout(mountArgs, nil, "", timeouts.mount)
+	res, err := client.AgentDaemonExecTypedTimeout(mountArgs, nil, "", timeouts.mount)
 	if err != nil {
 		return false, fmt.Errorf("mount shared folders: %w", err)
 	}
@@ -614,10 +614,10 @@ func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts share
 	mountedAny := false
 	rootMounted := strings.Contains(mountRes.Stdout, " on "+linuxSharedFoldersMountRoot+" ")
 	if !rootMounted {
-		if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", linuxSharedFoldersMountRoot}, nil, "", timeouts.mkdir); err != nil {
+		if _, err := client.AgentDaemonExecTypedTimeout([]string{"mkdir", "-p", linuxSharedFoldersMountRoot}, nil, "", timeouts.mkdir); err != nil {
 			return false, fmt.Errorf("create mount point %q: %w", linuxSharedFoldersMountRoot, err)
 		}
-		res, err := client.AgentExecTypedTimeout([]string{"mount", "-t", "virtiofs", SharedFoldersVirtioFSTag, linuxSharedFoldersMountRoot}, nil, "", timeouts.mount)
+		res, err := client.AgentDaemonExecTypedTimeout([]string{"mount", "-t", "virtiofs", SharedFoldersVirtioFSTag, linuxSharedFoldersMountRoot}, nil, "", timeouts.mount)
 		if err != nil {
 			return false, fmt.Errorf("mount shared folders: %w", err)
 		}
@@ -636,14 +636,14 @@ func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts share
 
 	for _, f := range LoadSharedFolders(vmDirectory) {
 		mountPoint := defaultSharedFolderMountPoint(vmDirectory, f.Tag)
-		if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
+		if _, err := client.AgentDaemonExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
 			return false, fmt.Errorf("create mount point %q: %w", mountPoint, err)
 		}
 		if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
 			continue
 		}
 		source := filepath.Join(linuxSharedFoldersMountRoot, f.Tag)
-		res, err := client.AgentExecTypedTimeout([]string{"mount", "--bind", source, mountPoint}, nil, "", timeouts.mount)
+		res, err := client.AgentDaemonExecTypedTimeout([]string{"mount", "--bind", source, mountPoint}, nil, "", timeouts.mount)
 		if err != nil {
 			return false, fmt.Errorf("mount shared folder %s: %w", f.Tag, err)
 		}
