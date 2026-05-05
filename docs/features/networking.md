@@ -21,10 +21,52 @@ Advanced modes also exist:
 | `vmnet` | Uses the vmnet shared networking path when available on the host OS. |
 | `filehandle` | Uses `VZFileHandleNetworkDeviceAttachment` for raw frame capture. Pair with `-pcap <path>`. |
 
+## Named Policies
+
+Named policies are accepted anywhere a network mode is accepted. They describe
+the intended egress posture and are recorded in the run audit log.
+
+| Policy | Effective mode | Intended egress |
+| --- | --- | --- |
+| `offline` | `none` | No network device. |
+| `packages` | `nat` | Package registries only: Debian, Ubuntu, PyPI, npm, GitHub Container Registry, Docker Hub, and Fedora registry hosts. |
+| `host-services` | `nat` | Package registries plus RFC1918 host/LAN ranges: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`. |
+| `lan` | `nat` | RFC1918 LAN ranges only; no public internet by policy. |
+| `open` | `nat` | Full egress. Equivalent to `nat`. |
+
+Examples:
+
+```bash
+cove run --net offline
+cove run --net packages
+cove run --net host-services
+cove run --net lan
+cove run --net open
+```
+
+For policies other than `open`, Cove writes `network.log` under the run
+artifact directory, for example `~/.vz/runs/<run-id>/network.log`.
+Print it with:
+
+```bash
+cove network audit <run-id>
+```
+
+Current enforcement limits:
+
+- `offline` is enforced by attaching no virtual network device.
+- `packages`, `host-services`, and `lan` currently use the shipped
+  Virtualization.framework NAT path. That path does not expose host-side
+  per-connection allow/deny hooks, so `network.log` records the selected policy,
+  allowlist, and limitation rather than a complete connection decision stream.
+- `filehandle` mode exposes raw frames and can write a PCAP, but it is an
+  advanced attachment mode rather than the default NAT path.
+
 Examples:
 
 ```bash
 cove run --net nat
+cove run --net packages
 cove run --net host-only
 cove run --net bridged:en0
 cove run --net none
