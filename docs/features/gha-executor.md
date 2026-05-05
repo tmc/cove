@@ -49,6 +49,8 @@ Outputs:
 | `vm-name` | Ephemeral fork name used by the run. |
 | `exit-code` | Guest command exit code. |
 | `log-path` | Host path to the cove run log root. |
+| `metrics-path` | Host path to the action run `metrics.jsonl`, when discovered. |
+| `artifact-path` | Host path to the run artifact directory, when metrics are discovered. |
 
 ## Runner Setup
 
@@ -170,6 +172,15 @@ Run logs are written to cove's host-side run directory. The workflow is
 responsible for uploading them with `actions/upload-artifact` if they should be
 retained by GitHub.
 
+Each `cove-action` invocation also writes cove run metrics to
+`~/.vz/runs/<run-id>/metrics.jsonl`. The stream uses the schema documented in
+[Run Metrics](metrics.md), with one JSON object per line. In addition to the
+normal cove run events, the action wrapper records `action_start` and
+`action_complete` events around the guest job; `action_complete.extra.exit_code`
+records the guest exit code. The wrapper also records `command_complete` after
+the guest command returns so operators can separate wrapper time from VM boot,
+readiness, command execution, and teardown.
+
 Example:
 
 ```yaml
@@ -184,6 +195,12 @@ Example:
         with:
           name: cove-run-logs
           path: ${{ steps.cove.outputs.log-path }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cove-run-metrics
+          path: ~/.vz/runs/**/metrics.jsonl
 ```
 
 ## Publication Status
