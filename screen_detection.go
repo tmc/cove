@@ -1,4 +1,4 @@
-// screen_detection.go - Detect current macOS UI state from screenshots
+// screen_detection.go - Detect current guest UI state from screenshots
 package main
 
 import (
@@ -17,6 +17,10 @@ const (
 	ScreenStateLoginScreen                // Login screen
 	ScreenStateDesktop                    // Desktop with dock
 	ScreenStateRecoveryMode               // Recovery mode
+	ScreenStateGDMLogin                   // Linux GDM login screen
+	ScreenStateGNOMEDesktop               // Linux GNOME desktop
+	ScreenStateGNOMEWelcome               // Linux GNOME Initial Setup welcome
+	ScreenStateGRUBMenu                   // Linux GRUB boot menu
 )
 
 func (s ScreenState) String() string {
@@ -33,6 +37,14 @@ func (s ScreenState) String() string {
 		return "desktop"
 	case ScreenStateRecoveryMode:
 		return "recovery_mode"
+	case ScreenStateGDMLogin:
+		return "gdm_login"
+	case ScreenStateGNOMEDesktop:
+		return "gnome_desktop"
+	case ScreenStateGNOMEWelcome:
+		return "gnome_welcome"
+	case ScreenStateGRUBMenu:
+		return "grub_menu"
 	default:
 		return "unknown"
 	}

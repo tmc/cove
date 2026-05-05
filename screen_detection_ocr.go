@@ -118,9 +118,76 @@ func containsAny(s string, markers []string) bool {
 	return false
 }
 
+func containsAll(s string, markers []string) bool {
+	for _, marker := range markers {
+		if !strings.Contains(s, marker) {
+			return false
+		}
+	}
+	return true
+}
+
+var linuxOCRScreenStates = []struct {
+	state   ScreenState
+	page    string
+	markers [][]string
+}{
+	{
+		state: ScreenStateGRUBMenu,
+		page:  "grub_menu",
+		markers: [][]string{
+			{"gnu grub"},
+			{"advanced options for ubuntu"},
+			{"use the ↑ and ↓ keys"},
+			{"use the up and down keys"},
+		},
+	},
+	{
+		state: ScreenStateGNOMEWelcome,
+		page:  "gnome_welcome",
+		markers: [][]string{
+			{"welcome to ubuntu"},
+			{"ready to go", "start using ubuntu"},
+			{"online accounts", "privacy", "ubuntu"},
+		},
+	},
+	{
+		state: ScreenStateGDMLogin,
+		page:  "gdm_login",
+		markers: [][]string{
+			{"not listed?"},
+			{"ubuntu", "sign in"},
+			{"ubuntu", "password", "sign in"},
+		},
+	},
+	{
+		state: ScreenStateGNOMEDesktop,
+		page:  "gnome_desktop",
+		markers: [][]string{
+			{"activities", "show applications"},
+			{"activities", "firefox"},
+			{"activities", "terminal"},
+		},
+	},
+}
+
+func detectLinuxScreenFromOCRText(lower string) (ScreenState, string) {
+	for _, entry := range linuxOCRScreenStates {
+		for _, markers := range entry.markers {
+			if containsAll(lower, markers) {
+				return entry.state, entry.page
+			}
+		}
+	}
+	return ScreenStateUnknown, "unknown"
+}
+
 func detectScreenStateFromOCRText(text string) ScreenState {
 	lower := strings.ToLower(text)
 
+	if state, _ := detectLinuxScreenFromOCRText(lower); state != ScreenStateUnknown {
+		return state
+	}
 	if strings.Contains(lower, "finder") && strings.Contains(lower, "file") {
 		return ScreenStateDesktop
 	}
@@ -139,6 +206,9 @@ func detectScreenStateFromOCRText(text string) ScreenState {
 func detectSetupAssistantPageFromOCRText(text string) string {
 	lower := strings.ToLower(text)
 
+	if _, page := detectLinuxScreenFromOCRText(lower); page != "unknown" {
+		return page
+	}
 	if strings.Contains(lower, "finder") && strings.Contains(lower, "file") {
 		return "desktop"
 	}
