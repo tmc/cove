@@ -47,6 +47,8 @@ type upConfig struct {
 	nvme                     bool
 	cpuExplicit              bool
 	rosetta                  bool
+	networkMode              string
+	portForwards             portForwardSpecs
 }
 
 // handleUp implements the "up" subcommand: install -> inject -> run -> vzscripts.
@@ -121,6 +123,9 @@ func parseUpFlags(args []string) (upConfig, error) {
 			return upConfig{}, err
 		}
 	}
+	if err := validateNetworkMode(cfg.networkMode); err != nil {
+		return upConfig{}, err
+	}
 
 	// Validate setup script is readable before doing any heavy work.
 	if cfg.setupScriptPath != "" {
@@ -190,6 +195,10 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	fs.BoolVar(&cfg.nvme, "nvme", false, "Attach Linux root disk through NVMe instead of virtio-blk")
 	fs.BoolVar(&cfg.rosetta, "rosetta", true, "Enable Rosetta translation support for Linux VMs")
+	fs.StringVar(&cfg.networkMode, "network", "nat", "network mode: nat, bridged:<iface>, host-only, none")
+	fs.StringVar(&cfg.networkMode, "net", "nat", "alias for -network")
+	fs.Var(&cfg.portForwards, "port-forward", "forward host TCP to guest vsock: hostPort:guestVsockPort (repeatable)")
+	fs.Var(&cfg.portForwards, "pf", "alias for -port-forward")
 	fs.Usage = func() {
 		printUpUsage(os.Stderr, fs)
 	}
@@ -284,6 +293,8 @@ func applyUpConfig(cfg upConfig) {
 		linuxNVMe = true
 	}
 	cpuExplicit = cfg.cpuExplicit
+	networkMode = cfg.networkMode
+	startupPortForwards = cfg.portForwards
 }
 
 // vmAlreadyInstalled reports whether the VM disk already exists, meaning

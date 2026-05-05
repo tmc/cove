@@ -255,11 +255,14 @@ func applySandboxDefaults() error {
 	if !policy.AllowsProxy() && strings.TrimSpace(proxyURL) != "" {
 		return fmt.Errorf("-sandbox-level strict does not allow -proxy; use minimal or omit -proxy")
 	}
+	if !policy.AllowsVsock() && len(startupPortForwards) > 0 {
+		return fmt.Errorf("-sandbox-level strict does not allow -port-forward; use minimal or omit -port-forward")
+	}
 	if !policy.AllowsRosetta() && enableRosetta && flagWasSet("rosetta") {
 		return fmt.Errorf("-sandbox-level strict does not allow -rosetta")
 	}
 
-	effectiveNetwork, err := policy.EffectiveNetworkMode(networkMode, flagWasSet("network"))
+	effectiveNetwork, err := policy.EffectiveNetworkMode(networkMode, flagWasSet("network") || flagWasSet("net"))
 	if err != nil {
 		return err
 	}

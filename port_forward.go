@@ -5,11 +5,70 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
+
+type portForwardSpecs []portForwardSpec
+
+type portForwardSpec struct {
+	HostPort  int
+	GuestPort uint32
+}
+
+func (s *portForwardSpecs) Set(value string) error {
+	spec, err := parsePortForwardSpec(value)
+	if err != nil {
+		return err
+	}
+	*s = append(*s, spec)
+	return nil
+}
+
+func (s *portForwardSpecs) String() string {
+	if s == nil || len(*s) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(*s))
+	for _, spec := range *s {
+		parts = append(parts, fmt.Sprintf("%d:%d", spec.HostPort, spec.GuestPort))
+	}
+	return strings.Join(parts, ",")
+}
+
+func parsePortForwardSpec(value string) (portForwardSpec, error) {
+	parts := strings.SplitN(strings.TrimSpace(value), ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return portForwardSpec{}, fmt.Errorf("expected hostPort:guestVsockPort, got %q", value)
+	}
+	hostPort, err := strconv.ParseUint(parts[0], 10, 16)
+	if err != nil || hostPort == 0 {
+		return portForwardSpec{}, fmt.Errorf("invalid host port %q", parts[0])
+	}
+	guestPort, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil || guestPort == 0 {
+		return portForwardSpec{}, fmt.Errorf("invalid guest vsock port %q", parts[1])
+	}
+	return portForwardSpec{HostPort: int(hostPort), GuestPort: uint32(guestPort)}, nil
+}
+
+func startConfiguredPortForwards(s *ControlServer) error {
+	if s == nil || len(startupPortForwards) == 0 {
+		return nil
+	}
+	manager := s.portForwardManager()
+	connector := newControlServerGuestConnector(s)
+	for _, spec := range startupPortForwards {
+		if err := manager.Start(connector, spec.HostPort, spec.GuestPort); err != nil {
+			return fmt.Errorf("port-forward %d:%d: %w", spec.HostPort, spec.GuestPort, err)
+		}
+	}
+	return nil
+}
 
 // PortForward represents an active host TCP -> guest vsock forwarding rule.
 type PortForward struct {

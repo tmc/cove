@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	vz "github.com/tmc/apple/virtualization"
 	networkx "github.com/tmc/apple/x/vzkit/network"
@@ -19,10 +20,20 @@ const (
 
 // ParseNetworkMode parses a network mode string.
 func ParseNetworkMode(s string) (networkx.Config, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
 	if s == string(NetworkModeFileHandle) {
 		return networkx.Config{Mode: NetworkModeFileHandle}, nil
 	}
-	return networkx.Parse(s)
+	cfg, err := networkx.Parse(s)
+	if err != nil {
+		return networkx.Config{}, err
+	}
+	return cfg, nil
+}
+
+func validateNetworkMode(s string) error {
+	_, err := ParseNetworkMode(s)
+	return err
 }
 
 // CreateNetworkDeviceConfiguration creates a complete network device configuration.
@@ -45,12 +56,12 @@ func NetworkModeHelp() string {
   none             No networking
 
 Examples:
-  -network nat              Default NAT mode
-  -network bridged:en0      Bridge to ethernet
-  -network host-only        Host and guest only
-  -network bridged:en1      Bridge to WiFi (check 'cove network list')
-  -network filehandle       Raw frame capture via VZFileHandleNetworkDeviceAttachment
-  -network none             Disable networking`
+  --net nat                 Default NAT mode
+  --net bridged:en0         Bridge to ethernet
+  --net host-only           Host and guest only
+  --net bridged:en1         Bridge to WiFi (check 'cove network list')
+  --net filehandle          Raw frame capture via VZFileHandleNetworkDeviceAttachment
+  --net none                Disable networking`
 }
 
 // printNetworkInterfaces prints available network interfaces.
@@ -65,6 +76,6 @@ func printNetworkInterfaces() {
 	fmt.Println("  en1        Secondary network interface")
 	fmt.Println("  bridge0    Thunderbolt Bridge")
 	fmt.Println()
-	fmt.Println("Usage: cove run -network bridged:<identifier>")
-	fmt.Println("Example: cove run -network bridged:en0")
+	fmt.Println("Usage: cove run --net bridged:<identifier>")
+	fmt.Println("Example: cove run --net bridged:en0")
 }

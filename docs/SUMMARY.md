@@ -16,6 +16,7 @@
 * [SIP Management](features/sip.md)
 * [Shared Folders](features/shared-folders.md)
 * [Linux VMs](features/linux.md)
+* [Networking](features/networking.md)
 * [GUI & Display](features/gui-display.md)
 
 ## Reference
