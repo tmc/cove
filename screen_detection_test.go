@@ -52,6 +52,10 @@ func TestScreenState_String(t *testing.T) {
 		{ScreenStateLoginScreen, "login_screen"},
 		{ScreenStateDesktop, "desktop"},
 		{ScreenStateRecoveryMode, "recovery_mode"},
+		{ScreenStateGDMLogin, "gdm_login"},
+		{ScreenStateGNOMEDesktop, "gnome_desktop"},
+		{ScreenStateGNOMEWelcome, "gnome_welcome"},
+		{ScreenStateGRUBMenu, "grub_menu"},
 	}
 
 	for _, tt := range tests {

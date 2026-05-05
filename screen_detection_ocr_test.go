@@ -76,6 +76,10 @@ func TestScreenState_AllStatesHaveString(t *testing.T) {
 		ScreenStateLoginScreen,
 		ScreenStateDesktop,
 		ScreenStateRecoveryMode,
+		ScreenStateGDMLogin,
+		ScreenStateGNOMEDesktop,
+		ScreenStateGNOMEWelcome,
+		ScreenStateGRUBMenu,
 	}
 
 	for _, s := range states {
@@ -180,5 +184,50 @@ func TestDetectScreenStateFromOCRText(t *testing.T) {
 	got := detectScreenStateFromOCRText("VoiceOver Tutorial\nThe VoiceOver Modifier")
 	if got != ScreenStateSetupAssistant {
 		t.Fatalf("detectScreenStateFromOCRText(voiceover tutorial) = %v, want %v", got, ScreenStateSetupAssistant)
+	}
+}
+
+func TestDetectLinuxScreenStateFromOCRText(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want ScreenState
+		page string
+	}{
+		{
+			name: "gdm login",
+			text: "Ubuntu\nPassword\nSign In\nNot listed?",
+			want: ScreenStateGDMLogin,
+			page: "gdm_login",
+		},
+		{
+			name: "gnome desktop",
+			text: "Activities\nTerminal\nFiles\nShow Applications",
+			want: ScreenStateGNOMEDesktop,
+			page: "gnome_desktop",
+		},
+		{
+			name: "gnome welcome",
+			text: "Welcome to Ubuntu\nOnline Accounts\nPrivacy\nReady to Go\nStart Using Ubuntu",
+			want: ScreenStateGNOMEWelcome,
+			page: "gnome_welcome",
+		},
+		{
+			name: "grub menu",
+			text: "GNU GRUB version 2.12\nUbuntu\nAdvanced options for Ubuntu\nUse the ↑ and ↓ keys to select which entry is highlighted.",
+			want: ScreenStateGRUBMenu,
+			page: "grub_menu",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := detectScreenStateFromOCRText(tt.text); got != tt.want {
+				t.Fatalf("detectScreenStateFromOCRText() = %v, want %v", got, tt.want)
+			}
+			if got := detectSetupAssistantPageFromOCRText(tt.text); got != tt.page {
+				t.Fatalf("detectSetupAssistantPageFromOCRText() = %q, want %q", got, tt.page)
+			}
+		})
 	}
 }
