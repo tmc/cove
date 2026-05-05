@@ -31,6 +31,16 @@ func stageMacOSVMForImage(t *testing.T, name string) string {
 			t.Fatalf("write %s: %v", n, err)
 		}
 	}
+	if err := vmconfig.Save(dir, &vmconfig.Config{Agent: &vmconfig.AgentConfig{
+		Platform:  "macos",
+		Requested: true,
+		Verified:  true,
+		Version:   hostVersion(),
+		Commit:    hostVersion(),
+		Features:  []string{"exec_attach", "exec_attach_v3", "shell"},
+	}}); err != nil {
+		t.Fatalf("save macos config: %v", err)
+	}
 	return dir
 }
 
@@ -52,11 +62,26 @@ func stageLinuxVMForImage(t *testing.T, name string) string {
 			t.Fatalf("write %s: %v", n, err)
 		}
 	}
-	cfg := &vmconfig.Config{Agent: &vmconfig.AgentConfig{Platform: "linux", Requested: true}}
-	if err := vmconfig.Save(dir, cfg); err != nil {
+	if err := vmconfig.Save(dir, &vmconfig.Config{Agent: &vmconfig.AgentConfig{
+		Platform:  "linux",
+		Requested: true,
+		Verified:  true,
+		Version:   hostVersion(),
+		Commit:    hostVersion(),
+		Features:  []string{"exec_attach_v3", "shell"},
+	}}); err != nil {
 		t.Fatalf("save linux config: %v", err)
 	}
 	return dir
+}
+
+func sliceContainsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestParseImageRef(t *testing.T) {
@@ -128,6 +153,27 @@ func TestBuildImage_HappyPath(t *testing.T) {
 	if manifest.SourceVM != src {
 		t.Errorf("manifest.SourceVM = %q, want %q", manifest.SourceVM, src)
 	}
+	if manifest.CoveCommit == "" {
+		t.Error("manifest.CoveCommit is empty")
+	}
+	if manifest.AgentCommit == "" {
+		t.Error("manifest.AgentCommit is empty")
+	}
+	if !sliceContainsString(manifest.AgentFeatures, "execattach.v3") {
+		t.Fatalf("manifest.AgentFeatures = %v, want execattach.v3", manifest.AgentFeatures)
+	}
+	if manifest.BuildRecipe == "" {
+		t.Error("manifest.BuildRecipe is empty")
+	}
+	if manifest.BuiltAt.IsZero() {
+		t.Error("manifest.BuiltAt is zero")
+	}
+	if manifest.DefaultNetwork == "" {
+		t.Error("manifest.DefaultNetwork is empty")
+	}
+	if manifest.DefaultSandbox == "" {
+		t.Error("manifest.DefaultSandbox is empty")
+	}
 	if !manifest.CreatedAt.Equal(fixed) {
 		t.Errorf("manifest.CreatedAt = %v, want %v", manifest.CreatedAt, fixed)
 	}
@@ -157,6 +203,9 @@ func TestBuildImage_HappyPath(t *testing.T) {
 	}
 	if got.DiskSHA256 != manifest.DiskSHA256 {
 		t.Errorf("loaded.DiskSHA256 = %q, want %q", got.DiskSHA256, manifest.DiskSHA256)
+	}
+	if got.CoveCommit != manifest.CoveCommit || got.AgentCommit != manifest.AgentCommit {
+		t.Fatalf("loaded provenance = %q/%q, want %q/%q", got.CoveCommit, got.AgentCommit, manifest.CoveCommit, manifest.AgentCommit)
 	}
 
 	// Source VM unchanged.

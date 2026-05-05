@@ -87,6 +87,12 @@ func SetRequested(vmDirectory, platform string, requested bool, source string) e
 
 // MarkVerified records a successful guest-agent connection.
 func MarkVerified(vmDirectory, platform, source string, when time.Time) error {
+	return MarkVerifiedInfo(vmDirectory, platform, source, "", "", nil, when)
+}
+
+// MarkVerifiedInfo records a successful guest-agent connection and the
+// agent's advertised build identity / features.
+func MarkVerifiedInfo(vmDirectory, platform, source, version, commit string, features []string, when time.Time) error {
 	if when.IsZero() {
 		when = time.Now()
 	}
@@ -98,6 +104,15 @@ func MarkVerified(vmDirectory, platform, source string, when time.Time) error {
 		agent.VerifiedAt = when.UTC()
 		if source != "" {
 			agent.Source = source
+		}
+		if version != "" {
+			agent.Version = version
+		}
+		if commit != "" {
+			agent.Commit = commit
+		}
+		if len(features) > 0 {
+			agent.Features = append([]string(nil), features...)
 		}
 	})
 }

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -24,7 +25,16 @@ type ImageInspectOutput struct {
 	DiskSize       int64    `json:"disk_size"`
 	DiskSHA256     string   `json:"disk_sha256"`
 	BaseImage      string   `json:"base_image,omitempty"`
+	CoveCommit     string   `json:"cove_commit,omitempty"`
+	AgentCommit    string   `json:"agent_commit,omitempty"`
+	AgentFeatures  []string `json:"agent_features,omitempty"`
+	BuildRecipe    string   `json:"build_recipe,omitempty"`
+	SourceImage    string   `json:"source_image,omitempty"`
 	Created        string   `json:"created,omitempty"`
+	BuiltAt        string   `json:"built_at,omitempty"`
+	DefaultNetwork string   `json:"default_network,omitempty"`
+	DefaultSandbox string   `json:"default_sandbox,omitempty"`
+	LegacyManifest bool     `json:"legacy_manifest,omitempty"`
 	MachineModelID string   `json:"machine_model_id,omitempty"`
 	Forks          []string `json:"forks"`
 	ForkCount      int      `json:"fork_count"`
@@ -45,18 +55,29 @@ func InspectImage(ref ImageRef) (ImageInspectOutput, error) {
 		forks = []string{}
 	}
 	out := ImageInspectOutput{
-		Ref:          ref.String(),
-		Name:         manifest.Name,
-		Tag:          manifest.Tag,
-		ManifestPath: filepath.Join(ref.Path(), "manifest.json"),
-		DiskSize:     manifest.DiskSize,
-		DiskSHA256:   manifest.DiskSHA256,
-		BaseImage:    manifest.BaseImage,
-		Forks:        forks,
-		ForkCount:    len(forks),
+		Ref:            ref.String(),
+		Name:           manifest.Name,
+		Tag:            manifest.Tag,
+		ManifestPath:   filepath.Join(ref.Path(), "manifest.json"),
+		DiskSize:       manifest.DiskSize,
+		DiskSHA256:     manifest.DiskSHA256,
+		BaseImage:      manifest.BaseImage,
+		CoveCommit:     manifest.CoveCommit,
+		AgentCommit:    manifest.AgentCommit,
+		AgentFeatures:  append([]string(nil), manifest.AgentFeatures...),
+		BuildRecipe:    manifest.BuildRecipe,
+		SourceImage:    manifest.SourceImage,
+		DefaultNetwork: manifest.DefaultNetwork,
+		DefaultSandbox: manifest.DefaultSandbox,
+		LegacyManifest: legacyImageManifest(manifest),
+		Forks:          forks,
+		ForkCount:      len(forks),
 	}
 	if !manifest.CreatedAt.IsZero() {
 		out.Created = manifest.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	if !manifest.BuiltAt.IsZero() {
+		out.BuiltAt = manifest.BuiltAt.UTC().Format(time.RFC3339)
 	}
 	if id, err := machineModelFingerprint(ref); err == nil {
 		out.MachineModelID = id
@@ -120,8 +141,35 @@ func writeInspectText(w io.Writer, out ImageInspectOutput) error {
 	if out.BaseImage != "" {
 		fmt.Fprintf(w, "  base image:  %s\n", out.BaseImage)
 	}
+	if out.LegacyManifest {
+		fmt.Fprintf(w, "  legacy:      yes\n")
+	}
+	if out.CoveCommit != "" {
+		fmt.Fprintf(w, "  cove commit: %s\n", out.CoveCommit)
+	}
+	if out.AgentCommit != "" {
+		fmt.Fprintf(w, "  agent:       %s\n", out.AgentCommit)
+	}
+	if len(out.AgentFeatures) > 0 {
+		fmt.Fprintf(w, "  features:    %s\n", strings.Join(out.AgentFeatures, ", "))
+	}
+	if out.BuildRecipe != "" {
+		fmt.Fprintf(w, "  recipe:      %s\n", out.BuildRecipe)
+	}
+	if out.SourceImage != "" {
+		fmt.Fprintf(w, "  source image: %s\n", out.SourceImage)
+	}
 	if out.Created != "" {
 		fmt.Fprintf(w, "  created:     %s\n", out.Created)
+	}
+	if out.BuiltAt != "" {
+		fmt.Fprintf(w, "  built at:    %s\n", out.BuiltAt)
+	}
+	if out.DefaultNetwork != "" {
+		fmt.Fprintf(w, "  network:     %s\n", out.DefaultNetwork)
+	}
+	if out.DefaultSandbox != "" {
+		fmt.Fprintf(w, "  sandbox:     %s\n", out.DefaultSandbox)
 	}
 	if out.MachineModelID != "" {
 		fmt.Fprintf(w, "  hw.model:    sha256:%s\n", out.MachineModelID)

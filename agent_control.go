@@ -927,6 +927,11 @@ func (s *ControlServer) handleAgentInfo() *controlpb.ControlResponse {
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("info: %v", err)}
 	}
+	if vmDirectory := s.effectiveVMDir(); strings.TrimSpace(vmDirectory) != "" {
+		if markErr := agentstate.MarkVerifiedInfo(vmDirectory, agentstate.DetectPlatform(vmDirectory), agentstate.SourceRuntime, info.GetAgentVersion(), info.GetAgentCommit(), normalizeAgentFeatures(info.GetFeatures()), time.Now()); markErr != nil && verbose {
+			fmt.Printf("warning: record guest agent info: %v\n", markErr)
+		}
+	}
 	data, _ := json.Marshal(info)
 	return &controlpb.ControlResponse{
 		Success: true,
