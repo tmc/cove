@@ -21,6 +21,7 @@ func TestParseForwardSpec(t *testing.T) {
 			mapping: "8080:80",
 			want: forwardSpec{
 				VM:        "vm1",
+				Protocol:  "tcp",
 				HostPort:  8080,
 				GuestPort: 80,
 				RelayPort: uint32(forwardRelayBasePort + 8080%forwardRelayPortWindow),
@@ -52,6 +53,40 @@ func TestParseForwardSpec(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("parseForwardSpec = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseForwardUDP(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want forwardSpec
+	}{
+		{
+			name: "flag",
+			args: []string{"vm1", "-udp", "5353:53"},
+			want: forwardSpec{VM: "vm1", Protocol: "udp", HostPort: 5353, GuestPort: 53, RelayPort: relayPortFor(5353), AgentPort: relayPortFor(5353) + forwardAgentPortOffset},
+		},
+		{
+			name: "prefix",
+			args: []string{"vm1", "udp/5353:53"},
+			want: forwardSpec{VM: "vm1", Protocol: "udp", HostPort: 5353, GuestPort: 53, RelayPort: relayPortFor(5353), AgentPort: relayPortFor(5353) + forwardAgentPortOffset},
+		},
+		{
+			name: "reverse",
+			args: []string{"vm1", "-udp", "-reverse", "53:5353"},
+			want: forwardSpec{VM: "vm1", Reverse: true, Protocol: "udp", HostPort: 5353, GuestPort: 53, RelayPort: relayPortFor(53), AgentPort: relayPortFor(53) + forwardAgentPortOffset},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseForwardArgs(tc.args)
+			if err != nil {
+				t.Fatalf("parseForwardArgs: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("parseForwardArgs = %#v, want %#v", got, tc.want)
 			}
 		})
 	}

@@ -22,6 +22,7 @@ const (
 type forwardSpec struct {
 	VM        string
 	Reverse   bool
+	Protocol  string
 	HostPort  int
 	GuestPort int
 	RelayPort uint32
@@ -54,33 +55,74 @@ func runForward(ctx context.Context, args []string, newStarter func(string) forw
 }
 
 func parseForwardArgs(args []string) (forwardSpec, error) {
-	if len(args) == 3 && (args[1] == "-reverse" || args[1] == "--reverse") {
-		return parseReverseForwardSpec(args[0], args[2])
-	}
-	if len(args) != 2 {
+	if len(args) < 2 {
 		return forwardSpec{}, errors.New("usage: cove forward <vm> <hostport>:<vmport>")
 	}
-	if strings.Contains(args[1], "->") {
-		return parseNaturalForwardSpec(args[0], args[1])
+	vm := args[0]
+	reverse := false
+	protocol := "tcp"
+	rest := args[1:]
+	for len(rest) > 0 && strings.HasPrefix(rest[0], "-") {
+		switch rest[0] {
+		case "-reverse", "--reverse":
+			reverse = true
+		case "-udp", "--udp":
+			protocol = "udp"
+		default:
+			return forwardSpec{}, fmt.Errorf("forward: unknown flag %s", rest[0])
+		}
+		rest = rest[1:]
 	}
-	return parseForwardSpec(args[0], args[1])
+	if len(rest) != 1 {
+		return forwardSpec{}, errors.New("usage: cove forward <vm> <hostport>:<vmport>")
+	}
+	mapping := rest[0]
+	if p, m, ok := strings.Cut(mapping, "/"); ok && (p == "tcp" || p == "udp") {
+		protocol = p
+		mapping = m
+	}
+	if strings.Contains(mapping, "->") {
+		spec, err := parseNaturalForwardSpec(vm, mapping)
+		if err != nil {
+			return forwardSpec{}, err
+		}
+		spec.Protocol = protocol
+		if reverse {
+			spec.Reverse = true
+			spec.HostPort, spec.GuestPort = spec.GuestPort, spec.HostPort
+			spec.RelayPort = relayPortFor(spec.GuestPort)
+			spec.AgentPort = spec.RelayPort + forwardAgentPortOffset
+		}
+		return spec, nil
+	}
+	if reverse {
+		return parseReverseForwardSpec(vm, mapping, protocol)
+	}
+	return parseForwardSpecWithProtocol(vm, mapping, protocol)
 }
 
 func parseForwardSpec(vm, mapping string) (forwardSpec, error) {
-	return parseForwardSpecWithDirection(vm, mapping, false)
+	return parseForwardSpecWithProtocol(vm, mapping, "tcp")
 }
 
-func parseReverseForwardSpec(vm, mapping string) (forwardSpec, error) {
-	return parseForwardSpecWithDirection(vm, mapping, true)
+func parseForwardSpecWithProtocol(vm, mapping, protocol string) (forwardSpec, error) {
+	return parseForwardSpecWithDirection(vm, mapping, false, protocol)
 }
 
-func parseForwardSpecWithDirection(vm, mapping string, reverse bool) (forwardSpec, error) {
+func parseReverseForwardSpec(vm, mapping, protocol string) (forwardSpec, error) {
+	return parseForwardSpecWithDirection(vm, mapping, true, protocol)
+}
+
+func parseForwardSpecWithDirection(vm, mapping string, reverse bool, protocol string) (forwardSpec, error) {
 	vm = strings.TrimSpace(vm)
 	if vm == "" {
 		return forwardSpec{}, errors.New("forward: vm required")
 	}
 	if strings.Contains(vm, "/") {
 		return forwardSpec{}, fmt.Errorf("forward: invalid VM name %q", vm)
+	}
+	if protocol != "tcp" && protocol != "udp" {
+		return forwardSpec{}, fmt.Errorf("forward: invalid protocol %q", protocol)
 	}
 	first, second, err := parseForwardPorts(mapping)
 	if err != nil {
@@ -94,10 +136,11 @@ func parseForwardSpecWithDirection(vm, mapping string, reverse bool) (forwardSpe
 	if reverse {
 		relayKey = guest
 	}
-	relay := uint32(forwardRelayBasePort + relayKey%forwardRelayPortWindow)
+	relay := relayPortFor(relayKey)
 	return forwardSpec{
 		VM:        vm,
 		Reverse:   reverse,
+		Protocol:  protocol,
 		HostPort:  host,
 		GuestPort: guest,
 		RelayPort: relay,
@@ -122,7 +165,7 @@ func parseNaturalForwardSpec(vm, mapping string) (forwardSpec, error) {
 	case leftName == "host" && rightName == "vm":
 		return parseForwardSpec(vm, leftPort+":"+rightPort)
 	case leftName == "vm" && rightName == "host":
-		return parseReverseForwardSpec(vm, leftPort+":"+rightPort)
+		return parseReverseForwardSpec(vm, leftPort+":"+rightPort, "tcp")
 	default:
 		return forwardSpec{}, fmt.Errorf("forward: expected host:port->vm:port or vm:port->host:port, got %q", mapping)
 	}
@@ -138,6 +181,10 @@ func parseForwardEndpoint(endpoint string) (string, string, error) {
 		return "", "", fmt.Errorf("forward: invalid endpoint %q", endpoint)
 	}
 	return name, port, nil
+}
+
+func relayPortFor(port int) uint32 {
+	return uint32(forwardRelayBasePort + port%forwardRelayPortWindow)
 }
 
 func parseForwardPorts(mapping string) (int, int, error) {
@@ -181,7 +228,7 @@ func (s controlForwardStarter) StartForward(ctx context.Context, spec forwardSpe
 	req := &controlpb.ControlRequest{
 		Type: "port-forward",
 		Command: &controlpb.ControlRequest_PortForward{PortForward: &controlpb.PortForwardCommand{
-			Action:    "start",
+			Action:    startForwardAction(spec.Protocol),
 			HostPort:  uint32(spec.HostPort),
 			GuestPort: spec.RelayPort,
 		}},
@@ -193,14 +240,14 @@ func (s controlForwardStarter) StartForward(ctx context.Context, spec forwardSpe
 	if !resp.Success {
 		return "", fmt.Errorf("forward: %s", resp.Error)
 	}
-	return fmt.Sprintf("forwarding localhost:%d -> %s:127.0.0.1:%d", spec.HostPort, spec.VM, spec.GuestPort), nil
+	return fmt.Sprintf("forwarding %s localhost:%d -> %s:127.0.0.1:%d", spec.Protocol, spec.HostPort, spec.VM, spec.GuestPort), nil
 }
 
 func (s controlForwardStarter) startReverseForward(ctx context.Context, spec forwardSpec) (string, error) {
 	req := &controlpb.ControlRequest{
 		Type: "port-forward",
 		Command: &controlpb.ControlRequest_PortForward{PortForward: &controlpb.PortForwardCommand{
-			Action:    "start-reverse",
+			Action:    startReverseForwardAction(spec.Protocol),
 			HostPort:  uint32(spec.HostPort),
 			GuestPort: uint32(spec.GuestPort),
 		}},
@@ -215,13 +262,17 @@ func (s controlForwardStarter) startReverseForward(ctx context.Context, spec for
 	if err := s.startGuestReverseRelay(ctx, spec); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("forwarding %s:127.0.0.1:%d -> localhost:%d", spec.VM, spec.GuestPort, spec.HostPort), nil
+	return fmt.Sprintf("forwarding %s %s:127.0.0.1:%d -> localhost:%d", spec.Protocol, spec.VM, spec.GuestPort, spec.HostPort), nil
 }
 
 func (s controlForwardStarter) startGuestRelay(ctx context.Context, spec forwardSpec) error {
 	logPath := fmt.Sprintf("/tmp/cove-forward-%d-%d.log", spec.HostPort, spec.GuestPort)
 	relaySpec := fmt.Sprintf("%d:127.0.0.1:%d", spec.RelayPort, spec.GuestPort)
-	script := fmt.Sprintf("nohup /usr/local/bin/vz-agent -port %d -relay %s >%s 2>&1 &", spec.AgentPort, shellQuote(relaySpec), shellQuote(logPath))
+	relayFlag := "-relay"
+	if spec.Protocol == "udp" {
+		relayFlag = "-udp-relay"
+	}
+	script := fmt.Sprintf("nohup /usr/local/bin/vz-agent -port %d %s %s >%s 2>&1 &", spec.AgentPort, relayFlag, shellQuote(relaySpec), shellQuote(logPath))
 	req := &controlpb.ControlRequest{
 		Type: "agent-exec",
 		Command: &controlpb.ControlRequest_AgentExec{AgentExec: &controlpb.AgentExecCommand{
@@ -244,7 +295,11 @@ func (s controlForwardStarter) startGuestRelay(ctx context.Context, spec forward
 func (s controlForwardStarter) startGuestReverseRelay(ctx context.Context, spec forwardSpec) error {
 	logPath := fmt.Sprintf("/tmp/cove-forward-reverse-%d-%d.log", spec.GuestPort, spec.HostPort)
 	relaySpec := fmt.Sprintf("%d:%d", spec.GuestPort, spec.RelayPort)
-	script := fmt.Sprintf("nohup /usr/local/bin/vz-agent -port %d -reverse-relay %s >%s 2>&1 &", spec.AgentPort, shellQuote(relaySpec), shellQuote(logPath))
+	relayFlag := "-reverse-relay"
+	if spec.Protocol == "udp" {
+		relayFlag = "-udp-reverse-relay"
+	}
+	script := fmt.Sprintf("nohup /usr/local/bin/vz-agent -port %d %s %s >%s 2>&1 &", spec.AgentPort, relayFlag, shellQuote(relaySpec), shellQuote(logPath))
 	req := &controlpb.ControlRequest{
 		Type: "agent-exec",
 		Command: &controlpb.ControlRequest_AgentExec{AgentExec: &controlpb.AgentExecCommand{
@@ -262,4 +317,18 @@ func (s controlForwardStarter) startGuestReverseRelay(ctx context.Context, spec 
 		return fmt.Errorf("forward: start guest reverse relay exited %d: %s", result.GetExitCode(), strings.TrimSpace(result.GetStderr()))
 	}
 	return nil
+}
+
+func startForwardAction(protocol string) string {
+	if protocol == "udp" {
+		return "start-udp"
+	}
+	return "start"
+}
+
+func startReverseForwardAction(protocol string) string {
+	if protocol == "udp" {
+		return "start-reverse-udp"
+	}
+	return "start-reverse"
 }
