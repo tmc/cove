@@ -1,0 +1,1 @@
+{"timestamp":"2026-05-05T11:45:00Z","event_type":"vm_start","vm_name":"incomplete-vm","image_ref":"registry.example/incomplete:latest","status":"ok","extra":{"run_id":"run-incomplete"}}
