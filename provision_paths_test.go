@@ -292,6 +292,35 @@ func TestStageAutoLogin(t *testing.T) {
 			t.Errorf("file %s: owner = %q, want root:wheel", f.Path, f.Owner)
 		}
 	}
+	kcPath := filepath.Join("private", "etc", "kcpassword")
+	var kcManifest *ProvisionManifestFile
+	for i := range manifest.Files {
+		if manifest.Files[i].Path == kcPath {
+			kcManifest = &manifest.Files[i]
+			break
+		}
+	}
+	if kcManifest == nil {
+		t.Fatalf("manifest missing %s", kcPath)
+	}
+	if kcManifest.Mode != "0600" || kcManifest.Owner != "root:wheel" {
+		t.Fatalf("kcpassword metadata = mode %q owner %q, want 0600 root:wheel", kcManifest.Mode, kcManifest.Owner)
+	}
+	kcData, err := os.ReadFile(filepath.Join(stagingDir, kcPath))
+	if err != nil {
+		t.Fatalf("read kcpassword: %v", err)
+	}
+	if string(kcData) == "pass123" {
+		t.Fatal("kcpassword contains plaintext password")
+	}
+	if got, want := kcData, password.EncodeKC("pass123"); string(got) != string(want) {
+		t.Fatalf("kcpassword bytes = %x, want %x", got, want)
+	}
+	if info, err := os.Stat(filepath.Join(stagingDir, kcPath)); err != nil {
+		t.Fatalf("stat kcpassword: %v", err)
+	} else if info.Mode().Perm() != 0600 {
+		t.Fatalf("kcpassword mode = %v, want 0600", info.Mode().Perm())
+	}
 
 	data, err := os.ReadFile(filepath.Join(stagingDir, "Library", "Preferences", "com.apple.loginwindow.plist"))
 	if err != nil {
@@ -317,6 +346,30 @@ func TestStageAutoLogin(t *testing.T) {
 	}
 	if creds.Username != "stagetest" || creds.Password != "pass123" {
 		t.Fatalf("credentials = %#v, want stagetest/pass123", creds)
+	}
+}
+
+func TestInjectAutoLoginValidatesKCPassword(t *testing.T) {
+	mountPoint := t.TempDir()
+	var rootFiles []string
+	if err := injectAutoLogin(mountPoint, "injecttest", "pass123", &rootFiles); err != nil {
+		t.Fatalf("injectAutoLogin: %v", err)
+	}
+	kcPath := filepath.Join(mountPoint, "private", "etc", "kcpassword")
+	data, err := os.ReadFile(kcPath)
+	if err != nil {
+		t.Fatalf("read kcpassword: %v", err)
+	}
+	if got, want := data, password.EncodeKC("pass123"); string(got) != string(want) {
+		t.Fatalf("kcpassword bytes = %x, want %x", got, want)
+	}
+	if info, err := os.Stat(kcPath); err != nil {
+		t.Fatalf("stat kcpassword: %v", err)
+	} else if info.Mode().Perm() != 0600 {
+		t.Fatalf("kcpassword mode = %v, want 0600", info.Mode().Perm())
+	}
+	if os.Geteuid() != 0 && !sliceContainsString(rootFiles, kcPath) {
+		t.Fatalf("rootFiles = %v, want %s recorded for later root:wheel chown", rootFiles, kcPath)
 	}
 }
 
@@ -375,25 +428,12 @@ func TestProvisionUserPlistAdminVsNonAdmin(t *testing.T) {
 
 // TestProvisionKCPasswordRoundTrip verifies XOR encoding preserves password bytes.
 func TestProvisionKCPasswordRoundTrip(t *testing.T) {
-	key := []byte{0x7D, 0x89, 0x52, 0x23, 0xD2, 0xBC, 0xDD, 0xEA, 0xA3, 0xB9, 0x1F}
-
-	passwords := []string{"test", "password123", "a", "hello world!"}
+	passwords := []string{"test", "password123", "a", "hello world!", "unicöde"}
 	for _, p := range passwords {
 		t.Run(p, func(t *testing.T) {
 			encoded := password.EncodeKC(p)
-
-			// Decode and verify.
-			decoded := make([]byte, len(p)+1)
-			for i := range decoded {
-				decoded[i] = encoded[i] ^ key[i%len(key)]
-			}
-			got := string(decoded[:len(p)])
-			if got != p {
-				t.Errorf("round-trip mismatch: got %q, want %q", got, p)
-			}
-			// Null terminator.
-			if decoded[len(p)] != 0 {
-				t.Error("missing null terminator after password")
+			if got := password.DecodeKC(encoded); got != p {
+				t.Fatalf("DecodeKC(EncodeKC(%q)) = %q, want %q", p, got, p)
 			}
 		})
 	}
