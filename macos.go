@@ -2001,6 +2001,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	// Create and attach toolbar
 	vmToolbar := NewVMToolbar(window, vmView, vm, queue, controlServer, target.Directory)
+	guiController := newAttachedGUIController(app, target, vm, queue, controlServer, window, vmView, vmToolbar, frameAutosaveName)
+	controlServer.SetGUIController(guiController)
 
 	// Setup main menu bar
 	setupMainMenu(vmToolbar.delegateID)
@@ -2161,7 +2163,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		window.SaveFrameUsingName(frameAutosaveName)
 		doCleanup()
 	}
-	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, window, nil, vmToolbar, quitRuntime)
+	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, window, guiController, vmToolbar, quitRuntime)
 
 	// Close-window should behave like app quit: clean up VM lifecycle and stop the app.
 	windowDelegate := appkit.NewNSWindowDelegate(appkit.NSWindowDelegateConfig{

@@ -129,6 +129,30 @@ func newHeadlessGUIController(app appkit.NSApplication, target vmSelection, vm v
 	return c, nil
 }
 
+func newAttachedGUIController(app appkit.NSApplication, target vmSelection, vm vz.VZVirtualMachine, queue dispatch.Queue, bindings vmGUIBindings, window appkit.NSWindow, vmView vz.VZVirtualMachineView, toolbar *VMToolbar, frameAutosaveName appkit.NSWindowFrameAutosaveName) *vmGUIController {
+	c := &vmGUIController{
+		app:             app,
+		vm:              vm,
+		vmQueue:         queue,
+		bindings:        bindings,
+		target:          target,
+		vmDirectory:     target.Directory,
+		window:          window,
+		vmView:          vmView,
+		toolbar:         toolbar,
+		frameAutosave:   frameAutosaveName,
+		headed:          window.ID != 0 && vmView.ID != 0,
+		windowTitleBase: controllerWindowTitle(target),
+	}
+	if window.ID != 0 {
+		c.lastVisibleFrame = window.Frame()
+	}
+	if bindings != nil && vmView.ID != 0 {
+		bindings.SetVMViewWithWindow(vmView, window)
+	}
+	return c
+}
+
 func controllerWindowTitle(target vmSelection) string {
 	osLabel := "macOS VM"
 	if linuxMode {

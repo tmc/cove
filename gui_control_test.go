@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"image"
 	"testing"
 
@@ -48,6 +49,39 @@ func TestHeadlessControllerBindingsUseDetachedViewWithoutWindow(t *testing.T) {
 		t.Fatal("toolbar created for detached headless view")
 	}
 }
+
+func TestGUIStatusUsesInstalledController(t *testing.T) {
+	s := &ControlServer{}
+	s.SetGUIController(fakeGUIController{
+		status: GUIStatus{
+			Supported:   true,
+			Headed:      true,
+			WindowReady: true,
+			CaptureMode: "window",
+		},
+	})
+
+	resp := s.handleGUIRequest("gui-status")
+	if !resp.Success {
+		t.Fatalf("gui-status failed: %s", resp.Error)
+	}
+	var status GUIStatus
+	if err := json.Unmarshal([]byte(resp.Data), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.Supported || !status.Headed || !status.WindowReady {
+		t.Fatalf("status = %+v, want supported headed ready", status)
+	}
+}
+
+type fakeGUIController struct {
+	status GUIStatus
+}
+
+func (f fakeGUIController) Open() error       { return nil }
+func (f fakeGUIController) Close() error      { return nil }
+func (f fakeGUIController) Status() GUIStatus { return f.status }
+func (f fakeGUIController) Shutdown()         {}
 
 type recordingGUIBindings struct {
 	calls  int
