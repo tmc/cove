@@ -1,0 +1,77 @@
+name: cove action
+description: Run a command inside a disposable cove VM fork.
+
+inputs:
+  image:
+    description: Local cove image ref to fork from.
+    required: true
+  command:
+    description: Shell command to run in the guest.
+    required: false
+    default: ""
+  args:
+    description: Alias for command.
+    required: false
+    default: ""
+  script:
+    description: Multiline shell script to run in the guest. Overrides command and args.
+    required: false
+    default: ""
+  vm-name:
+    description: Name for the ephemeral fork.
+    required: false
+    default: ""
+  timeout:
+    description: Readiness and guest command timeout.
+    required: false
+    default: 30m
+  cove-bin:
+    description: cove binary path, or cove from PATH.
+    required: false
+    default: cove
+  env:
+    description: Multiline KEY=VALUE entries to inject into the guest command environment.
+    required: false
+    default: ""
+  keep:
+    description: Keep the ephemeral fork after the run.
+    required: false
+    default: "false"
+  secrets:
+    description: Reserved for cove secret URI inputs. Not supported in Slice 1.
+    required: false
+    default: ""
+
+outputs:
+  exit-code:
+    description: Guest command exit code.
+    value: ${{ steps.cove.outputs.exit-code }}
+  vm-name:
+    description: Ephemeral VM name used for the run.
+    value: ${{ steps.cove.outputs.vm-name }}
+  log-path:
+    description: Host-side cove run log root.
+    value: ${{ steps.cove.outputs.log-path }}
+
+runs:
+  using: composite
+  steps:
+    - id: cove
+      shell: bash
+      env:
+        COVE_ACTION_COVE_BIN: ${{ inputs.cove-bin }}
+        COVE_ACTION_IMAGE: ${{ inputs.image }}
+        COVE_ACTION_COMMAND: ${{ inputs.command || inputs.args }}
+        COVE_ACTION_SCRIPT: ${{ inputs.script }}
+        COVE_ACTION_VM_NAME: ${{ inputs.vm-name }}
+        COVE_ACTION_TIMEOUT: ${{ inputs.timeout }}
+        COVE_ACTION_ENV: ${{ inputs.env }}
+        COVE_ACTION_KEEP: ${{ inputs.keep }}
+        COVE_ACTION_SECRETS: ${{ inputs.secrets }}
+      run: |
+        set -euo pipefail
+        if [ -n "${COVE_ACTION_SECRETS}" ]; then
+          echo "cove-action: secrets input is reserved for a later slice" >&2
+          exit 2
+        fi
+        go run "${GITHUB_ACTION_PATH}/../../../cmd/cove-action"

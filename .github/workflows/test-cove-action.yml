@@ -1,0 +1,54 @@
+name: test cove action
+
+on:
+  workflow_dispatch:
+    inputs:
+      run-cove:
+        description: Run the private cove action smoke test.
+        required: true
+        type: boolean
+        default: false
+      image:
+        description: Local cove image ref available on the runner.
+        required: true
+        type: string
+        default: cove-runner:latest
+      cove-bin:
+        description: cove binary path, or cove from PATH.
+        required: false
+        type: string
+        default: cove
+      vm-name:
+        description: Optional ephemeral VM name.
+        required: false
+        type: string
+        default: ""
+      timeout:
+        description: Readiness and guest command timeout.
+        required: false
+        type: string
+        default: 30m
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: ${{ inputs.run-cove }}
+    runs-on: [self-hosted, macOS, ARM64, cove]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run cove action
+        uses: ./.github/actions/cove-action
+        with:
+          image: ${{ inputs.image }}
+          cove-bin: ${{ inputs.cove-bin }}
+          vm-name: ${{ inputs.vm-name }}
+          timeout: ${{ inputs.timeout }}
+          script: |
+            set -euo pipefail
+            uname -a
+            whoami
