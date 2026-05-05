@@ -123,6 +123,20 @@ func sharedFolderVMName(vmDirectory string) string {
 	return name
 }
 
+func defaultSharedFolderMountPoint(vmDirectory, tag string) string {
+	if vmconfig.DetectOSType(vmDirectory) == "Linux" {
+		return "/mnt/" + tag
+	}
+	return filepath.Join(defaultSharedFoldersMountPoint, tag)
+}
+
+func defaultSharedFoldersMountRoot(vmDirectory string) string {
+	if vmconfig.DetectOSType(vmDirectory) == "Linux" {
+		return ""
+	}
+	return defaultSharedFoldersMountPoint
+}
+
 func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: cove shared-folder add <host-path> [tag] [ro|rw]")
