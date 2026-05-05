@@ -152,47 +152,21 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbeP
 		fmt.Println()
 		fmt.Println("Guest file checks (via agent):")
 
-		guestFiles := []struct {
-			path string
-			desc string
-		}{
-			{"/usr/local/bin/vz-agent", "Agent binary"},
-			{"/Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist", "Agent LaunchDaemon"},
-			{"/private/var/db/.vz-provisioned", "Provisioning completed marker"},
-			{"/private/var/db/.AppleSetupDone", "Setup Assistant skip marker"},
-		}
-
-		for _, f := range guestFiles {
+		for _, probe := range verifyRunningGuestProbes(agentstate.Platform(target.Directory)) {
 			execReq := &controlpb.ControlRequest{
 				Type: "agent-exec",
 				Command: &controlpb.ControlRequest_AgentExec{
 					AgentExec: &controlpb.AgentExecCommand{
-						Args: []string{"test", "-f", f.path},
+						Args: probe.args,
 					},
 				},
 			}
 			execResp, err := ctlSendRequest(sock, execReq, 5*time.Second, "agent-exec")
 			if agentExecExitOK(execResp, err) {
-				fmt.Printf("  + %s: present\n", f.desc)
+				fmt.Printf("  + %s: %s\n", probe.desc, probe.ok)
 			} else {
-				fmt.Printf("  - %s: not found (%s)\n", f.desc, f.path)
+				fmt.Printf("  - %s: %s\n", probe.desc, probe.missing)
 			}
-		}
-
-		// Check vz-agent process is running.
-		execReq := &controlpb.ControlRequest{
-			Type: "agent-exec",
-			Command: &controlpb.ControlRequest_AgentExec{
-				AgentExec: &controlpb.AgentExecCommand{
-					Args: []string{"pgrep", "-x", "vz-agent"},
-				},
-			},
-		}
-		execResp, err := ctlSendRequest(sock, execReq, 5*time.Second, "agent-exec")
-		if agentExecExitOK(execResp, err) {
-			fmt.Printf("  + vz-agent process: running\n")
-		} else {
-			fmt.Printf("  - vz-agent process: not running\n")
 		}
 
 		if agentstate.Platform(target.Directory) == agentstate.PlatformMacOS {
@@ -211,6 +185,88 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbeP
 		fmt.Println("Verification completed with issues")
 	}
 	return nil
+}
+
+type verifyRunningGuestProbe struct {
+	desc    string
+	args    []string
+	ok      string
+	missing string
+}
+
+func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
+	switch platform {
+	case agentstate.PlatformLinux:
+		return []verifyRunningGuestProbe{
+			{
+				desc:    "Agent binary",
+				args:    []string{"test", "-f", "/usr/local/bin/vz-agent"},
+				ok:      "present",
+				missing: "not found (/usr/local/bin/vz-agent)",
+			},
+			{
+				desc:    "Agent systemd unit",
+				args:    []string{"test", "-f", "/etc/systemd/system/vz-agent.service"},
+				ok:      "present",
+				missing: "not found (/etc/systemd/system/vz-agent.service)",
+			},
+			{
+				desc:    "Agent systemd service",
+				args:    []string{"systemctl", "is-active", "vz-agent"},
+				ok:      "active",
+				missing: "not active",
+			},
+			{
+				desc: "Provisioning completed marker",
+				args: []string{"sh", "-lc", strings.Join([]string{
+					"test -f /etc/cove-provisioned",
+					"test -f /var/lib/cove-setup.done",
+					"test -f /etc/cloud/cloud-init.disabled",
+				}, " || ")},
+				ok:      "present",
+				missing: "not found (/etc/cove-provisioned, /var/lib/cove-setup.done, or /etc/cloud/cloud-init.disabled)",
+			},
+			{
+				desc:    "vz-agent process",
+				args:    []string{"pgrep", "-x", "vz-agent"},
+				ok:      "running",
+				missing: "not running",
+			},
+		}
+	default:
+		return []verifyRunningGuestProbe{
+			{
+				desc:    "Agent binary",
+				args:    []string{"test", "-f", "/usr/local/bin/vz-agent"},
+				ok:      "present",
+				missing: "not found (/usr/local/bin/vz-agent)",
+			},
+			{
+				desc:    "Agent LaunchDaemon",
+				args:    []string{"test", "-f", "/Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist"},
+				ok:      "present",
+				missing: "not found (/Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist)",
+			},
+			{
+				desc:    "Provisioning completed marker",
+				args:    []string{"test", "-f", "/private/var/db/.vz-provisioned"},
+				ok:      "present",
+				missing: "not found (/private/var/db/.vz-provisioned)",
+			},
+			{
+				desc:    "Setup Assistant skip marker",
+				args:    []string{"test", "-f", "/private/var/db/.AppleSetupDone"},
+				ok:      "present",
+				missing: "not found (/private/var/db/.AppleSetupDone)",
+			},
+			{
+				desc:    "vz-agent process",
+				args:    []string{"pgrep", "-x", "vz-agent"},
+				ok:      "running",
+				missing: "not running",
+			},
+		}
+	}
 }
 
 func agentExecExitOK(resp *controlpb.ControlResponse, err error) bool {
