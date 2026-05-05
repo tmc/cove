@@ -1,0 +1,2 @@
+{"timestamp":"2026-05-05T11:30:00Z","event_type":"vm_start","vm_name":"fail-vm","image_ref":"registry.example/fail:latest","status":"ok","extra":{"run_id":"run-fail"}}
+{"timestamp":"2026-05-05T11:30:05Z","event_type":"run_complete","vm_name":"fail-vm","image_ref":"registry.example/fail:latest","duration_ms":5400,"status":"signal: killed","extra":{"run_id":"run-fail","exit_code":137}}

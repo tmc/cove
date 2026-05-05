@@ -1,0 +1,2 @@
+{"timestamp":"2026-05-05T11:00:00Z","event_type":"vm_start","vm_name":"new-vm","image_ref":"registry.example/new:latest","status":"ok","extra":{"run_id":"run-ok-new"}}
+{"timestamp":"2026-05-05T11:00:03Z","event_type":"run_complete","vm_name":"new-vm","image_ref":"registry.example/new:latest","duration_ms":3000,"status":"ok","extra":{"run_id":"run-ok-new","exit_code":0}}
