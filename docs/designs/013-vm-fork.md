@@ -177,6 +177,10 @@ type Config struct {
 | Vsock CID | Skip auto-assignment; let kernel pick (already does) |
 | Hostname (guest) | Optional `-set-hostname` flag drives a vzscript on first boot |
 
+This checklist remains correct for cold forks and concurrent sibling mode. It
+is deliberately inverted for Phase 5 vmstate-fidelity forks, where `machine.id`
+and MAC must be preserved from the source bundle instead of regenerated.
+
 ## Concurrent-run guard
 
 Even with everything above, two `cove run`s on the *same* vmDir still race.
@@ -248,6 +252,9 @@ own.
 
 Audit 2026-05-04: clean for abandoned preserve-identity stubs in `run_bundle.go`, `image_fork.go`, and `runtime_lifecycle.go`; A1 identity preservation remains deferred per the Phase 2 bench notes and `project_a1_snapshot_fidelity` finding referenced by design 024.
 
+Update 2026-05-05: Phase 5 slice 5a — identity preservation shipped at 4bd435d.
+Slice 5b — actual vmstate restore wiring — remains deferred.
+
 ## Phase 5 — vmstate identity fidelity
 
 Phase 5 revisits Model A1 for saved machine state. The earlier dead-code branch
@@ -296,6 +303,10 @@ Slice 5a deliberately stops after identity preservation. The runtime still cold
 boots the fork with the RAM-overlay disk attachment; Slice 5b will decide when
 and how `suspend.vmstate` or `snapshots/<name>.vmstate` should drive
 `RestoreMachineStateFromURL`.
+
+The dead-code `vz-macos-preserve-id` / `codex/fork-preserve-identity` branch is
+superseded by the Slice 5a implementation in `internal/vmidentity` and
+`SetupEphemeralFork(PreserveIdentity: true)`.
 
 ## What this replaces / consolidates
 
