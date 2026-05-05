@@ -132,11 +132,21 @@ func (e *buildExecutor) executeVMWithMissRunner(ctx context.Context, parentDir s
 		return result, err
 	}
 	for _, step := range e.plan.Steps {
+		stepStarted := time.Now()
 		applied, err := e.executeVMStep(ctx, step, currentDir, runMiss)
 		if err != nil {
+			emitMetricEvent("build_step", stepStarted, err.Error(), map[string]any{
+				"step":      step.Name,
+				"cache_hit": step.CacheHit,
+			})
 			e.cleanupIntermediate(result)
 			return result, err
 		}
+		emitMetricEvent("build_step", stepStarted, "ok", map[string]any{
+			"step":      step.Name,
+			"cache_hit": step.CacheHit,
+			"key":       step.Key,
+		})
 		if len(result.Steps) > 0 && !e.opts.KeepIntermediate {
 			_ = e.cleanupScratch(result.Steps[len(result.Steps)-1].Scratch)
 		}

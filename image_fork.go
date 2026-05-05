@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -51,6 +52,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	}
 	cfg = runConfigForImageManifest(cfg, manifest)
 
+	forkStarted := time.Now()
 	childPath, err := MaterializeImage(MaterializeImageOptions{
 		Ref:       ref,
 		ChildName: cfg.EphemeralForkName,
@@ -69,6 +71,10 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if cfg.Ephemeral {
 		fmt.Printf("  mode:   ephemeral (destroyed on stop)\n")
 	}
+	emitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
+		"child_name": childName,
+		"child_path": childPath,
+	})
 
 	vmName = childName
 	vmDir = childPath

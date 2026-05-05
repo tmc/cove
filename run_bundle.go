@@ -19,6 +19,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -28,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	runmetrics "github.com/tmc/vz-macos/internal/metrics"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
@@ -35,20 +37,22 @@ import (
 // construct via NewRunBundle. The dir field stores the target path but is
 // only created on first write (see ensureDir).
 type RunBundle struct {
-	id          string
-	dir         string
-	vmName      string
-	forkFrom    string
-	startedAt   time.Time
-	endedAt     time.Time
-	exitStatus  string
-	finalized   bool
-	created     bool
-	mu          sync.Mutex
-	eventsFile  *os.File
-	stdoutFile  *os.File
-	stderrFile  *os.File
-	screenshotN int
+	id               string
+	dir              string
+	vmName           string
+	forkFrom         string
+	startedAt        time.Time
+	endedAt          time.Time
+	exitStatus       string
+	finalized        bool
+	created          bool
+	mu               sync.Mutex
+	eventsFile       *os.File
+	stdoutFile       *os.File
+	stderrFile       *os.File
+	metricsSink      runmetrics.Sink
+	metricAgentReady bool
+	screenshotN      int
 }
 
 // runManifest is the on-disk schema for manifest.json.
@@ -218,6 +222,10 @@ func (b *RunBundle) Finalize(exitErr error) error {
 		_ = b.stderrFile.Close()
 		b.stderrFile = nil
 	}
+	if b.metricsSink != nil {
+		_ = b.metricsSink.Close()
+		b.metricsSink = nil
+	}
 
 	if !b.created {
 		// No events ever recorded: keep the disk clean and skip the
@@ -225,6 +233,29 @@ func (b *RunBundle) Finalize(exitErr error) error {
 		return nil
 	}
 	return b.writeManifestLocked()
+}
+
+// EmitMetric writes one structured metric event into metrics.jsonl.
+func (b *RunBundle) EmitMetric(ctx context.Context, event runmetrics.Event) error {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.finalized {
+		return nil
+	}
+	if err := b.ensureDirLocked(); err != nil {
+		return err
+	}
+	if b.metricsSink == nil {
+		sink, err := newMetricsSink(filepath.Join(b.dir, "metrics.jsonl"))
+		if err != nil {
+			return err
+		}
+		b.metricsSink = sink
+	}
+	return b.metricsSink.Emit(ctx, event)
 }
 
 func (b *RunBundle) writeManifestLocked() error {
@@ -372,6 +403,7 @@ func finishRunBundle(b *RunBundle, runErr error) {
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: run bundle exit event: %v\n", err)
 	}
+	emitMetricEvent("run_complete", b.startedAt, exit, nil)
 	if err := b.Finalize(runErr); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: run bundle finalize: %v\n", err)
 	}
@@ -396,6 +428,8 @@ func teeControlEvent(reqType string, resp interface{ GetError() string }) {
 	if resp != nil {
 		if errStr := resp.GetError(); errStr != "" {
 			event["error"] = errStr
+		} else if reqType == "agent-ping" {
+			emitAgentReadyMetric()
 		}
 	}
 	_ = b.AppendEvent(event)

@@ -29,7 +29,7 @@ type buildOptions struct {
 	StoreDir         string
 }
 
-func handleBuild(args []string) error {
+func handleBuild(args []string) (err error) {
 	var scripts, tags, cacheFrom, cacheTo stringList
 	var opts buildOptions
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
@@ -95,6 +95,21 @@ func handleBuild(args []string) error {
 		printBuildPlan(os.Stdout, plan, opts)
 		return nil
 	}
+	metricsRun, metricsErr := beginStandaloneMetricsRun(plan.Name, opts.Base)
+	if metricsErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", metricsErr)
+	}
+	defer finishStandaloneMetricsRun(metricsRun)
+	defer func(started time.Time) {
+		if metricsRun == nil {
+			return
+		}
+		status := "ok"
+		if err != nil {
+			status = err.Error()
+		}
+		emitMetricEvent("run_complete", started, status, map[string]any{"command": "build"})
+	}(time.Now())
 	exec := newBuildExecutor(plan, opts, blobStore)
 	if err := exec.Execute(ctx); err != nil {
 		return err
