@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeRunner struct {
@@ -72,7 +73,6 @@ func TestWriteReport(t *testing.T) {
 func TestRunPreparePass(t *testing.T) {
 	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
 	for _, call := range []string{
-		key("cove", "image", "inspect", "-json", "ubuntu:ci"),
 		key("cove", "shell", "ubuntu:ci", "--", "which", "bash"),
 		key("cove", "shell", "ubuntu:ci", "--", "which", "curl"),
 		key("cove", "shell", "ubuntu:ci", "--", "which", "git"),
@@ -84,8 +84,9 @@ func TestRunPreparePass(t *testing.T) {
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent abc123\n"}
 	r.outputs[key("cove", "version")] = Output{Stdout: "cove abc123 (commit abc123, built now)\n"}
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
+	r.outputs[key("cove", "image", "inspect", "-json", "ubuntu:ci")] = Output{Stdout: `{"built_at":"2026-05-05T10:00:00Z"}`}
 
-	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Runner: r})
+	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Force: true, Runner: r})
 	if got.Status != StatusPass || got.ExitCode() != 0 {
 		t.Fatalf("RunPrepare status = %q exit = %d, want pass/0", got.Status, got.ExitCode())
 	}
@@ -107,7 +108,7 @@ func TestRunPrepareFailsMissingDependency(t *testing.T) {
 	r.errors[key("cove", "shell", "ubuntu:ci", "--", "which", "docker")] = errors.New("exit 1")
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "which", "docker")] = Output{Stderr: "docker not found"}
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
-	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Runner: r})
+	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Force: true, Runner: r})
 	if got.Status != StatusFail || got.ExitCode() != 1 {
 		t.Fatalf("RunPrepare status = %q exit = %d, want fail/1", got.Status, got.ExitCode())
 	}
@@ -118,18 +119,80 @@ func TestRunPrepareFailsStaleAgent(t *testing.T) {
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent old\n"}
 	r.outputs[key("cove", "version")] = Output{Stdout: "cove new (commit new, built now)\n"}
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
-	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Runner: r})
+	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Force: true, Runner: r})
 	if got.Status != StatusFail {
 		t.Fatalf("RunPrepare status = %q, want fail", got.Status)
 	}
 }
 
+func TestRunPrepareSkipsFreshImage(t *testing.T) {
+	r := &fakeRunner{
+		outputs: map[string]Output{
+			key("cove", "image", "inspect", "-json", "ubuntu:ci"): {Stdout: `{"built_at":"2026-05-05T10:00:00Z"}`},
+		},
+		errors: map[string]error{},
+	}
+	got := RunPrepare(context.Background(), PrepareConfig{
+		CoveBin: "cove",
+		Ref:     "ubuntu:ci",
+		Runner:  r,
+		TTL:     24 * time.Hour,
+		Now:     mustTime(t, "2026-05-05T12:00:00Z"),
+	})
+	if got.Status != StatusPass {
+		t.Fatalf("RunPrepare status = %q, want pass", got.Status)
+	}
+	if len(got.Checks) != 1 || got.Checks[0].Name != "image-fresh" {
+		t.Fatalf("checks = %#v, want image-fresh only", got.Checks)
+	}
+	if !strings.Contains(got.Checks[0].Message, "image already prepared") {
+		t.Fatalf("fresh message = %q", got.Checks[0].Message)
+	}
+	if len(r.calls) != 1 {
+		t.Fatalf("calls = %v, want inspect only", r.calls)
+	}
+}
+
+func TestRunPrepareForceBypassesFreshSkip(t *testing.T) {
+	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	for _, call := range []string{
+		key("cove", "image", "inspect", "-json", "ubuntu:ci"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "bash"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "curl"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "git"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "docker"),
+		key("cove", "vm", "tree", "--reachable-from", "ubuntu:ci"),
+	} {
+		r.outputs[call] = Output{Stdout: "ok\n"}
+	}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent abc123\n"}
+	r.outputs[key("cove", "version")] = Output{Stdout: "cove abc123 (commit abc123, built now)\n"}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
+
+	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Force: true, Runner: r})
+	if got.Status != StatusPass {
+		t.Fatalf("RunPrepare status = %q, want pass", got.Status)
+	}
+	if !contains(r.calls, key("cove", "shell", "ubuntu:ci", "--", "which", "docker")) {
+		t.Fatalf("force did not run full checks: %v", r.calls)
+	}
+}
+
 func TestMovePrepareFlagsFirst(t *testing.T) {
-	got := movePrepareFlagsFirst([]string{"runner:latest", "--json", "--cove-bin", "./cove"})
-	want := []string{"--json", "--cove-bin", "./cove", "runner:latest"}
+	got := movePrepareFlagsFirst([]string{"runner:latest", "--json", "--force", "--ttl", "2h", "--cove-bin", "./cove"})
+	want := []string{"--json", "--force", "--ttl", "2h", "--cove-bin", "./cove", "runner:latest"}
 	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("movePrepareFlagsFirst = %q, want %q", got, want)
 	}
+}
+
+func mustTime(t *testing.T, value string) time.Time {
+	t.Helper()
+	tm, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tm
 }
 
 func contains(list []string, want string) bool {

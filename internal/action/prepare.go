@@ -2,6 +2,7 @@ package action
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -15,6 +16,9 @@ import (
 type PrepareConfig struct {
 	CoveBin string
 	Ref     string
+	Force   bool
+	TTL     time.Duration
+	Now     time.Time
 	Runner  Runner
 	Timeout time.Duration
 }
@@ -27,6 +31,12 @@ func RunPrepare(ctx context.Context, cfg PrepareConfig) Report {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
 	}
+	if cfg.TTL == 0 {
+		cfg.TTL = 24 * time.Hour
+	}
+	if cfg.Now.IsZero() {
+		cfg.Now = time.Now()
+	}
 	if cfg.CoveBin == "" {
 		if exe, err := os.Executable(); err == nil {
 			cfg.CoveBin = exe
@@ -37,6 +47,13 @@ func RunPrepare(ctx context.Context, cfg PrepareConfig) Report {
 	ref := strings.TrimSpace(cfg.Ref)
 	if ref == "" {
 		return makeReport([]CheckResult{{Name: "image-ref", Status: StatusFail, Message: "image ref required"}})
+	}
+
+	if !cfg.Force {
+		fresh := prepareFreshness(ctx, cfg, ref)
+		if fresh.Status == StatusPass {
+			return makeReport([]CheckResult{fresh})
+		}
 	}
 
 	checks := []CheckResult{
@@ -79,15 +96,17 @@ func RunPrepareCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	fs := flag.NewFlagSet("action prepare-image", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "emit JSON")
+	force := fs.Bool("force", false, "run all checks even when image is fresh")
+	ttl := fs.Duration("ttl", 24*time.Hour, "freshness TTL")
 	coveBin := fs.String("cove-bin", "", "cove binary path")
 	if err := fs.Parse(movePrepareFlagsFirst(args)); err != nil {
 		return 1
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: cove action prepare-image <ref> [--json]")
+		fmt.Fprintln(stderr, "usage: cove action prepare-image <ref> [--json] [--force] [--ttl <duration>]")
 		return 1
 	}
-	report := RunPrepare(ctx, PrepareConfig{CoveBin: *coveBin, Ref: fs.Arg(0)})
+	report := RunPrepare(ctx, PrepareConfig{CoveBin: *coveBin, Ref: fs.Arg(0), Force: *force, TTL: *ttl})
 	if err := WriteReport(stdout, report, *asJSON); err != nil {
 		fmt.Fprintf(stderr, "cove action prepare-image: %v\n", err)
 		return 1
@@ -100,8 +119,14 @@ func movePrepareFlagsFirst(args []string) []string {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
-		case "--json", "-json":
+		case "--json", "-json", "--force", "-force":
 			flags = append(flags, arg)
+		case "--ttl", "-ttl":
+			flags = append(flags, arg)
+			if i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
 		case "--cove-bin", "-cove-bin":
 			flags = append(flags, arg)
 			if i+1 < len(args) {
@@ -113,6 +138,39 @@ func movePrepareFlagsFirst(args []string) []string {
 		}
 	}
 	return append(flags, rest...)
+}
+
+func prepareFreshness(ctx context.Context, cfg PrepareConfig, ref string) CheckResult {
+	out, err := cfg.Runner.Run(ctx, cfg.CoveBin, "image", "inspect", "-json", ref)
+	if err != nil {
+		return CheckResult{Name: "image-fresh", Status: StatusWarn, Message: "inspect failed: " + trimOutput(out, err)}
+	}
+	var payload struct {
+		BuiltAt string `json:"built_at"`
+		Created string `json:"created"`
+	}
+	if err := json.Unmarshal([]byte(out.Stdout), &payload); err != nil {
+		return CheckResult{Name: "image-fresh", Status: StatusWarn, Message: "parse inspect JSON: " + err.Error()}
+	}
+	timestamp := strings.TrimSpace(payload.BuiltAt)
+	if timestamp == "" {
+		timestamp = strings.TrimSpace(payload.Created)
+	}
+	if timestamp == "" {
+		return CheckResult{Name: "image-fresh", Status: StatusWarn, Message: "image timestamp unavailable"}
+	}
+	built, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return CheckResult{Name: "image-fresh", Status: StatusWarn, Message: "parse timestamp: " + err.Error()}
+	}
+	age := cfg.Now.Sub(built)
+	if age < 0 {
+		age = 0
+	}
+	if age <= cfg.TTL {
+		return CheckResult{Name: "image-fresh", Status: StatusPass, Message: fmt.Sprintf("image already prepared, age=%s", age.Round(time.Second))}
+	}
+	return CheckResult{Name: "image-fresh", Status: StatusWarn, Message: fmt.Sprintf("image stale, age=%s exceeds ttl=%s", age.Round(time.Second), cfg.TTL)}
 }
 
 func prepareAgentVersion(ctx context.Context, cfg PrepareConfig, ref string) CheckResult {
