@@ -409,6 +409,47 @@ func TestPendingSharedFoldersWithoutLiveVMListsConfiguredFolders(t *testing.T) {
 	}
 }
 
+func TestSharedFolderStatusLinuxUsesPerTagMountPoint(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+
+	vmDir := linuxTestVMDir(t)
+	hostDir := t.TempDir()
+	if _, _, err := addSharedFolderEntry(vmDir, hostDir, "work", false); err != nil {
+		t.Fatalf("addSharedFolderEntry() error = %v", err)
+	}
+
+	verify := serveSharedFolderControlSteps(t, vmDir, "test-token", []sharedFolderControlStep{
+		{
+			wantType: "ping",
+			resp:     &controlpb.ControlResponse{Success: true},
+		},
+		{
+			wantType: "agent-ping",
+			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0, Stdout: ""}},
+			},
+		},
+	})
+
+	out := captureStdout(t, func() error {
+		return sharedFolderStatus(vmDir, defaultSharedFoldersMountRoot(vmDir))
+	})
+	verify()
+
+	if !strings.Contains(out, "Guest mount work: not mounted at /mnt/work") {
+		t.Fatalf("status output missing Linux mount point:\n%s", out)
+	}
+	if strings.Contains(out, "/Volumes/My Shared Files") {
+		t.Fatalf("status output contains macOS mount point:\n%s", out)
+	}
+}
+
 func TestPendingSharedFoldersOmitsMountedTags(t *testing.T) {
 	vmDir := shortSharedFolderVMDir(t)
 	hostDir := t.TempDir()
@@ -770,14 +811,6 @@ func TestMountSharedFoldersInGuestLinuxUsesMountVirtioFS(t *testing.T) {
 		},
 		{
 			wantType: "agent-exec",
-			wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint},
-			resp: &controlpb.ControlResponse{
-				Success: true,
-				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
-			},
-		},
-		{
-			wantType: "agent-exec",
 			wantArgs: []string{"mount"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -786,7 +819,15 @@ func TestMountSharedFoldersInGuestLinuxUsesMountVirtioFS(t *testing.T) {
 		},
 		{
 			wantType: "agent-exec",
-			wantArgs: []string{"mount", "-t", "virtiofs", "-o", "cache=none,uid=1001,gid=1002", SharedFoldersVirtioFSTag, defaultSharedFoldersMountPoint},
+			wantArgs: []string{"mkdir", "-p", "/mnt/work"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount", "-t", "virtiofs", "-o", "cache=none,uid=1001,gid=1002", "work", "/mnt/work"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
 				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
@@ -794,7 +835,7 @@ func TestMountSharedFoldersInGuestLinuxUsesMountVirtioFS(t *testing.T) {
 		},
 	})
 
-	mounted, err := mountSharedFoldersInGuestWithTimeouts(vmDir, defaultSharedFoldersMountPoint, sharedFolderMountTimeouts{
+	mounted, err := mountSharedFoldersInGuestWithTimeouts(vmDir, defaultSharedFoldersMountRoot(vmDir), sharedFolderMountTimeouts{
 		agentPing: 200 * time.Millisecond,
 		mkdir:     200 * time.Millisecond,
 		mounts:    200 * time.Millisecond,

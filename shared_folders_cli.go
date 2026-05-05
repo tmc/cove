@@ -53,7 +53,7 @@ func handleVMSharedFolderCommand(args []string) error {
 	case "list":
 		return listSharedFolders(targetDir)
 	case "status":
-		mountPoint := defaultSharedFoldersMountPoint
+		mountPoint := defaultSharedFoldersMountRoot(targetDir)
 		if len(args) >= 2 {
 			mountPoint = args[1]
 		}
@@ -69,7 +69,7 @@ func handleVMSharedFolderCommand(args []string) error {
 				return err
 			}
 		}
-		return pendingSharedFolders(targetDir, defaultSharedFoldersMountPoint)
+		return pendingSharedFolders(targetDir, defaultSharedFoldersMountRoot(targetDir))
 	case "add":
 		return handleVMSharedFolderAdd(targetDir, args[1:])
 	case "remove":
@@ -80,7 +80,7 @@ func handleVMSharedFolderCommand(args []string) error {
 	case "clear":
 		return handleVMSharedFolderClear(targetDir)
 	case "mount":
-		mountPoint := defaultSharedFoldersMountPoint
+		mountPoint := defaultSharedFoldersMountRoot(targetDir)
 		if len(args) >= 2 {
 			mountPoint = args[1]
 		}
@@ -89,8 +89,16 @@ func handleVMSharedFolderCommand(args []string) error {
 			return err
 		}
 		if mounted {
+			if mountPoint == "" {
+				fmt.Printf("Mounted shared folders at %s\n", sharedFoldersMountSummary(targetDir))
+				return nil
+			}
 			fmt.Printf("Mounted shared folders at %s\n", mountPoint)
 		} else {
+			if mountPoint == "" {
+				fmt.Printf("Shared folders already mounted at %s\n", sharedFoldersMountSummary(targetDir))
+				return nil
+			}
 			fmt.Printf("Shared folders already mounted at %s\n", mountPoint)
 		}
 		return nil
@@ -135,6 +143,18 @@ func defaultSharedFoldersMountRoot(vmDirectory string) string {
 		return ""
 	}
 	return defaultSharedFoldersMountPoint
+}
+
+func sharedFoldersMountSummary(vmDirectory string) string {
+	folders := LoadSharedFolders(vmDirectory)
+	if len(folders) == 0 {
+		return "(none)"
+	}
+	paths := make([]string, 0, len(folders))
+	for _, f := range folders {
+		paths = append(paths, defaultSharedFolderMountPoint(vmDirectory, f.Tag))
+	}
+	return strings.Join(paths, ", ")
 }
 
 func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
@@ -357,6 +377,17 @@ func sharedFolderStatus(vmDirectory, mountPoint string) error {
 	if err != nil {
 		return fmt.Errorf("query mounts: %w", err)
 	}
+	if sharedFoldersUsePerTagMounts(vmDirectory, mountPoint) {
+		for _, f := range folders {
+			tagMountPoint := defaultSharedFolderMountPoint(vmDirectory, f.Tag)
+			if strings.Contains(mountRes.Stdout, " on "+tagMountPoint+" ") {
+				fmt.Printf("Guest mount %s: mounted at %s\n", f.Tag, tagMountPoint)
+			} else {
+				fmt.Printf("Guest mount %s: not mounted at %s\n", f.Tag, tagMountPoint)
+			}
+		}
+		return nil
+	}
 	if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
 		fmt.Printf("Guest mount: mounted at %s\n", mountPoint)
 		return nil
@@ -416,6 +447,16 @@ func mountedSharedFolderTags(vmDirectory, mountPoint string) (map[string]bool, e
 	mountRes, err := client.AgentExecTyped([]string{"mount"}, nil, "")
 	if err != nil {
 		return nil, fmt.Errorf("query mounts: %w", err)
+	}
+	if sharedFoldersUsePerTagMounts(vmDirectory, mountPoint) {
+		mounted := map[string]bool{}
+		for _, f := range LoadSharedFolders(vmDirectory) {
+			tagMountPoint := defaultSharedFolderMountPoint(vmDirectory, f.Tag)
+			if strings.Contains(mountRes.Stdout, " on "+tagMountPoint+" ") {
+				mounted[f.Tag] = true
+			}
+		}
+		return mounted, nil
 	}
 	if !strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
 		return map[string]bool{}, nil
@@ -481,6 +522,10 @@ func mountSharedFoldersInGuest(vmDirectory, mountPoint string) (bool, error) {
 }
 
 func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeouts sharedFolderMountTimeouts) (bool, error) {
+	if sharedFoldersUsePerTagMounts(vmDirectory, mountPoint) {
+		return mountSharedFolderTagsInGuestWithTimeouts(vmDirectory, timeouts)
+	}
+
 	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
 
 	client.SetTimeout(timeouts.agentPing)
@@ -546,11 +591,61 @@ func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeo
 	return true, nil
 }
 
+func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts sharedFolderMountTimeouts) (bool, error) {
+	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
+
+	client.SetTimeout(timeouts.agentPing)
+	if _, err := client.AgentPingTyped(); err != nil {
+		return false, fmt.Errorf("guest agent unavailable: %w", err)
+	}
+
+	mountRes, err := client.AgentExecTypedTimeout([]string{"mount"}, nil, "", timeouts.mounts)
+	if err != nil {
+		return false, fmt.Errorf("query mounts: %w", err)
+	}
+
+	mountedAny := false
+	for _, f := range LoadSharedFolders(vmDirectory) {
+		mountPoint := defaultSharedFolderMountPoint(vmDirectory, f.Tag)
+		if _, err := client.AgentExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
+			return false, fmt.Errorf("create mount point %q: %w", mountPoint, err)
+		}
+		if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
+			continue
+		}
+		mountArgs := sharedFolderVirtioFSMountArgs(vmDirectory, f.Tag, mountPoint)
+		res, err := client.AgentExecTypedTimeout(mountArgs, nil, "", timeouts.mount)
+		if err != nil {
+			return false, fmt.Errorf("mount shared folder %s: %w", f.Tag, err)
+		}
+		if res.ExitCode != 0 {
+			msg := strings.TrimSpace(res.Stderr)
+			if msg == "" {
+				msg = strings.TrimSpace(res.Stdout)
+			}
+			if msg == "" {
+				msg = "unknown error"
+			}
+			return false, fmt.Errorf("%s %s exit %d: %s", mountArgs[0], f.Tag, res.ExitCode, msg)
+		}
+		mountedAny = true
+	}
+	return mountedAny, nil
+}
+
 func sharedFoldersVirtioFSMountArgs(vmDirectory, mountPoint string) []string {
+	return sharedFolderVirtioFSMountArgs(vmDirectory, SharedFoldersVirtioFSTag, mountPoint)
+}
+
+func sharedFolderVirtioFSMountArgs(vmDirectory, tag, mountPoint string) []string {
 	linuxGuest := vmconfig.DetectOSType(vmDirectory) == "Linux"
 	return virtioFSMountArgsWithOwner(vmconfig.VolumeMount{
-		Tag: SharedFoldersVirtioFSTag,
+		Tag: tag,
 	}, mountPoint, linuxGuest, linuxVirtioFSOwner(vmDirectory))
+}
+
+func sharedFoldersUsePerTagMounts(vmDirectory, mountPoint string) bool {
+	return mountPoint == "" && vmconfig.DetectOSType(vmDirectory) == "Linux"
 }
 
 func sharedFoldersMountedAndSynced(mountOutput, mountPoint string, tags []string, lsRes *controlpb.AgentExecResponse, lsErr error) bool {
