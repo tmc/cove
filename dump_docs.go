@@ -247,7 +247,7 @@ var cliDocSpecs = []cliDocSpec{
 		return captureWriter(printAgentUpgradeUsage)
 	}},
 	{Name: "verify", Summary: "Diagnose provisioning, agent, and file ownership health.", Aliases: []string{"doctor"}, Usage: func() string {
-		fs, _, _, _ := newVerifyFlagSet()
+		fs, _, _, _, _ := newVerifyFlagSet()
 		return captureWriter(func(w io.Writer) {
 			fs.SetOutput(w)
 			printVerifyUsage(w, fs)

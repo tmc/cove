@@ -63,7 +63,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "provision-agent", "inject-agent":
 			printProvisionAgentUsage(os.Stderr)
 		case "doctor", "verify":
-			fs, _, _, _ := newVerifyFlagSet()
+			fs, _, _, _, _ := newVerifyFlagSet()
 			fs.Usage()
 		case "template":
 			printTemplateUsage(os.Stderr)
@@ -194,7 +194,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 	case "doctor", "verify":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			fs, _, _, _ := newVerifyFlagSet()
+			fs, _, _, _, _ := newVerifyFlagSet()
 			fs.Usage()
 			return true, 0
 		}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -28,7 +29,7 @@ type VerifyResult struct {
 
 // handleVerify verifies provisioning files in a VM disk
 func handleVerify(args []string) error {
-	fs, verboseFlag, fixFlag, tccPathFlag := newVerifyFlagSet()
+	fs, verboseFlag, fixFlag, tccPathFlag, vmFlag := newVerifyFlagSet()
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -43,6 +44,13 @@ func handleVerify(args []string) error {
 
 	// Check if VM is running.
 	target := currentVMSelection()
+	if *vmFlag != "" {
+		dir, err := vmconfig.EnsureDir(*vmFlag, vmDir)
+		if err != nil {
+			return err
+		}
+		target = vmSelection{Directory: dir, Name: *vmFlag}
+	}
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
 		return verifyRunningForVM(target, sock, *verboseFlag, *tccPathFlag)
@@ -51,16 +59,17 @@ func handleVerify(args []string) error {
 	return verifyStoppedForVM(target, *verboseFlag, *fixFlag)
 }
 
-func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string) {
+func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string, *string) {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	verboseFlag := fs.Bool("v", false, "Verbose output")
 	fixFlag := fs.Bool("fix", false, "Attempt to fix issues automatically")
 	tccPathFlag := fs.String("tcc-path", "", "Guest path to use for Full Disk Access probe (default: first non-system /Volumes mount)")
+	vmFlag := fs.String("vm", "", "VM name")
 	fs.Usage = func() {
 		printVerifyUsage(os.Stderr, fs)
 	}
-	return fs, verboseFlag, fixFlag, tccPathFlag
+	return fs, verboseFlag, fixFlag, tccPathFlag, vmFlag
 }
 
 func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
