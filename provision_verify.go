@@ -172,7 +172,7 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbeP
 				},
 			}
 			execResp, err := ctlSendRequest(sock, execReq, 5*time.Second, "agent-exec")
-			if err == nil && execResp.Success {
+			if agentExecExitOK(execResp, err) {
 				fmt.Printf("  + %s: present\n", f.desc)
 			} else {
 				fmt.Printf("  - %s: not found (%s)\n", f.desc, f.path)
@@ -189,7 +189,7 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbeP
 			},
 		}
 		execResp, err := ctlSendRequest(sock, execReq, 5*time.Second, "agent-exec")
-		if err == nil && execResp.Success {
+		if agentExecExitOK(execResp, err) {
 			fmt.Printf("  + vz-agent process: running\n")
 		} else {
 			fmt.Printf("  - vz-agent process: not running\n")
@@ -211,6 +211,14 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbeP
 		fmt.Println("Verification completed with issues")
 	}
 	return nil
+}
+
+func agentExecExitOK(resp *controlpb.ControlResponse, err error) bool {
+	if err != nil || resp == nil || !resp.Success {
+		return false
+	}
+	result := resp.GetAgentExecResult()
+	return result != nil && result.GetExitCode() == 0
 }
 
 // verifyStopped mounts the disk and inspects files directly.
