@@ -65,7 +65,7 @@ Guest commands:
   guest-ping                  Check guest agent connectivity
   guest-exec <args...>        Run a command in the guest
   guest-shell <file>          Run a script file in the guest via bash
-  guest-terminal <file>       Run a script in Terminal.app (visible in VM)
+  guest-terminal <file>       Run a script in the guest's terminal application (macOS Terminal.app, Linux GNOME Terminal/Konsole/xterm)
   guest-cp <host> <guest>     Copy a file host→guest (streaming, for large files)
   guest-cp -from-guest <guest> <host>  Copy guest→host
   host-cp <host> <guest>      Copy host file/directory to guest (30m timeout)
@@ -227,7 +227,7 @@ func vzscriptRun(args []string) error {
 	socketPath := rf.String("socket", "", "Control socket path")
 	timeout := rf.Duration("timeout", 10*time.Minute, "Timeout for guest-exec commands")
 	verbose := rf.Bool("v", false, "Verbose output")
-	terminal := rf.Bool("terminal", false, "Run guest-shell commands in Terminal.app (visible in VM GUI)")
+	terminal := rf.Bool("terminal", false, "Run guest-shell commands in the guest's terminal application (macOS Terminal.app, Linux GNOME Terminal/Konsole/xterm)")
 	autoApprove := rf.Bool("auto-approve", false, "Auto-click Allow/OK on system dialogs via OCR")
 	daemon := rf.Bool("daemon", false, "Route guest commands through daemon agent (root) instead of user agent")
 	vm := rf.String("vm", "", "VM name (default: active VM or 'default')")

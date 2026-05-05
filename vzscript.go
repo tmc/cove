@@ -10,7 +10,7 @@
 //	guest-ping                  Check agent connectivity
 //	guest-exec <args...>        Run a command in the guest
 //	guest-shell <file>          Run a local script file in the guest via bash
-//	guest-terminal <file>       Run a local script file in the guest terminal (visible to user)
+//	guest-terminal <file>       Run a script in the guest's terminal application (macOS Terminal.app, Linux GNOME Terminal/Konsole/xterm)
 //	guest-write <dst> <src>     Copy a local file to the guest
 //	guest-read <path>           Read a guest file to stdout
 //	guest-cp <host> <guest>     Copy a file or directory host→guest (streaming)
@@ -356,7 +356,7 @@ func guestShellCmd(cfg vzscriptConfig) script.Cmd {
 func guestTerminalCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
-			Summary: "run a script in Terminal.app inside the guest (visible to user)",
+			Summary: "run a script in the guest's terminal application (macOS Terminal.app, Linux GNOME Terminal/Konsole/xterm)",
 			Args:    "script-file",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
