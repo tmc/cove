@@ -239,11 +239,63 @@ fork to child, boot child to login window, snapshot diff.
    only path; no clonefile-per-child fallback. `-snapshot` is deferred
    until a future identity-preserving fork option lands.
 5. **Phase 4** (~100 LOC): `cove vm tree`, lineage metadata, GC awareness.
+6. **Phase 5**: A1 vmstate snapshot fidelity. Slice 5a preserves the four
+   identity inputs needed for future vmstate resume; Slice 5b wires actual
+   `RestoreMachineStateFromURL`.
 
 Stop after any phase if the validation fails; phases 1-2 are useful on their
 own.
 
 Audit 2026-05-04: clean for abandoned preserve-identity stubs in `run_bundle.go`, `image_fork.go`, and `runtime_lifecycle.go`; A1 identity preservation remains deferred per the Phase 2 bench notes and `project_a1_snapshot_fidelity` finding referenced by design 024.
+
+## Phase 5 — vmstate identity fidelity
+
+Phase 5 revisits Model A1 for saved machine state. The earlier dead-code branch
+proved the important constraint: a `.vmstate` is not bound only to
+`machine.id`. It is bound to the tuple `{machine.id, aux storage, MAC address,
+disk image}`. Slice 5a preserves that tuple for `cove run -fork-from`; Slice 5b
+is deferred and will add actual vmstate restore wiring.
+
+```
+VM start
+  |
+  v
+save vmstate
+  |
+  v
+fork-from <vmstate>
+  |
+  v
+restore identity
+  |-- machine.id    -> copy source machine-config identity
+  |-- aux storage   -> clone/copy aux.img
+  |-- MAC address   -> persist and re-apply mac.address
+  |-- disk image    -> clonefile CoW disk.img
+  |
+  v
+resume
+```
+
+The identity inputs are preserved as follows:
+
+| Input | Preservation rule |
+| ----- | ----------------- |
+| `machine.id` | Encoded in `machine-config.json` and represented on disk as `machine.id`; preserved by copying the source identity into the fork bundle. |
+| Aux storage | `aux.img` is copied with the bundle so VZ sees the same auxiliary storage bytes as the saved state. |
+| MAC address | Persist `mac.address` when present and write the same address into the fork bundle; current first-boot regeneration is not acceptable for vmstate fidelity. |
+| Disk | `disk.img` stays clonefile-COW, matching Phase 3's disk primitive without copying full disk contents. |
+
+Identity mismatch detection is part of Slice 5a. The source bundle is read as a
+complete identity set, and the destination bundle is written from that set. If
+any component cannot be read, copied, or re-read as equal, `cove run -fork-from`
+fails loudly before boot. A partial identity-preserving fork is worse than a
+cold boot because it creates a bundle that looks resumable but cannot satisfy
+Virtualization.framework's restore checks.
+
+Slice 5a deliberately stops after identity preservation. The runtime still cold
+boots the fork with the RAM-overlay disk attachment; Slice 5b will decide when
+and how `suspend.vmstate` or `snapshots/<name>.vmstate` should drive
+`RestoreMachineStateFromURL`.
 
 ## What this replaces / consolidates
 
