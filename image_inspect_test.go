@@ -228,6 +228,46 @@ func TestInspectImageDiff_ChangedFieldsAndLayers(t *testing.T) {
 	}
 }
 
+func TestInspectImageDiff_JSONMissingFields(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src-a")
+	stageMacOSVMForImage(t, "src-b")
+	refA, _ := ParseImageRef("base:legacy")
+	refB, _ := ParseImageRef("base:fresh")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src-a", Ref: refA}); err != nil {
+		t.Fatalf("BuildImage legacy: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src-b", Ref: refB}); err != nil {
+		t.Fatalf("BuildImage fresh: %v", err)
+	}
+	removeManifestFields(t, refA, "cove_commit", "agent_features", "built_at")
+	patchManifest(t, refB, map[string]any{"cove_commit": "new", "agent_features": []any{"execattach.v3"}})
+
+	diff, err := InspectImageDiff(refA, refB)
+	if err != nil {
+		t.Fatalf("InspectImageDiff: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := writeInspectDiffJSON(&buf, diff); err != nil {
+		t.Fatalf("writeInspectDiffJSON: %v", err)
+	}
+	var got struct {
+		Added map[string]struct {
+			Old any `json:"old"`
+			New any `json:"new"`
+		} `json:"added"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal: %v\nraw:\n%s", err, buf.String())
+	}
+	if got.Added["cove_commit"].Old != "<missing>" || got.Added["cove_commit"].New != "new" {
+		t.Fatalf("added cove_commit = %#v", got.Added["cove_commit"])
+	}
+	if got.Added["agent_features"].Old != "<missing>" {
+		t.Fatalf("added agent_features old = %#v, want <missing>", got.Added["agent_features"].Old)
+	}
+}
+
 func patchManifest(t *testing.T, ref ImageRef, values map[string]any) {
 	t.Helper()
 	m := readManifestMapForTest(t, ref)
