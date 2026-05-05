@@ -537,6 +537,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "secret":
+			if err := handleSecretCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "push":
 			if err := handlePush(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
