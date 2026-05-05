@@ -12,6 +12,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -186,6 +187,9 @@ func injectAutoLogin(mountPoint, username, password string, rootFiles *[]string)
 		return fmt.Errorf("write kcpassword: %w", err)
 	}
 	chownRootWheel(kcpasswordPath, rootFiles)
+	if err := validateKCPasswordFile(kcpasswordPath, password); err != nil {
+		return err
+	}
 	fmt.Printf("Written: %s\n", kcpasswordPath)
 
 	// Create loginwindow.plist
@@ -241,6 +245,9 @@ func stageAutoLogin(stagingDir, username, password string, manifest *ProvisionMa
 		encodedPassword, 0600, "root:wheel", manifest); err != nil {
 		return err
 	}
+	if err := validateKCPasswordFile(filepath.Join(stagingDir, "private", "etc", "kcpassword"), password); err != nil {
+		return err
+	}
 
 	loginWindowPlist := pw.CreateLoginWindowPlist(username)
 	plistData, err := pw.EncodeLoginWindowPlist(loginWindowPlist)
@@ -262,6 +269,20 @@ func stageAutoLogin(stagingDir, username, password string, manifest *ProvisionMa
 	if err := stageFile(stagingDir, filepath.FromSlash(autoLoginLaunchDaemonRelativePath),
 		[]byte(autoLoginLaunchDaemonPlist), 0644, "root:wheel", manifest); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateKCPasswordFile(path, password string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read kcpassword: %w", err)
+	}
+	if want := pw.EncodeKC(password); !bytes.Equal(data, want) {
+		return fmt.Errorf("validate kcpassword: encoded bytes do not match password")
+	}
+	if got := pw.DecodeKC(data); got != password {
+		return fmt.Errorf("validate kcpassword: decoded password mismatch")
 	}
 	return nil
 }
