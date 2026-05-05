@@ -37,6 +37,7 @@ var (
 	linuxMode             bool
 	windowsMode           bool
 	linuxDesktop          bool
+	nixosMode             bool
 	linuxDistro           string
 	linuxNested           bool
 	linuxNVMe             bool
@@ -189,7 +190,8 @@ func init() {
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
 	flag.BoolVar(&windowsMode, "windows", false, "run a Windows ARM64 VM instead of macOS (experimental)")
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
-	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
+	flag.BoolVar(&nixosMode, "nixos", false, "install or run a NixOS Linux VM")
+	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine, nixos")
 	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	flag.BoolVar(&linuxNVMe, "nvme", false, "attach Linux root disk through NVMe instead of virtio-blk")
 	flag.StringVar(&linuxDesktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
@@ -308,8 +310,11 @@ func main() {
 	maybeStartPprofServer()
 
 	// -desktop and -nested imply -linux
-	if linuxDesktop || linuxNested {
+	if linuxDesktop || linuxNested || nixosMode {
 		linuxMode = true
+	}
+	if nixosMode {
+		linuxDistro = "nixos"
 	}
 	if windowsMode && linuxMode {
 		fmt.Fprintf(os.Stderr, "error: -windows and -linux are mutually exclusive\n")
@@ -687,8 +692,11 @@ func main() {
 		// (e.g., "cove run -gui" parses -gui here).
 		flag.CommandLine.Parse(args)
 
-		if linuxDesktop || linuxNested || linuxNVMe {
+		if linuxDesktop || linuxNested || linuxNVMe || nixosMode {
 			linuxMode = true
+		}
+		if nixosMode {
+			linuxDistro = "nixos"
 		}
 		if windowsMode && linuxMode {
 			fmt.Fprintf(os.Stderr, "error: -windows and -linux are mutually exclusive\n")

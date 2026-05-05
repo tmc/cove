@@ -716,6 +716,8 @@ func linuxISODescriptorForVariant(variant LinuxVariant) (linuxISODescriptor, err
 		return linuxISODescriptor{cacheName: "linux-fedora.iso", url: FedoraARM64URL, minSize: 500 * 1024 * 1024, label: "Fedora Server 43"}, nil
 	case LinuxVariantAlpine:
 		return linuxISODescriptor{cacheName: "linux-alpine.iso", url: AlpineARM64URL, minSize: 30 * 1024 * 1024, label: "Alpine 3.23 virt"}, nil
+	case LinuxVariantNixOS:
+		return linuxISODescriptor{cacheName: "nixos-25.11-aarch64-linux.iso", url: "https://channels.nixos.org/nixos-25.11/latest-nixos-minimal-aarch64-linux.iso", minSize: 1200 * 1024 * 1024, label: "NixOS 25.11 minimal"}, nil
 	default:
 		return linuxISODescriptor{}, fmt.Errorf("unsupported linux distro %q", variant)
 	}
@@ -738,6 +740,8 @@ func linuxISOMatchesVariant(path string, want LinuxVariant) bool {
 		return strings.Contains(info, "fedora")
 	case LinuxVariantAlpine:
 		return strings.Contains(info, "alpine")
+	case LinuxVariantNixOS:
+		return strings.Contains(info, "nixos")
 	default:
 		return false
 	}

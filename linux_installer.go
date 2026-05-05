@@ -56,6 +56,7 @@ const (
 	LinuxVariantDebian        LinuxVariant = "debian"
 	LinuxVariantFedora        LinuxVariant = "fedora"
 	LinuxVariantAlpine        LinuxVariant = "alpine"
+	LinuxVariantNixOS         LinuxVariant = "nixos"
 	LinuxVariantUbuntuServer               = LinuxVariantServer
 	LinuxVariantUbuntuDesktop              = LinuxVariantDesktop
 )
@@ -96,8 +97,10 @@ func parseLinuxVariant(distro string, desktop bool) (LinuxVariant, error) {
 		return LinuxVariantFedora, nil
 	case "alpine":
 		return LinuxVariantAlpine, nil
+	case "nix", "nix-os", "nixos":
+		return LinuxVariantNixOS, nil
 	default:
-		return "", fmt.Errorf("unsupported linux distro %q (supported: ubuntu, debian, fedora, alpine)", name)
+		return "", fmt.Errorf("unsupported linux distro %q (supported: ubuntu, debian, fedora, alpine, nixos)", name)
 	}
 }
 
@@ -109,6 +112,8 @@ func defaultLinuxUser(variant LinuxVariant) string {
 		return "fedora"
 	case LinuxVariantAlpine:
 		return "alpine"
+	case LinuxVariantNixOS:
+		return "nixos"
 	default:
 		return "ubuntu"
 	}
@@ -166,6 +171,8 @@ func (v LinuxVariant) displayName() string {
 		return "Fedora"
 	case LinuxVariantAlpine:
 		return "Alpine"
+	case LinuxVariantNixOS:
+		return "NixOS"
 	default:
 		return "Ubuntu Server"
 	}
@@ -300,6 +307,9 @@ func installLinuxVM() error {
 	}
 
 	fmt.Printf("Installing distro: %s\n", provConfig.Variant.displayName())
+	if provConfig.Variant == LinuxVariantNixOS {
+		return installNixOSVM(resolvedDiskPath, provConfig)
+	}
 
 	// Get ISO (download if needed)
 	resolvedISO, err := ensureLinuxISOForVariant(provConfig.Variant.installISOVariant())

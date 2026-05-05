@@ -482,6 +482,8 @@ func TestParseLinuxVariant(t *testing.T) {
 		{"debian", "debian", false, LinuxVariantDebian, false},
 		{"fedora", "fedora", false, LinuxVariantFedora, false},
 		{"alpine", "alpine", false, LinuxVariantAlpine, false},
+		{"nixos", "nixos", false, LinuxVariantNixOS, false},
+		{"nix alias", "nix", false, LinuxVariantNixOS, false},
 		{"desktop mismatch", "fedora", true, "", true},
 		{"unknown", "arch", false, "", true},
 	}
@@ -530,7 +532,7 @@ func TestLinuxVariantInstallISOVariant(t *testing.T) {
 	if got, want := LinuxVariantServer.installISOVariant(), LinuxVariantServer; got != want {
 		t.Fatalf("LinuxVariantServer.installISOVariant() = %q, want %q", got, want)
 	}
-	for _, variant := range []LinuxVariant{LinuxVariantDebian, LinuxVariantFedora, LinuxVariantAlpine} {
+	for _, variant := range []LinuxVariant{LinuxVariantDebian, LinuxVariantFedora, LinuxVariantAlpine, LinuxVariantNixOS} {
 		if got := variant.installISOVariant(); got != variant {
 			t.Fatalf("%s.installISOVariant() = %q, want %q", variant, got, variant)
 		}
@@ -607,6 +609,7 @@ func TestLinuxISODescriptorForVariant(t *testing.T) {
 		{LinuxVariantDebian, "linux-debian.iso", 300 * 1024 * 1024},
 		{LinuxVariantFedora, "linux-fedora.iso", 500 * 1024 * 1024},
 		{LinuxVariantAlpine, "linux-alpine.iso", 30 * 1024 * 1024},
+		{LinuxVariantNixOS, "nixos-25.11-aarch64-linux.iso", 1200 * 1024 * 1024},
 	}
 	for _, tc := range tests {
 		desc, err := linuxISODescriptorForVariant(tc.variant)
