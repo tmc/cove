@@ -21,6 +21,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -125,6 +126,7 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 	if _, err := conn.Write(append(payload, '\n')); err != nil {
 		return 0, fmt.Errorf("send attach: %w", err)
 	}
+	attachWriter := &shellAttachWriter{w: conn}
 
 	reader := bufio.NewReaderSize(conn, 64*1024)
 	first, err := reader.ReadString('\n')
@@ -167,13 +169,21 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 		restoreTTY = func() { _ = term.Restore(stdinFD, prev) }
 		// Send the initial winsize so the guest pty matches the host.
 		if cols, rows, sizeErr := term.GetSize(stdinFD); sizeErr == nil {
-			_ = sendShellResize(sock, token, execID, uint32(cols), uint32(rows))
+			if attached.Stdin {
+				_ = attachWriter.SendResize(execID, uint32(rows), uint32(cols))
+			} else {
+				_ = sendShellResize(sock, token, execID, uint32(cols), uint32(rows))
+			}
 		}
-		restoreSignals = installShellSignalForwarders(ctx, sock, token, execID, stdinFD, stderr)
+		if attached.Stdin {
+			restoreSignals = installShellInlineSignalForwarders(ctx, attachWriter, execID, stdinFD, stderr)
+		} else {
+			restoreSignals = installShellSignalForwarders(ctx, sock, token, execID, stdinFD, stderr)
+		}
 	}
 	stdinCtx, cancelStdin := context.WithCancel(ctx)
 	if attached.Stdin {
-		go pumpShellStdin(stdinCtx, conn, execID, stdin, stderr)
+		go pumpShellStdin(stdinCtx, attachWriter, execID, stdin, stderr)
 	}
 	defer func() {
 		cancelStdin()
@@ -192,16 +202,14 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 	return exitCode, nil
 }
 
-func pumpShellStdin(ctx context.Context, conn net.Conn, execID string, stdin io.Reader, stderr io.Writer) {
-	if err := writeShellStdinFrames(ctx, conn, execID, stdin); err != nil && !errors.Is(err, context.Canceled) {
+func pumpShellStdin(ctx context.Context, w *shellAttachWriter, execID string, stdin io.Reader, stderr io.Writer) {
+	if err := writeShellStdinFrames(ctx, w, execID, stdin); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(stderr, "cove shell: stdin: %v\n", err)
 	}
-	if cw, ok := conn.(interface{ CloseWrite() error }); ok {
-		_ = cw.CloseWrite()
-	}
+	_ = w.SendCloseStdin(execID)
 }
 
-func writeShellStdinFrames(ctx context.Context, w io.Writer, execID string, stdin io.Reader) error {
+func writeShellStdinFrames(ctx context.Context, w *shellAttachWriter, execID string, stdin io.Reader) error {
 	buf := make([]byte, 32*1024)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -209,15 +217,7 @@ func writeShellStdinFrames(ctx context.Context, w io.Writer, execID string, stdi
 		}
 		n, err := stdin.Read(buf)
 		if n > 0 {
-			frame, marshalErr := json.Marshal(agentExecStdinFrame{
-				Type:   "stdin",
-				ExecID: execID,
-				Data:   base64.StdEncoding.EncodeToString(buf[:n]),
-			})
-			if marshalErr != nil {
-				return fmt.Errorf("marshal stdin frame: %w", marshalErr)
-			}
-			if _, writeErr := w.Write(append(frame, '\n')); writeErr != nil {
+			if writeErr := w.SendStdin(execID, buf[:n]); writeErr != nil {
 				return fmt.Errorf("send stdin frame: %w", writeErr)
 			}
 		}
@@ -228,6 +228,58 @@ func writeShellStdinFrames(ctx context.Context, w io.Writer, execID string, stdi
 			return fmt.Errorf("read stdin: %w", err)
 		}
 	}
+}
+
+type shellAttachWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (w *shellAttachWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.w.Write(p)
+}
+
+func (w *shellAttachWriter) SendStdin(execID string, data []byte) error {
+	return w.send(agentExecStdinFrame{
+		Type:   "stdin",
+		ExecID: execID,
+		Data:   base64.StdEncoding.EncodeToString(data),
+	})
+}
+
+func (w *shellAttachWriter) SendResize(execID string, rows, cols uint32) error {
+	return w.send(agentExecStdinFrame{
+		Type:   "resize",
+		ExecID: execID,
+		Rows:   rows,
+		Cols:   cols,
+	})
+}
+
+func (w *shellAttachWriter) SendSignal(execID string, signal int32) error {
+	return w.send(agentExecStdinFrame{
+		Type:   "signal",
+		ExecID: execID,
+		Signal: signal,
+	})
+}
+
+func (w *shellAttachWriter) SendCloseStdin(execID string) error {
+	return w.send(agentExecStdinFrame{
+		Type:   "close_stdin",
+		ExecID: execID,
+	})
+}
+
+func (w *shellAttachWriter) send(frame agentExecStdinFrame) error {
+	data, err := json.Marshal(frame)
+	if err != nil {
+		return fmt.Errorf("marshal attach frame: %w", err)
+	}
+	_, err = w.Write(append(data, '\n'))
+	return err
 }
 
 // pumpShellFrames decodes JSON-line ControlResponse frames from r,
@@ -303,6 +355,65 @@ func installShellSignalForwarders(ctx context.Context, sock, token, execID strin
 		// Re-attach SIGINT to the main shutdown handler so post-shell
 		// Ctrl-C still cleanly stops the host process / VM.
 		reclaimMainSignals(syscall.SIGINT)
+	}
+}
+
+func installShellInlineSignalForwarders(ctx context.Context, w *shellAttachWriter, execID string, stdinFD int, stderr io.Writer) func() {
+	winchCh := make(chan os.Signal, 1)
+	intCh := make(chan os.Signal, 1)
+	signal.Notify(winchCh, syscall.SIGWINCH)
+	signal.Reset(syscall.SIGINT)
+	signal.Notify(intCh, syscall.SIGINT)
+
+	cancelCtx, cancel := context.WithCancel(ctx)
+	go forwardInlineWinch(cancelCtx, w, execID, stdinFD, winchCh, stderr)
+	go forwardInlineSignal(cancelCtx, w, execID, intCh, stderr)
+
+	return func() {
+		cancel()
+		signal.Stop(winchCh)
+		signal.Stop(intCh)
+		reclaimMainSignals(syscall.SIGINT)
+	}
+}
+
+func forwardInlineWinch(ctx context.Context, w *shellAttachWriter, execID string, stdinFD int, ch <-chan os.Signal, stderr io.Writer) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+		}
+		cols, rows, err := term.GetSize(stdinFD)
+		if err != nil {
+			continue
+		}
+		if err := w.SendResize(execID, uint32(rows), uint32(cols)); err != nil {
+			fmt.Fprintf(stderr, "cove shell: resize: %v\r\n", err)
+		}
+	}
+}
+
+func forwardInlineSignal(ctx context.Context, w *shellAttachWriter, execID string, ch <-chan os.Signal, stderr io.Writer) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case sig, ok := <-ch:
+			if !ok {
+				return
+			}
+			guestSig := hostSignalToExecSignal(sig)
+			if guestSig == 0 {
+				continue
+			}
+			if err := w.SendSignal(execID, guestSig); err != nil {
+				fmt.Fprintf(stderr, "cove shell: signal: %v\r\n", err)
+			}
+		}
 	}
 }
 
