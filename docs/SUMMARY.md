@@ -72,6 +72,7 @@
 * [cove shell exec UX](designs/023-cove-shell-exec-ux.md)
 * [cove runner images (publish + fork-from)](designs/024-cove-runner-images.md)
 * [cove-action security architecture](designs/025-cove-action-security.md)
+* [GHA executor Slice 2 cache reuse](designs/030-gha-executor-slice-2.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
