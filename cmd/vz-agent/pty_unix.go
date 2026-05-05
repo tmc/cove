@@ -34,7 +34,7 @@ func (s *agentServer) execStreamPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *co
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
 }
 
-func (s *agentServer) execAttachPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecOutput]) error {
+func (s *agentServer) execAttachPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecAttachOutput]) error {
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("pty start: %v", err))
@@ -42,10 +42,10 @@ func (s *agentServer) execAttachPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *co
 	s.trackExecWithPty(r, cmd, ptmx)
 	defer s.untrackExec(r.GetExecId())
 
-	go receiveExecAttachStdin(stream, nopWriteCloser{Writer: ptmx})
+	go s.receiveExecAttachControl(stream, nopWriteCloser{Writer: ptmx}, r.GetExecId(), true)
 
 	done := make(chan error, 1)
-	go streamPipe(stream, ptmx, pb.ExecOutput_STDOUT, done)
+	go streamAttachPipe(stream, ptmx, pb.ExecOutput_STDOUT, done)
 
 	exitCode := int32(0)
 	if err := cmd.Wait(); err != nil {
@@ -54,7 +54,9 @@ func (s *agentServer) execAttachPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *co
 		}
 	}
 	<-done
-	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
+	return stream.Send(&pb.ExecAttachOutput{
+		Output: &pb.ExecAttachOutput_ExitStatus{ExitStatus: &pb.ExitStatus{ExitCode: exitCode}},
+	})
 }
 
 type nopWriteCloser struct {

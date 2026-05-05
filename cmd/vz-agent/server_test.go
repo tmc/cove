@@ -63,15 +63,19 @@ func TestInfoAdvertisesExecAttach(t *testing.T) {
 	if !containsString(resp.Msg.GetFeatures(), "exec_attach") {
 		t.Fatalf("features = %v, want exec_attach", resp.Msg.GetFeatures())
 	}
+	if !containsString(resp.Msg.GetFeatures(), "exec_attach_v3") {
+		t.Fatalf("features = %v, want exec_attach_v3", resp.Msg.GetFeatures())
+	}
 }
 
-func TestReceiveExecAttachStdinWritesFrames(t *testing.T) {
+func TestReceiveExecAttachControlWritesStdinFrames(t *testing.T) {
 	stream := &fakeExecAttachReceiver{reqs: []*pb.ExecAttachRequest{
-		{Request: &pb.ExecAttachRequest_Stdin{Stdin: []byte("hello")}},
-		{Request: &pb.ExecAttachRequest_Stdin{Stdin: []byte(" world")}},
+		{Request: &pb.ExecAttachRequest_Stdin{Stdin: &pb.StdinChunk{Data: []byte("hello")}}},
+		{Request: &pb.ExecAttachRequest_Stdin{Stdin: &pb.StdinChunk{Data: []byte(" world")}}},
+		{Request: &pb.ExecAttachRequest_CloseStdin{CloseStdin: &pb.CloseStdinRequest{}}},
 	}}
 	dst := &recordWriteCloser{}
-	receiveExecAttachStdin(stream, dst)
+	newAgentServer().receiveExecAttachControl(stream, dst, "exec-1", false)
 	if got, want := dst.String(), "hello world"; got != want {
 		t.Fatalf("stdin writes = %q, want %q", got, want)
 	}
