@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	runmetrics "github.com/tmc/vz-macos/internal/metrics"
 )
 
 func TestRunSuccess(t *testing.T) {
@@ -113,6 +115,52 @@ func TestRunCacheHitUsesCacheImage(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("outputs missing %q in:\n%s", want, got)
 		}
+	}
+}
+
+func TestRunCacheExpiredEmitsEvict(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 0)
+	out := filepath.Join(dir, "out")
+	stageActionCacheImage(t, dir, "go-old")
+	cacheDir := filepath.Join(dir, ".vz", "images", "cache", "go-old", "latest")
+	if err := os.WriteFile(filepath.Join(cacheDir, "CACHE-TTL"), []byte("1h\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "manifest.json"), []byte(`{"name":"cache/go-old","tag":"latest","createdAt":"2026-05-01T00:00:00Z"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", "go-old"}, []string{
+		"HOME=" + dir,
+		"GITHUB_OUTPUT=" + out,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+	}, os.Stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, want 0", code)
+	}
+	events := readActionMetricEventsDetailed(t, filepath.Join(dir, ".vz", "runs", "stub-run", "metrics.jsonl"))
+	found := false
+	for _, e := range events {
+		if e.EventType != "run_cache_evict" {
+			continue
+		}
+		found = true
+		if got := actionAsInt64(t, e.Extra["bytes_freed"]); got <= 0 {
+			t.Fatalf("bytes_freed = %d, want > 0: %#v", got, e)
+		}
+		if e.Extra["run_id"] == "" || e.Extra["cache_image"] == "" {
+			t.Fatalf("evict event missing fields: %#v", e)
+		}
+	}
+	if !found {
+		t.Fatalf("missing run_cache_evict in %+v", events)
+	}
+	if !strings.Contains(readFile(t, out), "cache-saved=false") {
+		t.Fatalf("outputs missing cache-saved=false:\n%s", readFile(t, out))
 	}
 }
 
@@ -318,6 +366,43 @@ func stageActionCacheImage(t *testing.T, home, key string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"name":"cache/`+key+`","tag":"latest","createdAt":"2026-05-05T00:00:00Z"}`), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func readActionMetricEventsDetailed(t *testing.T, path string) []runmetrics.Event {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var events []runmetrics.Event
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		var e runmetrics.Event
+		if err := json.Unmarshal(scan.Bytes(), &e); err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, e)
+	}
+	if err := scan.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
+
+func actionAsInt64(t *testing.T, v any) int64 {
+	t.Helper()
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	default:
+		t.Fatalf("unexpected numeric type %T (%v)", v, v)
+		return 0
 	}
 }
 

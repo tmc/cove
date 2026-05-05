@@ -27,6 +27,8 @@ var (
 	cleanupWait        = 5 * time.Second
 )
 
+const cacheImageDefaultTTL = 7 * 24 * time.Hour
+
 type config struct {
 	CoveBin    string
 	Image      string
@@ -144,12 +146,23 @@ func runJob(cfg config) (res result, err error) {
 	forkFrom := cfg.Image
 	cacheRef := ""
 	cacheKey := strings.TrimSpace(cfg.CacheKey)
+	var cacheEvictBytes int64
+	var cacheEvictReason string
 	if cacheKey != "" {
 		cacheRef = cacheImageRef(cacheKey)
 		res.CacheImage = cacheRef
-		if cacheImageExists(cfg, cacheRef) {
+		if hit, evict, bytesFreed, reason := cacheImageRestoreState(cfg, cacheRef); hit || evict {
+			if evict {
+				cacheEvictBytes = bytesFreed
+				cacheEvictReason = reason
+			}
+			if hit {
+				forkFrom = cacheRef
+				res.CacheHit = true
+			}
+		}
+		if res.CacheHit {
 			forkFrom = cacheRef
-			res.CacheHit = true
 		}
 	}
 
@@ -187,6 +200,15 @@ func runJob(cfg config) (res result, err error) {
 
 	res.MetricsPath = waitForMetricsPath(ctx, cfg, actionStarted)
 	emitActionMetric(res.MetricsPath, "action_start", actionStarted, "ok", nil)
+	if cacheEvictBytes > 0 {
+		extra := map[string]any{
+			"cache_key":    cacheKey,
+			"cache_image":  cacheRef,
+			"bytes_freed":  cacheEvictBytes,
+			"cache_reason": cacheEvictReason,
+		}
+		emitActionMetric(res.MetricsPath, "run_cache_evict", actionStarted, "ok", extra)
+	}
 	if cacheKey != "" {
 		emitActionMetric(res.MetricsPath, "cache_lookup", actionStarted, "ok", map[string]any{
 			"cache_key":   cacheKey,
@@ -249,6 +271,44 @@ func cacheImageExists(cfg config, ref string) bool {
 	}
 	_, err := os.Stat(filepath.Join(path, "manifest.json"))
 	return err == nil
+}
+
+func cacheImageRestoreState(cfg config, ref string) (hit bool, evict bool, bytesFreed int64, reason string) {
+	path, ok := localImagePath(cfg, ref)
+	if !ok {
+		return false, false, 0, ""
+	}
+	data, err := os.ReadFile(filepath.Join(path, "manifest.json"))
+	if err != nil {
+		return false, false, 0, ""
+	}
+	var manifest struct {
+		CreatedAt time.Time `json:"createdAt"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return false, false, 0, ""
+	}
+	ttl := cacheImageTTLMarker(path)
+	if ttl <= 0 {
+		ttl = cacheImageDefaultTTL
+	}
+	age := time.Since(manifest.CreatedAt)
+	if age < ttl {
+		return true, false, 0, ""
+	}
+	return false, true, cacheImageSize(cfg, ref), fmt.Sprintf("expired after %s (ttl %s)", age.Round(time.Second), ttl)
+}
+
+func cacheImageTTLMarker(path string) time.Duration {
+	data, err := os.ReadFile(filepath.Join(path, "CACHE-TTL"))
+	if err != nil {
+		return cacheImageDefaultTTL
+	}
+	ttl, err := time.ParseDuration(strings.TrimSpace(string(data)))
+	if err != nil || ttl <= 0 {
+		return cacheImageDefaultTTL
+	}
+	return ttl
 }
 
 func localImagePath(cfg config, ref string) (string, bool) {
@@ -519,6 +579,18 @@ func emitActionMetric(path, eventType string, started time.Time, status string, 
 	if path == "" {
 		return
 	}
+	runID := filepath.Base(filepath.Dir(path))
+	if runID == "." || runID == string(filepath.Separator) {
+		runID = ""
+	}
+	if runID != "" {
+		if extra == nil {
+			extra = map[string]any{}
+		} else {
+			extra = copyActionMetricExtra(extra)
+		}
+		extra["run_id"] = runID
+	}
 	sink, err := runmetrics.NewJSONLSink(path)
 	if err != nil {
 		return
@@ -535,6 +607,14 @@ func emitActionMetric(path, eventType string, started time.Time, status string, 
 		Status:     status,
 		Extra:      extra,
 	})
+}
+
+func copyActionMetricExtra(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in)+1)
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func parseEnvBlock(s string) ([]string, error) {

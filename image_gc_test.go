@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	runmetrics "github.com/tmc/vz-macos/internal/metrics"
 )
 
 // gcTestSetup stages an isolated $HOME so vmconfig.BaseDir() and
@@ -230,5 +235,99 @@ func TestRunImageGC_YesSkipsPrompt(t *testing.T) {
 	}
 	if ImageExists(ref) {
 		t.Error("image survived runImageGC -yes")
+	}
+}
+
+func TestGCImagesEmitsTelemetry(t *testing.T) {
+	gcTestSetup(t)
+	runsRoot := t.TempDir()
+	prev := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	t.Cleanup(func() {
+		runsDirHook = prev
+		activeMetricsMu.Lock()
+		activeMetricsRun = nil
+		activeMetricsMu.Unlock()
+	})
+
+	recent := stageUnreferencedImage(t, "src-recent", "recent:1")
+	backdateImage(t, recent, time.Now().Add(-1*time.Hour))
+	keep := stageReferencedImage(t, "src-keep", "keep:1", "child-keep")
+	drop := stageUnreferencedImage(t, "src-drop", "drop:1")
+	backdateImage(t, drop, time.Now().Add(-8*24*time.Hour))
+
+	run, err := beginStandaloneMetricsRun("gc-vm", "image:cache")
+	if err != nil {
+		t.Fatalf("beginStandaloneMetricsRun: %v", err)
+	}
+	_, err = GCImages(ImageGCOptions{OlderThan: 24 * time.Hour})
+	finishStandaloneMetricsRun(run)
+	if err != nil {
+		t.Fatalf("GCImages: %v", err)
+	}
+
+	events := readMetricEventsDetailed(t, filepath.Join(run.dir, "metrics.jsonl"))
+	seen := map[string]bool{}
+	for _, e := range events {
+		seen[e.EventType] = true
+		switch e.EventType {
+		case "image_gc_keep":
+			if e.Extra["reason"] == "" || e.Extra["image_ref"] == "" {
+				t.Fatalf("keep event missing fields: %#v", e)
+			}
+		case "image_gc_evict":
+			if got := asInt64(t, e.Extra["bytes_freed"]); got <= 0 {
+				t.Fatalf("evict bytes_freed = %d, want > 0: %#v", got, e)
+			}
+			if e.Extra["image_ref"] == "" {
+				t.Fatalf("evict event missing image_ref: %#v", e)
+			}
+		}
+	}
+	if !seen["image_gc_keep"] || !seen["image_gc_evict"] {
+		t.Fatalf("events = %#v, want both keep and evict", events)
+	}
+	if !ImageExists(keep) || !ImageExists(recent) {
+		t.Fatalf("referenced/recent image unexpectedly removed")
+	}
+	if ImageExists(drop) {
+		t.Fatalf("old image was not evicted")
+	}
+}
+
+func readMetricEventsDetailed(t *testing.T, path string) []runmetrics.Event {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var events []runmetrics.Event
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		var e runmetrics.Event
+		if err := json.Unmarshal(scan.Bytes(), &e); err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, e)
+	}
+	if err := scan.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
+
+func asInt64(t *testing.T, v any) int64 {
+	t.Helper()
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	default:
+		t.Fatalf("unexpected numeric type %T (%v)", v, v)
+		return 0
 	}
 }
