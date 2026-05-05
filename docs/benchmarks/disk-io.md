@@ -72,6 +72,32 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 The after run completed successfully and wrote `ubuntu-desktop` to
 `linux-installed`.
 
+## T36 Current Status On This Host
+
+Current status on this host: the Ubuntu Desktop benchmark recipe is not yet
+producing a stable agent-visible boot. The install-only path can stop before
+the final boot boundary, `up -headless` fails on the post-install disk attach
+step, and the GUI `up` path reaches Ubuntu Setup Assistant and then crashes
+before `agent: available`. Until that provisioning issue is fixed, the host
+cannot produce a trustworthy virtio-blk vs NVMe wall-clock comparison.
+
+This blocks Design 027 disk I/O tuning follow-up benchmarks. Track the
+first-boot reliability issue in T42 before treating new Ubuntu Desktop
+wall-clock numbers as storage results.
+
+Suggested next benchmark command after the provisioning bug is fixed:
+
+```sh
+/usr/bin/time -p ./cove up -linux -desktop -gui -user ubuntu -password ubuntu \
+  -cpu 4 -memory 8 -disk-size 64 -force -vm disk-io-<mode>-<timestamp>
+```
+
+Then repeat with `-nvme` and record:
+
+- wall clock to `agent: available`
+- any `iostat` or installer throughput output
+- whether the VM reaches the desktop without Setup Assistant crashing
+
 ## Pending NVMe Run
 
 Run this when a host VM slot is free:
