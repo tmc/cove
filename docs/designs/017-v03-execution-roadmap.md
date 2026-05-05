@@ -271,8 +271,8 @@ list visible and consistent:
 - External secret stores such as 1Password, Vault, SOPS, and age. v0.3 secrets
   are host environment variables mounted through tmpfs only.
 - BuildKit-style parallel step execution. v0.3 build execution is sequential.
-- Packer plugin shim work unless `cove build` execution is already stable and a
-  maintainer explicitly reorders the roadmap.
+- Packer plugin shim work is not being pursued; use `cove image build` and the
+  Tart Packer plugin path instead.
 - Product-name resolution before any public registry or signed channel ships.
 - Soft-reset throughput claims for privacy-sensitive evals.
 - Tart maintenance claims that have not been freshly verified.
