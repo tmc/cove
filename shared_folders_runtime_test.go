@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -31,5 +32,18 @@ func TestHandleSharedFoldersRuntimeStatusWithoutVM(t *testing.T) {
 	}
 	if status.Message == "" {
 		t.Fatalf("status message is empty")
+	}
+}
+
+func TestSharedFoldersDeviceMissingMessagePreservesRebootFallback(t *testing.T) {
+	got := sharedFoldersDeviceMissingMessage()
+	for _, want := range []string{
+		"shared folders device not found",
+		"restart VM",
+		"shared-folders VirtioFS device",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("sharedFoldersDeviceMissingMessage() = %q, missing %q", got, want)
+		}
 	}
 }

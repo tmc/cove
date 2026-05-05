@@ -26,6 +26,10 @@ type sharedFoldersRuntimeStatus struct {
 	Message  string `json:"message,omitempty"`
 }
 
+func sharedFoldersDeviceMissingMessage() string {
+	return "shared folders device not found (restart VM to pick up shared-folders VirtioFS device)"
+}
+
 func newSharedFolderRuntimeApplier(vm vz.VZVirtualMachine, queue dispatch.Queue) sharedFolderRuntimeApplier {
 	return sharedFolderRuntimeApplier{vm: vm, queue: queue}
 }
@@ -103,7 +107,7 @@ func (a sharedFolderRuntimeApplier) Apply(folders []SharedFolderEntry) (int, err
 			}
 		}
 		if device.ID == 0 {
-			applyErr = fmt.Errorf("shared folders device not found (restart VM with full profile)")
+			applyErr = fmt.Errorf("%s", sharedFoldersDeviceMissingMessage())
 			return
 		}
 
@@ -180,7 +184,7 @@ func (a sharedFolderRuntimeApplier) Status() sharedFoldersRuntimeStatus {
 				return
 			}
 		}
-		status.Message = "shared folders device not found"
+		status.Message = sharedFoldersDeviceMissingMessage()
 	})
 	return status
 }
