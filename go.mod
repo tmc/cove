@@ -21,8 +21,13 @@ require (
 )
 
 require (
+	github.com/anthropics/anthropic-sdk-go v1.37.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
