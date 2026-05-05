@@ -68,7 +68,7 @@ cove run [flags]
 | `-cpu <n>` | 2 | Number of CPUs |
 | `-memory <n>` | 4 | Memory in GB |
 | `-display <spec>` | | Display config: WxH[@PPI] or preset (4k, 1080p, 720p, retina) |
-| `-network <mode>` | nat | Network mode: nat, bridged:\<iface\>, vmnet, filehandle, none |
+| `-network <mode>` / `--net <mode>` | nat | Network mode: nat, bridged:\<iface\>, host-only, none |
 | `-v <mount>` / `-vol <mount>` | | Host directory mount: /host[:tag][:ro\|rw] (repeatable) |
 | `-usb <path>` | | USB storage: /path/to/disk.img[:ro] (repeatable) |
 | `-rosetta` | true | Enable Rosetta x86-64 translation (Linux VMs) |
@@ -85,6 +85,7 @@ cove run [flags]
 | `-gdb-listen-all` | false | Listen on all interfaces for GDB |
 | `-sandbox-level <level>` | | Research isolation: minimal or strict |
 | `-pcap <path>` | | Write PCAP when using `-network filehandle` |
+| `--port-forward <host:guest>` / `--pf <host:guest>` | | Forward host TCP to a guest vsock port (repeatable) |
 | `-disposable` | false | Run from a disposable linked clone |
 | `-fork-from <ref>` | | Boot a fresh VM forked from a parent VM name or local image ref (`<name>` or `<name>:<tag>`); see [`cove image`](#image). Auto-bundles per-run artifacts (`manifest.json`, `events.jsonl`, `stdout.log`, `stderr.log`, `screenshots/`) under `~/.vz/runs/<run-id>/` for post-mortem inspection. |
 | `-ephemeral` | false | Mark a forked VM as disposable: removed on stop and swept by `cove gc`. Required for ephemeral CI runners; see [design 024](../designs/024-cove-runner-images.md). |

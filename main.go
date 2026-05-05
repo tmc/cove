@@ -171,6 +171,8 @@ var (
 	stopInIBootStage2 bool
 	// HTTP listener address for cove run -http.
 	runHTTPAddr string
+	// Startup host TCP -> guest vsock forwards.
+	startupPortForwards portForwardSpecs
 )
 
 func init() {
@@ -231,6 +233,9 @@ func init() {
 	flag.BoolVar(&runEphemeral, "ephemeral", false, "with -fork-from <image-ref>, destroy the materialized child on stop and skip vm tree registration")
 	// Network mode
 	flag.StringVar(&networkMode, "network", "nat", "network mode: nat, bridged:<iface>, vmnet, filehandle, none")
+	flag.StringVar(&networkMode, "net", "nat", "alias for -network")
+	flag.Var(&startupPortForwards, "port-forward", "forward host TCP to guest vsock: hostPort:guestVsockPort (repeatable)")
+	flag.Var(&startupPortForwards, "pf", "alias for -port-forward")
 	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal or strict")
 	flag.StringVar(&proxyURL, "proxy", "", "configure guest system HTTP/HTTPS proxy after boot (for example http://192.168.64.1:8080)")
 	flag.StringVar(&pcapPath, "pcap", "", "write captured Ethernet frames to a PCAP file when using -network filehandle")
@@ -1095,6 +1100,9 @@ func validateLaunchOptions() error {
 	}
 	if strings.TrimSpace(pcapPath) != "" && strings.TrimSpace(networkMode) != "filehandle" {
 		return fmt.Errorf("-pcap requires -network filehandle")
+	}
+	if err := validateNetworkMode(networkMode); err != nil {
+		return err
 	}
 	if err := validateProxyFlags(); err != nil {
 		return err

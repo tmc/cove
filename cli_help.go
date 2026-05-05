@@ -484,7 +484,8 @@ Common flags:
   -nested                 with -linux, enable nested virtualization on supported hosts
   -recovery               boot macOS into recovery mode
   -no-resume / -cold-boot discard saved suspend state and cold boot
-  -network <mode>         nat (default), bridged:<iface>, vmnet, filehandle, none
+  -network / --net <mode> nat (default), bridged:<iface>, host-only, none
+  --pf host:guest         forward host TCP to guest vsock (repeatable)
   -vol /host[:tag][:ro]   mount a host directory (repeatable)
   -usb /path/disk.img[:ro] attach a USB mass-storage device (repeatable)
   -display WxH[@PPI]      set display resolution (repeatable)

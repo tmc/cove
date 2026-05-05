@@ -1473,6 +1473,12 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 	startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 	startControlRuntimeInfrastructure(controlServer)
+	if err := startConfiguredPortForwards(controlServer); err != nil {
+		if restoreTerminal != nil {
+			restoreTerminal()
+		}
+		return err
+	}
 
 	if !recoveryMode {
 		go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
@@ -1994,6 +2000,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 	}
 	startControlRuntimeInfrastructure(controlServer)
+	if err := startConfiguredPortForwards(controlServer); err != nil {
+		return err
+	}
 
 	if !recoveryMode {
 		go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
