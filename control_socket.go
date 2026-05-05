@@ -76,6 +76,10 @@ type ControlServer struct {
 	windowTitleBase   string
 	windowTitleState  string
 	windowTitleLabel  string
+	policyMu          sync.Mutex
+	policyStartedAt   time.Time
+	policyExecCount   int64
+	policyStopIssued  bool
 	gui               VMGUIController
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
@@ -206,6 +210,36 @@ func (s *ControlServer) SetVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 	s.vmQueue = queue
 }
 
+func (s *ControlServer) setPolicyStartTime(now time.Time) {
+	s.policyMu.Lock()
+	if s.policyStartedAt.IsZero() {
+		s.policyStartedAt = now
+	}
+	s.policyMu.Unlock()
+}
+
+func (s *ControlServer) policySnapshot() (time.Time, int64, bool) {
+	s.policyMu.Lock()
+	defer s.policyMu.Unlock()
+	return s.policyStartedAt, s.policyExecCount, s.policyStopIssued
+}
+
+func (s *ControlServer) notePolicyExec() {
+	s.policyMu.Lock()
+	s.policyExecCount++
+	s.policyMu.Unlock()
+}
+
+func (s *ControlServer) markPolicyStopIssued() bool {
+	s.policyMu.Lock()
+	defer s.policyMu.Unlock()
+	if s.policyStopIssued {
+		return false
+	}
+	s.policyStopIssued = true
+	return true
+}
+
 func (s *ControlServer) SetWindowTitleBase(base string) {
 	s.windowTitleMu.Lock()
 	defer s.windowTitleMu.Unlock()
@@ -252,6 +286,7 @@ func (s *ControlServer) Start() error {
 		}
 		s.authToken = token
 	}
+	s.setPolicyStartTime(vmLifecycleClock.Now())
 
 	s.controlServer = &controlx.Server{
 		SocketPath:    s.socketPath,
