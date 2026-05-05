@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,9 +35,16 @@ type buildScriptMeta struct {
 	CacheFile  []string
 	CacheTTL   time.Duration
 	Secrets    []string
+	SecretFrom []buildSecretRef
 	Compact    string
 	HasMount   bool
 	MountValue string
+}
+
+type buildSecretRef struct {
+	Name string
+	URI  string
+	Line int
 }
 
 type buildCacheKeyInput struct {
@@ -47,6 +55,7 @@ type buildCacheKeyInput struct {
 	CacheURL             map[string]string `json:"cache_url,omitempty"`
 	CacheFile            map[string]string `json:"cache_file,omitempty"`
 	Secrets              []string          `json:"secrets,omitempty"`
+	SecretFrom           []string          `json:"secret_from,omitempty"`
 	Compact              string            `json:"compact"`
 }
 
@@ -92,7 +101,8 @@ func parseBuildScriptMeta(data []byte) (buildScriptMeta, error) {
 	var meta buildScriptMeta
 	ar := txtar.Parse(data)
 	s := bytes.Split(ar.Comment, []byte("\n"))
-	for _, raw := range s {
+	for i, raw := range s {
+		lineNo := i + 1
 		line := strings.TrimSpace(string(raw))
 		if line == "" || line == "#" {
 			continue
@@ -122,6 +132,12 @@ func parseBuildScriptMeta(data []byte) (buildScriptMeta, error) {
 			meta.CacheTTL = d
 		case "secret":
 			meta.Secrets = appendFields(meta.Secrets, value)
+		case "secret-from":
+			refs, err := parseBuildSecretFrom(value, lineNo)
+			if err != nil {
+				return meta, err
+			}
+			meta.SecretFrom = append(meta.SecretFrom, refs...)
 		case "compact":
 			compact := strings.ToLower(strings.TrimSpace(value))
 			if err := validateCompactMode(compact); err != nil {
@@ -137,10 +153,58 @@ func parseBuildScriptMeta(data []byte) (buildScriptMeta, error) {
 	meta.CacheURL = uniqueSorted(meta.CacheURL)
 	meta.CacheFile = uniqueSorted(meta.CacheFile)
 	meta.Secrets = uniqueSorted(meta.Secrets)
+	meta.SecretFrom = sortedBuildSecretRefs(meta.SecretFrom)
 	if meta.Compact == "" {
 		meta.Compact = "targeted"
 	}
 	return meta, nil
+}
+
+func parseBuildSecretFrom(value string, line int) ([]buildSecretRef, error) {
+	var refs []buildSecretRef
+	for _, f := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
+		if f == "" {
+			continue
+		}
+		name, uri, ok := strings.Cut(f, "=")
+		if !ok {
+			return nil, fmt.Errorf("line %d: secret-from: missing '=' in %q", line, f)
+		}
+		name = strings.TrimSpace(name)
+		uri = strings.TrimSpace(uri)
+		if !validBuildSecretName(name) {
+			return nil, fmt.Errorf("line %d: secret-from: invalid secret name %q", line, name)
+		}
+		if uri == "" {
+			return nil, fmt.Errorf("line %d: secret-from: empty URI for %s", line, name)
+		}
+		u, err := url.Parse(uri)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: secret-from: secret URI %q: %w", line, uri, err)
+		}
+		if u.Scheme == "" {
+			return nil, fmt.Errorf("line %d: secret-from: secret URI %q: missing scheme", line, uri)
+		}
+		refs = append(refs, buildSecretRef{Name: name, URI: uri, Line: line})
+	}
+	return refs, nil
+}
+
+func sortedBuildSecretRefs(in []buildSecretRef) []buildSecretRef {
+	if len(in) == 0 {
+		return nil
+	}
+	out := append([]buildSecretRef(nil), in...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		if out[i].URI != out[j].URI {
+			return out[i].URI < out[j].URI
+		}
+		return out[i].Line < out[j].Line
+	})
+	return out
 }
 
 func appendFields(dst []string, value string) []string {
@@ -234,6 +298,7 @@ func buildCacheKey(ctx context.Context, parentDigest string, step buildStep, cli
 		CacheURL:             map[string]string{},
 		CacheFile:            map[string]string{},
 		Secrets:              append([]string(nil), step.Meta.Secrets...),
+		SecretFrom:           buildSecretRefStrings(step.Meta.SecretFrom),
 		Compact:              step.Meta.Compact,
 	}
 	for _, name := range step.Meta.CacheEnv {
@@ -307,6 +372,7 @@ func digestCanonical(in buildCacheKeyInput) string {
 	writeMap(&b, "url", in.CacheURL)
 	writeMap(&b, "file", in.CacheFile)
 	writeList(&b, "secret", in.Secrets)
+	writeList(&b, "secret-from", in.SecretFrom)
 	writeKV(&b, "compact", in.Compact)
 	return digestBytes([]byte(b.String()))
 }
@@ -336,6 +402,15 @@ func writeList(b *strings.Builder, key string, list []string) {
 	for _, v := range list {
 		writeKV(b, key, v)
 	}
+}
+
+func buildSecretRefStrings(refs []buildSecretRef) []string {
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, ref.Name+"="+ref.URI)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func expandHome(path string) string {

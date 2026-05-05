@@ -93,6 +93,47 @@ func TestMountBuildStepSecretsLinuxSwapFailure(t *testing.T) {
 	}
 }
 
+func TestBuildStepSecretValuesSecretFromEnv(t *testing.T) {
+	t.Setenv("SOURCE_TOKEN", "secret-from-env")
+	values, err := buildStepSecretValues(buildPlanStep{Meta: buildScriptMeta{
+		SecretFrom: []buildSecretRef{{Name: "TARGET_TOKEN", URI: "env://SOURCE_TOKEN"}},
+	}})
+	if err != nil {
+		t.Fatalf("buildStepSecretValues(): %v", err)
+	}
+	if got := string(values["TARGET_TOKEN"]); got != "secret-from-env" {
+		t.Fatalf("TARGET_TOKEN = %q, want secret-from-env", got)
+	}
+	if _, ok := values["SOURCE_TOKEN"]; ok {
+		t.Fatal("source environment name was exposed as a guest secret")
+	}
+}
+
+func TestBuildStepSecretValuesSecretFromDuplicate(t *testing.T) {
+	t.Setenv("BUILD_SECRET", "legacy")
+	t.Setenv("SOURCE_TOKEN", "secret-from-env")
+	_, err := buildStepSecretValues(buildPlanStep{Meta: buildScriptMeta{
+		Secrets:    []string{"BUILD_SECRET"},
+		SecretFrom: []buildSecretRef{{Name: "BUILD_SECRET", URI: "env://SOURCE_TOKEN"}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "secret BUILD_SECRET declared more than once") {
+		t.Fatalf("buildStepSecretValues() = %v, want duplicate error", err)
+	}
+}
+
+func TestBuildStepSecretValuesSecretFromFileError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(path, []byte("secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := buildStepSecretValues(buildPlanStep{Meta: buildScriptMeta{
+		SecretFrom: []buildSecretRef{{Name: "FILE_SECRET", URI: "file://" + path}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "secret-from FILE_SECRET=file://") || !strings.Contains(err.Error(), "permissions 0644 too open") {
+		t.Fatalf("buildStepSecretValues() = %v, want wrapped file permissions error", err)
+	}
+}
+
 func TestMountBuildStepSecretsMacOS(t *testing.T) {
 	t.Setenv("BUILD_SECRET", "secret")
 	root := t.TempDir()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/secrets"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -41,13 +42,23 @@ func mountBuildStepSecrets(ctx context.Context, step buildPlanStep, sc buildScra
 }
 
 func buildStepSecretValues(step buildPlanStep) (map[string][]byte, error) {
-	values := make(map[string][]byte, len(step.Meta.Secrets))
+	values := make(map[string][]byte, len(step.Meta.Secrets)+len(step.Meta.SecretFrom))
 	for _, name := range step.Meta.Secrets {
 		value, ok := os.LookupEnv(name)
 		if !ok {
 			return nil, fmt.Errorf("missing secret environment variable %s", name)
 		}
 		values[name] = []byte(value)
+	}
+	for _, ref := range step.Meta.SecretFrom {
+		if _, ok := values[ref.Name]; ok {
+			return nil, fmt.Errorf("secret %s declared more than once", ref.Name)
+		}
+		value, err := secrets.Resolve(ref.URI)
+		if err != nil {
+			return nil, fmt.Errorf("secret-from %s=%s: %w", ref.Name, ref.URI, err)
+		}
+		values[ref.Name] = value
 	}
 	return values, nil
 }
