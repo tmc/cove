@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -31,12 +32,21 @@ func TestHostSignalToExecSignal(t *testing.T) {
 
 // recordingSignaler captures SignalExec calls for assertion in tests.
 type recordingSignaler struct {
+	mu    sync.Mutex
 	calls []int32
 }
 
 func (r *recordingSignaler) SignalExec(_ context.Context, _ string, signal int32) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.calls = append(r.calls, signal)
 	return nil
+}
+
+func (r *recordingSignaler) snapshot() []int32 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]int32(nil), r.calls...)
 }
 
 func TestForwardInterruptMapsSIGINTToSIGINT(t *testing.T) {
@@ -54,7 +64,7 @@ func TestForwardInterruptMapsSIGINTToSIGINT(t *testing.T) {
 	// Wait for the forwarder to process the signal before cancelling.
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if len(rec.calls) == 1 {
+		if len(rec.snapshot()) == 1 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -62,11 +72,12 @@ func TestForwardInterruptMapsSIGINTToSIGINT(t *testing.T) {
 	cancel()
 	<-done
 
-	if len(rec.calls) != 1 {
-		t.Fatalf("SignalExec call count = %d, want 1", len(rec.calls))
+	calls := rec.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("SignalExec call count = %d, want 1", len(calls))
 	}
-	if rec.calls[0] != int32(syscall.SIGINT) {
-		t.Fatalf("SignalExec arg = %d, want %d", rec.calls[0], int32(syscall.SIGINT))
+	if calls[0] != int32(syscall.SIGINT) {
+		t.Fatalf("SignalExec arg = %d, want %d", calls[0], int32(syscall.SIGINT))
 	}
 }
 
@@ -86,7 +97,7 @@ func TestForwardInterruptSkipsUnsupportedSignal(t *testing.T) {
 	ch <- syscall.SIGTERM
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if len(rec.calls) == 1 {
+		if len(rec.snapshot()) == 1 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -94,7 +105,8 @@ func TestForwardInterruptSkipsUnsupportedSignal(t *testing.T) {
 	cancel()
 	<-done
 
-	if len(rec.calls) != 1 || rec.calls[0] != int32(syscall.SIGTERM) {
-		t.Fatalf("SignalExec calls = %v, want [SIGTERM]", rec.calls)
+	calls := rec.snapshot()
+	if len(calls) != 1 || calls[0] != int32(syscall.SIGTERM) {
+		t.Fatalf("SignalExec calls = %v, want [SIGTERM]", calls)
 	}
 }

@@ -85,6 +85,7 @@ type ControlServer struct {
 	inputMode         atomic.Int32
 	activeConnections atomic.Int32
 	httpListeners     *httpListeners // TCP listeners started by StartHTTP
+	lifecycleMu       sync.RWMutex
 	lifecycleCtx      context.Context
 	lifecycleCancel   context.CancelFunc
 
@@ -130,6 +131,8 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 }
 
 func (s *ControlServer) lifecycleContext() context.Context {
+	s.lifecycleMu.RLock()
+	defer s.lifecycleMu.RUnlock()
 	if s.lifecycleCtx == nil {
 		return context.Background()
 	}
@@ -276,9 +279,12 @@ func (s *ControlServer) WindowTitle() string {
 
 // Start begins listening on the Unix socket
 func (s *ControlServer) Start() error {
+	s.lifecycleMu.Lock()
 	if s.lifecycleCtx == nil || s.lifecycleCancel == nil {
 		s.lifecycleCtx, s.lifecycleCancel = context.WithCancel(context.Background())
 	}
+	lifecycleCtx := s.lifecycleCtx
+	s.lifecycleMu.Unlock()
 	if s.authToken == "" {
 		token, err := EnsureControlTokenForVM(s.effectiveVMDir())
 		if err != nil {
@@ -305,7 +311,7 @@ func (s *ControlServer) Start() error {
 		},
 	}
 	s.running.Store(true)
-	return s.controlServer.Start(s.lifecycleCtx)
+	return s.controlServer.Start(lifecycleCtx)
 }
 
 // Stop closes the control server
@@ -317,10 +323,13 @@ func (s *ControlServer) Stop() {
 		cancel()
 		s.iterm2Proxy = nil
 	}
-	if s.lifecycleCancel != nil {
-		s.lifecycleCancel()
-		s.lifecycleCancel = nil
-		s.lifecycleCtx = nil
+	s.lifecycleMu.Lock()
+	lifecycleCancel := s.lifecycleCancel
+	s.lifecycleCancel = nil
+	s.lifecycleCtx = nil
+	s.lifecycleMu.Unlock()
+	if lifecycleCancel != nil {
+		lifecycleCancel()
 	}
 	if portForwards := s.clearPortForwardManager(); portForwards != nil {
 		portForwards.StopAll()
