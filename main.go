@@ -476,6 +476,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "quota":
+			if err := handleQuotaCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "provision":
 			if err := handleProvision(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -953,6 +959,7 @@ Runtime Control:
   ctl             Control running VM via socket (screenshot, key, text, mouse, ...)
   cp              Copy files between host and guest (cove cp host vm:/path)
   forward         Forward host TCP to guest TCP (cove forward vm 8080:80)
+  quota           Show or set per-VM resource quotas
   ctl disk list   Inspect runtime storage devices
   ctl usb list    Inspect runtime USB controllers and devices
   logs            Show guest logs from a running VM (cove logs <vm> [-f])
