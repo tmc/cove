@@ -259,13 +259,13 @@ func TestVZScriptListLinuxRecipes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"agentkit-linux-base", "agentkit-linux-claude-ready"} {
+	for _, want := range []string{"agentkit-linux-base", "agentkit-linux-claude-ready", "nixos-base"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("linux list missing %q:\n%s", want, out)
 		}
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if got, want := len(lines)-1, 2; got != want {
+	if got, want := len(lines)-1, 3; got != want {
 		t.Fatalf("linux recipe count = %d, want %d:\n%s", got, want, out)
 	}
 }
