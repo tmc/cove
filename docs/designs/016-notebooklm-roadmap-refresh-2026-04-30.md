@@ -50,7 +50,7 @@ research inputs until reverified against primary sources.
 - External secret stores (1Password, Vault, SOPS, age) — v0.3 secrets are host
   environment variables mounted through tmpfs only.
 - BuildKit-style parallel step execution; v0.3 build execution is sequential.
-- Packer plugin shim work.
+- Packer plugin shim work is not being pursued; see [Non-goals](../strategy/non-goals.md).
 - Product-name resolution before any public registry or signed channel.
 
 ## Docs work from this pass
@@ -60,6 +60,6 @@ research inputs until reverified against primary sources.
   to the reference page.
 - Keep the build CLI and release checklist explicit about which build modes
   ship and which remain deferred (registry bases, registry cache, signed
-  channels, external secret stores, BuildKit parallel, Packer, naming).
+  channels, external secret stores, BuildKit parallel, naming).
 - Keep the roadmap ordered around build execution, secrets, compaction,
   benchmark publication, and trademark gating.
