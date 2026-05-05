@@ -462,6 +462,11 @@ func applyProvisioningFiles() error {
 	return applyProvisioningFilesForVM(currentVMSelection())
 }
 
+var (
+	preWarmAuthorizationHook     = PreWarm
+	attachAndMountDataVolumeHook = attachAndMountDataVolume
+)
+
 func applyProvisioningFilesForVM(target vmSelection) error {
 	stagingDir := provisionStagingDirForVM(target)
 
@@ -483,8 +488,12 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 		fmt.Printf("Applying %d provisioning files to %s.\n", len(manifest.Files), filepath.Base(target.Directory))
 	}
 
+	if err := preWarmAuthorizationHook(); err != nil {
+		return fmt.Errorf("pre-warm authorization: %w", err)
+	}
+
 	// Mount the Data volume.
-	mountPoint, device, dataPart, err := attachAndMountDataVolume(diskPath)
+	mountPoint, device, dataPart, err := attachAndMountDataVolumeHook(diskPath)
 	if err != nil {
 		return fmt.Errorf("mount data volume: %w", err)
 	}

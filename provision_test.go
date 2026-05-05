@@ -1,10 +1,52 @@
 package main
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/tmc/vz-macos/proto/controlpb"
 )
+
+func TestApplyProvisioningPreWarmsBeforeDiskAttach(t *testing.T) {
+	dir := t.TempDir()
+	target := vmSelection{Directory: dir, Name: "prewarm-test"}
+	if err := os.WriteFile(target.diskPath(), []byte("disk"), 0o644); err != nil {
+		t.Fatalf("write disk: %v", err)
+	}
+	stagingDir := provisionStagingDirForVM(target)
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatalf("mkdir staging: %v", err)
+	}
+	if err := writeManifest(stagingDir, &ProvisionManifest{Version: 1}); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	oldPreWarm := preWarmAuthorizationHook
+	oldAttach := attachAndMountDataVolumeHook
+	defer func() {
+		preWarmAuthorizationHook = oldPreWarm
+		attachAndMountDataVolumeHook = oldAttach
+	}()
+
+	var order []string
+	preWarmAuthorizationHook = func() error {
+		order = append(order, "prewarm")
+		return nil
+	}
+	attachAndMountDataVolumeHook = func(string) (string, string, string, error) {
+		order = append(order, "attach")
+		return "", "", "", os.ErrNotExist
+	}
+
+	err := applyProvisioningFilesForVM(target)
+	if err == nil || !strings.Contains(err.Error(), "mount data volume") {
+		t.Fatalf("applyProvisioningFilesForVM error = %v, want mount error", err)
+	}
+	if len(order) != 2 || order[0] != "prewarm" || order[1] != "attach" {
+		t.Fatalf("order = %v, want [prewarm attach]", order)
+	}
+}
 
 func TestValidateUsername(t *testing.T) {
 	tests := []struct {
