@@ -1,12 +1,13 @@
 # cove runner images: publish & fork-from
 
 **Status**: Slice 1 shipped (`8a106dc`, 2026-05-02; 1027 LOC, 8 tests
-green). Slice 2 shipped (`02acc3d`, `cf6a506`, `0349570`, 2026-05-04):
-`cove image push|pull` use `oras-go`, Docker auth, compressed disk
-layers, and existing per-image metadata. Slice 3 (drop public-registry
-refusal + cosign) is **deferred indefinitely** per user 2026-05-02 —
-cove repo stays private; revisit only when the user explicitly requests
-a public flip.
+green). Slice 2 shipped (`02acc3d`, `cf6a506`, `0349570`, 2026-05-04)
+and is now contract-frozen: `cove image push|pull` use `oras-go` with
+Docker credential reuse, the tarball stdin/stdout path remains available
+for operator transport, and public-registry push still requires explicit
+operator opt-in. Slice 3 (drop public-registry refusal + cosign) is
+**deferred indefinitely** per user 2026-05-02 — cove repo stays
+private; revisit only when the user explicitly requests a public flip.
 **Source**: notebook scope-B verdict; the user prompt "i think cirrus
 publishes images to use as github runners, can we do the same?". Scope A
 (immediate vzscript-based runner provisioning) shipped at
@@ -103,14 +104,12 @@ cove run -fork-from cove-runner-macos:14.5 -ephemeral -vzscripts github-runner
 
 ### Pull / push (`cove image push|pull`)
 
-- Backed by `oras-go` or `quay/distribution-spec`. Dependency choice
-  deferred to Slice 1 implementation; document the trade in the PR.
+- Backed by `oras-go`.
 - Auth: reuse `~/.docker/config.json` so users get the same UX as
-  `docker pull <ghcr.io/...>`.
-- **Privacy gate**: `cove image push` refuses with a clear error in
-  the v0.2.1 / v0.3 cycle if the target registry hostname is public
-  (initial list: `ghcr.io`, `docker.io`, `quay.io`,
-  `registry.gitlab.com`) and the cove repo
+  `docker pull <ghcr.io/...>` and local credential helpers.
+- **Privacy gate**: `cove image push` refuses with a clear error if the
+  target registry hostname is public (initial list: `ghcr.io`,
+  `docker.io`, `quay.io`, `registry.gitlab.com`) and the cove repo
   ([`tmc/cove`](https://github.com/tmc/cove)) is still private. Override
   `COVE_ALLOW_PUBLIC_PUSH=1` for explicit operator opt-in. The hard
   refusal goes away in Slice 3 once the repo flips public.

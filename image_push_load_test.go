@@ -106,6 +106,35 @@ func TestPushImage_RefusesNonexistent(t *testing.T) {
 	}
 }
 
+func TestRunImagePushAndLoadRefuseTTY(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref := buildSampleImage(t, "src", "tty:v1")
+
+	oldStdout := stdoutIsTerminal
+	stdoutIsTerminal = func(int) bool { return true }
+	t.Cleanup(func() { stdoutIsTerminal = oldStdout })
+	if err := runImagePush([]string{ref.String(), "-"}); err == nil || !strings.Contains(err.Error(), "refusing to write tarball to a TTY") {
+		t.Fatalf("runImagePush tty error = %v, want tty refusal", err)
+	}
+
+	oldStdin := stdinIsTerminal
+	stdinIsTerminal = func(int) bool { return true }
+	t.Cleanup(func() { stdinIsTerminal = oldStdin })
+	if err := runImageLoad([]string{"-"}); err == nil || !strings.Contains(err.Error(), "refusing to read tarball from a TTY") {
+		t.Fatalf("runImageLoad tty error = %v, want tty refusal", err)
+	}
+}
+
+func TestRunImageLoadRejectsRegistryReference(t *testing.T) {
+	err := runImageLoad([]string{"ghcr.io/acme/vm:v1"})
+	if err == nil {
+		t.Fatal("runImageLoad succeeded; want registry ref refusal")
+	}
+	if !strings.Contains(err.Error(), "use cove image pull") {
+		t.Fatalf("error = %q, want pull hint", err)
+	}
+}
+
 func TestLoadImage_RefusesDuplicateTag(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "dup:v1")
@@ -122,6 +151,46 @@ func TestLoadImage_RefusesDuplicateTag(t *testing.T) {
 	// With -force, load succeeds.
 	if _, err := LoadImageFromFile(tarPath, "", true); err != nil {
 		t.Fatalf("LoadImageFromFile -force: %v", err)
+	}
+}
+
+func TestWriteImageTar_RejectsMissingLayer(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref := buildSampleImage(t, "src", "missing-layer:v1")
+	if err := os.Remove(filepath.Join(ref.Path(), "disk.img")); err != nil {
+		t.Fatalf("Remove(disk): %v", err)
+	}
+	if err := WriteImageTar(ref, &bytes.Buffer{}, false); err == nil || !strings.Contains(err.Error(), "source missing disk.img") {
+		t.Fatalf("WriteImageTar error = %v, want missing disk.img", err)
+	}
+}
+
+func TestLoadImage_RejectsMissingManifestEntry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	tarPath := filepath.Join(t.TempDir(), "missing-manifest.tar")
+	f, err := os.Create(tarPath)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	tw := tar.NewWriter(f)
+	if err := tw.WriteHeader(&tar.Header{Name: "disk.img", Mode: 0o644, Size: 4, Typeflag: tar.TypeReg}); err != nil {
+		t.Fatalf("header: %v", err)
+	}
+	if _, err := tw.Write([]byte("disk")); err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close file: %v", err)
+	}
+	_, err = LoadImageFromFile(tarPath, "", false)
+	if err == nil {
+		t.Fatal("LoadImageFromFile accepted tar without manifest.json; want error")
+	}
+	if !strings.Contains(err.Error(), "first tar entry is") || !strings.Contains(err.Error(), "want manifest.json") {
+		t.Fatalf("error = %q, want missing manifest failure", err)
 	}
 }
 
@@ -213,6 +282,38 @@ func TestLoadImage_RejectsSymlink(t *testing.T) {
 	}
 }
 
+func TestLoadImage_RejectsMissingLayer(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	tarPath := filepath.Join(t.TempDir(), "missing-layer.tar")
+	writeRawTar(t, tarPath, []tar.Header{
+		{Name: "aux.img", Mode: 0o644, Typeflag: tar.TypeReg},
+		{Name: "hw.model", Mode: 0o644, Typeflag: tar.TypeReg},
+		{Name: "machine.id", Mode: 0o644, Typeflag: tar.TypeReg},
+	}, map[string][]byte{
+		"aux.img":    []byte("aux"),
+		"hw.model":   []byte("hw"),
+		"machine.id": []byte("machine"),
+	})
+	_, err := LoadImageFromFile(tarPath, "", false)
+	if err == nil {
+		t.Fatal("LoadImageFromFile accepted tar missing disk.img; want error")
+	}
+	if !strings.Contains(err.Error(), "tar missing required files") || !strings.Contains(err.Error(), "disk.img") {
+		t.Fatalf("error = %q, want missing disk.img", err)
+	}
+}
+
+func TestCheckTarEntryRejectsOversize(t *testing.T) {
+	hdr := &tar.Header{Name: "disk.img", Mode: 0o644, Typeflag: tar.TypeReg, Size: imageEntryMaxBytes + 1}
+	err := checkTarEntry(hdr)
+	if err == nil {
+		t.Fatal("checkTarEntry succeeded for oversize entry; want error")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("error = %q, want oversize refusal", err)
+	}
+}
+
 func TestPushImage_GzipRoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "gz:v1")
@@ -301,8 +402,7 @@ func mustStatSize(t *testing.T, path string) int64 {
 // TestWriteImageTar_StdoutRoundTrip drives the stdin/stdout streaming
 // path: WriteImageTar -> bytes.Buffer -> ReadImageTar. This is the
 // in-process equivalent of `cove image push x:1 - | cove image load -`.
-// TTY refusal is enforced one layer up (in runImagePush / runImageLoad);
-// not unit-tested here because term.IsTerminal(int) requires a real fd.
+// TTY refusal is unit-tested separately by swapping the terminal probe.
 func TestWriteImageTar_StdoutRoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "stream:v1")
