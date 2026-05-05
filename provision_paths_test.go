@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tmc/apple/x/plist"
 	"github.com/tmc/vz-macos/internal/password"
 )
 
@@ -261,6 +262,7 @@ func TestStageLaunchDaemonProvisioning(t *testing.T) {
 			t.Errorf("file %s: owner = %q, want root:wheel", f.Path, f.Owner)
 		}
 	}
+
 }
 
 func TestStageAutoLogin(t *testing.T) {
@@ -289,6 +291,32 @@ func TestStageAutoLogin(t *testing.T) {
 		if f.Owner != "root:wheel" {
 			t.Errorf("file %s: owner = %q, want root:wheel", f.Path, f.Owner)
 		}
+	}
+
+	data, err := os.ReadFile(filepath.Join(stagingDir, "Library", "Preferences", "com.apple.loginwindow.plist"))
+	if err != nil {
+		t.Fatalf("read loginwindow plist: %v", err)
+	}
+	var prefs password.LoginWindowPlist
+	if _, err := plist.Unmarshal(data, &prefs); err != nil {
+		t.Fatalf("parse loginwindow plist: %v", err)
+	}
+	if prefs.AutoLoginUser != "stagetest" {
+		t.Fatalf("autoLoginUser = %q, want stagetest", prefs.AutoLoginUser)
+	}
+	if prefs.AutoLoginUserScreenLocked {
+		t.Fatal("autoLoginUserScreenLocked = true, want false")
+	}
+	if prefs.DisableFDEAutoLogin {
+		t.Fatal("DisableFDEAutoLogin = true, want false")
+	}
+
+	creds, err := readLoginScreenCredentials(stagingDir)
+	if err != nil {
+		t.Fatalf("readLoginScreenCredentials: %v", err)
+	}
+	if creds.Username != "stagetest" || creds.Password != "pass123" {
+		t.Fatalf("credentials = %#v, want stagetest/pass123", creds)
 	}
 }
 
