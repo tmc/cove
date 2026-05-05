@@ -28,6 +28,8 @@ func handleImageCommand(args []string) error {
 		return runImageVerify(rest)
 	case "gc":
 		return runImageGC(rest)
+	case "prune":
+		return runImagePrune(rest)
 	case "rm", "remove", "delete":
 		return runImageRm(rest)
 	case "push":
@@ -52,6 +54,8 @@ Subcommands:
   verify <name[:tag]> [-strict] [-json]
                                        Check freshness, provenance, and layout
   gc   [-dry-run] [-yes] [-older-than D]  Sweep images with zero live forks
+  prune [-older-than D] [-filter GLOB] [-force] [-dry-run]
+                                       Remove local images by age or tag glob
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
   push <name[:tag]> <file|-|registry/ref:tag> [-gzip]
                                        Tar to a file/stdout or push to an OCI registry
