@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestLoadInstalledLinuxBootArtifacts(t *testing.T) {
@@ -50,5 +52,41 @@ func TestCloneOptionalFilesLinuxIncludesBootArtifacts(t *testing.T) {
 		if !found {
 			t.Fatalf("cloneOptionalFiles(Linux) missing %q: %v", want, files)
 		}
+	}
+}
+
+func TestLinuxVirtioFSDeviceConfigsAlwaysIncludesSharedFoldersDevice(t *testing.T) {
+	got, err := linuxVirtioFSDeviceConfigs(nil, nil)
+	if err != nil {
+		t.Fatalf("linuxVirtioFSDeviceConfigs() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(linuxVirtioFSDeviceConfigs()) = %d, want 1", len(got))
+	}
+	if tag := got[0].Tag(); tag != SharedFoldersVirtioFSTag {
+		t.Fatalf("shared folders device tag = %q, want %q", tag, SharedFoldersVirtioFSTag)
+	}
+	if got[0].Share() == nil {
+		t.Fatal("shared folders device has nil share, want empty multiple-directory share")
+	}
+}
+
+func TestLinuxVirtioFSDeviceConfigsPreservesVolumes(t *testing.T) {
+	hostDir := t.TempDir()
+	got, err := linuxVirtioFSDeviceConfigs([]vmconfig.VolumeMount{{
+		HostPath: hostDir,
+		Tag:      "work",
+	}}, nil)
+	if err != nil {
+		t.Fatalf("linuxVirtioFSDeviceConfigs() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(linuxVirtioFSDeviceConfigs()) = %d, want 2", len(got))
+	}
+	if tag := got[0].Tag(); tag != "work" {
+		t.Fatalf("volume device tag = %q, want work", tag)
+	}
+	if tag := got[1].Tag(); tag != SharedFoldersVirtioFSTag {
+		t.Fatalf("shared folders device tag = %q, want %q", tag, SharedFoldersVirtioFSTag)
 	}
 }

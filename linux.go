@@ -198,15 +198,13 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 		}
 	}
 
-	// Volume mounts (VirtioFS) - docker-style -v flag
-	effectiveVolumes := getEffectiveVolumes()
-	if len(effectiveVolumes) > 0 {
-		volumeConfigs, err := createVolumeConfigs(effectiveVolumes)
-		if err != nil {
-			fmt.Printf("warning: volume config: %v\n", err)
-		} else if len(volumeConfigs) > 0 {
-			setDirectorySharingDevicesMulti(config, volumeConfigs)
-		}
+	// Volume mounts (VirtioFS) - docker-style -v flag, plus the dedicated
+	// shared-folders device that runtime live-apply mutates.
+	virtioFSConfigs, err := linuxVirtioFSDeviceConfigs(getEffectiveVolumes(), effectiveSharedFolders(vmDir))
+	if err != nil {
+		fmt.Printf("warning: volume config: %v\n", err)
+	} else if len(virtioFSConfigs) > 0 {
+		setDirectorySharingDevicesMulti(config, virtioFSConfigs)
 	}
 
 	// Rosetta support for x86-64 binary translation
@@ -228,6 +226,23 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	return config, nil
+}
+
+func linuxVirtioFSDeviceConfigs(effectiveVolumes []vmconfig.VolumeMount, sharedFolders []SharedFolderEntry) ([]vz.VZVirtioFileSystemDeviceConfiguration, error) {
+	var configs []vz.VZVirtioFileSystemDeviceConfiguration
+	if len(effectiveVolumes) > 0 {
+		volumeConfigs, err := createVolumeConfigs(effectiveVolumes)
+		if err != nil {
+			return nil, err
+		}
+		configs = append(configs, volumeConfigs...)
+	}
+
+	sharedFoldersDevice := createSharedFoldersDevice(sharedFolders)
+	if sharedFoldersDevice.ID != 0 {
+		configs = append(configs, sharedFoldersDevice)
+	}
+	return configs, nil
 }
 
 // createLinuxBootLoader creates a VZLinuxBootLoader with kernel, initrd, and cmdline.
