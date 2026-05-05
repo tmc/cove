@@ -1,6 +1,6 @@
 # Soft-reset empirical result
 
-**Status**: draft v0
+**Status**: shipped (Phase D orchestrator)
 **Author**: cove team
 **Date**: 2026-04-27
 **Supersedes**: the soft-reset positioning assumptions in `012-product-roadmap-2026.md` and `014-roadmap-update-post-v0.1.md`
@@ -99,6 +99,53 @@ Boot-to-agent throughput remains a separate benchmark.
      permits.
 4. Treat the OpenAI Agents SDK adapter as fork-first for privacy-sensitive
    examples.
+
+## Phase D (Final): Orchestrator
+
+The final implementation surface is a single orchestrator command:
+
+```bash
+cove softreset run-all <vm-ref> [--json] [--filter=filesystem,network,memory,process] [--timeout=60s]
+```
+
+Input:
+
+- VM ref: a named VM resolved through the cove VM registry.
+- Probe selection: all probes by default, with `--filter` for a comma-separated
+  subset.
+- Output format: JSON by default for `run-all`; `--json` is accepted
+  explicitly for scripts.
+- Timeout: a whole-run budget, defaulting to 60 seconds.
+
+Output:
+
+- Per-probe status, runtime, error text, and evidence.
+- Total runtime.
+- Aggregate isolation score from 0 to 100.
+
+The score is an empirical summary, not a security proof: pass is full credit,
+limit is half credit, and fail or timeout is zero credit. A score below 100
+means the selected reset path did not fully isolate the selected probe suite.
+
+Probe ordering is fixed unless a future probe declares otherwise:
+
+1. Filesystem attributes.
+2. Process table.
+3. Network.
+4. Memory.
+
+Filesystem runs before network because filesystem teardown can disrupt local
+socket state and logs. Memory runs last because it is the most invasive probe
+and may alter shared temporary state used by other probes. The orchestrator
+sequences probes instead of running them concurrently so residue from one
+probe is visible in the report and does not hide another probe's result.
+
+Each probe intentionally leaves traces while it is armed. The orchestrator's
+job is to correlate whether the chosen reset operation clears those traces,
+not to make the probes non-destructive. If any probe leaks across a fork, then
+design 013 or this design has a real bug: the empirical validation would show
+that fork-from plus boundary profiles are not isolating the state they claim
+to isolate.
 
 ## Non-goals
 
