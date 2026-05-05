@@ -117,6 +117,7 @@ channel.
 | Curated agentkit base images | done | build execution + trademark decision | [012](archive/012-product-roadmap-2026.md) | Prepares the v1.0 registry story without publishing under a blocked name. Local curated bases shipped as `92f2272`; public registry publication remains deferred. |
 | Disk I/O tuning + Linux NVMe Slice 2 | done | Linux workstation install path | [027](027-disk-io-tuning.md) | Explicit disk cache/sync policies shipped at `fc7ff1e` and `a459076`; Linux NVMe wiring, flag, and deferred-benchmark docs shipped at `8500ecb`, `968cbde`, and `1b7c947`. |
 | Block device passthrough | done | cove-helper root protocol | [028](028-block-device-passthrough.md) | Raw `/dev/rdiskN` helper protocol, Linux run wiring, and smoke runbook shipped at `b522ab3`, `a78e891`, and `74d9527`. |
+| GitHub Actions executor Slice 2 cache reuse | done | cove-action Slice 1 + local image store | [030](030-gha-executor-slice-2.md) | Adds local-only cross-run cache images for the private GHA executor, preserving fork isolation while speeding repeated CI runs. Implemented by T77 at `3199d58`, `1444d5f`, and `d78a853`. |
 | Packer plugin shim decision | maybe | none | gap vs tart Packer integration | Decide whether a shim accelerates adoption or distracts from the `cove build` moat. |
 
 ## v0.3 implementation slices
@@ -174,6 +175,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-05-05**: design [030](030-gha-executor-slice-2.md) landed for GHA executor Slice 2 cross-run cache reuse after T77 shipped `3199d58`, `1444d5f`, and `d78a853`.
 - **2026-05-04**: Reconciled shipped v0.3 rows: ControlServer phase 3 landed at `cede792`, the Anthropic sandbox-runtime adapter landed at `fafc32a`, and curated agentkit base images landed at `92f2272`.
 - **2026-05-04**: designs [027](027-disk-io-tuning.md) and [028](028-block-device-passthrough.md) shipped. Disk I/O tuning landed at `fc7ff1e` and `a459076`; Linux NVMe Slice 2 landed at `8500ecb`, `968cbde`, and `1b7c947`; block device passthrough landed across `b522ab3`, `a78e891`, and `74d9527`.
 - **2026-05-02**: design [025](025-cove-action-security.md) cove-action security architecture landed at `1db4830` (411 LOC). Threat model + token lifecycle + isolation invariants for the v0.4 cove-action GHA wrapper. Clears the security-gate prerequisite on design [021](021-v04-ci-executors-tracks.md) Slice 1 implementation. Per user 2026-05-02: Slice 1 still v0.4-targeted; cove repo stays private; design [024](024-cove-runner-images.md) Slice 3 deferred indefinitely.
