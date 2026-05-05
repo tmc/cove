@@ -24,6 +24,10 @@ func handleFleetCommand(args []string) error {
 }
 
 func runFleetCommand(args []string, path string, out io.Writer) error {
+	return runFleetCommandWithRunner(context.Background(), args, path, sshFleetRunner{}, out, os.Stderr)
+}
+
+func runFleetCommandWithRunner(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("usage: cove fleet add <name> <user@host> [-vm <default>] | ls | rm <name>")
 	}
@@ -34,6 +38,8 @@ func runFleetCommand(args []string, path string, out io.Writer) error {
 		return fleetList(path, out)
 	case "rm", "remove":
 		return fleetRemove(args[1:], path)
+	case "vm", "image":
+		return runFleetAggregateCommand(ctx, args, path, runner, out, errOut)
 	default:
 		return fmt.Errorf("fleet: unknown command %q", args[0])
 	}
