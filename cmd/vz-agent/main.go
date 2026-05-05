@@ -47,6 +47,8 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version information")
 	var relays relaySpecs
 	flag.Var(&relays, "relay", "TCP relay: vsockPort:tcpAddr (e.g. 2222:localhost:22)")
+	var reverseRelays relaySpecs
+	flag.Var(&reverseRelays, "reverse-relay", "reverse TCP relay: tcpPort:vsockPort (e.g. 8080:22080)")
 	flag.Parse()
 
 	if *showVersion {
@@ -127,6 +129,16 @@ func main() {
 			slog.Error("start relay", slog.String("spec", spec), slog.Any("err", err))
 		}
 	}
+	for _, spec := range reverseRelays {
+		tcpPort, vport, err := parseReverseRelaySpec(spec)
+		if err != nil {
+			slog.Error("invalid reverse relay spec", slog.String("spec", spec), slog.Any("err", err))
+			continue
+		}
+		if _, err := StartReverseTCPRelay(ctx, tcpPort, vport); err != nil {
+			slog.Error("start reverse relay", slog.String("spec", spec), slog.Any("err", err))
+		}
+	}
 
 	slog.Info("listening",
 		slog.Int("port", *port),
@@ -137,6 +149,24 @@ func main() {
 		slog.Error("serve", slog.Any("err", err))
 		os.Exit(1)
 	}
+}
+
+func parseReverseRelaySpec(spec string) (int, uint32, error) {
+	idx := strings.IndexByte(spec, ':')
+	if idx < 0 {
+		return 0, 0, fmt.Errorf("expected tcpPort:vsockPort")
+	}
+	tcpStr := spec[:idx]
+	vportStr := spec[idx+1:]
+	tcpPort, err := strconv.ParseUint(tcpStr, 10, 16)
+	if err != nil || tcpPort == 0 {
+		return 0, 0, fmt.Errorf("invalid tcp port %q", tcpStr)
+	}
+	vport, err := strconv.ParseUint(vportStr, 10, 32)
+	if err != nil || vport == 0 {
+		return 0, 0, fmt.Errorf("invalid vsock port %q", vportStr)
+	}
+	return int(tcpPort), uint32(vport), nil
 }
 
 // detectMode infers the mode from the XPC_SERVICE_NAME environment variable
