@@ -104,6 +104,40 @@ func TestAddSharedFolderEntryTagCollision(t *testing.T) {
 	}
 }
 
+func TestDefaultSharedFolderMountPoint(t *testing.T) {
+	macDir := shortSharedFolderVMDir(t)
+	linuxDir := linuxTestVMDir(t)
+
+	tests := []struct {
+		name string
+		dir  string
+		tag  string
+		want string
+	}{
+		{name: "macos", dir: macDir, tag: "work", want: "/Volumes/My Shared Files/work"},
+		{name: "linux", dir: linuxDir, tag: "work", want: "/mnt/work"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := defaultSharedFolderMountPoint(tt.dir, tt.tag); got != tt.want {
+				t.Fatalf("defaultSharedFolderMountPoint() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultSharedFoldersMountRoot(t *testing.T) {
+	macDir := shortSharedFolderVMDir(t)
+	linuxDir := linuxTestVMDir(t)
+
+	if got := defaultSharedFoldersMountRoot(macDir); got != defaultSharedFoldersMountPoint {
+		t.Fatalf("macOS mount root = %q, want %q", got, defaultSharedFoldersMountPoint)
+	}
+	if got := defaultSharedFoldersMountRoot(linuxDir); got != "" {
+		t.Fatalf("Linux mount root = %q, want empty", got)
+	}
+}
+
 func TestRemoveSharedFolderEntry(t *testing.T) {
 	vmDir := t.TempDir()
 	hostA := filepath.Join(t.TempDir(), "a")
