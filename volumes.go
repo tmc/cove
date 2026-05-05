@@ -394,12 +394,23 @@ func setupRosettaInGuest(ctx context.Context, cs *ControlServer) {
 		return
 	}
 	if result.ExitCode != 0 {
-		fmt.Printf("auto-mount Rosetta failed (exit %d): %s\n", result.ExitCode, strings.TrimSpace(string(result.Stderr)))
+		stderr := strings.TrimSpace(string(result.Stderr))
+		if rosettaRegisterFailureIsBenign(stderr) {
+			if verbose {
+				fmt.Printf("auto-mount Rosetta register skipped: %s\n", stderr)
+			}
+			return
+		}
+		fmt.Printf("auto-mount Rosetta failed (exit %d): %s\n", result.ExitCode, stderr)
 		return
 	}
 	if verbose {
 		fmt.Println("Rosetta mounted and registered in guest")
 	}
+}
+
+func rosettaRegisterFailureIsBenign(stderr string) bool {
+	return strings.Contains(stderr, "failed to open elf at --register")
 }
 
 const rosettaGuestSetupScript = `set -eu
