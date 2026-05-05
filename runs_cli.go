@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -83,20 +84,18 @@ func runRunsList(args []string) error {
 }
 
 func runRunsShow(args []string) error {
-	fs := flag.NewFlagSet("runs show", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	jsonOut := fs.Bool("json", false, "emit event array as JSON")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: cove runs show <run-id-prefix> [--json]")
-	}
-	show, err := runs.LoadShow(vmconfig.RunsDir(), fs.Arg(0))
+	prefix, jsonOut, err := parseRunsShowArgs(args)
 	if err != nil {
 		return err
 	}
-	if *jsonOut {
+	if prefix == "" {
+		return fmt.Errorf("usage: cove runs show <run-id-prefix> [--json]")
+	}
+	show, err := runs.LoadShow(vmconfig.RunsDir(), prefix)
+	if err != nil {
+		return err
+	}
+	if jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(show.Events)
@@ -105,25 +104,68 @@ func runRunsShow(args []string) error {
 }
 
 func runRunsExport(args []string) error {
-	fs := flag.NewFlagSet("runs export", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	format := fs.String("format", "", "export format: json, gha-summary, tar")
-	if err := fs.Parse(args); err != nil {
+	prefix, format, err := parseRunsExportArgs(args)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() != 1 || *format == "" {
+	if prefix == "" || format == "" {
 		return fmt.Errorf("usage: cove runs export <run-id-prefix> --format json|gha-summary|tar")
 	}
-	switch *format {
+	switch format {
 	case "json":
-		return runs.ExportJSON(os.Stdout, vmconfig.RunsDir(), fs.Arg(0))
+		return runs.ExportJSON(os.Stdout, vmconfig.RunsDir(), prefix)
 	case "gha-summary":
-		return runs.ExportGHASummary(os.Stdout, vmconfig.RunsDir(), fs.Arg(0))
+		return runs.ExportGHASummary(os.Stdout, vmconfig.RunsDir(), prefix)
 	case "tar":
-		return runs.ExportTarGz(os.Stdout, vmconfig.RunsDir(), fs.Arg(0))
+		return runs.ExportTarGz(os.Stdout, vmconfig.RunsDir(), prefix)
 	default:
-		return fmt.Errorf("unknown runs export format %q", *format)
+		return fmt.Errorf("unknown runs export format %q", format)
 	}
+}
+
+func parseRunsShowArgs(args []string) (prefix string, jsonOut bool, err error) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--json", "-json":
+			jsonOut = true
+		default:
+			if strings.HasPrefix(args[i], "-") {
+				return "", false, fmt.Errorf("unknown runs show flag %q", args[i])
+			}
+			if prefix != "" {
+				return "", false, fmt.Errorf("usage: cove runs show <run-id-prefix> [--json]")
+			}
+			prefix = args[i]
+		}
+	}
+	return prefix, jsonOut, nil
+}
+
+func parseRunsExportArgs(args []string) (prefix, format string, err error) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--format" || arg == "-format":
+			i++
+			if i >= len(args) || args[i] == "" {
+				return "", "", fmt.Errorf("runs export: --format requires a value")
+			}
+			format = args[i]
+		case strings.HasPrefix(arg, "--format="):
+			format = strings.TrimPrefix(arg, "--format=")
+		case strings.HasPrefix(arg, "-format="):
+			format = strings.TrimPrefix(arg, "-format=")
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", "", fmt.Errorf("unknown runs export flag %q", arg)
+			}
+			if prefix != "" {
+				return "", "", fmt.Errorf("usage: cove runs export <run-id-prefix> --format json|gha-summary|tar")
+			}
+			prefix = arg
+		}
+	}
+	return prefix, format, nil
 }
 
 func printRunsTable(w io.Writer, summaries []runs.Summary) error {
