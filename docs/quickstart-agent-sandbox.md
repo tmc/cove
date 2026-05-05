@@ -42,6 +42,19 @@ cove image build -from macos-base -tag macos-agent:latest
 cove run -fork-from macos-agent:latest -ephemeral -gui
 ```
 
+To run a provider loop with a fresh fork and replay bundle in one command:
+
+```bash
+export ANTHROPIC_API_KEY=...
+cove agent-sandbox run \
+  --provider anthropic \
+  --image macos-agent:latest \
+  --task "Take a screenshot of the desktop and describe what is visible."
+```
+
+See [Agent Sandbox CLI](features/agent-sandbox-cli.md) for Anthropic, Gemini,
+Vertex AI, and OpenAI provider examples.
+
 ## OpenAI Computer Use
 
 Install the OpenAI Agents SDK adapter from this repository:
