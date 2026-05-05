@@ -49,19 +49,31 @@ func TestAgentSSHDArgsByGuestOS(t *testing.T) {
 			name:      "linux on",
 			action:    "on",
 			linuxMode: true,
-			want:      []string{"systemctl", "start", "ssh"},
+			want:      []string{"systemctl", "enable", "--now", "ssh.service", "ssh.socket"},
 		},
 		{
 			name:      "linux off",
 			action:    "off",
 			linuxMode: true,
-			want:      []string{"systemctl", "stop", "ssh"},
+			want:      []string{"systemctl", "disable", "--now", "ssh.service", "ssh.socket"},
+		},
+		{
+			name:      "linux start",
+			action:    "start",
+			linuxMode: true,
+			want:      []string{"systemctl", "start", "ssh.service", "ssh.socket"},
+		},
+		{
+			name:      "linux stop",
+			action:    "stop",
+			linuxMode: true,
+			want:      []string{"systemctl", "stop", "ssh.service", "ssh.socket"},
 		},
 		{
 			name:      "linux enable",
 			action:    "enable",
 			linuxMode: true,
-			want:      []string{"systemctl", "enable", "ssh"},
+			want:      []string{"systemctl", "enable", "--now", "ssh.service", "ssh.socket"},
 		},
 	}
 	for _, tt := range tests {
@@ -72,6 +84,23 @@ func TestAgentSSHDArgsByGuestOS(t *testing.T) {
 			}
 			if strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {
 				t.Fatalf("agentSSHDArgs() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentSSHDLinuxOffAndStopMentionSocket(t *testing.T) {
+	for _, action := range []string{"off", "stop"} {
+		t.Run(action, func(t *testing.T) {
+			got, err := agentSSHDArgs(action, true)
+			if err != nil {
+				t.Fatalf("agentSSHDArgs(%q) error = %v", action, err)
+			}
+			joined := strings.Join(got, " ")
+			for _, want := range []string{"ssh.service", "ssh.socket"} {
+				if !strings.Contains(joined, want) {
+					t.Fatalf("agentSSHDArgs(%q) = %q, missing %q", action, got, want)
+				}
 			}
 		})
 	}
