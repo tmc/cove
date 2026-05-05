@@ -10,6 +10,7 @@ import (
 
 	vz "github.com/tmc/apple/virtualization"
 	virtiofsx "github.com/tmc/apple/x/vzkit/virtiofs"
+	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
@@ -287,6 +288,19 @@ func waitForAgentLoss(ctx context.Context, cs *ControlServer) error {
 	}
 }
 
+func autoMountAgent(cs *ControlServer, label string) (*agentstate.AgentClient, bool) {
+	a, err := cs.getAgent()
+	if err != nil {
+		fmt.Printf("%s: agent unavailable: %v\n", label, err)
+		return nil, false
+	}
+	if a == nil {
+		fmt.Printf("%s: agent unavailable\n", label)
+		return nil, false
+	}
+	return a, true
+}
+
 func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmconfig.VolumeMount, owner virtioFSOwner) {
 	for _, m := range tagged {
 		mountPoint := "/mnt/" + m.Tag
@@ -297,9 +311,13 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 		}
 
 		// Create mount point
+		a, ok := autoMountAgent(cs, "  auto-mount "+m.Tag)
+		if !ok {
+			continue
+		}
 		cs.mu.Lock()
 		mkdirCtx, mkdirCancel := context.WithTimeout(ctx, 10*time.Second)
-		_, mkdirErr := cs.agent.Exec(mkdirCtx, []string{"mkdir", "-p", mountPoint}, nil, "")
+		_, mkdirErr := a.Exec(mkdirCtx, []string{"mkdir", "-p", mountPoint}, nil, "")
 		mkdirCancel()
 		cs.mu.Unlock()
 
@@ -309,9 +327,13 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 		}
 
 		// Check if already mounted (common after VM resume).
+		a, ok = autoMountAgent(cs, "  auto-mount "+m.Tag)
+		if !ok {
+			continue
+		}
 		cs.mu.Lock()
 		checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
-		checkResult, checkErr := cs.agent.Exec(checkCtx, []string{"mount"}, nil, "")
+		checkResult, checkErr := a.Exec(checkCtx, []string{"mount"}, nil, "")
 		checkCancel()
 		cs.mu.Unlock()
 
@@ -327,9 +349,13 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 		// Mount the VirtioFS tag using guest-native mount semantics.
 		mountArgs := virtioFSMountArgsWithOwner(m, mountPoint, linuxMode, owner)
 
+		a, ok = autoMountAgent(cs, "  auto-mount "+m.Tag)
+		if !ok {
+			continue
+		}
 		cs.mu.Lock()
 		mountCtx, mountCancel := context.WithTimeout(ctx, 10*time.Second)
-		result, mountErr := cs.agent.Exec(mountCtx, mountArgs, nil, "")
+		result, mountErr := a.Exec(mountCtx, mountArgs, nil, "")
 		mountCancel()
 		cs.mu.Unlock()
 
@@ -353,9 +379,13 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 func setupRosettaInGuest(ctx context.Context, cs *ControlServer) {
 	args := []string{"sh", "-lc", rosettaGuestSetupScript}
 
+	a, ok := autoMountAgent(cs, "auto-mount Rosetta")
+	if !ok {
+		return
+	}
 	cs.mu.Lock()
 	runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	result, err := cs.agent.Exec(runCtx, args, nil, "")
+	result, err := a.Exec(runCtx, args, nil, "")
 	cancel()
 	cs.mu.Unlock()
 
