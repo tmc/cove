@@ -27,6 +27,13 @@ var (
 	libcFclose func(fp uintptr) int32
 )
 
+var (
+	authCreateNoUITimeout      = 90 * time.Second
+	authCreatePromptTimeout    = 15 * time.Minute
+	authCreatePollInterval     = 500 * time.Millisecond
+	authorizationPromptVisible = defaultAuthorizationPromptVisible
+)
+
 func initAuthorizationServices() {
 	if authInitialized {
 		return
@@ -165,9 +172,7 @@ func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
 		)
 		close(done)
 	}()
-	const authCreateNoUITimeout = 90 * time.Second
-	const authCreatePromptTimeout = 15 * time.Minute
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(authCreatePollInterval)
 	defer ticker.Stop()
 	start := time.Now()
 	promptSeenAt := time.Time{}
@@ -242,7 +247,7 @@ authCreateDone:
 	return nil
 }
 
-func authorizationPromptVisible() bool {
+func defaultAuthorizationPromptVisible() bool {
 	for _, name := range []string{"SecurityAgent", "authorizationhost"} {
 		if err := exec.Command("pgrep", "-x", name).Run(); err == nil {
 			return true
