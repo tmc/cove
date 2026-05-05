@@ -7,6 +7,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 
 ## Unreleased
 
+## v0.2.1 - 2026-05-05
+
 ### Added
 - `cove image build/list/rm`: local image store at `~/.vz/images/<name>/<tag>/`. `cove image build -from <vm> -tag <name[:tag]>` snapshots a stopped VM bundle (manifest.json + clonefile-backed disk + aux + machine.id + hw.model; vmstate excluded per identity-binding rule). `cove image rm` refuses while live forks reference the image (gated by `ParentImage` on child config.json). Pure local; no registry, no push/pull, no signing in this slice -- design 024 Slice 2 ships push/pull in v0.4.
 - `cove image inspect <ref> [-json]`: print manifest (size, sha256, base image, created-at, `hw.model` fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling; reuses `VMsForkedFromImage` so the fork inventory stays in lockstep with `cove image rm`.
