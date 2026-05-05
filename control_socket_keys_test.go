@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/apple/appkit"
-	"github.com/tmc/apple/objc"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -107,12 +105,50 @@ func TestTypeTextRequiresGUIMode(t *testing.T) {
 	}
 }
 
-func TestSendKeyEventPrimitiveFramebufferRefusesHostFallback(t *testing.T) {
+func TestSendKeyEventPrimitiveFramebufferDefaultNoHostFallback(t *testing.T) {
 	t.Setenv("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD", "")
-
-	cs := &ControlServer{
-		window: appkit.NSWindowFromID(objc.ID(1)),
+	t.Setenv("VZ_MACOS_DISABLE_HID_KEYBOARD", "")
+	called := false
+	sendKeyEventPrivateHook = func(_ *ControlServer, cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+		called = true
+		if cmd.KeyCode != 17 || !cmd.KeyDown || cmd.Character != "t" {
+			t.Fatalf("private hook cmd = %+v", cmd)
+		}
+		return &controlpb.ControlResponse{Success: true}
 	}
+	defer func() { sendKeyEventPrivateHook = nil }()
+
+	cs := &ControlServer{}
+	cs.setInputBackend(automationBackendFramebuffer)
+
+	resp := cs.sendKeyEventPrimitive(&controlpb.KeyCommand{KeyCode: 17, KeyDown: true, Character: "t"})
+	if resp == nil {
+		t.Fatalf("sendKeyEventPrimitive() = nil, want response")
+	}
+	if !resp.Success {
+		t.Fatalf("sendKeyEventPrimitive() success = false, error = %q", resp.Error)
+	}
+	if !called {
+		t.Fatalf("private keyboard path was not called")
+	}
+	if strings.Contains(resp.Error, "refusing host window-server fallback") {
+		t.Fatalf("error = %q, want no host fallback refusal", resp.Error)
+	}
+	if strings.Contains(resp.Error, "VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD"+"=1") {
+		t.Fatalf("error = %q, want no legacy enable instruction", resp.Error)
+	}
+}
+
+func TestSendKeyEventPrimitiveFramebufferOptOutRefuses(t *testing.T) {
+	t.Setenv("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD", "")
+	t.Setenv("VZ_MACOS_DISABLE_HID_KEYBOARD", "1")
+	sendKeyEventPrivateHook = func(_ *ControlServer, _ *controlpb.KeyCommand) *controlpb.ControlResponse {
+		t.Fatalf("private keyboard path called despite opt-out")
+		return nil
+	}
+	defer func() { sendKeyEventPrivateHook = nil }()
+
+	cs := &ControlServer{}
 	cs.setInputBackend(automationBackendFramebuffer)
 
 	resp := cs.sendKeyEventPrimitive(&controlpb.KeyCommand{KeyCode: 17, KeyDown: true, Character: "t"})
@@ -122,7 +158,10 @@ func TestSendKeyEventPrimitiveFramebufferRefusesHostFallback(t *testing.T) {
 	if resp.Success {
 		t.Fatalf("sendKeyEventPrimitive() unexpectedly succeeded")
 	}
-	if !strings.Contains(resp.Error, "refusing host window-server fallback") {
-		t.Fatalf("error = %q, want host fallback refusal", resp.Error)
+	if !strings.Contains(resp.Error, "disabled by VZ_MACOS_DISABLE_HID_KEYBOARD") {
+		t.Fatalf("error = %q, want HID keyboard disabled error", resp.Error)
+	}
+	if strings.Contains(resp.Error, "refusing host window-server fallback") {
+		t.Fatalf("error = %q, want no host fallback refusal", resp.Error)
 	}
 }

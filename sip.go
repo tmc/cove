@@ -152,7 +152,7 @@ func sipAuto(mode string, args []string) error {
 	fmt.Println()
 	fmt.Println("Run this to execute automation:")
 	fmt.Println()
-	fmt.Printf("  VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD=1 cove -vm %s run -recovery -no-resume -gui -unattended -usb %q -boot-commands %q\n",
+	fmt.Printf("  cove -vm %s run -recovery -no-resume -gui -unattended -usb %q -boot-commands %q\n",
 		sipTargetVMName(), recoveryPath, bootCmdsPath)
 	fmt.Println()
 	fmt.Printf("After reboot, verify with:\n  cove -vm %s sip status\n", sipTargetVMName())

@@ -674,10 +674,10 @@ func (s *ControlServer) sendKeyEventPrimitive(cmd *controlpb.KeyCommand) *contro
 		return s.sendKeyEventCGEvent(cmd)
 	}
 	if s.inputBackend() == automationBackendFramebuffer {
-		if allowExperimentalHIDKeyboard() {
-			return s.sendKeyEventPrivate(cmd)
+		if !allowHIDKeyboard() {
+			return &controlpb.ControlResponse{Error: "framebuffer keyboard input disabled by VZ_MACOS_DISABLE_HID_KEYBOARD"}
 		}
-		return &controlpb.ControlResponse{Error: "framebuffer keyboard input requires VM-local injection; refusing host window-server fallback; set VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD=1 to re-enable the experimental private API path"}
+		return s.sendKeyEventPrivate(cmd)
 	}
 	if cmd.UseCgEvent {
 		return s.sendKeyEventMultiPath(cmd, false)
@@ -772,7 +772,7 @@ func (s *ControlServer) sendKeyEventMultiPath(cmd *controlpb.KeyCommand, fanout 
 		{name: "nsevent", fn: s.sendKeyEventNSEvent},
 		{name: "cgevent", fn: s.sendKeyEventCGEvent},
 	}
-	if allowExperimentalHIDKeyboard() {
+	if allowHIDKeyboard() {
 		paths = append(paths, keyInjector{name: "private", fn: s.sendKeyEventPrivate})
 	}
 	if cmd.UseCgEvent {
@@ -781,7 +781,7 @@ func (s *ControlServer) sendKeyEventMultiPath(cmd *controlpb.KeyCommand, fanout 
 			{name: "cgevent", fn: s.sendKeyEventCGEvent},
 			{name: "nsevent", fn: s.sendKeyEventNSEvent},
 		}
-		if allowExperimentalHIDKeyboard() {
+		if allowHIDKeyboard() {
 			paths = append([]keyInjector{{name: "private", fn: s.sendKeyEventPrivate}}, paths...)
 		}
 	}
@@ -821,17 +821,54 @@ func (s *ControlServer) sendKeyEventMultiPath(cmd *controlpb.KeyCommand, fanout 
 	return &controlpb.ControlResponse{Error: "keyboard injection failed: " + strings.Join(errs, "; ")}
 }
 
-func allowExperimentalHIDKeyboard() bool {
-	return strings.TrimSpace(os.Getenv("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD")) == "1"
+var hidKeyboardDeprecatedEnvLogOnce sync.Once
+var sendKeyEventPrivateHook func(*ControlServer, *controlpb.KeyCommand) *controlpb.ControlResponse
+
+func allowHIDKeyboard() bool {
+	return !disableHIDKeyboardOptOut()
+}
+
+func disableHIDKeyboardOptOut() bool {
+	legacy, ok := envBool("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD")
+	if ok {
+		hidKeyboardDeprecatedEnvLogOnce.Do(func() {
+			fmt.Println("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD is deprecated; HID keyboard input is enabled by default; use VZ_MACOS_DISABLE_HID_KEYBOARD=1 to disable it")
+		})
+	}
+	if envBoolTrue("VZ_MACOS_DISABLE_HID_KEYBOARD") {
+		return true
+	}
+	if ok && !legacy {
+		return true
+	}
+	return false
+}
+
+func envBoolTrue(name string) bool {
+	v, ok := envBool(name)
+	return ok && v
+}
+
+func envBool(name string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true, true
+	case "0", "false", "no", "off":
+		return false, true
+	}
+	return false, false
 }
 
 // sendKeyEventPrivate sends a keyboard event through the typed private
 // _VZKeyboard.sendKeyEvents: path using _VZKeyEvent objects.
 //
-// This remains opt-in behind VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD=1 because it
-// still depends on private Virtualization selectors, but it no longer assumes
-// raw HID byte-buffer semantics.
+// The framebuffer backend uses this VM-local path by default. It still depends
+// on private Virtualization selectors, so VZ_MACOS_DISABLE_HID_KEYBOARD=1 can
+// temporarily disable it if a host/framework regression appears.
 func (s *ControlServer) sendKeyEventPrivate(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	if sendKeyEventPrivateHook != nil {
+		return sendKeyEventPrivateHook(s, cmd)
+	}
 	event, err := s.newKeyboardNSEvent(cmd)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
