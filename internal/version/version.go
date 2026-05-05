@@ -40,6 +40,9 @@ func Resolve(version, commit, date string) Info {
 
 // Format returns a user-facing version string for program.
 func Format(program string, info Info) string {
+	if info.Version == "dev" && info.Commit != "" && info.Commit != "unknown" {
+		info.Version = info.Commit
+	}
 	return fmt.Sprintf("%s %s (commit %s, built %s)", program, info.Version, info.Commit, info.Date)
 }
 

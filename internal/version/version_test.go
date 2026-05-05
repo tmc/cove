@@ -19,6 +19,15 @@ func TestFormat(t *testing.T) {
 	}
 }
 
+func TestFormatDevUsesCommitAsVersion(t *testing.T) {
+	info := Info{Version: "dev", Commit: "abc12345", Date: "2026-04-23T00:00:00Z"}
+	got := Format("cove", info)
+	want := "cove abc12345 (commit abc12345, built 2026-04-23T00:00:00Z)"
+	if got != want {
+		t.Fatalf("Format() = %q, want %q", got, want)
+	}
+}
+
 func TestHost(t *testing.T) {
 	tests := []struct {
 		name string
