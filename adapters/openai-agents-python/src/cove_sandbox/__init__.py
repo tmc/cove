@@ -3,11 +3,11 @@ from .backend import (
     CoveSandboxClientOptions,
     CoveSandboxSession,
     CoveSandboxSessionState,
-    sandbox_run_config,
 )
 from .client import CoveClient, CoveError, ExecResult
 from .computer import CoveComputer
 from .sandbox import CoveSandbox
+from .sandbox_run_config import sandbox_run_config
 
 __all__ = [
     "CoveClient",
