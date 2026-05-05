@@ -213,18 +213,24 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 		return nil
 	}
 
-	mounted, err := mountSharedFoldersInGuest(vmDirectory, defaultSharedFoldersMountPoint)
+	mountRoot := defaultSharedFoldersMountRoot(vmDirectory)
+	mounted, err := mountSharedFoldersInGuest(vmDirectory, mountRoot)
 	if err != nil {
 		fmt.Printf("warning: could not mount in guest: %v\n", err)
-		fmt.Printf("         you can retry with: cove -vm %s shared-folder mount %q\n", sharedFolderVMName(vmDirectory), defaultSharedFoldersMountPoint)
+		if mountRoot == "" {
+			fmt.Printf("         you can retry with: cove -vm %s shared-folder mount\n", sharedFolderVMName(vmDirectory))
+		} else {
+			fmt.Printf("         you can retry with: cove -vm %s shared-folder mount %q\n", sharedFolderVMName(vmDirectory), mountRoot)
+		}
 		return nil
 	}
+	mountSummary := sharedFoldersMountSummary(vmDirectory)
 	if mounted {
-		fmt.Printf("mounted in guest at %s\n", defaultSharedFoldersMountPoint)
+		fmt.Printf("mounted in guest at %s\n", mountSummary)
 	} else {
-		fmt.Printf("already mounted in guest at %s\n", defaultSharedFoldersMountPoint)
+		fmt.Printf("already mounted in guest at %s\n", mountSummary)
 	}
-	fmt.Printf("Guest path for this folder: %s/%s\n", defaultSharedFoldersMountPoint, entry.Tag)
+	fmt.Printf("Guest path for this folder: %s\n", defaultSharedFolderMountPoint(vmDirectory, entry.Tag))
 	return nil
 }
 
