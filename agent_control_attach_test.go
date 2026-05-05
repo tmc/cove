@@ -98,10 +98,13 @@ func (f *fakeAttachAgent) SignalExec(ctx context.Context, execID string, sig int
 }
 
 type fakeExecStream struct {
-	frames chan *pb.ExecOutput
-	stdin  bytes.Buffer
-	closed bool
-	mu     sync.Mutex
+	frames    chan *pb.ExecOutput
+	stdin     bytes.Buffer
+	closed    bool
+	resizes   []resizeCall
+	signals   []signalCall
+	closeOnce bool
+	mu        sync.Mutex
 }
 
 func (s *fakeExecStream) queue(out *pb.ExecOutput) {
@@ -133,7 +136,24 @@ func (s *fakeExecStream) SendStdin(data []byte) error {
 	return err
 }
 
+func (s *fakeExecStream) SendResize(rows, cols uint32) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resizes = append(s.resizes, resizeCall{rows: rows, cols: cols})
+	return nil
+}
+
+func (s *fakeExecStream) SendSignal(signal int32) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.signals = append(s.signals, signalCall{sig: signal})
+	return nil
+}
+
 func (s *fakeExecStream) CloseStdin() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closeOnce = true
 	return nil
 }
 
@@ -235,6 +255,96 @@ func TestForwardAttachStdinSendsDecodedFrames(t *testing.T) {
 
 	if got := stream.stdin.String(); got != "abc" {
 		t.Fatalf("stdin = %q, want abc", got)
+	}
+}
+
+func TestForwardAttachStdinSendsControlFrames(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	stream := &fakeExecStream{frames: make(chan *pb.ExecOutput)}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		forwardAttachStdin(context.Background(), server, "exec-1", stream)
+	}()
+
+	frames := []agentExecStdinFrame{
+		{Type: "resize", ExecID: "exec-1", Rows: 40, Cols: 120},
+		{Type: "signal", ExecID: "exec-1", Signal: 2},
+		{Type: "close_stdin", ExecID: "exec-1"},
+	}
+	enc := json.NewEncoder(client)
+	for _, frame := range frames {
+		if err := enc.Encode(frame); err != nil {
+			t.Fatalf("write frame: %v", err)
+		}
+	}
+	<-done
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.resizes) != 1 {
+		t.Fatalf("resize calls = %d, want 1", len(stream.resizes))
+	}
+	if got := stream.resizes[0]; got.rows != 40 || got.cols != 120 {
+		t.Fatalf("resize = %+v, want rows=40 cols=120", got)
+	}
+	if len(stream.signals) != 1 {
+		t.Fatalf("signal calls = %d, want 1", len(stream.signals))
+	}
+	if got := stream.signals[0]; got.sig != 2 {
+		t.Fatalf("signal = %+v, want sig=2", got)
+	}
+	if !stream.closeOnce {
+		t.Fatalf("CloseStdin was not called")
+	}
+}
+
+func TestServeAgentExecAttachConcurrentSessionsUseIndependentExecIDs(t *testing.T) {
+	cs := &ControlServer{}
+	agent := &fakeAttachAgent{attach: true, streams: make(chan *fakeExecStream, 2)}
+
+	open := func() []map[string]any {
+		server, client := net.Pipe()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			raw, _ := json.Marshal(map[string]any{
+				"type": "agent-exec-attach",
+				"args": []string{"sh"},
+			})
+			cs.serveAgentExecAttach(server, raw, agent)
+			server.Close()
+		}()
+		frames := readAttachFrames(t, client, 5*time.Second)
+		client.Close()
+		<-done
+		var decoded []map[string]any
+		for _, frame := range frames {
+			var payload map[string]any
+			mustJSON(t, frame.GetData(), &payload)
+			decoded = append(decoded, payload)
+		}
+		return decoded
+	}
+
+	first := open()
+	second := open()
+	if len(first) == 0 || len(second) == 0 {
+		t.Fatalf("missing attach frames: first=%v second=%v", first, second)
+	}
+	firstID, _ := first[0]["exec_id"].(string)
+	secondID, _ := second[0]["exec_id"].(string)
+	if firstID == "" || secondID == "" {
+		t.Fatalf("missing exec ids: first=%v second=%v", first[0], second[0])
+	}
+	if firstID == secondID {
+		t.Fatalf("exec ids matched: %q", firstID)
+	}
+	if first[0]["stdin"] != true || second[0]["stdin"] != true {
+		t.Fatalf("stdin handshake = %v / %v, want true", first[0], second[0])
 	}
 }
 

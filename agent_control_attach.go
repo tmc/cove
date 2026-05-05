@@ -81,6 +81,9 @@ type agentExecStdinFrame struct {
 	Type   string `json:"type"`
 	ExecID string `json:"exec_id"`
 	Data   string `json:"data"`
+	Cols   uint32 `json:"cols"`
+	Rows   uint32 `json:"rows"`
+	Signal int32  `json:"signal"`
 }
 
 // handleAgentExecAttachConnection serves an `agent-exec-attach` request on a
@@ -229,14 +232,36 @@ func forwardAttachStdin(ctx context.Context, conn net.Conn, execID string, strea
 		if err := dec.Decode(&frame); err != nil {
 			return
 		}
-		if frame.Type != "stdin" || frame.ExecID != execID || frame.Data == "" {
+		if frame.ExecID != execID {
 			continue
 		}
-		data, err := base64.StdEncoding.DecodeString(frame.Data)
-		if err != nil {
-			return
-		}
-		if err := stream.SendStdin(data); err != nil {
+		switch frame.Type {
+		case "stdin":
+			if frame.Data == "" {
+				continue
+			}
+			data, err := base64.StdEncoding.DecodeString(frame.Data)
+			if err != nil {
+				return
+			}
+			if err := stream.SendStdin(data); err != nil {
+				return
+			}
+		case "resize":
+			if frame.Rows == 0 || frame.Cols == 0 {
+				continue
+			}
+			if err := stream.SendResize(frame.Rows, frame.Cols); err != nil {
+				return
+			}
+		case "signal":
+			if frame.Signal == 0 {
+				continue
+			}
+			if err := stream.SendSignal(frame.Signal); err != nil {
+				return
+			}
+		case "close_stdin":
 			return
 		}
 	}

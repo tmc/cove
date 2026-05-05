@@ -116,7 +116,8 @@ func TestPumpShellFramesPropagatesServerError(t *testing.T) {
 
 func TestWriteShellStdinFrames(t *testing.T) {
 	var out bytes.Buffer
-	if err := writeShellStdinFrames(context.Background(), &out, "exec-1", strings.NewReader("abc")); err != nil {
+	writer := &shellAttachWriter{w: &out}
+	if err := writeShellStdinFrames(context.Background(), writer, "exec-1", strings.NewReader("abc")); err != nil {
 		t.Fatalf("writeShellStdinFrames: %v", err)
 	}
 	var frame agentExecStdinFrame
@@ -241,6 +242,59 @@ func TestRunShellSessionEndToEnd(t *testing.T) {
 	}
 }
 
+func TestRunShellSessionV02FallbackWarnsAndCompletes(t *testing.T) {
+	dir, err := os.MkdirTemp("", "shellsess*")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	sockPath := filepath.Join(dir, "c.sock")
+	srv, err := newFakeShellServer(sockPath)
+	if err != nil {
+		t.Fatalf("start fake server: %v", err)
+	}
+	defer srv.Close()
+	srv.stdin = false
+	srv.warning = "guest agent does not support ExecAttach; stdin disabled"
+
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	defer devnull.Close()
+
+	out, outDone := newPipeBuffer()
+	errBuf, errDone := newPipeBuffer()
+	exit, err := runShellSession(
+		context.Background(),
+		sockPath,
+		"",
+		"vm0",
+		[]string{"echo", "fallback"},
+		devnull,
+		out.w,
+		errBuf.w,
+	)
+	if err != nil {
+		t.Fatalf("runShellSession err = %v", err)
+	}
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	out.w.Close()
+	errBuf.w.Close()
+	<-outDone
+	<-errDone
+
+	if !strings.Contains(out.buf.String(), "fallback") {
+		t.Fatalf("stdout = %q, want substring fallback", out.buf.String())
+	}
+	if !strings.Contains(errBuf.buf.String(), srv.warning) {
+		t.Fatalf("stderr = %q, want warning %q", errBuf.buf.String(), srv.warning)
+	}
+}
+
 // pipeBuffer pairs a bytes.Buffer sink with the writer end of an os.Pipe so
 // production code that wants *os.File can write into a buffer the test can
 // inspect. Caller must Close() w and then wait on the returned channel.
@@ -272,6 +326,8 @@ type fakeShellServer struct {
 	mu       sync.Mutex
 	attaches int
 	closed   chan struct{}
+	stdin    bool
+	warning  string
 }
 
 func newFakeShellServer(sockPath string) (*fakeShellServer, error) {
@@ -279,7 +335,7 @@ func newFakeShellServer(sockPath string) (*fakeShellServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &fakeShellServer{ln: ln, closed: make(chan struct{})}
+	s := &fakeShellServer{ln: ln, closed: make(chan struct{}), stdin: true}
 	go s.serve()
 	return s, nil
 }
@@ -337,6 +393,8 @@ func (s *fakeShellServer) handle(conn net.Conn) {
 	_, _ = conn.Write([]byte(mustResponse(nil, map[string]any{
 		"attached": true,
 		"exec_id":  execID,
+		"stdin":    s.stdin,
+		"warning":  s.warning,
 	}) + "\n"))
 
 	// 2. one stdout frame echoing args[1:]
