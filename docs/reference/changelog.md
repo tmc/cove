@@ -33,7 +33,7 @@ visible and consistent across CLI reference, roadmap, and release checklist:
 - Public curated `cove` image registry and signed agentkit image channels until trademark counsel clears the name or a rename lands.
 - External secret stores beyond `env://` and `file://` (1Password, Vault, SOPS, age, cloud secret managers).
 - BuildKit-style parallel step execution. v0.3 build execution is sequential.
-- Packer plugin shim.
+- Packer plugin shim (sunset; see [Non-goals](../strategy/non-goals.md)).
 - Product-name resolution before any public registry or signed channel ships.
 - Fresh `agentkit/linux-base` image refresh is still in flight for this cycle and is not yet listed as shipped.
 
