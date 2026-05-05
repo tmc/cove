@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"text/tabwriter"
+	"time"
 )
 
 // handleImageCommand routes `cove image <subcmd>`.
@@ -62,7 +63,7 @@ Examples:
   cove run -fork-from cove-runner-macos:14.5 -ephemeral`)
 }
 
-func runImageBuild(args []string) error {
+func runImageBuild(args []string) (err error) {
 	fs := flag.NewFlagSet("image build", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	from := fs.String("from", "", "source VM name (must be stopped)")
@@ -78,10 +79,28 @@ func runImageBuild(args []string) error {
 	if err != nil {
 		return err
 	}
+	metricsRun, metricsErr := beginStandaloneMetricsRun(*from, ref.String())
+	if metricsErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", metricsErr)
+	}
+	defer finishStandaloneMetricsRun(metricsRun)
+	defer func(started time.Time) {
+		if metricsRun == nil {
+			return
+		}
+		status := "ok"
+		if err != nil {
+			status = err.Error()
+		}
+		emitMetricEvent("run_complete", started, status, map[string]any{"command": "image build"})
+	}(time.Now())
+	buildStarted := time.Now()
 	manifest, err := BuildImage(BuildImageOptions{SourceVM: *from, Ref: ref})
 	if err != nil {
+		emitMetricEvent("vm_create", buildStarted, err.Error(), map[string]any{"source_vm": *from})
 		return err
 	}
+	emitMetricEvent("vm_create", buildStarted, "ok", map[string]any{"source_vm": *from})
 	fmt.Printf("Built image %s from %s\n", ref, *from)
 	fmt.Printf("  path:   %s\n", ref.Path())
 	fmt.Printf("  disk:   %d bytes\n", manifest.DiskSize)

@@ -1279,8 +1279,10 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 	} else {
 		fmt.Println("Starting virtual machine...")
 	}
+	started := time.Now()
 	startErr := beginVMStart(vm, queue)
 	if err := waitForVMStart(vm, queue, startErr, pumpRunLoop); err != nil {
+		emitMetricEvent("vm_start", started, err.Error(), nil)
 		if !printNSErrorSummary("VM start error", err) {
 			fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
 		}
@@ -1298,6 +1300,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		return fmt.Errorf("vm start failed: %w", err)
 	}
 	fmt.Println("VM started successfully")
+	emitMetricEvent("vm_start", started, "ok", nil)
 	return nil
 }
 

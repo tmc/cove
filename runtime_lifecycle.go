@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
@@ -105,6 +106,12 @@ func runVMWithConfig(cfg RunConfig) error {
 		return runErr
 	}
 
+	metricsRun, err := beginStandaloneMetricsRun(originalVMName, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", err)
+	}
+	defer finishStandaloneMetricsRun(metricsRun)
+
 	var clone DisposableClone
 	temporaryClone := cfg.Disposable || cfg.RollbackSnapshot != ""
 	if temporaryClone {
@@ -175,6 +182,13 @@ func runVMWithConfig(cfg RunConfig) error {
 		runErr = runLinuxVMHook()
 	} else {
 		runErr = runMacOSVMHook()
+	}
+	exit := "ok"
+	if runErr != nil {
+		exit = runErr.Error()
+	}
+	if metricsRun != nil {
+		emitMetricEvent("run_complete", metricsRun.started, exit, nil)
 	}
 
 	if temporaryClone {
@@ -248,6 +262,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		fmt.Fprintf(os.Stderr, "warning: release parent run.lock: %v\n", releaseErr)
 	}
 
+	forkStarted := time.Now()
 	fork, err := setupEphemeralForkHook(EphemeralForkOptions{
 		Parent: cfg.EphemeralForkParent,
 		Name:   cfg.EphemeralForkName,
@@ -259,6 +274,10 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	fmt.Printf("Ephemeral fork: %s\n", fork.Name)
 	fmt.Printf("Ephemeral path: %s\n", fork.Path)
 	fmt.Printf("Parent disk:    %s (RAM-overlay, read-only)\n", vmPrimaryDiskPath(parentDir))
+	emitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
+		"child_name": fork.Name,
+		"child_path": fork.Path,
+	})
 
 	parentDisk := vmPrimaryDiskPath(parentDir)
 	prevAttachment := runtimeSystemDiskAttachment

@@ -162,18 +162,11 @@ func TestRunBundle_OnlyForkFrom(t *testing.T) {
 	t.Cleanup(func() { runMacOSVMHook = prevMac })
 	runMacOSVMHook = func() error { return nil }
 
-	// Plain run with no fork-from — must NOT create any bundle dir.
+	// Plain run with no fork-from must not activate the run bundle; it may
+	// still create a metrics-only run directory.
 	cfg := RunConfig{VM: vmSelection{Name: "vm-plain", Directory: t.TempDir()}}
 	if err := runVMWithConfig(cfg); err != nil {
 		t.Fatalf("plain run: %v", err)
-	}
-	entries, _ := os.ReadDir(runsRoot)
-	if len(entries) != 0 {
-		names := []string{}
-		for _, e := range entries {
-			names = append(names, e.Name())
-		}
-		t.Fatalf("plain run created bundle dirs: %v", names)
 	}
 	if ActiveRunBundle() != nil {
 		t.Fatalf("plain run left an active bundle behind")

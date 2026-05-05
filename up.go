@@ -315,8 +315,22 @@ func vmAlreadyInstalled(dir string, linux bool) bool {
 // runUpPipeline executes the install -> inject -> run pipeline.
 // If the VM is already installed (disk exists) and -force is not set,
 // it skips install and provisioning and proceeds to boot + vzscripts.
-func runUpPipeline(cfg upConfig) error {
+func runUpPipeline(cfg upConfig) (err error) {
 	target := currentVMSelection()
+	metricsRun, metricsErr := beginStandaloneMetricsRun(target.Name, "")
+	if metricsErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", metricsErr)
+	}
+	defer finishStandaloneMetricsRun(metricsRun)
+	defer func(started time.Time) {
+		if metricsRun != nil {
+			status := "ok"
+			if err != nil {
+				status = err.Error()
+			}
+			emitMetricEvent("run_complete", started, status, map[string]any{"command": "up"})
+		}
+	}(time.Now())
 	if cfg.linux {
 		return runLinuxUpPipeline(cfg)
 	}
@@ -328,10 +342,13 @@ func runUpPipeline(cfg upConfig) error {
 		fmt.Println("=== Step 1/3: Install (already done) ===")
 	} else {
 		fmt.Println("=== Step 1/3: Installing macOS ===")
+		createStarted := time.Now()
 		installErr := installMacOSLikeVZ(context.Background())
 		if installErr != nil && !errors.Is(installErr, errRestartVM) {
+			emitMetricEvent("vm_create", createStarted, installErr.Error(), map[string]any{"command": "up"})
 			return fmt.Errorf("install: %w", installErr)
 		}
+		emitMetricEvent("vm_create", createStarted, "ok", map[string]any{"command": "up"})
 	}
 
 	// Step 2: Inject provisioning files.
@@ -429,6 +446,7 @@ func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verbos
 			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
 			return
 		}
+		emitAgentReadyMetric()
 		if err := verifyProvisioningForUp(sock, verifyUser); err != nil {
 			_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
 			scriptsDone <- err
@@ -544,9 +562,12 @@ func runLinuxUpPipeline(cfg upConfig) error {
 		fmt.Println("=== Step 1/2: Install (already done) ===")
 	} else {
 		fmt.Println("=== Step 1/2: Installing Linux VM ===")
+		createStarted := time.Now()
 		if err := installLinuxVM(); err != nil {
+			emitMetricEvent("vm_create", createStarted, err.Error(), map[string]any{"command": "up", "guest_os": "linux"})
 			return fmt.Errorf("install: %w", err)
 		}
+		emitMetricEvent("vm_create", createStarted, "ok", map[string]any{"command": "up", "guest_os": "linux"})
 	}
 
 	// Step 2: Boot VM and optionally run vzscripts and/or setup-script.
@@ -598,6 +619,7 @@ func runLinuxUpWithVZScripts(recipes []string, setupScript string, noShutdown, v
 			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
 			return
 		}
+		emitAgentReadyMetric()
 
 		if len(recipes) > 0 {
 			fmt.Printf("\n=== Running vzscripts: %s ===\n", strings.Join(recipes, ", "))
