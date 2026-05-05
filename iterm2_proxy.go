@@ -31,7 +31,7 @@ const (
 type ITerm2Proxy struct {
 	port     int
 	server   *http.Server
-	cs       *ControlServer
+	guest    controlServerGuestConnector
 	mu       sync.Mutex
 	running  bool
 	upgrader websocket.Upgrader
@@ -39,12 +39,16 @@ type ITerm2Proxy struct {
 
 // NewITerm2Proxy creates a proxy bound to the given ControlServer.
 func NewITerm2Proxy(cs *ControlServer, port int) *ITerm2Proxy {
+	return newITerm2Proxy(newControlServerGuestConnector(cs), port)
+}
+
+func newITerm2Proxy(guest controlServerGuestConnector, port int) *ITerm2Proxy {
 	if port == 0 {
 		port = iterm2DefaultPort
 	}
 	return &ITerm2Proxy{
-		port: port,
-		cs:   cs,
+		port:  port,
+		guest: guest,
 		upgrader: websocket.Upgrader{
 			Subprotocols:    []string{iterm2WSSubprotocol},
 			CheckOrigin:     allowLocalhostOrigin,
@@ -205,11 +209,7 @@ func (p *ITerm2Proxy) handleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *ITerm2Proxy) dialGuest() (net.Conn, error) {
-	mgr, err := NewVsockDeviceManager(p.cs.vm, p.cs.vmQueue)
-	if err != nil {
-		return nil, fmt.Errorf("vsock device: %w", err)
-	}
-	conn, err := mgr.ConnectToAgent(iterm2VsockPort)
+	conn, err := p.guest.ConnectToGuestPort(iterm2VsockPort)
 	if err != nil {
 		return nil, fmt.Errorf("connect port %d: %w", iterm2VsockPort, err)
 	}
@@ -255,7 +255,8 @@ func (s *ControlServer) handleITerm2ProxyStartWithPort(port int) *controlpb.Cont
 	if port == 0 {
 		port = iterm2DefaultPort
 	}
-	proxy := NewITerm2Proxy(s, port)
+	guest := controlServerGuestConnector{vm: s.vm, queue: s.vmQueue}
+	proxy := newITerm2Proxy(guest, port)
 	if err := proxy.Start(); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("start iterm2 proxy: %v", err)}
 	}
