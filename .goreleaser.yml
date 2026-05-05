@@ -117,4 +117,4 @@ release:
     - Apple Silicon Mac (M1/M2/M3/M4)
     - macOS 12.0+ (Monterey or later)
   footer: |
-    **Full Changelog**: https://github.com/tmc/vz-macos/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/tmc/cove/compare/{{ .PreviousTag }}...{{ .Tag }}
