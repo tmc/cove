@@ -59,6 +59,8 @@ var (
 	verbose bool
 	// Optional pprof listener for live diagnostics.
 	pprofAddr string
+	// Remote fleet context.
+	fleetName string
 	// Serial console output destination
 	serialOutput string
 	// Boot into recovery mode
@@ -194,6 +196,7 @@ func init() {
 	flag.BoolVar(&linuxShell, "shell", false, "after Linux guest boots, attach the host terminal to a guest shell via the agent (requires -linux; mutually exclusive with -headless)")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output (includes run loop debugging)")
 	flag.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
+	flag.StringVar(&fleetName, "fleet", "", "remote fleet context")
 	flag.UintVar(&cpuCount, "cpu", 2, "number of CPUs")
 	flag.Uint64Var(&memoryGB, "memory", 4, "memory in GB")
 	flag.StringVar(&diskPath, "disk", "", "path to disk image")
@@ -446,6 +449,13 @@ func main() {
 	if flag.NArg() > 0 {
 		cmd := flag.Arg(0)
 		args := flag.Args()[1:]
+		if fleetName != "" && cmd != "fleet" {
+			if err := handleFleetRoute(context.Background(), fleetName, cmd, args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 
 		// Commands that have their own flag parsing (don't re-parse with main flags)
 		switch cmd {
@@ -478,6 +488,12 @@ func main() {
 			return
 		case "forward":
 			if err := forwardCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "fleet":
+			if err := handleFleetCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
@@ -944,6 +960,7 @@ VM Management:
   runs            Inspect local run metrics and artifacts
   daemon          Manage the cove background coordinator
   compact         Zero guest free space for smaller pushes
+  fleet           Register and use remote cove hosts
   build           Chain vzscript steps into a cache-keyed VM image
   action          Preflight helpers for private GitHub Actions runner images
   push            Plan a VM disk OCI push (dry-run)
