@@ -605,6 +605,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "diff":
+			if err := diffCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "runs":
 			if err := handleRunsCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -903,6 +909,7 @@ VM Management:
   clone           Clone a VM (cove clone [source] <target> [--linked])
   fork            CoW-fork a VM with a fresh identity (cove fork <parent> <child>)
   image           Local VM image store (build/list/rm); see 'cove image -h'
+  diff            Compare local image disk layer metadata
   runs            Inspect local run metrics and artifacts
   compact         Zero guest free space for smaller pushes
   build           Chain vzscript steps into a cache-keyed VM image
