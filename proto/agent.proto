@@ -19,8 +19,8 @@ service Agent {
   rpc Exec(ExecRequest) returns (ExecResponse);
   // ExecStream runs a command with streaming stdout/stderr.
   rpc ExecStream(ExecRequest) returns (stream ExecOutput);
-  // ExecAttach runs a command with bidirectional stdin/stdout/stderr.
-  rpc ExecAttach(stream ExecAttachRequest) returns (stream ExecOutput);
+  // ExecAttach runs a command with bidirectional stdin/stdout/stderr/control.
+  rpc ExecAttach(stream ExecAttachRequest) returns (stream ExecAttachOutput);
   rpc ResizeExecTTY(ResizeExecTTYRequest) returns (ResizeExecTTYResponse);
   rpc SignalExec(SignalExecRequest) returns (SignalExecResponse);
   rpc SetTime(SetTimeRequest) returns (SetTimeResponse);
@@ -113,8 +113,46 @@ message ExecOutput {
 message ExecAttachRequest {
   oneof request {
     ExecRequest start = 1;
-    bytes stdin = 2;
+    StdinChunk stdin = 2;
+    ResizeRequest resize = 3;
+    SignalRequest signal = 4;
+    CloseStdinRequest close_stdin = 5;
   }
+}
+
+message StdinChunk {
+  bytes data = 1;
+}
+
+message ResizeRequest {
+  uint32 rows = 1;
+  uint32 cols = 2;
+}
+
+message SignalRequest {
+  int32 signal = 1;
+}
+
+message CloseStdinRequest {}
+
+message ExecAttachOutput {
+  oneof output {
+    StdoutChunk stdout = 1;
+    StderrChunk stderr = 2;
+    ExitStatus exit_status = 3;
+  }
+}
+
+message StdoutChunk {
+  bytes data = 1;
+}
+
+message StderrChunk {
+  bytes data = 1;
+}
+
+message ExitStatus {
+  int32 exit_code = 1;
 }
 
 message ResizeExecTTYRequest {
