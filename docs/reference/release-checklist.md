@@ -269,11 +269,10 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 These behaviours were observed during RC smoke and must either be fixed
 or explicitly gated/documented before tag:
 
-- `--compact thorough` is currently broken on macOS guests:
-  `compact.go:121` runs `diskutil secureErase freespace 0 /`, but `/` is
-  the read-only System volume on macOS 11+. For RC, either fix the
-  command to target `/System/Volumes/Data`, gate with an explicit
-  pre-flight error, or document the mode as Linux-guest only.
+- `--compact thorough` on macOS guests was fixed before v0.3 by targeting the
+  writable Data volume, using `dd` plus virtio TRIM, and adding a host-capacity
+  preflight. Keep the live smoke above in the tag gate, but do not document
+  thorough mode as broken unless the current smoke regresses.
 - SIGINT exits silently rather than printing a context-cancellation
   error. Cache integrity is preserved (see (e) above), and the abandoned
   scratch is GC'd by the next build, but the missing diagnostic is worth
@@ -319,7 +318,7 @@ reference, changelog, roadmap, 016 refresh, and 017 execution roadmap):
 git push origin main
 git tag -s vX.Y.Z -m "cove vX.Y.Z"
 git push origin vX.Y.Z
-goreleaser release --clean
+./scripts/release-local.sh
 ```
 
 After publish:
