@@ -173,29 +173,37 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 	if err := waitAgentSandboxReady(ctx, coveBin, vm); err != nil {
 		return err
 	}
-	result, err := agentsandbox.Run(ctx, agentsandbox.Options{
-		Provider:      opts.provider,
-		VMName:        vm,
-		Task:          opts.task,
-		MaxSteps:      opts.maxSteps,
-		ScreenshotDir: screenshotDir,
-		ReplayDir:     replayDir,
-		EventsPath:    eventsPath,
-		Stdout:        os.Stdout,
-		Stderr:        os.Stderr,
-	})
+	var result agentsandboxResult
+	var providerErr error
+	if opts.provider == agentsandbox.ProviderAnthropic {
+		result, providerErr = runAnthropicAgentSandbox(ctx, opts, vm, replayDir)
+	} else {
+		providerResult, err := agentsandbox.Run(ctx, agentsandbox.Options{
+			Provider:      opts.provider,
+			VMName:        vm,
+			Task:          opts.task,
+			MaxSteps:      opts.maxSteps,
+			ScreenshotDir: screenshotDir,
+			ReplayDir:     replayDir,
+			EventsPath:    eventsPath,
+			Stdout:        os.Stdout,
+			Stderr:        os.Stderr,
+		})
+		result = agentsandboxResult{FinalAnswer: providerResult.FinalAnswer}
+		providerErr = err
+	}
 	finalAnswer = result.FinalAnswer
-	if writeErr := writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, result.FinalAnswer); writeErr != nil && err == nil {
-		err = writeErr
+	if writeErr := writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, result.FinalAnswer); writeErr != nil && providerErr == nil {
+		providerErr = writeErr
 	} else if writeErr == nil {
 		replayWritten = true
 	}
-	if stopErr := stopAgentSandboxVM(ctx, coveBin, vm); stopErr != nil && err == nil {
-		err = stopErr
+	if stopErr := stopAgentSandboxVM(ctx, coveBin, vm); stopErr != nil && providerErr == nil {
+		providerErr = stopErr
 	}
 	stopped = true
-	if err != nil {
-		return err
+	if providerErr != nil {
+		return providerErr
 	}
 	fmt.Printf("agent-sandbox replay: %s\n", replayDir)
 	return nil

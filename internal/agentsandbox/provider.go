@@ -53,8 +53,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	provider := strings.ToLower(strings.TrimSpace(opts.Provider))
 	switch provider {
-	case ProviderAnthropic, ProviderGemini, ProviderVertex:
+	case ProviderGemini, ProviderVertex:
 		return runPythonBridge(ctx, provider, opts)
+	case ProviderAnthropic:
+		return Result{}, errors.New("agent-sandbox: anthropic provider is implemented by the cove runtime")
 	case ProviderOpenAI:
 		return Result{}, errors.New("agent-sandbox: openai provider is not implemented yet")
 	default:

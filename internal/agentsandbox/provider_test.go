@@ -28,6 +28,17 @@ func TestRunOpenAIStub(t *testing.T) {
 	}
 }
 
+func TestRunAnthropicDelegatesToRuntime(t *testing.T) {
+	_, err := Run(context.Background(), Options{
+		Provider: ProviderAnthropic,
+		VMName:   "vm",
+		Task:     "task",
+	})
+	if err == nil || !strings.Contains(err.Error(), "implemented by the cove runtime") {
+		t.Fatalf("Run error = %v, want runtime delegation error", err)
+	}
+}
+
 func TestRunRequiresVMAndTask(t *testing.T) {
 	for _, tc := range []struct {
 		name string
