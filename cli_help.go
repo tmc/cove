@@ -53,6 +53,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printBuildUsage(os.Stderr)
 		case "secret":
 			printSecretUsage(os.Stderr)
+		case "policy":
+			printPolicyUsage(os.Stderr)
 		case "push":
 			printPushUsage(os.Stderr)
 		case "pull":
@@ -173,6 +175,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printPullUsage(os.Stderr)
 			return true, 0
+		}
+	case "policy":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printPolicyUsage(os.Stderr)
+			return true, usageExitCode(subargs)
 		}
 	case "store":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
