@@ -52,6 +52,12 @@ outputs:
   log-path:
     description: Host-side cove run log root.
     value: ${{ steps.cove.outputs.log-path }}
+  metrics-path:
+    description: Host-side metrics JSONL file, when cove produced one.
+    value: ${{ steps.cove.outputs.metrics-path }}
+  artifact-path:
+    description: Host-side cove run artifact bundle, when cove produced metrics.
+    value: ${{ steps.metrics.outputs.artifact-path }}
 
 runs:
   using: composite
@@ -75,3 +81,13 @@ runs:
           exit 2
         fi
         go run "${GITHUB_ACTION_PATH}/../../../cmd/cove-action"
+    - id: metrics
+      if: ${{ always() }}
+      shell: bash
+      env:
+        COVE_ACTION_METRICS_PATH: ${{ steps.cove.outputs.metrics-path }}
+      run: |
+        set -euo pipefail
+        if [ -n "${COVE_ACTION_METRICS_PATH}" ]; then
+          printf 'artifact-path=%s\n' "$(dirname "${COVE_ACTION_METRICS_PATH}")" >>"${GITHUB_OUTPUT}"
+        fi
