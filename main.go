@@ -611,6 +611,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "logs":
+			if err := logsCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "shell":
 			if err := shellCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -928,6 +934,7 @@ Runtime Control:
   cp              Copy files between host and guest (cove cp host vm:/path)
   ctl disk list   Inspect runtime storage devices
   ctl usb list    Inspect runtime USB controllers and devices
+  logs            Show guest logs from a running VM (cove logs <vm> [-f])
   shell           Open a Docker-shaped exec session in a running VM (cove shell <vm>)
   agent-sandbox   Run a computer-use provider loop in a fresh VM fork
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
