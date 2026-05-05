@@ -45,8 +45,10 @@ func stubAuthorizationCreate(t *testing.T, promptVisible bool) func() {
 	oldPromptVisible := authorizationPromptVisible
 
 	block := make(chan struct{})
+	finished := make(chan struct{})
 	authInitialized = true
 	authCreate = func(uintptr, uintptr, uint32, *uintptr) int32 {
+		defer close(finished)
 		<-block
 		return 0
 	}
@@ -59,6 +61,7 @@ func stubAuthorizationCreate(t *testing.T, promptVisible bool) func() {
 
 	return func() {
 		close(block)
+		<-finished
 		authInitialized = oldAuthInitialized
 		authCreate = oldAuthCreate
 		authExecute = oldAuthExecute
