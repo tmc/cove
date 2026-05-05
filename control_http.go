@@ -316,7 +316,7 @@ func (h *httpHandler) handleAgentExec(w http.ResponseWriter, r *http.Request) {
 		args = append([]string{body.Cmd}, args...)
 	}
 	resp, ok := h.dispatch(w, &controlpb.ControlRequest{
-		Type:    "agent-exec",
+		Type:    "agent-exec-auto",
 		Command: &controlpb.ControlRequest_AgentExec{AgentExec: &controlpb.AgentExecCommand{Args: args}},
 	})
 	if !ok {

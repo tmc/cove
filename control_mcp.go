@@ -595,7 +595,7 @@ var mcpToolTable = []mcpTool{
 	},
 	{
 		Name:        "vm_agent_exec",
-		Description: "Run a command inside the guest via the vz-agent daemon and return exit code, stdout, and stderr.",
+		Description: "Run a command inside the guest via the path-aware vz-agent route and return exit code, stdout, and stderr.",
 		Schema: objectSchema(map[string]any{
 			"name": schemaVMName(),
 			"cmd":  map[string]any{"type": "string", "description": "Executable to run inside the guest."},
@@ -614,7 +614,7 @@ var mcpToolTable = []mcpTool{
 				full = append([]string{in.Cmd}, in.Args...)
 			}
 			return &controlpb.ControlRequest{
-				Type:      "agent-exec",
+				Type:      "agent-exec-auto",
 				AuthToken: token,
 				Command:   &controlpb.ControlRequest_AgentExec{AgentExec: &controlpb.AgentExecCommand{Args: full}},
 			}, nil

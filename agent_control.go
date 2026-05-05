@@ -353,10 +353,14 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 		return s.handleAgentPing(), true
 	case "agent-info":
 		return s.handleAgentInfo(), true
-	case "agent-exec":
+	case "agent-exec", "agent-exec-auto":
 		cmd := req.GetAgentExec()
 		if cmd == nil {
 			return &controlpb.ControlResponse{Error: "missing agent-exec command payload"}, true
+		}
+		if req.Type == "agent-exec-auto" && agentstate.RouteForExec(cmd.Args, linuxMode) == agentstate.RouteUser {
+			log.Printf("agent-route: exec %v -> user agent", cmd.Args)
+			return s.handleAgentUserExec(cmd), true
 		}
 		return s.handleAgentExec(cmd), true
 	case "agent-exec-stream":
@@ -1259,7 +1263,9 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 
 	var stream agentstate.ExecStreamReceiver
 	var connErr error
-	if req.Type == "agent-user-exec-stream" {
+	routeUser := req.Type == "agent-user-exec-stream" ||
+		(req.Type == "agent-exec-stream-auto" && agentstate.RouteForExec(cmd.Args, linuxMode) == agentstate.RouteUser)
+	if routeUser {
 		ua, err := s.getUserAgent()
 		if err != nil {
 			writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})

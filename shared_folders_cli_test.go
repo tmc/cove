@@ -354,7 +354,7 @@ func TestSharedFolderAddLiveAppliesAndMounts(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"mount"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -420,7 +420,7 @@ func TestSharedFolderAddLiveAppliesAndMountsLinuxPerTag(t *testing.T) {
 			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"mount"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -521,7 +521,7 @@ func TestSharedFolderStatusLinuxUsesPerTagMountPoint(t *testing.T) {
 			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"mount"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -569,7 +569,7 @@ func TestPendingSharedFoldersOmitsMountedTags(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"mount"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -580,7 +580,7 @@ func TestPendingSharedFoldersOmitsMountedTags(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"ls", "-1", defaultSharedFoldersMountPoint},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -740,7 +740,7 @@ func TestMountSharedFoldersInGuestMountedLSTimeoutIsBounded(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"mount"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -751,7 +751,7 @@ func TestMountSharedFoldersInGuestMountedLSTimeoutIsBounded(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"ls", "-1", defaultSharedFoldersMountPoint},
 			delay:    250 * time.Millisecond,
 		},
@@ -814,7 +814,7 @@ func TestMountSharedFoldersInGuestMountedStaleTagsRemounts(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"mount"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -825,7 +825,7 @@ func TestMountSharedFoldersInGuestMountedStaleTagsRemounts(t *testing.T) {
 			},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"ls", "-1", defaultSharedFoldersMountPoint},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -903,7 +903,7 @@ func TestMountSharedFoldersInGuestLinuxUsesMountVirtioFS(t *testing.T) {
 			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
 		},
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"mount"},
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -968,7 +968,7 @@ func TestControlClientAgentExecTypedTimeoutHonorsOverride(t *testing.T) {
 	vmDir := shortSharedFolderVMDir(t)
 	verify := serveSharedFolderControlSteps(t, vmDir, "test-token", []sharedFolderControlStep{
 		{
-			wantType: "agent-exec",
+			wantType: "agent-exec-auto",
 			wantArgs: []string{"echo", "hello"},
 			delay:    250 * time.Millisecond,
 		},
