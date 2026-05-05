@@ -211,6 +211,43 @@ func extractCtlSubcommandFlags(subArgs []string, outputFile *string) ([]string, 
 	return out, useDaemon
 }
 
+func parseCtlScreenshotArgs(subArgs []string, outputFile *string) (string, error) {
+	format := "jpeg"
+	var positional []string
+	for i := 0; i < len(subArgs); i++ {
+		arg := subArgs[i]
+		value := ""
+		switch {
+		case arg == "-format" || arg == "--format":
+			if i+1 >= len(subArgs) {
+				return "", fmt.Errorf("screenshot -format requires png, jpeg, or jpg")
+			}
+			value = subArgs[i+1]
+			i++
+		case strings.HasPrefix(arg, "-format="):
+			value = strings.TrimPrefix(arg, "-format=")
+		case strings.HasPrefix(arg, "--format="):
+			value = strings.TrimPrefix(arg, "--format=")
+		default:
+			positional = append(positional, arg)
+			continue
+		}
+
+		switch strings.ToLower(value) {
+		case "png":
+			format = "png"
+		case "jpeg", "jpg":
+			format = "jpeg"
+		default:
+			return "", fmt.Errorf("screenshot -format must be png, jpeg, or jpg")
+		}
+	}
+	if len(positional) > 0 && *outputFile == "" {
+		*outputFile = positional[0]
+	}
+	return format, nil
+}
+
 // ctlCommand handles the "ctl" subcommand for control socket interaction
 func ctlCommand(args []string) error {
 	fs, socketPath, timeout, outputFile, raw, wait, token := newCtlFlagSet()
@@ -259,28 +296,7 @@ func ctlCommand(args []string) error {
 		return ctlReady(sock, subArgs)
 	}
 
-	// Handle flags that appear after the subcommand (e.g. "screenshot -o file.jpg").
-	// Go's flag parser stops at the first non-flag arg, so flags after the subcommand
-	// name are not parsed. Scan subArgs for known ctl flags and extract them.
-	for i := 0; i < len(subArgs); i++ {
-		if subArgs[i] == "-o" && i+1 < len(subArgs) {
-			*outputFile = subArgs[i+1]
-			subArgs = append(subArgs[:i], subArgs[i+2:]...)
-			i--
-		}
-	}
-	useDaemon := false
-	for i := 0; i < len(subArgs); i++ {
-		if subArgs[i] == "--daemon" || subArgs[i] == "-daemon" {
-			useDaemon = true
-			subArgs = append(subArgs[:i], subArgs[i+1:]...)
-			i--
-		}
-	}
-	// Strip conventional "--" separator between ctl flags and command args.
-	if len(subArgs) > 0 && subArgs[0] == "--" {
-		subArgs = subArgs[1:]
-	}
+	subArgs, useDaemon := extractCtlSubcommandFlags(subArgs, outputFile)
 
 	// Determine socket path
 	sock := *socketPath
@@ -487,15 +503,15 @@ func ctlCommand(args []string) error {
 		}
 
 	case "screenshot":
-		// Accept positional path: "ctl screenshot /tmp/screen.jpg"
-		if len(subArgs) > 0 && *outputFile == "" {
-			*outputFile = subArgs[0]
+		format, err := parseCtlScreenshotArgs(subArgs, outputFile)
+		if err != nil {
+			return err
 		}
 		req.Command = &controlpb.ControlRequest_Screenshot{
 			Screenshot: &controlpb.ScreenshotCommand{
 				Scale:   0.5,
 				Quality: 60,
-				Format:  "jpeg",
+				Format:  format,
 			},
 		}
 

@@ -2,17 +2,18 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
 func TestExtractCtlSubcommandFlags(t *testing.T) {
 	tests := []struct {
-		name        string
-		in          []string
-		wantArgs    []string
-		wantOutput  string
-		wantDaemon  bool
-		seedOutput  string
+		name       string
+		in         []string
+		wantArgs   []string
+		wantOutput string
+		wantDaemon bool
+		seedOutput string
 	}{
 		{
 			name:     "plain command",
@@ -76,6 +77,68 @@ func TestExtractCtlSubcommandFlags(t *testing.T) {
 			}
 			if out != tc.wantOutput {
 				t.Errorf("output = %q, want %q", out, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestParseCtlScreenshotArgsFormat(t *testing.T) {
+	tests := []struct {
+		name       string
+		in         []string
+		wantFormat string
+		wantOutput string
+		wantErr    string
+	}{
+		{
+			name:       "default jpeg",
+			wantFormat: "jpeg",
+		},
+		{
+			name:       "png",
+			in:         []string{"-format", "png"},
+			wantFormat: "png",
+		},
+		{
+			name:       "jpg normalizes",
+			in:         []string{"--format", "JPG"},
+			wantFormat: "jpeg",
+		},
+		{
+			name:       "equals form",
+			in:         []string{"-format=PNG", "/tmp/screen.png"},
+			wantFormat: "png",
+			wantOutput: "/tmp/screen.png",
+		},
+		{
+			name:    "missing format value",
+			in:      []string{"-format"},
+			wantErr: "requires",
+		},
+		{
+			name:    "bad format",
+			in:      []string{"-format", "gif"},
+			wantErr: "must be",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			output := ""
+			got, err := parseCtlScreenshotArgs(append([]string(nil), tc.in...), &output)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if got != tc.wantFormat {
+				t.Fatalf("format = %q, want %q", got, tc.wantFormat)
+			}
+			if output != tc.wantOutput {
+				t.Fatalf("output = %q, want %q", output, tc.wantOutput)
 			}
 		})
 	}
