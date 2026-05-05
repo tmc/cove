@@ -268,6 +268,10 @@ func installLinuxVM() error {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
 	saveHardwareConfig(vmDir)
+	persistInstallQuota(vmDir)
+	if err := applyInstallDiskQuota(vmDir); err != nil {
+		return err
+	}
 
 	// Configure provisioning
 	provConfig := DefaultLinuxProvisionConfig()

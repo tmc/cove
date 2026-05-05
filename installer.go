@@ -427,6 +427,11 @@ func installMacOSLikeVZ(ctx context.Context) error {
 	if err := os.MkdirAll(vmDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
+	saveHardwareConfig(vmDir)
+	persistInstallQuota(vmDir)
+	if err := applyInstallDiskQuota(vmDir); err != nil {
+		return err
+	}
 
 	// Watch vmDir + parent for unexpected remove/rename events while the
 	// install is running. Diagnoses blockers-next.md #1: vmDir vanishes
