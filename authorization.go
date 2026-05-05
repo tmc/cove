@@ -81,6 +81,21 @@ type authorizationItemSet struct {
 	items *authorizationItem
 }
 
+// PreWarm obtains the admin authorization right early so later provisioning
+// work can reuse the OS credential cache.
+func PreWarm() error {
+	return preWarmAuthorization(elevationPrompt("Prepare to provision the VM disk."))
+}
+
+func preWarmAuthorization(prompt string) error {
+	authRef, err := createAuthorization(prompt)
+	if err != nil {
+		return err
+	}
+	authFree(authRef, kAuthorizationFlagDestroyRights)
+	return nil
+}
+
 // runElevatedManifestNative shows the native macOS authorization dialog and
 // then re-execs cove with __elevated-op, which becomes root via setuid(0) and
 // runs the typed manifest. The manifest content is hashed by the parent;
@@ -93,10 +108,11 @@ type authorizationItemSet struct {
 // action-oriented (one sentence). Name the affected VM when relevant so the
 // user can tell what they are approving.
 func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
-	initAuthorizationServices()
-	if authCreate == nil || authExecute == nil {
-		return fmt.Errorf("authorization services not available")
+	authRef, err := createAuthorization(prompt)
+	if err != nil {
+		return err
 	}
+	defer authFree(authRef, kAuthorizationFlagDestroyRights)
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -119,16 +135,62 @@ func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
 		return fmt.Errorf("authorization manifest hash: %w", err)
 	}
 
+	argv := []*byte{subcmdArg, manifestArg, hashArg, nil}
+	var commPipe uintptr
+	status := authExecute(
+		authRef,
+		uintptr(unsafe.Pointer(toolPath)),
+		0,
+		uintptr(unsafe.Pointer(&argv[0])),
+		&commPipe,
+	)
+	if status == errAuthorizationCanceled {
+		return fmt.Errorf("interrupted: user cancelled authorization")
+	}
+	if status != 0 {
+		return fmt.Errorf("AuthorizationExecuteWithPrivileges: status %d", status)
+	}
+	if commPipe != 0 && libcFread != nil {
+		var buf [4096]byte
+		for {
+			n := libcFread(uintptr(unsafe.Pointer(&buf[0])), 1, uintptr(len(buf)), commPipe)
+			if n == 0 {
+				break
+			}
+			os.Stdout.Write(buf[:n])
+		}
+		if libcFclose != nil {
+			libcFclose(commPipe)
+		}
+	}
+	return nil
+}
+
+func createAuthorization(prompt string) (uintptr, error) {
+	initAuthorizationServices()
+	if authCreate == nil || authExecute == nil {
+		return 0, fmt.Errorf("authorization services not available")
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return 0, fmt.Errorf("locate cove binary for elevated exec: %w", err)
+	}
+	toolPath, err := syscall.BytePtrFromString(exePath)
+	if err != nil {
+		return 0, fmt.Errorf("authorization tool path: %w", err)
+	}
+
 	// authorizationItem.name is a C string (NUL-terminated): Security.framework
 	// calls strlen() on it. A bare []byte conversion is NOT NUL-terminated and
 	// causes SIGBUS when strlen walks past the buffer into unmapped pages.
 	rightName, err := syscall.BytePtrFromString(kAuthorizationRightExecute)
 	if err != nil {
-		return fmt.Errorf("authorization right name: %w", err)
+		return 0, fmt.Errorf("authorization right name: %w", err)
 	}
 	envKey, err := syscall.BytePtrFromString(kAuthorizationEnvironmentPrompt)
 	if err != nil {
-		return fmt.Errorf("authorization env key: %w", err)
+		return 0, fmt.Errorf("authorization env key: %w", err)
 	}
 
 	// Build rights for the privileged tool itself.
@@ -146,7 +208,7 @@ func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
 	// bare []byte runs up against an unmapped page.
 	promptPtr, err := syscall.BytePtrFromString(prompt)
 	if err != nil {
-		return fmt.Errorf("authorization prompt: %w", err)
+		return 0, fmt.Errorf("authorization prompt: %w", err)
 	}
 	promptItem := authorizationItem{
 		name:        envKey,
@@ -191,60 +253,23 @@ func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
 					waitingForApprovalLogged = true
 				}
 				if time.Since(promptSeenAt) > authCreatePromptTimeout {
-					return fmt.Errorf("authorization dialog still pending after %s; approve or cancel the macOS prompt and retry", authCreatePromptTimeout)
+					return 0, fmt.Errorf("authorization dialog still pending after %s; approve or cancel the macOS prompt and retry", authCreatePromptTimeout)
 				}
 				continue
 			}
 			if time.Since(start) > authCreateNoUITimeout {
-				return fmt.Errorf("AuthorizationCreate wedged after %s (likely authd/SecurityAgent unresponsive); try logging out and back in, or run the script manually as root", authCreateNoUITimeout)
+				return 0, fmt.Errorf("AuthorizationCreate wedged after %s (likely authd/SecurityAgent unresponsive); try logging out and back in, or run the script manually as root", authCreateNoUITimeout)
 			}
 		}
 	}
 authCreateDone:
 	if status == errAuthorizationCanceled {
-		return fmt.Errorf("interrupted: user cancelled authorization")
+		return 0, fmt.Errorf("interrupted: user cancelled authorization")
 	}
 	if status != 0 {
-		return fmt.Errorf("AuthorizationCreate: status %d", status)
+		return 0, fmt.Errorf("AuthorizationCreate: status %d", status)
 	}
-	defer authFree(authRef, kAuthorizationFlagDestroyRights)
-
-	// AuthorizationExecuteWithPrivileges launches the privileged tool
-	// asynchronously and returns immediately. Without `communicationsPipe`,
-	// callers cannot tell when the child finishes — and any deferred cleanup
-	// (e.g. removing the bash script) races the child. Pass a real pipe so
-	// the child's stdout is connected; reading until EOF blocks until the
-	// child closes its end (i.e. exits). This makes the call synchronous
-	// from the caller's perspective.
-	argv := []*byte{subcmdArg, manifestArg, hashArg, nil}
-	var commPipe uintptr
-	status = authExecute(
-		authRef,
-		uintptr(unsafe.Pointer(toolPath)),
-		0,
-		uintptr(unsafe.Pointer(&argv[0])),
-		&commPipe,
-	)
-	if status == errAuthorizationCanceled {
-		return fmt.Errorf("interrupted: user cancelled authorization")
-	}
-	if status != 0 {
-		return fmt.Errorf("AuthorizationExecuteWithPrivileges: status %d", status)
-	}
-	if commPipe != 0 && libcFread != nil {
-		var buf [4096]byte
-		for {
-			n := libcFread(uintptr(unsafe.Pointer(&buf[0])), 1, uintptr(len(buf)), commPipe)
-			if n == 0 {
-				break
-			}
-			os.Stdout.Write(buf[:n])
-		}
-		if libcFclose != nil {
-			libcFclose(commPipe)
-		}
-	}
-	return nil
+	return authRef, nil
 }
 
 func defaultAuthorizationPromptVisible() bool {

@@ -6,6 +6,49 @@ import (
 	"time"
 )
 
+func TestPreWarmUsesAuthorizationCreate(t *testing.T) {
+	oldAuthInitialized := authInitialized
+	oldAuthCreate := authCreate
+	oldAuthExecute := authExecute
+	oldAuthFree := authFree
+	defer func() {
+		authInitialized = oldAuthInitialized
+		authCreate = oldAuthCreate
+		authExecute = oldAuthExecute
+		authFree = oldAuthFree
+	}()
+
+	var createCalled bool
+	var freeCalled bool
+	authInitialized = true
+	authCreate = func(_ uintptr, _ uintptr, flags uint32, authRef *uintptr) int32 {
+		createCalled = true
+		if flags&(kAuthorizationFlagInteractionAllowed|kAuthorizationFlagExtendRights|kAuthorizationFlagPreAuthorize) == 0 {
+			t.Fatalf("flags = %#x, missing expected authorization flags", flags)
+		}
+		*authRef = 42
+		return 0
+	}
+	authExecute = func(uintptr, uintptr, uint32, uintptr, *uintptr) int32 { return 0 }
+	authFree = func(authRef uintptr, flags uint32) int32 {
+		freeCalled = true
+		if authRef != 42 {
+			t.Fatalf("authRef = %d, want 42", authRef)
+		}
+		if flags != kAuthorizationFlagDestroyRights {
+			t.Fatalf("free flags = %#x, want destroy rights", flags)
+		}
+		return 0
+	}
+
+	if err := PreWarm(); err != nil {
+		t.Fatalf("PreWarm: %v", err)
+	}
+	if !createCalled || !freeCalled {
+		t.Fatalf("create/free called = %v/%v, want true/true", createCalled, freeCalled)
+	}
+}
+
 func TestRunElevatedManifestNativeTimesOutWithoutPrompt(t *testing.T) {
 	restore := stubAuthorizationCreate(t, false)
 	defer restore()
