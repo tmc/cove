@@ -1826,6 +1826,16 @@ func handleNetworkCommand(args []string) {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+	case "logs":
+		logArgs, err := parseNetworkLogsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := PrintNetworkLogs(os.Stdout, logArgs.VM, logArgs.Follow); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown network command: %s\nRun 'cove -help' for usage.\n", args[0])
 		os.Exit(1)
