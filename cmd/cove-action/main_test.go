@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,9 +35,16 @@ func TestRunSuccess(t *testing.T) {
 		"vm-name=cove-action-123-2",
 		"exit-code=0",
 		"log-path=" + filepath.Join(dir, ".vz", "runs"),
+		"metrics-path=" + filepath.Join(dir, ".vz", "runs", "stub-run", "metrics.jsonl"),
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("outputs missing %q in:\n%s", want, got)
+		}
+	}
+	events := readEvents(t, filepath.Join(dir, ".vz", "runs", "stub-run", "metrics.jsonl"))
+	for _, want := range []string{"action_start", "vm_create", "vm_start", "agent_ready", "command_complete", "action_complete"} {
+		if !events[want] {
+			t.Fatalf("missing event %q in %#v", want, events)
 		}
 	}
 	log := readFile(t, filepath.Join(dir, "log"))
@@ -86,6 +95,22 @@ set -eu
 printf '%s\n' "$*" >> "$COVE_STUB_LOG"
 case "$1" in
 run)
+	vm=""
+	image=""
+	prev=""
+	for arg in "$@"; do
+		if [ "$prev" = "-fork-name" ]; then vm="$arg"; fi
+		if [ "$prev" = "-fork-from" ]; then image="$arg"; fi
+		prev="$arg"
+	done
+	metrics_dir="$HOME/.vz/runs/stub-run"
+	mkdir -p "$metrics_dir"
+	{
+		printf '{"timestamp":"2026-05-05T00:00:00Z","event_type":"vm_create","vm_name":"%s","image_ref":"%s","status":"ok"}\n' "$vm" "$image"
+		printf '{"timestamp":"2026-05-05T00:00:01Z","event_type":"fork_created","vm_name":"%s","image_ref":"%s","status":"ok"}\n' "$vm" "$image"
+		printf '{"timestamp":"2026-05-05T00:00:02Z","event_type":"vm_start","vm_name":"%s","image_ref":"%s","status":"ok"}\n' "$vm" "$image"
+		printf '{"timestamp":"2026-05-05T00:00:03Z","event_type":"agent_ready","vm_name":"%s","image_ref":"%s","status":"ok"}\n' "$vm" "$image"
+	} > "$metrics_dir/metrics.jsonl"
 	trap 'exit 0' TERM INT
 	while :; do sleep 1; done
 	;;
@@ -116,6 +141,30 @@ esac
 		t.Fatal(err)
 	}
 	return path
+}
+
+func readEvents(t *testing.T, path string) map[string]bool {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	events := map[string]bool{}
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		var row struct {
+			EventType string `json:"event_type"`
+		}
+		if err := json.Unmarshal(scan.Bytes(), &row); err != nil {
+			t.Fatal(err)
+		}
+		events[row.EventType] = true
+	}
+	if err := scan.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return events
 }
 
 func readFile(t *testing.T, path string) string {
