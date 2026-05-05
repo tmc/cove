@@ -40,6 +40,8 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 		return fleetRemove(args[1:], path)
 	case "vm", "image":
 		return runFleetAggregateCommand(ctx, args, path, runner, out, errOut)
+	case "ps":
+		return runFleetPSCommand(ctx, args[1:], path, runner, out, errOut)
 	default:
 		return fmt.Errorf("fleet: unknown command %q", args[0])
 	}

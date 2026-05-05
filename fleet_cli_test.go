@@ -159,6 +159,50 @@ func TestFleetImageLsJSONIncludesFailures(t *testing.T) {
 	runner.assertCalls(t, []string{"image", "list"}, 2)
 }
 
+func TestFleetPSFiltersRunningVMs(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	runner := &fakeFleetRunner{outputs: map[string]string{
+		"a.local": "a-vm running\nb-vm stopped\n",
+		"b.local": "c-vm Running\n",
+	}}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"ps"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet ps: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"a\ta-vm running", "b\tc-vm Running"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "stopped") {
+		t.Fatalf("output includes stopped VM:\n%s", got)
+	}
+	runner.assertCalls(t, []string{"vm", "list"}, 2)
+}
+
+func TestFleetPSJSONIncludesFailures(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	runner := &fakeFleetRunner{
+		outputs: map[string]string{"a.local": "a-vm running\nb-vm stopped\n"},
+		errs:    map[string]error{"b.local": errors.New("unreachable")},
+	}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"ps", "--json"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet ps --json: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{`"host": "a"`, `"kind": "ps"`, `"output": "a-vm running"`, `"host": "b"`, `"error": "unreachable"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("json missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "stopped") {
+		t.Fatalf("json includes stopped VM:\n%s", got)
+	}
+	runner.assertCalls(t, []string{"vm", "list"}, 2)
+}
+
 func writeFleetTestConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fleet.json")
