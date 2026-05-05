@@ -74,6 +74,8 @@ Example runner labels:
 runs-on: [self-hosted, macOS, ARM64, cove]
 ```
 
+## Preflight Commands
+
 Preflight the host and runner image before wiring a workflow:
 
 ```bash
