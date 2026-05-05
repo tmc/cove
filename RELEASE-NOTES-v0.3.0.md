@@ -99,6 +99,30 @@ with live-smoke and package-check documentation under
 The Anthropic sandbox-runtime adapter also ships as a substrate bridge
 for computer-use style workflows.
 
+### Additions since initial v0.3 cut prep
+
+The v0.3 line also picked up the round-30/31 packaging and operator
+polish needed to make the build/cache surface usable as an agent
+sandbox substrate:
+
+- **Run metrics**: forked runs now write structured lifecycle metrics to
+  `~/.vz/runs/<run-id>/metrics.jsonl`, with JSONL as the default local
+  sink and optional OTLP export through `OTEL_EXPORTER_OTLP_ENDPOINT`.
+  The first metric set covers run start/end, fork materialization, VM
+  start, and agent-ready timing. See `docs/features/metrics.md`.
+- **Network policy surface**: `cove run` and `cove up` document
+  `-network` / `--net` modes for `nat`, `bridged:<iface>`,
+  `host-only`, and `none`, plus control-socket port forwarding for
+  host-to-guest TCP access. See `docs/features/networking.md`.
+- **Agent sandbox quickstart**: `docs/quickstart-agent-sandbox.md`
+  packages the computer-use story across OpenAI Agents SDK, Anthropic
+  Claude computer use, Gemini computer use, fork-per-task isolation, and
+  per-run artifacts.
+- **GitHub Actions executor verification**: the private `cove-action`
+  wrapper has now been verified end-to-end for simple commands,
+  multiline scripts, and intentional guest-command failure. Exit codes
+  propagate through the action output instead of being swallowed.
+
 ## Install
 
 ```bash
@@ -124,6 +148,9 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 - `# secret:` vzscript directive
 - `# secret-from:` vzscript directive with `env://` and `file://`
 - `cove secret probe <uri>`
+- `cove run -fork-from ...` metrics in `~/.vz/runs/<run-id>/metrics.jsonl`
+- `cove run --net nat|bridged:<iface>|host-only|none`
+- `cove ctl port-forward start|stop|list`
 
 ## Deferred
 
@@ -137,6 +164,9 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 - BuildKit-style parallel step execution. v0.3 builds run sequentially.
 - Packer plugin shim.
 - Product-name resolution before any public registry or signed channel.
+- Fresh public `agentkit/linux-base` image refresh is still in flight for
+  this cycle; do not describe it as shipped until the image build and
+  verification land.
 
 ## Known limitations
 
