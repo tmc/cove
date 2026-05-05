@@ -6,7 +6,7 @@
 //     they vanish on shutdown)
 //   - has its own vmDir for control.sock, screenshots, logs
 //   - copies parent's aux.img + hw.model (immutable identity inputs)
-//   - generates a fresh machine.id and MAC on first boot
+//   - optionally preserves machine.id + MAC for vmstate fidelity
 //   - records lineage so cove vm tree / cove gc see it
 //
 // On normal exit the vmDir is removed. On crash, the .ephemeral sentinel
@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmidentity"
 )
 
 // ephemeralSentinel marks a vmDir as auto-deletable. cove gc removes
@@ -51,15 +52,19 @@ type EphemeralForkOptions struct {
 	Name string
 	// Now is a clock injection point for deterministic names in tests.
 	Now func() time.Time
+	// PreserveIdentity copies the parent's machine.id and MAC into the
+	// child. It is for vmstate-fidelity fork-from runs, not cold forks.
+	PreserveIdentity bool
 }
 
 // SetupEphemeralFork creates an ephemeral child vmDir without cloning
 // the parent's disk. The child's disk is the parent's disk.img attached
 // read-only via RAM-overlay at boot time (see runtime wiring in
 // runtime_lifecycle.go); only aux.img and hw.model are physically
-// copied. machine.id is generated fresh by the VM init path on first
-// boot. A `.ephemeral` sentinel is dropped so cove gc can sweep
-// orphaned siblings after host crashes.
+// copied. Unless PreserveIdentity is set, machine.id and MAC are
+// generated fresh by the VM init path on first boot. A `.ephemeral`
+// sentinel is dropped so cove gc can sweep orphaned siblings after
+// host crashes.
 func SetupEphemeralFork(opts EphemeralForkOptions) (EphemeralFork, error) {
 	if opts.Parent == "" {
 		return EphemeralFork{}, errors.New("ephemeral fork: parent VM name required")
@@ -94,6 +99,14 @@ func SetupEphemeralFork(opts EphemeralForkOptions) (EphemeralFork, error) {
 			return EphemeralFork{}, fmt.Errorf("ephemeral fork: parent missing %s: %w", f, err)
 		}
 	}
+	var identity *vmidentity.Identity
+	if opts.PreserveIdentity {
+		var err error
+		identity, err = vmidentity.Read(parentDir, vmPrimaryDiskPath(parentDir))
+		if err != nil {
+			return EphemeralFork{}, fmt.Errorf("ephemeral fork: read parent identity: %w", err)
+		}
+	}
 
 	if err := os.MkdirAll(childDir, 0o755); err != nil {
 		return EphemeralFork{}, fmt.Errorf("ephemeral fork: create child dir: %w", err)
@@ -107,13 +120,18 @@ func SetupEphemeralFork(opts EphemeralForkOptions) (EphemeralFork, error) {
 		cleanup()
 		return EphemeralFork{}, fmt.Errorf("ephemeral fork: write sentinel: %w", err)
 	}
-	if err := copyFile(filepath.Join(parentDir, "aux.img"), filepath.Join(childDir, "aux.img")); err != nil {
-		cleanup()
-		return EphemeralFork{}, fmt.Errorf("ephemeral fork: copy aux.img: %w", err)
-	}
 	if err := copyFile(filepath.Join(parentDir, "hw.model"), filepath.Join(childDir, "hw.model")); err != nil {
 		cleanup()
 		return EphemeralFork{}, fmt.Errorf("ephemeral fork: copy hw.model: %w", err)
+	}
+	if opts.PreserveIdentity {
+		if err := vmidentity.Write(childDir, identity); err != nil {
+			cleanup()
+			return EphemeralFork{}, fmt.Errorf("ephemeral fork: write child identity: %w", err)
+		}
+	} else if err := copyFile(filepath.Join(parentDir, "aux.img"), filepath.Join(childDir, "aux.img")); err != nil {
+		cleanup()
+		return EphemeralFork{}, fmt.Errorf("ephemeral fork: copy aux.img: %w", err)
 	}
 
 	cfg, err := vmconfig.Load(childDir)
