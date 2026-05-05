@@ -48,10 +48,12 @@ Subcommands:
   inspect <name[:tag]> [-json]         Show manifest details and downstream forks
   gc   [-dry-run] [-yes] [-older-than D]  Sweep images with zero live forks
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
-  push <name[:tag]> <file> [-gzip]     Tar an image dir to a single file
-  push <name[:tag]> <registry/ref:tag> Push an image to a private OCI registry
-  pull <registry/ref:tag> [-tag <name[:tag]>] [-force]  Pull an image from an OCI registry
-  load <file> [-tag <name[:tag]>] [-force]  Extract a tarball into the image store
+  push <name[:tag]> <file|-|registry/ref:tag> [-gzip]
+                                       Tar to a file/stdout or push to an OCI registry
+  pull <registry/ref:tag> [-tag <name[:tag]>] [-force]
+                                       Pull an image from an OCI registry
+  load <file|-> [-tag <name[:tag]>] [-force]
+                                       Extract a tarball into the image store
 
 Examples:
   cove image build -from base -tag cove-runner-macos:14.5

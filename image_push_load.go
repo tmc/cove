@@ -1,10 +1,9 @@
-// image_push_load.go — local-tarball portability for the image store.
+// image_push_load.go — image transport for the local store.
 //
-// `cove image push <ref> <file>` tars a built image directory into a single
-// file (suitable for scp / external storage). `cove image load <file>`
-// extracts it back into ~/.vz/images/<ref>/. Pass `-` for either side to
-// stream via stdin/stdout (e.g. `cove image push x:1 - | ssh host cove
-// image load -`). No HTTP, no OCI registry.
+// `cove image push` can either tar a local image to a file/stdout or publish
+// it to an OCI registry, depending on the destination shape. `cove image load`
+// keeps the tarball import path for files/stdin; registry imports use
+// `cove image pull`.
 package main
 
 import (
@@ -33,6 +32,9 @@ var imageDataFiles = []string{"disk.img", "aux.img", "hw.model", "machine.id"}
 // many tens of GB, but >100 GB is treated as malicious / corrupt input.
 const imageEntryMaxBytes int64 = 100 * 1024 * 1024 * 1024
 
+var stdoutIsTerminal = term.IsTerminal
+var stdinIsTerminal = term.IsTerminal
+
 func runImagePush(args []string) error {
 	fs := flag.NewFlagSet("image push", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -42,7 +44,7 @@ func runImagePush(args []string) error {
 	}
 	if fs.NArg() != 2 {
 		fs.Usage()
-		return fmt.Errorf("image push requires <ref> and <file>")
+		return fmt.Errorf("image push requires <ref> and <file|registry/ref:tag|->")
 	}
 	ref, err := ParseImageRef(fs.Arg(0))
 	if err != nil {
@@ -62,7 +64,7 @@ func runImagePush(args []string) error {
 		return nil
 	}
 	if dst == "-" {
-		if term.IsTerminal(int(os.Stdout.Fd())) {
+		if stdoutIsTerminal(int(os.Stdout.Fd())) {
 			return fmt.Errorf("image push: refusing to write tarball to a TTY (redirect stdout or pass a file path)")
 		}
 		if err := WriteImageTar(ref, os.Stdout, *gz); err != nil {
@@ -195,11 +197,14 @@ func runImageLoad(args []string) error {
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
-		return fmt.Errorf("image load requires <file>")
+		return fmt.Errorf("image load requires <file|->")
 	}
 	src := fs.Arg(0)
+	if isRegistryReference(src) {
+		return fmt.Errorf("image load: %q looks like a registry reference; use cove image pull", src)
+	}
 	if src == "-" {
-		if term.IsTerminal(int(os.Stdin.Fd())) {
+		if stdinIsTerminal(int(os.Stdin.Fd())) {
 			return fmt.Errorf("image load: refusing to read tarball from a TTY (redirect stdin or pass a file path)")
 		}
 		ref, err := ReadImageTar(os.Stdin, *tag, *force)
