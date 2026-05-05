@@ -492,7 +492,7 @@ Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stop
 cove image build -from <vm> -tag <name[:tag]>
 cove image list
 cove image inspect <name[:tag]> [-json]
-cove image verify <name[:tag]> [-strict] [-json]
+cove image verify <name[:tag]> [-strict] [-json] [-quiet] [-newer-than <duration>]
 cove image push <name[:tag]> <file> [-gzip]
 cove image load <file> [-tag <name[:tag]>] [-force]
 cove image gc [-dry-run] [-yes] [-older-than <duration>]
@@ -504,7 +504,7 @@ cove image rm <name[:tag]>
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy). vmstate is excluded; cold-boot only. |
 | `list` | Show stored images with size + creation time + source VM. |
 | `inspect <ref> [-json]` | Print manifest (size, sha256, base image, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. |
-| `verify <ref> [-strict] [-json]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure. |
+| `verify <ref> [-strict] [-json] [-quiet] [-newer-than D]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure; `-quiet` prints only on failure for CI; `-newer-than` fails stale images such as `24h` or `7d`. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
 | `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
 | `gc [-dry-run] [-yes] [-older-than D]` | Sweep images with zero live forks. `-dry-run` plans only; `-yes` skips the confirmation prompt; `-older-than` filters by manifest `createdAt`. Re-checks fork count immediately before deletion to close the planning -> remove TOCTOU window. |

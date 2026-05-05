@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 )
@@ -37,7 +38,9 @@ type imageVerifyReport struct {
 }
 
 type imageVerifyOptions struct {
-	Strict bool
+	Strict    bool
+	NewerThan time.Duration
+	Now       time.Time
 }
 
 func VerifyImage(ref ImageRef, opts imageVerifyOptions) imageVerifyReport {
@@ -67,6 +70,11 @@ func VerifyImage(ref ImageRef, opts imageVerifyOptions) imageVerifyReport {
 
 	coveStatus, coveDetail := verifyImageCoveCommit(manifest)
 	report.addCheck("cove commit", coveStatus, coveDetail)
+
+	if opts.NewerThan > 0 {
+		freshStatus, freshDetail := verifyImageFreshness(manifest, opts)
+		report.addCheck("freshness", freshStatus, freshDetail)
+	}
 
 	if forks, err := VMsForkedFromImage(ref); err != nil {
 		report.addCheck("forks", imageVerifyWarn, fmt.Sprintf("fork count unavailable: %v", err))
@@ -141,6 +149,28 @@ func verifyImageCoveCommit(manifest *ImageManifest) (imageVerifyStatus, string) 
 	}
 }
 
+func verifyImageFreshness(manifest *ImageManifest, opts imageVerifyOptions) (imageVerifyStatus, string) {
+	timestamp := manifest.BuiltAt
+	if timestamp.IsZero() {
+		timestamp = manifest.CreatedAt
+	}
+	if timestamp.IsZero() {
+		return imageVerifyFail, "manifest has no built_at or createdAt timestamp"
+	}
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	age := now.Sub(timestamp)
+	if age < 0 {
+		return imageVerifyWarn, fmt.Sprintf("image timestamp %s is in the future", timestamp.UTC().Format(time.RFC3339))
+	}
+	if age > opts.NewerThan {
+		return imageVerifyFail, fmt.Sprintf("image age %s exceeds %s", age.Round(time.Second), opts.NewerThan)
+	}
+	return imageVerifyPass, fmt.Sprintf("image age %s within %s", age.Round(time.Second), opts.NewerThan)
+}
+
 func (r *imageVerifyReport) addCheck(name string, status imageVerifyStatus, detail string) {
 	if detail != "" {
 		detail = strings.TrimSpace(detail)
@@ -167,7 +197,9 @@ func runImageVerify(args []string) error {
 	fs := flag.NewFlagSet("image verify", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
+	quiet := fs.Bool("quiet", false, "only print on failure")
 	strict := fs.Bool("strict", false, "treat missing execattach.v3 as an error")
+	newerThan := fs.Duration("newer-than", 0, "require image built or created within duration")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -179,12 +211,12 @@ func runImageVerify(args []string) error {
 	if err != nil {
 		return err
 	}
-	report := VerifyImage(ref, imageVerifyOptions{Strict: *strict})
+	report := VerifyImage(ref, imageVerifyOptions{Strict: *strict, NewerThan: *newerThan})
 	if *asJSON {
 		if err := writeImageVerifyJSON(os.Stdout, report); err != nil {
 			return err
 		}
-	} else {
+	} else if !*quiet || report.Verdict == imageVerifyFail {
 		writeImageVerifyText(os.Stdout, report)
 	}
 	if report.Verdict == imageVerifyFail {
