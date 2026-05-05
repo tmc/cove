@@ -174,16 +174,14 @@ func (pf *PortForward) handleConn(ctx context.Context, hostConn net.Conn) {
 
 // handlePortForward dispatches port-forward commands.
 func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *controlpb.ControlResponse {
-	if s.portForwards == nil {
-		s.portForwards = NewPortForwardManager(s.lifecycleContext())
-	}
+	portForwards := s.portForwardManager()
 
 	switch cmd.Action {
 	case "start":
 		if cmd.HostPort == 0 || cmd.GuestPort == 0 {
 			return &controlpb.ControlResponse{Error: "host_port and guest_port required"}
 		}
-		if err := s.portForwards.Start(newControlServerGuestConnector(s), int(cmd.HostPort), cmd.GuestPort); err != nil {
+		if err := portForwards.Start(newControlServerGuestConnector(s), int(cmd.HostPort), cmd.GuestPort); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		msg := fmt.Sprintf("forwarding localhost:%d -> vsock:%d", cmd.HostPort, cmd.GuestPort)
@@ -194,7 +192,7 @@ func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *co
 		if cmd.HostPort == 0 {
 			return &controlpb.ControlResponse{Error: "host_port required"}
 		}
-		if err := s.portForwards.Stop(int(cmd.HostPort)); err != nil {
+		if err := portForwards.Stop(int(cmd.HostPort)); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		msg := fmt.Sprintf("stopped forwarding localhost:%d", cmd.HostPort)
@@ -202,7 +200,7 @@ func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *co
 			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
 
 	case "list":
-		forwards := s.portForwards.List()
+		forwards := portForwards.List()
 		msg := "no active port forwards"
 		if len(forwards) > 0 {
 			msg = fmt.Sprintf("%d active:\n%s", len(forwards), joinLines(forwards))
@@ -213,6 +211,15 @@ func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *co
 	default:
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown port-forward action: %s", cmd.Action)}
 	}
+}
+
+func (s *ControlServer) portForwardManager() *PortForwardManager {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.portForwards == nil {
+		s.portForwards = NewPortForwardManager(s.lifecycleContext())
+	}
+	return s.portForwards
 }
 
 func joinLines(ss []string) string {
