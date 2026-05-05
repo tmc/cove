@@ -48,6 +48,9 @@ func TestGenerateUserDataServer(t *testing.T) {
 	if strings.Contains(got, "AutomaticLoginEnable=true") {
 		t.Fatalf("generateUserData(server) unexpectedly enabled desktop autologin\n%s", got)
 	}
+	if strings.Contains(got, "login.keyring") {
+		t.Fatalf("generateUserData(server) unexpectedly removed desktop login keyring\n%s", got)
+	}
 	if strings.Contains(got, "/vz-agent") {
 		t.Fatalf("generateUserData(server) unexpectedly referenced vz-agent download\n%s", got)
 	}
@@ -94,6 +97,7 @@ func TestGenerateUserDataDesktopWithAgent(t *testing.T) {
 		"search --no-floppy --fs-uuid --set=root",
 		"AutomaticLoginEnable=true",
 		"AutomaticLogin=me",
+		"/target/home/me/.local/share/keyrings/login.keyring",
 		"http://192.168.64.1:1234/vz-agent",
 		"blkid -L CIDATA",
 		"systemctl enable vz-agent",
@@ -168,6 +172,55 @@ func TestLinuxAutoLoginLateCommand(t *testing.T) {
 				if strings.Contains(got, unwanted) {
 					t.Fatalf("linuxAutoLoginLateCommand() unexpectedly contains %q\n%s", unwanted, got)
 				}
+			}
+		})
+	}
+}
+
+func TestLinuxAutoLoginKeyringLateCommand(t *testing.T) {
+	tests := []struct {
+		name   string
+		config LinuxProvisionConfig
+		want   string
+	}{
+		{
+			name: "desktop",
+			config: LinuxProvisionConfig{
+				Username:  "me",
+				Variant:   LinuxVariantDesktop,
+				AutoLogin: true,
+			},
+			want: "rm -f '/target/home/me/.local/share/keyrings/login.keyring' || true",
+		},
+		{
+			name: "server",
+			config: LinuxProvisionConfig{
+				Username:  "me",
+				Variant:   LinuxVariantServer,
+				AutoLogin: true,
+			},
+		},
+		{
+			name: "desktop disabled",
+			config: LinuxProvisionConfig{
+				Username:  "me",
+				Variant:   LinuxVariantDesktop,
+				AutoLogin: false,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := linuxAutoLoginKeyringLateCommand(tt.config)
+			if tt.want == "" {
+				if got != "" {
+					t.Fatalf("linuxAutoLoginKeyringLateCommand() = %q, want empty", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tt.want) {
+				t.Fatalf("linuxAutoLoginKeyringLateCommand() missing %q\n%s", tt.want, got)
 			}
 		})
 	}
@@ -530,6 +583,7 @@ func TestGenerateUserDataDesktopOEM(t *testing.T) {
 		"90-installer-network.cfg",
 		"AutomaticLoginEnable=true",
 		"AutomaticLogin=me",
+		"/target/home/me/.local/share/keyrings/login.keyring",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("oem-mode YAML missing %q\n%s", want, got)

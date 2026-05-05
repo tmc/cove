@@ -1175,6 +1175,15 @@ func linuxAutoLoginLateCommand(config LinuxProvisionConfig) string {
       printf '%%s\n' '[daemon]' 'AutomaticLoginEnable=true' %q > /target/etc/gdm3/custom.conf`, "AutomaticLogin="+config.Username)
 }
 
+func linuxAutoLoginKeyringLateCommand(config LinuxProvisionConfig) string {
+	if !config.AutoLogin || config.Variant != LinuxVariantDesktop {
+		return ""
+	}
+	keyringPath := shellQuote("/target/home/" + config.Username + "/.local/share/keyrings/login.keyring")
+	return fmt.Sprintf(`
+    - rm -f %s || true`, keyringPath)
+}
+
 func linuxDesktopUserLateCommands(config LinuxProvisionConfig, hashedPassword string) string {
 	if config.Variant != LinuxVariantDesktop || !strings.EqualFold(linuxDesktopInstaller, "oem") {
 		return ""
@@ -1466,6 +1475,7 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
 	}
 
 	autoLoginLateCommands := linuxAutoLoginLateCommand(config)
+	autoLoginKeyringLateCommands := linuxAutoLoginKeyringLateCommand(config)
 	earlyCommandsSection := linuxEarlyCommandsSection(config)
 	storageSection := linuxStorageSection()
 	bootloaderLateCommands := linuxBootloaderLateCommands()
@@ -1488,14 +1498,14 @@ func generateAutoinstallData(config LinuxProvisionConfig, includeAgent bool, age
 %s
 %s
   late-commands:
-    - curtin in-target --target=/target -- systemctl enable ssh%s%s%s%s%s
+    - curtin in-target --target=/target -- systemctl enable ssh%s%s%s%s%s%s
   error-commands:
     - cat /var/log/installer/curtin-install.log | tail -200 > /dev/hvc0 2>&1 || true
     - cat /var/crash/*.crash > /dev/hvc0 2>&1 || true
   user-data:
     disable_root: false
     timezone: %s
-`, config.Locale, packagesSection, sourceSection, oemSection, config.Hostname, config.Username, hashedPassword, sshSection, earlyCommandsSection, storageSection, bootloaderLateCommands, desktopLateCommands, agentLateCommands, desktopUserLateCommands, autoLoginLateCommands, config.TimeZone)
+`, config.Locale, packagesSection, sourceSection, oemSection, config.Hostname, config.Username, hashedPassword, sshSection, earlyCommandsSection, storageSection, bootloaderLateCommands, desktopLateCommands, agentLateCommands, desktopUserLateCommands, autoLoginLateCommands, autoLoginKeyringLateCommands, config.TimeZone)
 }
 
 // generateUserData creates the cloud-init user-data file with autoinstall config.
