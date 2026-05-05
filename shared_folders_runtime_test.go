@@ -40,6 +40,7 @@ func TestSharedFoldersDeviceMissingMessagePreservesRebootFallback(t *testing.T) 
 	for _, want := range []string{
 		"shared folders device not found",
 		"restart VM",
+		"cove run -no-resume",
 		"shared-folders VirtioFS device",
 	} {
 		if !strings.Contains(got, want) {

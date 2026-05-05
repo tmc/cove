@@ -27,7 +27,7 @@ type sharedFoldersRuntimeStatus struct {
 }
 
 func sharedFoldersDeviceMissingMessage() string {
-	return "shared folders device not found (restart VM to pick up shared-folders VirtioFS device)"
+	return "shared folders device not found (restart VM with the current cove runtime, using cove run -no-resume if needed, to pick up the shared-folders VirtioFS device)"
 }
 
 func newSharedFolderRuntimeApplier(vm vz.VZVirtualMachine, queue dispatch.Queue) sharedFolderRuntimeApplier {

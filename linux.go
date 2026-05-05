@@ -200,10 +200,13 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 
 	// Volume mounts (VirtioFS) - docker-style -v flag, plus the dedicated
 	// shared-folders device that runtime live-apply mutates.
-	virtioFSConfigs, err := linuxVirtioFSDeviceConfigs(getEffectiveVolumes(), effectiveSharedFolders(vmDir))
-	if err != nil {
+	virtioFSConfigs := linuxVirtioFSDeviceConfigs(nil, effectiveSharedFolders(vmDir))
+	if volumeConfigs, err := createVolumeConfigs(getEffectiveVolumes()); err != nil {
 		fmt.Printf("warning: volume config: %v\n", err)
-	} else if len(virtioFSConfigs) > 0 {
+	} else {
+		virtioFSConfigs = append(volumeConfigs, virtioFSConfigs...)
+	}
+	if len(virtioFSConfigs) > 0 {
 		setDirectorySharingDevicesMulti(config, virtioFSConfigs)
 	}
 
@@ -228,21 +231,13 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	return config, nil
 }
 
-func linuxVirtioFSDeviceConfigs(effectiveVolumes []vmconfig.VolumeMount, sharedFolders []SharedFolderEntry) ([]vz.VZVirtioFileSystemDeviceConfiguration, error) {
-	var configs []vz.VZVirtioFileSystemDeviceConfiguration
-	if len(effectiveVolumes) > 0 {
-		volumeConfigs, err := createVolumeConfigs(effectiveVolumes)
-		if err != nil {
-			return nil, err
-		}
-		configs = append(configs, volumeConfigs...)
-	}
-
+func linuxVirtioFSDeviceConfigs(volumeConfigs []vz.VZVirtioFileSystemDeviceConfiguration, sharedFolders []SharedFolderEntry) []vz.VZVirtioFileSystemDeviceConfiguration {
+	configs := append([]vz.VZVirtioFileSystemDeviceConfiguration(nil), volumeConfigs...)
 	sharedFoldersDevice := createSharedFoldersDevice(sharedFolders)
 	if sharedFoldersDevice.ID != 0 {
 		configs = append(configs, sharedFoldersDevice)
 	}
-	return configs, nil
+	return configs
 }
 
 // createLinuxBootLoader creates a VZLinuxBootLoader with kernel, initrd, and cmdline.
