@@ -345,6 +345,66 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 	}
 }
 
+func TestRunEphemeralForkPreservesIdentity(t *testing.T) {
+	stubAcquireRunLockHook(t)
+	t.Setenv("HOME", t.TempDir())
+	parent := "identity-parent"
+	parentDir := stageParentVMForEphemeralFork(t, parent)
+
+	oldVMName := vmName
+	oldVMDir := vmDir
+	oldRuntimeSystemDiskPathOverride := runtimeSystemDiskPathOverride
+	oldRuntimeSystemDiskAttachment := runtimeSystemDiskAttachment
+	oldSetupHook := setupEphemeralForkHook
+	oldCleanupHook := cleanupEphemeralForkHook
+	oldRunMacHook := runMacOSVMHook
+	t.Cleanup(func() {
+		vmName = oldVMName
+		vmDir = oldVMDir
+		runtimeSystemDiskPathOverride = oldRuntimeSystemDiskPathOverride
+		runtimeSystemDiskAttachment = oldRuntimeSystemDiskAttachment
+		setupEphemeralForkHook = oldSetupHook
+		cleanupEphemeralForkHook = oldCleanupHook
+		runMacOSVMHook = oldRunMacHook
+	})
+
+	childDir := filepath.Join(vmconfig.BaseDir(), "identity-child")
+	var gotOpts EphemeralForkOptions
+	var gotDiskPathOverride string
+	setupEphemeralForkHook = func(opts EphemeralForkOptions) (EphemeralFork, error) {
+		gotOpts = opts
+		if err := os.MkdirAll(childDir, 0o755); err != nil {
+			t.Fatalf("mkdir child: %v", err)
+		}
+		return EphemeralFork{Name: "identity-child", Path: childDir, Source: opts.Parent}, nil
+	}
+	cleanupEphemeralForkHook = func(string) error { return nil }
+	runMacOSVMHook = func() error {
+		gotDiskPathOverride = runtimeSystemDiskPathOverride
+		return nil
+	}
+
+	cfg := RunConfig{
+		VM:                  vmSelection{Name: "original", Directory: filepath.Join(vmconfig.BaseDir(), "original")},
+		EphemeralForkParent: parent,
+	}
+	if _, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) }); err != nil {
+		t.Fatalf("runVMWithConfig: %v", err)
+	}
+	if gotOpts.Parent != parent || gotOpts.Name != "" || !gotOpts.PreserveIdentity {
+		t.Fatalf("EphemeralForkOptions = %#v, want PreserveIdentity for parent %q", gotOpts, parent)
+	}
+	if runtimeSystemDiskPathOverride != oldRuntimeSystemDiskPathOverride {
+		t.Fatalf("runtimeSystemDiskPathOverride after run = %q, want %q", runtimeSystemDiskPathOverride, oldRuntimeSystemDiskPathOverride)
+	}
+	parentDisk := vmPrimaryDiskPath(parentDir)
+	gotReal, _ := filepath.EvalSymlinks(gotDiskPathOverride)
+	wantReal, _ := filepath.EvalSymlinks(parentDisk)
+	if gotReal != wantReal {
+		t.Fatalf("runtimeSystemDiskPathOverride during run = %q, want parent disk %q", gotDiskPathOverride, parentDisk)
+	}
+}
+
 func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 	stubAcquireRunLockHook(t)
 	oldHome, homeErr := os.UserHomeDir()

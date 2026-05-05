@@ -387,8 +387,9 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 
 	forkStarted := time.Now()
 	fork, err := setupEphemeralForkHook(EphemeralForkOptions{
-		Parent: cfg.EphemeralForkParent,
-		Name:   cfg.EphemeralForkName,
+		Parent:           cfg.EphemeralForkParent,
+		Name:             cfg.EphemeralForkName,
+		PreserveIdentity: true,
 	})
 	if err != nil {
 		return err

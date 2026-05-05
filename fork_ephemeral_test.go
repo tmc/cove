@@ -21,10 +21,11 @@ func stageParentVMForEphemeralFork(t *testing.T, parent string) string {
 		t.Fatalf("mkdir parent: %v", err)
 	}
 	files := map[string][]byte{
-		"disk.img":   {0xDE, 0xAD, 0xBE, 0xEF},
-		"aux.img":    []byte("parent-aux-bytes"),
-		"hw.model":   []byte("parent-hw-model"),
-		"machine.id": []byte("PARENT-MACHINE-ID-VALUE-32BYTES!"),
+		"disk.img":    {0xDE, 0xAD, 0xBE, 0xEF},
+		"aux.img":     []byte("parent-aux-bytes"),
+		"hw.model":    []byte("parent-hw-model"),
+		"machine.id":  []byte("PARENT-MACHINE-ID-VALUE-32BYTES!"),
+		"mac.address": []byte("aa:bb:cc:dd:ee:ff\n"),
 	}
 	for name, data := range files {
 		if err := os.WriteFile(filepath.Join(parentDir, name), data, 0o644); err != nil {
@@ -81,6 +82,12 @@ func TestSetupEphemeralFork_HappyPath(t *testing.T) {
 	if string(gotAux) != string(wantAux) {
 		t.Error("child aux.img differs from parent aux.img")
 	}
+	if _, err := os.Stat(filepath.Join(fork.Path, "machine.id")); err == nil {
+		t.Error("child unexpectedly has machine.id without PreserveIdentity")
+	}
+	if _, err := os.Stat(filepath.Join(fork.Path, "mac.address")); err == nil {
+		t.Error("child unexpectedly has mac.address without PreserveIdentity")
+	}
 
 	cfg, err := vmconfig.Load(fork.Path)
 	if err != nil {
@@ -91,6 +98,37 @@ func TestSetupEphemeralFork_HappyPath(t *testing.T) {
 	}
 	if cfg.ForkedAt.IsZero() {
 		t.Error("child ForkedAt is zero")
+	}
+}
+
+func TestSetupEphemeralForkPreservesIdentity(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	parent := "eph-parent-identity"
+	parentDir := stageParentVMForEphemeralFork(t, parent)
+
+	fork, err := SetupEphemeralFork(EphemeralForkOptions{
+		Parent:           parent,
+		Name:             "identity-child",
+		PreserveIdentity: true,
+	})
+	if err != nil {
+		t.Fatalf("SetupEphemeralFork: %v", err)
+	}
+	for _, name := range []string{"machine.id", "mac.address", "aux.img"} {
+		got, err := os.ReadFile(filepath.Join(fork.Path, name))
+		if err != nil {
+			t.Fatalf("read child %s: %v", name, err)
+		}
+		want, err := os.ReadFile(filepath.Join(parentDir, name))
+		if err != nil {
+			t.Fatalf("read parent %s: %v", name, err)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("child %s = %q, want parent %q", name, got, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(fork.Path, "disk.img")); !os.IsNotExist(err) {
+		t.Error("child unexpectedly has its own disk.img; identity-preserving ephemeral should still use parent disk")
 	}
 }
 
