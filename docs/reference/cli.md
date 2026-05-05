@@ -520,6 +520,38 @@ cove image rm macos-runner:14.5
 cove image push macos-runner:14.5 - | ssh other-mac cove image load -
 ```
 
+---
+
+## runs
+
+Inspect and export local run artifacts under `~/.vz/runs/<run-id>/`. Run metrics
+are read from `~/.vz/runs/<run-id>/metrics.jsonl`; each line is one JSON event.
+See [Run Metrics](../features/metrics.md) and [Runs UX](../features/runs-ux.md).
+
+```
+cove runs list [--limit N] [--since DURATION] [--status ok|fail|all] [--json]
+cove runs show <run-id-prefix> [--json]
+cove runs export <run-id-prefix> --format json|gha-summary|tar
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `list [--limit N] [--since DURATION] [--status ok\|fail\|all] [--json]` | List recent runs. Fields: run-id prefix, `image_ref`, `vm_name`, `status`, `total_duration_ms`, `exit_code`, `started_at`. |
+| `show <run-id-prefix> [--json]` | Show one run by unique run-id prefix. Fails if the prefix matches no run or more than one run. |
+| `export <run-id-prefix> --format json\|gha-summary\|tar` | Export one run. `json` emits structured data, `gha-summary` emits Markdown for `GITHUB_STEP_SUMMARY`, and `tar` writes a gzip tar archive to stdout. |
+
+`runs show` and `runs export` use prefix matching against local run directory
+names. Ambiguous prefixes fail instead of guessing; pass more run-id characters
+to select a single run.
+
+```bash
+cove runs list --limit 20 --since 24h --status all
+cove runs list --json
+cove runs show 20260505
+cove runs export 20260505 --format gha-summary >> "$GITHUB_STEP_SUMMARY"
+cove runs export 20260505 --format tar > cove-run.tar.gz
+```
+
 Computer-use bridges that drive a running VM through the control socket
 ship as Python helpers under `adapters/`. See
 [Anthropic Computer Use](../examples/anthropic-computer-use.md) and
