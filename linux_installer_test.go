@@ -244,6 +244,24 @@ func TestBuildLinuxInstallConfigurationSocketDevices(t *testing.T) {
 	}
 }
 
+func TestLinuxInstallNoPartitionTableError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "linux-disk.img")
+	err := linuxInstallNoPartitionTableError(path)
+	if err == nil {
+		t.Fatal("linuxInstallNoPartitionTableError() = nil")
+	}
+	got := err.Error()
+	for _, want := range []string{
+		"installer produced no partition table on " + path,
+		"retry with -gui or -disk-sync fsync",
+		"inspect installer logs",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("error missing %q: %q", want, got)
+		}
+	}
+}
+
 func TestBuildLinuxInstallSeedDataForDistros(t *testing.T) {
 	tests := []struct {
 		name    string

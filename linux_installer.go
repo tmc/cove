@@ -1529,7 +1529,7 @@ func verifyLinuxInstallBootable(diskPath string) error {
 	}
 	if len(devices) < 2 {
 		_ = detachLinuxDisk(diskPath, devices)
-		return fmt.Errorf("attach installed disk: expected partition devices, got %v", devices)
+		return linuxInstallNoPartitionTableError(diskPath)
 	}
 	defer func() {
 		_ = detachLinuxDisk(diskPath, devices)
@@ -1549,6 +1549,10 @@ func verifyLinuxInstallBootable(diskPath string) error {
 		return err
 	}
 	return nil
+}
+
+func linuxInstallNoPartitionTableError(diskPath string) error {
+	return fmt.Errorf("installer produced no partition table on %s; retry with -gui or -disk-sync fsync, or inspect installer logs", diskPath)
 }
 
 func attachLinuxDiskReadOnlyWithRetry(diskPath string, timeout time.Duration) ([]string, error) {
