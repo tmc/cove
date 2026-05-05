@@ -51,6 +51,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printCompactUsage(os.Stderr)
 		case "build":
 			printBuildUsage(os.Stderr)
+		case "secret":
+			printSecretUsage(os.Stderr)
 		case "push":
 			printPushUsage(os.Stderr)
 		case "pull":
