@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -86,6 +88,7 @@ type PortForwardManager struct {
 	mu       sync.Mutex
 	ctx      context.Context
 	forwards map[int]*PortForward // keyed by host port
+	reverse  map[int]*ReversePortForward
 }
 
 // NewPortForwardManager creates a new manager.
@@ -96,6 +99,7 @@ func NewPortForwardManager(ctx context.Context) *PortForwardManager {
 	return &PortForwardManager{
 		ctx:      ctx,
 		forwards: make(map[int]*PortForward),
+		reverse:  make(map[int]*ReversePortForward),
 	}
 }
 
@@ -133,6 +137,33 @@ func (m *PortForwardManager) Start(connector guestPortConnector, hostPort int, g
 	return nil
 }
 
+// StartReverse begins forwarding from a guest TCP port to a host TCP port.
+func (m *PortForwardManager) StartReverse(hostPort int, guestPort int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.reverse[guestPort]; exists {
+		return fmt.Errorf("guest port %d already reverse-forwarded", guestPort)
+	}
+	relayPort := uint32(forwardRelayBasePort + guestPort%forwardRelayPortWindow)
+	ln, err := listenHostVsock(relayPort)
+	if err != nil {
+		return fmt.Errorf("listen vsock:%d: %w", relayPort, err)
+	}
+	ctx, cancel := context.WithCancel(m.ctx)
+	rf := &ReversePortForward{
+		HostPort:  hostPort,
+		GuestPort: guestPort,
+		RelayPort: relayPort,
+		listener:  ln,
+		cancel:    cancel,
+	}
+	m.reverse[guestPort] = rf
+	go rf.serve(ctx)
+	fmt.Printf("[port-forward] reverse vsock:%d -> localhost:%d\n", relayPort, hostPort)
+	return nil
+}
+
 // Stop removes a port forward by host port.
 func (m *PortForwardManager) Stop(hostPort int) error {
 	m.mu.Lock()
@@ -161,6 +192,12 @@ func (m *PortForwardManager) List() []string {
 		pf.mu.Unlock()
 		result = append(result, fmt.Sprintf("localhost:%d -> vsock:%d (%d active)", pf.HostPort, pf.GuestPort, conns))
 	}
+	for _, rf := range m.reverse {
+		rf.mu.Lock()
+		conns := rf.conns
+		rf.mu.Unlock()
+		result = append(result, fmt.Sprintf("vm:%d -> localhost:%d via vsock:%d (%d active)", rf.GuestPort, rf.HostPort, rf.RelayPort, conns))
+	}
 	return result
 }
 
@@ -173,6 +210,11 @@ func (m *PortForwardManager) StopAll() {
 		pf.cancel()
 		pf.listener.Close()
 		delete(m.forwards, hp)
+	}
+	for gp, rf := range m.reverse {
+		rf.cancel()
+		rf.listener.Close()
+		delete(m.reverse, gp)
 	}
 }
 
@@ -190,6 +232,66 @@ func (pf *PortForward) serve(ctx context.Context) {
 		}
 		go pf.handleConn(ctx, conn)
 	}
+}
+
+// ReversePortForward represents an active guest TCP -> host TCP forwarding rule.
+type ReversePortForward struct {
+	HostPort  int
+	GuestPort int
+	RelayPort uint32
+	listener  net.Listener
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	conns     int
+}
+
+func (rf *ReversePortForward) serve(ctx context.Context) {
+	for {
+		conn, err := rf.listener.Accept()
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				fmt.Printf("[port-forward] accept reverse vsock:%d: %v\n", rf.RelayPort, err)
+				return
+			}
+		}
+		go rf.handleConn(ctx, conn)
+	}
+}
+
+func (rf *ReversePortForward) handleConn(ctx context.Context, guestConn net.Conn) {
+	defer guestConn.Close()
+	rf.mu.Lock()
+	rf.conns++
+	rf.mu.Unlock()
+	defer func() {
+		rf.mu.Lock()
+		rf.conns--
+		rf.mu.Unlock()
+	}()
+
+	hostConn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(rf.HostPort)))
+	if err != nil {
+		fmt.Printf("[port-forward] reverse dial localhost:%d: %v\n", rf.HostPort, err)
+		return
+	}
+	defer hostConn.Close()
+
+	done := make(chan struct{})
+	go func() {
+		io.Copy(hostConn, guestConn)
+		if tc, ok := hostConn.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
+		close(done)
+	}()
+	io.Copy(guestConn, hostConn)
+	if d, ok := guestConn.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		d.SetWriteDeadline(time.Now())
+	}
+	<-done
 }
 
 func (pf *PortForward) handleConn(ctx context.Context, hostConn net.Conn) {
@@ -247,6 +349,17 @@ func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *co
 		return &controlpb.ControlResponse{Success: true, Data: msg,
 			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
 
+	case "start-reverse":
+		if cmd.HostPort == 0 || cmd.GuestPort == 0 {
+			return &controlpb.ControlResponse{Error: "host_port and guest_port required"}
+		}
+		if err := portForwards.StartReverse(int(cmd.HostPort), int(cmd.GuestPort)); err != nil {
+			return &controlpb.ControlResponse{Error: err.Error()}
+		}
+		msg := fmt.Sprintf("reverse forwarding vm:%d -> localhost:%d", cmd.GuestPort, cmd.HostPort)
+		return &controlpb.ControlResponse{Success: true, Data: msg,
+			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
+
 	case "stop":
 		if cmd.HostPort == 0 {
 			return &controlpb.ControlResponse{Error: "host_port required"}
@@ -280,6 +393,51 @@ func (s *ControlServer) portForwardManager() *PortForwardManager {
 	}
 	return s.portForwards
 }
+
+type hostVsockListener struct {
+	file *os.File
+}
+
+func (l *hostVsockListener) Accept() (net.Conn, error) {
+	fd, _, errno := syscall.Syscall(syscall.SYS_ACCEPT, l.file.Fd(), 0, 0)
+	if errno != 0 {
+		return nil, errno
+	}
+	f := os.NewFile(uintptr(fd), "host-vsock-conn")
+	return &hostVsockConn{file: f}, nil
+}
+
+func (l *hostVsockListener) Close() error {
+	return l.file.Close()
+}
+
+func (l *hostVsockListener) Addr() net.Addr {
+	return hostVsockAddr{}
+}
+
+type hostVsockConn struct {
+	file *os.File
+}
+
+func (c *hostVsockConn) Read(b []byte) (int, error)  { return c.file.Read(b) }
+func (c *hostVsockConn) Write(b []byte) (int, error) { return c.file.Write(b) }
+func (c *hostVsockConn) Close() error                { return c.file.Close() }
+func (c *hostVsockConn) LocalAddr() net.Addr         { return hostVsockAddr{} }
+func (c *hostVsockConn) RemoteAddr() net.Addr        { return hostVsockAddr{} }
+func (c *hostVsockConn) SetDeadline(t time.Time) error {
+	return c.file.SetDeadline(t)
+}
+func (c *hostVsockConn) SetReadDeadline(t time.Time) error {
+	return c.file.SetReadDeadline(t)
+}
+func (c *hostVsockConn) SetWriteDeadline(t time.Time) error {
+	return c.file.SetWriteDeadline(t)
+}
+
+type hostVsockAddr struct{}
+
+func (hostVsockAddr) Network() string { return "vsock" }
+func (hostVsockAddr) String() string  { return "vsock" }
 
 func joinLines(ss []string) string {
 	result := ""

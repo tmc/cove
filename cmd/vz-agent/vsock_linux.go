@@ -59,3 +59,23 @@ func listenVsock(port uint32) (net.Listener, error) {
 	file := os.NewFile(uintptr(fd), "vsock")
 	return &vsockListener{file: file}, nil
 }
+
+func dialHostVsock(port uint32) (net.Conn, error) {
+	const (
+		AF_VSOCK        = 40
+		VMADDR_CID_HOST = 2
+	)
+	fd, err := syscall.Socket(AF_VSOCK, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		return nil, fmt.Errorf("socket: %w", err)
+	}
+	sa := [16]byte{}
+	binary.LittleEndian.PutUint16(sa[0:2], AF_VSOCK)
+	binary.LittleEndian.PutUint32(sa[4:8], port)
+	binary.LittleEndian.PutUint32(sa[8:12], VMADDR_CID_HOST)
+	if _, _, errno := syscall.RawSyscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafePointer(&sa[0])), uintptr(len(sa))); errno != 0 {
+		syscall.Close(fd)
+		return nil, fmt.Errorf("connect: %w", errno)
+	}
+	return &vsockConn{file: os.NewFile(uintptr(fd), "vsock-host")}, nil
+}
