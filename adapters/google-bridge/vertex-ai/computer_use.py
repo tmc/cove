@@ -177,6 +177,8 @@ class CoveVertexBridge:
         control_token: str | None = None,
         socket_path: str | None = None,
         credentials_path: str | None = None,
+        screenshot_dir: str | None = None,
+        events_jsonl: str | None = None,
     ) -> None:
         self._vm_name = vm_name
         self._socket_path = _resolve_socket_path(vm_name, socket_path)
@@ -185,6 +187,9 @@ class CoveVertexBridge:
         self._region = region
         self._credentials_path = credentials_path
         self._access_token: str | None = None
+        self._screenshot_dir = Path(screenshot_dir) if screenshot_dir else None
+        self._events_jsonl = Path(events_jsonl) if events_jsonl else None
+        self._step = 0
 
     # --- low-level control-socket I/O -------------------------------------
 
@@ -215,6 +220,7 @@ class CoveVertexBridge:
             raise RuntimeError(f"non-JSON response from control socket: {exc}") from exc
         if not response.get("success", False):
             raise RuntimeError(f"control socket error: {response.get('error', response)}")
+        self._record_event(request, response)
         return response
 
     # --- primitives -------------------------------------------------------
@@ -233,7 +239,31 @@ class CoveVertexBridge:
             b64 = response.get("data", "") or ""
         if not b64:
             raise RuntimeError("screenshot response missing image data")
-        return base64.b64decode(b64)
+        png = base64.b64decode(b64)
+        self._record_screenshot(png)
+        return png
+
+    def _record_screenshot(self, data: bytes) -> None:
+        if self._screenshot_dir is None:
+            return
+        self._screenshot_dir.mkdir(parents=True, exist_ok=True)
+        self._step += 1
+        (self._screenshot_dir / f"step-{self._step:03d}.png").write_bytes(data)
+
+    def _record_event(self, request: dict[str, Any], response: dict[str, Any]) -> None:
+        if self._events_jsonl is None:
+            return
+        self._events_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        event = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "provider": "vertex",
+            "type": request.get("type"),
+            "success": bool(response.get("success")),
+        }
+        if "error" in response:
+            event["error"] = response.get("error")
+        with self._events_jsonl.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, separators=(",", ":")) + "\n")
 
     def click(self, x: int, y: int, button: str = "left") -> None:
         button_id = {"left": 0, "right": 1, "middle": 2}.get(button.lower(), 0)
@@ -479,6 +509,8 @@ def main() -> None:
         default=None,
         help="Path to a Google service-account JSON file (sets GOOGLE_APPLICATION_CREDENTIALS).",
     )
+    parser.add_argument("--screenshot-dir", default=None, help="Write screenshots to this directory before sending them to the provider.")
+    parser.add_argument("--events-jsonl", default=None, help="Append cove control events to this JSONL file.")
     args = parser.parse_args()
 
     # Acquire an access token early so we fail fast with a clear message
@@ -495,6 +527,8 @@ def main() -> None:
         region=args.region,
         control_token=args.token,
         credentials_path=args.credentials,
+        screenshot_dir=args.screenshot_dir,
+        events_jsonl=args.events_jsonl,
     )
     bridge._access_token = access_token  # reuse the token we just acquired
     width, height = bridge.screen_size()

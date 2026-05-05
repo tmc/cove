@@ -43,12 +43,16 @@ class CoveComputerUse:
     """Thin sync client for cove's per-VM control socket."""
 
     def __init__(self, vm_name: str, control_token: str | None = None,
-                 timeout: float = 30.0) -> None:
+                 timeout: float = 30.0, screenshot_dir: str | None = None,
+                 events_jsonl: str | None = None) -> None:
         self.vm_name = vm_name
         self.socket_path = Path.home() / ".vz" / "vms" / vm_name / "control.sock"
         self.token = control_token if control_token is not None else self._load_token()
         self.timeout = timeout
         self._last_screen_size: tuple[int, int] | None = None
+        self._screenshot_dir = Path(screenshot_dir) if screenshot_dir else None
+        self._events_jsonl = Path(events_jsonl) if events_jsonl else None
+        self._step = 0
 
     def _load_token(self) -> str:
         env = os.environ.get("VZ_MACOS_CTL_TOKEN")
@@ -83,6 +87,7 @@ class CoveComputerUse:
         resp = json.loads(line.decode())
         if not resp.get("success"):
             raise RuntimeError(str(resp.get("error") or "control request failed"))
+        self._record_event(request, resp)
         return resp
 
     def screenshot(self, scale: float = 1.0, fmt: str = "png") -> bytes:
@@ -96,7 +101,31 @@ class CoveComputerUse:
         data = result.get("image_data") or resp.get("data")
         if not isinstance(data, str):
             raise RuntimeError("screenshot returned no image data")
-        return base64.b64decode(data)
+        png = base64.b64decode(data)
+        self._record_screenshot(png)
+        return png
+
+    def _record_screenshot(self, data: bytes) -> None:
+        if self._screenshot_dir is None:
+            return
+        self._screenshot_dir.mkdir(parents=True, exist_ok=True)
+        self._step += 1
+        (self._screenshot_dir / f"step-{self._step:03d}.png").write_bytes(data)
+
+    def _record_event(self, request: dict[str, Any], response: dict[str, Any]) -> None:
+        if self._events_jsonl is None:
+            return
+        self._events_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        event = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "provider": "anthropic",
+            "type": request.get("type"),
+            "success": bool(response.get("success")),
+        }
+        if "error" in response:
+            event["error"] = response.get("error")
+        with self._events_jsonl.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, separators=(",", ":")) + "\n")
 
     def click(self, x: int, y: int, button: str = "left") -> None:
         btn = {"left": 0, "right": 1, "middle": 2}.get(button, 0)
@@ -195,6 +224,8 @@ def main() -> int:
     p.add_argument("--task", required=True, help="prompt to drive the agent loop with")
     p.add_argument("--model", default=DEFAULT_MODEL)
     p.add_argument("--max-iters", type=int, default=5)
+    p.add_argument("--screenshot-dir", default=None)
+    p.add_argument("--events-jsonl", default=None)
     args = p.parse_args()
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -202,7 +233,11 @@ def main() -> int:
         print("ANTHROPIC_API_KEY not set", file=sys.stderr)
         return 2
 
-    cove = CoveComputerUse(vm_name=args.vm)
+    cove = CoveComputerUse(
+        vm_name=args.vm,
+        screenshot_dir=args.screenshot_dir,
+        events_jsonl=args.events_jsonl,
+    )
     width, height = cove.screen_size()
     tools = [{
         "type": "computer_20250124",
