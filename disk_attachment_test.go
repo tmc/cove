@@ -59,3 +59,9 @@ func TestOverrideDiskSyncMode(t *testing.T) {
 		})
 	}
 }
+
+func TestLinuxInstallDiskCachePolicy(t *testing.T) {
+	if got := linuxInstallDiskCachePolicy(); got != DiskCacheDurable {
+		t.Fatalf("linuxInstallDiskCachePolicy() = %v, want %v", got, DiskCacheDurable)
+	}
+}

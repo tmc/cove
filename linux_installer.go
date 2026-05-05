@@ -474,7 +474,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 
 	// Main disk
 	diskURL := foundation.NewURLFileURLWithPath(diskPath)
-	diskAttachment, err := newDiskAttachment(diskURL, false, DiskCacheEphemeral)
+	diskAttachment, err := newDiskAttachment(diskURL, false, linuxInstallDiskCachePolicy())
 	if err != nil {
 		return config, fmt.Errorf("create disk attachment: %w", err)
 	}
@@ -590,6 +590,10 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	}
 
 	return config, nil
+}
+
+func linuxInstallDiskCachePolicy() DiskCachePolicy {
+	return DiskCacheDurable
 }
 
 // createLinuxInstallBootLoader creates a VZLinuxBootLoader for installer kernel/initrd.
