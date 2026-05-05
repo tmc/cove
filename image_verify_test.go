@@ -128,6 +128,61 @@ func TestVerifyImageWarnsOnLegacyManifest(t *testing.T) {
 	}
 }
 
+func TestVerifyImageNewerThan(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, err := ParseImageRef("freshness:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	manifest, err := LoadImageManifest(ref)
+	if err != nil {
+		t.Fatalf("LoadImageManifest: %v", err)
+	}
+	manifest.BuiltAt = mustParseTime(t, "2026-05-05T12:00:00Z")
+	manifest.CreatedAt = manifest.BuiltAt
+	if err := writeImageManifest(ref.Path(), manifest); err != nil {
+		t.Fatalf("writeImageManifest: %v", err)
+	}
+
+	report := VerifyImage(ref, imageVerifyOptions{
+		NewerThan: 24 * time.Hour,
+		Now:       mustParseTime(t, "2026-05-06T11:00:00Z"),
+	})
+	if got := imageVerifyCheckStatus(report, "freshness"); got != imageVerifyPass {
+		t.Fatalf("freshness = %s, want PASS (%#v)", got, report.Checks)
+	}
+
+	report = VerifyImage(ref, imageVerifyOptions{
+		NewerThan: 24 * time.Hour,
+		Now:       mustParseTime(t, "2026-05-06T13:00:00Z"),
+	})
+	if got := imageVerifyCheckStatus(report, "freshness"); got != imageVerifyFail {
+		t.Fatalf("freshness = %s, want FAIL (%#v)", got, report.Checks)
+	}
+	if report.Verdict != imageVerifyFail {
+		t.Fatalf("Verdict = %s, want FAIL", report.Verdict)
+	}
+}
+
+func TestRunImageVerifyQuiet(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, err := ParseImageRef("quiet:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	if err := runImageVerify([]string{"--quiet", ref.String()}); err != nil {
+		t.Fatalf("runImageVerify quiet pass: %v", err)
+	}
+}
+
 func TestRunImageForkFromWithConfigRefusesFailedVerify(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stageMacOSVMForImage(t, "src")
@@ -209,4 +264,13 @@ func mustParseTime(t *testing.T, value string) (tm time.Time) {
 		t.Fatalf("parse time %q: %v", value, err)
 	}
 	return tm
+}
+
+func imageVerifyCheckStatus(report imageVerifyReport, name string) imageVerifyStatus {
+	for _, check := range report.Checks {
+		if check.Name == name {
+			return check.Status
+		}
+	}
+	return ""
 }
