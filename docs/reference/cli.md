@@ -557,13 +557,13 @@ Preflight helpers for the private GitHub Actions executor.
 
 ```
 cove action doctor [--json]
-cove action prepare-image <ref> [--json]
+cove action prepare-image <ref> [--json] [--force] [--ttl <duration>]
 ```
 
 | Subcommand | Description |
 |------------|-------------|
 | `doctor [--json]` | Check host-side action prerequisites: signed `cove` binary, virtualization entitlement, `~/.vz` disk capacity, network interface listing, optional fork image agent metadata, and writable run artifact root. Read-only. |
-| `prepare-image <ref> [--json]` | Check that a local image ref exists, can be forked for action jobs, has a current guest agent, can run shell commands through the agent, has runner dependencies, has enough disk headroom, and has no stale forks. |
+| `prepare-image <ref> [--json] [--force] [--ttl D]` | Check that a local image ref exists, can be forked for action jobs, has a current guest agent, can run shell commands through the agent, has runner dependencies, has enough disk headroom, and has no stale forks. Fresh images skip repeated checks unless `--force` is set; `--ttl` controls freshness. |
 
 With `--json`, the command prints a machine-readable preflight result instead of
 operator text. The JSON result includes an overall `ok` value and per-check
@@ -582,7 +582,7 @@ Examples:
 ```bash
 cove action doctor
 cove action doctor --json
-cove action prepare-image macos-runner:14.5
+cove action prepare-image macos-runner:14.5 --ttl 24h
 cove action prepare-image ubuntu-runner --json
 ```
 
