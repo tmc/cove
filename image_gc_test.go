@@ -121,6 +121,53 @@ func TestGCImages_OlderThanFilter(t *testing.T) {
 	}
 }
 
+func TestGCImages_CacheTTLMarker(t *testing.T) {
+	gcTestSetup(t)
+	recent := stageUnreferencedImage(t, "src-recent", "cache/recent:latest")
+	old := stageUnreferencedImage(t, "src-old", "cache/old:latest")
+	for _, ref := range []ImageRef{recent, old} {
+		if err := os.WriteFile(ref.Path()+"/CACHE-TTL", []byte("168h\n"), 0o644); err != nil {
+			t.Fatalf("write CACHE-TTL %s: %v", ref, err)
+		}
+	}
+	backdateImage(t, old, time.Now().Add(-8*24*time.Hour))
+	backdateImage(t, recent, time.Now().Add(-1*time.Hour))
+
+	res, err := GCImages(ImageGCOptions{})
+	if err != nil {
+		t.Fatalf("GCImages: %v", err)
+	}
+	if len(res.Removed) != 1 || res.Removed[0] != old {
+		t.Fatalf("Removed = %v, want [cache/old:latest]", res.Removed)
+	}
+	if !ImageExists(recent) {
+		t.Errorf("recent cache image was deleted before CACHE-TTL")
+	}
+	if ImageExists(old) {
+		t.Errorf("old cache image was not deleted")
+	}
+}
+
+func TestGCImages_CacheTTLKeepsReferencedOldImage(t *testing.T) {
+	gcTestSetup(t)
+	ref := stageReferencedImage(t, "src", "cache/live:latest", "child-live")
+	if err := os.WriteFile(ref.Path()+"/CACHE-TTL", []byte("168h\n"), 0o644); err != nil {
+		t.Fatalf("write CACHE-TTL: %v", err)
+	}
+	backdateImage(t, ref, time.Now().Add(-8*24*time.Hour))
+
+	res, err := GCImages(ImageGCOptions{})
+	if err != nil {
+		t.Fatalf("GCImages: %v", err)
+	}
+	if len(res.Removed) != 0 {
+		t.Fatalf("Removed = %v, want empty", res.Removed)
+	}
+	if !ImageExists(ref) {
+		t.Errorf("referenced cache image was deleted")
+	}
+}
+
 func TestGCImages_DryRunNoMutation(t *testing.T) {
 	gcTestSetup(t)
 	ref := stageUnreferencedImage(t, "src", "drop:1")
