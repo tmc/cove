@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"image"
+	"sync/atomic"
 	"testing"
 
 	"github.com/tmc/apple/appkit"
@@ -71,6 +72,70 @@ func TestGUIStatusUsesInstalledController(t *testing.T) {
 	}
 	if !status.Supported || !status.Headed || !status.WindowReady {
 		t.Fatalf("status = %+v, want supported headed ready", status)
+	}
+}
+
+func TestGUIDelegateHideRunsUnderLock(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*vmGUIController, func() error) bool
+	}{
+		{
+			name: "window close",
+			run:  func(c *vmGUIController, hide func() error) bool { return c.windowShouldCloseOnMainWithHide(hide) },
+		},
+		{
+			name: "app terminate",
+			run:  func(c *vmGUIController, hide func() error) bool { return c.appShouldTerminateOnMainWithHide(hide) },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &vmGUIController{}
+			var called atomic.Bool
+			allow := tt.run(c, func() error {
+				called.Store(true)
+				if c.mu.TryLock() {
+					c.mu.Unlock()
+					t.Fatal("hide callback ran without c.mu held")
+				}
+				return nil
+			})
+			if allow {
+				t.Fatal("delegate allowed close/terminate while not shutting down")
+			}
+			if !called.Load() {
+				t.Fatal("hide callback was not called")
+			}
+		})
+	}
+}
+
+func TestGUIDelegateAllowsShutdownWithoutHide(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*vmGUIController, func() error) bool
+	}{
+		{
+			name: "window close",
+			run:  func(c *vmGUIController, hide func() error) bool { return c.windowShouldCloseOnMainWithHide(hide) },
+		},
+		{
+			name: "app terminate",
+			run:  func(c *vmGUIController, hide func() error) bool { return c.appShouldTerminateOnMainWithHide(hide) },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &vmGUIController{shuttingDown: true}
+			allow := tt.run(c, func() error {
+				t.Fatal("hide callback called during shutdown")
+				return nil
+			})
+			if !allow {
+				t.Fatal("delegate refused close/terminate during shutdown")
+			}
+		})
 	}
 }
 

@@ -246,27 +246,16 @@ func (c *vmGUIController) initWindow() error {
 
 	c.windowDelegate = appkit.NewNSWindowDelegate(appkit.NSWindowDelegateConfig{
 		ShouldClose: func(_ appkit.NSWindow) bool {
-			c.mu.Lock()
-			shuttingDown := c.shuttingDown
-			c.mu.Unlock()
-			if shuttingDown {
-				return true
-			}
-			c.hideOnMain()
-			return false
+			return c.windowShouldCloseOnMain()
 		},
 	})
 	window.SetDelegate(c.windowDelegate)
 
 	c.appDelegate = appkit.NewNSApplicationDelegate(appkit.NSApplicationDelegateConfig{
 		ShouldTerminate: func(_ appkit.NSApplication) appkit.NSApplicationTerminateReply {
-			c.mu.Lock()
-			shuttingDown := c.shuttingDown
-			c.mu.Unlock()
-			if shuttingDown {
+			if c.appShouldTerminateOnMain() {
 				return appkit.NSTerminateNow
 			}
-			c.hideOnMain()
 			return appkit.NSTerminateCancel
 		},
 	})
@@ -280,6 +269,34 @@ func (c *vmGUIController) initWindow() error {
 	}
 
 	return nil
+}
+
+func (c *vmGUIController) windowShouldCloseOnMain() bool {
+	return c.windowShouldCloseOnMainWithHide(c.hideOnMain)
+}
+
+func (c *vmGUIController) windowShouldCloseOnMainWithHide(hide func() error) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.shuttingDown {
+		return true
+	}
+	_ = hide()
+	return false
+}
+
+func (c *vmGUIController) appShouldTerminateOnMain() bool {
+	return c.appShouldTerminateOnMainWithHide(c.hideOnMain)
+}
+
+func (c *vmGUIController) appShouldTerminateOnMainWithHide(hide func() error) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.shuttingDown {
+		return true
+	}
+	_ = hide()
+	return false
 }
 
 func (c *vmGUIController) captureMode() string {
