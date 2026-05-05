@@ -464,6 +464,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "daemon":
+			if err := daemonCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "cp":
 			if err := handleCpCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -930,6 +936,7 @@ VM Management:
   diff            Compare local image disk layer metadata
   softreset       Run destructive soft-reset probe matrix
   runs            Inspect local run metrics and artifacts
+  daemon          Manage the cove background coordinator
   compact         Zero guest free space for smaller pushes
   build           Chain vzscript steps into a cache-keyed VM image
   action          Preflight helpers for private GitHub Actions runner images

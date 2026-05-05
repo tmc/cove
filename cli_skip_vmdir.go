@@ -12,6 +12,7 @@ package main
 // real failure that should surface immediately.
 var vmDirIndependentCommands = map[string]bool{
 	"helper":  true,
+	"daemon":  true,
 	"runs":    true,
 	"secret":  true,
 	"version": true,
