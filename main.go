@@ -18,6 +18,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
+	"github.com/tmc/vz-macos/internal/action"
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/term"
@@ -344,6 +345,9 @@ func main() {
 			os.Exit(exitCode)
 		}
 		return
+	}
+	if flag.NArg() > 0 && flag.Arg(0) == "action" {
+		os.Exit(handleActionCommand(flag.Args()[1:]))
 	}
 
 	// Set up macgo bundling (entitlements, signing, app icon).
@@ -830,6 +834,22 @@ func handleRun() {
 	}
 }
 
+func handleActionCommand(args []string) int {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		fmt.Fprintln(os.Stderr, "Usage: cove action <doctor|prepare-image> [options]")
+		return 0
+	}
+	switch args[0] {
+	case "doctor":
+		return action.RunDoctorCommand(context.Background(), args[1:], os.Stdout, os.Stderr)
+	case "prepare-image":
+		return action.RunPrepareCommand(context.Background(), args[1:], os.Stdout, os.Stderr)
+	default:
+		fmt.Fprintf(os.Stderr, "unknown action command: %s\n", args[0])
+		return 1
+	}
+}
+
 func usage() {
 	fmt.Fprintf(os.Stderr, `cove - Apple Virtualization Framework Example
 
@@ -868,6 +888,7 @@ VM Management:
   runs            Inspect local run metrics and artifacts
   compact         Zero guest free space for smaller pushes
   build           Chain vzscript steps into a cache-keyed VM image
+  action          Preflight helpers for private GitHub Actions runner images
   push            Plan a VM disk OCI push (dry-run)
   pull            Validate an OCI pull plan (dry-run)
   store           Manage the local OCI blob store

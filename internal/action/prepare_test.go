@@ -1,0 +1,142 @@
+package action
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"strings"
+	"testing"
+)
+
+type fakeRunner struct {
+	outputs map[string]Output
+	errors  map[string]error
+	calls   []string
+}
+
+func (r *fakeRunner) Run(_ context.Context, name string, args ...string) (Output, error) {
+	call := strings.Join(append([]string{name}, args...), "\x00")
+	r.calls = append(r.calls, call)
+	if err := r.errors[call]; err != nil {
+		return r.outputs[call], err
+	}
+	return r.outputs[call], nil
+}
+
+func key(name string, args ...string) string {
+	return strings.Join(append([]string{name}, args...), "\x00")
+}
+
+func TestCheckNetworkFallsBackToTopLevelNetwork(t *testing.T) {
+	r := &fakeRunner{
+		outputs: map[string]Output{
+			key("cove", "ctl", "network", "list"): {Stderr: "unknown command"},
+			key("cove", "network", "list"):        {Stdout: "Available network interfaces\n"},
+		},
+		errors: map[string]error{
+			key("cove", "ctl", "network", "list"): errors.New("exit status 1"),
+		},
+	}
+	got := checkNetwork(context.Background(), DoctorConfig{CoveBin: "cove", Runner: r})
+	if got.Status != StatusPass {
+		t.Fatalf("status = %q, want pass: %s", got.Status, got.Message)
+	}
+	if len(r.calls) != 2 {
+		t.Fatalf("calls = %v, want ctl probe then fallback", r.calls)
+	}
+}
+
+func TestWriteReport(t *testing.T) {
+	report := Report{
+		Status: StatusWarn,
+		Checks: []CheckResult{
+			{Name: "disk-capacity", Status: StatusWarn, Message: "low"},
+		},
+	}
+	var text bytes.Buffer
+	if err := WriteReport(&text, report, false); err != nil {
+		t.Fatalf("WriteReport text: %v", err)
+	}
+	if !strings.Contains(text.String(), "[warn] disk-capacity: low") {
+		t.Fatalf("text output = %q", text.String())
+	}
+	var js bytes.Buffer
+	if err := WriteReport(&js, report, true); err != nil {
+		t.Fatalf("WriteReport json: %v", err)
+	}
+	if !strings.Contains(js.String(), `"status": "warn"`) {
+		t.Fatalf("json output = %q", js.String())
+	}
+}
+
+func TestRunPreparePass(t *testing.T) {
+	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	for _, call := range []string{
+		key("cove", "image", "inspect", "-json", "ubuntu:ci"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "bash"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "curl"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "git"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "docker"),
+		key("cove", "vm", "tree", "--reachable-from", "ubuntu:ci"),
+	} {
+		r.outputs[call] = Output{Stdout: "ok\n"}
+	}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent abc123\n"}
+	r.outputs[key("cove", "version")] = Output{Stdout: "cove abc123 (commit abc123, built now)\n"}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
+
+	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Runner: r})
+	if got.Status != StatusPass || got.ExitCode() != 0 {
+		t.Fatalf("RunPrepare status = %q exit = %d, want pass/0", got.Status, got.ExitCode())
+	}
+	for _, want := range []string{
+		key("cove", "image", "inspect", "-json", "ubuntu:ci"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "docker"),
+		key("cove", "vm", "tree", "--reachable-from", "ubuntu:ci"),
+	} {
+		if !contains(r.calls, want) {
+			t.Fatalf("missing call %q in %v", want, r.calls)
+		}
+	}
+}
+
+func TestRunPrepareFailsMissingDependency(t *testing.T) {
+	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent abc123\n"}
+	r.outputs[key("cove", "version")] = Output{Stdout: "cove abc123 (commit abc123, built now)\n"}
+	r.errors[key("cove", "shell", "ubuntu:ci", "--", "which", "docker")] = errors.New("exit 1")
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "which", "docker")] = Output{Stderr: "docker not found"}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
+	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Runner: r})
+	if got.Status != StatusFail || got.ExitCode() != 1 {
+		t.Fatalf("RunPrepare status = %q exit = %d, want fail/1", got.Status, got.ExitCode())
+	}
+}
+
+func TestRunPrepareFailsStaleAgent(t *testing.T) {
+	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent old\n"}
+	r.outputs[key("cove", "version")] = Output{Stdout: "cove new (commit new, built now)\n"}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
+	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Runner: r})
+	if got.Status != StatusFail {
+		t.Fatalf("RunPrepare status = %q, want fail", got.Status)
+	}
+}
+
+func TestMovePrepareFlagsFirst(t *testing.T) {
+	got := movePrepareFlagsFirst([]string{"runner:latest", "--json", "--cove-bin", "./cove"})
+	want := []string{"--json", "--cove-bin", "./cove", "runner:latest"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("movePrepareFlagsFirst = %q, want %q", got, want)
+	}
+}
+
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
