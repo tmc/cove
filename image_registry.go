@@ -65,14 +65,15 @@ func newImageRepository(ref registryImageRef) (*remote.Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("registry repository: %w", err)
 	}
-	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
-	if err == nil {
-		repo.Client = &auth.Client{
-			Client:     auth.DefaultClient.Client,
-			Header:     auth.DefaultClient.Header,
-			Cache:      auth.DefaultClient.Cache,
-			Credential: credentials.Credential(store),
-		}
+	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{DetectDefaultNativeStore: true})
+	if err != nil {
+		return nil, fmt.Errorf("registry auth: load docker credentials: %w", err)
+	}
+	repo.Client = &auth.Client{
+		Client:     auth.DefaultClient.Client,
+		Header:     auth.DefaultClient.Header,
+		Cache:      auth.DefaultClient.Cache,
+		Credential: credentials.Credential(store),
 	}
 	if ref.Registry == "localhost" || strings.HasPrefix(ref.Registry, "localhost:") {
 		repo.PlainHTTP = true
