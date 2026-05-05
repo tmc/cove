@@ -89,8 +89,9 @@ func printVolumeMountInfo(mounts []vmconfig.VolumeMount) {
 			if len(mount.MountOpts) > 0 {
 				opts = " [" + strings.Join(mount.MountOpts, ",") + "]"
 			}
+			guestPath := volumeGuestMountPoint(mount.Tag, linuxMode)
 			fmt.Printf("  %s -> tag %q (%s%s)\n", mount.HostPath, mount.Tag, mode, opts)
-			fmt.Printf("    guest: mount_virtiofs %s /mnt/%s\n", mount.Tag, mount.Tag)
+			fmt.Printf("    guest: %s\n", volumeGuestMountCommand(mount.Tag, guestPath, linuxMode))
 		} else {
 			guestPath := "/Volumes/My Shared Files"
 			if untaggedCount > 1 {
@@ -100,11 +101,31 @@ func printVolumeMountInfo(mounts []vmconfig.VolumeMount) {
 					key = fmt.Sprintf("%s-%d", baseName, i)
 				}
 				usedKeys[key] = true
-				guestPath = "/Volumes/My Shared Files/" + key
+				if linuxMode {
+					guestPath = volumeGuestMountPoint(key, true)
+				} else {
+					guestPath = "/Volumes/My Shared Files/" + key
+				}
+			} else if linuxMode {
+				guestPath = volumeGuestMountPoint(filepath.Base(mount.HostPath), true)
 			}
 			fmt.Printf("  %s -> %s (%s)\n", mount.HostPath, guestPath, mode)
 		}
 	}
+}
+
+func volumeGuestMountPoint(tag string, linuxGuest bool) string {
+	if linuxGuest {
+		return "/mnt/" + tag
+	}
+	return "/Volumes/" + tag
+}
+
+func volumeGuestMountCommand(tag, mountPoint string, linuxGuest bool) string {
+	if linuxGuest {
+		return fmt.Sprintf("mount -t virtiofs %s %s", tag, mountPoint)
+	}
+	return fmt.Sprintf("mount_virtiofs %s %s", tag, mountPoint)
 }
 
 // getEffectiveVolumes returns the combined list of volumes from -vol flags,

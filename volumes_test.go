@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -38,6 +39,53 @@ func TestVirtioFSMountArgsLinuxRespectsExplicitCache(t *testing.T) {
 	want := []string{"mount", "-t", "virtiofs", "-o", "cache=metadata,noatime,uid=1000,gid=1000", "work", "/mnt/work"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("virtioFSMountArgs(linux explicit cache) = %#v, want %#v", got, want)
+	}
+}
+
+func TestPrintVolumeMountInfoLinuxPaths(t *testing.T) {
+	oldLinux := linuxMode
+	linuxMode = true
+	defer func() { linuxMode = oldLinux }()
+
+	out := captureStdout(t, func() error {
+		printVolumeMountInfo([]vmconfig.VolumeMount{
+			{HostPath: "/Users/me/work", Tag: "work"},
+			{HostPath: "/Users/me/data"},
+		})
+		return nil
+	})
+	for _, want := range []string{
+		"guest: mount -t virtiofs work /mnt/work",
+		"/Users/me/data -> /mnt/data",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "/Volumes/My Shared Files") {
+		t.Fatalf("linux output contains macOS shared path:\n%s", out)
+	}
+}
+
+func TestPrintVolumeMountInfoMacOSPaths(t *testing.T) {
+	oldLinux := linuxMode
+	linuxMode = false
+	defer func() { linuxMode = oldLinux }()
+
+	out := captureStdout(t, func() error {
+		printVolumeMountInfo([]vmconfig.VolumeMount{
+			{HostPath: "/Users/me/work", Tag: "work"},
+			{HostPath: "/Users/me/data"},
+		})
+		return nil
+	})
+	for _, want := range []string{
+		"guest: mount_virtiofs work /Volumes/work",
+		"/Users/me/data -> /Volumes/My Shared Files",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
 	}
 }
 
