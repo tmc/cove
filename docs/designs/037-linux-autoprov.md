@@ -61,3 +61,12 @@ Unit tests should render `generateUserData` for desktop and server variants and
 assert the expected late-command strings. Runtime verification with a fresh
 Desktop VM remains useful, but it is disk-heavy and should be a separate pass
 unless the machine has enough free space for another Ubuntu Desktop install.
+
+## Cross-references
+
+- [`docs/benchmarks/disk-io.md`](../benchmarks/disk-io.md) for the validation
+  gap that is still contaminating first-boot conclusions.
+- [`docs/designs/036-nixos-guest-support.md`](036-nixos-guest-support.md) for
+  the other Linux guest install path that shares the provisioning boundary.
+- [`RELEASE-NOTES-v0.4.0.md`](../../RELEASE-NOTES-v0.4.0.md) for the release
+  note that should keep the first-boot caveat visible.

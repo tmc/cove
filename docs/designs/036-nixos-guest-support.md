@@ -105,3 +105,12 @@ Slice 2 and later can add:
 - Secret injection through tmpfs or another non-store path.
 - A fully unattended live-ISO automation script once the Apple Silicon boot
   path is validated on hardware.
+
+## Cross-references
+
+- [`docs/quickstart/nixos.md`](../quickstart/nixos.md) for the operator-facing
+  install and boot flow.
+- [`docs/designs/037-linux-autoprov.md`](037-linux-autoprov.md) for the Linux
+  Desktop provisioning work that shares the same guest-install boundary.
+- [`docs/designs/033-cove-daemon.md`](033-cove-daemon.md) for the later
+  daemon-coordination boundary that should not replace the per-VM socket.

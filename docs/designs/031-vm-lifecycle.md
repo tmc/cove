@@ -225,3 +225,12 @@ Unit tests should cover:
 
 The MVP answer is "no" to the last two and "not yet" to inheritance. Keep the
 first slice focused on local persistence and clean stop behavior.
+
+## Cross-references
+
+- [`docs/designs/032-vm-quotas.md`](032-vm-quotas.md) for the durable
+  per-VM resource cap record that sits beside policy.json.
+- [`docs/designs/033-cove-daemon.md`](033-cove-daemon.md) for the host-side
+  coordinator that eventually owns policy enforcement and image GC scheduling.
+- [`docs/reference/release-checklist.md`](../reference/release-checklist.md)
+  for the release-prep gate that should still be green before tag time.

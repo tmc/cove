@@ -134,3 +134,12 @@ Later slices:
 3. Add scheduled image GC with metrics.
 4. Add network drift reports.
 5. Add installer hardening and operator docs for launchd mode.
+
+## Cross-references
+
+- [`docs/designs/031-vm-lifecycle.md`](031-vm-lifecycle.md) for the policy
+  loop that the daemon should eventually supervise.
+- [`docs/designs/032-vm-quotas.md`](032-vm-quotas.md) for the durable host and
+  VM caps the daemon may need to report.
+- [`docs/designs/034-fleet-slice-1.md`](034-fleet-slice-1.md) for the related
+  multi-host routing surface that should remain distinct from daemon mode.

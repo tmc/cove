@@ -287,3 +287,13 @@ operator pattern.
    beta header / tool-type strings have not rolled forward (they
    change roughly every 6 months — the doc currently lists
    `computer-use-2025-11-24` as the latest header).
+
+## Cross-references
+
+- [`docs/designs/035-openai-sandbox-run-config.md`](035-openai-sandbox-run-config.md)
+  for the cove `SandboxRunConfig` backend shape that mirrors the OpenAI
+  adapter.
+- [`docs/examples/anthropic-computer-use.md`](../examples/anthropic-computer-use.md)
+  for the current substrate bridge that this design wraps.
+- [`docs/quickstart-agent-sandbox.md`](../quickstart-agent-sandbox.md) for the
+  unified agent-sandbox story across providers.

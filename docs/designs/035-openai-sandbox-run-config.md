@@ -203,3 +203,12 @@ result = await Runner.run(agent, task, run_config=sandbox_run_config(parent="mac
 
 and get a cove-backed sandbox run without manually constructing the backend
 plumbing each time.
+
+## Cross-references
+
+- [`docs/examples/openai-agents.md`](../examples/openai-agents.md) for the
+  end-user walkthrough.
+- [`docs/integrations/openai-agents.md`](../integrations/openai-agents.md) for
+  the shipped integration summary.
+- [`adapters/openai-agents-python/README.md`](../../adapters/openai-agents-python/README.md)
+  for the package-level README that ships with the adapter.
