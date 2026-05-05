@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVMSelectionHelpers(t *testing.T) {
@@ -81,6 +82,32 @@ func TestGuestAgentUpgradeInstallScriptUsesRename(t *testing.T) {
 	}
 	if strings.Contains(script, "cp ") {
 		t.Fatalf("script should not copy over the running executable:\n%s", script)
+	}
+}
+
+func TestAgentUpgradeReconnectBudget(t *testing.T) {
+	if agentUpgradeReconnectInitialDelay != 5*time.Second {
+		t.Fatalf("agentUpgradeReconnectInitialDelay = %s, want 5s", agentUpgradeReconnectInitialDelay)
+	}
+	if agentUpgradeReconnectAttempts != 30 {
+		t.Fatalf("agentUpgradeReconnectAttempts = %d, want 30", agentUpgradeReconnectAttempts)
+	}
+	if agentUpgradeReconnectDelay != 3*time.Second {
+		t.Fatalf("agentUpgradeReconnectDelay = %s, want 3s", agentUpgradeReconnectDelay)
+	}
+	if agentUpgradeReconnectTimeout != 10*time.Second {
+		t.Fatalf("agentUpgradeReconnectTimeout = %s, want 10s", agentUpgradeReconnectTimeout)
+	}
+	msg := agentUpgradeReconnectTimeoutMessage()
+	for _, want := range []string{
+		"agent installed and restart requested",
+		"within 95s",
+		"tried 30 reconnects",
+		"retry cove ctl agent-ping or cove agent-upgrade",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("agentUpgradeReconnectTimeoutMessage() = %q, missing %q", msg, want)
+		}
 	}
 }
 

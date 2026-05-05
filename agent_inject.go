@@ -39,6 +39,13 @@ const agentLaunchDaemonLabel = "com.github.tmc.vz-macos.vz-agent"
 // agentLaunchAgentLabel is the launchd label for the guest user agent (user session, port 1025).
 const agentLaunchAgentLabel = "com.github.tmc.vz-macos.vz-agent-user"
 
+const (
+	agentUpgradeReconnectInitialDelay = 5 * time.Second
+	agentUpgradeReconnectAttempts     = 30
+	agentUpgradeReconnectDelay        = 3 * time.Second
+	agentUpgradeReconnectTimeout      = 10 * time.Second
+)
+
 // buildAgentBinary cross-compiles the vz-agent binary for the guest.
 // It targets the appropriate OS/arch with CGO disabled for a static binary.
 func buildAgentBinary(outputPath string) error {
@@ -828,22 +835,22 @@ func upgradeAgentAt(sock string) error {
 
 	// Wait for the service manager to restart the agent.
 	fmt.Println("Waiting for new agent...")
-	time.Sleep(5 * time.Second)
+	time.Sleep(agentUpgradeReconnectInitialDelay)
 
 	// Reconnect: the old vsock connection is dead, force a new one.
 	connectReq := &controlpb.ControlRequest{Type: "agent-connect"}
 	var connected bool
-	for attempt := 0; attempt < 10; attempt++ {
-		resp, err = ctlSendRequest(sock, connectReq, 10*time.Second, "agent-connect")
+	for attempt := 0; attempt < agentUpgradeReconnectAttempts; attempt++ {
+		resp, err = ctlSendRequest(sock, connectReq, agentUpgradeReconnectTimeout, "agent-connect")
 		if err == nil && resp.Error == "" {
 			connected = true
 			break
 		}
 		fmt.Printf("  reconnect attempt %d...\n", attempt+1)
-		time.Sleep(3 * time.Second)
+		time.Sleep(agentUpgradeReconnectDelay)
 	}
 	if !connected {
-		return fmt.Errorf("agent did not come back after upgrade (tried 10 reconnects)")
+		return fmt.Errorf("%s", agentUpgradeReconnectTimeoutMessage())
 	}
 
 	resp, err = ctlSendRequest(sock, pingReq, 10*time.Second, "agent-ping")
@@ -862,6 +869,11 @@ func upgradeAgentAt(sock string) error {
 	}
 	fmt.Printf("Upgraded: %s → %s\n", oldVersion, newVersion)
 	return nil
+}
+
+func agentUpgradeReconnectTimeoutMessage() string {
+	window := agentUpgradeReconnectInitialDelay + agentUpgradeReconnectAttempts*agentUpgradeReconnectDelay
+	return fmt.Sprintf("agent installed and restart requested, but agent did not reconnect within %ds (tried %d reconnects); VM may still be restarting the agent, retry cove ctl agent-ping or cove agent-upgrade", int(window/time.Second), agentUpgradeReconnectAttempts)
 }
 
 func guestAgentUpgradeInstallScript(tmpPath, destPath string) string {
