@@ -1,6 +1,6 @@
-# Design 034: Fleet Slice 1
+# Design 034: Fleet
 
-Status: Implemented (2026-05-05; Slice 1)
+Status: Implemented (2026-05-05; Slices 1-2)
 Author: Travis Cline
 Date: 2026-05-05
 
@@ -86,6 +86,29 @@ Commands that create, mutate, schedule, or coordinate VMs across hosts remain
 local in Slice 1. There is no fleet-wide `run`, no scheduler, no image
 placement, no state replication, no gossip, and no leader election.
 
+## Slice 2 Scope
+
+Slice 2 adds fleet-wide read aggregation. The local cove CLI queries every
+registered host in parallel, labels rows with the fleet host name, and returns a
+unified view:
+
+```text
+cove fleet vm ls
+cove fleet image ls
+cove fleet ps
+```
+
+`fleet vm ls` runs the remote VM list operation on each host. `fleet image ls`
+runs the remote image list operation on each host. `fleet ps` is a convenience
+view that lists running VMs across all hosts.
+
+Each host query runs in its own goroutine with a 10 second per-host timeout.
+Results are fail-soft: a dead host produces an `(unreachable)` row with the
+error string, while healthy hosts still print their data.
+
+Default output is tabular. `--json` emits a machine-readable array with host,
+kind, payload text, and error fields so scripts can keep partial results.
+
 ## Routing Rules
 
 `--fleet=<name>` selects a remote from `fleet.json`. For control-socket
@@ -100,6 +123,10 @@ available, the command fails with an actionable error.
 running the remote cove CLI over SSH in Slice 1. That keeps remote filesystem
 layout and registry state owned by the remote host.
 
+Slice 2 aggregate commands intentionally use the same remote CLI route rather
+than introducing a fleet daemon. This keeps host-local state authoritative and
+keeps the failure boundary at one SSH command per host.
+
 ## Security
 
 Slice 1 relies on SSH authentication and the existing cove control-token model.
@@ -111,7 +138,8 @@ fleet API.
 
 - Scheduler and placement.
 - Fleet-wide image push/pull.
-- Health checks and host inventory.
+- Fleet-wide policy.
+- Health checks and richer host inventory.
 - Concurrent multi-host run.
 - SSH connection pooling.
 - Native Go SSH client.
