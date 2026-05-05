@@ -21,6 +21,9 @@ const (
 // ParseNetworkMode parses a network mode string.
 func ParseNetworkMode(s string) (networkx.Config, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
+	if policy, ok := parseNamedNetworkPolicyMode(s); ok {
+		return policy.NetworkConfig(), nil
+	}
 	if s == string(NetworkModeFileHandle) {
 		return networkx.Config{Mode: NetworkModeFileHandle}, nil
 	}
@@ -32,8 +35,18 @@ func ParseNetworkMode(s string) (networkx.Config, error) {
 }
 
 func validateNetworkMode(s string) error {
-	_, err := ParseNetworkMode(s)
+	_, err := ParseNetworkPolicy(s)
 	return err
+}
+
+func parseNamedNetworkPolicyMode(s string) (NetworkPolicy, bool) {
+	switch s {
+	case "offline", "packages", "host-services", "lan", "open":
+		p, err := ParseNetworkPolicy(s)
+		return p, err == nil
+	default:
+		return NetworkPolicy{}, false
+	}
 }
 
 // CreateNetworkDeviceConfiguration creates a complete network device configuration.
@@ -55,8 +68,16 @@ func NetworkModeHelp() string {
   filehandle       Host-side filehandle attachment for raw frame capture
   none             No networking
 
+Named policies:
+  offline          No network device
+  packages         NAT with package-registry allowlist audit
+  host-services    NAT with package-registry plus RFC1918 audit
+  lan              NAT with RFC1918-only audit intent
+  open             Full egress, equivalent to nat
+
 Examples:
   --net nat                 Default NAT mode
+  --net packages            Package-registry policy audit
   --net bridged:en0         Bridge to ethernet
   --net host-only           Host and guest only
   --net bridged:en1         Bridge to WiFi (check 'cove network list')
