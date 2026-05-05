@@ -9,16 +9,39 @@ import (
 	"fmt"
 	"image"
 
+	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/coregraphics"
+	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/capture"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
+type screenshotCaptureState struct {
+	vmView            vz.VZVirtualMachineView
+	window            appkit.NSWindow
+	windowNum         int
+	viewContentHeight int
+	gui               VMGUIController
+}
+
+func (s *ControlServer) captureState() screenshotCaptureState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return screenshotCaptureState{
+		vmView:            s.vmView,
+		window:            s.window,
+		windowNum:         s.windowNum,
+		viewContentHeight: s.viewContentHeight,
+		gui:               s.gui,
+	}
+}
+
 // takeScreenshotWithOptions captures the VM view with specified options.
 func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotCommand) *controlpb.ControlResponse {
-	if s.vmView.ID == 0 {
+	state := s.captureState()
+	if state.vmView.ID == 0 {
 		return &controlpb.ControlResponse{Error: "screenshot requires GUI mode (run with -gui)"}
 	}
 
@@ -78,6 +101,7 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 }
 
 func (s *ControlServer) captureDisplayImage() (image.Image, string) {
+	state := s.captureState()
 	remember := func(img image.Image, errMsg string) (image.Image, string) {
 		if errMsg == "" {
 			s.rememberCaptureBounds(img)
@@ -91,11 +115,8 @@ func (s *ControlServer) captureDisplayImage() (image.Image, string) {
 		return remember(s.captureVMView())
 	}
 
-	s.mu.Lock()
-	gui := s.gui
-	s.mu.Unlock()
-	if gui != nil {
-		status := gui.Status()
+	if state.gui != nil {
+		status := state.gui.Status()
 		if !status.Headed {
 			if img, errMsg := s.capturePrivateGraphicsDisplay(); errMsg == "" {
 				return remember(img, "")
@@ -112,11 +133,12 @@ func (s *ControlServer) captureDisplayImage() (image.Image, string) {
 
 // captureVMView captures the raw image from the VM view using CGWindowListCreateImage.
 func (s *ControlServer) captureVMView() (image.Image, string) {
-	if s.window.ID == 0 {
+	state := s.captureState()
+	if state.window.ID == 0 {
 		return nil, "window not set"
 	}
 
-	windowNum := s.windowNum
+	windowNum := state.windowNum
 	if windowNum <= 0 {
 		return nil, fmt.Sprintf("invalid window number: %d", windowNum)
 	}

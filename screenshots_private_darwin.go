@@ -15,7 +15,8 @@ import (
 )
 
 func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
-	if s.vmView.ID == 0 {
+	state := s.captureState()
+	if state.vmView.ID == 0 {
 		return nil, "vm view not set"
 	}
 
@@ -29,11 +30,11 @@ func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 		pool := foundation.NewNSAutoreleasePool()
 		defer pool.Drain()
 
-		vmView := vmViewAsNSView(s.vmView)
+		vmView := vmViewAsNSView(state.vmView)
 		captureView := vmView
 		mode = "view-cache"
 
-		vmViewObj := objectivec.ObjectFromID(s.vmView.ID)
+		vmViewObj := objectivec.ObjectFromID(state.vmView.ID)
 		framebufferIvar := objectivec.Class_getInstanceVariable(objc.GetClass("VZVirtualMachineView"), "_framebufferView")
 		if framebufferIvar != 0 {
 			framebufferObj := objectivec.Object_getIvar(vmViewObj, framebufferIvar)
@@ -43,8 +44,8 @@ func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 			}
 		}
 
-		if s.window.ID != 0 {
-			s.window.DisplayIfNeeded()
+		if state.window.ID != 0 {
+			state.window.DisplayIfNeeded()
 		}
 		vmView.LayoutSubtreeIfNeeded()
 		vmView.SetNeedsDisplay(true)
