@@ -1,0 +1,76 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestTagImage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	src, _ := ParseImageRef("base:old")
+	dst, _ := ParseImageRef("base:new")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: src}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(src.Path(), "LABELS"), []byte("role=runner\n"), 0o644); err != nil {
+		t.Fatalf("write labels: %v", err)
+	}
+	if err := TagImage(ImageTagOptions{Source: src, Target: dst}); err != nil {
+		t.Fatalf("TagImage: %v", err)
+	}
+	if !ImageExists(src) {
+		t.Fatalf("source image was removed")
+	}
+	if !ImageExists(dst) {
+		t.Fatalf("target image missing")
+	}
+	m, err := LoadImageManifest(dst)
+	if err != nil {
+		t.Fatalf("LoadImageManifest target: %v", err)
+	}
+	if m.Name != "base" || m.Tag != "new" {
+		t.Fatalf("target manifest ref = %s:%s, want base:new", m.Name, m.Tag)
+	}
+	if m.DiskSHA256 == "" || m.DiskSize == 0 {
+		t.Fatalf("target manifest lost disk metadata: %#v", m)
+	}
+	for _, name := range []string{"disk.img", "aux.img", "hw.model", "machine.id", "LABELS"} {
+		if _, err := os.Stat(filepath.Join(dst.Path(), name)); err != nil {
+			t.Fatalf("target missing %s: %v", name, err)
+		}
+	}
+}
+
+func TestTagImageRejectsExistingTarget(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	src, _ := ParseImageRef("base:old")
+	dst, _ := ParseImageRef("base:new")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: src}); err != nil {
+		t.Fatalf("BuildImage src: %v", err)
+	}
+	stageMacOSVMForImage(t, "dst")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "dst", Ref: dst}); err != nil {
+		t.Fatalf("BuildImage dst: %v", err)
+	}
+	if err := TagImage(ImageTagOptions{Source: src, Target: dst}); err == nil {
+		t.Fatalf("TagImage succeeded with existing target")
+	}
+}
+
+func TestTagImageRejectsMissingSource(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	src, _ := ParseImageRef("missing:old")
+	dst, _ := ParseImageRef("base:new")
+	if err := TagImage(ImageTagOptions{Source: src, Target: dst}); err == nil {
+		t.Fatalf("TagImage succeeded with missing source")
+	}
+}
+
+func TestRunImageTagUsage(t *testing.T) {
+	if err := runImageTag(nil); err == nil {
+		t.Fatalf("runImageTag with no args succeeded")
+	}
+}
