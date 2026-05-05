@@ -110,7 +110,11 @@ func validateImageName(s string) error {
 	if strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") || strings.Contains(s, "//") {
 		return fmt.Errorf("%q must be slash-separated path components", s)
 	}
-	for _, part := range strings.Split(s, "/") {
+	parts := strings.Split(s, "/")
+	if len(parts) > 1 && strings.ContainsAny(parts[0], ".:") {
+		return fmt.Errorf("%q looks like a registry reference; use registry/repo:tag for remote images", s)
+	}
+	for _, part := range parts {
 		if err := validateImageComponent(part); err != nil {
 			return err
 		}

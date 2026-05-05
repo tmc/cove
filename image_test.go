@@ -80,6 +80,7 @@ func TestParseImageRef(t *testing.T) {
 		{"foo:bad tag", "", "", true},
 		{"..:tag", "", "", true},
 		{"agentkit/..:tag", "", "", true},
+		{"ghcr.io/acme/vm:v1", "", "", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
