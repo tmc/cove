@@ -287,9 +287,8 @@ func (s *ControlServer) Stop() {
 		s.lifecycleCancel = nil
 		s.lifecycleCtx = nil
 	}
-	if s.portForwards != nil {
-		s.portForwards.StopAll()
-		s.portForwards = nil
+	if portForwards := s.clearPortForwardManager(); portForwards != nil {
+		portForwards.StopAll()
 	}
 	if s.httpListeners != nil {
 		s.httpListeners.closeAll()
@@ -303,6 +302,14 @@ func (s *ControlServer) Stop() {
 	} else {
 		os.Remove(s.socketPath)
 	}
+}
+
+func (s *ControlServer) clearPortForwardManager() *PortForwardManager {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	portForwards := s.portForwards
+	s.portForwards = nil
+	return portForwards
 }
 
 func (s *ControlServer) handleConnection(conn net.Conn) {
