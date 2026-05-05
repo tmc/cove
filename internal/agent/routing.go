@@ -19,7 +19,10 @@
 
 package agent
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // Route selects which guest agent should service an op.
 type Route int
@@ -62,8 +65,12 @@ func RouteFor(op, path string, linuxGuest bool) Route {
 		// callers that read or write inside /Volumes/<tag> use the path-aware
 		// route below.
 		return RouteDaemon
-	case "exec", "exec-stream", "ping", "info", "shutdown", "reboot",
-		"sshd", "connect", "status":
+	case "exec", "exec-stream":
+		if IsUserPath(path) {
+			return RouteUser
+		}
+		return RouteDaemon
+	case "ping", "info", "shutdown", "reboot", "sshd", "connect", "status":
 		return RouteDaemon
 	case "read", "write", "cp":
 		if IsUserPath(path) {
@@ -72,6 +79,170 @@ func RouteFor(op, path string, linuxGuest bool) Route {
 		return RouteDaemon
 	}
 	return RouteDaemon
+}
+
+// RouteForExec returns the route for an exec argv. Commands with no
+// recognizable path operand stay on the daemon.
+func RouteForExec(argv []string, linuxGuest bool) Route {
+	path := ExtractPathOperand(argv)
+	if path == "" {
+		return RouteDaemon
+	}
+	return RouteFor("exec", path, linuxGuest)
+}
+
+// ExtractPathOperand returns the first useful path operand for common file
+// commands. It is deliberately conservative: it does not parse shells, expand
+// globs, or treat plain words as paths.
+func ExtractPathOperand(argv []string) string {
+	if len(argv) == 0 {
+		return ""
+	}
+	cmd := filepath.Base(argv[0])
+	args := argv[1:]
+
+	switch cmd {
+	case "ls", "stat", "cat", "head", "tail", "file", "du", "df",
+		"mkdir", "rmdir", "rm", "chmod", "chown", "chgrp":
+		return lastPathOperand(args)
+	case "cp", "mv", "ln":
+		return lastPathOperand(args)
+	case "test", "[":
+		return testPathOperand(args)
+	case "tar":
+		return tarPathOperand(args)
+	}
+	return ""
+}
+
+func lastPathOperand(args []string) string {
+	var last string
+	for _, arg := range positionalOperands(args) {
+		if looksPathLike(arg) {
+			last = arg
+		}
+	}
+	return last
+}
+
+func testPathOperand(args []string) string {
+	pos := positionalOperands(args)
+	if len(pos) == 2 && isUnaryFileTest(pos[0]) && looksPathLike(pos[1]) {
+		return pos[1]
+	}
+	var last string
+	for _, arg := range pos {
+		if looksPathLike(arg) {
+			last = arg
+		}
+	}
+	return last
+}
+
+func positionalOperands(args []string) []string {
+	var out []string
+	parsingFlags := true
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if parsingFlags && arg == "--" {
+			parsingFlags = false
+			continue
+		}
+		if parsingFlags && strings.HasPrefix(arg, "-") && arg != "-" {
+			if flagConsumesNext(arg) && !strings.Contains(arg, "=") && i+1 < len(args) {
+				i++
+			}
+			continue
+		}
+		if arg != "-" {
+			out = append(out, arg)
+		}
+	}
+	return out
+}
+
+func flagConsumesNext(flag string) bool {
+	switch flag {
+	case "-C", "--directory", "-f", "--file", "-o", "--output",
+		"--target-directory", "-t", "--reference", "--owner", "--group",
+		"--exclude", "--exclude-from", "--transform":
+		return true
+	}
+	return false
+}
+
+func isUnaryFileTest(op string) bool {
+	switch op {
+	case "-e", "-f", "-d", "-r", "-w", "-x", "-L", "-S", "-b", "-c", "-p":
+		return true
+	}
+	return false
+}
+
+func tarPathOperand(args []string) string {
+	var file string
+	var firstPos string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			for _, rest := range args[i+1:] {
+				if looksPathLike(rest) {
+					return rest
+				}
+			}
+			return ""
+		}
+		if arg == "-C" || arg == "--directory" {
+			if i+1 < len(args) && looksPathLike(args[i+1]) {
+				return args[i+1]
+			}
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "-C") && len(arg) > 2 {
+			path := strings.TrimPrefix(arg, "-C")
+			if looksPathLike(path) {
+				return path
+			}
+			continue
+		}
+		if arg == "-f" || arg == "--file" {
+			if i+1 < len(args) && looksPathLike(args[i+1]) {
+				file = args[i+1]
+			}
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--file=") {
+			path := strings.TrimPrefix(arg, "--file=")
+			if looksPathLike(path) {
+				file = path
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") && strings.Contains(arg, "f") && len(arg) > 2 {
+			if i+1 < len(args) && looksPathLike(args[i+1]) {
+				file = args[i+1]
+				i++
+			}
+			continue
+		}
+		if !strings.HasPrefix(arg, "-") && firstPos == "" && looksPathLike(arg) {
+			firstPos = arg
+		}
+	}
+	if file != "" {
+		return file
+	}
+	return firstPos
+}
+
+func looksPathLike(s string) bool {
+	return strings.HasPrefix(s, "/") ||
+		strings.HasPrefix(s, "~/") ||
+		strings.HasPrefix(s, "./") ||
+		strings.HasPrefix(s, "../") ||
+		strings.Contains(s, "/")
 }
 
 // IsUserPath reports whether p is a guest path that requires user-context
