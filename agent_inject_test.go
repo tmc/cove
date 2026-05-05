@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestVMSelectionHelpers(t *testing.T) {
 	tests := []struct {
@@ -60,6 +63,64 @@ func TestVMSelectionHelpers(t *testing.T) {
 			}
 			if got := tt.selection.injectSucceededMarker(); got != tt.wantMarker {
 				t.Fatalf("injectSucceededMarker() = %q, want %q", got, tt.wantMarker)
+			}
+		})
+	}
+}
+
+func TestGuestAgentUpgradeInstallScriptUsesRename(t *testing.T) {
+	script := guestAgentUpgradeInstallScript("/tmp/vz-agent-upgrade", "/usr/local/bin/vz-agent")
+	for _, want := range []string{
+		"tmp='/tmp/vz-agent-upgrade'",
+		"dest='/usr/local/bin/vz-agent'",
+		"mv -f \"$tmp\" \"$dest\"",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, "cp ") {
+		t.Fatalf("script should not copy over the running executable:\n%s", script)
+	}
+}
+
+func TestIsLinuxGuestOS(t *testing.T) {
+	tests := []struct {
+		name string
+		os   string
+		want bool
+	}{
+		{name: "ubuntu", os: "Ubuntu 24.04.3 LTS", want: true},
+		{name: "linux", os: "Linux 6.17.0", want: true},
+		{name: "debian", os: "Debian GNU/Linux 13", want: true},
+		{name: "fedora", os: "Fedora Linux 42", want: true},
+		{name: "macos", os: "macOS 15.4"},
+		{name: "empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isLinuxGuestOS(tt.os); got != tt.want {
+				t.Fatalf("isLinuxGuestOS(%q) = %v, want %v", tt.os, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentBuildTargetOS(t *testing.T) {
+	tests := []struct {
+		name string
+		os   string
+		want string
+	}{
+		{name: "ubuntu", os: "Ubuntu 24.04.3 LTS", want: "linux"},
+		{name: "linux", os: "Linux", want: "linux"},
+		{name: "macos", os: "macOS 15.4", want: "darwin"},
+		{name: "unknown", want: "darwin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := agentBuildTargetOS(tt.os); got != tt.want {
+				t.Fatalf("agentBuildTargetOS(%q) = %q, want %q", tt.os, got, tt.want)
 			}
 		})
 	}
