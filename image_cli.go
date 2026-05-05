@@ -32,6 +32,8 @@ func handleImageCommand(args []string) error {
 		return runImagePrune(rest)
 	case "tag":
 		return runImageTag(rest)
+	case "history":
+		return runImageHistory(rest)
 	case "rm", "remove", "delete":
 		return runImageRm(rest)
 	case "push":
@@ -59,6 +61,7 @@ Subcommands:
   prune [-older-than D] [-filter GLOB] [-force] [-dry-run]
                                        Remove local images by age or tag glob
   tag <src-ref> <dst-ref>              Add a local tag without rebuilding
+  history <name[:tag]> [-json]         Show layer and provenance lineage
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
   push <name[:tag]> <file|-|registry/ref:tag> [-gzip]
                                        Tar to a file/stdout or push to an OCI registry
