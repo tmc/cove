@@ -615,23 +615,14 @@ func manifestIncludesAgent(manifest *ProvisionManifest) bool {
 // mount point, sets permissions and ownership. If not running as root, the
 // entire operation runs via a native Security.framework authorization prompt.
 func applyStagedFiles(target vmSelection, stagingDir, mountPoint, dataPart string, manifest *ProvisionManifest) error {
-	// Pick a representative file we can post-verify chowned correctly. We
-	// need at least one file with Owner=root:wheel to validate that the
-	// owners-mount actually took effect.
-	var verifyTarget string
-	for _, f := range manifest.Files {
-		if f.Owner == "root:wheel" {
-			verifyTarget = filepath.Join(mountPoint, f.Path)
-			break
-		}
-	}
+	verifyTargets := rootWheelVerifyTargets(manifest, mountPoint)
 
 	successMarker := tmpPathFor("vz-provision-apply-ok-")
 
 	em := &elevatedManifest{
-		RemountOwners:     []string{dataPart},
-		VerifyChownTarget: verifyTarget,
-		SuccessMarker:     successMarker,
+		RemountOwners:      []string{dataPart},
+		VerifyChownTargets: verifyTargets,
+		SuccessMarker:      successMarker,
 	}
 	for _, f := range manifest.Files {
 		src := filepath.Join(stagingDir, f.Path)
@@ -665,6 +656,19 @@ func applyStagedFiles(target vmSelection, stagingDir, mountPoint, dataPart strin
 		}
 	}
 	return nil
+}
+
+func rootWheelVerifyTargets(manifest *ProvisionManifest, mountPoint string) []string {
+	if manifest == nil {
+		return nil
+	}
+	var targets []string
+	for _, f := range manifest.Files {
+		if f.Owner == "root:wheel" {
+			targets = append(targets, filepath.Join(mountPoint, f.Path))
+		}
+	}
+	return targets
 }
 
 // tmpPathFor returns a unique temporary file path with the given prefix.

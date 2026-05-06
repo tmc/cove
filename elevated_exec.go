@@ -61,6 +61,9 @@ type elevatedManifest struct {
 	// reports owner uid=0 gid=0; failure aborts with a clear message.
 	VerifyChownTarget string `json:"verifyChownTarget,omitempty"`
 
+	// VerifyChownTargets checks every listed path for root:wheel ownership.
+	VerifyChownTargets []string `json:"verifyChownTargets,omitempty"`
+
 	// SuccessMarker, if non-empty, is a path that gets touched at the end
 	// of a successful run. The (unprivileged) caller can stat it to
 	// distinguish "child crashed" from "child completed".
@@ -180,18 +183,13 @@ func runElevatedManifest(m *elevatedManifest) error {
 		}
 	}
 
+	verifyTargets := m.VerifyChownTargets
 	if m.VerifyChownTarget != "" {
-		st, err := os.Stat(m.VerifyChownTarget)
-		if err != nil {
-			return fmt.Errorf("verify-chown stat %s: %w", m.VerifyChownTarget, err)
-		}
-		sys, ok := st.Sys().(*syscall.Stat_t)
-		if !ok {
-			return fmt.Errorf("verify-chown: unexpected stat type for %s", m.VerifyChownTarget)
-		}
-		if sys.Uid != 0 || sys.Gid != 0 {
-			return fmt.Errorf("chown root:wheel did not stick on %s (owner=%d:%d); launchd will reject daemon plists",
-				m.VerifyChownTarget, sys.Uid, sys.Gid)
+		verifyTargets = append(verifyTargets, m.VerifyChownTarget)
+	}
+	for _, target := range verifyTargets {
+		if err := verifyRootWheel(target); err != nil {
+			return err
 		}
 	}
 
@@ -201,6 +199,22 @@ func runElevatedManifest(m *elevatedManifest) error {
 			return fmt.Errorf("success marker: %w", err)
 		}
 		f.Close()
+	}
+	return nil
+}
+
+func verifyRootWheel(path string) error {
+	st, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("verify-chown stat %s: %w", path, err)
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("verify-chown: unexpected stat type for %s", path)
+	}
+	if sys.Uid != 0 || sys.Gid != 0 {
+		return fmt.Errorf("chown root:wheel did not stick on %s (owner=%d:%d); launchd will reject daemon plists",
+			path, sys.Uid, sys.Gid)
 	}
 	return nil
 }
