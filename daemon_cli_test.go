@@ -112,6 +112,23 @@ func TestDaemonStopCommandUnloadsPlist(t *testing.T) {
 	}
 }
 
+func TestDaemonUICommandOpensLocalURL(t *testing.T) {
+	oldRun := daemonRunCommand
+	defer func() { daemonRunCommand = oldRun }()
+	var got []string
+	daemonRunCommand = func(name string, args ...string) ([]byte, error) {
+		got = append([]string{name}, args...)
+		return nil, nil
+	}
+	if err := daemonUICommand([]string{"-addr", "127.0.0.1:19877", "-open", "opener"}); err != nil {
+		t.Fatalf("daemonUICommand: %v", err)
+	}
+	want := []string{"opener", "http://127.0.0.1:19877"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("command = %v, want %v", got, want)
+	}
+}
+
 func TestQueryDaemonStatus(t *testing.T) {
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "cove.sock")
