@@ -41,6 +41,8 @@ type guiUpdate struct {
 	createVMWindow      bool
 	closeVMWindow       bool
 	setVMWindowTitle    string
+	setOverlayTitle     string
+	overlaySubtitle     string
 	fadeOutOverlay      bool
 	stopApp             bool
 }
@@ -90,6 +92,15 @@ func (g *guiUpdate) requestCloseVMWindow() {
 func (g *guiUpdate) requestSetVMWindowTitle(title string) {
 	g.mu.Lock()
 	g.setVMWindowTitle = title
+	g.dirty = true
+	g.mu.Unlock()
+}
+
+// setOverlaySubtitle updates the install overlay message.
+func (g *guiUpdate) setOverlaySubtitle(title, subtitle string) {
+	g.mu.Lock()
+	g.setOverlayTitle = title
+	g.overlaySubtitle = subtitle
 	g.dirty = true
 	g.mu.Unlock()
 }
@@ -576,7 +587,6 @@ func runFullInstallWithGUI(ctx context.Context) error {
 			return
 		}
 
-		overlayVisible := true
 		lastPercent := -1.0
 
 		for {
@@ -605,7 +615,10 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					}
 				}
 				fmt.Println("=== Installation Complete ===")
+				title, subtitle, _ := installOverlayMessage(installOverlayFirstBoot, 100)
+				ui.setOverlaySubtitle(title, subtitle)
 				ui.requestSetVMWindowTitle("macOS VM Installation - Stopping VM...")
+				ui.requestFadeOutOverlay()
 				ui.requestCloseVMWindow()
 				select {
 				case <-vmWindowClosed:
@@ -633,10 +646,8 @@ func runFullInstallWithGUI(ctx context.Context) error {
 				if currentPercent-lastPercent >= 1.0 || lastPercent < 0 {
 					printProgress(currentPercent)
 					ui.requestSetVMWindowTitle(fmt.Sprintf("macOS VM Installation - %.1f%%", currentPercent))
-					if overlayVisible && currentPercent > 0 {
-						overlayVisible = false
-						ui.requestFadeOutOverlay()
-					}
+					title, subtitle, _ := installOverlayMessage(installOverlayRestoring, currentPercent)
+					ui.setOverlaySubtitle(title, subtitle)
 					lastPercent = currentPercent
 				}
 				time.Sleep(500 * time.Millisecond)
@@ -717,7 +728,8 @@ func runFullInstallWithGUI(ctx context.Context) error {
 								fmt.Fprintf(os.Stderr, "warning: install overlay skipped: %v\n", r)
 							}
 						}()
-						vmOverlay = createInstallOverlay(contentRect.Size)
+						title, subtitle, _ := installOverlayMessage(installOverlayStarting, 0)
+						vmOverlay = createInstallOverlay(contentRect.Size, title, subtitle)
 						addSubview(vmViewAsNSView(vmView), vmOverlay)
 					}()
 
@@ -751,6 +763,15 @@ func runFullInstallWithGUI(ctx context.Context) error {
 				if ui.setVMWindowTitle != "" && vmWindow.ID != 0 {
 					vmWindow.SetTitle(ui.setVMWindowTitle)
 					ui.setVMWindowTitle = ""
+				}
+				if (ui.setOverlayTitle != "" || ui.overlaySubtitle != "") && vmOverlay.ID != 0 {
+					title := ui.setOverlayTitle
+					subtitle := ui.overlaySubtitle
+					ui.setOverlayTitle = ""
+					ui.overlaySubtitle = ""
+					objc.Send[objc.ID](vmOverlay.ID, objc.Sel("removeFromSuperview"))
+					vmOverlay = createInstallOverlay(currentVMViewSize(vmView, corefoundation.CGSize{Width: 1024, Height: 768}), title, subtitle)
+					addSubview(vmViewAsNSView(vmView), vmOverlay)
 				}
 
 				// Fade out overlay — animate over ~10 iterations (~0.33s at 30 Hz).
@@ -1916,9 +1937,34 @@ func downloadRestoreImageVZ(ctx context.Context, destPath string) error {
 
 // The AppKit event pump drains both the GCD main queue and CFRunLoop.
 
-// createInstallOverlay creates a dark overlay view shown before install progress appears.
-func createInstallOverlay(size corefoundation.CGSize) appkit.NSView {
-	return createMessageOverlay(size, "Starting installation...", "", 0.1, 0.86, 24)
+type installOverlayPhase int
+
+const (
+	installOverlayStarting installOverlayPhase = iota
+	installOverlayRestoring
+	installOverlayFirstBoot
+)
+
+func installOverlayMessage(phase installOverlayPhase, percent float64) (title, subtitle string, hold bool) {
+	switch phase {
+	case installOverlayRestoring:
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+		return "Installing macOS", fmt.Sprintf("Restoring system files... %.0f%%", percent), true
+	case installOverlayFirstBoot:
+		return "Installing macOS", "First boot in progress...", true
+	default:
+		return "Starting installation...", "Allocating disk image.", true
+	}
+}
+
+// createInstallOverlay creates a dark overlay view shown during install progress.
+func createInstallOverlay(size corefoundation.CGSize, title, subtitle string) appkit.NSView {
+	return createMessageOverlay(size, title, subtitle, 0.08, 0.88, 22)
 }
 
 // postDummyEvent posts an application-defined event to unblock the AppKit
