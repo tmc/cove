@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/coved"
 	buildversion "github.com/tmc/vz-macos/internal/version"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -71,6 +72,8 @@ func main() {
 		pidPath:   *pidPath,
 		connected: make(chan struct{}),
 	}
+	gc := coved.NewImageGCScheduler("", logger)
+	go gc.RunScheduledImageGC(ctx)
 	go func() {
 		<-ctx.Done()
 		_ = l.Close()
