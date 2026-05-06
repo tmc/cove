@@ -1326,6 +1326,15 @@ func handleList() {
 
 // handleClone handles the clone subcommand.
 func handleClone(args []string) {
+	if err := runClone(args); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+var cloneProvisionAgentForVM = provisionAgentForVM
+
+func runClone(args []string) error {
 	// Parse: clone [source] <target> [--linked] [--with-agent]
 	var source, target string
 	withAgent := false
@@ -1346,8 +1355,7 @@ func handleClone(args []string) {
 
 	switch len(nonFlagArgs) {
 	case 0:
-		fmt.Fprintln(os.Stderr, "Usage: cove clone [source] <target> [--linked] [--with-agent]")
-		os.Exit(1)
+		return fmt.Errorf("usage: cove clone [source] <target> [--linked] [--with-agent]")
 	case 1:
 		source = vmconfig.ActiveName()
 		target = nonFlagArgs[0]
@@ -1363,21 +1371,23 @@ func handleClone(args []string) {
 		CopyMachineID: false,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
+	fmt.Printf("Clone created: %s\n", target)
 
 	if withAgent {
 		fmt.Println()
 		fmt.Println("=== Provisioning agent into clone ===")
-		if err := provisionAgentForVM(vmSelection{
+		if err := cloneProvisionAgentForVM(vmSelection{
 			Directory: vmconfig.Path(target),
 			Name:      target,
 		}); err != nil {
-			fmt.Fprintf(os.Stderr, "error: provision agent in clone: %v\n", err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "warning: clone %q was created, but --with-agent provisioning failed: %v\n", target, err)
+			fmt.Fprintf(os.Stderr, "         retry after the backup is selected with: cove -vm %s provision -agent\n", target)
+			return nil
 		}
 	}
+	return nil
 }
 
 // handleFork handles the fork subcommand: creates a CoW clone of an

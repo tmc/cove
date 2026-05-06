@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -130,5 +132,64 @@ func TestCloneVMUsesSourceDiskOverride(t *testing.T) {
 	}
 	if string(got) != "snapshot-disk" {
 		t.Fatalf("cloned disk = %q, want %q", got, "snapshot-disk")
+	}
+}
+
+func TestRunCloneWithAgentProvisionFailureLeavesCloneSuccess(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src := filepath.Join(vmconfig.BaseDir(), "src-macos")
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"disk.img":    []byte("disk"),
+		"aux.img":     []byte("aux"),
+		"hw.model":    []byte("hw"),
+		"machine.id":  []byte("machine"),
+		"config.json": []byte("{\"memoryGB\":4}\n"),
+	} {
+		if err := os.WriteFile(filepath.Join(src, name), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	oldProvision := cloneProvisionAgentForVM
+	cloneProvisionAgentForVM = func(vmSelection) error {
+		return fmt.Errorf("native authorization requires an interactive terminal")
+	}
+	t.Cleanup(func() {
+		cloneProvisionAgentForVM = oldProvision
+	})
+
+	stderr, restoreStderr := captureStderr(t)
+	out, err := captureStdoutResult(t, func() error {
+		return runClone([]string{"src-macos", "dst-macos", "--linked", "--with-agent"})
+	})
+	restoreStderr()
+	if err != nil {
+		t.Fatalf("runClone() error = %v", err)
+	}
+	for _, want := range []string{
+		"Clone complete.",
+		"Clone created: dst-macos",
+		"=== Provisioning agent into clone ===",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout missing %q\n%s", want, out)
+		}
+	}
+	for _, want := range []string{
+		`warning: clone "dst-macos" was created, but --with-agent provisioning failed`,
+		"native authorization requires an interactive terminal",
+		"cove -vm dst-macos provision -agent",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q\n%s", want, stderr.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "dst-macos", "disk.img")); err != nil {
+		t.Fatalf("clone disk missing after provision warning: %v", err)
 	}
 }
