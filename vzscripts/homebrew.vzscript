@@ -18,6 +18,28 @@ if [ -z "$BREW_USER" ]; then
 fi
 echo "Installing Homebrew as user: $BREW_USER"
 
+# Homebrew's upstream installer runs xcode-select --install when CLT is
+# missing. Refuse by default so developer-tools-free VMs stay that way.
+if ! /usr/bin/xcode-select -p >/dev/null 2>&1; then
+  if [ "${COVE_HOMEBREW_ACCEPT_CLT:-}" != "1" ]; then
+    cat >&2 <<'EOF'
+error: Xcode Command Line Tools are not installed.
+
+Homebrew's upstream installer will trigger a ~1 GB CLT install via
+softwareupdate, which can take 10-30 minutes. Cove refuses by default
+to keep this VM developer-tools-free.
+
+To proceed anyway:
+  cove vzscript run -env COVE_HOMEBREW_ACCEPT_CLT=1 homebrew
+
+Or install CLT separately first:
+  cove vzscript run xcode-cli homebrew
+EOF
+    exit 2
+  fi
+  echo "==> CLT will be installed by Homebrew (COVE_HOMEBREW_ACCEPT_CLT=1)"
+fi
+
 # Grant passwordless sudo temporarily for the install.
 echo "$BREW_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebrew-install
 chmod 0440 /etc/sudoers.d/homebrew-install
