@@ -62,6 +62,11 @@ type vmGUIController struct {
 	appDelegate    appkit.NSApplicationDelegateObject
 }
 
+var setDockBadgeLabel = func(app appkit.NSApplication, label string) {
+	dockTile := app.DockTile()
+	dockTile.SetBadgeLabel(label)
+}
+
 func ensureAppReady(policy appkit.NSApplicationActivationPolicy) appkit.NSApplication {
 	var app appkit.NSApplication
 	runOnUIThreadSync(func() {
@@ -186,8 +191,7 @@ func (c *vmGUIController) configureProcessIdentity() {
 
 func (c *vmGUIController) setDockBadgeOnMain() {
 	if c.target.Name != "" && c.target.Name != "default" {
-		dockTile := c.app.DockTile()
-		dockTile.SetBadgeLabel(c.target.Name)
+		setDockBadgeLabel(c.app, c.target.Name)
 	}
 }
 
