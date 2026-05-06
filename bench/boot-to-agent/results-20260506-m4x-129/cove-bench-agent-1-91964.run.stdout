@@ -1,0 +1,10 @@
+Image fork: test:latest
+  child:  cove-bench-agent-1-91964
+  path:   /Users/tmc/.vz/vms/cove-bench-agent-1-91964
+  mode:   ephemeral (destroyed on stop)
+Starting virtual machine...
+VM started successfully
+  warning: could not get terminal settings: operation not supported by device
+Control socket: /Users/tmc/.vz/vms/cove-bench-agent-1-91964/control.sock
+VM stopped
+Ephemeral image fork removed: cove-bench-agent-1-91964

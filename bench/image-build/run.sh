@@ -83,7 +83,7 @@ EOF
 		fi
 		end=$(bench_ms_now)
 		inspect="$out_dir/image-inspect-$i.json"
-		"$cove" image inspect "$run_tag" -json >"$inspect" 2>/dev/null || true
+		"$cove" image inspect -json "$run_tag" >"$inspect" 2>/dev/null || true
 		printf '{"timestamp":"%s","benchmark":"image-build","mode":"image-build","source_vm":"%s","tag":"%s","iteration":%s,"duration_ms":%s,"exit_code":%s,"status":"%s","inspect":"%s","stdout":"%s","stderr":"%s"}\n' \
 			"$(bench_timestamp)" "$(bench_json_escape "$from_vm")" "$(bench_json_escape "$run_tag")" "$i" "$((end - start))" "$exit_code" "$status" "$(bench_json_escape "$inspect")" "$(bench_json_escape "$stdout")" "$(bench_json_escape "$stderr")" >>"$jsonl"
 		printf '| %s | image build | %s | %sms |\n' "$i" "$status" "$((end - start))" >>"$summary"

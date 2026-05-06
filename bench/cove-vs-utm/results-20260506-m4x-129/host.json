@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-05-06T02:25:04Z",
+  "hostname": "m4x-129.local",
+  "hostid": "m4x-129",
+  "git_head": "fc5385ce8891a39a05c8c88d5bd2b4707fa7e4e5",
+  "origin_main": "d60acdb922685d013b1ebc30a2cf4e241fd1c901",
+  "cove_version": "cove fc5385ce8891 (commit fc5385ce8891, built 2026-05-06T02:21:10Z)",
+  "macos": "macOS 26.4.1",
+  "kernel": "Darwin m4x-129.local 25.4.0 Darwin Kernel Version 25.4.0: Thu Mar 19 19:33:25 PDT 2026; root:xnu-12377.101.15~1/RELEASE_ARM64_T6041 arm64",
+  "cpu": "Apple M4 Max",
+  "cpu_count": 16,
+  "memory_bytes": 137438953472,
+  "vm_root": "/Users/tmc/.vz/vms",
+  "image_root": "/Users/tmc/.vz/images",
+  "runs_root": "/Users/tmc/.vz/runs",
+  "disk_free_bytes": 133990035456
+}
