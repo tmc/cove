@@ -1,0 +1,5 @@
+# xcode-cli — Install Xcode Command Line Tools
+# guest-os: darwin
+# requires: developer-tools
+
+echo Xcode Command Line Tools ready.
