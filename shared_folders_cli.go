@@ -139,6 +139,10 @@ func defaultSharedFolderMountPoint(vmDirectory, tag string) string {
 	return filepath.Join(defaultSharedFoldersMountPoint, tag)
 }
 
+func defaultSharedFolderHomeLink(tag string) string {
+	return "~/" + tag
+}
+
 func defaultSharedFoldersMountRoot(vmDirectory string) string {
 	if vmconfig.DetectOSType(vmDirectory) == "Linux" {
 		return ""
@@ -231,7 +235,8 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	} else {
 		fmt.Printf("already mounted in guest at %s\n", mountSummary)
 	}
-	fmt.Printf("Guest path for this folder: %s\n", defaultSharedFolderMountPoint(vmDirectory, entry.Tag))
+	link, linkErr := ensureSharedFolderHomeLink(vmDirectory, entry)
+	printSharedFolderApplied(entry, vmDirectory, link, linkErr)
 	return nil
 }
 
@@ -245,6 +250,94 @@ func printSharedFolderAddResult(entry SharedFolderEntry, added bool) {
 		return
 	}
 	fmt.Printf("Shared folder already configured: %s (tag=%s)\n", entry.Path, entry.Tag)
+}
+
+func printSharedFolderApplied(entry SharedFolderEntry, vmDirectory, link string, linkErr error) {
+	mode := "rw"
+	if entry.ReadOnly {
+		mode = "ro"
+	}
+	guest := defaultSharedFolderMountPoint(vmDirectory, entry.Tag)
+	fmt.Println("Shared folder applied:")
+	fmt.Printf("  host:  %s\n", entry.Path)
+	fmt.Printf("  tag:   %s\n", entry.Tag)
+	fmt.Printf("  guest: %s\n", guest)
+	if linkErr != nil {
+		fmt.Printf("  link:  %s -> %s (pending: %v)\n", defaultSharedFolderHomeLink(entry.Tag), guest, linkErr)
+	} else {
+		fmt.Printf("  link:  %s -> %s\n", link, guest)
+	}
+	fmt.Printf("  mode:  %s\n", mode)
+}
+
+func ensureSharedFolderHomeLink(vmDirectory string, entry SharedFolderEntry) (string, error) {
+	link := defaultSharedFolderHomeLink(entry.Tag)
+	if vmconfig.DetectOSType(vmDirectory) == "Linux" {
+		return link, nil
+	}
+	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
+	target := defaultSharedFolderMountPoint(vmDirectory, entry.Tag)
+	script := `set -e
+target=$1
+link=$2
+case "$link" in
+~/*) link="$HOME/${link#~/}" ;;
+esac
+parent=$(dirname "$link")
+mkdir -p "$parent"
+if [ -L "$link" ]; then
+	current=$(readlink "$link")
+	if [ "$current" = "$target" ]; then
+		exit 0
+	fi
+	printf '%s\n' "$link already points to $current" >&2
+	exit 1
+fi
+if [ -e "$link" ]; then
+	printf '%s\n' "$link exists and is not a symlink" >&2
+	exit 1
+fi
+ln -s "$target" "$link"`
+	var (
+		res *controlpb.AgentExecResponse
+		err error
+	)
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		res, err = client.AgentUserExecTypedTimeout([]string{"/bin/sh", "-c", script, "cove-shared-folder-link", target, link}, nil, "", 10*time.Second)
+		if err == nil || !sharedFolderUserAgentPending(err) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if err != nil {
+		return link, err
+	}
+	if res.ExitCode != 0 {
+		msg := strings.TrimSpace(res.Stderr)
+		if msg == "" {
+			msg = strings.TrimSpace(res.Stdout)
+		}
+		if msg == "" {
+			msg = "unknown error"
+		}
+		return link, fmt.Errorf("create %s: exit %d: %s", link, res.ExitCode, msg)
+	}
+	return link, nil
+}
+
+func sharedFolderUserAgentPending(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "user agent") &&
+		(strings.Contains(s, "connection refused") ||
+			strings.Contains(s, "no such file") ||
+			strings.Contains(s, "not running") ||
+			strings.Contains(s, "unavailable") ||
+			strings.Contains(s, "i/o timeout") ||
+			strings.Contains(s, "deadline exceeded"))
 }
 
 func handleVMSharedFolderRemove(vmDirectory, selector string) error {
@@ -364,6 +457,8 @@ func sharedFolderStatus(vmDirectory, mountPoint string) error {
 			mode = "ro"
 		}
 		fmt.Printf("  %s\t%s\t%s\n", f.Tag, mode, f.Path)
+		fmt.Printf("    guest: %s\n", defaultSharedFolderMountPoint(vmDirectory, f.Tag))
+		fmt.Printf("    link:  %s -> %s\n", defaultSharedFolderHomeLink(f.Tag), defaultSharedFolderMountPoint(vmDirectory, f.Tag))
 	}
 
 	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
