@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,6 +33,34 @@ func TestInstallDaemonPlist(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("plist missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestPrintDaemonMetrics(t *testing.T) {
+	var out strings.Builder
+	printDaemonMetrics(&out, "# HELP x y\ncoved_uptime_seconds 12\ncoved_vms_managed 3\n")
+	got := out.String()
+	for _, want := range []string{"coved_uptime_seconds: 12", "coved_vms_managed: 3"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestFetchDaemonMetrics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/metrics" {
+			t.Fatalf("path = %q, want /metrics", r.URL.Path)
+		}
+		w.Write([]byte("coved_uptime_seconds 1\n")) //nolint
+	}))
+	defer srv.Close()
+	got, err := fetchDaemonMetrics(srv.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("fetchDaemonMetrics: %v", err)
+	}
+	if !strings.Contains(got, "coved_uptime_seconds 1") {
+		t.Fatalf("body = %q", got)
 	}
 }
 
