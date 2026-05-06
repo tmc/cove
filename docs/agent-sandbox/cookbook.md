@@ -44,14 +44,17 @@ cove agent-sandbox run \
   --task "Take one screenshot and report the visible app."
 ```
 
-Expected output today:
+Expected output:
 
 ```text
-agent-sandbox: provider capability not supported: openai provider is not implemented in cove agent-sandbox run yet
+agent-sandbox replay: /Users/me/.vz/runs/<run-id>/replay
 ```
 
-Use `adapters/openai-agents-python` directly until the unified CLI OpenAI path
-is wired in.
+Install the local OpenAI adapter first:
+
+```bash
+python -m pip install -e adapters/openai-agents-python[agents]
+```
 
 ## Four Parallel Forks, Four Providers
 
@@ -77,8 +80,8 @@ Expected output:
 agent-sandbox replay: /Users/me/.vz/runs/<run-id>/replay
 ```
 
-OpenAI currently exits with the explicit not-supported error shown above; the
-other providers require valid credentials.
+All providers require valid credentials and a local `agentkit/macos-base:latest`
+image.
 
 ## Snapshot a Long-Running Agent and Resume Tomorrow
 

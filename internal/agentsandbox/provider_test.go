@@ -18,14 +18,15 @@ func TestRunRejectsUnsupportedProvider(t *testing.T) {
 	}
 }
 
-func TestRunOpenAIStub(t *testing.T) {
+func TestRunOpenAIBridgeRequiresScript(t *testing.T) {
 	_, err := Run(context.Background(), Options{
 		Provider: ProviderOpenAI,
 		VMName:   "vm",
 		Task:     "task",
+		RepoRoot: t.TempDir(),
 	})
-	if !errors.Is(err, ErrNotSupported) || !strings.Contains(err.Error(), "openai provider is not implemented") {
-		t.Fatalf("Run error = %v, want openai stub error", err)
+	if err == nil || !strings.Contains(err.Error(), "provider script") {
+		t.Fatalf("Run error = %v, want missing provider script", err)
 	}
 }
 
