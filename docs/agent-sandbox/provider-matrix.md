@@ -7,7 +7,7 @@ this repository today.
 
 | Provider | Unified CLI state | Screenshot | Click | Type | Scroll | Wait | Env vars needed |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| OpenAI Agents | Python SDK adapter invoked by unified CLI | yes | yes | yes | yes | yes | `OPENAI_API_KEY` |
+| OpenAI Agents | Python SDK adapter invoked by unified CLI | yes | yes | yes | yes | yes | `OPENAI_API_KEY`; optional `COVE_OPENAI_MODEL` |
 | Anthropic computer-use | First-class Go runtime path plus Python sandbox package | yes | yes | yes | yes | yes | `ANTHROPIC_API_KEY` |
 | Gemini computer-use | Python bridge invoked by unified CLI | yes | yes | yes | yes | yes | `GEMINI_API_KEY` |
 | Vertex AI computer-use | Python bridge invoked by unified CLI | yes | yes | yes | yes | yes | `GOOGLE_CLOUD_PROJECT` or `COVE_VERTEX_PROJECT`; optional `COVE_VERTEX_REGION`; ADC or gcloud auth |
@@ -16,6 +16,8 @@ this repository today.
 
 - OpenAI uses the repository adapter in `adapters/openai-agents-python`; install
   it locally with `python -m pip install -e adapters/openai-agents-python[agents]`.
+  The unified bridge defaults to `computer-use-preview`, the OpenAI model for
+  the computer-use tool.
 - Anthropic is special today: the unified CLI routes it through the Go runtime
   adapter instead of `internal/agentsandbox.Run`.
 - Gemini and Vertex use the repository Python bridge scripts:

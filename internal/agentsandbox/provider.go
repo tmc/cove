@@ -168,6 +168,9 @@ func runPythonBridge(ctx context.Context, provider string, opts Options) (Result
 	switch provider {
 	case ProviderOpenAI:
 		args = append(args, "--max-steps", fmt.Sprint(opts.MaxSteps))
+		if model := strings.TrimSpace(os.Getenv("COVE_OPENAI_MODEL")); model != "" {
+			args = append(args, "--model", model)
+		}
 	case ProviderAnthropic:
 		args = append(args, "--max-iters", fmt.Sprint(opts.MaxSteps))
 	case ProviderGemini:
