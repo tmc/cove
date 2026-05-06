@@ -113,6 +113,9 @@ func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
 	if !authorizationStdinIsTTY() {
 		return fmt.Errorf("native authorization requires an interactive terminal; re-run the provisioning command with sudo")
 	}
+	if onUIThread() {
+		return fmt.Errorf("native authorization cannot run on the app ui thread; run provisioning from a worker goroutine")
+	}
 	authRef, err := createAuthorization(prompt)
 	if err != nil {
 		return err
@@ -141,34 +144,67 @@ func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
 	}
 
 	argv := []*byte{subcmdArg, manifestArg, hashArg, nil}
-	var commPipe uintptr
-	status := authExecute(
-		authRef,
-		uintptr(unsafe.Pointer(toolPath)),
-		0,
-		uintptr(unsafe.Pointer(&argv[0])),
-		&commPipe,
-	)
-	if status == errAuthorizationCanceled {
-		return fmt.Errorf("interrupted: user cancelled authorization")
+	return executeAuthorizedTool(authRef, uintptr(unsafe.Pointer(toolPath)), uintptr(unsafe.Pointer(&argv[0])))
+}
+
+func executeAuthorizedTool(authRef, toolPath, argv uintptr) error {
+	type executeResult struct {
+		status int32
 	}
-	if status != 0 {
-		return fmt.Errorf("AuthorizationExecuteWithPrivileges: status %d", status)
-	}
-	if commPipe != 0 && libcFread != nil {
-		var buf [4096]byte
-		for {
-			n := libcFread(uintptr(unsafe.Pointer(&buf[0])), 1, uintptr(len(buf)), commPipe)
-			if n == 0 {
-				break
+	done := make(chan executeResult, 1)
+	go func() {
+		var commPipe uintptr
+		status := authExecute(authRef, toolPath, 0, argv, &commPipe)
+		if commPipe != 0 && libcFread != nil {
+			var buf [4096]byte
+			for {
+				n := libcFread(uintptr(unsafe.Pointer(&buf[0])), 1, uintptr(len(buf)), commPipe)
+				if n == 0 {
+					break
+				}
+				os.Stdout.Write(buf[:n])
 			}
-			os.Stdout.Write(buf[:n])
+			if libcFclose != nil {
+				libcFclose(commPipe)
+			}
 		}
-		if libcFclose != nil {
-			libcFclose(commPipe)
+		done <- executeResult{status: status}
+	}()
+
+	ticker := time.NewTicker(authCreatePollInterval)
+	defer ticker.Stop()
+	start := time.Now()
+	promptSeenAt := time.Time{}
+	waitingForApprovalLogged := false
+	for {
+		select {
+		case result := <-done:
+			if result.status == errAuthorizationCanceled {
+				return fmt.Errorf("interrupted: user cancelled authorization")
+			}
+			if result.status != 0 {
+				return fmt.Errorf("AuthorizationExecuteWithPrivileges: status %d", result.status)
+			}
+			return nil
+		case <-ticker.C:
+			if authorizationPromptVisible() {
+				if promptSeenAt.IsZero() {
+					promptSeenAt = time.Now()
+				}
+				if !waitingForApprovalLogged {
+					fmt.Fprintln(os.Stderr, "Waiting for macOS admin-password dialog approval...")
+					waitingForApprovalLogged = true
+				}
+				if time.Since(promptSeenAt) > authCreatePromptTimeout {
+					return fmt.Errorf("authorization execute dialog still pending after %s; approve or cancel the macOS prompt and retry", authCreatePromptTimeout)
+				}
+				continue
+			}
+			if time.Since(start) > authCreateNoUITimeout {
+				return fmt.Errorf("AuthorizationExecuteWithPrivileges wedged after %s (likely authd/SecurityAgent unresponsive); try logging out and back in, or run the script manually as root", authCreateNoUITimeout)
+			}
 		}
 	}
-	return nil
 }
 
 func createAuthorization(prompt string) (uintptr, error) {
