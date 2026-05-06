@@ -203,6 +203,59 @@ func TestFleetPSJSONIncludesFailures(t *testing.T) {
 	runner.assertCalls(t, []string{"vm", "list"}, 2)
 }
 
+func TestFleetImageTransferCommands(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		wantOut string
+		want    []fakeFleetCommandCall
+	}{
+		{
+			name:    "push local to remote",
+			args:    []string{"image", "push", "base:latest", "a"},
+			wantOut: "pushed image base:latest to a",
+			want: []fakeFleetCommandCall{
+				{host: "", args: []string{"image", "push", "base:latest", "-"}},
+				{host: "a.local", args: []string{"image", "load", "-"}},
+			},
+		},
+		{
+			name:    "pull remote to local",
+			args:    []string{"image", "pull", "base:latest", "a"},
+			wantOut: "pulled image base:latest from a",
+			want: []fakeFleetCommandCall{
+				{host: "a.local", args: []string{"image", "push", "base:latest", "-"}},
+				{host: "", args: []string{"image", "load", "-"}},
+			},
+		},
+		{
+			name:    "sync remote to remote",
+			args:    []string{"image", "sync", "base:latest", "a", "b"},
+			wantOut: "synced image base:latest from a to b",
+			want: []fakeFleetCommandCall{
+				{host: "a.local", args: []string{"image", "push", "base:latest", "-"}},
+				{host: "b.local", args: []string{"image", "load", "-"}},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeFleetTestConfig(t)
+			runner := &fakeFleetRunner{streamPayload: "tarball"}
+			var out bytes.Buffer
+			if err := runFleetCommandWithRunner(context.Background(), tc.args, path, runner, &out, &bytes.Buffer{}); err != nil {
+				t.Fatalf("runFleetCommandWithRunner: %v", err)
+			}
+			if !strings.Contains(out.String(), tc.wantOut) {
+				t.Fatalf("output = %q, want %q", out.String(), tc.wantOut)
+			}
+			runner.assertCommandCalls(t, tc.want)
+			if runner.loaded != "tarball" {
+				t.Fatalf("loaded = %q, want tarball", runner.loaded)
+			}
+		})
+	}
+}
+
 func writeFleetTestConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fleet.json")
@@ -224,13 +277,21 @@ type fakeFleetCall struct {
 	args   []string
 }
 
+type fakeFleetCommandCall struct {
+	host string
+	args []string
+}
+
 type fakeFleetRunner struct {
-	mu      sync.Mutex
-	remote  fleetpkg.Remote
-	args    []string
-	outputs map[string]string
-	errs    map[string]error
-	calls   []fakeFleetCall
+	mu            sync.Mutex
+	remote        fleetpkg.Remote
+	args          []string
+	outputs       map[string]string
+	errs          map[string]error
+	calls         []fakeFleetCall
+	commandCalls  []fakeFleetCommandCall
+	streamPayload string
+	loaded        string
 }
 
 func (f *fakeFleetRunner) Run(ctx context.Context, remote fleetpkg.Remote, args []string, stdout, stderr io.Writer) error {
@@ -254,6 +315,34 @@ func (f *fakeFleetRunner) Run(ctx context.Context, remote fleetpkg.Remote, args 
 	return nil
 }
 
+func (f *fakeFleetRunner) RunCommand(ctx context.Context, remote fleetpkg.Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	f.mu.Lock()
+	f.commandCalls = append(f.commandCalls, fakeFleetCommandCall{host: remote.Host, args: append([]string(nil), args...)})
+	payload := f.streamPayload
+	err := error(nil)
+	if f.errs != nil {
+		err = f.errs[remote.Host]
+	}
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if len(args) >= 2 && args[0] == "image" && args[1] == "push" {
+		_, err := io.WriteString(stdout, payload)
+		return err
+	}
+	if len(args) >= 2 && args[0] == "image" && args[1] == "load" {
+		var b bytes.Buffer
+		if _, err := io.Copy(&b, stdin); err != nil {
+			return err
+		}
+		f.mu.Lock()
+		f.loaded = b.String()
+		f.mu.Unlock()
+	}
+	return nil
+}
+
 func (f *fakeFleetRunner) assertCalls(t *testing.T, wantArgs []string, wantCount int) {
 	t.Helper()
 	f.mu.Lock()
@@ -264,6 +353,27 @@ func (f *fakeFleetRunner) assertCalls(t *testing.T, wantArgs []string, wantCount
 	for _, call := range f.calls {
 		if !reflect.DeepEqual(call.args, wantArgs) {
 			t.Fatalf("call args = %#v, want %#v", call.args, wantArgs)
+		}
+	}
+}
+
+func (f *fakeFleetRunner) assertCommandCalls(t *testing.T, want []fakeFleetCommandCall) {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.commandCalls) != len(want) {
+		t.Fatalf("command calls = %#v, want %#v", f.commandCalls, want)
+	}
+	for _, w := range want {
+		found := false
+		for _, got := range f.commandCalls {
+			if got.host == w.host && reflect.DeepEqual(got.args, w.args) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("command calls = %#v, missing %#v", f.commandCalls, w)
 		}
 	}
 }

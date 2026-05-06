@@ -17,6 +17,10 @@ type fleetRunner interface {
 	Run(ctx context.Context, remote fleetpkg.Remote, args []string, stdout, stderr io.Writer) error
 }
 
+type fleetCommandRunner interface {
+	Run(ctx context.Context, remote fleetpkg.Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error
+}
+
 type sshFleetRunner struct{}
 
 func handleFleetCommand(args []string) error {
@@ -211,10 +215,19 @@ func hasFlagPrefix(args []string, prefixes ...string) bool {
 }
 
 func (sshFleetRunner) Run(ctx context.Context, remote fleetpkg.Remote, args []string, stdout, stderr io.Writer) error {
+	return runSSHFleetCommand(ctx, remote, args, nil, stdout, stderr)
+}
+
+func (sshFleetRunner) RunCommand(ctx context.Context, remote fleetpkg.Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	return runSSHFleetCommand(ctx, remote, args, stdin, stdout, stderr)
+}
+
+func runSSHFleetCommand(ctx context.Context, remote fleetpkg.Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	sshArgs := append([]string{}, remote.SSHArgs...)
 	sshArgs = append(sshArgs, fleetRemoteTarget(remote), "cove")
 	sshArgs = append(sshArgs, shellJoinArgs(args))
 	cmd := exec.CommandContext(ctx, fleetSSHBinary(), sshArgs...)
+	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()

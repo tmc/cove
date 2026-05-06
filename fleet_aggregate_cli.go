@@ -27,6 +27,12 @@ func runFleetAggregateCommand(ctx context.Context, args []string, path string, r
 	}
 	kind := args[0]
 	sub := args[1]
+	if kind == "image" {
+		switch sub {
+		case "push", "pull", "sync":
+			return runFleetImageTransferCommand(ctx, args[1:], path, runner, out, errOut)
+		}
+	}
 	if sub != "ls" && sub != "list" {
 		return fmt.Errorf("fleet: unknown %s command %q", kind, sub)
 	}
