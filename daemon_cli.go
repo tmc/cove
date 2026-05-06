@@ -18,9 +18,12 @@ import (
 var covedPlistTemplate string
 
 type daemonStatus struct {
-	Version    string `json:"version"`
-	UptimeS    int64  `json:"uptime_s"`
-	VMsManaged int    `json:"vms_managed"`
+	Version                string `json:"version"`
+	UptimeS                int64  `json:"uptime_s"`
+	VMsManaged             int    `json:"vms_managed"`
+	ImageGCLastRunTS       string `json:"image_gc_last_run_ts,omitempty"`
+	ImageGCRunsTotal       int64  `json:"image_gc_runs_total"`
+	ImageGCBytesFreedTotal int64  `json:"image_gc_bytes_freed_total"`
 }
 
 type daemonPaths struct {
@@ -49,7 +52,8 @@ func daemonCommand(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("version: %s\nuptime_s: %d\nvms_managed: %d\n", status.Version, status.UptimeS, status.VMsManaged)
+		fmt.Printf("version: %s\nuptime_s: %d\nvms_managed: %d\nimage_gc_last_run_ts: %s\nimage_gc_runs_total: %d\nimage_gc_bytes_freed_total: %d\n",
+			status.Version, status.UptimeS, status.VMsManaged, status.ImageGCLastRunTS, status.ImageGCRunsTotal, status.ImageGCBytesFreedTotal)
 		return nil
 	case "start":
 		return daemonStartCommand(args[1:])

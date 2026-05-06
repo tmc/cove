@@ -101,7 +101,14 @@ func TestQueryDaemonStatus(t *testing.T) {
 		buf := make([]byte, 16)
 		n, _ := conn.Read(buf)
 		if string(buf[:n]) == "STATUS\n" {
-			_ = json.NewEncoder(conn).Encode(daemonStatus{Version: "test", UptimeS: 7, VMsManaged: 3})
+			_ = json.NewEncoder(conn).Encode(daemonStatus{
+				Version:                "test",
+				UptimeS:                7,
+				VMsManaged:             3,
+				ImageGCLastRunTS:       "2026-05-05T12:00:00Z",
+				ImageGCRunsTotal:       2,
+				ImageGCBytesFreedTotal: 99,
+			})
 		}
 	}()
 	got, err := queryDaemonStatus(socket)
@@ -109,7 +116,7 @@ func TestQueryDaemonStatus(t *testing.T) {
 		t.Fatalf("queryDaemonStatus: %v", err)
 	}
 	<-done
-	if got != (daemonStatus{Version: "test", UptimeS: 7, VMsManaged: 3}) {
+	if got != (daemonStatus{Version: "test", UptimeS: 7, VMsManaged: 3, ImageGCLastRunTS: "2026-05-05T12:00:00Z", ImageGCRunsTotal: 2, ImageGCBytesFreedTotal: 99}) {
 		t.Fatalf("status = %+v", got)
 	}
 }
