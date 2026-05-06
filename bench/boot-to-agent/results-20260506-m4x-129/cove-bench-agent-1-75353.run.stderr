@@ -1,4 +1,0 @@
-warning: image test:latest verification returned WARN; continuing
-time=2026-05-05T19:33:55.410-07:00 level=INFO msg="agent-health: reconnected" component=cove version=097997da downtime=32.011s
-time=2026-05-05T19:33:55.426-07:00 level=INFO msg="agent-health: version mismatch: host=8cd190341779 guest=097997da" component=cove
-time=2026-05-05T19:33:55.426-07:00 level=INFO msg="agent-health: run 'cove agent-upgrade' to update, or use -auto-upgrade-agent" component=cove
