@@ -148,6 +148,22 @@ Later slices:
 2. Add network drift reports.
 3. Add installer hardening and operator docs for launchd mode.
 
+## Slice 3: Observability Stack
+
+Slice 3 turns `coved` into an observable host coordinator:
+
+- An internal event bus carries lifecycle and image-GC events to subscribers.
+- A JSONL subscriber preserves the existing `~/.vz/metrics.jsonl` event shape.
+- A Prometheus endpoint serves `/metrics` on `127.0.0.1:9876` by default.
+- `cove daemon metrics` and `cove fleet metrics` expose local and fleet metrics
+  without requiring Prometheus.
+- A best-effort webhook subscriber posts configured event types from
+  `~/.vz/cove.toml`.
+- A vanilla embedded web UI serves on `127.0.0.1:9877` by default.
+
+Both HTTP listeners are localhost-only by default and configurable through
+`~/.vz/cove.toml`.
+
 ## Cross-references
 
 - [`docs/designs/031-vm-lifecycle.md`](031-vm-lifecycle.md) for the policy
