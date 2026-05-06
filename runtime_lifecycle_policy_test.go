@@ -85,7 +85,7 @@ func TestCheckVMLifecyclePolicyStopsForIdle(t *testing.T) {
 	}
 }
 
-func TestCheckVMLifecyclePolicyStopsForMaxAgeAndBudget(t *testing.T) {
+func TestCheckVMLifecyclePolicyStopsForMaxAge(t *testing.T) {
 	withTempHome(t)
 	runsRoot := t.TempDir()
 	prevRuns := runsDirHook
@@ -102,65 +102,31 @@ func TestCheckVMLifecyclePolicyStopsForMaxAgeAndBudget(t *testing.T) {
 	}
 	t.Cleanup(func() { lifecycleCurrentVMStateHook = prevStateHook })
 
-	t.Run("max-age", func(t *testing.T) {
-		prevStopHook := lifecycleRequestStopHook
-		stopped := false
-		lifecycleRequestStopHook = func(*ControlServer) error {
-			stopped = true
-			return nil
-		}
-		t.Cleanup(func() { lifecycleRequestStopHook = prevStopHook })
+	prevStopHook := lifecycleRequestStopHook
+	stopped := false
+	lifecycleRequestStopHook = func(*ControlServer) error {
+		stopped = true
+		return nil
+	}
+	t.Cleanup(func() { lifecycleRequestStopHook = prevStopHook })
 
-		dir := t.TempDir()
-		if err := vmpolicy.Save(dir, vmpolicy.Policy{MaxAge: 30 * time.Minute}); err != nil {
-			t.Fatalf("Save(): %v", err)
-		}
-		s := NewControlServerWithVMDir("", dir)
-		s.setPolicyStartTime(time.Unix(0, 0))
-		run, err := beginStandaloneMetricsRun("vm-age", "")
-		if err != nil {
-			t.Fatalf("beginStandaloneMetricsRun: %v", err)
-		}
-		defer finishStandaloneMetricsRun(run)
-		s.checkVMLifecyclePolicy()
-		if !stopped {
-			t.Fatal("policy stop did not request shutdown")
-		}
-		events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
-		if len(events) != 1 || events[0].Extra["reason"] != "max_age" {
-			t.Fatalf("events = %+v", events)
-		}
-	})
-
-	t.Run("run-budget", func(t *testing.T) {
-		prevStopHook := lifecycleRequestStopHook
-		stopped := false
-		lifecycleRequestStopHook = func(*ControlServer) error {
-			stopped = true
-			return nil
-		}
-		t.Cleanup(func() { lifecycleRequestStopHook = prevStopHook })
-
-		dir := t.TempDir()
-		if err := vmpolicy.Save(dir, vmpolicy.Policy{RunBudget: 2}); err != nil {
-			t.Fatalf("Save(): %v", err)
-		}
-		s := NewControlServerWithVMDir("", dir)
-		s.setPolicyStartTime(time.Unix(1500, 0))
-		s.notePolicyExec()
-		s.notePolicyExec()
-		run, err := beginStandaloneMetricsRun("vm-budget", "")
-		if err != nil {
-			t.Fatalf("beginStandaloneMetricsRun: %v", err)
-		}
-		defer finishStandaloneMetricsRun(run)
-		s.checkVMLifecyclePolicy()
-		if !stopped {
-			t.Fatal("policy stop did not request shutdown")
-		}
-		events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
-		if len(events) != 1 || events[0].Extra["reason"] != "run_budget" {
-			t.Fatalf("events = %+v", events)
-		}
-	})
+	dir := t.TempDir()
+	if err := vmpolicy.Save(dir, vmpolicy.Policy{MaxAge: 30 * time.Minute}); err != nil {
+		t.Fatalf("Save(): %v", err)
+	}
+	s := NewControlServerWithVMDir("", dir)
+	s.setPolicyStartTime(time.Unix(0, 0))
+	run, err := beginStandaloneMetricsRun("vm-age", "")
+	if err != nil {
+		t.Fatalf("beginStandaloneMetricsRun: %v", err)
+	}
+	defer finishStandaloneMetricsRun(run)
+	s.checkVMLifecyclePolicy()
+	if !stopped {
+		t.Fatal("policy stop did not request shutdown")
+	}
+	events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
+	if len(events) != 1 || events[0].Extra["reason"] != "max_age" {
+		t.Fatalf("events = %+v", events)
+	}
 }

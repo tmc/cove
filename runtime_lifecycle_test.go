@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tmc/vz-macos/internal/lifecycle"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmpolicy"
 )
 
 func TestRunCurrentVMWithDisposableClone(t *testing.T) {
@@ -166,6 +168,52 @@ func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 	}
 	if vmDir != "/tmp/research-base" {
 		t.Fatalf("vmDir after run = %q, want %q", vmDir, "/tmp/research-base")
+	}
+}
+
+func TestRunVMWithConfigEnforcesRunBudgetBeforeBoot(t *testing.T) {
+	withTempHome(t)
+	stubAcquireRunLockHook(t)
+
+	runsRoot := t.TempDir()
+	prevRuns := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	t.Cleanup(func() { runsDirHook = prevRuns })
+
+	oldRunMacHook := runMacOSVMHook
+	t.Cleanup(func() { runMacOSVMHook = oldRunMacHook })
+
+	dir := t.TempDir()
+	if err := vmpolicy.Save(dir, vmpolicy.Policy{RunBudget: 1}); err != nil {
+		t.Fatalf("Save(): %v", err)
+	}
+	cfg := RunConfig{VM: vmSelection{Name: "budget-vm", Directory: dir}}
+
+	runs := 0
+	runMacOSVMHook = func() error {
+		runs++
+		return nil
+	}
+	if err := runVMWithConfig(cfg); err != nil {
+		t.Fatalf("first runVMWithConfig: %v", err)
+	}
+	if runs != 1 {
+		t.Fatalf("runs after first boot = %d, want 1", runs)
+	}
+
+	err := runVMWithConfig(cfg)
+	if !errors.Is(err, lifecycle.ErrBudgetExceeded) {
+		t.Fatalf("second runVMWithConfig error = %v, want ErrBudgetExceeded", err)
+	}
+	if runs != 1 {
+		t.Fatalf("runs after budget exceeded = %d, want 1", runs)
+	}
+	used, err := lifecycle.RunsUsed(dir)
+	if err != nil {
+		t.Fatalf("RunsUsed(): %v", err)
+	}
+	if used != 1 {
+		t.Fatalf("RunsUsed() = %d, want 1", used)
 	}
 }
 

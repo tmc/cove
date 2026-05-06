@@ -11,6 +11,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 
+	"github.com/tmc/vz-macos/internal/lifecycle"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmpolicy"
 )
@@ -28,6 +29,7 @@ var (
 	configureRequestedProxyAfterBootHook = configureRequestedProxyAfterBoot
 	teardownRequestedProxyHook           = teardownRequestedProxy
 	acquireRunLockHook                   = AcquireRunLock
+	consumeRunBudgetHook                 = lifecycle.ConsumeRunBudget
 )
 
 type RunConfig struct {
@@ -114,6 +116,13 @@ func runVMWithConfig(cfg RunConfig) error {
 	}
 	writeActiveNetworkPolicyAudit(metricsRun)
 	defer finishStandaloneMetricsRun(metricsRun)
+
+	if err := enforceRunBudget(originalVMName, originalVMDir, metricsRun); err != nil {
+		if metricsRun != nil {
+			emitMetricEvent("run_complete", metricsRun.started, err.Error(), nil)
+		}
+		return err
+	}
 
 	var clone DisposableClone
 	temporaryClone := cfg.Disposable || cfg.RollbackSnapshot != ""
@@ -205,6 +214,34 @@ func runVMWithConfig(cfg RunConfig) error {
 	}
 
 	return runErr
+}
+
+func enforceRunBudget(vmName, vmDir string, metricsRun *standaloneMetricsRun) error {
+	policy, err := vmpolicy.Load(vmDir)
+	if err != nil {
+		return err
+	}
+	if policy.RunBudget <= 0 {
+		return nil
+	}
+	runsUsed, err := consumeRunBudgetHook(vmDir, policy.RunBudget)
+	if errors.Is(err, lifecycle.ErrBudgetExceeded) {
+		started := time.Time{}
+		if metricsRun != nil {
+			started = metricsRun.started
+		}
+		emitMetricEvent("lifecycle.budget.exceeded", started, "exceeded", map[string]any{
+			"vm_name":      vmName,
+			"budget_count": policy.RunBudget,
+			"runs_used":    runsUsed,
+			"policy_path":  vmpolicy.Path(vmDir),
+		})
+		return fmt.Errorf("vm %q run budget exceeded: %w", vmName, err)
+	}
+	if err != nil {
+		return fmt.Errorf("consume run budget: %w", err)
+	}
+	return nil
 }
 
 func startRuntimeFeatureServices(runtimeFeatures *runtimeFeatureState, vm vz.VZVirtualMachine, queue dispatch.Queue) {
@@ -328,8 +365,6 @@ func (s *ControlServer) checkVMLifecyclePolicy() {
 	now := vmLifecycleClock.Now()
 	reason := ""
 	switch {
-	case policy.RunBudget > 0 && execCount >= int64(policy.RunBudget):
-		reason = "run_budget"
 	case policy.MaxAge > 0 && !startedAt.IsZero() && now.Sub(startedAt) >= policy.MaxAge:
 		reason = "max_age"
 	case policy.IdleTimeout > 0 && state == vz.VZVirtualMachineStateRunning:
