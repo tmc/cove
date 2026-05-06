@@ -119,6 +119,43 @@ func TestFleetRunRequiresOptInPolicy(t *testing.T) {
 	}
 }
 
+func TestFleetMetricsAggregatesHosts(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	runner := &fakeFleetRunner{outputs: map[string]string{
+		"a.local": "coved_vms_managed 2\ncoved_image_gc_runs_total 1\n",
+		"b.local": "coved_vms_managed 3\ncoved_image_gc_runs_total 4\n",
+	}}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"metrics"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet metrics: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"a\tvms=2", "b\tvms=3", "total\tvms=5"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+	runner.assertCallsWithArgs(t, []string{"daemon", "metrics", "--json"}, 2)
+}
+
+func TestFleetMetricsJSONIncludesErrors(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	runner := &fakeFleetRunner{
+		outputs: map[string]string{"a.local": "coved_vms_managed 2\n"},
+		errs:    map[string]error{"b.local": errors.New("offline")},
+	}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"metrics", "--json"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet metrics --json: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{`"host": "a"`, `"coved_vms_managed": 2`, `"host": "b"`, `"error": "offline"`, `"totals"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("json missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestRunFleetRouteInvokesRunner(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	cfg := &fleetpkg.Config{}
