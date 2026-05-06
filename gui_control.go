@@ -182,6 +182,9 @@ func (c *vmGUIController) configureProcessIdentity() {
 		procName = fmt.Sprintf("cove (%s)", c.target.Name)
 	}
 	foundation.GetProcessInfoClass().ProcessInfo().SetProcessName(procName)
+}
+
+func (c *vmGUIController) setDockBadgeOnMain() {
 	if c.target.Name != "" && c.target.Name != "default" {
 		dockTile := c.app.DockTile()
 		dockTile.SetBadgeLabel(c.target.Name)
@@ -310,6 +313,7 @@ func (c *vmGUIController) openOnMain() {
 	transformToForegroundApp()
 	c.app.SetActivationPolicy(appkit.NSApplicationActivationPolicyRegular)
 	setAppIcon(&c.app)
+	c.setDockBadgeOnMain()
 	if !c.menuConfigured && c.toolbar != nil {
 		setupMainMenu(c.toolbar.delegateID)
 		c.menuConfigured = true
