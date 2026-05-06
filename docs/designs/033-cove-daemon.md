@@ -1,6 +1,6 @@
 # Design 033: Cove Daemon Mode
 
-**Status:** Slice 1 scaffold  
+**Status:** Slice 2b scheduled image GC shipped  
 **Author:** Travis Cline  
 **Date:** 2026-05-05
 
@@ -89,9 +89,13 @@ and optional configured sweeps. It should reuse existing `image gc` code paths
 rather than deleting image directories directly, so T57 metric behavior remains
 the single source of truth.
 
-The daemon should write scheduler decisions to the same run metrics root or a
-daemon metrics stream under `~/.vz/runs`. That choice is deferred; Slice 1 only
-creates the daemon process and status surface.
+Slice 2b runs scheduled local image GC every hour and writes one `image.gc.run`
+event per tick to `~/.vz/metrics.jsonl`. The event records
+`manifests_scanned`, `manifests_removed`, `bytes_freed`, and `duration_ms`.
+`STATUS` includes `image_gc_last_run_ts`, `image_gc_runs_total`, and
+`image_gc_bytes_freed_total` so `cove daemon status` can show progress without
+tailing the metrics stream. Manual `cove image gc` remains daemon-less and
+unchanged.
 
 ### Network Drift Detection
 

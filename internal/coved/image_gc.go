@@ -33,7 +33,9 @@ type ImageGCScheduler struct {
 
 	mu    sync.Mutex
 	stats ImageGCStats
+	last  time.Time
 	runs  int64
+	bytes int64
 }
 
 func NewImageGCScheduler(home string, logger *slog.Logger) *ImageGCScheduler {
@@ -83,10 +85,10 @@ func (s *ImageGCScheduler) RunOnce(ctx context.Context) (ImageGCStats, error) {
 	return stats, err
 }
 
-func (s *ImageGCScheduler) Stats() (ImageGCStats, int64) {
+func (s *ImageGCScheduler) Stats() (ImageGCStats, time.Time, int64, int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.stats, s.runs
+	return s.stats, s.last, s.runs, s.bytes
 }
 
 func (s *ImageGCScheduler) runOnceLocked(ctx context.Context) (ImageGCStats, error) {
@@ -161,7 +163,9 @@ func (s *ImageGCScheduler) record(stats ImageGCStats) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stats = stats
+	s.last = s.now()
 	s.runs++
+	s.bytes += stats.BytesFreed
 }
 
 func (s *ImageGCScheduler) acquireLock() (func(), error) {

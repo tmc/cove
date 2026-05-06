@@ -2,12 +2,15 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/coved"
 )
 
 func TestHandleStatus(t *testing.T) {
@@ -19,7 +22,11 @@ func TestHandleStatus(t *testing.T) {
 		version:   "test-version",
 		started:   time.Now().Add(-3 * time.Second),
 		vmRoot:    vmRoot,
+		imageGC:   coved.NewImageGCScheduler(t.TempDir(), nil),
 		connected: make(chan struct{}),
+	}
+	if _, err := d.imageGC.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
 	}
 	go d.handle(server)
 	if _, err := client.Write([]byte("STATUS\n")); err != nil {
@@ -38,6 +45,9 @@ func TestHandleStatus(t *testing.T) {
 	}
 	if got.UptimeS < 2 {
 		t.Fatalf("uptime = %d, want at least 2", got.UptimeS)
+	}
+	if got.ImageGCRunsTotal != 1 || got.ImageGCLastRunTS == "" {
+		t.Fatalf("image gc status = %+v", got)
 	}
 }
 

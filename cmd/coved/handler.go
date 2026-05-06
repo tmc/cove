@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/coved"
 )
 
 type daemon struct {
@@ -17,13 +19,19 @@ type daemon struct {
 	vmRoot    string
 	socket    string
 	pidPath   string
+	imageGC   *coved.ImageGCScheduler
 	connected chan struct{}
 }
 
 type statusResponse struct {
-	Version    string `json:"version"`
-	UptimeS    int64  `json:"uptime_s"`
-	VMsManaged int    `json:"vms_managed"`
+	Version                 string `json:"version"`
+	UptimeS                 int64  `json:"uptime_s"`
+	VMsManaged              int    `json:"vms_managed"`
+	ImageGCLastRunTS        string `json:"image_gc_last_run_ts,omitempty"`
+	ImageGCRunsTotal        int64  `json:"image_gc_runs_total"`
+	ImageGCBytesFreedTotal  int64  `json:"image_gc_bytes_freed_total"`
+	ImageGCManifestsScanned int    `json:"image_gc_manifests_scanned,omitempty"`
+	ImageGCManifestsRemoved int    `json:"image_gc_manifests_removed,omitempty"`
 }
 
 func (d *daemon) serve(ctx context.Context, l net.Listener) error {
@@ -60,11 +68,22 @@ func (d *daemon) handle(conn net.Conn) {
 }
 
 func (d *daemon) status() statusResponse {
-	return statusResponse{
+	resp := statusResponse{
 		Version:    d.version,
 		UptimeS:    int64(time.Since(d.started).Seconds()),
 		VMsManaged: countVMDirs(d.vmRoot),
 	}
+	if d.imageGC != nil {
+		stats, last, runs, bytesFreed := d.imageGC.Stats()
+		resp.ImageGCRunsTotal = runs
+		resp.ImageGCBytesFreedTotal = bytesFreed
+		resp.ImageGCManifestsScanned = stats.ManifestsScanned
+		resp.ImageGCManifestsRemoved = stats.ManifestsRemoved
+		if !last.IsZero() {
+			resp.ImageGCLastRunTS = last.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	return resp
 }
 
 func countVMDirs(root string) int {

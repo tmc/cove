@@ -73,6 +73,7 @@ func main() {
 		connected: make(chan struct{}),
 	}
 	gc := coved.NewImageGCScheduler("", logger)
+	d.imageGC = gc
 	go gc.RunScheduledImageGC(ctx)
 	go func() {
 		<-ctx.Done()
