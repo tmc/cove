@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"text/template"
 	"time"
 )
@@ -60,12 +63,67 @@ func daemonCommand(args []string) error {
 			fmt.Printf("lifecycle_last_run_ts: %s\n", status.LifecycleLastRunTS)
 		}
 		return nil
+	case "metrics":
+		return daemonMetricsCommand(args[1:])
 	case "start":
 		return daemonStartCommand(args[1:])
 	case "stop":
 		return daemonStopCommand(args[1:])
 	default:
 		return fmt.Errorf("unknown daemon command: %s", args[0])
+	}
+}
+
+func daemonMetricsCommand(args []string) error {
+	fs := flag.NewFlagSet("daemon metrics", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	raw := fs.Bool("json", false, "print raw prometheus exposition")
+	addr := fs.String("addr", "127.0.0.1:9876", "metrics address")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove daemon metrics [--json] [-addr host:port]")
+	}
+	body, err := fetchDaemonMetrics("http://" + *addr + "/metrics")
+	if err != nil {
+		return err
+	}
+	if *raw {
+		fmt.Print(body)
+		return nil
+	}
+	printDaemonMetrics(os.Stdout, body)
+	return nil
+}
+
+func fetchDaemonMetrics(url string) (string, error) {
+	client := &http.Client{Timeout: daemonDialTimeout}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("daemon metrics: %w", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("daemon metrics read: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("daemon metrics: %s: %s", resp.Status, bytes.TrimSpace(data))
+	}
+	return string(data), nil
+}
+
+func printDaemonMetrics(w io.Writer, body string) {
+	for _, line := range strings.Split(body, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		name, value, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(w, "%s: %s\n", name, value)
 	}
 }
 
