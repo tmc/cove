@@ -88,6 +88,9 @@ func main() {
 	} else {
 		slog.Debug("metrics jsonl subscriber", slog.Any("err", err))
 	}
+	if webhook := coved.NewWebhookSubscriber(cfg.Daemon.Webhook); webhook != nil {
+		go webhook.Run(ctx, d.events)
+	}
 	go gc.RunScheduledImageGC(ctx)
 	lifecycle := coved.NewLifecycleEnforcer(coved.LifecycleConfig{
 		VMRoot: d.vmRoot,
