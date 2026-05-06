@@ -481,7 +481,8 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 					fmt.Println("  Agent injected successfully")
 				}
 			}
-		} else if len(badOwnerPaths) > 0 {
+		}
+		if len(badOwnerPaths) > 0 {
 			fmt.Printf("Fixing ownership on %d file(s)...\n", len(badOwnerPaths))
 			if err := fixOwnershipWithSudoForVM(target, badOwnerPaths, dataPartition); err != nil {
 				fmt.Printf("  Ownership fix failed: %v\n", err)
