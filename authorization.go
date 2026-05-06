@@ -90,12 +90,14 @@ func PreWarm() error {
 }
 
 func preWarmAuthorization(prompt string) error {
-	authRef, err := createAuthorization(prompt)
-	if err != nil {
-		return err
-	}
-	authFree(authRef, kAuthorizationFlagDestroyRights)
-	return nil
+	return runOffUIThread(func() error {
+		authRef, err := createAuthorization(prompt)
+		if err != nil {
+			return err
+		}
+		authFree(authRef, kAuthorizationFlagDestroyRights)
+		return nil
+	})
 }
 
 // runElevatedManifestNative shows the native macOS authorization dialog and

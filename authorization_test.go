@@ -128,6 +128,40 @@ func TestRunElevatedManifestNativeRefusesUIThread(t *testing.T) {
 	}
 }
 
+func TestPreWarmRunsAuthorizationOffUIThread(t *testing.T) {
+	oldAuthInitialized := authInitialized
+	oldAuthCreate := authCreate
+	oldAuthExecute := authExecute
+	oldAuthFree := authFree
+	oldTTY := authorizationStdinIsTTY
+	oldUIThreadID := uiThreadID.Load()
+	t.Cleanup(func() {
+		authInitialized = oldAuthInitialized
+		authCreate = oldAuthCreate
+		authExecute = oldAuthExecute
+		authFree = oldAuthFree
+		authorizationStdinIsTTY = oldTTY
+		uiThreadID.Store(oldUIThreadID)
+	})
+
+	authInitialized = true
+	authCreate = func(_ uintptr, _ uintptr, _ uint32, authRef *uintptr) int32 {
+		if onUIThread() {
+			t.Fatal("authCreate ran on UI thread")
+		}
+		*authRef = 42
+		return 0
+	}
+	authExecute = func(uintptr, uintptr, uint32, uintptr, *uintptr) int32 { return 0 }
+	authFree = func(uintptr, uint32) int32 { return 0 }
+	authorizationStdinIsTTY = func() bool { return true }
+	uiThreadID.Store(currentUIThreadID())
+
+	if err := PreWarm(); err != nil {
+		t.Fatalf("PreWarm: %v", err)
+	}
+}
+
 func stubAuthorizationCreate(t *testing.T, promptVisible bool) func() {
 	t.Helper()
 
