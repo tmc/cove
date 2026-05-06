@@ -71,6 +71,18 @@ guest-exec /bin/echo hello
 	}
 }
 
+func TestCfgForRecipeTerminalModes(t *testing.T) {
+	cfg := cfgForRecipe(vzscriptConfig{}, scriptMeta{runsOn: "terminal"})
+	if !cfg.terminal || !cfg.verbose || cfg.terminalGUI {
+		t.Fatalf("terminal cfg = %+v", cfg)
+	}
+
+	cfg = cfgForRecipe(vzscriptConfig{}, scriptMeta{runsOn: "terminal-gui"})
+	if !cfg.terminalGUI || cfg.terminal {
+		t.Fatalf("terminal-gui cfg = %+v", cfg)
+	}
+}
+
 func TestParseScriptMetaEmpty(t *testing.T) {
 	meta := parseScriptMeta(nil)
 	if meta.name != "" || meta.guestOS != "darwin" || len(meta.requires) != 0 || len(meta.inject) != 0 {
