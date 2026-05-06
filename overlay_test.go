@@ -72,3 +72,48 @@ func TestBootOverlayReadyToFade(t *testing.T) {
 		})
 	}
 }
+
+func TestInstallOverlayMessage(t *testing.T) {
+	tests := []struct {
+		name         string
+		phase        installOverlayPhase
+		percent      float64
+		wantTitle    string
+		wantSubtitle string
+	}{
+		{
+			name:         "starting",
+			phase:        installOverlayStarting,
+			wantTitle:    "Starting installation...",
+			wantSubtitle: "Allocating disk image.",
+		},
+		{
+			name:         "restoring",
+			phase:        installOverlayRestoring,
+			percent:      42.4,
+			wantTitle:    "Installing macOS",
+			wantSubtitle: "Restoring system files... 42%",
+		},
+		{
+			name:         "restoring clamps high",
+			phase:        installOverlayRestoring,
+			percent:      123,
+			wantTitle:    "Installing macOS",
+			wantSubtitle: "Restoring system files... 100%",
+		},
+		{
+			name:         "first boot",
+			phase:        installOverlayFirstBoot,
+			wantTitle:    "Installing macOS",
+			wantSubtitle: "First boot in progress...",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			title, subtitle, hold := installOverlayMessage(tt.phase, tt.percent)
+			if title != tt.wantTitle || subtitle != tt.wantSubtitle || !hold {
+				t.Fatalf("installOverlayMessage() = %q, %q, %v; want %q, %q, true", title, subtitle, hold, tt.wantTitle, tt.wantSubtitle)
+			}
+		})
+	}
+}
