@@ -553,6 +553,9 @@ func warnNonRootProvisioning(target vmSelection, stagingDir string, manifest *Pr
 	if provisionEffectiveUID() == 0 || !manifestNeedsRootProvisioning(manifest) {
 		return
 	}
+	if !restrictedEnvironment() {
+		return
+	}
 	username := provisionUser
 	if fp, ok := readStagingFingerprint(stagingDir); ok && fp.Username != "" {
 		username = fp.Username
@@ -561,10 +564,10 @@ func warnNonRootProvisioning(target vmSelection, stagingDir string, manifest *Pr
 		username = "<username>"
 	}
 	fmt.Fprintln(provisionWarningWriter)
-	fmt.Fprintln(provisionWarningWriter, "warning: macOS auto-login provisioning needs administrator privileges")
+	fmt.Fprintln(provisionWarningWriter, "warning: macOS auto-login provisioning needs administrator privileges, but this environment cannot show the native admin dialog")
 	fmt.Fprintln(provisionWarningWriter, "  LaunchDaemon plists must be written as root:wheel or launchd will ignore them.")
-	fmt.Fprintln(provisionWarningWriter, "  If this boot reaches the login screen, stop the VM and re-run:")
-	fmt.Fprintf(provisionWarningWriter, "    sudo cove%s provision -user %s -password <password> -skip-setup-assistant -auto-login\n",
+	fmt.Fprintln(provisionWarningWriter, "  Re-run from a normal terminal, or use the manual elevation command printed below.")
+	fmt.Fprintf(provisionWarningWriter, "    cove%s provision -user %s -password <password> -skip-setup-assistant -auto-login\n",
 		target.hintFlag(), shellQuote(username))
 }
 
@@ -639,7 +642,7 @@ func applyStagedFiles(target vmSelection, stagingDir, mountPoint, dataPart strin
 	if err := runElevated(em, elevationPrompt(
 		fmt.Sprintf("Provision VM %q: write %d files (user account, agent, auto-login).", target.elevationLabel(), len(manifest.Files)),
 	)); err != nil {
-		return fmt.Errorf("%w\n  recovery: sudo cove%s provision -apply", err, target.hintFlag())
+		return fmt.Errorf("%w\n  recovery: re-run cove%s provision -apply from a normal terminal and approve the macOS admin dialog", err, target.hintFlag())
 	}
 
 	// Verify the privileged operation ran to completion. The success marker

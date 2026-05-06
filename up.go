@@ -426,38 +426,10 @@ func requireRootForMacOSUpProvisioning(cfg upConfig, target vmSelection, install
 	if installed && didInjectSucceedForVM(target) {
 		return nil
 	}
-	return fmt.Errorf("auto-login provisioning requires root; re-run with: %s", sudoUpCommand(cfg, target))
-}
-
-func sudoUpCommand(cfg upConfig, target vmSelection) string {
-	args := []string{"sudo", "cove", "up"}
-	if target.Name != "" {
-		args = append(args, "-vm", target.Name)
+	if restrictedEnvironment() {
+		return fmt.Errorf("auto-login provisioning needs the native macOS admin dialog; re-run cove up from a normal terminal")
 	}
-	args = append(args, "-user", cfg.user)
-	if cfg.password != "" {
-		args = append(args, "-password", cfg.password)
-	}
-	if !cfg.gui {
-		args = append(args, "-headless")
-	}
-	if cfg.cpuCount != 0 {
-		args = append(args, "-cpu", strconv.FormatUint(uint64(cfg.cpuCount), 10))
-	}
-	if cfg.memoryGB != 0 {
-		args = append(args, "-memory", strconv.FormatUint(cfg.memoryGB, 10))
-	}
-	if cfg.noShutdown {
-		args = append(args, "-no-shutdown")
-	}
-	if cfg.force {
-		args = append(args, "-force")
-	}
-	quoted := make([]string, len(args))
-	for i, arg := range args {
-		quoted[i] = shellQuoteForDisplay(arg)
-	}
-	return strings.Join(quoted, " ")
+	return nil
 }
 
 func shellQuoteForDisplay(arg string) string {

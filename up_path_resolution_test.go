@@ -139,7 +139,7 @@ func TestUpPathResolutionWithLegacyVM(t *testing.T) {
 	}
 }
 
-func TestRequireRootForMacOSUpProvisioning(t *testing.T) {
+func TestRequireRootForMacOSUpProvisioningAllowsNativeAuth(t *testing.T) {
 	restoreVMGlobals(t)
 	oldEUID := upEffectiveUID
 	t.Cleanup(func() { upEffectiveUID = oldEUID })
@@ -155,23 +155,37 @@ func TestRequireRootForMacOSUpProvisioning(t *testing.T) {
 	}
 	target := vmSelection{Name: cfg.vmName, Directory: t.TempDir()}
 	upEffectiveUID = func() int { return 501 }
+	t.Setenv("COVE_FORCE_MANUAL_ELEVATION", "")
 
-	err := requireRootForMacOSUpProvisioning(cfg, target, false)
-	if err == nil {
-		t.Fatal("requireRootForMacOSUpProvisioning returned nil error")
-	}
-	for _, want := range []string{
-		"auto-login provisioning requires root",
-		"sudo cove up -vm mlxgo-fresh-nodev-20260505 -user mlxqa -password mlxqa123 -headless -cpu 4 -memory 8 -no-shutdown",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error missing %q\n%v", want, err)
-		}
+	if err := requireRootForMacOSUpProvisioning(cfg, target, false); err != nil {
+		t.Fatalf("requireRootForMacOSUpProvisioning: %v", err)
 	}
 
 	upEffectiveUID = func() int { return 0 }
 	if err := requireRootForMacOSUpProvisioning(cfg, target, false); err != nil {
 		t.Fatalf("root requireRootForMacOSUpProvisioning: %v", err)
+	}
+}
+
+func TestRequireRootForMacOSUpProvisioningRejectsManualElevationContext(t *testing.T) {
+	restoreVMGlobals(t)
+	oldEUID := upEffectiveUID
+	t.Cleanup(func() { upEffectiveUID = oldEUID })
+
+	cfg := upConfig{user: "mlxqa", password: "mlxqa123", vmName: "mlxgo-fresh-nodev-20260505"}
+	target := vmSelection{Name: cfg.vmName, Directory: t.TempDir()}
+	upEffectiveUID = func() int { return 501 }
+	t.Setenv("COVE_FORCE_MANUAL_ELEVATION", "1")
+
+	err := requireRootForMacOSUpProvisioning(cfg, target, false)
+	if err == nil {
+		t.Fatal("requireRootForMacOSUpProvisioning returned nil error")
+	}
+	if want := "auto-login provisioning needs the native macOS admin dialog"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+	if strings.Contains(err.Error(), "sudo") {
+		t.Fatalf("error suggests sudo: %v", err)
 	}
 }
 
