@@ -111,7 +111,7 @@ for level in $levels; do
 	end=$(bench_ms_now)
 	if [ "$keep" != true ]; then
 		for child in $children; do
-			"$cove" clean -vm "$child" >/dev/null 2>&1 || true
+			printf 'y\n' | "$cove" vm delete "$child" >/dev/null 2>&1 || true
 		done
 	fi
 	printf '| %s | %s | %sms | parent `%s` |\n' "$level" "$status" "$((end - start))" "$parent" >>"$summary"
