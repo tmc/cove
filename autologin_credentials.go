@@ -108,6 +108,9 @@ func loadLoginScreenCredentialsFromDisk(diskPath string) (loginScreenCredentials
 }
 
 func loadBootLoginScreenCredentials(vmDir, diskPath string) (loginScreenCredentials, error) {
+	// Do not mount diskPath here. This runs on the VM boot path, just before
+	// Virtualization.framework opens the disk, so the watchdog must rely on
+	// the host-side cache written during provisioning.
 	creds, err := readLoginScreenCredentialsCache(vmDir)
 	if err != nil {
 		return loginScreenCredentials{}, err
@@ -115,7 +118,7 @@ func loadBootLoginScreenCredentials(vmDir, diskPath string) (loginScreenCredenti
 	if creds.Valid() {
 		return creds, nil
 	}
-	return loadLoginScreenCredentialsFromDisk(diskPath)
+	return loginScreenCredentials{}, nil
 }
 
 func resolveLoginScreenWatchdogCredentials() loginScreenCredentials {

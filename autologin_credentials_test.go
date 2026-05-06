@@ -70,3 +70,13 @@ func TestLoginScreenCredentialsCacheRoundTrip(t *testing.T) {
 		t.Fatalf("cache mode = %o, want 600", mode)
 	}
 }
+
+func TestLoadBootLoginScreenCredentialsDoesNotMountDisk(t *testing.T) {
+	creds, err := loadBootLoginScreenCredentials(t.TempDir(), filepath.Join(t.TempDir(), "missing.img"))
+	if err != nil {
+		t.Fatalf("loadBootLoginScreenCredentials: %v", err)
+	}
+	if creds.Valid() {
+		t.Fatalf("credentials = %+v, want empty", creds)
+	}
+}
