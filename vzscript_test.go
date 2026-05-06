@@ -118,6 +118,26 @@ func TestVZScriptEngineConditions(t *testing.T) {
 	}
 }
 
+func TestVZScriptEnvFlag(t *testing.T) {
+	var flags envFlag
+	if err := flags.Set("COVE_HOMEBREW_ACCEPT_CLT=1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := flags.Set("EMPTY="); err != nil {
+		t.Fatal(err)
+	}
+	if got := flags.String(); got != "COVE_HOMEBREW_ACCEPT_CLT=1,EMPTY=" {
+		t.Fatalf("String() = %q", got)
+	}
+	got := envListToMap(flags)
+	if got["COVE_HOMEBREW_ACCEPT_CLT"] != "1" || got["EMPTY"] != "" {
+		t.Fatalf("envListToMap = %#v", got)
+	}
+	if err := flags.Set("not-an-assignment"); err == nil {
+		t.Fatal("Set without '=' succeeded")
+	}
+}
+
 func TestVZScriptWaitCommand(t *testing.T) {
 	cfg := vzscriptConfig{}
 	engine := newVZScriptEngine(cfg)
@@ -195,6 +215,45 @@ func TestXcodeVZScriptHostCopyFallback(t *testing.T) {
 	}
 
 	if err := executeVZScriptSyntaxOnly(t, "xcode.vzscript", data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHomebrewVZScriptRefusesImplicitCLT(t *testing.T) {
+	data, err := builtinScripts.ReadFile("vzscripts/homebrew.vzscript")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"if ! /usr/bin/xcode-select -p >/dev/null 2>&1; then",
+		`[ "${COVE_HOMEBREW_ACCEPT_CLT:-}" != "1" ]`,
+		"cove vzscript run -env COVE_HOMEBREW_ACCEPT_CLT=1 homebrew",
+		"cove vzscript run xcode-cli homebrew",
+		"exit 2",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("homebrew recipe missing %q", want)
+		}
+	}
+	if strings.Index(script, "xcode-select -p") > strings.Index(script, "install.sh") {
+		t.Fatal("homebrew recipe checks CLT after invoking install.sh")
+	}
+	if err := executeVZScriptSyntaxOnly(t, "homebrew.vzscript", data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestXcodeCLIVZScriptRequiresDeveloperTools(t *testing.T) {
+	data, err := builtinScripts.ReadFile("vzscripts/xcode-cli.vzscript")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	if !strings.Contains(script, "# requires: developer-tools") {
+		t.Fatalf("xcode-cli recipe does not require developer-tools:\n%s", script)
+	}
+	if err := executeVZScriptSyntaxOnly(t, "xcode-cli.vzscript", data); err != nil {
 		t.Fatal(err)
 	}
 }
