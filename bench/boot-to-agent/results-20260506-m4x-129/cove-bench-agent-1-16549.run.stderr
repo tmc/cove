@@ -1,0 +1,3 @@
+warning: image test:latest verification returned WARN; continuing
+time=2026-05-05T19:37:42.849-07:00 level=ERROR msg="control socket: write response" component=cove err="write unix /Users/tmc/.vz/vms/cove-bench-agent-1-16549/control.sock->: write: broken pipe"
+time=2026-05-05T19:37:52.852-07:00 level=INFO msg="agent-health: reconnected" component=cove version=097997da downtime=52.585s
