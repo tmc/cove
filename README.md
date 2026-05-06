@@ -163,7 +163,7 @@ cove up -user dev -vzscripts homebrew,golang
 
 ```bash
 cove install -ipsw ~/cache/restore.ipsw
-sudo cove inject -user ci -password secret -skip-setup-assistant
+cove inject -user ci -password secret -skip-setup-assistant
 cove run -headless -cpu 4 -memory 8
 ```
 

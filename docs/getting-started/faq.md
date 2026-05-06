@@ -13,11 +13,17 @@ The host must run macOS 12 (Monterey) or later. Guest VMs can run macOS 13 (Vent
 
 ### Does cove require root or sudo?
 
-Only the `provision` and `provision-agent` commands need sudo. macOS launchd requires LaunchDaemon plists to be owned by root:wheel, so injecting provisioning files into the VM disk must be done as root. All other commands run as your normal user.
+No normal cove workflow should require rerunning with `sudo`. macOS disk
+provisioning needs administrator privileges for root-owned LaunchDaemon files,
+so cove asks through the native macOS admin dialog when it applies those files.
+All commands still start as your normal user.
 
-### Why does provisioning need sudo?
+### Why does provisioning ask for administrator approval?
 
-launchd silently ignores LaunchDaemon plists that aren't owned by root:wheel (uid=0, gid=0). Without sudo, the injected files get your user's UID, the daemon never loads, and the provisioning script never runs. See the [provisioning guide](../guides/provisioning.md) for details.
+launchd silently ignores LaunchDaemon plists that aren't owned by root:wheel
+(uid=0, gid=0). Cove uses the native admin dialog to write those files with the
+right ownership. See the [provisioning guide](../guides/provisioning.md) for
+details.
 
 ### What is the default VM directory?
 
