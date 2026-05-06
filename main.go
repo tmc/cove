@@ -949,6 +949,9 @@ Use 'cove <command> -h' for command-specific help.
 Quick Start:
   up              Install + provision + boot in one command (cove up -user me)
 
+Cirrus Migration:
+  See docs/quickstart-from-cirrus.md and docs/migrations/from-cirrus.md
+
 Lifecycle:
   install         Install OS (macOS from IPSW, -linux for Ubuntu)
   run             Run a VM (macOS by default, -linux for Linux)

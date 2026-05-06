@@ -7,6 +7,13 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- Cirrus-displacement migration surface: private landing-page draft, five-step
+  quickstart, full `.cirrus.yml` migration walkthrough, operator checklist,
+  migration doctor VZScript, and May 2026 benchmark report. Public install and
+  registry language remain gated until release, privacy, trademark, and tap
+  availability checks clear.
+
 ## v0.3.0 - 2026-05-05
 
 ### Added
