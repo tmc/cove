@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
+	"golang.org/x/term"
 )
 
 var (
@@ -32,6 +33,7 @@ var (
 	authCreatePromptTimeout    = 15 * time.Minute
 	authCreatePollInterval     = 500 * time.Millisecond
 	authorizationPromptVisible = defaultAuthorizationPromptVisible
+	authorizationStdinIsTTY    = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 )
 
 func initAuthorizationServices() {
@@ -108,6 +110,9 @@ func preWarmAuthorization(prompt string) error {
 // action-oriented (one sentence). Name the affected VM when relevant so the
 // user can tell what they are approving.
 func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
+	if !authorizationStdinIsTTY() {
+		return fmt.Errorf("native authorization requires an interactive terminal; re-run the provisioning command with sudo")
+	}
 	authRef, err := createAuthorization(prompt)
 	if err != nil {
 		return err

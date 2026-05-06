@@ -648,7 +648,7 @@ func applyStagedFiles(target vmSelection, stagingDir, mountPoint, dataPart strin
 	if err := runElevated(em, elevationPrompt(
 		fmt.Sprintf("Provision VM %q: write %d files (user account, agent, auto-login).", target.elevationLabel(), len(manifest.Files)),
 	)); err != nil {
-		return err
+		return fmt.Errorf("%w\n  recovery: sudo cove%s provision -apply", err, target.hintFlag())
 	}
 
 	// Verify the privileged operation ran to completion. The success marker
