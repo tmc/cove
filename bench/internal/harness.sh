@@ -128,3 +128,38 @@ bench_summary_header() {
 
 EOF
 }
+
+bench_append_duration_stats() {
+	md=$1
+	jsonl=$2
+	key=$3
+	label=$4
+	perl -MJSON::PP -e '
+		my ($file, $key, $label) = @ARGV;
+		open my $fh, "<", $file or die "$file: $!";
+		my @v;
+		while (my $line = <$fh>) {
+			my $row = eval { decode_json($line) };
+			next if !$row || !exists $row->{$key} || $row->{$key} !~ /^\d+$/;
+			push @v, 0 + $row->{$key};
+		}
+		exit 0 if !@v;
+		@v = sort { $a <=> $b } @v;
+		my $n = @v;
+		my $sum = 0; $sum += $_ for @v;
+		my $pct = sub {
+			my $p = shift;
+			my $idx = int(($p * ($n - 1)) + 0.999999);
+			return $v[$idx];
+		};
+		my $median = $v[int($n / 2)];
+		if ($n % 2 == 0) {
+			$median = int(($v[$n / 2 - 1] + $v[$n / 2]) / 2);
+		}
+		printf "\n## %s summary\n\n", $label;
+		printf "| n | mean | median | p95 | p99 |\n";
+		printf "|---:|---:|---:|---:|---:|\n";
+		printf "| %d | %dms | %dms | %dms | %dms |\n",
+			$n, int($sum / $n), $median, $pct->(0.95), $pct->(0.99);
+	' "$jsonl" "$key" "$label" >>"$md"
+}

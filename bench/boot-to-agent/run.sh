@@ -111,3 +111,4 @@ while [ "$i" -le "$runs" ]; do
 	printf '| %s | %s | %sms | `%s` |\n' "$i" "$status" "$ready_ms" "$child" >>"$summary"
 	i=$((i + 1))
 done
+bench_append_duration_stats "$summary" "$jsonl" agent_ready_ms "agent readiness"

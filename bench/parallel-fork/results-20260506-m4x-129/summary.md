@@ -12,3 +12,9 @@
 | 4 | ok | 276ms | parent `hermes-mlx-go-60g-v10` |
 | 8 | ok | 403ms | parent `hermes-mlx-go-60g-v10` |
 | 16 | ok | 784ms | parent `hermes-mlx-go-60g-v10` |
+
+## child fork duration summary
+
+| n | mean | median | p95 | p99 |
+|---:|---:|---:|---:|---:|
+| 31 | 496ms | 625ms | 736ms | 740ms |

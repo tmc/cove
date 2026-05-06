@@ -8,3 +8,9 @@
 | Iteration | Mode | Status | Wall |
 |---:|---|---|---:|
 | 1 | image build | ok | 33231ms |
+
+## image build duration summary
+
+| n | mean | median | p95 | p99 |
+|---:|---:|---:|---:|---:|
+| 1 | 33231ms | 33231ms | 33231ms | 33231ms |

@@ -8,3 +8,9 @@
 | Iteration | Status | Agent ready | VM |
 |---:|---|---:|---|
 | 1 | ok | 13082ms | `cove-bench-agent-1-91964` |
+
+## agent readiness summary
+
+| n | mean | median | p95 | p99 |
+|---:|---:|---:|---:|---:|
+| 1 | 13082ms | 13082ms | 13082ms | 13082ms |
