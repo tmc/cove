@@ -33,6 +33,8 @@ type statusResponse struct {
 	ImageGCBytesFreedTotal  int64  `json:"image_gc_bytes_freed_total"`
 	ImageGCManifestsScanned int    `json:"image_gc_manifests_scanned,omitempty"`
 	ImageGCManifestsRemoved int    `json:"image_gc_manifests_removed,omitempty"`
+	LifecycleEnforced       uint64 `json:"lifecycle_enforced"`
+	LifecycleLastRunTS      string `json:"lifecycle_last_run_ts,omitempty"`
 }
 
 func (d *daemon) serve(ctx context.Context, l net.Listener) error {
@@ -82,6 +84,13 @@ func (d *daemon) status() statusResponse {
 		resp.ImageGCManifestsRemoved = stats.ManifestsRemoved
 		if !last.IsZero() {
 			resp.ImageGCLastRunTS = last.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	if d.lifecycle != nil {
+		stats := d.lifecycle.Stats()
+		resp.LifecycleEnforced = stats.Enforced
+		if stats.LastRunUnix != 0 {
+			resp.LifecycleLastRunTS = time.Unix(stats.LastRunUnix, 0).UTC().Format(time.RFC3339)
 		}
 	}
 	return resp

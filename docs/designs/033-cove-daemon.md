@@ -1,6 +1,6 @@
 # Design 033: Cove Daemon Mode
 
-**Status:** Slice 2b scheduled image GC shipped  
+**Status:** Slice 2 lifecycle policy enforcement and Slice 2b scheduled image GC shipped  
 **Author:** Travis Cline  
 **Date:** 2026-05-05
 
@@ -30,7 +30,7 @@ installation. Slice 1 only establishes the contract:
 - `STATUS` over the socket returns JSON:
 
   ```json
-  {"version":"...","uptime_s":12,"vms_managed":0}
+  {"version":"...","uptime_s":12,"vms_managed":0,"lifecycle_enforced":0,"lifecycle_last_run_ts":"2026-05-05T00:00:00Z","image_gc_runs_total":0,"image_gc_bytes_freed_total":0}
   ```
 
 The daemon is a parent/coordinator for host-level policy and scheduling. It is
@@ -70,16 +70,17 @@ The normal `cove` binary still needs the virtualization entitlement after build;
 
 ### VM Lifecycle Policy
 
-`coved` should eventually own host-level lifecycle rules:
+`coved` owns host-level lifecycle policy enforcement for running VMs that expose
+a per-VM control socket:
 
-- Refuse conflicting starts when a policy says only one VM in a group may run.
-- Enforce idle shutdown or suspend policies.
-- Coordinate policy with #247 so CLI commands can ask the daemon for a decision
-  before mutating VM state.
+- It scans `~/.vz/vms/*/control.sock` on a fixed interval.
+- It reads each VM's `policy.json` using the policy contract from design 031.
+- It asks the VM control socket for status, last agent ping time, VM policy
+  start time, exec count, and whether a policy stop has already been issued.
+- It sends `request-stop` when idle timeout, max age, or run budget trips.
 
-The first implementation should keep the policy surface read-only: `STATUS`
-reports `vms_managed`, and later slices can add commands such as
-`REGISTER_VM`, `EVALUATE_START`, or `LIST_POLICIES`.
+Unreachable VMs are skipped. The daemon does not synthesize runtime state for a
+stopped VM, and it does not proxy user VM commands.
 
 ### Image GC Scheduling
 
@@ -125,19 +126,27 @@ CLI behavior:
 
 ## Slice Plan
 
-Slice 1 closes #245 foundation:
+Slice 1 closed #245 foundation:
 
 1. This design.
 2. `cmd/coved` with `STATUS`.
 3. `cove daemon status`, `cove daemon start`, and `cove daemon stop`.
 
+Slice 2 closes the lifecycle enforcement segment:
+
+1. Daemon-side lifecycle policy scanner.
+2. Per-VM control socket status fields for lifecycle decisions.
+3. `cove daemon status` counters:
+   - `lifecycle_enforced`
+   - `lifecycle_last_run_ts`
+
+Slice 2b runs scheduled image GC as described above.
+
 Later slices:
 
 1. Add structured status with VM discovery.
-2. Add lifecycle policy registration and enforcement.
-3. Add scheduled image GC with metrics.
-4. Add network drift reports.
-5. Add installer hardening and operator docs for launchd mode.
+2. Add network drift reports.
+3. Add installer hardening and operator docs for launchd mode.
 
 ## Cross-references
 

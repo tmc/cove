@@ -24,6 +24,8 @@ type daemonStatus struct {
 	ImageGCLastRunTS       string `json:"image_gc_last_run_ts,omitempty"`
 	ImageGCRunsTotal       int64  `json:"image_gc_runs_total"`
 	ImageGCBytesFreedTotal int64  `json:"image_gc_bytes_freed_total"`
+	LifecycleEnforced      uint64 `json:"lifecycle_enforced"`
+	LifecycleLastRunTS     string `json:"lifecycle_last_run_ts,omitempty"`
 }
 
 type daemonPaths struct {
@@ -52,8 +54,11 @@ func daemonCommand(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("version: %s\nuptime_s: %d\nvms_managed: %d\nimage_gc_last_run_ts: %s\nimage_gc_runs_total: %d\nimage_gc_bytes_freed_total: %d\n",
-			status.Version, status.UptimeS, status.VMsManaged, status.ImageGCLastRunTS, status.ImageGCRunsTotal, status.ImageGCBytesFreedTotal)
+		fmt.Printf("version: %s\nuptime_s: %d\nvms_managed: %d\nimage_gc_last_run_ts: %s\nimage_gc_runs_total: %d\nimage_gc_bytes_freed_total: %d\nlifecycle_enforced: %d\n",
+			status.Version, status.UptimeS, status.VMsManaged, status.ImageGCLastRunTS, status.ImageGCRunsTotal, status.ImageGCBytesFreedTotal, status.LifecycleEnforced)
+		if status.LifecycleLastRunTS != "" {
+			fmt.Printf("lifecycle_last_run_ts: %s\n", status.LifecycleLastRunTS)
+		}
 		return nil
 	case "start":
 		return daemonStartCommand(args[1:])
