@@ -36,3 +36,16 @@ bench/<name>/results-YYYYMMDD-<hostid>.md
 
 The JSONL file is the machine-readable evidence. The Markdown file is the
 human summary linked from strategy docs.
+
+## Competitive report
+
+Phase 2 publishes a normalized competitive report for cove, Lume, Docker-Mac,
+and Cirrus benchmark cells. Raw `bench/**/runs.jsonl` files remain the citable
+evidence. The normalized report at
+`docs/benchmarks/results-2026-05-cove.json` is the derived interchange format
+for dashboards and docs.
+
+`cove bench competitive` reads the raw JSONL evidence, preserves explicit
+`not_measured` and `skipped` cells, writes the normalized report, and emits a
+normal cove run under `~/.vz/runs/<run-id>/metrics.jsonl` so `cove runs
+list/show/export` can inspect the benchmark run.
