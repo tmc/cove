@@ -15,7 +15,11 @@ boot reached the login prompt. OCR saw `Name`, `Enter Password`, and
 `Agent: connecting...`. `cove ctl detect` reported the pixel state as
 `desktop`.
 
-## Bug A: Auto-login provisioning visibility
+## Bug A: User account never created
+
+The attempted recovery proved this is not only auto-login failing. The login
+window rejected `mlxqa` / `mlxqa123` after `cove ctl` typed the credentials, so
+the `mlxqa` account was never created inside the guest.
 
 The macOS provisioning path stages the right ownership metadata. The staged
 LaunchDaemon and auto-login repair LaunchDaemon are recorded as `root:wheel`;
@@ -29,12 +33,12 @@ obvious before the VM boots. The existing FAQ documents the same failure mode:
 without sudo, the injected files can receive the invoking user's UID and the
 first-boot provisioning daemon never runs.
 
-The narrow fix is visibility, not a provisioning rewrite: when macOS `cove up`
-is about to stage and apply user provisioning with auto-login while the host
-process is not root, print a prominent stderr warning with the recovery command:
+The fix is to fail before claiming provisioning success. When macOS `cove up`
+would perform first-boot user provisioning and the host process is not root, it
+must return a non-zero error before install/provision/run continues:
 
 ```bash
-sudo cove -vm <name> provision -user <user> -password <password> -skip-setup-assistant -auto-login
+sudo cove up -vm <name> -user <user> -password <password> ...
 ```
 
 ## Bug B: Login prompt detected as desktop
@@ -55,3 +59,30 @@ The narrow detector fix is to inspect OCR observations before falling back to
 pixel heuristics: if `Name` and either `Password` or `Enter Password` are both
 found in the central two-thirds of the frame, classify the screen as
 `login_screen`.
+
+## Bug C: Noninteractive privilege prompt hang
+
+The attempted manual recovery:
+
+```bash
+cove provision -user mlxqa -password mlxqa123 -skip-setup-assistant
+```
+
+hung in the privileged write step. The likely path is
+`AuthorizationExecuteWithPrivileges` through `runElevatedManifestNative`.
+That native dialog path is acceptable for an interactive terminal, but it is not
+acceptable when stdin is noninteractive. In that case cove must fail fast with a
+plain error and a `sudo cove ... provision -apply` recovery command instead of
+waiting for a GUI authorization prompt the caller may never see.
+
+The reset-password recovery also failed while looking for the guest Data
+partition:
+
+```text
+could not find Data partition for disk /dev/disk23
+```
+
+Without the `diskutil list` text that the detector parsed, the next diagnosis
+has no evidence. The immediate fix is diagnostic: include the full
+`diskutil list` output in that failure so the partition parser can be corrected
+from real layout data.
