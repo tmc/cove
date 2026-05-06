@@ -75,6 +75,12 @@ func main() {
 	gc := coved.NewImageGCScheduler("", logger)
 	d.imageGC = gc
 	go gc.RunScheduledImageGC(ctx)
+	lifecycle := coved.NewLifecycleEnforcer(coved.LifecycleConfig{
+		VMRoot: d.vmRoot,
+		Log:    logger,
+	})
+	d.lifecycle = lifecycle
+	go lifecycle.Run(ctx)
 	go func() {
 		<-ctx.Done()
 		_ = l.Close()
