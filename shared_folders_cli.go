@@ -290,6 +290,11 @@ if [ -L "$link" ]; then
 	if [ "$current" = "$target" ]; then
 		exit 0
 	fi
+	root=$(dirname "$target")
+	if [ "$current" = "$root" ]; then
+		ln -sfn "$target" "$link"
+		exit 0
+	fi
 	printf '%s\n' "$link already points to $current" >&2
 	exit 1
 fi
