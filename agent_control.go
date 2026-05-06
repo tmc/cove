@@ -430,7 +430,7 @@ func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *co
 	s.notePolicyExec()
 	ua, err := s.getUserAgent()
 	if err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("user agent: %v", err)}
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("user agent unavailable: finish logging into the VM and retry: %v", err)}
 	}
 	if len(cmd.Args) == 0 {
 		return &controlpb.ControlResponse{Error: "args required"}
