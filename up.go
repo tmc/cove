@@ -336,6 +336,9 @@ func runUpPipeline(cfg upConfig) (err error) {
 	}
 
 	installed := vmAlreadyInstalled(target.Directory, false)
+	if err := requireRootForMacOSUpProvisioning(cfg, target, installed); err != nil {
+		return err
+	}
 
 	// Step 1: Install macOS (skip if already installed).
 	if installed && !cfg.force {
@@ -412,6 +415,56 @@ func runUpPipeline(cfg upConfig) (err error) {
 	fmt.Println()
 	fmt.Println("=== Step 3/3: Booting VM ===")
 	return runUpMacOSVM(verifyProvisionedUser, cfg.verbose)
+}
+
+var upEffectiveUID = os.Geteuid
+
+func requireRootForMacOSUpProvisioning(cfg upConfig, target vmSelection, installed bool) error {
+	if cfg.linux || upEffectiveUID() == 0 {
+		return nil
+	}
+	if installed && didInjectSucceedForVM(target) {
+		return nil
+	}
+	return fmt.Errorf("auto-login provisioning requires root; re-run with: %s", sudoUpCommand(cfg, target))
+}
+
+func sudoUpCommand(cfg upConfig, target vmSelection) string {
+	args := []string{"sudo", "cove", "up"}
+	if target.Name != "" {
+		args = append(args, "-vm", target.Name)
+	}
+	args = append(args, "-user", cfg.user)
+	if cfg.password != "" {
+		args = append(args, "-password", cfg.password)
+	}
+	if !cfg.gui {
+		args = append(args, "-headless")
+	}
+	if cfg.cpuCount != 0 {
+		args = append(args, "-cpu", strconv.FormatUint(uint64(cfg.cpuCount), 10))
+	}
+	if cfg.memoryGB != 0 {
+		args = append(args, "-memory", strconv.FormatUint(cfg.memoryGB, 10))
+	}
+	if cfg.noShutdown {
+		args = append(args, "-no-shutdown")
+	}
+	if cfg.force {
+		args = append(args, "-force")
+	}
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = shellQuoteForDisplay(arg)
+	}
+	return strings.Join(quoted, " ")
+}
+
+func shellQuoteForDisplay(arg string) string {
+	if arg == "" || strings.ContainsAny(arg, " \t\n'\"\\$`!*?[]{}()<>|&;") {
+		return shellQuote(arg)
+	}
+	return arg
 }
 
 // runUpWithVZScripts boots the VM in a goroutine, runs the given vzscript
