@@ -8,7 +8,7 @@ macOS VMs that suspend, snapshot, and script.
 
 cove is a CLI for creating and managing macOS and Linux virtual machines on Apple Silicon using Apple's Virtualization.framework. Pure Go, cgo-free ([purego](https://github.com/ebitengine/purego)).
 
-Cirrus migration? Start with [Cove for Cirrus CI migration](docs/landing/cirrus-displacement.md).
+Cirrus migration? Start with [Cove for Cirrus CI migration](docs/landing/cirrus-displacement.md), then check the citable [competitive proof table](docs/strategy/proof.md).
 
 ## Install
 
