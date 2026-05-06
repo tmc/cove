@@ -215,6 +215,31 @@ func TestRunVMWithConfigEnforcesRunBudgetBeforeBoot(t *testing.T) {
 	if used != 1 {
 		t.Fatalf("RunsUsed() = %d, want 1", used)
 	}
+	metricFiles, err := filepath.Glob(filepath.Join(runsRoot, "*", "metrics.jsonl"))
+	if err != nil {
+		t.Fatalf("Glob metrics: %v", err)
+	}
+	var found bool
+	for _, path := range metricFiles {
+		for _, event := range readMetricEvents(t, path) {
+			if event.EventType != "lifecycle.budget.exceeded" {
+				continue
+			}
+			found = true
+			if event.Extra["vm_name"] != "budget-vm" {
+				t.Fatalf("vm_name = %#v, want budget-vm", event.Extra["vm_name"])
+			}
+			if event.Extra["budget_count"] != float64(1) {
+				t.Fatalf("budget_count = %#v, want 1", event.Extra["budget_count"])
+			}
+			if event.Extra["runs_used"] != float64(1) {
+				t.Fatalf("runs_used = %#v, want 1", event.Extra["runs_used"])
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("lifecycle.budget.exceeded event not found in %v", metricFiles)
+	}
 }
 
 func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {

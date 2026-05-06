@@ -77,11 +77,14 @@ func TestCheckVMLifecyclePolicyStopsForIdle(t *testing.T) {
 		t.Fatalf("events = %d, want 1", len(events))
 	}
 	got := events[0]
-	if got.EventType != "vm_policy_stop" || got.Status != "ok" {
+	if got.EventType != "lifecycle.idle.tripped" || got.Status != "tripped" {
 		t.Fatalf("event = %+v", got)
 	}
 	if got.Extra["reason"] != "idle" {
 		t.Fatalf("reason = %#v, want idle", got.Extra["reason"])
+	}
+	if got.Extra["idle_timeout_s"] != float64(1800) {
+		t.Fatalf("idle_timeout_s = %#v, want 1800", got.Extra["idle_timeout_s"])
 	}
 }
 
@@ -126,7 +129,10 @@ func TestCheckVMLifecyclePolicyStopsForMaxAge(t *testing.T) {
 		t.Fatal("policy stop did not request shutdown")
 	}
 	events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
-	if len(events) != 1 || events[0].Extra["reason"] != "max_age" {
+	if len(events) != 1 || events[0].EventType != "lifecycle.maxage.tripped" || events[0].Extra["reason"] != "max_age" {
 		t.Fatalf("events = %+v", events)
+	}
+	if events[0].Extra["max_age_s"] != float64(1800) {
+		t.Fatalf("max_age_s = %#v, want 1800", events[0].Extra["max_age_s"])
 	}
 }

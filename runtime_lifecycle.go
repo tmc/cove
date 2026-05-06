@@ -244,6 +244,17 @@ func enforceRunBudget(vmName, vmDir string, metricsRun *standaloneMetricsRun) er
 	return nil
 }
 
+func lifecyclePolicyEventType(reason string) string {
+	switch reason {
+	case "idle":
+		return "lifecycle.idle.tripped"
+	case "max_age":
+		return "lifecycle.maxage.tripped"
+	default:
+		return "vm_policy_stop"
+	}
+}
+
 func startRuntimeFeatureServices(runtimeFeatures *runtimeFeatureState, vm vz.VZVirtualMachine, queue dispatch.Queue) {
 	if runtimeFeatures == nil {
 		return
@@ -382,13 +393,15 @@ func (s *ControlServer) checkVMLifecyclePolicy() {
 		return
 	}
 
-	emitMetricEvent("vm_policy_stop", startedAt, "ok", map[string]any{
-		"reason":       reason,
-		"policy_path":  vmpolicy.Path(s.effectiveVMDir()),
-		"idle_timeout": policy.IdleTimeout.String(),
-		"max_age":      policy.MaxAge.String(),
-		"run_budget":   policy.RunBudget,
-		"exec_count":   execCount,
+	vmDir := s.effectiveVMDir()
+	emitMetricEvent(lifecyclePolicyEventType(reason), startedAt, "tripped", map[string]any{
+		"reason":           reason,
+		"vm_name":          filepathBase(vmDir),
+		"policy_path":      vmpolicy.Path(vmDir),
+		"idle_timeout_s":   int64(policy.IdleTimeout / time.Second),
+		"max_age_s":        int64(policy.MaxAge / time.Second),
+		"run_budget_count": policy.RunBudget,
+		"runs_used":        execCount,
 	})
 	if err := lifecycleRequestStopHook(s); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: vm policy stop: %v\n", err)
