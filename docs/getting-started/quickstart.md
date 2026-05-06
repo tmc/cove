@@ -41,13 +41,15 @@ cove install -ipsw ~/Downloads/UniversalMac_15.0_RestoreImage.ipsw
 ### 2. Provision a User
 
 ```bash
-sudo cove provision -user myuser -skip-setup-assistant
+cove provision -user myuser -skip-setup-assistant
 ```
 
 This mounts the VM disk, injects a LaunchDaemon that creates the user on first boot, configures auto-login, and skips Setup Assistant.
 
 > [!NOTE]
-> `provision` requires `sudo` for proper LaunchDaemon ownership. launchd silently ignores plists not owned by root:wheel.
+> `provision` asks through the native macOS admin dialog so LaunchDaemon files
+> can be written as root:wheel. launchd silently ignores plists without that
+> ownership.
 
 ### 3. Boot the VM
 

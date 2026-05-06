@@ -59,7 +59,7 @@ cove run -proxy http://192.168.64.1:8080
 The agent is injected automatically during `cove provision` or `cove up`. To inject only the agent (no user provisioning):
 
 ```bash
-sudo cove provision-agent
+cove provision-agent
 ```
 
 To upgrade the agent in an existing VM:

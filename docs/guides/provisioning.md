@@ -13,11 +13,14 @@ The `provision` command writes files directly into the VM disk image.
 
 ```bash
 cove install -ipsw restore.ipsw
-sudo cove provision -user testuser -password secret -skip-setup-assistant
+cove provision -user testuser -password secret -skip-setup-assistant
 cove run -gui
 ```
 
-**Sudo is required.** macOS launchd silently ignores LaunchDaemon plists not owned by root:wheel. Without sudo, provisioning files are created with your user's UID and the daemon never loads.
+The disk apply step needs administrator privileges because macOS launchd
+silently ignores LaunchDaemon plists not owned by root:wheel. Cove requests
+those privileges with the native macOS admin dialog; you do not need to rerun
+the command with `sudo` from a normal terminal.
 
 #### What It Does
 
@@ -40,30 +43,30 @@ For CI or when building as non-root:
 # Phase 1: build binaries, generate scripts (no admin needed)
 cove provision -user testuser -password secret -stage-only
 
-# Phase 2: mount disk, copy files (needs admin)
-sudo cove provision -apply
+# Phase 2: mount disk, copy files (native admin dialog)
+cove provision -apply
 ```
 
 #### Provision Options
 
 ```bash
 # Full provisioning
-sudo cove provision -user me -password secret -skip-setup-assistant
+cove provision -user me -password secret -skip-setup-assistant
 
 # With SSH key
-sudo cove provision -user me -password secret -ssh-key ~/.ssh/id_rsa.pub
+cove provision -user me -password secret -ssh-key ~/.ssh/id_rsa.pub
 
 # Enable SSH daemon
-sudo cove provision -user me -password secret -enable-sshd
+cove provision -user me -password secret -enable-sshd
 
 # Direct plist mode (advanced, bypasses sysadminctl)
-sudo cove provision -user me -password secret -plist -uid 501
+cove provision -user me -password secret -plist -uid 501
 
 # Disable auto-login
-sudo cove provision -user me -password secret -no-auto-login
+cove provision -user me -password secret -no-auto-login
 
 # Disable recovery bootstrap
-sudo cove provision -user me -password secret -no-bootstrap-recovery
+cove provision -user me -password secret -no-bootstrap-recovery
 ```
 
 ### Method 2: GUI Automation
@@ -110,7 +113,7 @@ Expected output for successful injection:
     Status: OK
 ```
 
-If you see `WRONG_OWNER`, re-run provision with sudo.
+If you see `WRONG_OWNER`, run `cove doctor --fix` and retry provisioning.
 
 Auto-fix issues:
 
@@ -152,10 +155,10 @@ Auto-login requires two files:
 |-------|-------|---------|
 | "Resource temporarily unavailable" | VM is running | Stop VM before provisioning |
 | "could not find Data partition" | APFS detection failed | Use `-v` for verbose output |
-| User not created on boot | LaunchDaemon not loaded | Re-run with sudo |
+| User not created on boot | LaunchDaemon not loaded | Run `cove doctor --fix`, then retry provisioning |
 | Setup Assistant still appears | `.AppleSetupDone` missing | Use `-skip-setup-assistant` |
-| Auto-login not working | Wrong kcpassword owner | Re-run with sudo |
-| WRONG_OWNER in doctor | Files created without sudo | Re-run with sudo |
+| Auto-login not working | Wrong kcpassword owner | Run `cove doctor --fix`, then retry provisioning |
+| WRONG_OWNER in doctor | Files need root:wheel ownership | Run `cove doctor --fix` |
 
 ## Manually Inspecting the Disk
 

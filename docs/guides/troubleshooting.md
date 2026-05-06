@@ -39,10 +39,10 @@ This should happen automatically on first launch. If it doesn't, run the codesig
 
 **Cause:** LaunchDaemon plist not owned by root:wheel.
 
-**Solution:** Re-run provision with sudo:
+**Solution:** Run provisioning again and approve the native macOS admin dialog:
 
 ```bash
-sudo cove provision -user testuser -password secret -skip-setup-assistant
+cove provision -user testuser -password secret -skip-setup-assistant
 ```
 
 Verify with:
@@ -55,10 +55,10 @@ cove doctor
 
 **Cause:** `.AppleSetupDone` not created or wrong ownership.
 
-**Solution:** Use `-skip-setup-assistant` flag and ensure sudo:
+**Solution:** Use `-skip-setup-assistant` flag and approve the native macOS admin dialog:
 
 ```bash
-sudo cove provision -user testuser -skip-setup-assistant
+cove provision -user testuser -skip-setup-assistant
 ```
 
 ### "Resource temporarily unavailable"
@@ -154,7 +154,7 @@ cove ctl agent-status
 If the agent is missing, inject it:
 
 ```bash
-sudo cove provision-agent
+cove provision-agent
 ```
 
 Or upgrade an existing agent:

@@ -192,9 +192,9 @@ cove provision [flags]
 | `-v` | false | Verbose output |
 
 ```bash
-sudo cove provision -user testuser -skip-setup-assistant
+cove provision -user testuser -skip-setup-assistant
 cove provision -user testuser -password secret -stage-only
-sudo cove provision -apply
+cove provision -apply
 ```
 
 ---
@@ -204,7 +204,7 @@ sudo cove provision -apply
 Inject only the vz-agent daemon (no user provisioning).
 
 ```
-sudo cove provision-agent
+cove provision-agent
 ```
 
 ---

@@ -11,7 +11,7 @@ Install a base macOS VM with the tools you need for analysis:
 
 ```bash
 cove -vm sandbox install -cpu 2 -memory 4 -disk-size 32
-sudo cove -vm sandbox provision -user analyst -password analyst -skip-setup-assistant
+cove -vm sandbox provision -user analyst -password analyst -skip-setup-assistant
 ```
 
 Boot, install analysis tools, then shut down:
