@@ -25,11 +25,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 )
+
+var runElevatedManifestNativeHook = runElevatedManifestNative
 
 // runElevated executes a manifest with root privileges. Prompt is shown to
 // the user inside the AEWP dialog body (one short sentence).
 func runElevated(m *elevatedManifest, prompt string) error {
+	return runOffUIThread(func() error {
+		return runElevatedOnCurrentThread(m, prompt)
+	})
+}
+
+func runElevatedOnCurrentThread(m *elevatedManifest, prompt string) error {
 	if os.Geteuid() == 0 {
 		return runElevatedManifest(m)
 	}
@@ -80,13 +89,36 @@ func runElevated(m *elevatedManifest, prompt string) error {
 	sum := sha256.Sum256(body)
 	hash := hex.EncodeToString(sum[:])
 
-	if err := runElevatedManifestNative(tmp.Name(), hash, prompt); err != nil {
+	if err := runElevatedManifestNativeHook(tmp.Name(), hash, prompt); err != nil {
 		return err
 	}
 	if !helperInstalled() {
 		fmt.Fprintln(os.Stderr, "(tip: 'cove helper install' replaces this prompt with a one-time setup)")
 	}
 	return nil
+}
+
+func runOffUIThread(fn func() error) error {
+	if fn == nil {
+		return nil
+	}
+	if !onUIThread() {
+		return fn()
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- fn()
+	}()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-ticker.C:
+			drainUIThreadTasks()
+		}
+	}
 }
 
 // printManualElevationManifest tells the user how to apply the manifest by
