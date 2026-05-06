@@ -19,6 +19,7 @@ var lifecycleEvents = map[string]bool{
 	"vm_start":                  true,
 	"agent_ready":               true,
 	"build_step":                true,
+	"benchmark_result":          true,
 	"lifecycle.budget.exceeded": true,
 	"lifecycle.idle.tripped":    true,
 	"lifecycle.maxage.tripped":  true,

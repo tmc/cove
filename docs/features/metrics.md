@@ -58,6 +58,11 @@ and `key` when available.
 : Final run record. `extra.command` is set for `up`, `build`, and `image build`
 entrypoints.
 
+`benchmark_result`
+: Emitted by `cove bench competitive` for each normalized benchmark cell.
+`extra` includes `workload`, `tool`, `source`, `methodology`, and `reason` when
+the cell is `not_measured`.
+
 ## OpenTelemetry
 
 Local JSONL is always available. OpenTelemetry export is optional and enabled by

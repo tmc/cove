@@ -672,6 +672,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "bench":
+			if err := handleBenchCommand(args); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "logs":
 			if err := logsCommand(args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -970,6 +976,7 @@ VM Management:
   diff            Compare local image disk layer metadata
   softreset       Run destructive soft-reset probe matrix
   runs            Inspect local run metrics and artifacts
+  bench           Normalize benchmark evidence into reports and run metrics
   daemon          Manage the cove background coordinator
   compact         Zero guest free space for smaller pushes
   fleet           Register and use remote cove hosts
