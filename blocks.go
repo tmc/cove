@@ -57,6 +57,18 @@ func snapshotNSError(err error) error {
 	return errors.New(err.Error())
 }
 
+func isVZAlreadyStoppedStopError(err error) bool {
+	var snap nsErrorSnapshot
+	if !errors.As(err, &snap) {
+		return false
+	}
+	if !strings.EqualFold(snap.domain, "VZErrorDomain") || snap.code != 4 {
+		return false
+	}
+	msg := strings.ToLower(snap.Error())
+	return strings.Contains(msg, "stopped") && strings.Contains(msg, "stopping")
+}
+
 func printNSErrorSummary(prefix string, err error) bool {
 	switch e := err.(type) {
 	case nsErrorSnapshot:

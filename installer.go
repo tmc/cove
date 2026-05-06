@@ -382,7 +382,12 @@ func stopInstallerVM(vm *virtualMachine) error {
 	stopDone := make(chan error, 1)
 	DispatchAsyncQueue(vm.queue, func() {
 		vm.vm.StopWithCompletionHandler(func(err error) {
-			stopDone <- snapshotNSError(err)
+			err = snapshotNSError(err)
+			if isVZAlreadyStoppedStopError(err) {
+				stopDone <- nil
+				return
+			}
+			stopDone <- err
 		})
 	})
 
