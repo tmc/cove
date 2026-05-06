@@ -48,6 +48,14 @@ does not currently live hot-add a new VirtioFS device to an already-running VM.
 Use `cove shared-folder pending` to see configured folders that are not mounted
 in the running guest.
 
+On macOS guests, cove mounts the aggregate VirtioFS share at
+`/Volumes/My Shared Files/<tag>`. After a successful runtime mount, cove also
+creates `~/<tag>` as a user-session symlink to that system mount path. The
+symlink is created through the user agent, so a fresh desktop VM must complete
+login before the link can be installed. If the user agent is connected but
+macOS still refuses to enumerate the mount, run `cove doctor`; that is the
+existing Full Disk Access diagnostic for non-system `/Volumes` mounts.
+
 ## VZScript Host Mounts
 
 VZScript recipes can declare host directories:
@@ -64,4 +72,4 @@ corresponding VirtioFS device.
 
 > [!WARNING]
 > VirtioFS devices must be present at VM boot time. Folders added after suspend/resume require a VM reboot.
-- TCC blocks `vz-agent` from accessing VirtioFS mounts as a daemon. The agent lacks Full Disk Access. Users can `ls` from the GUI session, but `agent-exec` as daemon cannot traverse the mount.
+- TCC blocks `vz-agent` from accessing VirtioFS mounts as a daemon. The daemon lacks Full Disk Access. Cove routes path-aware `agent-exec` calls for `/Volumes/My Shared Files/...` through the user agent and uses `cove doctor` for FDA failures that remain after routing.
