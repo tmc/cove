@@ -85,3 +85,19 @@ cove runs export 20260505 --format tar > cove-run.tar.gz
 The tar format is intended for CI artifact upload and post-mortem transfer.
 Because it writes binary gzip data to stdout, redirect it to a file or pipe it
 to an artifact uploader.
+
+## Benchmark Runs
+
+`cove bench competitive` writes a normal run artifact containing benchmark
+metrics:
+
+```bash
+cove bench competitive \
+  --out docs/benchmarks/results-2026-05-cove.json \
+  --markdown docs/benchmarks/competitive-2026-05.md
+cove runs show bench-20260506
+cove runs export bench-20260506 --format json
+```
+
+The checked-in JSON report is the table source. The run directory remains the
+inspectable evidence bundle for `cove runs list/show/export`.
