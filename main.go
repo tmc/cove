@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
@@ -175,6 +176,8 @@ var (
 	stopInIBootStage2 bool
 	// HTTP listener address for cove run -http.
 	runHTTPAddr string
+	// Maximum time to wait for a VM to report Running during start.
+	startTimeout time.Duration
 	// Startup host TCP -> guest vsock forwards.
 	startupPortForwards portForwardSpecs
 )
@@ -276,6 +279,7 @@ func init() {
 	flag.BoolVar(&stopInIBootStage1, "iboot-stage1", false, "start a macOS VM and stop in iBoot stage 1")
 	flag.BoolVar(&stopInIBootStage2, "iboot-stage2", false, "start a macOS VM and stop in iBoot stage 2")
 	flag.StringVar(&runHTTPAddr, "http", "", "expose VM HTTP API on TCP address (e.g. 127.0.0.1:7777 or :0 for random port)")
+	flag.DurationVar(&startTimeout, "start-timeout", 60*time.Second, "maximum time to wait for VM startup before failing")
 	// Unattended install
 	flag.BoolVar(&unattended, "unattended", false, "fully unattended install + setup (disk provisioning, OCR fallback)")
 	flag.StringVar(&bootCommandsFile, "boot-commands", "", "path to vzscript automation file for custom setup")

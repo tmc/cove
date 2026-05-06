@@ -1282,7 +1282,14 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 	}
 	started := time.Now()
 	startErr := beginVMStart(vm, queue)
-	if err := waitForVMStart(vm, queue, startErr, pumpRunLoop); err != nil {
+	if err := waitForVMStart(vm, queue, startErr, pumpRunLoop, vmStartDiagnostics{
+		VMDir:       currentVMSelection().Directory,
+		DiskPath:    diskPath,
+		QueueHandle: queue.Handle(),
+		BootMode:    bootSessionModeString(currentBootSessionMode()),
+		Recovery:    recoveryMode,
+		Headless:    headlessMode,
+	}); err != nil {
 		emitMetricEvent("vm_start", started, err.Error(), nil)
 		if !printNSErrorSummary("VM start error", err) {
 			fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
@@ -1356,20 +1363,90 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 	return startErr
 }
 
-func waitForVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue, startErr <-chan error, pumpRunLoop bool) error {
-	timeout := time.After(30 * time.Second)
+type vmStartDiagnostics struct {
+	VMDir       string
+	DiskPath    string
+	QueueHandle uintptr
+	BootMode    string
+	Recovery    bool
+	Headless    bool
+}
+
+func (d vmStartDiagnostics) String() string {
+	diskPath := d.DiskPath
+	if diskPath == "" && d.VMDir != "" {
+		diskPath = filepath.Join(d.VMDir, "disk.img")
+	}
+	diskAttached := "unknown"
+	if diskPath != "" {
+		if _, found, _ := disk.FindAttachedDisk(diskPath); found {
+			diskAttached = "yes"
+		} else {
+			diskAttached = "no"
+		}
+	}
+	controlSocket := "unknown"
+	if d.VMDir != "" {
+		if isVMRunningAt(d.VMDir) {
+			controlSocket = "connected"
+		} else {
+			controlSocket = "not connected"
+		}
+	}
+	return fmt.Sprintf("queue=%#x boot_mode=%s recovery=%v headless=%v disk_attached=%s control_socket=%s",
+		d.QueueHandle, d.BootMode, d.Recovery, d.Headless, diskAttached, controlSocket)
+}
+
+type vmStartWaitOptions struct {
+	Timeout     time.Duration
+	PollEvery   time.Duration
+	PumpRunLoop bool
+	Diagnostics vmStartDiagnostics
+}
+
+func waitForVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue, startErr <-chan error, pumpRunLoop bool, diagnostics vmStartDiagnostics) error {
+	return waitForVMStartPoll(startErr, func() (vz.VZVirtualMachineState, error) {
+		return currentVMState(vm, queue)
+	}, vmStartWaitOptions{
+		Timeout:     startTimeout,
+		PollEvery:   10 * time.Millisecond,
+		PumpRunLoop: pumpRunLoop,
+		Diagnostics: diagnostics,
+	})
+}
+
+func waitForVMStartPoll(startErr <-chan error, poll func() (vz.VZVirtualMachineState, error), opts vmStartWaitOptions) error {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	pollEvery := opts.PollEvery
+	if pollEvery <= 0 {
+		pollEvery = 10 * time.Millisecond
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(pollEvery)
+	defer ticker.Stop()
+	lastState := "unknown"
+	lastPollErr := ""
 	for {
 		select {
 		case err := <-startErr:
 			if errors.Is(err, errVMStartupInProgress) {
-				return waitForVMRunning(vm, queue, pumpRunLoop, 30*time.Second)
+				return waitForVMRunningPoll(poll, opts)
 			}
 			return err
-		case <-timeout:
-			return fmt.Errorf("vm start timed out")
-		default:
-			state, err := currentVMState(vm, queue)
+		case <-deadline.C:
+			if lastPollErr != "" {
+				lastState = lastState + " (" + lastPollErr + ")"
+			}
+			return fmt.Errorf("VM start timeout — last state: %s; diagnostics: %s", lastState, opts.Diagnostics.String())
+		case <-ticker.C:
+			state, err := poll()
 			if err == nil {
+				lastState = vmStateLabel(state)
+				lastPollErr = ""
 				switch state {
 				case vz.VZVirtualMachineStateRunning:
 					return nil
@@ -1378,36 +1455,59 @@ func waitForVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue, startErr <-cha
 				case vz.VZVirtualMachineStateStopped:
 					// Allow the in-flight start callback to report the failure.
 				}
+			} else {
+				lastPollErr = err.Error()
 			}
-			if pumpRunLoop {
+			if opts.PumpRunLoop {
 				vzkit.RunRunLoopOnce()
 			}
-			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
 
 func waitForVMRunning(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop bool, timeout time.Duration) error {
+	return waitForVMRunningPoll(func() (vz.VZVirtualMachineState, error) {
+		return currentVMState(vm, queue)
+	}, vmStartWaitOptions{Timeout: timeout, PumpRunLoop: pumpRunLoop, PollEvery: 10 * time.Millisecond})
+}
+
+func waitForVMRunningPoll(poll func() (vz.VZVirtualMachineState, error), opts vmStartWaitOptions) error {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	pollEvery := opts.PollEvery
+	if pollEvery <= 0 {
+		pollEvery = 10 * time.Millisecond
+	}
 	deadline := time.Now().Add(timeout)
+	lastState := "unknown"
+	lastPollErr := ""
 	for time.Now().Before(deadline) {
-		state, err := currentVMState(vm, queue)
+		state, err := poll()
 		if err != nil {
-			return err
+			lastPollErr = err.Error()
+		} else {
+			lastState = vmStateLabel(state)
+			lastPollErr = ""
+			switch state {
+			case vz.VZVirtualMachineStateRunning:
+				return nil
+			case vz.VZVirtualMachineStateError:
+				return fmt.Errorf("vm entered error state during startup")
+			case vz.VZVirtualMachineStateStopped:
+				return fmt.Errorf("vm returned to stopped state during startup")
+			}
 		}
-		switch state {
-		case vz.VZVirtualMachineStateRunning:
-			return nil
-		case vz.VZVirtualMachineStateError:
-			return fmt.Errorf("vm entered error state during startup")
-		case vz.VZVirtualMachineStateStopped:
-			return fmt.Errorf("vm returned to stopped state during startup")
-		}
-		if pumpRunLoop {
+		if opts.PumpRunLoop {
 			vzkit.RunRunLoopOnce()
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(pollEvery)
 	}
-	return fmt.Errorf("vm start timed out")
+	if lastPollErr != "" {
+		lastState = lastState + " (" + lastPollErr + ")"
+	}
+	return fmt.Errorf("VM start timeout — last state: %s; diagnostics: %s", lastState, opts.Diagnostics.String())
 }
 
 func currentVMState(vm vz.VZVirtualMachine, queue dispatch.Queue) (vz.VZVirtualMachineState, error) {
