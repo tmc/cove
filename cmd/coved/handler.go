@@ -53,6 +53,10 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 	}
 }
 
+func (d *daemon) uiSnapshot() coved.UISnapshot {
+	return coved.UISnapshot{Status: d.status(), Events: d.events.Tail()}
+}
+
 func (d *daemon) serve(ctx context.Context, l net.Listener) error {
 	for {
 		conn, err := l.Accept()
