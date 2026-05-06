@@ -65,6 +65,8 @@ func daemonCommand(args []string) error {
 		return nil
 	case "metrics":
 		return daemonMetricsCommand(args[1:])
+	case "ui":
+		return daemonUICommand(args[1:])
 	case "start":
 		return daemonStartCommand(args[1:])
 	case "stop":
@@ -72,6 +74,26 @@ func daemonCommand(args []string) error {
 	default:
 		return fmt.Errorf("unknown daemon command: %s", args[0])
 	}
+}
+
+func daemonUICommand(args []string) error {
+	fs := flag.NewFlagSet("daemon ui", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	addr := fs.String("addr", "127.0.0.1:9877", "web UI address")
+	openCmd := fs.String("open", "open", "open command")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove daemon ui [-addr host:port]")
+	}
+	url := "http://" + *addr
+	out, err := daemonRunCommand(*openCmd, url)
+	if err != nil {
+		return fmt.Errorf("open daemon ui: %w: %s", err, bytes.TrimSpace(out))
+	}
+	fmt.Println(url)
+	return nil
 }
 
 func daemonMetricsCommand(args []string) error {
