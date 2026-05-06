@@ -8,7 +8,10 @@ before that date.
 
 Cove is the local Apple Silicon VM substrate for that migration. Keep GitHub
 Actions, Buildkite, or your existing scheduler. Replace hosted Cirrus VM tasks
-with disposable cove forks from verified runner images.
+with disposable cove forks from verified runner images. Current citable
+benchmark evidence lives in
+[`docs/strategy/proof.md`](../strategy/proof.md); quote numbers from that table,
+not from memory.
 
 ## Five-line migration
 
@@ -29,6 +32,8 @@ spawn a fresh ephemeral fork from the same image and delete it at shutdown.
 
 The broader comparison lives in
 [`docs/strategy/competitive-2026-05.md`](../strategy/competitive-2026-05.md).
+Measured or explicitly unmeasured benchmark rows live in
+[`docs/strategy/proof.md`](../strategy/proof.md).
 
 | Need | Cirrus / Tart | Cove replacement |
 |---|---|---|
