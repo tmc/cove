@@ -514,6 +514,10 @@ func (c *ControlClient) AgentDaemonExecTypedTimeout(args []string, env map[strin
 	return c.agentExecTypedTimeout("agent-exec", args, env, workDir, timeout)
 }
 
+func (c *ControlClient) AgentUserExecTypedTimeout(args []string, env map[string]string, workDir string, timeout time.Duration) (*controlpb.AgentExecResponse, error) {
+	return c.agentExecTypedTimeout("agent-user-exec", args, env, workDir, timeout)
+}
+
 func (c *ControlClient) agentExecTypedTimeout(reqType string, args []string, env map[string]string, workDir string, timeout time.Duration) (*controlpb.AgentExecResponse, error) {
 	req := &controlpb.ControlRequest{
 		Type: reqType,

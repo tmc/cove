@@ -131,6 +131,8 @@ func TestIsUserPath(t *testing.T) {
 		{"/tmp/x", false},
 		{"/Volumes/share", true},
 		{"/Volumes/share/file.txt", true},
+		{"/Volumes/My Shared Files", true},
+		{"/Volumes/My Shared Files/ml-explore/file.txt", true},
 		{"/Volumes/Macintosh HD/etc/hosts", false},
 		{"/Volumes/Macintosh HD - Data/Users/me", false},
 	}
@@ -140,5 +142,31 @@ func TestIsUserPath(t *testing.T) {
 				t.Errorf("IsUserPath(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRouteForSharedFoldersMount(t *testing.T) {
+	tests := []struct {
+		name string
+		op   string
+		path string
+	}{
+		{"read", "read", "/Volumes/My Shared Files/ml-explore/file.txt"},
+		{"write", "write", "/Volumes/My Shared Files/ml-explore/file.txt"},
+		{"copy", "cp", "/Volumes/My Shared Files/ml-explore/file.txt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RouteFor(tt.op, tt.path, false); got != RouteUser {
+				t.Fatalf("RouteFor(%q, %q, false) = %v, want %v", tt.op, tt.path, got, RouteUser)
+			}
+		})
+	}
+}
+
+func TestRouteForExecSharedFoldersMount(t *testing.T) {
+	args := []string{"ls", "-1", "/Volumes/My Shared Files/ml-explore"}
+	if got := RouteForExec(args, false); got != RouteUser {
+		t.Fatalf("RouteForExec(%v, false) = %v, want %v", args, got, RouteUser)
 	}
 }
