@@ -108,6 +108,8 @@ func TestQueryDaemonStatus(t *testing.T) {
 				ImageGCLastRunTS:       "2026-05-05T12:00:00Z",
 				ImageGCRunsTotal:       2,
 				ImageGCBytesFreedTotal: 99,
+				LifecycleEnforced:      4,
+				LifecycleLastRunTS:     "2026-05-05T00:00:00Z",
 			})
 		}
 	}()
@@ -116,7 +118,7 @@ func TestQueryDaemonStatus(t *testing.T) {
 		t.Fatalf("queryDaemonStatus: %v", err)
 	}
 	<-done
-	if got != (daemonStatus{Version: "test", UptimeS: 7, VMsManaged: 3, ImageGCLastRunTS: "2026-05-05T12:00:00Z", ImageGCRunsTotal: 2, ImageGCBytesFreedTotal: 99}) {
+	if got != (daemonStatus{Version: "test", UptimeS: 7, VMsManaged: 3, ImageGCLastRunTS: "2026-05-05T12:00:00Z", ImageGCRunsTotal: 2, ImageGCBytesFreedTotal: 99, LifecycleEnforced: 4, LifecycleLastRunTS: "2026-05-05T00:00:00Z"}) {
 		t.Fatalf("status = %+v", got)
 	}
 }
