@@ -281,7 +281,7 @@ func ensureSharedFolderHomeLink(vmDirectory string, entry SharedFolderEntry) (st
 target=$1
 link=$2
 case "$link" in
-~/*) link="$HOME/${link#~/}" ;;
+\~/*) link="$HOME/${link#\~/}" ;;
 esac
 parent=$(dirname "$link")
 mkdir -p "$parent"
