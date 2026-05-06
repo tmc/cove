@@ -183,6 +183,7 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbeP
 			if !verifyTCCFDAProbe(sock, tccProbePath, verbose) {
 				allOK = false
 			}
+			verifyTCCAppleEventsProbe(sock)
 		}
 	}
 

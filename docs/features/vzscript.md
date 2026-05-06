@@ -21,14 +21,15 @@ cove vzscript run ./custom.vzscript       # run a custom script file
 ```bash
 cove vzscript run -v homebrew             # verbose output
 cove vzscript run -timeout 30m golang     # custom timeout
-cove vzscript run -terminal homebrew      # open a visible guest terminal window
+cove vzscript run -terminal homebrew      # stream guest-shell output here
+cove vzscript run -terminal-gui homebrew  # explicit guest terminal window
 cove vzscript run -auto-approve golang    # auto-click Allow/OK dialogs via OCR
 cove vzscript run -template -var Mode=disable ./sip.vzscript.tmpl
 ```
 
-`-terminal` opens a visible terminal window in the guest (macOS Terminal.app,
-or Linux GNOME Terminal / GNOME Console / Konsole / xterm via the active
-graphical session).
+`-terminal` streams guest-shell output to the host terminal. This avoids macOS
+Apple Events prompts from Terminal.app on fresh guests. Use `-terminal-gui`
+only when you explicitly need a visible terminal window in the guest.
 
 ## Script Format
 
@@ -94,6 +95,16 @@ Scripts that need root (e.g., installing packages, writing to `/etc`) should dec
 ```
 
 This routes commands through the root daemon agent (port 1024) instead of the user agent.
+
+Recipes can also request terminal output:
+
+```
+# runs-on: terminal
+```
+
+This streams output to the host terminal. `# runs-on: terminal-gui` explicitly
+requests a guest Terminal window and falls back to host-streamed output if
+Terminal automation is not already allowed by macOS TCC.
 
 ## Templates
 
