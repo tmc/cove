@@ -109,6 +109,32 @@ func TestApplyProvisioningWarnsWhenAutoLoginNeedsRoot(t *testing.T) {
 	}
 }
 
+func TestRootWheelVerifyTargetsIncludesEveryRootOwnedFile(t *testing.T) {
+	manifest := &ProvisionManifest{
+		Version: 1,
+		Files: []ProvisionManifestFile{
+			{Path: filepath.Join("private", "var", "db", "vz-provision.sh"), Owner: "root:wheel"},
+			{Path: filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"), Owner: "root:wheel"},
+			{Path: filepath.Join("private", "var", "db", ".AppleSetupDone")},
+			{Path: filepath.Join("usr", "local", "bin", agentBinaryName), Owner: "root:wheel"},
+		},
+	}
+	got := rootWheelVerifyTargets(manifest, "/Volumes/Data")
+	want := []string{
+		filepath.Join("/Volumes/Data", "private", "var", "db", "vz-provision.sh"),
+		filepath.Join("/Volumes/Data", "Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"),
+		filepath.Join("/Volumes/Data", "usr", "local", "bin", agentBinaryName),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len(rootWheelVerifyTargets) = %d, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("rootWheelVerifyTargets[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestValidateUsername(t *testing.T) {
 	tests := []struct {
 		name    string
