@@ -53,7 +53,7 @@ EOF
 	exit 0
 fi
 
-if ! "$cove" image verify "$image" -quiet >/dev/null 2>&1; then
+if ! "$cove" image verify -quiet "$image" >/dev/null 2>&1; then
 	bench_emit_skip "$jsonl" boot-to-agent "image not found or invalid: $image"
 	cat >>"$summary" <<EOF
 Status: skip
@@ -96,7 +96,7 @@ while [ "$i" -le "$runs" ]; do
 	"$cove" -vm "$child" ctl stop >/dev/null 2>>"$stderr" || true
 	wait "$run_pid" >/dev/null 2>&1 || true
 	if [ "$keep" != true ]; then
-		"$cove" clean -vm "$child" >/dev/null 2>&1 || true
+		printf 'y\n' | "$cove" vm delete "$child" >/dev/null 2>&1 || true
 	fi
 	printf '{"timestamp":"%s","benchmark":"boot-to-agent","image_ref":"%s","vm":"%s","iteration":%s,"agent_ready_ms":%s,"status":"%s","ready_json":"%s","stdout":"%s","stderr":"%s"}\n' \
 		"$(bench_timestamp)" \
