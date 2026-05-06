@@ -9,6 +9,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,11 +38,124 @@ func handleAgentSandboxCommand(args []string) error {
 	switch args[0] {
 	case "run":
 		return handleAgentSandboxRun(args[1:])
+	case "doctor":
+		return handleAgentSandboxDoctor(args[1:])
 	case "-h", "--help", "help":
 		printAgentSandboxUsage(os.Stdout)
 		return nil
 	default:
 		return fmt.Errorf("agent-sandbox: unknown subcommand %q", args[0])
+	}
+}
+
+var agentSandboxDoctorDial = func(ctx context.Context, network, address string) (net.Conn, error) {
+	var d net.Dialer
+	return d.DialContext(ctx, network, address)
+}
+
+func handleAgentSandboxDoctor(args []string) error {
+	fs := flag.NewFlagSet("agent-sandbox doctor", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	provider := fs.String("provider", "", "provider: openai, anthropic, gemini, or vertex")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("agent-sandbox doctor: unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	name := strings.ToLower(strings.TrimSpace(*provider))
+	if name == "" {
+		return errors.New("agent-sandbox doctor: --provider is required")
+	}
+	if _, err := agentsandbox.LookupProvider(name); err != nil {
+		return err
+	}
+	return runAgentSandboxDoctor(context.Background(), os.Stdout, name)
+}
+
+func runAgentSandboxDoctor(ctx context.Context, w io.Writer, provider string) error {
+	ok := true
+	fmt.Fprintf(w, "agent-sandbox doctor provider=%s\n", provider)
+	for _, env := range providerRequiredEnv(provider) {
+		if strings.Contains(env, " or ") {
+			parts := strings.Split(env, " or ")
+			if os.Getenv(parts[0]) == "" && os.Getenv(parts[1]) == "" {
+				fmt.Fprintf(w, "FAIL env %s: set one of these variables\n", env)
+				ok = false
+			} else {
+				fmt.Fprintf(w, "PASS env %s\n", env)
+			}
+			continue
+		}
+		if os.Getenv(env) == "" {
+			fmt.Fprintf(w, "FAIL env %s: set %s\n", env, env)
+			ok = false
+		} else {
+			fmt.Fprintf(w, "PASS env %s\n", env)
+		}
+	}
+	endpoint := providerEndpoint(provider)
+	if endpoint != "" {
+		dctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		conn, err := agentSandboxDoctorDial(dctx, "tcp", endpoint)
+		cancel()
+		if err != nil {
+			fmt.Fprintf(w, "FAIL network %s: %v\n", endpoint, err)
+			ok = false
+		} else {
+			_ = conn.Close()
+			fmt.Fprintf(w, "PASS network %s\n", endpoint)
+		}
+	}
+	fmt.Fprintf(w, "PASS model %s\n", providerModel(provider))
+	if !ok {
+		return errors.New("agent-sandbox doctor: one or more checks failed")
+	}
+	return nil
+}
+
+func providerRequiredEnv(provider string) []string {
+	switch provider {
+	case agentsandbox.ProviderOpenAI:
+		return []string{"OPENAI_API_KEY"}
+	case agentsandbox.ProviderAnthropic:
+		return []string{"ANTHROPIC_API_KEY"}
+	case agentsandbox.ProviderGemini:
+		return []string{"GEMINI_API_KEY"}
+	case agentsandbox.ProviderVertex:
+		return []string{"GOOGLE_CLOUD_PROJECT or COVE_VERTEX_PROJECT"}
+	default:
+		return nil
+	}
+}
+
+func providerEndpoint(provider string) string {
+	switch provider {
+	case agentsandbox.ProviderOpenAI:
+		return "api.openai.com:443"
+	case agentsandbox.ProviderAnthropic:
+		return "api.anthropic.com:443"
+	case agentsandbox.ProviderGemini:
+		return "generativelanguage.googleapis.com:443"
+	case agentsandbox.ProviderVertex:
+		return "aiplatform.googleapis.com:443"
+	default:
+		return ""
+	}
+}
+
+func providerModel(provider string) string {
+	key := "COVE_" + strings.ToUpper(provider) + "_MODEL"
+	if model := strings.TrimSpace(os.Getenv(key)); model != "" {
+		return model
+	}
+	switch provider {
+	case agentsandbox.ProviderAnthropic:
+		return anthropicModel()
+	case agentsandbox.ProviderGemini, agentsandbox.ProviderVertex:
+		return "gemini-2.5-computer-use-preview-10-2025"
+	default:
+		return "provider default"
 	}
 }
 
@@ -396,6 +510,7 @@ func finishAgentSandboxBundle(bundle *RunBundle, runErr error) {
 func printAgentSandboxUsage(w io.Writer) {
 	fmt.Fprintf(w, `Usage:
   cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> --task <prompt> [options]
+  cove agent-sandbox doctor --provider openai|anthropic|gemini|vertex
 
 Options:
   --provider <name>       provider: openai, anthropic, gemini, vertex
