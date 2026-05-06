@@ -23,6 +23,7 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 - [Installation](getting-started/install.md) -- brew, go install, or from source
 - [Quick Start](getting-started/quickstart.md) -- three paths to a running VM
 - [CLI Reference](reference/cli.md) -- every command and flag
+- [Cirrus Migration](migrations/from-cirrus.md) -- translate `.cirrus.yml` jobs to cove-backed GitHub Actions
 - [VZScript Commands](reference/vzscript-commands.md) -- guest agent and OCR automation
 - [Shared Folders Reference](reference/shared-folders.md) -- persist-vs-live VirtioFS behavior
 - [Control Socket API](reference/control-api.md) -- programmatic VM control

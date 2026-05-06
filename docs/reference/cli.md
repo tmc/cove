@@ -636,7 +636,7 @@ cove runs export 20260505 --format tar > cove-run.tar.gz
 Register trusted Mac hosts and route selected commands over SSH. Fleet commands
 operate on hosts you control; they do not create a hosted queue. For Cirrus
 migration context, see [Fleet Quickstart](../quickstart/fleet.md) and
-[Migrate from Cirrus](../migrate-from-cirrus.md).
+[Migrate from Cirrus](../migrations/from-cirrus.md).
 
 ```
 cove fleet add <name> <ssh-target> [--root <path>]
