@@ -7,6 +7,11 @@ Every row names the checked-in result file and the commit that captured it.
 Missing competitor numbers are recorded as `not measured`; they are not
 estimated.
 
+The normalized Phase 2 competitive report is
+[`docs/benchmarks/results-2026-05-cove.json`](../benchmarks/results-2026-05-cove.json),
+with the generated Markdown view at
+[`docs/benchmarks/competitive-2026-05.md`](../benchmarks/competitive-2026-05.md).
+
 ## Result table
 
 | Workload | Cove | Lume | UTM | Cirrus | Methodology |
