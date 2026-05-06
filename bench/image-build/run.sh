@@ -89,6 +89,7 @@ EOF
 		printf '| %s | image build | %s | %sms |\n' "$i" "$status" "$((end - start))" >>"$summary"
 		i=$((i + 1))
 	done
+	bench_append_duration_stats "$summary" "$jsonl" duration_ms "image build duration"
 	exit 0
 fi
 
@@ -130,3 +131,4 @@ while [ "$i" -le "$runs" ]; do
 	printf '| %s | cove build | %s | %sms |\n' "$i" "$status" "$((end - start))" >>"$summary"
 	i=$((i + 1))
 done
+bench_append_duration_stats "$summary" "$jsonl" duration_ms "cove build duration"

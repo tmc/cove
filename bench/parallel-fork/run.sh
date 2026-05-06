@@ -118,3 +118,4 @@ for level in $levels; do
 	IFS=,
 done
 IFS=$old_ifs
+bench_append_duration_stats "$summary" "$jsonl" duration_ms "child fork duration"
