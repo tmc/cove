@@ -13,6 +13,8 @@ import (
 	"strings"
 )
 
+var ErrNotSupported = errors.New("agent-sandbox: provider capability not supported")
+
 // Provider names supported by the unified agent-sandbox command.
 const (
 	ProviderOpenAI    = "openai"
@@ -20,6 +22,79 @@ const (
 	ProviderGemini    = "gemini"
 	ProviderVertex    = "vertex"
 )
+
+type Capabilities struct {
+	Screenshot bool
+	Click      bool
+	Type       bool
+	Scroll     bool
+	Wait       bool
+}
+
+type ProviderInfo struct {
+	Name         string
+	FirstClass   bool
+	EnvVars      []string
+	Capabilities Capabilities
+	Notes        string
+}
+
+type Provider interface {
+	Info() ProviderInfo
+	Run(context.Context, Options) (Result, error)
+}
+
+var allCapabilities = Capabilities{Screenshot: true, Click: true, Type: true, Scroll: true, Wait: true}
+
+var providers = map[string]Provider{
+	ProviderOpenAI: providerStub{info: ProviderInfo{
+		Name:         ProviderOpenAI,
+		EnvVars:      []string{"OPENAI_API_KEY"},
+		Capabilities: allCapabilities,
+		Notes:        "SDK adapter exists; unified CLI provider is not wired yet",
+	}},
+	ProviderAnthropic: providerStub{info: ProviderInfo{
+		Name:         ProviderAnthropic,
+		FirstClass:   true,
+		EnvVars:      []string{"ANTHROPIC_API_KEY"},
+		Capabilities: allCapabilities,
+		Notes:        "implemented by cove runtime",
+	}},
+	ProviderGemini: pythonProvider{info: ProviderInfo{
+		Name:         ProviderGemini,
+		FirstClass:   true,
+		EnvVars:      []string{"GEMINI_API_KEY"},
+		Capabilities: allCapabilities,
+	}},
+	ProviderVertex: pythonProvider{info: ProviderInfo{
+		Name:         ProviderVertex,
+		FirstClass:   true,
+		EnvVars:      []string{"GOOGLE_CLOUD_PROJECT or COVE_VERTEX_PROJECT", "COVE_VERTEX_REGION optional"},
+		Capabilities: allCapabilities,
+	}},
+}
+
+func ProviderNames() []string {
+	return []string{ProviderOpenAI, ProviderAnthropic, ProviderGemini, ProviderVertex}
+}
+
+func ProviderInfos() []ProviderInfo {
+	names := ProviderNames()
+	out := make([]ProviderInfo, 0, len(names))
+	for _, name := range names {
+		out = append(out, providers[name].Info())
+	}
+	return out
+}
+
+func LookupProvider(name string) (Provider, error) {
+	key := strings.ToLower(strings.TrimSpace(name))
+	p, ok := providers[key]
+	if !ok {
+		return nil, fmt.Errorf("agent-sandbox: unsupported provider %q", name)
+	}
+	return p, nil
+}
 
 // Options configures a provider run against an already-running cove VM.
 type Options struct {
@@ -51,17 +126,38 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if strings.TrimSpace(opts.Task) == "" {
 		return Result{}, errors.New("agent-sandbox: task required")
 	}
-	provider := strings.ToLower(strings.TrimSpace(opts.Provider))
-	switch provider {
-	case ProviderGemini, ProviderVertex:
-		return runPythonBridge(ctx, provider, opts)
-	case ProviderAnthropic:
-		return Result{}, errors.New("agent-sandbox: anthropic provider is implemented by the cove runtime")
-	case ProviderOpenAI:
-		return Result{}, errors.New("agent-sandbox: openai provider is not implemented yet")
-	default:
-		return Result{}, fmt.Errorf("agent-sandbox: unsupported provider %q", opts.Provider)
+	provider, err := LookupProvider(opts.Provider)
+	if err != nil {
+		return Result{}, err
 	}
+	return provider.Run(ctx, opts)
+}
+
+type providerStub struct {
+	info ProviderInfo
+}
+
+func (p providerStub) Info() ProviderInfo { return p.info }
+
+func (p providerStub) Run(context.Context, Options) (Result, error) {
+	switch p.info.Name {
+	case ProviderAnthropic:
+		return Result{}, fmt.Errorf("%w: anthropic provider is implemented by the cove runtime", ErrNotSupported)
+	case ProviderOpenAI:
+		return Result{}, fmt.Errorf("%w: openai provider is not implemented in cove agent-sandbox run yet", ErrNotSupported)
+	default:
+		return Result{}, ErrNotSupported
+	}
+}
+
+type pythonProvider struct {
+	info ProviderInfo
+}
+
+func (p pythonProvider) Info() ProviderInfo { return p.info }
+
+func (p pythonProvider) Run(ctx context.Context, opts Options) (Result, error) {
+	return runPythonBridge(ctx, p.info.Name, opts)
 }
 
 func runPythonBridge(ctx context.Context, provider string, opts Options) (Result, error) {

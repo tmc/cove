@@ -2,6 +2,7 @@ package agentsandbox
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -23,7 +24,7 @@ func TestRunOpenAIStub(t *testing.T) {
 		VMName:   "vm",
 		Task:     "task",
 	})
-	if err == nil || !strings.Contains(err.Error(), "openai provider is not implemented yet") {
+	if !errors.Is(err, ErrNotSupported) || !strings.Contains(err.Error(), "openai provider is not implemented") {
 		t.Fatalf("Run error = %v, want openai stub error", err)
 	}
 }
@@ -34,8 +35,24 @@ func TestRunAnthropicDelegatesToRuntime(t *testing.T) {
 		VMName:   "vm",
 		Task:     "task",
 	})
-	if err == nil || !strings.Contains(err.Error(), "implemented by the cove runtime") {
+	if !errors.Is(err, ErrNotSupported) || !strings.Contains(err.Error(), "implemented by the cove runtime") {
 		t.Fatalf("Run error = %v, want runtime delegation error", err)
+	}
+}
+
+func TestProviderInfos(t *testing.T) {
+	infos := ProviderInfos()
+	if len(infos) != 4 {
+		t.Fatalf("ProviderInfos len = %d, want 4", len(infos))
+	}
+	want := []string{ProviderOpenAI, ProviderAnthropic, ProviderGemini, ProviderVertex}
+	for i, info := range infos {
+		if info.Name != want[i] {
+			t.Fatalf("ProviderInfos[%d].Name = %q, want %q", i, info.Name, want[i])
+		}
+		if !info.Capabilities.Screenshot || !info.Capabilities.Click || !info.Capabilities.Type || !info.Capabilities.Scroll || !info.Capabilities.Wait {
+			t.Fatalf("%s capabilities incomplete: %+v", info.Name, info.Capabilities)
+		}
 	}
 }
 
