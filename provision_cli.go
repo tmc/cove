@@ -24,6 +24,7 @@ type InjectOptions struct {
 	InjectGuestTools   bool   // Download and inject SPICE guest tools for clipboard sharing
 	BootstrapRecovery  bool   // Two-user bootstrap: create hidden admin first, then real user
 	EnableSSHD         bool   // Enable SSH daemon (Remote Login) on first boot
+	Force              bool   // Re-stage and re-apply even if provisioning already succeeded
 }
 
 // provisionVerbose controls verbose output for provision operations.
@@ -53,7 +54,7 @@ func handleProvision(args []string) error {
 	provisionVerbose = os.Getenv("VZ_DEBUG_INJECT") == "1"
 	target := currentVMSelection()
 
-	fs, user, password, admin, skipSetup, autoLogin, noAutoLogin, createUserPlist, uid, sshKeyPath, installXcodeCLI, verboseFlag, applyOnly, stageOnly, enableAgent, enableGuestTools, enableSSHD, bootstrapRecovery, noBootstrapRecovery := newInjectFlagSet()
+	fs, user, password, admin, skipSetup, autoLogin, noAutoLogin, createUserPlist, uid, sshKeyPath, installXcodeCLI, verboseFlag, applyOnly, stageOnly, force, enableAgent, enableGuestTools, enableSSHD, bootstrapRecovery, noBootstrapRecovery := newInjectFlagSet()
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -69,7 +70,12 @@ func handleProvision(args []string) error {
 
 	// Apply-only mode: read manifest and apply staged files to disk.
 	if *applyOnly {
-		return applyProvisioningFilesForVM(target)
+		return applyProvisioningFilesForVMForce(target, *force)
+	}
+
+	if !*stageOnly && !*force && didInjectSucceedForVM(target) {
+		printProvisioningAlreadyApplied(target)
+		return nil
 	}
 
 	// Agent-only mode: if -agent was explicitly passed but no -user, just
@@ -136,6 +142,7 @@ func handleProvision(args []string) error {
 		InjectGuestTools:   *enableGuestTools,
 		BootstrapRecovery:  *bootstrapRecovery,
 		EnableSSHD:         *enableSSHD,
+		Force:              *force,
 	}
 
 	// Phase 1: Stage all files (builds, downloads, generates — no root needed).
@@ -155,10 +162,10 @@ func handleProvision(args []string) error {
 	}
 
 	// Phase 2: Apply staged files to the VM disk.
-	return applyProvisioningFilesForVM(target)
+	return applyProvisioningFilesForVMForce(target, *force)
 }
 
-func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *bool, *bool, *int, *string, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool) {
+func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *bool, *bool, *int, *string, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool, *bool) {
 	fs := flag.NewFlagSet("provision", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	user := fs.String("user", "", "Username for the provisioned user (required)")
@@ -174,6 +181,7 @@ func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *
 	verboseFlag := fs.Bool("v", false, "Verbose output (or set VZ_DEBUG_INJECT=1)")
 	applyOnly := fs.Bool("apply", false, "Apply previously staged provisioning files to the VM disk")
 	stageOnly := fs.Bool("stage-only", false, "Stage files only (no disk mount); prints the apply command")
+	force := fs.Bool("force", false, "Re-stage and re-apply even if provisioning already succeeded")
 	enableAgent := fs.Bool("agent", true, "Cross-compile and inject the vz-agent gRPC daemon")
 	enableGuestTools := fs.Bool("guest-tools", true, "Download and inject SPICE guest tools for clipboard sharing")
 	enableSSHD := fs.Bool("enable-sshd", false, "Enable SSH daemon (Remote Login) on first boot")
@@ -182,7 +190,7 @@ func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *
 	fs.Usage = func() {
 		printInjectUsage(os.Stderr, fs)
 	}
-	return fs, user, password, admin, skipSetup, autoLogin, noAutoLogin, createUserPlist, uid, sshKeyPath, installXcodeCLI, verboseFlag, applyOnly, stageOnly, enableAgent, enableGuestTools, enableSSHD, bootstrapRecovery, noBootstrapRecovery
+	return fs, user, password, admin, skipSetup, autoLogin, noAutoLogin, createUserPlist, uid, sshKeyPath, installXcodeCLI, verboseFlag, applyOnly, stageOnly, force, enableAgent, enableGuestTools, enableSSHD, bootstrapRecovery, noBootstrapRecovery
 }
 
 func printInjectUsage(w io.Writer, fs *flag.FlagSet) {

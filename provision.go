@@ -354,7 +354,7 @@ func stageProvisioningFilesForVM(target vmSelection, opts InjectOptions) (string
 	// If a complete staging directory already exists for the same user, reuse
 	// it. This makes provisioning resumable: an interrupted apply can re-run
 	// without rebuilding the agent or re-staging unchanged files.
-	if reusable, err := stagingMatchesOptions(stagingDir, opts); err == nil && reusable {
+	if reusable, err := stagingMatchesOptions(stagingDir, opts); !opts.Force && err == nil && reusable {
 		if verbose {
 			fmt.Printf("Reusing staged files (delete %s to force re-stage).\n", stagingDir)
 		} else {
@@ -463,6 +463,12 @@ func applyProvisioningFiles() error {
 	return applyProvisioningFilesForVM(currentVMSelection())
 }
 
+func printProvisioningAlreadyApplied(target vmSelection) {
+	fmt.Printf("Provisioning already applied to %q.\n", target.elevationLabel())
+	fmt.Printf("  To re-stage and re-apply: cove%s provision -user <username> -password <password> -force\n", target.hintFlag())
+	fmt.Printf("  To verify: cove%s verify\n", target.hintFlag())
+}
+
 var (
 	preWarmAuthorizationHook               = PreWarm
 	attachAndMountDataVolumeHook           = attachAndMountDataVolume
@@ -473,11 +479,19 @@ var (
 )
 
 func applyProvisioningFilesForVM(target vmSelection) error {
+	return applyProvisioningFilesForVMForce(target, false)
+}
+
+func applyProvisioningFilesForVMForce(target vmSelection, force bool) error {
 	stagingDir := provisionStagingDirForVM(target)
 
 	manifest, err := readManifest(stagingDir)
 	if err != nil {
-		return fmt.Errorf("no staged provisioning files found: %w\n  run 'cove inject -user <username> -skip-setup-assistant' to stage and apply", err)
+		if !force && didInjectSucceedForVM(target) {
+			printProvisioningAlreadyApplied(target)
+			return nil
+		}
+		return fmt.Errorf("no staged provisioning files found: %w\n  run 'cove%s provision -user <username> -password <password>' to stage and apply", err, target.hintFlag())
 	}
 	warnNonRootProvisioning(target, stagingDir, manifest)
 

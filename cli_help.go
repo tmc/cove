@@ -62,7 +62,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "store":
 			printStoreUsage(os.Stderr)
 		case "provision", "inject":
-			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
+			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
 		case "provision-agent", "inject-agent":
 			printProvisionAgentUsage(os.Stderr)
@@ -192,7 +192,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 	case "provision", "inject":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
+			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
 			return true, 0
 		}
