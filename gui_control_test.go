@@ -51,6 +51,57 @@ func TestHeadlessControllerBindingsUseDetachedViewWithoutWindow(t *testing.T) {
 	}
 }
 
+func TestConfigureProcessIdentityDoesNotSetDockBadge(t *testing.T) {
+	orig := setDockBadgeLabel
+	defer func() { setDockBadgeLabel = orig }()
+
+	setDockBadgeLabel = func(app appkit.NSApplication, label string) {
+		t.Fatalf("setDockBadgeLabel called with %q", label)
+	}
+
+	c := &vmGUIController{target: vmSelection{Name: "work"}}
+	c.configureProcessIdentity()
+}
+
+func TestSetDockBadgeOnMainUsesNamedVM(t *testing.T) {
+	orig := setDockBadgeLabel
+	defer func() { setDockBadgeLabel = orig }()
+
+	var got string
+	setDockBadgeLabel = func(app appkit.NSApplication, label string) {
+		got = label
+	}
+
+	c := &vmGUIController{target: vmSelection{Name: "work"}}
+	c.setDockBadgeOnMain()
+	if got != "work" {
+		t.Fatalf("dock badge = %q, want work", got)
+	}
+}
+
+func TestSetDockBadgeOnMainSkipsDefaultVM(t *testing.T) {
+	tests := []struct {
+		name string
+		vm   string
+	}{
+		{name: "empty", vm: ""},
+		{name: "default", vm: "default"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orig := setDockBadgeLabel
+			defer func() { setDockBadgeLabel = orig }()
+
+			setDockBadgeLabel = func(app appkit.NSApplication, label string) {
+				t.Fatalf("setDockBadgeLabel called with %q", label)
+			}
+
+			c := &vmGUIController{target: vmSelection{Name: tt.vm}}
+			c.setDockBadgeOnMain()
+		})
+	}
+}
+
 func TestGUIStatusUsesInstalledController(t *testing.T) {
 	s := &ControlServer{}
 	s.SetGUIController(fakeGUIController{
