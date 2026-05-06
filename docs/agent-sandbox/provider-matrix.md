@@ -16,8 +16,9 @@ this repository today.
 
 - OpenAI uses the repository adapter in `adapters/openai-agents-python`; install
   it locally with `python -m pip install -e adapters/openai-agents-python[agents]`.
-  The unified bridge defaults to `computer-use-preview`, the OpenAI model for
-  the computer-use tool.
+  The unified bridge defaults to the GA `gpt-5.5` + `computer` tool path.
+  Set `COVE_OPENAI_MODEL=computer-use-preview` only for the deprecated preview
+  integration.
 - Anthropic is special today: the unified CLI routes it through the Go runtime
   adapter instead of `internal/agentsandbox.Run`.
 - Gemini and Vertex use the repository Python bridge scripts:
