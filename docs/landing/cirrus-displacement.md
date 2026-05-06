@@ -1,5 +1,8 @@
 # Cove for Cirrus CI migration
 
+This page is the short migration note. The blog-post-ready landing-page draft
+is [`docs/landing/cove-vs-cirrus.md`](cove-vs-cirrus.md).
+
 Cirrus Labs announced on April 7, 2026 that Cirrus CI will shut down on
 Monday, June 1, 2026:
 <https://cirruslabs.org/>. Teams using `.cirrus.yml`, Tart-backed macOS tasks,
