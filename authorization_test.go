@@ -62,6 +62,26 @@ func TestRunElevatedManifestNativeTimesOutWithoutPrompt(t *testing.T) {
 	}
 }
 
+func TestRunElevatedManifestNativeRefusesNoninteractive(t *testing.T) {
+	oldTTY := authorizationStdinIsTTY
+	oldAuthCreate := authCreate
+	t.Cleanup(func() { authorizationStdinIsTTY = oldTTY })
+	authorizationStdinIsTTY = func() bool { return false }
+	authCreate = func(uintptr, uintptr, uint32, *uintptr) int32 {
+		t.Fatal("authCreate called for noninteractive stdin")
+		return 0
+	}
+	t.Cleanup(func() { authCreate = oldAuthCreate })
+
+	err := runElevatedManifestNative("/tmp/manifest.json", "abc123", "Provision VM")
+	if err == nil {
+		t.Fatal("runElevatedManifestNative succeeded, want noninteractive error")
+	}
+	if !strings.Contains(err.Error(), "native authorization requires an interactive terminal") {
+		t.Fatalf("error = %v, want interactive terminal refusal", err)
+	}
+}
+
 func TestRunElevatedManifestNativeTimesOutWithPromptPending(t *testing.T) {
 	restore := stubAuthorizationCreate(t, true)
 	defer restore()
@@ -86,6 +106,7 @@ func stubAuthorizationCreate(t *testing.T, promptVisible bool) func() {
 	oldPromptTimeout := authCreatePromptTimeout
 	oldPollInterval := authCreatePollInterval
 	oldPromptVisible := authorizationPromptVisible
+	oldTTY := authorizationStdinIsTTY
 
 	block := make(chan struct{})
 	finished := make(chan struct{})
@@ -101,6 +122,7 @@ func stubAuthorizationCreate(t *testing.T, promptVisible bool) func() {
 	authCreatePromptTimeout = 5 * time.Millisecond
 	authCreatePollInterval = time.Millisecond
 	authorizationPromptVisible = func() bool { return promptVisible }
+	authorizationStdinIsTTY = func() bool { return true }
 
 	return func() {
 		close(block)
@@ -113,5 +135,6 @@ func stubAuthorizationCreate(t *testing.T, promptVisible bool) func() {
 		authCreatePromptTimeout = oldPromptTimeout
 		authCreatePollInterval = oldPollInterval
 		authorizationPromptVisible = oldPromptVisible
+		authorizationStdinIsTTY = oldTTY
 	}
 }
