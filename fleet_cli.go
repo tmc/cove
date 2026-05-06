@@ -46,6 +46,8 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 		return runFleetAggregateCommand(ctx, args, path, runner, out, errOut)
 	case "ps":
 		return runFleetPSCommand(ctx, args[1:], path, runner, out, errOut)
+	case "run":
+		return runFleetRunCommand(ctx, args[1:], path, runner, out, errOut)
 	default:
 		return fmt.Errorf("fleet: unknown command %q", args[0])
 	}
@@ -171,8 +173,10 @@ func fleetRemoteArgs(cmd string, args []string, remote fleetpkg.Remote) ([]strin
 		if len(args) > 0 && (args[0] == "list" || args[0] == "ls") {
 			return append([]string{"image"}, args...), nil
 		}
+	case "run":
+		return append([]string{"run"}, args...), nil
 	}
-	return nil, fmt.Errorf("fleet: command %q is not supported in slice 1", cmd)
+	return nil, fmt.Errorf("fleet: command %q is not supported in fleet routing", cmd)
 }
 
 func ensureFleetVMArg(args []string, remote fleetpkg.Remote) []string {

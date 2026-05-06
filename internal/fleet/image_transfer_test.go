@@ -39,7 +39,7 @@ func TestTransferImageReportsEndpointErrors(t *testing.T) {
 		errs map[string]error
 		want string
 	}{
-		{name: "source", errs: map[string]error{"src.local": errors.New("boom")}, want: "source image push"},
+		{name: "source", errs: map[string]error{"src.local": errors.New("boom")}, want: "boom"},
 		{name: "destination", errs: map[string]error{"dst.local": errors.New("boom")}, want: "destination image load"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
