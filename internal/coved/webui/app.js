@@ -42,10 +42,16 @@ function renderEvents(events) {
 
 async function refresh() {
   try {
+    const params = new URLSearchParams(location.search);
+    const fleet = params.get("mode") === "fleet";
     const status = await json("/api/status");
     renderSummary(status);
     renderMetrics(parseMetrics(await text("/metrics")));
     renderEvents(await json("/api/events"));
+    if (fleet) {
+      document.body.dataset.mode = "fleet";
+      document.querySelector("h1").textContent = "coved fleet view";
+    }
   } catch (e) {
     document.getElementById("events").textContent = e.message;
   }
