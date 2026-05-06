@@ -22,6 +22,7 @@ type daemon struct {
 	imageGC   *coved.ImageGCScheduler
 	connected chan struct{}
 	lifecycle *coved.LifecycleEnforcer
+	events    *coved.EventBus
 }
 
 type statusResponse struct {

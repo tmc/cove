@@ -71,13 +71,21 @@ func main() {
 		socket:    *socketPath,
 		pidPath:   *pidPath,
 		connected: make(chan struct{}),
+		events:    coved.NewEventBus(50),
 	}
 	gc := coved.NewImageGCScheduler("", logger)
+	gc.Bus = d.events
 	d.imageGC = gc
+	if sink, err := coved.NewJSONLSink(""); err == nil {
+		go coved.RunJSONLSubscriber(ctx, d.events, sink)
+	} else {
+		slog.Debug("metrics jsonl subscriber", slog.Any("err", err))
+	}
 	go gc.RunScheduledImageGC(ctx)
 	lifecycle := coved.NewLifecycleEnforcer(coved.LifecycleConfig{
 		VMRoot: d.vmRoot,
 		Log:    logger,
+		Bus:    d.events,
 	})
 	d.lifecycle = lifecycle
 	go lifecycle.Run(ctx)

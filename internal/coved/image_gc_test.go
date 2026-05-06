@@ -119,6 +119,25 @@ func TestImageGCRunOnceSkipsWhenLocked(t *testing.T) {
 	}
 }
 
+func TestImageGCRunOncePublishesToBus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeImage(t, home, "orphan:old", 17)
+	bus := NewEventBus(4)
+	s := NewImageGCScheduler(home, nil)
+	s.Bus = bus
+	if _, err := s.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	tail := bus.Tail()
+	if len(tail) != 1 || tail[0].EventType != "image.gc.run" {
+		t.Fatalf("tail = %+v", tail)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".vz", "metrics.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("metrics file err = %v, want missing when bus handles event", err)
+	}
+}
+
 func writeImage(t *testing.T, home, ref string, payloadSize int) {
 	t.Helper()
 	name, tag, ok := stringsCut(ref, ":")

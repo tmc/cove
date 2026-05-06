@@ -25,6 +25,7 @@ type LifecycleConfig struct {
 	Interval time.Duration
 	Now      func() time.Time
 	Log      *slog.Logger
+	Bus      *EventBus
 }
 
 type LifecycleStats struct {
@@ -127,8 +128,24 @@ func (e *LifecycleEnforcer) enforceVM(ctx context.Context, name, vmDir string, n
 		return fmt.Errorf("request stop: %w", err)
 	}
 	e.enforced.Add(1)
+	e.publishStop(ctx, name, reason, now)
 	e.cfg.Log.Info("lifecycle policy stop", slog.String("vm", name), slog.String("reason", reason))
 	return nil
+}
+
+func (e *LifecycleEnforcer) publishStop(ctx context.Context, name, reason string, now time.Time) {
+	if e.cfg.Bus == nil {
+		return
+	}
+	e.cfg.Bus.Publish(ctx, Event{
+		Timestamp: now.UTC().Format(time.RFC3339Nano),
+		EventType: "lifecycle.policy.stop",
+		VMName:    name,
+		Status:    "stop_requested",
+		Extra: map[string]any{
+			"reason": reason,
+		},
+	})
 }
 
 func stopReason(policy vmpolicy.Policy, status vmStatus, now time.Time) string {

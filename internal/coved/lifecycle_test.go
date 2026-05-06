@@ -72,9 +72,11 @@ func TestLifecycleEnforcerThresholds(t *testing.T) {
 			}
 
 			stopCount := serveLifecycleControl(t, vmDir, tt.status)
+			bus := NewEventBus(4)
 			enforcer := NewLifecycleEnforcer(LifecycleConfig{
 				VMRoot: root,
 				Now:    func() time.Time { return now },
+				Bus:    bus,
 			})
 			enforcer.EnforceOnce(context.Background())
 			if got := *stopCount > 0; got != tt.want {
@@ -82,6 +84,12 @@ func TestLifecycleEnforcerThresholds(t *testing.T) {
 			}
 			if got := enforcer.Stats().Enforced; got != boolUint64(tt.want) {
 				t.Fatalf("enforced = %d, want %d", got, boolUint64(tt.want))
+			}
+			if tt.want {
+				tail := bus.Tail()
+				if len(tail) != 1 || tail[0].EventType != "lifecycle.policy.stop" || tail[0].VMName != "vm" {
+					t.Fatalf("tail = %+v", tail)
+				}
 			}
 		})
 	}
