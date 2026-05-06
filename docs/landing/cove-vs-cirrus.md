@@ -60,10 +60,14 @@ fabricate hosted Cirrus numbers.
 
 ## Quickstart
 
-Install cove on the trusted Apple Silicon runner host:
+Until the public tap is available, build cove from a private checkout on the
+trusted Apple Silicon runner host:
 
 ```bash
-brew install tmc/tap/cove
+git clone git@github.com:tmc/cove.git
+cd cove
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
 Then migrate one Cirrus task from your existing repository:

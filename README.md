@@ -8,18 +8,28 @@ macOS VMs that suspend, snapshot, and script.
 
 cove is a CLI for creating and managing macOS and Linux virtual machines on Apple Silicon using Apple's Virtualization.framework. Pure Go, cgo-free ([purego](https://github.com/ebitengine/purego)).
 
-Cirrus migration? Start with [Cove for Cirrus CI migration](docs/landing/cirrus-displacement.md), then check the citable [competitive proof table](docs/strategy/proof.md).
+Cirrus migration? Start with the private landing draft
+[Cove after Cirrus CI](docs/landing/cove-vs-cirrus.md), follow the
+[five-step quickstart](docs/quickstart-from-cirrus.md), then use the
+[migration walkthrough](docs/migrations/from-cirrus.md) and citable
+[benchmark table](docs/benchmarks/competitive-2026-05.md).
 
 ## Install
 
+Until the public release and tap-availability gates clear, build from a private
+checkout:
+
 ```bash
-brew install tmc/tap/cove
+git clone git@github.com:tmc/cove.git
+cd cove
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
-Or from source:
+After the Homebrew tap is public, the install path will be:
 
 ```bash
-go install github.com/tmc/vz-macos@latest
+brew install tmc/tap/cove
 ```
 
 See [INSTALL.md](INSTALL.md) for first-run requirements, IPSW reuse, and the macOS virtualization license note.
@@ -176,6 +186,21 @@ GH_REPO=tmc/cove GH_TOKEN=<reg-token> \
 GITLAB_URL=https://gitlab.com GITLAB_TOKEN=<token> \
   cove vzscript run gitlab-runner
 ```
+
+### Cirrus Task Migration
+
+From the cove checkout:
+
+```bash
+cove action doctor
+cove image verify --strict --newer-than 168h macos-runner:latest
+cove action prepare-image macos-runner:latest --ttl 24h
+go run ./cmd/cove-action -image macos-runner:latest -command './ci/test.sh'
+```
+
+Use [Quickstart from Cirrus](docs/quickstart-from-cirrus.md) for the five-step
+path and [Migrating from Cirrus CI to cove](docs/migrations/from-cirrus.md) for
+container, macOS, persistent-worker, and matrix examples.
 
 ### Tailscale Mesh Access
 
