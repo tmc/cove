@@ -120,6 +120,31 @@ channel.
 | GitHub Actions executor Slice 2 cache reuse | done | cove-action Slice 1 + local image store | [030](030-gha-executor-slice-2.md) | Adds local-only cross-run cache images for the private GHA executor, preserving fork isolation while speeding repeated CI runs. Implemented by T77 at `3199d58`, `1444d5f`, and `d78a853`. |
 | Packer plugin shim decision | maybe | none | gap vs tart Packer integration | Decide whether a shim accelerates adoption or distracts from the `cove build` moat. |
 
+## v0.4 — CI Executors + Adapters + Daemon + Fleet
+
+| Item | Priority | Depends on | Source | Why |
+|---|---|---|---|---|
+| VM identity preservation for forked vmstate bundles | done | fork/restore | [013](013-vm-fork.md) | Preserves identity files across vmstate forks so forked agents keep stable guest identity. Shipped at `67c9abc` and `7e4ed99`; status note at `4f8035c`. |
+| Anthropic computer-use adapter v2 | done | agent-sandbox CLI | [022](022-v04-anthropic-adapter.md) | Adds a Go-side Anthropic Messages computer-use loop and wires it into `cove agent-sandbox run`. Shipped at `55a2463`, `33e5b30`, and `775537f`. |
+| OpenAI Agents SDK `SandboxRunConfig` helper | done | OpenAI adapter v1 | [035](035-openai-sandbox-run-config.md) | Adds a local Python `cove-sandbox` helper for `Runner.run()` workflows. Shipped at `36552c2`, `4d61edd`, and `27f9e24`. |
+| GitHub Actions private executor surface | done | local image store + run metrics | [021](021-v04-ci-executors-tracks.md), [030](030-gha-executor-slice-2.md) | Ships the private GHA wrapper, action metrics, preflight commands, and cache-image reuse. Representative commits: `0985377`, `19804c7`, `8bd473e`, `82a0ac5`, `7fafe40`, `9e6253a`. |
+| NixOS guest distro | done | Linux installer | [036](036-nixos-guest-support.md) | Adds `cove install -nixos`, a NixOS installer path, base vzscript, and quickstart. Shipped at `1ddd3b9`, `8324750`, `2427b2e`, and `f1e6812`. |
+| Linux Desktop autoprovisioning | done | Linux desktop installer | [037](037-linux-autoprov.md) | Documents and hardens the Desktop first-boot auto-login path. Shipped at `e93a3e0`, `449cbfa`, `0cbc455`, and later OEM setup suppression at `4f71eb3`. |
+| Fleet Slice 1 remote routing | done | SSH access to trusted Macs | [034](034-fleet-slice-1.md) | Adds fleet host config, SSH tunnel helpers, routeable remote commands, and docs. Shipped at `622b571`, `695ae2e`, `9f993a5`, and `366bfac`. |
+| Fleet Slice 2 aggregation | done | Fleet Slice 1 | [034](034-fleet-slice-1.md) | Adds parallel remote query helpers and aggregate VM/image/ps lists. Shipped at `afba1a5`, `0b4776f`, `e59348d`, and `6e91044`. |
+| Fleet Slice 3 image transfer and placement | done | Fleet Slice 1 + local image store | [034](034-fleet-slice-1.md) | Adds `cove fleet image push/pull/sync` and least-loaded run placement. Shipped at `f13dae5`, `1273fcb`, and `e347836`. |
+| Cove daemon Slices 1-2 | done | per-VM control sockets | [033](033-cove-daemon.md) | Adds `coved`, `cove daemon status`, lifecycle enforcement, and image GC counters. Shipped at `c94557d`, `d786e53`, `a9a2a9b`, `3258982`, `ef019c1`, `2b516da`, and `c6f33df`. |
+| VM lifecycle policy v2 | done | [031](031-vm-lifecycle.md) | [031](031-vm-lifecycle.md) | Adds policy persistence, CLI, enforcement loop, locked run-budget counter, and telemetry. Shipped at `12c391d`, `d1df12b`, `2202f46`, `80eea77`, `9749f29`, and `cd899a1`. |
+| Per-VM resource quotas | done | VM config persistence | [032](032-vm-quotas.md) | Adds quota persistence, APFS quota wrapper, and `cove quota` CLI. Shipped at `94bf2d2`, `62a71aa`, and `2bad0e8`. |
+| Soft-reset destructive probe matrix + orchestrator | done | [015](015-soft-reset-empirical.md) | [015](015-soft-reset-empirical.md) | Adds network, memory, process-table, filesystem-attribute probes and a run-all orchestrator. Shipped at `8c7d54b`, `a51c544`, `31017ca`, `0ed3b70`, `ad9dc16`, `7030657`, and `6773695`. |
+| Image lifecycle UX | done | local image store | [024](024-cove-runner-images.md) | Adds prune/gc, tag, history, search, freshness verification, and inspect diffs. Shipped at `fb37866`, `75c1897`, `1e9806e`, `7cbbf9c`, `6f0d396`, and `b46deb0`. |
+| Network policy, logs, and forwarding | done | control socket + guest agent | [001](001-cove-serve-http-mcp.md), [034](034-fleet-slice-1.md) | Adds named policy audit logs, `cove network logs`, `cove forward` reverse direction, and UDP support. Shipped at `1ac32f9`, `6fd5bc5`, `6e6fa18`, `22e6c43`, and `235b678`. |
+| Operator file/log/diff commands | done | guest agent + image store | [024](024-cove-runner-images.md) | Adds `cove cp`, `cove logs`, and manifest diff/inspect helpers. Shipped at `dbe1520`, `fca848e`, `9fc8303`, `b46deb0`, and `535db8c`. |
+| Reliability sweep | done | run/provision/fleet surfaces | [031](031-vm-lifecycle.md), [033](033-cove-daemon.md) | Adds test-HOME isolation audit, concurrency fixes, Apple log predicate refresh, install overlay polish, startup state, and start watchdog. Shipped at `34775a4`, `3456d67`, `d3a6d18`, `ef82fc0`, `9dea52e`, and `f78ce61`. |
+| Fresh VM login recovery cluster | done | macOS provisioning | [bugs/fresh-vm-login](../bugs/2026-05-05-fresh-vm-login-misclassify.md) | Makes non-root `cove up` fail loudly, refuses noninteractive native authorization, improves login-screen OCR, and dumps `diskutil list` on Data lookup failure. Shipped at `b9c06ee`, `e512329`, `a1742f4`, `14e2bdb`, and `ca4d824`. |
+| Cirrus migration docs | done | fleet + images + action surface | [migration guide](../migrate-from-cirrus.md) | Adds Cirrus displacement landing page, migration walkthrough, README link, and blog draft. Shipped at `bdd1912`, `2642d01`, `e413e0e`, `6017373`, and `4635254`. |
+| v0.4 readiness and integration matrix | done | shipped v0.4 surfaces | [release audit](../release/v0.4.0-readiness.md) | Adds v0.4 release notes draft, integration matrix, cross-reference pass, and readiness audit. Shipped at `96706d2`, `7852177`, `c29eae3`, and `14cabac`; this closeout updates the final docs. |
+
 ## v0.3 implementation slices
 
 The next implementation branches should stay directly based on `origin/main`
@@ -175,6 +200,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-05-05**: Added the v0.4 closeout milestone covering R36-R40 shipped work across agent adapters, fleet, daemon, lifecycle, quotas, NixOS, Linux desktop provisioning, image/network surfaces, reliability, Cirrus migration, and the fresh-VM-login fix cluster.
 - **2026-05-05**: design [030](030-gha-executor-slice-2.md) landed for GHA executor Slice 2 cross-run cache reuse after T77 shipped `3199d58`, `1444d5f`, and `d78a853`.
 - **2026-05-04**: Reconciled shipped v0.3 rows: ControlServer phase 3 landed at `cede792`, the Anthropic sandbox-runtime adapter landed at `fafc32a`, and curated agentkit base images landed at `92f2272`.
 - **2026-05-04**: designs [027](027-disk-io-tuning.md) and [028](028-block-device-passthrough.md) shipped. Disk I/O tuning landed at `fc7ff1e` and `a459076`; Linux NVMe Slice 2 landed at `8500ecb`, `968cbde`, and `1b7c947`; block device passthrough landed across `b522ab3`, `a78e891`, and `74d9527`.
