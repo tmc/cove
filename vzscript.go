@@ -113,7 +113,8 @@ type vzscriptConfig struct {
 	guestOS      string
 	execTimeout  time.Duration
 	verbose      bool
-	terminal     bool // force guest-shell/guest-exec to run in the guest terminal
+	terminal     bool // stream guest-shell output to the host terminal
+	terminalGUI  bool // force guest-shell to run in the guest terminal app
 	autoApprove  bool // auto-click "Allow"/"OK" on system dialogs via OCR
 	daemon       bool // use daemon agent (root) instead of user agent
 	logWriter    io.Writer
@@ -364,7 +365,12 @@ func guestShellCmd(cfg vzscriptConfig) script.Cmd {
 				return nil, err
 			}
 			if cfg.terminal {
-				return guestExecInTerminal(cfg, guestPath)
+				streamCfg := cfg
+				streamCfg.verbose = true
+				return guestExec(streamCfg, []string{"/bin/bash", guestPath})
+			}
+			if cfg.terminalGUI {
+				return guestExecInTerminalOrStream(cfg, guestPath)
 			}
 			return guestExec(cfg, []string{"/bin/bash", guestPath})
 		},
@@ -390,7 +396,7 @@ func guestTerminalCmd(cfg vzscriptConfig) script.Cmd {
 			if err := guestWriteFile(cfg.socketPath, guestPath, data, 0755); err != nil {
 				return nil, err
 			}
-			return guestExecInTerminal(cfg, guestPath)
+			return guestExecInTerminalOrStream(cfg, guestPath)
 		},
 	)
 }
@@ -600,6 +606,12 @@ func envListToMap(env []string) map[string]string {
 	return m
 }
 
+var (
+	detectGuestOSHook                   = detectGuestOS
+	guestConsoleUserHook                = guestConsoleUser
+	guestTerminalAppleEventsAllowedHook = guestTerminalAppleEventsAllowed
+)
+
 func stdoutOrStderrWrite(buf *bytes.Buffer, sink func([]byte), chunk []byte) {
 	_, _ = buf.Write(chunk)
 	if sink != nil {
@@ -607,10 +619,21 @@ func stdoutOrStderrWrite(buf *bytes.Buffer, sink func([]byte), chunk []byte) {
 	}
 }
 
+func guestExecInTerminalOrStream(cfg vzscriptConfig, guestPath string) (script.WaitFunc, error) {
+	wait, err := guestExecInTerminal(cfg, guestPath)
+	if err == nil {
+		return wait, nil
+	}
+	fmt.Fprintf(os.Stderr, "[guest-terminal] %v; streaming output here instead\n", err)
+	streamCfg := cfg
+	streamCfg.verbose = true
+	return guestExec(streamCfg, []string{"/bin/bash", guestPath})
+}
+
 // guestExecInTerminal runs a script in the guest GUI terminal so the user can watch.
 func guestExecInTerminal(cfg vzscriptConfig, guestPath string) (script.WaitFunc, error) {
 	client := NewControlClient(cfg.socketPath)
-	osName, err := detectGuestOS(client)
+	osName, err := detectGuestOSHook(client)
 	if err != nil {
 		return nil, err
 	}
@@ -627,10 +650,15 @@ func guestExecInTerminal(cfg vzscriptConfig, guestPath string) (script.WaitFunc,
 		return nil, fmt.Errorf("guest terminal launch is not implemented for %s", osName)
 	}
 
-	user, err := guestConsoleUser(cfg)
+	user, err := guestConsoleUserHook(cfg)
 	if err != nil {
 		// No console user — run directly as root (won't open Terminal).
 		return guestExec(cfg, []string{"/bin/bash", guestPath})
+	}
+	if ok, err := guestTerminalAppleEventsAllowedHook(cfg, user); err != nil {
+		return nil, fmt.Errorf("check Terminal Apple Events permission: %w", err)
+	} else if !ok {
+		return nil, fmt.Errorf("Terminal Apple Events permission is not already granted")
 	}
 
 	// Grant temporary passwordless sudo for all commands.
@@ -659,6 +687,53 @@ exit $status
 
 	openCmd := "open -a Terminal " + shellEscape(wrapperPath)
 	return guestExec(cfg, []string{"su", "-l", user, "-c", openCmd})
+}
+
+func guestTerminalAppleEventsAllowed(cfg vzscriptConfig, user string) (bool, error) {
+	query := `SELECT CASE WHEN EXISTS (
+  SELECT 1 FROM access
+  WHERE service='kTCCServiceAppleEvents'
+    AND auth_value=2
+    AND (
+      client='/usr/local/bin/vz-agent'
+      OR client LIKE '%com.github.tmc.vz-macos.vz-agent%'
+    )
+    AND (
+      indirect_object_identifier='com.apple.Terminal'
+      OR indirect_object_identifier LIKE '%Terminal%'
+      OR indirect_object_identifier IS NULL
+    )
+) THEN 'yes' ELSE 'no' END FROM access LIMIT 1;`
+	script := fmt.Sprintf(`dbs="/Library/Application Support/com.apple.TCC/TCC.db"
+home=$(dscl . -read /Users/%s NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+if [ -n "$home" ]; then
+  dbs="$dbs:$home/Library/Application Support/com.apple.TCC/TCC.db"
+fi
+IFS=:
+for db in $dbs; do
+  [ -r "$db" ] || continue
+  out=$(sqlite3 "$db" %s 2>/dev/null || true)
+  if [ "$out" = yes ]; then
+    echo yes
+    exit 0
+  fi
+done
+echo no
+`, shellEscape(user), shellEscape(query))
+	stdout, stderr, exitCode, err := guestExecStream(
+		cfg,
+		[]string{"/bin/sh", "-c", script},
+		10*time.Second,
+		nil,
+		nil,
+	)
+	if err != nil {
+		return false, err
+	}
+	if exitCode != 0 {
+		return false, fmt.Errorf("exit code %d: %s", exitCode, strings.TrimSpace(stderr))
+	}
+	return strings.TrimSpace(stdout) == "yes", nil
 }
 
 // guestConsoleUser returns the username of the currently logged-in console user.

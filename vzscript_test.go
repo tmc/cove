@@ -138,6 +138,25 @@ func TestVZScriptEnvFlag(t *testing.T) {
 	}
 }
 
+func TestGuestExecInTerminalFallsBackWhenAppleEventsDenied(t *testing.T) {
+	oldDetect := detectGuestOSHook
+	oldUser := guestConsoleUserHook
+	oldAE := guestTerminalAppleEventsAllowedHook
+	t.Cleanup(func() {
+		detectGuestOSHook = oldDetect
+		guestConsoleUserHook = oldUser
+		guestTerminalAppleEventsAllowedHook = oldAE
+	})
+	detectGuestOSHook = func(guestTerminalAgent) (string, error) { return guestOSDarwin, nil }
+	guestConsoleUserHook = func(vzscriptConfig) (string, error) { return "tester", nil }
+	guestTerminalAppleEventsAllowedHook = func(vzscriptConfig, string) (bool, error) { return false, nil }
+
+	_, err := guestExecInTerminal(vzscriptConfig{}, "/tmp/script.sh")
+	if err == nil || !strings.Contains(err.Error(), "Terminal Apple Events permission is not already granted") {
+		t.Fatalf("guestExecInTerminal error = %v", err)
+	}
+}
+
 func TestVZScriptWaitCommand(t *testing.T) {
 	cfg := vzscriptConfig{}
 	engine := newVZScriptEngine(cfg)

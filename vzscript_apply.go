@@ -54,7 +54,7 @@ func printVzscriptUsage(w io.Writer) {
 Commands:
   list [-os darwin|linux] List built-in recipes
   show <recipe>           Print recipe contents
-  run [-v] [-timeout d] [-env KEY=VALUE] <recipe...>
+  run [-v] [-timeout d] [-terminal|-terminal-gui] [-env KEY=VALUE] <recipe...>
                           Run one or more recipes against a running VM
 
 A recipe is a txtar archive (see golang.org/x/tools/txtar) executed
@@ -229,7 +229,8 @@ func vzscriptRun(args []string) error {
 	socketPath := rf.String("socket", "", "Control socket path")
 	timeout := rf.Duration("timeout", 10*time.Minute, "Timeout for guest-exec commands")
 	verbose := rf.Bool("v", false, "Verbose output")
-	terminal := rf.Bool("terminal", false, "Run guest-shell commands in the guest's terminal application (macOS Terminal.app, Linux GNOME Terminal/Konsole/xterm)")
+	terminal := rf.Bool("terminal", false, "Stream guest-shell output to this terminal")
+	terminalGUI := rf.Bool("terminal-gui", false, "Run guest-shell commands in the guest's GUI terminal application")
 	autoApprove := rf.Bool("auto-approve", false, "Auto-click Allow/OK on system dialogs via OCR")
 	daemon := rf.Bool("daemon", false, "Route guest commands through daemon agent (root) instead of user agent")
 	vm := rf.String("vm", "", "VM name (default: active VM or 'default')")
@@ -265,6 +266,7 @@ func vzscriptRun(args []string) error {
 		execTimeout:  *timeout,
 		verbose:      *verbose,
 		terminal:     *terminal,
+		terminalGUI:  *terminalGUI,
 		autoApprove:  *autoApprove,
 		daemon:       *daemon,
 		template:     *renderTemplate,
@@ -855,10 +857,15 @@ func vzscriptBuiltinNames(name string) []string {
 }
 
 // cfgForRecipe returns a copy of cfg with per-recipe overrides applied.
-// Currently handles "runs-on: daemon" to route commands through the root agent.
 func cfgForRecipe(cfg vzscriptConfig, meta scriptMeta) vzscriptConfig {
-	if meta.runsOn == "daemon" {
+	switch meta.runsOn {
+	case "daemon":
 		cfg.daemon = true
+	case "terminal":
+		cfg.terminal = true
+		cfg.verbose = true
+	case "terminal-gui":
+		cfg.terminalGUI = true
 	}
 	return cfg
 }
@@ -883,7 +890,7 @@ type scriptMeta struct {
 	desc     string
 	guestOS  string            // darwin, linux, or both
 	requires []string          // recipe names this script depends on
-	runsOn   string            // "daemon" to run as root via daemon agent
+	runsOn   string            // daemon, terminal, or terminal-gui
 	inject   []injectDirective // files to inject into VM disk
 	mounts   []mountDirective  // host directories to mount via VirtioFS
 }
@@ -895,6 +902,8 @@ type scriptMeta struct {
 //	# guest-os: darwin|linux|both
 //	# requires: a, b       (dependency list)
 //	# runs-on: daemon      (run as root via daemon agent)
+//	# runs-on: terminal    (stream guest-shell output to the host terminal)
+//	# runs-on: terminal-gui (run guest-shell in the guest terminal app)
 //	# inject: guest-path txtar-file [mode] [owner]
 func parseScriptMeta(comment []byte) scriptMeta {
 	m := scriptMeta{guestOS: "darwin"}
