@@ -369,6 +369,13 @@ func TestSharedFolderAddLiveAppliesAndMounts(t *testing.T) {
 				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
 			},
 		},
+		{
+			wantType: "agent-user-exec",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
 	})
 	defer stop()
 
@@ -380,7 +387,10 @@ func TestSharedFolderAddLiveAppliesAndMounts(t *testing.T) {
 		"shared folder saved; applying to running VM ...",
 		"applied to running VM: applied 1 shared folder(s)",
 		"mounted in guest at " + defaultSharedFoldersMountPoint,
-		"Guest path for this folder: " + defaultSharedFoldersMountPoint + "/work",
+		"Shared folder applied:",
+		"  guest: " + defaultSharedFoldersMountPoint + "/work",
+		"  link:  ~/work -> " + defaultSharedFoldersMountPoint + "/work",
+		"  mode:  rw",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
@@ -470,7 +480,10 @@ func TestSharedFolderAddLiveAppliesAndMountsLinuxPerTag(t *testing.T) {
 		"shared folder saved; applying to running VM ...",
 		"applied to running VM: applied 1 shared folder(s)",
 		"mounted in guest at /mnt/work",
-		"Guest path for this folder: /mnt/work",
+		"Shared folder applied:",
+		"  guest: /mnt/work",
+		"  link:  ~/work -> /mnt/work",
+		"  mode:  rw",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
