@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -171,6 +172,70 @@ func TestHelperOpenBlockDeviceRejectsUnsafePath(t *testing.T) {
 	}
 	if resp.Error != "block device /tmp/disk.img is not under /dev" {
 		t.Fatalf("error = %q", resp.Error)
+	}
+}
+
+func TestValidateForceDetachRequestRequiresMatchingAttachedDisk(t *testing.T) {
+	oldFind := helperFindAttachedDisk
+	t.Cleanup(func() { helperFindAttachedDisk = oldFind })
+	helperFindAttachedDisk = func(path string) (string, bool, error) {
+		if path != "/Users/tmc/.vz/vms/test/disk.img" {
+			t.Fatalf("path = %q", path)
+		}
+		return "/dev/disk23", true, nil
+	}
+
+	device, diskPath, err := validateForceDetachRequest(&forceDetachRequest{
+		Device:   "/dev/disk23",
+		DiskPath: "/Users/tmc/.vz/vms/test/disk.img",
+	})
+	if err != nil {
+		t.Fatalf("validateForceDetachRequest: %v", err)
+	}
+	if device != "/dev/disk23" || diskPath != "/Users/tmc/.vz/vms/test/disk.img" {
+		t.Fatalf("device,diskPath = %q,%q", device, diskPath)
+	}
+}
+
+func TestValidateForceDetachRequestRejectsDeviceMismatch(t *testing.T) {
+	oldFind := helperFindAttachedDisk
+	t.Cleanup(func() { helperFindAttachedDisk = oldFind })
+	helperFindAttachedDisk = func(string) (string, bool, error) {
+		return "/dev/disk24", true, nil
+	}
+
+	_, _, err := validateForceDetachRequest(&forceDetachRequest{
+		Device:   "/dev/disk23",
+		DiskPath: "/Users/tmc/.vz/vms/test/disk.img",
+	})
+	if err == nil {
+		t.Fatal("validateForceDetachRequest returned nil error")
+	}
+	if want := "attached as /dev/disk24, not /dev/disk23"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+}
+
+func TestHelperForceDetachFallsBackToDiskutil(t *testing.T) {
+	oldCmd := helperDetachCommand
+	t.Cleanup(func() { helperDetachCommand = oldCmd })
+	var calls []string
+	helperDetachCommand = func(name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		if name == "hdiutil" {
+			return []byte("busy"), os.ErrPermission
+		}
+		return nil, nil
+	}
+	if err := helperForceDetachDevice("/dev/disk23"); err != nil {
+		t.Fatalf("helperForceDetachDevice: %v", err)
+	}
+	want := []string{
+		"hdiutil detach /dev/disk23 -force",
+		"diskutil unmountDisk force /dev/disk23",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("calls = %v, want %v", calls, want)
 	}
 }
 
