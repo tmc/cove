@@ -63,6 +63,7 @@ func TestFleetRemoteArgs(t *testing.T) {
 		{name: "vm list", cmd: "vm", args: []string{"list"}, want: []string{"vm", "list"}},
 		{name: "top list", cmd: "list", want: []string{"list"}},
 		{name: "image list", cmd: "image", args: []string{"list"}, want: []string{"image", "list"}},
+		{name: "run", cmd: "run", args: []string{"-linux", "-headless"}, want: []string{"run", "-linux", "-headless"}},
 		{name: "logs default vm", cmd: "logs", want: []string{"logs", "ubuntu"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -74,6 +75,47 @@ func TestFleetRemoteArgs(t *testing.T) {
 				t.Fatalf("fleetRemoteArgs = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestFleetRunLeastLoadedSelectsHost(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	runner := &fakeFleetRunner{outputs: map[string]string{
+		"a.local": "a1 running\na2 running\n",
+		"b.local": "b1 running\n",
+	}}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"run", "--policy=least-loaded", "-linux", "-headless"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet run: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "selected b") {
+		t.Fatalf("output = %q, want selected b", got)
+	}
+	runner.assertCallsWithArgs(t, []string{"vm", "list"}, 2)
+	runner.assertSawCall(t, "b.local", []string{"run", "-linux", "-headless"})
+}
+
+func TestFleetRunLeastLoadedIgnoresUnreachable(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	runner := &fakeFleetRunner{
+		outputs: map[string]string{"b.local": "b1 running\n"},
+		errs:    map[string]error{"a.local": errors.New("offline")},
+	}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"run", "--policy=least-loaded"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet run: %v", err)
+	}
+	if !strings.Contains(out.String(), "selected b") {
+		t.Fatalf("output = %q, want selected b", out.String())
+	}
+	runner.assertSawCall(t, "b.local", []string{"run"})
+}
+
+func TestFleetRunRequiresOptInPolicy(t *testing.T) {
+	err := runFleetCommandWithRunner(context.Background(), []string{"run"}, writeFleetTestConfig(t), &fakeFleetRunner{}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "least-loaded") {
+		t.Fatalf("fleet run error = %v, want least-loaded usage", err)
 	}
 }
 
@@ -355,6 +397,33 @@ func (f *fakeFleetRunner) assertCalls(t *testing.T, wantArgs []string, wantCount
 			t.Fatalf("call args = %#v, want %#v", call.args, wantArgs)
 		}
 	}
+}
+
+func (f *fakeFleetRunner) assertCallsWithArgs(t *testing.T, wantArgs []string, wantCount int) {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := 0
+	for _, call := range f.calls {
+		if reflect.DeepEqual(call.args, wantArgs) {
+			count++
+		}
+	}
+	if count != wantCount {
+		t.Fatalf("calls = %#v, count for %#v = %d, want %d", f.calls, wantArgs, count, wantCount)
+	}
+}
+
+func (f *fakeFleetRunner) assertSawCall(t *testing.T, wantHost string, wantArgs []string) {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, call := range f.calls {
+		if call.remote.Host == wantHost && reflect.DeepEqual(call.args, wantArgs) {
+			return
+		}
+	}
+	t.Fatalf("calls = %#v, missing host=%q args=%#v", f.calls, wantHost, wantArgs)
 }
 
 func (f *fakeFleetRunner) assertCommandCalls(t *testing.T, want []fakeFleetCommandCall) {
