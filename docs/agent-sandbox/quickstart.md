@@ -1,0 +1,33 @@
+# Agent Sandbox Quickstart
+
+From zero to a fork-isolated provider loop:
+
+```bash
+brew install tmc/tap/cove
+cove run -fork-from agentkit/macos-base:latest -fork-name agent-smoke -ephemeral -gui
+cove agent-sandbox run --provider anthropic --image agentkit/macos-base:latest --task "Take a screenshot and describe the desktop."
+```
+
+Provider credentials:
+
+```bash
+export OPENAI_API_KEY=sk-...
+export ANTHROPIC_API_KEY=sk-ant-...
+export GEMINI_API_KEY=...
+export GOOGLE_CLOUD_PROJECT=my-project
+```
+
+Check auth and network reachability:
+
+```bash
+cove agent-sandbox doctor --provider anthropic
+```
+
+Switch provider with one flag:
+
+```bash
+cove agent-sandbox run --provider gemini --image agentkit/macos-base:latest --task "Open Safari."
+cove agent-sandbox run --provider vertex --image agentkit/macos-base:latest --task "Open Safari."
+```
+
+Every run writes a replay bundle under `~/.vz/runs/<run-id>/replay`.

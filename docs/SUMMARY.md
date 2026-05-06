@@ -42,6 +42,9 @@
 * [Anthropic Computer Use](examples/anthropic-computer-use.md)
 * [Gemini Computer Use](examples/gemini-computer-use.md)
 * [Vertex AI Computer Use](examples/vertex-ai-computer-use.md)
+* [Agent Sandbox Quickstart](agent-sandbox/quickstart.md)
+* [Agent Sandbox Provider Matrix](agent-sandbox/provider-matrix.md)
+* [Agent Sandbox Cookbook](agent-sandbox/cookbook.md)
 * [Tailscale Mesh VM](examples/tailscale-mesh.md)
 
 ## Architecture
@@ -78,6 +81,7 @@
 * [VirtioFS hot-add](designs/029-virtiofs-hot-add.md)
 * [GHA executor Slice 2 cache reuse](designs/030-gha-executor-slice-2.md)
 * [VM lifecycle policy](designs/031-vm-lifecycle.md)
+* [Agent Sandbox v2](designs/034-agent-sandbox-v2.md)
 * [Per-VM resource quotas](designs/032-vm-quotas.md)
 * [Cove daemon mode](designs/033-cove-daemon.md)
 * [Fleet](designs/034-fleet-slice-1.md)

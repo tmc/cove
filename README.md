@@ -91,6 +91,21 @@ A vsock gRPC agent injected into the guest at install time. Execute commands, tr
 cove run -clipboard -proxy http://192.168.64.1:8080
 ```
 
+### Agent Sandbox
+
+Run OpenAI, Anthropic, Gemini, or Vertex computer-use loops against fresh local
+VM forks with replay artifacts and provider auth checks.
+
+```bash
+cove agent-sandbox doctor --provider anthropic
+cove agent-sandbox run --provider anthropic --image agentkit/macos-base:latest --task "Describe the desktop."
+```
+
+Start with the [quickstart](docs/agent-sandbox/quickstart.md), then use the
+[provider matrix](docs/agent-sandbox/provider-matrix.md),
+[cookbook](docs/agent-sandbox/cookbook.md), and
+[benchmark harness](bench/agent-sandbox-providers/results-20260505.md).
+
 ### Native GUI Window
 
 macOS-native window with toolbar, menu bar, and frame persistence per VM. Multi-display support with resolution presets.
