@@ -7,17 +7,15 @@ this repository today.
 
 | Provider | Unified CLI state | Screenshot | Click | Type | Scroll | Wait | Env vars needed |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| OpenAI Agents | Stub in `cove agent-sandbox run`; full Python SDK adapter exists in `adapters/openai-agents-python` | yes in adapter | yes in adapter | yes in adapter | yes in adapter | yes in adapter | `OPENAI_API_KEY` |
+| OpenAI Agents | Python SDK adapter invoked by unified CLI | yes | yes | yes | yes | yes | `OPENAI_API_KEY` |
 | Anthropic computer-use | First-class Go runtime path plus Python sandbox package | yes | yes | yes | yes | yes | `ANTHROPIC_API_KEY` |
 | Gemini computer-use | Python bridge invoked by unified CLI | yes | yes | yes | yes | yes | `GEMINI_API_KEY` |
 | Vertex AI computer-use | Python bridge invoked by unified CLI | yes | yes | yes | yes | yes | `GOOGLE_CLOUD_PROJECT` or `COVE_VERTEX_PROJECT`; optional `COVE_VERTEX_REGION`; ADC or gcloud auth |
 
 ## Notes
 
-- OpenAI is not yet a first-class `cove agent-sandbox run --provider openai`
-  provider. The CLI accepts the provider name but returns a clear
-  not-supported error until the Agents SDK adapter is wired into the unified
-  runner.
+- OpenAI uses the repository adapter in `adapters/openai-agents-python`; install
+  it locally with `python -m pip install -e adapters/openai-agents-python[agents]`.
 - Anthropic is special today: the unified CLI routes it through the Go runtime
   adapter instead of `internal/agentsandbox.Run`.
 - Gemini and Vertex use the repository Python bridge scripts:

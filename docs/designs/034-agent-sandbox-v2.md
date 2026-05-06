@@ -5,10 +5,9 @@
 ## Provider Abstraction
 
 The internal provider registry normalizes OpenAI, Anthropic, Gemini, and Vertex
-behind provider metadata and a common `Run` shape. The matrix is intentionally
-honest: OpenAI has a full Python Agents SDK adapter but remains an explicit
-`ErrNotSupported` stub in `cove agent-sandbox run`; Anthropic is implemented by
-the Go runtime path; Gemini and Vertex use Python bridge scripts.
+behind provider metadata and a common `Run` shape. OpenAI uses the local Python
+Agents SDK adapter; Anthropic is implemented by the Go runtime path; Gemini and
+Vertex use Python bridge scripts.
 
 Provider switching is a one-flag change:
 

@@ -47,11 +47,12 @@ type Provider interface {
 var allCapabilities = Capabilities{Screenshot: true, Click: true, Type: true, Scroll: true, Wait: true}
 
 var providers = map[string]Provider{
-	ProviderOpenAI: providerStub{info: ProviderInfo{
+	ProviderOpenAI: pythonProvider{info: ProviderInfo{
 		Name:         ProviderOpenAI,
+		FirstClass:   true,
 		EnvVars:      []string{"OPENAI_API_KEY"},
 		Capabilities: allCapabilities,
-		Notes:        "SDK adapter exists; unified CLI provider is not wired yet",
+		Notes:        "implemented by the OpenAI Agents SDK adapter",
 	}},
 	ProviderAnthropic: providerStub{info: ProviderInfo{
 		Name:         ProviderAnthropic,
@@ -143,8 +144,6 @@ func (p providerStub) Run(context.Context, Options) (Result, error) {
 	switch p.info.Name {
 	case ProviderAnthropic:
 		return Result{}, fmt.Errorf("%w: anthropic provider is implemented by the cove runtime", ErrNotSupported)
-	case ProviderOpenAI:
-		return Result{}, fmt.Errorf("%w: openai provider is not implemented in cove agent-sandbox run yet", ErrNotSupported)
 	default:
 		return Result{}, ErrNotSupported
 	}
@@ -167,6 +166,8 @@ func runPythonBridge(ctx context.Context, provider string, opts Options) (Result
 	}
 	args := []string{script, "--vm", opts.VMName, "--task", opts.Task}
 	switch provider {
+	case ProviderOpenAI:
+		args = append(args, "--max-steps", fmt.Sprint(opts.MaxSteps))
 	case ProviderAnthropic:
 		args = append(args, "--max-iters", fmt.Sprint(opts.MaxSteps))
 	case ProviderGemini:
@@ -213,6 +214,8 @@ func providerScript(provider, root string) (string, error) {
 	base := repoRootOrCWD(root)
 	var rel string
 	switch provider {
+	case ProviderOpenAI:
+		rel = filepath.Join("adapters", "openai-agents-python", "examples", "computer_use.py")
 	case ProviderAnthropic:
 		rel = filepath.Join("adapters", "anthropic-bridge", "computer_use.py")
 	case ProviderGemini:
