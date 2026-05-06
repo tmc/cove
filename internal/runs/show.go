@@ -14,12 +14,15 @@ import (
 )
 
 var lifecycleEvents = map[string]bool{
-	"fork_created":   true,
-	"vm_create":      true,
-	"vm_start":       true,
-	"agent_ready":    true,
-	"build_step":     true,
-	runCompleteEvent: true,
+	"fork_created":              true,
+	"vm_create":                 true,
+	"vm_start":                  true,
+	"agent_ready":               true,
+	"build_step":                true,
+	"lifecycle.budget.exceeded": true,
+	"lifecycle.idle.tripped":    true,
+	"lifecycle.maxage.tripped":  true,
+	runCompleteEvent:            true,
 }
 
 // Show is the rendered data for a run.
