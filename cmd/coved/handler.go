@@ -21,6 +21,7 @@ type daemon struct {
 	pidPath   string
 	imageGC   *coved.ImageGCScheduler
 	connected chan struct{}
+	lifecycle *coved.LifecycleEnforcer
 }
 
 type statusResponse struct {

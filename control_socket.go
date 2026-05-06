@@ -1599,6 +1599,14 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 		"canStop":        canStop,
 		"canRequestStop": canRequestStop,
 	}
+	startedAt, execCount, stopIssued := s.policySnapshot()
+	status["policyStartedAt"] = startedAt.Format(time.RFC3339)
+	status["policyExecCount"] = execCount
+	status["policyStopIssued"] = stopIssued
+	s.healthMu.RLock()
+	lastPing := s.agentHealth.lastPing
+	s.healthMu.RUnlock()
+	status["lastPing"] = lastPing.Format(time.RFC3339)
 
 	data, _ := json.Marshal(status)
 	return &controlpb.ControlResponse{
