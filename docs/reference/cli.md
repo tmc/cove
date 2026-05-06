@@ -496,6 +496,10 @@ cove image verify <name[:tag]> [-strict] [-json] [-quiet] [-newer-than <duration
 cove image push <name[:tag]> <file> [-gzip]
 cove image load <file> [-tag <name[:tag]>] [-force]
 cove image gc [-dry-run] [-yes] [-older-than <duration>]
+cove image prune [-dry-run] [-yes] [-older-than <duration>]
+cove image tag <src> <dst>
+cove image history <ref> [-json]
+cove image search <query>
 cove image rm <name[:tag]>
 ```
 
@@ -508,6 +512,10 @@ cove image rm <name[:tag]>
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
 | `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
 | `gc [-dry-run] [-yes] [-older-than D]` | Sweep images with zero live forks. `-dry-run` plans only; `-yes` skips the confirmation prompt; `-older-than` filters by manifest `createdAt`. Re-checks fork count immediately before deletion to close the planning -> remove TOCTOU window. |
+| `prune [-dry-run] [-yes] [-older-than D]` | Prune unused images through the v0.4 image lifecycle UX. |
+| `tag <src> <dst>` | Add a local image tag for an existing image ref. |
+| `history <ref> [-json]` | Show local image ancestry/history information. |
+| `search <query>` | Search local images by name/tag metadata. |
 | `rm <ref>` | Delete an image. Refuses while any forked VM still references the image (`ParentImage` on the child's `config.json` is the gate). |
 
 ```bash
@@ -516,6 +524,9 @@ cove image inspect macos-runner:14.5 -json
 cove image push macos-runner:14.5 /tmp/macos-runner.tar.gz -gzip
 cove image load /tmp/macos-runner.tar.gz -tag macos-runner:imported
 cove image gc -dry-run -older-than 168h
+cove image tag macos-runner:14.5 macos-runner:latest
+cove image history macos-runner:latest
+cove image search runner
 cove image list
 cove run -fork-from macos-runner:14.5 -ephemeral -name worker-1
 cove image rm macos-runner:14.5
@@ -616,6 +627,148 @@ cove runs list --json
 cove runs show 20260505
 cove runs export 20260505 --format gha-summary >> "$GITHUB_STEP_SUMMARY"
 cove runs export 20260505 --format tar > cove-run.tar.gz
+```
+
+---
+
+## fleet
+
+Register trusted Mac hosts and route selected commands over SSH. Fleet commands
+operate on hosts you control; they do not create a hosted queue. For Cirrus
+migration context, see [Fleet Quickstart](../quickstart/fleet.md) and
+[Migrate from Cirrus](../migrate-from-cirrus.md).
+
+```
+cove fleet add <name> <ssh-target> [--root <path>]
+cove fleet ls
+cove fleet rm <name>
+cove --fleet=<name> <command> [args...]
+cove fleet vm list [--json]
+cove fleet image list [--json]
+cove fleet ps [--json] [--watch]
+cove fleet image push <ref> <dst-host>
+cove fleet image pull <ref> <src-host>
+cove fleet image sync <ref> <src-host> <dst-host>
+cove fleet run --policy=least-loaded [run flags...]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `add <name> <ssh-target>` | Register a trusted remote Mac reachable by SSH. |
+| `ls` / `list` | List registered fleet hosts. |
+| `rm` / `remove <name>` | Remove a fleet host registration. |
+| `--fleet=<name> <command>` | Route supported `ctl`, `shell`, `cp`, `logs`, `list`, `vm list`, `image list`, and `run` commands to a remote host. |
+| `vm list [--json]` | Aggregate VM lists across registered hosts. |
+| `image list [--json]` | Aggregate local image lists across registered hosts. |
+| `ps [--json] [--watch]` | Aggregate running VM/process state across registered hosts. |
+| `image push <ref> <dst-host>` | Stream a local image ref to another fleet host. |
+| `image pull <ref> <src-host>` | Pull an image ref from another fleet host. |
+| `image sync <ref> <src-host> <dst-host>` | Copy an image ref between two fleet hosts. |
+| `run --policy=least-loaded` | Place a run on the least-loaded registered host. |
+
+```bash
+cove fleet add mini-1 mini-1.local
+cove fleet vm list
+cove fleet image push macos-runner:latest mini-1
+cove fleet run --policy=least-loaded -fork-from macos-runner:latest -ephemeral
+```
+
+---
+
+## daemon / coved
+
+`coved` is the user-session coordinator for lifecycle enforcement and image GC.
+The one-shot `cove daemon` command starts, stops, or queries that daemon.
+
+```
+coved
+cove daemon start [-coved <path>]
+cove daemon stop
+cove daemon status [--json]
+```
+
+| Command | Description |
+|---------|-------------|
+| `coved` | Start the host-side coordinator daemon. |
+| `cove daemon start [-coved <path>]` | Start `coved`, optionally from an explicit binary path. |
+| `cove daemon stop` | Stop the user-session daemon. |
+| `cove daemon status [--json]` | Show daemon reachability, lifecycle enforcement, and image-GC counters. |
+
+```bash
+coved
+cove daemon status
+cove daemon status --json
+```
+
+---
+
+## policy and quota
+
+Lifecycle policies and resource quotas are stored per VM.
+
+```
+cove policy <vm> show
+cove policy <vm> clear
+cove policy <vm> idle <duration>
+cove policy <vm> max-age <duration>
+cove policy <vm> run-budget <duration>
+cove policy <vm> set idle=<duration> max-age=<duration> run-budget=<duration>
+cove quota <vm> show
+cove quota <vm> cpu <n>
+cove quota <vm> memory <gb>
+cove quota <vm> disk <gb>
+```
+
+| Command | Description |
+|---------|-------------|
+| `policy <vm> show` / `vm policy show` | Show idle, max-age, and run-budget policy for a VM. |
+| `policy <vm> clear` | Clear the VM lifecycle policy. |
+| `policy <vm> idle|max-age|run-budget <duration>` | Set one lifecycle policy threshold. |
+| `policy <vm> set ...` | Set multiple lifecycle policy fields at once. |
+| `quota <vm> show` | Show durable CPU, memory, and disk quota intent. |
+| `quota <vm> cpu|memory|disk <n>` | Update quota intent; disk quota applies the APFS quota wrapper. |
+
+```bash
+cove policy ci-runner idle 30m
+cove policy ci-runner run-budget 8h
+cove quota ci-runner cpu 4
+cove quota ci-runner memory 8
+```
+
+---
+
+## logs / cp / diff / forward / network logs
+
+v0.4 adds small operator commands for moving data, reading logs, comparing
+images, and exposing selected ports.
+
+```
+cove logs <vm> [-f|--follow]
+cove cp <host-path> <vm:/guest/path>
+cove cp <vm:/guest/path> <host-path>
+cove diff <ref-a> <ref-b> [-json]
+cove forward <vm> <hostport>:<vmport>
+cove forward <vm> -reverse <vmport>:<hostport>
+cove forward <vm> udp:<hostport>:<vmport>
+cove network logs <vm> [-f]
+```
+
+| Command | Description |
+|---------|-------------|
+| `logs <vm> [-f\|--follow]` | Tail guest logs through the agent/control path. |
+| `cp` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. |
+| `diff <ref-a> <ref-b> [-json]` | Compare local image manifests/layers. |
+| `forward` | Forward TCP/UDP between host and guest; `-reverse` exposes guest-to-host direction. |
+| `network logs <vm> [-f]` | Tail network policy audit events. |
+
+```bash
+cove logs ubuntu-runner -f
+cove cp ./artifact.txt ubuntu-runner:/tmp/artifact.txt
+cove cp ubuntu-runner:/etc/os-release ./os-release
+cove diff macos-runner:old macos-runner:new -json
+cove forward dev 8080:80
+cove forward dev -reverse 3000:8080
+cove network logs dev -f
 ```
 
 Computer-use bridges that drive a running VM through the control socket
