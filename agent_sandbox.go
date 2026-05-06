@@ -398,6 +398,11 @@ func printAgentSandboxUsage(w io.Writer) {
   cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> --task <prompt> [options]
 
 Options:
+  --provider <name>       provider: openai, anthropic, gemini, vertex
+                          env: OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
+                               GOOGLE_CLOUD_PROJECT or COVE_VERTEX_PROJECT
+  --image <ref>           local image ref to fork, for example agentkit/macos-base:latest
+  --task <prompt>         provider task prompt
   --screenshot-dir <dir>  screenshot output directory (default: ~/.vz/runs/<run-id>/screenshots)
   --max-steps N           maximum provider agent steps (default: 25)
   --vm <name>             ephemeral VM name (default: agent-sandbox-<id>)

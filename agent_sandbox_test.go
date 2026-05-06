@@ -30,6 +30,34 @@ func TestParseAgentSandboxRunArgs(t *testing.T) {
 	}
 }
 
+func TestParseAgentSandboxRunArgsProviderSwitchOnly(t *testing.T) {
+	base := []string{"--image", "agentkit/macos-base:latest", "--task", "describe desktop"}
+	for _, provider := range []string{"openai", "anthropic", "gemini", "vertex"} {
+		args := append([]string{"--provider", provider}, base...)
+		got, err := parseAgentSandboxRunArgs(args)
+		if err != nil {
+			t.Fatalf("%s: %v", provider, err)
+		}
+		if got.provider != provider {
+			t.Fatalf("provider = %q, want %q", got.provider, provider)
+		}
+		if got.image != "agentkit/macos-base:latest" || got.task != "describe desktop" {
+			t.Fatalf("non-provider options changed: %+v", got)
+		}
+	}
+}
+
+func TestAgentSandboxUsageListsProviderEnvVars(t *testing.T) {
+	var b strings.Builder
+	printAgentSandboxUsage(&b)
+	out := b.String()
+	for _, want := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "COVE_VERTEX_PROJECT"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("usage missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestParseAgentSandboxRunArgsRejectsBadInput(t *testing.T) {
 	for _, tc := range []struct {
 		name string
