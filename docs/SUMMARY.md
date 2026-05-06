@@ -72,7 +72,18 @@
 * [cove shell exec UX](designs/023-cove-shell-exec-ux.md)
 * [cove runner images (publish + fork-from)](designs/024-cove-runner-images.md)
 * [cove-action security architecture](designs/025-cove-action-security.md)
+* [Ephemeral self-hosted runners](designs/026-ephemeral-self-hosted-runners.md)
+* [Disk I/O tuning](designs/027-disk-io-tuning.md)
+* [Block device passthrough](designs/028-block-device-passthrough.md)
+* [VirtioFS hot-add](designs/029-virtiofs-hot-add.md)
 * [GHA executor Slice 2 cache reuse](designs/030-gha-executor-slice-2.md)
+* [VM lifecycle policy](designs/031-vm-lifecycle.md)
+* [Per-VM resource quotas](designs/032-vm-quotas.md)
+* [Cove daemon mode](designs/033-cove-daemon.md)
+* [Fleet](designs/034-fleet-slice-1.md)
+* [OpenAI SandboxRunConfig backend](designs/035-openai-sandbox-run-config.md)
+* [NixOS guest support](designs/036-nixos-guest-support.md)
+* [Linux Desktop autoprovisioning](designs/037-linux-autoprov.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
