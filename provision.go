@@ -466,6 +466,8 @@ func applyProvisioningFiles() error {
 var (
 	preWarmAuthorizationHook               = PreWarm
 	attachAndMountDataVolumeHook           = attachAndMountDataVolume
+	detachDiskHook                         = detachDisk
+	applyStagedFilesHook                   = applyStagedFiles
 	provisionEffectiveUID                  = os.Geteuid
 	provisionWarningWriter       io.Writer = os.Stderr
 )
@@ -501,7 +503,7 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 	if err != nil {
 		return fmt.Errorf("mount data volume: %w", err)
 	}
-	defer detachDisk(device)
+	defer detachDiskHook(device)
 
 	// Handle Ctrl+C — close a channel instead of os.Exit so deferred
 	// detachDisk runs and the disk is cleanly released.
@@ -532,7 +534,10 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 	// and ownership in one elevated pass. This avoids the problem where APFS
 	// ownership is disabled (default for disk images) and we can't even
 	// create files in system directories without root.
-	if err := applyStagedFiles(target, stagingDir, mountPoint, dataPart, manifest); err != nil {
+	if err := applyStagedFilesHook(target, stagingDir, mountPoint, dataPart, manifest); err != nil {
+		return err
+	}
+	if err := cacheProvisionedLoginScreenCredentials(target, stagingDir, manifest); err != nil {
 		return err
 	}
 
@@ -546,6 +551,23 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 	}
 
 	fmt.Println("Provisioning files applied; guest user will be verified after boot.")
+	return nil
+}
+
+func cacheProvisionedLoginScreenCredentials(target vmSelection, stagingDir string, manifest *ProvisionManifest) error {
+	if !manifestIncludesLoginScreenCredentials(manifest) {
+		return nil
+	}
+	creds, err := readLoginScreenCredentials(stagingDir)
+	if err != nil {
+		return fmt.Errorf("read staged login screen credentials: %w", err)
+	}
+	if !creds.Valid() {
+		return nil
+	}
+	if err := writeLoginScreenCredentialsCache(target.Directory, creds); err != nil {
+		return fmt.Errorf("write login screen credential cache: %w", err)
+	}
 	return nil
 }
 
@@ -612,6 +634,22 @@ func manifestIncludesAgent(manifest *ProvisionManifest) bool {
 		}
 	}
 	return false
+}
+
+func manifestIncludesLoginScreenCredentials(manifest *ProvisionManifest) bool {
+	if manifest == nil {
+		return false
+	}
+	var hasKCPassword, hasLoginWindow bool
+	for _, file := range manifest.Files {
+		switch filepath.Clean(file.Path) {
+		case filepath.Join("private", "etc", "kcpassword"):
+			hasKCPassword = true
+		case filepath.Join("Library", "Preferences", "com.apple.loginwindow.plist"):
+			hasLoginWindow = true
+		}
+	}
+	return hasKCPassword && hasLoginWindow
 }
 
 // applyStagedFiles enables APFS ownership, copies all staged files to the

@@ -26,9 +26,11 @@ func TestApplyProvisioningPreWarmsBeforeDiskAttach(t *testing.T) {
 
 	oldPreWarm := preWarmAuthorizationHook
 	oldAttach := attachAndMountDataVolumeHook
+	oldDetach := detachDiskHook
 	defer func() {
 		preWarmAuthorizationHook = oldPreWarm
 		attachAndMountDataVolumeHook = oldAttach
+		detachDiskHook = oldDetach
 	}()
 
 	var order []string
@@ -47,6 +49,72 @@ func TestApplyProvisioningPreWarmsBeforeDiskAttach(t *testing.T) {
 	}
 	if len(order) != 2 || order[0] != "prewarm" || order[1] != "attach" {
 		t.Fatalf("order = %v, want [prewarm attach]", order)
+	}
+}
+
+func TestApplyProvisioningCachesLoginScreenCredentials(t *testing.T) {
+	dir := t.TempDir()
+	target := vmSelection{Directory: dir, Name: "cache-test"}
+	if err := os.WriteFile(target.diskPath(), []byte("disk"), 0o644); err != nil {
+		t.Fatalf("write disk: %v", err)
+	}
+	stagingDir := provisionStagingDirForVM(target)
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatalf("mkdir staging: %v", err)
+	}
+	manifest := &ProvisionManifest{Version: 1}
+	if err := stageAutoLogin(stagingDir, "mlxqa", "mlxqa123", manifest); err != nil {
+		t.Fatalf("stageAutoLogin: %v", err)
+	}
+	if err := writeManifest(stagingDir, manifest); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	oldPreWarm := preWarmAuthorizationHook
+	oldAttach := attachAndMountDataVolumeHook
+	oldDetach := detachDiskHook
+	oldApply := applyStagedFilesHook
+	t.Cleanup(func() {
+		preWarmAuthorizationHook = oldPreWarm
+		attachAndMountDataVolumeHook = oldAttach
+		detachDiskHook = oldDetach
+		applyStagedFilesHook = oldApply
+	})
+
+	var applied bool
+	preWarmAuthorizationHook = func() error { return nil }
+	attachAndMountDataVolumeHook = func(string) (string, string, string, error) {
+		return t.TempDir(), "/dev/disk-test", "disk-test-data", nil
+	}
+	detachDiskHook = func(string) {}
+	applyStagedFilesHook = func(vmSelection, string, string, string, *ProvisionManifest) error {
+		applied = true
+		return nil
+	}
+
+	if err := applyProvisioningFilesForVM(target); err != nil {
+		t.Fatalf("applyProvisioningFilesForVM: %v", err)
+	}
+	if !applied {
+		t.Fatal("applyStagedFilesHook was not called")
+	}
+	got, err := readLoginScreenCredentialsCache(target.Directory)
+	if err != nil {
+		t.Fatalf("readLoginScreenCredentialsCache: %v", err)
+	}
+	want := loginScreenCredentials{Username: "mlxqa", Password: "mlxqa123"}
+	if got != want {
+		t.Fatalf("cached credentials = %+v, want %+v", got, want)
+	}
+	info, err := os.Stat(loginScreenCredentialsPath(target.Directory))
+	if err != nil {
+		t.Fatalf("stat credential cache: %v", err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("credential cache mode = %o, want 600", mode)
+	}
+	if _, err := os.Stat(stagingDir); !os.IsNotExist(err) {
+		t.Fatalf("staging dir still exists or stat failed with non-ENOENT: %v", err)
 	}
 }
 
