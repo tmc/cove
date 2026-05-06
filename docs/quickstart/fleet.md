@@ -1,7 +1,7 @@
 # Fleet Quickstart
 
-Slice 1 lets one cove CLI register another Mac host and run selected remote
-commands over SSH.
+Fleet lets one cove CLI register another Mac host, run selected remote commands
+over SSH, aggregate state across hosts, and copy images directly between hosts.
 
 ## Setup
 
@@ -42,6 +42,28 @@ List remote images:
 cove --fleet=studio image list
 ```
 
+Aggregate VMs and images across all registered hosts:
+
+```sh
+cove fleet vm ls
+cove fleet image ls
+cove fleet ps
+```
+
+Copy a local image to a remote host, pull it back, or sync it between remotes:
+
+```sh
+cove fleet image push agentkit/linux-base:latest studio
+cove fleet image pull agentkit/linux-base:latest studio
+cove fleet image sync agentkit/linux-base:latest studio mini
+```
+
+Start a VM on the host with the fewest running VMs:
+
+```sh
+cove fleet run --policy=least-loaded -linux -headless -vm ubuntu
+```
+
 Remove a remote:
 
 ```sh
@@ -50,9 +72,10 @@ cove fleet rm studio
 
 ## Limits
 
-Fleet Slice 1 is SSH-routed remote control. It does not schedule VMs, replicate
-state, start a run on the least busy host, push images across hosts, or manage
-host health. Those are deferred to later slices.
+Fleet image transfer is direct host-to-host tar streaming through SSH. It does
+not use a registry, content-addressed deduplication across hosts, or public
+image references.
 
 Use `--fleet` only with commands that inspect or control an existing remote
-host. VM creation and placement remain explicit per host.
+host. Least-loaded placement is opt-in through `cove fleet run
+--policy=least-loaded`; default `cove run` behavior is unchanged.
