@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,6 +47,65 @@ func TestApplyProvisioningPreWarmsBeforeDiskAttach(t *testing.T) {
 	}
 	if len(order) != 2 || order[0] != "prewarm" || order[1] != "attach" {
 		t.Fatalf("order = %v, want [prewarm attach]", order)
+	}
+}
+
+func TestApplyProvisioningWarnsWhenAutoLoginNeedsRoot(t *testing.T) {
+	dir := t.TempDir()
+	target := vmSelection{Directory: dir, Name: "login-warning"}
+	if err := os.WriteFile(target.diskPath(), []byte("disk"), 0o644); err != nil {
+		t.Fatalf("write disk: %v", err)
+	}
+	stagingDir := provisionStagingDirForVM(target)
+	if err := os.MkdirAll(filepath.Join(stagingDir, "Library", "LaunchDaemons"), 0o755); err != nil {
+		t.Fatalf("mkdir staging: %v", err)
+	}
+	manifest := &ProvisionManifest{
+		Version: 1,
+		Files: []ProvisionManifestFile{
+			{Path: filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"), Mode: "0644", Owner: "root:wheel"},
+			{Path: filepath.Join("private", "etc", "kcpassword"), Mode: "0600", Owner: "root:wheel"},
+		},
+	}
+	if err := writeManifest(stagingDir, manifest); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := writeStagingFingerprint(stagingDir, stagingFingerprint{Username: "mlxqa", AutoLogin: true}); err != nil {
+		t.Fatalf("write fingerprint: %v", err)
+	}
+
+	oldEUID := provisionEffectiveUID
+	oldWriter := provisionWarningWriter
+	oldPreWarm := preWarmAuthorizationHook
+	oldAttach := attachAndMountDataVolumeHook
+	t.Cleanup(func() {
+		provisionEffectiveUID = oldEUID
+		provisionWarningWriter = oldWriter
+		preWarmAuthorizationHook = oldPreWarm
+		attachAndMountDataVolumeHook = oldAttach
+	})
+
+	var buf bytes.Buffer
+	provisionEffectiveUID = func() int { return 501 }
+	provisionWarningWriter = &buf
+	preWarmAuthorizationHook = func() error { return nil }
+	attachAndMountDataVolumeHook = func(string) (string, string, string, error) {
+		return "", "", "", os.ErrNotExist
+	}
+
+	err := applyProvisioningFilesForVM(target)
+	if err == nil || !strings.Contains(err.Error(), "mount data volume") {
+		t.Fatalf("applyProvisioningFilesForVM error = %v, want mount error", err)
+	}
+	got := buf.String()
+	for _, want := range []string{
+		"warning: macOS auto-login provisioning needs administrator privileges",
+		"root:wheel",
+		"sudo cove -vm login-warning provision -user 'mlxqa' -password <password> -skip-setup-assistant -auto-login",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("warning missing %q\n%s", want, got)
+		}
 	}
 }
 

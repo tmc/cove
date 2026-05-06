@@ -140,6 +140,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -463,8 +464,10 @@ func applyProvisioningFiles() error {
 }
 
 var (
-	preWarmAuthorizationHook     = PreWarm
-	attachAndMountDataVolumeHook = attachAndMountDataVolume
+	preWarmAuthorizationHook               = PreWarm
+	attachAndMountDataVolumeHook           = attachAndMountDataVolume
+	provisionEffectiveUID                  = os.Geteuid
+	provisionWarningWriter       io.Writer = os.Stderr
 )
 
 func applyProvisioningFilesForVM(target vmSelection) error {
@@ -474,6 +477,7 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 	if err != nil {
 		return fmt.Errorf("no staged provisioning files found: %w\n  run 'cove inject -user <username> -skip-setup-assistant' to stage and apply", err)
 	}
+	warnNonRootProvisioning(target, stagingDir, manifest)
 
 	diskPath := target.diskPath()
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
@@ -543,6 +547,53 @@ func applyProvisioningFilesForVM(target vmSelection) error {
 
 	fmt.Println("Provisioning files applied; guest user will be verified after boot.")
 	return nil
+}
+
+func warnNonRootProvisioning(target vmSelection, stagingDir string, manifest *ProvisionManifest) {
+	if provisionEffectiveUID() == 0 || !manifestNeedsRootProvisioning(manifest) {
+		return
+	}
+	username := provisionUser
+	if fp, ok := readStagingFingerprint(stagingDir); ok && fp.Username != "" {
+		username = fp.Username
+	}
+	if username == "" {
+		username = "<username>"
+	}
+	fmt.Fprintln(provisionWarningWriter)
+	fmt.Fprintln(provisionWarningWriter, "warning: macOS auto-login provisioning needs administrator privileges")
+	fmt.Fprintln(provisionWarningWriter, "  LaunchDaemon plists must be written as root:wheel or launchd will ignore them.")
+	fmt.Fprintln(provisionWarningWriter, "  If this boot reaches the login screen, stop the VM and re-run:")
+	fmt.Fprintf(provisionWarningWriter, "    sudo cove%s provision -user %s -password <password> -skip-setup-assistant -auto-login\n",
+		target.hintFlag(), shellQuote(username))
+}
+
+func manifestNeedsRootProvisioning(manifest *ProvisionManifest) bool {
+	if manifest == nil {
+		return false
+	}
+	for _, file := range manifest.Files {
+		switch filepath.Clean(file.Path) {
+		case filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"),
+			filepath.Join("private", "etc", "kcpassword"),
+			filepath.Join("Library", "Preferences", "com.apple.loginwindow.plist"),
+			filepath.FromSlash(autoLoginLaunchDaemonRelativePath):
+			return true
+		}
+	}
+	return false
+}
+
+func readStagingFingerprint(stagingDir string) (stagingFingerprint, bool) {
+	data, err := os.ReadFile(filepath.Join(stagingDir, "fingerprint.json"))
+	if err != nil {
+		return stagingFingerprint{}, false
+	}
+	var fp stagingFingerprint
+	if err := json.Unmarshal(data, &fp); err != nil {
+		return stagingFingerprint{}, false
+	}
+	return fp, true
 }
 
 func manifestIncludesAgent(manifest *ProvisionManifest) bool {
