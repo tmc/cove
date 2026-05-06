@@ -1,0 +1,74 @@
+# cirrus-migrate-doctor — Inspect a mounted repository for Cirrus migration inputs
+# guest-os: both
+# mount: . ro
+
+guest-ping
+guest-shell cirrus-migrate-doctor.sh
+
+-- cirrus-migrate-doctor.sh --
+#!/bin/sh
+set -eu
+
+pick_root() {
+	if [ -n "${CIRRUS_MIGRATE_ROOT:-}" ] && [ -d "$CIRRUS_MIGRATE_ROOT" ]; then
+		printf '%s\n' "$CIRRUS_MIGRATE_ROOT"
+		return
+	fi
+	for d in "/Volumes/My Shared Files" /mnt /workspace /workspaces "$HOME"; do
+		if [ -d "$d" ] && find "$d" \( -name .cirrus.yml -o -name .cirrus.yaml \) -type f 2>/dev/null | sed -n 1q | grep -q .; then
+			printf '%s\n' "$d"
+			return
+		fi
+	done
+	printf '%s\n' ""
+}
+
+root=$(pick_root)
+if [ -n "$root" ]; then
+	cirrus_files=$(find "$root" \( -name .cirrus.yml -o -name .cirrus.yaml \) -type f 2>/dev/null | sort | sed -n '1,20p')
+else
+	cirrus_files=
+fi
+
+count=0
+if [ -n "$cirrus_files" ]; then
+	count=$(printf '%s\n' "$cirrus_files" | wc -l | tr -d ' ')
+fi
+
+github=no
+workflows=no
+if [ -n "$root" ] && [ -d "$root/.git" ]; then github=yes; fi
+if [ -n "$root" ] && [ -d "$root/.github/workflows" ]; then workflows=yes; fi
+
+images=unknown
+for d in "$HOME/.vz/images" "/Volumes/My Shared Files/.vz/images"; do
+	if [ -d "$d" ]; then
+		images=visible
+		break
+	fi
+done
+
+printf '{\n'
+printf '  "workspace": "%s",\n' "$root"
+printf '  "cirrus_files": %s,\n' "$count"
+printf '  "git_repository": "%s",\n' "$github"
+printf '  "github_workflows": "%s",\n' "$workflows"
+printf '  "cove_images": "%s"\n' "$images"
+printf '}\n\n'
+
+echo "migration plan:"
+if [ -z "$root" ]; then
+	echo "- mount or pass a repository path with CIRRUS_MIGRATE_ROOT"
+else
+	echo "- workspace: $root"
+fi
+if [ "$count" -eq 0 ]; then
+	echo "- no .cirrus.yml files found"
+else
+	echo "- Cirrus configs:"
+	printf '%s\n' "$cirrus_files" | sed 's/^/  - /'
+fi
+[ "$github" = yes ] || echo "- initialize or run from a Git repository before workflow cutover"
+[ "$workflows" = yes ] || echo "- add .github/workflows for the cove action job"
+[ "$images" = visible ] || echo "- run host-side cove image list and cove image verify for registry state"
+echo "- use docs/migrations/from-cirrus-checklist.md before deleting Cirrus tasks"
