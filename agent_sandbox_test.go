@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +30,46 @@ func TestParseAgentSandboxRunArgs(t *testing.T) {
 	}
 	if opts.maxSteps != 25 {
 		t.Fatalf("maxSteps = %d, want 25", opts.maxSteps)
+	}
+}
+
+type fakeConn struct{ net.Conn }
+
+func (fakeConn) Close() error { return nil }
+
+func TestAgentSandboxDoctor(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	old := agentSandboxDoctorDial
+	t.Cleanup(func() { agentSandboxDoctorDial = old })
+	agentSandboxDoctorDial = func(context.Context, string, string) (net.Conn, error) {
+		return fakeConn{}, nil
+	}
+	var b strings.Builder
+	if err := runAgentSandboxDoctor(context.Background(), &b, "anthropic"); err != nil {
+		t.Fatalf("doctor: %v\n%s", err, b.String())
+	}
+	out := b.String()
+	for _, want := range []string{"PASS env ANTHROPIC_API_KEY", "PASS network api.anthropic.com:443", "PASS model"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAgentSandboxDoctorFailsMissingEnv(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	old := agentSandboxDoctorDial
+	t.Cleanup(func() { agentSandboxDoctorDial = old })
+	agentSandboxDoctorDial = func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("blocked")
+	}
+	var b strings.Builder
+	err := runAgentSandboxDoctor(context.Background(), &b, "openai")
+	if err == nil {
+		t.Fatalf("doctor succeeded:\n%s", b.String())
+	}
+	if !strings.Contains(b.String(), "FAIL env OPENAI_API_KEY") {
+		t.Fatalf("doctor output:\n%s", b.String())
 	}
 }
 
