@@ -54,7 +54,8 @@ func printVzscriptUsage(w io.Writer) {
 Commands:
   list [-os darwin|linux] List built-in recipes
   show <recipe>           Print recipe contents
-  run [-v] [-timeout d] <recipe...>  Run one or more recipes against a running VM
+  run [-v] [-timeout d] [-env KEY=VALUE] <recipe...>
+                          Run one or more recipes against a running VM
 
 A recipe is a txtar archive (see golang.org/x/tools/txtar) executed
 by rsc.io/script. The comment section contains commands; files in
@@ -111,6 +112,7 @@ Examples:
   cove vzscript list
   cove vzscript show homebrew
   cove vzscript run developer-tools
+  cove vzscript run -env COVE_HOMEBREW_ACCEPT_CLT=1 homebrew
   cove vzscript run homebrew golang openclaw
   cove vzscript run ./custom.vzscript
   cove vzscript run -template -var Mode=disable -var Reboot=true ./custom.vzscript.tmpl
@@ -235,6 +237,8 @@ func vzscriptRun(args []string) error {
 	renderTemplate := rf.Bool("template", false, "Render recipes as Go text/templates before running")
 	templateVars := templateVarFlag{}
 	rf.Var(&templateVars, "var", "Template variable name=value (repeatable)")
+	envVars := envFlag{}
+	rf.Var(&envVars, "env", "Guest environment variable KEY=VALUE (repeatable)")
 	if err := rf.Parse(args); err != nil {
 		return err
 	}
@@ -265,6 +269,7 @@ func vzscriptRun(args []string) error {
 		daemon:       *daemon,
 		template:     *renderTemplate,
 		templateVars: templateVars,
+		env:          envVars,
 		guestOS:      vzscriptGuestOSForSocket(sock),
 	}
 
@@ -795,7 +800,7 @@ func reorderArgsForFlags(args []string) []string {
 // flagTakesValue returns true for vzscript run flags that take a value argument.
 func flagTakesValue(name string) bool {
 	switch name {
-	case "socket", "timeout", "vm", "var":
+	case "socket", "timeout", "vm", "var", "env":
 		return true
 	}
 	return false

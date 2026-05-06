@@ -89,6 +89,24 @@ import (
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
+type envFlag []string
+
+func (f *envFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *envFlag) Set(s string) error {
+	name, _, ok := strings.Cut(s, "=")
+	if !ok {
+		return fmt.Errorf("env must be KEY=VALUE")
+	}
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("env name is empty")
+	}
+	*f = append(*f, s)
+	return nil
+}
+
 // vzscriptConfig holds configuration for the vzscript engine.
 type vzscriptConfig struct {
 	socketPath   string
@@ -480,7 +498,7 @@ func guestExecStream(cfg vzscriptConfig, args []string, timeout time.Duration, o
 	req := &controlpb.ControlRequest{
 		Type: cfg.execStreamType(),
 		Command: &controlpb.ControlRequest_AgentExec{
-			AgentExec: &controlpb.AgentExecCommand{Args: args},
+			AgentExec: &controlpb.AgentExecCommand{Args: args, Env: envListToMap(cfg.env)},
 		},
 	}
 
@@ -565,6 +583,21 @@ func guestExecStream(cfg vzscriptConfig, args []string, timeout time.Duration, o
 	}
 
 	return stdoutBuf.String(), stderrBuf.String(), exitCode, nil
+}
+
+func envListToMap(env []string) map[string]string {
+	if len(env) == 0 {
+		return nil
+	}
+	m := make(map[string]string)
+	for _, kv := range env {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok || name == "" {
+			continue
+		}
+		m[name] = value
+	}
+	return m
 }
 
 func stdoutOrStderrWrite(buf *bytes.Buffer, sink func([]byte), chunk []byte) {
