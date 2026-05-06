@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-05-06T18:30:44Z",
+  "run_id": "bench-20260506-183044",
+  "git_head": "0c5f4c0ce252c2244f92231aa1bc659e9ff737e2",
+  "origin_main": "b48468670b12d748bb8863557856cafa0fdc43ae",
+  "results": [
+    {
+      "workload": "parallel_fork_16",
+      "tool": "cove",
+      "status": "ok",
+      "value_ms": 1163,
+      "unit": "ms",
+      "source": "bench/parallel-fork/results-20260506-m4x-129/summary.md",
+      "methodology": "parallel fork fan-out from a stopped 60 GiB macOS VM, 16 children"
+    },
+    {
+      "workload": "boot_to_agent",
+      "tool": "cove",
+      "status": "ok",
+      "value_ms": 52693,
+      "unit": "ms",
+      "source": "bench/boot-to-agent/results-20260506-m4x-129/runs.jsonl",
+      "methodology": "boot local image and wait for guest agent readiness"
+    },
+    {
+      "workload": "image_build",
+      "tool": "cove",
+      "status": "ok",
+      "value_ms": 37648,
+      "unit": "ms",
+      "source": "bench/image-build/results-20260506-m4x-129/runs.jsonl",
+      "methodology": "snapshot a stopped VM into a local cove image"
+    },
+    {
+      "workload": "parallel_fork_16",
+      "tool": "lume",
+      "status": "not_measured",
+      "methodology": "bench/cove-vs-lume/run.sh",
+      "reason": "lume CLI not found on PATH"
+    },
+    {
+      "workload": "parallel_fork_16",
+      "tool": "docker_mac",
+      "status": "not_measured",
+      "methodology": "not run",
+      "reason": "Docker Desktop was not run for these VM workloads; container startup is not equivalent to macOS/Linux VM fork, boot-to-agent, or image-build timing"
+    },
+    {
+      "workload": "parallel_fork_16",
+      "tool": "cirrus",
+      "status": "not_measured",
+      "methodology": "bench/cove-vs-cirrus/run.sh",
+      "reason": "cirrus CLI not found on PATH"
+    },
+    {
+      "workload": "boot_to_agent",
+      "tool": "lume",
+      "status": "not_measured",
+      "methodology": "bench/cove-vs-lume/run.sh",
+      "reason": "lume CLI not found on PATH"
+    },
+    {
+      "workload": "boot_to_agent",
+      "tool": "docker_mac",
+      "status": "not_measured",
+      "methodology": "not run",
+      "reason": "Docker Desktop was not run for these VM workloads; container startup is not equivalent to macOS/Linux VM fork, boot-to-agent, or image-build timing"
+    },
+    {
+      "workload": "boot_to_agent",
+      "tool": "cirrus",
+      "status": "not_measured",
+      "methodology": "bench/cove-vs-cirrus/run.sh",
+      "reason": "cirrus CLI not found on PATH"
+    },
+    {
+      "workload": "image_build",
+      "tool": "lume",
+      "status": "not_measured",
+      "methodology": "bench/cove-vs-lume/run.sh",
+      "reason": "lume CLI not found on PATH"
+    },
+    {
+      "workload": "image_build",
+      "tool": "docker_mac",
+      "status": "not_measured",
+      "methodology": "not run",
+      "reason": "Docker Desktop was not run for these VM workloads; container startup is not equivalent to macOS/Linux VM fork, boot-to-agent, or image-build timing"
+    },
+    {
+      "workload": "image_build",
+      "tool": "cirrus",
+      "status": "not_measured",
+      "methodology": "bench/cove-vs-cirrus/run.sh",
+      "reason": "cirrus CLI not found on PATH"
+    }
+  ]
+}
