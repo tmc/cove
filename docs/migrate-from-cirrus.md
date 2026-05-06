@@ -10,6 +10,14 @@ Cirrus hosted CI shuts down on **2026-06-01**. This guide is the short path for 
 
 Cove is not a hosted queue. It replaces the VM image, fork-per-job, logs, and artifact substrate. Keep scheduling in GitHub Actions, your existing CI, or a small host-side runner script.
 
+This draft has been superseded by the canonical migration guide and checklist:
+
+- [`docs/migrations/from-cirrus.md`](migrations/from-cirrus.md)
+- [`docs/migrations/from-cirrus-checklist.md`](migrations/from-cirrus-checklist.md)
+
+Use those files for command examples. The notes below are retained as older
+planning context.
+
 ## Mapping
 
 | Cirrus | Cove |
@@ -25,9 +33,9 @@ Cove is not a hosted queue. It replaces the VM image, fork-per-job, logs, and ar
 Run these checks before cutting over:
 
 ```bash
-cove action doctor --fork-from acme/runner:latest
+cove action doctor
 cove action prepare-image acme/runner:latest
-cove image verify acme/runner:latest --strict --newer-than 7d
+cove image verify --strict --newer-than 168h acme/runner:latest
 ```
 
 For multi-host execution, register Macs with the fleet slice 1 commands in [Fleet Quickstart](quickstart/fleet.md). For strategy and competitive context, see [Competitive Matrix, May 2026](strategy/competitive-2026-05.md).
@@ -50,7 +58,7 @@ Cove:
 cove up -linux -vm ubuntu-runner -user ubuntu -password ubuntu
 cove ctl -vm ubuntu-runner agent-exec --daemon -- bash -lc 'apt-get update && apt-get install -y golang'
 cove image build -from ubuntu-runner -tag acme/runner:go
-cove run -fork-from acme/runner:go -ephemeral -- bash -lc 'go test ./...'
+go run ./cmd/cove-action -image acme/runner:go -command 'go test ./...'
 ```
 
 The package install moves into the image. Each job starts from a fresh fork of `acme/runner:go`.
@@ -76,7 +84,7 @@ Cove:
 ```bash
 for go in 1.24 1.25; do
   cove image build -from "go-${go}-runner" -tag "acme/runner:go-${go}"
-  cove run -fork-from "acme/runner:go-${go}" -ephemeral -- bash -lc 'go test ./...'
+  go run ./cmd/cove-action -image "acme/runner:go-${go}" -command 'go test ./...'
 done
 ```
 
@@ -108,8 +116,8 @@ Cove:
 
 ```bash
 cove build -from go-base -tag acme/runner:deps -script ci/deps.vzscript
-cove image verify acme/runner:deps --strict --newer-than 24h
-cove run -fork-from acme/runner:deps -ephemeral -- bash -lc 'go test ./...'
+cove image verify --strict --newer-than 24h acme/runner:deps
+go run ./cmd/cove-action -image acme/runner:deps -command 'go test ./...'
 ```
 
 The dependency cache becomes part of the runner image or Design 030 build cache entry. Freshness is explicit through `cove image verify --newer-than` instead of hidden in a hosted cache service.
@@ -117,8 +125,8 @@ The dependency cache becomes part of the runner image or Design 030 build cache 
 ## Cutover checklist
 
 1. Build one runner image from a known-good VM.
-2. Verify it with `cove image verify --strict --newer-than 7d`.
-3. Run one Cirrus task equivalent with `cove run -fork-from ... -ephemeral`.
+2. Verify it with `cove image verify --strict --newer-than 168h <ref>`.
+3. Run one Cirrus task equivalent with `.github/actions/cove-action` or `cmd/cove-action`.
 4. Compare logs under `~/.vz/runs/<run-id>/` to the old Cirrus task output.
 5. Add `cove action doctor` and `cove action prepare-image` to the workflow preflight.
 

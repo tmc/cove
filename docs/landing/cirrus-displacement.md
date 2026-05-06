@@ -17,7 +17,7 @@ not from memory.
 
 ```bash
 cove action doctor
-cove image verify macos-runner:latest --strict --newer-than 7d
+cove image verify --strict --newer-than 168h macos-runner:latest
 cove action prepare-image macos-runner:latest --ttl 24h
 go run ./cmd/cove-action -image macos-runner:latest -command 'xcodebuild test'
 cove run -fork-from macos-runner:latest -ephemeral -headless
@@ -75,5 +75,9 @@ cove image build -from macos-runner -tag macos-runner:latest
 After the image exists, wire the private action into GitHub Actions with
 `uses: ./.github/actions/cove-action` and set `image: macos-runner:latest`.
 Run `cove action doctor`, `cove action prepare-image`, and
-`cove image verify --strict --newer-than 7d` in the preflight path before
+`cove image verify --strict --newer-than 168h` in the preflight path before
 turning off the Cirrus job.
+
+The canonical migration walkthrough and operator checklist live under
+[`docs/migrations/from-cirrus.md`](../migrations/from-cirrus.md) and
+[`docs/migrations/from-cirrus-checklist.md`](../migrations/from-cirrus-checklist.md).

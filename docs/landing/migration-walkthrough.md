@@ -55,7 +55,7 @@ cove ctl -vm macos-runner agent-exec -- /bin/bash -lc 'brew bundle --file=ci/Bre
 
 ```bash
 cove image build -from macos-runner -tag macos-runner:latest
-cove image verify macos-runner:latest --strict --newer-than 7d
+cove image verify --strict --newer-than 168h macos-runner:latest
 cove action prepare-image macos-runner:latest --ttl 24h
 ```
 
@@ -110,7 +110,7 @@ jobs:
         run: cove action doctor
       - name: Verify runner image
         run: |
-          cove image verify macos-runner:latest --strict --newer-than 7d
+          cove image verify --strict --newer-than 168h macos-runner:latest
           cove action prepare-image macos-runner:latest --ttl 24h
       - name: Run in cove fork
         uses: ./.github/actions/cove-action
@@ -170,4 +170,6 @@ against the same commit. Compare:
 If a command depends on an unshipped cove surface, mark it post-v0.4 in the
 workflow and keep that line out of the cutover path. The commands above use the
 shipped `cove action`, `cove image`, `cove run -fork-from`, and `cmd/cove-action`
-surfaces on origin/main.
+surfaces on origin/main. For container, persistent-worker, and matrix mappings,
+use the canonical guide at
+[`docs/migrations/from-cirrus.md`](../migrations/from-cirrus.md).
