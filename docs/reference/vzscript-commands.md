@@ -66,9 +66,10 @@ curl -fsSL https://example.com/setup.sh | bash
 
 ### guest-terminal
 
-Opens a visible terminal window in the guest (macOS Terminal.app, or Linux
+Requests a visible terminal window in the guest (macOS Terminal.app, or Linux
 GNOME Terminal / GNOME Console / Konsole / xterm via the active graphical
-session).
+session). On macOS, cove falls back to host-streamed output when Terminal
+automation is not already allowed by TCC.
 
 ```
 guest-terminal <script-file>

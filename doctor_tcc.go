@@ -53,6 +53,24 @@ func verifyTCCFDAProbe(sock, explicitPath string, verbose bool) bool {
 	return false
 }
 
+func verifyTCCAppleEventsProbe(sock string) bool {
+	fmt.Println("Apple Events probe:")
+	result, err := agentUserExec(sock, []string{"/bin/sh", "-c", tccAppleEventsProbeScript()}, 10*time.Second)
+	if err != nil {
+		fmt.Printf("  ! error checking Terminal automation grant: %v\n", err)
+		printAppleEventsHint()
+		return false
+	}
+	if result.ExitCode == 0 && strings.TrimSpace(result.Stdout) == "granted" {
+		fmt.Println("  + Terminal automation already granted for vz-agent")
+		return true
+	}
+	fmt.Println("  - Terminal automation is not pre-granted")
+	fmt.Println("    cove streams vzscript terminal output to the host by default")
+	printAppleEventsHint()
+	return true
+}
+
 func isENOENTStderr(stderr string) bool {
 	s := strings.ToLower(stderr)
 	return strings.Contains(s, "no such file or directory")
@@ -132,6 +150,43 @@ rm -f "$out" "$err" "$timed"
 exit "$rc"`, tccProbeSeconds)
 }
 
+func tccAppleEventsProbeScript() string {
+	query := `SELECT CASE WHEN EXISTS (
+  SELECT 1 FROM access
+  WHERE service='kTCCServiceAppleEvents'
+    AND auth_value=2
+    AND (
+      client='/usr/local/bin/vz-agent'
+      OR client LIKE '%com.github.tmc.vz-macos.vz-agent%'
+    )
+    AND (
+      indirect_object_identifier='com.apple.Terminal'
+      OR indirect_object_identifier LIKE '%Terminal%'
+      OR indirect_object_identifier IS NULL
+    )
+) THEN 'granted' ELSE 'missing' END FROM access LIMIT 1;`
+	return fmt.Sprintf(`dbs="/Library/Application Support/com.apple.TCC/TCC.db"
+console=$(stat -f %%Su /dev/console 2>/dev/null || true)
+if [ -n "$console" ] && [ "$console" != root ]; then
+	home=$(dscl . -read /Users/"$console" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+	if [ -n "$home" ]; then
+		dbs="$dbs:$home/Library/Application Support/com.apple.TCC/TCC.db"
+	fi
+fi
+IFS=:
+for db in $dbs; do
+	[ -r "$db" ] || continue
+	out=$(sqlite3 "$db" %s 2>/dev/null || true)
+	if [ "$out" = granted ]; then
+		echo granted
+		exit 0
+	fi
+done
+echo missing
+exit 1
+`, shellEscape(query))
+}
+
 func firstOutputLine(s string) string {
 	for _, line := range strings.Split(s, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
@@ -145,4 +200,11 @@ func printFDAHint() {
 	fmt.Println("    grant Full Disk Access inside the guest:")
 	fmt.Println("      System Settings -> Privacy & Security -> Full Disk Access")
 	fmt.Println("      add /usr/local/bin/vz-agent, approve the prompt, then rerun cove doctor")
+}
+
+func printAppleEventsHint() {
+	fmt.Println("    explicit guest Terminal mode may need Apple Events approval:")
+	fmt.Println("      System Settings -> Privacy & Security -> Automation")
+	fmt.Println("      allow vz-agent to control Terminal, or keep using host-streamed output")
+	fmt.Println("      reset stale denials with: tccutil reset AppleEvents")
 }

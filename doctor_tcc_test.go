@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -50,6 +52,42 @@ func TestTCCVolumeDiscoverySkipsSystemVolumes(t *testing.T) {
 			t.Fatalf("tccVolumeDiscoveryScript missing %q:\n%s", want, script)
 		}
 	}
+}
+
+func TestTCCAppleEventsProbeScript(t *testing.T) {
+	script := tccAppleEventsProbeScript()
+	for _, want := range []string{
+		"kTCCServiceAppleEvents",
+		"/usr/local/bin/vz-agent",
+		"com.apple.Terminal",
+		"auth_value=2",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("tccAppleEventsProbeScript missing %q:\n%s", want, script)
+		}
+	}
+	if hint := captureAppleEventsHint(t); !strings.Contains(hint, "tccutil reset AppleEvents") {
+		t.Fatalf("Apple Events hint missing reset command:\n%s", hint)
+	}
+}
+
+func captureAppleEventsHint(t *testing.T) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	printAppleEventsHint()
+	_ = w.Close()
+	os.Stdout = old
+	defer r.Close()
+	var b strings.Builder
+	if _, err := io.Copy(&b, r); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
 }
 
 func TestIsENOENTStderr(t *testing.T) {
