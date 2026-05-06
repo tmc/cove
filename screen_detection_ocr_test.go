@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/tmc/apple/corefoundation"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 
@@ -187,6 +188,55 @@ func TestDetectScreenStateFromOCRText(t *testing.T) {
 	}
 }
 
+func TestDetectStrongLoginFromOCRObservations(t *testing.T) {
+	bounds := image.Rect(0, 0, 1200, 900)
+	tests := []struct {
+		name string
+		obs  []ocrx.TextObservation
+		want bool
+	}{
+		{
+			name: "central name and enter password",
+			obs: []ocrx.TextObservation{
+				testOCRObservation("Name", 600, 360),
+				testOCRObservation("Enter Password", 600, 430),
+			},
+			want: true,
+		},
+		{
+			name: "central name and password",
+			obs: []ocrx.TextObservation{
+				testOCRObservation("Name", 620, 360),
+				testOCRObservation("Password", 620, 430),
+			},
+			want: true,
+		},
+		{
+			name: "missing name",
+			obs: []ocrx.TextObservation{
+				testOCRObservation("Enter Password", 600, 430),
+			},
+			want: false,
+		},
+		{
+			name: "outside central frame",
+			obs: []ocrx.TextObservation{
+				testOCRObservation("Name", 70, 360),
+				testOCRObservation("Enter Password", 70, 430),
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := detectStrongLoginFromOCRObservations(tt.obs, bounds); got != tt.want {
+				t.Fatalf("detectStrongLoginFromOCRObservations() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDetectLinuxScreenStateFromOCRText(t *testing.T) {
 	tests := []struct {
 		name string
@@ -229,5 +279,16 @@ func TestDetectLinuxScreenStateFromOCRText(t *testing.T) {
 				t.Fatalf("detectSetupAssistantPageFromOCRText() = %q, want %q", got, tt.page)
 			}
 		})
+	}
+}
+
+func testOCRObservation(text string, x, y int) ocrx.TextObservation {
+	return ocrx.TextObservation{
+		Text:   text,
+		Center: image.Point{X: x, Y: y},
+		BoundingBox: corefoundation.CGRect{
+			Origin: corefoundation.CGPoint{X: float64(x) / 1200, Y: float64(y) / 900},
+			Size:   corefoundation.CGSize{Width: 0.05, Height: 0.03},
+		},
 	}
 }

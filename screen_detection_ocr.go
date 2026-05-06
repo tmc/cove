@@ -47,16 +47,49 @@ func DetectScreenStateOCR(img image.Image, ocr *ocrx.Service) ScreenState {
 		return DetectScreenState(img)
 	}
 
-	text := ocr.AllText(img)
-	if text == "" {
+	observations, err := ocr.RecognizeText(img)
+	if err != nil || len(observations) == 0 {
 		// No text found — use pixel heuristics
 		return DetectScreenState(img)
 	}
+	if detectStrongLoginFromOCRObservations(observations, img.Bounds()) {
+		return ScreenStateLoginScreen
+	}
 
+	var lines []string
+	for _, obs := range observations {
+		lines = append(lines, obs.Text)
+	}
+	text := strings.Join(lines, "\n")
 	if state := detectScreenStateFromOCRText(text); state != ScreenStateUnknown {
 		return state
 	}
 	return DetectScreenState(img)
+}
+
+func detectStrongLoginFromOCRObservations(observations []ocrx.TextObservation, bounds image.Rectangle) bool {
+	if bounds.Empty() {
+		return false
+	}
+	minX := bounds.Min.X + bounds.Dx()/6
+	maxX := bounds.Min.X + bounds.Dx()*5/6
+	minY := bounds.Min.Y + bounds.Dy()/6
+	maxY := bounds.Min.Y + bounds.Dy()*5/6
+
+	var hasName, hasPassword bool
+	for _, obs := range observations {
+		if obs.Center.X < minX || obs.Center.X > maxX || obs.Center.Y < minY || obs.Center.Y > maxY {
+			continue
+		}
+		text := strings.ToLower(strings.TrimSpace(obs.Text))
+		if text == "name" {
+			hasName = true
+		}
+		if strings.Contains(text, "password") {
+			hasPassword = true
+		}
+	}
+	return hasName && hasPassword
 }
 
 // ocrPageDetectionOrder defines the order in which pages are checked.
