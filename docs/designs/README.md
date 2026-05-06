@@ -24,9 +24,21 @@ implementation review. Start there before choosing new work.
 12. [v0.3 cache-miss execution](020-v03-cache-miss-execution.md) — Slice 3 implementation contract for VM execution, layer persistence, and the point where non-dry-run builds become supported.
 13. [v0.4 CI executors](021-v04-ci-executors-tracks.md) — v0.4 — GitHub Actions and GitLab executors as wrappers over `cove run -fork-from`, the control socket, and the guest agent. Slice 1 GHA action, Slice 2 GitLab shell-runner shim.
 14. [v0.4 Anthropic adapter](022-v04-anthropic-adapter.md) — v0.4 — Anthropic computer-use adapter mirroring the OpenAI Agents SDK adapter shape. Slice 1 SDK survey (Anthropic has no `ComputerTool` analogue; adapter drives the Messages API agent loop directly). Slice 2 `cove-claude-sandbox` Python package.
-15. [cove shell — Docker-shaped exec UX](023-cove-shell-exec-ux.md) — v0.2.1 / v0.3 — standalone `cove shell <vm>` subcommand brokering exec through the per-VM control socket because vsock requires VM-owner-process. Slice 1 control-socket extension (`agent-exec-attach/-resize/-signal`); Slice 2 `cove shell` client; Slice 3 v0.3 proto `ExecAttach` bidi RPC for true interactive stdin.
-16. [cove runner images — publish & fork-from](024-cove-runner-images.md) — v0.2.1 / v0.4 — publish VM disk images as OCI artifacts and fork-from to spawn ephemeral CI runners. Slice 1 `cove image build` + local image store; Slice 2 push/pull behind a privacy gate; Slice 3 public-registry promotion contingent on the cove repo flipping public.
-17. [GHA executor Slice 2 cache reuse](030-gha-executor-slice-2.md) — v0.4 — local-only cross-run cache images for the private GitHub Actions executor; implemented by T77.
+15. [cove shell — Docker-shaped exec UX](023-cove-shell-exec-ux.md) — shipped — standalone `cove shell <vm>` subcommand brokering exec through the per-VM control socket because vsock requires VM-owner-process. Slice 1 control-socket extension (`agent-exec-attach/-resize/-signal`); Slice 2 `cove shell` client; Slice 3 v0.3 proto `ExecAttach` bidi RPC for true interactive stdin.
+16. [cove runner images — publish & fork-from](024-cove-runner-images.md) — shipped through private-registry Slice 2 — publish VM disk images as OCI artifacts and fork-from to spawn ephemeral CI runners. Slice 1 `cove image build` + local image store; Slice 2 push/pull behind a privacy gate; Slice 3 public-registry promotion remains deferred while the cove repo stays private.
+17. [cove-action security architecture](025-cove-action-security.md) — shipped — private GitHub Actions executor threat model and boundary contract.
+18. [Ephemeral self-hosted runners](026-ephemeral-self-hosted-runners.md) — shipped — disposable VM runner flow built around fork-from images and guest-agent command execution.
+19. [Disk I/O tuning](027-disk-io-tuning.md) — shipped — durable install disk attachments, disk cache policy controls, and the follow-on benchmark plan.
+20. [Block device passthrough](028-block-device-passthrough.md) — shipped — raw block-device attachment support for benchmark and appliance workflows.
+21. [VirtioFS hot-add](029-virtiofs-hot-add.md) — shipped through placeholder-device live update — shared-folder live-apply design after confirming Apple Virtualization has no public new-device hot-add API.
+22. [GHA executor Slice 2 cache reuse](030-gha-executor-slice-2.md) — shipped — local-only cross-run cache images for the private GitHub Actions executor; implemented by T77.
+23. [VM lifecycle policy](031-vm-lifecycle.md) — shipped — idle timeout, maximum age, and run-budget policies with CLI and daemon enforcement.
+24. [Per-VM resource quotas](032-vm-quotas.md) — shipped — durable CPU, memory, and disk quota records plus enforcement at cove-controlled boundaries.
+25. [Cove daemon mode](033-cove-daemon.md) — shipped through lifecycle policy enforcement and scheduled image GC — long-lived coordinator for policy, metrics, and cleanup work.
+26. [Fleet](034-fleet-slice-1.md) — shipped through Slices 1-2 — trusted-host registry, SSH routing, aggregate views, and image transfer.
+27. [OpenAI SandboxRunConfig backend](035-openai-sandbox-run-config.md) — shipped — OpenAI Agents SDK sandbox backend over cove VMs.
+28. [NixOS guest support](036-nixos-guest-support.md) — shipped — first-class NixOS install/run path on the Linux VM stack.
+29. [Linux Desktop autoprovisioning](037-linux-autoprov.md) — shipped with known first-boot reliability follow-ups — Ubuntu Desktop user provisioning and login setup.
 
 ## Strategy inputs
 
