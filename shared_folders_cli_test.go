@@ -556,6 +556,53 @@ func TestSharedFolderStatusLinuxUsesPerTagMountPoint(t *testing.T) {
 	}
 }
 
+func TestSharedFolderStatusShowsGuestLink(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := t.TempDir()
+	if _, _, err := addSharedFolderEntry(vmDir, hostDir, "work", false); err != nil {
+		t.Fatalf("addSharedFolderEntry() error = %v", err)
+	}
+
+	verify := serveSharedFolderControlSteps(t, vmDir, "test-token", []sharedFolderControlStep{
+		{
+			wantType: "ping",
+			resp:     &controlpb.ControlResponse{Success: true},
+		},
+		{
+			wantType: "agent-ping",
+			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
+		},
+		{
+			wantType: "agent-exec-auto",
+			wantArgs: []string{"mount"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "map auto_home on /Volumes/My Shared Files (autofs, automounted)\n",
+				}},
+			},
+		},
+	})
+
+	out := captureStdout(t, func() error {
+		return sharedFolderStatus(vmDir, defaultSharedFoldersMountRoot(vmDir))
+	})
+	verify()
+
+	for _, want := range []string{
+		"guest: /Volumes/My Shared Files/work",
+		"link:  ~/work -> /Volumes/My Shared Files/work",
+		"Guest mount: mounted at /Volumes/My Shared Files",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestPendingSharedFoldersOmitsMountedTags(t *testing.T) {
 	vmDir := shortSharedFolderVMDir(t)
 	hostDir := t.TempDir()
