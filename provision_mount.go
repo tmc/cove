@@ -84,6 +84,7 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 		detachDisk(device)
 		return "", "", "", fmt.Errorf("diskutil list failed: %w", err)
 	}
+	diskutilListOutput := string(output)
 
 	// Look for APFS Volume named "Data" that belongs to our disk
 	// We need to find volumes in containers that reference our physical disk
@@ -190,7 +191,7 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 
 	if dataPartition == "" {
 		detachDisk(device)
-		return "", "", "", fmt.Errorf("could not find Data partition for disk %s", device)
+		return "", "", "", dataPartitionNotFoundError(device, diskutilListOutput)
 	}
 
 	provisionLog("Found Data partition: %s", dataPartition)
@@ -237,6 +238,10 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 
 	provisionLog("Data volume mounted at: %s", mountPoint)
 	return mountPoint, device, dataPartition, nil
+}
+
+func dataPartitionNotFoundError(device, diskutilListOutput string) error {
+	return fmt.Errorf("could not find Data partition for disk %s\n\ndiskutil list output:\n%s", device, diskutilListOutput)
 }
 
 // attachDiskImageNoMountDI2 attaches a disk image using DiskImages2.framework
