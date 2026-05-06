@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 def main() -> None:
-    from agents import Agent, ComputerTool, Runner
+    from agents import Agent, ComputerTool, ModelSettings, Runner
     from cove_sandbox import CoveClient, CoveComputer
 
     parser = argparse.ArgumentParser()
@@ -13,6 +14,7 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=25)
     parser.add_argument("--screenshot-dir")
     parser.add_argument("--events-jsonl")
+    parser.add_argument("--model", default=os.environ.get("COVE_OPENAI_MODEL", "computer-use-preview"))
     args = parser.parse_args()
 
     del args.max_steps, args.screenshot_dir, args.events_jsonl
@@ -22,6 +24,8 @@ def main() -> None:
     agent = Agent(
         name="macOS operator",
         instructions="Use the cove-backed macOS VM and report concise observations.",
+        model=args.model,
+        model_settings=ModelSettings(truncation="auto"),
         tools=[ComputerTool(computer)],
     )
     result = Runner.run_sync(agent, args.task)
