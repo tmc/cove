@@ -107,6 +107,9 @@ func runOffUIThread(fn func() error) error {
 	}
 	done := make(chan error, 1)
 	go func() {
+		for onUIThread() {
+			time.Sleep(time.Millisecond)
+		}
 		done <- fn()
 	}()
 	ticker := time.NewTicker(10 * time.Millisecond)

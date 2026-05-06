@@ -292,11 +292,26 @@ func detachDisk(device string) {
 	detachDiskForPath(device, filepath.Join(vmDir, "disk.img"))
 }
 
+var (
+	ensureDetachedHook       = disk.EnsureDetached
+	forceDetachViaHelperHook = forceDetachViaHelper
+)
+
 func detachDiskForPath(device, diskPath string) {
 	fmt.Printf("Detaching %s...\n", device)
 
-	if err := disk.EnsureDetached(diskPath); err != nil {
+	if err := ensureDetachedHook(diskPath); err != nil {
 		fmt.Printf("warning: %v\n", err)
+		if helperInstalled() {
+			fmt.Println("  Trying cove-helper force detach...")
+			if helperErr := forceDetachViaHelperHook(device, diskPath); helperErr == nil {
+				fmt.Println("  Detached via cove-helper.")
+				return
+			} else {
+				fmt.Printf("  cove-helper force detach failed: %v\n", helperErr)
+				return
+			}
+		}
 		fmt.Printf("  Manual fix: hdiutil detach %s -force\n", device)
 	}
 }
@@ -352,13 +367,23 @@ func checkDiskNotMounted(diskPath string) error {
 		detachDisk(device)
 		// Verify it's gone.
 		if _, stillFound, _ := disk.FindAttachedDisk(diskPath); stillFound {
-			fmt.Println("Normal detach failed, trying force...")
-			cmd := exec.Command("hdiutil", "detach", device, "-force")
-			cmd.Run()
+			if helperInstalled() {
+				fmt.Println("Normal detach failed, trying cove-helper force detach...")
+				if err := forceDetachViaHelperHook(device, diskPath); err != nil {
+					return fmt.Errorf("disk image is already mounted%s; cove-helper force detach failed: %w", hint, err)
+				}
+			} else {
+				fmt.Println("Normal detach failed, trying force...")
+				cmd := exec.Command("hdiutil", "detach", device, "-force")
+				cmd.Run()
+			}
 		}
 		return nil
 	}
 
+	if helperInstalled() {
+		return fmt.Errorf("disk image is already mounted%s; cove-helper is installed but cove could not prompt to detach interactively", hint)
+	}
 	return fmt.Errorf("disk image is already mounted%s\n  Detach with: hdiutil detach %s -force\n  Or run: ./cove disk-detach", hint, device)
 }
 
