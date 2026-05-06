@@ -1,0 +1,14 @@
+{
+  "title": "coved",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"type":"stat","title":"VMs managed","targets":[{"expr":"coved_vms_managed"}],"gridPos":{"x":0,"y":0,"w":6,"h":4}},
+    {"type":"stat","title":"Uptime seconds","targets":[{"expr":"coved_uptime_seconds"}],"gridPos":{"x":6,"y":0,"w":6,"h":4}},
+    {"type":"timeseries","title":"Lifecycle stops","targets":[{"expr":"rate(coved_lifecycle_enforced_total[5m])"}],"gridPos":{"x":0,"y":4,"w":12,"h":7}},
+    {"type":"timeseries","title":"Image GC runs","targets":[{"expr":"rate(coved_image_gc_runs_total[5m])"}],"gridPos":{"x":12,"y":4,"w":12,"h":7}},
+    {"type":"timeseries","title":"Bytes freed","targets":[{"expr":"rate(coved_image_gc_bytes_freed_total[5m])"}],"gridPos":{"x":0,"y":11,"w":12,"h":7}},
+    {"type":"timeseries","title":"Events","targets":[{"expr":"rate(coved_events_total[5m])"}],"gridPos":{"x":12,"y":11,"w":12,"h":7}}
+  ]
+}
