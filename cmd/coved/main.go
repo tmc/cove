@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,6 +28,7 @@ var (
 func main() {
 	socketPath := flag.String("socket", defaultSocketPath(), "unix socket path")
 	pidPath := flag.String("pid", defaultPIDPath(), "pid file path")
+	configPath := flag.String("config", coved.DefaultConfigPath(), "config file path")
 	showVersion := flag.Bool("version", false, "print version information")
 	flag.Parse()
 
@@ -63,6 +65,11 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	cfg, err := coved.LoadConfig(*configPath)
+	if err != nil {
+		slog.Error("load config", slog.Any("err", err))
+		os.Exit(1)
+	}
 
 	d := &daemon{
 		version:   buildversion.Host(info),
@@ -89,6 +96,22 @@ func main() {
 	})
 	d.lifecycle = lifecycle
 	go lifecycle.Run(ctx)
+	if cfg.Daemon.MetricsAddr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", coved.PrometheusHandler(d.prometheusSnapshot))
+		d.http = &http.Server{Addr: cfg.Daemon.MetricsAddr, Handler: mux}
+		go func() {
+			if err := d.http.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("metrics http", slog.Any("err", err))
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_ = d.http.Shutdown(shutdownCtx)
+		}()
+	}
 	go func() {
 		<-ctx.Done()
 		_ = l.Close()
