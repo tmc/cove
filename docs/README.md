@@ -24,6 +24,7 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 - [Quick Start](getting-started/quickstart.md) -- three paths to a running VM
 - [CLI Reference](reference/cli.md) -- every command and flag
 - [Cove after Cirrus CI](landing/cove-vs-cirrus.md) -- private landing-page draft for the June 2026 Cirrus shutdown window
+- [Quickstart from Cirrus](quickstart-from-cirrus.md) -- five-step private-repo migration path
 - [Cirrus Migration](migrations/from-cirrus.md) -- translate `.cirrus.yml` jobs to cove-backed GitHub Actions
 - [VZScript Commands](reference/vzscript-commands.md) -- guest agent and OCR automation
 - [Shared Folders Reference](reference/shared-folders.md) -- persist-vs-live VirtioFS behavior
