@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -135,6 +136,42 @@ func TestUpPathResolutionWithLegacyVM(t *testing.T) {
 	}
 	if got, want := target.diskPath(), filepath.Join(cfg.vmDir, "disk.img"); got != want {
 		t.Fatalf("target.diskPath() = %q, want %q", got, want)
+	}
+}
+
+func TestRequireRootForMacOSUpProvisioning(t *testing.T) {
+	restoreVMGlobals(t)
+	oldEUID := upEffectiveUID
+	t.Cleanup(func() { upEffectiveUID = oldEUID })
+
+	cfg := upConfig{
+		user:       "mlxqa",
+		password:   "mlxqa123",
+		vmName:     "mlxgo-fresh-nodev-20260505",
+		cpuCount:   4,
+		memoryGB:   8,
+		gui:        false,
+		noShutdown: true,
+	}
+	target := vmSelection{Name: cfg.vmName, Directory: t.TempDir()}
+	upEffectiveUID = func() int { return 501 }
+
+	err := requireRootForMacOSUpProvisioning(cfg, target, false)
+	if err == nil {
+		t.Fatal("requireRootForMacOSUpProvisioning returned nil error")
+	}
+	for _, want := range []string{
+		"auto-login provisioning requires root",
+		"sudo cove up -vm mlxgo-fresh-nodev-20260505 -user mlxqa -password mlxqa123 -headless -cpu 4 -memory 8 -no-shutdown",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q\n%v", want, err)
+		}
+	}
+
+	upEffectiveUID = func() int { return 0 }
+	if err := requireRootForMacOSUpProvisioning(cfg, target, false); err != nil {
+		t.Fatalf("root requireRootForMacOSUpProvisioning: %v", err)
 	}
 }
 
