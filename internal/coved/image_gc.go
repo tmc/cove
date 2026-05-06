@@ -30,6 +30,7 @@ type ImageGCScheduler struct {
 	MetricsPath string
 	Logger      *slog.Logger
 	Now         func() time.Time
+	Bus         *EventBus
 
 	mu    sync.Mutex
 	stats ImageGCStats
@@ -129,15 +130,6 @@ func (s *ImageGCScheduler) runOnceLocked(ctx context.Context) (ImageGCStats, err
 }
 
 func (s *ImageGCScheduler) emit(ctx context.Context, started time.Time, stats ImageGCStats, runErr error) error {
-	path := s.MetricsPath
-	if path == "" {
-		path = filepath.Join(s.home(), ".vz", "metrics.jsonl")
-	}
-	sink, err := runmetrics.NewJSONLSink(path)
-	if err != nil {
-		return err
-	}
-	defer sink.Close()
 	status := "ok"
 	if stats.Skipped {
 		status = "skipped"
@@ -150,13 +142,27 @@ func (s *ImageGCScheduler) emit(ctx context.Context, started time.Time, stats Im
 		"bytes_freed":       stats.BytesFreed,
 		"duration_ms":       stats.DurationMS,
 	}
-	return sink.Emit(ctx, runmetrics.Event{
+	event := runmetrics.Event{
 		Timestamp:  started.UTC().Format(time.RFC3339Nano),
 		EventType:  "image.gc.run",
 		DurationMS: stats.DurationMS,
 		Status:     status,
 		Extra:      extra,
-	})
+	}
+	if s.Bus != nil {
+		s.Bus.Publish(ctx, event)
+		return nil
+	}
+	path := s.MetricsPath
+	if path == "" {
+		path = filepath.Join(s.home(), ".vz", "metrics.jsonl")
+	}
+	sink, err := runmetrics.NewJSONLSink(path)
+	if err != nil {
+		return err
+	}
+	defer sink.Close()
+	return sink.Emit(ctx, event)
 }
 
 func (s *ImageGCScheduler) record(stats ImageGCStats) {
