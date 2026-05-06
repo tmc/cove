@@ -99,21 +99,12 @@ func main() {
 	})
 	d.lifecycle = lifecycle
 	go lifecycle.Run(ctx)
+	metricsHandler := coved.PrometheusHandler(d.prometheusSnapshot)
 	if cfg.Daemon.MetricsAddr != "" {
-		mux := http.NewServeMux()
-		mux.Handle("/metrics", coved.PrometheusHandler(d.prometheusSnapshot))
-		d.http = &http.Server{Addr: cfg.Daemon.MetricsAddr, Handler: mux}
-		go func() {
-			if err := d.http.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				slog.Error("metrics http", slog.Any("err", err))
-			}
-		}()
-		go func() {
-			<-ctx.Done()
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			_ = d.http.Shutdown(shutdownCtx)
-		}()
+		startHTTPServer(ctx, cfg.Daemon.MetricsAddr, metricsHandler, "metrics")
+	}
+	if cfg.Daemon.UIAddr != "" {
+		startHTTPServer(ctx, cfg.Daemon.UIAddr, coved.WebUIHandler(d.uiSnapshot, metricsHandler), "webui")
 	}
 	go func() {
 		<-ctx.Done()
@@ -124,6 +115,21 @@ func main() {
 		slog.Error("serve", slog.Any("err", err))
 		os.Exit(1)
 	}
+}
+
+func startHTTPServer(ctx context.Context, addr string, handler http.Handler, name string) {
+	server := &http.Server{Addr: addr, Handler: handler}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error(name+" http", slog.Any("err", err))
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
 }
 
 func defaultSocketPath() string {
