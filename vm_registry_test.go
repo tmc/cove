@@ -114,6 +114,39 @@ func TestVMInfoState(t *testing.T) {
 			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "running")
 		}
 	})
+
+	t.Run("starting while run lock held", func(t *testing.T) {
+		vmPath := makeTestVMDir(t)
+		lock, err := AcquireRunLock(vmPath)
+		if err != nil {
+			t.Fatalf("AcquireRunLock() error = %v", err)
+		}
+		defer lock.Release()
+		if err := writeVMRuntimeState(vmPath, "starting"); err != nil {
+			t.Fatalf("writeVMRuntimeState() error = %v", err)
+		}
+		info, err := vmconfig.InfoFor(vmPath, detectVMState)
+		if err != nil {
+			t.Fatalf("vmconfig.InfoFor() error = %v", err)
+		}
+		if info.State != "starting" {
+			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "starting")
+		}
+	})
+
+	t.Run("stale runtime state ignored without run lock", func(t *testing.T) {
+		vmPath := makeTestVMDir(t)
+		if err := writeVMRuntimeState(vmPath, "starting"); err != nil {
+			t.Fatalf("writeVMRuntimeState() error = %v", err)
+		}
+		info, err := vmconfig.InfoFor(vmPath, detectVMState)
+		if err != nil {
+			t.Fatalf("vmconfig.InfoFor() error = %v", err)
+		}
+		if info.State != "stopped" {
+			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "stopped")
+		}
+	})
 }
 
 func makeTestVMDir(t *testing.T) string {

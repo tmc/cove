@@ -468,6 +468,7 @@ func runMacOSVM() error {
 	if verbose {
 		fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
 	}
+	noteVMRuntimeState(target.Directory, "starting")
 	config, err := buildVMConfiguration(resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
@@ -1300,6 +1301,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		return fmt.Errorf("vm start failed: %w", err)
 	}
 	fmt.Println("VM started successfully")
+	noteVMRuntimeState(currentVMSelection().Directory, "running")
 	emitMetricEvent("vm_start", started, "ok", nil)
 	return nil
 }
@@ -1594,6 +1596,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			state := vz.VZVirtualMachineState(vm.State())
 			if state != lastState {
 				lastState = state
+				noteVMRuntimeState(target.Directory, vmStateLabel(state))
 				stateUpdate.mu.Lock()
 				stateUpdate.newState = state
 				stateUpdate.changed = true
@@ -1638,6 +1641,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			} else {
 				fmt.Println("\nStopping VM...")
 			}
+			noteVMRuntimeState(target.Directory, "stopping")
 			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
@@ -1702,6 +1706,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	os.Remove(suspendConfigPath())
 	clearInjectSucceeded()
 	closeSerialOutputFile()
+	noteVMRuntimeState(target.Directory, "stopped")
 	fmt.Println("VM stopped")
 	return getRunErr()
 }
@@ -2117,6 +2122,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					fmt.Printf("VM state transition: %s -> %s\n", vmStateName(lastState), vmStateName(state))
 				}
 				lastState = state
+				noteVMRuntimeState(target.Directory, vmStateLabel(state))
 				stateUpdate.mu.Lock()
 				stateUpdate.newState = state
 				stateUpdate.changed = true
@@ -2160,9 +2166,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			} else {
 				fmt.Println("\nStopping VM...")
 			}
+			noteVMRuntimeState(target.Directory, "stopping")
 			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
+		noteVMRuntimeState(target.Directory, "stopped")
 	}
 	var cleanupOnce sync.Once
 	doCleanup := func() { cleanupOnce.Do(cleanup) }
