@@ -37,6 +37,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/apple/x/vzkit/disk"
 	"golang.org/x/sys/unix"
 )
 
@@ -53,11 +54,17 @@ type helperRequest struct {
 	Op              string              `json:"op"`
 	Manifest        json.RawMessage     `json:"manifest,omitempty"` // for apply_manifest: encoded elevatedManifest
 	OpenBlockDevice *blockDeviceRequest `json:"openBlockDevice,omitempty"`
+	ForceDetach     *forceDetachRequest `json:"forceDetach,omitempty"`
 }
 
 type blockDeviceRequest struct {
 	Path     string `json:"path"`
 	ReadOnly bool   `json:"readOnly"`
+}
+
+type forceDetachRequest struct {
+	Device   string `json:"device"`
+	DiskPath string `json:"diskPath"`
 }
 
 // helperResponse is the JSON response format returned by the helper.
@@ -106,6 +113,43 @@ func runManifestViaHelper(manifestJSON []byte) (handled bool, err error) {
 	return true, nil
 }
 
+func forceDetachViaHelper(device, diskPath string) error {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	conn, err := dialHelper()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(2 * time.Minute))
+
+	req := helperRequest{
+		Op: "force_detach",
+		ForceDetach: &forceDetachRequest{
+			Device:   device,
+			DiskPath: diskPath,
+		},
+	}
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return fmt.Errorf("send force-detach request: %w", err)
+	}
+	var resp helperResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return fmt.Errorf("read force-detach response: %w", err)
+	}
+	if resp.Stdout != "" {
+		os.Stdout.WriteString(resp.Stdout)
+	}
+	if resp.Stderr != "" {
+		os.Stderr.WriteString(resp.Stderr)
+	}
+	if !resp.OK {
+		return fmt.Errorf("helper: %s", resp.Error)
+	}
+	return nil
+}
+
 // dialHelper connects to the helper socket. Returns errHelperUnavailable if
 // the socket doesn't exist.
 func dialHelper() (net.Conn, error) {
@@ -126,7 +170,9 @@ var errHelperUnavailable = errors.New("cove helper not installed")
 
 // helperInstalled reports whether the helper LaunchDaemon plist and binary are
 // in place. It does not verify the daemon is actually running.
-func helperInstalled() bool {
+var helperInstalled = helperInstalledImpl
+
+func helperInstalledImpl() bool {
 	if _, err := os.Stat(helperPlistPath); err != nil {
 		return false
 	}
@@ -542,6 +588,8 @@ func handleHelperConn(parent *slog.Logger, conn net.Conn, allowedUID int) {
 		runHelperManifest(log, conn, req.Manifest)
 	case "open_block_device":
 		runHelperOpenBlockDevice(log, uc, req.OpenBlockDevice)
+	case "force_detach":
+		runHelperForceDetach(log, conn, req.ForceDetach)
 	case "ping":
 		log.Info("ping")
 		json.NewEncoder(conn).Encode(helperResponse{OK: true})
@@ -602,6 +650,69 @@ func runHelperOpenBlockDevice(log *slog.Logger, conn *net.UnixConn, req *blockDe
 		return
 	}
 	log.Info("block device opened", slog.String("path", req.Path), slog.Bool("readOnly", req.ReadOnly))
+}
+
+var (
+	helperFindAttachedDisk = disk.FindAttachedDisk
+	helperDetachCommand    = func(name string, args ...string) ([]byte, error) {
+		return exec.Command(name, args...).CombinedOutput()
+	}
+)
+
+func runHelperForceDetach(log *slog.Logger, conn net.Conn, req *forceDetachRequest) {
+	if req == nil {
+		writeHelperError(log, conn, "missing force detach request")
+		return
+	}
+	device, diskPath, err := validateForceDetachRequest(req)
+	if err != nil {
+		writeHelperError(log, conn, err.Error())
+		return
+	}
+	if err := helperForceDetachDevice(device); err != nil {
+		writeHelperError(log, conn, err.Error())
+		return
+	}
+	log.Info("force detached disk", slog.String("device", device), slog.String("diskPath", diskPath))
+	json.NewEncoder(conn).Encode(helperResponse{OK: true})
+}
+
+func validateForceDetachRequest(req *forceDetachRequest) (device, diskPath string, err error) {
+	device = strings.TrimSpace(req.Device)
+	diskPath = filepath.Clean(strings.TrimSpace(req.DiskPath))
+	if device == "" {
+		return "", "", fmt.Errorf("force detach device is required")
+	}
+	if !strings.HasPrefix(device, "/dev/disk") {
+		return "", "", fmt.Errorf("force detach device %s is not a /dev/disk device", device)
+	}
+	if !filepath.IsAbs(diskPath) {
+		return "", "", fmt.Errorf("force detach disk path must be absolute")
+	}
+	if filepath.Base(diskPath) != "disk.img" {
+		return "", "", fmt.Errorf("force detach disk path %s is not a cove disk image", diskPath)
+	}
+	foundDevice, found, err := helperFindAttachedDisk(diskPath)
+	if err != nil {
+		return "", "", fmt.Errorf("verify attached disk %s: %w", diskPath, err)
+	}
+	if !found {
+		return "", "", fmt.Errorf("disk image %s is not attached", diskPath)
+	}
+	if foundDevice != device {
+		return "", "", fmt.Errorf("disk image %s is attached as %s, not %s", diskPath, foundDevice, device)
+	}
+	return device, diskPath, nil
+}
+
+func helperForceDetachDevice(device string) error {
+	if out, err := helperDetachCommand("hdiutil", "detach", device, "-force"); err != nil {
+		firstErr := fmt.Errorf("hdiutil detach %s -force: %w (%s)", device, err, strings.TrimSpace(string(out)))
+		if out2, err2 := helperDetachCommand("diskutil", "unmountDisk", "force", device); err2 != nil {
+			return fmt.Errorf("%w; diskutil unmountDisk force: %w (%s)", firstErr, err2, strings.TrimSpace(string(out2)))
+		}
+	}
+	return nil
 }
 
 func validateBlockDevicePath(path string, readOnly bool) error {
