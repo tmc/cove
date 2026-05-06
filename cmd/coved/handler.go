@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ type daemon struct {
 	connected chan struct{}
 	lifecycle *coved.LifecycleEnforcer
 	events    *coved.EventBus
+	http      *http.Server
 }
 
 type statusResponse struct {
@@ -36,6 +38,19 @@ type statusResponse struct {
 	ImageGCManifestsRemoved int    `json:"image_gc_manifests_removed,omitempty"`
 	LifecycleEnforced       uint64 `json:"lifecycle_enforced"`
 	LifecycleLastRunTS      string `json:"lifecycle_last_run_ts,omitempty"`
+}
+
+func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
+	status := d.status()
+	return coved.PrometheusSnapshot{
+		Version:       status.Version,
+		UptimeS:       status.UptimeS,
+		VMsManaged:    status.VMsManaged,
+		ImageGCRuns:   status.ImageGCRunsTotal,
+		ImageGCBytes:  status.ImageGCBytesFreedTotal,
+		LifecycleRuns: status.LifecycleEnforced,
+		Events:        d.events.Tail(),
+	}
 }
 
 func (d *daemon) serve(ctx context.Context, l net.Listener) error {
