@@ -7,8 +7,12 @@ image="${IMAGE:-agentkit/macos-base:latest}"
 task="${TASK:-take a screenshot, click button at coords, type hello, take another screenshot}"
 out="${OUT:-bench/agent-sandbox-providers/results-$(date +%Y%m%d).md}"
 live="${RUN_LIVE:-0}"
+artifacts="${ARTIFACTS_DIR:-${out%.md}-artifacts}"
 
 mkdir -p "$(dirname "$out")"
+if [ "$live" = "1" ]; then
+  mkdir -p "$artifacts"
+fi
 
 {
   echo "# Agent sandbox provider latency"
@@ -20,6 +24,7 @@ mkdir -p "$(dirname "$out")"
   echo "- Task: \`$task\`"
   echo "- Runs per provider: $runs"
   echo "- Live API run: $live"
+  [ "$live" = "1" ] && echo "- Run artifacts: \`$artifacts\`"
   echo
   echo "| Provider | Model | Runs | Median latency s | Error rate | Notes |"
   echo "| --- | --- | ---: | ---: | ---: | --- |"
@@ -28,20 +33,21 @@ mkdir -p "$(dirname "$out")"
 for provider in $providers; do
   model_var="$(printf '%s' "$provider" | tr '[:lower:]' '[:upper:]')_MODEL"
   model="${!model_var:-default}"
-  tmp="$(mktemp -d)"
+  run_dir="$artifacts/$provider"
   errors=0
   latencies=()
   if [ "$live" != "1" ]; then
     echo "| $provider | $model | $runs | n/a | n/a | set RUN_LIVE=1 and provider credentials to collect |" >> "$out"
     continue
   fi
+  mkdir -p "$run_dir"
   for i in $(seq 1 "$runs"); do
     start="$(python3 - <<'PY'
 import time
 print(time.time())
 PY
 )"
-    if ! ./cove agent-sandbox run --provider "$provider" --image "$image" --task "$task" --max-steps 8 >"$tmp/$provider-$i.out" 2>"$tmp/$provider-$i.err"; then
+    if ! ./cove agent-sandbox run --provider "$provider" --image "$image" --task "$task" --max-steps 8 >"$run_dir/$i.out" 2>"$run_dir/$i.err"; then
       errors=$((errors + 1))
     fi
     end="$(python3 - <<'PY'
@@ -64,7 +70,7 @@ import sys
 print(f"{int(sys.argv[1]) / int(sys.argv[2]):.2f}")
 PY
 )"
-  notes="mechanical latency only; not quality"
+  notes="mechanical latency only; artifacts: $run_dir"
   echo "| $provider | $model | $runs | $median | $err_rate | $notes |" >> "$out"
 done
 

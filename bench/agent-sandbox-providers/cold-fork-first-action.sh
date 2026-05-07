@@ -7,8 +7,12 @@ image="${IMAGE:-agentkit/macos-base:latest}"
 out="${OUT:-bench/agent-sandbox-providers/cold-fork-results-$(date +%Y%m%d).md}"
 live="${RUN_LIVE:-0}"
 task="${TASK:-take one screenshot and stop}"
+artifacts="${ARTIFACTS_DIR:-${out%.md}-artifacts}"
 
 mkdir -p "$(dirname "$out")"
+if [ "$live" = "1" ]; then
+  mkdir -p "$artifacts"
+fi
 
 {
   echo "# Cold fork to first observable action"
@@ -19,25 +23,28 @@ mkdir -p "$(dirname "$out")"
   echo "- Image: \`$image\`"
   echo "- First action proxy: first screenshot/control event in replay bundle"
   echo "- Live API run: $live"
+  [ "$live" = "1" ] && echo "- Run artifacts: \`$artifacts\`"
   echo
   echo "| Provider | Runs | Median fork-to-first-action s | Error rate | Notes |"
   echo "| --- | ---: | ---: | ---: | --- |"
 } > "$out"
 
 for provider in $providers; do
+  run_dir="$artifacts/$provider"
   errors=0
   latencies=()
   if [ "$live" != "1" ]; then
     echo "| $provider | $runs | n/a | n/a | set RUN_LIVE=1 and provider credentials to collect |" >> "$out"
     continue
   fi
+  mkdir -p "$run_dir"
   for i in $(seq 1 "$runs"); do
     start="$(python3 - <<'PY'
 import time
 print(time.time())
 PY
 )"
-    log="$(mktemp)"
+    log="$run_dir/$i.log"
     if ! ./cove agent-sandbox run --provider "$provider" --image "$image" --task "$task" --max-steps 3 >"$log" 2>&1; then
       errors=$((errors + 1))
       continue
@@ -84,7 +91,7 @@ import sys
 print(f"{int(sys.argv[1]) / int(sys.argv[2]):.2f}")
 PY
 )"
-  notes="instant provisioning metric"
+  notes="instant provisioning metric; artifacts: $run_dir"
   echo "| $provider | $runs | $median | $err_rate | $notes |" >> "$out"
 done
 

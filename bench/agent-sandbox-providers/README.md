@@ -22,6 +22,10 @@ The benchmark scripts capture cove version, host info, image ref, provider,
 model id, run count, median latency, and error rate. They measure mechanical
 latency and reliability only, not task quality.
 
+Live runs preserve per-provider stdout/stderr under
+`<result-name>-artifacts/<provider>/`. Set `ARTIFACTS_DIR=/tmp/...` to keep
+large or exploratory runs outside the repository.
+
 Checked-in evidence:
 
 - `results-20260505.md`: full-matrix protocol capture without live provider
