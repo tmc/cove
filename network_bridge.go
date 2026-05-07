@@ -70,7 +70,7 @@ func (n *networkBridge) addHTTPListener(ln net.Listener) {
 	}
 	listeners := n.httpListeners
 	n.mu.Unlock()
-	listeners.add(ln)
+	listeners.Add(ln)
 }
 
 // setVNCStatus replaces the recorded VNC runtime status.
@@ -223,6 +223,6 @@ func (n *networkBridge) closeHTTPListeners() {
 	n.httpListeners = nil
 	n.mu.Unlock()
 	if listeners != nil {
-		listeners.closeAll()
+		listeners.CloseAll()
 	}
 }
