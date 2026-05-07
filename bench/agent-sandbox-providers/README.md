@@ -38,3 +38,5 @@ Checked-in evidence:
   cold-fork-to-first-action run on `m4x-129`; not full-matrix evidence.
 - `results-gemini-live-20260507.md`: one successful Gemini live latency run on `m4x-129`; not full-matrix evidence.
 - `cold-fork-results-gemini-live-20260507.md`: one successful Gemini live cold-fork-to-first-action run.
+
+- `results-vertex-live-20260507.md`: one Vertex live latency attempt with passing auth/ADC that failed with provider HTTP 404 before first action.

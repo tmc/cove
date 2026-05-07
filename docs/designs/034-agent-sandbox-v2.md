@@ -63,6 +63,8 @@ Checked-in evidence distinguishes protocol dry-runs from live provider runs:
   on `m4x-129`. It is not full-matrix evidence.
 - `cold-fork-results-gemini-live-20260507.md`: one successful Gemini live
   cold-fork-to-first-action run.
+- `results-vertex-live-20260507.md`: one Vertex live latency attempt with
+  passing auth/ADC that failed with provider HTTP 404 before first action.
 
 ## Ship Artifacts
 

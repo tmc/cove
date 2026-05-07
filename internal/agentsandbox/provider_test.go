@@ -3,6 +3,8 @@ package agentsandbox
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -41,6 +43,46 @@ func TestRunAnthropicDelegatesToRuntime(t *testing.T) {
 	}
 }
 
+func TestRunPassesGoogleModelOverrides(t *testing.T) {
+	root := t.TempDir()
+	log := filepath.Join(root, "args.txt")
+	writeBridge := func(rel string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >\"$COVE_TEST_ARGS\"\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeBridge(filepath.Join("adapters", "google-bridge", "computer_use.py"))
+	writeBridge(filepath.Join("adapters", "google-bridge", "vertex-ai", "computer_use.py"))
+	t.Setenv("COVE_AGENT_SANDBOX_PYTHON", "/bin/sh")
+	t.Setenv("COVE_TEST_ARGS", log)
+
+	t.Setenv("COVE_GEMINI_MODEL", "gemini-model")
+	if _, err := Run(context.Background(), Options{Provider: ProviderGemini, VMName: "vm", Task: "task", RepoRoot: root}); err != nil {
+		t.Fatalf("gemini run: %v", err)
+	}
+	got := readFile(t, log)
+	if !strings.Contains(got, "--model\ngemini-model\n") {
+		t.Fatalf("gemini args:\n%s", got)
+	}
+
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "project")
+	t.Setenv("COVE_VERTEX_REGION", "region")
+	t.Setenv("COVE_VERTEX_MODEL", "vertex-model")
+	if _, err := Run(context.Background(), Options{Provider: ProviderVertex, VMName: "vm", Task: "task", RepoRoot: root}); err != nil {
+		t.Fatalf("vertex run: %v", err)
+	}
+	got = readFile(t, log)
+	for _, want := range []string{"--project\nproject\n", "--region\nregion\n", "--model\nvertex-model\n"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("vertex args missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestProviderInfos(t *testing.T) {
 	infos := ProviderInfos()
 	if len(infos) != 4 {
@@ -55,6 +97,15 @@ func TestProviderInfos(t *testing.T) {
 			t.Fatalf("%s capabilities incomplete: %+v", info.Name, info.Capabilities)
 		}
 	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestRunRequiresVMAndTask(t *testing.T) {
