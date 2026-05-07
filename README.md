@@ -198,7 +198,7 @@ cove vzscript run gitlab-runner
 Runner registration tokens are secrets. Avoid pasting real values into shell
 history; use a prompt, keychain lookup, or CI secret variable instead.
 
-### Cirrus Task Migration
+### Private CI Runner
 
 This is an advanced workflow. Get a local VM working first with `cove first-run`.
 
@@ -211,9 +211,8 @@ cove action prepare-image macos-runner:latest --ttl 24h
 go run ./cmd/cove-action -image macos-runner:latest -command './ci/test.sh'
 ```
 
-Use [Quickstart from Cirrus](docs/quickstart-from-cirrus.md) for the five-step
-path and [Migrating from Cirrus CI to cove](docs/migrations/from-cirrus.md) for
-container, macOS, persistent-worker, and matrix examples.
+This is the private runner path: the scheduler stays outside cove, and each job
+runs through a verified local image fork.
 
 ### Tailscale Mesh Access
 

@@ -10,6 +10,18 @@ title: Installation
 - Xcode Command Line Tools (`xcode-select --install`)
 - ~20GB free disk space for a macOS VM
 
+## Private Checkout
+
+```bash
+git clone git@github.com:tmc/cove.git
+cd cove
+go build -o cove ./cmd/cove
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+```
+
+> [!NOTE]
+> Public tap availability is gated on the release and product-name decision.
+
 ## Go Install
 
 Install from source for now:
@@ -35,7 +47,9 @@ The Go module path is `github.com/tmc/cove`.
 
 ### Entitlements
 
-cove auto-signs itself on first launch with the required Virtualization.framework entitlements. No manual step is needed for normal use.
+Published builds auto-sign themselves on first launch with the required
+Virtualization.framework entitlements. Private checkout builds should be signed
+explicitly after `go build`.
 
 > [!WARNING]
 > Manual signing is only needed if autosigning fails or you bypass normal

@@ -12,6 +12,11 @@ direct cross-host image transfer (`f13dae5`, `1273fcb`), least-loaded placement
 (`e347836`), and a daemon that reports lifecycle and image-GC state (`ef019c1`,
 `c6f33df`).
 
+The daemon is local observability and lifecycle coordination. Metrics and JSONL
+events are in-scope for v0.4.0; webhooks and the embedded web UI are preview
+operator surfaces, with the UI opt-in and status-only rather than a VM control
+plane.
+
 The release also expands the computer-use story: the OpenAI Agents SDK
 `SandboxRunConfig` helper landed at `4d61edd`, OpenAI integration docs at
 `27f9e24`, and the Anthropic computer-use loop plus CLI integration at
@@ -26,7 +31,7 @@ The release also expands the computer-use story: the OpenAI Agents SDK
 - **Host daemon.** `coved` and `cove daemon` CLI scaffolding landed at
   `d786e53` and `a9a2a9b`; image-GC scheduling and status counters landed at
   `3258982` and `ef019c1`; lifecycle enforcement landed at `2b516da` and
-  `c6f33df`.
+  `c6f33df`; observability remains host-local, with the browser UI opt-in.
 - **Lifecycle policy and quotas.** Policy persistence, CLI, and enforcement
   landed at `d1df12b`, `2202f46`, and `80eea77`; run-budget locking and
   telemetry landed at `9749f29` and `cd899a1`. Per-VM quota persistence,
@@ -46,9 +51,9 @@ The release also expands the computer-use story: the OpenAI Agents SDK
   landed at `8c7d54b`, `a51c544`, `31017ca`, `0ed3b70`, `ad9dc16`, and
   `7030657`. The release keeps the empirical conclusion from design 015:
   fork/restore remains the isolation primitive.
-- **Cirrus migration docs.** The migration guide, landing page, walkthrough,
-  README link, and blog draft landed at `bdd1912`, `2642d01`, `e413e0e`,
-  `6017373`, and `4635254`.
+- **Cirrus migration docs.** The technical migration guide and walkthrough
+  landed at `bdd1912` and `e413e0e`. Landing and blog drafts exist only as
+  parked private material until the release, privacy, and name gates clear.
 
 ## New CLI Surface
 
@@ -96,10 +101,10 @@ The release also expands the computer-use story: the OpenAI Agents SDK
 
 ## Migration Notes
 
-- Cirrus users should start with `docs/migrate-from-cirrus.md` (`bdd1912`),
-  `docs/landing/cirrus-displacement.md` (`2642d01`), and
+- Cirrus users should start with `docs/migrate-from-cirrus.md` (`bdd1912`) and
   `docs/landing/migration-walkthrough.md` (`e413e0e`). These are migration
-  docs, not an automatic `.cirrus.yml` converter.
+  docs, not an automatic `.cirrus.yml` converter, hosted queue replacement, or
+  public launch campaign.
 - Fleet features require SSH reachability to trusted Mac hosts; the base fleet
   docs landed at `366bfac`, and cross-host image transfer docs landed at
   `ec75f1b`.

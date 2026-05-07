@@ -1,7 +1,9 @@
 # Cove for Cirrus CI migration
 
-This page is the short migration note. The blog-post-ready landing-page draft
-is [`docs/landing/cove-vs-cirrus.md`](cove-vs-cirrus.md).
+Status: private migration draft. Do not publish until release, privacy, and
+name gates are complete.
+
+This page is a parked short migration note.
 
 Cirrus Labs announced on April 7, 2026 that Cirrus CI will shut down on
 Monday, June 1, 2026:
