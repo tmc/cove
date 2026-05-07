@@ -139,6 +139,6 @@ type VolumeMount struct {
 
 // PortForward is a startup host TCP -> guest vsock forward.
 type PortForward struct {
-	HostAddr  string // "127.0.0.1:8080" or ":8080"
+	HostPort  int
 	GuestPort uint32
 }

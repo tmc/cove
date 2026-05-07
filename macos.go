@@ -28,6 +28,7 @@ import (
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/vz-macos/internal/vmrun"
 )
 
 var errVMStartupInProgress = errors.New("vm startup already in progress")
@@ -367,11 +368,13 @@ const (
 
 // runMacOSVM runs a macOS VM with the configured settings.
 func runMacOSVM() error {
-	if verbose {
+	rc := vmrunRunConfig(vmrun.GuestMacOS)
+	hc := vmrunHostConfig()
+	if hc.Verbose {
 		fmt.Println("=== macOS VM Runner ===")
 	}
 	target := currentVMSelection()
-	preferPasswordDialog = guiMode && !headlessMode
+	preferPasswordDialog = rc.GUI && !rc.Headless
 
 	stopAppleLogStream := maybeStartAppleLogStream()
 	defer stopAppleLogStream()
@@ -390,7 +393,7 @@ func runMacOSVM() error {
 	}
 
 	// Resolve disk path
-	resolvedDiskPath := diskPath
+	resolvedDiskPath := rc.DiskPath
 	if resolvedDiskPath == "" {
 		resolvedDiskPath = target.diskPath()
 	}
@@ -403,8 +406,8 @@ func runMacOSVM() error {
 
 	// Create disk if it doesn't exist
 	if os.IsNotExist(diskStatErr) {
-		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, diskSizeGB)
-		if err := createDiskImage(resolvedDiskPath, diskSizeGB); err != nil {
+		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, rc.DiskSizeGB)
+		if err := createDiskImage(resolvedDiskPath, rc.DiskSizeGB); err != nil {
 			return fmt.Errorf("create disk image: %w", err)
 		}
 	} else if diskStatErr != nil {
@@ -438,35 +441,35 @@ func runMacOSVM() error {
 	if err := disk.EnsureDetached(resolvedDiskPath); err != nil {
 		return fmt.Errorf("disk busy: %w", err)
 	}
-	if verbose {
+	if hc.Verbose {
 		fmt.Println("Disk detached successfully.")
 	}
 
 	if err := writeLoginScreenCredentialsCache(target.Directory, loginScreenCredentials{
-		Username: provisionUser,
-		Password: provisionPassword,
-	}); err != nil && verbose {
+		Username: rc.ProvisionUser,
+		Password: rc.ProvisionPassword,
+	}); err != nil && hc.Verbose {
 		fmt.Printf("[login-watchdog] cache credentials: %v\n", err)
 	}
 
 	bootLoginScreenCredentials = loginScreenCredentials{}
-	if !headlessMode && diskExists {
+	if !rc.Headless && diskExists {
 		creds, err := loadBootLoginScreenCredentials(target.Directory, resolvedDiskPath)
 		if err != nil {
-			if verbose {
+			if hc.Verbose {
 				fmt.Printf("[login-watchdog] cached credentials unavailable: %v\n", err)
 			}
 		} else if creds.Valid() {
 			bootLoginScreenCredentials = creds
-			if verbose {
+			if hc.Verbose {
 				fmt.Printf("[login-watchdog] cached credentials loaded for %s\n", creds.Username)
 			}
 		}
 	}
 
 	// Build VM configuration
-	if verbose {
-		fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
+	if hc.Verbose {
+		fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
 	}
 	noteVMRuntimePhase(target.Directory, "starting", "building-config")
 	config, err := buildVMConfiguration(resolvedDiskPath)
@@ -654,14 +657,17 @@ func validateVMSettings() error {
 
 // buildVMConfiguration builds a VZVirtualMachineConfiguration for macOS.
 func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
+	rc := vmrunRunConfig(vmrun.GuestMacOS)
+	hc := vmrunHostConfig()
+
 	// Resolve symlinks for all paths
 	diskImagePath = resolvePath(diskImagePath)
 
 	config := vz.NewVZVirtualMachineConfiguration()
 
 	// CPU and memory
-	config.SetCPUCount(cpuCount)
-	config.SetMemorySize(memoryGB * 1024 * 1024 * 1024)
+	config.SetCPUCount(rc.CPUCount)
+	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
 
 	// Platform configuration (macOS)
 	platformConfig := vz.NewVZMacPlatformConfiguration()
@@ -682,7 +688,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 
 	// Auxiliary storage (NVRAM, etc.)
 	// Use UTM bundle's auxiliary storage path if set, otherwise default.
-	auxStoragePath := filepath.Join(vmDir, "aux.img")
+	auxStoragePath := filepath.Join(hc.VMDir, "aux.img")
 	if utmAuxStoragePath != "" {
 		auxStoragePath = utmAuxStoragePath
 	}
@@ -690,7 +696,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	auxURL.Retain() // Prevent premature deallocation
 	var auxStorage vz.VZMacAuxiliaryStorage
 	if _, statErr := os.Stat(auxStoragePath); os.IsNotExist(statErr) {
-		if verbose {
+		if hc.Verbose {
 			fmt.Println("  Creating auxiliary storage...")
 		}
 		var err error
@@ -701,7 +707,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		}
 		auxStorage.Retain()
 	} else {
-		if verbose {
+		if hc.Verbose {
 			fmt.Println("  Loading existing auxiliary storage...")
 		}
 		auxStorage = vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
@@ -731,7 +737,10 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	setStorageDevices(config, storageConfig)
 
 	// Graphics with multi-display support
-	displayConfigs := []displayx.Config(displays)
+	displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
+	for _, d := range rc.Displays {
+		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+	}
 	if len(displayConfigs) == 0 {
 		displayConfigs = []displayx.Config{displayx.DefaultConfig()}
 	}
@@ -739,7 +748,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	if err != nil {
 		return config, fmt.Errorf("create graphics config: %w", err)
 	}
-	if verbose {
+	if hc.Verbose {
 		for i, d := range displayConfigs {
 			fmt.Printf("  Display %d: %dx%d @ %d PPI\n", i+1, d.Width, d.Height, d.PPI)
 		}
@@ -747,7 +756,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	setGraphicsDevices(config, graphicsConfig)
 
 	// Network configuration
-	netConfig, err := ParseNetworkMode(networkMode)
+	netConfig, err := ParseNetworkMode(rc.NetworkMode)
 	if err != nil {
 		return config, fmt.Errorf("parse network mode: %w", err)
 	}
@@ -796,7 +805,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		setAudioDevices(config, audioConfig)
 	}
 
-	minimalProfile := runtimeProfile == "minimal"
+	minimalProfile := hc.RuntimeProfile == "minimal"
 	if !minimalProfile {
 		EnsureUSBController(config)
 	}
@@ -825,14 +834,14 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 
 	// Serial console (for streaming output to stdout/stderr)
 	if minimalProfile {
-		if serialOutput != "none" {
+		if rc.SerialOutput != "none" {
 			fmt.Println("warning: ignoring -serial with -runtime-profile minimal")
 		}
 	} else {
 		serialConfig := createSerialConsoleConfig()
 		if serialConfig.ID != 0 {
 			setSerialPorts(config, serialConfig)
-			if verbose {
+			if hc.Verbose {
 				fmt.Println("  Serial console attached (output to stdout)")
 			}
 		}
@@ -840,10 +849,10 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 
 	// Clipboard sharing (SPICE agent over Virtio console)
 	if minimalProfile {
-		if enableClipboard {
+		if rc.EnableClipboard {
 			fmt.Println("warning: ignoring -clipboard with -runtime-profile minimal")
 		}
-	} else if enableClipboard {
+	} else if rc.EnableClipboard {
 		clipboardDevice, err := clipboard.NewConfig()
 		if err != nil {
 			fmt.Printf("  warning: clipboard: %v\n", err)
@@ -851,7 +860,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 			config.SetConsoleDevices([]vz.VZConsoleDeviceConfiguration{
 				vz.VZConsoleDeviceConfigurationFromID(clipboardDevice.ID),
 			})
-			if verbose {
+			if hc.Verbose {
 				fmt.Println("  Clipboard sharing enabled (SPICE agent)")
 			}
 		}
@@ -873,7 +882,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 
 		// Dedicated VirtioFS device for toolbar-managed shared folders.
 		// Always created so the GUI can hotplug folders at runtime.
-		sharedFolders := effectiveSharedFolders(vmDir)
+		sharedFolders := effectiveSharedFolders(hc.VMDir)
 		sharedFoldersDevice := createSharedFoldersDevice(sharedFolders)
 		if sharedFoldersDevice.ID != 0 {
 			allVirtioConfigs = append(allVirtioConfigs, sharedFoldersDevice)
@@ -885,7 +894,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		}
 	} else {
 		effectiveVolumes := getEffectiveVolumes()
-		if len(effectiveVolumes) > 0 || len(LoadSharedFolders(vmDir)) > 0 {
+		if len(effectiveVolumes) > 0 || len(LoadSharedFolders(hc.VMDir)) > 0 {
 			fmt.Println("warning: ignoring shared folders/volumes with -runtime-profile minimal")
 		}
 	}
