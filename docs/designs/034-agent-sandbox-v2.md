@@ -55,9 +55,10 @@ Checked-in evidence distinguishes protocol dry-runs from live provider runs:
 - `results-20260505.md`: full-matrix protocol capture; no provider credentials
   were available for live calls in that commit.
 - `cold-fork-results-20260505.md`: cold-fork protocol capture; no live calls.
-- `results-openai-live-20260507.md`: one OpenAI live run on `m4x-129`; the
-  task reached the provider/fork loop and recorded a provider error row. It is
-  not full-matrix evidence.
+- `results-openai-live-20260507.md`: one successful OpenAI live latency
+  run on `m4x-129`. It is not full-matrix evidence.
+- `cold-fork-results-openai-live-20260507.md`: one successful OpenAI live
+  cold-fork-to-first-action run on `m4x-129`. It is not full-matrix evidence.
 
 ## Ship Artifacts
 

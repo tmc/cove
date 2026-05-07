@@ -32,5 +32,7 @@ Checked-in evidence:
   credentials.
 - `cold-fork-results-20260505.md`: cold-fork protocol capture without live
   provider credentials.
-- `results-openai-live-20260507.md`: one OpenAI live run on `m4x-129`; not
-  full-matrix evidence.
+- `results-openai-live-20260507.md`: one successful OpenAI live latency run
+  on `m4x-129`; not full-matrix evidence.
+- `cold-fork-results-openai-live-20260507.md`: one successful OpenAI live
+  cold-fork-to-first-action run on `m4x-129`; not full-matrix evidence.

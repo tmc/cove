@@ -58,12 +58,17 @@ def test_exec_result(tmp_path: Path) -> None:
 
 
 def test_computer_screenshot_is_base64(tmp_path: Path) -> None:
-    del tmp_path
     sock = _short_socket_path()
     server = _UnixServer(sock, {"success": True, "screenshot_result": {"image_data": _b64(b"image")}})
     server.start()
-    computer = CoveComputer(CoveClient(socket_path=sock))
+    screenshots = tmp_path / "screens"
+    events = tmp_path / "events.jsonl"
+    computer = CoveComputer(CoveClient(socket_path=sock), screenshot_dir=str(screenshots), events_jsonl=str(events))
     assert base64.b64decode(computer.screenshot()) == b"image"
+    assert (screenshots / "step-001.png").read_bytes() == b"image"
+    row = json.loads(events.read_text().splitlines()[0])
+    assert row["action"] == "screenshot"
+    assert row["path"].endswith("step-001.png")
     assert computer.environment == "mac"
     assert computer.dimensions == (1024, 768)
 

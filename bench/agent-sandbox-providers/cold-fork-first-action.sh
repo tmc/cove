@@ -73,7 +73,18 @@ ts=sys.argv[1]
 if not ts:
     print(time.time())
 else:
-    print(datetime.datetime.fromisoformat(ts.replace("Z","+00:00")).timestamp())
+    ts = ts.replace("Z","+00:00")
+    if "." in ts:
+        head, tail = ts.split(".", 1)
+        frac = tail
+        zone = ""
+        for sep in ("+", "-"):
+            if sep in tail:
+                frac, zone = tail.split(sep, 1)
+                zone = sep + zone
+                break
+        ts = head + "." + frac[:6].ljust(6, "0") + zone
+    print(datetime.datetime.fromisoformat(ts).timestamp())
 PY
 )"
     latencies+=("$(python3 - "$start" "$end" <<'PY'

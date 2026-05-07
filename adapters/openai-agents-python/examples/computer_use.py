@@ -17,10 +17,10 @@ def main() -> None:
     parser.add_argument("--model", default=os.environ.get("COVE_OPENAI_MODEL", "gpt-5.5"))
     args = parser.parse_args()
 
-    del args.max_steps, args.screenshot_dir, args.events_jsonl
+    del args.max_steps
 
     client = CoveClient(vm=args.vm)
-    computer = CoveComputer(client)
+    computer = CoveComputer(client, screenshot_dir=args.screenshot_dir, events_jsonl=args.events_jsonl)
     model_settings = ModelSettings(truncation="auto") if args.model == "computer-use-preview" else ModelSettings()
     agent = Agent(
         name="macOS operator",
