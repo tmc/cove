@@ -41,9 +41,10 @@ import (
 )
 
 // getAgent returns the current agent client, connecting if necessary.
-// It holds agentMu only briefly for connection setup, not during RPCs.
-func (s *ControlServer) getAgent() (*agentstate.AgentClient, error) {
-	state, err := s.currentVMState()
+// It holds the bridge mutex only briefly for connection setup, not
+// during RPCs.
+func (b *agentBridge) getAgent() (*agentstate.AgentClient, error) {
+	state, err := b.currentVMState()
 	if err != nil {
 		return nil, err
 	}
@@ -52,43 +53,47 @@ func (s *ControlServer) getAgent() (*agentstate.AgentClient, error) {
 	}
 
 	// Fast path: read lock to check existing connection.
-	s.bridge.mu.RLock()
-	if a := s.bridge.agent; a != nil {
-		s.bridge.mu.RUnlock()
+	b.mu.RLock()
+	if a := b.agent; a != nil {
+		b.mu.RUnlock()
 		// Quick health check outside any lock.
-		ctx, cancel := s.timeoutContext(2 * time.Second)
+		ctx, cancel := b.timeoutContext(2 * time.Second)
 		defer cancel()
 		if _, err := a.Ping(ctx); err == nil {
 			return a, nil
 		}
 		// Connection is dead, fall through to reconnect.
 	} else {
-		s.bridge.mu.RUnlock()
+		b.mu.RUnlock()
 	}
 
 	// Slow path: write lock to reconnect.
-	s.bridge.mu.Lock()
-	defer s.bridge.mu.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	// Double-check after acquiring write lock.
-	if s.bridge.agent != nil {
-		ctx, cancel := s.timeoutContext(2 * time.Second)
+	if b.agent != nil {
+		ctx, cancel := b.timeoutContext(2 * time.Second)
 		defer cancel()
-		if _, err := s.bridge.agent.Ping(ctx); err == nil {
-			return s.bridge.agent, nil
+		if _, err := b.agent.Ping(ctx); err == nil {
+			return b.agent, nil
 		}
-		s.bridge.agent.Close()
-		s.bridge.agent = nil
+		b.agent.Close()
+		b.agent = nil
 	}
-	if err := s.connectAgentLocked(); err != nil {
+	if err := b.connectAgentLocked(); err != nil {
 		return nil, err
 	}
-	return s.bridge.agent, nil
+	return b.agent, nil
+}
+
+func (s *ControlServer) getAgent() (*agentstate.AgentClient, error) {
+	return s.bridge.getAgent()
 }
 
 // getUserAgent returns the user session agent client, connecting if necessary.
 // If the LaunchAgent is missing in a macOS guest, it is bootstrapped on demand.
-func (s *ControlServer) getUserAgent() (*agentstate.UserAgentClient, error) {
-	state, err := s.currentVMState()
+func (b *agentBridge) getUserAgent() (*agentstate.UserAgentClient, error) {
+	state, err := b.currentVMState()
 	if err != nil {
 		return nil, err
 	}
@@ -97,65 +102,69 @@ func (s *ControlServer) getUserAgent() (*agentstate.UserAgentClient, error) {
 	}
 
 	// Fast path: verify existing connection.
-	s.bridge.mu.RLock()
-	if ua := s.bridge.userAgent; ua != nil {
-		s.bridge.mu.RUnlock()
-		ctx, cancel := s.timeoutContext(2 * time.Second)
+	b.mu.RLock()
+	if ua := b.userAgent; ua != nil {
+		b.mu.RUnlock()
+		ctx, cancel := b.timeoutContext(2 * time.Second)
 		defer cancel()
 		if _, err := ua.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
 			return ua, nil
 		}
 	} else {
-		s.bridge.mu.RUnlock()
+		b.mu.RUnlock()
 	}
 
 	// Slow path: connect.
-	s.bridge.mu.Lock()
-	defer s.bridge.mu.Unlock()
-	if s.bridge.userAgent != nil {
-		ctx, cancel := s.timeoutContext(2 * time.Second)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.userAgent != nil {
+		ctx, cancel := b.timeoutContext(2 * time.Second)
 		defer cancel()
-		if _, err := s.bridge.userAgent.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
-			return s.bridge.userAgent, nil
+		if _, err := b.userAgent.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
+			return b.userAgent, nil
 		}
-		s.bridge.userAgent.Close()
-		s.bridge.userAgent = nil
+		b.userAgent.Close()
+		b.userAgent = nil
 	}
-	if err := s.connectUserAgentLocked(); err != nil {
+	if err := b.connectUserAgentLocked(); err != nil {
 		return nil, err
 	}
-	return s.bridge.userAgent, nil
+	return b.userAgent, nil
+}
+
+func (s *ControlServer) getUserAgent() (*agentstate.UserAgentClient, error) {
+	return s.bridge.getUserAgent()
 }
 
 // connectUserAgentLocked establishes the user agent connection on port 1025.
-// Caller must hold s.bridge.mu write lock.
-func (s *ControlServer) connectUserAgentLocked() error {
-	if s.bridge.userAgent != nil {
+// Caller must hold b.mu write lock.
+func (b *agentBridge) connectUserAgentLocked() error {
+	if b.userAgent != nil {
 		return nil
 	}
 
-	if err := s.connectUserAgentPortLocked(); err == nil {
+	if err := b.connectUserAgentPortLocked(); err == nil {
 		return nil
 	} else if linuxMode {
 		return err
 	} else {
-		repairErr := s.bootstrapUserAgentLocked()
+		repairErr := b.bootstrapUserAgentLocked()
 		if repairErr != nil {
 			return fmt.Errorf("%v; bootstrap user agent: %w", err, repairErr)
 		}
-		if retryErr := s.connectUserAgentPortLocked(); retryErr != nil {
+		if retryErr := b.connectUserAgentPortLocked(); retryErr != nil {
 			return fmt.Errorf("connect user agent after bootstrap: %w", retryErr)
 		}
 		return nil
 	}
 }
 
-func (s *ControlServer) connectUserAgentPortLocked() error {
+func (b *agentBridge) connectUserAgentPortLocked() error {
 	client, err := agentstate.NewUserAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
+		mgr, err := NewVsockDeviceManager(b.cs.vm, b.cs.vmQueue)
 		if err != nil {
 			return nil, fmt.Errorf("vsock device: %w", err)
 		}
@@ -168,34 +177,34 @@ func (s *ControlServer) connectUserAgentPortLocked() error {
 	if err != nil {
 		return fmt.Errorf("user agent client: %w", err)
 	}
-	ctx, cancel := s.timeoutContext(5 * time.Second)
+	ctx, cancel := b.timeoutContext(5 * time.Second)
 	defer cancel()
 	if _, err := client.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err != nil {
 		client.Close()
 		return err
 	}
-	s.bridge.userAgent = client
+	b.userAgent = client
 	return nil
 }
 
-func (s *ControlServer) bootstrapUserAgentLocked() error {
+func (b *agentBridge) bootstrapUserAgentLocked() error {
 	if linuxMode {
 		return fmt.Errorf("user agent bootstrap is only supported for macOS guests")
 	}
-	if err := s.connectAgentLocked(); err != nil {
+	if err := b.connectAgentLocked(); err != nil {
 		return fmt.Errorf("connect daemon agent: %w", err)
 	}
 
-	user, uid, err := s.consoleUserLocked()
+	user, uid, err := b.consoleUserLocked()
 	if err != nil {
 		return err
 	}
 
 	plistPath := "/Library/LaunchAgents/" + agentLaunchAgentLabel + ".plist"
-	ctx, cancel := s.timeoutContext(20 * time.Second)
+	ctx, cancel := b.timeoutContext(20 * time.Second)
 	defer cancel()
 
-	if err := s.bridge.agent.WriteFile(ctx, plistPath, []byte(agentLaunchAgentPlist), 0644); err != nil {
+	if err := b.agent.WriteFile(ctx, plistPath, []byte(agentLaunchAgentPlist), 0644); err != nil {
 		return fmt.Errorf("write %s: %w", plistPath, err)
 	}
 
@@ -209,7 +218,7 @@ launchctl enable gui/%d/%s
 launchctl kickstart -k gui/%d/%s
 `, plistPath, plistPath, plistPath, uid, agentLaunchAgentLabel, uid, agentLaunchAgentLabel, uid, plistPath, uid, agentLaunchAgentLabel, uid, agentLaunchAgentLabel)
 
-	result, err := s.bridge.agent.Exec(ctx, []string{"sh", "-lc", script}, nil, "")
+	result, err := b.agent.Exec(ctx, []string{"sh", "-lc", script}, nil, "")
 	if err != nil {
 		return fmt.Errorf("bootstrap %s for %s (%d): %w", agentLaunchAgentLabel, user, uid, err)
 	}
@@ -226,11 +235,11 @@ launchctl kickstart -k gui/%d/%s
 	return nil
 }
 
-func (s *ControlServer) consoleUserLocked() (string, int, error) {
-	ctx, cancel := s.timeoutContext(5 * time.Second)
+func (b *agentBridge) consoleUserLocked() (string, int, error) {
+	ctx, cancel := b.timeoutContext(5 * time.Second)
 	defer cancel()
 
-	result, err := s.bridge.agent.Exec(ctx, []string{"stat", "-f", "%Su %u", "/dev/console"}, nil, "")
+	result, err := b.agent.Exec(ctx, []string{"stat", "-f", "%Su %u", "/dev/console"}, nil, "")
 	if err != nil {
 		return "", 0, fmt.Errorf("query console user: %w", err)
 	}
@@ -247,14 +256,18 @@ func (s *ControlServer) consoleUserLocked() (string, int, error) {
 	return parseConsoleOwnerOutput(string(result.Stdout))
 }
 
-func (s *ControlServer) consoleUser() (string, int, error) {
-	s.bridge.mu.Lock()
-	defer s.bridge.mu.Unlock()
+func (b *agentBridge) consoleUser() (string, int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-	if err := s.connectAgentLocked(); err != nil {
+	if err := b.connectAgentLocked(); err != nil {
 		return "", 0, fmt.Errorf("connect daemon agent: %w", err)
 	}
-	return s.consoleUserLocked()
+	return b.consoleUserLocked()
+}
+
+func (s *ControlServer) consoleUser() (string, int, error) {
+	return s.bridge.consoleUser()
 }
 
 func parseConsoleOwnerOutput(stdout string) (string, int, error) {
@@ -305,9 +318,9 @@ func agentUnavailableForVMState(state vz.VZVirtualMachineState) error {
 }
 
 // connectAgentLocked establishes the agent connection.
-// Caller must hold s.bridge.mu.
-func (s *ControlServer) connectAgentLocked() error {
-	if s.bridge.agent != nil {
+// Caller must hold b.mu.
+func (b *agentBridge) connectAgentLocked() error {
+	if b.agent != nil {
 		return nil // already connected
 	}
 
@@ -315,7 +328,7 @@ func (s *ControlServer) connectAgentLocked() error {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
+		mgr, err := NewVsockDeviceManager(b.cs.vm, b.cs.vmQueue)
 		if err != nil {
 			return nil, fmt.Errorf("vsock device: %w", err)
 		}
@@ -328,13 +341,13 @@ func (s *ControlServer) connectAgentLocked() error {
 	if err != nil {
 		return fmt.Errorf("agent client: %w", err)
 	}
-	ctx, cancel := s.timeoutContext(5 * time.Second)
+	ctx, cancel := b.timeoutContext(5 * time.Second)
 	defer cancel()
 	if _, err := client.Ping(ctx); err != nil {
 		client.Close()
 		return err
 	}
-	s.bridge.agent = client
+	b.agent = client
 	return nil
 }
 
@@ -460,17 +473,22 @@ func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *co
 }
 
 func (s *ControlServer) handleAgentConnect() *controlpb.ControlResponse {
-	// Force reconnect: write lock to close and reopen.
-	s.bridge.mu.Lock()
-	defer s.bridge.mu.Unlock()
-	if s.bridge.agent != nil {
-		s.bridge.agent.Close()
-		s.bridge.agent = nil
-	}
-	if err := s.connectAgentLocked(); err != nil {
+	if err := s.bridge.forceReconnect(); err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	return &controlpb.ControlResponse{Success: true, Data: "connected to guest agent", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "connected to guest agent"}}}
+}
+
+// forceReconnect drops any cached daemon agent connection and dials a
+// fresh one. Used by the agent-connect control command.
+func (b *agentBridge) forceReconnect() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.agent != nil {
+		b.agent.Close()
+		b.agent = nil
+	}
+	return b.connectAgentLocked()
 }
 
 func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
@@ -626,7 +644,7 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 		s.bridge.agent.Close()
 		s.bridge.agent = nil
 	}
-	err = s.connectAgentLocked()
+	err = s.bridge.connectAgentLocked()
 	s.bridge.mu.Unlock()
 
 	if err != nil {
