@@ -156,6 +156,8 @@ func TestRequireRootForMacOSUpProvisioningAllowsNativeAuth(t *testing.T) {
 	target := vmSelection{Name: cfg.vmName, Directory: t.TempDir()}
 	upEffectiveUID = func() int { return 501 }
 	t.Setenv("COVE_FORCE_MANUAL_ELEVATION", "")
+	t.Setenv("CLAUDECODE", "")
+	t.Setenv("IS_SANDBOX", "")
 
 	if err := requireRootForMacOSUpProvisioning(cfg, target, false); err != nil {
 		t.Fatalf("requireRootForMacOSUpProvisioning: %v", err)
