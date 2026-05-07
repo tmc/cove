@@ -170,6 +170,33 @@ func TestPlanStorageOrder(t *testing.T) {
 	}
 }
 
+func TestPlanUSBCarriesIdentitySlot(t *testing.T) {
+	rc := validRunConfig(GuestLinux)
+	rc.USB = []USBSpec{
+		{Path: "/usb/a.img"},
+		{Path: "/usb/b.img", ReadOnly: true},
+	}
+	plan, err := Plan(rc, validHostConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.USB) != 2 {
+		t.Fatalf("USB count = %d, want 2 (%+v)", len(plan.USB), plan.USB)
+	}
+	want := []USBPlan{
+		{Path: "/usb/a.img"},
+		{Path: "/usb/b.img", ReadOnly: true},
+	}
+	for i, w := range want {
+		if plan.USB[i] != w {
+			t.Errorf("USB[%d] = %+v, want %+v", i, plan.USB[i], w)
+		}
+	}
+	if plan.USB[0].UUID != "" || plan.USB[1].UUID != "" {
+		t.Fatal("Plan must not invent a UUID; package main fills the slot")
+	}
+}
+
 func TestPlanSerialNormalize(t *testing.T) {
 	cases := map[string]string{
 		"":         "stdout",
