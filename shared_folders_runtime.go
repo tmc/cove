@@ -11,6 +11,7 @@ import (
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
 
+	"github.com/tmc/vz-macos/internal/controlclient"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -19,12 +20,7 @@ type sharedFolderRuntimeApplier struct {
 	queue dispatch.Queue
 }
 
-type sharedFoldersRuntimeStatus struct {
-	Running  bool   `json:"running"`
-	VirtioFS bool   `json:"virtiofs"`
-	State    string `json:"state,omitempty"`
-	Message  string `json:"message,omitempty"`
-}
+type sharedFoldersRuntimeStatus = controlclient.SharedFoldersRuntimeStatus
 
 func sharedFoldersDeviceMissingMessage() string {
 	return "shared folders device not found (restart VM with the current cove runtime, using cove run -no-resume if needed, to pick up the shared-folders VirtioFS device)"
