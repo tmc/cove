@@ -606,6 +606,68 @@ func (b *inputBridge) sendKeyNSEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 	return resp
 }
 
+// typeText types text into the VM character by character. Each character is
+// mapped to its macOS virtual keycode and delivered through the configured
+// automation backend. The caller must not hold b.cs.mu; typeText acquires it
+// per key event so each send observes the same state as a fresh key RPC.
+func (b *inputBridge) typeText(cmd *controlpb.TextCommand) *controlpb.ControlResponse {
+	if b.cs.vmView.ID == 0 || b.cs.window.ID == 0 {
+		return &controlpb.ControlResponse{Error: "text input requires GUI mode (run with -gui)"}
+	}
+
+	if verbose {
+		fmt.Printf("[typeText] typing %d chars: %q\n", len([]rune(cmd.Text)), cmd.Text)
+	}
+
+	send := func(kc *controlpb.KeyCommand) *controlpb.ControlResponse {
+		b.cs.mu.Lock()
+		defer b.cs.mu.Unlock()
+		return b.sendKey(kc)
+	}
+
+	for _, ch := range cmd.Text {
+		info, ok := charToKeyCode[ch]
+		if !ok {
+			if verbose {
+				fmt.Printf("[typeText] no keycode for %q, skipping\n", ch)
+			}
+			continue
+		}
+
+		var mods uint32
+		if info.shift {
+			mods = uint32(ModifierShift)
+		}
+
+		downCmd := &controlpb.KeyCommand{
+			KeyCode:   uint32(info.keyCode),
+			KeyDown:   true,
+			Modifiers: mods,
+			Character: string(ch),
+		}
+		if resp := send(downCmd); resp.Error != "" {
+			return resp
+		}
+		time.Sleep(30 * time.Millisecond)
+
+		upCmd := &controlpb.KeyCommand{
+			KeyCode:   uint32(info.keyCode),
+			KeyDown:   false,
+			Modifiers: mods,
+			Character: string(ch),
+		}
+		if resp := send(upCmd); resp.Error != "" {
+			return resp
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if verbose {
+		fmt.Printf("[typeText] done typing %q\n", cmd.Text)
+	}
+	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+}
+
 func (b *inputBridge) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NSEvent, error) {
 	cgEvent, err := createKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
 	if err != nil {
