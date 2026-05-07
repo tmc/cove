@@ -2482,12 +2482,13 @@ func ctlITerm2Proxy(sock string, args []string, raw bool) error {
 	// ports we use a custom raw JSON approach.
 	if *port != iterm2DefaultPort {
 		// Send raw JSON directly for port override.
-		conn, err := net.DialTimeout("unix", sock, client.timeout)
+		timeout := client.Timeout()
+		conn, err := net.DialTimeout("unix", sock, timeout)
 		if err != nil {
 			return ctlConnectError(sock, err)
 		}
 		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(client.timeout))
+		conn.SetDeadline(time.Now().Add(timeout))
 
 		token := resolveControlTokenForSocket(sock)
 		rawReq := fmt.Sprintf(`{"type":"iterm2-proxy-start","auth_token":%q,"data":{"port":%d}}`, token, *port)
