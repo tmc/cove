@@ -131,6 +131,50 @@ func (r webhookErrorRoundTripper) RoundTrip(*http.Request) (*http.Response, erro
 	return nil, errors.New("temporary webhook failure")
 }
 
+func TestWebhookSubscriberPostRejectsNon2xx(t *testing.T) {
+	tests := []struct {
+		name string
+		code int
+	}{
+		{"bad_request", http.StatusBadRequest},
+		{"server_error", http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, http.StatusText(tt.code), tt.code)
+			}))
+			defer srv.Close()
+			sub := NewWebhookSubscriber(WebhookConfig{URL: srv.URL})
+			err := sub.post(context.Background(), Event{EventType: "image.gc.run"})
+			if err == nil {
+				t.Fatalf("post status %d succeeded, want error", tt.code)
+			}
+			if sub.Rejected() != 1 {
+				t.Fatalf("Rejected = %d, want 1", sub.Rejected())
+			}
+		})
+	}
+}
+
+func TestWebhookSubscriberRetriesServerError(t *testing.T) {
+	var got atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := got.Add(1)
+		if n == 1 {
+			http.Error(w, "try again", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	sub := NewWebhookSubscriber(WebhookConfig{URL: srv.URL})
+	sub.deliver(context.Background(), Event{EventType: "image.gc.run"})
+	if got.Load() != 2 {
+		t.Fatalf("posts = %d, want 2", got.Load())
+	}
+}
+
 func waitSubscribers(t *testing.T, bus *EventBus) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
@@ -151,11 +195,13 @@ func TestWebhookSubscriberRejectedCountsNon2xx(t *testing.T) {
 	w := NewWebhookSubscriber(WebhookConfig{URL: srv.URL})
 	w.deliver(context.Background(), Event{EventType: "x"})
 
-	// Existing semantics: 5xx counts as delivered (no error returned).
-	if w.Delivered() != 1 {
-		t.Fatalf("Delivered = %d, want 1", w.Delivered())
+	if w.Delivered() != 0 {
+		t.Fatalf("Delivered = %d, want 0", w.Delivered())
 	}
-	if w.Rejected() != 1 {
-		t.Fatalf("Rejected = %d, want 1", w.Rejected())
+	if w.Failed() != 1 {
+		t.Fatalf("Failed = %d, want 1", w.Failed())
+	}
+	if w.Rejected() != 3 {
+		t.Fatalf("Rejected = %d, want 3 retries", w.Rejected())
 	}
 }

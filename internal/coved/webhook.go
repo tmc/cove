@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -97,6 +98,7 @@ func (w *WebhookSubscriber) want(eventType string) bool {
 }
 
 func (w *WebhookSubscriber) deliver(ctx context.Context, event Event) {
+	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if ctx.Err() != nil {
 			return
@@ -107,11 +109,15 @@ func (w *WebhookSubscriber) deliver(ctx context.Context, event Event) {
 			w.lastDelivery.Store(time.Now().Unix())
 			return
 		}
+		lastErr = err
 		if !webhookRetryDelay(ctx, time.Duration(attempt+1)*100*time.Millisecond) {
 			return
 		}
 	}
 	w.failed.Add(1)
+	slog.Warn("coved webhook delivery failed",
+		slog.String("event_type", event.EventType),
+		slog.Any("err", lastErr))
 }
 
 func webhookRetryDelay(ctx context.Context, delay time.Duration) bool {
@@ -146,6 +152,7 @@ func (w *WebhookSubscriber) post(ctx context.Context, event Event) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		w.rejected.Add(1)
+		return fmt.Errorf("webhook post: %s", resp.Status)
 	}
 	return nil
 }

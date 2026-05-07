@@ -1,12 +1,13 @@
 # Coved Observability
 
-`coved` exposes host-local observability on localhost-only ports by default.
-Configure addresses in `~/.vz/cove.toml`:
+`coved` exposes host-local observability. Metrics use a localhost-only listener
+by default. The web UI is preview/status-only and opt-in; set `ui_addr` to
+enable it.
 
 ```toml
 [daemon]
 metrics_addr = "127.0.0.1:9876"
-ui_addr = "127.0.0.1:9877"
+# ui_addr = "127.0.0.1:9877"
 
 [daemon.webhook]
 url = "https://example.com/cove-events"
@@ -50,7 +51,8 @@ unreachable.
 
 ## Web UI
 
-Open the local web UI:
+Enable the local web UI by setting `daemon.ui_addr` in `~/.vz/cove.toml`, then
+open it:
 
 ```sh
 cove daemon ui
@@ -60,12 +62,16 @@ The page fetches `/metrics`, `/api/status`, and `/api/events` every five seconds
 Use `http://127.0.0.1:9877/?mode=fleet` alongside `cove fleet metrics --json`
 for the matching fleet view.
 
+The UI is an operator status surface. It is not the VM control plane and should
+not replace `cove ctl`, per-VM control sockets, or the native AppKit VM window.
+
 ## Event Bus
 
 Daemon loops publish in-process events to an internal event bus. Subscribers
 write the existing `~/.vz/metrics.jsonl` shape, update Prometheus event counters,
-and optionally deliver webhooks. Slow subscribers use buffered channels and do
-not block lifecycle or image-GC loops.
+and optionally deliver webhooks. Webhooks are best-effort: non-2xx responses
+retry and then log a warning. Slow subscribers use buffered channels and do not
+block lifecycle or image-GC loops.
 
 ## Idle Behavior
 

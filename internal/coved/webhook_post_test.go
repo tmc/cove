@@ -28,14 +28,17 @@ func TestWebhookPostSendsJSONAndReturnsNilOn2xx(t *testing.T) {
 	}
 }
 
-func TestWebhookPost5xxReturnsNil(t *testing.T) {
+func TestWebhookPost5xxReturnsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 	}))
 	defer srv.Close()
 	wb := &WebhookSubscriber{URL: srv.URL, Client: srv.Client()}
-	if err := wb.post(context.Background(), Event{EventType: "x"}); err != nil {
-		t.Fatalf("post: %v", err)
+	if err := wb.post(context.Background(), Event{EventType: "x"}); err == nil {
+		t.Fatal("post 500 returned nil, want error")
+	}
+	if wb.Rejected() != 1 {
+		t.Fatalf("Rejected = %d, want 1", wb.Rejected())
 	}
 }
 

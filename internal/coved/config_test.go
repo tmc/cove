@@ -13,7 +13,7 @@ func TestLoadConfigDefaultsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig missing: %v", err)
 	}
-	if cfg.Daemon.MetricsAddr != "127.0.0.1:9876" || cfg.Daemon.UIAddr != "127.0.0.1:9877" {
+	if cfg.Daemon.MetricsAddr != "127.0.0.1:9876" || cfg.Daemon.UIAddr != "" {
 		t.Fatalf("defaults = %+v", cfg.Daemon)
 	}
 	path := filepath.Join(t.TempDir(), "cove.toml")

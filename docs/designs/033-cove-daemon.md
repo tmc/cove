@@ -156,10 +156,12 @@ Slice 3 turned `coved` into an observable host coordinator (shipped at
   without requiring Prometheus.
 - A best-effort webhook subscriber posts configured event types from
   `~/.vz/cove.toml`.
-- A vanilla embedded web UI serves on `127.0.0.1:9877` by default.
+- A vanilla embedded web UI serves on `127.0.0.1:9877` when enabled with
+  `daemon.ui_addr`.
 
-Both HTTP listeners are localhost-only by default and configurable through
-`~/.vz/cove.toml`.
+The metrics listener is localhost-only by default and configurable through
+`~/.vz/cove.toml`. The web UI is preview/status-only and opt-in, not the VM
+control plane.
 
 ## Storage Budget Integration (design 040)
 

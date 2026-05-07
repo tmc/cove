@@ -27,7 +27,6 @@ type WebhookConfig struct {
 func DefaultConfig() Config {
 	return Config{Daemon: DaemonConfig{
 		MetricsAddr: "127.0.0.1:9876",
-		UIAddr:      "127.0.0.1:9877",
 	}}
 }
 
