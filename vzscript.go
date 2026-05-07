@@ -86,6 +86,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"rsc.io/script"
 
+	"github.com/tmc/vz-macos/internal/controlserver"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -1936,12 +1937,12 @@ func vzWaitPromptClearCmd(cfg vzscriptConfig) script.Cmd {
 
 func typeTextKeycodesViaClient(client *ControlClient, text string) error {
 	for _, ch := range text {
-		info, ok := charToKeyCode[ch]
+		info, ok := controlserver.CharToKeyCode[ch]
 		if !ok {
 			return fmt.Errorf("no keycode for %q", ch)
 		}
 		var modifiers uint32
-		if info.shift {
+		if info.Shift {
 			modifiers = uint32(ModifierShift)
 		}
 		for _, down := range []bool{true, false} {
@@ -1949,7 +1950,7 @@ func typeTextKeycodesViaClient(client *ControlClient, text string) error {
 				Type: "key",
 				Command: &controlpb.ControlRequest_Key{
 					Key: &controlpb.KeyCommand{
-						KeyCode:    uint32(info.keyCode),
+						KeyCode:    uint32(info.KeyCode),
 						KeyDown:    down,
 						Modifiers:  modifiers,
 						Character:  string(ch),

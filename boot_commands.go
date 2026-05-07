@@ -11,6 +11,7 @@ import (
 
 	"github.com/tmc/apple/appkit"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
+	"github.com/tmc/vz-macos/internal/controlserver"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -452,19 +453,19 @@ func (e *automationExecutor) typeText(text string) error {
 
 func (e *automationExecutor) typeTextKeycodes(text string) error {
 	for _, ch := range text {
-		info, ok := charToKeyCode[ch]
+		info, ok := controlserver.CharToKeyCode[ch]
 		if !ok {
 			return fmt.Errorf("no keycode for %q", ch)
 		}
 
 		var modifiers uint32
-		if info.shift {
+		if info.Shift {
 			modifiers = uint32(ModifierShift)
 		}
 		useCGEvent := e.cs != nil && e.cs.inputBackend() == automationBackendWindow
 
 		resp := e.cs.sendKeyEvent(&controlpb.KeyCommand{
-			KeyCode:    uint32(info.keyCode),
+			KeyCode:    uint32(info.KeyCode),
 			KeyDown:    true,
 			Modifiers:  modifiers,
 			Character:  string(ch),
@@ -476,7 +477,7 @@ func (e *automationExecutor) typeTextKeycodes(text string) error {
 		time.Sleep(30 * time.Millisecond)
 
 		resp = e.cs.sendKeyEvent(&controlpb.KeyCommand{
-			KeyCode:    uint32(info.keyCode),
+			KeyCode:    uint32(info.KeyCode),
 			KeyDown:    false,
 			Modifiers:  modifiers,
 			Character:  string(ch),
