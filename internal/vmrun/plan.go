@@ -19,6 +19,7 @@ type DevicePlan struct {
 	Network NetworkPlan
 	Display []DisplaySpec
 	Volumes []VolumeMount
+	USB     []USBPlan
 
 	Audio       AudioPlan
 	Rosetta     bool
@@ -37,6 +38,19 @@ type StoragePlan struct {
 	Path     string
 	ReadOnly bool
 	Cache    string
+}
+
+// USBPlan describes a USB mass-storage attachment together with the
+// identity slot package main fills in before constructing the VZ device.
+// vmrun knows Path and ReadOnly from the user-supplied flag; the UUID
+// is owned by package main (it comes from a saved per-VM identity file
+// or is generated at attach time) and is recorded here so callers can
+// pass DevicePlan to the device builder without re-walking the original
+// USB flag slice.
+type USBPlan struct {
+	Path     string
+	ReadOnly bool
+	UUID     string
 }
 
 // StorageKind names the abstract device family.
@@ -157,6 +171,10 @@ func Plan(rc RunConfig, hc HostConfig) (DevicePlan, error) {
 	for _, u := range rc.USB {
 		plan.Storage = append(plan.Storage, StoragePlan{
 			Kind:     StorageUSB,
+			Path:     u.Path,
+			ReadOnly: u.ReadOnly,
+		})
+		plan.USB = append(plan.USB, USBPlan{
 			Path:     u.Path,
 			ReadOnly: u.ReadOnly,
 		})
