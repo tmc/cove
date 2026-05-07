@@ -56,14 +56,10 @@ type ControlServer struct {
 	vmQueue           dispatch.Queue
 	mu                sync.Mutex
 	agentMu           sync.RWMutex // protects agent connection setup; RLock for concurrent RPCs
-	screenshotMu      sync.Mutex   // protects lastScreenshot for diff mode
 	running           atomic.Bool
-	lastScreenshot    image.Image                 // For diff mode
-	lastCaptureWidth  int                         // last screenshot width used for OCR/click mapping
-	lastCaptureHeight int                         // last screenshot height used for OCR/click mapping
+	capture           screenCapture               // diff cache + lazy OCR service, self-guarded
 	agent             *agentstate.AgentClient     // GRPC client to guest agent daemon (nil until connected)
 	userAgent         *agentstate.UserAgentClient // GRPC client to guest user agent (nil until connected)
-	ocr               *ocrx.Service               // lazily created OCR service for server-side OCR commands
 	iterm2Proxy       *ITerm2Proxy                // WebSocket-to-vsock relay for iTerm2 API (nil until started)
 	portForwards      *PortForwardManager         // host TCP -> guest vsock port forwards (nil until first use)
 	vncStatus         VNCStatus
@@ -160,20 +156,11 @@ func (s *ControlServer) setInputBackend(mode automationBackendMode) {
 }
 
 func (s *ControlServer) rememberCaptureBounds(img image.Image) {
-	if img == nil {
-		return
-	}
-	b := img.Bounds()
-	s.screenshotMu.Lock()
-	s.lastCaptureWidth = b.Dx()
-	s.lastCaptureHeight = b.Dy()
-	s.screenshotMu.Unlock()
+	s.capture.rememberBounds(img)
 }
 
 func (s *ControlServer) lastCaptureBounds() (width, height int) {
-	s.screenshotMu.Lock()
-	defer s.screenshotMu.Unlock()
-	return s.lastCaptureWidth, s.lastCaptureHeight
+	return s.capture.lastBounds()
 }
 
 func (s *ControlServer) effectiveVMDir() string {
@@ -560,12 +547,7 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 
 // getOCR returns the lazily-initialized OCR service.
 func (s *ControlServer) getOCR() *ocrx.Service {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.ocr == nil {
-		s.ocr = ocrx.NewService(verbose)
-	}
-	return s.ocr
+	return s.capture.service(verbose)
 }
 
 // ocrDataParams extracts text and timeout from the JSON "data" field.
