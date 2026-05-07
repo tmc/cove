@@ -148,9 +148,11 @@ channel.
 ## v0.5 — Stabilization: package boundaries + observability fixes
 
 This release contracts surface area and tightens internal boundaries. Slices 1-4
-of design 039 ship; slices 5-6 (`internal/vmrun` + `ControlServer` subcomponent
-splits) are deferred to v0.6 to avoid disturbing the macOS/Linux/windows runtime
-entry points during the Cirrus displacement window.
+of design 039 ship; slice 5 (`internal/vmrun`) and slice 6 sub-slices 1-2
+(`agentBridge`, `screenCapture`) ship within the v0.5 stabilization arc
+(R46 conductor pull-in). Remaining slice 6 sub-slices (input dispatch,
+lifecycle, network listeners) and the facade move to `internal/controlserver`
+remain deferred to v0.6.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
@@ -158,8 +160,10 @@ entry points during the Cirrus displacement window.
 | Startup state visibility (#292 Issue B) | done | run.lock | [bugs/fresh-vm-run-hang](../bugs/2026-05-05-fresh-vm-run-hang.md) | `detectVMState` now honors `run.lock` + live-pid liveness check; `runtime.json` records startup phase (configuring → building-config → creating-vm → awaiting-start → running); `cove list`/`cove status` surface `starting` state with phase + pid. Shipped at `3bc6d86`. |
 | Bounded `internal/control.Server.Stop()` shutdown | done | control socket server | none (post-incident fix) | Adds `StopTimeout` (default 5s) and tracks active connections so a wedged health monitor cannot keep `cove run` alive after `runtime.json` writes `stopped`. Shipped at `cfb174b` via the agent-sandbox v2 batch. |
 | Mlxqa fresh-VM provisioning P0 verified resolved | done | fresh-VM-login cluster | [bug doc](../bugs/2026-05-05-fresh-vm-login-misclassify.md) | Verified that the silent-success / no-user-account failure mode is caught loudly by the `b9c06ee...ca4d824` cluster plus `81680c4`/`1965ee7`/`e7b9e3e`. Forced noninteractive `cove up` exits with `auto-login provisioning needs the native macOS admin dialog`; recent fresh VM `mlxgo-fresh-headed2-20260505` has `mlxqa` account and `root:wheel` LaunchDaemon plists. No additional code change needed. |
-| Design 039 slice 5 (`internal/vmrun` config) | maybe | slices 1-4 | [039](039-package-boundary-extraction.md) | Defines `RunConfig`, `HostConfig`, `DevicePlan`; converts `macos.go`/`linux.go`/`windows.go` entry points to accept these values. Deferred to v0.6 unless v0.5 has time after stabilization arc. |
-| Design 039 slice 6 (`ControlServer` subcomponent splits) | maybe | slices 1-5 | [039](039-package-boundary-extraction.md) | Extracts agent bridge, capture/OCR state, input dispatch, lifecycle, and network listeners as smaller invariants behind the existing facade. Deferred to v0.6. |
+| Design 039 slice 5 (`internal/vmrun` config) | done | slices 1-4 | [039](039-package-boundary-extraction.md) | `internal/vmrun` package shipped with `RunConfig`, `HostConfig`, `DevicePlan`, `Plan()` pure function and table-driven tests (`3d876b8`). `macos.go`/`linux.go`/`windows.go` entry-point bodies converted via `vmrun_adapter.go` snapshot constructor (`c5dcfec`/`ed05f50`/`23c25d1`). 38 entry-point global reads retired; `runVMHeadless`/`runVMWithGUI` and `isoPath`/`usbDevices` deferred to v0.6 (see slice 5 summary). |
+| Design 039 slice 6 sub-slice 1 (`agentBridge`) | done | slice 5 | [039](039-package-boundary-extraction.md) | Agent connection plumbing + health monitor extracted into `agentBridge` value embedded in `ControlServer` (`fb376ba`/`270bd42`/`2d2f266`/`d805575`/`b52d2d6`). Two `ControlServer` mutexes retired (`agentMu`, `healthMu`); 5 invariant tests pin disconnect-edge / cadence / nil-cs at the bridge boundary. Sub-component stays in package main per facade-late rule. |
+| Design 039 slice 6 sub-slice 2 (`screenCapture`) | done | slice 5 | [039](039-package-boundary-extraction.md) | Capture cache + lazy OCR service extracted into `screenCapture` value with own narrow lock (`d9d5055`/`067aff5`). One `ControlServer` mutex retired (`screenshotMu`); OCR no longer piggybacks on `mu`. Mouse Y mapping invariant (memory-protected `viewContentHeight`) preserved. |
+| Design 039 slice 6 sub-slices 3-5 + facade move | maybe | slice 6.1+6.2 | [039](039-package-boundary-extraction.md) | Remaining sub-slices: input dispatch, lifecycle + policy stop checks, port-forward/HTTP/VNC/debug status. Facade move to `internal/controlserver` follows after all five sub-slices ship. Deferred to v0.6. |
 
 ## v0.3 implementation slices
 
