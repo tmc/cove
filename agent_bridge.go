@@ -10,8 +10,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"sync"
+	"time"
 
+	vz "github.com/tmc/apple/virtualization"
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 )
 
@@ -26,10 +30,31 @@ import (
 // as a value so existing &ControlServer{...} test constructors
 // continue to work without an explicit init step.
 type agentBridge struct {
+	cs *ControlServer // back-reference for VM access, lifecycle context, and timeouts
+
 	mu        sync.RWMutex                // protects agent connection setup; RLock for concurrent RPCs
 	agent     *agentstate.AgentClient     // GRPC client to guest daemon agent (nil until connected)
 	userAgent *agentstate.UserAgentClient // GRPC client to guest user agent (nil until connected)
 
 	healthMu sync.RWMutex
 	health   agentHealthState
+}
+
+// currentVMState reports the current VM state via the parent
+// ControlServer, or returns "vm not configured" if the bridge has no
+// back-reference yet (zero-value bridges in unit tests).
+func (b *agentBridge) currentVMState() (vz.VZVirtualMachineState, error) {
+	if b.cs == nil {
+		return vz.VZVirtualMachineStateError, fmt.Errorf("vm not configured")
+	}
+	return b.cs.currentVMState()
+}
+
+// timeoutContext returns a context derived from the lifecycle
+// context, or context.Background() when the bridge has no parent.
+func (b *agentBridge) timeoutContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	if b.cs == nil {
+		return context.WithTimeout(context.Background(), timeout)
+	}
+	return b.cs.timeoutContext(timeout)
 }

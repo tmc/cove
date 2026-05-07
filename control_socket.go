@@ -115,6 +115,7 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 		lifecycleCtx:    ctx,
 		lifecycleCancel: cancel,
 	}
+	s.bridge.cs = s
 	capture, input := resolveAutomationBackends()
 	s.setCaptureBackend(capture)
 	s.setInputBackend(input)
