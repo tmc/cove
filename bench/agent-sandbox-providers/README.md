@@ -36,3 +36,5 @@ Checked-in evidence:
   on `m4x-129`; not full-matrix evidence.
 - `cold-fork-results-openai-live-20260507.md`: one successful OpenAI live
   cold-fork-to-first-action run on `m4x-129`; not full-matrix evidence.
+- `results-gemini-live-20260507.md`: one successful Gemini live latency run on `m4x-129`; not full-matrix evidence.
+- `cold-fork-results-gemini-live-20260507.md`: one Gemini live cold run that failed with provider HTTP 429 before first action.
