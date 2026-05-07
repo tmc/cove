@@ -102,7 +102,9 @@ func TestNetworkBridgeAddHTTPListenerLazy(t *testing.T) {
 	n.addHTTPListener(ln1)
 	n.addHTTPListener(ln2)
 
-	n.shutdown(context.Background())
+	n.closeHTTPListeners()
+	n.stopPortForwards()
+	n.stopITerm2Proxy(context.Background())
 
 	// closeAll closed both listeners; a second Accept must error.
 	if _, err := ln1.Accept(); err == nil {
@@ -113,20 +115,23 @@ func TestNetworkBridgeAddHTTPListenerLazy(t *testing.T) {
 	}
 }
 
-func TestNetworkBridgeShutdownIdempotent(t *testing.T) {
+func TestNetworkBridgeTeardownIdempotent(t *testing.T) {
 	var n networkBridge
-	n.shutdown(context.Background())
-	n.shutdown(context.Background())
+	n.closeHTTPListeners()
+	n.stopPortForwards()
+	n.stopITerm2Proxy(context.Background())
+	n.closeHTTPListeners()
+	n.stopPortForwards()
+	n.stopITerm2Proxy(context.Background())
 }
 
-func TestNetworkBridgeShutdownClearsPortForwards(t *testing.T) {
+func TestNetworkBridgeStopPortForwardsClearsManager(t *testing.T) {
 	var n networkBridge
-	manager := n.portForwardManager()
-	if manager == nil {
+	if manager := n.portForwardManager(); manager == nil {
 		t.Fatal("portForwardManager returned nil")
 	}
-	n.shutdown(context.Background())
+	n.stopPortForwards()
 	if got := n.clearPortForwardManager(); got != nil {
-		t.Fatalf("portForwards still installed after shutdown: %p", got)
+		t.Fatalf("portForwards still installed after stopPortForwards: %p", got)
 	}
 }

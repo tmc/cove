@@ -603,12 +603,7 @@ func (s *ControlServer) handlePortForward(cmd *controlpb.PortForwardCommand) *co
 }
 
 func (s *ControlServer) portForwardManager() *PortForwardManager {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.portForwards == nil {
-		s.portForwards = NewPortForwardManager(s.lifecycleContext())
-	}
-	return s.portForwards
+	return s.network.portForwardManager()
 }
 
 type hostVsockListener struct {
