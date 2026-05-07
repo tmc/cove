@@ -52,7 +52,7 @@ type ControlServer struct {
 	mu                sync.Mutex
 	running           atomic.Bool
 	capture           controlserver.Capture // diff cache + lazy OCR service, self-guarded
-	bridge            agentBridge   // agent clients + health state (owns its own mutexes)
+	bridge            controlserver.AgentBridge // agent clients + health state (owns its own mutexes)
 	network           networkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
 	input             inputBridge   // mouse/keyboard delivery, back-references this ControlServer
 	windowNum         int           // cached window number for thread-safe screenshot
@@ -70,20 +70,6 @@ type ControlServer struct {
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
 }
 
-// agentHealthState tracks proactive agent health monitoring.
-type agentHealthState struct {
-	daemonStatus     string // "connected", "disconnected", "reconnecting"
-	userStatus       string // "connected", "disconnected", "unknown"
-	guiSession       guiSession
-	guiSessionActive bool
-	lastPing         time.Time // last successful daemon ping
-	disconnectAt     time.Time // first ping failure since the last successful ping; zero when connected
-	lastErr          string    // last ping error (empty if healthy)
-	version          string    // agent version from last successful ping
-	versionChecked   bool      // true after first version comparison
-	upgradeAttempted bool      // true after auto-upgrade attempt
-}
-
 // NewControlServer creates a new control server
 func NewControlServer(socketPath string) *ControlServer {
 	return NewControlServerWithVMDir(socketPath, vmDir)
@@ -99,7 +85,7 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 		vmDir:      vmDirectory,
 	}
 	s.life.Start()
-	s.bridge.cs = s
+	s.bridge.SetHost(s)
 	s.network.cs = s
 	s.input.cs = s
 	capture, input := resolveAutomationBackends()
@@ -939,9 +925,7 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 	status["policyStartedAt"] = startedAt.Format(time.RFC3339)
 	status["policyExecCount"] = execCount
 	status["policyStopIssued"] = stopIssued
-	s.bridge.healthMu.RLock()
-	lastPing := s.bridge.health.lastPing
-	s.bridge.healthMu.RUnlock()
+	lastPing := s.bridge.LastPing()
 	status["lastPing"] = lastPing.Format(time.RFC3339)
 
 	data, _ := json.Marshal(status)

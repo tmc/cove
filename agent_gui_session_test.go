@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/tmc/vz-macos/internal/controlserver"
+)
 
 func TestParseLinuxLoginctlSessionsActiveWayland(t *testing.T) {
 	in := []byte(`[
@@ -14,7 +18,7 @@ func TestParseLinuxLoginctlSessionsActiveWayland(t *testing.T) {
 	if !ok {
 		t.Fatal("no session found")
 	}
-	want := guiSession{ID: "1", User: "desk", Seat: "seat0", Kind: "wayland"}
+	want := controlserver.GUISession{ID: "1", User: "desk", Seat: "seat0", Kind: "wayland"}
 	if got != want {
 		t.Fatalf("session = %#v, want %#v", got, want)
 	}
@@ -31,7 +35,7 @@ func TestParseLinuxLoginctlSessionsActiveX11NameFallback(t *testing.T) {
 	if !ok {
 		t.Fatal("no session found")
 	}
-	want := guiSession{ID: "3", User: "qa", Seat: "seat0", Kind: "x11"}
+	want := controlserver.GUISession{ID: "3", User: "qa", Seat: "seat0", Kind: "x11"}
 	if got != want {
 		t.Fatalf("session = %#v, want %#v", got, want)
 	}
@@ -62,7 +66,7 @@ func TestParseLoginctlShowGUISession(t *testing.T) {
 	if !ok {
 		t.Fatal("no session found")
 	}
-	want := guiSession{ID: "1", User: "desk", Seat: "seat0", Kind: "wayland"}
+	want := controlserver.GUISession{ID: "1", User: "desk", Seat: "seat0", Kind: "wayland"}
 	if got != want {
 		t.Fatalf("session = %#v, want %#v", got, want)
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/controlserver"
 	"github.com/tmc/vz-macos/proto/controlpb"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
@@ -293,6 +294,6 @@ func loginConsoleUserFromExec(result *controlpb.AgentExecResponse) (string, erro
 		}
 		return "", fmt.Errorf("query console user: %s", msg)
 	}
-	user, _, err := parseConsoleOwnerOutput(result.Stdout)
+	user, _, err := controlserver.ParseConsoleOwnerOutput(result.Stdout)
 	return user, err
 }

@@ -380,9 +380,7 @@ func (s *ControlServer) checkVMLifecyclePolicy() {
 	case policy.MaxAge > 0 && !startedAt.IsZero() && now.Sub(startedAt) >= policy.MaxAge:
 		reason = "max_age"
 	case policy.IdleTimeout > 0 && state == vz.VZVirtualMachineStateRunning:
-		s.bridge.healthMu.RLock()
-		lastPing := s.bridge.health.lastPing
-		s.bridge.healthMu.RUnlock()
+		lastPing := s.bridge.LastPing()
 		if !lastPing.IsZero() && now.Sub(lastPing) >= policy.IdleTimeout {
 			reason = "idle"
 		}
