@@ -36,14 +36,40 @@ func TestKnownCommandsCoverAliases(t *testing.T) {
 		"vm", "rename", "export", "import", "config", "rm",
 		"verify", "doctor", "provision", "inject",
 	}
-	set := make(map[string]bool, len(knownCommands))
-	for _, k := range knownCommands {
+	set := make(map[string]bool, len(commandNames()))
+	for _, k := range commandNames() {
 		set[k] = true
 	}
 	for _, r := range required {
 		if !set[r] {
 			t.Errorf("knownCommands missing %q", r)
 		}
+	}
+}
+
+func TestLookupCommandAliases(t *testing.T) {
+	tests := []struct {
+		name      string
+		wantName  string
+		wantClass commandDispatch
+	}{
+		{"run", "run", commandDispatchLate},
+		{"ls", "list", commandDispatchLate},
+		{"inject", "inject", commandDispatchEarly},
+		{"doctor", "verify", commandDispatchEarly},
+		{"shared-folders", "shared-folder", commandDispatchEarly},
+		{"action", "action", commandDispatchPreUI},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, ok := lookupCommand(tt.name)
+			if !ok {
+				t.Fatalf("lookupCommand(%q) not found", tt.name)
+			}
+			if spec.Name != tt.wantName || spec.Dispatch != tt.wantClass {
+				t.Fatalf("lookupCommand(%q) = (%q, %v), want (%q, %v)", tt.name, spec.Name, spec.Dispatch, tt.wantName, tt.wantClass)
+			}
+		})
 	}
 }
 

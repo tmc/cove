@@ -2,58 +2,6 @@ package main
 
 import "strings"
 
-// knownCommands lists every top-level command the dispatch in main.go accepts.
-// Keep in sync with the switch cases in main.go; new commands should be added
-// here so the "did you mean" suggester stays useful.
-var knownCommands = []string{
-	"agent-upgrade",
-	"clean",
-	"clone",
-	"compact",
-	"config",
-	"ctl",
-	"destroy",
-	"disk-detach",
-	"disk-snapshot",
-	"doctor",
-	"export",
-	"fork",
-	"gc",
-	"helper",
-	"help",
-	"image",
-	"import",
-	"inject",
-	"inject-agent",
-	"install",
-	"list",
-	"ls",
-	"network",
-	"pit",
-	"provision",
-	"provision-agent",
-	"pull",
-	"push",
-	"remove",
-	"rename",
-	"rm",
-	"rosetta",
-	"run",
-	"serve",
-	"shared-folder",
-	"shared-folders",
-	"sip",
-	"snapshot",
-	"template",
-	"uiscript",
-	"up",
-	"upgrade-agent",
-	"verify",
-	"version",
-	"vm",
-	"vzscript",
-}
-
 // suggestCommand returns the closest known command to cmd, or "" if none is
 // close enough. The threshold scales with the input length so short typos
 // still match but long unrelated strings do not.
@@ -63,7 +11,7 @@ func suggestCommand(cmd string) string {
 	}
 	best := ""
 	bestDist := -1
-	for _, k := range knownCommands {
+	for _, k := range commandNames() {
 		d := levenshtein(cmd, k)
 		if bestDist == -1 || d < bestDist {
 			bestDist = d
@@ -76,7 +24,7 @@ func suggestCommand(cmd string) string {
 	}
 	// Fall back to a substring hit so "sharedfolder" → "shared-folder".
 	lc := strings.ToLower(cmd)
-	for _, k := range knownCommands {
+	for _, k := range commandNames() {
 		if strings.Contains(k, lc) || strings.Contains(lc, k) {
 			return k
 		}

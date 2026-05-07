@@ -10,13 +10,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"text/tabwriter"
 	"time"
 
-	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 	"github.com/tmc/vz-macos/internal/action"
@@ -358,8 +356,10 @@ func main() {
 		}
 		return
 	}
-	if flag.NArg() > 0 && flag.Arg(0) == "action" {
-		os.Exit(handleActionCommand(flag.Args()[1:]))
+	if flag.NArg() > 0 {
+		if spec, ok := lookupCommand(flag.Arg(0)); ok && spec.Dispatch == commandDispatchPreUI {
+			os.Exit(runRegisteredCommand(spec, flag.Arg(0), flag.Args()[1:]))
+		}
 	}
 
 	// Set up macgo bundling (entitlements, signing, app icon).
@@ -424,36 +424,14 @@ func main() {
 		return
 	}
 	if installVM {
-		fmt.Fprintf(os.Stderr, "warning: -install flag is deprecated, use 'cove install' command instead\n")
-		var err error
-		if windowsMode {
-			err = installWindowsVM()
-		} else if linuxMode {
-			err = handleLinuxInstall()
-		} else {
-			err = installMacOSLikeVZ(context.Background())
-		}
-		if errors.Is(err, errRestartVM) {
-			if err := runMacOSVM(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		return
+		os.Exit(runLegacyInstallFlag())
 	}
 	if utmBundlePath != "" {
 		handleUTM()
 		return
 	}
 	if runVM {
-		fmt.Fprintf(os.Stderr, "warning: -run flag is deprecated, use 'cove run' command instead\n")
-		handleRun()
-		return
+		os.Exit(runLegacyRunFlag())
 	}
 	if flag.NArg() > 0 {
 		cmd := flag.Arg(0)
@@ -466,236 +444,8 @@ func main() {
 			return
 		}
 
-		// Commands that have their own flag parsing (don't re-parse with main flags)
-		switch cmd {
-		case "version":
-			fmt.Println(versionInfo())
-			return
-		case "sip":
-			if err := handleSIPCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "ctl":
-			if err := ctlCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "daemon":
-			if err := daemonCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "cp":
-			if err := handleCpCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "forward":
-			if err := forwardCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "fleet":
-			if err := handleFleetCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "quota":
-			if err := handleQuotaCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "provision":
-			if err := handleProvision(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "inject":
-			fmt.Fprintf(os.Stderr, "note: 'inject' has been renamed to 'provision'\n")
-			if err := handleProvision(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "provision-agent":
-			if err := provisionAgent(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "inject-agent":
-			fmt.Fprintf(os.Stderr, "note: 'inject-agent' has been renamed to 'provision-agent'\n")
-			if err := provisionAgent(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "shared-folder", "shared-folders":
-			if sharedFolderCommandBlocked(args) {
-				fmt.Fprintf(os.Stderr, "error: -sandbox-level %s does not allow shared-folder mutations\n", sandboxLevel)
-				os.Exit(1)
-			}
-			if err := handleVMSharedFolderCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "agent-upgrade", "upgrade-agent":
-			if err := upgradeAgent(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "verify", "doctor":
-			if err := handleVerify(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "disk-detach":
-			diskFile := filepath.Join(vmDir, "disk.img")
-			if err := disk.EnsureDetached(diskFile); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			if verbose {
-				fmt.Println("Disk detached successfully.")
-			}
-			return
-		case "up":
-			if err := handleUp(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "gc":
-			if err := handleGCCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "compact":
-			if err := handleCompact(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "build":
-			if err := handleBuild(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "secret":
-			if err := handleSecretCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "policy":
-			if err := handlePolicyCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "push":
-			if err := handlePush(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "pull":
-			if err := handlePull(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "store":
-			if err := handleStoreCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "vzscript":
-			if err := vzscriptCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "uiscript":
-			fmt.Fprintf(os.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'cove vzscript' instead.\n")
-			os.Exit(0)
-			return
-		case "serve":
-			// serve uses its own flag set; skip the top-level re-parse so
-			// flags like -token-file and -mcp aren't rejected here.
-			if err := runServeCmd(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "fork":
-			// fork has its own flag set (-from, -snapshot); skip the
-			// top-level re-parse so those flags are not rejected here.
-			handleFork(args)
-			return
-		case "image":
-			if err := handleImageCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "diff":
-			if err := diffCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "softreset":
-			if err := softresetCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "runs":
-			if err := handleRunsCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "bench":
-			if err := handleBenchCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "logs":
-			if err := logsCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "shell":
-			if err := shellCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "agent-sandbox":
-			if err := handleAgentSandboxCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
+		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == commandDispatchEarly {
+			os.Exit(runRegisteredCommand(spec, cmd, args))
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
@@ -734,113 +484,20 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Re-resolve vmDir if -vm flag was provided after subcommand
-		if vmName != "" {
-			vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
+		// Re-resolve vmDir if -vm flag was provided after subcommand.
+		if code := rerunVMDirForPostCommand(); code != 0 {
+			os.Exit(code)
 		}
 
-		switch cmd {
-		case "install":
-			installVM = true
-			var err error
-			if windowsMode {
-				err = installWindowsVM()
-			} else if linuxMode {
-				err = handleLinuxInstall()
-			} else {
-				err = installMacOSLikeVZ(context.Background())
-			}
-			if errors.Is(err, errRestartVM) {
-				if err := runMacOSVM(); err != nil {
-					fmt.Fprintf(os.Stderr, "error: %v\n", err)
-					os.Exit(1)
-				}
-			} else if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			if installVZScripts != "" {
-				if err := runPostInstallVZScripts(installVZScripts); err != nil {
-					fmt.Fprintf(os.Stderr, "error: running vzscripts: %v\n", err)
-					os.Exit(1)
-				}
-			}
-			return
-		case "run":
-			handleRun()
-			return
-		case "status":
-			if err := statusCommand(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "list", "ls":
-			handleList()
-			return
-		case "clean":
-			if err := cleanVM(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "clone":
-			handleClone(args)
-			return
-		case "template":
-			handleTemplate(args)
-			return
-		case "vm":
-			handleVMCommand(args)
-			return
-		case "rm", "remove", "destroy":
-			handleVMCommand(append([]string{"delete"}, args...))
-			return
-		case "rename", "export", "import", "config":
-			handleVMCommand(append([]string{cmd}, args...))
-			return
-		case "snapshot":
-			handleSnapshotCommand(args)
-			return
-		case "pit":
-			if err := handlePITCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "disk-snapshot":
-			if err := handleDiskSnapshotCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "network":
-			handleNetworkCommand(args)
-			return
-		case "rosetta":
-			if err := handleRosettaCommand(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "helper":
-			if err := runHelperCmd(args); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		default:
-			if s := suggestCommand(cmd); s != "" {
-				fmt.Fprintf(os.Stderr, "cove: unknown command %q. Did you mean %q?\n", cmd, s)
-			} else {
-				fmt.Fprintf(os.Stderr, "cove: unknown command %q.\nRun 'cove -help' for usage.\n", cmd)
-			}
-			os.Exit(2)
+		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == commandDispatchLate {
+			os.Exit(runRegisteredCommand(spec, cmd, args))
 		}
+		if s := suggestCommand(cmd); s != "" {
+			fmt.Fprintf(os.Stderr, "cove: unknown command %q. Did you mean %q?\n", cmd, s)
+		} else {
+			fmt.Fprintf(os.Stderr, "cove: unknown command %q.\nRun 'cove -help' for usage.\n", cmd)
+		}
+		os.Exit(2)
 	}
 
 	// Default: smart routing based on number of VMs
