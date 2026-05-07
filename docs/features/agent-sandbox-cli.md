@@ -64,15 +64,36 @@ cove agent-sandbox run \
 OpenAI:
 
 ```bash
+export OPENAI_API_KEY=...
+python3.12 -m venv /tmp/cove-openai-agents
+/tmp/cove-openai-agents/bin/python -m pip install -e 'adapters/openai-agents-python[agents]'
+COVE_AGENT_SANDBOX_PYTHON=/tmp/cove-openai-agents/bin/python \
 cove agent-sandbox run \
   --provider openai \
   --image macos-agent:latest \
   --task "Describe the desktop."
 ```
 
-The OpenAI provider is reserved in this command and currently returns a clear
-not-implemented error. Use the Python OpenAI Agents SDK adapter directly until
-that provider is wired into the unified CLI.
+The OpenAI provider uses the local OpenAI Agents SDK adapter under
+`adapters/openai-agents-python`. Python 3.10 or newer is required.
+
+## Doctor And Benchmarks
+
+Check the full provider matrix before live runs:
+
+```bash
+cove agent-sandbox doctor --provider all
+```
+
+Run dry benchmark protocols without provider API calls:
+
+```bash
+cove agent-sandbox bench --provider all
+cove agent-sandbox bench --provider all --cold
+```
+
+After `doctor --provider all` passes, add `--live` to collect provider latency
+and cold-fork-to-first-action evidence.
 
 ## Replay Bundle
 
@@ -94,4 +115,3 @@ performed by the provider bridge.
 
 Use a local or approved artifact store for replay bundles. Screenshots and OCR
 text may contain secrets visible in the guest.
-
