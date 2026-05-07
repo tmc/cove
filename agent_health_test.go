@@ -38,13 +38,13 @@ func TestNextAgentHealthInterval(t *testing.T) {
 		t.Fatalf("nextAgentHealthInterval before connect = %v, want %v", got, startupAgentHealthInterval)
 	}
 
-	cs.agentHealth.daemonStatus = "connected"
-	cs.agentHealth.userStatus = "disconnected"
+	cs.bridge.health.daemonStatus = "connected"
+	cs.bridge.health.userStatus = "disconnected"
 	if got := cs.nextAgentHealthInterval(time.Minute); got != startupAgentHealthInterval {
 		t.Fatalf("nextAgentHealthInterval before user agent = %v, want %v", got, startupAgentHealthInterval)
 	}
 
-	cs.agentHealth.userStatus = "connected"
+	cs.bridge.health.userStatus = "connected"
 	if got := cs.nextAgentHealthInterval(time.Minute); got != time.Minute {
 		t.Fatalf("nextAgentHealthInterval after connect = %v, want 1m", got)
 	}
@@ -92,22 +92,22 @@ func TestMarkAgentReconnectingRecordsFirstFailure(t *testing.T) {
 	cs := &ControlServer{}
 
 	cs.markAgentReconnecting("first failure")
-	first := cs.agentHealth.disconnectAt
+	first := cs.bridge.health.disconnectAt
 	if first.IsZero() {
 		t.Fatal("first markAgentReconnecting should set disconnectAt")
 	}
-	if cs.agentHealth.daemonStatus != "reconnecting" {
-		t.Errorf("daemonStatus = %q, want reconnecting", cs.agentHealth.daemonStatus)
+	if cs.bridge.health.daemonStatus != "reconnecting" {
+		t.Errorf("daemonStatus = %q, want reconnecting", cs.bridge.health.daemonStatus)
 	}
 
 	// Second call within the same streak must not move the timestamp.
 	time.Sleep(2 * time.Millisecond)
 	cs.markAgentReconnecting("second failure")
-	if !cs.agentHealth.disconnectAt.Equal(first) {
-		t.Errorf("disconnectAt moved from %v to %v on second call", first, cs.agentHealth.disconnectAt)
+	if !cs.bridge.health.disconnectAt.Equal(first) {
+		t.Errorf("disconnectAt moved from %v to %v on second call", first, cs.bridge.health.disconnectAt)
 	}
-	if cs.agentHealth.lastErr != "second failure" {
-		t.Errorf("lastErr = %q, want updated", cs.agentHealth.lastErr)
+	if cs.bridge.health.lastErr != "second failure" {
+		t.Errorf("lastErr = %q, want updated", cs.bridge.health.lastErr)
 	}
 }
 
@@ -118,25 +118,25 @@ func TestMarkAgentConnectedClearsDisconnectEdge(t *testing.T) {
 	cs := &ControlServer{}
 
 	cs.markAgentReconnecting("ping failed")
-	if cs.agentHealth.disconnectAt.IsZero() {
+	if cs.bridge.health.disconnectAt.IsZero() {
 		t.Fatal("setup: disconnectAt should be set")
 	}
 
 	cs.markAgentConnected("v0.1.0")
-	if !cs.agentHealth.disconnectAt.IsZero() {
-		t.Errorf("disconnectAt = %v, want zero after recovery", cs.agentHealth.disconnectAt)
+	if !cs.bridge.health.disconnectAt.IsZero() {
+		t.Errorf("disconnectAt = %v, want zero after recovery", cs.bridge.health.disconnectAt)
 	}
-	if cs.agentHealth.daemonStatus != "connected" {
-		t.Errorf("daemonStatus = %q, want connected", cs.agentHealth.daemonStatus)
+	if cs.bridge.health.daemonStatus != "connected" {
+		t.Errorf("daemonStatus = %q, want connected", cs.bridge.health.daemonStatus)
 	}
-	if cs.agentHealth.version != "v0.1.0" {
-		t.Errorf("version = %q, want v0.1.0", cs.agentHealth.version)
+	if cs.bridge.health.version != "v0.1.0" {
+		t.Errorf("version = %q, want v0.1.0", cs.bridge.health.version)
 	}
-	if cs.agentHealth.lastPing.IsZero() {
+	if cs.bridge.health.lastPing.IsZero() {
 		t.Errorf("lastPing should be updated to now")
 	}
-	if cs.agentHealth.lastErr != "" {
-		t.Errorf("lastErr = %q, want cleared", cs.agentHealth.lastErr)
+	if cs.bridge.health.lastErr != "" {
+		t.Errorf("lastErr = %q, want cleared", cs.bridge.health.lastErr)
 	}
 }
 
@@ -147,20 +147,20 @@ func TestMarkAgentConnectedClearsDisconnectEdge(t *testing.T) {
 func TestMarkAgentConnectedComputesDowntime(t *testing.T) {
 	cs := &ControlServer{}
 	// Simulate a disconnect 50ms ago.
-	cs.healthMu.Lock()
-	cs.agentHealth.disconnectAt = time.Now().Add(-50 * time.Millisecond)
-	cs.agentHealth.daemonStatus = "reconnecting"
-	cs.healthMu.Unlock()
+	cs.bridge.healthMu.Lock()
+	cs.bridge.health.disconnectAt = time.Now().Add(-50 * time.Millisecond)
+	cs.bridge.health.daemonStatus = "reconnecting"
+	cs.bridge.healthMu.Unlock()
 
 	cs.markAgentConnected("v1")
-	if !cs.agentHealth.disconnectAt.IsZero() {
+	if !cs.bridge.health.disconnectAt.IsZero() {
 		t.Errorf("disconnectAt should be cleared after recovery")
 	}
 	// We can't observe the slog field directly without a custom handler,
 	// but the field clearing + lastPing freshness prove the recovery edge
 	// fired. Cardinality of the elapsed timestamp is exercised in the live
 	// monitor's Info call (covered by manual smoke against a paused agent).
-	if cs.agentHealth.lastPing.IsZero() {
+	if cs.bridge.health.lastPing.IsZero() {
 		t.Errorf("lastPing should be updated to now")
 	}
 }
@@ -174,7 +174,7 @@ func TestSetHealthStatusTracksDisconnectEdge(t *testing.T) {
 	cs := &ControlServer{}
 
 	cs.setHealthStatus("disconnected", "", "vm not running")
-	first := cs.agentHealth.disconnectAt
+	first := cs.bridge.health.disconnectAt
 	if first.IsZero() {
 		t.Fatal("setHealthStatus(disconnected) should record disconnectAt")
 	}
@@ -182,13 +182,13 @@ func TestSetHealthStatusTracksDisconnectEdge(t *testing.T) {
 	// Repeated disconnected calls preserve the original timestamp.
 	time.Sleep(2 * time.Millisecond)
 	cs.setHealthStatus("disconnected", "", "still not running")
-	if !cs.agentHealth.disconnectAt.Equal(first) {
-		t.Errorf("disconnectAt changed under repeated disconnected: %v -> %v", first, cs.agentHealth.disconnectAt)
+	if !cs.bridge.health.disconnectAt.Equal(first) {
+		t.Errorf("disconnectAt changed under repeated disconnected: %v -> %v", first, cs.bridge.health.disconnectAt)
 	}
 
 	// Connected clears the edge so the next failure starts clean.
 	cs.setHealthStatus("connected", "v1", "")
-	if !cs.agentHealth.disconnectAt.IsZero() {
-		t.Errorf("disconnectAt = %v, want zero after connected", cs.agentHealth.disconnectAt)
+	if !cs.bridge.health.disconnectAt.IsZero() {
+		t.Errorf("disconnectAt = %v, want zero after connected", cs.bridge.health.disconnectAt)
 	}
 }
