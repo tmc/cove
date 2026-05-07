@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -312,14 +313,134 @@ func TestSharedFolderAddSkipsHotApplyWithoutVirtioFS(t *testing.T) {
 		return handleVMSharedFolderAdd(vmDir, []string{hostDir, "work", "rw"})
 	})
 	for _, want := range []string{
-		"shared folder saved; will mount on next boot of " + filepath.Base(vmDir) + " (this VM was not booted with VirtioFS device, so live attach is not possible)",
+		"Added shared folder: " + resolvePath(hostDir) + " (tag=work, rw)",
+		"live mount unavailable for guest path " + defaultSharedFoldersMountPoint + "/work: no directory sharing devices configured",
+		"shared folder saved; will mount at " + defaultSharedFoldersMountPoint + "/work on next boot of " + filepath.Base(vmDir) + " (reboot required)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "Added shared folder:") || strings.Contains(out, "could not live-apply") || strings.Contains(out, "applied to running VM") {
+	if strings.Contains(out, "shared-folders-apply") || strings.Contains(out, "could not live-apply") || strings.Contains(out, "applied to running VM") {
 		t.Fatalf("output attempted live apply:\n%s", out)
+	}
+}
+
+func TestSharedFolderAddReportsGuestPathWhenRuntimeStatusUnavailable(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := t.TempDir()
+
+	out := captureStdout(t, func() error {
+		return handleVMSharedFolderAdd(vmDir, []string{hostDir, "work", "rw"})
+	})
+	for _, want := range []string{
+		"Added shared folder: " + resolvePath(hostDir) + " (tag=work, rw)",
+		"live mount unavailable for guest path " + defaultSharedFoldersMountPoint + "/work: running VM status unavailable:",
+		"shared folder saved; will mount at " + defaultSharedFoldersMountPoint + "/work on next boot of " + filepath.Base(vmDir) + " (reboot required)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSharedFolderAddReportsGuestPathWhenApplyFails(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := t.TempDir()
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "shared-folders-runtime-status",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Data:    `{"running":true,"virtiofs":true,"message":"shared folders VirtioFS device present"}`,
+			},
+		},
+		{
+			wantType: "shared-folders-apply",
+			resp: &controlpb.ControlResponse{
+				Error: "shared folders device not found",
+			},
+		},
+	})
+	defer stop()
+
+	out := captureStdout(t, func() error {
+		return handleVMSharedFolderAdd(vmDir, []string{hostDir, "work", "rw"})
+	})
+	for _, want := range []string{
+		"Added shared folder: " + resolvePath(hostDir) + " (tag=work, rw)",
+		"warning: could not live-apply shared folders to VM " + strconv.Quote(filepath.Base(vmDir)) + ": shared-folders-apply: shared folders device not found",
+		"share is saved and will mount at " + defaultSharedFoldersMountPoint + "/work on next boot (reboot required)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSharedFolderAddReportsGuestPathWhenGuestMountFails(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	hostDir := t.TempDir()
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "shared-folders-runtime-status",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Data:    `{"running":true,"virtiofs":true,"message":"shared folders VirtioFS device present"}`,
+			},
+		},
+		{
+			wantType: "shared-folders-apply",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "applied 1 shared folder(s)"}},
+			},
+		},
+		{
+			wantType: "agent-ping",
+			resp:     &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test-agent"}}},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec-auto",
+			wantArgs: []string{"mount"},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0}},
+			},
+		},
+		{
+			wantType: "agent-exec",
+			wantArgs: []string{"mount_virtiofs", SharedFoldersVirtioFSTag, defaultSharedFoldersMountPoint},
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 1,
+					Stderr:   "mount_virtiofs: Operation not permitted",
+				}},
+			},
+		},
+	})
+	defer stop()
+
+	out := captureStdout(t, func() error {
+		return handleVMSharedFolderAdd(vmDir, []string{hostDir, "work", "rw"})
+	})
+	for _, want := range []string{
+		"applied to running VM: applied 1 shared folder(s)",
+		"warning: could not mount guest path " + defaultSharedFoldersMountPoint + "/work: mount_virtiofs exit 1: mount_virtiofs: Operation not permitted",
+		"share is saved and will mount at " + defaultSharedFoldersMountPoint + "/work after reboot if live mount remains unavailable",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -507,7 +628,7 @@ func TestPendingSharedFoldersWithoutLiveVMListsConfiguredFolders(t *testing.T) {
 	for _, want := range []string{
 		"Running VM mount status unavailable:",
 		"Pending shared folders for next boot of " + filepath.Base(vmDir) + ":",
-		"work\trw\t" + resolvePath(hostDir),
+		"work\trw\t" + resolvePath(hostDir) + "\tguest=" + defaultSharedFoldersMountPoint + "/work",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)

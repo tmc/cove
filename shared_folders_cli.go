@@ -195,8 +195,18 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
 	client.SetTimeout(15 * time.Second)
 	status, err := client.SharedFoldersRuntimeStatus()
-	if err != nil || !status.VirtioFS {
-		fmt.Printf("shared folder saved; will mount on next boot of %s (this VM was not booted with VirtioFS device, so live attach is not possible)\n", sharedFolderVMName(vmDirectory))
+	if err != nil {
+		printSharedFolderAddResult(entry, added)
+		printSharedFolderNextBoot(entry, vmDirectory, fmt.Sprintf("running VM status unavailable: %v", err))
+		return nil
+	}
+	if !status.VirtioFS {
+		printSharedFolderAddResult(entry, added)
+		reason := strings.TrimSpace(status.Message)
+		if reason == "" {
+			reason = "this VM was not booted with the shared-folders VirtioFS device"
+		}
+		printSharedFolderNextBoot(entry, vmDirectory, reason)
 		return nil
 	}
 
@@ -214,14 +224,16 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 		if !handled {
 			fmt.Printf("warning: could not live-apply shared folders to VM %q: %v\n", sharedFolderVMName(vmDirectory), err)
 		}
-		fmt.Println("         share is saved and will apply on next boot")
+		fmt.Printf("         share is saved and will mount at %s on next boot (reboot required)\n", defaultSharedFolderMountPoint(vmDirectory, entry.Tag))
 		return nil
 	}
 
 	mountRoot := defaultSharedFoldersMountRoot(vmDirectory)
 	mounted, err := mountSharedFoldersInGuest(vmDirectory, mountRoot)
 	if err != nil {
-		fmt.Printf("warning: could not mount in guest: %v\n", err)
+		guest := defaultSharedFolderMountPoint(vmDirectory, entry.Tag)
+		fmt.Printf("warning: could not mount guest path %s: %v\n", guest, err)
+		fmt.Printf("         share is saved and will mount at %s after reboot if live mount remains unavailable\n", guest)
 		if mountRoot == "" {
 			fmt.Printf("         you can retry with: cove -vm %s shared-folder mount\n", sharedFolderVMName(vmDirectory))
 		} else {
@@ -238,6 +250,12 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	link, linkErr := ensureSharedFolderHomeLink(vmDirectory, entry)
 	printSharedFolderApplied(entry, vmDirectory, link, linkErr)
 	return nil
+}
+
+func printSharedFolderNextBoot(entry SharedFolderEntry, vmDirectory, reason string) {
+	guest := defaultSharedFolderMountPoint(vmDirectory, entry.Tag)
+	fmt.Printf("live mount unavailable for guest path %s: %s\n", guest, reason)
+	fmt.Printf("shared folder saved; will mount at %s on next boot of %s (reboot required)\n", guest, sharedFolderVMName(vmDirectory))
 }
 
 func printSharedFolderAddResult(entry SharedFolderEntry, added bool) {
@@ -533,7 +551,7 @@ func pendingSharedFolders(vmDirectory, mountPoint string) error {
 		if f.ReadOnly {
 			mode = "ro"
 		}
-		fmt.Printf("  %s\t%s\t%s\n", f.Tag, mode, f.Path)
+		fmt.Printf("  %s\t%s\t%s\tguest=%s\n", f.Tag, mode, f.Path, defaultSharedFolderMountPoint(vmDirectory, f.Tag))
 	}
 	return nil
 }
