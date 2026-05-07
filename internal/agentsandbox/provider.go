@@ -175,6 +175,9 @@ func runPythonBridge(ctx context.Context, provider string, opts Options) (Result
 		args = append(args, "--max-iters", fmt.Sprint(opts.MaxSteps))
 	case ProviderGemini:
 		args = append(args, "--max-iterations", fmt.Sprint(opts.MaxSteps))
+		if model := strings.TrimSpace(os.Getenv("COVE_GEMINI_MODEL")); model != "" {
+			args = append(args, "--model", model)
+		}
 	case ProviderVertex:
 		project := strings.TrimSpace(os.Getenv("COVE_VERTEX_PROJECT"))
 		if project == "" {
@@ -186,6 +189,9 @@ func runPythonBridge(ctx context.Context, provider string, opts Options) (Result
 		args = append(args, "--project", project, "--max-iterations", fmt.Sprint(opts.MaxSteps))
 		if region := strings.TrimSpace(os.Getenv("COVE_VERTEX_REGION")); region != "" {
 			args = append(args, "--region", region)
+		}
+		if model := strings.TrimSpace(os.Getenv("COVE_VERTEX_MODEL")); model != "" {
+			args = append(args, "--model", model)
 		}
 	}
 	if opts.ScreenshotDir != "" {
