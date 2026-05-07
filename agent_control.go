@@ -566,8 +566,8 @@ func resolveAgentHealthInterval() time.Duration {
 //   - INFO on a successful reconnect, with elapsed time since the first
 //     failure ("agent reconnected after Xs")
 //   - WARN on each ping failure during a disconnect streak
-func (s *ControlServer) agentHealthMonitor() {
-	ctx := s.lifecycleContext()
+func (b *agentBridge) agentHealthMonitor() {
+	ctx := b.cs.lifecycleContext()
 
 	// Wait briefly for the VM to boot before starting health checks.
 	select {
@@ -581,13 +581,13 @@ func (s *ControlServer) agentHealthMonitor() {
 
 	failCount := 0
 	for {
-		if !s.running.Load() {
+		if !b.cs.running.Load() {
 			return
 		}
 
-		s.healthCheckOnce(ctx, &failCount)
+		b.healthCheckOnce(ctx, &failCount)
 
-		next := s.nextAgentHealthInterval(interval)
+		next := b.nextAgentHealthInterval(interval)
 		select {
 		case <-ctx.Done():
 			return
@@ -596,28 +596,28 @@ func (s *ControlServer) agentHealthMonitor() {
 	}
 }
 
-func (s *ControlServer) nextAgentHealthInterval(steady time.Duration) time.Duration {
-	s.bridge.healthMu.RLock()
-	daemon := s.bridge.health.daemonStatus
-	user := s.bridge.health.userStatus
-	s.bridge.healthMu.RUnlock()
+func (b *agentBridge) nextAgentHealthInterval(steady time.Duration) time.Duration {
+	b.healthMu.RLock()
+	daemon := b.health.daemonStatus
+	user := b.health.userStatus
+	b.healthMu.RUnlock()
 	if daemon == "connected" && user == "connected" {
 		return steady
 	}
 	return startupAgentHealthInterval
 }
 
-func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
-	state, err := s.currentVMState()
+func (b *agentBridge) healthCheckOnce(ctx context.Context, failCount *int) {
+	state, err := b.cs.currentVMState()
 	if err != nil || agentUnavailableForVMState(state) != nil {
-		s.setHealthStatus("disconnected", "", "vm not running")
+		b.setHealthStatus("disconnected", "", "vm not running")
 		return
 	}
 
 	// Try to ping via existing connection (read lock only).
-	s.bridge.mu.RLock()
-	a := s.bridge.agent
-	s.bridge.mu.RUnlock()
+	b.mu.RLock()
+	a := b.agent
+	b.mu.RUnlock()
 
 	if a != nil {
 		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -625,10 +625,10 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 		cancel()
 		if err == nil {
 			*failCount = 0
-			s.markAgentConnected(agentVer)
-			s.checkAgentVersion(agentVer)
-			s.healthCheckUserAgent(ctx)
-			s.healthCheckGUISession(ctx)
+			b.markAgentConnected(agentVer)
+			b.checkAgentVersion(agentVer)
+			b.healthCheckUserAgent(ctx)
+			b.healthCheckGUISession(ctx)
 			return
 		}
 		slog.Warn("agent-health: ping failed",
@@ -637,25 +637,25 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 
 	// Ping failed or no connection. Attempt reconnect.
 	*failCount++
-	s.markAgentReconnecting(fmt.Sprintf("ping failed (attempt %d)", *failCount))
+	b.markAgentReconnecting(fmt.Sprintf("ping failed (attempt %d)", *failCount))
 
-	s.bridge.mu.Lock()
-	if s.bridge.agent != nil {
-		s.bridge.agent.Close()
-		s.bridge.agent = nil
+	b.mu.Lock()
+	if b.agent != nil {
+		b.agent.Close()
+		b.agent = nil
 	}
-	err = s.bridge.connectAgentLocked()
-	s.bridge.mu.Unlock()
+	err = b.connectAgentLocked()
+	b.mu.Unlock()
 
 	if err != nil {
-		s.setHealthStatus("disconnected", "", err.Error())
+		b.setHealthStatus("disconnected", "", err.Error())
 		return
 	}
 
 	// Reconnected — verify with a ping.
-	s.bridge.mu.RLock()
-	a = s.bridge.agent
-	s.bridge.mu.RUnlock()
+	b.mu.RLock()
+	a = b.agent
+	b.mu.RUnlock()
 
 	if a != nil {
 		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -663,13 +663,13 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 		cancel()
 		if err == nil {
 			*failCount = 0
-			s.markAgentConnected(agentVer)
-			s.checkAgentVersion(agentVer)
-			s.healthCheckUserAgent(ctx)
-			s.healthCheckGUISession(ctx)
+			b.markAgentConnected(agentVer)
+			b.checkAgentVersion(agentVer)
+			b.healthCheckUserAgent(ctx)
+			b.healthCheckGUISession(ctx)
 			return
 		}
-		s.setHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
+		b.setHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
 	}
 }
 
@@ -677,22 +677,22 @@ func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
 // the previous state recorded a disconnect (disconnectAt non-zero), this is
 // the recovery edge — emit an INFO log with elapsed downtime so operators
 // can see how long the agent was unreachable.
-func (s *ControlServer) markAgentConnected(version string) {
+func (b *agentBridge) markAgentConnected(version string) {
 	now := vmLifecycleClock.Now()
-	s.bridge.healthMu.Lock()
-	wasDisconnected := !s.bridge.health.disconnectAt.IsZero()
+	b.healthMu.Lock()
+	wasDisconnected := !b.health.disconnectAt.IsZero()
 	downtime := time.Duration(0)
 	if wasDisconnected {
-		downtime = now.Sub(s.bridge.health.disconnectAt)
+		downtime = now.Sub(b.health.disconnectAt)
 	}
-	s.bridge.health.daemonStatus = "connected"
+	b.health.daemonStatus = "connected"
 	if version != "" {
-		s.bridge.health.version = version
+		b.health.version = version
 	}
-	s.bridge.health.lastErr = ""
-	s.bridge.health.lastPing = now
-	s.bridge.health.disconnectAt = time.Time{}
-	s.bridge.healthMu.Unlock()
+	b.health.lastErr = ""
+	b.health.lastPing = now
+	b.health.disconnectAt = time.Time{}
+	b.healthMu.Unlock()
 
 	if wasDisconnected {
 		slog.Info("agent-health: reconnected",
@@ -705,32 +705,32 @@ func (s *ControlServer) markAgentConnected(version string) {
 // markAgentReconnecting transitions the agent into the "reconnecting"
 // state. Captures the first-failure timestamp so the eventual recovery edge
 // can report accurate downtime.
-func (s *ControlServer) markAgentReconnecting(reason string) {
+func (b *agentBridge) markAgentReconnecting(reason string) {
 	now := vmLifecycleClock.Now()
-	s.bridge.healthMu.Lock()
-	if s.bridge.health.disconnectAt.IsZero() {
-		s.bridge.health.disconnectAt = now
+	b.healthMu.Lock()
+	if b.health.disconnectAt.IsZero() {
+		b.health.disconnectAt = now
 	}
-	s.bridge.health.daemonStatus = "reconnecting"
-	s.bridge.health.lastErr = reason
-	s.bridge.healthMu.Unlock()
+	b.health.daemonStatus = "reconnecting"
+	b.health.lastErr = reason
+	b.healthMu.Unlock()
 }
 
 // checkAgentVersion compares the guest agent version with the host version.
 // On a comparable mismatch where the guest is older, triggers a background
 // upgrade (if autoUpgradeAgent is enabled). A newer guest is left alone with
 // a warning — we never downgrade. Equal/unknown versions are no-ops.
-func (s *ControlServer) checkAgentVersion(agentVer string) {
-	s.bridge.healthMu.RLock()
-	checked := s.bridge.health.versionChecked
-	s.bridge.healthMu.RUnlock()
+func (b *agentBridge) checkAgentVersion(agentVer string) {
+	b.healthMu.RLock()
+	checked := b.health.versionChecked
+	b.healthMu.RUnlock()
 	if checked {
 		return
 	}
 
-	s.bridge.healthMu.Lock()
-	s.bridge.health.versionChecked = true
-	s.bridge.healthMu.Unlock()
+	b.healthMu.Lock()
+	b.health.versionChecked = true
+	b.healthMu.Unlock()
 
 	hostVer := hostVersion()
 
@@ -754,16 +754,16 @@ func (s *ControlServer) checkAgentVersion(agentVer string) {
 		return
 	}
 
-	s.bridge.healthMu.RLock()
-	attempted := s.bridge.health.upgradeAttempted
-	s.bridge.healthMu.RUnlock()
+	b.healthMu.RLock()
+	attempted := b.health.upgradeAttempted
+	b.healthMu.RUnlock()
 	if attempted {
 		return
 	}
 
-	s.bridge.healthMu.Lock()
-	s.bridge.health.upgradeAttempted = true
-	s.bridge.healthMu.Unlock()
+	b.healthMu.Lock()
+	b.health.upgradeAttempted = true
+	b.healthMu.Unlock()
 
 	log.Printf("agent-health: auto-upgrading agent (%s -> %s)...", agentVer, hostVer)
 	go func() {
@@ -772,38 +772,38 @@ func (s *ControlServer) checkAgentVersion(agentVer string) {
 			return
 		}
 		// Reset version check so next ping verifies the new version.
-		s.bridge.healthMu.Lock()
-		s.bridge.health.versionChecked = false
-		s.bridge.healthMu.Unlock()
+		b.healthMu.Lock()
+		b.health.versionChecked = false
+		b.healthMu.Unlock()
 		log.Printf("agent-health: auto-upgrade complete")
 	}()
 }
 
-func (s *ControlServer) healthCheckUserAgent(ctx context.Context) {
-	ua, err := s.getUserAgent()
+func (b *agentBridge) healthCheckUserAgent(ctx context.Context) {
+	ua, err := b.cs.getUserAgent()
 	if err != nil {
-		s.bridge.healthMu.Lock()
-		s.bridge.health.userStatus = "disconnected"
-		s.bridge.healthMu.Unlock()
+		b.healthMu.Lock()
+		b.health.userStatus = "disconnected"
+		b.healthMu.Unlock()
 		return
 	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	_, err = ua.UserExec(pingCtx, []string{"true"}, nil, "")
 	cancel()
-	s.bridge.healthMu.Lock()
+	b.healthMu.Lock()
 	if err == nil {
-		s.bridge.health.userStatus = "connected"
+		b.health.userStatus = "connected"
 	} else {
-		s.bridge.health.userStatus = "disconnected"
+		b.health.userStatus = "disconnected"
 	}
-	s.bridge.healthMu.Unlock()
+	b.healthMu.Unlock()
 }
 
-func (s *ControlServer) healthCheckGUISession(ctx context.Context) {
-	s.bridge.mu.RLock()
-	a := s.bridge.agent
-	s.bridge.mu.RUnlock()
+func (b *agentBridge) healthCheckGUISession(ctx context.Context) {
+	b.mu.RLock()
+	a := b.agent
+	b.mu.RUnlock()
 	if a == nil {
 		return
 	}
@@ -813,7 +813,7 @@ func (s *ControlServer) healthCheckGUISession(ctx context.Context) {
 		ok      bool
 		err     error
 	)
-	switch agentstate.Platform(s.vmDir) {
+	switch agentstate.Platform(b.cs.vmDir) {
 	case agentstate.PlatformLinux:
 		session, ok, err = probeLinuxGUISession(ctx, a)
 	case agentstate.PlatformMacOS:
@@ -825,20 +825,20 @@ func (s *ControlServer) healthCheckGUISession(ctx context.Context) {
 		slog.Debug("agent-health: gui session probe failed", "err", err)
 		return
 	}
-	s.bridge.healthMu.Lock()
-	s.bridge.health.guiSession = session
-	s.bridge.health.guiSessionActive = ok
-	s.bridge.healthMu.Unlock()
+	b.healthMu.Lock()
+	b.health.guiSession = session
+	b.health.guiSessionActive = ok
+	b.healthMu.Unlock()
 }
 
 // AgentHealthSummary returns a short status string for UI display.
 // Thread-safe; intended for main-thread polling.
-func (s *ControlServer) AgentHealthSummary() string {
-	s.bridge.healthMu.RLock()
-	h := s.bridge.health
-	s.bridge.healthMu.RUnlock()
+func (b *agentBridge) AgentHealthSummary() string {
+	b.healthMu.RLock()
+	h := b.health
+	b.healthMu.RUnlock()
 
-	return agentHealthSummaryWithNeverConnected(h, s.agentNeverConnectedSummary())
+	return agentHealthSummaryWithNeverConnected(h, b.agentNeverConnectedSummary())
 }
 
 func agentHealthSummary(h agentHealthState) string {
@@ -883,8 +883,8 @@ func formatGUISessionSummary(session guiSession) string {
 // VM agent config to differentiate "fresh install, agent will appear after
 // first boot" from "agent expected, currently waiting" and "no agent
 // configured for this VM."
-func (s *ControlServer) agentNeverConnectedSummary() string {
-	cfg, err := vmconfig.Load(s.vmDir)
+func (b *agentBridge) agentNeverConnectedSummary() string {
+	cfg, err := vmconfig.Load(b.cs.vmDir)
 	if err != nil || cfg == nil || cfg.Agent == nil {
 		return "Agent: not installed"
 	}
@@ -897,26 +897,51 @@ func (s *ControlServer) agentNeverConnectedSummary() string {
 	return "Agent: connecting..."
 }
 
-func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
-	s.bridge.healthMu.Lock()
-	defer s.bridge.healthMu.Unlock()
-	s.bridge.health.daemonStatus = status
+func (b *agentBridge) setHealthStatus(status, version, lastErr string) {
+	b.healthMu.Lock()
+	defer b.healthMu.Unlock()
+	b.health.daemonStatus = status
 	if version != "" {
-		s.bridge.health.version = version
+		b.health.version = version
 	}
-	s.bridge.health.lastErr = lastErr
+	b.health.lastErr = lastErr
 	now := vmLifecycleClock.Now()
 	switch status {
 	case "connected":
-		s.bridge.health.lastPing = now
-		s.bridge.health.disconnectAt = time.Time{}
+		b.health.lastPing = now
+		b.health.disconnectAt = time.Time{}
 	case "disconnected", "reconnecting":
-		if s.bridge.health.disconnectAt.IsZero() {
-			s.bridge.health.disconnectAt = now
+		if b.health.disconnectAt.IsZero() {
+			b.health.disconnectAt = now
 		}
 	}
 }
 
+// The following wrappers preserve the prior method-on-ControlServer
+// shape for callers (control-socket dispatcher, lifecycle manager,
+// tests) while delegating to the bridge sub-component.
+
+func (s *ControlServer) agentHealthMonitor() { s.bridge.agentHealthMonitor() }
+func (s *ControlServer) nextAgentHealthInterval(d time.Duration) time.Duration {
+	return s.bridge.nextAgentHealthInterval(d)
+}
+func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
+	s.bridge.healthCheckOnce(ctx, failCount)
+}
+func (s *ControlServer) markAgentConnected(version string)        { s.bridge.markAgentConnected(version) }
+func (s *ControlServer) markAgentReconnecting(reason string)      { s.bridge.markAgentReconnecting(reason) }
+func (s *ControlServer) checkAgentVersion(agentVer string)        { s.bridge.checkAgentVersion(agentVer) }
+func (s *ControlServer) healthCheckUserAgent(ctx context.Context) { s.bridge.healthCheckUserAgent(ctx) }
+func (s *ControlServer) healthCheckGUISession(ctx context.Context) {
+	s.bridge.healthCheckGUISession(ctx)
+}
+func (s *ControlServer) AgentHealthSummary() string { return s.bridge.AgentHealthSummary() }
+func (s *ControlServer) agentNeverConnectedSummary() string {
+	return s.bridge.agentNeverConnectedSummary()
+}
+func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
+	s.bridge.setHealthStatus(status, version, lastErr)
+}
 func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
 	a, err := s.getAgent()
 	if err != nil {
