@@ -1,6 +1,7 @@
 # Design 034: Agent Sandbox v2
 
 **Status:** shipped as provider abstraction, docs, doctor, examples, and benchmark harness.
+Full live provider-matrix evidence still depends on local provider credentials.
 
 ## Provider Abstraction
 
@@ -32,9 +33,9 @@ separate from VM isolation.
 | Gemini | `GEMINI_API_KEY` |
 | Vertex | `GOOGLE_CLOUD_PROJECT` or `COVE_VERTEX_PROJECT`; optional `COVE_VERTEX_REGION` |
 
-`cove agent-sandbox doctor --provider X` checks those variables, provider API
-TCP reachability, and the selected model id without making a provider API call
-in tests.
+`cove agent-sandbox doctor --provider all` checks those variables, provider API
+TCP reachability, and the selected model id across the full matrix without
+making a provider API call in tests.
 
 ## Benchmark Methodology
 
@@ -48,6 +49,15 @@ Two scripts live under `bench/agent-sandbox-providers/`:
 The scripts capture cove version, host info, image ref, provider, model id,
 run count, median latency, and error rate. Live provider calls are gated by
 `RUN_LIVE=1` and local credentials.
+
+Checked-in evidence distinguishes protocol dry-runs from live provider runs:
+
+- `results-20260505.md`: full-matrix protocol capture; no provider credentials
+  were available for live calls in that commit.
+- `cold-fork-results-20260505.md`: cold-fork protocol capture; no live calls.
+- `results-openai-live-20260507.md`: one OpenAI live run on `m4x-129`; the
+  task reached the provider/fork loop and recorded a provider error row. It is
+  not full-matrix evidence.
 
 ## Ship Artifacts
 

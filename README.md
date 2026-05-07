@@ -107,14 +107,14 @@ Run OpenAI, Anthropic, Gemini, or Vertex computer-use loops against fresh local
 VM forks with replay artifacts and provider auth checks.
 
 ```bash
-cove agent-sandbox doctor --provider anthropic
+cove agent-sandbox doctor --provider all
 cove agent-sandbox run --provider anthropic --image agentkit/macos-base:latest --task "Describe the desktop."
 ```
 
 Start with the [quickstart](docs/agent-sandbox/quickstart.md), then use the
 [provider matrix](docs/agent-sandbox/provider-matrix.md),
 [cookbook](docs/agent-sandbox/cookbook.md), and
-[benchmark harness](bench/agent-sandbox-providers/results-20260505.md).
+[benchmark harness](bench/agent-sandbox-providers/README.md).
 
 ### Native GUI Window
 
