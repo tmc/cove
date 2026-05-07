@@ -90,11 +90,50 @@ func TestParseAgentSandboxRunArgsProviderSwitchOnly(t *testing.T) {
 	}
 }
 
+func TestParseAgentSandboxBenchArgs(t *testing.T) {
+	opts, err := parseAgentSandboxBenchArgs([]string{
+		"--provider", "gemini",
+		"--image", "agentkit/macos-base:latest",
+		"--runs", "3",
+		"--out", "bench/agent-sandbox-providers/results-test.md",
+		"--live",
+		"--cold",
+	})
+	if err != nil {
+		t.Fatalf("parseAgentSandboxBenchArgs: %v", err)
+	}
+	if opts.provider != "gemini" || opts.image != "agentkit/macos-base:latest" || opts.runs != 3 {
+		t.Fatalf("bench opts = %+v", opts)
+	}
+	if opts.out != "bench/agent-sandbox-providers/results-test.md" || !opts.live || !opts.cold {
+		t.Fatalf("bench opts = %+v", opts)
+	}
+}
+
+func TestParseAgentSandboxBenchArgsRejectsBadInput(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "provider", args: []string{"--provider", "bogus"}, want: "unsupported provider"},
+		{name: "image", args: []string{"--image", ""}, want: "-image is required"},
+		{name: "runs", args: []string{"--runs", "0"}, want: "must be positive"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseAgentSandboxBenchArgs(tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestAgentSandboxUsageListsProviderEnvVars(t *testing.T) {
 	var b strings.Builder
 	printAgentSandboxUsage(&b)
 	out := b.String()
-	for _, want := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "COVE_VERTEX_PROJECT"} {
+	for _, want := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "COVE_VERTEX_PROJECT", "agent-sandbox bench"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage missing %q:\n%s", want, out)
 		}

@@ -31,6 +31,15 @@ type agentSandboxRunOptions struct {
 	vmName        string
 }
 
+type agentSandboxBenchOptions struct {
+	provider string
+	image    string
+	runs     int
+	out      string
+	live     bool
+	cold     bool
+}
+
 func handleAgentSandboxCommand(args []string) error {
 	if len(args) == 0 {
 		return errors.New("agent-sandbox requires subcommand: run")
@@ -40,6 +49,8 @@ func handleAgentSandboxCommand(args []string) error {
 		return handleAgentSandboxRun(args[1:])
 	case "doctor":
 		return handleAgentSandboxDoctor(args[1:])
+	case "bench":
+		return handleAgentSandboxBench(args[1:])
 	case "-h", "--help", "help":
 		printAgentSandboxUsage(os.Stdout)
 		return nil
@@ -157,6 +168,81 @@ func providerModel(provider string) string {
 	default:
 		return "provider default"
 	}
+}
+
+func handleAgentSandboxBench(args []string) error {
+	opts, err := parseAgentSandboxBenchArgs(args)
+	if err != nil {
+		return err
+	}
+	return runAgentSandboxBench(context.Background(), opts)
+}
+
+func parseAgentSandboxBenchArgs(args []string) (agentSandboxBenchOptions, error) {
+	opts := agentSandboxBenchOptions{
+		provider: "all",
+		image:    "agentkit/macos-base:latest",
+		runs:     10,
+	}
+	fs := flag.NewFlagSet("agent-sandbox bench", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&opts.provider, "provider", opts.provider, "provider: all, openai, anthropic, gemini, or vertex")
+	fs.StringVar(&opts.image, "image", opts.image, "local image ref to fork")
+	fs.IntVar(&opts.runs, "runs", opts.runs, "runs per provider")
+	fs.StringVar(&opts.out, "out", "", "markdown result path")
+	fs.BoolVar(&opts.live, "live", false, "call provider APIs; requires credentials")
+	fs.BoolVar(&opts.cold, "cold", false, "measure cold fork to first action")
+	if err := fs.Parse(args); err != nil {
+		return opts, err
+	}
+	if fs.NArg() != 0 {
+		return opts, fmt.Errorf("agent-sandbox bench: unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	opts.provider = strings.ToLower(strings.TrimSpace(opts.provider))
+	switch opts.provider {
+	case "all", agentsandbox.ProviderOpenAI, agentsandbox.ProviderAnthropic, agentsandbox.ProviderGemini, agentsandbox.ProviderVertex:
+	default:
+		return opts, fmt.Errorf("agent-sandbox bench: unsupported provider %q", opts.provider)
+	}
+	if strings.TrimSpace(opts.image) == "" {
+		return opts, errors.New("agent-sandbox bench: -image is required")
+	}
+	if opts.runs <= 0 {
+		return opts, errors.New("agent-sandbox bench: -runs must be positive")
+	}
+	return opts, nil
+}
+
+func runAgentSandboxBench(ctx context.Context, opts agentSandboxBenchOptions) error {
+	script := filepath.Join("bench", "agent-sandbox-providers", "run.sh")
+	if opts.cold {
+		script = filepath.Join("bench", "agent-sandbox-providers", "cold-fork-first-action.sh")
+	}
+	if _, err := os.Stat(script); err != nil {
+		return fmt.Errorf("agent-sandbox bench: %s: %w", script, err)
+	}
+	providers := opts.provider
+	if providers == "all" {
+		providers = strings.Join(agentsandbox.ProviderNames(), " ")
+	}
+	cmd := exec.CommandContext(ctx, "bash", script)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(),
+		"PROVIDERS="+providers,
+		"IMAGE="+opts.image,
+		"RUNS="+fmt.Sprint(opts.runs),
+	)
+	if opts.out != "" {
+		cmd.Env = append(cmd.Env, "OUT="+opts.out)
+	}
+	if opts.live {
+		cmd.Env = append(cmd.Env, "RUN_LIVE=1")
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("agent-sandbox bench: %w", err)
+	}
+	return nil
 }
 
 func handleAgentSandboxRun(args []string) error {
@@ -511,6 +597,7 @@ func printAgentSandboxUsage(w io.Writer) {
 	fmt.Fprintf(w, `Usage:
   cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> --task <prompt> [options]
   cove agent-sandbox doctor --provider openai|anthropic|gemini|vertex
+  cove agent-sandbox bench --provider all [--live] [--cold]
 
 Options:
   --provider <name>       provider: openai, anthropic, gemini, vertex
@@ -525,5 +612,9 @@ Options:
 Replay:
   writes ~/.vz/runs/<run-id>/replay/ with screenshots, OCR text, control events,
   final-answer.md, and a metrics.jsonl symlink.
+
+Bench:
+  wraps bench/agent-sandbox-providers/run.sh. Without --live, the benchmark
+  records the protocol without calling provider APIs.
 `)
 }
