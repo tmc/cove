@@ -148,11 +148,11 @@ channel.
 ## v0.5 — Stabilization: package boundaries + observability fixes
 
 This release contracts surface area and tightens internal boundaries. Slices 1-4
-of design 039 ship; slice 5 (`internal/vmrun`) and slice 6 sub-slices 1-2
-(`agentBridge`, `screenCapture`) ship within the v0.5 stabilization arc
-(R46 conductor pull-in). Remaining slice 6 sub-slices (input dispatch,
-lifecycle, network listeners) and the facade move to `internal/controlserver`
-remain deferred to v0.6.
+of design 039 ship; slice 5 (`internal/vmrun`) and all five slice 6 sub-slices
+(`agentBridge`, `screenCapture`, `inputBridge`, `lifecycleBridge`,
+`networkBridge`) ship within the v0.5 stabilization arc (R46 + R47 conductor
+pull-in). The eventual facade move to `internal/controlserver` remains
+deferred to v0.6.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
@@ -163,7 +163,10 @@ remain deferred to v0.6.
 | Design 039 slice 5 (`internal/vmrun` config) | done | slices 1-4 | [039](039-package-boundary-extraction.md) | `internal/vmrun` package shipped with `RunConfig`, `HostConfig`, `DevicePlan`, `Plan()` pure function and table-driven tests (`3d876b8`). `macos.go`/`linux.go`/`windows.go` entry-point bodies converted via `vmrun_adapter.go` snapshot constructor (`c5dcfec`/`ed05f50`/`23c25d1`). 38 entry-point global reads retired; `runVMHeadless`/`runVMWithGUI` and `isoPath`/`usbDevices` deferred to v0.6 (see slice 5 summary). |
 | Design 039 slice 6 sub-slice 1 (`agentBridge`) | done | slice 5 | [039](039-package-boundary-extraction.md) | Agent connection plumbing + health monitor extracted into `agentBridge` value embedded in `ControlServer` (`fb376ba`/`270bd42`/`2d2f266`/`d805575`/`b52d2d6`). Two `ControlServer` mutexes retired (`agentMu`, `healthMu`); 5 invariant tests pin disconnect-edge / cadence / nil-cs at the bridge boundary. Sub-component stays in package main per facade-late rule. |
 | Design 039 slice 6 sub-slice 2 (`screenCapture`) | done | slice 5 | [039](039-package-boundary-extraction.md) | Capture cache + lazy OCR service extracted into `screenCapture` value with own narrow lock (`d9d5055`/`067aff5`). One `ControlServer` mutex retired (`screenshotMu`); OCR no longer piggybacks on `mu`. Mouse Y mapping invariant (memory-protected `viewContentHeight`) preserved. |
-| Design 039 slice 6 sub-slices 3-5 + facade move | maybe | slice 6.1+6.2 | [039](039-package-boundary-extraction.md) | Remaining sub-slices: input dispatch, lifecycle + policy stop checks, port-forward/HTTP/VNC/debug status. Facade move to `internal/controlserver` follows after all five sub-slices ship. Deferred to v0.6. |
+| Design 039 slice 6 sub-slice 3 (`inputBridge`) | done | slice 5 | [039](039-package-boundary-extraction.md) | Mouse/keyboard/scroll/typeText routed through `inputBridge` value embedded in `ControlServer` (`fdb9907`/`5422e03`/`7b3c387`/`139da0d`). All four input families own their bodies on `inputBridge`; `ControlServer` methods are 1-line forwarders preserving every external signature. `viewContentHeight` mouse-mapping memo + `CGEvent->NSEvent->keyDown` keyboard invariants documented and preserved. |
+| Design 039 slice 6 sub-slice 4 (`lifecycleBridge`) | done | slice 5 | [039](039-package-boundary-extraction.md) | Lifecycle ctx + policy state extracted into `lifecycleBridge` value (`6592695`/`ccba4bf`/`6947d3d`). Two `ControlServer` mutexes retired (`policyMu`, `lifecycleMu`); 6 invariant tests pin set-once start time, exec increment, one-shot stop edge, pre-start ctx, shutdown idempotence at the bridge boundary. Bounded-shutdown invariant from `cfb174b` preserved by construction (`StopTimeout` stays in `internal/control.Server`, `life.shutdown()` only cancels ctx). |
+| Design 039 slice 6 sub-slice 5 (`networkBridge`) | done | slice 5 | [039](039-package-boundary-extraction.md) | iTerm2 proxy, port forwards, HTTP listeners, VNC/debug status extracted into `networkBridge` value (`0c74183`/`4a66c3a`). Five `ControlServer` catch-all-mu uses retired (iterm2Proxy, portForwards, httpListeners, vncStatus, debugStubStatus); `StartHTTP` lazy-init race fixed. T35 portForwards concurrency invariant preserved. Dead `httpListeners` field on `ControlServer` swept in follow-up `1adbfaa`. |
+| Design 039 slice 6 facade move to `internal/controlserver` | maybe | slices 6.1-6.5 | [039](039-package-boundary-extraction.md) | All five sub-slices have shipped with local invariants. The facade move is the final design-039 step; deferred to v0.6 unless v0.5 has time after stabilization. |
 
 ## v0.3 implementation slices
 
