@@ -54,12 +54,45 @@ func handleVerify(args []string) error {
 		}
 		target = vmSelection{Directory: dir, Name: *vmFlag}
 	}
+	reportHostTCCPreAuthState(os.Stdout)
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
 		return verifyRunningForVM(target, sock, *verboseFlag, *tccPathFlag)
 	}
 
 	return verifyStoppedForVM(target, *verboseFlag, *fixFlag)
+}
+
+// reportHostTCCPreAuthState prints a concise summary of the host
+// Apple Events services that have not been pre-flighted, hinting at
+// `cove doctor tcc-preauth` if any service is still pending. It is
+// silent when every service is already recorded as granted.
+func reportHostTCCPreAuthState(w io.Writer) {
+	path, err := DefaultTCCStatePath()
+	if err != nil {
+		return
+	}
+	state, err := LoadTCCState(path)
+	if err != nil {
+		return
+	}
+	writeHostTCCPreAuthReport(w, state, hostTCCServices)
+}
+
+func writeHostTCCPreAuthReport(w io.Writer, state *TCCState, services []tccPreAuthService) {
+	pending := make([]string, 0, len(services))
+	for _, svc := range services {
+		entry, ok := state.HostEntry(svc.ID)
+		if !ok || entry.Result == TCCResultUnknown {
+			pending = append(pending, svc.Target)
+		}
+	}
+	if len(pending) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "Host TCC pre-auth: %d service(s) not yet preflighted: %s\n", len(pending), strings.Join(pending, ", "))
+	fmt.Fprintln(w, "  run 'cove doctor tcc-preauth' to handle these prompts at a predictable time")
+	fmt.Fprintln(w)
 }
 
 func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string, *string) {
