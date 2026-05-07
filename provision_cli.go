@@ -12,21 +12,6 @@ import (
 	"golang.org/x/term"
 )
 
-// InjectOptions configures the inject behavior
-type InjectOptions struct {
-	Config             ProvisionConfig
-	SkipSetupAssistant bool
-	AutoLogin          bool
-	CreateUserPlist    bool // Create user plist directly instead of using LaunchDaemon
-	UID                int
-	SSHKeyPath         string // Path to SSH public key file for authorized_keys
-	InjectAgent        bool   // Cross-compile and inject the vz-agent GRPC daemon
-	InjectGuestTools   bool   // Download and inject SPICE guest tools for clipboard sharing
-	BootstrapRecovery  bool   // Two-user bootstrap: create hidden admin first, then real user
-	EnableSSHD         bool   // Enable SSH daemon (Remote Login) on first boot
-	Force              bool   // Re-stage and re-apply even if provisioning already succeeded
-}
-
 // provisionVerbose controls verbose output for provision operations.
 var provisionVerbose bool
 

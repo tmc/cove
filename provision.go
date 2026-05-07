@@ -137,7 +137,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -150,21 +149,6 @@ import (
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 )
 
-// ProvisionManifest describes staged provisioning files for the apply phase.
-type ProvisionManifest struct {
-	Version int                     `json:"version"`
-	VMDir   string                  `json:"vmDir"`
-	Created time.Time               `json:"created"`
-	Files   []ProvisionManifestFile `json:"files"`
-}
-
-// ProvisionManifestFile describes a single staged file and its target ownership.
-type ProvisionManifestFile struct {
-	Path  string `json:"path"`  // relative to Data volume mount point
-	Mode  string `json:"mode"`  // octal file mode, e.g. "0755"
-	Owner string `json:"owner"` // "root:wheel" or "" for default
-}
-
 // provisionStagingDir returns the staging directory for the current VM.
 func provisionStagingDir() string {
 	return provisionStagingDirForVM(currentVMSelection())
@@ -172,118 +156,6 @@ func provisionStagingDir() string {
 
 func provisionStagingDirForVM(target vmSelection) string {
 	return target.provisionStagingDir()
-}
-
-// stageFile writes data to the staging directory and appends a manifest entry.
-func stageFile(stagingDir, relativePath string, data []byte, mode os.FileMode, owner string, manifest *ProvisionManifest) error {
-	dest := filepath.Join(stagingDir, relativePath)
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("create staging directory for %s: %w", relativePath, err)
-	}
-	if err := os.WriteFile(dest, data, mode); err != nil {
-		return fmt.Errorf("write staged file %s: %w", relativePath, err)
-	}
-	manifest.Files = append(manifest.Files, ProvisionManifestFile{
-		Path:  relativePath,
-		Mode:  fmt.Sprintf("0%o", mode),
-		Owner: owner,
-	})
-	if verbose {
-		fmt.Printf("  staged: %s\n", relativePath)
-	}
-	return nil
-}
-
-// writeManifest writes the provision manifest to the staging directory.
-func writeManifest(stagingDir string, manifest *ProvisionManifest) error {
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal manifest: %w", err)
-	}
-	return os.WriteFile(filepath.Join(stagingDir, "manifest.json"), data, 0644)
-}
-
-// readManifest reads a provision manifest from the staging directory.
-func readManifest(stagingDir string) (*ProvisionManifest, error) {
-	data, err := os.ReadFile(filepath.Join(stagingDir, "manifest.json"))
-	if err != nil {
-		return nil, fmt.Errorf("read manifest: %w", err)
-	}
-	var m ProvisionManifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
-	}
-	return &m, nil
-}
-
-// stagingFingerprint summarizes the inputs that determined the staged files.
-// If two stages produce the same fingerprint, their staged outputs are
-// equivalent — so the second can reuse the first instead of re-staging.
-type stagingFingerprint struct {
-	Username           string `json:"username"`
-	Admin              bool   `json:"admin"`
-	BootstrapRecovery  bool   `json:"bootstrapRecovery"`
-	SkipSetupAssistant bool   `json:"skipSetupAssistant"`
-	AutoLogin          bool   `json:"autoLogin"`
-	CreateUserPlist    bool   `json:"createUserPlist"`
-	InjectAgent        bool   `json:"injectAgent"`
-	InjectGuestTools   bool   `json:"injectGuestTools"`
-	EnableSSHD         bool   `json:"enableSSHD"`
-	SSHKeyPath         string `json:"sshKeyPath,omitempty"`
-}
-
-func makeStagingFingerprint(opts InjectOptions) stagingFingerprint {
-	return stagingFingerprint{
-		Username:           opts.Config.Username,
-		Admin:              opts.Config.Admin,
-		BootstrapRecovery:  opts.Config.BootstrapRecovery,
-		SkipSetupAssistant: opts.SkipSetupAssistant,
-		AutoLogin:          opts.AutoLogin,
-		CreateUserPlist:    opts.CreateUserPlist,
-		InjectAgent:        opts.InjectAgent,
-		InjectGuestTools:   opts.InjectGuestTools,
-		EnableSSHD:         opts.EnableSSHD,
-		SSHKeyPath:         opts.SSHKeyPath,
-	}
-}
-
-// writeStagingFingerprint records the fingerprint alongside the manifest so
-// later stage-or-reuse decisions can compare without re-deriving it.
-func writeStagingFingerprint(stagingDir string, fp stagingFingerprint) error {
-	data, err := json.MarshalIndent(fp, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(stagingDir, "fingerprint.json"), data, 0644)
-}
-
-// stagingMatchesOptions reports whether stagingDir contains a complete prior
-// stage that matches the given options. A matching stage can be reused
-// without rebuilding any artifacts.
-func stagingMatchesOptions(stagingDir string, opts InjectOptions) (bool, error) {
-	if _, err := os.Stat(filepath.Join(stagingDir, "manifest.json")); err != nil {
-		return false, err
-	}
-	data, err := os.ReadFile(filepath.Join(stagingDir, "fingerprint.json"))
-	if err != nil {
-		return false, err
-	}
-	var existing stagingFingerprint
-	if err := json.Unmarshal(data, &existing); err != nil {
-		return false, err
-	}
-	return existing == makeStagingFingerprint(opts), nil
-}
-
-// ProvisionConfig holds the user provisioning configuration
-type ProvisionConfig struct {
-	Username          string `json:"username"`
-	Password          string `json:"password"`
-	Fullname          string `json:"fullname,omitempty"`
-	Admin             bool   `json:"admin"`
-	BootstrapRecovery bool   `json:"bootstrap_recovery,omitempty"` // Two-user bootstrap for recovery auth
-	InstallXcodeCLI   bool   `json:"install_xcode_cli,omitempty"`  // Optionally install Xcode Command Line Tools
-	EnableSSHD        bool   `json:"enable_sshd,omitempty"`        // Enable SSH daemon (Remote Login) on first boot
 }
 
 // cleanVM removes all VM files from vmDir
@@ -607,65 +479,6 @@ func warnNonRootProvisioning(target vmSelection, stagingDir string, manifest *Pr
 		target.hintFlag(), shellQuote(username))
 }
 
-func manifestNeedsRootProvisioning(manifest *ProvisionManifest) bool {
-	if manifest == nil {
-		return false
-	}
-	for _, file := range manifest.Files {
-		switch filepath.Clean(file.Path) {
-		case filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"),
-			filepath.Join("private", "etc", "kcpassword"),
-			filepath.Join("Library", "Preferences", "com.apple.loginwindow.plist"),
-			filepath.FromSlash(autoLoginLaunchDaemonRelativePath):
-			return true
-		}
-	}
-	return false
-}
-
-func readStagingFingerprint(stagingDir string) (stagingFingerprint, bool) {
-	data, err := os.ReadFile(filepath.Join(stagingDir, "fingerprint.json"))
-	if err != nil {
-		return stagingFingerprint{}, false
-	}
-	var fp stagingFingerprint
-	if err := json.Unmarshal(data, &fp); err != nil {
-		return stagingFingerprint{}, false
-	}
-	return fp, true
-}
-
-func manifestIncludesAgent(manifest *ProvisionManifest) bool {
-	if manifest == nil {
-		return false
-	}
-	for _, file := range manifest.Files {
-		switch filepath.Clean(file.Path) {
-		case filepath.Join("usr", "local", "bin", agentBinaryName),
-			filepath.Join("Library", "LaunchDaemons", agentLaunchDaemonLabel+".plist"),
-			filepath.Join("Library", "LaunchAgents", agentLaunchAgentLabel+".plist"):
-			return true
-		}
-	}
-	return false
-}
-
-func manifestIncludesLoginScreenCredentials(manifest *ProvisionManifest) bool {
-	if manifest == nil {
-		return false
-	}
-	var hasKCPassword, hasLoginWindow bool
-	for _, file := range manifest.Files {
-		switch filepath.Clean(file.Path) {
-		case filepath.Join("private", "etc", "kcpassword"):
-			hasKCPassword = true
-		case filepath.Join("Library", "Preferences", "com.apple.loginwindow.plist"):
-			hasLoginWindow = true
-		}
-	}
-	return hasKCPassword && hasLoginWindow
-}
-
 // applyStagedFiles enables APFS ownership, copies all staged files to the
 // mount point, sets permissions and ownership. If not running as root, the
 // entire operation runs via a native Security.framework authorization prompt.
@@ -711,19 +524,6 @@ func applyStagedFiles(target vmSelection, stagingDir, mountPoint, dataPart strin
 		}
 	}
 	return nil
-}
-
-func rootWheelVerifyTargets(manifest *ProvisionManifest, mountPoint string) []string {
-	if manifest == nil {
-		return nil
-	}
-	var targets []string
-	for _, f := range manifest.Files {
-		if f.Owner == "root:wheel" {
-			targets = append(targets, filepath.Join(mountPoint, f.Path))
-		}
-	}
-	return targets
 }
 
 // tmpPathFor returns a unique temporary file path with the given prefix.

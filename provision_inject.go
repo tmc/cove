@@ -27,42 +27,7 @@ const (
 	autoLoginLaunchDaemonRelativePath = "Library/LaunchDaemons/com.github.tmc.vz-macos.autologin.plist"
 )
 
-// --- Username validation ---
-
-// validateUsername checks if a username is valid for macOS
-func validateUsername(username string) error {
-	if username == "" {
-		return fmt.Errorf("username cannot be empty")
-	}
-	if len(username) > 255 {
-		return fmt.Errorf("username too long (max 255 characters)")
-	}
-	// macOS usernames should start with a letter and contain only letters, numbers, and underscores
-	// However, we'll be more permissive and just check for dangerous characters
-	invalidChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", "\n", "\r", "\t"}
-	for _, c := range invalidChars {
-		if strings.Contains(username, c) {
-			return fmt.Errorf("username contains invalid character: %q", c)
-		}
-	}
-	// Check for reserved usernames
-	reserved := []string{"root", "daemon", "nobody", "wheel", "admin", "staff"}
-	for _, r := range reserved {
-		if strings.ToLower(username) == r {
-			return fmt.Errorf("username %q is reserved by the system", username)
-		}
-	}
-	return nil
-}
-
 // --- LaunchDaemon provisioning ---
-
-// shellEscape wraps a value in single quotes with proper escaping for safe
-// embedding in shell scripts. Single quotes within the value are replaced
-// with the sequence '\" (end quote, escaped quote, start quote).
-func shellEscape(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
 
 // injectLaunchDaemonProvisioning creates the LaunchDaemon and script for first-boot provisioning.
 // Files needing root:wheel ownership are collected in rootFiles for a later targeted sudo chown.
