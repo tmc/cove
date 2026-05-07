@@ -122,6 +122,42 @@ func TestPreAuthRunInteractivePromptDeclined(t *testing.T) {
 	}
 }
 
+func TestWriteHostTCCPreAuthReportSilentWhenAllGranted(t *testing.T) {
+	state := &TCCState{}
+	services := []tccPreAuthService{
+		{ID: "a", Target: "AppA"},
+		{ID: "b", Target: "AppB"},
+	}
+	state.SetHostEntry("a", TCCResultGranted, time.Now())
+	state.SetHostEntry("b", TCCResultDenied, time.Now())
+	out := &bytes.Buffer{}
+	writeHostTCCPreAuthReport(out, state, services)
+	if out.Len() != 0 {
+		t.Errorf("expected silence when all preflighted, got: %q", out.String())
+	}
+}
+
+func TestWriteHostTCCPreAuthReportListsPending(t *testing.T) {
+	state := &TCCState{}
+	services := []tccPreAuthService{
+		{ID: "a", Target: "AppA"},
+		{ID: "b", Target: "AppB"},
+	}
+	state.SetHostEntry("a", TCCResultGranted, time.Now())
+	out := &bytes.Buffer{}
+	writeHostTCCPreAuthReport(out, state, services)
+	got := out.String()
+	if !strings.Contains(got, "AppB") {
+		t.Errorf("expected pending AppB in output, got: %s", got)
+	}
+	if strings.Contains(got, "AppA") {
+		t.Errorf("granted AppA should not appear in pending list, got: %s", got)
+	}
+	if !strings.Contains(got, "cove doctor tcc-preauth") {
+		t.Errorf("expected hint to include the subcommand, got: %s", got)
+	}
+}
+
 func TestHostTCCServicesCovered(t *testing.T) {
 	want := []string{"system_events", "utm"}
 	if len(hostTCCServices) != len(want) {
