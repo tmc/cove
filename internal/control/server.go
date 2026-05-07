@@ -43,12 +43,15 @@ type Server struct {
 	Handler       Handler
 	HealthMonitor func()
 	ActiveLimit   int32
+	StopTimeout   time.Duration
 	AcceptError   func(error)
 	Started       func()
 	listener      net.Listener
 	running       atomic.Bool
 	active        atomic.Int32
 	wg            sync.WaitGroup
+	connMu        sync.Mutex
+	conns         map[net.Conn]struct{}
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -100,7 +103,20 @@ func (s *Server) Stop() {
 	if s.listener != nil {
 		_ = s.listener.Close()
 	}
-	s.wg.Wait()
+	s.closeActiveConnections()
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	timeout := s.StopTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
 	if s.SocketPath != "" {
 		_ = os.Remove(s.SocketPath)
 	}
@@ -122,10 +138,41 @@ func (s *Server) acceptLoop() {
 			_ = conn.Close()
 			continue
 		}
+		s.trackConn(conn)
 		go func() {
-			defer s.active.Add(-1)
+			defer func() {
+				s.untrackConn(conn)
+				s.active.Add(-1)
+			}()
 			ServeConnection(conn, s.Handler)
 		}()
+	}
+}
+
+func (s *Server) trackConn(conn net.Conn) {
+	s.connMu.Lock()
+	if s.conns == nil {
+		s.conns = make(map[net.Conn]struct{})
+	}
+	s.conns[conn] = struct{}{}
+	s.connMu.Unlock()
+}
+
+func (s *Server) untrackConn(conn net.Conn) {
+	s.connMu.Lock()
+	delete(s.conns, conn)
+	s.connMu.Unlock()
+}
+
+func (s *Server) closeActiveConnections() {
+	s.connMu.Lock()
+	conns := make([]net.Conn, 0, len(s.conns))
+	for conn := range s.conns {
+		conns = append(conns, conn)
+	}
+	s.connMu.Unlock()
+	for _, conn := range conns {
+		_ = conn.Close()
 	}
 }
 
