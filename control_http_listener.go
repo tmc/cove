@@ -5,29 +5,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"sync"
+
+	"github.com/tmc/vz-macos/internal/controlserver"
 )
 
-// httpListeners tracks TCP listeners started by StartHTTP so Stop() can close them.
-type httpListeners struct {
-	mu  sync.Mutex
-	lns []net.Listener
-}
-
-func (h *httpListeners) add(ln net.Listener) {
-	h.mu.Lock()
-	h.lns = append(h.lns, ln)
-	h.mu.Unlock()
-}
-
-func (h *httpListeners) closeAll() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for _, ln := range h.lns {
-		ln.Close()
-	}
-	h.lns = nil
-}
+// httpListeners is an alias of controlserver.HTTPListeners. The type
+// lives in internal/controlserver so the network bridge (extracted
+// next) can hold it without crossing the package-main boundary.
+type httpListeners = controlserver.HTTPListeners
 
 // StartHTTP binds a TCP listener on addr and serves the per-VM HTTP API.
 // vmName is used in URL path matching (e.g. /v1/vms/<vmName>/status).
