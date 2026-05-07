@@ -7,24 +7,28 @@ import (
 )
 
 func TestCtlAgentExecUsesAutoRouteByDefault(t *testing.T) {
-	vmDir := shortSharedFolderVMDir(t)
-	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
-		{
-			wantType: "agent-exec-auto",
-			wantArgs: []string{"ls", "/etc/os-release"},
-			resp: &controlpb.ControlResponse{
-				Success: true,
-				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
-					ExitCode: 0,
-					Stdout:   "PRETTY_NAME=Ubuntu\n",
-				}},
-			},
-		},
-	})
-	defer stop()
+	for _, cmd := range []string{"exec", "agent-exec"} {
+		t.Run(cmd, func(t *testing.T) {
+			vmDir := shortSharedFolderVMDir(t)
+			stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+				{
+					wantType: "agent-exec-auto",
+					wantArgs: []string{"ls", "/etc/os-release"},
+					resp: &controlpb.ControlResponse{
+						Success: true,
+						Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+							ExitCode: 0,
+							Stdout:   "PRETTY_NAME=Ubuntu\n",
+						}},
+					},
+				},
+			})
+			defer stop()
 
-	if err := ctlCommand([]string{"-socket", GetControlSocketPathForVM(vmDir), "agent-exec", "ls", "/etc/os-release"}); err != nil {
-		t.Fatalf("ctlCommand() error = %v", err)
+			if err := ctlCommand([]string{"-socket", GetControlSocketPathForVM(vmDir), cmd, "ls", "/etc/os-release"}); err != nil {
+				t.Fatalf("ctlCommand() error = %v", err)
+			}
+		})
 	}
 }
 

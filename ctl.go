@@ -122,8 +122,9 @@ Guest agent (gRPC over vsock):
   agent-connect         Connect to guest agent
   agent-ping            Ping guest agent
   agent-info            Get guest system info
-  agent-exec <cmd> [args...]  Run command in guest (auto-routed by path)
-  agent-exec --daemon <cmd>   Run command via root daemon instead
+  exec <cmd> [args...]        Run command in guest (auto-routed by path)
+  exec --daemon <cmd>         Run command via root daemon instead
+  agent-exec <cmd> [args...]  Legacy alias for exec
   agent-exec-stream <cmd> [args...]  Stream command output (auto-routed by path)
   agent-exec-stream --daemon <cmd>   Stream via root daemon instead
   agent-cp <host> <guest>     Copy file host→guest (streaming)
@@ -173,8 +174,8 @@ Examples:
   cove ctl click-menu Utilities Terminal
   cove ctl step
   cove ctl -wait 60s agent-ping
-  cove ctl agent-exec ls /tmp
-  cove ctl agent-exec --daemon whoami
+  cove ctl exec ls /tmp
+  cove ctl exec --daemon whoami
   cove ctl -vm smoke ping
   cove ctl ready --require xcode-cli,go,homebrew
   cove ctl ready --require go --json
@@ -282,6 +283,9 @@ func ctlCommand(args []string) error {
 	// modify the slice without aliasing fs.Args()'s backing array.
 	cmdType := fs.Arg(0)
 	subArgs := append([]string{}, fs.Args()[1:]...)
+	if cmdType == "exec" {
+		cmdType = "agent-exec"
+	}
 
 	// Subcommands that own their flag parsing (including --daemon, -o, --) get
 	// the raw subArgs before the generic strippers below mangle them.
@@ -600,7 +604,7 @@ func ctlCommand(args []string) error {
 
 	case "agent-exec":
 		if len(subArgs) < 1 {
-			return fmt.Errorf("agent-exec requires at least one argument")
+			return fmt.Errorf("exec requires at least one argument")
 		}
 		if !useDaemon {
 			req.Type = "agent-exec-auto"
