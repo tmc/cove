@@ -72,7 +72,6 @@ type ControlServer struct {
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
 	activeConnections atomic.Int32
-	httpListeners     *httpListeners // TCP listeners started by StartHTTP
 	lifecycleMu       sync.RWMutex
 	lifecycleCtx      context.Context
 	lifecycleCancel   context.CancelFunc
