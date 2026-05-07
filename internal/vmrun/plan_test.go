@@ -226,6 +226,24 @@ func TestRunConfigJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestResolveISO(t *testing.T) {
+	rc := validRunConfig(GuestLinux)
+	if rc.ISOPath != "" {
+		t.Fatalf("test fixture leaks ISOPath = %q", rc.ISOPath)
+	}
+	rc.ResolveISO("/cache/ubuntu.iso")
+	if rc.ISOPath != "/cache/ubuntu.iso" {
+		t.Fatalf("ResolveISO did not set ISOPath, got %q", rc.ISOPath)
+	}
+	rc.ResolveISO("/cache/other.iso")
+	if rc.ISOPath != "/cache/other.iso" {
+		t.Fatalf("ResolveISO did not overwrite ISOPath, got %q", rc.ISOPath)
+	}
+
+	var nilRC *RunConfig
+	nilRC.ResolveISO("/x") // must not panic
+}
+
 func TestGuestOSString(t *testing.T) {
 	cases := map[GuestOS]string{
 		GuestUnknown: "unknown",

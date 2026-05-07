@@ -93,6 +93,18 @@ type RunConfig struct {
 	BootCommandsFile string
 }
 
+// ResolveISO records a host-resolved ISO path on the receiver. It is the
+// single sanctioned mutation entry for late ISO resolution: callers that
+// need to download or auto-pick install media after the RunConfig has been
+// constructed call ResolveISO so subsequent VM-build code reads the
+// resolved value from rc.ISOPath rather than from a package-level global.
+func (c *RunConfig) ResolveISO(path string) {
+	if c == nil {
+		return
+	}
+	c.ISOPath = path
+}
+
 // HostConfig is host-side context that does not vary per command invocation
 // but does affect VM construction (paths, profiles, helper modes).
 type HostConfig struct {

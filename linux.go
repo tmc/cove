@@ -24,8 +24,10 @@ import (
 )
 
 // buildLinuxVMConfiguration builds a VZVirtualMachineConfiguration for Linux.
-func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
-	rc := vmrunRunConfig(vmrun.GuestLinux)
+// rc carries the per-run intent (including any host-resolved ISO path); pass
+// the same value runLinuxVM threaded through ResolveISO. Callers that have
+// no live rc (the recovery / codec path) snapshot a fresh one from globals.
+func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
 	hc := vmrunHostConfig()
 
 	config := vz.NewVZVirtualMachineConfiguration()
@@ -94,11 +96,10 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// If ISO is provided, add it as second storage device (read-only).
-	// Read isoPath directly here because runLinuxVM may have just mutated
-	// the global to insert an auto-resolved ISO path; rc captured a stale
-	// value at function entry. Slice 6 retires this last global.
-	if isoPath != "" {
-		isoURL := foundation.NewURLFileURLWithPath(isoPath)
+	// rc.ISOPath reflects any host-side resolution runLinuxVM did via
+	// (*vmrun.RunConfig).ResolveISO before calling the builder.
+	if rc.ISOPath != "" {
+		isoURL := foundation.NewURLFileURLWithPath(rc.ISOPath)
 		isoAttachment, err := newDiskAttachment(isoURL, true, DiskCacheReadOnly)
 		if err != nil {
 			return config, fmt.Errorf("failed to create ISO attachment: %w", err)
@@ -458,7 +459,7 @@ func runLinuxVM() error {
 	// (no efi.nvram) or if the user explicitly provided an ISO.
 	if rc.KernelPath == "" {
 		if _, ok := loadInstalledLinuxBootArtifacts(hc.VMDir); ok {
-			isoPath = ""
+			rc.ResolveISO("")
 		} else {
 			efiStorePath := filepath.Join(hc.VMDir, "efi.nvram")
 			isoExplicit := false
@@ -473,7 +474,7 @@ func runLinuxVM() error {
 				if err != nil {
 					return fmt.Errorf("ensure ISO: %w", err)
 				}
-				isoPath = resolvedISO
+				rc.ResolveISO(resolvedISO)
 			} else if _, err := os.Stat(efiStorePath); os.IsNotExist(err) {
 				if _, markerErr := os.Stat(linuxInstalledMarkerPath(hc.VMDir)); markerErr == nil {
 					// The unattended installer completed previously. Create an EFI
@@ -485,7 +486,7 @@ func runLinuxVM() error {
 					if err != nil {
 						return fmt.Errorf("ensure ISO: %w", err)
 					}
-					isoPath = resolvedISO
+					rc.ResolveISO(resolvedISO)
 				}
 			}
 		}
@@ -511,7 +512,7 @@ func runLinuxVM() error {
 
 	// Build VM configuration
 	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
-	config, err := buildLinuxVMConfiguration(resolvedDiskPath)
+	config, err := buildLinuxVMConfiguration(rc, resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
 	}
