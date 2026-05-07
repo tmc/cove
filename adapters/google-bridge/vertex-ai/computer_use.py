@@ -375,13 +375,45 @@ def normalize_to_pixels(x: int, y: int, width: int, height: int) -> tuple[int, i
 
 def _http_post_json(url: str, headers: dict[str, str], body: dict[str, Any], timeout: float = 60.0) -> dict[str, Any]:
     payload = json.dumps(body).encode("utf-8")
+    attempts = int(os.environ.get("COVE_GOOGLE_BRIDGE_HTTP_RETRIES", "3"))
+    for attempt in range(max(1, attempts)):
+        try:
+            if httpx is not None:
+                r = httpx.post(url, headers=headers, content=payload, timeout=timeout)
+                r.raise_for_status()
+                return r.json()
+            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # type: ignore[union-attr]
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001 - normalize httpx and urllib errors.
+            code, retry_after = _http_error_status(exc)
+            if attempt + 1 >= attempts or code not in {429, 500, 502, 503, 504}:
+                raise
+            delay = retry_after or min(30.0, 2.0 ** attempt)
+            print(f"provider HTTP {code}; retrying in {delay:.1f}s", file=sys.stderr)
+            time.sleep(delay)
+    raise RuntimeError("unreachable")
+
+
+def _http_error_status(exc: Exception) -> tuple[int | None, float | None]:
     if httpx is not None:
-        r = httpx.post(url, headers=headers, content=payload, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
-    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # type: ignore[union-attr]
-        return json.loads(resp.read().decode("utf-8"))
+        response = getattr(exc, "response", None)
+        if response is not None:
+            return int(response.status_code), _retry_after(response.headers.get("retry-after"))
+    code = getattr(exc, "code", None)
+    headers = getattr(exc, "headers", None)
+    if isinstance(code, int):
+        return code, _retry_after(headers.get("Retry-After") if headers else None)
+    return None, None
+
+
+def _retry_after(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        return None
 
 
 # --- Vertex request shape ------------------------------------------------
