@@ -63,7 +63,7 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 		return &controlpb.ControlResponse{Error: errMsg}
 	}
 
-	outputImg := s.capture.diff(img, opts.Diff)
+	outputImg := s.capture.Diff(img, opts.Diff)
 
 	if scale < 1 {
 		outputImg = capture.ScaleImage(outputImg, scale)
