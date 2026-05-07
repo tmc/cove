@@ -77,12 +77,7 @@ PY
   done
   median="n/a"
   if [ "${#latencies[@]}" -gt 0 ]; then
-    median="$(printf '%s\n' "${latencies[@]}" | sort -n | python3 - <<'PY'
-import sys
-vals=[float(x) for x in sys.stdin if x.strip()]
-print("n/a" if not vals else f"{vals[len(vals)//2]:.3f}")
-PY
-)"
+    median="$(printf '%s\n' "${latencies[@]}" | sort -n | python3 -c 'import sys; vals=[float(x) for x in sys.stdin if x.strip()]; print("n/a" if not vals else f"{vals[len(vals)//2]:.3f}")')"
   fi
   err_rate="$(python3 - "$errors" "$runs" <<'PY'
 import sys
