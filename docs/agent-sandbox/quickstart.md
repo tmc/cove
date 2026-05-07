@@ -20,7 +20,7 @@ export GOOGLE_CLOUD_PROJECT=my-project
 Check auth and network reachability:
 
 ```bash
-cove agent-sandbox doctor --provider anthropic
+cove agent-sandbox doctor --provider all
 ```
 
 Switch provider with one flag:
@@ -31,3 +31,7 @@ cove agent-sandbox run --provider vertex --image agentkit/macos-base:latest --ta
 ```
 
 Every run writes a replay bundle under `~/.vz/runs/<run-id>/replay`.
+
+Provider benchmark protocols live in `bench/agent-sandbox-providers/`. Use
+`cove agent-sandbox bench --provider all` to record the protocol without API
+calls, or add `--live` after `doctor --provider all` passes on the host.
