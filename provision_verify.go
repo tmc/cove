@@ -29,6 +29,9 @@ type VerifyResult struct {
 
 // handleVerify verifies provisioning files in a VM disk
 func handleVerify(args []string) error {
+	if len(args) > 0 && args[0] == "tcc-preauth" {
+		return runPreAuth(args[1:])
+	}
 	fs, verboseFlag, fixFlag, tccPathFlag, vmFlag := newVerifyFlagSet()
 
 	if err := fs.Parse(args); err != nil {
