@@ -64,17 +64,11 @@ type ControlServer struct {
 	windowTitleBase   string
 	windowTitleState  string
 	windowTitleLabel  string
-	policyMu          sync.Mutex
-	policyStartedAt   time.Time
-	policyExecCount   int64
-	policyStopIssued  bool
+	life              lifecycleBridge // cancellable lifecycle ctx + policy counters (owns its own mutexes)
 	gui               VMGUIController
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
 	activeConnections atomic.Int32
-	lifecycleMu       sync.RWMutex
-	lifecycleCtx      context.Context
-	lifecycleCancel   context.CancelFunc
 
 	opsMu  sync.Mutex                    // guards opsReg lazy init
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
@@ -104,13 +98,11 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 	if vmDirectory == "" {
 		vmDirectory = vmDir
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	s := &ControlServer{
-		socketPath:      socketPath,
-		vmDir:           vmDirectory,
-		lifecycleCtx:    ctx,
-		lifecycleCancel: cancel,
+		socketPath: socketPath,
+		vmDir:      vmDirectory,
 	}
+	s.life.start()
 	s.bridge.cs = s
 	s.network.cs = s
 	capture, input := resolveAutomationBackends()
@@ -120,16 +112,11 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 }
 
 func (s *ControlServer) lifecycleContext() context.Context {
-	s.lifecycleMu.RLock()
-	defer s.lifecycleMu.RUnlock()
-	if s.lifecycleCtx == nil {
-		return context.Background()
-	}
-	return s.lifecycleCtx
+	return s.life.context()
 }
 
 func (s *ControlServer) timeoutContext(timeout time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(s.lifecycleContext(), timeout)
+	return s.life.timeoutContext(timeout)
 }
 
 func (s *ControlServer) captureBackend() automationBackendMode {
@@ -194,33 +181,19 @@ func (s *ControlServer) SetVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 }
 
 func (s *ControlServer) setPolicyStartTime(now time.Time) {
-	s.policyMu.Lock()
-	if s.policyStartedAt.IsZero() {
-		s.policyStartedAt = now
-	}
-	s.policyMu.Unlock()
+	s.life.setPolicyStartTime(now)
 }
 
 func (s *ControlServer) policySnapshot() (time.Time, int64, bool) {
-	s.policyMu.Lock()
-	defer s.policyMu.Unlock()
-	return s.policyStartedAt, s.policyExecCount, s.policyStopIssued
+	return s.life.policySnapshot()
 }
 
 func (s *ControlServer) notePolicyExec() {
-	s.policyMu.Lock()
-	s.policyExecCount++
-	s.policyMu.Unlock()
+	s.life.notePolicyExec()
 }
 
 func (s *ControlServer) markPolicyStopIssued() bool {
-	s.policyMu.Lock()
-	defer s.policyMu.Unlock()
-	if s.policyStopIssued {
-		return false
-	}
-	s.policyStopIssued = true
-	return true
+	return s.life.markPolicyStopIssued()
 }
 
 func (s *ControlServer) SetWindowTitleBase(base string) {
@@ -259,12 +232,7 @@ func (s *ControlServer) WindowTitle() string {
 
 // Start begins listening on the Unix socket
 func (s *ControlServer) Start() error {
-	s.lifecycleMu.Lock()
-	if s.lifecycleCtx == nil || s.lifecycleCancel == nil {
-		s.lifecycleCtx, s.lifecycleCancel = context.WithCancel(context.Background())
-	}
-	lifecycleCtx := s.lifecycleCtx
-	s.lifecycleMu.Unlock()
+	lifecycleCtx := s.life.start()
 	if s.authToken == "" {
 		token, err := EnsureControlTokenForVM(s.effectiveVMDir())
 		if err != nil {
@@ -300,14 +268,7 @@ func (s *ControlServer) Stop() {
 	proxyCtx, cancel := s.timeoutContext(5 * time.Second)
 	s.network.stopITerm2Proxy(proxyCtx)
 	cancel()
-	s.lifecycleMu.Lock()
-	lifecycleCancel := s.lifecycleCancel
-	s.lifecycleCancel = nil
-	s.lifecycleCtx = nil
-	s.lifecycleMu.Unlock()
-	if lifecycleCancel != nil {
-		lifecycleCancel()
-	}
+	s.life.shutdown()
 	s.network.stopPortForwards()
 	s.network.closeHTTPListeners()
 	if s.listener != nil {
