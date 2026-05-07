@@ -1288,16 +1288,19 @@ func handleList() {
 	} else {
 		fmt.Println("VMs:")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tOS\tSTATE\tSIZE\tCREATED\tACTIVE")
+		fmt.Fprintln(w, "  NAME\tOS\tSTATE\tUPTIME\tNOTE\tSIZE\tCREATED\tACTIVE")
 		for _, vm := range vms {
 			active := ""
 			if vm.Name == activeVM {
 				active = "*"
 			}
-			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
+			uptime, note := runtimeListFields(vm.Path, vm.State)
+			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				vm.Name,
 				vm.OSType,
 				vm.State,
+				uptime,
+				note,
 				bytefmt.Size(vm.DiskSize),
 				vm.Created.Format("2006-01-02"),
 				active)
@@ -1332,6 +1335,43 @@ func handleList() {
 		fmt.Println()
 		fmt.Println("Remove with: cove vm delete <name>")
 	}
+}
+
+func runtimeListFields(vmPath, state string) (string, string) {
+	if state != "starting" {
+		return "-", "-"
+	}
+	rt, err := readVMRuntimeState(vmPath)
+	if err != nil || rt.PID <= 0 || !processLive(rt.PID) {
+		return "-", "-"
+	}
+	note := strings.TrimSpace(rt.Phase)
+	if note == "" {
+		note = "starting"
+	}
+	note = fmt.Sprintf("%s (pid=%d)", note, rt.PID)
+	since := rt.LastPhaseAt
+	if since.IsZero() {
+		since = rt.UpdatedAt
+	}
+	if since.IsZero() {
+		return "-", note
+	}
+	return shortDuration(time.Since(since)), note
+}
+
+func shortDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return d.String()
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm%02ds", int(d/time.Minute), int(d%time.Minute/time.Second))
+	}
+	return fmt.Sprintf("%dh%02dm", int(d/time.Hour), int(d%time.Hour/time.Minute))
 }
 
 // handleClone handles the clone subcommand.

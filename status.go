@@ -7,6 +7,14 @@ import (
 )
 
 func statusCommand() error {
+	if !isVMRunningAt(vmDir) {
+		state := detectVMState(vmDir)
+		if state == "starting" {
+			_, note := runtimeListFields(vmDir, state)
+			fmt.Printf("starting: %s\n", note)
+			return nil
+		}
+	}
 	client := NewControlClient(GetControlSocketPath())
 	osName, err := detectGuestOS(client)
 	if err != nil {

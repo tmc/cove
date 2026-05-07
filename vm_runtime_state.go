@@ -13,20 +13,30 @@ import (
 const vmRuntimeStateFile = "runtime.json"
 
 type vmRuntimeState struct {
-	State     string    `json:"state"`
-	PID       int       `json:"pid"`
-	UpdatedAt time.Time `json:"updated_at"`
+	State       string    `json:"state"`
+	Phase       string    `json:"phase,omitempty"`
+	PID         int       `json:"pid"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	LastPhaseAt time.Time `json:"last_phase_at,omitempty"`
 }
 
 func writeVMRuntimeState(vmDir, state string) error {
+	return writeVMRuntimePhase(vmDir, state, "")
+}
+
+func writeVMRuntimePhase(vmDir, state, phase string) error {
 	state = strings.TrimSpace(state)
 	if vmDir == "" || state == "" {
 		return nil
 	}
+	phase = strings.TrimSpace(phase)
+	now := time.Now().UTC()
 	rt := vmRuntimeState{
-		State:     state,
-		PID:       os.Getpid(),
-		UpdatedAt: time.Now().UTC(),
+		State:       state,
+		Phase:       phase,
+		PID:         os.Getpid(),
+		UpdatedAt:   now,
+		LastPhaseAt: now,
 	}
 	data, err := json.MarshalIndent(rt, "", "  ")
 	if err != nil {
@@ -54,6 +64,7 @@ func readVMRuntimeState(vmDir string) (vmRuntimeState, error) {
 		return vmRuntimeState{}, fmt.Errorf("parse runtime state: %w", err)
 	}
 	rt.State = canonicalVMState(rt.State)
+	rt.Phase = strings.TrimSpace(rt.Phase)
 	return rt, nil
 }
 
@@ -63,6 +74,9 @@ func detectRuntimeState(vmDir string) string {
 		return ""
 	}
 	if !isRunLockHeld(vmDir) {
+		return ""
+	}
+	if rt.PID > 0 && !processLive(rt.PID) {
 		return ""
 	}
 	switch rt.State {
@@ -84,6 +98,12 @@ func isRunLockHeld(vmDir string) bool {
 
 func noteVMRuntimeState(vmDir, state string) {
 	if err := writeVMRuntimeState(vmDir, state); err != nil && verbose {
+		fmt.Fprintf(os.Stderr, "warning: write runtime state: %v\n", err)
+	}
+}
+
+func noteVMRuntimePhase(vmDir, state, phase string) {
+	if err := writeVMRuntimePhase(vmDir, state, phase); err != nil && verbose {
 		fmt.Fprintf(os.Stderr, "warning: write runtime state: %v\n", err)
 	}
 }

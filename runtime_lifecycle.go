@@ -181,6 +181,7 @@ func runVMWithConfig(cfg RunConfig) error {
 	if err != nil {
 		return fmt.Errorf("cove run: %w", err)
 	}
+	noteVMRuntimePhase(vmDir, "starting", "configuring")
 	defer func() {
 		if releaseErr := lock.Release(); releaseErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)

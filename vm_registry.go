@@ -67,6 +67,9 @@ func detectVMState(vmPath string) string {
 	if state := detectRuntimeState(vmPath); state != "" {
 		return state
 	}
+	if isRunLockHeld(vmPath) {
+		return "starting"
+	}
 	if vmconfig.HasSuspendState(vmPath) {
 		return "suspended"
 	}
