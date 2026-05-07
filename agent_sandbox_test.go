@@ -73,6 +73,51 @@ func TestAgentSandboxDoctorFailsMissingEnv(t *testing.T) {
 	}
 }
 
+func TestAgentSandboxDoctorAll(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "test")
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	t.Setenv("GEMINI_API_KEY", "test")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "test")
+	old := agentSandboxDoctorDial
+	t.Cleanup(func() { agentSandboxDoctorDial = old })
+	agentSandboxDoctorDial = func(context.Context, string, string) (net.Conn, error) {
+		return fakeConn{}, nil
+	}
+	var b strings.Builder
+	if err := runAgentSandboxDoctorAll(context.Background(), &b); err != nil {
+		t.Fatalf("doctor all: %v\n%s", err, b.String())
+	}
+	out := b.String()
+	for _, want := range []string{"provider=openai", "provider=anthropic", "provider=gemini", "provider=vertex"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor all missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAgentSandboxDoctorAllReportsFailedProviders(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "test")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
+	t.Setenv("COVE_VERTEX_PROJECT", "")
+	old := agentSandboxDoctorDial
+	t.Cleanup(func() { agentSandboxDoctorDial = old })
+	agentSandboxDoctorDial = func(context.Context, string, string) (net.Conn, error) {
+		return fakeConn{}, nil
+	}
+	var b strings.Builder
+	err := runAgentSandboxDoctorAll(context.Background(), &b)
+	if err == nil {
+		t.Fatalf("doctor all succeeded:\n%s", b.String())
+	}
+	for _, want := range []string{"anthropic", "gemini", "vertex"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("doctor all error = %v, want %q", err, want)
+		}
+	}
+}
+
 func TestParseAgentSandboxRunArgsProviderSwitchOnly(t *testing.T) {
 	base := []string{"--image", "agentkit/macos-base:latest", "--task", "describe desktop"}
 	for _, provider := range []string{"openai", "anthropic", "gemini", "vertex"} {
