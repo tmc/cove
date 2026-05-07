@@ -24,7 +24,7 @@ type commandSpec struct {
 	Aliases  []string
 	Summary  string
 	Dispatch commandDispatch
-	Run      func(name string, args []string) int
+	Run      func(env commandEnv, name string, args []string) int
 }
 
 var commandRegistry = []commandSpec{
@@ -112,148 +112,208 @@ func commandNames() []string {
 	return names
 }
 
-func runRegisteredCommand(spec *commandSpec, name string, args []string) int {
+func runRegisteredCommand(env commandEnv, spec *commandSpec, name string, args []string) int {
 	if spec == nil || spec.Run == nil {
 		return 2
 	}
-	return spec.Run(name, args)
+	return spec.Run(env, name, args)
 }
 
-func commandError(err error) int {
+func commandError(env commandEnv, err error) int {
 	if err == nil {
 		return 0
 	}
-	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	fmt.Fprintf(env.Stderr, "error: %v\n", err)
 	return 1
 }
 
-func runActionCommand(_ string, args []string) int {
+func runActionCommand(_ commandEnv, _ string, args []string) int {
 	return handleActionCommand(args)
 }
 
-func runAgentSandboxCommand(_ string, args []string) int {
-	return commandError(handleAgentSandboxCommand(args))
+func runAgentSandboxCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleAgentSandboxCommand(args))
 }
-func runAgentUpgradeCommand(_ string, _ []string) int { return commandError(upgradeAgent()) }
-func runBenchCommand(_ string, args []string) int     { return commandError(handleBenchCommand(args)) }
-func runBuildCommand(_ string, args []string) int     { return commandError(handleBuild(args)) }
-func runCompactCommand(_ string, args []string) int   { return commandError(handleCompact(args)) }
-func runCpCommand(_ string, args []string) int        { return commandError(handleCpCommand(args)) }
-func runCtlCommand(_ string, args []string) int       { return commandError(ctlCommand(args)) }
-func runDaemonCommand(_ string, args []string) int    { return commandError(daemonCommand(args)) }
-func runDiffCommand(_ string, args []string) int      { return commandError(diffCommand(args)) }
-func runFleetCommandSpec(_ string, args []string) int { return commandError(handleFleetCommand(args)) }
-func runForwardCommand(_ string, args []string) int   { return commandError(forwardCommand(args)) }
-func runGCCommand(_ string, args []string) int        { return commandError(handleGCCommand(args)) }
-func runImageCommand(_ string, args []string) int     { return commandError(handleImageCommand(args)) }
-func runLogsCommand(_ string, args []string) int      { return commandError(logsCommand(args)) }
-func runPolicyCommand(_ string, args []string) int    { return commandError(handlePolicyCommand(args)) }
-func runPullCommand(_ string, args []string) int      { return commandError(handlePull(args)) }
-func runPushCommand(_ string, args []string) int      { return commandError(handlePush(args)) }
-func runQuotaCommand(_ string, args []string) int     { return commandError(handleQuotaCommand(args)) }
-func runRunsCommand(_ string, args []string) int      { return commandError(handleRunsCommand(args)) }
-func runSecretCommand(_ string, args []string) int    { return commandError(handleSecretCommand(args)) }
-func runShellCommand(_ string, args []string) int     { return commandError(shellCommand(args)) }
-func runSIPCommand(_ string, args []string) int       { return commandError(handleSIPCommand(args)) }
-func runSoftresetCommand(_ string, args []string) int { return commandError(softresetCommand(args)) }
-func runStoreCommand(_ string, args []string) int     { return commandError(handleStoreCommand(args)) }
-func runUpCommand(_ string, args []string) int        { return commandError(handleUp(args)) }
-func runVerifyCommand(_ string, args []string) int    { return commandError(handleVerify(args)) }
-func runVZScriptCommand(_ string, args []string) int  { return commandError(vzscriptCommand(args)) }
+func runAgentUpgradeCommand(env commandEnv, _ string, _ []string) int {
+	return commandError(env, upgradeAgent())
+}
+func runBenchCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleBenchCommand(args))
+}
+func runBuildCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleBuild(args))
+}
+func runCompactCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleCompact(args))
+}
+func runCpCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleCpCommand(args))
+}
+func runCtlCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, ctlCommand(args))
+}
+func runDaemonCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, daemonCommand(args))
+}
+func runDiffCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, diffCommand(args))
+}
+func runFleetCommandSpec(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleFleetCommand(args))
+}
+func runForwardCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, forwardCommand(args))
+}
+func runGCCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleGCCommand(args))
+}
+func runImageCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleImageCommand(args))
+}
+func runLogsCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, logsCommand(args))
+}
+func runPolicyCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handlePolicyCommand(args))
+}
+func runPullCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handlePull(args))
+}
+func runPushCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handlePush(args))
+}
+func runQuotaCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleQuotaCommand(args))
+}
+func runRunsCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleRunsCommand(args))
+}
+func runSecretCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleSecretCommand(args))
+}
+func runShellCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, shellCommand(args))
+}
+func runSIPCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleSIPCommand(args))
+}
+func runSoftresetCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, softresetCommand(args))
+}
+func runStoreCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleStoreCommand(args))
+}
+func runUpCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleUp(args))
+}
+func runVerifyCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleVerify(args))
+}
+func runVZScriptCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, vzscriptCommand(args))
+}
 
-func runCleanCommand(_ string, _ []string) int { return commandError(cleanVM()) }
-func runCloneCommand(_ string, args []string) int {
+func runCleanCommand(env commandEnv, _ string, _ []string) int { return commandError(env, cleanVM()) }
+func runCloneCommand(_ commandEnv, _ string, args []string) int {
 	handleClone(args)
 	return 0
 }
-func runDiskSnapshotCommand(_ string, args []string) int {
-	return commandError(handleDiskSnapshotCommand(args))
+func runDiskSnapshotCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleDiskSnapshotCommand(args))
 }
-func runHelperCommandSpec(_ string, args []string) int { return commandError(runHelperCmd(args)) }
-func runListCommand(_ string, _ []string) int {
-	handleList()
+func runHelperCommandSpec(env commandEnv, _ string, args []string) int {
+	return commandError(env, runHelperCmd(args))
+}
+func runListCommand(env commandEnv, _ string, _ []string) int {
+	if err := handleListTo(env.Stdout); err != nil {
+		return commandError(env, err)
+	}
 	return 0
 }
-func runNetworkCommandSpec(_ string, args []string) int {
+func runNetworkCommandSpec(_ commandEnv, _ string, args []string) int {
 	handleNetworkCommand(args)
 	return 0
 }
-func runPITCommandSpec(_ string, args []string) int { return commandError(handlePITCommand(args)) }
-func runRosettaCommandSpec(_ string, args []string) int {
-	return commandError(handleRosettaCommand(args))
+func runPITCommandSpec(env commandEnv, _ string, args []string) int {
+	return commandError(env, handlePITCommand(args))
 }
-func runRunCommand(_ string, _ []string) int {
+func runRosettaCommandSpec(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleRosettaCommand(args))
+}
+func runRunCommand(_ commandEnv, _ string, _ []string) int {
 	handleRun()
 	return 0
 }
-func runSnapshotCommandSpec(_ string, args []string) int {
+func runSnapshotCommandSpec(_ commandEnv, _ string, args []string) int {
 	handleSnapshotCommand(args)
 	return 0
 }
-func runStatusCommand(_ string, _ []string) int { return commandError(statusCommand()) }
-func runTemplateCommand(_ string, args []string) int {
+func runStatusCommand(env commandEnv, _ string, _ []string) int {
+	return commandError(env, statusCommand())
+}
+func runTemplateCommand(_ commandEnv, _ string, args []string) int {
 	handleTemplate(args)
 	return 0
 }
-func runVMCommandSpec(_ string, args []string) int {
+func runVMCommandSpec(_ commandEnv, _ string, args []string) int {
 	handleVMCommand(args)
 	return 0
 }
 
-func runVersionCommand(_ string, _ []string) int {
-	fmt.Println(versionInfo())
+func runVersionCommand(env commandEnv, _ string, _ []string) int {
+	fmt.Fprintln(env.Stdout, versionInfo())
 	return 0
 }
 
-func runProvisionCommand(name string, args []string) int {
+func runProvisionCommand(env commandEnv, name string, args []string) int {
 	if name == "inject" {
-		fmt.Fprintf(os.Stderr, "note: 'inject' has been renamed to 'provision'\n")
+		fmt.Fprintf(env.Stderr, "note: 'inject' has been renamed to 'provision'\n")
 	}
-	return commandError(handleProvision(args))
+	return commandError(env, handleProvision(args))
 }
 
-func runProvisionAgentCommand(name string, _ []string) int {
+func runProvisionAgentCommand(env commandEnv, name string, _ []string) int {
 	if name == "inject-agent" {
-		fmt.Fprintf(os.Stderr, "note: 'inject-agent' has been renamed to 'provision-agent'\n")
+		fmt.Fprintf(env.Stderr, "note: 'inject-agent' has been renamed to 'provision-agent'\n")
 	}
-	return commandError(provisionAgent())
+	return commandError(env, provisionAgent())
 }
 
-func runSharedFolderCommand(_ string, args []string) int {
+func runSharedFolderCommand(env commandEnv, _ string, args []string) int {
 	if sharedFolderCommandBlocked(args) {
-		fmt.Fprintf(os.Stderr, "error: -sandbox-level %s does not allow shared-folder mutations\n", sandboxLevel)
+		fmt.Fprintf(env.Stderr, "error: -sandbox-level %s does not allow shared-folder mutations\n", sandboxLevel)
 		return 1
 	}
-	return commandError(handleVMSharedFolderCommand(args))
+	return commandError(env, handleVMSharedFolderCommand(args))
 }
 
-func runDiskDetachCommand(_ string, _ []string) int {
+func runDiskDetachCommand(env commandEnv, _ string, _ []string) int {
 	diskFile := filepath.Join(vmDir, "disk.img")
 	if err := disk.EnsureDetached(diskFile); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(env.Stderr, "error: %v\n", err)
 		return 1
 	}
 	if verbose {
-		fmt.Println("Disk detached successfully.")
+		fmt.Fprintln(env.Stdout, "Disk detached successfully.")
 	}
 	return 0
 }
 
-func runUIScriptCommand(_ string, _ []string) int {
-	fmt.Fprintf(os.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'cove vzscript' instead.\n")
+func runUIScriptCommand(env commandEnv, _ string, _ []string) int {
+	fmt.Fprintf(env.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'cove vzscript' instead.\n")
 	return 0
 }
 
-func runServeCommandSpec(_ string, args []string) int {
-	return commandError(runServeCmd(args))
+func runServeCommandSpec(env commandEnv, _ string, args []string) int {
+	return commandError(env, runServeCmd(args))
 }
 
-func runForkCommand(_ string, args []string) int {
+func runForkCommand(_ commandEnv, _ string, args []string) int {
 	handleFork(args)
 	return 0
 }
 
-func runInstallCommand(_ string, _ []string) int {
+func runInstallCommand(env commandEnv, _ string, _ []string) int {
 	installVM = true
 	var err error
 	if windowsMode {
@@ -265,35 +325,35 @@ func runInstallCommand(_ string, _ []string) int {
 	}
 	if errors.Is(err, errRestartVM) {
 		if err := runMacOSVM(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Fprintf(env.Stderr, "error: %v\n", err)
 			return 1
 		}
 	} else if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(env.Stderr, "error: %v\n", err)
 		return 1
 	}
 	if installVZScripts != "" {
 		if err := runPostInstallVZScripts(installVZScripts); err != nil {
-			fmt.Fprintf(os.Stderr, "error: running vzscripts: %v\n", err)
+			fmt.Fprintf(env.Stderr, "error: running vzscripts: %v\n", err)
 			return 1
 		}
 	}
 	return 0
 }
 
-func runVMDeleteAliasCommand(_ string, args []string) int {
+func runVMDeleteAliasCommand(_ commandEnv, _ string, args []string) int {
 	handleVMCommand(append([]string{"delete"}, args...))
 	return 0
 }
 
-func runVMSubcommand(name string, args []string) int {
+func runVMSubcommand(_ commandEnv, name string, args []string) int {
 	handleVMCommand(append([]string{name}, args...))
 	return 0
 }
 
 func runLegacyInstallFlag() int {
 	fmt.Fprintf(os.Stderr, "warning: -install flag is deprecated, use 'cove install' command instead\n")
-	return runInstallCommand("install", nil)
+	return runInstallCommand(newCommandEnv(), "install", nil)
 }
 
 func runLegacyRunFlag() int {
