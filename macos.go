@@ -468,7 +468,7 @@ func runMacOSVM() error {
 	if verbose {
 		fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
 	}
-	noteVMRuntimeState(target.Directory, "starting")
+	noteVMRuntimePhase(target.Directory, "starting", "building-config")
 	config, err := buildVMConfiguration(resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
@@ -481,6 +481,7 @@ func runMacOSVM() error {
 	vmQueue := dispatch.QueueCreate("com.appledocs.vz.vmqueue")
 
 	// Create VM with dispatch queue
+	noteVMRuntimePhase(target.Directory, "starting", "creating-vm")
 	vm := vz.NewVirtualMachineWithConfigurationQueue(&config, vmQueue)
 	if vm.ID == 0 {
 		return fmt.Errorf("failed to create virtual machine")
@@ -1280,6 +1281,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 	} else {
 		fmt.Println("Starting virtual machine...")
 	}
+	noteVMRuntimePhase(currentVMSelection().Directory, "starting", "awaiting-start")
 	started := time.Now()
 	startErr := beginVMStart(vm, queue)
 	if err := waitForVMStart(vm, queue, startErr, pumpRunLoop, vmStartDiagnostics{

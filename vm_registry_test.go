@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -134,6 +136,22 @@ func TestVMInfoState(t *testing.T) {
 		}
 	})
 
+	t.Run("starting while run lock held before runtime state", func(t *testing.T) {
+		vmPath := makeTestVMDir(t)
+		lock, err := AcquireRunLock(vmPath)
+		if err != nil {
+			t.Fatalf("AcquireRunLock() error = %v", err)
+		}
+		defer lock.Release()
+		info, err := vmconfig.InfoFor(vmPath, detectVMState)
+		if err != nil {
+			t.Fatalf("vmconfig.InfoFor() error = %v", err)
+		}
+		if info.State != "starting" {
+			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "starting")
+		}
+	})
+
 	t.Run("stale runtime state ignored without run lock", func(t *testing.T) {
 		vmPath := makeTestVMDir(t)
 		if err := writeVMRuntimeState(vmPath, "starting"); err != nil {
@@ -147,6 +165,55 @@ func TestVMInfoState(t *testing.T) {
 			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "stopped")
 		}
 	})
+
+	t.Run("dead runtime pid ignored", func(t *testing.T) {
+		vmPath := makeTestVMDir(t)
+		if err := writeVMRuntimeStateForTest(vmPath, vmRuntimeState{
+			State:       "starting",
+			Phase:       "configuring",
+			PID:         999999,
+			UpdatedAt:   time.Now().UTC(),
+			LastPhaseAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("writeVMRuntimeStateForTest() error = %v", err)
+		}
+		info, err := vmconfig.InfoFor(vmPath, detectVMState)
+		if err != nil {
+			t.Fatalf("vmconfig.InfoFor() error = %v", err)
+		}
+		if info.State != "stopped" {
+			t.Fatalf("vmconfig.InfoFor().State = %q, want %q", info.State, "stopped")
+		}
+	})
+}
+
+func TestRuntimeListFieldsStarting(t *testing.T) {
+	vmPath := makeTestVMDir(t)
+	when := time.Now().Add(-23 * time.Second).UTC()
+	if err := writeVMRuntimeStateForTest(vmPath, vmRuntimeState{
+		State:       "starting",
+		Phase:       "configuring",
+		PID:         os.Getpid(),
+		UpdatedAt:   when,
+		LastPhaseAt: when,
+	}); err != nil {
+		t.Fatalf("writeVMRuntimeStateForTest() error = %v", err)
+	}
+	uptime, note := runtimeListFields(vmPath, "starting")
+	if uptime == "-" {
+		t.Fatal("uptime = -, want duration")
+	}
+	if note != fmt.Sprintf("configuring (pid=%d)", os.Getpid()) {
+		t.Fatalf("note = %q, want configuring pid note", note)
+	}
+}
+
+func writeVMRuntimeStateForTest(vmPath string, rt vmRuntimeState) error {
+	data, err := json.Marshal(rt)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(vmPath, vmRuntimeStateFile), append(data, '\n'), 0644)
 }
 
 func makeTestVMDir(t *testing.T) string {
