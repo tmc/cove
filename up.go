@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/controlserver"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 	"golang.org/x/tools/txtar"
@@ -264,6 +265,7 @@ func applyUpConfig(cfg upConfig) {
 	memoryGB = cfg.memoryGB
 	diskSizeGB = cfg.diskSizeGB
 	verbose = cfg.verbose
+	controlserver.Verbose = cfg.verbose
 	guiMode = cfg.gui
 	automationBackend = cfg.automationBackend
 	automationCaptureBackend = cfg.automationCaptureBackend

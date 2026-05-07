@@ -63,7 +63,7 @@ func TestClearPortForwardManager(t *testing.T) {
 	if got := s.clearPortForwardManager(); got != manager {
 		t.Fatalf("clearPortForwardManager = %p, want %p", got, manager)
 	}
-	if got := s.network.clearPortForwardManager(); got != nil {
+	if got := s.network.ClearPortForwards(); got != nil {
 		t.Fatalf("clearPortForwardManager left manager installed: %p", got)
 	}
 }
