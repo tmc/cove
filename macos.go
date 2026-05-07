@@ -797,12 +797,20 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
 	setEntropyDevices(config, entropyConfig)
 
-	// Audio with host input/output streams
-	audioConfig, err := createAudioDeviceConfiguration()
-	if err != nil {
-		fmt.Printf("warning: audio config: %v\n", err)
-	} else {
-		setAudioDevices(config, audioConfig)
+	// Audio with host input/output streams.
+	// Plan() decides whether the guest gets a VirtioSound device. For
+	// macOS the answer is always yes (host streams are required for
+	// installation; see CLAUDE.md DFU 3004/4014). If Plan errors we
+	// fall back to attaching audio anyway — the prior behavior — so
+	// validation surfaces happen later via the framework, not here.
+	audioPlan, planErr := vmrun.Plan(rc, hc)
+	if planErr != nil || audioPlan.Audio.Enabled {
+		audioConfig, err := createAudioDeviceConfiguration()
+		if err != nil {
+			fmt.Printf("warning: audio config: %v\n", err)
+		} else {
+			setAudioDevices(config, audioConfig)
+		}
 	}
 
 	minimalProfile := hc.RuntimeProfile == "minimal"
