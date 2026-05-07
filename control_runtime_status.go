@@ -4,27 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/tmc/vz-macos/internal/controlserver"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-// VNCStatus reports the configured VNC runtime state.
-type VNCStatus struct {
-	Enabled     bool   `json:"enabled"`
-	Port        uint16 `json:"port,omitempty"`
-	State       string `json:"state,omitempty"`
-	ServiceName string `json:"service_name,omitempty"`
-	Description string `json:"description,omitempty"`
-}
+// VNCStatus is an alias of controlserver.VNCStatus. The type lives in
+// internal/controlserver so the network bridge (extracted next) can
+// hold it without crossing the package-main boundary.
+type VNCStatus = controlserver.VNCStatus
 
-// DebugStubStatus reports the configured debug stub runtime state.
-type DebugStubStatus struct {
-	Enabled     bool   `json:"enabled"`
-	Kind        string `json:"kind,omitempty"`
-	Port        uint16 `json:"port,omitempty"`
-	ListenAll   bool   `json:"listen_all,omitempty"`
-	State       string `json:"state,omitempty"`
-	Description string `json:"description,omitempty"`
-}
+// DebugStubStatus is an alias of controlserver.DebugStubStatus. See
+// VNCStatus for the placement rationale.
+type DebugStubStatus = controlserver.DebugStubStatus
 
 func (s *ControlServer) SetVNCStatus(status VNCStatus) {
 	s.network.setVNCStatus(status)
