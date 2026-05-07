@@ -159,6 +159,8 @@ func TestApplyProvisioningDoesNotWarnWhenNativeAuthAvailable(t *testing.T) {
 	}
 
 	t.Setenv("COVE_FORCE_MANUAL_ELEVATION", "")
+	t.Setenv("CLAUDECODE", "")
+	t.Setenv("IS_SANDBOX", "")
 	err := applyProvisioningFilesForVM(target)
 	if err == nil || !strings.Contains(err.Error(), "mount data volume") {
 		t.Fatalf("applyProvisioningFilesForVM error = %v, want mount error", err)
