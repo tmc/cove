@@ -17,6 +17,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmrun"
 	winsetup "github.com/tmc/vz-macos/internal/windows"
 	"github.com/tmc/vz-macos/internal/windows/esd"
 )
@@ -61,6 +62,8 @@ func parseWindowsSerialMode(s string) (windowsSerial, error) {
 }
 
 func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
+	rc := vmrunRunConfig(vmrun.GuestWindows)
+
 	config, err := buildWindowsBaseConfiguration()
 	if err != nil {
 		return config, err
@@ -72,8 +75,8 @@ func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfi
 	}
 	storageDevices := []vz.VZStorageDeviceConfiguration{storage}
 
-	if isoPath != "" {
-		isoStorage, err := windowsUSBStorageDevice(resolvePath(isoPath), true)
+	if rc.ISOPath != "" {
+		isoStorage, err := windowsUSBStorageDevice(resolvePath(rc.ISOPath), true)
 		if err != nil {
 			return config, fmt.Errorf("attach windows ISO: %w", err)
 		}
@@ -90,6 +93,8 @@ func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfi
 }
 
 func buildWindowsInstallConfiguration(diskImagePath, windowsISO string) (vz.VZVirtualMachineConfiguration, error) {
+	hc := vmrunHostConfig()
+
 	config, err := buildWindowsBaseConfiguration()
 	if err != nil {
 		return config, err
@@ -112,7 +117,7 @@ func buildWindowsInstallConfiguration(diskImagePath, windowsISO string) (vz.VZVi
 	if err != nil {
 		return config, fmt.Errorf("attach windows ISO: %w", err)
 	}
-	autounattendISO, err := winsetup.CreateAutounattendISO(vmDir, winsetup.DefaultProvisionConfig())
+	autounattendISO, err := winsetup.CreateAutounattendISO(hc.VMDir, winsetup.DefaultProvisionConfig())
 	if err != nil {
 		return config, fmt.Errorf("create windows autounattend ISO: %w", err)
 	}
@@ -140,9 +145,11 @@ func buildWindowsInstallConfiguration(diskImagePath, windowsISO string) (vz.VZVi
 }
 
 func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
+	rc := vmrunRunConfig(vmrun.GuestWindows)
+
 	config := vz.NewVZVirtualMachineConfiguration()
-	config.SetCPUCount(cpuCount)
-	config.SetMemorySize(memoryGB * 1024 * 1024 * 1024)
+	config.SetCPUCount(rc.CPUCount)
+	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
 
 	platformConfig := vz.NewVZGenericPlatformConfiguration()
 	machineID := loadOrCreateWindowsMachineIdentifier()
@@ -159,7 +166,7 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 		return config, err
 	}
 
-	netConfig, err := ParseNetworkMode(networkMode)
+	netConfig, err := ParseNetworkMode(rc.NetworkMode)
 	if err != nil {
 		return config, fmt.Errorf("parse network mode: %w", err)
 	}
@@ -213,7 +220,8 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 }
 
 func createWindowsSerialConsoleConfig() (vz.VZSerialPortConfiguration, error) {
-	mode, err := parseWindowsSerialMode(windowsSerialMode)
+	rc := vmrunRunConfig(vmrun.GuestWindows)
+	mode, err := parseWindowsSerialMode(rc.WindowsSerialMode)
 	if err != nil {
 		return vz.VZSerialPortConfiguration{}, err
 	}
@@ -257,7 +265,8 @@ func createWindowsSerialConsoleConfig() (vz.VZSerialPortConfiguration, error) {
 }
 
 func setWindowsGraphicsDevices(config vz.VZVirtualMachineConfiguration) error {
-	mode, err := parseWindowsGraphicsMode(windowsGraphicsMode)
+	rc := vmrunRunConfig(vmrun.GuestWindows)
+	mode, err := parseWindowsGraphicsMode(rc.WindowsGraphicsMode)
 	if err != nil {
 		return err
 	}
@@ -265,7 +274,10 @@ func setWindowsGraphicsDevices(config vz.VZVirtualMachineConfiguration) error {
 	case windowsGraphicsLinearFramebuffer:
 		return setWindowsLinearFramebufferGraphicsDevice(config)
 	case windowsGraphicsVirtio:
-		displayConfigs := []displayx.Config(displays)
+		displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
+		for _, d := range rc.Displays {
+			displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+		}
 		if len(displayConfigs) == 0 {
 			displayConfigs = []displayx.Config{displayx.DefaultLinuxConfig()}
 		}
@@ -369,19 +381,21 @@ func loadOrCreateWindowsMachineIdentifier() vz.VZGenericMachineIdentifier {
 }
 
 func runWindowsVM() error {
+	rc := vmrunRunConfig(vmrun.GuestWindows)
+	hc := vmrunHostConfig()
 	fmt.Println("=== Windows VM Runner (experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(vmDir, 0755); err != nil {
+	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
-	saveHardwareConfig(vmDir)
+	saveHardwareConfig(hc.VMDir)
 
-	resolvedDiskPath := diskPath
+	resolvedDiskPath := rc.DiskPath
 	if resolvedDiskPath == "" {
-		resolvedDiskPath = filepath.Join(vmDir, "windows-disk.img")
+		resolvedDiskPath = filepath.Join(hc.VMDir, "windows-disk.img")
 	}
 	if _, err := os.Stat(resolvedDiskPath); err != nil {
 		if os.IsNotExist(err) {
@@ -390,7 +404,7 @@ func runWindowsVM() error {
 		return fmt.Errorf("stat windows disk image: %w", err)
 	}
 
-	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
+	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
 	config, err := buildWindowsVMConfiguration(resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
@@ -417,17 +431,19 @@ func runWindowsVM() error {
 }
 
 func installWindowsVM() error {
+	rc := vmrunRunConfig(vmrun.GuestWindows)
+	hc := vmrunHostConfig()
 	fmt.Println("=== Windows VM Installer (experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(vmDir, 0755); err != nil {
+	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
-	saveHardwareConfig(vmDir)
-	persistInstallQuota(vmDir)
-	if err := applyInstallDiskQuota(vmDir); err != nil {
+	saveHardwareConfig(hc.VMDir)
+	persistInstallQuota(hc.VMDir)
+	if err := applyInstallDiskQuota(hc.VMDir); err != nil {
 		return err
 	}
 
@@ -437,18 +453,18 @@ func installWindowsVM() error {
 	}
 	fmt.Printf("Using Windows ISO: %s\n", windowsISO)
 
-	resolvedDiskPath := diskPath
+	resolvedDiskPath := rc.DiskPath
 	if resolvedDiskPath == "" {
-		resolvedDiskPath = filepath.Join(vmDir, "windows-disk.img")
+		resolvedDiskPath = filepath.Join(hc.VMDir, "windows-disk.img")
 	}
 	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
-		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, diskSizeGB)
-		if err := createInstallDiskImage(resolvedDiskPath, diskSizeGB); err != nil {
+		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, rc.DiskSizeGB)
+		if err := createInstallDiskImage(resolvedDiskPath, rc.DiskSizeGB); err != nil {
 			return fmt.Errorf("create disk image: %w", err)
 		}
 	}
 
-	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
+	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
 	config, err := buildWindowsInstallConfiguration(resolvedDiskPath, windowsISO)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
