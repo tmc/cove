@@ -168,9 +168,14 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
 	setEntropyDevices(config, entropyConfig)
 
-	// Audio
-	audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
-	setAudioDevices(config, audioConfig)
+	// Audio. Plan() gates whether the VirtioSound device is attached;
+	// for Linux it is always enabled with output-only host streams.
+	// Plan errors fall back to attaching audio (prior behavior).
+	audioPlan, planErr := vmrun.Plan(rc, hc)
+	if planErr != nil || audioPlan.Audio.Enabled {
+		audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
+		setAudioDevices(config, audioConfig)
+	}
 
 	// Runtime USB attach/detach requires a live USB controller.
 	EnsureUSBController(config)
