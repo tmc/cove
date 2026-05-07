@@ -14,16 +14,35 @@ strategy in [012](archive/012-product-roadmap-2026.md), the v0.1 handoff in
 [014](archive/014-roadmap-update-post-v0.1.md), the soft-reset empirical result in
 [015](archive/015-soft-reset-empirical.md), and the post-integration NotebookLM refresh
 in [016](archive/016-notebooklm-roadmap-refresh-2026-04-30.md). The v0.3 execution
-slices are tracked in [017](archive/017-v03-execution-roadmap.md). The 012, 016, and
-017 sources used NotebookLM notebook `79a32e96-8e1c-4e89-9385-20193e3a8209` as
-a sparring partner. Date-sensitive market, legal, license, pricing, and
-competitor claims from that notebook stay research inputs, not release claims,
-until they are reverified against primary sources.
+slices are tracked in [017](017-v03-execution-roadmap.md), and the R6 refresh
+decisions are recorded in [038](038-roadmap-refresh-2026-05-06.md). The 012,
+016, 017, and 038 sources used NotebookLM notebook
+`79a32e96-8e1c-4e89-9385-20193e3a8209` as a sparring partner. Date-sensitive
+market, legal, license, pricing, and competitor claims from that notebook stay
+research inputs, not release claims, until they are reverified against primary
+sources.
 
 The current product bet is narrower than "another macOS VM CLI": cove should be
 the local, MIT-licensed Apple-Silicon macOS agent substrate with fork/restore,
 vsock control, OCI-backed images, and agent adapters. The next work should
 protect that wedge instead of chasing disconnected features.
+
+## Current decision state
+
+- v0.2.1, v0.3.0, and v0.4.0 are closeout releases. They should be tagged only
+  after the named release gates are signed off; this roadmap refresh does not
+  cut tags.
+- `coved` is host-local lifecycle and observability infrastructure. Metrics and
+  JSONL events are part of the daemon story; the browser UI is opt-in,
+  status-only, and not the control plane.
+- Cirrus migration material remains technical operator documentation. README
+  funnels, public issue templates, landing pages, and blog copy stay parked
+  until release, privacy, and name gates clear.
+- Public registry, signed image distribution, tap launch copy, and public
+  product-name claims remain blocked on the product/name decision. See
+  [trademark research](../research/trademark-cove.md).
+- Batches that add multiple public surfaces must pass the
+  [public surface gate](../governance/public-surface-gates.md) before landing.
 
 ## Status legend
 
@@ -44,6 +63,10 @@ protect that wedge instead of chasing disconnected features.
 - `cove` is not clean for public software/registry branding based on the
   preliminary USPTO search. Public registry, signed image distribution, and
   product-name claims need a legal/product decision first.
+- coved observability stays in the product as local operator infrastructure,
+  but webhook failures must be observable and the web UI must be opt-in.
+- Cirrus migration docs are useful technical guidance, not a public launch
+  campaign or automatic `.cirrus.yml` conversion engine.
 
 ## RC scope: what ships and what's deferred
 
@@ -144,7 +167,7 @@ channel.
 | Operator file/log/diff commands | done | guest agent + image store | [024](024-cove-runner-images.md) | Adds `cove cp`, `cove logs`, and manifest diff/inspect helpers. Shipped at `dbe1520`, `fca848e`, `9fc8303`, `b46deb0`, and `535db8c`. |
 | Reliability sweep | done | run/provision/fleet surfaces | [031](031-vm-lifecycle.md), [033](033-cove-daemon.md) | Adds test-HOME isolation audit, concurrency fixes, Apple log predicate refresh, install overlay polish, startup state, and start watchdog. Shipped at `34775a4`, `3456d67`, `d3a6d18`, `ef82fc0`, `9dea52e`, and `f78ce61`. |
 | Fresh VM login recovery cluster | done | macOS provisioning | [bugs/fresh-vm-login](../bugs/2026-05-05-fresh-vm-login-misclassify.md) | Makes non-root `cove up` fail loudly, refuses noninteractive native authorization, improves login-screen OCR, and dumps `diskutil list` on Data lookup failure. Bug doc at `b9c06ee`; implementation chain `e512329` (login-prompt classifier), `a1742f4` (`cove up` requires root for macOS provisioning), `14e2bdb` (refuse noninteractive authorization), `ca4d824` (diskutil output on Data lookup failure). |
-| Cirrus migration docs | done | fleet + images + action surface | [migration guide](../migrations/from-cirrus.md) | Adds Cirrus displacement landing page, migration walkthrough, README link, and blog draft. Shipped at `bdd1912`, `2642d01`, `e413e0e`, `6017373`, and `4635254`. |
+| Cirrus migration docs | done | fleet + images + action surface | [migration guide](../migrations/from-cirrus.md) | Adds technical migration guidance and walkthrough. Landing page and blog drafts were created but are explicitly parked until release, privacy, and name gates clear. Shipped at `bdd1912`, `2642d01`, `e413e0e`, `6017373`, and `4635254`. |
 | v0.4 readiness and integration matrix | done | shipped v0.4 surfaces | [release audit](../release/v0.4.0-readiness.md) | Adds v0.4 release notes draft, integration matrix, cross-reference pass, and readiness audit. Shipped at `96706d2`, `7852177`, `c29eae3`, and `14cabac`; this closeout updates the final docs. |
 
 ## v0.5 — Stabilization: package boundaries + observability fixes
@@ -258,7 +281,6 @@ see [017](archive/017-v03-execution-roadmap.md) for files, gates, and docs updat
 4. Harden the first agent adapter against fork/restore, not soft reset.
 5. Defer agentkit image publication until the name/legal decision and build
    execution are both resolved.
-
 ## Validation gates
 
 - `cove build`: cache hits skip guest execution; misses execute in a VM;
@@ -267,6 +289,10 @@ see [017](archive/017-v03-execution-roadmap.md) for files, gates, and docs updat
   named host hardware, with slower-than-target runs published instead of hidden.
 - Agent adapter: a fresh install can run an Agents-SDK-compatible agent against
   a cove VM in five lines, using fork/restore for sensitive examples.
+- Daemon observability: metrics and JSONL events work locally; webhooks retry
+  and log non-2xx delivery failures; browser UI is opt-in and status-only.
+- Public surface: every multi-surface public batch has a design checkpoint and
+  release-note honesty pass.
 - Registry: no public `cove` registry or signed agentkit image channel ships
   until trademark counsel clears the name or a rename lands.
 - External claims: any public post that cites competitor dates, partner lists,
