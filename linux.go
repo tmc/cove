@@ -20,15 +20,19 @@ import (
 	"github.com/tmc/apple/x/vzkit/clipboard"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmrun"
 )
 
 // buildLinuxVMConfiguration builds a VZVirtualMachineConfiguration for Linux.
 func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
+	rc := vmrunRunConfig(vmrun.GuestLinux)
+	hc := vmrunHostConfig()
+
 	config := vz.NewVZVirtualMachineConfiguration()
 
 	// CPU and memory
-	config.SetCPUCount(cpuCount)
-	config.SetMemorySize(memoryGB * 1024 * 1024 * 1024)
+	config.SetCPUCount(rc.CPUCount)
+	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
 
 	// Platform configuration (generic for Linux)
 	fmt.Println("Setting up Linux platform configuration...")
@@ -38,7 +42,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	machineID := loadOrCreateGenericMachineIdentifier()
 	platformConfig.SetMachineIdentifier(&machineID)
 
-	if linuxNested {
+	if rc.LinuxNested {
 		if err := validateNestedVirtualizationSupported(); err != nil {
 			return config, err
 		}
@@ -50,11 +54,11 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
 
-	kernelToUse := kernelPath
-	initrdToUse := initrdPath
-	cmdLineToUse := cmdLine
+	kernelToUse := rc.KernelPath
+	initrdToUse := rc.InitrdPath
+	cmdLineToUse := rc.CmdLine
 	if kernelToUse == "" {
-		if installed, ok := loadInstalledLinuxBootArtifacts(vmDir); ok {
+		if installed, ok := loadInstalledLinuxBootArtifacts(hc.VMDir); ok {
 			fmt.Println("  Using staged installed kernel boot (VZLinuxBootLoader)")
 			kernelToUse = installed.kernel
 			initrdToUse = installed.initrd
@@ -89,7 +93,10 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("create root storage device: %w", err)
 	}
 
-	// If ISO is provided, add it as second storage device (read-only)
+	// If ISO is provided, add it as second storage device (read-only).
+	// Read isoPath directly here because runLinuxVM may have just mutated
+	// the global to insert an auto-resolved ISO path; rc captured a stale
+	// value at function entry. Slice 6 retires this last global.
 	if isoPath != "" {
 		isoURL := foundation.NewURLFileURLWithPath(isoPath)
 		isoAttachment, err := newDiskAttachment(isoURL, true, DiskCacheReadOnly)
@@ -114,7 +121,10 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	// Default the framebuffer to the host window size (1024x768) so the
 	// guest renders 1:1 instead of being scaled from displayx.DefaultLinux's
 	// 1920x1080. Users who want higher resolution pass -display.
-	displayConfigs := []displayx.Config(displays)
+	displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
+	for _, d := range rc.Displays {
+		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+	}
 	if len(displayConfigs) == 0 {
 		displayConfigs = []displayx.Config{{
 			Width:  defaultWindowWidth,
@@ -129,7 +139,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	setVirtioGraphicsDevices(config, graphicsConfig)
 
 	// Network configuration
-	netConfig, err := ParseNetworkMode(networkMode)
+	netConfig, err := ParseNetworkMode(rc.NetworkMode)
 	if err != nil {
 		return config, fmt.Errorf("parse network mode: %w", err)
 	}
@@ -138,7 +148,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
-		macAddr := loadOrCreateMACAddressForVM(vmDir)
+		macAddr := loadOrCreateMACAddressForVM(hc.VMDir)
 		if macAddr.ID != 0 {
 			networkDeviceConfig.SetMACAddress(&macAddr)
 		}
@@ -180,7 +190,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// Clipboard sharing (SPICE agent over Virtio console)
-	if enableClipboard {
+	if rc.EnableClipboard {
 		clipboardDevice, err := clipboard.NewConfig()
 		if err != nil {
 			fmt.Printf("  warning: clipboard: %v\n", err)
@@ -194,7 +204,7 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 
 	// Volume mounts (VirtioFS) - docker-style -v flag, plus the dedicated
 	// shared-folders device that runtime live-apply mutates.
-	virtioFSConfigs := linuxVirtioFSDeviceConfigs(nil, effectiveSharedFolders(vmDir))
+	virtioFSConfigs := linuxVirtioFSDeviceConfigs(nil, effectiveSharedFolders(hc.VMDir))
 	if volumeConfigs, err := createVolumeConfigs(getEffectiveVolumes()); err != nil {
 		fmt.Printf("warning: volume config: %v\n", err)
 	} else {
@@ -205,8 +215,8 @@ func buildLinuxVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfigu
 	}
 
 	// Rosetta support for x86-64 binary translation
-	if enableRosetta && !sandboxStrict() {
-		if err := AddRosettaToLinuxVM(config, vmDir); err != nil {
+	if rc.EnableRosetta && !sandboxStrict() {
+		if err := AddRosettaToLinuxVM(config, hc.VMDir); err != nil {
 			fmt.Printf("warning: Rosetta setup failed: %v\n", err)
 		}
 	}
@@ -427,6 +437,8 @@ func saveGenericMachineIdentifier(machineID vz.VZGenericMachineIdentifier, path 
 
 // runLinuxVM runs a Linux VM with the configured settings.
 func runLinuxVM() error {
+	rc := vmrunRunConfig(vmrun.GuestLinux)
+	hc := vmrunHostConfig()
 	fmt.Println("=== Linux VM Runner ===")
 
 	// Validate settings
@@ -435,27 +447,27 @@ func runLinuxVM() error {
 	}
 
 	// Persist CPU/memory config for subsequent boots
-	saveHardwareConfig(vmDir)
+	saveHardwareConfig(hc.VMDir)
 
 	// Ensure VM directory exists
-	if err := os.MkdirAll(vmDir, 0755); err != nil {
+	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
 
 	// For EFI boot: only attach ISO if the VM hasn't been installed yet
 	// (no efi.nvram) or if the user explicitly provided an ISO.
-	if kernelPath == "" {
-		if _, ok := loadInstalledLinuxBootArtifacts(vmDir); ok {
+	if rc.KernelPath == "" {
+		if _, ok := loadInstalledLinuxBootArtifacts(hc.VMDir); ok {
 			isoPath = ""
 		} else {
-			efiStorePath := filepath.Join(vmDir, "efi.nvram")
+			efiStorePath := filepath.Join(hc.VMDir, "efi.nvram")
 			isoExplicit := false
 			flag.Visit(func(f *flag.Flag) {
 				if f.Name == "iso" {
 					isoExplicit = true
 				}
 			})
-			if isoExplicit || isoPath != "" {
+			if isoExplicit || rc.ISOPath != "" {
 				// User explicitly wants an ISO — resolve it
 				resolvedISO, err := ensureLinuxISO()
 				if err != nil {
@@ -463,7 +475,7 @@ func runLinuxVM() error {
 				}
 				isoPath = resolvedISO
 			} else if _, err := os.Stat(efiStorePath); os.IsNotExist(err) {
-				if _, markerErr := os.Stat(linuxInstalledMarkerPath(vmDir)); markerErr == nil {
+				if _, markerErr := os.Stat(linuxInstalledMarkerPath(hc.VMDir)); markerErr == nil {
 					// The unattended installer completed previously. Create an EFI
 					// variable store on first real boot, but do not reattach
 					// installation media.
@@ -481,24 +493,24 @@ func runLinuxVM() error {
 	}
 
 	// Resolve disk path
-	resolvedDiskPath := diskPath
+	resolvedDiskPath := rc.DiskPath
 	if resolvedDiskPath == "" {
-		resolvedDiskPath = filepath.Join(vmDir, "linux-disk.img")
+		resolvedDiskPath = filepath.Join(hc.VMDir, "linux-disk.img")
 	}
-	if err := checkIncompletePullDisk(vmDir, resolvedDiskPath); err != nil {
+	if err := checkIncompletePullDisk(hc.VMDir, resolvedDiskPath); err != nil {
 		return err
 	}
 
 	// Create disk if it doesn't exist
 	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
-		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, diskSizeGB)
-		if err := createDiskImage(resolvedDiskPath, diskSizeGB); err != nil {
+		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, rc.DiskSizeGB)
+		if err := createDiskImage(resolvedDiskPath, rc.DiskSizeGB); err != nil {
 			return fmt.Errorf("create disk image: %w", err)
 		}
 	}
 
 	// Build VM configuration
-	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
+	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
 	config, err := buildLinuxVMConfiguration(resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
@@ -515,7 +527,7 @@ func runLinuxVM() error {
 	updateSaveRestoreSupport(config)
 
 	// Note: Avoid calling getter methods on config as they may crash due to selector issues
-	fmt.Printf("  Configured: %d CPUs, %d GB RAM\n", cpuCount, memoryGB)
+	fmt.Printf("  Configured: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
 
 	// Create dispatch queue for VM operations
 	vmQueue := dispatch.QueueCreate("com.appledocs.vz.linux.vmqueue")
