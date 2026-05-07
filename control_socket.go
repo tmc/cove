@@ -58,6 +58,7 @@ type ControlServer struct {
 	capture           screenCapture // diff cache + lazy OCR service, self-guarded
 	bridge            agentBridge   // agent clients + health state (owns its own mutexes)
 	network           networkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
+	input             inputBridge   // mouse/keyboard delivery, back-references this ControlServer
 	windowNum         int           // cached window number for thread-safe screenshot
 	viewContentHeight int           // cached view content height in pixels (excludes title bar)
 	windowTitleMu     sync.RWMutex
@@ -105,6 +106,7 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 	s.life.start()
 	s.bridge.cs = s
 	s.network.cs = s
+	s.input.cs = s
 	capture, input := resolveAutomationBackends()
 	s.setCaptureBackend(capture)
 	s.setInputBackend(input)
