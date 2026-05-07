@@ -12,6 +12,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/configcodec"
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmrun"
 )
 
 const vmFrameworkConfigFileName = "framework-config.vzcfg"
@@ -122,7 +123,7 @@ func buildSelectedVMFrameworkConfiguration(diskImagePath string) (vz.VZVirtualMa
 	case "Windows":
 		return buildWindowsVMConfiguration(diskImagePath)
 	case "Linux":
-		return buildLinuxVMConfiguration(diskImagePath)
+		return buildLinuxVMConfiguration(vmrunRunConfig(vmrun.GuestLinux), diskImagePath)
 	case "macOS":
 		return buildVMConfiguration(diskImagePath)
 	default:
