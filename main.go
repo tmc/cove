@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"runtime"
@@ -303,7 +304,7 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Println(versionInfo())
+		fmt.Fprintln(newCommandEnv().Stdout, versionInfo())
 		return
 	}
 
@@ -358,7 +359,7 @@ func main() {
 	}
 	if flag.NArg() > 0 {
 		if spec, ok := lookupCommand(flag.Arg(0)); ok && spec.Dispatch == commandDispatchPreUI {
-			os.Exit(runRegisteredCommand(spec, flag.Arg(0), flag.Args()[1:]))
+			os.Exit(runRegisteredCommand(newCommandEnv(), spec, flag.Arg(0), flag.Args()[1:]))
 		}
 	}
 
@@ -420,7 +421,11 @@ func main() {
 		return
 	}
 	if listVMs {
-		handleList()
+		env := newCommandEnv()
+		if err := handleListTo(env.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 	if installVM {
@@ -445,7 +450,7 @@ func main() {
 		}
 
 		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == commandDispatchEarly {
-			os.Exit(runRegisteredCommand(spec, cmd, args))
+			os.Exit(runRegisteredCommand(newCommandEnv(), spec, cmd, args))
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
@@ -490,7 +495,7 @@ func main() {
 		}
 
 		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == commandDispatchLate {
-			os.Exit(runRegisteredCommand(spec, cmd, args))
+			os.Exit(runRegisteredCommand(newCommandEnv(), spec, cmd, args))
 		}
 		if s := suggestCommand(cmd); s != "" {
 			fmt.Fprintf(os.Stderr, "cove: unknown command %q. Did you mean %q?\n", cmd, s)
@@ -931,20 +936,26 @@ func confirmDeletef(format string, args ...any) (bool, error) {
 
 // handleList shows all VMs and templates.
 func handleList() {
+	if err := handleListTo(os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func handleListTo(stdout io.Writer) error {
 	// List VMs
 	vms, err := vmconfig.List(detectVMState)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: listing VMs: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("listing VMs: %w", err)
 	}
 
 	activeVM := vmconfig.ActiveName()
 
 	if len(vms) == 0 {
-		fmt.Println("No VMs found. Run 'cove install' to create one.")
+		fmt.Fprintln(stdout, "No VMs found. Run 'cove install' to create one.")
 	} else {
-		fmt.Println("VMs:")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(stdout, "VMs:")
+		w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "  NAME\tOS\tSTATE\tUPTIME\tNOTE\tSIZE\tCREATED\tACTIVE")
 		for _, vm := range vms {
 			active := ""
@@ -962,15 +973,17 @@ func handleList() {
 				vm.Created.Format("2006-01-02"),
 				active)
 		}
-		w.Flush()
+		if err := w.Flush(); err != nil {
+			return err
+		}
 	}
 
 	// List templates
 	templates, err := ListTemplates()
 	if err == nil && len(templates) > 0 {
-		fmt.Println()
-		fmt.Println("Templates:")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Templates:")
+		w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "  NAME\tSIZE\tCREATED")
 		for _, t := range templates {
 			fmt.Fprintf(w, "  %s\t%s\t%s\n",
@@ -978,20 +991,23 @@ func handleList() {
 				bytefmt.Size(t.DiskSize),
 				t.Created.Format("2006-01-02"))
 		}
-		w.Flush()
+		if err := w.Flush(); err != nil {
+			return err
+		}
 	}
 
 	// Surface orphan VM directories (dirs without a valid disk image)
 	// so users can clean them up with `cove vm delete <name>`.
 	if orphans, err := vmconfig.ListOrphans(); err == nil && len(orphans) > 0 {
-		fmt.Println()
-		fmt.Println("Orphans (missing disk image):")
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Orphans (missing disk image):")
 		for _, name := range orphans {
-			fmt.Printf("  %s\t(orphan: missing disk)\n", name)
+			fmt.Fprintf(stdout, "  %s\t(orphan: missing disk)\n", name)
 		}
-		fmt.Println()
-		fmt.Println("Remove with: cove vm delete <name>")
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Remove with: cove vm delete <name>")
 	}
+	return nil
 }
 
 func runtimeListFields(vmPath, state string) (string, string) {
