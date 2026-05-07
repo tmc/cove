@@ -12,8 +12,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
+	"time"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // networkBridge holds the network-listener state owned by a
@@ -115,25 +119,109 @@ func (n *networkBridge) debugStubStatusValue() DebugStubStatus {
 	return status
 }
 
-// shutdown closes the iTerm2 proxy, port-forward manager, and HTTP
-// listeners. ctx bounds the iTerm2 proxy stop. shutdown is safe to
-// call multiple times.
-func (n *networkBridge) shutdown(ctx context.Context) {
+// startITerm2Proxy starts the iTerm2 WebSocket proxy on port. If the
+// proxy is already running, returns a success message naming the
+// active port without restarting it. Returns nil only if port == 0
+// without a default; the caller treats nil as a programming error.
+func (n *networkBridge) startITerm2Proxy(port int) *controlpb.ControlResponse {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.iterm2Proxy != nil && n.iterm2Proxy.Running() {
+		msg := fmt.Sprintf("iterm2 proxy already running on port %d", n.iterm2Proxy.Port())
+		return &controlpb.ControlResponse{Success: true, Data: msg,
+			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
+	}
+
+	if port == 0 {
+		port = iterm2DefaultPort
+	}
+	cs := n.cs
+	if cs == nil {
+		return &controlpb.ControlResponse{Error: "iterm2 proxy: control server not configured"}
+	}
+	guest := controlServerGuestConnector{vm: cs.vm, queue: cs.vmQueue}
+	proxy := newITerm2Proxy(guest, port)
+	if err := proxy.Start(); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("start iterm2 proxy: %v", err)}
+	}
+	n.iterm2Proxy = proxy
+
+	msg := fmt.Sprintf("iterm2 proxy started on ws://localhost:%d", port)
+	return &controlpb.ControlResponse{Success: true, Data: msg,
+		Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
+}
+
+// iterm2ProxyStopResponse stops a running iTerm2 proxy and returns the
+// command response. Distinct from stopITerm2Proxy, which is used by
+// the lifecycle Stop path and ignores errors.
+func (n *networkBridge) iterm2ProxyStopResponse() *controlpb.ControlResponse {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.iterm2Proxy == nil || !n.iterm2Proxy.Running() {
+		return &controlpb.ControlResponse{Success: true, Data: "iterm2 proxy not running",
+			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "iterm2 proxy not running"}}}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if n.cs != nil {
+		ctx, cancel = n.cs.timeoutContext(5 * time.Second)
+	}
+	defer cancel()
+	if err := n.iterm2Proxy.Stop(ctx); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("stop iterm2 proxy: %v", err)}
+	}
+	n.iterm2Proxy = nil
+
+	return &controlpb.ControlResponse{Success: true, Data: "iterm2 proxy stopped",
+		Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "iterm2 proxy stopped"}}}
+}
+
+// iterm2ProxyStatusResponse returns the current iTerm2 proxy status as
+// a control response.
+func (n *networkBridge) iterm2ProxyStatusResponse() *controlpb.ControlResponse {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.iterm2Proxy == nil || !n.iterm2Proxy.Running() {
+		return &controlpb.ControlResponse{Success: true, Data: "stopped",
+			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "stopped"}}}
+	}
+
+	msg := fmt.Sprintf("running on ws://localhost:%d", n.iterm2Proxy.Port())
+	return &controlpb.ControlResponse{Success: true, Data: msg,
+		Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
+}
+
+// stopITerm2Proxy stops a running iTerm2 proxy, if any. ctx bounds
+// the stop. Safe to call multiple times.
+func (n *networkBridge) stopITerm2Proxy(ctx context.Context) {
 	n.mu.Lock()
 	proxy := n.iterm2Proxy
 	n.iterm2Proxy = nil
-	pf := n.portForwards
-	n.portForwards = nil
-	listeners := n.httpListeners
-	n.httpListeners = nil
 	n.mu.Unlock()
-
 	if proxy != nil {
 		proxy.Stop(ctx)
 	}
+}
+
+// stopPortForwards stops the host-to-guest port-forward manager, if
+// any, and detaches it. Safe to call multiple times.
+func (n *networkBridge) stopPortForwards() {
+	pf := n.clearPortForwardManager()
 	if pf != nil {
 		pf.StopAll()
 	}
+}
+
+// closeHTTPListeners closes any HTTP listeners tracked by addHTTPListener
+// and clears the list. Safe to call multiple times.
+func (n *networkBridge) closeHTTPListeners() {
+	n.mu.Lock()
+	listeners := n.httpListeners
+	n.httpListeners = nil
+	n.mu.Unlock()
 	if listeners != nil {
 		listeners.closeAll()
 	}

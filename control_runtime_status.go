@@ -27,49 +27,25 @@ type DebugStubStatus struct {
 }
 
 func (s *ControlServer) SetVNCStatus(status VNCStatus) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.vncStatus = status
+	s.network.setVNCStatus(status)
 }
 
 func (s *ControlServer) VNCStatus() VNCStatus {
 	if state := runtimeFeatureStateFor(s); state != nil {
 		return state.controlVNCStatus()
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	status := s.vncStatus
-	if status.State == "" {
-		if status.Enabled {
-			status.State = "enabled"
-		} else {
-			status.State = "disabled"
-		}
-	}
-	return status
+	return s.network.vncStatusValue()
 }
 
 func (s *ControlServer) SetDebugStubStatus(status DebugStubStatus) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.debugStubStatus = status
+	s.network.setDebugStubStatus(status)
 }
 
 func (s *ControlServer) DebugStubStatus() DebugStubStatus {
 	if state := runtimeFeatureStateFor(s); state != nil {
 		return state.controlDebugStubStatus()
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	status := s.debugStubStatus
-	if status.State == "" {
-		if status.Enabled {
-			status.State = "enabled"
-		} else {
-			status.State = "disabled"
-		}
-	}
-	return status
+	return s.network.debugStubStatusValue()
 }
 
 func (s *ControlServer) handleVNCStatus() *controlpb.ControlResponse {

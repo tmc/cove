@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -243,62 +242,15 @@ func (s *ControlServer) handleITerm2ProxyStart() *controlpb.ControlResponse {
 
 // handleITerm2ProxyStartWithPort starts the proxy on a specific port.
 func (s *ControlServer) handleITerm2ProxyStartWithPort(port int) *controlpb.ControlResponse {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.iterm2Proxy != nil && s.iterm2Proxy.Running() {
-		msg := fmt.Sprintf("iterm2 proxy already running on port %d", s.iterm2Proxy.Port())
-		return &controlpb.ControlResponse{Success: true, Data: msg,
-			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
-	}
-
-	if port == 0 {
-		port = iterm2DefaultPort
-	}
-	guest := controlServerGuestConnector{vm: s.vm, queue: s.vmQueue}
-	proxy := newITerm2Proxy(guest, port)
-	if err := proxy.Start(); err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("start iterm2 proxy: %v", err)}
-	}
-	s.iterm2Proxy = proxy
-
-	msg := fmt.Sprintf("iterm2 proxy started on ws://localhost:%d", port)
-	return &controlpb.ControlResponse{Success: true, Data: msg,
-		Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
+	return s.network.startITerm2Proxy(port)
 }
 
 // handleITerm2ProxyStop stops the iTerm2 WebSocket proxy.
 func (s *ControlServer) handleITerm2ProxyStop() *controlpb.ControlResponse {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.iterm2Proxy == nil || !s.iterm2Proxy.Running() {
-		return &controlpb.ControlResponse{Success: true, Data: "iterm2 proxy not running",
-			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "iterm2 proxy not running"}}}
-	}
-
-	ctx, cancel := s.timeoutContext(5 * time.Second)
-	defer cancel()
-	if err := s.iterm2Proxy.Stop(ctx); err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("stop iterm2 proxy: %v", err)}
-	}
-	s.iterm2Proxy = nil
-
-	return &controlpb.ControlResponse{Success: true, Data: "iterm2 proxy stopped",
-		Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "iterm2 proxy stopped"}}}
+	return s.network.iterm2ProxyStopResponse()
 }
 
 // handleITerm2ProxyStatus returns the current proxy status.
 func (s *ControlServer) handleITerm2ProxyStatus() *controlpb.ControlResponse {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.iterm2Proxy == nil || !s.iterm2Proxy.Running() {
-		return &controlpb.ControlResponse{Success: true, Data: "stopped",
-			Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "stopped"}}}
-	}
-
-	msg := fmt.Sprintf("running on ws://localhost:%d", s.iterm2Proxy.Port())
-	return &controlpb.ControlResponse{Success: true, Data: msg,
-		Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}}}
+	return s.network.iterm2ProxyStatusResponse()
 }

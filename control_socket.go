@@ -55,14 +55,11 @@ type ControlServer struct {
 	vmQueue           dispatch.Queue
 	mu                sync.Mutex
 	running           atomic.Bool
-	capture           screenCapture       // diff cache + lazy OCR service, self-guarded
-	bridge            agentBridge         // agent clients + health state (owns its own mutexes)
-	iterm2Proxy       *ITerm2Proxy        // WebSocket-to-vsock relay for iTerm2 API (nil until started)
-	portForwards      *PortForwardManager // host TCP -> guest vsock port forwards (nil until first use)
-	vncStatus         VNCStatus
-	debugStubStatus   DebugStubStatus
-	windowNum         int // cached window number for thread-safe screenshot
-	viewContentHeight int // cached view content height in pixels (excludes title bar)
+	capture           screenCapture // diff cache + lazy OCR service, self-guarded
+	bridge            agentBridge   // agent clients + health state (owns its own mutexes)
+	network           networkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
+	windowNum         int           // cached window number for thread-safe screenshot
+	viewContentHeight int           // cached view content height in pixels (excludes title bar)
 	windowTitleMu     sync.RWMutex
 	windowTitleBase   string
 	windowTitleState  string
@@ -116,6 +113,7 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 		lifecycleCancel: cancel,
 	}
 	s.bridge.cs = s
+	s.network.cs = s
 	capture, input := resolveAutomationBackends()
 	s.setCaptureBackend(capture)
 	s.setInputBackend(input)
@@ -300,12 +298,9 @@ func (s *ControlServer) Start() error {
 // Stop closes the control server
 func (s *ControlServer) Stop() {
 	s.running.Store(false)
-	if s.iterm2Proxy != nil {
-		ctx, cancel := s.timeoutContext(5 * time.Second)
-		s.iterm2Proxy.Stop(ctx)
-		cancel()
-		s.iterm2Proxy = nil
-	}
+	proxyCtx, cancel := s.timeoutContext(5 * time.Second)
+	s.network.stopITerm2Proxy(proxyCtx)
+	cancel()
 	s.lifecycleMu.Lock()
 	lifecycleCancel := s.lifecycleCancel
 	s.lifecycleCancel = nil
@@ -314,12 +309,8 @@ func (s *ControlServer) Stop() {
 	if lifecycleCancel != nil {
 		lifecycleCancel()
 	}
-	if portForwards := s.clearPortForwardManager(); portForwards != nil {
-		portForwards.StopAll()
-	}
-	if s.httpListeners != nil {
-		s.httpListeners.closeAll()
-	}
+	s.network.stopPortForwards()
+	s.network.closeHTTPListeners()
 	if s.listener != nil {
 		s.listener.Close()
 	}
@@ -332,11 +323,7 @@ func (s *ControlServer) Stop() {
 }
 
 func (s *ControlServer) clearPortForwardManager() *PortForwardManager {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	portForwards := s.portForwards
-	s.portForwards = nil
-	return portForwards
+	return s.network.clearPortForwardManager()
 }
 
 func (s *ControlServer) handleConnection(conn net.Conn) {
