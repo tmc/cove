@@ -264,15 +264,6 @@ func cacheImageRef(key string) string {
 	return "cache/" + component + ":latest"
 }
 
-func cacheImageExists(cfg config, ref string) bool {
-	path, ok := localImagePath(cfg, ref)
-	if !ok {
-		return false
-	}
-	_, err := os.Stat(filepath.Join(path, "manifest.json"))
-	return err == nil
-}
-
 func cacheImageRestoreState(cfg config, ref string) (hit bool, evict bool, bytesFreed int64, reason string) {
 	path, ok := localImagePath(cfg, ref)
 	if !ok {
