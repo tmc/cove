@@ -3,8 +3,6 @@ package softreset
 import (
 	"context"
 	"fmt"
-	"net"
-	"strconv"
 	"strings"
 )
 
@@ -110,21 +108,3 @@ func networkSocketKey(s NetworkSocket) string {
 	return s.Protocol + "|" + s.Local + "|" + s.Remote + "|" + s.State
 }
 
-func hostPort(addr string) (string, string, bool) {
-	host, port, err := net.SplitHostPort(addr)
-	if err == nil {
-		return host, port, true
-	}
-	i := strings.LastIndex(addr, ".")
-	if i < 0 {
-		i = strings.LastIndex(addr, ":")
-	}
-	if i < 0 || i == len(addr)-1 {
-		return "", "", false
-	}
-	port = addr[i+1:]
-	if _, err := strconv.Atoi(port); err != nil {
-		return "", "", false
-	}
-	return addr[:i], port, true
-}
