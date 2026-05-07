@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/controlserver"
 )
 
 func statusCommand() error {
@@ -21,47 +23,47 @@ func statusCommand() error {
 		return err
 	}
 
-	status := agentHealthState{daemonStatus: "connected", userStatus: "unknown"}
+	status := controlserver.AgentHealthState{DaemonStatus: "connected", UserStatus: "unknown"}
 	if agentStatus, err := client.AgentExecTypedTimeout([]string{"true"}, nil, "", 5*time.Second); err != nil || agentStatus.GetExitCode() != 0 {
-		status.daemonStatus = "disconnected"
+		status.DaemonStatus = "disconnected"
 	}
-	if status.daemonStatus == "connected" {
+	if status.DaemonStatus == "connected" {
 		switch osName {
 		case guestOSLinux:
 			session, ok, err := probeLinuxGUISessionControl(client)
 			if err != nil {
 				return err
 			}
-			status.guiSession = session
-			status.guiSessionActive = ok
+			status.GUISession = session
+			status.GUISessionActive = ok
 		case guestOSDarwin:
 			session, ok, err := probeMacOSGUISessionControl(client)
 			if err != nil {
 				return err
 			}
-			status.guiSession = session
-			status.guiSessionActive = ok
+			status.GUISession = session
+			status.GUISessionActive = ok
 		}
 	}
-	fmt.Println(agentHealthSummary(status))
+	fmt.Println(controlserver.AgentHealthSummary(status))
 	return nil
 }
 
-func probeLinuxGUISessionControl(client *ControlClient) (guiSession, bool, error) {
+func probeLinuxGUISessionControl(client *ControlClient) (controlserver.GUISession, bool, error) {
 	resp, err := client.AgentExecTypedTimeout([]string{"loginctl", "list-sessions", "--output", "json", "--no-pager"}, nil, "", 5*time.Second)
 	if err != nil {
-		return guiSession{}, false, fmt.Errorf("query gui sessions: %w", err)
+		return controlserver.GUISession{}, false, fmt.Errorf("query gui sessions: %w", err)
 	}
 	if resp.GetExitCode() != 0 {
 		msg := strings.TrimSpace(resp.GetStderr())
 		if msg == "" {
 			msg = strings.TrimSpace(resp.GetStdout())
 		}
-		return guiSession{}, false, fmt.Errorf("query gui sessions: %s", msg)
+		return controlserver.GUISession{}, false, fmt.Errorf("query gui sessions: %s", msg)
 	}
 	rows, err := parseLinuxLoginctlSessionRows([]byte(resp.GetStdout()))
 	if err != nil {
-		return guiSession{}, false, err
+		return controlserver.GUISession{}, false, err
 	}
 	if session, ok := activeGraphicalLoginctlSession(rows); ok {
 		return session, true, nil
@@ -78,20 +80,20 @@ func probeLinuxGUISessionControl(client *ControlClient) (guiSession, bool, error
 			return session, true, nil
 		}
 	}
-	return guiSession{}, false, nil
+	return controlserver.GUISession{}, false, nil
 }
 
-func probeMacOSGUISessionControl(client *ControlClient) (guiSession, bool, error) {
+func probeMacOSGUISessionControl(client *ControlClient) (controlserver.GUISession, bool, error) {
 	resp, err := client.AgentExecTypedTimeout([]string{"sh", "-lc", macOSGUISessionScript()}, nil, "", 5*time.Second)
 	if err != nil {
-		return guiSession{}, false, fmt.Errorf("query gui session: %w", err)
+		return controlserver.GUISession{}, false, fmt.Errorf("query gui session: %w", err)
 	}
 	if resp.GetExitCode() != 0 {
-		return guiSession{}, false, nil
+		return controlserver.GUISession{}, false, nil
 	}
 	user := strings.TrimSpace(resp.GetStdout())
 	if user == "" {
-		return guiSession{}, false, nil
+		return controlserver.GUISession{}, false, nil
 	}
-	return guiSession{User: user, Seat: "console", Kind: "console"}, true, nil
+	return controlserver.GUISession{User: user, Seat: "console", Kind: "console"}, true, nil
 }

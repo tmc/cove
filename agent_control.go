@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -35,261 +34,132 @@ import (
 
 	vz "github.com/tmc/apple/virtualization"
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/controlserver"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
-// getAgent returns the current agent client, connecting if necessary.
-// It holds the bridge mutex only briefly for connection setup, not
-// during RPCs.
-func (b *agentBridge) getAgent() (*agentstate.AgentClient, error) {
-	state, err := b.currentVMState()
-	if err != nil {
-		return nil, err
-	}
-	if err := agentUnavailableForVMState(state); err != nil {
-		return nil, err
-	}
-
-	// Fast path: read lock to check existing connection.
-	b.mu.RLock()
-	if a := b.agent; a != nil {
-		b.mu.RUnlock()
-		// Quick health check outside any lock.
-		ctx, cancel := b.timeoutContext(2 * time.Second)
-		defer cancel()
-		if _, err := a.Ping(ctx); err == nil {
-			return a, nil
-		}
-		// Connection is dead, fall through to reconnect.
-	} else {
-		b.mu.RUnlock()
-	}
-
-	// Slow path: write lock to reconnect.
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	// Double-check after acquiring write lock.
-	if b.agent != nil {
-		ctx, cancel := b.timeoutContext(2 * time.Second)
-		defer cancel()
-		if _, err := b.agent.Ping(ctx); err == nil {
-			return b.agent, nil
-		}
-		b.agent.Close()
-		b.agent = nil
-	}
-	if err := b.connectAgentLocked(); err != nil {
-		return nil, err
-	}
-	return b.agent, nil
-}
-
+// getAgent / getUserAgent / consoleUser are thin forwarders that
+// delegate to the agent bridge sub-component.
 func (s *ControlServer) getAgent() (*agentstate.AgentClient, error) {
-	return s.bridge.getAgent()
-}
-
-// getUserAgent returns the user session agent client, connecting if necessary.
-// If the LaunchAgent is missing in a macOS guest, it is bootstrapped on demand.
-func (b *agentBridge) getUserAgent() (*agentstate.UserAgentClient, error) {
-	state, err := b.currentVMState()
-	if err != nil {
-		return nil, err
-	}
-	if err := agentUnavailableForVMState(state); err != nil {
-		return nil, err
-	}
-
-	// Fast path: verify existing connection.
-	b.mu.RLock()
-	if ua := b.userAgent; ua != nil {
-		b.mu.RUnlock()
-		ctx, cancel := b.timeoutContext(2 * time.Second)
-		defer cancel()
-		if _, err := ua.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
-			return ua, nil
-		}
-	} else {
-		b.mu.RUnlock()
-	}
-
-	// Slow path: connect.
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.userAgent != nil {
-		ctx, cancel := b.timeoutContext(2 * time.Second)
-		defer cancel()
-		if _, err := b.userAgent.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
-			return b.userAgent, nil
-		}
-		b.userAgent.Close()
-		b.userAgent = nil
-	}
-	if err := b.connectUserAgentLocked(); err != nil {
-		return nil, err
-	}
-	return b.userAgent, nil
+	return s.bridge.GetAgent()
 }
 
 func (s *ControlServer) getUserAgent() (*agentstate.UserAgentClient, error) {
-	return s.bridge.getUserAgent()
-}
-
-// connectUserAgentLocked establishes the user agent connection on port 1025.
-// Caller must hold b.mu write lock.
-func (b *agentBridge) connectUserAgentLocked() error {
-	if b.userAgent != nil {
-		return nil
-	}
-
-	if err := b.connectUserAgentPortLocked(); err == nil {
-		return nil
-	} else if linuxMode {
-		return err
-	} else {
-		repairErr := b.bootstrapUserAgentLocked()
-		if repairErr != nil {
-			return fmt.Errorf("%v; bootstrap user agent: %w", err, repairErr)
-		}
-		if retryErr := b.connectUserAgentPortLocked(); retryErr != nil {
-			return fmt.Errorf("connect user agent after bootstrap: %w", retryErr)
-		}
-		return nil
-	}
-}
-
-func (b *agentBridge) connectUserAgentPortLocked() error {
-	client, err := agentstate.NewUserAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		mgr, err := NewVsockDeviceManager(b.cs.vm, b.cs.vmQueue)
-		if err != nil {
-			return nil, fmt.Errorf("vsock device: %w", err)
-		}
-		conn, err := mgr.ConnectToAgent(agentstate.UserPort)
-		if err != nil {
-			return nil, fmt.Errorf("connect user agent port %d: %w (user agent may not be running; check /tmp/vz-agent-user.log inside the vm)", agentstate.UserPort, err)
-		}
-		return conn, nil
-	})
-	if err != nil {
-		return fmt.Errorf("user agent client: %w", err)
-	}
-	ctx, cancel := b.timeoutContext(5 * time.Second)
-	defer cancel()
-	if _, err := client.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err != nil {
-		client.Close()
-		return err
-	}
-	b.userAgent = client
-	return nil
-}
-
-func (b *agentBridge) bootstrapUserAgentLocked() error {
-	if linuxMode {
-		return fmt.Errorf("user agent bootstrap is only supported for macOS guests")
-	}
-	if err := b.connectAgentLocked(); err != nil {
-		return fmt.Errorf("connect daemon agent: %w", err)
-	}
-
-	user, uid, err := b.consoleUserLocked()
-	if err != nil {
-		return err
-	}
-
-	plistPath := "/Library/LaunchAgents/" + agentLaunchAgentLabel + ".plist"
-	ctx, cancel := b.timeoutContext(20 * time.Second)
-	defer cancel()
-
-	if err := b.agent.WriteFile(ctx, plistPath, []byte(agentLaunchAgentPlist), 0644); err != nil {
-		return fmt.Errorf("write %s: %w", plistPath, err)
-	}
-
-	script := fmt.Sprintf(`
-set -e
-chown root:wheel %q 2>/dev/null || chown root:0 %q
-chmod 644 %q
-launchctl print gui/%d/%s >/dev/null 2>&1 && launchctl bootout gui/%d/%s >/dev/null 2>&1 || true
-launchctl bootstrap gui/%d %q
-launchctl enable gui/%d/%s
-launchctl kickstart -k gui/%d/%s
-`, plistPath, plistPath, plistPath, uid, agentLaunchAgentLabel, uid, agentLaunchAgentLabel, uid, plistPath, uid, agentLaunchAgentLabel, uid, agentLaunchAgentLabel)
-
-	result, err := b.agent.Exec(ctx, []string{"sh", "-lc", script}, nil, "")
-	if err != nil {
-		return fmt.Errorf("bootstrap %s for %s (%d): %w", agentLaunchAgentLabel, user, uid, err)
-	}
-	if result.ExitCode != 0 {
-		msg := strings.TrimSpace(string(result.Stderr))
-		if msg == "" {
-			msg = strings.TrimSpace(string(result.Stdout))
-		}
-		if msg == "" {
-			msg = "unknown error"
-		}
-		return fmt.Errorf("bootstrap %s for %s (%d): %s", agentLaunchAgentLabel, user, uid, msg)
-	}
-	return nil
-}
-
-func (b *agentBridge) consoleUserLocked() (string, int, error) {
-	ctx, cancel := b.timeoutContext(5 * time.Second)
-	defer cancel()
-
-	result, err := b.agent.Exec(ctx, []string{"stat", "-f", "%Su %u", "/dev/console"}, nil, "")
-	if err != nil {
-		return "", 0, fmt.Errorf("query console user: %w", err)
-	}
-	if result.ExitCode != 0 {
-		msg := strings.TrimSpace(string(result.Stderr))
-		if msg == "" {
-			msg = strings.TrimSpace(string(result.Stdout))
-		}
-		if msg == "" {
-			msg = "unknown error"
-		}
-		return "", 0, fmt.Errorf("query console user: %s", msg)
-	}
-	return parseConsoleOwnerOutput(string(result.Stdout))
-}
-
-func (b *agentBridge) consoleUser() (string, int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if err := b.connectAgentLocked(); err != nil {
-		return "", 0, fmt.Errorf("connect daemon agent: %w", err)
-	}
-	return b.consoleUserLocked()
+	return s.bridge.GetUserAgent()
 }
 
 func (s *ControlServer) consoleUser() (string, int, error) {
-	return s.bridge.consoleUser()
+	return s.bridge.ConsoleUser()
 }
 
-func parseConsoleOwnerOutput(stdout string) (string, int, error) {
-	fields := strings.Fields(strings.TrimSpace(stdout))
-	if len(fields) != 2 {
-		return "", 0, fmt.Errorf("unexpected console owner output %q", strings.TrimSpace(stdout))
-	}
-	var uid int
-	if _, err := fmt.Sscanf(fields[1], "%d", &uid); err != nil {
-		return "", 0, fmt.Errorf("parse console uid %q: %w", fields[1], err)
-	}
-	if fields[0] == "root" || uid == 0 {
-		return "", 0, fmt.Errorf("no logged-in GUI user on /dev/console")
-	}
-	return fields[0], uid, nil
+// -- AgentHost interface implementation -------------------------------
+
+// VMDir returns the active VM directory.
+func (s *ControlServer) VMDir() string { return s.vmDir }
+
+// VMState reports the current VZVirtualMachine state.
+func (s *ControlServer) VMState() (vz.VZVirtualMachineState, error) {
+	return s.currentVMState()
 }
+
+// Linux reports whether the guest is a Linux VM.
+func (s *ControlServer) Linux() bool { return linuxMode }
+
+// Now returns the current time, routed through the lifecycle clock so
+// tests can stub it.
+func (s *ControlServer) Now() time.Time { return vmLifecycleClock.Now() }
+
+// DialAgent opens a vsock connection to the guest agent on port.
+func (s *ControlServer) DialAgent(ctx context.Context, port uint32) (net.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
+	if err != nil {
+		return nil, fmt.Errorf("vsock device: %w", err)
+	}
+	return mgr.ConnectToAgent(port)
+}
+
+// LifecycleContext returns the active lifecycle context.
+func (s *ControlServer) LifecycleContext() context.Context { return s.lifecycleContext() }
+
+// Running reports whether the control server's VM run flag is live.
+func (s *ControlServer) Running() bool { return s.running.Load() }
+
+// TimeoutContext returns a context derived from the lifecycle context
+// with the given timeout.
+func (s *ControlServer) TimeoutContext(d time.Duration) (context.Context, context.CancelFunc) {
+	return s.timeoutContext(d)
+}
+
+// ProbeGUISession dispatches the GUI-session probe by guest OS.
+func (s *ControlServer) ProbeGUISession(ctx context.Context, a *agentstate.AgentClient) (controlserver.GUISession, bool, error) {
+	switch agentstate.Platform(s.vmDir) {
+	case agentstate.PlatformLinux:
+		return probeLinuxGUISession(ctx, a)
+	case agentstate.PlatformMacOS:
+		return probeMacOSGUISession(ctx, a)
+	default:
+		return controlserver.GUISession{}, false, nil
+	}
+}
+
+// LaunchAgentArtifact returns the launchd label and plist used when
+// bootstrapping the per-user launch agent on macOS guests.
+func (s *ControlServer) LaunchAgentArtifact() (string, string) {
+	return agentLaunchAgentLabel, agentLaunchAgentPlist
+}
+
+// MaybeAutoUpgradeAgent compares the guest agent version with the
+// host version and triggers an in-place upgrade in a goroutine when
+// the policy allows. Returns true when an upgrade was kicked off.
+func (s *ControlServer) MaybeAutoUpgradeAgent(agentVer string, onUpgraded func()) bool {
+	hostVer := hostVersion()
+
+	switch agentstate.CompareVersions(hostVer, agentVer) {
+	case agentstate.VersionUnknown:
+		return false
+	case agentstate.VersionEqual:
+		log.Printf("agent-health: version match (%s)", agentVer)
+		return false
+	case agentstate.VersionGuestNewer:
+		log.Printf("agent-health: guest agent %s is newer than host %s; not downgrading", agentVer, hostVer)
+		return false
+	case agentstate.VersionGuestOlder, agentstate.VersionDifferent:
+		// fall through to upgrade path
+	}
+
+	log.Printf("agent-health: version mismatch: host=%s guest=%s", hostVer, agentVer)
+
+	if !sandboxAllowsAgentUpgrade() {
+		log.Printf("agent-health: run 'cove agent-upgrade' to update, or use -auto-upgrade-agent")
+		return false
+	}
+
+	log.Printf("agent-health: auto-upgrading agent (%s -> %s)...", agentVer, hostVer)
+	go func() {
+		if err := upgradeAgent(); err != nil {
+			log.Printf("agent-health: auto-upgrade failed: %v", err)
+			return
+		}
+		if onUpgraded != nil {
+			onUpgraded()
+		}
+		log.Printf("agent-health: auto-upgrade complete")
+	}()
+	return true
+}
+
+// -- ControlServer-side helpers ---------------------------------------
 
 func responseText(data []byte) string {
 	if len(data) == 0 {
 		return ""
 	}
-	return strings.ToValidUTF8(string(data), "\uFFFD")
+	return strings.ToValidUTF8(string(data), "�")
 }
 
 func (s *ControlServer) currentVMState() (vz.VZVirtualMachineState, error) {
@@ -301,54 +171,6 @@ func (s *ControlServer) currentVMState() (vz.VZVirtualMachineState, error) {
 		state = vz.VZVirtualMachineState(s.vm.State())
 	})
 	return state, nil
-}
-
-func agentUnavailableForVMState(state vz.VZVirtualMachineState) error {
-	label := vmStateLabel(state)
-	switch state {
-	case vz.VZVirtualMachineStateRunning:
-		return nil
-	case vz.VZVirtualMachineStateStarting, vz.VZVirtualMachineStateResuming, vz.VZVirtualMachineStateRestoring:
-		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)", label)
-	case vz.VZVirtualMachineStatePaused:
-		return fmt.Errorf("guest agent unavailable: vm is paused")
-	default:
-		return fmt.Errorf("guest agent unavailable: vm is %s", label)
-	}
-}
-
-// connectAgentLocked establishes the agent connection.
-// Caller must hold b.mu.
-func (b *agentBridge) connectAgentLocked() error {
-	if b.agent != nil {
-		return nil // already connected
-	}
-
-	client, err := agentstate.NewAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		mgr, err := NewVsockDeviceManager(b.cs.vm, b.cs.vmQueue)
-		if err != nil {
-			return nil, fmt.Errorf("vsock device: %w", err)
-		}
-		conn, err := mgr.ConnectToAgent(agentstate.DaemonPort)
-		if err != nil {
-			return nil, fmt.Errorf("connect agent: %w (guest may still be booting; check /var/log/vz-agent.log inside the vm)", err)
-		}
-		return conn, nil
-	})
-	if err != nil {
-		return fmt.Errorf("agent client: %w", err)
-	}
-	ctx, cancel := b.timeoutContext(5 * time.Second)
-	defer cancel()
-	if _, err := client.Ping(ctx); err != nil {
-		client.Close()
-		return err
-	}
-	b.agent = client
-	return nil
 }
 
 // handleAgentCommand dispatches agent-* commands from the control socket.
@@ -385,10 +207,6 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 			Error: "agent-exec-attach requires streaming transport (use one request per connection)",
 		}, true
 	case "agent-exec-resize", "agent-exec-signal":
-		// Handled in the main socket loop directly off the raw JSON line
-		// (see control_socket.go). If we got here the dispatcher missed
-		// the command — surface a clear error rather than silently
-		// returning ok=false.
 		return &controlpb.ControlResponse{
 			Error: fmt.Sprintf("%s expects raw JSON dispatch; use the unix control socket", req.Type),
 		}, true
@@ -473,48 +291,34 @@ func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *co
 }
 
 func (s *ControlServer) handleAgentConnect() *controlpb.ControlResponse {
-	if err := s.bridge.forceReconnect(); err != nil {
+	if err := s.bridge.ForceReconnect(); err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	return &controlpb.ControlResponse{Success: true, Data: "connected to guest agent", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "connected to guest agent"}}}
 }
 
-// forceReconnect drops any cached daemon agent connection and dials a
-// fresh one. Used by the agent-connect control command.
-func (b *agentBridge) forceReconnect() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.agent != nil {
-		b.agent.Close()
-		b.agent = nil
-	}
-	return b.connectAgentLocked()
-}
-
 func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
-	s.bridge.healthMu.RLock()
-	h := s.bridge.health
-	s.bridge.healthMu.RUnlock()
+	h := s.bridge.HealthSnapshot()
 
 	status := map[string]any{
-		"daemon":   h.daemonStatus,
-		"user":     h.userStatus,
-		"lastPing": h.lastPing.Format(time.RFC3339),
-		"summary":  agentHealthSummary(h),
-		"version":  h.version,
+		"daemon":   h.DaemonStatus,
+		"user":     h.UserStatus,
+		"lastPing": h.LastPing.Format(time.RFC3339),
+		"summary":  controlserver.AgentHealthSummary(h),
+		"version":  h.Version,
 	}
-	if h.guiSessionActive {
+	if h.GUISessionActive {
 		status["guiSession"] = map[string]string{
-			"user": h.guiSession.User,
-			"seat": h.guiSession.Seat,
-			"type": h.guiSession.Kind,
+			"user": h.GUISession.User,
+			"seat": h.GUISession.Seat,
+			"type": h.GUISession.Kind,
 		}
 	}
-	if h.lastErr != "" {
-		status["lastError"] = h.lastErr
+	if h.LastErr != "" {
+		status["lastError"] = h.LastErr
 	}
-	if !h.lastPing.IsZero() {
-		status["ago"] = time.Since(h.lastPing).Round(time.Second).String()
+	if !h.LastPing.IsZero() {
+		status["ago"] = time.Since(h.LastPing).Round(time.Second).String()
 	}
 
 	data, _ := json.Marshal(status)
@@ -526,21 +330,15 @@ func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 }
 
 // defaultAgentHealthInterval is the tick cadence the agent health monitor
-// uses when COVE_AGENT_HEALTH_INTERVAL is unset or unparseable. Picked at
-// 30s as the brief's default — short enough to recover quickly from a
-// guest-side restart, long enough not to spam the dispatch queue.
+// uses when COVE_AGENT_HEALTH_INTERVAL is unset or unparseable.
 const defaultAgentHealthInterval = 30 * time.Second
-const startupAgentHealthInterval = 2 * time.Second
 
 // agentHealthIntervalEnv lets operators override the tick cadence at boot
-// time. Accepts any string Go's time.ParseDuration handles (e.g. "10s",
-// "1m"). Set to a positive duration to override; anything <= 0 falls back
-// to defaultAgentHealthInterval.
+// time.
 const agentHealthIntervalEnv = "COVE_AGENT_HEALTH_INTERVAL"
 
 // resolveAgentHealthInterval returns the tick cadence for the agent health
-// monitor. Reads agentHealthIntervalEnv first; on parse failure or
-// non-positive duration, returns defaultAgentHealthInterval.
+// monitor.
 func resolveAgentHealthInterval() time.Duration {
 	raw := os.Getenv(agentHealthIntervalEnv)
 	if raw == "" {
@@ -548,396 +346,29 @@ func resolveAgentHealthInterval() time.Duration {
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil || d <= 0 {
-		slog.Warn("agent-health: ignoring unparseable interval, falling back to default",
-			"env", agentHealthIntervalEnv, "value", raw, "default", defaultAgentHealthInterval)
+		log.Printf("agent-health: ignoring unparseable interval %q for %s, falling back to %s",
+			raw, agentHealthIntervalEnv, defaultAgentHealthInterval)
 		return defaultAgentHealthInterval
 	}
 	return d
 }
 
-// agentHealthMonitor runs in the background pinging the agent. It polls
-// quickly while the VM is booting or the user agent is still coming up, then
-// falls back to the configured interval (defaultAgentHealthInterval,
-// overridable via COVE_AGENT_HEALTH_INTERVAL). On failure it transitions through the
-// healthCheckOnce reconnect path and emits slog records:
-//
-//   - DEBUG on each successful ping (cardinality every interval, mostly
-//     noise unless the operator opts in to verbose logging)
-//   - INFO on a successful reconnect, with elapsed time since the first
-//     failure ("agent reconnected after Xs")
-//   - WARN on each ping failure during a disconnect streak
-func (b *agentBridge) agentHealthMonitor() {
-	ctx := b.cs.lifecycleContext()
-
-	// Wait briefly for the VM to boot before starting health checks.
-	select {
-	case <-ctx.Done():
-		return
-	case <-time.After(startupAgentHealthInterval):
-	}
-
-	interval := resolveAgentHealthInterval()
-	slog.Debug("agent-health: monitor started", "interval", interval)
-
-	failCount := 0
-	for {
-		if !b.cs.running.Load() {
-			return
-		}
-
-		b.healthCheckOnce(ctx, &failCount)
-
-		next := b.nextAgentHealthInterval(interval)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(next):
-		}
-	}
+// agentHealthMonitor runs the proactive health monitor for the bridge.
+func (s *ControlServer) agentHealthMonitor() {
+	s.bridge.HealthMonitor(resolveAgentHealthInterval())
 }
 
-func (b *agentBridge) nextAgentHealthInterval(steady time.Duration) time.Duration {
-	b.healthMu.RLock()
-	daemon := b.health.daemonStatus
-	user := b.health.userStatus
-	b.healthMu.RUnlock()
-	if daemon == "connected" && user == "connected" {
-		return steady
-	}
-	return startupAgentHealthInterval
-}
-
-func (b *agentBridge) healthCheckOnce(ctx context.Context, failCount *int) {
-	state, err := b.cs.currentVMState()
-	if err != nil || agentUnavailableForVMState(state) != nil {
-		b.setHealthStatus("disconnected", "", "vm not running")
-		return
-	}
-
-	// Try to ping via existing connection (read lock only).
-	b.mu.RLock()
-	a := b.agent
-	b.mu.RUnlock()
-
-	if a != nil {
-		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		agentVer, err := a.Ping(pingCtx)
-		cancel()
-		if err == nil {
-			*failCount = 0
-			b.markAgentConnected(agentVer)
-			b.checkAgentVersion(agentVer)
-			b.healthCheckUserAgent(ctx)
-			b.healthCheckGUISession(ctx)
-			return
-		}
-		slog.Warn("agent-health: ping failed",
-			"err", err, "attempt", *failCount+1)
-	}
-
-	// Ping failed or no connection. Attempt reconnect.
-	*failCount++
-	b.markAgentReconnecting(fmt.Sprintf("ping failed (attempt %d)", *failCount))
-
-	b.mu.Lock()
-	if b.agent != nil {
-		b.agent.Close()
-		b.agent = nil
-	}
-	err = b.connectAgentLocked()
-	b.mu.Unlock()
-
-	if err != nil {
-		b.setHealthStatus("disconnected", "", err.Error())
-		return
-	}
-
-	// Reconnected — verify with a ping.
-	b.mu.RLock()
-	a = b.agent
-	b.mu.RUnlock()
-
-	if a != nil {
-		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		agentVer, err := a.Ping(pingCtx)
-		cancel()
-		if err == nil {
-			*failCount = 0
-			b.markAgentConnected(agentVer)
-			b.checkAgentVersion(agentVer)
-			b.healthCheckUserAgent(ctx)
-			b.healthCheckGUISession(ctx)
-			return
-		}
-		b.setHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
-	}
-}
-
-// markAgentConnected transitions the agent into the "connected" state. If
-// the previous state recorded a disconnect (disconnectAt non-zero), this is
-// the recovery edge — emit an INFO log with elapsed downtime so operators
-// can see how long the agent was unreachable.
-func (b *agentBridge) markAgentConnected(version string) {
-	now := vmLifecycleClock.Now()
-	b.healthMu.Lock()
-	wasDisconnected := !b.health.disconnectAt.IsZero()
-	downtime := time.Duration(0)
-	if wasDisconnected {
-		downtime = now.Sub(b.health.disconnectAt)
-	}
-	b.health.daemonStatus = "connected"
-	if version != "" {
-		b.health.version = version
-	}
-	b.health.lastErr = ""
-	b.health.lastPing = now
-	b.health.disconnectAt = time.Time{}
-	b.healthMu.Unlock()
-
-	if wasDisconnected {
-		slog.Info("agent-health: reconnected",
-			"version", version, "downtime", downtime.Round(time.Millisecond))
-		return
-	}
-	slog.Debug("agent-health: ping ok", "version", version)
-}
-
-// markAgentReconnecting transitions the agent into the "reconnecting"
-// state. Captures the first-failure timestamp so the eventual recovery edge
-// can report accurate downtime.
-func (b *agentBridge) markAgentReconnecting(reason string) {
-	now := vmLifecycleClock.Now()
-	b.healthMu.Lock()
-	if b.health.disconnectAt.IsZero() {
-		b.health.disconnectAt = now
-	}
-	b.health.daemonStatus = "reconnecting"
-	b.health.lastErr = reason
-	b.healthMu.Unlock()
-}
-
-// checkAgentVersion compares the guest agent version with the host version.
-// On a comparable mismatch where the guest is older, triggers a background
-// upgrade (if autoUpgradeAgent is enabled). A newer guest is left alone with
-// a warning — we never downgrade. Equal/unknown versions are no-ops.
-func (b *agentBridge) checkAgentVersion(agentVer string) {
-	b.healthMu.RLock()
-	checked := b.health.versionChecked
-	b.healthMu.RUnlock()
-	if checked {
-		return
-	}
-
-	b.healthMu.Lock()
-	b.health.versionChecked = true
-	b.healthMu.Unlock()
-
-	hostVer := hostVersion()
-
-	switch agentstate.CompareVersions(hostVer, agentVer) {
-	case agentstate.VersionUnknown:
-		return
-	case agentstate.VersionEqual:
-		log.Printf("agent-health: version match (%s)", agentVer)
-		return
-	case agentstate.VersionGuestNewer:
-		log.Printf("agent-health: guest agent %s is newer than host %s; not downgrading", agentVer, hostVer)
-		return
-	case agentstate.VersionGuestOlder, agentstate.VersionDifferent:
-		// fall through to upgrade path
-	}
-
-	log.Printf("agent-health: version mismatch: host=%s guest=%s", hostVer, agentVer)
-
-	if !sandboxAllowsAgentUpgrade() {
-		log.Printf("agent-health: run 'cove agent-upgrade' to update, or use -auto-upgrade-agent")
-		return
-	}
-
-	b.healthMu.RLock()
-	attempted := b.health.upgradeAttempted
-	b.healthMu.RUnlock()
-	if attempted {
-		return
-	}
-
-	b.healthMu.Lock()
-	b.health.upgradeAttempted = true
-	b.healthMu.Unlock()
-
-	log.Printf("agent-health: auto-upgrading agent (%s -> %s)...", agentVer, hostVer)
-	go func() {
-		if err := upgradeAgent(); err != nil {
-			log.Printf("agent-health: auto-upgrade failed: %v", err)
-			return
-		}
-		// Reset version check so next ping verifies the new version.
-		b.healthMu.Lock()
-		b.health.versionChecked = false
-		b.healthMu.Unlock()
-		log.Printf("agent-health: auto-upgrade complete")
-	}()
-}
-
-func (b *agentBridge) healthCheckUserAgent(ctx context.Context) {
-	ua, err := b.cs.getUserAgent()
-	if err != nil {
-		b.healthMu.Lock()
-		b.health.userStatus = "disconnected"
-		b.healthMu.Unlock()
-		return
-	}
-
-	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	_, err = ua.UserExec(pingCtx, []string{"true"}, nil, "")
-	cancel()
-	b.healthMu.Lock()
-	if err == nil {
-		b.health.userStatus = "connected"
-	} else {
-		b.health.userStatus = "disconnected"
-	}
-	b.healthMu.Unlock()
-}
-
-func (b *agentBridge) healthCheckGUISession(ctx context.Context) {
-	b.mu.RLock()
-	a := b.agent
-	b.mu.RUnlock()
-	if a == nil {
-		return
-	}
-
-	var (
-		session guiSession
-		ok      bool
-		err     error
-	)
-	switch agentstate.Platform(b.cs.vmDir) {
-	case agentstate.PlatformLinux:
-		session, ok, err = probeLinuxGUISession(ctx, a)
-	case agentstate.PlatformMacOS:
-		session, ok, err = probeMacOSGUISession(ctx, a)
-	default:
-		return
-	}
-	if err != nil {
-		slog.Debug("agent-health: gui session probe failed", "err", err)
-		return
-	}
-	b.healthMu.Lock()
-	b.health.guiSession = session
-	b.health.guiSessionActive = ok
-	b.healthMu.Unlock()
-}
-
-// AgentHealthSummary returns a short status string for UI display.
-// Thread-safe; intended for main-thread polling.
-func (b *agentBridge) AgentHealthSummary() string {
-	b.healthMu.RLock()
-	h := b.health
-	b.healthMu.RUnlock()
-
-	return agentHealthSummaryWithNeverConnected(h, b.agentNeverConnectedSummary())
-}
-
-func agentHealthSummary(h agentHealthState) string {
-	return agentHealthSummaryWithNeverConnected(h, "Agent: not installed")
-}
-
-func agentHealthSummaryWithNeverConnected(h agentHealthState, neverConnected string) string {
-	switch h.daemonStatus {
-	case "connected":
-		parts := []string{"daemon connected"}
-		if h.guiSessionActive {
-			parts = append(parts, formatGUISessionSummary(h.guiSession))
-		}
-		if h.userStatus == "disconnected" {
-			parts = append(parts, "user agent unavailable")
-		}
-		return strings.Join(parts, "; ")
-	case "reconnecting":
-		return "Agent: reconnecting..."
-	case "disconnected":
-		if h.lastPing.IsZero() {
-			return neverConnected
-		}
-		return "Agent: disconnected"
-	default:
-		// No health check has run yet.
-		if h.lastPing.IsZero() {
-			return neverConnected
-		}
-		return "Agent: connecting..."
-	}
-}
-
-func formatGUISessionSummary(session guiSession) string {
-	if session.Seat == "console" && session.Kind == "console" {
-		return fmt.Sprintf("GUI session active (user=%s, console)", session.User)
-	}
-	return fmt.Sprintf("GUI session active (user=%s, seat=%s, %s)", session.User, session.Seat, session.Kind)
-}
-
-// agentNeverConnectedSummary describes the pre-first-connect state. It uses
-// VM agent config to differentiate "fresh install, agent will appear after
-// first boot" from "agent expected, currently waiting" and "no agent
-// configured for this VM."
-func (b *agentBridge) agentNeverConnectedSummary() string {
-	cfg, err := vmconfig.Load(b.cs.vmDir)
-	if err != nil || cfg == nil || cfg.Agent == nil {
-		return "Agent: not installed"
-	}
-	if !cfg.Agent.Requested {
-		return "Agent: not installed"
-	}
-	if !cfg.Agent.Verified {
-		return "Agent: starting (first boot)"
-	}
-	return "Agent: connecting..."
-}
-
-func (b *agentBridge) setHealthStatus(status, version, lastErr string) {
-	b.healthMu.Lock()
-	defer b.healthMu.Unlock()
-	b.health.daemonStatus = status
-	if version != "" {
-		b.health.version = version
-	}
-	b.health.lastErr = lastErr
-	now := vmLifecycleClock.Now()
-	switch status {
-	case "connected":
-		b.health.lastPing = now
-		b.health.disconnectAt = time.Time{}
-	case "disconnected", "reconnecting":
-		if b.health.disconnectAt.IsZero() {
-			b.health.disconnectAt = now
-		}
-	}
-}
-
-// agentHealthMonitor and AgentHealthSummary are reachable from the
-// control server lifecycle wiring and the GUI status text, so the
-// public method shape stays on *ControlServer.
-
-func (s *ControlServer) agentHealthMonitor()        { s.bridge.agentHealthMonitor() }
-func (s *ControlServer) AgentHealthSummary() string { return s.bridge.AgentHealthSummary() }
-
-// The remaining wrappers exist for the handleAgentPing fast path
-// (markAgentConnected) and for tests in agent_health_test.go that
-// pin the disconnect-edge invariants through the ControlServer
-// surface. They will go away once the dispatcher and tests speak
-// directly to *agentBridge.
+func (s *ControlServer) AgentHealthSummary() string { return s.bridge.Summary() }
 
 func (s *ControlServer) nextAgentHealthInterval(d time.Duration) time.Duration {
-	return s.bridge.nextAgentHealthInterval(d)
+	return s.bridge.NextAgentHealthInterval(d)
 }
-func (s *ControlServer) markAgentConnected(version string)   { s.bridge.markAgentConnected(version) }
-func (s *ControlServer) markAgentReconnecting(reason string) { s.bridge.markAgentReconnecting(reason) }
+func (s *ControlServer) markAgentConnected(version string)   { s.bridge.MarkAgentConnected(version) }
+func (s *ControlServer) markAgentReconnecting(reason string) { s.bridge.MarkAgentReconnecting(reason) }
 func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
-	s.bridge.setHealthStatus(status, version, lastErr)
+	s.bridge.SetHealthStatus(status, version, lastErr)
 }
+
 func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
 	a, err := s.getAgent()
 	if err != nil {
@@ -1049,9 +480,6 @@ func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *co
 	}
 }
 
-// userAgentReadFile shells out via the user agent (port 1025) to read a file
-// in the logged-in user's TCC scope. The user agent has only UserExec, so we
-// pipe the file through base64 to keep binary-safe and length-bounded.
 func (s *ControlServer) userAgentReadFile(ctx context.Context, path string) ([]byte, error) {
 	ua, err := s.getUserAgent()
 	if err != nil {
@@ -1103,9 +531,6 @@ func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *
 	return &controlpb.ControlResponse{Success: true, Data: "ok", Result: &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: "ok"}}}
 }
 
-// userAgentWriteFile shells out via the user agent to write data to path,
-// inheriting the logged-in user's TCC scope. The data is passed as a single
-// base64-encoded argv element and decoded by the guest shell.
 func (s *ControlServer) userAgentWriteFile(ctx context.Context, path string, data []byte, mode uint32) error {
 	ua, err := s.getUserAgent()
 	if err != nil {
@@ -1127,9 +552,6 @@ func (s *ControlServer) userAgentWriteFile(ctx context.Context, path string, dat
 	return nil
 }
 
-// guestDir returns the directory component of a guest (POSIX) path. We don't
-// use path/filepath because it applies host separators; agent paths are
-// always POSIX regardless of the host.
 func guestDir(p string) string {
 	if i := strings.LastIndexByte(p, '/'); i >= 0 {
 		if i == 0 {
@@ -1255,11 +677,6 @@ func (s *ControlServer) handleAgentMountVolumes() *controlpb.ControlResponse {
 		a.Exec(ctx, []string{"mkdir", "-p", mountPoint}, nil, "")
 		cancel()
 
-		// Dispatch the right mount command for the guest OS. Linux uses
-		// `mount -t virtiofs` (with cache=none injected for VirtioFS
-		// coherency); macOS uses `mount_virtiofs`. Sharing
-		// virtioFSMountArgs with the host-side install path keeps the
-		// option-injection rules in one place — see volumes.go.
 		mountArgs := virtioFSMountArgs(m, mountPoint, linuxMode)
 		ctx, cancel = s.timeoutContext(10 * time.Second)
 		result, err := a.Exec(ctx, mountArgs, nil, "")
@@ -1390,7 +807,6 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("stat %s: %v", cmd.HostPath, err)}
 		}
 
-		// Directory copy: use longer timeout (large apps like Xcode can be 3+ GB).
 		if info.IsDir() {
 			timeout = 30 * time.Minute
 		}
@@ -1399,9 +815,8 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 	defer cancel()
 
 	if cmd.ToGuest {
-		info, _ := os.Stat(cmd.HostPath) // already checked above
+		info, _ := os.Stat(cmd.HostPath)
 
-		// Directory copy: tar on host, stream to guest, extract there.
 		if info.IsDir() {
 			return s.handleAgentCopyDir(ctx, a, cmd.HostPath, cmd.GuestPath, cmd.Overwrite)
 		}
@@ -1421,7 +836,6 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 		}
 	}
 
-	// Guest to host.
 	if err := a.CopyFromGuest(ctx, cmd.GuestPath, cmd.HostPath); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
 	}
@@ -1438,11 +852,7 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 	}
 }
 
-// handleAgentCopyDir copies a host directory to the guest by streaming a tar
-// archive over the CopyIn RPC, then extracting it on the guest side.
-// If overwrite is false and the destination already exists, the copy is skipped.
 func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.AgentClient, hostDir, guestDir string, overwrite bool) *controlpb.ControlResponse {
-	// Skip if destination already exists (unless overwrite is set).
 	if !overwrite {
 		checkResult, _ := a.Exec(ctx, []string{"/bin/test", "-d", guestDir}, nil, "")
 		if checkResult != nil && checkResult.ExitCode == 0 {
@@ -1460,10 +870,8 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.Ag
 		}
 	}
 
-	// Stream tar from host dir into a temp file on guest.
 	tmpTar := "/tmp/vz-cp-" + filepath.Base(hostDir) + ".tar"
 
-	// Always clean up the temp tar, even on failure.
 	defer func() {
 		ctx, cancel := s.timeoutContext(5 * time.Second)
 		defer cancel()
@@ -1472,7 +880,6 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.Ag
 
 	pr, pw := io.Pipe()
 
-	// Tar the directory in a goroutine.
 	go func() {
 		cmd := exec.Command("tar", "cf", "-", "-C", filepath.Dir(hostDir), filepath.Base(hostDir))
 		cmd.Stdout = pw
@@ -1484,13 +891,10 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.Ag
 		pw.Close()
 	}()
 
-	// Stream the tar to guest via CopyIn.
 	if err := a.CopyReaderToGuest(ctx, pr, tmpTar, 0644); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("stream tar to guest: %v", err)}
 	}
 
-	// Create destination and extract, stripping the source directory name so
-	// files land under guestDir regardless of the original basename.
 	if mkResult, err := a.Exec(ctx, []string{"mkdir", "-p", guestDir}, nil, ""); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("mkdir guest dir: %v", err)}
 	} else if mkResult.ExitCode != 0 {
@@ -1504,7 +908,6 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.Ag
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("extract tar: exit %d: %s", result.ExitCode, string(result.Stderr))}
 	}
 
-	// Check extracted size.
 	sizeResult, _ := a.Exec(ctx, []string{"du", "-sh", guestDir}, nil, "")
 	sizeStr := ""
 	if sizeResult != nil {

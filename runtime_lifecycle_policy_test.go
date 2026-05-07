@@ -58,9 +58,7 @@ func TestCheckVMLifecyclePolicyStopsForIdle(t *testing.T) {
 	}
 	s := NewControlServerWithVMDir("", dir)
 	s.setPolicyStartTime(time.Unix(0, 0))
-	s.bridge.healthMu.Lock()
-	s.bridge.health.lastPing = time.Unix(0, 0)
-	s.bridge.healthMu.Unlock()
+	s.bridge.SetLastPingForTest(time.Unix(0, 0))
 
 	run, err := beginStandaloneMetricsRun("vm-idle", "")
 	if err != nil {

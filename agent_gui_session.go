@@ -7,15 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/controlserver"
 	agentpb "github.com/tmc/vz-macos/proto/agentpb"
 )
-
-type guiSession struct {
-	ID   string
-	User string
-	Seat string
-	Kind string
-}
 
 type linuxLoginctlSession struct {
 	ID    string `json:"session"`
@@ -30,24 +24,24 @@ type guiSessionExec interface {
 	Exec(ctx context.Context, args []string, env map[string]string, workDir string) (*agentpb.ExecResponse, error)
 }
 
-func probeLinuxGUISession(ctx context.Context, exec guiSessionExec) (guiSession, bool, error) {
+func probeLinuxGUISession(ctx context.Context, exec guiSessionExec) (controlserver.GUISession, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	resp, err := exec.Exec(ctx, []string{"loginctl", "list-sessions", "--output", "json", "--no-pager"}, nil, "")
 	if err != nil {
-		return guiSession{}, false, fmt.Errorf("query gui sessions: %w", err)
+		return controlserver.GUISession{}, false, fmt.Errorf("query gui sessions: %w", err)
 	}
 	if resp.GetExitCode() != 0 {
 		msg := strings.TrimSpace(string(resp.GetStderr()))
 		if msg == "" {
 			msg = strings.TrimSpace(string(resp.GetStdout()))
 		}
-		return guiSession{}, false, fmt.Errorf("query gui sessions: %s", msg)
+		return controlserver.GUISession{}, false, fmt.Errorf("query gui sessions: %s", msg)
 	}
 	rows, err := parseLinuxLoginctlSessionRows(resp.GetStdout())
 	if err != nil {
-		return guiSession{}, false, err
+		return controlserver.GUISession{}, false, err
 	}
 	if session, ok := activeGraphicalLoginctlSession(rows); ok {
 		return session, true, nil
@@ -64,25 +58,25 @@ func probeLinuxGUISession(ctx context.Context, exec guiSessionExec) (guiSession,
 			return session, true, nil
 		}
 	}
-	return guiSession{}, false, nil
+	return controlserver.GUISession{}, false, nil
 }
 
-func probeMacOSGUISession(ctx context.Context, exec guiSessionExec) (guiSession, bool, error) {
+func probeMacOSGUISession(ctx context.Context, exec guiSessionExec) (controlserver.GUISession, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	resp, err := exec.Exec(ctx, []string{"sh", "-lc", macOSGUISessionScript()}, nil, "")
 	if err != nil {
-		return guiSession{}, false, fmt.Errorf("query gui session: %w", err)
+		return controlserver.GUISession{}, false, fmt.Errorf("query gui session: %w", err)
 	}
 	if resp.GetExitCode() != 0 {
-		return guiSession{}, false, nil
+		return controlserver.GUISession{}, false, nil
 	}
 	user := strings.TrimSpace(string(resp.GetStdout()))
 	if user == "" {
-		return guiSession{}, false, nil
+		return controlserver.GUISession{}, false, nil
 	}
-	return guiSession{User: user, Seat: "console", Kind: "console"}, true, nil
+	return controlserver.GUISession{User: user, Seat: "console", Kind: "console"}, true, nil
 }
 
 func macOSGUISessionScript() string {
@@ -95,10 +89,10 @@ launchctl print "gui/$uid" >/dev/null || exit 3
 printf '%s\n' "$user"`
 }
 
-func parseLinuxLoginctlSessions(data []byte) (guiSession, bool, error) {
+func parseLinuxLoginctlSessions(data []byte) (controlserver.GUISession, bool, error) {
 	rows, err := parseLinuxLoginctlSessionRows(data)
 	if err != nil {
-		return guiSession{}, false, err
+		return controlserver.GUISession{}, false, err
 	}
 	session, ok := activeGraphicalLoginctlSession(rows)
 	return session, ok, nil
@@ -112,7 +106,7 @@ func parseLinuxLoginctlSessionRows(data []byte) ([]linuxLoginctlSession, error) 
 	return rows, nil
 }
 
-func activeGraphicalLoginctlSession(rows []linuxLoginctlSession) (guiSession, bool) {
+func activeGraphicalLoginctlSession(rows []linuxLoginctlSession) (controlserver.GUISession, bool) {
 	for _, row := range rows {
 		kind := strings.ToLower(strings.TrimSpace(row.Type))
 		if row.State != "active" || (kind != "wayland" && kind != "x11") {
@@ -125,17 +119,17 @@ func activeGraphicalLoginctlSession(rows []linuxLoginctlSession) (guiSession, bo
 		if user == "" {
 			continue
 		}
-		return guiSession{
+		return controlserver.GUISession{
 			ID:   row.ID,
 			User: user,
 			Seat: strings.TrimSpace(row.Seat),
 			Kind: kind,
 		}, true
 	}
-	return guiSession{}, false
+	return controlserver.GUISession{}, false
 }
 
-func parseLoginctlShowGUISession(id, out string) (guiSession, bool) {
+func parseLoginctlShowGUISession(id, out string) (controlserver.GUISession, bool) {
 	props := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
 		key, val, ok := strings.Cut(line, "=")
@@ -145,14 +139,14 @@ func parseLoginctlShowGUISession(id, out string) (guiSession, bool) {
 	}
 	kind := strings.ToLower(props["Type"])
 	if props["State"] != "active" || (kind != "wayland" && kind != "x11") {
-		return guiSession{}, false
+		return controlserver.GUISession{}, false
 	}
 	user := props["Name"]
 	if user == "" {
 		user = props["User"]
 	}
 	if user == "" {
-		return guiSession{}, false
+		return controlserver.GUISession{}, false
 	}
-	return guiSession{ID: id, User: user, Seat: props["Seat"], Kind: kind}, true
+	return controlserver.GUISession{ID: id, User: user, Seat: props["Seat"], Kind: kind}, true
 }
