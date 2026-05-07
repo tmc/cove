@@ -145,6 +145,21 @@ channel.
 | Cirrus migration docs | done | fleet + images + action surface | [migration guide](../migrations/from-cirrus.md) | Adds Cirrus displacement landing page, migration walkthrough, README link, and blog draft. Shipped at `bdd1912`, `2642d01`, `e413e0e`, `6017373`, and `4635254`. |
 | v0.4 readiness and integration matrix | done | shipped v0.4 surfaces | [release audit](../release/v0.4.0-readiness.md) | Adds v0.4 release notes draft, integration matrix, cross-reference pass, and readiness audit. Shipped at `96706d2`, `7852177`, `c29eae3`, and `14cabac`; this closeout updates the final docs. |
 
+## v0.5 — Stabilization: package boundaries + observability fixes
+
+This release contracts surface area and tightens internal boundaries. Slices 1-4
+of design 039 ship; slices 5-6 (`internal/vmrun` + `ControlServer` subcomponent
+splits) are deferred to v0.6 to avoid disturbing the macOS/Linux/windows runtime
+entry points during the Cirrus displacement window.
+
+| Item | Priority | Depends on | Source | Why |
+|---|---|---|---|---|
+| Design 039 package boundary extraction (slices 1-4) | done | none | [039](039-package-boundary-extraction.md) | Slice 1 introduces a command registry table replacing main.go switch sprawl (`346de9c`, net -53 LOC). Slice 2 adds an explicit `commandEnv` struct populated from globals at the dispatch boundary (`eeef127`). Slice 3 extracts `internal/controlclient` from `ctl.go`/`control_client.go` with a small Client API and no GUI/OCR pulled in (`3777885`, +200/-979 LOC net). Slice 4 extracts pure `ProvisionConfig`/`InjectOptions`/`ProvisionManifest` types into `internal/provision` with 200 LOC of tests at the new boundary (`49bd8f1`). |
+| Startup state visibility (#292 Issue B) | done | run.lock | [bugs/fresh-vm-run-hang](../bugs/2026-05-05-fresh-vm-run-hang.md) | `detectVMState` now honors `run.lock` + live-pid liveness check; `runtime.json` records startup phase (configuring → building-config → creating-vm → awaiting-start → running); `cove list`/`cove status` surface `starting` state with phase + pid. Shipped at `3bc6d86`. |
+| Bounded `internal/control.Server.Stop()` shutdown | done | control socket server | none (post-incident fix) | Adds `StopTimeout` (default 5s) and tracks active connections so a wedged health monitor cannot keep `cove run` alive after `runtime.json` writes `stopped`. Shipped at `cfb174b` via the agent-sandbox v2 batch. |
+| Design 039 slice 5 (`internal/vmrun` config) | maybe | slices 1-4 | [039](039-package-boundary-extraction.md) | Defines `RunConfig`, `HostConfig`, `DevicePlan`; converts `macos.go`/`linux.go`/`windows.go` entry points to accept these values. Deferred to v0.6 unless v0.5 has time after stabilization arc. |
+| Design 039 slice 6 (`ControlServer` subcomponent splits) | maybe | slices 1-5 | [039](039-package-boundary-extraction.md) | Extracts agent bridge, capture/OCR state, input dispatch, lifecycle, and network listeners as smaller invariants behind the existing facade. Deferred to v0.6. |
+
 ## v0.3 implementation slices
 
 The next implementation branches should stay directly based on `origin/main`
