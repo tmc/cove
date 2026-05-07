@@ -917,28 +917,24 @@ func (b *agentBridge) setHealthStatus(status, version, lastErr string) {
 	}
 }
 
-// The following wrappers preserve the prior method-on-ControlServer
-// shape for callers (control-socket dispatcher, lifecycle manager,
-// tests) while delegating to the bridge sub-component.
+// agentHealthMonitor and AgentHealthSummary are reachable from the
+// control server lifecycle wiring and the GUI status text, so the
+// public method shape stays on *ControlServer.
 
-func (s *ControlServer) agentHealthMonitor() { s.bridge.agentHealthMonitor() }
+func (s *ControlServer) agentHealthMonitor()        { s.bridge.agentHealthMonitor() }
+func (s *ControlServer) AgentHealthSummary() string { return s.bridge.AgentHealthSummary() }
+
+// The remaining wrappers exist for the handleAgentPing fast path
+// (markAgentConnected) and for tests in agent_health_test.go that
+// pin the disconnect-edge invariants through the ControlServer
+// surface. They will go away once the dispatcher and tests speak
+// directly to *agentBridge.
+
 func (s *ControlServer) nextAgentHealthInterval(d time.Duration) time.Duration {
 	return s.bridge.nextAgentHealthInterval(d)
 }
-func (s *ControlServer) healthCheckOnce(ctx context.Context, failCount *int) {
-	s.bridge.healthCheckOnce(ctx, failCount)
-}
-func (s *ControlServer) markAgentConnected(version string)        { s.bridge.markAgentConnected(version) }
-func (s *ControlServer) markAgentReconnecting(reason string)      { s.bridge.markAgentReconnecting(reason) }
-func (s *ControlServer) checkAgentVersion(agentVer string)        { s.bridge.checkAgentVersion(agentVer) }
-func (s *ControlServer) healthCheckUserAgent(ctx context.Context) { s.bridge.healthCheckUserAgent(ctx) }
-func (s *ControlServer) healthCheckGUISession(ctx context.Context) {
-	s.bridge.healthCheckGUISession(ctx)
-}
-func (s *ControlServer) AgentHealthSummary() string { return s.bridge.AgentHealthSummary() }
-func (s *ControlServer) agentNeverConnectedSummary() string {
-	return s.bridge.agentNeverConnectedSummary()
-}
+func (s *ControlServer) markAgentConnected(version string)   { s.bridge.markAgentConnected(version) }
+func (s *ControlServer) markAgentReconnecting(reason string) { s.bridge.markAgentReconnecting(reason) }
 func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
 	s.bridge.setHealthStatus(status, version, lastErr)
 }
