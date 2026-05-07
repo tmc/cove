@@ -65,7 +65,6 @@ type ControlServer struct {
 	gui               VMGUIController
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
-	activeConnections atomic.Int32
 
 	opsMu  sync.Mutex                    // guards opsReg lazy init
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
