@@ -27,11 +27,11 @@ mkdir -p "$(dirname "$out")"
 for provider in $providers; do
   errors=0
   latencies=()
+  if [ "$live" != "1" ]; then
+    echo "| $provider | $runs | n/a | n/a | set RUN_LIVE=1 and provider credentials to collect |" >> "$out"
+    continue
+  fi
   for i in $(seq 1 "$runs"); do
-    if [ "$live" != "1" ]; then
-      errors=$((errors + 1))
-      continue
-    fi
     start="$(python3 - <<'PY'
 import time
 print(time.time())
@@ -89,8 +89,7 @@ import sys
 print(f"{int(sys.argv[1]) / int(sys.argv[2]):.2f}")
 PY
 )"
-  notes="set RUN_LIVE=1 and provider credentials to collect"
-  [ "$live" = "1" ] && notes="instant provisioning metric"
+  notes="instant provisioning metric"
   echo "| $provider | $runs | $median | $err_rate | $notes |" >> "$out"
 done
 

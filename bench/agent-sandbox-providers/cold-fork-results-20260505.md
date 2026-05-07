@@ -9,7 +9,7 @@
 
 | Provider | Runs | Median fork-to-first-action s | Error rate | Notes |
 | --- | ---: | ---: | ---: | --- |
-| openai | 10 | n/a | 1.00 | set RUN_LIVE=1 and OPENAI_API_KEY to collect |
-| anthropic | 10 | n/a | 1.00 | set RUN_LIVE=1 and ANTHROPIC_API_KEY to collect |
-| gemini | 10 | n/a | 1.00 | set RUN_LIVE=1 and GEMINI_API_KEY to collect |
-| vertex | 10 | n/a | 1.00 | set RUN_LIVE=1 and GOOGLE_CLOUD_PROJECT plus ADC to collect |
+| openai | 10 | n/a | n/a | set RUN_LIVE=1 and OPENAI_API_KEY to collect |
+| anthropic | 10 | n/a | n/a | set RUN_LIVE=1 and ANTHROPIC_API_KEY to collect |
+| gemini | 10 | n/a | n/a | set RUN_LIVE=1 and GEMINI_API_KEY to collect |
+| vertex | 10 | n/a | n/a | set RUN_LIVE=1 and GOOGLE_CLOUD_PROJECT plus ADC to collect |

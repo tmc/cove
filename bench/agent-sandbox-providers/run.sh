@@ -31,11 +31,11 @@ for provider in $providers; do
   tmp="$(mktemp -d)"
   errors=0
   latencies=()
+  if [ "$live" != "1" ]; then
+    echo "| $provider | $model | $runs | n/a | n/a | set RUN_LIVE=1 and provider credentials to collect |" >> "$out"
+    continue
+  fi
   for i in $(seq 1 "$runs"); do
-    if [ "$live" != "1" ]; then
-      errors=$((errors + 1))
-      continue
-    fi
     start="$(python3 - <<'PY'
 import time
 print(time.time())
@@ -69,8 +69,7 @@ import sys
 print(f"{int(sys.argv[1]) / int(sys.argv[2]):.2f}")
 PY
 )"
-  notes="set RUN_LIVE=1 and provider credentials to collect"
-  [ "$live" = "1" ] && notes="mechanical latency only; not quality"
+  notes="mechanical latency only; not quality"
   echo "| $provider | $model | $runs | $median | $err_rate | $notes |" >> "$out"
 done
 
