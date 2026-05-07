@@ -27,7 +27,6 @@ import (
 	"github.com/tmc/apple/x/vzkit/vm"
 	"github.com/tmc/apple/x/vzkit/vminput"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
 	controlx "github.com/tmc/vz-macos/internal/control"
 	"github.com/tmc/vz-macos/internal/control/operations"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
@@ -55,19 +54,15 @@ type ControlServer struct {
 	vm                vz.VZVirtualMachine
 	vmQueue           dispatch.Queue
 	mu                sync.Mutex
-	agentMu           sync.RWMutex // protects agent connection setup; RLock for concurrent RPCs
 	running           atomic.Bool
-	capture           screenCapture               // diff cache + lazy OCR service, self-guarded
-	agent             *agentstate.AgentClient     // GRPC client to guest agent daemon (nil until connected)
-	userAgent         *agentstate.UserAgentClient // GRPC client to guest user agent (nil until connected)
-	iterm2Proxy       *ITerm2Proxy                // WebSocket-to-vsock relay for iTerm2 API (nil until started)
-	portForwards      *PortForwardManager         // host TCP -> guest vsock port forwards (nil until first use)
+	capture           screenCapture       // diff cache + lazy OCR service, self-guarded
+	bridge            agentBridge         // agent clients + health state (owns its own mutexes)
+	iterm2Proxy       *ITerm2Proxy        // WebSocket-to-vsock relay for iTerm2 API (nil until started)
+	portForwards      *PortForwardManager // host TCP -> guest vsock port forwards (nil until first use)
 	vncStatus         VNCStatus
 	debugStubStatus   DebugStubStatus
-	windowNum         int              // cached window number for thread-safe screenshot
-	viewContentHeight int              // cached view content height in pixels (excludes title bar)
-	healthMu          sync.RWMutex     // protects agentHealth
-	agentHealth       agentHealthState // proactive health monitoring state
+	windowNum         int // cached window number for thread-safe screenshot
+	viewContentHeight int // cached view content height in pixels (excludes title bar)
 	windowTitleMu     sync.RWMutex
 	windowTitleBase   string
 	windowTitleState  string
@@ -1585,9 +1580,9 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 	status["policyStartedAt"] = startedAt.Format(time.RFC3339)
 	status["policyExecCount"] = execCount
 	status["policyStopIssued"] = stopIssued
-	s.healthMu.RLock()
-	lastPing := s.agentHealth.lastPing
-	s.healthMu.RUnlock()
+	s.bridge.healthMu.RLock()
+	lastPing := s.bridge.health.lastPing
+	s.bridge.healthMu.RUnlock()
 	status["lastPing"] = lastPing.Format(time.RFC3339)
 
 	data, _ := json.Marshal(status)
