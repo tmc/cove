@@ -1,0 +1,316 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/tmc/apple/x/vzkit/disk"
+	"github.com/tmc/vz-macos/internal/vmconfig"
+)
+
+type commandDispatch int
+
+const (
+	commandDispatchPreUI commandDispatch = iota
+	commandDispatchEarly
+	commandDispatchLate
+)
+
+type commandSpec struct {
+	Name     string
+	Aliases  []string
+	Summary  string
+	Dispatch commandDispatch
+	Run      func(name string, args []string) int
+}
+
+var commandRegistry = []commandSpec{
+	{Name: "action", Summary: "Preflight helpers for private GitHub Actions runner images", Dispatch: commandDispatchPreUI, Run: runActionCommand},
+	{Name: "agent-sandbox", Summary: "Run a computer-use provider loop in a fresh VM fork", Dispatch: commandDispatchEarly, Run: runAgentSandboxCommand},
+	{Name: "agent-upgrade", Aliases: []string{"upgrade-agent"}, Summary: "Live-upgrade vz-agent in a running VM", Dispatch: commandDispatchEarly, Run: runAgentUpgradeCommand},
+	{Name: "bench", Summary: "Normalize benchmark evidence into reports and run metrics", Dispatch: commandDispatchEarly, Run: runBenchCommand},
+	{Name: "build", Summary: "Chain vzscript steps into a cache-keyed VM image", Dispatch: commandDispatchEarly, Run: runBuildCommand},
+	{Name: "clean", Summary: "Remove VM files", Dispatch: commandDispatchLate, Run: runCleanCommand},
+	{Name: "clone", Summary: "Clone a VM", Dispatch: commandDispatchLate, Run: runCloneCommand},
+	{Name: "compact", Summary: "Zero guest free space for smaller pushes", Dispatch: commandDispatchEarly, Run: runCompactCommand},
+	{Name: "config", Summary: "Export/import framework config snapshots", Dispatch: commandDispatchLate, Run: runVMSubcommand},
+	{Name: "cp", Summary: "Copy files between host and guest", Dispatch: commandDispatchEarly, Run: runCpCommand},
+	{Name: "ctl", Summary: "Control running VM via socket", Dispatch: commandDispatchEarly, Run: runCtlCommand},
+	{Name: "daemon", Summary: "Manage the cove background coordinator", Dispatch: commandDispatchEarly, Run: runDaemonCommand},
+	{Name: "diff", Summary: "Compare local image disk layer metadata", Dispatch: commandDispatchEarly, Run: runDiffCommand},
+	{Name: "disk-detach", Summary: "Detach VM disk if stuck", Dispatch: commandDispatchEarly, Run: runDiskDetachCommand},
+	{Name: "disk-snapshot", Summary: "Manage disk-level snapshots", Dispatch: commandDispatchLate, Run: runDiskSnapshotCommand},
+	{Name: "export", Summary: "Export VM to tarball", Dispatch: commandDispatchLate, Run: runVMSubcommand},
+	{Name: "fleet", Summary: "Register and use remote cove hosts", Dispatch: commandDispatchEarly, Run: runFleetCommandSpec},
+	{Name: "fork", Summary: "CoW-fork a VM with a fresh identity", Dispatch: commandDispatchEarly, Run: runForkCommand},
+	{Name: "forward", Summary: "Forward host TCP to guest TCP", Dispatch: commandDispatchEarly, Run: runForwardCommand},
+	{Name: "gc", Summary: "Delete old disposable VM clones", Dispatch: commandDispatchEarly, Run: runGCCommand},
+	{Name: "helper", Summary: "Manage the privileged helper", Dispatch: commandDispatchLate, Run: runHelperCommandSpec},
+	{Name: "image", Summary: "Local VM image store", Dispatch: commandDispatchEarly, Run: runImageCommand},
+	{Name: "import", Summary: "Import VM from tarball", Dispatch: commandDispatchLate, Run: runVMSubcommand},
+	{Name: "inject", Summary: "Deprecated alias for provision", Dispatch: commandDispatchEarly, Run: runProvisionCommand},
+	{Name: "inject-agent", Summary: "Deprecated alias for provision-agent", Dispatch: commandDispatchEarly, Run: runProvisionAgentCommand},
+	{Name: "install", Summary: "Install OS", Dispatch: commandDispatchLate, Run: runInstallCommand},
+	{Name: "list", Aliases: []string{"ls"}, Summary: "List available VMs and templates", Dispatch: commandDispatchLate, Run: runListCommand},
+	{Name: "logs", Summary: "Show guest logs from a running VM", Dispatch: commandDispatchEarly, Run: runLogsCommand},
+	{Name: "network", Summary: "Network configuration", Dispatch: commandDispatchLate, Run: runNetworkCommandSpec},
+	{Name: "pit", Summary: "Experimental point-in-time save, restore, run, and swap", Dispatch: commandDispatchLate, Run: runPITCommandSpec},
+	{Name: "policy", Summary: "VM lifecycle policy", Dispatch: commandDispatchEarly, Run: runPolicyCommand},
+	{Name: "provision", Summary: "Write provisioning files into VM disk", Dispatch: commandDispatchEarly, Run: runProvisionCommand},
+	{Name: "provision-agent", Summary: "Provision vz-agent daemon", Dispatch: commandDispatchEarly, Run: runProvisionAgentCommand},
+	{Name: "pull", Summary: "Validate an OCI pull plan", Dispatch: commandDispatchEarly, Run: runPullCommand},
+	{Name: "push", Summary: "Plan a VM disk OCI push", Dispatch: commandDispatchEarly, Run: runPushCommand},
+	{Name: "quota", Summary: "Show or set per-VM resource quotas", Dispatch: commandDispatchEarly, Run: runQuotaCommand},
+	{Name: "rename", Summary: "Rename a VM", Dispatch: commandDispatchLate, Run: runVMSubcommand},
+	{Name: "rm", Aliases: []string{"remove", "destroy"}, Summary: "Delete a VM", Dispatch: commandDispatchLate, Run: runVMDeleteAliasCommand},
+	{Name: "rosetta", Summary: "Rosetta 2 for Linux VMs", Dispatch: commandDispatchLate, Run: runRosettaCommandSpec},
+	{Name: "run", Summary: "Run a VM", Dispatch: commandDispatchLate, Run: runRunCommand},
+	{Name: "runs", Summary: "Inspect local run metrics and artifacts", Dispatch: commandDispatchEarly, Run: runRunsCommand},
+	{Name: "secret", Summary: "Debug secret resolver", Dispatch: commandDispatchEarly, Run: runSecretCommand},
+	{Name: "serve", Summary: "Multi-VM HTTP gateway", Dispatch: commandDispatchEarly, Run: runServeCommandSpec},
+	{Name: "shared-folder", Aliases: []string{"shared-folders"}, Summary: "Manage shared folders", Dispatch: commandDispatchEarly, Run: runSharedFolderCommand},
+	{Name: "shell", Summary: "Open a Docker-shaped exec session", Dispatch: commandDispatchEarly, Run: runShellCommand},
+	{Name: "sip", Summary: "SIP management", Dispatch: commandDispatchEarly, Run: runSIPCommand},
+	{Name: "snapshot", Summary: "Manage VM state snapshots", Dispatch: commandDispatchLate, Run: runSnapshotCommandSpec},
+	{Name: "softreset", Summary: "Run destructive soft-reset probe matrix", Dispatch: commandDispatchEarly, Run: runSoftresetCommand},
+	{Name: "status", Summary: "Show VM status", Dispatch: commandDispatchLate, Run: runStatusCommand},
+	{Name: "store", Summary: "Manage the local OCI blob store", Dispatch: commandDispatchEarly, Run: runStoreCommand},
+	{Name: "template", Summary: "Manage VM templates", Dispatch: commandDispatchLate, Run: runTemplateCommand},
+	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: commandDispatchEarly, Run: runUIScriptCommand},
+	{Name: "up", Summary: "Install + provision + boot in one command", Dispatch: commandDispatchEarly, Run: runUpCommand},
+	{Name: "verify", Aliases: []string{"doctor"}, Summary: "Verify provisioning files in VM disk", Dispatch: commandDispatchEarly, Run: runVerifyCommand},
+	{Name: "version", Summary: "Print version information", Dispatch: commandDispatchEarly, Run: runVersionCommand},
+	{Name: "vm", Summary: "Manage VMs", Dispatch: commandDispatchLate, Run: runVMCommandSpec},
+	{Name: "vzscript", Summary: "Run guest-agent and UI automation scripts", Dispatch: commandDispatchEarly, Run: runVZScriptCommand},
+}
+
+func lookupCommand(name string) (*commandSpec, bool) {
+	for i := range commandRegistry {
+		spec := &commandRegistry[i]
+		if name == spec.Name {
+			return spec, true
+		}
+		for _, alias := range spec.Aliases {
+			if name == alias {
+				return spec, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func commandNames() []string {
+	var names []string
+	for _, spec := range commandRegistry {
+		names = append(names, spec.Name)
+		names = append(names, spec.Aliases...)
+	}
+	names = append(names, "help")
+	return names
+}
+
+func runRegisteredCommand(spec *commandSpec, name string, args []string) int {
+	if spec == nil || spec.Run == nil {
+		return 2
+	}
+	return spec.Run(name, args)
+}
+
+func commandError(err error) int {
+	if err == nil {
+		return 0
+	}
+	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	return 1
+}
+
+func runActionCommand(_ string, args []string) int {
+	return handleActionCommand(args)
+}
+
+func runAgentSandboxCommand(_ string, args []string) int {
+	return commandError(handleAgentSandboxCommand(args))
+}
+func runAgentUpgradeCommand(_ string, _ []string) int { return commandError(upgradeAgent()) }
+func runBenchCommand(_ string, args []string) int     { return commandError(handleBenchCommand(args)) }
+func runBuildCommand(_ string, args []string) int     { return commandError(handleBuild(args)) }
+func runCompactCommand(_ string, args []string) int   { return commandError(handleCompact(args)) }
+func runCpCommand(_ string, args []string) int        { return commandError(handleCpCommand(args)) }
+func runCtlCommand(_ string, args []string) int       { return commandError(ctlCommand(args)) }
+func runDaemonCommand(_ string, args []string) int    { return commandError(daemonCommand(args)) }
+func runDiffCommand(_ string, args []string) int      { return commandError(diffCommand(args)) }
+func runFleetCommandSpec(_ string, args []string) int { return commandError(handleFleetCommand(args)) }
+func runForwardCommand(_ string, args []string) int   { return commandError(forwardCommand(args)) }
+func runGCCommand(_ string, args []string) int        { return commandError(handleGCCommand(args)) }
+func runImageCommand(_ string, args []string) int     { return commandError(handleImageCommand(args)) }
+func runLogsCommand(_ string, args []string) int      { return commandError(logsCommand(args)) }
+func runPolicyCommand(_ string, args []string) int    { return commandError(handlePolicyCommand(args)) }
+func runPullCommand(_ string, args []string) int      { return commandError(handlePull(args)) }
+func runPushCommand(_ string, args []string) int      { return commandError(handlePush(args)) }
+func runQuotaCommand(_ string, args []string) int     { return commandError(handleQuotaCommand(args)) }
+func runRunsCommand(_ string, args []string) int      { return commandError(handleRunsCommand(args)) }
+func runSecretCommand(_ string, args []string) int    { return commandError(handleSecretCommand(args)) }
+func runShellCommand(_ string, args []string) int     { return commandError(shellCommand(args)) }
+func runSIPCommand(_ string, args []string) int       { return commandError(handleSIPCommand(args)) }
+func runSoftresetCommand(_ string, args []string) int { return commandError(softresetCommand(args)) }
+func runStoreCommand(_ string, args []string) int     { return commandError(handleStoreCommand(args)) }
+func runUpCommand(_ string, args []string) int        { return commandError(handleUp(args)) }
+func runVerifyCommand(_ string, args []string) int    { return commandError(handleVerify(args)) }
+func runVZScriptCommand(_ string, args []string) int  { return commandError(vzscriptCommand(args)) }
+
+func runCleanCommand(_ string, _ []string) int { return commandError(cleanVM()) }
+func runCloneCommand(_ string, args []string) int {
+	handleClone(args)
+	return 0
+}
+func runDiskSnapshotCommand(_ string, args []string) int {
+	return commandError(handleDiskSnapshotCommand(args))
+}
+func runHelperCommandSpec(_ string, args []string) int { return commandError(runHelperCmd(args)) }
+func runListCommand(_ string, _ []string) int {
+	handleList()
+	return 0
+}
+func runNetworkCommandSpec(_ string, args []string) int {
+	handleNetworkCommand(args)
+	return 0
+}
+func runPITCommandSpec(_ string, args []string) int { return commandError(handlePITCommand(args)) }
+func runRosettaCommandSpec(_ string, args []string) int {
+	return commandError(handleRosettaCommand(args))
+}
+func runRunCommand(_ string, _ []string) int {
+	handleRun()
+	return 0
+}
+func runSnapshotCommandSpec(_ string, args []string) int {
+	handleSnapshotCommand(args)
+	return 0
+}
+func runStatusCommand(_ string, _ []string) int { return commandError(statusCommand()) }
+func runTemplateCommand(_ string, args []string) int {
+	handleTemplate(args)
+	return 0
+}
+func runVMCommandSpec(_ string, args []string) int {
+	handleVMCommand(args)
+	return 0
+}
+
+func runVersionCommand(_ string, _ []string) int {
+	fmt.Println(versionInfo())
+	return 0
+}
+
+func runProvisionCommand(name string, args []string) int {
+	if name == "inject" {
+		fmt.Fprintf(os.Stderr, "note: 'inject' has been renamed to 'provision'\n")
+	}
+	return commandError(handleProvision(args))
+}
+
+func runProvisionAgentCommand(name string, _ []string) int {
+	if name == "inject-agent" {
+		fmt.Fprintf(os.Stderr, "note: 'inject-agent' has been renamed to 'provision-agent'\n")
+	}
+	return commandError(provisionAgent())
+}
+
+func runSharedFolderCommand(_ string, args []string) int {
+	if sharedFolderCommandBlocked(args) {
+		fmt.Fprintf(os.Stderr, "error: -sandbox-level %s does not allow shared-folder mutations\n", sandboxLevel)
+		return 1
+	}
+	return commandError(handleVMSharedFolderCommand(args))
+}
+
+func runDiskDetachCommand(_ string, _ []string) int {
+	diskFile := filepath.Join(vmDir, "disk.img")
+	if err := disk.EnsureDetached(diskFile); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	if verbose {
+		fmt.Println("Disk detached successfully.")
+	}
+	return 0
+}
+
+func runUIScriptCommand(_ string, _ []string) int {
+	fmt.Fprintf(os.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'cove vzscript' instead.\n")
+	return 0
+}
+
+func runServeCommandSpec(_ string, args []string) int {
+	return commandError(runServeCmd(args))
+}
+
+func runForkCommand(_ string, args []string) int {
+	handleFork(args)
+	return 0
+}
+
+func runInstallCommand(_ string, _ []string) int {
+	installVM = true
+	var err error
+	if windowsMode {
+		err = installWindowsVM()
+	} else if linuxMode {
+		err = handleLinuxInstall()
+	} else {
+		err = installMacOSLikeVZ(context.Background())
+	}
+	if errors.Is(err, errRestartVM) {
+		if err := runMacOSVM(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return 1
+		}
+	} else if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	if installVZScripts != "" {
+		if err := runPostInstallVZScripts(installVZScripts); err != nil {
+			fmt.Fprintf(os.Stderr, "error: running vzscripts: %v\n", err)
+			return 1
+		}
+	}
+	return 0
+}
+
+func runVMDeleteAliasCommand(_ string, args []string) int {
+	handleVMCommand(append([]string{"delete"}, args...))
+	return 0
+}
+
+func runVMSubcommand(name string, args []string) int {
+	handleVMCommand(append([]string{name}, args...))
+	return 0
+}
+
+func runLegacyInstallFlag() int {
+	fmt.Fprintf(os.Stderr, "warning: -install flag is deprecated, use 'cove install' command instead\n")
+	return runInstallCommand("install", nil)
+}
+
+func runLegacyRunFlag() int {
+	fmt.Fprintf(os.Stderr, "warning: -run flag is deprecated, use 'cove run' command instead\n")
+	handleRun()
+	return 0
+}
+
+func rerunVMDirForPostCommand() int {
+	if vmName == "" {
+		return 0
+	}
+	var err error
+	vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	return 0
+}
