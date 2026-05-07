@@ -2,18 +2,16 @@
 // controlserver.InputHost.
 //
 // These adapters expose existing control-server state under the names
-// the input bridge will reach for once it moves into
-// internal/controlserver. The bridge in package main today still uses
-// unexported back-references; the compile-time assertion below pins
-// the contract so the later move is a mechanical rename rather than
-// an interface negotiation.
+// the input bridge reaches for from internal/controlserver.
 package main
 
 import (
 	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 
 	"github.com/tmc/vz-macos/internal/controlserver"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 var _ controlserver.InputHost = (*ControlServer)(nil)
@@ -51,3 +49,22 @@ func (s *ControlServer) Lock() { s.mu.Lock() }
 
 // Unlock releases the RPC serialization mutex.
 func (s *ControlServer) Unlock() { s.mu.Unlock() }
+
+// VMQueue returns the dispatch queue used to serialize VM input sends.
+func (s *ControlServer) VMQueue() dispatch.Queue { return s.vmQueue }
+
+// Verbose reports whether the host is in verbose-logging mode.
+func (s *ControlServer) Verbose() bool { return verbose }
+
+// PrivateKeyHook returns the active test override for the
+// private-keyboard path bound to this ControlServer, or nil if none
+// is installed.
+func (s *ControlServer) PrivateKeyHook() func(*controlpb.KeyCommand) *controlpb.ControlResponse {
+	hook := sendKeyEventPrivateHook
+	if hook == nil {
+		return nil
+	}
+	return func(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+		return hook(s, cmd)
+	}
+}

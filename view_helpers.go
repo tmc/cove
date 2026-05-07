@@ -4,13 +4,15 @@ import (
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/objc"
 	vz "github.com/tmc/apple/virtualization"
+
+	"github.com/tmc/vz-macos/internal/controlserver"
 )
 
 // vmViewAsNSView casts a VZVirtualMachineView to appkit.NSView.
-// VZVirtualMachineView inherits from NSView in Objective-C, but the generated
-// Go bindings embed objectivec.Object instead of appkit.NSView.
+// Thin forwarder; the canonical implementation lives in the
+// controlserver package alongside the input bridge.
 func vmViewAsNSView(v vz.VZVirtualMachineView) appkit.NSView {
-	return appkit.NSViewFromID(v.ID)
+	return controlserver.VMViewAsNSView(v)
 }
 
 // getSharedApp returns the shared NSApplication instance.

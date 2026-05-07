@@ -1,14 +1,17 @@
 // InputHost is the narrow back-channel the input bridge uses to reach
 // state owned by the control server facade in package main.
 //
-// The input bridge will hold an InputHost rather than a *ControlServer
+// The input bridge holds an InputHost rather than a *ControlServer
 // back-reference so the dependency direction stays one-way from package
 // main into this package (per design 039 §7).
 package controlserver
 
 import (
 	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
+
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 // InputHost exposes the slice of control-server state the input bridge
@@ -52,6 +55,24 @@ type InputHost interface {
 	// same control-server state as a fresh key RPC.
 	Lock()
 	Unlock()
+
+	// VMQueue returns the dispatch queue used to serialize VM input
+	// sends. The bridge's private-keyboard path passes it to
+	// vminput.NewSender.
+	VMQueue() dispatch.Queue
+
+	// Verbose reports whether the host is in verbose-logging mode. The
+	// bridge's mouse/keyboard paths emit packet traces when true.
+	Verbose() bool
+
+	// PrivateKeyHook returns a test override for the private-keyboard
+	// path, or nil to use the real path. The bridge's SendKeyPrivate
+	// calls the hook (if non-nil) instead of dispatching through
+	// vminput.NewSender, which lets tests assert the path is reached
+	// without a live VM. The hook is owned by package main; this
+	// accessor lets the bridge consult it without taking a back
+	// reference to *ControlServer.
+	PrivateKeyHook() func(*controlpb.KeyCommand) *controlpb.ControlResponse
 }
 
 // BackendMode identifies a capture or input backend.

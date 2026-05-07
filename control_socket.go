@@ -54,7 +54,7 @@ type ControlServer struct {
 	capture           controlserver.Capture // diff cache + lazy OCR service, self-guarded
 	bridge            controlserver.AgentBridge // agent clients + health state (owns its own mutexes)
 	network           networkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
-	input             inputBridge   // mouse/keyboard delivery, back-references this ControlServer
+	input             controlserver.InputBridge // mouse/keyboard delivery
 	windowNum         int           // cached window number for thread-safe screenshot
 	viewContentHeight int           // cached view content height in pixels (excludes title bar)
 	windowTitleMu     sync.RWMutex
@@ -87,7 +87,7 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 	s.life.Start()
 	s.bridge.SetHost(s)
 	s.network.cs = s
-	s.input.cs = s
+	s.input.SetHost(s)
 	capture, input := resolveAutomationBackends()
 	s.setCaptureBackend(capture)
 	s.setInputBackend(input)
@@ -118,14 +118,13 @@ func (s *ControlServer) setInputBackend(mode automationBackendMode) {
 	s.inputMode.Store(int32(mode))
 }
 
-// inputs returns the input bridge with its back-reference wired. Test
-// constructors that build &ControlServer{} skip NewControlServerWithVMDir,
-// so the bridge can be reached with a nil cs. The forwarders go through
-// inputs() to ensure b.cs is always live.
-func (s *ControlServer) inputs() *inputBridge {
-	if s.input.cs != s {
-		s.input.cs = s
-	}
+// inputs returns the input bridge with its host back-channel wired.
+// Test constructors that build &ControlServer{} skip
+// NewControlServerWithVMDir, so the bridge can be reached with a nil
+// host; the forwarders go through inputs() to ensure the host is
+// always live.
+func (s *ControlServer) inputs() *controlserver.InputBridge {
+	s.input.SetHost(s)
 	return &s.input
 }
 
@@ -624,11 +623,11 @@ func (s *ControlServer) authorizeRequest(token string) bool {
 // VZVirtualMachineView.keyDown: uses internally.
 // Falls back to NSEvent or CGEvent delivery if HID injection fails.
 func (s *ControlServer) sendKeyEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	return s.inputs().sendKey(cmd)
+	return s.inputs().SendKey(cmd)
 }
 
 func (s *ControlServer) sendKeyEventPrimitive(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	return s.inputs().sendKeyPrimitive(cmd)
+	return s.inputs().SendKeyPrimitive(cmd)
 }
 
 func modifierKeySequence(flags uint32) []uint32 {
@@ -687,43 +686,27 @@ func envBool(name string) (bool, bool) {
 }
 
 func (s *ControlServer) sendKeyEventPrivate(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	return s.inputs().sendKeyPrivate(cmd)
+	return s.inputs().SendKeyPrivate(cmd)
 }
 
 func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	return s.inputs().sendKeyCGEvent(cmd)
+	return s.inputs().SendKeyCGEvent(cmd)
 }
 
 func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	return s.inputs().sendKeyNSEvent(cmd)
-}
-
-func keyboardEventUnicodeString(cmd *controlpb.KeyCommand) string {
-	if cmd == nil {
-		return ""
-	}
-	if cmd.Character != "" {
-		return cmd.Character
-	}
-	switch cmd.KeyCode {
-	case 36:
-		return "\r"
-	case 48:
-		return "\t"
-	case 51:
-		return "\x7f"
-	case 53:
-		return "\x1b"
-	case 49:
-		return " "
-	default:
-		return ""
-	}
+	return s.inputs().SendKeyNSEvent(cmd)
 }
 
 // sendMouseEvent forwards a mouse event to the input bridge.
 func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.ControlResponse {
-	return s.inputs().sendMouse(cmd)
+	return s.inputs().SendMouse(cmd)
+}
+
+// keyboardEventUnicodeString is a thin forwarder kept for tests in
+// package main. The implementation lives alongside the input bridge in
+// the controlserver package.
+func keyboardEventUnicodeString(cmd *controlpb.KeyCommand) string {
+	return controlserver.KeyboardEventUnicodeString(cmd)
 }
 
 func mapWindowCapturePointToViewPoint(x, y float64, captureW, captureH int, boundsW, contentH float64) (viewX, viewY float64) {
@@ -762,59 +745,16 @@ func mapNormalizedWindowCapturePointToViewPoint(x, y float64, captureW, captureH
 	)
 }
 
+// needsWindowCapturePointMapping is a thin forwarder kept for tests in
+// package main. The implementation lives alongside the input bridge in
+// the controlserver package.
 func needsWindowCapturePointMapping(mode automationBackendMode, captureW, captureH int, boundsW, contentH float64) bool {
-	if captureW <= 0 || captureH <= 0 {
-		return false
-	}
-	if mode == automationBackendWindow {
-		return true
-	}
-	if mode != automationBackendAuto {
-		return false
-	}
-	return float64(captureW) != boundsW || float64(captureH) != contentH
+	return controlserver.NeedsWindowCapturePointMapping(controlserver.BackendMode(mode), captureW, captureH, boundsW, contentH)
 }
 
 // typeText forwards a text-typing command to the input bridge.
 func (s *ControlServer) typeText(cmd *controlpb.TextCommand) *controlpb.ControlResponse {
-	return s.inputs().typeText(cmd)
-}
-
-// charKeyCodeInfo holds keycode and shift state for a character.
-type charKeyCodeInfo struct {
-	keyCode uint16
-	shift   bool
-}
-
-// charToKeyCode maps ASCII characters to macOS virtual keycodes.
-var charToKeyCode = map[rune]charKeyCodeInfo{
-	'a': {0, false}, 'b': {11, false}, 'c': {8, false}, 'd': {2, false},
-	'e': {14, false}, 'f': {3, false}, 'g': {5, false}, 'h': {4, false},
-	'i': {34, false}, 'j': {38, false}, 'k': {40, false}, 'l': {37, false},
-	'm': {46, false}, 'n': {45, false}, 'o': {31, false}, 'p': {35, false},
-	'q': {12, false}, 'r': {15, false}, 's': {1, false}, 't': {17, false},
-	'u': {32, false}, 'v': {9, false}, 'w': {13, false}, 'x': {7, false},
-	'y': {16, false}, 'z': {6, false},
-	'A': {0, true}, 'B': {11, true}, 'C': {8, true}, 'D': {2, true},
-	'E': {14, true}, 'F': {3, true}, 'G': {5, true}, 'H': {4, true},
-	'I': {34, true}, 'J': {38, true}, 'K': {40, true}, 'L': {37, true},
-	'M': {46, true}, 'N': {45, true}, 'O': {31, true}, 'P': {35, true},
-	'Q': {12, true}, 'R': {15, true}, 'S': {1, true}, 'T': {17, true},
-	'U': {32, true}, 'V': {9, true}, 'W': {13, true}, 'X': {7, true},
-	'Y': {16, true}, 'Z': {6, true},
-	'0': {29, false}, '1': {18, false}, '2': {19, false}, '3': {20, false},
-	'4': {21, false}, '5': {23, false}, '6': {22, false}, '7': {26, false},
-	'8': {28, false}, '9': {25, false},
-	' ': {49, false}, '-': {27, false}, '=': {24, false}, '[': {33, false},
-	']': {30, false}, '\\': {42, false}, ';': {41, false}, '\'': {39, false},
-	',': {43, false}, '.': {47, false}, '/': {44, false}, '`': {50, false},
-	'!': {18, true}, '@': {19, true}, '#': {20, true}, '$': {21, true},
-	'%': {23, true}, '^': {22, true}, '&': {26, true}, '*': {28, true},
-	'(': {25, true}, ')': {29, true}, '_': {27, true}, '+': {24, true},
-	'{': {33, true}, '}': {30, true}, '|': {42, true}, '~': {50, true},
-	':': {41, true}, '"': {39, true}, '<': {43, true}, '>': {47, true},
-	'?':  {44, true},
-	'\n': {36, false}, '\t': {48, false},
+	return s.inputs().TypeText(cmd)
 }
 
 // GetControlSocketPath returns the default socket path

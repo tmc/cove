@@ -1,9 +1,9 @@
-package main
+package controlserver
 
 import "testing"
 
-// TestMouseYMappingUsesContentHeight asserts the slice-6c invariant: the
-// mouse Y mapping flips against the cached content height (the VM
+// TestMouseYMappingUsesContentHeight asserts the slice-6c invariant:
+// the mouse Y mapping flips against the cached content height (the VM
 // content area, e.g. 768px), not the NSView bounds height (which
 // includes the 32px title bar). The catch case is a non-window backend
 // with no capture metadata: viewY must equal (1.0 - normY) * contentH.
@@ -15,8 +15,8 @@ func TestMouseYMappingUsesContentHeight(t *testing.T) {
 	)
 
 	// captureW=0 / captureH=0 forces the no-capture branch in
-	// mapNormalizedWindowCapturePointToViewPoint.
-	_, viewY := mapNormalizedWindowCapturePointToViewPoint(0.5, normY, 0, 0, boundsW, contentH)
+	// MapNormalizedWindowCapturePointToViewPoint.
+	_, viewY := MapNormalizedWindowCapturePointToViewPoint(0.5, normY, 0, 0, boundsW, contentH)
 
 	want := (1.0 - normY) * contentH
 	if viewY != want {
@@ -28,17 +28,17 @@ func TestMouseYMappingUsesContentHeight(t *testing.T) {
 // the mapping is skipped when capture dimensions are unknown,
 // preserving the legacy (pre-window-mapping) coordinate path.
 func TestNeedsWindowCapturePointMappingDisabledWhenCaptureZero(t *testing.T) {
-	if needsWindowCapturePointMapping(automationBackendWindow, 0, 0, 1024, 768) {
+	if NeedsWindowCapturePointMapping(BackendWindow, 0, 0, 1024, 768) {
 		t.Fatal("mapping should be disabled when captureW/captureH are 0")
 	}
 }
 
-// TestInputBridgeZeroValueHasNilCS documents that a zero-value
-// inputBridge has no parent ControlServer wired. Tests that build
-// &ControlServer{} rely on this.
-func TestInputBridgeZeroValueHasNilCS(t *testing.T) {
-	var b inputBridge
-	if b.cs != nil {
-		t.Fatalf("zero inputBridge.cs = %v, want nil", b.cs)
+// TestInputBridgeZeroValueHasNilHost documents that a zero-value
+// InputBridge has no host wired. ControlServer constructors that
+// build &ControlServer{} rely on this.
+func TestInputBridgeZeroValueHasNilHost(t *testing.T) {
+	var b InputBridge
+	if b.host != nil {
+		t.Fatalf("zero InputBridge.host = %v, want nil", b.host)
 	}
 }
