@@ -61,7 +61,7 @@ type ControlServer struct {
 	windowTitleBase   string
 	windowTitleState  string
 	windowTitleLabel  string
-	life              lifecycleBridge // cancellable lifecycle ctx + policy counters (owns its own mutexes)
+	life              controlserver.Lifecycle // cancellable lifecycle ctx + policy counters (owns its own mutexes)
 	gui               VMGUIController
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
@@ -99,7 +99,7 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 		socketPath: socketPath,
 		vmDir:      vmDirectory,
 	}
-	s.life.start()
+	s.life.Start()
 	s.bridge.cs = s
 	s.network.cs = s
 	s.input.cs = s
@@ -110,11 +110,11 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 }
 
 func (s *ControlServer) lifecycleContext() context.Context {
-	return s.life.context()
+	return s.life.Context()
 }
 
 func (s *ControlServer) timeoutContext(timeout time.Duration) (context.Context, context.CancelFunc) {
-	return s.life.timeoutContext(timeout)
+	return s.life.TimeoutContext(timeout)
 }
 
 func (s *ControlServer) captureBackend() automationBackendMode {
@@ -190,19 +190,19 @@ func (s *ControlServer) SetVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 }
 
 func (s *ControlServer) setPolicyStartTime(now time.Time) {
-	s.life.setPolicyStartTime(now)
+	s.life.SetPolicyStartTime(now)
 }
 
 func (s *ControlServer) policySnapshot() (time.Time, int64, bool) {
-	return s.life.policySnapshot()
+	return s.life.PolicySnapshot()
 }
 
 func (s *ControlServer) notePolicyExec() {
-	s.life.notePolicyExec()
+	s.life.NotePolicyExec()
 }
 
 func (s *ControlServer) markPolicyStopIssued() bool {
-	return s.life.markPolicyStopIssued()
+	return s.life.MarkPolicyStopIssued()
 }
 
 func (s *ControlServer) SetWindowTitleBase(base string) {
@@ -241,7 +241,7 @@ func (s *ControlServer) WindowTitle() string {
 
 // Start begins listening on the Unix socket
 func (s *ControlServer) Start() error {
-	lifecycleCtx := s.life.start()
+	lifecycleCtx := s.life.Start()
 	if s.authToken == "" {
 		token, err := EnsureControlTokenForVM(s.effectiveVMDir())
 		if err != nil {
@@ -277,7 +277,7 @@ func (s *ControlServer) Stop() {
 	proxyCtx, cancel := s.timeoutContext(5 * time.Second)
 	s.network.stopITerm2Proxy(proxyCtx)
 	cancel()
-	s.life.shutdown()
+	s.life.Shutdown()
 	s.network.stopPortForwards()
 	s.network.closeHTTPListeners()
 	if s.listener != nil {
