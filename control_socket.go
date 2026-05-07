@@ -24,6 +24,7 @@ import (
 
 	controlx "github.com/tmc/vz-macos/internal/control"
 	"github.com/tmc/vz-macos/internal/control/operations"
+	"github.com/tmc/vz-macos/internal/controlserver"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -50,7 +51,7 @@ type ControlServer struct {
 	vmQueue           dispatch.Queue
 	mu                sync.Mutex
 	running           atomic.Bool
-	capture           screenCapture // diff cache + lazy OCR service, self-guarded
+	capture           controlserver.Capture // diff cache + lazy OCR service, self-guarded
 	bridge            agentBridge   // agent clients + health state (owns its own mutexes)
 	network           networkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
 	input             inputBridge   // mouse/keyboard delivery, back-references this ControlServer
@@ -144,11 +145,11 @@ func (s *ControlServer) inputs() *inputBridge {
 }
 
 func (s *ControlServer) rememberCaptureBounds(img image.Image) {
-	s.capture.rememberBounds(img)
+	s.capture.RememberBounds(img)
 }
 
 func (s *ControlServer) lastCaptureBounds() (width, height int) {
-	return s.capture.lastBounds()
+	return s.capture.LastBounds()
 }
 
 func (s *ControlServer) effectiveVMDir() string {
@@ -498,7 +499,7 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 
 // getOCR returns the lazily-initialized OCR service.
 func (s *ControlServer) getOCR() *ocrx.Service {
-	return s.capture.service(verbose)
+	return s.capture.Service(verbose)
 }
 
 // ocrDataParams extracts text and timeout from the JSON "data" field.
