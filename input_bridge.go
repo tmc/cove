@@ -15,11 +15,14 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/objc"
+	"github.com/tmc/apple/x/vzkit/vm"
+	"github.com/tmc/apple/x/vzkit/vminput"
 
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -332,4 +335,301 @@ func (b *inputBridge) sendMouseCGEvent(cmd *controlpb.MouseCommand) *controlpb.C
 	}
 
 	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+}
+
+// sendKey is the top-level entry point for keyboard input. Modifier
+// chords are synthesized as real modifier-key presses; bare keys go
+// through the configured automation backend.
+func (b *inputBridge) sendKey(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	s := b.cs
+	if s.vmView.ID == 0 {
+		return &controlpb.ControlResponse{Error: "keyboard input requires GUI mode (run with -gui)"}
+	}
+
+	// Modifier chords are fragile in Recovery UI when represented only as
+	// event flags. Synthesize real modifier-key presses instead.
+	if cmd.Modifiers != 0 {
+		return b.sendKeyChord(cmd)
+	}
+
+	// For non-modifier keys, choose the configured automation backend unless
+	// the caller explicitly asks for CGEvent-style fallback behavior.
+	return b.sendKeyPrimitive(cmd)
+}
+
+func (b *inputBridge) sendKeyPrimitive(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	s := b.cs
+	if s.inputBackend() == automationBackendWindow {
+		return b.sendKeyCGEvent(cmd)
+	}
+	if s.inputBackend() == automationBackendFramebuffer {
+		if !allowHIDKeyboard() {
+			return &controlpb.ControlResponse{Error: "framebuffer keyboard input disabled by VZ_MACOS_DISABLE_HID_KEYBOARD"}
+		}
+		return b.sendKeyPrivate(cmd)
+	}
+	if cmd.UseCgEvent {
+		return b.sendKeyMultiPath(cmd, false)
+	}
+	return b.sendKeyNSEvent(cmd)
+}
+
+func (b *inputBridge) sendKeyChord(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	mods := modifierKeySequence(cmd.Modifiers)
+	if len(mods) == 0 {
+		// Unknown modifier bit pattern; fall back to flag-based injection.
+		return b.sendKeyMultiPath(cmd, true)
+	}
+
+	var errs []string
+	send := func(name string, c *controlpb.KeyCommand) bool {
+		resp := b.sendKeyPrimitive(c)
+		if resp != nil && resp.Success {
+			return true
+		}
+		msg := "unknown error"
+		if resp != nil && resp.Error != "" {
+			msg = resp.Error
+		}
+		errs = append(errs, name+": "+msg)
+		return false
+	}
+
+	if cmd.KeyDown {
+		for _, keyCode := range mods {
+			send(fmt.Sprintf("modifier-down-%d", keyCode), &controlpb.KeyCommand{
+				KeyCode:    keyCode,
+				KeyDown:    true,
+				UseCgEvent: cmd.UseCgEvent,
+			})
+		}
+		if send("chord-key-down", &controlpb.KeyCommand{
+			KeyCode:    cmd.KeyCode,
+			Character:  cmd.Character,
+			KeyDown:    true,
+			UseCgEvent: cmd.UseCgEvent,
+		}) {
+			return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+		}
+		return &controlpb.ControlResponse{Error: "keyboard chord down failed: " + strings.Join(errs, "; ")}
+	}
+
+	// Key up: release primary key first, then modifiers in reverse order.
+	send("chord-key-up", &controlpb.KeyCommand{
+		KeyCode:    cmd.KeyCode,
+		Character:  cmd.Character,
+		KeyDown:    false,
+		UseCgEvent: cmd.UseCgEvent,
+	})
+	for i := len(mods) - 1; i >= 0; i-- {
+		keyCode := mods[i]
+		send(fmt.Sprintf("modifier-up-%d", keyCode), &controlpb.KeyCommand{
+			KeyCode:    keyCode,
+			KeyDown:    false,
+			UseCgEvent: cmd.UseCgEvent,
+		})
+	}
+	if len(errs) == 0 {
+		return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+	}
+	return &controlpb.ControlResponse{Error: "keyboard chord up failed: " + strings.Join(errs, "; ")}
+}
+
+func (b *inputBridge) sendKeyMultiPath(cmd *controlpb.KeyCommand, fanout bool) *controlpb.ControlResponse {
+	type keyInjector struct {
+		name string
+		fn   func(*controlpb.KeyCommand) *controlpb.ControlResponse
+	}
+	paths := []keyInjector{
+		{name: "nsevent", fn: b.sendKeyNSEvent},
+		{name: "cgevent", fn: b.sendKeyCGEvent},
+	}
+	if allowHIDKeyboard() {
+		paths = append(paths, keyInjector{name: "private", fn: b.sendKeyPrivate})
+	}
+	if cmd.UseCgEvent {
+		// For shortcut-style input, prefer lower-level injectors first.
+		paths = []keyInjector{
+			{name: "cgevent", fn: b.sendKeyCGEvent},
+			{name: "nsevent", fn: b.sendKeyNSEvent},
+		}
+		if allowHIDKeyboard() {
+			paths = append([]keyInjector{{name: "private", fn: b.sendKeyPrivate}}, paths...)
+		}
+	}
+
+	var errs []string
+	succeeded := false
+	for _, p := range paths {
+		resp := p.fn(cmd)
+		if resp != nil && resp.Success {
+			succeeded = true
+			if verbose {
+				fmt.Printf("[key-fallback] %s ok keyCode=%d down=%v mods=%d\n",
+					p.name, cmd.KeyCode, cmd.KeyDown, cmd.Modifiers)
+			}
+			if !fanout {
+				return resp
+			}
+			continue
+		}
+
+		msg := "unknown error"
+		if resp != nil && resp.Error != "" {
+			msg = resp.Error
+		}
+		errs = append(errs, p.name+": "+msg)
+		if verbose {
+			fmt.Printf("[key-fallback] %s failed: %s\n", p.name, msg)
+		}
+	}
+
+	if succeeded {
+		return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+	}
+	if len(errs) == 0 {
+		return &controlpb.ControlResponse{Error: "keyboard injection failed"}
+	}
+	return &controlpb.ControlResponse{Error: "keyboard injection failed: " + strings.Join(errs, "; ")}
+}
+
+// sendKeyPrivate sends a keyboard event through the typed private
+// _VZKeyboard.sendKeyEvents: path using _VZKeyEvent objects.
+//
+// The framebuffer backend uses this VM-local path by default. It still depends
+// on private Virtualization selectors, so VZ_MACOS_DISABLE_HID_KEYBOARD=1 can
+// temporarily disable it if a host/framework regression appears.
+func (b *inputBridge) sendKeyPrivate(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	if sendKeyEventPrivateHook != nil {
+		return sendKeyEventPrivateHook(b.cs, cmd)
+	}
+	s := b.cs
+	event, err := b.newKeyboardNSEvent(cmd)
+	if err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
+	}
+	sender := vminput.NewSender(vm.WrapQueue(s.vmQueue), s.vm)
+	if err := sender.SendKeyboardNSEvent(event, 0); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("private keyboard inject: %v", err)}
+	}
+	if verbose {
+		fmt.Printf("[key-private] sent keyCode=%d down=%v mods=%d chars=%q\n",
+			cmd.KeyCode, cmd.KeyDown, cmd.Modifiers, keyboardEventUnicodeString(cmd))
+	}
+	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+}
+
+// sendKeyCGEvent uses Quartz CGEvent for keyboard injection.
+// Events are posted through the system HID event tap so they travel
+// through the window server to VZVirtualMachineView (the same path
+// as real keyboard input). The VM window must be key and frontmost.
+func (b *inputBridge) sendKeyCGEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	s := b.cs
+	// Activate and focus the VM window on the main thread first.
+	runOnUIThreadSync(func() {
+		appkit.GetNSApplicationClass().SharedApplication().Activate()
+		s.window.MakeKeyAndOrderFront(nil)
+		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
+	})
+
+	event, err := createKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
+	}
+	if event == 0 {
+		return &controlpb.ControlResponse{Error: "failed to create CGEvent"}
+	}
+	defer corefoundation.CFRelease(corefoundation.CFTypeRef(event))
+
+	chars := keyboardEventUnicodeString(cmd)
+	if chars != "" {
+		setEventUnicodeString(event, chars)
+	}
+	if cmd.Modifiers != 0 {
+		setEventFlags(event, uint64(cmd.Modifiers))
+	}
+
+	// Try both delivery methods: first activate the app, then post through
+	// the HID event tap (window server path). Also post to PID as fallback.
+	if err := postEvent(cgHIDEventTap, event); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CG: %v", err)}
+	}
+	if verbose {
+		fmt.Printf("[key-cgevent] posted keyCode=%d down=%v chars=%q via HID event tap\n", cmd.KeyCode, cmd.KeyDown, chars)
+	}
+
+	return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+}
+
+// sendKeyNSEvent uses AppKit NSEvent for view-level keyboard injection.
+// All AppKit calls are dispatched to the main thread.
+//
+// The CGEvent → +[NSEvent eventWithCGEvent:] → keyDown:/keyUp: chain
+// is the only path that survives purego's ARM64 stack-passing bug for
+// uint16 parameters (NSEvent keyEventWithType:...keyCode: would corrupt
+// the keyCode). See the package-level note on inputBridge.
+func (b *inputBridge) sendKeyNSEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
+	s := b.cs
+	event, err := b.newKeyboardNSEvent(cmd)
+	if err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
+	}
+
+	// Convert CGEvent to NSEvent and deliver to VZVirtualMachineView on the main thread.
+	var resp *controlpb.ControlResponse
+	runOnUIThreadSync(func() {
+		// Make sure the VM view is first responder.
+		s.window.MakeKeyAndOrderFront(nil)
+		s.window.MakeFirstResponder(vmViewAsNSView(s.vmView).NSResponder)
+
+		actualKeyCode := event.KeyCode()
+		chars := keyboardEventUnicodeString(cmd)
+		if verbose {
+			fmt.Printf("[key-nsevent] vmView=%x keyCode=%d actualKeyCode=%d down=%v chars=%q\n",
+				s.vmView.ID, cmd.KeyCode, actualKeyCode, cmd.KeyDown, chars)
+		}
+
+		// Route through VZVirtualMachineView's keyDown:/keyUp: directly,
+		// matching the pattern used for mouse events (mouseDown:/mouseUp:).
+		if cmd.KeyDown {
+			objc.Send[struct{}](s.vmView.ID, objc.Sel("keyDown:"), event.ID)
+		} else {
+			objc.Send[struct{}](s.vmView.ID, objc.Sel("keyUp:"), event.ID)
+		}
+
+		if verbose {
+			fmt.Printf("[key-nsevent] sent successfully\n")
+		}
+
+		resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
+	})
+	return resp
+}
+
+func (b *inputBridge) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NSEvent, error) {
+	cgEvent, err := createKeyboardEvent(0, uint16(cmd.KeyCode), cmd.KeyDown)
+	if err != nil {
+		return appkit.NSEvent{}, fmt.Errorf("create CGEvent: %v", err)
+	}
+	if cgEvent == 0 {
+		return appkit.NSEvent{}, fmt.Errorf("create CGEvent returned nil")
+	}
+
+	chars := keyboardEventUnicodeString(cmd)
+	if chars != "" {
+		setEventUnicodeString(cgEvent, chars)
+	}
+	if cmd.Modifiers != 0 {
+		setEventFlags(cgEvent, uint64(cmd.Modifiers))
+	}
+
+	eventID := objc.Send[objc.ID](
+		objc.ID(objc.GetClass("NSEvent")),
+		objc.Sel("eventWithCGEvent:"),
+		uintptr(cgEvent),
+	)
+	if eventID == 0 {
+		return appkit.NSEvent{}, fmt.Errorf("NSEvent eventWithCGEvent: returned nil")
+	}
+	return appkit.NSEventFromID(eventID), nil
 }
