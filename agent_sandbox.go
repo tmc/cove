@@ -67,7 +67,7 @@ var agentSandboxDoctorDial = func(ctx context.Context, network, address string) 
 func handleAgentSandboxDoctor(args []string) error {
 	fs := flag.NewFlagSet("agent-sandbox doctor", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	provider := fs.String("provider", "", "provider: openai, anthropic, gemini, or vertex")
+	provider := fs.String("provider", "", "provider: all, openai, anthropic, gemini, or vertex")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -78,10 +78,29 @@ func handleAgentSandboxDoctor(args []string) error {
 	if name == "" {
 		return errors.New("agent-sandbox doctor: --provider is required")
 	}
+	if name == "all" {
+		return runAgentSandboxDoctorAll(context.Background(), os.Stdout)
+	}
 	if _, err := agentsandbox.LookupProvider(name); err != nil {
 		return err
 	}
 	return runAgentSandboxDoctor(context.Background(), os.Stdout, name)
+}
+
+func runAgentSandboxDoctorAll(ctx context.Context, w io.Writer) error {
+	var failed []string
+	for i, provider := range agentsandbox.ProviderNames() {
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
+		if err := runAgentSandboxDoctor(ctx, w, provider); err != nil {
+			failed = append(failed, provider)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("agent-sandbox doctor: providers failed: %s", strings.Join(failed, ", "))
+	}
+	return nil
 }
 
 func runAgentSandboxDoctor(ctx context.Context, w io.Writer, provider string) error {
@@ -596,11 +615,11 @@ func finishAgentSandboxBundle(bundle *RunBundle, runErr error) {
 func printAgentSandboxUsage(w io.Writer) {
 	fmt.Fprintf(w, `Usage:
   cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> --task <prompt> [options]
-  cove agent-sandbox doctor --provider openai|anthropic|gemini|vertex
+  cove agent-sandbox doctor --provider all|openai|anthropic|gemini|vertex
   cove agent-sandbox bench --provider all [--live] [--cold]
 
 Options:
-  --provider <name>       provider: openai, anthropic, gemini, vertex
+  --provider <name>       provider: all, openai, anthropic, gemini, vertex
                           env: OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
                                GOOGLE_CLOUD_PROJECT or COVE_VERTEX_PROJECT
   --image <ref>           local image ref to fork, for example agentkit/macos-base:latest
