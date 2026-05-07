@@ -30,10 +30,6 @@ type vmGUIBindings interface {
 	vmWindowStateSink
 }
 
-type guestPortConnector interface {
-	ConnectToGuestPort(port uint32) (net.Conn, error)
-}
-
 type runtimeAgentAvailabilityTarget interface {
 	currentVMState() (vz.VZVirtualMachineState, error)
 	getAgent() (*agentstate.AgentClient, error)

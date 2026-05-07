@@ -18,25 +18,25 @@ type VNCStatus = controlserver.VNCStatus
 type DebugStubStatus = controlserver.DebugStubStatus
 
 func (s *ControlServer) SetVNCStatus(status VNCStatus) {
-	s.network.setVNCStatus(status)
+	s.network.SetVNCStatus(status)
 }
 
 func (s *ControlServer) VNCStatus() VNCStatus {
 	if state := runtimeFeatureStateFor(s); state != nil {
 		return state.controlVNCStatus()
 	}
-	return s.network.vncStatusValue()
+	return s.network.VNCStatusValue()
 }
 
 func (s *ControlServer) SetDebugStubStatus(status DebugStubStatus) {
-	s.network.setDebugStubStatus(status)
+	s.network.SetDebugStubStatus(status)
 }
 
 func (s *ControlServer) DebugStubStatus() DebugStubStatus {
 	if state := runtimeFeatureStateFor(s); state != nil {
 		return state.controlDebugStubStatus()
 	}
-	return s.network.debugStubStatusValue()
+	return s.network.DebugStubStatusValue()
 }
 
 func (s *ControlServer) handleVNCStatus() *controlpb.ControlResponse {

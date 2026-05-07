@@ -23,7 +23,7 @@ func (s *ControlServer) StartHTTP(addr, vmName string) (net.Listener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("http listen %s: %w", addr, err)
 	}
-	s.network.addHTTPListener(ln)
+	s.network.AddHTTPListener(ln)
 	go func() {
 		if err := http.Serve(ln, handler); err != nil && !isClosedError(err) {
 			slog.Error("http server",

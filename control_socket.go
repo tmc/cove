@@ -53,7 +53,7 @@ type ControlServer struct {
 	running           atomic.Bool
 	capture           controlserver.Capture // diff cache + lazy OCR service, self-guarded
 	bridge            controlserver.AgentBridge // agent clients + health state (owns its own mutexes)
-	network           networkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
+	network           controlserver.NetworkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
 	input             controlserver.InputBridge // mouse/keyboard delivery
 	windowNum         int           // cached window number for thread-safe screenshot
 	viewContentHeight int           // cached view content height in pixels (excludes title bar)
@@ -86,7 +86,7 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 	}
 	s.life.Start()
 	s.bridge.SetHost(s)
-	s.network.cs = s
+	s.network.SetHost(s)
 	s.input.SetHost(s)
 	capture, input := resolveAutomationBackends()
 	s.setCaptureBackend(capture)
@@ -259,11 +259,11 @@ func (s *ControlServer) Start() error {
 func (s *ControlServer) Stop() {
 	s.running.Store(false)
 	proxyCtx, cancel := s.timeoutContext(5 * time.Second)
-	s.network.stopITerm2Proxy(proxyCtx)
+	s.network.StopITerm2Proxy(proxyCtx)
 	cancel()
 	s.life.Shutdown()
-	s.network.stopPortForwards()
-	s.network.closeHTTPListeners()
+	s.network.StopPortForwards()
+	s.network.CloseHTTPListeners()
 	if s.listener != nil {
 		s.listener.Close()
 	}
@@ -273,10 +273,6 @@ func (s *ControlServer) Stop() {
 	} else {
 		os.Remove(s.socketPath)
 	}
-}
-
-func (s *ControlServer) clearPortForwardManager() *PortForwardManager {
-	return s.network.clearPortForwardManager()
 }
 
 func (s *ControlServer) handleConnection(conn net.Conn) {
