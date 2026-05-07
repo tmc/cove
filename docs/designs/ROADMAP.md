@@ -225,7 +225,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 ## Recent changes
 
 - **2026-05-05**: Added the v0.4 closeout milestone covering R36-R40 shipped work across agent adapters, fleet, daemon, lifecycle, quotas, NixOS, Linux desktop provisioning, image/network surfaces, reliability, Cirrus migration, and the fresh-VM-login fix cluster.
-- **2026-05-05**: design [030](030-gha-executor-slice-2.md) landed for GHA executor Slice 2 cross-run cache reuse after T77 shipped `3199d58`, `1444d5f`, and `d78a853`.
+- **2026-05-05**: design [030](030-gha-executor-slice-2.md) landed for GHA executor Slice 2 cross-run cache reuse after T77 shipped `9e6253a`, `f06d554`, and `c0a1433`.
 - **2026-05-04**: Reconciled shipped v0.3 rows: ControlServer phase 3 landed at `cede792`, the Anthropic sandbox-runtime adapter landed at `fafc32a`, and curated agentkit base images landed at `92f2272`.
 - **2026-05-04**: designs [027](027-disk-io-tuning.md) and [028](028-block-device-passthrough.md) shipped. Disk I/O tuning landed at `fc7ff1e` and `a459076`; Linux NVMe Slice 2 landed at `8500ecb`, `968cbde`, and `1b7c947`; block device passthrough landed across `b522ab3`, `a78e891`, and `74d9527`.
 - **2026-05-02**: design [025](025-cove-action-security.md) cove-action security architecture landed at `1db4830` (411 LOC). Threat model + token lifecycle + isolation invariants for the v0.4 cove-action GHA wrapper. Clears the security-gate prerequisite on design [021](021-v04-ci-executors-tracks.md) Slice 1 implementation. Per user 2026-05-02: Slice 1 still v0.4-targeted; cove repo stays private; design [024](024-cove-runner-images.md) Slice 3 deferred indefinitely.
