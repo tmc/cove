@@ -162,6 +162,130 @@ func (e *buildExecutor) cleanupScratch(sc buildScratch) error {
 	return nil
 }
 
+// buildScratchEntry describes one ~/.vz/build-scratch/<id> directory
+// considered by pruneBuildScratch.
+type buildScratchEntry struct {
+	Dir     string
+	Age     time.Duration
+	Bytes   int64
+	Reason  string // "live-pid", "too-young", "removed", "candidate", "skipped-error"
+	Removed bool
+}
+
+// pruneBuildScratchReport is the result of one pruneBuildScratch call.
+type pruneBuildScratchReport struct {
+	Root         string
+	OlderThan    time.Duration
+	SanityFloor  time.Duration
+	Apply        bool
+	Entries      []buildScratchEntry
+	BytesRemoved int64
+	BytesKept    int64
+}
+
+// pruneBuildScratchSanityFloor is the minimum age below which prune
+// refuses to delete a scratch dir, regardless of -older-than.
+const pruneBuildScratchSanityFloor = time.Hour
+
+// pruneBuildScratch walks root and removes scratch directories older
+// than olderThan whose owning build process is no longer live. Dirs
+// younger than the sanity floor are always kept. When apply is false
+// the report still describes what would be removed, but no rm runs.
+func pruneBuildScratch(root string, olderThan time.Duration, apply bool, isLive func(int) bool, now func() time.Time) (pruneBuildScratchReport, error) {
+	if root == "" {
+		return pruneBuildScratchReport{}, fmt.Errorf("prune build scratch: root required")
+	}
+	if isLive == nil {
+		isLive = processLive
+	}
+	if now == nil {
+		now = time.Now
+	}
+	floor := pruneBuildScratchSanityFloor
+	if olderThan < floor {
+		olderThan = floor
+	}
+	rep := pruneBuildScratchReport{
+		Root:        root,
+		OlderThan:   olderThan,
+		SanityFloor: floor,
+		Apply:       apply,
+	}
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return rep, nil
+	}
+	if err != nil {
+		return rep, fmt.Errorf("read build scratch: %w", err)
+	}
+	cutoff := now().Add(-olderThan)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			rep.Entries = append(rep.Entries, buildScratchEntry{Dir: dir, Reason: "skipped-error"})
+			continue
+		}
+		bytes := dirBytes(dir)
+		age := now().Sub(info.ModTime())
+		ent := buildScratchEntry{Dir: dir, Age: age, Bytes: bytes}
+		if info.ModTime().After(cutoff) {
+			ent.Reason = "too-young"
+			rep.BytesKept += bytes
+			rep.Entries = append(rep.Entries, ent)
+			continue
+		}
+		if pid, ok := readBuildScratchPID(filepath.Join(dir, "build.pid")); ok && isLive(pid) {
+			ent.Reason = "live-pid"
+			rep.BytesKept += bytes
+			rep.Entries = append(rep.Entries, ent)
+			continue
+		}
+		if !apply {
+			ent.Reason = "candidate"
+			rep.BytesRemoved += bytes
+			rep.Entries = append(rep.Entries, ent)
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			ent.Reason = "skipped-error"
+			rep.BytesKept += bytes
+			rep.Entries = append(rep.Entries, ent)
+			continue
+		}
+		ent.Reason = "removed"
+		ent.Removed = true
+		rep.BytesRemoved += bytes
+		rep.Entries = append(rep.Entries, ent)
+	}
+	return rep, nil
+}
+
+// dirBytes sums the size of every regular file under dir.
+func dirBytes(dir string) int64 {
+	var total int64
+	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
 func gcBuildScratch(root string, isLive func(int) bool) error {
 	if root == "" {
 		return nil

@@ -82,6 +82,125 @@ func TestGCBuildScratch(t *testing.T) {
 	}
 }
 
+func TestPruneBuildScratch(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	mkdir := func(name string, age time.Duration, payload int64, pid string) string {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if pid != "" {
+			if err := os.WriteFile(filepath.Join(dir, "build.pid"), []byte(pid), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if payload > 0 {
+			if err := os.WriteFile(filepath.Join(dir, "disk.img"), make([]byte, payload), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		mtime := now.Add(-age)
+		if err := os.Chtimes(dir, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+
+	young := mkdir("young", 30*time.Minute, 100, "200")     // < sanity floor: always kept
+	old := mkdir("old", 10*24*time.Hour, 1000, "300")       // > older-than, dead pid: removed
+	live := mkdir("live", 10*24*time.Hour, 500, "100")      // > older-than, live pid: kept
+	recent := mkdir("recent", 2*time.Hour, 200, "400")      // < older-than: kept (not yet stale)
+	noPID := mkdir("no-pid", 10*24*time.Hour, 250, "")      // > older-than, no pid file: removed
+	veryOld := mkdir("very-old", 30*24*time.Hour, 800, "5") // > older-than, dead: removed
+
+	isLive := func(pid int) bool { return pid == 100 }
+
+	dryRep, err := pruneBuildScratch(root, 7*24*time.Hour, false, isLive, func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if dryRep.Apply {
+		t.Fatalf("dry-run report claims Apply=true")
+	}
+	for _, dir := range []string{young, old, live, recent, noPID, veryOld} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("dry-run removed %s: %v", dir, err)
+		}
+	}
+	// disk.img bytes + pid-file bytes per dir; old=1003 (1000+"300"), noPID=250, veryOld=801 (800+"5").
+	if want := int64(1003 + 250 + 801); dryRep.BytesRemoved != want {
+		t.Errorf("dry-run BytesRemoved = %d, want %d (old+noPID+veryOld)", dryRep.BytesRemoved, want)
+	}
+
+	rep, err := pruneBuildScratch(root, 7*24*time.Hour, true, isLive, func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	for _, dir := range []string{young, live, recent} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("apply removed kept dir %s: %v", dir, err)
+		}
+	}
+	for _, dir := range []string{old, noPID, veryOld} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("apply did not remove %s: %v", dir, err)
+		}
+	}
+	if rep.BytesRemoved != int64(1003+250+801) {
+		t.Errorf("apply BytesRemoved = %d, want %d", rep.BytesRemoved, 1003+250+801)
+	}
+	// young=103 (100+"200"), live=503 (500+"100"), recent=203 (200+"400")
+	if rep.BytesKept != int64(103+503+203) {
+		t.Errorf("apply BytesKept = %d, want %d", rep.BytesKept, 103+503+203)
+	}
+	reasons := map[string]string{}
+	for _, e := range rep.Entries {
+		reasons[filepath.Base(e.Dir)] = e.Reason
+	}
+	wantReasons := map[string]string{
+		"young":    "too-young",
+		"recent":   "too-young",
+		"live":     "live-pid",
+		"old":      "removed",
+		"no-pid":   "removed",
+		"very-old": "removed",
+	}
+	for name, want := range wantReasons {
+		if got := reasons[name]; got != want {
+			t.Errorf("reason for %s = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// TestPruneBuildScratchSanityFloor confirms the 1h floor overrides
+// even an absurdly small -older-than value.
+func TestPruneBuildScratchSanityFloor(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	dir := filepath.Join(root, "fresh")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "build.pid"), []byte("999"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mtime := now.Add(-30 * time.Minute) // < 1h
+	if err := os.Chtimes(dir, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := pruneBuildScratch(root, time.Second, true, func(int) bool { return false }, func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("dir removed despite < 1h floor: %v", err)
+	}
+	if rep.OlderThan < pruneBuildScratchSanityFloor {
+		t.Fatalf("OlderThan = %s, want >= sanity floor %s", rep.OlderThan, pruneBuildScratchSanityFloor)
+	}
+}
+
 func TestBuildExecutorExecuteRunsLocalVMBuild(t *testing.T) {
 	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
 		return &controlpb.ControlResponse{Success: true}, nil
