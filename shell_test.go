@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/metrics"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -72,7 +73,7 @@ func TestPumpShellFramesWritesStreamsAndExit(t *testing.T) {
 
 	r := bufio.NewReader(strings.NewReader(strings.Join(frames, "\n") + "\n"))
 	var out, errOut bytes.Buffer
-	exit, err := pumpShellFrames(r, &out, &errOut)
+	exit, err := pumpShellFrames(r, &out, &errOut, nil)
 	if err != nil {
 		t.Fatalf("pumpShellFrames err = %v", err)
 	}
@@ -92,7 +93,7 @@ func TestPumpShellFramesWritesStreamsAndExit(t *testing.T) {
 func TestPumpShellFramesAgentDisconnectIsError(t *testing.T) {
 	r := bufio.NewReader(strings.NewReader(""))
 	var out, errOut bytes.Buffer
-	_, err := pumpShellFrames(r, &out, &errOut)
+	_, err := pumpShellFrames(r, &out, &errOut, nil)
 	if err == nil || !strings.Contains(err.Error(), "agent disconnected") {
 		t.Fatalf("expected agent disconnected, got %v", err)
 	}
@@ -108,7 +109,7 @@ func TestPumpShellFramesPropagatesServerError(t *testing.T) {
 	}
 	r := bufio.NewReader(strings.NewReader(string(body) + "\n"))
 	var out, errOut bytes.Buffer
-	_, err = pumpShellFrames(r, &out, &errOut)
+	_, err = pumpShellFrames(r, &out, &errOut, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such command") {
 		t.Fatalf("expected guest agent error, got %v", err)
 	}
@@ -151,7 +152,7 @@ func TestPumpShellFramesIgnoresAttachWarningPayload(t *testing.T) {
 	}
 	r := bufio.NewReader(strings.NewReader(strings.Join(frames, "\n") + "\n"))
 	var out, errOut bytes.Buffer
-	exit, err := pumpShellFrames(r, &out, &errOut)
+	exit, err := pumpShellFrames(r, &out, &errOut, nil)
 	if err != nil {
 		t.Fatalf("pumpShellFrames err = %v", err)
 	}
@@ -215,6 +216,8 @@ func TestRunShellSessionEndToEnd(t *testing.T) {
 		"", // no token configured
 		"vm0",
 		[]string{"echo", "fromfake"},
+		nil,
+		nil,
 		devnull,
 		out.w,
 		errBuf.w,
@@ -272,6 +275,8 @@ func TestRunShellSessionV02FallbackWarnsAndCompletes(t *testing.T) {
 		"",
 		"vm0",
 		[]string{"echo", "fallback"},
+		nil,
+		nil,
 		devnull,
 		out.w,
 		errBuf.w,
@@ -325,6 +330,8 @@ type fakeShellServer struct {
 	ln       net.Listener
 	mu       sync.Mutex
 	attaches int
+	lastEnv  map[string]string
+	echoData []byte
 	closed   chan struct{}
 	stdin    bool
 	warning  string
@@ -382,8 +389,17 @@ func (s *fakeShellServer) handle(conn net.Conn) {
 		_, _ = conn.Write([]byte(mustResponse(nil, map[string]any{}) + "\n"))
 		return
 	}
+	envMap := map[string]string{}
+	if e, ok := req["env"].(map[string]any); ok {
+		for k, v := range e {
+			if s, ok := v.(string); ok {
+				envMap[k] = s
+			}
+		}
+	}
 	s.mu.Lock()
 	s.attaches++
+	s.lastEnv = envMap
 	s.mu.Unlock()
 
 	args, _ := req["args"].([]any)
@@ -407,6 +423,9 @@ func (s *fakeShellServer) handle(conn net.Conn) {
 			}
 		}
 		payload = strings.Join(parts, " ") + "\n"
+	}
+	if len(s.echoData) > 0 {
+		payload = string(s.echoData)
 	}
 	_, _ = conn.Write([]byte(mustResponse(nil, map[string]any{
 		"stream":  "stdout",
@@ -446,4 +465,73 @@ func mustResponse(t *testing.T, payload map[string]any) string {
 		return ""
 	}
 	return string(out)
+}
+
+// TestRunShellSessionPlumbsSecretEnvAndRedactsOutput verifies the
+// end-to-end Slice 1 contract: --secret-env values arrive on the
+// agent-exec-attach env field, AND any echo of those values in guest
+// output is masked before the host writes it to stdout/stderr.
+func TestRunShellSessionPlumbsSecretEnvAndRedactsOutput(t *testing.T) {
+	dir, err := os.MkdirTemp("", "shsec*")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sockPath := filepath.Join(dir, "c.sock")
+	srv, err := newFakeShellServer(sockPath)
+	if err != nil {
+		t.Fatalf("start fake server: %v", err)
+	}
+	defer srv.Close()
+	const secret = "deadbeefcafe1234"
+	srv.echoData = []byte("token=" + secret + "\n")
+
+	masker := metrics.NewMasker()
+	masker.AddString(secret)
+
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devnull.Close()
+
+	out, outDone := newPipeBuffer()
+	errBuf, errDone := newPipeBuffer()
+	exit, err := runShellSession(
+		context.Background(),
+		sockPath,
+		"",
+		"vm0",
+		[]string{"echo", "secrets-test"},
+		map[string]string{"GH_TOKEN": secret},
+		masker,
+		devnull,
+		out.w,
+		errBuf.w,
+	)
+	if err != nil {
+		t.Fatalf("runShellSession: %v", err)
+	}
+	if exit != 0 {
+		t.Fatalf("exit = %d", exit)
+	}
+	out.w.Close()
+	errBuf.w.Close()
+	<-outDone
+	<-errDone
+
+	srv.mu.Lock()
+	gotEnv := srv.lastEnv
+	srv.mu.Unlock()
+	if gotEnv["GH_TOKEN"] != secret {
+		t.Errorf("env not transported: got %q want %q", gotEnv["GH_TOKEN"], secret)
+	}
+
+	got := out.buf.String()
+	if strings.Contains(got, secret) {
+		t.Errorf("secret leaked to stdout: %q", got)
+	}
+	if !strings.Contains(got, "***") {
+		t.Errorf("expected masked output, got %q", got)
+	}
 }
