@@ -41,6 +41,7 @@ type config struct {
 	CacheKey   string
 	CachePaths string
 	Env        []string
+	Secrets    []string
 	Stdout     io.Writer
 	Stderr     io.Writer
 	Environ    []string
@@ -95,6 +96,7 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	timeoutText := envValue(environ, "COVE_ACTION_TIMEOUT", envValue(environ, "COVE_TIMEOUT", "30m"))
 	keepText := envValue(environ, "COVE_ACTION_KEEP", "false")
 	envText := envValue(environ, "COVE_ACTION_ENV", "")
+	secretsText := envValue(environ, "COVE_ACTION_SECRETS", "")
 	cfg.CacheKey = envValue(environ, "COVE_ACTION_CACHE_KEY", "")
 	cfg.CachePaths = envValue(environ, "COVE_ACTION_CACHE_PATHS", "")
 
@@ -109,6 +111,7 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	fs.StringVar(&timeoutText, "timeout", timeoutText, "overall timeout")
 	fs.BoolVar(&cfg.Keep, "keep", parseBool(keepText), "keep ephemeral fork")
 	fs.StringVar(&envText, "env", envText, "newline-separated KEY=VALUE guest environment")
+	fs.StringVar(&secretsText, "secrets", secretsText, "newline-separated KEY=value|env://VAR|file:///path guest secrets")
 	fs.StringVar(&cfg.CacheKey, "cache-key", cfg.CacheKey, "whole-VM cache key")
 	fs.StringVar(&cfg.CachePaths, "cache-paths", cfg.CachePaths, "newline-separated guest paths preserved by the whole-VM cache")
 	if err := fs.Parse(args); err != nil {
@@ -123,6 +126,10 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	}
 	cfg.Timeout = timeout
 	cfg.Env, err = parseEnvBlock(envText)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Secrets, err = parseSecretsBlock(secretsText)
 	if err != nil {
 		return cfg, err
 	}
@@ -438,7 +445,7 @@ func execGuestCommand(ctx context.Context, cfg config) (int, error) {
 		b.WriteString(shellQuote(command))
 		command = b.String()
 	}
-	err := runShell(ctx, cfg, command)
+	err := runShellWithSecrets(ctx, cfg, command, cfg.Secrets)
 	if err == nil {
 		return 0, nil
 	}
@@ -453,7 +460,16 @@ func execGuestCommand(ctx context.Context, cfg config) (int, error) {
 }
 
 func runShell(ctx context.Context, cfg config, command string) error {
-	cmd := execCommandContext(ctx, cfg.CoveBin, "shell", cfg.VMName, "--", "/bin/sh", "-lc", command)
+	return runShellWithSecrets(ctx, cfg, command, nil)
+}
+
+func runShellWithSecrets(ctx context.Context, cfg config, command string, secrets []string) error {
+	args := []string{"shell"}
+	for _, s := range secrets {
+		args = append(args, "--secret-env", s)
+	}
+	args = append(args, cfg.VMName, "--", "/bin/sh", "-lc", command)
+	cmd := execCommandContext(ctx, cfg.CoveBin, args...)
 	cmd.Stdout = cfg.Stdout
 	cmd.Stderr = cfg.Stderr
 	cmd.Env = cfg.Environ
@@ -624,6 +640,37 @@ func parseEnvBlock(s string) ([]string, error) {
 		env = append(env, line)
 	}
 	return env, nil
+}
+
+// parseSecretsBlock parses a multi-line GHA `secrets:` input.
+//
+// Each non-blank, non-comment line is `KEY=value`, where value may be a
+// literal, `env://VAR`, or `file:///path`. URI resolution and redaction
+// happen in `cove shell --secret-env`; this function only validates shape
+// and rejects duplicate keys. KEY must be a non-empty identifier.
+func parseSecretsBlock(s string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, _, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid secret entry %q: want KEY=value|env://VAR|file:///path", line)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("invalid secret entry %q: empty key", line)
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("duplicate secret key %q", key)
+		}
+		seen[key] = true
+		out = append(out, line)
+	}
+	return out, nil
 }
 
 func envValue(environ []string, key, fallback string) string {

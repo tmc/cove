@@ -444,3 +444,67 @@ func readFile(t *testing.T, path string) string {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestParseSecretsBlock(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    []string
+		wantErr string
+	}{
+		{name: "empty"},
+		{name: "blank-and-comments", in: "\n  \n# c\n"},
+		{name: "literal", in: "FOO=bar", want: []string{"FOO=bar"}},
+		{name: "env-uri", in: "GH=env://GH_TOKEN", want: []string{"GH=env://GH_TOKEN"}},
+		{name: "file-uri", in: "K=file:///tmp/k", want: []string{"K=file:///tmp/k"}},
+		{name: "multi", in: "A=1\nB=env://B\nC=file:///c\n", want: []string{"A=1", "B=env://B", "C=file:///c"}},
+		{name: "trim-line", in: "  A=1  \n", want: []string{"A=1"}},
+		{name: "value-with-equals", in: "K=a=b=c", want: []string{"K=a=b=c"}},
+		{name: "no-equals", in: "BAREWORD", wantErr: "want KEY=value"},
+		{name: "empty-key", in: "=v", wantErr: "empty key"},
+		{name: "duplicate", in: "A=1\nA=2", wantErr: "duplicate secret key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSecretsBlock(tt.in)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want contains %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i, v := range got {
+				if v != tt.want[i] {
+					t.Fatalf("got[%d]=%q, want %q", i, v, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParseConfigSecretsFromEnv(t *testing.T) {
+	environ := []string{
+		"COVE_ACTION_IMAGE=img:tag",
+		"COVE_ACTION_COMMAND=true",
+		"COVE_ACTION_SECRETS=GH=env://GH_TOKEN\nDB=file:///tmp/db",
+	}
+	cfg, err := parseConfig(nil, environ, os.Stdout, os.Stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"GH=env://GH_TOKEN", "DB=file:///tmp/db"}
+	if len(cfg.Secrets) != len(want) {
+		t.Fatalf("Secrets = %v, want %v", cfg.Secrets, want)
+	}
+	for i, v := range want {
+		if cfg.Secrets[i] != v {
+			t.Fatalf("Secrets[%d] = %q, want %q", i, cfg.Secrets[i], v)
+		}
+	}
+}
