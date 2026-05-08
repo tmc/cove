@@ -40,7 +40,7 @@ landed.
 
 | Slice | Surface | Status | Commit |
 |---|---|---|---|
-| 1 | `cove doctor sckit-preauth` diagnostic — reports SCKit availability and Screen Recording authorization. No production callers wired. | TBD | — |
+| 1 | [`cove doctor sckit-preauth`](#how-to-test-the-probe) diagnostic — reports SCKit availability and Screen Recording authorization via [`internal/sckit/`](internal/sckit/). No production callers wired. | Shipped 2026-05-08 | [`8d55d7a`](https://github.com/tmc/cove/commit/8d55d7a) |
 | 2 | Parallel `captureVMViewSCKit` behind `-capture-backend=sckit` (or `COVE_CAPTURE_BACKEND=sckit`). Default remains `cgwindow`. | TBD | — |
 | 3 | Default flips to `sckit` on macOS 14+. First-GUI-screenshot may produce a Screen Recording TCC prompt; pre-flight via `cove doctor sckit-preauth`. | TBD | — |
 | 4 | `CGWindowListCreateImage` removed from `screenshots.go`. `staticcheck` clears SA1019. | TBD | — |
@@ -75,6 +75,53 @@ Operators automating fresh-host setup should run
 `cove run -gui` or `cove ctl screenshot`. Revoking Screen Recording in
 System Settings produces a clean error from `cove ctl screenshot` once
 Slice 3 lands; cove does not silently fall back to the legacy path.
+
+See [How to test the probe](#how-to-test-the-probe) below for exact
+commands and expected output.
+
+### How to test the probe
+
+The probe is read-only: it never triggers a TCC prompt. Exit code 0
+when SCKit is available and Screen Recording is authorized; exit 1
+otherwise.
+
+```
+$ cove doctor sckit-preauth
+=== cove ScreenCaptureKit pre-flight ===
+
+  macOS version              : 14.5
+  SCKit available            : yes
+  screen recording authorized: yes
+
+$ echo $?
+0
+```
+
+Denied state (also exit 1):
+
+```
+$ cove doctor sckit-preauth
+=== cove ScreenCaptureKit pre-flight ===
+
+  macOS version              : 14.5
+  SCKit available            : yes
+  screen recording authorized: no
+
+error: screen recording not authorized; grant in System Settings > Privacy & Security > Screen Recording
+$ echo $?
+1
+```
+
+Add `-json` for machine-readable output (same exit-code semantics):
+
+```
+$ cove doctor sckit-preauth -json
+{
+  "SCKitAvailable": true,
+  "ScreenRecordingAuthorized": true,
+  "MacOSVersion": "14.5"
+}
+```
 
 ## Pre-tag gates
 
