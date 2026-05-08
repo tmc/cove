@@ -31,6 +31,55 @@ type Report struct {
 	UsedBytes  int64      `json:"used_bytes"`
 	Categories []Category `json:"categories"`
 	Generated  time.Time  `json:"generated"`
+	// Budget is the persisted storage budget, when one is configured.
+	// Nil means no budget on disk; the zero value never appears here.
+	Budget *Budget `json:"budget,omitempty"`
+}
+
+// State classifies a Report's UsedBytes against its Budget tripwires.
+type State int
+
+const (
+	// StateUnset indicates no budget is configured.
+	StateUnset State = iota
+	// StateOK means usage is below all configured tripwires.
+	StateOK
+	// StateWarn means usage has crossed warn_pct of the target.
+	StateWarn
+	// StateHard means usage has crossed hard_pct of the target.
+	StateHard
+)
+
+// String returns a short label for the state.
+func (s State) String() string {
+	switch s {
+	case StateUnset:
+		return "unset"
+	case StateOK:
+		return "ok"
+	case StateWarn:
+		return "warn"
+	case StateHard:
+		return "hard"
+	default:
+		return fmt.Sprintf("state(%d)", int(s))
+	}
+}
+
+// State returns the current tripwire state for rep, given its Budget.
+// StateUnset is returned when Budget is nil or the budget is the zero
+// value.
+func (rep Report) State() State {
+	if rep.Budget == nil || !rep.Budget.IsSet() {
+		return StateUnset
+	}
+	if hard := rep.Budget.HardBytes(); hard > 0 && rep.UsedBytes >= hard {
+		return StateHard
+	}
+	if warn := rep.Budget.WarnBytes(); warn > 0 && rep.UsedBytes >= warn {
+		return StateWarn
+	}
+	return StateOK
 }
 
 // Category aggregates one top-level subtree under Root.
@@ -183,13 +232,34 @@ func EncodeJSON(w io.Writer, rep Report) error {
 
 // RenderHuman writes rep as a fixed-width table to w. Sizes are shown
 // in GB rounded to one decimal; categories with zero usage are still
-// listed so a fresh install reads as expected.
+// listed so a fresh install reads as expected. When rep.Budget is
+// configured the header also surfaces the target, headroom, and
+// tripwire state.
 func RenderHuman(w io.Writer, rep Report) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintf(tw, "Root: %s\n", rep.Root); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(tw, "Used: %s\n\n", formatBytes(rep.UsedBytes)); err != nil {
+	if _, err := fmt.Fprintf(tw, "Used: %s\n", formatBytes(rep.UsedBytes)); err != nil {
+		return err
+	}
+	if rep.Budget != nil && rep.Budget.IsSet() {
+		headroom := rep.Budget.TargetBytes - rep.UsedBytes
+		marker := ""
+		switch rep.State() {
+		case StateWarn:
+			marker = " [WARN]"
+		case StateHard:
+			marker = " [HARD]"
+		}
+		if _, err := fmt.Fprintf(tw, "Target: %s\n", formatBytes(rep.Budget.TargetBytes)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(tw, "Headroom: %s%s\n", formatBytes(headroom), marker); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(tw); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintln(tw, "CATEGORY\tPATH\tUSED\tITEMS"); err != nil {
@@ -204,6 +274,9 @@ func RenderHuman(w io.Writer, rep Report) error {
 }
 
 func formatBytes(n int64) string {
+	if n < 0 {
+		return "-" + formatBytes(-n)
+	}
 	const (
 		kib = 1024
 		mib = kib * 1024
