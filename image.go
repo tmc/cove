@@ -536,6 +536,19 @@ func MaterializeImage(opts MaterializeImageOptions) (string, error) {
 	if !ImageExists(opts.Ref) {
 		return "", fmt.Errorf("materialize: image %s not found", opts.Ref)
 	}
+	// Hold the per-image lock from before clonefile through the child's
+	// config.json write, so a concurrent gc cannot race past
+	// VMsForkedFromImage and delete an image that is mid-fork. Closes
+	// R1 in docs/research/image-gc-race-audit-2026-05-08.md.
+	imgLock, err := acquireImageLockHook(opts.Ref.Path())
+	if err != nil {
+		return "", fmt.Errorf("materialize: acquire image lock: %w", err)
+	}
+	defer func() {
+		if releaseErr := imgLock.Release(); releaseErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: release image lock: %v\n", releaseErr)
+		}
+	}()
 	if strings.TrimSpace(opts.ChildName) == "" {
 		now := opts.Now
 		if now == nil {

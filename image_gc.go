@@ -93,50 +93,65 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			res.Removed = append(res.Removed, ref)
 			continue
 		}
-		// Re-check immediately before removal: a child VM could have been
-		// created between the planning pass and now. Materially safer
-		// than relying on the loop-top result, even though TOCTOU isn't
-		// fully closable without coarse locking.
-		recheck, err := VMsForkedFromImage(ref)
-		if err != nil {
-			res.Skipped = append(res.Skipped, ImageGCSkipped{
-				Ref:    ref,
-				Reason: fmt.Sprintf("fork recheck failed: %v", err),
-			})
+		removed, skipped := gcImageLocked(ref, now)
+		if skipped != nil {
+			res.Skipped = append(res.Skipped, *skipped)
 			continue
 		}
-		if len(recheck) > 0 {
-			emitImageGCKeep(ref, "in_use", now)
-			res.Skipped = append(res.Skipped, ImageGCSkipped{
-				Ref:    ref,
-				Reason: "fork raced into existence: " + strings.Join(recheck, ", "),
-			})
-			continue
+		if removed {
+			res.Removed = append(res.Removed, ref)
 		}
-		path := ref.Path()
-		// Defensive: never let a malformed ref delete the image root.
-		if path == "" || path == ImagesBaseDir() {
-			res.Skipped = append(res.Skipped, ImageGCSkipped{
-				Ref:    ref,
-				Reason: "refusing to remove image root",
-			})
-			continue
-		}
-		freed := pathSize(path)
-		if err := os.RemoveAll(path); err != nil {
-			res.Skipped = append(res.Skipped, ImageGCSkipped{
-				Ref:    ref,
-				Reason: fmt.Sprintf("remove failed: %v", err),
-			})
-			continue
-		}
-		res.Removed = append(res.Removed, ref)
-		emitMetricEvent("image_gc_evict", now, "ok", map[string]any{
-			"image_ref":   ref.String(),
-			"bytes_freed": freed,
-		})
 	}
 	return res, nil
+}
+
+// gcImageLocked performs the recheck-and-remove for a single image
+// under the per-image lock. Returns (removed, skipped) — at most one
+// is non-zero. If the lock cannot be acquired (concurrent fork or
+// tag), returns a Skipped reason and gc will retry next sweep. Closes
+// R1+R3+R7 in docs/research/image-gc-race-audit-2026-05-08.md.
+func gcImageLocked(ref ImageRef, now time.Time) (bool, *ImageGCSkipped) {
+	imgLock, err := TryAcquireImageLock(ref.Path())
+	if err != nil {
+		return false, &ImageGCSkipped{
+			Ref:    ref,
+			Reason: "image busy (concurrent fork or tag); will retry",
+		}
+	}
+	defer imgLock.Release()
+	recheck, err := VMsForkedFromImage(ref)
+	if err != nil {
+		return false, &ImageGCSkipped{
+			Ref:    ref,
+			Reason: fmt.Sprintf("fork recheck failed: %v", err),
+		}
+	}
+	if len(recheck) > 0 {
+		emitImageGCKeep(ref, "in_use", now)
+		return false, &ImageGCSkipped{
+			Ref:    ref,
+			Reason: "fork raced into existence: " + strings.Join(recheck, ", "),
+		}
+	}
+	path := ref.Path()
+	if path == "" || path == ImagesBaseDir() {
+		return false, &ImageGCSkipped{
+			Ref:    ref,
+			Reason: "refusing to remove image root",
+		}
+	}
+	freed := pathSize(path)
+	if err := os.RemoveAll(path); err != nil {
+		return false, &ImageGCSkipped{
+			Ref:    ref,
+			Reason: fmt.Sprintf("remove failed: %v", err),
+		}
+	}
+	emitMetricEvent("image_gc_evict", now, "ok", map[string]any{
+		"image_ref":   ref.String(),
+		"bytes_freed": freed,
+	})
+	return true, nil
 }
 
 func emitImageGCKeep(ref ImageRef, reason string, started time.Time) {

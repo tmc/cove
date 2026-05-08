@@ -29,6 +29,18 @@ func TagImage(opts ImageTagOptions) error {
 	if ImageExists(opts.Target) {
 		return fmt.Errorf("image tag: target image %s already exists", opts.Target)
 	}
+	// Hold the source image lock through clone + manifest write +
+	// rename. Closes R7 in docs/research/image-gc-race-audit-2026-05-08.md
+	// (gc deleting the source while we walk it).
+	srcLock, err := acquireImageLockHook(opts.Source.Path())
+	if err != nil {
+		return fmt.Errorf("image tag: acquire source lock: %w", err)
+	}
+	defer func() {
+		if releaseErr := srcLock.Release(); releaseErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: release image lock: %v\n", releaseErr)
+		}
+	}()
 	manifest, err := LoadImageManifest(opts.Source)
 	if err != nil {
 		return fmt.Errorf("image tag: %w", err)
