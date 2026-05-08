@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os/exec"
 	"time"
@@ -110,10 +109,4 @@ func (s *userAgentServer) UserExecStream(ctx context.Context, req *connect.Reque
 		}
 	}
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
-}
-
-// userStreamPipe reads from a pipe and sends chunks to the stream.
-// Reuses the same streamPipe from server.go.
-func userStreamPipe(stream *connect.ServerStream[pb.ExecOutput], pipe io.ReadCloser, which pb.ExecOutput_Stream, done chan<- error) {
-	streamPipe(stream, pipe, which, done)
 }
