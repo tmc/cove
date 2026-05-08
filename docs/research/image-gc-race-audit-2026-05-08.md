@@ -72,7 +72,7 @@ metrics.
 
 Severity: P2. Fix: have CLI gc take the same `image-gc.lock`.
 
-### R4. Stale `image-gc.lock` after coved crash — P2
+### R4. Stale `image-gc.lock` after coved crash — P2 — RESOLVED ea836bd
 
 `acquireLock` uses `O_CREATE|O_EXCL` with no PID-liveness check on
 existing lock (internal/coved/image_gc.go:182). If coved crashes mid-
