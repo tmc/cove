@@ -11,8 +11,13 @@ parent: docs/strategy/cirrus-migration-readiness-2026-05-08.md (item 2)
 **Slice 1 shipped (2026-05-08)** — `metrics: redact secret values in run
 logs` at `847a4e2`, `shell: add --env and --secret-env flags` at
 `fcec084`. Host-side `cove shell` flag + run-log redactor land; proto/
-and internal/agent/ untouched. cove-action `secrets:` input parser
-deferred to Slice 2.
+and internal/agent/ untouched.
+
+**Slice 2 shipped (2026-05-08)** — `cove-action: parse secrets: input,
+plumb to --secret-env` at `ab7f159`. The GHA composite `secrets:` input
+now accepts a multi-line `KEY=value|env://VAR|file:///path` block,
+forwarded as repeated `--secret-env` flags to `cove shell`. Same
+redaction guarantees as Slice 1.
 
 Cirrus shuts down 2026-06-01. The migration audit
 ([cirrus-migration-readiness-2026-05-08.md](cirrus-migration-readiness-2026-05-08.md))
