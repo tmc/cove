@@ -289,3 +289,93 @@ func TestStoragePollSchedulerHardInvokesPrunerDryRun(t *testing.T) {
 	stop()
 	<-done
 }
+
+// fakePins is a test PinChecker that pins a fixed canonical "ns:id" set.
+type fakePins map[string]bool
+
+func (f fakePins) IsPinned(category, id string) bool { return f[category+":"+id] }
+
+// TestStoragePollSchedulerHonorsPins confirms that when the hard
+// tripwire fires with a non-nil Pins, the prune coordinator excludes
+// pinned candidates from the eviction plan and surfaces the count via
+// the storage_prune_run event extras.
+func TestStoragePollSchedulerHonorsPins(t *testing.T) {
+	root := t.TempDir()
+	vmsDir := filepath.Join(root, "vms")
+	if err := os.MkdirAll(vmsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vmsDir, "disk.img"), make([]byte, 400), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := storagecensus.SaveBudget(root, storagecensus.Budget{
+		TargetBytes: 200,
+		WarnPct:     50,
+		HardPct:     90,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	t0 := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	pruner := fakePruner{
+		name: "vms",
+		cs: []storagecensus.Candidate{
+			// pinned: must be excluded from Removed and counted as PinnedSkipped.
+			{Path: "/Users/x/.vz/vms/keep", Bytes: 150, LastUsed: t0.Add(-96 * time.Hour), Reason: "older"},
+			// not pinned: should be selected.
+			{Path: "/Users/x/.vz/vms/drop", Bytes: 250, LastUsed: t0.Add(-72 * time.Hour), Reason: "old"},
+		},
+	}
+
+	bus := NewEventBus(16)
+	sub, cancel := bus.Subscribe(8)
+	defer cancel()
+
+	tickCh := make(chan time.Time, 1)
+	sched := &StoragePollScheduler{
+		Root:       root,
+		Categories: []storagecensus.Descriptor{{Name: "vms", Path: vmsDir}},
+		Pruners:    []storagecensus.Pruner{pruner},
+		Pins:       fakePins{"vm:keep": true},
+		Apply:      false,
+		Interval:   time.Millisecond,
+		Bus:        bus,
+		Now:        func() time.Time { return t0 },
+		Tick:       func(time.Duration) <-chan time.Time { return tickCh },
+	}
+
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	done := make(chan struct{})
+	go func() {
+		sched.Run(ctx)
+		close(done)
+	}()
+
+	tickCh <- time.Now()
+
+	var events []Event
+	deadline := time.After(2 * time.Second)
+	for len(events) < 2 {
+		select {
+		case ev := <-sub:
+			events = append(events, ev)
+		case <-deadline:
+			t.Fatalf("collected %d events, want 2", len(events))
+		}
+	}
+	pe := events[1]
+	if pe.EventType != "storage_prune_run" {
+		t.Fatalf("event[1].EventType = %q, want storage_prune_run", pe.EventType)
+	}
+	// Pinned /keep (150B) is excluded; only /drop (250B) is selected.
+	if got := pe.Extra["bytes_freed"]; got != int64(250) {
+		t.Errorf("bytes_freed = %v, want 250", got)
+	}
+	if got := pe.Extra["removed_count"]; got != int64(1) {
+		t.Errorf("removed_count = %v, want 1 (pinned /keep excluded)", got)
+	}
+
+	stop()
+	<-done
+}
