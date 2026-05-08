@@ -1260,7 +1260,7 @@ func linuxSourceSection(config LinuxProvisionConfig) string {
 }
 
 func linuxEarlyCommandsSection(config LinuxProvisionConfig) string {
-	return fmt.Sprintf(`
+	return `
   early-commands:
     - printf '#!/bin/sh\nexit 0\n' > /usr/sbin/flash-kernel && chmod +x /usr/sbin/flash-kernel
     - |
@@ -1277,7 +1277,7 @@ func linuxEarlyCommandsSection(config LinuxProvisionConfig) string {
           printf '#!/bin/sh\nexit 0\n' > /target/usr/sbin/flash-kernel
         fi
         sleep 1
-      done) &`)
+      done) &`
 }
 
 func linuxStorageSection() string {
