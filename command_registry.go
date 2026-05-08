@@ -57,6 +57,8 @@ var commandRegistry = []commandSpec{
 	{Name: "list", Aliases: []string{"ls"}, Summary: "List available VMs and templates", Dispatch: commandDispatchLate, Run: runListCommand},
 	{Name: "logs", Summary: "Show guest logs from a running VM", Dispatch: commandDispatchEarly, Run: runLogsCommand},
 	{Name: "network", Summary: "Network configuration", Dispatch: commandDispatchLate, Run: runNetworkCommandSpec},
+	{Name: "pin", Summary: "Pin an object so storage budget eviction skips it", Dispatch: commandDispatchEarly, Run: runPinCommand},
+	{Name: "pins", Summary: "List pinned objects", Dispatch: commandDispatchEarly, Run: runPinsCommand},
 	{Name: "pit", Summary: "Experimental point-in-time save, restore, run, and swap", Dispatch: commandDispatchLate, Run: runPITCommandSpec},
 	{Name: "policy", Summary: "VM lifecycle policy", Dispatch: commandDispatchEarly, Run: runPolicyCommand},
 	{Name: "provision", Summary: "Write provisioning files into VM disk", Dispatch: commandDispatchEarly, Run: runProvisionCommand},
@@ -81,6 +83,7 @@ var commandRegistry = []commandSpec{
 	{Name: "store", Summary: "Manage the local OCI blob store", Dispatch: commandDispatchEarly, Run: runStoreCommand},
 	{Name: "template", Summary: "Manage VM templates", Dispatch: commandDispatchLate, Run: runTemplateCommand},
 	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: commandDispatchEarly, Run: runUIScriptCommand},
+	{Name: "unpin", Summary: "Remove a storage pin", Dispatch: commandDispatchEarly, Run: runUnpinCommand},
 	{Name: "up", Summary: "Install + provision + boot in one command", Dispatch: commandDispatchEarly, Run: runUpCommand},
 	{Name: "verify", Aliases: []string{"doctor"}, Summary: "Verify provisioning files in VM disk", Dispatch: commandDispatchEarly, Run: runVerifyCommand},
 	{Name: "version", Summary: "Print version information", Dispatch: commandDispatchEarly, Run: runVersionCommand},
@@ -180,11 +183,20 @@ func runPolicyCommand(env commandEnv, _ string, args []string) int {
 func runPullCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePull(args))
 }
+func runPinCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handlePinCommand(args))
+}
+func runPinsCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handlePinsCommand(args))
+}
 func runPushCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePush(args))
 }
 func runQuotaCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleQuotaCommand(args))
+}
+func runUnpinCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleUnpinCommand(args))
 }
 func runRunsCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleRunsCommand(args))

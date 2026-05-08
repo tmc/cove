@@ -219,8 +219,17 @@ existing event-type table.
 3. **Phase 2**: prune coordinator. `cove storage prune` driving existing
    per-category cleanups in the documented order. Dry-run first; explicit
    `-yes` for destructive run.
-4. **Phase 3**: pinning. `cove image keep` and `cove runs keep`. Surface
-   `pinned=true` in census output. Eviction respects `KEEP` files.
+4. **Phase 3**: pinning — **shipped**. `cove pin <object>`, `cove unpin
+   <object>`, and `cove pins list` persist operator-supplied keep
+   markers in `~/.vz/pins.json` (atomic tempfile + rename). Object
+   refs are typed: `vm:<name>`, `image:<ref>`, `run:<id>`,
+   `cache:<sha>`. Census output (`cove storage census`) surfaces
+   `pinned: true` in JSON and a `Pinned:` block plus `(★N)` row
+   markers in `-human`. The eviction loop reaches the pin set via
+   `internal/storagepins.File.IsPinned(category, id)`; the prune
+   coordinator wires that helper when it lands. Implementation
+   simplified the original Phase 3 sketch — single typed file rather
+   than per-category `KEEP` markers — to keep one source of truth.
 5. **Phase 4**: daemon integration. `[storage]` section in `coved.toml`,
    daemon-driven prune ticks, three new metrics events, regression test
    that a daemon prune never touches a VM bundle.
