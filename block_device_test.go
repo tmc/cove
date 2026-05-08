@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	vz "github.com/tmc/apple/virtualization"
@@ -55,6 +57,57 @@ func TestParseBlockDeviceSpec(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("parseBlockDeviceSpec(%q) = %+v, want %+v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOpenBlockDeviceViaHelperFailureText(t *testing.T) {
+	tests := []struct {
+		name      string
+		installed bool
+		fresh     bool
+		freshErr  error
+		want      string
+	}{
+		{
+			name:      "not installed",
+			installed: false,
+			want:      "block devices require an up-to-date cove-helper; run: sudo cove helper install",
+		},
+		{
+			name:      "stale helper",
+			installed: true,
+			fresh:     false,
+			want:      "block devices require an up-to-date cove-helper; run: sudo cove helper install",
+		},
+		{
+			name:      "freshness check error",
+			installed: true,
+			freshErr:  errors.New("hash running binary: boom"),
+			want:      "check cove-helper freshness: hash running binary: boom",
+		},
+	}
+
+	oldInstalled := helperInstalled
+	oldFresh := helperBinaryFreshness
+	t.Cleanup(func() {
+		helperInstalled = oldInstalled
+		helperBinaryFreshness = oldFresh
+	})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helperInstalled = func() bool { return tt.installed }
+			helperBinaryFreshness = func() (bool, string, error) {
+				return tt.fresh, "", tt.freshErr
+			}
+			_, err := openBlockDeviceViaHelper(blockDeviceSpec{Path: "/dev/rdisk8"})
+			if err == nil {
+				t.Fatal("openBlockDeviceViaHelper err = nil, want error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("openBlockDeviceViaHelper err = %q, want substring %q", err, tt.want)
 			}
 		})
 	}

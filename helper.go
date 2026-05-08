@@ -300,7 +300,9 @@ func fileSHA256(path string) (string, error) {
 // LaunchDaemon at /usr/local/libexec/cove-helper still runs the old version.
 // A stale binary that crash-loops can hammer launchd; warning loudly here is
 // the cheapest path to a clear remediation prompt.
-func helperBinaryFreshness() (matches bool, summary string, err error) {
+var helperBinaryFreshness = helperBinaryFreshnessImpl
+
+func helperBinaryFreshnessImpl() (matches bool, summary string, err error) {
 	myPath, err := os.Executable()
 	if err != nil {
 		return false, "", fmt.Errorf("locate running binary: %w", err)
