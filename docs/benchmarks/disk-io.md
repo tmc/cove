@@ -132,3 +132,59 @@ should compare:
   other install changes;
 - NVMe controller for Linux, from design 027 slice 2;
 - preallocated raw disk image, from design 027 slice 3.
+
+## Slice 4: -block (block device passthrough)
+
+Slice 4 of design [027](../designs/027-disk-io-tuning.md) adds `-block` for
+attaching a raw block device through `VZDiskBlockDeviceStorageDeviceAttachment`.
+The unprivileged VM process never opens the device; `cove-helper` opens and
+validates the node, then passes the file descriptor over `SCM_RIGHTS`.
+
+Modes:
+
+- `:ro` — read-only attachment. Host may keep the device mounted.
+- `:rw` — read-write. Helper refuses to continue if the device is mounted.
+  Defaults to full synchronization.
+- `:rw:sync=none` — read-write with synchronization disabled. Explicit operator
+  opt-in; risks data loss on host crash.
+
+Status: spec doc; live results pending. No `-block` numbers were captured in
+this round because the host has no spare raw block device to dedicate to a VM.
+The numbers below are placeholders so that future runs can drop measured values
+into the same table.
+
+| Mode | Device | Workload | Wall clock | fio seq write | fio rand write | fio fsync-heavy |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `:ro` | pending | pending | pending | pending | pending | pending |
+| `:rw` (sync=full) | pending | pending | pending | pending | pending | pending |
+| `:rw:sync=none` | pending | pending | pending | pending | pending | pending |
+
+### How to bench
+
+Pick a raw block device the host can dedicate (an external USB SSD, a
+Thunderbolt enclosure, or an `hdiutil attach -nomount` image). Resolve the raw
+node (`/dev/rdiskN`) via `diskutil list`. Then:
+
+```sh
+# Read-only attach
+./cove run -linux -block /dev/rdiskN:ro -vm block-ro-YYYYMMDD-HHMM
+
+# Read-write attach, full sync (default)
+./cove run -linux -block /dev/rdiskN:rw -vm block-rw-YYYYMMDD-HHMM
+
+# Read-write, sync=none (explicit opt-in; data-loss risk on host crash)
+./cove run -linux -block /dev/rdiskN:rw:sync=none -vm block-rwn-YYYYMMDD-HHMM
+```
+
+Inside the guest, run `fio` with sequential write, random write, and an
+fsync-heavy profile against the resolved device. Record host model, OS build,
+device class (internal / USB / Thunderbolt / hdiutil-backed), exact cove
+command line, guest-visible device name, and whether `sync=full` or
+`sync=none` was used, per design 027 §Slice 4.
+
+Rebuild and re-sign before each run:
+
+```sh
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+```
