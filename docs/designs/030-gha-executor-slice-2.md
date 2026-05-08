@@ -261,3 +261,12 @@ Live verification:
 3. Does `cove image build` currently return a stable enough duplicate-tag error for the wrapper to classify first-writer-wins, or should the image package expose a typed error?
 4. Should cache metadata extend `manifest.json`, or should cache images carry a sidecar `cache.json` to avoid perturbing the core image manifest contract?
 5. Should cache save failure fail the action by default? The strict answer surfaces real image-store problems, but a warning mode may be friendlier for early adoption.
+
+## Spec drift / open work
+
+Verified against `.github/actions/cove-action/action.yml` at `4150a02` (R71 finding R71-DESIGN-030-STATUS `0b774c4`). The header note at lines 11-15 flagged drift in passing; the items below are the resolved list.
+
+1. Missing inputs: `cache-mode`, `cache-scope`, `cache-ttl`, `cache-save-on` from API Surface § (lines 54-57) are not wired in `action.yml`. Cache behavior is currently hard-coded to `restore-save` semantics gated only by `cache-key`. Status: deferred to v0.7 — needs decision on whether to ship the full surface or trim the spec to match code.
+2. Extra input: `cache-paths` is wired despite API Surface § (lines 72-75) explicitly saying "Do not add a `paths` input in the MVP." Today it is informational only. Status: needs decision — drop the input or respec it as supported.
+3. Missing output: `cache-primary-key` from API Surface § (line 66) is not emitted. The other three cache outputs (`cache-hit`, `cache-image`, `cache-saved`) match. Status: deferred to v0.7 — small wrapper change, blocked on input decisions above.
+4. Open Questions §§ 1-5 (lines 259-263) remain unanswered: `cache-scope` default, TTL default, duplicate-tag error shape, manifest-vs-sidecar, save-failure policy. Status: needs design discussion before the input surface lands.
