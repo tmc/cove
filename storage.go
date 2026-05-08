@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -33,8 +34,10 @@ func handleStorageCommand(args []string) error {
 }
 
 func runStoragePrune(args []string, out io.Writer) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: cove storage prune <category> [flags]\n  build-scratch    Remove ~/.vz/build-scratch/<id> dirs older than -older-than")
+	// First positional arg is the category; absence (or a leading flag)
+	// means budget-aware multi-category sweep.
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return runStoragePruneCoordinated(args, out)
 	}
 	switch args[0] {
 	case "build-scratch":
@@ -42,6 +45,62 @@ func runStoragePrune(args []string, out io.Writer) error {
 	default:
 		return fmt.Errorf("storage prune: unknown category %q", args[0])
 	}
+}
+
+func runStoragePruneCoordinated(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("storage prune", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	apply := fs.Bool("apply", false, "actually delete; default is dry-run")
+	olderThan := fs.Duration("older-than", 7*24*time.Hour, "build-scratch entries below this age are kept regardless of budget pressure")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove storage prune [-apply] [-older-than DUR]")
+	}
+
+	root := coveRoot()
+	b, err := storagecensus.LoadBudget(root)
+	if err != nil {
+		return fmt.Errorf("storage prune: load budget: %w", err)
+	}
+	if !b.IsSet() {
+		_, err := fmt.Fprintln(out, "no budget configured (run `cove storage budget set -target SIZE` to enable budget-aware prune)")
+		return err
+	}
+
+	cats := []storagecensus.Descriptor{
+		{Name: "vms", Path: vmconfig.BaseDir()},
+		{Name: "images", Path: ImagesBaseDir()},
+		{Name: "runs", Path: vmconfig.RunsDir()},
+		{Name: "cache", Path: vmconfig.CacheDir()},
+		{Name: "build-scratch", Path: defaultBuildScratchRoot()},
+		{Name: "store", Path: store.DefaultDir()},
+	}
+	rep, err := storagecensus.Walk(root, cats, storagecensus.Options{TopN: 0})
+	if err != nil {
+		return fmt.Errorf("storage prune: census: %w", err)
+	}
+	rep.Budget = &b
+	state := rep.State()
+	if state == storagecensus.StateOK {
+		_, err := fmt.Fprintf(out, "storage usage %s under warn threshold %s — nothing to prune\n",
+			formatBytes(rep.UsedBytes), formatBytes(b.WarnBytes()))
+		return err
+	}
+
+	pruners := []storagecensus.Pruner{
+		buildScratchPruner{Root: defaultBuildScratchRoot(), OlderThan: *olderThan},
+	}
+	pruneRep, err := storagecensus.CoordinatePrune(context.Background(), pruners, rep.UsedBytes, b.TargetBytes, *apply)
+	if err != nil {
+		// Coordinator returned a partial result; surface the error after rendering.
+		if rerr := storagecensus.RenderPruneHuman(out, pruneRep); rerr != nil {
+			return rerr
+		}
+		return fmt.Errorf("storage prune: %w", err)
+	}
+	return storagecensus.RenderPruneHuman(out, pruneRep)
 }
 
 func runStoragePruneBuildScratch(args []string, out io.Writer) error {
