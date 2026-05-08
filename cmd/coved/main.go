@@ -16,6 +16,7 @@ import (
 
 	"github.com/tmc/vz-macos/internal/coved"
 	"github.com/tmc/vz-macos/internal/storagecensus"
+	"github.com/tmc/vz-macos/internal/storagepins"
 	buildversion "github.com/tmc/vz-macos/internal/version"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -100,6 +101,9 @@ func main() {
 		storage.Interval = *storagePollInterval
 		storage.Bus = d.events
 		storage.Apply = os.Getenv("COVE_DAEMON_STORAGE_PRUNE_APPLY") == "1"
+		if pf, perr := storagepins.Load(coveRoot); perr == nil {
+			storage.Pins = pf
+		}
 		d.storage = storage
 		go storage.Run(ctx)
 	}
