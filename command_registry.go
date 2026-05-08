@@ -77,6 +77,7 @@ var commandRegistry = []commandSpec{
 	{Name: "snapshot", Summary: "Manage VM state snapshots", Dispatch: commandDispatchLate, Run: runSnapshotCommandSpec},
 	{Name: "softreset", Summary: "Run destructive soft-reset probe matrix", Dispatch: commandDispatchEarly, Run: runSoftresetCommand},
 	{Name: "status", Summary: "Show VM status", Dispatch: commandDispatchLate, Run: runStatusCommand},
+	{Name: "storage", Summary: "Inspect cove disk usage under ~/.vz/", Dispatch: commandDispatchEarly, Run: runStorageCommand},
 	{Name: "store", Summary: "Manage the local OCI blob store", Dispatch: commandDispatchEarly, Run: runStoreCommand},
 	{Name: "template", Summary: "Manage VM templates", Dispatch: commandDispatchLate, Run: runTemplateCommand},
 	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: commandDispatchEarly, Run: runUIScriptCommand},
@@ -199,6 +200,9 @@ func runSIPCommand(env commandEnv, _ string, args []string) int {
 }
 func runSoftresetCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, softresetCommand(args))
+}
+func runStorageCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleStorageCommand(args))
 }
 func runStoreCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleStoreCommand(args))
