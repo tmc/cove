@@ -10,7 +10,7 @@ Follow-on work that touches the same surface but lands under other designs: `4e0
 
 Spec-vs-code drift surfaced during this refresh (left for a separate follow-up — out of scope for status):
 
-- `action.yml` exposes `cache-key`, `cache-paths`, and (R76, `ece1169`) `cache-mode`. The MVP § here also lists `cache-scope`, `cache-ttl`, and `cache-save-on`; those three remain unwired. `cache-paths` is now permitted as informational-only metadata (resolved below).
+- `action.yml` exposes `cache-key`, `cache-paths`, (R76, `ece1169`) `cache-mode`, and (R77) `cache-scope`. The MVP § here also lists `cache-ttl` and `cache-save-on`; those two remain unwired. `cache-paths` is now permitted as informational-only metadata (resolved below).
 - The `cache-primary-key` output named in the API Surface § is not emitted; the other three outputs (`cache-hit`, `cache-image`, `cache-saved`) match.
 - Default save policy and TTL behavior reflected in code should be reconciled against the MVP § wording.
 
@@ -266,7 +266,7 @@ Live verification:
 
 Verified against `.github/actions/cove-action/action.yml` at `4150a02` (R71 finding R71-DESIGN-030-STATUS `0b774c4`). The header note at lines 11-15 flagged drift in passing; the items below are the resolved list.
 
-1. Missing inputs: `cache-mode`, `cache-scope`, `cache-ttl`, `cache-save-on` from API Surface § (lines 54-57) are not wired in `action.yml`. Status: `cache-mode` resolved at `ece1169` (R76) — wires the four-value enum with `restore-save` default matching `actions/cache`. The remaining three (`cache-scope`, `cache-ttl`, `cache-save-on`) stay deferred to v0.7.
+1. Missing inputs: `cache-mode`, `cache-scope`, `cache-ttl`, `cache-save-on` from API Surface § (lines 54-57) are not wired in `action.yml`. Status: `cache-mode` resolved at `ece1169` (R76); `cache-scope` resolved at R77 — adds an optional namespace prefix joined as `<scope>:<key>` before normalization, default empty (per-repo behavior preserved). Open Question §1 (default source) is intentionally settled minimally: caller supplies `${{ github.repository }}` or any other namespace explicitly. The remaining two (`cache-ttl`, `cache-save-on`) stay deferred to v0.7.
 2. Extra input: `cache-paths` is wired and is now spec-permitted as informational-only metadata (R74). Status: resolved — API Surface § respec'd to keep the shipped surface; removing it would have broken `docs/migrations/from-cirrus.md`, `docs/migration/cirrus-to-cove.md`, `docs/landing/migration-walkthrough.md`, and `docs/features/gha-executor.md` examples.
 3. Missing output: `cache-primary-key` from API Surface § (line 66) is not emitted. The other three cache outputs (`cache-hit`, `cache-image`, `cache-saved`) match. Status: deferred to v0.7 — small wrapper change, blocked on input decisions above.
 4. Open Questions §§ 1-5 (lines 259-263) remain unanswered: `cache-scope` default, TTL default, duplicate-tag error shape, manifest-vs-sidecar, save-failure policy. Status: needs design discussion before the input surface lands.
