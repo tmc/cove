@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -102,6 +103,13 @@ func SaveBudget(root string, b Budget) error {
 		return fmt.Errorf("write storage budget: %w", err)
 	}
 	return nil
+}
+
+// EncodeBudgetJSON writes b as indented JSON to w.
+func EncodeBudgetJSON(w io.Writer, b Budget) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(b)
 }
 
 // ClearBudget removes ~/.vz/storage-budget.json. A missing file is not an
