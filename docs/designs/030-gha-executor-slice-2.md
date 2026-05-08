@@ -1,10 +1,18 @@
 # Design 030: GHA Executor Slice 2 Cross-run Cache Reuse
 
-**Status:** Implemented  
+**Status:** Implemented (MVP)  
 **Author:** Travis Cline  
 **Date:** 2026-05-05
 
-**Implementation:** T77 shipped this spec via `3199d58`, `1444d5f`, and `d78a853`.
+**Implementation:** T77 shipped this spec on `origin/main` at `9e6253a` (action: add local image cache restore), `f06d554` (image: expire local action caches), and `c0a1433` (docs: describe action image cache). The header previously cited `3199d58`, `1444d5f`, and `d78a853`; those are off-main rebase duplicates of the same three commits and are not on `origin/main`. ROADMAP row "GitHub Actions executor Slice 2 cache reuse" tracks the canonical SHAs.
+
+Follow-on work that touches the same surface but lands under other designs: `4e0a0aa` (metrics: emit image gc and run cache eviction events) and `ab7f159` / `c9940f6` / `c9df361` (R63 cove-action `secrets:` parser, scoped under design 025 / cirrus-secrets-fix-2026-05-08, not design 030).
+
+Spec-vs-code drift surfaced during this refresh (left for a separate follow-up — out of scope for status):
+
+- `action.yml` exposes `cache-key` and `cache-paths` only. The MVP § here lists `cache-mode`, `cache-scope`, `cache-ttl`, and `cache-save-on`; none are wired. `cache-paths` is present despite the API Surface § stating "Do not add a `paths` input in the MVP."
+- The `cache-primary-key` output named in the API Surface § is not emitted; the other three outputs (`cache-hit`, `cache-image`, `cache-saved`) match.
+- Default save policy and TTL behavior reflected in code should be reconciled against the MVP § wording.
 
 ## Problem
 
