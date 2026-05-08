@@ -5,14 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-
-	"github.com/tmc/vz-macos/internal/controlserver"
 )
-
-// httpListeners is an alias of controlserver.HTTPListeners. The type
-// lives in internal/controlserver so the network bridge (extracted
-// next) can hold it without crossing the package-main boundary.
-type httpListeners = controlserver.HTTPListeners
 
 // StartHTTP binds a TCP listener on addr and serves the per-VM HTTP API.
 // vmName is used in URL path matching (e.g. /v1/vms/<vmName>/status).
