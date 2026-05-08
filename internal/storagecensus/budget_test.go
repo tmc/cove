@@ -140,6 +140,58 @@ func TestRenderHumanWithBudgetShowsHeadroomAndMarker(t *testing.T) {
 	}
 }
 
+func TestBudgetValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      Budget
+		wantErr bool
+	}{
+		{"zero", Budget{}, false},
+		{"valid", Budget{TargetBytes: 1000, WarnPct: 80, HardPct: 95}, false},
+		{"negative target", Budget{TargetBytes: -1}, true},
+		{"warn below 0", Budget{TargetBytes: 1, WarnPct: -1}, true},
+		{"warn above 100", Budget{TargetBytes: 1, WarnPct: 101}, true},
+		{"hard below 0", Budget{TargetBytes: 1, HardPct: -1}, true},
+		{"hard above 100", Budget{TargetBytes: 1, HardPct: 101}, true},
+		{"warn exceeds hard", Budget{TargetBytes: 1, WarnPct: 95, HardPct: 80}, true},
+		{"warn equals hard", Budget{TargetBytes: 1, WarnPct: 90, HardPct: 90}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.in.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() err=%v, wantErr=%v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestEncodeBudgetJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		in   Budget
+		want []string
+	}{
+		{"zero", Budget{}, []string{`"target_bytes": 0`}},
+		{"set", Budget{TargetBytes: 1000, WarnPct: 80, HardPct: 95},
+			[]string{`"target_bytes": 1000`, `"warn_pct": 80`, `"hard_pct": 95`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := EncodeBudgetJSON(&buf, tt.in); err != nil {
+				t.Fatalf("EncodeBudgetJSON: %v", err)
+			}
+			out := buf.String()
+			for _, w := range tt.want {
+				if !contains(out, w) {
+					t.Errorf("missing %q in output:\n%s", w, out)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadBudgetCorruptFileReturnsError(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, BudgetFilename), []byte("not json"), 0o644); err != nil {

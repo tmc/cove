@@ -197,6 +197,45 @@ func TestWalkMarksPinnedItems(t *testing.T) {
 	}
 }
 
+func TestStateString(t *testing.T) {
+	tests := []struct {
+		name string
+		in   State
+		want string
+	}{
+		{"unset", StateUnset, "unset"},
+		{"ok", StateOK, "ok"},
+		{"warn", StateWarn, "warn"},
+		{"hard", StateHard, "hard"},
+		{"unknown", State(99), "state(99)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.String(); got != tt.want {
+				t.Errorf("State(%d).String() = %q, want %q", int(tt.in), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultDescriptors(t *testing.T) {
+	root := "/cove"
+	got := DefaultDescriptors(root)
+	wantNames := []string{"vms", "images", "runs", "cache", "build-scratch", "store"}
+	if len(got) != len(wantNames) {
+		t.Fatalf("DefaultDescriptors returned %d entries, want %d", len(got), len(wantNames))
+	}
+	for i, name := range wantNames {
+		if got[i].Name != name {
+			t.Errorf("entry[%d].Name = %q, want %q", i, got[i].Name, name)
+		}
+		wantPath := filepath.Join(root, name)
+		if got[i].Path != wantPath {
+			t.Errorf("entry[%d].Path = %q, want %q", i, got[i].Path, wantPath)
+		}
+	}
+}
+
 func mustWrite(t *testing.T, path string, n int) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
