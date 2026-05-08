@@ -1,6 +1,16 @@
 # Design 027: Disk I/O Performance Tuning
 
-Status: Implemented (2026-05-04; Slices 1-3 shipped, Slice 4 specified 2026-05-05)
+Status: Implemented (2026-05-04; Slices 1-4 shipped). Last verified R71 (2026-05-08).
+
+- Slice 1 (DiskCachePolicy + `-disk-sync` + callsite migration): `fc7ff1e`.
+- Slice 2 (Linux NVMe wiring + `-nvme`): `8500ecb`, `968cbde`; benchmark deferred at `1b7c947` / `f71851b`.
+- Slice 3 (preallocated raw install disk + `-raw-disk`): `7ca06a9`; benchmark recorded at `093d63d`.
+- Slice 4 (block device passthrough): helper protocol `b522ab3`, run wiring `a78e891`, smoke runbook `74d9527`, final spec `65b6964`, benchmark blocker `50ba06e`.
+
+Carried-forward open items:
+- Slice 1 acceptance: Ubuntu 24.04 desktop install <10 min wall-clock — still gated on Ubuntu Desktop first-boot reliability (see `50ba06e`).
+- Slice 2 acceptance: virtio-blk vs. NVMe install benchmark — deferred for the same reason.
+- Slice 4 acceptance: `docs/benchmarks/disk-io.md` row separated from desktop reliability — pending the same gate.
 Author: Travis Cline
 Date: 2026-05-03
 
