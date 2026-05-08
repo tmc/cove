@@ -1,6 +1,6 @@
 # Design 035: OpenAI SandboxRunConfig backend for cove
 
-**Status:** Draft  
+**Status:** Shipped 2026-05-05 at `27f9e24` (Agents SDK sandbox backend; SHA chain in ROADMAP)  
 **Author:** Travis Cline  
 **Date:** 2026-05-05
 

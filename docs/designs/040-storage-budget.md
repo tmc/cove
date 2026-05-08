@@ -1,6 +1,6 @@
 # Design 040: Storage Budget for `~/.vz/`
 
-Status: Proposed (2026-05-07; horizon v0.6)
+Status: Shipped 2026-05-08 at `6cf3a93` (Phases 0-5 during R57; SHA chain in ROADMAP)
 Author: Travis Cline
 Date: 2026-05-07
 

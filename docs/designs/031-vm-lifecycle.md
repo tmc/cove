@@ -1,6 +1,6 @@
 # Design 031: VM Lifecycle Policy
 
-**Status:** Draft  
+**Status:** Shipped 2026-05-05 at `cd899a1` (policy persistence, CLI, enforcement loop, run-budget counter; SHA chain in ROADMAP)  
 **Author:** Travis Cline  
 **Date:** 2026-05-05
 
