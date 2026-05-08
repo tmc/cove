@@ -408,3 +408,162 @@ Before Slice 4 ships:
   `SCStream`, `SCStreamConfiguration`, `SCContentFilter`,
   `SCShareableContent`, `SCScreenshotManager`,
   `SCContentSharingPicker`.
+
+## Slice 3 — production wiring spec
+
+Slice 1 shipped at `8d55d7a` (`cove doctor sckit-preauth`).
+Slice 2 spike shipped at `d0877b8` (`internal/sckit.CaptureSpike`,
+single-frame `SCScreenshotManager` against an `SCWindow` filter,
+perf A/B blocked on Screen Recording grant in CI).
+
+Slice 3 wires the spike into the live capture path behind a
+feature flag, defaults off, with deterministic fallback to the
+existing `CGWindowListCreateImage` path. No behavior change for
+operators who do not opt in. Goal is to ship the production code
+path on `main` so that internal dogfooders and the v0.6 release-
+notes audience can flip a flag and exercise SCKit end to end.
+
+### 1. Feature flag
+
+Name: `COVE_CAPTURE_BACKEND`. Values: `cgwindow` (default),
+`sckit`, `auto`.
+
+- `cgwindow`: current behavior; `internal/sckit` is not touched.
+- `sckit`: try SCKit first; on init or capture error, fall back
+  to CGWindowList and emit one `slog.Warn` per process lifetime
+  ("sckit-fallback").
+- `auto`: equivalent to `cgwindow` in v0.6; reserved for Slice 4
+  flip to `sckit-first`. Documented now so the matrix is stable.
+
+Per-VM override: `~/.vz/vms/<name>/capture-backend` (one line,
+same three values). Per-VM file wins over env var. Unreadable or
+unknown value falls through to env var, then default. Read site:
+new helper `captureBackend()` in `screenshots.go` (5–8 LOC),
+called once per `captureVMView()` invocation. No global init —
+the flag is honored on every capture so an operator can flip it
+without restarting the VM.
+
+### 2. Dual-path skeleton
+
+The decision lives in `screenshots.go` next to the existing
+`captureVMView()`. `internal/controlserver/capture.go` does not
+change — it still consumes `image.Image`. The new code lives
+behind a build tag (`darwin && !ios`) so non-darwin and stub
+builds keep compiling.
+
+```go
+// screenshots.go (pseudocode, ~25 LOC over current captureVMView)
+func (s *ControlServer) captureVMView() (image.Image, string) {
+    switch captureBackend(s.vmName) {
+    case "sckit":
+        if img, err := s.captureSCKit(); err == nil {
+            return img, ""
+        } else {
+            warnSCKitFallbackOnce(err) // slog.Warn, sync.Once
+        }
+    }
+    return s.captureCGWindow() // renamed body of current captureVMView
+}
+```
+
+`captureSCKit` is a thin adapter on `internal/sckit.CaptureSpike`
+(rename to `CaptureWindow` in Slice 3 — Slice 2's "spike" naming
+is no longer accurate). It takes the same `windowNum` the
+CGWindowList path resolves and returns `(image.Image, error)`.
+
+### 3. Fallback policy
+
+SCKit init failure (no shareable content, TCC denied, window not
+visible to the current process, or any non-nil error from
+`CaptureWindow`) **must not** fail the capture call. The path is:
+
+1. Log a `slog.Warn` with `cause=...` (TCC, window-missing,
+   timeout, other). At most once per process via `sync.Once`
+   keyed on the cause string, to avoid log floods during install.
+2. Fall through to `captureCGWindow()`. Operator sees no
+   user-visible degradation beyond the SA1019 deprecation that
+   already exists.
+3. Do **not** auto-disable the flag. The fallback is per-call so
+   that a transient TCC reset (operator just granted Screen
+   Recording) recovers on the next capture without a restart.
+
+Headless install (no GUI window) keeps the existing branch in
+`screenshots.go` that prefers `capturePrivateGraphicsDisplay()`
+— SCKit is only consulted in the GUI window branch. Document
+this in the Slice 3 commit message.
+
+### 4. Migration order
+
+| Phase | Default | What ships | Risk |
+|---|---|---|---|
+| Slice 1 (shipped `8d55d7a`) | n/a | `cove doctor sckit-preauth` diagnostic | none |
+| Slice 2 (shipped `d0877b8`) | n/a | `internal/sckit.CaptureSpike`, A/B harness | none, off the hot path |
+| Slice 3 (this spec) | `cgwindow` | dual-path, opt-in via env/per-VM, fallback policy | low — default unchanged |
+| Slice 4 (v0.6 GA candidate) | `sckit` (`auto` resolves to sckit) | flip default; doctor command becomes recommended pre-flight | medium — TCC prompt now in default flow |
+| Post-v0.6 cleanup | `sckit` only | drop CGWindowList branch, remove SA1019 hit, retire `COVE_CAPTURE_BACKEND` (or freeze at `sckit`) | low if Slice 4 has soaked one release |
+
+Slice 4 ships only if Slice 3 dogfood reports zero unrecovered
+fallbacks across at least one full release cycle on operator
+hardware. Slice 4 spec is out of scope for this document.
+
+### 5. Test gate
+
+Tests split into three buckets:
+
+| Bucket | Tests | Skip rule |
+|---|---|---|
+| Unit-pure | `captureBackend()` resolution (env + per-VM file precedence, unknown values), fallback log de-dup `sync.Once` semantics | always run |
+| Fixture-only | `captureSCKit` adapter wiring against a fake `screencapturekit` interface (table-driven errors → fallback path) | always run; uses interface seam, no TCC |
+| Live SCKit | end-to-end capture against a real cove window in `_test.go` files behind `//go:build darwin && sckit_live`, gated on `COVE_TEST_SCKIT_GRANT=1` | skip when env unset; document in `internal/sckit/doc.go` |
+
+The live bucket replaces Slice 2's manual A/B in CI. CI does not
+set `COVE_TEST_SCKIT_GRANT`; release engineer runs it once per
+release on a TCC-granted host. Slice 3 commit must include at
+least the unit-pure and fixture-only tests; live tests can land
+in a follow-up commit on the same branch.
+
+No new fixtures required for the unit-pure bucket. Fixture-only
+bucket needs a single fake implementing the 3 SCKit calls
+`CaptureSpike` makes (`GetShareableContentExcludingDesktopWindowsOnScreenWindowsOnly`,
+`NewContentFilterWithDesktopIndependentWindow`,
+`CaptureImageWithFilterConfiguration`). Define the seam as an
+interface in `internal/sckit` so Slice 4 can swap to streaming
+without rewriting tests.
+
+### 6. macOS 14 floor
+
+Confirmed and unchanged from §"Resolved decisions" item 1.
+SCKit availability is gated at **build time** by `go:build
+darwin && !ios` on `internal/sckit/sckit_darwin.go` plus
+`internal/sckit/spike_darwin.go`. There is no runtime
+`if #available(macOS 14.0)` check — the binary's macOS
+deployment target is bumped to 14 in v0.6 (separate task,
+tracked in RELEASE-NOTES-v0.6.0.md). Operators on macOS 12 or
+13 cannot install v0.6 in the first place, so the SCKit code
+cannot execute on an unsupported host.
+
+### 7. LOC budget
+
+| File | New LOC | Notes |
+|---|---|---|
+| `screenshots.go` | ~30 | `captureBackend()`, dual-path switch, `warnSCKitFallbackOnce`, rename `captureVMView` body to `captureCGWindow` |
+| `internal/sckit/sckit_darwin.go` | ~20 | `CaptureWindow` (rename + minor cleanup of `CaptureSpike`), interface seam for tests |
+| `internal/sckit/sckit_other.go` | ~10 | non-darwin stub matching new exported surface |
+| `internal/sckit/sckit_test.go` | ~80 | fixture-only fake + table-driven fallback tests, `captureBackend()` precedence tests |
+| `screenshots_test.go` (new or extended) | ~40 | dual-path resolution tests using fake seam |
+| `internal/sckit/doc.go` | ~10 | document live test build tag + `COVE_TEST_SCKIT_GRANT` |
+| `RELEASE-NOTES-v0.6.0.md` | ~10 | "opt-in via `COVE_CAPTURE_BACKEND=sckit`" stanza |
+
+Total: ~200 LOC. Fits within the 250 LOC cap with ~50 LOC of
+headroom. If live tests land in the same commit, expect another
+~60 LOC; that pushes the total to ~260 and should split into a
+second commit (`internal/sckit: live screenshot test`).
+
+### 8. Open question
+
+1. Should `auto` in v0.6 do anything at all, or is it pure
+   reserved-future-value? Current spec says "treat as
+   `cgwindow`". Alternative: `auto` resolves to `sckit` only
+   when `cove doctor sckit-preauth` last ran successfully
+   (cached marker file). Adds ~20 LOC + a doctor cache file.
+   Defer to conductor.
