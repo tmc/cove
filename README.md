@@ -44,7 +44,7 @@ Or step by step:
 
 ```bash
 cove install                            # download IPSW and install macOS
-cove inject -user myuser                # provision user, skip Setup Assistant
+cove provision -user myuser             # provision user, skip Setup Assistant
 cove run                                # boot with native GUI window
 ```
 
@@ -173,7 +173,7 @@ cove up -user dev -vzscripts homebrew,golang
 
 ```bash
 cove install -ipsw ~/cache/restore.ipsw
-cove inject -user ci -password secret -skip-setup-assistant
+cove provision -user ci -password secret -skip-setup-assistant
 cove run -headless -cpu 4 -memory 8
 ```
 
