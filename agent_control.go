@@ -360,14 +360,7 @@ func (s *ControlServer) agentHealthMonitor() {
 
 func (s *ControlServer) AgentHealthSummary() string { return s.bridge.Summary() }
 
-func (s *ControlServer) nextAgentHealthInterval(d time.Duration) time.Duration {
-	return s.bridge.NextAgentHealthInterval(d)
-}
-func (s *ControlServer) markAgentConnected(version string)   { s.bridge.MarkAgentConnected(version) }
-func (s *ControlServer) markAgentReconnecting(reason string) { s.bridge.MarkAgentReconnecting(reason) }
-func (s *ControlServer) setHealthStatus(status, version, lastErr string) {
-	s.bridge.SetHealthStatus(status, version, lastErr)
-}
+func (s *ControlServer) markAgentConnected(version string) { s.bridge.MarkAgentConnected(version) }
 
 func (s *ControlServer) handleAgentPing() *controlpb.ControlResponse {
 	a, err := s.getAgent()
