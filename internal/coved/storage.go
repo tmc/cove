@@ -36,6 +36,10 @@ type StoragePollScheduler struct {
 	// Default false keeps the daemon path dry-run only; cmd/coved opts
 	// in via the COVE_DAEMON_STORAGE_PRUNE_APPLY env var.
 	Apply bool
+	// Pins is consulted to filter pinned candidates out before sorting.
+	// nil means no pin filter is applied (build-scratch and other
+	// non-pinnable categories are unaffected either way).
+	Pins storagecensus.PinChecker
 	// Interval is the poll cadence. Zero falls back to DefaultStoragePollInterval.
 	Interval time.Duration
 	// Logger is optional; nil disables logging.
@@ -177,7 +181,7 @@ func (s *StoragePollScheduler) runPrune(ctx context.Context, rep storagecensus.R
 	if rep.Budget == nil {
 		return
 	}
-	pruneRep, err := storagecensus.CoordinatePrune(ctx, s.Pruners, rep.UsedBytes, rep.Budget.TargetBytes, s.Apply)
+	pruneRep, err := storagecensus.CoordinatePrune(ctx, s.Pruners, rep.UsedBytes, rep.Budget.TargetBytes, s.Apply, s.Pins)
 	if err != nil && s.Logger != nil {
 		s.Logger.Warn("storage prune coordinator partial failure", slog.Any("err", err))
 	}
