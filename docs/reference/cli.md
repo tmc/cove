@@ -1051,3 +1051,5 @@ agent-aware free-space compactor.
 | `pit` | Experimental point-in-time save, restore, run, and swap |
 | `softreset` | Run destructive soft-reset probe matrix |
 | `store` | Manage the local content-addressed OCI blob store |
+| `status` | Show running VM status |
+| `helper` | Manage the privileged helper (install, uninstall, status) to skip per-run sudo prompts |
