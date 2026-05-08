@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/storagecensus"
+	"github.com/tmc/vz-macos/internal/storagepins"
 	"github.com/tmc/vz-macos/internal/store"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -241,7 +242,19 @@ func runStorageCensus(args []string, out io.Writer) error {
 		{Name: "store", Path: store.DefaultDir()},
 	}
 
-	rep, err := storagecensus.Walk(root, cats, storagecensus.Options{TopN: *topN})
+	opts := storagecensus.Options{
+		TopN: *topN,
+		CategoryToPinName: map[string]string{
+			"vms":    "vm",
+			"images": "image",
+			"runs":   "run",
+			"cache":  "cache",
+		},
+	}
+	if pf, perr := storagepins.Load(root); perr == nil {
+		opts.Pins = pf.RefSet()
+	}
+	rep, err := storagecensus.Walk(root, cats, opts)
 	if err != nil {
 		return fmt.Errorf("storage census: %w", err)
 	}
