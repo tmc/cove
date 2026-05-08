@@ -54,7 +54,7 @@ this doc is the readiness gap report behind it.
 |---|---|---|
 | **GitHub Actions annotations** (`::error`, `::warning`, file/line) emitted from inside the guest | Print plain text; GHA renders as logs only | **M** |
 | **Public Marketplace action** (`uses: cirrus-actions/...` analogue) | Private composite action at `.github/actions/cove-action`; copy/paste per repo | **L** — gated by privacy gate (cove repo private) |
-| **Cirrus secrets** (`ENCRYPTED[…]` URI) → guest env | `cove-action` `secrets:` input is **reserved and rejected** (`action.yml:48-49,95-99`); operator pipes plain `env:` | **L** — secret lifecycle, redaction, and lease design needed |
+| **Cirrus secrets** (`ENCRYPTED[…]` URI) → guest env | `cove-action` `secrets:` input is **reserved and rejected** (`action.yml:48-49,95-99`); operator pipes plain `env:` | **M** — sized in [`cirrus-secrets-fix-2026-05-08.md`](cirrus-secrets-fix-2026-05-08.md); proto wire ready, host-side plumbing + redactor only |
 | **Hosted queue** (Cirrus picks a Mac for you) | Operator owns the runner host (or fleet); GitHub `runs-on` labels do scheduling | **L** — by design, cove is operator-owned. Not a blocker; a scope decision. |
 | **Multi-OS hosted CI** (Linux x86_64 / Windows runners under same `.cirrus.yml`) | cove is Apple Silicon only | **L** — out of scope per `docs/strategy/non-goals.md` |
 | **Public macOS/Linux image catalog** (Tart-style GHCR images) | Operator builds locally with `cove up` + `cove image build` | **L** — gated by privacy gate; design 024 Slice 3 deferred |
@@ -63,15 +63,14 @@ this doc is the readiness gap report behind it.
 | **Auto-cancel on push** | GitHub `concurrency: cancel-in-progress: true` | **S** (docs only) |
 | **Cosign-signed images / SLSA provenance** | Local provenance fields in image manifest (`26380b8`); no public signature channel | **L** — defers with public registry decision |
 
-### Missing(L) blocker count: **5**
+### Missing(L) blocker count: **4**
 
 1. Public Marketplace action (privacy gate)
-2. Cirrus-style secrets → guest env (lifecycle + redaction)
-3. Hosted queue (out-of-scope by design — listed for completeness only)
-4. Public image catalog (privacy gate)
-5. Cosign-signed images / SLSA provenance public channel
+2. Hosted queue (out-of-scope by design — listed for completeness only)
+3. Public image catalog (privacy gate)
+4. Cosign-signed images / SLSA provenance public channel
 
-Items 3 and 5 are scope/posture decisions, not engineering work. Items 1, 2, 4 are the real shipping cost; 1 and 4 unblock once the privacy gate flips, leaving **secrets (item 2)** as the only purely engineering-bound L blocker. Note: GitHub Actions annotations from-guest is sized **M**, not L — included above as a UX polish item.
+Items 2 and 4 are scope/posture decisions, not engineering work. Items 1 and 3 are real shipping cost but both gated by the privacy gate. Cirrus-style secrets → guest env was previously listed as the only purely engineering-bound L blocker; on closer inventory it is sized **M** (proto wire already plumbed; host-side flag + redactor only). See [`cirrus-secrets-fix-2026-05-08.md`](cirrus-secrets-fix-2026-05-08.md). GitHub Actions annotations from-guest is also **M**, included above as a UX polish item.
 
 ## Recommended migration steps
 
