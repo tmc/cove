@@ -1,10 +1,9 @@
 // Package controlserver holds the sub-components of the control plane.
 //
-// Per design 039 §7 (facade-late rule), the ControlServer facade
-// itself remains in package main until all five sub-components have
-// been extracted and have local invariants. This package is the
-// destination for those sub-components: agent, capture, lifecycle,
-// input, and network.
+// Per design 039 §7 (facade-late rule), all five sub-components live
+// here: agent, capture, lifecycle, input, and network. The
+// ControlServer facade itself remains in package main and embeds each
+// of them by value.
 //
 // Sub-components that need access to ControlServer-owned state (the VM
 // view, the underlying VM handle, etc.) take a narrow Host interface
