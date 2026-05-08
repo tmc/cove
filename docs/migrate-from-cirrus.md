@@ -115,7 +115,8 @@ test_task:
 Cove:
 
 ```bash
-cove build -from go-base -tag acme/runner:deps -script ci/deps.vzscript
+cove vzscript run -vm go-base ci/deps.vzscript
+cove image build -from go-base -tag acme/runner:deps
 cove image verify --strict --newer-than 24h acme/runner:deps
 go run ./cmd/cove-action -image acme/runner:deps -command 'go test ./...'
 ```
