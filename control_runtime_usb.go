@@ -171,14 +171,6 @@ func runtimeUSBErrorResponse(action string, err error) *controlpb.ControlRespons
 	})
 }
 
-func runtimeUSBSuccessResponse(action, message string) *controlpb.ControlResponse {
-	return runtimeUSBControlResponse(runtimeUSBResponse{
-		OK:      true,
-		Action:  action,
-		Message: message,
-	})
-}
-
 func (s *ControlServer) handleRuntimeUSBJSONRequest(rawJSON []byte) *controlpb.ControlResponse {
 	req, err := parseRuntimeUSBRequest(rawJSON)
 	if err != nil {
