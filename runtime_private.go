@@ -307,9 +307,7 @@ func parsePortSpec(spec string) (uint16, error) {
 	if strings.Contains(spec, "/") {
 		return 0, fmt.Errorf("expected port, got %q", spec)
 	}
-	if strings.HasPrefix(spec, ":") {
-		spec = spec[1:]
-	}
+	spec = strings.TrimPrefix(spec, ":")
 	if strings.Contains(spec, ":") {
 		return 0, fmt.Errorf("host-qualified address %q is not supported; use :port or port", spec)
 	}

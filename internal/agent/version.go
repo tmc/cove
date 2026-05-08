@@ -49,9 +49,7 @@ func VersionsEqual(host, guest string) bool {
 
 func parseSemver(s string) ([3]int, bool) {
 	var out [3]int
-	if strings.HasPrefix(s, "v") {
-		s = s[1:]
-	}
+	s = strings.TrimPrefix(s, "v")
 	if i := strings.IndexAny(s, "-+"); i >= 0 {
 		s = s[:i]
 	}
