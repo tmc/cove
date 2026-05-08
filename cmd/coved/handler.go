@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -24,7 +23,6 @@ type daemon struct {
 	connected chan struct{}
 	lifecycle *coved.LifecycleEnforcer
 	events    *coved.EventBus
-	http      *http.Server
 }
 
 type statusResponse struct {
