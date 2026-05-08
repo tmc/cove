@@ -54,6 +54,7 @@
 * [Overview](designs/README.md)
 * [Roadmap](designs/ROADMAP.md)
 * [cove serve (HTTP + MCP)](designs/001-cove-serve-http-mcp.md)
+* [Defer create_vm to v0.2](designs/001a-defer-create-vm-to-v02.md)
 * [Disks & OCI](designs/002-cove-disks-oci.md)
 * [Build & Layer Caching](designs/003-cove-build-oci-caching.md)
 * [Churn Benchmark](designs/004-churn-benchmark-harness.md)
