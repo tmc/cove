@@ -147,12 +147,15 @@ channel.
 
 ## v0.5 — Stabilization: package boundaries + observability fixes
 
-This release contracts surface area and tightens internal boundaries. Slices 1-4
-of design 039 ship; slice 5 (`internal/vmrun`) and all five slice 6 sub-slices
-(`agentBridge`, `screenCapture`, `inputBridge`, `lifecycleBridge`,
-`networkBridge`) ship within the v0.5 stabilization arc (R46 + R47 conductor
-pull-in). The eventual facade move to `internal/controlserver` remains
-deferred to v0.6.
+**Status: code-complete at `8bd7a65` (2026-05-07). Tag not yet cut; user-gated.**
+
+This release contracts surface area and tightens internal boundaries. Slices
+1-4 of design 039 ship, slice 5 (`internal/vmrun`) and all five slice 6
+sub-slices (`agentBridge`, `screenCapture`, `inputBridge`, `lifecycleBridge`,
+`networkBridge`) ship, **and the §7 facade move to `internal/controlserver` is
+fully complete**: all five bridges (`Capture`, `Lifecycle`, `Agent`, `Input`,
+`Network`) now live in `internal/controlserver/` behind narrow `*Host`
+interfaces. `ControlServer` in package main is a thin facade.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
@@ -167,7 +170,7 @@ deferred to v0.6.
 | Design 039 slice 6 sub-slice 4 (`lifecycleBridge`) | done | slice 5 | [039](039-package-boundary-extraction.md) | Lifecycle ctx + policy state extracted into `lifecycleBridge` value (`6592695`/`ccba4bf`/`6947d3d`). Two `ControlServer` mutexes retired (`policyMu`, `lifecycleMu`); 6 invariant tests pin set-once start time, exec increment, one-shot stop edge, pre-start ctx, shutdown idempotence at the bridge boundary. Bounded-shutdown invariant from `cfb174b` preserved by construction (`StopTimeout` stays in `internal/control.Server`, `life.shutdown()` only cancels ctx). |
 | Design 039 slice 6 sub-slice 5 (`networkBridge`) | done | slice 5 | [039](039-package-boundary-extraction.md) | iTerm2 proxy, port forwards, HTTP listeners, VNC/debug status extracted into `networkBridge` value (`0c74183`/`4a66c3a`). Five `ControlServer` catch-all-mu uses retired (iterm2Proxy, portForwards, httpListeners, vncStatus, debugStubStatus); `StartHTTP` lazy-init race fixed. T35 portForwards concurrency invariant preserved. Dead `httpListeners` field on `ControlServer` swept in follow-up `1adbfaa`. |
 | Design 039 facade move — `Capture` + `Lifecycle` to `internal/controlserver` | done | slices 6.1-6.5 | [039](039-package-boundary-extraction.md) | First R48 facade slice shipped (`8dcf3e9`/`09fc1d1`): `internal/controlserver/` introduced with `Capture` and `Lifecycle` types moved cleanly (zero back-refs). `doc.go` pins Host-interface convention as load-bearing artifact for the remaining bridges. |
-| Design 039 facade move — remaining bridges (`Agent`, `Input`, `Network`) | maybe | facade slice 1 | [039](039-package-boundary-extraction.md) | Three larger bridges still in package main: `agentBridge` (~1500 LOC, ~10-method `AgentHost` iface), `inputBridge` (~700 LOC, ~9-method `InputHost` iface, vmView/window/cgevent refs), `networkBridge` (~1100 LOC, ~3-method `NetworkHost` iface, pulls in iTerm2Proxy + PortForwardManager). Each is its own `/goal` against a fresh worktree. Deferred to v0.6 unless v0.5 has time. |
+| Design 039 facade move — remaining bridges (`Agent`, `Input`, `Network`) | done | facade slice 1 | [039](039-package-boundary-extraction.md) | All three larger bridges shipped into `internal/controlserver/` over the R49 arc. `Agent` shipped at `cc9d12f` (~1500 LOC, `AgentHost` iface). `Input` shipped via `595727a` (interface) + `d6ee2e0` (move; ~700 LOC, `InputHost` iface; preserves `viewContentHeight` mouse mapping + CGEvent->NSEvent->keyDown invariants). `Network` shipped via `62068ce` (interface) + `8bd7a65` (move; ~1100 LOC, `NetworkHost` iface; pulls iTerm2Proxy + PortForwardManager). `ControlServer` in package main is now a thin facade. Behavioral diff: none. |
 
 ## v0.3 implementation slices
 
@@ -224,6 +227,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-05-07**: v0.5 milestone code-complete at `8bd7a65`. Design 039 §7 facade move closed: `Capture` (`8dcf3e9`), `Lifecycle` (`09fc1d1`), `Agent` (`cc9d12f`), `Input` (`d6ee2e0`), `Network` (`8bd7a65`) all live in `internal/controlserver/`. RELEASE-NOTES-v0.5.0.md drafted; tag not yet cut.
 - **2026-05-05**: Added the v0.4 closeout milestone covering R36-R40 shipped work across agent adapters, fleet, daemon, lifecycle, quotas, NixOS, Linux desktop provisioning, image/network surfaces, reliability, Cirrus migration, and the fresh-VM-login fix cluster.
 - **2026-05-05**: design [030](030-gha-executor-slice-2.md) landed for GHA executor Slice 2 cross-run cache reuse after T77 shipped `9e6253a`, `f06d554`, and `c0a1433`.
 - **2026-05-04**: Reconciled shipped v0.3 rows: ControlServer phase 3 landed at `cede792`, the Anthropic sandbox-runtime adapter landed at `fafc32a`, and curated agentkit base images landed at `92f2272`.
