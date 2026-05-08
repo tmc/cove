@@ -192,6 +192,80 @@ func TestEncodeBudgetJSON(t *testing.T) {
 	}
 }
 
+func TestSaveBudgetOverwritesExisting(t *testing.T) {
+	root := t.TempDir()
+	first := Budget{TargetBytes: 1000, WarnPct: 50, HardPct: 90}
+	if err := SaveBudget(root, first); err != nil {
+		t.Fatalf("SaveBudget first: %v", err)
+	}
+	second := Budget{TargetBytes: 2000, WarnPct: 70, HardPct: 95}
+	if err := SaveBudget(root, second); err != nil {
+		t.Fatalf("SaveBudget second: %v", err)
+	}
+	got, err := LoadBudget(root)
+	if err != nil {
+		t.Fatalf("LoadBudget: %v", err)
+	}
+	if got != second {
+		t.Errorf("got %+v, want %+v (second write should overwrite)", got, second)
+	}
+}
+
+func TestLoadBudgetRejectsInvalidOnDisk(t *testing.T) {
+	root := t.TempDir()
+	// Write a syntactically valid JSON budget that fails Validate (warn > hard).
+	bad := []byte(`{"target_bytes":1000,"warn_pct":95,"hard_pct":80}`)
+	if err := os.WriteFile(filepath.Join(root, BudgetFilename), bad, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := LoadBudget(root); err == nil {
+		t.Errorf("LoadBudget on invalid budget succeeded; want error")
+	}
+}
+
+func TestThresholdHelpersTerabyteScale(t *testing.T) {
+	// 10 TiB — realistic upper bound for an operator budget. Confirms
+	// integer math stays well within int64 at expected scales.
+	const tenTiB = int64(10) * 1024 * 1024 * 1024 * 1024
+	b := Budget{TargetBytes: tenTiB, WarnPct: 80, HardPct: 95}
+	if got, want := b.WarnBytes(), tenTiB*80/100; got != want {
+		t.Errorf("WarnBytes = %d, want %d", got, want)
+	}
+	if got, want := b.HardBytes(), tenTiB*95/100; got != want {
+		t.Errorf("HardBytes = %d, want %d", got, want)
+	}
+}
+
+func TestThresholdHelpersZeroPct(t *testing.T) {
+	b := Budget{TargetBytes: 1000} // WarnPct/HardPct unset
+	if got := b.WarnBytes(); got != 0 {
+		t.Errorf("WarnBytes with zero pct = %d, want 0", got)
+	}
+	if got := b.HardBytes(); got != 0 {
+		t.Errorf("HardBytes with zero pct = %d, want 0", got)
+	}
+}
+
+func TestBudgetIsSet(t *testing.T) {
+	tests := []struct {
+		name string
+		in   Budget
+		want bool
+	}{
+		{"zero", Budget{}, false},
+		{"only-pct", Budget{WarnPct: 80, HardPct: 95}, false},
+		{"target-set", Budget{TargetBytes: 1}, true},
+		{"target-and-pct", Budget{TargetBytes: 1024, WarnPct: 80}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.IsSet(); got != tt.want {
+				t.Errorf("IsSet() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadBudgetCorruptFileReturnsError(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, BudgetFilename), []byte("not json"), 0o644); err != nil {
