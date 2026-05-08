@@ -673,3 +673,37 @@ func TestRunCacheModeDispatch(t *testing.T) {
 		})
 	}
 }
+
+func TestScopedCacheKey(t *testing.T) {
+	cases := []struct {
+		name  string
+		scope string
+		key   string
+		want  string
+	}{
+		{"empty scope passes through", "", "go-main", "go-main"},
+		{"whitespace scope passes through", "   ", "go-main", "go-main"},
+		{"repo scope prefixes", "octo/cove", "go-main", "octo/cove:go-main"},
+		{"scope is trimmed", "  octo/cove\n", "go-main", "octo/cove:go-main"},
+		{"scopes isolate identical keys", "branch/main", "deps", "branch/main:deps"},
+		{"empty key keeps separator-free passthrough", "octo/cove", "", "octo/cove:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := scopedCacheKey(tc.scope, tc.key); got != tc.want {
+				t.Fatalf("scopedCacheKey(%q,%q) = %q, want %q", tc.scope, tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCacheImageRefHonorsScope(t *testing.T) {
+	a := cacheImageRef(scopedCacheKey("octo/cove", "go-main"))
+	b := cacheImageRef(scopedCacheKey("octo/other", "go-main"))
+	if a == b {
+		t.Fatalf("different scopes should produce different cache refs, both = %q", a)
+	}
+	if c := cacheImageRef(scopedCacheKey("", "go-main")); c != cacheImageRef("go-main") {
+		t.Fatalf("empty scope should preserve historical ref, got %q vs %q", c, cacheImageRef("go-main"))
+	}
+}

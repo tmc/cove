@@ -58,6 +58,7 @@ type config struct {
 	CacheKey   string
 	CachePaths string
 	CacheMode  string
+	CacheScope string
 	Env        []string
 	Secrets    []string
 	Stdout     io.Writer
@@ -118,6 +119,7 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	cfg.CacheKey = envValue(environ, "COVE_ACTION_CACHE_KEY", "")
 	cfg.CachePaths = envValue(environ, "COVE_ACTION_CACHE_PATHS", "")
 	cfg.CacheMode = envValue(environ, "COVE_ACTION_CACHE_MODE", cacheModeRestoreSave)
+	cfg.CacheScope = envValue(environ, "COVE_ACTION_CACHE_SCOPE", "")
 
 	fs := flag.NewFlagSet("cove-action", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -134,6 +136,7 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	fs.StringVar(&cfg.CacheKey, "cache-key", cfg.CacheKey, "whole-VM cache key")
 	fs.StringVar(&cfg.CachePaths, "cache-paths", cfg.CachePaths, "newline-separated guest paths preserved by the whole-VM cache")
 	fs.StringVar(&cfg.CacheMode, "cache-mode", cfg.CacheMode, "cache behavior: restore-save, restore-only, save-only, off")
+	fs.StringVar(&cfg.CacheScope, "cache-scope", cfg.CacheScope, "namespace prefix joined to cache-key as <scope>:<key>")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
@@ -188,7 +191,7 @@ func runJob(cfg config) (res result, err error) {
 	var cacheEvictBytes int64
 	var cacheEvictReason string
 	if cacheKey != "" {
-		cacheRef = cacheImageRef(cacheKey)
+		cacheRef = cacheImageRef(scopedCacheKey(cfg.CacheScope, cacheKey))
 		res.CacheImage = cacheRef
 		if hit, evict, bytesFreed, reason := cacheImageRestoreState(cfg, cacheRef); cacheRestore && (hit || evict) {
 			if evict {
@@ -290,6 +293,16 @@ func runJob(cfg config) (res result, err error) {
 		}
 	}
 	return res, nil
+}
+
+// scopedCacheKey joins scope and key as "<scope>:<key>". Empty scope is a
+// pass-through, preserving the historical per-repo cache layout.
+func scopedCacheKey(scope, key string) string {
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return key
+	}
+	return scope + ":" + key
 }
 
 func cacheImageRef(key string) string {

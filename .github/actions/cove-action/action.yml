@@ -51,6 +51,14 @@ inputs:
       or off. Matches GitHub actions/cache convention.
     required: false
     default: restore-save
+  cache-scope:
+    description: |
+      Optional namespace prefix for the cache key. When non-empty, the
+      effective cache key is "<scope>:<key>" before normalization, so caches
+      from different repos, branches, or orgs do not collide on the same
+      self-hosted runner. Empty preserves the per-repo default.
+    required: false
+    default: ""
   secrets:
     description: |
       Multiline KEY=value|env://VAR|file:///path secret entries. Values are
@@ -102,6 +110,7 @@ runs:
         COVE_ACTION_CACHE_KEY: ${{ inputs.cache-key }}
         COVE_ACTION_CACHE_PATHS: ${{ inputs.cache-paths }}
         COVE_ACTION_CACHE_MODE: ${{ inputs.cache-mode }}
+        COVE_ACTION_CACHE_SCOPE: ${{ inputs.cache-scope }}
         COVE_ACTION_SECRETS: ${{ inputs.secrets }}
       run: |
         set -euo pipefail
