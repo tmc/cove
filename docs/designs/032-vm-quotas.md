@@ -1,6 +1,16 @@
 # Design 032: Per-VM Resource Quotas
 
-Status: Implemented (2026-05-05; roadmap segment R36)
+Status: Shipped. SHA chain:
+- `94bf2d2` design doc landed
+- `62a71aa` `internal/vmquota` quota persistence and `diskutil apfs setQuota` wrapper
+- `2bad0e8` `cove quota` CLI plus install-time `persistInstallQuota` wired into
+  `installer.go` and `linux_installer.go`
+
+Acceptance items shipped: `quotas.json` per-VM file, sparse cpus/memory_gb/disk_gb
+schema, `cove quota <vm> show|cpu|memory|disk`, host-side APFS directory quota via
+`diskutil apfs setQuota`, install-time quota write for fresh macOS and Linux VMs.
+Deferred items in this doc remain deferred. Roadmap segment R36-629F closed.
+
 Author: Travis Cline
 Date: 2026-05-05
 
