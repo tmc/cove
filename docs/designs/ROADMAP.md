@@ -12,9 +12,9 @@ an item ships, mark its row `done` and leave the row in place.
 This roadmap is the post-integration, post-review rollup of the notebook-backed
 strategy in [012](archive/012-product-roadmap-2026.md), the v0.1 handoff in
 [014](archive/014-roadmap-update-post-v0.1.md), the soft-reset empirical result in
-[015](015-soft-reset-empirical.md), and the post-integration NotebookLM refresh
-in [016](016-notebooklm-roadmap-refresh-2026-04-30.md). The v0.3 execution
-slices are tracked in [017](017-v03-execution-roadmap.md). The 012, 016, and
+[015](archive/015-soft-reset-empirical.md), and the post-integration NotebookLM refresh
+in [016](archive/016-notebooklm-roadmap-refresh-2026-04-30.md). The v0.3 execution
+slices are tracked in [017](archive/017-v03-execution-roadmap.md). The 012, 016, and
 017 sources used NotebookLM notebook `79a32e96-8e1c-4e89-9385-20193e3a8209` as
 a sparring partner. Date-sensitive market, legal, license, pricing, and
 competitor claims from that notebook stay research inputs, not release claims,
@@ -40,7 +40,7 @@ protect that wedge instead of chasing disconnected features.
   pushable image state.
 - Soft reset failed as an isolation boundary. Use fork/restore for
   privacy-critical evals; do not publish "thousands per hour" style soft-reset
-  claims. See [015](015-soft-reset-empirical.md).
+  claims. See [015](archive/015-soft-reset-empirical.md).
 - `cove` is not clean for public software/registry branding based on the
   preliminary USPTO search. Public registry, signed image distribution, and
   product-name claims need a legal/product decision first.
@@ -48,8 +48,8 @@ protect that wedge instead of chasing disconnected features.
 ## RC scope: what ships and what's deferred
 
 This boundary is canonical and must agree with the CLI reference, changelog,
-release checklist, [016](016-notebooklm-roadmap-refresh-2026-04-30.md), and
-[017](017-v03-execution-roadmap.md).
+release checklist, [016](archive/016-notebooklm-roadmap-refresh-2026-04-30.md), and
+[017](archive/017-v03-execution-roadmap.md).
 
 **Ships in this RC.** `cove build` non-dry-run execution against a local VM
 directory base (cache hits validate metadata and skip guest execution; misses
@@ -72,20 +72,20 @@ channel.
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
 | `cove up` fresh-install path-resolution fix | done | none | [roadmap-post-v0.1](archive/roadmap-post-v0.1.md), `03fb38f fix(up): resolve up target before install` | Fixes the headline UX bug where install reported success but provisioning failed because the target VM directory was never materialized. Shipped on `main` as `03fb38f`. |
-| CDC vs fixed-offset chunking trade-off study | done | none | [002](002-cove-disks-oci.md) | Settles whether content-defined chunking is worth the cost before committing the v0.2 store design. |
+| CDC vs fixed-offset chunking trade-off study | done | none | [002](archive/002-cove-disks-oci.md) | Settles whether content-defined chunking is worth the cost before committing the v0.2 store design. |
 | `cove doctor` TCC/FDA probe | done | none | [TCC research](../research/tcc-via-user-agent.md) | Triggers/diagnoses Full Disk Access state before VirtioFS access silently fails. |
-| Verify 008 codebase-cleanup status | done | none | [008](008-codebase-cleanup-plan.md) | Confirms which cleanup phases already landed and gates v0.2 work. |
+| Verify 008 codebase-cleanup status | done | none | [008](archive/008-codebase-cleanup-plan.md) | Confirms which cleanup phases already landed and gates v0.2 work. |
 
 ## v0.2 - Linux Workstation + Foundation Cleanup
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| Local content-addressed store at `~/.vz/store/` + GC | done | none | [002](002-cove-disks-oci.md) | Required foundation for resumable pulls and `cove build`. |
+| Local content-addressed store at `~/.vz/store/` + GC | done | none | [002](archive/002-cove-disks-oci.md) | Required foundation for resumable pulls and `cove build`. |
 | Nested KVM on M3/M4 | done | none | [006](006-cove-linux-v02.md) | Enables minikube/k3d-class Linux developer workflows on supported Apple Silicon hosts. |
 | Turnkey Linux distros (Ubuntu, Debian, Fedora, Alpine) | done | none | [006](006-cove-linux-v02.md) | Provides reliable unattended installers, including fast Alpine setup. |
 | Linux shell unary RPCs (`ResizeExecTTY`, `SignalExec`, `SetTime`) | done | none | [006](006-cove-linux-v02.md) | Keeps terminal control proxy-safe and per-call authenticated. |
 | VirtioFS UID/GID auto-mapping + Rosetta-by-default | done | none | [006](006-cove-linux-v02.md) | Removes manual chmod and Rosetta setup toil for Linux guests. |
-| ControlServer decomposition - phases 1+2 | done | none | [008](008-codebase-cleanup-plan.md) | Moves agent and shared-folder configuration seams out of the package-main god object. |
+| ControlServer decomposition - phases 1+2 | done | none | [008](archive/008-codebase-cleanup-plan.md) | Moves agent and shared-folder configuration seams out of the package-main god object. |
 | DHCP lease exhaustion warnings | done | none | gap vs tart DHCP lease handling | Warns high-throughput fork users before macOS VM networking degrades from long DHCP leases. |
 | USPTO trademark search for "cove" | done | none | product/legal hygiene | Finds live/pending software-class COVE conflicts before public registry work. |
 
@@ -105,14 +105,14 @@ channel.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| `cove build` VM execution path | done | v0.2 store + dry-run planner | [003](003-cove-build-oci-caching.md) | Local-base builds create scratch VMs, restore cache-hit layers, execute misses, persist metadata, and leave pushable image state. Registry-base execution remains deferred. |
-| Secrets via tmpfs (`# secret:` directive) with guest swap disabled | done | build execution | [003](003-cove-build-oci-caching.md) | Prevents secret leakage into pushed OCI block diffs. |
-| `cove build` compaction integration | done | build execution | [002](002-cove-disks-oci.md), [003](003-cove-build-oci-caching.md) | Wires `fast`, `targeted`, and `thorough` build compaction into the pipeline before diffing and pushing images. |
-| Fork-only benchmark publication | done | existing fork support | [012](archive/012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-20260427.md) | Published 132-140 ms stopped-VM fork measurements on the M4 smoke host after soft reset failed as the isolation primitive. |
-| Boot-to-agent fork benchmark publication | done | existing fork support + reachable agent base image | [012](archive/012-product-roadmap-2026.md), [015](015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-agent-20260430.md) | Published the product-relevant time from fork command to agent reachability on named M4 Max hardware. |
-| ControlServer decomposition - phase 3 (`internal/control`) | done | v0.2 phases 1+2 | [008](008-codebase-cleanup-plan.md) | Completes the cleanup arc started in v0.2. Shipped as `cede792`. |
+| `cove build` VM execution path | done | v0.2 store + dry-run planner | [003](archive/003-cove-build-oci-caching.md) | Local-base builds create scratch VMs, restore cache-hit layers, execute misses, persist metadata, and leave pushable image state. Registry-base execution remains deferred. |
+| Secrets via tmpfs (`# secret:` directive) with guest swap disabled | done | build execution | [003](archive/003-cove-build-oci-caching.md) | Prevents secret leakage into pushed OCI block diffs. |
+| `cove build` compaction integration | done | build execution | [002](archive/002-cove-disks-oci.md), [003](archive/003-cove-build-oci-caching.md) | Wires `fast`, `targeted`, and `thorough` build compaction into the pipeline before diffing and pushing images. |
+| Fork-only benchmark publication | done | existing fork support | [012](archive/012-product-roadmap-2026.md), [015](archive/015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-20260427.md) | Published 132-140 ms stopped-VM fork measurements on the M4 smoke host after soft reset failed as the isolation primitive. |
+| Boot-to-agent fork benchmark publication | done | existing fork support + reachable agent base image | [012](archive/012-product-roadmap-2026.md), [015](archive/015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-agent-20260430.md) | Published the product-relevant time from fork command to agent reachability on named M4 Max hardware. |
+| ControlServer decomposition - phase 3 (`internal/control`) | done | v0.2 phases 1+2 | [008](archive/008-codebase-cleanup-plan.md) | Completes the cleanup arc started in v0.2. Shipped as `cede792`. |
 | OpenAI Agents SDK adapter v1 | done | fork/restore + control socket | [012](archive/012-product-roadmap-2026.md), [OpenAI example](../examples/openai-agents.md) | Proves the agent-substrate pitch with a fork-first local adapter under `adapters/openai-agents-python`. |
-| OpenAI adapter release hardening | done | adapter v1 + boot-to-agent benchmark | [012](archive/012-product-roadmap-2026.md), [017](017-v03-execution-roadmap.md) | Added live smoke instructions, package checks, and fork-first example polish before treating the adapter as a release surface. |
+| OpenAI adapter release hardening | done | adapter v1 + boot-to-agent benchmark | [012](archive/012-product-roadmap-2026.md), [017](archive/017-v03-execution-roadmap.md) | Added live smoke instructions, package checks, and fork-first example polish before treating the adapter as a release surface. |
 | Anthropic sandbox-runtime adapter | done | OpenAI adapter lessons | [012](archive/012-product-roadmap-2026.md) | Expands agent integrations after the first adapter proves the shape. Shipped as `fafc32a`. |
 | Curated agentkit base images | done | build execution + trademark decision | [012](archive/012-product-roadmap-2026.md) | Prepares the v1.0 registry story without publishing under a blocked name. Local curated bases shipped as `92f2272`; public registry publication remains deferred. |
 | Disk I/O tuning + Linux NVMe Slice 2 | done | Linux workstation install path | [027](027-disk-io-tuning.md) | Explicit disk cache/sync policies shipped at `fc7ff1e` and `a459076`; Linux NVMe wiring, flag, and deferred-benchmark docs shipped at `8500ecb`, `968cbde`, and `1b7c947`. |
@@ -125,9 +125,9 @@ channel.
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
 | VM identity preservation for forked vmstate bundles | done | fork/restore | [013](013-vm-fork.md) | Preserves identity files across vmstate forks so forked agents keep stable guest identity. Shipped at `67c9abc` and `7e4ed99`; status note at `4f8035c`. |
-| Anthropic computer-use adapter v2 | done | agent-sandbox CLI | [022](022-v04-anthropic-adapter.md) | Adds a Go-side Anthropic Messages computer-use loop and wires it into `cove agent-sandbox run`. Shipped at `55a2463`, `33e5b30`, and `775537f`. |
+| Anthropic computer-use adapter v2 | done | agent-sandbox CLI | [022](archive/022-v04-anthropic-adapter.md) | Adds a Go-side Anthropic Messages computer-use loop and wires it into `cove agent-sandbox run`. Shipped at `55a2463`, `33e5b30`, and `775537f`. |
 | OpenAI Agents SDK `SandboxRunConfig` helper | done | OpenAI adapter v1 | [035](035-openai-sandbox-run-config.md) | Adds a local Python `cove-sandbox` helper for `Runner.run()` workflows. Shipped at `36552c2`, `4d61edd`, and `27f9e24`. |
-| GitHub Actions private executor surface | done | local image store + run metrics | [021](021-v04-ci-executors-tracks.md), [030](030-gha-executor-slice-2.md) | Ships the private GHA wrapper, action metrics, preflight commands, and cache-image reuse. Representative commits: `0985377`, `19804c7`, `8bd473e`, `82a0ac5`, `7fafe40`, `9e6253a`. |
+| GitHub Actions private executor surface | done | local image store + run metrics | [021](archive/021-v04-ci-executors-tracks.md), [030](030-gha-executor-slice-2.md) | Ships the private GHA wrapper, action metrics, preflight commands, and cache-image reuse. Representative commits: `0985377`, `19804c7`, `8bd473e`, `82a0ac5`, `7fafe40`, `9e6253a`. |
 | NixOS guest distro | done | Linux installer | [036](036-nixos-guest-support.md) | Adds `cove install -nixos`, a NixOS installer path, base vzscript, and quickstart. Shipped at `1ddd3b9`, `8324750`, `2427b2e`, and `f1e6812`. |
 | Linux Desktop autoprovisioning | done | Linux desktop installer | [037](037-linux-autoprov.md) | Documents and hardens the Desktop first-boot auto-login path. Shipped at `e93a3e0`, `449cbfa`, `0cbc455`, and later OEM setup suppression at `4f71eb3`. |
 | Fleet Slice 1 remote routing | done | SSH access to trusted Macs | [034](034-fleet-slice-1.md) | Adds fleet host config, SSH tunnel helpers, routeable remote commands, and docs. Shipped at `622b571`, `695ae2e`, `9f993a5`, and `366bfac`. |
@@ -136,9 +136,9 @@ channel.
 | Cove daemon Slices 1-2 | done | per-VM control sockets | [033](033-cove-daemon.md) | Adds `coved`, `cove daemon status`, lifecycle enforcement, and image GC counters. Shipped at `c94557d`, `d786e53`, `a9a2a9b`, `3258982`, `ef019c1`, `2b516da`, and `c6f33df`. |
 | VM lifecycle policy v2 | done | [031](031-vm-lifecycle.md) | [031](031-vm-lifecycle.md) | Adds policy persistence, CLI, enforcement loop, locked run-budget counter, and telemetry. Shipped at `12c391d`, `d1df12b`, `2202f46`, `80eea77`, `9749f29`, and `cd899a1`. |
 | Per-VM resource quotas | done | VM config persistence | [032](032-vm-quotas.md) | Adds quota persistence, APFS quota wrapper, and `cove quota` CLI. Shipped at `94bf2d2`, `62a71aa`, and `2bad0e8`. |
-| Soft-reset destructive probe matrix + orchestrator | done | [015](015-soft-reset-empirical.md) | [015](015-soft-reset-empirical.md) | Adds network, memory, process-table, filesystem-attribute probes and a run-all orchestrator. Shipped at `8c7d54b`, `a51c544`, `31017ca`, `0ed3b70`, `ad9dc16`, `7030657`, and `6773695`. |
+| Soft-reset destructive probe matrix + orchestrator | done | [015](archive/015-soft-reset-empirical.md) | [015](archive/015-soft-reset-empirical.md) | Adds network, memory, process-table, filesystem-attribute probes and a run-all orchestrator. Shipped at `8c7d54b`, `a51c544`, `31017ca`, `0ed3b70`, `ad9dc16`, `7030657`, and `6773695`. |
 | Image lifecycle UX | done | local image store | [024](024-cove-runner-images.md) | Adds prune/gc, tag, history, search, freshness verification, and inspect diffs. Shipped at `fb37866`, `75c1897`, `1e9806e`, `7cbbf9c`, `6f0d396`, and `b46deb0`. |
-| Network policy, logs, and forwarding | done | control socket + guest agent | [001](001-cove-serve-http-mcp.md), [034](034-fleet-slice-1.md) | Adds named policy audit logs, `cove network logs`, `cove forward` reverse direction, and UDP support. Shipped at `1ac32f9`, `6fd5bc5`, `6e6fa18`, `22e6c43`, and `235b678`. |
+| Network policy, logs, and forwarding | done | control socket + guest agent | [001](archive/001-cove-serve-http-mcp.md), [034](034-fleet-slice-1.md) | Adds named policy audit logs, `cove network logs`, `cove forward` reverse direction, and UDP support. Shipped at `1ac32f9`, `6fd5bc5`, `6e6fa18`, `22e6c43`, and `235b678`. |
 | Operator file/log/diff commands | done | guest agent + image store | [024](024-cove-runner-images.md) | Adds `cove cp`, `cove logs`, and manifest diff/inspect helpers. Shipped at `dbe1520`, `fca848e`, `9fc8303`, `b46deb0`, and `535db8c`. |
 | Reliability sweep | done | run/provision/fleet surfaces | [031](031-vm-lifecycle.md), [033](033-cove-daemon.md) | Adds test-HOME isolation audit, concurrency fixes, Apple log predicate refresh, install overlay polish, startup state, and start watchdog. Shipped at `34775a4`, `3456d67`, `d3a6d18`, `ef82fc0`, `9dea52e`, and `f78ce61`. |
 | Fresh VM login recovery cluster | done | macOS provisioning | [bugs/fresh-vm-login](../bugs/2026-05-05-fresh-vm-login-misclassify.md) | Makes non-root `cove up` fail loudly, refuses noninteractive native authorization, improves login-screen OCR, and dumps `diskutil list` on Data lookup failure. Shipped at `b9c06ee`, `e512329`, `a1742f4`, `14e2bdb`, and `ca4d824`. |
@@ -194,15 +194,15 @@ interfaces. `ControlServer` in package main is a thin facade.
 
 The next implementation branches should stay directly based on `origin/main`
 and should not stack on each other. Each slice should be reviewable by itself;
-see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
+see [017](archive/017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 1. Build executor scaffold and scratch VM lifecycle, with non-dry-run still
-   gated. See [018](018-v03-build-executor-scaffold.md).
+   gated. See [018](archive/018-v03-build-executor-scaffold.md).
 2. Cache-hit materialization, so cached layers can apply without guest boot. See
-   [019](019-v03-cache-hit-materialization.md).
+   [019](archive/019-v03-cache-hit-materialization.md).
 3. Cache-miss VM execution, block diff production, metadata persistence, and
    the point where non-dry-run `cove build` becomes supported. See
-   [020](020-v03-cache-miss-execution.md).
+   [020](archive/020-v03-cache-miss-execution.md).
 4. `# secret:` tmpfs handling with guest no-swap verification.
 5. Build-pipeline compaction integration with `targeted` as the current default.
 6. Boot-to-agent benchmark publication plus OpenAI adapter release hardening.
@@ -253,10 +253,10 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 - **2026-05-05**: design [030](030-gha-executor-slice-2.md) landed for GHA executor Slice 2 cross-run cache reuse after T77 shipped `9e6253a`, `f06d554`, and `c0a1433`.
 - **2026-05-04**: Reconciled shipped v0.3 rows: ControlServer phase 3 landed at `cede792`, the Anthropic sandbox-runtime adapter landed at `fafc32a`, and curated agentkit base images landed at `92f2272`.
 - **2026-05-04**: designs [027](027-disk-io-tuning.md) and [028](028-block-device-passthrough.md) shipped. Disk I/O tuning landed at `fc7ff1e` and `a459076`; Linux NVMe Slice 2 landed at `8500ecb`, `968cbde`, and `1b7c947`; block device passthrough landed across `b522ab3`, `a78e891`, and `74d9527`.
-- **2026-05-02**: design [025](025-cove-action-security.md) cove-action security architecture landed at `1db4830` (411 LOC). Threat model + token lifecycle + isolation invariants for the v0.4 cove-action GHA wrapper. Clears the security-gate prerequisite on design [021](021-v04-ci-executors-tracks.md) Slice 1 implementation. Per user 2026-05-02: Slice 1 still v0.4-targeted; cove repo stays private; design [024](024-cove-runner-images.md) Slice 3 deferred indefinitely.
+- **2026-05-02**: design [025](025-cove-action-security.md) cove-action security architecture landed at `1db4830` (411 LOC). Threat model + token lifecycle + isolation invariants for the v0.4 cove-action GHA wrapper. Clears the security-gate prerequisite on design [021](archive/021-v04-ci-executors-tracks.md) Slice 1 implementation. Per user 2026-05-02: Slice 1 still v0.4-targeted; cove repo stays private; design [024](024-cove-runner-images.md) Slice 3 deferred indefinitely.
 - **2026-05-02**: v0.2.1 Slice 1 implementations shipped: design [023](023-cove-shell-exec-ux.md) server-side at 17211bd (289 LOC, 7 tests); design [024](024-cove-runner-images.md) image surface at 8a106dc (1027 LOC, 8 tests). Slice 2 of 023 (standalone `cove shell <vm>` client, ~150 LOC) is the only remaining v0.2.1 implementation.
 - **2026-05-02**: Added v0.2.1 milestone covering `cove shell <vm>` Slice 1 (design [023](023-cove-shell-exec-ux.md)), local image store + `cove image build/list/rm` Slice 1 (design [024](024-cove-runner-images.md)), and three CI/networking vzscripts (github-runner, gitlab-runner, tailscale).
-- **2026-05-02**: Trimmed Buildkite track from v0.4 design [021](021-v04-ci-executors-tracks.md); v0.4 CI work now covers GHA + GitLab only.
+- **2026-05-02**: Trimmed Buildkite track from v0.4 design [021](archive/021-v04-ci-executors-tracks.md); v0.4 CI work now covers GHA + GitLab only.
 - **2026-04-30**: Reconciled docs with branch reality for the RC: `cove build` local-base execution, `# secret:` tmpfs, build-pipeline compaction, fork benchmarks, and OpenAI adapter hardening are all marked landed; deferred-items boundary made canonical and consistent across CLI reference, changelog, ROADMAP, 016, 017, and the release checklist.
 - **2026-04-30**: Re-reviewed the roadmap against the notebook-backed 012 strategy; made `cove build` execution, fork benchmarks, adapter proof, and trademark gating explicit.
 - **2026-04-30**: Added the Slice 3 cache-miss execution plan and started the metadata persistence implementation.

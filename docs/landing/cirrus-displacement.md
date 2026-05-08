@@ -56,7 +56,7 @@ artifacts, and tears the child down. The same primitive is available locally
 with `cove run -fork-from <image-ref> -ephemeral`.
 
 That is deliberate. Design 015
-([`docs/designs/015-soft-reset-empirical.md`](../designs/015-soft-reset-empirical.md))
+([`docs/designs/archive/015-soft-reset-empirical.md`](../designs/archive/015-soft-reset-empirical.md))
 measured warm-guest soft reset and found it was not a reliable isolation
 primitive for privacy-critical work. Cove therefore does not ask displaced
 Cirrus users to trust UID recycling, cache cleanup, or a persistent worker

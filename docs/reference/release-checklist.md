@@ -291,8 +291,8 @@ Check that:
   canonical "what ships / what's deferred" boundary below.
 - `docs/reference/cli.md` matches the command help.
 - `docs/designs/ROADMAP.md` does not mark unfinished work as shipped.
-- `docs/designs/016-notebooklm-roadmap-refresh-2026-04-30.md` and
-  `docs/designs/017-v03-execution-roadmap.md` agree with this checklist on the
+- `docs/designs/archive/016-notebooklm-roadmap-refresh-2026-04-30.md` and
+  `docs/designs/archive/017-v03-execution-roadmap.md` agree with this checklist on the
   deferred-items list.
 - Public docs say non-dry-run `cove build` requires a local VM base directory
   for execution, registry bases remain planning-only, build output can be

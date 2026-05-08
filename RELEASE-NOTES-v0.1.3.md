@@ -21,7 +21,7 @@ foundation, no public surface yet:
 - Block-delta primitives that store disk deltas as blobs in the
   store. Build-cache metadata persists across runs.
 
-Track 2 of the v0.3 design (`docs/designs/018-v03-build-executor-scaffold.md`,
+Track 2 of the v0.3 design (`docs/designs/archive/018-v03-build-executor-scaffold.md`,
 `019-v03-cache-hit-materialization.md`) consumes these primitives in
 follow-up releases. No CLI breaking changes in v0.1.3.
 
