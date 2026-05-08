@@ -88,6 +88,7 @@
 * [OpenAI SandboxRunConfig backend](designs/035-openai-sandbox-run-config.md)
 * [NixOS guest support](designs/036-nixos-guest-support.md)
 * [Linux Desktop autoprovisioning](designs/037-linux-autoprov.md)
+* [Package boundary extraction (v0.5 facade move)](designs/039-package-boundary-extraction.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
