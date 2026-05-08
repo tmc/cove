@@ -171,6 +171,18 @@ interfaces. `ControlServer` in package main is a thin facade.
 | Design 039 slice 6 sub-slice 5 (`networkBridge`) | done | slice 5 | [039](039-package-boundary-extraction.md) | iTerm2 proxy, port forwards, HTTP listeners, VNC/debug status extracted into `networkBridge` value (`0c74183`/`4a66c3a`). Five `ControlServer` catch-all-mu uses retired (iterm2Proxy, portForwards, httpListeners, vncStatus, debugStubStatus); `StartHTTP` lazy-init race fixed. T35 portForwards concurrency invariant preserved. Dead `httpListeners` field on `ControlServer` swept in follow-up `1adbfaa`. |
 | Design 039 facade move — `Capture` + `Lifecycle` to `internal/controlserver` | done | slices 6.1-6.5 | [039](039-package-boundary-extraction.md) | First R48 facade slice shipped (`8dcf3e9`/`09fc1d1`): `internal/controlserver/` introduced with `Capture` and `Lifecycle` types moved cleanly (zero back-refs). `doc.go` pins Host-interface convention as load-bearing artifact for the remaining bridges. |
 | Design 039 facade move — remaining bridges (`Agent`, `Input`, `Network`) | done | facade slice 1 | [039](039-package-boundary-extraction.md) | All three larger bridges shipped into `internal/controlserver/` over the R49 arc. `Agent` shipped at `cc9d12f` (~1500 LOC, `AgentHost` iface). `Input` shipped via `595727a` (interface) + `d6ee2e0` (move; ~700 LOC, `InputHost` iface; preserves `viewContentHeight` mouse mapping + CGEvent->NSEvent->keyDown invariants). `Network` shipped via `62068ce` (interface) + `8bd7a65` (move; ~1100 LOC, `NetworkHost` iface; pulls iTerm2Proxy + PortForwardManager). `ControlServer` in package main is now a thin facade. Behavioral diff: none. |
+| Design 040 storage budget (Phases 0-5) | done | none | [040](040-storage-budget.md) | Storage census, budget config, prune coordinator, pin/unpin CLI, and daemon storage poll all shipped during R57. New surface: `cove pin/unpin/pins list`, `cove storage prune`, `cove storage budget get/set/clear`; `coved` polls usage and runs pin-aware prune at hard tripwire. SHA chain: `78b2e7b`, `ce1a2c0`, `e6a9850`, `5660b13`, `7e9ea28`, `292b81d`, `394b812`, `42714c0`, `e087a71`, `1c49740`, `cacce19`, `6cf3a93`. |
+
+## v0.6 — macOS 14.0 floor + ScreenCaptureKit migration
+
+**Status: in flight. macOS host floor bumps from 12.0 to 14.0; capture pipeline migrates from `CGWindowListCreateImage` to ScreenCaptureKit.**
+
+| Item | Priority | Depends on | Source | Why |
+|---|---|---|---|---|
+| Design 041 Slice 1 — SCKit capture path behind feature flag | must | none | [041](041-screencapturekit-migration.md) | Lands ScreenCaptureKit-backed capture as opt-in path, leaving `CGWindowListCreateImage` as default until Slice 2 perf A/B. Accepted at `50bf8ca`; in flight on pane 6A04C089. |
+| Design 041 Slice 2 — dual-path framebuffer fallback + perf A/B | must | Slice 1 | [041](041-screencapturekit-migration.md) | Side-by-side capture with measured latency; SCKit promoted to default only if no regression on representative workloads. Capture-latency regressions are gating, not informational. |
+| Design 041 Slice 3 — retire `CGWindowListCreateImage`; enforce macOS 14.0 floor | must | Slice 2 | [041](041-screencapturekit-migration.md) | Removes the deprecated path and bumps the documented host minimum. macOS 12/13 fallback shims retired. |
+| Design 041 Slice 4 — TCC pre-flight via `cove doctor` | must | Slice 3 | [041](041-screencapturekit-migration.md) | Surfaces ScreenCaptureKit TCC state through the existing doctor surface so first-run permission UX is obvious instead of silent. |
 
 ## v0.3 implementation slices
 
@@ -227,6 +239,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-05-08**: Design 040 storage budget Phases 0-5 fully shipped during R57 (`78b2e7b`, `ce1a2c0`, `e6a9850`, `5660b13`, `7e9ea28`, `292b81d`, `394b812`, `42714c0`, `e087a71`, `1c49740`, `cacce19`, `6cf3a93`). Design 041 ScreenCaptureKit migration accepted at `50bf8ca` with macOS 14.0 host floor; v0.6 milestone added with Slices 1-4. v0.5 remains code-complete awaiting tag cut (#225).
 - **2026-05-07**: v0.5 milestone code-complete at `8bd7a65`. Design 039 §7 facade move closed: `Capture` (`8dcf3e9`), `Lifecycle` (`09fc1d1`), `Agent` (`cc9d12f`), `Input` (`d6ee2e0`), `Network` (`8bd7a65`) all live in `internal/controlserver/`. RELEASE-NOTES-v0.5.0.md drafted; tag not yet cut.
 - **2026-05-05**: Added the v0.4 closeout milestone covering R36-R40 shipped work across agent adapters, fleet, daemon, lifecycle, quotas, NixOS, Linux desktop provisioning, image/network surfaces, reliability, Cirrus migration, and the fresh-VM-login fix cluster.
 - **2026-05-05**: design [030](030-gha-executor-slice-2.md) landed for GHA executor Slice 2 cross-run cache reuse after T77 shipped `9e6253a`, `f06d554`, and `c0a1433`.
