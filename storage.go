@@ -69,15 +69,7 @@ func runStoragePruneCoordinated(args []string, out io.Writer) error {
 		return err
 	}
 
-	cats := []storagecensus.Descriptor{
-		{Name: "vms", Path: vmconfig.BaseDir()},
-		{Name: "images", Path: ImagesBaseDir()},
-		{Name: "runs", Path: vmconfig.RunsDir()},
-		{Name: "cache", Path: vmconfig.CacheDir()},
-		{Name: "build-scratch", Path: defaultBuildScratchRoot()},
-		{Name: "store", Path: store.DefaultDir()},
-	}
-	rep, err := storagecensus.Walk(root, cats, storagecensus.Options{TopN: 0})
+	rep, err := storagecensus.Walk(root, storagecensus.DefaultDescriptors(root), storagecensus.Options{TopN: 0})
 	if err != nil {
 		return fmt.Errorf("storage prune: census: %w", err)
 	}
