@@ -265,10 +265,7 @@ func IsUserPath(p string) bool {
 	}
 	if strings.HasPrefix(p, "/Volumes/") {
 		rest := strings.TrimPrefix(p, "/Volumes/")
-		if strings.HasPrefix(rest, "Macintosh HD") {
-			return false
-		}
-		return true
+		return !strings.HasPrefix(rest, "Macintosh HD")
 	}
 	if !strings.HasPrefix(p, "/Users/") {
 		return false
