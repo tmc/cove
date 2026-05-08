@@ -171,100 +171,6 @@ func goListModuleDir(workingDir string) (string, error) {
 	return dir, nil
 }
 
-// injectAgent cross-compiles the vz-agent binary and injects it into the
-// mounted Data volume along with LaunchDaemon and LaunchAgent plists.
-//
-// When running as root, files are written directly. When running as a normal
-// user, directories under root-owned paths (e.g. /usr/local/bin) cannot be
-// created. In that case, files are staged to temp and added to pendingInstalls
-// so the caller's elevated script handles mkdir + cp + chown in one pass.
-func injectAgent(mountPoint string, rootFiles *[]string, pendingInstalls *[]pendingInstall) error {
-	fmt.Println()
-	fmt.Println("=== Provisioning Guest Agent ===")
-
-	// Build to a temp location
-	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
-	// Note: don't defer Remove — caller may need the file for the elevated script.
-	// Caller is responsible for cleanup after fixOwnershipWithSudo completes.
-
-	if err := buildAgentBinary(tmpBinary); err != nil {
-		return err
-	}
-
-	binDir := filepath.Join(mountPoint, "usr", "local", "bin")
-	binPath := filepath.Join(binDir, agentBinaryName)
-	launchDaemonsDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
-	launchAgentsDir := filepath.Join(mountPoint, "Library", "LaunchAgents")
-	daemonPlistPath := filepath.Join(launchDaemonsDir, agentLaunchDaemonLabel+".plist")
-	agentPlistPath := filepath.Join(launchAgentsDir, agentLaunchAgentLabel+".plist")
-
-	// Try direct write (works when running as root).
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		// Can't create directory — stage for elevated install.
-		fmt.Printf("Staging agent for elevated install (need root for %s)\n", binDir)
-
-		// Stage plists to temp.
-		tmpDaemonPlist := filepath.Join(os.TempDir(), agentLaunchDaemonLabel+".plist")
-		if err := os.WriteFile(tmpDaemonPlist, []byte(agentLaunchDaemonPlist), 0644); err != nil {
-			return fmt.Errorf("write temp daemon plist: %w", err)
-		}
-		tmpAgentPlist := filepath.Join(os.TempDir(), agentLaunchAgentLabel+".plist")
-		if err := os.WriteFile(tmpAgentPlist, []byte(agentLaunchAgentPlist), 0644); err != nil {
-			return fmt.Errorf("write temp agent plist: %w", err)
-		}
-
-		*pendingInstalls = append(*pendingInstalls,
-			pendingInstall{Src: tmpBinary, Dest: binPath, Mode: 0755},
-			pendingInstall{Src: tmpDaemonPlist, Dest: daemonPlistPath, Mode: 0644},
-			pendingInstall{Src: tmpAgentPlist, Dest: agentPlistPath, Mode: 0644},
-		)
-
-		info, err := os.Stat(tmpBinary)
-		if err != nil {
-			return fmt.Errorf("stat agent binary: %w", err)
-		}
-		fmt.Printf("Staged: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, info.Size())
-		fmt.Printf("Staged: %s\n", daemonPlistPath)
-		fmt.Printf("Staged: %s\n", agentPlistPath)
-		return nil
-	}
-
-	// Direct write succeeded — write files and record for chown.
-	binaryData, err := os.ReadFile(tmpBinary)
-	if err != nil {
-		return fmt.Errorf("read built binary: %w", err)
-	}
-	os.Remove(tmpBinary)
-
-	if err := os.WriteFile(binPath, binaryData, 0755); err != nil {
-		return fmt.Errorf("write agent binary: %w", err)
-	}
-	chownRootWheel(binPath, rootFiles)
-	fmt.Printf("Written: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, len(binaryData))
-
-	// Write the LaunchDaemon plist (root, port 1024).
-	if err := os.MkdirAll(launchDaemonsDir, 0755); err != nil {
-		return fmt.Errorf("create LaunchDaemons directory: %w", err)
-	}
-	if err := os.WriteFile(daemonPlistPath, []byte(agentLaunchDaemonPlist), 0644); err != nil {
-		return fmt.Errorf("write daemon plist: %w", err)
-	}
-	chownRootWheel(daemonPlistPath, rootFiles)
-	fmt.Printf("Written: %s\n", daemonPlistPath)
-
-	// Write the LaunchAgent plist (user session, port 1025).
-	if err := os.MkdirAll(launchAgentsDir, 0755); err != nil {
-		return fmt.Errorf("create LaunchAgents directory: %w", err)
-	}
-	if err := os.WriteFile(agentPlistPath, []byte(agentLaunchAgentPlist), 0644); err != nil {
-		return fmt.Errorf("write agent plist: %w", err)
-	}
-	chownRootWheel(agentPlistPath, rootFiles)
-	fmt.Printf("Written: %s\n", agentPlistPath)
-
-	return nil
-}
-
 // provisionAgent provisions the guest agent into the VM, choosing between
 // the running-VM (vsock) path and the offline-disk (mount) path automatically.
 // Idempotent: if the running VM already has the same agent version, returns
@@ -312,13 +218,9 @@ func provisionAgentRunning(sock string) error {
 	return upgradeAgentAt(sock)
 }
 
-// injectAgentOnly mounts the VM disk and injects the vz-agent binary,
+// injectAgentOnlyForVM mounts the VM disk and injects the vz-agent binary,
 // LaunchDaemon plist (port 1024), and LaunchAgent plist (port 1025).
 // No user provisioning is performed.
-func injectAgentOnly() error {
-	return injectAgentOnlyForVM(currentVMSelection())
-}
-
 func injectAgentOnlyForVM(target vmSelection) error {
 	if err := checkVMNotRunningAt(target.Directory); err != nil {
 		return err
