@@ -18,6 +18,12 @@ import (
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
+// captureBackendSCKit is the future ScreenCaptureKit capture backend
+// landing zone for design 041 Slice 2. Slice 1 ships only the
+// internal/sckit probe and the cove doctor sckit-preauth surface;
+// no caller selects this value yet.
+const captureBackendSCKit automationBackendMode = 100
+
 type screenshotCaptureState struct {
 	vmView            vz.VZVirtualMachineView
 	window            appkit.NSWindow

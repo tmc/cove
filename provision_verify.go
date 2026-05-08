@@ -32,6 +32,9 @@ func handleVerify(args []string) error {
 	if len(args) > 0 && args[0] == "tcc-preauth" {
 		return runPreAuth(args[1:])
 	}
+	if len(args) > 0 && args[0] == "sckit-preauth" {
+		return runSCKitPreAuth(args[1:])
+	}
 	fs, verboseFlag, fixFlag, tccPathFlag, vmFlag := newVerifyFlagSet()
 
 	if err := fs.Parse(args); err != nil {
