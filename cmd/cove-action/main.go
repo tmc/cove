@@ -29,6 +29,23 @@ var (
 
 const cacheImageDefaultTTL = 7 * 24 * time.Hour
 
+// Cache modes mirror GitHub actions/cache: restore-save (default) does both,
+// restore-only skips save, save-only skips restore, off disables cache entirely.
+const (
+	cacheModeRestoreSave = "restore-save"
+	cacheModeRestoreOnly = "restore-only"
+	cacheModeSaveOnly    = "save-only"
+	cacheModeOff         = "off"
+)
+
+func validateCacheMode(m string) error {
+	switch m {
+	case cacheModeRestoreSave, cacheModeRestoreOnly, cacheModeSaveOnly, cacheModeOff:
+		return nil
+	}
+	return fmt.Errorf("invalid cache-mode %q (want restore-save, restore-only, save-only, off)", m)
+}
+
 type config struct {
 	CoveBin    string
 	Image      string
@@ -40,6 +57,7 @@ type config struct {
 	Keep       bool
 	CacheKey   string
 	CachePaths string
+	CacheMode  string
 	Env        []string
 	Secrets    []string
 	Stdout     io.Writer
@@ -99,6 +117,7 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	secretsText := envValue(environ, "COVE_ACTION_SECRETS", "")
 	cfg.CacheKey = envValue(environ, "COVE_ACTION_CACHE_KEY", "")
 	cfg.CachePaths = envValue(environ, "COVE_ACTION_CACHE_PATHS", "")
+	cfg.CacheMode = envValue(environ, "COVE_ACTION_CACHE_MODE", cacheModeRestoreSave)
 
 	fs := flag.NewFlagSet("cove-action", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -114,6 +133,7 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	fs.StringVar(&secretsText, "secrets", secretsText, "newline-separated KEY=value|env://VAR|file:///path guest secrets")
 	fs.StringVar(&cfg.CacheKey, "cache-key", cfg.CacheKey, "whole-VM cache key")
 	fs.StringVar(&cfg.CachePaths, "cache-paths", cfg.CachePaths, "newline-separated guest paths preserved by the whole-VM cache")
+	fs.StringVar(&cfg.CacheMode, "cache-mode", cfg.CacheMode, "cache behavior: restore-save, restore-only, save-only, off")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
@@ -131,6 +151,13 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	}
 	cfg.Secrets, err = parseSecretsBlock(secretsText)
 	if err != nil {
+		return cfg, err
+	}
+	cfg.CacheMode = strings.TrimSpace(cfg.CacheMode)
+	if cfg.CacheMode == "" {
+		cfg.CacheMode = cacheModeRestoreSave
+	}
+	if err := validateCacheMode(cfg.CacheMode); err != nil {
 		return cfg, err
 	}
 	if strings.TrimSpace(cfg.Image) == "" {
@@ -153,12 +180,17 @@ func runJob(cfg config) (res result, err error) {
 	forkFrom := cfg.Image
 	cacheRef := ""
 	cacheKey := strings.TrimSpace(cfg.CacheKey)
+	if cfg.CacheMode == cacheModeOff {
+		cacheKey = ""
+	}
+	cacheRestore := cfg.CacheMode == cacheModeRestoreSave || cfg.CacheMode == cacheModeRestoreOnly
+	cacheSave := cfg.CacheMode == cacheModeRestoreSave || cfg.CacheMode == cacheModeSaveOnly
 	var cacheEvictBytes int64
 	var cacheEvictReason string
 	if cacheKey != "" {
 		cacheRef = cacheImageRef(cacheKey)
 		res.CacheImage = cacheRef
-		if hit, evict, bytesFreed, reason := cacheImageRestoreState(cfg, cacheRef); hit || evict {
+		if hit, evict, bytesFreed, reason := cacheImageRestoreState(cfg, cacheRef); cacheRestore && (hit || evict) {
 			if evict {
 				cacheEvictBytes = bytesFreed
 				cacheEvictReason = reason
@@ -174,7 +206,7 @@ func runJob(cfg config) (res result, err error) {
 	}
 
 	runArgs := []string{"run", "-fork-from", forkFrom, "-fork-name", cfg.VMName, "-ephemeral", "-headless"}
-	keepForCache := cacheKey != "" && !res.CacheHit
+	keepForCache := cacheKey != "" && cacheSave && !res.CacheHit
 	if cfg.Keep || keepForCache {
 		runArgs = append(runArgs, "-keep")
 	}

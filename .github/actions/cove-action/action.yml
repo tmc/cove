@@ -45,6 +45,12 @@ inputs:
     description: Informational guest paths expected to benefit from the whole-VM cache.
     required: false
     default: ""
+  cache-mode:
+    description: |
+      Cache behavior. One of restore-save (default), restore-only, save-only,
+      or off. Matches GitHub actions/cache convention.
+    required: false
+    default: restore-save
   secrets:
     description: |
       Multiline KEY=value|env://VAR|file:///path secret entries. Values are
@@ -95,6 +101,7 @@ runs:
         COVE_ACTION_KEEP: ${{ inputs.keep }}
         COVE_ACTION_CACHE_KEY: ${{ inputs.cache-key }}
         COVE_ACTION_CACHE_PATHS: ${{ inputs.cache-paths }}
+        COVE_ACTION_CACHE_MODE: ${{ inputs.cache-mode }}
         COVE_ACTION_SECRETS: ${{ inputs.secrets }}
       run: |
         set -euo pipefail

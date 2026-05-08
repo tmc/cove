@@ -588,3 +588,88 @@ func TestParseConfigSecretsFromEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestParseConfigCacheModeValidation(t *testing.T) {
+	base := []string{"COVE_ACTION_IMAGE=ubuntu-ci", "COVE_ACTION_COMMAND=echo ok"}
+	cases := []struct {
+		name    string
+		mode    string
+		want    string
+		wantErr bool
+	}{
+		{"default", "", "restore-save", false},
+		{"restore-save", "restore-save", "restore-save", false},
+		{"restore-only", "restore-only", "restore-only", false},
+		{"save-only", "save-only", "save-only", false},
+		{"off", "off", "off", false},
+		{"invalid", "bogus", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := append([]string{}, base...)
+			if tc.mode != "" {
+				env = append(env, "COVE_ACTION_CACHE_MODE="+tc.mode)
+			}
+			cfg, err := parseConfig(nil, env, os.Stdout, os.Stderr)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseConfig(%q) err = nil, want error", tc.mode)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseConfig(%q) err = %v", tc.mode, err)
+			}
+			if cfg.CacheMode != tc.want {
+				t.Fatalf("CacheMode = %q, want %q", cfg.CacheMode, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunCacheModeDispatch(t *testing.T) {
+	cases := []struct {
+		name        string
+		mode        string
+		stageHit    bool
+		wantForkRef string
+		wantSave    bool
+	}{
+		{"off-skips-restore-and-save", "off", true, "ubuntu-ci", false},
+		{"restore-only-skips-save", "restore-only", false, "ubuntu-ci", false},
+		{"save-only-skips-restore", "save-only", true, "ubuntu-ci", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			oldCleanupWait := cleanupWait
+			cleanupWait = 10 * time.Millisecond
+			t.Cleanup(func() { cleanupWait = oldCleanupWait })
+			stub := writeStubCove(t, dir, 0)
+			if tc.stageHit {
+				stageActionCacheImage(t, dir, "k1")
+			}
+			out := filepath.Join(dir, "out")
+			code := run([]string{
+				"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok",
+				"-cache-key", "k1", "-cache-mode", tc.mode,
+			}, []string{
+				"HOME=" + dir,
+				"GITHUB_OUTPUT=" + out,
+				"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+				"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+			}, os.Stdout, os.Stderr)
+			if code != 0 {
+				t.Fatalf("run returned %d, want 0", code)
+			}
+			log := readFile(t, filepath.Join(dir, "log"))
+			if !strings.Contains(log, "run -fork-from "+tc.wantForkRef+" ") {
+				t.Fatalf("expected fork-from %q in log:\n%s", tc.wantForkRef, log)
+			}
+			savedLog := strings.Contains(log, "image build")
+			if savedLog != tc.wantSave {
+				t.Fatalf("save in log = %v, want %v:\n%s", savedLog, tc.wantSave, log)
+			}
+		})
+	}
+}
