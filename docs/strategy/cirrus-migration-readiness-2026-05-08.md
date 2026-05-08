@@ -3,6 +3,7 @@ title: Cirrus migration readiness audit
 date: 2026-05-08
 audience: operators planning to leave Cirrus before 2026-06-01
 companion: docs/migrations/from-cirrus.md
+walkthrough: docs/migration/cirrus-to-cove.md
 ---
 
 # Cirrus migration readiness audit (2026-05-08)
