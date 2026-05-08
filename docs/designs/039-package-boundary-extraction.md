@@ -1,6 +1,9 @@
 # Design 039: Package Boundary Extraction
 
-Status: Draft
+Status: Shipped at 8bd7a65 (2026-05-07). All five ControlServer
+sub-bridges (Capture, Lifecycle, Agent, Input, Network) live in
+`internal/controlserver/`; the `internal/vmrun` extraction (§5)
+shipped alongside.
 Date: 2026-05-06
 
 ## Problem
