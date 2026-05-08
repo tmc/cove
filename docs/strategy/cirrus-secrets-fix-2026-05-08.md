@@ -9,9 +9,9 @@ parent: docs/strategy/cirrus-migration-readiness-2026-05-08.md (item 2)
 # Cirrus secrets → guest env (M)
 
 **Slice 1 shipped (2026-05-08)** — `metrics: redact secret values in run
-logs` at `847a4e2`, `shell: add --env and --secret-env flags` at
-`fcec084`. Host-side `cove shell` flag + run-log redactor land; proto/
-and internal/agent/ untouched.
+logs` at `29ff983`, `shell: add --env and --secret-env flags` at
+`13ce8c0` (summary: `fe99629`). Host-side `cove shell` flag + run-log
+redactor land; proto/ and internal/agent/ untouched.
 
 **Slice 2 shipped (2026-05-08)** — `cove-action: parse secrets: input,
 plumb to --secret-env` at `ab7f159`. The GHA composite `secrets:` input
