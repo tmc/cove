@@ -1,7 +1,7 @@
 # cove soft-reset isolation matrix
 
 This is the soft-reset isolation harness referenced by `docs/designs/ROADMAP.md`
-and resolved by `docs/designs/015-soft-reset-empirical.md`. The first measured
+and resolved by `docs/designs/archive/015-soft-reset-empirical.md`. The first measured
 matrix showed that per-eval user-account reset is not an isolation primitive;
 the harness remains useful only for future rechecks and low-risk throughput
 experiments.

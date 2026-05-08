@@ -212,7 +212,7 @@ POST   /v1/vms                               # async create; returns 202 + Locat
 ```
 
 > [!NOTE]
-> In the current gateway, `POST /v1/vms` is stubbed: it creates the operation record to exercise the long-running-operation plumbing, then immediately transitions the operation to `failed` with code `not_implemented`. Use `cove install` from the CLI to provision VMs until this lands (see `docs/designs/001a-defer-create-vm-to-v02.md`). Clients can still use the shape below for retry and polling logic.
+> In the current gateway, `POST /v1/vms` is stubbed: it creates the operation record to exercise the long-running-operation plumbing, then immediately transitions the operation to `failed` with code `not_implemented`. Use `cove install` from the CLI to provision VMs until this lands (see `docs/designs/archive/001a-defer-create-vm-to-v02.md`). Clients can still use the shape below for retry and polling logic.
 
 ```bash
 curl -i -X POST -H "Authorization: Bearer $TOKEN" \

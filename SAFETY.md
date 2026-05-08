@@ -55,7 +55,7 @@ Deleting and recreating users inside a warm macOS guest is not equivalent to a f
 
 The 2026-04-27 matrix confirmed this empirically: zero passes, three fails,
 and three limits. See `bench/soft-reset/results-20260427.md` and
-`docs/designs/015-soft-reset-empirical.md`.
+`docs/designs/archive/015-soft-reset-empirical.md`.
 
 ### Shared folders expose host paths you choose
 

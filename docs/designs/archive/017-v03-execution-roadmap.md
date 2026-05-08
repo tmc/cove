@@ -213,7 +213,7 @@ key, and `targeted` is the documented default.
 **Docs**:
 
 - Document build compaction modes in `docs/reference/cli.md`.
-- Update `docs/designs/003-cove-build-oci-caching.md` if default selection
+- Update `docs/designs/archive/003-cove-build-oci-caching.md` if default selection
   changes.
 - Add release-checklist coverage for secret plus compaction combinations.
 

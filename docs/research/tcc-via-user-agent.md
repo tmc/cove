@@ -163,7 +163,7 @@ needs a manual Accessibility grant, so adding FDA is a small extension.
 
 ## References
 
-- `docs/designs/007-vzscript-host-files-NLM-REVIEW.md` — original argument for
+- `docs/designs/archive/007-vzscript-host-files-NLM-REVIEW.md` — original argument for
   routing user-context ops through port 1025.
 - `cmd/vz-agent/user_server.go` — UserExec implementation (runs in current
   user's process tree, inherits TCC).
