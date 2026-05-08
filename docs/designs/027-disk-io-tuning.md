@@ -298,10 +298,10 @@ runbook and the CLI reference as an advanced feature.
       `cove-helper`. (b522ab3, no test)
 - [x] descriptor passing uses `SCM_RIGHTS`; no device path is reopened by the
       unprivileged VM process after helper validation. (b522ab3, no test)
-- [ ] tests cover block spec parsing, sync mapping, non-`/dev` rejection,
+- [x] tests cover block spec parsing, sync mapping, non-`/dev` rejection,
       mounted-device rejection, and stale-helper failure text.
-      (b522ab3 covers parsing/sync/non-`/dev`/mounted; stale-helper failure
-      text has no test)
+      (b522ab3 covers parsing/sync/non-`/dev`/mounted; 1cad67a covers
+      stale-helper failure text)
 - [ ] a guarded Darwin integration test opens an `hdiutil attach -nomount`
       raw device and verifies descriptor passing without requiring a physical
       USB drive.
