@@ -40,6 +40,7 @@ implementation review. Start there before choosing new work.
 28. [NixOS guest support](036-nixos-guest-support.md) — shipped — first-class NixOS install/run path on the Linux VM stack.
 29. [Linux Desktop autoprovisioning](037-linux-autoprov.md) — shipped with known first-boot reliability follow-ups — Ubuntu Desktop user provisioning and login setup.
 30. [Storage budget for `~/.vz/`](040-storage-budget.md) — proposed for v0.6 — unified disk-budget enforcement covering images, runs, snapshot lineages, and orphaned VM scratch. LRU eviction with explicit `keep` annotations. CLI: `cove storage status / budget / prune`. Daemon-driven prune ticks compose with existing per-category cleanups (`cove image gc`, `cove image prune`).
+31. [ScreenCaptureKit migration](041-screencapturekit-migration.md) — proposed for v0.6 or later — replaces the deprecated `CGWindowListCreateImage` path in `screenshots.go` with `SCScreenshotManager` / `SCStream`. Slice plan: probe + `cove doctor sckit-preauth`, parallel implementation behind a flag, default flip with a Screen Recording TCC prompt callout, then drop CGWindowList. Open question: macOS version floor (Apple Virtualization implies 12.0+ today; SCKit migration is materially simpler if floor moves to 14.0).
 
 ## Strategy inputs
 
