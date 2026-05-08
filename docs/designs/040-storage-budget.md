@@ -1,6 +1,8 @@
 # Design 040: Storage Budget for `~/.vz/`
 
-Status: Shipped 2026-05-08 at `6cf3a93` (Phases 0-5 during R57; SHA chain in ROADMAP)
+Status: Shipped. Phases 0-5 landed during R57; PiB-scale overflow fix at
+`c7865e1` (R67); test coverage strengthened at `61c2ca5` (R66). SHA chain
+in ROADMAP row "Design 040 storage budget (Phases 0-5)".
 Author: Travis Cline
 Date: 2026-05-07
 
@@ -219,33 +221,32 @@ existing event-type table.
 3. **Phase 2**: prune coordinator. `cove storage prune` driving existing
    per-category cleanups in the documented order. Dry-run first; explicit
    `-yes` for destructive run.
-4. **Phase 3**: pinning — **shipped**. `cove pin <object>`, `cove unpin
-   <object>`, and `cove pins list` persist operator-supplied keep
-   markers in `~/.vz/pins.json` (atomic tempfile + rename). Object
-   refs are typed: `vm:<name>`, `image:<ref>`, `run:<id>`,
-   `cache:<sha>`. Census output (`cove storage census`) surfaces
-   `pinned: true` in JSON and a `Pinned:` block plus `(★N)` row
-   markers in `-human`. The eviction loop reaches the pin set via
-   `internal/storagepins.File.IsPinned(category, id)`; the prune
-   coordinator wires that helper when it lands. Implementation
-   simplified the original Phase 3 sketch — single typed file rather
-   than per-category `KEEP` markers — to keep one source of truth.
-5. **Phase 4**: daemon integration. `[storage]` section in `coved.toml`,
-   daemon-driven prune ticks, three new metrics events, regression test
-   that a daemon prune never touches a VM bundle.
-
-   **Status: shipped (R57, conductor/r57-daemon).** `internal/coved/storage.go`
-   adds `StoragePollScheduler`, wired into `cmd/coved/main.go` behind a
-   `-storage-poll-interval` flag (default 1h, override via
-   `COVE_STORAGE_POLL_INTERVAL`). Three new event types
+4. **Phase 3**: pinning — shipped (R57). `cove pin <object>`,
+   `cove unpin <object>`, and `cove pins list` persist operator-supplied
+   keep markers in `~/.vz/pins.json` (atomic tempfile + rename). Object
+   refs are typed: `vm:<name>`, `image:<ref>`, `run:<id>`, `cache:<sha>`.
+   Census output surfaces `pinned: true` in JSON and a `Pinned:` block
+   plus `(★N)` row markers in `-human`. The eviction loop reaches the
+   pin set via `internal/storagepins.File.IsPinned(category, id)`.
+   Implementation simplified the original sketch — single typed file
+   rather than per-category `KEEP` markers — to keep one source of truth.
+5. **Phase 4**: daemon integration — shipped (R57).
+   `internal/coved/storage.go` adds `StoragePollScheduler`, wired into
+   `cmd/coved/main.go` behind `-storage-poll-interval` (default 1h,
+   override via `COVE_STORAGE_POLL_INTERVAL`). Three new event types
    (`storage_budget_warn`, `storage_budget_hard`, `storage_prune_run`)
-   are catalogued in `docs/observability/runs-schema.md`. The Phase 3
-   prune coordinator is not yet on main; until it ships the hard
-   tripwire emits `storage_prune_run` with `dry_run=true` and
-   `reason="phase-3-not-shipped"` so alerting hooks work without
-   blocking on the coordinator.
+   catalogued in `docs/observability/runs-schema.md`. The hard tripwire
+   now invokes the Phase 5 prune coordinator with pin-aware eviction; it
+   never touches VM bundles or pinned items.
+6. **Phase 5**: prune coordinator — shipped (R57). `cove storage prune`
+   drives the documented eviction order with `-dry-run` / `-yes` /
+   `-only=<category>`. The daemon hard tripwire calls the same
+   coordinator. PiB-scale budgets stay overflow-safe after `c7865e1`
+   (R67); regression coverage for budget overwrite, invalid on-disk
+   state, and threshold edges landed at `61c2ca5` (R66).
 
-Each phase ships behind a single CLI surface and is reviewable on its own.
+Each phase shipped behind a single CLI surface and was reviewable on its
+own.
 
 ## Open questions
 
