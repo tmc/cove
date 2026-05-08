@@ -198,8 +198,7 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 
 	// Step 3: Mount the Data partition
 	cmd = exec.Command("diskutil", "mount", dataPartition)
-	output, err = cmd.Output()
-	if err != nil {
+	if _, err = cmd.Output(); err != nil {
 		detachDisk(device)
 		return "", "", "", fmt.Errorf("diskutil mount failed: %w", err)
 	}
