@@ -149,6 +149,54 @@ func TestRenderHumanContainsSummaryAndCategories(t *testing.T) {
 	}
 }
 
+func TestWalkMarksPinnedItems(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "vms", "alpha", "disk.img"), 1024)
+	mustWrite(t, filepath.Join(root, "vms", "beta", "disk.img"), 1024)
+
+	cats := []Descriptor{{Name: "vms", Path: filepath.Join(root, "vms")}}
+	rep, err := Walk(root, cats, Options{
+		Pins:              map[string]bool{"vm:alpha": true},
+		CategoryToPinName: map[string]string{"vms": "vm"},
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(rep.Categories) != 1 {
+		t.Fatalf("got %d categories; want 1", len(rep.Categories))
+	}
+	var alpha, beta *Item
+	for i := range rep.Categories[0].Items {
+		it := &rep.Categories[0].Items[i]
+		switch filepath.Base(it.Path) {
+		case "alpha":
+			alpha = it
+		case "beta":
+			beta = it
+		}
+	}
+	if alpha == nil || beta == nil {
+		t.Fatalf("missing items: %+v", rep.Categories[0].Items)
+	}
+	if !alpha.Pinned {
+		t.Errorf("alpha not pinned despite Pins[vm:alpha]")
+	}
+	if beta.Pinned {
+		t.Errorf("beta unexpectedly pinned")
+	}
+
+	var buf bytes.Buffer
+	if err := RenderHuman(&buf, rep); err != nil {
+		t.Fatalf("RenderHuman: %v", err)
+	}
+	if !contains(buf.String(), "★ vm:alpha") {
+		t.Errorf("RenderHuman missing star line; got:\n%s", buf.String())
+	}
+	if !contains(buf.String(), "(★1)") {
+		t.Errorf("RenderHuman missing per-row pin count; got:\n%s", buf.String())
+	}
+}
+
 func mustWrite(t *testing.T, path string, n int) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

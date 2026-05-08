@@ -92,10 +92,14 @@ type Category struct {
 
 // Item names one immediate child of a category, newest first.
 type Item struct {
-	Path       string    `json:"path"`
-	SizeBytes  int64     `json:"size_bytes"`
-	LastUsed   time.Time `json:"last_used"`
-	IsDir      bool      `json:"is_dir"`
+	Path      string    `json:"path"`
+	SizeBytes int64     `json:"size_bytes"`
+	LastUsed  time.Time `json:"last_used"`
+	IsDir     bool      `json:"is_dir"`
+	// Pinned reports whether the operator has marked this item to be
+	// kept across budget enforcement. Set by Walk when Options.Pins
+	// names the item by canonical "category:id".
+	Pinned bool `json:"pinned,omitempty"`
 }
 
 // Descriptor names one category to walk.
@@ -125,6 +129,15 @@ type Options struct {
 	TopN int
 	// Now is the time recorded as Report.Generated. Zero means time.Now().UTC().
 	Now time.Time
+	// Pins, if set, marks Items whose canonical "category:id" appears
+	// as a key. CategoryToPinName maps a Walk category name (e.g. "vms")
+	// to the pin namespace ("vm"). Walk derives the Item's id from the
+	// last path element of Item.Path.
+	Pins map[string]bool
+	// CategoryToPinName maps a Walk category name to the pin namespace
+	// used when looking up Pins. A category not in the map is not
+	// considered for pinning. The zero value yields no pinning.
+	CategoryToPinName map[string]string
 }
 
 // Walk runs a census across cats and returns the Report. Categories that
@@ -140,9 +153,29 @@ func Walk(root string, cats []Descriptor, opts Options) (Report, error) {
 	rep := Report{Root: root, Generated: now}
 	var errs []error
 	for _, c := range cats {
-		cat, err := walkCategory(c, opts.TopN)
+		// Walk every category in full first; trimming and pin marking
+		// happen after so pinned items survive a TopN cut.
+		cat, err := walkCategory(c, 0)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", c.Name, err))
+		}
+		if pinName, ok := opts.CategoryToPinName[c.Name]; ok && len(opts.Pins) > 0 {
+			for i := range cat.Items {
+				id := filepath.Base(cat.Items[i].Path)
+				if opts.Pins[pinName+":"+id] {
+					cat.Items[i].Pinned = true
+				}
+			}
+		}
+		if opts.TopN > 0 && len(cat.Items) > opts.TopN {
+			head := cat.Items[:opts.TopN]
+			var pinnedTail []Item
+			for _, it := range cat.Items[opts.TopN:] {
+				if it.Pinned {
+					pinnedTail = append(pinnedTail, it)
+				}
+			}
+			cat.Items = append(head, pinnedTail...)
 		}
 		rep.UsedBytes += cat.UsedBytes
 		rep.Categories = append(rep.Categories, cat)
@@ -281,11 +314,81 @@ func RenderHuman(w io.Writer, rep Report) error {
 		return err
 	}
 	for _, c := range rep.Categories {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n", c.Name, c.Path, formatBytes(c.UsedBytes), len(c.Items)); err != nil {
+		pinned := 0
+		for _, it := range c.Items {
+			if it.Pinned {
+				pinned++
+			}
+		}
+		row := fmt.Sprintf("%s\t%s\t%s\t%d", c.Name, c.Path, formatBytes(c.UsedBytes), len(c.Items))
+		if pinned > 0 {
+			row += fmt.Sprintf(" (★%d)", pinned)
+		}
+		if _, err := fmt.Fprintln(tw, row); err != nil {
 			return err
 		}
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	return renderPinnedBlock(w, rep)
+}
+
+// renderPinnedBlock writes a "Pinned:" footer listing the pinned items
+// across all categories. It is a no-op when no items are pinned.
+func renderPinnedBlock(w io.Writer, rep Report) error {
+	type entry struct {
+		ref  string
+		path string
+	}
+	var entries []entry
+	for _, c := range rep.Categories {
+		for _, it := range c.Items {
+			if !it.Pinned {
+				continue
+			}
+			id := filepath.Base(it.Path)
+			pinName := categoryToPinNameForRender(c.Name)
+			if pinName == "" {
+				continue
+			}
+			entries = append(entries, entry{ref: pinName + ":" + id, path: it.Path})
+		}
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "Pinned:"); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if _, err := fmt.Fprintf(w, "  ★ %s (%s)\n", e.ref, e.path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// categoryToPinNameForRender mirrors the conventional Walk mapping for
+// the human renderer. Walk supplies the same mapping via Options when a
+// caller wants Pinned flags set; the renderer needs it again to recover
+// the canonical "category:id" string from an Item.Path. Categories that
+// have no pin namespace (e.g. "build-scratch") return "".
+func categoryToPinNameForRender(category string) string {
+	switch category {
+	case "vms":
+		return "vm"
+	case "images":
+		return "image"
+	case "runs":
+		return "run"
+	case "cache":
+		return "cache"
+	}
+	return ""
 }
 
 func formatBytes(n int64) string {
