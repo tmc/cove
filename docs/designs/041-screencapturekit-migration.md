@@ -567,3 +567,148 @@ second commit (`internal/sckit: live screenshot test`).
    when `cove doctor sckit-preauth` last ran successfully
    (cached marker file). Adds ~20 LOC + a doctor cache file.
    Defer to conductor.
+
+## Slice 4: default flip + CGWindowList retire
+
+Slice 3 shipped the dual-path opt-in at 55257f2. Slice 4 flips
+the default to SCKit and deletes the CGWindowList code path.
+Deletion-heavy slice: net LOC is negative.
+
+### 1. Default flip semantics
+
+**Decision: Option A — macOS 14+ build always uses SCKit, no
+backend flag honored beyond a single release of escape hatch
+(see §4).**
+
+Rationale: the v0.6 binary already requires macOS 14 (build
+tag in `internal/sckit/sckit_darwin.go`, deployment target bump
+tracked in RELEASE-NOTES-v0.6.0.md). Once the floor is 14, every
+host can run SCKit; conditioning on a doctor cache marker
+(Option B) adds a state file with no benefit — TCC denial
+surfaces at first capture as a typed error either way. Option C
+(rename `auto` keyword) preserves the dual-path machinery we are
+explicitly retiring. Option A is the only choice that lets us
+delete code.
+
+`captureBackend()` becomes a constant returning the SCKit
+backend. The `automationBackendMode` enum keeps its values for
+one release for log-message stability, then collapses in v0.7.
+
+### 2. CGWindowList retire — files touched
+
+Verified via `grep -l CGWindowList`:
+
+| File | Action | Notes |
+|---|---|---|
+| `screenshots.go` | delete `captureCGWindow` (~30 LOC), inline SCKit path into `captureVMView` | drops `coregraphics.CGWindowListCreateImage` import |
+| `control_socket.go:105` | delete `captureBackend()` selector | callers inline the SCKit call |
+| `internal/sckit/backend.go` | delete `automationBackendMode` constants for cgwindow | keep SCKit constant only |
+| `screenshots_sckit_test.go` | rewrite as primary path tests, drop dual-path tables | ~40 LOC remains |
+| `private_api_display_test.go` | delete CGWindow comparison harness | ~120 LOC, test-only |
+| `doc.go` | strip CGWindowList prose from package doc | ~5 LOC |
+
+Total deletions: ~225 LOC code + ~140 LOC tests. Replacement
+inline SCKit call: ~15 LOC. Net: ~−350 LOC.
+
+### 3. SA1019 deprecation
+
+`CGWindowListCreateImage` is the sole SA1019 hit in
+`screenshots.go` and `private_api_display_test.go`
+(deprecated in macOS 14.4 SDK). Removing both files'
+references silences the lint cleanly; no `//lint:ignore`
+pragmas survive into v0.6. Confirm with `staticcheck ./...`
+in the Slice 4 commit.
+
+### 4. Backwards compat
+
+**Decision: keep `COVE_CAPTURE_BACKEND=cgwindow` as a no-op
+warning for one release (v0.6), drop entirely in v0.7.**
+
+If the env var is set to `cgwindow`, log once at startup:
+`COVE_CAPTURE_BACKEND=cgwindow is no longer supported; using
+sckit. This warning will become a hard error in v0.7.` This
+preserves muscle memory for operators who scripted around
+Slice 3 without breaking their pipelines mid-release.
+`sckit` and `auto` are accepted silently. Anything else is a
+typed config error (unchanged from Slice 3).
+
+### 5. macOS 13 fallback
+
+Confirmed: design 041 already pins macOS 14 as the floor (see
+§"Resolved decisions" item 1 and Slice 3 §6). `go.mod`
+`go 1.25.5` and `go:build darwin && !ios` tags do not encode
+an OS minimum — the floor is enforced by the Mach-O
+deployment target set during link. v0.5 still runs on
+macOS 13; v0.6 does not. Therefore the cgwindow path is
+unreachable on every host that can install v0.6, and there
+is no fallback to preserve. If a user must stay on macOS 13,
+they pin to v0.5.x.
+
+### 6. Migration order
+
+**Decision: Slice 4 ships in v0.7, NOT v0.6.**
+
+Slice 2 perf data is still TBD pending TCC grant on the test
+host (per memory `project_tcc_appleevents_slice`). Shipping
+Slice 4 in v0.6 means deleting the cgwindow fallback before we
+have measured SCKit latency under sustained capture load
+(`cove run -gui` + OCR every frame). The risk-adjusted plan:
+v0.6 keeps Slice 3 dual-path with default still `cgwindow`,
+v0.6.x collects perf telemetry from opt-in users, v0.7 flips
+the default and retires cgwindow once §7(a) is closed. The
+LOC win is large but reversible — there is no urgency to
+delete in v0.6.
+
+### 7. Risk register
+
+(a) **Capture latency regression.** SCKit's `SCStream` is
+push-based and frame-coalescing; CGWindowListCreateImage is
+synchronous pull. For OCR-driven automation paths that capture
+on demand we expect SCKit to be at least as fast, but the
+worst case is a first-frame latency spike on stream
+initialization. Slice 2 was supposed to land a benchmark; that
+benchmark is still pending TCC grant. Slice 4 must not ship
+until at least one captured-vs-cgwindow latency comparison
+exists in `docs/designs/041-screencapturekit-migration.md`
+or a dedicated bench file. Mitigation: hold Slice 4 to v0.7
+(per §6).
+
+(b) **TCC denial on existing user installs.** Operators who
+upgraded through the Slice 3 dual-path with default `cgwindow`
+will not have been prompted for screen recording consent. The
+v0.7 upgrade silently breaks their capture path until they
+approve the TCC dialog. Mitigation: `cove doctor sckit-preauth`
+must run as part of the v0.7 first-launch path and surface a
+typed error (`ErrTCCScreenCaptureDenied`) with remediation
+steps in `cove doctor`. Release notes call out the prompt
+explicitly under "Action required".
+
+(c) **SCKit framework version skew across macOS 14.x point
+releases.** `SCStream` and `SCContentFilter` selectors have
+shifted behavior between 14.0, 14.4, and 15.x. Slice 1's
+spike pinned to 14.0 selectors; we have not exercised 14.4
+or 15.x in CI (CI matrix is single-host). Without cgwindow as
+a fallback the version-skew blast radius is total capture
+loss on a regressed point release. Mitigation: keep Slice 3's
+fallback-on-error path inside `captureVMView` even after the
+default flip — fall back to a typed error rather than
+cgwindow, surfaced via `cove doctor`. Audit the SCKit
+selector set against the macOS 15 SDK in the Slice 4 commit.
+
+### 8. LOC budget (deletion-heavy)
+
+| File | Δ LOC | Notes |
+|---|---|---|
+| `screenshots.go` | −60 | delete `captureCGWindow`, inline SCKit |
+| `private_api_display_test.go` | −140 | delete CGWindow harness |
+| `screenshots_sckit_test.go` | −20 | drop dual-path tables |
+| `control_socket.go` | −10 | delete `captureBackend()` selector |
+| `internal/sckit/backend.go` | −15 | drop cgwindow constants |
+| `doc.go` | −5 | prose cleanup |
+| (new prose) `screenshots.go` warn-once for env var | +10 | §4 escape hatch |
+| `RELEASE-NOTES-v0.7.0.md` | +15 | "Action required" stanza |
+
+Net: ~−225 LOC. Single commit feasible; if live SCKit tests
+arrive in the same release, split into
+`screenshots: retire CGWindowList` and
+`internal/sckit: harden version skew tests`.
