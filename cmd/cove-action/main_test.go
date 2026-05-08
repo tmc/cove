@@ -488,6 +488,86 @@ func TestParseSecretsBlock(t *testing.T) {
 	}
 }
 
+func TestParseEnvBlock(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    []string
+		wantErr string
+	}{
+		{name: "empty"},
+		{name: "blank-and-comments", in: "\n  \n# c\n  # d\n"},
+		{name: "single", in: "FOO=bar", want: []string{"FOO=bar"}},
+		{name: "multi", in: "A=1\nB=2\n", want: []string{"A=1", "B=2"}},
+		{name: "trim-line", in: "  A=1  ", want: []string{"A=1"}},
+		{name: "value-with-equals", in: "URL=http://x?k=v", want: []string{"URL=http://x?k=v"}},
+		{name: "empty-value-allowed", in: "EMPTY=", want: []string{"EMPTY="}},
+		{name: "no-equals", in: "BAREWORD", wantErr: "invalid env entry"},
+		{name: "comment-after-content-not-stripped", in: "A=1 # not a comment", want: []string{"A=1 # not a comment"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseEnvBlock(tt.in)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want contains %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i, v := range got {
+				if v != tt.want[i] {
+					t.Fatalf("got[%d]=%q, want %q", i, v, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParseSecretsBlockMoreEdges(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    []string
+		wantErr string
+	}{
+		{name: "key-with-hyphen", in: "MY-KEY=v", want: []string{"MY-KEY=v"}},
+		{name: "key-with-dot", in: "my.key=v", want: []string{"my.key=v"}},
+		{name: "trailing-blank-line", in: "A=1\n\n", want: []string{"A=1"}},
+		{name: "comment-mid-block", in: "A=1\n# skip\nB=2", want: []string{"A=1", "B=2"}},
+		{name: "indented-comment", in: "  # c\nA=1", want: []string{"A=1"}},
+		{name: "empty-value", in: "A=", want: []string{"A="}},
+		{name: "whitespace-only-key", in: "   =v", wantErr: "empty key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSecretsBlock(tt.in)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want contains %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i, v := range got {
+				if v != tt.want[i] {
+					t.Fatalf("got[%d]=%q, want %q", i, v, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestParseConfigSecretsFromEnv(t *testing.T) {
 	environ := []string{
 		"COVE_ACTION_IMAGE=img:tag",
