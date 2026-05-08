@@ -740,8 +740,9 @@ cove quota ci-runner memory 8
 
 ## storage
 
-Read-only census of cove disk usage under `~/.vz/`, plus a persisted
-operator-set budget. Phases 1-2 of design 040.
+Read-only census of cove disk usage under `~/.vz/`, a persisted
+operator-set budget, and a budget-aware prune coordinator. Phases 1-3
+of design 040.
 
 ```
 cove storage census                      # JSON
@@ -750,6 +751,9 @@ cove storage census -top N               # surface N newest items per category (
 cove storage budget get [-human]         # show the persisted storage budget
 cove storage budget set -target SIZE [-warn PCT] [-hard PCT]
 cove storage budget clear                # remove the persisted storage budget
+cove storage prune                       # budget-aware multi-category sweep (dry-run)
+cove storage prune -apply                # actually delete
+cove storage prune build-scratch [-older-than DUR] [-apply]
 ```
 
 The walker reports per-category byte sums for `vms`, `images`, `runs`,
@@ -765,8 +769,17 @@ When a budget is configured, `cove storage census` surfaces the target,
 remaining headroom, and a `[WARN]` or `[HARD]` marker once usage crosses
 the corresponding tripwire.
 
-Census is read-only and never mutates state. Eviction and pinning land in
-later phases of design 040.
+`cove storage prune` (no category) runs a budget-aware sweep: it loads the
+budget, takes a census, and if usage is above the warn tripwire it
+enumerates removable items across all wired-up categories and selects the
+oldest first until enough bytes are reclaimed to drop usage below the
+target. Without a budget the command prints a friendly hint and exits.
+Default mode is dry-run; `-apply` actually deletes. As of Phase 3,
+`build-scratch` is the only category wired into the coordinator;
+`runs`, `cache`, and `images` will land in later phases.
+
+Census is read-only and never mutates state. Pinning lands in a later
+phase of design 040.
 
 ---
 
