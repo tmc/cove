@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/coved"
+	"github.com/tmc/vz-macos/internal/storagecensus"
 	buildversion "github.com/tmc/vz-macos/internal/version"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -30,6 +31,7 @@ func main() {
 	pidPath := flag.String("pid", defaultPIDPath(), "pid file path")
 	configPath := flag.String("config", coved.DefaultConfigPath(), "config file path")
 	showVersion := flag.Bool("version", false, "print version information")
+	storagePollInterval := flag.Duration("storage-poll-interval", defaultStoragePollInterval(), "storage budget poll interval (0 disables)")
 	flag.Parse()
 
 	info := buildversion.Resolve(version, commit, date)
@@ -92,6 +94,14 @@ func main() {
 		go webhook.Run(ctx, d.events)
 	}
 	go gc.RunScheduledImageGC(ctx)
+	if *storagePollInterval > 0 {
+		coveRoot := filepath.Dir(d.vmRoot)
+		storage := coved.NewStoragePollScheduler(coveRoot, storagecensus.DefaultDescriptors(coveRoot), logger)
+		storage.Interval = *storagePollInterval
+		storage.Bus = d.events
+		d.storage = storage
+		go storage.Run(ctx)
+	}
 	lifecycle := coved.NewLifecycleEnforcer(coved.LifecycleConfig{
 		VMRoot: d.vmRoot,
 		Log:    logger,
@@ -130,6 +140,15 @@ func startHTTPServer(ctx context.Context, addr string, handler http.Handler, nam
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
+}
+
+func defaultStoragePollInterval() time.Duration {
+	if v := os.Getenv("COVE_STORAGE_POLL_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+			return d
+		}
+	}
+	return coved.DefaultStoragePollInterval
 }
 
 func defaultSocketPath() string {

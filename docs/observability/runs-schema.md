@@ -87,6 +87,14 @@ parameterized helpers `emitMetricEvent` (package main) and
 | `agent_sandbox_start` | `agent_sandbox.go` | Agent sandbox session began |
 | `agent_sandbox_complete` | `agent_sandbox.go` | Agent sandbox session terminated |
 
+### Storage budget (design 040 Phase 5)
+
+| `event_type` | Emitted by | Meaning |
+|---|---|---|
+| `storage_budget_warn` | `internal/coved/storage.go` | Census crossed `warn_pct` of the configured budget. `extra` carries `used_bytes`, `state="warn"`, `target_bytes`, `warn_pct`, `hard_pct`. |
+| `storage_budget_hard` | `internal/coved/storage.go` | Census crossed `hard_pct`. Same `extra` fields as warn, with `state="hard"`. |
+| `storage_prune_run` | `internal/coved/storage.go` (Phase 5 stub) and the prune coordinator (Phase 3, not yet shipped) | One prune pass. `extra` carries `category`, `bytes_freed`, `dry_run`, `used_bytes`. While Phase 3 is unshipped the daemon emits this with `dry_run=true` and `reason="phase-3-not-shipped"` whenever it sees `state=hard`. |
+
 ## Lifecycle subset for `cove runs show`
 
 `cove runs show` highlights a subset of events as "Lifecycle". The set is

@@ -225,6 +225,17 @@ existing event-type table.
    daemon-driven prune ticks, three new metrics events, regression test
    that a daemon prune never touches a VM bundle.
 
+   **Status: shipped (R57, conductor/r57-daemon).** `internal/coved/storage.go`
+   adds `StoragePollScheduler`, wired into `cmd/coved/main.go` behind a
+   `-storage-poll-interval` flag (default 1h, override via
+   `COVE_STORAGE_POLL_INTERVAL`). Three new event types
+   (`storage_budget_warn`, `storage_budget_hard`, `storage_prune_run`)
+   are catalogued in `docs/observability/runs-schema.md`. The Phase 3
+   prune coordinator is not yet on main; until it ships the hard
+   tripwire emits `storage_prune_run` with `dry_run=true` and
+   `reason="phase-3-not-shipped"` so alerting hooks work without
+   blocking on the coordinator.
+
 Each phase ships behind a single CLI surface and is reviewable on its own.
 
 ## Open questions

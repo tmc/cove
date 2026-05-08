@@ -20,6 +20,7 @@ type daemon struct {
 	socket    string
 	pidPath   string
 	imageGC   *coved.ImageGCScheduler
+	storage   *coved.StoragePollScheduler
 	connected chan struct{}
 	lifecycle *coved.LifecycleEnforcer
 	events    *coved.EventBus
