@@ -1,5 +1,7 @@
 # cove v0.5.0 release notes
 
+Status: Released 2026-05-08 at `463c5ce` (tag object `8e4c767`).
+
 v0.5.0 is the stabilization release. The headline change is internal: the
 `ControlServer` package-main god object is gone. All five sub-component bridges
 (`Capture`, `Lifecycle`, `Agent`, `Input`, `Network`) now live in
@@ -217,6 +219,5 @@ cove pins list
 
 ## Tagging
 
-This file is the release notes draft. The git tag `v0.5.0` is **not yet cut**;
-tag-cut is user-gated. See `docs/release/v0.5-readiness.md` for the cut
-sequence.
+Tag `v0.5.0` cut 2026-05-08 at `463c5ce`; tag object `8e4c767`. See
+`docs/release/v0.5-readiness.md` for the cut sequence.
