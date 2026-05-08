@@ -245,6 +245,10 @@ func runStorageCensus(args []string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("storage census: %w", err)
 	}
+	if b, berr := storagecensus.LoadBudget(root); berr == nil && b.IsSet() {
+		bb := b
+		rep.Budget = &bb
+	}
 	if *human {
 		return storagecensus.RenderHuman(out, rep)
 	}

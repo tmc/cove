@@ -740,12 +740,16 @@ cove quota ci-runner memory 8
 
 ## storage
 
-Read-only census of cove disk usage under `~/.vz/`. Phase 1 of design 040.
+Read-only census of cove disk usage under `~/.vz/`, plus a persisted
+operator-set budget. Phases 1-2 of design 040.
 
 ```
-cove storage census           # JSON
-cove storage census -human    # fixed-width table
-cove storage census -top N    # surface N newest items per category (default 10)
+cove storage census                      # JSON
+cove storage census -human               # fixed-width table
+cove storage census -top N               # surface N newest items per category (default 10)
+cove storage budget get [-human]         # show the persisted storage budget
+cove storage budget set -target SIZE [-warn PCT] [-hard PCT]
+cove storage budget clear                # remove the persisted storage budget
 ```
 
 The walker reports per-category byte sums for `vms`, `images`, `runs`,
@@ -753,8 +757,16 @@ The walker reports per-category byte sums for `vms`, `images`, `runs`,
 zero rather than failing, so a fresh install reads as expected. The on-wire
 schema uses bytes; human rendering converts to GB.
 
-Census is read-only and never mutates state. Eviction, budget persistence,
-and pinning land in later phases of design 040.
+`storage budget set -target` accepts a decimal byte count or a binary
+shorthand (`KB`/`MB`/`GB`/`TB`, where `1 KB = 1024 B` to match every other
+size in cove). `-warn` and `-hard` are tripwire percentages of the target
+(default 80 and 95). The budget is persisted at `~/.vz/storage-budget.json`.
+When a budget is configured, `cove storage census` surfaces the target,
+remaining headroom, and a `[WARN]` or `[HARD]` marker once usage crosses
+the corresponding tripwire.
+
+Census is read-only and never mutates state. Eviction and pinning land in
+later phases of design 040.
 
 ---
 

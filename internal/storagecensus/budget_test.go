@@ -1,6 +1,7 @@
 package storagecensus
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -89,6 +90,53 @@ func TestThresholdHelpers(t *testing.T) {
 	}
 	if got := zero.HardBytes(); got != 0 {
 		t.Errorf("zero HardBytes = %d, want 0", got)
+	}
+}
+
+func TestReportStateAgainstBudget(t *testing.T) {
+	b := Budget{TargetBytes: 1000, WarnPct: 80, HardPct: 95}
+	cases := []struct {
+		used int64
+		want State
+	}{
+		{0, StateOK},
+		{500, StateOK},
+		{800, StateWarn},
+		{900, StateWarn},
+		{950, StateHard},
+		{2000, StateHard},
+	}
+	for _, c := range cases {
+		rep := Report{UsedBytes: c.used, Budget: &b}
+		if got := rep.State(); got != c.want {
+			t.Errorf("used=%d State=%s, want %s", c.used, got, c.want)
+		}
+	}
+	// Without a budget, state is unset.
+	rep := Report{UsedBytes: 1_000_000_000}
+	if got := rep.State(); got != StateUnset {
+		t.Errorf("nil-budget State=%s, want unset", got)
+	}
+	// Zero-value budget on a non-nil pointer also yields unset.
+	zero := Budget{}
+	rep2 := Report{UsedBytes: 1_000_000_000, Budget: &zero}
+	if got := rep2.State(); got != StateUnset {
+		t.Errorf("zero-budget State=%s, want unset", got)
+	}
+}
+
+func TestRenderHumanWithBudgetShowsHeadroomAndMarker(t *testing.T) {
+	b := Budget{TargetBytes: 1000, WarnPct: 80, HardPct: 95}
+	rep := Report{Root: "/x", UsedBytes: 850, Budget: &b}
+	var buf bytes.Buffer
+	if err := RenderHuman(&buf, rep); err != nil {
+		t.Fatalf("RenderHuman: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"Target:", "Headroom:", "[WARN]"} {
+		if !contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
 	}
 }
 
