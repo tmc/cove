@@ -1,8 +1,8 @@
 # Design 033: Cove Daemon Mode
 
-**Status:** Slice 2 lifecycle policy enforcement and Slice 2b scheduled image GC shipped  
+**Status:** Slices 1, 2, 2b, and 3 shipped; design 040 storage poll wired into `coved`  
 **Author:** Travis Cline  
-**Date:** 2026-05-05
+**Date:** 2026-05-08
 
 ## Problem
 
@@ -126,13 +126,14 @@ CLI behavior:
 
 ## Slice Plan
 
-Slice 1 closed #245 foundation:
+Slice 1 closed #245 foundation (shipped at `d786e53`):
 
 1. This design.
 2. `cmd/coved` with `STATUS`.
 3. `cove daemon status`, `cove daemon start`, and `cove daemon stop`.
 
-Slice 2 closes the lifecycle enforcement segment:
+Slice 2 closed the lifecycle enforcement segment (shipped at `2b516da`,
+`fff2f1b`, `c6f33df`):
 
 1. Daemon-side lifecycle policy scanner.
 2. Per-VM control socket status fields for lifecycle decisions.
@@ -140,17 +141,13 @@ Slice 2 closes the lifecycle enforcement segment:
    - `lifecycle_enforced`
    - `lifecycle_last_run_ts`
 
-Slice 2b runs scheduled image GC as described above.
-
-Later slices:
-
-1. Add structured status with VM discovery.
-2. Add network drift reports.
-3. Add installer hardening and operator docs for launchd mode.
+Slice 2b runs scheduled image GC as described above (shipped at `3258982`,
+`33f17bd`, `ef019c1`).
 
 ## Slice 3: Observability Stack
 
-Slice 3 turns `coved` into an observable host coordinator:
+Slice 3 turned `coved` into an observable host coordinator (shipped at
+`fa2a1bf`, `94d08db`, `33bcf38`, `90b6a66`, `94eab06`, `3dad02f`):
 
 - An internal event bus carries lifecycle and image-GC events to subscribers.
 - A JSONL subscriber preserves the existing `~/.vz/metrics.jsonl` event shape.
@@ -163,6 +160,21 @@ Slice 3 turns `coved` into an observable host coordinator:
 
 Both HTTP listeners are localhost-only by default and configurable through
 `~/.vz/cove.toml`.
+
+## Storage Budget Integration (design 040)
+
+R56-R57 wired design 040's storage budget into `coved`. The daemon now runs a
+`StoragePollScheduler` that publishes census events with budget headroom and
+tripwire state, and at hard tripwire delegates to the prune coordinator using
+a `PinChecker` so pinned images are preserved (shipped at `394b812`,
+`42714c0`, `1f7ffa4`, `cacce19`, `9b7c849`). See
+[`040-storage-budget.md`](040-storage-budget.md) for the budget surface.
+
+## Open Slices
+
+1. Add structured status with VM discovery.
+2. Add network drift reports.
+3. Add installer hardening and operator docs for launchd mode.
 
 ## Cross-references
 
