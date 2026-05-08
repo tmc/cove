@@ -166,7 +166,7 @@ func attemptLogin(cs *ControlServer, ocr *ocrx.Service) error {
 
 	time.Sleep(200 * time.Millisecond)
 	useCGEvent := cs.inputBackend() == automationBackendWindow
-	resp = cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: true, UseCgEvent: useCGEvent}) // Return
+	cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: true, UseCgEvent: useCGEvent})
 	cs.sendKeyEvent(&controlpb.KeyCommand{KeyCode: 36, KeyDown: false, UseCgEvent: useCGEvent})
 
 	// Wait for desktop
