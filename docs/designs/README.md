@@ -39,6 +39,7 @@ implementation review. Start there before choosing new work.
 27. [OpenAI SandboxRunConfig backend](035-openai-sandbox-run-config.md) — shipped — OpenAI Agents SDK sandbox backend over cove VMs.
 28. [NixOS guest support](036-nixos-guest-support.md) — shipped — first-class NixOS install/run path on the Linux VM stack.
 29. [Linux Desktop autoprovisioning](037-linux-autoprov.md) — shipped with known first-boot reliability follow-ups — Ubuntu Desktop user provisioning and login setup.
+30. [Storage budget for `~/.vz/`](040-storage-budget.md) — proposed for v0.6 — unified disk-budget enforcement covering images, runs, snapshot lineages, and orphaned VM scratch. LRU eviction with explicit `keep` annotations. CLI: `cove storage status / budget / prune`. Daemon-driven prune ticks compose with existing per-category cleanups (`cove image gc`, `cove image prune`).
 
 ## Strategy inputs
 
