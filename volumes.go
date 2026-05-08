@@ -303,7 +303,7 @@ func autoMountAgent(cs *ControlServer, label string) (*agentstate.AgentClient, b
 
 func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmconfig.VolumeMount, owner virtioFSOwner) {
 	for _, m := range tagged {
-		mountPoint := "/mnt/" + m.Tag
+		var mountPoint string
 		if linuxMode {
 			mountPoint = "/mnt/" + m.Tag
 		} else {
