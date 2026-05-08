@@ -1,8 +1,31 @@
 # Design 029: VirtioFS Hot-Add for Shared Folders
 
-Status: Implemented (2026-05-04)
+Status: Shipped. Live-apply through the pre-existing shared-folders
+VirtioFS device works end-to-end on macOS and Linux guests; true device
+hot-add is still gated on Apple shipping a public attach API.
 Author: Travis Cline
 Date: 2026-05-04
+
+## Status
+
+| Slice | State | SHA |
+|-------|-------|-----|
+| Runtime preflight (`shared-folders-runtime-status`) | shipped | `16853bb` |
+| Host-side live apply (`shared-folders-apply`) | shipped | `fdda2ab` |
+| Persist-only fallback message | shipped | `f6553e5`, `5d62b0c` |
+| `shared-folder pending` CLI | shipped | `39d0916` |
+| Guest remount after apply (macOS + Linux) | shipped | `c5a3c67`, `11b54c5` |
+| Per-tag Linux mount paths + bind entries | shipped | `27e52f2`, `0a13e8b`, `4caaffb`, `3f26e4d` |
+| Guest home symlinks for tags | shipped | `56c531d`, `1500f54`, `b63712f` |
+| Linux VirtioFS default `cache=none` | shipped | `e202836` |
+| Read-only tag + sanitization | shipped | `c535502` |
+| True VirtioFS device hot-add | not pursued | depends on Apple public API |
+
+Resolved open questions:
+
+- *Auto-mount after apply.* Yes — control command updates the host share
+  and the CLI/agent path remounts on the guest (`c5a3c67`, `11b54c5`).
+- *`shared-folder pending` exists.* Shipped at `39d0916`.
 
 ## Problem
 
@@ -153,9 +176,6 @@ that profile would change its contract and saved-state fingerprint.
 
 ## Open Questions
 
-- Should cove auto-mount after `shared-folders-apply` for all VM types, or
-  should the control command only update the host share while the CLI performs
-  the guest remount?
 - Should minimal profile gain an explicit opt-in such as
   `-runtime-profile minimal -shared-folders-device`, or should users switch to
   the full profile when they want live shared folders?
