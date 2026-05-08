@@ -1,8 +1,23 @@
 # Design 035: OpenAI SandboxRunConfig backend for cove
 
-**Status:** Shipped 2026-05-05 at `27f9e24` (Agents SDK sandbox backend; SHA chain in ROADMAP)  
+**Status:** Shipped; helper, backend, tests, example, and integration docs all
+landed (`36552c2`, `4d61edd`, `27f9e24`)  
 **Author:** Travis Cline  
-**Date:** 2026-05-05
+**Date:** 2026-05-08
+
+## Shipped Slices
+
+- Design doc: `36552c2`.
+- `cove-sandbox` Python helper plus `CoveSandboxClient` /
+  `CoveSandboxClientOptions` / `sandbox_run_config()` re-exports: `4d61edd`.
+- Backend wiring (`backend.py`), tests
+  (`tests/test_sandbox_run_config.py`), runnable example
+  (`examples/sandbox_runner.py`), README, and `docs/integrations/openai-agents.md`
+  walkthrough: `27f9e24`.
+- ROADMAP row marked `done` against `36552c2`, `4d61edd`, `27f9e24`.
+
+The MVP from the section below is satisfied: a documented helper, a working
+local VM-backed backend, a runnable example, and integration docs.
 
 ## Problem
 
