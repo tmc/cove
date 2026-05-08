@@ -1,8 +1,25 @@
 # Design 041: ScreenCaptureKit Migration
 
-Status: Proposed (2026-05-07; horizon v0.6 or later)
+Status: Accepted (2026-05-08; horizon v0.6)
 Author: Travis Cline
 Date: 2026-05-07
+
+## Resolved decisions (2026-05-08)
+
+1. **macOS floor**: 14.0+ for the SCKit migration. v0.6 bumps cove's
+   minimum to macOS 14 Sonoma. Slice 2 uses `SCScreenshotManager`. Older
+   hosts get a clear error at first capture with a bump suggestion.
+2. **TCC prompt timing**: pre-flight via `cove doctor sckit-preauth`
+   (Slice 1). Investigate `SCContentSharingPicker` on 14.4+ as a
+   lower-friction permission UX during Slice 2.
+3. **Performance under contention**: defer empirical decision to Slice
+   2 A/B. If SCKit single-frame latency exceeds 50 ms median, switch to
+   long-lived `SCStream` + ring buffer.
+4. **`_framebufferView` interaction**: dual-path with fallback. Slice 2
+   ships an explicit test that captures during a known install flow,
+   compares SCKit output against `capturePrivateGraphicsDisplay()`,
+   keeps the private path as fallback when SCKit can't see the
+   framebuffer ivar.
 
 ## Problem
 
