@@ -738,6 +738,26 @@ cove quota ci-runner memory 8
 
 ---
 
+## storage
+
+Read-only census of cove disk usage under `~/.vz/`. Phase 1 of design 040.
+
+```
+cove storage census           # JSON
+cove storage census -human    # fixed-width table
+cove storage census -top N    # surface N newest items per category (default 10)
+```
+
+The walker reports per-category byte sums for `vms`, `images`, `runs`,
+`cache`, `build-scratch`, and `store`. Missing category directories report
+zero rather than failing, so a fresh install reads as expected. The on-wire
+schema uses bytes; human rendering converts to GB.
+
+Census is read-only and never mutates state. Eviction, budget persistence,
+and pinning land in later phases of design 040.
+
+---
+
 ## logs / cp / diff / forward / network logs
 
 v0.4 adds small operator commands for moving data, reading logs, comparing
