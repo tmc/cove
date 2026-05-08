@@ -41,7 +41,7 @@ landed.
 | Slice | Surface | Status | Commit |
 |---|---|---|---|
 | 1 | [`cove doctor sckit-preauth`](#how-to-test-the-probe) diagnostic — reports SCKit availability and Screen Recording authorization via [`internal/sckit/`](internal/sckit/). No production callers wired. | Shipped 2026-05-08 | [`8d55d7a`](https://github.com/tmc/cove/commit/8d55d7a) |
-| 2 | Parallel `captureVMViewSCKit` behind `-capture-backend=sckit` (or `COVE_CAPTURE_BACKEND=sckit`). Default remains `cgwindow`. | TBD | — |
+| 2 | Dual-path capture via `COVE_CAPTURE_BACKEND=sckit` (or per-VM `<vmDir>/capture-backend` file). Default remains `cgwindow`; SCKit failures fall through silently with one `slog.Warn` per cause. | Shipped 2026-05-08 | [`55257f2`](https://github.com/tmc/cove/commit/55257f2) |
 | 3 | Default flips to `sckit` on macOS 14+. First-GUI-screenshot may produce a Screen Recording TCC prompt; pre-flight via `cove doctor sckit-preauth`. | TBD | — |
 | 4 | `CGWindowListCreateImage` removed from `screenshots.go`. `staticcheck` clears SA1019. | TBD | — |
 

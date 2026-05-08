@@ -498,7 +498,7 @@ this in the Slice 3 commit message.
 |---|---|---|---|
 | Slice 1 (shipped `8d55d7a`) | n/a | `cove doctor sckit-preauth` diagnostic | none |
 | Slice 2 (shipped `d0877b8`) | n/a | `internal/sckit.CaptureSpike`, A/B harness | none, off the hot path |
-| Slice 3 (this spec) | `cgwindow` | dual-path, opt-in via env/per-VM, fallback policy | low — default unchanged |
+| Slice 3 (shipped `55257f2`) | `cgwindow` | dual-path, opt-in via env/per-VM, fallback policy | low — default unchanged |
 | Slice 4 (v0.6 GA candidate) | `sckit` (`auto` resolves to sckit) | flip default; doctor command becomes recommended pre-flight | medium — TCC prompt now in default flow |
 | Post-v0.6 cleanup | `sckit` only | drop CGWindowList branch, remove SA1019 hit, retire `COVE_CAPTURE_BACKEND` (or freeze at `sckit`) | low if Slice 4 has soaked one release |
 
