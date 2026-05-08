@@ -157,8 +157,44 @@ anchor and `8bd7a65`:
   `docs/benchmarks/r53-perf-snapshot.md` records the R53 performance audit
   snapshot.
 - Future-roadmap visibility: `docs/designs/040-storage-budget.md` lands the
-  storage-budget design as a v0.6 horizon item (`403f3ad`). v0.5 itself does
-  not implement design 040.
+  storage-budget design (`403f3ad`). The first slice of design 040 ships in
+  v0.5; see Storage budget + pinning below.
+
+## Storage budget + pinning
+
+R57 ships the first slice of design 040: visibility into `~/.vz/` usage, a
+budget the user can set, a pinning surface that protects items from prune,
+a budget-aware prune coordinator, and a daemon poll that emits budget
+events.
+
+- **`cove storage census`.** Walks `~/.vz/` and reports per-category usage
+  (VMs, images, run artifacts, store blobs, scratch). `census -human`
+  renders pinned items with a `★` marker (`ce1a2c0`).
+- **`cove storage budget get|set|clear`.** Per-host budget with headroom
+  and tripwire state surfaced in census output.
+- **`cove storage prune build-scratch [-older-than DUR] [-apply]`.**
+  Default dry-run; 1h sanity floor; `-apply` performs the prune
+  (`7e9ea28`, `5660b13`). Plumbed through `storagecensus.DefaultDescriptors`
+  (`292b81d`, `daf94a5`).
+- **Pinning.** `cove pin <ref>`, `cove unpin <ref>`, `cove pins list`
+  (`e6a9850`). Typed refs: `vm:<name>`, `image:<ref>`, `run:<id>`,
+  `cache:<sha>`. Pin set persisted atomically to `~/.vz/pins.json`
+  (`78b2e7b`).
+- **Daemon storage poll.** `coved` polls the budget on an hourly cadence
+  (env override available) and emits `storage_budget_warn`,
+  `storage_budget_hard`, and `storage_prune_run` events to `~/.vz/runs/`.
+  Scheduler at `394b812`; daemon wiring at `42714c0`. Schema documented in
+  `docs/observability/runs-schema.md`.
+
+```bash
+cove storage census -human
+cove storage budget set 200GB
+cove storage prune build-scratch -older-than 24h
+cove storage prune build-scratch -older-than 24h -apply
+cove pin vm:dev
+cove pin image:agentkit/macos-base:latest
+cove pins list
+```
 
 ## Pre-tag gates
 
