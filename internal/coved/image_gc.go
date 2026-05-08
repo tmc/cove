@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	runmetrics "github.com/tmc/vz-macos/internal/metrics"
@@ -225,15 +227,66 @@ func (s *ImageGCScheduler) acquireLock() (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	// Stage our claim in a unique tmp file, then publish via link(2).
+	// link is atomic and fails with EEXIST if the target exists, so at
+	// most one concurrent caller can publish over a freshly broken
+	// stale lock.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".image-gc.lock.*")
 	if err != nil {
 		return nil, err
 	}
-	_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
-	return func() {
-		_ = f.Close()
-		_ = os.Remove(path)
-	}, nil
+	if _, err := fmt.Fprintf(tmp, "%d\n", os.Getpid()); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return nil, err
+	}
+	cleanupTmp := func() { os.Remove(tmp.Name()) }
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := os.Link(tmp.Name(), path); err == nil {
+			cleanupTmp()
+			return func() { _ = os.Remove(path) }, nil
+		} else if !os.IsExist(err) || attempt > 0 {
+			cleanupTmp()
+			return nil, err
+		}
+		if !staleLock(path) {
+			cleanupTmp()
+			return nil, os.ErrExist
+		}
+		// Stale: prior holder is dead. Break and retry exactly once.
+		if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
+			cleanupTmp()
+			return nil, rmErr
+		}
+	}
+	cleanupTmp()
+	return nil, os.ErrExist
+}
+
+// staleLock reports whether the lock file at path was written by a
+// process that is no longer alive. An unreadable or unparseable lock
+// file is treated as live so a foreign writer is never broken.
+func staleLock(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	switch err := syscall.Kill(pid, 0); err {
+	case nil, syscall.EPERM:
+		return false
+	case syscall.ESRCH:
+		return true
+	default:
+		return false
+	}
 }
 
 type localImage struct {

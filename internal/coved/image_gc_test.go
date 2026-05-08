@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -98,7 +100,8 @@ func TestImageGCRunOnceSkipsWhenLocked(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(lock), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(lock, []byte("locked\n"), 0600); err != nil {
+	// Live PID (this test process) — must be respected.
+	if err := os.WriteFile(lock, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -226,6 +229,101 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestImageGCAcquireLockBreaksStaleLock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	lock := filepath.Join(home, ".vz", "image-gc.lock")
+	if err := os.MkdirAll(filepath.Dir(lock), 0700); err != nil {
+		t.Fatal(err)
+	}
+	deadPID := spawnDeadPID(t)
+	if err := os.WriteFile(lock, []byte(fmt.Sprintf("%d\n", deadPID)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewImageGCScheduler(home, nil)
+	release, err := s.acquireLock()
+	if err != nil {
+		t.Fatalf("acquireLock with stale lock: %v", err)
+	}
+	release()
+}
+
+func TestImageGCAcquireLockRespectsLivePID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	lock := filepath.Join(home, ".vz", "image-gc.lock")
+	if err := os.MkdirAll(filepath.Dir(lock), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewImageGCScheduler(home, nil)
+	if _, err := s.acquireLock(); !os.IsExist(err) {
+		t.Fatalf("acquireLock with live PID: got %v, want ErrExist", err)
+	}
+}
+
+func TestImageGCAcquireLockConcurrentBreak(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	lock := filepath.Join(home, ".vz", "image-gc.lock")
+	if err := os.MkdirAll(filepath.Dir(lock), 0700); err != nil {
+		t.Fatal(err)
+	}
+	deadPID := spawnDeadPID(t)
+	if err := os.WriteFile(lock, []byte(fmt.Sprintf("%d\n", deadPID)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewImageGCScheduler(home, nil)
+	const goroutines = 8
+	var winners atomic.Int32
+	start := make(chan struct{})
+	done := make(chan func(), goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			<-start
+			release, err := s.acquireLock()
+			if err == nil {
+				winners.Add(1)
+				done <- release
+			} else {
+				done <- nil
+			}
+		}()
+	}
+	close(start)
+	var releases []func()
+	for i := 0; i < goroutines; i++ {
+		if r := <-done; r != nil {
+			releases = append(releases, r)
+		}
+	}
+	for _, r := range releases {
+		r()
+	}
+	if got := winners.Load(); got != 1 {
+		t.Fatalf("concurrent acquire: %d winners, want 1", got)
+	}
+}
+
+// spawnDeadPID returns a PID that has been reaped and is therefore dead.
+func spawnDeadPID(t *testing.T) int {
+	t.Helper()
+	proc, err := os.StartProcess("/usr/bin/true", []string{"true"}, &os.ProcAttr{})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	state, err := proc.Wait()
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if !state.Exited() {
+		t.Fatalf("child did not exit")
+	}
+	return proc.Pid
 }
 
 func stringsCut(s, sep string) (string, string, bool) {
