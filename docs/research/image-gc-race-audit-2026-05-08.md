@@ -28,7 +28,7 @@ can take seconds for a multi-GB clonefile + aux byte-copy.
 
 ## Identified races
 
-### R1. fork-from materialization invisible to gc — P1
+### R1. fork-from materialization invisible to gc — P1 — RESOLVED 2c1d557
 
 CLI `GCImages` (image_gc.go:76) calls `VMsForkedFromImage`, then again
 at line 100 just before `os.RemoveAll`. Both calls only see VMs whose
@@ -51,7 +51,7 @@ write a sentinel `materializing.<pid>` into the child dir at step 1
 and have gc enumerate child dirs (not just configs) for unfinished
 materializations.
 
-### R2. coved scheduler has no recheck — P1
+### R2. coved scheduler has no recheck — P1 — RESOLVED 2c1d557
 
 `runOnceLocked` (internal/coved/image_gc.go:95) reads `referencedImages`
 once at line 105, then sweeps without re-reading. The window between
@@ -61,7 +61,7 @@ walk plus per-image work. Same failure mode as R1, larger window.
 Severity: P1. Recommended fix: identical to R1, plus port the CLI's
 recheck-immediately-before-remove (image_gc.go:100) into the loop.
 
-### R3. CLI vs coved concurrent gc — P2
+### R3. CLI vs coved concurrent gc — P2 — RESOLVED 2c1d557
 
 CLI `runImageGC` does NOT acquire `~/.vz/image-gc.lock`; coved does
 (internal/coved/image_gc.go:177). A user-invoked `cove image gc`
@@ -108,7 +108,7 @@ documented when coved runs them.
 Severity: P2 (policy bug, not a race per se, but surfaced by audit).
 Fix: factor TTL+cache check into a shared helper used by both paths.
 
-### R7. coved gc deletes whole tree without manifest re-stat — P2
+### R7. coved gc deletes whole tree without manifest re-stat — P2 — RESOLVED 2c1d557
 
 `runOnceLocked` does not re-stat `manifest.json` before RemoveAll. If
 a concurrent `image tag` (image_tag.go:53) is rewriting the manifest
@@ -134,6 +134,15 @@ to confirm not a hole.)
 - P2: 5 (R3 CLI vs coved concurrency; R4 stale lock; R5 fsync; R6
   cache TTL divergence; R7 tag-vs-gc paper race)
 - Informational: 1 (R8)
+
+## Resolution summary (R77)
+
+R1+R2+R3+R7 closed by per-image advisory flock (commits 04fa305 and
+2c1d557). The primitive lives in `image_lock.go` mirroring
+`run_lock.go`. MaterializeImage holds the lock through child config
+write; TagImage holds it through clone+rename; both gc paths take it
+non-blocking just before recheck+RemoveAll and skip with a "busy"
+reason if held. R4/R5/R6 remain open per R76 audit scope.
 
 ## Cross-cutting recommendation
 
