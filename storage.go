@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/storagecensus"
@@ -15,11 +17,13 @@ import (
 
 func handleStorageCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: cove storage <subcommand> [args]\n  census    Walk ~/.vz/ and report per-category disk usage\n  prune     Remove safe-to-delete cruft (build-scratch only for now)")
+		return fmt.Errorf("usage: cove storage <subcommand> [args]\n  census    Walk ~/.vz/ and report per-category disk usage\n  budget    Show or update the storage budget\n  prune     Remove safe-to-delete cruft (build-scratch only for now)")
 	}
 	switch args[0] {
 	case "census":
 		return runStorageCensus(args[1:], os.Stdout)
+	case "budget":
+		return runStorageBudget(args[1:], os.Stdout)
 	case "prune":
 		return runStoragePrune(args[1:], os.Stdout)
 	default:
@@ -76,6 +80,143 @@ func writePruneBuildScratchReport(out io.Writer, rep pruneBuildScratchReport) er
 		fmt.Fprintln(out, "(re-run with -apply to delete)")
 	}
 	return nil
+}
+
+func runStorageBudget(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: cove storage budget <get|set|clear> [args]")
+	}
+	switch args[0] {
+	case "get":
+		return runStorageBudgetGet(args[1:], out)
+	case "set":
+		return runStorageBudgetSet(args[1:], out)
+	case "clear":
+		return runStorageBudgetClear(args[1:], out)
+	default:
+		return fmt.Errorf("storage budget: unknown action %q", args[0])
+	}
+}
+
+func runStorageBudgetGet(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("storage budget get", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	human := fs.Bool("human", false, "render a fixed-width table instead of JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove storage budget get [-human]")
+	}
+	b, err := storagecensus.LoadBudget(coveRoot())
+	if err != nil {
+		return fmt.Errorf("storage budget get: %w", err)
+	}
+	if *human {
+		if !b.IsSet() {
+			_, err := fmt.Fprintln(out, "no budget configured")
+			return err
+		}
+		_, err := fmt.Fprintf(out, "target: %s\nwarn:   %d%% (%s)\nhard:   %d%% (%s)\n",
+			formatBytes(b.TargetBytes), b.WarnPct, formatBytes(b.WarnBytes()), b.HardPct, formatBytes(b.HardBytes()))
+		return err
+	}
+	return storagecensus.EncodeBudgetJSON(out, b)
+}
+
+func runStorageBudgetSet(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("storage budget set", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	target := fs.String("target", "", "soft watermark, e.g. 500GB or 2TB or 1234567 (bytes)")
+	warn := fs.Int("warn", 80, "warn tripwire as percent of target (0-100)")
+	hard := fs.Int("hard", 95, "hard tripwire as percent of target (0-100)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove storage budget set -target SIZE [-warn PCT] [-hard PCT]")
+	}
+	if *target == "" {
+		return fmt.Errorf("storage budget set: -target is required")
+	}
+	bytes, err := parseSize(*target)
+	if err != nil {
+		return fmt.Errorf("storage budget set: %w", err)
+	}
+	b := storagecensus.Budget{TargetBytes: bytes, WarnPct: *warn, HardPct: *hard}
+	if err := storagecensus.SaveBudget(coveRoot(), b); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "storage budget: target=%s warn=%d%% hard=%d%%\n", formatBytes(b.TargetBytes), b.WarnPct, b.HardPct)
+	return err
+}
+
+func runStorageBudgetClear(args []string, _ io.Writer) error {
+	if len(args) != 0 {
+		return fmt.Errorf("usage: cove storage budget clear")
+	}
+	return storagecensus.ClearBudget(coveRoot())
+}
+
+// parseSize accepts a decimal byte count or a SI-suffixed shorthand
+// (KB, MB, GB, TB; KiB/MiB/GiB/TiB also accepted for clarity). The
+// suffixes are case-insensitive and binary-based (1 KB = 1024 B), since
+// every other size in cove is binary-quoted by APFS.
+func parseSize(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty size")
+	}
+	var unit int64 = 1
+	upper := strings.ToUpper(s)
+	switch {
+	case strings.HasSuffix(upper, "TIB"), strings.HasSuffix(upper, "TB"):
+		unit = 1024 * 1024 * 1024 * 1024
+	case strings.HasSuffix(upper, "GIB"), strings.HasSuffix(upper, "GB"):
+		unit = 1024 * 1024 * 1024
+	case strings.HasSuffix(upper, "MIB"), strings.HasSuffix(upper, "MB"):
+		unit = 1024 * 1024
+	case strings.HasSuffix(upper, "KIB"), strings.HasSuffix(upper, "KB"):
+		unit = 1024
+	}
+	digits := s
+	if unit > 1 {
+		// Strip the alphabetic suffix.
+		i := len(s)
+		for i > 0 && (s[i-1] < '0' || s[i-1] > '9') {
+			i--
+		}
+		digits = strings.TrimSpace(s[:i])
+	}
+	n, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid size %q", s)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("size must be non-negative: %q", s)
+	}
+	return n * unit, nil
+}
+
+func formatBytes(n int64) string {
+	const (
+		kib = 1024
+		mib = kib * 1024
+		gib = mib * 1024
+		tib = gib * 1024
+	)
+	switch {
+	case n >= tib:
+		return fmt.Sprintf("%.1f TB", float64(n)/float64(tib))
+	case n >= gib:
+		return fmt.Sprintf("%.1f GB", float64(n)/float64(gib))
+	case n >= mib:
+		return fmt.Sprintf("%.1f MB", float64(n)/float64(mib))
+	case n >= kib:
+		return fmt.Sprintf("%.1f KB", float64(n)/float64(kib))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 func runStorageCensus(args []string, out io.Writer) error {
