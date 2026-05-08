@@ -84,7 +84,11 @@ func runStoragePruneCoordinated(args []string, out io.Writer) error {
 	pruners := []storagecensus.Pruner{
 		buildScratchPruner{Root: defaultBuildScratchRoot(), OlderThan: *olderThan},
 	}
-	pruneRep, err := storagecensus.CoordinatePrune(context.Background(), pruners, rep.UsedBytes, b.TargetBytes, *apply)
+	var pins storagecensus.PinChecker
+	if pf, perr := storagepins.Load(root); perr == nil {
+		pins = pf
+	}
+	pruneRep, err := storagecensus.CoordinatePrune(context.Background(), pruners, rep.UsedBytes, b.TargetBytes, *apply, pins)
 	if err != nil {
 		// Coordinator returned a partial result; surface the error after rendering.
 		if rerr := storagecensus.RenderPruneHuman(out, pruneRep); rerr != nil {
