@@ -26,7 +26,7 @@ func TestCoordinatePruneSelectsOldestUntilTarget(t *testing.T) {
 	t0 := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 
 	t.Run("under target is no-op", func(t *testing.T) {
-		rep, err := CoordinatePrune(context.Background(), nil, 100, 200, false)
+		rep, err := CoordinatePrune(context.Background(), nil, 100, 200, false, nil)
 		if err != nil {
 			t.Fatalf("CoordinatePrune: %v", err)
 		}
@@ -46,7 +46,7 @@ func TestCoordinatePruneSelectsOldestUntilTarget(t *testing.T) {
 			{Path: "/r1", Bytes: 200, LastUsed: t0.Add(-48 * time.Hour), Reason: "stale"},
 			{Path: "/r2", Bytes: 200, LastUsed: t0.Add(-2 * time.Hour), Reason: "fresh"},
 		}}
-		rep, err := CoordinatePrune(context.Background(), []Pruner{bs, rn}, 1000, 600, false)
+		rep, err := CoordinatePrune(context.Background(), []Pruner{bs, rn}, 1000, 600, false, nil)
 		if err != nil {
 			t.Fatalf("CoordinatePrune: %v", err)
 		}
@@ -80,7 +80,7 @@ func TestCoordinatePruneSelectsOldestUntilTarget(t *testing.T) {
 			{Path: "/no-delete-fn", Bytes: 100, LastUsed: t0.Add(-12 * time.Hour), Reason: "old",
 				Delete: nil},
 		}}
-		rep, err := CoordinatePrune(context.Background(), []Pruner{bs}, 300, 0, true)
+		rep, err := CoordinatePrune(context.Background(), []Pruner{bs}, 300, 0, true, nil)
 		if err != nil {
 			t.Fatalf("CoordinatePrune: %v", err)
 		}
@@ -102,7 +102,7 @@ func TestCoordinatePruneSelectsOldestUntilTarget(t *testing.T) {
 		bs := fakePruner{name: "build-scratch", cs: []Candidate{
 			{Path: "/a", Bytes: 50, LastUsed: t0.Add(-1 * time.Hour), Reason: "old"},
 		}}
-		rep, err := CoordinatePrune(context.Background(), []Pruner{bs, errPruner{name: "broken"}}, 100, 50, false)
+		rep, err := CoordinatePrune(context.Background(), []Pruner{bs, errPruner{name: "broken"}}, 100, 50, false, nil)
 		if err == nil {
 			t.Fatalf("expected error from errPruner")
 		}
@@ -110,6 +110,56 @@ func TestCoordinatePruneSelectsOldestUntilTarget(t *testing.T) {
 			t.Errorf("expected partial progress, got %+v", rep)
 		}
 	})
+}
+
+type fakePins map[string]bool
+
+func (f fakePins) IsPinned(category, id string) bool { return f[category+":"+id] }
+
+func TestCoordinatePruneSkipsPinnedItems(t *testing.T) {
+	t0 := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+
+	vms := fakePruner{name: "vms", cs: []Candidate{
+		{Path: "/Users/x/.vz/vms/foo", Bytes: 100, LastUsed: t0.Add(-72 * time.Hour), Reason: "old"},
+		{Path: "/Users/x/.vz/vms/bar", Bytes: 100, LastUsed: t0.Add(-24 * time.Hour), Reason: "old"},
+	}}
+	pins := fakePins{"vm:foo": true}
+	rep, err := CoordinatePrune(context.Background(), []Pruner{vms}, 300, 100, false, pins)
+	if err != nil {
+		t.Fatalf("CoordinatePrune: %v", err)
+	}
+	if len(rep.Removed) != 1 {
+		t.Fatalf("Removed len = %d, want 1; got %+v", len(rep.Removed), rep.Removed)
+	}
+	if rep.Removed[0].Path != "/Users/x/.vz/vms/bar" {
+		t.Errorf("Removed[0] = %s, want /Users/x/.vz/vms/bar (foo is pinned)", rep.Removed[0].Path)
+	}
+	if rep.PinnedSkipped != 1 {
+		t.Errorf("PinnedSkipped = %d, want 1", rep.PinnedSkipped)
+	}
+
+	// build-scratch has no pin namespace; pins must not affect it even
+	// if a "build-scratch:foo" pin is somehow present in the set.
+	bs := fakePruner{name: "build-scratch", cs: []Candidate{
+		{Path: "/scratch/foo", Bytes: 200, LastUsed: t0.Add(-24 * time.Hour), Reason: "old"},
+	}}
+	rep, err = CoordinatePrune(context.Background(), []Pruner{bs}, 300, 100, false, fakePins{"build-scratch:foo": true})
+	if err != nil {
+		t.Fatalf("CoordinatePrune: %v", err)
+	}
+	if len(rep.Removed) != 1 || rep.PinnedSkipped != 0 {
+		t.Errorf("build-scratch should not be filtered: removed=%d pinned-skipped=%d", len(rep.Removed), rep.PinnedSkipped)
+	}
+
+	// Nil PinChecker means no filtering even when candidates carry
+	// names that would otherwise match a pin.
+	rep, err = CoordinatePrune(context.Background(), []Pruner{vms}, 300, 100, false, nil)
+	if err != nil {
+		t.Fatalf("CoordinatePrune: %v", err)
+	}
+	if len(rep.Removed) != 2 || rep.PinnedSkipped != 0 {
+		t.Errorf("nil PinChecker should pass everything through: removed=%d pinned-skipped=%d", len(rep.Removed), rep.PinnedSkipped)
+	}
 }
 
 func TestCoordinatePruneStableOrdering(t *testing.T) {
@@ -122,7 +172,7 @@ func TestCoordinatePruneStableOrdering(t *testing.T) {
 	b := fakePruner{name: "beta", cs: []Candidate{
 		{Path: "/same", Bytes: 10, LastUsed: t0, Reason: "x"},
 	}}
-	rep, err := CoordinatePrune(context.Background(), []Pruner{b, a}, 30, 10, false)
+	rep, err := CoordinatePrune(context.Background(), []Pruner{b, a}, 30, 10, false, nil)
 	if err != nil {
 		t.Fatalf("CoordinatePrune: %v", err)
 	}

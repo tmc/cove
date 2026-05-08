@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"text/tabwriter"
 	"time"
@@ -35,6 +36,50 @@ type Pruner interface {
 	Candidates(ctx context.Context) ([]Candidate, error)
 }
 
+// PinChecker reports whether a given typed object is pinned by the
+// operator and so must be excluded from eviction. The category names
+// match the storagepins namespace ("vm", "image", "run", "cache");
+// the id is the candidate's stable last-path-segment identifier.
+//
+// internal/storagepins.File satisfies this interface.
+type PinChecker interface {
+	IsPinned(category, id string) bool
+}
+
+// filterPinned returns cs minus any candidates pinned in pins; *skipped
+// is incremented for each filtered entry. The candidate id is the last
+// path segment of Candidate.Path, matching the convention storagepins
+// uses for vm/image/run/cache refs.
+func filterPinned(cs []Candidate, namespace string, pins PinChecker, skipped *int) []Candidate {
+	out := cs[:0]
+	for _, c := range cs {
+		if pins.IsPinned(namespace, filepath.Base(c.Path)) {
+			*skipped++
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// pinNamespace maps a Pruner.Name (e.g. "vms") to the storagepins
+// namespace ("vm"). A category absent from the map is not pinnable
+// today (e.g. "build-scratch", "store") and its candidates are passed
+// through unchanged.
+func pinNamespace(prunerName string) string {
+	switch prunerName {
+	case "vms":
+		return "vm"
+	case "images":
+		return "image"
+	case "runs":
+		return "run"
+	case "cache":
+		return "cache"
+	}
+	return ""
+}
+
 // PruneReport is the result of one CoordinatePrune call.
 type PruneReport struct {
 	Apply        bool
@@ -44,6 +89,10 @@ type PruneReport struct {
 	Removed      []Candidate
 	Skipped      []Candidate // selected but unable to delete (apply mode only)
 	BytesRemoved int64
+	// PinnedSkipped counts candidates excluded because the operator
+	// pinned them. The pinned items themselves are not stored on the
+	// report; their identity is already the operator's intent.
+	PinnedSkipped int
 }
 
 // CoordinatePrune walks pruners and selects the oldest candidates across
@@ -51,7 +100,11 @@ type PruneReport struct {
 // target. With apply=false the report describes the plan and nothing is
 // removed. The selection is stable: ties on LastUsed break by Path then
 // Category so two runs against the same on-disk state pick the same set.
-func CoordinatePrune(ctx context.Context, pruners []Pruner, usedBytes, target int64, apply bool) (PruneReport, error) {
+//
+// When pins is non-nil, candidates whose canonical "namespace:id" matches
+// a pin are dropped before sorting and counted in PruneReport.PinnedSkipped.
+// Categories without a pin namespace (build-scratch, store) are not checked.
+func CoordinatePrune(ctx context.Context, pruners []Pruner, usedBytes, target int64, apply bool, pins PinChecker) (PruneReport, error) {
 	rep := PruneReport{
 		Apply:      apply,
 		UsedBefore: usedBytes,
@@ -70,8 +123,12 @@ func CoordinatePrune(ctx context.Context, pruners []Pruner, usedBytes, target in
 			collectErrs = append(collectErrs, fmt.Errorf("%s: %w", p.Name(), err))
 			continue
 		}
+		ns := pinNamespace(p.Name())
 		for i := range cs {
 			cs[i].Category = p.Name()
+		}
+		if pins != nil && ns != "" {
+			cs = filterPinned(cs, ns, pins, &rep.PinnedSkipped)
 		}
 		all = append(all, cs...)
 	}
@@ -149,6 +206,11 @@ func RenderPruneHuman(w io.Writer, rep PruneReport) error {
 	}
 	if _, err := fmt.Fprintf(w, "%s: %s across %d items\n", verb, formatBytes(rep.BytesRemoved), len(rep.Removed)); err != nil {
 		return err
+	}
+	if rep.PinnedSkipped > 0 {
+		if _, err := fmt.Fprintf(w, "pinned-skipped: %d items\n", rep.PinnedSkipped); err != nil {
+			return err
+		}
 	}
 	if !rep.Apply && rep.BytesRemoved > 0 {
 		_, err := fmt.Fprintln(w, "(re-run with -apply to delete)")
