@@ -104,6 +104,21 @@ type Descriptor struct {
 	Path string
 }
 
+// DefaultDescriptors returns the canonical category list under root,
+// matching the layout cove writes today. Used by the daemon poll loop
+// (design 040 Phase 5) so it does not have to import the package main
+// path helpers.
+func DefaultDescriptors(root string) []Descriptor {
+	return []Descriptor{
+		{Name: "vms", Path: filepath.Join(root, "vms")},
+		{Name: "images", Path: filepath.Join(root, "images")},
+		{Name: "runs", Path: filepath.Join(root, "runs")},
+		{Name: "cache", Path: filepath.Join(root, "cache")},
+		{Name: "build-scratch", Path: filepath.Join(root, "build-scratch")},
+		{Name: "store", Path: filepath.Join(root, "store")},
+	}
+}
+
 // Options controls how Walk reports.
 type Options struct {
 	// TopN bounds how many child Items each category surfaces. 0 means "no limit".
