@@ -147,7 +147,7 @@ channel.
 
 ## v0.5 — Stabilization: package boundaries + observability fixes
 
-**Status: code-complete at `8bd7a65` (2026-05-07). Tag not yet cut; user-gated.**
+**Status: Shipped v0.5.0 2026-05-08 at `463c5ce` (tag object `8e4c767`).**
 
 This release contracts surface area and tightens internal boundaries. Slices
 1-4 of design 039 ship, slice 5 (`internal/vmrun`) and all five slice 6
