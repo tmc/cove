@@ -1,8 +1,10 @@
 package storagecensus
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -182,5 +184,68 @@ func TestCoordinatePruneStableOrdering(t *testing.T) {
 	if rep.Removed[0].Category != "alpha" || rep.Removed[1].Category != "beta" {
 		t.Errorf("tie-break order = %s,%s; want alpha,beta",
 			rep.Removed[0].Category, rep.Removed[1].Category)
+	}
+}
+
+func TestRenderPruneHuman(t *testing.T) {
+	t0 := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		rep  PruneReport
+		want []string // substrings that must appear
+		miss []string // substrings that must NOT appear
+	}{
+		{
+			name: "empty dry-run",
+			rep:  PruneReport{Apply: false, UsedBefore: 100, UsedAfter: 100, Target: 200},
+			want: []string{"mode=dry-run", "no candidates selected"},
+			miss: []string{"would-remove", "removed:"},
+		},
+		{
+			name: "dry-run with removed and pinned-skipped",
+			rep: PruneReport{
+				Apply: false, UsedBefore: 1000, UsedAfter: 600, Target: 600,
+				Removed: []Candidate{
+					{Path: "/a", Bytes: 400, LastUsed: t0, Category: "build-scratch", Reason: "old"},
+				},
+				BytesRemoved:  400,
+				PinnedSkipped: 2,
+			},
+			want: []string{"mode=dry-run", "would-remove", "build-scratch", "/a", "pinned-skipped: 2", "(re-run with -apply to delete)"},
+		},
+		{
+			name: "apply with skipped",
+			rep: PruneReport{
+				Apply: true, UsedBefore: 500, UsedAfter: 400, Target: 200,
+				Removed: []Candidate{
+					{Path: "/ok", Bytes: 100, Category: "runs", Reason: "old"},
+				},
+				Skipped: []Candidate{
+					{Path: "/no-fn", Bytes: 100, Category: "runs", Reason: "no delete fn"},
+				},
+				BytesRemoved: 100,
+			},
+			want: []string{"mode=apply", "removed", "skipped", "/ok", "/no-fn"},
+			miss: []string{"(re-run with -apply", "no candidates"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := RenderPruneHuman(&buf, tt.rep); err != nil {
+				t.Fatalf("RenderPruneHuman: %v", err)
+			}
+			out := buf.String()
+			for _, s := range tt.want {
+				if !strings.Contains(out, s) {
+					t.Errorf("output missing %q\n--- got ---\n%s", s, out)
+				}
+			}
+			for _, s := range tt.miss {
+				if strings.Contains(out, s) {
+					t.Errorf("output unexpectedly contains %q\n--- got ---\n%s", s, out)
+				}
+			}
+		})
 	}
 }
