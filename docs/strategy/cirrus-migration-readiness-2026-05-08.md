@@ -54,7 +54,7 @@ this doc is the readiness gap report behind it.
 |---|---|---|
 | **GitHub Actions annotations** (`::error`, `::warning`, file/line) emitted from inside the guest | Print plain text; GHA renders as logs only | **M** |
 | **Public Marketplace action** (`uses: cirrus-actions/...` analogue) | Private composite action at `.github/actions/cove-action`; copy/paste per repo | **L** — gated by privacy gate (cove repo private) |
-| **Cirrus secrets** (`ENCRYPTED[…]` URI) → guest env | `cove-action` `secrets:` input is **reserved and rejected** (`action.yml:48-49,95-99`); operator pipes plain `env:` | **M** — sized in [`cirrus-secrets-fix-2026-05-08.md`](cirrus-secrets-fix-2026-05-08.md); proto wire ready, host-side plumbing + redactor only |
+| **Cirrus secrets** (`ENCRYPTED[…]` URI) → guest env | `cove-action` `secrets:` input is **reserved and rejected** (`action.yml:48-49,95-99`); operator pipes plain `env:` | **D — Slice 1 shipped 2026-05-08** at `847a4e2` + `fcec084`: `cove shell --secret-env NAME=env://VAR\|file:///path` plus run-log redactor. cove-action `secrets:` input plumbing is Slice 2. See [`cirrus-secrets-fix-2026-05-08.md`](cirrus-secrets-fix-2026-05-08.md). |
 | **Hosted queue** (Cirrus picks a Mac for you) | Operator owns the runner host (or fleet); GitHub `runs-on` labels do scheduling | **L** — by design, cove is operator-owned. Not a blocker; a scope decision. |
 | **Multi-OS hosted CI** (Linux x86_64 / Windows runners under same `.cirrus.yml`) | cove is Apple Silicon only | **L** — out of scope per `docs/strategy/non-goals.md` |
 | **Public macOS/Linux image catalog** (Tart-style GHCR images) | Operator builds locally with `cove up` + `cove image build` | **L** — gated by privacy gate; design 024 Slice 3 deferred |

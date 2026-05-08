@@ -8,6 +8,12 @@ parent: docs/strategy/cirrus-migration-readiness-2026-05-08.md (item 2)
 
 # Cirrus secrets → guest env (M)
 
+**Slice 1 shipped (2026-05-08)** — `metrics: redact secret values in run
+logs` at `847a4e2`, `shell: add --env and --secret-env flags` at
+`fcec084`. Host-side `cove shell` flag + run-log redactor land; proto/
+and internal/agent/ untouched. cove-action `secrets:` input parser
+deferred to Slice 2.
+
 Cirrus shuts down 2026-06-01. The migration audit
 ([cirrus-migration-readiness-2026-05-08.md](cirrus-migration-readiness-2026-05-08.md))
 identified **one** purely-engineering L blocker: lifting Cirrus
