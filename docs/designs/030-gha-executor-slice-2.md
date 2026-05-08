@@ -10,7 +10,7 @@ Follow-on work that touches the same surface but lands under other designs: `4e0
 
 Spec-vs-code drift surfaced during this refresh (left for a separate follow-up — out of scope for status):
 
-- `action.yml` exposes `cache-key` and `cache-paths` only. The MVP § here lists `cache-mode`, `cache-scope`, `cache-ttl`, and `cache-save-on`; none are wired. `cache-paths` is present despite the API Surface § stating "Do not add a `paths` input in the MVP."
+- `action.yml` exposes `cache-key` and `cache-paths` only. The MVP § here lists `cache-mode`, `cache-scope`, `cache-ttl`, and `cache-save-on`; none are wired. `cache-paths` is now permitted as informational-only metadata (resolved below).
 - The `cache-primary-key` output named in the API Surface § is not emitted; the other three outputs (`cache-hit`, `cache-image`, `cache-saved`) match.
 - Default save policy and TTL behavior reflected in code should be reconciled against the MVP § wording.
 
@@ -24,7 +24,7 @@ Slice 2 adds cross-run cache reuse without weakening the Slice 1 security model.
 
 - Add an optional `cache-key` surface to the private cove GitHub Action. Empty key keeps the current Slice 1 behavior exactly: fork from `image`, run, stop, delete.
 - Model the cache as a local cove image snapshot, not as a persistent VirtioFS volume. A cache hit forks from the cached image; a miss forks from the requested base image and may save the stopped fork as a new cache image after a successful job.
-- Make the cache key name a whole-VM cache state, not a list of host paths. Users should include lockfile hashes in the key, as they do with `actions/cache`; cove should not expose `paths` in the MVP because it is not doing partial directory extraction.
+- Make the cache key name a whole-VM cache state, not a list of host paths. Users should include lockfile hashes in the key, as they do with `actions/cache`; an optional `cache-paths` input is informational only (kept for `actions/cache` shape parity) and does not drive partial directory extraction.
 - Use first-writer-wins save semantics. If two jobs miss the same key, both may run from the base image, but only one saves the cache image; the other treats the duplicate image as a benign cache-save race.
 - Keep caches local-only under `~/.vz/images/`. The action does not push caches to OCI registries, and no public registry surface is introduced in this slice.
 
@@ -93,7 +93,7 @@ Example workflow:
       go test ./...
 ```
 
-Do not add a `paths` input in the MVP. The saved object is a full stopped VM image, so a path list would imply behavior cove is not providing. If users want path-aware invalidation, they put path hashes into `cache-key`.
+A `cache-paths` input is permitted as informational metadata only. The saved object is a full stopped VM image, so the list does not drive partial restore or extraction; it documents which guest paths the whole-VM cache is expected to benefit, mirroring the `actions/cache` shape so migrating workflows port cleanly. Path-aware invalidation still belongs in `cache-key` (e.g. `hashFiles('go.sum')`). Cove must not start interpreting `cache-paths` as a selection filter without a follow-up design.
 
 ### Cache Key Model
 
@@ -206,7 +206,7 @@ MVP should include:
 - first-writer-wins duplicate save handling
 - no automatic GC
 - no registry push/pull
-- no `paths` input
+- `cache-paths` accepted but informational only (no partial restore)
 - no restore-key prefix matching
 
 This is enough to prove the speedup story with two sequential runs on the same self-hosted runner: first run misses and saves; second run hits and starts from the cached image.
@@ -267,6 +267,6 @@ Live verification:
 Verified against `.github/actions/cove-action/action.yml` at `4150a02` (R71 finding R71-DESIGN-030-STATUS `0b774c4`). The header note at lines 11-15 flagged drift in passing; the items below are the resolved list.
 
 1. Missing inputs: `cache-mode`, `cache-scope`, `cache-ttl`, `cache-save-on` from API Surface § (lines 54-57) are not wired in `action.yml`. Cache behavior is currently hard-coded to `restore-save` semantics gated only by `cache-key`. Status: deferred to v0.7 — needs decision on whether to ship the full surface or trim the spec to match code.
-2. Extra input: `cache-paths` is wired despite API Surface § (lines 72-75) explicitly saying "Do not add a `paths` input in the MVP." Today it is informational only. Status: needs decision — drop the input or respec it as supported.
+2. Extra input: `cache-paths` is wired and is now spec-permitted as informational-only metadata (R74). Status: resolved — API Surface § respec'd to keep the shipped surface; removing it would have broken `docs/migrations/from-cirrus.md`, `docs/migration/cirrus-to-cove.md`, `docs/landing/migration-walkthrough.md`, and `docs/features/gha-executor.md` examples.
 3. Missing output: `cache-primary-key` from API Surface § (line 66) is not emitted. The other three cache outputs (`cache-hit`, `cache-image`, `cache-saved`) match. Status: deferred to v0.7 — small wrapper change, blocked on input decisions above.
 4. Open Questions §§ 1-5 (lines 259-263) remain unanswered: `cache-scope` default, TTL default, duplicate-tag error shape, manifest-vs-sidecar, save-failure policy. Status: needs design discussion before the input surface lands.
