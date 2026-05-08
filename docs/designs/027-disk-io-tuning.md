@@ -305,8 +305,9 @@ runbook and the CLI reference as an advanced feature.
 - [ ] a guarded Darwin integration test opens an `hdiutil attach -nomount`
       raw device and verifies descriptor passing without requiring a physical
       USB drive.
-- [ ] `docs/benchmarks/disk-io.md` records Slice 4 results separately from
-      Ubuntu Desktop first-boot reliability.
+- [x] `docs/benchmarks/disk-io.md` records Slice 4 results separately from
+      Ubuntu Desktop first-boot reliability. (0695fcd; spec doc, live numbers
+      pending host with a spare raw block device)
 
 ## Risks
 
