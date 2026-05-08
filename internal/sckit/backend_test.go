@@ -67,6 +67,53 @@ func TestBackendForVMDirMissingFileFallsThroughToEnv(t *testing.T) {
 	}
 }
 
+func TestBackendForVMDirEnvGarbageFallsToDefault(t *testing.T) {
+	t.Setenv("COVE_CAPTURE_BACKEND", "totally-unknown")
+	if got := BackendForVMDir(""); got != BackendCGWindow {
+		t.Errorf("BackendForVMDir = %q, want cgwindow (garbage env -> default)", got)
+	}
+}
+
+func TestBackendForVMDirEnvUppercaseAndWhitespace(t *testing.T) {
+	tests := []struct {
+		env  string
+		want Backend
+	}{
+		{"  SCKit\n", BackendSCKit},
+		{"\tSCKIT\t", BackendSCKit},
+		{"  CGWINDOW ", BackendCGWindow},
+		{"  AUTO ", BackendCGWindow},
+	}
+	for _, tt := range tests {
+		t.Setenv("COVE_CAPTURE_BACKEND", tt.env)
+		if got := BackendForVMDir(""); got != tt.want {
+			t.Errorf("env=%q BackendForVMDir = %q, want %q", tt.env, got, tt.want)
+		}
+	}
+}
+
+func TestBackendForVMDirEmptyPerVMFileFallsThroughToEnv(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "capture-backend"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("COVE_CAPTURE_BACKEND", "sckit")
+	if got := BackendForVMDir(dir); got != BackendSCKit {
+		t.Errorf("BackendForVMDir = %q, want sckit (empty file -> env)", got)
+	}
+}
+
+func TestBackendForVMDirPerVMFileUppercaseWithNewline(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "capture-backend"), []byte("SCKIT\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("COVE_CAPTURE_BACKEND", "")
+	if got := BackendForVMDir(dir); got != BackendSCKit {
+		t.Errorf("BackendForVMDir = %q, want sckit (uppercase per-VM file)", got)
+	}
+}
+
 func TestBackendForVMDirPerVMCGWindowWinsOverSCKitEnv(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "capture-backend"), []byte("cgwindow"), 0o644); err != nil {
