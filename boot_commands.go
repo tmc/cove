@@ -4,7 +4,6 @@ package main
 import (
 	"fmt"
 	"image"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -90,23 +89,6 @@ func (e *automationExecutor) hostClickTextWithOptions(text string, timeout time.
 		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("timeout waiting for text %q to host-click", text)
-}
-
-func (e *automationExecutor) hostClickTextIfPresent(text string, timeout time.Duration, opts ocrx.SearchOptions) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		img := e.captureScreen()
-		if img == nil {
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		x, y, found := e.ocr.FindTextWithOptions(img, text, opts)
-		if found {
-			return e.hostClickPixel(x, y)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return nil
 }
 
 func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error {
@@ -247,23 +229,6 @@ func startupOptionsTilePoints(width, height, optX, optY float64) []startupClickP
 
 func continueBelongsToOptions(width, continueX float64) bool {
 	return continueX >= width*0.5
-}
-
-func ocrTexts(ocr *ocrx.Service, img image.Image) []string {
-	if ocr == nil || img == nil {
-		return nil
-	}
-	obs, err := ocr.RecognizeText(img)
-	if err != nil {
-		return nil
-	}
-	texts := make([]string, 0, len(obs))
-	for _, ob := range obs {
-		if strings.TrimSpace(ob.Text) != "" {
-			texts = append(texts, ob.Text)
-		}
-	}
-	return texts
 }
 
 func (e *automationExecutor) continueRecoveryLanguage(timeout time.Duration) error {
@@ -443,14 +408,6 @@ func (e *automationExecutor) clickHostMenuItem(menuTitle, itemTitle string) bool
 	return clicked
 }
 
-func (e *automationExecutor) typeText(text string) error {
-	resp := e.cs.typeText(&controlpb.TextCommand{Text: text})
-	if !resp.Success {
-		return fmt.Errorf("type text: %s", resp.Error)
-	}
-	return nil
-}
-
 func (e *automationExecutor) typeTextKeycodes(text string) error {
 	for _, ch := range text {
 		info, ok := controlserver.CharToKeyCode[ch]
@@ -487,69 +444,6 @@ func (e *automationExecutor) typeTextKeycodes(text string) error {
 			return fmt.Errorf("type key up %q: %s", ch, resp.Error)
 		}
 		time.Sleep(50 * time.Millisecond)
-	}
-	return nil
-}
-
-func (e *automationExecutor) typeAndReturnIfText(needle, value string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		img := e.captureScreen()
-		if img == nil {
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		lowerNeedle := strings.ToLower(needle)
-		if strings.Contains(lowerNeedle, "password") && e.recoveryAuthFailed(img) {
-			return fmt.Errorf("%s", recoveryAuthFailureMessage(needle))
-		}
-		_, _, found := e.ocr.FindText(img, needle)
-		if found {
-			typeFn := e.typeText
-			if strings.Contains(lowerNeedle, "password") ||
-				strings.Contains(lowerNeedle, "[y/n]") ||
-				strings.Contains(lowerNeedle, "are you sure") ||
-				strings.Contains(lowerNeedle, "allow booting unsigned") {
-				// Recovery's secure-password prompt can render before Terminal is
-				// and confirmation prompts can render before Terminal is actually
-				// ready to consume injected text. A short settle plus raw keycode
-				// entry behaves more like physical typing than Unicode text input.
-				time.Sleep(1500 * time.Millisecond)
-				typeFn = e.typeTextKeycodes
-			}
-			if err := typeFn(value); err != nil {
-				return err
-			}
-			if err := e.sendKey("return"); err != nil {
-				return err
-			}
-
-			clearSatisfied := func(img image.Image) bool {
-				return promptClearedOCR(e.ocr, img, needle)
-			}
-
-			// Wait for the prompt to actually clear before allowing the next
-			// step to run. Recovery screens can lag behind the injected key
-			// event, and without this a later prompt step can re-match the same
-			// visible line and inject the same answer twice.
-			clearDeadline := time.Now().Add(5 * time.Second)
-			for time.Now().Before(clearDeadline) {
-				img = e.captureScreen()
-				if img == nil {
-					time.Sleep(250 * time.Millisecond)
-					continue
-				}
-				if strings.Contains(lowerNeedle, "password") && e.recoveryAuthFailed(img) {
-					return fmt.Errorf("%s", recoveryAuthFailureMessage(needle))
-				}
-				if clearSatisfied(img) {
-					return nil
-				}
-				time.Sleep(250 * time.Millisecond)
-			}
-			return fmt.Errorf("timeout waiting for prompt %q to clear", needle)
-		}
-		time.Sleep(500 * time.Millisecond)
 	}
 	return nil
 }
@@ -633,23 +527,6 @@ func recoveryAuthFailureMessage(needle string) string {
 	return fmt.Sprintf("recovery authentication failed after answering prompt %q; the VM user is not authorized for recovery operations. Ensure provisioning completed with bootstrap recovery enabled and that 'diskutil apfs updatePreboot /' ran successfully", needle)
 }
 
-func (e *automationExecutor) rebootIfText(needle string) error {
-	img := e.captureScreen()
-	if img == nil {
-		return fmt.Errorf("capture screen for rebootIfText")
-	}
-	if _, _, found := e.ocr.FindText(img, needle); !found {
-		if e.verbose {
-			fmt.Printf("[boot] rebootIfText skipped: %q not visible\n", needle)
-		}
-		return nil
-	}
-	if err := e.typeText("reboot"); err != nil {
-		return err
-	}
-	return e.sendKey("return")
-}
-
 func (e *automationExecutor) sendKey(keySpec string) error {
 	keyCode, modifiers := parseKeySpec(keySpec)
 	useCGEvent := e.cs != nil && e.cs.inputBackend() == automationBackendWindow
@@ -713,24 +590,6 @@ func (e *automationExecutor) captureScreen() image.Image {
 		return nil
 	}
 	return img
-}
-
-func (e *automationExecutor) saveScreenshot() error {
-	if e.debugDir == "" {
-		return nil
-	}
-	img := e.captureScreen()
-	if img == nil {
-		return fmt.Errorf("no screenshot available")
-	}
-	if e.ocr != nil {
-		observations, err := e.ocr.RecognizeText(img)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: OCR recognition failed: %v\n", err)
-		}
-		ocrx.SaveDebugScreenshot(img, observations, e.debugDir, "boot-cmd")
-	}
-	return nil
 }
 
 // parseKeySpec converts a key specification like "return", "tab", "cmd+q" to keycode + modifiers.
