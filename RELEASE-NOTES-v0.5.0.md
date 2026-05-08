@@ -136,6 +136,39 @@ anchor and `8bd7a65`:
   readiness at `0f8c4aa`; v0.2.1 readiness at `02e14a7`; staged artifacts at
   `be98769`/`3dc6fe8`.
 
+## Internals
+
+- **Post-move cleanup.** R51-FACADE-CLEANUP swept dead code that the design
+  039 §7 move left in package main. Six atomic commits, net -280 LOC across
+  agent, boot, control, and softreset surfaces. Closeout doc at `a4b39d7`
+  (`docs: close out design 039 facade-late move`).
+
+## Quality
+
+- **Behavioral-diff-free, audited four ways.** The design 039 facade move was
+  audited across agent reliability, observability, and performance surfaces
+  (R53 audit wave). All audits returned clean. The performance audit's
+  quantitative re-run is the only open pre-tag gate (see Pre-tag gates).
+
+## Operator + roadmap visibility
+
+- New operator docs landed alongside v0.5: `docs/observability/runs-schema.md`
+  documents the `runs.json` schema for the `cove runs` surface, and
+  `docs/benchmarks/r53-perf-snapshot.md` records the R53 performance audit
+  snapshot.
+- Future-roadmap visibility: `docs/designs/040-storage-budget.md` lands the
+  storage-budget design as a v0.6 horizon item (`403f3ad`). v0.5 itself does
+  not implement design 040.
+
+## Pre-tag gates
+
+- **Quiet-host perf re-run** — user-gated. The R54 performance audit measured
+  on a loaded host; a quiet-host re-run is desirable before tag-cut to
+  publish stable numbers. Not a blocker for the tag itself; flagged so the
+  cutter knows the published perf snapshot may be re-issued post-tag.
+- **User-gated tag approval** — issues `#224`, `#225`, `#294` still own the
+  cut decision.
+
 ## Known regressions
 
 - None. The two formerly-flaky provisioning tests are green at `1f8435c`.
