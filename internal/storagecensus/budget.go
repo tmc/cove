@@ -32,7 +32,7 @@ func (b Budget) WarnBytes() int64 {
 	if !b.IsSet() || b.WarnPct <= 0 {
 		return 0
 	}
-	return b.TargetBytes * int64(b.WarnPct) / 100
+	return b.TargetBytes / 100 * int64(b.WarnPct)
 }
 
 // HardBytes returns the byte threshold at which the budget enters hard state.
@@ -41,7 +41,7 @@ func (b Budget) HardBytes() int64 {
 	if !b.IsSet() || b.HardPct <= 0 {
 		return 0
 	}
-	return b.TargetBytes * int64(b.HardPct) / 100
+	return b.TargetBytes / 100 * int64(b.HardPct)
 }
 
 // Validate returns nil if b is a usable budget. The zero value is valid:

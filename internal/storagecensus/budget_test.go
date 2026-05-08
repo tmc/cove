@@ -223,16 +223,19 @@ func TestLoadBudgetRejectsInvalidOnDisk(t *testing.T) {
 	}
 }
 
-func TestThresholdHelpersTerabyteScale(t *testing.T) {
-	// 10 TiB — realistic upper bound for an operator budget. Confirms
-	// integer math stays well within int64 at expected scales.
-	const tenTiB = int64(10) * 1024 * 1024 * 1024 * 1024
-	b := Budget{TargetBytes: tenTiB, WarnPct: 80, HardPct: 95}
-	if got, want := b.WarnBytes(), tenTiB*80/100; got != want {
+func TestThresholdHelpersPetabyteScale(t *testing.T) {
+	// 100 PiB — far beyond any realistic operator budget. Confirms threshold
+	// math does not overflow int64; multiply-before-divide would wrap here.
+	const hundredPiB = int64(100) * 1024 * 1024 * 1024 * 1024 * 1024
+	b := Budget{TargetBytes: hundredPiB, WarnPct: 80, HardPct: 95}
+	if got, want := b.WarnBytes(), hundredPiB/100*80; got != want {
 		t.Errorf("WarnBytes = %d, want %d", got, want)
 	}
-	if got, want := b.HardBytes(), tenTiB*95/100; got != want {
+	if got, want := b.HardBytes(), hundredPiB/100*95; got != want {
 		t.Errorf("HardBytes = %d, want %d", got, want)
+	}
+	if b.WarnBytes() <= 0 || b.HardBytes() <= 0 {
+		t.Errorf("thresholds overflowed: warn=%d hard=%d", b.WarnBytes(), b.HardBytes())
 	}
 }
 
