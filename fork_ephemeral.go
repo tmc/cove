@@ -240,8 +240,5 @@ func GCEphemeralForks(opts EphemeralGCOptions) (EphemeralGCResult, error) {
 // ephemeralForkIsActive returns true if a live process holds the
 // vmDir's run.lock. Stale lock files (process gone) are not active.
 func ephemeralForkIsActive(path string) bool {
-	if isVMRunningAt(path) {
-		return true
-	}
-	return false
+	return isVMRunningAt(path)
 }
