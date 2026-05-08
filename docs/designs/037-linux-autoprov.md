@@ -4,6 +4,24 @@ Issue #235 tracks first-boot Linux Desktop provisioning for the #122 carryover:
 `cove up -linux -desktop -user X -password Y` should install Ubuntu Desktop and
 arrive at a logged-in GNOME session without a manual password prompt.
 
+## Status
+
+Shipped. The operator-facing contract documented below lands across:
+
+- `f718d69` linux: enable GDM autologin and right-size GUI scanout
+- `c624d3f` linux: add `-desktop-installer oem|server` flag
+- `aebcf13` linux: provision OEM desktop users explicitly
+- `c3f7ead` linux: disable cloud-init after OEM desktop provisioning
+- `449cbfa` linux: cover desktop autologin late command (tests)
+- `0cbc455` linux: clear autologin keyring prompt
+- `4f71eb3` linux: suppress GNOME Initial Setup for OEM desktop
+
+Validation gaps from the original draft are closed: `linux_installer_test.go`
+covers the desktop GDM block, asserts the server variant omits it, and asserts
+the keyring removal late command is present. Live first-boot reliability
+follow-ups remain tracked in [`docs/benchmarks/disk-io.md`](../benchmarks/disk-io.md)
+and the ROADMAP `done` row.
+
 ## Current Path
 
 `up.go` maps `cove up -linux -desktop -user X -password Y` onto the global
@@ -37,30 +55,23 @@ AutomaticLogin=<user>
 The install flow sets `AutoLogin=true` only for `LinuxVariantDesktop`, so the
 GDM block is not emitted for server installs.
 
-## Gaps
+## Gaps (closed)
 
-The generated YAML needs focused coverage for the operator-facing contract:
+The generated YAML now has focused coverage for the operator-facing contract:
 
 - desktop autoinstall emits the GDM automatic login block for the requested
-  user;
-- non-desktop autoinstall does not emit the GDM block;
-- desktop autologin also avoids the common GNOME login keyring prompt on the
-  first GUI session.
-
-The keyring prompt can be mitigated without live VM verification by removing the
-installer-created login keyring in a desktop autologin late command. GNOME will
-recreate it on first use instead of prompting for a stale keyring password:
-
-```
-rm -f /target/home/<user>/.local/share/keyrings/login.keyring || true
-```
+  user (`linuxAutoLoginLateCommand`, covered in `linux_installer_test.go`);
+- non-desktop autoinstall does not emit the GDM block (server variant test);
+- desktop autologin removes the installer-created login keyring so GNOME does
+  not prompt on first GUI session (`0cbc455`).
 
 ## Validation
 
-Unit tests should render `generateUserData` for desktop and server variants and
-assert the expected late-command strings. Runtime verification with a fresh
-Desktop VM remains useful, but it is disk-heavy and should be a separate pass
-unless the machine has enough free space for another Ubuntu Desktop install.
+`linux_installer_test.go` renders `generateUserData` for desktop and server
+variants and asserts the expected late-command strings, including the GDM
+block, the keyring removal, and the server-variant negative assertions.
+Runtime verification with a fresh Desktop VM remains a separate, disk-heavy
+pass tracked in [`docs/benchmarks/disk-io.md`](../benchmarks/disk-io.md).
 
 ## Cross-references
 
