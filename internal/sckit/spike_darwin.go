@@ -59,3 +59,12 @@ func CaptureSpike(ctx context.Context, windowID uint32) (image.Image, time.Durat
 	}
 	return img, time.Since(start), nil
 }
+
+// CaptureWindow grabs a single screenshot of the given CGWindowID via
+// ScreenCaptureKit. It is the production entry point for design 041
+// Slice 3; CaptureSpike remains the timing-aware harness used by
+// cove doctor sckit-spike.
+func CaptureWindow(ctx context.Context, windowID uint32) (image.Image, error) {
+	img, _, err := CaptureSpike(ctx, windowID)
+	return img, err
+}
