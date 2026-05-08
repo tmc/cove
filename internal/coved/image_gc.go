@@ -12,7 +12,10 @@ import (
 	"time"
 
 	runmetrics "github.com/tmc/vz-macos/internal/metrics"
+	"golang.org/x/sys/unix"
 )
+
+const imageLockFile = ".image.lock"
 
 const DefaultImageGCInterval = time.Hour
 
@@ -116,17 +119,60 @@ func (s *ImageGCScheduler) runOnceLocked(ctx context.Context) (ImageGCStats, err
 		if refs[img.ref] {
 			continue
 		}
+		// Take per-image flock and re-read the live-fork set under it.
+		// Closes R2+R3 in docs/research/image-gc-race-audit-2026-05-08.md:
+		// without this, the refs read at the top of the sweep is stale
+		// by the time we delete, so a fork-from racing into existence
+		// during the sweep would be silently destroyed.
+		release, err := tryAcquireImageLock(img.path)
+		if err != nil {
+			if s.Logger != nil {
+				s.Logger.Debug("image busy, skipping", slog.String("path", img.path), slog.Any("err", err))
+			}
+			continue
+		}
+		recheck, err := s.referencedImages()
+		if err != nil {
+			release()
+			if s.Logger != nil {
+				s.Logger.Debug("recheck refs", slog.Any("err", err))
+			}
+			continue
+		}
+		if recheck[img.ref] {
+			release()
+			continue
+		}
 		size := dirSize(img.path)
 		if err := os.RemoveAll(img.path); err != nil {
+			release()
 			if s.Logger != nil {
 				s.Logger.Debug("remove image", slog.String("path", img.path), slog.Any("err", err))
 			}
 			continue
 		}
+		release()
 		stats.ManifestsRemoved++
 		stats.BytesFreed += size
 	}
 	return stats, nil
+}
+
+// tryAcquireImageLock takes a non-blocking exclusive flock on
+// <imageDir>/.image.lock. The release function closes the descriptor,
+// dropping the lock. Mirrors the main package's TryAcquireImageLock —
+// duplicated here to avoid pulling the cmd package into internal/coved.
+func tryAcquireImageLock(imageDir string) (func(), error) {
+	path := filepath.Join(imageDir, imageLockFile)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { f.Close() }, nil
 }
 
 func (s *ImageGCScheduler) emit(ctx context.Context, started time.Time, stats ImageGCStats, runErr error) error {
