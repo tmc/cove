@@ -215,30 +215,6 @@ func sandboxAllowsAgentUpgrade() bool {
 	return policy.EffectiveAgentUpgrade(autoUpgradeAgent)
 }
 
-func sandboxAllowsSharedFolders() bool {
-	policy, err := currentSandboxPolicy()
-	if err != nil {
-		return true
-	}
-	return policy.AllowsSharedFolders()
-}
-
-func sandboxAllowsVolumes() bool {
-	policy, err := currentSandboxPolicy()
-	if err != nil {
-		return true
-	}
-	return policy.AllowsVolumes()
-}
-
-func sandboxAllowsProxy() bool {
-	policy, err := currentSandboxPolicy()
-	if err != nil {
-		return true
-	}
-	return policy.AllowsProxy()
-}
-
 func applySandboxDefaults() error {
 	policy, err := currentSandboxPolicy()
 	if err != nil {

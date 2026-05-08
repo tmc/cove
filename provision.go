@@ -149,11 +149,6 @@ import (
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 )
 
-// provisionStagingDir returns the staging directory for the current VM.
-func provisionStagingDir() string {
-	return provisionStagingDirForVM(currentVMSelection())
-}
-
 func provisionStagingDirForVM(target vmSelection) string {
 	return target.provisionStagingDir()
 }
@@ -200,13 +195,9 @@ func cleanVMForVM(target vmSelection) error {
 	return nil
 }
 
-// stageProvisioningFiles performs all expensive operations (builds, downloads,
+// stageProvisioningFilesForVM performs all expensive operations (builds, downloads,
 // file generation) and writes them to a staging directory. No root access needed.
-// The staged files can then be applied to the disk with applyProvisioningFiles.
-func stageProvisioningFiles(opts InjectOptions) (string, error) {
-	return stageProvisioningFilesForVM(currentVMSelection(), opts)
-}
-
+// The staged files can then be applied to the disk with applyProvisioningFilesForVM.
 func stageProvisioningFilesForVM(target vmSelection, opts InjectOptions) (string, error) {
 	// Validate username
 	if err := validateUsername(opts.Config.Username); err != nil {
@@ -326,13 +317,6 @@ func stageProvisioningFilesForVM(target vmSelection, opts InjectOptions) (string
 		fmt.Printf("Staged %d files in %s.\n", len(manifest.Files), filepath.Base(stagingDir))
 	}
 	return stagingDir, nil
-}
-
-// applyProvisioningFiles reads a staging manifest, mounts the VM disk, and
-// copies all staged files to the Data volume with correct ownership.
-// This is the only step that may require elevated privileges.
-func applyProvisioningFiles() error {
-	return applyProvisioningFilesForVM(currentVMSelection())
 }
 
 func printProvisioningAlreadyApplied(target vmSelection) {
@@ -552,12 +536,6 @@ func elevationPrompt(action string) string {
 		action = action[:max-1] + "…"
 	}
 	return action
-}
-
-// elevationVMLabel returns the VM name to show in auth dialogs, defaulting to
-// "default" when no VM is selected yet.
-func elevationVMLabel() string {
-	return currentVMSelection().elevationLabel()
 }
 
 // errRestrictedNoElevation is returned when cove is invoked from a restricted

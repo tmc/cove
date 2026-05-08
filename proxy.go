@@ -462,18 +462,6 @@ func configureGuestProxy(ctx context.Context, cs *ControlServer, rawURL string) 
 	return configureGuestProxyOnRuntime(ctx, rt, rawURL, flags)
 }
 
-func configureRequestedProxy(cs *ControlServer) error {
-	if strings.TrimSpace(proxyURL) == "" {
-		return nil
-	}
-	if cs == nil {
-		return fmt.Errorf("proxy runtime unavailable")
-	}
-	ctx, cancel := cs.timeoutContext(proxyRuntimeWaitTimeout)
-	defer cancel()
-	return configureGuestProxy(ctx, cs, proxyURL)
-}
-
 func configureRequestedProxyAfterBoot(cs *ControlServer) {
 	if strings.TrimSpace(proxyURL) == "" || cs == nil {
 		return

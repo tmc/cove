@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,24 +14,6 @@ import (
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 )
-
-// nsArrayCount returns the count of an NSArray given its objc.ID.
-func nsArrayCount(id objc.ID) uint {
-	if id == 0 {
-		return 0
-	}
-	return objc.Send[uint](id, objc.Sel("count"))
-}
-
-// nsArrayDescribe returns description + count for an NSArray objc.ID.
-func nsArrayDescribe(id objc.ID) string {
-	if id == 0 {
-		return "(nil)"
-	}
-	count := nsArrayCount(id)
-	desc := foundation.NSStringFromID(objc.Send[objc.ID](id, objc.Sel("description"))).String()
-	return fmt.Sprintf("count=%d desc=%s", count, desc)
-}
 
 // createMinimalMacVM creates a minimal VZVirtualMachine with a macOS config
 // backed by the default VM disk. Returns zero IDs if the VM directory is missing.

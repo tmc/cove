@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -256,20 +254,3 @@ Examples:
   cove serve -per-vm-auth                  # per-VM strict mode`)
 }
 
-// startHTTPForRun is called after controlServer.Start() in the run path when
-// -http was provided. It binds a TCP listener and serves the per-VM HTTP API.
-func startHTTPForRun(cs *ControlServer, addr, name string) (net.Listener, error) {
-	handler := NewHTTPHandler(cs, name, cs.authToken, nil)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	go func() {
-		if err := http.Serve(ln, handler); err != nil && !isClosedError(err) {
-			slog.Error("http server",
-				slog.String("vm", name),
-				slog.Any("err", err))
-		}
-	}()
-	return ln, nil
-}

@@ -195,60 +195,6 @@ func extractPkgFromIMG(imgPath, pkgDest string) error {
 	return nil
 }
 
-// injectGuestTools copies the SPICE guest tools .pkg into the mounted Data
-// volume and installs a LaunchDaemon that runs the installer on first boot.
-func injectGuestTools(mountPoint string, rootFiles *[]string) error {
-	fmt.Println()
-	fmt.Println("=== Injecting SPICE Guest Tools ===")
-
-	// Download/cache the .pkg.
-	pkgPath, err := ensureGuestToolsPkg()
-	if err != nil {
-		return err
-	}
-
-	pkgData, err := os.ReadFile(pkgPath)
-	if err != nil {
-		return fmt.Errorf("read cached pkg: %w", err)
-	}
-
-	// Write .pkg to /var/db/vz-guest-tools.pkg on the Data volume.
-	destDir := filepath.Join(mountPoint, "private", "var", "db")
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return fmt.Errorf("create destination directory: %w", err)
-	}
-
-	destPkg := filepath.Join(destDir, "vz-guest-tools.pkg")
-	if err := os.WriteFile(destPkg, pkgData, 0644); err != nil {
-		return fmt.Errorf("write guest tools pkg: %w", err)
-	}
-	chownRootWheel(destPkg, rootFiles)
-	fmt.Printf("Written: %s (%.1f MB)\n", destPkg, float64(len(pkgData))/(1024*1024))
-
-	// Write the installer LaunchDaemon.
-	launchDaemonsDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
-	if err := os.MkdirAll(launchDaemonsDir, 0755); err != nil {
-		return fmt.Errorf("create LaunchDaemons directory: %w", err)
-	}
-
-	plistPath := filepath.Join(launchDaemonsDir, guestToolsLaunchDaemonLabel+".plist")
-	if err := os.WriteFile(plistPath, []byte(guestToolsLaunchDaemonPlist), 0644); err != nil {
-		return fmt.Errorf("write guest tools plist: %w", err)
-	}
-	chownRootWheel(plistPath, rootFiles)
-	fmt.Printf("Written: %s\n", plistPath)
-
-	// Write the installer script.
-	scriptPath := filepath.Join(destDir, "vz-install-guest-tools.sh")
-	if err := os.WriteFile(scriptPath, []byte(guestToolsInstallScript), 0755); err != nil {
-		return fmt.Errorf("write installer script: %w", err)
-	}
-	chownRootWheel(scriptPath, rootFiles)
-	fmt.Printf("Written: %s\n", scriptPath)
-
-	return nil
-}
-
 // guestToolsLaunchDaemonPlist runs the guest tools installer on first boot.
 // LaunchOnlyOnce prevents re-running after the initial install.
 const guestToolsLaunchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>

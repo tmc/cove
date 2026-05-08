@@ -49,17 +49,6 @@ func runOnUIThreadSync(fn func()) {
 	}
 }
 
-func runOnUIThreadAsync(fn func()) {
-	if fn == nil {
-		return
-	}
-	if onUIThread() || uiThreadID.Load() == 0 {
-		fn()
-		return
-	}
-	uiThreadTasks <- uiTask{fn: fn}
-}
-
 func drainUIThreadTasks() {
 	if !onUIThread() {
 		return

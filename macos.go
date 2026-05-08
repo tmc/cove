@@ -1484,12 +1484,6 @@ func waitForVMStartPoll(startErr <-chan error, poll func() (vz.VZVirtualMachineS
 	}
 }
 
-func waitForVMRunning(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop bool, timeout time.Duration) error {
-	return waitForVMRunningPoll(func() (vz.VZVirtualMachineState, error) {
-		return currentVMState(vm, queue)
-	}, vmStartWaitOptions{Timeout: timeout, PumpRunLoop: pumpRunLoop, PollEvery: 10 * time.Millisecond})
-}
-
 func waitForVMRunningPoll(poll func() (vz.VZVirtualMachineState, error), opts vmStartWaitOptions) error {
 	timeout := opts.Timeout
 	if timeout <= 0 {

@@ -147,14 +147,6 @@ func writeAppleLZ4Uncompressed(w io.Writer, raw []byte) error {
 	return nil
 }
 
-// uncompressLZ4Block decodes one raw LZ4 block (the inner payload of a bv41
-// chunk) into dst and returns the number of bytes written. Wraps
-// pierrec/lz4's UncompressBlock so external callers — including tests that
-// drive block parsing manually — don't need to import lz4 themselves.
-func uncompressLZ4Block(src, dst []byte) (int, error) {
-	return lz4.UncompressBlock(src, dst)
-}
-
 // uncompressLZ4BlockWithDict decodes one raw LZ4 block whose back-references
 // may extend into dict (the previous block's decoded output, capped at 64
 // KiB). Apple-LZ4 streams are dependent: each compressed block uses its

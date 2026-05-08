@@ -434,13 +434,6 @@ func requireRootForMacOSUpProvisioning(cfg upConfig, target vmSelection, install
 	return nil
 }
 
-func shellQuoteForDisplay(arg string) string {
-	if arg == "" || strings.ContainsAny(arg, " \t\n'\"\\$`!*?[]{}()<>|&;") {
-		return shellQuote(arg)
-	}
-	return arg
-}
-
 // runUpWithVZScripts boots the VM in a goroutine, runs the given vzscript
 // recipes followed by an optional plain setup-script, and either shuts down
 // the VM or leaves it running based on noShutdown. If the VM exits
@@ -769,15 +762,11 @@ func validateVZScriptRecipes(recipes []string) error {
 	return nil
 }
 
-// stageVZScriptInjects loads the named vzscript recipes and their transitive
+// stageVZScriptInjectsForVM loads the named vzscript recipes and their transitive
 // dependencies, extracts any # inject: directives from their metadata, and
 // stages the referenced txtar files into the existing provisioning staging
-// directory. This runs between stageProvisioningFiles and applyProvisioningFiles
+// directory. This runs between stageProvisioningFilesForVM and applyProvisioningFilesForVM
 // so the inject files are included in the same disk-write pass.
-func stageVZScriptInjects(recipes []string) error {
-	return stageVZScriptInjectsForVM(currentVMSelection(), recipes)
-}
-
 func stageVZScriptInjectsForVM(target vmSelection, recipes []string) error {
 	stagingDir := provisionStagingDirForVM(target)
 	manifest, err := readManifest(stagingDir)
