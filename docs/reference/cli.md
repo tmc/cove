@@ -28,7 +28,8 @@ cove install [flags]
 |------|---------|-------------|
 | `-ipsw <path>` | | Path to IPSW restore image (downloads latest if empty) |
 | `-linux` | false | Install Linux instead of macOS |
-| `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
+| `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine, nixos |
+| `-nixos` | false | Install NixOS (implies `-linux -distro nixos`) |
 | `-desktop` | false | Use Ubuntu Desktop ISO (implies `-linux`) |
 | `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
 | `-iso <path>` | | Path to ISO image for Linux EFI boot |
