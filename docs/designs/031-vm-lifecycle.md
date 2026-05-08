@@ -1,6 +1,19 @@
 # Design 031: VM Lifecycle Policy
 
-**Status:** Shipped 2026-05-05 at `cd899a1` (policy persistence, CLI, enforcement loop, run-budget counter; SHA chain in ROADMAP)  
+**Status:** Shipped. SHA chain:
+- `12c391d` design doc landed
+- `d1df12b` policy persistence (`internal/vmpolicy`)
+- `850651d` + `dfb0eaa` package docs and validate/load/clear error coverage
+- `2202f46` `cove policy` CLI
+- `80eea77` runtime lifecycle enforcement
+- `9749f29` locked run-budget counter
+- `cd899a1` `vm_policy_stop` telemetry
+- `fff2f1b` lifecycle policy enforcement tests
+- `6592695` / `ccba4bf` / `09fc1d1` lifecycleBridge extraction (design 039 §7)
+
+Acceptance items shipped: policy.json persistence, sparse three-field model, `cove policy show|clear|idle|max-age|run-budget`, runtime ticker enforcement with deterministic reason precedence, single-shot stop request, JSONL `vm_policy_stop` event in `metrics.jsonl`. ROADMAP row "VM lifecycle policy v2" marked `done`.
+
+
 **Author:** Travis Cline  
 **Date:** 2026-05-05
 
