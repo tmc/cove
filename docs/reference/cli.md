@@ -1046,3 +1046,8 @@ agent-aware free-space compactor.
 | `rosetta` | Rosetta management (status, install, setup) |
 | `agent-upgrade` | Upgrade guest agent |
 | `disk-detach` | Force-detach VM disk image |
+| `fork` | CoW-fork a VM with a fresh identity (`cove fork <parent> <child>`) |
+| `bench` | Normalize benchmark evidence into reports and run metrics |
+| `pit` | Experimental point-in-time save, restore, run, and swap |
+| `softreset` | Run destructive soft-reset probe matrix |
+| `store` | Manage the local content-addressed OCI blob store |
