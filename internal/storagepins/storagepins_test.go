@@ -1,7 +1,10 @@
 package storagepins
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -166,4 +169,123 @@ func loadJSONFile(path string) (any, error) {
 		return nil, err
 	}
 	return loaded.List(), nil
+}
+
+// TestConcurrentAddRemove exercises the in-memory mutex under racing
+// Add/Remove/IsPinned/RefSet calls. Run with -race to catch a missing
+// lock; without -race this still asserts that no operation panics and
+// that the final pin set is internally consistent.
+func TestConcurrentAddRemove(t *testing.T) {
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	f := New()
+
+	const writers = 8
+	const opsPerWriter = 200
+	var wg sync.WaitGroup
+	wg.Add(writers)
+	for w := 0; w < writers; w++ {
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < opsPerWriter; i++ {
+				id := fmt.Sprintf("w%d-i%d", w, i)
+				if err := f.Add("vm", id, now); err != nil {
+					t.Errorf("Add: %v", err)
+					return
+				}
+				_ = f.IsPinned("vm", id)
+				_ = f.RefSet()
+				if i%3 == 0 {
+					if _, err := f.Remove("vm", id); err != nil {
+						t.Errorf("Remove: %v", err)
+						return
+					}
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	// Every kept pin must round-trip through List.
+	pins := f.List()
+	set := f.RefSet()
+	if len(pins) != len(set) {
+		t.Errorf("List len=%d RefSet len=%d; want equal", len(pins), len(set))
+	}
+	for _, p := range pins {
+		if !set[p.Ref()] {
+			t.Errorf("List pin %q missing from RefSet", p.Ref())
+		}
+	}
+}
+
+// TestConcurrentSaveLoad exercises the tempfile+rename atomicity: a
+// reader Loading concurrently with a writer Saving must always observe
+// either the previous or the new state, never a partial file.
+func TestConcurrentSaveLoad(t *testing.T) {
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+
+	// Seed the file so the reader has something to observe from tick 0.
+	seed := New()
+	if err := seed.Add("vm", "seed", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(root, seed); err != nil {
+		t.Fatal(err)
+	}
+
+	stop := make(chan struct{})
+	var readers, readErrs int64
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			loaded, err := Load(root)
+			if err != nil {
+				atomic.AddInt64(&readErrs, 1)
+				continue
+			}
+			atomic.AddInt64(&readers, 1)
+			// The seed pin must always be present: every Save below
+			// includes it. A short or partial JSON file would surface
+			// here as a parse error or a missing pin.
+			if !loaded.IsPinned("vm", "seed") {
+				t.Errorf("reader observed missing seed pin; partial Save?")
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			f := New()
+			if err := f.Add("vm", "seed", now); err != nil {
+				t.Errorf("Add: %v", err)
+				return
+			}
+			if err := f.Add("vm", fmt.Sprintf("v%d", i), now); err != nil {
+				t.Errorf("Add: %v", err)
+				return
+			}
+			if err := Save(root, f); err != nil {
+				t.Errorf("Save: %v", err)
+				return
+			}
+		}
+		close(stop)
+	}()
+	wg.Wait()
+
+	if atomic.LoadInt64(&readErrs) > 0 {
+		t.Errorf("reader saw %d parse errors; rename should be atomic", readErrs)
+	}
+	if atomic.LoadInt64(&readers) == 0 {
+		t.Errorf("reader never observed a successful Load")
+	}
 }
