@@ -98,15 +98,6 @@ func readLoginScreenCredentials(root string) (loginScreenCredentials, error) {
 	return creds, nil
 }
 
-func loadLoginScreenCredentialsFromDisk(diskPath string) (loginScreenCredentials, error) {
-	mountPoint, device, _, err := attachAndMountDataVolume(diskPath)
-	if err != nil {
-		return loginScreenCredentials{}, err
-	}
-	defer detachDisk(device)
-	return readLoginScreenCredentials(mountPoint)
-}
-
 func loadBootLoginScreenCredentials(vmDir, diskPath string) (loginScreenCredentials, error) {
 	// Do not mount diskPath here. This runs on the VM boot path, just before
 	// Virtualization.framework opens the disk, so the watchdog must rely on
