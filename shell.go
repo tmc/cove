@@ -27,6 +27,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/tmc/vz-macos/internal/metrics"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -46,6 +47,9 @@ func shellCommand(args []string) error {
 	fs := flag.NewFlagSet("shell", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() { printShellUsage(os.Stderr) }
+	var envFlag, secretEnvFlagVar secretEnvFlag
+	fs.Var(&envFlag, "env", "guest env NAME=value (repeatable; not redacted)")
+	fs.Var(&secretEnvFlagVar, "secret-env", "guest env NAME=value|env://VAR|file:///path (repeatable; redacted in run logs)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -72,7 +76,13 @@ func shellCommand(args []string) error {
 	}
 	token := resolveControlTokenForSocket(sock)
 
-	exitCode, err := runShellSession(context.Background(), sock, token, vmArg, cmd, os.Stdin, os.Stdout, os.Stderr)
+	masker := metrics.NewMasker()
+	env, err := resolveShellEnv(envFlag, secretEnvFlagVar, masker, os.Stderr)
+	if err != nil {
+		return err
+	}
+
+	exitCode, err := runShellSession(context.Background(), sock, token, vmArg, cmd, env, masker, os.Stdin, os.Stdout, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -105,7 +115,7 @@ func resolveShellSocket(vmName string) (string, error) {
 // frames, install signal forwarders, restore TTY on exit. Returns the
 // guest exit code (0 on clean exit) and an error (nil on a clean session
 // even if exit code is non-zero — the exit code carries that signal).
-func runShellSession(ctx context.Context, sock, token, vmName string, argv []string, stdin, stdout, stderr *os.File) (int32, error) {
+func runShellSession(ctx context.Context, sock, token, vmName string, argv []string, env map[string]string, masker *metrics.Masker, stdin, stdout, stderr *os.File) (int32, error) {
 	conn, err := net.DialTimeout("unix", sock, 10*time.Second)
 	if err != nil {
 		return 0, formatControlSocketDialError(sock, err)
@@ -118,6 +128,9 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 		"type":       "agent-exec-attach",
 		"args":       argv,
 		"auth_token": token,
+	}
+	if len(env) > 0 {
+		attach["env"] = env
 	}
 	payload, err := json.Marshal(attach)
 	if err != nil {
@@ -195,7 +208,7 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 		}
 	}()
 
-	exitCode, err := pumpShellFrames(reader, stdout, stderr)
+	exitCode, err := pumpShellFrames(reader, stdout, stderr, masker)
 	if err != nil {
 		return exitCode, err
 	}
@@ -286,7 +299,7 @@ func (w *shellAttachWriter) send(frame agentExecStdinFrame) error {
 // writing stream chunks to stdout/stderr, and returns the guest exit code
 // when a `done` frame arrives. Returns io.EOF mapped to a clean error
 // only if the agent disconnected before sending `done`.
-func pumpShellFrames(r *bufio.Reader, stdout, stderr io.Writer) (int32, error) {
+func pumpShellFrames(r *bufio.Reader, stdout, stderr io.Writer, masker *metrics.Masker) (int32, error) {
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil {
@@ -320,7 +333,11 @@ func pumpShellFrames(r *bufio.Reader, stdout, stderr io.Writer) (int32, error) {
 				if frame.Stream == "stderr" {
 					dst = stderr
 				}
-				if _, wErr := dst.Write(chunk); wErr != nil {
+				// Note: a TTY guest pty (the default) will not contain
+				// secret values verbatim — values are typed by the user
+				// or read by the guest. Apply still scrubs paste-back
+				// echoes and any host-side log capture downstream.
+				if _, wErr := dst.Write(masker.Apply(chunk)); wErr != nil {
 					return 0, fmt.Errorf("write stream: %w", wErr)
 				}
 			}
