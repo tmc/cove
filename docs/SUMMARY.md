@@ -89,6 +89,8 @@
 * [NixOS guest support](designs/036-nixos-guest-support.md)
 * [Linux Desktop autoprovisioning](designs/037-linux-autoprov.md)
 * [Package boundary extraction (v0.5 facade move)](designs/039-package-boundary-extraction.md)
+* [Storage budget for ~/.vz/](designs/040-storage-budget.md)
+* [ScreenCaptureKit migration](designs/041-screencapturekit-migration.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
