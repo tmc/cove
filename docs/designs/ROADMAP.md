@@ -177,12 +177,14 @@ interfaces. `ControlServer` in package main is a thin facade.
 
 **Status: in flight. macOS host floor bumps from 12.0 to 14.0; capture pipeline migrates from `CGWindowListCreateImage` to ScreenCaptureKit.**
 
-| Item | Priority | Depends on | Source | Why |
-|---|---|---|---|---|
-| Design 041 Slice 1 — SCKit capture path behind feature flag | must | none | [041](041-screencapturekit-migration.md) | Lands ScreenCaptureKit-backed capture as opt-in path, leaving `CGWindowListCreateImage` as default until Slice 2 perf A/B. Accepted at `50bf8ca`; in flight on pane 6A04C089. |
-| Design 041 Slice 2 — dual-path framebuffer fallback + perf A/B | must | Slice 1 | [041](041-screencapturekit-migration.md) | Side-by-side capture with measured latency; SCKit promoted to default only if no regression on representative workloads. Capture-latency regressions are gating, not informational. |
-| Design 041 Slice 3 — retire `CGWindowListCreateImage`; enforce macOS 14.0 floor | must | Slice 2 | [041](041-screencapturekit-migration.md) | Removes the deprecated path and bumps the documented host minimum. macOS 12/13 fallback shims retired. |
-| Design 041 Slice 4 — TCC pre-flight via `cove doctor` | must | Slice 3 | [041](041-screencapturekit-migration.md) | Surfaces ScreenCaptureKit TCC state through the existing doctor surface so first-run permission UX is obvious instead of silent. |
+| Item | Priority | Status | Depends on | Source | Why |
+|---|---|---|---|---|---|
+| Design 041 Slice 1 — SCKit capture path behind feature flag | must | shipped (`8d55d7a`) | none | [041](041-screencapturekit-migration.md) | Lands ScreenCaptureKit-backed capture as opt-in path, leaving `CGWindowListCreateImage` as default until Slice 2 perf A/B. Accepted at `50bf8ca`; probe + `cove doctor sckit-preauth` shipped at `8d55d7a`. |
+| Design 041 Slice 2 — dual-path framebuffer fallback + perf A/B | must | spike done (`d0877b8`); perf TBD | Slice 1 | [041](041-screencapturekit-migration.md) | Side-by-side capture with measured latency; SCKit promoted to default only if no regression on representative workloads. Capture-latency regressions are gating, not informational. R58 spike landed `cove doctor sckit-spike` at `d0877b8`; p50/p95 numbers blocked on Screen Recording TCC grant + GUI VM. |
+| Design 041 Slice 3 — retire `CGWindowListCreateImage`; enforce macOS 14.0 floor | must | not started | Slice 2 | [041](041-screencapturekit-migration.md) | Removes the deprecated path and bumps the documented host minimum. macOS 12/13 fallback shims retired. |
+| Design 041 Slice 4 — TCC pre-flight via `cove doctor` | must | not started | Slice 3 | [041](041-screencapturekit-migration.md) | Surfaces ScreenCaptureKit TCC state through the existing doctor surface so first-run permission UX is obvious instead of silent. |
+| APFS clonefile-aware storage census | should | not started | design 040 phases 0-5 | [040](040-storage-budget.md) §Open questions | Storage census reports per-file allocated size; two images sharing 30 GB of cloned blocks show as 60 GB used. Switch to a one-pass reference-counted walk if user-visible. Leftover from R57. |
+| Guest → host artifact copy-out | should | not started | guest agent + runs bundle | [Cirrus migration readiness 2026-05-08](../strategy/cirrus-migration-readiness-2026-05-08.md) §Partial | First-class `cove runs export` for guest-side artifacts so CI users don't hand-roll `cove ctl cp` at end of every script. Sized M; pure engineering. |
 
 ## v0.3 implementation slices
 
@@ -239,6 +241,7 @@ see [017](017-v03-execution-roadmap.md) for files, gates, and docs updates.
 
 ## Recent changes
 
+- **2026-05-08** (R60): v0.5/v0.6 transition audit. v0.5 verified all-done (no rows promoted). v0.6 SCKit table grew a Status column: Slice 1 shipped at `8d55d7a`, Slice 2 spike done at `d0877b8` (perf TBD), Slices 3-4 not started. Added APFS clonefile-aware census (design 040 leftover) and guest→host artifact copy-out (Cirrus migration M-sized) as v0.6 candidates.
 - **2026-05-08**: Design 040 storage budget Phases 0-5 fully shipped during R57 (`78b2e7b`, `ce1a2c0`, `e6a9850`, `5660b13`, `7e9ea28`, `292b81d`, `394b812`, `42714c0`, `e087a71`, `1c49740`, `cacce19`, `6cf3a93`). Design 041 ScreenCaptureKit migration accepted at `50bf8ca` with macOS 14.0 host floor; v0.6 milestone added with Slices 1-4. v0.5 remains code-complete awaiting tag cut (#225).
 - **2026-05-07**: v0.5 milestone code-complete at `8bd7a65`. Design 039 §7 facade move closed: `Capture` (`8dcf3e9`), `Lifecycle` (`09fc1d1`), `Agent` (`cc9d12f`), `Input` (`d6ee2e0`), `Network` (`8bd7a65`) all live in `internal/controlserver/`. RELEASE-NOTES-v0.5.0.md drafted; tag not yet cut.
 - **2026-05-05**: Added the v0.4 closeout milestone covering R36-R40 shipped work across agent adapters, fleet, daemon, lifecycle, quotas, NixOS, Linux desktop provisioning, image/network surfaces, reliability, Cirrus migration, and the fresh-VM-login fix cluster.
