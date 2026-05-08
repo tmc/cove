@@ -681,18 +681,6 @@ func envBool(name string) (bool, bool) {
 	return false, false
 }
 
-func (s *ControlServer) sendKeyEventPrivate(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	return s.inputs().SendKeyPrivate(cmd)
-}
-
-func (s *ControlServer) sendKeyEventCGEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	return s.inputs().SendKeyCGEvent(cmd)
-}
-
-func (s *ControlServer) sendKeyEventNSEvent(cmd *controlpb.KeyCommand) *controlpb.ControlResponse {
-	return s.inputs().SendKeyNSEvent(cmd)
-}
-
 // sendMouseEvent forwards a mouse event to the input bridge.
 func (s *ControlServer) sendMouseEvent(cmd *controlpb.MouseCommand) *controlpb.ControlResponse {
 	return s.inputs().SendMouse(cmd)
@@ -739,13 +727,6 @@ func mapNormalizedWindowCapturePointToViewPoint(x, y float64, captureW, captureH
 		boundsW,
 		contentH,
 	)
-}
-
-// needsWindowCapturePointMapping is a thin forwarder kept for tests in
-// package main. The implementation lives alongside the input bridge in
-// the controlserver package.
-func needsWindowCapturePointMapping(mode automationBackendMode, captureW, captureH int, boundsW, contentH float64) bool {
-	return controlserver.NeedsWindowCapturePointMapping(controlserver.BackendMode(mode), captureW, captureH, boundsW, contentH)
 }
 
 // typeText forwards a text-typing command to the input bridge.
