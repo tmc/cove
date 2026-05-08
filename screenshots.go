@@ -5,9 +5,13 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"image"
+	"log/slog"
+	"strings"
+	"sync"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
@@ -15,8 +19,28 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/capture"
 
+	"github.com/tmc/vz-macos/internal/sckit"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
+
+// captureSCKitFn is the seam used by the SCKit capture branch in
+// captureVMView. Tests override it to exercise the dual-path dispatch
+// without a TCC-granted host. The default calls sckit.CaptureWindow.
+var captureSCKitFn = func(ctx context.Context, windowID uint32) (image.Image, error) {
+	return sckit.CaptureWindow(ctx, windowID)
+}
+
+// sckitFallbackOnce de-duplicates the slog.Warn emitted on the first
+// SCKit error per process per cause. Spec §3 wants one warn per cause
+// to avoid log floods during install.
+var sckitFallbackOnce sync.Map // cause string -> *sync.Once
+
+func warnSCKitFallbackOnce(cause string, err error) {
+	v, _ := sckitFallbackOnce.LoadOrStore(cause, &sync.Once{})
+	v.(*sync.Once).Do(func() {
+		slog.Warn("sckit-fallback", "cause", cause, "err", err)
+	})
+}
 
 // captureBackendSCKit is the future ScreenCaptureKit capture backend
 // landing zone for design 041 Slice 2. Slice 1 ships only the
@@ -131,7 +155,11 @@ func (s *ControlServer) captureDisplayImage() (image.Image, string) {
 	return remember(s.captureVMView())
 }
 
-// captureVMView captures the raw image from the VM view using CGWindowListCreateImage.
+// captureVMView captures the raw image from the VM view. It dispatches
+// to the SCKit or CGWindowList backend per design 041 Slice 3. SCKit is
+// opt-in via COVE_CAPTURE_BACKEND=sckit (or per-VM file); on any SCKit
+// error the call falls through to CGWindowList and emits a single
+// slog.Warn per cause.
 func (s *ControlServer) captureVMView() (image.Image, string) {
 	state := s.captureState()
 	if state.window.ID == 0 {
@@ -143,6 +171,42 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 		return nil, fmt.Sprintf("invalid window number: %d", windowNum)
 	}
 
+	if sckit.BackendForVMDir(s.VMDir()) == sckit.BackendSCKit {
+		ctx, cancel := context.WithCancel(context.Background())
+		img, err := captureSCKitFn(ctx, uint32(windowNum))
+		cancel()
+		if err == nil && img != nil {
+			return img, ""
+		}
+		warnSCKitFallbackOnce(sckitFallbackCause(err), err)
+	}
+	return s.captureCGWindow(windowNum)
+}
+
+// sckitFallbackCause classifies an SCKit error for warn-once de-dup.
+// The cause string is opaque to operators; it only controls how often
+// the same failure mode logs.
+func sckitFallbackCause(err error) string {
+	if err == nil {
+		return "nil-image"
+	}
+	return classifySCKitError(err.Error())
+}
+
+func classifySCKitError(msg string) string {
+	switch {
+	case strings.Contains(msg, "TCC"), strings.Contains(msg, "denied"), strings.Contains(msg, "authoriz"):
+		return "tcc"
+	case strings.Contains(msg, "not in shareable content"), strings.Contains(msg, "off-screen"):
+		return "window-missing"
+	case strings.Contains(msg, "context deadline"), strings.Contains(msg, "timeout"):
+		return "timeout"
+	}
+	return "other"
+}
+
+// captureCGWindow is the legacy CGWindowListCreateImage capture path.
+func (s *ControlServer) captureCGWindow(windowNum int) (image.Image, string) {
 	bounds := corefoundation.CGRect{} // CGRectNull
 	cgImage := coregraphics.CGWindowListCreateImage(
 		bounds,
