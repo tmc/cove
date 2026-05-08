@@ -46,7 +46,10 @@ inputs:
     required: false
     default: ""
   secrets:
-    description: Reserved for cove secret URI inputs. Not supported in Slice 1.
+    description: |
+      Multiline KEY=value|env://VAR|file:///path secret entries. Values are
+      resolved on the host by `cove shell --secret-env` and redacted from
+      run logs. Duplicate keys are rejected.
     required: false
     default: ""
 
@@ -95,10 +98,6 @@ runs:
         COVE_ACTION_SECRETS: ${{ inputs.secrets }}
       run: |
         set -euo pipefail
-        if [ -n "${COVE_ACTION_SECRETS}" ]; then
-          echo "cove-action: secrets input is reserved for a later slice" >&2
-          exit 2
-        fi
         go run "${GITHUB_ACTION_PATH}/../../../cmd/cove-action"
     - id: metrics
       if: ${{ always() }}
