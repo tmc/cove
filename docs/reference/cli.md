@@ -216,6 +216,9 @@ Diagnose VM health: provisioning, agent, and file ownership.
 
 ```
 cove doctor [flags]
+cove doctor tcc-preauth
+cove doctor sckit-preauth [-json]
+cove doctor sckit-spike [-n N] [-threshold DUR] [-title-prefix STR] [-owner STR]
 ```
 
 | Flag | Default | Description |
@@ -224,10 +227,18 @@ cove doctor [flags]
 | `-fix` | false | Attempt to fix issues automatically |
 | `-tcc-path` | first non-system `/Volumes` mount | Guest path to use for the Full Disk Access probe |
 
+| Subcommand | Description |
+|------------|-------------|
+| `tcc-preauth` | Pre-auth Apple Events services cove uses on the host. |
+| `sckit-preauth [-json]` | Report ScreenCaptureKit availability and Screen Recording authorization (design 041). |
+| `sckit-spike` | A/B harness comparing SCKit and CGWindow capture latency. |
+
 ```bash
 cove doctor
 cove doctor --fix
 cove doctor --tcc-path /Volumes/work
+cove doctor sckit-preauth
+cove doctor sckit-preauth -json
 ```
 
 ---
@@ -778,8 +789,31 @@ Default mode is dry-run; `-apply` actually deletes. As of Phase 3,
 `build-scratch` is the only category wired into the coordinator;
 `runs`, `cache`, and `images` will land in later phases.
 
-Census is read-only and never mutates state. Pinning lands in a later
-phase of design 040.
+Census is read-only and never mutates state. Pinned objects (see
+`cove pin`) are excluded from `cove storage prune` selection.
+
+---
+
+## pin / unpin / pins
+
+Mark a VM, image, run, or cache blob as pinned so `cove storage prune`
+skips it. Phase 4 of design 040.
+
+```
+cove pin <object>
+cove unpin <object>
+cove pins list [-json]
+```
+
+`<object>` is `vm:<name>`, `image:<ref>`, `run:<id>`, or `cache:<sha>`.
+The pinset is persisted at `~/.vz/pins.json`.
+
+```bash
+cove pin vm:dev
+cove pin image:macos-runner:14.5
+cove pins list
+cove unpin run:20260505T120000Z
+```
 
 ---
 
@@ -830,7 +864,7 @@ walkthroughs.
 Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Stdin remains read-only in this release (Slice 3 / v0.3 will ship bidirectional stdin). See [design 023](../designs/023-cove-shell-exec-ux.md).
 
 ```
-cove shell <vm> [-- <argv>...]
+cove shell <vm> [--env NAME=VALUE]... [--secret-env NAME=value|env://VAR|file:///path]... [-- <argv>...]
 ```
 
 - Forwards SIGWINCH to `agent-exec-resize` on each terminal resize.
@@ -838,10 +872,17 @@ cove shell <vm> [-- <argv>...]
 - Propagates the guest exit code.
 - Friendly errors for VM-not-running, bad token, agent unreachable.
 
+| Flag | Description |
+|------|-------------|
+| `--env NAME=VALUE` | Pass an env var into the guest exec (repeatable; not redacted). |
+| `--secret-env NAME=value\|env://VAR\|file:///path` | Pass a secret env var; resolved value is registered with the run-log redactor (repeatable). `--secret-env` overrides `--env` of the same name with a stderr warning. |
+
 ```bash
 cove shell my-vm                                # interactive bash -l
 cove shell my-vm -- ls /tmp                     # one-shot
 cove shell my-vm -- /bin/bash -c 'echo hi >&2; exit 7'
+cove shell my-vm --secret-env API_TOKEN=env://CIRRUS_API_TOKEN -- ./run.sh
+cove shell my-vm --secret-env DEPLOY_KEY=file:///run/secrets/deploy.key -- ./deploy.sh
 ```
 
 ---
@@ -1099,3 +1140,11 @@ agent-aware free-space compactor.
 | `store` | Manage the local content-addressed OCI blob store |
 | `status` | Show running VM status |
 | `helper` | Manage the privileged helper (install, uninstall, status) to skip per-run sudo prompts |
+
+---
+
+## Environment Variables
+
+| Variable | Effect |
+|----------|--------|
+| `COVE_CAPTURE_BACKEND` | Set to `sckit` to opt into the ScreenCaptureKit capture path for `cove run -gui` and `cove ctl screenshot` (design 041). Unset or any other value uses CGWindow. The per-VM `<vmDir>/capture-backend` file overrides this for a single VM. |
