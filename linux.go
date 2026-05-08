@@ -250,11 +250,6 @@ func linuxVirtioFSDeviceConfigs(volumeConfigs []vz.VZVirtioFileSystemDeviceConfi
 	return configs
 }
 
-// createLinuxBootLoader creates a VZLinuxBootLoader with kernel, initrd, and cmdline.
-func createLinuxBootLoader() (vz.VZLinuxBootLoader, error) {
-	return createLinuxBootLoaderWithPaths(kernelPath, initrdPath, cmdLine)
-}
-
 func createLinuxBootLoaderWithPaths(kernelPath, initrdPath, cmdLine string) (vz.VZLinuxBootLoader, error) {
 	// Resolve to absolute paths (NSURL requires absolute paths)
 	absKernelPath, err := filepath.Abs(kernelPath)
@@ -578,14 +573,6 @@ func createLinuxStorageDeviceWithAttachment(attachment vz.VZStorageDeviceAttachm
 }
 
 // Helper functions for Linux-specific array properties using generated slice setters.
-func setStorageDevicesMultiple(config vz.VZVirtualMachineConfiguration, devices ...vz.VZVirtioBlockDeviceConfiguration) {
-	storageDevices := make([]vz.VZStorageDeviceConfiguration, len(devices))
-	for i, device := range devices {
-		storageDevices[i] = vz.VZStorageDeviceConfigurationFromID(device.ID)
-	}
-	config.SetStorageDevices(storageDevices)
-}
-
 func setVirtioGraphicsDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioGraphicsDeviceConfiguration) {
 	config.SetGraphicsDevices([]vz.VZGraphicsDeviceConfiguration{
 		vz.VZGraphicsDeviceConfigurationFromID(device.ID),

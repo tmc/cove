@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -199,8 +198,3 @@ func writeSoftresetProbeSummary(w io.Writer, opts softresetProbeOptions, results
 	return nil
 }
 
-func sortedSoftresetProbeNames() []string {
-	out := append([]string(nil), softresetProbeNames...)
-	sort.Strings(out)
-	return out
-}

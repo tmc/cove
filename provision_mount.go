@@ -315,13 +315,6 @@ func detachDiskForPath(device, diskPath string) {
 	}
 }
 
-// checkVMNotRunning checks whether the VM is currently running by probing
-// the control socket. Returns a clear error if the VM is active, preventing
-// disk operations that would corrupt a running VM.
-func checkVMNotRunning() error {
-	return checkVMNotRunningAt(vmDir)
-}
-
 func checkVMNotRunningAt(vmDirectory string) error {
 	sock := GetControlSocketPathForVM(vmDirectory)
 	if _, err := os.Stat(sock); os.IsNotExist(err) {
@@ -403,15 +396,11 @@ func chownRootWheel(path string, failedPaths *[]string) {
 	}
 }
 
-// fixOwnershipWithSudo enables APFS ownership on the volume and runs a single
+// fixOwnershipWithSudoForVM enables APFS ownership on the volume and runs a single
 // elevated script that creates directories, copies pending files, and sets
 // root:wheel ownership.
 // APFS volumes from disk images have ownership disabled by default — without
 // enableOwnership, chown silently does nothing even with sudo.
-func fixOwnershipWithSudo(paths []string, dataPartition string, installs ...pendingInstall) error {
-	return fixOwnershipWithSudoForVM(currentVMSelection(), paths, dataPartition, installs...)
-}
-
 func fixOwnershipWithSudoForVM(target vmSelection, paths []string, dataPartition string, installs ...pendingInstall) error {
 	if len(paths) == 0 && len(installs) == 0 {
 		return nil

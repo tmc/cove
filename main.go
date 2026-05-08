@@ -934,14 +934,6 @@ func confirmDeletef(format string, args ...any) (bool, error) {
 	return answer == "y" || answer == "Y", nil
 }
 
-// handleList shows all VMs and templates.
-func handleList() {
-	if err := handleListTo(os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
 func handleListTo(stdout io.Writer) error {
 	// List VMs
 	vms, err := vmconfig.List(detectVMState)

@@ -1738,55 +1738,6 @@ func hashPassword(password string) string {
 	return strings.TrimSpace(string(output))
 }
 
-// monitorInstallCompletion watches the serial log for the first successful
-// shutdown/reboot event. With direct kernel boot the VM would reboot into
-// the same installer kernel, causing an install loop. When the shutdown
-// line is detected we send SIGINT to ourselves so the VM exits cleanly.
-func monitorInstallCompletion(logPath string) {
-	// Poll the log file for the shutdown event.
-	seen := int64(0)
-	for {
-		time.Sleep(5 * time.Second)
-		f, err := os.Open(logPath)
-		if err != nil {
-			continue
-		}
-		if seen > 0 {
-			f.Seek(seen, 0)
-		}
-		buf := make([]byte, 8192)
-		n, _ := f.Read(buf)
-		f.Close()
-		if n == 0 {
-			continue
-		}
-		seen += int64(n)
-		chunk := string(buf[:n])
-		if strings.Contains(chunk, "subiquity/Shutdown/shutdown: mode=REBOOT") ||
-			strings.Contains(chunk, "reboot: Restarting system") {
-			fmt.Println()
-			fmt.Println("=== Installation Complete ===")
-			fmt.Println("The installer has finished and requested a reboot.")
-			fmt.Println("Run the installed VM with: ./cove -linux run")
-			// Give serial log a moment to flush.
-			time.Sleep(2 * time.Second)
-			p, _ := os.FindProcess(os.Getpid())
-			p.Signal(os.Interrupt)
-			return
-		}
-		// Also detect install failure.
-		if strings.Contains(chunk, "install_fail") {
-			fmt.Println()
-			fmt.Println("=== Installation Failed ===")
-			fmt.Printf("Check the serial log for details: %s\n", logPath)
-			time.Sleep(2 * time.Second)
-			p, _ := os.FindProcess(os.Getpid())
-			p.Signal(os.Interrupt)
-			return
-		}
-	}
-}
-
 // handleLinuxInstall handles the "install -linux" command.
 func handleLinuxInstall() error {
 	return installLinuxVM()

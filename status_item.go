@@ -113,13 +113,6 @@ func (c *VMStatusItemController) tooltipForState(state vz.VZVirtualMachineState)
 	return fmt.Sprintf("cove %s — %s (%s)", c.name, vmStateName(state), c.presentationMode())
 }
 
-func (c *VMStatusItemController) setWindow(window appkit.NSWindow) {
-	c.mu.Lock()
-	c.window = window
-	c.mu.Unlock()
-	c.refreshStatusItem()
-}
-
 func (c *VMStatusItemController) UpdateState(state vz.VZVirtualMachineState) {
 	c.mu.Lock()
 	c.state = state

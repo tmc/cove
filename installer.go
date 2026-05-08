@@ -125,16 +125,7 @@ func (g *guiUpdate) requestStopApp() {
 // that installation succeeded and the caller should start the VM with GUI.
 var errRestartVM = errors.New("restart VM")
 
-// injectSucceededMarker returns the path to the marker file that records
-// whether disk injection completed successfully.
-func injectSucceededMarker() string { return injectSucceededMarkerForVM(currentVMSelection()) }
-
 func injectSucceededMarkerForVM(target vmSelection) string { return target.injectSucceededMarker() }
-
-// markInjectSucceeded creates the inject success marker file.
-func markInjectSucceeded() {
-	markInjectSucceededForVM(currentVMSelection())
-}
 
 func markInjectSucceededForVM(target vmSelection) {
 	if err := os.WriteFile(injectSucceededMarkerForVM(target), nil, 0644); err != nil {
@@ -1637,7 +1628,6 @@ type virtualMachine struct {
 	stateChanged chan vz.VZVirtualMachineState
 	stateLock    sync.Mutex
 	currentState vz.VZVirtualMachineState
-	observer     objc.ID       // For KVO observation
 	done         chan struct{} // closed to stop monitorState goroutine
 }
 

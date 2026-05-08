@@ -151,11 +151,6 @@ func isVMRunning(sock string) bool {
 	return true
 }
 
-// verifyRunning performs checks against a running VM via the control socket.
-func verifyRunning(sock string, verbose bool) error {
-	return verifyRunningForVM(currentVMSelection(), sock, verbose, "")
-}
-
 func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbePath string) error {
 	fmt.Println("=== Verifying VM (Running) ===")
 	fmt.Printf("VM: %s\n", target.Directory)
@@ -327,12 +322,6 @@ func agentExecExitOK(resp *controlpb.ControlResponse, err error) bool {
 	}
 	result := resp.GetAgentExecResult()
 	return result != nil && result.GetExitCode() == 0
-}
-
-// verifyStopped mounts the disk and inspects files directly.
-// If fix is true, attempts to repair issues found.
-func verifyStopped(verbose, fix bool) error {
-	return verifyStoppedForVM(currentVMSelection(), verbose, fix)
 }
 
 func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {

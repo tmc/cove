@@ -65,11 +65,6 @@ func createSparseDiskImageBytes(path string, sizeBytes int64) error {
 	return f.Truncate(sizeBytes)
 }
 
-func createRawDiskImage(path string, sizeGB uint64) error {
-	sizeBytes := int64(sizeGB) * 1024 * 1024 * 1024
-	return createRawDiskImageBytes(path, sizeBytes)
-}
-
 func createRawDiskImageBytes(path string, sizeBytes int64) error {
 	if err := checkDiskSpace(filepath.Dir(path), sizeBytes); err != nil {
 		return err
