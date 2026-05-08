@@ -17,12 +17,8 @@ const DefaultStoragePollInterval = time.Hour
 
 // StoragePollScheduler runs the storage census on a ticker and emits
 // metrics events when the report crosses the budget warn or hard
-// tripwire.
-//
-// It does not mutate state. Phase 3 (prune coordinator) is responsible
-// for actual eviction; until that lands the StateHard branch logs a
-// "would-prune" hint and emits storage_prune_run with dry_run=true so
-// operators can wire alerting on it without waiting for Phase 3.
+// tripwire. When the hard tripwire fires the scheduler also drives
+// the storagecensus prune coordinator across its configured Pruners.
 type StoragePollScheduler struct {
 	// Root is the cove root, typically ~/.vz.
 	Root string
@@ -31,6 +27,15 @@ type StoragePollScheduler struct {
 	// dependency to avoid pulling main's filesystem-layout helpers
 	// into internal/coved.
 	Categories []storagecensus.Descriptor
+	// Pruners is the list of category-specific pruners the coordinator
+	// consults when the hard tripwire fires. When empty the coordinator
+	// still runs and emits a no-op storage_prune_run event so alerting
+	// hooks see the daemon attempted eviction.
+	Pruners []storagecensus.Pruner
+	// Apply, when true, lets the coordinator actually delete candidates.
+	// Default false keeps the daemon path dry-run only; cmd/coved opts
+	// in via the COVE_DAEMON_STORAGE_PRUNE_APPLY env var.
+	Apply bool
 	// Interval is the poll cadence. Zero falls back to DefaultStoragePollInterval.
 	Interval time.Duration
 	// Logger is optional; nil disables logging.
@@ -123,10 +128,7 @@ func (s *StoragePollScheduler) RunOnce(ctx context.Context) (storagecensus.Repor
 		s.emit(ctx, "storage_budget_warn", rep)
 	case storagecensus.StateHard:
 		s.emit(ctx, "storage_budget_hard", rep)
-		// TODO(040 Phase 3): once the prune coordinator lands, call it
-		// here when budget+pins are configured. Until then we emit a
-		// "would-prune" event so alerting hooks can wire up early.
-		s.emitPruneWouldRun(ctx, rep)
+		s.runPrune(ctx, rep)
 	}
 	return rep, nil
 }
@@ -166,21 +168,43 @@ func (s *StoragePollScheduler) emit(ctx context.Context, eventType string, rep s
 	})
 }
 
-func (s *StoragePollScheduler) emitPruneWouldRun(ctx context.Context, rep storagecensus.Report) {
+// runPrune drives the storagecensus prune coordinator. It is called
+// only when the hard tripwire fires and rep.Budget is set. The
+// coordinator handles empty Pruners gracefully (no-op plan); a partial
+// per-pruner failure still yields a usable report and an emitted
+// event.
+func (s *StoragePollScheduler) runPrune(ctx context.Context, rep storagecensus.Report) {
+	if rep.Budget == nil {
+		return
+	}
+	pruneRep, err := storagecensus.CoordinatePrune(ctx, s.Pruners, rep.UsedBytes, rep.Budget.TargetBytes, s.Apply)
+	if err != nil && s.Logger != nil {
+		s.Logger.Warn("storage prune coordinator partial failure", slog.Any("err", err))
+	}
 	if s.Logger != nil {
-		s.Logger.Warn("storage budget hard threshold; prune coordinator not yet wired",
-			slog.Int64("used_bytes", rep.UsedBytes),
+		s.Logger.Info("storage prune coordinator",
+			slog.Bool("apply", s.Apply),
+			slog.Int64("used_bytes_before", pruneRep.UsedBefore),
+			slog.Int64("used_bytes_after", pruneRep.UsedAfter),
+			slog.Int64("bytes_freed", pruneRep.BytesRemoved),
+			slog.Int("removed_count", len(pruneRep.Removed)),
+			slog.Int("skipped_count", len(pruneRep.Skipped)),
 		)
 	}
 	if s.Bus == nil {
 		return
 	}
 	extra := map[string]any{
-		"category":    "all",
-		"bytes_freed": int64(0),
-		"dry_run":     true,
-		"used_bytes":  rep.UsedBytes,
-		"reason":      "phase-3-not-shipped",
+		"category":          "all",
+		"bytes_freed":       pruneRep.BytesRemoved,
+		"dry_run":           !s.Apply,
+		"used_bytes_before": pruneRep.UsedBefore,
+		"used_bytes_after":  pruneRep.UsedAfter,
+		"removed_count":     int64(len(pruneRep.Removed)),
+		"skipped_count":     int64(len(pruneRep.Skipped)),
+	}
+	if len(s.Pruners) == 0 {
+		extra["reason"] = "no-pruners-configured"
 	}
 	s.Bus.Publish(ctx, runmetrics.Event{
 		Timestamp: s.now().UTC().Format(time.RFC3339Nano),

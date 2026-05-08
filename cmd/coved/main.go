@@ -99,6 +99,7 @@ func main() {
 		storage := coved.NewStoragePollScheduler(coveRoot, storagecensus.DefaultDescriptors(coveRoot), logger)
 		storage.Interval = *storagePollInterval
 		storage.Bus = d.events
+		storage.Apply = os.Getenv("COVE_DAEMON_STORAGE_PRUNE_APPLY") == "1"
 		d.storage = storage
 		go storage.Run(ctx)
 	}
