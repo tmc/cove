@@ -288,18 +288,20 @@ runbook and the CLI reference as an advanced feature.
 
 ### Slice 4 acceptance
 
-- [ ] `cove run -linux -block /dev/rdiskN:ro` attaches a read-only block device
-      through `VZDiskBlockDeviceStorageDeviceAttachment`.
-- [ ] `cove run -linux -block /dev/rdiskN:rw` attaches read-write only after
-      helper validation proves the device is unmounted.
-- [ ] `:rw` defaults to full synchronization; `:rw:sync=none` requires explicit
-      operator opt-in.
-- [ ] the VM process never runs as root; raw device opening stays in
-      `cove-helper`.
-- [ ] descriptor passing uses `SCM_RIGHTS`; no device path is reopened by the
-      unprivileged VM process after helper validation.
+- [x] `cove run -linux -block /dev/rdiskN:ro` attaches a read-only block device
+      through `VZDiskBlockDeviceStorageDeviceAttachment`. (b522ab3)
+- [x] `cove run -linux -block /dev/rdiskN:rw` attaches read-write only after
+      helper validation proves the device is unmounted. (b522ab3)
+- [x] `:rw` defaults to full synchronization; `:rw:sync=none` requires explicit
+      operator opt-in. (b522ab3)
+- [x] the VM process never runs as root; raw device opening stays in
+      `cove-helper`. (b522ab3, no test)
+- [x] descriptor passing uses `SCM_RIGHTS`; no device path is reopened by the
+      unprivileged VM process after helper validation. (b522ab3, no test)
 - [ ] tests cover block spec parsing, sync mapping, non-`/dev` rejection,
       mounted-device rejection, and stale-helper failure text.
+      (b522ab3 covers parsing/sync/non-`/dev`/mounted; stale-helper failure
+      text has no test)
 - [ ] a guarded Darwin integration test opens an `hdiutil attach -nomount`
       raw device and verifies descriptor passing without requiring a physical
       USB drive.
