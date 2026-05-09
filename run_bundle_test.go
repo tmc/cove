@@ -265,3 +265,39 @@ func TestRunsDir_FromHome(t *testing.T) {
 		t.Errorf("RunsDir() = %q, want %q", got, want)
 	}
 }
+
+func TestAtomicWriteFile_CreateTempFails(t *testing.T) {
+	// Parent dir does not exist -> os.CreateTemp fails.
+	missing := filepath.Join(t.TempDir(), "nope", "out.txt")
+	tmp, err := atomicWriteFile(missing, []byte("x"), 0o644)
+	if err == nil {
+		t.Fatalf("expected error for missing parent dir")
+	}
+	if tmp != "" {
+		t.Errorf("tmp = %q, want empty on create-temp failure", tmp)
+	}
+	if !strings.Contains(err.Error(), "create temp") {
+		t.Errorf("err = %v, want create temp wrap", err)
+	}
+}
+
+func TestAtomicWriteFile_RenameFails(t *testing.T) {
+	// Final path is an existing directory -> rename(file, dir) fails.
+	dir := t.TempDir()
+	target := filepath.Join(dir, "busy")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatalf("mkdir target: %v", err)
+	}
+	tmp, err := atomicWriteFile(target, []byte("payload"), 0o644)
+	if err == nil {
+		t.Fatalf("expected rename failure")
+	}
+	if tmp == "" {
+		t.Errorf("tmp empty on rename failure; want temp path so caller can clean up")
+	} else if _, statErr := os.Stat(tmp); statErr != nil {
+		t.Errorf("temp path %q missing: %v", tmp, statErr)
+	}
+	if !strings.Contains(err.Error(), "rename") {
+		t.Errorf("err = %v, want rename wrap", err)
+	}
+}
