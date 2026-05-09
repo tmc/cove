@@ -188,6 +188,34 @@ In a GitHub Actions workflow under `cove-action`:
 - `go build ./...` green.
 - `go test ./...` green, including the new `sckit` package tests.
 
+## Addendum: R76-R84 polish landmarks
+
+Work between the v0.6 scaffold and tag-cut, not covered by design 041
+or the Cirrus secrets work above.
+
+### CLI `-h` robustness
+
+`cove <anything> -h` now reliably exits 0 with usage text on every
+subcommand and sub-subcommand path. 53 bugs fixed across two waves;
+regression tests guard each path.
+
+| Wave | Surface | Commits |
+|---|---|---|
+| R81 | Top-level subcommands: dispatcher-style, flag-parsed, version banner, network/inject-agent/verify | [`0efd206`](https://github.com/tmc/cove/commit/0efd206), [`a553b82`](https://github.com/tmc/cove/commit/a553b82), [`daccc20`](https://github.com/tmc/cove/commit/daccc20), [`f9d01fa`](https://github.com/tmc/cove/commit/f9d01fa), [`1b365b3`](https://github.com/tmc/cove/commit/1b365b3), [`e98f1ad`](https://github.com/tmc/cove/commit/e98f1ad) |
+| R83-R84 | Sub-subcommands: image, sip, softreset, daemon/fleet/storage/pins; regression tests | [`6faf329`](https://github.com/tmc/cove/commit/6faf329), [`51192e6`](https://github.com/tmc/cove/commit/51192e6), [`04b2776`](https://github.com/tmc/cove/commit/04b2776), [`4f153f2`](https://github.com/tmc/cove/commit/4f153f2), [`2de0517`](https://github.com/tmc/cove/commit/2de0517) |
+
+### Doctor + image gc + observability
+
+| Item | Commit |
+|---|---|
+| `cove doctor` golden-path E2E test | [`327e4ba`](https://github.com/tmc/cove/commit/327e4ba) |
+| Doctor E2E extended to version/image/vm/pin/runs | [`caada88`](https://github.com/tmc/cove/commit/caada88) |
+| `cove-action` `cache-mode` input | [`ece1169`](https://github.com/tmc/cove/commit/ece1169) |
+| `cove-action` `cache-scope` input | [`63b71d1`](https://github.com/tmc/cove/commit/63b71d1) |
+| `internal/runs` list/show benchmarks | [`060cacc`](https://github.com/tmc/cove/commit/060cacc) |
+| Image gc race audit (R1-R5/R7 closed; R6 cache TTL deferred) | [`a1ccf54`](https://github.com/tmc/cove/commit/a1ccf54) |
+| Storage census int64 overflow at PiB-scale budgets | [`c7865e1`](https://github.com/tmc/cove/commit/c7865e1) |
+
 ## Tagging
 
 This file is a scaffold drafted before any v0.6 slice ships. The git
