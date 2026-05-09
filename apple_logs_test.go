@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -25,5 +28,43 @@ func TestDefaultAppleLogPredicateShape(t *testing.T) {
 		if !strings.Contains(defaultAppleLogPredicate, want) {
 			t.Fatalf("defaultAppleLogPredicate missing %q: %s", want, defaultAppleLogPredicate)
 		}
+	}
+}
+
+func TestPrefixLines(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		prefix string
+		want   string
+	}{
+		{"empty", "", "[tag]", ""},
+		{"single", "hello\n", "[tag]", "[tag] hello\n"},
+		{"multi", "a\nb\nc\n", "[x]", "[x] a\n[x] b\n[x] c\n"},
+		{"skips blank and trims", "one\n\n  two  \n\t\n", "[p]", "[p] one\n[p] two\n"},
+		{"no trailing newline", "only", "[p]", "[p] only\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatalf("pipe: %v", err)
+			}
+			oldStdout := os.Stdout
+			os.Stdout = w
+			done := make(chan []byte, 1)
+			go func() {
+				var buf bytes.Buffer
+				_, _ = io.Copy(&buf, r)
+				done <- buf.Bytes()
+			}()
+			prefixLines(strings.NewReader(tt.input), tt.prefix)
+			_ = w.Close()
+			os.Stdout = oldStdout
+			got := string(<-done)
+			if got != tt.want {
+				t.Fatalf("prefixLines: got %q want %q", got, tt.want)
+			}
+		})
 	}
 }
