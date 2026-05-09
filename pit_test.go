@@ -160,3 +160,65 @@ func TestHandlePITJSONRequestNoVM(t *testing.T) {
 		t.Fatalf("expected error, got %#v", resp)
 	}
 }
+
+func TestPITSnapshotManagerDelete(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewPITSnapshotManager(dir)
+
+	// not found
+	if err := manager.Delete("missing"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("Delete(missing) error = %v, want not found", err)
+	}
+
+	// invalid name
+	if err := manager.Delete("../escape"); err == nil {
+		t.Fatal("Delete(invalid) error = nil, want validation error")
+	}
+
+	// success: pre-create the snapshot directory
+	snapDir := manager.snapshotDir("alpha")
+	if err := os.MkdirAll(snapDir, 0755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := manager.Delete("alpha"); err != nil {
+		t.Fatalf("Delete(alpha) error = %v", err)
+	}
+	if _, err := os.Stat(snapDir); !os.IsNotExist(err) {
+		t.Fatalf("snapshot dir still present after Delete: err = %v", err)
+	}
+}
+
+func TestHandlePITSaveEarlyReturns(t *testing.T) {
+	s := NewControlServerWithVMDir("", t.TempDir())
+
+	if resp := s.handlePITSave(""); resp == nil || !strings.Contains(resp.Error, "name required") {
+		t.Fatalf("empty name resp = %#v", resp)
+	}
+	if resp := s.handlePITSave("checkpoint"); resp == nil || !strings.Contains(resp.Error, "VM not configured") {
+		t.Fatalf("no-VM resp = %#v", resp)
+	}
+}
+
+func TestHandlePITSwapEmptyName(t *testing.T) {
+	s := NewControlServerWithVMDir("", t.TempDir())
+	resp := s.handlePITSwap("", false)
+	if resp == nil || !strings.Contains(resp.Error, "name required") {
+		t.Fatalf("empty name resp = %#v", resp)
+	}
+}
+
+func TestHandlePITCommandDispatch(t *testing.T) {
+	// empty args -> usage, no error
+	if err := handlePITCommand(nil); err != nil {
+		t.Fatalf("handlePITCommand(nil) error = %v", err)
+	}
+	// help -> no error
+	if err := handlePITCommand([]string{"help"}); err != nil {
+		t.Fatalf("handlePITCommand(help) error = %v", err)
+	}
+	// unknown command -> error
+	err := handlePITCommand([]string{"bogus"})
+	if err == nil || !strings.Contains(err.Error(), "unknown pit command") {
+		t.Fatalf("handlePITCommand(bogus) error = %v, want unknown", err)
+	}
+}
