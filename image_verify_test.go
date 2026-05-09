@@ -257,6 +257,96 @@ func TestRunImageForkFromWithConfigWarnsAndProceeds(t *testing.T) {
 	}
 }
 
+func TestVerifyImageManifestGaps(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(t *testing.T, ref ImageRef)
+		want    imageVerifyStatus
+		detail  string
+	}{
+		{
+			name: "missing manifest",
+			mutate: func(t *testing.T, ref ImageRef) {
+				if err := os.Remove(filepath.Join(ref.Path(), "manifest.json")); err != nil {
+					t.Fatalf("remove manifest: %v", err)
+				}
+			},
+			want:   imageVerifyFail,
+			detail: "manifest",
+		},
+		{
+			name: "malformed manifest json",
+			mutate: func(t *testing.T, ref ImageRef) {
+				path := filepath.Join(ref.Path(), "manifest.json")
+				if err := os.WriteFile(path, []byte("{not-json"), 0o644); err != nil {
+					t.Fatalf("write manifest: %v", err)
+				}
+			},
+			want:   imageVerifyFail,
+			detail: "manifest",
+		},
+		{
+			name: "missing disk image",
+			mutate: func(t *testing.T, ref ImageRef) {
+				if err := os.Remove(filepath.Join(ref.Path(), "disk.img")); err != nil {
+					t.Fatalf("remove disk: %v", err)
+				}
+			},
+			want:   imageVerifyFail,
+			detail: "layout",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			stageMacOSVMForImage(t, "src")
+			ref, err := ParseImageRef("gap:v1")
+			if err != nil {
+				t.Fatalf("ParseImageRef: %v", err)
+			}
+			if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+				t.Fatalf("BuildImage: %v", err)
+			}
+			tc.mutate(t, ref)
+			report := VerifyImage(ref, imageVerifyOptions{})
+			if report.Verdict != tc.want {
+				t.Fatalf("Verdict = %s, want %s (%#v)", report.Verdict, tc.want, report.Checks)
+			}
+			if got := imageVerifyCheckStatus(report, tc.detail); got != imageVerifyFail {
+				t.Fatalf("%s check = %s, want FAIL (%#v)", tc.detail, got, report.Checks)
+			}
+		})
+	}
+}
+
+func TestVerifyImageFreshnessFutureTimestamp(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, err := ParseImageRef("future:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	manifest, err := LoadImageManifest(ref)
+	if err != nil {
+		t.Fatalf("LoadImageManifest: %v", err)
+	}
+	manifest.BuiltAt = mustParseTime(t, "2030-01-01T00:00:00Z")
+	manifest.CreatedAt = manifest.BuiltAt
+	if err := writeImageManifest(ref.Path(), manifest); err != nil {
+		t.Fatalf("writeImageManifest: %v", err)
+	}
+	report := VerifyImage(ref, imageVerifyOptions{
+		NewerThan: 24 * time.Hour,
+		Now:       mustParseTime(t, "2026-05-09T00:00:00Z"),
+	})
+	if got := imageVerifyCheckStatus(report, "freshness"); got != imageVerifyWarn {
+		t.Fatalf("freshness = %s, want WARN (%#v)", got, report.Checks)
+	}
+}
+
 func mustParseTime(t *testing.T, value string) (tm time.Time) {
 	t.Helper()
 	tm, err := time.Parse(time.RFC3339, value)
