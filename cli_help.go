@@ -128,6 +128,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 		return true, 0
 	case "version":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove version")
+			fmt.Fprintln(os.Stdout, "\nPrint cove version information (semver, commit, build time).")
+			return true, 0
+		}
 		fmt.Println(versionInfo())
 		return true, 0
 	case "network":

@@ -81,6 +81,7 @@ var helpSubcommands = []string{
 	"unpin",
 	"up",
 	"verify",
+	"version",
 	"vm",
 	"vzscript",
 }
@@ -88,16 +89,7 @@ var helpSubcommands = []string{
 // skippedHelpSubcommands records subcommands intentionally not covered
 // by TestCoveSubcommandHelp, with a short reason. Each entry is a real
 // gap; flipping one of these green means the help surface improved.
-var skippedHelpSubcommands = map[string]string{
-	// version is intentionally not a help target. `cove version` prints
-	// the build banner (semver, commit, build time) and `cove version -h`
-	// does the same — `-h` is consumed as a positional arg by the
-	// version handler rather than routed to a Usage surface. This is
-	// load-bearing: scripts grep `cove version` output for the semver,
-	// so adding a Usage block here would be a breaking change. Users
-	// discover the command via `cove -h` / `cove help`.
-	"version": "prints version banner by design; no Usage surface",
-}
+var skippedHelpSubcommands = map[string]string{}
 
 // TestCoveSubcommandHelp asserts that `cove <cmd> -h` returns a
 // well-formed help surface for every entry in helpSubcommands. It
