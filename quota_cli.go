@@ -35,6 +35,9 @@ func handleQuotaCommand(args []string) error {
 
 func runQuota(ctx context.Context, args []string, manager quotaManager, out io.Writer) error {
 	cmd, err := parseQuotaArgs(args)
+	if errors.Is(err, errFlagHelp) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -60,7 +63,10 @@ func runQuota(ctx context.Context, args []string, manager quotaManager, out io.W
 func parseQuotaArgs(args []string) (quotaCommand, error) {
 	fs := flag.NewFlagSet("quota", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	if err := fs.Parse(args); err != nil {
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: cove quota <vm> cpu <n> | memory <gb> | disk <gb> | show")
+	}
+	if err := parseFlagsOrHelp(fs, args); err != nil {
 		return quotaCommand{}, err
 	}
 	if fs.NArg() < 2 {

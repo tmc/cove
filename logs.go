@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -18,7 +19,11 @@ func parseLogsArgs(args []string) (logsOptions, error) {
 	fs.SetOutput(os.Stderr)
 	follow := fs.Bool("f", false, "follow logs")
 	fs.BoolVar(follow, "follow", false, "follow logs")
-	if err := fs.Parse(moveLogsFlagsFirst(args)); err != nil {
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: cove logs <vm> [-f]")
+		fs.PrintDefaults()
+	}
+	if err := parseFlagsOrHelp(fs, moveLogsFlagsFirst(args)); err != nil {
 		return logsOptions{}, err
 	}
 	if fs.NArg() != 1 {
@@ -42,6 +47,9 @@ func moveLogsFlagsFirst(args []string) []string {
 
 func logsCommand(args []string) error {
 	opts, err := parseLogsArgs(args)
+	if errors.Is(err, errFlagHelp) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

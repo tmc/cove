@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -31,7 +32,14 @@ func diffCommand(args []string) error {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
-	if err := fs.Parse(args); err != nil {
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: cove diff <ref-a> <ref-b> [-json]")
+		fs.PrintDefaults()
+	}
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 2 {

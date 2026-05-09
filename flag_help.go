@@ -1,0 +1,39 @@
+// flag_help.go - shared handling of `-h` for flag-parsed subcommands.
+//
+// Go's flag package returns flag.ErrHelp from Parse when -h or -help is
+// requested. Callers that propagate that error through commandError exit
+// nonzero, which is wrong for the golden help path. parseFlagsOrHelp
+// converts ErrHelp into a successful no-op (after printing usage to
+// stdout) so commandError returns 0.
+package main
+
+import (
+	"errors"
+	"flag"
+	"os"
+)
+
+// parseFlagsOrHelp parses args, treating -h/-help as a successful exit.
+// On flag.ErrHelp it invokes fs.Usage() against stdout and returns the
+// sentinel errFlagHelp, which handlers must check and translate to a
+// nil return so commandError yields exit 0.
+func parseFlagsOrHelp(fs *flag.FlagSet, args []string) error {
+	err := fs.Parse(args)
+	if errors.Is(err, flag.ErrHelp) {
+		prev := fs.Output()
+		fs.SetOutput(os.Stdout)
+		if fs.Usage != nil {
+			fs.Usage()
+		} else {
+			fs.PrintDefaults()
+		}
+		fs.SetOutput(prev)
+		return errFlagHelp
+	}
+	return err
+}
+
+// errFlagHelp is the sentinel returned by parseFlagsOrHelp when the
+// user asked for help. Handlers should `if errors.Is(err, errFlagHelp)
+// { return nil }` so commandError exits 0.
+var errFlagHelp = errors.New("flag help requested")

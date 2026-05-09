@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,7 +17,13 @@ import (
 func handlePinCommand(args []string) error {
 	fs := flag.NewFlagSet("pin", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: cove pin <object>\n  object is one of vm:<name>, image:<ref>, run:<id>, cache:<sha>")
+	}
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 1 {
@@ -45,7 +52,13 @@ func handlePinCommand(args []string) error {
 func handleUnpinCommand(args []string) error {
 	fs := flag.NewFlagSet("unpin", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: cove unpin <object>\n  object is one of vm:<name>, image:<ref>, run:<id>, cache:<sha>")
+	}
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 1 {

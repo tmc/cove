@@ -51,7 +51,10 @@ func handleBuild(args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := fs.Parse(flagArgs); err != nil {
+	if err := parseFlagsOrHelp(fs, flagArgs); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if len(posArgs) != 1 {
