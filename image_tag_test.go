@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,40 @@ func TestTagImageRejectsMissingSource(t *testing.T) {
 func TestRunImageTagUsage(t *testing.T) {
 	if err := runImageTag(nil); err == nil {
 		t.Fatalf("runImageTag with no args succeeded")
+	}
+}
+
+func TestTagImageRejectsEmptyRefs(t *testing.T) {
+	good, _ := ParseImageRef("base:tag")
+	tests := []struct {
+		name string
+		opts ImageTagOptions
+		want string
+	}{
+		{"empty source", ImageTagOptions{Source: ImageRef{}, Target: good}, "source ref required"},
+		{"source missing tag", ImageTagOptions{Source: ImageRef{Name: "base"}, Target: good}, "source ref required"},
+		{"empty target", ImageTagOptions{Source: good, Target: ImageRef{}}, "target ref required"},
+		{"target missing tag", ImageTagOptions{Source: good, Target: ImageRef{Name: "base"}}, "target ref required"},
+		{"same ref", ImageTagOptions{Source: good, Target: good}, "source and target are the same"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := TagImage(tt.opts)
+			if err == nil {
+				t.Fatalf("TagImage(%+v) = nil, want error containing %q", tt.opts, tt.want)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("TagImage(%+v) error = %v, want substring %q", tt.opts, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunImageTagBadRef(t *testing.T) {
+	if err := runImageTag([]string{"::bad", "base:new"}); err == nil {
+		t.Fatalf("runImageTag with malformed src ref succeeded")
+	}
+	if err := runImageTag([]string{"base:old", "::bad"}); err == nil {
+		t.Fatalf("runImageTag with malformed dst ref succeeded")
 	}
 }
