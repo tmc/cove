@@ -178,6 +178,44 @@ func TestMasterTokenKeychain(t *testing.T) {
 	}
 }
 
+func TestWriteTokenFileCreatesNestedDir(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nested", "sub", "tok")
+
+	if err := writeTokenFile(path, "deadbeef"); err != nil {
+		t.Fatalf("writeTokenFile: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got := string(data); got != "deadbeef\n" {
+		t.Errorf("contents = %q, want %q", got, "deadbeef\n")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf("token file perms = %04o, want 0600", perm)
+	}
+}
+
+func TestLoadOrCreateFileTokenStatErrorIsReturned(t *testing.T) {
+	dir := t.TempDir()
+	// A path under a non-directory parent triggers a non-IsNotExist stat error.
+	parent := filepath.Join(dir, "notadir")
+	if err := os.WriteFile(parent, []byte("x"), 0600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	path := filepath.Join(parent, "tok")
+
+	_, err := loadOrCreateFileToken(path)
+	if err == nil {
+		t.Fatal("loadOrCreateFileToken: expected error for path under non-directory parent")
+	}
+}
+
 // assertTokenFormat checks that tok is exactly 64 lowercase hex chars.
 func assertTokenFormat(t *testing.T, tok string) {
 	t.Helper()
