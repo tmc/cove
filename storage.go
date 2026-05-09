@@ -55,7 +55,7 @@ func runStoragePruneCoordinated(args []string, out io.Writer) error {
 	fs.SetOutput(os.Stderr)
 	apply := fs.Bool("apply", false, "actually delete; default is dry-run")
 	olderThan := fs.Duration("older-than", 7*24*time.Hour, "build-scratch entries below this age are kept regardless of budget pressure")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -146,6 +146,9 @@ func runStorageBudget(args []string, out io.Writer) error {
 		return fmt.Errorf("usage: cove storage budget <get|set|clear> [args]")
 	}
 	switch args[0] {
+	case "-h", "--help", "help":
+		fmt.Fprintln(out, "Usage: cove storage budget <get|set|clear> [args]")
+		return nil
 	case "get":
 		return runStorageBudgetGet(args[1:], out)
 	case "set":
@@ -283,7 +286,7 @@ func runStorageCensus(args []string, out io.Writer) error {
 	fs.SetOutput(os.Stderr)
 	human := fs.Bool("human", false, "render a fixed-width table instead of JSON")
 	topN := fs.Int("top", 10, "number of newest items to surface per category (0 = all)")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {

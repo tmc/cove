@@ -43,14 +43,30 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 	case "add":
 		return fleetAdd(args[1:], path)
 	case "ls", "list":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(out, "Usage: cove fleet ls")
+			return nil
+		}
 		return fleetList(path, out)
 	case "rm", "remove":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(out, "Usage: cove fleet rm <name>")
+			return nil
+		}
 		return fleetRemove(args[1:], path)
 	case "vm", "image":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintf(out, "Usage: cove fleet %s ls [--json]\n", args[0])
+			return nil
+		}
 		return runFleetAggregateCommand(ctx, args, path, runner, out, errOut)
 	case "ps":
 		return runFleetPSCommand(ctx, args[1:], path, runner, out, errOut)
 	case "run":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(out, "Usage: cove fleet run --policy=least-loaded [run flags]")
+			return nil
+		}
 		return runFleetRunCommand(ctx, args[1:], path, runner, out, errOut)
 	case "metrics":
 		return runFleetMetricsCommand(ctx, args[1:], path, runner, out, errOut)
@@ -61,9 +77,9 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 
 func fleetAdd(args []string, path string) error {
 	fs := flag.NewFlagSet("fleet add", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(os.Stderr)
 	defaultVM := fs.String("vm", "", "default VM for this remote")
-	if err := fs.Parse(moveFleetAddFlagsFirst(args)); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, moveFleetAddFlagsFirst(args)); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 2 {

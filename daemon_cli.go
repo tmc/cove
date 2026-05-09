@@ -57,6 +57,10 @@ func daemonCommand(args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove daemon status")
+			return nil
+		}
 		status, err := queryDaemonStatus(defaultDaemonPaths().SocketPath)
 		if err != nil {
 			return err
@@ -85,7 +89,7 @@ func daemonUICommand(args []string) error {
 	fs.SetOutput(os.Stderr)
 	addr := fs.String("addr", "127.0.0.1:9877", "web UI address")
 	openCmd := fs.String("open", "open", "open command")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -105,7 +109,7 @@ func daemonMetricsCommand(args []string) error {
 	fs.SetOutput(os.Stderr)
 	raw := fs.Bool("json", false, "print raw prometheus exposition")
 	addr := fs.String("addr", "127.0.0.1:9876", "metrics address")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -157,7 +161,7 @@ func daemonStartCommand(args []string) error {
 	fs := flag.NewFlagSet("daemon start", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	covedPath := fs.String("coved", "", "path to coved binary")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -179,6 +183,10 @@ func daemonStartCommand(args []string) error {
 }
 
 func daemonStopCommand(args []string) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		fmt.Fprintln(os.Stdout, "Usage: cove daemon stop")
+		return nil
+	}
 	if len(args) != 0 {
 		return fmt.Errorf("usage: cove daemon stop")
 	}

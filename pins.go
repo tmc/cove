@@ -109,7 +109,7 @@ func runPinsList(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("pins list", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "render JSON instead of a fixed-width table")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {

@@ -53,6 +53,23 @@ var subSubHelp = []subSubHelpCase{
 	{"image", "push"},
 	{"image", "pull"},
 	{"image", "load"},
+	{"daemon", "status"},
+	{"daemon", "start"},
+	{"daemon", "stop"},
+	{"daemon", "metrics"},
+	{"daemon", "ui"},
+	{"fleet", "add"},
+	{"fleet", "ls"},
+	{"fleet", "rm"},
+	{"fleet", "vm"},
+	{"fleet", "image"},
+	{"fleet", "ps"},
+	{"fleet", "run"},
+	{"fleet", "metrics"},
+	{"pins", "list"},
+	{"storage", "census"},
+	{"storage", "budget"},
+	{"storage", "prune"},
 }
 
 // skippedSubSubHelp records (parent, action) pairs intentionally not
@@ -60,25 +77,7 @@ var subSubHelp = []subSubHelpCase{
 // follow-up: most sub-subcommands route -h into their own flag parser
 // or positional-arg parser and exit 1 instead of printing a Usage
 // surface, mirroring the top-level bugs R82 fixed.
-var skippedSubSubHelp = map[subSubHelpCase]string{
-	{"daemon", "status"}:        "daemon status -h: exit 1, no Usage (R84)",
-	{"daemon", "start"}:         "daemon start -h: exit 1 from flag parser (R84)",
-	{"daemon", "stop"}:          "daemon stop -h: exit 1 from flag parser (R84)",
-	{"daemon", "metrics"}:       "daemon metrics -h: exit 1 from flag parser (R84)",
-	{"daemon", "ui"}:            "daemon ui -h: exit 1 from flag parser (R84)",
-	{"fleet", "add"}:            "fleet add -h: exit 1, no Usage, no action name (R84)",
-	{"fleet", "ls"}:             "fleet ls -h: exit 0 but no Usage and no action name (R84)",
-	{"fleet", "rm"}:             "fleet rm -h: exit 1, no Usage (R84)",
-	{"fleet", "vm"}:             "fleet vm -h: exit 1, no Usage (R84)",
-	{"fleet", "image"}:          "fleet image -h: exit 1, no Usage (R84)",
-	{"fleet", "ps"}:             "fleet ps -h: exit 1, no Usage, no action name (R84)",
-	{"fleet", "run"}:            "fleet run -h: exit 1 from flag parser (R84)",
-	{"fleet", "metrics"}:        "fleet metrics -h: exit 1 from flag parser (R84)",
-	{"pins", "list"}:            "pins list -h: exit 1 from flag parser (R84)",
-	{"storage", "census"}:       "storage census -h: exit 1 from flag parser (R84)",
-	{"storage", "budget"}:       "storage budget -h: exit 1, no Usage (R84)",
-	{"storage", "prune"}:        "storage prune -h: exit 1 from flag parser (R84)",
-}
+var skippedSubSubHelp = map[subSubHelpCase]string{}
 
 // TestCoveSubSubcommandHelp asserts that `cove <parent> <action> -h`
 // returns a well-formed help surface for every entry in subSubHelp.
