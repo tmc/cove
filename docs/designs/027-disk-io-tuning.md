@@ -1,6 +1,6 @@
 # Design 027: Disk I/O Performance Tuning
 
-Status: Implemented (2026-05-04; Slices 1-4 shipped). Last verified R71 (2026-05-08).
+Status: Implemented (2026-05-04; Slices 1-4 shipped). Last verified R89 (2026-05-09).
 
 - Slice 1 (DiskCachePolicy + `-disk-sync` + callsite migration): `fc7ff1e`.
 - Slice 2 (Linux NVMe wiring + `-nvme`): `8500ecb`, `968cbde`; benchmark deferred at `1b7c947` / `f71851b`.
