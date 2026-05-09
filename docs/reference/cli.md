@@ -421,7 +421,7 @@ cove vzscript <command> [args...]
 
 | Command | Description |
 |---------|-------------|
-| `list` | List built-in recipes |
+| `list [-os darwin\|linux] [-vm <name>]` | List built-in recipes; `-os` filters, `-vm` defaults `-os` from the VM platform |
 | `show <recipe>` | Print recipe contents |
 | `run [flags] <recipe...>` | Run one or more recipes |
 
@@ -493,6 +493,9 @@ cove clone <source> <destination> [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-linked` | false | Create linked clone (APFS copy-on-write) |
+| `-with-agent` | false | Provision vz-agent into the new clone |
+
+If `<source>` is omitted, the active VM is cloned into `<destination>`.
 
 ---
 
@@ -609,6 +612,27 @@ cove action prepare-image macos-runner:14.5 --ttl 24h
 cove action prepare-image ubuntu-runner --json
 ```
 
+### cove-action (GitHub Actions runner)
+
+The `cmd/cove-action` binary is invoked from `action.yml` to fork a fresh VM
+from a local image, run a guest command/script, and capture metrics. Inputs
+are read from environment variables (`COVE_ACTION_*`) or the matching flags.
+
+| Flag | Env | Default | Description |
+|------|-----|---------|-------------|
+| `-image` | `COVE_ACTION_IMAGE` | | Local image ref to fork from (required) |
+| `-command` / `-args` | `COVE_ACTION_ARGS` | | Guest shell command |
+| `-script` | `COVE_ACTION_SCRIPT` | | Guest shell script body |
+| `-cache-key` | `COVE_ACTION_CACHE_KEY` | | Whole-VM cache key |
+| `-cache-paths` | `COVE_ACTION_CACHE_PATHS` | | Newline-separated guest paths preserved by the cache |
+| `-cache-mode` | `COVE_ACTION_CACHE_MODE` | `restore-save` | Cache behavior: `restore-save`, `restore-only`, `save-only`, `off` |
+| `-cache-scope` | `COVE_ACTION_CACHE_SCOPE` | | Namespace prefix joined to `-cache-key` as `<scope>:<key>` |
+| `-env` | `COVE_ACTION_ENV` | | Newline-separated `KEY=VALUE` guest env |
+| `-secrets` | `COVE_ACTION_SECRETS` | | Newline-separated `KEY=value\|env://VAR\|file:///path` secrets |
+| `-vm-name` | `COVE_ACTION_VM_NAME` | derived | Ephemeral VM fork name |
+| `-keep` | `COVE_ACTION_KEEP` | false | Leave the ephemeral fork in place |
+| `-timeout` | `COVE_ACTION_TIMEOUT` | `30m` | Overall timeout |
+
 ---
 
 ## runs
@@ -662,6 +686,7 @@ cove fleet image push <ref> <dst-host>
 cove fleet image pull <ref> <src-host>
 cove fleet image sync <ref> <src-host> <dst-host>
 cove fleet run --policy=least-loaded [run flags...]
+cove fleet metrics [--json]
 ```
 
 | Subcommand | Description |
@@ -677,6 +702,7 @@ cove fleet run --policy=least-loaded [run flags...]
 | `image pull <ref> <src-host>` | Pull an image ref from another fleet host. |
 | `image sync <ref> <src-host> <dst-host>` | Copy an image ref between two fleet hosts. |
 | `run --policy=least-loaded` | Place a run on the least-loaded registered host. |
+| `metrics [--json]` | Aggregate fleet-wide metrics across registered hosts. |
 
 ```bash
 cove fleet add mini-1 mini-1.local
@@ -697,6 +723,8 @@ coved
 cove daemon start [-coved <path>]
 cove daemon stop
 cove daemon status [--json]
+cove daemon metrics [-addr <host:port>] [-json]
+cove daemon ui [-addr <host:port>] [-open <cmd>]
 ```
 
 | Command | Description |
@@ -705,6 +733,8 @@ cove daemon status [--json]
 | `cove daemon start [-coved <path>]` | Start `coved`, optionally from an explicit binary path. |
 | `cove daemon stop` | Stop the user-session daemon. |
 | `cove daemon status [--json]` | Show daemon reachability, lifecycle enforcement, and image-GC counters. |
+| `cove daemon metrics [-addr] [-json]` | Scrape Prometheus metrics from the daemon (default `127.0.0.1:9876`); `-json` prints raw exposition. |
+| `cove daemon ui [-addr] [-open <cmd>]` | Open the local daemon web UI (default `127.0.0.1:9877`). |
 
 ```bash
 coved
