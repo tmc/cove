@@ -1,6 +1,7 @@
 package password
 
 import (
+	"bytes"
 	"encoding/hex"
 	"testing"
 )
@@ -110,6 +111,67 @@ func TestEncodeKCKnownValue(t *testing.T) {
 		if encoded[i] != exp {
 			t.Errorf("EncodeKC('test')[%d] = %02x, want %02x", i, encoded[i], exp)
 		}
+	}
+}
+
+func TestEncodeKCPaddingBoundaries(t *testing.T) {
+	// EncodeKC null-terminates the password then pads up to a multiple of the
+	// 11-byte key. When the null-terminated form is already a multiple of 11,
+	// no padding is added (the `padLen < keyLen` branch).
+	tests := []struct {
+		name     string
+		password string
+		wantLen  int
+	}{
+		{"empty", "", 11},                         // null only -> 1 byte -> pad to 11
+		{"len10_aligned_after_null", "abcdefghij", 11}, // 10+null=11, no padding
+		{"len11_one_over", "abcdefghijk", 22},     // 11+null=12, pad +10 -> 22
+		{"len21", "abcdefghijklmnopqrstu", 22},    // 21+null=22, no padding
+		{"len22_one_over", "abcdefghijklmnopqrstuv", 33},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			encoded := EncodeKC(tt.password)
+			if len(encoded) != tt.wantLen {
+				t.Errorf("len = %d, want %d", len(encoded), tt.wantLen)
+			}
+			if len(encoded)%11 != 0 {
+				t.Errorf("len = %d, not multiple of 11", len(encoded))
+			}
+			if got := DecodeKC(encoded); got != tt.password {
+				t.Errorf("roundtrip = %q, want %q", got, tt.password)
+			}
+		})
+	}
+}
+
+func TestGenerateShadowHashDataSaltUniqueness(t *testing.T) {
+	// Two hashes of the same password must use distinct random salts and
+	// therefore produce distinct entropy.
+	a, err := GenerateShadowHashData("samepassword")
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	b, err := GenerateShadowHashData("samepassword")
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if bytes.Equal(a.SaltedSHA512PBKDF2.Salt, b.SaltedSHA512PBKDF2.Salt) {
+		t.Error("salts collided across calls")
+	}
+	if bytes.Equal(a.SaltedSHA512PBKDF2.Entropy, b.SaltedSHA512PBKDF2.Entropy) {
+		t.Error("entropy collided across calls (salt not mixed in)")
+	}
+	// Empty password is a documented boundary; must still hash and verify.
+	empty, err := GenerateShadowHashData("")
+	if err != nil {
+		t.Fatalf("empty: %v", err)
+	}
+	if !VerifyPassword("", empty) {
+		t.Error("empty password failed to verify against its own hash")
+	}
+	if VerifyPassword("x", empty) {
+		t.Error("non-empty password verified against empty-password hash")
 	}
 }
 
