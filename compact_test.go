@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"reflect"
 	"strings"
@@ -11,6 +12,60 @@ import (
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
+
+func TestPrintCompactResult(t *testing.T) {
+	tests := []struct {
+		name   string
+		result *compactResult
+		want   []string
+		skip   []string
+	}{
+		{
+			name:   "platform only",
+			result: &compactResult{Platform: agentstate.PlatformLinux},
+			want:   []string{"Compacted linux guest free space"},
+			skip:   []string{"\n\n"},
+		},
+		{
+			name:   "with stdout and stderr",
+			result: &compactResult{Platform: agentstate.PlatformMacOS, Stdout: "ok", Stderr: "warn"},
+			want:   []string{"Compacted macos guest free space", "ok\n", "warn\n"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printCompactResult(&buf, tt.result)
+			got := buf.String()
+			for _, w := range tt.want {
+				if !strings.Contains(got, w) {
+					t.Fatalf("printCompactResult() = %q, want substring %q", got, w)
+				}
+			}
+			for _, s := range tt.skip {
+				if strings.Contains(got, s) {
+					t.Fatalf("printCompactResult() = %q, must not contain %q", got, s)
+				}
+			}
+		})
+	}
+}
+
+func TestNewCompactFlagSet(t *testing.T) {
+	var buf bytes.Buffer
+	fs, target := newCompactFlagSet(&buf)
+	if err := fs.Parse([]string{"-vm", "alpha"}); err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if *target != "alpha" {
+		t.Fatalf("target = %q, want alpha", *target)
+	}
+	// Usage writes to the supplied writer.
+	fs.Usage()
+	if buf.Len() == 0 {
+		t.Fatal("Usage() wrote nothing to provided writer")
+	}
+}
 
 func TestCompactCommand(t *testing.T) {
 	tests := []struct {
