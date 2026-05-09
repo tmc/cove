@@ -181,6 +181,62 @@ func lifecycleStatusResponse(status vmStatus) *controlpb.ControlResponse {
 	}
 }
 
+func TestLifecycleEnforcerSkipsNonRunningState(t *testing.T) {
+	for _, state := range []string{"stopped", "stopping", ""} {
+		t.Run(state, func(t *testing.T) {
+			root := shortTempDir(t)
+			vmDir := filepath.Join(root, "vm")
+			if err := os.Mkdir(vmDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := vmpolicy.Save(vmDir, vmpolicy.Policy{RunBudget: 1}); err != nil {
+				t.Fatalf("Save(): %v", err)
+			}
+			stopCount := serveLifecycleControl(t, vmDir, vmStatus{State: state, PolicyExecCount: 99})
+			enforcer := NewLifecycleEnforcer(LifecycleConfig{
+				VMRoot: root,
+				Now:    func() time.Time { return time.Unix(4000, 0).UTC() },
+			})
+			enforcer.EnforceOnce(context.Background())
+			if *stopCount != 0 {
+				t.Fatalf("stopCount = %d, want 0 for state %q", *stopCount, state)
+			}
+			if got := enforcer.Stats().Enforced; got != 0 {
+				t.Fatalf("enforced = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestParseTime(t *testing.T) {
+	ref := time.Date(2026, 5, 9, 12, 30, 45, 0, time.UTC)
+	tests := []struct {
+		name  string
+		in    string
+		want  time.Time
+		isZero bool
+	}{
+		{name: "empty", in: "", isZero: true},
+		{name: "rfc3339", in: ref.Format(time.RFC3339), want: ref},
+		{name: "rfc3339nano", in: "2026-05-09T12:30:45.123456789Z", want: time.Date(2026, 5, 9, 12, 30, 45, 123456789, time.UTC)},
+		{name: "invalid", in: "not-a-time", isZero: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseTime(tt.in)
+			if tt.isZero {
+				if !got.IsZero() {
+					t.Fatalf("got %v, want zero", got)
+				}
+				return
+			}
+			if !got.Equal(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func boolUint64(v bool) uint64 {
 	if v {
 		return 1
