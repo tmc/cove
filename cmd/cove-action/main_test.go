@@ -707,3 +707,65 @@ func TestCacheImageRefHonorsScope(t *testing.T) {
 		t.Fatalf("empty scope should preserve historical ref, got %q vs %q", c, cacheImageRef("go-main"))
 	}
 }
+
+// TestParseConfigCacheFlagEnvPrecedence covers cache-mode and cache-scope
+// resolution across (a) flag-wins-over-env, (b) env-when-flag-absent, and
+// (c) defaults when neither is set.
+func TestParseConfigCacheFlagEnvPrecedence(t *testing.T) {
+	base := []string{"COVE_ACTION_IMAGE=ubuntu-ci", "COVE_ACTION_COMMAND=echo ok"}
+	cases := []struct {
+		name      string
+		env       []string
+		args      []string
+		wantMode  string
+		wantScope string
+	}{
+		{
+			name:      "defaults when neither flag nor env",
+			wantMode:  "restore-save",
+			wantScope: "",
+		},
+		{
+			name:      "env supplies mode and scope when flags absent",
+			env:       []string{"COVE_ACTION_CACHE_MODE=restore-only", "COVE_ACTION_CACHE_SCOPE=octo/cove"},
+			wantMode:  "restore-only",
+			wantScope: "octo/cove",
+		},
+		{
+			name:      "flag wins over env for mode",
+			env:       []string{"COVE_ACTION_CACHE_MODE=off"},
+			args:      []string{"-cache-mode", "save-only"},
+			wantMode:  "save-only",
+			wantScope: "",
+		},
+		{
+			name:      "flag wins over env for scope",
+			env:       []string{"COVE_ACTION_CACHE_SCOPE=env/scope"},
+			args:      []string{"-cache-scope", "flag/scope"},
+			wantMode:  "restore-save",
+			wantScope: "flag/scope",
+		},
+		{
+			name:      "both flags override both env vars",
+			env:       []string{"COVE_ACTION_CACHE_MODE=off", "COVE_ACTION_CACHE_SCOPE=env/scope"},
+			args:      []string{"-cache-mode", "restore-only", "-cache-scope", "flag/scope"},
+			wantMode:  "restore-only",
+			wantScope: "flag/scope",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := append(append([]string{}, base...), tc.env...)
+			cfg, err := parseConfig(tc.args, env, os.Stdout, os.Stderr)
+			if err != nil {
+				t.Fatalf("parseConfig: %v", err)
+			}
+			if cfg.CacheMode != tc.wantMode {
+				t.Fatalf("CacheMode = %q, want %q", cfg.CacheMode, tc.wantMode)
+			}
+			if cfg.CacheScope != tc.wantScope {
+				t.Fatalf("CacheScope = %q, want %q", cfg.CacheScope, tc.wantScope)
+			}
+		})
+	}
+}
