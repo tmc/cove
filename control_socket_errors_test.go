@@ -51,6 +51,20 @@ func TestFormatControlSocketDialErrorConnectionRefused(t *testing.T) {
 	}
 }
 
+func TestVMRunHintForSocket(t *testing.T) {
+	tests := []struct {
+		sock, want string
+	}{
+		{"/var/folders/x/macos-3/control.sock", "cove -vm macos-3 run"},
+		{"control.sock", "cove run"},
+	}
+	for _, tt := range tests {
+		if got := vmRunHintForSocket(tt.sock); got != tt.want {
+			t.Errorf("vmRunHintForSocket(%q) = %q, want %q", tt.sock, got, tt.want)
+		}
+	}
+}
+
 func TestFormatControlSocketDialErrorTimeout(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "control.sock")
 	err := formatControlSocketDialError(sock, errors.New("dial unix /tmp/control.sock: i/o timeout"))

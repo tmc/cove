@@ -112,6 +112,23 @@ func TestAgentSSHDArgsRejectsUnknown(t *testing.T) {
 	}
 }
 
+func TestGuestDir(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"/etc/hosts", "/etc"},
+		{"/var/log/system.log", "/var/log"},
+		{"/file", "/"},
+		{"file", "."},
+		{"", "."},
+	}
+	for _, tt := range tests {
+		if got := guestDir(tt.in); got != tt.want {
+			t.Errorf("guestDir(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestResponseTextValidUTF8(t *testing.T) {
 	got := responseText([]byte{0xff, 'o', 'k'})
 	if !utf8.ValidString(got) {
