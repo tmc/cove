@@ -9,6 +9,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -216,7 +217,10 @@ func runImageGC(args []string) error {
 	dryRun := fs.Bool("dry-run", false, "print images without deleting them")
 	yes := fs.Bool("yes", false, "skip confirmation prompt")
 	olderThan := fs.Duration("older-than", 0, "only delete images older than this duration")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	metricsRun, metricsErr := beginStandaloneMetricsRun("image-gc", "cache")

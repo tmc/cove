@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -104,7 +105,10 @@ func cloneImageDirectory(src, dst string) error {
 func runImageTag(args []string) error {
 	fs := flag.NewFlagSet("image tag", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 2 {

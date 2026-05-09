@@ -40,6 +40,19 @@ var subSubHelp = []subSubHelpCase{
 	{"sip", "create-disk"},
 	{"softreset", "probe"},
 	{"softreset", "run-all"},
+	{"image", "build"},
+	{"image", "list"},
+	{"image", "inspect"},
+	{"image", "verify"},
+	{"image", "gc"},
+	{"image", "prune"},
+	{"image", "tag"},
+	{"image", "history"},
+	{"image", "search"},
+	{"image", "rm"},
+	{"image", "push"},
+	{"image", "pull"},
+	{"image", "load"},
 }
 
 // skippedSubSubHelp records (parent, action) pairs intentionally not
@@ -65,19 +78,6 @@ var skippedSubSubHelp = map[subSubHelpCase]string{
 	{"storage", "census"}:       "storage census -h: exit 1 from flag parser (R84)",
 	{"storage", "budget"}:       "storage budget -h: exit 1, no Usage (R84)",
 	{"storage", "prune"}:        "storage prune -h: exit 1 from flag parser (R84)",
-	{"image", "build"}:          "image build -h: exit 1 from flag parser (R84)",
-	{"image", "list"}:           "image list -h: exit 1 from flag parser (R84)",
-	{"image", "inspect"}:        "image inspect -h: exit 1 from flag parser (R84)",
-	{"image", "verify"}:         "image verify -h: exit 1 from flag parser (R84)",
-	{"image", "gc"}:             "image gc -h: exit 1 from flag parser (R84)",
-	{"image", "prune"}:          "image prune -h: exit 1 from flag parser (R84)",
-	{"image", "tag"}:            "image tag -h: exit 1 from flag parser (R84)",
-	{"image", "history"}:        "image history -h: exit 1 from flag parser (R84)",
-	{"image", "search"}:         "image search -h: exit 1 from flag parser (R84)",
-	{"image", "rm"}:             "image rm -h: exit 1 from flag parser (R84)",
-	{"image", "push"}:           "image push -h: exit 1 from flag parser (R84)",
-	{"image", "pull"}:           "image pull -h: exit 1 from flag parser (R84)",
-	{"image", "load"}:           "image load -h: exit 1 from flag parser (R84)",
 }
 
 // TestCoveSubSubcommandHelp asserts that `cove <parent> <action> -h`
