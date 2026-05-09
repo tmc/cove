@@ -645,3 +645,43 @@ func Example_parseProxySpec() {
 	fmt.Println(spec.endpoint())
 	// Output: 127.0.0.1:8080
 }
+
+func TestParseProxySpecErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"missing host", "http://:8080", "missing a host"},
+		{"non-numeric port", "http://127.0.0.1:abc", "parse proxy url"},
+		{"port out of range", "http://127.0.0.1:99999", "out of range"},
+		{"path present", "http://127.0.0.1:8080/path", "must not include a path"},
+		{"query present", "http://127.0.0.1:8080?x=1", "must not include a query"},
+		{"fragment present", "http://127.0.0.1:8080#frag", "must not include a query"},
+		{"invalid url", "http://%zz", "parse proxy url"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseProxySpec(tt.raw)
+			if err == nil {
+				t.Fatalf("parseProxySpec(%q) = nil, want error containing %q", tt.raw, tt.want)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("parseProxySpec(%q) error = %q, want substring %q", tt.raw, err.Error(), tt.want)
+			}
+		})
+	}
+}
+
+func TestProxySpecEndpointIPv6(t *testing.T) {
+	spec, err := parseProxySpec("https://[::1]:8443")
+	if err != nil {
+		t.Fatalf("parseProxySpec: %v", err)
+	}
+	if got, want := spec.endpoint(), "[::1]:8443"; got != want {
+		t.Fatalf("endpoint = %q, want %q", got, want)
+	}
+	if got, want := spec.canonicalURL(), "http://[::1]:8443"; got != want {
+		t.Fatalf("canonicalURL = %q, want %q", got, want)
+	}
+}
