@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,10 @@ func TestCpParseSpec(t *testing.T) {
 		{name: "relative guest", src: "a", dst: "vm:tmp/a", err: "guest path must be absolute"},
 		{name: "empty vm", src: "a", dst: ":/tmp/a", err: "invalid remote path"},
 		{name: "colon host", src: "a:b", dst: "out", err: "guest path must be absolute"},
+		{name: "empty src", src: "", dst: "vm:/tmp/a", err: "empty path"},
+		{name: "empty dst", src: "a", dst: "", err: "empty path"},
+		{name: "vm with slash", src: "a", dst: "vm/sub:/tmp/a", err: "invalid VM name"},
+		{name: "remote empty path", src: "a", dst: "vm:", err: "invalid remote path"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := parseCpSpec(tc.src, tc.dst)
@@ -118,3 +123,40 @@ func (f *fakeCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath strin
 	}
 	return os.WriteFile(hostPath, data, 0644)
 }
+
+func TestCpRunCpArgErrors(t *testing.T) {
+	noAgent := func(string) cpAgent { t.Fatal("agent should not be constructed"); return nil }
+	for _, tc := range []struct {
+		name string
+		args []string
+		err  string
+	}{
+		{name: "no args", args: nil, err: "usage:"},
+		{name: "one arg", args: []string{"a"}, err: "usage:"},
+		{name: "three args", args: []string{"a", "b", "c"}, err: "usage:"},
+		{name: "bad spec", args: []string{"a", "b"}, err: "exactly one path must be remote"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runCp(context.Background(), tc.args, noAgent)
+			if err == nil || !strings.Contains(err.Error(), tc.err) {
+				t.Fatalf("runCp err = %v, want %q", err, tc.err)
+			}
+		})
+	}
+}
+
+func TestCpAgentErrorPropagation(t *testing.T) {
+	wantErr := errors.New("agent unreachable")
+	newAgent := func(string) cpAgent { return errCpAgent{err: wantErr} }
+	if err := runCp(context.Background(), []string{"a", "vm:/tmp/a"}, newAgent); !errors.Is(err, wantErr) {
+		t.Fatalf("host->guest err = %v, want %v", err, wantErr)
+	}
+	if err := runCp(context.Background(), []string{"vm:/tmp/a", "out"}, newAgent); !errors.Is(err, wantErr) {
+		t.Fatalf("guest->host err = %v, want %v", err, wantErr)
+	}
+}
+
+type errCpAgent struct{ err error }
+
+func (e errCpAgent) CopyToGuest(context.Context, string, string) error   { return e.err }
+func (e errCpAgent) CopyFromGuest(context.Context, string, string) error { return e.err }
