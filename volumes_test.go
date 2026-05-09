@@ -181,6 +181,67 @@ func TestVirtioFSMountArgsMacOSReadWrite(t *testing.T) {
 	}
 }
 
+func TestVolumeSliceString(t *testing.T) {
+	tests := []struct {
+		name string
+		in   volumeSlice
+		want string
+	}{
+		{name: "nil", in: nil, want: ""},
+		{name: "empty", in: volumeSlice{}, want: ""},
+		{
+			name: "host only",
+			in:   volumeSlice{{HostPath: "/a"}},
+			want: "/a",
+		},
+		{
+			name: "host+tag+ro",
+			in:   volumeSlice{{HostPath: "/a", Tag: "work", ReadOnly: true}},
+			want: "/a:work:ro",
+		},
+		{
+			name: "host+tag+opts",
+			in:   volumeSlice{{HostPath: "/a", Tag: "work", MountOpts: []string{"noatime", "nodev"}}},
+			want: "/a:work:noatime,nodev",
+		},
+		{
+			name: "multiple joined",
+			in:   volumeSlice{{HostPath: "/a"}, {HostPath: "/b", Tag: "data", ReadOnly: true}},
+			want: "/a, /b:data:ro",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.String(); got != tt.want {
+				t.Fatalf("String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVolumeSliceSetAppends(t *testing.T) {
+	dir := t.TempDir()
+	var vs volumeSlice
+	if err := vs.Set(dir); err != nil {
+		t.Fatalf("Set(%q) error = %v", dir, err)
+	}
+	if err := vs.Set(dir + ":tagged:ro"); err != nil {
+		t.Fatalf("Set tagged error = %v", err)
+	}
+	if len(vs) != 2 {
+		t.Fatalf("len = %d, want 2", len(vs))
+	}
+	if vs[0].HostPath == "" || vs[0].Tag != "" || vs[0].ReadOnly {
+		t.Fatalf("entry[0] = %#v", vs[0])
+	}
+	if vs[1].Tag != "tagged" || !vs[1].ReadOnly {
+		t.Fatalf("entry[1] = %#v", vs[1])
+	}
+	if err := vs.Set(""); err == nil {
+		t.Fatalf("Set(\"\") error = nil, want error")
+	}
+}
+
 func assertDoesNotPanic(t *testing.T, fn func()) {
 	t.Helper()
 	defer func() {
