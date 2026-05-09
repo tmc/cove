@@ -268,6 +268,62 @@ func TestInspectImageDiff_JSONMissingFields(t *testing.T) {
 	}
 }
 
+func TestInspectImageDiff_MissingRef(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	refA, _ := ParseImageRef("base:1")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: refA}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	ghost, _ := ParseImageRef("ghost:1")
+
+	if _, err := InspectImageDiff(refA, ghost); err == nil {
+		t.Fatal("InspectImageDiff with missing ref-b succeeded; want error")
+	} else if !strings.Contains(err.Error(), "ghost:1") {
+		t.Errorf("error %q does not mention missing ref ghost:1", err.Error())
+	}
+	if _, err := InspectImageDiff(ghost, refA); err == nil {
+		t.Fatal("InspectImageDiff with missing ref-a succeeded; want error")
+	} else if !strings.Contains(err.Error(), "ghost:1") {
+		t.Errorf("error %q does not mention missing ref ghost:1", err.Error())
+	}
+}
+
+func TestInspectImageDiff_MalformedManifest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src-a")
+	stageMacOSVMForImage(t, "src-b")
+	refA, _ := ParseImageRef("base:a")
+	refB, _ := ParseImageRef("base:b")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src-a", Ref: refA}); err != nil {
+		t.Fatalf("BuildImage a: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src-b", Ref: refB}); err != nil {
+		t.Fatalf("BuildImage b: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		ref  ImageRef
+	}{
+		{"side-a", refA},
+		{"side-b", refB},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			good, err := os.ReadFile(filepath.Join(tc.ref.Path(), "manifest.json"))
+			if err != nil {
+				t.Fatalf("snapshot manifest: %v", err)
+			}
+			defer os.WriteFile(filepath.Join(tc.ref.Path(), "manifest.json"), good, 0o644)
+			if err := os.WriteFile(filepath.Join(tc.ref.Path(), "manifest.json"), []byte("{not json"), 0o644); err != nil {
+				t.Fatalf("corrupt manifest: %v", err)
+			}
+			if _, err := InspectImageDiff(refA, refB); err == nil {
+				t.Fatal("InspectImageDiff on malformed manifest succeeded; want error")
+			}
+		})
+	}
+}
+
 func patchManifest(t *testing.T, ref ImageRef, values map[string]any) {
 	t.Helper()
 	m := readManifestMapForTest(t, ref)
