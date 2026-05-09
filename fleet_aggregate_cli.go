@@ -124,10 +124,10 @@ func printFleetAggregate(out io.Writer, rows []fleetAggregateRow) error {
 
 func runFleetPSCommand(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("fleet ps", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(errOut)
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	watch := fs.Bool("watch", false, "refresh until interrupted")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {

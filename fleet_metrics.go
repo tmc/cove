@@ -16,7 +16,7 @@ func runFleetMetricsCommand(ctx context.Context, args []string, path string, run
 	fs := flag.NewFlagSet("fleet metrics", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	jsonOut := fs.Bool("json", false, "emit JSON")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {

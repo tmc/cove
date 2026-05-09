@@ -37,3 +37,16 @@ func parseFlagsOrHelp(fs *flag.FlagSet, args []string) error {
 // user asked for help. Handlers should `if errors.Is(err, errFlagHelp)
 // { return nil }` so commandError exits 0.
 var errFlagHelp = errors.New("flag help requested")
+
+// parseFlagsOrHelpExit is the parse-and-translate convenience: it
+// returns (true, nil) when -h was handled (caller should `return nil`),
+// (false, err) on a real parse error, and (false, nil) on success.
+func parseFlagsOrHelpExit(fs *flag.FlagSet, args []string) (handled bool, err error) {
+	if perr := parseFlagsOrHelp(fs, args); perr != nil {
+		if errors.Is(perr, errFlagHelp) {
+			return true, nil
+		}
+		return false, perr
+	}
+	return false, nil
+}
