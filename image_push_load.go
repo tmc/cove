@@ -39,7 +39,10 @@ func runImagePush(args []string) error {
 	fs := flag.NewFlagSet("image push", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	gz := fs.Bool("gzip", false, "gzip-compress the tarball")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 2 {
@@ -192,7 +195,10 @@ func runImageLoad(args []string) error {
 	fs.SetOutput(os.Stderr)
 	tag := fs.String("tag", "", "override image ref on load (name[:tag])")
 	force := fs.Bool("force", false, "overwrite if image already exists")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 1 {
@@ -227,7 +233,10 @@ func runImagePull(args []string) error {
 	fs.SetOutput(os.Stderr)
 	tag := fs.String("tag", "", "override image ref on pull (name[:tag])")
 	force := fs.Bool("force", false, "overwrite if image already exists")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 1 {

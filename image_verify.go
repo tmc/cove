@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -200,7 +201,10 @@ func runImageVerify(args []string) error {
 	quiet := fs.Bool("quiet", false, "only print on failure")
 	strict := fs.Bool("strict", false, "treat missing execattach.v3 as an error")
 	newerThan := fs.Duration("newer-than", 0, "require image built or created within duration")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 1 {

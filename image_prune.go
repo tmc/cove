@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -88,7 +89,10 @@ func runImagePrune(args []string) error {
 	filter := fs.String("filter", "", "delete images with tags matching this glob")
 	force := fs.Bool("force", false, "skip confirmation prompt")
 	dryRun := fs.Bool("dry-run", false, "print images without deleting them")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 0 {

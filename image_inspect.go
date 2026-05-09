@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -141,7 +142,10 @@ func runImageInspect(args []string) error {
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	diff := fs.Bool("diff", false, "compare two image refs")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if *diff {

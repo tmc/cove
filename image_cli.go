@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -85,7 +86,10 @@ func runImageBuild(args []string) (err error) {
 	fs.SetOutput(os.Stderr)
 	from := fs.String("from", "", "source VM name (must be stopped)")
 	tag := fs.String("tag", "", "image ref: name[:tag] (default tag: latest)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if *from == "" || *tag == "" {
@@ -132,7 +136,10 @@ func runImageBuild(args []string) (err error) {
 func runImageList(args []string) error {
 	fs := flag.NewFlagSet("image list", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	entries, err := ListImages()
@@ -159,7 +166,10 @@ func runImageList(args []string) error {
 func runImageRm(args []string) error {
 	fs := flag.NewFlagSet("image rm", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() < 1 {
