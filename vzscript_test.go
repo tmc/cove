@@ -544,6 +544,73 @@ func validateVZScriptStubCommand(name string, files map[string]bool, args []stri
 	return nil
 }
 
+// TestVZScriptListFilterMatrix exercises the guest-os filter predicate of
+// vzscriptListWithGuestOS across darwin, linux, and the unfiltered case.
+// The linux/invalid cases are covered by sibling tests; this fills the
+// darwin and "no filter" arms of the matrix.
+func TestVZScriptListFilterMatrix(t *testing.T) {
+	tests := []struct {
+		name      string
+		filter    string
+		mustHave  []string
+		mustOmit  []string
+	}{
+		{
+			name:     "darwin filter includes darwin recipes",
+			filter:   "darwin",
+			mustHave: []string{"homebrew", "sip-enable"},
+			mustOmit: []string{"agentkit-linux-base", "nixos-base"},
+		},
+		{
+			name:     "no filter includes both platforms",
+			filter:   "",
+			mustHave: []string{"homebrew", "agentkit-linux-base"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := os.Stdout
+			os.Stdout = w
+			runErr := vzscriptListWithGuestOS(tt.filter)
+			w.Close()
+			os.Stdout = old
+			if runErr != nil {
+				t.Fatal(runErr)
+			}
+			var buf bytes.Buffer
+			if _, err := buf.ReadFrom(r); err != nil {
+				t.Fatal(err)
+			}
+			out := buf.String()
+			for _, want := range tt.mustHave {
+				if !strings.Contains(out, want) {
+					t.Errorf("missing recipe %q in output:\n%s", want, out)
+				}
+			}
+			for _, omit := range tt.mustOmit {
+				if strings.Contains(out, omit) {
+					t.Errorf("unexpected recipe %q in darwin-filtered output:\n%s", omit, out)
+				}
+			}
+		})
+	}
+}
+
+// TestVZScriptShowErrors covers the show command error paths: missing
+// recipe argument and unknown recipe name.
+func TestVZScriptShowErrors(t *testing.T) {
+	if err := vzscriptShow(nil); err == nil {
+		t.Error("vzscriptShow(nil) = nil, want error for missing recipe name")
+	}
+	if err := vzscriptShow([]string{"definitely-not-a-recipe"}); err == nil {
+		t.Error("vzscriptShow(unknown) = nil, want error for unknown recipe")
+	}
+}
+
 func requireArchiveFile(files map[string]bool, path string) error {
 	if filepath.IsAbs(path) {
 		return nil
