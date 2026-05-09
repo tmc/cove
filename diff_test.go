@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,6 +88,56 @@ func TestImageDiffDiskLayer(t *testing.T) {
 				t.Fatalf("new sha256 = %q, want sha256: prefix", file.New.SHA256)
 			}
 		})
+	}
+}
+
+func TestWriteImageDiffJSON(t *testing.T) {
+	out := imageDiffOutput{
+		Refs:    [2]string{"a:latest", "b:latest"},
+		Changed: true,
+		Files: []imageDiffFile{{
+			Name:   "disk.img",
+			Status: "CHANGED",
+			Old:    &imageDiffFileValue{Size: 3, SHA256: "sha256:aaa"},
+			New:    &imageDiffFileValue{Size: 4, SHA256: "sha256:bbb"},
+		}},
+	}
+	var buf bytes.Buffer
+	if err := writeImageDiffJSON(&buf, out); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasSuffix(buf.Bytes(), []byte("\n")) {
+		t.Fatalf("json output missing trailing newline")
+	}
+	var got imageDiffOutput
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("round-trip: %v", err)
+	}
+	if got.Refs != out.Refs || got.Changed != out.Changed || len(got.Files) != 1 {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+	if got.Files[0].Status != "CHANGED" || got.Files[0].Old.SHA256 != "sha256:aaa" {
+		t.Fatalf("file mismatch: %+v", got.Files[0])
+	}
+}
+
+func TestWriteImageDiffText(t *testing.T) {
+	out := imageDiffOutput{
+		Refs: [2]string{"a:latest", "b:latest"},
+		Files: []imageDiffFile{
+			{Name: "disk.img", Status: "ADDED", New: &imageDiffFileValue{Size: 7, SHA256: "sha256:xyz"}},
+			{Name: "gone.img", Status: "REMOVED", Old: &imageDiffFileValue{Size: 1, SHA256: "sha256:old"}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := writeImageDiffText(&buf, out); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	for _, want := range []string{"a:latest", "b:latest", "disk.img", "[ADDED]", "gone.img", "[REMOVED]", "<missing>", "sha256:xyz", "7 bytes"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("text output missing %q in:\n%s", want, got)
+		}
 	}
 }
 
