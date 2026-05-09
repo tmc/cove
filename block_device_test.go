@@ -2,11 +2,63 @@ package main
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
 	vz "github.com/tmc/apple/virtualization"
 )
+
+func TestBlockDeviceSliceString(t *testing.T) {
+	var nilSlice *blockDeviceSlice
+	if got := nilSlice.String(); got != "" {
+		t.Fatalf("nil String = %q, want empty", got)
+	}
+	empty := blockDeviceSlice{}
+	if got := empty.String(); got != "" {
+		t.Fatalf("empty String = %q, want empty", got)
+	}
+	s := blockDeviceSlice{
+		{Path: "/dev/rdisk8", ReadOnly: true},
+		{Path: "/dev/rdisk9"},
+		{Path: "/dev/rdisk10", Sync: "none"},
+	}
+	want := "/dev/rdisk8:ro, /dev/rdisk9:rw, /dev/rdisk10:rw:sync=none"
+	if got := s.String(); got != want {
+		t.Fatalf("String = %q, want %q", got, want)
+	}
+}
+
+func TestBlockDeviceSliceSet(t *testing.T) {
+	var s blockDeviceSlice
+	if err := s.Set("/dev/rdisk8:ro"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := s.Set("/dev/rdisk9:rw:sync=full"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if len(s) != 2 {
+		t.Fatalf("len = %d, want 2", len(s))
+	}
+	if s[0].Path != "/dev/rdisk8" || !s[0].ReadOnly {
+		t.Fatalf("s[0] = %+v", s[0])
+	}
+	if s[1].Sync != "full" {
+		t.Fatalf("s[1] = %+v", s[1])
+	}
+	if err := s.Set("bogus"); err == nil {
+		t.Fatal("Set(bogus) err = nil, want error")
+	}
+}
+
+func TestBlockDeviceOpenFlags(t *testing.T) {
+	if got := blockDeviceOpenFlags(true); got != os.O_RDONLY {
+		t.Fatalf("readOnly flags = %d, want %d", got, os.O_RDONLY)
+	}
+	if got := blockDeviceOpenFlags(false); got != os.O_RDWR {
+		t.Fatalf("readWrite flags = %d, want %d", got, os.O_RDWR)
+	}
+}
 
 func TestParseBlockDeviceSpec(t *testing.T) {
 	tests := []struct {
