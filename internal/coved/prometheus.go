@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 )
 
 type PrometheusSnapshot struct {
@@ -67,6 +66,3 @@ func sortedKeys(m map[string]int) []string {
 	return keys
 }
 
-func SecondsSince(start time.Time) int64 {
-	return int64(time.Since(start).Seconds())
-}

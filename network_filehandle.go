@@ -139,14 +139,6 @@ func (s *FileHandleNetworkSession) Attachment() vz.VZFileHandleNetworkDeviceAtta
 	return s.attachment
 }
 
-// HostFile returns the host-side datagram socket.
-func (s *FileHandleNetworkSession) HostFile() *os.File {
-	if s == nil {
-		return nil
-	}
-	return s.hostFile
-}
-
 // Stats returns a snapshot of the session counters.
 func (s *FileHandleNetworkSession) Stats() FileHandleNetworkStats {
 	if s == nil {
@@ -288,11 +280,3 @@ func (s *FileHandleNetworkSession) Close() error {
 	return nil
 }
 
-// DeviceConfigurationWithSummary returns the configuration and a shutdown
-// summary in one call for future integration points.
-func (s *FileHandleNetworkSession) DeviceConfigurationWithSummary() (vz.VZVirtioNetworkDeviceConfiguration, string) {
-	if s == nil {
-		return vz.VZVirtioNetworkDeviceConfiguration{}, "filehandle network: disabled"
-	}
-	return s.deviceConfig, s.Summary()
-}
