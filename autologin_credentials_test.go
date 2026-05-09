@@ -122,3 +122,69 @@ func TestLoadBootLoginScreenCredentialsDoesNotMountDisk(t *testing.T) {
 		t.Fatalf("credentials = %+v, want empty", creds)
 	}
 }
+
+func TestReadLoginScreenCredentialsKcpasswordUnreadable(t *testing.T) {
+	root := t.TempDir()
+	// Make kcpassword a directory; ReadFile returns a non-ENOENT error.
+	if err := os.MkdirAll(filepath.Join(root, "private", "etc", "kcpassword"), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if _, err := readLoginScreenCredentials(root); err == nil {
+		t.Fatalf("readLoginScreenCredentials: want error for kcpassword directory")
+	}
+}
+
+func TestReadLoginScreenCredentialsLoginwindowUnreadable(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "private", "etc"), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "private", "etc", "kcpassword"), []byte("x"), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Make loginwindow plist a directory.
+	if err := os.MkdirAll(filepath.Join(root, "Library", "Preferences", "com.apple.loginwindow.plist"), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if _, err := readLoginScreenCredentials(root); err == nil {
+		t.Fatalf("readLoginScreenCredentials: want error for loginwindow directory")
+	}
+}
+
+func TestReadLoginScreenCredentialsMalformedPlist(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "private", "etc"), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "Library", "Preferences"), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "private", "etc", "kcpassword"), []byte("x"), 0600); err != nil {
+		t.Fatalf("WriteFile kcpassword: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Library", "Preferences", "com.apple.loginwindow.plist"), []byte("not-a-plist"), 0644); err != nil {
+		t.Fatalf("WriteFile plist: %v", err)
+	}
+	if _, err := readLoginScreenCredentials(root); err == nil {
+		t.Fatalf("readLoginScreenCredentials: want error for malformed plist")
+	}
+}
+
+func TestResolveLoginScreenWatchdogCredentialsFallsBackToBootCache(t *testing.T) {
+	savedUser, savedPass, savedBoot := provisionUser, provisionPassword, bootLoginScreenCredentials
+	t.Cleanup(func() {
+		provisionUser, provisionPassword, bootLoginScreenCredentials = savedUser, savedPass, savedBoot
+	})
+	provisionUser, provisionPassword = "", ""
+	bootLoginScreenCredentials = loginScreenCredentials{Username: "boot", Password: "bootpw"}
+	got := resolveLoginScreenWatchdogCredentials()
+	if got.Username != "boot" || got.Password != "bootpw" {
+		t.Fatalf("resolveLoginScreenWatchdogCredentials = %+v, want boot cache", got)
+	}
+
+	bootLoginScreenCredentials = loginScreenCredentials{}
+	got = resolveLoginScreenWatchdogCredentials()
+	if got.Valid() {
+		t.Fatalf("resolveLoginScreenWatchdogCredentials = %+v, want empty", got)
+	}
+}
