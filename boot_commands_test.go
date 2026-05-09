@@ -256,3 +256,73 @@ func TestSplitConditionalTypeArgs(t *testing.T) {
 		t.Fatalf("splitConditionalTypeArgs invalid = (%q, %q), want empty", needle, value)
 	}
 }
+
+func TestContinueBelongsToOptions(t *testing.T) {
+	tests := []struct {
+		name      string
+		width     float64
+		continueX float64
+		want      bool
+	}{
+		{"right half belongs to options", 1440, 1000, true},
+		{"exactly midline counts", 1440, 720, true},
+		{"left half is recovery language", 1440, 200, false},
+		{"zero is left", 1440, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := continueBelongsToOptions(tt.width, tt.continueX); got != tt.want {
+				t.Errorf("continueBelongsToOptions(%v,%v) = %v, want %v", tt.width, tt.continueX, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestKeyNameToCodeCoverage(t *testing.T) {
+	// Cover the letter, digit, F-key, arrow, and numeric-passthrough branches
+	// so the run-loop key spec parser stays honest as new aliases are added.
+	tests := []struct {
+		name string
+		want uint16
+	}{
+		{"return", 36}, {"enter", 36}, {"tab", 48}, {"space", 49},
+		{"escape", 53}, {"esc", 53}, {"delete", 51}, {"backspace", 51},
+		{"up", 126}, {"down", 125}, {"left", 123}, {"right", 124},
+		{"a", 0}, {"b", 11}, {"c", 8}, {"d", 2}, {"e", 14}, {"f", 3},
+		{"g", 5}, {"h", 4}, {"i", 34}, {"j", 38}, {"k", 40}, {"l", 37},
+		{"m", 46}, {"n", 45}, {"o", 31}, {"p", 35}, {"q", 12}, {"r", 15},
+		{"s", 1}, {"t", 17}, {"u", 32}, {"v", 9}, {"w", 13}, {"x", 7},
+		{"y", 16}, {"z", 6},
+		{"f1", 122}, {"f2", 120}, {"f3", 99}, {"f4", 118}, {"f5", 96},
+		{"0", 29}, {"1", 18}, {"2", 19}, {"3", 20}, {"4", 21},
+		{"5", 23}, {"6", 22}, {"7", 26}, {"8", 28}, {"9", 25},
+		{"dash", 27}, {"hyphen", 27}, {"equal", 24},
+		{"lbracket", 33}, {"rbracket", 30}, {"lessthan", 43}, {"greaterthan", 47},
+		{"exclaim", 18}, {"lbrace", 33}, {"rbrace", 30},
+		{"lparen", 25}, {"rparen", 29},
+		{"42", 42}, // numeric passthrough
+		{"unknown-key", 0},
+		{"RETURN", 36}, // case-insensitive
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := keyNameToCode(tt.name); got != tt.want {
+				t.Errorf("keyNameToCode(%q) = %d, want %d", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseKeySpecNumericAndModifiers(t *testing.T) {
+	// Numeric keycode passthrough + each individual modifier flag.
+	code, mods := parseKeySpec("123")
+	if code != 123 || mods != 0 {
+		t.Errorf("parseKeySpec(123) = (%d,%d), want (123,0)", code, mods)
+	}
+	code, mods = parseKeySpec("alt+option+command+control+a")
+	wantMods := uint((1 << 17) | 0) // shift not set
+	wantMods = (1 << 19) | (1 << 19) | (1 << 20) | (1 << 18)
+	if code != 0 || mods != wantMods {
+		t.Errorf("parseKeySpec all-mods = (%d,%d), want (0,%d)", code, mods, wantMods)
+	}
+}
