@@ -84,7 +84,7 @@ Severity: P2. Fix: write PID to lock (already done), on EEXIST read
 the PID and use `kill -0` / `os.FindProcess` to check liveness; if
 dead, claim the lock.
 
-### R5. No manifest fsync ordering — P2
+### R5. No manifest fsync ordering — P2 — RESOLVED 7107b99
 
 `writeImageManifest` (image.go:324) does `os.WriteFile(tmp)` then
 `os.Rename(tmp, path)` with no `fsync(tmp)` and no `fsync(parentDir)`.
@@ -96,6 +96,9 @@ forever (orphan disk under `~/.vz/images/<name>/<tag>/`).
 Severity: P2. Fix: open tmp with O_SYNC, or fsync(tmp) + fsync(dir)
 before/after rename. Independently, gc should sweep image dirs
 without a readable manifest after a generous TTL.
+
+Resolved: writeImageManifest now fsyncs the tmp file before rename
+and fsyncs the parent directory after rename. See commit below.
 
 ### R6. coved scheduler ignores cache/* TTL — P2
 
