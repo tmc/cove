@@ -49,9 +49,11 @@ var helpSubcommands = []string{
 	"image",
 	"import",
 	"inject",
+	"inject-agent",
 	"install",
 	"list",
 	"logs",
+	"network",
 	"pin",
 	"pins",
 	"pit",
@@ -78,6 +80,7 @@ var helpSubcommands = []string{
 	"template",
 	"unpin",
 	"up",
+	"verify",
 	"vm",
 	"vzscript",
 }
@@ -86,10 +89,14 @@ var helpSubcommands = []string{
 // by TestCoveSubcommandHelp, with a short reason. Each entry is a real
 // gap; flipping one of these green means the help surface improved.
 var skippedHelpSubcommands = map[string]string{
-	"inject-agent": "deprecated alias; usage prints 'provision-agent' only",
-	"network":      "prints 'Network modes:' instead of 'Usage:'",
-	"verify":       "alias of doctor; usage prints 'doctor' only",
-	"version":      "prints version banner, no Usage section by design",
+	// version is intentionally not a help target. `cove version` prints
+	// the build banner (semver, commit, build time) and `cove version -h`
+	// does the same — `-h` is consumed as a positional arg by the
+	// version handler rather than routed to a Usage surface. This is
+	// load-bearing: scripts grep `cove version` output for the semver,
+	// so adding a Usage block here would be a breaking change. Users
+	// discover the command via `cove -h` / `cove help`.
+	"version": "prints version banner by design; no Usage surface",
 }
 
 // TestCoveSubcommandHelp asserts that `cove <cmd> -h` returns a

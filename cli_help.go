@@ -65,8 +65,14 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
 		case "provision-agent", "inject-agent":
+			if subargs[0] == "inject-agent" {
+				printDeprecatedAliasNotice(os.Stderr, "inject-agent", "provision-agent")
+			}
 			printProvisionAgentUsage(os.Stderr)
 		case "doctor", "verify":
+			if subargs[0] == "verify" {
+				printDeprecatedAliasNotice(os.Stderr, "verify", "doctor")
+			}
 			fs, _, _, _, _ := newVerifyFlagSet()
 			fs.Usage()
 		case "template":
@@ -198,11 +204,17 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 	case "provision-agent", "inject-agent":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			if cmd == "inject-agent" {
+				printDeprecatedAliasNotice(os.Stderr, "inject-agent", "provision-agent")
+			}
 			printProvisionAgentUsage(os.Stderr)
 			return true, 0
 		}
 	case "doctor", "verify":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			if cmd == "verify" {
+				printDeprecatedAliasNotice(os.Stderr, "verify", "doctor")
+			}
 			fs, _, _, _, _ := newVerifyFlagSet()
 			fs.Usage()
 			return true, 0
@@ -299,6 +311,12 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	}
 
 	return false, 0
+}
+
+// printDeprecatedAliasNotice prints a one-line note when a command is invoked
+// under a deprecated alias, so the alias name appears in -h output.
+func printDeprecatedAliasNotice(w io.Writer, alias, canonical string) {
+	fmt.Fprintf(w, "Note: %q is a deprecated alias for %q.\n\n", alias, canonical)
 }
 
 func printProvisionAgentUsage(w io.Writer) {

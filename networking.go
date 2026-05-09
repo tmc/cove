@@ -59,7 +59,9 @@ func CreateNetworkDeviceConfiguration(config networkx.Config) (vz.VZVirtioNetwor
 
 // NetworkModeHelp returns help text for network modes.
 func NetworkModeHelp() string {
-	return `Network modes:
+	return `Usage: cove network [list|audit|logs] [args]
+
+Network modes:
   nat              NAT networking (default, guest gets private IP via DHCP)
   bridged:<iface>  Bridge to host interface (e.g., bridged:en0)
                    Guest appears on same network as host
