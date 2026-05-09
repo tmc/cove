@@ -83,6 +83,24 @@ func TestWriteImageHistoryJSON(t *testing.T) {
 	}
 }
 
+func TestImageHistoryForMissingRef(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	missing, _ := ParseImageRef("ghost:v1")
+	if _, err := ImageHistoryFor(missing); err == nil {
+		t.Fatalf("ImageHistoryFor(missing) err = nil, want error")
+	}
+}
+
+func TestWriteImageHistoryTextEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := writeImageHistoryText(&buf, ImageHistory{Ref: "empty:v1"}); err != nil {
+		t.Fatalf("writeImageHistoryText empty: %v", err)
+	}
+	if !strings.Contains(buf.String(), "REF") {
+		t.Fatalf("empty history text missing header:\n%s", buf.String())
+	}
+}
+
 func TestWriteImageHistoryText(t *testing.T) {
 	history := ImageHistory{Ref: "base:v1", Entries: []ImageHistoryEntry{{
 		Ref:           "base:v1",

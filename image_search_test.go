@@ -61,6 +61,46 @@ func TestSearchImagesReturnsAllWithoutQuery(t *testing.T) {
 	}
 }
 
+func TestSearchImagesNoMatch(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, _ := ParseImageRef("alpha:v1")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	results, err := SearchImages("zzz-no-such-image")
+	if err != nil {
+		t.Fatalf("SearchImages: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("SearchImages no-match = %#v, want empty", results)
+	}
+}
+
+func TestWriteImageSearchTextEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := writeImageSearchText(&buf, nil); err != nil {
+		t.Fatalf("writeImageSearchText empty: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("No images found")) {
+		t.Fatalf("empty search text = %q, want 'No images found'", buf.String())
+	}
+}
+
+func TestWriteImageJSONEmptyIsArray(t *testing.T) {
+	var buf bytes.Buffer
+	if err := writeImageSearchJSON(&buf, nil); err != nil {
+		t.Fatalf("writeImageSearchJSON empty: %v", err)
+	}
+	var got []ImageSearchResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal empty: %v\n%s", err, buf.String())
+	}
+	if len(got) != 0 {
+		t.Fatalf("empty round trip = %#v", got)
+	}
+}
+
 func TestWriteImageSearchJSON(t *testing.T) {
 	results := []ImageSearchResult{{Ref: "base:v1", Name: "base", Tag: "v1", Labels: []string{"role=runner"}, Score: 80}}
 	var buf bytes.Buffer
