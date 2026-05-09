@@ -90,3 +90,52 @@ func TestAutomationBackendCaptureMode(t *testing.T) {
 		})
 	}
 }
+
+func TestAutomationBackendModeStrings(t *testing.T) {
+	tests := []struct {
+		mode                        automationBackendMode
+		str, input, keyboard, mouse string
+	}{
+		{automationBackendAuto, "auto", "auto", "auto", "auto"},
+		{automationBackendFramebuffer, "framebuffer", "direct", "direct", "direct"},
+		{automationBackendWindow, "window", "window", "cgevent", "cgevent"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.str, func(t *testing.T) {
+			if got := tt.mode.String(); got != tt.str {
+				t.Errorf("String() = %q, want %q", got, tt.str)
+			}
+			if got := tt.mode.inputString(); got != tt.input {
+				t.Errorf("inputString() = %q, want %q", got, tt.input)
+			}
+			if got := tt.mode.keyboardMode(); got != tt.keyboard {
+				t.Errorf("keyboardMode() = %q, want %q", got, tt.keyboard)
+			}
+			if got := tt.mode.mouseMode(); got != tt.mouse {
+				t.Errorf("mouseMode() = %q, want %q", got, tt.mouse)
+			}
+		})
+	}
+}
+
+func TestCombinedAutomationBackend(t *testing.T) {
+	tests := []struct {
+		name           string
+		capture, input automationBackendMode
+		want           string
+	}{
+		{"both auto", automationBackendAuto, automationBackendAuto, "auto"},
+		{"both framebuffer", automationBackendFramebuffer, automationBackendFramebuffer, "framebuffer"},
+		{"both window", automationBackendWindow, automationBackendWindow, "window"},
+		{"mixed auto+window", automationBackendAuto, automationBackendWindow, "mixed"},
+		{"mixed framebuffer+window", automationBackendFramebuffer, automationBackendWindow, "mixed"},
+		{"mixed window+framebuffer", automationBackendWindow, automationBackendFramebuffer, "mixed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := combinedAutomationBackend(tt.capture, tt.input); got != tt.want {
+				t.Errorf("combinedAutomationBackend(%v,%v) = %q, want %q", tt.capture, tt.input, got, tt.want)
+			}
+		})
+	}
+}
