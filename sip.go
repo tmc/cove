@@ -18,6 +18,11 @@ func handleSIPCommand(args []string) error {
 		return nil
 	}
 
+	rest := args[1:]
+	if len(rest) > 0 && isHelpArg(rest[0]) {
+		fmt.Print(sipUsage)
+		return nil
+	}
 	switch args[0] {
 	case "enable":
 		if err := requireMacOSSIPTarget(); err != nil {
@@ -28,7 +33,7 @@ func handleSIPCommand(args []string) error {
 		if err := requireMacOSSIPTarget(); err != nil {
 			return err
 		}
-		return sipAuto("enable", args[1:])
+		return sipAuto("enable", rest)
 	case "disable":
 		if err := requireMacOSSIPTarget(); err != nil {
 			return err
@@ -38,7 +43,7 @@ func handleSIPCommand(args []string) error {
 		if err := requireMacOSSIPTarget(); err != nil {
 			return err
 		}
-		return sipAuto("disable", args[1:])
+		return sipAuto("disable", rest)
 	case "status":
 		if err := requireMacOSSIPTarget(); err != nil {
 			return err
