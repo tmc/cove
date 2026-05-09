@@ -71,6 +71,48 @@ func TestLoginScreenCredentialsCacheRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWriteLoginScreenCredentialsCacheSkipsInvalid(t *testing.T) {
+	vmDir := t.TempDir()
+	cases := []loginScreenCredentials{
+		{},
+		{Username: "u"},
+		{Password: "p"},
+	}
+	for _, c := range cases {
+		if err := writeLoginScreenCredentialsCache(vmDir, c); err != nil {
+			t.Fatalf("writeLoginScreenCredentialsCache(%+v): %v", c, err)
+		}
+		if _, err := os.Stat(filepath.Join(vmDir, loginScreenCredentialsFile)); !os.IsNotExist(err) {
+			t.Fatalf("cache file written for invalid creds %+v: err=%v", c, err)
+		}
+	}
+}
+
+func TestReadLoginScreenCredentialsCacheCorrupt(t *testing.T) {
+	vmDir := t.TempDir()
+	path := filepath.Join(vmDir, loginScreenCredentialsFile)
+
+	// Valid JSON but invalid creds (empty fields) -> empty, no error.
+	if err := os.WriteFile(path, []byte(`{"Username":"","Password":""}`), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	got, err := readLoginScreenCredentialsCache(vmDir)
+	if err != nil {
+		t.Fatalf("readLoginScreenCredentialsCache (empty fields): %v", err)
+	}
+	if got.Valid() {
+		t.Fatalf("got = %+v, want empty", got)
+	}
+
+	// Malformed JSON -> error.
+	if err := os.WriteFile(path, []byte("not-json"), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := readLoginScreenCredentialsCache(vmDir); err == nil {
+		t.Fatalf("readLoginScreenCredentialsCache: want error for malformed JSON")
+	}
+}
+
 func TestLoadBootLoginScreenCredentialsDoesNotMountDisk(t *testing.T) {
 	creds, err := loadBootLoginScreenCredentials(t.TempDir(), filepath.Join(t.TempDir(), "missing.img"))
 	if err != nil {
