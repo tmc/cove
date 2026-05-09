@@ -2,11 +2,106 @@ package main
 
 import (
 	"bytes"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestParseNetworkPolicyNamed(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          string
+		wantName    string
+		wantMode    string
+		wantAudit   bool
+		wantEnforce bool
+		wantDomains bool
+		wantCIDRs   bool
+	}{
+		{"empty defaults to open", "", "open", "nat", false, false, false, false},
+		{"offline", "offline", "offline", "none", true, true, false, false},
+		{"packages", "packages", "packages", "nat", true, false, true, false},
+		{"host-services", "host-services", "host-services", "nat", true, false, true, true},
+		{"lan", "lan", "lan", "nat", true, false, false, true},
+		{"open named", "open", "open", "nat", false, false, false, false},
+		{"case insensitive", "OFFLINE", "offline", "none", true, true, false, false},
+		{"trims whitespace", "  packages  ", "packages", "nat", true, false, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := ParseNetworkPolicy(tt.in)
+			if err != nil {
+				t.Fatalf("ParseNetworkPolicy(%q): %v", tt.in, err)
+			}
+			if p.Name != tt.wantName {
+				t.Errorf("Name = %q, want %q", p.Name, tt.wantName)
+			}
+			if string(p.Mode) != tt.wantMode {
+				t.Errorf("Mode = %q, want %q", p.Mode, tt.wantMode)
+			}
+			if p.Audit != tt.wantAudit {
+				t.Errorf("Audit = %v, want %v", p.Audit, tt.wantAudit)
+			}
+			if p.Enforced != tt.wantEnforce {
+				t.Errorf("Enforced = %v, want %v", p.Enforced, tt.wantEnforce)
+			}
+			if (len(p.Domains) > 0) != tt.wantDomains {
+				t.Errorf("Domains populated = %v, want %v", len(p.Domains) > 0, tt.wantDomains)
+			}
+			if (len(p.CIDRs) > 0) != tt.wantCIDRs {
+				t.Errorf("CIDRs populated = %v, want %v", len(p.CIDRs) > 0, tt.wantCIDRs)
+			}
+		})
+	}
+}
+
+func TestParseNetworkPolicyInvalid(t *testing.T) {
+	if _, err := ParseNetworkPolicy("bogus-policy-name"); err == nil {
+		t.Fatal("ParseNetworkPolicy(bogus): want error, got nil")
+	}
+	if err := validateNetworkMode("not-a-mode"); err == nil {
+		t.Fatal("validateNetworkMode(not-a-mode): want error, got nil")
+	}
+}
+
+func TestNetworkPolicyAllows(t *testing.T) {
+	pkg, err := ParseNetworkPolicy("packages")
+	if err != nil {
+		t.Fatalf("ParseNetworkPolicy: %v", err)
+	}
+	if !pkg.AllowsDomain("pypi.org") {
+		t.Error("packages should allow pypi.org")
+	}
+	if !pkg.AllowsDomain("files.pypi.org") {
+		t.Error("packages should allow subdomain files.pypi.org")
+	}
+	if pkg.AllowsDomain("evil.example.com") {
+		t.Error("packages should not allow evil.example.com")
+	}
+	if pkg.AllowsIP(netip.MustParseAddr("10.0.0.1")) {
+		t.Error("packages should not allow RFC1918")
+	}
+
+	lan, _ := ParseNetworkPolicy("lan")
+	if !lan.AllowsIP(netip.MustParseAddr("192.168.1.1")) {
+		t.Error("lan should allow 192.168.1.1")
+	}
+	if lan.AllowsIP(netip.MustParseAddr("8.8.8.8")) {
+		t.Error("lan should not allow 8.8.8.8")
+	}
+
+	open, _ := ParseNetworkPolicy("open")
+	if !open.AllowsDomain("anything.example") || !open.AllowsIP(netip.MustParseAddr("8.8.8.8")) {
+		t.Error("open should allow everything")
+	}
+
+	off, _ := ParseNetworkPolicy("offline")
+	if off.AllowsDomain("pypi.org") || off.AllowsIP(netip.MustParseAddr("10.0.0.1")) {
+		t.Error("offline should allow nothing")
+	}
+}
 
 func TestWriteNetworkPolicyAudit(t *testing.T) {
 	policy, err := ParseNetworkPolicy("packages")
