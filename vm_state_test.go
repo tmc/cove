@@ -23,10 +23,24 @@ func TestCanonicalVMState(t *testing.T) {
 }
 
 func TestVMStateLabel(t *testing.T) {
-	if got := vmStateLabel(vz.VZVirtualMachineStateRunning); got != "running" {
-		t.Fatalf("vmStateLabel(running) = %q, want %q", got, "running")
+	tests := []struct {
+		state vz.VZVirtualMachineState
+		want  string
+	}{
+		{vz.VZVirtualMachineStateRunning, "running"},
+		{vz.VZVirtualMachineStatePaused, "paused"},
+		{vz.VZVirtualMachineStateStarting, "starting"},
+		{vz.VZVirtualMachineStatePausing, "pausing"},
+		{vz.VZVirtualMachineStateResuming, "resuming"},
+		{vz.VZVirtualMachineStateStopping, "stopping"},
+		{vz.VZVirtualMachineStateSaving, "saving"},
+		{vz.VZVirtualMachineStateRestoring, "restoring"},
+		{vz.VZVirtualMachineStateError, "error"},
+		{vz.VZVirtualMachineStateStopped, "stopped"},
 	}
-	if got := vmStateLabel(vz.VZVirtualMachineStateStopped); got != "stopped" {
-		t.Fatalf("vmStateLabel(stopped) = %q, want %q", got, "stopped")
+	for _, tt := range tests {
+		if got := vmStateLabel(tt.state); got != tt.want {
+			t.Errorf("vmStateLabel(%v) = %q, want %q", tt.state, got, tt.want)
+		}
 	}
 }
