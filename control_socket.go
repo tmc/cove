@@ -70,11 +70,6 @@ type ControlServer struct {
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
 }
 
-// NewControlServer creates a new control server
-func NewControlServer(socketPath string) *ControlServer {
-	return NewControlServerWithVMDir(socketPath, vmDir)
-}
-
 // NewControlServerWithVMDir creates a new control server bound to a specific VM directory.
 func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 	if vmDirectory == "" {

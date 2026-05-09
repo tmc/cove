@@ -111,10 +111,6 @@ func (p NetworkPolicy) NetworkConfig() networkx.Config {
 	return networkx.Config{Mode: p.Mode}
 }
 
-func (p NetworkPolicy) IsNamed() bool {
-	return p.namedInput
-}
-
 func (p NetworkPolicy) ShouldAudit() bool {
 	return p.Audit && p.Name != "" && p.Name != "open"
 }

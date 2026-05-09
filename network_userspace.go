@@ -118,10 +118,6 @@ func (s FileHandleNetworkStats) summary(cfg FileHandleNetworkConfig) string {
 	return "filehandle network: " + strings.Join(parts, " ")
 }
 
-func (s FileHandleNetworkStats) String() string {
-	return s.summary(FileHandleNetworkConfig{})
-}
-
 // newConnectedDatagramSocketPair returns a connected SOCK_DGRAM socket pair.
 func newConnectedDatagramSocketPair(mtu int) (hostFD int, guestFD int, err error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
