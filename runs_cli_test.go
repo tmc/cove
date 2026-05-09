@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseRunsShowArgsAllowsFlagsAfterPrefix(t *testing.T) {
 	prefix, jsonOut, err := parseRunsShowArgs([]string{"abc123", "--json"})
@@ -25,6 +28,47 @@ func TestParseRunsExportArgsAllowsFormatAfterPrefix(t *testing.T) {
 		}
 		if prefix != "abc123" || format != "gha-summary" {
 			t.Fatalf("parseRunsExportArgs(%v) = %q, %q; want abc123, gha-summary", args, prefix, format)
+		}
+	}
+}
+
+func TestParseRunsExportArgsErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"missing format value", []string{"abc", "--format"}, "requires a value"},
+		{"unknown flag", []string{"abc", "--bogus"}, "unknown runs export flag"},
+		{"two prefixes", []string{"abc", "def", "--format=json"}, "usage:"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := parseRunsExportArgs(tt.args)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v; want contains %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunRunsExportRejectsUnknownFormat(t *testing.T) {
+	err := runRunsExport([]string{"abc123", "--format=yaml"})
+	if err == nil || !strings.Contains(err.Error(), "unknown runs export format") {
+		t.Fatalf("err = %v; want unknown format error", err)
+	}
+}
+
+func TestRunRunsExportRequiresPrefixAndFormat(t *testing.T) {
+	tests := [][]string{
+		{},
+		{"--format=json"},
+		{"abc123"},
+	}
+	for _, args := range tests {
+		err := runRunsExport(args)
+		if err == nil || !strings.Contains(err.Error(), "usage:") {
+			t.Fatalf("runRunsExport(%v) err = %v; want usage error", args, err)
 		}
 	}
 }
