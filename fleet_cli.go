@@ -35,6 +35,10 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 	if len(args) == 0 {
 		return errors.New("usage: cove fleet add <name> <user@host> [-vm <default>] | ls | rm <name>")
 	}
+	if isHelpArg(args[0]) {
+		fmt.Fprintln(out, "Usage: cove fleet <add|ls|rm|vm|image|ps|run|metrics> [args]")
+		return nil
+	}
 	switch args[0] {
 	case "add":
 		return fleetAdd(args[1:], path)

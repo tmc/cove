@@ -48,8 +48,12 @@ var (
 )
 
 func daemonCommand(args []string) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
 		return fmt.Errorf("usage: cove daemon <status|start|stop>")
+	}
+	if isHelpArg(args[0]) {
+		fmt.Fprintln(os.Stdout, "Usage: cove daemon <status|start|stop|metrics|ui>")
+		return nil
 	}
 	switch args[0] {
 	case "status":

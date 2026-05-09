@@ -28,6 +28,9 @@ func softresetCommand(args []string) error {
 		return fmt.Errorf("usage: cove softreset probe <vm> [--all|--probes filesystem,process,network,memory]")
 	}
 	switch args[0] {
+	case "-h", "--help", "help":
+		fmt.Fprintln(os.Stdout, "Usage: cove softreset <probe|run-all> <vm> [--all|--probes filesystem,process,network,memory]")
+		return nil
 	case "probe":
 		opts, err := parseSoftresetProbeArgs(args[1:])
 		if err != nil {

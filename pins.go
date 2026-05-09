@@ -82,6 +82,9 @@ func handlePinsCommand(args []string) error {
 		return fmt.Errorf("usage: cove pins <subcommand>\n  list   List pinned objects")
 	}
 	switch args[0] {
+	case "-h", "--help", "help":
+		fmt.Fprintln(os.Stdout, "Usage: cove pins <subcommand>\n  list   List pinned objects")
+		return nil
 	case "list":
 		return runPinsList(args[1:], os.Stdout)
 	default:

@@ -22,6 +22,9 @@ func handleStorageCommand(args []string) error {
 		return fmt.Errorf("usage: cove storage <subcommand> [args]\n  census    Walk ~/.vz/ and report per-category disk usage\n  budget    Show or update the storage budget\n  prune     Remove safe-to-delete cruft (build-scratch only for now)")
 	}
 	switch args[0] {
+	case "-h", "--help", "help":
+		fmt.Fprintln(os.Stdout, "Usage: cove storage <subcommand> [args]\n  census    Walk ~/.vz/ and report per-category disk usage\n  budget    Show or update the storage budget\n  prune     Remove safe-to-delete cruft (build-scratch only for now)")
+		return nil
 	case "census":
 		return runStorageCensus(args[1:], os.Stdout)
 	case "budget":
