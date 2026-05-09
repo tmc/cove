@@ -265,3 +265,81 @@ func TestEffectiveSharedFoldersRespectsSandboxForSavedState(t *testing.T) {
 		t.Fatalf("effectiveSharedFolders() with sandbox = %#v, want nil", got)
 	}
 }
+
+func TestSandboxPolicyStrict(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		level SandboxLevel
+		want  bool
+	}{
+		{SandboxLevelUnset, false},
+		{SandboxLevelMinimal, false},
+		{SandboxLevelStrict, true},
+	}
+	for _, tc := range cases {
+		if got := (SandboxPolicy{Level: tc.level}).Strict(); got != tc.want {
+			t.Fatalf("Strict(%q) = %v, want %v", tc.level, got, tc.want)
+		}
+	}
+}
+
+func TestSandboxLevelHelpers(t *testing.T) {
+	oldLevel := sandboxLevel
+	oldUpgrade := autoUpgradeAgent
+	t.Cleanup(func() {
+		sandboxLevel = oldLevel
+		autoUpgradeAgent = oldUpgrade
+	})
+
+	cases := []struct {
+		level             string
+		wantActive        bool
+		wantStrict        bool
+		wantAgentProv     bool
+		wantAgentUpgrade  bool
+		upgradeFlag       bool
+	}{
+		{level: "", wantActive: false, wantStrict: false, wantAgentProv: true, wantAgentUpgrade: true, upgradeFlag: true},
+		{level: "minimal", wantActive: true, wantStrict: false, wantAgentProv: false, wantAgentUpgrade: false, upgradeFlag: true},
+		{level: "strict", wantActive: true, wantStrict: true, wantAgentProv: false, wantAgentUpgrade: false, upgradeFlag: true},
+	}
+	for _, tc := range cases {
+		sandboxLevel = tc.level
+		autoUpgradeAgent = tc.upgradeFlag
+		if got := sandboxActive(); got != tc.wantActive {
+			t.Fatalf("sandboxActive(%q) = %v, want %v", tc.level, got, tc.wantActive)
+		}
+		if got := sandboxStrict(); got != tc.wantStrict {
+			t.Fatalf("sandboxStrict(%q) = %v, want %v", tc.level, got, tc.wantStrict)
+		}
+		if got := sandboxAllowsAgentProvision(); got != tc.wantAgentProv {
+			t.Fatalf("sandboxAllowsAgentProvision(%q) = %v, want %v", tc.level, got, tc.wantAgentProv)
+		}
+		if got := sandboxAllowsAgentUpgrade(); got != tc.wantAgentUpgrade {
+			t.Fatalf("sandboxAllowsAgentUpgrade(%q) = %v, want %v", tc.level, got, tc.wantAgentUpgrade)
+		}
+	}
+}
+
+func TestSharedFolderCommandBlocked(t *testing.T) {
+	oldLevel := sandboxLevel
+	t.Cleanup(func() { sandboxLevel = oldLevel })
+
+	sandboxLevel = ""
+	if sharedFolderCommandBlocked([]string{"add", "/foo"}) {
+		t.Fatalf("sharedFolderCommandBlocked without sandbox: want false")
+	}
+
+	sandboxLevel = "strict"
+	if sharedFolderCommandBlocked(nil) {
+		t.Fatalf("sharedFolderCommandBlocked(nil): want false")
+	}
+	for _, allowed := range []string{"list", "status", "mount", "help", "-h", "--help"} {
+		if sharedFolderCommandBlocked([]string{allowed}) {
+			t.Fatalf("sharedFolderCommandBlocked(%q): want false", allowed)
+		}
+	}
+	if !sharedFolderCommandBlocked([]string{"add", "/foo"}) {
+		t.Fatalf("sharedFolderCommandBlocked(add) under sandbox: want true")
+	}
+}
