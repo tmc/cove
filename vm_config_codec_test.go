@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tmc/apple/x/vzkit/configcodec"
@@ -52,5 +55,54 @@ func TestUnmarshalFrameworkConfigSnapshotInvalidFormat(t *testing.T) {
 	data := []byte(frameworkConfigFormatPrefix + "not-a-number\npayload")
 	if _, _, err := unmarshalFrameworkConfigSnapshot(data); err == nil {
 		t.Fatal("expected error for invalid format")
+	}
+}
+
+func TestEmptyIfBlank(t *testing.T) {
+	if got := emptyIfBlank(""); got != "<none>" {
+		t.Errorf("empty: got %q want <none>", got)
+	}
+	if got := emptyIfBlank("foo"); got != "foo" {
+		t.Errorf("non-empty: got %q want foo", got)
+	}
+}
+
+func TestEnsureReadableFile(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "nope")
+	err := ensureReadableFile(missing)
+	if err == nil || !strings.Contains(err.Error(), "missing required file") {
+		t.Errorf("missing: got %v", err)
+	}
+	empty := filepath.Join(dir, "empty")
+	if err := os.WriteFile(empty, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	err = ensureReadableFile(empty)
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Errorf("empty: got %v", err)
+	}
+	good := filepath.Join(dir, "good")
+	if err := os.WriteFile(good, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureReadableFile(good); err != nil {
+		t.Errorf("good: %v", err)
+	}
+}
+
+func TestWriteFrameworkConfigBytes(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "sub", "config.bin")
+	want := []byte("payload")
+	if err := writeFrameworkConfigBytes(target, want); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %q want %q", got, want)
 	}
 }
