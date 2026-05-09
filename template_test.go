@@ -103,6 +103,120 @@ func TestTemplateErrorPaths(t *testing.T) {
 	}
 }
 
+func TestCompressDecompressRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.bin")
+	gz := filepath.Join(dir, "src.bin.gz")
+	out := filepath.Join(dir, "out.bin")
+
+	want := make([]byte, 64*1024)
+	for i := range want {
+		want[i] = byte(i % 251)
+	}
+	if err := os.WriteFile(src, want, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := compressFile(src, gz); err != nil {
+		t.Fatalf("compressFile: %v", err)
+	}
+	gzInfo, err := os.Stat(gz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gzInfo.Size() == 0 {
+		t.Fatal("compressed file is empty")
+	}
+
+	if err := decompressFile(gz, out); err != nil {
+		t.Fatalf("decompressFile: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("size: got %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("byte %d: got %d, want %d", i, got[i], want[i])
+		}
+	}
+}
+
+func TestCompressFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	if err := compressFile(filepath.Join(dir, "missing"), filepath.Join(dir, "out.gz")); err == nil {
+		t.Error("compressFile missing src: want error")
+	}
+	src := filepath.Join(dir, "src")
+	if err := os.WriteFile(src, []byte("hi"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := compressFile(src, filepath.Join(dir, "no-such-dir", "out.gz")); err == nil {
+		t.Error("compressFile bad dst: want error")
+	}
+}
+
+func TestDecompressFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	if err := decompressFile(filepath.Join(dir, "missing"), filepath.Join(dir, "out")); err == nil {
+		t.Error("decompressFile missing src: want error")
+	}
+	bad := filepath.Join(dir, "bad.gz")
+	if err := os.WriteFile(bad, []byte("not gzip"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := decompressFile(bad, filepath.Join(dir, "out")); err == nil {
+		t.Error("decompressFile non-gzip: want error")
+	}
+}
+
+func TestGetTemplateInfoFastAndCompressed(t *testing.T) {
+	dir := t.TempDir()
+
+	// Missing required file -> error.
+	if _, err := getTemplateInfo(dir); err == nil {
+		t.Error("getTemplateInfo empty dir: want error")
+	}
+
+	// Compressed mode: stage required files.
+	for _, f := range TemplateFiles {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err := getTemplateInfo(dir)
+	if err != nil {
+		t.Fatalf("getTemplateInfo compressed: %v", err)
+	}
+	if info.FastMode {
+		t.Error("expected FastMode=false")
+	}
+	if info.Name != filepath.Base(dir) {
+		t.Errorf("Name=%q, want %q", info.Name, filepath.Base(dir))
+	}
+
+	// Fast mode: marker present, requires disk.img.
+	fast := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fast, TemplateMarkerFast), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range TemplateFilesFast {
+		if err := os.WriteFile(filepath.Join(fast, f), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err = getTemplateInfo(fast)
+	if err != nil {
+		t.Fatalf("getTemplateInfo fast: %v", err)
+	}
+	if !info.FastMode {
+		t.Error("expected FastMode=true")
+	}
+}
+
 func TestListTemplatesEmpty(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	got, err := ListTemplates()
