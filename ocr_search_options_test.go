@@ -79,3 +79,33 @@ func TestObservationInSearchRegion(t *testing.T) {
 		t.Fatal("bottom point should be outside menu region")
 	}
 }
+
+func TestObservationInSearchRegion_Cases(t *testing.T) {
+	region := &ocrx.Region{MinX: 0.25, MinY: 0.25, MaxX: 0.75, MaxY: 0.75}
+	tests := []struct {
+		name   string
+		bounds image.Rectangle
+		region *ocrx.Region
+		pt     image.Point
+		want   bool
+	}{
+		{"nil region", image.Rect(0, 0, 100, 100), nil, image.Point{X: 0, Y: 0}, true},
+		{"zero width", image.Rect(0, 0, 0, 100), region, image.Point{X: 50, Y: 50}, false},
+		{"zero height", image.Rect(0, 0, 100, 0), region, image.Point{X: 50, Y: 50}, false},
+		{"inside center", image.Rect(0, 0, 100, 100), region, image.Point{X: 50, Y: 50}, true},
+		{"outside left", image.Rect(0, 0, 100, 100), region, image.Point{X: 10, Y: 50}, false},
+		{"min boundary", image.Rect(0, 0, 100, 100), region, image.Point{X: 25, Y: 25}, true},
+		{"max boundary", image.Rect(0, 0, 100, 100), region, image.Point{X: 75, Y: 75}, true},
+		{"translated bounds inside", image.Rect(200, 200, 300, 300), region, image.Point{X: 250, Y: 250}, true},
+		{"translated bounds outside", image.Rect(200, 200, 300, 300), region, image.Point{X: 210, Y: 210}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obs := ocrx.TextObservation{Center: tt.pt}
+			got := observationInSearchRegion(obs, tt.bounds, tt.region)
+			if got != tt.want {
+				t.Fatalf("observationInSearchRegion(%v) = %v, want %v", tt.pt, got, tt.want)
+			}
+		})
+	}
+}
