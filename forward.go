@@ -42,6 +42,10 @@ func forwardCommand(args []string) error {
 }
 
 func runForward(ctx context.Context, args []string, newStarter func(string) forwardStarter) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		fmt.Println("Usage: cove forward <vm> <hostport>:<vmport> [-reverse] [-udp]")
+		return nil
+	}
 	spec, err := parseForwardArgs(args)
 	if err != nil {
 		return err

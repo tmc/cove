@@ -49,7 +49,7 @@ func handleSIPCommand(args []string) error {
 			return err
 		}
 		return sipCreateDisk()
-	case "help":
+	case "help", "-h", "--help":
 		fmt.Print(sipUsage)
 		return nil
 	default:
