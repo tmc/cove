@@ -216,6 +216,19 @@ func TestLoadOrCreateFileTokenStatErrorIsReturned(t *testing.T) {
 	}
 }
 
+func TestRotateMasterTokenFileMkdirError(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Path whose parent dir creation must fail (parent component is a file).
+	bad := filepath.Join(blocker, "sub", "tok")
+	if _, err := RotateMasterToken(bad); err == nil {
+		t.Fatal("expected error when parent is a file")
+	}
+}
+
 // assertTokenFormat checks that tok is exactly 64 lowercase hex chars.
 func assertTokenFormat(t *testing.T, tok string) {
 	t.Helper()
