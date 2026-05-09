@@ -1,6 +1,11 @@
 # Design 041: ScreenCaptureKit Migration
 
-Status: Accepted (2026-05-08; horizon v0.6)
+Status: Slices 1-3 shipped; Slice 4 specced (horizon v0.6).
+Slice 1 (probe + `cove doctor sckit-preauth`) at `8d55d7a`. Slice 2
+(`SCScreenshotManager` spike) at `d0877b8`. Slice 3 (dual-path SCKit /
+CGWindow capture) at `55257f2`; tests at `e124c46`; release-notes
+marker at `eadb34f`. Slice 4 spec (default flip + retire) at `318d801`.
+Accepted 2026-05-08 at `50bf8ca`.
 Author: Travis Cline
 Date: 2026-05-07
 
