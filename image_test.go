@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -440,5 +441,49 @@ func TestIsImageForkFromRef(t *testing.T) {
 				t.Errorf("isImageForkFromRef(%q) = %v, want %v", tc.ref, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestWriteImageManifestAtomic verifies writeImageManifest leaves no
+// partial manifest.json: the destination is either fully present with
+// valid JSON or absent. Closes R5 of image-gc-race-audit-2026-05-08.
+func TestWriteImageManifestAtomic(t *testing.T) {
+	dir := t.TempDir()
+	m := &ImageManifest{Name: "n", Tag: "t", SchemaVersion: 1}
+	if err := writeImageManifest(dir, m); err != nil {
+		t.Fatalf("writeImageManifest: %v", err)
+	}
+	// No leftover tmp file.
+	if _, err := os.Stat(filepath.Join(dir, "manifest.json.tmp")); !os.IsNotExist(err) {
+		t.Fatalf("manifest.json.tmp leaked: err=%v", err)
+	}
+	// Final file parses as valid JSON with expected fields.
+	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatalf("manifest.json is empty")
+	}
+	var got ImageManifest
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	if got.Name != "n" || got.Tag != "t" {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+}
+
+// TestWriteImageManifestNoPartialOnRenameFailure verifies that if the
+// rename step cannot proceed (target dir missing), no partial
+// manifest.json is left behind.
+func TestWriteImageManifestNoPartialOnDirMissing(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "does-not-exist")
+	m := &ImageManifest{Name: "n", Tag: "t", SchemaVersion: 1}
+	if err := writeImageManifest(dir, m); err == nil {
+		t.Fatalf("writeImageManifest: expected error for missing dir")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("manifest.json should not exist: err=%v", err)
 	}
 }

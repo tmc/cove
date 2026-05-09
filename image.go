@@ -328,12 +328,31 @@ func writeImageManifest(dir string, m *ImageManifest) error {
 	}
 	path := filepath.Join(dir, "manifest.json")
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
 		return fmt.Errorf("write manifest: %w", err)
+	}
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("write manifest: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("sync manifest: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("close manifest: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp)
 		return fmt.Errorf("rename manifest: %w", err)
+	}
+	if d, err := os.Open(dir); err == nil {
+		d.Sync()
+		d.Close()
 	}
 	return nil
 }
