@@ -694,3 +694,83 @@ func containsBuildWarning(list []string, substr string) bool {
 	}
 	return false
 }
+
+func TestParseBuildDuration(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		want    time.Duration
+		wantErr bool
+	}{
+		{"days", "7d", 7 * 24 * time.Hour, false},
+		{"one_day", "1d", 24 * time.Hour, false},
+		{"hours", "2h", 2 * time.Hour, false},
+		{"minutes", "30m", 30 * time.Minute, false},
+		{"empty", "", 0, true},
+		{"zero", "0s", 0, true},
+		{"negative", "-1h", 0, true},
+		{"bad_days", "xd", 0, true},
+		{"zero_days", "0d", 0, true},
+		{"junk", "not-a-duration", 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseBuildDuration(tc.in)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseBuildDuration(%q) = %v, want error", tc.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseBuildDuration(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("parseBuildDuration(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateCompactMode(t *testing.T) {
+	cases := []struct {
+		mode    string
+		wantErr bool
+	}{
+		{"fast", false},
+		{"targeted", false},
+		{"thorough", false},
+		{"", true},
+		{"aggressive", true},
+		{"FAST", true}, // case-sensitive
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode, func(t *testing.T) {
+			err := validateCompactMode(tc.mode)
+			if tc.wantErr && err == nil {
+				t.Fatalf("validateCompactMode(%q) = nil, want error", tc.mode)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("validateCompactMode(%q): %v", tc.mode, err)
+			}
+		})
+	}
+}
+
+func TestParseBuildScriptMetaRejectsBadDirectives(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"bad_ttl", "# cache-ttl: notaduration\nexec echo ok\n"},
+		{"empty_ttl", "# cache-ttl:\nexec echo ok\n"},
+		{"bad_compact", "# compact: aggressive\nexec echo ok\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseBuildScriptMeta([]byte(tc.body)); err == nil {
+				t.Fatalf("parseBuildScriptMeta(%q) = nil, want error", tc.body)
+			}
+		})
+	}
+}
