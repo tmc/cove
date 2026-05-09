@@ -45,7 +45,13 @@ func handleCpCommand(args []string) error {
 func runCp(ctx context.Context, args []string, newAgent func(string) cpAgent) error {
 	fs := flag.NewFlagSet("cp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	if err := fs.Parse(args); err != nil {
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: cove cp <host-path> <vm:/guest/path> | <vm:/guest/path> <host-path>")
+	}
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 2 {
