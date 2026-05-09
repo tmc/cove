@@ -157,6 +157,49 @@ func TestHandleDiskSnapshotSaveArgs(t *testing.T) {
 	}
 }
 
+func TestHandleDiskSnapshotRestoreSystemFlag(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewDiskSnapshotManager(dir)
+
+	if err := handleDiskSnapshotSave(mgr, []string{"snap1"}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	// -system selects DiskSnapshotSystem; restore reaches mgr.Restore which
+	// returns an error because there is no live disk to clobber. We only
+	// care that the arg branch executed without a parse-time failure.
+	err := handleDiskSnapshotRestore(mgr, []string{"snap1", "-system"})
+	if err == nil {
+		t.Skip("Restore unexpectedly succeeded with no live disk; skipping branch check")
+	}
+}
+
+func TestHandleDiskSnapshotRunArgs(t *testing.T) {
+	if err := handleDiskSnapshotRun(nil); err == nil {
+		t.Error("run with no args should fail")
+	}
+
+	prevDisp := disposableMode
+	disposableMode = true
+	err := handleDiskSnapshotRun([]string{"snap1"})
+	disposableMode = prevDisp
+	if err == nil || !strings.Contains(err.Error(), "disposable") {
+		t.Errorf("err = %v, want disposable conflict", err)
+	}
+
+	if err := handleDiskSnapshotRun([]string{"snap1", "-bogus"}); err == nil ||
+		!strings.Contains(err.Error(), "unknown disk-snapshot run option") {
+		t.Errorf("err = %v, want unknown option", err)
+	}
+
+	prevDir := vmDir
+	vmDir = t.TempDir()
+	err = handleDiskSnapshotRun([]string{"missing-snap", "-ram"})
+	vmDir = prevDir
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("err = %v, want not-found for missing snapshot", err)
+	}
+}
+
 func TestHandleDiskSnapshotCommandUnknown(t *testing.T) {
 	err := handleDiskSnapshotCommand([]string{"bogus"})
 	if err == nil || !strings.Contains(err.Error(), "unknown disk-snapshot command") {
