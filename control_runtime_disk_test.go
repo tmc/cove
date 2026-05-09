@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -102,6 +103,41 @@ func TestRuntimeDiskResponseJSONRoundTrip(t *testing.T) {
 	}
 	if got.Count != 1 || len(got.Disks) != 1 || got.Disks[0].Path != "/tmp/disk.img" || !got.Disks[0].ReadOnly {
 		t.Fatalf("round trip = %#v", got)
+	}
+}
+
+func TestHandleDiskJSONRequestDispatchErrors(t *testing.T) {
+	s := NewControlServerWithVMDir("", t.TempDir())
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"empty", ``, "empty request"},
+		{"bad json", `{`, "parse runtime disk request"},
+		{"unknown action", `{"action":"frobnicate"}`, "unknown disk action"},
+		{"swap missing index", `{"action":"swap","path":"/tmp/a.img"}`, "disk swap requires index"},
+		{"swap missing path", `{"action":"swap","index":0}`, "disk swap requires path"},
+		{"resize missing index", `{"action":"resize","size_bytes":1024}`, "disk resize requires index"},
+		{"envelope unwrap unknown", `{"data":{"action":"nope"}}`, "unknown disk action"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := s.handleDiskJSONRequest([]byte(tt.body))
+			if resp == nil || resp.Error == "" {
+				t.Fatalf("want error containing %q, got %#v", tt.want, resp)
+			}
+			if !strings.Contains(resp.Error, tt.want) {
+				t.Fatalf("error = %q, want substring %q", resp.Error, tt.want)
+			}
+		})
+	}
+}
+
+func TestRuntimeDiskActionNameAliasAndCase(t *testing.T) {
+	req := RuntimeDiskActionRequest{Type: "  SWAP  "}
+	if got := req.actionName(); got != "swap" {
+		t.Fatalf("actionName via Type alias = %q, want %q", got, "swap")
 	}
 }
 
