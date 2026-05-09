@@ -302,6 +302,91 @@ func TestBuildLumeManifestRoundTripsThroughParser(t *testing.T) {
 	}
 }
 
+func TestWriteLumeManifestOut(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	m := ociimage.Manifest{SchemaVersion: 2, MediaType: "application/vnd.oci.image.manifest.v1+json"}
+
+	if err := writeLumeManifestOut(path, m); err != nil {
+		t.Fatalf("writeLumeManifestOut: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got := data[len(data)-1]; got != '\n' {
+		t.Errorf("manifest does not end with newline; last byte = %q", got)
+	}
+	var round ociimage.Manifest
+	if err := json.Unmarshal(data, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if round.SchemaVersion != 2 {
+		t.Errorf("SchemaVersion = %d, want 2", round.SchemaVersion)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0644 {
+		t.Errorf("manifest perm = %04o, want 0644", perm)
+	}
+}
+
+func TestWriteLumeManifestOutWriteError(t *testing.T) {
+	dir := t.TempDir()
+	// Path under a regular file → write fails.
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	bad := filepath.Join(blocker, "manifest.json")
+	if err := writeLumeManifestOut(bad, ociimage.Manifest{}); err == nil {
+		t.Fatal("expected write error")
+	}
+}
+
+func TestLumePushDryRunOnlyRejectsNonDryRun(t *testing.T) {
+	plan := &lumePushPlan{VMName: "x", Ref: "r"}
+	err := lumePushDryRunOnly(plan, pushOptions{DryRun: false})
+	if err == nil {
+		t.Fatal("expected error for non-dry-run")
+	}
+	if !strings.Contains(err.Error(), "--dry-run") {
+		t.Errorf("error %q does not mention --dry-run", err.Error())
+	}
+}
+
+func TestLumePushDryRunOnlyWritesManifest(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "out.json")
+	plan := &lumePushPlan{
+		VMName:   "myvm",
+		Ref:      "ghcr.io/foo/bar:tag",
+		DiskPath: "/dev/null",
+		Manifest: ociimage.Manifest{SchemaVersion: 2},
+		Config:   lumeConfigOut{OS: "macos", CPUCount: 4, MemorySize: 4 << 30, DiskSize: 64 << 30},
+	}
+	// Redirect stdout to discard noise from printLumePushDryRun.
+	oldStdout := os.Stdout
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	os.Stdout = devnull
+	defer func() {
+		os.Stdout = oldStdout
+		devnull.Close()
+	}()
+
+	if err := lumePushDryRunOnly(plan, pushOptions{DryRun: true, ManifestOut: manifestPath}); err != nil {
+		t.Fatalf("lumePushDryRunOnly: %v", err)
+	}
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("manifest not written: %v", err)
+	}
+}
+
 func TestLumeConfigOutMatchesObservedSchema(t *testing.T) {
 	// Sanity: the JSON we serialize should look like trycua's published
 	// schema. Field names verified against
