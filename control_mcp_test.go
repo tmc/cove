@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -319,6 +322,99 @@ func TestMCP_VMStatus_NotRunning(t *testing.T) {
 	msg, _ := ci["text"].(string)
 	if !strings.Contains(msg, "ghost") {
 		t.Errorf("error text should mention vm name %q; got %q", "ghost", msg)
+	}
+}
+
+type mcpErrWriter struct{}
+
+func (mcpErrWriter) Write(p []byte) (int, error) { return 0, errors.New("nope") }
+
+func TestMcpServerWriteFrame(t *testing.T) {
+	t.Run("happy path appends newline", func(t *testing.T) {
+		var out, log bytes.Buffer
+		s := &mcpServer{Out: &out, Log: &log}
+		s.writeFrame(jsonrpcResponse{JSONRPC: "2.0", ID: json.RawMessage(`1`), Result: "ok"})
+		got := out.String()
+		if !strings.HasSuffix(got, "\n") {
+			t.Errorf("frame missing trailing newline: %q", got)
+		}
+		var resp jsonrpcResponse
+		if err := json.Unmarshal([]byte(strings.TrimRight(got, "\n")), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp.JSONRPC != "2.0" {
+			t.Errorf("JSONRPC = %q, want 2.0", resp.JSONRPC)
+		}
+		if log.Len() != 0 {
+			t.Errorf("log unexpectedly non-empty: %q", log.String())
+		}
+	})
+
+	t.Run("write error logs and swallows", func(t *testing.T) {
+		var log bytes.Buffer
+		s := &mcpServer{Out: mcpErrWriter{}, Log: &log}
+		s.writeFrame(jsonrpcResponse{JSONRPC: "2.0"})
+		if !strings.Contains(log.String(), "mcp: write") {
+			t.Errorf("log = %q, want write error", log.String())
+		}
+	})
+
+	t.Run("marshal error logs", func(t *testing.T) {
+		var out, log bytes.Buffer
+		s := &mcpServer{Out: &out, Log: &log}
+		s.writeFrame(jsonrpcResponse{JSONRPC: "2.0", Result: make(chan int)})
+		if out.Len() != 0 {
+			t.Errorf("out should be empty on marshal failure; got %q", out.String())
+		}
+		if !strings.Contains(log.String(), "mcp: marshal response") {
+			t.Errorf("log = %q, want marshal error", log.String())
+		}
+	})
+}
+
+func TestMcpVMDirectory(t *testing.T) {
+	root := t.TempDir()
+	good := filepath.Join(root, "vm-good")
+	if err := os.Mkdir(good, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	notDir := filepath.Join(root, "vm-file")
+	if err := os.WriteFile(notDir, nil, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		args    string
+		want    string
+		wantErr string
+	}{
+		{"missing args", `{}`, "", `missing required argument: "name"`},
+		{"empty name", `{"name":"  "}`, "", `missing required argument: "name"`},
+		{"dot", `{"name":"."}`, "", `invalid vm name`},
+		{"slash", `{"name":"a/b"}`, "", `invalid vm name`},
+		{"backslash", `{"name":"a\\b"}`, "", `invalid vm name`},
+		{"missing vm", `{"name":"nope"}`, "", "not found"},
+		{"not a directory", `{"name":"vm-file"}`, "", "is not a directory"},
+		{"happy", `{"name":"vm-good"}`, good, ""},
+		{"bad json", `not json`, "", "invalid character"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := mcpVMDirectory(root, json.RawMessage(tt.args))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want substring %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
