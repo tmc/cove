@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -130,6 +132,42 @@ func TestIsLinuxGuestOS(t *testing.T) {
 				t.Fatalf("isLinuxGuestOS(%q) = %v, want %v", tt.os, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFindCoveModuleDirCoveSrc(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("COVE_SRC", dir)
+		got, err := findCoveModuleDir()
+		if err != nil {
+			t.Fatalf("findCoveModuleDir() error = %v", err)
+		}
+		if got != dir {
+			t.Fatalf("findCoveModuleDir() = %q, want %q", got, dir)
+		}
+	})
+
+	t.Run("missing go.mod", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("COVE_SRC", dir)
+		_, err := findCoveModuleDir()
+		if err == nil || !strings.Contains(err.Error(), "does not contain go.mod") {
+			t.Fatalf("findCoveModuleDir() error = %v, want 'does not contain go.mod'", err)
+		}
+	})
+}
+
+func TestGoListModuleDirRejectsNonModuleDir(t *testing.T) {
+	dir := t.TempDir()
+	// dir has no go.mod and is unrelated to this module, so go list -m should fail
+	// or return a path not matching expectations.
+	_, err := goListModuleDir(dir)
+	if err == nil {
+		t.Fatalf("goListModuleDir(%q) = nil error, want failure outside module tree", dir)
 	}
 }
 
