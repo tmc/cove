@@ -98,3 +98,52 @@ func TestMarkVerified(t *testing.T) {
 		t.Fatalf("VerifiedAt = %v, want %v", cfg.Agent.VerifiedAt, when.UTC())
 	}
 }
+
+func TestMarkVerifiedInfoRecordsBuildIdentity(t *testing.T) {
+	dir := t.TempDir()
+	feats := []string{"exec-attach", "user-exec"}
+	if err := MarkVerifiedInfo(dir, PlatformMacOS, SourceRuntime, "v0.5.0", "abc123", feats, time.Time{}); err != nil {
+		t.Fatalf("MarkVerifiedInfo() error = %v", err)
+	}
+	cfg, err := vmconfig.Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	a := cfg.Agent
+	if a == nil || a.Version != "v0.5.0" || a.Commit != "abc123" {
+		t.Fatalf("Agent = %#v, want version+commit set", a)
+	}
+	if len(a.Features) != 2 || a.Features[0] != "exec-attach" || a.Features[1] != "user-exec" {
+		t.Fatalf("Features = %v, want %v", a.Features, feats)
+	}
+	if a.VerifiedAt.IsZero() {
+		t.Fatalf("VerifiedAt should default to now when zero passed")
+	}
+	// Mutating caller slice must not affect persisted state (defensive copy).
+	feats[0] = "mutated"
+	cfg2, _ := vmconfig.Load(dir)
+	if cfg2.Agent.Features[0] != "exec-attach" {
+		t.Fatalf("Features aliased caller slice: %v", cfg2.Agent.Features)
+	}
+}
+
+func TestMarkVerifiedForSocket(t *testing.T) {
+	if err := MarkVerifiedForSocket("   ", SourceRuntime); err != nil {
+		t.Fatalf("blank sock should be no-op, got %v", err)
+	}
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "control.sock")
+	if err := MarkVerifiedForSocket(sock, SourceRuntime); err != nil {
+		t.Fatalf("MarkVerifiedForSocket() error = %v", err)
+	}
+	cfg, err := vmconfig.Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Agent == nil || !cfg.Agent.Verified || cfg.Agent.Source != SourceRuntime {
+		t.Fatalf("Agent = %#v, want verified runtime entry", cfg.Agent)
+	}
+	if cfg.Agent.Platform != PlatformMacOS {
+		t.Fatalf("Platform = %q, want auto-detected macos", cfg.Agent.Platform)
+	}
+}
