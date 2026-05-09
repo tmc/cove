@@ -479,3 +479,62 @@ func TestWriteImageTar_GzipStreamRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestRunImagePushArgErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"no args", nil, "image push requires"},
+		{"one arg", []string{"foo:bar"}, "image push requires"},
+		{"three args", []string{"foo:bar", "x", "y"}, "image push requires"},
+		{"bad ref", []string{":::bad", "out.tar"}, ""},
+		{"gzip with registry", []string{"-gzip", "foo:bar", "ghcr.io/acme/vm:v1"}, "-gzip is only valid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runImagePush(tt.args)
+			if err == nil {
+				t.Fatalf("runImagePush(%v) succeeded; want error", tt.args)
+			}
+			if tt.want != "" && !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %q, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunImageLoadArgErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"no args", nil, "image load requires"},
+		{"two args", []string{"a", "b"}, "image load requires"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runImageLoad(tt.args)
+			if err == nil {
+				t.Fatalf("runImageLoad(%v) succeeded; want error", tt.args)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %q, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunImagePushHelp(t *testing.T) {
+	if err := runImagePush([]string{"-h"}); err != nil {
+		t.Fatalf("runImagePush -h: %v", err)
+	}
+}
+
+func TestRunImageLoadHelp(t *testing.T) {
+	if err := runImageLoad([]string{"-h"}); err != nil {
+		t.Fatalf("runImageLoad -h: %v", err)
+	}
+}
