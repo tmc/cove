@@ -32,8 +32,14 @@ type subSubHelpCase struct {
 // subSubHelp lists (parent, action) pairs whose `-h` surface is
 // expected to exit cleanly with a Usage block mentioning the action.
 var subSubHelp = []subSubHelpCase{
+	{"sip", "enable"},
 	{"sip", "enable-auto"},
+	{"sip", "disable"},
 	{"sip", "disable-auto"},
+	{"sip", "status"},
+	{"sip", "create-disk"},
+	{"softreset", "probe"},
+	{"softreset", "run-all"},
 }
 
 // skippedSubSubHelp records (parent, action) pairs intentionally not
@@ -56,12 +62,6 @@ var skippedSubSubHelp = map[subSubHelpCase]string{
 	{"fleet", "run"}:            "fleet run -h: exit 1 from flag parser (R84)",
 	{"fleet", "metrics"}:        "fleet metrics -h: exit 1 from flag parser (R84)",
 	{"pins", "list"}:            "pins list -h: exit 1 from flag parser (R84)",
-	{"sip", "enable"}:           "sip enable -h: exit 0 but no Usage; -h consumed as positional (R84)",
-	{"sip", "disable"}:          "sip disable -h: exit 0 but no Usage; -h consumed as positional (R84)",
-	{"sip", "status"}:           "sip status -h: exit 0 but no Usage; -h consumed as positional (R84)",
-	{"sip", "create-disk"}:      "sip create-disk -h: exit 0 but no Usage and no action name (R84)",
-	{"softreset", "probe"}:      "softreset probe -h: exit 1; -h treated as <vm> positional (R84)",
-	{"softreset", "run-all"}:    "softreset run-all -h: exit 1; -h treated as <vm> positional (R84)",
 	{"storage", "census"}:       "storage census -h: exit 1 from flag parser (R84)",
 	{"storage", "budget"}:       "storage budget -h: exit 1, no Usage (R84)",
 	{"storage", "prune"}:        "storage prune -h: exit 1 from flag parser (R84)",
