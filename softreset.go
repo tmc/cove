@@ -32,6 +32,10 @@ func softresetCommand(args []string) error {
 		fmt.Fprintln(os.Stdout, "Usage: cove softreset <probe|run-all> <vm> [--all|--probes filesystem,process,network,memory]")
 		return nil
 	case "probe":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove softreset probe <vm> [--all|--probes filesystem,process,network,memory]")
+			return nil
+		}
 		opts, err := parseSoftresetProbeArgs(args[1:])
 		if err != nil {
 			return err
@@ -42,6 +46,10 @@ func softresetCommand(args []string) error {
 		}
 		return writeSoftresetProbeSummary(os.Stdout, opts, results)
 	case "run-all":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove softreset run-all <vm> [--probes filesystem,process,network,memory]")
+			return nil
+		}
 		opts, err := parseSoftresetRunAllArgs(args[1:])
 		if err != nil {
 			return err
