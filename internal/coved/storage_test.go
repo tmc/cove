@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -378,4 +379,100 @@ func TestStoragePollSchedulerHonorsPins(t *testing.T) {
 
 	stop()
 	<-done
+}
+
+// TestStoragePollSchedulerRunOnceErrors covers the two RunOnce error
+// paths: a canceled context returns ctx.Err() before any work, and an
+// empty Root surfaces a "root required" failure.
+func TestStoragePollSchedulerRunOnceErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func() (*StoragePollScheduler, context.Context)
+		wantErr string
+	}{
+		{
+			name: "ctx canceled",
+			setup: func() (*StoragePollScheduler, context.Context) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return &StoragePollScheduler{Root: t.TempDir()}, ctx
+			},
+			wantErr: "context canceled",
+		},
+		{
+			name: "empty root",
+			setup: func() (*StoragePollScheduler, context.Context) {
+				return &StoragePollScheduler{}, context.Background()
+			},
+			wantErr: "root required",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, ctx := tc.setup()
+			_, err := s.RunOnce(ctx)
+			if err == nil {
+				t.Fatalf("RunOnce err = nil, want %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("RunOnce err = %q, want substring %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestStoragePollSchedulerHardWithoutPrunersAnnotates confirms the
+// scheduler still drives the prune coordinator when Pruners is empty
+// and tags the emitted storage_prune_run event with
+// reason=no-pruners-configured so alerting hooks can distinguish a
+// dry-run-by-design from a misconfiguration.
+func TestStoragePollSchedulerHardWithoutPrunersAnnotates(t *testing.T) {
+	root := t.TempDir()
+	vmsDir := filepath.Join(root, "vms")
+	if err := os.MkdirAll(vmsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vmsDir, "disk.img"), make([]byte, 400), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := storagecensus.SaveBudget(root, storagecensus.Budget{
+		TargetBytes: 200, WarnPct: 50, HardPct: 90,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	bus := NewEventBus(8)
+	sub, cancel := bus.Subscribe(4)
+	defer cancel()
+
+	sched := &StoragePollScheduler{
+		Root:       root,
+		Categories: []storagecensus.Descriptor{{Name: "vms", Path: vmsDir}},
+		Bus:        bus,
+		Now:        func() time.Time { return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC) },
+	}
+	if _, err := sched.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	var events []Event
+	deadline := time.After(2 * time.Second)
+	for len(events) < 2 {
+		select {
+		case ev := <-sub:
+			events = append(events, ev)
+		case <-deadline:
+			t.Fatalf("collected %d events, want 2", len(events))
+		}
+	}
+	pe := events[1]
+	if pe.EventType != "storage_prune_run" {
+		t.Fatalf("event[1].EventType = %q, want storage_prune_run", pe.EventType)
+	}
+	if got := pe.Extra["reason"]; got != "no-pruners-configured" {
+		t.Errorf("reason = %v, want no-pruners-configured", got)
+	}
+	if got := pe.Extra["bytes_freed"]; got != int64(0) {
+		t.Errorf("bytes_freed = %v, want 0", got)
+	}
 }
