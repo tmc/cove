@@ -173,6 +173,90 @@ func TestRunBundle_OnlyForkFrom(t *testing.T) {
 	}
 }
 
+func TestRunBundle_StdoutStderrWriterNil(t *testing.T) {
+	var b *RunBundle
+	if got := b.StdoutWriter(); got != nil {
+		t.Errorf("nil bundle StdoutWriter = %v, want nil", got)
+	}
+	if got := b.StderrWriter(); got != nil {
+		t.Errorf("nil bundle StderrWriter = %v, want nil", got)
+	}
+}
+
+func TestRunBundle_BundleWriterWriteCreatesLazily(t *testing.T) {
+	tmp := withTempHome(t)
+	runsRoot := filepath.Join(tmp, ".vz", "runs")
+	b, err := NewRunBundle(runsRoot, "vm-x", "base")
+	if err != nil {
+		t.Fatalf("NewRunBundle: %v", err)
+	}
+
+	w := b.StdoutWriter()
+	if w == nil {
+		t.Fatal("StdoutWriter = nil")
+	}
+	n, err := w.Write([]byte("hello\n"))
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if n != 6 {
+		t.Errorf("Write n = %d, want 6", n)
+	}
+	got, err := os.ReadFile(filepath.Join(b.Dir(), "stdout.log"))
+	if err != nil {
+		t.Fatalf("read stdout.log: %v", err)
+	}
+	if string(got) != "hello\n" {
+		t.Errorf("stdout.log = %q, want %q", got, "hello\n")
+	}
+	// Second write appends.
+	if _, err := w.Write([]byte("world\n")); err != nil {
+		t.Fatalf("Write 2: %v", err)
+	}
+	got, err = os.ReadFile(filepath.Join(b.Dir(), "stdout.log"))
+	if err != nil {
+		t.Fatalf("read stdout.log: %v", err)
+	}
+	if string(got) != "hello\nworld\n" {
+		t.Errorf("stdout.log = %q, want appended", got)
+	}
+}
+
+func TestRunBundle_BundleWriterAfterFinalizeDiscards(t *testing.T) {
+	tmp := withTempHome(t)
+	runsRoot := filepath.Join(tmp, ".vz", "runs")
+	b, err := NewRunBundle(runsRoot, "vm-x", "base")
+	if err != nil {
+		t.Fatalf("NewRunBundle: %v", err)
+	}
+	w := b.StderrWriter()
+	if err := b.Finalize(nil); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	// Writes after finalize are discarded but report full length.
+	n, err := w.Write([]byte("late"))
+	if err != nil {
+		t.Fatalf("Write after finalize: %v", err)
+	}
+	if n != 4 {
+		t.Errorf("Write n = %d, want 4", n)
+	}
+	if _, err := os.Stat(filepath.Join(b.Dir(), "stderr.log")); !os.IsNotExist(err) {
+		t.Errorf("stderr.log exists after finalize-discard; err=%v", err)
+	}
+}
+
+func TestRunBundle_BundleWriterNilNoOp(t *testing.T) {
+	var w *bundleWriter
+	n, err := w.Write([]byte("data"))
+	if err != nil {
+		t.Errorf("nil writer Write err = %v", err)
+	}
+	if n != 4 {
+		t.Errorf("nil writer Write n = %d, want 4", n)
+	}
+}
+
 // TestRunsDir_FromHome confirms vmconfig.RunsDir composes from $HOME.
 func TestRunsDir_FromHome(t *testing.T) {
 	t.Setenv("HOME", "/tmp/fake-home")
