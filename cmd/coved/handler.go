@@ -49,6 +49,7 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		VMsManaged:    status.VMsManaged,
 		ImageGCRuns:   status.ImageGCRunsTotal,
 		ImageGCBytes:  status.ImageGCBytesFreedTotal,
+		ImageGCSkips:  imageGCSkips(d),
 		LifecycleRuns:   status.LifecycleEnforced,
 		LifecycleErrors: status.LifecycleStopErrors,
 		EventsDropped:    d.events.Dropped(),
@@ -135,4 +136,11 @@ func countVMDirs(root string) int {
 		}
 	}
 	return n
+}
+
+func imageGCSkips(d *daemon) int64 {
+	if d == nil || d.imageGC == nil {
+		return 0
+	}
+	return d.imageGC.Skips()
 }
