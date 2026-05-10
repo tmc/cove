@@ -66,3 +66,26 @@ func TestFleetMetricsAggregatesAndKeepsErrors(t *testing.T) {
 		t.Fatalf("text = %q", text)
 	}
 }
+
+func TestFleetMetricsErrorCount(t *testing.T) {
+	entries := []Entry{{Name: "a"}, {Name: "b"}, {Name: "c"}}
+	got := FleetMetrics(context.Background(), entries, func(ctx context.Context, entry Entry) (string, error) {
+		if entry.Name == "a" {
+			return "coved_vms_managed 2\n", nil
+		}
+		return "", errors.New("offline")
+	})
+	if got.ErrorCount != 2 {
+		t.Fatalf("ErrorCount = %d, want 2", got.ErrorCount)
+	}
+}
+
+func TestFleetMetricsErrorCountZeroWhenAllOK(t *testing.T) {
+	entries := []Entry{{Name: "a"}, {Name: "b"}}
+	got := FleetMetrics(context.Background(), entries, func(ctx context.Context, entry Entry) (string, error) {
+		return "coved_vms_managed 1\n", nil
+	})
+	if got.ErrorCount != 0 {
+		t.Fatalf("ErrorCount = %d, want 0", got.ErrorCount)
+	}
+}
