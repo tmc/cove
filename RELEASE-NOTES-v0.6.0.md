@@ -219,3 +219,12 @@ regression tests guard each path.
 This file is a scaffold drafted before any v0.6 slice ships. The git
 tag `v0.6.0` is **not yet cut**; tag-cut is user-gated and will follow
 the same readiness sequence used for v0.5.
+
+## Binary fingerprint
+
+- Tag: v0.6.0
+- Tag SHA: 8d1b76e8e687139c6fd18a7c2ddaa3f202995e1a
+- Tag points at commit: dd5f58fcaf39d12186e58bd2d517a44eed73088a
+- Binary: cove (darwin/arm64)
+- SHA256: 2e0f6a3adbca8f01b96e4c147924da829bbe0c1e4a39e89abcee16d96ec8db93
+- Build command: `go build -o cove ./`, then codesign per `internal/autosign/vz.entitlements`
