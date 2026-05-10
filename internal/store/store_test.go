@@ -286,6 +286,9 @@ func TestGCKeepsBuildCacheReachableBlob(t *testing.T) {
 	if res.Deleted != 1 {
 		t.Fatalf("Deleted = %d, want 1", res.Deleted)
 	}
+	if res.KeptReachable != 1 {
+		t.Fatalf("KeptReachable = %d, want 1", res.KeptReachable)
+	}
 	keptPath, err := s.BlobPath(keptDigest)
 	if err != nil {
 		t.Fatalf("BlobPath(kept): %v", err)
