@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestHandleVMSharedFolderCommandListEmpty(t *testing.T) {
+	oldVMDir, oldVMName := vmDir, vmName
+	t.Cleanup(func() { vmDir, vmName = oldVMDir, oldVMName })
+	vmDir = t.TempDir()
+	vmName = "list-empty"
+	t.Setenv("HOME", t.TempDir())
+
+	out, err := captureStdoutResult(t, func() error {
+		return handleVMSharedFolderCommand([]string{"list"})
+	})
+	if err != nil {
+		t.Fatalf("handleVMSharedFolderCommand(list): %v, want nil", err)
+	}
+	if !strings.Contains(out, "No shared folders configured.") {
+		t.Fatalf("stdout = %q, want 'No shared folders configured.'", out)
+	}
+}
+
 // TestHandleVMSharedFolderCommandEarlyBranches covers the dispatch branches
 // that return before sharedFolderCommandVMDir is consulted: empty args,
 // the three help aliases, and the "pending" too-many-args usage error.
