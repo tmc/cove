@@ -39,10 +39,11 @@ type Show struct {
 
 // Result summarizes the terminal run status.
 type Result struct {
-	Status      string
-	ExitCode    int
-	HasExitCode bool
-	WallclockMS int64
+	Status       string
+	ExitCode     int
+	HasExitCode  bool
+	WallclockMS  int64
+	FailedEvents int
 }
 
 // Failure summarizes the first failed event in a run.
@@ -194,6 +195,9 @@ func lifecycle(events []metrics.Event) []metrics.Event {
 func result(events []metrics.Event) Result {
 	var r Result
 	for _, e := range events {
+		if e.Status != "" && e.Status != "ok" {
+			r.FailedEvents++
+		}
 		if e.EventType != runCompleteEvent {
 			continue
 		}
