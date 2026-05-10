@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -95,4 +97,31 @@ func TestNoteVMRuntimeStateSwallowsErrorOnBadDir(t *testing.T) {
 	t.Cleanup(func() { verbose = prev })
 	noteVMRuntimeState(filepath.Join(t.TempDir(), "no-such-subdir", "vm"), "starting")
 	noteVMRuntimePhase(filepath.Join(t.TempDir(), "no-such-subdir", "vm"), "running", "boot")
+}
+
+func TestNoteVMRuntimeStateVerboseWarning(t *testing.T) {
+	prev := verbose
+	verbose = true
+	t.Cleanup(func() { verbose = prev })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	badDir := filepath.Join(t.TempDir(), "no-such-subdir", "vm")
+	noteVMRuntimeState(badDir, "starting")
+	noteVMRuntimePhase(badDir, "running", "boot")
+
+	w.Close()
+	out, _ := io.ReadAll(r)
+	got := string(out)
+	if !strings.Contains(got, "warning: write runtime state") {
+		t.Errorf("stderr = %q, want warning prefix", got)
+	}
+	if strings.Count(got, "warning: write runtime state") != 2 {
+		t.Errorf("expected 2 warnings, got %q", got)
+	}
 }
