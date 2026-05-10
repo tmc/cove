@@ -214,3 +214,12 @@ This section is load-bearing. See
   optionally bakes into images.
 - [`bench/fork-time/README.md`](../../bench/fork-time/README.md) —
   fork-time baseline used in the differentiator section.
+
+## Verified 2026-05-10
+
+- SHA chain `8a106dc`, `02acc3d`, `cf6a506`, `0349570`, `7c315fc` all present on `origin/main`.
+- `image_cli.go:28-44` dispatches `verify`, `push`, `pull` subcommands; matches Slice 2 contract.
+- `oras.land/oras-go/v2 v2.6.0` pinned in `go.mod:23`; matches the registry-client claim.
+- `image_fork.go:1-20` is the `cove run -fork-from <image-ref>` runtime path; matches the fork-primitive wedge in §"Goal".
+- `vzscripts/github-runner.vzscript` is present at the cited path (T-GHA-RUNNER Scope A).
+- Slice 3 (public registry + cosign) remains deferred per privacy gate; no public-registry push code added.
