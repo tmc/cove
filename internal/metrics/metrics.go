@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -179,6 +180,25 @@ func (m MultiSink) Close() error {
 type OTLPSink struct {
 	Endpoint string
 	Client   *http.Client
+
+	delivered atomic.Uint64
+	failed    atomic.Uint64
+}
+
+// Delivered returns the count of events accepted with a 2xx status.
+func (o *OTLPSink) Delivered() uint64 {
+	if o == nil {
+		return 0
+	}
+	return o.delivered.Load()
+}
+
+// Failed returns the count of Emit calls that returned an error.
+func (o *OTLPSink) Failed() uint64 {
+	if o == nil {
+		return 0
+	}
+	return o.failed.Load()
 }
 
 // NewOTLPSink returns an HTTP OTLP sink.
@@ -190,10 +210,17 @@ func NewOTLPSink(endpoint string) *OTLPSink {
 }
 
 // Emit posts e to the configured endpoint.
-func (o *OTLPSink) Emit(ctx context.Context, e Event) error {
+func (o *OTLPSink) Emit(ctx context.Context, e Event) (err error) {
 	if o == nil || o.Endpoint == "" {
 		return nil
 	}
+	defer func() {
+		if err != nil {
+			o.failed.Add(1)
+		} else {
+			o.delivered.Add(1)
+		}
+	}()
 	if e.Timestamp == "" {
 		e.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
 	}

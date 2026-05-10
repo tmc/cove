@@ -170,3 +170,28 @@ func TestOTLPSinkErrorIncludesBodyOnNon2xx(t *testing.T) {
 		t.Fatalf("err = %v, want 400 status", err)
 	}
 }
+
+func TestOTLPSinkCountsDeliveredAndFailed(t *testing.T) {
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer ok.Close()
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+
+	sink := NewOTLPSink(ok.URL)
+	if err := sink.Emit(context.Background(), Event{EventType: "x"}); err != nil {
+		t.Fatalf("Emit ok: %v", err)
+	}
+	if got := sink.Delivered(); got != 1 {
+		t.Fatalf("Delivered = %d, want 1", got)
+	}
+
+	sink2 := NewOTLPSink(bad.URL)
+	if err := sink2.Emit(context.Background(), Event{EventType: "x"}); err == nil {
+		t.Fatal("Emit bad: want error, got nil")
+	}
+	if got := sink2.Failed(); got != 1 {
+		t.Fatalf("Failed = %d, want 1", got)
+	}
+}
