@@ -2,6 +2,7 @@ package controlserver
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -117,5 +118,26 @@ func TestCountsTotalSums(t *testing.T) {
 	c := Counts{Forward: 2, Reverse: 1, ForwardUDP: 3, ReverseUDP: 4}
 	if got, want := c.Total(), 10; got != want {
 		t.Fatalf("Total = %d, want %d", got, want)
+	}
+}
+
+type errConnector struct{}
+
+func (errConnector) ConnectToGuestPort(uint32) (net.Conn, error) {
+	return nil, errors.New("no guest")
+}
+
+func TestPortForwardTotalAcceptedAccumulates(t *testing.T) {
+	pf := &PortForward{HostPort: 1234, GuestPort: 5678, connector: errConnector{}}
+	if got := pf.TotalAccepted(); got != 0 {
+		t.Fatalf("initial TotalAccepted = %d, want 0", got)
+	}
+	for i := 0; i < 3; i++ {
+		host, peer := net.Pipe()
+		_ = peer.Close()
+		pf.handleConn(context.Background(), host)
+	}
+	if got := pf.TotalAccepted(); got != 3 {
+		t.Fatalf("TotalAccepted = %d, want 3", got)
 	}
 }
