@@ -219,3 +219,14 @@ func TestPrometheusEmitsImageGCManifestCounts(t *testing.T) {
 		}
 	}
 }
+
+func TestPrometheusEmitsWebhookLastRunUnix(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{WebhookLastRunUnix: 1715302468}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), "coved_webhook_last_run_unix 1715302468") {
+		t.Fatalf("metrics missing coved_webhook_last_run_unix:\n%s", rec.Body.String())
+	}
+}
