@@ -283,3 +283,12 @@ Full commit log: `git log --oneline v0.1.3..v0.2.1`. Roadmap:
 (v0.4 CI executors), 022 (v0.4 Anthropic adapter), 023 (cove shell
 exec UX), 024 (cove runner images), 025 (cove-action security
 architecture).
+
+## Binary fingerprint
+
+- Tag: v0.2.1
+- Tag SHA: 86f7f4e1f2866beb5b80ccfd282fd77637996219
+- Tag points at commit: dd5f58fcaf39d12186e58bd2d517a44eed73088a
+- Binary: cove (darwin/arm64)
+- SHA256: d5896de5889ac38c4fdfc840747c1d107d5cc786c8389ed67cd804c38d4ee002
+- Build command: `go build -o cove ./`, then codesign per `internal/autosign/vz.entitlements`
