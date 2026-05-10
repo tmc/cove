@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -816,7 +817,15 @@ func openVZScriptLog(socketPath string) (*os.File, error) {
 	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }
 
+// ErrEmptyRecipeName is returned by loadVZScriptData when called with an
+// empty or whitespace-only name. Callers can use errors.Is to distinguish
+// this from a missing-recipe error.
+var ErrEmptyRecipeName = errors.New("empty recipe name")
+
 func loadVZScriptData(nameOrPath string) ([]byte, error) {
+	if strings.TrimSpace(nameOrPath) == "" {
+		return nil, ErrEmptyRecipeName
+	}
 	if _, err := os.Stat(nameOrPath); err == nil {
 		return os.ReadFile(nameOrPath)
 	}
