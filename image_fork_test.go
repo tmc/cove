@@ -1,6 +1,31 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestRunImageForkFromWithConfigInvalidRef(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	err := runImageForkFromWithConfig(RunConfig{EphemeralForkParent: "::bad"}, "", "")
+	if err == nil {
+		t.Fatal("runImageForkFromWithConfig(::bad) = nil, want parse error")
+	}
+	if !strings.Contains(err.Error(), "cove run -fork-from") {
+		t.Fatalf("err = %v, want 'cove run -fork-from' wrap", err)
+	}
+}
+
+func TestRunImageForkFromWithConfigMissingImage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	err := runImageForkFromWithConfig(RunConfig{EphemeralForkParent: "ghost-image:v1"}, "", "")
+	if err == nil {
+		t.Fatal("runImageForkFromWithConfig(missing image) = nil, want not-found")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("err = %v, want 'not found'", err)
+	}
+}
 
 func TestRunConfigForImageManifestInfersLinux(t *testing.T) {
 	cfg := runConfigForImageManifest(RunConfig{}, &ImageManifest{OSType: "Linux"})
