@@ -114,11 +114,6 @@ type InputBridge struct {
 	host InputHost
 }
 
-// NewInputBridge returns a bridge that issues input events through host.
-func NewInputBridge(host InputHost) *InputBridge {
-	return &InputBridge{host: host}
-}
-
 // SetHost wires (or rewires) the host back-channel. Mirrors the
 // pattern used by AgentBridge so ControlServer can keep embedding
 // the bridge by value with a zero-usable struct.
