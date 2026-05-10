@@ -62,7 +62,7 @@ func (r *Resolver) Resolve(uri string) ([]byte, error) {
 	}
 	value, err := p.Resolve(u)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("secret %s: %w", scheme, err)
 	}
 	return append([]byte(nil), value...), nil
 }
