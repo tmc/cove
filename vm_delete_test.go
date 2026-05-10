@@ -96,3 +96,32 @@ func TestChildVMNames_SortsAndExcludesSelf(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteVMWithOptionsNotFound(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	err := DeleteVMWithOptions("ghost-vm-r302", DeleteVMOptions{})
+	if err == nil {
+		t.Fatal("DeleteVMWithOptions(ghost) = nil, want not-found error")
+	}
+	if !strings.Contains(err.Error(), "vm not found") {
+		t.Fatalf("err = %v, want 'vm not found'", err)
+	}
+}
+
+func TestDeleteVMWithOptionsRejectsNonDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	base := vmconfig.BaseDir()
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "file-vm"), nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	err := DeleteVMWithOptions("file-vm", DeleteVMOptions{})
+	if err == nil {
+		t.Fatal("DeleteVMWithOptions(file) = nil, want non-dir error")
+	}
+	if !strings.Contains(err.Error(), "not a VM directory") {
+		t.Fatalf("err = %v, want 'not a VM directory'", err)
+	}
+}
