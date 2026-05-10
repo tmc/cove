@@ -1,60 +1,70 @@
+version: "2"
 run:
-  timeout: 5m
   build-tags:
     - darwin
-
 linters:
   enable:
-    - errcheck
-    - govet
-    - staticcheck
-    - gosimple
-    - unused
-    - ineffassign
-    - typecheck
-    - gofmt
     - misspell
     - unconvert
-
-linters-settings:
-  errcheck:
-    exclude-functions:
-      - fmt.Fprintf
-      - fmt.Fprintln
-      - fmt.Printf
-      - fmt.Println
-      - (io.Closer).Close
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-  misspell:
-    locale: US
-  staticcheck:
-    checks:
-      - all
-      - -SA1019  # allow deprecated usage (framework APIs evolve)
-
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Printf
+        - fmt.Println
+        - (io.Closer).Close
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+    misspell:
+      locale: US
+    staticcheck:
+      checks:
+        - all
+        - -SA1019
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - unused
+        source: func \(.*\) .+\(.*\) {
+      - linters:
+          - errcheck
+        path: _test\.go
+      - path: _test\.go
+        text: dot-imports
+    paths:
+      - .*\.pb\.go$
+      - .*\.connect\.go$
+      - proto/controlpb
+      - proto/agentpb
+      - proto/agentpbconnect
+      - swift
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-dirs:
-    - proto/controlpb
-    - proto/agentpb
-    - proto/agentpbconnect
-    - swift
-  exclude-files:
-    - ".*\\.pb\\.go$"
-    - ".*\\.connect\\.go$"
-  exclude-rules:
-    # Allow unused parameters in interface implementations and callbacks
-    - linters:
-        - unused
-      source: "func \\(.*\\) .+\\(.*\\) {"
-    # Allow unchecked errors in test files
-    - path: _test\.go
-      linters:
-        - errcheck
-    # Allow dot imports in test files
-    - path: _test\.go
-      text: "dot-imports"
   max-issues-per-linter: 50
   max-same-issues: 10
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+    paths:
+      - .*\.pb\.go$
+      - .*\.connect\.go$
+      - proto/controlpb
+      - proto/agentpb
+      - proto/agentpbconnect
+      - swift
+      - third_party$
+      - builtin$
+      - examples$
