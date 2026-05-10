@@ -231,3 +231,22 @@ func TestListTemplatesEmpty(t *testing.T) {
 		t.Errorf("template dir not created: %v", err)
 	}
 }
+
+func TestDeleteTemplateRemovesFastModeTemplate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	tplPath := filepath.Join(vmconfig.TemplateDir(), "fast-tpl")
+	if err := os.MkdirAll(tplPath, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, f := range []string{TemplateMarkerFast, "disk.img", "aux.img", "hw.model"} {
+		if err := os.WriteFile(filepath.Join(tplPath, f), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", f, err)
+		}
+	}
+	if err := DeleteTemplate("fast-tpl"); err != nil {
+		t.Fatalf("DeleteTemplate: %v", err)
+	}
+	if _, err := os.Stat(tplPath); !os.IsNotExist(err) {
+		t.Fatalf("template still exists: err=%v", err)
+	}
+}
