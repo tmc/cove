@@ -77,8 +77,8 @@ func downloadIPSWCurl(urlStr, path string) error {
 			if statErr != nil {
 				return fmt.Errorf("downloaded file not found: %w", statErr)
 			}
-			if info.Size() < 1*1024*1024*1024 {
-				return fmt.Errorf("downloaded file too small (%.1f GB)", float64(info.Size())/(1024*1024*1024))
+			if info.Size() < ipswMinSize {
+				return fmt.Errorf("%w: have %.1f GB, want >= %.1f GB", ErrIPSWTooSmall, float64(info.Size())/(1024*1024*1024), float64(ipswMinSize)/(1024*1024*1024))
 			}
 			fmt.Printf("  Download complete: %.1f GB\n", float64(info.Size())/(1024*1024*1024))
 			return nil
@@ -289,8 +289,8 @@ func downloadIPSWCurlWithProgress(urlStr, path string, progress progressFunc) er
 			if statErr != nil {
 				return fmt.Errorf("downloaded file not found: %w", statErr)
 			}
-			if info.Size() < 1*1024*1024*1024 {
-				return fmt.Errorf("downloaded file too small (%.1f GB)", float64(info.Size())/(1024*1024*1024))
+			if info.Size() < ipswMinSize {
+				return fmt.Errorf("%w: have %.1f GB, want >= %.1f GB", ErrIPSWTooSmall, float64(info.Size())/(1024*1024*1024), float64(ipswMinSize)/(1024*1024*1024))
 			}
 			fmt.Printf("  Download complete: %.1f GB\n", float64(info.Size())/(1024*1024*1024))
 			progress("Download complete", 100)
