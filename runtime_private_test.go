@@ -44,6 +44,9 @@ func TestActionSourceLabel(t *testing.T) {
 	if got := actionSourceLabel(""); got != "VM" {
 		t.Errorf("empty: %q", got)
 	}
+	if got := actionSourceLabel("ctl-shutdown"); got != "ctl-shutdown" {
+		t.Errorf("non-empty source: got %q, want verbatim", got)
+	}
 }
 
 func TestValidatePrivateRuntimeOptions(t *testing.T) {
