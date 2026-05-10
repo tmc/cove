@@ -18,6 +18,24 @@ const (
 	VersionDifferent
 )
 
+// String returns a short label for the relation, suitable for logs.
+func (r VersionRelation) String() string {
+	switch r {
+	case VersionUnknown:
+		return "unknown"
+	case VersionEqual:
+		return "equal"
+	case VersionGuestOlder:
+		return "guest-older"
+	case VersionGuestNewer:
+		return "guest-newer"
+	case VersionDifferent:
+		return "different"
+	default:
+		return "invalid"
+	}
+}
+
 func CompareVersions(host, guest string) VersionRelation {
 	if host == "" || host == "dev" || host == "unknown" {
 		return VersionUnknown

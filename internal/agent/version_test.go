@@ -70,3 +70,21 @@ func TestVersionsEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestVersionRelationString(t *testing.T) {
+	for _, tt := range []struct {
+		in   VersionRelation
+		want string
+	}{
+		{VersionUnknown, "unknown"},
+		{VersionEqual, "equal"},
+		{VersionGuestOlder, "guest-older"},
+		{VersionGuestNewer, "guest-newer"},
+		{VersionDifferent, "different"},
+		{VersionRelation(99), "invalid"},
+	} {
+		if got := tt.in.String(); got != tt.want {
+			t.Errorf("VersionRelation(%d).String() = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
