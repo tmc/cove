@@ -1,6 +1,6 @@
 # cove build — churn benchmark harness
 
-**Status**: draft v1 (post-second-opinion review)
+**Status**: superseded — `cove build` v0.3 shipped with `compact_mode` default `targeted` (per H1); the standalone benchmark harness was not built as a separate binary, the choice was made from spot-measured runs and locked into `build_cache.go:158`.
 **Author**: cove team
 **Date**: 2026-04-16
 **Target**: run before cove build v0.3 implementation begins
@@ -204,3 +204,14 @@ rule defaults to `targeted` rather than chasing a false signal.
   confound. Wall-clock budget unchanged (~69 runs total on the test
   hardware).
 - **v0 (2026-04-16)**: initial draft for Council review.
+
+## Verified 2026-05-10
+
+- `compact_mode` directive parsed in `build_cache.go:141-146`; valid
+  values `fast|targeted|thorough` enforced by `validateCompactMode`
+  (`build_cache.go:275-277`); default `targeted` set at
+  `build_cache.go:158`. H1 was confirmed to the extent that `targeted`
+  ships as the user-facing default.
+- `cmd/cove-build-bench` (the standalone harness this doc proposed) is
+  NOT in tree. Spot benchmarks live in `docs/benchmarks/` (`disk-io.md`,
+  `r53-perf-snapshot.md`) instead.
