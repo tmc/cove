@@ -1,11 +1,22 @@
 # Design 040: Storage Budget for `~/.vz/`
 
-Status: Shipped. Phases 0-5 landed during R57; PiB-scale overflow fix at
-`c7865e1` (R67); test coverage strengthened at `61c2ca5` (R66). SHA chain
-in ROADMAP row "Design 040 storage budget (Phases 0-5)".
-Verified 2026-05-10 (R365): `cove storage <census|budget|prune>` dispatch
-in `storage.go`; `internal/storagecensus` package backs the walk; SHAs
-`c7865e1` and `61c2ca5` reachable on main.
+## Status
+
+Phases 0-5 are shipped on `main`. SHAs below were verified reachable from
+`origin/main` on 2026-05-10.
+
+| Phase | State | Evidence |
+|---|---|---|
+| 0 storage census | SHIPPED | `cb11913`, `b3d2fb8` |
+| 1 budget persistence | SHIPPED | `25f57f4`, `36b2a9b`, `e00b680` |
+| 2 prune coordinator CLI | SHIPPED | `5660b13`, `7e9ea28`, `292b81d` |
+| 3 pinning | SHIPPED | `78b2e7b`, `ce1a2c0`, `e6a9850`, `ecb75ed` |
+| 4 daemon integration | SHIPPED | `394b812`, `42714c0`, `1f7ffa4`, `cacce19`, `9b7c849` |
+| 5 pin-aware prune hard tripwire | SHIPPED | `1f7ffa4`, `ecb75ed`, `cacce19` |
+
+Overflow safety landed at `c7865e1`; follow-up budget edge coverage landed at
+`61c2ca5`.
+
 Author: Travis Cline
 Date: 2026-05-07
 
