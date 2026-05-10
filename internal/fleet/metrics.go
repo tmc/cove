@@ -18,8 +18,9 @@ type HostMetrics struct {
 }
 
 type FleetMetricsResult struct {
-	Hosts  []HostMetrics      `json:"hosts"`
-	Totals map[string]float64 `json:"totals"`
+	Hosts      []HostMetrics      `json:"hosts"`
+	Totals     map[string]float64 `json:"totals"`
+	ErrorCount int                `json:"error_count,omitempty"`
 }
 
 func FleetMetrics(ctx context.Context, entries []Entry, query MetricsQueryFunc) FleetMetricsResult {
@@ -39,6 +40,7 @@ func FleetMetrics(ctx context.Context, entries []Entry, query MetricsQueryFunc) 
 		}
 		if result.Error != nil {
 			row.Error = result.Error.Error()
+			out.ErrorCount++
 		} else {
 			for name, value := range result.Value {
 				out.Totals[name] += value
