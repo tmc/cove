@@ -46,6 +46,8 @@ type statusResponse struct {
 	WebhookDeliveredTotal   uint64 `json:"webhook_delivered_total,omitempty"`
 	WebhookFailedTotal      uint64 `json:"webhook_failed_total,omitempty"`
 	WebhookRejectedTotal    uint64 `json:"webhook_rejected_total,omitempty"`
+	EventbusDroppedTotal    uint64 `json:"eventbus_dropped_total,omitempty"`
+	EventbusSubscribers     int    `json:"eventbus_subscribers,omitempty"`
 }
 
 func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
@@ -155,6 +157,10 @@ func (d *daemon) status() statusResponse {
 		resp.WebhookDeliveredTotal = d.webhook.Delivered()
 		resp.WebhookFailedTotal = d.webhook.Failed()
 		resp.WebhookRejectedTotal = d.webhook.Rejected()
+	}
+	if d.events != nil {
+		resp.EventbusDroppedTotal = d.events.Dropped()
+		resp.EventbusSubscribers = d.events.Subscribers()
 	}
 	return resp
 }
