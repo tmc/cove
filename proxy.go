@@ -30,6 +30,11 @@ var proxyURL string
 var proxySandboxLevel string
 var proxyLastValidation *proxyValidation
 
+// ErrProxyCredentialsUnsupported is returned by parseProxySpec when the proxy
+// URL embeds userinfo. cove rejects credentials in -proxy URLs because they
+// would otherwise leak into guest /etc/environment files and shell history.
+var ErrProxyCredentialsUnsupported = errors.New("proxy url credentials are not supported")
+
 const (
 	proxyStateFileName   = ".proxy-state.json"
 	proxyPlatformMacOS   = "macos"
@@ -414,7 +419,7 @@ func parseProxySpec(raw string) (proxySpec, error) {
 		return proxySpec{}, fmt.Errorf("parse proxy url: %w", err)
 	}
 	if u.User != nil {
-		return proxySpec{}, fmt.Errorf("proxy url credentials are not supported")
+		return proxySpec{}, ErrProxyCredentialsUnsupported
 	}
 	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
 	switch scheme {

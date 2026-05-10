@@ -685,3 +685,16 @@ func TestProxySpecEndpointIPv6(t *testing.T) {
 		t.Fatalf("canonicalURL = %q, want %q", got, want)
 	}
 }
+
+func TestParseProxySpecCredentialsSentinel(t *testing.T) {
+	for _, raw := range []string{
+		"http://user@127.0.0.1:8080",
+		"http://user:pass@127.0.0.1:8080",
+		"https://user:pass@proxy.example.com:443",
+	} {
+		_, err := parseProxySpec(raw)
+		if !errors.Is(err, ErrProxyCredentialsUnsupported) {
+			t.Errorf("parseProxySpec(%q) err = %v, want errors.Is ErrProxyCredentialsUnsupported", raw, err)
+		}
+	}
+}
