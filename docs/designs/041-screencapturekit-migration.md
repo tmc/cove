@@ -5,7 +5,9 @@ Slice 1 (probe + `cove doctor sckit-preauth`) at `8d55d7a`. Slice 2
 (`SCScreenshotManager` spike) at `d0877b8`. Slice 3 (dual-path SCKit /
 CGWindow capture) at `55257f2`; tests at `e124c46`; release-notes
 marker at `eadb34f`. Slice 4 spec (default flip + retire) at `318d801`.
-Accepted 2026-05-08 at `50bf8ca`.
+Accepted 2026-05-08 at `50bf8ca`. Verified against code 2026-05-10
+(R359): `captureCGWindow` is at `screenshots.go:208`, dispatch in
+`captureVMView` at `screenshots.go:163`.
 Author: Travis Cline
 Date: 2026-05-07
 
@@ -28,12 +30,13 @@ Date: 2026-05-07
 
 ## Problem
 
-`screenshots.go:141` calls `coregraphics.CGWindowListCreateImage`,
-the canonical Quartz Window Services screen-capture API. As of
-macOS 14 (Sonoma) Apple ships a `staticcheck` SA1019:
+`screenshots.go:211` (`captureCGWindow`) calls
+`coregraphics.CGWindowListCreateImage`, the canonical Quartz Window
+Services screen-capture API. As of macOS 14 (Sonoma) Apple ships a
+`staticcheck` SA1019:
 
 ```
-screenshots.go:141:13: coregraphics.CGWindowListCreateImage is
+screenshots.go:211:13: coregraphics.CGWindowListCreateImage is
     deprecated: Please use ScreenCaptureKit instead.
 ```
 
@@ -46,8 +49,10 @@ prompt that does not exist for this API today.
 
 Cove uses screen capture in three load-bearing places:
 
-- `captureVMView()` (`screenshots.go`) — full-window capture via
-  `CGWindowListCreateImage`. Used when the GUI window is on-screen.
+- `captureVMView()` (`screenshots.go:163`) — full-window capture.
+  Post-Slice 3 it dispatches to SCKit or to `captureCGWindow`
+  (`screenshots.go:208`, the `CGWindowListCreateImage` path). Used
+  when the GUI window is on-screen.
 - `capturePrivateGraphicsDisplay()` (`screenshots_private_darwin.go`)
   — a separate code path that uses
   `cacheDisplayInRectToBitmapImageRep` against the private
