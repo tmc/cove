@@ -49,6 +49,31 @@ func TestHandleSIPCommandUsage(t *testing.T) {
 	}
 }
 
+func TestHandleSIPCommandRefusesLinuxForAllSubcommands(t *testing.T) {
+	oldVMDir := vmDir
+	vmDir = linuxTestVMDir(t)
+	t.Cleanup(func() { vmDir = oldVMDir })
+
+	cases := [][]string{
+		{"enable"},
+		{"disable"},
+		{"status"},
+		{"enable-auto"},
+		{"disable-auto"},
+	}
+	for _, args := range cases {
+		t.Run(args[0], func(t *testing.T) {
+			err := handleSIPCommand(args)
+			if err == nil {
+				t.Fatalf("handleSIPCommand(%v) err = nil, want linux refusal", args)
+			}
+			if !strings.Contains(err.Error(), "sip is only supported for macOS VMs") {
+				t.Fatalf("handleSIPCommand(%v) err = %v, want linux refusal", args, err)
+			}
+		})
+	}
+}
+
 func TestHandleSIPCommandUnknown(t *testing.T) {
 	err := handleSIPCommand([]string{"bogus"})
 	if err == nil {
