@@ -92,3 +92,30 @@ func TestReadUDPFrame_ControlServer_MidFrameClose(t *testing.T) {
 		t.Fatalf("err = %v, want io.EOF", err)
 	}
 }
+
+func TestPortForwardManagerCountsEmpty(t *testing.T) {
+	m := NewPortForwardManager(nil)
+	got := m.Counts()
+	want := Counts{}
+	if got != want {
+		t.Fatalf("Counts on fresh manager = %+v, want %+v", got, want)
+	}
+	if got.Total() != 0 {
+		t.Fatalf("Total = %d, want 0", got.Total())
+	}
+}
+
+func TestPortForwardManagerCountsNilReceiver(t *testing.T) {
+	var m *PortForwardManager
+	got := m.Counts()
+	if got != (Counts{}) {
+		t.Fatalf("nil-receiver Counts = %+v, want zero", got)
+	}
+}
+
+func TestCountsTotalSums(t *testing.T) {
+	c := Counts{Forward: 2, Reverse: 1, ForwardUDP: 3, ReverseUDP: 4}
+	if got, want := c.Total(), 10; got != want {
+		t.Fatalf("Total = %d, want %d", got, want)
+	}
+}
