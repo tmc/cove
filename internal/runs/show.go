@@ -28,13 +28,14 @@ var lifecycleEvents = map[string]bool{
 
 // Show is the rendered data for a run.
 type Show struct {
-	RunID     string
-	Dir       string
-	Events    []metrics.Event
-	Lifecycle []metrics.Event
-	Result    Result
-	Artifacts []string
-	Failure   Failure
+	RunID         string
+	Dir           string
+	Events        []metrics.Event
+	Lifecycle     []metrics.Event
+	Result        Result
+	Artifacts     []string
+	ArtifactBytes int64
+	Failure       Failure
 }
 
 // Result summarizes the terminal run status.
@@ -62,17 +63,18 @@ func LoadShow(root, prefix string) (Show, error) {
 	if err != nil {
 		return Show{}, err
 	}
-	artifacts, err := listArtifacts(dir)
+	artifacts, artifactBytes, err := listArtifacts(dir)
 	if err != nil {
 		return Show{}, err
 	}
 	show := Show{
-		RunID:     filepath.Base(dir),
-		Dir:       dir,
-		Events:    events,
-		Lifecycle: lifecycle(events),
-		Result:    result(events),
-		Artifacts: artifacts,
+		RunID:         filepath.Base(dir),
+		Dir:           dir,
+		Events:        events,
+		Lifecycle:     lifecycle(events),
+		Result:        result(events),
+		Artifacts:     artifacts,
+		ArtifactBytes: artifactBytes,
 	}
 	if show.Result.Status != "" && show.Result.Status != "ok" {
 		show.Failure = failure(events)
@@ -228,8 +230,9 @@ func failure(events []metrics.Event) Failure {
 	return Failure{}
 }
 
-func listArtifacts(dir string) ([]string, error) {
+func listArtifacts(dir string) ([]string, int64, error) {
 	var names []string
+	var total int64
 	if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -242,12 +245,15 @@ func listArtifacts(dir string) ([]string, error) {
 			return err
 		}
 		names = append(names, filepath.ToSlash(name))
+		if info, ierr := d.Info(); ierr == nil {
+			total += info.Size()
+		}
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("list artifacts: %w", err)
+		return nil, 0, fmt.Errorf("list artifacts: %w", err)
 	}
 	sort.Strings(names)
-	return names, nil
+	return names, total, nil
 }
 
 func eventStatus(e metrics.Event) string {

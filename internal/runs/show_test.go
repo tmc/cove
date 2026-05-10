@@ -128,6 +128,26 @@ func event(typ, status string, duration int64, extra map[string]any) metrics.Eve
 	}
 }
 
+func TestLoadShowSumsArtifactBytes(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "20260510-ab", []metrics.Event{
+		event(runCompleteEvent, "ok", 1, nil),
+	}, map[string]string{
+		"stdout.log":   "abcdef\n",      // 7 bytes
+		"sub/note.txt": "hello world\n", // 12 bytes
+	})
+
+	show, err := LoadShow(root, "20260510-ab")
+	if err != nil {
+		t.Fatalf("LoadShow: %v", err)
+	}
+	// metrics.jsonl from writeRun also counts; the two seeded files
+	// together are 19 bytes, so total must be at least 19.
+	if show.ArtifactBytes < 19 {
+		t.Fatalf("ArtifactBytes = %d, want >= 19", show.ArtifactBytes)
+	}
+}
+
 func TestResultCountsFailedEvents(t *testing.T) {
 	root := t.TempDir()
 	writeRun(t, root, "20260510-fe", []metrics.Event{
