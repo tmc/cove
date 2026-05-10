@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +46,17 @@ func TestParseUSBStorageFlag(t *testing.T) {
 				t.Errorf("Path=%q want %q", cfg.Path, tt.wantPath)
 			}
 		})
+	}
+}
+
+func TestParseUSBStorageFlagMissingWrapsFSErrNotExist(t *testing.T) {
+	dir := t.TempDir()
+	_, err := ParseUSBStorageFlag(filepath.Join(dir, "nope.img"))
+	if err == nil {
+		t.Fatal("ParseUSBStorageFlag missing: want error, got nil")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want errors.Is(err, fs.ErrNotExist)", err)
 	}
 }
 
