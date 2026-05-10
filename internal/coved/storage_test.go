@@ -286,6 +286,12 @@ func TestStoragePollSchedulerHardInvokesPrunerDryRun(t *testing.T) {
 	if got := pe.Extra["category"]; got != "all" {
 		t.Errorf("category = %v, want all", got)
 	}
+	if got, ok := pe.Extra["pinned_skipped"]; !ok || got != int64(0) {
+		t.Errorf("pinned_skipped = %v (ok=%v), want 0", got, ok)
+	}
+	if got, ok := pe.Extra["collect_errors"]; !ok || got != int64(0) {
+		t.Errorf("collect_errors = %v (ok=%v), want 0", got, ok)
+	}
 
 	stop()
 	<-done
