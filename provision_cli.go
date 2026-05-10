@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,12 @@ import (
 
 	"golang.org/x/term"
 )
+
+// ErrInjectFlagRequired is returned by the inject CLI when a required
+// flag (-user, -password) is missing and cannot be filled from a
+// terminal prompt. Callers can branch on this with errors.Is to
+// surface a usage hint without parsing the message.
+var ErrInjectFlagRequired = errors.New("inject required flag missing")
 
 // provisionVerbose controls verbose output for provision operations.
 var provisionVerbose bool
@@ -76,7 +83,7 @@ func handleProvision(args []string) error {
 	}
 
 	if *user == "" {
-		return fmt.Errorf("missing required flag: -user")
+		return fmt.Errorf("%w: -user", ErrInjectFlagRequired)
 	}
 	if *password == "" {
 		pw, err := readPassword("Password: ")
@@ -85,7 +92,7 @@ func handleProvision(args []string) error {
 		}
 		*password = string(pw)
 		if *password == "" {
-			return fmt.Errorf("missing required flag: -password")
+			return fmt.Errorf("%w: -password", ErrInjectFlagRequired)
 		}
 	}
 
