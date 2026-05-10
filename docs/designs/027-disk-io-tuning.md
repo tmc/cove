@@ -1,6 +1,8 @@
 # Design 027: Disk I/O Performance Tuning
 
-Status: Implemented (2026-05-04; Slices 1-4 shipped). Last verified R89 (2026-05-09).
+Status: Implemented (2026-05-04; Slices 1-4 shipped). Last verified 2026-05-10 (R370).
+
+Verified 2026-05-10 (R370): Slice SHAs `fc7ff1e`/`8500ecb`/`968cbde`/`1b7c947`/`f71851b`/`7ca06a9`/`093d63d`/`b522ab3`/`a78e891`/`74d9527`/`65b6964`/`50ba06e` all reachable on main; `DiskCachePolicy` type at `disk_attachment.go:12`, `linuxInstallDiskCachePolicy` covered at `disk_attachment_test.go:63`; flags `-nvme`/`-raw-disk`/`-disk-sync` registered at `main.go:198/208/250`.
 
 - Slice 1 (DiskCachePolicy + `-disk-sync` + callsite migration): `fc7ff1e`.
 - Slice 2 (Linux NVMe wiring + `-nvme`): `8500ecb`, `968cbde`; benchmark deferred at `1b7c947` / `f71851b`.
