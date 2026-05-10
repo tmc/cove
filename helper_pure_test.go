@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,8 +65,7 @@ func TestDataPartitionNotFoundError(t *testing.T) {
 	if !strings.Contains(msg, "GUID_partition_scheme") {
 		t.Fatalf("missing diskutil output in message: %q", msg)
 	}
-	if !strings.Contains(msg, "Data partition") {
-		t.Fatalf("missing 'Data partition' summary: %q", msg)
+	if !errors.Is(err, ErrDataPartitionNotFound) {
+		t.Fatalf("err = %v, want ErrDataPartitionNotFound", err)
 	}
 }
-
