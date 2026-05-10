@@ -221,7 +221,7 @@ func writeVZScriptForSIP(vmDirectory, mode, script string) (string, error) {
 	base := fmt.Sprintf("sip-%s.vzscript", mode)
 	path := filepath.Join(vmDirectory, base)
 	if err := os.WriteFile(path, []byte(script), 0644); err != nil {
-		return "", err
+		return "", fmt.Errorf("write sip %s vzscript %s: %w", mode, path, err)
 	}
 	return path, nil
 }
