@@ -3,6 +3,7 @@ package runs
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/tmc/vz-macos/internal/metrics"
 )
+
+// ErrRunNotFound reports that no run directory matched the requested prefix.
+var ErrRunNotFound = errors.New("run not found")
 
 var lifecycleEvents = map[string]bool{
 	"fork_created":              true,
@@ -148,6 +152,9 @@ func matchRunDir(root, prefix string) (string, error) {
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("run %q: %w", prefix, ErrRunNotFound)
+		}
 		return "", fmt.Errorf("read runs root: %w", err)
 	}
 	var matches []string
@@ -162,7 +169,7 @@ func matchRunDir(root, prefix string) (string, error) {
 	sort.Strings(matches)
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("run %q: not found", prefix)
+		return "", fmt.Errorf("run %q: %w", prefix, ErrRunNotFound)
 	case 1:
 		return filepath.Join(root, matches[0]), nil
 	default:

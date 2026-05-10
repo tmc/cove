@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -55,7 +56,8 @@ func List(root string, filter Filter) ([]Summary, error) {
 		}
 		summary, ok, err := readRun(filepath.Join(root, entry.Name()), entry.Name())
 		if err != nil {
-			return nil, err
+			slog.Warn("skip malformed run metrics", "run", entry.Name(), "err", err)
+			continue
 		}
 		if !ok || !matchesFilter(summary, filter) {
 			continue
