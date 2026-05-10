@@ -4,6 +4,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,16 @@ import (
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
+
+// ErrVMNotFound is returned by DeleteVM/RenameVM (and friends) when
+// the named VM directory is missing or fails vmconfig.Validate.
+// Callers can branch on this with errors.Is to format a "did you mean"
+// hint without parsing the message.
+var ErrVMNotFound = errors.New("vm not found")
+
+// ErrVMRenameTargetExists is returned by RenameVM when the requested
+// new name already corresponds to an existing VM directory.
+var ErrVMRenameTargetExists = errors.New("rename target VM already exists")
 
 // DeleteVMOptions configures DeleteVMWithOptions. Cascade descends to
 // children before removing the named VM, mirroring rm -r semantics.
@@ -46,7 +57,7 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	info, err := os.Stat(vmPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("vm not found: %s", name)
+			return fmt.Errorf("%w: %s", ErrVMNotFound, name)
 		}
 		return fmt.Errorf("stat VM dir: %w", err)
 	}
@@ -130,11 +141,11 @@ func RenameVM(oldName, newName string) error {
 	newPath := vmconfig.Path(newName)
 
 	if !vmconfig.Validate(oldPath) {
-		return fmt.Errorf("vm not found: %s", oldName)
+		return fmt.Errorf("%w: %s", ErrVMNotFound, oldName)
 	}
 
 	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
-		return fmt.Errorf("target VM already exists: %s", newName)
+		return fmt.Errorf("%w: %s", ErrVMRenameTargetExists, newName)
 	}
 
 	fmt.Printf("Renaming VM '%s' -> '%s'...\n", oldName, newName)

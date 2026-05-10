@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,8 +19,8 @@ func TestRenameVM_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("RenameVM(ghost, newghost) returned nil; want not-found error")
 	}
-	if !strings.Contains(err.Error(), "vm not found") {
-		t.Errorf("err = %q, want substring 'vm not found'", err.Error())
+	if !errors.Is(err, ErrVMNotFound) {
+		t.Errorf("err = %v, want errors.Is(err, ErrVMNotFound)", err)
 	}
 }
 
@@ -34,8 +35,8 @@ func TestRenameVM_TargetExists(t *testing.T) {
 	if err == nil {
 		t.Fatal("RenameVM(src, dst) returned nil; want target-exists error")
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("err = %q, want substring 'already exists'", err.Error())
+	if !errors.Is(err, ErrVMRenameTargetExists) {
+		t.Errorf("err = %v, want errors.Is(err, ErrVMRenameTargetExists)", err)
 	}
 	// Source must remain in place on refusal.
 	if _, statErr := os.Stat(filepath.Join(vmconfig.BaseDir(), "src")); statErr != nil {
