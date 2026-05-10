@@ -188,3 +188,25 @@ func TestResolveLoginScreenWatchdogCredentialsFallsBackToBootCache(t *testing.T)
 		t.Fatalf("resolveLoginScreenWatchdogCredentials = %+v, want empty", got)
 	}
 }
+
+func TestResolveLoginScreenWatchdogCredentialsPrefersProvisionAfterInject(t *testing.T) {
+	savedUser, savedPass, savedBoot := provisionUser, provisionPassword, bootLoginScreenCredentials
+	savedVMDir, savedVMName := vmDir, vmName
+	t.Cleanup(func() {
+		provisionUser, provisionPassword, bootLoginScreenCredentials = savedUser, savedPass, savedBoot
+		vmDir, vmName = savedVMDir, savedVMName
+	})
+	t.Setenv("HOME", t.TempDir())
+	vmDir = t.TempDir()
+	vmName = "watchdog-r312"
+	if err := os.WriteFile(filepath.Join(vmDir, ".inject-succeeded"), nil, 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	provisionUser, provisionPassword = "tester", "secret"
+	bootLoginScreenCredentials = loginScreenCredentials{Username: "boot", Password: "bootpw"}
+
+	got := resolveLoginScreenWatchdogCredentials()
+	if got.Username != "tester" || got.Password != "secret" {
+		t.Fatalf("got = %+v, want provision creds (after inject succeeded)", got)
+	}
+}
