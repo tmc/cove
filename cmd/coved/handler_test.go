@@ -52,6 +52,9 @@ func TestHandleStatus(t *testing.T) {
 	if got.ImageGCSkipsTotal != 0 {
 		t.Fatalf("ImageGCSkipsTotal = %d, want 0 (no contention)", got.ImageGCSkipsTotal)
 	}
+	if got.StoragePollRunsTotal != 0 || got.StoragePollErrorsTotal != 0 {
+		t.Fatalf("storage poll = (%d,%d), want zero when scheduler nil", got.StoragePollRunsTotal, got.StoragePollErrorsTotal)
+	}
 }
 
 func TestHandleUnknownCommand(t *testing.T) {
