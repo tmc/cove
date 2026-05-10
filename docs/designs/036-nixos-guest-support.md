@@ -2,7 +2,9 @@
 
 Status: Shipped (`8324750` installer, `2427b2e` vzscript base recipe,
 `f1e6812` quickstart docs, `07835a9` cli.md install table). Last
-verified R89 (2026-05-09).
+verified 2026-05-10 (R368): `nixos_installer.go` exports the
+`LinuxVariantNixOS` flow, `vzscripts/nixos-base.vzscript` and
+`vzscripts/nix.vzscript` present; all four SHAs reachable on main.
 
 Cove should install NixOS as a first-class Linux guest with the same user
 shape as the existing Linux path:
