@@ -216,3 +216,11 @@ v0.3 proto bump. Per [022](022-v04-anthropic-adapter.md)'s shape
 decision (the standalone subcommand owns its own loop), `cove shell`
 owns the host TTY/signal/stream loop end-to-end — not a thin wrapper
 around `runLinuxShellSession`.
+
+## Verified 2026-05-10
+
+- SHA chain `17211bd`, `33fbe7e`, `4d9043a`, `8e550d4`, `5d5876f`, `63d3234`, `fb7bce2` all present on `origin/main`.
+- `shell.go` (cross-process `cove shell <vm>`) and `linux_shell.go` (in-process `cove run -linux -shell` precursor) both present.
+- `proto/agent.proto:23-25` declares the bidi `ExecAttach` stream plus unary `ResizeExecTTY` / `SignalExec` RPCs cited in the design.
+- `agent_control.go:74-81` confirms `DialAgent` dials vsock through the running VM's `VZVirtioSocketDevice`; matches the vsock-ownership invariant in §"Why this is non-trivial".
+- `control_socket.go:603` `authorizeRequest` gates the per-VM control-socket broker path; matches the auth claim in §"Why this is non-trivial".
