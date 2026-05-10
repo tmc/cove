@@ -249,3 +249,20 @@ func TestRenderPruneHuman(t *testing.T) {
 		})
 	}
 }
+
+func TestCoordinatePruneCountsCollectErrors(t *testing.T) {
+	good := fakePruner{name: "ok", cs: []Candidate{
+		{Path: "a", Bytes: 200, LastUsed: time.Unix(1, 0)},
+	}}
+	bad := errPruner{name: "boom"}
+	rep, err := CoordinatePrune(context.Background(), []Pruner{good, bad}, 1000, 0, false, nil)
+	if err == nil {
+		t.Fatal("CoordinatePrune: want collect error, got nil")
+	}
+	if rep.CollectErrors != 1 {
+		t.Fatalf("CollectErrors = %d, want 1", rep.CollectErrors)
+	}
+	if len(rep.Removed) != 1 || rep.Removed[0].Path != "a" {
+		t.Fatalf("Removed = %#v, want one entry from good pruner", rep.Removed)
+	}
+}
