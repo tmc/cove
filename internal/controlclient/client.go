@@ -99,23 +99,23 @@ func (c *Client) SendRequest(req *controlpb.ControlRequest) (*controlpb.ControlR
 	}
 	reqBytes, err := control.ProtoJSONMarshaler.Marshal(reqToSend)
 	if err != nil {
-		return nil, fmt.Errorf("marshal: %w", err)
+		return nil, fmt.Errorf("control %q: marshal: %w", req.Type, err)
 	}
 	reqBytes = append(reqBytes, '\n')
 	if _, err := conn.Write(reqBytes); err != nil {
-		return nil, fmt.Errorf("write: %w", err)
+		return nil, fmt.Errorf("control %q: write: %w", req.Type, err)
 	}
 
 	// Read response
 	reader := bufio.NewReaderSize(conn, 256*1024)
 	respLine, err := reader.ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("read: %w", err)
+		return nil, fmt.Errorf("control %q: read: %w", req.Type, err)
 	}
 
 	var resp controlpb.ControlResponse
 	if err := control.ProtoJSONUnmarshaler.Unmarshal([]byte(respLine), &resp); err != nil {
-		return nil, fmt.Errorf("parse: %w", err)
+		return nil, fmt.Errorf("control %q: parse: %w", req.Type, err)
 	}
 
 	return &resp, nil
