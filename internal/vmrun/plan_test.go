@@ -284,3 +284,20 @@ func TestGuestOSString(t *testing.T) {
 		}
 	}
 }
+
+func TestStorageKindString(t *testing.T) {
+	for _, tt := range []struct {
+		in   StorageKind
+		want string
+	}{
+		{StorageRoot, "root"},
+		{StorageISO, "iso"},
+		{StorageUSB, "usb"},
+		{StorageBlock, "block"},
+		{StorageKind(99), "unknown"},
+	} {
+		if got := tt.in.String(); got != tt.want {
+			t.Errorf("StorageKind(%d).String() = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

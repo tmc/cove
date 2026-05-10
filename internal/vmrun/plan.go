@@ -63,6 +63,22 @@ const (
 	StorageBlock                   // raw block device
 )
 
+// String returns a short label for the storage kind, suitable for logs.
+func (k StorageKind) String() string {
+	switch k {
+	case StorageRoot:
+		return "root"
+	case StorageISO:
+		return "iso"
+	case StorageUSB:
+		return "usb"
+	case StorageBlock:
+		return "block"
+	default:
+		return "unknown"
+	}
+}
+
 // NetworkPlan describes the single primary NIC. An empty Mode means no NIC.
 type NetworkPlan struct {
 	Mode string // "nat", "bridged:<iface>", "vmnet", "filehandle", "none"
