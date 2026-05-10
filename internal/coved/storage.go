@@ -57,6 +57,16 @@ type StoragePollScheduler struct {
 	lastState storagecensus.State
 	lastRun   time.Time
 	runs      int64
+	errors    int64
+}
+
+// Errors returns the count of RunOnce calls that failed during the
+// census walk. It is informational only and does not include hard
+// tripwire prune failures.
+func (s *StoragePollScheduler) Errors() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.errors
 }
 
 // NewStoragePollScheduler returns a scheduler with the default interval.
@@ -116,6 +126,7 @@ func (s *StoragePollScheduler) RunOnce(ctx context.Context) (storagecensus.Repor
 	}
 	rep, err := storagecensus.Walk(s.Root, s.Categories, storagecensus.Options{TopN: 0})
 	if err != nil {
+		s.errors++
 		return storagecensus.Report{}, fmt.Errorf("storage poll: %w", err)
 	}
 	if b, berr := storagecensus.LoadBudget(s.Root); berr == nil && b.IsSet() {
