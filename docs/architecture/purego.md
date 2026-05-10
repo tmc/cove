@@ -128,12 +128,7 @@ GCD main queue dispatch (`dispatch_get_main_queue()`) does NOT work from gorouti
    DispatchAsyncQueue(vmQueue, func() { /* works */ })
    ```
 
-2. Use thread-safe APIs -- many CoreGraphics APIs don't need the main queue:
-   ```go
-   cgImage := coregraphics.CGWindowListCreateImage(bounds, options, windowID, imageOptions)
-   ```
-
-3. Use CGEvent instead of NSEvent for input events:
+2. Use CGEvent instead of NSEvent for input events:
    ```go
    event := coregraphics.CGEventCreateKeyboardEvent(nil, keycode, keydown)
    coregraphics.CGEventPost(kCGHIDEventTap, event)

@@ -61,7 +61,7 @@ Extends rsc.io/script with guest and UI automation commands. Scripts are txtar a
 
 ### Screenshots and OCR (screenshots.go, ocr.go)
 
-Screenshots use `CGWindowListCreateImage` (thread-safe, no main queue dispatch needed). OCR uses Apple's Vision framework. Both are exposed through the control socket for remote access.
+Screenshots use ScreenCaptureKit. OCR uses Apple's Vision framework. Both are exposed through the control socket for remote access.
 
 ### Provisioning (provision*.go)
 
@@ -140,5 +140,5 @@ sequenceDiagram
 - The main goroutine is locked to the OS thread for AppKit/NSApplication
 - VM operations dispatch to a serial GCD queue (`com.appledocs.vz.vm`)
 - Control socket runs on its own goroutine, dispatching to the VM queue as needed
-- `CGWindowListCreateImage` is thread-safe (no main queue required)
+- ScreenCaptureKit captures VM windows without the deprecated CGWindow image path
 - `CGEventCreateKeyboardEvent` is used instead of `NSEvent` for keyboard input (avoids ARM64 purego parameter corruption beyond argument position 8)

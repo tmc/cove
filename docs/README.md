@@ -62,7 +62,7 @@ graph TD
     VM -->|vsock gRPC| GA["Guest Agent<br/>(vz-agent)"]
     CS --> GA
 
-    CLI --> SS["Screenshots / OCR<br/>(CGWindowListCreateImage + Vision)"]
+    CLI --> SS["Screenshots / OCR<br/>(ScreenCaptureKit + Vision)"]
     SS --> CS
 ```
 

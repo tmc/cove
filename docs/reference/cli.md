@@ -1642,4 +1642,4 @@ agent-aware free-space compactor.
 
 | Variable | Effect |
 |----------|--------|
-| `COVE_CAPTURE_BACKEND` | Set to `sckit` to opt into the ScreenCaptureKit capture path for `cove run -gui` and `cove ctl screenshot` (design 041). Unset or any other value uses CGWindow. The per-VM `<vmDir>/capture-backend` file overrides this for a single VM. |
+| `COVE_CAPTURE_BACKEND` | Legacy capture selector for design 041. `sckit` and `auto` are accepted silently. `cgwindow` logs a one-release warning and still uses ScreenCaptureKit. |

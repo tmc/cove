@@ -14,10 +14,10 @@ func TestParseBackend(t *testing.T) {
 		{"sckit", BackendSCKit},
 		{"SCKIT", BackendSCKit},
 		{"  sckit\n", BackendSCKit},
-		{"cgwindow", BackendCGWindow},
-		{"auto", BackendCGWindow}, // Slice 3: auto resolves to cgwindow
-		{"", BackendCGWindow},
-		{"bogus", BackendCGWindow},
+		{"cgwindow", BackendSCKit},
+		{"auto", BackendSCKit},
+		{"", BackendSCKit},
+		{"bogus", BackendSCKit},
 	}
 	for _, tt := range tests {
 		if got := ParseBackend(tt.in); got != tt.want {
@@ -32,23 +32,23 @@ func TestBackendForVMDirEnvOnly(t *testing.T) {
 		t.Errorf("BackendForVMDir(\"\") = %q, want sckit", got)
 	}
 	t.Setenv("COVE_CAPTURE_BACKEND", "")
-	if got := BackendForVMDir(""); got != BackendCGWindow {
-		t.Errorf("BackendForVMDir(\"\") with empty env = %q, want cgwindow", got)
+	if got := BackendForVMDir(""); got != BackendSCKit {
+		t.Errorf("BackendForVMDir(\"\") with empty env = %q, want sckit", got)
 	}
 }
 
-func TestBackendForVMDirPerVMFileWinsOverEnv(t *testing.T) {
+func TestBackendForVMDirIgnoresPerVMFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "capture-backend"), []byte("sckit\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "capture-backend"), []byte("cgwindow\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("COVE_CAPTURE_BACKEND", "cgwindow")
 	if got := BackendForVMDir(dir); got != BackendSCKit {
-		t.Errorf("BackendForVMDir = %q, want sckit (per-VM file wins)", got)
+		t.Errorf("BackendForVMDir = %q, want sckit", got)
 	}
 }
 
-func TestBackendForVMDirUnknownFileFallsThroughToEnv(t *testing.T) {
+func TestBackendForVMDirUnknownFileStillSCKit(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "capture-backend"), []byte("garbage"), 0o644); err != nil {
 		t.Fatal(err)
@@ -69,8 +69,8 @@ func TestBackendForVMDirMissingFileFallsThroughToEnv(t *testing.T) {
 
 func TestBackendForVMDirEnvGarbageFallsToDefault(t *testing.T) {
 	t.Setenv("COVE_CAPTURE_BACKEND", "totally-unknown")
-	if got := BackendForVMDir(""); got != BackendCGWindow {
-		t.Errorf("BackendForVMDir = %q, want cgwindow (garbage env -> default)", got)
+	if got := BackendForVMDir(""); got != BackendSCKit {
+		t.Errorf("BackendForVMDir = %q, want sckit", got)
 	}
 }
 
@@ -81,8 +81,8 @@ func TestBackendForVMDirEnvUppercaseAndWhitespace(t *testing.T) {
 	}{
 		{"  SCKit\n", BackendSCKit},
 		{"\tSCKIT\t", BackendSCKit},
-		{"  CGWINDOW ", BackendCGWindow},
-		{"  AUTO ", BackendCGWindow},
+		{"  CGWINDOW ", BackendSCKit},
+		{"  AUTO ", BackendSCKit},
 	}
 	for _, tt := range tests {
 		t.Setenv("COVE_CAPTURE_BACKEND", tt.env)
@@ -120,7 +120,7 @@ func TestBackendForVMDirPerVMCGWindowWinsOverSCKitEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("COVE_CAPTURE_BACKEND", "sckit")
-	if got := BackendForVMDir(dir); got != BackendCGWindow {
-		t.Errorf("BackendForVMDir = %q, want cgwindow (per-VM cgwindow overrides env sckit)", got)
+	if got := BackendForVMDir(dir); got != BackendSCKit {
+		t.Errorf("BackendForVMDir = %q, want sckit", got)
 	}
 }

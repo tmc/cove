@@ -429,7 +429,7 @@ func TestPrivateAPI_TakeScreenshotStopped(t *testing.T) {
 			// connected and has an active framebuffer.
 			t.Logf("device[%d] display[%d] _takeScreenshot: SKIPPED (SIGTRAP on stopped VM)", i, j)
 			t.Logf("  _takeScreenshot requires a running VM with active framebuffer")
-			t.Logf("  On a running headless VM, this may work as an alternative to CGWindowListCreateImage")
+			t.Logf("  On a running headless VM, this may work as a framebuffer screenshot path")
 		}
 	}
 }

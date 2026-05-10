@@ -503,7 +503,7 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 	}
 
 	// Handle lock-free commands first. These use thread-safe APIs
-	// (CGWindowListCreateImage, VM state queries) and must not block
+	// (ScreenCaptureKit, VM state queries) and must not block
 	// behind the mutex — otherwise a slow screenshot holds up ping/status.
 	switch req.Type {
 	case "screenshot":
