@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -123,8 +124,8 @@ func TestRunElevatedManifestNativeRefusesUIThread(t *testing.T) {
 	if err == nil {
 		t.Fatal("runElevatedManifestNative succeeded on UI thread")
 	}
-	if !strings.Contains(err.Error(), "cannot run on the app ui thread") {
-		t.Fatalf("error = %v, want UI thread refusal", err)
+	if !errors.Is(err, ErrAuthorizationOnUIThread) {
+		t.Fatalf("error = %v, want ErrAuthorizationOnUIThread", err)
 	}
 }
 
