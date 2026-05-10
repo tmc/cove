@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -17,6 +18,13 @@ import (
 	pb "github.com/tmc/vz-macos/proto/agentpb"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
+
+// ErrProxyRuntimeUnavailable is returned by proxyRuntimeClient methods
+// when the underlying control server is nil. Callers can branch on
+// this with errors.Is to distinguish "runtime not yet wired" (caller
+// raced startup) from per-method agent failures, without parsing the
+// literal message.
+var ErrProxyRuntimeUnavailable = errors.New("proxy runtime unavailable")
 
 var proxyURL string
 var proxySandboxLevel string
@@ -181,7 +189,7 @@ func (r *proxyRuntimeClient) IsLinux() bool {
 
 func (r *proxyRuntimeClient) Exec(ctx context.Context, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
 	if r == nil || r.server == nil {
-		return nil, fmt.Errorf("proxy runtime unavailable")
+		return nil, ErrProxyRuntimeUnavailable
 	}
 	agent, err := r.server.getAgent()
 	if err != nil {
@@ -192,7 +200,7 @@ func (r *proxyRuntimeClient) Exec(ctx context.Context, args []string, env map[st
 
 func (r *proxyRuntimeClient) UserExec(ctx context.Context, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
 	if r == nil || r.server == nil {
-		return nil, fmt.Errorf("proxy runtime unavailable")
+		return nil, ErrProxyRuntimeUnavailable
 	}
 	agent, err := r.server.getUserAgent()
 	if err != nil {
@@ -203,7 +211,7 @@ func (r *proxyRuntimeClient) UserExec(ctx context.Context, args []string, env ma
 
 func (r *proxyRuntimeClient) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	if r == nil || r.server == nil {
-		return nil, fmt.Errorf("proxy runtime unavailable")
+		return nil, ErrProxyRuntimeUnavailable
 	}
 	agent, err := r.server.getAgent()
 	if err != nil {
@@ -214,7 +222,7 @@ func (r *proxyRuntimeClient) ReadFile(ctx context.Context, path string) ([]byte,
 
 func (r *proxyRuntimeClient) WriteFile(ctx context.Context, path string, data []byte, mode uint32) error {
 	if r == nil || r.server == nil {
-		return fmt.Errorf("proxy runtime unavailable")
+		return ErrProxyRuntimeUnavailable
 	}
 	agent, err := r.server.getAgent()
 	if err != nil {
@@ -449,7 +457,7 @@ func configureGuestProxy(ctx context.Context, cs *ControlServer, rawURL string) 
 		return nil
 	}
 	if cs == nil {
-		return fmt.Errorf("proxy runtime unavailable")
+		return ErrProxyRuntimeUnavailable
 	}
 	flags, err := currentProxyFlags()
 	if err != nil {
@@ -505,7 +513,7 @@ func teardownRequestedProxy(cs *ControlServer) {
 
 func waitForProxyRuntime(ctx context.Context, cs *ControlServer) error {
 	if cs == nil {
-		return fmt.Errorf("proxy runtime unavailable")
+		return ErrProxyRuntimeUnavailable
 	}
 	ticker := time.NewTicker(proxyRuntimePollInterval)
 	defer ticker.Stop()
