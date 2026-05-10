@@ -187,6 +187,22 @@ func TestVMInfoState(t *testing.T) {
 	})
 }
 
+func TestRuntimeListFieldsNonStartingShortCircuits(t *testing.T) {
+	for _, state := range []string{"running", "stopped", "paused", ""} {
+		uptime, note := runtimeListFields(t.TempDir(), state)
+		if uptime != "-" || note != "-" {
+			t.Errorf("state=%q: got (%q, %q), want (\"-\", \"-\")", state, uptime, note)
+		}
+	}
+}
+
+func TestRuntimeListFieldsStartingNoRuntimeState(t *testing.T) {
+	uptime, note := runtimeListFields(t.TempDir(), "starting")
+	if uptime != "-" || note != "-" {
+		t.Errorf("got (%q, %q), want (\"-\", \"-\") when runtime state absent", uptime, note)
+	}
+}
+
 func TestRuntimeListFieldsStarting(t *testing.T) {
 	vmPath := makeTestVMDir(t)
 	when := time.Now().Add(-23 * time.Second).UTC()
