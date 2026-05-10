@@ -3,6 +3,9 @@
 Status: Shipped. Phases 0-5 landed during R57; PiB-scale overflow fix at
 `c7865e1` (R67); test coverage strengthened at `61c2ca5` (R66). SHA chain
 in ROADMAP row "Design 040 storage budget (Phases 0-5)".
+Verified 2026-05-10 (R365): `cove storage <census|budget|prune>` dispatch
+in `storage.go`; `internal/storagecensus` package backs the walk; SHAs
+`c7865e1` and `61c2ca5` reachable on main.
 Author: Travis Cline
 Date: 2026-05-07
 
