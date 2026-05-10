@@ -314,7 +314,7 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 			return nil
 		}
 		if inProgress[name] {
-			return fmt.Errorf("dependency cycle detected at %s", name)
+			return fmt.Errorf("%w at %s", ErrVZScriptDependencyCycle, name)
 		}
 		data, err := loadVZScriptData(name)
 		if err != nil {
@@ -821,6 +821,12 @@ func openVZScriptLog(socketPath string) (*os.File, error) {
 // empty or whitespace-only name. Callers can use errors.Is to distinguish
 // this from a missing-recipe error.
 var ErrEmptyRecipeName = errors.New("empty recipe name")
+
+// ErrVZScriptDependencyCycle is returned by the recipe runner when the
+// dependency graph contains a cycle (a recipe transitively requires
+// itself). Callers can branch on this with errors.Is to print a
+// recipe-name list without parsing the literal message.
+var ErrVZScriptDependencyCycle = errors.New("vzscript dependency cycle")
 
 func loadVZScriptData(nameOrPath string) ([]byte, error) {
 	if strings.TrimSpace(nameOrPath) == "" {
