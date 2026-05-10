@@ -1,6 +1,9 @@
 # Design 028: Block Device Passthrough
 
-Status: Implemented (2026-05-04)
+Status: Implemented (2026-05-04). Verified 2026-05-10 (R360):
+`openBlockDeviceViaHelper` at `block_device.go:114`,
+`validateBlockDevicePath`/`Node`/`Unmounted` at `helper.go:720/742/757`,
+`handleHelperConn` at `helper.go:557`.
 Author: Travis Cline
 Date: 2026-05-03
 
