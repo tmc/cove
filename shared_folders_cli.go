@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,16 @@ import (
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
+
+// ErrSharedFolderTagExists is returned by AddSharedFolder when the
+// requested tag is already used by a different shared folder. Callers
+// can branch on this with errors.Is to suggest a different tag without
+// parsing the message.
+var ErrSharedFolderTagExists = errors.New("shared folder tag already exists")
+
+// ErrSharedFolderNotFound is returned by RemoveSharedFolder when the
+// supplied tag-or-path selector matches no configured folder.
+var ErrSharedFolderNotFound = errors.New("shared folder not found")
 
 const defaultSharedFoldersMountPoint = "/Volumes/My Shared Files"
 const linuxSharedFoldersMountRoot = "/mnt/.cove-shared-folders"
@@ -369,7 +380,7 @@ func handleVMSharedFolderRemove(vmDirectory, selector string) error {
 		return err
 	}
 	if !removed {
-		return fmt.Errorf("no shared folder matches %q", selector)
+		return fmt.Errorf("%w: %q", ErrSharedFolderNotFound, selector)
 	}
 	fmt.Printf("Removed shared folder %q\n", selector)
 	return applySharedFoldersAndPrint(vmDirectory)
@@ -419,7 +430,7 @@ func addSharedFolderEntry(vmDirectory, hostPath, tag string, readOnly bool) (Sha
 	} else {
 		for _, f := range folders {
 			if f.Tag == tag {
-				return SharedFolderEntry{}, false, fmt.Errorf("tag %q already exists", tag)
+				return SharedFolderEntry{}, false, fmt.Errorf("%w: %q", ErrSharedFolderTagExists, tag)
 			}
 		}
 	}
