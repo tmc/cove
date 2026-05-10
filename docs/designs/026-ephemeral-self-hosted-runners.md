@@ -514,3 +514,17 @@ design.
   long-lived alternative to `cove runner job`.
 
 [gh-jit]: https://docs.github.com/en/rest/actions/self-hosted-runners?apiVersion=2022-11-28#create-configuration-for-a-just-in-time-runner-for-a-repository
+
+## Verified 2026-05-10
+
+- Status accurately reflects "planning input v2.5": no `runner*.go` file
+  on `origin/main`; no `cove runner job` subcommand wired into `main.go`
+  or `cli_help.go`. Slice 0 has not shipped.
+- `vzscripts/github-runner.vzscript` (the long-lived alternative cited in
+  §"Related") is present.
+- `# secret:` directive is parsed in `build_cache.go:135` (cove build
+  only), not in `vzscript_apply.go`'s `parseScriptMeta` — confirms one of
+  the three v2-killing flaws cited in §"Lessons learned in v2".
+- Composition deps: design 023 Slice 1 (shell.go, ExecAttach RPC) and
+  design 024 Slice 1 (image_cli.go push/pull/verify) are both shipped on
+  `origin/main`, so the on-ramp is unblocked when Slice 0 lands.
