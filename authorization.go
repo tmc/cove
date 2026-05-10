@@ -76,7 +76,6 @@ type authorizationItem struct {
 	name        *byte
 	valueLength uint32
 	value       unsafe.Pointer
-	flags       uint32
 }
 
 type authorizationItemSet struct {
