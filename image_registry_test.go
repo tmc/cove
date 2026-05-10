@@ -15,6 +15,69 @@ import (
 	"oras.land/oras-go/v2/registry/remote/auth"
 )
 
+func TestIsRegistryHostClassification(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{"localhost", true},
+		{"localhost:5000", true},
+		{"ghcr.io", true},
+		{"registry.example.com", true},
+		{"host:5000", true},
+		{"docker", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := isRegistryHost(tt.host); got != tt.want {
+			t.Errorf("isRegistryHost(%q) = %v, want %v", tt.host, got, tt.want)
+		}
+	}
+}
+
+func TestIsPublicRegistryClassification(t *testing.T) {
+	tests := []struct {
+		registry string
+		want     bool
+	}{
+		{"docker.io", true},
+		{"  Docker.IO  ", true},
+		{"index.docker.io", true},
+		{"registry-1.docker.io", true},
+		{"ghcr.io", true},
+		{"quay.io", true},
+		{"registry.gitlab.com", true},
+		{"localhost", false},
+		{"localhost:5000", false},
+		{"registry.example.com", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := isPublicRegistry(tt.registry); got != tt.want {
+			t.Errorf("isPublicRegistry(%q) = %v, want %v", tt.registry, got, tt.want)
+		}
+	}
+}
+
+func TestIsRegistryReferenceClassification(t *testing.T) {
+	tests := []struct {
+		ref  string
+		want bool
+	}{
+		{"ghcr.io/me/img:v1", true},
+		{"localhost:5000/img:v1", true},
+		{"ghcr.io/me/img", false},
+		{"docker/img:v1", false},
+		{"", false},
+		{"::::", false},
+	}
+	for _, tt := range tests {
+		if got := isRegistryReference(tt.ref); got != tt.want {
+			t.Errorf("isRegistryReference(%q) = %v, want %v", tt.ref, got, tt.want)
+		}
+	}
+}
+
 func TestPushImageToTargetPacksCoveArtifact(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "registry:v1")
