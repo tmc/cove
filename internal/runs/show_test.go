@@ -127,3 +127,21 @@ func event(typ, status string, duration int64, extra map[string]any) metrics.Eve
 		Extra:      extra,
 	}
 }
+
+func TestResultCountsFailedEvents(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "20260510-fe", []metrics.Event{
+		event("vm_start", "ok", 10, nil),
+		event("build_step", "failed", 20, map[string]any{"reason": "compile"}),
+		event("build_step", "failed", 5, map[string]any{"reason": "link"}),
+		event(runCompleteEvent, "failed", 100, map[string]any{"exit_code": 1}),
+	}, nil)
+
+	show, err := LoadShow(root, "20260510-fe")
+	if err != nil {
+		t.Fatalf("LoadShow: %v", err)
+	}
+	if show.Result.FailedEvents != 3 {
+		t.Fatalf("FailedEvents = %d, want 3", show.Result.FailedEvents)
+	}
+}
