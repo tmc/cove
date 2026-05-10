@@ -195,3 +195,30 @@ func TestOTLPSinkCountsDeliveredAndFailed(t *testing.T) {
 		t.Fatalf("Failed = %d, want 1", got)
 	}
 }
+
+func TestOTLPSinkErrorIncludesEventType(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	sink := NewOTLPSink(srv.URL)
+	err := sink.Emit(context.Background(), Event{EventType: "vm.start"})
+	if err == nil {
+		t.Fatal("Emit: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), `event_type="vm.start"`) {
+		t.Fatalf("err = %v, want event_type label", err)
+	}
+
+	// Connect failure path: closed server, no body.
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv2.Close()
+	err = NewOTLPSink(srv2.URL).Emit(context.Background(), Event{EventType: "image.gc"})
+	if err == nil {
+		t.Fatal("Emit closed server: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), `event_type="image.gc"`) {
+		t.Fatalf("err = %v, want event_type label on transport error", err)
+	}
+}

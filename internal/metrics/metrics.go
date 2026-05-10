@@ -226,11 +226,11 @@ func (o *OTLPSink) Emit(ctx context.Context, e Event) (err error) {
 	}
 	b, err := json.Marshal(e)
 	if err != nil {
-		return fmt.Errorf("metrics otlp: marshal event: %w", err)
+		return fmt.Errorf("metrics otlp: marshal event_type=%q: %w", e.EventType, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.Endpoint, bytes.NewReader(b))
 	if err != nil {
-		return fmt.Errorf("metrics otlp: build request: %w", err)
+		return fmt.Errorf("metrics otlp: build request event_type=%q: %w", e.EventType, err)
 	}
 	req.Header.Set("content-type", "application/json")
 	client := o.Client
@@ -239,16 +239,16 @@ func (o *OTLPSink) Emit(ctx context.Context, e Event) (err error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("metrics otlp: post event: %w", err)
+		return fmt.Errorf("metrics otlp: post event_type=%q: %w", e.EventType, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
 		body = bytes.TrimSpace(body)
 		if len(body) > 0 {
-			return fmt.Errorf("metrics otlp: status %s: %s", resp.Status, body)
+			return fmt.Errorf("metrics otlp: event_type=%q status %s: %s", e.EventType, resp.Status, body)
 		}
-		return fmt.Errorf("metrics otlp: status %s", resp.Status)
+		return fmt.Errorf("metrics otlp: event_type=%q status %s", e.EventType, resp.Status)
 	}
 	return nil
 }
