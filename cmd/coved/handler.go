@@ -43,6 +43,7 @@ type statusResponse struct {
 	LifecycleLastRunTS      string `json:"lifecycle_last_run_ts,omitempty"`
 	StoragePollRunsTotal    int64  `json:"storage_poll_runs_total,omitempty"`
 	StoragePollErrorsTotal  int64  `json:"storage_poll_errors_total,omitempty"`
+	StoragePollLastRunTS    string `json:"storage_poll_last_run_ts,omitempty"`
 	StorageUsedBytes        int64  `json:"storage_used_bytes,omitempty"`
 	WebhookDeliveredTotal   uint64 `json:"webhook_delivered_total,omitempty"`
 	WebhookFailedTotal      uint64 `json:"webhook_failed_total,omitempty"`
@@ -166,10 +167,13 @@ func (d *daemon) status() statusResponse {
 		}
 	}
 	if d.storage != nil {
-		used, _, _, runs := d.storage.Stats()
+		used, _, last, runs := d.storage.Stats()
 		resp.StoragePollRunsTotal = runs
 		resp.StoragePollErrorsTotal = d.storage.Errors()
 		resp.StorageUsedBytes = used
+		if !last.IsZero() {
+			resp.StoragePollLastRunTS = last.UTC().Format(time.RFC3339Nano)
+		}
 	}
 	if d.webhook != nil {
 		resp.WebhookDeliveredTotal = d.webhook.Delivered()
