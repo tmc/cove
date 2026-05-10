@@ -282,6 +282,72 @@ func TestFleetPSJSONIncludesFailures(t *testing.T) {
 	runner.assertCalls(t, []string{"vm", "list"}, 2)
 }
 
+func TestFleetMultiHostCoordination(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		outputs   map[string]string
+		errs      map[string]error
+		wantOut   []string
+		wantErr   string
+		wantCalls int
+	}{
+		{
+			name: "vm list aggregates three hosts",
+			args: []string{"vm", "ls"},
+			outputs: map[string]string{
+				"a.local": "a-vm running\n",
+				"b.local": "b-vm stopped\n",
+				"c.local": "c-vm running\n",
+			},
+			wantOut:   []string{"a\ta-vm running", "b\tb-vm stopped", "c\tc-vm running"},
+			wantCalls: 3,
+		},
+		{
+			name: "least loaded placement scores hosts",
+			args: []string{"run", "--policy=least-loaded", "-linux"},
+			outputs: map[string]string{
+				"a.local": "a1 running\na2 running\n",
+				"b.local": "b1 running\n",
+				"c.local": "",
+			},
+			wantOut:   []string{"selected c", "a=2", "b=1", "c=0"},
+			wantCalls: 3,
+		},
+		{
+			name:      "all hosts down fails placement",
+			args:      []string{"run", "--policy=least-loaded"},
+			errs:      map[string]error{"a.local": errors.New("down"), "b.local": errors.New("down"), "c.local": errors.New("down")},
+			wantErr:   "all remotes unreachable",
+			wantCalls: 3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeFleetHostsConfig(t, "a", "b", "c")
+			runner := &fakeFleetRunner{outputs: tt.outputs, errs: tt.errs}
+			var out bytes.Buffer
+			err := runFleetCommandWithRunner(context.Background(), tt.args, path, runner, &out, &bytes.Buffer{})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want substring %q", err, tt.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("fleet command: %v", err)
+			}
+			for _, want := range tt.wantOut {
+				if !strings.Contains(out.String(), want) {
+					t.Fatalf("output missing %q:\n%s", want, out.String())
+				}
+			}
+			runner.assertCallsWithArgs(t, []string{"vm", "list"}, tt.wantCalls)
+			if tt.name == "least loaded placement scores hosts" {
+				runner.assertSawCall(t, "c.local", []string{"run", "-linux"})
+			}
+		})
+	}
+}
+
 func TestFleetImageTransferCommands(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -344,6 +410,21 @@ func writeFleetTestConfig(t *testing.T) string {
 	}
 	if err := cfg.Add("b", fleetpkg.Remote{Host: "b.local"}); err != nil {
 		t.Fatalf("Add b: %v", err)
+	}
+	if err := fleetpkg.SavePath(path, cfg); err != nil {
+		t.Fatalf("SavePath: %v", err)
+	}
+	return path
+}
+
+func writeFleetHostsConfig(t *testing.T, names ...string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	cfg := &fleetpkg.Config{}
+	for _, name := range names {
+		if err := cfg.Add(name, fleetpkg.Remote{Host: name + ".local"}); err != nil {
+			t.Fatalf("Add %s: %v", name, err)
+		}
 	}
 	if err := fleetpkg.SavePath(path, cfg); err != nil {
 		t.Fatalf("SavePath: %v", err)
