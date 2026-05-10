@@ -487,3 +487,34 @@ func TestWriteImageManifestNoPartialOnDirMissing(t *testing.T) {
 		t.Fatalf("manifest.json should not exist: err=%v", err)
 	}
 }
+
+func TestMaterializeImageRejectsMissingImage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref, _ := ParseImageRef("ghost:v1")
+	_, err := MaterializeImage(MaterializeImageOptions{Ref: ref, ChildName: "kid"})
+	if err == nil {
+		t.Fatal("MaterializeImage(missing image) = nil, want not-found error")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("err = %v, want 'not found'", err)
+	}
+}
+
+func TestMaterializeImageRejectsExistingChild(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src-existing")
+	ref, _ := ParseImageRef("collide:v1")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src-existing", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	if err := os.MkdirAll(vmconfig.Path("already-here"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	_, err := MaterializeImage(MaterializeImageOptions{Ref: ref, ChildName: "already-here"})
+	if err == nil {
+		t.Fatal("MaterializeImage(existing child) = nil, want already-exists error")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err = %v, want 'already exists'", err)
+	}
+}
