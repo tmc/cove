@@ -184,3 +184,17 @@ a `PinChecker` so pinned images are preserved (shipped at `394b812`,
   VM caps the daemon may need to report.
 - [`docs/designs/034-fleet-slice-1.md`](034-fleet-slice-1.md) for the related
   multi-host routing surface that should remain distinct from daemon mode.
+
+## Verified 2026-05-10
+
+- Daemon binary at `cmd/coved/main.go`; Unix socket path
+  `~/.vz/cove.sock` resolved at `cmd/coved/main.go:161`; PID file
+  `~/.vz/cove.pid` at `:166`.
+- `internal/coved/` ships handler, image_gc, lifecycle, eventbus,
+  webhook, prometheus subsystems.
+- Prometheus surface (`prometheus.go:41-45`) exposes
+  `coved_lifecycle_enforced_total`, `coved_image_gc_runs_total`,
+  `coved_image_gc_bytes_freed_total`, `coved_image_gc_duration_ms_total`,
+  matching the STATUS JSON contract.
+- Slice composition: design 040 (storage budget) shipped via
+  `internal/coved/` per ROADMAP and §"Status" line.
