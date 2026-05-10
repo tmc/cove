@@ -81,3 +81,13 @@ pass tracked in [`docs/benchmarks/disk-io.md`](../benchmarks/disk-io.md).
   the other Linux guest install path that shares the provisioning boundary.
 - [`RELEASE-NOTES-v0.4.0.md`](../../RELEASE-NOTES-v0.4.0.md) for the release
   note that should keep the first-boot caveat visible.
+
+## Verified 2026-05-10
+
+- SHA chain `f718d69`, `c624d3f`, `aebcf13`, `c3f7ead`, `449cbfa`,
+  `0cbc455`, `4f71eb3` all present on `origin/main`.
+- `linux_installer.go:55` defines `LinuxVariantDesktop`; `up.go:193`
+  wires `-desktop-installer oem|server` flag (default `oem`); `up.go:282`
+  selects the desktop variant from `cove up -linux -desktop`.
+- `linux_installer_test.go:49-57` asserts the server variant omits the
+  desktop GDM block; `:193` covers the keyring-removal late command.
