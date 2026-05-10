@@ -24,6 +24,7 @@ type daemon struct {
 	connected chan struct{}
 	lifecycle *coved.LifecycleEnforcer
 	events    *coved.EventBus
+	webhook   *coved.WebhookSubscriber
 }
 
 type statusResponse struct {
@@ -50,8 +51,11 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		ImageGCBytes:  status.ImageGCBytesFreedTotal,
 		LifecycleRuns:   status.LifecycleEnforced,
 		LifecycleErrors: status.LifecycleStopErrors,
-		EventsDropped:   d.events.Dropped(),
-		Events:          d.events.Tail(),
+		EventsDropped:    d.events.Dropped(),
+		WebhookDelivered: d.webhook.Delivered(),
+		WebhookFailed:    d.webhook.Failed(),
+		WebhookRejected:  d.webhook.Rejected(),
+		Events:           d.events.Tail(),
 	}
 }
 

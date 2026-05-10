@@ -92,6 +92,7 @@ func main() {
 		slog.Debug("metrics jsonl subscriber", slog.Any("err", err))
 	}
 	if webhook := coved.NewWebhookSubscriber(cfg.Daemon.Webhook); webhook != nil {
+		d.webhook = webhook
 		go webhook.Run(ctx, d.events)
 	}
 	go gc.RunScheduledImageGC(ctx)
