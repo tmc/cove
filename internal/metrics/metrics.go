@@ -56,8 +56,18 @@ func (f SinkFunc) Close() error { return nil }
 
 // JSONL writes one JSON event per line.
 type JSONL struct {
-	mu sync.Mutex
-	w  io.Writer
+	mu      sync.Mutex
+	w       io.Writer
+	written atomic.Uint64
+}
+
+// Written returns the count of events successfully serialized to the
+// underlying writer.
+func (j *JSONL) Written() uint64 {
+	if j == nil {
+		return 0
+	}
+	return j.written.Load()
 }
 
 // NewJSONL returns a JSONL sink writing to w.
@@ -91,6 +101,7 @@ func (j *JSONL) Emit(ctx context.Context, e Event) error {
 	if _, err := j.w.Write(b); err != nil {
 		return fmt.Errorf("metrics jsonl: write event: %w", err)
 	}
+	j.written.Add(1)
 	return nil
 }
 
