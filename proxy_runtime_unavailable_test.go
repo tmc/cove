@@ -23,3 +23,27 @@ func TestProxyRuntimeUnavailableSentinel(t *testing.T) {
 		t.Fatalf("WriteFile err = %v, want ErrProxyRuntimeUnavailable", err)
 	}
 }
+
+func TestProxyRuntimeUnavailableHelpers(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "configure guest proxy without control server",
+			run:  func() error { return configureGuestProxy(ctx, nil, "http://127.0.0.1:8080") },
+		},
+		{
+			name: "wait without control server",
+			run:  func() error { return waitForProxyRuntime(ctx, nil) },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.run(); !errors.Is(err, ErrProxyRuntimeUnavailable) {
+				t.Fatalf("err = %v, want ErrProxyRuntimeUnavailable", err)
+			}
+		})
+	}
+}
