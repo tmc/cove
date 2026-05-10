@@ -1,6 +1,6 @@
 # cove v0.4 secrets — architecture options brief (Council consultation)
 
-**Status**: draft v1 (post-second-opinion review)
+**Status**: Option A shipped in v0.4. Option B (age sidecar) deferred. Option C (Go plugin API) rejected.
 **Author**: cove team
 **Date**: 2026-04-16
 **Target**: input for v0.4 roadmap; implementation follows v0.3 ship
@@ -132,3 +132,10 @@ A therefore specifies three additional behaviors:
 ---
 
 *References: v0.3 secrets design doc (`docs/design/secrets-v0.3.md`), Council round-1 notes (`docs/council/2026-03-secrets-round1.md`), Council round-2 notes (`docs/council/2026-04-secrets-round2.md`), vzscript directive reference (`docs/vzscript.md`), headless-CI adapter runbook (`docs/build-secrets-ci.md`).*
+
+## Verified 2026-05-10
+
+- Option A `# secret-from: KEY=<uri>` directive parsed in `build_cache.go:135`.
+- `internal/secrets/secrets.go` ships the `Resolver` with `Provider` registry (`Scheme()` interface, line 11) and `Resolve(uri)` dispatch (line 47). `env.go` and `file.go` providers present; URI-based external-CLI adapters (op/vault/sops/age) not yet wired beyond env/file.
+- `SupportedSchemes()` (line 38) surfaces the registry to error messages (line 71).
+- No `secret-timeout:` directive or `COVE_BUILD_HEADLESS` env var present yet — the headless-CI hardening (timeout + TTY probe + pgid kill) remains a v0.4 follow-up.
