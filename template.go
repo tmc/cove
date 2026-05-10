@@ -14,6 +14,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,15 @@ import (
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
+
+// ErrTemplateSourceNotFound is returned by SaveTemplateWithOptions when
+// the source VM directory does not exist or fails vmconfig.Validate.
+var ErrTemplateSourceNotFound = errors.New("template source VM not found")
+
+// ErrTemplateExists is returned by SaveTemplateWithOptions when the
+// target template directory already exists. Callers can branch on this
+// with errors.Is to offer overwrite/rename guidance.
+var ErrTemplateExists = errors.New("template already exists")
 
 // TemplateInfo holds information about a template.
 type TemplateInfo struct {
@@ -87,13 +97,13 @@ func SaveTemplateWithOptions(opts SaveTemplateOptions) error {
 	// Validate source VM
 	vmPath := vmconfig.Path(opts.VMName)
 	if !vmconfig.Validate(vmPath) {
-		return fmt.Errorf("source VM not found: %s", opts.VMName)
+		return fmt.Errorf("%w: %s", ErrTemplateSourceNotFound, opts.VMName)
 	}
 
 	// Check template doesn't exist
 	templatePath := filepath.Join(vmconfig.TemplateDir(), opts.TemplateName)
 	if _, err := os.Stat(templatePath); !os.IsNotExist(err) {
-		return fmt.Errorf("template already exists: %s", opts.TemplateName)
+		return fmt.Errorf("%w: %s", ErrTemplateExists, opts.TemplateName)
 	}
 
 	modeStr := "compressed"

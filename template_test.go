@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,9 +66,8 @@ func TestTemplateErrorPaths(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	// SaveTemplate: source VM does not exist.
-	if err := SaveTemplate("nope", "tpl"); err == nil ||
-		!strings.Contains(err.Error(), "source VM not found") {
-		t.Errorf("SaveTemplate missing VM: got %v, want 'source VM not found'", err)
+	if err := SaveTemplate("nope", "tpl"); !errors.Is(err, ErrTemplateSourceNotFound) {
+		t.Errorf("SaveTemplate missing VM: got %v, want ErrTemplateSourceNotFound", err)
 	}
 
 	// DeleteTemplate: template does not exist.
@@ -97,9 +97,8 @@ func TestTemplateErrorPaths(t *testing.T) {
 	if err := os.MkdirAll(tplDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveTemplate("src", "dup"); err == nil ||
-		!strings.Contains(err.Error(), "template already exists") {
-		t.Errorf("SaveTemplate dup: got %v, want 'template already exists'", err)
+	if err := SaveTemplate("src", "dup"); !errors.Is(err, ErrTemplateExists) {
+		t.Errorf("SaveTemplate dup: got %v, want ErrTemplateExists", err)
 	}
 }
 
