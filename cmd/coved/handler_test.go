@@ -58,6 +58,9 @@ func TestHandleStatus(t *testing.T) {
 	if got.StorageUsedBytes != 0 {
 		t.Fatalf("StorageUsedBytes = %d, want 0 when scheduler nil", got.StorageUsedBytes)
 	}
+	if got.WebhookDeliveredTotal != 0 || got.WebhookFailedTotal != 0 || got.WebhookRejectedTotal != 0 {
+		t.Fatalf("webhook = (%d,%d,%d), want zero when subscriber nil", got.WebhookDeliveredTotal, got.WebhookFailedTotal, got.WebhookRejectedTotal)
+	}
 }
 
 func TestHandleUnknownCommand(t *testing.T) {
