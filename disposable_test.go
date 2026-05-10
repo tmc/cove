@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,30 @@ import (
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
+
+func TestDisposableCloneIsActive(t *testing.T) {
+	t.Run("no socket returns false", func(t *testing.T) {
+		if disposableCloneIsActive(t.TempDir()) {
+			t.Fatal("disposableCloneIsActive(empty dir) = true, want false")
+		}
+	})
+	t.Run("listening socket returns true", func(t *testing.T) {
+		dir, err := os.MkdirTemp("/tmp", "r290-")
+		if err != nil {
+			t.Fatalf("MkdirTemp: %v", err)
+		}
+		t.Cleanup(func() { os.RemoveAll(dir) })
+		sock := filepath.Join(dir, "control.sock")
+		l, err := net.Listen("unix", sock)
+		if err != nil {
+			t.Fatalf("net.Listen: %v", err)
+		}
+		t.Cleanup(func() { l.Close() })
+		if !disposableCloneIsActive(dir) {
+			t.Fatal("disposableCloneIsActive(listening sock) = false, want true")
+		}
+	})
+}
 
 func TestDisposableCloneNameRoundTrip(t *testing.T) {
 	now := time.Date(2026, 3, 29, 12, 34, 56, 0, time.Local)
