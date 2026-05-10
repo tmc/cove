@@ -46,6 +46,17 @@ func TestHandlePortForwardListEmpty(t *testing.T) {
 	}
 }
 
+func TestHandlePortForwardStopNotFound(t *testing.T) {
+	s := NewControlServerWithVMDir("", t.TempDir())
+	resp := s.handlePortForward(&controlpb.PortForwardCommand{Action: "stop", HostPort: 18080})
+	if resp.Success {
+		t.Fatalf("Success = true, want failure")
+	}
+	if !strings.Contains(resp.Error, "no forward on host port 18080") {
+		t.Fatalf("Error = %q, want 'no forward on host port 18080'", resp.Error)
+	}
+}
+
 func TestPortForwardSpecsSetAndString(t *testing.T) {
 	var specs portForwardSpecs
 	if got := specs.String(); got != "" {
