@@ -105,3 +105,14 @@ func TestPrometheusEmitsStoragePollCounters(t *testing.T) {
 		}
 	}
 }
+
+func TestPrometheusEmitsStorageUsedBytes(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{StorageUsedBytes: 12345678}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), "coved_storage_used_bytes 12345678") {
+		t.Fatalf("metrics missing coved_storage_used_bytes:\n%s", rec.Body.String())
+	}
+}
