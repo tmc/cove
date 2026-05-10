@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -324,10 +325,16 @@ func agentExecExitOK(resp *controlpb.ControlResponse, err error) bool {
 	return result != nil && result.GetExitCode() == 0
 }
 
+// ErrVMDiskImageMissing is returned by verifyStoppedForVM when the
+// VM directory has no disk.img. Callers can branch on this with
+// errors.Is to surface a "run 'cove install' first" hint without
+// matching the literal message.
+var ErrVMDiskImageMissing = errors.New("vm disk image not found")
+
 func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 	diskPath := target.diskPath()
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		return fmt.Errorf("disk image not found: %s\nRun 'cove install' first to create a VM", diskPath)
+		return fmt.Errorf("%w: %s\nRun 'cove install' first to create a VM", ErrVMDiskImageMissing, diskPath)
 	}
 
 	if err := checkDiskNotMounted(diskPath); err != nil {
