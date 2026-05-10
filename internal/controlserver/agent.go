@@ -40,11 +40,6 @@ type AgentBridge struct {
 	health   AgentHealthState
 }
 
-// NewAgentBridge returns a bridge that issues agent RPCs through host.
-func NewAgentBridge(host AgentHost) *AgentBridge {
-	return &AgentBridge{host: host}
-}
-
 // SetHost wires the host onto a zero-value bridge held by value.
 // ControlServer constructors call this once during init so existing
 // &ControlServer{} test patterns keep compiling without explicit

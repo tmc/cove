@@ -35,10 +35,6 @@ func Resolve(uri string) ([]byte, error) {
 	return DefaultResolver().Resolve(uri)
 }
 
-func SupportedSchemes() []string {
-	return DefaultResolver().SupportedSchemes()
-}
-
 func (r *Resolver) SupportedSchemes() []string {
 	schemes := make([]string, 0, len(r.providers))
 	for scheme := range r.providers {
