@@ -1,7 +1,7 @@
 package main
 
 import (
-	"strings"
+	"errors"
 	"testing"
 )
 
@@ -45,8 +45,8 @@ func TestHandleProvisionEarlyReturns(t *testing.T) {
 		_, err := captureStdoutResult(t, func() error {
 			return handleProvision([]string{"-stage-only"})
 		})
-		if err == nil || !strings.Contains(err.Error(), "missing required flag: -user") {
-			t.Fatalf("handleProvision missing -user: got %v, want 'missing required flag: -user'", err)
+		if !errors.Is(err, ErrInjectFlagRequired) {
+			t.Fatalf("handleProvision missing -user: got %v, want ErrInjectFlagRequired", err)
 		}
 	})
 }
