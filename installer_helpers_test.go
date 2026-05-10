@@ -51,6 +51,37 @@ func TestVMStateName(t *testing.T) {
 	}
 }
 
+func TestInjectSucceededLifecycleForVM(t *testing.T) {
+	dir := t.TempDir()
+	target := vmSelection{Directory: dir, Name: "t"}
+
+	if didInjectSucceedForVM(target) {
+		t.Fatalf("fresh dir: didInjectSucceedForVM = true, want false")
+	}
+	marker := injectSucceededMarkerForVM(target)
+	if want := filepath.Join(dir, ".inject-succeeded"); marker != want {
+		t.Fatalf("marker = %q, want %q", marker, want)
+	}
+
+	markInjectSucceededForVM(target)
+	if !didInjectSucceedForVM(target) {
+		t.Fatalf("after mark: didInjectSucceedForVM = false, want true")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("after mark: stat marker: %v", err)
+	}
+
+	clearInjectSucceededForVM(target)
+	if didInjectSucceedForVM(target) {
+		t.Fatalf("after clear: didInjectSucceedForVM = true, want false")
+	}
+
+	clearInjectSucceededForVM(target)
+	if didInjectSucceedForVM(target) {
+		t.Fatalf("after second clear: didInjectSucceedForVM = true, want false")
+	}
+}
+
 func TestIPSWLooksComplete(t *testing.T) {
 	dir := t.TempDir()
 
