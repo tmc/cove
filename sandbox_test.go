@@ -205,6 +205,40 @@ func TestSandboxPolicyCopiesInput(t *testing.T) {
 	}
 }
 
+func TestGetEffectiveVolumesIncludesLegacyShareDir(t *testing.T) {
+	oldVMDir := vmDir
+	oldVolumes := volumes
+	oldShareDir := shareDir
+	oldSandboxLevel := sandboxLevel
+	t.Cleanup(func() {
+		vmDir = oldVMDir
+		volumes = oldVolumes
+		shareDir = oldShareDir
+		sandboxLevel = oldSandboxLevel
+	})
+	vmDir = t.TempDir()
+	volumes = nil
+	sandboxLevel = ""
+
+	share := t.TempDir()
+	shareDir = share
+
+	got := getEffectiveVolumes()
+	if len(got) != 1 {
+		t.Fatalf("getEffectiveVolumes() = %#v, want 1 entry from shareDir", got)
+	}
+	abs, err := filepath.EvalSymlinks(share)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if got[0].HostPath != abs {
+		t.Fatalf("HostPath = %q, want %q", got[0].HostPath, abs)
+	}
+	if got[0].ReadOnly {
+		t.Fatalf("ReadOnly = true, want false for shareDir-derived mount")
+	}
+}
+
 func TestGetEffectiveVolumesRespectsSandboxForSavedConfig(t *testing.T) {
 	oldVMDir := vmDir
 	oldVolumes := volumes
