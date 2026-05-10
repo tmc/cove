@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -111,12 +112,24 @@ func preWarmAuthorization(prompt string) error {
 // SecurityAgent's own "<app> wants to make changes" line. Keep it short and
 // action-oriented (one sentence). Name the affected VM when relevant so the
 // user can tell what they are approving.
+// ErrAuthorizationNoTTY is returned by runElevatedManifestNative when
+// stdin is not a terminal. Callers can branch on this with errors.Is
+// to fall back to sudo or surface a "run from a TTY" message without
+// matching the literal error string.
+var ErrAuthorizationNoTTY = errors.New("native authorization requires an interactive terminal")
+
+// ErrAuthorizationOnUIThread is returned by runElevatedManifestNative
+// when invoked from the AppKit main thread. The Security framework
+// blocks waiting for the SecurityAgent dialog and would deadlock the
+// UI; callers must dispatch to a worker goroutine.
+var ErrAuthorizationOnUIThread = errors.New("native authorization on app UI thread")
+
 func runElevatedManifestNative(manifestPath, sha256Hex, prompt string) error {
 	if !authorizationStdinIsTTY() {
-		return fmt.Errorf("native authorization requires an interactive terminal; re-run the provisioning command with sudo")
+		return fmt.Errorf("%w; re-run the provisioning command with sudo", ErrAuthorizationNoTTY)
 	}
 	if onUIThread() {
-		return fmt.Errorf("native authorization cannot run on the app ui thread; run provisioning from a worker goroutine")
+		return fmt.Errorf("%w; run provisioning from a worker goroutine", ErrAuthorizationOnUIThread)
 	}
 	authRef, err := createAuthorization(prompt)
 	if err != nil {
