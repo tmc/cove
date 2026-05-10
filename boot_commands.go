@@ -50,7 +50,7 @@ func (e *automationExecutor) waitForTextWithOptions(text string, timeout time.Du
 		}
 		time.Sleep(time.Second)
 	}
-	return fmt.Errorf("timeout waiting for text %q", text)
+	return fmt.Errorf("%w: text %q not found", ErrBootTimeout, text)
 }
 
 func (e *automationExecutor) clickText(text string, timeout time.Duration) error {
@@ -71,7 +71,7 @@ func (e *automationExecutor) clickTextWithOptions(text string, timeout time.Dura
 		}
 		time.Sleep(time.Second)
 	}
-	return fmt.Errorf("timeout waiting for text %q to click", text)
+	return fmt.Errorf("%w: click target %q not found", ErrBootTimeout, text)
 }
 
 func (e *automationExecutor) hostClickTextWithOptions(text string, timeout time.Duration, opts ocrx.SearchOptions) error {
@@ -88,7 +88,7 @@ func (e *automationExecutor) hostClickTextWithOptions(text string, timeout time.
 		}
 		time.Sleep(time.Second)
 	}
-	return fmt.Errorf("timeout waiting for text %q to host-click", text)
+	return fmt.Errorf("%w: host-click target %q not found", ErrBootTimeout, text)
 }
 
 func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error {
