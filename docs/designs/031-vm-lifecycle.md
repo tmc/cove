@@ -247,3 +247,11 @@ first slice focused on local persistence and clean stop behavior.
   coordinator that eventually owns policy enforcement and image GC scheduling.
 - [`docs/reference/release-checklist.md`](../reference/release-checklist.md)
   for the release-prep gate that should still be green before tag time.
+
+## Verified 2026-05-10
+
+- SHA chain `12c391d`, `d1df12b`, `2202f46`, `80eea77`, `9749f29`, `cd899a1`, `09fc1d1` all present on `origin/main`.
+- `internal/vmpolicy/policy.go` defines `IdleTimeout`, `MaxAge`, `RunBudget` (lines 16-18) and `fileName = "policy.json"` (line 12); matches the three-field model in §"Decision Summary".
+- `runtime_lifecycle.go:255` emits `"vm_policy_stop"` event-type string; matches the telemetry contract in §"Decision Summary".
+- `policy_cli.go` wires `cove policy <vm> show|clear|idle|...` subcommands (lines 32-67).
+- ROADMAP `## v0.4` row "VM lifecycle policy v2" still marked `done` with the canonical SHAs (`docs/designs/ROADMAP.md:137`).
