@@ -40,6 +40,7 @@ cove install [flags]
 | `-provision-user <name>` | | Username for auto-provisioned user |
 | `-provision-password <pw>` | | Password for auto-provisioned user |
 | `-vzscripts <list>` | | Comma-separated recipes to run after install |
+| `-vm <name>` | active VM | Target VM name |
 
 ```bash
 cove install
@@ -68,8 +69,10 @@ cove run [flags]
 | `-shell` | false | Attach the host terminal to a guest shell after boot (Linux only; mutually exclusive with `-headless`). Output-only in v0.2 -- see [Linux VMs > Guest Shell](../features/linux.md#guest-shell--shell). |
 | `-cpu <n>` | 2 | Number of CPUs |
 | `-memory <n>` | 4 | Memory in GB |
+| `-vm <name>` | active VM | Target VM name |
 | `-display <spec>` | | Display config: WxH[@PPI] or preset (4k, 1080p, 720p, retina) |
 | `-network <mode>` / `--net <mode>` | nat | Network mode: nat, bridged:\<iface\>, host-only, none |
+| `-http <addr>` | | Expose per-VM HTTP API |
 | `-v <mount>` / `-vol <mount>` | | Host directory mount: /host[:tag][:ro\|rw] (repeatable) |
 | `-usb <path>` | | USB storage: /path/to/disk.img[:ro] (repeatable) |
 | `-rosetta` | true | Enable Rosetta x86-64 translation (Linux VMs) |
@@ -89,6 +92,8 @@ cove run [flags]
 | `--port-forward <host:guest>` / `--pf <host:guest>` | | Forward host TCP to a guest vsock port (repeatable) |
 | `-disposable` | false | Run from a disposable linked clone |
 | `-fork-from <ref>` | | Boot a fresh VM forked from a parent VM name or local image ref (`<name>` or `<name>:<tag>`); see [`cove image`](#image). Auto-bundles per-run artifacts (`manifest.json`, `events.jsonl`, `stdout.log`, `stderr.log`, `screenshots/`) under `~/.vz/runs/<run-id>/` for post-mortem inspection. |
+| `-fork-name <name>` | | Explicit ephemeral fork VM name |
+| `-keep` | false | Keep an ephemeral fork VM directory after exit |
 | `-ephemeral` | false | Mark a forked VM as disposable: removed on stop and swept by `cove gc`. Required for ephemeral CI runners; see [design 024](../designs/024-cove-runner-images.md). |
 | `-launch-order <mode>` | window-first | GUI startup order: window-first or start-first |
 | `-runtime-profile <mode>` | full | macOS device profile: full or minimal |
@@ -113,7 +118,7 @@ cove run -headless -cpu 4 -memory 8
 cove run -display 4k -v ~/projects
 cove run -linux -rosetta -serial /tmp/serial.log
 cove run -linux -shell                         # pipe a guest shell to the host terminal
-cove run -fork-from macos-base -name worker-1  # fork from a stopped VM
+cove run -fork-from macos-base -fork-name worker-1  # fork from a stopped VM
 cove run -fork-from macos-runner:14.5 -ephemeral # ephemeral CI runner from an image
 cove run -recovery -no-resume -gui -usb ~/recovery.img
 ```
@@ -145,7 +150,11 @@ cove up [flags]
 | `-linux` | false | Install Linux instead of macOS |
 | `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
 | `-desktop` | false | Use Ubuntu Desktop (implies `-linux`) |
+| `-desktop-installer <mode>` | oem | Ubuntu Desktop install path: oem or server |
 | `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
+| `-network <mode>` / `-net <mode>` | nat | Network mode: nat, bridged:\<iface\>, host-only, none |
+| `-port-forward <host:guest>` / `-pf <host:guest>` | | Forward host TCP to guest vsock (repeatable) |
+| `-setup-script <path>` | | Plain text setup script to run through the guest agent after boot |
 | `-rosetta` | true | Enable Rosetta translation support for Linux |
 | `-pprof <addr>` | | Serve pprof diagnostics (e.g., `6060`) |
 | `-automation-backend <mode>` | auto | UI automation: auto, framebuffer, or window |
@@ -188,6 +197,7 @@ cove provision [flags]
 | `-enable-sshd` | false | Enable SSH on first boot |
 | `-bootstrap-recovery` | true | Two-user recovery bootstrap |
 | `-no-bootstrap-recovery` | false | Disable recovery bootstrap |
+| `-force` | false | Re-stage and re-apply even if provisioning already succeeded |
 | `-stage-only` | false | Stage files only, no disk mount |
 | `-apply` | false | Apply previously staged files |
 | `-v` | false | Verbose output |
@@ -259,6 +269,7 @@ cove ctl [options] <command> [args...]
 | `-raw` | false | Output raw JSON response |
 | `-wait <dur>` | | Wait/retry for agent commands |
 | `-token <str>` | | Auth token (default: VM control.token) |
+| `-vm <name>` | | Resolve socket from a VM name |
 
 ### Control Commands
 
@@ -432,6 +443,10 @@ Run flags:
 | `-v` | false | Verbose output |
 | `-timeout <dur>` | 10m | Execution timeout |
 | `-terminal` | false | Run in Terminal.app |
+| `-terminal-gui` | false | Run in a visible guest terminal |
+| `-env <key=value>` | | Set a script environment variable (repeatable) |
+| `-template` | false | Render Go text/template recipes before running |
+| `-var <key=value>` | | Template variable for `-template` (repeatable) |
 | `-auto-approve` | false | Auto-click Allow/OK dialogs |
 | `-socket <path>` | | Control socket path (default: auto-detected) |
 | `-daemon` | false | Route guest commands through daemon agent (root) |
@@ -947,6 +962,7 @@ cove vm <command> [args]
 |---------|-------------|
 | `set <name>` | Set active VM |
 | `delete <name>` | Delete a VM |
+| `delete [--cascade] <name>` | Delete a VM and its fork descendants |
 | `rename <old> <new>` | Rename a VM |
 | `export <name> <path>` | Export VM to tarball |
 | `import <path> <name>` | Import VM from tarball |
@@ -1010,6 +1026,7 @@ cove serve [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-http <addr>` | `:7777` (multi-VM) | HTTP listen address |
+| `-listen <url>` | | Listen URL: `tcp://host:port` or `unix:///path` |
 | `-mcp` | false | Serve MCP over stdio |
 | `-token-file <path>` | | Auth token file (falls back to keychain) |
 | `-per-vm-auth` | false | Require strict per-VM tokens instead of a master token |
@@ -1064,6 +1081,7 @@ cove push <vm|dir> <ref> [flags]
 | `--chunk-size <mb>` | 512 | Chunk size in megabytes |
 | `--dry-run` | false | Print the plan without uploading |
 | `--lume-compat` | false | Emit dual annotations for Lume interop |
+| `--format <fmt>` | cove | Output format: cove or lume (`--dry-run` only) |
 | `--additional-tag <tag>` | | Additional tag to publish (repeatable) |
 | `--manifest-out <path>` | | Write OCI manifest JSON to path |
 
@@ -1170,6 +1188,9 @@ agent-aware free-space compactor.
 | `store` | Manage the local content-addressed OCI blob store |
 | `status` | Show running VM status |
 | `helper` | Manage the privileged helper (install, uninstall, status) to skip per-run sudo prompts |
+| `secret` | Resolve secret URIs for diagnostics without printing secret values |
+| `dump-docs` | Emit machine-readable CLI, HTTP API, and MCP documentation JSON |
+| `help [command]` | Show top-level or command-specific help |
 
 ---
 
