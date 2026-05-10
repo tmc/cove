@@ -1,18 +1,13 @@
 # Design 027: Disk I/O Performance Tuning
 
-Status: Implemented (2026-05-04; Slices 1-4 shipped). Last verified 2026-05-10 (R370).
+Status: Implemented (2026-05-04; Slices 1-4 shipped). Last verified 2026-05-10 (R96).
 
-Verified 2026-05-10 (R370): Slice SHAs `fc7ff1e`/`8500ecb`/`968cbde`/`1b7c947`/`f71851b`/`7ca06a9`/`093d63d`/`b522ab3`/`a78e891`/`74d9527`/`65b6964`/`50ba06e` all reachable on main; `DiskCachePolicy` type at `disk_attachment.go:12`, `linuxInstallDiskCachePolicy` covered at `disk_attachment_test.go:63`; flags `-nvme`/`-raw-disk`/`-disk-sync` registered at `main.go:198/208/250`.
-
-- Slice 1 (DiskCachePolicy + `-disk-sync` + callsite migration): `fc7ff1e`.
-- Slice 2 (Linux NVMe wiring + `-nvme`): `8500ecb`, `968cbde`; benchmark deferred at `1b7c947` / `f71851b`.
-- Slice 3 (preallocated raw install disk + `-raw-disk`): `7ca06a9`; benchmark recorded at `093d63d`.
-- Slice 4 (block device passthrough): helper protocol `b522ab3`, run wiring `a78e891`, smoke runbook `74d9527`, final spec `65b6964`, benchmark blocker `50ba06e`.
-
-Carried-forward open items:
-- Slice 1 acceptance: Ubuntu 24.04 desktop install <10 min wall-clock — still gated on Ubuntu Desktop first-boot reliability (see `50ba06e`).
-- Slice 2 acceptance: virtio-blk vs. NVMe install benchmark — deferred for the same reason.
-- Slice 4 acceptance: `docs/benchmarks/disk-io.md` row separated from desktop reliability — pending the same gate.
+| Slice | Status | Shipped commits |
+|---|---|---|
+| 1. Disk cache policy | Shipped | `fc7ff1e` (2026-05-03), `a459076` (2026-05-03) |
+| 2. Linux NVMe | Shipped | `8500ecb` (2026-05-04), `968cbde` (2026-05-04), `1b7c947` (2026-05-04), `f71851b` (2026-05-04) |
+| 3. Raw install disk | Shipped | `7ca06a9` (2026-05-04), `093d63d` (2026-05-04) |
+| 4. Block device passthrough | Shipped | `b522ab3` (2026-05-03), `a78e891` (2026-05-03), `74d9527` (2026-05-03), `65b6964` (2026-05-05), `50ba06e` (2026-05-05), `0695fcd` (2026-05-08), `417ce68` (2026-05-08), `82dbba3` (2026-05-08) |
 Author: Travis Cline
 Date: 2026-05-03
 
