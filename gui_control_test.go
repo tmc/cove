@@ -214,3 +214,14 @@ func (r *recordingGUIBindings) SetVMViewWithWindow(view vz.VZVirtualMachineView,
 func (r *recordingGUIBindings) captureDisplayImage() (image.Image, string) {
 	return nil, ""
 }
+
+func TestVMGUIControllerCaptureMode(t *testing.T) {
+	var c vmGUIController
+	if got := c.captureMode(); got != "private-framebuffer" {
+		t.Errorf("headed=false: got %q, want private-framebuffer", got)
+	}
+	c.headed = true
+	if got := c.captureMode(); got != "window" {
+		t.Errorf("headed=true: got %q, want window", got)
+	}
+}
