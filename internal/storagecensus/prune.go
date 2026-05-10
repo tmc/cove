@@ -93,6 +93,11 @@ type PruneReport struct {
 	// pinned them. The pinned items themselves are not stored on the
 	// report; their identity is already the operator's intent.
 	PinnedSkipped int
+	// CollectErrors counts pruners whose Candidates call returned an
+	// error. The error is still surfaced to the caller via errors.Join,
+	// but the count survives on the report so JSON consumers (events,
+	// /metrics) see partial failures.
+	CollectErrors int
 }
 
 // CoordinatePrune walks pruners and selects the oldest candidates across
@@ -121,6 +126,7 @@ func CoordinatePrune(ctx context.Context, pruners []Pruner, usedBytes, target in
 		cs, err := p.Candidates(ctx)
 		if err != nil {
 			collectErrs = append(collectErrs, fmt.Errorf("%s: %w", p.Name(), err))
+			rep.CollectErrors++
 			continue
 		}
 		ns := pinNamespace(p.Name())
