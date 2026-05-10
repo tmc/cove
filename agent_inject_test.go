@@ -171,6 +171,19 @@ func TestGoListModuleDirRejectsNonModuleDir(t *testing.T) {
 	}
 }
 
+func TestGoListModuleDirReturnsModuleRoot(t *testing.T) {
+	dir, err := goListModuleDir("")
+	if err != nil {
+		t.Fatalf("goListModuleDir(\"\"): %v", err)
+	}
+	if dir == "" {
+		t.Fatal("goListModuleDir returned empty path")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+		t.Fatalf("module dir %q lacks go.mod: %v", dir, err)
+	}
+}
+
 func TestAgentBuildTargetOS(t *testing.T) {
 	tests := []struct {
 		name string
