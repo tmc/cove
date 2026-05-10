@@ -155,3 +155,14 @@ func TestPrometheusEmitsLifecycleLastRunUnix(t *testing.T) {
 		t.Fatalf("metrics missing coved_lifecycle_last_run_unix:\n%s", rec.Body.String())
 	}
 }
+
+func TestPrometheusEmitsImageGCLastRunUnix(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{ImageGCLastRunUnix: 1715300555}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), "coved_image_gc_last_run_unix 1715300555") {
+		t.Fatalf("metrics missing coved_image_gc_last_run_unix:\n%s", rec.Body.String())
+	}
+}
