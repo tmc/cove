@@ -51,7 +51,7 @@ func TestExportGHASummary(t *testing.T) {
 		"| Phase | Status | Duration |",
 		"| fork_created | [ok] ok | 10ms |",
 		"| vm_start | [fail] failed | 20ms |",
-		"**Result:** [fail] failed exit_code=1 wallclock=30ms",
+		"**Result:** [fail] failed exit_code=1 wallclock=30ms failed_events=2",
 		"**Failure:** `vm_start`: boot failed",
 	} {
 		if !strings.Contains(out, want) {

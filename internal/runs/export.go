@@ -69,6 +69,11 @@ func ExportGHASummary(w io.Writer, root, prefix string) error {
 			return err
 		}
 	}
+	if show.Result.FailedEvents > 0 {
+		if _, err := fmt.Fprintf(w, " failed_events=%d", show.Result.FailedEvents); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintln(w); err != nil {
 		return err
 	}
