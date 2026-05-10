@@ -343,6 +343,26 @@ func TestParsePullArgs(t *testing.T) {
 	}
 }
 
+func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
+	opts, pos, err := parsePullArgs([]string{"-h"}, ioDiscard{})
+	if err != nil {
+		t.Fatalf("parsePullArgs(-h) error = %v, want nil", err)
+	}
+	if pos != nil {
+		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
+	}
+	if opts.DryRun || opts.As != "" || opts.ManifestPath != "" {
+		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
+	}
+}
+
+func TestParsePullArgsRejectsUnknownFlag(t *testing.T) {
+	_, _, err := parsePullArgs([]string{"--bogus"}, ioDiscard{})
+	if err == nil {
+		t.Fatal("parsePullArgs(--bogus) error = nil, want flag parse error")
+	}
+}
+
 func TestBuildPullPlanRejectsInvalidRef(t *testing.T) {
 	_, err := buildPullPlan("me/dev-vm", pullOptions{DryRun: true})
 	if err == nil || !strings.Contains(err.Error(), "invalid ref") {
