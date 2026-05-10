@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,6 +39,40 @@ func TestLinuxISOMatchesVariantMissingFile(t *testing.T) {
 		if linuxISOMatchesVariant(missing, v) {
 			t.Errorf("linuxISOMatchesVariant(missing, %s) = true, want false", v)
 		}
+	}
+}
+
+func TestEnsureLinuxISOForVariantUsesPrimaryCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	saved := isoPath
+	t.Cleanup(func() { isoPath = saved })
+	isoPath = ""
+
+	cacheDir := filepath.Join(home, ".vz", "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Alpine minSize is 30 MiB; write a sparse 31 MiB file.
+	cacheFile := filepath.Join(cacheDir, "linux-alpine.iso")
+	f, err := os.Create(cacheFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(31 * 1024 * 1024); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ensureLinuxISOForVariant(LinuxVariantAlpine)
+	if err != nil {
+		t.Fatalf("ensureLinuxISOForVariant: %v", err)
+	}
+	if got != cacheFile {
+		t.Fatalf("got = %q, want %q", got, cacheFile)
 	}
 }
 
