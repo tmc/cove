@@ -30,6 +30,9 @@ func PrometheusHandler(snapshot func() PrometheusSnapshot) http.Handler {
 }
 
 func WritePrometheus(w io.Writer, s PrometheusSnapshot) {
+	if s.Version != "" {
+		fmt.Fprintf(w, "coved_build_info{version=%q} 1\n", s.Version)
+	}
 	fmt.Fprintf(w, "coved_uptime_seconds %d\n", s.UptimeS)
 	fmt.Fprintf(w, "coved_vms_managed %d\n", s.VMsManaged)
 	fmt.Fprintf(w, "coved_lifecycle_enforced_total %d\n", s.LifecycleRuns)

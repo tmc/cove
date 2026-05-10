@@ -10,6 +10,7 @@ import (
 func TestPrometheusHandler(t *testing.T) {
 	h := PrometheusHandler(func() PrometheusSnapshot {
 		return PrometheusSnapshot{
+			Version:       "v0.5.0",
 			UptimeS:       12,
 			VMsManaged:    3,
 			LifecycleRuns: 2,
@@ -30,6 +31,7 @@ func TestPrometheusHandler(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
+		`coved_build_info{version="v0.5.0"} 1`,
 		"coved_uptime_seconds 12",
 		"coved_vms_managed 3",
 		"coved_lifecycle_enforced_total 2",
@@ -40,5 +42,16 @@ func TestPrometheusHandler(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics missing %q:\n%s", want, body)
 		}
+	}
+}
+
+func TestPrometheusOmitsBuildInfoWhenVersionEmpty(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{UptimeS: 1}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if strings.Contains(rec.Body.String(), "coved_build_info") {
+		t.Fatalf("should omit coved_build_info:\n%s", rec.Body.String())
 	}
 }
