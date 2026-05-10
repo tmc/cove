@@ -204,6 +204,21 @@ func TestMCP_VMListEmpty(t *testing.T) {
 	}
 }
 
+func TestMCP_ToolsCallInvalidParams(t *testing.T) {
+	dir := t.TempDir()
+	frames := runMCP(t, dir,
+		`{"jsonrpc":"2.0","id":42,"method":"tools/call","params":42}`+"\n")
+	if len(frames) != 1 {
+		t.Fatalf("want 1 frame, got %d", len(frames))
+	}
+	if frames[0].Error == nil {
+		t.Fatalf("want JSON-RPC error for invalid params, got: %+v", frames[0].Result)
+	}
+	if frames[0].Error.Code != rpcErrInvalidParams {
+		t.Errorf("error code = %d, want %d", frames[0].Error.Code, rpcErrInvalidParams)
+	}
+}
+
 func TestMCP_UnknownTool(t *testing.T) {
 	dir := t.TempDir()
 	frames := runMCP(t, dir,
