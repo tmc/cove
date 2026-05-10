@@ -10,12 +10,13 @@ import (
 func TestPrometheusHandler(t *testing.T) {
 	h := PrometheusHandler(func() PrometheusSnapshot {
 		return PrometheusSnapshot{
-			Version:       "v0.5.0",
-			UptimeS:       12,
-			VMsManaged:    3,
-			LifecycleRuns: 2,
-			ImageGCRuns:   4,
-			ImageGCBytes:  99,
+			Version:           "v0.5.0",
+			UptimeS:           12,
+			VMsManaged:        3,
+			LifecycleRuns:     2,
+			ImageGCRuns:       4,
+			ImageGCBytes:      99,
+			ImageGCDurationMS: 1500,
 			Events: []Event{{
 				EventType: "lifecycle.policy.stop",
 				VMName:    "vm1",
@@ -37,6 +38,7 @@ func TestPrometheusHandler(t *testing.T) {
 		"coved_lifecycle_enforced_total 2",
 		"coved_image_gc_runs_total 4",
 		"coved_image_gc_bytes_freed_total 99",
+		"coved_image_gc_duration_ms_total 1500",
 		`coved_events_total{event_type="lifecycle.policy.stop",vm="vm1",reason="idle"} 1`,
 	} {
 		if !strings.Contains(body, want) {
