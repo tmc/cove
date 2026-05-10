@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,15 @@ import (
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
+
+// ErrCloneSourceNotFound is returned by CloneVM when the source VM
+// directory does not exist or fails the vmconfig.Validate check.
+var ErrCloneSourceNotFound = errors.New("clone source VM not found")
+
+// ErrCloneTargetExists is returned by CloneVM when the target VM
+// directory already exists. Callers can branch on this with errors.Is
+// to offer overwrite/rename guidance.
+var ErrCloneTargetExists = errors.New("clone target VM already exists")
 
 // CloneOptions configures VM cloning behavior.
 type CloneOptions struct {
@@ -26,13 +36,13 @@ func CloneVM(opts CloneOptions) error {
 	// Validate source exists
 	srcPath := vmconfig.Path(opts.Source)
 	if !vmconfig.Validate(srcPath) {
-		return fmt.Errorf("source VM not found: %s", opts.Source)
+		return fmt.Errorf("%w: %s", ErrCloneSourceNotFound, opts.Source)
 	}
 
 	// Validate target doesn't exist
 	dstPath := vmconfig.Path(opts.Target)
 	if _, err := os.Stat(dstPath); !os.IsNotExist(err) {
-		return fmt.Errorf("target VM already exists: %s", opts.Target)
+		return fmt.Errorf("%w: %s", ErrCloneTargetExists, opts.Target)
 	}
 
 	fmt.Printf("Cloning %s -> %s\n", opts.Source, opts.Target)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -191,5 +192,34 @@ func TestRunCloneWithAgentProvisionFailureLeavesCloneSuccess(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "dst-macos", "disk.img")); err != nil {
 		t.Fatalf("clone disk missing after provision warning: %v", err)
+	}
+}
+
+func TestCloneVMSentinelErrors(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := CloneVM(CloneOptions{Source: "missing-src", Target: "any-dst"}); !errors.Is(err, ErrCloneSourceNotFound) {
+		t.Fatalf("missing source err = %v, want ErrCloneSourceNotFound", err)
+	}
+
+	src := filepath.Join(vmconfig.BaseDir(), "live-src")
+	dst := filepath.Join(vmconfig.BaseDir(), "live-dst")
+	for _, p := range []string{src, dst} {
+		if err := os.MkdirAll(p, 0755); err != nil {
+			t.Fatal(err)
+		}
+		for name, data := range map[string][]byte{
+			"linux-disk.img":   []byte("d"),
+			"linux-machine.id": []byte("m"),
+			"config.json":      []byte("{}\n"),
+		} {
+			if err := os.WriteFile(filepath.Join(p, name), data, 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := CloneVM(CloneOptions{Source: "live-src", Target: "live-dst"}); !errors.Is(err, ErrCloneTargetExists) {
+		t.Fatalf("target exists err = %v, want ErrCloneTargetExists", err)
 	}
 }
