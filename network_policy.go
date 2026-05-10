@@ -174,7 +174,11 @@ func WriteNetworkPolicyAudit(dir string, policy NetworkPolicy) error {
 		fmt.Fprintf(&b, "# enforcement=not-hooked\n")
 	}
 	fmt.Fprintf(&b, "%s dest=* decision=policy-loaded policy=%s\n", ts, policy.Name)
-	return os.WriteFile(filepath.Join(dir, "network.log"), []byte(b.String()), 0644)
+	path := filepath.Join(dir, "network.log")
+	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
+		return fmt.Errorf("write network audit %s: %w", path, err)
+	}
+	return nil
 }
 
 type networkAuditDir interface {
