@@ -61,6 +61,9 @@ func TestHandleStatus(t *testing.T) {
 	if got.WebhookDeliveredTotal != 0 || got.WebhookFailedTotal != 0 || got.WebhookRejectedTotal != 0 {
 		t.Fatalf("webhook = (%d,%d,%d), want zero when subscriber nil", got.WebhookDeliveredTotal, got.WebhookFailedTotal, got.WebhookRejectedTotal)
 	}
+	if got.EventbusDroppedTotal != 0 || got.EventbusSubscribers != 0 {
+		t.Fatalf("eventbus = (%d,%d), want zero when bus nil", got.EventbusDroppedTotal, got.EventbusSubscribers)
+	}
 }
 
 func TestHandleUnknownCommand(t *testing.T) {
