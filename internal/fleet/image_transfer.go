@@ -1,10 +1,12 @@
 package fleet
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type CommandRunner interface {
@@ -28,21 +30,22 @@ func TransferImage(ctx context.Context, ref string, src, dst Remote, runner Comm
 	}
 	pr, pw := io.Pipe()
 	errc := make(chan error, 2)
+	var srcStderr, dstStderr bytes.Buffer
 	go func() {
 		defer pw.Close()
-		err := runner.Run(ctx, src, []string{"image", "push", ref, "-"}, nil, pw, io.Discard)
+		err := runner.Run(ctx, src, []string{"image", "push", ref, "-"}, nil, pw, &srcStderr)
 		if err != nil {
 			_ = pw.CloseWithError(err)
-			errc <- fmt.Errorf("source image push: %w", err)
+			errc <- wrapTransferErr("source image push", err, &srcStderr)
 			return
 		}
 		errc <- nil
 	}()
 	go func() {
 		defer pr.Close()
-		err := runner.Run(ctx, dst, []string{"image", "load", "-"}, pr, io.Discard, io.Discard)
+		err := runner.Run(ctx, dst, []string{"image", "load", "-"}, pr, io.Discard, &dstStderr)
 		if err != nil {
-			errc <- fmt.Errorf("destination image load: %w", err)
+			errc <- wrapTransferErr("destination image load", err, &dstStderr)
 			return
 		}
 		errc <- nil
@@ -54,4 +57,15 @@ func TransferImage(ctx context.Context, ref string, src, dst Remote, runner Comm
 		}
 	}
 	return first
+}
+
+func wrapTransferErr(stage string, err error, stderr *bytes.Buffer) error {
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		return fmt.Errorf("%s: %w", stage, err)
+	}
+	if len(msg) > 200 {
+		msg = msg[:200] + "..."
+	}
+	return fmt.Errorf("%s: %w: %s", stage, err, msg)
 }

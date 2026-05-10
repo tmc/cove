@@ -118,3 +118,21 @@ func (r *recordCommandRunner) sawCall(remote Remote, args []string) bool {
 	}
 	return false
 }
+
+type stderrRunner struct{ msg string }
+
+func (s stderrRunner) Run(ctx context.Context, remote Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	_, _ = stderr.Write([]byte(s.msg))
+	return errors.New("exit status 1")
+}
+
+func TestTransferImageIncludesStderrInError(t *testing.T) {
+	runner := stderrRunner{msg: "manifest not found: base:latest"}
+	err := TransferImage(context.Background(), "base:latest", Remote{Host: "src.local"}, Remote{Host: "dst.local"}, runner)
+	if err == nil {
+		t.Fatal("want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "manifest not found") {
+		t.Fatalf("err = %v, want stderr included", err)
+	}
+}
