@@ -176,7 +176,7 @@ interfaces. `ControlServer` in package main is a thin facade.
 
 ## v0.6 — macOS 14.0 floor + ScreenCaptureKit migration
 
-**Status: in flight. macOS host floor bumps from 12.0 to 14.0; capture pipeline migrates from `CGWindowListCreateImage` to ScreenCaptureKit.**
+**Status: Shipped v0.6.0 2026-05-10 at `8d1b76e`. macOS host floor bumped from 12.0 to 14.0; capture pipeline began migrating from `CGWindowListCreateImage` to ScreenCaptureKit.**
 
 | Item | Priority | Status | Size | Depends on | Source | Why |
 |---|---|---|---|---|---|---|
@@ -190,6 +190,16 @@ interfaces. `ControlServer` in package main is a thin facade.
 | Test coverage gap fill — control + storage internals | should | in progress (R59-R71+) | M | none | R57-R71+ test-gap dispatches | Targets exercised through R71: `storagecensus` (`dbfacf8`, `f6e7c7c`, `1339f2f`, `61c2ca5`, `84ab32d`; PiB-overflow fix `c7865e1`), `storagepins` (`c5ec526`, `4150a02`), `coved` poll scheduler (`9b7c849`). Continue across `internal/control`, `internal/controlserver`, and `internal/vmrun` to lift coverage before v0.6 GA. Sized M (per-pane single-package dispatches). |
 | Deadcode + staticcheck SA4006 sweep — round 5 | should | in progress (R56-R83+) | S | none | R54-R83+ sweeps | Continue the U1000/SA4006 cadence shipped through R54 (`1bdd1e8`), R56 (`260e80c`, `05d0ee3`, `8d53d70`, `59be48a`), R57 (`aa1a80e`), R59 (`e3f135a`), R83 (`2decbf9`), and the follow-on internal-pkg cleanup at `3d54d6d` and `f5c14f4`. One small sweep per release keeps the surface narrow ahead of the SCKit and storage-census churn. Sized S; no design doc. |
 | Capture-latency observability surface | maybe | spec needed | M | Slice 3 perf wiring | [041](041-screencapturekit-migration.md) §Slice 2 perf gate | Slice 2's "p50/p95 measured" gate currently lives in the spike binary. To keep the capture path honest post-flip, surface per-capture latency through `cove runs` + `coved` metrics so regressions are observable in production, not just bench. Spec needed (no design doc). Depends: Slice 3 production wiring lands `controlserver/Capture` instrumentation point. |
+
+## v0.7 (target: 2026-Q3)
+
+| Item | Priority | Status | Depends on | Source | Why |
+|---|---|---|---|---|---|
+| SCKit Slice 4 — default flip + `CGWindowListCreateImage` retire | must | planned on `conductor/sckit-slice4` | v0.6 Slice 3 bake time + Slice 2 perf clearance | [041](041-screencapturekit-migration.md) §Slice 4, [preflight](041-slice4-preflight.md) | Make SCKit the macOS 14+ default, remove the deprecated CGWindowList path, and clear SA1019 with a net-negative implementation. |
+| SCKit Slice 2 perf numbers — p50/p95 under TCC + GUI VM | must | blocked: needs operator hardware | Screen Recording TCC grant + representative GUI VM | [041](041-screencapturekit-migration.md) §Slice 2 perf gate | Collect the latency evidence required before Slice 4 flips the default; do not infer from the spike shipping alone. |
+| Cirrus shutdown 2026-06-01 closeout | should | planned | v0.6 Cirrus secrets surface | [readiness audit](../strategy/cirrus-migration-readiness-2026-05-08.md), [migration checklist](../migrations/from-cirrus-checklist.md) | After shutdown, verify migration docs, benchmark notes, and landing pages are current and remove rollback language that only applied before 2026-06-01. |
+| macOS 15 host audit | should | planned | v0.6 macOS 14 floor | [macOS floor audit](../strategy/macos-floor-2026-05-08.md) | Decide whether v0.7 still targets macOS 14 or bumps to 15 for newer ScreenCaptureKit and Virtualization.framework behavior. |
+| Privacy gate review | should | planned | product/legal decision | [privacy-gated gaps](../strategy/cirrus-migration-readiness-2026-05-08.md) | Decide when the private cove repo can flip public, and list prerequisites for public action, image catalog, registry, and signing channels. |
 
 ## v0.3 implementation slices
 
