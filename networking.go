@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -18,6 +19,11 @@ const (
 	NetworkModeFileHandle networkx.Mode = "filehandle"
 )
 
+var (
+	ErrInvalidNetworkSpec         = errors.New("invalid network spec")
+	lookupBridgedNetworkInterface = networkx.LookupBridgedNetworkInterface
+)
+
 // ParseNetworkMode parses a network mode string.
 func ParseNetworkMode(s string) (networkx.Config, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
@@ -29,7 +35,12 @@ func ParseNetworkMode(s string) (networkx.Config, error) {
 	}
 	cfg, err := networkx.Parse(s)
 	if err != nil {
-		return networkx.Config{}, err
+		return networkx.Config{}, fmt.Errorf("%w: %v", ErrInvalidNetworkSpec, err)
+	}
+	if cfg.Mode == NetworkModeBridged {
+		if _, err := lookupBridgedNetworkInterface(cfg.Interface); err != nil {
+			return networkx.Config{}, fmt.Errorf("%w: %v", ErrInvalidNetworkSpec, err)
+		}
 	}
 	return cfg, nil
 }

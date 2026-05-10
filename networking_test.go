@@ -1,8 +1,11 @@
 package main
 
 import (
+	"errors"
 	"net/netip"
 	"testing"
+
+	vz "github.com/tmc/apple/virtualization"
 )
 
 func TestParseNetworkModeExplicitModes(t *testing.T) {
@@ -31,8 +34,61 @@ func TestParseNetworkModeExplicitModes(t *testing.T) {
 }
 
 func TestParseNetworkModeRejectsBareBridged(t *testing.T) {
-	if _, err := ParseNetworkMode("bridged"); err == nil {
-		t.Fatal("ParseNetworkMode(bridged) succeeded, want error")
+	if _, err := ParseNetworkMode("bridged"); !errors.Is(err, ErrInvalidNetworkSpec) {
+		t.Fatalf("ParseNetworkMode(bridged) err = %v, want ErrInvalidNetworkSpec", err)
+	}
+}
+
+func TestParseNetworkModeSpecs(t *testing.T) {
+	restore := stubBridgedNetworkInterfaces(map[string]bool{"en0": true})
+	defer restore()
+
+	tests := []struct {
+		name      string
+		in        string
+		wantMode  string
+		wantIface string
+		wantErr   error
+	}{
+		{name: "default nat", in: "", wantMode: string(NetworkModeNAT)},
+		{name: "nat", in: "nat", wantMode: string(NetworkModeNAT)},
+		{name: "bridged en0", in: "bridged:en0", wantMode: string(NetworkModeBridged), wantIface: "en0"},
+		{name: "bridged nonexistent", in: "bridged:nonexistent", wantErr: ErrInvalidNetworkSpec},
+		{name: "none", in: "none", wantMode: string(NetworkModeNone)},
+		{name: "malformed", in: "bridged:", wantErr: ErrInvalidNetworkSpec},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseNetworkMode(tt.in)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("ParseNetworkMode(%q) err = %v, want %v", tt.in, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseNetworkMode(%q): %v", tt.in, err)
+			}
+			if string(got.Mode) != tt.wantMode {
+				t.Fatalf("mode = %q, want %q", got.Mode, tt.wantMode)
+			}
+			if got.Interface != tt.wantIface {
+				t.Fatalf("interface = %q, want %q", got.Interface, tt.wantIface)
+			}
+		})
+	}
+}
+
+func stubBridgedNetworkInterfaces(valid map[string]bool) func() {
+	old := lookupBridgedNetworkInterface
+	lookupBridgedNetworkInterface = func(identifier string) (vz.VZBridgedNetworkInterface, error) {
+		if valid[identifier] {
+			return vz.VZBridgedNetworkInterface{}, nil
+		}
+		return vz.VZBridgedNetworkInterface{}, errors.New("not found")
+	}
+	return func() {
+		lookupBridgedNetworkInterface = old
 	}
 }
 
