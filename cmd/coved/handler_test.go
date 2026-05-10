@@ -67,6 +67,9 @@ func TestHandleStatus(t *testing.T) {
 	if got.ImageGCDurationMSTotal < 0 {
 		t.Fatalf("ImageGCDurationMSTotal = %d, want >= 0", got.ImageGCDurationMSTotal)
 	}
+	if got.StoragePollLastRunTS != "" {
+		t.Fatalf("StoragePollLastRunTS = %q, want empty when scheduler nil", got.StoragePollLastRunTS)
+	}
 }
 
 func TestHandleUnknownCommand(t *testing.T) {
