@@ -50,6 +50,7 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		ImageGCBytes:  status.ImageGCBytesFreedTotal,
 		LifecycleRuns:   status.LifecycleEnforced,
 		LifecycleErrors: status.LifecycleStopErrors,
+		EventsDropped:   d.events.Dropped(),
 		Events:          d.events.Tail(),
 	}
 }

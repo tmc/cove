@@ -95,3 +95,17 @@ func (s *recordSink) len() int {
 	defer s.mu.Unlock()
 	return len(s.events)
 }
+
+func TestEventBusDroppedCountsBackpressure(t *testing.T) {
+	bus := NewEventBus(8)
+	ch, cancel := bus.Subscribe(1)
+	defer cancel()
+
+	for i := 0; i < 5; i++ {
+		bus.Publish(context.Background(), Event{EventType: "x"})
+	}
+	if got := bus.Dropped(); got < 4 {
+		t.Fatalf("Dropped = %d, want >= 4 (only 1 buffered)", got)
+	}
+	<-ch
+}
