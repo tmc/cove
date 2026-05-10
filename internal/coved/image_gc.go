@@ -206,6 +206,9 @@ func (s *ImageGCScheduler) emit(ctx context.Context, started time.Time, stats Im
 		"bytes_freed":       stats.BytesFreed,
 		"duration_ms":       stats.DurationMS,
 	}
+	if runErr != nil {
+		extra["reason"] = runErr.Error()
+	}
 	event := runmetrics.Event{
 		Timestamp:  started.UTC().Format(time.RFC3339Nano),
 		EventType:  "image.gc.run",

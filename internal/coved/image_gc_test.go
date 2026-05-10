@@ -346,3 +346,18 @@ func splitSlash(s string) []string {
 	}
 	return out
 }
+
+func TestImageGCEmitIncludesReasonOnError(t *testing.T) {
+	bus := NewEventBus(8)
+	s := &ImageGCScheduler{Bus: bus, Now: func() time.Time { return time.Unix(0, 0) }}
+	if err := s.emit(context.Background(), time.Unix(0, 0), ImageGCStats{}, fmt.Errorf("disk full")); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	tail := bus.Tail()
+	if len(tail) != 1 || tail[0].Status != "error" {
+		t.Fatalf("tail = %#v, want one error event", tail)
+	}
+	if got := tail[0].Extra["reason"]; got != "disk full" {
+		t.Fatalf("reason = %v, want 'disk full'", got)
+	}
+}
