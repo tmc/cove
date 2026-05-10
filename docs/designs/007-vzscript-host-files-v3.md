@@ -1,6 +1,6 @@
 # vzscript host-file copying — v3 design
 
-**Status**: draft v3 (Council-ready)
+**Status**: shipped — `host-cp` runtime command (`vzscript.go:157`, `:839`) backed by `CopyIn` + `WriteFile` RPCs (`proto/agent.proto:28-34`).
 **Author**: cove team
 **Date**: 2026-04-20
 **Target**: v0.3 (alongside `cove build` work)
@@ -540,3 +540,19 @@ is overdue.
 3. Approve the agent-protocol bump (`CopyIn` RPC on `Agent` and
    `UserAgent`) for v0.3 — this is the largest agent-side change since
    the original LaunchAgent split.
+
+## Verified 2026-05-10
+
+- `host-cp <host> <guest>` script command registered at
+  `vzscript.go:157`, implemented in `hostCpCmd` (`vzscript.go:839`).
+  v3 §0 finding 1 (Option A "stream stdin via UserExecStream") was
+  resolved by the native RPCs below.
+- Native RPCs landed in `proto/agent.proto`: `CopyIn(stream CopyInChunk)`
+  (line 29) and `WriteFile(WriteFileRequest)` (line 34) with their
+  message types at lines 181-222.
+- Help text in `vzscript_apply.go:72` and `vzscript.go:17` documents
+  the 30-minute long-copy timeout per v3 §3.
+- Path-allowlist + symlink-evasion defense (v3 §0 finding 2) is NOT
+  visibly enforced in `vzscript.go`'s `hostCpCmd`: no `EvalSymlinks`
+  or basename-allowlist guard. Callers currently pass arbitrary host
+  paths; the v3 hardening is a follow-up.
