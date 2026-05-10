@@ -35,6 +35,11 @@ var ErrTemplateSourceNotFound = errors.New("template source VM not found")
 // with errors.Is to offer overwrite/rename guidance.
 var ErrTemplateExists = errors.New("template already exists")
 
+// ErrTemplateNotFound is returned by DeleteTemplate and
+// CreateFromTemplate when the named template directory is missing or
+// fails the layout/manifest check.
+var ErrTemplateNotFound = errors.New("template not found")
+
 // TemplateInfo holds information about a template.
 type TemplateInfo struct {
 	Name     string    // Template name (directory name)
@@ -284,7 +289,7 @@ func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
 	templatePath := filepath.Join(vmconfig.TemplateDir(), opts.TemplateName)
 	templateInfo, err := getTemplateInfo(templatePath)
 	if err != nil {
-		return fmt.Errorf("template not found or invalid: %s: %w", opts.TemplateName, err)
+		return fmt.Errorf("%w: %s: %v", ErrTemplateNotFound, opts.TemplateName, err)
 	}
 
 	// Warn if template was built from different provisioning sources.
@@ -365,7 +370,7 @@ func DeleteTemplate(templateName string) error {
 
 	// Verify it's a valid template
 	if _, err := getTemplateInfo(templatePath); err != nil {
-		return fmt.Errorf("template not found: %s", templateName)
+		return fmt.Errorf("%w: %s", ErrTemplateNotFound, templateName)
 	}
 
 	return os.RemoveAll(templatePath)
