@@ -84,32 +84,39 @@ func (r ImageRef) Path() string {
 	return filepath.Join(parts...)
 }
 
+// ErrImageRefInvalid is returned by ParseImageRef when the supplied
+// string is empty, has multiple ':', or has an empty name/tag, or
+// when the name/tag fails component validation. Callers can branch on
+// this with errors.Is to surface a "give me 'name:tag'" hint without
+// matching individual messages.
+var ErrImageRefInvalid = errors.New("invalid image ref")
+
 // ParseImageRef parses "name" or "name:tag" into an ImageRef. Default
 // tag is "latest". The name and tag are validated against the same
 // allow-set used by snapshot names so they are safe path components.
 func ParseImageRef(s string) (ImageRef, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return ImageRef{}, errors.New("image ref must not be empty")
+		return ImageRef{}, fmt.Errorf("%w: empty", ErrImageRefInvalid)
 	}
 	if strings.Count(s, ":") > 1 {
-		return ImageRef{}, fmt.Errorf("image ref %q contains multiple ':'", s)
+		return ImageRef{}, fmt.Errorf("%w: %q contains multiple ':'", ErrImageRefInvalid, s)
 	}
 	name, tag, hasTag := strings.Cut(s, ":")
 	if name == "" {
-		return ImageRef{}, fmt.Errorf("image ref %q has empty name", s)
+		return ImageRef{}, fmt.Errorf("%w: %q has empty name", ErrImageRefInvalid, s)
 	}
 	if !hasTag {
 		tag = "latest"
 	}
 	if tag == "" {
-		return ImageRef{}, fmt.Errorf("image ref %q has empty tag", s)
+		return ImageRef{}, fmt.Errorf("%w: %q has empty tag", ErrImageRefInvalid, s)
 	}
 	if err := validateImageName(name); err != nil {
-		return ImageRef{}, fmt.Errorf("image name: %w", err)
+		return ImageRef{}, fmt.Errorf("%w: name: %v", ErrImageRefInvalid, err)
 	}
 	if err := validateImageComponent(tag); err != nil {
-		return ImageRef{}, fmt.Errorf("image tag: %w", err)
+		return ImageRef{}, fmt.Errorf("%w: tag: %v", ErrImageRefInvalid, err)
 	}
 	return ImageRef{Name: name, Tag: tag}, nil
 }

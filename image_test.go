@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,6 +115,9 @@ func TestParseImageRef(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("ParseImageRef(%q) succeeded; want error", tc.in)
+				}
+				if !errors.Is(err, ErrImageRefInvalid) {
+					t.Fatalf("ParseImageRef(%q) err = %v, want errors.Is(err, ErrImageRefInvalid)", tc.in, err)
 				}
 				return
 			}
