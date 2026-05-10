@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,7 +108,7 @@ func TestValidateMemoryTargetGB(t *testing.T) {
 			name:            "exceeds configured memory",
 			targetGB:        5,
 			configuredBytes: 4 * bytesPerGiB,
-			wantErr:         "target size 5.00 GB exceeds configured memory 4.00 GB",
+			wantErr:         "5.00 GB > configured 4.00 GB",
 		},
 		{
 			name:     "unknown configured memory",
@@ -127,8 +128,11 @@ func TestValidateMemoryTargetGB(t *testing.T) {
 			if err == nil {
 				t.Fatal("validateMemoryTargetGB() error = nil, want error")
 			}
-			if err.Error() != tt.wantErr {
-				t.Fatalf("validateMemoryTargetGB() error = %q, want %q", err.Error(), tt.wantErr)
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("validateMemoryTargetGB() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+			if !errors.Is(err, ErrMemoryExceedsConfigured) {
+				t.Fatalf("err = %v, want errors.Is(err, ErrMemoryExceedsConfigured)", err)
 			}
 		})
 	}
