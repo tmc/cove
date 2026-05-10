@@ -17,6 +17,36 @@ func newSolidImage(w, h int, c color.RGBA) *image.RGBA {
 	return img
 }
 
+func TestUniformImageHelpersReturnFalse(t *testing.T) {
+	img := newSolidImage(800, 600, color.RGBA{128, 128, 128, 255})
+	tests := []struct {
+		name string
+		got  bool
+	}{
+		{"hasLoginScreenElements", hasLoginScreenElements(img, 800, 600)},
+		{"hasSetupAssistantButton", hasSetupAssistantButton(img, 800, 600)},
+		{"hasAppleIDPattern", hasAppleIDPattern(img, 800, 600)},
+		{"hasAppearancePattern", hasAppearancePattern(img, 800, 600)},
+		{"hasMigrationPattern", hasMigrationPattern(img, 800, 600)},
+		{"hasScreenTimePattern", hasScreenTimePattern(img, 800, 600)},
+		{"hasHorizontalBands", hasHorizontalBands(img, 200, 400)},
+	}
+	for _, tt := range tests {
+		if tt.got {
+			t.Errorf("%s on uniform image = true, want false", tt.name)
+		}
+	}
+	// hasPrivacyPattern treats uniform grayscale as a "lock" icon and returns true.
+	if !hasPrivacyPattern(img, 800, 600) {
+		t.Error("hasPrivacyPattern on uniform gray = false, want true")
+	}
+	// Saturated red breaks both isGray and isBlue.
+	red := newSolidImage(800, 600, color.RGBA{255, 0, 0, 255})
+	if hasPrivacyPattern(red, 800, 600) {
+		t.Error("hasPrivacyPattern on red image = true, want false")
+	}
+}
+
 func TestDetectScreenState_Nil(t *testing.T) {
 	if got := DetectScreenState(nil); got != ScreenStateUnknown {
 		t.Errorf("DetectScreenState(nil) = %v, want %v", got, ScreenStateUnknown)
