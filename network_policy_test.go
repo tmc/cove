@@ -203,3 +203,23 @@ func TestPrintNetworkAudit(t *testing.T) {
 		t.Fatal("PrintNetworkAudit accepted path traversal")
 	}
 }
+
+func TestWriteNetworkPolicyAuditWrapsWriteError(t *testing.T) {
+	// Plant a directory at network.log so WriteFile fails; exercises the
+	// wrap path independently of the MkdirAll branch.
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "network.log"), 0755); err != nil {
+		t.Fatalf("seed dir: %v", err)
+	}
+	policy := NetworkPolicy{Name: "package", Audit: true}
+	err := WriteNetworkPolicyAudit(dir, policy)
+	if err == nil {
+		t.Fatalf("WriteNetworkPolicyAudit: expected error")
+	}
+	if !strings.Contains(err.Error(), "write network audit") {
+		t.Fatalf("error %q missing wrap prefix", err)
+	}
+	if !strings.Contains(err.Error(), "network.log") {
+		t.Fatalf("error %q missing path", err)
+	}
+}
