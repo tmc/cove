@@ -5,7 +5,33 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestFleetMetricsRecordsHostDuration(t *testing.T) {
+	entries := []Entry{
+		{Name: "fast", Remote: Remote{Host: "f.local"}},
+		{Name: "slow", Remote: Remote{Host: "s.local"}},
+	}
+	got := FleetMetrics(context.Background(), entries, func(ctx context.Context, e Entry) (string, error) {
+		if e.Name == "slow" {
+			time.Sleep(20 * time.Millisecond)
+		}
+		return "coved_vms_managed 1\n", nil
+	})
+	if len(got.Hosts) != 2 {
+		t.Fatalf("len = %d, want 2", len(got.Hosts))
+	}
+	var slow HostMetrics
+	for _, h := range got.Hosts {
+		if h.Host == "slow" {
+			slow = h
+		}
+	}
+	if slow.DurationMS < 20 {
+		t.Fatalf("slow DurationMS = %d, want >= 20", slow.DurationMS)
+	}
+}
 
 func TestParsePrometheusMetrics(t *testing.T) {
 	body := "# HELP x y\ncoved_vms_managed 2\ncoved_events_total{event_type=\"x\"} 3\ncoved_events_total{event_type=\"y\"} 4\n"
