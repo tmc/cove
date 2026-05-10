@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/storagecensus"
+	"github.com/tmc/vz-macos/internal/storagepins"
 )
 
 func TestStoragePollSchedulerEmitsTripwires(t *testing.T) {
@@ -185,7 +186,7 @@ type fakePruner struct {
 	cs   []storagecensus.Candidate
 }
 
-func (f fakePruner) Name() string                                      { return f.name }
+func (f fakePruner) Name() string { return f.name }
 func (f fakePruner) Candidates(_ context.Context) ([]storagecensus.Candidate, error) {
 	return f.cs, nil
 }
@@ -301,6 +302,104 @@ func TestStoragePollSchedulerHardInvokesPrunerDryRun(t *testing.T) {
 type fakePins map[string]bool
 
 func (f fakePins) IsPinned(category, id string) bool { return f[category+":"+id] }
+
+type tempDirPruner struct {
+	name string
+	root string
+}
+
+func (p tempDirPruner) Name() string { return p.name }
+
+func (p tempDirPruner) Candidates(context.Context) ([]storagecensus.Candidate, error) {
+	entries, err := os.ReadDir(p.root)
+	if err != nil {
+		return nil, err
+	}
+	var out []storagecensus.Candidate
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		path := filepath.Join(p.root, e.Name())
+		pth := path
+		out = append(out, storagecensus.Candidate{
+			Path:     path,
+			Bytes:    dirSize(path),
+			LastUsed: time.Unix(0, 0),
+			Reason:   "test",
+			Delete:   func() error { return os.RemoveAll(pth) },
+		})
+	}
+	return out, nil
+}
+
+func TestStoragePollSchedulerPinnedPruneUsesPinFile(t *testing.T) {
+	tests := []struct {
+		name          string
+		pinKeep       bool
+		wantKeep      bool
+		wantPinnedNum int64
+	}{
+		{"pinned keep is skipped", true, true, 1},
+		{"unpinned keep can be pruned", false, false, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			vmsDir := filepath.Join(root, "vms")
+			for _, name := range []string{"keep", "drop"} {
+				dir := filepath.Join(vmsDir, name)
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "disk.img"), make([]byte, 200), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := storagecensus.SaveBudget(root, storagecensus.Budget{TargetBytes: 100, WarnPct: 10, HardPct: 50}); err != nil {
+				t.Fatal(err)
+			}
+			pins := storagepins.New()
+			if tt.pinKeep {
+				if err := pins.Add("vm", "keep", time.Unix(0, 0)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := storagepins.Save(root, pins); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := storagepins.Load(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			bus := NewEventBus(8)
+			s := &StoragePollScheduler{
+				Root:       root,
+				Categories: []storagecensus.Descriptor{{Name: "vms", Path: vmsDir}},
+				Pruners:    []storagecensus.Pruner{tempDirPruner{name: "vms", root: vmsDir}},
+				Pins:       loaded,
+				Apply:      true,
+				Bus:        bus,
+				Now:        func() time.Time { return time.Unix(1, 0) },
+			}
+			if _, err := s.RunOnce(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			tail := bus.Tail()
+			ev := tail[len(tail)-1]
+			if ev.EventType != "storage_prune_run" || ev.Extra["pinned_skipped"] != tt.wantPinnedNum {
+				t.Fatalf("event = %+v, want pinned_skipped %d", ev, tt.wantPinnedNum)
+			}
+			if _, err := os.Stat(filepath.Join(vmsDir, "keep")); os.IsNotExist(err) == tt.wantKeep {
+				t.Fatalf("keep exists = %v, want %v", !os.IsNotExist(err), tt.wantKeep)
+			}
+			if _, err := os.Stat(filepath.Join(vmsDir, "drop")); !os.IsNotExist(err) {
+				t.Fatalf("drop still exists: %v", err)
+			}
+		})
+	}
+}
 
 // TestStoragePollSchedulerHonorsPins confirms that when the hard
 // tripwire fires with a non-nil Pins, the prune coordinator excludes
