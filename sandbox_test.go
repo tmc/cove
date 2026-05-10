@@ -189,6 +189,29 @@ func TestSandboxPolicyEffectiveBehavior(t *testing.T) {
 	}
 }
 
+func TestSandboxPolicyEffectiveReturnsFalseWhenNotRequested(t *testing.T) {
+	t.Parallel()
+	policies := []SandboxPolicy{
+		{},
+		{Level: SandboxLevelMinimal},
+		{Level: SandboxLevelStrict},
+	}
+	for _, p := range policies {
+		if got := p.EffectiveVsock(false); got {
+			t.Errorf("EffectiveVsock(false) on %v = true, want false", p.Level)
+		}
+		if got := p.EffectiveRosetta(false); got {
+			t.Errorf("EffectiveRosetta(false) on %v = true, want false", p.Level)
+		}
+		if got := p.EffectiveProxy(false); got {
+			t.Errorf("EffectiveProxy(false) on %v = true, want false", p.Level)
+		}
+		if got := p.EffectiveAgentUpgrade(false); got {
+			t.Errorf("EffectiveAgentUpgrade(false) on %v = true, want false", p.Level)
+		}
+	}
+}
+
 func TestSandboxPolicyCopiesInput(t *testing.T) {
 	t.Parallel()
 
