@@ -113,6 +113,21 @@ func TestReadLoginScreenCredentialsCacheCorrupt(t *testing.T) {
 	}
 }
 
+func TestLoadBootLoginScreenCredentialsReturnsCachedValid(t *testing.T) {
+	vmDir := t.TempDir()
+	want := loginScreenCredentials{Username: "alice", Password: "wonder"}
+	if err := writeLoginScreenCredentialsCache(vmDir, want); err != nil {
+		t.Fatalf("writeLoginScreenCredentialsCache: %v", err)
+	}
+	got, err := loadBootLoginScreenCredentials(vmDir, filepath.Join(t.TempDir(), "ignored.img"))
+	if err != nil {
+		t.Fatalf("loadBootLoginScreenCredentials: %v", err)
+	}
+	if got.Username != want.Username || got.Password != want.Password {
+		t.Fatalf("got = %+v, want %+v", got, want)
+	}
+}
+
 func TestLoadBootLoginScreenCredentialsDoesNotMountDisk(t *testing.T) {
 	creds, err := loadBootLoginScreenCredentials(t.TempDir(), filepath.Join(t.TempDir(), "missing.img"))
 	if err != nil {
