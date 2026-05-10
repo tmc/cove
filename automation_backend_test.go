@@ -139,3 +139,41 @@ func TestCombinedAutomationBackend(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveAutomationBackends(t *testing.T) {
+	saveB := automationBackend
+	saveC := automationCaptureBackend
+	saveI := automationInputBackend
+	t.Cleanup(func() {
+		automationBackend = saveB
+		automationCaptureBackend = saveC
+		automationInputBackend = saveI
+	})
+
+	tests := []struct {
+		name        string
+		combined    string
+		captureFlag string
+		inputFlag   string
+		wantCapture automationBackendMode
+		wantInput   automationBackendMode
+	}{
+		{"all empty defaults to auto", "", "", "", automationBackendAuto, automationBackendAuto},
+		{"invalid combined falls back to auto", "bogus", "", "", automationBackendAuto, automationBackendAuto},
+		{"combined=window", "window", "", "", automationBackendWindow, automationBackendWindow},
+		{"capture overrides combined", "window", "framebuffer", "", automationBackendFramebuffer, automationBackendWindow},
+		{"input overrides combined", "framebuffer", "", "window", automationBackendFramebuffer, automationBackendWindow},
+		{"invalid capture override is ignored", "window", "bogus", "", automationBackendWindow, automationBackendWindow},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			automationBackend = tc.combined
+			automationCaptureBackend = tc.captureFlag
+			automationInputBackend = tc.inputFlag
+			capture, input := resolveAutomationBackends()
+			if capture != tc.wantCapture || input != tc.wantInput {
+				t.Fatalf("capture=%v input=%v, want capture=%v input=%v", capture, input, tc.wantCapture, tc.wantInput)
+			}
+		})
+	}
+}
