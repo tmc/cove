@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/tmc/vz-macos/internal/metrics"
 )
 
 // ExportJSON writes the full run metrics event array as JSON.
@@ -59,7 +61,15 @@ func ExportGHASummary(w io.Writer, root, prefix string) error {
 			return err
 		}
 	}
-	if _, err := fmt.Fprintf(w, " wallclock=%dms\n", show.Result.WallclockMS); err != nil {
+	if _, err := fmt.Fprintf(w, " wallclock=%dms", show.Result.WallclockMS); err != nil {
+		return err
+	}
+	if ref := runImageRef(show.Events); ref != "" {
+		if _, err := fmt.Fprintf(w, " image_ref=%s", ref); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
 		return err
 	}
 	if show.Failure.Class != "" {
@@ -126,6 +136,15 @@ func ExportTarGz(w io.Writer, root, prefix string) error {
 		return fmt.Errorf("export tar: %w", err)
 	}
 	return nil
+}
+
+func runImageRef(events []metrics.Event) string {
+	for _, e := range events {
+		if e.ImageRef != "" {
+			return e.ImageRef
+		}
+	}
+	return ""
 }
 
 func badge(status string) string {

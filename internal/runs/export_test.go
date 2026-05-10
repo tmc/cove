@@ -60,6 +60,40 @@ func TestExportGHASummary(t *testing.T) {
 	}
 }
 
+func TestExportGHASummaryIncludesImageRef(t *testing.T) {
+	root := t.TempDir()
+	start := event("vm_start", "ok", 10, nil)
+	start.ImageRef = "ubuntu:24.04@sha256:abc"
+	writeRun(t, root, "20260510-img", []metrics.Event{
+		start,
+		event("run_complete", "ok", 20, map[string]any{"exit_code": 0}),
+	}, nil)
+
+	var buf bytes.Buffer
+	if err := ExportGHASummary(&buf, root, "20260510-img"); err != nil {
+		t.Fatalf("ExportGHASummary: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "image_ref=ubuntu:24.04@sha256:abc") {
+		t.Fatalf("summary missing image_ref:\n%s", out)
+	}
+}
+
+func TestExportGHASummaryOmitsImageRefWhenAbsent(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "20260510-noimg", []metrics.Event{
+		event("run_complete", "ok", 5, map[string]any{"exit_code": 0}),
+	}, nil)
+
+	var buf bytes.Buffer
+	if err := ExportGHASummary(&buf, root, "20260510-noimg"); err != nil {
+		t.Fatalf("ExportGHASummary: %v", err)
+	}
+	if strings.Contains(buf.String(), "image_ref=") {
+		t.Fatalf("summary should omit image_ref:\n%s", buf.String())
+	}
+}
+
 func TestExportTarGzContainsRunFiles(t *testing.T) {
 	root := t.TempDir()
 	writeRun(t, root, "20260505-tar", []metrics.Event{
