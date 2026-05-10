@@ -77,3 +77,14 @@ func TestResolveReturnsCallerOwnedBytes(t *testing.T) {
 		t.Fatalf("second Resolve = %q, want alpha", second)
 	}
 }
+
+func TestResolveProviderErrorIncludesScheme(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope")
+	_, err := Resolve("file://" + missing)
+	if err == nil {
+		t.Fatal("Resolve missing file: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "secret file:") {
+		t.Fatalf("err = %v, want 'secret file:' prefix", err)
+	}
+}
