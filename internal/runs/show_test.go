@@ -74,7 +74,7 @@ func TestRenderShow(t *testing.T) {
 	for _, want := range []string{
 		"Run: 20260505-show",
 		"fork_created  ok  10ms",
-		"Result: failed exit_code=2 wallclock=150ms",
+		"Result: failed exit_code=2 wallclock=150ms failed_events=2",
 		"Failure: vm_start: boot failed",
 		"Artifacts (",
 		" bytes):",
