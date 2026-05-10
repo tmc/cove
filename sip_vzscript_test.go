@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,5 +140,19 @@ func TestWriteVZScriptForSIP(t *testing.T) {
 	}
 	if string(data) != script {
 		t.Fatalf("script round trip mismatch")
+	}
+}
+
+func TestWriteVZScriptForSIPWrapsWriteError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope-does-not-exist")
+	_, err := writeVZScriptForSIP(missing, "enable", "echo")
+	if err == nil {
+		t.Fatal("writeVZScriptForSIP into missing dir: want error, got nil")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want errors.Is(err, fs.ErrNotExist)", err)
+	}
+	if !strings.Contains(err.Error(), "sip enable") {
+		t.Fatalf("err = %v, want mode label", err)
 	}
 }
