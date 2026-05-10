@@ -71,6 +71,20 @@ const (
 	FormatTart
 )
 
+// String returns a short label for the manifest layout, suitable for logs.
+func (f ManifestFormat) String() string {
+	switch f {
+	case FormatCove:
+		return "cove"
+	case FormatLume:
+		return "lume"
+	case FormatTart:
+		return "tart"
+	default:
+		return "unknown"
+	}
+}
+
 // ParsedManifest is the normalized disk and sidecar metadata from a manifest.
 type ParsedManifest struct {
 	Format      ManifestFormat

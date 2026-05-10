@@ -306,3 +306,19 @@ func cloneStringMap(in map[string]string) map[string]string {
 	}
 	return out
 }
+
+func TestManifestFormatString(t *testing.T) {
+	for _, tt := range []struct {
+		in   ManifestFormat
+		want string
+	}{
+		{FormatCove, "cove"},
+		{FormatLume, "lume"},
+		{FormatTart, "tart"},
+		{ManifestFormat(99), "unknown"},
+	} {
+		if got := tt.in.String(); got != tt.want {
+			t.Errorf("ManifestFormat(%d).String() = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
