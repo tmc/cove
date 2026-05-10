@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+func TestShellCommandResolveSocketMissingVM(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	err := shellCommand([]string{"no-such-vm-r271"})
+	if err == nil {
+		t.Fatal("shellCommand(no-such-vm-r271) = nil, want missing-VM error")
+	}
+	if !strings.Contains(err.Error(), "no running VM") {
+		t.Fatalf("shellCommand err = %v, want 'no running VM'", err)
+	}
+}
+
 // TestShellCommandEarlyBranches covers the flag-parsing branches that exit
 // before any socket dial: -h returns nil, an unknown flag surfaces a parse
 // error from flag.Parse, and a missing positional VM argument returns the
