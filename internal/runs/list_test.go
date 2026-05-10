@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/metrics"
 )
 
 func TestList(t *testing.T) {
@@ -138,6 +140,27 @@ func summaryIDs(summaries []Summary) []string {
 		ids = append(ids, summary.RunID)
 	}
 	return ids
+}
+
+func TestListEventCount(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "20260510-cnt", []metrics.Event{
+		event("vm_start", "ok", 10, nil),
+		event("agent_ready", "ok", 5, nil),
+		event("build_step", "ok", 50, nil),
+		event(runCompleteEvent, "ok", 100, map[string]any{"exit_code": 0}),
+	}, nil)
+
+	got, err := List(root, Filter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	if got[0].EventCount != 4 {
+		t.Fatalf("EventCount = %d, want 4", got[0].EventCount)
+	}
 }
 
 func mustTime(t *testing.T, s string) time.Time {

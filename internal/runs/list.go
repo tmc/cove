@@ -23,6 +23,7 @@ type Summary struct {
 	TotalDurationMS int64     `json:"total_duration_ms"`
 	ExitCode        *int      `json:"exit_code,omitempty"`
 	StartedAt       time.Time `json:"started_at"`
+	EventCount      int       `json:"event_count,omitempty"`
 }
 
 // Filter limits List results. Status is "ok", "fail", or "all".
@@ -87,6 +88,7 @@ func readRun(dir, fallbackID string) (Summary, bool, error) {
 		started  time.Time
 		complete metrics.Event
 		found    bool
+		count    int
 	)
 	scan := bufio.NewScanner(f)
 	for scan.Scan() {
@@ -94,6 +96,7 @@ func readRun(dir, fallbackID string) (Summary, bool, error) {
 		if err := json.Unmarshal(scan.Bytes(), &event); err != nil {
 			return Summary{}, false, fmt.Errorf("runs list: parse metrics: %w", err)
 		}
+		count++
 		if started.IsZero() {
 			started = parseTime(event.Timestamp)
 		}
@@ -120,6 +123,7 @@ func readRun(dir, fallbackID string) (Summary, bool, error) {
 		TotalDurationMS: complete.DurationMS,
 		ExitCode:        exitCode(complete.Extra),
 		StartedAt:       started,
+		EventCount:      count,
 	}, true, nil
 }
 
