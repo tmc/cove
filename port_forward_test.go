@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"strconv"
 	"sync"
 	"testing"
 )
@@ -20,6 +22,28 @@ func TestParsePortForwardSpecRejectsInvalid(t *testing.T) {
 		t.Run(in, func(t *testing.T) {
 			if _, err := parsePortForwardSpec(in); err == nil {
 				t.Fatalf("parsePortForwardSpec(%q) succeeded, want error", in)
+			}
+		})
+	}
+}
+
+func TestParsePortForwardSpecWrapsParseErrors(t *testing.T) {
+	tests := []struct {
+		in   string
+		want error
+	}{
+		{"abc:80", strconv.ErrSyntax},
+		{"8080:xyz", strconv.ErrSyntax},
+		{"99999:80", strconv.ErrRange},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			_, err := parsePortForwardSpec(tt.in)
+			if err == nil {
+				t.Fatalf("want error for %q", tt.in)
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want errors.Is(err, %v)", err, tt.want)
 			}
 		})
 	}
