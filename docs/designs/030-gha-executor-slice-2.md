@@ -270,3 +270,10 @@ Verified against `.github/actions/cove-action/action.yml` at `4150a02` (R71 find
 2. Extra input: `cache-paths` is wired and is now spec-permitted as informational-only metadata (R74). Status: resolved — API Surface § respec'd to keep the shipped surface; removing it would have broken `docs/migrations/from-cirrus.md`, `docs/migration/cirrus-to-cove.md`, `docs/landing/migration-walkthrough.md`, and `docs/features/gha-executor.md` examples.
 3. Missing output: `cache-primary-key` from API Surface § (line 66) is not emitted. The other three cache outputs (`cache-hit`, `cache-image`, `cache-saved`) match. Status: deferred to v0.7 — small wrapper change, blocked on input decisions above.
 4. Open Questions §§ 1-5 (lines 259-263) remain unanswered: `cache-scope` default, TTL default, duplicate-tag error shape, manifest-vs-sidecar, save-failure policy. Status: needs design discussion before the input surface lands.
+
+## Verified 2026-05-10
+
+- Implementation SHAs `9e6253a`, `f06d554`, `c0a1433`, `4e0a0aa`, `ab7f159`, `ece1169` all present on `origin/main`.
+- `.github/actions/cove-action/action.yml` inputs `cache-key`, `cache-paths`, `cache-mode`, `cache-scope` are wired; `cache-ttl` and `cache-save-on` remain unwired (matches Spec drift §1).
+- Action outputs `cache-hit`, `cache-image`, `cache-saved` are present; `cache-primary-key` is not emitted (matches Spec drift §3).
+- ROADMAP `## v0.4` row "GitHub Actions executor Slice 2 cache reuse" still cites the canonical `9e6253a`/`f06d554`/`c0a1433` SHAs.
