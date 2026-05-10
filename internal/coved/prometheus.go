@@ -18,6 +18,7 @@ type PrometheusSnapshot struct {
 	ImageGCSkips      int64
 	LifecycleRuns     uint64
 	LifecycleErrors   uint64
+	LifecycleLastRunUnix int64
 	EventsDropped     uint64
 	WebhookDelivered  uint64
 	WebhookFailed     uint64
@@ -48,6 +49,7 @@ func WritePrometheus(w io.Writer, s PrometheusSnapshot) {
 	fmt.Fprintf(w, "coved_vms_managed %d\n", s.VMsManaged)
 	fmt.Fprintf(w, "coved_lifecycle_enforced_total %d\n", s.LifecycleRuns)
 	fmt.Fprintf(w, "coved_lifecycle_stop_errors_total %d\n", s.LifecycleErrors)
+	fmt.Fprintf(w, "coved_lifecycle_last_run_unix %d\n", s.LifecycleLastRunUnix)
 	fmt.Fprintf(w, "coved_image_gc_runs_total %d\n", s.ImageGCRuns)
 	fmt.Fprintf(w, "coved_image_gc_bytes_freed_total %d\n", s.ImageGCBytes)
 	fmt.Fprintf(w, "coved_image_gc_duration_ms_total %d\n", s.ImageGCDurationMS)

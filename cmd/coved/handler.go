@@ -57,6 +57,10 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		storageUsed = used
 		storageErrors = d.storage.Errors()
 	}
+	var lifecycleLastRunUnix int64
+	if d.lifecycle != nil {
+		lifecycleLastRunUnix = d.lifecycle.Stats().LastRunUnix
+	}
 	return coved.PrometheusSnapshot{
 		Version:       status.Version,
 		UptimeS:       status.UptimeS,
@@ -64,8 +68,9 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		ImageGCRuns:   status.ImageGCRunsTotal,
 		ImageGCBytes:  status.ImageGCBytesFreedTotal,
 		ImageGCSkips:  imageGCSkips(d),
-		LifecycleRuns:   status.LifecycleEnforced,
-		LifecycleErrors: status.LifecycleStopErrors,
+		LifecycleRuns:        status.LifecycleEnforced,
+		LifecycleErrors:      status.LifecycleStopErrors,
+		LifecycleLastRunUnix: lifecycleLastRunUnix,
 		EventsDropped:     d.events.Dropped(),
 		WebhookDelivered:  d.webhook.Delivered(),
 		WebhookFailed:     d.webhook.Failed(),
