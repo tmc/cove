@@ -71,11 +71,14 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		lifecycleLastRunUnix = d.lifecycle.Stats().LastRunUnix
 	}
 	var imageGCLastRunUnix int64
+	var imageGCScanned, imageGCRemoved int
 	if d.imageGC != nil {
-		_, last, _, _ := d.imageGC.Stats()
+		stats, last, _, _ := d.imageGC.Stats()
 		if !last.IsZero() {
 			imageGCLastRunUnix = last.Unix()
 		}
+		imageGCScanned = stats.ManifestsScanned
+		imageGCRemoved = stats.ManifestsRemoved
 	}
 	return coved.PrometheusSnapshot{
 		Version:       status.Version,
@@ -86,6 +89,8 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		ImageGCSkips:       imageGCSkips(d),
 		ImageGCDurationMS:  status.ImageGCDurationMSTotal,
 		ImageGCLastRunUnix: imageGCLastRunUnix,
+		ImageGCManifestsScanned: imageGCScanned,
+		ImageGCManifestsRemoved: imageGCRemoved,
 		LifecycleRuns:        status.LifecycleEnforced,
 		LifecycleErrors:      status.LifecycleStopErrors,
 		LifecycleLastRunUnix: lifecycleLastRunUnix,

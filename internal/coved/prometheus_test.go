@@ -199,3 +199,23 @@ func TestPrometheusOmitsStorageStateWhenEmpty(t *testing.T) {
 		t.Fatalf("expected coved_storage_state to be omitted when empty:\n%s", rec.Body.String())
 	}
 }
+
+func TestPrometheusEmitsImageGCManifestCounts(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{
+			ImageGCManifestsScanned: 27,
+			ImageGCManifestsRemoved: 4,
+		}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		"coved_image_gc_manifests_scanned 27",
+		"coved_image_gc_manifests_removed 4",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, body)
+		}
+	}
+}
