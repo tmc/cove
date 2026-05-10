@@ -54,11 +54,13 @@ type statusResponse struct {
 func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 	status := d.status()
 	var storageRuns, storageErrors, storageUsed, storageLastRunUnix int64
+	var storageState string
 	if d.storage != nil {
-		used, _, lastRun, runs := d.storage.Stats()
+		used, state, lastRun, runs := d.storage.Stats()
 		storageRuns = runs
 		storageUsed = used
 		storageErrors = d.storage.Errors()
+		storageState = state.String()
 		if !lastRun.IsZero() {
 			storageLastRunUnix = lastRun.Unix()
 		}
@@ -94,6 +96,7 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		StoragePollErrors:      storageErrors,
 		StoragePollLastRunUnix: storageLastRunUnix,
 		StorageUsedBytes:       storageUsed,
+		StorageState:           storageState,
 		EventbusSubs:      d.events.Subscribers(),
 		Events:            d.events.Tail(),
 	}

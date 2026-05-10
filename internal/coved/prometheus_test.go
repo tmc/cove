@@ -177,3 +177,25 @@ func TestPrometheusEmitsStoragePollLastRunUnix(t *testing.T) {
 		t.Fatalf("metrics missing coved_storage_poll_last_run_unix:\n%s", rec.Body.String())
 	}
 }
+
+func TestPrometheusEmitsStorageState(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{StorageState: "warn"}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), `coved_storage_state{state="warn"} 1`) {
+		t.Fatalf("metrics missing coved_storage_state:\n%s", rec.Body.String())
+	}
+}
+
+func TestPrometheusOmitsStorageStateWhenEmpty(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{StorageState: ""}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if strings.Contains(rec.Body.String(), "coved_storage_state") {
+		t.Fatalf("expected coved_storage_state to be omitted when empty:\n%s", rec.Body.String())
+	}
+}
