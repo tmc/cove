@@ -129,12 +129,29 @@ func (e *LifecycleEnforcer) enforceVM(ctx context.Context, name, vmDir string, n
 	}
 	if err := client.requestStop(ctx); err != nil {
 		e.stopErrors.Add(1)
+		e.publishStopError(ctx, name, reason, err, now)
 		return fmt.Errorf("request stop: %w", err)
 	}
 	e.enforced.Add(1)
 	e.publishStop(ctx, name, reason, now)
 	e.cfg.Log.Info("lifecycle policy stop", slog.String("vm", name), slog.String("reason", reason))
 	return nil
+}
+
+func (e *LifecycleEnforcer) publishStopError(ctx context.Context, name, reason string, err error, now time.Time) {
+	if e.cfg.Bus == nil {
+		return
+	}
+	e.cfg.Bus.Publish(ctx, Event{
+		Timestamp: now.UTC().Format(time.RFC3339Nano),
+		EventType: "lifecycle.policy.stop_error",
+		VMName:    name,
+		Status:    "error",
+		Extra: map[string]any{
+			"reason":     reason,
+			"stop_error": err.Error(),
+		},
+	})
 }
 
 func (e *LifecycleEnforcer) publishStop(ctx context.Context, name, reason string, now time.Time) {

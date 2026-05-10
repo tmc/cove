@@ -253,3 +253,23 @@ func shortTempDir(t *testing.T) string {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
 }
+
+func TestLifecyclePublishStopErrorEmitsEvent(t *testing.T) {
+	bus := NewEventBus(8)
+	e := NewLifecycleEnforcer(LifecycleConfig{Bus: bus})
+	e.publishStopError(context.Background(), "vm1", "idle", &net.OpError{Op: "dial", Err: net.UnknownNetworkError("vsock")}, time.Unix(0, 0))
+	tail := bus.Tail()
+	if len(tail) != 1 {
+		t.Fatalf("len(tail) = %d, want 1", len(tail))
+	}
+	got := tail[0]
+	if got.EventType != "lifecycle.policy.stop_error" || got.Status != "error" || got.VMName != "vm1" {
+		t.Fatalf("event = %#v", got)
+	}
+	if got.Extra["reason"] != "idle" {
+		t.Fatalf("reason = %v, want idle", got.Extra["reason"])
+	}
+	if got.Extra["stop_error"] == nil || got.Extra["stop_error"] == "" {
+		t.Fatalf("stop_error empty: %#v", got.Extra)
+	}
+}
