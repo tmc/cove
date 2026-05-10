@@ -244,6 +244,40 @@ func TestApplySharedFoldersAndPrintWithoutRunningVM(t *testing.T) {
 	}
 }
 
+func TestSharedFolderCommandVMDirAbsoluteVMDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() { vmName, vmDir = oldVMName, oldVMDir })
+	vmName = ""
+	abs := t.TempDir()
+	vmDir = abs
+
+	got, err := sharedFolderCommandVMDir()
+	if err != nil {
+		t.Fatalf("sharedFolderCommandVMDir(): %v", err)
+	}
+	if got != abs {
+		t.Fatalf("got = %q, want %q (absolute vmDir returned verbatim)", got, abs)
+	}
+}
+
+func TestSharedFolderCommandVMDirRelativeResolvesUnderBase(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() { vmName, vmDir = oldVMName, oldVMDir })
+	vmName = ""
+	vmDir = "rel-vm-r280"
+
+	got, err := sharedFolderCommandVMDir()
+	if err != nil {
+		t.Fatalf("sharedFolderCommandVMDir(): %v", err)
+	}
+	want := vmconfig.Path("rel-vm-r280")
+	if got != want {
+		t.Fatalf("got = %q, want %q (relative vmDir resolved under BaseDir)", got, want)
+	}
+}
+
 func TestSharedFolderCommandVMDirHonorsVMFlag(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	oldVMName, oldVMDir := vmName, vmDir
