@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	runmetrics "github.com/tmc/vz-macos/internal/metrics"
@@ -13,10 +14,18 @@ import (
 type Event = runmetrics.Event
 
 type EventBus struct {
-	mu   sync.RWMutex
-	subs []chan Event
-	tail []Event
-	size int
+	mu      sync.RWMutex
+	subs    []chan Event
+	tail    []Event
+	size    int
+	dropped atomic.Uint64
+}
+
+func (b *EventBus) Dropped() uint64 {
+	if b == nil {
+		return 0
+	}
+	return b.dropped.Load()
 }
 
 func NewJSONLSink(path string) (runmetrics.Sink, error) {
@@ -77,6 +86,7 @@ func (b *EventBus) Publish(ctx context.Context, e Event) {
 		case <-ctx.Done():
 			return
 		default:
+			b.dropped.Add(1)
 		}
 	}
 }

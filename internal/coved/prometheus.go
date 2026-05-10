@@ -17,6 +17,7 @@ type PrometheusSnapshot struct {
 	ImageGCDurationMS int64
 	LifecycleRuns     uint64
 	LifecycleErrors   uint64
+	EventsDropped     uint64
 	Events            []Event
 }
 
@@ -42,6 +43,7 @@ func WritePrometheus(w io.Writer, s PrometheusSnapshot) {
 	fmt.Fprintf(w, "coved_image_gc_runs_total %d\n", s.ImageGCRuns)
 	fmt.Fprintf(w, "coved_image_gc_bytes_freed_total %d\n", s.ImageGCBytes)
 	fmt.Fprintf(w, "coved_image_gc_duration_ms_total %d\n", s.ImageGCDurationMS)
+	fmt.Fprintf(w, "coved_eventbus_dropped_total %d\n", s.EventsDropped)
 	counts := eventCounts(s.Events)
 	for _, key := range sortedKeys(counts) {
 		labels := strings.Split(key, "\x00")

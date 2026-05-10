@@ -15,6 +15,7 @@ func TestPrometheusHandler(t *testing.T) {
 			VMsManaged:        3,
 			LifecycleRuns:     2,
 			LifecycleErrors:   3,
+			EventsDropped:     7,
 			ImageGCRuns:       4,
 			ImageGCBytes:      99,
 			ImageGCDurationMS: 1500,
@@ -41,6 +42,7 @@ func TestPrometheusHandler(t *testing.T) {
 		"coved_image_gc_runs_total 4",
 		"coved_image_gc_bytes_freed_total 99",
 		"coved_image_gc_duration_ms_total 1500",
+		"coved_eventbus_dropped_total 7",
 		`coved_events_total{event_type="lifecycle.policy.stop",vm="vm1",reason="idle"} 1`,
 	} {
 		if !strings.Contains(body, want) {
