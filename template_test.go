@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -71,15 +70,13 @@ func TestTemplateErrorPaths(t *testing.T) {
 	}
 
 	// DeleteTemplate: template does not exist.
-	if err := DeleteTemplate("ghost"); err == nil ||
-		!strings.Contains(err.Error(), "template not found") {
-		t.Errorf("DeleteTemplate missing: got %v, want 'template not found'", err)
+	if err := DeleteTemplate("ghost"); !errors.Is(err, ErrTemplateNotFound) {
+		t.Errorf("DeleteTemplate missing: got %v, want ErrTemplateNotFound", err)
 	}
 
 	// CreateFromTemplate: template does not exist.
-	if err := CreateFromTemplate("ghost", "newvm"); err == nil ||
-		!strings.Contains(err.Error(), "template not found or invalid") {
-		t.Errorf("CreateFromTemplate missing: got %v", err)
+	if err := CreateFromTemplate("ghost", "newvm"); !errors.Is(err, ErrTemplateNotFound) {
+		t.Errorf("CreateFromTemplate missing: got %v, want ErrTemplateNotFound", err)
 	}
 
 	// SaveTemplate: template already exists. Stage a minimally-valid
