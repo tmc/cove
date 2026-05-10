@@ -98,6 +98,7 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		WebhookDelivered:  d.webhook.Delivered(),
 		WebhookFailed:     d.webhook.Failed(),
 		WebhookRejected:   d.webhook.Rejected(),
+		WebhookLastRunUnix: d.webhook.LastDeliveryUnix(),
 		StoragePollRuns:        storageRuns,
 		StoragePollErrors:      storageErrors,
 		StoragePollLastRunUnix: storageLastRunUnix,

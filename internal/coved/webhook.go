@@ -15,9 +15,19 @@ type WebhookSubscriber struct {
 	Events map[string]bool
 	Client *http.Client
 
-	delivered atomic.Uint64
-	failed    atomic.Uint64
-	rejected  atomic.Uint64
+	delivered     atomic.Uint64
+	failed        atomic.Uint64
+	rejected      atomic.Uint64
+	lastDelivery  atomic.Int64
+}
+
+// LastDeliveryUnix returns the Unix timestamp of the most recent
+// successful delivery, or zero if none have completed.
+func (w *WebhookSubscriber) LastDeliveryUnix() int64 {
+	if w == nil {
+		return 0
+	}
+	return w.lastDelivery.Load()
 }
 
 // Rejected returns the count of post() calls that completed with a
@@ -94,6 +104,7 @@ func (w *WebhookSubscriber) deliver(ctx context.Context, event Event) {
 		err := w.post(ctx, event)
 		if err == nil {
 			w.delivered.Add(1)
+			w.lastDelivery.Store(time.Now().Unix())
 			return
 		}
 		time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
