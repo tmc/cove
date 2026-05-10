@@ -1,10 +1,53 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestParseHdiutilAttach(t *testing.T) {
+	tests := []struct {
+		name       string
+		in         string
+		wantDev    string
+		wantMount  string
+		wantErr    error
+	}{
+		{
+			name:      "device and mount",
+			in:        "/dev/disk22          \tGUID_partition_scheme           \t\n/dev/disk22s1        \tEFI                             \t\n/dev/disk22s2        \tDOS_FAT_32                      \t/Volumes/VZRECOVERY\n",
+			wantDev:   "/dev/disk22",
+			wantMount: "/Volumes/VZRECOVERY",
+		},
+		{
+			name:    "no device",
+			in:      "garbage\nmore garbage\n",
+			wantErr: ErrHdiutilNoDevice,
+		},
+		{
+			name:    "device but no mount",
+			in:      "/dev/disk22          \tGUID_partition_scheme           \t\n/dev/disk22s1        \tEFI                             \t\n",
+			wantDev: "/dev/disk22",
+			wantErr: ErrHdiutilNoMountPoint,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dev, mp, err := parseHdiutilAttach([]byte(tt.in))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if dev != tt.wantDev {
+				t.Errorf("device = %q, want %q", dev, tt.wantDev)
+			}
+			if mp != tt.wantMount {
+				t.Errorf("mount = %q, want %q", mp, tt.wantMount)
+			}
+		})
+	}
+}
 
 func TestRecoveryDiskPath(t *testing.T) {
 	tests := []struct {

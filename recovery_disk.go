@@ -1,12 +1,54 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// ErrHdiutilNoDevice is returned when hdiutil attach output contains no
+// /dev/disk* line. ErrHdiutilNoMountPoint is returned when the device line
+// has no associated mount point. Callers wrap these with the raw output so
+// operators can debug malformed hdiutil responses.
+var (
+	ErrHdiutilNoDevice     = errors.New("hdiutil attach: no device in output")
+	ErrHdiutilNoMountPoint = errors.New("hdiutil attach: no mount point in output")
+)
+
+// parseHdiutilAttach extracts the whole-disk device and its mount point
+// from the tab-delimited output of `hdiutil attach`.
+func parseHdiutilAttach(out []byte) (device, mountPoint string, err error) {
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		tabFields := strings.SplitN(line, "\t", 3)
+		dev := strings.TrimSpace(tabFields[0])
+		if !strings.HasPrefix(dev, "/dev/disk") {
+			continue
+		}
+		if !strings.Contains(dev[len("/dev/disk"):], "s") {
+			device = dev
+		}
+		if len(tabFields) >= 3 {
+			mp := strings.TrimSpace(tabFields[2])
+			if mp != "" && mp != "/" {
+				mountPoint = mp
+			}
+		}
+	}
+	if device == "" {
+		return "", "", ErrHdiutilNoDevice
+	}
+	if mountPoint == "" {
+		return device, "", ErrHdiutilNoMountPoint
+	}
+	return device, mountPoint, nil
+}
 
 // RecoveryDiskPath returns the default recovery disk path for a VM.
 func RecoveryDiskPath(vmDirectory string) string {
@@ -50,36 +92,13 @@ func CreateRecoveryDisk(path string) error {
 		return fmt.Errorf("attach recovery disk: %w: %s", err, attachOut)
 	}
 
-	var device, mountPoint string
-	for _, line := range strings.Split(strings.TrimSpace(string(attachOut)), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+	device, mountPoint, err := parseHdiutilAttach(attachOut)
+	if err != nil {
+		if device != "" {
+			_ = exec.Command("hdiutil", "detach", device).Run()
 		}
-		tabFields := strings.SplitN(line, "\t", 3)
-		dev := strings.TrimSpace(tabFields[0])
-		if !strings.HasPrefix(dev, "/dev/disk") {
-			continue
-		}
-		if !strings.Contains(dev[len("/dev/disk"):], "s") {
-			device = dev
-		}
-		if len(tabFields) >= 3 {
-			mp := strings.TrimSpace(tabFields[2])
-			if mp != "" && mp != "/" {
-				mountPoint = mp
-			}
-		}
-	}
-
-	if device == "" {
 		_ = os.Remove(dmgPath)
-		return fmt.Errorf("could not find device in hdiutil output: %s", string(attachOut))
-	}
-	if mountPoint == "" {
-		_ = exec.Command("hdiutil", "detach", device).Run()
-		_ = os.Remove(dmgPath)
-		return fmt.Errorf("could not find mount point in hdiutil output: %s", string(attachOut))
+		return fmt.Errorf("%w: %s", err, string(attachOut))
 	}
 
 	files := map[string]string{
