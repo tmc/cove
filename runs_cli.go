@@ -170,18 +170,19 @@ func parseRunsExportArgs(args []string) (prefix, format string, err error) {
 
 func printRunsTable(w io.Writer, summaries []runs.Summary) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "RUN ID\tIMAGE\tVM\tSTATUS\tDURATION_MS\tEXIT\tSTARTED_AT")
+	fmt.Fprintln(tw, "RUN ID\tIMAGE\tVM\tSTATUS\tDURATION_MS\tEVENTS\tEXIT\tSTARTED_AT")
 	for _, summary := range summaries {
 		exit := "-"
 		if summary.ExitCode != nil {
 			exit = fmt.Sprint(*summary.ExitCode)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
 			shortRunID(summary.RunID),
 			emptyDash(summary.ImageRef),
 			emptyDash(summary.VMName),
 			summary.Status,
 			summary.TotalDurationMS,
+			summary.EventCount,
 			exit,
 			summary.StartedAt.UTC().Format(time.RFC3339))
 	}

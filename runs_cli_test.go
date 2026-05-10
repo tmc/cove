@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/tmc/vz-macos/internal/runs"
 )
 
 func TestParseRunsShowArgsAllowsFlagsAfterPrefix(t *testing.T) {
@@ -70,5 +74,30 @@ func TestRunRunsExportRequiresPrefixAndFormat(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "usage:") {
 			t.Fatalf("runRunsExport(%v) err = %v; want usage error", args, err)
 		}
+	}
+}
+
+func TestPrintRunsTableIncludesEventCount(t *testing.T) {
+	exit := 0
+	summaries := []runs.Summary{{
+		RunID:           "20260510-abcdef",
+		ImageRef:        "ubuntu:24.04",
+		VMName:          "vm1",
+		Status:          "ok",
+		TotalDurationMS: 250,
+		EventCount:      7,
+		ExitCode:        &exit,
+		StartedAt:       time.Unix(0, 0).UTC(),
+	}}
+	var buf bytes.Buffer
+	if err := printRunsTable(&buf, summaries); err != nil {
+		t.Fatalf("printRunsTable: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "EVENTS") {
+		t.Fatalf("missing EVENTS header:\n%s", out)
+	}
+	if !strings.Contains(out, " 7 ") {
+		t.Fatalf("missing event count cell '7':\n%s", out)
 	}
 }
