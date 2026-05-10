@@ -85,3 +85,23 @@ func TestPrometheusEmitsWebhookCounters(t *testing.T) {
 		}
 	}
 }
+
+func TestPrometheusEmitsStoragePollCounters(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{
+			StoragePollRuns:   17,
+			StoragePollErrors: 4,
+		}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		"coved_storage_poll_runs_total 17",
+		"coved_storage_poll_errors_total 4",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, body)
+		}
+	}
+}

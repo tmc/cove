@@ -43,6 +43,11 @@ type statusResponse struct {
 
 func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 	status := d.status()
+	var storageRuns, storageErrors int64
+	if d.storage != nil {
+		_, _, _, storageRuns = d.storage.Stats()
+		storageErrors = d.storage.Errors()
+	}
 	return coved.PrometheusSnapshot{
 		Version:       status.Version,
 		UptimeS:       status.UptimeS,
@@ -52,11 +57,13 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		ImageGCSkips:  imageGCSkips(d),
 		LifecycleRuns:   status.LifecycleEnforced,
 		LifecycleErrors: status.LifecycleStopErrors,
-		EventsDropped:    d.events.Dropped(),
-		WebhookDelivered: d.webhook.Delivered(),
-		WebhookFailed:    d.webhook.Failed(),
-		WebhookRejected:  d.webhook.Rejected(),
-		Events:           d.events.Tail(),
+		EventsDropped:     d.events.Dropped(),
+		WebhookDelivered:  d.webhook.Delivered(),
+		WebhookFailed:     d.webhook.Failed(),
+		WebhookRejected:   d.webhook.Rejected(),
+		StoragePollRuns:   storageRuns,
+		StoragePollErrors: storageErrors,
+		Events:            d.events.Tail(),
 	}
 }
 
