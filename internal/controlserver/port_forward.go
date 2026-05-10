@@ -231,6 +231,34 @@ func (m *PortForwardManager) List() []string {
 	return result
 }
 
+// Counts is a snapshot of the number of active forwards by direction.
+type Counts struct {
+	Forward    int
+	Reverse    int
+	ForwardUDP int
+	ReverseUDP int
+}
+
+// Total returns the sum of all four directions.
+func (c Counts) Total() int {
+	return c.Forward + c.Reverse + c.ForwardUDP + c.ReverseUDP
+}
+
+// Counts returns the number of active forwards by direction.
+func (m *PortForwardManager) Counts() Counts {
+	if m == nil {
+		return Counts{}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return Counts{
+		Forward:    len(m.forwards),
+		Reverse:    len(m.reverse),
+		ForwardUDP: len(m.udp),
+		ReverseUDP: len(m.udpRev),
+	}
+}
+
 // StopAll shuts down all active forwards.
 func (m *PortForwardManager) StopAll() {
 	m.mu.Lock()
