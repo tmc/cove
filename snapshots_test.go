@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,8 +113,8 @@ func TestDiskSnapshotSaveDuplicate(t *testing.T) {
 	if err == nil {
 		t.Fatal("second Save of same name should have failed")
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error = %v, want 'already exists'", err)
+	if !errors.Is(err, ErrDiskSnapshotExists) {
+		t.Errorf("error = %v, want errors.Is(err, ErrDiskSnapshotExists)", err)
 	}
 }
 
@@ -122,12 +123,12 @@ func TestDiskSnapshotRestoreAndDeleteMissing(t *testing.T) {
 	mgr := NewDiskSnapshotManager(dir)
 
 	err := mgr.Restore("nope", DiskSnapshotSystem)
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Errorf("Restore missing: err = %v, want 'not found'", err)
+	if !errors.Is(err, ErrDiskSnapshotNotFound) {
+		t.Errorf("Restore missing: err = %v, want ErrDiskSnapshotNotFound", err)
 	}
 	err = mgr.Delete("nope")
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Errorf("Delete missing: err = %v, want 'not found'", err)
+	if !errors.Is(err, ErrDiskSnapshotNotFound) {
+		t.Errorf("Delete missing: err = %v, want ErrDiskSnapshotNotFound", err)
 	}
 
 	// Bad name on Restore is rejected before missing check.

@@ -14,6 +14,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,6 +74,16 @@ func (m *DiskSnapshotManager) ensureDir() error {
 	return os.MkdirAll(m.diskSnapshotsDir(), 0755)
 }
 
+// ErrDiskSnapshotExists is returned by DiskSnapshotManager.Save when a
+// snapshot directory with the requested name already exists. Callers
+// can branch on this with errors.Is to suggest a different name or
+// offer a --force overwrite without parsing the message.
+var ErrDiskSnapshotExists = errors.New("disk snapshot already exists")
+
+// ErrDiskSnapshotNotFound is returned by DiskSnapshotManager.Restore
+// (and friends) when the named snapshot directory is missing.
+var ErrDiskSnapshotNotFound = errors.New("disk snapshot not found")
+
 // validateSnapshotName checks that a snapshot name is safe for use as a
 // directory component. Empty names, path separators, and path traversal
 // components are rejected.
@@ -101,7 +112,7 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 
 	snapDir := m.snapshotDir(name)
 	if _, err := os.Stat(snapDir); !os.IsNotExist(err) {
-		return fmt.Errorf("disk snapshot '%s' already exists", name)
+		return fmt.Errorf("%w: %s", ErrDiskSnapshotExists, name)
 	}
 
 	if err := os.MkdirAll(snapDir, 0755); err != nil {
@@ -157,7 +168,7 @@ func (m *DiskSnapshotManager) Restore(name string, target DiskSnapshotTarget) er
 	}
 	snapDir := m.snapshotDir(name)
 	if _, err := os.Stat(snapDir); os.IsNotExist(err) {
-		return fmt.Errorf("disk snapshot '%s' not found", name)
+		return fmt.Errorf("%w: %s", ErrDiskSnapshotNotFound, name)
 	}
 
 	var info DiskSnapshotInfo
@@ -241,7 +252,7 @@ func (m *DiskSnapshotManager) Delete(name string) error {
 	}
 	snapDir := m.snapshotDir(name)
 	if _, err := os.Stat(snapDir); os.IsNotExist(err) {
-		return fmt.Errorf("disk snapshot '%s' not found", name)
+		return fmt.Errorf("%w: %s", ErrDiskSnapshotNotFound, name)
 	}
 
 	if err := os.RemoveAll(snapDir); err != nil {
@@ -513,7 +524,7 @@ func handleDiskSnapshotRun(args []string) error {
 		snapshotDiskPath := filepath.Join(vmDir, "disk-snapshots", name, "disk.img")
 		if _, err := os.Stat(snapshotDiskPath); err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("disk snapshot '%s' not found", name)
+				return fmt.Errorf("%w: %s", ErrDiskSnapshotNotFound, name)
 			}
 			return fmt.Errorf("stat snapshot disk: %w", err)
 		}
