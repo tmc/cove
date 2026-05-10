@@ -1,11 +1,36 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/fsnotify/fsnotify"
 )
+
+func TestGatewayHandleFSEventCreateAddsVMDirWatch(t *testing.T) {
+	dir := t.TempDir()
+	gw, err := NewGateway(dir, "tok", false, nil, newServeTestRegistry(t))
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+	vmSubdir := filepath.Join(dir, "fresh-vm")
+	if err := os.MkdirAll(vmSubdir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	gw.handleFSEvent(fsnotify.Event{
+		Name: vmSubdir,
+		Op:   fsnotify.Create,
+	})
+
+	gw.mu.RLock()
+	_, ok := gw.routes["fresh-vm"]
+	gw.mu.RUnlock()
+	if ok {
+		t.Error("route should not be added when control.sock is absent")
+	}
+}
 
 func TestGatewayHandleFSEventIgnoresNonControlSock(t *testing.T) {
 	dir := t.TempDir()
