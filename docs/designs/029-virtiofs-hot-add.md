@@ -3,6 +3,10 @@
 Status: Shipped. Live-apply through the pre-existing shared-folders
 VirtioFS device works end-to-end on macOS and Linux guests; true device
 hot-add is still gated on Apple shipping a public attach API.
+Verified 2026-05-10 (R364): `sharedFoldersRuntimeStatus` at
+`shared_folders_runtime.go:43`; `handleSharedFoldersApply` at
+`shared_folders_runtime.go:50`; `cove shared-folder pending` plumbed via
+`shared_folders_cli.go`. SHA-chain commits 16853bb/fdda2ab/f6553e5/39d0916/c5a3c67/27e52f2/e202836 all on main.
 Author: Travis Cline
 Date: 2026-05-04
 
