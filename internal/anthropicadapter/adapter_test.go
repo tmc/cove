@@ -69,6 +69,48 @@ func TestAdapterReturnsToolErrorsToModel(t *testing.T) {
 	}
 }
 
+func TestAdapterDispatchContentActions(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   map[string]any
+		want    string
+		wantErr string
+	}{
+		{name: "type", input: map[string]any{"action": "type", "text": "hi"}, want: "typed"},
+		{name: "key", input: map[string]any{"action": "key", "key": "Return"}, want: "pressed"},
+		{name: "scroll y", input: map[string]any{"action": "scroll", "scroll_y": float64(3)}, want: "scrolled"},
+		{name: "scroll amount fallback", input: map[string]any{"action": "scroll", "scroll_amount": float64(2)}, want: "scrolled"},
+		{name: "cursor", input: map[string]any{"action": "cursor_position"}, want: "cursor_position: 0,0"},
+		{name: "unsupported action", input: map[string]any{"action": "wat"}, wantErr: "unsupported computer action"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &Adapter{Control: &fakeControl{}}
+			got, err := a.dispatchContent(context.Background(), Block{Name: "computer", Input: tt.input})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want contains %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("dispatchContent: %v", err)
+			}
+			if s, _ := got.(string); s != tt.want {
+				t.Fatalf("got = %v, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAdapterDispatchContentRejectsNonComputerTool(t *testing.T) {
+	a := &Adapter{Control: &fakeControl{}}
+	_, err := a.dispatchContent(context.Background(), Block{Name: "shell"})
+	if err == nil || !strings.Contains(err.Error(), `unsupported tool "shell"`) {
+		t.Fatalf("err = %v, want unsupported tool", err)
+	}
+}
+
 type fakeAnthropic struct {
 	requests  []MessageRequest
 	responses []MessageResponse
