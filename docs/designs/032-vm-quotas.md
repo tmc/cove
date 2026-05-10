@@ -11,6 +11,11 @@ schema, `cove quota <vm> show|cpu|memory|disk`, host-side APFS directory quota v
 `diskutil apfs setQuota`, install-time quota write for fresh macOS and Linux VMs.
 Deferred items in this doc remain deferred. Roadmap segment R36-629F closed.
 
+Verified 2026-05-10 (R362): `handleQuotaCommand` at `quota_cli.go:32`,
+`persistInstallQuota` at `quota_cli.go:181` (called from `installer.go:438`,
+`linux_installer.go:278`, `windows.go:445`), `internal/vmquota/quota.go`
+exports `FileName = "quotas.json"`.
+
 Author: Travis Cline
 Date: 2026-05-05
 
