@@ -476,3 +476,29 @@ func TestStoragePollSchedulerHardWithoutPrunersAnnotates(t *testing.T) {
 		t.Errorf("bytes_freed = %v, want 0", got)
 	}
 }
+
+func TestStoragePollSchedulerCountsErrors(t *testing.T) {
+	root := t.TempDir()
+	// Force storagecensus.Walk to fail by pointing a descriptor at a
+	// non-directory file.
+	bad := filepath.Join(root, "bad-cat")
+	if err := os.Mkdir(bad, 0); err != nil {
+		t.Fatalf("mkdir mode 0: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(bad, 0700) })
+
+	s := &StoragePollScheduler{
+		Root:       root,
+		Categories: []storagecensus.Descriptor{{Name: "x", Path: bad}},
+		Now:        func() time.Time { return time.Unix(0, 0) },
+	}
+	if got := s.Errors(); got != 0 {
+		t.Fatalf("initial Errors() = %d, want 0", got)
+	}
+	if _, err := s.RunOnce(context.Background()); err == nil {
+		t.Fatal("RunOnce: want error from unreadable category")
+	}
+	if got := s.Errors(); got != 1 {
+		t.Fatalf("Errors() = %d, want 1", got)
+	}
+}
