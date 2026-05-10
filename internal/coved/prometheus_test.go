@@ -166,3 +166,14 @@ func TestPrometheusEmitsImageGCLastRunUnix(t *testing.T) {
 		t.Fatalf("metrics missing coved_image_gc_last_run_unix:\n%s", rec.Body.String())
 	}
 }
+
+func TestPrometheusEmitsStoragePollLastRunUnix(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{StoragePollLastRunUnix: 1715301234}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), "coved_storage_poll_last_run_unix 1715301234") {
+		t.Fatalf("metrics missing coved_storage_poll_last_run_unix:\n%s", rec.Body.String())
+	}
+}
