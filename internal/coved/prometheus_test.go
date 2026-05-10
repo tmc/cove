@@ -61,3 +61,25 @@ func TestPrometheusOmitsBuildInfoWhenVersionEmpty(t *testing.T) {
 		t.Fatalf("should omit coved_build_info:\n%s", rec.Body.String())
 	}
 }
+
+func TestPrometheusEmitsWebhookCounters(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{
+			WebhookDelivered: 11,
+			WebhookFailed:    2,
+			WebhookRejected:  5,
+		}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		"coved_webhook_delivered_total 11",
+		"coved_webhook_failed_total 2",
+		"coved_webhook_rejected_total 5",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, body)
+		}
+	}
+}

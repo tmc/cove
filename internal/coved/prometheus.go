@@ -18,6 +18,9 @@ type PrometheusSnapshot struct {
 	LifecycleRuns     uint64
 	LifecycleErrors   uint64
 	EventsDropped     uint64
+	WebhookDelivered  uint64
+	WebhookFailed     uint64
+	WebhookRejected   uint64
 	Events            []Event
 }
 
@@ -44,6 +47,9 @@ func WritePrometheus(w io.Writer, s PrometheusSnapshot) {
 	fmt.Fprintf(w, "coved_image_gc_bytes_freed_total %d\n", s.ImageGCBytes)
 	fmt.Fprintf(w, "coved_image_gc_duration_ms_total %d\n", s.ImageGCDurationMS)
 	fmt.Fprintf(w, "coved_eventbus_dropped_total %d\n", s.EventsDropped)
+	fmt.Fprintf(w, "coved_webhook_delivered_total %d\n", s.WebhookDelivered)
+	fmt.Fprintf(w, "coved_webhook_failed_total %d\n", s.WebhookFailed)
+	fmt.Fprintf(w, "coved_webhook_rejected_total %d\n", s.WebhookRejected)
 	counts := eventCounts(s.Events)
 	for _, key := range sortedKeys(counts) {
 		labels := strings.Split(key, "\x00")
