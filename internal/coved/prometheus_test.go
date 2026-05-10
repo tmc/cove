@@ -144,3 +144,14 @@ func TestEventBusSubscribersTracksAttachDetach(t *testing.T) {
 		t.Fatalf("Subscribers after detach = %d, want 0", got)
 	}
 }
+
+func TestPrometheusEmitsLifecycleLastRunUnix(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{LifecycleLastRunUnix: 1715300000}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), "coved_lifecycle_last_run_unix 1715300000") {
+		t.Fatalf("metrics missing coved_lifecycle_last_run_unix:\n%s", rec.Body.String())
+	}
+}
