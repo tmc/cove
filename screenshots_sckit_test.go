@@ -124,6 +124,18 @@ func TestWarnSCKitFallbackOncePerCause(t *testing.T) {
 	}
 }
 
+func TestSckitFallbackCauseClassifies(t *testing.T) {
+	if got := sckitFallbackCause(nil); got != "nil-image" {
+		t.Errorf("sckitFallbackCause(nil) = %q, want nil-image", got)
+	}
+	if got := sckitFallbackCause(errors.New("TCC denied")); got != "tcc" {
+		t.Errorf("sckitFallbackCause(TCC) = %q, want tcc", got)
+	}
+	if got := sckitFallbackCause(errors.New("kernel panic")); got != "other" {
+		t.Errorf("sckitFallbackCause(other) = %q, want other", got)
+	}
+}
+
 func TestClassifySCKitError(t *testing.T) {
 	tests := []struct {
 		msg, want string
