@@ -84,6 +84,35 @@ func TestReceiveExecAttachControlWritesStdinFrames(t *testing.T) {
 	}
 }
 
+func TestReceiveExecAttachControlSkipsEmptyAndResizeWithoutTTY(t *testing.T) {
+	stream := &fakeExecAttachReceiver{reqs: []*pb.ExecAttachRequest{
+		{Request: &pb.ExecAttachRequest_Stdin{Stdin: &pb.StdinChunk{Data: nil}}},
+		{Request: &pb.ExecAttachRequest_Resize{Resize: &pb.ResizeRequest{Rows: 24, Cols: 80}}},
+		{Request: &pb.ExecAttachRequest_Stdin{Stdin: &pb.StdinChunk{Data: []byte("ok")}}},
+		{Request: &pb.ExecAttachRequest_CloseStdin{CloseStdin: &pb.CloseStdinRequest{}}},
+	}}
+	dst := &recordWriteCloser{}
+	newAgentServer().receiveExecAttachControl(stream, dst, "exec-1", false)
+	if got, want := dst.String(), "ok"; got != want {
+		t.Fatalf("stdin writes = %q, want %q", got, want)
+	}
+	if !dst.closed {
+		t.Fatal("dst was not closed")
+	}
+}
+
+func TestReceiveExecAttachControlExitsOnReceiveError(t *testing.T) {
+	stream := &fakeExecAttachReceiver{}
+	dst := &recordWriteCloser{}
+	newAgentServer().receiveExecAttachControl(stream, dst, "exec-1", true)
+	if dst.String() != "" {
+		t.Fatalf("dst writes = %q, want empty", dst.String())
+	}
+	if !dst.closed {
+		t.Fatal("dst was not closed on EOF")
+	}
+}
+
 func TestSignalExecMissingExecID(t *testing.T) {
 	s := newAgentServer()
 	_, err := s.SignalExec(context.Background(), connect.NewRequest(&pb.SignalExecRequest{
