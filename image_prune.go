@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/storagepins"
 )
 
 type ImagePruneOptions struct {
@@ -37,12 +39,20 @@ func PruneImages(opts ImagePruneOptions) (ImagePruneResult, error) {
 		now = time.Now
 	}
 	cutoff := now()
+	pins, err := storagepins.Load(coveRoot())
+	if err != nil {
+		return ImagePruneResult{}, fmt.Errorf("image prune: load pins: %w", err)
+	}
 	var res ImagePruneResult
 	for _, entry := range entries {
 		if !imagePruneMatches(entry, opts, cutoff) {
 			continue
 		}
 		ref := entry.Ref
+		if pins.IsPinned("image", ref.String()) {
+			res.Skipped = append(res.Skipped, ImagePruneSkipped{Ref: ref, Reason: "pinned"})
+			continue
+		}
 		forks, err := VMsForkedFromImage(ref)
 		if err != nil {
 			res.Skipped = append(res.Skipped, ImagePruneSkipped{Ref: ref, Reason: fmt.Sprintf("fork lookup failed: %v", err)})

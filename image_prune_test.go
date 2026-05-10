@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/storagepins"
 )
 
 func TestParseImagePruneDuration(t *testing.T) {
@@ -138,4 +140,108 @@ func TestPruneImagesEmitsTelemetry(t *testing.T) {
 		return
 	}
 	t.Fatalf("image_gc_evict event not found: %#v", events)
+}
+
+func TestPruneImagesTable(t *testing.T) {
+	now := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name        string
+		opts        ImagePruneOptions
+		setup       func(t *testing.T) (removed, kept []ImageRef)
+		wantRemoved int
+		wantSkipped int
+	}{
+		{
+			name:        "no images",
+			opts:        ImagePruneOptions{Filter: "*"},
+			setup:       func(t *testing.T) ([]ImageRef, []ImageRef) { return nil, nil },
+			wantRemoved: 0,
+		},
+		{
+			name: "all images pinned",
+			opts: ImagePruneOptions{Filter: "*"},
+			setup: func(t *testing.T) ([]ImageRef, []ImageRef) {
+				a := stageUnreferencedImage(t, "src-a", "pin:a")
+				b := stageUnreferencedImage(t, "src-b", "pin:b")
+				pinImage(t, a)
+				pinImage(t, b)
+				return nil, []ImageRef{a, b}
+			},
+			wantSkipped: 2,
+		},
+		{
+			name: "mix pinned and unpinned",
+			opts: ImagePruneOptions{Filter: "*"},
+			setup: func(t *testing.T) ([]ImageRef, []ImageRef) {
+				drop := stageUnreferencedImage(t, "src-drop", "mix:drop")
+				keep := stageUnreferencedImage(t, "src-keep", "mix:keep")
+				pinImage(t, keep)
+				return []ImageRef{drop}, []ImageRef{keep}
+			},
+			wantRemoved: 1,
+			wantSkipped: 1,
+		},
+		{
+			name: "dangling tag",
+			opts: ImagePruneOptions{Filter: "tmp-*"},
+			setup: func(t *testing.T) ([]ImageRef, []ImageRef) {
+				base := stageUnreferencedImage(t, "src-base", "app:stable")
+				tmp, _ := ParseImageRef("app:tmp-1")
+				if err := TagImage(ImageTagOptions{Source: base, Target: tmp}); err != nil {
+					t.Fatalf("TagImage: %v", err)
+				}
+				return []ImageRef{tmp}, []ImageRef{base}
+			},
+			wantRemoved: 1,
+		},
+		{
+			name: "age threshold",
+			opts: ImagePruneOptions{OlderThan: 7 * 24 * time.Hour, Now: func() time.Time { return now }},
+			setup: func(t *testing.T) ([]ImageRef, []ImageRef) {
+				old := stageUnreferencedImage(t, "src-old-age", "age:old")
+				new := stageUnreferencedImage(t, "src-new-age", "age:new")
+				backdateImage(t, old, now.Add(-8*24*time.Hour))
+				backdateImage(t, new, now.Add(-time.Hour))
+				return []ImageRef{old}, []ImageRef{new}
+			},
+			wantRemoved: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gcTestSetup(t)
+			removed, kept := tt.setup(t)
+			res, err := PruneImages(tt.opts)
+			if err != nil {
+				t.Fatalf("PruneImages: %v", err)
+			}
+			if len(res.Removed) != tt.wantRemoved || len(res.Skipped) != tt.wantSkipped {
+				t.Fatalf("result = removed %v skipped %v", res.Removed, res.Skipped)
+			}
+			for _, ref := range removed {
+				if ImageExists(ref) {
+					t.Fatalf("removed image still exists: %s", ref)
+				}
+			}
+			for _, ref := range kept {
+				if !ImageExists(ref) {
+					t.Fatalf("kept image was pruned: %s", ref)
+				}
+			}
+		})
+	}
+}
+
+func pinImage(t *testing.T, ref ImageRef) {
+	t.Helper()
+	pins, err := storagepins.Load(coveRoot())
+	if err != nil {
+		t.Fatalf("Load pins: %v", err)
+	}
+	if err := pins.Add("image", ref.String(), time.Now()); err != nil {
+		t.Fatalf("Add pin: %v", err)
+	}
+	if err := storagepins.Save(coveRoot(), pins); err != nil {
+		t.Fatalf("Save pins: %v", err)
+	}
 }
