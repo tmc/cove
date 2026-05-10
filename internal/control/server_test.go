@@ -147,3 +147,39 @@ func shortUnixSocketPath(t *testing.T) string {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return filepath.Join(dir, "control.sock")
 }
+
+func TestServerCountsRejectedConnections(t *testing.T) {
+	sock := shortUnixSocketPath(t)
+	s := &Server{
+		SocketPath:  sock,
+		Handler:     &fakeHandler{token: "secret"},
+		ActiveLimit: 1,
+	}
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer s.Stop()
+	conn1, err := net.DialTimeout("unix", sock, time.Second)
+	if err != nil {
+		t.Fatalf("Dial 1: %v", err)
+	}
+	defer conn1.Close()
+	// First connection must be active before the second one races in.
+	if _, err := conn1.Write([]byte(`{"type":"ping","token":"secret"}` + "\n")); err != nil {
+		t.Fatalf("write 1: %v", err)
+	}
+	if _, err := bufio.NewReader(conn1).ReadString('\n'); err != nil {
+		t.Fatalf("read 1: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for s.Rejected() == 0 && time.Now().Before(deadline) {
+		conn2, err := net.DialTimeout("unix", sock, 200*time.Millisecond)
+		if err == nil {
+			_, _ = bufio.NewReader(conn2).ReadString('\n')
+			_ = conn2.Close()
+		}
+	}
+	if got := s.Rejected(); got == 0 {
+		t.Fatalf("Rejected = 0, want >= 1 after over-limit dial")
+	}
+}

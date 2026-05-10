@@ -49,6 +49,7 @@ type Server struct {
 	listener      net.Listener
 	running       atomic.Bool
 	active        atomic.Int32
+	rejected      atomic.Uint64
 	wg            sync.WaitGroup
 	connMu        sync.Mutex
 	conns         map[net.Conn]struct{}
@@ -122,6 +123,16 @@ func (s *Server) Stop() {
 	}
 }
 
+// Rejected returns the count of accepted connections that were dropped
+// because the active-connection limit was exceeded. The returned value
+// is monotonically increasing over the server's lifetime.
+func (s *Server) Rejected() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.rejected.Load()
+}
+
 func (s *Server) acceptLoop() {
 	for s.running.Load() {
 		conn, err := s.listener.Accept()
@@ -135,6 +146,7 @@ func (s *Server) acceptLoop() {
 		}
 		if s.active.Add(1) > s.ActiveLimit {
 			s.active.Add(-1)
+			s.rejected.Add(1)
 			_ = conn.Close()
 			continue
 		}
