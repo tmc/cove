@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -122,6 +123,18 @@ func TestCleanupDisposableClone(t *testing.T) {
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("CleanupDisposableClone() left directory behind: %v", err)
+	}
+}
+
+func TestCleanupDisposableCloneUnsafePathSentinel(t *testing.T) {
+	for _, path := range []string{"", "  ", ".", "/"} {
+		err := CleanupDisposableClone(path)
+		if err == nil {
+			t.Fatalf("CleanupDisposableClone(%q): want error", path)
+		}
+		if !errors.Is(err, ErrDisposableUnsafePath) {
+			t.Fatalf("CleanupDisposableClone(%q) err = %v, want ErrDisposableUnsafePath", path, err)
+		}
 	}
 }
 
