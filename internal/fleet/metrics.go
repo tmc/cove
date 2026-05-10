@@ -11,9 +11,10 @@ import (
 type MetricsQueryFunc func(context.Context, Entry) (string, error)
 
 type HostMetrics struct {
-	Host    string             `json:"host"`
-	Metrics map[string]float64 `json:"metrics,omitempty"`
-	Error   string             `json:"error,omitempty"`
+	Host       string             `json:"host"`
+	Metrics    map[string]float64 `json:"metrics,omitempty"`
+	Error      string             `json:"error,omitempty"`
+	DurationMS int64              `json:"duration_ms,omitempty"`
 }
 
 type FleetMetricsResult struct {
@@ -31,7 +32,11 @@ func FleetMetrics(ctx context.Context, entries []Entry, query MetricsQueryFunc) 
 	})
 	out := FleetMetricsResult{Totals: make(map[string]float64)}
 	for _, result := range results {
-		row := HostMetrics{Host: result.Host, Metrics: result.Value}
+		row := HostMetrics{
+			Host:       result.Host,
+			Metrics:    result.Value,
+			DurationMS: result.Duration.Milliseconds(),
+		}
 		if result.Error != nil {
 			row.Error = result.Error.Error()
 		} else {
