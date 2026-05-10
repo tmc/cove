@@ -64,6 +64,9 @@ func TestHandleStatus(t *testing.T) {
 	if got.EventbusDroppedTotal != 0 || got.EventbusSubscribers != 0 {
 		t.Fatalf("eventbus = (%d,%d), want zero when bus nil", got.EventbusDroppedTotal, got.EventbusSubscribers)
 	}
+	if got.ImageGCDurationMSTotal < 0 {
+		t.Fatalf("ImageGCDurationMSTotal = %d, want >= 0", got.ImageGCDurationMSTotal)
+	}
 }
 
 func TestHandleUnknownCommand(t *testing.T) {

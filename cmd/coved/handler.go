@@ -35,6 +35,7 @@ type statusResponse struct {
 	ImageGCRunsTotal        int64  `json:"image_gc_runs_total"`
 	ImageGCBytesFreedTotal  int64  `json:"image_gc_bytes_freed_total"`
 	ImageGCSkipsTotal       int64  `json:"image_gc_skips_total,omitempty"`
+	ImageGCDurationMSTotal  int64  `json:"image_gc_duration_ms_total,omitempty"`
 	ImageGCManifestsScanned int    `json:"image_gc_manifests_scanned,omitempty"`
 	ImageGCManifestsRemoved int    `json:"image_gc_manifests_removed,omitempty"`
 	LifecycleEnforced       uint64 `json:"lifecycle_enforced"`
@@ -74,9 +75,10 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		Version:       status.Version,
 		UptimeS:       status.UptimeS,
 		VMsManaged:    status.VMsManaged,
-		ImageGCRuns:   status.ImageGCRunsTotal,
-		ImageGCBytes:  status.ImageGCBytesFreedTotal,
+		ImageGCRuns:        status.ImageGCRunsTotal,
+		ImageGCBytes:       status.ImageGCBytesFreedTotal,
 		ImageGCSkips:       imageGCSkips(d),
+		ImageGCDurationMS:  status.ImageGCDurationMSTotal,
 		ImageGCLastRunUnix: imageGCLastRunUnix,
 		LifecycleRuns:        status.LifecycleEnforced,
 		LifecycleErrors:      status.LifecycleStopErrors,
@@ -141,6 +143,7 @@ func (d *daemon) status() statusResponse {
 		resp.ImageGCRunsTotal = runs
 		resp.ImageGCBytesFreedTotal = bytesFreed
 		resp.ImageGCSkipsTotal = d.imageGC.Skips()
+		resp.ImageGCDurationMSTotal = d.imageGC.DurationTotalMS()
 		resp.ImageGCManifestsScanned = stats.ManifestsScanned
 		resp.ImageGCManifestsRemoved = stats.ManifestsRemoved
 		if !last.IsZero() {
