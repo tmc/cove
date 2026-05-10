@@ -24,9 +24,10 @@ type Store struct {
 }
 
 type GCResult struct {
-	Deleted   int
-	Reclaimed int64
-	KeptYoung int
+	Deleted        int
+	Reclaimed      int64
+	KeptYoung      int
+	KeptReachable  int
 }
 
 func DefaultDir() string {
@@ -209,6 +210,7 @@ func (s Store) GC(reachable map[string]bool, grace time.Duration) (GCResult, err
 		}
 		digest := "sha256:" + filepath.Base(path)
 		if reachable[digest] {
+			result.KeptReachable++
 			return nil
 		}
 		info, err := d.Info()
