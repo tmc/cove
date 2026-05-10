@@ -222,3 +222,20 @@ func TestOTLPSinkErrorIncludesEventType(t *testing.T) {
 		t.Fatalf("err = %v, want event_type label on transport error", err)
 	}
 }
+
+func TestJSONLSinkWrittenCountsAppends(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metrics.jsonl")
+	sink, err := NewJSONLSink(path)
+	if err != nil {
+		t.Fatalf("NewJSONLSink: %v", err)
+	}
+	defer sink.Close()
+	for i := 0; i < 3; i++ {
+		if err := sink.Emit(context.Background(), Event{EventType: "x"}); err != nil {
+			t.Fatalf("Emit: %v", err)
+		}
+	}
+	if got := sink.Written(); got != 3 {
+		t.Fatalf("Written = %d, want 3", got)
+	}
+}

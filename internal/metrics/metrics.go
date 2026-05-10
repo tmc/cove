@@ -99,8 +99,17 @@ func (j *JSONL) Close() error { return nil }
 
 // JSONLSink appends JSONL events to a file.
 type JSONLSink struct {
-	mu sync.Mutex
-	f  *os.File
+	mu      sync.Mutex
+	f       *os.File
+	written atomic.Uint64
+}
+
+// Written returns the count of events successfully appended.
+func (j *JSONLSink) Written() uint64 {
+	if j == nil {
+		return 0
+	}
+	return j.written.Load()
 }
 
 // NewJSONLSink opens path for append, creating parent directories.
@@ -128,7 +137,11 @@ func (j *JSONLSink) Emit(ctx context.Context, e Event) error {
 	if j.f == nil {
 		return fmt.Errorf("metrics jsonl: sink closed")
 	}
-	return NewJSONL(j.f).Emit(ctx, e)
+	if err := NewJSONL(j.f).Emit(ctx, e); err != nil {
+		return err
+	}
+	j.written.Add(1)
+	return nil
 }
 
 // Close closes the sink file.
