@@ -125,7 +125,7 @@ channel.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| VM identity preservation for forked vmstate bundles | done | fork/restore | [013](013-vm-fork.md) | Preserves identity files across vmstate forks so forked agents keep stable guest identity. Shipped at `67c9abc` and `7e4ed99`; status note at `4f8035c`. |
+| VM identity preservation for forked vmstate bundles | done | fork/restore | [013](013-vm-fork.md) | Preserves identity files across vmstate forks so forked agents keep stable guest identity. Design 013 Phase 5 Slice 5a shipped at `67c9abc` (vmidentity bundle) and `7e4ed99`/`4bd435d` (fork preserve identity); status note at `4f8035c`. |
 | Anthropic computer-use adapter v2 | done | agent-sandbox CLI | [022](archive/022-v04-anthropic-adapter.md) | Adds a Go-side Anthropic Messages computer-use loop and wires it into `cove agent-sandbox run`. Shipped at `55a2463`, `33e5b30`, and `775537f`. |
 | OpenAI Agents SDK `SandboxRunConfig` helper | done | OpenAI adapter v1 | [035](035-openai-sandbox-run-config.md) | Adds a local Python `cove-sandbox` helper for `Runner.run()` workflows. Shipped at `36552c2`, `4d61edd`, and `27f9e24`. |
 | GitHub Actions private executor surface | done | local image store + run metrics | [021](archive/021-v04-ci-executors-tracks.md), [030](030-gha-executor-slice-2.md) | Ships the private GHA wrapper, action metrics, preflight commands, and cache-image reuse. Representative commits: `0985377`, `19804c7`, `8bd473e`, `82a0ac5`, `7fafe40`, `9e6253a`. |
@@ -246,6 +246,7 @@ see [017](archive/017-v03-execution-roadmap.md) for files, gates, and docs updat
 
 ## Recent changes
 
+- **2026-05-10** (R412): VM identity preservation row SHA chain expanded. Row was missing `4bd435d` (fork preserve identity follow-up); design 013 Phase 5 Slice 5a header lists both `7e4ed99` and `4bd435d` as the canonical pair. Reframed to call out design 013 phase + slice and added the missing SHA.
 - **2026-05-10** (R410): NixOS guest distro row SHA chain expanded. Row previously cited `1ddd3b9, 8324750, 2427b2e, f1e6812` (one of which was the design doc commit). Aligned with design 036's full implementation chain: `8324750` (installer), `2427b2e` (vzscript), `f1e6812` (quickstart), `07835a9` (cli.md table).
 - **2026-05-10** (R407): Linux Desktop autoprovisioning row SHA chain expanded. Row previously cited `e93a3e0, 449cbfa, 0cbc455, 4f71eb3` (one of which was the design doc commit). Aligned with design 037's full implementation chain: `f718d69, c624d3f, aebcf13, c3f7ead, 449cbfa, 0cbc455, 4f71eb3`.
 - **2026-05-10** (R406): Refreshed the 2026-05-02 changelog entry that still claimed "Slice 2 of 023 ... is the only remaining v0.2.1 implementation"; both Slice 2 (`33fbe7e`/`c38025f`) and Slice 3 (`4d9043a`/`8e550d4`/`5d5876f`) had shipped.
