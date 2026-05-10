@@ -24,6 +24,7 @@ type Summary struct {
 	ExitCode        *int      `json:"exit_code,omitempty"`
 	StartedAt       time.Time `json:"started_at"`
 	EventCount      int       `json:"event_count,omitempty"`
+	FailedEvents    int       `json:"failed_events,omitempty"`
 }
 
 // Filter limits List results. Status is "ok", "fail", or "all".
@@ -85,10 +86,11 @@ func readRun(dir, fallbackID string) (Summary, bool, error) {
 	defer f.Close()
 
 	var (
-		started  time.Time
-		complete metrics.Event
-		found    bool
-		count    int
+		started      time.Time
+		complete     metrics.Event
+		found        bool
+		count        int
+		failedEvents int
 	)
 	scan := bufio.NewScanner(f)
 	for scan.Scan() {
@@ -97,6 +99,9 @@ func readRun(dir, fallbackID string) (Summary, bool, error) {
 			return Summary{}, false, fmt.Errorf("runs list: parse metrics: %w", err)
 		}
 		count++
+		if event.Status != "" && event.Status != "ok" {
+			failedEvents++
+		}
 		if started.IsZero() {
 			started = parseTime(event.Timestamp)
 		}
@@ -124,6 +129,7 @@ func readRun(dir, fallbackID string) (Summary, bool, error) {
 		ExitCode:        exitCode(complete.Extra),
 		StartedAt:       started,
 		EventCount:      count,
+		FailedEvents:    failedEvents,
 	}, true, nil
 }
 

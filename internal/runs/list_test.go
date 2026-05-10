@@ -171,3 +171,27 @@ func mustTime(t *testing.T, s string) time.Time {
 	}
 	return got
 }
+
+func TestListFailedEvents(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "20260510-fe", []metrics.Event{
+		event("vm_start", "ok", 10, nil),
+		event("agent_step", "fail", 5, nil),
+		event("build_step", "error", 50, nil),
+		event(runCompleteEvent, "ok", 100, map[string]any{"exit_code": 0}),
+	}, nil)
+
+	got, err := List(root, Filter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	if got[0].FailedEvents != 2 {
+		t.Fatalf("FailedEvents = %d, want 2", got[0].FailedEvents)
+	}
+	if got[0].EventCount != 4 {
+		t.Fatalf("EventCount = %d, want 4", got[0].EventCount)
+	}
+}
