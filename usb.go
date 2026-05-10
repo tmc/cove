@@ -47,7 +47,7 @@ func ParseUSBStorageFlag(s string) (USBStorageConfig, error) {
 
 	// Verify file exists
 	if _, err := os.Stat(path); err != nil {
-		return config, fmt.Errorf("usb storage file not found: %s", path)
+		return config, fmt.Errorf("usb storage file %s: %w", path, err)
 	}
 
 	config.Path = path
