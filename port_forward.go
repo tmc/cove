@@ -61,12 +61,18 @@ func parsePortForwardSpec(value string) (portForwardSpec, error) {
 		return portForwardSpec{}, fmt.Errorf("expected hostPort:guestVsockPort, got %q", value)
 	}
 	hostPort, err := strconv.ParseUint(parts[0], 10, 16)
-	if err != nil || hostPort == 0 {
-		return portForwardSpec{}, fmt.Errorf("invalid host port %q", parts[0])
+	if err != nil {
+		return portForwardSpec{}, fmt.Errorf("invalid host port %q: %w", parts[0], err)
+	}
+	if hostPort == 0 {
+		return portForwardSpec{}, fmt.Errorf("invalid host port %q: must be > 0", parts[0])
 	}
 	guestPort, err := strconv.ParseUint(parts[1], 10, 32)
-	if err != nil || guestPort == 0 {
-		return portForwardSpec{}, fmt.Errorf("invalid guest vsock port %q", parts[1])
+	if err != nil {
+		return portForwardSpec{}, fmt.Errorf("invalid guest vsock port %q: %w", parts[1], err)
+	}
+	if guestPort == 0 {
+		return portForwardSpec{}, fmt.Errorf("invalid guest vsock port %q: must be > 0", parts[1])
 	}
 	return portForwardSpec{HostPort: int(hostPort), GuestPort: uint32(guestPort)}, nil
 }
