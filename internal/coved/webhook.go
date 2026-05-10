@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,6 +14,23 @@ type WebhookSubscriber struct {
 	URL    string
 	Events map[string]bool
 	Client *http.Client
+
+	delivered atomic.Uint64
+	failed    atomic.Uint64
+}
+
+func (w *WebhookSubscriber) Delivered() uint64 {
+	if w == nil {
+		return 0
+	}
+	return w.delivered.Load()
+}
+
+func (w *WebhookSubscriber) Failed() uint64 {
+	if w == nil {
+		return 0
+	}
+	return w.failed.Load()
 }
 
 func NewWebhookSubscriber(cfg WebhookConfig) *WebhookSubscriber {
@@ -63,10 +81,12 @@ func (w *WebhookSubscriber) deliver(ctx context.Context, event Event) {
 		}
 		err := w.post(ctx, event)
 		if err == nil {
+			w.delivered.Add(1)
 			return
 		}
 		time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
 	}
+	w.failed.Add(1)
 }
 
 func (w *WebhookSubscriber) post(ctx context.Context, event Event) error {
