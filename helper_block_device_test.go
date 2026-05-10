@@ -36,6 +36,17 @@ func TestValidateBlockDevicePathRejectsUnsafePaths(t *testing.T) {
 	}
 }
 
+func TestValidateBlockDeviceNodeMissingPath(t *testing.T) {
+	missing := "/nonexistent/r317/disk-node"
+	err := validateBlockDeviceNode(missing)
+	if err == nil {
+		t.Fatal("validateBlockDeviceNode(missing) = nil, want stat error")
+	}
+	if !strings.Contains(err.Error(), "stat block device") {
+		t.Fatalf("err = %v, want 'stat block device' wrap", err)
+	}
+}
+
 func TestValidateBlockDeviceNodeRejectsRegularFile(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "disk")
 	if err != nil {
