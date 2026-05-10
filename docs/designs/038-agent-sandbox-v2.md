@@ -73,3 +73,15 @@ Checked-in evidence distinguishes protocol dry-runs from live provider runs:
 - Cookbook: `docs/agent-sandbox/cookbook.md`
 - Quickstart: `docs/agent-sandbox/quickstart.md`
 - Benchmarks: `bench/agent-sandbox-providers/`
+
+## Verified 2026-05-10
+
+- `cove agent-sandbox` subcommand registered in `main.go:682`; `doctor`
+  subcommand at `agent_sandbox.go:50` accepts `--provider all|openai|anthropic|gemini|vertex` (`agent_sandbox.go:70`).
+- Provider abstraction lives in `internal/agentsandbox/provider.go`.
+- Env-var contract enforced: `GEMINI_API_KEY`, `COVE_VERTEX_PROJECT`
+  exercised in `agent_sandbox_test.go:79-103`. `OPENAI_API_KEY` and
+  `ANTHROPIC_API_KEY` referenced in doctor reachability host map
+  (`agent_sandbox.go:165-167`).
+- Fork-isolation invariant intact: `agent_sandbox.go` composes on top of
+  `cove run -fork-from <ref>` (design 013 Phase 3 + design 024 Slice 1).
