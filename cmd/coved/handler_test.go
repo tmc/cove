@@ -49,6 +49,9 @@ func TestHandleStatus(t *testing.T) {
 	if got.ImageGCRunsTotal != 1 || got.ImageGCLastRunTS == "" {
 		t.Fatalf("image gc status = %+v", got)
 	}
+	if got.ImageGCSkipsTotal != 0 {
+		t.Fatalf("ImageGCSkipsTotal = %d, want 0 (no contention)", got.ImageGCSkipsTotal)
+	}
 }
 
 func TestHandleUnknownCommand(t *testing.T) {
