@@ -522,15 +522,6 @@ type UserAgentClient struct {
 	closeOnce sync.Once
 }
 
-// NewUserAgentClient creates a client connected to the user agent on port 1025.
-func NewUserAgentClient(netConn net.Conn) (*UserAgentClient, error) {
-	dial, closeFn, err := newOneShotConnDialer(netConn)
-	if err != nil {
-		return nil, err
-	}
-	return NewUserAgentClientWithDial(dial, closeFn)
-}
-
 // NewUserAgentClientWithDial creates a user-agent client that dials a fresh connection as needed.
 func NewUserAgentClientWithDial(dial func(context.Context) (net.Conn, error), closeFns ...func()) (*UserAgentClient, error) {
 	if dial == nil {
