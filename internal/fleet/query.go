@@ -10,10 +10,11 @@ const DefaultQueryTimeout = 10 * time.Second
 type QueryFunc[T any] func(context.Context, Entry) (T, error)
 
 type FleetResult[T any] struct {
-	Host   string
-	Remote Remote
-	Value  T
-	Error  error
+	Host     string
+	Remote   Remote
+	Value    T
+	Error    error
+	Duration time.Duration
 }
 
 func QueryAll[T any](ctx context.Context, entries []Entry, fn QueryFunc[T]) []FleetResult[T] {
@@ -33,7 +34,9 @@ func QueryAllWithTimeout[T any](ctx context.Context, entries []Entry, timeout ti
 		go func() {
 			qctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
+			start := time.Now()
 			value, err := fn(qctx, entry)
+			results[i].Duration = time.Since(start)
 			results[i].Value = value
 			results[i].Error = err
 			done <- i
