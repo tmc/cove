@@ -17,6 +17,18 @@ type WebhookSubscriber struct {
 
 	delivered atomic.Uint64
 	failed    atomic.Uint64
+	rejected  atomic.Uint64
+}
+
+// Rejected returns the count of post() calls that completed with a
+// non-2xx HTTP status. The current retry logic treats those as success
+// (no retry, delivered++); rejected gives operators a separate signal
+// so a misconfigured endpoint is visible without changing semantics.
+func (w *WebhookSubscriber) Rejected() uint64 {
+	if w == nil {
+		return 0
+	}
+	return w.rejected.Load()
 }
 
 func (w *WebhookSubscriber) Delivered() uint64 {
@@ -108,11 +120,8 @@ func (w *WebhookSubscriber) post(ctx context.Context, event Event) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 500 {
-		return nil
-	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil
+		w.rejected.Add(1)
 	}
 	return nil
 }

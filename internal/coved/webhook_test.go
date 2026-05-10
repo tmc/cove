@@ -97,3 +97,21 @@ func waitSubscribers(t *testing.T, bus *EventBus) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+func TestWebhookSubscriberRejectedCountsNon2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	w := NewWebhookSubscriber(WebhookConfig{URL: srv.URL})
+	w.deliver(context.Background(), Event{EventType: "x"})
+
+	// Existing semantics: 5xx counts as delivered (no error returned).
+	if w.Delivered() != 1 {
+		t.Fatalf("Delivered = %d, want 1", w.Delivered())
+	}
+	if w.Rejected() != 1 {
+		t.Fatalf("Rejected = %d, want 1", w.Rejected())
+	}
+}
