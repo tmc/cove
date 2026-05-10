@@ -55,6 +55,9 @@ func TestHandleStatus(t *testing.T) {
 	if got.StoragePollRunsTotal != 0 || got.StoragePollErrorsTotal != 0 {
 		t.Fatalf("storage poll = (%d,%d), want zero when scheduler nil", got.StoragePollRunsTotal, got.StoragePollErrorsTotal)
 	}
+	if got.StorageUsedBytes != 0 {
+		t.Fatalf("StorageUsedBytes = %d, want 0 when scheduler nil", got.StorageUsedBytes)
+	}
 }
 
 func TestHandleUnknownCommand(t *testing.T) {

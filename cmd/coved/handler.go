@@ -42,6 +42,7 @@ type statusResponse struct {
 	LifecycleLastRunTS      string `json:"lifecycle_last_run_ts,omitempty"`
 	StoragePollRunsTotal    int64  `json:"storage_poll_runs_total,omitempty"`
 	StoragePollErrorsTotal  int64  `json:"storage_poll_errors_total,omitempty"`
+	StorageUsedBytes        int64  `json:"storage_used_bytes,omitempty"`
 }
 
 func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
@@ -137,9 +138,10 @@ func (d *daemon) status() statusResponse {
 		}
 	}
 	if d.storage != nil {
-		_, _, _, runs := d.storage.Stats()
+		used, _, _, runs := d.storage.Stats()
 		resp.StoragePollRunsTotal = runs
 		resp.StoragePollErrorsTotal = d.storage.Errors()
+		resp.StorageUsedBytes = used
 	}
 	return resp
 }
