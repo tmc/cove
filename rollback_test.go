@@ -3,11 +3,37 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
+
+func TestSetupRollbackSnapshotCloneEarlyRejects(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	t.Run("empty source", func(t *testing.T) {
+		_, err := SetupRollbackSnapshotClone(RollbackSnapshotCloneOptions{Snapshot: "ok"})
+		if err == nil || !strings.Contains(err.Error(), "source vm is required") {
+			t.Fatalf("err = %v, want 'source vm is required'", err)
+		}
+	})
+
+	t.Run("invalid snapshot name", func(t *testing.T) {
+		_, err := SetupRollbackSnapshotClone(RollbackSnapshotCloneOptions{Source: "src", Snapshot: "../escape"})
+		if err == nil {
+			t.Fatal("invalid snapshot name = nil, want validation error")
+		}
+	})
+
+	t.Run("source vm not found", func(t *testing.T) {
+		_, err := SetupRollbackSnapshotClone(RollbackSnapshotCloneOptions{Source: "ghost-vm-r310", Snapshot: "checkpoint"})
+		if err == nil || !strings.Contains(err.Error(), "source vm not found") {
+			t.Fatalf("err = %v, want 'source vm not found'", err)
+		}
+	})
+}
 
 func TestSetupRollbackSnapshotCloneUsesInjectedClone(t *testing.T) {
 	home := t.TempDir()
