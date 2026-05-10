@@ -9,13 +9,14 @@ import (
 )
 
 type PrometheusSnapshot struct {
-	Version       string
-	UptimeS       int64
-	VMsManaged    int
-	ImageGCRuns   int64
-	ImageGCBytes  int64
-	LifecycleRuns uint64
-	Events        []Event
+	Version           string
+	UptimeS           int64
+	VMsManaged        int
+	ImageGCRuns       int64
+	ImageGCBytes      int64
+	ImageGCDurationMS int64
+	LifecycleRuns     uint64
+	Events            []Event
 }
 
 func PrometheusHandler(snapshot func() PrometheusSnapshot) http.Handler {
@@ -38,6 +39,7 @@ func WritePrometheus(w io.Writer, s PrometheusSnapshot) {
 	fmt.Fprintf(w, "coved_lifecycle_enforced_total %d\n", s.LifecycleRuns)
 	fmt.Fprintf(w, "coved_image_gc_runs_total %d\n", s.ImageGCRuns)
 	fmt.Fprintf(w, "coved_image_gc_bytes_freed_total %d\n", s.ImageGCBytes)
+	fmt.Fprintf(w, "coved_image_gc_duration_ms_total %d\n", s.ImageGCDurationMS)
 	counts := eventCounts(s.Events)
 	for _, key := range sortedKeys(counts) {
 		labels := strings.Split(key, "\x00")

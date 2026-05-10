@@ -37,11 +37,18 @@ type ImageGCScheduler struct {
 	Now         func() time.Time
 	Bus         *EventBus
 
-	mu    sync.Mutex
-	stats ImageGCStats
-	last  time.Time
-	runs  int64
-	bytes int64
+	mu       sync.Mutex
+	stats    ImageGCStats
+	last     time.Time
+	runs     int64
+	bytes    int64
+	duration int64
+}
+
+func (s *ImageGCScheduler) DurationTotalMS() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.duration
 }
 
 func NewImageGCScheduler(home string, logger *slog.Logger) *ImageGCScheduler {
@@ -220,6 +227,7 @@ func (s *ImageGCScheduler) record(stats ImageGCStats) {
 	s.last = s.now()
 	s.runs++
 	s.bytes += stats.BytesFreed
+	s.duration += stats.DurationMS
 }
 
 func (s *ImageGCScheduler) acquireLock() (func(), error) {
