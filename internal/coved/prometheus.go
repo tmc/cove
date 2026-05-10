@@ -25,6 +25,7 @@ type PrometheusSnapshot struct {
 	StoragePollRuns   int64
 	StoragePollErrors int64
 	StorageUsedBytes  int64
+	EventbusSubs      int
 	Events            []Event
 }
 
@@ -58,6 +59,7 @@ func WritePrometheus(w io.Writer, s PrometheusSnapshot) {
 	fmt.Fprintf(w, "coved_storage_poll_runs_total %d\n", s.StoragePollRuns)
 	fmt.Fprintf(w, "coved_storage_poll_errors_total %d\n", s.StoragePollErrors)
 	fmt.Fprintf(w, "coved_storage_used_bytes %d\n", s.StorageUsedBytes)
+	fmt.Fprintf(w, "coved_eventbus_subscribers %d\n", s.EventbusSubs)
 	counts := eventCounts(s.Events)
 	for _, key := range sortedKeys(counts) {
 		labels := strings.Split(key, "\x00")

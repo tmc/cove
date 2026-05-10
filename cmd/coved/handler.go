@@ -69,6 +69,7 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		StoragePollRuns:   storageRuns,
 		StoragePollErrors: storageErrors,
 		StorageUsedBytes:  storageUsed,
+		EventbusSubs:      d.events.Subscribers(),
 		Events:            d.events.Tail(),
 	}
 }

@@ -116,3 +116,31 @@ func TestPrometheusEmitsStorageUsedBytes(t *testing.T) {
 		t.Fatalf("metrics missing coved_storage_used_bytes:\n%s", rec.Body.String())
 	}
 }
+
+func TestPrometheusEmitsEventbusSubscribers(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{EventbusSubs: 3}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), "coved_eventbus_subscribers 3") {
+		t.Fatalf("metrics missing coved_eventbus_subscribers:\n%s", rec.Body.String())
+	}
+}
+
+func TestEventBusSubscribersTracksAttachDetach(t *testing.T) {
+	bus := NewEventBus(8)
+	if got := bus.Subscribers(); got != 0 {
+		t.Fatalf("Subscribers initial = %d, want 0", got)
+	}
+	_, cancel1 := bus.Subscribe(4)
+	_, cancel2 := bus.Subscribe(4)
+	if got := bus.Subscribers(); got != 2 {
+		t.Fatalf("Subscribers after attach = %d, want 2", got)
+	}
+	cancel1()
+	cancel2()
+	if got := bus.Subscribers(); got != 0 {
+		t.Fatalf("Subscribers after detach = %d, want 0", got)
+	}
+}
