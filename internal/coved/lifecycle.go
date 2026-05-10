@@ -30,12 +30,14 @@ type LifecycleConfig struct {
 
 type LifecycleStats struct {
 	Enforced    uint64
+	StopErrors  uint64
 	LastRunUnix int64
 }
 
 type LifecycleEnforcer struct {
 	cfg         LifecycleConfig
 	enforced    atomic.Uint64
+	stopErrors  atomic.Uint64
 	lastRunUnix atomic.Int64
 }
 
@@ -70,6 +72,7 @@ func (e *LifecycleEnforcer) Run(ctx context.Context) {
 func (e *LifecycleEnforcer) Stats() LifecycleStats {
 	return LifecycleStats{
 		Enforced:    e.enforced.Load(),
+		StopErrors:  e.stopErrors.Load(),
 		LastRunUnix: e.lastRunUnix.Load(),
 	}
 }
@@ -125,6 +128,7 @@ func (e *LifecycleEnforcer) enforceVM(ctx context.Context, name, vmDir string, n
 		return nil
 	}
 	if err := client.requestStop(ctx); err != nil {
+		e.stopErrors.Add(1)
 		return fmt.Errorf("request stop: %w", err)
 	}
 	e.enforced.Add(1)
