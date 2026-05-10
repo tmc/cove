@@ -40,6 +40,8 @@ type statusResponse struct {
 	LifecycleEnforced       uint64 `json:"lifecycle_enforced"`
 	LifecycleStopErrors     uint64 `json:"lifecycle_stop_errors,omitempty"`
 	LifecycleLastRunTS      string `json:"lifecycle_last_run_ts,omitempty"`
+	StoragePollRunsTotal    int64  `json:"storage_poll_runs_total,omitempty"`
+	StoragePollErrorsTotal  int64  `json:"storage_poll_errors_total,omitempty"`
 }
 
 func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
@@ -132,6 +134,11 @@ func (d *daemon) status() statusResponse {
 		if stats.LastRunUnix != 0 {
 			resp.LifecycleLastRunTS = time.Unix(stats.LastRunUnix, 0).UTC().Format(time.RFC3339)
 		}
+	}
+	if d.storage != nil {
+		_, _, _, runs := d.storage.Stats()
+		resp.StoragePollRunsTotal = runs
+		resp.StoragePollErrorsTotal = d.storage.Errors()
 	}
 	return resp
 }
