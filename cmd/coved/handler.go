@@ -43,6 +43,9 @@ type statusResponse struct {
 	StoragePollRunsTotal    int64  `json:"storage_poll_runs_total,omitempty"`
 	StoragePollErrorsTotal  int64  `json:"storage_poll_errors_total,omitempty"`
 	StorageUsedBytes        int64  `json:"storage_used_bytes,omitempty"`
+	WebhookDeliveredTotal   uint64 `json:"webhook_delivered_total,omitempty"`
+	WebhookFailedTotal      uint64 `json:"webhook_failed_total,omitempty"`
+	WebhookRejectedTotal    uint64 `json:"webhook_rejected_total,omitempty"`
 }
 
 func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
@@ -142,6 +145,11 @@ func (d *daemon) status() statusResponse {
 		resp.StoragePollRunsTotal = runs
 		resp.StoragePollErrorsTotal = d.storage.Errors()
 		resp.StorageUsedBytes = used
+	}
+	if d.webhook != nil {
+		resp.WebhookDeliveredTotal = d.webhook.Delivered()
+		resp.WebhookFailedTotal = d.webhook.Failed()
+		resp.WebhookRejectedTotal = d.webhook.Rejected()
 	}
 	return resp
 }
