@@ -36,6 +36,7 @@ type statusResponse struct {
 	ImageGCManifestsScanned int    `json:"image_gc_manifests_scanned,omitempty"`
 	ImageGCManifestsRemoved int    `json:"image_gc_manifests_removed,omitempty"`
 	LifecycleEnforced       uint64 `json:"lifecycle_enforced"`
+	LifecycleStopErrors     uint64 `json:"lifecycle_stop_errors,omitempty"`
 	LifecycleLastRunTS      string `json:"lifecycle_last_run_ts,omitempty"`
 }
 
@@ -47,8 +48,9 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		VMsManaged:    status.VMsManaged,
 		ImageGCRuns:   status.ImageGCRunsTotal,
 		ImageGCBytes:  status.ImageGCBytesFreedTotal,
-		LifecycleRuns: status.LifecycleEnforced,
-		Events:        d.events.Tail(),
+		LifecycleRuns:   status.LifecycleEnforced,
+		LifecycleErrors: status.LifecycleStopErrors,
+		Events:          d.events.Tail(),
 	}
 }
 
@@ -108,6 +110,7 @@ func (d *daemon) status() statusResponse {
 	if d.lifecycle != nil {
 		stats := d.lifecycle.Stats()
 		resp.LifecycleEnforced = stats.Enforced
+		resp.LifecycleStopErrors = stats.StopErrors
 		if stats.LastRunUnix != 0 {
 			resp.LifecycleLastRunTS = time.Unix(stats.LastRunUnix, 0).UTC().Format(time.RFC3339)
 		}
