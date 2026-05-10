@@ -13,6 +13,14 @@ cove's *currently shipped* surface against the documented Cirrus surface a
 typical `.cirrus.yml` user depends on. Strategic positioning lives in
 [competitive-2026-05.md](competitive-2026-05.md); this is operator-facing.
 
+**T-22 days (2026-05-10).** The pure-engineering Cirrus secrets blocker is
+closed: `cove shell --secret-env` plus run-log redaction shipped at `29ff983`
+and `13ce8c0`, and the private cove-action `secrets:` input now forwards to
+that path at `ab7f159`. The remaining blockers are either deferred product /
+privacy gates (public Marketplace action, public image catalog, public
+signing/provenance channel) or operational polish with workable substitutes
+(guest artifact copy-out, GitHub annotations, cache server semantics).
+
 ## Method
 
 Surface inventory via `git log` + `grep` against `origin/main` at this
@@ -43,10 +51,10 @@ this doc is the readiness gap report behind it.
 | Cirrus surface | cove today | What's missing | Effort |
 |---|---|---|---|
 | Whole-VM cache (`cache-key` / `fingerprint_script`) | `cove-action` accepts `cache-key` + `cache-paths`; local cache image restore/save | No content-addressed fingerprint; key must be host-computed (e.g. `hashFiles()`) | S |
-| Artifacts upload | `~/.vz/runs/<run-id>/` exists; `cove runs export <id> --format gha-summary|json|tar` | No first-class **guest → host** artifact copy-out; user must `cove ctl cp` or include in script | M |
+| Artifacts upload | `~/.vz/runs/<run-id>/` exists; `cove runs show/export` reports and packages run artifacts, including total artifact bytes (`c93136c`, `c9b2392`) | No first-class **guest → host** artifact copy-out; user must `cove ctl cp` or include in script | M |
 | Matrix tasks | GitHub Actions `strategy.matrix` selects per-row image | No native cove matrix expander; relies entirely on the scheduler | S (docs only) |
 | Cron / scheduled tasks | GitHub Actions `schedule` triggers the workflow | cove has no built-in cron; `coved` daemon (`394b812` `42714c0`) schedules image GC, not user tasks | S (docs only) |
-| Network audit | per-mode policy + `cove network logs tail` | No `cove network audit <run-id>` command; pcap available on `filehandle` mode only | M |
+| Network audit | per-mode policy + `cove network audit <run-id>` (`7ec82c1`) and `cove network logs <vm> -f` (`6e6fa18`) | Packet capture remains available only on `filehandle` mode | M |
 | Background webhook / event triggers | `coved` webhook event subscriber (`33bcf38`) | Not wired to "run image X on push"; operator must script it | M |
 
 ## Missing or workaround
@@ -55,7 +63,7 @@ this doc is the readiness gap report behind it.
 |---|---|---|
 | **GitHub Actions annotations** (`::error`, `::warning`, file/line) emitted from inside the guest | Print plain text; GHA renders as logs only | **M** |
 | **Public Marketplace action** (`uses: cirrus-actions/...` analogue) | Private composite action at `.github/actions/cove-action`; copy/paste per repo | **L** — gated by privacy gate (cove repo private) |
-| **Cirrus secrets** (`ENCRYPTED[…]` URI) → guest env | `cove-action` `secrets:` input is **reserved and rejected** (`action.yml:48-49,95-99`); operator pipes plain `env:` | **D — Slice 1 shipped 2026-05-08** at `847a4e2` + `fcec084`: `cove shell --secret-env NAME=env://VAR\|file:///path` plus run-log redactor. cove-action `secrets:` input plumbing is Slice 2. See [`cirrus-secrets-fix-2026-05-08.md`](cirrus-secrets-fix-2026-05-08.md). |
+| **Cirrus secrets** (`ENCRYPTED[…]` URI) → guest env | `cove shell --secret-env NAME=env://VAR\|file:///path` plus redaction; cove-action `secrets:` input forwards to the same path | **D — shipped 2026-05-08** at `29ff983`, `13ce8c0`, and `ab7f159`. See [`cirrus-secrets-fix-2026-05-08.md`](cirrus-secrets-fix-2026-05-08.md). |
 | **Hosted queue** (Cirrus picks a Mac for you) | Operator owns the runner host (or fleet); GitHub `runs-on` labels do scheduling | **L** — by design, cove is operator-owned. Not a blocker; a scope decision. |
 | **Multi-OS hosted CI** (Linux x86_64 / Windows runners under same `.cirrus.yml`) | cove is Apple Silicon only | **L** — out of scope per `docs/strategy/non-goals.md` |
 | **Public macOS/Linux image catalog** (Tart-style GHCR images) | Operator builds locally with `cove up` + `cove image build` | **L** — gated by privacy gate; design 024 Slice 3 deferred |
@@ -64,14 +72,13 @@ this doc is the readiness gap report behind it.
 | **Auto-cancel on push** | GitHub `concurrency: cancel-in-progress: true` | **S** (docs only) |
 | **Cosign-signed images / SLSA provenance** | Local provenance fields in image manifest (`26380b8`); no public signature channel | **L** — defers with public registry decision |
 
-### Missing(L) blocker count: **4**
+### Missing(L) blocker count: **3**
 
 1. Public Marketplace action (privacy gate)
-2. Hosted queue (out-of-scope by design — listed for completeness only)
-3. Public image catalog (privacy gate)
-4. Cosign-signed images / SLSA provenance public channel
+2. Public image catalog (privacy gate)
+3. Cosign-signed images / SLSA provenance public channel (public-channel decision)
 
-Items 2 and 4 are scope/posture decisions, not engineering work. Items 1 and 3 are real shipping cost but both gated by the privacy gate. Cirrus-style secrets → guest env was previously listed as the only purely engineering-bound L blocker; on closer inventory it is sized **M** (proto wire already plumbed; host-side flag + redactor only). See [`cirrus-secrets-fix-2026-05-08.md`](cirrus-secrets-fix-2026-05-08.md). GitHub Actions annotations from-guest is also **M**, included above as a UX polish item.
+Hosted queue and multi-OS hosted CI remain out of scope by design, not blockers. Items 1 and 2 are real shipping cost but both gated by the privacy gate; item 3 is coupled to the public registry/signing decision. Cirrus-style secrets → guest env has shipped; GitHub Actions annotations from-guest and guest artifact copy-out remain **M** UX polish with documented workarounds.
 
 ## Recommended migration steps
 
@@ -83,7 +90,7 @@ For each `.cirrus.yml` task class, in this order:
 4. **Gate freshness.** `cove image verify --strict --newer-than 168h <ref>` and `cove action prepare-image <ref> --ttl 24h` in workflow preflight.
 5. **Translate `task:` → workflow step.** Use the private `./.github/actions/cove-action` composite (`docs/migrations/from-cirrus.md:20-31`).
 6. **Translate caches.** Move `fingerprint_script` to GitHub `hashFiles()`; pass via `cache-key:`. Sensitive caches stay on the trusted host.
-7. **Translate secrets.** Slice 1 does **not** support guest-bound secrets — keep secrets out of the guest environment until the secret slice ships, or pipe via plain `env:` for non-sensitive smoke values only. Cirrus `ENCRYPTED[…]` URIs cannot be lifted.
+7. **Translate secrets.** Decrypt Cirrus `ENCRYPTED[…]` values on the trusted host, then pass them via `cove-action` `secrets:` entries such as `TOKEN=env://TOKEN`; cove forwards them through `cove shell --secret-env` and redacts matching run-log bytes.
 8. **A/B run.** Same commit, both workflows, compare exit code + test summary + `metrics.jsonl` for one soak period.
 9. **Capture artifacts.** Until guest copy-out lands, end each script with explicit `cove ctl cp` or upload `~/.vz/runs/<run-id>/` as a workflow artifact.
 10. **Cut over and keep `.cirrus.yml` until 2026-06-01.** Cirrus deletes itself on that date; until then it is your rollback.
@@ -92,8 +99,8 @@ For each `.cirrus.yml` task class, in this order:
 
 Cove's runner-shaped surface is **functionally complete for ~80% of `.cirrus.yml` task shapes** as of `d0877b8` (origin/main, 2026-05-08). The gaps that block migration are concentrated in:
 
-- **Secrets** (the only purely-engineering L blocker) — operators with `ENCRYPTED[…]` URIs must defer or refactor.
 - **Privacy gate** — public action / public image catalog can't ship while the cove repo is private.
 - **Annotations + guest artifact copy-out** — UX polish, sized M; workarounds work today.
+- **Public signing/provenance channel** — local provenance exists, but public cosign/SLSA distribution remains deferred with the registry decision.
 
 Operators planning a 2026-06-01 cutover should start at step 1 today.
