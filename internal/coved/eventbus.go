@@ -28,6 +28,16 @@ func (b *EventBus) Dropped() uint64 {
 	return b.dropped.Load()
 }
 
+// Subscribers returns the number of currently attached subscribers.
+func (b *EventBus) Subscribers() int {
+	if b == nil {
+		return 0
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.subs)
+}
+
 func NewJSONLSink(path string) (runmetrics.Sink, error) {
 	if path == "" {
 		home, _ := os.UserHomeDir()
