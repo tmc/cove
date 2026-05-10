@@ -102,6 +102,23 @@ func TestTagImageRejectsEmptyRefs(t *testing.T) {
 	}
 }
 
+func TestRunImageTagHelpAndUnknownFlag(t *testing.T) {
+	t.Run("help flag returns nil", func(t *testing.T) {
+		if err := runImageTag([]string{"-h"}); err != nil {
+			t.Fatalf("runImageTag -h: %v, want nil", err)
+		}
+	})
+	t.Run("unknown flag returns parse error", func(t *testing.T) {
+		err := runImageTag([]string{"-not-a-real-flag"})
+		if err == nil {
+			t.Fatal("runImageTag(-not-a-real-flag) = nil, want parse error")
+		}
+		if strings.Contains(err.Error(), "usage:") {
+			t.Fatalf("expected parse error, got usage error: %v", err)
+		}
+	})
+}
+
 func TestRunImageTagBadRef(t *testing.T) {
 	if err := runImageTag([]string{"::bad", "base:new"}); err == nil {
 		t.Fatalf("runImageTag with malformed src ref succeeded")
