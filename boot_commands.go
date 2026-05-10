@@ -162,7 +162,7 @@ func (e *automationExecutor) activateStartupOptions(timeout time.Duration) error
 		}
 	}
 
-	return fmt.Errorf("timeout activating Recovery Startup Options")
+	return fmt.Errorf("%w: activate Recovery Startup Options", ErrBootTimeout)
 }
 
 func (e *automationExecutor) activateStartupOptionsWithKeyboard() (bool, error) {
@@ -284,7 +284,7 @@ func (e *automationExecutor) continueRecoveryLanguage(timeout time.Duration) err
 		time.Sleep(2 * time.Second)
 	}
 	if advanced {
-		return fmt.Errorf("timeout leaving Recovery language page")
+		return fmt.Errorf("%w: leave Recovery language page", ErrBootTimeout)
 	}
 	return nil
 }
@@ -322,7 +322,7 @@ func (e *automationExecutor) clickMenuItem(menu, item string, timeout time.Durat
 			time.Sleep(150 * time.Millisecond)
 		}
 	}
-	return fmt.Errorf("timeout clicking menu item %q from menu %q", item, menu)
+	return fmt.Errorf("%w: click menu item %q from menu %q", ErrBootTimeout, item, menu)
 }
 
 func (e *automationExecutor) hasHostMenuTitle(title string) bool {
