@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -363,4 +364,28 @@ func imageVerifyCheckStatus(report imageVerifyReport, name string) imageVerifySt
 		}
 	}
 	return ""
+}
+
+func TestVerifyImageLayoutDiskSizeMismatchSentinel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, err := ParseImageRef("size:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	manifest, err := LoadImageManifest(ref)
+	if err != nil {
+		t.Fatalf("LoadImageManifest: %v", err)
+	}
+	disk := filepath.Join(ref.Path(), "disk.img")
+	if err := os.Truncate(disk, manifest.DiskSize+1); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	got := verifyImageLayout(ref, manifest)
+	if !errors.Is(got, ErrImageDiskSizeMismatch) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrImageDiskSizeMismatch)", got)
+	}
 }

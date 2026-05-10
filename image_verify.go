@@ -109,10 +109,16 @@ func verifyImageLayout(ref ImageRef, manifest *ImageManifest) error {
 		return err
 	}
 	if manifest.DiskSize > 0 && diskInfo.Size() != manifest.DiskSize {
-		return fmt.Errorf("disk.img size %d does not match manifest %d", diskInfo.Size(), manifest.DiskSize)
+		return fmt.Errorf("%w: have %d, manifest %d", ErrImageDiskSizeMismatch, diskInfo.Size(), manifest.DiskSize)
 	}
 	return nil
 }
+
+// ErrImageDiskSizeMismatch is returned by verifyImageLayout when the
+// on-disk disk.img size does not match the manifest's DiskSize.
+// Callers can branch on this with errors.Is to distinguish a corrupt
+// image from a missing manifest field or layout problem.
+var ErrImageDiskSizeMismatch = errors.New("image disk.img size mismatch")
 
 func verifyImageAgentFeatures(manifest *ImageManifest, strict bool) (imageVerifyStatus, string) {
 	features := normalizeAgentFeatures(manifest.AgentFeatures)
