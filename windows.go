@@ -734,10 +734,10 @@ func parseHdiutilAttachOutput(output string) (device, mount string, err error) {
 		}
 	}
 	if device == "" {
-		return "", "", fmt.Errorf("could not find device in hdiutil output: %s", output)
+		return "", "", fmt.Errorf("%w: %s", ErrHdiutilNoDevice, output)
 	}
 	if mount == "" {
-		return "", "", fmt.Errorf("fat32 partition not auto-mounted: %s", output)
+		return "", "", fmt.Errorf("%w: %s", ErrHdiutilNoMountPoint, output)
 	}
 	return device, mount, nil
 }

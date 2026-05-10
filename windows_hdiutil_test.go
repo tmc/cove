@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -25,8 +26,8 @@ func TestParseHdiutilAttachOutputHappy(t *testing.T) {
 
 func TestParseHdiutilAttachOutputNoDevice(t *testing.T) {
 	_, _, err := parseHdiutilAttachOutput("garbage line\n")
-	if err == nil || !strings.Contains(err.Error(), "could not find device") {
-		t.Fatalf("err = %v, want 'could not find device'", err)
+	if !errors.Is(err, ErrHdiutilNoDevice) {
+		t.Fatalf("err = %v, want ErrHdiutilNoDevice", err)
 	}
 }
 
@@ -34,8 +35,8 @@ func TestParseHdiutilAttachOutputNoMount(t *testing.T) {
 	out := "/dev/disk9          \tGUID_partition_scheme        \t\n" +
 		"/dev/disk9s1        \tWindows_FAT_32               \t\n"
 	_, _, err := parseHdiutilAttachOutput(out)
-	if err == nil || !strings.Contains(err.Error(), "fat32 partition not auto-mounted") {
-		t.Fatalf("err = %v, want 'fat32 partition not auto-mounted'", err)
+	if !errors.Is(err, ErrHdiutilNoMountPoint) {
+		t.Fatalf("err = %v, want ErrHdiutilNoMountPoint", err)
 	}
 }
 
@@ -43,7 +44,7 @@ func TestParseHdiutilAttachOutputIgnoresNonVolumesMount(t *testing.T) {
 	out := "/dev/disk5          \tGUID_partition_scheme        \t\n" +
 		"/dev/disk5s2        \tWindows_FAT_32               \t/private/somewhere\n"
 	_, _, err := parseHdiutilAttachOutput(out)
-	if err == nil || !strings.Contains(err.Error(), "fat32 partition not auto-mounted") {
-		t.Fatalf("err = %v, want non-Volumes mount rejected", err)
+	if !errors.Is(err, ErrHdiutilNoMountPoint) {
+		t.Fatalf("err = %v, want ErrHdiutilNoMountPoint for non-Volumes mount", err)
 	}
 }
