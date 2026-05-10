@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -239,8 +240,14 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 	return mountPoint, device, dataPartition, nil
 }
 
+// ErrDataPartitionNotFound is returned when diskutil list output for a
+// freshly attached disk image lacks an APFS Data volume entry. Callers
+// can branch on this with errors.Is to surface a "image is not a
+// macOS install disk" hint without parsing diskutil output.
+var ErrDataPartitionNotFound = errors.New("data partition not found")
+
 func dataPartitionNotFoundError(device, diskutilListOutput string) error {
-	return fmt.Errorf("could not find Data partition for disk %s\n\ndiskutil list output:\n%s", device, diskutilListOutput)
+	return fmt.Errorf("%w on disk %s\n\ndiskutil list output:\n%s", ErrDataPartitionNotFound, device, diskutilListOutput)
 }
 
 // attachDiskImageNoMountDI2 attaches a disk image using DiskImages2.framework
