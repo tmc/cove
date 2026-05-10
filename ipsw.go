@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +19,78 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
 )
+
+type ipswSource struct {
+	Path  string
+	IsURL bool
+}
+
+func parseIPSWSource(raw string) (ipswSource, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ipswSource{}, fmt.Errorf("ipsw source is empty")
+	}
+	u, err := url.Parse(raw)
+	if err == nil && u.Scheme != "" {
+		switch u.Scheme {
+		case "http", "https":
+			if u.Host == "" {
+				return ipswSource{}, fmt.Errorf("ipsw url missing host")
+			}
+			return ipswSource{IsURL: true}, nil
+		case "file":
+			if u.Path == "" {
+				return ipswSource{}, fmt.Errorf("ipsw file url missing path")
+			}
+			return ipswSource{Path: u.Path}, nil
+		default:
+			return ipswSource{}, fmt.Errorf("unsupported ipsw url scheme %q", u.Scheme)
+		}
+	}
+	return ipswSource{Path: raw}, nil
+}
+
+func verifyIPSWFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%w: %s", ErrIPSWMissing, path)
+		}
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() < ipswMinSize {
+		return fmt.Errorf("%w: have %.1f GB, want >= %.1f GB", ErrIPSWTooSmall, float64(info.Size())/(1024*1024*1024), float64(ipswMinSize)/(1024*1024*1024))
+	}
+	if !readerHasZipEOCD(f, info.Size()) {
+		return fmt.Errorf("%w: missing zip end record", ErrIPSWCorrupt)
+	}
+	return nil
+}
+
+func readerHasZipEOCD(r io.ReaderAt, size int64) bool {
+	const tailSize = 256
+	offset := size - tailSize
+	if offset < 0 {
+		offset = 0
+	}
+	buf := make([]byte, tailSize)
+	n, err := r.ReadAt(buf, offset)
+	if err != nil && n == 0 {
+		return false
+	}
+	buf = buf[:n]
+	for i := len(buf) - 4; i >= 0; i-- {
+		if buf[i] == 0x50 && buf[i+1] == 0x4b && buf[i+2] == 0x05 && buf[i+3] == 0x06 {
+			return true
+		}
+	}
+	return false
+}
 
 func killDownloadProcess(cmd *exec.Cmd, done <-chan error) {
 	if cmd.Process != nil {

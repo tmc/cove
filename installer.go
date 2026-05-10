@@ -933,39 +933,7 @@ func createProgressWindow() (appkit.NSWindow, objc.ID, objc.ID) {
 // end-of-central-directory (EOCD) signature near the end of the file. A
 // partial download will not have this signature.
 func ipswLooksComplete(path string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil || info.Size() < 1*1024*1024*1024 { // must be at least 1 GB
-		return false
-	}
-
-	// The EOCD record is at most 65557 bytes from the end of the file
-	// (22 byte minimum EOCD + 65535 byte max comment). Read the last 256 bytes
-	// which covers the common case (no zip comment).
-	const tailSize = 256
-	offset := info.Size() - tailSize
-	if offset < 0 {
-		offset = 0
-	}
-	buf := make([]byte, tailSize)
-	n, err := f.ReadAt(buf, offset)
-	if err != nil && n == 0 {
-		return false
-	}
-	buf = buf[:n]
-
-	// Search for EOCD signature: 0x50 0x4b 0x05 0x06
-	for i := len(buf) - 4; i >= 0; i-- {
-		if buf[i] == 0x50 && buf[i+1] == 0x4b && buf[i+2] == 0x05 && buf[i+3] == 0x06 {
-			return true
-		}
-	}
-	return false
+	return verifyIPSWFile(path) == nil
 }
 
 // resolveOrDownloadIPSW finds a cached IPSW or downloads one.

@@ -9,6 +9,13 @@ import "errors"
 // message.
 var ErrIPSWTooSmall = errors.New("downloaded IPSW too small")
 
+// ErrIPSWMissing is returned when an expected IPSW file is absent.
+var ErrIPSWMissing = errors.New("ipsw missing")
+
+// ErrIPSWCorrupt is returned when an IPSW is large enough but does not
+// look like a complete zip archive.
+var ErrIPSWCorrupt = errors.New("ipsw corrupt")
+
 // ipswMinSize is the smallest plausible Apple Silicon IPSW (1 GB).
 // Anything smaller is almost certainly a truncated body.
 const ipswMinSize = 1 * 1024 * 1024 * 1024
