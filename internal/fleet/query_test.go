@@ -99,3 +99,25 @@ func TestQueryAllParentCancel(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryAllRecordsDuration(t *testing.T) {
+	entries := []Entry{
+		{Name: "fast", Remote: Remote{Host: "f.local"}},
+		{Name: "slow", Remote: Remote{Host: "s.local"}},
+	}
+	got := QueryAll(context.Background(), entries, func(ctx context.Context, e Entry) (string, error) {
+		if e.Name == "slow" {
+			time.Sleep(20 * time.Millisecond)
+		}
+		return e.Name, nil
+	})
+	if got[0].Duration < 0 {
+		t.Fatalf("fast duration = %v, want >= 0", got[0].Duration)
+	}
+	if got[1].Duration < 20*time.Millisecond {
+		t.Fatalf("slow duration = %v, want >= 20ms", got[1].Duration)
+	}
+	if got[1].Duration <= got[0].Duration {
+		t.Fatalf("slow (%v) should exceed fast (%v)", got[1].Duration, got[0].Duration)
+	}
+}
