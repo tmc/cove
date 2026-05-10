@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -61,6 +63,29 @@ func TestDiskSnapshotSaveAndList(t *testing.T) {
 	}
 	if snaps[0].Description != "test description" {
 		t.Errorf("description = %q, want %q", snaps[0].Description, "test description")
+	}
+}
+
+func TestDiskSnapshotListSystemSizeFallback(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewDiskSnapshotManager(dir)
+	snapDir := filepath.Join(mgr.diskSnapshotsDir(), "no-meta")
+	if err := os.MkdirAll(snapDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("0123456789")
+	if err := os.WriteFile(filepath.Join(snapDir, "disk.img"), body, 0644); err != nil {
+		t.Fatal(err)
+	}
+	snaps, err := mgr.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(snaps) != 1 {
+		t.Fatalf("len = %d, want 1", len(snaps))
+	}
+	if snaps[0].SystemSize != int64(len(body)) {
+		t.Fatalf("SystemSize = %d, want %d", snaps[0].SystemSize, len(body))
 	}
 }
 

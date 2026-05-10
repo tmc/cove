@@ -218,6 +218,11 @@ func (m *DiskSnapshotManager) List() ([]DiskSnapshotInfo, error) {
 			info.Created = fileInfo.ModTime()
 		}
 		info.FilePath = filepath.Join(dir, entry.Name())
+		if info.SystemSize == 0 {
+			if fi, err := os.Stat(filepath.Join(info.FilePath, "disk.img")); err == nil {
+				info.SystemSize = fi.Size()
+			}
+		}
 
 		snapshots = append(snapshots, info)
 	}
