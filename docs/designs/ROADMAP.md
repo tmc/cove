@@ -126,7 +126,7 @@ channel.
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
 | VM identity preservation for forked vmstate bundles | done | fork/restore | [013](013-vm-fork.md) | Preserves identity files across vmstate forks so forked agents keep stable guest identity. Design 013 Phase 5 Slice 5a shipped at `67c9abc` (vmidentity bundle) and `7e4ed99`/`4bd435d` (fork preserve identity); status note at `4f8035c`. |
-| Anthropic computer-use adapter v2 | done | agent-sandbox CLI | [022](archive/022-v04-anthropic-adapter.md) | Adds a Go-side Anthropic Messages computer-use loop and wires it into `cove agent-sandbox run`. Shipped at `55a2463`, `33e5b30`, and `775537f`. |
+| Anthropic computer-use adapter v2 | done | agent-sandbox CLI | [022](archive/022-v04-anthropic-adapter.md) | Adds a Go-side Anthropic Messages computer-use loop and wires it into `cove agent-sandbox run`. Design v2 update at `55a2463`; implementation at `33e5b30` (`anthropicadapter` computer-use loop) and `775537f` (`agent-sandbox` provider wiring). |
 | OpenAI Agents SDK `SandboxRunConfig` helper | done | OpenAI adapter v1 | [035](035-openai-sandbox-run-config.md) | Adds a local Python `cove-sandbox` helper for `Runner.run()` workflows. Shipped at `36552c2`, `4d61edd`, and `27f9e24`. |
 | GitHub Actions private executor surface | done | local image store + run metrics | [021](archive/021-v04-ci-executors-tracks.md), [030](030-gha-executor-slice-2.md) | Ships the private GHA wrapper, action metrics, preflight commands, and cache-image reuse. Representative commits: `0985377`, `19804c7`, `8bd473e`, `82a0ac5`, `7fafe40`, `9e6253a`. |
 | NixOS guest distro | done | Linux installer | [036](036-nixos-guest-support.md) | Adds `cove install -nixos`, a NixOS installer path, base vzscript, and quickstart. Design doc landed at `1ddd3b9`; implementation chain `8324750` (installer), `2427b2e` (`nixos-base.vzscript`), `f1e6812` (quickstart docs), `07835a9` (cli.md install table). |
@@ -246,6 +246,7 @@ see [017](archive/017-v03-execution-roadmap.md) for files, gates, and docs updat
 
 ## Recent changes
 
+- **2026-05-10** (R417): Anthropic adapter v2 row separated design-update SHA from implementation SHAs. `55a2463` is "docs: update anthropic adapter design v2"; `33e5b30` is the `anthropicadapter` computer-use loop; `775537f` is the agent-sandbox provider wiring.
 - **2026-05-10** (R416): VM lifecycle policy v2 row separated design-doc SHA from implementation SHAs. `12c391d` is "docs: design vm lifecycle policy"; the implementation chain `d1df12b/2202f46/80eea77/9749f29/cd899a1` is now annotated per design 031's SHA chain header.
 - **2026-05-10** (R414): Per-VM resource quotas row separated design-doc SHA from implementation SHAs. `94bf2d2` is "docs: design per-vm resource quotas"; `62a71aa` is the `internal/vmquota` + APFS wrapper; `2bad0e8` is the `cove quota` CLI + `persistInstallQuota`. Matches design 032's SHA chain header.
 - **2026-05-10** (R412): VM identity preservation row SHA chain expanded. Row was missing `4bd435d` (fork preserve identity follow-up); design 013 Phase 5 Slice 5a header lists both `7e4ed99` and `4bd435d` as the canonical pair. Reframed to call out design 013 phase + slice and added the missing SHA.
