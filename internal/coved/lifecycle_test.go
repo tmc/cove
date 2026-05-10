@@ -95,6 +95,65 @@ func TestLifecycleEnforcerThresholds(t *testing.T) {
 	}
 }
 
+func TestLifecycleEnforcerRunLoopStopsByPolicy(t *testing.T) {
+	now := time.Unix(4000, 0).UTC()
+	tests := []struct {
+		name   string
+		policy vmpolicy.Policy
+		status vmStatus
+		reason string
+	}{
+		{"idle", vmpolicy.Policy{IdleTimeout: time.Minute}, vmStatus{State: "running", LastPing: now.Add(-2 * time.Minute)}, "idle"},
+		{"max age", vmpolicy.Policy{MaxAge: time.Minute}, vmStatus{State: "running", PolicyStartedAt: now.Add(-2 * time.Minute)}, "max_age"},
+		{"run budget", vmpolicy.Policy{RunBudget: 2}, vmStatus{State: "running", PolicyExecCount: 2}, "run_budget"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := shortTempDirLink(t)
+			vmDir := filepath.Join(root, "vm")
+			if err := os.Mkdir(vmDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := vmpolicy.Save(vmDir, tt.policy); err != nil {
+				t.Fatal(err)
+			}
+			stopCount := serveLifecycleControl(t, vmDir, tt.status)
+			bus := NewEventBus(8)
+			sub, cancelSub := bus.Subscribe(4)
+			defer cancelSub()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			go func() {
+				NewLifecycleEnforcer(LifecycleConfig{
+					VMRoot:   root,
+					Interval: time.Hour,
+					Now:      func() time.Time { return now },
+					Bus:      bus,
+				}).Run(ctx)
+				close(done)
+			}()
+
+			select {
+			case ev := <-sub:
+				cancel()
+				<-done
+				if ev.EventType != "lifecycle.policy.stop" || ev.Extra["reason"] != tt.reason {
+					t.Fatalf("event = %+v, want reason %q", ev, tt.reason)
+				}
+				if *stopCount != 1 {
+					t.Fatalf("stopCount = %d, want 1", *stopCount)
+				}
+			case <-time.After(2 * time.Second):
+				cancel()
+				<-done
+				t.Fatal("timed out waiting for lifecycle policy event")
+			}
+		})
+	}
+}
+
 func TestLifecycleEnforcerSkipsUnreachableVM(t *testing.T) {
 	root := shortTempDir(t)
 	vmDir := filepath.Join(root, "vm")
@@ -211,9 +270,9 @@ func TestLifecycleEnforcerSkipsNonRunningState(t *testing.T) {
 func TestParseTime(t *testing.T) {
 	ref := time.Date(2026, 5, 9, 12, 30, 45, 0, time.UTC)
 	tests := []struct {
-		name  string
-		in    string
-		want  time.Time
+		name   string
+		in     string
+		want   time.Time
 		isZero bool
 	}{
 		{name: "empty", in: "", isZero: true},
@@ -252,6 +311,17 @@ func shortTempDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
+}
+
+func shortTempDirLink(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	link := filepath.Join("/tmp", "cvd-"+filepath.Base(dir))
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(link) })
+	return link
 }
 
 func TestLifecyclePublishStopErrorEmitsEvent(t *testing.T) {
