@@ -635,3 +635,9 @@ func captureStdoutResult(t *testing.T, fn func() error) (string, error) {
 	}
 	return buf.String(), <-done
 }
+
+func TestStartVMLifecyclePolicyMonitorNilNoop(t *testing.T) {
+	// Nil ControlServer must short-circuit without spawning a goroutine
+	// or panicking; the contract is "if cs == nil, return".
+	startVMLifecyclePolicyMonitor(nil)
+}
