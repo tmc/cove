@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -114,15 +115,21 @@ func SetupDisposableClone(opts DisposableSetupOptions) (DisposableClone, error) 
 	}, nil
 }
 
+// ErrDisposableUnsafePath is returned by CleanupDisposableClone when
+// the supplied path is empty, ".", or a filesystem root. Callers can
+// branch on this with errors.Is to distinguish a programmer mistake
+// (refused destructive call) from an actual rm failure.
+var ErrDisposableUnsafePath = errors.New("disposable clone path unsafe")
+
 // CleanupDisposableClone removes a disposable clone directory.
 func CleanupDisposableClone(path string) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return fmt.Errorf("clone path is required")
+		return fmt.Errorf("%w: empty", ErrDisposableUnsafePath)
 	}
 	clean := filepath.Clean(path)
 	if clean == "." || clean == string(filepath.Separator) {
-		return fmt.Errorf("refusing to remove %q", path)
+		return fmt.Errorf("%w: %q", ErrDisposableUnsafePath, path)
 	}
 	return os.RemoveAll(path)
 }
