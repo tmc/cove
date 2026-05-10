@@ -1,6 +1,6 @@
 # cove-action security architecture
 
-**Status**: draft.
+**Status**: spec; cove-action GHA wrapper shipped at `.github/actions/cove-action/action.yml` per design 021 Slice 1.
 **Source**: conductor dispatch 2026-05-02; user decision (cove repo
 stays private through this design; cove-action implementation deferred
 to v0.4; image push/pull is private-only until the public flip).
@@ -409,3 +409,16 @@ and cove-action just registers it per-fork.
 - [006](006-cove-linux-v02.md) — guest agent gRPC over vsock; the
   `Exec` / `Cp` / `Write` RPCs cove-action uses to seed the
   registration token at fork-boot.
+
+## Verified 2026-05-10
+
+- cove-action GHA wrapper shipped at
+  `.github/actions/cove-action/action.yml` (inputs: `image`, `command`,
+  `args`, `script`, `vm-name`, `timeout`, `cove-bin`, `keep-ephemeral`).
+- Composition deps confirmed on `origin/main`:
+  - `image_cli.go` push/pull/verify (design 024 Slice 1 + 2).
+  - `image_fork.go` `cove run -fork-from <ref>` (design 013 Phase 3).
+  - `proto/agent.proto` `ExecAttach` / `WriteFile` / `Exec` RPCs (designs 023, 006).
+  - `vzscripts/github-runner.vzscript` (T-GHA-RUNNER manual path) at the cited path.
+- Privacy gate still holds: cove-action consumes only LOCAL image refs;
+  no public registry push/pull (design 024 Slice 3 deferred).
