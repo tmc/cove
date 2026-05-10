@@ -44,9 +44,11 @@ type statusResponse struct {
 
 func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 	status := d.status()
-	var storageRuns, storageErrors int64
+	var storageRuns, storageErrors, storageUsed int64
 	if d.storage != nil {
-		_, _, _, storageRuns = d.storage.Stats()
+		used, _, _, runs := d.storage.Stats()
+		storageRuns = runs
+		storageUsed = used
 		storageErrors = d.storage.Errors()
 	}
 	return coved.PrometheusSnapshot{
@@ -64,6 +66,7 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		WebhookRejected:   d.webhook.Rejected(),
 		StoragePollRuns:   storageRuns,
 		StoragePollErrors: storageErrors,
+		StorageUsedBytes:  storageUsed,
 		Events:            d.events.Tail(),
 	}
 }

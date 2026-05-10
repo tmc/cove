@@ -24,6 +24,7 @@ type PrometheusSnapshot struct {
 	WebhookRejected   uint64
 	StoragePollRuns   int64
 	StoragePollErrors int64
+	StorageUsedBytes  int64
 	Events            []Event
 }
 
@@ -56,6 +57,7 @@ func WritePrometheus(w io.Writer, s PrometheusSnapshot) {
 	fmt.Fprintf(w, "coved_webhook_rejected_total %d\n", s.WebhookRejected)
 	fmt.Fprintf(w, "coved_storage_poll_runs_total %d\n", s.StoragePollRuns)
 	fmt.Fprintf(w, "coved_storage_poll_errors_total %d\n", s.StoragePollErrors)
+	fmt.Fprintf(w, "coved_storage_used_bytes %d\n", s.StorageUsedBytes)
 	counts := eventCounts(s.Events)
 	for _, key := range sortedKeys(counts) {
 		labels := strings.Split(key, "\x00")
