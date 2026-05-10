@@ -150,3 +150,23 @@ func TestNewSinkDefaultsToJSONL(t *testing.T) {
 		t.Fatalf("output = %q, want jsonl line", got)
 	}
 }
+
+func TestOTLPSinkErrorIncludesBodyOnNon2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("invalid resource attribute schema"))
+	}))
+	defer srv.Close()
+
+	sink := NewOTLPSink(srv.URL)
+	err := sink.Emit(context.Background(), Event{EventType: "x"})
+	if err == nil {
+		t.Fatal("Emit: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid resource attribute schema") {
+		t.Fatalf("err = %v, want body excerpt", err)
+	}
+	if !strings.Contains(err.Error(), "400") {
+		t.Fatalf("err = %v, want 400 status", err)
+	}
+}

@@ -216,6 +216,11 @@ func (o *OTLPSink) Emit(ctx context.Context, e Event) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		body = bytes.TrimSpace(body)
+		if len(body) > 0 {
+			return fmt.Errorf("metrics otlp: status %s: %s", resp.Status, body)
+		}
 		return fmt.Errorf("metrics otlp: status %s", resp.Status)
 	}
 	return nil
