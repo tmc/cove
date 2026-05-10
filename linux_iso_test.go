@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,56 @@ func TestLinuxISOMatchesVariantMissingFile(t *testing.T) {
 		if linuxISOMatchesVariant(missing, v) {
 			t.Errorf("linuxISOMatchesVariant(missing, %s) = true, want false", v)
 		}
+	}
+}
+
+func writeTarWithDiskInfo(t *testing.T, info string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "fake.iso")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	body := []byte(info)
+	hdr := &tar.Header{Name: ".disk/info", Mode: 0o644, Size: int64(len(body))}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLinuxISOMatchesVariantClassifiesDiskInfo(t *testing.T) {
+	ubuntuServer := writeTarWithDiskInfo(t, "Ubuntu-Server 24.04 LTS arm64")
+	debian := writeTarWithDiskInfo(t, "Debian GNU/Linux 12 arm64")
+
+	tests := []struct {
+		name    string
+		path    string
+		variant LinuxVariant
+		want    bool
+	}{
+		{"server matches ubuntu-server info", ubuntuServer, LinuxVariantServer, true},
+		{"desktop rejects server info", ubuntuServer, LinuxVariantDesktop, false},
+		{"debian matches debian info", debian, LinuxVariantDebian, true},
+		{"alpine rejects debian info", debian, LinuxVariantAlpine, false},
+		{"unknown variant returns false", ubuntuServer, LinuxVariant("bogus"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := linuxISOMatchesVariant(tc.path, tc.variant); got != tc.want {
+				t.Fatalf("linuxISOMatchesVariant(%s) = %v, want %v", tc.variant, got, tc.want)
+			}
+		})
 	}
 }
 
