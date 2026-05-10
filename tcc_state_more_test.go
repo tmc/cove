@@ -21,6 +21,14 @@ func TestDefaultTCCStatePath(t *testing.T) {
 	}
 }
 
+func TestDefaultTCCStatePathRejectsEmptyHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	_, err := DefaultTCCStatePath()
+	if err == nil {
+		t.Fatal("DefaultTCCStatePath() = nil, want error when HOME is unset")
+	}
+}
+
 func TestLoadTCCStateReadErrorOnDirectory(t *testing.T) {
 	dir := t.TempDir()
 	// pointing LoadTCCState at a directory triggers a non-IsNotExist read error.
