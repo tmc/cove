@@ -239,3 +239,22 @@ func TestJSONLSinkWrittenCountsAppends(t *testing.T) {
 		t.Fatalf("Written = %d, want 3", got)
 	}
 }
+
+func TestJSONLWrittenCountsSerializedEvents(t *testing.T) {
+	var buf bytes.Buffer
+	sink := NewJSONL(&buf)
+	for i := 0; i < 4; i++ {
+		if err := sink.Emit(context.Background(), Event{EventType: "x"}); err != nil {
+			t.Fatalf("Emit: %v", err)
+		}
+	}
+	if got := sink.Written(); got != 4 {
+		t.Fatalf("Written = %d, want 4", got)
+	}
+	if err := sink.Emit(context.Background(), Event{EventType: "y", Timestamp: "not-rfc3339"}); err == nil {
+		t.Fatal("Emit invalid timestamp: want error, got nil")
+	}
+	if got := sink.Written(); got != 4 {
+		t.Fatalf("Written = %d after error, want still 4", got)
+	}
+}
