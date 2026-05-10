@@ -65,6 +65,28 @@ func TestWebhookSubscriberDoesNotBlockPublish(t *testing.T) {
 	}
 }
 
+func TestWebhookSubscriberCountsDeliveredAndFailed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	w := NewWebhookSubscriber(WebhookConfig{URL: srv.URL})
+	w.deliver(context.Background(), Event{EventType: "ok"})
+	if w.Delivered() != 1 {
+		t.Fatalf("Delivered = %d, want 1", w.Delivered())
+	}
+
+	bad := &WebhookSubscriber{
+		URL:    "http://127.0.0.1:1",
+		Client: &http.Client{Timeout: 50 * time.Millisecond},
+	}
+	bad.deliver(context.Background(), Event{EventType: "x"})
+	if bad.Failed() != 1 {
+		t.Fatalf("Failed = %d, want 1", bad.Failed())
+	}
+}
+
 func waitSubscribers(t *testing.T, bus *EventBus) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
