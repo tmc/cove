@@ -42,7 +42,19 @@ type PortForward struct {
 	connector GuestConnector
 	cancel    context.CancelFunc
 	mu        sync.Mutex
-	conns     int // active connection count
+	conns     int   // active connection count
+	total     int64 // cumulative accepted connection count
+}
+
+// TotalAccepted returns the cumulative number of host-side connections
+// accepted by this forward, including those that already closed.
+func (pf *PortForward) TotalAccepted() int64 {
+	if pf == nil {
+		return 0
+	}
+	pf.mu.Lock()
+	defer pf.mu.Unlock()
+	return pf.total
 }
 
 // PortForwardManager tracks active port forwards.
@@ -489,6 +501,7 @@ func (pf *PortForward) handleConn(ctx context.Context, hostConn net.Conn) {
 
 	pf.mu.Lock()
 	pf.conns++
+	pf.total++
 	pf.mu.Unlock()
 	defer func() {
 		pf.mu.Lock()
