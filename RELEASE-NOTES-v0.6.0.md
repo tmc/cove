@@ -1,8 +1,6 @@
 # cove v0.6.0 release notes
 
-**Status: in development.** v0.6.0 is not tagged. This file is a scaffold;
-slice rows update one at a time as design 041 ships. Do not treat as a
-shipped release.
+**Status: shipped 2026-05-10.**
 
 The headline change in v0.6 is operator-visible: cove's minimum macOS
 host floor moves from implicit 12.0 to 14.0 (Sonoma), and the screen
