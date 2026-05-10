@@ -610,3 +610,22 @@ Plus v0.3 stretch items (Arch + NixOS installers, user-mode networking if revisi
 - Cove gets a second audience (Linux devs) without giving up the macOS-VM pitch.
 
 The frame: **cove 0.1 matches lume on macOS portability; cove 0.2 leapfrogs everyone on Linux developer ergonomics.**
+
+## Verified 2026-05-10
+
+- Generated Go stubs `proto/agentpb/agent.pb.go` and
+  `proto/agentpbconnect/agent.connect.go` are committed; standard
+  `go build` is zero-dependency.
+- `proto/agent.proto:19-26` declares the v3 unary surface: `Exec`,
+  `ExecStream` (server-streaming), `ResizeExecTTY`, `SignalExec`,
+  `SetTime`. Matches v5 "no bidi" decision.
+- **Drift, additive only**: `proto/agent.proto:23` later added the bidi
+  `ExecAttach(stream)` RPC for `cove shell <vm>` (design 023 Slice 3,
+  v0.3). v5's "no bidi" was correct for v0.2 scope; the v0.3 addition
+  is opt-in and does not violate the v5 security/auth rationale because
+  `ExecAttach` runs over the local control-socket broker, not the
+  remote `cove serve` path the v5 rationale targeted.
+- `proto/buf.gen.yaml` present; `proto/buf.gen.clients.yaml`
+  (release-time TS/Python/Swift client gen) NOT yet shipped.
+  `swift/VZControl/` shows the Swift client lives in tree directly,
+  not behind a release-only generator step.
