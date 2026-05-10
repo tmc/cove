@@ -1,7 +1,11 @@
 # Design 035: OpenAI SandboxRunConfig backend for cove
 
 **Status:** Shipped; helper, backend, tests, example, and integration docs all
-landed (`36552c2`, `4d61edd`, `27f9e24`)  
+landed (`36552c2`, `4d61edd`, `27f9e24`). Last verified 2026-05-10 (R372).
+
+Verified 2026-05-10 (R372): SHAs `36552c2`/`4d61edd`/`27f9e24` all reachable on main; adapter tree present at `adapters/openai-agents-python/` (pyproject.toml, README.md, src, tests, examples); `tests/test_sandbox_run_config.py` and `examples/sandbox_runner.py` present; integration walkthrough at `docs/integrations/openai-agents.md`.
+
+
 **Author:** Travis Cline  
 **Date:** 2026-05-08
 
