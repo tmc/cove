@@ -76,6 +76,8 @@ func TestRenderShow(t *testing.T) {
 		"fork_created  ok  10ms",
 		"Result: failed exit_code=2 wallclock=150ms",
 		"Failure: vm_start: boot failed",
+		"Artifacts (",
+		" bytes):",
 		"metrics.jsonl",
 		"screenshots/one.txt",
 	} {

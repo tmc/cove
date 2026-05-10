@@ -120,7 +120,7 @@ func RenderShow(w io.Writer, show Show) error {
 			return err
 		}
 	}
-	if _, err := fmt.Fprintln(w, "\nArtifacts:"); err != nil {
+	if _, err := fmt.Fprintf(w, "\nArtifacts (%d bytes):\n", show.ArtifactBytes); err != nil {
 		return err
 	}
 	for _, name := range show.Artifacts {
