@@ -141,6 +141,46 @@ func TestImageGCRunOncePublishesToBus(t *testing.T) {
 	}
 }
 
+func TestImageGCSchedulerRunsOnSchedule(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeImage(t, home, "orphan:old", 17)
+	bus := NewEventBus(4)
+	sub, cancelSub := bus.Subscribe(2)
+	defer cancelSub()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	s := NewImageGCScheduler(home, nil)
+	s.Interval = time.Millisecond
+	s.Bus = bus
+	s.Now = func() time.Time { return time.Unix(1, 0) }
+	go func() {
+		s.RunScheduledImageGC(ctx)
+		close(done)
+	}()
+
+	select {
+	case ev := <-sub:
+		cancel()
+		<-done
+		if ev.EventType != "image.gc.run" || ev.Status != "ok" {
+			t.Fatalf("event = %+v", ev)
+		}
+		if imageExists(home, "orphan:old") {
+			t.Fatal("scheduled image gc left orphan image")
+		}
+		_, _, runs, bytes := s.Stats()
+		if runs != 1 || bytes == 0 {
+			t.Fatalf("Stats runs=%d bytes=%d, want one freeing run", runs, bytes)
+		}
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+		t.Fatal("timed out waiting for scheduled image gc")
+	}
+}
+
 func writeImage(t *testing.T, home, ref string, payloadSize int) {
 	t.Helper()
 	name, tag, ok := stringsCut(ref, ":")
