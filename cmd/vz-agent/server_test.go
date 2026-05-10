@@ -84,6 +84,27 @@ func TestReceiveExecAttachControlWritesStdinFrames(t *testing.T) {
 	}
 }
 
+func TestSignalExecMissingExecID(t *testing.T) {
+	s := newAgentServer()
+	_, err := s.SignalExec(context.Background(), connect.NewRequest(&pb.SignalExecRequest{
+		Signal: int32(syscall.SIGTERM),
+	}))
+	if err == nil || !strings.Contains(err.Error(), "exec_id required") {
+		t.Fatalf("SignalExec missing exec_id error = %v", err)
+	}
+}
+
+func TestSignalExecNotFound(t *testing.T) {
+	s := newAgentServer()
+	_, err := s.SignalExec(context.Background(), connect.NewRequest(&pb.SignalExecRequest{
+		ExecId: "missing",
+		Signal: int32(syscall.SIGTERM),
+	}))
+	if err == nil || !strings.Contains(err.Error(), "exec not found") {
+		t.Fatalf("SignalExec not found error = %v", err)
+	}
+}
+
 func TestSignalExecValidatesSignal(t *testing.T) {
 	s := newAgentServer()
 	_, err := s.SignalExec(context.Background(), connect.NewRequest(&pb.SignalExecRequest{
