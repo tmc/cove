@@ -43,12 +43,21 @@ type ImageGCScheduler struct {
 	runs     int64
 	bytes    int64
 	duration int64
+	skips    int64
 }
 
 func (s *ImageGCScheduler) DurationTotalMS() int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.duration
+}
+
+// Skips returns the cumulative count of RunOnce invocations that
+// returned without doing work because a peer process held the lock.
+func (s *ImageGCScheduler) Skips() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.skips
 }
 
 func NewImageGCScheduler(home string, logger *slog.Logger) *ImageGCScheduler {
@@ -228,6 +237,9 @@ func (s *ImageGCScheduler) record(stats ImageGCStats) {
 	s.runs++
 	s.bytes += stats.BytesFreed
 	s.duration += stats.DurationMS
+	if stats.Skipped {
+		s.skips++
+	}
 }
 
 func (s *ImageGCScheduler) acquireLock() (func(), error) {

@@ -77,3 +77,16 @@ func TestImageGCSchedulerDurationTotalMSAccumulates(t *testing.T) {
 		t.Fatalf("DurationTotalMS = %d, want 1000", got)
 	}
 }
+
+func TestImageGCSchedulerSkipsCountsLockedRuns(t *testing.T) {
+	s := &ImageGCScheduler{Now: func() time.Time { return time.Unix(0, 0) }}
+	if got := s.Skips(); got != 0 {
+		t.Fatalf("initial Skips() = %d, want 0", got)
+	}
+	s.record(ImageGCStats{})
+	s.record(ImageGCStats{Skipped: true})
+	s.record(ImageGCStats{Skipped: true})
+	if got := s.Skips(); got != 2 {
+		t.Fatalf("Skips() = %d, want 2", got)
+	}
+}
