@@ -2,12 +2,50 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 )
+
+type errSignaler struct{}
+
+func (errSignaler) SignalExec(context.Context, string, int32) error {
+	return errors.New("guest dial failed")
+}
+
+func TestForwardInterruptHandlesSignalExecError(t *testing.T) {
+	ch := make(chan os.Signal, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		forwardInterrupt(ctx, errSignaler{}, "exec-1", ch)
+		close(done)
+	}()
+	ch <- syscall.SIGINT
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+}
+
+func TestForwardInterruptReturnsOnChannelClose(t *testing.T) {
+	rec := &recordingSignaler{}
+	ch := make(chan os.Signal, 1)
+	ctx := context.Background()
+	done := make(chan struct{})
+	go func() {
+		forwardInterrupt(ctx, rec, "exec-1", ch)
+		close(done)
+	}()
+	close(ch)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("forwardInterrupt did not return on channel close")
+	}
+}
 
 func TestHostSignalToExecSignal(t *testing.T) {
 	cases := []struct {
