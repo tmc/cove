@@ -34,6 +34,7 @@ type statusResponse struct {
 	ImageGCLastRunTS        string `json:"image_gc_last_run_ts,omitempty"`
 	ImageGCRunsTotal        int64  `json:"image_gc_runs_total"`
 	ImageGCBytesFreedTotal  int64  `json:"image_gc_bytes_freed_total"`
+	ImageGCSkipsTotal       int64  `json:"image_gc_skips_total,omitempty"`
 	ImageGCManifestsScanned int    `json:"image_gc_manifests_scanned,omitempty"`
 	ImageGCManifestsRemoved int    `json:"image_gc_manifests_removed,omitempty"`
 	LifecycleEnforced       uint64 `json:"lifecycle_enforced"`
@@ -114,6 +115,7 @@ func (d *daemon) status() statusResponse {
 		stats, last, runs, bytesFreed := d.imageGC.Stats()
 		resp.ImageGCRunsTotal = runs
 		resp.ImageGCBytesFreedTotal = bytesFreed
+		resp.ImageGCSkipsTotal = d.imageGC.Skips()
 		resp.ImageGCManifestsScanned = stats.ManifestsScanned
 		resp.ImageGCManifestsRemoved = stats.ManifestsRemoved
 		if !last.IsZero() {
