@@ -98,6 +98,19 @@ func TestEnsureControlTokenForVM(t *testing.T) {
 	})
 }
 
+func TestEnsureControlTokenForVMMkdirFailsWithEnv(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "blocker")
+	if err := os.WriteFile(parent, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	vmDir := filepath.Join(parent, "vm")
+	t.Setenv(controlTokenEnvVar, "envtoken")
+	if _, err := EnsureControlTokenForVM(vmDir); err == nil {
+		t.Fatal("EnsureControlTokenForVM(env, blocked-mkdir) = nil, want mkdir error")
+	}
+}
+
 func TestEffectiveVMDir(t *testing.T) {
 	s := &ControlServer{vmDir: "/explicit"}
 	if got := s.effectiveVMDir(); got != "/explicit" {
