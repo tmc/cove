@@ -5,6 +5,20 @@ import (
 	"testing"
 )
 
+func TestImageLockReleaseNilSafe(t *testing.T) {
+	var lock *ImageLock
+	if err := lock.Release(); err != nil {
+		t.Fatalf("nil receiver Release: %v, want nil", err)
+	}
+	lock2 := &ImageLock{}
+	if err := lock2.Release(); err != nil {
+		t.Fatalf("zero-value Release: %v, want nil", err)
+	}
+	if err := lock2.Release(); err != nil {
+		t.Fatalf("second Release on zero-value: %v, want nil (idempotent)", err)
+	}
+}
+
 // TestImageLock_Basic exercises acquire/release.
 func TestImageLock_Basic(t *testing.T) {
 	gcTestSetup(t)
