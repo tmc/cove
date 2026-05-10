@@ -73,6 +73,32 @@ func TestSnapshotNSError(t *testing.T) {
 	}
 }
 
+func TestVzlogRespectsDebugFlag(t *testing.T) {
+	capture := func(fn func()) string {
+		r, w, _ := os.Pipe()
+		old := os.Stdout
+		os.Stdout = w
+		fn()
+		w.Close()
+		os.Stdout = old
+		b, _ := io.ReadAll(r)
+		return string(b)
+	}
+
+	saved := vzDebugInstall
+	t.Cleanup(func() { vzDebugInstall = saved })
+
+	vzDebugInstall = false
+	if out := capture(func() { vzlog("noisy %d", 1) }); out != "" {
+		t.Fatalf("vzlog with debug=false wrote %q, want empty", out)
+	}
+	vzDebugInstall = true
+	out := capture(func() { vzlog("hello %d", 42) })
+	if want := "[VZ-INSTALL-DEBUG] hello 42\n"; out != want {
+		t.Fatalf("vzlog with debug=true: got %q, want %q", out, want)
+	}
+}
+
 func TestPrintNSErrorSummary(t *testing.T) {
 	capture := func(fn func()) string {
 		r, w, _ := os.Pipe()
