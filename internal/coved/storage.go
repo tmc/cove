@@ -204,6 +204,8 @@ func (s *StoragePollScheduler) runPrune(ctx context.Context, rep storagecensus.R
 			slog.Int64("bytes_freed", pruneRep.BytesRemoved),
 			slog.Int("removed_count", len(pruneRep.Removed)),
 			slog.Int("skipped_count", len(pruneRep.Skipped)),
+			slog.Int("pinned_skipped", pruneRep.PinnedSkipped),
+			slog.Int("collect_errors", pruneRep.CollectErrors),
 		)
 	}
 	if s.Bus == nil {
@@ -217,6 +219,8 @@ func (s *StoragePollScheduler) runPrune(ctx context.Context, rep storagecensus.R
 		"used_bytes_after":  pruneRep.UsedAfter,
 		"removed_count":     int64(len(pruneRep.Removed)),
 		"skipped_count":     int64(len(pruneRep.Skipped)),
+		"pinned_skipped":    int64(pruneRep.PinnedSkipped),
+		"collect_errors":    int64(pruneRep.CollectErrors),
 	}
 	if len(s.Pruners) == 0 {
 		extra["reason"] = "no-pruners-configured"
