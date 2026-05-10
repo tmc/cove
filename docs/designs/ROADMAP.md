@@ -94,7 +94,8 @@ channel.
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
 | `cove shell <vm>` server-side commands (Slice 1) | done | v0.2 in-process `cove run -linux -shell` | [023](023-cove-shell-exec-ux.md) | Ships agent-exec-attach/-resize/-signal control-socket commands. No proto bump. Landed 17211bd. |
-| `cove shell <vm>` standalone client (Slice 2) | done | Slice 1 server commands | [023](023-cove-shell-exec-ux.md) | Standalone client subcommand. Landed 33fbe7e (~303 LOC, 7 tests). Stdin /dev/null until Slice 3 v0.3 proto bump. |
+| `cove shell <vm>` standalone client (Slice 2) | done | Slice 1 server commands | [023](023-cove-shell-exec-ux.md) | Standalone client subcommand. Landed `33fbe7e` (~303 LOC, 7 tests). Bidi stdin/stdout/stderr ships in Slice 3 (v0.3 proto bump) — see next row. |
+| `cove shell <vm>` bidi `ExecAttach` (Slice 3) | done | Slice 2 + v0.3 proto bump | [023](023-cove-shell-exec-ux.md) | Additive bidi `ExecAttach` stream RPC plus fallback to the v0.2 unary/`ExecStream` path for older agents. Shipped 2026-05-04 at `4d9043a`, `8e550d4`, `5d5876f`. |
 | Local image store + `cove image build/list/rm` (Slice 1) | done | fork-from + APFS clonefile | [024](024-cove-runner-images.md) | Pre-baked, forkable VM images at ~/.vz/images/. Landed 8a106dc, 1027 LOC, 8 tests green. |
 | `cove run -fork-from <local-image-ref>` + `-ephemeral` | done | image store Slice 1 | [024](024-cove-runner-images.md) | Wires image store into existing fork-from codepath so users can spawn disposable VMs from a saved baseline. Shipped with image Slice 1 at 8a106dc. |
 | github-runner vzscript | done | none | gap vs Cirrus tart workflow | Self-hosted GHA runner inside a long-lived cove VM; primary billing-block escape hatch. |
@@ -245,6 +246,7 @@ see [017](archive/017-v03-execution-roadmap.md) for files, gates, and docs updat
 
 ## Recent changes
 
+- **2026-05-10** (R404): v0.2.1 `cove shell` row refresh. Slice 2 row text "Stdin /dev/null until Slice 3 v0.3 proto bump" was stale — Slice 3 shipped 2026-05-04. Reworded Slice 2 to point to Slice 3 and added an explicit Slice 3 row (`4d9043a`, `8e550d4`, `5d5876f`).
 - **2026-05-10** (R400): Cirrus secrets row flipped from "spec landed; impl pending" to "Slices 1-2 shipped (`fe99629`, `ab7f159`)". Slice 1 (metrics redaction) and Slice 2 (cove-action `secrets:` input → `--secret-env`) both landed 2026-05-08 per `docs/strategy/cirrus-secrets-fix-2026-05-08.md`; the row text had not caught up.
 - **2026-05-10** (R369): Roadmap row freshness pass. Bumped two v0.6 in-progress rows past their stale R62/R59 windows: test-coverage gap fill now reflects R71+ cadence with new commits (`1339f2f`, `61c2ca5`, `84ab32d`, `c7865e1`, `4150a02`); deadcode/SA4006 sweep extended through R83 (`2decbf9`) and post-R83 internal-pkg follow-ons (`3d54d6d`, `f5c14f4`). No status flips; both rows remain `should` / in progress.
 - **2026-05-09** (R87): Roadmap design-row drift sweep. Fixed two v0.4 rows (`VM lifecycle policy v2`, `Soft-reset destructive probe matrix + orchestrator`) where the Depends-on column duplicated the Source design link instead of `none`. No status flips — designs 029 (`16853bb`), 038 (agent-sandbox v2 provider abstraction) ship-state already covered by adjacent rows (virtiofs runtime preflight; Anthropic adapter v2 + cove-action surfaces).
