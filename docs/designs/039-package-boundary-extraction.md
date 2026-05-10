@@ -4,6 +4,10 @@ Status: Shipped at 8bd7a65 (2026-05-07). All five ControlServer
 sub-bridges (Capture, Lifecycle, Agent, Input, Network) live in
 `internal/controlserver/`; the `internal/vmrun` extraction (§5)
 shipped alongside.
+Verified 2026-05-10 (R367): bridge files
+`internal/controlserver/{capture,lifecycle,agent,input,network}.go`
+all present; `internal/vmrun/` package present; SHA `8bd7a65`
+reachable on main.
 Date: 2026-05-06
 
 ## Problem
