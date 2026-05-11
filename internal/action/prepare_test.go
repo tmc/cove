@@ -212,6 +212,25 @@ func TestMovePrepareFlagsFirst(t *testing.T) {
 	}
 }
 
+func TestParseVersionToken(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"cove", "cove abc123 (commit abc123, built now)", "abc123"},
+		{"agent", "vz-agent def456\n", "def456"},
+		{"missing", "version abc123\n", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseVersionToken(tt.in); got != tt.want {
+				t.Fatalf("parseVersionToken(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func mustTime(t *testing.T, value string) time.Time {
 	t.Helper()
 	tm, err := time.Parse(time.RFC3339, value)
