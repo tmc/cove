@@ -1,13 +1,30 @@
-# Blockers deferred from 0.1 to `next`
+# Deferred blocker audit
 
 Two items were deferred from the cove 0.1 ship gate on 2026-04-24 because
-empirical smoke testing turned up reproducible bugs. This doc is the
-handoff: reproduction, evidence, and root-cause hypotheses. Full
-smoke-test context lives in `docs/ship-audit-2026-04-24.md`.
+empirical smoke testing turned up reproducible bugs. Full smoke-test context
+lives in `docs/ship-audit-2026-04-24.md`.
+
+Audit status on 2026-05-10 against `origin/main` `373d50c`:
+
+- #1 is no longer the original no-disk blocker. The resolver drift and
+  ghost-wipe failure modes are covered by `5d7eacb` (`up.go`,
+  `installer.go`, `up_path_resolution_test.go`) and `706cf0d`
+  (`disposable_test.go`, `installer_watch.go`). The remaining gate is a
+  real clean-host fresh-install smoke, because `RELEASE-NOTES-v0.1.0.md`
+  still records that it had not been completed after the fix.
+- #6 is fixed in code for upstream lume tar-split pull. `ba6024c`
+  (`internal/ociimage/lume.go`, `lume_pull.go`) added tar-split manifest
+  detection and a separate importer, `c48a5c8` projects `config.json` into
+  cove vmconfig while preserving `lume-config.json`, and `d5bf2fc` covers
+  pull dispatch with httptest registry fixtures. `fc1cd2e` keeps the old
+  `docker://` DX wart closed by accepting the transport prefix in
+  `internal/ociimage.ParseReference`.
 
 ## #1 — `cove up` fresh install produces no disk
 
-**Symptom.** `cove up -user <name> -vm <name> -ipsw <ipsw> -headless`
+**Status.** Original code-level blocker resolved; clean-host smoke still open.
+
+**Original symptom.** `cove up -user <name> -vm <name> -ipsw <ipsw> -headless`
 reports install 100%, then fails at provision stage because the VM
 directory does not exist.
 
@@ -39,47 +56,39 @@ error: stage provisioning: disk image not found: …/smoketest-vm/disk.img
 **Post-condition.** `/Users/tmc/.vz/vms/smoketest-vm/` never exists on
 disk. `find /Users/tmc/.vz -name 'smoketest*'` returns nothing.
 
-**Hypotheses (pick one when working this).**
+**Current code evidence.**
 
-1. **Path-resolution mismatch between install target and post-install
-   stop+inject.** Existing VMs on the machine live at `~/.vz/<name>/`
-   (e.g. `~/.vz/hermes-mlx-go-60g-v10/disk.img`), but the post-install
-   warning resolves `target.Directory` to `~/.vz/vms/<name>/`. Install
-   may have written to one path, `stopVMAndInject` stats another.
-2. **Install materialized disk in a temp dir that was cleaned up by the
-   installer completion handler before provisioning ran.** Install
-   reports 100% but leaves nothing on disk under the expected name.
-3. **`applyUpConfig` / `currentVMSelection` drift.** Globals set by
-   `up.go` for install may not agree with the `VMTarget` read by
-   `stopVMAndInject` and `stageProvisioningFilesForVM`.
+- `5d7eacb fix(up): instrument resolver flow + path-resolution regression
+  test` added `up_path_resolution_test.go`, which asserts `parseUpFlags`,
+  `applyUpConfig`, `currentVMSelection`, and `target.diskPath()` agree for
+  fresh named VMs, fresh default VMs, and legacy `~/.vz/<name>` VMs.
+- `installer.go` now logs `target.Directory`, `target.Name`, global
+  `vmDir`/`vmName`, post-stop `diskFile`, parent entries, and post-install
+  `vmDir`/`disk.img` state under `VZ_DEBUG_INSTALL=1`.
+- `706cf0d fix(test): stop wiping the real ~/.vz/vms during disposable
+  tests` removed the test-side `os.RemoveAll(vmconfig.BaseDir())` hazard
+  that release notes identify as the actual root cause of the no-disk smoke.
+- `installer_watch.go` adds a `VZ_DEBUG_INSTALL` fsnotify watcher for
+  remove/rename/create events on `vmDir` and its parent during install.
 
-**Relevant code.**
-- `up.go:196-217` — `applyUpConfig` sets globals `provisionStrategy="disk"`,
-  `SkipSetupAssistant=true`, `AutoLogin=true`, writes `provisionUser`/
-  `provisionPassword`.
-- `up.go:238-264` — `runUpPipeline` orchestrates install → inject → run,
-  skips install if `vmAlreadyInstalled(target.Directory)`.
-- `installer.go:161-187` — `stopVMAndInject` stats `target.diskPath()`
-  post-stop and prints the warning above.
-- `installer.go:321-376` — `stopInstallerVM` is non-destructive; does not
-  remove files.
-- `vmconfig` / `VMTarget.Directory` resolution — likely where the divergence
-  lives.
+**Next slice.**
 
-**TODO.**
-- [ ] Add a pre-install log line that prints the full resolved
-  `target.Directory` and the disk path the installer is about to write to.
-- [ ] Add an equivalent log line in `stopVMAndInject` before the stat.
-- [ ] Reproduce with `VZ_DEBUG_INSTALL=1` to dump the install path.
-- [ ] If install and post-install resolve to different paths, unify at
-  a single resolver in `vmconfig`.
-- [ ] After the root cause is fixed, re-run the smoke from
-  `docs/ship-audit-2026-04-24.md` and flip item #1 to PASS.
+- [ ] Run one clean-host fresh install with `VZ_DEBUG_INSTALL=1`:
+  `./cove up -user smoketest -password smokepass123 -vm smoketest-vm
+  -ipsw ~/.vz/cache/RestoreImage.ipsw -headless -disk-size 48
+  -no-shutdown`.
+- [ ] Record the full install path trace and post-condition in this doc or a
+  dated smoke artifact.
+- [ ] If it reaches the provisioned desktop and leaves
+  `~/.vz/vms/smoketest-vm/disk.img`, flip #1 to PASS. If it fails, use the
+  new resolver trace and watcher events as the next root-cause artifact.
 
 ## #6 — `cove pull` does not accept upstream lume images
 
-**Symptom.** `cove pull` of any `ghcr.io/trycua/*` image fails at
-manifest-parse before any blob fetch:
+**Status.** Fixed for upstream lume tar-split imports on current `origin/main`.
+
+**Original symptom.** `cove pull` of any `ghcr.io/trycua/*` image failed at
+manifest parse before any blob fetch:
 
 ```
 $ ./cove pull --dry-run --as lume-smoke \
@@ -89,61 +98,29 @@ error: parse registry manifest: parse manifest:
   org.trycua.lume.uncompressed-disk-size
 ```
 
-**Root cause.** Lume's public ghcr.io images use a schema that the
-`coveToLume`/`lumeToCove` map in `internal/ociimage/annotations.go:22-50`
-does not cover. Observed against
-`ghcr.io/trycua/ubuntu-noble-vanilla:latest` and
-`ghcr.io/trycua/macos-sequoia-vanilla:latest`:
+**Current code evidence.**
 
-- Manifest-level annotations: only `org.opencontainers.image.created`.
-  No `org.trycua.lume.uncompressed-disk-size`, no `hw-model-digest`, no
-  `aux-digest`, no lume- or cove-namespaced keys at all.
-- Layer mediaType:
-  `application/vnd.oci.image.layer.v1.tar;part.number=N;part.total=41` —
-  a parameterised tar split, not LZ4-compressed chunks.
-- Layer annotations: only `org.opencontainers.image.title` set to
-  `disk.img.part.aa` … `disk.img.part.bo`, `nvram.bin`, `config.json`.
-- No `chunk-index`/`chunk-total`/`uncompressed-size`/`role` anywhere.
+- `ba6024c ociimage: detect lume tar-split manifests and route to a separate
+  importer` added `internal/ociimage/lume.go`. It detects layers with
+  `application/vnd.oci.image.layer.v1.tar;part.number=...` or
+  `org.opencontainers.image.title=disk.img.part.*`, extracts `nvram.bin` and
+  `config.json`, and dispatches `ParseManifest` to `FormatLume`.
+- `lume_pull.go` streams the sorted disk parts into `disk.img.partial`, renames
+  atomically to `disk.img`, preserves sidecars, writes provenance, and maps
+  lume CPU/memory config into cove vmconfig.
+- `d5bf2fc pull: cover FormatLume vs FormatCove dispatch with httptest
+  registry` added `TestPullDispatch_LumeManifest`, which uses the original
+  blocker schema: only `org.opencontainers.image.created` at manifest level,
+  tar-split disk layers, and `image.title` sidecars.
+- `integration_oci_test.go` also drives a full pull dispatch path for related
+  registry formats; `lume_pull_test.go` covers config projection.
+- `fc1cd2e` accepts Lume-style `docker://ghcr.io/...` refs in
+  `internal/ociimage.ParseReference`.
 
-Cove's pull path requires `CoveUncompressedDiskSize` at manifest level
-(`annotations.go:75-78`) and per-layer `CoveUncompressedSize`,
-`CoveChunkIndex`, `CoveChunkTotal`, `CoveRole` (`annotations.go:97-121`,
-`pull.go:322-336`). None of these are present in lume's images.
+**Remaining validation.**
 
-**Schema differences that make "add a few more aliases" insufficient.**
-
-1. **Disk layout.** Lume ships `disk.img` split into named 500 MB `tar`
-   parts reassembled by filename; cove expects LZ4-compressed, sha256-
-   verified chunks addressed by `chunk-index`/`chunk-total` annotations
-   and written at computed offsets via `WriteCompressedChunkAt`.
-   Different compression, different addressing, different verification.
-2. **Identity metadata.** Lume ships `nvram.bin` and `config.json` as
-   separate layers keyed by `image.title`; cove keys them by `role`
-   annotation (`nvram`/`hw-model`/`machine-id`). Lume has no `hw-model`
-   or `machine-id` blob — macOS hardware identity lives inside
-   `config.json`, which cove does not parse.
-3. **No size/digest hints.** Without `uncompressed-size` and
-   `uncompressed-content-digest` on each layer, cove cannot preallocate
-   `disk.img.partial` or verify final output.
-
-**TODO.**
-- [ ] Decide scope: do we want 1-way lume-import, or full interop?
-- [ ] If 1-way import: add a second `pull` code path keyed on
-      `mediaType` containing `;part.number=`/`;part.total=` and
-      `image.title` matching `disk.img.part.*` / `nvram.bin` /
-      `config.json`. Concat parts by sort-order of `part.aa`…`part.bo`,
-      write to `disk.img` atomically.
-- [ ] Parse `config.json` (lume format) for macOS hardware identity.
-      Emit cove's `hw-model` / `machine-id` equivalents at pull time so
-      the VM can boot with VZ's platform config.
-- [ ] Smoke-test against `ghcr.io/trycua/ubuntu-noble-vanilla:latest`
-      (Linux — simpler: no hw-model) and
-      `ghcr.io/trycua/macos-sequoia-vanilla:latest` (macOS — needs hw
-      identity extraction).
-- [ ] After landing, flip item #6 to PASS and re-include it in 0.1
-      scope or confirm deferral to 0.2.
-
-**Minor DX wart seen during smoke:** `./cove pull docker://…` fails with
-`reference must not include a URL scheme`. Lume docs commonly show
-`docker://`-prefixed refs. Not a correctness issue — treat as a
-ref-parser improvement while in this area.
+- [ ] Run one network smoke against
+  `docker://ghcr.io/trycua/ubuntu-noble-vanilla:latest` and, if available to
+  the operator, `docker://ghcr.io/trycua/macos-sequoia-vanilla:latest`.
+  The current code has fixture-backed parser/import coverage, not a fresh
+  live GHCR pull recorded in this doc.

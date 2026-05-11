@@ -21,6 +21,7 @@ func ParseReference(ref string) (Reference, error) {
 	if ref == "" {
 		return out, fmt.Errorf("empty reference")
 	}
+	ref = strings.TrimPrefix(ref, "docker://")
 	if strings.Contains(ref, "://") {
 		return out, fmt.Errorf("reference must not include a URL scheme")
 	}
