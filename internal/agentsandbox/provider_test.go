@@ -83,6 +83,58 @@ func TestRunPassesGoogleModelOverrides(t *testing.T) {
 	}
 }
 
+func TestRunOpenAIBridgeArgsAndOutput(t *testing.T) {
+	root := t.TempDir()
+	log := filepath.Join(root, "args.txt")
+	writeAgentBridge(t, root, filepath.Join("adapters", "openai-agents-python", "examples", "computer_use.py"), log)
+	t.Setenv("COVE_AGENT_SANDBOX_PYTHON", "/bin/sh")
+	t.Setenv("COVE_OPENAI_MODEL", "gpt-test")
+
+	var stdout strings.Builder
+	result, err := Run(context.Background(), Options{
+		Provider:      ProviderOpenAI,
+		VMName:        "vm",
+		Task:          "inspect desktop",
+		MaxSteps:      7,
+		ScreenshotDir: filepath.Join(root, "shots"),
+		EventsPath:    filepath.Join(root, "events.jsonl"),
+		RepoRoot:      root,
+		Stdout:        &stdout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FinalAnswer != "bridge ok" || stdout.String() != "bridge ok\n" {
+		t.Fatalf("result=%q stdout=%q, want bridge ok", result.FinalAnswer, stdout.String())
+	}
+	got := readFile(t, log)
+	for _, want := range []string{
+		"--vm\nvm\n",
+		"--task\ninspect desktop\n",
+		"--max-steps\n7\n",
+		"--model\ngpt-test\n",
+		"--screenshot-dir\n" + filepath.Join(root, "shots") + "\n",
+		"--events-jsonl\n" + filepath.Join(root, "events.jsonl") + "\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("openai args missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestRunVertexRequiresProject(t *testing.T) {
+	root := t.TempDir()
+	writeAgentBridge(t, root, filepath.Join("adapters", "google-bridge", "vertex-ai", "computer_use.py"), filepath.Join(root, "args.txt"))
+	t.Setenv("COVE_AGENT_SANDBOX_PYTHON", "/bin/sh")
+	t.Setenv("COVE_VERTEX_PROJECT", "")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
+
+	_, err := Run(context.Background(), Options{Provider: ProviderVertex, VMName: "vm", Task: "task", RepoRoot: root})
+	if err == nil || !strings.Contains(err.Error(), "requires COVE_VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT") {
+		t.Fatalf("Run error = %v, want vertex project requirement", err)
+	}
+}
+
 func TestProviderInfos(t *testing.T) {
 	infos := ProviderInfos()
 	if len(infos) != 4 {
@@ -147,6 +199,22 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func writeAgentBridge(t *testing.T, root, rel, log string) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" >" + shellQuote(log) + "\nprintf 'bridge ok\\n'\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func TestRunRequiresVMAndTask(t *testing.T) {
