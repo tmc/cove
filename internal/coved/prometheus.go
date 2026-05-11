@@ -9,31 +9,31 @@ import (
 )
 
 type PrometheusSnapshot struct {
-	Version           string
-	UptimeS           int64
-	VMsManaged        int
-	ImageGCRuns       int64
-	ImageGCBytes      int64
-	ImageGCDurationMS int64
-	ImageGCSkips      int64
-	ImageGCLastRunUnix int64
+	Version                 string
+	UptimeS                 int64
+	VMsManaged              int
+	ImageGCRuns             int64
+	ImageGCBytes            int64
+	ImageGCDurationMS       int64
+	ImageGCSkips            int64
+	ImageGCLastRunUnix      int64
 	ImageGCManifestsScanned int
 	ImageGCManifestsRemoved int
-	LifecycleRuns     uint64
-	LifecycleErrors   uint64
-	LifecycleLastRunUnix int64
-	EventsDropped     uint64
-	WebhookDelivered  uint64
-	WebhookFailed     uint64
-	WebhookRejected   uint64
-	WebhookLastRunUnix int64
-	StoragePollRuns   int64
-	StoragePollErrors int64
-	StoragePollLastRunUnix int64
-	StorageUsedBytes  int64
-	StorageState      string
-	EventbusSubs      int
-	Events            []Event
+	LifecycleRuns           uint64
+	LifecycleErrors         uint64
+	LifecycleLastRunUnix    int64
+	EventsDropped           uint64
+	WebhookDelivered        uint64
+	WebhookFailed           uint64
+	WebhookRejected         uint64
+	WebhookLastRunUnix      int64
+	StoragePollRuns         int64
+	StoragePollErrors       int64
+	StoragePollLastRunUnix  int64
+	StorageUsedBytes        int64
+	StorageState            string
+	EventbusSubs            int
+	Events                  []Event
 }
 
 func PrometheusHandler(snapshot func() PrometheusSnapshot) http.Handler {
@@ -81,6 +81,17 @@ func WritePrometheus(w io.Writer, s PrometheusSnapshot) {
 		labels := strings.Split(key, "\x00")
 		fmt.Fprintf(w, "coved_events_total{event_type=%q,vm=%q,reason=%q} %d\n", labels[0], labels[1], labels[2], counts[key])
 	}
+	captures := captureLatencyStats(s.Events)
+	for _, key := range sortedKeys(captures) {
+		labels := strings.Split(key, "\x00")
+		stat := captures[key]
+		fmt.Fprintf(w, "coved_capture_latency_ms_count{backend=%q,requested_backend=%q,fallback=%q,fallback_cause=%q} %d\n", labels[0], labels[1], labels[2], labels[3], stat.count)
+		fmt.Fprintf(w, "coved_capture_latency_ms_sum{backend=%q,requested_backend=%q,fallback=%q,fallback_cause=%q} %d\n", labels[0], labels[1], labels[2], labels[3], stat.sum)
+		fmt.Fprintf(w, "coved_capture_latency_ms_max{backend=%q,requested_backend=%q,fallback=%q,fallback_cause=%q} %d\n", labels[0], labels[1], labels[2], labels[3], stat.max)
+		if stat.errors > 0 {
+			fmt.Fprintf(w, "coved_capture_errors_total{backend=%q,requested_backend=%q,fallback_cause=%q} %d\n", labels[0], labels[1], labels[3], stat.errors)
+		}
+	}
 }
 
 func eventCounts(events []Event) map[string]int {
@@ -98,7 +109,60 @@ func eventCounts(events []Event) map[string]int {
 	return counts
 }
 
-func sortedKeys(m map[string]int) []string {
+type captureLatencyStat struct {
+	count  int
+	sum    int64
+	max    int64
+	errors int
+}
+
+func captureLatencyStats(events []Event) map[string]captureLatencyStat {
+	stats := make(map[string]captureLatencyStat)
+	for _, e := range events {
+		if e.EventType != "capture_latency" {
+			continue
+		}
+		backend := extraString(e.Extra, "backend")
+		requested := extraString(e.Extra, "requested_backend")
+		fallback := extraString(e.Extra, "fallback")
+		cause := extraString(e.Extra, "fallback_cause")
+		key := strings.Join([]string{backend, requested, fallback, cause}, "\x00")
+		stat := stats[key]
+		stat.count++
+		stat.sum += e.DurationMS
+		if e.DurationMS > stat.max {
+			stat.max = e.DurationMS
+		}
+		if e.Status == "error" {
+			stat.errors++
+		}
+		stats[key] = stat
+	}
+	return stats
+}
+
+func extraString(extra map[string]any, key string) string {
+	if extra == nil {
+		return ""
+	}
+	switch v := extra[key].(type) {
+	case string:
+		return v
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
+	}
+}
+
+type keyed interface {
+	int | captureLatencyStat
+}
+
+func sortedKeys[V keyed](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
 		keys = append(keys, key)
@@ -106,4 +170,3 @@ func sortedKeys(m map[string]int) []string {
 	sort.Strings(keys)
 	return keys
 }
-

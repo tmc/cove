@@ -230,3 +230,61 @@ func TestPrometheusEmitsWebhookLastRunUnix(t *testing.T) {
 		t.Fatalf("metrics missing coved_webhook_last_run_unix:\n%s", rec.Body.String())
 	}
 }
+
+func TestPrometheusEmitsCaptureLatencyStats(t *testing.T) {
+	h := PrometheusHandler(func() PrometheusSnapshot {
+		return PrometheusSnapshot{Events: []Event{
+			{
+				EventType:  "capture_latency",
+				VMName:     "vm1",
+				DurationMS: 12,
+				Status:     "ok",
+				Extra: map[string]any{
+					"backend":           "sckit",
+					"requested_backend": "auto",
+					"fallback":          false,
+				},
+			},
+			{
+				EventType:  "capture_latency",
+				VMName:     "vm2",
+				DurationMS: 20,
+				Status:     "error",
+				Extra: map[string]any{
+					"backend":           "sckit",
+					"requested_backend": "auto",
+					"fallback":          false,
+				},
+			},
+			{
+				EventType:  "capture_latency",
+				VMName:     "vm3",
+				DurationMS: 33,
+				Status:     "ok",
+				Extra: map[string]any{
+					"backend":           "cgwindow",
+					"requested_backend": "sckit",
+					"fallback":          true,
+					"fallback_cause":    "tcc",
+				},
+			},
+		}}
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		`coved_capture_latency_ms_count{backend="sckit",requested_backend="auto",fallback="false",fallback_cause=""} 2`,
+		`coved_capture_latency_ms_sum{backend="sckit",requested_backend="auto",fallback="false",fallback_cause=""} 32`,
+		`coved_capture_latency_ms_max{backend="sckit",requested_backend="auto",fallback="false",fallback_cause=""} 20`,
+		`coved_capture_errors_total{backend="sckit",requested_backend="auto",fallback_cause=""} 1`,
+		`coved_capture_latency_ms_count{backend="cgwindow",requested_backend="sckit",fallback="true",fallback_cause="tcc"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `coved_capture_latency_ms_count{backend="sckit",requested_backend="auto",fallback="false",fallback_cause="",vm=`) {
+		t.Fatalf("capture labels include vm:\n%s", body)
+	}
+}
