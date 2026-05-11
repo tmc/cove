@@ -60,6 +60,7 @@ func TestRunConfigValidate(t *testing.T) {
 			c.IPSWPath = "/x.ipsw"
 		}, "macOS-only"},
 		{"empty usb path", func(c *RunConfig) { c.USB = []USBSpec{{Path: ""}} }, "empty path"},
+		{"empty block path", func(c *RunConfig) { c.BlockDevices = []BlockSpec{{Path: ""}} }, "empty path"},
 		{"empty volume path", func(c *RunConfig) { c.Volumes = []VolumeMount{{Tag: "t"}} }, "empty host path"},
 	}
 
