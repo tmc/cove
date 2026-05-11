@@ -104,3 +104,22 @@ func TestCreateAutounattendISORejectsInvalidVMDir(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateAutounattendISORejectsExistingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	isoPath := filepath.Join(dir, "autounattend.iso")
+	if err := os.Mkdir(isoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(isoPath, "child"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := CreateAutounattendISO(dir, ProvisionConfig{})
+	if err == nil {
+		t.Fatal("CreateAutounattendISO succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "remove existing autounattend iso") {
+		t.Fatalf("error = %q, want remove existing autounattend iso", err.Error())
+	}
+}
