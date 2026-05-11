@@ -1,7 +1,8 @@
 # Design 036: NixOS Guest Support
 
-Status: Shipped (`8324750` installer, `2427b2e` vzscript base recipe,
-`f1e6812` quickstart docs, `07835a9` cli.md install table). Last
+Status: Shipped on 2026-05-05 (`8324750` installer, `2427b2e` vzscript
+base recipe, `f1e6812` quickstart docs) and completed on 2026-05-07
+(`07835a9` cli.md install table). Last
 verified 2026-05-10 (R368): `nixos_installer.go` exports the
 `LinuxVariantNixOS` flow, `vzscripts/nixos-base.vzscript` and
 `vzscripts/nix.vzscript` present; all four SHAs reachable on main.
