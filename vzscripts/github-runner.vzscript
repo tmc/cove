@@ -7,7 +7,7 @@ guest-write /tmp/install-runner.sh install-runner.sh
 # Host vars ($GH_REPO etc.) are expanded by the vzscript engine before being
 # sent to the guest. Empty values pass through and are validated inside the
 # script. We pass values as positional args to avoid quoting issues.
-guest-exec /bin/bash /tmp/install-runner.sh '__VZSCRIPT_GH_RUNNER_ARGS__' $GH_REPO $GH_TOKEN $RUNNER_LABEL $RUNNER_NAME
+guest-exec /bin/bash /tmp/install-runner.sh '__VZSCRIPT_GH_RUNNER_ARGS__' $GH_REPO $GH_TOKEN $RUNNER_LABEL $RUNNER_NAME $RUNNER_REINSTALL
 
 -- install-runner.sh --
 #!/bin/bash
@@ -19,6 +19,7 @@ guest-exec /bin/bash /tmp/install-runner.sh '__VZSCRIPT_GH_RUNNER_ARGS__' $GH_RE
 #   $3  GH_TOKEN   (required, registration token)
 #   $4  RUNNER_LABEL (optional, default "cove-vm")
 #   $5  RUNNER_NAME  (optional, default "$(hostname)-cove")
+#   $6  RUNNER_REINSTALL (optional, set to 1 to replace existing install)
 set -eu
 
 if [ "${1:-}" != "__VZSCRIPT_GH_RUNNER_ARGS__" ]; then
@@ -29,6 +30,7 @@ GH_REPO="${2:-}"
 GH_TOKEN="${3:-}"
 RUNNER_LABEL="${4:-cove-vm}"
 RUNNER_NAME="${5:-$(hostname -s)-cove}"
+RUNNER_REINSTALL="${6:-}"
 
 if [ -z "$GH_REPO" ] || [ -z "$GH_TOKEN" ]; then
   cat >&2 <<EOF
@@ -55,12 +57,23 @@ RUNNER_HOME=$(dscl . -read "/Users/$RUNNER_USER" NFSHomeDirectory \
 RUNNER_DIR="$RUNNER_HOME/actions-runner"
 
 if [ -f "$RUNNER_DIR/.runner" ]; then
-  echo "Runner already configured at $RUNNER_DIR. Refusing to re-register."
-  echo "Remove $RUNNER_DIR (after './svc.sh uninstall' and './config.sh remove') to reinstall."
-  if [ -x "$RUNNER_DIR/svc.sh" ]; then
-    su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./svc.sh status" || true
+  if [ "$RUNNER_REINSTALL" != "1" ]; then
+    echo "Runner already configured at $RUNNER_DIR. Refusing to re-register."
+    echo "Re-run with RUNNER_REINSTALL=1 to stop, unregister, and replace it."
+    if [ -x "$RUNNER_DIR/svc.sh" ]; then
+      su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./svc.sh status" || true
+    fi
+    exit 0
   fi
-  exit 0
+  echo "Replacing existing GitHub Actions runner at $RUNNER_DIR"
+  if [ -x "$RUNNER_DIR/svc.sh" ]; then
+    su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./svc.sh stop" || true
+    su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./svc.sh uninstall" || true
+  fi
+  if [ -x "$RUNNER_DIR/config.sh" ]; then
+    su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./config.sh remove --unattended --token '$GH_TOKEN'" || true
+  fi
+  rm -rf "$RUNNER_DIR"
 fi
 
 echo "Installing GitHub Actions runner for $GH_REPO as user $RUNNER_USER"

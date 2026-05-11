@@ -183,6 +183,9 @@ Self-hosted GitHub Actions or GitLab runner inside a long-lived VM:
 GH_REPO=tmc/cove GH_TOKEN=<reg-token> \
   cove vzscript run github-runner
 
+RUNNER_REINSTALL=1 GH_REPO=tmc/cove GH_TOKEN=<reg-token> \
+  cove vzscript run github-runner
+
 GITLAB_URL=https://gitlab.com GITLAB_TOKEN=<token> \
   cove vzscript run gitlab-runner
 ```
