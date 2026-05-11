@@ -4,6 +4,7 @@ package controlclient
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -83,13 +84,32 @@ func (c *Client) SetAuthToken(token string) {
 
 // SendRequest sends a proto request and returns the proto response.
 func (c *Client) SendRequest(req *controlpb.ControlRequest) (*controlpb.ControlResponse, error) {
-	conn, err := net.DialTimeout("unix", c.socketPath, c.timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	return c.SendRequestCtx(ctx, req)
+}
+
+// SendRequestCtx sends a proto request and returns the proto response.
+func (c *Client) SendRequestCtx(ctx context.Context, req *controlpb.ControlRequest) (*controlpb.ControlResponse, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", c.socketPath)
 	if err != nil {
 		return nil, FormatDialError(c.socketPath, err)
 	}
 	defer conn.Close()
 
-	conn.SetDeadline(time.Now().Add(c.timeout))
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
 
 	// Marshal and send request
 	reqToSend := req
@@ -103,6 +123,9 @@ func (c *Client) SendRequest(req *controlpb.ControlRequest) (*controlpb.ControlR
 	}
 	reqBytes = append(reqBytes, '\n')
 	if _, err := conn.Write(reqBytes); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("control %q: write: %w", req.Type, err)
 	}
 
@@ -110,6 +133,9 @@ func (c *Client) SendRequest(req *controlpb.ControlRequest) (*controlpb.ControlR
 	reader := bufio.NewReaderSize(conn, 256*1024)
 	respLine, err := reader.ReadString('\n')
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("control %q: read: %w", req.Type, err)
 	}
 
