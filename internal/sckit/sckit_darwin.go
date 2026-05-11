@@ -16,12 +16,13 @@ import (
 const sckitMinMacOSMajor = 14
 
 var (
-	cgPreflightOnce               sync.Once
+	cgPreflightOnce                sync.Once
 	cgPreflightScreenCaptureAccess func() bool
+	coreGraphicsFrameworkPath      = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
 )
 
 func loadCGPreflight() {
-	cg, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	cg, err := purego.Dlopen(coreGraphicsFrameworkPath, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 	if err != nil {
 		return
 	}
