@@ -141,6 +141,34 @@ func TestWriteCompressedChunkAtRejectsBadInput(t *testing.T) {
 		wantErr string
 	}{
 		{
+			name:    "negative size",
+			chunk:   Chunk{Index: 1, Size: -1, Digest: testDigest(data)},
+			desc:    desc,
+			writer:  tempDiskWriter(t, int64(len(data))),
+			wantErr: "negative size",
+		},
+		{
+			name:    "missing digest",
+			chunk:   Chunk{Index: 1, Size: int64(len(data))},
+			desc:    desc,
+			writer:  tempDiskWriter(t, int64(len(data))),
+			wantErr: "missing digest",
+		},
+		{
+			name:    "missing compressed digest",
+			chunk:   chunk,
+			desc:    Descriptor{Size: desc.Size},
+			writer:  tempDiskWriter(t, int64(len(data))),
+			wantErr: "missing compressed digest",
+		},
+		{
+			name:    "negative compressed size",
+			chunk:   chunk,
+			desc:    descriptorWithSize(desc, -1),
+			writer:  tempDiskWriter(t, int64(len(data))),
+			wantErr: "negative compressed size",
+		},
+		{
 			name:    "compressed digest",
 			chunk:   chunk,
 			desc:    descriptorWithDigest(desc, testDigest([]byte("bad"))),
