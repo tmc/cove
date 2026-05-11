@@ -1,7 +1,8 @@
 # v0.4 Anthropic adapter v2
 
-**Status**: v2 implementation target. Live API verification pending unless a
-running disposable VM and `ANTHROPIC_API_KEY` are available.
+**Status**: shipped on 2026-05-05. Design v2 update landed at `55a2463`;
+implementation shipped at `33e5b30` and `775537f`. Live API verification
+remains gated on a running disposable VM and `ANTHROPIC_API_KEY`.
 **Supersedes**: Design 022 v1 in this file, accepted planning input for the
 Python `cove-claude-sandbox` package.
 **Source**: [/tmp/cove-v04-audit-a4k2.md](../../tmp/cove-v04-audit-a4k2.md)
