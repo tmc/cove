@@ -1,6 +1,10 @@
 package controlserver
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/tmc/apple/corefoundation"
+)
 
 // TestMouseYMappingUsesContentHeight asserts the slice-6c invariant:
 // the mouse Y mapping flips against the cached content height (the VM
@@ -40,5 +44,62 @@ func TestInputBridgeZeroValueHasNilHost(t *testing.T) {
 	var b InputBridge
 	if b.host != nil {
 		t.Fatalf("zero InputBridge.host = %v, want nil", b.host)
+	}
+}
+
+func TestSetInputBridgeRuntimeInstallsHooks(t *testing.T) {
+	_ = t.TempDir()
+	tests := []struct {
+		name string
+		rt   InputBridgeRuntime
+	}{
+		{
+			name: "hooks",
+			rt: InputBridgeRuntime{
+				CreateMouseEvent: func(uint64, uint32, corefoundation.CGPoint, uint32) (uintptr, error) {
+					return 11, nil
+				},
+				CreateKeyboardEvent: func(uint64, uint16, bool) (uintptr, error) {
+					return 12, nil
+				},
+				PostEvent:             func(uint32, uintptr) error { return nil },
+				SetEventUnicodeString: func(uintptr, string) {},
+				SetEventFlags:         func(uintptr, uint64) {},
+				RunOnUIThreadSync:     func(f func()) { f() },
+				AllowHIDKeyboard:      func() bool { return true },
+				ModifierKeySequence:   func(flags uint32) []uint32 { return []uint32{flags + 1} },
+				ModifierShift:         1,
+				CGEventMouseMoved:     2,
+				CGEventLeftMouseDown:  3,
+				CGEventRightMouseDown: 4,
+				CGEventLeftMouseUp:    5,
+				CGEventRightMouseUp:   6,
+				CGHIDEventTap:         7,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetInputBridgeRuntime(tt.rt)
+			if got, _ := createMouseEventFn(0, 0, corefoundation.CGPoint{}, 0); got != 11 {
+				t.Fatalf("createMouseEventFn = %d, want 11", got)
+			}
+			if got, _ := createKeyboardEventFn(0, 0, false); got != 12 {
+				t.Fatalf("createKeyboardEventFn = %d, want 12", got)
+			}
+			ran := false
+			runOnUIThreadSyncFn(func() { ran = true })
+			if !ran || !allowHIDKeyboardFn() {
+				t.Fatal("runtime hooks not installed")
+			}
+			if got := modifierKeySequenceFn(4); len(got) != 1 || got[0] != 5 {
+				t.Fatalf("modifierKeySequenceFn = %v, want [5]", got)
+			}
+			if modifierShiftMask != 1 || cgEventMouseMoved != 2 || cgEventLeftMouseDown != 3 ||
+				cgEventRightMouseDown != 4 || cgEventLeftMouseUp != 5 || cgEventRightMouseUp != 6 ||
+				cgHIDEventTap != 7 {
+				t.Fatal("runtime constants not installed")
+			}
+		})
 	}
 }
