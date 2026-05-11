@@ -41,6 +41,16 @@ func (r Route) String() string {
 	}
 }
 
+// Port returns the vsock port for r.
+func (r Route) Port() uint32 {
+	switch r {
+	case RouteUser:
+		return UserPort
+	default:
+		return DaemonPort
+	}
+}
+
 // RouteFor returns the appropriate route for op. path may be empty for
 // ops that do not address a guest path (exec, mount, etc.). For Linux guests,
 // the user agent is unavailable and RouteDaemon is always returned.

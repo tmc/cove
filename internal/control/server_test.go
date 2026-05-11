@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,6 +58,38 @@ func TestServeConnectionDispatchesAuthorizedRequest(t *testing.T) {
 	<-done
 	if h.handled != "ping" || h.events != 1 {
 		t.Fatalf("handled=%q events=%d", h.handled, h.events)
+	}
+}
+
+func TestWriteResponseFramesJSONLine(t *testing.T) {
+	tests := []struct {
+		name string
+		resp *controlpb.ControlResponse
+		want string
+	}{
+		{name: "success", resp: &controlpb.ControlResponse{Success: true, Data: "ok"}, want: `"success":true`},
+		{name: "error", resp: &controlpb.ControlResponse{Error: "booting"}, want: `"error":"booting"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, client := net.Pipe()
+			defer client.Close()
+			errc := make(chan error, 1)
+			go func() {
+				errc <- WriteResponse(server, tt.resp)
+				server.Close()
+			}()
+			line, err := bufio.NewReader(client).ReadString('\n')
+			if err != nil {
+				t.Fatalf("read frame: %v", err)
+			}
+			if err := <-errc; err != nil {
+				t.Fatalf("WriteResponse: %v", err)
+			}
+			if !strings.HasSuffix(line, "\n") || !strings.Contains(line, tt.want) {
+				t.Fatalf("frame = %q, want newline and %s", line, tt.want)
+			}
+		})
 	}
 }
 
