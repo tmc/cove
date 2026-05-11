@@ -106,6 +106,16 @@ func TestListMissingRoot(t *testing.T) {
 	}
 }
 
+func TestListRejectsEmptyRoot(t *testing.T) {
+	_, err := List("", Filter{})
+	if err == nil {
+		t.Fatal("List returned nil error")
+	}
+	if err.Error() != "runs list: empty root" {
+		t.Fatalf("error = %q, want empty root", err)
+	}
+}
+
 func copyListFixtures(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
