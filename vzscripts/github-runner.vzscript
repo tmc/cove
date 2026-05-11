@@ -58,7 +58,7 @@ if [ -f "$RUNNER_DIR/.runner" ]; then
   echo "Runner already configured at $RUNNER_DIR. Refusing to re-register."
   echo "Remove $RUNNER_DIR (after './svc.sh uninstall' and './config.sh remove') to reinstall."
   if [ -x "$RUNNER_DIR/svc.sh" ]; then
-    ( cd "$RUNNER_DIR" && ./svc.sh status ) || true
+    su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./svc.sh status" || true
   fi
   exit 0
 fi
@@ -100,8 +100,9 @@ su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./config.sh --unattended \
   --labels '${LABELS}' \
   --replace"
 
-# Install and start the launchd service. svc.sh must run with sudo.
-( cd "$RUNNER_DIR" && ./svc.sh install "$RUNNER_USER" && ./svc.sh start )
-( cd "$RUNNER_DIR" && ./svc.sh status ) || true
+# Install and start the launchd service. The macOS runner's svc.sh creates a
+# per-user LaunchAgent and refuses to run as root.
+su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./svc.sh install && ./svc.sh start"
+su -l "$RUNNER_USER" -c "cd '$RUNNER_DIR' && ./svc.sh status" || true
 
 echo "Runner '${RUNNER_NAME}' registered for ${GH_REPO} with labels: ${LABELS}"
