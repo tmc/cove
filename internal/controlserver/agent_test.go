@@ -1,6 +1,8 @@
 package controlserver
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -114,6 +116,50 @@ func TestAgentBridgeGetAgentWithoutHostReturnsNotConfigured(t *testing.T) {
 	}
 	if got := err.Error(); got != "vm not configured" {
 		t.Errorf("err = %q, want %q", got, "vm not configured")
+	}
+}
+
+func TestAgentBridgeNilHostAccessors(t *testing.T) {
+	_ = t.TempDir()
+	tests := []struct {
+		name string
+		run  func(*AgentBridge) error
+	}{
+		{"daemon", func(b *AgentBridge) error {
+			_, err := b.GetAgent()
+			return err
+		}},
+		{"user", func(b *AgentBridge) error {
+			_, err := b.GetUserAgent()
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b AgentBridge
+			if err := tt.run(&b); err == nil || err.Error() != "vm not configured" {
+				t.Fatalf("err = %v, want vm not configured", err)
+			}
+			if b.CurrentDaemonClient() != nil {
+				t.Fatal("CurrentDaemonClient = non-nil, want nil")
+			}
+			if !b.LastPing().IsZero() {
+				t.Fatal("LastPing = non-zero, want zero")
+			}
+			if got := b.HealthSnapshot(); got != (AgentHealthState{}) {
+				t.Fatalf("HealthSnapshot = %+v, want zero", got)
+			}
+		})
+	}
+}
+
+func TestAgentBridgeTimeoutContextWithoutHost(t *testing.T) {
+	var b AgentBridge
+	ctx, cancel := b.timeoutContext(time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("ctx.Err = %v, want DeadlineExceeded", ctx.Err())
 	}
 }
 
