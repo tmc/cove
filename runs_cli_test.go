@@ -1,11 +1,19 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/metrics"
 	"github.com/tmc/vz-macos/internal/runs"
 )
 
@@ -26,13 +34,26 @@ func TestParseRunsExportArgsAllowsFormatAfterPrefix(t *testing.T) {
 		{"--format", "gha-summary", "abc123"},
 	}
 	for _, args := range tests {
-		prefix, format, err := parseRunsExportArgs(args)
+		prefix, format, guestPaths, err := parseRunsExportArgs(args)
 		if err != nil {
 			t.Fatalf("parseRunsExportArgs(%v): %v", args, err)
 		}
-		if prefix != "abc123" || format != "gha-summary" {
-			t.Fatalf("parseRunsExportArgs(%v) = %q, %q; want abc123, gha-summary", args, prefix, format)
+		if prefix != "abc123" || format != "gha-summary" || len(guestPaths) != 0 {
+			t.Fatalf("parseRunsExportArgs(%v) = %q, %q, %v; want abc123, gha-summary, nil", args, prefix, format, guestPaths)
 		}
+	}
+}
+
+func TestParseRunsExportArgsIncludesGuest(t *testing.T) {
+	prefix, format, guestPaths, err := parseRunsExportArgs([]string{"abc123", "--format=tar", "--include-guest", "/tmp/out.txt", "--include-guest=/var/log/app.log"})
+	if err != nil {
+		t.Fatalf("parseRunsExportArgs: %v", err)
+	}
+	if prefix != "abc123" || format != "tar" {
+		t.Fatalf("prefix/format = %q/%q, want abc123/tar", prefix, format)
+	}
+	if got, want := strings.Join(guestPaths, ","), "/tmp/out.txt,/var/log/app.log"; got != want {
+		t.Fatalf("guest paths = %q, want %q", got, want)
 	}
 }
 
@@ -48,9 +69,54 @@ func TestParseRunsExportArgsErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := parseRunsExportArgs(tt.args)
+			_, _, _, err := parseRunsExportArgs(tt.args)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v; want contains %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunRunsExportIncludeGuestCopiesIntoTar(t *testing.T) {
+	root := t.TempDir()
+	writeRunsCLIRun(t, root, "20260510-guest", "job-vm")
+	fake := newFakeCpAgent()
+	fake.guest["/tmp/report.txt"] = []byte("guest report\n")
+	var buf bytes.Buffer
+	if err := runRunsExportWith(context.Background(), []string{"20260510", "--format=tar", "--include-guest", "/tmp/report.txt"}, root, &buf, func(vm string) cpAgent {
+		if vm != "job-vm" {
+			t.Fatalf("vm = %q, want job-vm", vm)
+		}
+		return fake
+	}); err != nil {
+		t.Fatalf("runRunsExportWith: %v", err)
+	}
+	names := runsTarNames(t, buf.Bytes())
+	if !names["20260510-guest/guest/tmp/report.txt"] {
+		t.Fatalf("tar missing guest artifact: %#v", names)
+	}
+}
+
+func TestRunRunsExportIncludeGuestFailures(t *testing.T) {
+	root := t.TempDir()
+	writeRunsCLIRun(t, root, "20260510-guest", "job-vm")
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"non tar", []string{"20260510", "--format=json", "--include-guest", "/tmp/a"}, "requires --format tar"},
+		{"relative guest", []string{"20260510", "--format=tar", "--include-guest", "tmp/a"}, "must be absolute"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := runRunsExportWith(context.Background(), tt.args, root, &buf, func(string) cpAgent {
+				t.Fatal("agent should not be constructed")
+				return nil
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
 	}
@@ -100,4 +166,48 @@ func TestPrintRunsTableIncludesEventCount(t *testing.T) {
 	if !strings.Contains(out, " 7 ") {
 		t.Fatalf("missing event count cell '7':\n%s", out)
 	}
+}
+
+func writeRunsCLIRun(t *testing.T, root, id, vm string) {
+	t.Helper()
+	dir := filepath.Join(root, id)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	f, err := os.Create(filepath.Join(dir, "metrics.jsonl"))
+	if err != nil {
+		t.Fatalf("Create metrics: %v", err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	for _, event := range []metrics.Event{
+		{Timestamp: time.Unix(0, 0).UTC().Format(time.RFC3339Nano), EventType: "vm_start", VMName: vm, Status: "ok"},
+		{Timestamp: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), EventType: "run_complete", VMName: vm, Status: "ok", Extra: map[string]any{"run_id": id}},
+	} {
+		if err := enc.Encode(event); err != nil {
+			t.Fatalf("Encode metrics: %v", err)
+		}
+	}
+}
+
+func runsTarNames(t *testing.T, data []byte) map[string]bool {
+	t.Helper()
+	gz, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("NewReader: %v", err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	names := map[string]bool{}
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Next: %v", err)
+		}
+		names[h.Name] = true
+	}
+	return names
 }

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -39,7 +41,7 @@ func printRunsUsage(w io.Writer) {
 Subcommands:
   list [--limit N] [--since D] [--status ok|fail|all] [--json]
   show <run-id-prefix> [--json]
-  export <run-id-prefix> --format json|gha-summary|tar`)
+  export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]`)
 }
 
 func runRunsList(args []string) error {
@@ -104,20 +106,32 @@ func runRunsShow(args []string) error {
 }
 
 func runRunsExport(args []string) error {
-	prefix, format, err := parseRunsExportArgs(args)
+	return runRunsExportWith(context.Background(), args, vmconfig.RunsDir(), os.Stdout, newControlCpAgent)
+}
+
+func runRunsExportWith(ctx context.Context, args []string, root string, out io.Writer, newAgent func(string) cpAgent) error {
+	prefix, format, guestPaths, err := parseRunsExportArgs(args)
 	if err != nil {
 		return err
 	}
 	if prefix == "" || format == "" {
-		return fmt.Errorf("usage: cove runs export <run-id-prefix> --format json|gha-summary|tar")
+		return fmt.Errorf("usage: cove runs export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]")
+	}
+	if len(guestPaths) > 0 {
+		if format != "tar" {
+			return fmt.Errorf("runs export: --include-guest requires --format tar")
+		}
+		if err := includeGuestArtifacts(ctx, root, prefix, guestPaths, newAgent); err != nil {
+			return err
+		}
 	}
 	switch format {
 	case "json":
-		return runs.ExportJSON(os.Stdout, vmconfig.RunsDir(), prefix)
+		return runs.ExportJSON(out, root, prefix)
 	case "gha-summary":
-		return runs.ExportGHASummary(os.Stdout, vmconfig.RunsDir(), prefix)
+		return runs.ExportGHASummary(out, root, prefix)
 	case "tar":
-		return runs.ExportTarGz(os.Stdout, vmconfig.RunsDir(), prefix)
+		return runs.ExportTarGz(out, root, prefix)
 	default:
 		return fmt.Errorf("unknown runs export format %q", format)
 	}
@@ -141,31 +155,92 @@ func parseRunsShowArgs(args []string) (prefix string, jsonOut bool, err error) {
 	return prefix, jsonOut, nil
 }
 
-func parseRunsExportArgs(args []string) (prefix, format string, err error) {
+func parseRunsExportArgs(args []string) (prefix, format string, guestPaths []string, err error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--format" || arg == "-format":
 			i++
 			if i >= len(args) || args[i] == "" {
-				return "", "", fmt.Errorf("runs export: --format requires a value")
+				return "", "", nil, fmt.Errorf("runs export: --format requires a value")
 			}
 			format = args[i]
 		case strings.HasPrefix(arg, "--format="):
 			format = strings.TrimPrefix(arg, "--format=")
 		case strings.HasPrefix(arg, "-format="):
 			format = strings.TrimPrefix(arg, "-format=")
+		case arg == "--include-guest" || arg == "-include-guest":
+			i++
+			if i >= len(args) || args[i] == "" {
+				return "", "", nil, fmt.Errorf("runs export: --include-guest requires a guest path")
+			}
+			guestPaths = append(guestPaths, args[i])
+		case strings.HasPrefix(arg, "--include-guest="):
+			guestPaths = append(guestPaths, strings.TrimPrefix(arg, "--include-guest="))
+		case strings.HasPrefix(arg, "-include-guest="):
+			guestPaths = append(guestPaths, strings.TrimPrefix(arg, "-include-guest="))
 		default:
 			if strings.HasPrefix(arg, "-") {
-				return "", "", fmt.Errorf("unknown runs export flag %q", arg)
+				return "", "", nil, fmt.Errorf("unknown runs export flag %q", arg)
 			}
 			if prefix != "" {
-				return "", "", fmt.Errorf("usage: cove runs export <run-id-prefix> --format json|gha-summary|tar")
+				return "", "", nil, fmt.Errorf("usage: cove runs export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]")
 			}
 			prefix = arg
 		}
 	}
-	return prefix, format, nil
+	return prefix, format, guestPaths, nil
+}
+
+func includeGuestArtifacts(ctx context.Context, root, prefix string, guestPaths []string, newAgent func(string) cpAgent) error {
+	show, err := runs.LoadShow(root, prefix)
+	if err != nil {
+		return err
+	}
+	vm := runExportVMName(show)
+	if vm == "" {
+		return fmt.Errorf("runs export: run %s has no vm_name in metrics", show.RunID)
+	}
+	hostPaths := make([]string, len(guestPaths))
+	for i, guestPath := range guestPaths {
+		hostPath, err := guestArtifactHostPath(show.Dir, guestPath)
+		if err != nil {
+			return err
+		}
+		hostPaths[i] = hostPath
+	}
+	agent := newAgent(vm)
+	for i, guestPath := range guestPaths {
+		hostPath := hostPaths[i]
+		if err := os.MkdirAll(filepath.Dir(hostPath), 0755); err != nil {
+			return fmt.Errorf("runs export: prepare guest artifact path: %w", err)
+		}
+		if err := agent.CopyFromGuest(ctx, filepath.Clean(guestPath), hostPath); err != nil {
+			return fmt.Errorf("runs export: copy guest %s: %w", guestPath, err)
+		}
+	}
+	return nil
+}
+
+func runExportVMName(show runs.Show) string {
+	for _, event := range show.Events {
+		if event.VMName != "" {
+			return event.VMName
+		}
+	}
+	return ""
+}
+
+func guestArtifactHostPath(runDir, guestPath string) (string, error) {
+	clean := filepath.Clean(strings.TrimSpace(guestPath))
+	if !filepath.IsAbs(clean) {
+		return "", fmt.Errorf("runs export: guest path %q must be absolute", guestPath)
+	}
+	rel := strings.TrimPrefix(clean, string(filepath.Separator))
+	if rel == "" || rel == "." {
+		return "", fmt.Errorf("runs export: guest path %q does not name a file", guestPath)
+	}
+	return filepath.Join(runDir, "guest", rel), nil
 }
 
 func printRunsTable(w io.Writer, summaries []runs.Summary) error {
