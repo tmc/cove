@@ -468,13 +468,15 @@ func stopAgentSandboxVM(ctx context.Context, coveBin, vm string) error {
 func waitAgentSandboxRun(cmd *exec.Cmd) error {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
 	select {
 	case err := <-done:
 		if err != nil {
 			return fmt.Errorf("agent-sandbox: fork run exited: %w", err)
 		}
 		return nil
-	case <-time.After(30 * time.Second):
+	case <-timer.C:
 		_ = cmd.Process.Kill()
 		return errors.New("agent-sandbox: fork did not stop after 30s")
 	}
