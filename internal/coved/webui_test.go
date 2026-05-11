@@ -37,3 +37,23 @@ func TestWebUIHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestWebUIHandlerSnapshotOnce(t *testing.T) {
+	var calls int
+	h := WebUIHandler(func() UISnapshot {
+		calls++
+		return UISnapshot{Status: map[string]any{"version": calls}}
+	}, PrometheusHandler(func() PrometheusSnapshot { return PrometheusSnapshot{} }))
+	for _, path := range []string{"/api/status", "/api/events"} {
+		before := calls
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s code = %d", path, rec.Code)
+		}
+		if calls != before+1 {
+			t.Fatalf("%s snapshot calls = %d, want %d", path, calls, before+1)
+		}
+	}
+}
