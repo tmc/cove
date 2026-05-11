@@ -1,6 +1,8 @@
 package controlclient
 
 import (
+	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -39,5 +41,34 @@ func TestSendRequestReadErrorWrapsRequestType(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `control "screenshot"`) {
 		t.Fatalf("err = %v, want request type in wrap", err)
+	}
+}
+
+func TestSendRequestCtxDeadlineDuringRead(t *testing.T) {
+	sock := serveControlClientTest(t, func(*controlpb.ControlRequest) *controlpb.ControlResponse {
+		time.Sleep(time.Second)
+		return &controlpb.ControlResponse{Success: true}
+	})
+	c := New(sock)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	_, err := c.SendRequestCtx(ctx, &controlpb.ControlRequest{Type: "ping"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SendRequestCtx err = %v, want deadline exceeded", err)
+	}
+}
+
+func TestSendRequestKeepsClientTimeout(t *testing.T) {
+	sock := serveControlClientTest(t, func(*controlpb.ControlRequest) *controlpb.ControlResponse {
+		time.Sleep(time.Second)
+		return &controlpb.ControlResponse{Success: true}
+	})
+	c := New(sock)
+	c.SetTimeout(20 * time.Millisecond)
+
+	_, err := c.SendRequest(&controlpb.ControlRequest{Type: "ping"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SendRequest err = %v, want deadline exceeded", err)
 	}
 }
