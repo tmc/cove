@@ -3,8 +3,10 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmpolicy"
 )
 
 func TestSetPolicyFieldErrors(t *testing.T) {
@@ -60,6 +62,45 @@ func TestSetPolicyFieldHappyPaths(t *testing.T) {
 			}
 			if !strings.Contains(out, "Policy file:") {
 				t.Fatalf("setPolicyField(%v) stdout = %q, want Policy file line", tt.args, out)
+			}
+		})
+	}
+}
+
+func TestSetPolicyFieldPreservesExistingFields(t *testing.T) {
+	withTempHome(t)
+	vmDir := vmconfig.Path("vm")
+	start := vmpolicy.Policy{IdleTimeout: time.Minute, MaxAge: time.Hour, RunBudget: 3}
+	if err := vmpolicy.Save(vmDir, start); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		args []string
+		want vmpolicy.Policy
+	}{
+		{
+			name: "idle override",
+			args: []string{"idle", "2m"},
+			want: vmpolicy.Policy{IdleTimeout: 2 * time.Minute, MaxAge: time.Hour, RunBudget: 3},
+		},
+		{
+			name: "run budget override",
+			args: []string{"run-budget", "1"},
+			want: vmpolicy.Policy{IdleTimeout: 2 * time.Minute, MaxAge: time.Hour, RunBudget: 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := setPolicyField("vm", vmDir, tt.args); err != nil {
+				t.Fatalf("setPolicyField: %v", err)
+			}
+			got, err := vmpolicy.Load(vmDir)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("policy = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
