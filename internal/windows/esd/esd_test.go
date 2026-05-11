@@ -29,6 +29,12 @@ func TestParseProductsXML(t *testing.T) {
 	}
 }
 
+func TestParseProductsXMLRejectsMalformedXML(t *testing.T) {
+	if _, err := ParseProductsXML(stringsReader("<MCT>")); err == nil {
+		t.Fatal("ParseProductsXML succeeded, want error")
+	}
+}
+
 func TestSelectPrefersConsumerARM64(t *testing.T) {
 	tests := []struct {
 		name    string
