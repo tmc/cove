@@ -68,21 +68,21 @@ type lumeConfigOut struct {
 
 // lumePushPlan is the dry-run plan for a cove→lume export.
 type lumePushPlan struct {
-	VMName        string
-	VMDir         string
-	Ref           string
-	DiskPath      string
-	DiskSize      int64
-	ChunkSize     int64
-	Config        lumeConfigOut
-	ConfigJSON    []byte
-	NvramPath     string
-	NvramDigest   string
-	NvramSize     int64
-	Parts         []lumePushPart
-	Manifest      ociimage.Manifest
-	UploadTime    string
-	StreamSize    int64 // total compressed bytes (sum of parts)
+	VMName      string
+	VMDir       string
+	Ref         string
+	DiskPath    string
+	DiskSize    int64
+	ChunkSize   int64
+	Config      lumeConfigOut
+	ConfigJSON  []byte
+	NvramPath   string
+	NvramDigest string
+	NvramSize   int64
+	Parts       []lumePushPart
+	Manifest    ociimage.Manifest
+	UploadTime  string
+	StreamSize  int64 // total compressed bytes (sum of parts)
 }
 
 // lumePushPart is one part.aa..bo descriptor in the dry-run plan.
@@ -415,6 +415,9 @@ func writeLumeManifestOut(path string, m ociimage.Manifest) error {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write lume manifest: %w", err)
 	}
+	if err := os.Chmod(path, 0644); err != nil {
+		return fmt.Errorf("chmod lume manifest: %w", err)
+	}
 	return nil
 }
 
@@ -433,4 +436,3 @@ func lumePushDryRunOnly(plan *lumePushPlan, opts pushOptions) error {
 	printLumePushDryRun(os.Stdout, plan)
 	return nil
 }
-
