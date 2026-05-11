@@ -1,7 +1,60 @@
 # Design 041 Slice 4 Preflight
 
-Captured after `git fetch origin` on 2026-05-10. Branch
-`origin/conductor/sckit-slice4` did not exist at this check.
+Updated after `git fetch origin main conductor/sckit-slice4` on
+2026-05-11. Branch `origin/conductor/sckit-slice4` exists at
+`017e52d` (`screenshots: retire CGWindowList`), but it is not
+ready to land on current `origin/main`.
+
+## 2026-05-11 audit
+
+Branch delta from `origin/main...origin/conductor/sckit-slice4`:
+
+- One slice commit: `017e52d screenshots: retire CGWindowList`.
+- Files touched: `README.md`, `control_socket.go`, `doc.go`,
+  `docs/README.md`, `docs/architecture/overview.md`,
+  `docs/architecture/purego.md`, `docs/designs/README.md`,
+  `docs/reference/cli.md`, `internal/sckit/backend.go`,
+  `internal/sckit/backend_test.go`, `internal/sckit/doc.go`,
+  `private_api_display_test.go`, `screenshots.go`,
+  `screenshots_sckit_test.go`.
+- Net delta: 69 insertions, 253 deletions.
+
+Merge status against current `origin/main`:
+
+- `git merge --no-commit --no-ff origin/conductor/sckit-slice4`
+  conflicts in `docs/designs/README.md` and `screenshots.go`.
+- The `screenshots.go` conflict is in the SCKit fallback block that
+  current main still keeps for Slice 3 dual-path behavior.
+- The `docs/designs/README.md` conflict is a stale roadmap-status row.
+
+Missing ship gate:
+
+- Design 041 still blocks Slice 4 on real SCKit-vs-CGWindow latency
+  evidence. `RELEASE-NOTES-v0.6.0.md` and
+  `docs/release/v0.6-readiness.md` both still say Slice 2 p50/p95
+  numbers are blocked/TBD.
+- No in-repo benchmark/result file currently records the required
+  p50/p95 comparison for the default flip.
+
+Validate later with a TCC-granted bench host:
+
+```sh
+git fetch origin main conductor/sckit-slice4
+git worktree add ../vz-macos-sckit-slice4-merge origin/main
+cd ../vz-macos-sckit-slice4-merge
+git merge --no-commit --no-ff origin/conductor/sckit-slice4
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+./cove doctor sckit-preauth
+COVE_TEST_SCKIT_GRANT=1 go test -tags sckit_live ./internal/sckit/
+./cove doctor sckit-spike -n 30 -threshold 50ms -title-prefix cove
+go test ./...
+staticcheck -checks=SA1019 ./...
+```
+
+Do not land Slice 4 until the benchmark output is recorded in-repo with
+p50 and p95 values and the merge conflicts above are resolved. The safe
+preparatory cleanup that can land now is this status clarification only.
 
 ## Design anchors
 
