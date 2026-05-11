@@ -191,6 +191,13 @@ func TestBuildImage_HappyPath(t *testing.T) {
 
 	// On-disk layout.
 	imgDir := ref.Path()
+	info, err := os.Stat(imgDir)
+	if err != nil {
+		t.Fatalf("stat image dir: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("image dir mode = %03o, want 700", got)
+	}
 	for _, f := range []string{"manifest.json", "disk.img", "aux.img", "hw.model", "machine.id"} {
 		if _, err := os.Stat(filepath.Join(imgDir, f)); err != nil {
 			t.Errorf("image missing %s: %v", f, err)
