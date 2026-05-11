@@ -106,6 +106,33 @@ func TestPortForwardManagerCountsEmpty(t *testing.T) {
 	}
 }
 
+func TestPortForwardManagerListAllDirections(t *testing.T) {
+	m := NewPortForwardManager(nil)
+	m.forwards[1001] = &PortForward{HostPort: 1001, GuestPort: 22, conns: 2}
+	m.reverse[2222] = &ReversePortForward{HostPort: 1002, GuestPort: 2222, RelayPort: 20222, conns: 3}
+	m.udp[1003] = &UDPForward{HostPort: 1003, GuestPort: 53, conns: 4}
+	m.udpRev[5353] = &ReverseUDPForward{HostPort: 1004, GuestPort: 5353, RelayPort: 25353, conns: 5}
+
+	got := m.List()
+	want := map[string]bool{
+		"localhost:1001 -> vsock:22 (2 active)":                     false,
+		"vm:2222 -> localhost:1002 via vsock:20222 (3 active)":      false,
+		"udp localhost:1003 -> vsock:53 (4 packets)":                false,
+		"udp vm:5353 -> localhost:1004 via vsock:25353 (5 packets)": false,
+	}
+	for _, line := range got {
+		if _, ok := want[line]; !ok {
+			t.Fatalf("unexpected List entry %q in %v", line, got)
+		}
+		want[line] = true
+	}
+	for line, seen := range want {
+		if !seen {
+			t.Fatalf("missing List entry %q in %v", line, got)
+		}
+	}
+}
+
 func TestPortForwardManagerCountsNilReceiver(t *testing.T) {
 	var m *PortForwardManager
 	got := m.Counts()
