@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	vz "github.com/tmc/apple/virtualization"
 	agentstate "github.com/tmc/vz-macos/internal/agent"
@@ -158,6 +159,9 @@ func (s *ControlServer) MaybeAutoUpgradeAgent(agentVer string, onUpgraded func()
 func responseText(data []byte) string {
 	if len(data) == 0 {
 		return ""
+	}
+	if utf8.Valid(data) {
+		return string(data)
 	}
 	return strings.ToValidUTF8(string(data), "�")
 }

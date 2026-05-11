@@ -130,6 +130,9 @@ func TestGuestDir(t *testing.T) {
 }
 
 func TestResponseTextValidUTF8(t *testing.T) {
+	if got := responseText([]byte("ok")); got != "ok" {
+		t.Fatalf("responseText(valid) = %q, want ok", got)
+	}
 	got := responseText([]byte{0xff, 'o', 'k'})
 	if !utf8.ValidString(got) {
 		t.Fatalf("responseText returned invalid UTF-8: %q", got)
