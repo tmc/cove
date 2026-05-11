@@ -112,6 +112,15 @@ func TestAgentBridgeSummaryWithoutHost(t *testing.T) {
 	}
 }
 
+func TestAgentBridgeSetLastPingForTest(t *testing.T) {
+	var b AgentBridge
+	want := time.Unix(1700000000, 0)
+	b.SetLastPingForTest(want)
+	if got := b.LastPing(); !got.Equal(want) {
+		t.Fatalf("LastPing() = %v, want %v", got, want)
+	}
+}
+
 // TestAgentBridgeGetAgentWithoutHostReturnsNotConfigured verifies the
 // nil-host degradation path: a bare &AgentBridge{} returns the same
 // "vm not configured" error the pre-extraction path produced for an
