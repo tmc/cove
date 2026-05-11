@@ -1,7 +1,9 @@
 # Design 034: Fleet
 
-Status: Implemented (2026-05-05; Slices 1-2). Verified 2026-05-10 (R361):
-`runFleetCommandWithRunner` at `fleet_cli.go:34` dispatches add/ls/rm/vm/image/ps;
+Status: Implemented (2026-05-05; Slices 1-3). Slice 1 shipped at `622b571`,
+`695ae2e`, `9f993a5`, and `366bfac`; Slice 2 at `afba1a5`, `0b4776f`,
+`e59348d`, and `6e91044`; Slice 3 at `f13dae5`, `1273fcb`, and `e347836`.
+Verified 2026-05-10 (R361): `runFleetCommandWithRunner` at `fleet_cli.go:34` dispatches add/ls/rm/vm/image/ps;
 `runFleetAggregateCommand` at `fleet_aggregate_cli.go:24`; `runFleetPSCommand` at
 `fleet_aggregate_cli.go:125`; config path `~/.vz/fleet.json` from
 `internal/fleet/fleet.go:29` (`DefaultPath`).
