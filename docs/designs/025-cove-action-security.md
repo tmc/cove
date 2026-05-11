@@ -1,6 +1,6 @@
 # cove-action security architecture
 
-**Status**: spec; cove-action GHA wrapper shipped at `.github/actions/cove-action/action.yml` per design 021 Slice 1.
+**Status**: shipped. Design landed 2026-05-02 at `1db4830`; cove-action surface shipped at `0985377`, `90493c3`, `8bd473e`, `82a0ac5`, `7fafe40`, and `9e6253a`.
 **Source**: conductor dispatch 2026-05-02; user decision (cove repo
 stays private through this design; cove-action implementation deferred
 to v0.4; image push/pull is private-only until the public flip).
