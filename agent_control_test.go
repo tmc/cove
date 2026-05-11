@@ -43,7 +43,7 @@ func TestAgentSSHDArgsByGuestOS(t *testing.T) {
 			name:      "linux status",
 			action:    "status",
 			linuxMode: true,
-			want:      []string{"systemctl", "is-active", "ssh"},
+			want:      []string{"systemctl", "show", "-p", "ActiveState", "--value", "ssh"},
 		},
 		{
 			name:      "linux on",

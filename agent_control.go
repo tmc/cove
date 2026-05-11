@@ -588,7 +588,7 @@ func (s *ControlServer) handleAgentSSHD(cmd *controlpb.AgentSSHDCommand) *contro
 	}
 	args, err := agentSSHDArgs(cmd.Action, linuxMode)
 	if err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown sshd action: %s (use on, off, or status)", cmd.Action)}
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown sshd action: %s (use on, off, start, stop, enable, or status)", cmd.Action)}
 	}
 	ctx, cancel := s.timeoutContext(30 * time.Second)
 	defer cancel()
@@ -626,7 +626,7 @@ func agentSSHDArgs(action string, linuxGuest bool) ([]string, error) {
 		case "enable":
 			return []string{"systemctl", "enable", "--now", "ssh.service", "ssh.socket"}, nil
 		case "status":
-			return []string{"systemctl", "is-active", "ssh"}, nil
+			return []string{"systemctl", "show", "-p", "ActiveState", "--value", "ssh"}, nil
 		default:
 			return nil, fmt.Errorf("unknown sshd action")
 		}

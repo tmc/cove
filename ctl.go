@@ -133,7 +133,7 @@ Guest agent (gRPC over vsock):
   agent-write <path> <data>   Write data to file in guest
   agent-shutdown [force]      Graceful guest shutdown
   agent-reboot                Reboot guest
-  agent-sshd <on|off|status>  Manage SSH remote login
+  agent-sshd <on|off|start|stop|enable|status>  Manage SSH remote login
   agent-mount-volumes         Mount tagged VirtioFS volumes in guest
   agent-status                Agent health status (daemon + user agent)
   ready [--require <names>]   Run readiness checks (xcode-cli, go, homebrew, ...)
@@ -645,11 +645,13 @@ func ctlCommand(args []string) error {
 
 	case "agent-sshd":
 		if len(subArgs) < 1 {
-			return fmt.Errorf("agent-sshd requires: on, off, or status")
+			return fmt.Errorf("agent-sshd requires: on, off, start, stop, enable, or status")
 		}
 		action := subArgs[0]
-		if action != "on" && action != "off" && action != "status" {
-			return fmt.Errorf("agent-sshd action must be on, off, or status")
+		switch action {
+		case "on", "off", "start", "stop", "enable", "status":
+		default:
+			return fmt.Errorf("agent-sshd action must be on, off, start, stop, enable, or status")
 		}
 		req.Command = &controlpb.ControlRequest_AgentSshd{
 			AgentSshd: &controlpb.AgentSSHDCommand{
