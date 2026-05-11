@@ -95,6 +95,10 @@ func SetInputBridgeRuntime(rt InputBridgeRuntime) {
 	cgHIDEventTap = rt.CGHIDEventTap
 }
 
+func isZeroCFTypeRef(ref corefoundation.CFTypeRef) bool {
+	return uintptr(ref) == 0
+}
+
 // InputBridge owns the mouse and keyboard delivery paths used by
 // the control socket. The host injects an InputHost back-channel
 // for VM/view/window handles and configuration; the bridge stays
@@ -395,7 +399,7 @@ func (b *InputBridge) sendMouseCGEvent(cmd *controlpb.MouseCommand) *controlpb.C
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
 	}
-	if event == nil {
+	if isZeroCFTypeRef(event) {
 		return &controlpb.ControlResponse{Error: "failed to create CGEvent"}
 	}
 	defer corefoundation.CFRelease(event)
@@ -616,7 +620,7 @@ func (b *InputBridge) SendKeyCGEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
 	}
-	if event == nil {
+	if isZeroCFTypeRef(event) {
 		return &controlpb.ControlResponse{Error: "failed to create CGEvent"}
 	}
 	defer corefoundation.CFRelease(event)
@@ -756,7 +760,7 @@ func (b *InputBridge) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NSEv
 	if err != nil {
 		return appkit.NSEvent{}, fmt.Errorf("create CGEvent: %v", err)
 	}
-	if cgEvent == nil {
+	if isZeroCFTypeRef(cgEvent) {
 		return appkit.NSEvent{}, fmt.Errorf("create CGEvent returned nil")
 	}
 

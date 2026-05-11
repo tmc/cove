@@ -9,9 +9,13 @@ import (
 	"github.com/tmc/apple/objc"
 )
 
+func zeroCFTypeRef(ref corefoundation.CFTypeRef) bool {
+	return uintptr(ref) == 0
+}
+
 func ensureInputInit() error {
 	event, err := createKeyboardEvent(0, 0, false)
-	if event != nil {
+	if !zeroCFTypeRef(event) {
 		corefoundation.CFRelease(event)
 	}
 	return err
@@ -157,7 +161,7 @@ func TestPrivateHIDKeyboardEventConstruction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create key down: %v", err)
 			}
-			if cgDown == nil {
+			if zeroCFTypeRef(cgDown) {
 				t.Fatal("CreateKeyboardEvent returned nil for key down")
 			}
 			if tc.char != "" {
@@ -191,7 +195,7 @@ func TestPrivateHIDKeyboardEventConstruction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create key up: %v", err)
 			}
-			if cgUp == nil {
+			if zeroCFTypeRef(cgUp) {
 				t.Fatal("CreateKeyboardEvent returned nil for key up")
 			}
 
