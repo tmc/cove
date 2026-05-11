@@ -71,7 +71,7 @@ channel.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| `cove up` fresh-install path-resolution fix | done | none | [roadmap-post-v0.1](archive/roadmap-post-v0.1.md), `03fb38f fix(up): resolve up target before install` | Fixes the headline UX bug where install reported success but provisioning failed because the target VM directory was never materialized. Shipped on `main` as `03fb38f`. |
+| `cove up` fresh-install path-resolution fix | done | none | [roadmap-post-v0.1](archive/roadmap-post-v0.1.md), `03fb38f`, `5d7eacb`, `706cf0d`, [blocker audit](../blockers-next.md) | Fixes the headline UX bug where install reported success but provisioning failed because the target VM directory was never materialized. Follow-up audit found the old no-disk smoke was caused by a disposable test wiping the real `~/.vz/vms`; resolver tracing, path-resolution tests, and the `VZ_DEBUG_INSTALL` watcher are in place. Remaining work is a clean-host smoke record, not another resolver-code blocker. |
 | CDC vs fixed-offset chunking trade-off study | done | none | [002](archive/002-cove-disks-oci.md) | Settles whether content-defined chunking is worth the cost before committing the v0.2 store design. |
 | `cove doctor` TCC/FDA probe | done | none | [TCC research](../research/tcc-via-user-agent.md) | Triggers/diagnoses Full Disk Access state before VirtioFS access silently fails. |
 | Verify 008 codebase-cleanup status | done | none | [008](archive/008-codebase-cleanup-plan.md) | Confirms which cleanup phases already landed and gates v0.2 work. |
@@ -88,6 +88,7 @@ channel.
 | ControlServer decomposition - phases 1+2 | done | none | [008](archive/008-codebase-cleanup-plan.md) | Moves agent and shared-folder configuration seams out of the package-main god object. |
 | DHCP lease exhaustion warnings | done | none | gap vs tart DHCP lease handling | Warns high-throughput fork users before macOS VM networking degrades from long DHCP leases. |
 | USPTO trademark search for "cove" | done | none | product/legal hygiene | Finds live/pending software-class COVE conflicts before public registry work. |
+| Upstream Lume tar-split pull import | done | local content-addressed store | [002](archive/002-cove-disks-oci.md), [blocker audit](../blockers-next.md) | `cove pull` now detects upstream Lume tar-split manifests, routes them to `lume_pull.go`, preserves `lume-config.json`, projects CPU/memory into cove vmconfig, and accepts Lume-doc-style `docker://` refs. Evidence: `ba6024c`, `c48a5c8`, `d5bf2fc`, and `fc1cd2e`. Remaining validation is a live GHCR smoke record, not parser/import implementation. |
 
 ## v0.2.1 - Shell + Image Surface (post-v0.2 polish)
 

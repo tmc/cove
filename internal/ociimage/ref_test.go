@@ -48,6 +48,15 @@ func TestParseReference(t *testing.T) {
 				Digest:     "sha256:abcd",
 			},
 		},
+		{
+			name: "docker transport prefix",
+			ref:  "docker://ghcr.io/trycua/ubuntu-noble-vanilla:latest",
+			want: Reference{
+				Registry:   "ghcr.io",
+				Repository: "trycua/ubuntu-noble-vanilla",
+				Tag:        "latest",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -58,7 +67,7 @@ func TestParseReference(t *testing.T) {
 			if got != tt.want {
 				t.Fatalf("ParseReference() = %#v, want %#v", got, tt.want)
 			}
-			if got.String() != tt.ref {
+			if !strings.HasPrefix(tt.ref, "docker://") && got.String() != tt.ref {
 				t.Fatalf("Reference.String() = %q, want %q", got.String(), tt.ref)
 			}
 		})
