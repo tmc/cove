@@ -1,14 +1,10 @@
 # cove runner images: publish & fork-from
 
-**Status**: Slice 1 shipped (`8a106dc`, 2026-05-02; 1027 LOC, 8 tests
-green). Slice 2 shipped (`02acc3d`, `cf6a506`, `0349570`, 2026-05-04)
-and is now contract-frozen: `cove image push|pull` use `oras-go` with
-Docker credential reuse, `cove image verify` is the freshness/provenance
-gate, the tarball stdin/stdout path remains available for operator
-transport, and public-registry push still requires explicit operator
-opt-in. Slice 3 (drop public-registry refusal + cosign) is **deferred
-indefinitely** per user 2026-05-02 — cove repo stays private; revisit
-only when the user explicitly requests a public flip.
+**Status**: Slices 1-2 shipped (`8a106dc`, 2026-05-02; `02acc3d`,
+`cf6a506`, `0349570`, 2026-05-04). Image lifecycle and operator commands
+shipped on 2026-05-05 at `fb37866`, `75c1897`, `1e9806e`, `7cbbf9c`,
+`6f0d396`, `b46deb0`, `dbe1520`, `fca848e`, `9fc8303`, and `535db8c`.
+Slice 3 (public registry + cosign) remains deferred while cove stays private.
 **Source**: notebook scope-B verdict; the user prompt "i think cirrus
 publishes images to use as github runners, can we do the same?". Scope A
 (immediate vzscript-based runner provisioning) shipped at
