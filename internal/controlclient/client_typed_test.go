@@ -38,6 +38,30 @@ func TestClientTypedResponses(t *testing.T) {
 			want:     "ok\n",
 		},
 		{
+			name: "agent daemon exec",
+			resp: &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentExecResult{
+				AgentExecResult: &controlpb.AgentExecResponse{Stdout: "root\n"},
+			}},
+			run: func(c *Client) (string, error) {
+				s, err := c.AgentDaemonExecTypedTimeout([]string{"id"}, nil, "", time.Second)
+				return s.GetStdout(), err
+			},
+			wantType: "agent-exec",
+			want:     "root\n",
+		},
+		{
+			name: "agent user exec",
+			resp: &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentExecResult{
+				AgentExecResult: &controlpb.AgentExecResponse{Stdout: "user\n"},
+			}},
+			run: func(c *Client) (string, error) {
+				s, err := c.AgentUserExecTypedTimeout([]string{"whoami"}, nil, "", time.Second)
+				return s.GetStdout(), err
+			},
+			wantType: "agent-user-exec",
+			want:     "user\n",
+		},
+		{
 			name: "agent read",
 			resp: &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentFile{
 				AgentFile: &controlpb.AgentFileResponse{Data: []byte("file")},
