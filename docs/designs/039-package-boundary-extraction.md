@@ -1,13 +1,13 @@
 # Design 039: Package Boundary Extraction
 
-Status: Shipped at 8bd7a65 (2026-05-07). All five ControlServer
-sub-bridges (Capture, Lifecycle, Agent, Input, Network) live in
-`internal/controlserver/`; the `internal/vmrun` extraction (§5)
-shipped alongside.
-Verified 2026-05-10 (R367): bridge files
+Status: Shipped through the 2026-05-07 package-boundary arc. `internal/vmrun`
+shipped at `3d876b8`, with macOS/Linux/Windows callers routed through it at
+`c5dcfec`, `ed05f50`, and `23c25d1`. All five ControlServer sub-bridges
+(Capture, Lifecycle, Agent, Input, Network) now live in
+`internal/controlserver/`; the final bridge move landed at `8bd7a65`.
+Verified 2026-05-11 (R108): cited SHAs are reachable from `origin/main`; bridge files
 `internal/controlserver/{capture,lifecycle,agent,input,network}.go`
-all present; `internal/vmrun/` package present; SHA `8bd7a65`
-reachable on main.
+all present; `internal/vmrun/` package present.
 Date: 2026-05-06
 
 ## Problem
@@ -332,8 +332,8 @@ Do include the first three slices in v0.5 if the release has room:
 Those slices are tractable, reviewable, and reduce the amount of new product
 surface that lands directly in package `main`. Slice 4 (`internal/provision`)
 is the stretch goal for v0.5 because provisioning has been the source of real
-operator pain. Slices 5 and 6 should be v0.6 stabilization work unless v0.5
-slips for other reasons.
+operator pain. Slices 5 and 6 later shipped as part of the same 2026-05-07
+package-boundary arc; this recommendation is retained as design history.
 
 The standard for each slice should be boring: one concern, tests passing, no
 behavioral diff, and a revert that does not strand later work.
