@@ -60,7 +60,8 @@ func inputEnsureInit() error {
 // mouseType is one of the cgEvent* mouse constants; mouseButton is 0 for left, 1 for right.
 func createMouseEvent(source uintptr, mouseType uint32, position corefoundation.CGPoint, mouseButton uint32) (corefoundation.CFTypeRef, error) {
 	if err := inputEnsureInit(); err != nil {
-		return nil, err
+		var ref corefoundation.CFTypeRef
+		return ref, err
 	}
 	return cgEventCreateMouseEvent(source, mouseType, position, mouseButton), nil
 }
@@ -69,7 +70,8 @@ func createMouseEvent(source uintptr, mouseType uint32, position corefoundation.
 // virtual key code (e.g. 36=Return, 48=Tab).
 func createKeyboardEvent(source uintptr, virtualKey uint16, keyDown bool) (corefoundation.CFTypeRef, error) {
 	if err := inputEnsureInit(); err != nil {
-		return nil, err
+		var ref corefoundation.CFTypeRef
+		return ref, err
 	}
 	return cgEventCreateKeyboardEvent(source, virtualKey, keyDown), nil
 }
