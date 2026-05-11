@@ -88,6 +88,39 @@ func TestHandleUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestHandleSetsReadDeadline(t *testing.T) {
+	server, client := net.Pipe()
+	deadlines := make(chan time.Time, 1)
+	d := &daemon{
+		version:   "test-version",
+		started:   time.Now(),
+		vmRoot:    t.TempDir(),
+		connected: make(chan struct{}),
+	}
+	go d.handle(deadlineConn{Conn: server, deadlines: deadlines})
+	if _, err := client.Write([]byte("STATUS\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	select {
+	case deadline := <-deadlines:
+		if !deadline.After(time.Now()) {
+			t.Fatalf("deadline = %v, want future", deadline)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("deadline was not set")
+	}
+}
+
+type deadlineConn struct {
+	net.Conn
+	deadlines chan<- time.Time
+}
+
+func (c deadlineConn) SetReadDeadline(t time.Time) error {
+	c.deadlines <- t
+	return c.Conn.SetReadDeadline(t)
+}
+
 func mustMkdir(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0755); err != nil {

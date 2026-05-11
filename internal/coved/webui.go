@@ -21,11 +21,13 @@ func WebUIHandler(snapshot func() UISnapshot, metrics http.Handler) http.Handler
 	mux.Handle("/metrics", metrics)
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		_ = json.NewEncoder(w).Encode(snapshot().Status)
+		snap := snapshot()
+		_ = json.NewEncoder(w).Encode(snap.Status)
 	})
 	mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		events := snapshot().Events
+		snap := snapshot()
+		events := snap.Events
 		if events == nil {
 			events = []Event{}
 		}

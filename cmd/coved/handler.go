@@ -52,6 +52,8 @@ type statusResponse struct {
 	EventbusSubscribers     int    `json:"eventbus_subscribers,omitempty"`
 }
 
+const commandReadTimeout = 5 * time.Second
+
 func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 	status := d.status()
 	var storageRuns, storageErrors, storageUsed, storageLastRunUnix int64
@@ -81,31 +83,31 @@ func (d *daemon) prometheusSnapshot() coved.PrometheusSnapshot {
 		imageGCRemoved = stats.ManifestsRemoved
 	}
 	return coved.PrometheusSnapshot{
-		Version:       status.Version,
-		UptimeS:       status.UptimeS,
-		VMsManaged:    status.VMsManaged,
-		ImageGCRuns:        status.ImageGCRunsTotal,
-		ImageGCBytes:       status.ImageGCBytesFreedTotal,
-		ImageGCSkips:       imageGCSkips(d),
-		ImageGCDurationMS:  status.ImageGCDurationMSTotal,
-		ImageGCLastRunUnix: imageGCLastRunUnix,
+		Version:                 status.Version,
+		UptimeS:                 status.UptimeS,
+		VMsManaged:              status.VMsManaged,
+		ImageGCRuns:             status.ImageGCRunsTotal,
+		ImageGCBytes:            status.ImageGCBytesFreedTotal,
+		ImageGCSkips:            imageGCSkips(d),
+		ImageGCDurationMS:       status.ImageGCDurationMSTotal,
+		ImageGCLastRunUnix:      imageGCLastRunUnix,
 		ImageGCManifestsScanned: imageGCScanned,
 		ImageGCManifestsRemoved: imageGCRemoved,
-		LifecycleRuns:        status.LifecycleEnforced,
-		LifecycleErrors:      status.LifecycleStopErrors,
-		LifecycleLastRunUnix: lifecycleLastRunUnix,
-		EventsDropped:     d.events.Dropped(),
-		WebhookDelivered:  d.webhook.Delivered(),
-		WebhookFailed:     d.webhook.Failed(),
-		WebhookRejected:   d.webhook.Rejected(),
-		WebhookLastRunUnix: d.webhook.LastDeliveryUnix(),
-		StoragePollRuns:        storageRuns,
-		StoragePollErrors:      storageErrors,
-		StoragePollLastRunUnix: storageLastRunUnix,
-		StorageUsedBytes:       storageUsed,
-		StorageState:           storageState,
-		EventbusSubs:      d.events.Subscribers(),
-		Events:            d.events.Tail(),
+		LifecycleRuns:           status.LifecycleEnforced,
+		LifecycleErrors:         status.LifecycleStopErrors,
+		LifecycleLastRunUnix:    lifecycleLastRunUnix,
+		EventsDropped:           d.events.Dropped(),
+		WebhookDelivered:        d.webhook.Delivered(),
+		WebhookFailed:           d.webhook.Failed(),
+		WebhookRejected:         d.webhook.Rejected(),
+		WebhookLastRunUnix:      d.webhook.LastDeliveryUnix(),
+		StoragePollRuns:         storageRuns,
+		StoragePollErrors:       storageErrors,
+		StoragePollLastRunUnix:  storageLastRunUnix,
+		StorageUsedBytes:        storageUsed,
+		StorageState:            storageState,
+		EventbusSubs:            d.events.Subscribers(),
+		Events:                  d.events.Tail(),
 	}
 }
 
@@ -133,6 +135,7 @@ func (d *daemon) handle(conn net.Conn) {
 	default:
 		close(d.connected)
 	}
+	_ = conn.SetReadDeadline(time.Now().Add(commandReadTimeout))
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil && line == "" {
 		fmt.Fprintf(conn, `{"error":"read command: %v"}`+"\n", err)
