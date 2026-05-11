@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -129,18 +130,29 @@ func ExportTarGz(w io.Writer, root, prefix string) error {
 		}
 		return nil
 	}); err != nil {
-		_ = tw.Close()
-		_ = gz.Close()
+		if closeErr := closeTarGz(tw, gz); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 		return fmt.Errorf("export tar: %w", err)
 	}
-	if err := tw.Close(); err != nil {
-		_ = gz.Close()
-		return fmt.Errorf("export tar: %w", err)
-	}
-	if err := gz.Close(); err != nil {
+	if err := closeTarGz(tw, gz); err != nil {
 		return fmt.Errorf("export tar: %w", err)
 	}
 	return nil
+}
+
+func closeTarGz(tw *tar.Writer, gz *gzip.Writer) error {
+	return closeAll(tw, gz)
+}
+
+func closeAll(closers ...io.Closer) error {
+	var err error
+	for _, c := range closers {
+		if e := c.Close(); e != nil {
+			err = errors.Join(err, e)
+		}
+	}
+	return err
 }
 
 func runImageRef(events []metrics.Event) string {

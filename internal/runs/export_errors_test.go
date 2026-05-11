@@ -110,3 +110,20 @@ func TestExportNilWriter(t *testing.T) {
 		})
 	}
 }
+
+func TestCloseAllReportsCloseErrors(t *testing.T) {
+	errA := errors.New("close a")
+	errB := errors.New("close b")
+	err := closeAll(errorCloser{err: errA}, errorCloser{err: errB})
+	if !errors.Is(err, errA) || !errors.Is(err, errB) {
+		t.Fatalf("closeAll() = %v, want both close errors", err)
+	}
+}
+
+type errorCloser struct {
+	err error
+}
+
+func (c errorCloser) Close() error {
+	return c.err
+}
