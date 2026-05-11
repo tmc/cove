@@ -7,6 +7,7 @@ package sckit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"time"
@@ -14,6 +15,10 @@ import (
 	"github.com/tmc/apple/screencapturekit"
 	"github.com/tmc/apple/x/vzkit/capture"
 )
+
+// ErrWindowNotFound reports that ScreenCaptureKit could not see the target
+// window in shareable content.
+var ErrWindowNotFound = errors.New("window not found")
 
 // CaptureSpike grabs a single screenshot of the window with the given
 // CGWindowID using SCScreenshotManager and returns the decoded image
@@ -39,7 +44,7 @@ func CaptureSpike(ctx context.Context, windowID uint32) (image.Image, time.Durat
 		}
 	}
 	if !found {
-		return nil, 0, fmt.Errorf("window %d not in shareable content (TCC denied or off-screen)", windowID)
+		return nil, 0, fmt.Errorf("window %d not in shareable content: %w", windowID, ErrWindowNotFound)
 	}
 
 	filter := screencapturekit.NewContentFilterWithDesktopIndependentWindow(target)
