@@ -132,6 +132,57 @@ func TestWriteJSON(t *testing.T) {
 	}
 }
 
+func TestCoveResultHelpers(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "summary.md", "| 16 | ok | 42ms |\n")
+	write(t, root, "runs.jsonl", `{"status":"ok","duration_ms":99}`+"\n")
+
+	for _, tc := range []struct {
+		name       string
+		result     Result
+		wantStatus string
+		wantMS     int64
+		wantReason string
+	}{
+		{
+			name:       "summary ok",
+			result:     coveSummaryResult(root, "fork", "summary.md", "| 16 |", "method"),
+			wantStatus: "ok",
+			wantMS:     42,
+		},
+		{
+			name:       "summary missing",
+			result:     coveSummaryResult(root, "fork", "missing.md", "| 16 |", "method"),
+			wantStatus: "not_measured",
+			wantReason: "no such file",
+		},
+		{
+			name:       "jsonl ok",
+			result:     coveJSONLResult(root, "build", "runs.jsonl", "duration_ms", "method"),
+			wantStatus: "ok",
+			wantMS:     99,
+		},
+		{
+			name:       "jsonl missing",
+			result:     coveJSONLResult(root, "build", "missing.jsonl", "duration_ms", "method"),
+			wantStatus: "not_measured",
+			wantReason: "no such file",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.result.Status != tc.wantStatus {
+				t.Fatalf("status = %q, want %q", tc.result.Status, tc.wantStatus)
+			}
+			if tc.wantMS != 0 && (tc.result.ValueMS == nil || *tc.result.ValueMS != tc.wantMS) {
+				t.Fatalf("value = %v, want %d", tc.result.ValueMS, tc.wantMS)
+			}
+			if tc.wantReason != "" && !strings.Contains(tc.result.Reason, tc.wantReason) {
+				t.Fatalf("reason = %q, want substring %q", tc.result.Reason, tc.wantReason)
+			}
+		})
+	}
+}
+
 func TestRunCompetitiveWritesJSONAndMetrics(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "bench/parallel-fork/results-20260506-m4x-129/summary.md", "| 16 | ok | 1163ms |\n")
