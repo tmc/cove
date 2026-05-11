@@ -4,6 +4,7 @@ package sckit
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -28,9 +29,12 @@ func TestReadMacOSVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			if tt.script != "" {
-				path := filepath.Join(dir, "sw_vers")
-				if err := os.WriteFile(path, []byte(tt.script), 0o755); err != nil {
+				src := filepath.Join(dir, "sw_vers.go")
+				if err := os.WriteFile(src, []byte("package main\nimport \"fmt\"\nfunc main() { fmt.Print(\"14.5.1\\n\") }\n"), 0o644); err != nil {
 					t.Fatal(err)
+				}
+				if out, err := exec.Command("go", "build", "-o", filepath.Join(dir, "sw_vers"), src).CombinedOutput(); err != nil {
+					t.Fatalf("build sw_vers fake: %v\n%s", err, out)
 				}
 			}
 			t.Setenv("PATH", dir)
