@@ -174,3 +174,65 @@ func TestRunRequiresVMAndTask(t *testing.T) {
 		})
 	}
 }
+
+func TestRunValidationAndSentinels(t *testing.T) {
+	tests := []struct {
+		name   string
+		run    func() error
+		want   string
+		wantIs error
+	}{
+		{
+			name: "missing vm",
+			run: func() error {
+				_, err := Run(context.Background(), Options{Provider: ProviderAnthropic, Task: "task"})
+				return err
+			},
+			want: "vm name required",
+		},
+		{
+			name: "missing task",
+			run: func() error {
+				_, err := Run(context.Background(), Options{Provider: ProviderAnthropic, VMName: "vm"})
+				return err
+			},
+			want: "task required",
+		},
+		{
+			name: "unsupported provider",
+			run: func() error {
+				_, err := Run(context.Background(), Options{Provider: "bogus", VMName: "vm", Task: "task"})
+				return err
+			},
+			want: `unsupported provider "bogus"`,
+		},
+		{
+			name: "anthropic runtime sentinel",
+			run: func() error {
+				_, err := Run(context.Background(), Options{Provider: ProviderAnthropic, VMName: "vm", Task: "task"})
+				return err
+			},
+			want:   "implemented by the cove runtime",
+			wantIs: ErrNotSupported,
+		},
+		{
+			name:   "generic stub sentinel",
+			run:    func() error { _, err := (providerStub{}).Run(context.Background(), Options{}); return err },
+			wantIs: ErrNotSupported,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			if err == nil {
+				t.Fatal("err = nil")
+			}
+			if tt.want != "" && !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want substring %q", err, tt.want)
+			}
+			if tt.wantIs != nil && !errors.Is(err, tt.wantIs) {
+				t.Fatalf("errors.Is(%v, %v) = false", err, tt.wantIs)
+			}
+		})
+	}
+}
