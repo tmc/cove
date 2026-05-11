@@ -130,3 +130,39 @@ func TestLifecycleShutdownWithoutStartDoesNotPanic(t *testing.T) {
 		t.Errorf("Context() after lone Shutdown = %v, want Background", got)
 	}
 }
+
+func TestLifecycleTimeoutContext(t *testing.T) {
+	_ = t.TempDir()
+	tests := []struct {
+		name     string
+		start    bool
+		shutdown bool
+	}{
+		{"background", false, false},
+		{"started", true, false},
+		{"shutdown", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var l Lifecycle
+			if tt.start {
+				l.Start()
+			}
+			ctx, cancel := l.TimeoutContext(time.Hour)
+			defer cancel()
+			if tt.shutdown {
+				l.Shutdown()
+			}
+			select {
+			case <-ctx.Done():
+				if !tt.shutdown {
+					t.Fatal("timeout context canceled early")
+				}
+			default:
+				if tt.shutdown {
+					t.Fatal("timeout context still live after shutdown")
+				}
+			}
+		})
+	}
+}
