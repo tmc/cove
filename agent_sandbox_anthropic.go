@@ -23,7 +23,6 @@ func runAnthropicAgentSandbox(ctx context.Context, opts agentSandboxRunOptions, 
 	if err != nil {
 		return agentsandboxResult{}, fmt.Errorf("agent-sandbox: create anthropic transcript: %w", err)
 	}
-	defer transcript.Close()
 	control := &anthropicControl{client: NewControlClient(GetControlSocketPathForVM(dir))}
 	entries, err := (&anthropicadapter.Adapter{
 		Control:  control,
@@ -33,7 +32,11 @@ func runAnthropicAgentSandbox(ctx context.Context, opts agentSandboxRunOptions, 
 		Log:      transcript,
 	}).Run(ctx, opts.task)
 	if err != nil {
+		_ = transcript.Close()
 		return agentsandboxResult{}, err
+	}
+	if err := transcript.Close(); err != nil {
+		return agentsandboxResult{}, fmt.Errorf("agent-sandbox: close anthropic transcript: %w", err)
 	}
 	return agentsandboxResult{FinalAnswer: finalAnthropicAnswer(entries)}, nil
 }
