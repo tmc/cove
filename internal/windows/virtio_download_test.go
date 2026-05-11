@@ -111,6 +111,41 @@ func TestDownloadVirtIODriversISORejectsStalePartialDirectory(t *testing.T) {
 	}
 }
 
+func TestDownloadVirtIODriversISORejectsBadURL(t *testing.T) {
+	oldURL := virtIODriversURL
+	virtIODriversURL = "http://\n"
+	t.Cleanup(func() { virtIODriversURL = oldURL })
+
+	err := downloadVirtIODriversISO(filepath.Join(t.TempDir(), virtIODriversISOName))
+	if err == nil {
+		t.Fatal("downloadVirtIODriversISO succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "download virtio iso") {
+		t.Fatalf("error = %q, want download virtio iso", err.Error())
+	}
+}
+
+func TestEnsureVirtIODriversISOUsesDefaultCacheDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cacheDir := filepath.Join(home, ".vz", "windows-drivers")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	isoPath := filepath.Join(cacheDir, virtIODriversISOName)
+	if err := os.WriteFile(isoPath, make([]byte, minVirtIODriversSize), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := EnsureVirtIODriversISO("")
+	if err != nil {
+		t.Fatalf("EnsureVirtIODriversISO(): %v", err)
+	}
+	if got != isoPath {
+		t.Fatalf("iso path = %q, want %q", got, isoPath)
+	}
+}
+
 func TestEnsureVirtIODriversISOFetchesWhenCacheMissing(t *testing.T) {
 	large := strings.Repeat("x", minVirtIODriversSize)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
