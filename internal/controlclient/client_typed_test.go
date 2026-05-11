@@ -38,6 +38,18 @@ func TestClientTypedResponses(t *testing.T) {
 			want:     "ok\n",
 		},
 		{
+			name: "agent exec default timeout",
+			resp: &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentExecResult{
+				AgentExecResult: &controlpb.AgentExecResponse{Stdout: "auto\n"},
+			}},
+			run: func(c *Client) (string, error) {
+				s, err := c.AgentExecTyped([]string{"echo", "auto"}, nil, "")
+				return s.GetStdout(), err
+			},
+			wantType: "agent-exec-auto",
+			want:     "auto\n",
+		},
+		{
 			name: "agent daemon exec",
 			resp: &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentExecResult{
 				AgentExecResult: &controlpb.AgentExecResponse{Stdout: "root\n"},
