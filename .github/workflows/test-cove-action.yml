@@ -35,7 +35,7 @@ permissions:
 jobs:
   smoke:
     if: ${{ inputs.run-cove }}
-    runs-on: [self-hosted, macOS, ARM64, cove]
+    runs-on: [self-hosted, macOS, ARM64, cove-hermes-v10]
     timeout-minutes: 45
     steps:
       - name: Checkout
