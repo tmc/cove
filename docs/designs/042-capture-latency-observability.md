@@ -1,6 +1,6 @@
 # Design 042: Capture Latency Observability
 
-Status: spec landed; implementation pending.
+Status: production capture sample wiring landed.
 Author: Travis Cline
 Date: 2026-05-10
 
@@ -78,3 +78,10 @@ regression alerts.
   bucket design can follow once production distributions are known.
 - Screenshot artifact upload. This only times capture and records metadata.
 - Changing the SCKit fallback policy from Design 041.
+
+## Implementation Notes
+
+R111 wires production `captureDisplayImage` calls into run metrics. The
+daemon-side Prometheus aggregation was already present; JSONL capture events now
+carry the same low-cardinality labels for successful captures and capture
+errors.

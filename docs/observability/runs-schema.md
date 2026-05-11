@@ -51,6 +51,7 @@ parameterized helpers `emitMetricEvent` (package main) and
 | `vm_create` | `up.go`, `image_cli.go` | New VM directory created |
 | `vm_start` | `macos.go` | VM started |
 | `agent_ready` | `run_metrics.go` | Guest agent came up; emitted at most once per run |
+| `capture_latency` | `screenshots.go` | Screenshot capture completed before diff/OCR work. `extra` carries `backend`, `requested_backend`, `fallback`, optional `fallback_cause`, optional `width` and `height`, and optional truncated `error`. |
 | `vm_stop` | (sink test only) | VM stopped |
 | `fork_created` | `image_fork.go`, `runtime_lifecycle.go` | Fork-from VM materialized |
 | `run_complete` | `up.go`, `build.go`, `runtime_lifecycle.go`, `run_bundle.go`, `image_cli.go` | Terminal event; carries the final `status` and `extra.exit_code` |
@@ -104,7 +105,7 @@ defined in `internal/runs/show.go` (`lifecycleEvents` map):
 `benchmark_result`, `lifecycle.budget.exceeded`, `lifecycle.idle.tripped`,
 `lifecycle.maxage.tripped`, `run_complete`.
 
-Events not in this list (image GC, agent sandbox, daemon-side
+Events not in this list (image GC, agent sandbox, capture latency, daemon-side
 `lifecycle.policy.stop`, `vm_policy_stop` fallback) still appear in `runs
 show -v` and `runs export` JSON, but are not rendered in the default
 lifecycle phase table.

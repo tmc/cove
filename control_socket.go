@@ -51,12 +51,12 @@ type ControlServer struct {
 	vmQueue           dispatch.Queue
 	mu                sync.Mutex
 	running           atomic.Bool
-	capture           controlserver.Capture // diff cache + lazy OCR service, self-guarded
-	bridge            controlserver.AgentBridge // agent clients + health state (owns its own mutexes)
+	capture           controlserver.Capture       // diff cache + lazy OCR service, self-guarded
+	bridge            controlserver.AgentBridge   // agent clients + health state (owns its own mutexes)
 	network           controlserver.NetworkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
-	input             controlserver.InputBridge // mouse/keyboard delivery
-	windowNum         int           // cached window number for thread-safe screenshot
-	viewContentHeight int           // cached view content height in pixels (excludes title bar)
+	input             controlserver.InputBridge   // mouse/keyboard delivery
+	windowNum         int                         // cached window number for thread-safe screenshot
+	viewContentHeight int                         // cached view content height in pixels (excludes title bar)
 	windowTitleMu     sync.RWMutex
 	windowTitleBase   string
 	windowTitleState  string
@@ -83,6 +83,7 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 	s.bridge.SetHost(s)
 	s.network.SetHost(s)
 	s.input.SetHost(s)
+	s.capture.SetMetrics(captureMetricsFunc(emitCaptureLatencyMetric))
 	capture, input := resolveAutomationBackends()
 	s.setCaptureBackend(capture)
 	s.setInputBackend(input)

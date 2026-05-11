@@ -8,7 +8,16 @@ import (
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/objc"
+	"github.com/tmc/vz-macos/internal/controlserver"
 )
+
+type recordingCaptureMetrics struct {
+	events []controlserver.CaptureLatencyEvent
+}
+
+func (r *recordingCaptureMetrics) EmitCaptureLatency(ctx context.Context, e controlserver.CaptureLatencyEvent) {
+	r.events = append(r.events, e)
+}
 
 // stubVMViewWindow installs the minimal window/windowNum state required
 // by captureVMView. The window handle is a synthetic nonzero objc.ID;
@@ -66,6 +75,42 @@ func TestCaptureVMViewDispatchesToSCKitWhenOptedIn(t *testing.T) {
 	}
 }
 
+func TestCaptureDisplayImageEmitsSCKitLatency(t *testing.T) {
+	t.Setenv("COVE_CAPTURE_BACKEND", "sckit")
+	resetSCKitFallbackOnce(t)
+
+	want := image.NewRGBA(image.Rect(0, 0, 4, 5))
+	withCaptureSCKitFn(t, func(ctx context.Context, windowID uint32) (image.Image, error) {
+		return want, nil
+	})
+
+	s := NewControlServerWithVMDir("", "")
+	rec := &recordingCaptureMetrics{}
+	s.capture.SetMetrics(rec)
+	stubVMViewWindow(s, 7)
+
+	got, errMsg := s.captureDisplayImage()
+	if errMsg != "" {
+		t.Fatalf("captureDisplayImage errMsg = %q, want empty", errMsg)
+	}
+	if got != want {
+		t.Fatalf("captureDisplayImage image = %v, want %v", got, want)
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("events = %d, want 1", len(rec.events))
+	}
+	event := rec.events[0]
+	if event.Backend != "sckit" || event.RequestedBackend != "sckit" {
+		t.Fatalf("backend labels = %q/%q, want sckit/sckit", event.Backend, event.RequestedBackend)
+	}
+	if event.Fallback {
+		t.Fatal("Fallback = true, want false")
+	}
+	if event.Status != "ok" || event.Width != 4 || event.Height != 5 {
+		t.Fatalf("event status/size = %q %dx%d, want ok 4x5", event.Status, event.Width, event.Height)
+	}
+}
+
 func TestCaptureVMViewSCKitErrorFallsThroughToCGWindow(t *testing.T) {
 	t.Setenv("COVE_CAPTURE_BACKEND", "sckit")
 	resetSCKitFallbackOnce(t)
@@ -87,6 +132,38 @@ func TestCaptureVMViewSCKitErrorFallsThroughToCGWindow(t *testing.T) {
 	}
 }
 
+func TestCaptureDisplayImageEmitsSCKitFallbackLatency(t *testing.T) {
+	t.Setenv("COVE_CAPTURE_BACKEND", "sckit")
+	resetSCKitFallbackOnce(t)
+
+	withCaptureSCKitFn(t, func(ctx context.Context, windowID uint32) (image.Image, error) {
+		return nil, errors.New("TCC denied")
+	})
+
+	s := NewControlServerWithVMDir("", "")
+	rec := &recordingCaptureMetrics{}
+	s.capture.SetMetrics(rec)
+	stubVMViewWindow(s, 99999)
+
+	_, errMsg := s.captureDisplayImage()
+	if errMsg == "" {
+		t.Fatal("expected fallback CGWindow error string, got empty")
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("events = %d, want 1", len(rec.events))
+	}
+	event := rec.events[0]
+	if event.Backend != "cgwindow" || event.RequestedBackend != "sckit" {
+		t.Fatalf("backend labels = %q/%q, want cgwindow/sckit", event.Backend, event.RequestedBackend)
+	}
+	if !event.Fallback || event.FallbackCause != "tcc" {
+		t.Fatalf("fallback = %v cause %q, want true/tcc", event.Fallback, event.FallbackCause)
+	}
+	if event.Status != "error" || event.Error == "" {
+		t.Fatalf("event status/error = %q/%q, want error/non-empty", event.Status, event.Error)
+	}
+}
+
 func TestCaptureVMViewCGWindowDefaultBypassesSCKit(t *testing.T) {
 	t.Setenv("COVE_CAPTURE_BACKEND", "")
 	resetSCKitFallbackOnce(t)
@@ -103,6 +180,59 @@ func TestCaptureVMViewCGWindowDefaultBypassesSCKit(t *testing.T) {
 	_, _ = s.captureVMView()
 	if called != 0 {
 		t.Fatalf("captureSCKitFn called %d times in cgwindow mode, want 0", called)
+	}
+}
+
+func TestCaptureDisplayImageEmitsCGWindowLatency(t *testing.T) {
+	t.Setenv("COVE_CAPTURE_BACKEND", "")
+	resetSCKitFallbackOnce(t)
+
+	called := 0
+	withCaptureSCKitFn(t, func(ctx context.Context, windowID uint32) (image.Image, error) {
+		called++
+		return nil, errors.New("should not be called")
+	})
+
+	s := NewControlServerWithVMDir("", "")
+	rec := &recordingCaptureMetrics{}
+	s.capture.SetMetrics(rec)
+	stubVMViewWindow(s, 7)
+
+	_, _ = s.captureDisplayImage()
+	if called != 0 {
+		t.Fatalf("captureSCKitFn called %d times in cgwindow mode, want 0", called)
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("events = %d, want 1", len(rec.events))
+	}
+	event := rec.events[0]
+	if event.Backend != "cgwindow" || event.RequestedBackend != "cgwindow" {
+		t.Fatalf("backend labels = %q/%q, want cgwindow/cgwindow", event.Backend, event.RequestedBackend)
+	}
+	if event.Fallback {
+		t.Fatal("Fallback = true, want false")
+	}
+}
+
+func TestCaptureDisplayImageEmitsFramebufferLatency(t *testing.T) {
+	s := NewControlServerWithVMDir("", "")
+	s.setCaptureBackend(automationBackendFramebuffer)
+	rec := &recordingCaptureMetrics{}
+	s.capture.SetMetrics(rec)
+
+	_, errMsg := s.captureDisplayImage()
+	if errMsg == "" {
+		t.Fatal("expected framebuffer error string, got empty")
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("events = %d, want 1", len(rec.events))
+	}
+	event := rec.events[0]
+	if event.Backend != "framebuffer" || event.RequestedBackend != "framebuffer" {
+		t.Fatalf("backend labels = %q/%q, want framebuffer/framebuffer", event.Backend, event.RequestedBackend)
+	}
+	if event.Status != "error" || event.Error == "" {
+		t.Fatalf("event status/error = %q/%q, want error/non-empty", event.Status, event.Error)
 	}
 }
 
