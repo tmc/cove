@@ -84,10 +84,13 @@ func TestParseReferenceRejectsInvalid(t *testing.T) {
 		{name: "scheme", ref: "https://ghcr.io/acme/vm:latest", wantErr: "URL scheme"},
 		{name: "missing registry", ref: "acme/vm", wantErr: "registry and repository"},
 		{name: "missing repo", ref: "ghcr.io/:latest", wantErr: "registry and repository"},
+		{name: "registry leading dot", ref: ".example.com/acme/vm:latest", wantErr: "invalid registry"},
 		{name: "uppercase repo", ref: "ghcr.io/Acme/vm:latest", wantErr: "invalid repository"},
+		{name: "empty repo segment", ref: "ghcr.io/acme//vm:latest", wantErr: "invalid repository"},
 		{name: "bad registry port", ref: "localhost:http/acme/vm:latest", wantErr: "invalid registry"},
 		{name: "bad tag", ref: "ghcr.io/acme/vm:-bad", wantErr: "invalid tag"},
 		{name: "empty digest", ref: "ghcr.io/acme/vm@", wantErr: "empty digest"},
+		{name: "multiple digests", ref: "ghcr.io/acme/vm@sha256:abcd@sha256:ef", wantErr: "invalid digest"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
