@@ -222,6 +222,8 @@ func TestWriteReplayArtifacts(t *testing.T) {
 	if err := writeReplayArtifacts(replay, dst, src, "done"); err != nil {
 		t.Fatalf("writeReplayArtifacts: %v", err)
 	}
+	assertDirMode(t, replay, 0700)
+	assertDirMode(t, dst, 0700)
 	for _, rel := range []string{
 		"final-answer.md",
 		"ocr-text.txt",
@@ -251,6 +253,8 @@ func TestPrepareAgentSandboxReplay(t *testing.T) {
 	if _, err := os.Stat(screens); err != nil {
 		t.Fatalf("screenshots dir missing: %v", err)
 	}
+	assertDirMode(t, replay, 0700)
+	assertDirMode(t, screens, 0700)
 	info, err := os.Stat(events)
 	if err != nil {
 		t.Fatalf("control events missing: %v", err)
@@ -274,5 +278,16 @@ func TestWaitAgentSandboxRunReturnsAfterExit(t *testing.T) {
 	}
 	if err := waitAgentSandboxRun(cmd); err != nil {
 		t.Fatalf("waitAgentSandboxRun: %v", err)
+	}
+}
+
+func assertDirMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode = %v, want %v", path, got, want)
 	}
 }

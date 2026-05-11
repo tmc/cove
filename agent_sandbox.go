@@ -429,7 +429,7 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 }
 
 func prepareAgentSandboxReplay(replayDir, replayScreenshots, eventsPath string) error {
-	if err := os.MkdirAll(replayScreenshots, 0755); err != nil {
+	if err := os.MkdirAll(replayScreenshots, 0700); err != nil {
 		return fmt.Errorf("agent-sandbox: create replay dir: %w", err)
 	}
 	f, err := os.OpenFile(eventsPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -483,7 +483,7 @@ func waitAgentSandboxRun(cmd *exec.Cmd) error {
 }
 
 func writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, finalAnswer string) error {
-	if err := os.MkdirAll(replayDir, 0755); err != nil {
+	if err := os.MkdirAll(replayDir, 0700); err != nil {
 		return fmt.Errorf("agent-sandbox: create replay dir: %w", err)
 	}
 	if err := copyScreenshots(screenshotDir, replayScreenshots); err != nil {
@@ -502,7 +502,7 @@ func writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, finalAnsw
 }
 
 func copyScreenshots(srcDir, dstDir string) error {
-	if err := os.MkdirAll(dstDir, 0755); err != nil {
+	if err := os.MkdirAll(dstDir, 0700); err != nil {
 		return fmt.Errorf("agent-sandbox: create replay screenshots: %w", err)
 	}
 	entries, err := os.ReadDir(srcDir)
