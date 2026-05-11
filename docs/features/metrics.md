@@ -50,6 +50,12 @@ VM process and waiting for Virtualization.framework to accept the start.
 : Emitted when the guest agent is reachable. `duration_ms` is measured from run
 start.
 
+`capture_latency`
+: Emitted for each screenshot capture. `duration_ms` is the wall-clock capture
+time before diff/OCR work. `extra` includes `backend`, `requested_backend`,
+`fallback`, optional `fallback_cause`, optional `width` and `height`, and a
+truncated `error` string when `status` is `error`.
+
 `build_step`
 : Emitted for each `cove build` step. `extra` includes `step`, `cache_hit`,
 and `key` when available.

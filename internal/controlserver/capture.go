@@ -3,6 +3,7 @@
 package controlserver
 
 import (
+	"context"
 	"image"
 	"sync"
 
@@ -14,11 +15,29 @@ import (
 // control server. All state is guarded by mu. The zero value is
 // usable.
 type Capture struct {
-	mu    sync.Mutex
-	last  image.Image
-	lastW int
-	lastH int
-	ocr   *ocrx.Service
+	mu      sync.Mutex
+	last    image.Image
+	lastW   int
+	lastH   int
+	ocr     *ocrx.Service
+	metrics CaptureMetrics
+}
+
+// SetMetrics sets the sink used for capture-path latency measurements.
+func (c *Capture) SetMetrics(metrics CaptureMetrics) {
+	c.mu.Lock()
+	c.metrics = metrics
+	c.mu.Unlock()
+}
+
+// EmitCaptureLatency forwards e to the configured metrics sink, if any.
+func (c *Capture) EmitCaptureLatency(ctx context.Context, e CaptureLatencyEvent) {
+	c.mu.Lock()
+	metrics := c.metrics
+	c.mu.Unlock()
+	if metrics != nil {
+		metrics.EmitCaptureLatency(ctx, e)
+	}
 }
 
 // RememberBounds records the dimensions of the most recent capture so

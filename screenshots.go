@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
@@ -19,6 +20,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/capture"
 
+	"github.com/tmc/vz-macos/internal/controlserver"
 	"github.com/tmc/vz-macos/internal/sckit"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
@@ -48,6 +50,15 @@ type screenshotCaptureState struct {
 	windowNum         int
 	viewContentHeight int
 	gui               VMGUIController
+}
+
+type captureDisplayResult struct {
+	img              image.Image
+	errMsg           string
+	backend          string
+	requestedBackend string
+	fallback         bool
+	fallbackCause    string
 }
 
 func (s *ControlServer) captureState() screenshotCaptureState {
@@ -119,34 +130,86 @@ func (s *ControlServer) takeScreenshotWithOptions(opts *controlpb.ScreenshotComm
 }
 
 func (s *ControlServer) captureDisplayImage() (image.Image, string) {
-	state := s.captureState()
-	remember := func(img image.Image, errMsg string) (image.Image, string) {
-		if errMsg == "" {
-			s.rememberCaptureBounds(img)
-		}
-		return img, errMsg
+	started := time.Now()
+	result := s.captureDisplayImageResult()
+	s.emitCaptureLatency(context.Background(), started, result)
+	if result.errMsg == "" {
+		s.rememberCaptureBounds(result.img)
 	}
+	return result.img, result.errMsg
+}
+
+func (s *ControlServer) captureDisplayImageResult() captureDisplayResult {
+	state := s.captureState()
 	switch s.captureBackend() {
 	case automationBackendFramebuffer:
-		return remember(s.capturePrivateGraphicsDisplay())
+		img, errMsg := s.capturePrivateGraphicsDisplay()
+		return captureDisplayResult{
+			img:              img,
+			errMsg:           errMsg,
+			backend:          "framebuffer",
+			requestedBackend: "framebuffer",
+		}
 	case automationBackendWindow:
-		return remember(s.captureVMView())
+		return s.captureVMViewResult("window")
 	}
 
 	if state.gui != nil {
 		status := state.gui.Status()
 		if !status.Headed {
 			if img, errMsg := s.capturePrivateGraphicsDisplay(); errMsg == "" {
-				return remember(img, "")
+				return captureDisplayResult{
+					img:              img,
+					backend:          "framebuffer",
+					requestedBackend: "auto",
+				}
 			} else {
 				if verbose {
 					fmt.Printf("[screenshot] private capture unavailable: %s\n", errMsg)
 				}
-				return remember(nil, errMsg)
+				return captureDisplayResult{
+					errMsg:           errMsg,
+					backend:          "framebuffer",
+					requestedBackend: "auto",
+				}
 			}
 		}
 	}
-	return remember(s.captureVMView())
+	return s.captureVMViewResult(string(sckit.BackendForVMDir(s.VMDir())))
+}
+
+func (s *ControlServer) emitCaptureLatency(ctx context.Context, started time.Time, result captureDisplayResult) {
+	status := "ok"
+	if result.errMsg != "" {
+		status = "error"
+	}
+	width, height := captureImageSize(result.img)
+	s.capture.EmitCaptureLatency(ctx, controlserver.CaptureLatencyEvent{
+		Backend:          result.backend,
+		RequestedBackend: result.requestedBackend,
+		Fallback:         result.fallback,
+		FallbackCause:    result.fallbackCause,
+		Width:            width,
+		Height:           height,
+		DurationMS:       time.Since(started).Milliseconds(),
+		Status:           status,
+		Error:            truncateCaptureMetricError(result.errMsg),
+	})
+}
+
+func captureImageSize(img image.Image) (int, int) {
+	if img == nil {
+		return 0, 0
+	}
+	b := img.Bounds()
+	return b.Dx(), b.Dy()
+}
+
+func truncateCaptureMetricError(msg string) string {
+	if len(msg) <= 256 {
+		return msg
+	}
+	return msg[:256]
 }
 
 // captureVMView captures the raw image from the VM view. It dispatches
@@ -155,14 +218,30 @@ func (s *ControlServer) captureDisplayImage() (image.Image, string) {
 // error the call falls through to CGWindowList and emits a single
 // slog.Warn per cause.
 func (s *ControlServer) captureVMView() (image.Image, string) {
+	result := s.captureVMViewResult(string(sckit.BackendForVMDir(s.VMDir())))
+	return result.img, result.errMsg
+}
+
+func (s *ControlServer) captureVMViewResult(requestedBackend string) captureDisplayResult {
 	state := s.captureState()
+	if requestedBackend == "" {
+		requestedBackend = string(sckit.BackendForVMDir(s.VMDir()))
+	}
 	if state.window.ID == 0 {
-		return nil, "window not set"
+		return captureDisplayResult{
+			errMsg:           "window not set",
+			backend:          "cgwindow",
+			requestedBackend: requestedBackend,
+		}
 	}
 
 	windowNum := state.windowNum
 	if windowNum <= 0 {
-		return nil, fmt.Sprintf("invalid window number: %d", windowNum)
+		return captureDisplayResult{
+			errMsg:           fmt.Sprintf("invalid window number: %d", windowNum),
+			backend:          "cgwindow",
+			requestedBackend: requestedBackend,
+		}
 	}
 
 	if sckit.BackendForVMDir(s.VMDir()) == sckit.BackendSCKit {
@@ -170,11 +249,31 @@ func (s *ControlServer) captureVMView() (image.Image, string) {
 		img, err := captureSCKitFn(ctx, uint32(windowNum))
 		cancel()
 		if err == nil && img != nil {
-			return img, ""
+			return captureDisplayResult{
+				img:              img,
+				backend:          "sckit",
+				requestedBackend: requestedBackend,
+			}
 		}
-		warnSCKitFallbackOnce(sckitFallbackCause(err), err)
+		cause := sckitFallbackCause(err)
+		warnSCKitFallbackOnce(cause, err)
+		img, errMsg := s.captureCGWindow(windowNum)
+		return captureDisplayResult{
+			img:              img,
+			errMsg:           errMsg,
+			backend:          "cgwindow",
+			requestedBackend: requestedBackend,
+			fallback:         true,
+			fallbackCause:    cause,
+		}
 	}
-	return s.captureCGWindow(windowNum)
+	img, errMsg := s.captureCGWindow(windowNum)
+	return captureDisplayResult{
+		img:              img,
+		errMsg:           errMsg,
+		backend:          "cgwindow",
+		requestedBackend: requestedBackend,
+	}
 }
 
 // sckitFallbackCause classifies an SCKit error for warn-once de-dup.

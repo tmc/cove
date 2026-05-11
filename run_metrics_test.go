@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/tmc/vz-macos/internal/controlserver"
 	runmetrics "github.com/tmc/vz-macos/internal/metrics"
 )
 
@@ -82,6 +84,48 @@ func TestMetricEventTypes(t *testing.T) {
 		if !seen[typ] {
 			t.Fatalf("missing event type %q in %+v", typ, events)
 		}
+	}
+}
+
+func TestCaptureLatencyMetricWritesJSONL(t *testing.T) {
+	withTempHome(t)
+	runsRoot := t.TempDir()
+	prev := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	t.Cleanup(func() {
+		runsDirHook = prev
+		activeMetricsMu.Lock()
+		activeMetricsRun = nil
+		activeMetricsMu.Unlock()
+	})
+
+	run, err := beginStandaloneMetricsRun("vm-x", "image:ci")
+	if err != nil {
+		t.Fatalf("beginStandaloneMetricsRun: %v", err)
+	}
+	emitCaptureLatencyMetric(context.Background(), controlserver.CaptureLatencyEvent{
+		Backend:          "sckit",
+		RequestedBackend: "sckit",
+		Width:            640,
+		Height:           480,
+		DurationMS:       12,
+		Status:           "ok",
+	})
+	finishStandaloneMetricsRun(run)
+
+	events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
+	if len(events) != 1 {
+		t.Fatalf("events = %d, want 1", len(events))
+	}
+	got := events[0]
+	if got.EventType != "capture_latency" || got.Status != "ok" || got.DurationMS < 12 {
+		t.Fatalf("event = %+v", got)
+	}
+	if got.Extra["backend"] != "sckit" || got.Extra["requested_backend"] != "sckit" || got.Extra["run_id"] != run.id {
+		t.Fatalf("extra = %#v", got.Extra)
+	}
+	if got.Extra["width"].(float64) != 640 || got.Extra["height"].(float64) != 480 {
+		t.Fatalf("extra size = %#v", got.Extra)
 	}
 }
 

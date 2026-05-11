@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/controlserver"
 	runmetrics "github.com/tmc/vz-macos/internal/metrics"
 )
 
@@ -25,6 +26,14 @@ var (
 	activeMetricsMu  sync.Mutex
 	activeMetricsRun *standaloneMetricsRun
 )
+
+type captureMetricsFunc func(context.Context, controlserver.CaptureLatencyEvent)
+
+func (f captureMetricsFunc) EmitCaptureLatency(ctx context.Context, e controlserver.CaptureLatencyEvent) {
+	if f != nil {
+		f(ctx, e)
+	}
+}
 
 func beginStandaloneMetricsRun(vmName, imageRef string) (*standaloneMetricsRun, error) {
 	id, err := generateRunID()
@@ -156,6 +165,36 @@ func emitAgentReadyMetric() {
 	started := run.started
 	activeMetricsMu.Unlock()
 	emitMetricEvent("agent_ready", started, "ok", nil)
+}
+
+func emitCaptureLatencyMetric(ctx context.Context, e controlserver.CaptureLatencyEvent) {
+	_ = ctx
+	extra := map[string]any{
+		"backend":           e.Backend,
+		"requested_backend": e.RequestedBackend,
+		"fallback":          e.Fallback,
+	}
+	if e.FallbackCause != "" {
+		extra["fallback_cause"] = e.FallbackCause
+	}
+	if e.Width > 0 {
+		extra["width"] = e.Width
+	}
+	if e.Height > 0 {
+		extra["height"] = e.Height
+	}
+	if e.Error != "" {
+		extra["error"] = e.Error
+	}
+	status := e.Status
+	if status == "" {
+		status = "ok"
+	}
+	started := time.Now()
+	if e.DurationMS > 0 {
+		started = started.Add(-time.Duration(e.DurationMS) * time.Millisecond)
+	}
+	emitMetricEvent("capture_latency", started, status, extra)
 }
 
 func copyMetricExtra(in map[string]any) map[string]any {
