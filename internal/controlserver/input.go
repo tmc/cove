@@ -33,15 +33,15 @@ import (
 // nothing outside this package should reach into the bridge through
 // these hooks.
 var (
-	createMouseEventFn       func(uint64, uint32, corefoundation.CGPoint, uint32) (uintptr, error)
-	createKeyboardEventFn    func(uint64, uint16, bool) (uintptr, error)
-	postEventFn              func(uint32, uintptr) error
-	setEventUnicodeStringFn  func(uintptr, string)
-	setEventFlagsFn          func(uintptr, uint64)
-	runOnUIThreadSyncFn      func(func())
-	allowHIDKeyboardFn       func() bool
-	modifierKeySequenceFn    func(uint32) []uint32
-	modifierShiftMask        uint32
+	createMouseEventFn      func(uint64, uint32, corefoundation.CGPoint, uint32) (corefoundation.CFTypeRef, error)
+	createKeyboardEventFn   func(uint64, uint16, bool) (corefoundation.CFTypeRef, error)
+	postEventFn             func(uint32, corefoundation.CFTypeRef) error
+	setEventUnicodeStringFn func(corefoundation.CFTypeRef, string)
+	setEventFlagsFn         func(corefoundation.CFTypeRef, uint64)
+	runOnUIThreadSyncFn     func(func())
+	allowHIDKeyboardFn      func() bool
+	modifierKeySequenceFn   func(uint32) []uint32
+	modifierShiftMask       uint32
 
 	cgEventMouseMoved     uint32
 	cgEventLeftMouseDown  uint32
@@ -55,11 +55,11 @@ var (
 // bridge depends on. Package main calls SetInputBridgeRuntime in init
 // order before any input event is dispatched.
 type InputBridgeRuntime struct {
-	CreateMouseEvent      func(eventSource uint64, eventType uint32, position corefoundation.CGPoint, mouseButton uint32) (uintptr, error)
-	CreateKeyboardEvent   func(eventSource uint64, keyCode uint16, keyDown bool) (uintptr, error)
-	PostEvent             func(tap uint32, event uintptr) error
-	SetEventUnicodeString func(event uintptr, s string)
-	SetEventFlags         func(event uintptr, flags uint64)
+	CreateMouseEvent      func(eventSource uint64, eventType uint32, position corefoundation.CGPoint, mouseButton uint32) (corefoundation.CFTypeRef, error)
+	CreateKeyboardEvent   func(eventSource uint64, keyCode uint16, keyDown bool) (corefoundation.CFTypeRef, error)
+	PostEvent             func(tap uint32, event corefoundation.CFTypeRef) error
+	SetEventUnicodeString func(event corefoundation.CFTypeRef, s string)
+	SetEventFlags         func(event corefoundation.CFTypeRef, flags uint64)
 	RunOnUIThreadSync     func(func())
 	AllowHIDKeyboard      func() bool
 	ModifierKeySequence   func(flags uint32) []uint32
@@ -395,10 +395,10 @@ func (b *InputBridge) sendMouseCGEvent(cmd *controlpb.MouseCommand) *controlpb.C
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
 	}
-	if event == 0 {
+	if event == nil {
 		return &controlpb.ControlResponse{Error: "failed to create CGEvent"}
 	}
-	defer corefoundation.CFRelease(corefoundation.CFTypeRef(event))
+	defer corefoundation.CFRelease(event)
 
 	// Post through the system HID event tap so events travel the same
 	// path as real mouse input (window server → focused app → key window).
@@ -616,10 +616,10 @@ func (b *InputBridge) SendKeyCGEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("init CGEvent: %v", err)}
 	}
-	if event == 0 {
+	if event == nil {
 		return &controlpb.ControlResponse{Error: "failed to create CGEvent"}
 	}
-	defer corefoundation.CFRelease(corefoundation.CFTypeRef(event))
+	defer corefoundation.CFRelease(event)
 
 	chars := KeyboardEventUnicodeString(cmd)
 	if chars != "" {
@@ -756,7 +756,7 @@ func (b *InputBridge) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NSEv
 	if err != nil {
 		return appkit.NSEvent{}, fmt.Errorf("create CGEvent: %v", err)
 	}
-	if cgEvent == 0 {
+	if cgEvent == nil {
 		return appkit.NSEvent{}, fmt.Errorf("create CGEvent returned nil")
 	}
 
@@ -771,7 +771,7 @@ func (b *InputBridge) newKeyboardNSEvent(cmd *controlpb.KeyCommand) (appkit.NSEv
 	eventID := objc.Send[objc.ID](
 		objc.ID(objc.GetClass("NSEvent")),
 		objc.Sel("eventWithCGEvent:"),
-		uintptr(cgEvent),
+		cgEvent,
 	)
 	if eventID == 0 {
 		return appkit.NSEvent{}, fmt.Errorf("NSEvent eventWithCGEvent: returned nil")

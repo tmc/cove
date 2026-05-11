@@ -11,8 +11,8 @@ import (
 
 func ensureInputInit() error {
 	event, err := createKeyboardEvent(0, 0, false)
-	if event != 0 {
-		corefoundation.CFRelease(corefoundation.CFTypeRef(event))
+	if event != nil {
+		corefoundation.CFRelease(event)
 	}
 	return err
 }
@@ -157,7 +157,7 @@ func TestPrivateHIDKeyboardEventConstruction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create key down: %v", err)
 			}
-			if cgDown == 0 {
+			if cgDown == nil {
 				t.Fatal("CreateKeyboardEvent returned nil for key down")
 			}
 			if tc.char != "" {
@@ -191,7 +191,7 @@ func TestPrivateHIDKeyboardEventConstruction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create key up: %v", err)
 			}
-			if cgUp == 0 {
+			if cgUp == nil {
 				t.Fatal("CreateKeyboardEvent returned nil for key up")
 			}
 
