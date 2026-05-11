@@ -345,6 +345,13 @@ func TestMaterializeImage_FreshIdentity(t *testing.T) {
 	if filepath.Base(childDir) != "worker-1" {
 		t.Errorf("child dir basename = %q, want worker-1", filepath.Base(childDir))
 	}
+	info, err := os.Stat(childDir)
+	if err != nil {
+		t.Fatalf("stat child dir: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("child dir mode = %03o, want 700", got)
+	}
 
 	// Required files present.
 	for _, f := range []string{"disk.img", "aux.img", "hw.model", "machine.id", ephemeralSentinel} {
