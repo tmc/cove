@@ -23,6 +23,9 @@ func TestResolve(t *testing.T) {
 	if err := os.WriteFile(file0644, []byte("open"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(file0644, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name    string

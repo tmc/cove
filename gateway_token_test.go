@@ -64,6 +64,9 @@ func TestMasterTokenWiderPermsWarning(t *testing.T) {
 	if err := os.WriteFile(path, []byte("aabbccdd\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
 
 	stderr, restore := captureStderr(t)
 	defer restore()

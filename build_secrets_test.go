@@ -126,6 +126,9 @@ func TestBuildStepSecretValuesSecretFromFileError(t *testing.T) {
 	if err := os.WriteFile(path, []byte("secret"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
 	_, err := buildStepSecretValues(buildPlanStep{Meta: buildScriptMeta{
 		SecretFrom: []buildSecretRef{{Name: "FILE_SECRET", URI: "file://" + path}},
 	}})
