@@ -85,7 +85,8 @@ disk. `find /Users/tmc/.vz -name 'smoketest*'` returns nothing.
 
 ## #6 — `cove pull` does not accept upstream lume images
 
-**Status.** Fixed for upstream lume tar-split imports on current `origin/main`.
+**Status.** PASS for upstream Lume tar-split manifest validation on current
+`origin/main`; full disk import/boot remains unexercised.
 
 **Original symptom.** `cove pull` of any `ghcr.io/trycua/*` image failed at
 manifest parse before any blob fetch:
@@ -119,8 +120,23 @@ error: parse registry manifest: parse manifest:
 
 **Remaining validation.**
 
-- [ ] Run one network smoke against
+- [x] Run one network smoke against
   `docker://ghcr.io/trycua/ubuntu-noble-vanilla:latest` and, if available to
   the operator, `docker://ghcr.io/trycua/macos-sequoia-vanilla:latest`.
   The current code has fixture-backed parser/import coverage, not a fresh
   live GHCR pull recorded in this doc.
+
+**2026-05-10 live smoke.** See
+`docs/handoff/r107-deferred-validation-smoke-2026-05-10.md`. A signed
+throwaway `/tmp/cove-r107` from `b305c86` ran:
+
+```
+/tmp/cove-r107 pull --dry-run --as r107-lume-ghcr-smoke \
+  docker://ghcr.io/trycua/ubuntu-noble-vanilla:latest
+```
+
+Result: PASS. The command resolved the live GHCR manifest digest
+`sha256:a78ef799209b072757f5762e1288655336b2ac72e1ff699253b50e538d423e9e`,
+classified it as `format: lume (tar-split)`, found 41 disk parts, and reported
+20.0 GB compressed bytes plus `nvram.bin` and `config.json` sidecars. The
+dry-run did not create `/Users/tmc/.vz/vms/r107-lume-ghcr-smoke`.
