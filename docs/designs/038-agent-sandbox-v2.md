@@ -65,6 +65,9 @@ Checked-in evidence distinguishes protocol dry-runs from live provider runs:
   cold-fork-to-first-action run.
 - `results-vertex-live-20260507.md`: one Vertex live latency attempt with
   passing auth/ADC that failed with provider HTTP 404 before first action.
+- `results-vertex-model-probe-20260511.md`: direct Vertex API probe showing
+  `tmcdev/us-central1` can access `gemini-2.5-flash`, but that model rejects
+  `computer_use`; the preview computer-use model is not accessible there.
 
 ## Ship Artifacts
 
