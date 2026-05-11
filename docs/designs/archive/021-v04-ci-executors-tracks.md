@@ -1,6 +1,9 @@
 # v0.4 CI executors (GitHub Actions, GitLab)
 
-**Status**: accepted planning input. Security gate cleared: design [025](025-cove-action-security.md) (cove-action security architecture) landed at `1db4830` 2026-05-02. Slice 1 implementation (cove-action GHA wrapper, ~600 LOC) is now unblocked but remains v0.4-targeted; do not pre-empt the v0.3 GA cycle.
+**Status**: GitHub Actions executor surface shipped on 2026-05-05. Docs
+landed at `19804c7`; implementation shipped at `0985377`, `8bd473e`,
+`82a0ac5`, `7fafe40`, `9e6253a`, `f06d554`, and `c0a1433`. GitLab
+shell-runner shim remains unshipped.
 **Source**: `/tmp/cove-v04-audit-a4k2.md` (audit at `4511a60`), plus local
 review of the v0.3 build executor (`build.go`, `build_execute.go`,
 `build_scratch.go`, `fork.go`) and the OpenAI Agents SDK adapter at
