@@ -223,6 +223,40 @@ func TestRunCompetitiveWritesJSONAndMetrics(t *testing.T) {
 	}
 }
 
+func TestRunCompetitivePropagatesWriteErrors(t *testing.T) {
+	root := t.TempDir()
+	blocker := filepath.Join(root, "file")
+	if err := os.WriteFile(blocker, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		cfg  CompetitiveConfig
+	}{
+		{
+			name: "json",
+			cfg:  CompetitiveConfig{OutPath: filepath.Join(blocker, "out.json")},
+		},
+		{
+			name: "markdown",
+			cfg:  CompetitiveConfig{MarkdownPath: filepath.Join(blocker, "out.md")},
+		},
+		{
+			name: "metrics",
+			cfg:  CompetitiveConfig{RunsRoot: filepath.Join(blocker, "runs")},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.cfg.RepoRoot = root
+			_, err := RunCompetitive(context.Background(), tc.cfg)
+			if !errors.Is(err, syscall.ENOTDIR) {
+				t.Fatalf("RunCompetitive() error = %v, want ENOTDIR", err)
+			}
+		})
+	}
+}
+
 func TestMarkdownCells(t *testing.T) {
 	ok := int64(1234)
 	results := []Result{
