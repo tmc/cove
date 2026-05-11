@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -480,7 +481,7 @@ func digestLocalBuildBase(dir string) (string, error) {
 		path := filepath.Join(dir, name)
 		info, err := os.Stat(path)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				if required[name] {
 					return "", fmt.Errorf("local build base %s: %w", name, err)
 				}

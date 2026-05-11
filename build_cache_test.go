@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -772,5 +773,24 @@ func TestParseBuildScriptMetaRejectsBadDirectives(t *testing.T) {
 				t.Fatalf("parseBuildScriptMeta(%q) = nil, want error", tc.body)
 			}
 		})
+	}
+}
+
+func TestDigestLocalBuildBaseMissingFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := digestLocalBuildBase(dir); err != nil {
+		t.Fatalf("digestLocalBuildBase() with missing optional files: %v", err)
+	}
+
+	macDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(macDir, "disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := digestLocalBuildBase(macDir)
+	if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "aux.img") {
+		t.Fatalf("digestLocalBuildBase() = %v, want missing aux.img", err)
 	}
 }
