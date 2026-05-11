@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tmc/apple/foundation"
@@ -128,6 +129,9 @@ func TestWindowsLinearFramebufferGraphicsDevice(t *testing.T) {
 		t.Fatalf("graphicsDevices count = %d, want 1", got)
 	}
 	if _, err := config.ValidateWithError(); err != nil {
+		if strings.Contains(err.Error(), "Virtualization is not available") {
+			t.Skipf("Virtualization.framework unavailable: %v", err)
+		}
 		t.Fatalf("ValidateWithError: %v", err)
 	}
 }
