@@ -94,6 +94,22 @@ func TestExportGHASummaryOmitsImageRefWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestExportGHASummaryRendersEmptyStatusAsNA(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "20260510-na", []metrics.Event{
+		event("agent_ready", "", 7, nil),
+		event("run_complete", "ok", 9, nil),
+	}, nil)
+
+	var buf bytes.Buffer
+	if err := ExportGHASummary(&buf, root, "20260510-na"); err != nil {
+		t.Fatalf("ExportGHASummary: %v", err)
+	}
+	if !strings.Contains(buf.String(), "| agent_ready | [n/a] n/a | 7ms |") {
+		t.Fatalf("summary missing n/a badge:\n%s", buf.String())
+	}
+}
+
 func TestExportTarGzContainsRunFiles(t *testing.T) {
 	root := t.TempDir()
 	writeRun(t, root, "20260505-tar", []metrics.Event{
