@@ -167,3 +167,32 @@ func TestResultCountsFailedEvents(t *testing.T) {
 		t.Fatalf("FailedEvents = %d, want 3", show.Result.FailedEvents)
 	}
 }
+
+func TestLoadShowFailureReasonFallbacks(t *testing.T) {
+	tests := []struct {
+		name  string
+		extra map[string]any
+		want  string
+	}{
+		{"reason", map[string]any{"reason": "boot failed"}, "boot failed"},
+		{"error", map[string]any{"error": "agent failed"}, "agent failed"},
+		{"status", nil, "failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeRun(t, root, "20260510-"+tt.name, []metrics.Event{
+				event("build_step", "failed", 20, tt.extra),
+				event(runCompleteEvent, "failed", 30, nil),
+			}, nil)
+
+			show, err := LoadShow(root, "20260510-"+tt.name)
+			if err != nil {
+				t.Fatalf("LoadShow: %v", err)
+			}
+			if show.Failure.Class != "build_step" || show.Failure.Reason != tt.want {
+				t.Fatalf("Failure = %+v, want build_step %q", show.Failure, tt.want)
+			}
+		})
+	}
+}
