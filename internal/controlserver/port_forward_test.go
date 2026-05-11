@@ -121,6 +121,55 @@ func TestCountsTotalSums(t *testing.T) {
 	}
 }
 
+func TestRelayPortFor(t *testing.T) {
+	_ = t.TempDir()
+	oldBase, oldWindow := ForwardRelayBasePort, ForwardRelayPortWindow
+	t.Cleanup(func() {
+		ForwardRelayBasePort = oldBase
+		ForwardRelayPortWindow = oldWindow
+	})
+	ForwardRelayBasePort = 20000
+	ForwardRelayPortWindow = 100
+	tests := []struct {
+		port int
+		want uint32
+	}{
+		{0, 20000},
+		{80, 20080},
+		{180, 20080},
+	}
+	for _, tt := range tests {
+		if got := relayPortFor(tt.port); got != tt.want {
+			t.Fatalf("relayPortFor(%d) = %d, want %d", tt.port, got, tt.want)
+		}
+	}
+}
+
+func TestPortForwardManagerErrors(t *testing.T) {
+	_ = t.TempDir()
+	tests := []struct {
+		name string
+		run  func(*PortForwardManager) error
+		want string
+	}{
+		{"start nil connector", func(m *PortForwardManager) error { return m.Start(nil, 0, 22) }, "guest connector unavailable"},
+		{"start udp nil connector", func(m *PortForwardManager) error { return m.StartUDP(nil, 0, 22) }, "guest connector unavailable"},
+		{"stop missing", func(m *PortForwardManager) error { return m.Stop(1234) }, "no forward on host port 1234"},
+		{"reverse no listener", func(m *PortForwardManager) error { return m.StartReverse(80, 22) }, "host vsock listener not configured"},
+		{"reverse udp no listener", func(m *PortForwardManager) error { return m.StartReverseUDP(80, 22) }, "host vsock listener not configured"},
+	}
+	old := ListenHostVsock
+	t.Cleanup(func() { ListenHostVsock = old })
+	ListenHostVsock = nil
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.run(NewPortForwardManager(nil)); err == nil || err.Error() != tt.want {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 type errConnector struct{}
 
 func (errConnector) ConnectToGuestPort(uint32) (net.Conn, error) {
