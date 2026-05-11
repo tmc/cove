@@ -61,6 +61,20 @@ func TestLoadShowRejectsEmptyRootOrPrefix(t *testing.T) {
 	}
 }
 
+func TestLoadShowReportsMissingMetrics(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "20260510-nometrics"), 0755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	_, err := LoadShow(root, "20260510-nometrics")
+	if err == nil {
+		t.Fatal("LoadShow returned nil error")
+	}
+	if !strings.Contains(err.Error(), "open metrics:") {
+		t.Fatalf("error = %q, want open metrics", err)
+	}
+}
+
 func TestRenderShow(t *testing.T) {
 	root := t.TempDir()
 	events := []metrics.Event{
