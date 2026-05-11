@@ -10,27 +10,27 @@ func TestClientKeyWrappers(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*Client) error
-		want []controlpb.KeyCommand
+		want []*controlpb.KeyCommand
 	}{
 		{
 			name: "key down",
 			run:  func(c *Client) error { return c.KeyDown(36) },
-			want: []controlpb.KeyCommand{{KeyCode: 36, KeyDown: true}},
+			want: []*controlpb.KeyCommand{{KeyCode: 36, KeyDown: true}},
 		},
 		{
 			name: "key up",
 			run:  func(c *Client) error { return c.KeyUp(36) },
-			want: []controlpb.KeyCommand{{KeyCode: 36}},
+			want: []*controlpb.KeyCommand{{KeyCode: 36}},
 		},
 		{
 			name: "send key",
 			run:  func(c *Client) error { return c.SendKey(40) },
-			want: []controlpb.KeyCommand{{KeyCode: 40, KeyDown: true}, {KeyCode: 40}},
+			want: []*controlpb.KeyCommand{{KeyCode: 40, KeyDown: true}, {KeyCode: 40}},
 		},
 		{
 			name: "modified key press",
 			run:  func(c *Client) error { return c.KeyPressWithModifiers(12, 1) },
-			want: []controlpb.KeyCommand{
+			want: []*controlpb.KeyCommand{
 				{KeyCode: 12, KeyDown: true, Modifiers: 1, UseCgEvent: true},
 				{KeyCode: 12, Modifiers: 1, UseCgEvent: true},
 			},
@@ -52,8 +52,8 @@ func TestClientKeyWrappers(t *testing.T) {
 					t.Fatalf("request %d type = %q, want key", i, req.GetType())
 				}
 				got := req.GetKey()
-				if got.GetKeyCode() != want.KeyCode || got.GetKeyDown() != want.KeyDown ||
-					got.GetModifiers() != want.Modifiers || got.GetUseCgEvent() != want.UseCgEvent {
+				if got.GetKeyCode() != want.GetKeyCode() || got.GetKeyDown() != want.GetKeyDown() ||
+					got.GetModifiers() != want.GetModifiers() || got.GetUseCgEvent() != want.GetUseCgEvent() {
 					t.Fatalf("request %d key = %+v, want %+v", i, got, want)
 				}
 			}
