@@ -145,6 +145,16 @@ func TestFetchLatest(t *testing.T) {
 	}
 }
 
+func TestExtractProductsXMLRejectsEmptyOutput(t *testing.T) {
+	tarPath := filepath.Join(t.TempDir(), "tar")
+	if err := os.WriteFile(tarPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := extractProductsXML(context.Background(), tarPath, "catalog.cab"); err == nil {
+		t.Fatal("extractProductsXML succeeded, want error")
+	}
+}
+
 func testEntry(name, edition, arch, language string) Entry {
 	return Entry{
 		Name:         name,
