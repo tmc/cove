@@ -32,6 +32,34 @@ func TestBuildCacheEntryRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBuildCacheEntryCreatesPrivateDirs(t *testing.T) {
+	s := store.New(t.TempDir())
+	key := digestBytes([]byte("key"))
+	entry := buildCacheEntry{
+		Key:                  key,
+		ParentDigest:         digestBytes([]byte("parent")),
+		ScriptDigest:         digestBytes([]byte("script")),
+		AgentProtocolVersion: agentProtocolVersion,
+		Compact:              "targeted",
+		LayerDigest:          digestBytes([]byte("layer")),
+	}
+	if err := saveBuildCacheEntry(s, entry); err != nil {
+		t.Fatalf("saveBuildCacheEntry(): %v", err)
+	}
+	for _, dir := range []string{
+		filepath.Join(s.Dir, "build-cache"),
+		filepath.Join(s.Dir, "build-cache", "keys"),
+	} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("stat %s: %v", dir, err)
+		}
+		if got := info.Mode().Perm(); got != 0700 {
+			t.Fatalf("%s mode = %o, want 0700", dir, got)
+		}
+	}
+}
+
 func TestBuildLayerManifestRoundTrip(t *testing.T) {
 	s := store.New(t.TempDir())
 	manifest := buildLayerManifest{BlockSize: 65536, DiskSize: 123, Blocks: []buildLayerBlock{{Offset: 0, Size: 4, Digest: digestBytes([]byte("blob"))}}}

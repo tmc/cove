@@ -159,7 +159,7 @@ func writeBuildCacheJSON(path string, v any) error {
 		return err
 	}
 	data = append(data, '\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("create build cache dir: %w", err)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
