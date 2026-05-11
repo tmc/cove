@@ -216,9 +216,8 @@ regression tests guard each path.
 
 ## Tagging
 
-This file is a scaffold drafted before any v0.6 slice ships. The git
-tag `v0.6.0` is **not yet cut**; tag-cut is user-gated and will follow
-the same readiness sequence used for v0.5.
+The private `v0.6.0` tag has been cut. Public distribution remains
+gated by the repo/privacy decision.
 
 ## Binary fingerprint
 
