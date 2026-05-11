@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"text/tabwriter"
 	"time"
@@ -194,8 +196,9 @@ func walkCategory(d Descriptor, topN int) (Category, error) {
 	}
 	if !info.IsDir() {
 		// A file at the category root is unusual but countable.
-		cat.UsedBytes = info.Size()
-		cat.Items = []Item{{Path: d.Path, SizeBytes: info.Size(), LastUsed: info.ModTime(), IsDir: false}}
+		size := fileUsageBytes(info)
+		cat.UsedBytes = size
+		cat.Items = []Item{{Path: d.Path, SizeBytes: size, LastUsed: info.ModTime(), IsDir: false}}
 		return cat, nil
 	}
 
@@ -248,7 +251,7 @@ func childSize(path string) (int64, time.Time, error) {
 		return 0, time.Time{}, err
 	}
 	if !info.IsDir() {
-		return info.Size(), info.ModTime(), nil
+		return fileUsageBytes(info), info.ModTime(), nil
 	}
 	var total int64
 	walkErr := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
@@ -262,13 +265,45 @@ func childSize(path string) (int64, time.Time, error) {
 		if err != nil {
 			return err
 		}
-		total += fi.Size()
+		total += fileUsageBytes(fi)
 		return nil
 	})
 	if walkErr != nil {
 		return 0, time.Time{}, walkErr
 	}
 	return total, info.ModTime(), nil
+}
+
+func fileUsageBytes(info fs.FileInfo) int64 {
+	if blocks, ok := statBlocks(info.Sys()); ok && blocks <= math.MaxInt64/512 {
+		return blocks * 512
+	}
+	return info.Size()
+}
+
+func statBlocks(sys any) (int64, bool) {
+	v := reflect.ValueOf(sys)
+	if !v.IsValid() {
+		return 0, false
+	}
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return 0, false
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return 0, false
+	}
+	field := v.FieldByName("Blocks")
+	if !field.IsValid() || !field.CanInt() {
+		return 0, false
+	}
+	blocks := field.Int()
+	if blocks < 0 {
+		return 0, false
+	}
+	return blocks, true
 }
 
 // EncodeJSON writes rep as indented JSON to w.

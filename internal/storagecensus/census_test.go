@@ -3,6 +3,7 @@ package storagecensus
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +37,11 @@ func TestWalkSumsAndCategorizes(t *testing.T) {
 	if rep.Root != root {
 		t.Errorf("Root = %q, want %q", rep.Root, root)
 	}
-	wantTotal := int64(4096 + 256 + 8192 + 1024 + 64 + 32)
+	vmsSize := mustSize(t, filepath.Join(root, "vms", "alpha")) + mustSize(t, filepath.Join(root, "vms", "beta"))
+	imagesSize := mustSize(t, filepath.Join(root, "images", "macos-15"))
+	runsSize := mustSize(t, filepath.Join(root, "runs", "abc123"))
+	cacheSize := mustSize(t, filepath.Join(root, "cache", "blob"))
+	wantTotal := vmsSize + imagesSize + runsSize + cacheSize
 	if rep.UsedBytes != wantTotal {
 		t.Errorf("UsedBytes = %d, want %d", rep.UsedBytes, wantTotal)
 	}
@@ -45,10 +50,10 @@ func TestWalkSumsAndCategorizes(t *testing.T) {
 	}
 
 	want := map[string]int64{
-		"vms":           4096 + 256 + 8192,
-		"images":        1024,
-		"runs":          64,
-		"cache":         32,
+		"vms":           vmsSize,
+		"images":        imagesSize,
+		"runs":          runsSize,
+		"cache":         cacheSize,
 		"build-scratch": 0,
 		"store":         0,
 	}
@@ -99,8 +104,32 @@ func TestWalkTopNTrimsItems(t *testing.T) {
 		t.Errorf("items len = %d, want 2", got)
 	}
 	// Sum stays exact even when items are trimmed.
-	if got := rep.Categories[0].UsedBytes; got != 16*5 {
-		t.Errorf("UsedBytes = %d, want %d", got, 16*5)
+	var want int64
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		want += mustSize(t, filepath.Join(root, "runs", name))
+	}
+	if got := rep.Categories[0].UsedBytes; got != want {
+		t.Errorf("UsedBytes = %d, want %d", got, want)
+	}
+}
+
+func TestFileUsageBytesUsesAllocatedBlocks(t *testing.T) {
+	tests := []struct {
+		name string
+		info fs.FileInfo
+		want int64
+	}{
+		{name: "blocks", info: fakeFileInfo{size: 1 << 20, sys: struct{ Blocks int64 }{Blocks: 4}}, want: 2048},
+		{name: "zero blocks", info: fakeFileInfo{size: 1 << 20, sys: struct{ Blocks int64 }{}}, want: 0},
+		{name: "missing blocks", info: fakeFileInfo{size: 123, sys: struct{}{}}, want: 123},
+		{name: "negative blocks", info: fakeFileInfo{size: 123, sys: struct{ Blocks int64 }{Blocks: -1}}, want: 123},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fileUsageBytes(tt.info); got != tt.want {
+				t.Fatalf("fileUsageBytes() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -245,6 +274,27 @@ func mustWrite(t *testing.T, path string, n int) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+func mustSize(t *testing.T, path string) int64 {
+	t.Helper()
+	size, _, err := childSize(path)
+	if err != nil {
+		t.Fatalf("size %s: %v", path, err)
+	}
+	return size
+}
+
+type fakeFileInfo struct {
+	size int64
+	sys  any
+}
+
+func (f fakeFileInfo) Name() string       { return "fake" }
+func (f fakeFileInfo) Size() int64        { return f.size }
+func (f fakeFileInfo) Mode() fs.FileMode  { return 0 }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return false }
+func (f fakeFileInfo) Sys() any           { return f.sys }
 
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (indexOf(haystack, needle) >= 0)

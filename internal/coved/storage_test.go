@@ -15,10 +15,9 @@ import (
 func TestStoragePollSchedulerEmitsTripwires(t *testing.T) {
 	root := t.TempDir()
 
-	// Synthetic categories: "vms" with a 200-byte file. The budget has
-	// target=400 / warn=25% (=100B) / hard=75% (=300B), so a 200-byte
-	// payload is in StateWarn. Bumping to a 400-byte payload crosses
-	// hard.
+	// Synthetic categories: "vms" with one file. The storage census uses
+	// allocated bytes, so derive thresholds from measured usage rather than
+	// hard-coding logical payload sizes.
 	vmsDir := filepath.Join(root, "vms")
 	if err := os.MkdirAll(vmsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -28,10 +27,18 @@ func TestStoragePollSchedulerEmitsTripwires(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	writePayload(4096)
+	warnUsed := storageUsed(t, root, vmsDir)
+	writePayload(8192)
+	hardUsed := storageUsed(t, root, vmsDir)
+	if hardUsed <= warnUsed {
+		t.Fatalf("hard payload used %d, want > warn payload %d", hardUsed, warnUsed)
+	}
+	target := (warnUsed + hardUsed) / 2
 	if err := storagecensus.SaveBudget(root, storagecensus.Budget{
-		TargetBytes: 400,
-		WarnPct:     25,
-		HardPct:     75,
+		TargetBytes: target,
+		WarnPct:     1,
+		HardPct:     100,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -73,8 +80,8 @@ func TestStoragePollSchedulerEmitsTripwires(t *testing.T) {
 		return got
 	}
 
-	// Tick 1: 200 bytes → StateWarn. One event.
-	writePayload(200)
+	// Tick 1: smaller payload → StateWarn. One event.
+	writePayload(4096)
 	tickCh <- time.Now()
 	warnEvents := collect(1, 2*time.Second)
 	if got := warnEvents[0].EventType; got != "storage_budget_warn" {
@@ -84,9 +91,9 @@ func TestStoragePollSchedulerEmitsTripwires(t *testing.T) {
 		t.Errorf("tick 1 state = %v, want warn", got)
 	}
 
-	// Tick 2: 400 bytes → StateHard. Two events: hard tripwire +
+	// Tick 2: larger payload → StateHard. Two events: hard tripwire +
 	// would-prune dry-run.
-	writePayload(400)
+	writePayload(8192)
 	tickCh <- time.Now()
 	hardEvents := collect(2, 2*time.Second)
 	if got := hardEvents[0].EventType; got != "storage_budget_hard" {
@@ -110,8 +117,8 @@ func TestStoragePollSchedulerEmitsTripwires(t *testing.T) {
 
 	// Final state matches the last tick.
 	used, state, _, runs := sched.Stats()
-	if used != 400 {
-		t.Errorf("Stats() used = %d, want 400", used)
+	if used != hardUsed {
+		t.Errorf("Stats() used = %d, want %d", used, hardUsed)
 	}
 	if state != storagecensus.StateHard {
 		t.Errorf("Stats() state = %s, want hard", state)
@@ -205,10 +212,11 @@ func TestStoragePollSchedulerHardInvokesPrunerDryRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vmsDir, "disk.img"), make([]byte, 400), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	usedBefore := storageUsed(t, root, vmsDir)
 	if err := storagecensus.SaveBudget(root, storagecensus.Budget{
-		TargetBytes: 200,
+		TargetBytes: usedBefore / 2,
 		WarnPct:     50, // 100B
-		HardPct:     90, // 180B; 400B payload → hard
+		HardPct:     90,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -267,19 +275,18 @@ func TestStoragePollSchedulerHardInvokesPrunerDryRun(t *testing.T) {
 		t.Fatalf("event[1].EventType = %q, want storage_prune_run", pe.EventType)
 	}
 	// Coordinator picks oldest first: /fake/older (100B) then /fake/old
-	// (150B). Used 400 → target 200 means 200B to reclaim; 100+150=250
-	// covers it.
+	// (150B).
 	if got := pe.Extra["dry_run"]; got != true {
 		t.Errorf("dry_run = %v, want true", got)
 	}
 	if got := pe.Extra["bytes_freed"]; got != int64(250) {
 		t.Errorf("bytes_freed = %v, want 250", got)
 	}
-	if got := pe.Extra["used_bytes_before"]; got != int64(400) {
-		t.Errorf("used_bytes_before = %v, want 400", got)
+	if got := pe.Extra["used_bytes_before"]; got != usedBefore {
+		t.Errorf("used_bytes_before = %v, want %d", got, usedBefore)
 	}
-	if got := pe.Extra["used_bytes_after"]; got != int64(150) {
-		t.Errorf("used_bytes_after = %v, want 150", got)
+	if want := usedBefore - 250; pe.Extra["used_bytes_after"] != want {
+		t.Errorf("used_bytes_after = %v, want %d", pe.Extra["used_bytes_after"], want)
 	}
 	if got := pe.Extra["removed_count"]; got != int64(2) {
 		t.Errorf("removed_count = %v, want 2", got)
@@ -606,4 +613,13 @@ func TestStoragePollSchedulerCountsErrors(t *testing.T) {
 	if got := s.Errors(); got != 1 {
 		t.Fatalf("Errors() = %d, want 1", got)
 	}
+}
+
+func storageUsed(t *testing.T, root, vmsDir string) int64 {
+	t.Helper()
+	rep, err := storagecensus.Walk(root, []storagecensus.Descriptor{{Name: "vms", Path: vmsDir}}, storagecensus.Options{})
+	if err != nil {
+		t.Fatalf("storage census: %v", err)
+	}
+	return rep.UsedBytes
 }
