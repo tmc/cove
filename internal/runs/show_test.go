@@ -37,6 +37,30 @@ func TestLoadShowPrefixNotFound(t *testing.T) {
 	}
 }
 
+func TestLoadShowRejectsEmptyRootOrPrefix(t *testing.T) {
+	tests := []struct {
+		name   string
+		root   string
+		prefix string
+		want   string
+	}{
+		{"root", "", "run", "runs root is empty"},
+		{"prefix", t.TempDir(), "", "run prefix is empty"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := LoadShow(tt.root, tt.prefix)
+			if err == nil {
+				t.Fatal("LoadShow returned nil error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %q, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderShow(t *testing.T) {
 	root := t.TempDir()
 	events := []metrics.Event{
