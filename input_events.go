@@ -24,11 +24,11 @@ const (
 )
 
 var (
-	cgEventCreateMouseEvent         func(source uintptr, mouseType uint32, mouseCursorPosition corefoundation.CGPoint, mouseButton uint32) uintptr
-	cgEventCreateKeyboardEvent      func(source uintptr, virtualKey uint16, keyDown bool) uintptr
-	cgEventPost                     func(tap uint32, event uintptr)
-	cgEventSetFlags                 func(event uintptr, flags uint64)
-	cgEventKeyboardSetUnicodeString func(event uintptr, stringLength uint64, unicodeString *uint16)
+	cgEventCreateMouseEvent         func(source uintptr, mouseType uint32, mouseCursorPosition corefoundation.CGPoint, mouseButton uint32) corefoundation.CFTypeRef
+	cgEventCreateKeyboardEvent      func(source uintptr, virtualKey uint16, keyDown bool) corefoundation.CFTypeRef
+	cgEventPost                     func(tap uint32, event corefoundation.CFTypeRef)
+	cgEventSetFlags                 func(event corefoundation.CFTypeRef, flags uint64)
+	cgEventKeyboardSetUnicodeString func(event corefoundation.CFTypeRef, stringLength uint64, unicodeString *uint16)
 
 	inputInitOnce sync.Once
 	inputInitErr  error
@@ -58,24 +58,24 @@ func inputEnsureInit() error {
 
 // createMouseEvent creates a mouse event at the given position.
 // mouseType is one of the cgEvent* mouse constants; mouseButton is 0 for left, 1 for right.
-func createMouseEvent(source uintptr, mouseType uint32, position corefoundation.CGPoint, mouseButton uint32) (uintptr, error) {
+func createMouseEvent(source uintptr, mouseType uint32, position corefoundation.CGPoint, mouseButton uint32) (corefoundation.CFTypeRef, error) {
 	if err := inputEnsureInit(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	return cgEventCreateMouseEvent(source, mouseType, position, mouseButton), nil
 }
 
 // createKeyboardEvent creates a keyboard event. virtualKey is the macOS
 // virtual key code (e.g. 36=Return, 48=Tab).
-func createKeyboardEvent(source uintptr, virtualKey uint16, keyDown bool) (uintptr, error) {
+func createKeyboardEvent(source uintptr, virtualKey uint16, keyDown bool) (corefoundation.CFTypeRef, error) {
 	if err := inputEnsureInit(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	return cgEventCreateKeyboardEvent(source, virtualKey, keyDown), nil
 }
 
 // postEvent posts an event to the given HID event tap location.
-func postEvent(tap uint32, event uintptr) error {
+func postEvent(tap uint32, event corefoundation.CFTypeRef) error {
 	if err := inputEnsureInit(); err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func postEvent(tap uint32, event uintptr) error {
 }
 
 // setEventFlags sets the modifier flags (shift, control, etc.) on an event.
-func setEventFlags(event uintptr, flags uint64) error {
+func setEventFlags(event corefoundation.CFTypeRef, flags uint64) error {
 	if err := inputEnsureInit(); err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func setEventFlags(event uintptr, flags uint64) error {
 
 // setEventUnicodeString sets the Unicode string on a keyboard event,
 // enabling arbitrary characters that don't have a direct keycode.
-func setEventUnicodeString(event uintptr, s string) error {
+func setEventUnicodeString(event corefoundation.CFTypeRef, s string) error {
 	if err := inputEnsureInit(); err != nil {
 		return err
 	}

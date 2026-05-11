@@ -56,15 +56,15 @@ func TestSetInputBridgeRuntimeInstallsHooks(t *testing.T) {
 		{
 			name: "hooks",
 			rt: InputBridgeRuntime{
-				CreateMouseEvent: func(uint64, uint32, corefoundation.CGPoint, uint32) (uintptr, error) {
-					return 11, nil
+				CreateMouseEvent: func(uint64, uint32, corefoundation.CGPoint, uint32) (corefoundation.CFTypeRef, error) {
+					return corefoundation.CFTypeRef(new(byte)), nil
 				},
-				CreateKeyboardEvent: func(uint64, uint16, bool) (uintptr, error) {
-					return 12, nil
+				CreateKeyboardEvent: func(uint64, uint16, bool) (corefoundation.CFTypeRef, error) {
+					return corefoundation.CFTypeRef(new(byte)), nil
 				},
-				PostEvent:             func(uint32, uintptr) error { return nil },
-				SetEventUnicodeString: func(uintptr, string) {},
-				SetEventFlags:         func(uintptr, uint64) {},
+				PostEvent:             func(uint32, corefoundation.CFTypeRef) error { return nil },
+				SetEventUnicodeString: func(corefoundation.CFTypeRef, string) {},
+				SetEventFlags:         func(corefoundation.CFTypeRef, uint64) {},
 				RunOnUIThreadSync:     func(f func()) { f() },
 				AllowHIDKeyboard:      func() bool { return true },
 				ModifierKeySequence:   func(flags uint32) []uint32 { return []uint32{flags + 1} },
@@ -81,11 +81,11 @@ func TestSetInputBridgeRuntimeInstallsHooks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			SetInputBridgeRuntime(tt.rt)
-			if got, _ := createMouseEventFn(0, 0, corefoundation.CGPoint{}, 0); got != 11 {
-				t.Fatalf("createMouseEventFn = %d, want 11", got)
+			if got, _ := createMouseEventFn(0, 0, corefoundation.CGPoint{}, 0); got == nil {
+				t.Fatal("createMouseEventFn returned nil")
 			}
-			if got, _ := createKeyboardEventFn(0, 0, false); got != 12 {
-				t.Fatalf("createKeyboardEventFn = %d, want 12", got)
+			if got, _ := createKeyboardEventFn(0, 0, false); got == nil {
+				t.Fatal("createKeyboardEventFn returned nil")
 			}
 			ran := false
 			runOnUIThreadSyncFn(func() { ran = true })

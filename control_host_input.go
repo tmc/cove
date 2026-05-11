@@ -15,17 +15,17 @@ import (
 
 func init() {
 	controlserver.SetInputBridgeRuntime(controlserver.InputBridgeRuntime{
-		CreateMouseEvent: func(source uint64, eventType uint32, position corefoundation.CGPoint, mouseButton uint32) (uintptr, error) {
+		CreateMouseEvent: func(source uint64, eventType uint32, position corefoundation.CGPoint, mouseButton uint32) (corefoundation.CFTypeRef, error) {
 			return createMouseEvent(uintptr(source), eventType, position, mouseButton)
 		},
-		CreateKeyboardEvent: func(source uint64, keyCode uint16, keyDown bool) (uintptr, error) {
+		CreateKeyboardEvent: func(source uint64, keyCode uint16, keyDown bool) (corefoundation.CFTypeRef, error) {
 			return createKeyboardEvent(uintptr(source), keyCode, keyDown)
 		},
 		PostEvent: postEvent,
-		SetEventUnicodeString: func(event uintptr, s string) {
+		SetEventUnicodeString: func(event corefoundation.CFTypeRef, s string) {
 			_ = setEventUnicodeString(event, s)
 		},
-		SetEventFlags: func(event uintptr, flags uint64) {
+		SetEventFlags: func(event corefoundation.CFTypeRef, flags uint64) {
 			_ = setEventFlags(event, flags)
 		},
 		RunOnUIThreadSync:   runOnUIThreadSync,
