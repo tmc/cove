@@ -123,3 +123,67 @@ func TestCreateAutounattendISORejectsExistingDirectory(t *testing.T) {
 		t.Fatalf("error = %q, want remove existing autounattend iso", err.Error())
 	}
 }
+
+func TestCreateAutounattendISOInvokesHdiutil(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		script  string
+		wantErr string
+	}{
+		{
+			name: "success",
+			script: `#!/bin/sh
+set -eu
+out=
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = "-o" ]; then
+		shift
+		out=$1
+	fi
+	last=$1
+	shift
+done
+test -n "$out"
+test -f "$last/autounattend.xml"
+printf iso >"$out"
+`,
+		},
+		{
+			name: "failure",
+			script: `#!/bin/sh
+echo hdiutil failed
+exit 2
+`,
+			wantErr: "create autounattend iso",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			bin := filepath.Join(t.TempDir(), "hdiutil")
+			if err := os.WriteFile(bin, []byte(tt.script), 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", filepath.Dir(bin))
+
+			got, err := CreateAutounattendISO(dir, ProvisionConfig{})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("CreateAutounattendISO() error = %v, want %q", err, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), "hdiutil failed") {
+					t.Fatalf("CreateAutounattendISO() error = %v, want command output", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CreateAutounattendISO(): %v", err)
+			}
+			if got != filepath.Join(dir, "autounattend.iso") {
+				t.Fatalf("iso path = %q, want autounattend.iso in vm dir", got)
+			}
+			if _, err := os.Stat(got); err != nil {
+				t.Fatalf("stat iso: %v", err)
+			}
+		})
+	}
+}
