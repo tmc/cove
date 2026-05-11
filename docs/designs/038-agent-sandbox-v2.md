@@ -1,4 +1,4 @@
-# Design 034: Agent Sandbox v2
+# Design 038: Agent Sandbox v2
 
 **Status:** shipped as provider abstraction, docs, doctor, examples, and benchmark harness.
 Full live provider-matrix evidence still depends on local provider credentials.
