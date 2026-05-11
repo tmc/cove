@@ -35,6 +35,62 @@ func TestLoadMissing(t *testing.T) {
 	}
 }
 
+func TestPositiveValueRejectsInvalid(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		n    int64
+	}{
+		{name: "zero"},
+		{name: "negative", n: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := PositiveValue("cpu", tc.n); err == nil {
+				t.Fatal("PositiveValue succeeded, want error")
+			}
+		})
+	}
+}
+
+func TestQuotaCheckExceeded(t *testing.T) {
+	cap := Quota{CPUs: 4, MemoryGB: 8, DiskGB: 50}
+	tests := []struct {
+		name string
+		req  Quota
+	}{
+		{name: "cpu", req: Quota{CPUs: 5}},
+		{name: "memory", req: Quota{MemoryGB: 9}},
+		{name: "disk", req: Quota{DiskGB: 51}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := cap.Check(tc.req); !errors.Is(err, ErrQuotaExceeded) {
+				t.Fatalf("Check() error = %v, want ErrQuotaExceeded", err)
+			}
+		})
+	}
+}
+
+func TestQuotaUpdateOverwritesSavedCap(t *testing.T) {
+	dir := t.TempDir()
+	if err := Save(dir, Quota{CPUs: 2, MemoryGB: 4, DiskGB: 20}); err != nil {
+		t.Fatalf("Save initial: %v", err)
+	}
+	want := Quota{CPUs: 4, MemoryGB: 8, DiskGB: 40}
+	if err := Save(dir, want); err != nil {
+		t.Fatalf("Save update: %v", err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load update: %v", err)
+	}
+	if got != want {
+		t.Fatalf("Load update = %#v, want %#v", got, want)
+	}
+	if err := got.Check(Quota{CPUs: 4, MemoryGB: 8, DiskGB: 40}); err != nil {
+		t.Fatalf("Check updated cap: %v", err)
+	}
+}
+
 func TestApplyAPFSQuotaCommand(t *testing.T) {
 	vmDir := filepath.Join(t.TempDir(), "vm")
 	runner := &recordRunner{}
