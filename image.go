@@ -222,7 +222,7 @@ func BuildImage(opts BuildImageOptions) (*ImageManifest, error) {
 	if _, err := os.Stat(imgDir); err == nil {
 		return nil, fmt.Errorf("image build: image %s already exists at %s", opts.Ref, imgDir)
 	}
-	if err := os.MkdirAll(imgDir, 0o755); err != nil {
+	if err := os.MkdirAll(imgDir, 0o700); err != nil {
 		return nil, fmt.Errorf("image build: create image dir: %w", err)
 	}
 	cleanup := func() { os.RemoveAll(imgDir) }
@@ -440,7 +440,7 @@ func ListImages() ([]ImageEntry, error) {
 	root := ImagesBaseDir()
 	_, err := os.Stat(root)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("stat images dir: %w", err)
@@ -490,7 +490,7 @@ func ListImages() ([]ImageEntry, error) {
 func VMsForkedFromImage(ref ImageRef) ([]string, error) {
 	entries, err := os.ReadDir(vmconfig.BaseDir())
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read vm base dir: %w", err)

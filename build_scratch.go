@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,7 +62,7 @@ func (e *buildExecutor) createScratch(parentDisk string) (buildScratch, error) {
 		LogPath:  filepath.Join(e.scratchRoot, id, "build.log"),
 		Created:  created,
 	}
-	if err := os.MkdirAll(sc.Dir, 0755); err != nil {
+	if err := os.MkdirAll(sc.Dir, 0o700); err != nil {
 		return buildScratch{}, fmt.Errorf("create build scratch: %w", err)
 	}
 	if err := os.WriteFile(sc.PIDPath, []byte(strconv.Itoa(e.pid)+"\n"), 0644); err != nil {
@@ -141,7 +142,7 @@ func copyBuildScratchFile(srcDir, dstDir, name string, required bool) error {
 	src := filepath.Join(srcDir, name)
 	dst := filepath.Join(dstDir, name)
 	if _, err := os.Stat(src); err != nil {
-		if os.IsNotExist(err) && !required {
+		if errors.Is(err, os.ErrNotExist) && !required {
 			return nil
 		}
 		return fmt.Errorf("copy build scratch %s: %w", name, err)
@@ -212,7 +213,7 @@ func pruneBuildScratch(root string, olderThan time.Duration, apply bool, isLive 
 		Apply:       apply,
 	}
 	entries, err := os.ReadDir(root)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return rep, nil
 	}
 	if err != nil {
@@ -294,7 +295,7 @@ func gcBuildScratch(root string, isLive func(int) bool) error {
 		isLive = processLive
 	}
 	entries, err := os.ReadDir(root)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {

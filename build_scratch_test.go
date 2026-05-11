@@ -26,6 +26,13 @@ func TestBuildScratchCreateWritesMetadata(t *testing.T) {
 	if sc.Dir == "" || !strings.HasPrefix(sc.Dir, root) {
 		t.Fatalf("scratch dir = %q, want under %q", sc.Dir, root)
 	}
+	info, err := os.Stat(sc.Dir)
+	if err != nil {
+		t.Fatalf("stat scratch dir: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("scratch dir mode = %03o, want 700", got)
+	}
 	if got := strings.TrimSpace(readFile(t, sc.PIDPath)); got != "1234" {
 		t.Fatalf("build.pid = %q, want 1234", got)
 	}
