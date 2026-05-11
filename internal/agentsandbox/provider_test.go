@@ -99,6 +99,47 @@ func TestProviderInfos(t *testing.T) {
 	}
 }
 
+func TestProviderMatrixMetadata(t *testing.T) {
+	tests := []struct {
+		name    string
+		envVars []string
+		notes   string
+	}{
+		{ProviderOpenAI, []string{"OPENAI_API_KEY"}, "OpenAI Agents SDK"},
+		{ProviderAnthropic, []string{"ANTHROPIC_API_KEY"}, "cove runtime"},
+		{ProviderGemini, []string{"GEMINI_API_KEY"}, ""},
+		{ProviderVertex, []string{"GOOGLE_CLOUD_PROJECT or COVE_VERTEX_PROJECT", "COVE_VERTEX_REGION optional"}, ""},
+	}
+	infos := ProviderInfos()
+	if len(infos) != len(tests) {
+		t.Fatalf("ProviderInfos len = %d, want %d", len(infos), len(tests))
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if ProviderNames()[i] != tt.name {
+				t.Fatalf("ProviderNames[%d] = %q, want %q", i, ProviderNames()[i], tt.name)
+			}
+			p, err := LookupProvider("  " + strings.ToUpper(tt.name) + "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			info := p.Info()
+			if info.Name != tt.name || !info.FirstClass {
+				t.Fatalf("Info = %+v, want first-class %q", info, tt.name)
+			}
+			if strings.Join(info.EnvVars, ",") != strings.Join(tt.envVars, ",") {
+				t.Fatalf("EnvVars = %q, want %q", info.EnvVars, tt.envVars)
+			}
+			if tt.notes != "" && !strings.Contains(info.Notes, tt.notes) {
+				t.Fatalf("Notes = %q, want substring %q", info.Notes, tt.notes)
+			}
+			if infos[i].Name != info.Name {
+				t.Fatalf("ProviderInfos[%d] = %q, want %q", i, infos[i].Name, info.Name)
+			}
+		})
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
