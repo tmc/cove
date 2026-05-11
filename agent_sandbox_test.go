@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -263,5 +264,15 @@ func TestPrepareAgentSandboxReplay(t *testing.T) {
 	}
 	if target != filepath.Join("..", "metrics.jsonl") {
 		t.Fatalf("metrics link = %q", target)
+	}
+}
+
+func TestWaitAgentSandboxRunReturnsAfterExit(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitAgentSandboxRun(cmd); err != nil {
+		t.Fatalf("waitAgentSandboxRun: %v", err)
 	}
 }
