@@ -92,6 +92,25 @@ func TestDownloadVirtIODriversISO(t *testing.T) {
 	}
 }
 
+func TestDownloadVirtIODriversISORejectsStalePartialDirectory(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), virtIODriversISOName)
+	tmp := dest + ".tmp"
+	if err := os.Mkdir(tmp, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "child"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := downloadVirtIODriversISO(dest)
+	if err == nil {
+		t.Fatal("downloadVirtIODriversISO succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "remove partial virtio iso") {
+		t.Fatalf("error = %q, want remove partial virtio iso", err.Error())
+	}
+}
+
 func TestEnsureVirtIODriversISOFetchesWhenCacheMissing(t *testing.T) {
 	large := strings.Repeat("x", minVirtIODriversSize)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
