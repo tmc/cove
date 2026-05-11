@@ -452,6 +452,8 @@ func parseCachePaths(s string) []string {
 }
 
 func waitReady(ctx context.Context, cfg config) error {
+	ticker := time.NewTicker(cfg.ReadyEvery)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -469,7 +471,7 @@ func waitReady(ctx context.Context, cfg config) error {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("wait for guest readiness: %w", ctx.Err())
-		case <-time.After(cfg.ReadyEvery):
+		case <-ticker.C:
 		}
 	}
 }
@@ -565,6 +567,8 @@ func writeOutputs(cfg config, res result) error {
 
 func waitForMetricsPath(ctx context.Context, cfg config, since time.Time) string {
 	deadline := time.Now().Add(30 * time.Second)
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		if path := findMetricsPath(cfg, since); path != "" {
 			return path
@@ -575,7 +579,7 @@ func waitForMetricsPath(ctx context.Context, cfg config, since time.Time) string
 		select {
 		case <-ctx.Done():
 			return ""
-		case <-time.After(250 * time.Millisecond):
+		case <-ticker.C:
 		}
 	}
 }
