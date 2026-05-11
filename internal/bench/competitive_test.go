@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,6 +79,68 @@ func TestRunCompetitiveWritesJSONAndMetrics(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(runsRoot, report.RunID, "metrics.jsonl")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMarkdownCells(t *testing.T) {
+	ok := int64(1234)
+	results := []Result{
+		{Workload: "image_build", Tool: "cove", Status: "ok", ValueMS: &ok, Source: "bench/image/runs.jsonl"},
+		{Workload: "image_build", Tool: "lume", Status: "not_measured", Reason: "missing"},
+		{Workload: "boot_to_agent", Tool: "cove", Status: "not_measured"},
+	}
+	for _, tc := range []struct {
+		name string
+		got  string
+		want string
+	}{
+		{name: "ok value", got: cell(results, "image_build", "cove"), want: "1234ms"},
+		{name: "reason hidden", got: cell(results, "image_build", "lume"), want: "not measured"},
+		{name: "status fallback", got: cell(results, "boot_to_agent", "cove"), want: "not_measured"},
+		{name: "missing tool", got: cell(results, "image_build", "cirrus"), want: "not measured"},
+		{name: "source", got: sourceCell(results, "image_build"), want: "`bench/image/runs.jsonl`"},
+		{name: "missing source", got: sourceCell(results, "boot_to_agent"), want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Fatalf("got %q, want %q", tc.got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWriteMarkdown(t *testing.T) {
+	value := int64(77)
+	path := filepath.Join(t.TempDir(), "reports", "bench.md")
+	report := Report{
+		GeneratedAt: "2026-05-06T12:00:00Z",
+		RunID:       "bench-20260506-120000",
+		GitHead:     "head",
+		OriginMain:  "main",
+		Results: []Result{
+			{Workload: "z_work", Tool: "cove", Status: "ok", ValueMS: &value, Source: "z.jsonl"},
+			{Workload: "a_work", Tool: "cove", Status: "not_measured", Reason: "missing"},
+		},
+	}
+	if err := writeMarkdown(path, report); err != nil {
+		t.Fatalf("writeMarkdown: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"- Run id: `bench-20260506-120000`",
+		"| a_work | not measured | not measured | not measured | not measured |  |",
+		"| z_work | 77ms | not measured | not measured | not measured | `z.jsonl` |",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("markdown missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Index(got, "| a_work |") > strings.Index(got, "| z_work |") {
+		t.Fatalf("workloads not sorted:\n%s", got)
 	}
 }
 
