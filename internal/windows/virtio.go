@@ -10,11 +10,13 @@ import (
 )
 
 const (
-	virtIODriversVersion = "0.1.285-1"
-	virtIODriversISOName = "virtio-win-0.1.285.iso"
-	virtIODriversURL     = "https://github.com/qemus/virtiso-arm/releases/download/v" + virtIODriversVersion + "/" + virtIODriversISOName
-	minVirtIODriversSize = 100000
+	virtIODriversVersion    = "0.1.285-1"
+	virtIODriversISOName    = "virtio-win-0.1.285.iso"
+	defaultVirtIODriversURL = "https://github.com/qemus/virtiso-arm/releases/download/v" + virtIODriversVersion + "/" + virtIODriversISOName
+	minVirtIODriversSize    = 100000
 )
+
+var virtIODriversURL = defaultVirtIODriversURL
 
 // DefaultVirtIODriversCacheDir returns the default VirtIO driver cache directory.
 func DefaultVirtIODriversCacheDir() (string, error) {
