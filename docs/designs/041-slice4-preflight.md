@@ -1,5 +1,40 @@
 # Design 041 Slice 4 Preflight
 
+## 2026-05-11 R107 host check
+
+No-ship: this host cannot produce the Slice 2 p50/p95 evidence yet.
+
+Commands run from an isolated worktree at `origin/main` (`b305c86`):
+
+```sh
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+./cove doctor sckit-preauth -json
+./cove list
+COVE_TEST_SCKIT_GRANT=1 go test -v -tags sckit_live ./internal/sckit/ -run TestCaptureWindowLive
+./cove doctor sckit-spike -n 30 -threshold 50ms -title-prefix cove
+```
+
+Observed state:
+
+- Host: macOS 26.4.1 (`25E253`).
+- `sckit-preauth`: SCKit available, Screen Recording not authorized.
+- `cove list`: no running GUI VM; `default` is suspended and the other
+  local VMs are suspended or stopped.
+- Live SCKit test skipped because `COVE_TEST_SCKIT_WINDOW_ID` was not set.
+- `sckit-spike` failed before sampling with TCC denial:
+  `The user declined TCCs for application, window, display capture`.
+
+Run later on a TCC-granted host with a visible cove GUI VM:
+
+```sh
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+./cove doctor sckit-preauth
+COVE_TEST_SCKIT_GRANT=1 COVE_TEST_SCKIT_WINDOW_ID=<id> go test -tags sckit_live ./internal/sckit/
+./cove doctor sckit-spike -n 30 -threshold 50ms -title-prefix cove
+```
+
 Updated after `git fetch origin main conductor/sckit-slice4` on
 2026-05-11. Branch `origin/conductor/sckit-slice4` exists at
 `017e52d` (`screenshots: retire CGWindowList`), but it is not
