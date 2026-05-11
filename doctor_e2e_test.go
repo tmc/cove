@@ -11,6 +11,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,6 +62,15 @@ type buildError struct {
 }
 
 func (b *buildError) Error() string { return b.err.Error() + "\n" + b.out }
+
+func (b *buildError) Unwrap() error { return b.err }
+
+func TestWrapBuildErrUnwraps(t *testing.T) {
+	err := wrapBuildErr(os.ErrPermission, []byte("build output"))
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("errors.Is(%v, os.ErrPermission) = false", err)
+	}
+}
 
 func TestDoctorE2E(t *testing.T) {
 	if runtime.GOOS != "darwin" {
