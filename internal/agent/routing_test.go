@@ -47,6 +47,27 @@ func TestAgentRouteFor(t *testing.T) {
 	}
 }
 
+func TestAgentRoutePorts(t *testing.T) {
+	tests := []struct {
+		name string
+		op   string
+		path string
+		want uint32
+	}{
+		{name: "daemon route uses 1024", op: "ping", want: DaemonPort},
+		{name: "user route uses 1025", op: "user-exec", want: UserPort},
+		{name: "path aware user route uses 1025", op: "read", path: "/Volumes/share/a", want: UserPort},
+		{name: "system path uses 1024", op: "read", path: "/var/log/system.log", want: DaemonPort},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RouteFor(tt.op, tt.path, false).Port(); got != tt.want {
+				t.Fatalf("RouteFor(%q, %q, false).Port() = %d, want %d", tt.op, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestExtractPathOperand(t *testing.T) {
 	tests := []struct {
 		name string

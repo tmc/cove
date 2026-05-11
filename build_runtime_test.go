@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	controlx "github.com/tmc/vz-macos/internal/control"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -136,6 +138,43 @@ func TestWaitBuildAgentRetriesUntilSuccess(t *testing.T) {
 	}
 }
 
+func TestWaitBuildAgentRetriesUntilSocketReady(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "cove-build-agent-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "control.sock")
+	if err := os.WriteFile(filepath.Join(dir, controlTokenFileName), []byte("token\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	started := make(chan *controlx.Server, 1)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		s := &controlx.Server{
+			SocketPath:  sock,
+			Handler:     buildAgentPingHandler{},
+			StopTimeout: 100 * time.Millisecond,
+		}
+		if err := s.Start(context.Background()); err != nil {
+			t.Errorf("Start: %v", err)
+			return
+		}
+		started <- s
+	}()
+
+	if err := waitBuildAgent(context.Background(), sock, 2*time.Second); err != nil {
+		t.Fatalf("waitBuildAgent(): %v", err)
+	}
+	select {
+	case s := <-started:
+		s.Stop()
+	case <-time.After(time.Second):
+		t.Fatal("server did not report start")
+	}
+}
+
 func TestWaitBuildAgentHonorsContext(t *testing.T) {
 	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
 		*call++
@@ -149,6 +188,27 @@ func TestWaitBuildAgentHonorsContext(t *testing.T) {
 		t.Fatalf("waitBuildAgent() = %v, want context.Canceled", err)
 	}
 }
+
+type buildAgentPingHandler struct{}
+
+func (buildAgentPingHandler) Authorize(token string) bool { return token == "token" }
+
+func (buildAgentPingHandler) HandleStream(net.Conn, *controlpb.ControlRequest, []byte) (bool, bool) {
+	return false, false
+}
+
+func (buildAgentPingHandler) HandleRaw(*controlpb.ControlRequest, []byte) (*controlpb.ControlResponse, bool) {
+	return nil, false
+}
+
+func (buildAgentPingHandler) Handle(req *controlpb.ControlRequest) *controlpb.ControlResponse {
+	if req.Type != "agent-ping" {
+		return &controlpb.ControlResponse{Error: "unexpected request"}
+	}
+	return &controlpb.ControlResponse{Success: true}
+}
+
+func (buildAgentPingHandler) Event(string, *controlpb.ControlResponse) {}
 
 func TestShutdownBuildGuest(t *testing.T) {
 	restore := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
