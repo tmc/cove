@@ -586,7 +586,7 @@ func MaterializeImage(opts MaterializeImageOptions) (string, error) {
 	if _, err := os.Stat(childDir); err == nil {
 		return "", fmt.Errorf("materialize: vm %q already exists", opts.ChildName)
 	}
-	if err := os.MkdirAll(childDir, 0o755); err != nil {
+	if err := os.MkdirAll(childDir, 0o700); err != nil {
 		return "", fmt.Errorf("materialize: create child dir: %w", err)
 	}
 	cleanup := func() { os.RemoveAll(childDir) }
