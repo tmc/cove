@@ -59,6 +59,22 @@ func TestSelectPrefersConsumerARM64(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "deduplicates repeated catalog entries",
+			entries: []Entry{
+				testEntry("consumer.esd", "CLIENTCONSUMER", "ARM64", "en-us"),
+				testEntry("consumer.esd", "CLIENTCONSUMER", "ARM64", "en-us"),
+			},
+			want: "consumer.esd",
+		},
+		{
+			name: "ignores incomplete entries",
+			entries: []Entry{
+				{Name: "missing-url.esd", LanguageCode: "en-us", Architecture: "ARM64", Size: 1, SHA1: stringsRepeat("0", 40)},
+				testEntry("consumer.esd", "CLIENTCONSUMER", "ARM64", "en-us"),
+			},
+			want: "consumer.esd",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
