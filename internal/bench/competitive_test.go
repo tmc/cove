@@ -3,9 +3,11 @@ package bench
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -39,6 +41,94 @@ func TestFirstJSONLMS(t *testing.T) {
 	}
 	if got != 37648 {
 		t.Fatalf("duration = %d, want 37648", got)
+	}
+}
+
+func TestSummaryTableMSErrors(t *testing.T) {
+	dir := t.TempDir()
+	badNumber := filepath.Join(dir, "bad.md")
+	noRow := filepath.Join(dir, "missing.md")
+	write(t, dir, "bad.md", "| 16 | ok | fastms |\n")
+	write(t, dir, "missing.md", "| 8 | ok | 10ms |\n")
+
+	for _, tc := range []struct {
+		name    string
+		path    string
+		wantErr error
+		want    string
+	}{
+		{name: "missing file", path: filepath.Join(dir, "gone.md"), wantErr: os.ErrNotExist},
+		{name: "bad number", path: badNumber, want: "invalid syntax"},
+		{name: "missing row", path: noRow, want: `row "| 16 |" not found`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := summaryTableMS(tc.path, "| 16 |")
+			if err == nil {
+				t.Fatal("summaryTableMS succeeded, want error")
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want errors.Is(..., %v)", err, tc.wantErr)
+			}
+			if tc.want != "" && !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+func TestFirstJSONLMSErrors(t *testing.T) {
+	dir := t.TempDir()
+	badJSON := filepath.Join(dir, "bad.jsonl")
+	noField := filepath.Join(dir, "missing.jsonl")
+	write(t, dir, "bad.jsonl", "{\n")
+	write(t, dir, "missing.jsonl", `{"status":"ok","other_ms":1}`+"\n")
+
+	for _, tc := range []struct {
+		name    string
+		path    string
+		wantErr error
+		want    string
+	}{
+		{name: "missing file", path: filepath.Join(dir, "gone.jsonl"), wantErr: os.ErrNotExist},
+		{name: "bad json", path: badJSON, want: "unexpected end of JSON input"},
+		{name: "missing field", path: noField, want: `field "duration_ms" not found`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := firstJSONLMS(tc.path, "duration_ms")
+			if err == nil {
+				t.Fatal("firstJSONLMS succeeded, want error")
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want errors.Is(..., %v)", err, tc.wantErr)
+			}
+			if tc.want != "" && !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+func TestWriteJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "reports", "bench.json")
+	if err := writeJSON(path, Report{RunID: "bench-test"}); err != nil {
+		t.Fatalf("writeJSON: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "\"run_id\": \"bench-test\"") {
+		t.Fatalf("json missing run id:\n%s", data)
+	}
+
+	blocker := filepath.Join(dir, "file")
+	if err := os.WriteFile(blocker, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	err = writeJSON(filepath.Join(blocker, "bench.json"), Report{})
+	if !errors.Is(err, syscall.ENOTDIR) {
+		t.Fatalf("writeJSON error = %v, want ENOTDIR", err)
 	}
 }
 
