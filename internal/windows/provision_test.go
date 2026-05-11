@@ -1,9 +1,11 @@
 package windows
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -69,5 +71,36 @@ func TestEnsureVirtIODriversISOReturnsCachedPath(t *testing.T) {
 	}
 	if got != isoPath {
 		t.Fatalf("cached iso path = %q, want %q", got, isoPath)
+	}
+}
+
+func TestCreateAutounattendISORejectsInvalidVMDir(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "file")
+	if err := os.WriteFile(blocker, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name    string
+		vmDir   string
+		want    string
+		wantErr error
+	}{
+		{name: "empty", want: "vm dir is empty"},
+		{name: "parent is file", vmDir: filepath.Join(blocker, "vm"), want: "create vm dir", wantErr: syscall.ENOTDIR},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := CreateAutounattendISO(tt.vmDir, ProvisionConfig{})
+			if err == nil {
+				t.Fatal("CreateAutounattendISO succeeded, want error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tt.want)
+			}
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want errors.Is(..., %v)", err, tt.wantErr)
+			}
+		})
 	}
 }

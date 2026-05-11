@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -86,6 +87,57 @@ func TestDownloadVirtIODriversISO(t *testing.T) {
 			}
 			if tt.wantCached && info.Size() != int64(len(tt.body)) {
 				t.Fatalf("cached size = %d, want %d", info.Size(), len(tt.body))
+			}
+		})
+	}
+}
+
+func TestEnsureVirtIODriversISOFetchesWhenCacheMissing(t *testing.T) {
+	large := strings.Repeat("x", minVirtIODriversSize)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(large))
+	}))
+	defer server.Close()
+
+	oldURL := virtIODriversURL
+	virtIODriversURL = server.URL
+	t.Cleanup(func() { virtIODriversURL = oldURL })
+
+	for _, tt := range []struct {
+		name string
+		dir  func(t *testing.T) string
+		err  error
+	}{
+		{
+			name: "missing cache",
+			dir:  func(t *testing.T) string { return t.TempDir() },
+		},
+		{
+			name: "parent is file",
+			dir: func(t *testing.T) string {
+				root := t.TempDir()
+				blocker := filepath.Join(root, "file")
+				if err := os.WriteFile(blocker, nil, 0644); err != nil {
+					t.Fatal(err)
+				}
+				return filepath.Join(blocker, "cache")
+			},
+			err: syscall.ENOTDIR,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := EnsureVirtIODriversISO(tt.dir(t))
+			if tt.err != nil {
+				if !errors.Is(err, tt.err) {
+					t.Fatalf("EnsureVirtIODriversISO() error = %v, want %v", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("EnsureVirtIODriversISO(): %v", err)
+			}
+			if filepath.Base(got) != virtIODriversISOName {
+				t.Fatalf("iso path = %q, want base %q", got, virtIODriversISOName)
 			}
 		})
 	}
