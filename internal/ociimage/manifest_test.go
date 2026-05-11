@@ -262,6 +262,20 @@ func TestParseManifestRejectsInvalid(t *testing.T) {
 			m.Layers[0].Annotations[CoveChunkTotal] = "2"
 			return m
 		}},
+		{name: "chunk index out of range", mutate: func(m Manifest) Manifest {
+			m.Layers[0].Annotations = cloneStringMap(m.Layers[0].Annotations)
+			m.Layers[0].Annotations[CoveChunkIndex] = "1"
+			return m
+		}},
+		{name: "inconsistent chunk total", mutate: func(m Manifest) Manifest {
+			m.Layers = append(m.Layers, m.Layers[0])
+			m.Layers[0].Annotations = cloneStringMap(m.Layers[0].Annotations)
+			m.Layers[1].Annotations = cloneStringMap(m.Layers[1].Annotations)
+			m.Layers[0].Annotations[CoveChunkTotal] = "2"
+			m.Layers[1].Annotations[CoveChunkIndex] = "1"
+			m.Layers[1].Annotations[CoveChunkTotal] = "3"
+			return m
+		}},
 		{name: "size mismatch", mutate: func(m Manifest) Manifest {
 			m.Annotations = cloneStringMap(m.Annotations)
 			m.Annotations[CoveUncompressedDiskSize] = "4"
