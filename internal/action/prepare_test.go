@@ -153,6 +153,32 @@ func TestRunPrepareSkipsFreshImage(t *testing.T) {
 	}
 }
 
+func TestRunPrepareChecksStaleImage(t *testing.T) {
+	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	for _, call := range []string{
+		key("cove", "image", "inspect", "-json", "ubuntu:ci"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "bash"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "curl"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "git"),
+		key("cove", "shell", "ubuntu:ci", "--", "which", "docker"),
+		key("cove", "vm", "tree", "--reachable-from", "ubuntu:ci"),
+	} {
+		r.outputs[call] = Output{Stdout: "ok\n"}
+	}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent abc123\n"}
+	r.outputs[key("cove", "version")] = Output{Stdout: "cove abc123 (commit abc123, built now)\n"}
+	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
+	r.outputs[key("cove", "image", "inspect", "-json", "ubuntu:ci")] = Output{Stdout: `{"built_at":"2026-05-01T10:00:00Z"}`}
+
+	got := RunPrepare(context.Background(), PrepareConfig{CoveBin: "cove", Ref: "ubuntu:ci", Runner: r, TTL: 24 * time.Hour, Now: mustTime(t, "2026-05-05T12:00:00Z")})
+	if got.Status != StatusPass {
+		t.Fatalf("RunPrepare status = %q, want pass", got.Status)
+	}
+	if !contains(r.calls, key("cove", "shell", "ubuntu:ci", "--", "which", "docker")) {
+		t.Fatalf("stale image did not run full checks: %v", r.calls)
+	}
+}
+
 func TestRunPrepareForceBypassesFreshSkip(t *testing.T) {
 	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
 	for _, call := range []string{
