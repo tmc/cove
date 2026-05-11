@@ -104,6 +104,14 @@ func TestAgentBridgeSetHealthStatusTracksDisconnectEdge(t *testing.T) {
 	}
 }
 
+func TestAgentBridgeSummaryWithoutHost(t *testing.T) {
+	var b AgentBridge
+	b.SetHealthStatus("disconnected", "", "vm not running")
+	if got := b.Summary(); got != "Agent: not installed" {
+		t.Fatalf("Summary() = %q, want %q", got, "Agent: not installed")
+	}
+}
+
 // TestAgentBridgeGetAgentWithoutHostReturnsNotConfigured verifies the
 // nil-host degradation path: a bare &AgentBridge{} returns the same
 // "vm not configured" error the pre-extraction path produced for an
