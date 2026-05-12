@@ -58,6 +58,14 @@ nixos-install --root /mnt --no-root-passwd
 `, configText)
 }
 
+func LiveInstallerCommands() []string {
+	return []string{
+		"sudo mkdir -p /mnt/cove-seed",
+		"sudo mount /dev/disk/by-label/" + SeedVolumeID + " /mnt/cove-seed",
+		"sudo bash /mnt/cove-seed/" + InstallScript + " /dev/vda",
+	}
+}
+
 func ValidateConfiguration(s string) error {
 	required := []string{
 		`services.openssh.enable = true;`,

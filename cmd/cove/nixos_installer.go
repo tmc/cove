@@ -52,7 +52,10 @@ func installNixOSVM(resolvedDiskPath string, provConfig LinuxProvisionConfig) er
 	fmt.Printf("  Hostname: %s\n", provConfig.Hostname)
 	fmt.Println("  Seed volume: COVE-NIXOS")
 	fmt.Println()
-	fmt.Println("From the live installer, mount the seed volume and run install-nixos.sh.")
+	fmt.Println("From the live installer, run:")
+	for _, command := range nixos.LiveInstallerCommands() {
+		fmt.Printf("  %s\n", command)
+	}
 	fmt.Println("The script writes /mnt/etc/nixos/configuration.nix and runs nixos-install.")
 	fmt.Println()
 

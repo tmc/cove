@@ -53,6 +53,19 @@ func TestRenderInstallScript(t *testing.T) {
 	}
 }
 
+func TestLiveInstallerCommands(t *testing.T) {
+	got := strings.Join(LiveInstallerCommands(), "\n")
+	for _, want := range []string{
+		"sudo mkdir -p /mnt/cove-seed",
+		"sudo mount /dev/disk/by-label/COVE-NIXOS /mnt/cove-seed",
+		"sudo bash /mnt/cove-seed/install-nixos.sh /dev/vda",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("commands missing %q\n%s", want, got)
+		}
+	}
+}
+
 func TestConfigurationNixSyntaxWhenAvailable(t *testing.T) {
 	if _, err := exec.LookPath("nixos-rebuild"); err != nil {
 		t.Skip("nixos-rebuild not installed")

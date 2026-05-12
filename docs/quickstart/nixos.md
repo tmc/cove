@@ -15,10 +15,12 @@ ISO named `COVE-NIXOS` with:
 
 The first slice boots the NixOS live ISO through EFI and makes the declarative
 install bundle available to the live environment. From the live installer,
-mount the `COVE-NIXOS` volume and run:
+mount the `COVE-NIXOS` volume and run the installer:
 
 ```
-sudo bash install-nixos.sh
+sudo mkdir -p /mnt/cove-seed
+sudo mount /dev/disk/by-label/COVE-NIXOS /mnt/cove-seed
+sudo bash /mnt/cove-seed/install-nixos.sh /dev/vda
 ```
 
 The script partitions the target disk, writes
@@ -47,3 +49,16 @@ falls back to `nix-env`.
 
 Live boot validation requires an Apple Silicon host and a NixOS installer run.
 That validation is separate from this source slice.
+
+## Nix flake packaging
+
+`flake.nix` is present but still uses `lib.fakeHash` for the Go module vendor
+hashes. On a host with Nix installed, update them by running:
+
+```
+nix build .#cove
+nix build .#vz-agent
+```
+
+Each failed build prints the `vendorHash` Nix expects. Replace the matching
+`lib.fakeHash` value with that hash, then rerun the build.
