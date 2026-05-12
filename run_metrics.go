@@ -2,20 +2,24 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/controlserver"
 	runmetrics "github.com/tmc/vz-macos/internal/metrics"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 type standaloneMetricsRun struct {
 	id       string
 	dir      string
 	vmName   string
+	vmDir    string
 	imageRef string
 	started  time.Time
 	sink     runmetrics.Sink
@@ -27,6 +31,11 @@ var (
 	activeMetricsRun *standaloneMetricsRun
 )
 
+var resourceAgentInfoHook = func(vmDir string) (*controlpb.AgentInfoResponse, error) {
+	client := NewControlClient(GetControlSocketPathForVM(vmDir))
+	return client.AgentInfo()
+}
+
 type captureMetricsFunc func(context.Context, controlserver.CaptureLatencyEvent)
 
 func (f captureMetricsFunc) EmitCaptureLatency(ctx context.Context, e controlserver.CaptureLatencyEvent) {
@@ -35,7 +44,7 @@ func (f captureMetricsFunc) EmitCaptureLatency(ctx context.Context, e controlser
 	}
 }
 
-func beginStandaloneMetricsRun(vmName, imageRef string) (*standaloneMetricsRun, error) {
+func beginStandaloneMetricsRun(vmName, imageRef string, vmDir ...string) (*standaloneMetricsRun, error) {
 	id, err := generateRunID()
 	if err != nil {
 		return nil, err
@@ -52,6 +61,9 @@ func beginStandaloneMetricsRun(vmName, imageRef string) (*standaloneMetricsRun, 
 		imageRef: imageRef,
 		started:  time.Now(),
 		sink:     sink,
+	}
+	if len(vmDir) > 0 {
+		run.vmDir = vmDir[0]
 	}
 	activeMetricsMu.Lock()
 	activeMetricsRun = run
@@ -165,6 +177,51 @@ func emitAgentReadyMetric() {
 	started := run.started
 	activeMetricsMu.Unlock()
 	emitMetricEvent("agent_ready", started, "ok", nil)
+	emitResourceSampleMetric(run, "start")
+}
+
+func emitResourceSampleMetric(run *standaloneMetricsRun, phase string) {
+	if run == nil || strings.TrimSpace(run.vmDir) == "" {
+		return
+	}
+	info, err := resourceAgentInfoHook(run.vmDir)
+	if err != nil || info == nil || strings.TrimSpace(info.RawJson) == "" {
+		return
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(info.RawJson), &raw); err != nil {
+		return
+	}
+	total, okTotal := metricUint(raw, "memory_total", "memoryTotal")
+	available, okAvailable := metricUint(raw, "memory_available", "memoryAvailable")
+	if !okTotal && !okAvailable {
+		return
+	}
+	extra := map[string]any{"phase": phase}
+	if okTotal {
+		extra["memory_total_bytes"] = total
+	}
+	if okAvailable {
+		extra["memory_available_bytes"] = available
+	}
+	emitMetricEvent("resource_sample", run.started, "ok", extra)
+}
+
+func metricUint(raw map[string]any, names ...string) (uint64, bool) {
+	for _, name := range names {
+		switch v := raw[name].(type) {
+		case float64:
+			if v >= 0 {
+				return uint64(v), true
+			}
+		case string:
+			var n uint64
+			if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+				return n, true
+			}
+		}
+	}
+	return 0, false
 }
 
 func emitCaptureLatencyMetric(ctx context.Context, e controlserver.CaptureLatencyEvent) {

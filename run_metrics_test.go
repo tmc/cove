@@ -10,6 +10,7 @@ import (
 
 	"github.com/tmc/vz-macos/internal/controlserver"
 	runmetrics "github.com/tmc/vz-macos/internal/metrics"
+	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 func TestStandaloneMetricsRunWritesJSONL(t *testing.T) {
@@ -126,6 +127,43 @@ func TestCaptureLatencyMetricWritesJSONL(t *testing.T) {
 	}
 	if got.Extra["width"].(float64) != 640 || got.Extra["height"].(float64) != 480 {
 		t.Fatalf("extra size = %#v", got.Extra)
+	}
+}
+
+func TestResourceSampleMetricWritesMemory(t *testing.T) {
+	withTempHome(t)
+	runsRoot := t.TempDir()
+	prevRuns := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	prevInfo := resourceAgentInfoHook
+	resourceAgentInfoHook = func(string) (*controlpb.AgentInfoResponse, error) {
+		return &controlpb.AgentInfoResponse{RawJson: `{"memory_total":8192,"memory_available":4096}`}, nil
+	}
+	t.Cleanup(func() {
+		runsDirHook = prevRuns
+		resourceAgentInfoHook = prevInfo
+		activeMetricsMu.Lock()
+		activeMetricsRun = nil
+		activeMetricsMu.Unlock()
+	})
+
+	run, err := beginStandaloneMetricsRun("vm-x", "", "/tmp/vm-x")
+	if err != nil {
+		t.Fatalf("beginStandaloneMetricsRun: %v", err)
+	}
+	emitResourceSampleMetric(run, "start")
+	finishStandaloneMetricsRun(run)
+
+	events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
+	if len(events) != 1 {
+		t.Fatalf("events = %d, want 1", len(events))
+	}
+	got := events[0]
+	if got.EventType != "resource_sample" || got.Status != "ok" {
+		t.Fatalf("event = %+v", got)
+	}
+	if got.Extra["phase"] != "start" || got.Extra["memory_total_bytes"].(float64) != 8192 || got.Extra["memory_available_bytes"].(float64) != 4096 {
+		t.Fatalf("extra = %#v", got.Extra)
 	}
 }
 
