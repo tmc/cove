@@ -136,6 +136,11 @@ func (c *Client) SendRequestCtx(ctx context.Context, req *controlpb.ControlReque
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		if timeoutErr, ok := err.(net.Error); ok && timeoutErr.Timeout() {
+			if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+				return nil, context.DeadlineExceeded
+			}
+		}
 		return nil, fmt.Errorf("control %q: read: %w", req.Type, err)
 	}
 
