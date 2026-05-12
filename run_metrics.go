@@ -85,6 +85,7 @@ func finishStandaloneMetricsRun(run *standaloneMetricsRun) {
 	if run == nil {
 		return
 	}
+	emitResourceSampleMetric(run, "end")
 	if err := run.sink.Close(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: metrics close: %v\n", err)
 	}
