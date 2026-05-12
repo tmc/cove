@@ -3,7 +3,89 @@
 # T68 competitive matrix v2: cove vs Lume/Cua vs Cirrus/Tart
 
 Date: 2026-05-05
-Scope: design/research only. No repo edits, no commits.
+Original scope: design/research only. The 2026-05-11 refresh below is an
+in-repo docs update.
+
+## 2026-05-11 refresh: current gap analysis
+
+This refresh reconciles the T68 matrix with the current `origin/main` state at
+`6393ec1` and a May 11 public-doc pass over the comparison set. It does not
+change the strategic center of gravity: cove is strongest where an operator
+wants private, fork-per-task VM execution on Apple Silicon. The gap has moved
+from "missing basics" to "public packaging, resource observability, and hosted
+workflow ergonomics."
+
+### Current competitor deltas
+
+- **Lume/Cua:** Lume's public docs now present a single-binary CLI plus
+  localhost HTTP API for VM management, macOS/Linux support on Apple Silicon,
+  GHCR/GCS registry image support, unattended golden-image automation, and a
+  managed cloud macOS sandbox pilot. Cua still has the clearer agent-facing
+  package: Computer SDK, driver, benchmarks, and a story that starts from
+  computer-use automation rather than VM plumbing.
+- **Tart/Orchard:** Tart remains the public Apple-Silicon VM benchmark:
+  registry images, Packer-friendly workflows, broad operator recognition, and
+  Tart/Orchard licensing that is free below the published organizational free
+  tiers (100 Tart CPU cores, 4 Orchard hosts) but commercial beyond that.
+- **Cirrus CI:** Cirrus Labs still states that Cirrus CI shuts down effective
+  2026-06-01. That removes the hosted-service long-term path but does not erase
+  the operational expectations Cirrus users have: queueing, annotations,
+  artifacts, cache semantics, and mature task ergonomics.
+- **Daytona / hosted sandboxes:** The managed-sandbox category is getting more
+  legible for agent users: APIs, SDKs, snapshot/restore, and computer-use
+  entrypoints are the product, not an implementation detail. Cove should not
+  try to become a generic hosted queue, but it must be honest that managed
+  sandbox providers will beat it on "create a sandbox by API and forget the
+  host" UX.
+
+Refresh sources checked on 2026-05-11:
+
+- Lume introduction: <https://cua.ai/docs/lume/guide/getting-started/introduction>
+- Lume HTTP server: <https://cua.ai/docs/lume/guide/advanced/http-server>
+- Lume VM management: <https://cua.ai/docs/lume/guide/fundamentals/vm-management>
+- Tart licensing: <https://tart.run/licensing/>
+- Cirrus Labs announcement: <https://cirruslabs.org/>
+- Daytona sandboxes: <https://www.daytona.io/docs/en/sandboxes/>
+
+### Gap table after R122-R139
+
+| Gap | Status in cove now | Competitive pressure | Next action |
+| --- | --- | --- | --- |
+| Public install and public trust path | Still gated. The repo remains private; public Homebrew/Marketplace/image-catalog language must stay out of operator docs until the privacy/release decision is made. | Cua and Tart are much easier to evaluate from public docs. | User-gated release/distribution decision; do not auto-ship from conductor. |
+| Public image catalog and signed provenance | Private OCI and tar transport work; public catalog, cosign/SLSA, and curated base images remain deferred. | Tart's GHCR image ecosystem is still the benchmark; Lume documents registry push/pull. | Decide the public registry/signing posture before marketing cove as drop-in image infrastructure. |
+| Hosted queue semantics | Intentionally absent. Cove owns VM/image/fork execution and expects GitHub Actions, Buildkite, or an operator scheduler to schedule hosts. | Cirrus users expect queue semantics; Daytona-style products sell the API-hosted sandbox. | Keep as non-goal, but make scheduler handoff examples boring. |
+| Resource observability | Run JSONL, OTLP, daemon/fleet metrics, and runs UX exist, but there is no periodic guest/host RAM/CPU sample in run metrics. `vz-agent info` exposes guest memory total/available as a point-in-time raw payload. | Cirrus users expect task resource visibility; hosted sandbox products expose operational state through APIs. | Add a small resource-sample metrics event: start/end first, periodic later if needed. |
+| Guest artifact copy-out | Run bundles and `cove runs export` exist; guest-to-host artifact copy still requires explicit `ctl cp` or script cooperation. | Cirrus artifacts are first-class. | Add a cove-action artifact copy-out convention before public CI positioning. |
+| GitHub annotations | Guest output is logs; `::error`/file-line annotation UX is not first-class. | CI users expect structured failures. | Parse/forward explicit annotation records or document the supported escape hatch. |
+| Agent-facing UX | Agent sandbox, provider adapters, screenshots/OCR/input, network policies, and replay artifacts exist. The command story is still a toolkit, not one canonical "run this agent in a VM" path. | Cua leads with a clearer computer-use product. Daytona leads with API-first managed sandbox framing. | Pick one canonical agent command path and make replay/metrics/artifacts default. |
+| Network policy depth | Baseline policies and audit/log surfaces shipped. | Tart Softnet-style allow/block policy remains deeper. | Keep current surface for v0.6; consider DNS/egress allowlist policy only if a customer workload demands it. |
+| macOS capture backend | SCKit Slice 3 shipped; Slice 4 default flip and CGWindowList removal are intentionally deferred to v0.7. | Cua keeps improving background/focus-safe macOS control. | Do not rush pre-v0.7; finish perf/TCC evidence first. |
+| Config/lifecycle code hygiene | Go-team review follow-ups are recorded: `applyUpConfig` global state and `macos.go` lifecycle cleanup. | Internal maintainability gap, not a market gap. | Handle only after protected dirty `up.go`/`macos.go` lanes land or are explicitly assigned. |
+
+### Current ranking
+
+1. **Resource samples in run metrics.** This is the smallest new product gap
+   exposed by the May 11 audit. Cove already has the metrics pipe and guest
+   memory fields; it needs a stable `resource_sample` event before users debug
+   CI flakes by guessing.
+2. **Guest artifact copy-out.** This is the most practical Cirrus migration UX
+   gap left after secrets, action preflight, and runs export work.
+3. **GitHub annotation forwarding.** Useful for CI parity, smaller than public
+   distribution, and not blocked by privacy gates.
+4. **Canonical agent command.** Cove has all pieces but should expose one
+   polished entrypoint for agent workloads with replay and metrics on by
+   default.
+5. **Public packaging/signing decision.** This remains high leverage but
+   user-gated. Do not let conductor loops make this decision implicitly.
+
+### Bottom line
+
+Cove is production-plausible for private, operator-owned Apple-Silicon VM
+runners after the R122-R139 hardening. It is not done as a public product. The
+next non-gated gap to close is resource observability in `metrics.jsonl`,
+followed by artifact copy-out and CI annotation polish. The larger public
+catalog/signing/Marketplace story should remain gated until the repo and brand
+posture are deliberately chosen.
 
 ## Executive read
 
@@ -344,4 +426,3 @@ auditable per run.
 | Propose next 5 strategic investments for Rounds 32-40 ranked by user-visible impact and uniqueness | See ranked next five and investment order. |
 | Design only, no commits, no code edits | No repo files were changed; this report is under `/tmp`. |
 | Output path | `/tmp/629f-T68-cove-vs-lume-cirrus-v2.md`. |
-
