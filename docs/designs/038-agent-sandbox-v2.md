@@ -77,6 +77,21 @@ Checked-in evidence distinguishes protocol dry-runs from live provider runs:
 - Quickstart: `docs/agent-sandbox/quickstart.md`
 - Benchmarks: `bench/agent-sandbox-providers/`
 
+## Retrospective
+
+The original agent-sandbox v2 dispatch referred to this as design 034. That
+number now belongs to Fleet after the design index was repaired, so the
+canonical agent-sandbox v2 record is design 038.
+
+The provider abstraction landed cleanly: OpenAI, Anthropic, Gemini, and Vertex
+share one operator command, one doctor surface, and one benchmark protocol. The
+live evidence is intentionally narrower than the code surface. OpenAI and
+Gemini have successful checked-in live latency and cold-fork evidence; Vertex
+is blocked by model capability or regional availability for `computer_use`;
+Anthropic live verification remains key-gated. Future matrix claims should
+continue to distinguish implemented provider wiring from live provider
+availability.
+
 ## Verified 2026-05-10
 
 - `cove agent-sandbox` subcommand registered in `main.go:682`; `doctor`
