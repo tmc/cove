@@ -83,6 +83,45 @@ func TestRunReturnsGuestExitCode(t *testing.T) {
 	}
 }
 
+func TestRunCopiesArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 0)
+	out := filepath.Join(dir, "out")
+	code := run([]string{
+		"-cove-bin", stub,
+		"-image", "ubuntu-ci",
+		"-command", "echo ok",
+		"-artifacts", "/tmp/report.txt\n/var/log/app.log",
+	}, []string{
+		"HOME=" + dir,
+		"GITHUB_OUTPUT=" + out,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+	}, os.Stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, want 0", code)
+	}
+	runDir := filepath.Join(dir, ".vz", "runs", "stub-run")
+	if !strings.Contains(readFile(t, out), "artifact-path="+runDir) {
+		t.Fatalf("outputs missing artifact path:\n%s", readFile(t, out))
+	}
+	for _, path := range []string{
+		filepath.Join(runDir, "guest", "tmp", "report.txt"),
+		filepath.Join(runDir, "guest", "var", "log", "app.log"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("artifact %s missing: %v", path, err)
+		}
+	}
+	log := readFile(t, filepath.Join(dir, "log"))
+	if !strings.Contains(log, "cp cove-action-local-1:/tmp/report.txt "+filepath.Join(runDir, "guest", "tmp", "report.txt")) {
+		t.Fatalf("copy command missing from log:\n%s", log)
+	}
+}
+
 func TestRunCacheHitUsesCacheImage(t *testing.T) {
 	dir := t.TempDir()
 	oldCleanupWait := cleanupWait
@@ -336,6 +375,11 @@ shell)
 ctl)
 	exit 0
 	;;
+cp)
+	mkdir -p "$(dirname "$3")"
+	printf 'artifact\n' > "$3"
+	exit 0
+	;;
 image)
 	if [ "$2" != "build" ]; then exit 2; fi
 	from=""
@@ -549,6 +593,20 @@ func TestParseEnvBlock(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParseArtifactPaths(t *testing.T) {
+	got, err := parseArtifactPaths("\n# skip\n/tmp/report.txt\n /var/log/app.log \n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/tmp/report.txt", "/var/log/app.log"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("parseArtifactPaths = %v, want %v", got, want)
+	}
+	if _, err := parseArtifactPaths("relative.txt"); err == nil {
+		t.Fatal("parseArtifactPaths(relative) err = nil")
 	}
 }
 
