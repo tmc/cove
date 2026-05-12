@@ -276,7 +276,27 @@ func (s *ImageGCScheduler) acquireLock() (func(), error) {
 			cleanupTmp()
 			return nil, err
 		}
+		before, statErr := os.Stat(path)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			cleanupTmp()
+			return nil, statErr
+		}
 		if !staleLock(path) {
+			cleanupTmp()
+			return nil, os.ErrExist
+		}
+		after, statErr := os.Stat(path)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			cleanupTmp()
+			return nil, statErr
+		}
+		if !os.SameFile(before, after) {
 			cleanupTmp()
 			return nil, os.ErrExist
 		}
