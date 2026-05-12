@@ -110,7 +110,7 @@ func runVMWithConfig(cfg RunConfig) error {
 		return runErr
 	}
 
-	metricsRun, err := beginStandaloneMetricsRun(originalVMName, "")
+	metricsRun, err := beginStandaloneMetricsRun(originalVMName, "", originalVMDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", err)
 	}
@@ -201,6 +201,7 @@ func runVMWithConfig(cfg RunConfig) error {
 		exit = runErr.Error()
 	}
 	if metricsRun != nil {
+		emitResourceSampleMetric(metricsRun, "end")
 		emitMetricEvent("run_complete", metricsRun.started, exit, nil)
 	}
 

@@ -56,6 +56,11 @@ time before diff/OCR work. `extra` includes `backend`, `requested_backend`,
 `fallback`, optional `fallback_cause`, optional `width` and `height`, and a
 truncated `error` string when `status` is `error`.
 
+`resource_sample`
+: Best-effort guest resource snapshot emitted when the guest agent is reachable.
+`extra.phase` is `start` or `end`; memory fields use byte counts from guest
+agent info when available.
+
 `build_step`
 : Emitted for each `cove build` step. `extra` includes `step`, `cache_hit`,
 and `key` when available.
