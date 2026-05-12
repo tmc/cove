@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -119,6 +120,32 @@ func TestRunCopiesArtifacts(t *testing.T) {
 	log := readFile(t, filepath.Join(dir, "log"))
 	if !strings.Contains(log, "cp cove-action-local-1:/tmp/report.txt "+filepath.Join(runDir, "guest", "tmp", "report.txt")) {
 		t.Fatalf("copy command missing from log:\n%s", log)
+	}
+}
+
+func TestRunForwardsAnnotationFile(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 0)
+	var stdout bytes.Buffer
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok"}, []string{
+		"HOME=" + dir,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+		"COVE_STUB_ANNOTATIONS=1",
+	}, &stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, want 0", code)
+	}
+	got := stdout.String()
+	if !strings.Contains(got, "::error file=main.go,line=12::compile failed") {
+		files, _ := filepath.Glob(filepath.Join(dir, ".vz", "runs", "*", "github-annotations.log"))
+		t.Fatalf("stdout missing annotation (files %v): %q", files, got)
+	}
+	if strings.Contains(got, "plain secret-ish log line") {
+		t.Fatalf("stdout forwarded non-annotation line:\n%s", got)
 	}
 }
 
@@ -361,6 +388,14 @@ run)
 	while :; do sleep 1; done
 	;;
 shell)
+	if [ "${COVE_STUB_ANNOTATIONS:-}" = "1" ]; then
+		mkdir -p "$HOME/.vz/runs/stub-run" "$HOME/.vz/runs/$2"
+		{
+			echo "::error file=main.go,line=12::compile failed"
+			echo "plain secret-ish log line"
+		} > "$HOME/.vz/runs/stub-run/github-annotations.log"
+		cp "$HOME/.vz/runs/stub-run/github-annotations.log" "$HOME/.vz/runs/$2/github-annotations.log"
+	fi
 	count=0
 	if [ -f "$COVE_STUB_COUNT" ]; then
 		count=$(cat "$COVE_STUB_COUNT")

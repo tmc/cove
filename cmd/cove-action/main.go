@@ -246,6 +246,7 @@ func runJob(cfg config) (res result, err error) {
 				deleteVM(cfg)
 			}
 		}
+		forwardGitHubAnnotations(cfg, res.MetricsPath)
 	}()
 
 	res.MetricsPath = waitForMetricsPath(ctx, cfg, actionStarted)
@@ -629,6 +630,66 @@ func artifactHostPath(runDir, guestPath string) (string, error) {
 		return "", fmt.Errorf("artifact path %q does not name a file", guestPath)
 	}
 	return filepath.Join(runDir, "guest", rel), nil
+}
+
+func forwardGitHubAnnotations(cfg config, metricsPath string) {
+	if cfg.Stdout == nil {
+		return
+	}
+	var paths []string
+	if metricsPath != "" {
+		paths = append(paths, filepath.Join(filepath.Dir(metricsPath), "github-annotations.log"))
+	}
+	if root := defaultLogPath(cfg.Environ); root != "" {
+		paths = append(paths, filepath.Join(root, cfg.VMName, "github-annotations.log"))
+	}
+	for _, path := range paths {
+		if forwardGitHubAnnotationFile(cfg.Stdout, path) {
+			return
+		}
+	}
+}
+
+func forwardGitHubAnnotationFile(w io.Writer, path string) bool {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if forwardGitHubAnnotationFileOnce(w, path) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func forwardGitHubAnnotationFileOnce(w io.Writer, path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	forwarded := false
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		line := scan.Text()
+		if githubAnnotationLine(line) {
+			fmt.Fprintln(w, line)
+			forwarded = true
+		}
+	}
+	return forwarded
+}
+
+func githubAnnotationLine(line string) bool {
+	for _, name := range []string{"error", "warning", "notice"} {
+		rest, ok := strings.CutPrefix(line, "::"+name)
+		if !ok {
+			continue
+		}
+		return strings.HasPrefix(rest, "::") || (strings.HasPrefix(rest, " ") && strings.Contains(rest, "::"))
+	}
+	return false
 }
 
 func waitForMetricsPath(ctx context.Context, cfg config, since time.Time) string {
