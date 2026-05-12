@@ -58,6 +58,7 @@ Refresh sources checked on 2026-05-11:
 | Guest artifact copy-out | Run bundles and `cove runs export` exist; guest-to-host artifact copy still requires explicit `ctl cp` or script cooperation. | Cirrus artifacts are first-class. | Add a cove-action artifact copy-out convention before public CI positioning. |
 | GitHub annotations | Guest output is logs; `::error`/file-line annotation UX is not first-class. | CI users expect structured failures. | Parse/forward explicit annotation records or document the supported escape hatch. |
 | Agent-facing UX | The canonical local path is `cove agent-sandbox run`: fork a local image, wait for the guest agent, run one provider loop, and write replay artifacts. The remaining gap is operator polish around default artifact summaries and background-safety expectations. | Cua leads with a clearer computer-use product. Daytona leads with API-first managed sandbox framing. | Keep `cove agent-sandbox run` as the one operator-facing path; make replay, metrics, and artifact summary defaults boring before adding new agent entrypoints. |
+| In-VM user management | First-boot provisioning creates an admin user with password and optional SSH setup, but there is no lifecycle command for creating/deleting users after boot or auditing leftover home, keychain, SSH, LaunchAgent, and group residue. | Cirrus users think in job identities; Tart and Lume leave user lifecycle mostly to scripts/SSH. A cove-owned primitive would fit the guest-agent/no-SSH story. | Add a small `cove user` plan: create/delete, admin vs standard, password/SSH key input, macOS vs Linux backend split, and dry-run residue audit. |
 | Network policy depth | Baseline policies and audit/log surfaces shipped. | Tart Softnet-style allow/block policy remains deeper. | Keep current surface for v0.6; consider DNS/egress allowlist policy only if a customer workload demands it. |
 | macOS capture backend | SCKit Slice 3 shipped; Slice 4 default flip and CGWindowList removal are intentionally deferred to v0.7. | Cua keeps improving background/focus-safe macOS control. | Do not rush pre-v0.7; finish perf/TCC evidence first. |
 | Config/lifecycle code hygiene | Go-team review follow-ups are recorded: `applyUpConfig` global state and `macos.go` lifecycle cleanup. | Internal maintainability gap, not a market gap. | Handle only after protected dirty `up.go`/`macos.go` lanes land or are explicitly assigned. |
@@ -75,7 +76,9 @@ Refresh sources checked on 2026-05-11:
 4. **Canonical agent command polish.** `cove agent-sandbox run` is the one
    operator-facing path; polish replay, metrics, artifact summaries, and
    background-safety wording before adding any parallel agent entrypoint.
-5. **Public packaging/signing decision.** This remains high leverage but
+5. **In-VM user management.** Small differentiator if scoped to an agent-backed
+   lifecycle command plus cleanup audit, not a new isolation boundary.
+6. **Public packaging/signing decision.** This remains high leverage but
    user-gated. Do not let conductor loops make this decision implicitly.
 
 ### Bottom line
@@ -382,7 +385,28 @@ Why now: Cua is moving fast on background computer-use. Cove should not try to
 clone every Cua Driver trick first; it should make its fork-isolated VM agent
 story one command deep.
 
-### 5. Network policy v2: egress and audit
+### 5. In-VM user management
+
+Impact: medium. Uniqueness: medium.
+
+Smallest slice:
+
+- `cove user create/delete <name>` through the guest agent, with `--admin` and
+  default standard-user modes.
+- Password input by prompt or secret file descriptor; SSH key install as an
+  explicit option, not the primary command path.
+- macOS backend owns `sysadminctl`/`dscl`/home cleanup; Linux backend owns
+  `useradd`/`userdel`/sudoers/authorized_keys`. Keep the UI common but the
+  implementations separate.
+- `cove user audit <name>` reports residue: home dir, groups, sudo/admin state,
+  SSH keys, LaunchAgents, login items, keychains where observable, and known
+  cove provisioning files.
+
+Why now: Cirrus/Tart/Lume users mostly script this themselves. A small
+agent-backed lifecycle command would improve reusable images and operator
+handoff without claiming that deletion replaces fork isolation.
+
+### 6. Network policy v2: egress and audit
 
 Impact: medium-high. Uniqueness: medium.
 
@@ -407,6 +431,7 @@ auditable per run.
 4. Agent computer-use command surface: one command over OpenAI/Anthropic/Gemini
    with replay bundles.
 5. Network policy v2: named policies and per-run audit.
+6. In-VM user management: agent-backed create/delete plus residue audit.
 
 ## Explicit non-recommendations
 
@@ -415,6 +440,8 @@ auditable per run.
 - Do not chase every Tart networking mode before cove has run-level audit UX.
 - Do not build a hosted Cirrus replacement. The near-term wedge is
   operator-owned local runners.
+- Do not sell user deletion as a privacy boundary. Forked images remain the
+  isolation primitive; user cleanup is operator hygiene and image prep.
 - Do not compete with Cua Driver on background macOS focus tricks before
   packaging cove's existing fork-isolated computer-use flow.
 
