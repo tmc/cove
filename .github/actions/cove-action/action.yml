@@ -45,6 +45,10 @@ inputs:
     description: Informational guest paths expected to benefit from the whole-VM cache.
     required: false
     default: ""
+  artifacts:
+    description: Multiline absolute guest paths to copy into the cove run artifact bundle.
+    required: false
+    default: ""
   cache-mode:
     description: |
       Cache behavior. One of restore-save (default), restore-only, save-only,
@@ -109,6 +113,7 @@ runs:
         COVE_ACTION_KEEP: ${{ inputs.keep }}
         COVE_ACTION_CACHE_KEY: ${{ inputs.cache-key }}
         COVE_ACTION_CACHE_PATHS: ${{ inputs.cache-paths }}
+        COVE_ACTION_ARTIFACTS: ${{ inputs.artifacts }}
         COVE_ACTION_CACHE_MODE: ${{ inputs.cache-mode }}
         COVE_ACTION_CACHE_SCOPE: ${{ inputs.cache-scope }}
         COVE_ACTION_SECRETS: ${{ inputs.secrets }}

@@ -59,6 +59,7 @@ type config struct {
 	CachePaths string
 	CacheMode  string
 	CacheScope string
+	Artifacts  []string
 	Env        []string
 	Secrets    []string
 	Stdout     io.Writer
@@ -72,6 +73,7 @@ type result struct {
 	CacheHit    bool
 	CacheImage  string
 	CacheSaved  bool
+	ArtifactDir string
 }
 
 func main() {
@@ -116,6 +118,7 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	keepText := envValue(environ, "COVE_ACTION_KEEP", "false")
 	envText := envValue(environ, "COVE_ACTION_ENV", "")
 	secretsText := envValue(environ, "COVE_ACTION_SECRETS", "")
+	artifactsText := envValue(environ, "COVE_ACTION_ARTIFACTS", "")
 	cfg.CacheKey = envValue(environ, "COVE_ACTION_CACHE_KEY", "")
 	cfg.CachePaths = envValue(environ, "COVE_ACTION_CACHE_PATHS", "")
 	cfg.CacheMode = envValue(environ, "COVE_ACTION_CACHE_MODE", cacheModeRestoreSave)
@@ -133,6 +136,7 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 	fs.BoolVar(&cfg.Keep, "keep", parseBool(keepText), "keep ephemeral fork")
 	fs.StringVar(&envText, "env", envText, "newline-separated KEY=VALUE guest environment")
 	fs.StringVar(&secretsText, "secrets", secretsText, "newline-separated KEY=value|env://VAR|file:///path guest secrets")
+	fs.StringVar(&artifactsText, "artifacts", artifactsText, "newline-separated absolute guest artifact paths to copy into the run bundle")
 	fs.StringVar(&cfg.CacheKey, "cache-key", cfg.CacheKey, "whole-VM cache key")
 	fs.StringVar(&cfg.CachePaths, "cache-paths", cfg.CachePaths, "newline-separated guest paths preserved by the whole-VM cache")
 	fs.StringVar(&cfg.CacheMode, "cache-mode", cfg.CacheMode, "cache behavior: restore-save, restore-only, save-only, off")
@@ -153,6 +157,10 @@ func parseConfig(args, environ []string, stdout, stderr io.Writer) (config, erro
 		return cfg, err
 	}
 	cfg.Secrets, err = parseSecretsBlock(secretsText)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Artifacts, err = parseArtifactPaths(artifactsText)
 	if err != nil {
 		return cfg, err
 	}
@@ -273,6 +281,12 @@ func runJob(cfg config) (res result, err error) {
 	emitActionMetric(res.MetricsPath, "command_complete", actionStarted, status, map[string]any{"exit_code": code})
 	if err != nil {
 		return res, err
+	}
+	if len(cfg.Artifacts) > 0 {
+		if err := copyArtifacts(ctx, cfg, res.MetricsPath); err != nil {
+			return res, err
+		}
+		res.ArtifactDir = filepath.Dir(res.MetricsPath)
 	}
 	if keepForCache && res.Code == 0 {
 		cleanup(cfg, runCmd, runDone)
@@ -451,6 +465,21 @@ func parseCachePaths(s string) []string {
 	return out
 }
 
+func parseArtifactPaths(s string) ([]string, error) {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !filepath.IsAbs(filepath.Clean(line)) {
+			return nil, fmt.Errorf("artifact path %q must be absolute", line)
+		}
+		out = append(out, filepath.Clean(line))
+	}
+	return out, nil
+}
+
 func waitReady(ctx context.Context, cfg config) error {
 	ticker := time.NewTicker(cfg.ReadyEvery)
 	defer ticker.Stop()
@@ -560,9 +589,46 @@ func writeOutputs(cfg config, res result) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "vm-name=%s\nexit-code=%d\nlog-path=%s\nmetrics-path=%s\ncache-hit=%t\ncache-image=%s\ncache-saved=%t\n",
-		cfg.VMName, res.Code, defaultLogPath(cfg.Environ), res.MetricsPath, res.CacheHit, res.CacheImage, res.CacheSaved)
+	_, err = fmt.Fprintf(f, "vm-name=%s\nexit-code=%d\nlog-path=%s\nmetrics-path=%s\nartifact-path=%s\ncache-hit=%t\ncache-image=%s\ncache-saved=%t\n",
+		cfg.VMName, res.Code, defaultLogPath(cfg.Environ), res.MetricsPath, res.ArtifactDir, res.CacheHit, res.CacheImage, res.CacheSaved)
 	return err
+}
+
+func copyArtifacts(ctx context.Context, cfg config, metricsPath string) error {
+	if metricsPath == "" {
+		return errors.New("copy artifacts: metrics path not found")
+	}
+	runDir := filepath.Dir(metricsPath)
+	for _, guestPath := range cfg.Artifacts {
+		hostPath, err := artifactHostPath(runDir, guestPath)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(hostPath), 0755); err != nil {
+			return fmt.Errorf("copy artifact: prepare host path: %w", err)
+		}
+		src := cfg.VMName + ":" + guestPath
+		cmd := execCommandContext(ctx, cfg.CoveBin, "cp", src, hostPath)
+		cmd.Stdout = cfg.Stdout
+		cmd.Stderr = cfg.Stderr
+		cmd.Env = cfg.Environ
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("copy artifact %s: %w", guestPath, err)
+		}
+	}
+	return nil
+}
+
+func artifactHostPath(runDir, guestPath string) (string, error) {
+	clean := filepath.Clean(strings.TrimSpace(guestPath))
+	if !filepath.IsAbs(clean) {
+		return "", fmt.Errorf("artifact path %q must be absolute", guestPath)
+	}
+	rel := strings.TrimPrefix(clean, string(filepath.Separator))
+	if rel == "" || rel == "." {
+		return "", fmt.Errorf("artifact path %q does not name a file", guestPath)
+	}
+	return filepath.Join(runDir, "guest", rel), nil
 }
 
 func waitForMetricsPath(ctx context.Context, cfg config, since time.Time) string {
