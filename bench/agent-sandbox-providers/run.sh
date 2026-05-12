@@ -31,7 +31,7 @@ fi
 } > "$out"
 
 for provider in $providers; do
-  model_var="$(printf '%s' "$provider" | tr '[:lower:]' '[:upper:]')_MODEL"
+  model_var="COVE_$(printf '%s' "$provider" | tr '[:lower:]' '[:upper:]')_MODEL"
   model="${!model_var:-default}"
   run_dir="$artifacts/$provider"
   errors=0

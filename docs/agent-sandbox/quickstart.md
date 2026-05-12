@@ -3,7 +3,12 @@
 From zero to a fork-isolated provider loop:
 
 ```bash
-brew install tmc/tap/cove
+git clone git@github.com:tmc/cove.git
+cd cove
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+export PATH="$PWD:$PATH"
+
 cove run -fork-from agentkit/macos-base:latest -fork-name agent-smoke -ephemeral -gui
 cove agent-sandbox run --provider anthropic --image agentkit/macos-base:latest --task "Take a screenshot and describe the desktop."
 ```
