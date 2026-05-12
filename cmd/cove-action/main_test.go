@@ -386,7 +386,8 @@ func stageActionCacheImage(t *testing.T, home, key string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"name":"cache/`+key+`","tag":"latest","createdAt":"2026-05-05T00:00:00Z"}`), 0o644); err != nil {
+	manifest := `{"name":"cache/` + key + `","tag":"latest","createdAt":"` + time.Now().UTC().Format(time.RFC3339) + `"}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
