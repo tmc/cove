@@ -49,6 +49,8 @@
 * [Agent Sandbox Provider Matrix](agent-sandbox/provider-matrix.md)
 * [Agent Sandbox Cookbook](agent-sandbox/cookbook.md)
 * [Tailscale Mesh VM](examples/tailscale-mesh.md)
+* [Nix Package Manager](quickstart/nix.md)
+* [NixOS Guest](quickstart/nixos.md)
 
 ## Architecture
 * [Overview](architecture/overview.md)

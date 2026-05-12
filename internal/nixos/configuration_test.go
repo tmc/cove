@@ -19,6 +19,7 @@ func TestRenderConfiguration(t *testing.T) {
 	}
 	for _, want := range []string{
 		`networking.hostName = "test-nixos";`,
+		`imports = [ ./hardware-configuration.nix ];`,
 		`users.users.alice = {`,
 		`initialPassword = "secret";`,
 		`services.openssh.enable = true;`,
@@ -32,6 +33,9 @@ func TestRenderConfiguration(t *testing.T) {
 	if err := ValidateConfiguration(got); err != nil {
 		t.Fatalf("ValidateConfiguration: %v", err)
 	}
+	if strings.Contains(got, "networking.useDHCP") {
+		t.Fatalf("configuration should leave DHCP policy to NetworkManager and hardware config:\n%s", got)
+	}
 }
 
 func TestValidateConfigurationRejectsMissingFields(t *testing.T) {
@@ -44,6 +48,7 @@ func TestRenderInstallScript(t *testing.T) {
 	got := RenderInstallScript("services.openssh.enable = true;")
 	for _, want := range []string{
 		"nixos-install --root /mnt --no-root-passwd",
+		"nixos-generate-config --root /mnt",
 		"configuration.nix <<'EOF'",
 		"services.openssh.enable = true;",
 	} {

@@ -51,6 +51,7 @@ mkfs.ext4 -F "${disk}2"
 mount "${disk}2" /mnt
 mkdir -p /mnt/boot /mnt/etc/nixos
 mount "${disk}1" /mnt/boot
+nixos-generate-config --root /mnt
 cat > /mnt/etc/nixos/configuration.nix <<'EOF'
 %s
 EOF
@@ -88,14 +89,13 @@ func ValidateConfiguration(s string) error {
 var configurationTemplate = template.Must(template.New("configuration.nix").Parse(`{ config, pkgs, ... }:
 
 {
-  imports = [ ];
+  imports = [ ./hardware-configuration.nix ];
 
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = false;
   boot.kernelModules = [ "virtio_pci" "virtio_blk" "virtio_net" "vsock" "vmw_vsock_virtio_transport" ];
 
   networking.hostName = "{{ .Hostname }}";
-  networking.useDHCP = true;
   networking.networkmanager.enable = true;
 
   time.timeZone = "UTC";
