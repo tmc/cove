@@ -57,7 +57,7 @@ Refresh sources checked on 2026-05-11:
 | Resource observability | Run JSONL, OTLP, daemon/fleet metrics, and runs UX exist, but there is no periodic guest/host RAM/CPU sample in run metrics. `vz-agent info` exposes guest memory total/available as a point-in-time raw payload. | Cirrus users expect task resource visibility; hosted sandbox products expose operational state through APIs. | Add a small resource-sample metrics event: start/end first, periodic later if needed. |
 | Guest artifact copy-out | Run bundles and `cove runs export` exist; guest-to-host artifact copy still requires explicit `ctl cp` or script cooperation. | Cirrus artifacts are first-class. | Add a cove-action artifact copy-out convention before public CI positioning. |
 | GitHub annotations | Guest output is logs; `::error`/file-line annotation UX is not first-class. | CI users expect structured failures. | Parse/forward explicit annotation records or document the supported escape hatch. |
-| Agent-facing UX | Agent sandbox, provider adapters, screenshots/OCR/input, network policies, and replay artifacts exist. The command story is still a toolkit, not one canonical "run this agent in a VM" path. | Cua leads with a clearer computer-use product. Daytona leads with API-first managed sandbox framing. | Pick one canonical agent command path and make replay/metrics/artifacts default. |
+| Agent-facing UX | The canonical local path is `cove agent-sandbox run`: fork a local image, wait for the guest agent, run one provider loop, and write replay artifacts. The remaining gap is operator polish around default artifact summaries and background-safety expectations. | Cua leads with a clearer computer-use product. Daytona leads with API-first managed sandbox framing. | Keep `cove agent-sandbox run` as the one operator-facing path; make replay, metrics, and artifact summary defaults boring before adding new agent entrypoints. |
 | Network policy depth | Baseline policies and audit/log surfaces shipped. | Tart Softnet-style allow/block policy remains deeper. | Keep current surface for v0.6; consider DNS/egress allowlist policy only if a customer workload demands it. |
 | macOS capture backend | SCKit Slice 3 shipped; Slice 4 default flip and CGWindowList removal are intentionally deferred to v0.7. | Cua keeps improving background/focus-safe macOS control. | Do not rush pre-v0.7; finish perf/TCC evidence first. |
 | Config/lifecycle code hygiene | Go-team review follow-ups are recorded: `applyUpConfig` global state and `macos.go` lifecycle cleanup. | Internal maintainability gap, not a market gap. | Handle only after protected dirty `up.go`/`macos.go` lanes land or are explicitly assigned. |
@@ -72,9 +72,9 @@ Refresh sources checked on 2026-05-11:
    gap left after secrets, action preflight, and runs export work.
 3. **GitHub annotation forwarding.** Useful for CI parity, smaller than public
    distribution, and not blocked by privacy gates.
-4. **Canonical agent command.** Cove has all pieces but should expose one
-   polished entrypoint for agent workloads with replay and metrics on by
-   default.
+4. **Canonical agent command polish.** `cove agent-sandbox run` is the one
+   operator-facing path; polish replay, metrics, artifact summaries, and
+   background-safety wording before adding any parallel agent entrypoint.
 5. **Public packaging/signing decision.** This remains high leverage but
    user-gated. Do not let conductor loops make this decision implicitly.
 
@@ -365,15 +365,18 @@ public catalogs; cove can lead on explicit provenance/freshness.
 
 Impact: high. Uniqueness: medium.
 
-Ship:
+Canonical path:
 
 - `cove agent-sandbox run --provider openai|anthropic|gemini --image ... --task ...`
-  as a thin, documented wrapper around the existing adapters.
-- first-frame and screenshot-to-file defaults that avoid base64-in-context
-  bloat.
-- replay bundle: screenshots, OCR text, control events, final answer, metrics.
-- one "background-safe macOS" audit: identify whether cove can avoid focus
-  theft or must document the difference from Cua Driver.
+  is the operator-facing command. It must remain a thin wrapper around existing
+  adapters, local-image forks, guest-agent readiness, replay capture, and run
+  metrics.
+- Next docs/UX work should make the default outputs boring: first-frame and
+  screenshot-to-file behavior that avoids base64-in-context bloat, replay bundle
+  paths, `cove runs show/export` links, and failure text for missing provider
+  credentials or stale agent images.
+- Background-safe macOS remains an audit/documentation item: identify whether
+  cove can avoid focus theft or must document the difference from Cua Driver.
 
 Why now: Cua is moving fast on background computer-use. Cove should not try to
 clone every Cua Driver trick first; it should make its fork-isolated VM agent
