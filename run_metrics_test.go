@@ -155,8 +155,8 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 	finishStandaloneMetricsRun(run)
 
 	events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
-	if len(events) != 1 {
-		t.Fatalf("events = %d, want 1", len(events))
+	if len(events) != 2 {
+		t.Fatalf("events = %d, want 2", len(events))
 	}
 	got := events[0]
 	if got.EventType != "resource_sample" || got.Status != "ok" {
@@ -164,6 +164,9 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 	}
 	if got.Extra["phase"] != "start" || got.Extra["memory_total_bytes"].(float64) != 8192 || got.Extra["memory_available_bytes"].(float64) != 4096 {
 		t.Fatalf("extra = %#v", got.Extra)
+	}
+	if events[1].Extra["phase"] != "end" {
+		t.Fatalf("end extra = %#v", events[1].Extra)
 	}
 }
 
