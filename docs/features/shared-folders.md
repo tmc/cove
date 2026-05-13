@@ -44,6 +44,10 @@ cove shared-folder mount                   # mount in guest via agent
 `cove shared-folder add` persists the folder in the VM configuration and applies
 it on the next boot. VirtioFS devices must be present when the VM starts; cove
 does not currently live hot-add a new VirtioFS device to an already-running VM.
+The `# mount:` directive in `cove vzscript run` uses the same persisted
+configuration but additionally attempts best-effort hot-plug and guest mounting
+for that script run; failure there is warning-only and still requires a future
+boot for guaranteed availability.
 
 Use `cove shared-folder pending` to see configured folders that are not mounted
 in the running guest.

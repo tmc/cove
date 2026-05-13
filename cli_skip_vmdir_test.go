@@ -23,11 +23,14 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"helper bare", []string{"helper"}, true},
 		{"helper daemon", []string{"helper", "daemon"}, true},
 		{"helper status", []string{"helper", "status"}, true},
+		{"list is global", []string{"list"}, true},
+		{"ls is global", []string{"ls"}, true},
 		{"cp uses control socket", []string{"cp"}, true},
 		{"ctl uses control socket", []string{"ctl"}, true},
 		{"logs is read only", []string{"logs"}, true},
 		{"status is read only", []string{"status"}, true},
 		{"storage is global census", []string{"storage"}, true},
+		{"vzscript defers VM resolution", []string{"vzscript", "run", "recipe"}, true},
 		{"version", []string{"version"}, true},
 		{"vm tree", []string{"vm", "tree"}, true},
 		{"vm tree extra args still skips startup VM dir", []string{"vm", "tree", "extra"}, true},
@@ -118,6 +121,27 @@ func TestStorageWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", vm)); !os.IsNotExist(err) {
 		t.Fatalf("storage VM dir stat = %v, want not exist", err)
+	}
+}
+
+func TestListWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	home := t.TempDir()
+	vm := "missing-list-vm"
+	cmd := exec.Command(bin, "-vm", vm, "list")
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("list command failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", vm)); !os.IsNotExist(err) {
+		t.Fatalf("list VM dir stat = %v, want not exist", err)
 	}
 }
 

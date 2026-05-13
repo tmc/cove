@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
 )
@@ -337,13 +338,13 @@ func TestVZScriptListLinuxRecipes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"agentkit-linux-base", "agentkit-linux-claude-ready", "cirrus-migrate-doctor", "nixos-base"} {
+	for _, want := range []string{"agentkit-linux-base", "agentkit-linux-claude-ready", "cirrus-migrate-doctor", "kvm-test", "nixos-base"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("linux list missing %q:\n%s", want, out)
 		}
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if got, want := len(lines)-1, 4; got != want {
+	if got, want := len(lines)-1, 5; got != want {
 		t.Fatalf("linux recipe count = %d, want %d:\n%s", got, want, out)
 	}
 }
@@ -550,10 +551,10 @@ func validateVZScriptStubCommand(name string, files map[string]bool, args []stri
 // darwin and "no filter" arms of the matrix.
 func TestVZScriptListFilterMatrix(t *testing.T) {
 	tests := []struct {
-		name      string
-		filter    string
-		mustHave  []string
-		mustOmit  []string
+		name     string
+		filter   string
+		mustHave []string
+		mustOmit []string
 	}{
 		{
 			name:     "darwin filter includes darwin recipes",
@@ -608,6 +609,99 @@ func TestVZScriptShowErrors(t *testing.T) {
 	}
 	if err := vzscriptShow([]string{"definitely-not-a-recipe"}); err == nil {
 		t.Error("vzscriptShow(unknown) = nil, want error for unknown recipe")
+	}
+}
+
+func TestVZScriptShowHelp(t *testing.T) {
+	out, err := captureVZScriptStdout(t, func() error { return vzscriptShow([]string{"-h"}) })
+	if err != nil {
+		t.Fatalf("vzscriptShow(-h): %v", err)
+	}
+	for _, want := range []string{"Usage: cove vzscript show", "homebrew", "./custom.vzscript"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("help output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestVZScriptRunLocalOnlyMissingVMDoesNotCreateDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = ""
+	vmDir = ""
+	missing := "missing-vzscript-local-vm"
+	recipe := filepath.Join(t.TempDir(), "local.vzscript")
+	if err := os.WriteFile(recipe, []byte("echo local-only\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := vzscriptRun([]string{"-vm", missing, recipe}); err != nil {
+		t.Fatalf("vzscriptRun local-only: %v", err)
+	}
+	dir := filepath.Join(vmconfig.BaseDir(), missing)
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("missing VM dir stat = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "vzscript.log")); !os.IsNotExist(err) {
+		t.Fatalf("vzscript.log stat = %v, want not exist", err)
+	}
+}
+
+func TestVZScriptRunMissingRecipeGlobalVMDoesNotCreateDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "missing-vzscript-global-vm"
+	vmDir = ""
+	err := vzscriptRun([]string{"definitely-missing-vzscript-recipe"})
+	if err == nil {
+		t.Fatal("vzscriptRun missing recipe succeeded; want error")
+	}
+	dir := filepath.Join(vmconfig.BaseDir(), vmName)
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Fatalf("missing VM dir stat = %v, want not exist", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "vzscript.log")); !os.IsNotExist(statErr) {
+		t.Fatalf("vzscript.log stat = %v, want not exist", statErr)
+	}
+}
+
+func TestVZScriptRunGuestCommandMissingDefaultDoesNotCreateDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = ""
+	vmDir = ""
+	recipe := filepath.Join(t.TempDir(), "guest.vzscript")
+	if err := os.WriteFile(recipe, []byte("guest-exec echo hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := vzscriptRun([]string{"-timeout", "1s", recipe})
+	if err == nil {
+		t.Fatal("vzscriptRun guest command on missing default succeeded; want error")
+	}
+	if !strings.Contains(err.Error(), "vm is not running") && !strings.Contains(err.Error(), "connect to control socket") {
+		t.Fatalf("err = %v, want missing control socket diagnostic", err)
+	}
+	dir := filepath.Join(vmconfig.BaseDir(), "default")
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Fatalf("default VM dir stat = %v, want not exist", statErr)
+	}
+}
+
+func TestVZScriptUsageMentionsListVMAndSubcommandHelp(t *testing.T) {
+	var buf bytes.Buffer
+	printVzscriptUsage(&buf)
+	for _, want := range []string{"list [-os darwin|linux] [-vm <name>]", "cove vzscript list -h", "cove vzscript run -h"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("usage missing %q:\n%s", want, buf.String())
+		}
 	}
 }
 

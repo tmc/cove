@@ -458,7 +458,7 @@ Run flags:
 |------|---------|-------------|
 | `-v` | false | Verbose output |
 | `-timeout <dur>` | 10m | Execution timeout |
-| `-terminal` | false | Run in Terminal.app |
+| `-terminal` | false | Stream guest shell output to the host terminal |
 | `-terminal-gui` | false | Run in a visible guest terminal |
 | `-env <key=value>` | | Set a script environment variable (repeatable) |
 | `-template` | false | Render Go text/template recipes before running |

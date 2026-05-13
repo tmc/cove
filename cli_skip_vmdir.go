@@ -19,17 +19,20 @@ import (
 // from EnsureDir): for normal commands an unwritable ~/.vz/vms is still a
 // real failure that should surface immediately.
 var vmDirIndependentCommands = map[string]bool{
-	"helper":  true,
-	"daemon":  true,
-	"cp":      true,
-	"ctl":     true,
-	"logs":    true,
-	"runs":    true,
-	"secret":  true,
-	"status":  true,
-	"storage": true,
-	"version": true,
-	"shell":   true,
+	"helper":   true,
+	"daemon":   true,
+	"list":     true,
+	"ls":       true,
+	"cp":       true,
+	"ctl":      true,
+	"logs":     true,
+	"runs":     true,
+	"secret":   true,
+	"status":   true,
+	"storage":  true,
+	"version":  true,
+	"shell":    true,
+	"vzscript": true,
 }
 
 // subcommandSkipsVMDir reports whether the first non-flag argument names a

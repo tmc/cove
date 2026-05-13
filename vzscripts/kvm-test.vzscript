@@ -1,5 +1,5 @@
 # kvm-test — verify nested KVM inside a Linux guest
-# guest-os: darwin
+# guest-os: linux
 # runs-on: daemon
 
 guest-exec sh -lc 'test -e /dev/kvm'
