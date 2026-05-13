@@ -90,6 +90,9 @@ func runElevatedOnCurrentThread(m *elevatedManifest, prompt string) error {
 	hash := hex.EncodeToString(sum[:])
 
 	if err := runElevatedManifestNativeHook(tmp.Name(), hash, prompt); err != nil {
+		if errors.Is(err, ErrAuthorizationNoTTY) {
+			printManualElevationManifest(body, prompt)
+		}
 		return err
 	}
 	if !helperInstalled() {
