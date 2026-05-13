@@ -28,16 +28,17 @@ refuses a `FAIL` result unless `COVE_ALLOW_STALE_IMAGE=1` is set.
 
 ## Comparing images
 
-Use `cove image inspect --diff <ref-a> <ref-b>` to compare two local image
-manifests and image layers:
+Use `cove diff <ref-a> <ref-b> [-json]` to compare two local image disk layer
+metadata sets:
 
 ```sh
-cove image inspect --diff agentkit/linux-base:old agentkit/linux-base:new
+cove diff agentkit/linux-base:old agentkit/linux-base:new
+cove diff agentkit/linux-base:old agentkit/linux-base:new -json
 ```
 
-The diff reads manifest fields at runtime, so older manifests and newer
-provenance fields can be compared without a schema update. Fields and layers
-are marked `[CHANGED]`, `[UNCHANGED]`, `[ADDED]`, or `[REMOVED]`.
+The diff reads each image manifest at runtime to choose the expected disk
+layer name for the image OS. Disk layers are marked `[CHANGED]`,
+`[UNCHANGED]`, `[ADDED]`, or `[REMOVED]`.
 
-Use `-json` with `--diff` for structured output containing `added`,
-`removed`, `changed`, and `unchanged` objects with old and new values.
+Use trailing `-json` for structured output containing the compared refs,
+per-file status, old and new values, and whether any layer changed.
