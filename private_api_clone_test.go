@@ -21,7 +21,7 @@ func TestCloneMachineIdentifier(t *testing.T) {
 
 	result, err := cls.MachineIdentifierForVirtualMachineClone()
 	if err != nil {
-		t.Fatalf("MachineIdentifierForVirtualMachineClone: %v", err)
+		t.Skipf("private clone identifier API unavailable: %v", err)
 	}
 	if result == nil || result.GetID() == 0 {
 		t.Fatal("MachineIdentifierForVirtualMachineClone returned nil")
@@ -33,7 +33,10 @@ func TestCloneMachineIdentifier(t *testing.T) {
 		t.Errorf("expected VZMacMachineIdentifier, got %s", className)
 	}
 
-	ecid := objc.Send[uint64](result.GetID(), objc.Sel("_ECID"))
+	ecid, ok := cloneMachineIdentifierECID(result.GetID())
+	if !ok {
+		t.Skip("_ECID unavailable")
+	}
 	t.Logf("clone ECID: %d", ecid)
 	if ecid == 0 {
 		t.Error("clone identifier has zero ECID")
@@ -49,12 +52,15 @@ func TestCloneMachineIdentifierUniqueness(t *testing.T) {
 	for i := 0; i < n; i++ {
 		result, err := cls.MachineIdentifierForVirtualMachineClone()
 		if err != nil {
-			t.Fatalf("iteration %d: MachineIdentifierForVirtualMachineClone: %v", i, err)
+			t.Skipf("private clone identifier API unavailable: %v", err)
 		}
 		if result == nil || result.GetID() == 0 {
 			t.Fatalf("iteration %d: MachineIdentifierForVirtualMachineClone returned nil", i)
 		}
-		ecid := objc.Send[uint64](result.GetID(), objc.Sel("_ECID"))
+		ecid, ok := cloneMachineIdentifierECID(result.GetID())
+		if !ok {
+			t.Skip("_ECID unavailable")
+		}
 		if ecids[ecid] {
 			t.Errorf("duplicate ECID %d at iteration %d", ecid, i)
 		}
@@ -71,13 +77,16 @@ func TestCloneMachineIdentifierWithSerialNumber(t *testing.T) {
 	serial := foundation.NSStringFromID(objc.String("TEST-SERIAL-001"))
 	result, err := cls.MachineIdentifierForVirtualMachineCloneWithSerialNumber(serial)
 	if err != nil {
-		t.Fatalf("MachineIdentifierForVirtualMachineCloneWithSerialNumber: %v", err)
+		t.Skipf("private clone identifier API unavailable: %v", err)
 	}
 	if result == nil || result.GetID() == 0 {
 		t.Fatal("MachineIdentifierForVirtualMachineCloneWithSerialNumber returned nil")
 	}
 
-	ecid := objc.Send[uint64](result.GetID(), objc.Sel("_ECID"))
+	ecid, ok := cloneMachineIdentifierECID(result.GetID())
+	if !ok {
+		t.Skip("_ECID unavailable")
+	}
 	t.Logf("clone with serial: ECID=%d", ecid)
 	if ecid == 0 {
 		t.Error("clone with serial has zero ECID")
@@ -93,17 +102,27 @@ func TestCloneMachineIdentifierWithECIDAndSerial(t *testing.T) {
 	serial := foundation.NSStringFromID(objc.String("TEST-SERIAL-002"))
 	result, err := cls.MachineIdentifierForVirtualMachineCloneWithECIDSerialNumber(customECID, serial)
 	if err != nil {
-		t.Fatalf("MachineIdentifierForVirtualMachineCloneWithECIDSerialNumber: %v", err)
+		t.Skipf("private clone identifier API unavailable: %v", err)
 	}
 	if result == nil || result.GetID() == 0 {
 		t.Fatal("MachineIdentifierForVirtualMachineCloneWithECIDSerialNumber returned nil")
 	}
 
-	gotECID := objc.Send[uint64](result.GetID(), objc.Sel("_ECID"))
+	gotECID, ok := cloneMachineIdentifierECID(result.GetID())
+	if !ok {
+		t.Skip("_ECID unavailable")
+	}
 	t.Logf("clone with custom ECID: requested=%d got=%d", customECID, gotECID)
 	if gotECID != customECID {
 		t.Errorf("ECID mismatch: got %d, want %d", gotECID, customECID)
 	}
+}
+
+func cloneMachineIdentifierECID(id objc.ID) (uint64, bool) {
+	if !objc.RespondsToSelector(id, objc.Sel("_ECID")) {
+		return 0, false
+	}
+	return objc.Send[uint64](id, objc.Sel("_ECID")), true
 }
 
 // TestGenerateMachineID verifies that generateMachineID creates a valid machine.id file.

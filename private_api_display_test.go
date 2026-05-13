@@ -200,6 +200,10 @@ func TestPrivateAPI_DisplayPortCount(t *testing.T) {
 	}
 
 	for i, dev := range devices {
+		if !objc.RespondsToSelector(dev.ID, objc.Sel("_displayPortCount")) {
+			t.Logf("device[%d] _displayPortCount unavailable", i)
+			continue
+		}
 		portCount := objc.Send[uint64](dev.ID, objc.Sel("_displayPortCount"))
 		t.Logf("device[%d] _displayPortCount: %d", i, portCount)
 	}
@@ -240,7 +244,7 @@ func TestPrivateAPI_DisplayUUID(t *testing.T) {
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
 			uuidObj, err := privDisp.Uuid()
 			if err != nil {
-				t.Logf("device[%d] display[%d] _uuid: error=%v", i, j, err)
+				t.Logf("device[%d] display[%d] _uuid unavailable: %v", i, j, err)
 				continue
 			}
 			uuidStr := ""
@@ -269,7 +273,7 @@ func TestPrivateAPI_DisplayGraphicsOrientation(t *testing.T) {
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
 			orientation, err := privDisp.GraphicsOrientation()
 			if err != nil {
-				t.Logf("device[%d] display[%d] _graphicsOrientation: error=%v", i, j, err)
+				t.Logf("device[%d] display[%d] _graphicsOrientation unavailable: %v", i, j, err)
 				continue
 			}
 			t.Logf("device[%d] display[%d] _graphicsOrientation: %d", i, j, orientation)
@@ -292,7 +296,7 @@ func TestPrivateAPI_DisplayConfiguration(t *testing.T) {
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
 			configObj, err := privDisp.Configuration()
 			if err != nil {
-				t.Logf("device[%d] display[%d] _configuration: error=%v", i, j, err)
+				t.Logf("device[%d] display[%d] _configuration unavailable: %v", i, j, err)
 				continue
 			}
 			t.Logf("device[%d] display[%d] _configuration: ID=%#x", i, j, configObj.GetID())
@@ -323,7 +327,7 @@ func TestPrivateAPI_DisplayGraphicsDevice(t *testing.T) {
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
 			parentDev, err := privDisp.GraphicsDevice()
 			if err != nil {
-				t.Logf("device[%d] display[%d] _graphicsDevice: error=%v", i, j, err)
+				t.Logf("device[%d] display[%d] _graphicsDevice unavailable: %v", i, j, err)
 				continue
 			}
 			t.Logf("device[%d] display[%d] _graphicsDevice: ID=%#x (parent dev ID=%#x)",
@@ -382,15 +386,20 @@ func TestPrivateAPI_MacGraphicsDeviceMetadata(t *testing.T) {
 		macDev := privvz.VZMacGraphicsDeviceFromID(dev.ID)
 		featureLevel, err := macDev.DeviceFeatureLevel()
 		if err != nil {
-			t.Logf("device[%d] _deviceFeatureLevel: error=%v", i, err)
+			t.Logf("device[%d] _deviceFeatureLevel unavailable: %v", i, err)
 			continue
 		}
 		lowPower, err := macDev.PrefersLowPower()
 		if err != nil {
-			t.Logf("device[%d] _prefersLowPower: error=%v", i, err)
+			t.Logf("device[%d] _prefersLowPower unavailable: %v", i, err)
 			continue
 		}
-		portCount := objc.Send[uint64](dev.ID, objc.Sel("_displayPortCount"))
+		var portCount uint64
+		if objc.RespondsToSelector(dev.ID, objc.Sel("_displayPortCount")) {
+			portCount = objc.Send[uint64](dev.ID, objc.Sel("_displayPortCount"))
+		} else {
+			t.Logf("device[%d] _displayPortCount unavailable", i)
+		}
 		t.Logf("device[%d] _deviceFeatureLevel=%d _prefersLowPower=%v _displayPortCount=%d",
 			i, featureLevel, lowPower, portCount)
 	}
@@ -475,6 +484,9 @@ func TestPrivateAPI_DisplayConfigUUID(t *testing.T) {
 		t.Skip("could not create VZMacGraphicsDisplayConfiguration")
 	}
 
+	if !objc.RespondsToSelector(configID, objc.Sel("_uuid")) {
+		t.Skip("private selector _uuid is unavailable on this host")
+	}
 	uuidID := objc.Send[objc.ID](configID, objc.Sel("_uuid"))
 	uuidStr := ""
 	if uuidID != 0 {
@@ -484,9 +496,19 @@ func TestPrivateAPI_DisplayConfigUUID(t *testing.T) {
 	}
 	t.Logf("VZMacGraphicsDisplayConfiguration _uuid: %s", uuidStr)
 
+	if !objc.RespondsToSelector(configID, objc.Sel("_connectionType")) {
+		t.Log("_connectionType unavailable")
+		return
+	}
 	connType := objc.Send[int64](configID, objc.Sel("_connectionType"))
-	dispMode := objc.Send[int64](configID, objc.Sel("_displayMode"))
-	dispIDObj := objc.Send[objc.ID](configID, objc.Sel("_displayIdentifier"))
+	dispMode := int64(0)
+	if objc.RespondsToSelector(configID, objc.Sel("_displayMode")) {
+		dispMode = objc.Send[int64](configID, objc.Sel("_displayMode"))
+	}
+	dispIDObj := objc.ID(0)
+	if objc.RespondsToSelector(configID, objc.Sel("_displayIdentifier")) {
+		dispIDObj = objc.Send[objc.ID](configID, objc.Sel("_displayIdentifier"))
+	}
 	dispID := ""
 	if dispIDObj != 0 {
 		dispID = foundation.NSStringFromID(dispIDObj).String()
@@ -509,16 +531,20 @@ func TestPrivateAPI_DisplaySummary(t *testing.T) {
 
 		macDev := privvz.VZMacGraphicsDeviceFromID(dev.ID)
 		if featureLevel, err := macDev.DeviceFeatureLevel(); err != nil {
-			t.Logf("  _deviceFeatureLevel: error=%v", err)
+			t.Logf("  _deviceFeatureLevel unavailable: %v", err)
 		} else {
 			t.Logf("  _deviceFeatureLevel: %d", featureLevel)
 		}
 		if lowPower, err := macDev.PrefersLowPower(); err != nil {
-			t.Logf("  _prefersLowPower: error=%v", err)
+			t.Logf("  _prefersLowPower unavailable: %v", err)
 		} else {
 			t.Logf("  _prefersLowPower: %v", lowPower)
 		}
-		t.Logf("  _displayPortCount: %d", objc.Send[uint64](dev.ID, objc.Sel("_displayPortCount")))
+		if objc.RespondsToSelector(dev.ID, objc.Sel("_displayPortCount")) {
+			t.Logf("  _displayPortCount: %d", objc.Send[uint64](dev.ID, objc.Sel("_displayPortCount")))
+		} else {
+			t.Log("  _displayPortCount unavailable")
+		}
 
 		displays := dev.Displays()
 		t.Logf("  Displays count: %d", len(displays))
@@ -536,14 +562,14 @@ func TestPrivateAPI_DisplaySummary(t *testing.T) {
 			// Private API via VZGraphicsDisplay
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
 			if orientation, err := privDisp.GraphicsOrientation(); err != nil {
-				t.Logf("    _graphicsOrientation: error=%v", err)
+				t.Logf("    _graphicsOrientation unavailable: %v", err)
 			} else {
 				t.Logf("    _graphicsOrientation: %d", orientation)
 			}
 
 			uuidObj, err := privDisp.Uuid()
 			if err != nil {
-				t.Logf("    _uuid: error=%v", err)
+				t.Logf("    _uuid unavailable: %v", err)
 			} else if uuidObj.GetID() != 0 {
 				uuidStr := foundation.NSStringFromID(
 					objc.Send[objc.ID](uuidObj.GetID(), objc.Sel("UUIDString")),
@@ -553,7 +579,7 @@ func TestPrivateAPI_DisplaySummary(t *testing.T) {
 
 			configObj, err := privDisp.Configuration()
 			if err != nil {
-				t.Logf("    _configuration: error=%v", err)
+				t.Logf("    _configuration unavailable: %v", err)
 			} else if configObj.GetID() != 0 {
 				desc := foundation.NSStringFromID(
 					objc.Send[objc.ID](configObj.GetID(), objc.Sel("description")),
@@ -563,7 +589,7 @@ func TestPrivateAPI_DisplaySummary(t *testing.T) {
 
 			parentDev, err := privDisp.GraphicsDevice()
 			if err != nil {
-				t.Logf("    _graphicsDevice: error=%v", err)
+				t.Logf("    _graphicsDevice unavailable: %v", err)
 			} else {
 				t.Logf("    _graphicsDevice: ID=%#x", parentDev.GetID())
 			}

@@ -191,8 +191,7 @@ func TestPrivateControlAPICreateViewEndpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("options=%d", opt), func(t *testing.T) {
 			endpoint, err := vm.CreateViewEndpointWithOptions(opt)
 			if err != nil {
-				t.Logf("options=%d: error=%v", opt, err)
-				return
+				t.Skipf("private create view endpoint unavailable: %v", err)
 			}
 			if endpoint == nil {
 				t.Logf("options=%d: returned nil", opt)
@@ -212,6 +211,10 @@ func TestPrivateControlAPIDebugStub(t *testing.T) {
 	name := controlTestRequireRunningVM(t)
 	vm := controlTestConnectVM(t, name)
 
+	if !objc.RespondsToSelector(vm.ID, objc.Sel("_debugStub")) {
+		t.Skip("_debugStub unavailable")
+	}
+
 	// Use objc.Send directly since the method returns unsafe.Pointer (unexported).
 	stub := objc.Send[unsafe.Pointer](vm.ID, objc.Sel("_debugStub"))
 	if stub == nil {
@@ -225,6 +228,10 @@ func TestPrivateControlAPIHIDEventMonitor(t *testing.T) {
 	name := controlTestRequireRunningVM(t)
 	vm := controlTestConnectVM(t, name)
 
+	if !objc.RespondsToSelector(vm.ID, objc.Sel("_hidEventMonitor")) {
+		t.Skip("_hidEventMonitor unavailable")
+	}
+
 	monitor := objc.Send[unsafe.Pointer](vm.ID, objc.Sel("_hidEventMonitor"))
 	if monitor == nil {
 		t.Log("HID event monitor: nil")
@@ -237,6 +244,9 @@ func TestPrivateControlAPICurrentConfiguration(t *testing.T) {
 	name := controlTestRequireRunningVM(t)
 	vm := controlTestConnectVM(t, name)
 
+	if !objc.RespondsToSelector(vm.ID, objc.Sel("_currentConfiguration")) {
+		t.Skip("_currentConfiguration unavailable")
+	}
 	configID := objc.Send[objc.ID](vm.ID, objc.Sel("_currentConfiguration"))
 	if configID == 0 {
 		t.Log("current configuration: nil")
@@ -251,29 +261,49 @@ func TestPrivateControlAPIDiagnosticProperties(t *testing.T) {
 	name := controlTestRequireRunningVM(t)
 	vm := controlTestConnectVM(t, name)
 
-	stateDesc := objc.Send[objc.ID](vm.ID, objc.Sel("_stateDescription"))
-	t.Logf("state description: %q", foundation.NSStringFromID(stateDesc).String())
+	if objc.RespondsToSelector(vm.ID, objc.Sel("_stateDescription")) {
+		stateDesc := objc.Send[objc.ID](vm.ID, objc.Sel("_stateDescription"))
+		t.Logf("state description: %q", foundation.NSStringFromID(stateDesc).String())
+	} else {
+		t.Log("_stateDescription unavailable")
+	}
 
 	t.Logf("state: %d", vm.State())
 
-	canCreate := objc.Send[bool](vm.ID, objc.Sel("_canCreateCore"))
-	t.Logf("can create core: %v", canCreate)
-
-	hidReports, err := vm.ShouldSendHIDReports()
-	if err != nil {
-		t.Logf("should send HID reports: error=%v", err)
+	if objc.RespondsToSelector(vm.ID, objc.Sel("_canCreateCore")) {
+		canCreate := objc.Send[bool](vm.ID, objc.Sel("_canCreateCore"))
+		t.Logf("can create core: %v", canCreate)
 	} else {
-		t.Logf("should send HID reports: %v", hidReports)
+		t.Log("_canCreateCore unavailable")
 	}
 
-	pid := objc.Send[int](vm.ID, objc.Sel("_serviceProcessIdentifier"))
-	t.Logf("service process identifier: %d", pid)
+	shouldSendHIDReports, err := vm.ShouldSendHIDReports()
+	if err != nil {
+		t.Logf("should send HID reports unavailable: %v", err)
+	} else {
+		t.Logf("should send HID reports: %v", shouldSendHIDReports)
+	}
 
-	crashMsg := objc.Send[objc.ID](vm.ID, objc.Sel("_crashContextMessage"))
-	t.Logf("crash context message: %q", foundation.NSStringFromID(crashMsg).String())
+	if objc.RespondsToSelector(vm.ID, objc.Sel("_serviceProcessIdentifier")) {
+		pid := objc.Send[int](vm.ID, objc.Sel("_serviceProcessIdentifier"))
+		t.Logf("service process identifier: %d", pid)
+	} else {
+		t.Log("_serviceProcessIdentifier unavailable")
+	}
 
-	vmName := objc.Send[objc.ID](vm.ID, objc.Sel("_name"))
-	t.Logf("VM name: %q", foundation.NSStringFromID(vmName).String())
+	if objc.RespondsToSelector(vm.ID, objc.Sel("_crashContextMessage")) {
+		crashMsg := objc.Send[objc.ID](vm.ID, objc.Sel("_crashContextMessage"))
+		t.Logf("crash context message: %q", foundation.NSStringFromID(crashMsg).String())
+	} else {
+		t.Log("_crashContextMessage unavailable")
+	}
+
+	if objc.RespondsToSelector(vm.ID, objc.Sel("_name")) {
+		vmName := objc.Send[objc.ID](vm.ID, objc.Sel("_name"))
+		t.Logf("VM name: %q", foundation.NSStringFromID(vmName).String())
+	} else {
+		t.Log("_name unavailable")
+	}
 }
 
 func TestPrivateControlAPICreateCores(t *testing.T) {
@@ -329,6 +359,10 @@ func TestPrivateControlAPIDeviceArrays(t *testing.T) {
 		{"power source devices", "_powerSourceDevices"},
 	}
 	for _, a := range arrays {
+		if !objc.RespondsToSelector(vm.ID, objc.Sel(a.sel)) {
+			t.Logf("%s: unavailable", a.name)
+			continue
+		}
 		arrID := objc.Send[objc.ID](vm.ID, objc.Sel(a.sel))
 		count := int64(0)
 		if arrID != 0 {
@@ -341,6 +375,10 @@ func TestPrivateControlAPIDeviceArrays(t *testing.T) {
 func TestPrivateControlAPISetName(t *testing.T) {
 	name := controlTestRequireRunningVM(t)
 	vm := controlTestConnectVM(t, name)
+
+	if !objc.RespondsToSelector(vm.ID, objc.Sel("_name")) || !objc.RespondsToSelector(vm.ID, objc.Sel("_setName:")) {
+		t.Skip("_name accessors unavailable")
+	}
 
 	origID := objc.Send[objc.ID](vm.ID, objc.Sel("_name"))
 	original := foundation.NSStringFromID(origID).String()

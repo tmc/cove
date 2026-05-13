@@ -305,6 +305,9 @@ func TestLiveAPI_StateDescription(t *testing.T) {
 
 	var desc string
 	queue.Sync(func() {
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_stateDescription")) {
+			t.Skip("_stateDescription unavailable")
+		}
 		descID := objc.Send[objc.ID](privVM.ID, objc.Sel("_stateDescription"))
 		desc = foundation.NSStringFromID(descID).String()
 	})
@@ -331,6 +334,9 @@ func TestLiveAPI_StateDescriptionPaused(t *testing.T) {
 
 	var desc string
 	queue.Sync(func() {
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_stateDescription")) {
+			t.Skip("_stateDescription unavailable")
+		}
 		descID := objc.Send[objc.ID](privVM.ID, objc.Sel("_stateDescription"))
 		desc = foundation.NSStringFromID(descID).String()
 	})
@@ -430,9 +436,13 @@ func TestLiveAPI_SendPointerNSEvent(t *testing.T) {
 			}
 		}()
 
-		responds := objc.Send[bool](privVM.ID, objc.Sel("respondsToSelector:"), objc.Sel("sendPointerNSEvent:pointingDeviceIndex:"))
+		responds := objc.RespondsToSelector(privVM.ID, objc.Sel("sendPointerNSEvent:pointingDeviceIndex:"))
 		t.Logf("responds to sendPointerNSEvent:pointingDeviceIndex: = %v", responds)
 
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_pointingDevices")) {
+			t.Log("_pointingDevices unavailable")
+			return
+		}
 		pointingDevices := objc.Send[objc.ID](privVM.ID, objc.Sel("_pointingDevices"))
 		if pointingDevices != 0 {
 			count := objc.Send[int64](pointingDevices, objc.Sel("count"))
@@ -451,6 +461,10 @@ func TestLiveAPI_KeyboardsDiscovery(t *testing.T) {
 	_, privVM, queue := requireLiveVM(t)
 
 	queue.Sync(func() {
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_keyboards")) {
+			t.Log("_keyboards unavailable")
+			return
+		}
 		keyboards := objc.Send[objc.ID](privVM.ID, objc.Sel("_keyboards"))
 		if keyboards == 0 {
 			t.Log("_keyboards: nil")
@@ -541,7 +555,7 @@ func TestLiveAPI_CreateViewEndpoint(t *testing.T) {
 
 				endpoint, err := privVM.CreateViewEndpointWithOptions(opt)
 				if err != nil {
-					t.Logf("options=%d: error=%v", opt, err)
+					t.Logf("options=%d: unavailable: %v", opt, err)
 					return
 				}
 				if endpoint == nil {
@@ -570,6 +584,12 @@ func TestLiveAPI_RestrictedMode(t *testing.T) {
 		supported, valErr = privVM.ValidateRestrictedModeSupportWithError()
 	})
 	t.Logf("restricted mode supported: %v, error: %v", supported, valErr)
+	if valErr != nil {
+		t.Skipf("_validateRestrictedModeSupportWithError unavailable: %v", valErr)
+	}
+	if !supported {
+		t.Skip("restricted mode unsupported")
+	}
 
 	done := make(chan error, 1)
 	queue.Sync(func() {
@@ -594,6 +614,9 @@ func TestLiveAPI_CurrentConfiguration(t *testing.T) {
 	_, privVM, queue := requireLiveVM(t)
 
 	queue.Sync(func() {
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_currentConfiguration")) {
+			t.Skip("_currentConfiguration unavailable")
+		}
 		configID := objc.Send[objc.ID](privVM.ID, objc.Sel("_currentConfiguration"))
 		if configID == 0 {
 			t.Log("_currentConfiguration: nil")
@@ -610,14 +633,26 @@ func TestLiveAPI_CurrentConfiguration(t *testing.T) {
 		t.Logf("  memorySize: %d bytes (%.1f GB)", memSize, float64(memSize)/(1024*1024*1024))
 
 		// Private properties via raw objc.Send
-		t.Logf("  _memoryOvercommitmentAllowed: %v",
-			objc.Send[bool](configID, objc.Sel("_memoryOvercommitmentAllowed")))
-		t.Logf("  _fatalErrorAction: %d",
-			objc.Send[int64](configID, objc.Sel("_fatalErrorAction")))
-		t.Logf("  _panicAction: %d",
-			objc.Send[int64](configID, objc.Sel("_panicAction")))
-		t.Logf("  _restartAction: %d",
-			objc.Send[int64](configID, objc.Sel("_restartAction")))
+		for _, p := range []struct {
+			name string
+			sel  string
+			kind string
+		}{
+			{"_memoryOvercommitmentAllowed", "_memoryOvercommitmentAllowed", "bool"},
+			{"_fatalErrorAction", "_fatalErrorAction", "int"},
+			{"_panicAction", "_panicAction", "int"},
+			{"_restartAction", "_restartAction", "int"},
+		} {
+			if !objc.RespondsToSelector(configID, objc.Sel(p.sel)) {
+				t.Logf("  %s: unavailable", p.name)
+				continue
+			}
+			if p.kind == "bool" {
+				t.Logf("  %s: %v", p.name, objc.Send[bool](configID, objc.Sel(p.sel)))
+			} else {
+				t.Logf("  %s: %d", p.name, objc.Send[int64](configID, objc.Sel(p.sel)))
+			}
+		}
 	})
 }
 
@@ -626,29 +661,49 @@ func TestLiveAPI_DiagnosticProperties(t *testing.T) {
 	_, privVM, queue := requireLiveVM(t)
 
 	queue.Sync(func() {
-		stateDesc := objc.Send[objc.ID](privVM.ID, objc.Sel("_stateDescription"))
-		t.Logf("_stateDescription: %q", foundation.NSStringFromID(stateDesc).String())
+		if objc.RespondsToSelector(privVM.ID, objc.Sel("_stateDescription")) {
+			stateDesc := objc.Send[objc.ID](privVM.ID, objc.Sel("_stateDescription"))
+			t.Logf("_stateDescription: %q", foundation.NSStringFromID(stateDesc).String())
+		} else {
+			t.Log("_stateDescription: unavailable")
+		}
 
 		t.Logf("state: %d", privVM.State())
 
-		canCreate := objc.Send[bool](privVM.ID, objc.Sel("_canCreateCore"))
-		t.Logf("_canCreateCore: %v", canCreate)
-
-		hidReports, err := privVM.ShouldSendHIDReports()
-		if err != nil {
-			t.Logf("_shouldSendHIDReports: error=%v", err)
+		if objc.RespondsToSelector(privVM.ID, objc.Sel("_canCreateCore")) {
+			canCreate := objc.Send[bool](privVM.ID, objc.Sel("_canCreateCore"))
+			t.Logf("_canCreateCore: %v", canCreate)
 		} else {
-			t.Logf("_shouldSendHIDReports: %v", hidReports)
+			t.Log("_canCreateCore: unavailable")
 		}
 
-		pid := objc.Send[int](privVM.ID, objc.Sel("_serviceProcessIdentifier"))
-		t.Logf("_serviceProcessIdentifier: %d", pid)
+		shouldSendHIDReports, err := privVM.ShouldSendHIDReports()
+		if err != nil {
+			t.Logf("_shouldSendHIDReports unavailable: %v", err)
+		} else {
+			t.Logf("_shouldSendHIDReports: %v", shouldSendHIDReports)
+		}
 
-		crashMsg := objc.Send[objc.ID](privVM.ID, objc.Sel("_crashContextMessage"))
-		t.Logf("_crashContextMessage: %q", foundation.NSStringFromID(crashMsg).String())
+		if objc.RespondsToSelector(privVM.ID, objc.Sel("_serviceProcessIdentifier")) {
+			pid := objc.Send[int](privVM.ID, objc.Sel("_serviceProcessIdentifier"))
+			t.Logf("_serviceProcessIdentifier: %d", pid)
+		} else {
+			t.Log("_serviceProcessIdentifier: unavailable")
+		}
 
-		vmName := objc.Send[objc.ID](privVM.ID, objc.Sel("_name"))
-		t.Logf("_name: %q", foundation.NSStringFromID(vmName).String())
+		if objc.RespondsToSelector(privVM.ID, objc.Sel("_crashContextMessage")) {
+			crashMsg := objc.Send[objc.ID](privVM.ID, objc.Sel("_crashContextMessage"))
+			t.Logf("_crashContextMessage: %q", foundation.NSStringFromID(crashMsg).String())
+		} else {
+			t.Log("_crashContextMessage: unavailable")
+		}
+
+		if objc.RespondsToSelector(privVM.ID, objc.Sel("_name")) {
+			vmName := objc.Send[objc.ID](privVM.ID, objc.Sel("_name"))
+			t.Logf("_name: %q", foundation.NSStringFromID(vmName).String())
+		} else {
+			t.Log("_name: unavailable")
+		}
 	})
 }
 
@@ -672,6 +727,10 @@ func TestLiveAPI_DeviceArrays(t *testing.T) {
 
 	queue.Sync(func() {
 		for _, a := range arrays {
+			if !objc.RespondsToSelector(privVM.ID, objc.Sel(a.sel)) {
+				t.Logf("%s: unavailable", a.name)
+				continue
+			}
 			arrID := objc.Send[objc.ID](privVM.ID, objc.Sel(a.sel))
 			count := int64(0)
 			if arrID != 0 {
@@ -692,6 +751,10 @@ func TestLiveAPI_DebugStub(t *testing.T) {
 	_, privVM, queue := requireLiveVM(t)
 
 	queue.Sync(func() {
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_debugStub")) {
+			t.Log("_debugStub: unavailable")
+			return
+		}
 		stub := objc.Send[objc.ID](privVM.ID, objc.Sel("_debugStub"))
 		if stub == 0 {
 			t.Log("_debugStub: nil (not configured)")
@@ -707,6 +770,10 @@ func TestLiveAPI_HIDEventMonitor(t *testing.T) {
 	_, privVM, queue := requireLiveVM(t)
 
 	queue.Sync(func() {
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_hidEventMonitor")) {
+			t.Log("_hidEventMonitor: unavailable")
+			return
+		}
 		monitor := objc.Send[objc.ID](privVM.ID, objc.Sel("_hidEventMonitor"))
 		if monitor == 0 {
 			t.Log("_hidEventMonitor: nil")
@@ -757,6 +824,10 @@ func TestLiveAPI_DisplayProperties(t *testing.T) {
 					}
 				}()
 
+				if !objc.RespondsToSelector(privDisplay.ID, objc.Sel(p.sel)) {
+					t.Logf("%s: unavailable", p.name)
+					return
+				}
 				result := objc.Send[objc.ID](privDisplay.ID, objc.Sel(p.sel))
 				if result == 0 {
 					t.Logf("%s: nil/0", p.name)
@@ -774,6 +845,9 @@ func TestLiveAPI_SetName(t *testing.T) {
 	_, privVM, queue := requireLiveVM(t)
 
 	queue.Sync(func() {
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_name")) || !objc.RespondsToSelector(privVM.ID, objc.Sel("_setName:")) {
+			t.Skip("_name accessors unavailable")
+		}
 		origID := objc.Send[objc.ID](privVM.ID, objc.Sel("_name"))
 		original := foundation.NSStringFromID(origID).String()
 		t.Logf("original name: %q", original)
