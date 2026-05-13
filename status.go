@@ -1,23 +1,43 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/controlserver"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
-func statusCommand() error {
-	if !isVMRunningAt(vmDir) {
-		state := detectVMState(vmDir)
+type statusOptions struct {
+	VM string
+}
+
+func statusCommand(args ...string) error {
+	opts, err := parseStatusArgs(args)
+	if errors.Is(err, errFlagHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	targetDir, err := resolveStatusVMDir(opts.VM)
+	if err != nil {
+		return err
+	}
+	if !isVMRunningAt(targetDir) {
+		state := detectVMState(targetDir)
 		if state == "starting" {
-			_, note := runtimeListFields(vmDir, state)
+			_, note := runtimeListFields(targetDir, state)
 			fmt.Printf("starting: %s\n", note)
 			return nil
 		}
 	}
-	client := NewControlClient(GetControlSocketPath())
+	client := NewControlClient(GetControlSocketPathForVM(targetDir))
 	osName, err := detectGuestOS(client)
 	if err != nil {
 		return err
@@ -47,6 +67,52 @@ func statusCommand() error {
 	}
 	fmt.Println(controlserver.AgentHealthSummary(status))
 	return nil
+}
+
+func parseStatusArgs(args []string) (statusOptions, error) {
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	vmFlag := fs.String("vm", "", "VM name")
+	fs.Usage = func() { printStatusUsage(os.Stdout) }
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		return statusOptions{}, err
+	}
+	if fs.NArg() > 1 {
+		return statusOptions{}, fmt.Errorf("usage: cove status [-vm name] [vm]")
+	}
+	target := ""
+	vmFlagSet := flagWasProvided(fs, "vm")
+	if vmFlagSet {
+		target = strings.TrimSpace(*vmFlag)
+	}
+	if target == "" && fs.NArg() == 0 {
+		target = strings.TrimSpace(vmName)
+	}
+	if fs.NArg() == 1 {
+		positional := fs.Arg(0)
+		if vmFlagSet && target != "" && target != positional {
+			return statusOptions{}, fmt.Errorf("status: -vm %q does not match positional VM %q", target, positional)
+		}
+		target = positional
+	}
+	return statusOptions{VM: target}, nil
+}
+
+func printStatusUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove status [-vm name] [vm]
+
+Show guest-agent and GUI-session status for a running VM.
+If no VM is named, cove uses the active VM.`)
+}
+
+func resolveStatusVMDir(name string) (string, error) {
+	if strings.TrimSpace(name) != "" {
+		return requireExistingVMForControl(name)
+	}
+	if strings.TrimSpace(vmDir) != "" && vmconfig.Validate(vmDir) {
+		return vmDir, nil
+	}
+	return requireExistingVMForControl(vmconfig.ActiveName())
 }
 
 func probeLinuxGUISessionControl(client *ControlClient) (controlserver.GUISession, bool, error) {

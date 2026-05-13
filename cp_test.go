@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestCpParseSpec(t *testing.T) {
@@ -62,6 +65,55 @@ func TestCpParseSpec(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("parseCpSpec = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCpParseSpecForVMFlag(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		src    string
+		dst    string
+		vmFlag string
+		want   cpSpec
+		err    string
+	}{
+		{
+			name:   "matching host to guest",
+			src:    "file.txt",
+			dst:    "vm1:/tmp/file.txt",
+			vmFlag: "vm1",
+			want:   cpSpec{Direction: cpHostToGuest, VM: "vm1", HostPath: filepath.Join(wd, "file.txt"), GuestPath: "/tmp/file.txt"},
+		},
+		{
+			name:   "matching guest to host",
+			src:    "vm1:/tmp/file.txt",
+			dst:    "out.txt",
+			vmFlag: "vm1",
+			want:   cpSpec{Direction: cpGuestToHost, VM: "vm1", GuestPath: "/tmp/file.txt", HostPath: filepath.Join(wd, "out.txt")},
+		},
+		{name: "mismatch", src: "file.txt", dst: "vm1:/tmp/file.txt", vmFlag: "vm2", err: `-vm "vm2" does not match remote endpoint VM "vm1"`},
+		{name: "bad flag vm", src: "file.txt", dst: "vm1:/tmp/file.txt", vmFlag: "bad/name", err: "invalid VM name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseCpSpecForVM(tt.src, tt.dst, tt.vmFlag)
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Fatalf("parseCpSpecForVM error = %v, want %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseCpSpecForVM: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("parseCpSpecForVM = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
@@ -135,6 +187,7 @@ func TestCpRunCpArgErrors(t *testing.T) {
 		{name: "one arg", args: []string{"a"}, err: "usage:"},
 		{name: "three args", args: []string{"a", "b", "c"}, err: "usage:"},
 		{name: "bad spec", args: []string{"a", "b"}, err: "exactly one path must be remote"},
+		{name: "vm mismatch", args: []string{"-vm", "other", "a", "vm:/tmp/a"}, err: "does not match"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := runCp(context.Background(), tc.args, noAgent)
@@ -153,6 +206,69 @@ func TestCpAgentErrorPropagation(t *testing.T) {
 	}
 	if err := runCp(context.Background(), []string{"vm:/tmp/a", "out"}, newAgent); !errors.Is(err, wantErr) {
 		t.Fatalf("guest->host err = %v, want %v", err, wantErr)
+	}
+}
+
+func TestRunCpCommandUsageErrorsExitTwo(t *testing.T) {
+	var stderr bytes.Buffer
+	env := commandEnv{Stderr: &stderr}
+	if got := runCpCommand(env, "cp", []string{"-vm", "vm1"}); got != 2 {
+		t.Fatalf("runCpCommand exit = %d, want 2", got)
+	}
+	out := stderr.String()
+	for _, want := range []string{"Usage: cove cp", "error: usage: cove cp"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stderr = %q, want %q", out, want)
+		}
+	}
+}
+
+func TestCpVMNotFoundBeforeControlSocketHint(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	err := runCp(context.Background(), []string{"host.txt", "deleted-vm:/tmp/host.txt"}, newControlCpAgent)
+	if err == nil {
+		t.Fatal("runCp succeeded for missing VM")
+	}
+	msg := err.Error()
+	for _, want := range []string{`no VM named "deleted-vm"`, vmconfig.BaseDir()} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("runCp error = %q, want %q", msg, want)
+		}
+	}
+	for _, notWant := range []string{"control socket not found", "start it with"} {
+		if strings.Contains(msg, notWant) {
+			t.Fatalf("runCp error = %q, did not want %q", msg, notWant)
+		}
+	}
+}
+
+func TestCpStoppedExistingVMKeepsControlSocketHint(t *testing.T) {
+	home, err := os.MkdirTemp("/tmp", "cove-cp-test-")
+	if err != nil {
+		t.Fatalf("temp home: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(home) })
+	t.Setenv("HOME", home)
+	vm := "stopped-vm"
+	dir := filepath.Join(vmconfig.BaseDir(), vm)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir VM: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0o644); err != nil {
+		t.Fatalf("write disk: %v", err)
+	}
+	err = runCp(context.Background(), []string{"host.txt", vm + ":/tmp/host.txt"}, newControlCpAgent)
+	if err == nil {
+		t.Fatal("runCp succeeded for stopped VM without control socket")
+	}
+	msg := err.Error()
+	for _, want := range []string{"vm is not running: control socket not found", "start it with"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("runCp error = %q, want %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "no VM named") {
+		t.Fatalf("runCp error = %q, did not want not-found diagnostic", msg)
 	}
 }
 

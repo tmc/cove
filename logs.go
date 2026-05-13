@@ -4,7 +4,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -19,27 +21,60 @@ func parseLogsArgs(args []string) (logsOptions, error) {
 	fs.SetOutput(os.Stderr)
 	follow := fs.Bool("f", false, "follow logs")
 	fs.BoolVar(follow, "follow", false, "follow logs")
+	vmFlag := fs.String("vm", "", "VM name")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: cove logs <vm> [-f]")
-		fs.PrintDefaults()
+		printLogsUsage(fs.Output())
 	}
 	if err := parseFlagsOrHelp(fs, moveLogsFlagsFirst(args)); err != nil {
 		return logsOptions{}, err
 	}
-	if fs.NArg() != 1 {
-		return logsOptions{}, fmt.Errorf("usage: cove logs <vm> [-f]")
+	if fs.NArg() > 1 {
+		return logsOptions{}, fmt.Errorf("usage: cove logs [-vm name] [vm] [-f]")
 	}
-	return logsOptions{VM: fs.Arg(0), Follow: *follow}, nil
+	target := strings.TrimSpace(*vmFlag)
+	if target == "" {
+		target = strings.TrimSpace(vmName)
+	}
+	if fs.NArg() == 1 {
+		positional := fs.Arg(0)
+		if target != "" && target != positional {
+			return logsOptions{}, fmt.Errorf("logs: -vm %q does not match positional VM %q", target, positional)
+		}
+		target = positional
+	}
+	if target == "" {
+		return logsOptions{}, fmt.Errorf("usage: cove logs [-vm name] [vm] [-f]")
+	}
+	return logsOptions{VM: target, Follow: *follow}, nil
+}
+
+func printLogsUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove logs [-vm name] [vm] [-f]
+
+Show recent guest logs through cove shell. Linux uses journalctl; macOS uses
+log show. Use -f or --follow to stream logs.
+If no positional VM is provided, cove uses -vm or the global VM selection.`)
 }
 
 func moveLogsFlagsFirst(args []string) []string {
 	var flags, rest []string
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch arg {
 		case "-f", "--follow":
 			flags = append(flags, arg)
+		case "-vm", "--vm":
+			flags = append(flags, arg)
+			if i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
 		default:
-			rest = append(rest, arg)
+			if strings.HasPrefix(arg, "-vm=") || strings.HasPrefix(arg, "--vm=") {
+				flags = append(flags, arg)
+			} else {
+				rest = append(rest, arg)
+			}
 		}
 	}
 	return append(flags, rest...)
