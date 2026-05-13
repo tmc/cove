@@ -58,6 +58,17 @@ func TestPrintVMConfigUsage(t *testing.T) {
 	}
 }
 
+func TestPrintSharedFolderUsageDocumentsLiveApply(t *testing.T) {
+	var buf bytes.Buffer
+	printSharedFolderUsage(&buf)
+	got := buf.String()
+	for _, want := range []string{"Save and live-apply when running", "Retry guest mount via agent"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("printSharedFolderUsage missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestPrintForkUsage(t *testing.T) {
 	var buf bytes.Buffer
 	printForkUsage(&buf)

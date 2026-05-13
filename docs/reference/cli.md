@@ -903,8 +903,8 @@ images, and exposing selected ports.
 
 ```
 cove logs <vm> [-f|--follow]
-cove cp <host-path> <vm:/guest/path>
-cove cp <vm:/guest/path> <host-path>
+cove cp [-vm name] <host-path> <vm:/guest/path>
+cove cp [-vm name] <vm:/guest/path> <host-path>
 cove diff <ref-a> <ref-b> [-json]
 cove forward <vm> <hostport>:<vmport>
 cove forward <vm> -reverse <vmport>:<hostport>
@@ -914,8 +914,8 @@ cove network logs <vm> [-f]
 
 | Command | Description |
 |---------|-------------|
-| `logs <vm> [-f\|--follow]` | Tail guest logs through the agent/control path. |
-| `cp` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. |
+| `logs [-vm name] [vm] [-f\|--follow]` | Tail guest logs through the agent/control path. `-vm` may appear before or after the positional VM name and must match it when both are present. |
+| `cp [-vm name]` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. `-vm` may appear before or after operands and must match the `vm:/path` endpoint. |
 | `diff <ref-a> <ref-b> [-json]` | Compare local image manifests/layers. |
 | `forward` | Forward TCP/UDP between host and guest; `-reverse` exposes guest-to-host direction. |
 | `network logs <vm> [-f]` | Tail network policy audit events. |
@@ -924,6 +924,7 @@ cove network logs <vm> [-f]
 cove logs ubuntu-runner -f
 cove cp ./artifact.txt ubuntu-runner:/tmp/artifact.txt
 cove cp ubuntu-runner:/etc/os-release ./os-release
+cove cp ubuntu-runner:/tmp/artifact.txt ./artifact.txt -vm ubuntu-runner
 cove diff macos-runner:old macos-runner:new -json
 cove forward dev 8080:80
 cove forward dev -reverse 3000:8080
@@ -940,7 +941,7 @@ walkthroughs.
 
 ## shell
 
-Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Stdin remains read-only in this release (Slice 3 / v0.3 will ship bidirectional stdin). See [design 023](../designs/023-cove-shell-exec-ux.md).
+Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Current agents use ExecAttach for bidirectional stdin, terminal resize, signals, stdout/stderr, and exit-code propagation. Older agents fall back to the v0.2 read-only stdin path with a warning. See [design 023](../designs/023-cove-shell-exec-ux.md).
 
 ```
 cove shell <vm> [--env NAME=VALUE]... [--secret-env NAME=value|env://VAR|file:///path]... [-- <argv>...]
@@ -1027,10 +1028,10 @@ cove shared-folder <command> [args]
 | `list` | List configured folders |
 | `status [mount-point]` | Check mount status |
 | `pending [vm]` | List configured folders not mounted in the running guest |
-| `add <host-path> [tag] [ro\|rw]` | Add a folder |
+| `add <host-path> [tag] [ro\|rw]` | Save a folder and attempt live apply/mount when the VM is running |
 | `remove <tag-or-path>` | Remove a folder |
 | `clear` | Remove all folders |
-| `mount [mount-point]` | Mount in guest via agent |
+| `mount [mount-point]` | Retry guest mount via agent |
 
 ---
 

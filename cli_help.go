@@ -538,13 +538,13 @@ Alias:
   cove vm shared-folder <command>
 
 Commands:
-  list
-  status [mount-point]
-  pending [vm]
-  add <host-path> [tag] [ro|rw]
-  remove <tag-or-path>
-  clear
-  mount [mount-point]`)
+  list                              List configured folders
+  status [mount-point]              Show mount status in guest
+  pending [vm]                      List saved folders not mounted now
+  add <host-path> [tag] [ro|rw]     Save and live-apply when running
+  remove <tag-or-path>              Remove a saved folder
+  clear                             Remove all saved folders
+  mount [mount-point]               Retry guest mount via agent`)
 }
 
 func printInstallUsage(w io.Writer) {
