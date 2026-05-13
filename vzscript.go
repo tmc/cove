@@ -1384,6 +1384,14 @@ func vzRecoveryOptionsCmd(cfg vzscriptConfig) script.Cmd {
 				timeout = d
 			}
 			if exec := newScriptBootExecutor(cfg); exec != nil {
+				prevCapture := cfg.controlSrv.captureBackend()
+				prevInput := cfg.controlSrv.inputBackend()
+				cfg.controlSrv.setCaptureBackend(automationBackendWindow)
+				cfg.controlSrv.setInputBackend(automationBackendFramebuffer)
+				defer func() {
+					cfg.controlSrv.setCaptureBackend(prevCapture)
+					cfg.controlSrv.setInputBackend(prevInput)
+				}()
 				return nil, exec.activateStartupOptions(timeout)
 			}
 			client := NewControlClient(cfg.socketPath)
