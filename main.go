@@ -741,6 +741,7 @@ VM Management:
   diff            Compare local image disk layer metadata
   softreset       Run destructive soft-reset probe matrix
   runs            Inspect local run metrics and artifacts
+  recording       List/export run recording artifacts
   bench           Normalize benchmark evidence into reports and run metrics
   daemon          Manage the cove background coordinator
   compact         Zero guest free space for smaller pushes

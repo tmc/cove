@@ -716,6 +716,29 @@ cove runs export 20260505 --format tar > cove-run.tar.gz
 
 ---
 
+## recording
+
+List and export recording artifacts from run/session directories. A recording
+is any run under `~/.vz/runs/<run-id>/` with manifest, metrics, events, logs,
+screenshots, replay, or trace artifacts.
+
+```
+cove recording list [--json] [--limit N]
+cove recording export <run-id-prefix> --out PATH
+```
+
+`recording export` writes a gzip tarball containing the available metadata and
+media artifacts. Missing or empty recording sets print an actionable message
+without creating new run directories.
+
+```bash
+cove recording list
+cove recording list --json
+cove recording export 20260505 --out cove-recording-20260505.tar.gz
+```
+
+---
+
 ## fleet
 
 Register trusted Mac hosts and route selected commands over SSH. Fleet commands
@@ -1218,6 +1241,7 @@ agent-aware free-space compactor.
 | `disk-detach` | Force-detach VM disk image |
 | `fork` | CoW-fork a VM with a fresh identity (`cove fork <parent> <child>`) |
 | `bench` | Normalize benchmark evidence into reports and run metrics |
+| `recording` | List/export run recording artifacts |
 | `pit` | Experimental point-in-time save, restore, run, and swap |
 | `softreset` | Run destructive soft-reset probe matrix |
 | `store` | Manage the local content-addressed OCI blob store |

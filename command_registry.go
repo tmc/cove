@@ -67,6 +67,7 @@ var commandRegistry = []commandSpec{
 	{Name: "pull", Summary: "Validate an OCI pull plan", Dispatch: commandDispatchEarly, Run: runPullCommand},
 	{Name: "push", Summary: "Plan a VM disk OCI push", Dispatch: commandDispatchEarly, Run: runPushCommand},
 	{Name: "quota", Summary: "Show or set per-VM resource quotas", Dispatch: commandDispatchEarly, Run: runQuotaCommand},
+	{Name: "recording", Aliases: []string{"recordings"}, Summary: "List and export run recording artifacts", Dispatch: commandDispatchEarly, Run: runRecordingCommand},
 	{Name: "rename", Summary: "Rename a VM", Dispatch: commandDispatchLate, Run: runVMSubcommand},
 	{Name: "rm", Aliases: []string{"remove", "destroy"}, Summary: "Delete a VM", Dispatch: commandDispatchLate, Run: runVMDeleteAliasCommand},
 	{Name: "rosetta", Summary: "Rosetta 2 for Linux VMs", Dispatch: commandDispatchLate, Run: runRosettaCommandSpec},
@@ -219,6 +220,9 @@ func runPinsCommand(env commandEnv, _ string, args []string) int {
 }
 func runPushCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePush(args))
+}
+func runRecordingCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleRecordingCommand(args))
 }
 func runQuotaCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleQuotaCommand(args))
