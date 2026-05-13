@@ -136,15 +136,16 @@ func imageSearchLabels(ref ImageRef) []string {
 func runImageSearch(args []string) error {
 	fs := flag.NewFlagSet("image search", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() { printImageSearchUsage(fs.Output()) }
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
-	if err := parseFlagsOrHelp(fs, args); err != nil {
+	if err := parseFlagsOrHelp(fs, moveImageSearchFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
 		return err
 	}
 	if fs.NArg() > 1 {
-		return fmt.Errorf("usage: cove image search [query] [-json]")
+		return fmt.Errorf("usage: cove image search [-json] [query]")
 	}
 	query := ""
 	if fs.NArg() == 1 {
@@ -160,7 +161,33 @@ func runImageSearch(args []string) error {
 	return writeImageSearchText(os.Stdout, results)
 }
 
+func printImageSearchUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove image search [-json] [query]
+
+Fuzzy-search local image refs and labels. With no query, lists all local
+images ordered by ref.
+
+Flags:
+  -json    emit machine-readable JSON`)
+}
+
+func moveImageSearchFlagsFirst(args []string) []string {
+	var flags, rest []string
+	for _, arg := range args {
+		switch arg {
+		case "-json", "--json":
+			flags = append(flags, arg)
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return append(flags, rest...)
+}
+
 func writeImageSearchJSON(w io.Writer, results []ImageSearchResult) error {
+	if results == nil {
+		results = []ImageSearchResult{}
+	}
 	data, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode image search: %w", err)

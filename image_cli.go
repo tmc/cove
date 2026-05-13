@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,8 +57,8 @@ func printImageUsage(w io.Writer) {
 
 Subcommands:
   build -from <vm> -tag <name[:tag]>   Snapshot a stopped VM into the image store
-  list                                 List local images
-  inspect <name[:tag]> [-json]         Show manifest details and downstream forks
+  list [-json]                         List local images
+  inspect [-json] <name[:tag]>         Show manifest details and downstream forks
   verify <name[:tag]> [-strict] [-json]
                                        Check freshness, provenance, and layout
   gc   [-dry-run] [-yes] [-older-than D]  Sweep images with zero live forks
@@ -65,7 +66,7 @@ Subcommands:
                                        Remove local images by age or tag glob
   tag <src-ref> <dst-ref>              Add a local tag without rebuilding
   history <name[:tag]> [-json]         Show layer and provenance lineage
-  search [query] [-json]               Fuzzy-search local images
+  search [-json] [query]               Fuzzy-search local images
   rm   <name[:tag]>                    Delete a local image (refuses if forks exist)
   push <name[:tag]> <file|-|registry/ref:tag> [-gzip]
                                        Tar to a file/stdout or push to an OCI registry
@@ -136,6 +137,8 @@ func runImageBuild(args []string) (err error) {
 func runImageList(args []string) error {
 	fs := flag.NewFlagSet("image list", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() { printImageListUsage(fs.Output()) }
+	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -145,6 +148,9 @@ func runImageList(args []string) error {
 	entries, err := ListImages()
 	if err != nil {
 		return err
+	}
+	if *asJSON {
+		return writeImageListJSON(os.Stdout, entries)
 	}
 	if len(entries) == 0 {
 		fmt.Println("No images found.")
@@ -163,9 +169,62 @@ func runImageList(args []string) error {
 	return tw.Flush()
 }
 
+type imageListResult struct {
+	Ref     string `json:"ref"`
+	Name    string `json:"name"`
+	Tag     string `json:"tag"`
+	Size    int64  `json:"size"`
+	Source  string `json:"source,omitempty"`
+	Created string `json:"created,omitempty"`
+}
+
+func writeImageListJSON(w io.Writer, entries []ImageEntry) error {
+	results := make([]imageListResult, 0, len(entries))
+	for _, entry := range entries {
+		result := imageListResult{
+			Ref:  entry.Ref.String(),
+			Name: entry.Ref.Name,
+			Tag:  entry.Ref.Tag,
+		}
+		if entry.Manifest != nil {
+			result.Size = entry.Manifest.DiskSize
+			result.Source = entry.Manifest.SourceVM
+			if !entry.Manifest.CreatedAt.IsZero() {
+				result.Created = entry.Manifest.CreatedAt.UTC().Format(time.RFC3339)
+			}
+		}
+		results = append(results, result)
+	}
+	data, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode image list: %w", err)
+	}
+	if _, err := w.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
+func printImageListUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove image list [-json]
+
+List local images in the cove image store.
+
+Flags:
+  -json    emit machine-readable JSON
+
+Columns:
+  NAME      Image repository name
+  TAG       Image tag
+  SIZE      Uncompressed disk size in bytes
+  SOURCE    Source VM used to build the image
+  CREATED   Manifest creation time`)
+}
+
 func runImageRm(args []string) error {
 	fs := flag.NewFlagSet("image rm", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() { printImageRmUsage(fs.Output()) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -184,4 +243,11 @@ func runImageRm(args []string) error {
 	}
 	fmt.Printf("Deleted image %s\n", ref)
 	return nil
+}
+
+func printImageRmUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove image rm <name[:tag]>
+
+Delete a local image ref. The command refuses images that still have VM forks;
+use cove image inspect <ref> to see downstream forks first.`)
 }

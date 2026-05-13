@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestSearchImagesByRefAndLabels(t *testing.T) {
@@ -77,6 +79,16 @@ func TestSearchImagesNoMatch(t *testing.T) {
 	}
 }
 
+func TestRunImageSearchAllowsTrailingJSON(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := runImageSearch([]string{"missing", "-json"}); err != nil {
+		t.Fatalf("runImageSearch trailing -json: %v", err)
+	}
+	if got := strings.Join(moveImageSearchFlagsFirst([]string{"missing", "-json"}), " "); got != "-json missing" {
+		t.Fatalf("moveImageSearchFlagsFirst = %q, want '-json missing'", got)
+	}
+}
+
 func TestWriteImageSearchTextEmpty(t *testing.T) {
 	var buf bytes.Buffer
 	if err := writeImageSearchText(&buf, nil); err != nil {
@@ -112,6 +124,43 @@ func TestWriteImageSearchJSON(t *testing.T) {
 		t.Fatalf("Unmarshal: %v\n%s", err, buf.String())
 	}
 	if len(got) != 1 || got[0].Ref != "base:v1" || got[0].Labels[0] != "role=runner" {
+		t.Fatalf("round trip = %#v", got)
+	}
+}
+
+func TestWriteImageListJSONEmptyIsArray(t *testing.T) {
+	var buf bytes.Buffer
+	if err := writeImageListJSON(&buf, nil); err != nil {
+		t.Fatalf("writeImageListJSON empty: %v", err)
+	}
+	var got []imageListResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal empty: %v\n%s", err, buf.String())
+	}
+	if len(got) != 0 {
+		t.Fatalf("empty round trip = %#v", got)
+	}
+}
+
+func TestWriteImageListJSON(t *testing.T) {
+	created := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	entries := []ImageEntry{{
+		Ref: ImageRef{Name: "base", Tag: "v1"},
+		Manifest: &ImageManifest{
+			DiskSize:  12,
+			SourceVM:  "src",
+			CreatedAt: created,
+		},
+	}}
+	var buf bytes.Buffer
+	if err := writeImageListJSON(&buf, entries); err != nil {
+		t.Fatalf("writeImageListJSON: %v", err)
+	}
+	var got []imageListResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal: %v\n%s", err, buf.String())
+	}
+	if len(got) != 1 || got[0].Ref != "base:v1" || got[0].Source != "src" || got[0].Created != "2026-05-13T12:00:00Z" {
 		t.Fatalf("round trip = %#v", got)
 	}
 }
