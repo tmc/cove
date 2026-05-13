@@ -40,6 +40,8 @@ type agentSandboxBenchOptions struct {
 	cold     bool
 }
 
+var agentSandboxBenchNow = time.Now
+
 func handleAgentSandboxCommand(args []string) error {
 	if len(args) == 0 {
 		printAgentSandboxUsage(os.Stderr)
@@ -245,6 +247,10 @@ func runAgentSandboxBench(ctx context.Context, opts agentSandboxBenchOptions) er
 	if providers == "all" {
 		providers = strings.Join(agentsandbox.ProviderNames(), " ")
 	}
+	out := opts.out
+	if strings.TrimSpace(out) == "" {
+		out = defaultAgentSandboxBenchOut(opts.cold, agentSandboxBenchNow())
+	}
 	cmd := exec.CommandContext(ctx, "bash", script)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -252,10 +258,8 @@ func runAgentSandboxBench(ctx context.Context, opts agentSandboxBenchOptions) er
 		"PROVIDERS="+providers,
 		"IMAGE="+opts.image,
 		"RUNS="+fmt.Sprint(opts.runs),
+		"OUT="+out,
 	)
-	if opts.out != "" {
-		cmd.Env = append(cmd.Env, "OUT="+opts.out)
-	}
 	if opts.live {
 		cmd.Env = append(cmd.Env, "RUN_LIVE=1")
 	}
@@ -263,6 +267,14 @@ func runAgentSandboxBench(ctx context.Context, opts agentSandboxBenchOptions) er
 		return fmt.Errorf("agent-sandbox bench: %w", err)
 	}
 	return nil
+}
+
+func defaultAgentSandboxBenchOut(cold bool, now time.Time) string {
+	name := "cove-agent-sandbox-bench"
+	if cold {
+		name = "cove-agent-sandbox-cold-bench"
+	}
+	return filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s.md", name, now.Format("20060102-150405")))
 }
 
 func handleAgentSandboxRun(args []string) error {
@@ -637,6 +649,7 @@ Replay:
 
 Bench:
   wraps bench/agent-sandbox-providers/run.sh. Without --live, the benchmark
-  records the protocol without calling provider APIs.
+  records the protocol without calling provider APIs. If --out is omitted,
+  results are written under the system temp directory.
 `)
 }
