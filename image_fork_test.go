@@ -1,8 +1,12 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestRunImageForkFromWithConfigInvalidRef(t *testing.T) {
@@ -31,6 +35,25 @@ func TestRunImageForkFromWithConfigMissingImage(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
+	}
+}
+
+func TestRunMissingImageForkFromDoesNotCreateSelectedVMDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	name := "missing-image-child"
+	err := runVMWithConfig(RunConfig{
+		VM:                  vmSelection{Name: name, Directory: filepath.Join(vmconfig.BaseDir(), name)},
+		EphemeralForkParent: "ghost-image:v1",
+		EphemeralForkName:   name,
+	})
+	if err == nil {
+		t.Fatal("runVMWithConfig missing image fork succeeded")
+	}
+	if !strings.Contains(err.Error(), "image ghost-image:v1 not found") {
+		t.Fatalf("err = %v, want missing image", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(vmconfig.BaseDir(), name)); !os.IsNotExist(statErr) {
+		t.Fatalf("selected VM dir stat = %v, want not exist", statErr)
 	}
 }
 

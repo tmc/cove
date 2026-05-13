@@ -417,8 +417,9 @@ func runLegacyRunFlag() int {
 	return 0
 }
 
-func rerunVMDirForPostCommand(cmd string) int {
-	if vmName == "" || subcommandSkipsVMDir([]string{cmd}) {
+func rerunVMDirForPostCommand(cmd string, args []string) int {
+	cmdArgs := append([]string{cmd}, args...)
+	if vmName == "" || subcommandSkipsVMDir(cmdArgs) {
 		return 0
 	}
 	var err error

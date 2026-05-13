@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -59,6 +60,26 @@ func TestParseLogsArgsUsesGlobalVM(t *testing.T) {
 	}
 	if got.VM != "global-vm" {
 		t.Fatalf("VM = %q, want global-vm", got.VM)
+	}
+}
+
+func TestLogsGlobalMissingVMDoesNotCreateDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "missing-logs-vm"
+	vmDir = ""
+	err := logsCommand(nil)
+	if err == nil {
+		t.Fatal("logsCommand succeeded for missing VM")
+	}
+	if !strings.Contains(err.Error(), `no VM named "missing-logs-vm"`) {
+		t.Fatalf("logsCommand error = %q, want no VM named", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(vmconfig.BaseDir(), "missing-logs-vm")); !os.IsNotExist(statErr) {
+		t.Fatalf("missing logs VM dir stat = %v, want not exist", statErr)
 	}
 }
 
