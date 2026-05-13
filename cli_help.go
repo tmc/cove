@@ -72,6 +72,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printLogsUsage(os.Stderr)
 		case "secret":
 			printSecretUsage(os.Stderr)
+		case "security":
+			printSecurityUsage(os.Stderr)
 		case "policy":
 			printPolicyUsage(os.Stderr)
 		case "push":
@@ -261,6 +263,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "policy":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printPolicyUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "security":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printSecurityUsage(os.Stderr)
 			return true, usageExitCode(subargs)
 		}
 	case "store":
@@ -593,8 +600,9 @@ Common flags:
   -usb /path/disk.img[:ro] attach a USB mass-storage device (repeatable)
   -display WxH[@PPI]      set display resolution (repeatable)
   -http <addr>            expose per-VM HTTP API (e.g. :7777)
-  -vnc <addr>             start private VNC server (e.g. 127.0.0.1:5901)
-  -gdb <addr>             start private GDB debug stub (e.g. 127.0.0.1:1234)
+  -vnc <port>             start private VNC server (e.g. :5901)
+  -gdb <port>             start private GDB debug stub (e.g. :1234)
+  -host-containment       fail closed for host-escape features
   -unattended             fully unattended setup (disk + OCR fallback)
   -boot-commands <file>   custom boot automation vzscript
   -vm <name>              target VM (default: active VM)

@@ -104,6 +104,8 @@ var (
 	networkMode string
 	// Sandbox policy for safer research runs.
 	sandboxLevel string
+	// Strong host-containment mode for research VMs.
+	hostContainment bool
 	// USB storage devices
 	usbDevices USBStorageSlice
 	// Raw block devices
@@ -243,7 +245,8 @@ func init() {
 	flag.StringVar(&networkMode, "net", "nat", "alias for -network")
 	flag.Var(&startupPortForwards, "port-forward", "forward host TCP to guest vsock: hostPort:guestVsockPort (repeatable)")
 	flag.Var(&startupPortForwards, "pf", "alias for -port-forward")
-	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal or strict")
+	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal, strict, or host-containment")
+	flag.BoolVar(&hostContainment, "host-containment", false, "fail closed for host-escape features in research VMs")
 	flag.StringVar(&proxyURL, "proxy", "", "configure guest system HTTP/HTTPS proxy after boot (for example http://192.168.64.1:8080)")
 	flag.StringVar(&pcapPath, "pcap", "", "write captured Ethernet frames to a PCAP file when using -network filehandle")
 	flag.StringVar(&diskSyncMode, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
@@ -776,6 +779,7 @@ Runtime Control:
   cp              Copy files between host and guest (cove cp host vm:/path)
   forward         Forward host TCP to guest TCP (cove forward vm 8080:80)
   quota           Show or set per-VM resource quotas
+  security        Inspect host-containment policy
   ctl disk list   Inspect runtime storage devices
   ctl usb list    Inspect runtime USB controllers and devices
   logs            Show guest logs from a running VM (cove logs <vm> [-f])
@@ -787,6 +791,8 @@ Runtime Control:
   run -gdb :1234                      Attach a private GDB debug stub
   run -sandbox-level strict -disposable -gui
                                       Safer disposable analysis run
+  run -host-containment -fork-from sample:latest -ephemeral -headless
+                                      Fail closed for host-escape features
   run -network filehandle -pcap /tmp/vm.pcap
                                       Capture raw guest Ethernet frames
 

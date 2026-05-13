@@ -87,7 +87,8 @@ cove run [flags]
 | `-vnc-bonjour <name>` | | Bonjour service name for VNC |
 | `-gdb <addr>` | | Attach GDB debug stub (e.g., `:1234`) |
 | `-gdb-listen-all` | false | Listen on all interfaces for GDB |
-| `-sandbox-level <level>` | | Research isolation: minimal or strict |
+| `-sandbox-level <level>` | | Research isolation: minimal, strict, or host-containment |
+| `-host-containment` | false | Fail closed for host-escape features |
 | `-pcap <path>` | | Write PCAP when using `-network filehandle` |
 | `--port-forward <host:guest>` / `--pf <host:guest>` | | Forward host TCP to a guest vsock port (repeatable) |
 | `-disposable` | false | Run from a disposable linked clone |
@@ -875,6 +876,24 @@ cove policy ci-runner run-budget 8h
 cove quota ci-runner cpu 4
 cove quota ci-runner memory 8
 ```
+
+---
+
+## security
+
+Inspect the effective host-containment and host-escape policy for the current
+invocation.
+
+```
+cove security status
+cove security status -json
+cove -host-containment security status
+```
+
+`-host-containment` maps to `-sandbox-level host-containment` and rejects
+host-escape features: shared folders, clipboard, agent auto-upgrade, startup
+port forwards, VNC, debug stubs, host HTTP listeners, proxying, and explicit
+networked modes.
 
 ---
 

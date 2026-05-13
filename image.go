@@ -408,8 +408,8 @@ func normalizeAgentFeatures(features []string) []string {
 }
 
 func effectiveSandboxMode() string {
-	if mode := strings.TrimSpace(sandboxLevel); mode != "" {
-		return mode
+	if policy, err := currentSandboxPolicy(); err == nil && policy.Active() {
+		return string(policy.Level)
 	}
 	return "default"
 }
