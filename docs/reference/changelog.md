@@ -73,6 +73,7 @@ visible and consistent across CLI reference, roadmap, and release checklist:
 - Linux installer VM configurations now share the same virtio socket setup as normal Linux runtime configurations.
 - `cove recording list/export` adds a first-class path for finding and packaging run/session recording artifacts without inspecting `~/.vz/runs` by hand.
 - `cove trace enable/start/stop/status/export` records eslogger trace session metadata and exports trace artifacts for macOS guests, with explicit unsupported diagnostics for other guest types.
+- The macOS status item now uses clearer state labels and exposes error-state restart behavior through the tray menu model.
 
 ### Fixed
 - GUI delegate and iTerm2 proxy paths snapshot shared state under lock before use, closing concurrency races found in the T39 audit.
