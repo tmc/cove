@@ -207,6 +207,21 @@ func TestRunImageVerifyQuiet(t *testing.T) {
 	}
 }
 
+func TestRunImageVerifyAllowsTrailingJSON(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, err := ParseImageRef("json:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	if err := runImageVerify([]string{ref.String(), "-json"}); err != nil {
+		t.Fatalf("runImageVerify trailing -json: %v", err)
+	}
+}
+
 func TestRunImageForkFromWithConfigRefusesFailedVerify(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stageMacOSVMForImage(t, "src")
