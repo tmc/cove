@@ -739,6 +739,33 @@ cove recording export 20260505 --out cove-recording-20260505.tar.gz
 
 ---
 
+## trace
+
+Manage eslogger guest trace artifacts for macOS VMs.
+
+```
+cove trace enable <vm>
+cove trace start <vm> [--id ID]
+cove trace stop <vm> [--id ID]
+cove trace status <vm>
+cove trace export <vm> [--id ID] --out PATH
+```
+
+Trace state is stored under `<vm>/traces/eslogger/`. Linux and Windows guests
+return an unsupported diagnostic. The first pass records stable session paths
+and exports any `eslogger.jsonl` placed in the session directory; guest-side
+capture failures are visible in the session metadata and do not hide the
+primary command result.
+
+```bash
+cove trace enable work-vm
+cove trace start work-vm --id provisioning
+cove trace stop work-vm --id provisioning
+cove trace export work-vm --id provisioning --out provisioning-trace.tar.gz
+```
+
+---
+
 ## fleet
 
 Register trusted Mac hosts and route selected commands over SSH. Fleet commands
@@ -1246,6 +1273,7 @@ agent-aware free-space compactor.
 | `softreset` | Run destructive soft-reset probe matrix |
 | `store` | Manage the local content-addressed OCI blob store |
 | `status` | Show running VM status |
+| `trace` | Manage eslogger guest traces |
 | `helper` | Manage the privileged helper (install, uninstall, status) to skip per-run sudo prompts |
 | `secret` | Resolve secret URIs for diagnostics without printing secret values |
 | `dump-docs` | Emit machine-readable CLI, HTTP API, and MCP documentation JSON |

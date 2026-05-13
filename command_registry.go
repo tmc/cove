@@ -84,6 +84,7 @@ var commandRegistry = []commandSpec{
 	{Name: "storage", Summary: "Inspect cove disk usage under ~/.vz/", Dispatch: commandDispatchEarly, Run: runStorageCommand},
 	{Name: "store", Summary: "Manage the local OCI blob store", Dispatch: commandDispatchEarly, Run: runStoreCommand},
 	{Name: "template", Summary: "Manage VM templates", Dispatch: commandDispatchLate, Run: runTemplateCommand},
+	{Name: "trace", Aliases: []string{"traces"}, Summary: "Manage eslogger guest traces", Dispatch: commandDispatchEarly, Run: runTraceCommand},
 	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: commandDispatchEarly, Run: runUIScriptCommand},
 	{Name: "unpin", Summary: "Remove a storage pin", Dispatch: commandDispatchEarly, Run: runUnpinCommand},
 	{Name: "up", Summary: "Install + provision + boot in one command", Dispatch: commandDispatchEarly, Run: runUpCommand},
@@ -313,6 +314,9 @@ func runStatusCommand(env commandEnv, _ string, args []string) int {
 func runTemplateCommand(_ commandEnv, _ string, args []string) int {
 	handleTemplate(args)
 	return 0
+}
+func runTraceCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleTraceCommand(args))
 }
 func runVMCommandSpec(_ commandEnv, _ string, args []string) int {
 	handleVMCommand(args)
