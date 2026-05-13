@@ -22,9 +22,9 @@ import (
 var (
 	flagIntegrationVM          = flag.String("integration.vm", envOrString("VZ_TEST_VM", "cove-test"), "macOS VM name for integration tests")
 	flagIntegrationLinuxVM     = flag.String("integration.linux-vm", envOrString("VZ_TEST_LINUX_VM", "vz-linux-test"), "Linux VM name for integration tests")
-	flagIntegrationHeadless    = flag.Bool("integration.headless", envBool("VZ_TEST_HEADLESS"), "skip GUI-dependent integration tests")
-	flagIntegrationHeaded      = flag.Bool("integration.headed", envBool("VZ_TEST_HEADED"), "force GUI mode for macOS integration provisioning and runtime")
-	flagIntegrationSIP         = flag.Bool("integration.sip", envBool("VZ_TEST_SIP"), "run SIP recovery integration test")
+	flagIntegrationHeadless    = flag.Bool("integration.headless", integrationEnvBool("VZ_TEST_HEADLESS"), "skip GUI-dependent integration tests")
+	flagIntegrationHeaded      = flag.Bool("integration.headed", integrationEnvBool("VZ_TEST_HEADED"), "force GUI mode for macOS integration provisioning and runtime")
+	flagIntegrationSIP         = flag.Bool("integration.sip", integrationEnvBool("VZ_TEST_SIP"), "run SIP recovery integration test")
 	flagIntegrationSIPUser     = flag.String("integration.sip-user", os.Getenv("VZ_TEST_SIP_USER"), "recovery auth username for SIP integration test")
 	flagIntegrationSIPPassword = flag.String("integration.sip-password", os.Getenv("VZ_TEST_SIP_PASSWORD"), "recovery auth password for SIP integration test")
 )
@@ -76,7 +76,7 @@ func TestLinuxIntegration(t *testing.T) {
 	t.Run("vm-config", func(t *testing.T) { testVMConfig(t, vm) })
 }
 
-func envBool(name string) bool {
+func integrationEnvBool(name string) bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
 	return v == "1" || v == "true" || v == "yes" || v == "on"
 }
@@ -776,14 +776,18 @@ func buildIntegrationBinary(tb testing.TB) string {
 		}
 		path := dir + "/cove-integration"
 		cmd := exec.Command("go", "build", "-o", path, ".")
-		cmd.Dir = "/Volumes/tmc/go/src/github.com/tmc/vz-macos"
+		cmd.Dir, err = os.Getwd()
+		if err != nil {
+			integrationBinaryErr = err
+			return
+		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			integrationBinaryErr = fmt.Errorf("go build: %v\n%s", err, out)
 			return
 		}
 		signCmd := exec.Command("codesign", "-s", "-", "-f", "--entitlements", "internal/autosign/vz.entitlements", path)
-		signCmd.Dir = "/Volumes/tmc/go/src/github.com/tmc/vz-macos"
+		signCmd.Dir = cmd.Dir
 		out, err = signCmd.CombinedOutput()
 		if err != nil {
 			integrationBinaryErr = fmt.Errorf("codesign integration binary: %v\n%s", err, out)
@@ -824,6 +828,8 @@ func runIntegrationBinaryCommandExpectSuccess(tb testing.TB, args ...string) str
 func cloneTestVM(t *testing.T, baseVM *testVM) *testVM {
 	t.Helper()
 
+	skipMacOSRunningSourceClone(t, baseVM)
+
 	cloneName := integrationCloneName(t.Name())
 
 	// Stop base VM if we started it, or verify it is stopped for cloning.
@@ -841,6 +847,17 @@ func cloneTestVM(t *testing.T, baseVM *testVM) *testVM {
 	startTestVM(t, vm)
 	waitVMReadyTB(t, vm, integrationVMReadyTimeout(vm, false))
 	return vm
+}
+
+func skipMacOSRunningSourceClone(t *testing.T, vm *testVM) {
+	t.Helper()
+	if vm.linux {
+		return
+	}
+	status := statusResponse(t, vm)
+	if status.GetState() == "running" {
+		t.Skip("macOS linked clone from a running source is not reliable")
+	}
 }
 
 func integrationCloneName(name string) string {

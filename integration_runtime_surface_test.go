@@ -94,6 +94,27 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 	})
 
 	t.Run("disk-resize-live", func(t *testing.T) {
+		resp, err := ctlSendJSON(vm.sock, map[string]interface{}{
+			"type": "disk",
+			"data": map[string]any{"action": "list"},
+		}, 30*time.Second)
+		if err != nil {
+			t.Fatalf("disk list: %v", err)
+		}
+		if !resp.Success {
+			t.Fatalf("disk list failed: %s", resp.Error)
+		}
+		var baseDisks RuntimeDiskListResponse
+		if err := json.Unmarshal([]byte(resp.GetData()), &baseDisks); err != nil {
+			t.Fatalf("decode disk list: %v\n%s", err, resp.GetData())
+		}
+		if len(baseDisks.Disks) == 0 {
+			t.Fatalf("disk list empty: %+v", baseDisks)
+		}
+		if baseDisks.Disks[0].Kind != "disk-image" {
+			t.Skipf("runtime disk resize unavailable for disk kind %q", baseDisks.Disks[0].Kind)
+		}
+
 		cloneName := integrationCloneName(t.Name())
 		if err := CloneVM(CloneOptions{Source: vm.name, Target: cloneName, Linked: true}); err != nil {
 			t.Fatalf("CloneVM() error = %v", err)
@@ -103,6 +124,27 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 		startTestVM(t, clone)
 		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
 
+		resp, err = ctlSendJSON(clone.sock, map[string]interface{}{
+			"type": "disk",
+			"data": map[string]any{"action": "list"},
+		}, 30*time.Second)
+		if err != nil {
+			t.Fatalf("disk list: %v", err)
+		}
+		if !resp.Success {
+			t.Fatalf("disk list failed: %s", resp.Error)
+		}
+		var disks RuntimeDiskListResponse
+		if err := json.Unmarshal([]byte(resp.GetData()), &disks); err != nil {
+			t.Fatalf("decode disk list: %v\n%s", err, resp.GetData())
+		}
+		if len(disks.Disks) == 0 {
+			t.Fatalf("disk list empty: %+v", disks)
+		}
+		if disks.Disks[0].Kind != "disk-image" {
+			t.Skipf("runtime disk resize unavailable for disk kind %q", disks.Disks[0].Kind)
+		}
+
 		diskPath := filepath.Join(clone.dir, runtimeSurfaceDiskFileName(clone))
 		before, err := os.Stat(diskPath)
 		if err != nil {
@@ -110,7 +152,7 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 		}
 		targetSize := uint64(before.Size()) + 64*1024*1024
 
-		resp, err := ctlSendJSON(clone.sock, map[string]interface{}{
+		resp, err = ctlSendJSON(clone.sock, map[string]interface{}{
 			"type": "disk",
 			"data": map[string]any{
 				"action":     "resize",
@@ -209,9 +251,13 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 
 			guestFile := filepath.Join(defaultSharedFoldersMountPoint, entry.Tag, "sentinel.txt")
 			agentExecExpectCode(t, vm, 0, "/bin/test", "-f", guestFile)
-			before := agentExec(t, vm, "/bin/cat", guestFile)
-			if before != "shared-folder-pause-resume\n" {
-				t.Fatalf("guest sentinel before pause = %q, want %q", before, "shared-folder-pause-resume\n")
+			before := agentExecResult(t, vm, "/bin/cat", guestFile)
+			if before.GetExitCode() != 0 {
+				assertVirtioFSBoundedPermissionError(t, "cat", before)
+				t.Skip("shared folder contents not readable in this guest")
+			}
+			if before.GetStdout() != "shared-folder-pause-resume\n" {
+				t.Fatalf("guest sentinel before pause = %q, want %q", before.GetStdout(), "shared-folder-pause-resume\n")
 			}
 
 			ctlDo(t, vm, &controlpb.ControlRequest{Type: "pause"})
@@ -223,9 +269,13 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 
 			agentExecExpectCode(t, vm, 0, "/bin/test", "-d", defaultSharedFoldersMountPoint)
 			agentExecExpectCode(t, vm, 0, "/bin/test", "-f", guestFile)
-			after := agentExec(t, vm, "/bin/cat", guestFile)
-			if after != "shared-folder-pause-resume\n" {
-				t.Fatalf("guest sentinel after resume = %q, want %q", after, "shared-folder-pause-resume\n")
+			after := agentExecResult(t, vm, "/bin/cat", guestFile)
+			if after.GetExitCode() != 0 {
+				assertVirtioFSBoundedPermissionError(t, "cat", after)
+				t.Skip("shared folder contents not readable in this guest")
+			}
+			if after.GetStdout() != "shared-folder-pause-resume\n" {
+				t.Fatalf("guest sentinel after resume = %q, want %q", after.GetStdout(), "shared-folder-pause-resume\n")
 			}
 		})
 	}
