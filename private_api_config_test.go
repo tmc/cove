@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 	"unsafe"
 
@@ -37,55 +37,82 @@ func TestPrivateConfigBoolProperties(t *testing.T) {
 	config := newConfig(t)
 
 	tests := []struct {
-		name   string
-		getSel string
-		set    func(bool) error
+		name string
+		can  func() bool
+		get  func() (bool, error)
+		set  func(bool) error
 	}{
 		{
-			name:   "memoryOvercommitmentAllowed",
-			getSel: "_memoryOvercommitmentAllowed",
-			set:    config.SetMemoryOvercommitmentAllowed,
+			name: "memoryOvercommitmentAllowed",
+			can:  config.CanMemoryOvercommitmentAllowed,
+			get:  config.MemoryOvercommitmentAllowed,
+			set:  config.SetMemoryOvercommitmentAllowed,
 		},
 		{
-			name:   "terminationUnderMemoryPressureEnabled",
-			getSel: "_terminationUnderMemoryPressureEnabled",
-			set:    config.SetTerminationUnderMemoryPressureEnabled,
+			name: "terminationUnderMemoryPressureEnabled",
+			can:  config.CanTerminationUnderMemoryPressureEnabled,
+			get:  config.TerminationUnderMemoryPressureEnabled,
+			set:  config.SetTerminationUnderMemoryPressureEnabled,
 		},
 		{
-			name:   "testIgnoreEntitlementChecks",
-			getSel: "_testIgnoreEntitlementChecks",
-			set:    config.SetTestIgnoreEntitlementChecks,
+			name: "testIgnoreEntitlementChecks",
+			can:  config.CanTestIgnoreEntitlementChecks,
+			get:  config.TestIgnoreEntitlementChecks,
+			set:  config.SetTestIgnoreEntitlementChecks,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			safeCall(t, "get default", func() {
-				v := objc.Send[bool](config.ID, objc.Sel(tt.getSel))
-				t.Logf("default %s = %v", tt.name, v)
-			})
-			safeCall(t, "set true", func() {
-				if err := tt.set(true); err != nil {
-					t.Fatalf("set %s true: %v", tt.name, err)
-				}
-				v := objc.Send[bool](config.ID, objc.Sel(tt.getSel))
-				if !v {
-					t.Errorf("set %s to true but got false", tt.name)
-				}
-				t.Logf("set %s = true -> read back %v", tt.name, v)
-			})
-			safeCall(t, "set false", func() {
-				if err := tt.set(false); err != nil {
-					t.Fatalf("set %s false: %v", tt.name, err)
-				}
-				v := objc.Send[bool](config.ID, objc.Sel(tt.getSel))
-				if v {
-					t.Errorf("set %s to false but got true", tt.name)
-				}
-				t.Logf("set %s = false -> read back %v", tt.name, v)
-			})
+			if !tt.can() {
+				t.Skipf("private selector for %s is unavailable on this host", tt.name)
+			}
+			v, err := tt.get()
+			if unavailablePrivateSelector(err) {
+				t.Skipf("private selector for %s is unavailable on this host: %v", tt.name, err)
+			}
+			if err != nil {
+				t.Fatalf("get default: %v", err)
+			}
+			t.Logf("default %s = %v", tt.name, v)
+
+			if err := tt.set(true); unavailablePrivateSelector(err) {
+				t.Skipf("private setter for %s is unavailable on this host: %v", tt.name, err)
+			} else if err != nil {
+				t.Fatalf("set true: %v", err)
+			}
+			v, err = tt.get()
+			if err != nil {
+				t.Fatalf("get after set true: %v", err)
+			}
+			if !v {
+				t.Errorf("set %s to true but got false", tt.name)
+			}
+			t.Logf("set %s = true -> read back %v", tt.name, v)
+
+			if err := tt.set(false); unavailablePrivateSelector(err) {
+				t.Skipf("private setter for %s is unavailable on this host: %v", tt.name, err)
+			} else if err != nil {
+				t.Fatalf("set false: %v", err)
+			}
+			v, err = tt.get()
+			if err != nil {
+				t.Fatalf("get after set false: %v", err)
+			}
+			if v {
+				t.Errorf("set %s to false but got true", tt.name)
+			}
+			t.Logf("set %s = false -> read back %v", tt.name, v)
 		})
 	}
+}
+
+func unavailablePrivateSelector(err error) bool {
+	return errors.Is(err, objc.ErrUnrecognizedSelector)
+}
+
+func configRespondsToSelector(config pvz.VZVirtualMachineConfiguration, sel string) bool {
+	return objc.RespondsToSelector(config.ID, objc.Sel(sel))
 }
 
 func TestPrivateConfigActionProperties(t *testing.T) {
@@ -93,44 +120,60 @@ func TestPrivateConfigActionProperties(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		getSel  string
-		setSel  string
+		can     func() bool
+		get     func() (int64, error)
+		set     func(int64) error
 		setVals []int64
 	}{
 		{
 			name:    "fatalErrorAction",
-			getSel:  "_fatalErrorAction",
-			setSel:  "_setFatalErrorAction:",
+			can:     config.CanFatalErrorAction,
+			get:     config.FatalErrorAction,
+			set:     config.SetFatalErrorAction,
 			setVals: []int64{0, 1, 2},
 		},
 		{
 			name:    "panicAction",
-			getSel:  "_panicAction",
-			setSel:  "_setPanicAction:",
+			can:     config.CanPanicAction,
+			get:     config.PanicAction,
+			set:     config.SetPanicAction,
 			setVals: []int64{0, 1, 2},
 		},
 		{
 			name:    "restartAction",
-			getSel:  "_restartAction",
-			setSel:  "_setRestartAction:",
+			can:     config.CanRestartAction,
+			get:     config.RestartAction,
+			set:     config.SetRestartAction,
 			setVals: []int64{0, 1, 2},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			safeCall(t, "get default", func() {
-				v := objc.Send[int64](config.ID, objc.Sel(tt.getSel))
-				t.Logf("default %s = %d", tt.name, v)
-			})
+			if !tt.can() {
+				t.Skipf("private selector for %s is unavailable on this host", tt.name)
+			}
+			v, err := tt.get()
+			if unavailablePrivateSelector(err) {
+				t.Skipf("private selector for %s is unavailable on this host: %v", tt.name, err)
+			}
+			if err != nil {
+				t.Fatalf("get default: %v", err)
+			}
+			t.Logf("default %s = %d", tt.name, v)
 
 			for _, val := range tt.setVals {
 				val := val
-				safeCall(t, fmt.Sprintf("set %d", val), func() {
-					objc.Send[objc.ID](config.ID, objc.Sel(tt.setSel), val)
-					got := objc.Send[int64](config.ID, objc.Sel(tt.getSel))
-					t.Logf("set %s = %d -> read back %d", tt.name, val, got)
-				})
+				if err := tt.set(val); unavailablePrivateSelector(err) {
+					t.Skipf("private setter for %s is unavailable on this host: %v", tt.name, err)
+				} else if err != nil {
+					t.Fatalf("set %d: %v", val, err)
+				}
+				got, err := tt.get()
+				if err != nil {
+					t.Fatalf("get after set %d: %v", val, err)
+				}
+				t.Logf("set %s = %d -> read back %d", tt.name, val, got)
 			}
 		})
 	}
@@ -158,6 +201,9 @@ func TestPrivateConfigArrayDefaults(t *testing.T) {
 	for _, tt := range arrayProps {
 		t.Run(tt.name, func(t *testing.T) {
 			safeCall(t, "get default", func() {
+				if !configRespondsToSelector(config, tt.getSel) {
+					t.Skipf("private selector %s is unavailable on this host", tt.getSel)
+				}
 				id := objc.Send[objc.ID](config.ID, objc.Sel(tt.getSel))
 				if id == 0 {
 					t.Logf("default %s = nil", tt.name)
@@ -194,6 +240,12 @@ func TestPrivateConfigArraySetEmpty(t *testing.T) {
 	for _, tt := range arrayProps {
 		t.Run(tt.name, func(t *testing.T) {
 			safeCall(t, "set empty", func() {
+				if !configRespondsToSelector(config, tt.getSel) {
+					t.Skipf("private selector %s is unavailable on this host", tt.getSel)
+				}
+				if !configRespondsToSelector(config, tt.setSel) {
+					t.Skipf("private selector %s is unavailable on this host", tt.setSel)
+				}
 				objc.Send[objc.ID](config.ID, objc.Sel(tt.setSel), emptyArray.GetID())
 				id := objc.Send[objc.ID](config.ID, objc.Sel(tt.getSel))
 				if id == 0 {
@@ -212,6 +264,9 @@ func TestPrivateConfigPointerDefaults(t *testing.T) {
 
 	t.Run("debugStub", func(t *testing.T) {
 		safeCall(t, "get default", func() {
+			if !configRespondsToSelector(config, "_debugStub") {
+				t.Skip("private selector _debugStub is unavailable on this host")
+			}
 			v := objc.Send[unsafe.Pointer](config.ID, objc.Sel("_debugStub"))
 			t.Logf("default _debugStub = %v (nil=%v)", v, v == nil)
 		})
@@ -219,6 +274,9 @@ func TestPrivateConfigPointerDefaults(t *testing.T) {
 
 	t.Run("cpuEmulator", func(t *testing.T) {
 		safeCall(t, "get default", func() {
+			if !configRespondsToSelector(config, "_cpuEmulator") {
+				t.Skip("private selector _cpuEmulator is unavailable on this host")
+			}
 			v := objc.Send[unsafe.Pointer](config.ID, objc.Sel("_cpuEmulator"))
 			t.Logf("default _cpuEmulator = %v (nil=%v)", v, v == nil)
 		})
@@ -226,6 +284,9 @@ func TestPrivateConfigPointerDefaults(t *testing.T) {
 
 	t.Run("panicDevice", func(t *testing.T) {
 		safeCall(t, "get default", func() {
+			if !configRespondsToSelector(config, "_panicDevice") {
+				t.Skip("private selector _panicDevice is unavailable on this host")
+			}
 			v := objc.Send[unsafe.Pointer](config.ID, objc.Sel("_panicDevice"))
 			t.Logf("default _panicDevice = %v (nil=%v)", v, v == nil)
 		})
@@ -237,6 +298,10 @@ func TestPrivateConfigSetDebugStubNil(t *testing.T) {
 
 	safeCall(t, "set nil", func() {
 		config.SetDebugStub(objectivec.Object{ID: 0})
+		if !configRespondsToSelector(config, "_debugStub") {
+			t.Log("_debugStub unavailable")
+			return
+		}
 		v := objc.Send[unsafe.Pointer](config.ID, objc.Sel("_debugStub"))
 		t.Logf("SetDebugStub(nil) -> %v (nil=%v)", v, v == nil)
 	})
@@ -248,8 +313,11 @@ func TestPrivateConfigClassMethods(t *testing.T) {
 	t.Run("maximumAllowedOvercommittedMemorySize", func(t *testing.T) {
 		safeCall(t, "class method", func() {
 			v, err := configClass.MaximumAllowedOvercommittedMemorySize()
+			if unavailablePrivateSelector(err) {
+				t.Skipf("private selector unavailable: %v", err)
+			}
 			if err != nil {
-				t.Fatalf("MaximumAllowedOvercommittedMemorySize: %v", err)
+				t.Fatalf("maximumAllowedOvercommittedMemorySize: %v", err)
 			}
 			t.Logf("maximumAllowedOvercommittedMemorySize = %d bytes (%.1f GB)", v, float64(v)/(1024*1024*1024))
 		})
@@ -292,8 +360,11 @@ func TestPrivateConfigIsDuplicateUSB(t *testing.T) {
 
 	safeCall(t, "isDuplicateUSB(0,0)", func() {
 		v, err := config.IsDuplicateUSBDeviceConfigurationAtUsbDeviceIndex(0, 0)
+		if unavailablePrivateSelector(err) {
+			t.Skipf("private selector unavailable: %v", err)
+		}
 		if err != nil {
-			t.Fatalf("IsDuplicateUSBDeviceConfigurationAtUsbDeviceIndex: %v", err)
+			t.Fatalf("isDuplicateUSBDeviceConfiguration: %v", err)
 		}
 		t.Logf("isDuplicateUSBDeviceConfiguration(0, 0) = %v", v)
 	})

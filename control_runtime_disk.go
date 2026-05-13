@@ -306,6 +306,10 @@ func (s *ControlServer) runtimeDiskEntries() ([]runtimeDiskEntry, error) {
 
 	DispatchSync(uintptr(s.vmQueue.Handle()), func() {
 		machine := pvz.VZVirtualMachineFromID(s.vm.ID)
+		if !objc.RespondsToSelector(machine.ID, objc.Sel("_storageDevices")) {
+			entries = nil
+			return
+		}
 		devices := objc.Send[[]objc.ID](machine.ID, objc.Sel("_storageDevices"))
 		if devices == nil {
 			entries = nil
@@ -361,7 +365,8 @@ func runtimeDiskInfoForDevice(index int, device pvz.VZStorageDevice) RuntimeDisk
 	if diskAttachment, ok := runtimeDiskDiskImageAttachmentFromObject(attachment); ok {
 		info.Kind = "disk-image"
 		info.ReadOnly = diskAttachment.ReadOnly()
-		if urlID := objc.Send[objc.ID](diskAttachment.ID, objc.Sel("URL")); urlID != 0 {
+		if objc.RespondsToSelector(diskAttachment.ID, objc.Sel("URL")) {
+			urlID := objc.Send[objc.ID](diskAttachment.ID, objc.Sel("URL"))
 			if path := strings.TrimSpace(foundation.NSURLFromID(urlID).Path()); path != "" {
 				info.Path = path
 				if stat, err := os.Stat(path); err == nil {
@@ -381,10 +386,10 @@ func runtimeDiskDiskImageAttachmentFromObject(obj objectivec.IObject) (pvz.VZDis
 	if obj == nil || obj.GetID() == 0 {
 		return pvz.VZDiskImageStorageDeviceAttachment{}, false
 	}
-	if !objc.Send[bool](obj.GetID(), objc.Sel("respondsToSelector:"), objc.Sel("readOnly")) {
+	if !objc.RespondsToSelector(obj.GetID(), objc.Sel("readOnly")) {
 		return pvz.VZDiskImageStorageDeviceAttachment{}, false
 	}
-	if !objc.Send[bool](obj.GetID(), objc.Sel("respondsToSelector:"), objc.Sel("URL")) {
+	if !objc.RespondsToSelector(obj.GetID(), objc.Sel("URL")) {
 		return pvz.VZDiskImageStorageDeviceAttachment{}, false
 	}
 	return pvz.VZDiskImageStorageDeviceAttachmentFromID(obj.GetID()), true

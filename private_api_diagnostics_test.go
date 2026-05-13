@@ -157,6 +157,10 @@ func TestPrivateAPI_StateDescription(t *testing.T) {
 func TestPrivateAPI_NameGetSet(t *testing.T) {
 	_, privVM, _ := createMinimalMacVM(t)
 
+	if !objc.RespondsToSelector(privVM.ID, objc.Sel("_name")) || !objc.RespondsToSelector(privVM.ID, objc.Sel("_setName:")) {
+		t.Skip("_name accessors unavailable")
+	}
+
 	// Get initial name
 	nameID := objc.Send[objc.ID](privVM.ID, objc.Sel("_name"))
 	initialName := foundation.NSStringFromID(nameID).String()
@@ -177,6 +181,10 @@ func TestPrivateAPI_NameGetSet(t *testing.T) {
 
 func TestPrivateAPI_CrashContextMessage(t *testing.T) {
 	_, privVM, _ := createMinimalMacVM(t)
+
+	if !objc.RespondsToSelector(privVM.ID, objc.Sel("_crashContextMessage")) || !objc.RespondsToSelector(privVM.ID, objc.Sel("_setCrashContextMessage:")) {
+		t.Skip("_crashContextMessage accessors unavailable")
+	}
 
 	// Get initial crash context
 	msgID := objc.Send[objc.ID](privVM.ID, objc.Sel("_crashContextMessage"))
