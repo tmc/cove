@@ -37,6 +37,24 @@ func isImageForkFromRef(ref string) bool {
 	return ImageExists(parsed) || strings.Contains(ref, ":")
 }
 
+func validateImageForkFromBeforeBundle(refText string) error {
+	if !strings.Contains(refText, ":") && !isImageForkFromRef(refText) {
+		return nil
+	}
+	ref, err := ParseImageRef(refText)
+	if err != nil {
+		return fmt.Errorf("cove run -fork-from <image>: %w", err)
+	}
+	if !ImageExists(ref) {
+		return missingForkFromImageError(ref)
+	}
+	return nil
+}
+
+func missingForkFromImageError(ref ImageRef) error {
+	return fmt.Errorf("cove run -fork-from <image>: image %s not found; run 'cove image list' or 'cove image search %s' to find local images, or 'cove image verify %s' for manifest details", ref, ref.Name, ref)
+}
+
 // runImageForkFromWithConfig handles the design 024 fork-from-image
 // path: materialize a fresh bundle, take the run.lock, boot, and
 // (when -ephemeral) destroy on stop.
@@ -46,7 +64,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		return fmt.Errorf("cove run -fork-from <image>: %w", err)
 	}
 	if !ImageExists(ref) {
-		return fmt.Errorf("cove run -fork-from <image>: image %s not found; run 'cove image list' or 'cove image search %s' to find local images, or 'cove image verify %s' for manifest details", ref, ref.Name, ref)
+		return missingForkFromImageError(ref)
 	}
 
 	verification := VerifyImage(ref, imageVerifyOptions{})
