@@ -208,6 +208,10 @@ func handleVMSharedFolderAdd(vmDirectory string, args []string) error {
 	status, err := client.SharedFoldersRuntimeStatus()
 	if err != nil {
 		printSharedFolderAddResult(entry, added)
+		if sharedFolderVMStopped(err) {
+			printSharedFolderStopped(entry, vmDirectory)
+			return nil
+		}
 		printSharedFolderNextBoot(entry, vmDirectory, fmt.Sprintf("running VM status unavailable: %v", err))
 		return nil
 	}
@@ -267,6 +271,12 @@ func printSharedFolderNextBoot(entry SharedFolderEntry, vmDirectory, reason stri
 	guest := defaultSharedFolderMountPoint(vmDirectory, entry.Tag)
 	fmt.Printf("live mount unavailable for guest path %s: %s\n", guest, reason)
 	fmt.Printf("shared folder saved; will mount at %s on next boot of %s (reboot required)\n", guest, sharedFolderVMName(vmDirectory))
+}
+
+func printSharedFolderStopped(entry SharedFolderEntry, vmDirectory string) {
+	guest := defaultSharedFolderMountPoint(vmDirectory, entry.Tag)
+	fmt.Printf("shared folder saved; VM is stopped, so live mount was skipped\n")
+	fmt.Printf("it will mount at %s on next boot of %s\n", guest, sharedFolderVMName(vmDirectory))
 }
 
 func printSharedFolderAddResult(entry SharedFolderEntry, added bool) {
@@ -401,6 +411,11 @@ func applySharedFoldersAndPrint(vmDirectory string) error {
 		fmt.Printf("applied to running VM: %s\n", msg)
 		return nil
 	} else {
+		if sharedFolderVMStopped(err) {
+			fmt.Println("changes saved; VM is stopped, so live mount was skipped")
+			fmt.Println("changes will apply on next boot")
+			return nil
+		}
 		if strings.Contains(err.Error(), "unknown command type: shared-folders-apply") {
 			fmt.Println("warning: running VM control server does not support shared-folders-apply")
 			fmt.Println("         restart VM with the latest binary to live-apply in this session")
@@ -410,6 +425,16 @@ func applySharedFoldersAndPrint(vmDirectory string) error {
 		fmt.Println("         changes are saved and will apply on next boot")
 		return nil
 	}
+}
+
+func sharedFolderVMStopped(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "vm is not running") ||
+		strings.Contains(s, "control socket not found") ||
+		strings.Contains(s, "no such file or directory")
 }
 
 func addSharedFolderEntry(vmDirectory, hostPath, tag string, readOnly bool) (SharedFolderEntry, bool, error) {
