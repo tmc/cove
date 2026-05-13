@@ -91,10 +91,10 @@ cove run [flags]
 | `-pcap <path>` | | Write PCAP when using `-network filehandle` |
 | `--port-forward <host:guest>` / `--pf <host:guest>` | | Forward host TCP to a guest vsock port (repeatable) |
 | `-disposable` | false | Run from a disposable linked clone |
-| `-fork-from <ref>` | | Boot a fresh VM forked from a parent VM name or local image ref (`<name>` or `<name>:<tag>`); see [`cove image`](#image). Auto-bundles per-run artifacts (`manifest.json`, `events.jsonl`, `stdout.log`, `stderr.log`, `screenshots/`) under `~/.vz/runs/<run-id>/` for post-mortem inspection. |
-| `-fork-name <name>` | | Explicit ephemeral fork VM name |
-| `-keep` | false | Keep an ephemeral fork VM directory after exit |
-| `-ephemeral` | false | Mark a forked VM as disposable: removed on stop and swept by `cove gc`. Required for ephemeral CI runners; see [design 024](../designs/024-cove-runner-images.md). |
+| `-fork-from <image-ref>` | | Boot a fresh VM from a local image ref (`<name>:<tag>`); see [`cove image`](#image). VM-parent RAM-overlay forks are not implemented; use `cove fork` or `cove clone --linked` for VM parents. Auto-bundles per-run artifacts (`manifest.json`, `events.jsonl`, `stdout.log`, `stderr.log`, `screenshots/`) under `~/.vz/runs/<run-id>/` for post-mortem inspection. |
+| `-fork-name <name>` | | Explicit name for the forked VM |
+| `-keep` | false | Keep the forked VM directory after exit |
+| `-ephemeral` | false | With `-fork-from <image-ref>`, remove the materialized child on stop and sweep it with `cove gc`. Useful for disposable CI runners; see [design 024](../designs/024-cove-runner-images.md). |
 | `-launch-order <mode>` | window-first | GUI startup order: window-first or start-first |
 | `-runtime-profile <mode>` | full | macOS device profile: full or minimal |
 | `-apple-log` | false | Stream Apple unified logs |
@@ -118,8 +118,8 @@ cove run -headless -cpu 4 -memory 8
 cove run -display 4k -v ~/projects
 cove run -linux -rosetta -serial /tmp/serial.log
 cove run -linux -shell                         # pipe a guest shell to the host terminal
-cove run -fork-from macos-base -fork-name worker-1  # fork from a stopped VM
-cove run -fork-from macos-runner:14.5 -ephemeral # ephemeral CI runner from an image
+cove run -fork-from macos-runner:14.5 -ephemeral -fork-name worker-1
+cove fork macos-base worker-1 && cove run -vm worker-1
 cove run -recovery -no-resume -gui -usb ~/recovery.img
 ```
 
@@ -520,7 +520,7 @@ Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stop
 
 ```
 cove image build -from <vm> -tag <name[:tag]>
-cove image list
+cove image list [-json]
 cove image inspect <name[:tag]> [-json]
 cove image verify <name[:tag]> [-strict] [-json] [-quiet] [-newer-than <duration>]
 cove image push <name[:tag]> <file> [-gzip]
@@ -529,14 +529,14 @@ cove image gc [-dry-run] [-yes] [-older-than <duration>]
 cove image prune [-dry-run] [-yes] [-older-than <duration>]
 cove image tag <src> <dst>
 cove image history <ref> [-json]
-cove image search <query>
+cove image search [-json] [query]
 cove image rm <name[:tag]>
 ```
 
 | Subcommand | Description |
 |------------|-------------|
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy). vmstate is excluded; cold-boot only. |
-| `list` | Show stored images with size + creation time + source VM. |
+| `list [-json]` | Show stored images with size + creation time + source VM. `-json` emits a JSON array; empty output is `[]`. |
 | `inspect <ref> [-json]` | Print manifest (size, sha256, base image, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. |
 | `verify <ref> [-strict] [-json] [-quiet] [-newer-than D]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure; `-quiet` prints only on failure for CI; `-newer-than` fails stale images such as `24h` or `7d`. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
@@ -545,7 +545,7 @@ cove image rm <name[:tag]>
 | `prune [-dry-run] [-yes] [-older-than D]` | Prune unused images through the v0.4 image lifecycle UX. |
 | `tag <src> <dst>` | Add a local image tag for an existing image ref. |
 | `history <ref> [-json]` | Show local image ancestry/history information. |
-| `search <query>` | Search local images by name/tag metadata. |
+| `search [-json] [query]` | Search local images by name/tag metadata. `-json` emits a JSON array; empty output is `[]`. |
 | `rm <ref>` | Delete an image. Refuses while any forked VM still references the image (`ParentImage` on the child's `config.json` is the gate). |
 
 ```bash
@@ -556,11 +556,28 @@ cove image load /tmp/macos-runner.tar.gz -tag macos-runner:imported
 cove image gc -dry-run -older-than 168h
 cove image tag macos-runner:14.5 macos-runner:latest
 cove image history macos-runner:latest
-cove image search runner
-cove image list
-cove run -fork-from macos-runner:14.5 -ephemeral -name worker-1
+cove image search -json runner
+cove image list -json
+cove run -fork-from macos-runner:14.5 -ephemeral -fork-name worker-1
 cove image rm macos-runner:14.5
 cove image push macos-runner:14.5 - | ssh other-mac cove image load -
+```
+
+## store
+
+Manage the content-addressed blob store at `~/.vz/store`.
+
+```
+cove store gc [-dry-run]
+```
+
+| Command | Description |
+|---------|-------------|
+| `gc [-dry-run]` | Garbage collect unreachable store blobs. GC takes an exclusive store lock and keeps blobs modified within the last hour so concurrent or recently interrupted pulls are not collected. `-dry-run` prints candidate deletion totals without deleting blobs. |
+
+```bash
+cove store gc -dry-run
+cove store gc
 ```
 
 ---
@@ -1017,7 +1034,7 @@ cove gc [flags]
 
 ## serve
 
-Run the HTTP and MCP gateway. Exposes VM control over HTTP (for multi-VM fleets and remote clients) and/or a stdio MCP server (for AI agent integrations such as Claude Code).
+Run the HTTP and MCP gateway. Exposes VM control over HTTP (for multi-VM fleets and remote clients) and/or a stdio MCP server (for AI agent integrations such as Claude Code). `/v1/vms` lists known VMs; per-VM routes proxy only running VMs with a reachable control socket.
 
 ```
 cove serve [flags]

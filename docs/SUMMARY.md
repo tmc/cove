@@ -33,6 +33,7 @@
 * [Provisioning](guides/provisioning.md)
 * [Recovery & SIP](guides/recovery-sip.md)
 * [Troubleshooting](guides/troubleshooting.md)
+* [Runtime Listener Smoke](runbooks/runtime-listener-smoke.md)
 
 ## Examples
 * [CI Runner](examples/ci-runner.md)

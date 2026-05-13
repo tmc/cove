@@ -75,3 +75,31 @@ version you run: <https://www.apple.com/legal/sla/>. See
 [License and Virtualization Limits](../reference/license-comparison.md) for the
 cove, Lume, Tart, Orchard, and tart-guest-agent comparison. This section is a
 product disclosure, not legal advice.
+
+## macOS Restore Image Cache
+
+`cove install` caches Apple's IPSW restore image under `~/.vz/cache`. If a
+download is interrupted, cove verifies the cached file before reuse and resumes
+the transfer when possible. To resume manually, use the recovery command printed
+by `cove install`:
+
+```bash
+curl -L -C - -o ~/.vz/cache/RestoreImage.ipsw <restore-image-url>
+```
+
+After the file is complete, re-run the same `cove install` or `cove up` command.
+
+## Linux Guest Toolchains
+
+Fresh desktop Linux images may not include a Go toolchain new enough for the
+cove checkout or related Go projects. Install the project-required Go version
+inside the guest before running validations; distro packages can lag behind the
+`go.mod` requirement. For example:
+
+```bash
+curl -LO https://go.dev/dl/go1.24.3.linux-arm64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.24.3.linux-arm64.tar.gz
+export PATH=/usr/local/go/bin:$PATH
+go version
+```
