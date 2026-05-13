@@ -52,3 +52,13 @@ func TestCtlAgentExecDaemonFlagForcesDaemon(t *testing.T) {
 		t.Fatalf("ctlCommand() error = %v", err)
 	}
 }
+
+func TestCtlAgentExecAutoIsInternal(t *testing.T) {
+	err := ctlCommand([]string{"-socket", "/tmp/missing.sock", "agent-exec-auto", "whoami"})
+	if err == nil {
+		t.Fatal("ctlCommand() succeeded, want error")
+	}
+	if got := err.Error(); got != `agent-exec-auto is an internal control request; use "exec" or "agent-exec"` {
+		t.Fatalf("error = %q", got)
+	}
+}
