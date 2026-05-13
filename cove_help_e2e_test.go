@@ -68,6 +68,7 @@ var helpSubcommands = []string{
 	"run",
 	"runs",
 	"secret",
+	"security",
 	"serve",
 	"shared-folder",
 	"shell",

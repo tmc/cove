@@ -74,6 +74,7 @@ var commandRegistry = []commandSpec{
 	{Name: "run", Summary: "Run a VM", Dispatch: commandDispatchLate, Run: runRunCommand},
 	{Name: "runs", Summary: "Inspect local run metrics and artifacts", Dispatch: commandDispatchEarly, Run: runRunsCommand},
 	{Name: "secret", Summary: "Debug secret resolver", Dispatch: commandDispatchEarly, Run: runSecretCommand},
+	{Name: "security", Summary: "Inspect host-containment policy", Dispatch: commandDispatchEarly, Run: runSecurityCommand},
 	{Name: "serve", Summary: "Multi-VM HTTP gateway", Dispatch: commandDispatchEarly, Run: runServeCommandSpec},
 	{Name: "shared-folder", Aliases: []string{"shared-folders"}, Summary: "Manage shared folders", Dispatch: commandDispatchEarly, Run: runSharedFolderCommand},
 	{Name: "shell", Summary: "Open a Docker-shaped exec session", Dispatch: commandDispatchEarly, Run: runShellCommand},
