@@ -24,10 +24,15 @@ type Store struct {
 }
 
 type GCResult struct {
-	Deleted        int
-	Reclaimed      int64
-	KeptYoung      int
-	KeptReachable  int
+	Deleted       int
+	Reclaimed     int64
+	KeptYoung     int
+	KeptReachable int
+}
+
+type GCOptions struct {
+	Grace  time.Duration
+	DryRun bool
 }
 
 func DefaultDir() string {
@@ -187,14 +192,18 @@ func (s Store) LockExclusive() (func() error, error) {
 }
 
 func (s Store) GC(reachable map[string]bool, grace time.Duration) (GCResult, error) {
+	return s.GCWithOptions(reachable, GCOptions{Grace: grace})
+}
+
+func (s Store) GCWithOptions(reachable map[string]bool, opts GCOptions) (GCResult, error) {
 	var result GCResult
 	unlock, err := s.LockExclusive()
 	if err != nil {
 		return result, err
 	}
 	defer unlock()
-	if grace <= 0 {
-		grace = GCGrace
+	if opts.Grace <= 0 {
+		opts.Grace = GCGrace
 	}
 	root := filepath.Join(s.Dir, "blobs", "sha256")
 	now := time.Now()
@@ -217,13 +226,15 @@ func (s Store) GC(reachable map[string]bool, grace time.Duration) (GCResult, err
 		if err != nil {
 			return err
 		}
-		if now.Sub(info.ModTime()) < grace {
+		if now.Sub(info.ModTime()) < opts.Grace {
 			result.KeptYoung++
 			return nil
 		}
 		size := info.Size()
-		if err := os.Remove(path); err != nil {
-			return err
+		if !opts.DryRun {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
 		}
 		result.Deleted++
 		result.Reclaimed += size
