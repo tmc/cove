@@ -75,7 +75,7 @@ func handlePush(args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: cove push <vm> <ref> [flags]")
+		return fmt.Errorf("usage: cove push [flags] <vm|dir> <ref>")
 	}
 	switch opts.Format {
 	case "", "cove":
@@ -128,7 +128,7 @@ func parsePushArgs(args []string, w io.Writer) (pushOptions, []string, error) {
 	fs.Var(&opts.AdditionalTags, "additional-tag", "additional tag to publish")
 	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write OCI manifest JSON to path")
 	fs.Usage = func() { printPushUsage(w) }
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(movePushFlagsFirst(args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return opts, nil, nil
 		}
@@ -139,6 +139,18 @@ func parsePushArgs(args []string, w io.Writer) (pushOptions, []string, error) {
 	}
 	opts.ChunkSize = *chunkSizeMB << 20
 	return opts, fs.Args(), nil
+}
+
+func movePushFlagsFirst(args []string) []string {
+	return moveKnownFlagsFirst(args, map[string]bool{
+		"base":           true,
+		"chunk-size":     true,
+		"dry-run":        false,
+		"lume-compat":    false,
+		"format":         true,
+		"additional-tag": true,
+		"manifest-out":   true,
+	})
 }
 
 func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
@@ -549,7 +561,7 @@ func printPushDryRun(w io.Writer, plan *pushPlan) {
 }
 
 func printPushUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove push <vm|dir> <ref> [flags]
+	fmt.Fprintln(w, `Usage: cove push [flags] <vm|dir> <ref>
 
 Plan or push a VM disk as an OCI image.
 

@@ -44,34 +44,19 @@ func TestBuildPullPlanDryRunManifest(t *testing.T) {
 	}
 }
 
-func TestBuildPullPlanDryRunFetchesManifest(t *testing.T) {
+func TestBuildPullPlanDryRunWithoutManifestIsNetworkFree(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	manifest := pullTestManifest(t)
-	manifestData, manifestDigest := pullTestManifestData(t, manifest)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Fatalf("method = %s, want GET", r.Method)
-		}
-		if r.URL.Path != "/v2/me/dev-vm/manifests/v1" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		w.Header().Set("Docker-Content-Digest", manifestDigest)
-		_, _ = w.Write(manifestData)
-	}))
-	defer srv.Close()
-
 	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
-		DryRun:          true,
-		RegistryBaseURL: srv.URL,
+		DryRun: true,
 	})
 	if err != nil {
 		t.Fatalf("buildPullPlan(): %v", err)
 	}
-	if plan.ManifestDigest != manifestDigest {
-		t.Fatalf("ManifestDigest = %q, want %s", plan.ManifestDigest, manifestDigest)
+	if plan.ManifestDigest != "" {
+		t.Fatalf("ManifestDigest = %q, want empty", plan.ManifestDigest)
 	}
-	if got, want := len(plan.Manifest.Chunks), 1; got != want {
-		t.Fatalf("chunks = %d, want %d", got, want)
+	if got := len(plan.Manifest.Chunks); got != 0 {
+		t.Fatalf("chunks = %d, want 0 without manifest", got)
 	}
 }
 
@@ -360,6 +345,39 @@ func TestParsePullArgsRejectsUnknownFlag(t *testing.T) {
 	_, _, err := parsePullArgs([]string{"--bogus"}, ioDiscard{})
 	if err == nil {
 		t.Fatal("parsePullArgs(--bogus) error = nil, want flag parse error")
+	}
+}
+
+func TestPrintPullUsageShowsFlagsBeforeArgs(t *testing.T) {
+	var b strings.Builder
+	printPullUsage(&b)
+	if !strings.Contains(b.String(), "Usage: cove pull [flags] <ref>") {
+		t.Fatalf("usage = %q", b.String())
+	}
+}
+
+func TestParsePullArgsAllowsTrailingFlags(t *testing.T) {
+	opts, pos, err := parsePullArgs([]string{
+		"registry.example/cove/vm:latest",
+		"--dry-run",
+		"--as", "vm",
+		"--manifest=manifest.json",
+	}, ioDiscard{})
+	if err != nil {
+		t.Fatalf("parsePullArgs trailing flags: %v", err)
+	}
+	if !opts.DryRun || opts.As != "vm" || opts.ManifestPath != "manifest.json" {
+		t.Fatalf("opts = %#v, want dry-run/as/manifest", opts)
+	}
+	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
+		t.Fatalf("pos = %#v", pos)
+	}
+}
+
+func TestHandlePullUsageShowsFlagsBeforeArgs(t *testing.T) {
+	err := handlePull([]string{"one", "two"})
+	if err == nil || !strings.Contains(err.Error(), "usage: cove pull [flags] <ref>") {
+		t.Fatalf("handlePull usage error = %v, want flags-before-args usage", err)
 	}
 }
 

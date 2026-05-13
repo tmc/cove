@@ -49,7 +49,7 @@ func handlePull(args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: cove pull <ref> [flags]")
+		return fmt.Errorf("usage: cove pull [flags] <ref>")
 	}
 	plan, err := buildPullPlan(pos[0], opts)
 	if err != nil {
@@ -85,13 +85,21 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "validate inputs without writing a disk")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.Usage = func() { printPullUsage(w) }
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(movePullFlagsFirst(args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return opts, nil, nil
 		}
 		return opts, nil, err
 	}
 	return opts, fs.Args(), nil
+}
+
+func movePullFlagsFirst(args []string) []string {
+	return moveKnownFlagsFirst(args, map[string]bool{
+		"as":       true,
+		"dry-run":  false,
+		"manifest": true,
+	})
 }
 
 func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
@@ -125,6 +133,9 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 			return nil, err
 		}
 		manifestRaw, _ = os.ReadFile(opts.ManifestPath)
+	} else if opts.DryRun && opts.RegistryBaseURL == "" {
+		// Keep plain dry runs network-free. Use --manifest when the
+		// caller wants manifest validation without pulling disk data.
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), pullManifestFetchTimeout)
 		defer cancel()
@@ -531,7 +542,7 @@ func printPullResult(w io.Writer, plan *pullPlan) {
 }
 
 func printPullUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove pull <ref> [flags]
+	fmt.Fprintln(w, `Usage: cove pull [flags] <ref>
 
 Validate or pull an OCI VM image.
 
