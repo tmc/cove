@@ -2549,6 +2549,9 @@ func bootOverlayMessage() (title, subtitle string, hold bool) {
 }
 
 func bootOverlayReadyToFade(agentSummary string) bool {
+	if currentBootSessionMode() != bootSessionModeNormal {
+		return true
+	}
 	if strings.HasPrefix(agentSummary, "daemon connected") {
 		return true
 	}

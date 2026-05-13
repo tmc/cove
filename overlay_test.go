@@ -53,6 +53,10 @@ func TestBootOverlayMessage(t *testing.T) {
 }
 
 func TestBootOverlayReadyToFade(t *testing.T) {
+	oldBootMode := currentBootSessionMode()
+	setActiveBootSessionMode(bootSessionModeNormal)
+	defer setActiveBootSessionMode(oldBootMode)
+
 	tests := []struct {
 		summary string
 		want    bool
@@ -70,6 +74,16 @@ func TestBootOverlayReadyToFade(t *testing.T) {
 				t.Fatalf("bootOverlayReadyToFade(%q) = %v, want %v", tt.summary, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBootOverlayReadyToFadeRecovery(t *testing.T) {
+	oldBootMode := currentBootSessionMode()
+	setActiveBootSessionMode(bootSessionModeRecovery)
+	defer setActiveBootSessionMode(oldBootMode)
+
+	if !bootOverlayReadyToFade("Agent: starting (first boot)") {
+		t.Fatal("bootOverlayReadyToFade in recovery mode = false, want true")
 	}
 }
 
