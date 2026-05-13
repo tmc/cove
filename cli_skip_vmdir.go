@@ -1,7 +1,8 @@
 package main
 
-// vmDirIndependentCommands are top-level subcommands that do not operate on a
-// per-VM directory and therefore must not require ~/.vz/vms to be writable.
+// vmDirIndependentCommands are top-level subcommands that must not create a
+// per-VM directory during startup. Some do not operate on VMs; read-only VM
+// commands in this list resolve existing VMs inside their own command path.
 //
 // The motivating case is `cove helper daemon`, which launchd runs as root.
 // As root, $HOME is /var/root — on the SIP-sealed system volume — so a
@@ -15,6 +16,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"daemon":  true,
 	"runs":    true,
 	"secret":  true,
+	"status":  true,
 	"version": true,
 	"shell":   true,
 }

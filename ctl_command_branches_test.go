@@ -1,8 +1,12 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // TestCtlCommandEarlyBranches covers the dispatch paths that exit before
@@ -30,4 +34,53 @@ func TestCtlCommandEarlyBranches(t *testing.T) {
 			t.Fatalf("ctlCommand no subcmd: got %v, want 'command required'", err)
 		}
 	})
+}
+
+func TestCtlCommandVMNotFoundBeforeControlSocketHint(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	err := ctlCommand([]string{"-vm", "deleted-vm", "status"})
+	if err == nil {
+		t.Fatal("ctlCommand succeeded for missing VM")
+	}
+	msg := err.Error()
+	for _, want := range []string{`no VM named "deleted-vm"`, vmconfig.BaseDir()} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("ctlCommand error = %q, want %q", msg, want)
+		}
+	}
+	for _, notWant := range []string{"control socket not found", "start it with"} {
+		if strings.Contains(msg, notWant) {
+			t.Fatalf("ctlCommand error = %q, did not want %q", msg, notWant)
+		}
+	}
+}
+
+func TestCtlCommandStoppedExistingVMKeepsControlSocketHint(t *testing.T) {
+	home, err := os.MkdirTemp("/tmp", "cove-ctl-test-")
+	if err != nil {
+		t.Fatalf("temp home: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(home) })
+	t.Setenv("HOME", home)
+	vm := "stopped-vm"
+	dir := filepath.Join(vmconfig.BaseDir(), vm)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir VM: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0o644); err != nil {
+		t.Fatalf("write disk: %v", err)
+	}
+	err = ctlCommand([]string{"-vm", vm, "status"})
+	if err == nil {
+		t.Fatal("ctlCommand succeeded for stopped VM without control socket")
+	}
+	msg := err.Error()
+	for _, want := range []string{"vm is not running: control socket not found", "start it with"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("ctlCommand error = %q, want %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "no VM named") {
+		t.Fatalf("ctlCommand error = %q, did not want not-found diagnostic", msg)
+	}
 }

@@ -71,6 +71,7 @@ type readyResult struct {
 // readyReport is the machine-readable output of "ctl ready".
 type readyReport struct {
 	Agent  string        `json:"agent"`
+	Mode   string        `json:"mode"`
 	Checks []readyResult `json:"checks"`
 }
 
@@ -172,7 +173,7 @@ func ctlReady(sock string, args []string) error {
 		}
 	}
 
-	report := readyReport{Agent: agentStatus(agentOK), Checks: results}
+	report := readyReport{Agent: agentStatus(agentOK), Mode: readyMode(useDaemon), Checks: results}
 	if asJSON {
 		printReadyJSON(report)
 	} else {
@@ -189,6 +190,13 @@ func agentStatus(ok bool) string {
 		return "ok"
 	}
 	return "unreachable"
+}
+
+func readyMode(useDaemon bool) string {
+	if useDaemon {
+		return "daemon-agent"
+	}
+	return "user-agent"
 }
 
 // probeAgentPing sends a single agent-ping. It returns (ok, detail). detail is
@@ -310,7 +318,12 @@ func firstLine(s string) string {
 }
 
 func printReadyText(r readyReport) {
-	fmt.Printf("agent: %s\n", r.Agent)
+	fmt.Printf("daemon agent: %s\n", r.Agent)
+	if r.Mode == "daemon-agent" {
+		fmt.Println("checks: daemon agent")
+	} else {
+		fmt.Println("checks: user agent (requires a logged-in guest session)")
+	}
 	if len(r.Checks) == 0 {
 		return
 	}

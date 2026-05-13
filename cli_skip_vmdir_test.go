@@ -3,8 +3,7 @@ package main
 import "testing"
 
 // TestSubcommandSkipsVMDir guards the allowlist of subcommands that must boot
-// without a writable ~/.vz/vms. Adding a command here means weighing whether
-// it really has zero need for VM-dir state — be conservative.
+// without creating ~/.vz/vms entries during startup.
 func TestSubcommandSkipsVMDir(t *testing.T) {
 	tests := []struct {
 		name string
@@ -15,6 +14,7 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"helper bare", []string{"helper"}, true},
 		{"helper daemon", []string{"helper", "daemon"}, true},
 		{"helper status", []string{"helper", "status"}, true},
+		{"status is read only", []string{"status"}, true},
 		{"version", []string{"version"}, true},
 		{"vm tree", []string{"vm", "tree"}, true},
 		{"vm tree extra args still skips startup VM dir", []string{"vm", "tree", "extra"}, true},

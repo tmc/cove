@@ -104,7 +104,7 @@ func resolveShellSocket(vmName string) (string, error) {
 	sock := GetControlSocketPathForVM(dir)
 	if _, err := os.Stat(sock); err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("no running VM at %q (control socket missing at %s)\n  start it with: cove -vm %s run", vmName, sock, vmName)
+			return "", formatControlSocketDialError(sock, err)
 		}
 		return "", fmt.Errorf("stat control socket %s: %w", sock, err)
 	}

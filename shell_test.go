@@ -47,8 +47,8 @@ func TestResolveShellSocketMissingSocket(t *testing.T) {
 		t.Fatalf("mkdir vm: %v", err)
 	}
 	_, err := resolveShellSocket("myvm")
-	if err == nil || !strings.Contains(err.Error(), "control socket missing") {
-		t.Fatalf("resolveShellSocket = %v, want control socket missing", err)
+	if err == nil || !strings.Contains(err.Error(), "vm is not running: control socket not found") {
+		t.Fatalf("resolveShellSocket = %v, want canonical not-running error", err)
 	}
 }
 

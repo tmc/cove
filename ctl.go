@@ -267,9 +267,9 @@ func ctlCommand(args []string) error {
 
 	// If -vm was given and -socket was not, resolve the socket from the VM dir.
 	if ctlVMFlag != nil && *ctlVMFlag != "" && *socketPath == "" {
-		dir := vmconfig.Path(*ctlVMFlag)
-		if dir == "" {
-			return fmt.Errorf("vm not found: %s", *ctlVMFlag)
+		dir, err := requireExistingVMForControl(*ctlVMFlag)
+		if err != nil {
+			return err
 		}
 		*socketPath = GetControlSocketPathForVM(dir)
 	}
@@ -283,6 +283,15 @@ func ctlCommand(args []string) error {
 	// modify the slice without aliasing fs.Args()'s backing array.
 	cmdType := fs.Arg(0)
 	subArgs := append([]string{}, fs.Args()[1:]...)
+	if cmdType == "help" {
+		fs.Usage()
+		return nil
+	}
+	if ctlVMFlag != nil && *ctlVMFlag == "" && *socketPath == "" && len(subArgs) > 0 {
+		if _, ok := vmconfig.ExistingPath(cmdType); ok {
+			return fmt.Errorf("unknown ctl command %q; did you mean: cove ctl -vm %s %s", cmdType, cmdType, strings.Join(subArgs, " "))
+		}
+	}
 	if cmdType == "exec" {
 		cmdType = "agent-exec"
 	}
@@ -355,6 +364,10 @@ func ctlCommand(args []string) error {
 			return fmt.Errorf("gui requires action: status, open, close, backend, capture-backend, input-backend, or terminal")
 		}
 		action := subArgs[0]
+		if isHelpArg(action) {
+			printCtlUsage(os.Stderr, fs)
+			return nil
+		}
 		switch action {
 		case "status":
 			return ctlSimpleCommand(sock, "gui-status", *timeout, *raw)
@@ -1201,7 +1214,7 @@ func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Dur
 	reader := bufio.NewReaderSize(conn, 256*1024) // 256KB buffer
 	respLine, err := reader.ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("receive: %w", err)
+		return nil, ctlReceiveError(sock, cmdType, err)
 	}
 
 	var resp controlpb.ControlResponse
@@ -1239,7 +1252,7 @@ func ctlSendJSON(sock string, obj map[string]interface{}, timeout time.Duration)
 	reader := bufio.NewReaderSize(conn, 256*1024)
 	respLine, err := reader.ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("receive: %w", err)
+		return nil, ctlReceiveError(sock, fmt.Sprint(obj["type"]), err)
 	}
 
 	var resp controlpb.ControlResponse
@@ -1247,6 +1260,14 @@ func ctlSendJSON(sock string, obj map[string]interface{}, timeout time.Duration)
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	return &resp, nil
+}
+
+func ctlReceiveError(sock, cmdType string, err error) error {
+	msg := fmt.Sprintf("receive %s response", cmdType)
+	if strings.HasPrefix(cmdType, "agent-") || cmdType == "exec" {
+		msg += fmt.Sprintf("; guest agent may be unavailable, check: cove ctl -socket %s agent-status", sock)
+	}
+	return fmt.Errorf("%s: %w", msg, err)
 }
 
 func resolveControlTokenForSocket(sock string) string {
@@ -1912,9 +1933,14 @@ func ctlDetectScreen(socketPath string) error {
 	ocr := ocrx.NewService(false)
 	ocrState := DetectScreenStateOCR(img, ocr)
 	fmt.Printf("Detected screen state (OCR):   %s\n", ocrState)
+	effectiveState := state
+	if ocrState != ScreenStateUnknown {
+		effectiveState = ocrState
+	}
+	fmt.Printf("Detected screen state:         %s\n", effectiveState)
 
 	// If it looks like Setup Assistant, detect the page with both methods
-	if state == ScreenStateSetupAssistant || ocrState == ScreenStateSetupAssistant {
+	if effectiveState == ScreenStateSetupAssistant {
 		fullImg, err := client.Screenshot()
 		if err == nil {
 			page := DetectSetupAssistantPage(fullImg)
@@ -2222,7 +2248,7 @@ func ctlSetupAssist(socketPath, username, password string) error {
 	})
 
 	if err := assistant.Run(); err != nil {
-		return fmt.Errorf("setup assistant failed: %w", err)
+		return fmt.Errorf("setup assistant failed: %w\n  check whether the VM stopped: cove list\n  if it is still running, inspect the last screen: cove ctl -socket %s gui status", err, socketPath)
 	}
 
 	success, err := assistant.VerifyProvisioning()
@@ -2423,6 +2449,9 @@ func suggestAction(page string) {
 }
 
 func ctlAgentCommandError(sock, cmdType, detail string) error {
+	if ctlAgentErrorLooksGuestFailure(detail) {
+		return fmt.Errorf("%s failed: %s", cmdType, detail)
+	}
 	state, err := ctlVMStatusState(sock, 2*time.Second)
 	if err != nil || state == "" {
 		return fmt.Errorf("guest agent unavailable: %s", detail)
@@ -2440,6 +2469,42 @@ func ctlAgentCommandError(sock, cmdType, detail string) error {
 	default:
 		return fmt.Errorf("guest agent unavailable: vm state is %s\n  details: %s", state, detail)
 	}
+}
+
+func ctlAgentErrorLooksGuestFailure(detail string) bool {
+	detail = strings.ToLower(strings.TrimSpace(detail))
+	if detail == "" {
+		return false
+	}
+	for _, prefix := range []string{
+		"not_found:",
+		"permission_denied:",
+		"already_exists:",
+		"invalid_argument:",
+		"failed_precondition:",
+		"out_of_range:",
+		"read: not_found:",
+		"write: not_found:",
+		"copy: not_found:",
+		"read: permission_denied:",
+		"write: permission_denied:",
+		"copy: permission_denied:",
+	} {
+		if strings.HasPrefix(detail, prefix) {
+			return true
+		}
+	}
+	for _, marker := range []string{
+		": no such file or directory",
+		": permission denied",
+		"exit status ",
+		"exit code ",
+	} {
+		if strings.Contains(detail, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {

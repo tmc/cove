@@ -181,3 +181,12 @@ func TestAgentStatus(t *testing.T) {
 		t.Fatalf("agentStatus(false) != unreachable")
 	}
 }
+
+func TestReadyMode(t *testing.T) {
+	if got := readyMode(false); got != "user-agent" {
+		t.Fatalf("readyMode(false) = %q, want user-agent", got)
+	}
+	if got := readyMode(true); got != "daemon-agent" {
+		t.Fatalf("readyMode(true) = %q, want daemon-agent", got)
+	}
+}

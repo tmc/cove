@@ -10,6 +10,9 @@ import (
 )
 
 func TestParseLogsArgs(t *testing.T) {
+	oldVMName := vmName
+	t.Cleanup(func() { vmName = oldVMName })
+	vmName = ""
 	tests := []struct {
 		name string
 		args []string
@@ -20,8 +23,12 @@ func TestParseLogsArgs(t *testing.T) {
 		{name: "follow before vm", args: []string{"-f", "ubuntu"}, want: logsOptions{VM: "ubuntu", Follow: true}},
 		{name: "follow after vm", args: []string{"ubuntu", "-f"}, want: logsOptions{VM: "ubuntu", Follow: true}},
 		{name: "follow long", args: []string{"--follow", "ubuntu"}, want: logsOptions{VM: "ubuntu", Follow: true}},
+		{name: "vm flag", args: []string{"-vm", "ubuntu"}, want: logsOptions{VM: "ubuntu"}},
+		{name: "vm flag after follow", args: []string{"-f", "-vm", "ubuntu"}, want: logsOptions{VM: "ubuntu", Follow: true}},
+		{name: "vm flag after positional matching", args: []string{"ubuntu", "-vm", "ubuntu"}, want: logsOptions{VM: "ubuntu"}},
 		{name: "missing vm", fail: true},
 		{name: "extra arg", args: []string{"ubuntu", "extra"}, fail: true},
+		{name: "vm mismatch", args: []string{"ubuntu", "-vm", "other"}, fail: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -39,6 +46,19 @@ func TestParseLogsArgs(t *testing.T) {
 				t.Fatalf("parseLogsArgs = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseLogsArgsUsesGlobalVM(t *testing.T) {
+	oldVMName := vmName
+	t.Cleanup(func() { vmName = oldVMName })
+	vmName = "global-vm"
+	got, err := parseLogsArgs(nil)
+	if err != nil {
+		t.Fatalf("parseLogsArgs: %v", err)
+	}
+	if got.VM != "global-vm" {
+		t.Fatalf("VM = %q, want global-vm", got.VM)
 	}
 }
 
