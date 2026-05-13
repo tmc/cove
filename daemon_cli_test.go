@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -64,6 +65,16 @@ func TestFetchDaemonMetrics(t *testing.T) {
 	}
 }
 
+func TestDaemonMetricsErrorWithHint(t *testing.T) {
+	err := daemonMetricsErrorWithHint(errors.New("daemon metrics: Get \"http://127.0.0.1:9876/metrics\": dial tcp 127.0.0.1:9876: connect: connection refused"))
+	if err == nil {
+		t.Fatal("daemonMetricsErrorWithHint = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "start with: cove daemon start") {
+		t.Fatalf("error = %q, want daemon start hint", err)
+	}
+}
+
 func TestDaemonStartCommandLoadsRenderedPlist(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -90,6 +101,20 @@ func TestDaemonStartCommandLoadsRenderedPlist(t *testing.T) {
 	}
 	if _, err := os.Stat(wantPlist); err != nil {
 		t.Fatalf("plist stat: %v", err)
+	}
+}
+
+func TestDaemonStatusMissingSocketHint(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	err := daemonCommand([]string{"status"})
+	if err == nil {
+		t.Fatal("daemonCommand(status) = nil, want stopped daemon error")
+	}
+	if !strings.Contains(err.Error(), "daemon: stopped; start with: cove daemon start") {
+		t.Fatalf("error = %q, want stopped daemon hint", err)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("error = %q, want user-facing hint", err)
 	}
 }
 

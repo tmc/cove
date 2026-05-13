@@ -17,8 +17,12 @@ func handleSecretCommand(args []string) error {
 	}
 	switch args[0] {
 	case "probe":
+		if len(args) == 2 && isHelpArg(args[1]) {
+			printSecretProbeUsage(os.Stderr)
+			return nil
+		}
 		if len(args) != 2 {
-			return fmt.Errorf("secret probe requires: <uri>")
+			return fmt.Errorf("usage: cove secret probe <uri>")
 		}
 		value, err := secrets.Resolve(args[1])
 		if err != nil {
@@ -29,6 +33,18 @@ func handleSecretCommand(args []string) error {
 	default:
 		return fmt.Errorf("unknown secret command: %s", args[0])
 	}
+}
+
+func printSecretProbeUsage(w io.Writer) {
+	fmt.Fprintf(w, `Usage: cove secret probe <uri>
+
+Resolve a secret URI and print only its byte length. The secret value is never
+printed.
+
+Supported URI schemes:
+  env://VAR_NAME
+  file:///absolute/path
+`)
 }
 
 func printSecretUsage(w io.Writer) {

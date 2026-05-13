@@ -70,6 +70,7 @@ var subSubHelp = []subSubHelpCase{
 	{"storage", "census"},
 	{"storage", "budget"},
 	{"storage", "prune"},
+	{"vm", "delete"},
 }
 
 // skippedSubSubHelp records (parent, action) pairs intentionally not

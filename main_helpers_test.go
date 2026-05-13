@@ -1,9 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"flag"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestShortDuration(t *testing.T) {
@@ -64,5 +70,32 @@ func TestFlagWasProvided(t *testing.T) {
 				t.Errorf("flagWasProvided(%q) = %v, want %v (args=%v)", tt.check, got, tt.want, tt.args)
 			}
 		})
+	}
+}
+
+func TestHandleListReportsMissingDiskDirectories(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	base := vmconfig.BaseDir()
+	if err := os.MkdirAll(filepath.Join(base, "broken-vm"), 0755); err != nil {
+		t.Fatalf("mkdir broken vm: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := handleListTo(&buf); err != nil {
+		t.Fatalf("handleListTo: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"Missing-disk VM directories hidden from the main list:",
+		"broken-vm\t(no disk image found)",
+		"These are filesystem cleanup entries, not fork-lineage orphans from vm tree --orphans.",
+		"Remove with: cove vm delete <name>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("list output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "cove tree --orphans") {
+		t.Fatalf("list output kept invalid tree guidance:\n%s", out)
 	}
 }

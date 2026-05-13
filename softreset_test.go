@@ -60,3 +60,20 @@ func TestWriteSoftresetProbeSummary(t *testing.T) {
 		}
 	}
 }
+
+func TestSoftresetNoArgsShowsUsage(t *testing.T) {
+	err := softresetCommand(nil)
+	if err == nil || !strings.Contains(err.Error(), "command required") {
+		t.Fatalf("err = %v, want command required", err)
+	}
+}
+
+func TestSoftresetHelpUsage(t *testing.T) {
+	var b strings.Builder
+	printSoftresetUsage(&b)
+	for _, want := range []string{"Usage: cove softreset", "probe", "run-all"} {
+		if !strings.Contains(b.String(), want) {
+			t.Fatalf("usage missing %q:\n%s", want, b.String())
+		}
+	}
+}

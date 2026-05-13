@@ -63,14 +63,12 @@ func runQuota(ctx context.Context, args []string, manager quotaManager, out io.W
 func parseQuotaArgs(args []string) (quotaCommand, error) {
 	fs := flag.NewFlagSet("quota", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: cove quota <vm> cpu <n> | memory <gb> | disk <gb> | show")
-	}
+	fs.Usage = func() { printQuotaUsage(os.Stdout) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		return quotaCommand{}, err
 	}
 	if fs.NArg() < 2 {
-		return quotaCommand{}, errors.New("usage: cove quota <vm> cpu <n> | memory <gb> | disk <gb> | show")
+		return quotaCommand{}, errors.New("usage: cove quota <vm> show | cpu <n> | memory <gb> | disk <gb>")
 	}
 	vm := strings.TrimSpace(fs.Arg(0))
 	if vm == "" {
@@ -98,6 +96,16 @@ func parseQuotaArgs(args []string) (quotaCommand, error) {
 	default:
 		return quotaCommand{}, fmt.Errorf("quota: unknown action %q", action)
 	}
+}
+
+func printQuotaUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove quota <vm> show
+       cove quota <vm> cpu <n>
+       cove quota <vm> memory <gb>
+       cove quota <vm> disk <gb>
+
+Show or update saved resource quotas for a VM. Memory and disk values are in
+GiB; CPU is a whole vCPU count.`)
 }
 
 func parseQuotaValue(s, name string) (uint64, error) {
@@ -189,12 +197,15 @@ func applyInstallDiskQuota(dir string) error {
 	if diskSizeGB == 0 {
 		return nil
 	}
-	if err := vmquota.ApplyAPFSQuota(dir, diskSizeGB); err != nil {
-		if errors.Is(err, vmquota.ErrAPFSQuotaUnsupported) {
-			fmt.Printf("warning: APFS directory quota unsupported on this host; continuing without host disk quota: %v\n", err)
+	if err := applyAPFSQuotaForInstall(dir, diskSizeGB); err != nil {
+		if errors.Is(err, vmquota.ErrAPFSQuotaUnsupported) ||
+			strings.Contains(err.Error(), `did not recognize APFS verb "setQuota"`) {
+			fmt.Printf("warning: APFS directory quotas are not supported on this host; continuing without host disk quota: %v\n", err)
 			return nil
 		}
 		return err
 	}
 	return nil
 }
+
+var applyAPFSQuotaForInstall = vmquota.ApplyAPFSQuota

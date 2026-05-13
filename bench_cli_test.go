@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,6 +40,41 @@ func TestRunBenchCompetitiveBadFlag(t *testing.T) {
 	}
 }
 
+func TestRunBenchCompetitiveHelp(t *testing.T) {
+	if err := runBenchCompetitive([]string{"-h"}); err != nil {
+		t.Fatalf("runBenchCompetitive(-h) = %v, want nil", err)
+	}
+}
+
+func TestRunBenchCompetitiveDryRunDoesNotWriteDefaults(t *testing.T) {
+	dir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd(): %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir(): %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	out := captureBenchStdout(t, func() {
+		if err := runBenchCompetitive([]string{"-dry-run"}); err != nil {
+			t.Fatalf("runBenchCompetitive(-dry-run): %v", err)
+		}
+	})
+	if !strings.Contains(out, "benchmark dry run") {
+		t.Fatalf("output = %q, want dry run summary", out)
+	}
+	for _, path := range []string{
+		filepath.Join(dir, "docs", "benchmarks", "results-2026-05-cove.json"),
+		filepath.Join(dir, "docs", "benchmarks", "competitive-2026-05.md"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stat %s = %v, want not exist", path, err)
+		}
+	}
+}
+
 func TestRunBenchCompetitiveExtraArgs(t *testing.T) {
 	err := runBenchCompetitive([]string{"unexpected"})
 	if err == nil {
@@ -44,4 +83,22 @@ func TestRunBenchCompetitiveExtraArgs(t *testing.T) {
 	if !strings.Contains(err.Error(), "unexpected arguments") {
 		t.Errorf("error = %q, want contains 'unexpected arguments'", err)
 	}
+}
+
+func captureBenchStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe(): %v", err)
+	}
+	os.Stdout = w
+	fn()
+	_ = w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("Copy(): %v", err)
+	}
+	return buf.String()
 }

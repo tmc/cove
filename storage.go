@@ -19,11 +19,12 @@ import (
 
 func handleStorageCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: cove storage <subcommand> [args]\n  census    Walk ~/.vz/ and report per-category disk usage\n  budget    Show or update the storage budget\n  prune     Remove safe-to-delete cruft (build-scratch only for now)")
+		printStorageUsage(os.Stderr)
+		return fmt.Errorf("storage: command required")
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		fmt.Fprintln(os.Stdout, "Usage: cove storage <subcommand> [args]\n  census    Walk ~/.vz/ and report per-category disk usage\n  budget    Show or update the storage budget\n  prune     Remove safe-to-delete cruft (build-scratch only for now)")
+		printStorageUsage(os.Stdout)
 		return nil
 	case "census":
 		return runStorageCensus(args[1:], os.Stdout)
@@ -34,6 +35,15 @@ func handleStorageCommand(args []string) error {
 	default:
 		return fmt.Errorf("storage: unknown subcommand %q", args[0])
 	}
+}
+
+func printStorageUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove storage <subcommand> [args]
+
+Commands:
+  census    Walk ~/.vz/ and report per-category disk usage
+  budget    Show or update the storage budget
+  prune     Remove safe-to-delete cruft (build-scratch only for now)`)
 }
 
 func runStoragePrune(args []string, out io.Writer) error {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tmc/apple/x/vzkit/disk"
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -78,7 +79,7 @@ var commandRegistry = []commandSpec{
 	{Name: "sip", Summary: "SIP management", Dispatch: commandDispatchEarly, Run: runSIPCommand},
 	{Name: "snapshot", Summary: "Manage VM state snapshots", Dispatch: commandDispatchLate, Run: runSnapshotCommandSpec},
 	{Name: "softreset", Summary: "Run destructive soft-reset probe matrix", Dispatch: commandDispatchEarly, Run: runSoftresetCommand},
-	{Name: "status", Summary: "Show VM status", Dispatch: commandDispatchLate, Run: runStatusCommand},
+	{Name: "status", Summary: "Show VM status", Dispatch: commandDispatchEarly, Run: runStatusCommand},
 	{Name: "storage", Summary: "Inspect cove disk usage under ~/.vz/", Dispatch: commandDispatchEarly, Run: runStorageCommand},
 	{Name: "store", Summary: "Manage the local OCI blob store", Dispatch: commandDispatchEarly, Run: runStoreCommand},
 	{Name: "template", Summary: "Manage VM templates", Dispatch: commandDispatchLate, Run: runTemplateCommand},
@@ -131,11 +132,22 @@ func commandError(env commandEnv, err error) int {
 	return 1
 }
 
+func commandUsageError(env commandEnv, err error) int {
+	if err == nil {
+		return 0
+	}
+	fmt.Fprintf(env.Stderr, "error: %v\n", err)
+	return 2
+}
+
 func runActionCommand(_ commandEnv, _ string, args []string) int {
 	return handleActionCommand(args)
 }
 
 func runAgentSandboxCommand(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, handleAgentSandboxCommand(args))
+	}
 	return commandError(env, handleAgentSandboxCommand(args))
 }
 func runAgentUpgradeCommand(env commandEnv, _ string, _ []string) int {
@@ -145,13 +157,21 @@ func runBenchCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleBenchCommand(args))
 }
 func runBuildCommand(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, handleBuild(args))
+	}
 	return commandError(env, handleBuild(args))
 }
 func runCompactCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleCompact(args))
 }
 func runCpCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleCpCommand(args))
+	err := handleCpCommand(args)
+	if err != nil && strings.HasPrefix(err.Error(), "usage: cove cp ") {
+		printCpUsage(env.Stderr)
+		return commandUsageError(env, err)
+	}
+	return commandError(env, err)
 }
 func runCtlCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, ctlCommand(args))
@@ -163,6 +183,9 @@ func runDiffCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, diffCommand(args))
 }
 func runFleetCommandSpec(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, handleFleetCommand(args))
+	}
 	return commandError(env, handleFleetCommand(args))
 }
 func runForwardCommand(env commandEnv, _ string, args []string) int {
@@ -175,7 +198,12 @@ func runImageCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleImageCommand(args))
 }
 func runLogsCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, logsCommand(args))
+	err := logsCommand(args)
+	if err != nil && strings.HasPrefix(err.Error(), "usage: cove logs ") {
+		printLogsUsage(env.Stderr)
+		return commandUsageError(env, err)
+	}
+	return commandError(env, err)
 }
 func runPolicyCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePolicyCommand(args))
@@ -211,9 +239,15 @@ func runSIPCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleSIPCommand(args))
 }
 func runSoftresetCommand(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, softresetCommand(args))
+	}
 	return commandError(env, softresetCommand(args))
 }
 func runStorageCommand(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, handleStorageCommand(args))
+	}
 	return commandError(env, handleStorageCommand(args))
 }
 func runStoreCommand(env commandEnv, _ string, args []string) int {
@@ -264,8 +298,13 @@ func runSnapshotCommandSpec(_ commandEnv, _ string, args []string) int {
 	handleSnapshotCommand(args)
 	return 0
 }
-func runStatusCommand(env commandEnv, _ string, _ []string) int {
-	return commandError(env, statusCommand())
+func runStatusCommand(env commandEnv, _ string, args []string) int {
+	err := statusCommand(args...)
+	if err != nil && strings.HasPrefix(err.Error(), "usage: cove status") {
+		printStatusUsage(env.Stderr)
+		return commandUsageError(env, err)
+	}
+	return commandError(env, err)
 }
 func runTemplateCommand(_ commandEnv, _ string, args []string) int {
 	handleTemplate(args)
@@ -378,8 +417,8 @@ func runLegacyRunFlag() int {
 	return 0
 }
 
-func rerunVMDirForPostCommand() int {
-	if vmName == "" {
+func rerunVMDirForPostCommand(cmd string) int {
+	if vmName == "" || subcommandSkipsVMDir([]string{cmd}) {
 		return 0
 	}
 	var err error

@@ -47,6 +47,10 @@ func handleBuild(args []string) (err error) {
 	fs.StringVar(&opts.Compact, "compact", "targeted", "compaction mode: fast, targeted, thorough")
 	fs.StringVar(&opts.StoreDir, "store-dir", "", "content store directory")
 	fs.Usage = func() { printBuildUsage(os.Stderr) }
+	if len(args) == 0 {
+		printBuildUsage(os.Stderr)
+		return fmt.Errorf("build: name required")
+	}
 	flagArgs, posArgs, err := splitBuildArgs(args)
 	if err != nil {
 		return err

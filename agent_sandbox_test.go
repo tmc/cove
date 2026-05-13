@@ -186,6 +186,13 @@ func TestAgentSandboxUsageListsProviderEnvVars(t *testing.T) {
 	}
 }
 
+func TestAgentSandboxNoArgsShowsUsage(t *testing.T) {
+	err := handleAgentSandboxCommand(nil)
+	if err == nil || !strings.Contains(err.Error(), "command required") {
+		t.Fatalf("err = %v, want command required", err)
+	}
+}
+
 func TestParseAgentSandboxRunArgsRejectsBadInput(t *testing.T) {
 	for _, tc := range []struct {
 		name string

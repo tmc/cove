@@ -97,6 +97,26 @@ func TestRunRegisteredCommandRunsSpec(t *testing.T) {
 	}
 }
 
+func TestNamespaceNoArgUsageExitCode(t *testing.T) {
+	tests := []string{"agent-sandbox", "build", "fleet", "softreset", "storage"}
+	for _, name := range tests {
+		t.Run(name, func(t *testing.T) {
+			spec, ok := lookupCommand(name)
+			if !ok {
+				t.Fatalf("missing command %q", name)
+			}
+			var stderr bytes.Buffer
+			got := runRegisteredCommand(commandEnv{Stderr: &stderr}, spec, name, nil)
+			if got != 2 {
+				t.Fatalf("%s no-arg exit = %d, want 2; stderr=%q", name, got, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "error:") {
+				t.Fatalf("%s stderr = %q, want error", name, stderr.String())
+			}
+		})
+	}
+}
+
 func TestCommandError(t *testing.T) {
 	tests := []struct {
 		name    string
