@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,6 +106,37 @@ func TestDeleteVMWithOptionsNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "vm not found") {
 		t.Fatalf("err = %v, want 'vm not found'", err)
+	}
+}
+
+func TestDeleteVMWithOptionsRunningGuidance(t *testing.T) {
+	home, err := os.MkdirTemp("/tmp", "cove-del-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(home) })
+	t.Setenv("HOME", home)
+	writeTreeVM(t, "busy-vm", vmconfig.Config{})
+	sock := GetControlSocketPathForVM(vmconfig.Path("busy-vm"))
+	listener, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen control socket: %v", err)
+	}
+	defer listener.Close()
+
+	err = DeleteVMWithOptions("busy-vm", DeleteVMOptions{})
+	if err == nil {
+		t.Fatal("DeleteVMWithOptions(busy-vm) = nil, want running refusal")
+	}
+	for _, want := range []string{
+		"request stop: cove ctl -vm busy-vm request-stop",
+		"check status: cove list",
+		"if still running: cove ctl -vm busy-vm stop",
+		"then retry: cove vm delete busy-vm",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("running refusal missing %q in:\n%s", want, err)
+		}
 	}
 }
 
