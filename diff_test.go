@@ -132,6 +132,18 @@ func TestImageDiffMissingRefFails(t *testing.T) {
 	}
 }
 
+func TestDiffCommandAllowsTrailingJSON(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := ImageRef{Name: "a", Tag: "latest"}
+	b := ImageRef{Name: "b", Tag: "latest"}
+	writeTestDiffImage(t, a, "same", true)
+	writeTestDiffImage(t, b, "same", true)
+
+	if err := diffCommand([]string{a.String(), b.String(), "-json"}); err != nil {
+		t.Fatalf("diffCommand trailing -json: %v", err)
+	}
+}
+
 func TestWriteImageDiffJSON(t *testing.T) {
 	out := imageDiffOutput{
 		Refs:    [2]string{"a:latest", "b:latest"},

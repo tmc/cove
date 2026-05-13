@@ -30,12 +30,12 @@ cove -vm macos-base ctl stop
 For a clean VM per task:
 
 ```bash
-cove run -fork-from macos-base -fork-name task-001 -gui
+cove fork macos-base task-001
+cove run -vm task-001 -gui
 ```
 
-Use `-keep` when you want to inspect the fork after the run. Without `-keep`,
-VM-name forks are removed on exit. For image-backed sandboxes, build once and
-run disposable children:
+Delete the child when the task is done, or keep it around for inspection. For
+image-backed sandboxes, build once and run disposable children:
 
 ```bash
 cove image build -from macos-base -tag macos-agent:latest
@@ -177,7 +177,8 @@ already-running GUI VM through the control socket.
 python -m pip install httpx
 export GEMINI_API_KEY=...
 
-cove run -fork-from macos-base -fork-name gemini-agent -gui
+cove fork macos-base gemini-agent
+cove run -vm gemini-agent -gui
 cove ctl -vm gemini-agent -wait 120s agent-ping
 
 python3 adapters/google-bridge/computer_use.py \
@@ -200,10 +201,12 @@ cove fork macos-base task-debug-001
 cove -vm task-debug-001 run -gui
 ```
 
-Use `cove run -fork-from` for short jobs:
+Use `cove fork` for short jobs from a stopped VM parent:
 
 ```bash
-cove run -fork-from macos-base -fork-name task-$(date +%s) -gui
+child=task-$(date +%s)
+cove fork macos-base "$child"
+cove run -vm "$child" -gui
 ```
 
 Use image-backed `-ephemeral` for sandbox-per-task CI or evals:
@@ -213,8 +216,10 @@ cove image build -from macos-base -tag macos-agent:latest
 cove run -fork-from macos-agent:latest -ephemeral -headless
 ```
 
-The parent must be stopped for RAM-overlay VM-name forks. Keep secrets and
-untrusted state inside the child; discard the child after each task.
+VM parents must be stopped before `cove fork` or `cove clone --linked`.
+`cove run -fork-from` takes a local image ref such as `macos-agent:latest`;
+VM-parent RAM-overlay forks are not implemented. Keep secrets and untrusted
+state inside the child; discard the child after each task.
 
 ## Per-run Artifacts
 

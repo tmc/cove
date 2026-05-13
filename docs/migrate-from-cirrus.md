@@ -23,7 +23,7 @@ planning context.
 | Cirrus | Cove |
 |---|---|
 | `task:` | one workflow step or shell script that invokes cove |
-| `container: image: foo` | `cove image build -from <vm> -tag foo` then `cove run -fork-from foo` |
+| `container: image: foo` | `cove image build -from <vm> -tag foo:latest` then `cove run -fork-from foo:latest` |
 | `macos_instance:` / `linux_instance:` | explicit cove macOS or Linux runner image |
 | `script:` | command passed to the forked VM |
 | Cirrus cache | cove image cache plus Design 030 build cache |

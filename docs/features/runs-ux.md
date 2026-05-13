@@ -23,7 +23,7 @@ code without requiring an external telemetry service.
 ## Commands
 
 ```bash
-cove runs list [--limit N] [--since DURATION] [--status ok|fail|all] [--json]
+cove runs list [--limit N] [--since DURATION] [--status ok|fail|all] [--json|--ndjson]
 cove runs show <run-id-prefix> [--json]
 cove runs export <run-id-prefix> --format json|gha-summary|tar
 ```
@@ -31,7 +31,8 @@ cove runs export <run-id-prefix> --format json|gha-summary|tar
 `runs list`
 : Prints recent runs. `--limit` caps the number of rows, `--since` filters by a
 duration such as `24h` or `7d`, `--status` filters successful or failed runs,
-and `--json` emits machine-readable output.
+`--json` emits one machine-readable array, and `--ndjson` emits one object per
+line.
 
 `runs show`
 : Prints one run's summary and available metrics. `--json` emits the same data

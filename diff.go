@@ -33,7 +33,7 @@ func diffCommand(args []string) error {
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	fs.Usage = func() { printDiffUsage(fs.Output()) }
-	if err := parseFlagsOrHelp(fs, args); err != nil {
+	if err := parseFlagsOrHelp(fs, moveKnownFlagsFirst(args, map[string]bool{"json": false})); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
 		}

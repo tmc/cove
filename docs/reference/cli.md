@@ -125,6 +125,22 @@ cove run -recovery -no-resume -gui -usb ~/recovery.img
 
 ---
 
+## status
+
+Show guest-agent and GUI-session status for a VM.
+
+```
+cove status [-vm name] [vm]
+```
+
+```bash
+cove status
+cove status -vm work-vm
+cove status work-vm
+```
+
+---
+
 ## up
 
 Install, provision, and boot in one command.
@@ -674,14 +690,14 @@ are read from `~/.vz/runs/<run-id>/metrics.jsonl`; each line is one JSON event.
 See [Run Metrics](../features/metrics.md) and [Runs UX](../features/runs-ux.md).
 
 ```
-cove runs list [--limit N] [--since DURATION] [--status ok|fail|all] [--json]
+cove runs list [--limit N] [--since DURATION] [--status ok|fail|all] [--json|--ndjson]
 cove runs show <run-id-prefix> [--json]
 cove runs export <run-id-prefix> --format json|gha-summary|tar
 ```
 
 | Subcommand | Description |
 |------------|-------------|
-| `list [--limit N] [--since DURATION] [--status ok\|fail\|all] [--json]` | List recent runs. Fields: run-id prefix, `image_ref`, `vm_name`, `status`, `total_duration_ms`, `exit_code`, `started_at`. |
+| `list [--limit N] [--since DURATION] [--status ok\|fail\|all] [--json\|--ndjson]` | List recent runs. Fields: run-id prefix, `image_ref`, `vm_name`, `status`, `total_duration_ms`, `exit_code`, `started_at`. `--json` emits one array; `--ndjson` emits one object per line. |
 | `show <run-id-prefix> [--json]` | Show one run by unique run-id prefix. Fails if the prefix matches no run or more than one run. |
 | `export <run-id-prefix> --format json\|gha-summary\|tar` | Export one run. `json` emits structured data, `gha-summary` emits Markdown for `GITHUB_STEP_SUMMARY`, and `tar` writes a gzip tar archive to stdout. |
 
@@ -692,6 +708,7 @@ to select a single run.
 ```bash
 cove runs list --limit 20 --since 24h --status all
 cove runs list --json
+cove runs list --ndjson
 cove runs show 20260505
 cove runs export 20260505 --format gha-summary >> "$GITHUB_STEP_SUMMARY"
 cove runs export 20260505 --format tar > cove-run.tar.gz

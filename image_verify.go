@@ -229,7 +229,7 @@ func runImageVerify(args []string) error {
 	quiet := fs.Bool("quiet", false, "only print on failure")
 	strict := fs.Bool("strict", false, "treat missing execattach.v3 as an error")
 	newerThan := fs.Duration("newer-than", 0, "require image built or created within duration")
-	if err := parseFlagsOrHelp(fs, args); err != nil {
+	if err := parseFlagsOrHelp(fs, moveKnownFlagsFirst(args, map[string]bool{"json": false})); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
