@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -39,7 +40,7 @@ func printRunsUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove runs <subcommand> [options]
 
 Subcommands:
-  list [--limit N] [--since D] [--status ok|fail|all] [--json]
+  list [--limit N] [--since D] [--status ok|fail|all] [--json|--ndjson]
   show <run-id-prefix> [--json]
   export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]`)
 }
@@ -47,11 +48,16 @@ Subcommands:
 func runRunsList(args []string) error {
 	fs := flag.NewFlagSet("runs list", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() { printRunsListUsage(fs.Output()) }
 	limit := fs.Int("limit", 25, "maximum runs to show")
 	sinceText := fs.String("since", "", "only show runs started within duration")
 	status := fs.String("status", "all", "status filter: ok, fail, all")
-	jsonOut := fs.Bool("json", false, "emit NDJSON")
+	jsonOut := fs.Bool("json", false, "emit JSON array")
+	ndjsonOut := fs.Bool("ndjson", false, "emit NDJSON")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	var since time.Duration
@@ -65,6 +71,9 @@ func runRunsList(args []string) error {
 	if *status != "ok" && *status != "fail" && *status != "all" {
 		return fmt.Errorf("invalid --status %q: want ok, fail, or all", *status)
 	}
+	if *limit < 0 {
+		return fmt.Errorf("invalid --limit %d: want non-negative", *limit)
+	}
 	summaries, err := runs.List(vmconfig.RunsDir(), runs.Filter{
 		Limit:  *limit,
 		Since:  since,
@@ -73,16 +82,39 @@ func runRunsList(args []string) error {
 	if err != nil {
 		return err
 	}
+	if *limit == 0 {
+		summaries = []runs.Summary{}
+	}
+	if *jsonOut && *ndjsonOut {
+		return fmt.Errorf("runs list: choose only one of --json or --ndjson")
+	}
 	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		return enc.Encode(summaries)
+	}
+	if *ndjsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		for _, summary := range summaries {
 			if err := enc.Encode(summary); err != nil {
-				return fmt.Errorf("runs list json: %w", err)
+				return fmt.Errorf("runs list ndjson: %w", err)
 			}
 		}
 		return nil
 	}
 	return printRunsTable(os.Stdout, summaries)
+}
+
+func printRunsListUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove runs list [--limit N] [--since D] [--status ok|fail|all] [--json|--ndjson]
+
+List local run metrics from ~/.vz/runs.
+
+Flags:
+  --limit N              maximum runs to show (default 25)
+  --since D              only show runs started within duration, for example 24h
+  --status ok|fail|all   filter by final status (default all)
+  --json                 emit a JSON array
+  --ndjson               emit one JSON object per run`)
 }
 
 func runRunsShow(args []string) error {
