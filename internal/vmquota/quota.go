@@ -16,6 +16,9 @@ const FileName = "quotas.json"
 // ErrQuotaExceeded reports that a request exceeds a configured quota.
 var ErrQuotaExceeded = errors.New("quota exceeded")
 
+// ErrAPFSQuotaUnsupported reports a host diskutil without directory quotas.
+var ErrAPFSQuotaUnsupported = errors.New("apfs directory quotas unsupported")
+
 type Quota struct {
 	CPUs     uint   `json:"cpus,omitempty"`
 	MemoryGB uint64 `json:"memory_gb,omitempty"`
@@ -106,6 +109,9 @@ func ApplyAPFSQuotaWithRunner(vmDir string, gb uint64, runner Runner) error {
 	out, err := runner.Run("diskutil", "apfs", "setQuota", vmDir, fmt.Sprintf("%dg", gb))
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, `did not recognize APFS verb "setQuota"`) {
+			return fmt.Errorf("%w: %s", ErrAPFSQuotaUnsupported, msg)
+		}
 		if msg == "" {
 			return fmt.Errorf("apply apfs quota: %w", err)
 		}

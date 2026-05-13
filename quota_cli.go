@@ -189,5 +189,12 @@ func applyInstallDiskQuota(dir string) error {
 	if diskSizeGB == 0 {
 		return nil
 	}
-	return vmquota.ApplyAPFSQuota(dir, diskSizeGB)
+	if err := vmquota.ApplyAPFSQuota(dir, diskSizeGB); err != nil {
+		if errors.Is(err, vmquota.ErrAPFSQuotaUnsupported) {
+			fmt.Printf("warning: APFS directory quota unsupported on this host; continuing without host disk quota: %v\n", err)
+			return nil
+		}
+		return err
+	}
+	return nil
 }

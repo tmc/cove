@@ -142,12 +142,16 @@ type recordRunner struct {
 	name string
 	args []string
 	err  error
+	out  []byte
 }
 
 func (r *recordRunner) Run(name string, args ...string) ([]byte, error) {
 	r.name = name
 	r.args = append([]string(nil), args...)
 	if r.err != nil {
+		if r.out != nil {
+			return r.out, r.err
+		}
 		return []byte("runner failed"), r.err
 	}
 	return nil, nil
@@ -160,5 +164,15 @@ func TestApplyAPFSQuotaIncludesOutput(t *testing.T) {
 	}
 	if got := err.Error(); got == "" || !strings.Contains(got, "runner failed") {
 		t.Fatalf("error = %q, want command output", got)
+	}
+}
+
+func TestApplyAPFSQuotaUnsupported(t *testing.T) {
+	err := ApplyAPFSQuotaWithRunner(t.TempDir(), 2, &recordRunner{
+		err: errors.New("exit status 1"),
+		out: []byte(`diskutil: did not recognize APFS verb "setQuota"`),
+	})
+	if !errors.Is(err, ErrAPFSQuotaUnsupported) {
+		t.Fatalf("error = %v, want ErrAPFSQuotaUnsupported", err)
 	}
 }
