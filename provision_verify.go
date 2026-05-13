@@ -13,7 +13,6 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -55,14 +54,11 @@ func handleVerify(args []string) error {
 	// Check if VM is running.
 	target := currentVMSelection()
 	if *vmFlag != "" {
-		if err := validateNewVMName(*vmFlag); err != nil {
-			return fmt.Errorf("verify: invalid VM name %q: %w", *vmFlag, err)
-		}
-		dir, err := vmconfig.EnsureDir(*vmFlag, vmDir)
+		var err error
+		target, err = requireExistingVMSelection("verify", *vmFlag)
 		if err != nil {
 			return err
 		}
-		target = vmSelection{Directory: dir, Name: *vmFlag}
 	}
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {

@@ -23,6 +23,14 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"helper bare", []string{"helper"}, true},
 		{"helper daemon", []string{"helper", "daemon"}, true},
 		{"helper status", []string{"helper", "status"}, true},
+		{"agent-upgrade defers VM resolution", []string{"agent-upgrade"}, true},
+		{"upgrade-agent defers VM resolution", []string{"upgrade-agent"}, true},
+		{"provision-agent defers VM resolution", []string{"provision-agent"}, true},
+		{"inject-agent defers VM resolution", []string{"inject-agent"}, true},
+		{"verify defers VM resolution", []string{"verify"}, true},
+		{"doctor defers VM resolution", []string{"doctor"}, true},
+		{"shared-folder read path defers VM resolution", []string{"shared-folder", "list"}, true},
+		{"shared-folders alias defers VM resolution", []string{"shared-folders", "list"}, true},
 		{"list is global", []string{"list"}, true},
 		{"ls is global", []string{"ls"}, true},
 		{"cp uses control socket", []string{"cp"}, true},
@@ -121,6 +129,82 @@ func TestStorageWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", vm)); !os.IsNotExist(err) {
 		t.Fatalf("storage VM dir stat = %v, want not exist", err)
+	}
+}
+
+func TestAgentProvisionVerifyWithMissingVMDoesNotCreateVMDir(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	for _, tt := range []struct {
+		name string
+		args []string
+		vm   string
+		want string
+	}{
+		{"agent-upgrade global vm", []string{"-vm", "missing-agent-upgrade-global", "agent-upgrade"}, "missing-agent-upgrade-global", `no VM named "missing-agent-upgrade-global"`},
+		{"agent-upgrade post vm", []string{"agent-upgrade", "-vm", "missing-agent-upgrade-post"}, "missing-agent-upgrade-post", `no VM named "missing-agent-upgrade-post"`},
+		{"provision-agent global vm", []string{"-vm", "missing-provision-agent-global", "provision-agent"}, "missing-provision-agent-global", `no VM named "missing-provision-agent-global"`},
+		{"verify global vm", []string{"-vm", "missing-verify-global", "verify"}, "missing-verify-global", "disk image not found"},
+		{"verify post vm", []string{"verify", "-vm", "missing-verify-post"}, "missing-verify-post", `no VM named "missing-verify-post"`},
+		{"doctor global vm", []string{"-vm", "missing-doctor-global", "doctor"}, "missing-doctor-global", "disk image not found"},
+		{"doctor post vm", []string{"doctor", "-vm", "missing-doctor-post"}, "missing-doctor-post", `no VM named "missing-doctor-post"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := exec.Command(bin, tt.args...)
+			cmd.Env = append(os.Environ(), "HOME="+home)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			err := cmd.Run()
+			if err == nil {
+				t.Fatalf("command succeeded\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stderr.String()+stdout.String(), tt.want) {
+				t.Fatalf("output missing %q\nstdout:\n%s\nstderr:\n%s", tt.want, stdout.String(), stderr.String())
+			}
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", tt.vm)); !os.IsNotExist(err) {
+				t.Fatalf("VM dir stat = %v, want not exist", err)
+			}
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(err) {
+				t.Fatalf("default VM dir stat = %v, want not exist", err)
+			}
+		})
+	}
+}
+
+func TestSharedFolderWithMissingVMDoesNotCreateVMDir(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	for _, tt := range []struct {
+		name string
+		args []string
+		vm   string
+	}{
+		{"list global vm", []string{"-vm", "missing-shared-list", "shared-folder", "list"}, "missing-shared-list"},
+		{"status global vm", []string{"-vm", "missing-shared-status", "shared-folder", "status"}, "missing-shared-status"},
+		{"pending positional vm", []string{"shared-folder", "pending", "missing-shared-pending"}, "missing-shared-pending"},
+		{"mount global vm", []string{"-vm", "missing-shared-mount", "shared-folder", "mount"}, "missing-shared-mount"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := exec.Command(bin, tt.args...)
+			cmd.Env = append(os.Environ(), "HOME="+home)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			_ = cmd.Run()
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", tt.vm)); !os.IsNotExist(err) {
+				t.Fatalf("VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+			}
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(err) {
+				t.Fatalf("default VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 
