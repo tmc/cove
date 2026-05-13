@@ -150,8 +150,8 @@ func runAgentSandboxCommand(env commandEnv, _ string, args []string) int {
 	}
 	return commandError(env, handleAgentSandboxCommand(args))
 }
-func runAgentUpgradeCommand(env commandEnv, _ string, _ []string) int {
-	return commandError(env, upgradeAgent())
+func runAgentUpgradeCommand(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleAgentUpgradeCommand(args))
 }
 func runBenchCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleBenchCommand(args))

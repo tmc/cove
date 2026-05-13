@@ -14,6 +14,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -176,7 +177,15 @@ func goListModuleDir(workingDir string) (string, error) {
 // Idempotent: if the running VM already has the same agent version, returns
 // without rebuilding.
 func provisionAgent() error {
-	return provisionAgentForVM(currentVMSelection())
+	target := currentVMSelection()
+	if vmName != "" {
+		var err error
+		target, err = requireExistingVMSelection("provision-agent", vmName)
+		if err != nil {
+			return err
+		}
+	}
+	return provisionAgentForVM(target)
 }
 
 func provisionAgentForVM(target vmSelection) error {
@@ -187,6 +196,37 @@ func provisionAgentForVM(target vmSelection) error {
 	}
 	fmt.Println("Mounting disk for offline injection...")
 	return injectAgentOnlyForVM(target)
+}
+
+func handleAgentUpgradeCommand(args []string) error {
+	fs := flag.NewFlagSet("agent-upgrade", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	vmFlag := fs.String("vm", "", "VM name")
+	fs.Usage = func() {
+		printAgentUpgradeUsage(os.Stderr)
+	}
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove agent-upgrade [-vm <name>]")
+	}
+	target := currentVMSelection()
+	name := vmName
+	if *vmFlag != "" {
+		name = *vmFlag
+	}
+	if name != "" {
+		var err error
+		target, err = requireExistingVMSelection("agent-upgrade", name)
+		if err != nil {
+			return err
+		}
+	}
+	return upgradeAgentAt(target.controlSocketPath())
 }
 
 // provisionAgentRunning provisions the agent into a running VM via the
