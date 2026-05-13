@@ -55,15 +55,20 @@ func handleVerify(args []string) error {
 	// Check if VM is running.
 	target := currentVMSelection()
 	if *vmFlag != "" {
+		if err := validateNewVMName(*vmFlag); err != nil {
+			return fmt.Errorf("verify: invalid VM name %q: %w", *vmFlag, err)
+		}
 		dir, err := vmconfig.EnsureDir(*vmFlag, vmDir)
 		if err != nil {
 			return err
 		}
 		target = vmSelection{Directory: dir, Name: *vmFlag}
 	}
-	reportHostTCCPreAuthState(os.Stdout)
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
+		if agentstate.Platform(target.Directory) == agentstate.PlatformMacOS {
+			reportHostTCCPreAuthState(os.Stdout)
+		}
 		return verifyRunningForVM(target, sock, *verboseFlag, *tccPathFlag)
 	}
 
@@ -332,9 +337,22 @@ func agentExecExitOK(resp *controlpb.ControlResponse, err error) bool {
 var ErrVMDiskImageMissing = errors.New("vm disk image not found")
 
 func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
+	platform := agentstate.Platform(target.Directory)
+	if platform == agentstate.PlatformLinux {
+		linuxDiskPath := target.linuxDiskPath()
+		if _, err := os.Stat(linuxDiskPath); err == nil {
+			return fmt.Errorf("stopped Linux verification is not implemented for %s; boot the VM and run 'cove -vm %s verify'", linuxDiskPath, target.elevationLabel())
+		}
+		if _, err := os.Stat(linuxDiskPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("stat linux disk image: %w", err)
+		}
+	}
 	diskPath := target.diskPath()
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
 		return fmt.Errorf("%w: %s\nRun 'cove install' first to create a VM", ErrVMDiskImageMissing, diskPath)
+	}
+	if platform == agentstate.PlatformMacOS {
+		reportHostTCCPreAuthState(os.Stdout)
 	}
 
 	if err := checkDiskNotMounted(diskPath); err != nil {
