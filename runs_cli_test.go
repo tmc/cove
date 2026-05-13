@@ -27,6 +27,76 @@ func TestParseRunsShowArgsAllowsFlagsAfterPrefix(t *testing.T) {
 	}
 }
 
+func TestRunsUsageDocumentsNDJSONAlias(t *testing.T) {
+	var b bytes.Buffer
+	printRunsUsage(&b)
+	if !strings.Contains(b.String(), "--json|--ndjson") {
+		t.Fatalf("usage = %q, want ndjson alias", b.String())
+	}
+}
+
+func TestRunsListHelpExitsZero(t *testing.T) {
+	if err := runRunsList([]string{"-h"}); err != nil {
+		t.Fatalf("runRunsList(-h): %v", err)
+	}
+	var b bytes.Buffer
+	printRunsListUsage(&b)
+	for _, want := range []string{"Usage: cove runs list", "--status ok|fail|all", "--json", "--ndjson"} {
+		if !strings.Contains(b.String(), want) {
+			t.Fatalf("usage missing %q:\n%s", want, b.String())
+		}
+	}
+}
+
+func TestRunRunsListJSONModes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".vz", "runs")
+	writeRunsCLIRun(t, root, "20260510-a", "vm-a")
+	writeRunsCLIRun(t, root, "20260510-b", "vm-b")
+
+	jsonOut, err := captureStdoutResult(t, func() error {
+		return runRunsList([]string{"--json", "--limit", "2"})
+	})
+	if err != nil {
+		t.Fatalf("runRunsList --json: %v", err)
+	}
+	var summaries []runs.Summary
+	if err := json.Unmarshal([]byte(jsonOut), &summaries); err != nil {
+		t.Fatalf("--json output is not a JSON array: %v\n%s", err, jsonOut)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("--json summaries = %d, want 2: %s", len(summaries), jsonOut)
+	}
+
+	ndjsonOut, err := captureStdoutResult(t, func() error {
+		return runRunsList([]string{"--ndjson", "--limit", "2"})
+	})
+	if err != nil {
+		t.Fatalf("runRunsList --ndjson: %v", err)
+	}
+	if got := strings.Count(strings.TrimSpace(ndjsonOut), "\n") + 1; got != 2 {
+		t.Fatalf("--ndjson lines = %d, want 2:\n%s", got, ndjsonOut)
+	}
+}
+
+func TestRunRunsListLimitZeroReturnsEmpty(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".vz", "runs")
+	writeRunsCLIRun(t, root, "20260510-a", "vm-a")
+
+	out, err := captureStdoutResult(t, func() error {
+		return runRunsList([]string{"--json", "--limit", "0"})
+	})
+	if err != nil {
+		t.Fatalf("runRunsList --limit 0: %v", err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("--limit 0 JSON = %q, want []", strings.TrimSpace(out))
+	}
+}
+
 func TestParseRunsExportArgsAllowsFormatAfterPrefix(t *testing.T) {
 	tests := [][]string{
 		{"abc123", "--format", "gha-summary"},
