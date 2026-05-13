@@ -105,6 +105,11 @@ func TestParseUpFlagsErrorPaths(t *testing.T) {
 			args:    []string{"-user", "u", "-password", "p", "-headless", "-setup-script", filepath.Join(home, "missing.sh")},
 			wantErr: "setup-script",
 		},
+		{
+			name:    "short verbose trap",
+			args:    []string{"-user", "u", "-password", "p", "-headless", "-v"},
+			wantErr: "use -verbose",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -116,6 +121,20 @@ func TestParseUpFlagsErrorPaths(t *testing.T) {
 				t.Errorf("parseUpFlags error = %q, want substring %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestParseUpFlagsVerbose(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	restoreVMGlobals(t)
+
+	cfg, err := parseUpFlags([]string{"-user", "u", "-password", "p", "-headless", "-verbose"})
+	if err != nil {
+		t.Fatalf("parseUpFlags: %v", err)
+	}
+	if !cfg.verbose {
+		t.Fatal("cfg.verbose = false, want true")
 	}
 }
 
