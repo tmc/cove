@@ -16,6 +16,8 @@ import "strings"
 var vmDirIndependentCommands = map[string]bool{
 	"helper":  true,
 	"daemon":  true,
+	"cp":      true,
+	"ctl":     true,
 	"logs":    true,
 	"runs":    true,
 	"secret":  true,
