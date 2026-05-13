@@ -107,6 +107,34 @@ func TestGCRespectsSharedPullLockAndGrace(t *testing.T) {
 	}
 }
 
+func TestGCDryRunDoesNotDelete(t *testing.T) {
+	s := New(t.TempDir())
+	data := []byte("old")
+	digest := testDigest(data)
+	if err := s.Put(digest, int64(len(data)), bytes.NewReader(data)); err != nil {
+		t.Fatalf("Put(): %v", err)
+	}
+	path, err := s.BlobPath(digest)
+	if err != nil {
+		t.Fatalf("BlobPath(): %v", err)
+	}
+	oldTime := time.Now().Add(-2 * GCGrace)
+	if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+		t.Fatalf("Chtimes(): %v", err)
+	}
+
+	res, err := s.GCWithOptions(nil, GCOptions{Grace: GCGrace, DryRun: true})
+	if err != nil {
+		t.Fatalf("GCWithOptions(dry-run): %v", err)
+	}
+	if res.Deleted != 1 || res.Reclaimed != int64(len(data)) {
+		t.Fatalf("GC result = %+v, want one candidate", res)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("dry-run deleted blob: %v", err)
+	}
+}
+
 func TestReachableFromVMsUsesStoredManifest(t *testing.T) {
 	s := New(t.TempDir())
 	blobDigest := testDigest([]byte("blob"))

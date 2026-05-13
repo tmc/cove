@@ -30,12 +30,13 @@ func handleStoreCommand(args []string) error {
 func handleStoreGC(args []string) error {
 	fs := flag.NewFlagSet("store gc", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	dryRun := fs.Bool("dry-run", false, "print candidate deletion totals without deleting blobs")
 	fs.Usage = func() { printStoreGCUsage(os.Stderr) }
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: cove store gc")
+		return fmt.Errorf("usage: cove store gc [-dry-run]")
 	}
 	s := store.New("")
 	reachable, err := s.ReachableFromVMs(vmconfig.BaseDir())
@@ -49,9 +50,16 @@ func handleStoreGC(args []string) error {
 	for digest := range buildReachable {
 		reachable[digest] = true
 	}
-	res, err := s.GC(reachable, store.GCGrace)
+	res, err := s.GCWithOptions(reachable, store.GCOptions{
+		Grace:  store.GCGrace,
+		DryRun: *dryRun,
+	})
 	if err != nil {
 		return err
+	}
+	if *dryRun {
+		fmt.Printf("Store GC dry run: would delete %d blob(s), reclaim %s, keep %d young blob(s)\n", res.Deleted, bytefmt.Size(res.Reclaimed), res.KeptYoung)
+		return nil
 	}
 	fmt.Printf("Store GC complete: deleted %d blob(s), reclaimed %s, kept %d young blob(s)\n", res.Deleted, bytefmt.Size(res.Reclaimed), res.KeptYoung)
 	return nil
@@ -67,9 +75,12 @@ Commands:
 }
 
 func printStoreGCUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove store gc
+	fmt.Fprintln(w, `Usage: cove store gc [-dry-run]
 
 Garbage collect ~/.vz/store. GC takes an exclusive store lock and keeps blobs
 modified within the last hour so concurrent or recently interrupted pulls are
-not collected.`)
+not collected.
+
+Flags:
+  -dry-run    Print candidate deletion totals without deleting blobs`)
 }
