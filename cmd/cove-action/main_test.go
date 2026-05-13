@@ -2,11 +2,9 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -84,82 +82,15 @@ func TestRunReturnsGuestExitCode(t *testing.T) {
 	}
 }
 
-func TestRunCopiesArtifacts(t *testing.T) {
-	dir := t.TempDir()
-	oldCleanupWait := cleanupWait
-	cleanupWait = 10 * time.Millisecond
-	t.Cleanup(func() { cleanupWait = oldCleanupWait })
-	stub := writeStubCove(t, dir, 0)
-	out := filepath.Join(dir, "out")
-	code := run([]string{
-		"-cove-bin", stub,
-		"-image", "ubuntu-ci",
-		"-command", "echo ok",
-		"-artifacts", "/tmp/report.txt\n/var/log/app.log",
-	}, []string{
-		"HOME=" + dir,
-		"GITHUB_OUTPUT=" + out,
-		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
-		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
-	}, os.Stdout, os.Stderr)
-	if code != 0 {
-		t.Fatalf("run returned %d, want 0", code)
-	}
-	runDir := filepath.Join(dir, ".vz", "runs", "stub-run")
-	if !strings.Contains(readFile(t, out), "artifact-path="+runDir) {
-		t.Fatalf("outputs missing artifact path:\n%s", readFile(t, out))
-	}
-	for _, path := range []string{
-		filepath.Join(runDir, "guest", "tmp", "report.txt"),
-		filepath.Join(runDir, "guest", "var", "log", "app.log"),
-	} {
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("artifact %s missing: %v", path, err)
-		}
-	}
-	log := readFile(t, filepath.Join(dir, "log"))
-	if !strings.Contains(log, "cp cove-action-local-1:/tmp/report.txt "+filepath.Join(runDir, "guest", "tmp", "report.txt")) {
-		t.Fatalf("copy command missing from log:\n%s", log)
-	}
-}
-
-func TestRunForwardsAnnotationFile(t *testing.T) {
-	dir := t.TempDir()
-	oldCleanupWait := cleanupWait
-	cleanupWait = 10 * time.Millisecond
-	t.Cleanup(func() { cleanupWait = oldCleanupWait })
-	stub := writeStubCove(t, dir, 0)
-	var stdout bytes.Buffer
-	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok"}, []string{
-		"HOME=" + dir,
-		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
-		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
-		"COVE_STUB_ANNOTATIONS=1",
-	}, &stdout, os.Stderr)
-	if code != 0 {
-		t.Fatalf("run returned %d, want 0", code)
-	}
-	got := stdout.String()
-	if !strings.Contains(got, "::error file=main.go,line=12::compile failed") {
-		files, _ := filepath.Glob(filepath.Join(dir, ".vz", "runs", "*", "github-annotations.log"))
-		t.Fatalf("stdout missing annotation (files %v): %q", files, got)
-	}
-	if strings.Contains(got, "plain secret-ish log line") {
-		t.Fatalf("stdout forwarded non-annotation line:\n%s", got)
-	}
-}
-
 func TestRunCacheHitUsesCacheImage(t *testing.T) {
 	dir := t.TempDir()
 	oldCleanupWait := cleanupWait
 	cleanupWait = 10 * time.Millisecond
 	t.Cleanup(func() { cleanupWait = oldCleanupWait })
 	stub := writeStubCove(t, dir, 0)
-	key := testCacheKey(t, "go-main")
-	ref := cacheImageRef(key)
-	stageActionCacheImage(t, dir, key)
+	stageActionCacheImage(t, dir, "go-main")
 	out := filepath.Join(dir, "out")
-	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", key}, []string{
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", "go-main"}, []string{
 		"HOME=" + dir,
 		"GITHUB_OUTPUT=" + out,
 		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
@@ -169,7 +100,7 @@ func TestRunCacheHitUsesCacheImage(t *testing.T) {
 		t.Fatalf("run returned %d, want 0", code)
 	}
 	log := readFile(t, filepath.Join(dir, "log"))
-	if !strings.Contains(log, "run -fork-from "+ref+" -fork-name cove-action-local-1 -ephemeral -headless") {
+	if !strings.Contains(log, "run -fork-from cache/go-main:latest -fork-name cove-action-local-1 -ephemeral -headless") {
 		t.Fatalf("cache hit did not fork from cache image:\n%s", log)
 	}
 	if strings.Contains(log, "image build") {
@@ -178,7 +109,7 @@ func TestRunCacheHitUsesCacheImage(t *testing.T) {
 	got := readFile(t, out)
 	for _, want := range []string{
 		"cache-hit=true",
-		"cache-image=" + ref,
+		"cache-image=cache/go-main:latest",
 		"cache-saved=false",
 	} {
 		if !strings.Contains(got, want) {
@@ -194,19 +125,15 @@ func TestRunCacheExpiredEmitsEvict(t *testing.T) {
 	t.Cleanup(func() { cleanupWait = oldCleanupWait })
 	stub := writeStubCove(t, dir, 0)
 	out := filepath.Join(dir, "out")
-	key := testCacheKey(t, "go-old")
-	stageActionCacheImage(t, dir, key)
-	cacheDir, ok := localImagePath(config{Environ: []string{"HOME=" + dir}}, cacheImageRef(key))
-	if !ok {
-		t.Fatal("localImagePath failed")
-	}
+	stageActionCacheImage(t, dir, "go-old")
+	cacheDir := filepath.Join(dir, ".vz", "images", "cache", "go-old", "latest")
 	if err := os.WriteFile(filepath.Join(cacheDir, "CACHE-TTL"), []byte("1h\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cacheDir, "manifest.json"), []byte(`{"name":"cache/`+key+`","tag":"latest","createdAt":"2026-05-01T00:00:00Z"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cacheDir, "manifest.json"), []byte(`{"name":"cache/go-old","tag":"latest","createdAt":"2026-05-01T00:00:00Z"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", key}, []string{
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", "go-old"}, []string{
 		"HOME=" + dir,
 		"GITHUB_OUTPUT=" + out,
 		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
@@ -244,13 +171,11 @@ func TestRunCacheMissSavesImage(t *testing.T) {
 	t.Cleanup(func() { cleanupWait = oldCleanupWait })
 	stub := writeStubCove(t, dir, 0)
 	out := filepath.Join(dir, "out")
-	key := testCacheKey(t, "go-main")
-	ref := cacheImageRef(key)
 	code := run([]string{
 		"-cove-bin", stub,
 		"-image", "ubuntu-ci",
 		"-command", "echo ok",
-		"-cache-key", key,
+		"-cache-key", "go-main",
 		"-cache-paths", "/home/runner/.cache/go-build",
 	}, []string{
 		"HOME=" + dir,
@@ -264,24 +189,20 @@ func TestRunCacheMissSavesImage(t *testing.T) {
 	log := readFile(t, filepath.Join(dir, "log"))
 	for _, want := range []string{
 		"run -fork-from ubuntu-ci -fork-name cove-action-local-1 -ephemeral -headless -keep",
-		"image build -from cove-action-local-1 -tag " + ref,
+		"image build -from cove-action-local-1 -tag cache/go-main:latest",
 		"vm delete cove-action-local-1",
 	} {
 		if !strings.Contains(log, want) {
 			t.Fatalf("log missing %q in:\n%s", want, log)
 		}
 	}
-	cacheDir, ok := localImagePath(config{Environ: []string{"HOME=" + dir}}, ref)
-	if !ok {
-		t.Fatal("localImagePath failed")
-	}
-	if _, err := os.Stat(filepath.Join(cacheDir, "CACHE-TTL")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".vz", "images", "cache", "go-main", "latest", "CACHE-TTL")); err != nil {
 		t.Fatalf("CACHE-TTL marker missing: %v", err)
 	}
 	got := readFile(t, out)
 	for _, want := range []string{
 		"cache-hit=false",
-		"cache-image=" + ref,
+		"cache-image=cache/go-main:latest",
 		"cache-saved=true",
 	} {
 		if !strings.Contains(got, want) {
@@ -296,8 +217,7 @@ func TestRunCacheFailureDoesNotSave(t *testing.T) {
 	cleanupWait = 10 * time.Millisecond
 	t.Cleanup(func() { cleanupWait = oldCleanupWait })
 	stub := writeStubCove(t, dir, 9)
-	key := testCacheKey(t, "go-main")
-	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "exit 9", "-cache-key", key}, []string{
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "exit 9", "-cache-key", "go-main"}, []string{
 		"HOME=" + dir,
 		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
 		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
@@ -318,9 +238,7 @@ func TestRunCacheDuplicateSaveIsNonfatal(t *testing.T) {
 	t.Cleanup(func() { cleanupWait = oldCleanupWait })
 	stub := writeStubCove(t, dir, 0)
 	out := filepath.Join(dir, "out")
-	key := testCacheKey(t, "go-main")
-	ref := cacheImageRef(key)
-	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", key}, []string{
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-cache-key", "go-main"}, []string{
 		"HOME=" + dir,
 		"GITHUB_OUTPUT=" + out,
 		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
@@ -331,7 +249,7 @@ func TestRunCacheDuplicateSaveIsNonfatal(t *testing.T) {
 		t.Fatalf("run returned %d, want 0", code)
 	}
 	log := readFile(t, filepath.Join(dir, "log"))
-	if !strings.Contains(log, "image build -from cove-action-local-1 -tag "+ref) {
+	if !strings.Contains(log, "image build -from cove-action-local-1 -tag cache/go-main:latest") {
 		t.Fatalf("duplicate test did not attempt cache save:\n%s", log)
 	}
 	got := readFile(t, out)
@@ -345,12 +263,6 @@ func TestCacheImageRefNormalizesUnsafeKey(t *testing.T) {
 	if got != "cache/linux-go-main-abc:latest" {
 		t.Fatalf("cacheImageRef = %q, want cache/linux-go-main-abc:latest", got)
 	}
-}
-
-func testCacheKey(t *testing.T, base string) string {
-	t.Helper()
-	name := regexp.MustCompile(`[^A-Za-z0-9_.-]+`).ReplaceAllString(t.Name(), "-")
-	return base + "-" + strings.Trim(name, "-.")
 }
 
 func TestParseConfigRequiresCommand(t *testing.T) {
@@ -388,14 +300,6 @@ run)
 	while :; do sleep 1; done
 	;;
 shell)
-	if [ "${COVE_STUB_ANNOTATIONS:-}" = "1" ]; then
-		mkdir -p "$HOME/.vz/runs/stub-run" "$HOME/.vz/runs/$2"
-		{
-			echo "::error file=main.go,line=12::compile failed"
-			echo "plain secret-ish log line"
-		} > "$HOME/.vz/runs/stub-run/github-annotations.log"
-		cp "$HOME/.vz/runs/stub-run/github-annotations.log" "$HOME/.vz/runs/$2/github-annotations.log"
-	fi
 	count=0
 	if [ -f "$COVE_STUB_COUNT" ]; then
 		count=$(cat "$COVE_STUB_COUNT")
@@ -408,11 +312,6 @@ shell)
 	exit ` + strconv.Itoa(jobExit) + `
 	;;
 ctl)
-	exit 0
-	;;
-cp)
-	mkdir -p "$(dirname "$3")"
-	printf 'artifact\n' > "$3"
 	exit 0
 	;;
 image)
@@ -465,8 +364,20 @@ func stageActionCacheImage(t *testing.T, home, key string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"name":"cache/` + key + `","tag":"latest","createdAt":"` + time.Now().UTC().Format(time.RFC3339) + `"}`
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+	manifest := struct {
+		Name      string    `json:"name"`
+		Tag       string    `json:"tag"`
+		CreatedAt time.Time `json:"createdAt"`
+	}{
+		Name:      "cache/" + key,
+		Tag:       "latest",
+		CreatedAt: time.Now(),
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -631,20 +542,6 @@ func TestParseEnvBlock(t *testing.T) {
 	}
 }
 
-func TestParseArtifactPaths(t *testing.T) {
-	got, err := parseArtifactPaths("\n# skip\n/tmp/report.txt\n /var/log/app.log \n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"/tmp/report.txt", "/var/log/app.log"}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("parseArtifactPaths = %v, want %v", got, want)
-	}
-	if _, err := parseArtifactPaths("relative.txt"); err == nil {
-		t.Fatal("parseArtifactPaths(relative) err = nil")
-	}
-}
-
 func TestParseSecretsBlockMoreEdges(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -762,19 +659,13 @@ func TestRunCacheModeDispatch(t *testing.T) {
 			cleanupWait = 10 * time.Millisecond
 			t.Cleanup(func() { cleanupWait = oldCleanupWait })
 			stub := writeStubCove(t, dir, 0)
-			key := testCacheKey(t, "k1")
-			ref := cacheImageRef(key)
 			if tc.stageHit {
-				stageActionCacheImage(t, dir, key)
-			}
-			wantForkRef := tc.wantForkRef
-			if wantForkRef == "cache/k1:latest" {
-				wantForkRef = ref
+				stageActionCacheImage(t, dir, "k1")
 			}
 			out := filepath.Join(dir, "out")
 			code := run([]string{
 				"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok",
-				"-cache-key", key, "-cache-mode", tc.mode,
+				"-cache-key", "k1", "-cache-mode", tc.mode,
 			}, []string{
 				"HOME=" + dir,
 				"GITHUB_OUTPUT=" + out,
@@ -785,8 +676,8 @@ func TestRunCacheModeDispatch(t *testing.T) {
 				t.Fatalf("run returned %d, want 0", code)
 			}
 			log := readFile(t, filepath.Join(dir, "log"))
-			if !strings.Contains(log, "run -fork-from "+wantForkRef+" ") {
-				t.Fatalf("expected fork-from %q in log:\n%s", wantForkRef, log)
+			if !strings.Contains(log, "run -fork-from "+tc.wantForkRef+" ") {
+				t.Fatalf("expected fork-from %q in log:\n%s", tc.wantForkRef, log)
 			}
 			savedLog := strings.Contains(log, "image build")
 			if savedLog != tc.wantSave {

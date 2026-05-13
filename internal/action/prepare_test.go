@@ -204,11 +204,80 @@ func TestRunPrepareForceBypassesFreshSkip(t *testing.T) {
 	}
 }
 
+func TestRunPrepareRejectsRegistryRef(t *testing.T) {
+	for _, ref := range []string{"localhost:5000/cove/audit:latest", "ghcr.io/tmc/cove/audit:latest"} {
+		t.Run(ref, func(t *testing.T) {
+			r := &fakeRunner{}
+			got := RunPrepare(context.Background(), PrepareConfig{
+				CoveBin: "cove",
+				Ref:     ref,
+				Force:   true,
+				Runner:  r,
+			})
+			if got.Status != StatusFail {
+				t.Fatalf("RunPrepare registry ref status = %q, want fail", got.Status)
+			}
+			if len(got.Checks) != 1 || got.Checks[0].Name != "image-ref" {
+				t.Fatalf("checks = %#v, want single image-ref check", got.Checks)
+			}
+			if !strings.Contains(got.Checks[0].Message, "registry image refs are not supported") {
+				t.Fatalf("message = %q, want registry unsupported hint", got.Checks[0].Message)
+			}
+			if len(r.calls) != 0 {
+				t.Fatalf("RunPrepare registry ref made runner calls: %v", r.calls)
+			}
+		})
+	}
+}
+
 func TestMovePrepareFlagsFirst(t *testing.T) {
-	got := movePrepareFlagsFirst([]string{"runner:latest", "--json", "--force", "--ttl", "2h", "--cove-bin", "./cove"})
-	want := []string{"--json", "--force", "--ttl", "2h", "--cove-bin", "./cove", "runner:latest"}
+	got := movePrepareFlagsFirst([]string{"runner:latest", "--json", "--force", "--ttl", "2h", "--cove-bin", "./cove", "--registry-ref", "ghcr.io/tmc/cove:latest"})
+	want := []string{"--json", "--force", "--ttl", "2h", "--cove-bin", "./cove", "--registry-ref", "ghcr.io/tmc/cove:latest", "runner:latest"}
 	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("movePrepareFlagsFirst = %q, want %q", got, want)
+	}
+}
+
+func TestRunPrepareCommandRegistryRef(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := RunPrepareCommand(context.Background(), []string{"--registry-ref", "ghcr.io/tmc/cove/test:latest", "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("RunPrepareCommand = 0, want failure; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if strings.Contains(stderr.String(), "flag provided but not defined") {
+		t.Fatalf("stderr = %q, want known --registry-ref flag", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "registry image refs are not supported") {
+		t.Fatalf("stdout = %q, want registry unsupported report", stdout.String())
+	}
+}
+
+func TestRunPrepareCommandHelpExitsZero(t *testing.T) {
+	for _, arg := range []string{"-h", "help"} {
+		var stdout, stderr bytes.Buffer
+		if code := RunPrepareCommand(context.Background(), []string{arg}, &stdout, &stderr); code != 0 {
+			t.Fatalf("RunPrepareCommand(%s) = %d, want 0; stderr=%q", arg, code, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "Usage: cove action prepare-image") {
+			t.Fatalf("stderr = %q, want usage", stderr.String())
+		}
+		for _, want := range []string{"--registry-ref <ref>", "registry image refs are not supported"} {
+			if !strings.Contains(stderr.String(), want) {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), want)
+			}
+		}
+	}
+}
+
+func TestRunDoctorCommandHelpExitsZero(t *testing.T) {
+	for _, arg := range []string{"-h", "help"} {
+		var stdout, stderr bytes.Buffer
+		if code := RunDoctorCommand(context.Background(), []string{arg}, &stdout, &stderr); code != 0 {
+			t.Fatalf("RunDoctorCommand(%s) = %d, want 0; stderr=%q", arg, code, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "Usage: cove action doctor") {
+			t.Fatalf("stderr = %q, want usage", stderr.String())
+		}
 	}
 }
 
