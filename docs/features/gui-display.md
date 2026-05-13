@@ -81,7 +81,7 @@ Expose a VNC server for remote access:
 ```bash
 cove run -vnc :5901
 cove run -vnc :5901 -vnc-password secret
-cove run -vnc :5901 -vnc-bonjour "My VM"     # Bonjour discovery
+cove run -vnc :5901 -vnc-password secret -vnc-bonjour "My VM"
 ```
 
 Check VNC status on a running VM:
@@ -89,3 +89,28 @@ Check VNC status on a running VM:
 ```bash
 cove ctl vnc status
 ```
+
+The status output includes the localhost endpoint, whether password
+authentication is enabled, and the advertised Bonjour service name when one is
+configured. Bonjour advertisement requires `-vnc-password`; unauthenticated VNC
+is intentionally not advertised.
+
+Host-containment mode rejects VNC entirely:
+
+```bash
+cove run -host-containment -vnc :5901
+# error: -sandbox-level host-containment does not allow -vnc or -vnc-bonjour
+```
+
+## Debug Stub
+
+Attach the private GDB debug stub for kernel or low-level guest work:
+
+```bash
+cove run -gdb :1234
+cove ctl debug-stub status
+```
+
+The debug-stub status includes an endpoint and an `lldb` connection hint.
+`-gdb-listen-all` exposes the listener beyond localhost and should only be used
+on trusted networks. Host-containment mode rejects debugger listeners.

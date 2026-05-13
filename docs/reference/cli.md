@@ -404,6 +404,9 @@ cove ctl [options] <command> [args...]
 | `vnc status` | VNC server status |
 | `debug-stub status` | Debug stub status |
 
+VNC status includes the endpoint, password-protection state, and Bonjour service
+name. Debug-stub status includes the endpoint and an `lldb` connection hint.
+
 ```bash
 cove ctl ping
 cove ctl status

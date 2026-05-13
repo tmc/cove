@@ -145,10 +145,12 @@ func (s *runtimeFeatureState) snapshot() runtimeFeatureSnapshot {
 func (s *runtimeFeatureState) controlVNCStatus() VNCStatus {
 	snapshot := s.snapshot().VNC
 	status := VNCStatus{
-		Enabled:     snapshot.Requested,
-		Port:        snapshot.Port,
-		ServiceName: snapshot.BonjourService,
-		Description: snapshot.Description,
+		Enabled:           snapshot.Requested,
+		Port:              snapshot.Port,
+		Endpoint:          localhostEndpoint(snapshot.Port),
+		PasswordProtected: snapshot.PasswordProtected,
+		ServiceName:       snapshot.BonjourService,
+		Description:       snapshot.Description,
 	}
 	switch {
 	case snapshot.Error != "":
@@ -171,6 +173,8 @@ func (s *runtimeFeatureState) controlDebugStubStatus() DebugStubStatus {
 		Enabled:   s.debug.Enabled,
 		Kind:      s.debug.Kind,
 		Port:      s.debug.Port,
+		Endpoint:  debugStubEndpoint(s.debug.Port, s.debug.ListenAll),
+		Connect:   debugStubConnectCommand(s.debug.Port),
 		ListenAll: s.debug.ListenAll,
 	}
 	if s.debug.Enabled {
@@ -180,6 +184,30 @@ func (s *runtimeFeatureState) controlDebugStubStatus() DebugStubStatus {
 		status.State = "disabled"
 	}
 	return status
+}
+
+func localhostEndpoint(port uint16) string {
+	if port == 0 {
+		return ""
+	}
+	return fmt.Sprintf("127.0.0.1:%d", port)
+}
+
+func debugStubEndpoint(port uint16, listenAll bool) string {
+	if port == 0 {
+		return ""
+	}
+	if listenAll {
+		return fmt.Sprintf("0.0.0.0:%d", port)
+	}
+	return localhostEndpoint(port)
+}
+
+func debugStubConnectCommand(port uint16) string {
+	if port == 0 {
+		return ""
+	}
+	return fmt.Sprintf("lldb -o 'gdb-remote 127.0.0.1:%d'", port)
 }
 
 func (s *runtimeFeatureState) startVMServices(machine vz.VZVirtualMachine, queue dispatch.Queue) error {
@@ -411,6 +439,9 @@ func validatePrivateRuntimeOptions() error {
 	}
 	if strings.TrimSpace(vncPassword) != "" && !vncEnabled() {
 		return fmt.Errorf("-vnc-password requires -vnc or -vnc-bonjour")
+	}
+	if strings.TrimSpace(vncBonjourService) != "" && strings.TrimSpace(vncPassword) == "" {
+		return fmt.Errorf("-vnc-bonjour requires -vnc-password so advertised VNC is not unauthenticated")
 	}
 	if _, err := parsePortSpec(gdbAddress); err != nil {
 		return fmt.Errorf("invalid -gdb: %w", err)
