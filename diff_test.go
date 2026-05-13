@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +145,50 @@ func TestDiffCommandAllowsTrailingJSON(t *testing.T) {
 	}
 }
 
+func TestDiffCommandMissingRefJSON(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := ImageRef{Name: "missing-a", Tag: "latest"}
+	b := ImageRef{Name: "missing-b", Tag: "latest"}
+
+	var out bytes.Buffer
+	err := captureStdoutAllowError(t, &out, func() error {
+		return diffCommand([]string{a.String(), b.String(), "-json"})
+	})
+	if err == nil {
+		t.Fatal("diffCommand missing refs succeeded; want error")
+	}
+	if !strings.Contains(err.Error(), "image ref not found: missing-a:latest") {
+		t.Fatalf("error = %q, want missing ref", err.Error())
+	}
+	var got imageDiffErrorOutput
+	if jsonErr := json.Unmarshal(out.Bytes(), &got); jsonErr != nil {
+		t.Fatalf("unmarshal diff error JSON: %v\n%s", jsonErr, out.String())
+	}
+	if got.Refs != [2]string{a.String(), b.String()} {
+		t.Fatalf("refs = %#v, want %s/%s", got.Refs, a, b)
+	}
+	if !strings.Contains(got.Error, "image ref not found: missing-a:latest") {
+		t.Fatalf("json error = %q, want missing ref", got.Error)
+	}
+}
+
+func TestDiffCommandMissingRefText(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := ImageRef{Name: "missing-a", Tag: "latest"}
+	b := ImageRef{Name: "missing-b", Tag: "latest"}
+
+	var out bytes.Buffer
+	err := captureStdoutAllowError(t, &out, func() error {
+		return diffCommand([]string{a.String(), b.String()})
+	})
+	if err == nil {
+		t.Fatal("diffCommand missing refs succeeded; want error")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty for non-json error", out.String())
+	}
+}
+
 func TestWriteImageDiffJSON(t *testing.T) {
 	out := imageDiffOutput{
 		Refs:    [2]string{"a:latest", "b:latest"},
@@ -171,6 +216,27 @@ func TestWriteImageDiffJSON(t *testing.T) {
 	}
 	if got.Files[0].Status != "CHANGED" || got.Files[0].Old.SHA256 != "sha256:aaa" {
 		t.Fatalf("file mismatch: %+v", got.Files[0])
+	}
+}
+
+func TestWriteImageDiffErrorJSON(t *testing.T) {
+	var buf bytes.Buffer
+	out := imageDiffErrorOutput{
+		Refs:  [2]string{"a:latest", "b:latest"},
+		Error: "diff: image ref not found: a:latest",
+	}
+	if err := writeImageDiffErrorJSON(&buf, out); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasSuffix(buf.Bytes(), []byte("\n")) {
+		t.Fatalf("json output missing trailing newline")
+	}
+	var got imageDiffErrorOutput
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("round-trip: %v", err)
+	}
+	if got != out {
+		t.Fatalf("round-trip mismatch: %+v", got)
 	}
 }
 
@@ -219,4 +285,33 @@ func writeTestDiffImageOS(t *testing.T, ref ImageRef, osType, data string, ok bo
 	if err := os.WriteFile(filepath.Join(ref.Path(), imageLayoutDiskFile(osType)), []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func captureStdoutAllowError(t *testing.T, dst *bytes.Buffer, fn func() error) error {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = old
+	}()
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(dst, r)
+		done <- err
+	}()
+	fnErr := fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return fnErr
 }

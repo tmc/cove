@@ -28,6 +28,11 @@ type imageDiffFileValue struct {
 	SHA256 string `json:"sha256"`
 }
 
+type imageDiffErrorOutput struct {
+	Refs  [2]string `json:"refs"`
+	Error string    `json:"error"`
+}
+
 func diffCommand(args []string) error {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -52,6 +57,14 @@ func diffCommand(args []string) error {
 	}
 	out, err := imageDiff(a, b)
 	if err != nil {
+		if *asJSON {
+			if jsonErr := writeImageDiffErrorJSON(os.Stdout, imageDiffErrorOutput{
+				Refs:  [2]string{a.String(), b.String()},
+				Error: err.Error(),
+			}); jsonErr != nil {
+				return jsonErr
+			}
+		}
 		return err
 	}
 	if *asJSON {
@@ -212,6 +225,17 @@ func writeImageDiffJSON(w io.Writer, out imageDiffOutput) error {
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode image diff: %w", err)
+	}
+	if _, err := w.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeImageDiffErrorJSON(w io.Writer, out imageDiffErrorOutput) error {
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode image diff error: %w", err)
 	}
 	if _, err := w.Write(append(data, '\n')); err != nil {
 		return err

@@ -472,7 +472,7 @@ design.
      (find the newest `<parent>-fork-N` VM). Race-prone but no
      subprocess coupling.
    - **5d**: Pre-allocate the child name in Slice 0 and pass via `cove
-     run -fork-from <img> -ephemeral -name <slice-allocated>`. The
+     run -fork-from <img> -ephemeral -fork-name <slice-allocated>`. The
      `EphemeralForkName` field already exists at
      `runtime_lifecycle.go:45` and is plumbed through to
      `image_fork.go:51` and `run_bundle.go:334`. So the wiring is
