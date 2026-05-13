@@ -944,6 +944,10 @@ func resolveOrDownloadIPSW(ctx context.Context) (string, error) {
 		if ipswLooksComplete(cacheIPSW) {
 			restoreImagePath = cacheIPSW
 		} else {
+			if err := verifyIPSWFile(cacheIPSW); err != nil && !errors.Is(err, ErrIPSWMissing) {
+				fmt.Printf("Cached IPSW is incomplete or corrupt: %v\n", err)
+				fmt.Printf("  Recovery: curl -L -C - -o %s <restore-image-url>\n", cacheIPSW)
+			}
 			homeDir, _ := os.UserHomeDir()
 			legacyCacheIPSW := filepath.Join(homeDir, ".cache", "vz", "restore.ipsw")
 			if ipswLooksComplete(legacyCacheIPSW) {
@@ -955,6 +959,9 @@ func resolveOrDownloadIPSW(ctx context.Context) (string, error) {
 				fmt.Println()
 				if err := downloadRestoreImageVZ(ctx, restoreImagePath); err != nil {
 					return "", fmt.Errorf("download restore image: %w", err)
+				}
+				if err := verifyIPSWFile(restoreImagePath); err != nil {
+					return "", fmt.Errorf("verify downloaded restore image: %w\n  recovery: curl -L -C - -o %s <restore-image-url>", err, restoreImagePath)
 				}
 				fmt.Println()
 			}
@@ -981,6 +988,11 @@ func resolveOrDownloadIPSWWithProgress(ctx context.Context, progress progressFun
 		fmt.Printf("  Using cached IPSW: %s\n", cacheIPSW)
 		return resolvePath(cacheIPSW), nil
 	}
+	if err := verifyIPSWFile(cacheIPSW); err != nil && !errors.Is(err, ErrIPSWMissing) {
+		progress("Cached restore image is incomplete", -1)
+		fmt.Printf("  Cached IPSW is incomplete or corrupt: %v\n", err)
+		fmt.Printf("  Recovery: curl -L -C - -o %s <restore-image-url>\n", cacheIPSW)
+	}
 
 	homeDir, _ := os.UserHomeDir()
 	legacyCacheIPSW := filepath.Join(homeDir, ".cache", "vz", "restore.ipsw")
@@ -1000,6 +1012,9 @@ func resolveOrDownloadIPSWWithProgress(ctx context.Context, progress progressFun
 
 	if err := downloadRestoreImageVZWithProgress(ctx, restoreImagePath, progress); err != nil {
 		return "", fmt.Errorf("download restore image: %w", err)
+	}
+	if err := verifyIPSWFile(restoreImagePath); err != nil {
+		return "", fmt.Errorf("verify downloaded restore image: %w\n  recovery: curl -L -C - -o %s <restore-image-url>", err, restoreImagePath)
 	}
 	fmt.Println()
 	return resolvePath(restoreImagePath), nil
