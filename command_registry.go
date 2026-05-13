@@ -420,6 +420,15 @@ func runLegacyRunFlag() int {
 func rerunVMDirForPostCommand(cmd string, args []string) int {
 	cmdArgs := append([]string{cmd}, args...)
 	if vmName == "" || subcommandSkipsVMDir(cmdArgs) {
+		if cmd == "run" && vmName != "" && !argsContainFlag(args, "fork-from") {
+			dir, err := requireExistingRunVMDir(vmName)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return 1
+			}
+			vmDir = dir
+			applyVMConfig(vmDir)
+		}
 		return 0
 	}
 	var err error

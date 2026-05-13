@@ -1,6 +1,11 @@
 package main
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
+)
 
 // vmDirIndependentCommands are top-level subcommands that must not create a
 // per-VM directory during startup. Some do not operate on VMs; read-only VM
@@ -39,10 +44,24 @@ func subcommandSkipsVMDir(args []string) bool {
 	if args[0] == "vm" && len(args) > 1 && args[1] == "tree" {
 		return true
 	}
+	if args[0] == "run" && (vmName != "" || argsContainFlag(args[1:], "vm")) {
+		return true
+	}
 	if args[0] == "run" && argsContainFlag(args[1:], "fork-from") {
 		return true
 	}
 	return vmDirIndependentCommands[args[0]]
+}
+
+func requireExistingRunVMDir(name string) (string, error) {
+	dir, ok := vmconfig.ExistingPath(name)
+	if !ok {
+		return "", fmt.Errorf("run: no VM named %q under %s", name, vmconfig.BaseDir())
+	}
+	if !vmconfig.Validate(dir) {
+		return "", fmt.Errorf("run: VM %q is invalid under %s", name, vmconfig.BaseDir())
+	}
+	return dir, nil
 }
 
 func argsContainFlag(args []string, name string) bool {
