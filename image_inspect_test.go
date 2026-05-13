@@ -175,6 +175,37 @@ func TestInspectImageDiff_IdenticalRefs(t *testing.T) {
 	}
 }
 
+func TestInspectImageDiff_LinuxLayers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageLinuxVMForImage(t, "linux-src")
+	ref, _ := ParseImageRef("linux:v1")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "linux-src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+
+	diff, err := InspectImageDiff(ref, ref)
+	if err != nil {
+		t.Fatalf("InspectImageDiff: %v", err)
+	}
+	layer := findDiffLayer(t, diff, "linux-disk.img")
+	if layer.Status != "UNCHANGED" {
+		t.Fatalf("linux-disk.img status = %s, want UNCHANGED", layer.Status)
+	}
+	for _, layer := range diff.Layers {
+		if layer.Name == "disk.img" {
+			t.Fatalf("unexpected macOS disk layer in Linux diff: %#v", diff.Layers)
+		}
+	}
+	var buf bytes.Buffer
+	if err := writeInspectDiffText(&buf, diff); err != nil {
+		t.Fatalf("writeInspectDiffText: %v", err)
+	}
+	text := buf.String()
+	if !strings.Contains(text, "linux-disk.img") || strings.Contains(text, "disk.img\t<missing>") {
+		t.Fatalf("text diff has wrong Linux layer display:\n%s", text)
+	}
+}
+
 func TestInspectImageDiff_ChangedFieldsAndLayers(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stageMacOSVMForImage(t, "src-a")

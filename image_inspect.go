@@ -140,6 +140,7 @@ func machineModelFingerprint(ref ImageRef) (string, error) {
 func runImageInspect(args []string) error {
 	fs := flag.NewFlagSet("image inspect", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() { printImageInspectUsage(fs.Output()) }
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	diff := fs.Bool("diff", false, "compare two image refs")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
@@ -150,7 +151,7 @@ func runImageInspect(args []string) error {
 	}
 	if *diff {
 		if fs.NArg() != 2 {
-			return fmt.Errorf("usage: cove image inspect --diff <ref-a> <ref-b> [-json]")
+			return fmt.Errorf("usage: cove image inspect [-json] --diff <ref-a> <ref-b>")
 		}
 		a, err := ParseImageRef(fs.Arg(0))
 		if err != nil {
@@ -170,7 +171,7 @@ func runImageInspect(args []string) error {
 		return writeInspectDiffText(os.Stdout, out)
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: cove image inspect <name[:tag]> [-json]")
+		return fmt.Errorf("usage: cove image inspect [-json] <name[:tag]>")
 	}
 	ref, err := ParseImageRef(fs.Arg(0))
 	if err != nil {
@@ -178,12 +179,27 @@ func runImageInspect(args []string) error {
 	}
 	out, err := InspectImage(ref)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%w\nhint: run 'cove image list' to see local images or 'cove image search %s' to search refs", err, ref.Name)
+		}
 		return err
 	}
 	if *asJSON {
 		return writeInspectJSON(os.Stdout, out)
 	}
 	return writeInspectText(os.Stdout, out)
+}
+
+func printImageInspectUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove image inspect [-json] <name[:tag]>
+       cove image inspect [-json] -diff <ref-a> <ref-b>
+
+Show a local image manifest summary, downstream forks, and provenance. With
+-diff, compare two image manifests.
+
+Flags:
+  -json    emit machine-readable JSON
+  -diff    compare two image refs`)
 }
 
 func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {
@@ -320,8 +336,12 @@ func imageInspectFieldRank(field string) int {
 }
 
 func diffImageLayers(a, b ImageRef) ([]imageInspectLayerDiff, error) {
-	rows := make([]imageInspectLayerDiff, 0, len(imageDataFiles))
-	for _, name := range imageDataFiles {
+	names, err := imageDiffLayerNames(a, b)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]imageInspectLayerDiff, 0, len(names))
+	for _, name := range names {
 		av, aok, err := inspectImageLayer(a, name)
 		if err != nil {
 			return nil, fmt.Errorf("inspect diff %s %s: %w", a, name, err)

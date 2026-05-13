@@ -32,10 +32,7 @@ func diffCommand(args []string) error {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
-	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: cove diff <ref-a> <ref-b> [-json]")
-		fs.PrintDefaults()
-	}
+	fs.Usage = func() { printDiffUsage(fs.Output()) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -63,16 +60,116 @@ func diffCommand(args []string) error {
 	return writeImageDiffText(os.Stdout, out)
 }
 
+func printDiffUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove diff <ref-a> <ref-b> [-json]
+
+Compare local image disk layer metadata for two image refs.
+
+Flags:
+  -json    emit machine-readable JSON`)
+}
+
 func imageDiff(a, b ImageRef) (imageDiffOutput, error) {
-	file, err := diffImageFile(a, b, "disk.img")
+	if err := requireImageRefDir(a); err != nil {
+		return imageDiffOutput{}, err
+	}
+	if err := requireImageRefDir(b); err != nil {
+		return imageDiffOutput{}, err
+	}
+	names, err := imageDiffDiskNames(a, b)
 	if err != nil {
 		return imageDiffOutput{}, err
 	}
+	files := make([]imageDiffFile, 0, len(names))
+	changed := false
+	for _, name := range names {
+		file, err := diffImageFile(a, b, name)
+		if err != nil {
+			return imageDiffOutput{}, err
+		}
+		files = append(files, file)
+		if file.Status != "UNCHANGED" {
+			changed = true
+		}
+	}
 	return imageDiffOutput{
 		Refs:    [2]string{a.String(), b.String()},
-		Files:   []imageDiffFile{file},
-		Changed: file.Status != "UNCHANGED",
+		Files:   files,
+		Changed: changed,
 	}, nil
+}
+
+func imageDiffDiskNames(a, b ImageRef) ([]string, error) {
+	ma, err := LoadImageManifest(a)
+	if err != nil {
+		return nil, fmt.Errorf("diff %s: %w", a, err)
+	}
+	mb, err := LoadImageManifest(b)
+	if err != nil {
+		return nil, fmt.Errorf("diff %s: %w", b, err)
+	}
+	return imageDiskNamesForManifests(ma, mb), nil
+}
+
+func imageDiffLayerNames(a, b ImageRef) ([]string, error) {
+	ma, err := LoadImageManifest(a)
+	if err != nil {
+		return nil, fmt.Errorf("diff %s: %w", a, err)
+	}
+	mb, err := LoadImageManifest(b)
+	if err != nil {
+		return nil, fmt.Errorf("diff %s: %w", b, err)
+	}
+	return imageLayerNamesForManifests(ma, mb), nil
+}
+
+func imageDiskNamesForManifests(manifests ...*ImageManifest) []string {
+	var names []string
+	seen := make(map[string]bool)
+	for _, manifest := range manifests {
+		if manifest == nil {
+			continue
+		}
+		name := imageLayoutDiskFile(manifest.OSType)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	return names
+}
+
+func imageLayerNamesForManifests(manifests ...*ImageManifest) []string {
+	var names []string
+	seen := make(map[string]bool)
+	for _, manifest := range manifests {
+		if manifest == nil {
+			continue
+		}
+		for _, name := range imageLayoutRequiredFiles(manifest.OSType) {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func requireImageRefDir(ref ImageRef) error {
+	info, err := os.Stat(ref.Path())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("diff: image ref not found: %s", ref)
+		}
+		return fmt.Errorf("diff: inspect image ref %s: %w", ref, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("diff: image ref is not a directory: %s", ref)
+	}
+	return nil
 }
 
 func diffImageFile(a, b ImageRef, name string) (imageDiffFile, error) {

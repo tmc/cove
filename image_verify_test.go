@@ -56,6 +56,29 @@ func TestVerifyImagePassesOnFreshImage(t *testing.T) {
 	}
 }
 
+func TestVerifyImagePassesOnLinuxImage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageLinuxVMForImage(t, "linux-src")
+	ref, err := ParseImageRef("linux:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "linux-src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+
+	report := VerifyImage(ref, imageVerifyOptions{})
+	if report.Verdict != imageVerifyPass {
+		t.Fatalf("Verdict = %s, want PASS (%#v)", report.Verdict, report.Checks)
+	}
+	if got := imageVerifyCheckStatus(report, "layout"); got != imageVerifyPass {
+		t.Fatalf("layout = %s, want PASS (%#v)", got, report.Checks)
+	}
+	if _, err := os.Stat(filepath.Join(ref.Path(), "disk.img")); !os.IsNotExist(err) {
+		t.Fatalf("linux image disk.img stat = %v, want missing", err)
+	}
+}
+
 func TestVerifyImageStrictFailsWithoutExecAttachV3(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stageMacOSVMForImage(t, "src")
@@ -260,10 +283,10 @@ func TestRunImageForkFromWithConfigWarnsAndProceeds(t *testing.T) {
 
 func TestVerifyImageManifestGaps(t *testing.T) {
 	cases := []struct {
-		name    string
-		mutate  func(t *testing.T, ref ImageRef)
-		want    imageVerifyStatus
-		detail  string
+		name   string
+		mutate func(t *testing.T, ref ImageRef)
+		want   imageVerifyStatus
+		detail string
 	}{
 		{
 			name: "missing manifest",
