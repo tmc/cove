@@ -369,12 +369,15 @@ func TestSharedFolderAddReportsGuestPathWhenRuntimeStatusUnavailable(t *testing.
 	})
 	for _, want := range []string{
 		"Added shared folder: " + resolvePath(hostDir) + " (tag=work, rw)",
-		"live mount unavailable for guest path " + defaultSharedFoldersMountPoint + "/work: running VM status unavailable:",
-		"shared folder saved; will mount at " + defaultSharedFoldersMountPoint + "/work on next boot of " + filepath.Base(vmDir) + " (reboot required)",
+		"shared folder saved; VM is stopped, so live mount was skipped",
+		"it will mount at " + defaultSharedFoldersMountPoint + "/work on next boot of " + filepath.Base(vmDir),
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "warning:") || strings.Contains(out, "running VM status unavailable") {
+		t.Fatalf("stopped VM output should be neutral:\n%s", out)
 	}
 }
 
