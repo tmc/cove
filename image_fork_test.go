@@ -22,8 +22,22 @@ func TestRunImageForkFromWithConfigMissingImage(t *testing.T) {
 	if err == nil {
 		t.Fatal("runImageForkFromWithConfig(missing image) = nil, want not-found")
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("err = %v, want 'not found'", err)
+	for _, want := range []string{
+		"image ghost-image:v1 not found",
+		"cove image list",
+		"cove image search ghost-image",
+		"cove image verify ghost-image:v1",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+}
+
+func TestIsImageForkFromRefTreatsMissingTaggedRefAsImage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if !isImageForkFromRef("name:missing") {
+		t.Fatal("isImageForkFromRef(name:missing) = false, want true")
 	}
 }
 

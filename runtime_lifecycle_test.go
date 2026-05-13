@@ -418,11 +418,11 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 	}
 }
 
-func TestRunEphemeralForkPreservesIdentity(t *testing.T) {
+func TestRunEphemeralForkRejectsMacOSVMParentBeforeSetup(t *testing.T) {
 	stubAcquireRunLockHook(t)
 	t.Setenv("HOME", t.TempDir())
 	parent := "identity-parent"
-	parentDir := stageParentVMForEphemeralFork(t, parent)
+	stageParentVMForEphemeralFork(t, parent)
 
 	oldVMName := vmName
 	oldVMDir := vmDir
@@ -441,19 +441,16 @@ func TestRunEphemeralForkPreservesIdentity(t *testing.T) {
 		runMacOSVMHook = oldRunMacHook
 	})
 
-	childDir := filepath.Join(vmconfig.BaseDir(), "identity-child")
-	var gotOpts EphemeralForkOptions
-	var gotDiskPathOverride string
 	setupEphemeralForkHook = func(opts EphemeralForkOptions) (EphemeralFork, error) {
-		gotOpts = opts
-		if err := os.MkdirAll(childDir, 0o755); err != nil {
-			t.Fatalf("mkdir child: %v", err)
-		}
-		return EphemeralFork{Name: "identity-child", Path: childDir, Source: opts.Parent}, nil
+		t.Fatalf("SetupEphemeralFork called for unsupported VM parent: %#v", opts)
+		return EphemeralFork{}, nil
 	}
-	cleanupEphemeralForkHook = func(string) error { return nil }
+	cleanupEphemeralForkHook = func(path string) error {
+		t.Fatalf("CleanupEphemeralFork called before child exists: %s", path)
+		return nil
+	}
 	runMacOSVMHook = func() error {
-		gotDiskPathOverride = runtimeSystemDiskPathOverride
+		t.Fatal("runMacOSVM called for unsupported VM-parent fork")
 		return nil
 	}
 
@@ -461,20 +458,70 @@ func TestRunEphemeralForkPreservesIdentity(t *testing.T) {
 		VM:                  vmSelection{Name: "original", Directory: filepath.Join(vmconfig.BaseDir(), "original")},
 		EphemeralForkParent: parent,
 	}
-	if _, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) }); err != nil {
-		t.Fatalf("runVMWithConfig: %v", err)
+	_, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
+	if err == nil {
+		t.Fatal("runVMWithConfig succeeded for unsupported VM-parent fork")
 	}
-	if gotOpts.Parent != parent || gotOpts.Name != "" || !gotOpts.PreserveIdentity {
-		t.Fatalf("EphemeralForkOptions = %#v, want PreserveIdentity for parent %q", gotOpts, parent)
+	msg := err.Error()
+	for _, want := range []string{"RAM-overlay runtime", "not implemented", "No VM was created", "cove fork", "cove clone --linked", "image refs"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error = %q, want %q", msg, want)
+		}
 	}
 	if runtimeSystemDiskPathOverride != oldRuntimeSystemDiskPathOverride {
 		t.Fatalf("runtimeSystemDiskPathOverride after run = %q, want %q", runtimeSystemDiskPathOverride, oldRuntimeSystemDiskPathOverride)
 	}
-	parentDisk := vmPrimaryDiskPath(parentDir)
-	gotReal, _ := filepath.EvalSymlinks(gotDiskPathOverride)
-	wantReal, _ := filepath.EvalSymlinks(parentDisk)
-	if gotReal != wantReal {
-		t.Fatalf("runtimeSystemDiskPathOverride during run = %q, want parent disk %q", gotDiskPathOverride, parentDisk)
+	if runtimeSystemDiskAttachment != oldRuntimeSystemDiskAttachment {
+		t.Fatalf("runtimeSystemDiskAttachment after run = %v, want %v", runtimeSystemDiskAttachment, oldRuntimeSystemDiskAttachment)
+	}
+}
+
+func TestRunEphemeralForkRejectsLinuxVMParentBeforeSetup(t *testing.T) {
+	stubAcquireRunLockHook(t)
+	t.Setenv("HOME", t.TempDir())
+	parent := "linux-parent"
+	parentDir := filepath.Join(vmconfig.BaseDir(), parent)
+	if err := os.MkdirAll(parentDir, 0o755); err != nil {
+		t.Fatalf("mkdir parent: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(parentDir, "linux-disk.img"), []byte("disk"), 0o644); err != nil {
+		t.Fatalf("write linux disk: %v", err)
+	}
+
+	oldSetupHook := setupEphemeralForkHook
+	oldCleanupHook := cleanupEphemeralForkHook
+	oldRunLinuxHook := runLinuxVMHook
+	t.Cleanup(func() {
+		setupEphemeralForkHook = oldSetupHook
+		cleanupEphemeralForkHook = oldCleanupHook
+		runLinuxVMHook = oldRunLinuxHook
+	})
+	setupEphemeralForkHook = func(opts EphemeralForkOptions) (EphemeralFork, error) {
+		t.Fatalf("SetupEphemeralFork called for unsupported Linux parent: %#v", opts)
+		return EphemeralFork{}, nil
+	}
+	cleanupEphemeralForkHook = func(path string) error {
+		t.Fatalf("CleanupEphemeralFork called before child exists: %s", path)
+		return nil
+	}
+	runLinuxVMHook = func() error {
+		t.Fatal("runLinuxVM called for unsupported VM-parent fork")
+		return nil
+	}
+
+	cfg := RunConfig{
+		Linux:               true,
+		EphemeralForkParent: parent,
+	}
+	_, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
+	if err == nil {
+		t.Fatal("runVMWithConfig succeeded for unsupported Linux VM-parent fork")
+	}
+	msg := err.Error()
+	for _, want := range []string{"Linux", "VM-parent RAM-overlay forks are not implemented", "cove fork", "cove clone --linked"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error = %q, want %q", msg, want)
+		}
 	}
 }
 

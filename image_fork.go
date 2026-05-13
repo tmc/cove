@@ -12,15 +12,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // isImageForkFromRef returns true when ref does NOT match an existing
-// VM name and DOES match a local image. This intentionally favors the
-// VM-name path on collision so existing `-fork-from <vm>` invocations
-// keep their RAM-overlay semantics.
+// VM name and either matches a local image or looks like a tagged image
+// ref. This intentionally favors the VM-name path on collision so
+// existing `-fork-from <vm>` invocations keep their RAM-overlay
+// semantics.
 func isImageForkFromRef(ref string) bool {
 	if ref == "" {
 		return false
@@ -32,7 +34,7 @@ func isImageForkFromRef(ref string) bool {
 	if err != nil {
 		return false
 	}
-	return ImageExists(parsed)
+	return ImageExists(parsed) || strings.Contains(ref, ":")
 }
 
 // runImageForkFromWithConfig handles the design 024 fork-from-image
@@ -44,7 +46,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		return fmt.Errorf("cove run -fork-from <image>: %w", err)
 	}
 	if !ImageExists(ref) {
-		return fmt.Errorf("cove run -fork-from <image>: image %s not found", ref)
+		return fmt.Errorf("cove run -fork-from <image>: image %s not found; run 'cove image list' or 'cove image search %s' to find local images, or 'cove image verify %s' for manifest details", ref, ref.Name, ref)
 	}
 
 	verification := VerifyImage(ref, imageVerifyOptions{})
