@@ -46,3 +46,25 @@ func TestWarnIfDHCPLeaseTimeLong(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLocalServeListenAddr(t *testing.T) {
+	tests := []struct {
+		addr string
+		want bool
+	}{
+		{"", true},
+		{"127.0.0.1:7777", true},
+		{"localhost:7777", true},
+		{"[::1]:7777", true},
+		{"unix:///tmp/cove.sock", true},
+		{":7777", false},
+		{"0.0.0.0:7777", false},
+		{"192.168.1.10:7777", false},
+		{"tcp://0.0.0.0:7777", false},
+	}
+	for _, tt := range tests {
+		if got := isLocalServeListenAddr(tt.addr); got != tt.want {
+			t.Fatalf("isLocalServeListenAddr(%q) = %v, want %v", tt.addr, got, tt.want)
+		}
+	}
+}

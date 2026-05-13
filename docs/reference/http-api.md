@@ -11,7 +11,7 @@ curl http://127.0.0.1:7777/healthz
 # {"status":"ok"}
 ```
 
-The server reads `~/.vz/vms/` at startup, proxies each VM's Unix control socket under `/v1/vms/<name>/...`, and hot-adds routes when new VMs come up.
+The server reads `~/.vz/vms/`, lists known VMs at `/v1/vms`, proxies each running VM's Unix control socket under `/v1/vms/<name>/...`, and hot-adds proxy routes when new VMs come up.
 
 ## Authentication
 
@@ -54,7 +54,7 @@ Cove binds `localhost` by default. There's no TLS -- the assumption is localhost
 
 ```
 GET    /healthz                              # no auth; {"status":"ok"}
-GET    /v1/vms                               # list VMs + states
+GET    /v1/vms                               # list known/allowed VMs
 GET    /v1/vms/:name/status                  # state + capabilities
 POST   /v1/vms/:name/pause
 POST   /v1/vms/:name/resume
@@ -72,13 +72,13 @@ POST   /v1/vms/:name/mouse                   # body: {"x": .., "y": .., "button"
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7777/v1/vms
 ```
 
-The gateway only lists VMs with a reachable control socket under `~/.vz/vms/<name>/control.sock`; stopped VMs do not appear. `status` is always `"running"` for now — richer per-VM state comes from `/v1/vms/:name/status`.
+The gateway lists configured VMs that match the allowlist, including stopped VMs. Per-VM routes such as `/v1/vms/:name/status` require a reachable control socket; a stopped VM returns 404 until it is running.
 
 ```json
 {
   "vms": [
-    {"name": "default",   "status": "running"},
-    {"name": "ci-runner", "status": "running"}
+    {"name": "default"},
+    {"name": "ci-runner"}
   ]
 }
 ```

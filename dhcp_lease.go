@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"io"
+	"net"
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -20,6 +22,13 @@ func warnIfDHCPLeaseTimeLong(w io.Writer) {
 	warnIfDHCPLeaseTimeLongFrom(w, readBootPDDefaults)
 }
 
+func warnIfDHCPLeaseTimeLongForServe(w io.Writer, listenAddr string) {
+	if isLocalServeListenAddr(listenAddr) {
+		return
+	}
+	warnIfDHCPLeaseTimeLong(w)
+}
+
 func warnIfDHCPLeaseTimeLongFrom(w io.Writer, read func() (string, error)) {
 	out, err := read()
 	if err != nil {
@@ -32,7 +41,25 @@ func warnIfDHCPLeaseTimeLongFrom(w io.Writer, read func() (string, error)) {
 	if secs < defaultDHCPLeaseTimeSecs {
 		return
 	}
-	fmt.Fprintf(w, "cove serve: warning: macOS Internet Sharing DHCP lease time is %ds; high-throughput VM forks can exhaust the NAT lease pool. To reduce leases to %ds, run:\n  sudo defaults write %s bootpd -dict DHCPLeaseTimeSecs -int %d\nIf /var/db/dhcpd_leases is already full, remove stale leases with:\n  sudo rm /var/db/dhcpd_leases\n", secs, recommendedDHCPLeaseTimeSec, bootpdDefaultsPath, recommendedDHCPLeaseTimeSec)
+	fmt.Fprintf(w, "cove serve: warning: macOS Internet Sharing DHCP lease time is %ds; this matters when the gateway drives high-throughput VM forks on a shared NAT. To reduce leases to %ds, run:\n  sudo defaults write %s bootpd -dict DHCPLeaseTimeSecs -int %d\nIf /var/db/dhcpd_leases is already full, remove stale leases with:\n  sudo rm /var/db/dhcpd_leases\n", secs, recommendedDHCPLeaseTimeSec, bootpdDefaultsPath, recommendedDHCPLeaseTimeSec)
+}
+
+func isLocalServeListenAddr(addr string) bool {
+	if addr == "" {
+		return true
+	}
+	if strings.HasPrefix(addr, "unix://") {
+		return true
+	}
+	host := addr
+	if strings.HasPrefix(addr, "tcp://") {
+		host = strings.TrimPrefix(addr, "tcp://")
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func readBootPDDefaults() (string, error) {

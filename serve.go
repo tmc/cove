@@ -83,7 +83,11 @@ func runServeCmd(args []string) error {
 	}
 
 	checkSharedHost(cfg.PerVMAuth, cfg.TokenFile, nil)
-	warnIfDHCPLeaseTimeLong(os.Stderr)
+	dhcpListenAddr := cfg.HTTPAddr
+	if cfg.ListenURL != "" {
+		dhcpListenAddr = cfg.ListenURL
+	}
+	warnIfDHCPLeaseTimeLongForServe(os.Stderr, dhcpListenAddr)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -213,14 +217,14 @@ func whoUsers() ([]string, error) {
 func printServeUsage() {
 	fmt.Fprintln(os.Stderr, `Usage: cove serve [options]
 
-Start a multi-VM HTTP gateway that proxies all running VMs under /v1/vms/<name>/.
+Start a multi-VM HTTP gateway. GET /v1/vms lists known/allowed VMs; per-VM routes proxy only running VMs with reachable control sockets.
 
 Options:
   -http <addr>         HTTP listen address (default: 127.0.0.1:7777)
   -listen <url>        Listen URL: tcp://host:port or unix:///path (overrides -http)
   -token-file <path>   Master token file path; empty = macOS keychain default
   -per-vm-auth         Strict mode: require per-VM control.token for each VM route
-  -vms <list>          Comma-separated VM allowlist (default: all running VMs)
+  -vms <list>          Comma-separated VM allowlist (default: all known VMs)
   -mcp                 stdio MCP transport: JSON-RPC 2.0 over stdin/stdout
 
 Auth:
@@ -236,15 +240,15 @@ Auth:
 
 Routes:
   GET  /healthz                     no auth required
-  GET  /v1/vms                      list running VMs
+  GET  /v1/vms                      list known/allowed VMs
   POST /v1/vms                      create VM (async, returns 202 + operation)
-  /v1/vms/<name>/*                  proxy to VM's control socket
+  /v1/vms/<name>/*                  proxy to running VM's control socket
   GET  /v1/operations/<id>          poll operation status
   GET  /v1/operations/<id>/events   SSE stream of operation progress
   GET  /v1/operations               list recent operations
 
 VM discovery:
-  Polls ~/.vz/vms/*/control.sock every 2s and hot-adds/removes routes.
+  Lists configured VMs from ~/.vz/vms. Polls reachable control.sock files every 2s and hot-adds/removes proxy routes.
   Pass -vms to restrict to a specific set of VMs.
 
 Examples:
@@ -253,4 +257,3 @@ Examples:
   cove serve -token-file ~/.cove/api.tok   # file token for CI
   cove serve -per-vm-auth                  # per-VM strict mode`)
 }
-
