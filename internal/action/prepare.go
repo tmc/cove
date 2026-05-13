@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -48,6 +49,13 @@ func RunPrepare(ctx context.Context, cfg PrepareConfig) Report {
 	if ref == "" {
 		return makeReport([]CheckResult{{Name: "image-ref", Status: StatusFail, Message: "image ref required"}})
 	}
+	if prepareRefLooksUnsupportedRegistry(ref) {
+		return makeReport([]CheckResult{{
+			Name:    "image-ref",
+			Status:  StatusFail,
+			Message: "registry image refs are not supported here; use a local cove image ref or VM name",
+		}})
+	}
 
 	if !cfg.Force {
 		fresh := prepareFreshness(ctx, cfg, ref)
@@ -70,17 +78,30 @@ func RunPrepare(ctx context.Context, cfg PrepareConfig) Report {
 	return makeReport(checks)
 }
 
+func prepareRefLooksUnsupportedRegistry(ref string) bool {
+	host, _, ok := strings.Cut(ref, "/")
+	return ok && (strings.ContainsAny(host, ".:") || host == "localhost")
+}
+
 // RunDoctorCommand parses and runs cove action doctor.
 func RunDoctorCommand(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("action doctor", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.Usage = func() { printDoctorUsage(fs.Output()) }
 	asJSON := fs.Bool("json", false, "emit JSON")
 	coveBin := fs.String("cove-bin", "", "cove binary path")
+	if len(args) == 1 && actionHelpArg(args[0]) {
+		printDoctorUsage(stderr)
+		return 0
+	}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 1
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: cove action doctor [--json]")
+		printDoctorUsage(stderr)
 		return 1
 	}
 	report := RunDoctor(ctx, DoctorConfig{CoveBin: *coveBin})
@@ -95,23 +116,72 @@ func RunDoctorCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 func RunPrepareCommand(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("action prepare-image", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.Usage = func() { printPrepareUsage(fs.Output()) }
 	asJSON := fs.Bool("json", false, "emit JSON")
 	force := fs.Bool("force", false, "run all checks even when image is fresh")
 	ttl := fs.Duration("ttl", 24*time.Hour, "freshness TTL")
 	coveBin := fs.String("cove-bin", "", "cove binary path")
+	registryRef := fs.String("registry-ref", "", "unsupported remote registry ref")
+	if len(args) == 1 && actionHelpArg(args[0]) {
+		printPrepareUsage(stderr)
+		return 0
+	}
 	if err := fs.Parse(movePrepareFlagsFirst(args)); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 1
 	}
-	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: cove action prepare-image <ref> [--json] [--force] [--ttl <duration>]")
+	if fs.NArg() > 1 || (fs.NArg() == 1 && *registryRef != "") || (fs.NArg() == 0 && *registryRef == "") {
+		printPrepareUsage(stderr)
 		return 1
 	}
-	report := RunPrepare(ctx, PrepareConfig{CoveBin: *coveBin, Ref: fs.Arg(0), Force: *force, TTL: *ttl})
+	ref := strings.TrimSpace(*registryRef)
+	if ref == "" {
+		ref = fs.Arg(0)
+	}
+	report := RunPrepare(ctx, PrepareConfig{CoveBin: *coveBin, Ref: ref, Force: *force, TTL: *ttl})
 	if err := WriteReport(stdout, report, *asJSON); err != nil {
 		fmt.Fprintf(stderr, "cove action prepare-image: %v\n", err)
 		return 1
 	}
 	return report.ExitCode()
+}
+
+func printDoctorUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove action doctor [--json] [--cove-bin <path>]
+
+Check host-side prerequisites for private cove GitHub Actions runners.
+
+Flags:
+  --json             emit machine-readable JSON
+  --cove-bin <path>  cove binary to inspect`)
+}
+
+func printPrepareUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove action prepare-image <ref> [--json] [--force] [--ttl <duration>]
+       cove action prepare-image --registry-ref <ref> [--json] [--force] [--ttl <duration>]
+
+Validate a local cove image or running VM for runner use.
+Remote registry refs are accepted for diagnostics and currently report that
+registry image refs are not supported by this command.
+
+Flags:
+  --json             emit machine-readable JSON
+  --force            run all checks even when image freshness passes
+  --ttl <duration>   freshness window, for example 24h
+  --cove-bin <path>  cove binary to inspect
+  --registry-ref <ref>
+                     remote registry ref to diagnose as unsupported`)
+}
+
+func actionHelpArg(s string) bool {
+	switch s {
+	case "help", "-h", "-help", "--help":
+		return true
+	default:
+		return false
+	}
 }
 
 func movePrepareFlagsFirst(args []string) []string {
@@ -128,6 +198,12 @@ func movePrepareFlagsFirst(args []string) []string {
 				flags = append(flags, args[i])
 			}
 		case "--cove-bin", "-cove-bin":
+			flags = append(flags, arg)
+			if i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+		case "--registry-ref", "-registry-ref":
 			flags = append(flags, arg)
 			if i+1 < len(args) {
 				i++
