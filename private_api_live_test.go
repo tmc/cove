@@ -125,8 +125,8 @@ func startLiveVM(vmName string) (vz.VZVirtualMachine, privvz.VZVirtualMachine, d
 		objc.Send[objc.ID](objc.ID(objc.GetClass("VZDiskImageStorageDeviceAttachment")), objc.Sel("alloc")),
 		objc.Sel("initWithURL:readOnly:cachingMode:synchronizationMode:error:"),
 		diskURL, false, /* readOnly=false for boot */
-		int64(0),       /* automatic caching */
-		int64(1),       /* full sync */
+		int64(0), /* automatic caching */
+		int64(1), /* full sync */
 		&diskErrPtr,
 	)
 	if diskErrPtr != 0 {
@@ -539,7 +539,11 @@ func TestLiveAPI_CreateViewEndpoint(t *testing.T) {
 					}
 				}()
 
-				endpoint := privVM.CreateViewEndpointWithOptions(opt)
+				endpoint, err := privVM.CreateViewEndpointWithOptions(opt)
+				if err != nil {
+					t.Logf("options=%d: error=%v", opt, err)
+					return
+				}
 				if endpoint == nil {
 					t.Logf("options=%d: returned nil", opt)
 					return
@@ -630,7 +634,12 @@ func TestLiveAPI_DiagnosticProperties(t *testing.T) {
 		canCreate := objc.Send[bool](privVM.ID, objc.Sel("_canCreateCore"))
 		t.Logf("_canCreateCore: %v", canCreate)
 
-		t.Logf("_shouldSendHIDReports: %v", privVM.ShouldSendHIDReports())
+		hidReports, err := privVM.ShouldSendHIDReports()
+		if err != nil {
+			t.Logf("_shouldSendHIDReports: error=%v", err)
+		} else {
+			t.Logf("_shouldSendHIDReports: %v", hidReports)
+		}
 
 		pid := objc.Send[int](privVM.ID, objc.Sel("_serviceProcessIdentifier"))
 		t.Logf("_serviceProcessIdentifier: %d", pid)

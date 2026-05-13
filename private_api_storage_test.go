@@ -177,7 +177,10 @@ func TestStorageDeviceInitWithAttachment(t *testing.T) {
 	pvzAttachment := pvz.VZStorageDeviceAttachmentFromID(attachment.ID)
 
 	storageDevice := pvz.GetVZStorageDeviceClass().Alloc()
-	result := storageDevice.InitWithAttachment(pvzAttachment)
+	result, err := storageDevice.InitWithAttachment(pvzAttachment)
+	if err != nil {
+		t.Fatalf("InitWithAttachment: %v", err)
+	}
 	if result == nil {
 		t.Log("InitWithAttachment returned nil (may require VM context)")
 	} else {
@@ -200,13 +203,19 @@ func TestStorageDeviceAttachmentProperty(t *testing.T) {
 	pvzAttachment := pvz.VZStorageDeviceAttachmentFromID(attachment.ID)
 
 	storageDevice := pvz.GetVZStorageDeviceClass().Alloc()
-	result := storageDevice.InitWithAttachment(pvzAttachment)
+	result, err := storageDevice.InitWithAttachment(pvzAttachment)
+	if err != nil {
+		t.Fatalf("InitWithAttachment: %v", err)
+	}
 	if result == nil || result.GetID() == 0 {
 		t.Skip("InitWithAttachment returned nil; skipping Attachment() test")
 	}
 
 	device := pvz.VZStorageDeviceFromID(result.GetID())
-	got := device.Attachment()
+	got, err := device.Attachment()
+	if err != nil {
+		t.Fatalf("Attachment: %v", err)
+	}
 	if got == nil || got.GetID() == 0 {
 		t.Log("Attachment() returned nil (may require VM association)")
 	} else {
@@ -233,7 +242,10 @@ func TestStorageDeviceSetAttachmentAsync(t *testing.T) {
 	pvzAttachment := pvz.VZStorageDeviceAttachmentFromID(attachment.ID)
 
 	device := pvz.GetVZStorageDeviceClass().Alloc()
-	result := device.InitWithAttachment(pvzAttachment)
+	result, err := device.InitWithAttachment(pvzAttachment)
+	if err != nil {
+		t.Fatalf("InitWithAttachment: %v", err)
+	}
 	if result == nil || result.GetID() == 0 {
 		t.Skip("cannot create storage device without VM context")
 	}
@@ -294,7 +306,10 @@ func TestStorageDeviceSetVirtualMachine(t *testing.T) {
 	pvzAttachment := pvz.VZStorageDeviceAttachmentFromID(attachment.ID)
 
 	device := pvz.GetVZStorageDeviceClass().Alloc()
-	result := device.InitWithAttachment(pvzAttachment)
+	result, err := device.InitWithAttachment(pvzAttachment)
+	if err != nil {
+		t.Fatalf("InitWithAttachment: %v", err)
+	}
 	if result == nil || result.GetID() == 0 {
 		t.Skip("cannot create storage device without VM context")
 	}
