@@ -75,7 +75,7 @@ func (s proxySpec) endpoint() string {
 
 func (s proxySpec) canonicalURL() string {
 	return (&url.URL{
-		Scheme: "http",
+		Scheme: s.Scheme,
 		Host:   s.endpoint(),
 	}).String()
 }
@@ -476,7 +476,35 @@ func configureGuestProxy(ctx context.Context, cs *ControlServer, rawURL string) 
 }
 
 func configureRequestedProxyAfterBoot(cs *ControlServer) {
-	if strings.TrimSpace(proxyURL) == "" || cs == nil {
+	if cs == nil {
+		return
+	}
+	if strings.TrimSpace(proxyURL) == "" {
+		_, stateErr := loadProxyState(cs.effectiveVMDir())
+		if stateErr != nil && !linuxMode {
+			return
+		}
+		go func() {
+			ctx, cancel := cs.timeoutContext(proxyRuntimeWaitTimeout)
+			defer cancel()
+			if err := waitForProxyRuntime(ctx, cs); err != nil {
+				fmt.Printf("warning: restore guest proxy: %v\n", err)
+				return
+			}
+			if os.IsNotExist(stateErr) && linuxMode {
+				rt := &proxyRuntimeClient{server: cs, linux: true}
+				for _, path := range linuxProxyCleanupPaths() {
+					if err := removeProxyFile(ctx, rt, path); err != nil {
+						printProxyRestoreFailure(cs.effectiveVMDir(), err)
+						return
+					}
+				}
+				return
+			}
+			if err := teardownGuestProxy(ctx, cs); err != nil {
+				printProxyRestoreFailure(cs.effectiveVMDir(), err)
+			}
+		}()
 		return
 	}
 	go func() {
@@ -834,6 +862,13 @@ func linuxProxyFiles(spec proxySpec) map[string]string {
 	}
 }
 
+func linuxProxyCleanupPaths() []string {
+	return []string{
+		filepath.Join("/etc", "environment.d", proxyEnvFileName),
+		filepath.Join("/etc", "profile.d", proxyProfileFileName),
+	}
+}
+
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
@@ -886,8 +921,8 @@ func getMacOSProxyStatus(ctx context.Context, rt proxyUserExec, service, kind st
 func setMacOSProxyService(ctx context.Context, rt proxyUserExec, service string, spec proxySpec) error {
 	port := strconv.Itoa(spec.Port)
 	for _, args := range [][]string{
-		{"/usr/sbin/networksetup", "-setwebproxy", service, spec.Host, port, "on"},
-		{"/usr/sbin/networksetup", "-setsecurewebproxy", service, spec.Host, port, "on"},
+		{"/usr/sbin/networksetup", "-setwebproxy", service, spec.Host, port},
+		{"/usr/sbin/networksetup", "-setsecurewebproxy", service, spec.Host, port},
 		{"/usr/sbin/networksetup", "-setwebproxystate", service, "on"},
 		{"/usr/sbin/networksetup", "-setsecurewebproxystate", service, "on"},
 	} {
@@ -908,9 +943,9 @@ func restoreMacOSProxyService(ctx context.Context, rt proxyUserExec, state macOS
 			var args []string
 			switch kind {
 			case "web":
-				args = []string{"/usr/sbin/networksetup", "-setwebproxy", state.Name, server, portStr, "on"}
+				args = []string{"/usr/sbin/networksetup", "-setwebproxy", state.Name, server, portStr}
 			case "secure":
-				args = []string{"/usr/sbin/networksetup", "-setsecurewebproxy", state.Name, server, portStr, "on"}
+				args = []string{"/usr/sbin/networksetup", "-setsecurewebproxy", state.Name, server, portStr}
 			default:
 				return fmt.Errorf("unknown proxy kind %q", kind)
 			}
@@ -1009,8 +1044,14 @@ func readProxyFileBackup(ctx context.Context, rt proxyGuestFiles, path string) (
 }
 
 func removeProxyFile(ctx context.Context, rt proxyGuestExec, path string) error {
-	_, err := rt.Exec(ctx, []string{"/bin/rm", "-f", path}, nil, "")
-	return err
+	resp, err := rt.Exec(ctx, []string{"/bin/rm", "-f", path}, nil, "")
+	if err != nil {
+		return err
+	}
+	if resp.GetExitCode() != 0 {
+		return fmt.Errorf("remove proxy file %s: exit %d: %s", path, resp.GetExitCode(), strings.TrimSpace(string(resp.GetStderr())))
+	}
+	return nil
 }
 
 func isNotFoundError(err error) bool {

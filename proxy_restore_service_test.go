@@ -43,7 +43,7 @@ func TestRestoreMacOSProxyServiceEnabledRestoresAndTurnsOn(t *testing.T) {
 	if err := restoreMacOSProxyService(context.Background(), rt, state); err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if !rt.hasUserCall(commandKey([]string{"/usr/sbin/networksetup", "-setwebproxy", "Wi-Fi", "10.0.0.1", "3128", "on"})) {
+	if !rt.hasUserCall(commandKey([]string{"/usr/sbin/networksetup", "-setwebproxy", "Wi-Fi", "10.0.0.1", "3128"})) {
 		t.Fatal("missing -setwebproxy call")
 	}
 	if !rt.hasUserCall(commandKey([]string{"/usr/sbin/networksetup", "-setwebproxystate", "Wi-Fi", "on"})) {
