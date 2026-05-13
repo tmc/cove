@@ -68,3 +68,61 @@ func TestPrintForkUsage(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleEarlyCLIProductHelpTopics(t *testing.T) {
+	for _, tc := range []struct {
+		topic string
+		want  string
+	}{
+		{"action", "Usage: cove action"},
+		{"runs", "Usage: cove runs"},
+		{"daemon", "Usage: cove daemon"},
+		{"cp", "Usage: cove cp"},
+		{"forward", "Usage: cove forward"},
+		{"quota", "Usage: cove quota"},
+		{"diff", "Usage: cove diff"},
+		{"image", "Usage: cove image"},
+		{"logs", "Usage: cove logs"},
+	} {
+		t.Run(tc.topic, func(t *testing.T) {
+			stderr, restore := captureStderr(t)
+			handled, code := handleEarlyCLI([]string{"help", tc.topic})
+			restore()
+			if !handled || code != 0 {
+				t.Fatalf("handleEarlyCLI(help %s) = handled %v code %d, want true 0", tc.topic, handled, code)
+			}
+			if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("help %s output missing %q:\n%s", tc.topic, tc.want, stderr.String())
+			}
+		})
+	}
+}
+
+func TestHandleEarlyCLINoArgProductSurfaces(t *testing.T) {
+	for _, tc := range []struct {
+		cmd  string
+		want string
+	}{
+		{"runs", "Usage: cove runs"},
+		{"action", "Usage: cove action"},
+		{"daemon", "Usage: cove daemon"},
+		{"cp", "Usage: cove cp"},
+		{"forward", "Usage: cove forward"},
+		{"quota", "Usage: cove quota"},
+		{"diff", "Usage: cove diff"},
+		{"image", "Usage: cove image"},
+		{"logs", "Usage: cove logs"},
+	} {
+		t.Run(tc.cmd, func(t *testing.T) {
+			stderr, restore := captureStderr(t)
+			handled, code := handleEarlyCLI([]string{tc.cmd})
+			restore()
+			if !handled || code != 2 {
+				t.Fatalf("handleEarlyCLI(%s) = handled %v code %d, want true 2", tc.cmd, handled, code)
+			}
+			if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("%s no-arg output missing %q:\n%s", tc.cmd, tc.want, stderr.String())
+			}
+		})
+	}
+}

@@ -18,6 +18,19 @@ import (
 // sentinel errFlagHelp, which handlers must check and translate to a
 // nil return so commandError yields exit 0.
 func parseFlagsOrHelp(fs *flag.FlagSet, args []string) error {
+	for _, arg := range args {
+		if isHelpArg(arg) {
+			prev := fs.Output()
+			fs.SetOutput(os.Stdout)
+			if fs.Usage != nil {
+				fs.Usage()
+			} else {
+				fs.PrintDefaults()
+			}
+			fs.SetOutput(prev)
+			return errFlagHelp
+		}
+	}
 	err := fs.Parse(args)
 	if errors.Is(err, flag.ErrHelp) {
 		prev := fs.Output()

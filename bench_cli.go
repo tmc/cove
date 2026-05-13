@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -29,7 +30,10 @@ func printBenchUsage() {
 	fmt.Fprintln(os.Stderr, `Usage: cove bench <subcommand> [options]
 
 Subcommands:
-  competitive   Normalize checked-in competitive benchmark evidence`)
+  competitive   Normalize checked-in competitive benchmark evidence
+
+Safe example:
+  cove bench competitive -dry-run -json`)
 }
 
 func runBenchCompetitive(args []string) error {
@@ -38,25 +42,38 @@ func runBenchCompetitive(args []string) error {
 	out := fs.String("out", "docs/benchmarks/results-2026-05-cove.json", "write normalized JSON report")
 	markdown := fs.String("markdown", "docs/benchmarks/competitive-2026-05.md", "write Markdown summary")
 	jsonOut := fs.Bool("json", false, "also print JSON report to stdout")
-	if err := fs.Parse(args); err != nil {
+	stdout := fs.Bool("stdout", false, "print JSON report to stdout without writing files")
+	dryRun := fs.Bool("dry-run", false, "build the report without writing files or run metrics")
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("bench competitive: unexpected arguments: %v", fs.Args())
 	}
+	outPath, markdownPath, runsRoot := *out, *markdown, vmconfig.RunsDir()
+	if *dryRun || *stdout {
+		outPath, markdownPath, runsRoot = "", "", ""
+	}
 	report, err := bench.RunCompetitive(context.Background(), bench.CompetitiveConfig{
 		RepoRoot:     ".",
-		OutPath:      *out,
-		MarkdownPath: *markdown,
-		RunsRoot:     vmconfig.RunsDir(),
+		OutPath:      outPath,
+		MarkdownPath: markdownPath,
+		RunsRoot:     runsRoot,
 	})
 	if err != nil {
 		return err
 	}
-	if *jsonOut {
+	if *jsonOut || *stdout {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
+	}
+	if *dryRun {
+		fmt.Fprintf(os.Stdout, "benchmark dry run: %d result(s)\n", len(report.Results))
+		return nil
 	}
 	fmt.Fprintf(os.Stdout, "benchmark report: %s\n", *out)
 	fmt.Fprintf(os.Stdout, "benchmark summary: %s\n", *markdown)

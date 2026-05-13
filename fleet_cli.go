@@ -33,10 +33,11 @@ func runFleetCommand(args []string, path string, out io.Writer) error {
 
 func runFleetCommandWithRunner(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: cove fleet add <name> <user@host> [-vm <default>] | ls | rm <name>")
+		printFleetUsage(errOut)
+		return errors.New("fleet: command required")
 	}
 	if isHelpArg(args[0]) {
-		fmt.Fprintln(out, "Usage: cove fleet <add|ls|rm|vm|image|ps|run|metrics> [args]")
+		printFleetUsage(out)
 		return nil
 	}
 	switch args[0] {
@@ -73,6 +74,20 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 	default:
 		return fmt.Errorf("fleet: unknown command %q", args[0])
 	}
+}
+
+func printFleetUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove fleet <command> [args]
+
+Commands:
+  add <name> <user@host> [-vm <default>]
+  ls
+  rm <name>
+  vm ls [--json]
+  image ls [--json]
+  ps
+  run --policy=least-loaded [run flags]
+  metrics`)
 }
 
 func fleetAdd(args []string, path string) error {

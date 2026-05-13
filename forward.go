@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -43,7 +45,7 @@ func forwardCommand(args []string) error {
 
 func runForward(ctx context.Context, args []string, newStarter func(string) forwardStarter) error {
 	if len(args) > 0 && isHelpArg(args[0]) {
-		fmt.Println("Usage: cove forward <vm> <hostport>:<vmport> [-reverse] [-udp]")
+		printForwardUsage(os.Stdout)
 		return nil
 	}
 	spec, err := parseForwardArgs(args)
@@ -58,9 +60,21 @@ func runForward(ctx context.Context, args []string, newStarter func(string) forw
 	return nil
 }
 
+func printForwardUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove forward <vm> <hostport>:<vmport> [-reverse] [-udp]
+
+Forward host TCP to a guest TCP port through the guest agent. With -reverse,
+forward guest TCP to a host TCP port. Add /udp or -udp for UDP.
+
+Examples:
+  cove forward work-vm 8080:80
+  cove forward work-vm tcp/8080->80
+  cove forward work-vm 5353:5353 -udp`)
+}
+
 func parseForwardArgs(args []string) (forwardSpec, error) {
 	if len(args) < 2 {
-		return forwardSpec{}, errors.New("usage: cove forward <vm> <hostport>:<vmport>")
+		return forwardSpec{}, errors.New("usage: cove forward <vm> <hostport>:<vmport> [-reverse] [-udp]")
 	}
 	vm := args[0]
 	reverse := false
@@ -78,7 +92,7 @@ func parseForwardArgs(args []string) (forwardSpec, error) {
 		rest = rest[1:]
 	}
 	if len(rest) != 1 {
-		return forwardSpec{}, errors.New("usage: cove forward <vm> <hostport>:<vmport>")
+		return forwardSpec{}, errors.New("usage: cove forward <vm> <hostport>:<vmport> [-reverse] [-udp]")
 	}
 	mapping := rest[0]
 	if p, m, ok := strings.Cut(mapping, "/"); ok && (p == "tcp" || p == "udp") {

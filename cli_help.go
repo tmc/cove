@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 func isHelpArg(s string) bool {
 	switch s {
-	case "help", "-h", "--help":
+	case "help", "-h", "-help", "--help":
 		return true
 	default:
 		return false
@@ -32,7 +33,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 
 	switch cmd {
 	case "help":
-		if len(subargs) == 0 {
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			usage()
 			return true, 0
 		}
@@ -51,6 +52,24 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printCompactUsage(os.Stderr)
 		case "build":
 			printBuildUsage(os.Stderr)
+		case "action":
+			printActionUsage(os.Stderr)
+		case "runs":
+			printRunsUsage(os.Stderr)
+		case "daemon":
+			printDaemonUsage(os.Stderr)
+		case "cp":
+			printCpUsage(os.Stderr)
+		case "forward":
+			printForwardUsage(os.Stderr)
+		case "quota":
+			printQuotaUsage(os.Stderr)
+		case "diff":
+			printDiffUsage(os.Stderr)
+		case "image":
+			printImageUsage(os.Stderr)
+		case "logs":
+			printLogsUsage(os.Stderr)
 		case "secret":
 			printSecretUsage(os.Stderr)
 		case "policy":
@@ -159,6 +178,58 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "shell":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printShellUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "runs":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printRunsUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && (subargs[0] == "list" || subargs[0] == "ls") && isHelpArg(subargs[1]) {
+			printRunsListUsage(os.Stderr)
+			return true, 0
+		}
+	case "action":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printActionUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "daemon":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printDaemonUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "cp":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printCpUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "forward":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printForwardUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "quota":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printQuotaUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "diff":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printDiffUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "image":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printImageUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "logs":
+		if len(subargs) == 0 && strings.TrimSpace(vmName) != "" {
+			return false, 0
+		}
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printLogsUsage(os.Stderr)
 			return true, usageExitCode(subargs)
 		}
 	case "up":
@@ -522,24 +593,28 @@ Common flags:
   -usb /path/disk.img[:ro] attach a USB mass-storage device (repeatable)
   -display WxH[@PPI]      set display resolution (repeatable)
   -http <addr>            expose per-VM HTTP API (e.g. :7777)
+  -vnc <addr>             start private VNC server (e.g. 127.0.0.1:5901)
+  -gdb <addr>             start private GDB debug stub (e.g. 127.0.0.1:1234)
   -unattended             fully unattended setup (disk + OCR fallback)
   -boot-commands <file>   custom boot automation vzscript
   -vm <name>              target VM (default: active VM)
 
-Ephemeral fork (design 013 Phase 3):
-  -fork-from <parent>     boot a short-lived sibling sharing the parent's
-                          disk.img read-only via RAM-overlay; auto-deleted
-                          on exit. Parent VM must be stopped.
-  -fork-name <name>       explicit name for the ephemeral sibling
-                          (default: <parent>-eph-<timestamp>)
-  -keep                   with -fork-from, retain the ephemeral vmDir
+Ephemeral fork:
+  -fork-from <image-ref>  boot a short-lived VM from a local image ref;
+                          auto-deleted on exit with -ephemeral. VM-parent
+                          RAM-overlay forks are not implemented; use
+                          cove fork or cove clone --linked for VM parents.
+  -fork-name <name>       explicit name for the forked VM
+  -keep                   with -fork-from, retain the forked vmDir
                           after exit so logs / control.sock persist
+  -ephemeral              with -fork-from <image-ref>, destroy the
+                          materialized child on stop
 
 Examples:
   cove run -gui
   cove run -linux -gui -vol ~/code:code
-  cove run -fork-from base-vm -gui
-  cove run -fork-from base-vm -fork-name scratch-1 -keep`)
+  cove run -fork-from macos-runner:latest -ephemeral -headless
+  cove fork base-vm scratch-1 && cove run -vm scratch-1 -gui`)
 }
 
 func printListUsage(w io.Writer) {

@@ -12,9 +12,13 @@ func TestRunFleetCommandDispatchBranches(t *testing.T) {
 	runner := &fakeFleetRunner{}
 
 	t.Run("emptyArgs", func(t *testing.T) {
-		err := runFleetCommandWithRunner(context.Background(), nil, path, runner, &bytes.Buffer{}, &bytes.Buffer{})
-		if err == nil || !strings.Contains(err.Error(), "usage:") {
-			t.Fatalf("err = %v, want usage error", err)
+		var errOut bytes.Buffer
+		err := runFleetCommandWithRunner(context.Background(), nil, path, runner, &bytes.Buffer{}, &errOut)
+		if err == nil || !strings.Contains(err.Error(), "command required") {
+			t.Fatalf("err = %v, want command required", err)
+		}
+		if !strings.Contains(errOut.String(), "Usage: cove fleet") {
+			t.Fatalf("stderr = %q, want fleet usage", errOut.String())
 		}
 	})
 

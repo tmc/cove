@@ -14,9 +14,9 @@ func TestIsHelpArg(t *testing.T) {
 	}{
 		{"help", true},
 		{"-h", true},
+		{"-help", true},
 		{"--help", true},
 		{"", false},
-		{"-help", false},
 		{"Help", false},
 		{"foo", false},
 	}
@@ -72,5 +72,12 @@ func TestParseFlagsOrHelpExit(t *testing.T) {
 	handled, err = parseFlagsOrHelpExit(fs, []string{"-nope"})
 	if handled || err == nil {
 		t.Errorf("err: handled=%v err=%v, want false,non-nil", handled, err)
+	}
+}
+
+func TestHelpDashHPrintsTopLevelUsage(t *testing.T) {
+	handled, exit := handleEarlyCLI([]string{"help", "-h"})
+	if !handled || exit != 0 {
+		t.Fatalf("handleEarlyCLI(help -h) = %v, %d; want true, 0", handled, exit)
 	}
 }

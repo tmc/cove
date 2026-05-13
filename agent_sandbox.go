@@ -42,7 +42,8 @@ type agentSandboxBenchOptions struct {
 
 func handleAgentSandboxCommand(args []string) error {
 	if len(args) == 0 {
-		return errors.New("agent-sandbox requires subcommand: run")
+		printAgentSandboxUsage(os.Stderr)
+		return errors.New("agent-sandbox: command required")
 	}
 	switch args[0] {
 	case "run":

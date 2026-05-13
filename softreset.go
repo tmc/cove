@@ -25,11 +25,12 @@ type softresetProbeOptions struct {
 
 func softresetCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: cove softreset probe <vm> [--all|--probes filesystem,process,network,memory]")
+		printSoftresetUsage(os.Stderr)
+		return fmt.Errorf("softreset: command required")
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		fmt.Fprintln(os.Stdout, "Usage: cove softreset <probe|run-all> <vm> [--all|--probes filesystem,process,network,memory]")
+		printSoftresetUsage(os.Stdout)
 		return nil
 	case "probe":
 		if len(args) > 1 && isHelpArg(args[1]) {
@@ -64,6 +65,14 @@ func softresetCommand(args []string) error {
 	default:
 		return fmt.Errorf("unknown softreset command %q", args[0])
 	}
+}
+
+func printSoftresetUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove softreset <command> <vm> [options]
+
+Commands:
+  probe      Run soft-reset probes and print a summary
+  run-all    Run probes and apply the soft-reset workflow`)
 }
 
 func parseSoftresetProbeArgs(args []string) (softresetProbeOptions, error) {
@@ -208,4 +217,3 @@ func writeSoftresetProbeSummary(w io.Writer, opts softresetProbeOptions, results
 	fmt.Fprintf(w, "\nPass: %d\nFail: %d\nLimit: %d\n", counts[softreset.StatusPass], counts[softreset.StatusFail], counts[softreset.StatusLimit])
 	return nil
 }
-

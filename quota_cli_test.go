@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -91,6 +94,65 @@ func TestRunQuotaPropagatesError(t *testing.T) {
 	if !errors.Is(err, want) {
 		t.Fatalf("runQuota error = %v, want %v", err, want)
 	}
+}
+
+func TestApplyInstallDiskQuotaIgnoresUnsupportedSetQuota(t *testing.T) {
+	oldDiskSize := diskSizeGB
+	oldApply := applyAPFSQuotaForInstall
+	defer func() {
+		diskSizeGB = oldDiskSize
+		applyAPFSQuotaForInstall = oldApply
+	}()
+
+	diskSizeGB = 64
+	applyAPFSQuotaForInstall = func(dir string, gb uint64) error {
+		if dir != "/tmp/vm" || gb != 64 {
+			return fmt.Errorf("got dir=%q gb=%d", dir, gb)
+		}
+		return errors.New(`diskutil apfs did not recognize APFS verb "setQuota"; usage: diskutil apfs ...`)
+	}
+	out := captureQuotaStdout(t, func() {
+		if err := applyInstallDiskQuota("/tmp/vm"); err != nil {
+			t.Fatalf("applyInstallDiskQuota unsupported setQuota: %v", err)
+		}
+	})
+	if !strings.Contains(out, "APFS directory quotas are not supported") {
+		t.Fatalf("output = %q, want unsupported quota warning", out)
+	}
+}
+
+func TestApplyInstallDiskQuotaPropagatesOtherErrors(t *testing.T) {
+	oldDiskSize := diskSizeGB
+	oldApply := applyAPFSQuotaForInstall
+	defer func() {
+		diskSizeGB = oldDiskSize
+		applyAPFSQuotaForInstall = oldApply
+	}()
+
+	want := errors.New("permission denied")
+	diskSizeGB = 64
+	applyAPFSQuotaForInstall = func(string, uint64) error { return want }
+	if err := applyInstallDiskQuota("/tmp/vm"); !errors.Is(err, want) {
+		t.Fatalf("applyInstallDiskQuota error = %v, want %v", err, want)
+	}
+}
+
+func captureQuotaStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stdout = w
+	fn()
+	_ = w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("copy stdout: %v", err)
+	}
+	return buf.String()
 }
 
 type fakeQuotaManager struct {

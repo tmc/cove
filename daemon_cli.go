@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -49,10 +50,11 @@ var (
 
 func daemonCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: cove daemon <status|start|stop>")
+		printDaemonUsage(os.Stderr)
+		return fmt.Errorf("daemon: command required")
 	}
 	if isHelpArg(args[0]) {
-		fmt.Fprintln(os.Stdout, "Usage: cove daemon <status|start|stop|metrics|ui>")
+		printDaemonUsage(os.Stdout)
 		return nil
 	}
 	switch args[0] {
@@ -63,6 +65,9 @@ func daemonCommand(args []string) error {
 		}
 		status, err := queryDaemonStatus(defaultDaemonPaths().SocketPath)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("daemon: stopped; start with: cove daemon start")
+			}
 			return err
 		}
 		fmt.Printf("version: %s\nuptime_s: %d\nvms_managed: %d\nimage_gc_last_run_ts: %s\nimage_gc_runs_total: %d\nimage_gc_bytes_freed_total: %d\nlifecycle_enforced: %d\n",
@@ -82,6 +87,19 @@ func daemonCommand(args []string) error {
 	default:
 		return fmt.Errorf("unknown daemon command: %s", args[0])
 	}
+}
+
+func printDaemonUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove daemon <command>
+
+Manage the background cove coordinator.
+
+Commands:
+  status     Show daemon status
+  start      Install and load the launch agent
+  stop       Unload the launch agent
+  metrics    Print Prometheus metrics
+  ui         Open the daemon web UI`)
 }
 
 func daemonUICommand(args []string) error {
@@ -117,7 +135,7 @@ func daemonMetricsCommand(args []string) error {
 	}
 	body, err := fetchDaemonMetrics("http://" + *addr + "/metrics")
 	if err != nil {
-		return err
+		return daemonMetricsErrorWithHint(err)
 	}
 	if *raw {
 		fmt.Print(body)
@@ -125,6 +143,16 @@ func daemonMetricsCommand(args []string) error {
 	}
 	printDaemonMetrics(os.Stdout, body)
 	return nil
+}
+
+func daemonMetricsErrorWithHint(err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "connection refused") {
+		return fmt.Errorf("%w; start with: cove daemon start", err)
+	}
+	return err
 }
 
 func fetchDaemonMetrics(url string) (string, error) {
@@ -199,6 +227,9 @@ func daemonStopCommand(args []string) error {
 }
 
 func queryDaemonStatus(socketPath string) (daemonStatus, error) {
+	if _, err := os.Stat(socketPath); err != nil {
+		return daemonStatus{}, fmt.Errorf("daemon status: %w", err)
+	}
 	conn, err := net.DialTimeout("unix", socketPath, daemonDialTimeout)
 	if err != nil {
 		return daemonStatus{}, fmt.Errorf("daemon status: %w", err)
