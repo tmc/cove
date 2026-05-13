@@ -64,7 +64,7 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)
 	}
 
-	cmd := exec.Command("go", "build", "-o", outputPath, agentPkg)
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", outputPath, agentPkg)
 	cmd.Dir = moduleDir
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",

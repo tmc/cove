@@ -66,7 +66,7 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	}
 
 	if isVMRunningAt(vmPath) {
-		return fmt.Errorf("cannot delete VM '%s': it is currently running (stop it first)", name)
+		return fmt.Errorf("cannot delete VM %q: it is currently running\n  request stop: cove ctl -vm %s request-stop\n  check status: cove list\n  if still running: cove ctl -vm %s stop\n  then retry: cove vm delete %s", name, name, name, name)
 	}
 
 	children, err := childVMNames(name)

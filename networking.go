@@ -105,9 +105,9 @@ Examples:
 
 // printNetworkInterfaces prints available network interfaces.
 func printNetworkInterfaces() {
-	fmt.Println("Available network interfaces for bridged mode:")
+	fmt.Println("Network interface guidance for bridged mode:")
 	fmt.Println()
-	fmt.Println("To find your network interfaces, run:")
+	fmt.Println("This command does not enumerate interfaces yet. To find your network interfaces, run:")
 	fmt.Println("  networksetup -listallhardwareports")
 	fmt.Println()
 	fmt.Println("Common interface names:")
