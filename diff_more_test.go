@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -46,5 +47,25 @@ func TestDiffCommandFlagPaths(t *testing.T) {
 				t.Fatalf("diffCommand(%v) err = %q, want substring %q", tt.args, err.Error(), tt.wantSub)
 			}
 		})
+	}
+}
+
+func TestDiffCommandJSONErrorWritesMachineReadableStdout(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out, err := captureStdoutResult(t, func() error {
+		return diffCommand([]string{"missing-a:latest", "missing-b:latest", "-json"})
+	})
+	if err == nil {
+		t.Fatal("diffCommand missing -json = nil, want error")
+	}
+	if strings.Contains(out, "error:") {
+		t.Fatalf("stdout contains plain text diagnostic: %q", out)
+	}
+	var got imageDiffErrorOutput
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
+	}
+	if got.Refs != [2]string{"missing-a:latest", "missing-b:latest"} || got.Error == "" {
+		t.Fatalf("JSON output = %#v, want refs/error", got)
 	}
 }

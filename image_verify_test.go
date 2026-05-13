@@ -222,6 +222,26 @@ func TestRunImageVerifyAllowsTrailingJSON(t *testing.T) {
 	}
 }
 
+func TestRunImageVerifyMissingJSONWritesMachineReadableStdout(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out, err := captureStdoutResult(t, func() error {
+		return runImageVerify([]string{"missing:latest", "-json"})
+	})
+	if err == nil {
+		t.Fatal("runImageVerify missing -json = nil, want error")
+	}
+	if strings.Contains(out, "error:") {
+		t.Fatalf("stdout contains plain text diagnostic: %q", out)
+	}
+	var got imageVerifyReport
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
+	}
+	if got.Ref != "missing:latest" || got.Verdict != imageVerifyFail {
+		t.Fatalf("JSON output = %#v, want missing:latest FAIL", got)
+	}
+}
+
 func TestPrintImageVerifyUsage(t *testing.T) {
 	var buf strings.Builder
 	printImageVerifyUsage(&buf)

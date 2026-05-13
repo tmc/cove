@@ -97,6 +97,27 @@ func TestRunRunsListLimitZeroReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestRunRunsShowMissingJSONWritesMachineReadableStdout(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	out, err := captureStdoutResult(t, func() error {
+		return runRunsShow([]string{"missing", "--json"})
+	})
+	if err == nil {
+		t.Fatal("runRunsShow --json missing = nil, want error")
+	}
+	if strings.Contains(out, "error:") {
+		t.Fatalf("stdout contains plain text diagnostic: %q", out)
+	}
+	var got runsShowErrorOutput
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
+	}
+	if got.RunID != "missing" || got.Error == "" {
+		t.Fatalf("JSON output = %#v, want run_id/error", got)
+	}
+}
+
 func TestParseRunsExportArgsAllowsFormatAfterPrefix(t *testing.T) {
 	tests := [][]string{
 		{"abc123", "--format", "gha-summary"},
