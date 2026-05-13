@@ -615,6 +615,9 @@ func ctlCommand(args []string) error {
 			},
 		}
 
+	case "agent-exec-auto":
+		return fmt.Errorf("agent-exec-auto is an internal control request; use \"exec\" or \"agent-exec\"")
+
 	case "agent-read":
 		if len(subArgs) < 1 {
 			return fmt.Errorf("agent-read requires a file path")
