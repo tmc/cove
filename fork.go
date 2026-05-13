@@ -84,6 +84,9 @@ func ForkVM(parent, child string) error {
 	}); err != nil {
 		return err
 	}
+	if err := removeForkMACAddress(child); err != nil {
+		return err
+	}
 	if err := recordForkLineage(parent, child, "", time.Now().UTC()); err != nil {
 		return fmt.Errorf("fork: record lineage: %w", err)
 	}
@@ -191,6 +194,10 @@ func ForkVMWithSnapshot(opts ForkVMOptions) error {
 		return err
 	}
 	childDir := vmconfig.Path(opts.Child)
+	if err := removeForkMACAddress(opts.Child); err != nil {
+		os.RemoveAll(childDir)
+		return err
+	}
 	if err := copyFile(snapshotPath, filepath.Join(childDir, "suspend.vmstate")); err != nil {
 		// Roll back the partial clone so we don't leave a half-forked VM.
 		os.RemoveAll(childDir)
@@ -198,6 +205,14 @@ func ForkVMWithSnapshot(opts ForkVMOptions) error {
 	}
 	if err := recordForkLineage(opts.Parent, opts.Child, opts.Snapshot, time.Now().UTC()); err != nil {
 		return fmt.Errorf("fork: record lineage: %w", err)
+	}
+	return nil
+}
+
+func removeForkMACAddress(name string) error {
+	path := filepath.Join(vmconfig.Path(name), "mac.address")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("fork: remove mac address: %w", err)
 	}
 	return nil
 }

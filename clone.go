@@ -120,6 +120,12 @@ func CloneVM(opts CloneOptions) error {
 			copyFile(srcFile, dstFile)
 		}
 	}
+	if sourceOS != "Linux" && !opts.CopyMachineID {
+		if err := generateMACAddress(dstPath); err != nil {
+			os.RemoveAll(dstPath)
+			return fmt.Errorf("generate mac address: %w", err)
+		}
+	}
 
 	// Remove suspend state from clone for deterministic cold boot.
 	os.Remove(filepath.Join(dstPath, "suspend.vmstate"))
@@ -161,6 +167,8 @@ func cloneOptionalFiles(sourceOS string) []string {
 	files := []string{"boot-args.txt", "control.token", "config.json", "shared_folders.json", loginScreenCredentialsFile}
 	if sourceOS == "Linux" {
 		files = append(files, "efi.nvram", "linux-installed", "cloud-init.iso", "vmlinuz", "initrd", linuxRootUUIDFileName)
+	} else {
+		files = append(files, "mac.address")
 	}
 	return files
 }
@@ -218,6 +226,14 @@ func generateMachineID(vmPath string) error {
 
 	bytes := unsafe.Slice((*byte)(ptr), length)
 	return os.WriteFile(machineIDPath, bytes, 0600)
+}
+
+func generateMACAddress(vmPath string) error {
+	macAddr := vz.GetVZMACAddressClass().RandomLocallyAdministeredAddress()
+	if macAddr.ID == 0 {
+		return fmt.Errorf("failed to create mac address")
+	}
+	return os.WriteFile(filepath.Join(vmPath, "mac.address"), []byte(macAddr.String()+"\n"), 0644)
 }
 
 func generateLinuxMachineID(vmPath string) error {
