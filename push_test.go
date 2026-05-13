@@ -694,10 +694,47 @@ func TestParsePushArgs(t *testing.T) {
 	}
 }
 
+func TestParsePushArgsAllowsTrailingFlags(t *testing.T) {
+	opts, pos, err := parsePushArgs([]string{
+		"vm",
+		"ref",
+		"--dry-run",
+		"--manifest-out", "manifest.json",
+		"--additional-tag=latest",
+	}, ioDiscard{})
+	if err != nil {
+		t.Fatalf("parsePushArgs trailing flags: %v", err)
+	}
+	if !opts.DryRun || opts.ManifestOut != "manifest.json" {
+		t.Fatalf("opts = %#v, want dry-run and manifest-out", opts)
+	}
+	if got := strings.Join(opts.AdditionalTags, ","); got != "latest" {
+		t.Fatalf("AdditionalTags = %q, want latest", got)
+	}
+	if strings.Join(pos, ",") != "vm,ref" {
+		t.Fatalf("pos = %#v", pos)
+	}
+}
+
 func TestParsePushArgsRejectsBadChunkSize(t *testing.T) {
 	_, _, err := parsePushArgs([]string{"--chunk-size", "0", "vm", "ref"}, ioDiscard{})
 	if err == nil || !strings.Contains(err.Error(), "invalid chunk size") {
 		t.Fatalf("parsePushArgs() error = %v, want invalid chunk size", err)
+	}
+}
+
+func TestPrintPushUsageShowsFlagsBeforeArgs(t *testing.T) {
+	var b strings.Builder
+	printPushUsage(&b)
+	if !strings.Contains(b.String(), "Usage: cove push [flags] <vm|dir> <ref>") {
+		t.Fatalf("usage = %q", b.String())
+	}
+}
+
+func TestHandlePushUsageShowsFlagsBeforeArgs(t *testing.T) {
+	err := handlePush([]string{"only-one"})
+	if err == nil || !strings.Contains(err.Error(), "usage: cove push [flags] <vm|dir> <ref>") {
+		t.Fatalf("handlePush usage error = %v, want flags-before-args usage", err)
 	}
 }
 
