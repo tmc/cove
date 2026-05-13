@@ -229,6 +229,7 @@ func runImageVerify(args []string) error {
 	quiet := fs.Bool("quiet", false, "only print on failure")
 	strict := fs.Bool("strict", false, "treat missing execattach.v3 as an error")
 	newerThan := fs.Duration("newer-than", 0, "require image built or created within duration")
+	fs.Usage = func() { printImageVerifyUsage(fs.Output()) }
 	if err := parseFlagsOrHelp(fs, moveKnownFlagsFirst(args, map[string]bool{"json": false})); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -255,6 +256,20 @@ func runImageVerify(args []string) error {
 		return fmt.Errorf("image verify: %s", ref)
 	}
 	return nil
+}
+
+func printImageVerifyUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove image verify <name[:tag]> [-strict] [-json] [-quiet] [-newer-than <duration>]
+
+Verify a local image ref and report manifest, layout, agent, provenance, freshness,
+and downstream fork checks. The -json flag may appear before or after the image
+ref.
+
+Flags:
+  -json                  emit machine-readable JSON
+  -newer-than duration   require image built or created within duration
+  -quiet                 only print on failure
+  -strict                treat missing execattach.v3 as an error`)
 }
 
 func writeImageVerifyJSON(w io.Writer, report imageVerifyReport) error {

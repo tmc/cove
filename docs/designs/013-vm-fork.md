@@ -125,14 +125,21 @@ More complex than A or B. Defer.
 
 ## Proposed CLI surface
 
+Historical note: this section records the original VM-parent fork proposal.
+The shipped current `cove run -fork-from` path takes a local image ref
+(`<name>:<tag>`) and does not implement VM-parent RAM-overlay forks. Use
+`cove fork` or `cove clone --linked` for VM parents; use `-fork-name`, not the
+older `-name` spelling, when naming image-backed run children.
+
 ```
 # Persistent fork (clone-and-diverge)
 cove fork <parent> <child> [-snapshot <name>] [-linked]
     -snapshot   restore child from parent/snapshots/<name>.vmstate at first boot
     -linked     use clonefile (default; fall back to copy if not APFS)
 
+# Historical proposal, not current shipped behavior:
 # Ephemeral siblings (RAM-overlay, run-only, not registered)
-cove run -fork-from <parent> [-snapshot <name>] [-name <ephemeral-id>]
+cove run [historical VM-parent fork proposal] [-snapshot <name>] [-fork-name <ephemeral-id>]
     auto-deletes vmDir on exit unless -keep is given
 
 # Bulk
@@ -238,7 +245,7 @@ fork to child, boot child to login window, snapshot diff.
    machine.id, fresh MAC. No `-snapshot`. Boots from cloned disk.
 3. **Phase 2** (~150 LOC): `cove fork -snapshot <name>` — A1 with A2 fallback.
    Includes the empirical aux-replay test from Validation #2.
-4. **Phase 3** (~300 LOC): `cove run -fork-from <parent>` ephemeral mode.
+4. **Phase 3** (~300 LOC, historical proposal): VM-parent run-fork ephemeral mode.
    Validation #1 returned PASS with no file lock — Model B ships as the
    only path; no clonefile-per-child fallback. `-snapshot` is deferred
    until a future identity-preserving fork option lands.
@@ -313,7 +320,7 @@ superseded by the Slice 5a implementation in `internal/vmidentity` and
 - `clone.go` becomes `cove fork` under the hood.
 - `template.go` becomes "named parent for forking."
 - `disposable.go` (linked-clone-then-discard) becomes `cove run -fork-from -ephemeral`.
-- `disk-snapshot run` (snapshots.go:436) becomes `cove run -fork-from <parent> -snapshot <name>`.
+- `disk-snapshot run` (snapshots.go:436) becomes a VM-parent run-fork command (historical proposal; not current shipped `run -fork-from` behavior).
 
 Today these are four CLIs doing the same operation with different ergonomics.
 After fork lands, deprecate the others to aliases.

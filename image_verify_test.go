@@ -222,6 +222,21 @@ func TestRunImageVerifyAllowsTrailingJSON(t *testing.T) {
 	}
 }
 
+func TestPrintImageVerifyUsage(t *testing.T) {
+	var buf strings.Builder
+	printImageVerifyUsage(&buf)
+	got := buf.String()
+	for _, want := range []string{
+		"Usage: cove image verify <name[:tag]>",
+		"[-json]",
+		"-json flag may appear before or after the image",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("usage missing %q in:\n%s", want, got)
+		}
+	}
+}
+
 func TestRunImageForkFromWithConfigRefusesFailedVerify(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stageMacOSVMForImage(t, "src")
