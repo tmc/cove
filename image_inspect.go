@@ -79,6 +79,12 @@ type imageInspectLayerValue struct {
 	Size   int64  `json:"size"`
 }
 
+type imageInspectErrorOutput struct {
+	Ref   string `json:"ref"`
+	Error string `json:"error"`
+	Hint  string `json:"hint,omitempty"`
+}
+
 // InspectImage assembles the inspect output for ref. The fork list reuses
 // VMsForkedFromImage so it stays in lockstep with `cove image rm`'s gate.
 func InspectImage(ref ImageRef) (ImageInspectOutput, error) {
@@ -180,7 +186,17 @@ func runImageInspect(args []string) error {
 	out, err := InspectImage(ref)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("%w\nhint: run 'cove image list' to see local images or 'cove image search %s' to search refs", err, ref.Name)
+			hint := fmt.Sprintf("run 'cove image list' to see local images or 'cove image search %s' to search refs", ref.Name)
+			if *asJSON {
+				if jsonErr := writeInspectErrorJSON(os.Stdout, imageInspectErrorOutput{
+					Ref:   ref.String(),
+					Error: err.Error(),
+					Hint:  hint,
+				}); jsonErr != nil {
+					return jsonErr
+				}
+			}
+			return fmt.Errorf("%w\nhint: %s", err, hint)
 		}
 		return err
 	}
@@ -206,6 +222,17 @@ func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode inspect output: %w", err)
+	}
+	if _, err := w.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeInspectErrorJSON(w io.Writer, out imageInspectErrorOutput) error {
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode inspect error: %w", err)
 	}
 	if _, err := w.Write(append(data, '\n')); err != nil {
 		return err

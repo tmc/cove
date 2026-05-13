@@ -17,6 +17,11 @@ import (
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
+type runsShowErrorOutput struct {
+	RunID string `json:"run_id"`
+	Error string `json:"error"`
+}
+
 func handleRunsCommand(args []string) error {
 	if len(args) == 0 || isHelpArg(args[0]) {
 		printRunsUsage(os.Stdout)
@@ -127,6 +132,16 @@ func runRunsShow(args []string) error {
 	}
 	show, err := runs.LoadShow(vmconfig.RunsDir(), prefix)
 	if err != nil {
+		if jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if jsonErr := enc.Encode(runsShowErrorOutput{
+				RunID: prefix,
+				Error: err.Error(),
+			}); jsonErr != nil {
+				return jsonErr
+			}
+		}
 		return err
 	}
 	if jsonOut {

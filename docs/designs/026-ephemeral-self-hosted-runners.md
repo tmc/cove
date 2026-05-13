@@ -468,7 +468,7 @@ design.
      "...","control_socket":"..."}` lines on stderr. Cleanest.
    - **5b**: Slice 0 scrapes existing log lines. Fragile; will break
      on any log-format change.
-   - **5c**: Slice 0 uses `cove vm list --json` polling after fork
+   - **5c**: Slice 0 uses `cove list` polling after fork
      (find the newest `<parent>-fork-N` VM). Race-prone but no
      subprocess coupling.
    - **5d**: Pre-allocate the child name in Slice 0 and pass via `cove
