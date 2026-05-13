@@ -39,7 +39,7 @@ func TestPrivateConfigBoolProperties(t *testing.T) {
 	tests := []struct {
 		name   string
 		getSel string
-		set    func(bool)
+		set    func(bool) error
 	}{
 		{
 			name:   "memoryOvercommitmentAllowed",
@@ -65,7 +65,9 @@ func TestPrivateConfigBoolProperties(t *testing.T) {
 				t.Logf("default %s = %v", tt.name, v)
 			})
 			safeCall(t, "set true", func() {
-				tt.set(true)
+				if err := tt.set(true); err != nil {
+					t.Fatalf("set %s true: %v", tt.name, err)
+				}
 				v := objc.Send[bool](config.ID, objc.Sel(tt.getSel))
 				if !v {
 					t.Errorf("set %s to true but got false", tt.name)
@@ -73,7 +75,9 @@ func TestPrivateConfigBoolProperties(t *testing.T) {
 				t.Logf("set %s = true -> read back %v", tt.name, v)
 			})
 			safeCall(t, "set false", func() {
-				tt.set(false)
+				if err := tt.set(false); err != nil {
+					t.Fatalf("set %s false: %v", tt.name, err)
+				}
 				v := objc.Send[bool](config.ID, objc.Sel(tt.getSel))
 				if v {
 					t.Errorf("set %s to false but got true", tt.name)
@@ -243,7 +247,10 @@ func TestPrivateConfigClassMethods(t *testing.T) {
 
 	t.Run("maximumAllowedOvercommittedMemorySize", func(t *testing.T) {
 		safeCall(t, "class method", func() {
-			v := configClass.MaximumAllowedOvercommittedMemorySize()
+			v, err := configClass.MaximumAllowedOvercommittedMemorySize()
+			if err != nil {
+				t.Fatalf("MaximumAllowedOvercommittedMemorySize: %v", err)
+			}
 			t.Logf("maximumAllowedOvercommittedMemorySize = %d bytes (%.1f GB)", v, float64(v)/(1024*1024*1024))
 		})
 	})
@@ -284,7 +291,10 @@ func TestPrivateConfigIsDuplicateUSB(t *testing.T) {
 	config := newConfig(t)
 
 	safeCall(t, "isDuplicateUSB(0,0)", func() {
-		v := config.IsDuplicateUSBDeviceConfigurationAtUsbDeviceIndex(0, 0)
+		v, err := config.IsDuplicateUSBDeviceConfigurationAtUsbDeviceIndex(0, 0)
+		if err != nil {
+			t.Fatalf("IsDuplicateUSBDeviceConfigurationAtUsbDeviceIndex: %v", err)
+		}
 		t.Logf("isDuplicateUSBDeviceConfiguration(0, 0) = %v", v)
 	})
 }

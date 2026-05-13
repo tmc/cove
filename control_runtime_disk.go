@@ -350,7 +350,10 @@ func runtimeDiskInfoForDevice(index int, device pvz.VZStorageDevice) RuntimeDisk
 		Description: strings.TrimSpace(device.Description()),
 	}
 
-	attachment := device.Attachment()
+	attachment, err := device.Attachment()
+	if err != nil {
+		return info
+	}
 	if attachment == nil || attachment.GetID() == 0 {
 		return info
 	}
@@ -388,5 +391,9 @@ func runtimeDiskDiskImageAttachmentFromObject(obj objectivec.IObject) (pvz.VZDis
 }
 
 func runtimeDiskDiskImageAttachment(device pvz.VZStorageDevice) (pvz.VZDiskImageStorageDeviceAttachment, bool) {
-	return runtimeDiskDiskImageAttachmentFromObject(device.Attachment())
+	attachment, err := device.Attachment()
+	if err != nil {
+		return pvz.VZDiskImageStorageDeviceAttachment{}, false
+	}
+	return runtimeDiskDiskImageAttachmentFromObject(attachment)
 }

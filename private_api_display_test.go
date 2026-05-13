@@ -238,7 +238,11 @@ func TestPrivateAPI_DisplayUUID(t *testing.T) {
 		displays := dev.Displays()
 		for j, disp := range displays {
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
-			uuidObj := privDisp.Uuid()
+			uuidObj, err := privDisp.Uuid()
+			if err != nil {
+				t.Logf("device[%d] display[%d] _uuid: error=%v", i, j, err)
+				continue
+			}
 			uuidStr := ""
 			if uuidObj.GetID() != 0 {
 				uuidStr = foundation.NSStringFromID(
@@ -263,7 +267,11 @@ func TestPrivateAPI_DisplayGraphicsOrientation(t *testing.T) {
 		displays := dev.Displays()
 		for j, disp := range displays {
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
-			orientation := privDisp.GraphicsOrientation()
+			orientation, err := privDisp.GraphicsOrientation()
+			if err != nil {
+				t.Logf("device[%d] display[%d] _graphicsOrientation: error=%v", i, j, err)
+				continue
+			}
 			t.Logf("device[%d] display[%d] _graphicsOrientation: %d", i, j, orientation)
 		}
 	}
@@ -282,7 +290,11 @@ func TestPrivateAPI_DisplayConfiguration(t *testing.T) {
 		displays := dev.Displays()
 		for j, disp := range displays {
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
-			configObj := privDisp.Configuration()
+			configObj, err := privDisp.Configuration()
+			if err != nil {
+				t.Logf("device[%d] display[%d] _configuration: error=%v", i, j, err)
+				continue
+			}
 			t.Logf("device[%d] display[%d] _configuration: ID=%#x", i, j, configObj.GetID())
 
 			if configObj.GetID() != 0 {
@@ -309,7 +321,11 @@ func TestPrivateAPI_DisplayGraphicsDevice(t *testing.T) {
 		displays := dev.Displays()
 		for j, disp := range displays {
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
-			parentDev := privDisp.GraphicsDevice()
+			parentDev, err := privDisp.GraphicsDevice()
+			if err != nil {
+				t.Logf("device[%d] display[%d] _graphicsDevice: error=%v", i, j, err)
+				continue
+			}
 			t.Logf("device[%d] display[%d] _graphicsDevice: ID=%#x (parent dev ID=%#x)",
 				i, j, parentDev.GetID(), dev.ID)
 
@@ -364,8 +380,16 @@ func TestPrivateAPI_MacGraphicsDeviceMetadata(t *testing.T) {
 
 	for i, dev := range devices {
 		macDev := privvz.VZMacGraphicsDeviceFromID(dev.ID)
-		featureLevel := macDev.DeviceFeatureLevel()
-		lowPower := macDev.PrefersLowPower()
+		featureLevel, err := macDev.DeviceFeatureLevel()
+		if err != nil {
+			t.Logf("device[%d] _deviceFeatureLevel: error=%v", i, err)
+			continue
+		}
+		lowPower, err := macDev.PrefersLowPower()
+		if err != nil {
+			t.Logf("device[%d] _prefersLowPower: error=%v", i, err)
+			continue
+		}
 		portCount := objc.Send[uint64](dev.ID, objc.Sel("_displayPortCount"))
 		t.Logf("device[%d] _deviceFeatureLevel=%d _prefersLowPower=%v _displayPortCount=%d",
 			i, featureLevel, lowPower, portCount)
@@ -484,8 +508,16 @@ func TestPrivateAPI_DisplaySummary(t *testing.T) {
 		t.Logf("--- Device %d (ID=%#x) ---", i, dev.ID)
 
 		macDev := privvz.VZMacGraphicsDeviceFromID(dev.ID)
-		t.Logf("  _deviceFeatureLevel: %d", macDev.DeviceFeatureLevel())
-		t.Logf("  _prefersLowPower: %v", macDev.PrefersLowPower())
+		if featureLevel, err := macDev.DeviceFeatureLevel(); err != nil {
+			t.Logf("  _deviceFeatureLevel: error=%v", err)
+		} else {
+			t.Logf("  _deviceFeatureLevel: %d", featureLevel)
+		}
+		if lowPower, err := macDev.PrefersLowPower(); err != nil {
+			t.Logf("  _prefersLowPower: error=%v", err)
+		} else {
+			t.Logf("  _prefersLowPower: %v", lowPower)
+		}
 		t.Logf("  _displayPortCount: %d", objc.Send[uint64](dev.ID, objc.Sel("_displayPortCount")))
 
 		displays := dev.Displays()
@@ -503,26 +535,38 @@ func TestPrivateAPI_DisplaySummary(t *testing.T) {
 
 			// Private API via VZGraphicsDisplay
 			privDisp := privvz.VZGraphicsDisplayFromID(disp.ID)
-			t.Logf("    _graphicsOrientation: %d", privDisp.GraphicsOrientation())
+			if orientation, err := privDisp.GraphicsOrientation(); err != nil {
+				t.Logf("    _graphicsOrientation: error=%v", err)
+			} else {
+				t.Logf("    _graphicsOrientation: %d", orientation)
+			}
 
-			uuidObj := privDisp.Uuid()
-			if uuidObj.GetID() != 0 {
+			uuidObj, err := privDisp.Uuid()
+			if err != nil {
+				t.Logf("    _uuid: error=%v", err)
+			} else if uuidObj.GetID() != 0 {
 				uuidStr := foundation.NSStringFromID(
 					objc.Send[objc.ID](uuidObj.GetID(), objc.Sel("UUIDString")),
 				).String()
 				t.Logf("    _uuid: %s", uuidStr)
 			}
 
-			configObj := privDisp.Configuration()
-			if configObj.GetID() != 0 {
+			configObj, err := privDisp.Configuration()
+			if err != nil {
+				t.Logf("    _configuration: error=%v", err)
+			} else if configObj.GetID() != 0 {
 				desc := foundation.NSStringFromID(
 					objc.Send[objc.ID](configObj.GetID(), objc.Sel("description")),
 				).String()
 				t.Logf("    _configuration: %s", desc)
 			}
 
-			parentDev := privDisp.GraphicsDevice()
-			t.Logf("    _graphicsDevice: ID=%#x", parentDev.GetID())
+			parentDev, err := privDisp.GraphicsDevice()
+			if err != nil {
+				t.Logf("    _graphicsDevice: error=%v", err)
+			} else {
+				t.Logf("    _graphicsDevice: ID=%#x", parentDev.GetID())
+			}
 
 			// VZMacGraphicsDisplay methods (_connectionType, _displayMode,
 			// _displayIdentifier) crash with SIGTRAP on stopped VMs.

@@ -19,7 +19,10 @@ func TestCloneMachineIdentifier(t *testing.T) {
 		t.Fatal("VZMacMachineIdentifier class is nil")
 	}
 
-	result := cls.MachineIdentifierForVirtualMachineClone()
+	result, err := cls.MachineIdentifierForVirtualMachineClone()
+	if err != nil {
+		t.Fatalf("MachineIdentifierForVirtualMachineClone: %v", err)
+	}
 	if result == nil || result.GetID() == 0 {
 		t.Fatal("MachineIdentifierForVirtualMachineClone returned nil")
 	}
@@ -44,7 +47,10 @@ func TestCloneMachineIdentifierUniqueness(t *testing.T) {
 	const n = 5
 	ecids := make(map[uint64]bool, n)
 	for i := 0; i < n; i++ {
-		result := cls.MachineIdentifierForVirtualMachineClone()
+		result, err := cls.MachineIdentifierForVirtualMachineClone()
+		if err != nil {
+			t.Fatalf("iteration %d: MachineIdentifierForVirtualMachineClone: %v", i, err)
+		}
 		if result == nil || result.GetID() == 0 {
 			t.Fatalf("iteration %d: MachineIdentifierForVirtualMachineClone returned nil", i)
 		}
@@ -63,7 +69,10 @@ func TestCloneMachineIdentifierWithSerialNumber(t *testing.T) {
 	cls := privvz.GetVZMacMachineIdentifierClass()
 
 	serial := foundation.NSStringFromID(objc.String("TEST-SERIAL-001"))
-	result := cls.MachineIdentifierForVirtualMachineCloneWithSerialNumber(serial)
+	result, err := cls.MachineIdentifierForVirtualMachineCloneWithSerialNumber(serial)
+	if err != nil {
+		t.Fatalf("MachineIdentifierForVirtualMachineCloneWithSerialNumber: %v", err)
+	}
 	if result == nil || result.GetID() == 0 {
 		t.Fatal("MachineIdentifierForVirtualMachineCloneWithSerialNumber returned nil")
 	}
@@ -82,7 +91,10 @@ func TestCloneMachineIdentifierWithECIDAndSerial(t *testing.T) {
 
 	var customECID uint64 = 0xDEADBEEF
 	serial := foundation.NSStringFromID(objc.String("TEST-SERIAL-002"))
-	result := cls.MachineIdentifierForVirtualMachineCloneWithECIDSerialNumber(customECID, serial)
+	result, err := cls.MachineIdentifierForVirtualMachineCloneWithECIDSerialNumber(customECID, serial)
+	if err != nil {
+		t.Fatalf("MachineIdentifierForVirtualMachineCloneWithECIDSerialNumber: %v", err)
+	}
 	if result == nil || result.GetID() == 0 {
 		t.Fatal("MachineIdentifierForVirtualMachineCloneWithECIDSerialNumber returned nil")
 	}

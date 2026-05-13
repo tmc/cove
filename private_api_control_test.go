@@ -189,7 +189,11 @@ func TestPrivateControlAPICreateViewEndpoint(t *testing.T) {
 
 	for _, opt := range []uint64{0, 1, 2} {
 		t.Run(fmt.Sprintf("options=%d", opt), func(t *testing.T) {
-			endpoint := vm.CreateViewEndpointWithOptions(opt)
+			endpoint, err := vm.CreateViewEndpointWithOptions(opt)
+			if err != nil {
+				t.Logf("options=%d: error=%v", opt, err)
+				return
+			}
 			if endpoint == nil {
 				t.Logf("options=%d: returned nil", opt)
 				return
@@ -255,7 +259,12 @@ func TestPrivateControlAPIDiagnosticProperties(t *testing.T) {
 	canCreate := objc.Send[bool](vm.ID, objc.Sel("_canCreateCore"))
 	t.Logf("can create core: %v", canCreate)
 
-	t.Logf("should send HID reports: %v", vm.ShouldSendHIDReports())
+	hidReports, err := vm.ShouldSendHIDReports()
+	if err != nil {
+		t.Logf("should send HID reports: error=%v", err)
+	} else {
+		t.Logf("should send HID reports: %v", hidReports)
+	}
 
 	pid := objc.Send[int](vm.ID, objc.Sel("_serviceProcessIdentifier"))
 	t.Logf("service process identifier: %d", pid)
