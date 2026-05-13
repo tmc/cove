@@ -48,7 +48,7 @@ func runCp(ctx context.Context, args []string, newAgent func(string) cpAgent) er
 	fs.SetOutput(io.Discard)
 	vmFlag := fs.String("vm", "", "VM name; must match vm:/path endpoint if both are provided")
 	fs.Usage = func() { printCpUsage(os.Stdout) }
-	if err := parseFlagsOrHelp(fs, args); err != nil {
+	if err := parseFlagsOrHelp(fs, moveCpFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
@@ -82,10 +82,34 @@ func printCpUsage(w io.Writer) {
 
 Copy files between the host and a running guest through the VM control socket.
 The VM selected by -vm must match the vm:/path endpoint when both are present.
+The -vm flag may appear before or after the copy operands.
 
 Examples:
   cove cp ./app.log work-vm:/tmp/app.log
-  cove cp -vm work-vm work-vm:/tmp/app.log ./app.log`)
+  cove cp -vm work-vm work-vm:/tmp/app.log ./app.log
+  cove cp work-vm:/tmp/app.log ./app.log -vm work-vm`)
+}
+
+func moveCpFlagsFirst(args []string) []string {
+	var flags, rest []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "-vm", "--vm":
+			flags = append(flags, arg)
+			if i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+		default:
+			if strings.HasPrefix(arg, "-vm=") || strings.HasPrefix(arg, "--vm=") {
+				flags = append(flags, arg)
+			} else {
+				rest = append(rest, arg)
+			}
+		}
+	}
+	return append(flags, rest...)
 }
 
 func parseCpSpec(src, dst string) (cpSpec, error) {
