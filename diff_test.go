@@ -91,6 +91,47 @@ func TestImageDiffDiskLayer(t *testing.T) {
 	}
 }
 
+func TestImageDiffLinuxDiskLayer(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := ImageRef{Name: "a", Tag: "latest"}
+	b := ImageRef{Name: "b", Tag: "latest"}
+	writeTestDiffImageOS(t, a, "Linux", "same", true)
+	writeTestDiffImageOS(t, b, "Linux", "same", true)
+
+	out, err := imageDiff(a, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(out.Files); got != 1 {
+		t.Fatalf("len(out.Files) = %d, want 1", got)
+	}
+	file := out.Files[0]
+	if file.Name != "linux-disk.img" {
+		t.Fatalf("file.Name = %q, want linux-disk.img", file.Name)
+	}
+	if file.Status != "UNCHANGED" {
+		t.Fatalf("file.Status = %q, want UNCHANGED", file.Status)
+	}
+}
+
+func TestImageDiffMissingRefFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := ImageRef{Name: "a", Tag: "latest"}
+	b := ImageRef{Name: "b", Tag: "latest"}
+	writeTestDiffImage(t, a, "disk", true)
+
+	if _, err := imageDiff(a, b); err == nil {
+		t.Fatal("imageDiff with missing ref-b succeeded; want error")
+	} else if !strings.Contains(err.Error(), "image ref not found: b:latest") {
+		t.Fatalf("imageDiff missing ref-b error = %q", err.Error())
+	}
+	if _, err := imageDiff(b, a); err == nil {
+		t.Fatal("imageDiff with missing ref-a succeeded; want error")
+	} else if !strings.Contains(err.Error(), "image ref not found: b:latest") {
+		t.Fatalf("imageDiff missing ref-a error = %q", err.Error())
+	}
+}
+
 func TestWriteImageDiffJSON(t *testing.T) {
 	out := imageDiffOutput{
 		Refs:    [2]string{"a:latest", "b:latest"},
@@ -143,13 +184,27 @@ func TestWriteImageDiffText(t *testing.T) {
 
 func writeTestDiffImage(t *testing.T, ref ImageRef, data string, ok bool) {
 	t.Helper()
+	writeTestDiffImageOS(t, ref, "", data, ok)
+}
+
+func writeTestDiffImageOS(t *testing.T, ref ImageRef, osType, data string, ok bool) {
+	t.Helper()
 	if err := os.MkdirAll(ref.Path(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := &ImageManifest{
+		SchemaVersion: 1,
+		Name:          ref.Name,
+		Tag:           ref.Tag,
+		OSType:        osType,
+	}
+	if err := writeImageManifest(ref.Path(), manifest); err != nil {
 		t.Fatal(err)
 	}
 	if !ok {
 		return
 	}
-	if err := os.WriteFile(filepath.Join(ref.Path(), "disk.img"), []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(ref.Path(), imageLayoutDiskFile(osType)), []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

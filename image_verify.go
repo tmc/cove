@@ -63,7 +63,7 @@ func VerifyImage(ref ImageRef, opts imageVerifyOptions) imageVerifyReport {
 	if err := verifyImageLayout(ref, manifest); err != nil {
 		report.addCheck("layout", imageVerifyFail, err.Error())
 	} else {
-		report.addCheck("layout", imageVerifyPass, "disk.img, aux.img, hw.model, machine.id present")
+		report.addCheck("layout", imageVerifyPass, strings.Join(imageLayoutRequiredFiles(manifest.OSType), ", ")+" present")
 	}
 
 	agentStatus, detail := verifyImageAgentFeatures(manifest, opts.Strict)
@@ -93,7 +93,7 @@ func VerifyImage(ref ImageRef, opts imageVerifyOptions) imageVerifyReport {
 }
 
 func verifyImageLayout(ref ImageRef, manifest *ImageManifest) error {
-	required := []string{"disk.img", "aux.img", "hw.model", "machine.id"}
+	required := imageLayoutRequiredFiles(manifest.OSType)
 	for _, name := range required {
 		path := filepath.Join(ref.Path(), name)
 		info, err := os.Stat(path)
@@ -104,7 +104,8 @@ func verifyImageLayout(ref ImageRef, manifest *ImageManifest) error {
 			return fmt.Errorf("%s is a directory", name)
 		}
 	}
-	diskInfo, err := os.Stat(filepath.Join(ref.Path(), "disk.img"))
+	diskName := imageLayoutDiskFile(manifest.OSType)
+	diskInfo, err := os.Stat(filepath.Join(ref.Path(), diskName))
 	if err != nil {
 		return err
 	}
@@ -112,6 +113,27 @@ func verifyImageLayout(ref ImageRef, manifest *ImageManifest) error {
 		return fmt.Errorf("%w: have %d, manifest %d", ErrImageDiskSizeMismatch, diskInfo.Size(), manifest.DiskSize)
 	}
 	return nil
+}
+
+func imageLayoutRequiredFiles(osType string) []string {
+	var names []string
+	for _, f := range cloneRequiredFiles(osType) {
+		if f.required {
+			names = append(names, f.name)
+		}
+	}
+	return names
+}
+
+func imageLayoutDiskFile(osType string) string {
+	switch osType {
+	case "Linux":
+		return "linux-disk.img"
+	case "Windows":
+		return "windows-disk.img"
+	default:
+		return "disk.img"
+	}
 }
 
 // ErrImageDiskSizeMismatch is returned by verifyImageLayout when the
