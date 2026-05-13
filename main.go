@@ -328,6 +328,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if err := validateInstallMediaPaths(flag.Args()); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	cpuExplicit = flagWasProvided(flag.CommandLine, "cpu")
 	applyNestedLinuxDefaults()
 
@@ -487,6 +491,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+		if err := validateInstallMediaPaths([]string{cmd}); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
 		// Re-resolve vmDir if -vm flag was provided after subcommand.
 		if code := rerunVMDirForPostCommand(cmd, args); code != 0 {
@@ -506,6 +514,89 @@ func main() {
 
 	// Default: smart routing based on number of VMs
 	handleDefaultAction()
+}
+
+func validateInstallMediaPaths(args []string) error {
+	if !installCommandRequested(args) {
+		return nil
+	}
+	ipsw, iso, err := installMediaPathArgs(args)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(ipsw) != "" {
+		src, err := parseIPSWSource(ipsw)
+		if err != nil {
+			return fmt.Errorf("install: %w", err)
+		}
+		if !src.IsURL {
+			if err := validateReadableFile(src.Path); err != nil {
+				return fmt.Errorf("install: ipsw path %s: %w", src.Path, err)
+			}
+		}
+	}
+	if strings.TrimSpace(iso) != "" && !isURL(iso) {
+		if err := validateReadableFile(iso); err != nil {
+			return fmt.Errorf("install: iso path %s: %w", iso, err)
+		}
+	}
+	return nil
+}
+
+func installMediaPathArgs(args []string) (ipsw, iso string, err error) {
+	ipsw, iso = ipswPath, isoPath
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-ipsw" || arg == "--ipsw":
+			i++
+			if i >= len(args) {
+				return "", "", fmt.Errorf("install: %s requires a path", arg)
+			}
+			ipsw = args[i]
+		case strings.HasPrefix(arg, "-ipsw="):
+			ipsw = strings.TrimPrefix(arg, "-ipsw=")
+		case strings.HasPrefix(arg, "--ipsw="):
+			ipsw = strings.TrimPrefix(arg, "--ipsw=")
+		case arg == "-iso" || arg == "--iso":
+			i++
+			if i >= len(args) {
+				return "", "", fmt.Errorf("install: %s requires a path", arg)
+			}
+			iso = args[i]
+		case strings.HasPrefix(arg, "-iso="):
+			iso = strings.TrimPrefix(arg, "-iso=")
+		case strings.HasPrefix(arg, "--iso="):
+			iso = strings.TrimPrefix(arg, "--iso=")
+		}
+	}
+	return ipsw, iso, nil
+}
+
+func installCommandRequested(args []string) bool {
+	if installVM {
+		return true
+	}
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "install", "up":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateReadableFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("is a directory")
+	}
+	return nil
 }
 
 // handleDefaultAction routes based on the selected UI mode:
