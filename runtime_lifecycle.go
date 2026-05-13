@@ -86,6 +86,10 @@ func runVMWithConfig(cfg RunConfig) error {
 	}
 
 	if cfg.EphemeralForkParent != "" {
+		if err := validateImageForkFromBeforeBundle(cfg.EphemeralForkParent); err != nil {
+			return err
+		}
+
 		// Per-run artifact bundling is enabled only for the ephemeral
 		// fork-from paths — these are short-lived jobs the operator
 		// later wants to bisect. Plain `cove run <vm>` is a long-lived
