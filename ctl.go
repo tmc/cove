@@ -1664,9 +1664,15 @@ func activateStartupOptionsViaClient(client *ControlClient, ocr *ocrx.Service, t
 	if err := client.SetGUIInputBackend("direct"); err != nil {
 		return fmt.Errorf("set input backend direct: %w", err)
 	}
-	if err := client.SetGUICaptureBackend("framebuffer"); err != nil {
-		return fmt.Errorf("set capture backend framebuffer: %w", err)
+	defer func() {
+		_ = client.SetGUIInputBackend("auto")
+	}()
+	if err := client.SetGUICaptureBackend("window"); err != nil {
+		return fmt.Errorf("set capture backend window: %w", err)
 	}
+	defer func() {
+		_ = client.SetGUICaptureBackend("auto")
+	}()
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
