@@ -90,10 +90,9 @@ var (
 	cloneLinked bool
 	// Disposable run mode; boots from a temporary linked clone.
 	disposableMode bool
-	// Ephemeral fork mode (cove run -fork-from <parent>): boots a
-	// short-lived sibling that shares the parent's disk.img read-only
-	// via RAM-overlay. vmDir is auto-removed on exit unless -keep is
-	// set. See design 013 Phase 3 / fork_ephemeral.go.
+	// Ephemeral fork mode for local image refs. The older VM-parent
+	// RAM-overlay path is rejected with an actionable error until the
+	// temporary RAM storage attachment path is implemented.
 	ephemeralForkParent string
 	ephemeralForkName   string
 	ephemeralForkKeep   bool
@@ -235,8 +234,8 @@ func init() {
 	flag.BoolVar(&cloneLinked, "linked", false, "create linked clone using APFS copy-on-write")
 	flag.BoolVar(&disposableMode, "disposable", false, "run from a disposable linked clone and delete it after shutdown")
 	// Ephemeral fork (design 013 Phase 3)
-	flag.StringVar(&ephemeralForkParent, "fork-from", "", "boot an ephemeral sibling of the named parent VM (RAM-overlay; auto-deleted on exit)")
-	flag.StringVar(&ephemeralForkName, "fork-name", "", "explicit name for the ephemeral sibling (default: <parent>-eph-<timestamp>)")
+	flag.StringVar(&ephemeralForkParent, "fork-from", "", "boot a fork from a local image ref; VM-parent RAM-overlay forks are not implemented")
+	flag.StringVar(&ephemeralForkName, "fork-name", "", "explicit name for the forked VM")
 	flag.BoolVar(&ephemeralForkKeep, "keep", false, "with -fork-from, retain the ephemeral vmDir after exit")
 	flag.BoolVar(&runEphemeral, "ephemeral", false, "with -fork-from <image-ref>, destroy the materialized child on stop and skip vm tree registration")
 	// Network mode
@@ -490,7 +489,7 @@ func main() {
 		}
 
 		// Re-resolve vmDir if -vm flag was provided after subcommand.
-		if code := rerunVMDirForPostCommand(); code != 0 {
+		if code := rerunVMDirForPostCommand(cmd); code != 0 {
 			os.Exit(code)
 		}
 
@@ -586,7 +585,7 @@ func handleRun() {
 
 func handleActionCommand(args []string) int {
 	if len(args) == 0 || isHelpArg(args[0]) {
-		fmt.Fprintln(os.Stderr, "Usage: cove action <doctor|prepare-image> [options]")
+		printActionUsage(os.Stderr)
 		return 0
 	}
 	switch args[0] {
@@ -598,6 +597,16 @@ func handleActionCommand(args []string) int {
 		fmt.Fprintf(os.Stderr, "unknown action command: %s\n", args[0])
 		return 1
 	}
+}
+
+func printActionUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove action <command> [options]
+
+Preflight helpers for private GitHub Actions runner images.
+
+Commands:
+  doctor          Check host-side cove action prerequisites
+  prepare-image   Validate a local image or running VM for runner use`)
 }
 
 func usage() {
@@ -968,6 +977,7 @@ func handleListTo(stdout io.Writer) error {
 		if err := w.Flush(); err != nil {
 			return err
 		}
+		fmt.Fprintln(stdout, "GUI state: cove ctl -vm <name> gui status")
 	}
 
 	// List templates
@@ -992,11 +1002,11 @@ func handleListTo(stdout io.Writer) error {
 	// so users can clean them up with `cove vm delete <name>`.
 	if orphans, err := vmconfig.ListOrphans(); err == nil && len(orphans) > 0 {
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Orphans (missing disk image):")
+		fmt.Fprintln(stdout, "Missing-disk VM directories hidden from the main list:")
 		for _, name := range orphans {
-			fmt.Fprintf(stdout, "  %s\t(orphan: missing disk)\n", name)
+			fmt.Fprintf(stdout, "  %s\t(no disk image found)\n", name)
 		}
-		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "These are filesystem cleanup entries, not fork-lineage orphans from vm tree --orphans.")
 		fmt.Fprintln(stdout, "Remove with: cove vm delete <name>")
 	}
 	return nil
@@ -1097,12 +1107,22 @@ func runClone(args []string) error {
 			Directory: vmconfig.Path(target),
 			Name:      target,
 		}); err != nil {
+			if cloneAgentProvisionSkippedForLinux(err) {
+				fmt.Fprintf(os.Stderr, "note: clone %q is Linux; offline agent injection is not supported\n", target)
+				fmt.Fprintln(os.Stderr, "      the clone keeps any agent already installed inside the source VM")
+				fmt.Fprintf(os.Stderr, "      if the agent is missing, boot the VM and install it from inside the guest: cove -vm %s provision-agent\n", target)
+				return nil
+			}
 			fmt.Fprintf(os.Stderr, "warning: clone %q was created, but --with-agent provisioning failed: %v\n", target, err)
 			fmt.Fprintf(os.Stderr, "         retry after the backup is selected with: cove -vm %s provision -agent\n", target)
 			return nil
 		}
 	}
 	return nil
+}
+
+func cloneAgentProvisionSkippedForLinux(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "offline agent inject is not supported for Linux VMs")
 }
 
 // handleFork handles the fork subcommand: creates a CoW clone of an
@@ -1411,6 +1431,9 @@ func handleVMCommand(args []string) {
 		delFS.SetOutput(os.Stderr)
 		delCascade := delFS.Bool("cascade", false, "recursively delete fork descendants too")
 		if err := delFS.Parse(subargs); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return
+			}
 			os.Exit(2)
 		}
 		if delFS.NArg() < 1 {

@@ -432,6 +432,9 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if releaseErr := parentLock.Release(); releaseErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: release parent run.lock: %v\n", releaseErr)
 	}
+	if err := validateEphemeralForkVMParent(cfg.EphemeralForkParent, parentDir); err != nil {
+		return err
+	}
 
 	forkStarted := time.Now()
 	fork, err := setupEphemeralForkHook(EphemeralForkOptions{
@@ -500,4 +503,15 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		fmt.Printf("Ephemeral fork removed: %s\n", fork.Name)
 	}
 	return runErr
+}
+
+func validateEphemeralForkVMParent(parent, parentDir string) error {
+	switch vmconfig.DetectOSType(parentDir) {
+	case "Linux":
+		return fmt.Errorf("cove run -fork-from: VM parent %q is Linux; VM-parent RAM-overlay forks are not implemented. Use 'cove fork %s <child>' or 'cove clone --linked %s <child>', then run the child VM", parent, parent, parent)
+	case "Windows":
+		return fmt.Errorf("cove run -fork-from: VM parent %q is Windows; VM-parent RAM-overlay forks are not implemented. Use 'cove fork %s <child>' or 'cove clone --linked %s <child>', then run the child VM", parent, parent, parent)
+	default:
+		return fmt.Errorf("cove run -fork-from: VM parent %q uses the RAM-overlay runtime, which is not implemented. No VM was created. Use 'cove fork %s <child>' or 'cove clone --linked %s <child>', then run the child VM; image refs still work with -fork-from", parent, parent, parent)
+	}
 }
