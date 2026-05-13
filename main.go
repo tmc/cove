@@ -271,7 +271,7 @@ func init() {
 	flag.BoolVar(&recoverIdentity, "recover-identity", false, "if VM identity metadata is missing, back it up and reset identity files to attempt recovery")
 	flag.StringVar(&vncAddress, "vnc", "", "start private VNC server on port or :port (for example :5901)")
 	flag.StringVar(&vncPassword, "vnc-password", "", "password for private VNC server")
-	flag.StringVar(&vncBonjourService, "vnc-bonjour", "", "bonjour service name for the private VNC server")
+	flag.StringVar(&vncBonjourService, "vnc-bonjour", "", "bonjour service name for the private VNC server (requires -vnc-password)")
 	flag.StringVar(&gdbAddress, "gdb", "", "attach private GDB debug stub on port or :port (for example :1234)")
 	flag.BoolVar(&gdbListenAll, "gdb-listen-all", false, "listen on all interfaces for -gdb")
 	flag.BoolVar(&saveCompress, "save-compress", false, "compress suspend state using private save options")
