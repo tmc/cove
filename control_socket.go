@@ -956,6 +956,8 @@ func (s *ControlServer) stopVM() *controlpb.ControlResponse {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("cannot stop VM in state: %s", state.String())}
 	}
 
+	teardownRequestedProxyHook(s)
+
 	errCh := make(chan error, 1)
 	DispatchAsyncQueue(s.vmQueue, func() {
 		s.vm.StopWithCompletionHandler(func(err error) {

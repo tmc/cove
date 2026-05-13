@@ -23,7 +23,7 @@ func TestApplyMacOSProxyExistingServices(t *testing.T) {
 		t.Fatalf("got = %p, want %p (passthrough)", got, state)
 	}
 	for _, svc := range []string{"Wi-Fi", "Ethernet"} {
-		if !rt.hasUserCall(commandKey([]string{"/usr/sbin/networksetup", "-setwebproxy", svc, "127.0.0.1", "8080", "on"})) {
+		if !rt.hasUserCall(commandKey([]string{"/usr/sbin/networksetup", "-setwebproxy", svc, "127.0.0.1", "8080"})) {
 			t.Fatalf("missing -setwebproxy call for %s", svc)
 		}
 	}

@@ -48,13 +48,13 @@ func (f *fakeLinuxProxyRT) Exec(_ context.Context, args []string, _ map[string]s
 }
 
 func TestLinuxProxyFilesContent(t *testing.T) {
-	files := linuxProxyFiles(proxySpec{Scheme: "http", Host: "10.0.0.1", Port: 3128})
+	files := linuxProxyFiles(proxySpec{Scheme: "https", Host: "10.0.0.1", Port: 3128})
 	if len(files) != 2 {
 		t.Fatalf("got %d files, want 2", len(files))
 	}
 	for path, content := range files {
-		if !strings.Contains(content, "10.0.0.1:3128") {
-			t.Errorf("file %s missing host: %s", path, content)
+		if !strings.Contains(content, "https://10.0.0.1:3128") {
+			t.Errorf("file %s missing proxy URL: %s", path, content)
 		}
 		if strings.HasSuffix(path, ".sh") {
 			if !strings.Contains(content, "export HTTP_PROXY=") {
@@ -140,5 +140,3 @@ func TestRestoreLinuxProxyRemovesAbsentFiles(t *testing.T) {
 		t.Fatalf("expected one restore write, got %+v", rt.writes)
 	}
 }
-
-

@@ -24,7 +24,7 @@ func TestParseProxySpec(t *testing.T) {
 	}{
 		{name: "empty", raw: "", wantURL: ""},
 		{name: "http", raw: "http://127.0.0.1:8080", wantURL: "http://127.0.0.1:8080"},
-		{name: "ipv6", raw: "https://[::1]:8443", wantURL: "http://[::1]:8443"},
+		{name: "ipv6", raw: "https://[::1]:8443", wantURL: "https://[::1]:8443"},
 		{name: "missing port", raw: "http://127.0.0.1", wantErr: true},
 		{name: "userinfo", raw: "http://user:pass@127.0.0.1:8080", wantErr: true},
 		{name: "bad scheme", raw: "socks5://127.0.0.1:1080", wantErr: true},
@@ -308,8 +308,8 @@ func TestConfigureAndTeardownMacOSProxy(t *testing.T) {
 		t.Fatalf("configureGuestProxyOnRuntime() = %v", err)
 	}
 	wantSet := []string{
-		"/usr/sbin/networksetup\x00-setwebproxy\x00Wi-Fi\x00192.168.64.1\x008080\x00on",
-		"/usr/sbin/networksetup\x00-setsecurewebproxy\x00Wi-Fi\x00192.168.64.1\x008080\x00on",
+		"/usr/sbin/networksetup\x00-setwebproxy\x00Wi-Fi\x00192.168.64.1\x008080",
+		"/usr/sbin/networksetup\x00-setsecurewebproxy\x00Wi-Fi\x00192.168.64.1\x008080",
 		"/usr/sbin/networksetup\x00-setwebproxystate\x00Wi-Fi\x00on",
 		"/usr/sbin/networksetup\x00-setsecurewebproxystate\x00Wi-Fi\x00on",
 	}
@@ -408,7 +408,7 @@ func TestConfigureGuestProxyLinuxRollsBackOnFailure(t *testing.T) {
 func TestConfigureGuestProxyMacOSRollsBackOnFailure(t *testing.T) {
 	rt := newFakeProxyRuntime(t.TempDir(), false)
 	prepareMacOSProxyRuntime(rt)
-	rt.setUserExecResult([]string{"/usr/sbin/networksetup", "-setsecurewebproxy", "Wi-Fi", "192.168.64.1", "8080", "on"}, 1, "", "boom")
+	rt.setUserExecResult([]string{"/usr/sbin/networksetup", "-setsecurewebproxy", "Wi-Fi", "192.168.64.1", "8080"}, 1, "", "boom")
 
 	err := configureGuestProxyOnRuntime(context.Background(), rt, "http://192.168.64.1:8080", proxyFlags{
 		RawURL:         "http://192.168.64.1:8080",
@@ -681,7 +681,7 @@ func TestProxySpecEndpointIPv6(t *testing.T) {
 	if got, want := spec.endpoint(), "[::1]:8443"; got != want {
 		t.Fatalf("endpoint = %q, want %q", got, want)
 	}
-	if got, want := spec.canonicalURL(), "http://[::1]:8443"; got != want {
+	if got, want := spec.canonicalURL(), "https://[::1]:8443"; got != want {
 		t.Fatalf("canonicalURL = %q, want %q", got, want)
 	}
 }
