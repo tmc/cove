@@ -77,6 +77,12 @@ func handleUp(args []string) error {
 // parseUpFlags parses flags and prompts for missing values.
 // Returns a fully populated upConfig or an error.
 func parseUpFlags(args []string) (upConfig, error) {
+	for _, arg := range args {
+		if arg == "-v" || strings.HasPrefix(arg, "-v=") {
+			return upConfig{}, fmt.Errorf("cove up: -v is not a verbose flag here; use -verbose")
+		}
+	}
+
 	fs, cfg, headless := newUpFlagSet()
 
 	if err := fs.Parse(args); err != nil {
@@ -185,7 +191,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.StringVar(&cfg.automationCaptureBackend, "automation-capture-backend", "", "override screenshot backend: auto, framebuffer, or window")
 	fs.StringVar(&cfg.automationInputBackend, "automation-input-backend", "", "override input backend: auto, direct, or window")
 	fs.BoolVar(&cfg.noShutdown, "no-shutdown", false, "Leave the VM running after vzscripts complete")
-	fs.BoolVar(&cfg.verbose, "v", false, "Verbose output")
+	fs.BoolVar(&cfg.verbose, "verbose", false, "Verbose output")
 	fs.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
 	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
 	fs.BoolVar(&cfg.linux, "linux", false, "Install a Linux VM instead of macOS")
