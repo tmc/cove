@@ -780,6 +780,7 @@ Runtime Control:
   ctl usb list    Inspect runtime USB controllers and devices
   logs            Show guest logs from a running VM (cove logs <vm> [-f])
   shell           Open a Docker-shaped exec session in a running VM (cove shell <vm>)
+  trace           Manage eslogger guest traces
   agent-sandbox   Run a computer-use provider loop in a fresh VM fork
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
   run -headless -vnc :5901            Expose a private VNC console
