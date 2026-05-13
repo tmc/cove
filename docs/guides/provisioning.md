@@ -22,6 +22,15 @@ silently ignores LaunchDaemon plists not owned by root:wheel. Cove requests
 those privileges with the native macOS admin dialog; you do not need to rerun
 the command with `sudo` from a normal terminal.
 
+Run the apply phase from a normal interactive terminal. Restricted automation
+shells that cannot show the native admin dialog can stage files, but the apply
+phase will fail before the VM has an agent. In that state the safest recovery is
+to stop the VM and run:
+
+```bash
+cove -vm <vm> provision -apply
+```
+
 #### What It Does
 
 1. Attaches the VM disk image using `hdiutil attach`
@@ -83,6 +92,16 @@ Or drive Setup Assistant manually on a running VM:
 cove ctl detect                          # check current screen
 cove ctl setup-assist testuser secret    # automate Setup Assistant
 ```
+
+If `setup-assist` loses the control socket, first check whether the VM stopped:
+
+```bash
+cove list
+cove ctl -vm <vm> gui status
+```
+
+The command reports the failed control action, but a stopped VM needs to be
+started again before more keyboard or mouse automation can work.
 
 ### Method 3: One Command
 
@@ -159,6 +178,8 @@ Auto-login requires two files:
 | Setup Assistant still appears | `.AppleSetupDone` missing | Use `-skip-setup-assistant` |
 | Auto-login not working | Wrong kcpassword owner | Run `cove doctor --fix`, then retry provisioning |
 | WRONG_OWNER in doctor | Files need root:wheel ownership | Run `cove doctor --fix` |
+| No guest agent after install | Provision apply did not complete | Stop the VM, then run `cove -vm <vm> provision -apply` from a normal terminal |
+| "Preparing macOS" overlay remains | macOS first boot is still finishing | Wait for the overlay to clear before using desktop automation; `ctl exec` needs the agent and will not work until provisioning completes |
 
 ## Manually Inspecting the Disk
 

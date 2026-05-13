@@ -72,6 +72,17 @@ cove install -linux -distro alpine
 
 All four installers create the user, enable SSH, and partition the VM disk without prompting.
 
+If an Ubuntu install exits before partitioning, keep the VM directory until you
+have inspected the logs. The most useful retry is a headed boot so Subiquity's
+screen and serial output are visible:
+
+```bash
+cove install -linux -desktop -gui -vm debug-ubuntu
+```
+
+If the disk still has no partition table after the installer exits, retry with
+`-disk-sync fsync` and inspect the installer logs before deleting the VM.
+
 ## Boot Modes
 
 ### EFI Boot (default)
@@ -220,3 +231,4 @@ Linux VMs use:
 | Slow boot | EFI firmware initialization | Normal, wait ~30 seconds |
 | No network | DHCP timeout | Check NAT networking settings |
 | Black screen in GUI | Virtio GPU driver not loaded | Wait for kernel to load, or use serial console |
+| Install exits before partitioning | Ubuntu autoinstall did not reach Subiquity storage setup | Retry with `-gui`; if it repeats, use `-disk-sync fsync` and keep the VM directory for logs |
