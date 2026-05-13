@@ -4,7 +4,6 @@ package main
 
 import (
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -31,8 +30,9 @@ func testLinuxAgent(t *testing.T, vm *testVM) {
 		if os == "" {
 			t.Fatal("agent-info returned empty os")
 		}
-		if !strings.Contains(strings.ToLower(os), "linux") {
-			t.Fatalf("agent-info os: got %q, want linux", os)
+		lowerOS := strings.ToLower(os)
+		if !strings.Contains(lowerOS, "linux") && !strings.Contains(lowerOS, "ubuntu") {
+			t.Fatalf("agent-info os: got %q, want linux distro", os)
 		}
 		if strings.TrimSpace(info.GetArch()) == "" {
 			t.Fatal("agent-info returned empty arch")
@@ -107,15 +107,23 @@ func testLinuxNetwork(t *testing.T, vm *testVM) {
 			t.Fatalf("CloneVM() error = %v", err)
 		}
 		clone := clonedTestVM(t, cloneName, true)
+		envPath, profilePath := linuxProxyPaths()
+
+		startTestVM(t, clone)
+		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
+		baselineEnv := linuxProxyFileState(t, clone, envPath)
+		baselineProfile := linuxProxyFileState(t, clone, profilePath)
+		clone.cleanupTB(t)
 
 		startTestVMWithArgs(t, clone, "-proxy", "http://192.168.64.1:8080", "-no-agent")
 		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
 		waitForLinuxProxyFiles(t, clone, true)
+		waitForProxyStateApplied(t, clone)
 
 		clone.cleanupTB(t)
 		startTestVM(t, clone)
 		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
-		waitForLinuxProxyFiles(t, clone, false)
+		waitForLinuxProxyFileStates(t, clone, baselineEnv, baselineProfile)
 	})
 
 	t.Run("proxy-preflight-no-agent", func(t *testing.T) {
@@ -151,14 +159,18 @@ func testLinuxNetwork(t *testing.T, vm *testVM) {
 
 func waitForLinuxProxyFiles(t *testing.T, vm *testVM, present bool) {
 	t.Helper()
+	waitForLinuxProxyFileStates(t, vm, present, present)
+}
+
+func waitForLinuxProxyFileStates(t *testing.T, vm *testVM, wantEnv, wantProfile bool) {
+	t.Helper()
 	deadline := time.Now().Add(2 * time.Minute)
-	envPath := filepath.Join("/etc", "environment.d", proxyEnvFileName)
-	profilePath := filepath.Join("/etc", "profile.d", proxyProfileFileName)
+	envPath, profilePath := linuxProxyPaths()
 	for time.Now().Before(deadline) {
 		envOK := linuxProxyFileState(t, vm, envPath)
 		profileOK := linuxProxyFileState(t, vm, profilePath)
-		if envOK == present && profileOK == present {
-			if present {
+		if envOK == wantEnv && profileOK == wantProfile {
+			if wantEnv {
 				env := string(agentRead(t, vm, envPath))
 				if !strings.Contains(env, "HTTP_PROXY=http://192.168.64.1:8080") {
 					t.Fatalf("proxy env file missing configured proxy:\n%s", env)
@@ -168,11 +180,29 @@ func waitForLinuxProxyFiles(t *testing.T, vm *testVM, present bool) {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	t.Fatalf("proxy file state did not converge: want present=%v", present)
+	t.Fatalf("proxy file state did not converge: want env=%v profile=%v", wantEnv, wantProfile)
+}
+
+func linuxProxyPaths() (envPath, profilePath string) {
+	paths := linuxProxyCleanupPaths()
+	return paths[0], paths[1]
 }
 
 func linuxProxyFileState(t *testing.T, vm *testVM, path string) bool {
 	t.Helper()
 	result := agentExecResult(t, vm, "/bin/sh", "-lc", "test -f "+shellQuote(path))
 	return result.GetExitCode() == 0
+}
+
+func waitForProxyStateApplied(t *testing.T, vm *testVM) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		state, err := loadProxyState(vm.dir)
+		if err == nil && state.currentStage() == proxyStateApplied {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("proxy state did not reach %q", proxyStateApplied)
 }

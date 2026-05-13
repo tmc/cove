@@ -20,7 +20,7 @@ import (
 
 var (
 	flagIntegrationProvision     = flag.Bool("integration.provision", envBoolDefault("VZ_TEST_PROVISION", true), "provision missing integration VMs automatically")
-	flagIntegrationReprovision   = flag.Bool("integration.reprovision", envBool("VZ_TEST_REPROVISION"), "delete and rebuild integration VMs before running")
+	flagIntegrationReprovision   = flag.Bool("integration.reprovision", integrationEnvBool("VZ_TEST_REPROVISION"), "delete and rebuild integration VMs before running")
 	flagIntegrationUser          = flag.String("integration.user", envOrString("VZ_TEST_USER", "vztest"), "username for auto-provisioned macOS integration VMs")
 	flagIntegrationPassword      = flag.String("integration.password", envOrString("VZ_TEST_PASSWORD", "vztest123"), "password for auto-provisioned macOS integration VMs")
 	flagIntegrationIPSW          = flag.String("integration.ipsw", strings.TrimSpace(os.Getenv("VZ_TEST_IPSW")), "path to IPSW for auto-provisioned macOS integration VMs")

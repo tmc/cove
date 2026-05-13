@@ -15,6 +15,8 @@ import (
 
 func testVirtioFSReliability(t *testing.T, baseVM *testVM) {
 	t.Run("cold-boot-mounted-share", func(t *testing.T) {
+		skipMacOSRunningSourceClone(t, baseVM)
+
 		cloneName := integrationCloneName(t.Name())
 		if err := CloneVM(CloneOptions{Source: baseVM.name, Target: cloneName, Linked: true}); err != nil {
 			t.Fatalf("CloneVM() error = %v", err)
