@@ -3,8 +3,11 @@ package main
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func captureVZScriptStdout(t *testing.T, fn func() error) (string, error) {
@@ -61,6 +64,36 @@ func TestVzscriptListRejectsInvalidOS(t *testing.T) {
 	}
 }
 
+func TestVzscriptListVMFilterDoesNotCreateMissingVMDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	missing := "missing-vzscript-list-vm"
+	err := vzscriptList([]string{"-vm", missing})
+	if err == nil {
+		t.Fatal("vzscriptList missing VM succeeded; want error")
+	}
+	if !strings.Contains(err.Error(), `no VM named "missing-vzscript-list-vm"`) {
+		t.Fatalf("err = %v, want missing VM diagnostic", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(vmconfig.BaseDir(), missing)); !os.IsNotExist(statErr) {
+		t.Fatalf("missing VM dir stat = %v, want not exist", statErr)
+	}
+}
+
+func TestOpenVZScriptLogSkipsMissingVMDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	missingDir := filepath.Join(vmconfig.BaseDir(), "missing-vzscript-log")
+	f, err := openVZScriptLog(filepath.Join(missingDir, "control.sock"))
+	if err != nil {
+		t.Fatalf("openVZScriptLog missing dir: %v", err)
+	}
+	if f != nil {
+		t.Fatal("openVZScriptLog returned file for missing dir")
+	}
+	if _, statErr := os.Stat(missingDir); !os.IsNotExist(statErr) {
+		t.Fatalf("missing log VM dir stat = %v, want not exist", statErr)
+	}
+}
+
 func TestVzscriptListWithGuestOSEmptyFilter(t *testing.T) {
 	out, err := captureVZScriptStdout(t, func() error { return vzscriptListWithGuestOS("") })
 	if err != nil {
@@ -75,6 +108,9 @@ func TestVzscriptListWithGuestOSLinuxFilter(t *testing.T) {
 	out, err := captureVZScriptStdout(t, func() error { return vzscriptListWithGuestOS("linux") })
 	if err != nil {
 		t.Fatalf("vzscriptListWithGuestOS: %v", err)
+	}
+	if !strings.Contains(out, "kvm-test") {
+		t.Fatalf("linux filter missing kvm-test:\n%s", out)
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if !strings.HasPrefix(line, "  ") {

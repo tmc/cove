@@ -53,10 +53,15 @@ func printVzscriptUsage(w io.Writer) {
 	fmt.Fprintf(w, `Usage: cove vzscript <command> [args...]
 
 Commands:
-  list [-os darwin|linux] List built-in recipes
+  list [-os darwin|linux] [-vm <name>]
+                          List built-in recipes
   show <recipe>           Print recipe contents
   run [-v] [-timeout d] [-terminal|-terminal-gui] [-env KEY=VALUE] <recipe...>
                           Run one or more recipes against a running VM
+
+Use "cove vzscript <command> -h" for subcommand-specific flags, including
+"cove vzscript list -h" for -vm filtering and "cove vzscript run -h" for the
+full run flag set.
 
 A recipe is a txtar archive (see golang.org/x/tools/txtar) executed
 by rsc.io/script. The comment section contains commands; files in
@@ -88,6 +93,10 @@ UI automation commands (via control socket):
   detect-page                 Detect Setup Assistant page via OCR
   detect-screen               Detect screen state (desktop, login, etc.)
 
+Additional UI helpers such as answer-visible, click-menu-item, label-push,
+label-pop, recovery-options, startup-options, type-keycodes, wait-menu-text,
+and wait-prompt-clear are documented in docs/reference/vzscript-commands.md.
+
 Conditions:
   [screen:desktop]            True if screen state matches (desktop, login, etc.)
   [page:language]             True if Setup Assistant page matches
@@ -106,8 +115,10 @@ Dependencies:
 Host mounts:
   Scripts can declare host directories to mount via VirtioFS with
   "# mount: <host-path> [ro|rw]" in the header. Paths support ~/
-  expansion. Default mode is rw. Mounts are registered as shared folders,
-  hot-plugged into the running VM, and mounted in the guest automatically.
+  expansion. Default mode is rw. Mounts are registered as shared folders and
+  apply on the next boot. For vzscript runs against an already-running VM,
+  cove also attempts best-effort hot-plug and guest mounting; failures are
+  warnings and the saved mount still applies on a future boot.
 
 Examples:
   cove vzscript list
@@ -137,9 +148,9 @@ func vzscriptList(args []string) error {
 			vmForFilter = vmName
 		}
 		if vmForFilter != "" {
-			dir, err := vmconfig.EnsureDir(vmForFilter, vmDir)
-			if err != nil {
-				return err
+			dir, ok := vmconfig.ExistingPath(vmForFilter)
+			if !ok {
+				return fmt.Errorf("vzscript list: no VM named %q under %s", vmForFilter, vmconfig.BaseDir())
 			}
 			filterOS = vzscriptGuestOSFromPlatform(agentstate.Platform(dir))
 		}
@@ -208,6 +219,10 @@ func vzscriptListWithGuestOS(filterOS string) error {
 }
 
 func vzscriptShow(args []string) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		printVzscriptShowUsage(os.Stdout)
+		return nil
+	}
 	if len(args) < 1 {
 		return fmt.Errorf("show requires a recipe name or path")
 	}
@@ -217,6 +232,16 @@ func vzscriptShow(args []string) error {
 	}
 	os.Stdout.Write(data)
 	return nil
+}
+
+func printVzscriptShowUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove vzscript show <recipe-or-path>
+
+Print a built-in recipe or a local .vzscript/.vzscript.tmpl file.
+
+Examples:
+  cove vzscript show homebrew
+  cove vzscript show ./custom.vzscript`)
 }
 
 func vzscriptRun(args []string) error {
@@ -248,17 +273,13 @@ func vzscriptRun(args []string) error {
 		return fmt.Errorf("run requires a recipe name or path")
 	}
 
-	// Resolve socket path without mutating global vmDir.
+	// Resolve socket path without mutating global vmDir or creating VM dirs.
 	sock := *socketPath
 	if sock == "" {
 		if *vm != "" {
-			dir, err := vmconfig.EnsureDir(*vm, vmDir)
-			if err != nil {
-				return err
-			}
-			sock = GetControlSocketPathForVM(dir)
+			sock = GetControlSocketPathForVM(vmconfig.ResolveDir(*vm, vmDir))
 		} else {
-			sock = GetControlSocketPath()
+			sock = GetControlSocketPathForVM(vmconfig.ResolveDir(vmName, vmDir))
 		}
 	}
 
@@ -280,7 +301,7 @@ func vzscriptRun(args []string) error {
 	logFile, err := openVZScriptLog(sock)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: vzscript log: %v\n", err)
-	} else {
+	} else if logFile != nil {
 		defer logFile.Close()
 		cfg.hostLogFile = logFile
 	}
@@ -813,6 +834,16 @@ func flagTakesValue(name string) bool {
 // derived from the control socket path. The file is opened in append mode.
 func openVZScriptLog(socketPath string) (*os.File, error) {
 	vmDirectory := filepath.Dir(socketPath)
+	info, err := os.Stat(vmDirectory)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", vmDirectory)
+	}
 	logPath := filepath.Join(vmDirectory, "vzscript.log")
 	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }

@@ -83,8 +83,10 @@ Scripts can declare host directories to mount via VirtioFS:
 ```
 
 Paths support `~/` expansion. Mounts are registered as shared folders and apply
-when the VM boots with the corresponding VirtioFS device. Live hot-add is not
-currently supported.
+when the VM boots with the corresponding VirtioFS device. During `cove vzscript
+run`, cove also attempts best-effort hot-plug and guest mounting for an already
+running VM. If that live step fails, the run prints a warning and the saved
+mount still applies on a future cold boot.
 
 ## Run Mode
 

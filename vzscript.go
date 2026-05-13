@@ -509,6 +509,12 @@ func guestExecStream(cfg vzscriptConfig, args []string, timeout time.Duration, o
 		},
 	}
 
+	if _, err := os.Stat(filepath.Dir(cfg.socketPath)); err != nil {
+		if os.IsNotExist(err) {
+			return "", "", 0, ctlConnectError(cfg.socketPath, err)
+		}
+		return "", "", 0, err
+	}
 	conn, err := net.DialTimeout("unix", cfg.socketPath, timeout)
 	if err != nil {
 		return "", "", 0, ctlConnectError(cfg.socketPath, err)
