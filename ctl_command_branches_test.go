@@ -55,6 +55,34 @@ func TestCtlCommandVMNotFoundBeforeControlSocketHint(t *testing.T) {
 	}
 }
 
+func TestCtlCommandGlobalVMNotFoundBeforeControlSocketHint(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "deleted-global-vm"
+	vmDir = ""
+	err := ctlCommand([]string{"status"})
+	if err == nil {
+		t.Fatal("ctlCommand succeeded for missing global VM")
+	}
+	msg := err.Error()
+	for _, want := range []string{`no VM named "deleted-global-vm"`, vmconfig.BaseDir()} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("ctlCommand error = %q, want %q", msg, want)
+		}
+	}
+	for _, notWant := range []string{"control socket not found", "start it with"} {
+		if strings.Contains(msg, notWant) {
+			t.Fatalf("ctlCommand error = %q, did not want %q", msg, notWant)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), vmName)); !os.IsNotExist(err) {
+		t.Fatalf("global ctl VM dir stat = %v, want not exist", err)
+	}
+}
+
 func TestCtlCommandStoppedExistingVMKeepsControlSocketHint(t *testing.T) {
 	home, err := os.MkdirTemp("/tmp", "cove-ctl-test-")
 	if err != nil {

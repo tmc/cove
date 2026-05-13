@@ -265,13 +265,22 @@ func ctlCommand(args []string) error {
 		return err
 	}
 
-	// If -vm was given and -socket was not, resolve the socket from the VM dir.
-	if ctlVMFlag != nil && *ctlVMFlag != "" && *socketPath == "" {
-		dir, err := requireExistingVMForControl(*ctlVMFlag)
-		if err != nil {
-			return err
+	// If a VM was selected and -socket was not, resolve the socket from the VM dir.
+	if *socketPath == "" {
+		switch {
+		case ctlVMFlag != nil && *ctlVMFlag != "":
+			dir, err := requireExistingVMForControl(*ctlVMFlag)
+			if err != nil {
+				return err
+			}
+			*socketPath = GetControlSocketPathForVM(dir)
+		case strings.TrimSpace(vmName) != "":
+			dir, err := requireExistingVMForControl(vmName)
+			if err != nil {
+				return err
+			}
+			*socketPath = GetControlSocketPathForVM(dir)
 		}
-		*socketPath = GetControlSocketPathForVM(dir)
 	}
 
 	if fs.NArg() < 1 {

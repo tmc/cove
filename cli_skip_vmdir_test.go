@@ -20,6 +20,8 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"helper bare", []string{"helper"}, true},
 		{"helper daemon", []string{"helper", "daemon"}, true},
 		{"helper status", []string{"helper", "status"}, true},
+		{"cp uses control socket", []string{"cp"}, true},
+		{"ctl uses control socket", []string{"ctl"}, true},
 		{"logs is read only", []string{"logs"}, true},
 		{"status is read only", []string{"status"}, true},
 		{"version", []string{"version"}, true},
@@ -55,5 +57,33 @@ func TestRerunVMDirForPostCommandSkipsRunForkFrom(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), vmName)); !os.IsNotExist(err) {
 		t.Fatalf("run fork-from VM dir stat = %v, want not exist", err)
+	}
+}
+
+func TestRerunVMDirForPostCommandSkipsControlSocketCommands(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		cmd  string
+		args []string
+		vm   string
+	}{
+		{"cp", "cp", []string{"source.txt", "missing-cp-vm:/tmp/source.txt"}, "missing-cp-vm"},
+		{"ctl", "ctl", []string{"status"}, "missing-ctl-vm"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			oldVMName, oldVMDir := vmName, vmDir
+			t.Cleanup(func() {
+				vmName, vmDir = oldVMName, oldVMDir
+			})
+			vmName = tt.vm
+			vmDir = ""
+			if code := rerunVMDirForPostCommand(tt.cmd, tt.args); code != 0 {
+				t.Fatalf("rerunVMDirForPostCommand(%s) = %d, want 0", tt.cmd, code)
+			}
+			if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), tt.vm)); !os.IsNotExist(err) {
+				t.Fatalf("%s VM dir stat = %v, want not exist", tt.cmd, err)
+			}
+		})
 	}
 }

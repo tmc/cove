@@ -242,6 +242,39 @@ func TestCpVMNotFoundBeforeControlSocketHint(t *testing.T) {
 	}
 }
 
+func TestCpGlobalMissingVMDoesNotCreateDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "deleted-global-cp-vm"
+	vmDir = ""
+	src := filepath.Join(home, "host.txt")
+	if err := os.WriteFile(src, []byte("host"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	err := runCp(context.Background(), []string{src, vmName + ":/tmp/host.txt"}, newControlCpAgent)
+	if err == nil {
+		t.Fatal("runCp succeeded for missing global VM")
+	}
+	msg := err.Error()
+	for _, want := range []string{`no VM named "deleted-global-cp-vm"`, vmconfig.BaseDir()} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("runCp error = %q, want %q", msg, want)
+		}
+	}
+	for _, notWant := range []string{"control socket not found", "start it with"} {
+		if strings.Contains(msg, notWant) {
+			t.Fatalf("runCp error = %q, did not want %q", msg, notWant)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), vmName)); !os.IsNotExist(err) {
+		t.Fatalf("global cp VM dir stat = %v, want not exist", err)
+	}
+}
+
 func TestCpStoppedExistingVMKeepsControlSocketHint(t *testing.T) {
 	home, err := os.MkdirTemp("/tmp", "cove-cp-test-")
 	if err != nil {
