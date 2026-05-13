@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/configcodec"
@@ -123,7 +124,9 @@ func buildSelectedVMFrameworkConfiguration(diskImagePath string) (vz.VZVirtualMa
 	case "Windows":
 		return buildWindowsVMConfiguration(diskImagePath)
 	case "Linux":
-		return buildLinuxVMConfiguration(vmrunRunConfig(vmrun.GuestLinux), diskImagePath)
+		rc := vmrunRunConfig(vmrun.GuestLinux)
+		rc.EnableRosetta = false
+		return buildLinuxVMConfiguration(rc, diskImagePath)
 	case "macOS":
 		return buildVMConfiguration(diskImagePath)
 	default:
@@ -222,7 +225,7 @@ func encodeFrameworkConfig(cfg vz.VZVirtualMachineConfiguration) ([]byte, config
 	}
 	var errs []string
 	for _, format := range formats {
-		encoded, err := configcodec.Encode(cfg, format)
+		encoded, err := encodeFrameworkConfigQuiet(cfg, format)
 		if err == nil && len(encoded) > 0 {
 			return encoded, format, nil
 		}
@@ -233,6 +236,24 @@ func encodeFrameworkConfig(cfg vz.VZVirtualMachineConfiguration) ([]byte, config
 		errs = append(errs, fmt.Sprintf("format %d: empty data", format))
 	}
 	return nil, configcodec.DefaultFormat, fmt.Errorf("%s", strings.Join(errs, "; "))
+}
+
+func encodeFrameworkConfigQuiet(cfg vz.VZVirtualMachineConfiguration, format configcodec.Format) ([]byte, error) {
+	saved, err := syscall.Dup(2)
+	if err != nil {
+		return configcodec.Encode(cfg, format)
+	}
+	defer syscall.Close(saved)
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		return configcodec.Encode(cfg, format)
+	}
+	defer devNull.Close()
+	if err := syscall.Dup2(int(devNull.Fd()), 2); err != nil {
+		return configcodec.Encode(cfg, format)
+	}
+	defer syscall.Dup2(saved, 2)
+	return configcodec.Encode(cfg, format)
 }
 
 func ensureReadableFile(path string) error {
