@@ -22,6 +22,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"runs":    true,
 	"secret":  true,
 	"status":  true,
+	"storage": true,
 	"version": true,
 	"shell":   true,
 }
@@ -31,6 +32,9 @@ var vmDirIndependentCommands = map[string]bool{
 func subcommandSkipsVMDir(args []string) bool {
 	if len(args) == 0 {
 		return false
+	}
+	if _, ok := lookupCommand(args[0]); !ok && args[0] != "help" {
+		return true
 	}
 	if args[0] == "vm" && len(args) > 1 && args[1] == "tree" {
 		return true
