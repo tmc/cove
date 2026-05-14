@@ -82,6 +82,41 @@ func TestRecordingNoRecordingsMessage(t *testing.T) {
 	}
 }
 
+func TestRecordingListJSONEmptyArray(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out, err := captureStdoutResult(t, func() error {
+		return runRecordingList([]string{"--json"})
+	})
+	if err != nil {
+		t.Fatalf("runRecordingList --json: %v", err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("recording JSON = %q, want []", strings.TrimSpace(out))
+	}
+
+	out, err = captureStdoutResult(t, func() error {
+		return runRecordingList([]string{"--json", "--limit", "0"})
+	})
+	if err != nil {
+		t.Fatalf("runRecordingList --json --limit 0: %v", err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("recording limit 0 JSON = %q, want []", strings.TrimSpace(out))
+	}
+}
+
+func TestRecordingExportHelp(t *testing.T) {
+	out, err := captureStdoutResult(t, func() error {
+		return handleRecordingCommand([]string{"export", "--help"})
+	})
+	if err != nil {
+		t.Fatalf("recording export --help: %v", err)
+	}
+	if !strings.Contains(out, "Usage: cove recording export") {
+		t.Fatalf("help output = %q", out)
+	}
+}
+
 func tarNames(t *testing.T, data []byte) map[string]bool {
 	t.Helper()
 	gz, err := gzip.NewReader(bytes.NewReader(data))

@@ -33,6 +33,23 @@ type esloggerTraceSession struct {
 	Note      string `json:"note,omitempty"`
 }
 
+type traceCapabilities struct {
+	SupportedGuests       []string `json:"supported_guests"`
+	GuestCaptureWired     bool     `json:"guest_capture_wired"`
+	RequiresGuestTool     string   `json:"requires_guest_tool"`
+	SessionArtifactStatus string   `json:"session_artifact_status"`
+}
+
+type traceStatusOutput struct {
+	VMName       string                `json:"vm_name"`
+	OSType       string                `json:"os_type"`
+	ConfigPath   string                `json:"config_path"`
+	Enabled      bool                  `json:"enabled"`
+	UpdatedAt    string                `json:"updated_at,omitempty"`
+	Latest       *esloggerTraceSession `json:"latest,omitempty"`
+	Capabilities traceCapabilities     `json:"capabilities"`
+}
+
 var traceNow = time.Now
 
 func handleTraceCommand(args []string) error {
@@ -51,6 +68,8 @@ func handleTraceCommand(args []string) error {
 		return runTraceExport(args[1:])
 	case "status":
 		return runTraceStatus(args[1:])
+	case "capabilities":
+		return runTraceCapabilities(args[1:])
 	default:
 		printTraceUsage(os.Stderr)
 		return fmt.Errorf("unknown trace subcommand: %s", args[0])
@@ -64,7 +83,8 @@ Subcommands:
   enable <vm>                  Record that eslogger tracing is desired
   start <vm> [--id ID]         Create an eslogger trace session artifact
   stop <vm> [--id ID]          Mark an eslogger trace session stopped
-  status <vm>                  Show trace configuration and latest session
+  status <vm> [--json]         Show trace configuration and latest session
+  capabilities [--json]        Show host trace capture capabilities
   export <vm> [--id ID] --out PATH
 
 eslogger tracing is supported for macOS guests. Linux/Windows guests return a
@@ -168,27 +188,75 @@ func runTraceStop(args []string) error {
 }
 
 func runTraceStatus(args []string) error {
-	vm, err := oneTraceVMArg("trace status", args)
+	vm, jsonOut, err := parseTraceStatusArgs(args)
 	if err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 	dir, err := requireExistingVMForControl(vm)
 	if err != nil {
 		return err
 	}
+	status := traceStatus(dir, vm)
+	if jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(status)
+	}
 	fmt.Fprintf(os.Stdout, "trace config: %s\n", traceConfigPath(dir))
-	if cfg, err := loadTraceConfig(dir); err == nil && cfg.Enabled {
-		fmt.Fprintf(os.Stdout, "enabled: yes updated_at=%s\n", cfg.UpdatedAt)
+	if status.Enabled {
+		fmt.Fprintf(os.Stdout, "enabled: yes updated_at=%s\n", status.UpdatedAt)
 	} else {
 		fmt.Fprintln(os.Stdout, "enabled: no")
 	}
-	if id, err := latestTraceSessionID(dir); err == nil && id != "" {
-		session, _ := loadTraceSession(dir, id)
-		fmt.Fprintf(os.Stdout, "latest: %s status=%s log=%s\n", id, session.Status, session.LogPath)
+	if status.Latest != nil {
+		fmt.Fprintf(os.Stdout, "latest: %s status=%s log=%s\n", status.Latest.ID, status.Latest.Status, status.Latest.LogPath)
 	} else {
 		fmt.Fprintln(os.Stdout, "latest: none")
 	}
 	return nil
+}
+
+func runTraceCapabilities(args []string) error {
+	jsonOut := false
+	if len(args) > 0 && isHelpArg(args[0]) {
+		printTraceCapabilitiesUsage(os.Stdout)
+		return nil
+	}
+	for _, arg := range args {
+		switch arg {
+		case "--json", "-json":
+			jsonOut = true
+		default:
+			return fmt.Errorf("usage: cove trace capabilities [--json]")
+		}
+	}
+	caps := defaultTraceCapabilities()
+	if jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(caps)
+	}
+	fmt.Fprintf(os.Stdout, "supported guests: %s\n", strings.Join(caps.SupportedGuests, ", "))
+	fmt.Fprintf(os.Stdout, "guest capture wired: %v\n", caps.GuestCaptureWired)
+	fmt.Fprintf(os.Stdout, "requires guest tool: %s\n", caps.RequiresGuestTool)
+	fmt.Fprintf(os.Stdout, "session artifact status: %s\n", caps.SessionArtifactStatus)
+	return nil
+}
+
+func printTraceStatusUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove trace status <vm> [--json]
+
+Show eslogger trace configuration, the latest session artifact, and host trace
+capture capabilities for one VM.`)
+}
+
+func printTraceCapabilitiesUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove trace capabilities [--json]
+
+Show whether this host build can drive guest-side eslogger capture.`)
 }
 
 func runTraceExport(args []string) error {
@@ -239,6 +307,59 @@ func oneTraceVMArg(usage string, args []string) (string, error) {
 		return "", fmt.Errorf("usage: cove %s <vm>", usage)
 	}
 	return args[0], nil
+}
+
+func parseTraceStatusArgs(args []string) (vm string, jsonOut bool, err error) {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		printTraceStatusUsage(os.Stdout)
+		return "", false, errFlagHelp
+	}
+	for _, arg := range args {
+		switch arg {
+		case "--json", "-json":
+			jsonOut = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", false, fmt.Errorf("unknown trace status flag %q", arg)
+			}
+			if vm != "" {
+				return "", false, fmt.Errorf("usage: cove trace status <vm> [--json]")
+			}
+			vm = arg
+		}
+	}
+	if strings.TrimSpace(vm) == "" {
+		return "", false, fmt.Errorf("usage: cove trace status <vm> [--json]")
+	}
+	return vm, jsonOut, nil
+}
+
+func traceStatus(dir, vm string) traceStatusOutput {
+	status := traceStatusOutput{
+		VMName:       vm,
+		OSType:       vmconfig.DetectOSType(dir),
+		ConfigPath:   traceConfigPath(dir),
+		Capabilities: defaultTraceCapabilities(),
+	}
+	if cfg, err := loadTraceConfig(dir); err == nil && cfg.Enabled {
+		status.Enabled = true
+		status.UpdatedAt = cfg.UpdatedAt
+	}
+	if id, err := latestTraceSessionID(dir); err == nil && id != "" {
+		if session, err := loadTraceSession(dir, id); err == nil {
+			status.Latest = &session
+		}
+	}
+	return status
+}
+
+func defaultTraceCapabilities() traceCapabilities {
+	return traceCapabilities{
+		SupportedGuests:       []string{"macOS"},
+		GuestCaptureWired:     false,
+		RequiresGuestTool:     "eslogger",
+		SessionArtifactStatus: "unsupported until guest-side eslogger writes JSONL at log_path",
+	}
 }
 
 func requireTraceMacOSVM(vm string) (string, error) {

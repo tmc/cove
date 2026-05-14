@@ -36,6 +36,7 @@ var commandRegistry = []commandSpec{
 	{Name: "build", Summary: "Chain vzscript steps into a cache-keyed VM image", Dispatch: commandDispatchEarly, Run: runBuildCommand},
 	{Name: "clean", Summary: "Remove VM files", Dispatch: commandDispatchLate, Run: runCleanCommand},
 	{Name: "clone", Summary: "Clone a VM", Dispatch: commandDispatchLate, Run: runCloneCommand},
+	{Name: "commands", Summary: "Print machine-readable command inventory", Dispatch: commandDispatchEarly},
 	{Name: "compact", Summary: "Zero guest free space for smaller pushes", Dispatch: commandDispatchEarly, Run: runCompactCommand},
 	{Name: "config", Summary: "Export/import framework config snapshots", Dispatch: commandDispatchLate, Run: runVMSubcommand},
 	{Name: "cp", Summary: "Copy files between host and guest", Dispatch: commandDispatchEarly, Run: runCpCommand},
@@ -85,6 +86,7 @@ var commandRegistry = []commandSpec{
 	{Name: "status", Summary: "Show VM status", Dispatch: commandDispatchEarly, Run: runStatusCommand},
 	{Name: "storage", Summary: "Inspect cove disk usage under ~/.vz/", Dispatch: commandDispatchEarly, Run: runStorageCommand},
 	{Name: "store", Summary: "Manage the local OCI blob store", Dispatch: commandDispatchEarly, Run: runStoreCommand},
+	{Name: "support", Summary: "Create support diagnostics bundles", Dispatch: commandDispatchEarly, Run: runSupportCommandSpec},
 	{Name: "template", Summary: "Manage VM templates", Dispatch: commandDispatchLate, Run: runTemplateCommand},
 	{Name: "trace", Aliases: []string{"traces"}, Summary: "Manage eslogger guest traces", Dispatch: commandDispatchEarly, Run: runTraceCommand},
 	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: commandDispatchEarly, Run: runUIScriptCommand},
@@ -123,6 +125,9 @@ func commandNames() []string {
 
 func runRegisteredCommand(env commandEnv, spec *commandSpec, name string, args []string) int {
 	if spec == nil || spec.Run == nil {
+		if spec != nil && spec.Name == "commands" {
+			return runCommandsCommand(env, name, args)
+		}
 		return 2
 	}
 	return spec.Run(env, name, args)
@@ -259,6 +264,12 @@ func runStorageCommand(env commandEnv, _ string, args []string) int {
 }
 func runStoreCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleStoreCommand(args))
+}
+func runSupportCommandSpec(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, handleSupportCommand(args))
+	}
+	return commandError(env, handleSupportCommand(args))
 }
 func runUpCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleUp(args))

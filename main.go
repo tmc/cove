@@ -746,6 +746,7 @@ VM Management:
   runs            Inspect local run metrics and artifacts
   recording       List/export run recording artifacts
   bench           Normalize benchmark evidence into reports and run metrics
+  commands        Print command inventory (use --json for automation)
   daemon          Manage the cove background coordinator
   compact         Zero guest free space for smaller pushes
   fleet           Register and use remote cove hosts
@@ -1053,7 +1054,9 @@ func handleListTo(stdout io.Writer) error {
 	activeVM := vmconfig.ActiveName()
 
 	if len(vms) == 0 {
-		fmt.Fprintln(stdout, "No VMs found. Run 'cove install' to create one.")
+		fmt.Fprintln(stdout, "No VMs found.")
+		fmt.Fprintln(stdout, "  Check this Mac first: cove doctor host")
+		fmt.Fprintln(stdout, "  Create your first VM: cove up -user <name>")
 	} else {
 		fmt.Fprintln(stdout, "VMs:")
 		w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)

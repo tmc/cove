@@ -57,7 +57,19 @@ Required entitlements:
 
 ```bash
 cove version
+cove doctor host
 ```
+
+`cove doctor host -json` emits the same readiness checks as a JSON report.
+
+## First-Run Prompts
+
+`cove up -user <name>` prompts for the guest account password when `-password`
+is omitted. Prefer the prompt so the password is not saved in shell history.
+
+macOS may ask for administrator approval when cove mounts a guest disk, writes
+root-owned launchd files into the guest, or installs/updates the optional
+privileged helper. These prompts authorize local VM preparation on this Mac.
 
 ## Apple SLA Note
 
@@ -88,6 +100,51 @@ curl -L -C - -o ~/.vz/cache/RestoreImage.ipsw <restore-image-url>
 ```
 
 After the file is complete, re-run the same `cove install` or `cove up` command.
+
+## Support Bundle
+
+Use a support bundle when filing a bug or sharing setup diagnostics:
+
+```bash
+cove support bundle
+cove support bundle -vm dev
+```
+
+The archive is redacted and includes version/signing details, host readiness,
+helper and daemon status, storage census, recent run/recording metadata, and
+optional VM-specific doctor/control diagnostics.
+
+## Update
+
+With Homebrew:
+
+```bash
+brew update
+brew upgrade cove
+cove doctor host
+cove helper status
+```
+
+If the helper is stale after an upgrade:
+
+```bash
+sudo cove helper install
+```
+
+Source builds should be rebuilt, re-signed, and checked with `cove doctor host`.
+
+## Uninstall
+
+Remove only the pieces you no longer want:
+
+```bash
+brew uninstall cove          # CLI only
+cove helper uninstall        # optional privileged helper
+cove daemon stop             # user daemon, if running
+rm -rf ~/.vz                 # VMs, images, caches, runs, and store data
+```
+
+Keep `~/.vz` if you want to preserve local VM data.
 
 ## Linux Guest Toolchains
 

@@ -32,8 +32,16 @@ func handleRunsCommand(args []string) error {
 	case "list", "ls":
 		return runRunsList(rest)
 	case "show":
+		if len(rest) > 0 && isHelpArg(rest[0]) {
+			printRunsShowUsage(os.Stdout)
+			return nil
+		}
 		return runRunsShow(rest)
 	case "export":
+		if len(rest) > 0 && isHelpArg(rest[0]) {
+			printRunsExportUsage(os.Stdout)
+			return nil
+		}
 		return runRunsExport(rest)
 	default:
 		printRunsUsage(os.Stderr)
@@ -87,7 +95,7 @@ func runRunsList(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *limit == 0 {
+	if *limit == 0 || summaries == nil {
 		summaries = []runs.Summary{}
 	}
 	if *jsonOut && *ndjsonOut {
@@ -120,6 +128,21 @@ Flags:
   --status ok|fail|all   filter by final status (default all)
   --json                 emit a JSON array
   --ndjson               emit one JSON object per run`)
+}
+
+func printRunsShowUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove runs show <run-id-prefix> [--json]
+
+Show metrics events for one run. --json emits the run event array; when the run
+is missing, --json writes a machine-readable error object before returning an
+error exit.`)
+}
+
+func printRunsExportUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove runs export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]
+
+Export run artifacts as JSON, a GitHub Actions markdown summary, or a gzip
+tarball. --include-guest copies additional guest paths into tar exports.`)
 }
 
 func runRunsShow(args []string) error {
