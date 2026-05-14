@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -10,6 +12,55 @@ import (
 	"testing"
 	"time"
 )
+
+func TestHelperInstallAndUninstallHelpDoNotElevate(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "install short help", args: []string{"install", "-h"}, want: "Usage: cove helper install"},
+		{name: "install long help", args: []string{"install", "--help"}, want: "one macOS administrator approval"},
+		{name: "uninstall short help", args: []string{"uninstall", "-h"}, want: "Usage: cove helper uninstall"},
+		{name: "uninstall long help", args: []string{"uninstall", "--help"}, want: "Remove the optional privileged helper"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := captureStdoutString(t, func() {
+				if err := runHelperCmd(tt.args); err != nil {
+					t.Fatalf("runHelperCmd(%v): %v", tt.args, err)
+				}
+			})
+			if !strings.Contains(out, tt.want) {
+				t.Fatalf("help output = %q, want %q", out, tt.want)
+			}
+			if strings.Contains(out, "Installing cove privileged helper.") || strings.Contains(out, "Helper uninstalled.") {
+				t.Fatalf("help output looks like it ran helper operation: %q", out)
+			}
+		})
+	}
+}
+
+func captureStdoutString(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	_ = w.Close()
+	os.Stdout = old
+	return <-done
+}
 
 // TestHelperPeerUIDAccept verifies the daemon accepts a connection from the
 // authorized UID and rejects others. We run handleHelperConn directly
