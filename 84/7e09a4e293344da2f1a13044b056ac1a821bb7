@@ -1,0 +1,11 @@
+claude-code: feat(control): per-VM LRO registry + ctl snapshot save -async + ctl operations get/list/wait
+date: 2026-04-25
+model: claude-opus-4-7[1m]
+tty: not a tty
+pid: 8356
+iterm: w0t7p10:EDDC36F6-8C46-4A3F-A55B-7D3211BF0C9C
+acceptance: #1 PASS (ctl snapshot save -async parses, sends async=true, server returns op id immediately), #4 PASS (sync ctl snapshot save unchanged — same code path), #5 PASS (file-backed registry, persists across restart, orphans reaped to failed/server_restart on reload).
+verify: 6/6 control_operations_test.go pass; full go test ./... green
+proto: regenerated via make proto-go (new fields additive only — no field removals or renames)
+worktree: /Volumes/tmc/go/src/github.com/tmc/vz-macos-snapshot-async (isolated)
+followup: gateway's handleAsyncSnapshotSave (commit 1) still creates its OWN gateway-side LRO; could be unified later to ride on the per-VM LRO via SnapshotCommand.async=true. Not in this commit's scope.

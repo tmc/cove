@@ -1,0 +1,9 @@
+Author: Claude Code
+Model: claude-opus-4-7[1m]
+TTY: not a tty
+n/a
+PID: 3707
+ITERM_SESSION_ID: w0t7p10:D1ECD40A-AD68-41CF-8C4E-4C55523CD62E
+Date: 2026-04-25T05:00:28Z
+Branch: fix/agent-exec-dashdash
+Base: b680aca (next)

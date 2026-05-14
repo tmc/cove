@@ -1,0 +1,7 @@
+claude-code: docs(dump-docs): match GET /v1/vms description to f71c71d's configured-VMs semantics
+date: 2026-04-25
+model: claude-opus-4-7[1m]
+tty: not a tty
+pid: 55632
+iterm: w0t7p10:EDDC36F6-8C46-4A3F-A55B-7D3211BF0C9C
+note: tiny one-line fix flagged in 847e09a's followup. Ships alongside 98a292a (gateway LRO unification).

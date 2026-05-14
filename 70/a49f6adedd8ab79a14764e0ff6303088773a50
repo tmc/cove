@@ -1,0 +1,9 @@
+claude-code: feat(agent): configurable agent health monitor interval + slog reconnect/downtime logging
+date: 2026-04-25
+model: claude-opus-4-7[1m]
+tty: not a tty
+pid: 31671
+iterm: w0t7p10:EDDC36F6-8C46-4A3F-A55B-7D3211BF0C9C
+note: pre-existing agentHealthMonitor (5f98e86) had hardcoded 10s, log.Printf on reconnect only. Brief #17 asked for configurable cadence (env var, default 30s), slog records, and downtime visibility on recovery. agent_state.go does not exist; state lives in control_socket.go's ControlServer.agentHealth. agentHealthState gained disconnectAt for downtime accounting; markAgentConnected/markAgentReconnecting helpers centralize the state edges; setHealthStatus also tracks disconnectAt for the 'vm not running' path.
+verify: 5 new tests pass (10 subtests under TestResolveAgentHealthInterval); full go test ./... green
+worktree: /Volumes/tmc/go/src/github.com/tmc/vz-macos-agent-health (isolated)
