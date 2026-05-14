@@ -43,9 +43,8 @@ func TestCoveSubcommandsE2E(t *testing.T) {
 			name:     "image_list_empty",
 			args:     []string{"image", "list"},
 			wantExit: 0,
-			// Fresh HOME has no images. Output is human-formatted, not JSON
-			// (image list does not accept -json today).
-			wantStdout: []string{"No images found"},
+			// Fresh HOME has no images. Output is human-formatted.
+			wantStdout: []string{"No images found", "cove up -user <name>"},
 		},
 		{
 			name:       "vm_tree_json_empty",

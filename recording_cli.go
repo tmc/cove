@@ -39,8 +39,16 @@ func handleRecordingCommand(args []string) error {
 	}
 	switch args[0] {
 	case "list", "ls":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printRecordingListUsage(os.Stdout)
+			return nil
+		}
 		return runRecordingList(args[1:])
 	case "export":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printRecordingExportUsage(os.Stdout)
+			return nil
+		}
 		return runRecordingExport(args[1:])
 	default:
 		printRecordingUsage(os.Stderr)
@@ -81,6 +89,9 @@ func runRecordingList(args []string) error {
 	if err != nil {
 		return err
 	}
+	if recordings == nil {
+		recordings = []recordingEntry{}
+	}
 	if *jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -94,6 +105,14 @@ func printRecordingListUsage(w io.Writer) {
 
 List run/session recording artifacts from ~/.vz/runs. A recording is any run
 with manifest, events, metrics, logs, screenshots, replay, or trace artifacts.`)
+}
+
+func printRecordingExportUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove recording export <run-id-prefix> --out PATH
+
+Export one run/session recording from ~/.vz/runs to a gzip tarball containing
+manifest, events, metrics, logs, screenshots, replay files, and trace artifacts
+when present.`)
 }
 
 func runRecordingExport(args []string) error {
@@ -184,7 +203,7 @@ func listRecordings(root string, limit int) ([]recordingEntry, error) {
 		}
 	}
 	if limit == 0 {
-		return nil, nil
+		return []recordingEntry{}, nil
 	}
 	return out, nil
 }

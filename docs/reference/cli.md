@@ -142,6 +142,51 @@ cove status work-vm
 
 ---
 
+## commands
+
+Print the top-level command inventory.
+
+```
+cove commands [--json]
+cove help --json
+```
+
+`--json` emits command names, aliases, summaries, dispatch timing, and
+output-format hints. It is intended for agents that should not scrape prose
+help output.
+
+```bash
+cove commands --json
+cove help --json
+```
+
+---
+
+## doctor
+
+Diagnose host readiness or VM health.
+
+```
+cove doctor host [-json]
+cove doctor [options]
+```
+
+`cove doctor host` checks whether the Mac is ready to create and run cove VMs:
+Apple Silicon, macOS version, virtualization entitlement, cove state
+writability, free disk, network, optional helper state, and Xcode Command Line
+Tools. `-json` emits a machine-readable report.
+
+Plain `cove doctor` remains VM-focused. It checks provisioning, guest agent, TCC
+paths, and file ownership for the active VM or `-vm <name>`.
+
+```bash
+cove doctor host
+cove doctor host -json
+cove doctor -vm dev -v
+```
+
+---
+
 ## up
 
 Install, provision, and boot in one command.
@@ -722,6 +767,28 @@ are read from environment variables (`COVE_ACTION_*`) or the matching flags.
 
 ---
 
+## support
+
+Create a redacted diagnostics archive for support.
+
+```
+cove support bundle [-vm NAME] [-out PATH]
+```
+
+The bundle includes cove version and host details, signing/entitlement data,
+`cove doctor host` JSON, helper status, daemon status/metrics, storage census,
+and recent run and recording metadata. With `-vm NAME`, it also includes
+VM-specific doctor, GUI, VNC, capabilities, agent, and trace diagnostics.
+
+Bearer tokens, passwords, usernames, and home-directory paths are redacted.
+
+```bash
+cove support bundle
+cove support bundle -vm dev -out /tmp/cove-dev-support.tar.gz
+```
+
+---
+
 ## runs
 
 Inspect and export local run artifacts under `~/.vz/runs/<run-id>/`. Run metrics
@@ -736,7 +803,7 @@ cove runs export <run-id-prefix> --format json|gha-summary|tar
 
 | Subcommand | Description |
 |------------|-------------|
-| `list [--limit N] [--since DURATION] [--status ok\|fail\|all] [--json\|--ndjson]` | List recent runs. Fields: run-id prefix, `image_ref`, `vm_name`, `status`, `total_duration_ms`, `exit_code`, `started_at`. `--json` emits one array; `--ndjson` emits one object per line. |
+| `list [--limit N] [--since DURATION] [--status ok\|fail\|all] [--json\|--ndjson]` | List recent runs. Fields: run-id prefix, `image_ref`, `vm_name`, `status`, `total_duration_ms`, `exit_code`, `started_at`. `--json` emits one array (`[]` when empty); `--ndjson` emits one object per line and no output when empty. |
 | `show <run-id-prefix> [--json]` | Show one run by unique run-id prefix. Fails if the prefix matches no run or more than one run. |
 | `export <run-id-prefix> --format json\|gha-summary\|tar` | Export one run. `json` emits structured data, `gha-summary` emits Markdown for `GITHUB_STEP_SUMMARY`, and `tar` writes a gzip tar archive to stdout. |
 
@@ -786,7 +853,8 @@ Manage eslogger guest trace artifacts for macOS VMs.
 cove trace enable <vm>
 cove trace start <vm> [--id ID]
 cove trace stop <vm> [--id ID]
-cove trace status <vm>
+cove trace status <vm> [--json]
+cove trace capabilities [--json]
 cove trace export <vm> [--id ID] --out PATH
 ```
 
@@ -794,7 +862,10 @@ Trace state is stored under `<vm>/traces/eslogger/`. Linux and Windows guests
 return an unsupported diagnostic. The first pass records stable session paths
 and exports any `eslogger.jsonl` placed in the session directory; guest-side
 capture failures are visible in the session metadata and do not hide the
-primary command result.
+primary command result. `trace status --json` includes the latest session and
+capability fields. `trace capabilities --json` reports that this host build
+does not yet drive guest-side eslogger capture directly, so agents can preflight
+trace support before starting a session.
 
 ```bash
 cove trace enable work-vm

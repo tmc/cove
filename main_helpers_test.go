@@ -143,3 +143,18 @@ func TestHandleListReportsMissingDiskDirectories(t *testing.T) {
 		t.Fatalf("list output kept invalid tree guidance:\n%s", out)
 	}
 }
+
+func TestHandleListEmptyStatePointsToFirstRun(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	var buf bytes.Buffer
+	if err := handleListTo(&buf); err != nil {
+		t.Fatalf("handleListTo: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"No VMs found.", "cove doctor host", "cove up -user <name>"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("list empty output missing %q:\n%s", want, out)
+		}
+	}
+}

@@ -33,11 +33,20 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 
 	switch cmd {
 	case "help":
+		if len(subargs) == 1 && (subargs[0] == "--json" || subargs[0] == "-json") {
+			if err := printCommandsJSON(os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return true, 1
+			}
+			return true, 0
+		}
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			usage()
 			return true, 0
 		}
 		switch subargs[0] {
+		case "commands":
+			printCommandsUsage(os.Stderr)
 		case "ctl":
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
 			fs.Usage()
@@ -58,6 +67,12 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printRunnerUsage(os.Stderr)
 		case "runs":
 			printRunsUsage(os.Stderr)
+		case "recording", "recordings":
+			printRecordingUsage(os.Stderr)
+		case "status":
+			printStatusUsage(os.Stderr)
+		case "trace", "traces":
+			printTraceUsage(os.Stderr)
 		case "daemon":
 			printDaemonUsage(os.Stderr)
 		case "cp":
@@ -84,6 +99,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printPullUsage(os.Stderr)
 		case "store":
 			printStoreUsage(os.Stderr)
+		case "support":
+			printSupportUsage(os.Stderr)
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
@@ -179,6 +196,10 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fs.Usage()
 			return true, usageExitCode(subargs)
 		}
+		if len(subargs) > 1 && subargs[0] == "ready" && isHelpArg(subargs[1]) {
+			printReadyUsage(os.Stderr)
+			return true, 0
+		}
 	case "shell":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printShellUsage(os.Stderr)
@@ -191,6 +212,32 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 		if len(subargs) > 1 && (subargs[0] == "list" || subargs[0] == "ls") && isHelpArg(subargs[1]) {
 			printRunsListUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && subargs[0] == "show" && isHelpArg(subargs[1]) {
+			printRunsShowUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && subargs[0] == "export" && isHelpArg(subargs[1]) {
+			printRunsExportUsage(os.Stderr)
+			return true, 0
+		}
+	case "support":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printSupportUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && subargs[0] == "bundle" && isHelpArg(subargs[1]) {
+			printSupportBundleUsage(os.Stderr)
+			return true, 0
+		}
+	case "commands":
+		if len(subargs) == 0 || subargs[0] == "--json" || subargs[0] == "-json" {
+			code := runCommandsCommand(newCommandEnv(), cmd, subargs)
+			return true, code
+		}
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printCommandsUsage(os.Stderr)
 			return true, 0
 		}
 	case "action":
@@ -280,6 +327,37 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printSecurityUsage(os.Stderr)
 			return true, usageExitCode(subargs)
+		}
+	case "recording", "recordings":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printRecordingUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && (subargs[0] == "list" || subargs[0] == "ls") && isHelpArg(subargs[1]) {
+			printRecordingListUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && subargs[0] == "export" && isHelpArg(subargs[1]) {
+			printRecordingExportUsage(os.Stderr)
+			return true, 0
+		}
+	case "status":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printStatusUsage(os.Stderr)
+			return true, 0
+		}
+	case "trace", "traces":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printTraceUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && subargs[0] == "status" && isHelpArg(subargs[1]) {
+			printTraceStatusUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && subargs[0] == "capabilities" && isHelpArg(subargs[1]) {
+			printTraceCapabilitiesUsage(os.Stderr)
+			return true, 0
 		}
 	case "store":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {

@@ -92,6 +92,58 @@ func TestTraceStatusNoSession(t *testing.T) {
 	}
 }
 
+func TestTraceStatusJSON(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := makeTraceTestVM(t, "mac")
+	if err := writeJSONFile(traceConfigPath(dir), esloggerTraceConfig{
+		VMName:    "mac",
+		Enabled:   true,
+		UpdatedAt: "2026-05-14T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := writeJSONFile(traceSessionPath(dir, "trace-a"), esloggerTraceSession{
+		ID:      "trace-a",
+		VMName:  "mac",
+		Status:  "unsupported",
+		LogPath: filepath.Join(traceSessionDir(dir, "trace-a"), "eslogger.jsonl"),
+	}); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+	out, err := captureStdoutResult(t, func() error {
+		return runTraceStatus([]string{"mac", "--json"})
+	})
+	if err != nil {
+		t.Fatalf("runTraceStatus --json: %v", err)
+	}
+	var got traceStatusOutput
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("status JSON: %v\n%s", err, out)
+	}
+	if got.VMName != "mac" || !got.Enabled || got.Latest == nil || got.Latest.ID != "trace-a" {
+		t.Fatalf("status JSON = %+v", got)
+	}
+	if got.Capabilities.GuestCaptureWired {
+		t.Fatalf("capabilities = %+v, want guest_capture_wired false", got.Capabilities)
+	}
+}
+
+func TestTraceCapabilitiesJSON(t *testing.T) {
+	out, err := captureStdoutResult(t, func() error {
+		return runTraceCapabilities([]string{"--json"})
+	})
+	if err != nil {
+		t.Fatalf("runTraceCapabilities --json: %v", err)
+	}
+	var got traceCapabilities
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("capabilities JSON: %v\n%s", err, out)
+	}
+	if len(got.SupportedGuests) != 1 || got.SupportedGuests[0] != "macOS" || got.GuestCaptureWired {
+		t.Fatalf("capabilities = %+v", got)
+	}
+}
+
 func makeTraceTestVM(t *testing.T, name string) string {
 	t.Helper()
 	dir := filepath.Join(vmconfig.BaseDir(), name)
