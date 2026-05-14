@@ -18,8 +18,15 @@ brew install tmc/tap/cove
 Or build from source:
 
 ```bash
-go install github.com/tmc/vz-macos@latest
+git clone https://github.com/tmc/cove
+cd cove
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
+
+The Go module path remains `github.com/tmc/vz-macos` for compatibility, so
+`go install github.com/tmc/vz-macos@latest` is still valid when the module proxy
+has the release you want. The repository and Homebrew package are named `cove`.
 
 On first launch, cove signs the local binary with the Virtualization.framework entitlements it needs. If you build manually while developing cove, re-sign after each build:
 

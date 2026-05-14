@@ -31,7 +31,7 @@ brew install tmc/tap/cove
 Or build from source:
 
 ```bash
-git clone git@github.com:tmc/cove.git
+git clone https://github.com/tmc/cove
 cd cove
 go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
@@ -327,13 +327,13 @@ cove/
 
 - **Control socket**: per-VM bearer token, owner-only permissions (`0600`)
 - **Guest agent**: unencrypted gRPC over vsock, scoped to host-VM boundary
-- **Entitlements**: auto-signed on first launch with `com.apple.security.virtualization` and `com.apple.security.hypervisor`
+- **Entitlements**: auto-signed on first launch with `com.apple.security.virtualization` and local networking entitlements
 - **Safety posture**: see [SAFETY.md](SAFETY.md) for trust boundaries, known limitations, and audit guidance.
 
 ## Contributing
 
 ```bash
-git clone https://github.com/tmc/vz-macos
+git clone https://github.com/tmc/cove
 cd cove
 go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove

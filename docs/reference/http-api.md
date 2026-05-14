@@ -21,14 +21,12 @@ By default the master token lives in the macOS keychain (service `com.tmc.cove.g
 
 If the keychain is unavailable (headless login, no GUI session, Security.framework dlopen fails), cove falls back to `~/.vz/gateway.token` (mode 0600) and prints one line to stderr noting the fallback.
 
-Retrieve it for scripting:
+For scripting, read the token from Keychain or the fallback file through your
+secret manager, then pass it as a Bearer token. Avoid pasting token values into
+logs, docs, or shell history.
 
 ```bash
-TOKEN=$(security find-generic-password -s com.tmc.cove.gateway -a master-token -w)
-# or from the file fallback:
-TOKEN=$(cat ~/.vz/gateway.token)
-
-curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7777/v1/vms
+curl -H "Authorization: Bearer <gateway-token>" http://127.0.0.1:7777/v1/vms
 ```
 
 File-backed token (for CI where the login keychain isn't unlocked):

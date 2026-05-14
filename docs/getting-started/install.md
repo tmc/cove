@@ -25,14 +25,15 @@ brew install tmc/tap/cove
 go install github.com/tmc/vz-macos@latest
 ```
 
-The binary will be placed in `$GOPATH/bin` (or `$HOME/go/bin`).
+The binary will be placed in `$GOPATH/bin` (or `$HOME/go/bin`). The Go module
+path remains `github.com/tmc/vz-macos` for compatibility; the repository and
+Homebrew package are named `cove`.
 
 ## From Source
 
 ```bash
-git clone https://github.com/tmc/vz-macos
-cd vz-macos
-# The repository is github.com/tmc/vz-macos but the binary is named "cove"
+git clone https://github.com/tmc/cove
+cd cove
 go build -o cove .
 ```
 
@@ -51,7 +52,7 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 
 Required entitlements:
 - `com.apple.security.virtualization` -- basic VM capability
-- `com.apple.security.hypervisor` -- hypervisor access
+- `com.apple.security.network.client` and `com.apple.security.network.server` -- local control, gateway, and guest-service networking
 
 ## Verify Installation
 
