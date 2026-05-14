@@ -29,6 +29,9 @@ type VerifyResult struct {
 
 // handleVerify verifies provisioning files in a VM disk
 func handleVerify(args []string) error {
+	if len(args) > 0 && args[0] == "host" {
+		return handleDoctorHost(args[1:], os.Stdout)
+	}
 	if len(args) > 0 && args[0] == "tcc-preauth" {
 		return runPreAuth(args[1:])
 	}
@@ -118,8 +121,11 @@ func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string, *string) {
 
 func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintf(w, `Usage: cove doctor [options]
+       cove doctor host [-json]
 
 Diagnose VM health: provisioning, agent, and file ownership.
+
+Use cove doctor host before creating a first VM to check host readiness.
 
 When the VM is running, doctor checks via the control socket and guest agent.
 When stopped, it mounts the disk and inspects files directly.
@@ -133,6 +139,8 @@ Options:
 	fs.PrintDefaults()
 	fmt.Fprintf(w, `
 Examples:
+  cove doctor host
+  cove doctor host -json
   cove doctor
   cove doctor --fix
   cove doctor --tcc-path /Volumes/work
