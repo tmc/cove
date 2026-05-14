@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,18 +31,53 @@ func handleVMConfigCommand(args []string) error {
 		printVMConfigUsage(os.Stderr)
 		return nil
 	case "export":
-		if len(args) < 2 {
-			return fmt.Errorf("Usage: cove vm config export <path>")
+		path, err := parseVMConfigPathArg("export", args[1:])
+		if err != nil {
+			if errors.Is(err, errFlagHelp) {
+				return nil
+			}
+			return err
 		}
-		return exportVMFrameworkConfig(args[1])
+		return exportVMFrameworkConfig(path)
 	case "import":
-		if len(args) < 2 {
-			return fmt.Errorf("Usage: cove vm config import <path>")
+		path, err := parseVMConfigPathArg("import", args[1:])
+		if err != nil {
+			if errors.Is(err, errFlagHelp) {
+				return nil
+			}
+			return err
 		}
-		return importVMFrameworkConfig(args[1])
+		return importVMFrameworkConfig(path)
 	default:
 		return fmt.Errorf("unknown vm config command: %s", args[0])
 	}
+}
+
+func parseVMConfigPathArg(command string, args []string) (string, error) {
+	usage := fmt.Sprintf("Usage: cove vm config %s <path>", command)
+	if len(args) == 0 {
+		return "", fmt.Errorf("%s", usage)
+	}
+	if isHelpArg(args[0]) {
+		fmt.Fprintln(os.Stderr, usage)
+		return "", errFlagHelp
+	}
+	afterDashDash := false
+	if args[0] == "--" {
+		afterDashDash = true
+		args = args[1:]
+		if len(args) == 0 {
+			return "", fmt.Errorf("%s", usage)
+		}
+	}
+	if len(args) != 1 {
+		return "", fmt.Errorf("%s", usage)
+	}
+	path := args[0]
+	if strings.HasPrefix(path, "-") && !afterDashDash {
+		return "", fmt.Errorf("vm config %s: path %q looks like a flag; pass it after --", command, path)
+	}
+	return path, nil
 }
 
 func exportVMFrameworkConfig(destPath string) error {
