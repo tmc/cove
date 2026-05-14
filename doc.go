@@ -95,7 +95,7 @@
 //
 // Install and run a Linux VM:
 //
-//	./cove install -linux -provision-user ubuntu -provision-password secret
+//	./cove install -linux -provision-user ubuntu -provision-password <password>
 //	./cove run -linux -gui
 //
 // # VM Directory Structure

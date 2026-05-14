@@ -250,7 +250,7 @@ Examples:
   cove up -linux                                           # Ubuntu Server (ubuntu/ubuntu)
   cove up -linux -distro alpine                            # Alpine (alpine/alpine)
   cove up -linux -nested                                   # Linux with KVM on supported hosts
-  cove up -linux -user tmc -password secret                # Linux with custom user
+  cove up -linux -user tmc -password <password>                # Linux with custom user
   cove up -linux -desktop -user me                         # Ubuntu Desktop
   cove up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
 `)

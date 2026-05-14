@@ -95,6 +95,8 @@ func TestHandleEarlyCLIProductHelpTopics(t *testing.T) {
 		{"image", "Usage: cove image"},
 		{"logs", "Usage: cove logs"},
 		{"security", "Usage: cove security"},
+		{"gui", "Usage: cove run -gui"},
+		{"vnc", "Usage: cove run -vnc"},
 	} {
 		t.Run(tc.topic, func(t *testing.T) {
 			stderr, restore := captureStderr(t)
@@ -125,6 +127,8 @@ func TestHandleEarlyCLINoArgProductSurfaces(t *testing.T) {
 		{"image", "Usage: cove image"},
 		{"logs", "Usage: cove logs"},
 		{"security", "Usage: cove security"},
+		{"gui", "Usage: cove run -gui"},
+		{"vnc", "Usage: cove run -vnc"},
 	} {
 		t.Run(tc.cmd, func(t *testing.T) {
 			stderr, restore := captureStderr(t)

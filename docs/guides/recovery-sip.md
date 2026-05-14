@@ -20,7 +20,7 @@ Recovery mode gives access to Terminal, Disk Utility, and the csrutil command fo
 ### Step 1: Generate Automation
 
 ```bash
-cove sip disable-auto -user admin -password secret
+cove sip disable-auto -user admin -password <password>
 ```
 
 This creates:
@@ -54,7 +54,7 @@ cove sip status
 ## SIP Enable (Automated)
 
 ```bash
-cove sip enable-auto -user admin -password secret
+cove sip enable-auto -user admin -password <password>
 
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \

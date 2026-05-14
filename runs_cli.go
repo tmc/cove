@@ -314,6 +314,11 @@ func guestArtifactHostPath(runDir, guestPath string) (string, error) {
 }
 
 func printRunsTable(w io.Writer, summaries []runs.Summary) error {
+	if len(summaries) == 0 {
+		fmt.Fprintln(w, "No runs found.")
+		fmt.Fprintln(w, "  Run a VM or cove-action workflow, then inspect it with: cove runs list")
+		return nil
+	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "RUN ID\tIMAGE\tVM\tSTATUS\tDURATION_MS\tEVENTS\tEXIT\tSTARTED_AT")
 	for _, summary := range summaries {

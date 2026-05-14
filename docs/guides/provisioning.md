@@ -13,7 +13,7 @@ The `provision` command writes files directly into the VM disk image.
 
 ```bash
 cove install -ipsw restore.ipsw
-cove provision -user testuser -password secret -skip-setup-assistant
+cove provision -user testuser -password <password> -skip-setup-assistant
 cove run -gui
 ```
 
@@ -50,7 +50,7 @@ For CI or when building as non-root:
 
 ```bash
 # Phase 1: build binaries, generate scripts (no admin needed)
-cove provision -user testuser -password secret -stage-only
+cove provision -user testuser -password <password> -stage-only
 
 # Phase 2: mount disk, copy files (native admin dialog)
 cove provision -apply
@@ -60,22 +60,22 @@ cove provision -apply
 
 ```bash
 # Full provisioning
-cove provision -user me -password secret -skip-setup-assistant
+cove provision -user me -password <password> -skip-setup-assistant
 
 # With SSH key
-cove provision -user me -password secret -ssh-key ~/.ssh/id_rsa.pub
+cove provision -user me -password <password> -ssh-key ~/.ssh/id_rsa.pub
 
 # Enable SSH daemon
-cove provision -user me -password secret -enable-sshd
+cove provision -user me -password <password> -enable-sshd
 
 # Direct plist mode (advanced, bypasses sysadminctl)
-cove provision -user me -password secret -plist -uid 501
+cove provision -user me -password <password> -plist -uid 501
 
 # Disable auto-login
-cove provision -user me -password secret -no-auto-login
+cove provision -user me -password <password> -no-auto-login
 
 # Disable recovery bootstrap
-cove provision -user me -password secret -no-bootstrap-recovery
+cove provision -user me -password <password> -no-bootstrap-recovery
 ```
 
 ### Method 2: GUI Automation
@@ -83,7 +83,7 @@ cove provision -user me -password secret -no-bootstrap-recovery
 Use the `up` command to combine install, provision, and Setup Assistant automation:
 
 ```bash
-cove up -user testuser -password secret -gui
+cove up -user testuser -password <password> -gui
 ```
 
 Or drive Setup Assistant manually on a running VM:

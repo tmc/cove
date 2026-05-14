@@ -402,6 +402,12 @@ func helperInstall() error {
 
 // helperUninstall removes the LaunchDaemon and helper binary. Requires admin.
 func helperUninstall() error {
+	if !helperInstalled() {
+		if _, err := os.Stat(helperSocketPath); os.IsNotExist(err) {
+			fmt.Println("Helper is not installed.")
+			return nil
+		}
+	}
 	manifest := &elevatedManifest{
 		LaunchctlBootout: []string{helperLabel},
 		RemoveFiles: []string{
