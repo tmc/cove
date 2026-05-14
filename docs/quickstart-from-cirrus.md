@@ -56,6 +56,12 @@ tears the fork down.
 
 ## 5. Add the GitHub Actions job
 
+You can generate a starting workflow with:
+
+```bash
+cove runner workflow --image macos-runner:latest --script './ci/test.sh'
+```
+
 ```yaml
 jobs:
   migrated-task:

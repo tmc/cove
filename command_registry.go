@@ -72,6 +72,7 @@ var commandRegistry = []commandSpec{
 	{Name: "rm", Aliases: []string{"remove", "destroy"}, Summary: "Delete a VM", Dispatch: commandDispatchLate, Run: runVMDeleteAliasCommand},
 	{Name: "rosetta", Summary: "Rosetta 2 for Linux VMs", Dispatch: commandDispatchLate, Run: runRosettaCommandSpec},
 	{Name: "run", Summary: "Run a VM", Dispatch: commandDispatchLate, Run: runRunCommand},
+	{Name: "runner", Summary: "Generate hosted-runner workflow scaffolding", Dispatch: commandDispatchEarly, Run: runRunnerCommand},
 	{Name: "runs", Summary: "Inspect local run metrics and artifacts", Dispatch: commandDispatchEarly, Run: runRunsCommand},
 	{Name: "secret", Summary: "Debug secret resolver", Dispatch: commandDispatchEarly, Run: runSecretCommand},
 	{Name: "security", Summary: "Inspect host-containment policy", Dispatch: commandDispatchEarly, Run: runSecurityCommand},

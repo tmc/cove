@@ -54,6 +54,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printBuildUsage(os.Stderr)
 		case "action":
 			printActionUsage(os.Stderr)
+		case "runner":
+			printRunnerUsage(os.Stderr)
 		case "runs":
 			printRunsUsage(os.Stderr)
 		case "daemon":
@@ -195,6 +197,15 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printActionUsage(os.Stderr)
 			return true, usageExitCode(subargs)
+		}
+	case "runner":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printRunnerUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && subargs[0] == "workflow" && isHelpArg(subargs[1]) {
+			printRunnerWorkflowUsage(os.Stderr)
+			return true, 0
 		}
 	case "daemon":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {

@@ -629,6 +629,41 @@ cove agent-sandbox run --provider gemini --image macos-agent:latest --task "Open
 
 ---
 
+## runner
+
+Hosted-runner integration helpers. `cove runner` does not run a scheduler or
+register GitHub runners. It prints workflow scaffolds that consume the local
+`cove` runner primitives.
+
+```
+cove runner workflow --image <ref> [--mode self-hosted|github-hosted]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `workflow --image <ref>` | Print a GitHub Actions workflow that validates a local cove image and runs a job through `cove-action`. |
+
+Important flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--mode` | `self-hosted` | `self-hosted` runs on a trusted macOS runner with cove installed. `github-hosted` runs on GitHub-hosted Linux and SSHes into a trusted cove Mac. |
+| `--image` | | Local cove image ref on the runner host. Required. |
+| `--script` | `./ci/test.sh` | Guest command or script to run through the action wrapper. |
+| `--labels` | `self-hosted,macOS,ARM64,cove` | Self-hosted runner labels for GitHub Actions. |
+| `--remote` | `${{ secrets.COVE_HOST }}` | SSH target used by `--mode github-hosted`. |
+
+Examples:
+
+```bash
+cove runner workflow --image macos-runner:14.5 --script './ci/test.sh'
+cove runner workflow --mode github-hosted --image macos-runner:14.5 --remote mac-mini-ci --script './ci/test.sh'
+```
+
+See [Hosted Runner Examples](../examples/hosted-runners.md).
+
+---
+
 ## action
 
 Preflight helpers for the private GitHub Actions executor.
