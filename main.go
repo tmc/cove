@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"text/tabwriter"
@@ -363,6 +364,10 @@ func main() {
 		}
 		return
 	}
+	if flag.NArg() == 0 && !term.IsTerminal(int(os.Stdin.Fd())) {
+		usage()
+		return
+	}
 	if flag.NArg() > 0 {
 		if spec, ok := lookupCommand(flag.Arg(0)); ok && spec.Dispatch == commandDispatchPreUI {
 			os.Exit(runRegisteredCommand(newCommandEnv(), spec, flag.Arg(0), flag.Args()[1:]))
@@ -671,10 +676,41 @@ func handleUTM() {
 }
 
 func handleRun() {
+	if err := resolveRunTarget(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	if err := runCurrentVM(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func resolveRunTarget() error {
+	if strings.TrimSpace(ephemeralForkParent) != "" {
+		return nil
+	}
+	if vmDir != "" && vmconfig.Validate(vmDir) {
+		if vmName == "" {
+			vmName = filepath.Base(vmDir)
+		}
+		return nil
+	}
+	name := strings.TrimSpace(vmName)
+	if name == "" {
+		name = strings.TrimSpace(vmconfig.ActiveName())
+	}
+	if name == "" {
+		return fmt.Errorf("run: no VM selected; create one with 'cove up' or pass -vm <name>")
+	}
+	dir, ok := vmconfig.ExistingPath(name)
+	if !ok || !vmconfig.Validate(dir) {
+		return fmt.Errorf("run: no VM named %q under %s; create one with 'cove up' or pass -vm <name>", name, vmconfig.BaseDir())
+	}
+	vmName = name
+	vmDir = dir
+	applyVMConfig(vmDir)
+	return nil
 }
 
 func handleActionCommand(args []string) int {
