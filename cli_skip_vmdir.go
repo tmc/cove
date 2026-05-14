@@ -43,11 +43,13 @@ var vmDirIndependentCommands = map[string]bool{
 	"runs":            true,
 	"secret":          true,
 	"security":        true,
+	"first-run":       true,
 	"status":          true,
 	"storage":         true,
 	"trace":           true,
 	"traces":          true,
 	"support":         true,
+	"support-bundle":  true,
 	"version":         true,
 	"shell":           true,
 	"vzscript":        true,
@@ -92,7 +94,7 @@ func requireExistingVMDir(command, name string) (string, error) {
 	}
 	dir, ok := vmconfig.ExistingPath(name)
 	if !ok {
-		return "", fmt.Errorf("%s: no VM named %q under %s", command, name, vmconfig.BaseDir())
+		return "", fmt.Errorf("%s: no VM named %q under %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", command, name, vmconfig.BaseDir())
 	}
 	if !vmconfig.Validate(dir) {
 		return "", fmt.Errorf("%s: VM %q is invalid under %s", command, name, vmconfig.BaseDir())
