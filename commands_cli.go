@@ -9,11 +9,15 @@ import (
 )
 
 type commandInfo struct {
-	Name     string   `json:"name"`
-	Aliases  []string `json:"aliases,omitempty"`
-	Summary  string   `json:"summary"`
-	Dispatch string   `json:"dispatch"`
-	Outputs  []string `json:"outputs"`
+	Name              string   `json:"name"`
+	Aliases           []string `json:"aliases,omitempty"`
+	Summary           string   `json:"summary"`
+	Dispatch          string   `json:"dispatch"`
+	Outputs           []string `json:"outputs"`
+	SafeForDiscovery  bool     `json:"safe_for_discovery"`
+	MutatesState      bool     `json:"mutates_state"`
+	RequiresRunningVM bool     `json:"requires_running_vm"`
+	MayBootVM         bool     `json:"may_boot_vm"`
 }
 
 func runCommandsCommand(env commandEnv, _ string, args []string) int {
@@ -74,11 +78,15 @@ func commandInventory() []commandInfo {
 	out := make([]commandInfo, 0, len(commandRegistry))
 	for _, spec := range commandRegistry {
 		out = append(out, commandInfo{
-			Name:     spec.Name,
-			Aliases:  append([]string(nil), spec.Aliases...),
-			Summary:  spec.Summary,
-			Dispatch: commandDispatchName(spec.Dispatch),
-			Outputs:  commandOutputHints(spec.Name),
+			Name:              spec.Name,
+			Aliases:           append([]string(nil), spec.Aliases...),
+			Summary:           spec.Summary,
+			Dispatch:          commandDispatchName(spec.Dispatch),
+			Outputs:           commandOutputHints(spec.Name),
+			SafeForDiscovery:  commandSafeForDiscovery(spec.Name),
+			MutatesState:      commandMutatesState(spec.Name),
+			RequiresRunningVM: commandRequiresRunningVM(spec.Name),
+			MayBootVM:         commandMayBootVM(spec.Name),
 		})
 	}
 	return out
@@ -94,6 +102,37 @@ func commandDispatchName(dispatch commandDispatch) string {
 		return "late"
 	default:
 		return "unknown"
+	}
+}
+
+func commandSafeForDiscovery(name string) bool {
+	return !commandMutatesState(name) && !commandRequiresRunningVM(name) && !commandMayBootVM(name)
+}
+
+func commandMutatesState(name string) bool {
+	switch name {
+	case "action", "agent-sandbox", "agent-upgrade", "bench", "build", "clean", "clone", "compact", "config", "daemon", "disk-detach", "disk-snapshot", "export", "fleet", "fork", "forward", "gc", "helper", "image", "import", "inject", "inject-agent", "install", "network", "pin", "pit", "policy", "provision", "provision-agent", "push", "quota", "rename", "rm", "rosetta", "run", "serve", "shared-folder", "sip", "snapshot", "softreset", "storage", "store", "template", "trace", "uiscript", "unpin", "up", "verify", "vm", "vzscript":
+		return true
+	default:
+		return false
+	}
+}
+
+func commandRequiresRunningVM(name string) bool {
+	switch name {
+	case "agent-upgrade", "cp", "ctl", "logs", "shell", "status", "trace", "vzscript":
+		return true
+	default:
+		return false
+	}
+}
+
+func commandMayBootVM(name string) bool {
+	switch name {
+	case "agent-sandbox", "build", "install", "run", "up", "action":
+		return true
+	default:
+		return false
 	}
 }
 

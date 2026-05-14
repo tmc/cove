@@ -219,6 +219,44 @@ func TestSharedFolderWithMissingVMDoesNotCreateVMDir(t *testing.T) {
 	}
 }
 
+func TestReadOnlyDiscoveryCommandsLeaveOnlyVMRoot(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	home := t.TempDir()
+	commands := [][]string{
+		{"vm", "tree", "--json"},
+		{"storage", "census", "-human"},
+		{"shared-folder", "list"},
+		{"-vm", "missing-readonly-status", "shared-folder", "status"},
+	}
+	for _, args := range commands {
+		cmd := exec.Command(bin, args...)
+		cmd.Env = append(os.Environ(), "HOME="+home)
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("%v failed: %v\nstdout:\n%s\nstderr:\n%s", args, err, stdout.String(), stderr.String())
+		}
+	}
+	vmsDir := filepath.Join(home, ".vz", "vms")
+	entries, err := os.ReadDir(vmsDir)
+	if err != nil {
+		t.Fatalf("ReadDir(%s): %v", vmsDir, err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("read-only discovery left VM entries: %v", entries)
+	}
+	if _, err := os.Stat(filepath.Join(vmsDir, "default")); !os.IsNotExist(err) {
+		t.Fatalf("default VM dir stat = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(vmsDir, "missing-readonly-status")); !os.IsNotExist(err) {
+		t.Fatalf("missing VM dir stat = %v, want not exist", err)
+	}
+}
+
 func TestListWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("cove is darwin-only")

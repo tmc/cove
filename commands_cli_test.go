@@ -35,6 +35,21 @@ func TestCommandsJSONIncludesInventory(t *testing.T) {
 	if have["commands"].Dispatch != "early" {
 		t.Fatalf("commands dispatch = %q, want early", have["commands"].Dispatch)
 	}
+	if !have["commands"].SafeForDiscovery || have["commands"].MutatesState || have["commands"].RequiresRunningVM || have["commands"].MayBootVM {
+		t.Fatalf("commands metadata = %+v, want safe read-only discovery", have["commands"])
+	}
+	if !have["runs"].SafeForDiscovery || have["runs"].MutatesState || have["runs"].RequiresRunningVM || have["runs"].MayBootVM {
+		t.Fatalf("runs metadata = %+v, want safe read-only discovery", have["runs"])
+	}
+	if have["run"].SafeForDiscovery || !have["run"].MutatesState || !have["run"].MayBootVM {
+		t.Fatalf("run metadata = %+v, want mutating boot command", have["run"])
+	}
+	if have["ctl"].SafeForDiscovery || !have["ctl"].RequiresRunningVM || have["ctl"].MutatesState || have["ctl"].MayBootVM {
+		t.Fatalf("ctl metadata = %+v, want running-VM control command", have["ctl"])
+	}
+	if have["shared-folder"].SafeForDiscovery || !have["shared-folder"].MutatesState || have["shared-folder"].RequiresRunningVM || have["shared-folder"].MayBootVM {
+		t.Fatalf("shared-folder metadata = %+v, want stateful non-boot command", have["shared-folder"])
+	}
 }
 
 func TestHelpJSON(t *testing.T) {
