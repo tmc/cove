@@ -48,7 +48,15 @@ func TestCreateSupportBundleRedactsDiagnostics(t *testing.T) {
 		t.Fatalf("path = %q, want %q", path, out)
 	}
 	files := readSupportBundleFiles(t, out)
-	for _, name := range []string{"manifest.json", "doctor-host.json", "commands/helper-status.txt", "vm/ctl-agent-status.txt"} {
+	for _, name := range []string{
+		"manifest.json",
+		"doctor-host.json",
+		"commands/commands.json",
+		"commands/helper-status.txt",
+		"commands/trace-capabilities.json",
+		"commands/logs-help.txt",
+		"vm/ctl-agent-status.txt",
+	} {
 		if _, ok := files[name]; !ok {
 			t.Fatalf("bundle missing %s; files=%v", name, supportBundleMapKeys(files))
 		}

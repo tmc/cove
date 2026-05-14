@@ -189,8 +189,22 @@ func runHelperCmd(args []string) error {
 	}
 	switch args[0] {
 	case "install":
+		if len(args) > 1 {
+			if len(args) == 2 && isHelpArg(args[1]) {
+				return helperInstallUsage()
+			}
+			helperInstallUsage()
+			return fmt.Errorf("usage: cove helper install")
+		}
 		return helperInstall()
 	case "uninstall":
+		if len(args) > 1 {
+			if len(args) == 2 && isHelpArg(args[1]) {
+				return helperUninstallUsage()
+			}
+			helperUninstallUsage()
+			return fmt.Errorf("usage: cove helper uninstall")
+		}
 		return helperUninstall()
 	case "status":
 		return helperStatus()
@@ -216,6 +230,28 @@ The helper eliminates per-run sudo prompts when cove provisions VMs. Once
 installed, cove operations that need root (chown root:wheel inside mounted
 disk images) are routed through the helper without further authentication
 prompts.`)
+	return nil
+}
+
+func helperInstallUsage() error {
+	fmt.Println(`Usage: cove helper install
+
+Install the optional privileged helper.
+
+The helper is a root LaunchDaemon used only for bounded cove file operations
+such as writing root-owned launchd files into a mounted guest disk. Installing
+it asks for one macOS administrator approval, then future provisioning work can
+avoid repeated authorization prompts.`)
+	return nil
+}
+
+func helperUninstallUsage() error {
+	fmt.Println(`Usage: cove helper uninstall
+
+Remove the optional privileged helper.
+
+This unloads the LaunchDaemon and removes its binary, socket, and owner marker.
+It asks for macOS administrator approval only when the helper is installed.`)
 	return nil
 }
 

@@ -108,6 +108,7 @@ func runSupportBundle(args []string, stdout io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(stdout, "Support bundle written to %s\n", path)
+	fmt.Fprintln(stdout, "Redacted diagnostics include host readiness, command inventory, trace/log discovery, and recent run metadata.")
 	return nil
 }
 
@@ -215,12 +216,15 @@ type supportCommandSpec struct {
 
 func supportCommandSpecs(vm string) []supportCommandSpec {
 	specs := []supportCommandSpec{
+		{"commands/commands.json", []string{"commands", "--json"}},
 		{"commands/helper-status.txt", []string{"helper", "status"}},
 		{"commands/daemon-status.txt", []string{"daemon", "status"}},
 		{"commands/daemon-metrics.txt", []string{"daemon", "metrics", "--json"}},
 		{"commands/storage-census.txt", []string{"storage", "census", "-human"}},
 		{"commands/runs-list.json", []string{"runs", "list", "--json", "--limit", "20"}},
 		{"commands/recording-list.json", []string{"recording", "list", "--json", "--limit", "20"}},
+		{"commands/trace-capabilities.json", []string{"trace", "capabilities", "--json"}},
+		{"commands/logs-help.txt", []string{"logs", "-h"}},
 	}
 	if vm != "" {
 		specs = append(specs,
