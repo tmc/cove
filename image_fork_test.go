@@ -57,6 +57,32 @@ func TestRunMissingImageForkFromDoesNotCreateSelectedVMDir(t *testing.T) {
 	}
 }
 
+func TestRunForkFromUntaggedMissingParentGivesImageAndVMHints(t *testing.T) {
+	home := withTempHome(t)
+	err := runVMWithConfig(RunConfig{
+		VM:                  vmSelection{Name: "default", Directory: filepath.Join(vmconfig.BaseDir(), "default")},
+		EphemeralForkParent: "ghost-image",
+	})
+	if err == nil {
+		t.Fatal("runVMWithConfig missing untagged fork parent succeeded")
+	}
+	for _, want := range []string{
+		`no VM named "ghost-image"`,
+		"no local image ghost-image:latest",
+		"cove image list",
+		"cove image search ghost-image",
+		"cove fork ghost-image <child>",
+		"cove clone --linked ghost-image <child>",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(statErr) {
+		t.Fatalf("default VM dir stat = %v, want not exist", statErr)
+	}
+}
+
 func TestRunMissingImageForkFromDoesNotCreateDefaultOrRunDirs(t *testing.T) {
 	home := withTempHome(t)
 	prevBundle := ActiveRunBundle()
