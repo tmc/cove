@@ -49,6 +49,7 @@ var commandRegistry = []commandSpec{
 	{Name: "fleet", Summary: "Register and use remote cove hosts", Dispatch: commandDispatchEarly, Run: runFleetCommandSpec},
 	{Name: "fork", Summary: "CoW-fork a VM with a fresh identity", Dispatch: commandDispatchEarly, Run: runForkCommand},
 	{Name: "forward", Summary: "Forward host TCP to guest TCP", Dispatch: commandDispatchEarly, Run: runForwardCommand},
+	{Name: "first-run", Summary: "Show first-run onboarding steps", Dispatch: commandDispatchEarly, Run: runFirstRunCommand},
 	{Name: "gc", Summary: "Delete old disposable VM clones", Dispatch: commandDispatchEarly, Run: runGCCommand},
 	{Name: "helper", Summary: "Manage the privileged helper", Dispatch: commandDispatchLate, Run: runHelperCommandSpec},
 	{Name: "image", Summary: "Local VM image store", Dispatch: commandDispatchEarly, Run: runImageCommand},
@@ -87,6 +88,7 @@ var commandRegistry = []commandSpec{
 	{Name: "storage", Summary: "Inspect cove disk usage under ~/.vz/", Dispatch: commandDispatchEarly, Run: runStorageCommand},
 	{Name: "store", Summary: "Manage the local OCI blob store", Dispatch: commandDispatchEarly, Run: runStoreCommand},
 	{Name: "support", Summary: "Create support diagnostics bundles", Dispatch: commandDispatchEarly, Run: runSupportCommandSpec},
+	{Name: "support-bundle", Summary: "Create a redacted support bundle", Dispatch: commandDispatchEarly, Run: runSupportBundleAliasCommand},
 	{Name: "template", Summary: "Manage VM templates", Dispatch: commandDispatchLate, Run: runTemplateCommand},
 	{Name: "trace", Aliases: []string{"traces"}, Summary: "Manage eslogger guest traces", Dispatch: commandDispatchEarly, Run: runTraceCommand},
 	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: commandDispatchEarly, Run: runUIScriptCommand},
@@ -265,11 +267,19 @@ func runStorageCommand(env commandEnv, _ string, args []string) int {
 func runStoreCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleStoreCommand(args))
 }
+func runFirstRunCommand(env commandEnv, _ string, _ []string) int {
+	printFirstRunUsage(env.Stdout)
+	return 0
+}
 func runSupportCommandSpec(env commandEnv, _ string, args []string) int {
 	if len(args) == 0 {
 		return commandUsageError(env, handleSupportCommand(args))
 	}
 	return commandError(env, handleSupportCommand(args))
+}
+func runSupportBundleAliasCommand(env commandEnv, _ string, args []string) int {
+	fmt.Fprintln(env.Stderr, "note: support-bundle is an alias for 'cove support bundle'")
+	return commandError(env, runSupportBundle(args, env.Stdout))
 }
 func runUpCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleUp(args))

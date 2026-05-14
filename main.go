@@ -512,11 +512,7 @@ func main() {
 		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == commandDispatchLate {
 			os.Exit(runRegisteredCommand(newCommandEnv(), spec, cmd, args))
 		}
-		if s := suggestCommand(cmd); s != "" {
-			fmt.Fprintf(os.Stderr, "cove: unknown command %q. Did you mean %q?\n", cmd, s)
-		} else {
-			fmt.Fprintf(os.Stderr, "cove: unknown command %q.\nRun 'cove -help' for usage.\n", cmd)
-		}
+		writeUnknownCommand(os.Stderr, cmd)
 		os.Exit(2)
 	}
 
@@ -745,6 +741,43 @@ func usage() {
 Usage:
   cove [flags] [command]
 
+Common commands:
+  first-run        Show the safest first-run path
+  doctor host      Check this Mac before creating a VM
+  up -user <name>  Install, provision, and boot a first VM
+  list             List local VMs
+  run              Start the active VM
+  status           Show VM and guest-agent status
+  support bundle   Create a redacted support archive
+  config/export/import/rename are advanced VM aliases
+
+Use 'cove help advanced' for the full command list.
+Use 'cove <command> -h' for command-specific help.
+`)
+}
+
+func printFirstRunUsage(w io.Writer) {
+	fmt.Fprintln(w, `First run:
+  cove doctor host
+  cove up -user <name>
+  cove list
+
+What to expect:
+  - cove prompts for the guest account password if -password is omitted.
+  - macOS may ask for administrator approval to prepare guest disk files.
+  - VM data is stored under ~/.vz/.
+
+Support:
+  cove support bundle
+  cove support bundle -vm <name>`)
+}
+
+func usageAdvanced() {
+	fmt.Fprintf(os.Stderr, `cove - Apple Virtualization Framework Example
+
+Usage:
+  cove [flags] [command]
+
 Use 'cove <command> -h' for command-specific help.
 
 Quick Start:
@@ -839,8 +872,10 @@ Networking:
   rosetta         Rosetta 2 for Linux VMs (status/install/setup)
 
 Other:
+  first-run       Show first-run onboarding steps
   disk-detach     Detach VM disk if stuck from a previous provision/verify
   help [command]  Show top-level or command-specific help
+  help advanced   Show this full command list
   version         Print version information
 
 Auto-Provisioning (Recommended - provision command):
@@ -884,7 +919,7 @@ Linux VM:
 	  cove run -linux -nested                                # KVM on supported hosts
 	  cove install -linux -desktop                           # Ubuntu Desktop
   cove install -linux -iso /path/to/ubuntu.iso           # Use local ISO
-  cove install -linux -provision-user me -provision-password pw  # With user
+  cove install -linux -provision-user me -provision-password <password>
   cove run -linux                                        # Run installed VM
   cove run -linux -gui                                   # Run with display
   cove up -linux -user me                                # Server: install + boot
@@ -916,6 +951,14 @@ Volume Mounting (-vol flag):
 Flags:
 `)
 	printCommandDefaults(os.Stdout, flag.CommandLine)
+}
+
+func writeUnknownCommand(w io.Writer, cmd string) {
+	if s := suggestCommand(cmd); s != "" {
+		fmt.Fprintf(w, "cove: unknown command %q. Did you mean %q?\n  help: cove %s -h\n", cmd, s, s)
+		return
+	}
+	fmt.Fprintf(w, "cove: unknown command %q.\n  start here: cove first-run\n  common commands: cove help\n  full command list: cove help advanced\n", cmd)
 }
 
 func printCommandDefaults(w *os.File, fs *flag.FlagSet) {

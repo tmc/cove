@@ -57,7 +57,7 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	info, err := os.Stat(vmPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("%w: %s", ErrVMNotFound, name)
+			return fmt.Errorf("%w: %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", ErrVMNotFound, name)
 		}
 		return fmt.Errorf("stat VM dir: %w", err)
 	}
@@ -141,7 +141,7 @@ func RenameVM(oldName, newName string) error {
 	newPath := vmconfig.Path(newName)
 
 	if !vmconfig.Validate(oldPath) {
-		return fmt.Errorf("%w: %s", ErrVMNotFound, oldName)
+		return fmt.Errorf("%w: %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", ErrVMNotFound, oldName)
 	}
 
 	if _, err := os.Stat(newPath); !os.IsNotExist(err) {

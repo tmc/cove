@@ -26,6 +26,9 @@ func TestStatusMissingNamedVMDoesNotCreateDir(t *testing.T) {
 	if !strings.Contains(msg, `no VM named "missing-status-vm"`) {
 		t.Fatalf("statusCommand error = %q, want no VM named", msg)
 	}
+	if !strings.Contains(msg, "cove list") || !strings.Contains(msg, "cove up -user <name>") {
+		t.Fatalf("statusCommand error = %q, want actionable missing-VM hints", msg)
+	}
 	if strings.Contains(msg, "control socket not found") || strings.Contains(msg, "start it with") {
 		t.Fatalf("statusCommand error = %q, did not want stopped-VM hint", msg)
 	}
@@ -63,6 +66,9 @@ func TestStatusVMFlagMissingVMDoesNotCreateDir(t *testing.T) {
 			msg := err.Error()
 			if !strings.Contains(msg, `no VM named "`+missing+`"`) {
 				t.Fatalf("statusCommand error = %q, want missing VM %q", msg, missing)
+			}
+			if !strings.Contains(msg, "cove list") || !strings.Contains(msg, "cove up -user <name>") {
+				t.Fatalf("statusCommand error = %q, want actionable missing-VM hints", msg)
 			}
 			if _, statErr := os.Stat(filepath.Join(vmconfig.BaseDir(), missing)); !os.IsNotExist(statErr) {
 				t.Fatalf("missing status VM dir stat = %v, want not exist", statErr)

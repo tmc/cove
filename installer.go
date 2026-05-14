@@ -1770,10 +1770,10 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 			if provisionUser == "" {
 				fmt.Println()
 				fmt.Println("For auto-provisioning (automatic user creation), add flags:")
-				fmt.Println("  ./cove install -provision-user myuser -provision-password mypass")
+				fmt.Println("  ./cove install -provision-user myuser -provision-password <password>")
 				fmt.Println()
 				fmt.Println("Or provision after installation:")
-				fmt.Printf("  ./cove provision -user myuser -password mypass -skip-setup-assistant\n")
+				fmt.Printf("  ./cove provision -user myuser -skip-setup-assistant\n")
 			}
 			fmt.Println()
 			return nil

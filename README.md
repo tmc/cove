@@ -89,7 +89,7 @@ UI commands: `ocr-click`, `ocr-wait`, `type`, `key`, `click`, `screenshot`.
 Disable or enable System Integrity Protection with automated recovery boot.
 
 ```bash
-cove sip disable-auto -user admin -password secret -confirm
+cove sip disable-auto -user admin -password <password> -confirm
 cove run -recovery -gui -unattended -boot-commands ~/.vz/vms/default/sip-disable.vzscript
 ```
 
@@ -173,7 +173,7 @@ cove up -user dev -vzscripts homebrew,golang
 
 ```bash
 cove install -ipsw ~/cache/restore.ipsw
-cove provision -user ci -password secret -skip-setup-assistant
+cove provision -user ci -skip-setup-assistant  # prompts for password
 cove run -headless -cpu 4 -memory 8
 ```
 
@@ -223,7 +223,7 @@ echo '{"type":"screenshot","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/c
 ### Recovery and SIP
 
 ```bash
-cove sip disable-auto -user admin -password secret -confirm
+cove sip disable-auto -user admin -password <password> -confirm
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \
   -boot-commands ~/.vz/vms/default/sip-disable.vzscript

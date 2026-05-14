@@ -17,7 +17,7 @@
 //	./cove install -ipsw ~/Downloads/UniversalMac_14.0_RestoreImage.ipsw
 //
 //	# Provision VM for automatic user creation
-//	./cove provision -user testuser -password secret123 -skip-setup-assistant
+//	./cove provision -user testuser -skip-setup-assistant
 //
 //	# Verify provisioning files are correct
 //	./cove verify
