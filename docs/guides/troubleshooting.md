@@ -42,7 +42,7 @@ This should happen automatically on first launch. If it doesn't, run the codesig
 **Solution:** Run provisioning again and approve the native macOS admin dialog:
 
 ```bash
-cove provision -user testuser -password secret -skip-setup-assistant
+cove provision -user testuser -password <password> -skip-setup-assistant
 ```
 
 Verify with:

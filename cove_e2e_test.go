@@ -71,11 +71,10 @@ func TestCoveSubcommandsE2E(t *testing.T) {
 			ndjson: true,
 		},
 		{
-			name:     "runs_list_table_empty",
-			args:     []string{"runs", "list"},
-			wantExit: 0,
-			// Header row is always printed even when empty.
-			wantStdout: []string{"RUN ID", "STATUS"},
+			name:       "runs_list_table_empty",
+			args:       []string{"runs", "list"},
+			wantExit:   0,
+			wantStdout: []string{"No runs found.", "cove runs list"},
 		},
 	}
 

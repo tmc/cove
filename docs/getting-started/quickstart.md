@@ -77,7 +77,7 @@ cove install -linux -distro fedora
 Or with unattended provisioning:
 
 ```bash
-cove install -linux -provision-user ubuntu -provision-password secret
+cove install -linux -provision-user ubuntu -provision-password <password>
 cove run -linux -gui
 ```
 

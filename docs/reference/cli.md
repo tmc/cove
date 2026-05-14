@@ -45,7 +45,7 @@ cove install [flags]
 ```bash
 cove install
 cove install -ipsw ~/restore.ipsw -cpu 4 -memory 8
-cove install -linux -provision-user ubuntu -provision-password secret
+cove install -linux -provision-user ubuntu -provision-password <password>
 ```
 
 ---
@@ -228,7 +228,7 @@ cove up [flags]
 cove up -user me
 cove up -user me -vzscripts homebrew,golang
 cove up -user me -ipsw ~/restore.ipsw -cpu 4 -memory 8
-cove up -linux -user tmc -password secret
+cove up -linux -user tmc -password <password>
 cove up -linux -desktop -user me
 ```
 
@@ -266,7 +266,7 @@ cove provision [flags]
 
 ```bash
 cove provision -user testuser -skip-setup-assistant
-cove provision -user testuser -password secret -stage-only
+cove provision -user testuser -password <password> -stage-only
 cove provision -apply
 ```
 
@@ -482,7 +482,7 @@ cove sip <command> [flags]
 
 ```bash
 cove sip status
-cove sip disable-auto -user admin -password secret
+cove sip disable-auto -user admin -password <password>
 ```
 
 ---

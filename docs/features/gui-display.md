@@ -80,8 +80,8 @@ Expose a VNC server for remote access:
 
 ```bash
 cove run -vnc :5901
-cove run -vnc :5901 -vnc-password secret
-cove run -vnc :5901 -vnc-password secret -vnc-bonjour "My VM"
+cove run -vnc :5901 -vnc-password <password>
+cove run -vnc :5901 -vnc-password <password> -vnc-bonjour "My VM"
 ```
 
 Check VNC status on a running VM:

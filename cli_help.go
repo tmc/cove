@@ -143,6 +143,10 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fmt.Println(RosettaHelp())
 		case "helper":
 			_ = helperUsage()
+		case "gui":
+			printGUIUsage(os.Stderr)
+		case "vnc":
+			printVNCUsage(os.Stderr)
 		case "install":
 			printInstallUsage(os.Stderr)
 		case "run":
@@ -435,6 +439,16 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			_ = helperUsage()
 			return true, usageExitCode(subargs)
 		}
+	case "gui":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printGUIUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "vnc":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printVNCUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
 	case "install":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printInstallUsage(os.Stderr)
@@ -670,6 +684,33 @@ Examples:
   cove install -linux -distro alpine
   cove install -nixos
   cove install -linux -provision-user me`)
+}
+
+func printGUIUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove run -gui [flags]
+       cove ctl -vm <name> gui status|open|close
+
+Show or control the native VM display window.
+
+Examples:
+  cove run -gui
+  cove ctl -vm work gui status
+  cove ctl -vm work gui open`)
+}
+
+func printVNCUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove run -vnc :5901 [flags]
+       cove ctl -vm <name> vnc status|start|stop
+
+Expose a private VNC server for a running VM.
+
+Common flags:
+  -vnc-password <password>   require a VNC password
+  -vnc-bonjour <name>        advertise VNC with Bonjour
+
+Examples:
+  cove run -vnc :5901 -vnc-password <password>
+  cove ctl -vm work vnc status`)
 }
 
 func printRunUsage(w io.Writer) {

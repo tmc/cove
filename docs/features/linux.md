@@ -16,7 +16,7 @@ cove run -linux -gui
 With custom user credentials:
 
 ```bash
-cove install -linux -provision-user myuser -provision-password secret
+cove install -linux -provision-user myuser -provision-password <password>
 cove run -linux -gui
 ```
 
