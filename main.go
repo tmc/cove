@@ -751,6 +751,7 @@ VM Management:
   fleet           Register and use remote cove hosts
   build           Chain vzscript steps into a cache-keyed VM image
   action          Preflight helpers for private GitHub Actions runner images
+  runner          Generate hosted-runner workflow scaffolding
   push            Plan a VM disk OCI push (dry-run)
   pull            Validate an OCI pull plan (dry-run)
   policy          VM lifecycle policy (idle timeout, max age, run budget)
