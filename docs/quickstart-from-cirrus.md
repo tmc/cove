@@ -34,11 +34,14 @@ cove vzscript run cirrus-migrate-doctor
 Bake slow setup into a parent VM, then verify it before jobs use it:
 
 ```bash
-cove up -vm macos-runner -user ci -password '<admin-password>'
+cove up -vm macos-runner -user ci
 cove image build -from macos-runner -tag macos-runner:latest
 cove image verify --strict --newer-than 168h macos-runner:latest
 cove action prepare-image macos-runner:latest --ttl 24h
 ```
+
+For interactive image setup, let cove prompt for the guest password. Do not use
+a fixed password such as `cove/cove` in reusable runner images.
 
 ## 4. Run the job through the private action wrapper
 

@@ -228,9 +228,13 @@ cove up [flags]
 cove up -user me
 cove up -user me -vzscripts homebrew,golang
 cove up -user me -ipsw ~/restore.ipsw -cpu 4 -memory 8
-cove up -linux -user tmc -password <password>
+cove up -linux -user tmc
 cove up -linux -desktop -user me
 ```
+
+For macOS, omit `-password` so cove prompts. For Linux, an omitted password
+defaults to the provisioned username; change it before enabling remote access or
+saving a reusable image.
 
 ---
 
@@ -266,7 +270,7 @@ cove provision [flags]
 
 ```bash
 cove provision -user testuser -skip-setup-assistant
-cove provision -user testuser -password <password> -stage-only
+cove provision -user testuser -stage-only
 cove provision -apply
 ```
 

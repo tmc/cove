@@ -19,11 +19,15 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 2. Bake a runner image:
 
 ```bash
-cove up -vm macos-runner -user ci -password '<admin-password>'
+cove up -vm macos-runner -user ci
 cove image build -from macos-runner -tag macos-runner:latest
 cove action doctor
 cove action prepare-image macos-runner:latest --ttl 24h
 ```
+
+Omit `-password` for interactive setup so cove prompts instead of saving the
+guest password in shell history. Do not bake a shared default password into
+runner images.
 
 3. Generate the workflow:
 

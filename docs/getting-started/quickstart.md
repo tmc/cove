@@ -98,6 +98,10 @@ cove install -linux -provision-user ubuntu -provision-password <password>
 cove run -linux -gui
 ```
 
+If you omit the Linux provisioning password, cove uses the provisioned username
+as the initial password. Treat that as a local throwaway default only; change it
+before enabling SSH, Tailscale, VNC, saving an image, or sharing the VM.
+
 For Ubuntu Desktop:
 
 ```bash
