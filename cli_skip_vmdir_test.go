@@ -27,6 +27,7 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"upgrade-agent defers VM resolution", []string{"upgrade-agent"}, true},
 		{"commands is global inventory", []string{"commands"}, true},
 		{"config defers VM resolution", []string{"config", "export", "--help"}, true},
+		{"diff is global image metadata", []string{"diff", "--json", "missing-a:latest", "missing-b:latest"}, true},
 		{"provision-agent defers VM resolution", []string{"provision-agent"}, true},
 		{"inject-agent defers VM resolution", []string{"inject-agent"}, true},
 		{"verify defers VM resolution", []string{"verify"}, true},
@@ -39,6 +40,7 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"cp uses control socket", []string{"cp"}, true},
 		{"ctl uses control socket", []string{"ctl"}, true},
 		{"logs is read only", []string{"logs"}, true},
+		{"pins is global metadata", []string{"pins"}, true},
 		{"recording list is read only", []string{"recording", "list"}, true},
 		{"recordings alias is read only", []string{"recordings", "list"}, true},
 		{"status is read only", []string{"status"}, true},
@@ -178,6 +180,37 @@ func TestUnknownVMSubcommandDoesNotCreateVMDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(err) {
 		t.Fatalf("default VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+}
+
+func TestSafeDiscoveryWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{"diff", []string{"diff", "--json", "missing-a:latest", "missing-b:latest"}},
+		{"pins", []string{"pins"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			vm := "missing-" + tt.name + "-vm"
+			cmd := exec.Command(bin, append([]string{"-vm", vm}, tt.args...)...)
+			cmd.Env = append(os.Environ(), "HOME="+home)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			_ = cmd.Run()
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", vm)); !os.IsNotExist(err) {
+				t.Fatalf("%s VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", tt.name, err, stdout.String(), stderr.String())
+			}
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(err) {
+				t.Fatalf("%s default VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", tt.name, err, stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 
