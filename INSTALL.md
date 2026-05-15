@@ -15,6 +15,15 @@ cove runs on Apple Silicon Macs and uses Apple's Virtualization.framework.
 brew install tmc/tap/cove
 ```
 
+If Homebrew says the formula is unavailable because the tap is missing, add the
+tap explicitly and retry:
+
+```bash
+brew tap tmc/tap
+brew info cove
+brew install cove
+```
+
 Or build from source:
 
 ```bash

@@ -16,6 +16,14 @@ title: Installation
 brew install tmc/tap/cove
 ```
 
+If `brew info tmc/tap/cove` reports that the tap is missing, tap it first:
+
+```bash
+brew tap tmc/tap
+brew info cove
+brew install cove
+```
+
 > [!NOTE]
 > cove auto-signs itself with virtualization entitlements on first launch. No manual codesigning step is needed.
 
