@@ -697,11 +697,11 @@ func resolveRunTarget() error {
 		name = strings.TrimSpace(vmconfig.ActiveName())
 	}
 	if name == "" {
-		return fmt.Errorf("run: no VM selected; create one with 'cove up' or pass -vm <name>")
+		return fmt.Errorf("run: no VM selected\n  list VMs: cove list\n  create a VM: cove up -user <name>\n  or pass -vm <name>")
 	}
-	dir, ok := vmconfig.ExistingPath(name)
-	if !ok || !vmconfig.Validate(dir) {
-		return fmt.Errorf("run: no VM named %q under %s; create one with 'cove up' or pass -vm <name>", name, vmconfig.BaseDir())
+	dir, err := requireExistingRunVMDir(name)
+	if err != nil {
+		return err
 	}
 	vmName = name
 	vmDir = dir

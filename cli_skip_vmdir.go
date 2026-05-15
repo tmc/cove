@@ -53,6 +53,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"storage":         true,
 	"trace":           true,
 	"traces":          true,
+	"up":              true,
 	"support":         true,
 	"support-bundle":  true,
 	"version":         true,

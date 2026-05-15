@@ -109,9 +109,9 @@ func logsCommand(args []string) error {
 }
 
 func logsGuestCommand(opts logsOptions) ([]string, error) {
-	dir, ok := vmconfig.ExistingPath(opts.VM)
-	if !ok {
-		return nil, fmt.Errorf("no VM named %q under %s", opts.VM, vmconfig.BaseDir())
+	dir, err := requireExistingVMForControl(opts.VM)
+	if err != nil {
+		return nil, err
 	}
 	lines := opts.Lines
 	if lines <= 0 {

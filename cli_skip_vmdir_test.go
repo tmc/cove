@@ -49,6 +49,7 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"storage is global census", []string{"storage"}, true},
 		{"trace status defers VM resolution", []string{"trace", "status", "vm"}, true},
 		{"traces alias defers VM resolution", []string{"traces", "status", "vm"}, true},
+		{"up defers VM dir until args validated", []string{"up"}, true},
 		{"support is global diagnostics", []string{"support", "bundle"}, true},
 		{"support-bundle alias is global diagnostics", []string{"support-bundle"}, true},
 		{"vzscript defers VM resolution", []string{"vzscript", "run", "recipe"}, true},
@@ -74,6 +75,49 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := subcommandSkipsVMDir(tt.args); got != tt.want {
 				t.Errorf("subcommandSkipsVMDir(%v) = %v, want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpMissingUserDoesNotCreateVMDir(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{"bare up", []string{"up"}},
+		{"headless up", []string{"up", "-headless"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := exec.Command(bin, tt.args...)
+			cmd.Env = append(os.Environ(), "HOME="+home)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			err := cmd.Run()
+			if err == nil {
+				t.Fatalf("up missing user succeeded\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+			}
+			exitErr, ok := err.(*exec.ExitError)
+			if !ok {
+				t.Fatalf("up missing user: %v", err)
+			}
+			if exitErr.ExitCode() == 0 {
+				t.Fatalf("exit = 0, want nonzero\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "missing required flag: -user") {
+				t.Fatalf("stderr missing user diagnostic:\n%s", stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "cove up -user <name>") {
+				t.Fatalf("stderr missing up hint:\n%s", stderr.String())
+			}
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(err) {
+				t.Fatalf("default VM dir stat = %v, want not exist", err)
 			}
 		})
 	}
@@ -425,6 +469,12 @@ func TestRunWithMissingVMDoesNotCreateVMDir(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), `no VM named "missing-run-vm"`) {
 		t.Fatalf("stderr missing missing-VM diagnostic:\n%s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "list VMs: cove list") {
+		t.Fatalf("stderr missing list hint:\n%s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "create a VM: cove up -user <name>") {
+		t.Fatalf("stderr missing create hint:\n%s", stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", vm)); !os.IsNotExist(err) {
 		t.Fatalf("run missing VM dir stat = %v, want not exist", err)

@@ -91,6 +91,12 @@ func TestLogsGlobalMissingVMDoesNotCreateDir(t *testing.T) {
 	if !strings.Contains(err.Error(), `no VM named "missing-logs-vm"`) {
 		t.Fatalf("logsCommand error = %q, want no VM named", err)
 	}
+	if !strings.Contains(err.Error(), "list VMs: cove list") {
+		t.Fatalf("logsCommand error = %q, want list hint", err)
+	}
+	if !strings.Contains(err.Error(), "create a VM: cove up -user <name>") {
+		t.Fatalf("logsCommand error = %q, want create hint", err)
+	}
 	if _, statErr := os.Stat(filepath.Join(vmconfig.BaseDir(), "missing-logs-vm")); !os.IsNotExist(statErr) {
 		t.Fatalf("missing logs VM dir stat = %v, want not exist", statErr)
 	}
@@ -101,7 +107,10 @@ func TestLogsGuestCommand(t *testing.T) {
 	t.Setenv("HOME", home)
 	base := vmconfig.BaseDir()
 	mustTouch(t, filepath.Join(base, "linux", "efi.nvram"))
+	mustTouch(t, filepath.Join(base, "linux", "linux-disk.img"))
 	mustTouch(t, filepath.Join(base, "mac", "hw.model"))
+	mustTouch(t, filepath.Join(base, "mac", "disk.img"))
+	mustTouch(t, filepath.Join(base, "mac", "aux.img"))
 
 	tests := []struct {
 		name string

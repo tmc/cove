@@ -109,7 +109,7 @@ func parseUpFlags(args []string) (upConfig, error) {
 	}
 	// For Linux, user is optional.
 	if cfg.user == "" && !cfg.linux {
-		return upConfig{}, fmt.Errorf("missing required flag: -user")
+		return upConfig{}, fmt.Errorf("missing required flag: -user\n  try: cove up -user <name>")
 	}
 	if cfg.linux && cfg.user == "" {
 		cfg.user = defaultLinuxUser(variant)
