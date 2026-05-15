@@ -44,6 +44,11 @@ go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
+Packaged installs should feel like a normal macOS CLI install: Homebrew and
+future app packages provide the `cove` binary, and cove asks for guest account
+details only when you create or provision a VM. There are no built-in guest
+credentials.
+
 ## First VM
 
 Before creating a VM, run the host readiness check:
@@ -77,6 +82,11 @@ macOS may show administrator prompts when cove needs to mount a guest disk,
 write root-owned launchd files into the guest, or install/update the optional
 helper. Those prompts authorize local disk preparation only; cove does not send
 credentials to a remote service.
+
+When a VM runs with the native GUI, cove also adds a macOS status item for that
+VM. The status item shows the VM state and provides quick menu actions such as
+opening or closing the window and requesting a clean stop. It is a per-run UI
+control, not a background login item.
 
 ## Apple SLA Note
 

@@ -122,7 +122,12 @@ cove run -linux -shell                         # pipe a guest shell to the host 
 cove run -fork-from macos-runner:14.5 -ephemeral -fork-name worker-1
 cove fork macos-base worker-1 && cove run -vm worker-1
 cove run -recovery -no-resume -gui -usb ~/recovery.img
+cove run -headless -vnc :5901 -vnc-password <password>
 ```
+
+Use `-vnc-password` whenever you enable `-vnc`. `-vnc-bonjour` requires a
+password because it advertises the service on the local network. Bind the VNC
+listener to the narrowest address that fits your workflow.
 
 ---
 
@@ -353,6 +358,11 @@ cove ctl [options] <command> [args...]
 | `network-info` | MAC address, guest IP, mode |
 
 ### GUI Commands
+
+Native GUI runs create a macOS status item for the active VM. The item shows
+the VM state and exposes menu actions for opening or closing the window and
+requesting a clean stop. It is tied to the VM run and is not a background login
+item.
 
 | Command | Description |
 |---------|-------------|

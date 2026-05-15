@@ -146,6 +146,8 @@ Start with the [quickstart](docs/agent-sandbox/quickstart.md), then use the
 ### Native GUI Window
 
 macOS-native window with toolbar, menu bar, and frame persistence per VM. Multi-display support with resolution presets.
+When a GUI VM is running, cove also shows a macOS status item with the VM state
+and quick actions for the window and clean shutdown.
 
 ```bash
 cove run -display 4k
