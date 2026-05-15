@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 type supportBundleOptions struct {
@@ -197,12 +199,24 @@ func writeSupportBundle(tw *tar.Writer, opts supportBundleOptions) error {
 	if err := supportWriteFile(tw, "host.txt", []byte(supportHostSummary())); err != nil {
 		return err
 	}
+	vmMissing := false
+	if opts.VM != "" {
+		if _, ok := vmconfig.ExistingPath(opts.VM); !ok {
+			vmMissing = true
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	for _, spec := range supportCommandSpecs(opts.VM) {
+	for _, spec := range supportCommandSpecs(opts.VM, !vmMissing) {
 		res := supportRunCommand(ctx, spec.args...)
 		body := supportCommandBody(spec.args, res)
 		if err := supportWriteFile(tw, spec.path, []byte(redactSupportText(body))); err != nil {
+			return err
+		}
+	}
+	if vmMissing {
+		body := fmt.Sprintf("no VM named %q under %s\n  list VMs: cove list\n  create a VM: cove up -user <name>\n", opts.VM, vmconfig.BaseDir())
+		if err := supportWriteFile(tw, "vm/not-found.txt", []byte(redactSupportText(body))); err != nil {
 			return err
 		}
 	}
@@ -214,7 +228,7 @@ type supportCommandSpec struct {
 	args []string
 }
 
-func supportCommandSpecs(vm string) []supportCommandSpec {
+func supportCommandSpecs(vm string, includeVM bool) []supportCommandSpec {
 	specs := []supportCommandSpec{
 		{"commands/commands.json", []string{"commands", "--json"}},
 		{"commands/helper-status.txt", []string{"helper", "status"}},
@@ -226,7 +240,7 @@ func supportCommandSpecs(vm string) []supportCommandSpec {
 		{"commands/trace-capabilities.json", []string{"trace", "capabilities", "--json"}},
 		{"commands/logs-help.txt", []string{"logs", "-h"}},
 	}
-	if vm != "" {
+	if vm != "" && includeVM {
 		specs = append(specs,
 			supportCommandSpec{"vm/doctor.txt", []string{"doctor", "-vm", vm, "-v"}},
 			supportCommandSpec{"vm/ctl-capabilities.txt", []string{"ctl", "-vm", vm, "capabilities"}},

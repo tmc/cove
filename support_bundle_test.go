@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 func TestCreateSupportBundleRedactsDiagnostics(t *testing.T) {
@@ -37,6 +39,9 @@ func TestCreateSupportBundleRedactsDiagnostics(t *testing.T) {
 		default:
 			return nil, nil
 		}
+	}
+	if err := os.MkdirAll(filepath.Join(vmconfig.BaseDir(), "work"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 
 	out := filepath.Join(t.TempDir(), "bundle.tar.gz")
@@ -70,6 +75,52 @@ func TestCreateSupportBundleRedactsDiagnostics(t *testing.T) {
 	for _, want := range []string{"Bearer REDACTED", "password: REDACTED", "$HOME"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("bundle missing redacted marker %q in:\n%s", want, all)
+		}
+	}
+}
+
+func TestCreateSupportBundleMissingVMIsReadOnly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	oldRun := supportRunCommand
+	oldHostRun := hostDoctorRunCommand
+	t.Cleanup(func() {
+		supportRunCommand = oldRun
+		hostDoctorRunCommand = oldHostRun
+	})
+
+	var commands []string
+	supportRunCommand = func(ctx context.Context, args ...string) supportCommandResult {
+		commands = append(commands, strings.Join(args, " "))
+		return supportCommandResult{ExitCode: 0}
+	}
+	hostDoctorRunCommand = func(name string, args ...string) ([]byte, error) {
+		return nil, nil
+	}
+
+	out := filepath.Join(t.TempDir(), "bundle.tar.gz")
+	if _, err := createSupportBundle(supportBundleOptions{VM: "missing", Out: out}); err != nil {
+		t.Fatalf("createSupportBundle: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "missing")); !os.IsNotExist(err) {
+		t.Fatalf("missing VM dir stat error = %v, want not exist", err)
+	}
+	files := readSupportBundleFiles(t, out)
+	body, ok := files["vm/not-found.txt"]
+	if !ok {
+		t.Fatalf("bundle missing vm/not-found.txt; files=%v", supportBundleMapKeys(files))
+	}
+	for _, want := range []string{`no VM named "missing"`, "cove list", "cove up -user <name>"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("vm/not-found.txt missing %q:\n%s", want, body)
+		}
+	}
+	if _, ok := files["vm/doctor.txt"]; ok {
+		t.Fatalf("bundle included vm/doctor.txt for missing VM")
+	}
+	for _, cmd := range commands {
+		if strings.Contains(cmd, " -vm missing") || strings.HasPrefix(cmd, "doctor -vm missing") || cmd == "trace status missing" {
+			t.Fatalf("ran VM diagnostic for missing VM: %s", cmd)
 		}
 	}
 }
