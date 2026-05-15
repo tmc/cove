@@ -53,6 +53,7 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"version", []string{"version"}, true},
 		{"vm tree", []string{"vm", "tree"}, true},
 		{"vm tree extra args still skips startup VM dir", []string{"vm", "tree", "extra"}, true},
+		{"unknown vm subcommand skips startup VM dir", []string{"vm", "delet", "missing"}, true},
 		{"vm delete skips startup VM dir", []string{"vm", "delete", "missing"}, true},
 		{"rm alias skips startup VM dir", []string{"rm", "missing"}, true},
 		{"remove alias skips startup VM dir", []string{"remove", "missing"}, true},
@@ -144,6 +145,39 @@ func TestStorageWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", vm)); !os.IsNotExist(err) {
 		t.Fatalf("storage VM dir stat = %v, want not exist", err)
+	}
+}
+
+func TestUnknownVMSubcommandDoesNotCreateVMDir(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	home := t.TempDir()
+	cmd := exec.Command(bin, "vm", "delet", "missing-vm")
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		t.Fatalf("unknown VM subcommand succeeded\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("unknown VM subcommand: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("exit = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitErr.ExitCode(), stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "unknown vm command: delet") {
+		t.Fatalf("stderr missing unknown vm command:\n%s", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "missing-vm")); !os.IsNotExist(err) {
+		t.Fatalf("missing VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(err) {
+		t.Fatalf("default VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
 }
 

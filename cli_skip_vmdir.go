@@ -67,6 +67,9 @@ func subcommandSkipsVMDir(args []string) bool {
 	if _, ok := lookupCommand(args[0]); !ok && args[0] != "help" {
 		return true
 	}
+	if args[0] == "vm" && len(args) > 1 && vmSubcommandIsUnknown(args[1]) {
+		return true
+	}
 	if args[0] == "vm" && len(args) > 1 && args[1] == "tree" {
 		return true
 	}
@@ -80,6 +83,17 @@ func subcommandSkipsVMDir(args []string) bool {
 		return true
 	}
 	return vmDirIndependentCommands[args[0]]
+}
+
+func vmSubcommandIsUnknown(name string) bool {
+	switch name {
+	case "help", "-h", "--help",
+		"set", "unset", "list", "tree", "delete", "rename", "export", "import",
+		"shared-folder", "shared-folders", "config":
+		return false
+	default:
+		return true
+	}
 }
 
 func requireExistingRunVMDir(name string) (string, error) {
