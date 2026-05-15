@@ -10,7 +10,7 @@ Define a complete macOS development environment as code using vzscripts and shar
 The `up` command installs macOS, provisions a user, and runs vzscripts in sequence:
 
 ```bash
-cove up -user dev -password devpass -vzscripts homebrew,golang,claude-code -cpu 4 -memory 8
+cove up -user dev -vzscripts homebrew,golang,claude-code -cpu 4 -memory 8
 ```
 
 This does the following in order:

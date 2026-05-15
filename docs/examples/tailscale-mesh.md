@@ -32,7 +32,7 @@ export TS_TAGS=tag:cove-vm
 `cove up` installs macOS, provisions the user, boots the VM, and runs the requested vzscripts. Pass `homebrew,tailscale` so the recipe's `homebrew` dependency is built first:
 
 ```bash
-cove up -user me -password 'changeme' -vzscripts homebrew,tailscale
+cove up -user me -vzscripts homebrew,tailscale
 ```
 
 The first run takes the usual macOS install time (~5 minutes) plus a homebrew install. Subsequent runs against the same VM are fast: `tailscale` is idempotent and skips re-`up` if `BackendState` is already `Running`.
