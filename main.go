@@ -858,7 +858,8 @@ Runtime Control:
   trace           Manage eslogger guest traces
   agent-sandbox   Run a computer-use provider loop in a fresh VM fork
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
-  run -headless -vnc :5901            Expose a private VNC console
+  run -headless -vnc :5901 -vnc-password <password>
+                                      Expose a private VNC console
   run -gdb :1234                      Attach a private GDB debug stub
   run -sandbox-level strict -disposable -gui
                                       Safer disposable analysis run

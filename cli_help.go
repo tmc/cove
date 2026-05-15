@@ -713,7 +713,7 @@ Examples:
 }
 
 func printVNCUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove run -vnc :5901 [flags]
+	fmt.Fprintln(w, `Usage: cove run -vnc :5901 -vnc-password <password> [flags]
        cove ctl -vm <name> vnc status
 
 Expose a private VNC server for a running VM.

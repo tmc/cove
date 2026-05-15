@@ -79,6 +79,31 @@ func TestUpHelpLinuxCredentialCaution(t *testing.T) {
 	}
 }
 
+func TestVNCHelpRequiresPasswordInUsage(t *testing.T) {
+	var buf bytes.Buffer
+	printVNCUsage(&buf)
+	out := buf.String()
+	if !strings.Contains(out, "Usage: cove run -vnc :5901 -vnc-password <password> [flags]") {
+		t.Fatalf("vnc help usage missing password:\n%s", out)
+	}
+	if strings.Contains(out, "Usage: cove run -vnc :5901 [flags]") {
+		t.Fatalf("vnc help still has bare vnc usage:\n%s", out)
+	}
+}
+
+func TestAdvancedHelpVNCExampleRequiresPassword(t *testing.T) {
+	stderr, restore := captureStderr(t)
+	usageAdvanced()
+	restore()
+	out := stderr.String()
+	if !strings.Contains(out, "run -headless -vnc :5901 -vnc-password <password>") {
+		t.Fatalf("advanced help missing passworded vnc example:\n%s", out)
+	}
+	if strings.Contains(out, "run -headless -vnc :5901            Expose a private VNC console") {
+		t.Fatalf("advanced help still has bare vnc example:\n%s", out)
+	}
+}
+
 func TestFirstRunCommand(t *testing.T) {
 	out, err := captureStdoutResult(t, func() error {
 		handled, code := handleEarlyCLI([]string{"first-run"})
