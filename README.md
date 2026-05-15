@@ -207,15 +207,19 @@ cove run -headless -cpu 4 -memory 8
 Self-hosted GitHub Actions or GitLab runner inside a long-lived VM:
 
 ```bash
-GH_REPO=tmc/cove GH_TOKEN=<reg-token> \
-  cove vzscript run github-runner
+read -rsp 'GitHub runner registration token: ' GH_TOKEN
+export GH_REPO=tmc/cove GH_TOKEN
+cove vzscript run github-runner
 
-RUNNER_REINSTALL=1 GH_REPO=tmc/cove GH_TOKEN=<reg-token> \
-  cove vzscript run github-runner
+RUNNER_REINSTALL=1 cove vzscript run github-runner
 
-GITLAB_URL=https://gitlab.com GITLAB_TOKEN=<token> \
-  cove vzscript run gitlab-runner
+read -rsp 'GitLab runner registration token: ' GITLAB_TOKEN
+export GITLAB_URL=https://gitlab.com GITLAB_TOKEN
+cove vzscript run gitlab-runner
 ```
+
+Runner registration tokens are secrets. Avoid pasting real values into shell
+history; use a prompt, keychain lookup, or CI secret variable instead.
 
 ### Cirrus Task Migration
 

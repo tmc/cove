@@ -56,11 +56,16 @@ linux_test_task:
 cove equivalent:
 
 ```bash
-cove up -linux -vm ubuntu-go -user ci -password '<admin-password>'
+cove up -linux -vm ubuntu-go -user ci
 cove ctl -vm ubuntu-go agent-exec -- /bin/sh -lc 'sudo apt-get update && sudo apt-get install -y golang-go'
 cove image build -from ubuntu-go -tag ubuntu-go:latest
 cove image verify --strict --newer-than 168h ubuntu-go:latest
 ```
+
+For unattended Linux setup, cove defaults an omitted password to the provisioned
+username. That is acceptable for a private throwaway image only. Set a unique
+password or change it before enabling remote access, publishing the image, or
+using it as a shared runner.
 
 ```yaml
 jobs:
@@ -107,12 +112,15 @@ macos_test_task:
 cove equivalent:
 
 ```bash
-cove up -vm macos-runner -user ci -password '<admin-password>'
+cove up -vm macos-runner -user ci
 cove ctl -vm macos-runner agent-exec -- /bin/bash -lc 'brew bundle --file=ci/Brewfile'
 cove ctl -vm macos-runner agent-exec -- /bin/bash -lc 'xcodebuild -version'
 cove image build -from macos-runner -tag macos-runner:latest
 cove image verify --strict --newer-than 168h macos-runner:latest
 ```
+
+For macOS runner images, omit `-password` and let cove prompt. Do not use a
+fixed shared password such as `cove/cove` in reusable images.
 
 ```yaml
 jobs:

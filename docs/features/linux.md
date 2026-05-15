@@ -20,6 +20,11 @@ cove install -linux -provision-user myuser -provision-password <password>
 cove run -linux -gui
 ```
 
+When a Linux provisioning password is omitted, cove uses the provisioned
+username as the initial password. That keeps unattended installs simple, but it
+is not a credential to reuse in team images or remotely reachable VMs. Change it
+before enabling SSH, Tailscale, VNC, or publishing the image.
+
 Ubuntu Desktop:
 
 ```bash
