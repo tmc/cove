@@ -97,7 +97,7 @@ is intentionally not advertised. Use `-vnc-password` whenever you enable VNC.
 Host-containment mode rejects VNC entirely:
 
 ```bash
-cove run -host-containment -vnc :5901
+cove run -host-containment -vnc :5901 -vnc-password <password>
 # error: -sandbox-level host-containment does not allow -vnc or -vnc-bonjour
 ```
 

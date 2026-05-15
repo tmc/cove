@@ -40,10 +40,13 @@ func TestCtlCommandEarlyBranches(t *testing.T) {
 		if err == nil {
 			t.Fatal("ctlCommand vnc start: got nil, want error")
 		}
-		for _, want := range []string{"unknown vnc action: start", "use status", "cove run -vnc :5901"} {
+		for _, want := range []string{"unknown vnc action: start", "use status", "cove run -vnc :5901 -vnc-password <password>"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("ctlCommand vnc start error = %q, want %q", err.Error(), want)
 			}
+		}
+		if strings.Contains(err.Error(), "cove run -vnc :5901)") {
+			t.Fatalf("ctlCommand vnc start error still has bare vnc command: %q", err.Error())
 		}
 	})
 }
