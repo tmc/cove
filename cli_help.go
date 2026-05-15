@@ -536,10 +536,10 @@ Use -vm <name> (before the subcommand) to target a specific VM.`)
 func printGCUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove gc [options]
 
-Delete disposable VM clones created with -disposable.
+Delete disposable VM clones and inactive ephemeral forks.
 
 Options:
-  -dry-run              Print disposable clones without deleting them
+  -dry-run              Print disposable clones and ephemeral forks without deleting them
   -older-than duration  Only delete disposable clones older than the given age`)
 }
 
