@@ -79,7 +79,6 @@ cove run -launch-order start-first     # start VM, then show window
 Expose a VNC server for remote access:
 
 ```bash
-cove run -vnc :5901
 cove run -vnc :5901 -vnc-password <password>
 cove run -vnc :5901 -vnc-password <password> -vnc-bonjour "My VM"
 ```
@@ -93,7 +92,7 @@ cove ctl vnc status
 The status output includes the localhost endpoint, whether password
 authentication is enabled, and the advertised Bonjour service name when one is
 configured. Bonjour advertisement requires `-vnc-password`; unauthenticated VNC
-is intentionally not advertised.
+is intentionally not advertised. Use `-vnc-password` whenever you enable VNC.
 
 Host-containment mode rejects VNC entirely:
 
