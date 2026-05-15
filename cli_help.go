@@ -744,7 +744,7 @@ Common flags:
   -usb /path/disk.img[:ro] attach a USB mass-storage device (repeatable)
   -display WxH[@PPI]      set display resolution (repeatable)
   -http <addr>            expose per-VM HTTP API (e.g. :7777)
-  -vnc <port>             start private VNC server (e.g. :5901)
+  -vnc <port>             start private VNC server; pass -vnc-password (e.g. :5901)
   -gdb <port>             start private GDB debug stub (e.g. :1234)
   -host-containment       fail closed for host-escape features
   -unattended             fully unattended setup (disk + OCR fallback)

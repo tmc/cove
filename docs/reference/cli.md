@@ -82,7 +82,7 @@ cove run [flags]
 | `-unattended` | false | Fully unattended install + setup |
 | `-boot-commands <file>` | | Path to vzscript automation file |
 | `-boot-args <args>` | | Boot arguments (e.g., `serial=3 -v`) |
-| `-vnc <addr>` | | Start VNC server on port (e.g., `:5901`) |
+| `-vnc <addr>` | | Start VNC server on port; pass `-vnc-password` (e.g., `:5901`) |
 | `-vnc-password <pw>` | | VNC server password |
 | `-vnc-bonjour <name>` | | Bonjour service name for VNC |
 | `-gdb <addr>` | | Attach GDB debug stub (e.g., `:1234`) |
