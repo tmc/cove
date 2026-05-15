@@ -83,5 +83,5 @@ The Tailscale node will appear offline in the admin console within a few minutes
 ## See also
 
 - [macOS CI Runner](ci-runner.md) -- pair a tailnet-joined VM with snapshot rollback for a long-lived headless runner reachable by hostname.
-- [`vzscripts/tailscale.vzscript`](https://github.com/tmc/vz-macos/blob/main/vzscripts/tailscale.vzscript) -- the recipe driving this guide.
+- [`vzscripts/tailscale.vzscript`](../../vzscripts/tailscale.vzscript) -- the recipe driving this guide.
 - [`tailscale up` flag reference](https://tailscale.com/kb/1080/cli) -- full set of CLI options if you want to fork the recipe.
