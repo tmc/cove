@@ -1581,10 +1581,17 @@ func handleVMCommand(args []string) {
 		treeOrphans := treeFS.Bool("orphans", false, "list only VMs whose parent is missing")
 		treeReachable := treeFS.String("reachable-from", "", "show VMs forked from the given image ref (mutually exclusive with --orphans)")
 		if err := treeFS.Parse(subargs); err != nil {
+			if *treeJSON {
+				_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "")
+			}
 			os.Exit(2)
 		}
 		if treeFS.NArg() > 0 {
-			fmt.Fprintln(os.Stderr, "Usage: cove vm tree [--json] [--orphans] [--reachable-from <image-ref>]")
+			err := errors.New("usage: cove vm tree [--json] [--orphans] [--reachable-from <image-ref>]")
+			if *treeJSON {
+				_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "")
+			}
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		treeOpts := VMTreeOptions{
@@ -1593,17 +1600,27 @@ func handleVMCommand(args []string) {
 		}
 		if *treeReachable != "" {
 			if *treeOrphans {
-				fmt.Fprintln(os.Stderr, "vm tree: --reachable-from and --orphans are mutually exclusive")
+				err := errors.New("vm tree: --reachable-from and --orphans are mutually exclusive")
+				if *treeJSON {
+					_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "")
+				}
+				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
 			ref, err := ParseImageRef(*treeReachable)
 			if err != nil {
+				if *treeJSON {
+					_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "")
+				}
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 			treeOpts.ReachableFromImage = &ref
 		}
 		if err := PrintVMTreeWithOptions(os.Stdout, treeOpts); err != nil {
+			if *treeJSON {
+				_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "run 'cove image list' to see local images")
+			}
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

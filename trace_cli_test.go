@@ -128,6 +128,23 @@ func TestTraceStatusJSON(t *testing.T) {
 	}
 }
 
+func TestTraceStatusJSONMissingVMWritesError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out, err := captureStdoutResult(t, func() error {
+		return runTraceStatus([]string{"missing-trace-vm", "--json"})
+	})
+	if err == nil {
+		t.Fatal("runTraceStatus missing VM succeeded")
+	}
+	var got cliJSONError
+	if jsonErr := json.Unmarshal([]byte(out), &got); jsonErr != nil {
+		t.Fatalf("trace status error output is not JSON: %v\n%s", jsonErr, out)
+	}
+	if got.OK || got.Command != "trace status" || !strings.Contains(got.Error, `no VM named "missing-trace-vm"`) || got.Hint == "" {
+		t.Fatalf("trace status JSON error = %#v", got)
+	}
+}
+
 func TestTraceCapabilitiesJSON(t *testing.T) {
 	out, err := captureStdoutResult(t, func() error {
 		return runTraceCapabilities([]string{"--json"})
