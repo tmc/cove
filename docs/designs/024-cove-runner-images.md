@@ -18,7 +18,7 @@ publishes images to use as github runners, can we do the same?". Scope A
 cove publishes VM disk images (macOS + Linux) as OCI artifacts that
 users pull and fork-from to spawn ephemeral self-hosted CI runners. The
 wedge is `cove run -fork-from` semantics ([013](013-vm-fork.md)) plus
-the soft-reset isolation result ([015](015-soft-reset-empirical.md)) —
+the soft-reset isolation result ([015](archive/015-soft-reset-empirical.md)) —
 not "we ship prebaked images too". Cirrus tart's image catalogue is
 the prior art; cove's contribution is the fork primitive underneath
 and the empirical isolation story on top.
@@ -61,7 +61,7 @@ cove run -fork-from cove-runner-macos:14.5 -ephemeral -vzscripts github-runner
   [`bench/fork-time/`](../../bench/fork-time/README.md) harness records
   ~140 ms fork-only on a 60 GB parent on M4 hardware. tart pulls a full
   image per job; cove forks an already-pulled image in-place.
-- The soft-reset matrix in [015](015-soft-reset-empirical.md) recorded
+- The soft-reset matrix in [015](archive/015-soft-reset-empirical.md) recorded
   0 pass / 3 fail / 3 limit on warm-guest reset isolation. That result
   is empirical, not marketing — fork/restore is *required* for
   isolation against token leakage and secrets cross-contamination.
@@ -125,7 +125,7 @@ that [013](013-vm-fork.md) Phase 4 added.
 ## Security
 
 This section is load-bearing. See
-[015](015-soft-reset-empirical.md) for the empirical basis.
+[015](archive/015-soft-reset-empirical.md) for the empirical basis.
 
 - The 015 matrix recorded 0 pass / 3 fail / 3 limit on warm-guest
   isolation probes. Fails: System Keychain residue, GlobalPreferences
@@ -197,9 +197,9 @@ This section is load-bearing. See
 
 - [013](013-vm-fork.md) Phase 3 (`99b3732`), Phase 4 (`eacbf5e`) —
   fork-from semantics, `vm tree`.
-- [015](015-soft-reset-empirical.md) — soft-reset empirical
+- [015](archive/015-soft-reset-empirical.md) — soft-reset empirical
   (load-bearing for Security).
-- [021](021-v04-ci-executors-tracks.md) — v0.4 CI executors. 024 is
+- [021](archive/021-v04-ci-executors-tracks.md) — v0.4 CI executors. 024 is
   the image half of 021's surface; the GHA action consumes images
   built by 024.
 - [023](023-cove-shell-exec-ux.md) — cove shell exec UX. 024 sits
