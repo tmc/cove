@@ -253,6 +253,9 @@ Examples:
   cove up -linux -user tmc -password <password>                # Linux with custom user
   cove up -linux -desktop -user me                         # Ubuntu Desktop
   cove up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
+
+Linux username/password defaults are for disposable local VMs. Pass -user and
+-password for reusable images, remote access, or shared runners.
 `)
 }
 

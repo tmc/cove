@@ -44,6 +44,41 @@ func TestFirstRunHelp(t *testing.T) {
 	}
 }
 
+func TestProvisionHelpPasswordPrompt(t *testing.T) {
+	fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
+
+	var buf bytes.Buffer
+	fs.SetOutput(&buf)
+	printInjectUsage(&buf, fs)
+	out := buf.String()
+	if !strings.Contains(out, "Password for the provisioned user (prompts if empty)") {
+		t.Fatalf("provision help missing password prompt text:\n%s", out)
+	}
+	if strings.Contains(out, "Password for the provisioned user (required)") {
+		t.Fatalf("provision help still says password is required:\n%s", out)
+	}
+}
+
+func TestInstallHelpProvisionPasswordPrompt(t *testing.T) {
+	var buf bytes.Buffer
+	printInstallUsage(&buf)
+	out := buf.String()
+	if !strings.Contains(out, "-provision-password <p> password for provisioned user (prompts if empty)") {
+		t.Fatalf("install help missing provision-password prompt text:\n%s", out)
+	}
+}
+
+func TestUpHelpLinuxCredentialCaution(t *testing.T) {
+	fs, _, _ := newUpFlagSet()
+
+	var buf bytes.Buffer
+	printUpUsage(&buf, fs)
+	out := buf.String()
+	if !strings.Contains(out, "Linux username/password defaults are for disposable local VMs") {
+		t.Fatalf("up help missing linux credential caution:\n%s", out)
+	}
+}
+
 func TestFirstRunCommand(t *testing.T) {
 	out, err := captureStdoutResult(t, func() error {
 		handled, code := handleEarlyCLI([]string{"first-run"})

@@ -26,6 +26,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"daemon":          true,
 	"diff":            true,
 	"gc":              true,
+	"gui":             true,
 	"helper":          true,
 	"image":           true,
 	"inject-agent":    true,
@@ -58,6 +59,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"support":         true,
 	"support-bundle":  true,
 	"version":         true,
+	"vnc":             true,
 	"shell":           true,
 	"vzscript":        true,
 }

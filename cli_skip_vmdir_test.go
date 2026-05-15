@@ -133,39 +133,48 @@ func TestSubcommandSkipsVMDirRunWithGlobalVM(t *testing.T) {
 	}
 }
 
-func TestUnknownCommandWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
+func TestGUIVNCAliasesWithMissingVMDoNotCreateVMDir(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("cove is darwin-only")
 	}
 	bin := doctorE2EBinary(t)
 	for _, tt := range []struct {
-		name string
-		args []string
-		vm   string
+		name     string
+		args     []string
+		globalVM bool
+		vm       string
 	}{
-		{"gui status", []string{"gui", "status"}, "missing-gui-status"},
-		{"vnc status", []string{"vnc", "status"}, "missing-vnc-status"},
+		{"gui status global vm", []string{"gui", "status"}, true, "missing-gui-status"},
+		{"vnc status global vm", []string{"vnc", "status"}, true, "missing-vnc-status"},
+		{"gui status local vm", []string{"gui", "status", "-vm", "missing-gui-status"}, false, "missing-gui-status"},
+		{"vnc status local vm", []string{"vnc", "status", "-vm", "missing-vnc-status"}, false, "missing-vnc-status"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()
-			cmd := exec.Command(bin, append([]string{"-vm", tt.vm}, tt.args...)...)
+			args := append([]string{}, tt.args...)
+			if tt.globalVM {
+				args = append([]string{"-vm", tt.vm}, args...)
+			}
+			cmd := exec.Command(bin, args...)
 			cmd.Env = append(os.Environ(), "HOME="+home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
 			err := cmd.Run()
 			if err == nil {
-				t.Fatalf("unknown command succeeded\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+				t.Fatalf("alias command succeeded\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 			}
 			exitErr, ok := err.(*exec.ExitError)
 			if !ok {
-				t.Fatalf("run unknown command: %v", err)
+				t.Fatalf("run alias command: %v", err)
 			}
-			if exitErr.ExitCode() != 2 {
-				t.Fatalf("exit = %d, want 2\nstdout:\n%s\nstderr:\n%s", exitErr.ExitCode(), stdout.String(), stderr.String())
+			if exitErr.ExitCode() != 1 {
+				t.Fatalf("exit = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitErr.ExitCode(), stdout.String(), stderr.String())
 			}
-			if !strings.Contains(stderr.String(), "unknown command") {
-				t.Fatalf("stderr missing unknown command:\n%s", stderr.String())
+			for _, want := range []string{`no VM named`, "cove list", "cove up -user <name>"} {
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
+				}
 			}
 			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", tt.vm)); !os.IsNotExist(err) {
 				t.Fatalf("VM dir stat = %v, want not exist", err)

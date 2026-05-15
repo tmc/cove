@@ -225,7 +225,7 @@ func init() {
 	flag.Var(&volumes, "vol", "mount host directory: /host/path[:tag][:ro|rw][:opt=val,...] (repeatable; default tag is the host directory name)")
 	flag.StringVar(&shareDir, "share-dir", "", "deprecated alias for -vol /host/path")
 	flag.StringVar(&provisionUser, "provision-user", "", "username for auto-provisioned user (enables provisioning)")
-	flag.StringVar(&provisionPassword, "provision-password", "", "password for auto-provisioned user")
+	flag.StringVar(&provisionPassword, "provision-password", "", "password for auto-provisioned user (prompts if empty)")
 	flag.BoolVar(&provisionAdmin, "provision-admin", true, "make auto-provisioned user an admin")
 	flag.StringVar(&provisionStrategy, "provision-strategy", "disk",
 		"provisioning strategy: disk (mount disk + write files, needs admin), gui (keyboard automation), auto (try disk, fall back to gui)")

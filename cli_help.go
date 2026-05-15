@@ -689,7 +689,7 @@ Common flags:
   -disk-size N            disk size in GB (default 64)
   -force                  overwrite an existing VM disk
   -provision-user <name>  create user during install
-  -provision-password <p> password for provisioned user
+  -provision-password <p> password for provisioned user (prompts if empty)
   -vzscripts a,b,c        run vzscript recipes after install
   -vm <name>              target VM name (default: active VM)
 

@@ -161,7 +161,7 @@ func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *
 	fs := flag.NewFlagSet("provision", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	user := fs.String("user", "", "Username for the provisioned user (required)")
-	password := fs.String("password", "", "Password for the provisioned user (required)")
+	password := fs.String("password", "", "Password for the provisioned user (prompts if empty)")
 	admin := fs.Bool("admin", true, "Make the user an admin")
 	skipSetup := fs.Bool("skip-setup-assistant", false, "Skip Setup Assistant by creating .AppleSetupDone")
 	autoLogin := fs.Bool("auto-login", true, "Enable automatic login for the user")
