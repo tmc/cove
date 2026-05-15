@@ -193,10 +193,16 @@ func runTraceStatus(args []string) error {
 		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
+		if jsonOut {
+			_ = writeCLIErrorJSON(os.Stdout, "trace status", err, "")
+		}
 		return err
 	}
 	dir, err := requireExistingVMForControl(vm)
 	if err != nil {
+		if jsonOut {
+			_ = writeCLIErrorJSON(os.Stdout, "trace status", err, "create or select an existing VM")
+		}
 		return err
 	}
 	status := traceStatus(dir, vm)

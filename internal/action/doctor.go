@@ -118,6 +118,9 @@ type DoctorConfig struct {
 func DoctorMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	opts, err := ParseDoctorArgs(args)
 	if err != nil {
+		if actionArgsWantJSON(args) {
+			_ = WriteReport(stdout, actionArgumentErrorReport(err), true)
+		}
 		fmt.Fprintf(stderr, "cove action doctor: %v\n", err)
 		return 1
 	}
@@ -152,6 +155,27 @@ func ParseDoctorArgs(args []string) (DoctorOptions, error) {
 		return opts, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
 	return opts, nil
+}
+
+func actionArgsWantJSON(args []string) bool {
+	for _, arg := range args {
+		if arg == "--json" || arg == "-json" {
+			return true
+		}
+	}
+	return false
+}
+
+func actionArgumentErrorReport(err error) Report {
+	return Report{
+		OK:     false,
+		Status: StatusFail,
+		Checks: []CheckResult{{
+			Name:    "arguments",
+			Status:  StatusFail,
+			Message: err.Error(),
+		}},
+	}
 }
 
 // RunDoctor executes the action host preflight.
