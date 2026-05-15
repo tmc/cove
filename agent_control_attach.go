@@ -137,7 +137,7 @@ func (s *ControlServer) serveAgentExecAttach(conn net.Conn, raw []byte, a attach
 	} else {
 		stream, err = a.ExecStreamControl(ctx, req.ExecID, true, req.User, req.Args, req.Env, req.WorkingDir)
 		if warningText == "" {
-			warningText = "guest agent does not support ExecAttach; stdin disabled"
+			warningText = "guest agent is older; interactive stdin disabled, using exec fallback"
 		}
 	}
 	if err != nil {

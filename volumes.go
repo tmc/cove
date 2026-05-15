@@ -364,7 +364,7 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 			continue
 		}
 		if result.ExitCode != 0 {
-			fmt.Printf("  auto-mount %s: mount failed (exit %d): %s\n", m.Tag, result.ExitCode, strings.TrimSpace(string(result.Stderr)))
+			fmt.Printf("  auto-mount %s: %s\n", m.Tag, mountFailureMessage(result.ExitCode, strings.TrimSpace(string(result.Stderr))))
 			continue
 		}
 
@@ -401,12 +401,23 @@ func setupRosettaInGuest(ctx context.Context, cs *ControlServer) {
 			}
 			return
 		}
-		fmt.Printf("auto-mount Rosetta failed (exit %d): %s\n", result.ExitCode, stderr)
+		fmt.Printf("optional Rosetta setup failed (exit %d); x86_64 Linux binaries may not run: %s\n", result.ExitCode, stderr)
 		return
 	}
 	if verbose {
 		fmt.Println("Rosetta mounted and registered in guest")
 	}
+}
+
+func mountFailureMessage(exitCode int32, stderr string) string {
+	msg := fmt.Sprintf("mount failed (exit %d)", exitCode)
+	if stderr != "" {
+		msg += ": " + stderr
+	}
+	if strings.Contains(stderr, "Unknown parameter 'cache'") || strings.Contains(stderr, `Unknown parameter "cache"`) {
+		msg += " (guest kernel rejected the VirtioFS cache option; disable auto-mount and mount the tag manually without cache=...)"
+	}
+	return msg
 }
 
 func rosettaRegisterFailureIsBenign(stderr string) bool {

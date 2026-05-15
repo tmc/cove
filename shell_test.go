@@ -143,7 +143,7 @@ func TestPumpShellFramesIgnoresAttachWarningPayload(t *testing.T) {
 			"attached": true,
 			"exec_id":  "exec-1",
 			"stdin":    false,
-			"warning":  "guest agent does not support ExecAttach; stdin disabled",
+			"warning":  "guest agent is older; interactive stdin disabled, using exec fallback",
 		}),
 		mustResponse(t, map[string]any{
 			"done":     true,
@@ -259,7 +259,7 @@ func TestRunShellSessionV02FallbackWarnsAndCompletes(t *testing.T) {
 	}
 	defer srv.Close()
 	srv.stdin = false
-	srv.warning = "guest agent does not support ExecAttach; stdin disabled"
+	srv.warning = "guest agent is older; interactive stdin disabled, using exec fallback"
 
 	devnull, err := os.Open(os.DevNull)
 	if err != nil {

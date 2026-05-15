@@ -169,6 +169,31 @@ func TestIsImageForkFromRefTreatsMissingTaggedRefAsImage(t *testing.T) {
 	}
 }
 
+func TestMaybeQuietImageForkSerial(t *testing.T) {
+	oldHeadless := headlessMode
+	oldSerial := serialOutput
+	t.Cleanup(func() {
+		headlessMode = oldHeadless
+		serialOutput = oldSerial
+	})
+	headlessMode = true
+	serialOutput = "stdout"
+
+	stderr, restore := captureStderr(t)
+	cleanup := maybeQuietImageForkSerial(RunConfig{Linux: true})
+	restore()
+	if serialOutput != "none" {
+		t.Fatalf("serialOutput = %q, want none", serialOutput)
+	}
+	if !strings.Contains(stderr.String(), "suppressing Linux serial console") {
+		t.Fatalf("stderr = %q, want suppression note", stderr.String())
+	}
+	cleanup()
+	if serialOutput != "stdout" {
+		t.Fatalf("restored serialOutput = %q, want stdout", serialOutput)
+	}
+}
+
 func TestRunConfigForImageManifestInfersLinux(t *testing.T) {
 	cfg := runConfigForImageManifest(RunConfig{}, &ImageManifest{OSType: "Linux"})
 	if !cfg.Linux {

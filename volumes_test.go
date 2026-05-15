@@ -159,6 +159,19 @@ func TestRosettaRegisterFailureIsBenign(t *testing.T) {
 	}
 }
 
+func TestMountFailureMessageExplainsVirtioFSCacheOption(t *testing.T) {
+	got := mountFailureMessage(32, "mount: /mnt/work: Unknown parameter 'cache'")
+	for _, want := range []string{
+		"mount failed (exit 32)",
+		"guest kernel rejected the VirtioFS cache option",
+		"without cache=",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("mountFailureMessage = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestVirtioFSMountArgsMacOS(t *testing.T) {
 	m := vmconfig.VolumeMount{
 		Tag:       "work",
