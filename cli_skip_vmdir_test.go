@@ -46,6 +46,7 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"status is read only", []string{"status"}, true},
 		{"security status is read only", []string{"security", "status"}, true},
 		{"first-run is global help", []string{"first-run"}, true},
+		{"gc is global cleanup", []string{"gc", "-dry-run"}, true},
 		{"storage is global census", []string{"storage"}, true},
 		{"trace status defers VM resolution", []string{"trace", "status", "vm"}, true},
 		{"traces alias defers VM resolution", []string{"traces", "status", "vm"}, true},
@@ -191,6 +192,25 @@ func TestStorageWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", vm)); !os.IsNotExist(err) {
 		t.Fatalf("storage VM dir stat = %v, want not exist", err)
+	}
+}
+
+func TestGCDryRunDoesNotCreateVMDir(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	home := t.TempDir()
+	cmd := exec.Command(bin, "gc", "-dry-run")
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("gc -dry-run failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(err) {
+		t.Fatalf("default VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
 }
 
