@@ -424,7 +424,7 @@ func ctlCommand(args []string) error {
 		case "status":
 			return ctlSimpleCommand(sock, "vnc-status", *timeout, *raw)
 		default:
-			return fmt.Errorf("unknown vnc action: %s (use status)", subArgs[0])
+			return fmt.Errorf("unknown vnc action: %s (use status; start VNC with cove run -vnc :5901)", subArgs[0])
 		}
 	case "debug-stub":
 		if len(subArgs) < 1 {

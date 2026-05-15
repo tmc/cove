@@ -130,7 +130,7 @@ func TestStatusPostCommandResolutionDoesNotCreateMissingVMDir(t *testing.T) {
 	}
 }
 
-func TestStatusStoppedExistingVMKeepsControlSocketHint(t *testing.T) {
+func TestStatusStoppedExistingVMReportsStoppedState(t *testing.T) {
 	home, err := os.MkdirTemp("/tmp", "cove-status-test-")
 	if err != nil {
 		t.Fatalf("temp home: %v", err)
@@ -156,10 +156,13 @@ func TestStatusStoppedExistingVMKeepsControlSocketHint(t *testing.T) {
 		t.Fatal("statusCommand succeeded for stopped VM without control socket")
 	}
 	msg := err.Error()
-	for _, want := range []string{"vm is not running: control socket not found", "start it with"} {
+	for _, want := range []string{`vm "stopped-status-vm" is stopped`, "status requires a running VM", "cove -vm stopped-status-vm run", "cove list"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("statusCommand error = %q, want %q", msg, want)
 		}
+	}
+	if strings.Contains(msg, "control socket not found") {
+		t.Fatalf("statusCommand error = %q, did not want raw control socket diagnostic", msg)
 	}
 	if strings.Contains(msg, "no VM named") {
 		t.Fatalf("statusCommand error = %q, did not want not-found diagnostic", msg)

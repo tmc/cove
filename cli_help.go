@@ -714,7 +714,7 @@ Examples:
 
 func printVNCUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove run -vnc :5901 [flags]
-       cove ctl -vm <name> vnc status|start|stop
+       cove ctl -vm <name> vnc status
 
 Expose a private VNC server for a running VM.
 
