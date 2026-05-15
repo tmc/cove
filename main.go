@@ -270,7 +270,7 @@ func init() {
 	flag.BoolVar(&appleLog, "apple-log", false, "stream Apple unified logs relevant to virtualization while running")
 	flag.StringVar(&appleLogPredicate, "apple-log-predicate", "", "custom predicate for -apple-log (NSPredicate syntax)")
 	flag.BoolVar(&recoverIdentity, "recover-identity", false, "if VM identity metadata is missing, back it up and reset identity files to attempt recovery")
-	flag.StringVar(&vncAddress, "vnc", "", "start private VNC server on port or :port (for example :5901)")
+	flag.StringVar(&vncAddress, "vnc", "", "start private VNC server on port or :port; pass -vnc-password (for example :5901)")
 	flag.StringVar(&vncPassword, "vnc-password", "", "password for private VNC server")
 	flag.StringVar(&vncBonjourService, "vnc-bonjour", "", "bonjour service name for the private VNC server (requires -vnc-password)")
 	flag.StringVar(&gdbAddress, "gdb", "", "attach private GDB debug stub on port or :port (for example :1234)")

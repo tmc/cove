@@ -104,6 +104,18 @@ func TestAdvancedHelpVNCExampleRequiresPassword(t *testing.T) {
 	}
 }
 
+func TestRunHelpVNCFlagMentionsPassword(t *testing.T) {
+	var buf bytes.Buffer
+	printRunUsage(&buf)
+	out := buf.String()
+	if !strings.Contains(out, "-vnc <port>             start private VNC server; pass -vnc-password") {
+		t.Fatalf("run help vnc flag does not mention password:\n%s", out)
+	}
+	if strings.Contains(out, "-vnc <port>             start private VNC server (e.g. :5901)") {
+		t.Fatalf("run help still has bare vnc flag text:\n%s", out)
+	}
+}
+
 func TestFirstRunCommand(t *testing.T) {
 	out, err := captureStdoutResult(t, func() error {
 		handled, code := handleEarlyCLI([]string{"first-run"})
