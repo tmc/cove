@@ -34,6 +34,18 @@ func TestCtlCommandEarlyBranches(t *testing.T) {
 			t.Fatalf("ctlCommand no subcmd: got %v, want 'command required'", err)
 		}
 	})
+
+	t.Run("vnc start explains run flag", func(t *testing.T) {
+		err := ctlCommand([]string{"-socket", "/tmp/nonexistent.sock", "vnc", "start"})
+		if err == nil {
+			t.Fatal("ctlCommand vnc start: got nil, want error")
+		}
+		for _, want := range []string{"unknown vnc action: start", "use status", "cove run -vnc :5901"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("ctlCommand vnc start error = %q, want %q", err.Error(), want)
+			}
+		}
+	})
 }
 
 func TestCtlCommandVMNotFoundBeforeControlSocketHint(t *testing.T) {
