@@ -7,7 +7,7 @@ installed VM, and opens the GUI.
 go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 
-./cove -vm linux-gui-debug -display 1280x720 up -linux -desktop -user debug -password debug -gui
+./cove -vm linux-gui-debug -display 1280x720 up -linux -desktop -user debug -gui
 ```
 
 The `-desktop` path defaults to the OEM installer. Use

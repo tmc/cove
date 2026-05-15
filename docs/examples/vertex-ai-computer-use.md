@@ -51,10 +51,10 @@ python3 adapters/google-bridge/vertex-ai/computer_use.py \
   --task "Open Safari, search for 'cove vm', and read the first result."
 ```
 
-The script auto-resolves the control socket at
-`~/.vz/vms/vertex-eval/control.sock` and the auth token at
-`~/.vz/vms/vertex-eval/control.token`. Use `--token` to override and
-`--credentials /path/to/sa.json` to point at a specific service-account file.
+The script auto-resolves the VM's local control socket and per-VM auth token.
+Use `--token "$COVE_CONTROL_TOKEN"` to override from a secret manager or
+redacted environment variable, and `--credentials /path/to/sa.json` to point at
+a specific service-account file.
 
 ## How it works
 

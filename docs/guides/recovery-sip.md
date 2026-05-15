@@ -97,7 +97,7 @@ The automation scripts handle password prompts using OCR conditions:
 
 ```
 [text-visible:Authorized+user] type 'admin'
-[text-visible:Password] type-keycodes 'secret'
+[text-visible:Password] type-keycodes '<admin-password>'
 [text-visible:Password] wait-prompt-clear 'Password'
 ```
 

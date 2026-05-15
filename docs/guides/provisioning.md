@@ -90,7 +90,7 @@ Or drive Setup Assistant manually on a running VM:
 
 ```bash
 cove ctl detect                          # check current screen
-cove ctl setup-assist testuser secret    # automate Setup Assistant
+cove ctl setup-assist testuser <password>    # automate Setup Assistant
 ```
 
 If `setup-assist` loses the control socket, first check whether the VM stopped:
