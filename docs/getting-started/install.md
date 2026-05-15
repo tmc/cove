@@ -27,6 +27,11 @@ brew install cove
 > [!NOTE]
 > cove auto-signs itself with virtualization entitlements on first launch. No manual codesigning step is needed.
 
+Homebrew and future app packages install the `cove` binary only. Guest account
+setup remains explicit: the first VM asks for a username and prompts for a
+password when `-password` is omitted. Cove does not create fixed default guest
+credentials.
+
 ## Go Install
 
 ```bash
@@ -79,6 +84,11 @@ is omitted. Prefer the prompt so the password is not saved in shell history.
 macOS may ask for administrator approval when cove mounts a guest disk, writes
 root-owned launchd files into the guest, or installs/updates the optional
 privileged helper. These prompts authorize local VM preparation on this Mac.
+
+GUI VM runs add a macOS status item for the active VM. It shows the current VM
+state and exposes quick actions for the native window and clean shutdown. The
+status item exists for the running VM session; installing cove does not add a
+background login item.
 
 ## Apple SLA Note
 
