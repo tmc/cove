@@ -51,6 +51,7 @@ var commandRegistry = []commandSpec{
 	{Name: "forward", Summary: "Forward host TCP to guest TCP", Dispatch: commandDispatchEarly, Run: runForwardCommand},
 	{Name: "first-run", Summary: "Show first-run onboarding steps", Dispatch: commandDispatchEarly, Run: runFirstRunCommand},
 	{Name: "gc", Summary: "Delete old disposable VM clones", Dispatch: commandDispatchEarly, Run: runGCCommand},
+	{Name: "gui", Summary: "Control VM GUI window state", Dispatch: commandDispatchEarly, Run: runControlAliasCommand},
 	{Name: "helper", Summary: "Manage the privileged helper", Dispatch: commandDispatchLate, Run: runHelperCommandSpec},
 	{Name: "image", Summary: "Local VM image store", Dispatch: commandDispatchEarly, Run: runImageCommand},
 	{Name: "import", Summary: "Import VM from tarball", Dispatch: commandDispatchLate, Run: runVMSubcommand},
@@ -96,6 +97,7 @@ var commandRegistry = []commandSpec{
 	{Name: "up", Summary: "Install + provision + boot in one command", Dispatch: commandDispatchEarly, Run: runUpCommand},
 	{Name: "verify", Aliases: []string{"doctor"}, Summary: "Verify provisioning files in VM disk", Dispatch: commandDispatchEarly, Run: runVerifyCommand},
 	{Name: "version", Summary: "Print version information", Dispatch: commandDispatchEarly, Run: runVersionCommand},
+	{Name: "vnc", Summary: "Inspect private VNC server state", Dispatch: commandDispatchEarly, Run: runControlAliasCommand},
 	{Name: "vm", Summary: "Manage VMs", Dispatch: commandDispatchLate, Run: runVMCommandSpec},
 	{Name: "vzscript", Summary: "Run guest-agent and UI automation scripts", Dispatch: commandDispatchEarly, Run: runVZScriptCommand},
 }
@@ -186,6 +188,9 @@ func runCpCommand(env commandEnv, _ string, args []string) int {
 }
 func runCtlCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, ctlCommand(args))
+}
+func runControlAliasCommand(env commandEnv, name string, args []string) int {
+	return commandError(env, ctlCommand(controlAliasArgs(name, args)))
 }
 func runDaemonCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, daemonCommand(args))

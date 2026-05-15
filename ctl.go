@@ -812,6 +812,26 @@ func ctlCommand(args []string) error {
 	return ctlPrintResponse(resp, cmdType, *raw, *outputFile)
 }
 
+func controlAliasArgs(kind string, args []string) []string {
+	out := []string{kind}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-vm" || arg == "--vm":
+			if i+1 < len(args) {
+				out = append([]string{arg, args[i+1]}, out...)
+				i++
+				continue
+			}
+		case strings.HasPrefix(arg, "-vm=") || strings.HasPrefix(arg, "--vm="):
+			out = append([]string{arg}, out...)
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
 func ctlSimpleCommand(sock, cmdType string, timeout time.Duration, raw bool) error {
 	req := &controlpb.ControlRequest{
 		Type:      cmdType,
