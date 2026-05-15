@@ -53,7 +53,8 @@ func printLogsUsage(w io.Writer) {
 
 Show recent guest logs through cove shell. Linux uses journalctl; macOS uses
 log show. Use -f or --follow to stream logs.
-If no positional VM is provided, cove uses -vm or the global VM selection.`)
+If no positional VM is provided, cove uses -vm or the global VM selection.
+The -vm, -f, and --follow flags may appear before or after the VM name.`)
 }
 
 func moveLogsFlagsFirst(args []string) []string {

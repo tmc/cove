@@ -50,6 +50,16 @@ func TestParseLogsArgs(t *testing.T) {
 	}
 }
 
+func TestLogsUsageDocumentsFlagPlacement(t *testing.T) {
+	var b strings.Builder
+	printLogsUsage(&b)
+	for _, want := range []string{"-vm", "-f", "--follow", "before or after the VM name"} {
+		if !strings.Contains(b.String(), want) {
+			t.Fatalf("usage missing %q:\n%s", want, b.String())
+		}
+	}
+}
+
 func TestParseLogsArgsUsesGlobalVM(t *testing.T) {
 	oldVMName := vmName
 	t.Cleanup(func() { vmName = oldVMName })
