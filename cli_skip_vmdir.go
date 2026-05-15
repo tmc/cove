@@ -39,6 +39,9 @@ var vmDirIndependentCommands = map[string]bool{
 	"logs":            true,
 	"recording":       true,
 	"recordings":      true,
+	"rm":              true,
+	"remove":          true,
+	"destroy":         true,
 	"run":             true,
 	"runs":            true,
 	"secret":          true,
@@ -65,6 +68,9 @@ func subcommandSkipsVMDir(args []string) bool {
 		return true
 	}
 	if args[0] == "vm" && len(args) > 1 && args[1] == "tree" {
+		return true
+	}
+	if args[0] == "vm" && len(args) > 1 && args[1] == "delete" {
 		return true
 	}
 	if args[0] == "run" && (vmName != "" || argsContainFlag(args[1:], "vm")) {
