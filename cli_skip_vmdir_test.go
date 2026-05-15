@@ -53,6 +53,10 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"version", []string{"version"}, true},
 		{"vm tree", []string{"vm", "tree"}, true},
 		{"vm tree extra args still skips startup VM dir", []string{"vm", "tree", "extra"}, true},
+		{"vm delete skips startup VM dir", []string{"vm", "delete", "missing"}, true},
+		{"rm alias skips startup VM dir", []string{"rm", "missing"}, true},
+		{"remove alias skips startup VM dir", []string{"remove", "missing"}, true},
+		{"destroy alias skips startup VM dir", []string{"destroy", "missing"}, true},
 		{"run defers VM resolution", []string{"run"}, true},
 		{"run with explicit vm skips startup VM dir", []string{"run", "-vm", "missing"}, true},
 		{"run fork-from skips startup VM dir", []string{"run", "-fork-from", "missing:latest"}, true},
@@ -140,6 +144,57 @@ func TestStorageWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".vz", "vms", vm)); !os.IsNotExist(err) {
 		t.Fatalf("storage VM dir stat = %v, want not exist", err)
+	}
+}
+
+func TestVMDeleteMissingDoesNotCreateVMDir(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	for _, tt := range []struct {
+		name string
+		args []string
+		vm   string
+	}{
+		{"vm delete", []string{"vm", "delete", "missing-delete-vm"}, "missing-delete-vm"},
+		{"rm alias", []string{"rm", "missing-rm-vm"}, "missing-rm-vm"},
+		{"remove alias", []string{"remove", "missing-remove-vm"}, "missing-remove-vm"},
+		{"destroy alias", []string{"destroy", "missing-destroy-vm"}, "missing-destroy-vm"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := exec.Command(bin, tt.args...)
+			cmd.Env = append(os.Environ(), "HOME="+home)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			err := cmd.Run()
+			if err == nil {
+				t.Fatalf("delete missing VM succeeded\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+			}
+			exitErr, ok := err.(*exec.ExitError)
+			if !ok {
+				t.Fatalf("delete missing VM: %v", err)
+			}
+			if exitErr.ExitCode() != 1 {
+				t.Fatalf("exit = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitErr.ExitCode(), stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "vm not found: "+tt.vm) {
+				t.Fatalf("stderr missing useful not-found diagnostic:\n%s", stderr.String())
+			}
+			for _, want := range []string{"list VMs: cove list", "create a VM: cove up -user <name>"} {
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("stderr missing hint %q:\n%s", want, stderr.String())
+				}
+			}
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", tt.vm)); !os.IsNotExist(err) {
+				t.Fatalf("missing VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+			}
+			if _, err := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(err) {
+				t.Fatalf("default VM dir stat = %v, want not exist\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 
