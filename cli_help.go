@@ -679,7 +679,7 @@ Install a new VM. macOS by default; pass -linux for Linux.
 Common flags:
   -ipsw <path>            macOS restore image (downloaded if omitted)
   -linux                  install Linux instead of macOS
-  -distro <name>          Linux distro: ubuntu, debian, fedora, alpine (experimental), nixos
+  -distro <name>          Linux distro: ubuntu, debian, fedora, alpine, nixos
   -nixos                  install NixOS (implies -linux -distro nixos)
   -desktop                with -linux, install Ubuntu Desktop
   -nested                 with -linux, enable nested virtualization on supported hosts
@@ -695,7 +695,7 @@ Common flags:
 
 Examples:
   cove install -ipsw ~/.cache/vz/restore.ipsw
-  cove install -linux -distro alpine        # experimental
+  cove install -linux -distro alpine
   cove install -nixos
   cove install -linux -provision-user me`)
 }
