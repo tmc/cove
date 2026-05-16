@@ -352,9 +352,9 @@ func TestAgentProvisionVerifyWithMissingVMDoesNotCreateVMDir(t *testing.T) {
 		{"agent-upgrade global vm", []string{"-vm", "missing-agent-upgrade-global", "agent-upgrade"}, "missing-agent-upgrade-global", `no VM named "missing-agent-upgrade-global"`},
 		{"agent-upgrade post vm", []string{"agent-upgrade", "-vm", "missing-agent-upgrade-post"}, "missing-agent-upgrade-post", `no VM named "missing-agent-upgrade-post"`},
 		{"provision-agent global vm", []string{"-vm", "missing-provision-agent-global", "provision-agent"}, "missing-provision-agent-global", `no VM named "missing-provision-agent-global"`},
-		{"verify global vm", []string{"-vm", "missing-verify-global", "verify"}, "missing-verify-global", "disk image not found"},
+		{"verify global vm", []string{"-vm", "missing-verify-global", "verify"}, "missing-verify-global", `no VM named "missing-verify-global"`},
 		{"verify post vm", []string{"verify", "-vm", "missing-verify-post"}, "missing-verify-post", `no VM named "missing-verify-post"`},
-		{"doctor global vm", []string{"-vm", "missing-doctor-global", "doctor"}, "missing-doctor-global", "disk image not found"},
+		{"doctor global vm", []string{"-vm", "missing-doctor-global", "doctor"}, "missing-doctor-global", `no VM named "missing-doctor-global"`},
 		{"doctor post vm", []string{"doctor", "-vm", "missing-doctor-post"}, "missing-doctor-post", `no VM named "missing-doctor-post"`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

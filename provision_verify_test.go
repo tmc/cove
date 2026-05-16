@@ -97,6 +97,9 @@ func TestVerifyRunningGuestProbesLinux(t *testing.T) {
 	if got := probes[3].args; len(got) != 3 || got[0] != "sh" || got[1] != "-lc" {
 		t.Fatalf("marker args = %#v, want shell probe", got)
 	}
+	if got, want := probes[4].args, []string{"pgrep", "-f", "/usr/local/bin/vz-agent"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("process args = %#v, want %#v", got, want)
+	}
 }
 
 func TestVerifyRunningGuestProbesMacOS(t *testing.T) {
