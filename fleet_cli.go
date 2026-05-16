@@ -25,6 +25,7 @@ type sshFleetRunner struct{}
 
 var (
 	fleetDialControlSocket = fleetpkg.DialControlSocket
+	fleetReadControlToken  = fleetpkg.ReadControlToken
 	fleetCtlCommand        = ctlCommand
 )
 
@@ -77,8 +78,22 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 	case "metrics":
 		return runFleetMetricsCommand(ctx, args[1:], path, runner, out, errOut)
 	default:
+		if ok, err := fleetHasRemote(args[0], path); err != nil {
+			return err
+		} else if ok && len(args) >= 2 {
+			return runFleetRoute(ctx, args[0], args[1], args[2:], path, runner, out, errOut)
+		}
 		return fmt.Errorf("fleet: unknown command %q", args[0])
 	}
+}
+
+func fleetHasRemote(name, path string) (bool, error) {
+	cfg, err := fleetpkg.LoadPath(path)
+	if err != nil {
+		return false, err
+	}
+	_, ok := cfg.Get(name)
+	return ok, nil
 }
 
 func printFleetUsage(w io.Writer) {
@@ -92,7 +107,8 @@ Commands:
   image ls [--json]
   ps
   run --policy=least-loaded [run flags]
-  metrics`)
+  metrics
+  <remote> <command> [args...]`)
 }
 
 func fleetAdd(args []string, path string) error {
@@ -205,7 +221,11 @@ func runFleetControlRoute(ctx context.Context, remote fleetpkg.Remote, args []st
 		return err
 	}
 	defer tunnel.Close()
-	return fleetCtlCommand(append([]string{"-socket", tunnel.LocalSocket()}, args...))
+	token, err := fleetReadControlToken(ctx, remote, vm)
+	if err != nil {
+		return err
+	}
+	return fleetCtlCommand(append([]string{"-socket", tunnel.LocalSocket(), "-token", token}, args...))
 }
 
 func fleetControlVM(args []string, remote fleetpkg.Remote) string {
@@ -227,8 +247,6 @@ func fleetControlVM(args []string, remote fleetpkg.Remote) string {
 
 func fleetRemoteArgs(cmd string, args []string, remote fleetpkg.Remote) ([]string, error) {
 	switch cmd {
-	case "ctl":
-		return append([]string{"ctl"}, ensureFleetVMArg(args, remote)...), nil
 	case "shell":
 		return append([]string{"shell"}, ensureFleetPositionalVM(args, remote)...), nil
 	case "cp":

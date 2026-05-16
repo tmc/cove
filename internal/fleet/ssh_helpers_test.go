@@ -2,7 +2,9 @@ package fleet
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -13,8 +15,8 @@ func TestRemoteControlSocketPath(t *testing.T) {
 		vm     string
 		want   string
 	}{
-		{name: "explicit user", remote: Remote{User: "alice"}, vm: "dev", want: "/Users/alice/.vz/vms/dev/control.sock"},
-		{name: "missing user falls back to placeholder", remote: Remote{}, vm: "dev", want: "/Users/$USER/.vz/vms/dev/control.sock"},
+		{name: "explicit user still uses remote home", remote: Remote{User: "alice"}, vm: "dev", want: filepath.Join(".vz", "vms", "dev", "control.sock")},
+		{name: "missing user uses remote home", remote: Remote{}, vm: "dev", want: filepath.Join(".vz", "vms", "dev", "control.sock")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -22,6 +24,40 @@ func TestRemoteControlSocketPath(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRemoteControlTokenPath(t *testing.T) {
+	got := RemoteControlTokenPath(Remote{User: "alice"}, "dev")
+	want := filepath.Join(".vz", "vms", "dev", "control.token")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestReadControlToken(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "args")
+	ssh := filepath.Join(dir, "ssh")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + log + "\nprintf ' secret-token\\n'\n"
+	if err := os.WriteFile(ssh, []byte(script), 0755); err != nil {
+		t.Fatalf("write ssh stub: %v", err)
+	}
+	t.Setenv("COVE_FLEET_SSH", ssh)
+	token, err := ReadControlToken(context.Background(), Remote{User: "me", Host: "host"}, "dev")
+	if err != nil {
+		t.Fatalf("ReadControlToken: %v", err)
+	}
+	if token != "secret-token" {
+		t.Fatalf("token = %q, want secret-token", token)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatalf("read args log: %v", err)
+	}
+	want := "me@host\ncat\n" + filepath.Join(".vz", "vms", "dev", "control.token")
+	if strings.TrimSpace(string(data)) != want {
+		t.Fatalf("ssh args = %q, want %q", strings.TrimSpace(string(data)), want)
 	}
 }
 
