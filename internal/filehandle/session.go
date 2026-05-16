@@ -1,4 +1,4 @@
-package main
+package filehandle
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit/exp/networkfd"
 	"github.com/tmc/vz-macos/internal/pcap"
-	"golang.org/x/sys/unix"
 )
 
-// FileHandleNetworkSession owns the host-side socket and the VZ file-handle
+// Session owns the host-side socket and the VZ file-handle
 // attachment used for filehandle network mode bring-up.
-type FileHandleNetworkSession struct {
-	cfg FileHandleNetworkConfig
+type Session struct {
+	cfg Config
 
 	hostFile     *os.File
 	hostConn     net.Conn
@@ -29,62 +29,47 @@ type FileHandleNetworkSession struct {
 	pcapFile *os.File
 	pcap     *pcap.Writer
 
-	stats fileHandleNetworkStats
+	stats statsState
 
 	mu     sync.Mutex
 	closed bool
 }
 
-// NewFileHandleNetworkSession creates a connected datagram socket pair,
+// NewSession creates a connected datagram socket pair,
 // attaches one end to Virtualization.framework, and keeps the host end for
 // frame capture or future forwarding.
-func NewFileHandleNetworkSession(cfg FileHandleNetworkConfig) (*FileHandleNetworkSession, error) {
-	cfg = normalizeFileHandleNetworkConfig(cfg)
+func NewSession(cfg Config) (*Session, error) {
+	cfg = normalizeConfig(cfg)
 
 	hostFD, guestFD, err := newConnectedDatagramSocketPair(cfg.MTU)
 	if err != nil {
 		return nil, err
 	}
 
-	return newFileHandleNetworkSessionFromFDs(hostFD, guestFD, cfg)
+	return newSessionFromFDs(hostFD, guestFD, cfg)
 }
 
-func newFileHandleNetworkSessionFromFDs(hostFD, guestFD int, cfg FileHandleNetworkConfig) (*FileHandleNetworkSession, error) {
-	cfg = normalizeFileHandleNetworkConfig(cfg)
-	hostFile := os.NewFile(uintptr(hostFD), "cove-filehandle-host")
-	if hostFile == nil {
-		_ = unix.Close(hostFD)
-		_ = unix.Close(guestFD)
-		return nil, fmt.Errorf("create host file")
+func newSessionFromFDs(hostFD, guestFD int, cfg Config) (*Session, error) {
+	cfg = normalizeConfig(cfg)
+	hostFile, hostConn, err := networkfd.HostConn(hostFD)
+	if err != nil {
+		(networkfd.Pair{HostFD: -1, GuestFD: guestFD}).Close()
+		return nil, err
 	}
 
-	hostConn, err := net.FileConn(hostFile)
+	guestHandle, attachment, err := networkfd.NewAttachment(guestFD, cfg.MTU)
 	if err != nil {
 		hostFile.Close()
-		_ = unix.Close(guestFD)
-		return nil, fmt.Errorf("wrap host file: %w", err)
+		return nil, err
 	}
-
-	guestHandle := newNSFileHandleFromFD(guestFD)
-	attachment := vz.NewFileHandleNetworkDeviceAttachmentWithFileHandle(guestHandle)
-	if attachment.ID == 0 {
+	deviceConfig, err := networkfd.NewDevice(attachment)
+	if err != nil {
 		hostFile.Close()
 		_, _ = guestHandle.CloseAndReturnError()
-		return nil, fmt.Errorf("create filehandle network attachment")
+		return nil, err
 	}
-	attachment.Retain()
-	attachment.SetMaximumTransmissionUnit(cfg.MTU)
 
-	deviceConfig := vz.NewVZVirtioNetworkDeviceConfiguration()
-	if deviceConfig.ID == 0 {
-		hostFile.Close()
-		_, _ = guestHandle.CloseAndReturnError()
-		return nil, fmt.Errorf("create virtio network device configuration")
-	}
-	deviceConfig.SetAttachment(&attachment.VZNetworkDeviceAttachment)
-	deviceConfig.Retain()
-
-	session := &FileHandleNetworkSession{
+	session := &Session{
 		cfg:          cfg,
 		hostFile:     hostFile,
 		hostConn:     hostConn,
@@ -113,9 +98,9 @@ func newFileHandleNetworkSessionFromFDs(hostFD, guestFD int, cfg FileHandleNetwo
 	return session, nil
 }
 
-func normalizeFileHandleNetworkConfig(cfg FileHandleNetworkConfig) FileHandleNetworkConfig {
+func normalizeConfig(cfg Config) Config {
 	if cfg.MTU <= 0 {
-		cfg.MTU = defaultFileHandleMTU
+		cfg.MTU = defaultMTU
 	}
 	if cfg.Snaplen <= 0 {
 		cfg.Snaplen = pcap.DefaultSnaplen
@@ -124,31 +109,15 @@ func normalizeFileHandleNetworkConfig(cfg FileHandleNetworkConfig) FileHandleNet
 }
 
 // DeviceConfiguration returns the Virtio network configuration for the session.
-func (s *FileHandleNetworkSession) DeviceConfiguration() vz.VZVirtioNetworkDeviceConfiguration {
+func (s *Session) DeviceConfiguration() vz.VZVirtioNetworkDeviceConfiguration {
 	if s == nil {
 		return vz.VZVirtioNetworkDeviceConfiguration{}
 	}
 	return s.deviceConfig
 }
 
-// Attachment returns the underlying file-handle attachment.
-func (s *FileHandleNetworkSession) Attachment() vz.VZFileHandleNetworkDeviceAttachment {
-	if s == nil {
-		return vz.VZFileHandleNetworkDeviceAttachment{}
-	}
-	return s.attachment
-}
-
-// Stats returns a snapshot of the session counters.
-func (s *FileHandleNetworkSession) Stats() FileHandleNetworkStats {
-	if s == nil {
-		return FileHandleNetworkStats{}
-	}
-	return s.stats.snapshot()
-}
-
 // ReadFrame reads one datagram from the host socket.
-func (s *FileHandleNetworkSession) ReadFrame() ([]byte, error) {
+func (s *Session) ReadFrame() ([]byte, error) {
 	if s == nil || s.hostConn == nil {
 		return nil, fmt.Errorf("filehandle session not initialized")
 	}
@@ -165,7 +134,7 @@ func (s *FileHandleNetworkSession) ReadFrame() ([]byte, error) {
 }
 
 // SendFrame writes one datagram to the host socket.
-func (s *FileHandleNetworkSession) SendFrame(frame []byte) error {
+func (s *Session) SendFrame(frame []byte) error {
 	if s == nil || s.hostConn == nil {
 		return fmt.Errorf("filehandle session not initialized")
 	}
@@ -183,7 +152,7 @@ func (s *FileHandleNetworkSession) SendFrame(frame []byte) error {
 
 // Pump runs a host-side loop that reads guest frames and optionally emits a
 // response frame generated by handler.
-func (s *FileHandleNetworkSession) Pump(ctx context.Context, handler FrameProcessor) error {
+func (s *Session) Pump(ctx context.Context, handler FrameProcessor) error {
 	if s == nil {
 		return fmt.Errorf("filehandle session not initialized")
 	}
@@ -238,7 +207,7 @@ func (s *FileHandleNetworkSession) Pump(ctx context.Context, handler FrameProces
 }
 
 // Summary returns a human-readable shutdown summary.
-func (s *FileHandleNetworkSession) Summary() string {
+func (s *Session) Summary() string {
 	if s == nil {
 		return "filehandle network: disabled"
 	}
@@ -246,7 +215,7 @@ func (s *FileHandleNetworkSession) Summary() string {
 }
 
 // Close releases the host resources owned by the session.
-func (s *FileHandleNetworkSession) Close() error {
+func (s *Session) Close() error {
 	if s == nil {
 		return nil
 	}
@@ -279,4 +248,3 @@ func (s *FileHandleNetworkSession) Close() error {
 	s.stats.finish(time.Now(), nil)
 	return nil
 }
-

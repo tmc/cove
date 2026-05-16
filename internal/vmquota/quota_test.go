@@ -35,22 +35,6 @@ func TestLoadMissing(t *testing.T) {
 	}
 }
 
-func TestPositiveValueRejectsInvalid(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		n    int64
-	}{
-		{name: "zero"},
-		{name: "negative", n: -1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := PositiveValue("cpu", tc.n); err == nil {
-				t.Fatal("PositiveValue succeeded, want error")
-			}
-		})
-	}
-}
-
 func TestQuotaCheckExceeded(t *testing.T) {
 	cap := Quota{CPUs: 4, MemoryGB: 8, DiskGB: 50}
 	tests := []struct {

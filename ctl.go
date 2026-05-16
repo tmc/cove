@@ -21,6 +21,7 @@ import (
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 	pw "github.com/tmc/vz-macos/internal/password"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmstate"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -66,7 +67,7 @@ Commands:
   pause                 Pause VM
   resume                Resume paused VM
   stop                  Force stop VM
-  request-stop          Send ACPI power button (graceful shutdown)
+  request-stop          Send ACPI power button (guest may ignore it)
   reboot-to-recovery    Stop VM and start macOS Recovery
   network-info          Get VM network info (MAC address, guest IP, mode)
   gui status            Report whether the VM is currently headed or headless
@@ -109,6 +110,7 @@ Commands:
   click-menu [options] <menu> <item>  Click menu title, then menu item
                         options: -timeout <duration>
   shared-folders-apply  Reload shared_folders.json into a running VM
+  shared-folders-runtime-status  Report runtime shared-folder support
   boot-script <file>    Execute a vzscript automation file
   step                  Interactive step-through mode for Setup Assistant debugging
   setup-assist <user> <pass>  Run Setup Assistant automation
@@ -424,7 +426,7 @@ func ctlCommand(args []string) error {
 		case "status":
 			return ctlSimpleCommand(sock, "vnc-status", *timeout, *raw)
 		default:
-			return fmt.Errorf("unknown vnc action: %s (use status)", subArgs[0])
+			return fmt.Errorf("unknown vnc action: %s (use status; start VNC with cove run -vnc :5901 -vnc-password <password>)", subArgs[0])
 		}
 	case "debug-stub":
 		if len(subArgs) < 1 {
@@ -451,7 +453,7 @@ func ctlCommand(args []string) error {
 	req.AuthToken = resolveControlTokenForSocket(sock)
 
 	switch cmdType {
-	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "reboot-to-recovery", "boot-recovery", "shared-folders-apply":
+	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "reboot-to-recovery", "boot-recovery", "shared-folders-apply", "shared-folders-runtime-status":
 		// No payload needed
 
 	case "memory":
@@ -810,6 +812,26 @@ func ctlCommand(args []string) error {
 	}
 
 	return ctlPrintResponse(resp, cmdType, *raw, *outputFile)
+}
+
+func controlAliasArgs(kind string, args []string) []string {
+	out := []string{kind}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-vm" || arg == "--vm":
+			if i+1 < len(args) {
+				out = append([]string{arg, args[i+1]}, out...)
+				i++
+				continue
+			}
+		case strings.HasPrefix(arg, "-vm=") || strings.HasPrefix(arg, "--vm="):
+			out = append([]string{arg}, out...)
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
 }
 
 func ctlSimpleCommand(sock, cmdType string, timeout time.Duration, raw bool) error {
@@ -2466,7 +2488,7 @@ func ctlAgentCommandError(sock, cmdType, detail string) error {
 		return fmt.Errorf("guest agent unavailable: %s", detail)
 	}
 
-	switch canonicalVMState(state) {
+	switch vmstate.Canonical(state) {
 	case "starting", "resuming", "restoring":
 		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)\n  retry with: cove ctl -wait 60s %s\n  details: %s", state, cmdType, detail)
 	case "paused":
@@ -2529,7 +2551,7 @@ func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {
 		return "", fmt.Errorf("status: %s", resp.Error)
 	}
 	if status := resp.GetStatus(); status != nil {
-		return canonicalVMState(status.State), nil
+		return vmstate.Canonical(status.State), nil
 	}
 
 	var parsed map[string]interface{}
@@ -2537,7 +2559,7 @@ func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {
 		return "", fmt.Errorf("parse status: %w", err)
 	}
 	rawState, _ := parsed["state"].(string)
-	return canonicalVMState(rawState), nil
+	return vmstate.Canonical(rawState), nil
 }
 
 // ctlConnectError wraps a control socket dial error with actionable guidance.

@@ -33,11 +33,24 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 
 	switch cmd {
 	case "help":
+		if len(subargs) == 1 && (subargs[0] == "--json" || subargs[0] == "-json") {
+			if err := printCommandsJSON(os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return true, 1
+			}
+			return true, 0
+		}
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			usage()
 			return true, 0
 		}
 		switch subargs[0] {
+		case "advanced":
+			usageAdvanced()
+		case "first-run":
+			printFirstRunUsage(os.Stderr)
+		case "commands":
+			printCommandsUsage(os.Stderr)
 		case "ctl":
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
 			fs.Usage()
@@ -54,8 +67,16 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printBuildUsage(os.Stderr)
 		case "action":
 			printActionUsage(os.Stderr)
+		case "runner":
+			printRunnerUsage(os.Stderr)
 		case "runs":
 			printRunsUsage(os.Stderr)
+		case "recording", "recordings":
+			printRecordingUsage(os.Stderr)
+		case "status":
+			printStatusUsage(os.Stderr)
+		case "trace", "traces":
+			printTraceUsage(os.Stderr)
 		case "daemon":
 			printDaemonUsage(os.Stderr)
 		case "cp":
@@ -72,6 +93,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printLogsUsage(os.Stderr)
 		case "secret":
 			printSecretUsage(os.Stderr)
+		case "security":
+			printSecurityUsage(os.Stderr)
 		case "policy":
 			printPolicyUsage(os.Stderr)
 		case "push":
@@ -80,6 +103,10 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printPullUsage(os.Stderr)
 		case "store":
 			printStoreUsage(os.Stderr)
+		case "support":
+			printSupportUsage(os.Stderr)
+		case "support-bundle":
+			printSupportBundleUsage(os.Stderr)
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
@@ -122,6 +149,10 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fmt.Println(RosettaHelp())
 		case "helper":
 			_ = helperUsage()
+		case "gui":
+			printGUIUsage(os.Stderr)
+		case "vnc":
+			printVNCUsage(os.Stderr)
 		case "install":
 			printInstallUsage(os.Stderr)
 		case "run":
@@ -145,6 +176,9 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			usage()
 			return true, 2
 		}
+		return true, 0
+	case "first-run":
+		printFirstRunUsage(os.Stdout)
 		return true, 0
 	case "version":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
@@ -175,6 +209,10 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fs.Usage()
 			return true, usageExitCode(subargs)
 		}
+		if len(subargs) > 1 && subargs[0] == "ready" && isHelpArg(subargs[1]) {
+			printReadyUsage(os.Stderr)
+			return true, 0
+		}
 	case "shell":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printShellUsage(os.Stderr)
@@ -189,10 +227,50 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printRunsListUsage(os.Stderr)
 			return true, 0
 		}
+		if len(subargs) > 1 && subargs[0] == "show" && isHelpArg(subargs[1]) {
+			printRunsShowUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && subargs[0] == "export" && isHelpArg(subargs[1]) {
+			printRunsExportUsage(os.Stderr)
+			return true, 0
+		}
+	case "support":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printSupportUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && subargs[0] == "bundle" && isHelpArg(subargs[1]) {
+			printSupportBundleUsage(os.Stderr)
+			return true, 0
+		}
+	case "support-bundle":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printSupportBundleUsage(os.Stderr)
+			return true, 0
+		}
+	case "commands":
+		if len(subargs) == 0 || subargs[0] == "--json" || subargs[0] == "-json" {
+			code := runCommandsCommand(newCommandEnv(), cmd, subargs)
+			return true, code
+		}
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printCommandsUsage(os.Stderr)
+			return true, 0
+		}
 	case "action":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printActionUsage(os.Stderr)
 			return true, usageExitCode(subargs)
+		}
+	case "runner":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printRunnerUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && subargs[0] == "workflow" && isHelpArg(subargs[1]) {
+			printRunnerWorkflowUsage(os.Stderr)
+			return true, 0
 		}
 	case "daemon":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
@@ -262,6 +340,42 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printPolicyUsage(os.Stderr)
 			return true, usageExitCode(subargs)
+		}
+	case "security":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printSecurityUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "recording", "recordings":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printRecordingUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && (subargs[0] == "list" || subargs[0] == "ls") && isHelpArg(subargs[1]) {
+			printRecordingListUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && subargs[0] == "export" && isHelpArg(subargs[1]) {
+			printRecordingExportUsage(os.Stderr)
+			return true, 0
+		}
+	case "status":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printStatusUsage(os.Stderr)
+			return true, 0
+		}
+	case "trace", "traces":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printTraceUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && subargs[0] == "status" && isHelpArg(subargs[1]) {
+			printTraceStatusUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && subargs[0] == "capabilities" && isHelpArg(subargs[1]) {
+			printTraceCapabilitiesUsage(os.Stderr)
+			return true, 0
 		}
 	case "store":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
@@ -339,6 +453,16 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			_ = helperUsage()
 			return true, usageExitCode(subargs)
 		}
+	case "gui":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printGUIUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "vnc":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printVNCUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
 	case "install":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printInstallUsage(os.Stderr)
@@ -412,10 +536,10 @@ Use -vm <name> (before the subcommand) to target a specific VM.`)
 func printGCUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove gc [options]
 
-Delete disposable VM clones created with -disposable.
+Delete disposable VM clones and inactive ephemeral forks.
 
 Options:
-  -dry-run              Print disposable clones without deleting them
+  -dry-run              Print disposable clones and ephemeral forks without deleting them
   -older-than duration  Only delete disposable clones older than the given age`)
 }
 
@@ -538,13 +662,13 @@ Alias:
   cove vm shared-folder <command>
 
 Commands:
-  list
-  status [mount-point]
-  pending [vm]
-  add <host-path> [tag] [ro|rw]
-  remove <tag-or-path>
-  clear
-  mount [mount-point]`)
+  list                              List configured folders
+  status [mount-point]              Show mount status in guest
+  pending [vm]                      List saved folders not mounted now
+  add <host-path> [tag] [ro|rw]     Save and live-apply when running
+  remove <tag-or-path>              Remove a saved folder
+  clear                             Remove all saved folders
+  mount [mount-point]               Retry guest mount via agent`)
 }
 
 func printInstallUsage(w io.Writer) {
@@ -555,7 +679,7 @@ Install a new VM. macOS by default; pass -linux for Linux.
 Common flags:
   -ipsw <path>            macOS restore image (downloaded if omitted)
   -linux                  install Linux instead of macOS
-  -distro <name>          Linux distro: ubuntu, debian, fedora, alpine, nixos
+  -distro <name>          Linux distro: ubuntu, debian, fedora, alpine (experimental), nixos
   -nixos                  install NixOS (implies -linux -distro nixos)
   -desktop                with -linux, install Ubuntu Desktop
   -nested                 with -linux, enable nested virtualization on supported hosts
@@ -565,15 +689,42 @@ Common flags:
   -disk-size N            disk size in GB (default 64)
   -force                  overwrite an existing VM disk
   -provision-user <name>  create user during install
-  -provision-password <p> password for provisioned user
+  -provision-password <p> password for provisioned user (prompts if empty)
   -vzscripts a,b,c        run vzscript recipes after install
   -vm <name>              target VM name (default: active VM)
 
 Examples:
   cove install -ipsw ~/.cache/vz/restore.ipsw
-  cove install -linux -distro alpine
+  cove install -linux -distro alpine        # experimental
   cove install -nixos
   cove install -linux -provision-user me`)
+}
+
+func printGUIUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove run -gui [flags]
+       cove ctl -vm <name> gui status|open|close
+
+Show or control the native VM display window.
+
+Examples:
+  cove run -gui
+  cove ctl -vm work gui status
+  cove ctl -vm work gui open`)
+}
+
+func printVNCUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove run -vnc :5901 -vnc-password <password> [flags]
+       cove ctl -vm <name> vnc status
+
+Expose a private VNC server for a running VM.
+
+Common flags:
+  -vnc-password <password>   require a VNC password
+  -vnc-bonjour <name>        advertise VNC with Bonjour
+
+Examples:
+  cove run -vnc :5901 -vnc-password <password>
+  cove ctl -vm work vnc status`)
 }
 
 func printRunUsage(w io.Writer) {
@@ -593,8 +744,9 @@ Common flags:
   -usb /path/disk.img[:ro] attach a USB mass-storage device (repeatable)
   -display WxH[@PPI]      set display resolution (repeatable)
   -http <addr>            expose per-VM HTTP API (e.g. :7777)
-  -vnc <addr>             start private VNC server (e.g. 127.0.0.1:5901)
-  -gdb <addr>             start private GDB debug stub (e.g. 127.0.0.1:1234)
+  -vnc <port>             start private VNC server; pass -vnc-password (e.g. :5901)
+  -gdb <port>             start private GDB debug stub (e.g. :1234)
+  -host-containment       fail closed for host-escape features
   -unattended             fully unattended setup (disk + OCR fallback)
   -boot-commands <file>   custom boot automation vzscript
   -vm <name>              target VM (default: active VM)

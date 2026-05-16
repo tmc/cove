@@ -65,6 +65,9 @@ To verify the signature locally:
   codesign --verify --strict --verbose /usr/local/bin/cove
   spctl --assess --type execute --verbose /usr/local/bin/cove
 
+After installing:
+  cove doctor host
+
 For Homebrew users:
   brew install tmc/tap/cove
 EOF

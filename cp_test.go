@@ -188,6 +188,7 @@ func TestCpRunCpArgErrors(t *testing.T) {
 		{name: "three args", args: []string{"a", "b", "c"}, err: "usage:"},
 		{name: "bad spec", args: []string{"a", "b"}, err: "exactly one path must be remote"},
 		{name: "vm mismatch", args: []string{"-vm", "other", "a", "vm:/tmp/a"}, err: "does not match"},
+		{name: "trailing vm mismatch", args: []string{"a", "vm:/tmp/a", "-vm", "other"}, err: "does not match"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := runCp(context.Background(), tc.args, noAgent)
@@ -195,6 +196,27 @@ func TestCpRunCpArgErrors(t *testing.T) {
 				t.Fatalf("runCp err = %v, want %q", err, tc.err)
 			}
 		})
+	}
+}
+
+func TestRunCpAcceptsVMFlagAfterOperands(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	if err := os.WriteFile(src, []byte("hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	fake := newFakeCpAgent()
+	err := runCp(context.Background(), []string{src, "vm1:/tmp/data.txt", "-vm", "vm1"}, func(vm string) cpAgent {
+		if vm != "vm1" {
+			t.Fatalf("vm = %q, want vm1", vm)
+		}
+		return fake
+	})
+	if err != nil {
+		t.Fatalf("runCp trailing -vm: %v", err)
+	}
+	if got := string(fake.guest["/tmp/data.txt"]); got != "hello\n" {
+		t.Fatalf("guest data = %q", got)
 	}
 }
 

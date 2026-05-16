@@ -147,14 +147,6 @@ func writeAppleLZ4Uncompressed(w io.Writer, raw []byte) error {
 	return nil
 }
 
-// uncompressLZ4BlockWithDict decodes one raw LZ4 block whose back-references
-// may extend into dict (the previous block's decoded output, capped at 64
-// KiB). Apple-LZ4 streams are dependent: each compressed block uses its
-// predecessor as a dictionary. Wraps pierrec/lz4's UncompressBlockWithDict.
-func uncompressLZ4BlockWithDict(src, dst, dict []byte) (int, error) {
-	return lz4.UncompressBlockWithDict(src, dst, dict)
-}
-
 // readAppleLZ4 decodes an Apple-LZ4 stream from r into w. It iterates blocks
 // until an end-of-stream marker. Any other 4-byte prefix is an error.
 //

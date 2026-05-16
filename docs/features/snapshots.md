@@ -23,10 +23,13 @@ The save command automatically pauses the VM, saves state, and resumes.
 ### Via Control Socket
 
 ```bash
-TOKEN=$(cat ~/.vz/vms/default/control.token)
-echo '{"type":"snapshot","auth_token":"'$TOKEN'","snapshot":{"action":"save","name":"checkpoint1"}}' | \
-  nc -U ~/.vz/vms/default/control.sock
+cove ctl -vm default snapshot save checkpoint1
+cove ctl -vm default snapshot list
 ```
+
+Use `cove ctl` for normal automation so token handling stays inside cove. If
+you need the raw control-socket protocol, see
+[`docs/reference/control-api.md`](../reference/control-api.md).
 
 ## Disk Snapshots (APFS COW)
 

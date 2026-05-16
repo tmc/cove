@@ -10,7 +10,7 @@ import (
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/apple/x/vzkit/capture"
+	"github.com/tmc/apple/x/capture"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"

@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -121,7 +123,7 @@ func TestGenerateFedoraKickstart(t *testing.T) {
 }
 
 func TestBuildAlpineAPKOVL(t *testing.T) {
-	data, err := buildAlpineAPKOVL()
+	data, err := buildAlpineAPKOVL("HOSTNAMEOPTS=\"-n alpine-vm\"\n")
 	if err != nil {
 		t.Fatalf("buildAlpineAPKOVL: %v", err)
 	}
@@ -144,7 +146,54 @@ func TestBuildAlpineAPKOVL(t *testing.T) {
 	if h, ok := saw["etc/local.d/cove.start"]; !ok || h.Mode != 0755 {
 		t.Errorf("cove.start: ok=%v hdr=%+v", ok, h)
 	}
+	if h, ok := saw["etc/cove/setup-alpine.answers"]; !ok || h.Mode != 0644 {
+		t.Errorf("embedded answers: ok=%v hdr=%+v", ok, h)
+	}
 	if h, ok := saw["etc/runlevels/default/local"]; !ok || h.Typeflag != tar.TypeSymlink || h.Linkname != "/etc/init.d/local" {
 		t.Errorf("runlevels symlink: ok=%v hdr=%+v", ok, h)
+	}
+}
+
+func TestStageInstalledLinuxBootArtifactsAllowsNoInitrdAndRootDevice(t *testing.T) {
+	vmDir := t.TempDir()
+	mountPoint := t.TempDir()
+	artifactDir := filepath.Join(mountPoint, filepath.FromSlash(linuxEFIBootArtifactsDir))
+	if err := os.MkdirAll(artifactDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "vmlinuz"), []byte("MZkernel"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, linuxRootUUIDFileName), []byte("uuid-1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, linuxRootDeviceFileName), []byte("/dev/vda1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "initrd"), []byte("stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := stageInstalledLinuxBootArtifacts(vmDir, mountPoint); err != nil {
+		t.Fatalf("stageInstalledLinuxBootArtifacts: %v", err)
+	}
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{"vmlinuz", "MZkernel"},
+		{linuxRootUUIDFileName, "uuid-1\n"},
+		{linuxRootDeviceFileName, "/dev/vda1\n"},
+	} {
+		data, err := os.ReadFile(filepath.Join(vmDir, tt.name))
+		if err != nil {
+			t.Fatalf("read %s: %v", tt.name, err)
+		}
+		if string(data) != tt.want {
+			t.Fatalf("%s = %q, want %q", tt.name, data, tt.want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(vmDir, "initrd")); !os.IsNotExist(err) {
+		t.Fatalf("initrd stat = %v, want not exist", err)
 	}
 }

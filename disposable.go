@@ -155,6 +155,9 @@ func GCDisposableClones(opts DisposableGCOptions) (DisposableGCResult, error) {
 
 	entries, err := os.ReadDir(baseDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return DisposableGCResult{}, nil
+		}
 		return DisposableGCResult{}, fmt.Errorf("read vm base dir: %w", err)
 	}
 

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"unsafe"
 
 	vz "github.com/tmc/apple/virtualization"
+	identityx "github.com/tmc/apple/x/vzkit/identity"
+	networkx "github.com/tmc/apple/x/vzkit/network"
+	platformx "github.com/tmc/apple/x/vzkit/platform"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
@@ -166,7 +168,7 @@ func cloneRequiredFiles(sourceOS string) []struct {
 func cloneOptionalFiles(sourceOS string) []string {
 	files := []string{"boot-args.txt", "control.token", "config.json", "shared_folders.json", loginScreenCredentialsFile}
 	if sourceOS == "Linux" {
-		files = append(files, "efi.nvram", "linux-installed", "cloud-init.iso", "vmlinuz", "initrd", linuxRootUUIDFileName)
+		files = append(files, "efi.nvram", "linux-installed", "cloud-init.iso", "vmlinuz", "initrd", linuxRootUUIDFileName, linuxRootDeviceFileName)
 	} else {
 		files = append(files, "mac.address")
 	}
@@ -200,40 +202,11 @@ func SupportsClonefile(dir string) bool {
 
 // generateMachineID creates a new machine identifier for a VM.
 func generateMachineID(vmPath string) error {
-	machineIDPath := filepath.Join(vmPath, "machine.id")
-
-	// Create new machine identifier
-	machineID := vz.NewVZMacMachineIdentifier()
-	if machineID.ID == 0 {
-		return fmt.Errorf("failed to create machine identifier")
-	}
-
-	// Get data representation
-	data := machineID.DataRepresentation()
-	if data.GetID() == 0 {
-		return fmt.Errorf("machine identifier has no data representation")
-	}
-
-	// Extract bytes and save
-	ptr := data.Bytes()
-	if ptr == nil {
-		return fmt.Errorf("no data bytes")
-	}
-	length := data.Length()
-	if length == 0 {
-		return fmt.Errorf("empty data")
-	}
-
-	bytes := unsafe.Slice((*byte)(ptr), length)
-	return os.WriteFile(machineIDPath, bytes, 0600)
+	return identityx.CreateMacMachineIdentifier(filepath.Join(vmPath, "machine.id"))
 }
 
 func generateMACAddress(vmPath string) error {
-	macAddr := vz.GetVZMACAddressClass().RandomLocallyAdministeredAddress()
-	if macAddr.ID == 0 {
-		return fmt.Errorf("failed to create mac address")
-	}
-	return os.WriteFile(filepath.Join(vmPath, "mac.address"), []byte(macAddr.String()+"\n"), 0644)
+	return networkx.CreateRandomMACAddress(filepath.Join(vmPath, "mac.address"))
 }
 
 func generateLinuxMachineID(vmPath string) error {
@@ -242,5 +215,5 @@ func generateLinuxMachineID(vmPath string) error {
 	if machineID.ID == 0 {
 		return fmt.Errorf("failed to create generic machine identifier")
 	}
-	return saveGenericMachineIdentifier(machineID, machineIDPath)
+	return platformx.SaveGenericMachineIdentifier(machineID, machineIDPath)
 }
