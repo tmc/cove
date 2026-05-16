@@ -641,11 +641,16 @@ func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
 	fmt.Println()
 	exe := "./cove"
 	vmFlag := target.vmHintFlag()
-	fmt.Println("  To fix, stop the VM and re-provision:")
-	fmt.Println()
-	fmt.Printf("    %s%s provision -user <username> -skip-setup-assistant\n", exe, vmFlag)
-	fmt.Println()
-	fmt.Println("  Or to provision just the agent:")
+	vmDirectory := target.effectiveVMDir()
+	if agentstate.DetectPlatform(vmDirectory) == agentstate.PlatformDarwin {
+		fmt.Println("  To fix, stop the VM and re-provision:")
+		fmt.Println()
+		fmt.Printf("    %s%s provision -user <username> -skip-setup-assistant\n", exe, vmFlag)
+		fmt.Println()
+		fmt.Println("  Or to provision just the agent:")
+	} else {
+		fmt.Println("  To fix, stop the VM and provision the agent:")
+	}
 	fmt.Println()
 	fmt.Printf("    %s%s provision-agent\n", exe, vmFlag)
 	fmt.Println()

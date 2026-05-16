@@ -197,6 +197,15 @@ func linuxInstallCommandLineForVariant(variant LinuxVariant, seedAddress string)
 	}
 }
 
+func supportsDirectKernelInstall(variant LinuxVariant) bool {
+	switch variant {
+	case LinuxVariantAlpine:
+		return false
+	default:
+		return true
+	}
+}
+
 func linuxInstallCommandLine(seedAddress string) string {
 	// Subiquity (Ubuntu 22.04+) skips the "Continue with autoinstall? (yes/no)"
 	// prompt only when it observes the bare token `autoinstall` in
@@ -353,7 +362,7 @@ func installLinuxVM() error {
 	installInitrdPath := initrdPath
 	installCmdLine := cmdLine
 	useDirectBoot := installKernelPath != "" && installInitrdPath != ""
-	if !useDirectBoot {
+	if !useDirectBoot && supportsDirectKernelInstall(provConfig.Variant) {
 		extracted, err := extractKernelFromISO(resolvedISO, vmDir)
 		if err == nil {
 			installKernelPath = extracted.kernel
@@ -415,9 +424,7 @@ func installLinuxVM() error {
 	} else {
 		fmt.Println("Using EFI boot from ISO.")
 		fmt.Println("The GRUB bootloader will start automatically after ~5 seconds.")
-		fmt.Println("Cloud-init will detect the autoinstall configuration.")
-		fmt.Println("NOTE: this path uses the ISO's GRUB; if the bundled GRUB does not pass `autoinstall` to the kernel,")
-		fmt.Println("Subiquity may prompt with \"Continue with autoinstall?\" — answer \"yes\" once to proceed.")
+		printLinuxInstallerEFINote(provConfig.Variant)
 	}
 	fmt.Printf("  Username: %s\n", provConfig.Username)
 	fmt.Printf("  Hostname: %s\n", provConfig.Hostname)
@@ -663,7 +670,22 @@ type extractedKernel struct {
 	initrd string
 }
 
-// extractKernelFromISO extracts vmlinuz + initrd from an Ubuntu ISO into vmDir.
+func printLinuxInstallerEFINote(variant LinuxVariant) {
+	switch variant {
+	case LinuxVariantDebian:
+		fmt.Println("Preseed data is attached through the NoCloud seed ISO.")
+	case LinuxVariantFedora:
+		fmt.Println("Kickstart data is attached through the NoCloud seed ISO.")
+	case LinuxVariantAlpine:
+		fmt.Println("Alpine setup answers are attached through the NoCloud seed ISO.")
+	default:
+		fmt.Println("Cloud-init will detect the autoinstall configuration.")
+		fmt.Println("NOTE: this path uses the ISO's GRUB; if the bundled GRUB does not pass `autoinstall` to the kernel,")
+		fmt.Println("Subiquity may prompt with \"Continue with autoinstall?\" — answer \"yes\" once to proceed.")
+	}
+}
+
+// extractKernelFromISO extracts vmlinuz + initrd from a Linux ISO into vmDir.
 // Uses bsdtar to read the ISO9660 filesystem (hdiutil cannot mount hybrid ISOs).
 // ARM64 vmlinuz is gzip-compressed; VZLinuxBootLoader requires the uncompressed
 // Image (starts with MZ), so we decompress if needed.
@@ -681,17 +703,37 @@ func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
 	for _, c := range candidates {
 		dstKernel := filepath.Join(vmDir, "vmlinuz")
 		dstInitrd := filepath.Join(vmDir, "initrd")
-		out, err := exec.Command("bsdtar", "-xf", isoPath, "-C", vmDir, "--include", c.kernel, "--include", c.initrd, "--strip-components=1").CombinedOutput()
+		tmpDir, err := os.MkdirTemp(vmDir, ".kernel-*")
 		if err != nil {
+			return nil, fmt.Errorf("create kernel extract dir: %w", err)
+		}
+		out, err := exec.Command("bsdtar", "-xf", isoPath, "-C", tmpDir, "--include", c.kernel, "--include", c.initrd, "--strip-components=1").CombinedOutput()
+		if err != nil {
+			os.RemoveAll(tmpDir)
 			continue
 		}
-		if _, err := os.Stat(dstKernel); err != nil {
+		extractedKernelPath := filepath.Join(tmpDir, filepath.Base(c.kernel))
+		extractedInitrd := filepath.Join(tmpDir, filepath.Base(c.initrd))
+		if _, err := os.Stat(extractedKernelPath); err != nil {
+			os.RemoveAll(tmpDir)
 			continue
 		}
-		if _, err := os.Stat(dstInitrd); err != nil {
+		if _, err := os.Stat(extractedInitrd); err != nil {
+			os.RemoveAll(tmpDir)
 			continue
 		}
 		_ = out
+		os.Remove(dstKernel)
+		os.Remove(dstInitrd)
+		if err := os.Rename(extractedKernelPath, dstKernel); err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, fmt.Errorf("move kernel: %w", err)
+		}
+		if err := os.Rename(extractedInitrd, dstInitrd); err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, fmt.Errorf("move initrd: %w", err)
+		}
+		os.RemoveAll(tmpDir)
 		// Ensure extracted files are writable (ISO preserves read-only
 		// permissions). The kernel may need in-place decompression and
 		// the initrd may have cloud-init data appended.
