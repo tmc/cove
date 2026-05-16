@@ -71,8 +71,6 @@ func TestFleetRemoteArgs(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{name: "ctl default vm", cmd: "ctl", args: []string{"gui", "status"}, want: []string{"ctl", "-vm", "ubuntu", "gui", "status"}},
-		{name: "ctl explicit vm", cmd: "ctl", args: []string{"-vm", "other", "ping"}, want: []string{"ctl", "-vm", "other", "ping"}},
 		{name: "vm list", cmd: "vm", args: []string{"list"}, want: []string{"vm", "list"}},
 		{name: "top list", cmd: "list", want: []string{"list"}},
 		{name: "image list", cmd: "image", args: []string{"list"}, want: []string{"image", "list"}},
@@ -200,9 +198,11 @@ func TestRunFleetRouteCtlUsesControlTunnel(t *testing.T) {
 		t.Fatalf("SavePath: %v", err)
 	}
 	oldDial := fleetDialControlSocket
+	oldToken := fleetReadControlToken
 	oldCtl := fleetCtlCommand
 	defer func() {
 		fleetDialControlSocket = oldDial
+		fleetReadControlToken = oldToken
 		fleetCtlCommand = oldCtl
 	}()
 	var dialVM string
@@ -213,6 +213,12 @@ func TestRunFleetRouteCtlUsesControlTunnel(t *testing.T) {
 			ReadWriteCloser: fakeReadWriteCloser{close: func() error { closed = true; return nil }},
 			LocalSocketPath: "/tmp/fleet-control.sock",
 		}, nil
+	}
+	fleetReadControlToken = func(ctx context.Context, remote fleetpkg.Remote, vm string) (string, error) {
+		if vm != "ubuntu" {
+			t.Fatalf("token vm = %q, want ubuntu", vm)
+		}
+		return "secret", nil
 	}
 	var ctlArgs []string
 	fleetCtlCommand = func(args []string) error {
@@ -225,11 +231,56 @@ func TestRunFleetRouteCtlUsesControlTunnel(t *testing.T) {
 	if dialVM != "ubuntu" {
 		t.Fatalf("dial vm = %q, want ubuntu", dialVM)
 	}
-	if want := []string{"-socket", "/tmp/fleet-control.sock", "ping"}; !reflect.DeepEqual(ctlArgs, want) {
+	if want := []string{"-socket", "/tmp/fleet-control.sock", "-token", "secret", "ping"}; !reflect.DeepEqual(ctlArgs, want) {
 		t.Fatalf("ctl args = %#v, want %#v", ctlArgs, want)
 	}
 	if !closed {
 		t.Fatal("tunnel was not closed")
+	}
+}
+
+func TestFleetRemoteSubcommandRoutesCtl(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	cfg := &fleetpkg.Config{}
+	if err := cfg.Add("demo", fleetpkg.Remote{Host: "localhost", DefaultVM: "ubuntu"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := fleetpkg.SavePath(path, cfg); err != nil {
+		t.Fatalf("SavePath: %v", err)
+	}
+	oldDial := fleetDialControlSocket
+	oldToken := fleetReadControlToken
+	oldCtl := fleetCtlCommand
+	defer func() {
+		fleetDialControlSocket = oldDial
+		fleetReadControlToken = oldToken
+		fleetCtlCommand = oldCtl
+	}()
+	fleetDialControlSocket = func(ctx context.Context, remote fleetpkg.Remote, vm string) (*fleetpkg.Tunnel, error) {
+		if vm != "ubuntu" {
+			t.Fatalf("dial vm = %q, want ubuntu", vm)
+		}
+		return &fleetpkg.Tunnel{
+			ReadWriteCloser: fakeReadWriteCloser{},
+			LocalSocketPath: "/tmp/fleet-control.sock",
+		}, nil
+	}
+	fleetReadControlToken = func(ctx context.Context, remote fleetpkg.Remote, vm string) (string, error) {
+		if vm != "ubuntu" {
+			t.Fatalf("token vm = %q, want ubuntu", vm)
+		}
+		return "secret", nil
+	}
+	var ctlArgs []string
+	fleetCtlCommand = func(args []string) error {
+		ctlArgs = append([]string(nil), args...)
+		return nil
+	}
+	if err := runFleetCommandWithRunner(context.Background(), []string{"demo", "ctl", "ping"}, path, &fakeFleetRunner{}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet demo ctl ping: %v", err)
+	}
+	if want := []string{"-socket", "/tmp/fleet-control.sock", "-token", "secret", "ping"}; !reflect.DeepEqual(ctlArgs, want) {
+		t.Fatalf("ctl args = %#v, want %#v", ctlArgs, want)
 	}
 }
 
