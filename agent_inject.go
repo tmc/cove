@@ -691,7 +691,7 @@ func upgradeAgentAt(sock string) error {
 			Type: "agent-exec",
 			Command: &controlpb.ControlRequest_AgentExec{
 				AgentExec: &controlpb.AgentExecCommand{
-					Args: []string{"systemctl", "restart", "vz-agent"},
+					Args: []string{"sh", "-c", linuxAgentUpgradeRestartScript()},
 				},
 			},
 		}
@@ -776,6 +776,16 @@ func upgradeAgentAt(sock string) error {
 func agentUpgradeReconnectTimeoutMessage() string {
 	window := agentUpgradeReconnectInitialDelay + agentUpgradeReconnectAttempts*agentUpgradeReconnectDelay
 	return fmt.Sprintf("agent installed and restart requested, but agent did not reconnect within %ds (tried %d reconnects); VM may still be restarting the agent, retry cove ctl agent-ping or cove agent-upgrade", int(window/time.Second), agentUpgradeReconnectAttempts)
+}
+
+func linuxAgentUpgradeRestartScript() string {
+	return strings.Join([]string{
+		"set -eu",
+		"if command -v systemd-run >/dev/null 2>&1; then",
+		"  systemd-run --unit=vz-agent-upgrade-restart --collect --on-active=1s /bin/systemctl restart vz-agent >/tmp/vz-agent-upgrade-restart.log 2>&1 && exit 0",
+		"fi",
+		"(sleep 1; systemctl restart vz-agent) >/tmp/vz-agent-upgrade-restart.log 2>&1 &",
+	}, "\n")
 }
 
 func guestAgentUpgradeInstallScript(tmpPath, destPath string) string {

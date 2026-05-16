@@ -113,6 +113,23 @@ func TestAgentUpgradeReconnectBudget(t *testing.T) {
 	}
 }
 
+func TestLinuxAgentUpgradeRestartScriptSchedulesOutsideAgent(t *testing.T) {
+	script := linuxAgentUpgradeRestartScript()
+	for _, want := range []string{
+		"systemd-run",
+		"--on-active=1s",
+		"/bin/systemctl restart vz-agent",
+		"/tmp/vz-agent-upgrade-restart.log",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, "\nsystemctl restart vz-agent") {
+		t.Fatalf("script should not directly restart from the agent service:\n%s", script)
+	}
+}
+
 func TestIsLinuxGuestOS(t *testing.T) {
 	tests := []struct {
 		name string
