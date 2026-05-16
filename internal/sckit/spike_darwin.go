@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/tmc/apple/screencapturekit"
-	"github.com/tmc/apple/x/vzkit/capture"
+	"github.com/tmc/apple/x/capture"
 )
 
 // ErrWindowNotFound reports that ScreenCaptureKit could not see the target

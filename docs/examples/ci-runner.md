@@ -17,7 +17,7 @@ Install macOS into a VM named `ci-runner`, provision a user, and inject the gues
 
 ```bash
 cove -vm ci-runner install -ipsw ~/restore.ipsw -cpu 4 -memory 8 -disk-size 64
-cove -vm ci-runner provision -user ci -password cipass -skip-setup-assistant
+cove -vm ci-runner provision -user ci -skip-setup-assistant
 ```
 
 Boot once to let provisioning complete, then shut down:

@@ -39,6 +39,20 @@ func TestRunFleetCommandDispatchBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("unknownCommandWithArg", func(t *testing.T) {
+		err := runFleetCommandWithRunner(context.Background(), []string{"frobnicate", "arg"}, path, runner, &bytes.Buffer{}, &bytes.Buffer{})
+		if err == nil || !strings.Contains(err.Error(), "unknown command") {
+			t.Fatalf("err = %v, want unknown command", err)
+		}
+	})
+
+	t.Run("unknownCommandWithMissingConfig", func(t *testing.T) {
+		err := runFleetCommandWithRunner(context.Background(), []string{"frobnicate", "arg"}, path+"-missing", runner, &bytes.Buffer{}, &bytes.Buffer{})
+		if err == nil || !strings.Contains(err.Error(), "unknown command") {
+			t.Fatalf("err = %v, want unknown command", err)
+		}
+	})
+
 	t.Run("subHelp", func(t *testing.T) {
 		for _, sub := range []string{"ls", "rm", "vm", "image", "run"} {
 			var out bytes.Buffer

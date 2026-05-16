@@ -98,9 +98,16 @@ func RunDoctorCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		if *asJSON || actionArgsWantJSON(args) {
+			_ = WriteReport(stdout, actionArgumentErrorReport(err), true)
+		}
 		return 1
 	}
 	if fs.NArg() != 0 {
+		err := fmt.Errorf("usage: cove action doctor [--json] [--cove-bin <path>]")
+		if *asJSON {
+			_ = WriteReport(stdout, actionArgumentErrorReport(err), true)
+		}
 		printDoctorUsage(stderr)
 		return 1
 	}
@@ -130,9 +137,16 @@ func RunPrepareCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		if *asJSON || actionArgsWantJSON(args) {
+			_ = WriteReport(stdout, actionArgumentErrorReport(err), true)
+		}
 		return 1
 	}
 	if fs.NArg() > 1 || (fs.NArg() == 1 && *registryRef != "") || (fs.NArg() == 0 && *registryRef == "") {
+		err := fmt.Errorf("usage: cove action prepare-image <ref> [--json] [--force] [--ttl <duration>]")
+		if *asJSON {
+			_ = WriteReport(stdout, actionArgumentErrorReport(err), true)
+		}
 		printPrepareUsage(stderr)
 		return 1
 	}

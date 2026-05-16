@@ -118,6 +118,95 @@ func TestDaemonStatusMissingSocketHint(t *testing.T) {
 	}
 }
 
+func TestDaemonStatusJSONMissingSocket(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out, err := captureStdoutResult(t, func() error {
+		return daemonCommand([]string{"status", "--json"})
+	})
+	if err == nil {
+		t.Fatal("daemonCommand(status --json) = nil, want stopped daemon error")
+	}
+	var got daemonErrorOutput
+	if jsonErr := json.Unmarshal([]byte(out), &got); jsonErr != nil {
+		t.Fatalf("status --json error output: %v\n%s", jsonErr, out)
+	}
+	if got.Command != "daemon status" {
+		t.Fatalf("command = %q, want daemon status", got.Command)
+	}
+	if !strings.Contains(got.Error, "daemon: stopped") {
+		t.Fatalf("error = %q, want stopped daemon", got.Error)
+	}
+	if got.Hint != "cove daemon start" {
+		t.Fatalf("hint = %q, want cove daemon start", got.Hint)
+	}
+}
+
+func TestDaemonStatusJSONSuccess(t *testing.T) {
+	home, err := os.MkdirTemp("/tmp", "cove-daemon-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".vz")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	socket := filepath.Join(dir, "cove.sock")
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 16)
+		n, _ := conn.Read(buf)
+		if string(buf[:n]) == "STATUS\n" {
+			_ = json.NewEncoder(conn).Encode(daemonStatus{Version: "test", UptimeS: 9, VMsManaged: 2})
+		}
+	}()
+	out, err := captureStdoutResult(t, func() error {
+		return daemonCommand([]string{"status", "--json"})
+	})
+	if err != nil {
+		t.Fatalf("daemonCommand(status --json): %v", err)
+	}
+	<-done
+	var got daemonStatus
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("status JSON: %v\n%s", err, out)
+	}
+	if got.Version != "test" || got.UptimeS != 9 || got.VMsManaged != 2 {
+		t.Fatalf("status = %+v", got)
+	}
+}
+
+func TestDaemonMetricsJSONError(t *testing.T) {
+	out, err := captureStdoutResult(t, func() error {
+		return daemonMetricsCommand([]string{"--json", "-addr", "127.0.0.1:1"})
+	})
+	if err == nil {
+		t.Fatal("daemonMetricsCommand --json = nil, want connection error")
+	}
+	var got daemonErrorOutput
+	if jsonErr := json.Unmarshal([]byte(out), &got); jsonErr != nil {
+		t.Fatalf("metrics --json error output: %v\n%s", jsonErr, out)
+	}
+	if got.Command != "daemon metrics" {
+		t.Fatalf("command = %q, want daemon metrics", got.Command)
+	}
+	if !strings.Contains(got.Error, "daemon metrics:") {
+		t.Fatalf("error = %q, want daemon metrics context", got.Error)
+	}
+}
+
 func TestDaemonStopCommandUnloadsPlist(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

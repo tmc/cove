@@ -1,4 +1,4 @@
-package main
+package vmstate
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 )
 
-func TestCanonicalVMState(t *testing.T) {
+func TestCanonical(t *testing.T) {
 	tests := []struct {
 		in   string
 		want string
@@ -16,13 +16,13 @@ func TestCanonicalVMState(t *testing.T) {
 		{in: " VZVirtualMachineStateStarting ", want: "starting"},
 	}
 	for _, tt := range tests {
-		if got := canonicalVMState(tt.in); got != tt.want {
-			t.Fatalf("canonicalVMState(%q) = %q, want %q", tt.in, got, tt.want)
+		if got := Canonical(tt.in); got != tt.want {
+			t.Fatalf("Canonical(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }
 
-func TestVMStateLabel(t *testing.T) {
+func TestLabel(t *testing.T) {
 	tests := []struct {
 		state vz.VZVirtualMachineState
 		want  string
@@ -39,8 +39,8 @@ func TestVMStateLabel(t *testing.T) {
 		{vz.VZVirtualMachineStateStopped, "stopped"},
 	}
 	for _, tt := range tests {
-		if got := vmStateLabel(tt.state); got != tt.want {
-			t.Errorf("vmStateLabel(%v) = %q, want %q", tt.state, got, tt.want)
+		if got := Label(tt.state); got != tt.want {
+			t.Errorf("Label(%v) = %q, want %q", tt.state, got, tt.want)
 		}
 	}
 }

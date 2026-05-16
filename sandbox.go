@@ -20,6 +20,8 @@ const (
 	// SandboxLevelStrict is the strongest policy. It blocks host sharing,
 	// proxying, Rosetta, and vsock.
 	SandboxLevelStrict SandboxLevel = "strict"
+	// SandboxLevelHostContainment fails closed for host-escape features.
+	SandboxLevelHostContainment SandboxLevel = "host-containment"
 )
 
 // ParseSandboxLevel parses a sandbox level string.
@@ -31,8 +33,10 @@ func ParseSandboxLevel(s string) (SandboxLevel, error) {
 		return SandboxLevelMinimal, nil
 	case string(SandboxLevelStrict):
 		return SandboxLevelStrict, nil
+	case string(SandboxLevelHostContainment), "containment", "contained":
+		return SandboxLevelHostContainment, nil
 	default:
-		return SandboxLevelUnset, fmt.Errorf("unknown sandbox level %q (use minimal or strict)", s)
+		return SandboxLevelUnset, fmt.Errorf("unknown sandbox level %q (use minimal, strict, or host-containment)", s)
 	}
 }
 
@@ -51,17 +55,33 @@ func NewSandboxPolicy(level string) (SandboxPolicy, error) {
 }
 
 func currentSandboxPolicy() (SandboxPolicy, error) {
-	return NewSandboxPolicy(sandboxLevel)
+	level := sandboxLevel
+	if hostContainment {
+		parsed, err := ParseSandboxLevel(level)
+		if err != nil {
+			return SandboxPolicy{}, err
+		}
+		if parsed != SandboxLevelUnset && parsed != SandboxLevelHostContainment {
+			return SandboxPolicy{}, fmt.Errorf("-host-containment conflicts with -sandbox-level %s", parsed)
+		}
+		level = string(SandboxLevelHostContainment)
+	}
+	return NewSandboxPolicy(level)
 }
 
 // Active reports whether any sandbox policy is in effect.
 func (p SandboxPolicy) Active() bool {
-	return p.Level == SandboxLevelMinimal || p.Level == SandboxLevelStrict
+	return p.Level == SandboxLevelMinimal || p.Level == SandboxLevelStrict || p.Level == SandboxLevelHostContainment
 }
 
 // Strict reports whether the strongest sandbox policy is in effect.
 func (p SandboxPolicy) Strict() bool {
-	return p.Level == SandboxLevelStrict
+	return p.Level == SandboxLevelStrict || p.Level == SandboxLevelHostContainment
+}
+
+// HostContainment reports whether fail-closed host containment is in effect.
+func (p SandboxPolicy) HostContainment() bool {
+	return p.Level == SandboxLevelHostContainment
 }
 
 // AllowsVolumes reports whether host volume mounts are permitted.
@@ -76,17 +96,37 @@ func (p SandboxPolicy) AllowsSharedFolders() bool {
 
 // AllowsVsock reports whether the guest should keep a vsock device.
 func (p SandboxPolicy) AllowsVsock() bool {
-	return p.Level != SandboxLevelStrict
+	return !p.Strict()
 }
 
 // AllowsRosetta reports whether Rosetta should be enabled for Linux guests.
 func (p SandboxPolicy) AllowsRosetta() bool {
-	return p.Level != SandboxLevelStrict
+	return !p.Strict()
 }
 
 // AllowsProxy reports whether guest proxy configuration is allowed.
 func (p SandboxPolicy) AllowsProxy() bool {
-	return p.Level != SandboxLevelStrict
+	return !p.Strict()
+}
+
+// AllowsClipboard reports whether host/guest clipboard sharing is permitted.
+func (p SandboxPolicy) AllowsClipboard() bool {
+	return !p.Active()
+}
+
+// AllowsVNC reports whether a host VNC listener is permitted.
+func (p SandboxPolicy) AllowsVNC() bool {
+	return !p.HostContainment()
+}
+
+// AllowsDebugStub reports whether a host debugger listener is permitted.
+func (p SandboxPolicy) AllowsDebugStub() bool {
+	return !p.HostContainment()
+}
+
+// AllowsHTTP reports whether the per-VM host HTTP listener is permitted.
+func (p SandboxPolicy) AllowsHTTP() bool {
+	return !p.HostContainment()
 }
 
 // AllowsAgentProvision reports whether the host may auto-provision the guest agent.
@@ -120,9 +160,9 @@ func (p SandboxPolicy) EffectiveNetworkMode(requested string, explicit bool) (st
 			return requested, nil
 		}
 		return "none", nil
-	case SandboxLevelStrict:
+	case SandboxLevelStrict, SandboxLevelHostContainment:
 		if explicit && requested != "" && requested != "none" {
-			return "", fmt.Errorf("-sandbox-level strict does not allow -network %q; use minimal for network access", requested)
+			return "", fmt.Errorf("-sandbox-level %s does not allow -network %q; use minimal for network access", p.Level, requested)
 		}
 		return "none", nil
 	default:
@@ -229,13 +269,25 @@ func applySandboxDefaults() error {
 		return fmt.Errorf("-sandbox-level %s does not allow -vol or -share-dir", policy.Level)
 	}
 	if !policy.AllowsProxy() && strings.TrimSpace(proxyURL) != "" {
-		return fmt.Errorf("-sandbox-level strict does not allow -proxy; use minimal or omit -proxy")
+		return fmt.Errorf("-sandbox-level %s does not allow -proxy; use minimal or omit -proxy", policy.Level)
 	}
 	if !policy.AllowsVsock() && len(startupPortForwards) > 0 {
-		return fmt.Errorf("-sandbox-level strict does not allow -port-forward; use minimal or omit -port-forward")
+		return fmt.Errorf("-sandbox-level %s does not allow -port-forward; use minimal or omit -port-forward", policy.Level)
 	}
 	if !policy.AllowsRosetta() && enableRosetta && flagWasSet("rosetta") {
-		return fmt.Errorf("-sandbox-level strict does not allow -rosetta")
+		return fmt.Errorf("-sandbox-level %s does not allow -rosetta", policy.Level)
+	}
+	if !policy.AllowsClipboard() && enableClipboard && flagWasSet("clipboard") {
+		return fmt.Errorf("-sandbox-level %s does not allow -clipboard", policy.Level)
+	}
+	if !policy.AllowsVNC() && vncEnabled() {
+		return fmt.Errorf("-sandbox-level %s does not allow -vnc or -vnc-bonjour", policy.Level)
+	}
+	if !policy.AllowsDebugStub() && debugStubEnabled() {
+		return fmt.Errorf("-sandbox-level %s does not allow -gdb", policy.Level)
+	}
+	if !policy.AllowsHTTP() && strings.TrimSpace(runHTTPAddr) != "" {
+		return fmt.Errorf("-sandbox-level %s does not allow -http", policy.Level)
 	}
 
 	effectiveNetwork, err := policy.EffectiveNetworkMode(networkMode, flagWasSet("network") || flagWasSet("net"))

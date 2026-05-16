@@ -42,7 +42,7 @@ This should happen automatically on first launch. If it doesn't, run the codesig
 **Solution:** Run provisioning again and approve the native macOS admin dialog:
 
 ```bash
-cove provision -user testuser -password secret -skip-setup-assistant
+cove provision -user testuser -skip-setup-assistant
 ```
 
 Verify with:
@@ -129,6 +129,10 @@ rm ~/.vz/vms/default/suspend.vmstate
 cove ctl request-stop
 cove run -no-resume
 ```
+
+`request-stop` sends an ACPI power button event; it does not guarantee that
+the guest will power off. If the VM stays running, use `cove ctl stop` before
+the cold boot.
 
 ### VM Refuses to Boot After Pull
 
@@ -226,6 +230,19 @@ Delete the saved frame and restart. The frame autosave is handled by NSWindow an
 
 ## Debugging
 
+### First Support Bundle
+
+Before collecting low-level logs, create a redacted support bundle:
+
+```bash
+cove support bundle
+cove support bundle -vm default
+```
+
+The bundle includes host readiness, version/signing details, helper and daemon
+status, recent run and recording metadata, trace capabilities, command
+inventory, and optional VM control diagnostics.
+
 ### Verbose Output
 
 ```bash
@@ -260,8 +277,13 @@ cove run -pprof 6060
 
 ### Control Socket Debug
 
+Use `cove ctl` first; it handles the VM control token for you:
+
 ```bash
-TOKEN=$(cat ~/.vz/vms/default/control.token)
-echo '{"type":"status","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
-echo '{"type":"capabilities","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
+cove ctl -vm default status
+cove ctl -vm default capabilities
 ```
+
+The raw Unix-socket protocol is documented in
+[`docs/reference/control-api.md`](../reference/control-api.md) for integration
+debugging.

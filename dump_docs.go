@@ -172,7 +172,7 @@ func buildAPIDocs() *apiDocs {
 			{Method: "POST", Path: "/v1/vms/{name}/pause", Description: "Pause a running VM.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms/{name}/resume", Description: "Resume a paused VM.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms/{name}/stop", Description: "Stop a running VM.", Auth: "bearer"},
-			{Method: "POST", Path: "/v1/vms/{name}/request-stop", Description: "Request graceful guest shutdown with an ACPI power button event.", Auth: "bearer"},
+			{Method: "POST", Path: "/v1/vms/{name}/request-stop", Description: "Send an ACPI power button event; the guest may ignore it.", Auth: "bearer"},
 			{Method: "GET", Path: "/v1/vms/{name}/screenshot", Description: "Capture the VM display as an image.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms/{name}/type", Description: "Type text into the guest with synthesized keyboard input.", Auth: "bearer"},
 			{Method: "POST", Path: "/v1/vms/{name}/key", Description: "Send one keyboard event.", Auth: "bearer"},

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 )
 
@@ -157,16 +156,4 @@ func durationString(d time.Duration) string {
 		return ""
 	}
 	return d.String()
-}
-
-// ParseRunBudget returns a positive run budget from text.
-func ParseRunBudget(raw string) (int, error) {
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, fmt.Errorf("parse run budget: %w", err)
-	}
-	if n <= 0 {
-		return 0, fmt.Errorf("run budget must be greater than zero")
-	}
-	return n, nil
 }

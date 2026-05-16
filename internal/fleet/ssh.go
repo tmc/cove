@@ -8,13 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 type Tunnel struct {
 	io.ReadWriteCloser
-	cmd      *exec.Cmd
-	localDir string
+	LocalSocketPath string
+	cmd             *exec.Cmd
+	localDir        string
 }
 
 func DialControlSocket(ctx context.Context, remote Remote, vm string) (*Tunnel, error) {
@@ -40,7 +42,14 @@ func DialControlSocket(ctx context.Context, remote Remote, vm string) (*Tunnel, 
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
-	return &Tunnel{ReadWriteCloser: conn, cmd: cmd, localDir: dir}, nil
+	return &Tunnel{ReadWriteCloser: conn, LocalSocketPath: localSock, cmd: cmd, localDir: dir}, nil
+}
+
+func (t *Tunnel) LocalSocket() string {
+	if t == nil {
+		return ""
+	}
+	return t.LocalSocketPath
 }
 
 func (t *Tunnel) Close() error {
@@ -66,11 +75,29 @@ func SSHForwardArgs(remote Remote, localSock, remoteSock string) []string {
 }
 
 func RemoteControlSocketPath(remote Remote, vm string) string {
-	user := remote.User
-	if user == "" {
-		user = "$USER"
+	return filepath.Join(".vz", "vms", vm, "control.sock")
+}
+
+func RemoteControlTokenPath(remote Remote, vm string) string {
+	return filepath.Join(".vz", "vms", vm, "control.token")
+}
+
+func ReadControlToken(ctx context.Context, remote Remote, vm string) (string, error) {
+	vm = defaultVM(remote, vm)
+	if vm == "" {
+		return "", fmt.Errorf("fleet vm required")
 	}
-	return filepath.Join("/Users", user, ".vz", "vms", vm, "control.sock")
+	args := append([]string{}, remote.SSHArgs...)
+	args = append(args, remoteTarget(remote), "cat", RemoteControlTokenPath(remote, vm))
+	data, err := exec.CommandContext(ctx, sshBinary(), args...).Output()
+	if err != nil {
+		return "", fmt.Errorf("read remote control token: %w", err)
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return "", fmt.Errorf("remote control token is empty")
+	}
+	return token, nil
 }
 
 func sshBinary() string {

@@ -55,7 +55,7 @@ test_task:
 Cove:
 
 ```bash
-cove up -linux -vm ubuntu-runner -user ubuntu -password ubuntu
+cove up -linux -vm ubuntu-runner -user ubuntu
 cove ctl -vm ubuntu-runner agent-exec --daemon -- bash -lc 'apt-get update && apt-get install -y golang'
 cove image build -from ubuntu-runner -tag acme/runner:go
 go run ./cmd/cove-action -image acme/runner:go -command 'go test ./...'

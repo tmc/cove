@@ -30,6 +30,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	configx "github.com/tmc/apple/x/vzkit/config"
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -66,6 +67,7 @@ const linuxAutoinstallPath = "autoinstall.yaml"
 const (
 	linuxEFIBootArtifactsDir = "EFI/VZMACOS"
 	linuxRootUUIDFileName    = "linux-root-uuid.txt"
+	linuxRootDeviceFileName  = "linux-root-device.txt"
 )
 
 func currentLinuxVariant() LinuxVariant {
@@ -193,6 +195,15 @@ func linuxInstallCommandLineForVariant(variant LinuxVariant, seedAddress string)
 		return fmt.Sprintf("modules=loop,squashfs,sd-mod,usb-storage quiet console=tty0 apkovl=http://%s/cove.apkovl.tar.gz cove_answers=http://%s/setup-alpine.answers", seedAddress, seedAddress)
 	default:
 		return linuxInstallCommandLine(seedAddress)
+	}
+}
+
+func supportsDirectKernelInstall(variant LinuxVariant) bool {
+	switch variant {
+	case LinuxVariantAlpine:
+		return false
+	default:
+		return true
 	}
 }
 
@@ -352,7 +363,7 @@ func installLinuxVM() error {
 	installInitrdPath := initrdPath
 	installCmdLine := cmdLine
 	useDirectBoot := installKernelPath != "" && installInitrdPath != ""
-	if !useDirectBoot {
+	if !useDirectBoot && supportsDirectKernelInstall(provConfig.Variant) {
 		extracted, err := extractKernelFromISO(resolvedISO, vmDir)
 		if err == nil {
 			installKernelPath = extracted.kernel
@@ -414,9 +425,7 @@ func installLinuxVM() error {
 	} else {
 		fmt.Println("Using EFI boot from ISO.")
 		fmt.Println("The GRUB bootloader will start automatically after ~5 seconds.")
-		fmt.Println("Cloud-init will detect the autoinstall configuration.")
-		fmt.Println("NOTE: this path uses the ISO's GRUB; if the bundled GRUB does not pass `autoinstall` to the kernel,")
-		fmt.Println("Subiquity may prompt with \"Continue with autoinstall?\" — answer \"yes\" once to proceed.")
+		printLinuxInstallerEFINote(provConfig.Variant)
 	}
 	fmt.Printf("  Username: %s\n", provConfig.Username)
 	fmt.Printf("  Hostname: %s\n", provConfig.Hostname)
@@ -541,9 +550,9 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	graphicsConfig := vz.NewVZVirtioGraphicsDeviceConfiguration()
 	scanout := vz.NewVirtioGraphicsScanoutConfigurationWithWidthInPixelsHeightInPixels(defaultWindowWidth, defaultWindowHeight)
 	if scanout.ID != 0 {
-		setVirtioScanouts(graphicsConfig, scanout)
+		configx.SetVirtioScanouts(graphicsConfig, scanout)
 	}
-	setVirtioGraphicsDevices(config, graphicsConfig)
+	configx.SetVirtioGraphicsDevices(config, graphicsConfig)
 
 	// Network
 	natAttachment := vz.NewVZNATNetworkDeviceAttachment()
@@ -553,23 +562,23 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	if macAddr.ID != 0 {
 		networkConfig.SetMACAddress(&macAddr)
 	}
-	setNetworkDevices(config, networkConfig)
+	configx.SetNetworkDevices(config, networkConfig)
 
 	// Keyboard
 	keyboardConfig := vz.NewVZUSBKeyboardConfiguration()
-	setKeyboards(config, keyboardConfig)
+	configx.SetKeyboards(config, keyboardConfig)
 
 	// Pointing device
 	pointingConfig := vz.NewVZUSBScreenCoordinatePointingDeviceConfiguration()
-	setPointingDevices(config, []vz.IVZPointingDeviceConfiguration{pointingConfig})
+	configx.SetPointingDevices(config, []vz.IVZPointingDeviceConfiguration{pointingConfig})
 
 	// Entropy
 	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
-	setEntropyDevices(config, entropyConfig)
+	configx.SetEntropyDevices(config, entropyConfig)
 
 	// Audio (optional but nice to have)
 	audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
-	setAudioDevices(config, audioConfig)
+	configx.SetAudioDevices(config, audioConfig)
 
 	// USB controller (required for USB keyboard and USB mass storage devices)
 	usbController := vz.NewVZXHCIControllerConfiguration()
@@ -594,7 +603,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 				serialPort := vz.NewVZVirtioConsoleDeviceSerialPortConfiguration()
 				serialPort.SetAttachment(&serialAttachment.VZSerialPortAttachment)
 				if serialPort.ID != 0 {
-					setSerialPorts(config, vz.VZSerialPortConfigurationFromID(serialPort.ID))
+					configx.SetSerialPorts(config, vz.VZSerialPortConfigurationFromID(serialPort.ID))
 					if verbose {
 						fmt.Printf("  Serial console logging to %s\n", serialLogPath)
 					}
@@ -662,7 +671,22 @@ type extractedKernel struct {
 	initrd string
 }
 
-// extractKernelFromISO extracts vmlinuz + initrd from an Ubuntu ISO into vmDir.
+func printLinuxInstallerEFINote(variant LinuxVariant) {
+	switch variant {
+	case LinuxVariantDebian:
+		fmt.Println("Preseed data is attached through the NoCloud seed ISO.")
+	case LinuxVariantFedora:
+		fmt.Println("Kickstart data is attached through the NoCloud seed ISO.")
+	case LinuxVariantAlpine:
+		fmt.Println("Alpine setup answers are attached through the NoCloud seed ISO.")
+	default:
+		fmt.Println("Cloud-init will detect the autoinstall configuration.")
+		fmt.Println("NOTE: this path uses the ISO's GRUB; if the bundled GRUB does not pass `autoinstall` to the kernel,")
+		fmt.Println("Subiquity may prompt with \"Continue with autoinstall?\" — answer \"yes\" once to proceed.")
+	}
+}
+
+// extractKernelFromISO extracts vmlinuz + initrd from a Linux ISO into vmDir.
 // Uses bsdtar to read the ISO9660 filesystem (hdiutil cannot mount hybrid ISOs).
 // ARM64 vmlinuz is gzip-compressed; VZLinuxBootLoader requires the uncompressed
 // Image (starts with MZ), so we decompress if needed.
@@ -680,17 +704,37 @@ func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
 	for _, c := range candidates {
 		dstKernel := filepath.Join(vmDir, "vmlinuz")
 		dstInitrd := filepath.Join(vmDir, "initrd")
-		out, err := exec.Command("bsdtar", "-xf", isoPath, "-C", vmDir, "--include", c.kernel, "--include", c.initrd, "--strip-components=1").CombinedOutput()
+		tmpDir, err := os.MkdirTemp(vmDir, ".kernel-*")
 		if err != nil {
+			return nil, fmt.Errorf("create kernel extract dir: %w", err)
+		}
+		out, err := exec.Command("bsdtar", "-xf", isoPath, "-C", tmpDir, "--include", c.kernel, "--include", c.initrd, "--strip-components=1").CombinedOutput()
+		if err != nil {
+			os.RemoveAll(tmpDir)
 			continue
 		}
-		if _, err := os.Stat(dstKernel); err != nil {
+		extractedKernelPath := filepath.Join(tmpDir, filepath.Base(c.kernel))
+		extractedInitrd := filepath.Join(tmpDir, filepath.Base(c.initrd))
+		if _, err := os.Stat(extractedKernelPath); err != nil {
+			os.RemoveAll(tmpDir)
 			continue
 		}
-		if _, err := os.Stat(dstInitrd); err != nil {
+		if _, err := os.Stat(extractedInitrd); err != nil {
+			os.RemoveAll(tmpDir)
 			continue
 		}
 		_ = out
+		os.Remove(dstKernel)
+		os.Remove(dstInitrd)
+		if err := os.Rename(extractedKernelPath, dstKernel); err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, fmt.Errorf("move kernel: %w", err)
+		}
+		if err := os.Rename(extractedInitrd, dstInitrd); err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, fmt.Errorf("move initrd: %w", err)
+		}
+		os.RemoveAll(tmpDir)
 		// Ensure extracted files are writable (ISO preserves read-only
 		// permissions). The kernel may need in-place decompression and
 		// the initrd may have cloud-init data appended.
@@ -841,7 +885,7 @@ func buildLinuxCloudInitData(config LinuxProvisionConfig, includeAgent bool, age
 		}
 	case LinuxVariantAlpine:
 		answers := generateAlpineAnswers(config)
-		apkovl, err := buildAlpineAPKOVL()
+		apkovl, err := buildAlpineAPKOVL(answers)
 		if err != nil {
 			apkovl = nil
 		}
@@ -853,6 +897,7 @@ func buildLinuxCloudInitData(config LinuxProvisionConfig, includeAgent bool, age
 		}
 		if apkovl != nil {
 			files["cove.apkovl.tar.gz"] = apkovl
+			files["headless.apkovl.tar.gz"] = apkovl
 		}
 		return linuxCloudInitData{
 			userData:   vendorData,
@@ -954,7 +999,7 @@ ROOTPW="%s"
 `, config.Hostname, config.TimeZone, config.Username, config.Password)
 }
 
-func buildAlpineAPKOVL() ([]byte, error) {
+func buildAlpineAPKOVL(answers string) ([]byte, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -963,6 +1008,7 @@ func buildAlpineAPKOVL() ([]byte, error) {
 		mode int64
 		body string
 	}{
+		{"etc/cove/setup-alpine.answers", 0644, answers},
 		{"etc/local.d/cove.start", 0755, alpineSetupScript()},
 		{"etc/runlevels/default/local", 0777, ""},
 	}
@@ -998,8 +1044,11 @@ set -eu
 marker=/var/lib/cove-setup.done
 test -e "$marker" && exit 0
 url=$(sed -n 's/.*cove_answers=\([^ ]*\).*/\1/p' /proc/cmdline)
-test -n "$url"
-wget -O /tmp/setup-alpine.answers "$url"
+if test -n "$url"; then
+	wget -O /tmp/setup-alpine.answers "$url"
+else
+	cp /etc/cove/setup-alpine.answers /tmp/setup-alpine.answers
+fi
 setup-alpine -f /tmp/setup-alpine.answers
 touch "$marker"
 poweroff
@@ -1600,8 +1649,9 @@ func stageInstalledLinuxBootArtifacts(vmDir, mountPoint string) error {
 	kernelSource := filepath.Join(artifactDir, "vmlinuz")
 	initrdSource := filepath.Join(artifactDir, "initrd")
 	rootUUIDSource := filepath.Join(artifactDir, linuxRootUUIDFileName)
+	rootDeviceSource := filepath.Join(artifactDir, linuxRootDeviceFileName)
 
-	for _, path := range []string{kernelSource, initrdSource, rootUUIDSource} {
+	for _, path := range []string{kernelSource, rootUUIDSource} {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("missing staged linux boot artifact %s: %w", path, err)
 		}
@@ -1613,8 +1663,16 @@ func stageInstalledLinuxBootArtifacts(vmDir, mountPoint string) error {
 	if err := decompressKernelIfNeeded(filepath.Join(vmDir, "vmlinuz")); err != nil {
 		return fmt.Errorf("prepare staged linux kernel: %w", err)
 	}
-	if err := copyFile(initrdSource, filepath.Join(vmDir, "initrd")); err != nil {
-		return fmt.Errorf("copy staged linux initrd: %w", err)
+	if info, err := os.Stat(initrdSource); err == nil && info.Size() > 0 {
+		if err := copyFile(initrdSource, filepath.Join(vmDir, "initrd")); err != nil {
+			return fmt.Errorf("copy staged linux initrd: %w", err)
+		}
+	} else if err == nil || os.IsNotExist(err) {
+		if err := os.Remove(filepath.Join(vmDir, "initrd")); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale staged linux initrd: %w", err)
+		}
+	} else {
+		return fmt.Errorf("inspect staged linux initrd: %w", err)
 	}
 
 	rootUUID, err := os.ReadFile(rootUUIDSource)
@@ -1627,6 +1685,16 @@ func stageInstalledLinuxBootArtifacts(vmDir, mountPoint string) error {
 	}
 	if err := os.WriteFile(filepath.Join(vmDir, linuxRootUUIDFileName), append(rootUUID, '\n'), 0644); err != nil {
 		return fmt.Errorf("write staged linux root uuid: %w", err)
+	}
+	if rootDevice, err := os.ReadFile(rootDeviceSource); err == nil {
+		rootDevice = bytes.TrimSpace(rootDevice)
+		if len(rootDevice) > 0 {
+			if err := os.WriteFile(filepath.Join(vmDir, linuxRootDeviceFileName), append(rootDevice, '\n'), 0644); err != nil {
+				return fmt.Errorf("write staged linux root device: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read staged linux root device: %w", err)
 	}
 	return nil
 }

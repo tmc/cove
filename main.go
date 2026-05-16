@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"text/tabwriter"
@@ -21,6 +22,7 @@ import (
 	"github.com/tmc/vz-macos/internal/action"
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmtree"
 	"golang.org/x/term"
 )
 
@@ -104,6 +106,8 @@ var (
 	networkMode string
 	// Sandbox policy for safer research runs.
 	sandboxLevel string
+	// Strong host-containment mode for research VMs.
+	hostContainment bool
 	// USB storage devices
 	usbDevices USBStorageSlice
 	// Raw block devices
@@ -192,7 +196,7 @@ func init() {
 	flag.BoolVar(&windowsMode, "windows", false, "run a Windows ARM64 VM instead of macOS (experimental)")
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.BoolVar(&nixosMode, "nixos", false, "install or run a NixOS Linux VM")
-	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine, nixos")
+	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine (experimental), nixos")
 	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	flag.BoolVar(&linuxNVMe, "nvme", false, "attach Linux root disk through NVMe instead of virtio-blk")
 	flag.StringVar(&linuxDesktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
@@ -222,7 +226,7 @@ func init() {
 	flag.Var(&volumes, "vol", "mount host directory: /host/path[:tag][:ro|rw][:opt=val,...] (repeatable; default tag is the host directory name)")
 	flag.StringVar(&shareDir, "share-dir", "", "deprecated alias for -vol /host/path")
 	flag.StringVar(&provisionUser, "provision-user", "", "username for auto-provisioned user (enables provisioning)")
-	flag.StringVar(&provisionPassword, "provision-password", "", "password for auto-provisioned user")
+	flag.StringVar(&provisionPassword, "provision-password", "", "password for auto-provisioned user (prompts if empty)")
 	flag.BoolVar(&provisionAdmin, "provision-admin", true, "make auto-provisioned user an admin")
 	flag.StringVar(&provisionStrategy, "provision-strategy", "disk",
 		"provisioning strategy: disk (mount disk + write files, needs admin), gui (keyboard automation), auto (try disk, fall back to gui)")
@@ -243,7 +247,8 @@ func init() {
 	flag.StringVar(&networkMode, "net", "nat", "alias for -network")
 	flag.Var(&startupPortForwards, "port-forward", "forward host TCP to guest vsock: hostPort:guestVsockPort (repeatable)")
 	flag.Var(&startupPortForwards, "pf", "alias for -port-forward")
-	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal or strict")
+	flag.StringVar(&sandboxLevel, "sandbox-level", "", "research isolation policy: minimal, strict, or host-containment")
+	flag.BoolVar(&hostContainment, "host-containment", false, "fail closed for host-escape features in research VMs")
 	flag.StringVar(&proxyURL, "proxy", "", "configure guest system HTTP/HTTPS proxy after boot (for example http://192.168.64.1:8080)")
 	flag.StringVar(&pcapPath, "pcap", "", "write captured Ethernet frames to a PCAP file when using -network filehandle")
 	flag.StringVar(&diskSyncMode, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
@@ -266,9 +271,9 @@ func init() {
 	flag.BoolVar(&appleLog, "apple-log", false, "stream Apple unified logs relevant to virtualization while running")
 	flag.StringVar(&appleLogPredicate, "apple-log-predicate", "", "custom predicate for -apple-log (NSPredicate syntax)")
 	flag.BoolVar(&recoverIdentity, "recover-identity", false, "if VM identity metadata is missing, back it up and reset identity files to attempt recovery")
-	flag.StringVar(&vncAddress, "vnc", "", "start private VNC server on port or :port (for example :5901)")
+	flag.StringVar(&vncAddress, "vnc", "", "start private VNC server on port or :port; pass -vnc-password (for example :5901)")
 	flag.StringVar(&vncPassword, "vnc-password", "", "password for private VNC server")
-	flag.StringVar(&vncBonjourService, "vnc-bonjour", "", "bonjour service name for the private VNC server")
+	flag.StringVar(&vncBonjourService, "vnc-bonjour", "", "bonjour service name for the private VNC server (requires -vnc-password)")
 	flag.StringVar(&gdbAddress, "gdb", "", "attach private GDB debug stub on port or :port (for example :1234)")
 	flag.BoolVar(&gdbListenAll, "gdb-listen-all", false, "listen on all interfaces for -gdb")
 	flag.BoolVar(&saveCompress, "save-compress", false, "compress suspend state using private save options")
@@ -328,6 +333,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if err := validateInstallMediaPaths(flag.Args()); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	cpuExplicit = flagWasProvided(flag.CommandLine, "cpu")
 	applyNestedLinuxDefaults()
 
@@ -354,6 +363,10 @@ func main() {
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}
+		return
+	}
+	if flag.NArg() == 0 && !term.IsTerminal(int(os.Stdin.Fd())) {
+		usage()
 		return
 	}
 	if flag.NArg() > 0 {
@@ -487,6 +500,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+		if err := validateInstallMediaPaths([]string{cmd}); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
 		// Re-resolve vmDir if -vm flag was provided after subcommand.
 		if code := rerunVMDirForPostCommand(cmd, args); code != 0 {
@@ -496,16 +513,95 @@ func main() {
 		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == commandDispatchLate {
 			os.Exit(runRegisteredCommand(newCommandEnv(), spec, cmd, args))
 		}
-		if s := suggestCommand(cmd); s != "" {
-			fmt.Fprintf(os.Stderr, "cove: unknown command %q. Did you mean %q?\n", cmd, s)
-		} else {
-			fmt.Fprintf(os.Stderr, "cove: unknown command %q.\nRun 'cove -help' for usage.\n", cmd)
-		}
+		writeUnknownCommand(os.Stderr, cmd)
 		os.Exit(2)
 	}
 
 	// Default: smart routing based on number of VMs
 	handleDefaultAction()
+}
+
+func validateInstallMediaPaths(args []string) error {
+	if !installCommandRequested(args) {
+		return nil
+	}
+	ipsw, iso, err := installMediaPathArgs(args)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(ipsw) != "" {
+		src, err := parseIPSWSource(ipsw)
+		if err != nil {
+			return fmt.Errorf("install: %w", err)
+		}
+		if !src.IsURL {
+			if err := validateReadableFile(src.Path); err != nil {
+				return fmt.Errorf("install: ipsw path %s: %w", src.Path, err)
+			}
+		}
+	}
+	if strings.TrimSpace(iso) != "" && !isURL(iso) {
+		if err := validateReadableFile(iso); err != nil {
+			return fmt.Errorf("install: iso path %s: %w", iso, err)
+		}
+	}
+	return nil
+}
+
+func installMediaPathArgs(args []string) (ipsw, iso string, err error) {
+	ipsw, iso = ipswPath, isoPath
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-ipsw" || arg == "--ipsw":
+			i++
+			if i >= len(args) {
+				return "", "", fmt.Errorf("install: %s requires a path", arg)
+			}
+			ipsw = args[i]
+		case strings.HasPrefix(arg, "-ipsw="):
+			ipsw = strings.TrimPrefix(arg, "-ipsw=")
+		case strings.HasPrefix(arg, "--ipsw="):
+			ipsw = strings.TrimPrefix(arg, "--ipsw=")
+		case arg == "-iso" || arg == "--iso":
+			i++
+			if i >= len(args) {
+				return "", "", fmt.Errorf("install: %s requires a path", arg)
+			}
+			iso = args[i]
+		case strings.HasPrefix(arg, "-iso="):
+			iso = strings.TrimPrefix(arg, "-iso=")
+		case strings.HasPrefix(arg, "--iso="):
+			iso = strings.TrimPrefix(arg, "--iso=")
+		}
+	}
+	return ipsw, iso, nil
+}
+
+func installCommandRequested(args []string) bool {
+	if installVM {
+		return true
+	}
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "install", "up":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateReadableFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("is a directory")
+	}
+	return nil
 }
 
 // handleDefaultAction routes based on the selected UI mode:
@@ -577,10 +673,41 @@ func handleUTM() {
 }
 
 func handleRun() {
+	if err := resolveRunTarget(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	if err := runCurrentVM(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func resolveRunTarget() error {
+	if strings.TrimSpace(ephemeralForkParent) != "" {
+		return nil
+	}
+	if vmDir != "" && vmconfig.Validate(vmDir) {
+		if vmName == "" {
+			vmName = filepath.Base(vmDir)
+		}
+		return nil
+	}
+	name := strings.TrimSpace(vmName)
+	if name == "" {
+		name = strings.TrimSpace(vmconfig.ActiveName())
+	}
+	if name == "" {
+		return fmt.Errorf("run: no VM selected\n  list VMs: cove list\n  create a VM: cove up -user <name>\n  or pass -vm <name>")
+	}
+	dir, err := requireExistingRunVMDir(name)
+	if err != nil {
+		return err
+	}
+	vmName = name
+	vmDir = dir
+	applyVMConfig(vmDir)
+	return nil
 }
 
 func handleActionCommand(args []string) int {
@@ -610,6 +737,43 @@ Commands:
 }
 
 func usage() {
+	fmt.Fprintf(os.Stderr, `cove - Apple Virtualization Framework Example
+
+Usage:
+  cove [flags] [command]
+
+Common commands:
+  first-run        Show the safest first-run path
+  doctor host      Check this Mac before creating a VM
+  up -user <name>  Install, provision, and boot a first VM
+  list             List local VMs
+  run              Start the active VM
+  status           Show VM and guest-agent status
+  support bundle   Create a redacted support archive
+  config/export/import/rename are advanced VM aliases
+
+Use 'cove help advanced' for the full command list.
+Use 'cove <command> -h' for command-specific help.
+`)
+}
+
+func printFirstRunUsage(w io.Writer) {
+	fmt.Fprintln(w, `First run:
+  cove doctor host
+  cove up -user <name>
+  cove list
+
+What to expect:
+  - cove prompts for the guest account password if -password is omitted.
+  - macOS may ask for administrator approval to prepare guest disk files.
+  - VM data is stored under ~/.vz/.
+
+Support:
+  cove support bundle
+  cove support bundle -vm <name>`)
+}
+
+func usageAdvanced() {
 	fmt.Fprintf(os.Stderr, `cove - Apple Virtualization Framework Example
 
 Usage:
@@ -650,12 +814,15 @@ VM Management:
   diff            Compare local image disk layer metadata
   softreset       Run destructive soft-reset probe matrix
   runs            Inspect local run metrics and artifacts
+  recording       List/export run recording artifacts
   bench           Normalize benchmark evidence into reports and run metrics
+  commands        Print command inventory (use --json for automation)
   daemon          Manage the cove background coordinator
   compact         Zero guest free space for smaller pushes
   fleet           Register and use remote cove hosts
   build           Chain vzscript steps into a cache-keyed VM image
   action          Preflight helpers for private GitHub Actions runner images
+  runner          Generate hosted-runner workflow scaffolding
   push            Plan a VM disk OCI push (dry-run)
   pull            Validate an OCI pull plan (dry-run)
   policy          VM lifecycle policy (idle timeout, max age, run budget)
@@ -684,17 +851,22 @@ Runtime Control:
   cp              Copy files between host and guest (cove cp host vm:/path)
   forward         Forward host TCP to guest TCP (cove forward vm 8080:80)
   quota           Show or set per-VM resource quotas
+  security        Inspect host-containment policy
   ctl disk list   Inspect runtime storage devices
   ctl usb list    Inspect runtime USB controllers and devices
   logs            Show guest logs from a running VM (cove logs <vm> [-f])
   exec            Run a command in a running VM (cove exec <vm> <cmd>)
   shell           Open a Docker-shaped exec session in a running VM (cove shell <vm>)
+  trace           Manage eslogger guest traces
   agent-sandbox   Run a computer-use provider loop in a fresh VM fork
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
-  run -headless -vnc :5901            Expose a private VNC console
+  run -headless -vnc :5901 -vnc-password <password>
+                                      Expose a private VNC console
   run -gdb :1234                      Attach a private GDB debug stub
   run -sandbox-level strict -disposable -gui
                                       Safer disposable analysis run
+  run -host-containment -fork-from sample:latest -ephemeral -headless
+                                      Fail closed for host-escape features
   run -network filehandle -pcap /tmp/vm.pcap
                                       Capture raw guest Ethernet frames
 
@@ -703,8 +875,10 @@ Networking:
   rosetta         Rosetta 2 for Linux VMs (status/install/setup)
 
 Other:
+  first-run       Show first-run onboarding steps
   disk-detach     Detach VM disk if stuck from a previous provision/verify
   help [command]  Show top-level or command-specific help
+  help advanced   Show this full command list
   version         Print version information
 
 Auto-Provisioning (Recommended - provision command):
@@ -744,11 +918,11 @@ Linux VM:
 	  cove install -linux                                    # Ubuntu Server (default)
 	  cove install -linux -distro debian                     # Debian
 	  cove install -linux -distro fedora                     # Fedora
-	  cove install -linux -distro alpine                     # Alpine
+	  cove install -linux -distro alpine                     # Alpine (experimental)
 	  cove run -linux -nested                                # KVM on supported hosts
 	  cove install -linux -desktop                           # Ubuntu Desktop
   cove install -linux -iso /path/to/ubuntu.iso           # Use local ISO
-  cove install -linux -provision-user me -provision-password pw  # With user
+  cove install -linux -provision-user me -provision-password <password>
   cove run -linux                                        # Run installed VM
   cove run -linux -gui                                   # Run with display
   cove up -linux -user me                                # Server: install + boot
@@ -780,6 +954,14 @@ Volume Mounting (-vol flag):
 Flags:
 `)
 	printCommandDefaults(os.Stdout, flag.CommandLine)
+}
+
+func writeUnknownCommand(w io.Writer, cmd string) {
+	if s := suggestCommand(cmd); s != "" {
+		fmt.Fprintf(w, "cove: unknown command %q. Did you mean %q?\n  help: cove %s -h\n", cmd, s, s)
+		return
+	}
+	fmt.Fprintf(w, "cove: unknown command %q.\n  start here: cove first-run\n  common commands: cove help\n  full command list: cove help advanced\n", cmd)
 }
 
 func printCommandDefaults(w *os.File, fs *flag.FlagSet) {
@@ -954,7 +1136,9 @@ func handleListTo(stdout io.Writer) error {
 	activeVM := vmconfig.ActiveName()
 
 	if len(vms) == 0 {
-		fmt.Fprintln(stdout, "No VMs found. Run 'cove install' to create one.")
+		fmt.Fprintln(stdout, "No VMs found.")
+		fmt.Fprintln(stdout, "  Check this Mac first: cove doctor host")
+		fmt.Fprintln(stdout, "  Create your first VM: cove up -user <name>")
 	} else {
 		fmt.Fprintln(stdout, "VMs:")
 		w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
@@ -1400,29 +1584,52 @@ func handleVMCommand(args []string) {
 		treeOrphans := treeFS.Bool("orphans", false, "list only VMs whose parent is missing")
 		treeReachable := treeFS.String("reachable-from", "", "show VMs forked from the given image ref (mutually exclusive with --orphans)")
 		if err := treeFS.Parse(subargs); err != nil {
+			if *treeJSON {
+				_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "")
+			}
 			os.Exit(2)
 		}
 		if treeFS.NArg() > 0 {
-			fmt.Fprintln(os.Stderr, "Usage: cove vm tree [--json] [--orphans] [--reachable-from <image-ref>]")
+			err := errors.New("usage: cove vm tree [--json] [--orphans] [--reachable-from <image-ref>]")
+			if *treeJSON {
+				_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "")
+			}
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		treeOpts := VMTreeOptions{
+		treeOpts := vmtree.Options{
 			JSON:    *treeJSON,
 			Orphans: *treeOrphans,
 		}
 		if *treeReachable != "" {
 			if *treeOrphans {
-				fmt.Fprintln(os.Stderr, "vm tree: --reachable-from and --orphans are mutually exclusive")
+				err := errors.New("vm tree: --reachable-from and --orphans are mutually exclusive")
+				if *treeJSON {
+					_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "")
+				}
+				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
 			ref, err := ParseImageRef(*treeReachable)
 			if err != nil {
+				if *treeJSON {
+					_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "")
+				}
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
-			treeOpts.ReachableFromImage = &ref
+			treeOpts.ReachableFromImage = &vmtree.ReachableImage{
+				Ref:    ref.String(),
+				Exists: func(string) bool { return ImageExists(ref) },
+				Children: func(string) ([]string, error) {
+					return VMsForkedFromImage(ref)
+				},
+			}
 		}
-		if err := PrintVMTreeWithOptions(os.Stdout, treeOpts); err != nil {
+		if err := vmtree.PrintWithOptions(os.Stdout, treeOpts); err != nil {
+			if *treeJSON {
+				_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "run 'cove image list' to see local images")
+			}
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

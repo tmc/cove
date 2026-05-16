@@ -320,6 +320,28 @@ func TestInspectImageDiff_MissingRef(t *testing.T) {
 	}
 }
 
+func TestRunImageInspectDiffJSONMissingRefWritesError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, _ := ParseImageRef("base:1")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	out, err := captureStdoutResult(t, func() error {
+		return runImageInspect([]string{"-json", "-diff", "base:1", "ghost:1"})
+	})
+	if err == nil {
+		t.Fatal("runImageInspect diff missing ref succeeded")
+	}
+	var got cliJSONError
+	if jsonErr := json.Unmarshal([]byte(out), &got); jsonErr != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", jsonErr, out)
+	}
+	if got.OK || got.Command != "image inspect" || !strings.Contains(got.Error, "ghost:1") || got.Hint == "" {
+		t.Fatalf("image inspect diff JSON error = %#v", got)
+	}
+}
+
 func TestInspectImageDiff_MalformedManifest(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stageMacOSVMForImage(t, "src-a")

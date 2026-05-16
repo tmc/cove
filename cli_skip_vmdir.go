@@ -19,20 +19,49 @@ import (
 // from EnsureDir): for normal commands an unwritable ~/.vz/vms is still a
 // real failure that should surface immediately.
 var vmDirIndependentCommands = map[string]bool{
-	"helper":   true,
-	"daemon":   true,
-	"list":     true,
-	"ls":       true,
-	"cp":       true,
-	"ctl":      true,
-	"logs":     true,
-	"runs":     true,
-	"secret":   true,
-	"status":   true,
-	"storage":  true,
-	"version":  true,
-	"shell":    true,
-	"vzscript": true,
+	"agent-upgrade":   true,
+	"upgrade-agent":   true,
+	"commands":        true,
+	"config":          true,
+	"daemon":          true,
+	"diff":            true,
+	"gc":              true,
+	"gui":             true,
+	"helper":          true,
+	"image":           true,
+	"inject-agent":    true,
+	"provision-agent": true,
+	"shared-folder":   true,
+	"shared-folders":  true,
+	"doctor":          true,
+	"verify":          true,
+	"list":            true,
+	"ls":              true,
+	"cp":              true,
+	"ctl":             true,
+	"logs":            true,
+	"pins":            true,
+	"recording":       true,
+	"recordings":      true,
+	"rm":              true,
+	"remove":          true,
+	"destroy":         true,
+	"run":             true,
+	"runs":            true,
+	"secret":          true,
+	"security":        true,
+	"first-run":       true,
+	"status":          true,
+	"storage":         true,
+	"trace":           true,
+	"traces":          true,
+	"up":              true,
+	"support":         true,
+	"support-bundle":  true,
+	"version":         true,
+	"vnc":             true,
+	"shell":           true,
+	"vzscript":        true,
 }
 
 // subcommandSkipsVMDir reports whether the first non-flag argument names a
@@ -44,7 +73,13 @@ func subcommandSkipsVMDir(args []string) bool {
 	if _, ok := lookupCommand(args[0]); !ok && args[0] != "help" {
 		return true
 	}
+	if args[0] == "vm" && len(args) > 1 && vmSubcommandIsUnknown(args[1]) {
+		return true
+	}
 	if args[0] == "vm" && len(args) > 1 && args[1] == "tree" {
+		return true
+	}
+	if args[0] == "vm" && len(args) > 1 && args[1] == "delete" {
 		return true
 	}
 	if args[0] == "run" && (vmName != "" || argsContainFlag(args[1:], "vm")) {
@@ -56,13 +91,39 @@ func subcommandSkipsVMDir(args []string) bool {
 	return vmDirIndependentCommands[args[0]]
 }
 
+func vmSubcommandIsUnknown(name string) bool {
+	switch name {
+	case "help", "-h", "--help",
+		"set", "unset", "list", "tree", "delete", "rename", "export", "import",
+		"shared-folder", "shared-folders", "config":
+		return false
+	default:
+		return true
+	}
+}
+
 func requireExistingRunVMDir(name string) (string, error) {
+	return requireExistingVMDir("run", name)
+}
+
+func requireExistingVMSelection(command, name string) (vmSelection, error) {
+	dir, err := requireExistingVMDir(command, name)
+	if err != nil {
+		return vmSelection{}, err
+	}
+	return vmSelection{Directory: dir, Name: name}, nil
+}
+
+func requireExistingVMDir(command, name string) (string, error) {
+	if err := validateNewVMName(name); err != nil {
+		return "", fmt.Errorf("%s: invalid VM name %q: %w", command, name, err)
+	}
 	dir, ok := vmconfig.ExistingPath(name)
 	if !ok {
-		return "", fmt.Errorf("run: no VM named %q under %s", name, vmconfig.BaseDir())
+		return "", fmt.Errorf("%s: no VM named %q under %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", command, name, vmconfig.BaseDir())
 	}
 	if !vmconfig.Validate(dir) {
-		return "", fmt.Errorf("run: VM %q is invalid under %s", name, vmconfig.BaseDir())
+		return "", fmt.Errorf("%s: VM %q is invalid under %s", command, name, vmconfig.BaseDir())
 	}
 	return dir, nil
 }

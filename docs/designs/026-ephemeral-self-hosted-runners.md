@@ -3,7 +3,7 @@
 **Status**: planning input, v2.5 (2026-05-03 round-2-folded). Owns the bridge between the
 existing long-lived `vzscripts/github-runner.vzscript` (registration-mode
 runner inside a permanent VM) and the v0.4 `cove-gha-runner` GHA wrapper
-from design [021](021-v04-ci-executors-tracks.md). Ships the slices that
+from design [021](archive/021-v04-ci-executors-tracks.md). Ships the slices that
 arrive BEFORE 021's full GHA wrapper, so users with a working manual
 runner today can switch to fork-per-job ephemeral runners without
 waiting on v0.4.
@@ -32,7 +32,7 @@ Today's path:
    LaunchDaemon, persists across reboots, and accepts back-to-back jobs
    in the SAME guest.
 2. Each job inherits residue from the previous job (per
-   [015](015-soft-reset-empirical.md): 0 pass / 3 fail on warm-guest
+   [015](archive/015-soft-reset-empirical.md): 0 pass / 3 fail on warm-guest
    isolation probes — System Keychain, GlobalPreferences, orphan
    LaunchDaemons).
 3. There is no fork-per-job path the user can opt into without writing
@@ -231,7 +231,7 @@ tears down. Exit code = runner exit code.
   v0.3 proto bump), pipe JIT bytes via stdin and skip the disk
   round-trip entirely. Alternative for v0.2.2 if disk-window is
   unacceptable: write to a `tmpfs` mount (per design [005](005-v04-secrets-architecture.md)
-  / [021](021-v04-ci-executors-tracks.md) §secrets) so the bytes never
+  / [021](archive/021-v04-ci-executors-tracks.md) §secrets) so the bytes never
   hit the APFS-backed fork delta.
 
 ### Slice 1 (v0.3 candidate, ~250-300 LOC Go + tests): `cove runner serve`
@@ -282,7 +282,7 @@ serializes fork attempts. Slice 2 adds a `--max-parallel N` flag.
   temp+rename.
 
 **Failure invariants** (faithful inheritance from design 021
-[§"Failure rules" lines 149-163](021-v04-ci-executors-tracks.md)):
+[§"Failure rules" lines 149-163](archive/021-v04-ci-executors-tracks.md)):
 
 | Failure mode | Slice 1 behavior | Source |
 |---|---|---|
@@ -331,7 +331,7 @@ command.
 Mirror Slice 1 for GitLab self-hosted runners. GitLab uses
 `gitlab-runner register --token <runner-token>` not JIT configs; needs
 its own registration shim. Out of scope until GitHub Slice 1+2 are
-proven; tracked in [021](021-v04-ci-executors-tracks.md) Slice 2 layer.
+proven; tracked in [021](archive/021-v04-ci-executors-tracks.md) Slice 2 layer.
 
 ## Differentiator vs Cirrus
 
@@ -348,7 +348,7 @@ runners must script their own `tart clone` + `actions-runner
 1 (`cove runner serve`) sits on the GitHub side (where Cirrus has
 Cirrus CI itself as the alternative, not a self-hosted-runner fork)
 and ships the host-daemon shape that no Cirrus equivalent provides for
-GitHub Actions. Combined with [015](015-soft-reset-empirical.md)'s
+GitHub Actions. Combined with [015](archive/015-soft-reset-empirical.md)'s
 empirical basis for fork/restore being the only working isolation
 primitive, this is a measurable safety + perf claim no competitor
 matches.
@@ -485,15 +485,15 @@ design.
 
 ## References
 
-- [001](001-cove-serve.md) — LRO state file pattern at
+- [001](archive/001-cove-serve-http-mcp.md) — LRO state file pattern at
   `~/.vz/operations/<op_id>.json`. Slice 1's state store mirrors this
   exactly.
-- [005](005-uri-delegation.md) — URI-based secret delegation. Slice 1's
+- [005](005-v04-secrets-architecture.md) — URI-based secret delegation. Slice 1's
   `--token` flag should accept URIs (e.g. `1password://op/cove/gh-pat`).
 - [013](013-vm-fork.md) — fork-from semantics, Phase 4 lineage.
-- [015](015-soft-reset-empirical.md) — load-bearing for the
+- [015](archive/015-soft-reset-empirical.md) — load-bearing for the
   "fork/restore is the only isolation primitive" claim.
-- [021](021-v04-ci-executors-tracks.md) — v0.4 CI executors. This
+- [021](archive/021-v04-ci-executors-tracks.md) — v0.4 CI executors. This
   design ships the runner daemon; 021 Slice 1 ships the action that
   runs ON that daemon. Failure rules at lines 149-163 are the
   authoritative source for v2's Slice 1 failure-invariant table.

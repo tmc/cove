@@ -21,7 +21,7 @@ Should cove ship a Packer plugin shim, or should the idea be formally sunset?
 - Tart repository:
   https://github.com/cirruslabs/tart
 - cove image transport docs:
-  [`docs/designs/024-cove-runner-images.md`](../../designs/024-cove-runner-images.md)
+  [`docs/designs/024-cove-runner-images.md`](../designs/024-cove-runner-images.md)
 
 ## Evidence
 
