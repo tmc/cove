@@ -18,6 +18,7 @@ import (
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
+	windowsconfig "github.com/tmc/apple/x/vzkit/windowsconfig"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
 	winsetup "github.com/tmc/vz-macos/internal/windows"
@@ -148,10 +149,48 @@ func buildWindowsInstallConfiguration(diskImagePath, windowsISO string) (vz.VZVi
 
 func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 	rc := vmrunRunConfig(vmrun.GuestWindows)
+	hc := vmrunHostConfig()
 
-	config := vz.NewVZVirtualMachineConfiguration()
-	config.SetCPUCount(rc.CPUCount)
-	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
+	plan, err := windowsDevicePlan(rc, hc)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, err
+	}
+	netConfig, err := ParseNetworkMode(plan.Network.Mode)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("parse network mode: %w", err)
+	}
+	builderNetwork := windowsconfig.Network{Config: netConfig}
+	if netConfig.Mode == NetworkModeFileHandle || netConfig.Mode == NetworkModeNone {
+		builderNetwork = windowsconfig.Network{}
+	}
+
+	graphicsMode, err := parseWindowsGraphicsMode(rc.WindowsGraphicsMode)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, err
+	}
+	var displayConfigs []displayx.Config
+	if graphicsMode == windowsGraphicsVirtio {
+		displayConfigs = make([]displayx.Config, 0, len(plan.Display))
+		for _, d := range plan.Display {
+			displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+		}
+	}
+	config, err := windowsconfig.Build(windowsconfig.Config{
+		CPUCount:      plan.CPUCount,
+		MemoryGB:      plan.MemoryGB,
+		Display:       displayConfigs,
+		Network:       builderNetwork,
+		Keyboard:      true,
+		Pointing:      true,
+		Entropy:       true,
+		Sound:         true,
+		USBController: true,
+		MemoryBalloon: true,
+		Socket:        sandboxAllowsVsock(),
+	})
+	if err != nil {
+		return config, fmt.Errorf("build windows device config: %w", err)
+	}
 
 	platformConfig := vz.NewVZGenericPlatformConfiguration()
 	machineID := loadOrCreateWindowsMachineIdentifier()
@@ -164,46 +203,21 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 	}
 	config.SetBootLoader(&bootloader.VZBootLoader)
 
-	if err := setWindowsGraphicsDevices(config); err != nil {
-		return config, err
+	switch graphicsMode {
+	case windowsGraphicsLinearFramebuffer:
+		if err := setWindowsLinearFramebufferGraphicsDevice(config); err != nil {
+			return config, err
+		}
+	case windowsGraphicsVirtio:
+		fmt.Println("  Windows graphics: VirtIO")
 	}
 
-	netConfig, err := ParseNetworkMode(rc.NetworkMode)
-	if err != nil {
-		return config, fmt.Errorf("parse network mode: %w", err)
-	}
-	if netConfig.Mode != NetworkModeNone {
+	if netConfig.Mode == NetworkModeFileHandle {
 		networkDeviceConfig, err := CreateNetworkDeviceConfiguration(netConfig)
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
 		setNetworkDevices(config, networkDeviceConfig)
-	}
-
-	keyboardConfig := vz.NewVZUSBKeyboardConfiguration()
-	setKeyboards(config, keyboardConfig)
-
-	pointingConfig := vz.NewVZUSBScreenCoordinatePointingDeviceConfiguration()
-	setPointingDevices(config, []vz.IVZPointingDeviceConfiguration{pointingConfig})
-
-	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
-	setEntropyDevices(config, entropyConfig)
-
-	audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
-	setAudioDevices(config, audioConfig)
-
-	EnsureUSBController(config)
-
-	balloonConfig := vz.NewVZVirtioTraditionalMemoryBalloonDeviceConfiguration()
-	if balloonConfig.ID != 0 {
-		setMemoryBalloonDevices(config, balloonConfig)
-	}
-
-	if sandboxAllowsVsock() {
-		vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
-		if vsockConfig.ID != 0 {
-			setSocketDevices(config, vsockConfig)
-		}
 	}
 
 	serialConfig, err := createWindowsSerialConsoleConfig()
