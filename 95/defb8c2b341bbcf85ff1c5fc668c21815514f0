@@ -1,0 +1,9 @@
+commit: 95defb8c2b341bbcf85ff1c5fc668c21815514f0
+date: 2026-05-16T03:54:42Z
+agent: codex
+version: GPT-5
+model: unknown
+tty: not a tty
+pid: 54440
+ITERM_SESSION_ID: w0t0p5:8DDE1177-B78F-409A-98C8-3C7CA9FAFDA7
+summary: use vzkit generic platform and EFI helpers; validated via local go.work with ../apple at 530fed92
