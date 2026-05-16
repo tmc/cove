@@ -87,6 +87,13 @@ For Ubuntu Desktop:
 cove up -linux -desktop -user myuser
 ```
 
+For Ubuntu Desktop with nested KVM on M3/M4 hosts:
+
+```bash
+cove up -vm ubuntu-gui-kvm -linux -desktop -nested -cpu 4 -memory 8 \
+  -user ubuntu -password ubuntu -vzscripts kvm-test -no-shutdown
+```
+
 ## What Happens Next
 
 - The VM directory is `~/.vz/vms/default/` (override with `-vm <name>`)
