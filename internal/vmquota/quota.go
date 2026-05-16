@@ -35,17 +35,6 @@ func (execRunner) Run(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
-// PositiveValue validates a signed quota value before storing it.
-func PositiveValue(name string, n int64) (uint64, error) {
-	if strings.TrimSpace(name) == "" {
-		name = "quota"
-	}
-	if n <= 0 {
-		return 0, fmt.Errorf("%s quota must be greater than 0", name)
-	}
-	return uint64(n), nil
-}
-
 // Check reports whether request fits within q.
 func (q Quota) Check(request Quota) error {
 	if q.CPUs > 0 && request.CPUs > q.CPUs {

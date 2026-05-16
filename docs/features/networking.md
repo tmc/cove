@@ -96,6 +96,19 @@ cove run -sandbox-level minimal --net nat
 `-sandbox-level strict` forces `--net none` and rejects explicit networked modes.
 It also disables vsock, so startup port forwards are rejected.
 
+`-host-containment` is the fail-closed research mode. It is equivalent to
+`-sandbox-level host-containment` and rejects host-escape features instead of
+silently enabling them: shared folders, clipboard, agent auto-upgrade, startup
+port forwards, VNC, debug stubs, host HTTP listeners, proxying, and explicit
+networked modes.
+
+Inspect the effective policy for an invocation with:
+
+```bash
+cove -host-containment security status
+cove -host-containment security status -json
+```
+
 ## Port Forwarding
 
 Cove can forward host TCP listeners to guest vsock ports. This does not expose

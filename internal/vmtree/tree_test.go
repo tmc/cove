@@ -1,4 +1,4 @@
-package main
+package vmtree
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
-func TestPrintVMTree(t *testing.T) {
+func TestPrint(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	writeTreeVM(t, "base", vmconfig.Config{})
@@ -37,8 +37,8 @@ func TestPrintVMTree(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := PrintVMTree(&buf); err != nil {
-		t.Fatalf("PrintVMTree() error = %v", err)
+	if err := PrintWithOptions(&buf, Options{}); err != nil {
+		t.Fatalf("PrintWithOptions() error = %v", err)
 	}
 	want := `base
 |-- child-a (forked 2026-04-20)
@@ -48,7 +48,7 @@ func TestPrintVMTree(t *testing.T) {
 orphan (forked 2026-04-23)
 `
 	if got := buf.String(); got != want {
-		t.Fatalf("PrintVMTree() =\n%s\nwant:\n%s", got, want)
+		t.Fatalf("PrintWithOptions() =\n%s\nwant:\n%s", got, want)
 	}
 }
 
@@ -56,18 +56,18 @@ func TestPrintVMTreeEmpty(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	var buf bytes.Buffer
-	if err := PrintVMTree(&buf); err != nil {
-		t.Fatalf("PrintVMTree() error = %v", err)
+	if err := PrintWithOptions(&buf, Options{}); err != nil {
+		t.Fatalf("PrintWithOptions() error = %v", err)
 	}
 	if got, want := buf.String(), "No VMs found.\n"; got != want {
-		t.Fatalf("PrintVMTree() = %q, want %q", got, want)
+		t.Fatalf("PrintWithOptions() = %q, want %q", got, want)
 	}
 }
 
-// TestPrintVMTreeWithOptions_JSON asserts --json emits a structured
+// TestPrintWithOptions_JSON asserts --json emits a structured
 // forest where roots and orphans are top-level entries and children
 // nest. Orphan nodes carry the orphan flag; roots do not.
-func TestPrintVMTreeWithOptions_JSON(t *testing.T) {
+func TestPrintWithOptions_JSON(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	writeTreeVM(t, "base", vmconfig.Config{})
@@ -81,8 +81,8 @@ func TestPrintVMTreeWithOptions_JSON(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := PrintVMTreeWithOptions(&buf, VMTreeOptions{JSON: true}); err != nil {
-		t.Fatalf("PrintVMTreeWithOptions(JSON) error = %v", err)
+	if err := PrintWithOptions(&buf, Options{JSON: true}); err != nil {
+		t.Fatalf("PrintWithOptions(JSON) error = %v", err)
 	}
 
 	var got []vmTreeJSONNode
@@ -119,10 +119,10 @@ func TestPrintVMTreeWithOptions_JSON(t *testing.T) {
 	}
 }
 
-// TestPrintVMTreeWithOptions_OrphansASCII pins the --orphans flat
+// TestPrintWithOptions_OrphansASCII pins the --orphans flat
 // listing: only orphans appear, formatted with the missing parent
 // reference, and no tree branches are drawn.
-func TestPrintVMTreeWithOptions_OrphansASCII(t *testing.T) {
+func TestPrintWithOptions_OrphansASCII(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	writeTreeVM(t, "base", vmconfig.Config{})
@@ -137,8 +137,8 @@ func TestPrintVMTreeWithOptions_OrphansASCII(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := PrintVMTreeWithOptions(&buf, VMTreeOptions{Orphans: true}); err != nil {
-		t.Fatalf("PrintVMTreeWithOptions(Orphans) error = %v", err)
+	if err := PrintWithOptions(&buf, Options{Orphans: true}); err != nil {
+		t.Fatalf("PrintWithOptions(Orphans) error = %v", err)
 	}
 	got := buf.String()
 	if !strings.Contains(got, "lost (parent missing: missing@clean, forked 2026-04-22)") {
@@ -152,19 +152,19 @@ func TestPrintVMTreeWithOptions_OrphansASCII(t *testing.T) {
 	}
 }
 
-// TestPrintVMTreeWithOptions_NoOrphansWithFlag pins the empty case
+// TestPrintWithOptions_NoOrphansWithFlag pins the empty case
 // for --orphans: when there are no orphan VMs, the output is the
 // "No orphan VMs." sentinel rather than an empty string.
-func TestPrintVMTreeWithOptions_NoOrphansWithFlag(t *testing.T) {
+func TestPrintWithOptions_NoOrphansWithFlag(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	writeTreeVM(t, "solo", vmconfig.Config{})
 
 	var buf bytes.Buffer
-	if err := PrintVMTreeWithOptions(&buf, VMTreeOptions{Orphans: true}); err != nil {
-		t.Fatalf("PrintVMTreeWithOptions(Orphans) error = %v", err)
+	if err := PrintWithOptions(&buf, Options{Orphans: true}); err != nil {
+		t.Fatalf("PrintWithOptions(Orphans) error = %v", err)
 	}
 	if got, want := buf.String(), "No orphan VMs.\n"; got != want {
-		t.Fatalf("PrintVMTreeWithOptions(Orphans) = %q, want %q", got, want)
+		t.Fatalf("PrintWithOptions(Orphans) = %q, want %q", got, want)
 	}
 }
 
@@ -183,50 +183,32 @@ func writeTreeVM(t *testing.T, name string, cfg vmconfig.Config) {
 	}
 }
 
-// stageImageDir writes a minimal image directory at ~/.vz/images/<ref>/
-// with just enough on disk for ImageExists + LoadImageManifest. Used by
-// the --reachable-from tests to avoid depending on the full BuildImage
-// path (which mutates the source VM bundle).
-func stageImageDir(t *testing.T, ref ImageRef) {
-	t.Helper()
-	dir := ref.Path()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("MkdirAll(%s) error = %v", dir, err)
-	}
-	manifest := ImageManifest{
-		SchemaVersion: 1,
-		Name:          ref.Name,
-		Tag:           ref.Tag,
-		DiskSHA256:    "stub",
-		DiskSize:      0,
-		CreatedAt:     time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC),
-	}
-	data, err := json.Marshal(manifest)
-	if err != nil {
-		t.Fatalf("marshal manifest: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o644); err != nil {
-		t.Fatalf("write manifest: %v", err)
+func reachableImage(ref string, names ...string) *ReachableImage {
+	return &ReachableImage{
+		Ref:    ref,
+		Exists: func(string) bool { return true },
+		Children: func(string) ([]string, error) {
+			return append([]string(nil), names...), nil
+		},
 	}
 }
 
 func TestVMTree_ReachableFromImage_Forest(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	ref := ImageRef{Name: "base", Tag: "v1"}
-	stageImageDir(t, ref)
+	ref := "base:v1"
 	writeTreeVM(t, "eval-001", vmconfig.Config{
-		ParentImage: ref.String(),
+		ParentImage: ref,
 		ForkedAt:    time.Date(2026, 5, 3, 12, 34, 0, 0, time.UTC),
 	})
 	writeTreeVM(t, "eval-002", vmconfig.Config{
-		ParentImage: ref.String(),
+		ParentImage: ref,
 		ForkedAt:    time.Date(2026, 5, 3, 12, 35, 14, 0, time.UTC),
 	})
 	writeTreeVM(t, "unrelated", vmconfig.Config{})
 
 	var buf bytes.Buffer
-	if err := PrintVMTreeWithOptions(&buf, VMTreeOptions{ReachableFromImage: &ref}); err != nil {
-		t.Fatalf("PrintVMTreeWithOptions(ReachableFrom): %v", err)
+	if err := PrintWithOptions(&buf, Options{ReachableFromImage: reachableImage(ref, "eval-001", "eval-002")}); err != nil {
+		t.Fatalf("PrintWithOptions(ReachableFrom): %v", err)
 	}
 	got := buf.String()
 	if !strings.Contains(got, "base:v1 (image)") {
@@ -244,11 +226,10 @@ func TestVMTree_ReachableFromImage_Forest(t *testing.T) {
 
 func TestVMTree_ReachableFromImage_JSON(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	ref := ImageRef{Name: "base", Tag: "v1"}
-	stageImageDir(t, ref)
+	ref := "base:v1"
 	for _, name := range []string{"eval-001", "eval-002", "eval-003-orphan"} {
 		cfg := vmconfig.Config{
-			ParentImage: ref.String(),
+			ParentImage: ref,
 			ForkedAt:    time.Date(2026, 5, 3, 12, 36, 0, 0, time.UTC),
 		}
 		if name == "eval-003-orphan" {
@@ -258,8 +239,8 @@ func TestVMTree_ReachableFromImage_JSON(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := PrintVMTreeWithOptions(&buf, VMTreeOptions{ReachableFromImage: &ref, JSON: true}); err != nil {
-		t.Fatalf("PrintVMTreeWithOptions(ReachableFrom, JSON): %v", err)
+	if err := PrintWithOptions(&buf, Options{ReachableFromImage: reachableImage(ref, "eval-001", "eval-002", "eval-003-orphan"), JSON: true}); err != nil {
+		t.Fatalf("PrintWithOptions(ReachableFrom, JSON): %v", err)
 	}
 
 	var got reachableImageJSON
@@ -290,10 +271,13 @@ func TestVMTree_ReachableFromImage_JSON(t *testing.T) {
 
 func TestVMTree_ReachableFromImage_NotFound(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	missing := ImageRef{Name: "ghost", Tag: "v1"}
-	err := PrintVMTreeWithOptions(io.Discard, VMTreeOptions{ReachableFromImage: &missing})
+	missing := &ReachableImage{
+		Ref:    "ghost:v1",
+		Exists: func(string) bool { return false },
+	}
+	err := PrintWithOptions(io.Discard, Options{ReachableFromImage: missing})
 	if err == nil {
-		t.Fatal("PrintVMTreeWithOptions on missing image succeeded; want error")
+		t.Fatal("PrintWithOptions on missing image succeeded; want error")
 	}
 	if !strings.Contains(err.Error(), "ghost:v1") || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error %q does not flag missing image", err)
@@ -302,14 +286,12 @@ func TestVMTree_ReachableFromImage_NotFound(t *testing.T) {
 
 func TestVMTree_ReachableFromImage_OrphansFlagConflict(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	ref := ImageRef{Name: "base", Tag: "v1"}
-	stageImageDir(t, ref)
-	err := PrintVMTreeWithOptions(io.Discard, VMTreeOptions{
-		ReachableFromImage: &ref,
+	err := PrintWithOptions(io.Discard, Options{
+		ReachableFromImage: reachableImage("base:v1"),
 		Orphans:            true,
 	})
 	if err == nil {
-		t.Fatal("PrintVMTreeWithOptions accepted both flags; want conflict error")
+		t.Fatal("PrintWithOptions accepted both flags; want conflict error")
 	}
 	if !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Errorf("error %q does not flag the conflict", err)

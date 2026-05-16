@@ -11,7 +11,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
-	"github.com/tmc/apple/x/vzkit/capture"
+	"github.com/tmc/apple/x/capture"
 )
 
 func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {

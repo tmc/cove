@@ -56,42 +56,49 @@ func handleVMSharedFolderCommand(args []string) error {
 		return nil
 	}
 
-	targetDir, err := sharedFolderCommandVMDir()
-	if err != nil {
-		return err
-	}
-
 	switch args[0] {
 	case "list":
+		targetDir := sharedFolderCommandVMDirNoCreate()
 		return listSharedFolders(targetDir)
 	case "status":
+		targetDir := sharedFolderCommandVMDirNoCreate()
 		mountPoint := defaultSharedFoldersMountRoot(targetDir)
 		if len(args) >= 2 {
 			mountPoint = args[1]
 		}
 		return sharedFolderStatus(targetDir, mountPoint)
 	case "pending":
+		targetDir := sharedFolderCommandVMDirNoCreate()
 		if len(args) > 2 {
 			return fmt.Errorf("usage: cove shared-folder pending [vm]")
 		}
 		if len(args) == 2 {
-			var err error
-			targetDir, err = vmconfig.EnsureDir(args[1], vmDir)
-			if err != nil {
-				return err
-			}
+			targetDir = vmconfig.ResolveDir(args[1], vmDir)
 		}
 		return pendingSharedFolders(targetDir, defaultSharedFoldersMountRoot(targetDir))
 	case "add":
+		targetDir, err := sharedFolderCommandVMDir()
+		if err != nil {
+			return err
+		}
 		return handleVMSharedFolderAdd(targetDir, args[1:])
 	case "remove":
+		targetDir, err := sharedFolderCommandVMDir()
+		if err != nil {
+			return err
+		}
 		if len(args) < 2 {
 			return fmt.Errorf("usage: cove shared-folder remove <tag-or-path>")
 		}
 		return handleVMSharedFolderRemove(targetDir, args[1])
 	case "clear":
+		targetDir, err := sharedFolderCommandVMDir()
+		if err != nil {
+			return err
+		}
 		return handleVMSharedFolderClear(targetDir)
 	case "mount":
+		targetDir := sharedFolderCommandVMDirNoCreate()
 		mountPoint := defaultSharedFoldersMountRoot(targetDir)
 		if len(args) >= 2 {
 			mountPoint = args[1]
@@ -130,6 +137,13 @@ func sharedFolderCommandVMDir() (string, error) {
 		return vmDir, nil
 	}
 	return vmconfig.Path(vmDir), nil
+}
+
+func sharedFolderCommandVMDirNoCreate() string {
+	if filepath.IsAbs(vmDir) {
+		return vmDir
+	}
+	return vmconfig.ResolveDir(vmName, vmDir)
 }
 
 func sharedFolderVMName(vmDirectory string) string {

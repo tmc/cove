@@ -62,3 +62,21 @@ func TestCtlAgentExecAutoIsInternal(t *testing.T) {
 		t.Fatalf("error = %q", got)
 	}
 }
+
+func TestCtlSharedFoldersRuntimeStatus(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+		{
+			wantType: "shared-folders-runtime-status",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Data:    `{"running":true,"virtiofs":true,"message":"shared folders VirtioFS device present"}`,
+			},
+		},
+	})
+	defer stop()
+
+	if err := ctlCommand([]string{"-socket", GetControlSocketPathForVM(vmDir), "shared-folders-runtime-status"}); err != nil {
+		t.Fatalf("ctlCommand() error = %v", err)
+	}
+}

@@ -1,4 +1,4 @@
-package main
+package filehandle
 
 import (
 	"context"
@@ -10,28 +10,27 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tmc/apple/foundation"
-	"golang.org/x/sys/unix"
+	"github.com/tmc/apple/x/vzkit/exp/networkfd"
 )
 
 const (
-	defaultFileHandleMTU = 1500
+	defaultMTU = 1500
 )
 
 // FrameProcessor inspects one inbound frame and optionally returns a response
 // frame to send back to the guest.
 type FrameProcessor func(context.Context, []byte) ([]byte, error)
 
-// FileHandleNetworkConfig configures a file-handle network attachment and host
+// Config configures a file-handle network attachment and host
 // capture loop.
-type FileHandleNetworkConfig struct {
+type Config struct {
 	MTU      int
 	Snaplen  int
 	PCAPPath string
 }
 
-// FileHandleNetworkStats tracks frames flowing through the host-side loop.
-type FileHandleNetworkStats struct {
+// Stats tracks frames flowing through the host-side loop.
+type Stats struct {
 	StartedAt time.Time `json:"started_at,omitempty"`
 	StoppedAt time.Time `json:"stopped_at,omitempty"`
 	FramesIn  uint64    `json:"frames_in,omitempty"`
@@ -41,12 +40,12 @@ type FileHandleNetworkStats struct {
 	LastError string    `json:"last_error,omitempty"`
 }
 
-type fileHandleNetworkStats struct {
-	FileHandleNetworkStats
+type statsState struct {
+	Stats
 	mu sync.Mutex
 }
 
-func (s *fileHandleNetworkStats) start(now time.Time) {
+func (s *statsState) start(now time.Time) {
 	s.mu.Lock()
 	if s.StartedAt.IsZero() {
 		s.StartedAt = now
@@ -54,7 +53,7 @@ func (s *fileHandleNetworkStats) start(now time.Time) {
 	s.mu.Unlock()
 }
 
-func (s *fileHandleNetworkStats) finish(now time.Time, err error) {
+func (s *statsState) finish(now time.Time, err error) {
 	s.mu.Lock()
 	if s.StoppedAt.IsZero() {
 		s.StoppedAt = now
@@ -65,7 +64,7 @@ func (s *fileHandleNetworkStats) finish(now time.Time, err error) {
 	s.mu.Unlock()
 }
 
-func (s *fileHandleNetworkStats) recordInbound(n int) {
+func (s *statsState) recordInbound(n int) {
 	if n <= 0 {
 		return
 	}
@@ -75,7 +74,7 @@ func (s *fileHandleNetworkStats) recordInbound(n int) {
 	s.mu.Unlock()
 }
 
-func (s *fileHandleNetworkStats) recordOutbound(n int) {
+func (s *statsState) recordOutbound(n int) {
 	if n <= 0 {
 		return
 	}
@@ -85,15 +84,15 @@ func (s *fileHandleNetworkStats) recordOutbound(n int) {
 	s.mu.Unlock()
 }
 
-func (s *fileHandleNetworkStats) snapshot() FileHandleNetworkStats {
+func (s *statsState) snapshot() Stats {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.FileHandleNetworkStats
+	return s.Stats
 }
 
-func (s FileHandleNetworkStats) summary(cfg FileHandleNetworkConfig) string {
+func (s Stats) summary(cfg Config) string {
 	if cfg.MTU <= 0 {
-		cfg.MTU = defaultFileHandleMTU
+		cfg.MTU = defaultMTU
 	}
 	dur := time.Duration(0)
 	if !s.StartedAt.IsZero() && !s.StoppedAt.IsZero() && s.StoppedAt.After(s.StartedAt) {
@@ -120,55 +119,18 @@ func (s FileHandleNetworkStats) summary(cfg FileHandleNetworkConfig) string {
 
 // newConnectedDatagramSocketPair returns a connected SOCK_DGRAM socket pair.
 func newConnectedDatagramSocketPair(mtu int) (hostFD int, guestFD int, err error) {
-	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
+	pair, err := networkfd.NewSocketPair(mtu)
 	if err != nil {
-		return 0, 0, fmt.Errorf("socketpair: %w", err)
-	}
-	hostFD, guestFD = fds[0], fds[1]
-
-	if err := configureDatagramSocketBuffers(hostFD, mtu); err != nil {
-		unix.Close(hostFD)
-		unix.Close(guestFD)
 		return 0, 0, err
 	}
-	if err := configureDatagramSocketBuffers(guestFD, mtu); err != nil {
-		unix.Close(hostFD)
-		unix.Close(guestFD)
-		return 0, 0, err
-	}
-	return hostFD, guestFD, nil
+	return pair.HostFD, pair.GuestFD, nil
 }
 
-func configureDatagramSocketBuffers(fd int, mtu int) error {
-	if mtu <= 0 {
-		mtu = defaultFileHandleMTU
-	}
-	snd := mtu * 4
-	rcv := mtu * 8
-	if snd < 65536 {
-		snd = 65536
-	}
-	if rcv < snd*2 {
-		rcv = snd * 2
-	}
-	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, snd); err != nil {
-		return fmt.Errorf("set SO_SNDBUF: %w", err)
-	}
-	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, rcv); err != nil {
-		return fmt.Errorf("set SO_RCVBUF: %w", err)
-	}
-	return nil
-}
-
-func newNSFileHandleFromFD(fd int) foundation.NSFileHandle {
-	handle := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(fd, true)
-	handle.Retain()
-	return handle
-}
+var newNSFileHandleFromFD = networkfd.NewFileHandleFromFD
 
 func newFrameBuffer(sizeHint int) []byte {
 	if sizeHint <= 0 {
-		sizeHint = defaultFileHandleMTU
+		sizeHint = defaultMTU
 	}
 	return make([]byte, sizeHint)
 }

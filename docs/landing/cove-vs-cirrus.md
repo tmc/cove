@@ -75,10 +75,13 @@ Then migrate one Cirrus task from your existing repository:
 1. Build or refresh a runner image.
 
    ```bash
-   cove up -vm macos-runner -user ci -password '<admin-password>'
+   cove up -vm macos-runner -user ci
    cove image build -from macos-runner -tag macos-runner:latest
    cove image verify --strict --newer-than 168h macos-runner:latest
    ```
+
+   Let cove prompt for the guest password during interactive setup. Do not bake
+   fixed credentials such as `cove/cove` into reusable runner images.
 
 2. Run the task through the same private action wrapper used in GitHub Actions.
 

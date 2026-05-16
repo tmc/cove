@@ -9,7 +9,7 @@ review of the v0.3 build executor (`build.go`, `build_execute.go`,
 `build_scratch.go`, `fork.go`) and the OpenAI Agents SDK adapter at
 `adapters/openai-agents-python/` (layout under `src/cove_sandbox/`).
 **Roadmap**: v0.4. Roadmap section is currently absent from
-[ROADMAP](ROADMAP.md); this doc plus [022](022-v04-anthropic-adapter.md)
+[ROADMAP](../ROADMAP.md); this doc plus [022](022-v04-anthropic-adapter.md)
 are intended to populate it.
 **Branch**: planning (no branch yet).
 
@@ -58,7 +58,7 @@ isolation mechanism is introduced.
   (`adapters/openai-agents-python/pyproject.toml`), and depends only on
   the cove binary plus its public socket protocol. CI executors follow
   the same shape.
-- Secrets resolution will reuse [005](005-v04-secrets-architecture.md)
+- Secrets resolution will reuse [005](../005-v04-secrets-architecture.md)
   URI delegation once that lands; v0.4 CI executors do not invent a
   parallel secret mechanism.
 
@@ -98,7 +98,7 @@ Layout under `adapters/ci-executors/github-actions/`: `action.yml`,
 
 Inputs (`action.yml`): `base-image` (required), `vzscript`, `commands`,
 `secrets` (multiline URIs resolved per
-[005](005-v04-secrets-architecture.md), mounted as tmpfs under
+[005](../005-v04-secrets-architecture.md), mounted as tmpfs under
 `/run/cove/secrets/<name>` matching the existing `# secret:` rule in
 [003](003-cove-build-oci-caching.md)), `artifacts` (multiline globs),
 `timeout` (default `30m`).
@@ -156,7 +156,7 @@ Tests: `TestGitLabRunnerParsesEnv`, `TestGitLabRunnerStreamsStdout`,
   the parent VM and scratch path. No partial state.
 - Secret mount failure → abort with exit code `2`, surfacing the URI
   scheme and resolution error from the
-  [005](005-v04-secrets-architecture.md) resolver. Do not fall back to
+  [005](../005-v04-secrets-architecture.md) resolver. Do not fall back to
   unmounted env vars.
 - Timeout → SIGTERM the guest exec, wait `min(10s,
   remaining_timeout)`, then `cove ctl shutdown -force`. Always run
@@ -189,7 +189,7 @@ external surfaces are stubbed.
   VM/image by name; pulling from an OCI registry is gated on
   [002](002-cove-disks-oci.md) follow-up work.
 - No new secret mechanism. Reuse
-  [005](005-v04-secrets-architecture.md).
+  [005](../005-v04-secrets-architecture.md).
 - No log streaming protocol beyond line-buffered stdout. Real-time UI
   rendering is the platform's job.
 
@@ -221,7 +221,7 @@ digests modulo timestamps.
    *and* the CI platform also injects an env var named `FOO_BAR`,
    which wins? Recommendation: cove-resolved URIs always win;
    document loudly. Needs sanity check against
-   [005](005-v04-secrets-architecture.md) once that doc has Council
+   [005](../005-v04-secrets-architecture.md) once that doc has Council
    sign-off.
 3. **Distribution channel for the GitLab Docker image**. GHCR vs
    Docker Hub vs GitLab's own registry. Recommendation: GHCR, single
@@ -230,6 +230,6 @@ digests modulo timestamps.
 ## Handoff
 
 Once Slice 1 is in flight, [022](022-v04-anthropic-adapter.md)
-(parallel track) and [005](005-v04-secrets-architecture.md) are
+(parallel track) and [005](../005-v04-secrets-architecture.md) are
 unblocked. ROADMAP.md should grow a v0.4 section that links here and
 to 022 once both designs are accepted.

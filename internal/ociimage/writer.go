@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 )
 
@@ -22,34 +21,6 @@ func CreatePartialDisk(path string, size int64) (*os.File, error) {
 		return nil, fmt.Errorf("size partial disk: %w", err)
 	}
 	return f, nil
-}
-
-// WriteChunkAt verifies and writes one uncompressed chunk at its disk offset.
-func WriteChunkAt(w io.WriterAt, c Chunk, data []byte) error {
-	if c.Digest == "" {
-		return fmt.Errorf("write chunk %d: missing digest", c.Index)
-	}
-	if int64(len(data)) != c.Size {
-		return fmt.Errorf("write chunk %d: data size %d, want %d", c.Index, len(data), c.Size)
-	}
-	if got := digestBytes(data); got != c.Digest {
-		return fmt.Errorf("write chunk %d: digest %s, want %s", c.Index, got, c.Digest)
-	}
-	if c.Zero {
-		if !allZero(data) {
-			return fmt.Errorf("write chunk %d: non-zero data for zero chunk", c.Index)
-		}
-		return nil
-	}
-
-	n, err := w.WriteAt(data, c.Offset)
-	if err != nil {
-		return fmt.Errorf("write chunk %d: %w", c.Index, err)
-	}
-	if n != len(data) {
-		return fmt.Errorf("write chunk %d: %w", c.Index, io.ErrShortWrite)
-	}
-	return nil
 }
 
 func digestBytes(b []byte) string {

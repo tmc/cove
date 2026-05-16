@@ -206,7 +206,7 @@ type <text>
 
 ```
 type "hello world"
-type mypassword
+type <password>
 ```
 
 ### type-keycodes
@@ -399,7 +399,7 @@ True if the current screen state matches.
 
 ```
 [screen:desktop] guest-exec open /Applications/Safari.app
-[screen:login] type mypassword
+[screen:login] type <password>
 [screen:setup-assistant] ocr-click Continue
 ```
 

@@ -7,17 +7,18 @@ import (
 	"sync"
 
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/vz-macos/internal/filehandle"
 )
 
 var (
 	fileHandleNetworkMu      sync.Mutex
-	fileHandleNetworkSession *FileHandleNetworkSession
+	fileHandleNetworkSession *filehandle.Session
 	fileHandleNetworkCancel  context.CancelFunc
 	fileHandleNetworkDone    chan error
 )
 
 func prepareFileHandleNetworkDevice() (vz.VZVirtioNetworkDeviceConfiguration, error) {
-	session, err := NewFileHandleNetworkSession(FileHandleNetworkConfig{
+	session, err := filehandle.NewSession(filehandle.Config{
 		PCAPPath: pcapPath,
 	})
 	if err != nil {

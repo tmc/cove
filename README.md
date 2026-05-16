@@ -8,28 +8,39 @@ macOS VMs that suspend, snapshot, and script.
 
 cove is a CLI for creating and managing macOS and Linux virtual machines on Apple Silicon using Apple's Virtualization.framework. Pure Go, cgo-free ([purego](https://github.com/ebitengine/purego)).
 
-Cirrus migration? Start with the private landing draft
-[Cove after Cirrus CI](docs/landing/cove-vs-cirrus.md), follow the
-[five-step quickstart](docs/quickstart-from-cirrus.md), then use the
-[migration walkthrough](docs/migrations/from-cirrus.md) and citable
-[benchmark table](docs/benchmarks/competitive-2026-05.md).
+New to cove? Start with the safe first-run flow:
+
+```bash
+cove first-run
+cove doctor host
+cove up -user myuser
+```
+
+`cove up` installs, provisions, and boots a first VM. It prompts for the guest
+account password when you omit `-password`, which keeps secrets out of shell
+history.
 
 ## Install
 
-Until the public release and tap-availability gates clear, build from a private
-checkout:
+Homebrew is the normal install path:
 
 ```bash
-git clone git@github.com:tmc/cove.git
+brew install tmc/tap/cove
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/tmc/cove
 cd cove
 go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
-After the Homebrew tap is public, the install path will be:
+After installing, check the host before creating a VM:
 
 ```bash
-brew install tmc/tap/cove
+cove doctor host
 ```
 
 See [INSTALL.md](INSTALL.md) for first-run requirements, IPSW reuse, and the macOS virtualization license note.
@@ -37,18 +48,34 @@ See [INSTALL.md](INSTALL.md) for first-run requirements, IPSW reuse, and the mac
 ## Quick Start
 
 ```bash
-cove up -user myuser                    # install + provision + boot (one command)
+cove up -user myuser                    # install, provision, and boot
 ```
 
 Or step by step:
 
 ```bash
+cove doctor host                        # check this Mac first
 cove install                            # download IPSW and install macOS
 cove provision -user myuser             # provision user, skip Setup Assistant
 cove run                                # boot with native GUI window
 ```
 
-On first launch, cove auto-signs itself with the required Virtualization.framework entitlements. No manual `codesign` step needed.
+On first launch, cove auto-signs itself with the required Virtualization.framework entitlements. No manual `codesign` step is needed for normal installs.
+
+## Common Commands
+
+```bash
+cove first-run                          # show the first-run checklist
+cove doctor host                        # host readiness check
+cove list                               # list VMs
+cove status -vm my-vm                   # VM and guest-agent status
+cove ctl -vm my-vm agent-status         # detailed agent status
+cove logs my-vm                         # guest logs
+cove support bundle                     # redacted host diagnostics
+cove support bundle -vm my-vm           # include VM diagnostics
+```
+
+Use `cove help advanced` for the full command list.
 
 ## License and Apple Virtualization Limits
 
@@ -89,7 +116,7 @@ UI commands: `ocr-click`, `ocr-wait`, `type`, `key`, `click`, `screenshot`.
 Disable or enable System Integrity Protection with automated recovery boot.
 
 ```bash
-cove sip disable-auto -user admin -password secret -confirm
+cove sip disable-auto -user admin -password <password> -confirm
 cove run -recovery -gui -unattended -boot-commands ~/.vz/vms/default/sip-disable.vzscript
 ```
 
@@ -119,6 +146,8 @@ Start with the [quickstart](docs/agent-sandbox/quickstart.md), then use the
 ### Native GUI Window
 
 macOS-native window with toolbar, menu bar, and frame persistence per VM. Multi-display support with resolution presets.
+When a GUI VM is running, cove also shows a macOS status item with the VM state
+and quick actions for the window and clean shutdown.
 
 ```bash
 cove run -display 4k
@@ -173,24 +202,30 @@ cove up -user dev -vzscripts homebrew,golang
 
 ```bash
 cove install -ipsw ~/cache/restore.ipsw
-cove provision -user ci -password secret -skip-setup-assistant
+cove provision -user ci -skip-setup-assistant  # prompts for password
 cove run -headless -cpu 4 -memory 8
 ```
 
 Self-hosted GitHub Actions or GitLab runner inside a long-lived VM:
 
 ```bash
-GH_REPO=tmc/cove GH_TOKEN=<reg-token> \
-  cove vzscript run github-runner
+read -rsp 'GitHub runner registration token: ' GH_TOKEN
+export GH_REPO=tmc/cove GH_TOKEN
+cove vzscript run github-runner
 
-RUNNER_REINSTALL=1 GH_REPO=tmc/cove GH_TOKEN=<reg-token> \
-  cove vzscript run github-runner
+RUNNER_REINSTALL=1 cove vzscript run github-runner
 
-GITLAB_URL=https://gitlab.com GITLAB_TOKEN=<token> \
-  cove vzscript run gitlab-runner
+read -rsp 'GitLab runner registration token: ' GITLAB_TOKEN
+export GITLAB_URL=https://gitlab.com GITLAB_TOKEN
+cove vzscript run gitlab-runner
 ```
 
+Runner registration tokens are secrets. Avoid pasting real values into shell
+history; use a prompt, keychain lookup, or CI secret variable instead.
+
 ### Cirrus Task Migration
+
+This is an advanced workflow. Get a local VM working first with `cove first-run`.
 
 From the cove checkout:
 
@@ -215,15 +250,19 @@ TS_AUTHKEY=tskey-auth-... cove vzscript run tailscale
 ### Control a Running VM
 
 ```bash
-TOKEN=$(cat ~/.vz/vms/default/control.token)
-echo '{"type":"status","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
-echo '{"type":"screenshot","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
+cove ctl -vm default status
+cove ctl -vm default screenshot -o screen.jpg
+cove ctl -vm default agent-status
 ```
+
+The raw Unix-socket protocol is documented in
+[Control API](docs/reference/control-api.md) for integrations that cannot use
+`cove ctl`.
 
 ### Recovery and SIP
 
 ```bash
-cove sip disable-auto -user admin -password secret -confirm
+cove sip disable-auto -user admin -password <password> -confirm
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \
   -boot-commands ~/.vz/vms/default/sip-disable.vzscript
@@ -294,13 +333,13 @@ cove/
 
 - **Control socket**: per-VM bearer token, owner-only permissions (`0600`)
 - **Guest agent**: unencrypted gRPC over vsock, scoped to host-VM boundary
-- **Entitlements**: auto-signed on first launch with `com.apple.security.virtualization` and `com.apple.security.hypervisor`
+- **Entitlements**: auto-signed on first launch with `com.apple.security.virtualization` and local networking entitlements
 - **Safety posture**: see [SAFETY.md](SAFETY.md) for trust boundaries, known limitations, and audit guidance.
 
 ## Contributing
 
 ```bash
-git clone https://github.com/tmc/vz-macos
+git clone https://github.com/tmc/cove
 cd cove
 go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove

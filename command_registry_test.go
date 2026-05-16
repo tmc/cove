@@ -42,7 +42,7 @@ func TestLookupCommand(t *testing.T) {
 
 func TestCommandNamesContainsCoreCommands(t *testing.T) {
 	names := commandNames()
-	want := []string{"build", "run", "install", "list", "ls", "rm", "destroy", "help", "version"}
+	want := []string{"build", "run", "install", "list", "ls", "rm", "destroy", "help", "support", "version"}
 	have := map[string]bool{}
 	for _, n := range names {
 		have[n] = true
@@ -98,7 +98,7 @@ func TestRunRegisteredCommandRunsSpec(t *testing.T) {
 }
 
 func TestNamespaceNoArgUsageExitCode(t *testing.T) {
-	tests := []string{"agent-sandbox", "build", "fleet", "softreset", "storage"}
+	tests := []string{"agent-sandbox", "build", "fleet", "softreset", "storage", "support"}
 	for _, name := range tests {
 		t.Run(name, func(t *testing.T) {
 			spec, ok := lookupCommand(name)

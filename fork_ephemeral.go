@@ -207,6 +207,9 @@ func GCEphemeralForks(opts EphemeralGCOptions) (EphemeralGCResult, error) {
 
 	entries, err := os.ReadDir(baseDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return EphemeralGCResult{}, nil
+		}
 		return EphemeralGCResult{}, fmt.Errorf("read vm base dir: %w", err)
 	}
 

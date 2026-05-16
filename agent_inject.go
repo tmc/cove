@@ -14,6 +14,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -64,7 +65,7 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)
 	}
 
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", outputPath, agentPkg)
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", agentBuildLDFlags(), "-o", outputPath, agentPkg)
 	cmd.Dir = moduleDir
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",
@@ -90,6 +91,11 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 		}
 	}
 	return nil
+}
+
+func agentBuildLDFlags() string {
+	info := resolvedVersion()
+	return fmt.Sprintf("-X main.version=%s -X main.commit=%s -X main.date=%s", hostVersion(), info.Commit, info.Date)
 }
 
 // codesignAdHoc applies an ad-hoc signature to a Mach-O binary. macOS
@@ -176,7 +182,15 @@ func goListModuleDir(workingDir string) (string, error) {
 // Idempotent: if the running VM already has the same agent version, returns
 // without rebuilding.
 func provisionAgent() error {
-	return provisionAgentForVM(currentVMSelection())
+	target := currentVMSelection()
+	if vmName != "" {
+		var err error
+		target, err = requireExistingVMSelection("provision-agent", vmName)
+		if err != nil {
+			return err
+		}
+	}
+	return provisionAgentForVM(target)
 }
 
 func provisionAgentForVM(target vmSelection) error {
@@ -187,6 +201,37 @@ func provisionAgentForVM(target vmSelection) error {
 	}
 	fmt.Println("Mounting disk for offline injection...")
 	return injectAgentOnlyForVM(target)
+}
+
+func handleAgentUpgradeCommand(args []string) error {
+	fs := flag.NewFlagSet("agent-upgrade", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	vmFlag := fs.String("vm", "", "VM name")
+	fs.Usage = func() {
+		printAgentUpgradeUsage(os.Stderr)
+	}
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove agent-upgrade [-vm <name>]")
+	}
+	target := currentVMSelection()
+	name := vmName
+	if *vmFlag != "" {
+		name = *vmFlag
+	}
+	if name != "" {
+		var err error
+		target, err = requireExistingVMSelection("agent-upgrade", name)
+		if err != nil {
+			return err
+		}
+	}
+	return upgradeAgentAt(target.controlSocketPath())
 }
 
 // provisionAgentRunning provisions the agent into a running VM via the
@@ -596,11 +641,16 @@ func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
 	fmt.Println()
 	exe := "./cove"
 	vmFlag := target.vmHintFlag()
-	fmt.Println("  To fix, stop the VM and re-provision:")
-	fmt.Println()
-	fmt.Printf("    %s%s provision -user <username> -skip-setup-assistant\n", exe, vmFlag)
-	fmt.Println()
-	fmt.Println("  Or to provision just the agent:")
+	vmDirectory := target.effectiveVMDir()
+	if agentstate.DetectPlatform(vmDirectory) == agentstate.PlatformMacOS {
+		fmt.Println("  To fix, stop the VM and re-provision:")
+		fmt.Println()
+		fmt.Printf("    %s%s provision -user <username> -skip-setup-assistant\n", exe, vmFlag)
+		fmt.Println()
+		fmt.Println("  Or to provision just the agent:")
+	} else {
+		fmt.Println("  To fix, stop the VM and provision the agent:")
+	}
 	fmt.Println()
 	fmt.Printf("    %s%s provision-agent\n", exe, vmFlag)
 	fmt.Println()
@@ -691,7 +741,7 @@ func upgradeAgentAt(sock string) error {
 			Type: "agent-exec",
 			Command: &controlpb.ControlRequest_AgentExec{
 				AgentExec: &controlpb.AgentExecCommand{
-					Args: []string{"sh", "-c", linuxAgentUpgradeRestartScript()},
+					Args: linuxAgentRestartCommand(),
 				},
 			},
 		}
@@ -800,9 +850,31 @@ func guestAgentUpgradeInstallScript(tmpPath, destPath string) string {
 	}, "\n")
 }
 
+func linuxAgentRestartCommand() []string {
+	return []string{"sh", "-lc", `cat >/tmp/cove-restart-vz-agent.sh <<'EOF'
+#!/bin/sh
+set -u
+sleep 1
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files vz-agent.service >/dev/null 2>&1; then
+	exec systemctl restart vz-agent
+fi
+if command -v rc-service >/dev/null 2>&1 && test -x /etc/init.d/vz-agent; then
+	rc-service vz-agent stop || pkill -KILL -x vz-agent || true
+	rc-service vz-agent zap >/dev/null 2>&1 || true
+	exec rc-service vz-agent start
+fi
+pkill -KILL -x vz-agent || true
+exec /usr/local/bin/vz-agent -mode daemon >/var/log/vz-agent.log 2>&1
+EOF
+chmod 755 /tmp/cove-restart-vz-agent.sh
+nohup /tmp/cove-restart-vz-agent.sh >/tmp/cove-restart-vz-agent.log 2>&1 &
+`}
+}
+
 func isLinuxGuestOS(osVersion string) bool {
 	osVersion = strings.ToLower(osVersion)
 	return strings.Contains(osVersion, "linux") ||
+		strings.Contains(osVersion, "alpine") ||
 		strings.Contains(osVersion, "ubuntu") ||
 		strings.Contains(osVersion, "debian") ||
 		strings.Contains(osVersion, "fedora")

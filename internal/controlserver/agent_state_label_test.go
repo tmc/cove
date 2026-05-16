@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/vz-macos/internal/vmstate"
 )
 
 func TestVMStateLabel(t *testing.T) {
@@ -27,9 +28,9 @@ func TestVMStateLabel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := vmStateLabel(tt.state)
+			got := vmstate.Label(tt.state)
 			if got != tt.want {
-				t.Errorf("vmStateLabel(%d) = %q, want %q", int(tt.state), got, tt.want)
+				t.Errorf("vmstate.Label(%d) = %q, want %q", int(tt.state), got, tt.want)
 			}
 		})
 	}
