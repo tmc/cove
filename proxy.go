@@ -1098,13 +1098,6 @@ func loadProxyState(vmDirectory string) (*proxyState, error) {
 }
 
 func printProxyRestoreFailure(vmDirectory string, err error) {
-	if _, statErr := os.Stat(filepath.Join(vmDirectory, ephemeralSentinel)); statErr == nil {
-		fmt.Printf("warning: guest proxy restore failed before ephemeral cleanup; guest will be removed, so manual recovery is usually unnecessary: %v\n", err)
-		for _, line := range proxyRecoveryLines(vmDirectory) {
-			fmt.Printf("  %s\n", line)
-		}
-		return
-	}
 	fmt.Printf("warning: guest proxy restore failed; manual recovery needed: %v\n", err)
 	for _, line := range proxyRecoveryLines(vmDirectory) {
 		fmt.Printf("  %s\n", line)

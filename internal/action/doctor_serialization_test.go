@@ -40,24 +40,6 @@ func TestDoctorMainExitCodes(t *testing.T) {
 	})
 }
 
-func TestDoctorMainJSONArgumentError(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := DoctorMain(context.Background(), []string{"--json", "extra"}, &stdout, &stderr)
-	if code != 1 {
-		t.Fatalf("DoctorMain code = %d, want 1", code)
-	}
-	var got Report
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
-	}
-	if got.OK || got.Status != StatusFail || len(got.Checks) != 1 || got.Checks[0].Name != "arguments" {
-		t.Fatalf("report = %#v", got)
-	}
-	if !strings.Contains(got.Checks[0].Message, "unexpected arguments") {
-		t.Fatalf("message = %q, want unexpected arguments", got.Checks[0].Message)
-	}
-}
-
 // TestWriteReportJSONShape pins the JSON serialization shape for Report.
 func TestWriteReportJSONShape(t *testing.T) {
 	report := Report{

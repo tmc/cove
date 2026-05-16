@@ -16,21 +16,8 @@ title: Installation
 brew install tmc/tap/cove
 ```
 
-If `brew info tmc/tap/cove` reports that the tap is missing, tap it first:
-
-```bash
-brew tap tmc/tap
-brew info cove
-brew install cove
-```
-
 > [!NOTE]
 > cove auto-signs itself with virtualization entitlements on first launch. No manual codesigning step is needed.
-
-Homebrew and future app packages install the `cove` binary only. Guest account
-setup remains explicit: the first VM asks for a username and prompts for a
-password when `-password` is omitted. Cove does not create fixed default guest
-credentials.
 
 ## Go Install
 
@@ -38,15 +25,14 @@ credentials.
 go install github.com/tmc/vz-macos@latest
 ```
 
-The binary will be placed in `$GOPATH/bin` (or `$HOME/go/bin`). The Go module
-path remains `github.com/tmc/vz-macos` for compatibility; the repository and
-Homebrew package are named `cove`.
+The binary will be placed in `$GOPATH/bin` (or `$HOME/go/bin`).
 
 ## From Source
 
 ```bash
-git clone https://github.com/tmc/cove
-cd cove
+git clone https://github.com/tmc/vz-macos
+cd vz-macos
+# The repository is github.com/tmc/vz-macos but the binary is named "cove"
 go build -o cove .
 ```
 
@@ -65,30 +51,13 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 
 Required entitlements:
 - `com.apple.security.virtualization` -- basic VM capability
-- `com.apple.security.network.client` and `com.apple.security.network.server` -- local control, gateway, and guest-service networking
+- `com.apple.security.hypervisor` -- hypervisor access
 
 ## Verify Installation
 
 ```bash
 cove version
-cove doctor host
 ```
-
-`cove doctor host -json` emits the same readiness checks as a JSON report.
-
-## First-Run Prompts
-
-`cove up -user <name>` prompts for the guest account password when `-password`
-is omitted. Prefer the prompt so the password is not saved in shell history.
-
-macOS may ask for administrator approval when cove mounts a guest disk, writes
-root-owned launchd files into the guest, or installs/updates the optional
-privileged helper. These prompts authorize local VM preparation on this Mac.
-
-GUI VM runs add a macOS status item for the active VM. It shows the current VM
-state and exposes quick actions for the native window and clean shutdown. The
-status item exists for the running VM session; installing cove does not add a
-background login item.
 
 ## Apple SLA Note
 
@@ -119,51 +88,6 @@ curl -L -C - -o ~/.vz/cache/RestoreImage.ipsw <restore-image-url>
 ```
 
 After the file is complete, re-run the same `cove install` or `cove up` command.
-
-## Support Bundle
-
-Use a support bundle when filing a bug or sharing setup diagnostics:
-
-```bash
-cove support bundle
-cove support bundle -vm dev
-```
-
-The archive is redacted and includes version/signing details, host readiness,
-helper and daemon status, storage census, recent run/recording metadata, and
-optional VM-specific doctor/control diagnostics.
-
-## Update
-
-With Homebrew:
-
-```bash
-brew update
-brew upgrade cove
-cove doctor host
-cove helper status
-```
-
-If the helper is stale after an upgrade:
-
-```bash
-sudo cove helper install
-```
-
-Source builds should be rebuilt, re-signed, and checked with `cove doctor host`.
-
-## Uninstall
-
-Remove only the pieces you no longer want:
-
-```bash
-brew uninstall cove          # CLI only
-cove helper uninstall        # optional privileged helper
-cove daemon stop             # user daemon, if running
-rm -rf ~/.vz                 # VMs, images, caches, runs, and store data
-```
-
-Keep `~/.vz` if you want to preserve local VM data.
 
 ## Linux Guest Toolchains
 

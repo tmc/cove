@@ -89,9 +89,6 @@ func parseReadyArgs(args []string) (names []string, asJSON bool, timeout time.Du
 	to := fs.Duration("timeout", 10*time.Second, "per-check timeout")
 	daemon := fs.Bool("daemon", false, "run checks via the root daemon agent")
 	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
-			printReadyUsage(os.Stdout)
-		}
 		return nil, false, 0, false, err
 	}
 	if fs.NArg() != 0 {
@@ -102,14 +99,6 @@ func parseReadyArgs(args []string) (names []string, asJSON bool, timeout time.Du
 		names = []string{"agent-ping", "can-exec"}
 	}
 	return names, *jsonOut, *to, *daemon, nil
-}
-
-func printReadyUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove ctl ready [--require name1,name2] [--json] [--timeout D] [--daemon]
-
-Run readiness checks through the guest agent. Exit codes are 0 when all checks
-pass, 1 when at least one reachable-agent check fails, and 2 when the agent is
-unreachable.`)
 }
 
 // parseRequireList splits "a,b,,c" into ["a","b","c"], trimming whitespace
@@ -159,9 +148,6 @@ func resolveReadyCheck(name string) readyCheck {
 func ctlReady(sock string, args []string) error {
 	names, asJSON, timeout, useDaemon, err := parseReadyArgs(args)
 	if err != nil {
-		if err == flag.ErrHelp {
-			return nil
-		}
 		return err
 	}
 

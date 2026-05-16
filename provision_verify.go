@@ -13,6 +13,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/vmconfig"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -29,9 +30,6 @@ type VerifyResult struct {
 
 // handleVerify verifies provisioning files in a VM disk
 func handleVerify(args []string) error {
-	if len(args) > 0 && args[0] == "host" {
-		return handleDoctorHost(args[1:], os.Stdout)
-	}
 	if len(args) > 0 && args[0] == "tcc-preauth" {
 		return runPreAuth(args[1:])
 	}
@@ -56,16 +54,15 @@ func handleVerify(args []string) error {
 
 	// Check if VM is running.
 	target := currentVMSelection()
-	if *vmFlag != "" || vmName != "" {
-		name := vmName
-		if *vmFlag != "" {
-			name = *vmFlag
+	if *vmFlag != "" {
+		if err := validateNewVMName(*vmFlag); err != nil {
+			return fmt.Errorf("verify: invalid VM name %q: %w", *vmFlag, err)
 		}
-		var err error
-		target, err = requireExistingVMSelection("verify", name)
+		dir, err := vmconfig.EnsureDir(*vmFlag, vmDir)
 		if err != nil {
 			return err
 		}
+		target = vmSelection{Directory: dir, Name: *vmFlag}
 	}
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
@@ -125,11 +122,8 @@ func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string, *string) {
 
 func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintf(w, `Usage: cove doctor [options]
-       cove doctor host [-json]
 
 Diagnose VM health: provisioning, agent, and file ownership.
-
-Use cove doctor host before creating a first VM to check host readiness.
 
 When the VM is running, doctor checks via the control socket and guest agent.
 When stopped, it mounts the disk and inspects files directly.
@@ -143,8 +137,6 @@ Options:
 	fs.PrintDefaults()
 	fmt.Fprintf(w, `
 Examples:
-  cove doctor host
-  cove doctor host -json
   cove doctor
   cove doctor --fix
   cove doctor --tcc-path /Volumes/work
@@ -226,7 +218,6 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbeP
 				fmt.Printf("  + %s: %s\n", probe.desc, probe.ok)
 			} else {
 				fmt.Printf("  - %s: %s\n", probe.desc, probe.missing)
-				allOK = false
 			}
 		}
 
@@ -267,20 +258,14 @@ func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
 				missing: "not found (/usr/local/bin/vz-agent)",
 			},
 			{
-				desc: "Agent service",
-				args: []string{"sh", "-lc", strings.Join([]string{
-					"test -f /etc/systemd/system/vz-agent.service",
-					"test -x /etc/init.d/vz-agent",
-				}, " || ")},
+				desc:    "Agent systemd unit",
+				args:    []string{"test", "-f", "/etc/systemd/system/vz-agent.service"},
 				ok:      "present",
-				missing: "not found (/etc/systemd/system/vz-agent.service or /etc/init.d/vz-agent)",
+				missing: "not found (/etc/systemd/system/vz-agent.service)",
 			},
 			{
-				desc: "Agent service status",
-				args: []string{"sh", "-lc", strings.Join([]string{
-					"command -v systemctl >/dev/null 2>&1 && systemctl is-active vz-agent",
-					"command -v rc-service >/dev/null 2>&1 && rc-service vz-agent status",
-				}, " || ")},
+				desc:    "Agent systemd service",
+				args:    []string{"systemctl", "is-active", "vz-agent"},
 				ok:      "active",
 				missing: "not active",
 			},
@@ -296,7 +281,7 @@ func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
 			},
 			{
 				desc:    "vz-agent process",
-				args:    []string{"pgrep", "-f", "/usr/local/bin/vz-agent"},
+				args:    []string{"pgrep", "-x", "vz-agent"},
 				ok:      "running",
 				missing: "not running",
 			},

@@ -73,50 +73,6 @@ func TestFlagWasProvided(t *testing.T) {
 	}
 }
 
-func TestValidateInstallMediaPaths(t *testing.T) {
-	oldInstallVM, oldIPSWPath, oldISOPath := installVM, ipswPath, isoPath
-	t.Cleanup(func() {
-		installVM, ipswPath, isoPath = oldInstallVM, oldIPSWPath, oldISOPath
-	})
-	dir := t.TempDir()
-	media := filepath.Join(dir, "media.iso")
-	if err := os.WriteFile(media, []byte("iso"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	for _, tt := range []struct {
-		name    string
-		args    []string
-		install bool
-		ipsw    string
-		iso     string
-		err     string
-	}{
-		{name: "not install", args: []string{"list"}, iso: filepath.Join(dir, "missing.iso")},
-		{name: "install local ipsw missing", args: []string{"install"}, ipsw: filepath.Join(dir, "missing.ipsw"), err: "ipsw path"},
-		{name: "install arg local ipsw missing", args: []string{"install", "-ipsw", filepath.Join(dir, "missing.ipsw")}, err: "ipsw path"},
-		{name: "install local iso missing", args: []string{"install"}, iso: filepath.Join(dir, "missing.iso"), err: "iso path"},
-		{name: "install arg local iso missing", args: []string{"install", "-linux", "-iso", filepath.Join(dir, "missing.iso")}, err: "iso path"},
-		{name: "up local iso missing", args: []string{"up"}, iso: filepath.Join(dir, "missing.iso"), err: "iso path"},
-		{name: "legacy install flag local iso missing", install: true, iso: filepath.Join(dir, "missing.iso"), err: "iso path"},
-		{name: "url paths skip stat", args: []string{"install"}, ipsw: "https://example.test/Restore.ipsw", iso: "https://example.test/install.iso"},
-		{name: "existing local paths", args: []string{"install"}, ipsw: "file://" + media, iso: media},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			installVM, ipswPath, isoPath = tt.install, tt.ipsw, tt.iso
-			err := validateInstallMediaPaths(tt.args)
-			if tt.err != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.err) {
-					t.Fatalf("validateInstallMediaPaths error = %v, want %q", err, tt.err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("validateInstallMediaPaths: %v", err)
-			}
-		})
-	}
-}
-
 func TestHandleListReportsMissingDiskDirectories(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	base := vmconfig.BaseDir()
@@ -141,20 +97,5 @@ func TestHandleListReportsMissingDiskDirectories(t *testing.T) {
 	}
 	if strings.Contains(out, "cove tree --orphans") {
 		t.Fatalf("list output kept invalid tree guidance:\n%s", out)
-	}
-}
-
-func TestHandleListEmptyStatePointsToFirstRun(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-
-	var buf bytes.Buffer
-	if err := handleListTo(&buf); err != nil {
-		t.Fatalf("handleListTo: %v", err)
-	}
-	out := buf.String()
-	for _, want := range []string{"No VMs found.", "cove doctor host", "cove up -user <name>"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("list empty output missing %q:\n%s", want, out)
-		}
 	}
 }

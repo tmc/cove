@@ -486,7 +486,7 @@ var mcpToolTable = []mcpTool{
 	},
 	{
 		Name:        "vm_request_stop",
-		Description: "Send an ACPI power button event; the guest may ignore it.",
+		Description: "Request graceful guest shutdown with an ACPI power button event.",
 		Schema:      objectSchema(map[string]any{"name": schemaVMName()}, "name"),
 		build: func(args json.RawMessage, token string) (*controlpb.ControlRequest, error) {
 			return &controlpb.ControlRequest{Type: "request-stop", AuthToken: token}, nil

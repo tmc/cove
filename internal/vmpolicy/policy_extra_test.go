@@ -74,3 +74,11 @@ func TestClearIdempotent(t *testing.T) {
 		t.Fatalf("policy file still exists after Clear, stat err = %v", err)
 	}
 }
+
+func TestParseRunBudgetRejectsNonNumeric(t *testing.T) {
+	for _, raw := range []string{"twelve", "-3"} {
+		if _, err := ParseRunBudget(raw); err == nil {
+			t.Errorf("ParseRunBudget(%q) = nil, want error", raw)
+		}
+	}
+}

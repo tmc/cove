@@ -16,7 +16,7 @@ func TestExpandHome(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"tilde alone", "~", home},
+		{"tilde alone", "~", filepath.Join(home, "~")},
 		{"tilde slash", "~/foo/bar", filepath.Join(home, "foo", "bar")},
 		{"absolute unchanged", "/etc/hosts", "/etc/hosts"},
 		{"relative unchanged", "foo/bar", "foo/bar"},

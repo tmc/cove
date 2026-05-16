@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
@@ -19,9 +20,7 @@ import (
 	"github.com/tmc/apple/symbols"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
-	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
-	identityx "github.com/tmc/apple/x/vzkit/identity"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
@@ -1162,7 +1161,7 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 
 	// Save hardware model data for future runs
 	hwModelPath := filepath.Join(vmDir, "hw.model")
-	if err := identityx.SaveMacHardwareModel(hwModel, hwModelPath); err != nil {
+	if err := saveDataRepresentation(hwModel.ID, hwModelPath); err != nil {
 		fmt.Printf("warning: could not save hardware model: %v\n", err)
 	}
 
@@ -1174,13 +1173,17 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 
 	// Save machine identifier data for future runs
 	machineIDPath := filepath.Join(vmDir, "machine.id")
-	if err := identityx.SaveMacMachineIdentifier(machineID, machineIDPath); err != nil {
+	if err := saveDataRepresentation(machineID.ID, machineIDPath); err != nil {
 		fmt.Printf("warning: could not save machine identifier: %v\n", err)
 	}
 
 	// Create auxiliary storage with hardware model (key difference from runtime)
 	auxStoragePath := filepath.Join(vmDir, "aux.img")
-	auxStorage, err := identityx.CreateMacAuxiliaryStorage(auxStoragePath, hwModel, true)
+	auxURL := foundation.NewURLFileURLWithPath(auxStoragePath)
+	auxURL.Retain()
+
+	auxStorage, err := vz.NewMacAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
+		auxURL, hwModel, vz.VZMacAuxiliaryStorageInitializationOptionAllowOverwrite)
 	if err != nil {
 		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to create auxiliary storage: %w", err)
 	}
@@ -1194,10 +1197,11 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 	// Re-open the freshly created aux image through the same path we use at
 	// runtime. This validates readability immediately and avoids install/start
 	// discrepancies between the "create" and "load existing" code paths.
-	reloadedAux, err := identityx.LoadMacAuxiliaryStorage(auxStoragePath)
-	if err != nil {
-		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to reload created auxiliary storage: %w", err)
+	reloadedAux := vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
+	if reloadedAux.ID == 0 {
+		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to reload created auxiliary storage: %s", auxStoragePath)
 	}
+	reloadedAux.Retain()
 
 	// Build platform configuration
 	platformConfig := vz.NewVZMacPlatformConfiguration()
@@ -1216,6 +1220,23 @@ func getHardwareModel(reqs *vz.VZMacOSConfigurationRequirements) vz.VZMacHardwar
 		hwModel.Retain()
 	}
 	return hwModel
+}
+
+// saveDataRepresentation saves an object's dataRepresentation to a file.
+// NOTE: This uses objc.Send because DataRepresentation() may not be available on all types.
+func saveDataRepresentation(objID objc.ID, path string) error {
+	dataID := objc.Send[objc.ID](objID, objc.Sel("dataRepresentation"))
+	if dataID == 0 {
+		return fmt.Errorf("no data representation")
+	}
+	data := foundation.NSDataFromID(dataID)
+	length := data.Length()
+	if length == 0 {
+		return fmt.Errorf("empty data")
+	}
+	ptr := data.Bytes()
+	bytes := unsafe.Slice((*byte)(ptr), length)
+	return os.WriteFile(path, bytes, 0644)
 }
 
 // setupVMConfiguration creates the full VM configuration.
@@ -1239,7 +1260,7 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	if err != nil {
 		return config, fmt.Errorf("graphics config: %w", err)
 	}
-	configx.SetMacGraphicsDevices(config, graphicsConfig)
+	setGraphicsDevices(config, graphicsConfig)
 
 	// Storage (disk)
 	diskPath := filepath.Join(vmDir, "disk.img")
@@ -1247,14 +1268,14 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	if err != nil {
 		return config, fmt.Errorf("block device config: %w", err)
 	}
-	configx.SetStorageDevices(config, blockConfig)
+	setStorageDevices(config, blockConfig)
 
 	// Network
 	networkConfig, err := createNetworkDeviceConfiguration()
 	if err != nil {
 		return config, fmt.Errorf("network config: %w", err)
 	}
-	configx.SetNetworkDevices(config, networkConfig)
+	setNetworkDevices(config, networkConfig)
 
 	// Pointing devices (USB + trackpad if available)
 	pointingDevices := []vz.IVZPointingDeviceConfiguration{
@@ -1264,23 +1285,23 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	if trackpad := vz.NewVZMacTrackpadConfiguration(); trackpad.GetID() != 0 {
 		pointingDevices = append(pointingDevices, trackpad)
 	}
-	configx.SetPointingDevices(config, pointingDevices)
+	setPointingDevices(config, pointingDevices)
 
 	// Keyboard (try Mac keyboard, fallback to USB)
 	keyboardConfig := createKeyboardConfiguration()
-	configx.SetKeyboards(config, keyboardConfig)
+	setKeyboards(config, keyboardConfig)
 
 	// Audio
 	audioConfig, err := createAudioDeviceConfiguration()
 	if err != nil {
 		fmt.Printf("warning: audio config: %v\n", err)
 	} else {
-		configx.SetAudioDevices(config, audioConfig)
+		setAudioDevices(config, audioConfig)
 	}
 
 	// Entropy
 	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
-	configx.SetEntropyDevices(config, entropyConfig)
+	setEntropyDevices(config, entropyConfig)
 
 	// Volume mounts (VirtioFS) - also configure during install for first-boot provisioning
 	effectiveVolumes := getEffectiveVolumes()
@@ -1371,7 +1392,7 @@ func createGraphicsDeviceConfiguration() (vz.VZMacGraphicsDeviceConfiguration, e
 		return graphicsConfig, fmt.Errorf("failed to create display config")
 	}
 
-	configx.SetMacGraphicsDisplays(graphicsConfig, displayConfig)
+	setDisplays(graphicsConfig, displayConfig)
 	return graphicsConfig, nil
 }
 
@@ -1749,10 +1770,10 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 			if provisionUser == "" {
 				fmt.Println()
 				fmt.Println("For auto-provisioning (automatic user creation), add flags:")
-				fmt.Println("  ./cove install -provision-user myuser -provision-password <password>")
+				fmt.Println("  ./cove install -provision-user myuser -provision-password mypass")
 				fmt.Println()
 				fmt.Println("Or provision after installation:")
-				fmt.Printf("  ./cove provision -user myuser -skip-setup-assistant\n")
+				fmt.Printf("  ./cove provision -user myuser -password mypass -skip-setup-assistant\n")
 			}
 			fmt.Println()
 			return nil

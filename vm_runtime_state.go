@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/tmc/vz-macos/internal/vmstate"
 )
 
 const vmRuntimeStateFile = "runtime.json"
@@ -65,7 +63,7 @@ func readVMRuntimeState(vmDir string) (vmRuntimeState, error) {
 	if err := json.Unmarshal(data, &rt); err != nil {
 		return vmRuntimeState{}, fmt.Errorf("parse runtime state: %w", err)
 	}
-	rt.State = vmstate.Canonical(rt.State)
+	rt.State = canonicalVMState(rt.State)
 	rt.Phase = strings.TrimSpace(rt.Phase)
 	return rt, nil
 }

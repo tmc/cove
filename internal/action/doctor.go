@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -18,8 +17,6 @@ import (
 )
 
 const gib = 1024 * 1024 * 1024
-
-var coveDevVersionRE = regexp.MustCompile(`\bcove [0-9a-f]{7,}\b`)
 
 // Status is the outcome of one preflight check.
 type Status string
@@ -118,9 +115,6 @@ type DoctorConfig struct {
 func DoctorMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	opts, err := ParseDoctorArgs(args)
 	if err != nil {
-		if actionArgsWantJSON(args) {
-			_ = WriteReport(stdout, actionArgumentErrorReport(err), true)
-		}
 		fmt.Fprintf(stderr, "cove action doctor: %v\n", err)
 		return 1
 	}
@@ -155,27 +149,6 @@ func ParseDoctorArgs(args []string) (DoctorOptions, error) {
 		return opts, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
 	return opts, nil
-}
-
-func actionArgsWantJSON(args []string) bool {
-	for _, arg := range args {
-		if arg == "--json" || arg == "-json" {
-			return true
-		}
-	}
-	return false
-}
-
-func actionArgumentErrorReport(err error) Report {
-	return Report{
-		OK:     false,
-		Status: StatusFail,
-		Checks: []CheckResult{{
-			Name:    "arguments",
-			Status:  StatusFail,
-			Message: err.Error(),
-		}},
-	}
 }
 
 // RunDoctor executes the action host preflight.
@@ -347,9 +320,6 @@ func checkCoveVersionFloor(ctx context.Context, cfg DoctorConfig) CheckResult {
 	text := strings.TrimSpace(out.Stdout + out.Stderr)
 	if strings.Contains(text, "slice2-cache") || strings.Contains(text, "design030") || strings.Contains(text, "T77") {
 		return CheckResult{Name: "cove-version-floor", Status: StatusPass, Message: "build includes design 030 slice 2 cache marker"}
-	}
-	if coveDevVersionRE.MatchString(text) {
-		return CheckResult{Name: "cove-version-floor", Status: StatusPass, Message: "development build " + text}
 	}
 	return CheckResult{Name: "cove-version-floor", Status: StatusWarn, Message: fmt.Sprintf("could not confirm design 030 slice 2 cache floor %s from %q", cfg.VersionFloor, text)}
 }

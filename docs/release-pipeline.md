@@ -25,7 +25,7 @@ Storing a `.p12` of the Developer ID identity in GitHub Actions secrets
 is a real supply-chain risk: anyone who can land a workflow change or
 escalate via a compromised dependency can exfiltrate the certificate.
 The trade-off is the maintainer becomes the bottleneck per release and
-the Homebrew formula must be bumped manually. For a single-maintainer tool
+the Homebrew cask must be bumped manually. For a single-maintainer tool
 that releases on a human cadence, the trade is worth it.
 
 CI is only used to verify that a tag still builds and tests pass. No
@@ -101,9 +101,9 @@ gh release create v0.1.4 \
     dist/vz-agent_0.1.4_darwin_arm64.tar.gz \
     dist/vz-agent_0.1.4_linux_arm64.tar.gz
 
-# 6. Bump the Homebrew formula manually (see "Manual Homebrew bump" below).
+# 6. Bump the Homebrew cask manually (see "Manual cask bump" below).
 
-# 7. Smoke-test the published Homebrew package.
+# 7. Smoke-test the published cask.
 brew update
 brew install tmc/tap/cove
 cove version
@@ -148,9 +148,9 @@ to start if its precondition is not met.
 After step 7 the script prints the artifact paths and the suggested
 `gh release create` invocation.
 
-## Manual Homebrew bump
+## Manual cask bump
 
-The Homebrew package used to be auto-PRed by goreleaser. With local-only signing,
+The cask used to be auto-PRed by goreleaser. With local-only signing,
 the maintainer opens the PR against `tmc/homebrew-tap` by hand:
 
 ```bash
@@ -161,7 +161,7 @@ gh release view v0.1.4 -R tmc/cove --json assets \
     --jq '.assets[] | select(.name=="checksums.txt").url' \
     | xargs curl -sL
 
-# 2. Edit Formula/cove.rb in tmc/homebrew-tap, updating:
+# 2. Edit Casks/cove.rb in tmc/homebrew-tap, updating:
 #      version "0.1.4"
 #      sha256  "<shasum-of-tar.gz>"
 #      url     "https://github.com/tmc/cove/releases/download/v0.1.4/cove_0.1.4_darwin_arm64.tar.gz"
@@ -222,7 +222,7 @@ trademark gate cleared.
 This document explicitly does not propose alternative names; that work
 is tracked separately. The release pipeline itself is name-agnostic —
 only the user-visible strings in `.goreleaser.yml`, `README.md`, and
-Homebrew metadata would need renaming if the project moves to a different
+cask metadata would need renaming if the project moves to a different
 name.
 
 ## Troubleshooting

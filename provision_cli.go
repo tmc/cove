@@ -35,11 +35,11 @@ func provisionLog(format string, args ...interface{}) {
 // from disk operations that need elevated privileges. By default, both phases run
 // in a single invocation:
 //
-//	./cove provision -user testuser -skip-setup-assistant
+//	./cove provision -user testuser -password secret123 -skip-setup-assistant
 //
 // For CI/headless use, the phases can be run separately:
 //
-//	./cove provision -user testuser -stage-only
+//	./cove provision -user testuser -password secret123 -stage-only
 //	sudo ./cove provision --apply
 func handleProvision(args []string) error {
 	// Check environment variable for debug mode
@@ -161,7 +161,7 @@ func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *
 	fs := flag.NewFlagSet("provision", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	user := fs.String("user", "", "Username for the provisioned user (required)")
-	password := fs.String("password", "", "Password for the provisioned user (prompts if empty)")
+	password := fs.String("password", "", "Password for the provisioned user (required)")
 	admin := fs.Bool("admin", true, "Make the user an admin")
 	skipSetup := fs.Bool("skip-setup-assistant", false, "Skip Setup Assistant by creating .AppleSetupDone")
 	autoLogin := fs.Bool("auto-login", true, "Enable automatic login for the user")
@@ -207,9 +207,9 @@ Options:
 	fmt.Fprintf(w, `
 Examples:
   cove provision -user testuser -skip-setup-assistant
-  cove provision -user testuser -stage-only
+  cove provision -user testuser -password secret123 -stage-only
   cove provision -apply
-  cove provision -user testuser -ssh-key ~/.ssh/id_rsa.pub
+  cove provision -user testuser -password secret123 -ssh-key ~/.ssh/id_rsa.pub
 
 Recovery authorization:
   By default, provision uses a two-user bootstrap. A hidden admin is created

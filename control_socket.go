@@ -25,7 +25,6 @@ import (
 	controlx "github.com/tmc/vz-macos/internal/control"
 	"github.com/tmc/vz-macos/internal/control/operations"
 	"github.com/tmc/vz-macos/internal/controlserver"
-	"github.com/tmc/vz-macos/internal/vmstate"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -829,7 +828,7 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 	<-done
 
 	status := map[string]interface{}{
-		"state":          vmstate.Label(state),
+		"state":          vmStateLabel(state),
 		"canPause":       canPause,
 		"canResume":      canResume,
 		"canStop":        canStop,
@@ -847,7 +846,7 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 		Success: true,
 		Data:    string(data),
 		Result: &controlpb.ControlResponse_Status{Status: &controlpb.StatusResponse{
-			State:          vmstate.Label(state),
+			State:          vmStateLabel(state),
 			CanPause:       canPause,
 			CanResume:      canResume,
 			CanStop:        canStop,

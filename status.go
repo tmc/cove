@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,8 +36,6 @@ func statusCommand(args ...string) error {
 			fmt.Printf("starting: %s\n", note)
 			return nil
 		}
-		name := filepath.Base(targetDir)
-		return fmt.Errorf("vm %q is %s; status requires a running VM\n  start it with: cove -vm %s run\n  list VMs with: cove list", name, state, name)
 	}
 	client := NewControlClient(GetControlSocketPathForVM(targetDir))
 	osName, err := detectGuestOS(client)

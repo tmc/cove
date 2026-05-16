@@ -11,7 +11,7 @@ Install a base macOS VM with the tools you need for analysis:
 
 ```bash
 cove -vm sandbox install -cpu 2 -memory 4 -disk-size 32
-cove -vm sandbox provision -user analyst -skip-setup-assistant
+cove -vm sandbox provision -user analyst -password analyst -skip-setup-assistant
 ```
 
 Boot, install analysis tools, then shut down:
@@ -85,7 +85,7 @@ Some analysis requires disabling System Integrity Protection to attach debuggers
 
 ```bash
 # Generate SIP disable automation
-cove -vm sandbox sip disable-auto -user analyst
+cove -vm sandbox sip disable-auto -user analyst -password analyst
 
 # Boot into recovery with the automation script
 cove -vm sandbox run -recovery -no-resume -gui -unattended \

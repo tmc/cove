@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
@@ -71,8 +70,8 @@ func TestVerifyRunningGuestProbesLinux(t *testing.T) {
 	}
 	wantDescs := []string{
 		"Agent binary",
-		"Agent service",
-		"Agent service status",
+		"Agent systemd unit",
+		"Agent systemd service",
 		"Provisioning completed marker",
 		"vz-agent process",
 	}
@@ -84,21 +83,14 @@ func TestVerifyRunningGuestProbesLinux(t *testing.T) {
 			t.Fatalf("linux probes include macOS LaunchDaemon: %#v", probes)
 		}
 	}
-	if got := probes[1].args; len(got) != 3 || got[0] != "sh" || got[1] != "-lc" ||
-		!strings.Contains(got[2], "/etc/systemd/system/vz-agent.service") ||
-		!strings.Contains(got[2], "/etc/init.d/vz-agent") {
-		t.Fatalf("service args = %#v, want systemd/openrc shell probe", got)
+	if got, want := probes[1].args, []string{"test", "-f", "/etc/systemd/system/vz-agent.service"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("systemd unit args = %#v, want %#v", got, want)
 	}
-	if got := probes[2].args; len(got) != 3 || got[0] != "sh" || got[1] != "-lc" ||
-		!strings.Contains(got[2], "systemctl is-active vz-agent") ||
-		!strings.Contains(got[2], "rc-service vz-agent status") {
-		t.Fatalf("service status args = %#v, want systemd/openrc shell probe", got)
+	if got, want := probes[2].args, []string{"systemctl", "is-active", "vz-agent"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("systemd active args = %#v, want %#v", got, want)
 	}
 	if got := probes[3].args; len(got) != 3 || got[0] != "sh" || got[1] != "-lc" {
 		t.Fatalf("marker args = %#v, want shell probe", got)
-	}
-	if got, want := probes[4].args, []string{"pgrep", "-f", "/usr/local/bin/vz-agent"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("process args = %#v, want %#v", got, want)
 	}
 }
 

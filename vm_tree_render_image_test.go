@@ -1,4 +1,4 @@
-package vmtree
+package main
 
 import (
 	"bytes"
@@ -8,10 +8,7 @@ import (
 
 func TestRenderReachableFromImageMissingImage(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	ref := ReachableImage{
-		Ref:    "nonexistent:v1",
-		Exists: func(string) bool { return false },
-	}
+	ref := ImageRef{Name: "nonexistent", Tag: "v1"}
 	err := renderReachableFromImage(&bytes.Buffer{}, ref, false)
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("err = %v, want not found", err)

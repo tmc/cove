@@ -1,4 +1,4 @@
-package vmtree
+package main
 
 import (
 	"encoding/json"
@@ -21,8 +21,8 @@ type vmTreeNode struct {
 	children       []*vmTreeNode
 }
 
-// Options configures vm tree rendering.
-type Options struct {
+// VMTreeOptions configures vm tree rendering.
+type VMTreeOptions struct {
 	// JSON emits a structured tree (forest of root nodes with children).
 	JSON bool
 	// Orphans filters output to VMs whose ParentVM points at a missing
@@ -33,18 +33,18 @@ type Options struct {
 	// image-rooted view: the image is the synthetic root and child VMs
 	// (those whose ParentImage matches the ref) are direct children.
 	// Mutually exclusive with Orphans.
-	ReachableFromImage *ReachableImage
+	ReachableFromImage *ImageRef
 }
 
-// ReachableImage describes an image-rooted VM reachability query.
-type ReachableImage struct {
-	Ref      string
-	Exists   func(string) bool
-	Children func(string) ([]string, error)
+// PrintVMTree writes the VM fork lineage tree with default options
+// (ASCII, full forest). Kept as a stable entry point for callers that
+// don't need flag handling.
+func PrintVMTree(w io.Writer) error {
+	return PrintVMTreeWithOptions(w, VMTreeOptions{})
 }
 
-// PrintWithOptions writes the VM fork lineage tree honoring opts.
-func PrintWithOptions(w io.Writer, opts Options) error {
+// PrintVMTreeWithOptions writes the VM fork lineage tree honoring opts.
+func PrintVMTreeWithOptions(w io.Writer, opts VMTreeOptions) error {
 	if opts.ReachableFromImage != nil && opts.Orphans {
 		return errors.New("vm tree: --reachable-from and --orphans are mutually exclusive")
 	}
@@ -262,17 +262,11 @@ type reachableImageJSON struct {
 // renderReachableFromImage emits the image-rooted reachability view:
 // the image as a synthetic root and its direct child VMs (one-hop).
 // Errors out if the image does not exist on disk.
-func renderReachableFromImage(w io.Writer, image ReachableImage, asJSON bool) error {
-	if image.Ref == "" {
-		return fmt.Errorf("image ref is empty")
+func renderReachableFromImage(w io.Writer, ref ImageRef, asJSON bool) error {
+	if !ImageExists(ref) {
+		return fmt.Errorf("image %s not found", ref)
 	}
-	if image.Exists == nil || !image.Exists(image.Ref) {
-		return fmt.Errorf("image %s not found", image.Ref)
-	}
-	if image.Children == nil {
-		return fmt.Errorf("image %s children lookup is unavailable", image.Ref)
-	}
-	names, err := image.Children(image.Ref)
+	names, err := VMsForkedFromImage(ref)
 	if err != nil {
 		return err
 	}
@@ -316,7 +310,7 @@ func renderReachableFromImage(w io.Writer, image ReachableImage, asJSON bool) er
 
 	if asJSON {
 		out := reachableImageJSON{
-			Image:    image.Ref,
+			Image:    ref.String(),
 			Children: make([]reachableChildJSON, 0, len(children)),
 		}
 		for _, c := range children {
@@ -332,10 +326,10 @@ func renderReachableFromImage(w io.Writer, image ReachableImage, asJSON bool) er
 	}
 
 	if len(children) == 0 {
-		fmt.Fprintf(w, "No VMs forked from %s.\n", image.Ref)
+		fmt.Fprintf(w, "No VMs forked from %s.\n", ref)
 		return nil
 	}
-	fmt.Fprintf(w, "%s (image)\n", image.Ref)
+	fmt.Fprintf(w, "%s (image)\n", ref)
 	for i, c := range children {
 		branch := "|-- "
 		if i == len(children)-1 {

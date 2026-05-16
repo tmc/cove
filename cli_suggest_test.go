@@ -34,7 +34,7 @@ func TestKnownCommandsCoverAliases(t *testing.T) {
 	required := []string{
 		"run", "install", "list", "ls", "shared-folder", "shared-folders",
 		"vm", "rename", "export", "import", "config", "rm",
-		"verify", "doctor", "provision", "inject", "first-run", "support-bundle",
+		"verify", "doctor", "provision", "inject",
 	}
 	set := make(map[string]bool, len(commandNames()))
 	for _, k := range commandNames() {
@@ -58,8 +58,6 @@ func TestLookupCommandAliases(t *testing.T) {
 		{"inject", "inject", commandDispatchEarly},
 		{"doctor", "verify", commandDispatchEarly},
 		{"shared-folders", "shared-folder", commandDispatchEarly},
-		{"first-run", "first-run", commandDispatchEarly},
-		{"support-bundle", "support-bundle", commandDispatchEarly},
 		{"action", "action", commandDispatchPreUI},
 	}
 	for _, tt := range tests {

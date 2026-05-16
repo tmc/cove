@@ -154,8 +154,6 @@ func runImageList(args []string) error {
 	}
 	if len(entries) == 0 {
 		fmt.Println("No images found.")
-		fmt.Println("  Images are optional. Create a VM first with: cove up -user <name>")
-		fmt.Println("  Snapshot a stopped VM later with: cove image build -from <vm> -tag <name>:latest")
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)

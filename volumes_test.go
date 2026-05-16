@@ -17,16 +17,16 @@ func TestVirtioFSMountArgsLinux(t *testing.T) {
 		MountOpts: []string{"nodev", "noatime"},
 	}
 	got := virtioFSMountArgs(m, "/mnt/work", true)
-	want := []string{"mount", "-t", "virtiofs", "-o", "ro,nodev,noatime", "work", "/mnt/work"}
+	want := []string{"mount", "-t", "virtiofs", "-o", "ro,cache=none,nodev,noatime,uid=1000,gid=1000", "work", "/mnt/work"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("virtioFSMountArgs(linux) = %#v, want %#v", got, want)
 	}
 }
 
-func TestVirtioFSMountArgsLinuxDefaultHasNoOptions(t *testing.T) {
+func TestVirtioFSMountArgsLinuxDefaultsCacheNone(t *testing.T) {
 	m := vmconfig.VolumeMount{Tag: "work"}
 	got := virtioFSMountArgs(m, "/mnt/work", true)
-	want := []string{"mount", "-t", "virtiofs", "work", "/mnt/work"}
+	want := []string{"mount", "-t", "virtiofs", "-o", "cache=none,uid=1000,gid=1000", "work", "/mnt/work"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("virtioFSMountArgs(linux default) = %#v, want %#v", got, want)
 	}
@@ -38,7 +38,7 @@ func TestVirtioFSMountArgsLinuxRespectsExplicitCache(t *testing.T) {
 		MountOpts: []string{"cache=metadata", "noatime"},
 	}
 	got := virtioFSMountArgs(m, "/mnt/work", true)
-	want := []string{"mount", "-t", "virtiofs", "-o", "cache=metadata,noatime", "work", "/mnt/work"}
+	want := []string{"mount", "-t", "virtiofs", "-o", "cache=metadata,noatime,uid=1000,gid=1000", "work", "/mnt/work"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("virtioFSMountArgs(linux explicit cache) = %#v, want %#v", got, want)
 	}
@@ -156,19 +156,6 @@ func TestRosettaRegisterFailureIsBenign(t *testing.T) {
 				t.Fatalf("rosettaRegisterFailureIsBenign(%q) = %v, want %v", tt.stderr, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestMountFailureMessageExplainsVirtioFSCacheOption(t *testing.T) {
-	got := mountFailureMessage(32, "mount: /mnt/work: Unknown parameter 'cache'")
-	for _, want := range []string{
-		"mount failed (exit 32)",
-		"guest kernel rejected the VirtioFS cache option",
-		"without cache=",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("mountFailureMessage = %q, want %q", got, want)
-		}
 	}
 }
 

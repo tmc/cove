@@ -41,13 +41,13 @@ cove shared-folder mount                   # mount in guest via agent
 
 ## Persisted Configuration
 
-`cove shared-folder add` persists the folder in the VM configuration. When the
-VM is running, cove also checks the runtime sharing device, asks the control
-socket to apply the updated folder list, and attempts the guest mount through
-the agent. If live apply or mount is unavailable, the saved folder is still
-available on the next boot. The `# mount:` directive in `cove vzscript run`
-uses the same persisted configuration and live-apply path for that script run;
-failure there is warning-only and still leaves the configuration saved.
+`cove shared-folder add` persists the folder in the VM configuration and applies
+it on the next boot. VirtioFS devices must be present when the VM starts; cove
+does not currently live hot-add a new VirtioFS device to an already-running VM.
+The `# mount:` directive in `cove vzscript run` uses the same persisted
+configuration but additionally attempts best-effort hot-plug and guest mounting
+for that script run; failure there is warning-only and still requires a future
+boot for guaranteed availability.
 
 Use `cove shared-folder pending` to see configured folders that are not mounted
 in the running guest.

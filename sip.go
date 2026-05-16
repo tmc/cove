@@ -247,7 +247,7 @@ Commands:
   create-disk    Create (or recreate) the recovery tools disk
 
 Examples:
-  cove -vm macos-3 sip enable-auto -user user -password <password>
-  cove -vm macos-3 sip disable-auto -password <password>
+  cove -vm macos-3 sip enable-auto -user user -password secret
+  cove -vm macos-3 sip disable-auto -password secret
   cove -vm macos-3 run -recovery -no-resume -gui -unattended -usb ~/.vz/vms/macos-3/recovery-disk.img -boot-commands ~/.vz/vms/macos-3/sip-enable.vzscript
 `

@@ -169,9 +169,6 @@ func runImageInspect(args []string) error {
 		}
 		out, err := InspectImageDiff(a, b)
 		if err != nil {
-			if *asJSON {
-				_ = writeCLIErrorJSON(os.Stdout, "image inspect", err, "run 'cove image list' to see local images")
-			}
 			return err
 		}
 		if *asJSON {

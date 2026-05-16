@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -138,32 +137,6 @@ func TestDeleteVMWithOptionsRunningGuidance(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("running refusal missing %q in:\n%s", want, err)
 		}
-	}
-}
-
-func TestDeleteVMWithOptionsWaitsForSocketTeardown(t *testing.T) {
-	home, err := os.MkdirTemp("/tmp", "cove-del-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(home) })
-	t.Setenv("HOME", home)
-	writeTreeVM(t, "stopping-vm", vmconfig.Config{})
-	sock := GetControlSocketPathForVM(vmconfig.Path("stopping-vm"))
-	listener, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatalf("listen control socket: %v", err)
-	}
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		listener.Close()
-	}()
-
-	if err := DeleteVMWithOptions("stopping-vm", DeleteVMOptions{}); err != nil {
-		t.Fatalf("DeleteVMWithOptions(stopping-vm) error = %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "stopping-vm")); !os.IsNotExist(err) {
-		t.Fatalf("stopping-vm directory still exists after delete: %v", err)
 	}
 }
 

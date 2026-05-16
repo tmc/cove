@@ -4,7 +4,7 @@
 **Source**: conductor dispatch 2026-05-02; user decision (cove repo
 stays private through this design; cove-action implementation deferred
 to v0.4; image push/pull is private-only until the public flip).
-**Roadmap**: v0.4 — must land before [021](archive/021-v04-ci-executors-tracks.md)
+**Roadmap**: v0.4 — must land before [021](021-v04-ci-executors-tracks.md)
 Slice 1 (cove-action GHA wrapper, ~600 LOC) implementation begins.
 **Branch**: planning.
 
@@ -12,13 +12,13 @@ Slice 1 (cove-action GHA wrapper, ~600 LOC) implementation begins.
 
 Specify the threat model, token lifecycle, and isolation invariants
 for the cove-action wrapper that ships as
-[021](archive/021-v04-ci-executors-tracks.md) Slice 1. cove-action orchestrates
+[021](021-v04-ci-executors-tracks.md) Slice 1. cove-action orchestrates
 ephemeral cove forks per CI job; this doc nails down what trust
 boundary each token crosses, what residue we are required to keep out
 of the parent image, and which knobs the operator is forbidden from
 turning off.
 
-The load-bearing input is [015](archive/015-soft-reset-empirical.md): warm
+The load-bearing input is [015](015-soft-reset-empirical.md): warm
 soft reset failed isolation 0 / 3 / 3 against System Keychain,
 GlobalPreferences, and orphaned LaunchDaemons. fork/restore is the
 only supported isolation primitive. Everything in this doc follows
@@ -80,7 +80,7 @@ trust boundary is identical.
    boundary plus per-fork unique `machine.id` / MAC / disk
    ([013](013-vm-fork.md) hard constraints).
 4. **Residue between sequential jobs on the same parent** — the
-   exact failure mode [015](archive/015-soft-reset-empirical.md) measured
+   exact failure mode [015](015-soft-reset-empirical.md) measured
    for warm soft reset. Containment is "every job is a fresh fork
    from a never-mutated parent image".
 5. **Operator misconfiguration** — operator disables `-ephemeral`
@@ -174,7 +174,7 @@ not seen by cove-action.
 ## 3. Isolation invariants
 
 This section is non-negotiable. It is the cash value of
-[015](archive/015-soft-reset-empirical.md).
+[015](015-soft-reset-empirical.md).
 
 1. **Every job runs in a fresh ephemeral fork.** cove-action
    invokes `cove run -fork-from <parent-image-ref> -ephemeral`
@@ -190,12 +190,12 @@ This section is non-negotiable. It is the cash value of
    refuse to reuse a parent VM as a runner directly. The operator
    trying to point cove-action at a registered VM (rather than an
    image) gets a refusal at `cove-action register`-time with a
-   pointer to [015](archive/015-soft-reset-empirical.md) and to
+   pointer to [015](015-soft-reset-empirical.md) and to
    `cove image build`.
 4. **`-ephemeral` cannot be disabled.** There is no
    `cove-action --persist-fork` knob. If a future contributor
    proposes one, the answer is no, and the answer cites
-   [015](archive/015-soft-reset-empirical.md). The fork-end-of-job destroy
+   [015](015-soft-reset-empirical.md). The fork-end-of-job destroy
    is the boundary that keeps Section 2.5 honest.
 5. **Lineage gate.** [013](013-vm-fork.md) Phase 4 added
    `vm tree` and `delete --cascade`. cove-action's per-job forks
@@ -336,7 +336,7 @@ the fork.
 
 | Path | When to use | Isolation story |
 |---|---|---|
-| `vzscripts/github-runner` | developer machine convenience; one-off self-hosted runner against a side branch; you accept warm-guest residue | soft-reset shape — see [015](archive/015-soft-reset-empirical.md), not a privacy boundary |
+| `vzscripts/github-runner` | developer machine convenience; one-off self-hosted runner against a side branch; you accept warm-guest residue | soft-reset shape — see [015](015-soft-reset-empirical.md), not a privacy boundary |
 | `cove-action` | production CI; PR-from-fork workflows; multi-job throughput; secrets matter | fork-per-job, parent never mutated; the supported primitive |
 
 Both can coexist. The vzscript path is documented as developer
@@ -384,7 +384,7 @@ and cove-action just registers it per-fork.
 - GitLab parity beyond shape. The token lifecycle and isolation
   invariants are identical-shape; the wire-level token names
   differ. cove-action's GitLab adapter (Slice 2 of
-  [021](archive/021-v04-ci-executors-tracks.md)) inherits this design
+  [021](021-v04-ci-executors-tracks.md)) inherits this design
   unchanged except for substituting `CI_JOB_TOKEN` for
   `GITHUB_TOKEN` and `gitlab-runner` registration for
   `actions-runner` registration.
@@ -393,9 +393,9 @@ and cove-action just registers it per-fork.
 
 - [013](013-vm-fork.md) — fork-from semantics; Phase 3 RAM-overlay
   (`99b3732`); Phase 4 lineage / `vm tree` (`eacbf5e`).
-- [015](archive/015-soft-reset-empirical.md) — load-bearing. Soft reset
+- [015](015-soft-reset-empirical.md) — load-bearing. Soft reset
   failed isolation 0/3/3; fork/restore is required.
-- [021](archive/021-v04-ci-executors-tracks.md) — cove-action GHA wrapper
+- [021](021-v04-ci-executors-tracks.md) — cove-action GHA wrapper
   (Scope B) and GitLab shim. 025 must land before 021 Slice 1
   implementation.
 - [024](024-cove-runner-images.md) — `cove image build/list/rm` +

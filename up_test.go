@@ -78,7 +78,7 @@ func TestParseUpFlagsErrorPaths(t *testing.T) {
 		{
 			name:    "missing user for macOS",
 			args:    []string{"-headless"},
-			wantErr: "cove up -user <name>",
+			wantErr: "missing required flag: -user",
 		},
 		{
 			name:    "bad automation backend",

@@ -36,7 +36,6 @@ var commandRegistry = []commandSpec{
 	{Name: "build", Summary: "Chain vzscript steps into a cache-keyed VM image", Dispatch: commandDispatchEarly, Run: runBuildCommand},
 	{Name: "clean", Summary: "Remove VM files", Dispatch: commandDispatchLate, Run: runCleanCommand},
 	{Name: "clone", Summary: "Clone a VM", Dispatch: commandDispatchLate, Run: runCloneCommand},
-	{Name: "commands", Summary: "Print machine-readable command inventory", Dispatch: commandDispatchEarly},
 	{Name: "compact", Summary: "Zero guest free space for smaller pushes", Dispatch: commandDispatchEarly, Run: runCompactCommand},
 	{Name: "config", Summary: "Export/import framework config snapshots", Dispatch: commandDispatchLate, Run: runVMSubcommand},
 	{Name: "cp", Summary: "Copy files between host and guest", Dispatch: commandDispatchEarly, Run: runCpCommand},
@@ -50,9 +49,7 @@ var commandRegistry = []commandSpec{
 	{Name: "fleet", Summary: "Register and use remote cove hosts", Dispatch: commandDispatchEarly, Run: runFleetCommandSpec},
 	{Name: "fork", Summary: "CoW-fork a VM with a fresh identity", Dispatch: commandDispatchEarly, Run: runForkCommand},
 	{Name: "forward", Summary: "Forward host TCP to guest TCP", Dispatch: commandDispatchEarly, Run: runForwardCommand},
-	{Name: "first-run", Summary: "Show first-run onboarding steps", Dispatch: commandDispatchEarly, Run: runFirstRunCommand},
 	{Name: "gc", Summary: "Delete old disposable VM clones", Dispatch: commandDispatchEarly, Run: runGCCommand},
-	{Name: "gui", Summary: "Control VM GUI window state", Dispatch: commandDispatchEarly, Run: runControlAliasCommand},
 	{Name: "helper", Summary: "Manage the privileged helper", Dispatch: commandDispatchLate, Run: runHelperCommandSpec},
 	{Name: "image", Summary: "Local VM image store", Dispatch: commandDispatchEarly, Run: runImageCommand},
 	{Name: "import", Summary: "Import VM from tarball", Dispatch: commandDispatchLate, Run: runVMSubcommand},
@@ -72,15 +69,12 @@ var commandRegistry = []commandSpec{
 	{Name: "pull", Summary: "Validate an OCI pull plan", Dispatch: commandDispatchEarly, Run: runPullCommand},
 	{Name: "push", Summary: "Plan a VM disk OCI push", Dispatch: commandDispatchEarly, Run: runPushCommand},
 	{Name: "quota", Summary: "Show or set per-VM resource quotas", Dispatch: commandDispatchEarly, Run: runQuotaCommand},
-	{Name: "recording", Aliases: []string{"recordings"}, Summary: "List and export run recording artifacts", Dispatch: commandDispatchEarly, Run: runRecordingCommand},
 	{Name: "rename", Summary: "Rename a VM", Dispatch: commandDispatchLate, Run: runVMSubcommand},
 	{Name: "rm", Aliases: []string{"remove", "destroy"}, Summary: "Delete a VM", Dispatch: commandDispatchLate, Run: runVMDeleteAliasCommand},
 	{Name: "rosetta", Summary: "Rosetta 2 for Linux VMs", Dispatch: commandDispatchLate, Run: runRosettaCommandSpec},
 	{Name: "run", Summary: "Run a VM", Dispatch: commandDispatchLate, Run: runRunCommand},
-	{Name: "runner", Summary: "Generate hosted-runner workflow scaffolding", Dispatch: commandDispatchEarly, Run: runRunnerCommand},
 	{Name: "runs", Summary: "Inspect local run metrics and artifacts", Dispatch: commandDispatchEarly, Run: runRunsCommand},
 	{Name: "secret", Summary: "Debug secret resolver", Dispatch: commandDispatchEarly, Run: runSecretCommand},
-	{Name: "security", Summary: "Inspect host-containment policy", Dispatch: commandDispatchEarly, Run: runSecurityCommand},
 	{Name: "serve", Summary: "Multi-VM HTTP gateway", Dispatch: commandDispatchEarly, Run: runServeCommandSpec},
 	{Name: "shared-folder", Aliases: []string{"shared-folders"}, Summary: "Manage shared folders", Dispatch: commandDispatchEarly, Run: runSharedFolderCommand},
 	{Name: "shell", Summary: "Open a Docker-shaped exec session", Dispatch: commandDispatchEarly, Run: runShellCommand},
@@ -90,16 +84,12 @@ var commandRegistry = []commandSpec{
 	{Name: "status", Summary: "Show VM status", Dispatch: commandDispatchEarly, Run: runStatusCommand},
 	{Name: "storage", Summary: "Inspect cove disk usage under ~/.vz/", Dispatch: commandDispatchEarly, Run: runStorageCommand},
 	{Name: "store", Summary: "Manage the local OCI blob store", Dispatch: commandDispatchEarly, Run: runStoreCommand},
-	{Name: "support", Summary: "Create support diagnostics bundles", Dispatch: commandDispatchEarly, Run: runSupportCommandSpec},
-	{Name: "support-bundle", Summary: "Create a redacted support bundle", Dispatch: commandDispatchEarly, Run: runSupportBundleAliasCommand},
 	{Name: "template", Summary: "Manage VM templates", Dispatch: commandDispatchLate, Run: runTemplateCommand},
-	{Name: "trace", Aliases: []string{"traces"}, Summary: "Manage eslogger guest traces", Dispatch: commandDispatchEarly, Run: runTraceCommand},
 	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: commandDispatchEarly, Run: runUIScriptCommand},
 	{Name: "unpin", Summary: "Remove a storage pin", Dispatch: commandDispatchEarly, Run: runUnpinCommand},
 	{Name: "up", Summary: "Install + provision + boot in one command", Dispatch: commandDispatchEarly, Run: runUpCommand},
 	{Name: "verify", Aliases: []string{"doctor"}, Summary: "Verify provisioning files in VM disk", Dispatch: commandDispatchEarly, Run: runVerifyCommand},
 	{Name: "version", Summary: "Print version information", Dispatch: commandDispatchEarly, Run: runVersionCommand},
-	{Name: "vnc", Summary: "Inspect private VNC server state", Dispatch: commandDispatchEarly, Run: runControlAliasCommand},
 	{Name: "vm", Summary: "Manage VMs", Dispatch: commandDispatchLate, Run: runVMCommandSpec},
 	{Name: "vzscript", Summary: "Run guest-agent and UI automation scripts", Dispatch: commandDispatchEarly, Run: runVZScriptCommand},
 }
@@ -131,9 +121,6 @@ func commandNames() []string {
 
 func runRegisteredCommand(env commandEnv, spec *commandSpec, name string, args []string) int {
 	if spec == nil || spec.Run == nil {
-		if spec != nil && spec.Name == "commands" {
-			return runCommandsCommand(env, name, args)
-		}
 		return 2
 	}
 	return spec.Run(env, name, args)
@@ -165,8 +152,8 @@ func runAgentSandboxCommand(env commandEnv, _ string, args []string) int {
 	}
 	return commandError(env, handleAgentSandboxCommand(args))
 }
-func runAgentUpgradeCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleAgentUpgradeCommand(args))
+func runAgentUpgradeCommand(env commandEnv, _ string, _ []string) int {
+	return commandError(env, upgradeAgent())
 }
 func runBenchCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleBenchCommand(args))
@@ -190,9 +177,6 @@ func runCpCommand(env commandEnv, _ string, args []string) int {
 }
 func runCtlCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, ctlCommand(args))
-}
-func runControlAliasCommand(env commandEnv, name string, args []string) int {
-	return commandError(env, ctlCommand(controlAliasArgs(name, args)))
 }
 func runDaemonCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, daemonCommand(args))
@@ -238,9 +222,6 @@ func runPinsCommand(env commandEnv, _ string, args []string) int {
 func runPushCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePush(args))
 }
-func runRecordingCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleRecordingCommand(args))
-}
 func runQuotaCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleQuotaCommand(args))
 }
@@ -273,20 +254,6 @@ func runStorageCommand(env commandEnv, _ string, args []string) int {
 }
 func runStoreCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleStoreCommand(args))
-}
-func runFirstRunCommand(env commandEnv, _ string, _ []string) int {
-	printFirstRunUsage(env.Stdout)
-	return 0
-}
-func runSupportCommandSpec(env commandEnv, _ string, args []string) int {
-	if len(args) == 0 {
-		return commandUsageError(env, handleSupportCommand(args))
-	}
-	return commandError(env, handleSupportCommand(args))
-}
-func runSupportBundleAliasCommand(env commandEnv, _ string, args []string) int {
-	fmt.Fprintln(env.Stderr, "note: support-bundle is an alias for 'cove support bundle'")
-	return commandError(env, runSupportBundle(args, env.Stdout))
 }
 func runUpCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleUp(args))
@@ -344,9 +311,6 @@ func runStatusCommand(env commandEnv, _ string, args []string) int {
 func runTemplateCommand(_ commandEnv, _ string, args []string) int {
 	handleTemplate(args)
 	return 0
-}
-func runTraceCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleTraceCommand(args))
 }
 func runVMCommandSpec(_ commandEnv, _ string, args []string) int {
 	handleVMCommand(args)

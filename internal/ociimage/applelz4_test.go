@@ -6,8 +6,6 @@ import (
 	"math/rand"
 	"os"
 	"testing"
-
-	"github.com/pierrec/lz4/v4"
 )
 
 func TestAppleLZ4RoundTripCompressible(t *testing.T) {
@@ -162,7 +160,7 @@ func TestAppleLZ4ParsesRealTartLayer(t *testing.T) {
 				goto done
 			}
 			dst := make([]byte, rawSize)
-			n, err := lz4.UncompressBlockWithDict(comp, dst, dict)
+			n, err := uncompressLZ4BlockWithDict(comp, dst, dict)
 			if err != nil {
 				t.Fatalf("decompress block %d: %v", blocks, err)
 			}

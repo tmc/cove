@@ -43,3 +43,16 @@ func TestMergePreservesUnrelatedFields(t *testing.T) {
 		t.Fatalf("Merge() = %#v, want %#v", got, want)
 	}
 }
+
+func TestParseRunBudget(t *testing.T) {
+	got, err := ParseRunBudget("12")
+	if err != nil {
+		t.Fatalf("ParseRunBudget() error = %v", err)
+	}
+	if got != 12 {
+		t.Fatalf("ParseRunBudget() = %d, want 12", got)
+	}
+	if _, err := ParseRunBudget("0"); err == nil {
+		t.Fatal("ParseRunBudget(0) error = nil, want error")
+	}
+}

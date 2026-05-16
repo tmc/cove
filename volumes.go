@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,8 +16,6 @@ import (
 
 // volumeSlice implements flag.Value for collecting multiple -v flags.
 type volumeSlice []vmconfig.VolumeMount
-
-var rosettaRuntimeSetup bool
 
 func (v *volumeSlice) String() string {
 	if v == nil || len(*v) == 0 {
@@ -211,7 +210,7 @@ func taggedVolumes(mounts []vmconfig.VolumeMount) []vmconfig.VolumeMount {
 // after VM start.
 func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmconfig.VolumeMount) {
 	tagged := taggedVolumes(mounts)
-	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 && (!linuxMode || !rosettaRuntimeSetup) {
+	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 && (!linuxMode || !enableRosetta) {
 		return
 	}
 
@@ -227,7 +226,7 @@ func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmc
 			mountTaggedVolumesOnce(ctx, cs, tagged, linuxVirtioFSOwner(vmDir))
 		}
 
-		if linuxMode && rosettaRuntimeSetup {
+		if linuxMode && enableRosetta {
 			setupRosettaInGuest(ctx, cs)
 		}
 
@@ -365,7 +364,7 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 			continue
 		}
 		if result.ExitCode != 0 {
-			fmt.Printf("  auto-mount %s: %s\n", m.Tag, mountFailureMessage(result.ExitCode, strings.TrimSpace(string(result.Stderr))))
+			fmt.Printf("  auto-mount %s: mount failed (exit %d): %s\n", m.Tag, result.ExitCode, strings.TrimSpace(string(result.Stderr)))
 			continue
 		}
 
@@ -402,23 +401,12 @@ func setupRosettaInGuest(ctx context.Context, cs *ControlServer) {
 			}
 			return
 		}
-		fmt.Printf("optional Rosetta setup failed (exit %d); x86_64 Linux binaries may not run: %s\n", result.ExitCode, stderr)
+		fmt.Printf("auto-mount Rosetta failed (exit %d): %s\n", result.ExitCode, stderr)
 		return
 	}
 	if verbose {
 		fmt.Println("Rosetta mounted and registered in guest")
 	}
-}
-
-func mountFailureMessage(exitCode int32, stderr string) string {
-	msg := fmt.Sprintf("mount failed (exit %d)", exitCode)
-	if stderr != "" {
-		msg += ": " + stderr
-	}
-	if strings.Contains(stderr, "Unknown parameter 'cache'") || strings.Contains(stderr, `Unknown parameter "cache"`) {
-		msg += " (guest kernel rejected the VirtioFS cache option; disable auto-mount and mount the tag manually without cache=...)"
-	}
-	return msg
 }
 
 func rosettaRegisterFailureIsBenign(stderr string) bool {
@@ -468,6 +456,22 @@ func linuxVirtioFSOwner(dir string) virtioFSOwner {
 func virtioFSMountArgsWithOwner(m vmconfig.VolumeMount, mountPoint string, linuxGuest bool, owner virtioFSOwner) []string {
 	if linuxGuest {
 		opts := append([]string{}, m.MountOpts...)
+		// Default Linux guests to cache=none. Apple's VirtioFS host has no
+		// cache-coherency / sync mode, so guest-side caching produces stale
+		// directory listings — host edits don't surface in `ls` until the
+		// guest's dentry/page cache happens to expire. cache=none makes
+		// every lookup hit the host, which is the only way `ls` after a
+		// host-side write reflects the new state. Users who explicitly
+		// pass cache=<other> (e.g. metadata, always) keep their setting.
+		if !hasCacheOpt(opts) {
+			opts = append([]string{"cache=none"}, opts...)
+		}
+		if !hasOptPrefix(opts, "uid=") {
+			opts = append(opts, "uid="+strconv.FormatUint(uint64(owner.UID), 10))
+		}
+		if !hasOptPrefix(opts, "gid=") {
+			opts = append(opts, "gid="+strconv.FormatUint(uint64(owner.GID), 10))
+		}
 		if m.ReadOnly {
 			opts = append([]string{"ro"}, opts...)
 		}
@@ -485,4 +489,19 @@ func virtioFSMountArgsWithOwner(m vmconfig.VolumeMount, mountPoint string, linux
 	// macOS mount_virtiofs only documents -r, -u, and -g. Generic MountOpts are
 	// Linux-only today; passing -o here would be invalid.
 	return append(args, m.Tag, mountPoint)
+}
+
+// hasCacheOpt reports whether opts already contains a cache=... entry.
+// Used to decide whether to inject the cache=none default for Linux guests.
+func hasCacheOpt(opts []string) bool {
+	return hasOptPrefix(opts, "cache=")
+}
+
+func hasOptPrefix(opts []string, prefix string) bool {
+	for _, o := range opts {
+		if strings.HasPrefix(o, prefix) {
+			return true
+		}
+	}
+	return false
 }

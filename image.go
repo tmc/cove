@@ -24,6 +24,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -33,34 +34,130 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/imagestore"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // ImagesBaseDir returns the local image store root. Mirrors vmconfig.BaseDir
 // convention so a single ~/.vz tree holds VMs and images.
 func ImagesBaseDir() string {
-	return imagestore.BaseDir()
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".vz", "images")
 }
 
 // ImageManifest is the on-disk schema for an image's manifest.json.
-type ImageManifest = imagestore.Manifest
+// Field names use lowerCamel for forward-compat with the OCI annotation
+// shape Slice 2 will adopt.
+type ImageManifest struct {
+	SchemaVersion  int              `json:"schemaVersion"`
+	Name           string           `json:"name"`
+	Tag            string           `json:"tag"`
+	OSType         string           `json:"osType,omitempty"`
+	SourceVM       string           `json:"sourceVM,omitempty"`
+	BaseImage      string           `json:"baseImage,omitempty"`
+	CoveCommit     string           `json:"cove_commit,omitempty"`
+	AgentCommit    string           `json:"agent_commit,omitempty"`
+	AgentFeatures  []string         `json:"agent_features,omitempty"`
+	BuildRecipe    string           `json:"build_recipe,omitempty"`
+	SourceImage    string           `json:"source_image,omitempty"`
+	BuiltAt        time.Time        `json:"built_at,omitempty"`
+	DefaultNetwork string           `json:"default_network,omitempty"`
+	DefaultSandbox string           `json:"default_sandbox,omitempty"`
+	DiskSHA256     string           `json:"diskSHA256"`
+	DiskSize       int64            `json:"diskSize"`
+	CreatedAt      time.Time        `json:"createdAt"`
+	SourceConfig   *vmconfig.Config `json:"sourceConfig,omitempty"`
+}
 
 // ImageRef is a parsed name[:tag] image reference.
-type ImageRef = imagestore.Ref
+type ImageRef struct {
+	Name string
+	Tag  string
+}
+
+// String renders the canonical "name:tag" form.
+func (r ImageRef) String() string { return r.Name + ":" + r.Tag }
+
+// Path returns the on-disk directory for this image ref.
+func (r ImageRef) Path() string {
+	parts := append([]string{ImagesBaseDir()}, strings.Split(r.Name, "/")...)
+	parts = append(parts, r.Tag)
+	return filepath.Join(parts...)
+}
 
 // ErrImageRefInvalid is returned by ParseImageRef when the supplied
 // string is empty, has multiple ':', or has an empty name/tag, or
 // when the name/tag fails component validation. Callers can branch on
 // this with errors.Is to surface a "give me 'name:tag'" hint without
 // matching individual messages.
-var ErrImageRefInvalid = imagestore.ErrRefInvalid
+var ErrImageRefInvalid = errors.New("invalid image ref")
 
 // ParseImageRef parses "name" or "name:tag" into an ImageRef. Default
 // tag is "latest". The name and tag are validated against the same
 // allow-set used by snapshot names so they are safe path components.
 func ParseImageRef(s string) (ImageRef, error) {
-	return imagestore.ParseRef(s)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ImageRef{}, fmt.Errorf("%w: empty", ErrImageRefInvalid)
+	}
+	if strings.Count(s, ":") > 1 {
+		return ImageRef{}, fmt.Errorf("%w: %q contains multiple ':'", ErrImageRefInvalid, s)
+	}
+	name, tag, hasTag := strings.Cut(s, ":")
+	if name == "" {
+		return ImageRef{}, fmt.Errorf("%w: %q has empty name", ErrImageRefInvalid, s)
+	}
+	if !hasTag {
+		tag = "latest"
+	}
+	if tag == "" {
+		return ImageRef{}, fmt.Errorf("%w: %q has empty tag", ErrImageRefInvalid, s)
+	}
+	if err := validateImageName(name); err != nil {
+		return ImageRef{}, fmt.Errorf("%w: name: %v", ErrImageRefInvalid, err)
+	}
+	if err := validateImageComponent(tag); err != nil {
+		return ImageRef{}, fmt.Errorf("%w: tag: %v", ErrImageRefInvalid, err)
+	}
+	return ImageRef{Name: name, Tag: tag}, nil
+}
+
+func validateImageName(s string) error {
+	if strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") || strings.Contains(s, "//") {
+		return fmt.Errorf("%q must be slash-separated path components", s)
+	}
+	parts := strings.Split(s, "/")
+	if len(parts) > 1 && strings.ContainsAny(parts[0], ".:") {
+		return fmt.Errorf("%q looks like a registry reference; use registry/repo:tag for remote images", s)
+	}
+	for _, part := range parts {
+		if err := validateImageComponent(part); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateImageComponent is intentionally strict: alnum, '-', '_', '.';
+// 1..128 chars; not "." or "..". Keeps refs trivially safe as path
+// components and as future OCI repo/tag values.
+func validateImageComponent(s string) error {
+	if len(s) == 0 || len(s) > 128 {
+		return fmt.Errorf("%q must be 1..128 characters", s)
+	}
+	if s == "." || s == ".." {
+		return fmt.Errorf("%q is reserved", s)
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-' || r == '_' || r == '.':
+		default:
+			return fmt.Errorf("%q contains invalid character %q", s, r)
+		}
+	}
+	return nil
 }
 
 // ImageExists reports whether the image at ref has a manifest on disk.
@@ -72,7 +169,15 @@ func ImageExists(ref ImageRef) bool {
 // LoadImageManifest reads the manifest at ref or returns an error if
 // the image does not exist.
 func LoadImageManifest(ref ImageRef) (*ImageManifest, error) {
-	return imagestore.LoadManifest(ref)
+	data, err := os.ReadFile(filepath.Join(ref.Path(), "manifest.json"))
+	if err != nil {
+		return nil, fmt.Errorf("read image manifest: %w", err)
+	}
+	var m ImageManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("parse image manifest: %w", err)
+	}
+	return &m, nil
 }
 
 // BuildImageOptions configures cove image build.
@@ -224,7 +329,39 @@ func copyImageFiles(srcDir, imgDir, osType string) error {
 }
 
 func writeImageManifest(dir string, m *ImageManifest) error {
-	return imagestore.WriteManifest(dir, m)
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal manifest: %w", err)
+	}
+	path := filepath.Join(dir, "manifest.json")
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("write manifest: %w", err)
+	}
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("write manifest: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("sync manifest: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("close manifest: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename manifest: %w", err)
+	}
+	if d, err := os.Open(dir); err == nil {
+		d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 func legacyImageManifest(m *ImageManifest) bool {
@@ -271,8 +408,8 @@ func normalizeAgentFeatures(features []string) []string {
 }
 
 func effectiveSandboxMode() string {
-	if policy, err := currentSandboxPolicy(); err == nil && policy.Active() {
-		return string(policy.Level)
+	if mode := strings.TrimSpace(sandboxLevel); mode != "" {
+		return mode
 	}
 	return "default"
 }
@@ -292,7 +429,10 @@ func sha256AndSize(path string) (string, int64, error) {
 }
 
 // ImageEntry is a row in `cove image list`.
-type ImageEntry = imagestore.Entry
+type ImageEntry struct {
+	Ref      ImageRef
+	Manifest *ImageManifest
+}
 
 // ListImages walks the local image store and returns one entry per
 // (name, tag) pair that has a readable manifest.json.

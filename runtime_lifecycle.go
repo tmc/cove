@@ -419,7 +419,7 @@ func (s *ControlServer) checkVMLifecyclePolicy() {
 func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir string) error {
 	parentDir := vmconfig.Path(cfg.EphemeralForkParent)
 	if !vmconfig.Validate(parentDir) {
-		return missingForkFromParentError(cfg.EphemeralForkParent)
+		return fmt.Errorf("cove run -fork-from: parent VM not found: %s", cfg.EphemeralForkParent)
 	}
 
 	// Probe-and-release the parent's run.lock. If we can't acquire
@@ -507,14 +507,6 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		fmt.Printf("Ephemeral fork removed: %s\n", fork.Name)
 	}
 	return runErr
-}
-
-func missingForkFromParentError(parent string) error {
-	ref, err := ParseImageRef(parent)
-	if err != nil {
-		return fmt.Errorf("cove run -fork-from: no VM named %q under %s", parent, vmconfig.BaseDir())
-	}
-	return fmt.Errorf("cove run -fork-from: no VM named %q under %s and no local image %s; run 'cove image list' or 'cove image search %s' to find images, or use 'cove fork %s <child>' / 'cove clone --linked %s <child>' for VM parents", parent, vmconfig.BaseDir(), ref, ref.Name, parent, parent)
 }
 
 func validateEphemeralForkVMParent(parent, parentDir string) error {

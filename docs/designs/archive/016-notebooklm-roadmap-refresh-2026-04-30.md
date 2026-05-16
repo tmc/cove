@@ -50,7 +50,7 @@ research inputs until reverified against primary sources.
 - External secret stores (1Password, Vault, SOPS, age) — v0.3 secrets are host
   environment variables mounted through tmpfs only.
 - BuildKit-style parallel step execution; v0.3 build execution is sequential.
-- Packer plugin shim work is not being pursued; see [Non-goals](../../strategy/non-goals.md).
+- Packer plugin shim work is not being pursued; see [Non-goals](../strategy/non-goals.md).
 - Product-name resolution before any public registry or signed channel.
 
 ## Docs work from this pass

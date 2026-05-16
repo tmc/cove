@@ -66,7 +66,7 @@ func TestGCRespectsSharedPullLockAndGrace(t *testing.T) {
 	done := make(chan GCResult, 1)
 	errc := make(chan error, 1)
 	go func() {
-		res, err := s.GCWithOptions(nil, GCOptions{Grace: GCGrace})
+		res, err := s.GC(nil, GCGrace)
 		if err != nil {
 			errc <- err
 			return
@@ -307,7 +307,7 @@ func TestGCKeepsBuildCacheReachableBlob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReachableFromBuildCache(): %v", err)
 	}
-	res, err := s.GCWithOptions(reachable, GCOptions{Grace: GCGrace})
+	res, err := s.GC(reachable, GCGrace)
 	if err != nil {
 		t.Fatalf("GC(): %v", err)
 	}

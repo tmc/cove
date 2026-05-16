@@ -3,22 +3,7 @@ title: Quick Start
 ---
 # Quick Start
 
-Start here if you want a VM running without learning every cove subsystem.
-
-## Check This Mac
-
-Run the host readiness check first:
-
-```bash
-cove doctor host
-```
-
-If it reports a problem, fix that before installing a VM. For a short checklist
-of the safest first commands, run:
-
-```bash
-cove first-run
-```
+Three ways to get a VM running.
 
 ## One Command
 
@@ -31,9 +16,7 @@ cove up -user myuser
 This downloads the latest macOS IPSW, installs it, provisions a user account, and boots the VM with a GUI window.
 
 > [!TIP]
-> Omit `-password` and let cove prompt for the guest password. That keeps the
-> password out of your shell history. Add `-headless` if you don't need a GUI
-> window.
+> Add `-headless` if you don't need a GUI window.
 
 Add vzscripts to configure the guest automatically:
 
@@ -94,13 +77,9 @@ cove install -linux -distro fedora
 Or with unattended provisioning:
 
 ```bash
-cove install -linux -provision-user ubuntu -provision-password <password>
+cove install -linux -provision-user ubuntu -provision-password secret
 cove run -linux -gui
 ```
-
-If you omit the Linux provisioning password, cove uses the provisioned username
-as the initial password. Treat that as a local throwaway default only; change it
-before enabling SSH, Tailscale, VNC, saving an image, or sharing the VM.
 
 For Ubuntu Desktop:
 
@@ -121,18 +100,3 @@ cove up -vm ubuntu-gui-kvm -linux -desktop -nested -cpu 4 -memory 8 \
 - A control socket is created at `~/.vz/vms/<name>/control.sock` for programmatic access
 - On quit, the VM suspends to disk and resumes on next `cove run`
 - Use `cove run -no-resume` for a cold boot
-
-## When Something Fails
-
-Use the normal CLI tools first:
-
-```bash
-cove doctor host
-cove list
-cove status -vm default
-cove support bundle -vm default
-```
-
-Attach the support bundle when filing an issue. It is redacted and includes
-host readiness, version/signing details, helper and daemon status, and optional
-VM diagnostics.

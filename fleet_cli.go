@@ -23,12 +23,6 @@ type fleetCommandRunner interface {
 
 type sshFleetRunner struct{}
 
-var (
-	fleetDialControlSocket = fleetpkg.DialControlSocket
-	fleetReadControlToken  = fleetpkg.ReadControlToken
-	fleetCtlCommand        = ctlCommand
-)
-
 func handleFleetCommand(args []string) error {
 	return runFleetCommand(args, fleetpkg.DefaultPath(), os.Stdout)
 }
@@ -78,22 +72,8 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 	case "metrics":
 		return runFleetMetricsCommand(ctx, args[1:], path, runner, out, errOut)
 	default:
-		if ok, err := fleetHasRemote(args[0], path); err != nil {
-			return err
-		} else if ok && len(args) >= 2 {
-			return runFleetRoute(ctx, args[0], args[1], args[2:], path, runner, out, errOut)
-		}
 		return fmt.Errorf("fleet: unknown command %q", args[0])
 	}
-}
-
-func fleetHasRemote(name, path string) (bool, error) {
-	cfg, err := fleetpkg.LoadPath(path)
-	if err != nil {
-		return false, err
-	}
-	_, ok := cfg.Get(name)
-	return ok, nil
 }
 
 func printFleetUsage(w io.Writer) {
@@ -107,8 +87,7 @@ Commands:
   image ls [--json]
   ps
   run --policy=least-loaded [run flags]
-  metrics
-  <remote> <command> [args...]`)
+  metrics`)
 }
 
 func fleetAdd(args []string, path string) error {
@@ -160,7 +139,7 @@ func fleetList(path string, out io.Writer) error {
 	}
 	entries := cfg.List()
 	if len(entries) == 0 {
-		fmt.Fprintln(out, "no fleet remotes (use 'cove fleet add <name> <user@host>' to register one)")
+		fmt.Fprintln(out, "no fleet remotes")
 		return nil
 	}
 	for _, e := range entries {
@@ -204,9 +183,6 @@ func runFleetRoute(ctx context.Context, name, cmd string, args []string, path st
 	if !ok {
 		return fmt.Errorf("fleet: remote %q not found", name)
 	}
-	if cmd == "ctl" {
-		return runFleetControlRoute(ctx, remote, args)
-	}
 	argv, err := fleetRemoteArgs(cmd, args, remote)
 	if err != nil {
 		return err
@@ -214,39 +190,10 @@ func runFleetRoute(ctx context.Context, name, cmd string, args []string, path st
 	return runner.Run(ctx, remote, argv, stdout, stderr)
 }
 
-func runFleetControlRoute(ctx context.Context, remote fleetpkg.Remote, args []string) error {
-	vm := fleetControlVM(args, remote)
-	tunnel, err := fleetDialControlSocket(ctx, remote, vm)
-	if err != nil {
-		return err
-	}
-	defer tunnel.Close()
-	token, err := fleetReadControlToken(ctx, remote, vm)
-	if err != nil {
-		return err
-	}
-	return fleetCtlCommand(append([]string{"-socket", tunnel.LocalSocket(), "-token", token}, args...))
-}
-
-func fleetControlVM(args []string, remote fleetpkg.Remote) string {
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "-vm" || arg == "--vm":
-			if i+1 < len(args) {
-				return args[i+1]
-			}
-		case strings.HasPrefix(arg, "-vm="):
-			return strings.TrimPrefix(arg, "-vm=")
-		case strings.HasPrefix(arg, "--vm="):
-			return strings.TrimPrefix(arg, "--vm=")
-		}
-	}
-	return remote.DefaultVM
-}
-
 func fleetRemoteArgs(cmd string, args []string, remote fleetpkg.Remote) ([]string, error) {
 	switch cmd {
+	case "ctl":
+		return append([]string{"ctl"}, ensureFleetVMArg(args, remote)...), nil
 	case "shell":
 		return append([]string{"shell"}, ensureFleetPositionalVM(args, remote)...), nil
 	case "cp":
@@ -269,11 +216,43 @@ func fleetRemoteArgs(cmd string, args []string, remote fleetpkg.Remote) ([]strin
 	return nil, fmt.Errorf("fleet: command %q is not supported in fleet routing", cmd)
 }
 
+func ensureFleetVMArg(args []string, remote fleetpkg.Remote) []string {
+	if hasFlagValue(args, "-vm") || hasFlagValue(args, "--vm") || hasFlagPrefix(args, "-vm=") || hasFlagPrefix(args, "--vm=") || remote.DefaultVM == "" {
+		return args
+	}
+	out := append([]string{"-vm", remote.DefaultVM}, args...)
+	return out
+}
+
 func ensureFleetPositionalVM(args []string, remote fleetpkg.Remote) []string {
 	if len(args) > 0 || remote.DefaultVM == "" {
 		return args
 	}
 	return []string{remote.DefaultVM}
+}
+
+func hasFlagValue(args []string, names ...string) bool {
+	set := make(map[string]bool, len(names))
+	for _, name := range names {
+		set[name] = true
+	}
+	for _, arg := range args {
+		if set[arg] {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFlagPrefix(args []string, prefixes ...string) bool {
+	for _, arg := range args {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(arg, prefix) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (sshFleetRunner) Run(ctx context.Context, remote fleetpkg.Remote, args []string, stdout, stderr io.Writer) error {
