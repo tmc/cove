@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/buildpaths"
 	"github.com/tmc/vz-macos/internal/ociimage"
 	"golang.org/x/tools/txtar"
 )
@@ -415,18 +416,11 @@ func buildSecretRefStrings(refs []buildSecretRef) []string {
 }
 
 func expandHome(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, strings.TrimPrefix(path, "~/"))
-		}
-	}
-	return path
+	return buildpaths.ExpandHome(path)
 }
 
 func localBuildBaseDir(refText string) (string, bool) {
-	path := expandHome(refText)
-	info, err := os.Stat(path)
-	return path, err == nil && info.IsDir()
+	return buildpaths.LocalBaseDir(refText)
 }
 
 func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Reference, string, error) {
