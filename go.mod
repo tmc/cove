@@ -9,6 +9,7 @@ require (
 	github.com/ebitengine/purego v0.11.0-alpha.1.0.20260318130922-386f7c8fb549
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/knusbaum/go9p v1.18.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pierrec/lz4/v4 v4.1.26
@@ -25,6 +26,10 @@ require (
 )
 
 require (
+	9fans.net/go v0.0.7 // indirect
+	github.com/Plan9-Archive/libauth v0.0.0-20180917063427-d1ca9e94969d // indirect
+	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
+	github.com/fhs/mux9p v0.3.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect

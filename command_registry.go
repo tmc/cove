@@ -59,6 +59,7 @@ var commandRegistry = []commandSpec{
 	{Name: "list", Aliases: []string{"ls"}, Summary: "List available VMs and templates", Dispatch: commandDispatchLate, Run: runListCommand},
 	{Name: "logs", Summary: "Show guest logs from a running VM", Dispatch: commandDispatchEarly, Run: runLogsCommand},
 	{Name: "network", Summary: "Network configuration", Dispatch: commandDispatchLate, Run: runNetworkCommandSpec},
+	{Name: "9p", Summary: "Serve read-only VM metadata over 9p", Dispatch: commandDispatchEarly, Run: runNinePCommand},
 	{Name: "pin", Summary: "Pin an object so storage budget eviction skips it", Dispatch: commandDispatchEarly, Run: runPinCommand},
 	{Name: "pins", Summary: "List pinned objects", Dispatch: commandDispatchEarly, Run: runPinsCommand},
 	{Name: "pit", Summary: "Experimental point-in-time save, restore, run, and swap", Dispatch: commandDispatchLate, Run: runPITCommandSpec},
