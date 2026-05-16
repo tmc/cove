@@ -16,6 +16,8 @@ import (
 // volumeSlice implements flag.Value for collecting multiple -v flags.
 type volumeSlice []vmconfig.VolumeMount
 
+var rosettaRuntimeSetup bool
+
 func (v *volumeSlice) String() string {
 	if v == nil || len(*v) == 0 {
 		return ""
@@ -209,7 +211,7 @@ func taggedVolumes(mounts []vmconfig.VolumeMount) []vmconfig.VolumeMount {
 // after VM start.
 func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmconfig.VolumeMount) {
 	tagged := taggedVolumes(mounts)
-	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 && (!linuxMode || !enableRosetta) {
+	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 && (!linuxMode || !rosettaRuntimeSetup) {
 		return
 	}
 
@@ -225,7 +227,7 @@ func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmc
 			mountTaggedVolumesOnce(ctx, cs, tagged, linuxVirtioFSOwner(vmDir))
 		}
 
-		if linuxMode && enableRosetta {
+		if linuxMode && rosettaRuntimeSetup {
 			setupRosettaInGuest(ctx, cs)
 		}
 
