@@ -1,4 +1,4 @@
-package vmtree
+package main
 
 import (
 	"bytes"

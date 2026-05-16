@@ -17,7 +17,7 @@
 //	./cove install -ipsw ~/Downloads/UniversalMac_14.0_RestoreImage.ipsw
 //
 //	# Provision VM for automatic user creation
-//	./cove provision -user testuser -skip-setup-assistant
+//	./cove provision -user testuser -password secret123 -skip-setup-assistant
 //
 //	# Verify provisioning files are correct
 //	./cove verify
@@ -95,7 +95,7 @@
 //
 // Install and run a Linux VM:
 //
-//	./cove install -linux -provision-user ubuntu -provision-password <password>
+//	./cove install -linux -provision-user ubuntu -provision-password secret
 //	./cove run -linux -gui
 //
 // # VM Directory Structure

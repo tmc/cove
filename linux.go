@@ -17,14 +17,8 @@ import (
 	"github.com/tmc/apple/foundation"
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
-	audiox "github.com/tmc/apple/x/vzkit/audio"
 	"github.com/tmc/apple/x/vzkit/clipboard"
-	configx "github.com/tmc/apple/x/vzkit/config"
 	displayx "github.com/tmc/apple/x/vzkit/display"
-	linuxconfig "github.com/tmc/apple/x/vzkit/linuxconfig"
-	platformx "github.com/tmc/apple/x/vzkit/platform"
-	storagex "github.com/tmc/apple/x/vzkit/storage"
-	"github.com/tmc/vz-macos/internal/guestplan"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
 )
@@ -35,54 +29,12 @@ import (
 // no live rc (the recovery / codec path) snapshot a fresh one from globals.
 func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
 	hc := vmrunHostConfig()
-	rc.DiskPath = diskImagePath
-	plan, err := guestplan.Linux(rc, hc)
-	if err != nil {
-		return vz.VZVirtualMachineConfiguration{}, err
-	}
 
-	netConfig, err := ParseNetworkMode(plan.Network.Mode)
-	if err != nil {
-		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("parse network mode: %w", err)
-	}
-	macAddr := loadOrCreateMACAddressForVM(hc.VMDir)
-	builderNetwork := linuxconfig.Network{Config: netConfig}
-	if macAddr.ID != 0 {
-		builderNetwork.MAC = &macAddr
-	}
-	if netConfig.Mode == NetworkModeFileHandle || netConfig.Mode == NetworkModeNone {
-		builderNetwork = linuxconfig.Network{}
-	}
+	config := vz.NewVZVirtualMachineConfiguration()
 
-	var audioConfig *audiox.Config
-	if plan.Audio.Enabled {
-		audioConfig = &audiox.Config{
-			InputEnabled:  plan.Audio.HostInput,
-			OutputEnabled: plan.Audio.HostOutput,
-		}
-	}
-
-	displayConfigs := make([]displayx.Config, 0, len(plan.Display))
-	for _, d := range plan.Display {
-		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
-	}
-
-	config, err := linuxconfig.Build(linuxconfig.Config{
-		CPUCount:      plan.CPUCount,
-		MemoryGB:      plan.MemoryGB,
-		Display:       displayConfigs,
-		Network:       builderNetwork,
-		Audio:         audioConfig,
-		Keyboard:      true,
-		Pointing:      true,
-		Entropy:       true,
-		USBController: true,
-		MemoryBalloon: true,
-		Socket:        true,
-	})
-	if err != nil {
-		return config, fmt.Errorf("build linux device config: %w", err)
-	}
+	// CPU and memory
+	config.SetCPUCount(rc.CPUCount)
+	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
 
 	// Platform configuration (generic for Linux)
 	fmt.Println("Setting up Linux platform configuration...")
@@ -166,22 +118,80 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 		config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{storageConfig})
 	}
 
-	// Network configuration not covered by vzkit's mechanical builder.
-	if netConfig.Mode == NetworkModeFileHandle {
+	// Graphics - use Virtio for Linux with multi-display support.
+	// Default the framebuffer to the host window size (1024x768) so the
+	// guest renders 1:1 instead of being scaled from displayx.DefaultLinux's
+	// 1920x1080. Users who want higher resolution pass -display.
+	displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
+	for _, d := range rc.Displays {
+		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+	}
+	if len(displayConfigs) == 0 {
+		displayConfigs = []displayx.Config{{
+			Width:  defaultWindowWidth,
+			Height: defaultWindowHeight,
+			PPI:    144,
+		}}
+	}
+	graphicsConfig, err := displayx.CreateVirtioGraphicsConfig(displayConfigs)
+	if err != nil {
+		return config, fmt.Errorf("create graphics config: %w", err)
+	}
+	setVirtioGraphicsDevices(config, graphicsConfig)
+
+	// Network configuration
+	netConfig, err := ParseNetworkMode(rc.NetworkMode)
+	if err != nil {
+		return config, fmt.Errorf("parse network mode: %w", err)
+	}
+	if netConfig.Mode != NetworkModeNone {
 		networkDeviceConfig, err := CreateNetworkDeviceConfiguration(netConfig)
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
+		macAddr := loadOrCreateMACAddressForVM(hc.VMDir)
 		if macAddr.ID != 0 {
 			networkDeviceConfig.SetMACAddress(&macAddr)
 		}
-		configx.SetNetworkDevices(config, networkDeviceConfig)
+		setNetworkDevices(config, networkDeviceConfig)
 	}
+
+	// Keyboard
+	keyboardConfig := vz.NewVZUSBKeyboardConfiguration()
+	setKeyboards(config, keyboardConfig)
+
+	// Pointing device
+	pointingConfig := vz.NewVZUSBScreenCoordinatePointingDeviceConfiguration()
+	setPointingDevices(config, []vz.IVZPointingDeviceConfiguration{pointingConfig})
+
+	// Entropy device
+	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
+	setEntropyDevices(config, entropyConfig)
+
+	// Audio. Plan() gates whether the VirtioSound device is attached;
+	// for Linux it is always enabled with output-only host streams.
+	// Plan errors fall back to attaching audio (prior behavior).
+	audioPlan, planErr := vmrun.Plan(rc, hc)
+	if planErr != nil || audioPlan.Audio.Enabled {
+		audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
+		setAudioDevices(config, audioConfig)
+	}
+
+	// Runtime USB attach/detach requires a live USB controller.
+	EnsureUSBController(config)
+
+	// Memory balloon device (allows guest memory management)
+	balloonConfig := vz.NewVZVirtioTraditionalMemoryBalloonDeviceConfiguration()
+	if balloonConfig.ID != 0 {
+		setMemoryBalloonDevices(config, balloonConfig)
+	}
+
+	addVirtioSocketDevice(config)
 
 	// Serial console
 	serialConfig := createSerialConsoleConfig()
 	if serialConfig.ID != 0 {
-		configx.SetSerialPorts(config, serialConfig)
+		setSerialPorts(config, serialConfig)
 		fmt.Println("  Serial console attached (output to stdout)")
 	}
 
@@ -211,12 +221,9 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 	}
 
 	// Rosetta support for x86-64 binary translation
-	rosettaRuntimeSetup = false
 	if rc.EnableRosetta && !sandboxStrict() {
 		if err := AddRosettaToLinuxVM(config, hc.VMDir); err != nil {
-			fmt.Printf("optional Rosetta setup skipped; x86_64 Linux binaries may not run: %v\n", err)
-		} else {
-			rosettaRuntimeSetup = true
+			fmt.Printf("warning: Rosetta setup failed: %v\n", err)
 		}
 	}
 
@@ -303,26 +310,21 @@ func createLinuxBootLoaderWithPaths(kernelPath, initrdPath, cmdLine string) (vz.
 }
 
 type installedLinuxBootArtifacts struct {
-	kernel     string
-	initrd     string
-	rootUUID   string
-	rootDevice string
+	kernel   string
+	initrd   string
+	rootUUID string
 }
 
 func loadInstalledLinuxBootArtifacts(vmDir string) (installedLinuxBootArtifacts, bool) {
 	kernel := filepath.Join(vmDir, "vmlinuz")
 	initrd := filepath.Join(vmDir, "initrd")
 	rootUUIDPath := filepath.Join(vmDir, linuxRootUUIDFileName)
-	rootDevicePath := filepath.Join(vmDir, linuxRootDeviceFileName)
 
-	for _, path := range []string{kernel, rootUUIDPath} {
+	for _, path := range []string{kernel, initrd, rootUUIDPath} {
 		info, err := os.Stat(path)
 		if err != nil || info.Size() == 0 {
 			return installedLinuxBootArtifacts{}, false
 		}
-	}
-	if info, err := os.Stat(initrd); err != nil || info.Size() == 0 {
-		initrd = ""
 	}
 
 	rootUUID, err := os.ReadFile(rootUUIDPath)
@@ -334,16 +336,10 @@ func loadInstalledLinuxBootArtifacts(vmDir string) (installedLinuxBootArtifacts,
 		return installedLinuxBootArtifacts{}, false
 	}
 
-	rootDevice := ""
-	if data, err := os.ReadFile(rootDevicePath); err == nil {
-		rootDevice = strings.TrimSpace(string(data))
-	}
-
 	return installedLinuxBootArtifacts{
-		kernel:     kernel,
-		initrd:     initrd,
-		rootUUID:   rootUUIDValue,
-		rootDevice: rootDevice,
+		kernel:   kernel,
+		initrd:   initrd,
+		rootUUID: rootUUIDValue,
 	}, true
 }
 
@@ -353,23 +349,37 @@ func hasInstalledLinuxBootArtifacts(vmDir string) bool {
 }
 
 func (a installedLinuxBootArtifacts) commandLine() string {
-	if a.rootDevice != "" {
-		return fmt.Sprintf("console=tty0 console=hvc0 root=%s rootfstype=ext4 rw", a.rootDevice)
-	}
 	return fmt.Sprintf("console=tty0 console=hvc0 root=UUID=%s", a.rootUUID)
 }
 
 // createEFIBootLoader creates a VZEFIBootLoader with variable store.
 func createEFIBootLoader() (vz.VZEFIBootLoader, error) {
-	efiStorePath := filepath.Join(vmDir, "efi.nvram")
-	bootloader, created, err := platformx.CreateEFIBootLoader(efiStorePath)
-	if err != nil {
-		return bootloader, err
+	bootloader := vz.NewVZEFIBootLoader()
+	if bootloader.ID == 0 {
+		return bootloader, fmt.Errorf("failed to create EFI boot loader")
 	}
-	if created {
+
+	// Create or load EFI variable store
+	efiStorePath := filepath.Join(vmDir, "efi.nvram")
+	efiStoreURL := foundation.NewURLFileURLWithPath(efiStorePath)
+
+	var efiStore vz.VZEFIVariableStore
+	if _, err := os.Stat(efiStorePath); os.IsNotExist(err) {
 		fmt.Println("  Creating EFI variable store...")
+		var err error
+		efiStore, err = vz.NewEFIVariableStoreCreatingVariableStoreAtURLOptionsError(
+			efiStoreURL, vz.VZEFIVariableStoreInitializationOptionAllowOverwrite)
+		if err != nil {
+			return bootloader, fmt.Errorf("failed to create EFI variable store: %w", err)
+		}
 	} else {
 		fmt.Println("  Loading existing EFI variable store...")
+		efiStore = vz.NewEFIVariableStoreWithURL(efiStoreURL)
+	}
+	// efiStore must be retained as it's assigned to bootloader and might be autoreleased
+	if efiStore.ID != 0 {
+		efiStore.Retain()
+		bootloader.SetVariableStore(&efiStore)
 	}
 	if windowsMode && strings.TrimSpace(windowsEFIRomPath) != "" {
 		romPath := resolvePath(windowsEFIRomPath)
@@ -391,16 +401,39 @@ func createEFIBootLoader() (vz.VZEFIBootLoader, error) {
 // loadOrCreateGenericMachineIdentifier loads an existing generic machine identifier or creates a new one.
 func loadOrCreateGenericMachineIdentifier() vz.VZGenericMachineIdentifier {
 	machineIDPath := filepath.Join(vmDir, "linux-machine.id")
-	machineID, created, err := platformx.LoadOrCreateGenericMachineIdentifier(machineIDPath)
-	if err != nil {
+
+	// Check if we have a saved machine identifier
+	if data, err := os.ReadFile(machineIDPath); err == nil && len(data) > 0 {
+		nsData := createNSDataFromBytes(data)
+		if nsData != 0 {
+			nsDataObj := foundation.NSDataFromID(nsData)
+			machineID := vz.NewGenericMachineIdentifierWithDataRepresentation(&nsDataObj)
+			if machineID.ID != 0 {
+				fmt.Println("  Loaded existing machine identifier")
+				return machineID
+			}
+		}
+	}
+
+	// Create new machine identifier
+	machineID := vz.NewVZGenericMachineIdentifier()
+	fmt.Println("  Created new machine identifier")
+
+	// Save for future use
+	if err := saveGenericMachineIdentifier(machineID, machineIDPath); err != nil {
 		fmt.Printf("  warning: could not save machine identifier: %v\n", err)
 	}
-	if created {
-		fmt.Println("  Created new machine identifier")
-	} else {
-		fmt.Println("  Loaded existing machine identifier")
-	}
+
 	return machineID
+}
+
+// saveGenericMachineIdentifier saves the machine identifier data representation to a file.
+func saveGenericMachineIdentifier(machineID vz.VZGenericMachineIdentifier, path string) error {
+	data := machineID.DataRepresentation()
+	if data.GetID() == 0 {
+		return fmt.Errorf("machine identifier has no data representation")
+	}
+	return saveNSDataToFile(data.GetID(), path)
 }
 
 // runLinuxVM runs a Linux VM with the configured settings.
@@ -455,11 +488,6 @@ func runLinuxVM() error {
 					}
 					rc.ResolveISO(resolvedISO)
 				}
-			} else if _, markerErr := os.Stat(linuxInstalledMarkerPath(hc.VMDir)); os.IsNotExist(markerErr) {
-				fmt.Println("warning: Linux VM has EFI state but no installed-Linux boot marker")
-				fmt.Println("  missing direct-boot artifacts may cause the guest to stop immediately")
-				fmt.Println("  reinstall with 'cove install -linux' or use a VM with linux-installed, vmlinuz, and linux-root-uuid.txt")
-				fmt.Println("  initrd is optional; linux-root-device.txt may override the root= kernel argument")
 			}
 		}
 		// else: efi.nvram exists, boot from disk — no ISO needed
@@ -528,18 +556,31 @@ func createLinuxRootStorageDevice(path string, readOnly bool) (vz.VZStorageDevic
 
 func createLinuxStorageDeviceWithAttachment(attachment vz.VZStorageDeviceAttachment) (vz.VZStorageDeviceConfiguration, error) {
 	if linuxNVMe {
-		device, err := storagex.CreateNVMeDeviceWithAttachment(attachment)
-		if err != nil {
-			return vz.VZStorageDeviceConfiguration{}, err
+		device := vz.NewNVMExpressControllerDeviceConfigurationWithAttachment(attachment)
+		if device.ID == 0 {
+			return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create NVMe storage device")
 		}
+		device.Retain()
 		return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 	}
 
-	device, err := storagex.CreateBlockDeviceWithAttachment(attachment)
-	if err != nil {
-		return vz.VZStorageDeviceConfiguration{}, err
+	device := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&attachment)
+	if device.ID == 0 {
+		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create virtio block storage device")
 	}
+	device.Retain()
 	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
+}
+
+// Helper functions for Linux-specific array properties using generated slice setters.
+func setVirtioGraphicsDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioGraphicsDeviceConfiguration) {
+	config.SetGraphicsDevices([]vz.VZGraphicsDeviceConfiguration{
+		vz.VZGraphicsDeviceConfigurationFromID(device.ID),
+	})
+}
+
+func setVirtioScanouts(config vz.VZVirtioGraphicsDeviceConfiguration, scanout vz.VZVirtioGraphicsScanoutConfiguration) {
+	config.SetScanouts([]vz.VZVirtioGraphicsScanoutConfiguration{scanout})
 }
 
 // Common Linux ISO URLs for ARM64
@@ -716,12 +757,26 @@ func isURL(s string) bool {
 	return len(s) > 8 && (s[:7] == "http://" || s[:8] == "https://")
 }
 
+// Helper functions for Linux-specific device configuration
+
+func setMemoryBalloonDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioTraditionalMemoryBalloonDeviceConfiguration) {
+	config.SetMemoryBalloonDevices([]vz.VZMemoryBalloonDeviceConfiguration{
+		vz.VZMemoryBalloonDeviceConfigurationFromID(device.ID),
+	})
+}
+
+func setSocketDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioSocketDeviceConfiguration) {
+	config.SetSocketDevices([]vz.VZSocketDeviceConfiguration{
+		vz.VZSocketDeviceConfigurationFromID(device.ID),
+	})
+}
+
 func addVirtioSocketDevice(config vz.VZVirtualMachineConfiguration) {
 	if !sandboxAllowsVsock() {
 		return
 	}
 	vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
 	if vsockConfig.ID != 0 {
-		configx.SetSocketDevices(config, vsockConfig)
+		setSocketDevices(config, vsockConfig)
 	}
 }

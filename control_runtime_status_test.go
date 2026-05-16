@@ -16,20 +16,16 @@ func TestControlServerRuntimeStatusCommands(t *testing.T) {
 
 	s := NewControlServerWithVMDir(sock, dir)
 	s.SetVNCStatus(VNCStatus{
-		Enabled:           true,
-		Port:              5901,
-		Endpoint:          "127.0.0.1:5901",
-		State:             "running",
-		PasswordProtected: true,
-		ServiceName:       "cove",
-		Description:       "VNC server ready",
+		Enabled:     true,
+		Port:        5901,
+		State:       "running",
+		ServiceName: "cove",
+		Description: "VNC server ready",
 	})
 	s.SetDebugStubStatus(DebugStubStatus{
 		Enabled:     true,
 		Kind:        "gdb",
 		Port:        1234,
-		Endpoint:    "0.0.0.0:1234",
-		Connect:     "lldb -o 'gdb-remote 127.0.0.1:1234'",
 		ListenAll:   true,
 		State:       "attached",
 		Description: "GDB debug stub attached",
@@ -49,7 +45,7 @@ func TestControlServerRuntimeStatusCommands(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp.Data), &vncStatus); err != nil {
 		t.Fatalf("unmarshal vnc status: %v", err)
 	}
-	if !vncStatus.Enabled || vncStatus.Port != 5901 || vncStatus.State != "running" || !vncStatus.PasswordProtected || vncStatus.Endpoint == "" {
+	if !vncStatus.Enabled || vncStatus.Port != 5901 || vncStatus.State != "running" {
 		t.Fatalf("vnc status = %#v", vncStatus)
 	}
 
@@ -61,7 +57,7 @@ func TestControlServerRuntimeStatusCommands(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp.Data), &debugStatus); err != nil {
 		t.Fatalf("unmarshal debug status: %v", err)
 	}
-	if !debugStatus.Enabled || debugStatus.Kind != "gdb" || debugStatus.Port != 1234 || !debugStatus.ListenAll || debugStatus.Connect == "" {
+	if !debugStatus.Enabled || debugStatus.Kind != "gdb" || debugStatus.Port != 1234 || !debugStatus.ListenAll {
 		t.Fatalf("debug status = %#v", debugStatus)
 	}
 }
@@ -72,8 +68,8 @@ func TestCtlCommandRuntimeStatus(t *testing.T) {
 	defer os.Remove(sock)
 
 	s := NewControlServerWithVMDir(sock, dir)
-	s.SetVNCStatus(VNCStatus{Enabled: true, Port: 5901, Endpoint: "127.0.0.1:5901", State: "running"})
-	s.SetDebugStubStatus(DebugStubStatus{Enabled: true, Kind: "gdb", Port: 1234, Endpoint: "0.0.0.0:1234", Connect: "lldb -o 'gdb-remote 127.0.0.1:1234'", ListenAll: true})
+	s.SetVNCStatus(VNCStatus{Enabled: true, Port: 5901, State: "running"})
+	s.SetDebugStubStatus(DebugStubStatus{Enabled: true, Kind: "gdb", Port: 1234, ListenAll: true})
 	if err := s.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -87,18 +83,12 @@ func TestCtlCommandRuntimeStatus(t *testing.T) {
 	if !strings.Contains(vncOut, `"enabled": true`) || !strings.Contains(vncOut, `"port": 5901`) {
 		t.Fatalf("ctl vnc status output = %q", vncOut)
 	}
-	if !strings.Contains(vncOut, `"endpoint": "127.0.0.1:5901"`) {
-		t.Fatalf("ctl vnc status missing endpoint: %q", vncOut)
-	}
 
 	debugOut := captureStdout(t, func() error {
 		return ctlCommand([]string{"-socket", sock, "-token", s.authToken, "debug-stub", "status"})
 	})
 	if !strings.Contains(debugOut, `"kind": "gdb"`) || !strings.Contains(debugOut, `"listen_all": true`) {
 		t.Fatalf("ctl debug-stub status output = %q", debugOut)
-	}
-	if !strings.Contains(debugOut, `"connect": "lldb -o 'gdb-remote 127.0.0.1:1234'"`) {
-		t.Fatalf("ctl debug-stub status missing connect hint: %q", debugOut)
 	}
 }
 

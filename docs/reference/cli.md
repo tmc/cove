@@ -45,7 +45,7 @@ cove install [flags]
 ```bash
 cove install
 cove install -ipsw ~/restore.ipsw -cpu 4 -memory 8
-cove install -linux -provision-user ubuntu -provision-password <password>
+cove install -linux -provision-user ubuntu -provision-password secret
 ```
 
 ---
@@ -82,13 +82,12 @@ cove run [flags]
 | `-unattended` | false | Fully unattended install + setup |
 | `-boot-commands <file>` | | Path to vzscript automation file |
 | `-boot-args <args>` | | Boot arguments (e.g., `serial=3 -v`) |
-| `-vnc <addr>` | | Start VNC server on port; pass `-vnc-password` (e.g., `:5901`) |
+| `-vnc <addr>` | | Start VNC server on port (e.g., `:5901`) |
 | `-vnc-password <pw>` | | VNC server password |
 | `-vnc-bonjour <name>` | | Bonjour service name for VNC |
 | `-gdb <addr>` | | Attach GDB debug stub (e.g., `:1234`) |
 | `-gdb-listen-all` | false | Listen on all interfaces for GDB |
-| `-sandbox-level <level>` | | Research isolation: minimal, strict, or host-containment |
-| `-host-containment` | false | Fail closed for host-escape features |
+| `-sandbox-level <level>` | | Research isolation: minimal or strict |
 | `-pcap <path>` | | Write PCAP when using `-network filehandle` |
 | `--port-forward <host:guest>` / `--pf <host:guest>` | | Forward host TCP to a guest vsock port (repeatable) |
 | `-disposable` | false | Run from a disposable linked clone |
@@ -122,12 +121,7 @@ cove run -linux -shell                         # pipe a guest shell to the host 
 cove run -fork-from macos-runner:14.5 -ephemeral -fork-name worker-1
 cove fork macos-base worker-1 && cove run -vm worker-1
 cove run -recovery -no-resume -gui -usb ~/recovery.img
-cove run -headless -vnc :5901 -vnc-password <password>
 ```
-
-Use `-vnc-password` whenever you enable `-vnc`. `-vnc-bonjour` requires a
-password because it advertises the service on the local network. Bind the VNC
-listener to the narrowest address that fits your workflow.
 
 ---
 
@@ -171,51 +165,6 @@ cove status [-vm name] [vm]
 cove status
 cove status -vm work-vm
 cove status work-vm
-```
-
----
-
-## commands
-
-Print the top-level command inventory.
-
-```
-cove commands [--json]
-cove help --json
-```
-
-`--json` emits command names, aliases, summaries, dispatch timing, and
-output-format hints. It is intended for agents that should not scrape prose
-help output.
-
-```bash
-cove commands --json
-cove help --json
-```
-
----
-
-## doctor
-
-Diagnose host readiness or VM health.
-
-```
-cove doctor host [-json]
-cove doctor [options]
-```
-
-`cove doctor host` checks whether the Mac is ready to create and run cove VMs:
-Apple Silicon, macOS version, virtualization entitlement, cove state
-writability, free disk, network, optional helper state, and Xcode Command Line
-Tools. `-json` emits a machine-readable report.
-
-Plain `cove doctor` remains VM-focused. It checks provisioning, guest agent, TCC
-paths, and file ownership for the active VM or `-vm <name>`.
-
-```bash
-cove doctor host
-cove doctor host -json
-cove doctor -vm dev -v
 ```
 
 ---
@@ -268,13 +217,9 @@ cove up -vm ubuntu-gui-kvm -linux -desktop -nested -cpu 4 -memory 8 \
 cove up -user me
 cove up -user me -vzscripts homebrew,golang
 cove up -user me -ipsw ~/restore.ipsw -cpu 4 -memory 8
-cove up -linux -user tmc
+cove up -linux -user tmc -password secret
 cove up -linux -desktop -user me
 ```
-
-For macOS, omit `-password` so cove prompts. For Linux, an omitted password
-defaults to the provisioned username; change it before enabling remote access or
-saving a reusable image.
 
 ---
 
@@ -310,7 +255,7 @@ cove provision [flags]
 
 ```bash
 cove provision -user testuser -skip-setup-assistant
-cove provision -user testuser -stage-only
+cove provision -user testuser -password secret -stage-only
 cove provision -apply
 ```
 
@@ -389,15 +334,10 @@ cove ctl [options] <command> [args...]
 | `pause` | Pause VM |
 | `resume` | Resume paused VM |
 | `stop` | Force stop VM |
-| `request-stop` | Send ACPI power button; the guest may ignore it |
+| `request-stop` | ACPI power button (graceful shutdown) |
 | `network-info` | MAC address, guest IP, mode |
 
 ### GUI Commands
-
-Native GUI runs create a macOS status item for the active VM. The item shows
-the VM state and exposes menu actions for opening or closing the window and
-requesting a clean stop. It is tied to the VM run and is not a background login
-item.
 
 | Command | Description |
 |---------|-------------|
@@ -499,9 +439,6 @@ item.
 | `vnc status` | VNC server status |
 | `debug-stub status` | Debug stub status |
 
-VNC status includes the endpoint, password-protection state, and Bonjour service
-name. Debug-stub status includes the endpoint and an `lldb` connection hint.
-
 ```bash
 cove ctl ping
 cove ctl status
@@ -532,7 +469,7 @@ cove sip <command> [flags]
 
 ```bash
 cove sip status
-cove sip disable-auto -user admin -password <password>
+cove sip disable-auto -user admin -password secret
 ```
 
 ---
@@ -724,41 +661,6 @@ cove agent-sandbox run --provider gemini --image macos-agent:latest --task "Open
 
 ---
 
-## runner
-
-Hosted-runner integration helpers. `cove runner` does not run a scheduler or
-register GitHub runners. It prints workflow scaffolds that consume the local
-`cove` runner primitives.
-
-```
-cove runner workflow --image <ref> [--mode self-hosted|github-hosted]
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| `workflow --image <ref>` | Print a GitHub Actions workflow that validates a local cove image and runs a job through `cove-action`. |
-
-Important flags:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--mode` | `self-hosted` | `self-hosted` runs on a trusted macOS runner with cove installed. `github-hosted` runs on GitHub-hosted Linux and SSHes into a trusted cove Mac. |
-| `--image` | | Local cove image ref on the runner host. Required. |
-| `--script` | `./ci/test.sh` | Guest command or script to run through the action wrapper. |
-| `--labels` | `self-hosted,macOS,ARM64,cove` | Self-hosted runner labels for GitHub Actions. |
-| `--remote` | `${{ secrets.COVE_HOST }}` | SSH target used by `--mode github-hosted`. |
-
-Examples:
-
-```bash
-cove runner workflow --image macos-runner:14.5 --script './ci/test.sh'
-cove runner workflow --mode github-hosted --image macos-runner:14.5 --remote mac-mini-ci --script './ci/test.sh'
-```
-
-See [Hosted Runner Examples](../examples/hosted-runners.md).
-
----
-
 ## action
 
 Preflight helpers for the private GitHub Actions executor.
@@ -817,28 +719,6 @@ are read from environment variables (`COVE_ACTION_*`) or the matching flags.
 
 ---
 
-## support
-
-Create a redacted diagnostics archive for support.
-
-```
-cove support bundle [-vm NAME] [-out PATH]
-```
-
-The bundle includes cove version and host details, signing/entitlement data,
-`cove doctor host` JSON, helper status, daemon status/metrics, storage census,
-and recent run and recording metadata. With `-vm NAME`, it also includes
-VM-specific doctor, GUI, VNC, capabilities, agent, and trace diagnostics.
-
-Bearer tokens, passwords, usernames, and home-directory paths are redacted.
-
-```bash
-cove support bundle
-cove support bundle -vm dev -out /tmp/cove-dev-support.tar.gz
-```
-
----
-
 ## runs
 
 Inspect and export local run artifacts under `~/.vz/runs/<run-id>/`. Run metrics
@@ -853,7 +733,7 @@ cove runs export <run-id-prefix> --format json|gha-summary|tar
 
 | Subcommand | Description |
 |------------|-------------|
-| `list [--limit N] [--since DURATION] [--status ok\|fail\|all] [--json\|--ndjson]` | List recent runs. Fields: run-id prefix, `image_ref`, `vm_name`, `status`, `total_duration_ms`, `exit_code`, `started_at`. `--json` emits one array (`[]` when empty); `--ndjson` emits one object per line and no output when empty. |
+| `list [--limit N] [--since DURATION] [--status ok\|fail\|all] [--json\|--ndjson]` | List recent runs. Fields: run-id prefix, `image_ref`, `vm_name`, `status`, `total_duration_ms`, `exit_code`, `started_at`. `--json` emits one array; `--ndjson` emits one object per line. |
 | `show <run-id-prefix> [--json]` | Show one run by unique run-id prefix. Fails if the prefix matches no run or more than one run. |
 | `export <run-id-prefix> --format json\|gha-summary\|tar` | Export one run. `json` emits structured data, `gha-summary` emits Markdown for `GITHUB_STEP_SUMMARY`, and `tar` writes a gzip tar archive to stdout. |
 
@@ -868,60 +748,6 @@ cove runs list --ndjson
 cove runs show 20260505
 cove runs export 20260505 --format gha-summary >> "$GITHUB_STEP_SUMMARY"
 cove runs export 20260505 --format tar > cove-run.tar.gz
-```
-
----
-
-## recording
-
-List and export recording artifacts from run/session directories. A recording
-is any run under `~/.vz/runs/<run-id>/` with manifest, metrics, events, logs,
-screenshots, replay, or trace artifacts.
-
-```
-cove recording list [--json] [--limit N]
-cove recording export <run-id-prefix> --out PATH
-```
-
-`recording export` writes a gzip tarball containing the available metadata and
-media artifacts. Missing or empty recording sets print an actionable message
-without creating new run directories.
-
-```bash
-cove recording list
-cove recording list --json
-cove recording export 20260505 --out cove-recording-20260505.tar.gz
-```
-
----
-
-## trace
-
-Manage eslogger guest trace artifacts for macOS VMs.
-
-```
-cove trace enable <vm>
-cove trace start <vm> [--id ID]
-cove trace stop <vm> [--id ID]
-cove trace status <vm> [--json]
-cove trace capabilities [--json]
-cove trace export <vm> [--id ID] --out PATH
-```
-
-Trace state is stored under `<vm>/traces/eslogger/`. Linux and Windows guests
-return an unsupported diagnostic. The first pass records stable session paths
-and exports any `eslogger.jsonl` placed in the session directory; guest-side
-capture failures are visible in the session metadata and do not hide the
-primary command result. `trace status --json` includes the latest session and
-capability fields. `trace capabilities --json` reports that this host build
-does not yet drive guest-side eslogger capture directly, so agents can preflight
-trace support before starting a session.
-
-```bash
-cove trace enable work-vm
-cove trace start work-vm --id provisioning
-cove trace stop work-vm --id provisioning
-cove trace export work-vm --id provisioning --out provisioning-trace.tar.gz
 ```
 
 ---
@@ -1038,24 +864,6 @@ cove quota ci-runner memory 8
 
 ---
 
-## security
-
-Inspect the effective host-containment and host-escape policy for the current
-invocation.
-
-```
-cove security status
-cove security status -json
-cove -host-containment security status
-```
-
-`-host-containment` maps to `-sandbox-level host-containment` and rejects
-host-escape features: shared folders, clipboard, agent auto-upgrade, startup
-port forwards, VNC, debug stubs, host HTTP listeners, proxying, and explicit
-networked modes.
-
----
-
 ## storage
 
 Read-only census of cove disk usage under `~/.vz/`, a persisted
@@ -1131,8 +939,8 @@ images, and exposing selected ports.
 
 ```
 cove logs <vm> [-f|--follow]
-cove cp [-vm name] <host-path> <vm:/guest/path>
-cove cp [-vm name] <vm:/guest/path> <host-path>
+cove cp <host-path> <vm:/guest/path>
+cove cp <vm:/guest/path> <host-path>
 cove diff <ref-a> <ref-b> [-json]
 cove forward <vm> <hostport>:<vmport>
 cove forward <vm> -reverse <vmport>:<hostport>
@@ -1142,8 +950,8 @@ cove network logs <vm> [-f]
 
 | Command | Description |
 |---------|-------------|
-| `logs [-vm name] [vm] [-f\|--follow]` | Tail guest logs through the agent/control path. `-vm` may appear before or after the positional VM name and must match it when both are present. |
-| `cp [-vm name]` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. `-vm` may appear before or after operands and must match the `vm:/path` endpoint. |
+| `logs <vm> [-f\|--follow]` | Tail guest logs through the agent/control path. |
+| `cp` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. |
 | `diff <ref-a> <ref-b> [-json]` | Compare local image manifests/layers. |
 | `forward` | Forward TCP/UDP between host and guest; `-reverse` exposes guest-to-host direction. |
 | `network logs <vm> [-f]` | Tail network policy audit events. |
@@ -1152,7 +960,6 @@ cove network logs <vm> [-f]
 cove logs ubuntu-runner -f
 cove cp ./artifact.txt ubuntu-runner:/tmp/artifact.txt
 cove cp ubuntu-runner:/etc/os-release ./os-release
-cove cp ubuntu-runner:/tmp/artifact.txt ./artifact.txt -vm ubuntu-runner
 cove diff macos-runner:old macos-runner:new -json
 cove forward dev 8080:80
 cove forward dev -reverse 3000:8080
@@ -1169,7 +976,7 @@ walkthroughs.
 
 ## shell
 
-Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Current agents use ExecAttach for bidirectional stdin, terminal resize, signals, stdout/stderr, and exit-code propagation. Older agents fall back to the v0.2 read-only stdin path with a warning. See [design 023](../designs/023-cove-shell-exec-ux.md).
+Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Stdin remains read-only in this release (Slice 3 / v0.3 will ship bidirectional stdin). See [design 023](../designs/023-cove-shell-exec-ux.md).
 
 ```
 cove shell <vm> [--env NAME=VALUE]... [--secret-env NAME=value|env://VAR|file:///path]... [-- <argv>...]
@@ -1256,10 +1063,10 @@ cove shared-folder <command> [args]
 | `list` | List configured folders |
 | `status [mount-point]` | Check mount status |
 | `pending [vm]` | List configured folders not mounted in the running guest |
-| `add <host-path> [tag] [ro\|rw]` | Save a folder and attempt live apply/mount when the VM is running |
+| `add <host-path> [tag] [ro\|rw]` | Add a folder |
 | `remove <tag-or-path>` | Remove a folder |
 | `clear` | Remove all folders |
-| `mount [mount-point]` | Retry guest mount via agent |
+| `mount [mount-point]` | Mount in guest via agent |
 
 ---
 
@@ -1446,12 +1253,10 @@ agent-aware free-space compactor.
 | `disk-detach` | Force-detach VM disk image |
 | `fork` | CoW-fork a VM with a fresh identity (`cove fork <parent> <child>`) |
 | `bench` | Normalize benchmark evidence into reports and run metrics |
-| `recording` | List/export run recording artifacts |
 | `pit` | Experimental point-in-time save, restore, run, and swap |
 | `softreset` | Run destructive soft-reset probe matrix |
 | `store` | Manage the local content-addressed OCI blob store |
 | `status` | Show running VM status |
-| `trace` | Manage eslogger guest traces |
 | `helper` | Manage the privileged helper (install, uninstall, status) to skip per-run sudo prompts |
 | `secret` | Resolve secret URIs for diagnostics without printing secret values |
 | `dump-docs` | Emit machine-readable CLI, HTTP API, and MCP documentation JSON |

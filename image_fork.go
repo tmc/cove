@@ -72,7 +72,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		return fmt.Errorf("cove run -fork-from <image>: image %s failed verify; run cove image verify %s for details", ref, ref)
 	}
 	if verification.Verdict == imageVerifyWarn {
-		fmt.Fprintf(os.Stderr, "note: image %s has non-fatal verification warnings; booting anyway (run 'cove image verify %s' for details)\n", ref, ref)
+		fmt.Fprintf(os.Stderr, "warning: image %s verification returned WARN; continuing\n", ref)
 	}
 	manifest := verification.Manifest
 	if manifest == nil {
@@ -113,8 +113,6 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		vmName = originalVMName
 		vmDir = originalVMDir
 	}()
-	restoreSerial := maybeQuietImageForkSerial(cfg)
-	defer restoreSerial()
 
 	lock, err := acquireRunLockHook(vmDir)
 	if err != nil {
@@ -150,17 +148,6 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		fmt.Printf("Ephemeral image fork removed: %s\n", childName)
 	}
 	return runErr
-}
-
-func maybeQuietImageForkSerial(cfg RunConfig) func() {
-	if !cfg.Linux || !headlessMode || flagWasSet("serial") || serialOutput != "stdout" {
-		return func() {}
-	}
-	serialOutput = "none"
-	fmt.Fprintln(os.Stderr, "note: suppressing Linux serial console for headless image fork; use -serial stdout to show boot logs")
-	return func() {
-		serialOutput = "stdout"
-	}
 }
 
 func runConfigForImageManifest(cfg RunConfig, manifest *ImageManifest) RunConfig {

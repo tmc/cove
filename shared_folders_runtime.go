@@ -12,7 +12,6 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 
 	"github.com/tmc/vz-macos/internal/controlclient"
-	"github.com/tmc/vz-macos/internal/vmstate"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -85,7 +84,7 @@ func (a sharedFolderRuntimeApplier) Apply(folders []SharedFolderEntry) (int, err
 	DispatchSync(uintptr(a.queue.Handle()), func() {
 		state := vz.VZVirtualMachineState(a.vm.State())
 		if state != vz.VZVirtualMachineStateRunning && state != vz.VZVirtualMachineStatePaused {
-			applyErr = fmt.Errorf("vm not running (state=%s)", vmstate.Label(state))
+			applyErr = fmt.Errorf("vm not running (state=%s)", vmStateLabel(state))
 			return
 		}
 
@@ -161,7 +160,7 @@ func (a sharedFolderRuntimeApplier) Status() sharedFoldersRuntimeStatus {
 	status := sharedFoldersRuntimeStatus{}
 	DispatchSync(uintptr(a.queue.Handle()), func() {
 		state := vz.VZVirtualMachineState(a.vm.State())
-		status.State = vmstate.Label(state)
+		status.State = vmStateLabel(state)
 		status.Running = state == vz.VZVirtualMachineStateRunning || state == vz.VZVirtualMachineStatePaused
 		if !status.Running {
 			status.Message = fmt.Sprintf("vm not running (state=%s)", status.State)

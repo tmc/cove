@@ -91,6 +91,21 @@ func CompressChunkData(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// DecompressChunkData decompresses and verifies one LZ4 chunk blob.
+func DecompressChunkData(c Chunk, data []byte) ([]byte, error) {
+	out, err := io.ReadAll(lz4.NewReader(bytes.NewReader(data)))
+	if err != nil {
+		return nil, fmt.Errorf("decompress chunk %d: %w", c.Index, err)
+	}
+	if int64(len(out)) != c.Size {
+		return nil, fmt.Errorf("decompress chunk %d: size %d, want %d", c.Index, len(out), c.Size)
+	}
+	if got := digestBytes(out); got != c.Digest {
+		return nil, fmt.Errorf("decompress chunk %d: digest %s, want %s", c.Index, got, c.Digest)
+	}
+	return out, nil
+}
+
 // WriteCompressedChunkAt verifies, decompresses, and writes one compressed disk chunk.
 func WriteCompressedChunkAt(w io.WriterAt, c Chunk, desc Descriptor, compressed io.Reader) error {
 	if c.Size < 0 {

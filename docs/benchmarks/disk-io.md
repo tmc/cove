@@ -88,7 +88,7 @@ wall-clock numbers as storage results.
 Suggested next benchmark command after the provisioning bug is fixed:
 
 ```sh
-/usr/bin/time -p ./cove up -linux -desktop -gui -user ubuntu -password '<admin-password>' \
+/usr/bin/time -p ./cove up -linux -desktop -gui -user ubuntu -password ubuntu \
   -cpu 4 -memory 8 -disk-size 64 -force -vm disk-io-<mode>-<timestamp>
 ```
 

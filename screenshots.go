@@ -1,6 +1,6 @@
 // screenshots.go - Screenshot capture, diff, and compression for VM control.
 //
-// Generic image utilities delegate to github.com/tmc/apple/x/capture.
+// Generic image utilities delegate to github.com/tmc/apple/x/vzkit/capture.
 // ControlServer methods remain here since they depend on VM-specific state.
 package main
 
@@ -18,7 +18,7 @@ import (
 	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/coregraphics"
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/apple/x/capture"
+	"github.com/tmc/apple/x/vzkit/capture"
 
 	"github.com/tmc/vz-macos/internal/controlserver"
 	"github.com/tmc/vz-macos/internal/sckit"

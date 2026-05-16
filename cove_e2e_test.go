@@ -43,8 +43,9 @@ func TestCoveSubcommandsE2E(t *testing.T) {
 			name:     "image_list_empty",
 			args:     []string{"image", "list"},
 			wantExit: 0,
-			// Fresh HOME has no images. Output is human-formatted.
-			wantStdout: []string{"No images found", "cove up -user <name>"},
+			// Fresh HOME has no images. Output is human-formatted, not JSON
+			// (image list does not accept -json today).
+			wantStdout: []string{"No images found"},
 		},
 		{
 			name:       "vm_tree_json_empty",
@@ -71,10 +72,11 @@ func TestCoveSubcommandsE2E(t *testing.T) {
 			ndjson: true,
 		},
 		{
-			name:       "runs_list_table_empty",
-			args:       []string{"runs", "list"},
-			wantExit:   0,
-			wantStdout: []string{"No runs found.", "cove runs list"},
+			name:     "runs_list_table_empty",
+			args:     []string{"runs", "list"},
+			wantExit: 0,
+			// Header row is always printed even when empty.
+			wantStdout: []string{"RUN ID", "STATUS"},
 		},
 	}
 

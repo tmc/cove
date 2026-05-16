@@ -7,7 +7,7 @@ import (
 	"image"
 	"sync"
 
-	"github.com/tmc/apple/x/capture"
+	"github.com/tmc/apple/x/vzkit/capture"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )
 

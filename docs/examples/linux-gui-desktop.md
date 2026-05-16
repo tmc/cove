@@ -7,7 +7,7 @@ installed VM, and opens the GUI.
 go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 
-./cove -vm linux-gui-debug -display 1280x720 up -linux -desktop -user debug -gui
+./cove -vm linux-gui-debug -display 1280x720 up -linux -desktop -user debug -password debug -gui
 ```
 
 For the recommended GUI KVM machine on supported M3/M4 hosts, enable nested

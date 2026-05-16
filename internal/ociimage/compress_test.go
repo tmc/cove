@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/pierrec/lz4/v4"
 )
 
 func TestPrepareChunkLayerCompressesAndVerifies(t *testing.T) {
@@ -41,9 +39,9 @@ func TestPrepareChunkLayerCompressesAndVerifies(t *testing.T) {
 		t.Fatalf("lume chunk digest annotation = %q", got.Descriptor.Annotations[LumeUncompressedContentDigest])
 	}
 
-	plain, err := io.ReadAll(lz4.NewReader(bytes.NewReader(got.Data)))
+	plain, err := DecompressChunkData(chunks[0], got.Data)
 	if err != nil {
-		t.Fatalf("decompress prepared chunk: %v", err)
+		t.Fatalf("DecompressChunkData(): %v", err)
 	}
 	if !bytes.Equal(plain, data) {
 		t.Fatalf("decompressed = %v, want %v", plain, data)
@@ -85,6 +83,19 @@ func TestReadChunkAtRejectsShortRead(t *testing.T) {
 	_, err := ReadChunkAt(bytes.NewReader([]byte{1, 2, 3}), chunk)
 	if err == nil || !strings.Contains(err.Error(), "EOF") {
 		t.Fatalf("ReadChunkAt() error = %v, want EOF", err)
+	}
+}
+
+func TestDecompressChunkDataRejectsDigestMismatch(t *testing.T) {
+	data := []byte{1, 2, 3}
+	compressed, err := CompressChunkData(data)
+	if err != nil {
+		t.Fatalf("CompressChunkData(): %v", err)
+	}
+	chunk := Chunk{Index: 0, Size: 3, Digest: testDigest([]byte("bad"))}
+	_, err = DecompressChunkData(chunk, compressed)
+	if err == nil || !strings.Contains(err.Error(), "digest") {
+		t.Fatalf("DecompressChunkData() error = %v, want digest mismatch", err)
 	}
 }
 

@@ -62,10 +62,6 @@ type RunConfig struct {
 	StartupForwards []PortForward
 	HTTPListenAddr  string
 
-	// Security policy.
-	SandboxLevel    string
-	HostContainment bool
-
 	// Storage and shared folders.
 	USB          []USBSpec
 	BlockDevices []BlockSpec
@@ -117,9 +113,6 @@ type HostConfig struct {
 
 	RuntimeProfile string // "full" or "minimal"
 	LaunchOrder    string // "window-first" or "start-first"
-
-	SandboxLevel    string
-	HostContainment bool
 
 	AutoMountVolumes     bool
 	AutoUpgradeAgent     bool

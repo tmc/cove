@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmstate"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -400,7 +399,7 @@ func waitVMState(t *testing.T, vm *testVM, want string, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		status, err := statusOnce(vm)
-		if err == nil && vmstate.Canonical(status.GetState()) == want {
+		if err == nil && canonicalVMState(status.GetState()) == want {
 			return
 		}
 		time.Sleep(500 * time.Millisecond)

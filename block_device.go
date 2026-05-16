@@ -11,7 +11,6 @@ import (
 
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
-	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"golang.org/x/sys/unix"
 )
 
@@ -200,10 +199,11 @@ func createBlockStorageDevice(spec blockDeviceSpec) (vz.VZVirtioBlockDeviceConfi
 		return vz.VZVirtioBlockDeviceConfiguration{}, fmt.Errorf("create block device attachment: %w", err)
 	}
 	attachment.Retain()
-	device, err := storagex.CreateBlockDeviceWithAttachment(attachment.VZStorageDeviceAttachment)
-	if err != nil {
-		return vz.VZVirtioBlockDeviceConfiguration{}, err
+	device := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&attachment.VZStorageDeviceAttachment)
+	if device.ID == 0 {
+		return vz.VZVirtioBlockDeviceConfiguration{}, fmt.Errorf("create block storage device")
 	}
+	device.Retain()
 	return device, nil
 }
 

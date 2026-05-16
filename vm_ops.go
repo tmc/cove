@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -58,7 +57,7 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	info, err := os.Stat(vmPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("%w: %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", ErrVMNotFound, name)
+			return fmt.Errorf("%w: %s", ErrVMNotFound, name)
 		}
 		return fmt.Errorf("stat VM dir: %w", err)
 	}
@@ -66,7 +65,7 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 		return fmt.Errorf("not a VM directory: %s", vmPath)
 	}
 
-	if isVMRunningAt(vmPath) && !waitForVMNotRunning(vmPath, 3*time.Second) {
+	if isVMRunningAt(vmPath) {
 		return fmt.Errorf("cannot delete VM %q: it is currently running\n  request stop: cove ctl -vm %s request-stop\n  check status: cove list\n  if still running: cove ctl -vm %s stop\n  then retry: cove vm delete %s", name, name, name, name)
 	}
 
@@ -110,17 +109,6 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	return nil
 }
 
-func waitForVMNotRunning(vmPath string, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-		if !isVMRunningAt(vmPath) {
-			return true
-		}
-	}
-	return !isVMRunningAt(vmPath)
-}
-
 // childVMNames returns the sorted names of VMs whose ParentVM
 // matches parent. An empty slice (no children) means delete is
 // safe with respect to lineage.
@@ -153,7 +141,7 @@ func RenameVM(oldName, newName string) error {
 	newPath := vmconfig.Path(newName)
 
 	if !vmconfig.Validate(oldPath) {
-		return fmt.Errorf("%w: %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", ErrVMNotFound, oldName)
+		return fmt.Errorf("%w: %s", ErrVMNotFound, oldName)
 	}
 
 	if _, err := os.Stat(newPath); !os.IsNotExist(err) {

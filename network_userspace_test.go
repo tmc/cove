@@ -1,4 +1,4 @@
-package filehandle
+package main
 
 import (
 	"bytes"
@@ -57,16 +57,16 @@ func TestWriteFrameShortWrite(t *testing.T) {
 }
 
 func TestNewFrameBufferDefault(t *testing.T) {
-	if got := len(newFrameBuffer(0)); got != defaultMTU {
-		t.Fatalf("len = %d, want %d", got, defaultMTU)
+	if got := len(newFrameBuffer(0)); got != defaultFileHandleMTU {
+		t.Fatalf("len = %d, want %d", got, defaultFileHandleMTU)
 	}
 	if got := len(newFrameBuffer(2048)); got != 2048 {
 		t.Fatalf("len = %d, want 2048", got)
 	}
 }
 
-func TestStatsRecord(t *testing.T) {
-	var s statsState
+func TestFileHandleNetworkStatsRecord(t *testing.T) {
+	var s fileHandleNetworkStats
 	s.recordInbound(0)  // ignored
 	s.recordOutbound(0) // ignored
 	s.recordInbound(40)

@@ -2,7 +2,6 @@ package main
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 )
@@ -80,18 +79,6 @@ func TestParseReadyArgsRejectsPositional(t *testing.T) {
 func TestParseReadyArgsBadTimeout(t *testing.T) {
 	if _, _, _, _, err := parseReadyArgs([]string{"--timeout", "not-a-duration"}); err == nil {
 		t.Fatalf("expected error for invalid --timeout value")
-	}
-}
-
-func TestCtlReadyHelpExitsWithoutError(t *testing.T) {
-	out, err := captureStdoutResult(t, func() error {
-		return ctlReady("", []string{"--help"})
-	})
-	if err != nil {
-		t.Fatalf("ctlReady --help: %v", err)
-	}
-	if !strings.Contains(out, "Usage: cove ctl ready") {
-		t.Fatalf("help output = %q", out)
 	}
 }
 

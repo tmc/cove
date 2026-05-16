@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"golang.org/x/sys/unix"
@@ -337,4 +339,24 @@ func hintEntitlements(err error) error {
 		return fmt.Errorf("%w\n\n  This usually means the binary is missing the com.apple.security.virtualization entitlement.\n  Fix: codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove", err)
 	}
 	return err
+}
+
+// saveNSDataToFile saves NSData bytes to a file.
+func saveNSDataToFile(dataID objc.ID, path string) error {
+	data := foundation.NSDataFromID(dataID)
+	length := data.Length()
+	if length == 0 {
+		return fmt.Errorf("empty data")
+	}
+	ptr := data.Bytes()
+	bytes := unsafe.Slice((*byte)(ptr), length)
+	return os.WriteFile(path, bytes, 0644)
+}
+
+// createNSDataFromBytes creates an NSData object from Go bytes.
+func createNSDataFromBytes(data []byte) objc.ID {
+	if len(data) == 0 {
+		return 0
+	}
+	return foundation.GetNSDataClass().DataWithBytesLength(data).ID
 }

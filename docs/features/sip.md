@@ -23,7 +23,7 @@ Generate boot automation scripts and execute them in recovery mode:
 
 ```bash
 # Generate the automation script
-cove sip disable-auto -user admin -password <password>
+cove sip disable-auto -user admin -password secret
 
 # Boot into recovery with the automation
 cove run -recovery -no-resume -gui -unattended \
@@ -36,7 +36,7 @@ The script answers Recovery confirmation prompts when they appear.
 ## Automated SIP Enable
 
 ```bash
-cove sip enable-auto -user admin -password <password>
+cove sip enable-auto -user admin -password secret
 
 cove run -recovery -no-resume -gui -unattended \
   -usb ~/.vz/vms/default/recovery-disk.img \

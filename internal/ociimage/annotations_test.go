@@ -194,6 +194,23 @@ func TestNormalizeLayerAnnotations(t *testing.T) {
 	}
 }
 
+func TestNormalizeAnnotationKeys(t *testing.T) {
+	got := NormalizeAnnotationKeys(map[string]string{
+		LumeChunkIndex:                "9",
+		CoveChunkIndex:                "1",
+		LumeUncompressedContentDigest: "sha256:lume",
+		"example":                     "keep",
+	})
+	want := map[string]string{
+		CoveChunkIndex:                "1",
+		CoveUncompressedContentDigest: "sha256:lume",
+		"example":                     "keep",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("NormalizeAnnotationKeys() = %#v, want %#v", got, want)
+	}
+}
+
 func TestAddLumeCompatibility(t *testing.T) {
 	in := map[string]string{
 		CoveChunkIndex:                "1",

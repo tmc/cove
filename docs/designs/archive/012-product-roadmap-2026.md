@@ -400,7 +400,7 @@ produced.
 **Ship gate:** `003-cove-build-oci-caching.md` ship gate.
 
 **Risk this roadmap accepts:** cross-machine cache stability is a benchmark gate
-([004-churn-benchmark-harness.md](../004-churn-benchmark-harness.md)); `cove build` ships
+([004-churn-benchmark-harness.md](004-churn-benchmark-harness.md)); `cove build` ships
 even if cross-machine `--cache-from` is documented as deferred. Local-only cache hits
 are still a category-defining feature.
 

@@ -22,18 +22,13 @@ import (
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
-	audiox "github.com/tmc/apple/x/vzkit/audio"
+	balloonx "github.com/tmc/apple/x/vzkit/balloon"
 	"github.com/tmc/apple/x/vzkit/clipboard"
-	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
-	identityx "github.com/tmc/apple/x/vzkit/identity"
-	macosconfig "github.com/tmc/apple/x/vzkit/macosconfig"
 	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/guestplan"
 	"github.com/tmc/vz-macos/internal/vmrun"
-	"github.com/tmc/vz-macos/internal/vmstate"
 )
 
 var errVMStartupInProgress = errors.New("vm startup already in progress")
@@ -537,7 +532,9 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	} else if auxInfo.Size() == 0 {
 		issues = append(issues, "aux.img empty")
 	} else {
-		if _, err := identityx.LoadMacAuxiliaryStorage(auxPath); err != nil {
+		auxURL := foundation.NewURLFileURLWithPath(auxPath)
+		auxStorage := vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
+		if auxStorage.ID == 0 {
 			issues = append(issues, "aux.img unreadable")
 		}
 	}
@@ -553,16 +550,18 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	} else if len(hwData) == 0 {
 		issues = append(issues, "hw.model empty")
 	} else {
-		model, err := identityx.LoadMacHardwareModel(hwModelPath)
-		switch {
-		case err == nil:
-		case strings.Contains(err.Error(), "not supported"):
-			issues = append(issues, "hw.model unsupported on this host")
-		default:
+		nsData := createNSDataFromBytes(hwData)
+		if nsData == 0 {
 			issues = append(issues, "hw.model invalid")
-		}
-		if model.ID != 0 && !model.Supported() {
-			issues = append(issues, "hw.model unsupported on this host")
+		} else {
+			nsDataObj := foundation.NSDataFromID(nsData)
+			model := vz.NewMacHardwareModelWithDataRepresentation(&nsDataObj)
+			switch {
+			case model.ID == 0:
+				issues = append(issues, "hw.model invalid")
+			case !model.Supported():
+				issues = append(issues, "hw.model unsupported on this host")
+			}
 		}
 	}
 
@@ -577,8 +576,15 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	} else if len(machineData) == 0 {
 		issues = append(issues, "machine.id empty")
 	} else {
-		if _, err := identityx.LoadMacMachineIdentifier(machineIDPath); err != nil {
+		nsData := createNSDataFromBytes(machineData)
+		if nsData == 0 {
 			issues = append(issues, "machine.id invalid")
+		} else {
+			nsDataObj := foundation.NSDataFromID(nsData)
+			machineID := vz.NewMacMachineIdentifierWithDataRepresentation(&nsDataObj)
+			if machineID.ID == 0 {
+				issues = append(issues, "machine.id invalid")
+			}
 		}
 	}
 
@@ -657,52 +663,11 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	// Resolve symlinks for all paths
 	diskImagePath = resolvePath(diskImagePath)
 
-	plan, err := guestplan.MacOS(rc, hc)
-	if err != nil {
-		return vz.VZVirtualMachineConfiguration{}, err
-	}
-	netConfig, err := ParseNetworkMode(plan.Network.Mode)
-	if err != nil {
-		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("parse network mode: %w", err)
-	}
-	macAddr := loadOrCreateMACAddress()
-	builderNetwork := macosconfig.Network{Config: netConfig}
-	if macAddr.ID != 0 {
-		builderNetwork.MAC = &macAddr
-	}
-	if netConfig.Mode == NetworkModeFileHandle || netConfig.Mode == NetworkModeNone {
-		builderNetwork = macosconfig.Network{}
-	}
+	config := vz.NewVZVirtualMachineConfiguration()
 
-	var audioConfig *audiox.Config
-	if plan.Audio.Enabled {
-		audioConfig = &audiox.Config{
-			InputEnabled:  plan.Audio.HostInput,
-			OutputEnabled: plan.Audio.HostOutput,
-		}
-	}
-
-	displayConfigs := make([]displayx.Config, 0, len(plan.Display))
-	for _, d := range plan.Display {
-		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
-	}
-	minimalProfile := hc.RuntimeProfile == "minimal"
-	config, err := macosconfig.Build(macosconfig.Config{
-		CPUCount:      plan.CPUCount,
-		MemoryGB:      plan.MemoryGB,
-		Display:       displayConfigs,
-		Network:       builderNetwork,
-		Audio:         audioConfig,
-		Keyboard:      true,
-		Pointing:      true,
-		Entropy:       true,
-		USBController: !minimalProfile,
-		MemoryBalloon: !minimalProfile,
-		Socket:        !minimalProfile,
-	})
-	if err != nil {
-		return config, fmt.Errorf("build macos device config: %w", err)
-	}
+	// CPU and memory
+	config.SetCPUCount(rc.CPUCount)
+	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
 
 	// Platform configuration (macOS)
 	platformConfig := vz.NewVZMacPlatformConfiguration()
@@ -727,25 +692,29 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	if utmAuxStoragePath != "" {
 		auxStoragePath = utmAuxStoragePath
 	}
+	auxURL := foundation.NewURLFileURLWithPath(auxStoragePath)
+	auxURL.Retain() // Prevent premature deallocation
 	var auxStorage vz.VZMacAuxiliaryStorage
 	if _, statErr := os.Stat(auxStoragePath); os.IsNotExist(statErr) {
 		if hc.Verbose {
 			fmt.Println("  Creating auxiliary storage...")
 		}
 		var err error
-		auxStorage, err = identityx.CreateMacAuxiliaryStorage(auxStoragePath, hwModel, true)
+		auxStorage, err = vz.NewMacAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
+			auxURL, hwModel, vz.VZMacAuxiliaryStorageInitializationOptionAllowOverwrite)
 		if err != nil {
 			return config, fmt.Errorf("failed to create auxiliary storage: %w", err)
 		}
+		auxStorage.Retain()
 	} else {
 		if hc.Verbose {
 			fmt.Println("  Loading existing auxiliary storage...")
 		}
-		var err error
-		auxStorage, err = identityx.LoadMacAuxiliaryStorage(auxStoragePath)
-		if err != nil {
-			return config, err
+		auxStorage = vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
+		if auxStorage.ID == 0 {
+			return config, fmt.Errorf("failed to load auxiliary storage: %s", auxStoragePath)
 		}
+		auxStorage.Retain() // Prevent premature deallocation
 	}
 	if auxStorage.ID != 0 {
 		platformConfig.SetAuxiliaryStorage(&auxStorage)
@@ -765,24 +734,99 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	// Create block device custom config
 	storageConfig := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment)
 	storageConfig.Retain()
-	configx.SetStorageDevices(config, storageConfig)
+	setStorageDevices(config, storageConfig)
 
+	// Graphics with multi-display support
+	displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
+	for _, d := range rc.Displays {
+		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+	}
+	if len(displayConfigs) == 0 {
+		displayConfigs = []displayx.Config{displayx.DefaultConfig()}
+	}
+	graphicsConfig, err := displayx.CreateMacGraphicsConfig(displayConfigs)
+	if err != nil {
+		return config, fmt.Errorf("create graphics config: %w", err)
+	}
 	if hc.Verbose {
 		for i, d := range displayConfigs {
 			fmt.Printf("  Display %d: %dx%d @ %d PPI\n", i+1, d.Width, d.Height, d.PPI)
 		}
 	}
+	setGraphicsDevices(config, graphicsConfig)
 
-	// Network configuration not covered by vzkit's mechanical builder.
-	if netConfig.Mode == NetworkModeFileHandle {
+	// Network configuration
+	netConfig, err := ParseNetworkMode(rc.NetworkMode)
+	if err != nil {
+		return config, fmt.Errorf("parse network mode: %w", err)
+	}
+	if netConfig.Mode != NetworkModeNone {
 		networkDeviceConfig, err := CreateNetworkDeviceConfiguration(netConfig)
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
+
+		macAddr := loadOrCreateMACAddress()
 		if macAddr.ID != 0 {
 			networkDeviceConfig.SetMACAddress(&macAddr)
 		}
-		configx.SetNetworkDevices(config, networkDeviceConfig)
+
+		setNetworkDevices(config, networkDeviceConfig)
+	}
+
+	// Keyboard
+	// Try VZMacKeyboardConfiguration first when available
+	var keyboardConfig vz.IVZKeyboardConfiguration
+	if macKeyboard := vz.NewVZMacKeyboardConfiguration(); macKeyboard.GetID() != 0 {
+		keyboardConfig = macKeyboard
+	} else {
+		keyboardConfig = vz.NewVZUSBKeyboardConfiguration()
+	}
+	setKeyboards(config, keyboardConfig)
+
+	// Pointing device
+	pointingDevices := []vz.IVZPointingDeviceConfiguration{
+		vz.NewVZUSBScreenCoordinatePointingDeviceConfiguration(),
+	}
+	if trackpad := vz.NewVZMacTrackpadConfiguration(); trackpad.GetID() != 0 {
+		pointingDevices = append(pointingDevices, trackpad)
+	}
+	setPointingDevices(config, pointingDevices)
+
+	// Entropy device
+	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
+	setEntropyDevices(config, entropyConfig)
+
+	// Audio with host input/output streams.
+	// Plan() decides whether the guest gets a VirtioSound device. For
+	// macOS the answer is always yes (host streams are required for
+	// installation; see CLAUDE.md DFU 3004/4014). If Plan errors we
+	// fall back to attaching audio anyway — the prior behavior — so
+	// validation surfaces happen later via the framework, not here.
+	audioPlan, planErr := vmrun.Plan(rc, hc)
+	if planErr != nil || audioPlan.Audio.Enabled {
+		audioConfig, err := createAudioDeviceConfiguration()
+		if err != nil {
+			fmt.Printf("warning: audio config: %v\n", err)
+		} else {
+			setAudioDevices(config, audioConfig)
+		}
+	}
+
+	minimalProfile := hc.RuntimeProfile == "minimal"
+	if !minimalProfile {
+		EnsureUSBController(config)
+	}
+
+	if !minimalProfile {
+		// Memory balloon device for runtime memory control
+		balloonx.AddDevice(config)
+
+		// Virtio socket device (vsock for host-guest communication)
+		vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
+		if vsockConfig.ID != 0 {
+			setSocketDevices(config, vsockConfig)
+		}
 	}
 
 	// USB storage devices
@@ -804,7 +848,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	} else {
 		serialConfig := createSerialConsoleConfig()
 		if serialConfig.ID != 0 {
-			configx.SetSerialPorts(config, serialConfig)
+			setSerialPorts(config, serialConfig)
 			if hc.Verbose {
 				fmt.Println("  Serial console attached (output to stdout)")
 			}
@@ -879,13 +923,25 @@ func loadOrCreateMachineIdentifier() (vz.VZMacMachineIdentifier, error) {
 	machineIDPath := filepath.Join(vmDir, "machine.id")
 
 	// Check if we have a saved machine identifier
-	if machineID, err := identityx.LoadMacMachineIdentifier(machineIDPath); err == nil {
+	if data, err := os.ReadFile(machineIDPath); err == nil {
+		if len(data) == 0 {
+			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is empty")
+		}
+		nsData := createNSDataFromBytes(data)
+		if nsData == 0 {
+			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is invalid")
+		}
+		nsDataObj := foundation.NSDataFromID(nsData)
+		machineID := vz.NewMacMachineIdentifierWithDataRepresentation(&nsDataObj)
+		if machineID.ID == 0 {
+			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is invalid")
+		}
 		if verbose {
 			fmt.Println("  Loaded existing machine identifier")
 		}
 		return machineID, nil
 	} else if !os.IsNotExist(err) {
-		return vz.VZMacMachineIdentifier{}, err
+		return vz.VZMacMachineIdentifier{}, fmt.Errorf("read machine identifier: %w", err)
 	}
 
 	// Create new machine identifier
@@ -904,7 +960,11 @@ func loadOrCreateMachineIdentifier() (vz.VZMacMachineIdentifier, error) {
 
 // saveMachineIdentifier saves the machine identifier data representation to a file.
 func saveMachineIdentifier(machineID vz.VZMacMachineIdentifier, path string) error {
-	return identityx.SaveMacMachineIdentifier(machineID, path)
+	data := machineID.DataRepresentation()
+	if data.GetID() == 0 {
+		return fmt.Errorf("machine identifier has no data representation")
+	}
+	return saveNSDataToFile(data.GetID(), path)
 }
 
 // loadOrCreateMACAddress loads an existing MAC address or creates a new one.
@@ -944,15 +1004,26 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 
 	// Check if we have a saved hardware model
 	if data, err := os.ReadFile(hwModelPath); err == nil {
+		if len(data) == 0 {
+			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is empty")
+		}
 		if verbose {
 			fmt.Printf("  Found hw.model file: %s (%d bytes)\n", hwModelPath, len(data))
 		}
-		model, err := identityx.LoadMacHardwareModel(hwModelPath)
+		nsData := createNSDataFromBytes(data)
+		if nsData == 0 {
+			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is invalid")
+		}
+		nsDataObj := foundation.NSDataFromID(nsData)
+		model := vz.NewMacHardwareModelWithDataRepresentation(&nsDataObj)
 		if verbose {
 			fmt.Printf("  Hardware model ID: %#x, Supported: %v\n", model.ID, model.ID != 0 && model.Supported())
 		}
-		if err != nil {
-			return vz.VZMacHardwareModel{}, err
+		if model.ID == 0 {
+			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is invalid")
+		}
+		if !model.Supported() {
+			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model is not supported on this host")
 		}
 		return model, nil
 	} else if !os.IsNotExist(err) {
@@ -1010,7 +1081,68 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 
 // saveHardwareModel saves the hardware model data representation to a file.
 func saveHardwareModel(model vz.VZMacHardwareModel, path string) error {
-	return identityx.SaveMacHardwareModel(model, path)
+	data := model.DataRepresentation()
+	if data == nil || data.GetID() == 0 {
+		return fmt.Errorf("hardware model has no data representation")
+	}
+	return saveNSDataToFile(data.GetID(), path)
+}
+
+// Helper functions to set array properties using generated slice setters.
+// These use the generated bindings' FromID pattern to convert concrete subtypes
+// to base types required by the generated setters.
+func setStorageDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioBlockDeviceConfiguration) {
+	config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{
+		vz.VZStorageDeviceConfigurationFromID(device.ID),
+	})
+}
+
+func setGraphicsDevices(config vz.VZVirtualMachineConfiguration, device vz.VZMacGraphicsDeviceConfiguration) {
+	config.SetGraphicsDevices([]vz.VZGraphicsDeviceConfiguration{
+		vz.VZGraphicsDeviceConfigurationFromID(device.ID),
+	})
+}
+
+func setDisplays(config vz.VZMacGraphicsDeviceConfiguration, display vz.VZMacGraphicsDisplayConfiguration) {
+	config.SetDisplays([]vz.VZMacGraphicsDisplayConfiguration{display})
+}
+
+func setNetworkDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioNetworkDeviceConfiguration) {
+	config.SetNetworkDevices([]vz.VZNetworkDeviceConfiguration{
+		vz.VZNetworkDeviceConfigurationFromID(device.ID),
+	})
+}
+
+func setKeyboards(config vz.VZVirtualMachineConfiguration, device vz.IVZKeyboardConfiguration) {
+	config.SetKeyboards([]vz.VZKeyboardConfiguration{
+		vz.VZKeyboardConfigurationFromID(device.GetID()),
+	})
+}
+
+func setPointingDevices(config vz.VZVirtualMachineConfiguration, devices []vz.IVZPointingDeviceConfiguration) {
+	converted := make([]vz.VZPointingDeviceConfiguration, len(devices))
+	for i, dev := range devices {
+		converted[i] = vz.VZPointingDeviceConfigurationFromID(dev.GetID())
+	}
+	config.SetPointingDevices(converted)
+}
+
+func setEntropyDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioEntropyDeviceConfiguration) {
+	config.SetEntropyDevices([]vz.VZEntropyDeviceConfiguration{
+		vz.VZEntropyDeviceConfigurationFromID(device.ID),
+	})
+}
+
+func setAudioDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioSoundDeviceConfiguration) {
+	config.SetAudioDevices([]vz.VZAudioDeviceConfiguration{
+		vz.VZAudioDeviceConfigurationFromID(device.ID),
+	})
+}
+
+func setSerialPorts(config vz.VZVirtualMachineConfiguration, device vz.VZSerialPortConfiguration) {
+	config.SetSerialPorts([]vz.VZSerialPortConfiguration{
+		device,
+	})
 }
 
 // createSharedFoldersDevice creates a VirtioFS device with a MultipleDirectoryShare
@@ -1079,8 +1211,13 @@ func newDictFromSlices(values, keys []objectivec.IObject) foundation.NSDictionar
 	return foundation.NSDictionaryFromID(rv)
 }
 
+// setDirectorySharingDevicesMulti adds multiple VirtioFS configurations to the VM
 func setDirectorySharingDevicesMulti(config vz.VZVirtualMachineConfiguration, devices []vz.VZVirtioFileSystemDeviceConfiguration) {
-	configx.SetDirectorySharingDevices(config, devices)
+	var configs []vz.VZDirectorySharingDeviceConfiguration
+	for _, device := range devices {
+		configs = append(configs, vz.VZDirectorySharingDeviceConfigurationFromID(device.ID))
+	}
+	config.SetDirectorySharingDevices(configs)
 }
 
 // startVMWithQueue starts the virtual machine using a dispatch queue.
@@ -1327,7 +1464,7 @@ func waitForVMStartPoll(startErr <-chan error, poll func() (vz.VZVirtualMachineS
 		case <-ticker.C:
 			state, err := poll()
 			if err == nil {
-				lastState = vmstate.Label(state)
+				lastState = vmStateLabel(state)
 				lastPollErr = ""
 				switch state {
 				case vz.VZVirtualMachineStateRunning:
@@ -1364,7 +1501,7 @@ func waitForVMRunningPoll(poll func() (vz.VZVirtualMachineState, error), opts vm
 		if err != nil {
 			lastPollErr = err.Error()
 		} else {
-			lastState = vmstate.Label(state)
+			lastState = vmStateLabel(state)
 			lastPollErr = ""
 			switch state {
 			case vz.VZVirtualMachineStateRunning:
@@ -1572,7 +1709,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			state := vz.VZVirtualMachineState(vm.State())
 			if state != lastState {
 				lastState = state
-				noteVMRuntimeState(target.Directory, vmstate.Label(state))
+				noteVMRuntimeState(target.Directory, vmStateLabel(state))
 				stateUpdate.mu.Lock()
 				stateUpdate.newState = state
 				stateUpdate.changed = true
@@ -2098,7 +2235,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					fmt.Printf("VM state transition: %s -> %s\n", vmStateName(lastState), vmStateName(state))
 				}
 				lastState = state
-				noteVMRuntimeState(target.Directory, vmstate.Label(state))
+				noteVMRuntimeState(target.Directory, vmStateLabel(state))
 				stateUpdate.mu.Lock()
 				stateUpdate.newState = state
 				stateUpdate.changed = true

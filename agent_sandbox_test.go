@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestParseAgentSandboxRunArgs(t *testing.T) {
@@ -157,22 +156,6 @@ func TestParseAgentSandboxBenchArgs(t *testing.T) {
 	}
 }
 
-func TestDefaultAgentSandboxBenchOutUsesTempDir(t *testing.T) {
-	when := time.Date(2026, 5, 13, 23, 30, 0, 0, time.UTC)
-	got := defaultAgentSandboxBenchOut(false, when)
-	want := filepath.Join(os.TempDir(), "cove-agent-sandbox-bench-20260513-233000.md")
-	if got != want {
-		t.Fatalf("defaultAgentSandboxBenchOut = %q, want %q", got, want)
-	}
-	if strings.HasPrefix(got, "bench/") {
-		t.Fatalf("defaultAgentSandboxBenchOut = %q, want outside repo bench dir", got)
-	}
-	cold := defaultAgentSandboxBenchOut(true, when)
-	if !strings.Contains(cold, "cold") || filepath.Clean(filepath.Dir(cold)) != filepath.Clean(os.TempDir()) {
-		t.Fatalf("cold default output = %q, want temp cold path", cold)
-	}
-}
-
 func TestParseAgentSandboxBenchArgsRejectsBadInput(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -196,7 +179,7 @@ func TestAgentSandboxUsageListsProviderEnvVars(t *testing.T) {
 	var b strings.Builder
 	printAgentSandboxUsage(&b)
 	out := b.String()
-	for _, want := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "COVE_VERTEX_PROJECT", "agent-sandbox bench", "system temp directory"} {
+	for _, want := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "COVE_VERTEX_PROJECT", "agent-sandbox bench"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage missing %q:\n%s", want, out)
 		}

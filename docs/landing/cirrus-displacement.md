@@ -70,16 +70,10 @@ whole-VM image, then each job still runs in its own disposable fork.
 ## Get started
 
 ```bash
-cove up -vm macos-runner -user ci
-read -rsp 'GitHub runner registration token: ' GH_TOKEN
-export GH_REPO=owner/repo GH_TOKEN
-cove vzscript run github-runner
+cove up -vm macos-runner -user ci -password '<admin-password>'
+GH_REPO=owner/repo GH_TOKEN='<registration-token>' cove vzscript run github-runner
 cove image build -from macos-runner -tag macos-runner:latest
 ```
-
-Cove prompts for the guest password when `-password` is omitted. Keep runner
-registration tokens out of shell history; use a prompt, keychain lookup, or CI
-secret variable.
 
 After the image exists, wire the private action into GitHub Actions with
 `uses: ./.github/actions/cove-action` and set `image: macos-runner:latest`.

@@ -297,17 +297,10 @@ func runStorageCensus(args []string, out io.Writer) error {
 	human := fs.Bool("human", false, "render a fixed-width table instead of JSON")
 	topN := fs.Int("top", 10, "number of newest items to surface per category (0 = all)")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
-		if err != nil && !storageCensusHumanRequested(args) {
-			_ = writeCLIErrorJSON(out, "storage census", err, "")
-		}
 		return err
 	}
 	if fs.NArg() != 0 {
-		err := fmt.Errorf("usage: cove storage census [-human] [-top N]")
-		if !*human {
-			_ = writeCLIErrorJSON(out, "storage census", err, "")
-		}
-		return err
+		return fmt.Errorf("usage: cove storage census [-human] [-top N]")
 	}
 
 	root := coveRoot()
@@ -334,9 +327,6 @@ func runStorageCensus(args []string, out io.Writer) error {
 	}
 	rep, err := storagecensus.Walk(root, cats, opts)
 	if err != nil {
-		if !*human {
-			_ = writeCLIErrorJSON(out, "storage census", fmt.Errorf("storage census: %w", err), "")
-		}
 		return fmt.Errorf("storage census: %w", err)
 	}
 	if b, berr := storagecensus.LoadBudget(root); berr == nil && b.IsSet() {
@@ -347,15 +337,6 @@ func runStorageCensus(args []string, out io.Writer) error {
 		return storagecensus.RenderHuman(out, rep)
 	}
 	return storagecensus.EncodeJSON(out, rep)
-}
-
-func storageCensusHumanRequested(args []string) bool {
-	for _, arg := range args {
-		if arg == "-human" || arg == "--human" {
-			return true
-		}
-	}
-	return false
 }
 
 // coveRoot returns the parent of vmconfig.BaseDir(), i.e. ~/.vz/.

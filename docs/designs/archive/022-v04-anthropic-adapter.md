@@ -5,7 +5,7 @@ implementation shipped at `33e5b30` and `775537f`. Live API verification
 remains gated on a running disposable VM and `ANTHROPIC_API_KEY`.
 **Supersedes**: Design 022 v1 in this file, accepted planning input for the
 Python `cove-claude-sandbox` package.
-**Source**: `/tmp/cove-v04-audit-a4k2.md`
+**Source**: [/tmp/cove-v04-audit-a4k2.md](../../tmp/cove-v04-audit-a4k2.md)
 (read-only audit of v0.3 GA `main`).
 **Roadmap**: v0.4.
 **Branch**: planning.
@@ -13,7 +13,7 @@ Python `cove-claude-sandbox` package.
 ## Goal
 
 Provide an Anthropic adapter that mirrors the existing OpenAI Agents SDK
-adapter at `adapters/openai-agents-python/`.
+adapter at [`adapters/openai-agents-python/`](../../adapters/openai-agents-python/).
 Both adapters give a hosted model — Claude or GPT — computer-use tooling
 backed by a forked cove macOS VM: the model issues `screenshot`, `click`,
 `type`, `key`, `scroll`, `bash`, and `text_editor` actions; the adapter
@@ -88,7 +88,7 @@ transcript. Coordinates are scaled back to host pixels before dispatch.
 
 The primitives the adapter needs already exist on `main`:
 
-- **VM fork-per-run**: [design 013](../013-vm-fork.md), shipped as
+- **VM fork-per-run**: [design 013](013-vm-fork.md), shipped as
   `cove run -fork-from`.
 - **Control socket**: [design 002](002-cove-disks-oci.md) era,
   `~/.vz/vms/<name>/control.sock`, with screenshot, click, type, key,
@@ -291,10 +291,10 @@ operator pattern.
 
 ## Cross-references
 
-- [`docs/designs/035-openai-sandbox-run-config.md`](../035-openai-sandbox-run-config.md)
+- [`docs/designs/035-openai-sandbox-run-config.md`](035-openai-sandbox-run-config.md)
   for the cove `SandboxRunConfig` backend shape that mirrors the OpenAI
   adapter.
-- [`docs/examples/anthropic-computer-use.md`](../../examples/anthropic-computer-use.md)
+- [`docs/examples/anthropic-computer-use.md`](../examples/anthropic-computer-use.md)
   for the current substrate bridge that this design wraps.
-- [`docs/quickstart-agent-sandbox.md`](../../quickstart-agent-sandbox.md) for the
+- [`docs/quickstart-agent-sandbox.md`](../quickstart-agent-sandbox.md) for the
   unified agent-sandbox story across providers.

@@ -468,26 +468,6 @@ func TestTeardownGuestProxyRetainsRollbackStateOnFailure(t *testing.T) {
 	}
 }
 
-func TestPrintProxyRestoreFailureEphemeralSoftensRecovery(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ephemeralSentinel), nil, 0644); err != nil {
-		t.Fatalf("write sentinel: %v", err)
-	}
-	out := captureStdout(t, func() error {
-		printProxyRestoreFailure(dir, errors.New("unexpected EOF"))
-		return nil
-	})
-	for _, want := range []string{
-		"before ephemeral cleanup",
-		"manual recovery is usually unnecessary",
-		"state file:",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("output = %q, want %q", out, want)
-		}
-	}
-}
-
 func TestProxyStateRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	state := &proxyState{

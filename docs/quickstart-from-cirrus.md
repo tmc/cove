@@ -34,14 +34,11 @@ cove vzscript run cirrus-migrate-doctor
 Bake slow setup into a parent VM, then verify it before jobs use it:
 
 ```bash
-cove up -vm macos-runner -user ci
+cove up -vm macos-runner -user ci -password '<admin-password>'
 cove image build -from macos-runner -tag macos-runner:latest
 cove image verify --strict --newer-than 168h macos-runner:latest
 cove action prepare-image macos-runner:latest --ttl 24h
 ```
-
-For interactive image setup, let cove prompt for the guest password. Do not use
-a fixed password such as `cove/cove` in reusable runner images.
 
 ## 4. Run the job through the private action wrapper
 
@@ -58,12 +55,6 @@ guest agent, runs the command, records `~/.vz/runs/<run-id>/metrics.jsonl`, and
 tears the fork down.
 
 ## 5. Add the GitHub Actions job
-
-You can generate a starting workflow with:
-
-```bash
-cove runner workflow --image macos-runner:latest --script './ci/test.sh'
-```
 
 ```yaml
 jobs:

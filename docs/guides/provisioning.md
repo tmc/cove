@@ -13,12 +13,9 @@ The `provision` command writes files directly into the VM disk image.
 
 ```bash
 cove install -ipsw restore.ipsw
-cove provision -user testuser -skip-setup-assistant
+cove provision -user testuser -password secret -skip-setup-assistant
 cove run -gui
 ```
-
-Omit `-password` in an interactive terminal so cove prompts securely. Only pass
-a password non-interactively from a secret manager or short-lived CI variable.
 
 The disk apply step needs administrator privileges because macOS launchd
 silently ignores LaunchDaemon plists not owned by root:wheel. Cove requests
@@ -53,7 +50,7 @@ For CI or when building as non-root:
 
 ```bash
 # Phase 1: build binaries, generate scripts (no admin needed)
-cove provision -user testuser -stage-only
+cove provision -user testuser -password secret -stage-only
 
 # Phase 2: mount disk, copy files (native admin dialog)
 cove provision -apply
@@ -63,46 +60,38 @@ cove provision -apply
 
 ```bash
 # Full provisioning
-cove provision -user me -skip-setup-assistant
+cove provision -user me -password secret -skip-setup-assistant
 
 # With SSH key
-cove provision -user me -ssh-key ~/.ssh/id_rsa.pub
+cove provision -user me -password secret -ssh-key ~/.ssh/id_rsa.pub
 
 # Enable SSH daemon
-cove provision -user me -enable-sshd
+cove provision -user me -password secret -enable-sshd
 
 # Direct plist mode (advanced, bypasses sysadminctl)
-cove provision -user me -password <password> -plist -uid 501
+cove provision -user me -password secret -plist -uid 501
 
 # Disable auto-login
-cove provision -user me -no-auto-login
+cove provision -user me -password secret -no-auto-login
 
 # Disable recovery bootstrap
-cove provision -user me -no-bootstrap-recovery
+cove provision -user me -password secret -no-bootstrap-recovery
 ```
-
-The advanced plist path is shown with `-password` because it is commonly used
-from automation. Do not use fixed example credentials such as `cove/cove`; feed
-the value from a prompt, keychain lookup, or ephemeral CI secret.
 
 ### Method 2: GUI Automation
 
 Use the `up` command to combine install, provision, and Setup Assistant automation:
 
 ```bash
-cove up -user testuser -gui
+cove up -user testuser -password secret -gui
 ```
 
 Or drive Setup Assistant manually on a running VM:
 
 ```bash
 cove ctl detect                          # check current screen
-cove ctl setup-assist testuser <password>    # automate Setup Assistant
+cove ctl setup-assist testuser secret    # automate Setup Assistant
 ```
-
-`setup-assist` needs the password as an argument because it types into the guest
-UI. Use it only for local setup or automation that supplies the value from a
-secret source.
 
 If `setup-assist` loses the control socket, first check whether the VM stopped:
 

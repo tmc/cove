@@ -10,7 +10,6 @@ import (
 
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmstate"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
@@ -67,7 +66,7 @@ func testLinuxAgent(t *testing.T, vm *testVM) {
 func testLinuxCtl(t *testing.T, vm *testVM) {
 	t.Run("status", func(t *testing.T) {
 		status := statusResponse(t, vm)
-		if got := vmstate.Canonical(status.GetState()); got != "running" {
+		if got := canonicalVMState(status.GetState()); got != "running" {
 			t.Fatalf("status state: got %q, want %q", got, "running")
 		}
 	})

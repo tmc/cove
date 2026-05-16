@@ -48,29 +48,6 @@ func TestRunsListHelpExitsZero(t *testing.T) {
 	}
 }
 
-func TestRunsShowExportHelpExitsZero(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"show", []string{"show", "--help"}, "Usage: cove runs show"},
-		{"export", []string{"export", "--help"}, "Usage: cove runs export"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			out, err := captureStdoutResult(t, func() error {
-				return handleRunsCommand(tt.args)
-			})
-			if err != nil {
-				t.Fatalf("handleRunsCommand(%v): %v", tt.args, err)
-			}
-			if !strings.Contains(out, tt.want) {
-				t.Fatalf("help output = %q, want %q", out, tt.want)
-			}
-		})
-	}
-}
-
 func TestRunRunsListJSONModes(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -117,31 +94,6 @@ func TestRunRunsListLimitZeroReturnsEmpty(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != "[]" {
 		t.Fatalf("--limit 0 JSON = %q, want []", strings.TrimSpace(out))
-	}
-}
-
-func TestRunRunsListJSONMissingRootReturnsEmptyArray(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	out, err := captureStdoutResult(t, func() error {
-		return runRunsList([]string{"--json"})
-	})
-	if err != nil {
-		t.Fatalf("runRunsList --json missing root: %v", err)
-	}
-	if strings.TrimSpace(out) != "[]" {
-		t.Fatalf("missing root JSON = %q, want []", strings.TrimSpace(out))
-	}
-
-	out, err = captureStdoutResult(t, func() error {
-		return runRunsList([]string{"--ndjson"})
-	})
-	if err != nil {
-		t.Fatalf("runRunsList --ndjson missing root: %v", err)
-	}
-	if out != "" {
-		t.Fatalf("missing root NDJSON = %q, want empty output", out)
 	}
 }
 
