@@ -67,7 +67,7 @@ Commands:
   pause                 Pause VM
   resume                Resume paused VM
   stop                  Force stop VM
-  request-stop          Send ACPI power button (graceful shutdown)
+  request-stop          Send ACPI power button (guest may ignore it)
   reboot-to-recovery    Stop VM and start macOS Recovery
   network-info          Get VM network info (MAC address, guest IP, mode)
   gui status            Report whether the VM is currently headed or headless

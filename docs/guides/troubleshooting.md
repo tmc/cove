@@ -130,6 +130,10 @@ cove ctl request-stop
 cove run -no-resume
 ```
 
+`request-stop` sends an ACPI power button event; it does not guarantee that
+the guest will power off. If the VM stays running, use `cove ctl stop` before
+the cold boot.
+
 ### VM Refuses to Boot After Pull
 
 **Symptom:** `cove run <name>` errors with "incomplete disk" or similar; the VM directory contains `disk.img.partial`.
