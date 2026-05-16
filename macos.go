@@ -777,7 +777,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	// Create block device custom config
 	storageConfig := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&diskAttachment)
 	storageConfig.Retain()
-	setStorageDevices(config, storageConfig)
+	configx.SetStorageDevices(config, storageConfig)
 
 	if hc.Verbose {
 		for i, d := range displayConfigs {
@@ -794,7 +794,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		if macAddr.ID != 0 {
 			networkDeviceConfig.SetMACAddress(&macAddr)
 		}
-		setNetworkDevices(config, networkDeviceConfig)
+		configx.SetNetworkDevices(config, networkDeviceConfig)
 	}
 
 	// USB storage devices
@@ -816,7 +816,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	} else {
 		serialConfig := createSerialConsoleConfig()
 		if serialConfig.ID != 0 {
-			setSerialPorts(config, serialConfig)
+			configx.SetSerialPorts(config, serialConfig)
 			if hc.Verbose {
 				fmt.Println("  Serial console attached (output to stdout)")
 			}
@@ -1054,42 +1054,6 @@ func saveHardwareModel(model vz.VZMacHardwareModel, path string) error {
 		return fmt.Errorf("hardware model has no data representation")
 	}
 	return saveNSDataToFile(data.GetID(), path)
-}
-
-func setStorageDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioBlockDeviceConfiguration) {
-	configx.SetStorageDevices(config, device)
-}
-
-func setGraphicsDevices(config vz.VZVirtualMachineConfiguration, device vz.VZMacGraphicsDeviceConfiguration) {
-	configx.SetMacGraphicsDevices(config, device)
-}
-
-func setDisplays(config vz.VZMacGraphicsDeviceConfiguration, display vz.VZMacGraphicsDisplayConfiguration) {
-	configx.SetMacGraphicsDisplays(config, display)
-}
-
-func setNetworkDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioNetworkDeviceConfiguration) {
-	configx.SetNetworkDevices(config, device)
-}
-
-func setKeyboards(config vz.VZVirtualMachineConfiguration, device vz.IVZKeyboardConfiguration) {
-	configx.SetKeyboards(config, device)
-}
-
-func setPointingDevices(config vz.VZVirtualMachineConfiguration, devices []vz.IVZPointingDeviceConfiguration) {
-	configx.SetPointingDevices(config, devices)
-}
-
-func setEntropyDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioEntropyDeviceConfiguration) {
-	configx.SetEntropyDevices(config, device)
-}
-
-func setAudioDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioSoundDeviceConfiguration) {
-	configx.SetAudioDevices(config, device)
-}
-
-func setSerialPorts(config vz.VZVirtualMachineConfiguration, device vz.VZSerialPortConfiguration) {
-	configx.SetSerialPorts(config, device)
 }
 
 // createSharedFoldersDevice creates a VirtioFS device with a MultipleDirectoryShare

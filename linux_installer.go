@@ -30,6 +30,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	configx "github.com/tmc/apple/x/vzkit/config"
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -541,9 +542,9 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	graphicsConfig := vz.NewVZVirtioGraphicsDeviceConfiguration()
 	scanout := vz.NewVirtioGraphicsScanoutConfigurationWithWidthInPixelsHeightInPixels(defaultWindowWidth, defaultWindowHeight)
 	if scanout.ID != 0 {
-		setVirtioScanouts(graphicsConfig, scanout)
+		configx.SetVirtioScanouts(graphicsConfig, scanout)
 	}
-	setVirtioGraphicsDevices(config, graphicsConfig)
+	configx.SetVirtioGraphicsDevices(config, graphicsConfig)
 
 	// Network
 	natAttachment := vz.NewVZNATNetworkDeviceAttachment()
@@ -553,23 +554,23 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	if macAddr.ID != 0 {
 		networkConfig.SetMACAddress(&macAddr)
 	}
-	setNetworkDevices(config, networkConfig)
+	configx.SetNetworkDevices(config, networkConfig)
 
 	// Keyboard
 	keyboardConfig := vz.NewVZUSBKeyboardConfiguration()
-	setKeyboards(config, keyboardConfig)
+	configx.SetKeyboards(config, keyboardConfig)
 
 	// Pointing device
 	pointingConfig := vz.NewVZUSBScreenCoordinatePointingDeviceConfiguration()
-	setPointingDevices(config, []vz.IVZPointingDeviceConfiguration{pointingConfig})
+	configx.SetPointingDevices(config, []vz.IVZPointingDeviceConfiguration{pointingConfig})
 
 	// Entropy
 	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
-	setEntropyDevices(config, entropyConfig)
+	configx.SetEntropyDevices(config, entropyConfig)
 
 	// Audio (optional but nice to have)
 	audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
-	setAudioDevices(config, audioConfig)
+	configx.SetAudioDevices(config, audioConfig)
 
 	// USB controller (required for USB keyboard and USB mass storage devices)
 	usbController := vz.NewVZXHCIControllerConfiguration()
@@ -594,7 +595,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 				serialPort := vz.NewVZVirtioConsoleDeviceSerialPortConfiguration()
 				serialPort.SetAttachment(&serialAttachment.VZSerialPortAttachment)
 				if serialPort.ID != 0 {
-					setSerialPorts(config, vz.VZSerialPortConfigurationFromID(serialPort.ID))
+					configx.SetSerialPorts(config, vz.VZSerialPortConfigurationFromID(serialPort.ID))
 					if verbose {
 						fmt.Printf("  Serial console logging to %s\n", serialLogPath)
 					}

@@ -20,6 +20,7 @@ import (
 	"github.com/tmc/apple/symbols"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
+	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -1260,7 +1261,7 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	if err != nil {
 		return config, fmt.Errorf("graphics config: %w", err)
 	}
-	setGraphicsDevices(config, graphicsConfig)
+	configx.SetMacGraphicsDevices(config, graphicsConfig)
 
 	// Storage (disk)
 	diskPath := filepath.Join(vmDir, "disk.img")
@@ -1268,14 +1269,14 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	if err != nil {
 		return config, fmt.Errorf("block device config: %w", err)
 	}
-	setStorageDevices(config, blockConfig)
+	configx.SetStorageDevices(config, blockConfig)
 
 	// Network
 	networkConfig, err := createNetworkDeviceConfiguration()
 	if err != nil {
 		return config, fmt.Errorf("network config: %w", err)
 	}
-	setNetworkDevices(config, networkConfig)
+	configx.SetNetworkDevices(config, networkConfig)
 
 	// Pointing devices (USB + trackpad if available)
 	pointingDevices := []vz.IVZPointingDeviceConfiguration{
@@ -1285,23 +1286,23 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	if trackpad := vz.NewVZMacTrackpadConfiguration(); trackpad.GetID() != 0 {
 		pointingDevices = append(pointingDevices, trackpad)
 	}
-	setPointingDevices(config, pointingDevices)
+	configx.SetPointingDevices(config, pointingDevices)
 
 	// Keyboard (try Mac keyboard, fallback to USB)
 	keyboardConfig := createKeyboardConfiguration()
-	setKeyboards(config, keyboardConfig)
+	configx.SetKeyboards(config, keyboardConfig)
 
 	// Audio
 	audioConfig, err := createAudioDeviceConfiguration()
 	if err != nil {
 		fmt.Printf("warning: audio config: %v\n", err)
 	} else {
-		setAudioDevices(config, audioConfig)
+		configx.SetAudioDevices(config, audioConfig)
 	}
 
 	// Entropy
 	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
-	setEntropyDevices(config, entropyConfig)
+	configx.SetEntropyDevices(config, entropyConfig)
 
 	// Volume mounts (VirtioFS) - also configure during install for first-boot provisioning
 	effectiveVolumes := getEffectiveVolumes()
@@ -1392,7 +1393,7 @@ func createGraphicsDeviceConfiguration() (vz.VZMacGraphicsDeviceConfiguration, e
 		return graphicsConfig, fmt.Errorf("failed to create display config")
 	}
 
-	setDisplays(graphicsConfig, displayConfig)
+	configx.SetMacGraphicsDisplays(graphicsConfig, displayConfig)
 	return graphicsConfig, nil
 }
 

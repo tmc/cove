@@ -15,6 +15,7 @@ import (
 	"github.com/tmc/apple/objectivec"
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
+	configx "github.com/tmc/apple/x/vzkit/config"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
@@ -217,7 +218,7 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
-		setNetworkDevices(config, networkDeviceConfig)
+		configx.SetNetworkDevices(config, networkDeviceConfig)
 	}
 
 	serialConfig, err := createWindowsSerialConsoleConfig()
@@ -225,7 +226,7 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 		return config, err
 	}
 	if serialConfig.ID != 0 {
-		setSerialPorts(config, serialConfig)
+		configx.SetSerialPorts(config, serialConfig)
 		fmt.Println("  Serial console attached")
 	}
 
@@ -301,7 +302,7 @@ func setWindowsGraphicsDevices(config vz.VZVirtualMachineConfiguration) error {
 		if err != nil {
 			return fmt.Errorf("create virtio graphics config: %w", err)
 		}
-		setVirtioGraphicsDevices(config, graphicsConfig)
+		configx.SetVirtioGraphicsDevices(config, graphicsConfig)
 		fmt.Println("  Windows graphics: VirtIO")
 		return nil
 	default:
