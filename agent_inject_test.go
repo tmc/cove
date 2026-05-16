@@ -203,3 +203,22 @@ func TestAgentBuildTargetOS(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentBuildLDFlagsUseResolvedHostVersion(t *testing.T) {
+	oldVersion, oldCommit, oldDate := version, commit, date
+	version, commit, date = "dev", "abc12345", "2026-05-16T09:30:00Z"
+	t.Cleanup(func() {
+		version, commit, date = oldVersion, oldCommit, oldDate
+	})
+
+	got := agentBuildLDFlags()
+	for _, want := range []string{
+		"-X main.version=abc12345",
+		"-X main.commit=abc12345",
+		"-X main.date=2026-05-16T09:30:00Z",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("agentBuildLDFlags() = %q, missing %q", got, want)
+		}
+	}
+}
