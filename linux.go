@@ -32,12 +32,17 @@ import (
 // no live rc (the recovery / codec path) snapshot a fresh one from globals.
 func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
 	hc := vmrunHostConfig()
+	rc.DiskPath = diskImagePath
+	plan, err := linuxDevicePlan(rc, hc)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, err
+	}
 
 	config := vz.NewVZVirtualMachineConfiguration()
 
 	// CPU and memory
-	config.SetCPUCount(rc.CPUCount)
-	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
+	config.SetCPUCount(plan.CPUCount)
+	config.SetMemorySize(plan.MemoryGB * 1024 * 1024 * 1024)
 
 	// Platform configuration (generic for Linux)
 	fmt.Println("Setting up Linux platform configuration...")
@@ -125,16 +130,9 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 	// Default the framebuffer to the host window size (1024x768) so the
 	// guest renders 1:1 instead of being scaled from displayx.DefaultLinux's
 	// 1920x1080. Users who want higher resolution pass -display.
-	displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
-	for _, d := range rc.Displays {
+	displayConfigs := make([]displayx.Config, 0, len(plan.Display))
+	for _, d := range plan.Display {
 		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
-	}
-	if len(displayConfigs) == 0 {
-		displayConfigs = []displayx.Config{{
-			Width:  defaultWindowWidth,
-			Height: defaultWindowHeight,
-			PPI:    144,
-		}}
 	}
 	graphicsConfig, err := displayx.CreateVirtioGraphicsConfig(displayConfigs)
 	if err != nil {
@@ -143,7 +141,7 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 	setVirtioGraphicsDevices(config, graphicsConfig)
 
 	// Network configuration
-	netConfig, err := ParseNetworkMode(rc.NetworkMode)
+	netConfig, err := ParseNetworkMode(plan.Network.Mode)
 	if err != nil {
 		return config, fmt.Errorf("parse network mode: %w", err)
 	}
@@ -171,11 +169,9 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
 	setEntropyDevices(config, entropyConfig)
 
-	// Audio. Plan() gates whether the VirtioSound device is attached;
+	// Audio. The plan gates whether the VirtioSound device is attached;
 	// for Linux it is always enabled with output-only host streams.
-	// Plan errors fall back to attaching audio (prior behavior).
-	audioPlan, planErr := vmrun.Plan(rc, hc)
-	if planErr != nil || audioPlan.Audio.Enabled {
+	if plan.Audio.Enabled {
 		audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
 		setAudioDevices(config, audioConfig)
 	}
