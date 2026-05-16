@@ -642,7 +642,7 @@ func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
 	exe := "./cove"
 	vmFlag := target.vmHintFlag()
 	vmDirectory := target.effectiveVMDir()
-	if agentstate.DetectPlatform(vmDirectory) == agentstate.PlatformDarwin {
+	if agentstate.DetectPlatform(vmDirectory) == agentstate.PlatformMacOS {
 		fmt.Println("  To fix, stop the VM and re-provision:")
 		fmt.Println()
 		fmt.Printf("    %s%s provision -user <username> -skip-setup-assistant\n", exe, vmFlag)
