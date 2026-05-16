@@ -6,9 +6,21 @@ import (
 )
 
 func TestAlpineBuilderScript(t *testing.T) {
-	script := alpineBuilderScript("/mnt/src/cove/.tmp/alpine-builder", "https://example.test/alpine.tar.gz", true)
+	config := LinuxProvisionConfig{
+		Username:     "alpine",
+		Password:     "secret",
+		Hostname:     "alpine-vm",
+		SSHPubKey:    "ssh-ed25519 AAAA test@example",
+		InstallAgent: true,
+	}
+	script := alpineBuilderScript("/mnt/src/cove/.tmp/alpine-builder", "https://example.test/alpine.tar.gz", config)
 	for _, want := range []string{
-		"apk add openrc e2fsprogs e2fsprogs-extra dhcpcd openssh ca-certificates",
+		"apk add openrc e2fsprogs e2fsprogs-extra dhcpcd openssh sudo ca-certificates",
+		"adduser -D -s /bin/ash -G wheel 'alpine'",
+		"printf '%s:%s\\n' 'alpine' 'secret' | chpasswd",
+		"printf '%s\\n' '%wheel ALL=(ALL) ALL'",
+		"'sshd default'",
+		"ssh-ed25519 AAAA test@example",
 		"missing required tool: $tool",
 		"before hwdrivers machine-id",
 		"'dev sysinit'",
@@ -26,9 +38,13 @@ func TestAlpineBuilderScript(t *testing.T) {
 }
 
 func TestAlpineBuilderScriptWithoutAgent(t *testing.T) {
-	script := alpineBuilderScript("/mnt/src/cove/.tmp/alpine-builder", "https://example.test/alpine.tar.gz", false)
+	config := LinuxProvisionConfig{Username: "alpine", Password: "alpine", Hostname: "alpine-vm"}
+	script := alpineBuilderScript("/mnt/src/cove/.tmp/alpine-builder", "https://example.test/alpine.tar.gz", config)
 	if strings.Contains(script, "cp \"$WORK/vz-agent\"") {
 		t.Fatalf("script installs agent when installAgent=false:\n%s", script)
+	}
+	if strings.Contains(script, "authorized_keys") {
+		t.Fatalf("script installs ssh key when SSHPubKey is empty:\n%s", script)
 	}
 }
 

@@ -40,7 +40,7 @@ func installAlpineWithBuilderVM(diskPath string, config LinuxProvisionConfig) er
 	}
 
 	scriptPath := filepath.Join(hostWorkDir, "build-alpine.sh")
-	if err := os.WriteFile(scriptPath, []byte(alpineBuilderScript(guestWorkDir, alpineMinirootfsURL, config.InstallAgent)), 0755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(alpineBuilderScript(guestWorkDir, alpineMinirootfsURL, config)), 0755); err != nil {
 		return fmt.Errorf("write alpine builder script: %w", err)
 	}
 
@@ -92,11 +92,25 @@ func installAlpineWithBuilderVM(diskPath string, config LinuxProvisionConfig) er
 	return nil
 }
 
-func alpineBuilderScript(workDir, minirootfsURL string, installAgent bool) string {
+func alpineBuilderScript(workDir, minirootfsURL string, config LinuxProvisionConfig) string {
 	agentInstall := "true"
-	if installAgent {
+	if config.InstallAgent {
 		agentInstall = `cp "$WORK/vz-agent" "$ROOT/usr/local/bin/vz-agent"
 chmod 755 "$ROOT/usr/local/bin/vz-agent"`
+	}
+	sshKeyInstall := "true"
+	if strings.TrimSpace(config.SSHPubKey) != "" {
+		sshKeyInstall = fmt.Sprintf(`mkdir -p "$ROOT/home/%s/.ssh"
+printf '%%s\n' %s > "$ROOT/home/%s/.ssh/authorized_keys"
+chroot "$ROOT" chown -R %s:%s "/home/%s/.ssh"
+chmod 700 "$ROOT/home/%s/.ssh"
+chmod 600 "$ROOT/home/%s/.ssh/authorized_keys"`,
+			config.Username,
+			alpineShellQuote(strings.TrimSpace(config.SSHPubKey)),
+			config.Username,
+			config.Username, config.Username, config.Username,
+			config.Username,
+			config.Username)
 	}
 	return fmt.Sprintf(`#!/bin/sh
 set -eu
@@ -174,8 +188,8 @@ start() {
 EOS
 chmod 755 "$ROOT/etc/init.d/dev"
 ln -sf /etc/init.d/vz-agent "$ROOT/etc/runlevels/default/vz-agent"
-printf 'alpine-vm\n' > "$ROOT/etc/hostname"
-printf '127.0.0.1 localhost\n127.0.1.1 alpine-vm\n' > "$ROOT/etc/hosts"
+printf '%%s\n' %s > "$ROOT/etc/hostname"
+printf '127.0.0.1 localhost\n127.0.1.1 %%s\n' %s > "$ROOT/etc/hosts"
 cat > "$ROOT/etc/network/interfaces" <<'EOS'
 auto lo
 iface lo inet loopback
@@ -192,7 +206,11 @@ cat > "$ROOT/tmp/cove-finish.sh" <<'EOS'
 set -eu
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin
 apk update
-apk add openrc e2fsprogs e2fsprogs-extra dhcpcd openssh ca-certificates
+apk add openrc e2fsprogs e2fsprogs-extra dhcpcd openssh sudo ca-certificates
+adduser -D -s /bin/ash -G wheel %s
+printf '%%s:%%s\n' %s %s | chpasswd
+printf '%%s\n' '%%wheel ALL=(ALL) ALL' > /etc/sudoers.d/wheel
+chmod 440 /etc/sudoers.d/wheel
 for spec in \
 	'devfs sysinit' \
 	'dev sysinit' \
@@ -202,6 +220,7 @@ for spec in \
 	'bootmisc boot' \
 	'sysctl boot' \
 	'networking boot' \
+	'sshd default' \
 	'local default' \
 	'vz-agent default'
 do
@@ -213,11 +232,23 @@ EOS
 chmod 755 "$ROOT/tmp/cove-finish.sh"
 chroot "$ROOT" /bin/sh /tmp/cove-finish.sh
 rm -f "$ROOT/tmp/cove-finish.sh"
+%s
 sync
 blkid -s UUID -o value "${loop}p1" > "$WORK/%s"
 printf '/dev/vda1\n' > "$WORK/%s"
 gzip -dc /boot/vmlinuz-$(uname -r) > "$WORK/vmlinuz"
-`, alpineShellQuote(workDir), alpineShellQuote(minirootfsURL), agentInstall, linuxRootUUIDFileName, linuxRootDeviceFileName)
+`,
+		alpineShellQuote(workDir),
+		alpineShellQuote(minirootfsURL),
+		agentInstall,
+		alpineShellQuote(config.Hostname),
+		alpineShellQuote(config.Hostname),
+		alpineShellQuote(config.Username),
+		alpineShellQuote(config.Username),
+		alpineShellQuote(config.Password),
+		sshKeyInstall,
+		linuxRootUUIDFileName,
+		linuxRootDeviceFileName)
 }
 
 func alpineShellQuote(s string) string {
