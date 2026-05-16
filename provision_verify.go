@@ -56,9 +56,13 @@ func handleVerify(args []string) error {
 
 	// Check if VM is running.
 	target := currentVMSelection()
-	if *vmFlag != "" {
+	if *vmFlag != "" || vmName != "" {
+		name := vmName
+		if *vmFlag != "" {
+			name = *vmFlag
+		}
 		var err error
-		target, err = requireExistingVMSelection("verify", *vmFlag)
+		target, err = requireExistingVMSelection("verify", name)
 		if err != nil {
 			return err
 		}
@@ -222,6 +226,7 @@ func verifyRunningForVM(target vmSelection, sock string, verbose bool, tccProbeP
 				fmt.Printf("  + %s: %s\n", probe.desc, probe.ok)
 			} else {
 				fmt.Printf("  - %s: %s\n", probe.desc, probe.missing)
+				allOK = false
 			}
 		}
 
@@ -291,7 +296,7 @@ func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
 			},
 			{
 				desc:    "vz-agent process",
-				args:    []string{"pgrep", "-x", "vz-agent"},
+				args:    []string{"pgrep", "-f", "/usr/local/bin/vz-agent"},
 				ok:      "running",
 				missing: "not running",
 			},

@@ -58,3 +58,31 @@ func TestHandleVerifyRejectsPathLikeVMName(t *testing.T) {
 		t.Fatalf("err = %q, want invalid VM name", err.Error())
 	}
 }
+
+func TestHandleVerifyUsesGlobalVMName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+
+	name := "linux-global-verify"
+	dir := filepath.Join(home, ".vz", "vms", name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vmName = name
+	vmDir = filepath.Join(home, ".vz", "vms", "default")
+
+	err := handleVerify(nil)
+	if err == nil {
+		t.Fatal("handleVerify with stopped linux VM: want stopped verification error")
+	}
+	if !strings.Contains(err.Error(), filepath.Join(home, ".vz", "vms", name, "linux-disk.img")) {
+		t.Fatalf("err = %q, want global VM linux disk path", err.Error())
+	}
+}
