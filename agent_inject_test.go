@@ -87,6 +87,32 @@ func TestGuestAgentUpgradeInstallScriptUsesRename(t *testing.T) {
 	}
 }
 
+func TestLinuxAgentRestartCommandSupportsOpenRC(t *testing.T) {
+	args := linuxAgentRestartCommand()
+	if len(args) != 3 || args[0] != "sh" || args[1] != "-lc" {
+		t.Fatalf("linuxAgentRestartCommand() = %#v, want sh -lc script", args)
+	}
+	for _, want := range []string{
+		"systemctl restart vz-agent",
+		"rc-service vz-agent stop",
+		"rc-service vz-agent start",
+		"pkill -KILL -x vz-agent",
+		"/usr/local/bin/vz-agent -mode daemon",
+	} {
+		if !strings.Contains(args[2], want) {
+			t.Fatalf("restart script missing %q:\n%s", want, args[2])
+		}
+	}
+}
+
+func TestIsLinuxGuestOSIncludesAlpine(t *testing.T) {
+	for _, osVersion := range []string{"Alpine Linux v3.23", "alpine", "Ubuntu 24.04"} {
+		if !isLinuxGuestOS(osVersion) {
+			t.Fatalf("isLinuxGuestOS(%q) = false, want true", osVersion)
+		}
+	}
+}
+
 func TestAgentUpgradeReconnectBudget(t *testing.T) {
 	if agentUpgradeReconnectInitialDelay != 5*time.Second {
 		t.Fatalf("agentUpgradeReconnectInitialDelay = %s, want 5s", agentUpgradeReconnectInitialDelay)

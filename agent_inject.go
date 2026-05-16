@@ -741,7 +741,7 @@ func upgradeAgentAt(sock string) error {
 			Type: "agent-exec",
 			Command: &controlpb.ControlRequest_AgentExec{
 				AgentExec: &controlpb.AgentExecCommand{
-					Args: []string{"systemctl", "restart", "vz-agent"},
+					Args: linuxAgentRestartCommand(),
 				},
 			},
 		}
@@ -840,9 +840,31 @@ func guestAgentUpgradeInstallScript(tmpPath, destPath string) string {
 	}, "\n")
 }
 
+func linuxAgentRestartCommand() []string {
+	return []string{"sh", "-lc", `cat >/tmp/cove-restart-vz-agent.sh <<'EOF'
+#!/bin/sh
+set -u
+sleep 1
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files vz-agent.service >/dev/null 2>&1; then
+	exec systemctl restart vz-agent
+fi
+if command -v rc-service >/dev/null 2>&1 && test -x /etc/init.d/vz-agent; then
+	rc-service vz-agent stop || pkill -KILL -x vz-agent || true
+	rc-service vz-agent zap >/dev/null 2>&1 || true
+	exec rc-service vz-agent start
+fi
+pkill -KILL -x vz-agent || true
+exec /usr/local/bin/vz-agent -mode daemon >/var/log/vz-agent.log 2>&1
+EOF
+chmod 755 /tmp/cove-restart-vz-agent.sh
+nohup /tmp/cove-restart-vz-agent.sh >/tmp/cove-restart-vz-agent.log 2>&1 &
+`}
+}
+
 func isLinuxGuestOS(osVersion string) bool {
 	osVersion = strings.ToLower(osVersion)
 	return strings.Contains(osVersion, "linux") ||
+		strings.Contains(osVersion, "alpine") ||
 		strings.Contains(osVersion, "ubuntu") ||
 		strings.Contains(osVersion, "debian") ||
 		strings.Contains(osVersion, "fedora")

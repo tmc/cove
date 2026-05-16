@@ -262,14 +262,20 @@ func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
 				missing: "not found (/usr/local/bin/vz-agent)",
 			},
 			{
-				desc:    "Agent systemd unit",
-				args:    []string{"test", "-f", "/etc/systemd/system/vz-agent.service"},
+				desc: "Agent service",
+				args: []string{"sh", "-lc", strings.Join([]string{
+					"test -f /etc/systemd/system/vz-agent.service",
+					"test -x /etc/init.d/vz-agent",
+				}, " || ")},
 				ok:      "present",
-				missing: "not found (/etc/systemd/system/vz-agent.service)",
+				missing: "not found (/etc/systemd/system/vz-agent.service or /etc/init.d/vz-agent)",
 			},
 			{
-				desc:    "Agent systemd service",
-				args:    []string{"systemctl", "is-active", "vz-agent"},
+				desc: "Agent service status",
+				args: []string{"sh", "-lc", strings.Join([]string{
+					"command -v systemctl >/dev/null 2>&1 && systemctl is-active vz-agent",
+					"command -v rc-service >/dev/null 2>&1 && rc-service vz-agent status",
+				}, " || ")},
 				ok:      "active",
 				missing: "not active",
 			},
