@@ -19,6 +19,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/clipboard"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
 )
@@ -556,19 +557,17 @@ func createLinuxRootStorageDevice(path string, readOnly bool) (vz.VZStorageDevic
 
 func createLinuxStorageDeviceWithAttachment(attachment vz.VZStorageDeviceAttachment) (vz.VZStorageDeviceConfiguration, error) {
 	if linuxNVMe {
-		device := vz.NewNVMExpressControllerDeviceConfigurationWithAttachment(attachment)
-		if device.ID == 0 {
-			return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create NVMe storage device")
+		device, err := storagex.CreateNVMeDeviceWithAttachment(attachment)
+		if err != nil {
+			return vz.VZStorageDeviceConfiguration{}, err
 		}
-		device.Retain()
 		return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 	}
 
-	device := vz.NewVirtioBlockDeviceConfigurationWithAttachment(&attachment)
-	if device.ID == 0 {
-		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create virtio block storage device")
+	device, err := storagex.CreateBlockDeviceWithAttachment(attachment)
+	if err != nil {
+		return vz.VZStorageDeviceConfiguration{}, err
 	}
-	device.Retain()
 	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 }
 

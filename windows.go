@@ -16,6 +16,7 @@ import (
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
 	winsetup "github.com/tmc/vz-macos/internal/windows"
@@ -325,11 +326,10 @@ func windowsNVMeStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceCon
 	if err != nil {
 		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create disk attachment: %w", err)
 	}
-	device := vz.NewNVMExpressControllerDeviceConfigurationWithAttachment(attachment)
-	if device.ID == 0 {
-		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create NVMe storage device")
+	device, err := storagex.CreateNVMeDeviceWithAttachment(attachment)
+	if err != nil {
+		return vz.VZStorageDeviceConfiguration{}, err
 	}
-	device.Retain()
 	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 }
 
@@ -350,11 +350,10 @@ func windowsUSBStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConf
 	}
 	attachment.Retain()
 
-	device := vz.NewUSBMassStorageDeviceConfigurationWithAttachment(&attachment.VZStorageDeviceAttachment)
-	if device.ID == 0 {
-		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create USB storage device")
+	device, err := storagex.CreateUSBMassStorageDeviceWithAttachment(attachment.VZStorageDeviceAttachment)
+	if err != nil {
+		return vz.VZStorageDeviceConfiguration{}, err
 	}
-	device.Retain()
 	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 }
 
