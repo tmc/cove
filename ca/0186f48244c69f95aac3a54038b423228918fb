@@ -1,0 +1,16 @@
+codex note
+commit: ca0186f48244c69f95aac3a54038b423228918fb
+date: 2026-05-16T09:56:35Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 24605
+ITERM_SESSION_ID: w0t0p5:8DDE1177-B78F-409A-98C8-3C7CA9FAFDA7
+
+Validation:
+- go test ./... passed.
+- rebuilt and signed ./cove with internal/autosign/vz.entitlements before runtime validation.
+- macOS disposable fork codex-prodready-deletewait-025125: ctl stop followed immediately by vm delete succeeded and removed the VM directory.
+- macOS disposable fork codex-prodready-deletebusy-025142: vm delete refused a truly running VM after 3s, then force stop/delete cleaned it.
+- Linux disposable fork codex-prodready-linuxdelete-025445: delete refused while still running after request-stop; force stop/delete cleaned it.
+- report uploaded to NotebookLM sources 3afa60e2-6606-469d-982a-81ac2d38271d and fb799d17-dd2a-49a1-afcc-6c834ca6b0f3; NotebookLM said ready after follow-up validation.
