@@ -196,7 +196,7 @@ func init() {
 	flag.BoolVar(&windowsMode, "windows", false, "run a Windows ARM64 VM instead of macOS (experimental)")
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.BoolVar(&nixosMode, "nixos", false, "install or run a NixOS Linux VM")
-	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine, nixos")
+	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine (experimental), nixos")
 	flag.BoolVar(&linuxNested, "nested", false, "enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	flag.BoolVar(&linuxNVMe, "nvme", false, "attach Linux root disk through NVMe instead of virtio-blk")
 	flag.StringVar(&linuxDesktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
@@ -917,7 +917,7 @@ Linux VM:
 	  cove install -linux                                    # Ubuntu Server (default)
 	  cove install -linux -distro debian                     # Debian
 	  cove install -linux -distro fedora                     # Fedora
-	  cove install -linux -distro alpine                     # Alpine
+	  cove install -linux -distro alpine                     # Alpine (experimental)
 	  cove run -linux -nested                                # KVM on supported hosts
 	  cove install -linux -desktop                           # Ubuntu Desktop
   cove install -linux -iso /path/to/ubuntu.iso           # Use local ISO
