@@ -3,6 +3,7 @@ package action
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -249,6 +250,42 @@ func TestRunPrepareCommandRegistryRef(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "registry image refs are not supported") {
 		t.Fatalf("stdout = %q, want registry unsupported report", stdout.String())
+	}
+}
+
+func TestRunPrepareCommandJSONArgumentError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := RunPrepareCommand(context.Background(), []string{"--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("RunPrepareCommand code = %d, want 1", code)
+	}
+	var got Report
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if got.OK || got.Status != StatusFail || len(got.Checks) != 1 || got.Checks[0].Name != "arguments" {
+		t.Fatalf("report = %#v", got)
+	}
+	if !strings.Contains(got.Checks[0].Message, "usage: cove action prepare-image") {
+		t.Fatalf("message = %q, want usage", got.Checks[0].Message)
+	}
+}
+
+func TestRunDoctorCommandJSONArgumentError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := RunDoctorCommand(context.Background(), []string{"--json", "extra"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("RunDoctorCommand code = %d, want 1", code)
+	}
+	var got Report
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if got.OK || got.Status != StatusFail || len(got.Checks) != 1 || got.Checks[0].Name != "arguments" {
+		t.Fatalf("report = %#v", got)
+	}
+	if !strings.Contains(got.Checks[0].Message, "usage: cove action doctor") {
+		t.Fatalf("message = %q, want usage", got.Checks[0].Message)
 	}
 }
 

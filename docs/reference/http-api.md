@@ -21,14 +21,12 @@ By default the master token lives in the macOS keychain (service `com.tmc.cove.g
 
 If the keychain is unavailable (headless login, no GUI session, Security.framework dlopen fails), cove falls back to `~/.vz/gateway.token` (mode 0600) and prints one line to stderr noting the fallback.
 
-Retrieve it for scripting:
+For scripting, read the token from Keychain or the fallback file through your
+secret manager, then pass it as a Bearer token. Avoid pasting token values into
+logs, docs, or shell history.
 
 ```bash
-TOKEN=$(security find-generic-password -s com.tmc.cove.gateway -a master-token -w)
-# or from the file fallback:
-TOKEN=$(cat ~/.vz/gateway.token)
-
-curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7777/v1/vms
+curl -H "Authorization: Bearer <gateway-token>" http://127.0.0.1:7777/v1/vms
 ```
 
 File-backed token (for CI where the login keychain isn't unlocked):
@@ -58,7 +56,7 @@ GET    /v1/vms                               # list known/allowed VMs
 GET    /v1/vms/:name/status                  # state + capabilities
 POST   /v1/vms/:name/pause
 POST   /v1/vms/:name/resume
-POST   /v1/vms/:name/request-stop            # no body; graceful ACPI power button
+POST   /v1/vms/:name/request-stop            # no body; ACPI power button event
 POST   /v1/vms/:name/stop                    # no body; force stop
 GET    /v1/vms/:name/screenshot              # image/png
 POST   /v1/vms/:name/type                    # body: {"text": "..."}
@@ -123,12 +121,16 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:7777/v1/vms/default/resume
 ```
 
-### Example: graceful shutdown
+### Example: request guest shutdown
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:7777/v1/vms/default/request-stop
 ```
+
+This sends the ACPI power button event. Some guests, including macOS guests
+that are not logged in or are not ready to shut down, may keep running; use
+`cove ctl -vm default stop` if a bounded workflow needs a force stop.
 
 ### Example: send input
 

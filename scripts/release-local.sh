@@ -14,7 +14,7 @@
 #     gh release create v<version> dist/cove_<version>_darwin_arm64.tar.gz \
 #       dist/cove-<version>.dmg dist/checksums.txt
 #
-# and bump the Homebrew cask manually in tmc/homebrew-tap.
+# and bump the Homebrew formula manually in tmc/homebrew-tap.
 
 set -euo pipefail
 
@@ -174,6 +174,6 @@ Next steps:
       dist/vz-agent_${VERSION}_darwin_arm64.tar.gz \\
       dist/vz-agent_${VERSION}_linux_arm64.tar.gz
 
-Then bump the Homebrew cask manually in tmc/homebrew-tap (no auto-PR
+Then bump the Homebrew formula manually in tmc/homebrew-tap (no auto-PR
 from CI any more — see docs/release-pipeline.md).
 EOF

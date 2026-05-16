@@ -14,7 +14,7 @@ func requireExistingVMForControl(name string) (string, error) {
 	}
 	dir, ok := vmconfig.ExistingPath(name)
 	if !ok || !vmconfig.Validate(dir) {
-		return "", fmt.Errorf("no VM named %q under %s", name, vmconfig.BaseDir())
+		return "", fmt.Errorf("no VM named %q under %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", name, vmconfig.BaseDir())
 	}
 	return dir, nil
 }

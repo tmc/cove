@@ -32,7 +32,7 @@ export TS_TAGS=tag:cove-vm
 `cove up` installs macOS, provisions the user, boots the VM, and runs the requested vzscripts. Pass `homebrew,tailscale` so the recipe's `homebrew` dependency is built first:
 
 ```bash
-cove up -user me -password 'changeme' -vzscripts homebrew,tailscale
+cove up -user me -vzscripts homebrew,tailscale
 ```
 
 The first run takes the usual macOS install time (~5 minutes) plus a homebrew install. Subsequent runs against the same VM are fast: `tailscale` is idempotent and skips re-`up` if `BackendState` is already `Running`.
@@ -83,5 +83,5 @@ The Tailscale node will appear offline in the admin console within a few minutes
 ## See also
 
 - [macOS CI Runner](ci-runner.md) -- pair a tailnet-joined VM with snapshot rollback for a long-lived headless runner reachable by hostname.
-- [`vzscripts/tailscale.vzscript`](https://github.com/tmc/vz-macos/blob/main/vzscripts/tailscale.vzscript) -- the recipe driving this guide.
+- [`vzscripts/tailscale.vzscript`](../../vzscripts/tailscale.vzscript) -- the recipe driving this guide.
 - [`tailscale up` flag reference](https://tailscale.com/kb/1080/cli) -- full set of CLI options if you want to fork the recipe.

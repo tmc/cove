@@ -36,9 +36,9 @@ python3 adapters/google-bridge/computer_use.py \
   --task "Open Safari, search for 'cove vm', and read the first result."
 ```
 
-The script auto-resolves the control socket at
-`~/.vz/vms/macos-eval/control.sock` and the auth token at
-`~/.vz/vms/macos-eval/control.token`. Use `--token` to override.
+The script auto-resolves the VM's local control socket and per-VM auth token.
+Use `--token "$COVE_CONTROL_TOKEN"` to override from a secret manager or
+redacted environment variable.
 
 ## How it works
 

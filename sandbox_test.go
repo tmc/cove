@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -22,6 +23,8 @@ func TestParseSandboxLevel(t *testing.T) {
 		{name: "empty", input: "", want: SandboxLevelUnset},
 		{name: "minimal", input: "minimal", want: SandboxLevelMinimal},
 		{name: "strict", input: "strict", want: SandboxLevelStrict},
+		{name: "host containment", input: "host-containment", want: SandboxLevelHostContainment},
+		{name: "containment alias", input: "containment", want: SandboxLevelHostContainment},
 		{name: "none alias", input: "none", want: SandboxLevelUnset},
 		{name: "invalid", input: "hard", wantErr: true},
 	}
@@ -145,6 +148,20 @@ func TestSandboxPolicyEffectiveBehavior(t *testing.T) {
 			wantUpgrade:   false,
 			wantProvision: false,
 		},
+		{
+			name:          "host containment fails closed",
+			policy:        SandboxPolicy{Level: SandboxLevelHostContainment},
+			requestedNet:  "nat",
+			explicitNet:   true,
+			wantNetErr:    true,
+			wantVolumes:   0,
+			wantFolders:   0,
+			wantVsock:     false,
+			wantRosetta:   false,
+			wantProxy:     false,
+			wantUpgrade:   false,
+			wantProvision: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -195,6 +212,7 @@ func TestSandboxPolicyEffectiveReturnsFalseWhenNotRequested(t *testing.T) {
 		{},
 		{Level: SandboxLevelMinimal},
 		{Level: SandboxLevelStrict},
+		{Level: SandboxLevelHostContainment},
 	}
 	for _, p := range policies {
 		if got := p.EffectiveVsock(false); got {
@@ -332,6 +350,7 @@ func TestSandboxPolicyStrict(t *testing.T) {
 		{SandboxLevelUnset, false},
 		{SandboxLevelMinimal, false},
 		{SandboxLevelStrict, true},
+		{SandboxLevelHostContainment, true},
 	}
 	for _, tc := range cases {
 		if got := (SandboxPolicy{Level: tc.level}).Strict(); got != tc.want {
@@ -342,25 +361,29 @@ func TestSandboxPolicyStrict(t *testing.T) {
 
 func TestSandboxLevelHelpers(t *testing.T) {
 	oldLevel := sandboxLevel
+	oldHostContainment := hostContainment
 	oldUpgrade := autoUpgradeAgent
 	t.Cleanup(func() {
 		sandboxLevel = oldLevel
+		hostContainment = oldHostContainment
 		autoUpgradeAgent = oldUpgrade
 	})
 
 	cases := []struct {
-		level             string
-		wantActive        bool
-		wantStrict        bool
-		wantAgentProv     bool
-		wantAgentUpgrade  bool
-		upgradeFlag       bool
+		level            string
+		wantActive       bool
+		wantStrict       bool
+		wantAgentProv    bool
+		wantAgentUpgrade bool
+		upgradeFlag      bool
 	}{
 		{level: "", wantActive: false, wantStrict: false, wantAgentProv: true, wantAgentUpgrade: true, upgradeFlag: true},
 		{level: "minimal", wantActive: true, wantStrict: false, wantAgentProv: false, wantAgentUpgrade: false, upgradeFlag: true},
 		{level: "strict", wantActive: true, wantStrict: true, wantAgentProv: false, wantAgentUpgrade: false, upgradeFlag: true},
+		{level: "host-containment", wantActive: true, wantStrict: true, wantAgentProv: false, wantAgentUpgrade: false, upgradeFlag: true},
 	}
 	for _, tc := range cases {
+		hostContainment = false
 		sandboxLevel = tc.level
 		autoUpgradeAgent = tc.upgradeFlag
 		if got := sandboxActive(); got != tc.wantActive {
@@ -375,6 +398,12 @@ func TestSandboxLevelHelpers(t *testing.T) {
 		if got := sandboxAllowsAgentUpgrade(); got != tc.wantAgentUpgrade {
 			t.Fatalf("sandboxAllowsAgentUpgrade(%q) = %v, want %v", tc.level, got, tc.wantAgentUpgrade)
 		}
+	}
+
+	sandboxLevel = ""
+	hostContainment = true
+	if got := effectiveSandboxMode(); got != "host-containment" {
+		t.Fatalf("effectiveSandboxMode() with -host-containment = %q, want host-containment", got)
 	}
 }
 
@@ -398,5 +427,53 @@ func TestSharedFolderCommandBlocked(t *testing.T) {
 	}
 	if !sharedFolderCommandBlocked([]string{"add", "/foo"}) {
 		t.Fatalf("sharedFolderCommandBlocked(add) under sandbox: want true")
+	}
+}
+
+func TestHostContainmentRejectsHostEscapeFeatures(t *testing.T) {
+	oldLevel := sandboxLevel
+	oldHostContainment := hostContainment
+	oldNetwork := networkMode
+	oldVNC := vncAddress
+	oldBonjour := vncBonjourService
+	oldGDB := gdbAddress
+	oldHTTP := runHTTPAddr
+	oldForwards := startupPortForwards
+	t.Cleanup(func() {
+		sandboxLevel = oldLevel
+		hostContainment = oldHostContainment
+		networkMode = oldNetwork
+		vncAddress = oldVNC
+		vncBonjourService = oldBonjour
+		gdbAddress = oldGDB
+		runHTTPAddr = oldHTTP
+		startupPortForwards = oldForwards
+	})
+
+	tests := []struct {
+		name, want string
+		setup      func()
+	}{
+		{"port forward", "-port-forward", func() { startupPortForwards = portForwardSpecs{{HostPort: 8080, GuestPort: 80}} }},
+		{"vnc", "-vnc", func() { vncAddress = ":5901" }},
+		{"debug", "-gdb", func() { gdbAddress = ":1234" }},
+		{"http", "-http", func() { runHTTPAddr = ":7777" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sandboxLevel = ""
+			hostContainment = true
+			networkMode = "none"
+			vncAddress = ""
+			vncBonjourService = ""
+			gdbAddress = ""
+			runHTTPAddr = ""
+			startupPortForwards = nil
+			tt.setup()
+			err := applySandboxDefaults()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("applySandboxDefaults() error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

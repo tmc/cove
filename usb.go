@@ -9,6 +9,7 @@ import (
 
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 )
 
 // USBStorageConfig represents a USB storage device configuration
@@ -73,10 +74,9 @@ func CreateUSBStorageDevice(config USBStorageConfig) (vz.VZUSBMassStorageDeviceC
 	}
 	attachment.Retain()
 
-	// Create USB mass storage configuration
-	usbConfig := vz.NewUSBMassStorageDeviceConfigurationWithAttachment(&attachment.VZStorageDeviceAttachment)
-	if usbConfig.ID == 0 {
-		return usbConfig, fmt.Errorf("failed to create USB mass storage configuration")
+	usbConfig, err := storagex.CreateUSBMassStorageDeviceWithAttachment(attachment.VZStorageDeviceAttachment)
+	if err != nil {
+		return usbConfig, err
 	}
 
 	// Set UUID if provided (for snapshot restore tracking)
@@ -102,16 +102,7 @@ func AddUSBStorageToConfig(config vz.VZVirtualMachineConfiguration, usbConfigs [
 		return nil
 	}
 
-	// Get existing storage devices
-	existingStorage := config.StorageDevices()
-
-	// Create new list with existing + USB devices
-	storageDevices := make([]vz.VZStorageDeviceConfiguration, 0, len(existingStorage)+len(usbConfigs))
-	for _, dev := range existingStorage {
-		storageDevices = append(storageDevices, vz.VZStorageDeviceConfigurationFromID(dev.GetID()))
-	}
-
-	// Add USB devices
+	storageDevices := make([]vz.VZStorageDeviceConfiguration, 0, len(usbConfigs))
 	for i, usbConf := range usbConfigs {
 		usbDevice, err := CreateUSBStorageDevice(usbConf)
 		if err != nil {
@@ -120,24 +111,9 @@ func AddUSBStorageToConfig(config vz.VZVirtualMachineConfiguration, usbConfigs [
 		storageDevices = append(storageDevices, vz.VZStorageDeviceConfigurationFromID(usbDevice.ID))
 	}
 
-	config.SetStorageDevices(storageDevices)
+	storagex.AppendStorageDevices(config, storageDevices...)
 	fmt.Printf("  Added %d USB storage device(s) to VM configuration\n", len(usbConfigs))
 	return nil
-}
-
-// EnsureUSBController adds a default XHCI controller when none is configured.
-// Runtime USB attach and detach operations rely on a live controller object.
-func EnsureUSBController(config vz.VZVirtualMachineConfiguration) {
-	if len(config.UsbControllers()) > 0 {
-		return
-	}
-	controller := vz.NewVZXHCIControllerConfiguration()
-	if controller.ID == 0 {
-		return
-	}
-	config.SetUsbControllers([]vz.VZUSBControllerConfiguration{
-		vz.VZUSBControllerConfigurationFromID(controller.ID),
-	})
 }
 
 // Use truncate to create a sparse file

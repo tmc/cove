@@ -46,8 +46,8 @@ hit.
 
 ## How it works
 
-1. The helper opens `~/.vz/vms/<vm>/control.sock` and reads
-   `control.token` from the same directory.
+1. The helper opens the VM's local control socket and reads the per-VM auth
+   token through cove's normal credential path.
 2. On each iteration it POSTs to `https://api.anthropic.com/v1/messages`
    with the `anthropic-beta: computer-use-2025-11-24` header and a
    `computer_20250124` tool entry sized to the VM's last reported

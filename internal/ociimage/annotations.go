@@ -203,24 +203,3 @@ func missingAnnotationError(key string) error {
 	}
 	return fmt.Errorf("missing annotation %s", key)
 }
-
-// NormalizeAnnotationKeys returns a copy with legacy Lume keys rewritten to
-// cove keys. If both are present, the cove key wins.
-func NormalizeAnnotationKeys(in map[string]string) map[string]string {
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		if coveKey, ok := lumeToCove[k]; ok {
-			if _, exists := out[coveKey]; !exists {
-				out[coveKey] = v
-			}
-			continue
-		}
-		out[k] = v
-	}
-	for k, v := range in {
-		if _, ok := coveToLume[k]; ok {
-			out[k] = v
-		}
-	}
-	return out
-}

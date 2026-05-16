@@ -1,13 +1,15 @@
-package main
+// Package vmstate normalizes Virtualization.framework VM state labels.
+package vmstate
 
 import (
+	"fmt"
 	"strings"
 
 	vz "github.com/tmc/apple/virtualization"
 )
 
-// vmStateLabel maps virtualization state enums to stable lowercase labels.
-func vmStateLabel(state vz.VZVirtualMachineState) string {
+// Label maps virtualization state enums to stable lowercase labels.
+func Label(state vz.VZVirtualMachineState) string {
 	switch state {
 	case vz.VZVirtualMachineStateRunning:
 		return "running"
@@ -30,13 +32,12 @@ func vmStateLabel(state vz.VZVirtualMachineState) string {
 	case vz.VZVirtualMachineStateStopped:
 		return "stopped"
 	default:
-		return strings.ToLower(strings.TrimSpace(state.String()))
+		return fmt.Sprintf("state(%d)", int(state))
 	}
 }
 
-// canonicalVMState normalizes state strings from status responses into labels
-// like "running", regardless of whether the source uses enum names.
-func canonicalVMState(state string) string {
+// Canonical normalizes status response strings into stable lowercase labels.
+func Canonical(state string) string {
 	s := strings.ToLower(strings.TrimSpace(state))
 	s = strings.TrimPrefix(s, "vzvirtualmachinestate")
 	return strings.TrimSpace(s)

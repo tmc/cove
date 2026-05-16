@@ -34,9 +34,12 @@ The task asks Cirrus for a macOS VM, prepares dependencies, and runs one
 ## Step 1: create the runner VM
 
 ```bash
-cove up -vm macos-runner -user ci -password '<admin-password>'
+cove up -vm macos-runner -user ci
 cove ctl -vm macos-runner agent-exec -- /bin/bash -lc 'xcodebuild -version'
 ```
+
+Omit `-password` so cove prompts and the guest password stays out of shell
+history. Do not use a shared default password in a runner image.
 
 Expected output from the second command:
 

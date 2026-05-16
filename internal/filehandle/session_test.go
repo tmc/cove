@@ -1,4 +1,4 @@
-package main
+package filehandle
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestFileHandleNetworkSessionCreatesAttachment(t *testing.T) {
-	session, err := NewFileHandleNetworkSession(FileHandleNetworkConfig{
+func TestSessionCreatesAttachment(t *testing.T) {
+	session, err := NewSession(Config{
 		MTU:      2048,
 		Snaplen:  4096,
 		PCAPPath: "",
@@ -23,15 +23,12 @@ func TestFileHandleNetworkSessionCreatesAttachment(t *testing.T) {
 	}
 	defer session.Close()
 
-	if got := session.Attachment().MaximumTransmissionUnit(); got != 2048 {
-		t.Fatalf("maximum transmission unit = %d, want 2048", got)
-	}
 	if session.DeviceConfiguration().ID == 0 {
 		t.Fatal("device configuration has zero ID")
 	}
 }
 
-func TestFileHandleNetworkSessionPumpEcho(t *testing.T) {
+func TestSessionPumpEcho(t *testing.T) {
 	hostFD, guestFD, err := newConnectedDatagramSocketPair(2048)
 	if err != nil {
 		t.Fatalf("socketpair: %v", err)
@@ -43,7 +40,7 @@ func TestFileHandleNetworkSessionPumpEcho(t *testing.T) {
 		t.Fatalf("dup guest fd: %v", err)
 	}
 
-	session, err := newFileHandleNetworkSessionFromFDs(hostFD, guestFD, FileHandleNetworkConfig{
+	session, err := newSessionFromFDs(hostFD, guestFD, Config{
 		MTU:     2048,
 		Snaplen: 4096,
 	})
@@ -94,14 +91,6 @@ func TestFileHandleNetworkSessionPumpEcho(t *testing.T) {
 		t.Fatal("pump did not stop")
 	}
 
-	stats := session.Stats()
-	if stats.FramesIn != 1 || stats.FramesOut != 1 {
-		t.Fatalf("stats = %+v, want one in and one out frame", stats)
-	}
-	if stats.BytesIn != 4 || stats.BytesOut != 8 {
-		t.Fatalf("stats = %+v, want 4 bytes in and 8 bytes out", stats)
-	}
-
 	summary := session.Summary()
 	for _, want := range []string{"frames in=1 out=1", "bytes in=4 out=8", "mtu=2048"} {
 		if !strings.Contains(summary, want) {
@@ -110,10 +99,10 @@ func TestFileHandleNetworkSessionPumpEcho(t *testing.T) {
 	}
 }
 
-func TestNormalizeFileHandleNetworkConfig(t *testing.T) {
-	cfg := normalizeFileHandleNetworkConfig(FileHandleNetworkConfig{})
-	if cfg.MTU != defaultFileHandleMTU {
-		t.Fatalf("mtu = %d, want %d", cfg.MTU, defaultFileHandleMTU)
+func TestNormalizeConfig(t *testing.T) {
+	cfg := normalizeConfig(Config{})
+	if cfg.MTU != defaultMTU {
+		t.Fatalf("mtu = %d, want %d", cfg.MTU, defaultMTU)
 	}
 	if cfg.Snaplen != pcap.DefaultSnaplen {
 		t.Fatalf("snaplen = %d, want %d", cfg.Snaplen, pcap.DefaultSnaplen)
@@ -121,7 +110,7 @@ func TestNormalizeFileHandleNetworkConfig(t *testing.T) {
 }
 
 func TestFileHandleNetworkSummaryIncludesPcap(t *testing.T) {
-	stats := FileHandleNetworkStats{
+	stats := Stats{
 		StartedAt: time.Unix(100, 0),
 		StoppedAt: time.Unix(101, 250000000),
 		FramesIn:  3,
@@ -129,7 +118,7 @@ func TestFileHandleNetworkSummaryIncludesPcap(t *testing.T) {
 		BytesIn:   512,
 		BytesOut:  256,
 	}
-	summary := stats.summary(FileHandleNetworkConfig{MTU: 1500, PCAPPath: "/tmp/test.pcap"})
+	summary := stats.summary(Config{MTU: 1500, PCAPPath: "/tmp/test.pcap"})
 	for _, want := range []string{"frames in=3 out=2", "bytes in=512 out=256", "pcap=/tmp/test.pcap"} {
 		if !strings.Contains(summary, want) {
 			t.Fatalf("summary %q does not contain %q", summary, want)

@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/vmstate"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
 
 func testCtl(t *testing.T, vm *testVM) {
 	t.Run("status", func(t *testing.T) {
 		status := statusResponse(t, vm)
-		if got := canonicalVMState(status.GetState()); got != "running" {
+		if got := vmstate.Canonical(status.GetState()); got != "running" {
 			t.Fatalf("status state: got %q, want %q", got, "running")
 		}
 	})

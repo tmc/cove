@@ -40,6 +40,12 @@ type daemonPaths struct {
 	CovedPath  string
 }
 
+type daemonErrorOutput struct {
+	Command string `json:"command"`
+	Error   string `json:"error"`
+	Hint    string `json:"hint,omitempty"`
+}
+
 var (
 	daemonDialTimeout = 2 * time.Second
 	daemonRunCommand  = func(name string, args ...string) ([]byte, error) {
@@ -59,16 +65,36 @@ func daemonCommand(args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		jsonOut, err := parseDaemonStatusArgs(args[1:])
+		if err != nil {
+			return err
+		}
 		if len(args) > 1 && isHelpArg(args[1]) {
-			fmt.Fprintln(os.Stdout, "Usage: cove daemon status")
+			fmt.Fprintln(os.Stdout, "Usage: cove daemon status [--json]")
 			return nil
 		}
 		status, err := queryDaemonStatus(defaultDaemonPaths().SocketPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("daemon: stopped; start with: cove daemon start")
+				err = fmt.Errorf("daemon: stopped; start with: cove daemon start")
+				if jsonOut {
+					if jsonErr := writeDaemonErrorJSON(os.Stdout, "daemon status", err); jsonErr != nil {
+						return jsonErr
+					}
+				}
+				return err
+			}
+			if jsonOut {
+				if jsonErr := writeDaemonErrorJSON(os.Stdout, "daemon status", err); jsonErr != nil {
+					return jsonErr
+				}
 			}
 			return err
+		}
+		if jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(status)
 		}
 		fmt.Printf("version: %s\nuptime_s: %d\nvms_managed: %d\nimage_gc_last_run_ts: %s\nimage_gc_runs_total: %d\nimage_gc_bytes_freed_total: %d\nlifecycle_enforced: %d\n",
 			status.Version, status.UptimeS, status.VMsManaged, status.ImageGCLastRunTS, status.ImageGCRunsTotal, status.ImageGCBytesFreedTotal, status.LifecycleEnforced)
@@ -87,6 +113,22 @@ func daemonCommand(args []string) error {
 	default:
 		return fmt.Errorf("unknown daemon command: %s", args[0])
 	}
+}
+
+func parseDaemonStatusArgs(args []string) (bool, error) {
+	jsonOut := false
+	for _, arg := range args {
+		switch arg {
+		case "--json", "-json":
+			jsonOut = true
+		default:
+			if isHelpArg(arg) {
+				return jsonOut, nil
+			}
+			return false, fmt.Errorf("usage: cove daemon status [--json]")
+		}
+	}
+	return jsonOut, nil
 }
 
 func printDaemonUsage(w io.Writer) {
@@ -135,7 +177,13 @@ func daemonMetricsCommand(args []string) error {
 	}
 	body, err := fetchDaemonMetrics("http://" + *addr + "/metrics")
 	if err != nil {
-		return daemonMetricsErrorWithHint(err)
+		err = daemonMetricsErrorWithHint(err)
+		if *raw {
+			if jsonErr := writeDaemonErrorJSON(os.Stdout, "daemon metrics", err); jsonErr != nil {
+				return jsonErr
+			}
+		}
+		return err
 	}
 	if *raw {
 		fmt.Print(body)
@@ -143,6 +191,19 @@ func daemonMetricsCommand(args []string) error {
 	}
 	printDaemonMetrics(os.Stdout, body)
 	return nil
+}
+
+func writeDaemonErrorJSON(w io.Writer, command string, err error) error {
+	out := daemonErrorOutput{
+		Command: command,
+		Error:   err.Error(),
+	}
+	if strings.Contains(err.Error(), "start with: cove daemon start") {
+		out.Hint = "cove daemon start"
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 func daemonMetricsErrorWithHint(err error) error {

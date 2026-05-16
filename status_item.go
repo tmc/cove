@@ -101,7 +101,7 @@ func (c *VMStatusItemController) autosaveName() string {
 
 func (c *VMStatusItemController) buttonTitle() string {
 	const maxTitleRunes = 18
-	prefix := c.buttonStatePrefix(c.currentState())
+	prefix := statusItemStatePresentation(c.currentState()).Prefix
 	nameWidth := maxTitleRunes - len([]rune(prefix))
 	if nameWidth < 6 {
 		nameWidth = 6
@@ -110,7 +110,8 @@ func (c *VMStatusItemController) buttonTitle() string {
 }
 
 func (c *VMStatusItemController) tooltipForState(state vz.VZVirtualMachineState) string {
-	return fmt.Sprintf("cove %s — %s (%s)", c.name, vmStateName(state), c.presentationMode())
+	p := statusItemStatePresentation(state)
+	return fmt.Sprintf("cove %s — %s (%s)", c.name, p.Label, c.presentationMode())
 }
 
 func (c *VMStatusItemController) UpdateState(state vz.VZVirtualMachineState) {
@@ -165,7 +166,8 @@ func (c *VMStatusItemController) handleMenuNeedsUpdate(_ objc.ID, _ objc.SEL, me
 	header.SetEnabled(false)
 	menu.AddItem(&header)
 
-	stateItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("State: "+vmStateName(state)+" ("+c.presentationModeWithWindow(window)+")", 0, "")
+	presentation := statusItemStatePresentation(state)
+	stateItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("State: "+presentation.Label+" ("+c.presentationModeWithWindow(window)+")", 0, "")
 	stateItem.SetEnabled(false)
 	menu.AddItem(&stateItem)
 
@@ -227,10 +229,7 @@ func (c *VMStatusItemController) handleMenuNeedsUpdate(_ objc.ID, _ objc.SEL, me
 }
 
 func (c *VMStatusItemController) stateBusy(state vz.VZVirtualMachineState) bool {
-	return state == vz.VZVirtualMachineStateStarting ||
-		state == vz.VZVirtualMachineStateStopping ||
-		state == vz.VZVirtualMachineStateSaving ||
-		state == vz.VZVirtualMachineStateRestoring
+	return statusItemStatePresentation(state).Busy
 }
 
 func (c *VMStatusItemController) runStateTitle(state vz.VZVirtualMachineState) string {
@@ -241,8 +240,10 @@ func (c *VMStatusItemController) runStateTitle(state vz.VZVirtualMachineState) s
 		return "Resume"
 	case vz.VZVirtualMachineStateStopped:
 		return "Start"
+	case vz.VZVirtualMachineStateError:
+		return "Start"
 	default:
-		return vmStateName(state)
+		return statusItemStatePresentation(state).Label
 	}
 }
 
@@ -250,7 +251,8 @@ func (c *VMStatusItemController) runStateEnabled(state vz.VZVirtualMachineState)
 	return !c.stateBusy(state) &&
 		(state == vz.VZVirtualMachineStateRunning ||
 			state == vz.VZVirtualMachineStatePaused ||
-			state == vz.VZVirtualMachineStateStopped)
+			state == vz.VZVirtualMachineStateStopped ||
+			state == vz.VZVirtualMachineStateError)
 }
 
 func (c *VMStatusItemController) isWindowVisible(window appkit.NSWindow) bool {
@@ -288,23 +290,35 @@ func (c *VMStatusItemController) menuTitle() string {
 }
 
 func (c *VMStatusItemController) buttonStatePrefix(state vz.VZVirtualMachineState) string {
+	return statusItemStatePresentation(state).Prefix
+}
+
+type statusItemPresentation struct {
+	Prefix string
+	Label  string
+	Busy   bool
+}
+
+func statusItemStatePresentation(state vz.VZVirtualMachineState) statusItemPresentation {
 	switch state {
 	case vz.VZVirtualMachineStateRunning:
-		return "Rn:"
+		return statusItemPresentation{Prefix: "Run:", Label: "running"}
 	case vz.VZVirtualMachineStatePaused:
-		return "Pa:"
+		return statusItemPresentation{Prefix: "Pau:", Label: "paused"}
 	case vz.VZVirtualMachineStateStopped:
-		return "St:"
+		return statusItemPresentation{Prefix: "Off:", Label: "stopped"}
 	case vz.VZVirtualMachineStateStarting:
-		return "Up:"
+		return statusItemPresentation{Prefix: "Up:", Label: "starting", Busy: true}
 	case vz.VZVirtualMachineStateStopping:
-		return "Dn:"
+		return statusItemPresentation{Prefix: "Dn:", Label: "stopping", Busy: true}
 	case vz.VZVirtualMachineStateSaving:
-		return "Sv:"
+		return statusItemPresentation{Prefix: "Sav:", Label: "saving", Busy: true}
 	case vz.VZVirtualMachineStateRestoring:
-		return "Rs:"
+		return statusItemPresentation{Prefix: "Res:", Label: "restoring", Busy: true}
+	case vz.VZVirtualMachineStateError:
+		return statusItemPresentation{Prefix: "Err:", Label: "error"}
 	default:
-		return "VM:"
+		return statusItemPresentation{Prefix: "VM:", Label: vmStateName(state)}
 	}
 }
 

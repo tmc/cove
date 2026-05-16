@@ -8,14 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
-	"github.com/tmc/apple/objc"
-	"github.com/tmc/apple/objectivec"
-	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
+	configx "github.com/tmc/apple/x/vzkit/config"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	serialx "github.com/tmc/apple/x/vzkit/exp/serial"
+	"github.com/tmc/apple/x/vzkit/framebuffer"
+	platformx "github.com/tmc/apple/x/vzkit/platform"
+	storagex "github.com/tmc/apple/x/vzkit/storage"
+	windowsconfig "github.com/tmc/apple/x/vzkit/windowsconfig"
+	"github.com/tmc/vz-macos/internal/guestplan"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
 	winsetup "github.com/tmc/vz-macos/internal/windows"
@@ -146,10 +149,48 @@ func buildWindowsInstallConfiguration(diskImagePath, windowsISO string) (vz.VZVi
 
 func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 	rc := vmrunRunConfig(vmrun.GuestWindows)
+	hc := vmrunHostConfig()
 
-	config := vz.NewVZVirtualMachineConfiguration()
-	config.SetCPUCount(rc.CPUCount)
-	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
+	plan, err := guestplan.Windows(rc, hc)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, err
+	}
+	netConfig, err := ParseNetworkMode(plan.Network.Mode)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("parse network mode: %w", err)
+	}
+	builderNetwork := windowsconfig.Network{Config: netConfig}
+	if netConfig.Mode == NetworkModeFileHandle || netConfig.Mode == NetworkModeNone {
+		builderNetwork = windowsconfig.Network{}
+	}
+
+	graphicsMode, err := parseWindowsGraphicsMode(rc.WindowsGraphicsMode)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, err
+	}
+	var displayConfigs []displayx.Config
+	if graphicsMode == windowsGraphicsVirtio {
+		displayConfigs = make([]displayx.Config, 0, len(plan.Display))
+		for _, d := range plan.Display {
+			displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+		}
+	}
+	config, err := windowsconfig.Build(windowsconfig.Config{
+		CPUCount:      plan.CPUCount,
+		MemoryGB:      plan.MemoryGB,
+		Display:       displayConfigs,
+		Network:       builderNetwork,
+		Keyboard:      true,
+		Pointing:      true,
+		Entropy:       true,
+		Sound:         true,
+		USBController: true,
+		MemoryBalloon: true,
+		Socket:        sandboxAllowsVsock(),
+	})
+	if err != nil {
+		return config, fmt.Errorf("build windows device config: %w", err)
+	}
 
 	platformConfig := vz.NewVZGenericPlatformConfiguration()
 	machineID := loadOrCreateWindowsMachineIdentifier()
@@ -162,46 +203,21 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 	}
 	config.SetBootLoader(&bootloader.VZBootLoader)
 
-	if err := setWindowsGraphicsDevices(config); err != nil {
-		return config, err
+	switch graphicsMode {
+	case windowsGraphicsLinearFramebuffer:
+		if err := setWindowsLinearFramebufferGraphicsDevice(config); err != nil {
+			return config, err
+		}
+	case windowsGraphicsVirtio:
+		fmt.Println("  Windows graphics: VirtIO")
 	}
 
-	netConfig, err := ParseNetworkMode(rc.NetworkMode)
-	if err != nil {
-		return config, fmt.Errorf("parse network mode: %w", err)
-	}
-	if netConfig.Mode != NetworkModeNone {
+	if netConfig.Mode == NetworkModeFileHandle {
 		networkDeviceConfig, err := CreateNetworkDeviceConfiguration(netConfig)
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
-		setNetworkDevices(config, networkDeviceConfig)
-	}
-
-	keyboardConfig := vz.NewVZUSBKeyboardConfiguration()
-	setKeyboards(config, keyboardConfig)
-
-	pointingConfig := vz.NewVZUSBScreenCoordinatePointingDeviceConfiguration()
-	setPointingDevices(config, []vz.IVZPointingDeviceConfiguration{pointingConfig})
-
-	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
-	setEntropyDevices(config, entropyConfig)
-
-	audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
-	setAudioDevices(config, audioConfig)
-
-	EnsureUSBController(config)
-
-	balloonConfig := vz.NewVZVirtioTraditionalMemoryBalloonDeviceConfiguration()
-	if balloonConfig.ID != 0 {
-		setMemoryBalloonDevices(config, balloonConfig)
-	}
-
-	if sandboxAllowsVsock() {
-		vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
-		if vsockConfig.ID != 0 {
-			setSocketDevices(config, vsockConfig)
-		}
+		configx.SetNetworkDevices(config, networkDeviceConfig)
 	}
 
 	serialConfig, err := createWindowsSerialConsoleConfig()
@@ -209,7 +225,7 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 		return config, err
 	}
 	if serialConfig.ID != 0 {
-		setSerialPorts(config, serialConfig)
+		configx.SetSerialPorts(config, serialConfig)
 		fmt.Println("  Serial console attached")
 	}
 
@@ -234,80 +250,33 @@ func createWindowsSerialConsoleConfig() (vz.VZSerialPortConfiguration, error) {
 	}
 	switch mode {
 	case windowsSerialPL011:
-		if privvz.GetVZPL011SerialPortConfigurationClass().Class() == 0 {
-			return vz.VZSerialPortConfiguration{}, fmt.Errorf("private PL011 serial port configuration is unavailable")
+		serialConfig, err := serialx.New(serialx.PL011, attachment.VZSerialPortAttachment)
+		if err != nil {
+			return vz.VZSerialPortConfiguration{}, err
 		}
-		serialConfig := privvz.NewVZPL011SerialPortConfiguration()
-		if serialConfig.ID == 0 {
-			return vz.VZSerialPortConfiguration{}, fmt.Errorf("create PL011 serial port configuration")
-		}
-		serialConfig.Retain()
-		serial := vz.VZSerialPortConfigurationFromID(serialConfig.ID)
-		serial.SetAttachment(&attachment.VZSerialPortAttachment)
 		fmt.Println("  Windows serial: PL011")
-		return serial, nil
+		return serialConfig, nil
 	case windowsSerial16550:
-		if privvz.GetVZ16550SerialPortConfigurationClass().Class() == 0 {
-			return vz.VZSerialPortConfiguration{}, fmt.Errorf("private 16550 serial port configuration is unavailable")
+		serialConfig, err := serialx.New(serialx.UART, attachment.VZSerialPortAttachment)
+		if err != nil {
+			return vz.VZSerialPortConfiguration{}, err
 		}
-		serialConfig := privvz.NewVZ16550SerialPortConfiguration()
-		if serialConfig.ID == 0 {
-			return vz.VZSerialPortConfiguration{}, fmt.Errorf("create 16550 serial port configuration")
-		}
-		serialConfig.Retain()
-		serial := vz.VZSerialPortConfigurationFromID(serialConfig.ID)
-		serial.SetAttachment(&attachment.VZSerialPortAttachment)
 		fmt.Println("  Windows serial: 16550")
-		return serial, nil
+		return serialConfig, nil
 	default:
 		return vz.VZSerialPortConfiguration{}, fmt.Errorf("unsupported Windows serial mode: %s", mode)
 	}
 }
 
-func setWindowsGraphicsDevices(config vz.VZVirtualMachineConfiguration) error {
-	rc := vmrunRunConfig(vmrun.GuestWindows)
-	mode, err := parseWindowsGraphicsMode(rc.WindowsGraphicsMode)
+func setWindowsLinearFramebufferGraphicsDevice(config vz.VZVirtualMachineConfiguration) error {
+	width, height := windowsDisplaySize()
+	err := framebuffer.SetLinearFramebufferGraphicsDevice(config, framebuffer.LinearFramebufferConfig{
+		Width:  width,
+		Height: height,
+	})
 	if err != nil {
 		return err
 	}
-	switch mode {
-	case windowsGraphicsLinearFramebuffer:
-		return setWindowsLinearFramebufferGraphicsDevice(config)
-	case windowsGraphicsVirtio:
-		displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
-		for _, d := range rc.Displays {
-			displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
-		}
-		if len(displayConfigs) == 0 {
-			displayConfigs = []displayx.Config{displayx.DefaultLinuxConfig()}
-		}
-		graphicsConfig, err := displayx.CreateVirtioGraphicsConfig(displayConfigs)
-		if err != nil {
-			return fmt.Errorf("create virtio graphics config: %w", err)
-		}
-		setVirtioGraphicsDevices(config, graphicsConfig)
-		fmt.Println("  Windows graphics: VirtIO")
-		return nil
-	default:
-		return fmt.Errorf("unsupported Windows graphics mode: %s", mode)
-	}
-}
-
-func setWindowsLinearFramebufferGraphicsDevice(config vz.VZVirtualMachineConfiguration) error {
-	if privvz.GetVZLinearFramebufferGraphicsDeviceConfigurationClass().Class() == 0 {
-		return fmt.Errorf("private linear framebuffer graphics configuration is unavailable")
-	}
-	width, height := windowsDisplaySize()
-	graphics := privvz.NewVZLinearFramebufferGraphicsDeviceConfigurationWithBackingStoreSize(corefoundation.CGSize{
-		Width:  float64(width),
-		Height: float64(height),
-	})
-	if graphics.ID == 0 {
-		return fmt.Errorf("create linear framebuffer graphics configuration")
-	}
-	graphics.Retain()
-	array := objectivec.IObjectSliceToNSArray([]privvz.VZLinearFramebufferGraphicsDeviceConfiguration{graphics})
-	objc.Send[struct{}](config.ID, objc.Sel("setGraphicsDevices:"), array)
 	fmt.Printf("  Windows graphics: linear framebuffer %dx%d\n", width, height)
 	return nil
 }
@@ -325,11 +294,10 @@ func windowsNVMeStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceCon
 	if err != nil {
 		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create disk attachment: %w", err)
 	}
-	device := vz.NewNVMExpressControllerDeviceConfigurationWithAttachment(attachment)
-	if device.ID == 0 {
-		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create NVMe storage device")
+	device, err := storagex.CreateNVMeDeviceWithAttachment(attachment)
+	if err != nil {
+		return vz.VZStorageDeviceConfiguration{}, err
 	}
-	device.Retain()
 	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 }
 
@@ -350,32 +318,23 @@ func windowsUSBStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConf
 	}
 	attachment.Retain()
 
-	device := vz.NewUSBMassStorageDeviceConfigurationWithAttachment(&attachment.VZStorageDeviceAttachment)
-	if device.ID == 0 {
-		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create USB storage device")
+	device, err := storagex.CreateUSBMassStorageDeviceWithAttachment(attachment.VZStorageDeviceAttachment)
+	if err != nil {
+		return vz.VZStorageDeviceConfiguration{}, err
 	}
-	device.Retain()
 	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 }
 
 func loadOrCreateWindowsMachineIdentifier() vz.VZGenericMachineIdentifier {
 	machineIDPath := filepath.Join(vmDir, "windows-machine.id")
-	if data, err := os.ReadFile(machineIDPath); err == nil && len(data) > 0 {
-		nsData := createNSDataFromBytes(data)
-		if nsData != 0 {
-			nsDataObj := foundation.NSDataFromID(nsData)
-			machineID := vz.NewGenericMachineIdentifierWithDataRepresentation(&nsDataObj)
-			if machineID.ID != 0 {
-				fmt.Println("  Loaded existing Windows machine identifier")
-				return machineID
-			}
-		}
-	}
-
-	machineID := vz.NewVZGenericMachineIdentifier()
-	fmt.Println("  Created new Windows machine identifier")
-	if err := saveGenericMachineIdentifier(machineID, machineIDPath); err != nil {
+	machineID, created, err := platformx.LoadOrCreateGenericMachineIdentifier(machineIDPath)
+	if err != nil {
 		fmt.Printf("  warning: could not save Windows machine identifier: %v\n", err)
+	}
+	if created {
+		fmt.Println("  Created new Windows machine identifier")
+	} else {
+		fmt.Println("  Loaded existing Windows machine identifier")
 	}
 	return machineID
 }

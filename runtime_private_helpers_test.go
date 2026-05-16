@@ -91,12 +91,38 @@ func TestPrivateRuntimeSummary(t *testing.T) {
 	}
 }
 
+func TestRuntimeFeatureStatusDiscoveryFields(t *testing.T) {
+	state := &runtimeFeatureState{
+		vnc: vncStatus{
+			Requested:         true,
+			Started:           true,
+			Port:              5901,
+			PasswordProtected: true,
+			BonjourService:    "cove-vm",
+		},
+		debug: debugStubStatus{
+			Enabled:   true,
+			Kind:      "gdb",
+			Port:      1234,
+			ListenAll: true,
+		},
+	}
+	vnc := state.controlVNCStatus()
+	if vnc.Endpoint != "127.0.0.1:5901" || !vnc.PasswordProtected || vnc.ServiceName != "cove-vm" {
+		t.Fatalf("controlVNCStatus() = %#v", vnc)
+	}
+	debug := state.controlDebugStubStatus()
+	if debug.Endpoint != "0.0.0.0:1234" || !strings.Contains(debug.Connect, "gdb-remote 127.0.0.1:1234") {
+		t.Fatalf("controlDebugStubStatus() = %#v", debug)
+	}
+}
+
 func TestValidatePrivateRuntimeOptionsExtraBranches(t *testing.T) {
-	oVNC, oPw, oGDB, oGAll := vncAddress, vncPassword, gdbAddress, gdbListenAll
+	oVNC, oPw, oBonjour, oGDB, oGAll := vncAddress, vncPassword, vncBonjourService, gdbAddress, gdbListenAll
 	oR, oL, oW := recoveryMode, linuxMode, windowsMode
 	oF, oS1, oS2 := forceDFU, stopInIBootStage1, stopInIBootStage2
 	t.Cleanup(func() {
-		vncAddress, vncPassword, gdbAddress, gdbListenAll = oVNC, oPw, oGDB, oGAll
+		vncAddress, vncPassword, vncBonjourService, gdbAddress, gdbListenAll = oVNC, oPw, oBonjour, oGDB, oGAll
 		recoveryMode, linuxMode, windowsMode = oR, oL, oW
 		forceDFU, stopInIBootStage1, stopInIBootStage2 = oF, oS1, oS2
 	})
@@ -113,7 +139,7 @@ func TestValidatePrivateRuntimeOptionsExtraBranches(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			vncAddress, vncPassword, gdbAddress, gdbListenAll = "", "", "", false
+			vncAddress, vncPassword, vncBonjourService, gdbAddress, gdbListenAll = "", "", "", "", false
 			recoveryMode, linuxMode, windowsMode = false, false, false
 			forceDFU, stopInIBootStage1, stopInIBootStage2 = false, false, false
 			tt.setup()
