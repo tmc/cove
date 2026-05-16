@@ -18,6 +18,7 @@
 * [Linux VMs](features/linux.md)
 * [Networking](features/networking.md)
 * [GUI & Display](features/gui-display.md)
+* [9p Host Export](features/9p.md)
 
 ## Reference
 * [CLI Reference](reference/cli.md)
