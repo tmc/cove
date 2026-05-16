@@ -110,6 +110,7 @@ Commands:
   click-menu [options] <menu> <item>  Click menu title, then menu item
                         options: -timeout <duration>
   shared-folders-apply  Reload shared_folders.json into a running VM
+  shared-folders-runtime-status  Report runtime shared-folder support
   boot-script <file>    Execute a vzscript automation file
   step                  Interactive step-through mode for Setup Assistant debugging
   setup-assist <user> <pass>  Run Setup Assistant automation
@@ -452,7 +453,7 @@ func ctlCommand(args []string) error {
 	req.AuthToken = resolveControlTokenForSocket(sock)
 
 	switch cmdType {
-	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "reboot-to-recovery", "boot-recovery", "shared-folders-apply":
+	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "reboot-to-recovery", "boot-recovery", "shared-folders-apply", "shared-folders-runtime-status":
 		// No payload needed
 
 	case "memory":
