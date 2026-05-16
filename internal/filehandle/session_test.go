@@ -23,9 +23,6 @@ func TestSessionCreatesAttachment(t *testing.T) {
 	}
 	defer session.Close()
 
-	if got := session.Attachment().MaximumTransmissionUnit(); got != 2048 {
-		t.Fatalf("maximum transmission unit = %d, want 2048", got)
-	}
 	if session.DeviceConfiguration().ID == 0 {
 		t.Fatal("device configuration has zero ID")
 	}
@@ -92,14 +89,6 @@ func TestSessionPumpEcho(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("pump did not stop")
-	}
-
-	stats := session.Stats()
-	if stats.FramesIn != 1 || stats.FramesOut != 1 {
-		t.Fatalf("stats = %+v, want one in and one out frame", stats)
-	}
-	if stats.BytesIn != 4 || stats.BytesOut != 8 {
-		t.Fatalf("stats = %+v, want 4 bytes in and 8 bytes out", stats)
 	}
 
 	summary := session.Summary()

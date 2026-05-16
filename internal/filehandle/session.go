@@ -116,22 +116,6 @@ func (s *Session) DeviceConfiguration() vz.VZVirtioNetworkDeviceConfiguration {
 	return s.deviceConfig
 }
 
-// Attachment returns the underlying file-handle attachment.
-func (s *Session) Attachment() vz.VZFileHandleNetworkDeviceAttachment {
-	if s == nil {
-		return vz.VZFileHandleNetworkDeviceAttachment{}
-	}
-	return s.attachment
-}
-
-// Stats returns a snapshot of the session counters.
-func (s *Session) Stats() Stats {
-	if s == nil {
-		return Stats{}
-	}
-	return s.stats.snapshot()
-}
-
 // ReadFrame reads one datagram from the host socket.
 func (s *Session) ReadFrame() ([]byte, error) {
 	if s == nil || s.hostConn == nil {
