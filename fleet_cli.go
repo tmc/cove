@@ -23,6 +23,11 @@ type fleetCommandRunner interface {
 
 type sshFleetRunner struct{}
 
+var (
+	fleetDialControlSocket = fleetpkg.DialControlSocket
+	fleetCtlCommand        = ctlCommand
+)
+
 func handleFleetCommand(args []string) error {
 	return runFleetCommand(args, fleetpkg.DefaultPath(), os.Stdout)
 }
@@ -183,11 +188,41 @@ func runFleetRoute(ctx context.Context, name, cmd string, args []string, path st
 	if !ok {
 		return fmt.Errorf("fleet: remote %q not found", name)
 	}
+	if cmd == "ctl" {
+		return runFleetControlRoute(ctx, remote, args)
+	}
 	argv, err := fleetRemoteArgs(cmd, args, remote)
 	if err != nil {
 		return err
 	}
 	return runner.Run(ctx, remote, argv, stdout, stderr)
+}
+
+func runFleetControlRoute(ctx context.Context, remote fleetpkg.Remote, args []string) error {
+	vm := fleetControlVM(args, remote)
+	tunnel, err := fleetDialControlSocket(ctx, remote, vm)
+	if err != nil {
+		return err
+	}
+	defer tunnel.Close()
+	return fleetCtlCommand(append([]string{"-socket", tunnel.LocalSocket()}, args...))
+}
+
+func fleetControlVM(args []string, remote fleetpkg.Remote) string {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-vm" || arg == "--vm":
+			if i+1 < len(args) {
+				return args[i+1]
+			}
+		case strings.HasPrefix(arg, "-vm="):
+			return strings.TrimPrefix(arg, "-vm=")
+		case strings.HasPrefix(arg, "--vm="):
+			return strings.TrimPrefix(arg, "--vm=")
+		}
+	}
+	return remote.DefaultVM
 }
 
 func fleetRemoteArgs(cmd string, args []string, remote fleetpkg.Remote) ([]string, error) {

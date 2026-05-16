@@ -13,8 +13,9 @@ import (
 
 type Tunnel struct {
 	io.ReadWriteCloser
-	cmd      *exec.Cmd
-	localDir string
+	LocalSocketPath string
+	cmd             *exec.Cmd
+	localDir        string
 }
 
 func DialControlSocket(ctx context.Context, remote Remote, vm string) (*Tunnel, error) {
@@ -40,7 +41,14 @@ func DialControlSocket(ctx context.Context, remote Remote, vm string) (*Tunnel, 
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
-	return &Tunnel{ReadWriteCloser: conn, cmd: cmd, localDir: dir}, nil
+	return &Tunnel{ReadWriteCloser: conn, LocalSocketPath: localSock, cmd: cmd, localDir: dir}, nil
+}
+
+func (t *Tunnel) LocalSocket() string {
+	if t == nil {
+		return ""
+	}
+	return t.LocalSocketPath
 }
 
 func (t *Tunnel) Close() error {
