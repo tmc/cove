@@ -174,13 +174,13 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 		if macAddr.ID != 0 {
 			networkDeviceConfig.SetMACAddress(&macAddr)
 		}
-		setNetworkDevices(config, networkDeviceConfig)
+		configx.SetNetworkDevices(config, networkDeviceConfig)
 	}
 
 	// Serial console
 	serialConfig := createSerialConsoleConfig()
 	if serialConfig.ID != 0 {
-		setSerialPorts(config, serialConfig)
+		configx.SetSerialPorts(config, serialConfig)
 		fmt.Println("  Serial console attached (output to stdout)")
 	}
 
@@ -519,14 +519,6 @@ func createLinuxStorageDeviceWithAttachment(attachment vz.VZStorageDeviceAttachm
 	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 }
 
-func setVirtioGraphicsDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioGraphicsDeviceConfiguration) {
-	configx.SetVirtioGraphicsDevices(config, device)
-}
-
-func setVirtioScanouts(config vz.VZVirtioGraphicsDeviceConfiguration, scanout vz.VZVirtioGraphicsScanoutConfiguration) {
-	configx.SetVirtioScanouts(config, scanout)
-}
-
 // Common Linux ISO URLs for ARM64
 const (
 	UbuntuServerARM64URL  = "https://cdimage.ubuntu.com/releases/24.04.3/release/ubuntu-24.04.3-live-server-arm64.iso"
@@ -701,22 +693,12 @@ func isURL(s string) bool {
 	return len(s) > 8 && (s[:7] == "http://" || s[:8] == "https://")
 }
 
-// Helper functions for Linux-specific device configuration
-
-func setMemoryBalloonDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioTraditionalMemoryBalloonDeviceConfiguration) {
-	configx.SetMemoryBalloonDevices(config, device)
-}
-
-func setSocketDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioSocketDeviceConfiguration) {
-	configx.SetSocketDevices(config, device)
-}
-
 func addVirtioSocketDevice(config vz.VZVirtualMachineConfiguration) {
 	if !sandboxAllowsVsock() {
 		return
 	}
 	vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
 	if vsockConfig.ID != 0 {
-		setSocketDevices(config, vsockConfig)
+		configx.SetSocketDevices(config, vsockConfig)
 	}
 }

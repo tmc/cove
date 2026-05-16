@@ -116,12 +116,6 @@ func AddUSBStorageToConfig(config vz.VZVirtualMachineConfiguration, usbConfigs [
 	return nil
 }
 
-// EnsureUSBController adds a default XHCI controller when none is configured.
-// Runtime USB attach and detach operations rely on a live controller object.
-func EnsureUSBController(config vz.VZVirtualMachineConfiguration) {
-	storagex.EnsureUSBController(config)
-}
-
 // Use truncate to create a sparse file
 
 // USBStorageSlice implements flag.Value for collecting multiple -usb flags
