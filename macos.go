@@ -27,6 +27,7 @@ import (
 	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	identityx "github.com/tmc/apple/x/vzkit/identity"
 	macosconfig "github.com/tmc/apple/x/vzkit/macosconfig"
 	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/vz-macos/internal/bytefmt"
@@ -534,9 +535,7 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	} else if auxInfo.Size() == 0 {
 		issues = append(issues, "aux.img empty")
 	} else {
-		auxURL := foundation.NewURLFileURLWithPath(auxPath)
-		auxStorage := vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
-		if auxStorage.ID == 0 {
+		if _, err := identityx.LoadMacAuxiliaryStorage(auxPath); err != nil {
 			issues = append(issues, "aux.img unreadable")
 		}
 	}
@@ -552,18 +551,16 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	} else if len(hwData) == 0 {
 		issues = append(issues, "hw.model empty")
 	} else {
-		nsData := createNSDataFromBytes(hwData)
-		if nsData == 0 {
+		model, err := identityx.LoadMacHardwareModel(hwModelPath)
+		switch {
+		case err == nil:
+		case strings.Contains(err.Error(), "not supported"):
+			issues = append(issues, "hw.model unsupported on this host")
+		default:
 			issues = append(issues, "hw.model invalid")
-		} else {
-			nsDataObj := foundation.NSDataFromID(nsData)
-			model := vz.NewMacHardwareModelWithDataRepresentation(&nsDataObj)
-			switch {
-			case model.ID == 0:
-				issues = append(issues, "hw.model invalid")
-			case !model.Supported():
-				issues = append(issues, "hw.model unsupported on this host")
-			}
+		}
+		if model.ID != 0 && !model.Supported() {
+			issues = append(issues, "hw.model unsupported on this host")
 		}
 	}
 
@@ -578,15 +575,8 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	} else if len(machineData) == 0 {
 		issues = append(issues, "machine.id empty")
 	} else {
-		nsData := createNSDataFromBytes(machineData)
-		if nsData == 0 {
+		if _, err := identityx.LoadMacMachineIdentifier(machineIDPath); err != nil {
 			issues = append(issues, "machine.id invalid")
-		} else {
-			nsDataObj := foundation.NSDataFromID(nsData)
-			machineID := vz.NewMacMachineIdentifierWithDataRepresentation(&nsDataObj)
-			if machineID.ID == 0 {
-				issues = append(issues, "machine.id invalid")
-			}
 		}
 	}
 
@@ -735,29 +725,25 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	if utmAuxStoragePath != "" {
 		auxStoragePath = utmAuxStoragePath
 	}
-	auxURL := foundation.NewURLFileURLWithPath(auxStoragePath)
-	auxURL.Retain() // Prevent premature deallocation
 	var auxStorage vz.VZMacAuxiliaryStorage
 	if _, statErr := os.Stat(auxStoragePath); os.IsNotExist(statErr) {
 		if hc.Verbose {
 			fmt.Println("  Creating auxiliary storage...")
 		}
 		var err error
-		auxStorage, err = vz.NewMacAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
-			auxURL, hwModel, vz.VZMacAuxiliaryStorageInitializationOptionAllowOverwrite)
+		auxStorage, err = identityx.CreateMacAuxiliaryStorage(auxStoragePath, hwModel, true)
 		if err != nil {
 			return config, fmt.Errorf("failed to create auxiliary storage: %w", err)
 		}
-		auxStorage.Retain()
 	} else {
 		if hc.Verbose {
 			fmt.Println("  Loading existing auxiliary storage...")
 		}
-		auxStorage = vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
-		if auxStorage.ID == 0 {
-			return config, fmt.Errorf("failed to load auxiliary storage: %s", auxStoragePath)
+		var err error
+		auxStorage, err = identityx.LoadMacAuxiliaryStorage(auxStoragePath)
+		if err != nil {
+			return config, err
 		}
-		auxStorage.Retain() // Prevent premature deallocation
 	}
 	if auxStorage.ID != 0 {
 		platformConfig.SetAuxiliaryStorage(&auxStorage)
@@ -891,25 +877,13 @@ func loadOrCreateMachineIdentifier() (vz.VZMacMachineIdentifier, error) {
 	machineIDPath := filepath.Join(vmDir, "machine.id")
 
 	// Check if we have a saved machine identifier
-	if data, err := os.ReadFile(machineIDPath); err == nil {
-		if len(data) == 0 {
-			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is empty")
-		}
-		nsData := createNSDataFromBytes(data)
-		if nsData == 0 {
-			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is invalid")
-		}
-		nsDataObj := foundation.NSDataFromID(nsData)
-		machineID := vz.NewMacMachineIdentifierWithDataRepresentation(&nsDataObj)
-		if machineID.ID == 0 {
-			return vz.VZMacMachineIdentifier{}, fmt.Errorf("machine identifier file is invalid")
-		}
+	if machineID, err := identityx.LoadMacMachineIdentifier(machineIDPath); err == nil {
 		if verbose {
 			fmt.Println("  Loaded existing machine identifier")
 		}
 		return machineID, nil
 	} else if !os.IsNotExist(err) {
-		return vz.VZMacMachineIdentifier{}, fmt.Errorf("read machine identifier: %w", err)
+		return vz.VZMacMachineIdentifier{}, err
 	}
 
 	// Create new machine identifier
@@ -928,11 +902,7 @@ func loadOrCreateMachineIdentifier() (vz.VZMacMachineIdentifier, error) {
 
 // saveMachineIdentifier saves the machine identifier data representation to a file.
 func saveMachineIdentifier(machineID vz.VZMacMachineIdentifier, path string) error {
-	data := machineID.DataRepresentation()
-	if data.GetID() == 0 {
-		return fmt.Errorf("machine identifier has no data representation")
-	}
-	return saveNSDataToFile(data.GetID(), path)
+	return identityx.SaveMacMachineIdentifier(machineID, path)
 }
 
 // loadOrCreateMACAddress loads an existing MAC address or creates a new one.
@@ -972,26 +942,15 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 
 	// Check if we have a saved hardware model
 	if data, err := os.ReadFile(hwModelPath); err == nil {
-		if len(data) == 0 {
-			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is empty")
-		}
 		if verbose {
 			fmt.Printf("  Found hw.model file: %s (%d bytes)\n", hwModelPath, len(data))
 		}
-		nsData := createNSDataFromBytes(data)
-		if nsData == 0 {
-			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is invalid")
-		}
-		nsDataObj := foundation.NSDataFromID(nsData)
-		model := vz.NewMacHardwareModelWithDataRepresentation(&nsDataObj)
+		model, err := identityx.LoadMacHardwareModel(hwModelPath)
 		if verbose {
 			fmt.Printf("  Hardware model ID: %#x, Supported: %v\n", model.ID, model.ID != 0 && model.Supported())
 		}
-		if model.ID == 0 {
-			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model file is invalid")
-		}
-		if !model.Supported() {
-			return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model is not supported on this host")
+		if err != nil {
+			return vz.VZMacHardwareModel{}, err
 		}
 		return model, nil
 	} else if !os.IsNotExist(err) {
@@ -1049,11 +1008,7 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 
 // saveHardwareModel saves the hardware model data representation to a file.
 func saveHardwareModel(model vz.VZMacHardwareModel, path string) error {
-	data := model.DataRepresentation()
-	if data == nil || data.GetID() == 0 {
-		return fmt.Errorf("hardware model has no data representation")
-	}
-	return saveNSDataToFile(data.GetID(), path)
+	return identityx.SaveMacHardwareModel(model, path)
 }
 
 // createSharedFoldersDevice creates a VirtioFS device with a MultipleDirectoryShare

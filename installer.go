@@ -22,6 +22,7 @@ import (
 	"github.com/tmc/apple/x/vzkit"
 	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
+	identityx "github.com/tmc/apple/x/vzkit/identity"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
@@ -1162,7 +1163,7 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 
 	// Save hardware model data for future runs
 	hwModelPath := filepath.Join(vmDir, "hw.model")
-	if err := saveDataRepresentation(hwModel.ID, hwModelPath); err != nil {
+	if err := identityx.SaveMacHardwareModel(hwModel, hwModelPath); err != nil {
 		fmt.Printf("warning: could not save hardware model: %v\n", err)
 	}
 
@@ -1174,17 +1175,13 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 
 	// Save machine identifier data for future runs
 	machineIDPath := filepath.Join(vmDir, "machine.id")
-	if err := saveDataRepresentation(machineID.ID, machineIDPath); err != nil {
+	if err := identityx.SaveMacMachineIdentifier(machineID, machineIDPath); err != nil {
 		fmt.Printf("warning: could not save machine identifier: %v\n", err)
 	}
 
 	// Create auxiliary storage with hardware model (key difference from runtime)
 	auxStoragePath := filepath.Join(vmDir, "aux.img")
-	auxURL := foundation.NewURLFileURLWithPath(auxStoragePath)
-	auxURL.Retain()
-
-	auxStorage, err := vz.NewMacAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
-		auxURL, hwModel, vz.VZMacAuxiliaryStorageInitializationOptionAllowOverwrite)
+	auxStorage, err := identityx.CreateMacAuxiliaryStorage(auxStoragePath, hwModel, true)
 	if err != nil {
 		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to create auxiliary storage: %w", err)
 	}
@@ -1198,11 +1195,10 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 	// Re-open the freshly created aux image through the same path we use at
 	// runtime. This validates readability immediately and avoids install/start
 	// discrepancies between the "create" and "load existing" code paths.
-	reloadedAux := vz.NewMacAuxiliaryStorageWithContentsOfURL(auxURL)
-	if reloadedAux.ID == 0 {
-		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to reload created auxiliary storage: %s", auxStoragePath)
+	reloadedAux, err := identityx.LoadMacAuxiliaryStorage(auxStoragePath)
+	if err != nil {
+		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to reload created auxiliary storage: %w", err)
 	}
-	reloadedAux.Retain()
 
 	// Build platform configuration
 	platformConfig := vz.NewVZMacPlatformConfiguration()

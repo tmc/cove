@@ -11,8 +11,8 @@ import (
 
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit/exp/networkfd"
 	"github.com/tmc/vz-macos/internal/pcap"
-	"golang.org/x/sys/unix"
 )
 
 // FileHandleNetworkSession owns the host-side socket and the VZ file-handle
@@ -51,38 +51,23 @@ func NewFileHandleNetworkSession(cfg FileHandleNetworkConfig) (*FileHandleNetwor
 
 func newFileHandleNetworkSessionFromFDs(hostFD, guestFD int, cfg FileHandleNetworkConfig) (*FileHandleNetworkSession, error) {
 	cfg = normalizeFileHandleNetworkConfig(cfg)
-	hostFile := os.NewFile(uintptr(hostFD), "cove-filehandle-host")
-	if hostFile == nil {
-		_ = unix.Close(hostFD)
-		_ = unix.Close(guestFD)
-		return nil, fmt.Errorf("create host file")
+	hostFile, hostConn, err := networkfd.HostConn(hostFD)
+	if err != nil {
+		(networkfd.Pair{HostFD: -1, GuestFD: guestFD}).Close()
+		return nil, err
 	}
 
-	hostConn, err := net.FileConn(hostFile)
+	guestHandle, attachment, err := networkfd.NewAttachment(guestFD, cfg.MTU)
 	if err != nil {
 		hostFile.Close()
-		_ = unix.Close(guestFD)
-		return nil, fmt.Errorf("wrap host file: %w", err)
+		return nil, err
 	}
-
-	guestHandle := newNSFileHandleFromFD(guestFD)
-	attachment := vz.NewFileHandleNetworkDeviceAttachmentWithFileHandle(guestHandle)
-	if attachment.ID == 0 {
+	deviceConfig, err := networkfd.NewDevice(attachment)
+	if err != nil {
 		hostFile.Close()
 		_, _ = guestHandle.CloseAndReturnError()
-		return nil, fmt.Errorf("create filehandle network attachment")
+		return nil, err
 	}
-	attachment.Retain()
-	attachment.SetMaximumTransmissionUnit(cfg.MTU)
-
-	deviceConfig := vz.NewVZVirtioNetworkDeviceConfiguration()
-	if deviceConfig.ID == 0 {
-		hostFile.Close()
-		_, _ = guestHandle.CloseAndReturnError()
-		return nil, fmt.Errorf("create virtio network device configuration")
-	}
-	deviceConfig.SetAttachment(&attachment.VZNetworkDeviceAttachment)
-	deviceConfig.Retain()
 
 	session := &FileHandleNetworkSession{
 		cfg:          cfg,
@@ -279,4 +264,3 @@ func (s *FileHandleNetworkSession) Close() error {
 	s.stats.finish(time.Now(), nil)
 	return nil
 }
-
