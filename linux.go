@@ -211,9 +211,12 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 	}
 
 	// Rosetta support for x86-64 binary translation
+	rosettaRuntimeSetup = false
 	if rc.EnableRosetta && !sandboxStrict() {
 		if err := AddRosettaToLinuxVM(config, hc.VMDir); err != nil {
 			fmt.Printf("optional Rosetta setup skipped; x86_64 Linux binaries may not run: %v\n", err)
+		} else {
+			rosettaRuntimeSetup = true
 		}
 	}
 
