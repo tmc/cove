@@ -250,26 +250,19 @@ func (s *runtimeFeatureState) ensureVNCStarted(machine vz.VZVirtualMachine, queu
 		return fmt.Errorf("create vnc server: %w", err)
 	}
 
-	server.SetVirtualMachine(pvz.VZVirtualMachineFromID(machine.ID))
-
-	displayAttached := false
-	if display, err := currentGraphicsDisplay(machine, queue); err == nil && display.ID != 0 {
-		server.SetGraphicsDisplay(display)
-		displayAttached = true
-	} else if err != nil && verbose {
+	result, err := server.StartVirtualMachine(machine)
+	if err != nil && verbose {
 		fmt.Printf("warning: vnc display: %v\n", err)
 	}
 
-	server.Start()
-
 	s.mu.Lock()
 	s.vnc.Started = true
-	s.vnc.DisplayAttached = displayAttached
-	s.vnc.RawState = server.State()
-	if port := server.Port(); port != 0 {
+	s.vnc.DisplayAttached = result.DisplayAttached
+	s.vnc.RawState = result.State
+	if port := result.Port; port != 0 {
 		s.vnc.Port = port
 	}
-	if desc := server.Description(); desc != "" {
+	if desc := result.Description; desc != "" {
 		s.vnc.Description = desc
 	}
 	s.vncServer = server
@@ -301,30 +294,6 @@ func (s *runtimeFeatureState) stop() {
 		s.vnc.RawState = server.State()
 		s.mu.Unlock()
 	}
-}
-
-func currentGraphicsDisplay(machine vz.VZVirtualMachine, queue dispatch.Queue) (pvz.VZGraphicsDisplay, error) {
-	var (
-		display pvz.VZGraphicsDisplay
-		err     error
-	)
-	DispatchSync(uintptr(queue.Handle()), func() {
-		devices := machine.GraphicsDevices()
-		if len(devices) == 0 {
-			err = fmt.Errorf("no graphics devices")
-			return
-		}
-		displays := devices[0].Displays()
-		if len(displays) == 0 {
-			err = fmt.Errorf("no graphics displays")
-			return
-		}
-		display = pvz.VZGraphicsDisplayFromID(displays[0].ID)
-	})
-	if err != nil {
-		return pvz.VZGraphicsDisplay{}, err
-	}
-	return display, nil
 }
 
 func parsePortSpec(spec string) (uint16, error) {
