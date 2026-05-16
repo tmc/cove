@@ -66,7 +66,7 @@ cove run [flags]
 | `-recovery` | false | Boot into macOS recovery mode |
 | `-linux` | false | Run a Linux VM |
 | `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
-| `-shell` | false | Attach the host terminal to a guest shell after boot (Linux only; mutually exclusive with `-headless`). Output-only in v0.2 -- see [Linux VMs > Guest Shell](../features/linux.md#guest-shell--shell). |
+| `-shell` | false | Attach the host terminal to a guest shell after boot (Linux only; mutually exclusive with `-headless`). For already-running VMs, prefer [`cove exec -it`](#exec) or `cove shell`. |
 | `-cpu <n>` | 2 | Number of CPUs |
 | `-memory <n>` | 4 | Memory in GB |
 | `-vm <name>` | active VM | Target VM name |
@@ -122,6 +122,34 @@ cove run -fork-from macos-runner:14.5 -ephemeral -fork-name worker-1
 cove fork macos-base worker-1 && cove run -vm worker-1
 cove run -recovery -no-resume -gui -usb ~/recovery.img
 ```
+
+---
+
+## exec
+
+Run a command in a running VM through the guest agent.
+
+```
+cove exec [options] <vm> <cmd> [args...]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-i`, `--interactive` | false | Keep stdin open |
+| `-t`, `--tty` | false | Allocate a guest TTY |
+| `-e`, `--env NAME=value` | | Set guest environment variable (repeatable) |
+| `--secret-env SPEC` | | Set redacted guest environment variable: `NAME=value`, `NAME=env://VAR`, or `NAME=file:///path` |
+| `-w`, `--workdir DIR` | | Run in guest working directory |
+| `-u`, `--user USER` | | Run as guest user |
+
+```bash
+cove exec ubuntu uname -a
+cove exec -it ubuntu bash
+cove exec -e CI=1 -w /work ubuntu go test ./...
+cove exec ubuntu -- sh -lc 'echo "$0"'
+```
+
+Use `cove shell <vm>` as a shortcut for an interactive login shell.
 
 ---
 
@@ -371,6 +399,7 @@ cove ctl [options] <command> [args...]
 | `agent-connect` | Connect to guest agent |
 | `agent-ping` | Ping guest agent |
 | `agent-info` | Guest system info |
+| `exec <cmd> [args]` | Low-level alias used by `cove ctl`; prefer top-level `cove exec` for Docker-shaped use |
 | `agent-exec <cmd> [args]` | Run command in guest |
 | `agent-exec --daemon <cmd>` | Run as root |
 | `agent-exec-stream <cmd>` | Stream command output |

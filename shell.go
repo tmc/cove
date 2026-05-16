@@ -37,6 +37,13 @@ import (
 // linux_shell.go so `cove shell <vm>` and `cove run -linux -shell` agree.
 var shellDefaultCommand = []string{"/bin/bash", "-l"}
 
+type shellSessionOptions struct {
+	TTY         bool
+	Interactive bool
+	User        string
+	WorkingDir  string
+}
+
 // shellCommand is the entry point for the `cove shell` subcommand.
 //
 // Usage: cove shell <vm> [-- cmd args...]
@@ -82,7 +89,7 @@ func shellCommand(args []string) error {
 		return err
 	}
 
-	exitCode, err := runShellSession(context.Background(), sock, token, vmArg, cmd, env, masker, os.Stdin, os.Stdout, os.Stderr)
+	exitCode, err := runShellSession(context.Background(), sock, token, vmArg, cmd, env, masker, shellSessionOptions{TTY: true, Interactive: true}, os.Stdin, os.Stdout, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -115,7 +122,7 @@ func resolveShellSocket(vmName string) (string, error) {
 // frames, install signal forwarders, restore TTY on exit. Returns the
 // guest exit code (0 on clean exit) and an error (nil on a clean session
 // even if exit code is non-zero — the exit code carries that signal).
-func runShellSession(ctx context.Context, sock, token, vmName string, argv []string, env map[string]string, masker *metrics.Masker, stdin, stdout, stderr *os.File) (int32, error) {
+func runShellSession(ctx context.Context, sock, token, vmName string, argv []string, env map[string]string, masker *metrics.Masker, opts shellSessionOptions, stdin, stdout, stderr *os.File) (int32, error) {
 	conn, err := net.DialTimeout("unix", sock, 10*time.Second)
 	if err != nil {
 		return 0, formatControlSocketDialError(sock, err)
@@ -128,9 +135,16 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 		"type":       "agent-exec-attach",
 		"args":       argv,
 		"auth_token": token,
+		"tty":        opts.TTY,
 	}
 	if len(env) > 0 {
 		attach["env"] = env
+	}
+	if opts.User != "" {
+		attach["user"] = opts.User
+	}
+	if opts.WorkingDir != "" {
+		attach["working_dir"] = opts.WorkingDir
 	}
 	payload, err := json.Marshal(attach)
 	if err != nil {
@@ -174,7 +188,7 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 	isTTY := term.IsTerminal(stdinFD)
 	var restoreTTY func()
 	var restoreSignals func()
-	if isTTY {
+	if opts.TTY && isTTY {
 		prev, rawErr := term.MakeRaw(stdinFD)
 		if rawErr != nil {
 			return 0, fmt.Errorf("raw mode: %w", rawErr)
@@ -195,7 +209,7 @@ func runShellSession(ctx context.Context, sock, token, vmName string, argv []str
 		}
 	}
 	stdinCtx, cancelStdin := context.WithCancel(ctx)
-	if attached.Stdin {
+	if opts.Interactive && attached.Stdin {
 		go pumpShellStdin(stdinCtx, attachWriter, execID, stdin, stderr)
 	}
 	defer func() {

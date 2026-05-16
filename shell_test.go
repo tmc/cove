@@ -218,6 +218,7 @@ func TestRunShellSessionEndToEnd(t *testing.T) {
 		[]string{"echo", "fromfake"},
 		nil,
 		nil,
+		shellSessionOptions{TTY: true, Interactive: true},
 		devnull,
 		out.w,
 		errBuf.w,
@@ -277,6 +278,7 @@ func TestRunShellSessionV02FallbackWarnsAndCompletes(t *testing.T) {
 		[]string{"echo", "fallback"},
 		nil,
 		nil,
+		shellSessionOptions{TTY: true, Interactive: true},
 		devnull,
 		out.w,
 		errBuf.w,
@@ -331,6 +333,9 @@ type fakeShellServer struct {
 	mu       sync.Mutex
 	attaches int
 	lastEnv  map[string]string
+	lastTTY  bool
+	lastUser string
+	lastDir  string
 	echoData []byte
 	closed   chan struct{}
 	stdin    bool
@@ -400,6 +405,9 @@ func (s *fakeShellServer) handle(conn net.Conn) {
 	s.mu.Lock()
 	s.attaches++
 	s.lastEnv = envMap
+	s.lastTTY, _ = req["tty"].(bool)
+	s.lastUser, _ = req["user"].(string)
+	s.lastDir, _ = req["working_dir"].(string)
 	s.mu.Unlock()
 
 	args, _ := req["args"].([]any)
@@ -505,6 +513,7 @@ func TestRunShellSessionPlumbsSecretEnvAndRedactsOutput(t *testing.T) {
 		[]string{"echo", "secrets-test"},
 		map[string]string{"GH_TOKEN": secret},
 		masker,
+		shellSessionOptions{TTY: true, Interactive: true},
 		devnull,
 		out.w,
 		errBuf.w,

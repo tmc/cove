@@ -687,6 +687,7 @@ Runtime Control:
   ctl disk list   Inspect runtime storage devices
   ctl usb list    Inspect runtime USB controllers and devices
   logs            Show guest logs from a running VM (cove logs <vm> [-f])
+  exec            Run a command in a running VM (cove exec <vm> <cmd>)
   shell           Open a Docker-shaped exec session in a running VM (cove shell <vm>)
   agent-sandbox   Run a computer-use provider loop in a fresh VM fork
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)

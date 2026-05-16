@@ -41,6 +41,7 @@ var helpSubcommands = []string{
 	"disk-snapshot",
 	"doctor",
 	"export",
+	"exec",
 	"fleet",
 	"fork",
 	"forward",
