@@ -59,6 +59,7 @@ type agentExecAttachRequest struct {
 	Env        map[string]string `json:"env"`
 	WorkingDir string            `json:"working_dir"`
 	User       string            `json:"user"`
+	TTY        *bool             `json:"tty"`
 }
 
 // agentExecResizeRequest is the payload for `agent-exec-resize`.
@@ -131,11 +132,15 @@ func (s *ControlServer) serveAgentExecAttach(conn net.Conn, raw []byte, a attach
 		stdinOK = false
 		warningText = fmt.Sprintf("guest agent feature probe failed; stdin disabled: %v", err)
 	}
+	tty := true
+	if req.TTY != nil {
+		tty = *req.TTY
+	}
 	if stdinOK {
-		stdin, err = a.ExecAttachControl(ctx, req.ExecID, true, req.User, req.Args, req.Env, req.WorkingDir)
+		stdin, err = a.ExecAttachControl(ctx, req.ExecID, tty, req.User, req.Args, req.Env, req.WorkingDir)
 		stream = stdin
 	} else {
-		stream, err = a.ExecStreamControl(ctx, req.ExecID, true, req.User, req.Args, req.Env, req.WorkingDir)
+		stream, err = a.ExecStreamControl(ctx, req.ExecID, tty, req.User, req.Args, req.Env, req.WorkingDir)
 		if warningText == "" {
 			warningText = "guest agent does not support ExecAttach; stdin disabled"
 		}

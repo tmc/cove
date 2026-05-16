@@ -45,6 +45,7 @@ var commandRegistry = []commandSpec{
 	{Name: "disk-detach", Summary: "Detach VM disk if stuck", Dispatch: commandDispatchEarly, Run: runDiskDetachCommand},
 	{Name: "disk-snapshot", Summary: "Manage disk-level snapshots", Dispatch: commandDispatchLate, Run: runDiskSnapshotCommand},
 	{Name: "export", Summary: "Export VM to tarball", Dispatch: commandDispatchLate, Run: runVMSubcommand},
+	{Name: "exec", Summary: "Run a command in a running VM", Dispatch: commandDispatchEarly, Run: runExecCommand},
 	{Name: "fleet", Summary: "Register and use remote cove hosts", Dispatch: commandDispatchEarly, Run: runFleetCommandSpec},
 	{Name: "fork", Summary: "CoW-fork a VM with a fresh identity", Dispatch: commandDispatchEarly, Run: runForkCommand},
 	{Name: "forward", Summary: "Forward host TCP to guest TCP", Dispatch: commandDispatchEarly, Run: runForwardCommand},

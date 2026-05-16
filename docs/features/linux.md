@@ -113,18 +113,19 @@ cove run -linux -serial /tmp/serial.log  # write to file
 ## Guest Shell (`-shell`)
 
 `cove run -linux -shell` attaches the host terminal to an interactive shell
-in the guest after the VM boots. It opens an `ExecStream` against the
-guest agent with `tty=true`, allocates a PTY in the guest via the agent's
-PTY support, and pipes the master side to the host terminal. Host
-SIGWINCH forwards as `ResizeExecTTY`; host SIGINT forwards as
-`SignalExec(SIGINT)` to the guest process group only -- the main cove
-shutdown handler is detached from SIGINT for the duration of the shell so
-your first Ctrl-C does not also stop the VM.
+in the guest after the VM boots. For an already-running VM, use
+`cove exec -it <vm> bash` or the shortcut `cove shell <vm>`.
+
+These commands use the guest agent's attach path: a guest PTY when requested,
+bidirectional stdin, stdout/stderr streaming, host SIGWINCH resize forwarding,
+and host SIGINT forwarding to the guest process group.
 
 ```bash
 cove run -linux -shell                         # bash -l with PTY, GUI window
 cove run -linux -shell -gui                    # explicit GUI mode
 cove run -linux -shell -cpu 4 -memory 8        # bigger guest, same wrapper
+cove exec -it ubuntu bash                      # shell into a running VM
+cove exec ubuntu uname -a                      # one-shot command
 ```
 
 Constraints:
@@ -134,26 +135,15 @@ Constraints:
   cove needs a TTY to write to.
 - The default guest command is `/bin/bash -l`.
 
-### v0.2 readiness: what's IN
+### Current readiness
 
-- `cove run -linux -shell` -- in-process interactive shell during
-  `cove run`. Host SIGWINCH resizes the guest TTY; host SIGINT signals
-  the guest process group, **not** cove itself.
-- Agent-side PTY allocation via `creack/pty` (`cmd/vz-agent/server.go`).
-- Ubuntu LTS only for the smoke-tested path. Other distros boot but the
-  shell wrapper has only been integration-tested against Ubuntu so far.
-
-### v0.2 readiness: what's OUT (deferred)
-
-- Standalone `cove shell <vm>` command. Tracked in **design 023**
-  (Docker-shaped exec UX); planned for v0.2.1 or v0.3 depending on
-  proto-change scheduling.
-- **Bidirectional stdin.** The agent's `ExecStream` RPC is server-
-  streaming only, so the wrapper cannot type into the guest. Use
-  `-shell` for tail-style observation (boot logs, journald, long-
-  running output). Bidi stdin requires a proto change scoped to v0.3.
-- Phase B (OCI image distribution + per-distro CI matrix). Deferred to
-  v0.2.1 per the v0.2 audit.
+- `cove exec` is the canonical Docker-shaped command runner for running VMs.
+- `cove shell <vm>` opens a default `/bin/bash -l` interactive shell.
+- `cove run -linux -shell` remains the boot-time shell path.
+- Agent-side PTY allocation, bidirectional stdin, resize, signal forwarding,
+  and exit-code propagation are available through the attach path.
+- Ubuntu LTS is the smoke-tested Linux path. Other distros boot, but shell
+  and desktop flows are not covered by the same matrix yet.
 
 ## Rosetta (x86-64 Translation)
 

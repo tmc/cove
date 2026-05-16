@@ -13,12 +13,27 @@ Two agent instances run inside the guest:
 - **Daemon agent** (root, port 1024): system-level operations
 - **User agent** (login session): user-level operations with TCC/FDA access
 
+## Run Commands
+
+Use top-level `cove exec` for the Docker-shaped path:
+
+```bash
+cove exec ubuntu uname -a
+cove exec -it ubuntu bash
+cove exec -e CI=1 -w /work ubuntu go test ./...
+```
+
+`cove shell <vm>` is a shortcut for an interactive login shell in a running VM.
+
 ## Agent Commands via ctl
+
+`cove ctl` exposes the lower-level control-socket commands. Prefer these for
+automation that already works directly with the control socket.
 
 ```bash
 cove ctl agent-ping                       # check connectivity
 cove ctl agent-info                       # guest OS, hostname, arch
-cove ctl agent-exec ls /tmp               # run command (user session)
+cove ctl exec ls /tmp                     # run command (auto-routed by path)
 cove ctl agent-exec --daemon whoami       # run as root
 cove ctl agent-exec-stream make build     # stream output live
 cove ctl agent-read /etc/hosts            # read guest file

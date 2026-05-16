@@ -124,6 +124,7 @@ func runOne(b *testing.B, sockPath string) {
 		[]string{"echo", "bench"},
 		nil,
 		nil,
+		shellSessionOptions{TTY: true, Interactive: true},
 		devnull,
 		out,
 		errOut,
