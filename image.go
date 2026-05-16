@@ -34,14 +34,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/imagestore"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
 
 // ImagesBaseDir returns the local image store root. Mirrors vmconfig.BaseDir
 // convention so a single ~/.vz tree holds VMs and images.
 func ImagesBaseDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "images")
+	return imagestore.BaseDir()
 }
 
 // ImageManifest is the on-disk schema for an image's manifest.json.
@@ -69,95 +69,20 @@ type ImageManifest struct {
 }
 
 // ImageRef is a parsed name[:tag] image reference.
-type ImageRef struct {
-	Name string
-	Tag  string
-}
-
-// String renders the canonical "name:tag" form.
-func (r ImageRef) String() string { return r.Name + ":" + r.Tag }
-
-// Path returns the on-disk directory for this image ref.
-func (r ImageRef) Path() string {
-	parts := append([]string{ImagesBaseDir()}, strings.Split(r.Name, "/")...)
-	parts = append(parts, r.Tag)
-	return filepath.Join(parts...)
-}
+type ImageRef = imagestore.Ref
 
 // ErrImageRefInvalid is returned by ParseImageRef when the supplied
 // string is empty, has multiple ':', or has an empty name/tag, or
 // when the name/tag fails component validation. Callers can branch on
 // this with errors.Is to surface a "give me 'name:tag'" hint without
 // matching individual messages.
-var ErrImageRefInvalid = errors.New("invalid image ref")
+var ErrImageRefInvalid = imagestore.ErrRefInvalid
 
 // ParseImageRef parses "name" or "name:tag" into an ImageRef. Default
 // tag is "latest". The name and tag are validated against the same
 // allow-set used by snapshot names so they are safe path components.
 func ParseImageRef(s string) (ImageRef, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ImageRef{}, fmt.Errorf("%w: empty", ErrImageRefInvalid)
-	}
-	if strings.Count(s, ":") > 1 {
-		return ImageRef{}, fmt.Errorf("%w: %q contains multiple ':'", ErrImageRefInvalid, s)
-	}
-	name, tag, hasTag := strings.Cut(s, ":")
-	if name == "" {
-		return ImageRef{}, fmt.Errorf("%w: %q has empty name", ErrImageRefInvalid, s)
-	}
-	if !hasTag {
-		tag = "latest"
-	}
-	if tag == "" {
-		return ImageRef{}, fmt.Errorf("%w: %q has empty tag", ErrImageRefInvalid, s)
-	}
-	if err := validateImageName(name); err != nil {
-		return ImageRef{}, fmt.Errorf("%w: name: %v", ErrImageRefInvalid, err)
-	}
-	if err := validateImageComponent(tag); err != nil {
-		return ImageRef{}, fmt.Errorf("%w: tag: %v", ErrImageRefInvalid, err)
-	}
-	return ImageRef{Name: name, Tag: tag}, nil
-}
-
-func validateImageName(s string) error {
-	if strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") || strings.Contains(s, "//") {
-		return fmt.Errorf("%q must be slash-separated path components", s)
-	}
-	parts := strings.Split(s, "/")
-	if len(parts) > 1 && strings.ContainsAny(parts[0], ".:") {
-		return fmt.Errorf("%q looks like a registry reference; use registry/repo:tag for remote images", s)
-	}
-	for _, part := range parts {
-		if err := validateImageComponent(part); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateImageComponent is intentionally strict: alnum, '-', '_', '.';
-// 1..128 chars; not "." or "..". Keeps refs trivially safe as path
-// components and as future OCI repo/tag values.
-func validateImageComponent(s string) error {
-	if len(s) == 0 || len(s) > 128 {
-		return fmt.Errorf("%q must be 1..128 characters", s)
-	}
-	if s == "." || s == ".." {
-		return fmt.Errorf("%q is reserved", s)
-	}
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= 'A' && r <= 'Z':
-		case r >= '0' && r <= '9':
-		case r == '-' || r == '_' || r == '.':
-		default:
-			return fmt.Errorf("%q contains invalid character %q", s, r)
-		}
-	}
-	return nil
+	return imagestore.ParseRef(s)
 }
 
 // ImageExists reports whether the image at ref has a manifest on disk.
