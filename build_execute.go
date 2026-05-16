@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/vz-macos/internal/buildmeta"
 	"github.com/tmc/vz-macos/internal/store"
 )
 
@@ -292,7 +293,7 @@ func validateBuildStepSecrets(step buildPlanStep) error {
 }
 
 func validBuildSecretName(name string) bool {
-	return name != "" && !strings.Contains(name, "/")
+	return buildmeta.ValidSecretName(name)
 }
 
 func finalizeBuildResult(result buildExecutionResult) error {
