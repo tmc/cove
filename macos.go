@@ -22,11 +22,12 @@ import (
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
-	balloonx "github.com/tmc/apple/x/vzkit/balloon"
+	audiox "github.com/tmc/apple/x/vzkit/audio"
 	"github.com/tmc/apple/x/vzkit/clipboard"
 	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	macosconfig "github.com/tmc/apple/x/vzkit/macosconfig"
 	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/vmrun"
@@ -664,11 +665,52 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	// Resolve symlinks for all paths
 	diskImagePath = resolvePath(diskImagePath)
 
-	config := vz.NewVZVirtualMachineConfiguration()
+	plan, err := macOSDevicePlan(rc, hc)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, err
+	}
+	netConfig, err := ParseNetworkMode(plan.Network.Mode)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("parse network mode: %w", err)
+	}
+	macAddr := loadOrCreateMACAddress()
+	builderNetwork := macosconfig.Network{Config: netConfig}
+	if macAddr.ID != 0 {
+		builderNetwork.MAC = &macAddr
+	}
+	if netConfig.Mode == NetworkModeFileHandle || netConfig.Mode == NetworkModeNone {
+		builderNetwork = macosconfig.Network{}
+	}
 
-	// CPU and memory
-	config.SetCPUCount(rc.CPUCount)
-	config.SetMemorySize(rc.MemoryGB * 1024 * 1024 * 1024)
+	var audioConfig *audiox.Config
+	if plan.Audio.Enabled {
+		audioConfig = &audiox.Config{
+			InputEnabled:  plan.Audio.HostInput,
+			OutputEnabled: plan.Audio.HostOutput,
+		}
+	}
+
+	displayConfigs := make([]displayx.Config, 0, len(plan.Display))
+	for _, d := range plan.Display {
+		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+	}
+	minimalProfile := hc.RuntimeProfile == "minimal"
+	config, err := macosconfig.Build(macosconfig.Config{
+		CPUCount:      plan.CPUCount,
+		MemoryGB:      plan.MemoryGB,
+		Display:       displayConfigs,
+		Network:       builderNetwork,
+		Audio:         audioConfig,
+		Keyboard:      true,
+		Pointing:      true,
+		Entropy:       true,
+		USBController: !minimalProfile,
+		MemoryBalloon: !minimalProfile,
+		Socket:        !minimalProfile,
+	})
+	if err != nil {
+		return config, fmt.Errorf("build macos device config: %w", err)
+	}
 
 	// Platform configuration (macOS)
 	platformConfig := vz.NewVZMacPlatformConfiguration()
@@ -737,97 +779,22 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	storageConfig.Retain()
 	setStorageDevices(config, storageConfig)
 
-	// Graphics with multi-display support
-	displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
-	for _, d := range rc.Displays {
-		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
-	}
-	if len(displayConfigs) == 0 {
-		displayConfigs = []displayx.Config{displayx.DefaultConfig()}
-	}
-	graphicsConfig, err := displayx.CreateMacGraphicsConfig(displayConfigs)
-	if err != nil {
-		return config, fmt.Errorf("create graphics config: %w", err)
-	}
 	if hc.Verbose {
 		for i, d := range displayConfigs {
 			fmt.Printf("  Display %d: %dx%d @ %d PPI\n", i+1, d.Width, d.Height, d.PPI)
 		}
 	}
-	setGraphicsDevices(config, graphicsConfig)
 
-	// Network configuration
-	netConfig, err := ParseNetworkMode(rc.NetworkMode)
-	if err != nil {
-		return config, fmt.Errorf("parse network mode: %w", err)
-	}
-	if netConfig.Mode != NetworkModeNone {
+	// Network configuration not covered by vzkit's mechanical builder.
+	if netConfig.Mode == NetworkModeFileHandle {
 		networkDeviceConfig, err := CreateNetworkDeviceConfiguration(netConfig)
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
-
-		macAddr := loadOrCreateMACAddress()
 		if macAddr.ID != 0 {
 			networkDeviceConfig.SetMACAddress(&macAddr)
 		}
-
 		setNetworkDevices(config, networkDeviceConfig)
-	}
-
-	// Keyboard
-	// Try VZMacKeyboardConfiguration first when available
-	var keyboardConfig vz.IVZKeyboardConfiguration
-	if macKeyboard := vz.NewVZMacKeyboardConfiguration(); macKeyboard.GetID() != 0 {
-		keyboardConfig = macKeyboard
-	} else {
-		keyboardConfig = vz.NewVZUSBKeyboardConfiguration()
-	}
-	setKeyboards(config, keyboardConfig)
-
-	// Pointing device
-	pointingDevices := []vz.IVZPointingDeviceConfiguration{
-		vz.NewVZUSBScreenCoordinatePointingDeviceConfiguration(),
-	}
-	if trackpad := vz.NewVZMacTrackpadConfiguration(); trackpad.GetID() != 0 {
-		pointingDevices = append(pointingDevices, trackpad)
-	}
-	setPointingDevices(config, pointingDevices)
-
-	// Entropy device
-	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
-	setEntropyDevices(config, entropyConfig)
-
-	// Audio with host input/output streams.
-	// Plan() decides whether the guest gets a VirtioSound device. For
-	// macOS the answer is always yes (host streams are required for
-	// installation; see CLAUDE.md DFU 3004/4014). If Plan errors we
-	// fall back to attaching audio anyway — the prior behavior — so
-	// validation surfaces happen later via the framework, not here.
-	audioPlan, planErr := vmrun.Plan(rc, hc)
-	if planErr != nil || audioPlan.Audio.Enabled {
-		audioConfig, err := createAudioDeviceConfiguration()
-		if err != nil {
-			fmt.Printf("warning: audio config: %v\n", err)
-		} else {
-			setAudioDevices(config, audioConfig)
-		}
-	}
-
-	minimalProfile := hc.RuntimeProfile == "minimal"
-	if !minimalProfile {
-		EnsureUSBController(config)
-	}
-
-	if !minimalProfile {
-		// Memory balloon device for runtime memory control
-		balloonx.AddDevice(config)
-
-		// Virtio socket device (vsock for host-guest communication)
-		vsockConfig := vz.NewVZVirtioSocketDeviceConfiguration()
-		if vsockConfig.ID != 0 {
-			setSocketDevices(config, vsockConfig)
-		}
 	}
 
 	// USB storage devices
