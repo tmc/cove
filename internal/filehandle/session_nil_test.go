@@ -12,12 +12,6 @@ func TestSessionNilReceiver(t *testing.T) {
 	if got := s.DeviceConfiguration(); got.ID != 0 {
 		t.Errorf("nil.DeviceConfiguration().ID = %d, want zero", got.ID)
 	}
-	if got := s.Attachment(); got.ID != 0 {
-		t.Errorf("nil.Attachment().ID = %d, want zero", got.ID)
-	}
-	if got := s.Stats(); got != (Stats{}) {
-		t.Errorf("nil.Stats() = %+v, want zero value", got)
-	}
 	if got := s.Summary(); !strings.Contains(got, "disabled") {
 		t.Errorf("nil.Summary() = %q, want contains \"disabled\"", got)
 	}

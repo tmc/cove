@@ -126,10 +126,6 @@ func newConnectedDatagramSocketPair(mtu int) (hostFD int, guestFD int, err error
 	return pair.HostFD, pair.GuestFD, nil
 }
 
-func configureDatagramSocketBuffers(fd int, mtu int) error {
-	return networkfd.ConfigureDatagramSocketBuffers(fd, mtu)
-}
-
 var newNSFileHandleFromFD = networkfd.NewFileHandleFromFD
 
 func newFrameBuffer(sizeHint int) []byte {

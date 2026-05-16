@@ -269,43 +269,11 @@ func fleetRemoteArgs(cmd string, args []string, remote fleetpkg.Remote) ([]strin
 	return nil, fmt.Errorf("fleet: command %q is not supported in fleet routing", cmd)
 }
 
-func ensureFleetVMArg(args []string, remote fleetpkg.Remote) []string {
-	if hasFlagValue(args, "-vm") || hasFlagValue(args, "--vm") || hasFlagPrefix(args, "-vm=") || hasFlagPrefix(args, "--vm=") || remote.DefaultVM == "" {
-		return args
-	}
-	out := append([]string{"-vm", remote.DefaultVM}, args...)
-	return out
-}
-
 func ensureFleetPositionalVM(args []string, remote fleetpkg.Remote) []string {
 	if len(args) > 0 || remote.DefaultVM == "" {
 		return args
 	}
 	return []string{remote.DefaultVM}
-}
-
-func hasFlagValue(args []string, names ...string) bool {
-	set := make(map[string]bool, len(names))
-	for _, name := range names {
-		set[name] = true
-	}
-	for _, arg := range args {
-		if set[arg] {
-			return true
-		}
-	}
-	return false
-}
-
-func hasFlagPrefix(args []string, prefixes ...string) bool {
-	for _, arg := range args {
-		for _, prefix := range prefixes {
-			if strings.HasPrefix(arg, prefix) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (sshFleetRunner) Run(ctx context.Context, remote fleetpkg.Remote, args []string, stdout, stderr io.Writer) error {
