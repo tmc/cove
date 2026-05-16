@@ -1649,8 +1649,9 @@ func stageInstalledLinuxBootArtifacts(vmDir, mountPoint string) error {
 	kernelSource := filepath.Join(artifactDir, "vmlinuz")
 	initrdSource := filepath.Join(artifactDir, "initrd")
 	rootUUIDSource := filepath.Join(artifactDir, linuxRootUUIDFileName)
+	rootDeviceSource := filepath.Join(artifactDir, linuxRootDeviceFileName)
 
-	for _, path := range []string{kernelSource, initrdSource, rootUUIDSource} {
+	for _, path := range []string{kernelSource, rootUUIDSource} {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("missing staged linux boot artifact %s: %w", path, err)
 		}
@@ -1662,8 +1663,16 @@ func stageInstalledLinuxBootArtifacts(vmDir, mountPoint string) error {
 	if err := decompressKernelIfNeeded(filepath.Join(vmDir, "vmlinuz")); err != nil {
 		return fmt.Errorf("prepare staged linux kernel: %w", err)
 	}
-	if err := copyFile(initrdSource, filepath.Join(vmDir, "initrd")); err != nil {
-		return fmt.Errorf("copy staged linux initrd: %w", err)
+	if info, err := os.Stat(initrdSource); err == nil && info.Size() > 0 {
+		if err := copyFile(initrdSource, filepath.Join(vmDir, "initrd")); err != nil {
+			return fmt.Errorf("copy staged linux initrd: %w", err)
+		}
+	} else if err == nil || os.IsNotExist(err) {
+		if err := os.Remove(filepath.Join(vmDir, "initrd")); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale staged linux initrd: %w", err)
+		}
+	} else {
+		return fmt.Errorf("inspect staged linux initrd: %w", err)
 	}
 
 	rootUUID, err := os.ReadFile(rootUUIDSource)
@@ -1676,6 +1685,16 @@ func stageInstalledLinuxBootArtifacts(vmDir, mountPoint string) error {
 	}
 	if err := os.WriteFile(filepath.Join(vmDir, linuxRootUUIDFileName), append(rootUUID, '\n'), 0644); err != nil {
 		return fmt.Errorf("write staged linux root uuid: %w", err)
+	}
+	if rootDevice, err := os.ReadFile(rootDeviceSource); err == nil {
+		rootDevice = bytes.TrimSpace(rootDevice)
+		if len(rootDevice) > 0 {
+			if err := os.WriteFile(filepath.Join(vmDir, linuxRootDeviceFileName), append(rootDevice, '\n'), 0644); err != nil {
+				return fmt.Errorf("write staged linux root device: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read staged linux root device: %w", err)
 	}
 	return nil
 }
