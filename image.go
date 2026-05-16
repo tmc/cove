@@ -24,7 +24,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -45,28 +44,7 @@ func ImagesBaseDir() string {
 }
 
 // ImageManifest is the on-disk schema for an image's manifest.json.
-// Field names use lowerCamel for forward-compat with the OCI annotation
-// shape Slice 2 will adopt.
-type ImageManifest struct {
-	SchemaVersion  int              `json:"schemaVersion"`
-	Name           string           `json:"name"`
-	Tag            string           `json:"tag"`
-	OSType         string           `json:"osType,omitempty"`
-	SourceVM       string           `json:"sourceVM,omitempty"`
-	BaseImage      string           `json:"baseImage,omitempty"`
-	CoveCommit     string           `json:"cove_commit,omitempty"`
-	AgentCommit    string           `json:"agent_commit,omitempty"`
-	AgentFeatures  []string         `json:"agent_features,omitempty"`
-	BuildRecipe    string           `json:"build_recipe,omitempty"`
-	SourceImage    string           `json:"source_image,omitempty"`
-	BuiltAt        time.Time        `json:"built_at,omitempty"`
-	DefaultNetwork string           `json:"default_network,omitempty"`
-	DefaultSandbox string           `json:"default_sandbox,omitempty"`
-	DiskSHA256     string           `json:"diskSHA256"`
-	DiskSize       int64            `json:"diskSize"`
-	CreatedAt      time.Time        `json:"createdAt"`
-	SourceConfig   *vmconfig.Config `json:"sourceConfig,omitempty"`
-}
+type ImageManifest = imagestore.Manifest
 
 // ImageRef is a parsed name[:tag] image reference.
 type ImageRef = imagestore.Ref
@@ -94,15 +72,7 @@ func ImageExists(ref ImageRef) bool {
 // LoadImageManifest reads the manifest at ref or returns an error if
 // the image does not exist.
 func LoadImageManifest(ref ImageRef) (*ImageManifest, error) {
-	data, err := os.ReadFile(filepath.Join(ref.Path(), "manifest.json"))
-	if err != nil {
-		return nil, fmt.Errorf("read image manifest: %w", err)
-	}
-	var m ImageManifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parse image manifest: %w", err)
-	}
-	return &m, nil
+	return imagestore.LoadManifest(ref)
 }
 
 // BuildImageOptions configures cove image build.
@@ -254,39 +224,7 @@ func copyImageFiles(srcDir, imgDir, osType string) error {
 }
 
 func writeImageManifest(dir string, m *ImageManifest) error {
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal manifest: %w", err)
-	}
-	path := filepath.Join(dir, "manifest.json")
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return fmt.Errorf("write manifest: %w", err)
-	}
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("write manifest: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("sync manifest: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("close manifest: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("rename manifest: %w", err)
-	}
-	if d, err := os.Open(dir); err == nil {
-		d.Sync()
-		d.Close()
-	}
-	return nil
+	return imagestore.WriteManifest(dir, m)
 }
 
 func legacyImageManifest(m *ImageManifest) bool {
@@ -354,10 +292,7 @@ func sha256AndSize(path string) (string, int64, error) {
 }
 
 // ImageEntry is a row in `cove image list`.
-type ImageEntry struct {
-	Ref      ImageRef
-	Manifest *ImageManifest
-}
+type ImageEntry = imagestore.Entry
 
 // ListImages walks the local image store and returns one entry per
 // (name, tag) pair that has a readable manifest.json.
