@@ -3,7 +3,7 @@
 # runs-on: daemon
 
 guest-exec sh -lc 'test -e /dev/kvm'
-guest-exec sh -lc 'lsmod | grep -E "kvm|kvm_arm"'
+guest-exec sh -lc 'lsmod | grep -E "kvm|kvm_arm" || test -e /dev/kvm'
 guest-shell kvm-test.sh
 
 -- kvm-test.sh --

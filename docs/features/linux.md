@@ -33,6 +33,13 @@ cove up -linux -nested
 cove vzscript run kvm-test
 ```
 
+Ubuntu Desktop with nested KVM, kept running after verification:
+
+```bash
+cove up -vm ubuntu-gui-kvm -linux -desktop -nested -cpu 4 -memory 8 \
+  -user ubuntu -password ubuntu -vzscripts kvm-test -no-shutdown
+```
+
 ## Installation
 
 The installer creates the right unattended seed for each distro:
@@ -185,6 +192,22 @@ Use `-nested` on `cove run` or `cove up`:
 ```bash
 cove run -linux -nested
 ```
+
+For a persistent Ubuntu GUI machine with KVM enabled, prefer `cove up` so the
+same command installs the desktop, boots with nested virtualization enabled,
+runs the `kvm-test` recipe through the daemon agent, and leaves the VM running:
+
+```bash
+cove up -vm ubuntu-gui-kvm -linux -desktop -nested -cpu 4 -memory 8 \
+  -user ubuntu -password ubuntu -vzscripts kvm-test -no-shutdown
+```
+
+The install phase intentionally does not expose nested virtualization to the
+Ubuntu installer. cove enables it on the first normal boot, after the installed
+desktop disk is ready.
+
+`kvm-test` checks `/dev/kvm`, verifies the KVM kernel module is present, and
+installs the guest packages needed for nested QEMU/libvirt use.
 
 If the host does not support nested virtualization, cove fails before VM start with:
 

@@ -206,6 +206,13 @@ cove up [flags]
 | `-automation-input-backend <mode>` | | Override input backend: auto, direct, or window |
 | `-v` | false | Verbose output |
 
+Ubuntu GUI with nested KVM and verification:
+
+```bash
+cove up -vm ubuntu-gui-kvm -linux -desktop -nested -cpu 4 -memory 8 \
+  -user ubuntu -password ubuntu -vzscripts kvm-test -no-shutdown
+```
+
 ```bash
 cove up -user me
 cove up -user me -vzscripts homebrew,golang

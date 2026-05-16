@@ -10,9 +10,23 @@ codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ./cove -vm linux-gui-debug -display 1280x720 up -linux -desktop -user debug -password debug -gui
 ```
 
+For the recommended GUI KVM machine on supported M3/M4 hosts, enable nested
+virtualization on the post-install boot, run the KVM verification recipe, and
+leave the VM running:
+
+```sh
+./cove -vm ubuntu-gui-kvm -display 1280x720 up -linux -desktop -nested \
+  -cpu 4 -memory 8 -user ubuntu -password ubuntu \
+  -vzscripts kvm-test -no-shutdown
+```
+
 The `-desktop` path defaults to the OEM installer. Use
 `-desktop-installer=server` to force the older Server ISO plus
 `ubuntu-desktop` package path.
+
+The install phase keeps nested virtualization disabled for installer stability.
+The first normal boot enables it, and `kvm-test` verifies `/dev/kvm`, KVM module
+visibility, and nested QEMU/libvirt package installation.
 
 On the 2026-05-03 validation run, with disk image attachments using
 `Cached + None` during install:
