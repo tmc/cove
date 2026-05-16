@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	vz "github.com/tmc/apple/virtualization"
+	platformx "github.com/tmc/apple/x/vzkit/platform"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
@@ -242,5 +243,5 @@ func generateLinuxMachineID(vmPath string) error {
 	if machineID.ID == 0 {
 		return fmt.Errorf("failed to create generic machine identifier")
 	}
-	return saveGenericMachineIdentifier(machineID, machineIDPath)
+	return platformx.SaveGenericMachineIdentifier(machineID, machineIDPath)
 }

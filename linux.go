@@ -19,6 +19,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/clipboard"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
@@ -355,32 +356,15 @@ func (a installedLinuxBootArtifacts) commandLine() string {
 
 // createEFIBootLoader creates a VZEFIBootLoader with variable store.
 func createEFIBootLoader() (vz.VZEFIBootLoader, error) {
-	bootloader := vz.NewVZEFIBootLoader()
-	if bootloader.ID == 0 {
-		return bootloader, fmt.Errorf("failed to create EFI boot loader")
-	}
-
-	// Create or load EFI variable store
 	efiStorePath := filepath.Join(vmDir, "efi.nvram")
-	efiStoreURL := foundation.NewURLFileURLWithPath(efiStorePath)
-
-	var efiStore vz.VZEFIVariableStore
-	if _, err := os.Stat(efiStorePath); os.IsNotExist(err) {
+	bootloader, created, err := platformx.CreateEFIBootLoader(efiStorePath)
+	if err != nil {
+		return bootloader, err
+	}
+	if created {
 		fmt.Println("  Creating EFI variable store...")
-		var err error
-		efiStore, err = vz.NewEFIVariableStoreCreatingVariableStoreAtURLOptionsError(
-			efiStoreURL, vz.VZEFIVariableStoreInitializationOptionAllowOverwrite)
-		if err != nil {
-			return bootloader, fmt.Errorf("failed to create EFI variable store: %w", err)
-		}
 	} else {
 		fmt.Println("  Loading existing EFI variable store...")
-		efiStore = vz.NewEFIVariableStoreWithURL(efiStoreURL)
-	}
-	// efiStore must be retained as it's assigned to bootloader and might be autoreleased
-	if efiStore.ID != 0 {
-		efiStore.Retain()
-		bootloader.SetVariableStore(&efiStore)
 	}
 	if windowsMode && strings.TrimSpace(windowsEFIRomPath) != "" {
 		romPath := resolvePath(windowsEFIRomPath)
@@ -402,39 +386,16 @@ func createEFIBootLoader() (vz.VZEFIBootLoader, error) {
 // loadOrCreateGenericMachineIdentifier loads an existing generic machine identifier or creates a new one.
 func loadOrCreateGenericMachineIdentifier() vz.VZGenericMachineIdentifier {
 	machineIDPath := filepath.Join(vmDir, "linux-machine.id")
-
-	// Check if we have a saved machine identifier
-	if data, err := os.ReadFile(machineIDPath); err == nil && len(data) > 0 {
-		nsData := createNSDataFromBytes(data)
-		if nsData != 0 {
-			nsDataObj := foundation.NSDataFromID(nsData)
-			machineID := vz.NewGenericMachineIdentifierWithDataRepresentation(&nsDataObj)
-			if machineID.ID != 0 {
-				fmt.Println("  Loaded existing machine identifier")
-				return machineID
-			}
-		}
-	}
-
-	// Create new machine identifier
-	machineID := vz.NewVZGenericMachineIdentifier()
-	fmt.Println("  Created new machine identifier")
-
-	// Save for future use
-	if err := saveGenericMachineIdentifier(machineID, machineIDPath); err != nil {
+	machineID, created, err := platformx.LoadOrCreateGenericMachineIdentifier(machineIDPath)
+	if err != nil {
 		fmt.Printf("  warning: could not save machine identifier: %v\n", err)
 	}
-
-	return machineID
-}
-
-// saveGenericMachineIdentifier saves the machine identifier data representation to a file.
-func saveGenericMachineIdentifier(machineID vz.VZGenericMachineIdentifier, path string) error {
-	data := machineID.DataRepresentation()
-	if data.GetID() == 0 {
-		return fmt.Errorf("machine identifier has no data representation")
+	if created {
+		fmt.Println("  Created new machine identifier")
+	} else {
+		fmt.Println("  Loaded existing machine identifier")
 	}
-	return saveNSDataToFile(data.GetID(), path)
+	return machineID
 }
 
 // runLinuxVM runs a Linux VM with the configured settings.

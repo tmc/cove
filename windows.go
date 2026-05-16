@@ -16,6 +16,7 @@ import (
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
@@ -359,22 +360,14 @@ func windowsUSBStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConf
 
 func loadOrCreateWindowsMachineIdentifier() vz.VZGenericMachineIdentifier {
 	machineIDPath := filepath.Join(vmDir, "windows-machine.id")
-	if data, err := os.ReadFile(machineIDPath); err == nil && len(data) > 0 {
-		nsData := createNSDataFromBytes(data)
-		if nsData != 0 {
-			nsDataObj := foundation.NSDataFromID(nsData)
-			machineID := vz.NewGenericMachineIdentifierWithDataRepresentation(&nsDataObj)
-			if machineID.ID != 0 {
-				fmt.Println("  Loaded existing Windows machine identifier")
-				return machineID
-			}
-		}
-	}
-
-	machineID := vz.NewVZGenericMachineIdentifier()
-	fmt.Println("  Created new Windows machine identifier")
-	if err := saveGenericMachineIdentifier(machineID, machineIDPath); err != nil {
+	machineID, created, err := platformx.LoadOrCreateGenericMachineIdentifier(machineIDPath)
+	if err != nil {
 		fmt.Printf("  warning: could not save Windows machine identifier: %v\n", err)
+	}
+	if created {
+		fmt.Println("  Created new Windows machine identifier")
+	} else {
+		fmt.Println("  Loaded existing Windows machine identifier")
 	}
 	return machineID
 }
