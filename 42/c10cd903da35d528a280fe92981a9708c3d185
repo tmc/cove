@@ -1,0 +1,12 @@
+codex note
+commit: 42c10cd903da35d528a280fe92981a9708c3d185
+date: 2026-05-16T20:22:25Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 35464
+ITERM_SESSION_ID: w0t0p5:8DDE1177-B78F-409A-98C8-3C7CA9FAFDA7
+
+Validation:
+- fixes build break in previous no-agent remediation change by using agentstate.PlatformMacOS.
+- go test ./... passed after the fix.
