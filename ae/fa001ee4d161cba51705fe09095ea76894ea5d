@@ -1,0 +1,9 @@
+commit: aefa001ee4d161cba51705fe09095ea76894ea5d
+date: 2026-05-16T04:00:25Z
+agent: codex
+version: GPT-5
+model: unknown
+tty: not a tty
+pid: 55765
+ITERM_SESSION_ID: w0t0p5:8DDE1177-B78F-409A-98C8-3C7CA9FAFDA7
+summary: use vzkit config setters; validated via local go.work with ../apple at feb0e4c4
