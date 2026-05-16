@@ -17,9 +17,11 @@ import (
 	"github.com/tmc/apple/foundation"
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
+	audiox "github.com/tmc/apple/x/vzkit/audio"
 	"github.com/tmc/apple/x/vzkit/clipboard"
 	configx "github.com/tmc/apple/x/vzkit/config"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	linuxconfig "github.com/tmc/apple/x/vzkit/linuxconfig"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/vz-macos/internal/vmconfig"
@@ -38,11 +40,48 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 		return vz.VZVirtualMachineConfiguration{}, err
 	}
 
-	config := vz.NewVZVirtualMachineConfiguration()
+	netConfig, err := ParseNetworkMode(plan.Network.Mode)
+	if err != nil {
+		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("parse network mode: %w", err)
+	}
+	macAddr := loadOrCreateMACAddressForVM(hc.VMDir)
+	builderNetwork := linuxconfig.Network{Config: netConfig}
+	if macAddr.ID != 0 {
+		builderNetwork.MAC = &macAddr
+	}
+	if netConfig.Mode == NetworkModeFileHandle || netConfig.Mode == NetworkModeNone {
+		builderNetwork = linuxconfig.Network{}
+	}
 
-	// CPU and memory
-	config.SetCPUCount(plan.CPUCount)
-	config.SetMemorySize(plan.MemoryGB * 1024 * 1024 * 1024)
+	var audioConfig *audiox.Config
+	if plan.Audio.Enabled {
+		audioConfig = &audiox.Config{
+			InputEnabled:  plan.Audio.HostInput,
+			OutputEnabled: plan.Audio.HostOutput,
+		}
+	}
+
+	displayConfigs := make([]displayx.Config, 0, len(plan.Display))
+	for _, d := range plan.Display {
+		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
+	}
+
+	config, err := linuxconfig.Build(linuxconfig.Config{
+		CPUCount:      plan.CPUCount,
+		MemoryGB:      plan.MemoryGB,
+		Display:       displayConfigs,
+		Network:       builderNetwork,
+		Audio:         audioConfig,
+		Keyboard:      true,
+		Pointing:      true,
+		Entropy:       true,
+		USBController: true,
+		MemoryBalloon: true,
+		Socket:        true,
+	})
+	if err != nil {
+		return config, fmt.Errorf("build linux device config: %w", err)
+	}
 
 	// Platform configuration (generic for Linux)
 	fmt.Println("Setting up Linux platform configuration...")
@@ -126,66 +165,17 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 		config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{storageConfig})
 	}
 
-	// Graphics - use Virtio for Linux with multi-display support.
-	// Default the framebuffer to the host window size (1024x768) so the
-	// guest renders 1:1 instead of being scaled from displayx.DefaultLinux's
-	// 1920x1080. Users who want higher resolution pass -display.
-	displayConfigs := make([]displayx.Config, 0, len(plan.Display))
-	for _, d := range plan.Display {
-		displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
-	}
-	graphicsConfig, err := displayx.CreateVirtioGraphicsConfig(displayConfigs)
-	if err != nil {
-		return config, fmt.Errorf("create graphics config: %w", err)
-	}
-	setVirtioGraphicsDevices(config, graphicsConfig)
-
-	// Network configuration
-	netConfig, err := ParseNetworkMode(plan.Network.Mode)
-	if err != nil {
-		return config, fmt.Errorf("parse network mode: %w", err)
-	}
-	if netConfig.Mode != NetworkModeNone {
+	// Network configuration not covered by vzkit's mechanical builder.
+	if netConfig.Mode == NetworkModeFileHandle {
 		networkDeviceConfig, err := CreateNetworkDeviceConfiguration(netConfig)
 		if err != nil {
 			return config, fmt.Errorf("create network device: %w", err)
 		}
-		macAddr := loadOrCreateMACAddressForVM(hc.VMDir)
 		if macAddr.ID != 0 {
 			networkDeviceConfig.SetMACAddress(&macAddr)
 		}
 		setNetworkDevices(config, networkDeviceConfig)
 	}
-
-	// Keyboard
-	keyboardConfig := vz.NewVZUSBKeyboardConfiguration()
-	setKeyboards(config, keyboardConfig)
-
-	// Pointing device
-	pointingConfig := vz.NewVZUSBScreenCoordinatePointingDeviceConfiguration()
-	setPointingDevices(config, []vz.IVZPointingDeviceConfiguration{pointingConfig})
-
-	// Entropy device
-	entropyConfig := vz.NewVZVirtioEntropyDeviceConfiguration()
-	setEntropyDevices(config, entropyConfig)
-
-	// Audio. The plan gates whether the VirtioSound device is attached;
-	// for Linux it is always enabled with output-only host streams.
-	if plan.Audio.Enabled {
-		audioConfig := vz.NewVZVirtioSoundDeviceConfiguration()
-		setAudioDevices(config, audioConfig)
-	}
-
-	// Runtime USB attach/detach requires a live USB controller.
-	EnsureUSBController(config)
-
-	// Memory balloon device (allows guest memory management)
-	balloonConfig := vz.NewVZVirtioTraditionalMemoryBalloonDeviceConfiguration()
-	if balloonConfig.ID != 0 {
-		setMemoryBalloonDevices(config, balloonConfig)
-	}
-
-	addVirtioSocketDevice(config)
 
 	// Serial console
 	serialConfig := createSerialConsoleConfig()
