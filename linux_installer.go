@@ -321,6 +321,9 @@ func installLinuxVM() error {
 	if provConfig.Variant == LinuxVariantNixOS {
 		return installNixOSVM(resolvedDiskPath, provConfig)
 	}
+	if provConfig.Variant == LinuxVariantAlpine {
+		return installAlpineWithBuilderVM(resolvedDiskPath, provConfig)
+	}
 
 	// Get ISO (download if needed)
 	resolvedISO, err := ensureLinuxISOForVariant(provConfig.Variant.installISOVariant())
