@@ -168,7 +168,7 @@ func cloneRequiredFiles(sourceOS string) []struct {
 func cloneOptionalFiles(sourceOS string) []string {
 	files := []string{"boot-args.txt", "control.token", "config.json", "shared_folders.json", loginScreenCredentialsFile}
 	if sourceOS == "Linux" {
-		files = append(files, "efi.nvram", "linux-installed", "cloud-init.iso", "vmlinuz", "initrd", linuxRootUUIDFileName)
+		files = append(files, "efi.nvram", "linux-installed", "cloud-init.iso", "vmlinuz", "initrd", linuxRootUUIDFileName, linuxRootDeviceFileName)
 	} else {
 		files = append(files, "mac.address")
 	}

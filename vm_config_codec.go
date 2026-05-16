@@ -200,7 +200,7 @@ func ensureFrameworkConfigInputs() error {
 				}
 			}
 		case hasInstalledLinuxBootArtifacts(vmDir):
-			for _, name := range []string{"vmlinuz", "initrd", linuxRootUUIDFileName} {
+			for _, name := range []string{"vmlinuz", linuxRootUUIDFileName} {
 				if err := ensureReadableFile(filepath.Join(vmDir, name)); err != nil {
 					return err
 				}
