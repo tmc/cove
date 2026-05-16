@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,9 +13,9 @@ import (
 
 	"github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/builddigest"
+	"github.com/tmc/vz-macos/internal/buildmeta"
 	"github.com/tmc/vz-macos/internal/buildpaths"
 	"github.com/tmc/vz-macos/internal/ociimage"
-	"golang.org/x/tools/txtar"
 )
 
 const agentProtocolVersion = agent.ProtocolVersion
@@ -29,23 +27,9 @@ type buildStep struct {
 	Meta   buildScriptMeta
 }
 
-type buildScriptMeta struct {
-	CacheEnv   []string
-	CacheURL   []string
-	CacheFile  []string
-	CacheTTL   time.Duration
-	Secrets    []string
-	SecretFrom []buildSecretRef
-	Compact    string
-	HasMount   bool
-	MountValue string
-}
+type buildScriptMeta = buildmeta.ScriptMeta
 
-type buildSecretRef struct {
-	Name string
-	URI  string
-	Line int
-}
+type buildSecretRef = buildmeta.SecretRef
 
 type buildCacheKeyInput struct {
 	ParentDigest         string            `json:"parent_digest"`
@@ -98,189 +82,27 @@ func scriptDisplayName(name string) string {
 }
 
 func parseBuildScriptMeta(data []byte) (buildScriptMeta, error) {
-	var meta buildScriptMeta
-	ar := txtar.Parse(data)
-	s := bytes.Split(ar.Comment, []byte("\n"))
-	for i, raw := range s {
-		lineNo := i + 1
-		line := strings.TrimSpace(string(raw))
-		if line == "" || line == "#" {
-			continue
-		}
-		if !strings.HasPrefix(line, "#") {
-			break
-		}
-		text := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-		key, value, ok := strings.Cut(text, ":")
-		if !ok {
-			continue
-		}
-		key = strings.ToLower(strings.TrimSpace(key))
-		value = strings.TrimSpace(value)
-		switch key {
-		case "cache-env":
-			meta.CacheEnv = appendFields(meta.CacheEnv, value)
-		case "cache-url":
-			meta.CacheURL = appendFields(meta.CacheURL, value)
-		case "cache-file":
-			meta.CacheFile = appendFields(meta.CacheFile, value)
-		case "cache-ttl":
-			d, err := parseBuildDuration(value)
-			if err != nil {
-				return meta, err
-			}
-			meta.CacheTTL = d
-		case "secret":
-			meta.Secrets = appendFields(meta.Secrets, value)
-		case "secret-from":
-			refs, err := parseBuildSecretFrom(value, lineNo)
-			if err != nil {
-				return meta, err
-			}
-			meta.SecretFrom = append(meta.SecretFrom, refs...)
-		case "compact":
-			compact := strings.ToLower(strings.TrimSpace(value))
-			if err := validateCompactMode(compact); err != nil {
-				return meta, err
-			}
-			meta.Compact = compact
-		case "mount":
-			meta.HasMount = true
-			meta.MountValue = value
-		}
-	}
-	meta.CacheEnv = uniqueSorted(meta.CacheEnv)
-	meta.CacheURL = uniqueSorted(meta.CacheURL)
-	meta.CacheFile = uniqueSorted(meta.CacheFile)
-	meta.Secrets = uniqueSorted(meta.Secrets)
-	meta.SecretFrom = sortedBuildSecretRefs(meta.SecretFrom)
-	if meta.Compact == "" {
-		meta.Compact = "targeted"
-	}
-	return meta, nil
+	return buildmeta.ParseScript(data)
 }
 
 func parseBuildSecretFrom(value string, line int) ([]buildSecretRef, error) {
-	var refs []buildSecretRef
-	for _, f := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
-		if f == "" {
-			continue
-		}
-		name, uri, ok := strings.Cut(f, "=")
-		if !ok {
-			return nil, fmt.Errorf("line %d: secret-from: missing '=' in %q", line, f)
-		}
-		name = strings.TrimSpace(name)
-		uri = strings.TrimSpace(uri)
-		if !validBuildSecretName(name) {
-			return nil, fmt.Errorf("line %d: secret-from: invalid secret name %q", line, name)
-		}
-		if uri == "" {
-			return nil, fmt.Errorf("line %d: secret-from: empty URI for %s", line, name)
-		}
-		u, err := url.Parse(uri)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: secret-from: secret URI %q: %w", line, uri, err)
-		}
-		if u.Scheme == "" {
-			return nil, fmt.Errorf("line %d: secret-from: secret URI %q: missing scheme", line, uri)
-		}
-		refs = append(refs, buildSecretRef{Name: name, URI: uri, Line: line})
-	}
-	return refs, nil
+	return buildmeta.ParseSecretFrom(value, line)
 }
 
 func sortedBuildSecretRefs(in []buildSecretRef) []buildSecretRef {
-	if len(in) == 0 {
-		return nil
-	}
-	out := append([]buildSecretRef(nil), in...)
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Name != out[j].Name {
-			return out[i].Name < out[j].Name
-		}
-		if out[i].URI != out[j].URI {
-			return out[i].URI < out[j].URI
-		}
-		return out[i].Line < out[j].Line
-	})
-	return out
-}
-
-func appendFields(dst []string, value string) []string {
-	for _, f := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
-		if f != "" {
-			dst = append(dst, f)
-		}
-	}
-	return dst
+	return buildmeta.SortedSecretRefs(in)
 }
 
 func uniqueSorted(in []string) []string {
-	if len(in) == 0 {
-		return nil
-	}
-	m := make(map[string]bool, len(in))
-	var out []string
-	for _, s := range in {
-		s = strings.TrimSpace(s)
-		if s == "" || m[s] {
-			continue
-		}
-		m[s] = true
-		out = append(out, s)
-	}
-	sort.Strings(out)
-	return out
+	return buildmeta.UniqueSorted(in)
 }
 
 func parseBuildDuration(s string) (time.Duration, error) {
-	if s == "" {
-		return 0, fmt.Errorf("cache-ttl: empty duration")
-	}
-	if strings.HasSuffix(s, "d") {
-		n, err := parsePositiveInt(strings.TrimSuffix(s, "d"))
-		if err != nil {
-			return 0, fmt.Errorf("cache-ttl: %w", err)
-		}
-		return time.Duration(n) * 24 * time.Hour, nil
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0, fmt.Errorf("cache-ttl: %w", err)
-	}
-	if d <= 0 {
-		return 0, fmt.Errorf("cache-ttl: duration must be positive")
-	}
-	return d, nil
-}
-
-func parsePositiveInt(s string) (int64, error) {
-	var n int64
-	if s == "" {
-		return 0, fmt.Errorf("empty number")
-	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return 0, fmt.Errorf("invalid number %q", s)
-		}
-		n = n*10 + int64(r-'0')
-	}
-	if n <= 0 {
-		return 0, fmt.Errorf("number must be positive")
-	}
-	return n, nil
+	return buildmeta.ParseDuration(s)
 }
 
 func validateCompactMode(mode string) error {
-	switch mode {
-	case "fast", "targeted", "thorough":
-		return nil
-	case "":
-		return fmt.Errorf("compact: empty mode")
-	default:
-		return fmt.Errorf("compact: invalid mode %q", mode)
-	}
+	return buildmeta.ValidateCompactMode(mode)
 }
 
 func buildCacheKey(ctx context.Context, parentDigest string, step buildStep, client *http.Client) (string, buildCacheKeyInput, error) {
