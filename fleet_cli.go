@@ -160,7 +160,7 @@ func fleetList(path string, out io.Writer) error {
 	}
 	entries := cfg.List()
 	if len(entries) == 0 {
-		fmt.Fprintln(out, "no fleet remotes")
+		fmt.Fprintln(out, "no fleet remotes (use 'cove fleet add <name> <user@host>' to register one)")
 		return nil
 	}
 	for _, e := range entries {

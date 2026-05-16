@@ -458,7 +458,8 @@ func runLinuxVM() error {
 			} else if _, markerErr := os.Stat(linuxInstalledMarkerPath(hc.VMDir)); os.IsNotExist(markerErr) {
 				fmt.Println("warning: Linux VM has EFI state but no installed-Linux boot marker")
 				fmt.Println("  missing direct-boot artifacts may cause the guest to stop immediately")
-				fmt.Println("  reinstall with 'cove install -linux' or use a VM with linux-installed, vmlinuz, initrd, and linux-root-uuid.txt")
+				fmt.Println("  reinstall with 'cove install -linux' or use a VM with linux-installed, vmlinuz, and linux-root-uuid.txt")
+				fmt.Println("  initrd is optional; linux-root-device.txt may override the root= kernel argument")
 			}
 		}
 		// else: efi.nvram exists, boot from disk — no ISO needed

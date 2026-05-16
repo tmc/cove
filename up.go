@@ -198,7 +198,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
 	fs.StringVar(&cfg.desktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (default Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
 	fs.StringVar(&cfg.diskSync, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
-	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
+	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine (experimental)")
 	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	fs.BoolVar(&cfg.nvme, "nvme", false, "Attach Linux root disk through NVMe instead of virtio-blk")
 	fs.BoolVar(&cfg.rosetta, "rosetta", true, "Enable Rosetta translation support for Linux VMs")
@@ -248,7 +248,7 @@ Examples:
   cove up -user me -setup-script ./setup.sh                # macOS + plain script
   cove up -user me -ipsw ~/restore.ipsw                   # macOS with IPSW
   cove up -linux                                           # Ubuntu Server (ubuntu/ubuntu)
-  cove up -linux -distro alpine                            # Alpine (alpine/alpine)
+  cove up -linux -distro alpine                            # Alpine experimental (alpine/alpine)
   cove up -linux -nested                                   # Linux with KVM on supported hosts
   cove up -linux -user tmc -password <password>                # Linux with custom user
   cove up -linux -desktop -user me                         # Ubuntu Desktop
