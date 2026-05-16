@@ -10,7 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/corefoundation"
@@ -1217,23 +1216,6 @@ func getHardwareModel(reqs *vz.VZMacOSConfigurationRequirements) vz.VZMacHardwar
 		hwModel.Retain()
 	}
 	return hwModel
-}
-
-// saveDataRepresentation saves an object's dataRepresentation to a file.
-// NOTE: This uses objc.Send because DataRepresentation() may not be available on all types.
-func saveDataRepresentation(objID objc.ID, path string) error {
-	dataID := objc.Send[objc.ID](objID, objc.Sel("dataRepresentation"))
-	if dataID == 0 {
-		return fmt.Errorf("no data representation")
-	}
-	data := foundation.NSDataFromID(dataID)
-	length := data.Length()
-	if length == 0 {
-		return fmt.Errorf("empty data")
-	}
-	ptr := data.Bytes()
-	bytes := unsafe.Slice((*byte)(ptr), length)
-	return os.WriteFile(path, bytes, 0644)
 }
 
 // setupVMConfiguration creates the full VM configuration.

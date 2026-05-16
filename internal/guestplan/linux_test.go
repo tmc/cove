@@ -1,4 +1,4 @@
-package main
+package guestplan
 
 import (
 	"strings"
@@ -27,14 +27,14 @@ func validLinuxPlanHostConfig() vmrun.HostConfig {
 }
 
 func TestLinuxDevicePlanDefaultsDisplay(t *testing.T) {
-	plan, err := linuxDevicePlan(validLinuxPlanRunConfig(), validLinuxPlanHostConfig())
+	plan, err := Linux(validLinuxPlanRunConfig(), validLinuxPlanHostConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(plan.Display) != 1 {
 		t.Fatalf("display count = %d, want 1", len(plan.Display))
 	}
-	want := vmrun.DisplaySpec{Width: defaultWindowWidth, Height: defaultWindowHeight, PPI: 144}
+	want := vmrun.DisplaySpec{Width: 1024, Height: 768, PPI: 144}
 	if plan.Display[0] != want {
 		t.Fatalf("display = %+v, want %+v", plan.Display[0], want)
 	}
@@ -43,7 +43,7 @@ func TestLinuxDevicePlanDefaultsDisplay(t *testing.T) {
 func TestLinuxDevicePlanPreservesDisplay(t *testing.T) {
 	rc := validLinuxPlanRunConfig()
 	rc.Displays = []vmrun.DisplaySpec{{Width: 1280, Height: 800, PPI: 110}}
-	plan, err := linuxDevicePlan(rc, validLinuxPlanHostConfig())
+	plan, err := Linux(rc, validLinuxPlanHostConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestLinuxDevicePlanPreservesDisplay(t *testing.T) {
 func TestLinuxDevicePlanValidationError(t *testing.T) {
 	rc := validLinuxPlanRunConfig()
 	rc.MemoryGB = 0
-	_, err := linuxDevicePlan(rc, validLinuxPlanHostConfig())
+	_, err := Linux(rc, validLinuxPlanHostConfig())
 	if err == nil {
 		t.Fatal("expected error")
 	}

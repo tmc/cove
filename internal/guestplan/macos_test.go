@@ -1,4 +1,4 @@
-package main
+package guestplan
 
 import (
 	"testing"
@@ -26,7 +26,7 @@ func validMacOSPlanHostConfig() vmrun.HostConfig {
 }
 
 func TestMacOSDevicePlanDefaultsDisplay(t *testing.T) {
-	plan, err := macOSDevicePlan(validMacOSPlanRunConfig(), validMacOSPlanHostConfig())
+	plan, err := MacOS(validMacOSPlanRunConfig(), validMacOSPlanHostConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestMacOSDevicePlanDefaultsDisplay(t *testing.T) {
 func TestMacOSDevicePlanPreservesDisplay(t *testing.T) {
 	rc := validMacOSPlanRunConfig()
 	rc.Displays = []vmrun.DisplaySpec{{Width: 1280, Height: 800, PPI: 110}}
-	plan, err := macOSDevicePlan(rc, validMacOSPlanHostConfig())
+	plan, err := MacOS(rc, validMacOSPlanHostConfig())
 	if err != nil {
 		t.Fatal(err)
 	}

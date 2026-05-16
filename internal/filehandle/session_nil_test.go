@@ -1,4 +1,4 @@
-package main
+package filehandle
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestFileHandleNetworkSessionNilReceiver(t *testing.T) {
-	var s *FileHandleNetworkSession
+func TestSessionNilReceiver(t *testing.T) {
+	var s *Session
 
 	if got := s.DeviceConfiguration(); got.ID != 0 {
 		t.Errorf("nil.DeviceConfiguration().ID = %d, want zero", got.ID)
@@ -15,7 +15,7 @@ func TestFileHandleNetworkSessionNilReceiver(t *testing.T) {
 	if got := s.Attachment(); got.ID != 0 {
 		t.Errorf("nil.Attachment().ID = %d, want zero", got.ID)
 	}
-	if got := s.Stats(); got != (FileHandleNetworkStats{}) {
+	if got := s.Stats(); got != (Stats{}) {
 		t.Errorf("nil.Stats() = %+v, want zero value", got)
 	}
 	if got := s.Summary(); !strings.Contains(got, "disabled") {
@@ -26,8 +26,8 @@ func TestFileHandleNetworkSessionNilReceiver(t *testing.T) {
 	}
 }
 
-func TestFileHandleNetworkSessionNilReceiverErrors(t *testing.T) {
-	var s *FileHandleNetworkSession
+func TestSessionNilReceiverErrors(t *testing.T) {
+	var s *Session
 
 	tests := []struct {
 		name string

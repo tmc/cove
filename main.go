@@ -22,6 +22,7 @@ import (
 	"github.com/tmc/vz-macos/internal/action"
 	"github.com/tmc/vz-macos/internal/bytefmt"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmtree"
 	"golang.org/x/term"
 )
 
@@ -1595,7 +1596,7 @@ func handleVMCommand(args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		treeOpts := VMTreeOptions{
+		treeOpts := vmtree.Options{
 			JSON:    *treeJSON,
 			Orphans: *treeOrphans,
 		}
@@ -1616,9 +1617,15 @@ func handleVMCommand(args []string) {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
-			treeOpts.ReachableFromImage = &ref
+			treeOpts.ReachableFromImage = &vmtree.ReachableImage{
+				Ref:    ref.String(),
+				Exists: func(string) bool { return ImageExists(ref) },
+				Children: func(string) ([]string, error) {
+					return VMsForkedFromImage(ref)
+				},
+			}
 		}
-		if err := PrintVMTreeWithOptions(os.Stdout, treeOpts); err != nil {
+		if err := vmtree.PrintWithOptions(os.Stdout, treeOpts); err != nil {
 			if *treeJSON {
 				_ = writeCLIErrorJSON(os.Stdout, "vm tree", err, "run 'cove image list' to see local images")
 			}

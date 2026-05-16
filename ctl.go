@@ -21,6 +21,7 @@ import (
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 	pw "github.com/tmc/vz-macos/internal/password"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmstate"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -2486,7 +2487,7 @@ func ctlAgentCommandError(sock, cmdType, detail string) error {
 		return fmt.Errorf("guest agent unavailable: %s", detail)
 	}
 
-	switch canonicalVMState(state) {
+	switch vmstate.Canonical(state) {
 	case "starting", "resuming", "restoring":
 		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)\n  retry with: cove ctl -wait 60s %s\n  details: %s", state, cmdType, detail)
 	case "paused":
@@ -2549,7 +2550,7 @@ func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {
 		return "", fmt.Errorf("status: %s", resp.Error)
 	}
 	if status := resp.GetStatus(); status != nil {
-		return canonicalVMState(status.State), nil
+		return vmstate.Canonical(status.State), nil
 	}
 
 	var parsed map[string]interface{}
@@ -2557,7 +2558,7 @@ func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {
 		return "", fmt.Errorf("parse status: %w", err)
 	}
 	rawState, _ := parsed["state"].(string)
-	return canonicalVMState(rawState), nil
+	return vmstate.Canonical(rawState), nil
 }
 
 // ctlConnectError wraps a control socket dial error with actionable guidance.
