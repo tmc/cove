@@ -1,0 +1,9 @@
+commit: d13c5b8e72dd6392356e4f18c5a0fec5d93aaa4e
+date: 2026-05-16T03:50:04Z
+agent: codex
+version: GPT-5
+model: unknown
+tty: not a tty
+pid: 53300
+ITERM_SESSION_ID: w0t0p5:8DDE1177-B78F-409A-98C8-3C7CA9FAFDA7
+summary: use vzkit storage helpers; validated via go.work with ../apple at 5b17e76d
