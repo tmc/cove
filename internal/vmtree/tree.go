@@ -43,13 +43,6 @@ type ReachableImage struct {
 	Children func(string) ([]string, error)
 }
 
-// Print writes the VM fork lineage tree with default options
-// (ASCII, full forest). Kept as a stable entry point for callers that
-// don't need flag handling.
-func Print(w io.Writer) error {
-	return PrintWithOptions(w, Options{})
-}
-
 // PrintWithOptions writes the VM fork lineage tree honoring opts.
 func PrintWithOptions(w io.Writer, opts Options) error {
 	if opts.ReachableFromImage != nil && opts.Orphans {
