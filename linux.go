@@ -441,6 +441,10 @@ func runLinuxVM() error {
 					}
 					rc.ResolveISO(resolvedISO)
 				}
+			} else if _, markerErr := os.Stat(linuxInstalledMarkerPath(hc.VMDir)); os.IsNotExist(markerErr) {
+				fmt.Println("warning: Linux VM has EFI state but no installed-Linux boot marker")
+				fmt.Println("  missing direct-boot artifacts may cause the guest to stop immediately")
+				fmt.Println("  reinstall with 'cove install -linux' or use a VM with linux-installed, vmlinuz, initrd, and linux-root-uuid.txt")
 			}
 		}
 		// else: efi.nvram exists, boot from disk — no ISO needed
