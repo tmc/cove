@@ -18,6 +18,7 @@ import (
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/clipboard"
+	configx "github.com/tmc/apple/x/vzkit/config"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
@@ -532,15 +533,12 @@ func createLinuxStorageDeviceWithAttachment(attachment vz.VZStorageDeviceAttachm
 	return vz.VZStorageDeviceConfigurationFromID(device.ID), nil
 }
 
-// Helper functions for Linux-specific array properties using generated slice setters.
 func setVirtioGraphicsDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioGraphicsDeviceConfiguration) {
-	config.SetGraphicsDevices([]vz.VZGraphicsDeviceConfiguration{
-		vz.VZGraphicsDeviceConfigurationFromID(device.ID),
-	})
+	configx.SetVirtioGraphicsDevices(config, device)
 }
 
 func setVirtioScanouts(config vz.VZVirtioGraphicsDeviceConfiguration, scanout vz.VZVirtioGraphicsScanoutConfiguration) {
-	config.SetScanouts([]vz.VZVirtioGraphicsScanoutConfiguration{scanout})
+	configx.SetVirtioScanouts(config, scanout)
 }
 
 // Common Linux ISO URLs for ARM64
@@ -720,15 +718,11 @@ func isURL(s string) bool {
 // Helper functions for Linux-specific device configuration
 
 func setMemoryBalloonDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioTraditionalMemoryBalloonDeviceConfiguration) {
-	config.SetMemoryBalloonDevices([]vz.VZMemoryBalloonDeviceConfiguration{
-		vz.VZMemoryBalloonDeviceConfigurationFromID(device.ID),
-	})
+	configx.SetMemoryBalloonDevices(config, device)
 }
 
 func setSocketDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioSocketDeviceConfiguration) {
-	config.SetSocketDevices([]vz.VZSocketDeviceConfiguration{
-		vz.VZSocketDeviceConfigurationFromID(device.ID),
-	})
+	configx.SetSocketDevices(config, device)
 }
 
 func addVirtioSocketDevice(config vz.VZVirtualMachineConfiguration) {

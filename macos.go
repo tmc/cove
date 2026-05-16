@@ -24,6 +24,7 @@ import (
 	"github.com/tmc/apple/x/vzkit"
 	balloonx "github.com/tmc/apple/x/vzkit/balloon"
 	"github.com/tmc/apple/x/vzkit/clipboard"
+	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	"github.com/tmc/vz-macos/internal/assets"
@@ -1088,61 +1089,40 @@ func saveHardwareModel(model vz.VZMacHardwareModel, path string) error {
 	return saveNSDataToFile(data.GetID(), path)
 }
 
-// Helper functions to set array properties using generated slice setters.
-// These use the generated bindings' FromID pattern to convert concrete subtypes
-// to base types required by the generated setters.
 func setStorageDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioBlockDeviceConfiguration) {
-	config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{
-		vz.VZStorageDeviceConfigurationFromID(device.ID),
-	})
+	configx.SetStorageDevices(config, device)
 }
 
 func setGraphicsDevices(config vz.VZVirtualMachineConfiguration, device vz.VZMacGraphicsDeviceConfiguration) {
-	config.SetGraphicsDevices([]vz.VZGraphicsDeviceConfiguration{
-		vz.VZGraphicsDeviceConfigurationFromID(device.ID),
-	})
+	configx.SetMacGraphicsDevices(config, device)
 }
 
 func setDisplays(config vz.VZMacGraphicsDeviceConfiguration, display vz.VZMacGraphicsDisplayConfiguration) {
-	config.SetDisplays([]vz.VZMacGraphicsDisplayConfiguration{display})
+	configx.SetMacGraphicsDisplays(config, display)
 }
 
 func setNetworkDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioNetworkDeviceConfiguration) {
-	config.SetNetworkDevices([]vz.VZNetworkDeviceConfiguration{
-		vz.VZNetworkDeviceConfigurationFromID(device.ID),
-	})
+	configx.SetNetworkDevices(config, device)
 }
 
 func setKeyboards(config vz.VZVirtualMachineConfiguration, device vz.IVZKeyboardConfiguration) {
-	config.SetKeyboards([]vz.VZKeyboardConfiguration{
-		vz.VZKeyboardConfigurationFromID(device.GetID()),
-	})
+	configx.SetKeyboards(config, device)
 }
 
 func setPointingDevices(config vz.VZVirtualMachineConfiguration, devices []vz.IVZPointingDeviceConfiguration) {
-	converted := make([]vz.VZPointingDeviceConfiguration, len(devices))
-	for i, dev := range devices {
-		converted[i] = vz.VZPointingDeviceConfigurationFromID(dev.GetID())
-	}
-	config.SetPointingDevices(converted)
+	configx.SetPointingDevices(config, devices)
 }
 
 func setEntropyDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioEntropyDeviceConfiguration) {
-	config.SetEntropyDevices([]vz.VZEntropyDeviceConfiguration{
-		vz.VZEntropyDeviceConfigurationFromID(device.ID),
-	})
+	configx.SetEntropyDevices(config, device)
 }
 
 func setAudioDevices(config vz.VZVirtualMachineConfiguration, device vz.VZVirtioSoundDeviceConfiguration) {
-	config.SetAudioDevices([]vz.VZAudioDeviceConfiguration{
-		vz.VZAudioDeviceConfigurationFromID(device.ID),
-	})
+	configx.SetAudioDevices(config, device)
 }
 
 func setSerialPorts(config vz.VZVirtualMachineConfiguration, device vz.VZSerialPortConfiguration) {
-	config.SetSerialPorts([]vz.VZSerialPortConfiguration{
-		device,
-	})
+	configx.SetSerialPorts(config, device)
 }
 
 // createSharedFoldersDevice creates a VirtioFS device with a MultipleDirectoryShare
@@ -1211,13 +1191,8 @@ func newDictFromSlices(values, keys []objectivec.IObject) foundation.NSDictionar
 	return foundation.NSDictionaryFromID(rv)
 }
 
-// setDirectorySharingDevicesMulti adds multiple VirtioFS configurations to the VM
 func setDirectorySharingDevicesMulti(config vz.VZVirtualMachineConfiguration, devices []vz.VZVirtioFileSystemDeviceConfiguration) {
-	var configs []vz.VZDirectorySharingDeviceConfiguration
-	for _, device := range devices {
-		configs = append(configs, vz.VZDirectorySharingDeviceConfigurationFromID(device.ID))
-	}
-	config.SetDirectorySharingDevices(configs)
+	configx.SetDirectorySharingDevices(config, devices)
 }
 
 // startVMWithQueue starts the virtual machine using a dispatch queue.
