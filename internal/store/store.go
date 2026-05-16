@@ -191,10 +191,6 @@ func (s Store) LockExclusive() (func() error, error) {
 	return s.lock(unix.LOCK_EX)
 }
 
-func (s Store) GC(reachable map[string]bool, grace time.Duration) (GCResult, error) {
-	return s.GCWithOptions(reachable, GCOptions{Grace: grace})
-}
-
 func (s Store) GCWithOptions(reachable map[string]bool, opts GCOptions) (GCResult, error) {
 	var result GCResult
 	unlock, err := s.LockExclusive()

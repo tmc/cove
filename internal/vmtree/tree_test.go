@@ -37,8 +37,8 @@ func TestPrint(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := Print(&buf); err != nil {
-		t.Fatalf("Print() error = %v", err)
+	if err := PrintWithOptions(&buf, Options{}); err != nil {
+		t.Fatalf("PrintWithOptions() error = %v", err)
 	}
 	want := `base
 |-- child-a (forked 2026-04-20)
@@ -48,7 +48,7 @@ func TestPrint(t *testing.T) {
 orphan (forked 2026-04-23)
 `
 	if got := buf.String(); got != want {
-		t.Fatalf("Print() =\n%s\nwant:\n%s", got, want)
+		t.Fatalf("PrintWithOptions() =\n%s\nwant:\n%s", got, want)
 	}
 }
 
@@ -56,11 +56,11 @@ func TestPrintVMTreeEmpty(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	var buf bytes.Buffer
-	if err := Print(&buf); err != nil {
-		t.Fatalf("Print() error = %v", err)
+	if err := PrintWithOptions(&buf, Options{}); err != nil {
+		t.Fatalf("PrintWithOptions() error = %v", err)
 	}
 	if got, want := buf.String(), "No VMs found.\n"; got != want {
-		t.Fatalf("Print() = %q, want %q", got, want)
+		t.Fatalf("PrintWithOptions() = %q, want %q", got, want)
 	}
 }
 
