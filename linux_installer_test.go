@@ -422,6 +422,11 @@ func TestBuildLinuxInstallSeedDataForDistros(t *testing.T) {
 			if seed.files["user-data"] == nil || seed.files["meta-data"] == nil {
 				t.Fatalf("seed files missing cloud-init compatibility files")
 			}
+			if tc.variant == LinuxVariantAlpine {
+				if len(seed.files["headless.apkovl.tar.gz"]) == 0 {
+					t.Fatalf("alpine seed missing headless apkovl")
+				}
+			}
 		})
 	}
 }

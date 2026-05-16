@@ -303,21 +303,26 @@ func createLinuxBootLoaderWithPaths(kernelPath, initrdPath, cmdLine string) (vz.
 }
 
 type installedLinuxBootArtifacts struct {
-	kernel   string
-	initrd   string
-	rootUUID string
+	kernel     string
+	initrd     string
+	rootUUID   string
+	rootDevice string
 }
 
 func loadInstalledLinuxBootArtifacts(vmDir string) (installedLinuxBootArtifacts, bool) {
 	kernel := filepath.Join(vmDir, "vmlinuz")
 	initrd := filepath.Join(vmDir, "initrd")
 	rootUUIDPath := filepath.Join(vmDir, linuxRootUUIDFileName)
+	rootDevicePath := filepath.Join(vmDir, linuxRootDeviceFileName)
 
-	for _, path := range []string{kernel, initrd, rootUUIDPath} {
+	for _, path := range []string{kernel, rootUUIDPath} {
 		info, err := os.Stat(path)
 		if err != nil || info.Size() == 0 {
 			return installedLinuxBootArtifacts{}, false
 		}
+	}
+	if info, err := os.Stat(initrd); err != nil || info.Size() == 0 {
+		initrd = ""
 	}
 
 	rootUUID, err := os.ReadFile(rootUUIDPath)
@@ -329,10 +334,16 @@ func loadInstalledLinuxBootArtifacts(vmDir string) (installedLinuxBootArtifacts,
 		return installedLinuxBootArtifacts{}, false
 	}
 
+	rootDevice := ""
+	if data, err := os.ReadFile(rootDevicePath); err == nil {
+		rootDevice = strings.TrimSpace(string(data))
+	}
+
 	return installedLinuxBootArtifacts{
-		kernel:   kernel,
-		initrd:   initrd,
-		rootUUID: rootUUIDValue,
+		kernel:     kernel,
+		initrd:     initrd,
+		rootUUID:   rootUUIDValue,
+		rootDevice: rootDevice,
 	}, true
 }
 
@@ -342,6 +353,9 @@ func hasInstalledLinuxBootArtifacts(vmDir string) bool {
 }
 
 func (a installedLinuxBootArtifacts) commandLine() string {
+	if a.rootDevice != "" {
+		return fmt.Sprintf("console=tty0 console=hvc0 root=%s rootfstype=ext4 rw", a.rootDevice)
+	}
 	return fmt.Sprintf("console=tty0 console=hvc0 root=UUID=%s", a.rootUUID)
 }
 

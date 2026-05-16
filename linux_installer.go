@@ -67,6 +67,7 @@ const linuxAutoinstallPath = "autoinstall.yaml"
 const (
 	linuxEFIBootArtifactsDir = "EFI/VZMACOS"
 	linuxRootUUIDFileName    = "linux-root-uuid.txt"
+	linuxRootDeviceFileName  = "linux-root-device.txt"
 )
 
 func currentLinuxVariant() LinuxVariant {
@@ -884,7 +885,7 @@ func buildLinuxCloudInitData(config LinuxProvisionConfig, includeAgent bool, age
 		}
 	case LinuxVariantAlpine:
 		answers := generateAlpineAnswers(config)
-		apkovl, err := buildAlpineAPKOVL()
+		apkovl, err := buildAlpineAPKOVL(answers)
 		if err != nil {
 			apkovl = nil
 		}
@@ -896,6 +897,7 @@ func buildLinuxCloudInitData(config LinuxProvisionConfig, includeAgent bool, age
 		}
 		if apkovl != nil {
 			files["cove.apkovl.tar.gz"] = apkovl
+			files["headless.apkovl.tar.gz"] = apkovl
 		}
 		return linuxCloudInitData{
 			userData:   vendorData,
@@ -997,7 +999,7 @@ ROOTPW="%s"
 `, config.Hostname, config.TimeZone, config.Username, config.Password)
 }
 
-func buildAlpineAPKOVL() ([]byte, error) {
+func buildAlpineAPKOVL(answers string) ([]byte, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -1006,6 +1008,7 @@ func buildAlpineAPKOVL() ([]byte, error) {
 		mode int64
 		body string
 	}{
+		{"etc/cove/setup-alpine.answers", 0644, answers},
 		{"etc/local.d/cove.start", 0755, alpineSetupScript()},
 		{"etc/runlevels/default/local", 0777, ""},
 	}
@@ -1041,8 +1044,11 @@ set -eu
 marker=/var/lib/cove-setup.done
 test -e "$marker" && exit 0
 url=$(sed -n 's/.*cove_answers=\([^ ]*\).*/\1/p' /proc/cmdline)
-test -n "$url"
-wget -O /tmp/setup-alpine.answers "$url"
+if test -n "$url"; then
+	wget -O /tmp/setup-alpine.answers "$url"
+else
+	cp /etc/cove/setup-alpine.answers /tmp/setup-alpine.answers
+fi
 setup-alpine -f /tmp/setup-alpine.answers
 touch "$marker"
 poweroff

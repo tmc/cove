@@ -121,7 +121,7 @@ func TestGenerateFedoraKickstart(t *testing.T) {
 }
 
 func TestBuildAlpineAPKOVL(t *testing.T) {
-	data, err := buildAlpineAPKOVL()
+	data, err := buildAlpineAPKOVL("HOSTNAMEOPTS=\"-n alpine-vm\"\n")
 	if err != nil {
 		t.Fatalf("buildAlpineAPKOVL: %v", err)
 	}
@@ -143,6 +143,9 @@ func TestBuildAlpineAPKOVL(t *testing.T) {
 	}
 	if h, ok := saw["etc/local.d/cove.start"]; !ok || h.Mode != 0755 {
 		t.Errorf("cove.start: ok=%v hdr=%+v", ok, h)
+	}
+	if h, ok := saw["etc/cove/setup-alpine.answers"]; !ok || h.Mode != 0644 {
+		t.Errorf("embedded answers: ok=%v hdr=%+v", ok, h)
 	}
 	if h, ok := saw["etc/runlevels/default/local"]; !ok || h.Typeflag != tar.TypeSymlink || h.Linkname != "/etc/init.d/local" {
 		t.Errorf("runlevels symlink: ok=%v hdr=%+v", ok, h)
