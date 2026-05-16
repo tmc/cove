@@ -65,7 +65,7 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)
 	}
 
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", outputPath, agentPkg)
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", agentBuildLDFlags(), "-o", outputPath, agentPkg)
 	cmd.Dir = moduleDir
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",
@@ -91,6 +91,11 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 		}
 	}
 	return nil
+}
+
+func agentBuildLDFlags() string {
+	info := resolvedVersion()
+	return fmt.Sprintf("-X main.version=%s -X main.commit=%s -X main.date=%s", hostVersion(), info.Commit, info.Date)
 }
 
 // codesignAdHoc applies an ad-hoc signature to a Mach-O binary. macOS
