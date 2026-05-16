@@ -354,7 +354,7 @@ cove ctl [options] <command> [args...]
 | `pause` | Pause VM |
 | `resume` | Resume paused VM |
 | `stop` | Force stop VM |
-| `request-stop` | ACPI power button (graceful shutdown) |
+| `request-stop` | Send ACPI power button; the guest may ignore it |
 | `network-info` | MAC address, guest IP, mode |
 
 ### GUI Commands

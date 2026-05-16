@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tmc/vz-macos/internal/vmconfig"
 )
@@ -65,7 +66,7 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 		return fmt.Errorf("not a VM directory: %s", vmPath)
 	}
 
-	if isVMRunningAt(vmPath) {
+	if isVMRunningAt(vmPath) && !waitForVMNotRunning(vmPath, 3*time.Second) {
 		return fmt.Errorf("cannot delete VM %q: it is currently running\n  request stop: cove ctl -vm %s request-stop\n  check status: cove list\n  if still running: cove ctl -vm %s stop\n  then retry: cove vm delete %s", name, name, name, name)
 	}
 
@@ -107,6 +108,17 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 
 	fmt.Println("VM deleted.")
 	return nil
+}
+
+func waitForVMNotRunning(vmPath string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		if !isVMRunningAt(vmPath) {
+			return true
+		}
+	}
+	return !isVMRunningAt(vmPath)
 }
 
 // childVMNames returns the sorted names of VMs whose ParentVM

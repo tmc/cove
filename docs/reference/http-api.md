@@ -56,7 +56,7 @@ GET    /v1/vms                               # list known/allowed VMs
 GET    /v1/vms/:name/status                  # state + capabilities
 POST   /v1/vms/:name/pause
 POST   /v1/vms/:name/resume
-POST   /v1/vms/:name/request-stop            # no body; graceful ACPI power button
+POST   /v1/vms/:name/request-stop            # no body; ACPI power button event
 POST   /v1/vms/:name/stop                    # no body; force stop
 GET    /v1/vms/:name/screenshot              # image/png
 POST   /v1/vms/:name/type                    # body: {"text": "..."}
@@ -121,12 +121,16 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:7777/v1/vms/default/resume
 ```
 
-### Example: graceful shutdown
+### Example: request guest shutdown
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:7777/v1/vms/default/request-stop
 ```
+
+This sends the ACPI power button event. Some guests, including macOS guests
+that are not logged in or are not ready to shut down, may keep running; use
+`cove ctl -vm default stop` if a bounded workflow needs a force stop.
 
 ### Example: send input
 
