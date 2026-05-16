@@ -19,6 +19,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	agentstate "github.com/tmc/vz-macos/internal/agent"
 	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/vz-macos/internal/vmstate"
 )
 
 // AgentBridge holds the agent clients and health state used by the
@@ -101,41 +102,11 @@ func AgentUnavailableForVMState(state vz.VZVirtualMachineState) error {
 	case vz.VZVirtualMachineStateRunning:
 		return nil
 	case vz.VZVirtualMachineStateStarting, vz.VZVirtualMachineStateResuming, vz.VZVirtualMachineStateRestoring:
-		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)", vmStateLabel(state))
+		return fmt.Errorf("guest agent unavailable: vm is %s (still booting)", vmstate.Label(state))
 	case vz.VZVirtualMachineStatePaused:
 		return fmt.Errorf("guest agent unavailable: vm is paused")
 	default:
-		return fmt.Errorf("guest agent unavailable: vm is %s", vmStateLabel(state))
-	}
-}
-
-// vmStateLabel mirrors the package-main helper of the same name. The
-// string form is part of operator-visible error messages, so we keep
-// the labels stable.
-func vmStateLabel(state vz.VZVirtualMachineState) string {
-	switch state {
-	case vz.VZVirtualMachineStateStopped:
-		return "stopped"
-	case vz.VZVirtualMachineStateRunning:
-		return "running"
-	case vz.VZVirtualMachineStateStarting:
-		return "starting"
-	case vz.VZVirtualMachineStatePausing:
-		return "pausing"
-	case vz.VZVirtualMachineStatePaused:
-		return "paused"
-	case vz.VZVirtualMachineStateResuming:
-		return "resuming"
-	case vz.VZVirtualMachineStateStopping:
-		return "stopping"
-	case vz.VZVirtualMachineStateSaving:
-		return "saving"
-	case vz.VZVirtualMachineStateRestoring:
-		return "restoring"
-	case vz.VZVirtualMachineStateError:
-		return "error"
-	default:
-		return fmt.Sprintf("state(%d)", int(state))
+		return fmt.Errorf("guest agent unavailable: vm is %s", vmstate.Label(state))
 	}
 }
 

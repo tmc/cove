@@ -18,6 +18,7 @@ import (
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	windowsconfig "github.com/tmc/apple/x/vzkit/windowsconfig"
+	"github.com/tmc/vz-macos/internal/guestplan"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
 	winsetup "github.com/tmc/vz-macos/internal/windows"
@@ -150,7 +151,7 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 	rc := vmrunRunConfig(vmrun.GuestWindows)
 	hc := vmrunHostConfig()
 
-	plan, err := windowsDevicePlan(rc, hc)
+	plan, err := guestplan.Windows(rc, hc)
 	if err != nil {
 		return vz.VZVirtualMachineConfiguration{}, err
 	}
@@ -264,35 +265,6 @@ func createWindowsSerialConsoleConfig() (vz.VZSerialPortConfiguration, error) {
 		return serialConfig, nil
 	default:
 		return vz.VZSerialPortConfiguration{}, fmt.Errorf("unsupported Windows serial mode: %s", mode)
-	}
-}
-
-func setWindowsGraphicsDevices(config vz.VZVirtualMachineConfiguration) error {
-	rc := vmrunRunConfig(vmrun.GuestWindows)
-	mode, err := parseWindowsGraphicsMode(rc.WindowsGraphicsMode)
-	if err != nil {
-		return err
-	}
-	switch mode {
-	case windowsGraphicsLinearFramebuffer:
-		return setWindowsLinearFramebufferGraphicsDevice(config)
-	case windowsGraphicsVirtio:
-		displayConfigs := make([]displayx.Config, 0, len(rc.Displays))
-		for _, d := range rc.Displays {
-			displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
-		}
-		if len(displayConfigs) == 0 {
-			displayConfigs = []displayx.Config{displayx.DefaultLinuxConfig()}
-		}
-		graphicsConfig, err := displayx.CreateVirtioGraphicsConfig(displayConfigs)
-		if err != nil {
-			return fmt.Errorf("create virtio graphics config: %w", err)
-		}
-		configx.SetVirtioGraphicsDevices(config, graphicsConfig)
-		fmt.Println("  Windows graphics: VirtIO")
-		return nil
-	default:
-		return fmt.Errorf("unsupported Windows graphics mode: %s", mode)
 	}
 }
 

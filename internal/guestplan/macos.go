@@ -1,8 +1,8 @@
-package main
+package guestplan
 
 import "github.com/tmc/vz-macos/internal/vmrun"
 
-func macOSDevicePlan(rc vmrun.RunConfig, hc vmrun.HostConfig) (vmrun.DevicePlan, error) {
+func MacOS(rc vmrun.RunConfig, hc vmrun.HostConfig) (vmrun.DevicePlan, error) {
 	plan, err := vmrun.Plan(rc, hc)
 	if err != nil {
 		return vmrun.DevicePlan{}, err

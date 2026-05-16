@@ -31,7 +31,9 @@ import (
 	macosconfig "github.com/tmc/apple/x/vzkit/macosconfig"
 	"github.com/tmc/vz-macos/internal/assets"
 	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/vz-macos/internal/guestplan"
 	"github.com/tmc/vz-macos/internal/vmrun"
+	"github.com/tmc/vz-macos/internal/vmstate"
 )
 
 var errVMStartupInProgress = errors.New("vm startup already in progress")
@@ -655,7 +657,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 	// Resolve symlinks for all paths
 	diskImagePath = resolvePath(diskImagePath)
 
-	plan, err := macOSDevicePlan(rc, hc)
+	plan, err := guestplan.MacOS(rc, hc)
 	if err != nil {
 		return vz.VZVirtualMachineConfiguration{}, err
 	}
@@ -1325,7 +1327,7 @@ func waitForVMStartPoll(startErr <-chan error, poll func() (vz.VZVirtualMachineS
 		case <-ticker.C:
 			state, err := poll()
 			if err == nil {
-				lastState = vmStateLabel(state)
+				lastState = vmstate.Label(state)
 				lastPollErr = ""
 				switch state {
 				case vz.VZVirtualMachineStateRunning:
@@ -1362,7 +1364,7 @@ func waitForVMRunningPoll(poll func() (vz.VZVirtualMachineState, error), opts vm
 		if err != nil {
 			lastPollErr = err.Error()
 		} else {
-			lastState = vmStateLabel(state)
+			lastState = vmstate.Label(state)
 			lastPollErr = ""
 			switch state {
 			case vz.VZVirtualMachineStateRunning:
@@ -1570,7 +1572,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			state := vz.VZVirtualMachineState(vm.State())
 			if state != lastState {
 				lastState = state
-				noteVMRuntimeState(target.Directory, vmStateLabel(state))
+				noteVMRuntimeState(target.Directory, vmstate.Label(state))
 				stateUpdate.mu.Lock()
 				stateUpdate.newState = state
 				stateUpdate.changed = true
@@ -2096,7 +2098,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 					fmt.Printf("VM state transition: %s -> %s\n", vmStateName(lastState), vmStateName(state))
 				}
 				lastState = state
-				noteVMRuntimeState(target.Directory, vmStateLabel(state))
+				noteVMRuntimeState(target.Directory, vmstate.Label(state))
 				stateUpdate.mu.Lock()
 				stateUpdate.newState = state
 				stateUpdate.changed = true

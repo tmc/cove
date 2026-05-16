@@ -1,4 +1,4 @@
-package main
+package guestplan
 
 import (
 	"testing"
@@ -26,7 +26,7 @@ func validWindowsPlanHostConfig() vmrun.HostConfig {
 }
 
 func TestWindowsDevicePlanDefaultsDisplay(t *testing.T) {
-	plan, err := windowsDevicePlan(validWindowsPlanRunConfig(), validWindowsPlanHostConfig())
+	plan, err := Windows(validWindowsPlanRunConfig(), validWindowsPlanHostConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestWindowsDevicePlanDefaultsDisplay(t *testing.T) {
 func TestWindowsDevicePlanPreservesDisplay(t *testing.T) {
 	rc := validWindowsPlanRunConfig()
 	rc.Displays = []vmrun.DisplaySpec{{Width: 1280, Height: 720, PPI: 110}}
-	plan, err := windowsDevicePlan(rc, validWindowsPlanHostConfig())
+	plan, err := Windows(rc, validWindowsPlanHostConfig())
 	if err != nil {
 		t.Fatal(err)
 	}

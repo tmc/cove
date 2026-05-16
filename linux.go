@@ -24,6 +24,7 @@ import (
 	linuxconfig "github.com/tmc/apple/x/vzkit/linuxconfig"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
+	"github.com/tmc/vz-macos/internal/guestplan"
 	"github.com/tmc/vz-macos/internal/vmconfig"
 	"github.com/tmc/vz-macos/internal/vmrun"
 )
@@ -35,7 +36,7 @@ import (
 func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
 	hc := vmrunHostConfig()
 	rc.DiskPath = diskImagePath
-	plan, err := linuxDevicePlan(rc, hc)
+	plan, err := guestplan.Linux(rc, hc)
 	if err != nil {
 		return vz.VZVirtualMachineConfiguration{}, err
 	}
