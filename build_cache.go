@@ -3,11 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tmc/vz-macos/internal/agent"
+	"github.com/tmc/vz-macos/internal/builddigest"
 	"github.com/tmc/vz-macos/internal/buildpaths"
 	"github.com/tmc/vz-macos/internal/ociimage"
 	"golang.org/x/tools/txtar"
@@ -325,44 +323,15 @@ func buildCacheKey(ctx context.Context, parentDigest string, step buildStep, cli
 }
 
 func hashURL(ctx context.Context, client *http.Client, rawurl string) (string, error) {
-	if client == nil {
-		client = http.DefaultClient
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
-	if err != nil {
-		return "", fmt.Errorf("cache-url %s: %w", rawurl, err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("cache-url %s: %w", rawurl, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("cache-url %s: returned %s", rawurl, resp.Status)
-	}
-	return digestReader(resp.Body)
+	return builddigest.URL(ctx, client, rawurl)
 }
 
 func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", fmt.Errorf("cache-file %s: %w", path, err)
-	}
-	defer f.Close()
-	return digestReader(f)
-}
-
-func digestReader(r io.Reader) (string, error) {
-	h := sha256.New()
-	if _, err := io.Copy(h, r); err != nil {
-		return "", err
-	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+	return builddigest.File(path)
 }
 
 func digestBytes(data []byte) string {
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:])
+	return builddigest.Bytes(data)
 }
 
 func digestCanonical(in buildCacheKeyInput) string {
@@ -380,30 +349,15 @@ func digestCanonical(in buildCacheKeyInput) string {
 }
 
 func writeKV(b *strings.Builder, key, value string) {
-	b.WriteString(key)
-	b.WriteByte('=')
-	b.WriteString(value)
-	b.WriteByte('\n')
+	builddigest.WriteKV(b, key, value)
 }
 
 func writeMap(b *strings.Builder, key string, m map[string]string) {
-	if len(m) == 0 {
-		return
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		writeKV(b, key+":"+k, m[k])
-	}
+	builddigest.WriteMap(b, key, m)
 }
 
 func writeList(b *strings.Builder, key string, list []string) {
-	for _, v := range list {
-		writeKV(b, key, v)
-	}
+	builddigest.WriteList(b, key, list)
 }
 
 func buildSecretRefStrings(refs []buildSecretRef) []string {
