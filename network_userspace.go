@@ -10,8 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tmc/apple/foundation"
-	"golang.org/x/sys/unix"
+	"github.com/tmc/apple/x/vzkit/exp/networkfd"
 )
 
 const (
@@ -120,51 +119,18 @@ func (s FileHandleNetworkStats) summary(cfg FileHandleNetworkConfig) string {
 
 // newConnectedDatagramSocketPair returns a connected SOCK_DGRAM socket pair.
 func newConnectedDatagramSocketPair(mtu int) (hostFD int, guestFD int, err error) {
-	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
+	pair, err := networkfd.NewSocketPair(mtu)
 	if err != nil {
-		return 0, 0, fmt.Errorf("socketpair: %w", err)
-	}
-	hostFD, guestFD = fds[0], fds[1]
-
-	if err := configureDatagramSocketBuffers(hostFD, mtu); err != nil {
-		unix.Close(hostFD)
-		unix.Close(guestFD)
 		return 0, 0, err
 	}
-	if err := configureDatagramSocketBuffers(guestFD, mtu); err != nil {
-		unix.Close(hostFD)
-		unix.Close(guestFD)
-		return 0, 0, err
-	}
-	return hostFD, guestFD, nil
+	return pair.HostFD, pair.GuestFD, nil
 }
 
 func configureDatagramSocketBuffers(fd int, mtu int) error {
-	if mtu <= 0 {
-		mtu = defaultFileHandleMTU
-	}
-	snd := mtu * 4
-	rcv := mtu * 8
-	if snd < 65536 {
-		snd = 65536
-	}
-	if rcv < snd*2 {
-		rcv = snd * 2
-	}
-	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, snd); err != nil {
-		return fmt.Errorf("set SO_SNDBUF: %w", err)
-	}
-	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, rcv); err != nil {
-		return fmt.Errorf("set SO_RCVBUF: %w", err)
-	}
-	return nil
+	return networkfd.ConfigureDatagramSocketBuffers(fd, mtu)
 }
 
-func newNSFileHandleFromFD(fd int) foundation.NSFileHandle {
-	handle := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(fd, true)
-	handle.Retain()
-	return handle
-}
+var newNSFileHandleFromFD = networkfd.NewFileHandleFromFD
 
 func newFrameBuffer(sizeHint int) []byte {
 	if sizeHint <= 0 {

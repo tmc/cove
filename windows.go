@@ -8,15 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
-	"github.com/tmc/apple/objc"
-	"github.com/tmc/apple/objectivec"
-	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 	configx "github.com/tmc/apple/x/vzkit/config"
 	displayx "github.com/tmc/apple/x/vzkit/display"
+	serialx "github.com/tmc/apple/x/vzkit/exp/serial"
+	"github.com/tmc/apple/x/vzkit/framebuffer"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	windowsconfig "github.com/tmc/apple/x/vzkit/windowsconfig"
@@ -251,31 +249,19 @@ func createWindowsSerialConsoleConfig() (vz.VZSerialPortConfiguration, error) {
 	}
 	switch mode {
 	case windowsSerialPL011:
-		if privvz.GetVZPL011SerialPortConfigurationClass().Class() == 0 {
-			return vz.VZSerialPortConfiguration{}, fmt.Errorf("private PL011 serial port configuration is unavailable")
+		serialConfig, err := serialx.New(serialx.PL011, attachment.VZSerialPortAttachment)
+		if err != nil {
+			return vz.VZSerialPortConfiguration{}, err
 		}
-		serialConfig := privvz.NewVZPL011SerialPortConfiguration()
-		if serialConfig.ID == 0 {
-			return vz.VZSerialPortConfiguration{}, fmt.Errorf("create PL011 serial port configuration")
-		}
-		serialConfig.Retain()
-		serial := vz.VZSerialPortConfigurationFromID(serialConfig.ID)
-		serial.SetAttachment(&attachment.VZSerialPortAttachment)
 		fmt.Println("  Windows serial: PL011")
-		return serial, nil
+		return serialConfig, nil
 	case windowsSerial16550:
-		if privvz.GetVZ16550SerialPortConfigurationClass().Class() == 0 {
-			return vz.VZSerialPortConfiguration{}, fmt.Errorf("private 16550 serial port configuration is unavailable")
+		serialConfig, err := serialx.New(serialx.UART, attachment.VZSerialPortAttachment)
+		if err != nil {
+			return vz.VZSerialPortConfiguration{}, err
 		}
-		serialConfig := privvz.NewVZ16550SerialPortConfiguration()
-		if serialConfig.ID == 0 {
-			return vz.VZSerialPortConfiguration{}, fmt.Errorf("create 16550 serial port configuration")
-		}
-		serialConfig.Retain()
-		serial := vz.VZSerialPortConfigurationFromID(serialConfig.ID)
-		serial.SetAttachment(&attachment.VZSerialPortAttachment)
 		fmt.Println("  Windows serial: 16550")
-		return serial, nil
+		return serialConfig, nil
 	default:
 		return vz.VZSerialPortConfiguration{}, fmt.Errorf("unsupported Windows serial mode: %s", mode)
 	}
@@ -311,20 +297,14 @@ func setWindowsGraphicsDevices(config vz.VZVirtualMachineConfiguration) error {
 }
 
 func setWindowsLinearFramebufferGraphicsDevice(config vz.VZVirtualMachineConfiguration) error {
-	if privvz.GetVZLinearFramebufferGraphicsDeviceConfigurationClass().Class() == 0 {
-		return fmt.Errorf("private linear framebuffer graphics configuration is unavailable")
-	}
 	width, height := windowsDisplaySize()
-	graphics := privvz.NewVZLinearFramebufferGraphicsDeviceConfigurationWithBackingStoreSize(corefoundation.CGSize{
-		Width:  float64(width),
-		Height: float64(height),
+	err := framebuffer.SetLinearFramebufferGraphicsDevice(config, framebuffer.LinearFramebufferConfig{
+		Width:  width,
+		Height: height,
 	})
-	if graphics.ID == 0 {
-		return fmt.Errorf("create linear framebuffer graphics configuration")
+	if err != nil {
+		return err
 	}
-	graphics.Retain()
-	array := objectivec.IObjectSliceToNSArray([]privvz.VZLinearFramebufferGraphicsDeviceConfiguration{graphics})
-	objc.Send[struct{}](config.ID, objc.Sel("setGraphicsDevices:"), array)
 	fmt.Printf("  Windows graphics: linear framebuffer %dx%d\n", width, height)
 	return nil
 }
