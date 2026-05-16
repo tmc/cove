@@ -681,3 +681,23 @@ func TestInjectAutoinstallIntoInitrd(t *testing.T) {
 		t.Fatalf("injected initrd missing autoinstall contents %q", wantAutoinstall)
 	}
 }
+
+func TestSupportsDirectKernelInstall(t *testing.T) {
+	tests := []struct {
+		name    string
+		variant LinuxVariant
+		want    bool
+	}{
+		{"ubuntu", LinuxVariantServer, true},
+		{"debian", LinuxVariantDebian, true},
+		{"fedora", LinuxVariantFedora, true},
+		{"alpine", LinuxVariantAlpine, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := supportsDirectKernelInstall(tt.variant); got != tt.want {
+				t.Fatalf("supportsDirectKernelInstall(%s) = %v, want %v", tt.variant, got, tt.want)
+			}
+		})
+	}
+}
