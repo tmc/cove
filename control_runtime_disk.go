@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -15,8 +16,33 @@ import (
 	"github.com/tmc/apple/x/vzkit/storagehotplug"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 
+	agentstate "github.com/tmc/vz-macos/internal/agent"
+	agentpb "github.com/tmc/vz-macos/proto/agentpb"
 	controlpb "github.com/tmc/vz-macos/proto/controlpb"
 )
+
+const macOSResizeAPFSTimeout = 5 * time.Minute
+
+const macOSResizeAPFSManualCommand = `/usr/sbin/diskutil apfs resizeContainer "$(/usr/sbin/diskutil info / | /usr/bin/awk -F: '/APFS Container/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')" 0`
+
+const macOSResizeAPFSScript = `set -eu
+PATH=/usr/sbin:/usr/bin:/bin:/sbin
+container=$(/usr/sbin/diskutil info / | /usr/bin/awk -F: '/APFS Container/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')
+if [ -z "$container" ]; then
+	echo "could not find APFS container for /" >&2
+	/usr/sbin/diskutil info / >&2 || true
+	exit 64
+fi
+before=$(/usr/sbin/diskutil info / | /usr/bin/awk -F'[()]' '/Container Total Space:/ {print $2; exit}' || true)
+/usr/sbin/diskutil apfs resizeContainer "$container" 0
+after=$(/usr/sbin/diskutil info / | /usr/bin/awk -F'[()]' '/Container Total Space:/ {print $2; exit}' || true)
+printf 'expanded APFS container %s\n' "$container"
+if [ -n "$before" ]; then
+	printf 'before: %s\n' "$before"
+fi
+if [ -n "$after" ]; then
+	printf 'after: %s\n' "$after"
+fi`
 
 // RuntimeDiskInfo describes one live storage device attached to a VM.
 type RuntimeDiskInfo struct {
@@ -57,16 +83,31 @@ type RuntimeDiskListResponse struct {
 
 // RuntimeDiskMutationResponse is returned by swap/resize commands.
 type RuntimeDiskMutationResponse struct {
-	Action  string          `json:"action"`
-	Index   int             `json:"index"`
-	Disk    RuntimeDiskInfo `json:"disk"`
-	Message string          `json:"message"`
+	Action      string                  `json:"action"`
+	Index       int                     `json:"index"`
+	Disk        RuntimeDiskInfo         `json:"disk"`
+	GuestResize *RuntimeDiskGuestResize `json:"guest_resize,omitempty"`
+	Message     string                  `json:"message"`
+}
+
+// RuntimeDiskGuestResize describes a guest-side filesystem expansion performed
+// after the live backing disk grew.
+type RuntimeDiskGuestResize struct {
+	Platform  string `json:"platform"`
+	Attempted bool   `json:"attempted"`
+	Expanded  bool   `json:"expanded"`
+	Stdout    string `json:"stdout,omitempty"`
+	Stderr    string `json:"stderr,omitempty"`
 }
 
 type runtimeDiskEntry struct {
 	Index  int
 	Device pvz.VZStorageDevice
 	Info   RuntimeDiskInfo
+}
+
+type runtimeDiskGuestAgent interface {
+	Exec(ctx context.Context, args []string, env map[string]string, workDir string) (*agentpb.ExecResponse, error)
 }
 
 type runtimeDiskJSONEnvelope struct {
@@ -279,22 +320,87 @@ func (s *ControlServer) handleDiskResize(req RuntimeDiskActionRequest) *controlp
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("disk %d is not backed by a disk image", entry.Index)}
 	}
 
+	var macAgent runtimeDiskGuestAgent
+	expandMacOSAPFS := runtimeDiskShouldExpandMacOSRootAPFS(s.effectiveVMDir(), entry)
+	if expandMacOSAPFS {
+		a, err := s.getAgent()
+		if err != nil {
+			return &controlpb.ControlResponse{Error: macOSResizeAgentUnavailableError(entry.Index, sizeBytes, err).Error()}
+		}
+		macAgent = a
+	}
+
 	if err := storagehotplug.UpdateDiskSize(attachment, sizeBytes); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("resize disk attachment: %v", err)}
 	}
 
 	updated, err := s.runtimeDiskEntryByIndex(entry.Index)
 	if err != nil {
-		return &controlpb.ControlResponse{Error: err.Error()}
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("resized disk %d to %d bytes, but could not inspect updated disk: %v; next action: run `cove ctl disk list` and retry `cove ctl disk resize %d %dB` if the guest filesystem did not grow", entry.Index, sizeBytes, err, entry.Index, sizeBytes)}
+	}
+
+	var guestResize *RuntimeDiskGuestResize
+	if expandMacOSAPFS {
+		guestResize, err = s.expandMacOSRootAPFS(macAgent)
+		if err != nil {
+			return &controlpb.ControlResponse{Error: macOSResizeGuestFailedError(entry.Index, sizeBytes, err).Error()}
+		}
 	}
 
 	msg := fmt.Sprintf("resized disk %d to %d bytes", entry.Index, sizeBytes)
+	if guestResize != nil && guestResize.Expanded {
+		msg += " and expanded macOS APFS container"
+	} else if agentstate.Platform(s.effectiveVMDir()) == agentstate.PlatformMacOS && entry.Index != 0 {
+		msg += "; guest filesystem expansion is automatic only for macOS primary disk 0"
+	}
 	return statusControlResponse(RuntimeDiskMutationResponse{
-		Action:  "resize",
-		Index:   entry.Index,
-		Disk:    updated.Info,
-		Message: msg,
+		Action:      "resize",
+		Index:       entry.Index,
+		Disk:        updated.Info,
+		GuestResize: guestResize,
+		Message:     msg,
 	})
+}
+
+func runtimeDiskShouldExpandMacOSRootAPFS(vmDirectory string, entry runtimeDiskEntry) bool {
+	return entry.Index == 0 && agentstate.Platform(vmDirectory) == agentstate.PlatformMacOS
+}
+
+func (s *ControlServer) expandMacOSRootAPFS(agent runtimeDiskGuestAgent) (*RuntimeDiskGuestResize, error) {
+	if agent == nil {
+		return nil, fmt.Errorf("guest agent unavailable")
+	}
+	ctx, cancel := s.timeoutContext(macOSResizeAPFSTimeout)
+	defer cancel()
+
+	res, err := agent.Exec(ctx, []string{"/bin/sh", "-c", macOSResizeAPFSScript}, nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("run diskutil: %w", err)
+	}
+	if res == nil {
+		return nil, fmt.Errorf("run diskutil: missing response")
+	}
+
+	guestResize := &RuntimeDiskGuestResize{
+		Platform:  agentstate.PlatformMacOS,
+		Attempted: true,
+		Stdout:    strings.TrimSpace(responseText(res.GetStdout())),
+		Stderr:    strings.TrimSpace(responseText(res.GetStderr())),
+	}
+	if res.GetExitCode() != 0 {
+		detail := pickReadyDetail(guestResize.Stdout, guestResize.Stderr, int(res.GetExitCode()))
+		return guestResize, fmt.Errorf("diskutil exit %d: %s", res.GetExitCode(), detail)
+	}
+	guestResize.Expanded = true
+	return guestResize, nil
+}
+
+func macOSResizeAgentUnavailableError(index int, sizeBytes uint64, err error) error {
+	return fmt.Errorf("macOS disk resize requires the guest agent so cove can expand APFS after growing the backing image; no changes made; next action: start the VM, wait for `cove ctl agent-ping` to succeed, then rerun `cove ctl disk resize %d %dB`: %w", index, sizeBytes, err)
+}
+
+func macOSResizeGuestFailedError(index int, sizeBytes uint64, err error) error {
+	return fmt.Errorf("resized disk %d to %d bytes, but macOS APFS expansion failed: %v; next action: rerun `cove ctl disk resize %d %dB` after the guest agent is ready, or run inside the guest as root: %s", index, sizeBytes, err, index, sizeBytes, macOSResizeAPFSManualCommand)
 }
 
 func (s *ControlServer) runtimeDiskEntries() ([]runtimeDiskEntry, error) {

@@ -853,6 +853,8 @@ Runtime Control:
   quota           Show or set per-VM resource quotas
   security        Inspect host-containment policy
   ctl disk list   Inspect runtime storage devices
+  ctl disk resize 0 96G
+                  Grow a live disk; macOS disk 0 also expands APFS
   ctl usb list    Inspect runtime USB controllers and devices
   logs            Show guest logs from a running VM (cove logs <vm> [-f])
   exec            Run a command in a running VM (cove exec <vm> <cmd>)
