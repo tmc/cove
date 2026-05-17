@@ -1,0 +1,8 @@
+commit: 0fcbb0223a756fdd64302db3e0d52fbbd312cba6
+date: 2026-05-17T08:06:17Z
+agent: codex
+model: gpt-5
+tty: not a tty
+pid: 58568
+ITERM_SESSION_ID: w1t10p0:89D34F93-233D-49A6-B09F-85E2A3A9E4FF
+helper: git-auto-commit-message --auto failed: missing ANTHROPIC_API_KEY
