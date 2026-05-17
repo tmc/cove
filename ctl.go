@@ -81,7 +81,7 @@ Commands:
   debug-stub status     Report debug stub status
   disk list             List runtime storage devices
   disk swap <n> <path[:ro|rw]>  Swap a live disk-image backing
-  disk resize <n> <size>  Resize a live disk-image backing (for example: 64G)
+  disk resize <n> <size>  Resize live disk backing; macOS disk 0 expands APFS
   usb list              List runtime USB controllers and devices
   usb attach-storage <path[:ro|rw]> [controller]  Attach USB mass storage
   usb attach-host-service <id> [controller]       Attach host USB by service ID
@@ -164,7 +164,7 @@ Examples:
   cove ctl debug-stub status
   cove ctl disk list
   cove ctl disk swap 0 /tmp/other.img:ro
-  cove ctl disk resize 0 96G
+  cove ctl disk resize 0 96G      # macOS disk 0 also grows the APFS container
   cove ctl usb list
   cove ctl usb attach-storage /tmp/installer.iso:ro
   cove ctl screenshot -o screen.jpg

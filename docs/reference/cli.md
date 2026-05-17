@@ -413,8 +413,15 @@ item.
 | Command | Description |
 |---------|-------------|
 | `disk list` | List runtime storage devices |
-| `disk swap <attachment-id> <path>` | Hot-swap the backing file of an attached disk |
-| `disk resize <path> <size-gb>` | Resize a disk image (in GB) |
+| `disk swap <index> <path[:ro\|rw]>` | Hot-swap the backing file of an attached disk |
+| `disk resize <index> <size>` | Grow a live disk-image backing; for macOS disk `0`, cove also expands the guest APFS container |
+
+`disk resize` is a live operation against a running VM. On macOS primary disks,
+cove requires the daemon guest agent before resizing so it can run
+`diskutil apfs resizeContainer <root-container> 0` after the host backing image
+grows. If the guest APFS step cannot run, the command fails with no host-side
+change. If the backing image has already grown but the guest step fails, the
+error says so and prints the exact retry/manual recovery command.
 
 ### USB Commands
 
@@ -509,6 +516,7 @@ cove ctl screenshot -o screen.png
 cove ctl agent-exec ls /tmp
 cove ctl memory set 8
 cove ctl disk list
+cove ctl disk resize 0 96G
 ```
 
 ---

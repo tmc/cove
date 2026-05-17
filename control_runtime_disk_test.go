@@ -1,9 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	agentstate "github.com/tmc/vz-macos/internal/agent"
+	agentpb "github.com/tmc/vz-macos/proto/agentpb"
 )
 
 func TestParseRuntimeDiskActionRequest(t *testing.T) {
@@ -139,6 +145,96 @@ func TestRuntimeDiskActionNameAliasAndCase(t *testing.T) {
 	if got := req.actionName(); got != "swap" {
 		t.Fatalf("actionName via Type alias = %q, want %q", got, "swap")
 	}
+}
+
+func TestRuntimeDiskShouldExpandMacOSRootAPFS(t *testing.T) {
+	macDir := t.TempDir()
+	if !runtimeDiskShouldExpandMacOSRootAPFS(macDir, runtimeDiskEntry{Index: 0}) {
+		t.Fatalf("macOS primary disk should expand APFS")
+	}
+	if runtimeDiskShouldExpandMacOSRootAPFS(macDir, runtimeDiskEntry{Index: 1}) {
+		t.Fatalf("macOS secondary disk should not use root APFS expansion")
+	}
+
+	linuxDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(linuxDir, "linux-disk.img"), []byte("linux"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if runtimeDiskShouldExpandMacOSRootAPFS(linuxDir, runtimeDiskEntry{Index: 0}) {
+		t.Fatalf("Linux disk should not use macOS APFS expansion")
+	}
+}
+
+func TestExpandMacOSRootAPFS(t *testing.T) {
+	s := NewControlServerWithVMDir("", t.TempDir())
+	agent := &fakeRuntimeDiskGuestAgent{
+		resp: &agentpb.ExecResponse{
+			ExitCode: 0,
+			Stdout:   []byte("expanded APFS container disk3\n"),
+		},
+	}
+
+	got, err := s.expandMacOSRootAPFS(agent)
+	if err != nil {
+		t.Fatalf("expandMacOSRootAPFS: %v", err)
+	}
+	if got.Platform != agentstate.PlatformMacOS || !got.Attempted || !got.Expanded {
+		t.Fatalf("guest resize = %+v", got)
+	}
+	if len(agent.args) != 3 || agent.args[0] != "/bin/sh" || agent.args[1] != "-c" {
+		t.Fatalf("agent args = %#v", agent.args)
+	}
+	if !strings.Contains(agent.args[2], `diskutil apfs resizeContainer "$container" 0`) {
+		t.Fatalf("script missing resizeContainer:\n%s", agent.args[2])
+	}
+}
+
+func TestExpandMacOSRootAPFSReportsDiskutilFailure(t *testing.T) {
+	s := NewControlServerWithVMDir("", t.TempDir())
+	agent := &fakeRuntimeDiskGuestAgent{
+		resp: &agentpb.ExecResponse{
+			ExitCode: 64,
+			Stderr:   []byte("could not find APFS container\n"),
+		},
+	}
+
+	guest, err := s.expandMacOSRootAPFS(agent)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if guest == nil || guest.Expanded {
+		t.Fatalf("guest resize = %+v, want attempted failure", guest)
+	}
+	if !strings.Contains(err.Error(), "diskutil exit 64: could not find APFS container") {
+		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestMacOSResizeErrorsIncludeNextAction(t *testing.T) {
+	unavailable := macOSResizeAgentUnavailableError(0, 96<<30, context.Canceled)
+	for _, want := range []string{"no changes made", "cove ctl agent-ping", "cove ctl disk resize 0 103079215104B"} {
+		if !strings.Contains(unavailable.Error(), want) {
+			t.Fatalf("unavailable error missing %q: %s", want, unavailable)
+		}
+	}
+
+	failed := macOSResizeGuestFailedError(0, 96<<30, context.Canceled)
+	for _, want := range []string{"resized disk 0 to 103079215104 bytes", "macOS APFS expansion failed", macOSResizeAPFSManualCommand} {
+		if !strings.Contains(failed.Error(), want) {
+			t.Fatalf("failed error missing %q: %s", want, failed)
+		}
+	}
+}
+
+type fakeRuntimeDiskGuestAgent struct {
+	args []string
+	resp *agentpb.ExecResponse
+	err  error
+}
+
+func (f *fakeRuntimeDiskGuestAgent) Exec(ctx context.Context, args []string, env map[string]string, workDir string) (*agentpb.ExecResponse, error) {
+	f.args = append([]string(nil), args...)
+	return f.resp, f.err
 }
 
 func uint64Ptr(v uint64) *uint64 { return &v }
