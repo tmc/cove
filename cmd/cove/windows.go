@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -105,9 +106,22 @@ func buildWindowsInstallConfiguration(rc vmrun.RunConfig, hc vmrun.HostConfig, d
 		return config, err
 	}
 
-	bootStorage, err := windowsUSBStorageDevice(bootImage, true)
+	bootImageReadOnly := os.Getenv("COVE_WINDOWS_BOOT_IMAGE_WRITABLE") == ""
+	var bootStorage vz.VZStorageDeviceConfiguration
+	switch strings.ToLower(os.Getenv("COVE_WINDOWS_BOOT_IMAGE_DEVICE")) {
+	case "", "usb":
+		bootStorage, err = windowsUSBStorageDevice(bootImage, bootImageReadOnly)
+	case "nvme":
+		bootStorage, err = windowsNVMeStorageDevice(bootImage, bootImageReadOnly)
+		fmt.Println("  Windows EFI boot image: NVMe")
+	default:
+		return config, fmt.Errorf("invalid COVE_WINDOWS_BOOT_IMAGE_DEVICE %q", os.Getenv("COVE_WINDOWS_BOOT_IMAGE_DEVICE"))
+	}
 	if err != nil {
 		return config, fmt.Errorf("attach EFI boot image: %w", err)
+	}
+	if !bootImageReadOnly {
+		fmt.Println("  Windows EFI boot image: writable")
 	}
 	diskStorage, err := windowsNVMeStorageDevice(diskImagePath, false)
 	if err != nil {
@@ -134,13 +148,17 @@ func buildWindowsInstallConfiguration(rc vmrun.RunConfig, hc vmrun.HostConfig, d
 		return config, fmt.Errorf("attach windows virtio drivers ISO: %w", err)
 	}
 
-	config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{
+	storageDevices := []vz.VZStorageDeviceConfiguration{
 		diskStorage,
 		bootStorage,
 		isoStorage,
-		virtioStorage,
-		autounattendStorage,
-	})
+	}
+	if strings.ToLower(os.Getenv("COVE_WINDOWS_MEDIA_TOPOLOGY")) == "minimal" {
+		fmt.Println("  Windows media topology: minimal")
+	} else {
+		storageDevices = append(storageDevices, virtioStorage, autounattendStorage)
+	}
+	config.SetStorageDevices(storageDevices)
 	return config, nil
 }
 
@@ -169,6 +187,7 @@ func buildWindowsBaseConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostCo
 			displayConfigs = append(displayConfigs, displayx.Config{Width: d.Width, Height: d.Height, PPI: d.PPI})
 		}
 	}
+	minimalTopology := strings.ToLower(os.Getenv("COVE_WINDOWS_MEDIA_TOPOLOGY")) == "minimal"
 	config, err := windowsconfig.Build(windowsconfig.Config{
 		CPUCount:      plan.CPUCount,
 		MemoryGB:      plan.MemoryGB,
@@ -177,10 +196,10 @@ func buildWindowsBaseConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostCo
 		Keyboard:      true,
 		Pointing:      true,
 		Entropy:       true,
-		Sound:         true,
+		Sound:         !minimalTopology,
 		USBController: true,
-		MemoryBalloon: true,
-		Socket:        sandboxAllowsVsock(),
+		MemoryBalloon: !minimalTopology,
+		Socket:        !minimalTopology && sandboxAllowsVsock(),
 	})
 	if err != nil {
 		return config, fmt.Errorf("build windows device config: %w", err)
@@ -333,6 +352,11 @@ func loadOrCreateWindowsMachineIdentifier() vz.VZGenericMachineIdentifier {
 }
 
 func runWindowsVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBundle, metrics runMetricRecorder) error {
+	if backend, err := parseWindowsBackend(rc.WindowsBackendMode); err != nil {
+		return err
+	} else if backend == windowsBackendQEMU {
+		return runWindowsQEMUVMWithConfig(rc, hc)
+	}
 	fmt.Println("=== Windows VM Runner (experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
@@ -385,6 +409,11 @@ func installWindowsVM(quotaWarnings io.Writer) error {
 		quotaWarnings = io.Discard
 	}
 	rc, hc := currentWindowsRunAndHostConfig()
+	if backend, err := parseWindowsBackend(rc.WindowsBackendMode); err != nil {
+		return err
+	} else if backend == windowsBackendQEMU {
+		return installWindowsQEMUVMWithConfig(rc, hc, quotaWarnings)
+	}
 	fmt.Println("=== Windows VM Installer (experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
@@ -592,11 +621,14 @@ func windowsISOLabel(esdPath string) string {
 
 func ensureWindowsEFIBootImage(windowsISO string) (string, error) {
 	bootImgPath := filepath.Join(vmDir, "efi-boot.img")
-	if info, err := os.Stat(bootImgPath); err == nil && info.Size() > 0 {
-		if isoInfo, err := os.Stat(windowsISO); err == nil && info.ModTime().After(isoInfo.ModTime()) {
-			fmt.Printf("Using cached EFI boot image: %s\n", bootImgPath)
-			return bootImgPath, nil
-		}
+	cacheKeyPath := bootImgPath + ".cachekey"
+	fresh, err := windowsEFIBootImageFresh(bootImgPath, cacheKeyPath, windowsISO, windowsGOPShimPath)
+	if err != nil {
+		return "", err
+	}
+	if fresh {
+		fmt.Printf("Using cached EFI boot image: %s\n", bootImgPath)
+		return bootImgPath, nil
 	}
 
 	fmt.Println("Creating EFI boot image from Windows ISO...")
@@ -654,7 +686,9 @@ func ensureWindowsEFIBootImage(windowsISO string) (string, error) {
 		return "", fmt.Errorf("copy installer files: %w: %s", err, out)
 	}
 
-	installUEFIShellShim(dmgMount)
+	if err := installWindowsEFIBootShim(dmgMount); err != nil {
+		return "", err
+	}
 
 	if out, err := exec.Command("hdiutil", "detach", dmgDevice).CombinedOutput(); err != nil {
 		return "", fmt.Errorf("detach FAT32 image: %w: %s", err, out)
@@ -662,7 +696,58 @@ func ensureWindowsEFIBootImage(windowsISO string) (string, error) {
 	if err := os.Rename(dmgPath, bootImgPath); err != nil {
 		return "", fmt.Errorf("rename boot image: %w", err)
 	}
+	cacheKey, err := windowsEFIBootCacheKey(windowsGOPShimPath)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(cacheKeyPath, []byte(cacheKey), 0644); err != nil {
+		return "", fmt.Errorf("write EFI boot image cache key: %w", err)
+	}
 	return bootImgPath, nil
+}
+
+func windowsEFIBootImageFresh(bootImgPath, cacheKeyPath, windowsISO, shimPath string) (bool, error) {
+	info, err := os.Stat(bootImgPath)
+	if err != nil || info.Size() == 0 {
+		return false, nil
+	}
+	if isoInfo, err := os.Stat(windowsISO); err == nil && !info.ModTime().After(isoInfo.ModTime()) {
+		return false, nil
+	}
+	wantKey, err := windowsEFIBootCacheKey(shimPath)
+	if err != nil {
+		return false, err
+	}
+	gotKey, err := os.ReadFile(cacheKeyPath)
+	if err != nil || string(gotKey) != wantKey {
+		return false, nil
+	}
+	if shimPath != "" {
+		shimInfo, err := os.Stat(shimPath)
+		if err != nil {
+			return false, fmt.Errorf("stat Windows GOP shim: %w", err)
+		}
+		if !info.ModTime().After(shimInfo.ModTime()) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func windowsEFIBootCacheKey(shimPath string) (string, error) {
+	if shimPath == "" {
+		return "shim=\n", nil
+	}
+	abs, err := filepath.Abs(shimPath)
+	if err != nil {
+		abs = shimPath
+	}
+	data, err := os.ReadFile(shimPath)
+	if err != nil {
+		return "", fmt.Errorf("read Windows GOP shim cache key: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("shim=%s\nsha256=%x\n", abs, sum), nil
 }
 
 func parseHdiutilAttachOutput(output string) (device, mount string, err error) {
@@ -692,6 +777,46 @@ func parseHdiutilAttachOutput(output string) (device, mount string, err error) {
 		return "", "", fmt.Errorf("%w: %s", ErrHdiutilNoMountPoint, output)
 	}
 	return device, mount, nil
+}
+
+func installWindowsEFIBootShim(mount string) error {
+	if windowsGOPShimPath != "" {
+		return installWindowsGOPShim(mount, windowsGOPShimPath)
+	}
+	installUEFIShellShim(mount)
+	return nil
+}
+
+func installWindowsGOPShim(mount, shimPath string) error {
+	var bootPath string
+	for _, p := range []string{
+		filepath.Join(mount, "efi/boot/bootaa64.efi"),
+		filepath.Join(mount, "EFI/Boot/bootaa64.efi"),
+		filepath.Join(mount, "EFI/Boot/BOOTAA64.EFI"),
+	} {
+		if _, err := os.Stat(p); err == nil {
+			bootPath = p
+			break
+		}
+	}
+	if bootPath == "" {
+		return fmt.Errorf("Windows EFI boot path not found")
+	}
+	if _, err := os.Stat(filepath.Join(mount, "EFI", "Microsoft", "Boot", "bootmgfw.efi")); err != nil {
+		if _, err := os.Stat(filepath.Join(mount, "efi", "microsoft", "boot", "bootmgfw.efi")); err != nil {
+			return fmt.Errorf("EFI/Microsoft/Boot/bootmgfw.efi not found")
+		}
+	}
+	data, err := os.ReadFile(shimPath)
+	if err != nil {
+		return fmt.Errorf("read Windows GOP shim: %w", err)
+	}
+	if err := os.WriteFile(bootPath, data, 0644); err != nil {
+		return fmt.Errorf("install Windows GOP shim: %w", err)
+	}
+	fmt.Printf("  Installed experimental Windows GOP shim as %s\n", filepath.Base(bootPath))
+	fmt.Printf("  GOP shim chainloads \\\\EFI\\\\Microsoft\\\\Boot\\\\bootmgfw.efi\n")
+	return nil
 }
 
 func installUEFIShellShim(mount string) {

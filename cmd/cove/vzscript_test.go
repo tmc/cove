@@ -311,11 +311,11 @@ func TestLoadVZScriptData(t *testing.T) {
 }
 
 func TestVZScriptListRejectsInvalidOS(t *testing.T) {
-	err := vzscriptList([]string{"-os", "windows"})
+	err := vzscriptList([]string{"-os", "plan9"})
 	if err == nil {
 		t.Fatal("expected invalid guest OS error")
 	}
-	if got, want := err.Error(), `invalid guest OS "windows" (use darwin or linux)`; got != want {
+	if got, want := err.Error(), `invalid guest OS "plan9" (use darwin, linux, or windows)`; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
@@ -339,7 +339,7 @@ func TestVZScriptListLinuxRecipes(t *testing.T) {
 func TestPrintVZScriptUsageIncludesListOSFlag(t *testing.T) {
 	var buf bytes.Buffer
 	printVzscriptUsage(&buf)
-	if !strings.Contains(buf.String(), "list [-os darwin|linux]") {
+	if !strings.Contains(buf.String(), "list [-os darwin|linux|windows]") {
 		t.Fatalf("usage missing list OS flag:\n%s", buf.String())
 	}
 }
@@ -672,7 +672,7 @@ func TestVZScriptRunGuestCommandMissingDefaultDoesNotCreateDir(t *testing.T) {
 func TestVZScriptUsageMentionsListVMAndSubcommandHelp(t *testing.T) {
 	var buf bytes.Buffer
 	printVzscriptUsage(&buf)
-	for _, want := range []string{"list [-os darwin|linux] [-vm <name>]", "cove vzscript list -h", "cove vzscript run -h"} {
+	for _, want := range []string{"list [-os darwin|linux|windows] [-vm <name>]", "cove vzscript list -h", "cove vzscript run -h"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Fatalf("usage missing %q:\n%s", want, buf.String())
 		}

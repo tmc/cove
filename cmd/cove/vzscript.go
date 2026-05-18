@@ -40,6 +40,8 @@
 //	wait-prompt-clear <text> [timeout]  Wait until a prompt clears or progresses
 //	detect-page                 Detect Setup Assistant page via OCR
 //	detect-screen               Detect screen state (desktop/login/setup)
+//	qemu-monitor <command...>    Send a raw QEMU HMP monitor command
+//	windows-install [timeout]    Drive Windows setup via QEMU screenshots/OCR/keys
 //
 // Conditions:
 //
@@ -70,6 +72,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -87,6 +90,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"rsc.io/script"
 
+	agentstate "github.com/tmc/cove/internal/agent"
 	"github.com/tmc/cove/internal/controlserver"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
@@ -111,23 +115,26 @@ func (f *envFlag) Set(s string) error {
 
 // vzscriptConfig holds configuration for the vzscript engine.
 type vzscriptConfig struct {
-	socketPath   string
-	guestOS      string
-	execTimeout  time.Duration
-	verbose      bool
-	terminal     bool // stream guest-shell output to the host terminal
-	terminalGUI  bool // force guest-shell to run in the guest terminal app
-	autoApprove  bool // auto-click "Allow"/"OK" on system dialogs via OCR
-	daemon       bool // use daemon agent (root) instead of user agent
-	logWriter    io.Writer
-	streamOut    io.Writer
-	streamErr    io.Writer
-	env          []string // extra environment variables (KEY=VALUE)
-	hostLogFile  *os.File // persistent log file in VM directory
-	controlSrv   *ControlServer
-	labels       *vzscriptLabelStack
-	template     bool
-	templateVars map[string]any
+	socketPath       string
+	guestOS          string
+	execTimeout      time.Duration
+	verbose          bool
+	terminal         bool // stream guest-shell output to the host terminal
+	terminalGUI      bool // force guest-shell to run in the guest terminal app
+	autoApprove      bool // auto-click "Allow"/"OK" on system dialogs via OCR
+	daemon           bool // use daemon agent (root) instead of user agent
+	logWriter        io.Writer
+	streamOut        io.Writer
+	streamErr        io.Writer
+	env              []string // extra environment variables (KEY=VALUE)
+	hostLogFile      *os.File // persistent log file in VM directory
+	controlSrv       *ControlServer
+	qemuMonitorPath  string
+	qemuArtifactDir  string
+	qemuAgentAddress string
+	labels           *vzscriptLabelStack
+	template         bool
+	templateVars     map[string]any
 }
 
 // execStreamType returns the control request type for streaming exec commands.
@@ -182,6 +189,8 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 		"wait":               vzWaitCmd(),
 		"detect-page":        vzDetectPageCmd(cfg),
 		"detect-screen":      vzDetectScreenCmd(cfg),
+		"qemu-monitor":       vzQEMUMonitorCmd(cfg),
+		"windows-install":    vzWindowsInstallCmd(cfg),
 
 		// Standard commands.
 		"cat":    defaults["cat"],
@@ -223,6 +232,9 @@ func newVZScriptEngine(cfg vzscriptConfig) *script.Engine {
 // Default timeout is 10m. Polls quickly after the daemon agent appears so
 // first-boot provisioning can hand off as soon as the marker is written.
 func guestWaitCmd(cfg vzscriptConfig) script.Cmd {
+	if cfg.qemuAgentAddress != "" {
+		return qemuGuestWaitCmd(cfg)
+	}
 	return script.Command(
 		script.CmdUsage{
 			Summary: "wait for VM boot, agent reachable, and provisioning complete",
@@ -312,10 +324,163 @@ func provisionMarkerPresent(cfg vzscriptConfig) (bool, error) {
 	return result.ExitCode == 0, nil
 }
 
+func qemuGuestWaitCmd(cfg vzscriptConfig) script.Cmd {
+	return script.Command(
+		script.CmdUsage{
+			Summary: "wait for QEMU Windows agent and provisioning marker",
+			Args:    "[timeout]",
+		},
+		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			timeout := 10 * time.Minute
+			if len(args) > 0 {
+				d, err := time.ParseDuration(args[0])
+				if err != nil {
+					return nil, fmt.Errorf("invalid timeout %q: %w", args[0], err)
+				}
+				timeout = d
+			}
+
+			deadline := time.Now().Add(timeout)
+			attempt := 0
+			agentReadyAt := time.Time{}
+			const provisionGrace = 30 * time.Second
+			for time.Now().Before(deadline) {
+				attempt++
+				if attempt == 1 {
+					s.Logf("waiting for QEMU Windows agent and provisioning (timeout %s)...\n", timeout)
+				}
+				if _, err := qemuAgentPing(cfg.qemuAgentAddress, 3*time.Second); err != nil {
+					time.Sleep(2 * time.Second)
+					continue
+				}
+				if agentReadyAt.IsZero() {
+					agentReadyAt = time.Now()
+				}
+				done, err := qemuWindowsProvisionMarkerPresent(cfg.qemuAgentAddress)
+				if err == nil && done {
+					return func(*script.State) (string, string, error) {
+						return fmt.Sprintf("agent ready and provisioned after %d attempt(s)\n", attempt), "", nil
+					}, nil
+				}
+				if time.Since(agentReadyAt) > provisionGrace {
+					return func(*script.State) (string, string, error) {
+						return fmt.Sprintf("agent ready after %d attempt(s) (no Windows provision marker after %s; assuming non-provisioned VM)\n", attempt, provisionGrace), "", nil
+					}, nil
+				}
+				time.Sleep(time.Second)
+			}
+			return nil, fmt.Errorf("timeout after %s waiting for QEMU Windows agent and provisioning", timeout)
+		},
+	)
+}
+
+func qemuAgentClient(address string) (*agentstate.AgentClient, error) {
+	if strings.TrimSpace(address) == "" {
+		return nil, fmt.Errorf("qemu agent endpoint is empty")
+	}
+	client, err := agentstate.NewAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
+		var d net.Dialer
+		conn, err := d.DialContext(ctx, "tcp", address)
+		if err != nil {
+			return nil, fmt.Errorf("connect qemu windows agent %s: %w", address, err)
+		}
+		return conn, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func qemuAgentPing(address string, timeout time.Duration) (string, error) {
+	client, err := qemuAgentClient(address)
+	if err != nil {
+		return "", err
+	}
+	defer client.Close()
+	ctx, done := context.WithTimeout(context.Background(), timeout)
+	defer done()
+	return client.Ping(ctx)
+}
+
+func qemuAgentExecStream(cfg vzscriptConfig, args []string, timeout time.Duration, onStdout, onStderr func([]byte)) (string, string, int32, error) {
+	client, err := qemuAgentClient(cfg.qemuAgentAddress)
+	if err != nil {
+		return "", "", 0, err
+	}
+	defer client.Close()
+	ctx, done := context.WithTimeout(context.Background(), timeout)
+	defer done()
+	resp, err := client.Exec(ctx, args, envListToMap(cfg.env), "")
+	if err != nil {
+		return "", "", 0, err
+	}
+	stdout := string(resp.GetStdout())
+	stderr := string(resp.GetStderr())
+	if onStdout != nil && len(resp.GetStdout()) > 0 {
+		onStdout(resp.GetStdout())
+	}
+	if onStderr != nil && len(resp.GetStderr()) > 0 {
+		onStderr(resp.GetStderr())
+	}
+	return stdout, stderr, resp.GetExitCode(), nil
+}
+
+func qemuAgentWriteFile(address, path string, data []byte, mode uint32) error {
+	client, err := qemuAgentClient(address)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	ctx, done := context.WithTimeout(context.Background(), 30*time.Second)
+	defer done()
+	return client.WriteFile(ctx, path, data, mode)
+}
+
+func qemuAgentReadFile(address, path string) ([]byte, error) {
+	client, err := qemuAgentClient(address)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	ctx, done := context.WithTimeout(context.Background(), 30*time.Second)
+	defer done()
+	return client.ReadFile(ctx, path)
+}
+
+func qemuWindowsProvisionMarkerPresent(address string) (bool, error) {
+	client, err := qemuAgentClient(address)
+	if err != nil {
+		return false, err
+	}
+	defer client.Close()
+	ctx, done := context.WithTimeout(context.Background(), 10*time.Second)
+	defer done()
+	resp, err := client.Exec(ctx, []string{
+		"powershell.exe",
+		"-NoProfile",
+		"-ExecutionPolicy", "Bypass",
+		"-Command", `if (Test-Path 'C:\ProgramData\cove\provisioned') { exit 0 } else { exit 1 }`,
+	}, nil, "")
+	if err != nil {
+		return false, err
+	}
+	return resp.GetExitCode() == 0, nil
+}
+
 func guestPingCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{Summary: "check guest agent connectivity"},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if cfg.qemuAgentAddress != "" {
+				version, err := qemuAgentPing(cfg.qemuAgentAddress, 10*time.Second)
+				if err != nil {
+					return nil, err
+				}
+				return func(*script.State) (string, string, error) {
+					return fmt.Sprintf("agent version: %s\n", version), "", nil
+				}, nil
+			}
 			resp, err := ctlSendRequest(cfg.socketPath,
 				&controlpb.ControlRequest{Type: "agent-ping"},
 				10*time.Second, "agent-ping")
@@ -417,6 +582,9 @@ func guestWriteCmd(cfg vzscriptConfig) script.Cmd {
 			if err != nil {
 				return nil, err
 			}
+			if cfg.qemuAgentAddress != "" {
+				return nil, qemuAgentWriteFile(cfg.qemuAgentAddress, args[0], data, 0644)
+			}
 			return nil, guestWriteFile(cfg.socketPath, args[0], data, 0644)
 		},
 	)
@@ -431,6 +599,15 @@ func guestReadCmd(cfg vzscriptConfig) script.Cmd {
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
 			if len(args) != 1 {
 				return nil, script.ErrUsage
+			}
+			if cfg.qemuAgentAddress != "" {
+				data, err := qemuAgentReadFile(cfg.qemuAgentAddress, args[0])
+				if err != nil {
+					return nil, err
+				}
+				return func(*script.State) (string, string, error) {
+					return string(data), "", nil
+				}, nil
 			}
 			req := &controlpb.ControlRequest{
 				Type: "agent-read",
@@ -503,6 +680,9 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 // guestExecStream runs agent-exec-stream and returns collected stdout/stderr
 // plus final exit code. Optional callbacks receive live chunk data.
 func guestExecStream(cfg vzscriptConfig, args []string, timeout time.Duration, onStdout, onStderr func([]byte)) (string, string, int32, error) {
+	if cfg.qemuAgentAddress != "" {
+		return qemuAgentExecStream(cfg, args, timeout, onStdout, onStderr)
+	}
 	req := &controlpb.ControlRequest{
 		Type: cfg.execStreamType(),
 		Command: &controlpb.ControlRequest_AgentExec{
@@ -1069,6 +1249,23 @@ func vzOCRClickCmd(cfg vzscriptConfig) script.Cmd {
 					return nil, exec.hostClickTextWithOptions(text, d, ocrx.MenuSearchOptions())
 				}
 			}
+			if q := newQEMUVZScriptAutomation(cfg); q != nil {
+				opts := ocrx.SearchOptions{}
+				if region != "" && region != "screen" {
+					var err error
+					opts, err = ocrx.ParseSearchOptions(region)
+					if err != nil {
+						return nil, err
+					}
+				}
+				if err := q.waitForText(text, d, opts); err != nil {
+					return nil, err
+				}
+				if key, ok := qemuDefaultActionForText(text); ok {
+					return nil, q.sendKey(key)
+				}
+				return nil, fmt.Errorf("qemu ocr-click cannot click arbitrary text %q; use key/type/windows-install", text)
+			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-click", text, timeout, region, d+10*time.Second)
 			if err != nil {
 				return nil, err
@@ -1108,6 +1305,17 @@ func vzOCRWaitCmd(cfg vzscriptConfig) script.Cmd {
 				case "menu":
 					return nil, exec.waitForTextWithOptions(text, d, ocrx.MenuSearchOptions())
 				}
+			}
+			if q := newQEMUVZScriptAutomation(cfg); q != nil {
+				opts := ocrx.SearchOptions{}
+				if region != "" && region != "screen" {
+					var err error
+					opts, err = ocrx.ParseSearchOptions(region)
+					if err != nil {
+						return nil, err
+					}
+				}
+				return nil, q.waitForText(text, d, opts)
 			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-wait", text, timeout, region, d+10*time.Second)
 			if err != nil {
@@ -1158,6 +1366,17 @@ func vzOCRGoneCmd(cfg vzscriptConfig) script.Cmd {
 				}
 				return nil, fmt.Errorf("timeout waiting for text %q to disappear", text)
 			}
+			if q := newQEMUVZScriptAutomation(cfg); q != nil {
+				opts := ocrx.SearchOptions{}
+				if region != "" && region != "screen" {
+					var err error
+					opts, err = ocrx.ParseSearchOptions(region)
+					if err != nil {
+						return nil, err
+					}
+				}
+				return nil, q.waitForTextGone(text, d, opts)
+			}
 			resp, err := ctlSendOCRWithRegion(cfg.socketPath, "ocr-gone", text, timeout, region, d+10*time.Second)
 			if err != nil {
 				return nil, err
@@ -1176,6 +1395,15 @@ func vzOCRCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{Summary: "run OCR on current screen; stdout is all recognized text"},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if q := newQEMUVZScriptAutomation(cfg); q != nil {
+				text, err := q.allText()
+				if err != nil {
+					return nil, err
+				}
+				return func(*script.State) (string, string, error) {
+					return text + "\n", "", nil
+				}, nil
+			}
 			resp, err := ctlSendOCR(cfg.socketPath, "ocr-all-text", "", "", 30*time.Second)
 			if err != nil {
 				return nil, err
@@ -1193,10 +1421,23 @@ func vzOCRCmd(cfg vzscriptConfig) script.Cmd {
 func vzScreenshotCmd(cfg vzscriptConfig) script.Cmd {
 	return script.Command(
 		script.CmdUsage{
-			Summary: "capture VM screen to JPEG file",
+			Summary: "capture VM screen to file",
 			Args:    "[file]",
 		},
 		func(s *script.State, args ...string) (script.WaitFunc, error) {
+			if q := newQEMUVZScriptAutomation(cfg); q != nil {
+				path := ""
+				if len(args) > 0 {
+					path = s.Path(args[0])
+				}
+				got, err := q.screenshot(path)
+				if err != nil {
+					return nil, err
+				}
+				return func(*script.State) (string, string, error) {
+					return got + "\n", "", nil
+				}, nil
+			}
 			req := &controlpb.ControlRequest{
 				Type: "screenshot",
 				Command: &controlpb.ControlRequest_Screenshot{
@@ -1784,6 +2025,9 @@ func vzTypeCmd(cfg vzscriptConfig) script.Cmd {
 			if cfg.verbose {
 				s.Logf("type %q\n", text)
 			}
+			if q := newQEMUVZScriptAutomation(cfg); q != nil {
+				return nil, q.typeText(text)
+			}
 			req := &controlpb.ControlRequest{
 				Type: "text",
 				Command: &controlpb.ControlRequest_Text{
@@ -1818,6 +2062,9 @@ func vzTypeKeycodesCmd(cfg vzscriptConfig) script.Cmd {
 			if cfg.verbose {
 				s.Logf("type-keycodes %q\n", text)
 			}
+			if q := newQEMUVZScriptAutomation(cfg); q != nil {
+				return nil, q.typeText(text)
+			}
 			client := NewControlClient(cfg.socketPath)
 			client.SetTimeout(60 * time.Second)
 			if err := typeTextKeycodesViaClient(client, text); err != nil {
@@ -1846,6 +2093,9 @@ func vzKeyCmd(cfg vzscriptConfig) script.Cmd {
 			keyCode, modifiers := parseKeySpec(spec)
 			if cfg.verbose {
 				s.Logf("key %s (code=%d mods=%d)\n", spec, keyCode, modifiers)
+			}
+			if q := newQEMUVZScriptAutomation(cfg); q != nil {
+				return nil, q.sendKey(spec)
 			}
 			// Key down.
 			req := &controlpb.ControlRequest{
@@ -2020,6 +2270,9 @@ func vzClickCmd(cfg vzscriptConfig) script.Cmd {
 			}
 			if cfg.verbose {
 				s.Logf("click (%.3f, %.3f)\n", x, y)
+			}
+			if newQEMUVZScriptAutomation(cfg) != nil {
+				return nil, fmt.Errorf("qemu click is not supported by the HMP monitor path; use key/type/windows-install")
 			}
 			req := &controlpb.ControlRequest{
 				Type: "mouse",

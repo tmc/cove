@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -132,6 +133,47 @@ func TestWindowsLinearFramebufferGraphicsDevice(t *testing.T) {
 		if strings.Contains(err.Error(), "Virtualization is not available") {
 			t.Skipf("Virtualization.framework unavailable: %v", err)
 		}
+		t.Fatalf("ValidateWithError: %v", err)
+	}
+}
+
+func TestPrivateWindowsCPUEmulatorValidation(t *testing.T) {
+	if os.Getenv("COVE_EXPERIMENT_PRIVATE_CPU_EMULATOR") != "1" {
+		t.Skip("set COVE_EXPERIMENT_PRIVATE_CPU_EMULATOR=1 to run private CPU emulator validation")
+	}
+	if privvz.GetVZCustomCPUEmulatorConfigurationClass().Class() == 0 {
+		t.Skip("_VZCustomCPUEmulatorConfiguration unavailable")
+	}
+
+	config, err := buildWindowsBaseConfigurationForTest(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateConfig := privvz.VZVirtualMachineConfigurationFromID(config.ID)
+	if !privateConfig.CanSetCPUEmulator() {
+		t.Skip("_setCPUEmulator: unavailable")
+	}
+
+	emulator := privvz.NewVZCustomCPUEmulatorConfiguration()
+	if emulator.ID == 0 {
+		t.Fatal("NewVZCustomCPUEmulatorConfiguration returned nil")
+	}
+	url := foundation.NewURLFileURLWithPath("/bin/true")
+	if url.ID == 0 {
+		t.Fatal("NewURLFileURLWithPath returned nil")
+	}
+	emulator.SetEmulatorURL(url)
+	emulator.SetMemorySize(foundation.NewNumberWithUnsignedLongLong(64 << 20))
+	emulator.SetOptions("")
+	if err := privateConfig.SetCPUEmulator(emulator); err != nil {
+		t.Fatalf("SetCPUEmulator: %v", err)
+	}
+	if got, err := privateConfig.CpuEmulator(); err != nil {
+		t.Fatalf("CpuEmulator: %v", err)
+	} else if got == nil {
+		t.Fatal("CpuEmulator returned nil after SetCPUEmulator")
+	}
+	if _, err := config.ValidateWithError(); err != nil {
 		t.Fatalf("ValidateWithError: %v", err)
 	}
 }

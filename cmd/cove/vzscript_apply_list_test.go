@@ -42,6 +42,7 @@ func TestVzscriptListByOSFilter(t *testing.T) {
 		{name: "no filter lists all", args: nil},
 		{name: "darwin filter", args: []string{"-os", "darwin"}},
 		{name: "linux filter", args: []string{"-os", "linux"}},
+		{name: "windows filter", args: []string{"-os", "windows"}},
 		{name: "macos alias", args: []string{"-os", "macos"}},
 	}
 	for _, tt := range tests {
@@ -58,7 +59,7 @@ func TestVzscriptListByOSFilter(t *testing.T) {
 }
 
 func TestVzscriptListRejectsInvalidOS(t *testing.T) {
-	err := vzscriptList([]string{"-os", "windows"})
+	err := vzscriptList([]string{"-os", "plan9"})
 	if err == nil || !strings.Contains(err.Error(), "invalid guest OS") {
 		t.Fatalf("err = %v, want invalid guest OS", err)
 	}

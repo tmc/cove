@@ -126,6 +126,8 @@ var (
 	enableClipboard bool
 	// Experimental Windows VM graphics device.
 	windowsGraphicsMode string
+	// Windows VM backend.
+	windowsBackendMode string
 	// Experimental Windows serial port device.
 	windowsSerialMode string
 	// Experimental Windows EFI ROM image.
@@ -271,6 +273,7 @@ func init() {
 	flag.BoolVar(&enableRosetta, "rosetta", true, "enable Rosetta translation support when running Linux VMs")
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
+	flag.StringVar(&windowsBackendMode, "windows-backend", "vz", "Windows VM backend: vz or qemu")
 	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "virtio", "Windows graphics mode: virtio or linear-framebuffer")
 	flag.StringVar(&windowsSerialMode, "windows-serial", "virtio", "Windows serial port: virtio, pl011, or 16550")
 	flag.StringVar(&windowsEFIRomPath, "windows-efi-rom", "", "Windows EFI ROM image for private VZEFIBootLoader experiment")
@@ -996,6 +999,8 @@ Windows VM (experimental):
   cove install -windows -iso /path/to/Win11_ARM64.iso
   cove run -windows
   cove run -windows -windows-graphics linear-framebuffer # use private framebuffer experiment
+  cove install -windows -windows-backend qemu -iso /path/to/Win11_ARM64.iso
+  cove run -windows -windows-backend qemu
 
 Volume Mounting (-vol flag):
   Docker-style volume mounts. Format: /host/path[:tag][:ro|rw][:opt=val,...]
@@ -1108,6 +1113,9 @@ func validateLaunchOptions() error {
 	case "full", "minimal":
 	default:
 		return fmt.Errorf("invalid -runtime-profile %q (must be full or minimal)", runtimeProfile)
+	}
+	if _, err := parseWindowsBackend(windowsBackendMode); err != nil {
+		return err
 	}
 	if _, err := parseWindowsGraphicsMode(windowsGraphicsMode); err != nil {
 		return err

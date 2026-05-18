@@ -11,7 +11,10 @@ the script metadata and command body are parsed.
 
 ## Guest Commands
 
-Commands that interact with the guest VM via the agent over vsock.
+Commands that interact with the guest VM via the agent. VZ-backed VMs use the
+cove control socket to reach the vsock agent. QEMU Windows VMs can use
+`-qemu-agent host:port`, or `-vm <name>` with `qemu/metadata.json`, to reach the
+Windows agent through QEMU user-network host forwarding.
 
 ### guest-wait
 
@@ -130,7 +133,11 @@ append-path /opt/homebrew/bin
 
 ## UI Automation Commands
 
-Commands that drive the VM display via the control socket using screenshots and OCR.
+Commands that drive the VM display using screenshots and OCR. For VZ-backed
+VMs they use the cove control socket. For QEMU Windows VMs, pass
+`-qemu-monitor` or `-vm <name>` with a live `qemu/monitor.sock`; `ocr`,
+`ocr-wait`, `ocr-gone`, `screenshot`, `key`, `type`, and `windows-install`
+then use QEMU `screendump` and `sendkey`.
 
 ### ocr-click
 
@@ -186,7 +193,8 @@ stdout 'Continue'
 
 ### screenshot
 
-Capture VM screen to a JPEG file.
+Capture VM screen to a file. VZ control-socket captures are JPEG by default;
+QEMU monitor captures are PPM files produced by QEMU `screendump`.
 
 ```
 screenshot [file]
@@ -256,6 +264,33 @@ Sleep for a duration.
 
 ```
 wait <duration>
+```
+
+### qemu-monitor
+
+Send a raw command to the QEMU HMP monitor selected by `-qemu-monitor` or the
+current QEMU Windows VM.
+
+```
+qemu-monitor info status
+qemu-monitor sendkey spc
+```
+
+### windows-install
+
+Drive the Windows installer with QEMU monitor screenshots, OCR, and keyboard
+input. The command is intended for the experimental QEMU/HVF Windows backend.
+The built-in `windows-install` recipe also waits for the QEMU-forwarded
+Windows `vz-agent`, verifies the provision marker, and checks that the
+`cove-vz-agent` scheduled task has started `vz-agent.exe`.
+
+```
+windows-install [timeout]
+```
+
+```
+cove vzscript run -vm windows-qemu-setup windows-install
+cove vzscript run -qemu-monitor ~/.vz/vms/windows-qemu-setup.covevm/qemu/monitor.sock windows-install
 ```
 
 ```
