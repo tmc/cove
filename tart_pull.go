@@ -44,6 +44,11 @@ func tartPullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	if err := os.MkdirAll(plan.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
+	if plan.VMName != "" {
+		if err := vmconfig.EnsureCompatibilityAlias(plan.VMName, plan.VMDir); err != nil {
+			return fmt.Errorf("create VM compatibility alias: %w", err)
+		}
+	}
 
 	client := pullRegistryClient(plan.Ref, opts)
 

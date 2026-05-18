@@ -367,7 +367,7 @@ func VMsForkedFromImage(ref ImageRef) ([]string, error) {
 			continue
 		}
 		if cfg.ParentImage == want {
-			hits = append(hits, e.Name())
+			hits = append(hits, vmconfig.NameForPath(e.Name()))
 		}
 	}
 	sort.Strings(hits)
@@ -450,6 +450,10 @@ func MaterializeImage(opts MaterializeImageOptions) (string, error) {
 		return "", fmt.Errorf("materialize: create child dir: %w", err)
 	}
 	cleanup := func() { os.RemoveAll(childDir) }
+	if err := vmconfig.EnsureCompatibilityAlias(opts.ChildName, childDir); err != nil {
+		cleanup()
+		return "", fmt.Errorf("materialize: create compatibility alias: %w", err)
+	}
 
 	manifest, err := LoadImageManifest(opts.Ref)
 	if err != nil {

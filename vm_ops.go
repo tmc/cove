@@ -58,6 +58,10 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	info, err := os.Stat(vmPath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			candidate := filepath.Join(vmconfig.BaseDir(), name)
+			if candidateInfo, candidateErr := os.Lstat(candidate); candidateErr == nil && !candidateInfo.IsDir() {
+				return fmt.Errorf("not a VM directory: %s", candidate)
+			}
 			return fmt.Errorf("%w: %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", ErrVMNotFound, name)
 		}
 		return fmt.Errorf("stat VM dir: %w", err)
@@ -96,6 +100,12 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	}
 	if err := os.RemoveAll(vmPath); err != nil {
 		return fmt.Errorf("delete VM: %w", err)
+	}
+	if err := vmconfig.RemoveCompatibilityAlias(name); err != nil {
+		fmt.Printf("warning: remove VM compatibility alias: %v\n", err)
+	}
+	if err := vmconfig.RemovePackageAlias(name); err != nil {
+		fmt.Printf("warning: remove Finder VM package alias: %v\n", err)
 	}
 
 	if wasActive {
@@ -163,6 +173,18 @@ func RenameVM(oldName, newName string) error {
 	fmt.Printf("Renaming VM '%s' -> '%s'...\n", oldName, newName)
 	if err := os.Rename(oldPath, newPath); err != nil {
 		return fmt.Errorf("rename VM: %w", err)
+	}
+	if err := vmconfig.RemovePackageAlias(oldName); err != nil {
+		fmt.Printf("warning: remove old Finder VM package alias: %v\n", err)
+	}
+	if err := vmconfig.RemoveCompatibilityAlias(oldName); err != nil {
+		fmt.Printf("warning: remove old VM compatibility alias: %v\n", err)
+	}
+	if err := vmconfig.EnsureCompatibilityAlias(newName, newPath); err != nil {
+		fmt.Printf("warning: create VM compatibility alias: %v\n", err)
+	}
+	if err := vmconfig.EnsurePackageAlias(newName, newPath); err != nil {
+		fmt.Printf("warning: create Finder VM package alias: %v\n", err)
 	}
 
 	// Update active VM symlink if needed
@@ -293,6 +315,10 @@ func ImportVM(archivePath, name string) error {
 	// Create VM directory
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		return fmt.Errorf("create VM dir: %w", err)
+	}
+	if err := vmconfig.EnsureCompatibilityAlias(name, vmPath); err != nil {
+		os.RemoveAll(vmPath)
+		return fmt.Errorf("create VM compatibility alias: %w", err)
 	}
 
 	// Extract files

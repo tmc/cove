@@ -11,7 +11,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -92,9 +91,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if err != nil {
 		return err
 	}
-	// MaterializeImage already wrote the bundle under BaseDir; its
-	// directory basename is the child name.
-	childName := filepath.Base(filepath.Clean(childPath))
+	childName := vmconfig.NameForPath(childPath)
 
 	fmt.Printf("Image fork: %s\n", ref)
 	fmt.Printf("  child:  %s\n", childName)
