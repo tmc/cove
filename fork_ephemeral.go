@@ -115,6 +115,10 @@ func SetupEphemeralFork(opts EphemeralForkOptions) (EphemeralFork, error) {
 	cleanup := func() {
 		os.RemoveAll(childDir)
 	}
+	if err := vmconfig.EnsureCompatibilityAlias(name, childDir); err != nil {
+		cleanup()
+		return EphemeralFork{}, fmt.Errorf("ephemeral fork: create compatibility alias: %w", err)
+	}
 
 	if err := os.WriteFile(filepath.Join(childDir, ephemeralSentinel), nil, 0o644); err != nil {
 		cleanup()

@@ -342,8 +342,8 @@ func TestMaterializeImage_FreshIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MaterializeImage: %v", err)
 	}
-	if filepath.Base(childDir) != "worker-1" {
-		t.Errorf("child dir basename = %q, want worker-1", filepath.Base(childDir))
+	if vmconfig.NameForPath(childDir) != "worker-1" {
+		t.Errorf("child dir name = %q, want worker-1", vmconfig.NameForPath(childDir))
 	}
 	info, err := os.Stat(childDir)
 	if err != nil {

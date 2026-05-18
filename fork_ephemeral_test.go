@@ -147,8 +147,8 @@ func TestSetupEphemeralFork_ExplicitName(t *testing.T) {
 	if fork.Name != "scratch-1" {
 		t.Errorf("fork.Name = %q, want %q", fork.Name, "scratch-1")
 	}
-	if filepath.Base(fork.Path) != "scratch-1" {
-		t.Errorf("fork.Path basename = %q, want %q", filepath.Base(fork.Path), "scratch-1")
+	if vmconfig.NameForPath(fork.Path) != "scratch-1" {
+		t.Errorf("fork.Path name = %q, want %q", vmconfig.NameForPath(fork.Path), "scratch-1")
 	}
 }
 

@@ -53,6 +53,10 @@ func CloneVM(opts CloneOptions) error {
 	if err := os.MkdirAll(dstPath, 0755); err != nil {
 		return fmt.Errorf("create target dir: %w", err)
 	}
+	if err := vmconfig.EnsureCompatibilityAlias(opts.Target, dstPath); err != nil {
+		os.RemoveAll(dstPath)
+		return fmt.Errorf("create target compatibility alias: %w", err)
+	}
 
 	sourceOS := vmconfig.DetectOSType(srcPath)
 	filesToCopy := cloneRequiredFiles(sourceOS)

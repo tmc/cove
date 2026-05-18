@@ -65,12 +65,18 @@ func TestDeleteVM_CascadeRemovesChildrenFirst(t *testing.T) {
 func TestDeleteVM_ParentlessDeletesClean(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	writeTreeVM(t, "solo", vmconfig.Config{})
+	if err := vmconfig.EnsurePackageAlias("solo", vmconfig.Path("solo")); err != nil {
+		t.Fatalf("EnsurePackageAlias(solo) error = %v", err)
+	}
 
 	if err := DeleteVMWithOptions("solo", DeleteVMOptions{}); err != nil {
 		t.Fatalf("DeleteVMWithOptions(solo, {}) error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "solo")); !os.IsNotExist(err) {
 		t.Errorf("solo directory still exists after delete: %v", err)
+	}
+	if _, err := os.Lstat(vmconfig.PackageAliasPath("solo")); !os.IsNotExist(err) {
+		t.Errorf("solo package alias still exists after delete: %v", err)
 	}
 }
 
