@@ -45,6 +45,9 @@ func initMacgo() {
 		"com.apple.security.network.client",
 		"com.apple.security.network.server",
 	)
+	cfg.WithPostCreateHook(func(bundlePath string, cfg *macgo.Config) error {
+		return installCoveVMDocumentTypes(bundlePath)
+	})
 
 	if iconPath != "" {
 		cfg.WithIcon(iconPath)
@@ -73,6 +76,9 @@ func shouldEnableMacgo(args []string, gui, headless, legacyRun, legacyInstall bo
 
 func wantsMacgoRuntime(args []string, legacyRun, legacyInstall bool, utmPath string) bool {
 	if legacyRun || legacyInstall || utmPath != "" {
+		return true
+	}
+	if _, ok := coveVMBundlePathArg(args); ok {
 		return true
 	}
 	if len(args) == 0 {

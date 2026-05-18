@@ -124,6 +124,8 @@ var (
 	windowsSerialMode string
 	// Experimental Windows EFI ROM image.
 	windowsEFIRomPath string
+	// Experimental Windows GOP shim EFI application.
+	windowsGOPShimPath string
 	// vzscripts to run after install (comma-separated recipe names)
 	installVZScripts string
 	// Headless mode (disables GUI)
@@ -264,6 +266,7 @@ func init() {
 	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "virtio", "Windows graphics mode: virtio or linear-framebuffer")
 	flag.StringVar(&windowsSerialMode, "windows-serial", "virtio", "Windows serial port: virtio, pl011, or 16550")
 	flag.StringVar(&windowsEFIRomPath, "windows-efi-rom", "", "Windows EFI ROM image for private VZEFIBootLoader experiment")
+	flag.StringVar(&windowsGOPShimPath, "windows-gop-shim", "", "experimental Windows GOP shim EFI application to install as BOOTAA64.EFI")
 	flag.BoolVar(&skipResume, "no-resume", false, "discard saved suspend state and perform a cold boot")
 	flag.BoolVar(&skipResume, "cold-boot", false, "same as -no-resume")
 	flag.StringVar(&launchOrder, "launch-order", "window-first", "GUI launch order: window-first or start-first")
@@ -374,6 +377,7 @@ func main() {
 			os.Exit(runRegisteredCommand(newCommandEnv(), spec, flag.Arg(0), flag.Args()[1:]))
 		}
 	}
+	openedCoveVMDir, openedCoveVMArg := coveVMBundlePathArg(flag.Args())
 
 	// Set up macgo bundling (entitlements, signing, app icon).
 	// Must be before LockOSThread. May relaunch and not return.
@@ -381,6 +385,15 @@ func main() {
 
 	runtime.LockOSThread()
 	registerUIThread()
+	if !openedCoveVMArg && flag.NArg() == 0 && guiMode && !headlessMode {
+		openedCoveVMDir = waitForCoveVMDocumentOpen(500 * time.Millisecond)
+	}
+	if openedCoveVMDir != "" {
+		if err := configureOpenedCoveVM(openedCoveVMDir); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	// Note: NSSetUncaughtExceptionHandler disabled — purego cannot marshal
 	// struct types through callbacks (NSException is a Go struct wrapper).
@@ -393,7 +406,7 @@ func main() {
 	// `helper daemon`, which runs as root via launchd. As root, $HOME is
 	// /var/root, which is on the SIP-sealed root volume (EROFS).
 	var err error
-	if !subcommandSkipsVMDir(flag.Args()) {
+	if openedCoveVMDir == "" && !subcommandSkipsVMDir(flag.Args()) {
 		vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -422,6 +435,14 @@ func main() {
 	if err := validateLaunchOptions(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+	if openedCoveVMDir != "" {
+		if err := runSelectedVM(); err != nil {
+			showCoveVMLaunchError("Cannot Start Cove VM", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Legacy flag handling compatibility
@@ -673,14 +694,20 @@ func handleUTM() {
 }
 
 func handleRun() {
-	if err := resolveRunTarget(); err != nil {
+	if err := runSelectedVM(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func runSelectedVM() error {
+	if err := resolveRunTarget(); err != nil {
+		return err
 	}
 	if err := runCurrentVM(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return withVMLimitHint(err, vmName)
 	}
+	return nil
 }
 
 func resolveRunTarget() error {
