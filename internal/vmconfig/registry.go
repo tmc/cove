@@ -73,12 +73,12 @@ func ActiveName() string {
 	if err != nil {
 		return "default"
 	}
-	return filepath.Base(target)
+	return NameForPath(target)
 }
 
 // SetActive sets the active VM symlink.
 func SetActive(name string) error {
-	vmPath := filepath.Join(BaseDir(), name)
+	vmPath := Path(name)
 	if !Validate(vmPath) {
 		return fmt.Errorf("vm not found or invalid: %s", name)
 	}
