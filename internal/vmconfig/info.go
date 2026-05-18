@@ -43,13 +43,22 @@ func InfoFor(dir string, state StateFunc) (*Info, error) {
 		vmState = state(dir)
 	}
 	return &Info{
-		Name:     filepath.Base(dir),
+		Name:     NameForPath(dir),
 		Path:     dir,
 		DiskSize: diskInfo.Size(),
 		Created:  diskInfo.ModTime(),
 		State:    vmState,
 		OSType:   DetectOSType(dir),
 	}, nil
+}
+
+// NameForPath returns the VM name for a regular or .covevm package path.
+func NameForPath(dir string) string {
+	name := filepath.Base(dir)
+	if filepath.Ext(name) == ".covevm" {
+		name = name[:len(name)-len(".covevm")]
+	}
+	return name
 }
 
 // List returns all valid VMs in the base directory and any legacy
@@ -67,6 +76,7 @@ func List(state StateFunc) ([]Info, error) {
 	}
 
 	seen := make(map[string]bool)
+	seenPath := make(map[string]bool)
 	var vms []Info
 	for _, entry := range entries {
 		name := entry.Name()
@@ -84,7 +94,19 @@ func List(state StateFunc) ([]Info, error) {
 		if err != nil {
 			continue
 		}
-		seen[name] = true
+		if !entry.Type().IsRegular() {
+			realPath := resolvePath(vmPath)
+			if seenPath[realPath] {
+				continue
+			}
+			seenPath[realPath] = true
+		}
+		if packaged, err := EnsurePackageLayout(info.Name, info.Path); err == nil {
+			info.Path = packaged
+		} else {
+			return nil, err
+		}
+		seen[info.Name] = true
 		vms = append(vms, *info)
 	}
 
@@ -100,7 +122,8 @@ func List(state StateFunc) ([]Info, error) {
 				continue
 			}
 			name := entry.Name()
-			if name == filepath.Base(baseDir) || seen[name] {
+			vmName := NameForPath(name)
+			if name == filepath.Base(baseDir) || seen[vmName] {
 				continue
 			}
 			legacyPath := filepath.Join(legacyRoot, name)
@@ -112,7 +135,7 @@ func List(state StateFunc) ([]Info, error) {
 				continue
 			}
 			_ = EnsureAlias(name, legacyPath)
-			seen[name] = true
+			seen[info.Name] = true
 			vms = append(vms, *info)
 		}
 	}
@@ -120,6 +143,9 @@ func List(state StateFunc) ([]Info, error) {
 	sort.Slice(vms, func(i, j int) bool {
 		return vms[i].Name < vms[j].Name
 	})
+	if err := EnsurePackageAliases(vms); err != nil {
+		return nil, err
+	}
 	return vms, nil
 }
 

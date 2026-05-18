@@ -18,6 +18,12 @@ func TemplateDir() string {
 	return filepath.Join(homeDir, ".vz", "templates")
 }
 
+// BundleDir returns the directory for Finder-openable VM package aliases.
+func BundleDir() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".vz", "covevms")
+}
+
 // CacheDir returns the cache directory.
 func CacheDir() string {
 	homeDir, _ := os.UserHomeDir()
@@ -44,7 +50,7 @@ func Path(name string) string {
 	if existing, ok := ExistingPath(name); ok {
 		return existing
 	}
-	return filepath.Join(BaseDir(), name)
+	return filepath.Join(BaseDir(), PackageName(name))
 }
 
 // ExistingPath returns an existing registered or legacy VM path by name.
@@ -66,9 +72,12 @@ func ExistingPath(name string) (string, bool) {
 func PathCandidates(name string) []string {
 	baseDir := BaseDir()
 	homeDir := filepath.Dir(baseDir)
+	packageName := PackageName(name)
 	return []string{
 		filepath.Join(baseDir, name),
+		filepath.Join(baseDir, packageName),
 		filepath.Join(homeDir, name),
+		filepath.Join(homeDir, packageName),
 	}
 }
 
@@ -93,8 +102,18 @@ func EnsureDir(vmName, currentDir string) (string, error) {
 	if err := os.MkdirAll(resolvedDir, 0755); err != nil {
 		return "", fmt.Errorf("create VM dir: %w", err)
 	}
+	if filepath.Base(resolvedDir) == PackageName(filepath.Base(resolvedDir)) {
+		if err := markFinderPackage(resolvedDir); err != nil {
+			return "", err
+		}
+	}
 	if err := EnsureAlias(vmName, resolvedDir); err != nil {
 		return "", err
+	}
+	if vmName != "" {
+		if err := EnsureCompatibilityAlias(vmName, resolvedDir); err != nil {
+			return "", err
+		}
 	}
 	return resolvePath(resolvedDir), nil
 }

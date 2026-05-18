@@ -56,3 +56,103 @@ func TestEnsureAlias(t *testing.T) {
 		t.Fatalf("alias = %q, want %q", link, resolvePath(legacyPath))
 	}
 }
+
+func TestEnsurePackageAlias(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := filepath.Join(BaseDir(), "dev")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll(dev) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatalf("WriteFile(linux-disk.img) error = %v", err)
+	}
+
+	if err := EnsurePackageAlias("dev", dir); err != nil {
+		t.Fatalf("EnsurePackageAlias() error = %v", err)
+	}
+	alias := PackageAliasPath("dev")
+	link, err := os.Readlink(alias)
+	if err != nil {
+		t.Fatalf("Readlink(alias) error = %v", err)
+	}
+	if link != resolvePath(dir) {
+		t.Fatalf("alias = %q, want %q", link, resolvePath(dir))
+	}
+	if !Validate(alias) {
+		t.Fatal("Validate(package alias) = false, want true")
+	}
+}
+
+func TestEnsurePackageAliasDoesNotDoubleExtension(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := filepath.Join(BaseDir(), "dev.covevm")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll(dev.covevm) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatalf("WriteFile(linux-disk.img) error = %v", err)
+	}
+
+	if err := EnsurePackageAlias("dev.covevm", dir); err != nil {
+		t.Fatalf("EnsurePackageAlias() error = %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(BundleDir(), "dev.covevm.covevm")); !os.IsNotExist(err) {
+		t.Fatalf("double-extension alias exists: %v", err)
+	}
+	if !Validate(PackageAliasPath("dev.covevm")) {
+		t.Fatal("package alias is not a valid VM")
+	}
+}
+
+func TestEnsurePackageAliasReplacesStaleSymlink(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldDir := filepath.Join(t.TempDir(), "old")
+	newDir := filepath.Join(BaseDir(), "dev")
+	if err := os.MkdirAll(oldDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(old) error = %v", err)
+	}
+	if err := os.MkdirAll(newDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(new) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(newDir, "linux-disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatalf("WriteFile(linux-disk.img) error = %v", err)
+	}
+	if err := os.MkdirAll(BundleDir(), 0755); err != nil {
+		t.Fatalf("MkdirAll(BundleDir) error = %v", err)
+	}
+	alias := PackageAliasPath("dev")
+	if err := os.Symlink(oldDir, alias); err != nil {
+		t.Fatalf("Symlink(old) error = %v", err)
+	}
+
+	if err := EnsurePackageAlias("dev", newDir); err != nil {
+		t.Fatalf("EnsurePackageAlias() error = %v", err)
+	}
+	link, err := os.Readlink(alias)
+	if err != nil {
+		t.Fatalf("Readlink(alias) error = %v", err)
+	}
+	if link != resolvePath(newDir) {
+		t.Fatalf("alias = %q, want %q", link, resolvePath(newDir))
+	}
+}
+
+func TestRemovePackageAlias(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := filepath.Join(BaseDir(), "dev")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll(dev) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0644); err != nil {
+		t.Fatalf("WriteFile(linux-disk.img) error = %v", err)
+	}
+	if err := EnsurePackageAlias("dev", dir); err != nil {
+		t.Fatalf("EnsurePackageAlias() error = %v", err)
+	}
+	if err := RemovePackageAlias("dev"); err != nil {
+		t.Fatalf("RemovePackageAlias() error = %v", err)
+	}
+	if _, err := os.Lstat(PackageAliasPath("dev")); !os.IsNotExist(err) {
+		t.Fatalf("package alias still exists: %v", err)
+	}
+}

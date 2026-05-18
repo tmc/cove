@@ -25,7 +25,9 @@ func TestPathCandidates(t *testing.T) {
 	got := PathCandidates("vm")
 	want := []string{
 		filepath.Join("/tmp/home", ".vz", "vms", "vm"),
+		filepath.Join("/tmp/home", ".vz", "vms", "vm.covevm"),
 		filepath.Join("/tmp/home", ".vz", "vm"),
+		filepath.Join("/tmp/home", ".vz", "vm.covevm"),
 	}
 	if len(got) != len(want) {
 		t.Fatalf("len(PathCandidates()) = %d, want %d", len(got), len(want))
@@ -82,7 +84,7 @@ func TestEnsureDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureDir() error = %v", err)
 	}
-	want := resolvePath(filepath.Join(BaseDir(), "fresh"))
+	want := resolvePath(filepath.Join(BaseDir(), "fresh.covevm"))
 	if got != want {
 		t.Fatalf("EnsureDir() = %q, want %q", got, want)
 	}
@@ -90,5 +92,10 @@ func TestEnsureDir(t *testing.T) {
 		t.Fatalf("Stat(%q) error = %v", want, err)
 	} else if !info.IsDir() {
 		t.Fatalf("Stat(%q).IsDir = false, want true", want)
+	}
+	if link, err := os.Readlink(filepath.Join(BaseDir(), "fresh")); err != nil {
+		t.Fatalf("Readlink(fresh) error = %v", err)
+	} else if link != want {
+		t.Fatalf("fresh compatibility alias = %q, want %q", link, want)
 	}
 }
