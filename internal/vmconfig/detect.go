@@ -16,7 +16,7 @@ func DetectOSType(dir string) string {
 	if _, err := os.Stat(filepath.Join(dir, "hw.model")); err == nil {
 		return "macOS"
 	}
-	if _, err := os.Stat(filepath.Join(dir, "windows-disk.img")); err == nil {
+	if _, ok := existingWindowsDiskPath(dir); ok {
 		return "Windows"
 	}
 	if _, err := os.Stat(filepath.Join(dir, "linux-disk.img")); err == nil {

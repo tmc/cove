@@ -221,6 +221,65 @@ func TestWriteWindowsQEMUMetadata(t *testing.T) {
 	}
 }
 
+func TestWriteWindowsQEMUProcessMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "process.json")
+	started := time.Date(2026, 5, 18, 22, 0, 0, 0, time.UTC)
+	exited := started.Add(time.Minute)
+	want := windowsQEMUProcessMetadata{
+		State:           "stopped",
+		CovePID:         123,
+		QEMUPID:         456,
+		StartedAt:       started,
+		ExitedAt:        &exited,
+		MonitorSockPath: filepath.Join(dir, "monitor.sock"),
+	}
+	if err := writeWindowsQEMUProcessMetadata(path, want); err != nil {
+		t.Fatalf("writeWindowsQEMUProcessMetadata: %v", err)
+	}
+	var got windowsQEMUProcessMetadata
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.State != want.State || got.CovePID != want.CovePID || got.QEMUPID != want.QEMUPID || got.MonitorSockPath != want.MonitorSockPath {
+		t.Fatalf("process metadata = %#v, want %#v", got, want)
+	}
+	if got.ExitedAt == nil || !got.StartedAt.Equal(started) || !got.ExitedAt.Equal(exited) {
+		t.Fatalf("process metadata times = %s/%s, want %s/%s", got.StartedAt, got.ExitedAt, started, exited)
+	}
+}
+
+func TestWriteWindowsQEMUProcessMetadataOmitsExitedAtWhenRunning(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "process.json")
+	if err := writeWindowsQEMUProcessMetadata(path, windowsQEMUProcessMetadata{
+		State:     "running",
+		CovePID:   123,
+		QEMUPID:   456,
+		StartedAt: time.Date(2026, 5, 18, 22, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("writeWindowsQEMUProcessMetadata: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "exitedAt") {
+		t.Fatalf("running process metadata contains exitedAt:\n%s", data)
+	}
+}
+
+func TestWindowsQEMUProcessPath(t *testing.T) {
+	dir := t.TempDir()
+	cfg := windowsQEMUConfig{MonitorSockPath: filepath.Join(dir, "qemu", "monitor.sock")}
+	if got, want := windowsQEMUProcessPath(cfg), filepath.Join(dir, "qemu", "process.json"); got != want {
+		t.Fatalf("windowsQEMUProcessPath = %q, want %q", got, want)
+	}
+}
+
 func TestEnsureWindowsQEMUEFIVars(t *testing.T) {
 	dir := t.TempDir()
 	template := filepath.Join(dir, "template.fd")

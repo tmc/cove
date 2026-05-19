@@ -37,6 +37,15 @@ func TestValidate(t *testing.T) {
 			t.Fatal("Validate() = false, want true")
 		}
 	})
+	t.Run("windows qemu", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "windows.qcow2"), []byte("disk"), 0644); err != nil {
+			t.Fatalf("WriteFile(windows.qcow2) error = %v", err)
+		}
+		if !Validate(dir) {
+			t.Fatal("Validate() = false, want true")
+		}
+	})
 	t.Run("invalid", func(t *testing.T) {
 		if Validate(t.TempDir()) {
 			t.Fatal("Validate() = true, want false")

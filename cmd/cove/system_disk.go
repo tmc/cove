@@ -39,7 +39,7 @@ func vmPrimaryDiskPath(vmPath string) string {
 	case "Linux":
 		return filepath.Join(vmPath, "linux-disk.img")
 	case "Windows":
-		return filepath.Join(vmPath, "windows-disk.img")
+		return vmconfig.WindowsDiskPath(vmPath)
 	}
 	return filepath.Join(vmPath, "disk.img")
 }

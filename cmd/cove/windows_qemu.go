@@ -81,6 +81,17 @@ func installWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, quo
 	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
+	lock, err := acquireRunLockHook(hc.VMDir)
+	if err != nil {
+		return fmt.Errorf("cove install -windows -windows-backend qemu: %w", err)
+	}
+	defer func() {
+		if releaseErr := lock.Release(); releaseErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
+		}
+	}()
+	noteVMRuntimePhase(hc.VMDir, "starting", "qemu-install-prepare")
+
 	saveHardwareConfig(hc.VMDir)
 	persistInstallQuota(quotaWarnings, hc.VMDir)
 	if err := applyInstallDiskQuota(quotaWarnings, hc.VMDir); err != nil {
@@ -427,11 +438,14 @@ func ensureWindowsQEMUEFIVars(varsPath, templatePath string) error {
 }
 
 func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
+	noteVMRuntimePhase(cfg.VMDir, "starting", "qemu-start")
 	args, err := windowsQEMUArgs(cfg)
 	if err != nil {
+		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-args")
 		return err
 	}
 	if err := removeWindowsQEMUMonitorSocket(cfg.MonitorSockPath); err != nil {
+		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-monitor-socket")
 		return err
 	}
 	commandPath := filepath.Join(filepath.Dir(cfg.MonitorSockPath), "launch.sh")
@@ -458,7 +472,19 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
+		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-start")
 		return fmt.Errorf("start QEMU: %w", err)
+	}
+	processPath := windowsQEMUProcessPath(cfg)
+	process := windowsQEMUProcessMetadata{
+		State:           "running",
+		CovePID:         os.Getpid(),
+		QEMUPID:         cmd.Process.Pid,
+		StartedAt:       time.Now().UTC(),
+		MonitorSockPath: cfg.MonitorSockPath,
+	}
+	if err := writeWindowsQEMUProcessMetadata(processPath, process); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: write QEMU process metadata: %v\n", err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -467,15 +493,32 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 			_ = cmd.Process.Kill()
 			<-done
 		}
+		process.State = "error"
+		process.ExitError = err.Error()
+		exitedAt := time.Now().UTC()
+		process.ExitedAt = &exitedAt
+		_ = writeWindowsQEMUProcessMetadata(processPath, process)
+		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-monitor")
 		return err
 	}
+	noteVMRuntimePhase(cfg.VMDir, "running", "qemu-monitor-ready")
 	fmt.Printf("QEMU monitor: %s\n", cfg.MonitorSockPath)
 	if install && windowsQEMUAutoBootKey() {
 		go windowsQEMUSendBootKeys(cfg.MonitorSockPath, windowsQEMUBootKeyConfigFromEnv())
 	}
-	if err := <-done; err != nil {
-		return fmt.Errorf("QEMU exited: %w", err)
+	waitErr := <-done
+	exitedAt := time.Now().UTC()
+	process.ExitedAt = &exitedAt
+	if waitErr != nil {
+		process.State = "error"
+		process.ExitError = waitErr.Error()
+		_ = writeWindowsQEMUProcessMetadata(processPath, process)
+		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-exited")
+		return fmt.Errorf("QEMU exited: %w", waitErr)
 	}
+	process.State = "stopped"
+	_ = writeWindowsQEMUProcessMetadata(processPath, process)
+	noteVMRuntimeState(cfg.VMDir, "stopped")
 	return nil
 }
 
@@ -806,6 +849,40 @@ type windowsQEMUMetadata struct {
 	Args                []string `json:"args"`
 }
 
+type windowsQEMUProcessMetadata struct {
+	State           string     `json:"state"`
+	CovePID         int        `json:"covePid"`
+	QEMUPID         int        `json:"qemuPid"`
+	StartedAt       time.Time  `json:"startedAt"`
+	ExitedAt        *time.Time `json:"exitedAt,omitempty"`
+	ExitError       string     `json:"exitError,omitempty"`
+	MonitorSockPath string     `json:"monitorSockPath"`
+}
+
+func windowsQEMUProcessPath(cfg windowsQEMUConfig) string {
+	return filepath.Join(filepath.Dir(cfg.MonitorSockPath), "process.json")
+}
+
+func writeWindowsQEMUProcessMetadata(path string, metadata windowsQEMUProcessMetadata) error {
+	if path == "" {
+		return nil
+	}
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
 func writeWindowsQEMUMetadata(path string, cfg windowsQEMUConfig, args []string) error {
 	metadata := windowsQEMUMetadata{
 		Backend:             "qemu-hvf",
@@ -868,6 +945,7 @@ Useful monitor commands:
 
 Artifacts:
   metadata: %s
+  process metadata: %s
   launch script: %s
   display device: %s
   serial: %s
@@ -884,6 +962,7 @@ Display experiment:
   COVE_QEMU_DISPLAY_DEVICE=ramfb
 `, cfg.MonitorSockPath,
 		filepath.Join(filepath.Dir(cfg.MonitorSockPath), "metadata.json"),
+		windowsQEMUProcessPath(cfg),
 		filepath.Join(filepath.Dir(cfg.MonitorSockPath), "launch.sh"),
 		cfg.DisplayDevice,
 		cfg.SerialOutput,

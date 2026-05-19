@@ -32,7 +32,7 @@ func InfoFor(dir string, state StateFunc) (*Info, error) {
 		diskPath = filepath.Join(dir, "linux-disk.img")
 	}
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		diskPath = filepath.Join(dir, "windows-disk.img")
+		diskPath = WindowsDiskPath(dir)
 	}
 	diskInfo, err := os.Stat(diskPath)
 	if err != nil {
