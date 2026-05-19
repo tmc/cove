@@ -76,7 +76,7 @@ func installWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, quo
 	if quotaWarnings == nil {
 		quotaWarnings = io.Discard
 	}
-	fmt.Println("=== Windows VM Installer (QEMU/HVF experimental) ===")
+	fmt.Println("=== Windows VM Installer (QEMU/HVF) ===")
 
 	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
@@ -154,7 +154,7 @@ func runWindowsQEMUVM() error {
 }
 
 func runWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
-	fmt.Println("=== Windows VM Runner (QEMU/HVF experimental) ===")
+	fmt.Println("=== Windows VM Runner (QEMU/HVF) ===")
 
 	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)

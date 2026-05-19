@@ -279,7 +279,7 @@ qemu-monitor sendkey spc
 ### windows-install
 
 Drive the Windows installer with QEMU monitor screenshots, OCR, and keyboard
-input. The command is intended for the experimental QEMU/HVF Windows backend.
+input. The command is intended for the direct QEMU/HVF Windows backend.
 The built-in `windows-install` recipe also waits for the QEMU-forwarded
 Windows `vz-agent`, verifies the provision marker, and checks that the
 `cove-vz-agent` scheduled task has started `vz-agent.exe`.
