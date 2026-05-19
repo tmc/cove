@@ -560,6 +560,7 @@ func ctlCommand(args []string) error {
 	}
 
 	// If a VM was selected and -socket was not, resolve the socket from the VM dir.
+	targetVMDir := ""
 	if *socketPath == "" {
 		switch {
 		case ctlVMFlag != nil && *ctlVMFlag != "":
@@ -567,12 +568,14 @@ func ctlCommand(args []string) error {
 			if err != nil {
 				return err
 			}
+			targetVMDir = dir
 			*socketPath = GetControlSocketPathForVM(dir)
 		case strings.TrimSpace(vmName) != "":
 			dir, err := requireExistingVMForControl(vmName)
 			if err != nil {
 				return err
 			}
+			targetVMDir = dir
 			*socketPath = GetControlSocketPathForVM(dir)
 		}
 	}
@@ -638,6 +641,9 @@ func ctlCommand(args []string) error {
 	}
 	if strings.TrimSpace(*token) != "" {
 		os.Setenv(controlTokenEnvVar, strings.TrimSpace(*token))
+	}
+	if handled, err := ctlMaybeHandleWindowsQEMU(targetVMDir, cmdType, subArgs, *timeout, *wait, *raw); handled {
+		return err
 	}
 
 	switch cmdType {

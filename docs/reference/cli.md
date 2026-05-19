@@ -456,6 +456,11 @@ cove ctl [options] <command> [args...]
 | `request-stop` | Send ACPI power button; the guest may ignore it |
 | `network-info` | MAC address, guest IP, mode |
 
+For QEMU Windows VMs, `ctl -vm <name>` routes `status`, `stop`,
+`request-stop`, `agent-ping`, `exec`, `agent-exec`, `agent-exec-stream`, and
+`agent-shutdown` through the VM's `qemu/metadata.json`, QEMU monitor, and
+forwarded Windows `vz-agent`.
+
 ### GUI Commands
 
 Native GUI runs create a macOS status item for the active VM. The item shows
