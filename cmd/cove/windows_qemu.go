@@ -81,7 +81,7 @@ func installWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, quo
 	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
-	lock, err := acquireRunLockHook(hc.VMDir)
+	lock, err := AcquireRunLock(hc.VMDir)
 	if err != nil {
 		return fmt.Errorf("cove install -windows -windows-backend qemu: %w", err)
 	}

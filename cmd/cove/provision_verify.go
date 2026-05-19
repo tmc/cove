@@ -35,6 +35,9 @@ func handleVerify(args []string) error {
 	if len(args) > 0 && args[0] == "vm-processes" {
 		return handleDoctorVMProcesses(args[1:], os.Stdout)
 	}
+	if len(args) > 0 && args[0] == "qemu" {
+		return handleDoctorQEMU(args[1:], os.Stdout)
+	}
 	if len(args) > 0 && args[0] == "tcc-preauth" {
 		return runPreAuth(args[1:])
 	}
@@ -134,10 +137,12 @@ func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
        cove doctor host [-json]
        cove doctor vm-processes
        cove doctor tcc-fda -tcc-path /Volumes/work [-password pass] [-upgrade-agent]
+       cove doctor qemu [-json]
 
 Diagnose VM health: provisioning, agent, and file ownership.
 
 Use cove doctor host before creating a first VM to check host readiness.
+Use cove doctor qemu before installing Windows with -windows-backend qemu.
 
 When the VM is running, doctor checks via the control socket and guest agent.
 When stopped, it mounts the disk and inspects files directly.
@@ -155,6 +160,8 @@ Examples:
   cove doctor host -json
   cove doctor vm-processes
   cove doctor tcc-fda -tcc-path /Volumes/work -password covetest123
+  cove doctor qemu
+  cove doctor qemu -json
   cove doctor
   cove doctor --fix
   cove doctor --tcc-path /Volumes/work

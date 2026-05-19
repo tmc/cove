@@ -999,6 +999,7 @@ Windows VM (experimental):
   cove install -windows -iso /path/to/Win11_ARM64.iso
   cove run -windows
   cove run -windows -windows-graphics linear-framebuffer # use private framebuffer experiment
+  cove doctor qemu                                      # check QEMU/HVF prerequisites
   cove install -windows -windows-backend qemu -iso /path/to/Win11_ARM64.iso
   cove run -windows -windows-backend qemu
 

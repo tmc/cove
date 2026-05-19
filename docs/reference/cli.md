@@ -238,6 +238,7 @@ Diagnose host readiness or VM health.
 ```
 cove doctor host [-json]
 cove doctor tcc-fda -tcc-path /Volumes/<tag> [-password pass]
+cove doctor qemu [-json]
 cove doctor [options]
 ```
 
@@ -245,6 +246,10 @@ cove doctor [options]
 Apple Silicon, macOS version, virtualization entitlement, cove state
 writability, free disk, network, optional helper state, and Xcode Command Line
 Tools. `-json` emits a machine-readable report.
+
+`cove doctor qemu` checks the direct QEMU/HVF Windows backend prerequisites:
+`qemu-system-aarch64`, `qemu-img`, AArch64 EFI pflash assets, display-device
+configuration, and the local VirtIO driver cache state.
 
 Plain `cove doctor` remains VM-focused. It checks provisioning, guest agent, TCC
 paths, and file ownership for the active VM or `-vm <name>`.
@@ -256,6 +261,8 @@ the same bounded readdir probe.
 cove doctor host
 cove doctor host -json
 cove doctor tcc-fda -tcc-path /Volumes/work -password <guest-password>
+cove doctor qemu
+cove doctor qemu -json
 cove doctor -vm dev -v
 ```
 
@@ -375,6 +382,7 @@ Diagnose VM health: provisioning, agent, and file ownership.
 ```
 cove doctor [flags]
 cove doctor tcc-fda -tcc-path /Volumes/<tag> [-password pass] [-upgrade-agent]
+cove doctor qemu [-json]
 cove doctor tcc-preauth
 cove doctor sckit-preauth [-json]
 cove doctor sckit-spike [-n N] [-threshold DUR] [-title-prefix STR] [-owner STR]
@@ -389,12 +397,14 @@ cove doctor sckit-spike [-n N] [-threshold DUR] [-title-prefix STR] [-owner STR]
 | Subcommand | Description |
 |------------|-------------|
 | `tcc-fda -tcc-path PATH [-password PASS] [-upgrade-agent]` | Guide guest Full Disk Access for `/usr/local/bin/vz-agent` and verify by bounded readdir. |
+| `qemu [-json]` | Check direct QEMU/HVF Windows backend prerequisites. |
 | `tcc-preauth` | Pre-auth Apple Events services cove uses on the host. |
 | `sckit-preauth [-json]` | Report ScreenCaptureKit availability and Screen Recording authorization (design 041). |
 | `sckit-spike` | A/B harness comparing SCKit and CGWindow capture latency. |
 
 ```bash
 cove doctor
+cove doctor qemu
 cove doctor --fix
 cove doctor --tcc-path /Volumes/work
 cove doctor tcc-fda -tcc-path /Volumes/work -password <guest-password>
