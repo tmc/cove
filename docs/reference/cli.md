@@ -292,6 +292,9 @@ cove up [flags]
 | `-no-shutdown` | false | Leave VM running after vzscripts complete |
 | `-vm <name>` | | VM name |
 | `-linux` | false | Install Linux instead of macOS |
+| `-windows` | false | Install Windows ARM64 instead of macOS |
+| `-windows-backend <mode>` | vz | Windows backend: vz or qemu |
+| `-iso <path>` | | Windows ISO path when using `-windows` |
 | `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
 | `-desktop` | false | Use Ubuntu Desktop (implies `-linux`) |
 | `-desktop-installer <mode>` | oem | Ubuntu Desktop install path: oem or server |
@@ -319,11 +322,17 @@ cove up -user me -vzscripts homebrew,golang
 cove up -user me -ipsw ~/restore.ipsw -cpu 4 -memory 8
 cove up -linux -user tmc
 cove up -linux -desktop -user me
+cove up -windows -windows-backend qemu -iso ~/Win11_ARM64.iso -user me
 ```
 
 For macOS, omit `-password` so cove prompts. For Linux, an omitted password
 defaults to the provisioned username; change it before enabling remote access or
 saving a reusable image.
+
+For Windows, use the QEMU backend. First install defaults to the built-in
+`windows-install` vzscript, which drives setup, waits for the QEMU-forwarded
+Windows `vz-agent`, and verifies the provision marker, scheduled task, and
+agent process.
 
 ---
 

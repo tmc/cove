@@ -43,6 +43,9 @@ type upConfig struct {
 	noShutdown               bool
 	verbose                  bool
 	linux                    bool
+	windows                  bool
+	windowsBackend           string
+	isoPath                  string
 	desktop                  bool
 	desktopInstaller         string
 	diskSync                 string
@@ -100,6 +103,9 @@ func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 	if cfg.desktop || cfg.nested || cfg.nvme {
 		cfg.linux = true
 	}
+	if cfg.windows && cfg.linux {
+		return upConfig{}, fmt.Errorf("-windows and -linux are mutually exclusive")
+	}
 	variant, err := parseLinuxVariant(cfg.distro, cfg.desktop)
 	if err != nil {
 		return upConfig{}, err
@@ -113,6 +119,14 @@ func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 	}
 	if cfg.linux && cfg.user == "" {
 		cfg.user = defaultLinuxUser(variant)
+	}
+	if cfg.windows {
+		if _, err := parseWindowsBackend(cfg.windowsBackend); err != nil {
+			return upConfig{}, err
+		}
+		if cfg.setupScriptPath != "" {
+			return upConfig{}, fmt.Errorf("cove up -windows does not support -setup-script yet; use -vzscripts")
+		}
 	}
 	if *headless {
 		cfg.gui = false
@@ -180,7 +194,13 @@ func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 	fs := flag.NewFlagSet("up", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	cfg := &upConfig{}
+	cfg := &upConfig{
+		linux:          linuxMode,
+		windows:        windowsMode,
+		windowsBackend: windowsBackendMode,
+		isoPath:        isoPath,
+		distro:         linuxDistro,
+	}
 	headless := new(bool)
 
 	fs.StringVar(&cfg.user, "user", "", "Username for the provisioned user (required)")
@@ -202,11 +222,14 @@ func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 	fs.BoolVar(&cfg.verbose, "verbose", false, "Verbose output")
 	fs.StringVar(&pprofAddr, "pprof", "", "serve net/http/pprof on localhost for diagnostics (for example 6060 or localhost:6060)")
 	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
-	fs.BoolVar(&cfg.linux, "linux", false, "Install a Linux VM instead of macOS")
+	fs.BoolVar(&cfg.linux, "linux", cfg.linux, "Install a Linux VM instead of macOS")
+	fs.BoolVar(&cfg.windows, "windows", cfg.windows, "Install a Windows ARM64 VM instead of macOS")
+	fs.StringVar(&cfg.windowsBackend, "windows-backend", cfg.windowsBackend, "Windows VM backend: vz or qemu")
+	fs.StringVar(&cfg.isoPath, "iso", cfg.isoPath, "Path to Windows ISO when using -windows")
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
 	fs.StringVar(&cfg.desktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (default Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
 	fs.StringVar(&cfg.diskSync, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
-	fs.StringVar(&cfg.distro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine")
+	fs.StringVar(&cfg.distro, "distro", cfg.distro, "Linux distro: ubuntu, debian, fedora, alpine")
 	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	fs.BoolVar(&cfg.nvme, "nvme", false, "Attach Linux root disk through NVMe instead of virtio-blk")
 	fs.BoolVar(&cfg.rosetta, "rosetta", true, "Enable Rosetta translation support for Linux VMs")
@@ -227,6 +250,7 @@ Install, provision, and boot a VM in one command.
 
 macOS: install -> provision -> run [-> vzscripts]
 Linux: install (cloud-init provisions) -> run [-> vzscripts]
+Windows/QEMU: install (Autounattend provisions) -> windows-install vzscript
 
 Options:
 `)
@@ -263,9 +287,13 @@ Examples:
   cove up -linux -user tmc -password <password>                # Linux with custom user
   cove up -linux -desktop -user me                         # Ubuntu Desktop
   cove up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
+  cove up -windows -windows-backend qemu -iso ~/Win11_ARM64.iso -user me
 
 Linux username/password defaults are for disposable local VMs. Pass -user and
 -password for reusable images, remote access, or shared runners.
+
+Windows uses the QEMU backend. First install defaults to the windows-install
+vzscript, which drives setup and verifies the Windows vz-agent.
 `)
 }
 
@@ -275,6 +303,9 @@ func runtimeOptionsForUp(cfg upConfig) runtimeOptions {
 	opts.VMDir = cfg.vmDir
 	if cfg.ipswPath != "" {
 		opts.IPSWPath = cfg.ipswPath
+	}
+	if cfg.isoPath != "" {
+		opts.ISOPath = cfg.isoPath
 	}
 	opts.ForceInstall = cfg.force
 	opts.CPUCount = cfg.cpuCount
@@ -289,7 +320,12 @@ func runtimeOptionsForUp(cfg upConfig) runtimeOptions {
 	opts.AutomationInputBackend = cfg.automationInputBackend
 	opts.InstallVM = true
 	opts.Linux = cfg.linux
-	opts.Windows = false
+	opts.Windows = cfg.windows
+	opts.WindowsBackendMode = cfg.windowsBackend
+	opts.ProvisionUser = cfg.user
+	opts.ProvisionPassword = cfg.password
+	opts.ProvisionAdmin = true
+	opts.ProvisionStrategy = "disk"
 	opts.EnableRosetta = cfg.rosetta
 	opts.DiskSyncMode = cfg.diskSync
 	opts.LinuxNested = cfg.nested
@@ -306,6 +342,7 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 	vmName = opts.VMName
 	vmDir = opts.VMDir
 	ipswPath = opts.IPSWPath
+	isoPath = opts.ISOPath
 	forceInstall = opts.ForceInstall
 	cpuCount = opts.CPUCount
 	memoryGB = opts.MemoryGB
@@ -322,6 +359,11 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 	installVM = opts.InstallVM
 	linuxMode = opts.Linux
 	windowsMode = opts.Windows
+	windowsBackendMode = opts.WindowsBackendMode
+	provisionUser = opts.ProvisionUser
+	provisionPassword = opts.ProvisionPassword
+	provisionAdmin = opts.ProvisionAdmin
+	provisionStrategy = opts.ProvisionStrategy
 	enableRosetta = opts.EnableRosetta
 	diskSyncMode = opts.DiskSyncMode
 	linuxNested = opts.LinuxNested
@@ -333,6 +375,7 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 		vmName = prev.VMName
 		vmDir = prev.VMDir
 		ipswPath = prev.IPSWPath
+		isoPath = prev.ISOPath
 		forceInstall = prev.ForceInstall
 		cpuCount = prev.CPUCount
 		memoryGB = prev.MemoryGB
@@ -349,6 +392,11 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 		installVM = prev.InstallVM
 		linuxMode = prev.Linux
 		windowsMode = prev.Windows
+		windowsBackendMode = prev.WindowsBackendMode
+		provisionUser = prev.ProvisionUser
+		provisionPassword = prev.ProvisionPassword
+		provisionAdmin = prev.ProvisionAdmin
+		provisionStrategy = prev.ProvisionStrategy
 		enableRosetta = prev.EnableRosetta
 		diskSyncMode = prev.DiskSyncMode
 		linuxNested = prev.LinuxNested
@@ -375,6 +423,11 @@ func vmAlreadyInstalled(dir string, linux bool) bool {
 	return err == nil && info.Size() > 0
 }
 
+func windowsQEMUUpDiskExists(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, "windows.qcow2"))
+	return err == nil && info.Size() > 0
+}
+
 // runUpPipeline executes the install -> inject -> run pipeline.
 // If the VM is already installed (disk exists) and -force is not set,
 // it skips install and provisioning and proceeds to boot + vzscripts.
@@ -398,6 +451,9 @@ func runUpPipeline(env commandEnv, cfg upConfig, opts runtimeOptions) (err error
 	if cfg.linux {
 		rc, hc = opts.vmrunRunConfig(vmrun.GuestLinux), opts.vmrunHostConfig()
 		return runLinuxUpPipeline(env, cfg, target, rc, hc, metricsRun)
+	}
+	if cfg.windows {
+		return runWindowsUpPipeline(cfg)
 	}
 
 	installed := vmAlreadyInstalled(target.Directory, false)
@@ -495,6 +551,8 @@ func macOSInstallProvisionForUp(cfg upConfig) macOSInstallProvision {
 
 var upEffectiveUID = os.Geteuid
 
+var errVMExitedDuringVZScripts = errors.New("vm exited during vzscripts")
+
 func requireRootForMacOSUpProvisioning(cfg upConfig, target vmSelection, installed bool) error {
 	if cfg.linux || upEffectiveUID() == 0 {
 		return nil
@@ -511,6 +569,150 @@ func requireRootForMacOSUpProvisioning(cfg upConfig, target vmSelection, install
 		return fmt.Errorf("auto-login provisioning needs the native macOS admin dialog or the privileged helper; install it once with 'cove helper install' (needs sudo) or re-run cove up from a normal terminal")
 	}
 	return nil
+}
+
+func runWindowsUpPipeline(cfg upConfig) error {
+	backend, err := parseWindowsBackend(cfg.windowsBackend)
+	if err != nil {
+		return err
+	}
+	if backend != windowsBackendQEMU {
+		return fmt.Errorf("cove up -windows currently supports -windows-backend qemu")
+	}
+	if err := handleDoctorQEMU(nil, os.Stdout); err != nil {
+		return err
+	}
+
+	target := currentVMSelection()
+	installed := windowsQEMUUpDiskExists(target.Directory)
+	recipes := splitRecipes(cfg.vzscripts)
+	if !installed || cfg.force {
+		if len(recipes) == 0 {
+			recipes = []string{"windows-install"}
+		}
+		fmt.Println("=== Step 1/2: Installing Windows (QEMU/HVF) ===")
+		fmt.Println()
+		fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) ===\n", strings.Join(recipes, ", "))
+		return runWindowsQEMUUpWithVZScripts(true, recipes, cfg.noShutdown, cfg.verbose)
+	}
+
+	fmt.Println("=== Step 1/2: Install (Windows QEMU disk exists) ===")
+	if len(recipes) == 0 {
+		fmt.Println()
+		fmt.Println("=== Step 2/2: Booting Windows (QEMU/HVF) ===")
+		return runWindowsQEMUVM()
+	}
+	fmt.Println()
+	fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) ===\n", strings.Join(recipes, ", "))
+	return runWindowsQEMUUpWithVZScripts(false, recipes, cfg.noShutdown, cfg.verbose)
+}
+
+func runWindowsQEMUUpWithVZScripts(install bool, recipes []string, noShutdown, verboseMode bool) error {
+	if err := validateVZScriptRecipes(recipes); err != nil {
+		return err
+	}
+	target := currentVMSelection()
+	vmErr := make(chan error, 1)
+	go func() {
+		if install {
+			vmErr <- installWindowsQEMUVM()
+			return
+		}
+		vmErr <- runWindowsQEMUVM()
+	}()
+
+	monitor := qemuMonitorPathForVMDir(target.Directory)
+	if err := waitWindowsQEMUUpMonitor(monitor, vmErr, 5*time.Minute); err != nil {
+		return err
+	}
+	cfg := vzscriptConfig{
+		execTimeout:      30 * time.Minute,
+		verbose:          verboseMode,
+		guestOS:          "windows",
+		qemuMonitorPath:  monitor,
+		qemuAgentAddress: qemuAgentAddressForVMDir(target.Directory),
+		qemuArtifactDir:  filepath.Join(target.Directory, "qemu", "vzscript"),
+		env: []string{
+			"USERNAME=" + provisionUser,
+			"PASSWORD=" + provisionPassword,
+		},
+	}
+	if err := runVZScriptWithDepsOrVMErr(recipes, cfg, vmErr); err != nil {
+		if !errors.Is(err, errVMExitedDuringVZScripts) {
+			_ = qemuMonitorCommand(monitor, "quit")
+			_ = waitWindowsQEMUUpExit(vmErr, 30*time.Second)
+		}
+		return err
+	}
+	fmt.Println("=== Done: vzscripts ===")
+
+	if noShutdown {
+		fmt.Println("\nAll post-boot scripts complete. VM is still running.")
+		return <-vmErr
+	}
+
+	fmt.Println("\nShutting down Windows VM...")
+	script := []byte("guest-exec shutdown.exe /s /t 0\n")
+	if err := runVZScriptOrVMErr(script, "windows-qemu-shutdown", cfg, vmErr); err != nil {
+		return err
+	}
+	if err := waitWindowsQEMUUpExit(vmErr, 5*time.Minute); err != nil {
+		return err
+	}
+	fmt.Println("\nPost-install complete.")
+	return nil
+}
+
+func waitWindowsQEMUUpMonitor(sock string, vmErr <-chan error, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-vmErr:
+			if err != nil {
+				return fmt.Errorf("windows qemu exited before monitor was ready: %w", err)
+			}
+			return fmt.Errorf("windows qemu exited before monitor was ready")
+		case <-timer.C:
+			return fmt.Errorf("timed out waiting for qemu monitor %s", sock)
+		case <-ticker.C:
+			if err := qemuMonitorCommand(sock, "info status"); err == nil {
+				return nil
+			}
+		}
+	}
+}
+
+func runVZScriptWithDepsOrVMErr(recipes []string, cfg vzscriptConfig, vmErr <-chan error) error {
+	scriptErr := make(chan error, 1)
+	go func() {
+		scriptErr <- runVZScriptWithDeps(recipes, cfg)
+	}()
+	select {
+	case err := <-scriptErr:
+		if err != nil {
+			return err
+		}
+		return nil
+	case err := <-vmErr:
+		if err != nil {
+			return fmt.Errorf("%w: %v", errVMExitedDuringVZScripts, err)
+		}
+		return errVMExitedDuringVZScripts
+	}
+}
+
+func waitWindowsQEMUUpExit(vmErr <-chan error, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-vmErr:
+		return err
+	case <-timer.C:
+		return fmt.Errorf("timed out waiting for windows qemu vm to exit")
+	}
 }
 
 // runUpWithVZScripts boots the VM in a goroutine, runs the given vzscript

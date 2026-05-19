@@ -65,6 +65,77 @@ func TestVMAlreadyInstalledLinuxMarker(t *testing.T) {
 	}
 }
 
+func TestWindowsQEMUUpDiskExists(t *testing.T) {
+	dir := t.TempDir()
+	if windowsQEMUUpDiskExists(dir) {
+		t.Fatalf("windowsQEMUUpDiskExists = true for empty dir")
+	}
+	path := filepath.Join(dir, "windows.qcow2")
+	if err := os.WriteFile(path, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if windowsQEMUUpDiskExists(dir) {
+		t.Fatalf("windowsQEMUUpDiskExists = true for empty disk")
+	}
+	if err := os.WriteFile(path, []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !windowsQEMUUpDiskExists(dir) {
+		t.Fatalf("windowsQEMUUpDiskExists = false for populated disk")
+	}
+}
+
+func TestParseUpFlagsWindowsQEMU(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	restoreVMGlobals(t)
+
+	cfg, err := parseUpFlags(commandTestEnv(), []string{
+		"-windows",
+		"-windows-backend", "qemu",
+		"-iso", filepath.Join(home, "Win11.iso"),
+		"-user", "cove",
+		"-password", "secret",
+		"-headless",
+	})
+	if err != nil {
+		t.Fatalf("parseUpFlags: %v", err)
+	}
+	if !cfg.windows || cfg.linux {
+		t.Fatalf("windows/linux = %v/%v, want true/false", cfg.windows, cfg.linux)
+	}
+	if cfg.windowsBackend != "qemu" {
+		t.Fatalf("windowsBackend = %q, want qemu", cfg.windowsBackend)
+	}
+	if cfg.isoPath == "" {
+		t.Fatalf("isoPath is empty")
+	}
+}
+
+func TestParseUpFlagsWindowsRejectsSetupScript(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	restoreVMGlobals(t)
+	script := filepath.Join(home, "setup.txt")
+	if err := os.WriteFile(script, []byte("hostname\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := parseUpFlags(commandTestEnv(), []string{
+		"-windows",
+		"-windows-backend", "qemu",
+		"-user", "cove",
+		"-password", "secret",
+		"-setup-script", script,
+	})
+	if err == nil {
+		t.Fatal("parseUpFlags succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "does not support -setup-script") {
+		t.Fatalf("error = %v, want setup-script rejection", err)
+	}
+}
+
 func TestParseUpFlagsErrorPaths(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
