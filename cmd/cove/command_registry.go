@@ -58,6 +58,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "provision-agent", Summary: "Provision vz-agent daemon", Dispatch: covecli.DispatchEarly, Run: runProvisionAgentCommand},
 	{Name: "pull", Summary: "Validate an OCI pull plan", Dispatch: covecli.DispatchEarly, Run: runPullCommand},
 	{Name: "push", Summary: "Plan a VM disk OCI push", Dispatch: covecli.DispatchEarly, Run: runPushCommand},
+	{Name: "qemu-display", Summary: "QEMU display viewer", Dispatch: covecli.DispatchEarly, Run: runQEMUDisplayCommand},
 	{Name: "quota", Summary: "Show or set per-VM resource quotas", Dispatch: covecli.DispatchEarly, Run: runQuotaCommand},
 	{Name: "recording", Aliases: []string{"recordings"}, Summary: "List and export run recording artifacts", Dispatch: covecli.DispatchEarly, Run: runRecordingCommand},
 	{Name: "rename", Summary: "Rename a VM", Dispatch: covecli.DispatchLate, Run: runVMSubcommand},

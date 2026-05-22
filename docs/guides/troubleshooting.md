@@ -244,6 +244,8 @@ cove support bundle -vm default
 The bundle includes host readiness, version/signing details, helper and daemon
 status, recent run and recording metadata, trace capabilities, command
 inventory, and optional VM control diagnostics.
+Screenshots are omitted by default because they cannot be redacted; use
+`-include-screenshot` only when support explicitly needs the visible VM screen.
 
 ### Verbose Output
 

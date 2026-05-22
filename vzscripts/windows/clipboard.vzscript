@@ -1,0 +1,43 @@
+# windows-clipboard — Verify Windows/QEMU clipboard transport prerequisites
+# guest-os: windows
+
+qemu-monitor info chardev
+guest-wait 10m
+guest-ping
+guest-write C:/ProgramData/cove/verify-windows-clipboard.ps1 verify-windows-clipboard.ps1
+guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/cove/verify-windows-clipboard.ps1
+
+-- verify-windows-clipboard.ps1 --
+$ErrorActionPreference = 'Stop'
+$port = '\\.\Global\com.redhat.spice.0'
+$portPresent = $false
+try {
+  $portPresent = Test-Path -LiteralPath $port -ErrorAction Stop
+} catch {
+  if ($_.Exception.Message -match 'Access is denied') {
+    $portPresent = $true
+  } else {
+    throw
+  }
+}
+if (-not $portPresent) {
+  throw "missing SPICE vdagent virtio serial port: $port"
+}
+$services = Get-Service | Where-Object {
+  $_.Name -in @('spice-agent', 'vdservice') -or
+  $_.DisplayName -match 'SPICE|RHEV'
+}
+if (-not $services) {
+  throw 'missing SPICE guest tools service'
+}
+$running = $services | Where-Object { $_.Status -eq 'Running' }
+if (-not $running) {
+  throw 'SPICE guest tools service is not running'
+}
+$processes = Get-Process | Where-Object { $_.ProcessName -in @('vdagent', 'vdservice') }
+if (-not $processes) {
+  throw 'missing SPICE vdagent process'
+}
+Write-Output "SPICE vdagent port: $port"
+$services | Select-Object Name, DisplayName, Status | Format-Table -AutoSize | Out-String | Write-Output
+$processes | Select-Object ProcessName, Id | Format-Table -AutoSize | Out-String | Write-Output

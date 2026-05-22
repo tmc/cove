@@ -77,6 +77,7 @@ Commands:
   gui status            Report whether the VM is currently headed or headless
   gui open              Show the live VM window for a headless runtime
   gui close             Return the runtime to headless mode without stopping it
+  gui diagnose          Capture and summarize the current GUI screen
   gui backend <mode>    Set automation backend: auto, framebuffer, or window
   gui capture-backend <mode>  Set screenshot backend: auto, framebuffer, or window
   gui input-backend <mode>    Set input backend: auto, direct, or window
@@ -613,6 +614,9 @@ func ctlCommand(args []string) error {
 	// Subcommands that own their flag parsing (including --daemon, -o, --) get
 	// the raw subArgs before the generic strippers below mangle them.
 	if cmdType == "ready" {
+		if windowsQEMUCTLVM(targetVMDir) {
+			return ctlReadyWindowsQEMU(targetVMDir, subArgs)
+		}
 		sock := *socketPath
 		if sock == "" {
 			sock = GetControlSocketPath()
@@ -642,7 +646,7 @@ func ctlCommand(args []string) error {
 	if strings.TrimSpace(*token) != "" {
 		os.Setenv(controlTokenEnvVar, strings.TrimSpace(*token))
 	}
-	if handled, err := ctlMaybeHandleWindowsQEMU(targetVMDir, cmdType, subArgs, *timeout, *wait, *raw); handled {
+	if handled, err := ctlMaybeHandleWindowsQEMU(targetVMDir, cmdType, subArgs, *timeout, *wait, *raw, *outputFile); handled {
 		return err
 	}
 
@@ -1243,7 +1247,29 @@ func controlAliasArgs(kind string, args []string) []string {
 		}
 		out = append(out, arg)
 	}
+	if kind == "gui" && !controlAliasHasAction(args) {
+		out = append(out, "open")
+	}
+	if kind == "vnc" && !controlAliasHasAction(args) {
+		out = append(out, "status")
+	}
 	return out
+}
+
+func controlAliasHasAction(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-vm" || arg == "--vm":
+			if i+1 < len(args) {
+				i++
+			}
+		case strings.HasPrefix(arg, "-vm=") || strings.HasPrefix(arg, "--vm="):
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func ctlSimpleCommand(sock, cmdType string, timeout time.Duration, raw bool) error {
@@ -1914,7 +1940,10 @@ func ctlOCR(socketPath, regionSpec string) error {
 	if err != nil {
 		return fmt.Errorf("screenshot: %w", err)
 	}
+	return ctlOCRImage(img, regionSpec)
+}
 
+func ctlOCRImage(img image.Image, regionSpec string) error {
 	ocr := ocrx.NewService(false)
 	opts, err := ocrx.ParseSearchOptions(regionSpec)
 	if err != nil {

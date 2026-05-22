@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,6 +118,37 @@ func TestVMInfoState(t *testing.T) {
 		}
 	})
 
+	t.Run("running qemu monitor", func(t *testing.T) {
+		vmPath, err := os.MkdirTemp("/tmp", "qemu-vm-state-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(vmPath)
+		qemuDir := filepath.Join(vmPath, "qemu")
+		if err := os.Mkdir(qemuDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(vmPath, "windows.qcow2"), []byte("disk"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(qemuDir, "metadata.json"), []byte(`{"backend":"qemu-hvf"}`), 0644); err != nil {
+			t.Fatal(err)
+		}
+		ln, err := net.Listen("unix", filepath.Join(qemuDir, "monitor.sock"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+
+		info, err := vmconfig.InfoFor(vmPath, detectVMState)
+		if err != nil {
+			t.Fatalf("vmconfig.InfoFor() error = %v", err)
+		}
+		if info.State != "running" {
+			t.Fatalf("vmconfig.InfoFor().State = %q, want running", info.State)
+		}
+	})
+
 	t.Run("starting while run lock held", func(t *testing.T) {
 		vmPath := makeTestVMDir(t)
 		lock, err := AcquireRunLock(vmPath)
@@ -193,6 +225,32 @@ func TestRuntimeListFieldsNonStartingShortCircuits(t *testing.T) {
 		if uptime != "-" || note != "-" {
 			t.Errorf("state=%q: got (%q, %q), want (\"-\", \"-\")", state, uptime, note)
 		}
+	}
+}
+
+func TestRuntimeListFieldsWindowsQEMURunning(t *testing.T) {
+	vmPath := makeTestVMDir(t)
+	qemuDir := filepath.Join(vmPath, "qemu")
+	if err := os.MkdirAll(qemuDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "windows.qcow2"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Now().Add(-31 * time.Second).UTC()
+	if err := writeWindowsQEMUProcessMetadata(filepath.Join(qemuDir, "process.json"), windowsQEMUProcessMetadata{
+		State:     "running",
+		QEMUPID:   os.Getpid(),
+		StartedAt: when,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	uptime, note := runtimeListFields(vmPath, "running")
+	if uptime == "-" || uptime == "" {
+		t.Fatalf("uptime = %q, want duration", uptime)
+	}
+	if !strings.Contains(note, "qemu") || !strings.Contains(note, fmt.Sprintf("%d", os.Getpid())) {
+		t.Fatalf("note = %q, want qemu pid note", note)
 	}
 }
 

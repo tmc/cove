@@ -1,8 +1,12 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestShellCommandResolveSocketMissingVM(t *testing.T) {
@@ -13,6 +17,54 @@ func TestShellCommandResolveSocketMissingVM(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no running VM") {
 		t.Fatalf("shellCommand err = %v, want 'no running VM'", err)
+	}
+}
+
+func TestShellCommandWindowsQEMUInteractiveMessage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	name := "qemu-shell"
+	dir := filepath.Join(vmconfig.BaseDir(), name+".covevm")
+	if err := os.MkdirAll(filepath.Join(dir, "qemu"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "windows.qcow2"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "qemu", "metadata.json"), []byte(`{"backend":"qemu-hvf"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := shellCommand([]string{name})
+	if err == nil {
+		t.Fatal("shellCommand succeeded")
+	}
+	if !strings.Contains(err.Error(), "qemu windows shell does not support interactive sessions yet") {
+		t.Fatalf("shellCommand error = %v", err)
+	}
+}
+
+func TestShellCommandWindowsQEMUUsesGlobalVM(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName := vmName
+	t.Cleanup(func() { vmName = oldVMName })
+	vmName = "qemu-shell-global"
+	dir := filepath.Join(vmconfig.BaseDir(), vmName+".covevm")
+	if err := os.MkdirAll(filepath.Join(dir, "qemu"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "windows.qcow2"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "qemu", "metadata.json"), []byte(`{"backend":"qemu-hvf"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := shellCommand(nil)
+	if err == nil {
+		t.Fatal("shellCommand succeeded")
+	}
+	if !strings.Contains(err.Error(), "qemu windows shell does not support interactive sessions yet") {
+		t.Fatalf("shellCommand error = %v", err)
 	}
 }
 

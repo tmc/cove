@@ -351,6 +351,18 @@ func (c *AgentClient) WriteFile(ctx context.Context, path string, data []byte, m
 	return err
 }
 
+// AppendFile appends data to a file in the guest.
+func (c *AgentClient) AppendFile(ctx context.Context, path string, data []byte, mode uint32) error {
+	_, err := c.client.WriteFile(ctx, connect.NewRequest(&pb.WriteFileRequest{
+		Path:          path,
+		Data:          data,
+		Mode:          mode,
+		CreateParents: true,
+		Append:        true,
+	}))
+	return err
+}
+
 // ReadFile reads a file from the guest.
 func (c *AgentClient) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	resp, err := c.client.ReadFile(ctx, connect.NewRequest(&pb.ReadFileRequest{Path: path}))

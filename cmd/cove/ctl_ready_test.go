@@ -262,3 +262,24 @@ func TestSharedFolderProbeFailureDetail(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveWindowsQEMUReadyCheck(t *testing.T) {
+	tests := []struct {
+		name string
+		want []string
+	}{
+		{name: "can-exec", want: []string{"cmd.exe", "/c", "echo hi"}},
+		{name: "go", want: []string{"go", "version"}},
+		{name: "node", want: []string{"cmd.exe", "/c", "where node"}},
+		{name: "python", want: []string{"cmd.exe", "/c", "where python"}},
+	}
+	for _, tt := range tests {
+		got := resolveWindowsQEMUReadyCheck(tt.name)
+		if got.Name != tt.name {
+			t.Fatalf("resolveWindowsQEMUReadyCheck(%q).Name = %q", tt.name, got.Name)
+		}
+		if strings.Join(got.Args, "\x00") != strings.Join(tt.want, "\x00") {
+			t.Fatalf("resolveWindowsQEMUReadyCheck(%q).Args = %#v, want %#v", tt.name, got.Args, tt.want)
+		}
+	}
+}

@@ -1251,7 +1251,7 @@ func handleListTo(stdout io.Writer) error {
 		if err := w.Flush(); err != nil {
 			return err
 		}
-		fmt.Fprintln(stdout, "GUI state: cove ctl -vm <name> gui status")
+		fmt.Fprintln(stdout, "GUI state: cove gui -vm <name> status")
 	}
 
 	// List templates
@@ -1361,6 +1361,11 @@ func startAppleAppSandboxVMRootAccess(action string) (func(), error) {
 
 func runtimeListFields(vmPath, state string) (string, string) {
 	if state == "running" {
+		if windowsQEMUCTLVM(vmPath) {
+			if uptime, note := qemuRuntimeListFields(vmPath); uptime != "" {
+				return uptime, note
+			}
+		}
 		return runningRuntimeListFields(vmPath)
 	}
 	if state != "starting" {
@@ -1402,6 +1407,22 @@ func runningRuntimeListFields(vmPath string) (string, string) {
 		note += " " + info.StartSource
 	}
 	return uptime, note
+}
+
+func qemuRuntimeListFields(vmPath string) (string, string) {
+	process := readWindowsQEMUProcessForCTL(vmPath)
+	if !process.StartedAt.IsZero() {
+		note := "qemu"
+		if process.QEMUPID > 0 {
+			note = fmt.Sprintf("qemu (pid=%d)", process.QEMUPID)
+		}
+		return shortDuration(time.Since(process.StartedAt)), note
+	}
+	info, err := os.Stat(qemuMonitorPathForVMDir(vmPath))
+	if err != nil {
+		return "", ""
+	}
+	return shortDuration(time.Since(info.ModTime())), "qemu"
 }
 
 func shortDuration(d time.Duration) string {

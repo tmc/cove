@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestQEMUKeySpec(t *testing.T) {
@@ -56,6 +57,28 @@ func TestQEMUKeyForRune(t *testing.T) {
 	}
 }
 
+func TestQEMUDefaultActionForText(t *testing.T) {
+	for _, tt := range []struct {
+		text string
+		key  string
+	}{
+		{text: "OK", key: "return"},
+		{text: "Continue", key: "return"},
+		{text: "Cancel", key: "escape"},
+	} {
+		got, ok := qemuDefaultActionForText(tt.text)
+		if !ok {
+			t.Fatalf("qemuDefaultActionForText(%q) not found", tt.text)
+		}
+		if got != tt.key {
+			t.Fatalf("qemuDefaultActionForText(%q) = %q, want %q", tt.text, got, tt.key)
+		}
+	}
+	if _, ok := qemuDefaultActionForText("Recycle Bin"); ok {
+		t.Fatalf("qemuDefaultActionForText(Recycle Bin) unexpectedly found")
+	}
+}
+
 func TestDecodePPM(t *testing.T) {
 	img, err := decodePPM(strings.NewReader("P6\n# comment\n2 1\n255\n\xff\x00\x00\x00\xff\x00"))
 	if err != nil {
@@ -79,11 +102,86 @@ func TestQEMUAgentAddressForVMDir(t *testing.T) {
 	if err := os.Mkdir(qemuDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(qemuDir, "metadata.json"), []byte(`{"agentHostAddress":"127.0.0.1","agentHostPort":32102}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(qemuDir, "metadata.json"), []byte(`{"agentHostAddress":"127.0.0.1","agentHostPort":32102,"userAgentHostAddress":"127.0.0.1","userAgentHostPort":32103}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if got := qemuAgentAddressForVMDir(dir); got != "127.0.0.1:32102" {
 		t.Fatalf("qemuAgentAddressForVMDir = %q, want 127.0.0.1:32102", got)
+	}
+	if got := qemuUserAgentAddressForVMDir(dir); got != "127.0.0.1:32103" {
+		t.Fatalf("qemuUserAgentAddressForVMDir = %q, want 127.0.0.1:32103", got)
+	}
+}
+
+func TestVZScriptQEMUExecUsesUserAgent(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         vzscriptConfig
+		wantUser    bool
+		wantMissing bool
+	}{
+		{
+			name: "qemu user recipe",
+			cfg: vzscriptConfig{
+				qemuAgentAddress:     "127.0.0.1:1024",
+				qemuUserAgentAddress: "127.0.0.1:1025",
+			},
+			wantUser: true,
+		},
+		{
+			name: "daemon recipe",
+			cfg: vzscriptConfig{
+				qemuAgentAddress:     "127.0.0.1:1024",
+				qemuUserAgentAddress: "127.0.0.1:1025",
+				daemon:               true,
+			},
+			wantUser: false,
+		},
+		{
+			name:        "no user endpoint",
+			cfg:         vzscriptConfig{qemuAgentAddress: "127.0.0.1:1024"},
+			wantMissing: true,
+		},
+		{
+			name: "daemon no user endpoint",
+			cfg: vzscriptConfig{
+				qemuAgentAddress: "127.0.0.1:1024",
+				daemon:           true,
+			},
+		},
+		{
+			name: "non qemu",
+			cfg:  vzscriptConfig{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.qemuExecUsesUserAgent(); got != tt.wantUser {
+				t.Fatalf("qemuExecUsesUserAgent = %v, want %v", got, tt.wantUser)
+			}
+			if got := tt.cfg.qemuUserAgentRequiredButMissing(); got != tt.wantMissing {
+				t.Fatalf("qemuUserAgentRequiredButMissing = %v, want %v", got, tt.wantMissing)
+			}
+		})
+	}
+}
+
+func TestQEMUUserAgentExecWait(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		want    time.Duration
+	}{
+		{name: "zero", timeout: 0, want: 2 * time.Minute},
+		{name: "short", timeout: 30 * time.Second, want: 30 * time.Second},
+		{name: "long", timeout: 30 * time.Minute, want: 2 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := qemuUserAgentExecWait(tt.timeout); got != tt.want {
+				t.Fatalf("qemuUserAgentExecWait(%s) = %s, want %s", tt.timeout, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -1,0 +1,29 @@
+# windows-wsl1 - Enable the WSL optional feature for WSL1
+# guest-os: windows
+# runs-on: daemon
+
+guest-wait 10m
+guest-write C:/ProgramData/cove/enable-wsl1.ps1 enable-wsl1.ps1
+guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/cove/enable-wsl1.ps1
+
+-- enable-wsl1.ps1 --
+$ErrorActionPreference = 'Stop'
+$Root = 'C:\ProgramData\cove'
+New-Item -ItemType Directory -Force $Root | Out-Null
+try { Start-Transcript -Path (Join-Path $Root 'enable-wsl1.log') -Force | Out-Null } catch {}
+
+$feature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+if ($feature.State -eq 'Enabled') {
+  Remove-Item -Force (Join-Path $Root 'wsl1-reboot-required') -ErrorAction SilentlyContinue
+  Write-Output 'Microsoft-Windows-Subsystem-Linux already enabled'
+  exit 0
+}
+
+$result = Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -All -NoRestart
+if ($result.RestartNeeded) {
+  'reboot-required' | Set-Content -Encoding ASCII (Join-Path $Root 'wsl1-reboot-required')
+  Write-Error 'enabled Microsoft-Windows-Subsystem-Linux; reboot Windows and rerun this recipe'
+  exit 3010
+}
+
+Write-Output 'Microsoft-Windows-Subsystem-Linux enabled'

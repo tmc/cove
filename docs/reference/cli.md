@@ -138,6 +138,8 @@ Run a command in a running VM through the guest agent.
 
 ```
 cove exec [options] <vm> <cmd> [args...]
+cove exec -vm <vm> [options] <cmd> [args...]
+cove -vm <vm> exec [options] <cmd> [args...]
 ```
 
 | Flag | Default | Description |
@@ -148,15 +150,23 @@ cove exec [options] <vm> <cmd> [args...]
 | `--secret-env SPEC` | | Set redacted guest environment variable: `NAME=value`, `NAME=env://VAR`, or `NAME=file:///path` |
 | `-w`, `--workdir DIR` | | Run in guest working directory |
 | `-u`, `--user USER` | | Run as guest user |
+| `--vm VM` | | VM name |
+| `--daemon` | false | Run through the daemon agent for QEMU Windows VMs |
 
 ```bash
 cove exec ubuntu uname -a
+cove exec -vm windows-qemu whoami
+cove -vm windows-qemu exec whoami
+cove exec -vm windows-qemu --daemon whoami
 cove exec -it ubuntu bash
 cove exec -e CI=1 -w /work ubuntu go test ./...
 cove exec ubuntu -- sh -lc 'echo "$0"'
 ```
 
-Use `cove shell <vm>` as a shortcut for an interactive login shell.
+Use `cove shell <vm>` as a shortcut for an interactive login shell. For Windows
+QEMU VMs, plain `cove exec` and one-shot `cove shell <vm> -- <cmd>` run in the
+logged-in Windows user session. Use `--daemon` for service-agent commands.
+Interactive shell sessions are not supported yet.
 
 ---
 
@@ -249,7 +259,8 @@ Tools. `-json` emits a machine-readable report.
 
 `cove doctor qemu` checks the direct QEMU/HVF Windows backend prerequisites:
 `qemu-system-aarch64`, `qemu-img`, AArch64 EFI pflash assets, display-device
-configuration, and the local VirtIO driver cache state.
+configuration, QEMU screenshot/text backend override values, and the local
+VirtIO driver cache state.
 
 Plain `cove doctor` remains VM-focused. It checks provisioning, guest agent, TCC
 paths, and file ownership for the active VM or `-vm <name>`.
@@ -332,7 +343,29 @@ saving a reusable image.
 For Windows, use the QEMU backend. First install defaults to the built-in
 `windows-install` vzscript, which drives setup, waits for the QEMU-forwarded
 Windows `vz-agent`, and verifies the provision marker, scheduled task, and
-agent process.
+agent process. Clipboard sharing uses QEMU's SPICE vdagent channel and the
+Windows SPICE guest tools installer; verify it with `windows-clipboard`.
+Use `cove gui -vm <name> status` to see the local VNC URL and provisioned
+Windows credentials. Headed QEMU runs with `-vnc` open the VNC console
+automatically after QEMU starts; use `cove gui -vm <name>` to reopen it later.
+The local QEMU Windows VNC endpoint itself does not prompt for a username; the
+shown credentials are for Windows guest login if Windows is locked or signed
+out.
+QEMU Windows screenshots prefer the local RFB/VNC framebuffer when available and
+fall back to QEMU monitor screendump. Set `COVE_QEMU_SCREENSHOT_BACKEND=rfb` or
+`monitor` to force one path while debugging capture behavior.
+Support bundles include `vm/qemu-status.json` with the computed display mode,
+VNC auth mode, resolved screenshot/text backends, agent health, and redacted
+Windows credentials.
+QEMU Windows `text` input also prefers RFB/VNC when available and falls back to
+QEMU monitor `sendkey`; set `COVE_QEMU_TEXT_BACKEND=rfb` or `monitor` to force
+one path.
+Windows-specific built-in recipes live under `vzscripts/windows/` in the source
+tree but keep stable public names such as `windows-install`,
+`windows-clipboard`, `windows-golang`, and `windows-wsl`.
+Set `COVE_QEMU_SMB_DIR=/path/to/share` before launching the VM to expose a host
+directory through QEMU user-mode SMB as `\\10.0.2.4\qemu` in Windows. This
+requires a Samba `smbd` binary where QEMU expects it.
 
 ---
 
@@ -456,10 +489,21 @@ cove ctl [options] <command> [args...]
 | `request-stop` | Send ACPI power button; the guest may ignore it |
 | `network-info` | MAC address, guest IP, mode |
 
-For QEMU Windows VMs, `ctl -vm <name>` routes `status`, `stop`,
-`request-stop`, `agent-ping`, `exec`, `agent-exec`, `agent-exec-stream`, and
-`agent-shutdown` through the VM's `qemu/metadata.json`, QEMU monitor, and
-forwarded Windows `vz-agent`.
+For QEMU Windows VMs, `ctl -vm <name>` routes `status`, `ready`, `screenshot`, `ocr`, `key`, `mouse`, `text`, `click-text`, `stop`,
+`request-stop`, `gui`, `vnc`, `agent-ping`, `agent-status`, `exec`, `agent-exec`,
+`agent-exec-stream`, and `agent-shutdown` through the VM's `qemu/metadata.json`,
+QEMU monitor, and forwarded Windows `vz-agent`. It also supports
+`agent-user-exec`, `clipboard-push`, `clipboard-pull`,
+`clipboard-sync-to-guest`, and `clipboard-sync-from-guest` when the Windows
+user-session `vz-agent` endpoint is running. `status` reports the agent health,
+VNC URL, resolved screenshot/text backends, and provisioned Windows credentials
+when available.
+QEMU `click-text` uses OCR plus RFB-backed pointer input when the VM was
+launched with `-vnc`; QEMU Windows uses `usb-tablet` by default so RFB absolute
+pointer coordinates line up with the visible desktop. Without a VNC endpoint it
+falls back to safe dialog actions that can be confirmed by OCR and completed
+with keyboard input, such as OK, Continue, Yes, and Cancel. Use
+`mouse <x> <y> <move|down|up|click>` for direct pointer input.
 
 ### GUI Commands
 
@@ -468,11 +512,34 @@ the VM state and exposes menu actions for opening or closing the window and
 requesting a clean stop. It is tied to the VM run and is not a background login
 item.
 
+The top-level alias `cove gui -vm <name>` defaults to `open`. For Windows QEMU
+VMs launched with `-vnc`, it opens the local VNC console. QEMU `gui close`
+cannot close an external VNC viewer window; close that viewer directly. For
+Windows QEMU VMs, `gui status` reports the VNC URL, notes that VNC has no
+separate auth, and prints the Windows guest credentials when available. Use
+`gui diagnose` when the viewer looks stale or confusing; it captures the current
+RFB screen into the VM's `qemu/screenshots` directory, reports the detected
+screen state, and repeats whether Windows is already logged in.
+
+For QEMU Windows VMs, `gui open` defaults to the Cove-owned QEMU display viewer
+when a local VNC endpoint is available. The viewer renders the same local RFB
+stream in a Cove AppKit window and records its PID under `qemu/viewer.pid`;
+while it is running, `gui status` reports
+`qemu-vnc-cove`, and `gui close` closes only that viewer process while leaving
+QEMU running. The viewer uses one persistent RFB connection for display refresh
+and end-user keyboard and pointer input. Its window frame is saved using the
+same NSWindow autosave path as native VM windows, under a Windows QEMU VM
+identity. It installs a minimal macOS menu for screenshot and close-viewer
+actions plus a matching toolbar, and host shortcut keys are not forwarded into
+Windows. Set `COVE_QEMU_GUI_VIEWER=external` to open the system VNC viewer
+instead.
+
 | Command | Description |
 |---------|-------------|
 | `gui status` | Headed or headless status |
 | `gui open` | Show window for headless VM |
 | `gui close` | Return to headless mode |
+| `gui diagnose` | Capture and summarize the current GUI screen |
 | `gui backend <mode>` | Set automation backend |
 | `gui capture-backend <mode>` | Set screenshot backend |
 | `gui input-backend <mode>` | Set input backend |
@@ -555,12 +622,17 @@ container through the guest agent.
 | `exec <cmd> [args]` | Low-level alias used by `cove ctl`; prefer top-level `cove exec` for Docker-shaped use |
 | `agent-exec <cmd> [args]` | Run command in guest |
 | `agent-exec --daemon <cmd>` | Run as root |
+| `agent-user-exec <cmd> [args]` | Run command in the logged-in user session |
 | `agent-exec-stream <cmd>` | Stream command output |
 | `agent-cp <host> <guest>` | Copy host to guest |
 | `agent-cp -from-guest <guest> <host>` | Copy guest to host |
 | `agent-read <path>` | Read guest file |
 | `agent-write <path> <data>` | Write to guest file |
 | `agent-shutdown [force]` | Graceful shutdown |
+| `clipboard-push <text>` | Set the guest clipboard on Windows QEMU VMs |
+| `clipboard-pull` | Print the guest clipboard from Windows QEMU VMs |
+| `clipboard-sync-to-guest` | Copy the macOS clipboard into a Windows QEMU VM |
+| `clipboard-sync-from-guest` | Copy a Windows QEMU VM clipboard into macOS |
 | `agent-reboot` | Reboot guest |
 | `agent-sshd <on\|off\|status>` | Manage SSH |
 | `agent-mount-volumes` | Mount VirtioFS volumes |
@@ -586,7 +658,10 @@ container through the guest agent.
 | `debug-stub status` | Debug stub status |
 
 VNC status includes the endpoint, password-protection state, and Bonjour service
-name. Debug-stub status includes the endpoint and an `lldb` connection hint.
+name. For Windows QEMU VMs, VNC status reports the local QEMU console endpoint
+and notes that Windows credentials are for guest login, not VNC auth. The
+top-level alias `cove vnc -vm <name>` defaults to `status`.
+Debug-stub status includes the endpoint and an `lldb` connection hint.
 
 ```bash
 cove ctl ping
@@ -929,7 +1004,7 @@ are read from environment variables (`COVE_ACTION_*`) or the matching flags.
 Create a redacted diagnostics archive for support.
 
 ```
-cove support bundle [-vm NAME] [-out PATH]
+cove support bundle [-vm NAME] [-out PATH] [-include-screenshot]
 ```
 
 The bundle includes cove version and host details, signing/entitlement data,
@@ -938,10 +1013,14 @@ and recent run and recording metadata. With `-vm NAME`, it also includes
 VM-specific doctor, GUI, VNC, capabilities, agent, and trace diagnostics.
 
 Bearer tokens, passwords, usernames, and home-directory paths are redacted.
+Screenshots are omitted by default because they cannot be redacted. Use
+`-include-screenshot` only when you intentionally want to include the visible
+VM screen in the archive.
 
 ```bash
 cove support bundle
 cove support bundle -vm dev -out /tmp/cove-dev-support.tar.gz
+cove support bundle -vm windows-qemu -include-screenshot
 ```
 
 ---
@@ -1272,7 +1351,7 @@ cove network logs <vm> [-f]
 | Command | Description |
 |---------|-------------|
 | `logs [-vm name] [vm] [-f\|--follow]` | Tail guest logs through the agent/control path. `-vm` may appear before or after the positional VM name and must match it when both are present. |
-| `cp [-vm name]` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. `-vm` may appear before or after operands and must match the `vm:/path` endpoint. |
+| `cp [-vm name]` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. `-vm` may appear before or after operands and must match the `vm:/path` endpoint. Windows QEMU accepts `vm:/C:/path` and `vm:/c/path`. |
 | `diff <ref-a> <ref-b> [-json]` | Compare local image manifests/layers. |
 | `forward` | Forward TCP/UDP between host and guest; `-reverse` exposes guest-to-host direction. |
 | `user audit/create/delete` | Guest user lifecycle through the agent: read-only residue audit, standard/admin creation with password and optional SSH key, and deletion with home cleanup. |
@@ -1282,6 +1361,7 @@ cove network logs <vm> [-f]
 ```bash
 cove logs ubuntu-runner -f
 cove cp ./artifact.txt ubuntu-runner:/tmp/artifact.txt
+cove cp ./artifact.txt windows-qemu:/C:/Users/cove/Desktop/artifact.txt
 cove cp ubuntu-runner:/etc/os-release ./os-release
 cove cp ubuntu-runner:/tmp/artifact.txt ./artifact.txt -vm ubuntu-runner
 cove diff macos-runner:old macos-runner:new -json
@@ -1306,9 +1386,13 @@ walkthroughs.
 ## shell
 
 Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Current agents use ExecAttach for bidirectional stdin, terminal resize, signals, stdout/stderr, and exit-code propagation. Older agents fall back to the v0.2 read-only stdin path with a warning. See [design 023](../designs/023-cove-shell-exec-ux.md).
+For Windows QEMU VMs, one-shot commands are routed through the forwarded
+user-session agent; use `cove exec` for the normal Windows command path.
+Interactive shell sessions are not supported yet.
 
 ```
 cove shell <vm> [--env NAME=VALUE]... [--secret-env NAME=value|env://VAR|file:///path]... [-- <argv>...]
+cove -vm <vm> shell -- <argv>...
 ```
 
 - Forwards SIGWINCH to `agent-exec-resize` on each terminal resize.
@@ -1324,6 +1408,7 @@ cove shell <vm> [--env NAME=VALUE]... [--secret-env NAME=value|env://VAR|file://
 ```bash
 cove shell my-vm                                # interactive bash -l
 cove shell my-vm -- ls /tmp                     # one-shot
+cove -vm windows-qemu shell -- whoami
 cove shell my-vm -- /bin/bash -c 'echo hi >&2; exit 7'
 cove shell my-vm --secret-env API_TOKEN=env://CIRRUS_API_TOKEN -- ./run.sh
 cove shell my-vm --secret-env DEPLOY_KEY=file:///run/secrets/deploy.key -- ./deploy.sh

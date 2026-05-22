@@ -49,21 +49,36 @@ type windowsQEMUConfig struct {
 	EFIVarsPath string
 	ISOPath     string
 
-	CPUCount            uint
-	MemoryGB            uint64
-	NetworkMode         string
-	Headless            bool
-	DisplayDevice       string
-	Nodefaults          bool
-	SerialOutput        string
-	SerialLogPath       string
-	MonitorSockPath     string
-	AutounattendISOPath string
-	VirtioISOPath       string
-	AgentExecutablePath string
-	AgentHostAddress    string
-	AgentHostPort       int
-	AgentGuestPort      int
+	CPUCount             uint
+	MemoryGB             uint64
+	NetworkMode          string
+	Headless             bool
+	DisplayDevice        string
+	InputDevice          string
+	Nodefaults           bool
+	EnableClipboard      bool
+	SMBSharedDirectory   string
+	SerialOutput         string
+	SerialLogPath        string
+	MonitorSockPath      string
+	VNCHost              string
+	VNCPort              int
+	GuestUsername        string
+	GuestPassword        string
+	AutounattendISOPath  string
+	VirtioISOPath        string
+	SpiceGuestToolsPath  string
+	AgentExecutablePath  string
+	AgentHostAddress     string
+	AgentHostPort        int
+	AgentGuestPort       int
+	UserAgentHostAddress string
+	UserAgentHostPort    int
+	UserAgentGuestPort   int
+}
+
+var windowsQEMUOpenURL = func(url string) error {
+	return exec.Command("open", url).Run()
 }
 
 func installWindowsQEMUVM() error {
@@ -119,9 +134,17 @@ func installWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, quo
 	if err != nil {
 		return fmt.Errorf("build windows vz-agent: %w", err)
 	}
-	provConfig, err := windowsQEMUProvisionConfigFromFlags(agentPath, cfg.AgentGuestPort)
+	provConfig, err := windowsQEMUProvisionConfigFromFlags(agentPath, cfg.AgentGuestPort, cfg.UserAgentGuestPort)
 	if err != nil {
 		return err
+	}
+	if cfg.EnableClipboard {
+		spiceTools, err := winsetup.EnsureWindowsSpiceGuestTools("")
+		if err != nil {
+			return fmt.Errorf("ensure Windows SPICE guest tools: %w", err)
+		}
+		provConfig.SpiceGuestToolsExecutable = spiceTools
+		cfg.SpiceGuestToolsPath = spiceTools
 	}
 	autounattendISO, err := winsetup.CreateAutounattendISO(hc.VMDir, provConfig)
 	if err != nil {
@@ -134,16 +157,25 @@ func installWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, quo
 	cfg.AutounattendISOPath = autounattendISO
 	cfg.VirtioISOPath = virtioISO
 	cfg.AgentExecutablePath = agentPath
+	cfg.GuestUsername = provConfig.Username
+	cfg.GuestPassword = provConfig.Password
 
 	fmt.Printf("Configuring QEMU: %d CPUs, %d GB RAM\n", cfg.CPUCount, cfg.MemoryGB)
 	fmt.Printf("QEMU disk: %s\n", cfg.DiskPath)
 	fmt.Printf("QEMU EFI vars: %s\n", cfg.EFIVarsPath)
 	fmt.Printf("Windows autounattend ISO: %s\n", cfg.AutounattendISOPath)
 	fmt.Printf("Windows VirtIO drivers ISO: %s\n", cfg.VirtioISOPath)
+	if cfg.SpiceGuestToolsPath != "" {
+		fmt.Printf("Windows SPICE guest tools: %s\n", cfg.SpiceGuestToolsPath)
+	}
 	fmt.Printf("Windows vz-agent: %s\n", cfg.AgentExecutablePath)
 	if cfg.AgentHostPort != 0 {
 		fmt.Printf("Windows vz-agent host endpoint: %s:%d -> guest :%d\n", cfg.AgentHostAddress, cfg.AgentHostPort, cfg.AgentGuestPort)
 	}
+	if cfg.UserAgentHostPort != 0 {
+		fmt.Printf("Windows vz-agent user endpoint: %s:%d -> guest :%d\n", cfg.UserAgentHostAddress, cfg.UserAgentHostPort, cfg.UserAgentGuestPort)
+	}
+	printWindowsQEMUVNCHint(cfg)
 	return runWindowsQEMU(cfg, true)
 }
 
@@ -178,7 +210,14 @@ func runWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	fmt.Printf("Configuring QEMU: %d CPUs, %d GB RAM\n", cfg.CPUCount, cfg.MemoryGB)
 	fmt.Printf("QEMU disk: %s\n", cfg.DiskPath)
 	fmt.Printf("QEMU EFI vars: %s\n", cfg.EFIVarsPath)
+	printWindowsQEMUVNCHint(cfg)
 	return runWindowsQEMU(cfg, false)
+}
+
+func printWindowsQEMUVNCHint(cfg windowsQEMUConfig) {
+	if cfg.VNCPort != 0 {
+		fmt.Printf("QEMU VNC: %s\n", windowsQEMUVNCURL(cfg))
+	}
 }
 
 func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install bool) (windowsQEMUConfig, error) {
@@ -223,6 +262,10 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 	if install && !flagWasProvided(flag.CommandLine, "serial") {
 		serialOutput = serialLogPath
 	}
+	smbSharedDirectory, err := windowsQEMUSMBSharedDirectoryFromEnv()
+	if err != nil {
+		return windowsQEMUConfig{}, err
+	}
 	cfg := windowsQEMUConfig{
 		QEMUPath:            qemuPath,
 		QEMUImgPath:         qemuImgPath,
@@ -239,10 +282,24 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 		NetworkMode:         rc.NetworkMode,
 		Headless:            rc.Headless,
 		DisplayDevice:       windowsQEMUDisplayDeviceFromEnv(),
+		InputDevice:         windowsQEMUInputDeviceFromEnv(),
 		Nodefaults:          windowsQEMUNodefaultsFromEnv(),
+		EnableClipboard:     rc.EnableClipboard,
+		SMBSharedDirectory:  smbSharedDirectory,
 		SerialOutput:        serialOutput,
 		SerialLogPath:       serialLogPath,
 		MonitorSockPath:     filepath.Join(qemuDir, "monitor.sock"),
+	}
+	if vncAddress != "" {
+		port, err := parsePortSpec(vncAddress)
+		if err != nil {
+			return windowsQEMUConfig{}, fmt.Errorf("parse qemu vnc port: %w", err)
+		}
+		if port < 5900 {
+			return windowsQEMUConfig{}, fmt.Errorf("qemu vnc port must be 5900 or higher")
+		}
+		cfg.VNCHost = "127.0.0.1"
+		cfg.VNCPort = int(port)
 	}
 	if agentForward, err := windowsQEMUAgentForwardConfig(rc.NetworkMode); err != nil {
 		return windowsQEMUConfig{}, err
@@ -251,10 +308,17 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 		cfg.AgentHostPort = agentForward.hostPort
 		cfg.AgentGuestPort = agentForward.guestPort
 	}
+	if userAgentForward, err := windowsQEMUUserAgentForwardConfig(rc.NetworkMode); err != nil {
+		return windowsQEMUConfig{}, err
+	} else {
+		cfg.UserAgentHostAddress = userAgentForward.hostAddress
+		cfg.UserAgentHostPort = userAgentForward.hostPort
+		cfg.UserAgentGuestPort = userAgentForward.guestPort
+	}
 	return cfg, os.MkdirAll(qemuDir, 0755)
 }
 
-func windowsQEMUProvisionConfigFromFlags(agentPath string, agentPort int) (winsetup.ProvisionConfig, error) {
+func windowsQEMUProvisionConfigFromFlags(agentPath string, agentPort, userAgentPort int) (winsetup.ProvisionConfig, error) {
 	cfg := winsetup.DefaultProvisionConfig()
 	if provisionUser != "" {
 		cfg.Username = provisionUser
@@ -273,6 +337,7 @@ func windowsQEMUProvisionConfigFromFlags(agentPath string, agentPort int) (winse
 	cfg.LocalAdmin = provisionAdmin
 	cfg.AgentExecutable = agentPath
 	cfg.AgentTCPPort = agentPort
+	cfg.AgentUserTCPPort = userAgentPort
 	return cfg, nil
 }
 
@@ -281,7 +346,7 @@ func ensureWindowsQEMUAgentExecutable(vmDir string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return "", fmt.Errorf("create windows agent directory: %w", err)
 	}
-	cmd := exec.Command("go", "build", "-trimpath", "-o", path, "./cmd/vz-agent")
+	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", agentBuildLDFlagsForOS("windows"), "-o", path, "./cmd/vz-agent")
 	cmd.Env = append(os.Environ(),
 		"GOOS=windows",
 		"GOARCH=arm64",
@@ -503,6 +568,9 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 	}
 	noteVMRuntimePhase(cfg.VMDir, "running", "qemu-monitor-ready")
 	fmt.Printf("QEMU monitor: %s\n", cfg.MonitorSockPath)
+	if err := openWindowsQEMUVNCIfNeeded(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: open QEMU VNC console: %v\n", err)
+	}
 	if install && windowsQEMUAutoBootKey() {
 		go windowsQEMUSendBootKeys(cfg.MonitorSockPath, windowsQEMUBootKeyConfigFromEnv())
 	}
@@ -520,6 +588,17 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 	_ = writeWindowsQEMUProcessMetadata(processPath, process)
 	noteVMRuntimeState(cfg.VMDir, "stopped")
 	return nil
+}
+
+func openWindowsQEMUVNCIfNeeded(cfg windowsQEMUConfig) error {
+	if cfg.Headless {
+		return nil
+	}
+	url := windowsQEMUVNCURL(cfg)
+	if url == "" {
+		return nil
+	}
+	return windowsQEMUOpenURL(url)
 }
 
 func removeWindowsQEMUMonitorSocket(path string) error {
@@ -678,15 +757,20 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 		"-drive", "if=pflash,format=raw,unit=1,file="+cfg.EFIVarsPath,
 	)
 	args = append(args, displayArgs...)
+	inputArgs, err := windowsQEMUInputDeviceArgs(cfg.InputDevice)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, inputArgs...)
 	args = append(args,
-		"-device", "qemu-xhci,id=xhci",
-		"-device", "usb-kbd,bus=xhci.0",
-		"-device", "usb-tablet,bus=xhci.0",
 		"-object", "rng-random,id=rng0,filename=/dev/urandom",
 		"-device", "virtio-rng-pci,rng=rng0",
 		"-drive", fmt.Sprintf("if=none,id=hd0,format=%s,file=%s", cfg.DiskFormat, cfg.DiskPath),
 		"-device", "nvme,drive=hd0,serial=covewindows001,bootindex=2",
 	)
+	if cfg.EnableClipboard {
+		args = append(args, windowsQEMUClipboardArgs()...)
+	}
 	if cfg.ISOPath != "" {
 		args = append(args,
 			"-drive", "if=none,id=cd0,format=raw,media=cdrom,readonly=on,file="+cfg.ISOPath,
@@ -720,12 +804,22 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 	args = append(args,
 		"-monitor", "unix:"+cfg.MonitorSockPath+",server=on,wait=off",
 	)
-	if cfg.Headless {
+	if cfg.VNCPort != 0 {
+		args = append(args, "-display", "none", "-vnc", windowsQEMUVNCArg(cfg))
+	} else if cfg.Headless {
 		args = append(args, "-display", "none")
 	} else {
 		args = append(args, "-display", "cocoa")
 	}
 	return args, nil
+}
+
+func windowsQEMUClipboardArgs() []string {
+	return []string{
+		"-device", "virtio-serial-pci,id=virtio-serial0,max_ports=16",
+		"-chardev", "qemu-vdagent,id=vdagent0,name=vdagent,clipboard=on,mouse=off",
+		"-device", "virtserialport,bus=virtio-serial0.0,chardev=vdagent0,name=com.redhat.spice.0",
+	}
 }
 
 func windowsQEMUDisplayDeviceArgs(device string) ([]string, error) {
@@ -745,6 +839,33 @@ func windowsQEMUDisplayDeviceArgs(device string) ([]string, error) {
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("invalid COVE_QEMU_DISPLAY_DEVICE %q (must be ramfb, virtio-gpu-pci, ramfb+virtio-gpu-pci, bochs-display, or none)", device)
+	}
+}
+
+func windowsQEMUInputDeviceFromEnv() string {
+	s := strings.TrimSpace(os.Getenv("COVE_QEMU_INPUT_DEVICE"))
+	if s == "" {
+		return "usb-tablet"
+	}
+	return s
+}
+
+func windowsQEMUInputDeviceArgs(device string) ([]string, error) {
+	switch strings.ToLower(strings.TrimSpace(device)) {
+	case "", "tablet", "usb-tablet":
+		return []string{
+			"-device", "qemu-xhci,id=xhci",
+			"-device", "usb-kbd,bus=xhci.0",
+			"-device", "usb-tablet,bus=xhci.0",
+		}, nil
+	case "mouse", "usb-mouse":
+		return []string{
+			"-device", "qemu-xhci,id=xhci",
+			"-device", "usb-kbd,bus=xhci.0",
+			"-device", "usb-mouse,bus=xhci.0",
+		}, nil
+	default:
+		return nil, fmt.Errorf("invalid COVE_QEMU_INPUT_DEVICE %q (must be usb-mouse or usb-tablet)", device)
 	}
 }
 
@@ -785,6 +906,34 @@ func windowsQEMUAgentForwardConfig(networkMode string) (windowsQEMUAgentForward,
 	}, nil
 }
 
+func windowsQEMUUserAgentForwardConfig(networkMode string) (windowsQEMUAgentForward, error) {
+	if strings.EqualFold(strings.TrimSpace(networkMode), "none") {
+		return windowsQEMUAgentForward{}, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("COVE_QEMU_AGENT_FORWARD"))) {
+	case "0", "false", "no", "off":
+		return windowsQEMUAgentForward{}, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("COVE_QEMU_USER_AGENT_FORWARD"))) {
+	case "0", "false", "no", "off":
+		return windowsQEMUAgentForward{}, nil
+	}
+	guestPort := windowsQEMUEnvInt("COVE_QEMU_USER_AGENT_GUEST_PORT", 1025)
+	hostPort := windowsQEMUEnvInt("COVE_QEMU_USER_AGENT_HOST_PORT", 0)
+	var err error
+	if hostPort == 0 {
+		hostPort, err = pickFreeLocalTCPPort()
+		if err != nil {
+			return windowsQEMUAgentForward{}, err
+		}
+	}
+	return windowsQEMUAgentForward{
+		hostAddress: "127.0.0.1",
+		hostPort:    hostPort,
+		guestPort:   guestPort,
+	}, nil
+}
+
 func pickFreeLocalTCPPort() (int, error) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -798,12 +947,41 @@ func pickFreeLocalTCPPort() (int, error) {
 	return addr.Port, nil
 }
 
+func windowsQEMUSMBSharedDirectoryFromEnv() (string, error) {
+	path := strings.TrimSpace(os.Getenv("COVE_QEMU_SMB_DIR"))
+	if path == "" {
+		return "", nil
+	}
+	path = expandTilde(path)
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("COVE_QEMU_SMB_DIR: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("COVE_QEMU_SMB_DIR: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("COVE_QEMU_SMB_DIR: %s is not a directory", abs)
+	}
+	if strings.Contains(abs, ",") {
+		return "", fmt.Errorf("COVE_QEMU_SMB_DIR: %s contains comma, which qemu -netdev user cannot parse", abs)
+	}
+	return abs, nil
+}
+
 func windowsQEMUNetworkArgs(cfg windowsQEMUConfig) ([]string, error) {
 	switch strings.TrimSpace(strings.ToLower(cfg.NetworkMode)) {
 	case "", "nat":
 		netdev := "user,id=net0"
+		if cfg.SMBSharedDirectory != "" {
+			netdev += ",smb=" + cfg.SMBSharedDirectory
+		}
 		if cfg.AgentHostPort != 0 && cfg.AgentGuestPort != 0 {
 			netdev += fmt.Sprintf(",hostfwd=tcp:%s:%d-:%d", cfg.AgentHostAddress, cfg.AgentHostPort, cfg.AgentGuestPort)
+		}
+		if cfg.UserAgentHostPort != 0 && cfg.UserAgentGuestPort != 0 {
+			netdev += fmt.Sprintf(",hostfwd=tcp:%s:%d-:%d", cfg.UserAgentHostAddress, cfg.UserAgentHostPort, cfg.UserAgentGuestPort)
 		}
 		return []string{
 			"-netdev", netdev,
@@ -828,25 +1006,36 @@ func windowsQEMUSerialArgs(cfg windowsQEMUConfig) []string {
 }
 
 type windowsQEMUMetadata struct {
-	Backend             string   `json:"backend"`
-	QEMUPath            string   `json:"qemuPath"`
-	QEMUVersion         string   `json:"qemuVersion,omitempty"`
-	EFICodePath         string   `json:"efiCodePath"`
-	EFIVarsTemplatePath string   `json:"efiVarsTemplatePath"`
-	EFIVarsPath         string   `json:"efiVarsPath"`
-	DiskPath            string   `json:"diskPath"`
-	DiskFormat          string   `json:"diskFormat"`
-	ISOPath             string   `json:"isoPath,omitempty"`
-	Display             string   `json:"display"`
-	SerialOutput        string   `json:"serialOutput"`
-	MonitorSockPath     string   `json:"monitorSockPath"`
-	AutounattendISOPath string   `json:"autounattendIsoPath,omitempty"`
-	VirtioISOPath       string   `json:"virtioIsoPath,omitempty"`
-	AgentExecutablePath string   `json:"agentExecutablePath,omitempty"`
-	AgentHostAddress    string   `json:"agentHostAddress,omitempty"`
-	AgentHostPort       int      `json:"agentHostPort,omitempty"`
-	AgentGuestPort      int      `json:"agentGuestPort,omitempty"`
-	Args                []string `json:"args"`
+	Backend              string   `json:"backend"`
+	QEMUPath             string   `json:"qemuPath"`
+	QEMUVersion          string   `json:"qemuVersion,omitempty"`
+	EFICodePath          string   `json:"efiCodePath"`
+	EFIVarsTemplatePath  string   `json:"efiVarsTemplatePath"`
+	EFIVarsPath          string   `json:"efiVarsPath"`
+	DiskPath             string   `json:"diskPath"`
+	DiskFormat           string   `json:"diskFormat"`
+	ISOPath              string   `json:"isoPath,omitempty"`
+	Display              string   `json:"display"`
+	InputDevice          string   `json:"inputDevice,omitempty"`
+	Clipboard            bool     `json:"clipboard"`
+	SMBSharedDirectory   string   `json:"smbSharedDirectory,omitempty"`
+	SerialOutput         string   `json:"serialOutput"`
+	MonitorSockPath      string   `json:"monitorSockPath"`
+	VNCEndpoint          string   `json:"vncEndpoint,omitempty"`
+	VNCURL               string   `json:"vncURL,omitempty"`
+	GuestUsername        string   `json:"guestUsername,omitempty"`
+	GuestPassword        string   `json:"guestPassword,omitempty"`
+	AutounattendISOPath  string   `json:"autounattendIsoPath,omitempty"`
+	VirtioISOPath        string   `json:"virtioIsoPath,omitempty"`
+	SpiceGuestToolsPath  string   `json:"spiceGuestToolsPath,omitempty"`
+	AgentExecutablePath  string   `json:"agentExecutablePath,omitempty"`
+	AgentHostAddress     string   `json:"agentHostAddress,omitempty"`
+	AgentHostPort        int      `json:"agentHostPort,omitempty"`
+	AgentGuestPort       int      `json:"agentGuestPort,omitempty"`
+	UserAgentHostAddress string   `json:"userAgentHostAddress,omitempty"`
+	UserAgentHostPort    int      `json:"userAgentHostPort,omitempty"`
+	UserAgentGuestPort   int      `json:"userAgentGuestPort,omitempty"`
+	Args                 []string `json:"args"`
 }
 
 type windowsQEMUProcessMetadata struct {
@@ -885,25 +1074,36 @@ func writeWindowsQEMUProcessMetadata(path string, metadata windowsQEMUProcessMet
 
 func writeWindowsQEMUMetadata(path string, cfg windowsQEMUConfig, args []string) error {
 	metadata := windowsQEMUMetadata{
-		Backend:             "qemu-hvf",
-		QEMUPath:            cfg.QEMUPath,
-		QEMUVersion:         windowsQEMUVersion(cfg.QEMUPath),
-		EFICodePath:         cfg.EFICodePath,
-		EFIVarsTemplatePath: cfg.EFIVarsTemplatePath,
-		EFIVarsPath:         cfg.EFIVarsPath,
-		DiskPath:            cfg.DiskPath,
-		DiskFormat:          cfg.DiskFormat,
-		ISOPath:             cfg.ISOPath,
-		Display:             cfg.DisplayDevice,
-		SerialOutput:        cfg.SerialOutput,
-		MonitorSockPath:     cfg.MonitorSockPath,
-		AutounattendISOPath: cfg.AutounattendISOPath,
-		VirtioISOPath:       cfg.VirtioISOPath,
-		AgentExecutablePath: cfg.AgentExecutablePath,
-		AgentHostAddress:    cfg.AgentHostAddress,
-		AgentHostPort:       cfg.AgentHostPort,
-		AgentGuestPort:      cfg.AgentGuestPort,
-		Args:                append([]string(nil), args...),
+		Backend:              "qemu-hvf",
+		QEMUPath:             cfg.QEMUPath,
+		QEMUVersion:          windowsQEMUVersion(cfg.QEMUPath),
+		EFICodePath:          cfg.EFICodePath,
+		EFIVarsTemplatePath:  cfg.EFIVarsTemplatePath,
+		EFIVarsPath:          cfg.EFIVarsPath,
+		DiskPath:             cfg.DiskPath,
+		DiskFormat:           cfg.DiskFormat,
+		ISOPath:              cfg.ISOPath,
+		Display:              cfg.DisplayDevice,
+		InputDevice:          cfg.InputDevice,
+		Clipboard:            cfg.EnableClipboard,
+		SMBSharedDirectory:   cfg.SMBSharedDirectory,
+		SerialOutput:         cfg.SerialOutput,
+		MonitorSockPath:      cfg.MonitorSockPath,
+		VNCEndpoint:          windowsQEMUVNCEndpoint(cfg),
+		VNCURL:               windowsQEMUVNCURL(cfg),
+		GuestUsername:        cfg.GuestUsername,
+		GuestPassword:        cfg.GuestPassword,
+		AutounattendISOPath:  cfg.AutounattendISOPath,
+		VirtioISOPath:        cfg.VirtioISOPath,
+		SpiceGuestToolsPath:  cfg.SpiceGuestToolsPath,
+		AgentExecutablePath:  cfg.AgentExecutablePath,
+		AgentHostAddress:     cfg.AgentHostAddress,
+		AgentHostPort:        cfg.AgentHostPort,
+		AgentGuestPort:       cfg.AgentGuestPort,
+		UserAgentHostAddress: cfg.UserAgentHostAddress,
+		UserAgentHostPort:    cfg.UserAgentHostPort,
+		UserAgentGuestPort:   cfg.UserAgentGuestPort,
+		Args:                 append([]string(nil), args...),
 	}
 	data, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
@@ -938,6 +1138,9 @@ when firmware is found under /Applications/UTM.app/Contents/Resources/qemu.
 Monitor:
   nc -U %s
 
+Display:
+  %s
+
 Useful monitor commands:
   info status
   screendump /tmp/cove-windows-qemu-screen.ppm
@@ -946,32 +1149,47 @@ Useful monitor commands:
 Artifacts:
   metadata: %s
   process metadata: %s
-  launch script: %s
-  display device: %s
-  serial: %s
+	  launch script: %s
+	  display device: %s
+	  clipboard: %t
+	  vnc: %s
+	  guest username: %s
+	  guest password: %s
+	  SMB shared directory: %s
+	  serial: %s
   EFI vars: %s
   disk: %s
   autounattend ISO: %s
   VirtIO drivers ISO: %s
+  SPICE guest tools: %s
   Windows vz-agent: %s
   Windows vz-agent host endpoint: %s
+  Windows vz-agent user endpoint: %s
 
 Display experiment:
   COVE_QEMU_DISPLAY_DEVICE=ramfb+virtio-gpu-pci
   COVE_QEMU_DISPLAY_DEVICE=virtio-gpu-pci
   COVE_QEMU_DISPLAY_DEVICE=ramfb
 `, cfg.MonitorSockPath,
+		windowsQEMUVNCHelp(cfg),
 		filepath.Join(filepath.Dir(cfg.MonitorSockPath), "metadata.json"),
 		windowsQEMUProcessPath(cfg),
 		filepath.Join(filepath.Dir(cfg.MonitorSockPath), "launch.sh"),
 		cfg.DisplayDevice,
+		cfg.EnableClipboard,
+		windowsQEMUVNCEndpoint(cfg),
+		cfg.GuestUsername,
+		cfg.GuestPassword,
+		cfg.SMBSharedDirectory,
 		cfg.SerialOutput,
 		cfg.EFIVarsPath,
 		cfg.DiskPath,
 		cfg.AutounattendISOPath,
 		cfg.VirtioISOPath,
+		cfg.SpiceGuestToolsPath,
 		cfg.AgentExecutablePath,
 		windowsQEMUAgentEndpoint(cfg),
+		windowsQEMUUserAgentEndpoint(cfg),
 	)
 	return os.WriteFile(path, []byte(text), 0644)
 }
@@ -981,6 +1199,51 @@ func windowsQEMUAgentEndpoint(cfg windowsQEMUConfig) string {
 		return ""
 	}
 	return net.JoinHostPort(cfg.AgentHostAddress, strconv.Itoa(cfg.AgentHostPort))
+}
+
+func windowsQEMUUserAgentEndpoint(cfg windowsQEMUConfig) string {
+	if cfg.UserAgentHostAddress == "" || cfg.UserAgentHostPort == 0 {
+		return ""
+	}
+	return net.JoinHostPort(cfg.UserAgentHostAddress, strconv.Itoa(cfg.UserAgentHostPort))
+}
+
+func windowsQEMUVNCArg(cfg windowsQEMUConfig) string {
+	host := cfg.VNCHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("%s:%d", host, cfg.VNCPort-5900)
+}
+
+func windowsQEMUVNCEndpoint(cfg windowsQEMUConfig) string {
+	if cfg.VNCPort == 0 {
+		return ""
+	}
+	host := cfg.VNCHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(cfg.VNCPort))
+}
+
+func windowsQEMUVNCURL(cfg windowsQEMUConfig) string {
+	endpoint := windowsQEMUVNCEndpoint(cfg)
+	if endpoint == "" {
+		return ""
+	}
+	return "vnc://" + endpoint
+}
+
+func windowsQEMUVNCHelp(cfg windowsQEMUConfig) string {
+	url := windowsQEMUVNCURL(cfg)
+	if url == "" {
+		return "QEMU Cocoa window, or pass -vnc :5901 to expose a local VNC console."
+	}
+	if cfg.Headless {
+		return "open " + url
+	}
+	return "opens automatically for headed runs; reopen with cove gui -vm <name> or open " + url
 }
 
 func writeWindowsQEMUCommand(path, qemuPath string, args []string) error {

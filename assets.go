@@ -2,7 +2,7 @@ package cove
 
 import "embed"
 
-//go:embed vzscripts/*.vzscript
+//go:embed vzscripts/*.vzscript vzscripts/windows/*.vzscript
 var VZScripts embed.FS
 
 //go:embed templates/vz-provision.sh.tmpl

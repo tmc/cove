@@ -288,6 +288,71 @@ Windows `vz-agent`, verifies the provision marker, and checks that the
 windows-install [timeout]
 ```
 
+### windows-clipboard
+
+Verify the direct QEMU/HVF Windows clipboard transport prerequisites. The recipe checks the
+QEMU vdagent chardev, waits for the forwarded Windows `vz-agent`, and verifies
+that the guest sees the `com.redhat.spice.0` virtio-serial port plus a running
+SPICE guest tools service/process.
+
+```
+cove vzscript run windows-clipboard
+```
+
+### windows-golang
+
+Install and verify the latest stable Go toolchain inside a Windows guest.
+The recipe downloads the Windows ARM64 or AMD64 MSI from `go.dev`, verifies
+the upstream SHA-256, installs it machine-wide, and prints `go version`.
+
+```
+cove vzscript run windows-golang
+```
+
+### windows-wsl
+
+Enable and verify Windows Subsystem for Linux. The recipe enables the WSL and
+Virtual Machine Platform optional features, reports when a reboot is required,
+and verifies `wsl --status` on a later rerun.
+
+```
+cove vzscript run windows-wsl
+```
+
+### windows-wsl1
+
+Enable only the `Microsoft-Windows-Subsystem-Linux` optional feature for WSL1
+workloads. The recipe runs through the daemon agent and exits with a reboot
+requirement instead of continuing when Windows needs to restart.
+
+```
+cove vzscript run windows-wsl1
+```
+
+### windows-webdav-client
+
+Enable and start the Windows WebClient service so user-context recipes can mount
+host WebDAV shares with `net use`.
+
+```
+cove vzscript run windows-webdav-client
+```
+
+### windows-mlx-go-mnist
+
+Mount `~/ml-explore` from the host through WebDAV, ensure the WSL AppX package
+and Ubuntu ARM64 WSL1 rootfs are installed, install Linux ARM64 Go in WSL, and
+run `mlx-go/examples/mnist` for one epoch. The host must serve `/tmp` on
+`http://10.0.2.2:58080` for the WSL bundle, rootfs, and Linux Go tarball cache,
+and `~/ml-explore` on `http://10.0.2.2:58081/` through WebDAV. This recipe runs
+in the logged-in Windows user context, so the QEMU user agent must be reachable.
+Override the host cache and WebDAV URLs with `-env COVE_HOST_HTTP=...` and
+`-env COVE_ML_EXPLORE_WEBDAV=...`.
+
+```
+cove vzscript run -vm windows-qemu-agent4 windows-mlx-go-mnist
+```
+
 ```
 cove vzscript run -vm windows-qemu-setup windows-install
 cove vzscript run -qemu-monitor ~/.vz/vms/windows-qemu-setup.covevm/qemu/monitor.sock windows-install

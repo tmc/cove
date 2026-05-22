@@ -15,8 +15,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -29,6 +33,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 
 	agentstate "github.com/tmc/cove/internal/agent"
+	agentpb "github.com/tmc/cove/proto/agentpb"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -66,7 +71,7 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)
 	}
 
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", agentBuildLDFlags(), "-o", outputPath, agentPkg)
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", agentBuildLDFlagsForOS(targetOS), "-o", outputPath, agentPkg)
 	cmd.Dir = moduleDir
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",
@@ -95,8 +100,16 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 }
 
 func agentBuildLDFlags() string {
+	return agentBuildLDFlagsForOS("")
+}
+
+func agentBuildLDFlagsForOS(targetOS string) string {
 	info := resolvedVersion()
-	return fmt.Sprintf("-X main.version=%s -X main.commit=%s -X main.date=%s", hostVersion(), info.Commit, info.Date)
+	flags := fmt.Sprintf("-X main.version=%s -X main.commit=%s -X main.date=%s", hostVersion(), info.Commit, info.Date)
+	if targetOS == "windows" {
+		flags += " -H=windowsgui"
+	}
+	return flags
 }
 
 // codesignAdHoc applies an ad-hoc signature to a Mach-O binary. macOS
@@ -234,6 +247,9 @@ func handleAgentUpgradeCommand(args []string) error {
 		if err != nil {
 			return err
 		}
+	}
+	if windowsQEMUCTLVM(target.Directory) {
+		return upgradeWindowsQEMUAgent(target.Directory)
 	}
 	return upgradeAgentAt(target.controlSocketPath())
 }
@@ -827,6 +843,290 @@ func upgradeAgentAt(sock string) error {
 	return nil
 }
 
+func upgradeWindowsQEMUAgent(vmDir string) error {
+	address := qemuAgentAddressForVMDir(vmDir)
+	if strings.TrimSpace(address) == "" {
+		return fmt.Errorf("qemu windows agent endpoint is unavailable")
+	}
+	oldVersion, err := qemuAgentPing(address, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("agent not reachable (is the QEMU Windows VM running?): %w", err)
+	}
+	oldSHA := ""
+	if info, err := qemuAgentInfo(address, 10*time.Second); err == nil {
+		oldSHA = info.GetAgentSha256()
+	}
+	fmt.Printf("Current agent version: %s\n", oldVersion)
+
+	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName+"-windows-arm64.exe")
+	defer os.Remove(tmpBinary)
+	if err := buildAgentBinaryForOS(tmpBinary, "windows"); err != nil {
+		return err
+	}
+
+	guestTmpPath := fmt.Sprintf(`C:\ProgramData\cove\%s-upgrade-%d.tmp`, agentBinaryName, time.Now().UnixNano())
+	fmt.Println("Copying Windows agent to guest...")
+	client, err := qemuAgentClient(address)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	err = copyWindowsQEMUAgentToGuest(ctx, address, client, tmpBinary, guestTmpPath, 0644)
+	cancel()
+	client.Close()
+	if err != nil {
+		return fmt.Errorf("copy agent: %w", err)
+	}
+	fmt.Println("Copied.")
+
+	scriptPath := `C:\ProgramData\cove\upgrade-vz-agent.ps1`
+	if err := qemuAgentWriteFile(address, scriptPath, []byte(windowsAgentUpgradeScript(guestTmpPath)), 0644); err != nil {
+		return fmt.Errorf("write upgrade script: %w", err)
+	}
+	fmt.Println("Installing and restarting Windows agent scheduled tasks...")
+	stdout, stderr, exitCode, err := qemuAgentExecStream(
+		vzscriptConfig{qemuAgentAddress: address},
+		windowsStartPowerShellScriptCommand(scriptPath),
+		30*time.Second,
+		nil,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("start upgrade script: %w", err)
+	}
+	if exitCode != 0 {
+		return fmt.Errorf("start upgrade script exited with code %d\nstdout:\n%s\nstderr:\n%s", exitCode, stdout, stderr)
+	}
+
+	fmt.Println("Waiting for new Windows agent daemon...")
+	time.Sleep(agentUpgradeReconnectInitialDelay)
+	newVersion, err := waitWindowsQEMUAgentVersion(address)
+	if err != nil {
+		return err
+	}
+	newSHA := ""
+	if info, err := qemuAgentInfo(address, 10*time.Second); err == nil {
+		newSHA = info.GetAgentSha256()
+	}
+	if err := waitWindowsQEMUUserAgentAfterUpgrade(vmDir); err != nil {
+		return err
+	}
+	if oldSHA != "" || newSHA != "" {
+		fmt.Printf("Upgraded: %s (%s) → %s (%s)\n", oldVersion, oldSHA, newVersion, newSHA)
+	} else {
+		fmt.Printf("Upgraded: %s → %s\n", oldVersion, newVersion)
+	}
+	return nil
+}
+
+func copyWindowsQEMUAgentToGuest(ctx context.Context, address string, client *agentstate.AgentClient, hostPath, guestPath string, mode os.FileMode) error {
+	if err := client.CopyToGuest(ctx, hostPath, guestPath, mode); err == nil {
+		return nil
+	} else {
+		fmt.Printf("streaming copy failed (%v); retrying with host HTTP transfer...\n", err)
+	}
+	if err := copyWindowsQEMUAgentToGuestHTTP(ctx, address, hostPath, guestPath); err == nil {
+		return nil
+	} else {
+		fmt.Printf("host HTTP transfer failed (%v); retrying with chunked writes...\n", err)
+	}
+	return copyWindowsQEMUAgentToGuestChunked(ctx, client, hostPath, guestPath, mode)
+}
+
+func copyWindowsQEMUAgentToGuestHTTP(ctx context.Context, address, hostPath, guestPath string) error {
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	defer ln.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/vz-agent", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, hostPath)
+	})
+	srv := &http.Server{Handler: mux}
+	done := make(chan error, 1)
+	go func() {
+		err := srv.Serve(ln)
+		if err == http.ErrServerClosed {
+			err = nil
+		}
+		done <- err
+	}()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+		<-done
+	}()
+
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return fmt.Errorf("host transfer address: %w", err)
+	}
+	url := "http://10.0.2.2:" + port + "/vz-agent"
+	script := fmt.Sprintf(`$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri '%s' -OutFile '%s'`, url, psSingleQuote(guestPath))
+	stdout, stderr, exitCode, err := qemuAgentExecStream(
+		vzscriptConfig{qemuAgentAddress: address},
+		[]string{"powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script},
+		5*time.Minute,
+		nil,
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	if exitCode != 0 {
+		return fmt.Errorf("download exited with code %d\nstdout:\n%s\nstderr:\n%s", exitCode, stdout, stderr)
+	}
+	return nil
+}
+
+func copyWindowsQEMUAgentToGuestChunked(ctx context.Context, client *agentstate.AgentClient, hostPath, guestPath string, mode os.FileMode) error {
+	f, err := os.Open(hostPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if err := client.WriteFile(ctx, guestPath, nil, uint32(mode)); err != nil {
+		return fmt.Errorf("truncate guest file: %w", err)
+	}
+
+	buf := make([]byte, 512*1024)
+	var sent int64
+	start := time.Now()
+	lastLog := start
+	for {
+		n, err := f.Read(buf)
+		if n > 0 {
+			if err := client.AppendFile(ctx, guestPath, buf[:n], uint32(mode)); err != nil {
+				return fmt.Errorf("append guest file: %w", err)
+			}
+			sent += int64(n)
+			if now := time.Now(); now.Sub(lastLog) >= 3*time.Second {
+				fmt.Printf("  copied %d/%d bytes in %s\n", sent, info.Size(), now.Sub(start).Round(time.Second))
+				lastLog = now
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read local: %w", err)
+		}
+	}
+	fmt.Printf("  copied %d bytes in %s\n", sent, time.Since(start).Round(time.Second))
+	return nil
+}
+
+func qemuAgentInfo(address string, timeout time.Duration) (*agentpb.InfoResponse, error) {
+	client, err := qemuAgentClient(address)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return client.Info(ctx)
+}
+
+func waitWindowsQEMUAgentVersion(address string) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt < agentUpgradeReconnectAttempts; attempt++ {
+		version, err := qemuAgentPing(address, agentUpgradeReconnectTimeout)
+		if err == nil {
+			return version, nil
+		}
+		lastErr = err
+		fmt.Printf("  reconnect attempt %d...\n", attempt+1)
+		time.Sleep(agentUpgradeReconnectDelay)
+	}
+	return "", fmt.Errorf("%s: %w", agentUpgradeReconnectTimeoutMessage(), lastErr)
+}
+
+func waitWindowsQEMUUserAgentAfterUpgrade(vmDir string) error {
+	address := qemuUserAgentAddressForVMDir(vmDir)
+	if strings.TrimSpace(address) == "" {
+		return nil
+	}
+	probe := []string{"cmd.exe", "/c", "echo ok"}
+	var lastErr error
+	for attempt := 0; attempt < agentUpgradeReconnectAttempts; attempt++ {
+		stdout, stderr, exitCode, err := qemuUserAgentExec(address, probe, nil, agentUpgradeReconnectTimeout)
+		if err == nil && exitCode == 0 && strings.TrimSpace(stdout) == "ok" {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("user agent probe exited with code %d: %s", exitCode, strings.TrimSpace(stderr))
+		}
+		fmt.Printf("  user-agent reconnect attempt %d...\n", attempt+1)
+		time.Sleep(agentUpgradeReconnectDelay)
+	}
+	return fmt.Errorf("windows user agent did not reconnect after upgrade: %w", lastErr)
+}
+
+func windowsStartPowerShellScriptCommand(scriptPath string) []string {
+	script := fmt.Sprintf(`Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','%s')`, psSingleQuote(scriptPath))
+	return []string{"powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
+}
+
+func windowsAgentUpgradeScript(newPath string) string {
+	return fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+$Root = 'C:\ProgramData\cove'
+$Agent = Join-Path $Root 'vz-agent.exe'
+$New = '%s'
+$Log = Join-Path $Root 'upgrade-vz-agent.log'
+try { Start-Transcript -Path $Log -Force | Out-Null } catch {}
+Start-Sleep -Seconds 2
+try { Stop-ScheduledTask -TaskName 'cove-vz-agent-user' -ErrorAction SilentlyContinue | Out-Null } catch {}
+try { Stop-ScheduledTask -TaskName 'cove-vz-agent' -ErrorAction SilentlyContinue | Out-Null } catch {}
+Get-CimInstance Win32_Process -Filter "Name = 'vz-agent.exe'" | ForEach-Object {
+  try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+}
+$Installed = $false
+for ($i = 0; $i -lt 20; $i++) {
+  try {
+    Move-Item -Force $New $Agent
+    $Installed = $true
+    break
+  } catch {
+    Start-Sleep -Seconds 1
+  }
+}
+if (-not $Installed) {
+  throw "failed to install $Agent from $New"
+}
+try {
+  New-NetFirewallRule -DisplayName 'Cove vz-agent' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 1024,1025 -Profile Any -ErrorAction SilentlyContinue | Out-Null
+  New-NetFirewallRule -DisplayName 'Cove vz-agent executable' -Direction Inbound -Action Allow -Program $Agent -Profile Any -ErrorAction SilentlyContinue | Out-Null
+} catch {}
+try { Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False -ErrorAction SilentlyContinue | Out-Null } catch {}
+try {
+  Start-ScheduledTask -TaskName 'cove-vz-agent' -ErrorAction Stop | Out-Null
+} catch {
+  Start-Process -FilePath $Agent -ArgumentList '-mode daemon -tcp-listen 0.0.0.0:1024' -WindowStyle Hidden
+}
+Start-Sleep -Seconds 2
+try {
+  Start-ScheduledTask -TaskName 'cove-vz-agent-user' -ErrorAction Stop | Out-Null
+} catch {
+  Start-Process -FilePath $Agent -ArgumentList '-mode agent -tcp-listen 0.0.0.0:1025' -WindowStyle Hidden
+}
+try { Stop-Transcript | Out-Null } catch {}
+`, psSingleQuote(newPath))
+}
+
+func psSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
 func agentUpgradeReconnectTimeoutMessage() string {
 	window := agentUpgradeReconnectInitialDelay + agentUpgradeReconnectAttempts*agentUpgradeReconnectDelay
 	return fmt.Sprintf("agent installed and restart requested, but agent did not reconnect within %ds (tried %d reconnects); VM may still be restarting the agent, retry cove ctl agent-ping or cove agent-upgrade", int(window/time.Second), agentUpgradeReconnectAttempts)
@@ -884,7 +1184,16 @@ func isLinuxGuestOS(osVersion string) bool {
 		strings.Contains(osVersion, "fedora")
 }
 
+func isWindowsGuestOS(osVersion string) bool {
+	osVersion = strings.ToLower(osVersion)
+	return strings.Contains(osVersion, "windows") ||
+		strings.Contains(osVersion, "win32")
+}
+
 func agentBuildTargetOS(guestOS string) string {
+	if isWindowsGuestOS(guestOS) {
+		return "windows"
+	}
 	if isLinuxGuestOS(guestOS) {
 		return "linux"
 	}

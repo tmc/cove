@@ -76,6 +76,9 @@ func handleVerify(args []string) error {
 			return err
 		}
 	}
+	if windowsQEMUCTLVM(target.Directory) {
+		return verifyWindowsQEMUVM(target)
+	}
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
 		if agentstate.Platform(target.Directory) == agentstate.PlatformMacOS {
@@ -146,6 +149,8 @@ Use cove doctor qemu before installing Windows with -windows-backend qemu.
 
 When the VM is running, doctor checks via the control socket and guest agent.
 When stopped, it mounts the disk and inspects files directly.
+For Windows QEMU VMs, doctor checks qemu metadata, monitor, VNC, forwarded
+agent endpoints, guest credentials, and firewall state.
 
 With --fix, doctor attempts to repair issues automatically:
   - inject a missing vz-agent binary and LaunchDaemon
@@ -162,6 +167,7 @@ Examples:
   cove doctor tcc-fda -tcc-path /Volumes/work -password covetest123
   cove doctor qemu
   cove doctor qemu -json
+  cove doctor -vm windows-qemu
   cove doctor
   cove doctor --fix
   cove doctor --tcc-path /Volumes/work

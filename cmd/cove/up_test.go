@@ -85,6 +85,21 @@ func TestWindowsQEMUUpDiskExists(t *testing.T) {
 	}
 }
 
+func TestDefaultWindowsQEMUUpRecipesIncludeClipboardWhenEnabled(t *testing.T) {
+	old := enableClipboard
+	t.Cleanup(func() { enableClipboard = old })
+
+	enableClipboard = true
+	if got, want := defaultWindowsQEMUUpRecipes(), []string{"windows-install", "windows-clipboard"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("default recipes = %v, want %v", got, want)
+	}
+
+	enableClipboard = false
+	if got, want := defaultWindowsQEMUUpRecipes(), []string{"windows-install"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("default recipes = %v, want %v", got, want)
+	}
+}
+
 func TestParseUpFlagsWindowsQEMU(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

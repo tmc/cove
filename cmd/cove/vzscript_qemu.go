@@ -50,21 +50,34 @@ func qemuMonitorPathForVMDir(dir string) string {
 }
 
 func qemuAgentAddressForVMDir(dir string) string {
-	if dir == "" {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "qemu", "metadata.json"))
-	if err != nil {
-		return ""
-	}
-	var metadata windowsQEMUMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return ""
-	}
+	metadata := qemuMetadataForVMDir(dir)
 	if metadata.AgentHostAddress == "" || metadata.AgentHostPort == 0 {
 		return ""
 	}
 	return net.JoinHostPort(metadata.AgentHostAddress, strconv.Itoa(metadata.AgentHostPort))
+}
+
+func qemuUserAgentAddressForVMDir(dir string) string {
+	metadata := qemuMetadataForVMDir(dir)
+	if metadata.UserAgentHostAddress == "" || metadata.UserAgentHostPort == 0 {
+		return ""
+	}
+	return net.JoinHostPort(metadata.UserAgentHostAddress, strconv.Itoa(metadata.UserAgentHostPort))
+}
+
+func qemuMetadataForVMDir(dir string) windowsQEMUMetadata {
+	if dir == "" {
+		return windowsQEMUMetadata{}
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "qemu", "metadata.json"))
+	if err != nil {
+		return windowsQEMUMetadata{}
+	}
+	var metadata windowsQEMUMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return windowsQEMUMetadata{}
+	}
+	return metadata
 }
 
 func qemuMonitorCommand(sock, command string) error {
@@ -606,6 +619,8 @@ func qemuDefaultActionForText(text string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(text)) {
 	case "next", "continue", "install", "install now", "agree", "accept", "ok", "yes":
 		return "return", true
+	case "cancel", "close":
+		return "escape", true
 	default:
 		return "", false
 	}

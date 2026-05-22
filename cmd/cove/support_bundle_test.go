@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
+	"image"
+	"image/color"
 	"io"
 	"os"
 	"path/filepath"
@@ -49,9 +52,11 @@ func TestCreateSupportBundleRedactsDiagnostics(t *testing.T) {
 	t.Setenv("USER", "alice")
 	oldRun := supportRunCommand
 	oldHostRun := hostDoctorRunCommand
+	oldCapture := supportCaptureWindowsQEMUImage
 	t.Cleanup(func() {
 		supportRunCommand = oldRun
 		hostDoctorRunCommand = oldHostRun
+		supportCaptureWindowsQEMUImage = oldCapture
 	})
 	supportRunCommand = func(ctx context.Context, args ...string) supportCommandResult {
 		return supportCommandResult{
@@ -128,6 +133,11 @@ func TestCreateSupportBundleMissingVMIsReadOnly(t *testing.T) {
 	hostDoctorRunCommand = func(name string, args ...string) ([]byte, error) {
 		return nil, nil
 	}
+	supportCaptureWindowsQEMUImage = func(string) (image.Image, error) {
+		img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+		img.Set(0, 0, color.RGBA{R: 255, A: 255})
+		return img, nil
+	}
 
 	out := filepath.Join(t.TempDir(), "bundle.tar.gz")
 	if _, err := createSupportBundle(supportBundleOptions{VM: "missing", Out: out}); err != nil {
@@ -153,6 +163,165 @@ func TestCreateSupportBundleMissingVMIsReadOnly(t *testing.T) {
 		if strings.Contains(cmd, " -vm missing") || strings.HasPrefix(cmd, "doctor -vm missing") || cmd == "trace status missing" {
 			t.Fatalf("ran VM diagnostic for missing VM: %s", cmd)
 		}
+	}
+}
+
+func TestCreateSupportBundleIncludesQEMUWindowsArtifacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USER", "alice")
+	oldRun := supportRunCommand
+	oldHostRun := hostDoctorRunCommand
+	t.Cleanup(func() {
+		supportRunCommand = oldRun
+		hostDoctorRunCommand = oldHostRun
+	})
+	supportRunCommand = func(ctx context.Context, args ...string) supportCommandResult {
+		if strings.Join(args, " ") == "ctl -vm qemu-win gui status" {
+			return supportCommandResult{ExitCode: 0, Stdout: "user: cove\npass: Cove123!\n"}
+		}
+		return supportCommandResult{ExitCode: 0}
+	}
+	hostDoctorRunCommand = func(name string, args ...string) ([]byte, error) {
+		return nil, nil
+	}
+
+	vmDir := filepath.Join(vmconfig.BaseDir(), "qemu-win")
+	qemuDir := filepath.Join(vmDir, "qemu")
+	if err := os.MkdirAll(qemuDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "windows.qcow2"), []byte("disk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	metadata := `{
+  "backend": "qemu-hvf",
+  "vncEndpoint": "127.0.0.1:5907",
+  "vncURL": "vnc://127.0.0.1:5907",
+  "guestUsername": "cove",
+  "guestPassword": "Cove123!",
+  "diskPath": "/Users/alice/.vz/vms/qemu-win/windows.qcow2",
+  "serialOutput": "` + filepath.ToSlash(filepath.Join(qemuDir, "serial.log")) + `"
+}`
+	if err := os.WriteFile(filepath.Join(qemuDir, "metadata.json"), []byte(metadata), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qemuDir, "process.json"), []byte(`{"qemuPid":123}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qemuDir, "README"), []byte("path=/Users/alice/.vz/vms/qemu-win\npassword: no\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qemuDir, "serial.log"), []byte("boot\nAuthorization: Bearer abc.def\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "bundle.tar.gz")
+	if _, err := createSupportBundle(supportBundleOptions{VM: "qemu-win", Out: out}); err != nil {
+		t.Fatalf("createSupportBundle: %v", err)
+	}
+	files := readSupportBundleFiles(t, out)
+	for _, name := range []string{
+		"vm/qemu-metadata.json",
+		"vm/qemu-process.json",
+		"vm/qemu-readme.txt",
+		"vm/qemu-status.json",
+		"vm/qemu-serial-files.txt",
+		"vm/qemu-serial-tail.txt",
+		"vm/qemu-screenshot.txt",
+	} {
+		if _, ok := files[name]; !ok {
+			t.Fatalf("bundle missing %s; files=%v", name, supportBundleMapKeys(files))
+		}
+	}
+	if _, ok := files["vm/qemu-screenshot.png"]; ok {
+		t.Fatalf("bundle included screenshot without opt-in")
+	}
+	if !strings.Contains(files["vm/qemu-screenshot.txt"], "-include-screenshot") {
+		t.Fatalf("qemu screenshot note missing opt-in hint:\n%s", files["vm/qemu-screenshot.txt"])
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(files["vm/qemu-metadata.json"]), &got); err != nil {
+		t.Fatalf("qemu metadata is not JSON: %v\n%s", err, files["vm/qemu-metadata.json"])
+	}
+	if got["guestPassword"] != "REDACTED" {
+		t.Fatalf("guestPassword = %v, want REDACTED", got["guestPassword"])
+	}
+	var status map[string]any
+	if err := json.Unmarshal([]byte(files["vm/qemu-status.json"]), &status); err != nil {
+		t.Fatalf("qemu status is not JSON: %v\n%s", err, files["vm/qemu-status.json"])
+	}
+	if status["gui"] != "qemu-vnc-external" || status["vncAuth"] != "none" {
+		t.Fatalf("qemu status gui/vncAuth = %v/%v", status["gui"], status["vncAuth"])
+	}
+	if status["screenshotBackend"] != "rfb" || status["textBackend"] != "rfb" {
+		t.Fatalf("qemu status backends = %v/%v", status["screenshotBackend"], status["textBackend"])
+	}
+	if status["guestPassword"] != "REDACTED" {
+		t.Fatalf("qemu status guestPassword = %v, want REDACTED", status["guestPassword"])
+	}
+	all := strings.Join(mapValues(files), "\n")
+	for _, forbidden := range []string{"Cove123!", "Bearer abc.def", "/Users/alice"} {
+		if strings.Contains(all, forbidden) {
+			t.Fatalf("bundle was not redacted; found %q in:\n%s", forbidden, all)
+		}
+	}
+	if _, ok := files["vm/windows.qcow2"]; ok {
+		t.Fatalf("bundle included qemu disk")
+	}
+}
+
+func TestCreateSupportBundleIncludesQEMUWindowsScreenshotWhenRequested(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	oldRun := supportRunCommand
+	oldHostRun := hostDoctorRunCommand
+	oldCapture := supportCaptureWindowsQEMUImage
+	t.Cleanup(func() {
+		supportRunCommand = oldRun
+		hostDoctorRunCommand = oldHostRun
+		supportCaptureWindowsQEMUImage = oldCapture
+	})
+	supportRunCommand = func(ctx context.Context, args ...string) supportCommandResult {
+		return supportCommandResult{ExitCode: 0}
+	}
+	hostDoctorRunCommand = func(name string, args ...string) ([]byte, error) {
+		return nil, nil
+	}
+	supportCaptureWindowsQEMUImage = func(string) (image.Image, error) {
+		img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+		img.Set(0, 0, color.RGBA{G: 255, A: 255})
+		return img, nil
+	}
+
+	vmDir := filepath.Join(vmconfig.BaseDir(), "qemu-win")
+	qemuDir := filepath.Join(vmDir, "qemu")
+	if err := os.MkdirAll(qemuDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "windows.qcow2"), []byte("disk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qemuDir, "metadata.json"), []byte(`{"backend":"qemu-hvf"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "bundle.tar.gz")
+	if _, err := createSupportBundle(supportBundleOptions{VM: "qemu-win", Out: out, IncludeScreenshot: true}); err != nil {
+		t.Fatalf("createSupportBundle: %v", err)
+	}
+	files := readSupportBundleFiles(t, out)
+	if _, ok := files["vm/qemu-screenshot.png"]; !ok {
+		t.Fatalf("bundle missing qemu screenshot; files=%v", supportBundleMapKeys(files))
+	}
+	if _, ok := files["vm/qemu-screenshot.txt"]; ok {
+		t.Fatalf("bundle included screenshot opt-in note with screenshot")
+	}
+	if !strings.Contains(files["manifest.json"], `"include_screenshot": true`) {
+		t.Fatalf("manifest missing include_screenshot:\n%s", files["manifest.json"])
+	}
+	if !strings.Contains(files["manifest.json"], `"redacted": false`) {
+		t.Fatalf("manifest did not mark screenshot bundle as not fully redacted:\n%s", files["manifest.json"])
 	}
 }
 

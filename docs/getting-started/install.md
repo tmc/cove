@@ -116,6 +116,8 @@ cove support bundle -vm dev
 The archive is redacted and includes version/signing details, host readiness,
 helper and daemon status, storage census, recent run/recording metadata, and
 optional VM-specific doctor/control diagnostics.
+Screenshots are omitted by default because they cannot be redacted; use
+`-include-screenshot` only when you intend to share the visible VM screen.
 
 ## Update
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -714,16 +713,26 @@ func validateNewVMOptions(opts newVMOptions) error {
 }
 
 func listBuiltinVZScriptNames() ([]string, error) {
-	entries, err := fs.ReadDir(builtinScripts, "vzscripts")
+	files, err := builtinVZScriptFiles()
 	if err != nil {
 		return nil, err
 	}
+	seen := make(map[string]bool)
 	var names []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vzscript") {
+	for _, file := range files {
+		data, err := builtinScripts.ReadFile(file)
+		if err != nil {
 			continue
 		}
-		names = append(names, strings.TrimSuffix(e.Name(), ".vzscript"))
+		name := parseScriptMeta(txtar.Parse(data).Comment).name
+		if name == "" {
+			name = trimVZScriptExt(strings.TrimPrefix(file, "vzscripts/"))
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
 	}
 	sort.Strings(names)
 	return names, nil

@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -45,6 +46,8 @@ func main() {
 	port := flag.Int("port", 0, "vsock port to listen on (overrides mode default)")
 	tcpListen := flag.String("tcp-listen", os.Getenv("VZ_AGENT_TCP_LISTEN"), "TCP address to listen on (windows default :port)")
 	showVersion := flag.Bool("version", false, "print version information")
+	clipboardGet := flag.Bool("clipboard-get", false, "print the user clipboard as UTF-8 text and exit")
+	clipboardSetBase64 := flag.String("clipboard-set-base64", "", "set the user clipboard from base64 UTF-8 text and exit")
 	var relays relaySpecs
 	flag.Var(&relays, "relay", "TCP relay: vsockPort:tcpAddr (e.g. 2222:localhost:22)")
 	var udpRelays relaySpecs
@@ -57,6 +60,27 @@ func main() {
 
 	if *showVersion {
 		fmt.Println(agentVersionInfo())
+		return
+	}
+	if *clipboardGet {
+		text, err := clipboardGetText()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Print(text)
+		return
+	}
+	if *clipboardSetBase64 != "" {
+		data, err := base64.StdEncoding.DecodeString(*clipboardSetBase64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "decode clipboard text: %v\n", err)
+			os.Exit(1)
+		}
+		if err := clipboardSetText(string(data)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		return
 	}
 

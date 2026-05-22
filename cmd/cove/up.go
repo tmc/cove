@@ -293,7 +293,7 @@ Linux username/password defaults are for disposable local VMs. Pass -user and
 -password for reusable images, remote access, or shared runners.
 
 Windows uses the QEMU backend. First install defaults to the windows-install
-vzscript, which drives setup and verifies the Windows vz-agent.
+vzscript, plus windows-clipboard when clipboard sharing is enabled.
 `)
 }
 
@@ -588,7 +588,7 @@ func runWindowsUpPipeline(cfg upConfig) error {
 	recipes := splitRecipes(cfg.vzscripts)
 	if !installed || cfg.force {
 		if len(recipes) == 0 {
-			recipes = []string{"windows-install"}
+			recipes = defaultWindowsQEMUUpRecipes()
 		}
 		fmt.Println("=== Step 1/2: Installing Windows (QEMU/HVF) ===")
 		fmt.Println()
@@ -605,6 +605,14 @@ func runWindowsUpPipeline(cfg upConfig) error {
 	fmt.Println()
 	fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) ===\n", strings.Join(recipes, ", "))
 	return runWindowsQEMUUpWithVZScripts(false, recipes, cfg.noShutdown, cfg.verbose)
+}
+
+func defaultWindowsQEMUUpRecipes() []string {
+	recipes := []string{"windows-install"}
+	if enableClipboard {
+		recipes = append(recipes, "windows-clipboard")
+	}
+	return recipes
 }
 
 func runWindowsQEMUUpWithVZScripts(install bool, recipes []string, noShutdown, verboseMode bool) error {
@@ -626,12 +634,13 @@ func runWindowsQEMUUpWithVZScripts(install bool, recipes []string, noShutdown, v
 		return err
 	}
 	cfg := vzscriptConfig{
-		execTimeout:      30 * time.Minute,
-		verbose:          verboseMode,
-		guestOS:          "windows",
-		qemuMonitorPath:  monitor,
-		qemuAgentAddress: qemuAgentAddressForVMDir(target.Directory),
-		qemuArtifactDir:  filepath.Join(target.Directory, "qemu", "vzscript"),
+		execTimeout:          30 * time.Minute,
+		verbose:              verboseMode,
+		guestOS:              "windows",
+		qemuMonitorPath:      monitor,
+		qemuAgentAddress:     qemuAgentAddressForVMDir(target.Directory),
+		qemuUserAgentAddress: qemuUserAgentAddressForVMDir(target.Directory),
+		qemuArtifactDir:      filepath.Join(target.Directory, "qemu", "vzscript"),
 		env: []string{
 			"USERNAME=" + provisionUser,
 			"PASSWORD=" + provisionPassword,

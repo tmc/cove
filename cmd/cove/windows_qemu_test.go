@@ -52,24 +52,31 @@ func TestWindowsQEMUArgsInstallShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := windowsQEMUConfig{
-		EFICodePath:         filepath.Join(dir, "code.fd"),
-		EFIVarsPath:         filepath.Join(dir, "vars.fd"),
-		DiskPath:            filepath.Join(dir, "windows.qcow2"),
-		DiskFormat:          "qcow2",
-		ISOPath:             iso,
-		CPUCount:            4,
-		MemoryGB:            3,
-		NetworkMode:         "nat",
-		Headless:            true,
-		DisplayDevice:       "ramfb",
-		Nodefaults:          true,
-		SerialOutput:        "none",
-		MonitorSockPath:     filepath.Join(dir, "monitor.sock"),
-		AutounattendISOPath: autounattendISO,
-		VirtioISOPath:       virtioISO,
-		AgentHostAddress:    "127.0.0.1",
-		AgentHostPort:       32102,
-		AgentGuestPort:      1024,
+		EFICodePath:          filepath.Join(dir, "code.fd"),
+		EFIVarsPath:          filepath.Join(dir, "vars.fd"),
+		DiskPath:             filepath.Join(dir, "windows.qcow2"),
+		DiskFormat:           "qcow2",
+		ISOPath:              iso,
+		CPUCount:             4,
+		MemoryGB:             3,
+		NetworkMode:          "nat",
+		Headless:             true,
+		DisplayDevice:        "ramfb",
+		Nodefaults:           true,
+		EnableClipboard:      true,
+		SerialOutput:         "none",
+		MonitorSockPath:      filepath.Join(dir, "monitor.sock"),
+		VNCHost:              "127.0.0.1",
+		VNCPort:              5907,
+		AutounattendISOPath:  autounattendISO,
+		VirtioISOPath:        virtioISO,
+		SpiceGuestToolsPath:  filepath.Join(dir, "spice-guest-tools.exe"),
+		AgentHostAddress:     "127.0.0.1",
+		AgentHostPort:        32102,
+		AgentGuestPort:       1024,
+		UserAgentHostAddress: "127.0.0.1",
+		UserAgentHostPort:    32103,
+		UserAgentGuestPort:   1025,
 	}
 	args, err := windowsQEMUArgs(cfg)
 	if err != nil {
@@ -87,11 +94,17 @@ func TestWindowsQEMUArgsInstallShape(t *testing.T) {
 		"usb-storage,drive=cd0,bootindex=1",
 		"usb-storage,drive=virtio0",
 		"usb-storage,drive=oemdrv0",
+		"usb-tablet,bus=xhci.0",
 		"nvme,drive=hd0,serial=covewindows001,bootindex=2",
+		"virtio-serial-pci,id=virtio-serial0,max_ports=16",
+		"qemu-vdagent,id=vdagent0,name=vdagent,clipboard=on,mouse=off",
+		"virtserialport,bus=virtio-serial0.0,chardev=vdagent0,name=com.redhat.spice.0",
 		"user,id=net0",
 		"hostfwd=tcp:127.0.0.1:32102-:1024",
+		"hostfwd=tcp:127.0.0.1:32103-:1025",
 		"virtio-net-pci,netdev=net0",
 		"unix:" + cfg.MonitorSockPath + ",server=on,wait=off",
+		"127.0.0.1:7",
 		"none",
 	} {
 		if !strings.Contains(joined, want) {
@@ -178,22 +191,32 @@ func TestWriteWindowsQEMUMetadata(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "metadata.json")
 	cfg := windowsQEMUConfig{
-		QEMUPath:            "/bin/echo",
-		EFICodePath:         filepath.Join(dir, "code.fd"),
-		EFIVarsTemplatePath: filepath.Join(dir, "vars-template.fd"),
-		EFIVarsPath:         filepath.Join(dir, "vars.fd"),
-		DiskPath:            filepath.Join(dir, "windows.qcow2"),
-		DiskFormat:          "qcow2",
-		ISOPath:             filepath.Join(dir, "windows.iso"),
-		DisplayDevice:       "ramfb",
-		SerialOutput:        filepath.Join(dir, "serial.log"),
-		MonitorSockPath:     filepath.Join(dir, "monitor.sock"),
-		AutounattendISOPath: filepath.Join(dir, "autounattend.iso"),
-		VirtioISOPath:       filepath.Join(dir, "virtio.iso"),
-		AgentExecutablePath: filepath.Join(dir, "vz-agent.exe"),
-		AgentHostAddress:    "127.0.0.1",
-		AgentHostPort:       32102,
-		AgentGuestPort:      1024,
+		QEMUPath:             "/bin/echo",
+		EFICodePath:          filepath.Join(dir, "code.fd"),
+		EFIVarsTemplatePath:  filepath.Join(dir, "vars-template.fd"),
+		EFIVarsPath:          filepath.Join(dir, "vars.fd"),
+		DiskPath:             filepath.Join(dir, "windows.qcow2"),
+		DiskFormat:           "qcow2",
+		ISOPath:              filepath.Join(dir, "windows.iso"),
+		DisplayDevice:        "ramfb",
+		InputDevice:          "usb-mouse",
+		EnableClipboard:      true,
+		SerialOutput:         filepath.Join(dir, "serial.log"),
+		MonitorSockPath:      filepath.Join(dir, "monitor.sock"),
+		VNCHost:              "127.0.0.1",
+		VNCPort:              5907,
+		GuestUsername:        "cove",
+		GuestPassword:        "Cove123!",
+		AutounattendISOPath:  filepath.Join(dir, "autounattend.iso"),
+		VirtioISOPath:        filepath.Join(dir, "virtio.iso"),
+		SpiceGuestToolsPath:  filepath.Join(dir, "spice-guest-tools.exe"),
+		AgentExecutablePath:  filepath.Join(dir, "vz-agent.exe"),
+		AgentHostAddress:     "127.0.0.1",
+		AgentHostPort:        32102,
+		AgentGuestPort:       1024,
+		UserAgentHostAddress: "127.0.0.1",
+		UserAgentHostPort:    32103,
+		UserAgentGuestPort:   1025,
 	}
 	args := []string{"-machine", "virt,accel=hvf"}
 	if err := writeWindowsQEMUMetadata(path, cfg, args); err != nil {
@@ -207,14 +230,29 @@ func TestWriteWindowsQEMUMetadata(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Backend != "qemu-hvf" || got.DiskFormat != "qcow2" || got.Display != "ramfb" {
+	if got.Backend != "qemu-hvf" || got.DiskFormat != "qcow2" || got.Display != "ramfb" || !got.Clipboard {
 		t.Fatalf("metadata = %#v", got)
+	}
+	if got.InputDevice != "usb-mouse" {
+		t.Fatalf("metadata input device = %q, want usb-mouse", got.InputDevice)
+	}
+	if got.VNCEndpoint != "127.0.0.1:5907" || got.VNCURL != "vnc://127.0.0.1:5907" {
+		t.Fatalf("metadata vnc = %q/%q", got.VNCEndpoint, got.VNCURL)
+	}
+	if got.GuestUsername != "cove" || got.GuestPassword != "Cove123!" {
+		t.Fatalf("metadata guest credentials = %q/%q", got.GuestUsername, got.GuestPassword)
 	}
 	if got.AutounattendISOPath != cfg.AutounattendISOPath || got.VirtioISOPath != cfg.VirtioISOPath {
 		t.Fatalf("metadata ISO paths = %q, %q", got.AutounattendISOPath, got.VirtioISOPath)
 	}
+	if got.SpiceGuestToolsPath != cfg.SpiceGuestToolsPath {
+		t.Fatalf("metadata SPICE guest tools path = %q, want %q", got.SpiceGuestToolsPath, cfg.SpiceGuestToolsPath)
+	}
 	if got.AgentExecutablePath != cfg.AgentExecutablePath || got.AgentHostAddress != "127.0.0.1" || got.AgentHostPort != 32102 || got.AgentGuestPort != 1024 {
 		t.Fatalf("metadata agent endpoint = %#v", got)
+	}
+	if got.UserAgentHostAddress != "127.0.0.1" || got.UserAgentHostPort != 32103 || got.UserAgentGuestPort != 1025 {
+		t.Fatalf("metadata user agent endpoint = %#v", got)
 	}
 	if strings.Join(got.Args, " ") != strings.Join(args, " ") {
 		t.Fatalf("args = %v, want %v", got.Args, args)
@@ -280,6 +318,69 @@ func TestWindowsQEMUProcessPath(t *testing.T) {
 	}
 }
 
+func TestOpenWindowsQEMUVNCIfNeeded(t *testing.T) {
+	oldOpen := windowsQEMUOpenURL
+	t.Cleanup(func() { windowsQEMUOpenURL = oldOpen })
+	var opened []string
+	windowsQEMUOpenURL = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+
+	if err := openWindowsQEMUVNCIfNeeded(windowsQEMUConfig{VNCHost: "127.0.0.1", VNCPort: 5907}); err != nil {
+		t.Fatalf("openWindowsQEMUVNCIfNeeded: %v", err)
+	}
+	if got, want := strings.Join(opened, ","), "vnc://127.0.0.1:5907"; got != want {
+		t.Fatalf("opened = %q, want %q", got, want)
+	}
+
+	opened = nil
+	if err := openWindowsQEMUVNCIfNeeded(windowsQEMUConfig{Headless: true, VNCHost: "127.0.0.1", VNCPort: 5907}); err != nil {
+		t.Fatalf("openWindowsQEMUVNCIfNeeded headless: %v", err)
+	}
+	if len(opened) != 0 {
+		t.Fatalf("headless opened %#v, want none", opened)
+	}
+
+	if err := openWindowsQEMUVNCIfNeeded(windowsQEMUConfig{}); err != nil {
+		t.Fatalf("openWindowsQEMUVNCIfNeeded no vnc: %v", err)
+	}
+	if len(opened) != 0 {
+		t.Fatalf("no-vnc opened %#v, want none", opened)
+	}
+}
+
+func TestWindowsQEMUVNCHelp(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  windowsQEMUConfig
+		want string
+	}{
+		{
+			name: "no vnc",
+			cfg:  windowsQEMUConfig{},
+			want: "pass -vnc :5901",
+		},
+		{
+			name: "headed vnc",
+			cfg:  windowsQEMUConfig{VNCHost: "127.0.0.1", VNCPort: 5907},
+			want: "opens automatically for headed runs",
+		},
+		{
+			name: "headless vnc",
+			cfg:  windowsQEMUConfig{Headless: true, VNCHost: "127.0.0.1", VNCPort: 5907},
+			want: "open vnc://127.0.0.1:5907",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := windowsQEMUVNCHelp(tt.cfg); !strings.Contains(got, tt.want) {
+				t.Fatalf("windowsQEMUVNCHelp = %q, want substring %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEnsureWindowsQEMUEFIVars(t *testing.T) {
 	dir := t.TempDir()
 	template := filepath.Join(dir, "template.fd")
@@ -317,6 +418,16 @@ func TestWindowsQEMUNetworkArgs(t *testing.T) {
 	if _, err := windowsQEMUNetworkArgs(windowsQEMUConfig{NetworkMode: "nat"}); err != nil {
 		t.Fatalf("nat network: %v", err)
 	}
+	withSMB, err := windowsQEMUNetworkArgs(windowsQEMUConfig{
+		NetworkMode:        "nat",
+		SMBSharedDirectory: "/Users/tmc/ml-explore",
+	})
+	if err != nil {
+		t.Fatalf("smb network: %v", err)
+	}
+	if got, want := strings.Join(withSMB, " "), "smb=/Users/tmc/ml-explore"; !strings.Contains(got, want) {
+		t.Fatalf("smb network args = %v, want %q", withSMB, want)
+	}
 	args, err := windowsQEMUNetworkArgs(windowsQEMUConfig{NetworkMode: "none"})
 	if err != nil {
 		t.Fatalf("none network: %v", err)
@@ -349,6 +460,26 @@ func TestWindowsQEMUAgentForwardConfig(t *testing.T) {
 	}
 }
 
+func TestWindowsQEMUUserAgentForwardConfig(t *testing.T) {
+	t.Setenv("COVE_QEMU_USER_AGENT_HOST_PORT", "32103")
+	got, err := windowsQEMUUserAgentForwardConfig("nat")
+	if err != nil {
+		t.Fatalf("windowsQEMUUserAgentForwardConfig: %v", err)
+	}
+	if got.hostAddress != "127.0.0.1" || got.hostPort != 32103 || got.guestPort != 1025 {
+		t.Fatalf("user agent forward = %#v", got)
+	}
+
+	t.Setenv("COVE_QEMU_USER_AGENT_FORWARD", "off")
+	disabled, err := windowsQEMUUserAgentForwardConfig("nat")
+	if err != nil {
+		t.Fatalf("disabled user agent forward: %v", err)
+	}
+	if disabled.hostPort != 0 {
+		t.Fatalf("disabled user agent forward = %#v, want zero", disabled)
+	}
+}
+
 func TestWindowsQEMUDisplayDeviceArgs(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -373,6 +504,39 @@ func TestWindowsQEMUDisplayDeviceArgs(t *testing.T) {
 	}
 	if _, err := windowsQEMUDisplayDeviceArgs("virtio-ramfb"); err == nil {
 		t.Fatalf("virtio-ramfb succeeded")
+	}
+}
+
+func TestWindowsQEMUInputDeviceArgs(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{"", "usb-tablet,bus=xhci.0"},
+		{"usb-mouse", "usb-mouse,bus=xhci.0"},
+		{"usb-tablet", "usb-tablet,bus=xhci.0"},
+	} {
+		args, err := windowsQEMUInputDeviceArgs(tt.name)
+		if err != nil {
+			t.Fatalf("windowsQEMUInputDeviceArgs(%q): %v", tt.name, err)
+		}
+		if got := strings.Join(args, " "); !strings.Contains(got, tt.want) {
+			t.Fatalf("windowsQEMUInputDeviceArgs(%q) = %v, want %q", tt.name, args, tt.want)
+		}
+	}
+	if _, err := windowsQEMUInputDeviceArgs("trackpad"); err == nil {
+		t.Fatal("windowsQEMUInputDeviceArgs(trackpad) returned nil error")
+	}
+}
+
+func TestWindowsQEMUInputDeviceFromEnv(t *testing.T) {
+	t.Setenv("COVE_QEMU_INPUT_DEVICE", "")
+	if got := windowsQEMUInputDeviceFromEnv(); got != "usb-tablet" {
+		t.Fatalf("default input device = %q, want usb-tablet", got)
+	}
+	t.Setenv("COVE_QEMU_INPUT_DEVICE", "usb-mouse")
+	if got := windowsQEMUInputDeviceFromEnv(); got != "usb-mouse" {
+		t.Fatalf("input device from env = %q, want usb-mouse", got)
 	}
 }
 

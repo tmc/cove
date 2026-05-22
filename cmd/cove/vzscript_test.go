@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,28 +179,25 @@ echo done
 }
 
 func TestVZScriptEmbeddedScripts(t *testing.T) {
-	entries, err := fs.ReadDir(builtinScripts, "vzscripts")
+	entries, err := builtinVZScriptFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(entries) == 0 {
 		t.Fatal("no embedded vzscripts found")
 	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vzscript") {
-			continue
-		}
-		data, err := builtinScripts.ReadFile("vzscripts/" + e.Name())
+	for _, entry := range entries {
+		data, err := builtinScripts.ReadFile(entry)
 		if err != nil {
-			t.Errorf("read %s: %v", e.Name(), err)
+			t.Errorf("read %s: %v", entry, err)
 			continue
 		}
 		if len(data) == 0 {
-			t.Errorf("%s is empty", e.Name())
+			t.Errorf("%s is empty", entry)
 			continue
 		}
-		if err := executeVZScriptSyntaxOnly(t, e.Name(), data); err != nil {
-			t.Errorf("%s: %v", e.Name(), err)
+		if err := executeVZScriptSyntaxOnly(t, entry, data); err != nil {
+			t.Errorf("%s: %v", entry, err)
 		}
 	}
 }
@@ -289,6 +285,8 @@ func TestLoadVZScriptData(t *testing.T) {
 		{"builtin homebrew", "homebrew", false},
 		{"builtin sip enable", "sip-enable", false},
 		{"builtin sip disable", "sip-disable.vzscript", false},
+		{"builtin nested by public name", "windows-clipboard", false},
+		{"builtin nested by path", "windows/clipboard", false},
 		{"nonexistent", "does-not-exist", true},
 	}
 	for _, tt := range tests {
@@ -552,7 +550,13 @@ func TestVZScriptListFilterMatrix(t *testing.T) {
 		{
 			name:     "no filter includes both platforms",
 			filter:   "",
-			mustHave: []string{"homebrew", "agentkit-linux-base"},
+			mustHave: []string{"homebrew", "agentkit-linux-base", "windows-wsl"},
+		},
+		{
+			name:     "windows filter includes windows recipes",
+			filter:   "windows",
+			mustHave: []string{"windows-install", "windows-clipboard", "windows-golang", "windows-wsl", "windows-wsl1", "windows-webdav-client", "windows-mlx-go-mnist"},
+			mustOmit: []string{"homebrew", "agentkit-linux-base"},
 		},
 	}
 	for _, tt := range tests {

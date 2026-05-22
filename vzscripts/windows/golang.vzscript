@@ -1,0 +1,54 @@
+# windows-golang - Install and verify Go on Windows
+# guest-os: windows
+# runs-on: daemon
+
+guest-wait 10m
+guest-write C:/ProgramData/cove/install-golang.ps1 install-golang.ps1
+guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/cove/install-golang.ps1
+
+-- install-golang.ps1 --
+$ErrorActionPreference = 'Stop'
+$Root = 'C:\ProgramData\cove'
+New-Item -ItemType Directory -Force $Root | Out-Null
+try { Start-Transcript -Path (Join-Path $Root 'install-golang.log') -Force | Out-Null } catch {}
+
+$GoBin = 'C:\Program Files\Go\bin'
+$env:Path = "$GoBin;$env:Path"
+if (Get-Command go.exe -ErrorAction SilentlyContinue) {
+  & go.exe version
+  exit 0
+}
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+  'ARM64' { 'arm64' }
+  'AMD64' { 'amd64' }
+  default { throw "unsupported Windows architecture: $env:PROCESSOR_ARCHITECTURE" }
+}
+$release = Invoke-RestMethod -Uri 'https://go.dev/dl/?mode=json' | Where-Object { $_.stable } | Select-Object -First 1
+if (-not $release) { throw 'no stable Go release found at go.dev/dl' }
+$file = $release.files | Where-Object {
+  $_.os -eq 'windows' -and $_.arch -eq $arch -and $_.kind -eq 'installer'
+} | Select-Object -First 1
+if (-not $file) { throw "no Windows $arch Go installer found for $($release.version)" }
+
+$msi = Join-Path $Root $file.filename
+if (-not (Test-Path $msi)) {
+  Write-Output "Downloading $($file.filename)"
+  Invoke-WebRequest -Uri "https://go.dev/dl/$($file.filename)" -OutFile $msi
+}
+if ((Get-FileHash -Algorithm SHA256 $msi).Hash.ToLowerInvariant() -ne $file.sha256.ToLowerInvariant()) {
+  throw "sha256 mismatch for $msi"
+}
+
+$p = Start-Process msiexec.exe -ArgumentList @('/i', $msi, '/qn', '/norestart') -Wait -PassThru
+if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+  throw "go installer exited with code $($p.ExitCode)"
+}
+
+$machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+if ($machinePath -notlike "*$GoBin*") {
+  [Environment]::SetEnvironmentVariable('Path', "$machinePath;$GoBin", 'Machine')
+}
+$env:Path = "$GoBin;$env:Path"
+& go.exe version

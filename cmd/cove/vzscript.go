@@ -115,26 +115,27 @@ func (f *envFlag) Set(s string) error {
 
 // vzscriptConfig holds configuration for the vzscript engine.
 type vzscriptConfig struct {
-	socketPath       string
-	guestOS          string
-	execTimeout      time.Duration
-	verbose          bool
-	terminal         bool // stream guest-shell output to the host terminal
-	terminalGUI      bool // force guest-shell to run in the guest terminal app
-	autoApprove      bool // auto-click "Allow"/"OK" on system dialogs via OCR
-	daemon           bool // use daemon agent (root) instead of user agent
-	logWriter        io.Writer
-	streamOut        io.Writer
-	streamErr        io.Writer
-	env              []string // extra environment variables (KEY=VALUE)
-	hostLogFile      *os.File // persistent log file in VM directory
-	controlSrv       *ControlServer
-	qemuMonitorPath  string
-	qemuArtifactDir  string
-	qemuAgentAddress string
-	labels           *vzscriptLabelStack
-	template         bool
-	templateVars     map[string]any
+	socketPath           string
+	guestOS              string
+	execTimeout          time.Duration
+	verbose              bool
+	terminal             bool // stream guest-shell output to the host terminal
+	terminalGUI          bool // force guest-shell to run in the guest terminal app
+	autoApprove          bool // auto-click "Allow"/"OK" on system dialogs via OCR
+	daemon               bool // use daemon agent (root) instead of user agent
+	logWriter            io.Writer
+	streamOut            io.Writer
+	streamErr            io.Writer
+	env                  []string // extra environment variables (KEY=VALUE)
+	hostLogFile          *os.File // persistent log file in VM directory
+	controlSrv           *ControlServer
+	qemuMonitorPath      string
+	qemuArtifactDir      string
+	qemuAgentAddress     string
+	qemuUserAgentAddress string
+	labels               *vzscriptLabelStack
+	template             bool
+	templateVars         map[string]any
 }
 
 // execStreamType returns the control request type for streaming exec commands.
@@ -392,6 +393,39 @@ func qemuAgentClient(address string) (*agentstate.AgentClient, error) {
 	return client, nil
 }
 
+func qemuUserAgentClient(address string) (*agentstate.UserAgentClient, error) {
+	if strings.TrimSpace(address) == "" {
+		return nil, fmt.Errorf("qemu user agent endpoint is empty")
+	}
+	client, err := agentstate.NewUserAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
+		var d net.Dialer
+		conn, err := d.DialContext(ctx, "tcp", address)
+		if err != nil {
+			return nil, fmt.Errorf("connect qemu windows user agent %s: %w", address, err)
+		}
+		return conn, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func qemuUserAgentExec(address string, args []string, env []string, timeout time.Duration) (string, string, int32, error) {
+	client, err := qemuUserAgentClient(address)
+	if err != nil {
+		return "", "", 0, err
+	}
+	defer client.Close()
+	ctx, done := context.WithTimeout(context.Background(), timeout)
+	defer done()
+	resp, err := client.UserExec(ctx, args, envListToMap(env), "")
+	if err != nil {
+		return "", "", 0, err
+	}
+	return string(resp.GetStdout()), string(resp.GetStderr()), resp.GetExitCode(), nil
+}
+
 func qemuAgentPing(address string, timeout time.Duration) (string, error) {
 	client, err := qemuAgentClient(address)
 	if err != nil {
@@ -424,6 +458,21 @@ func qemuAgentExecStream(cfg vzscriptConfig, args []string, timeout time.Duratio
 		onStderr(resp.GetStderr())
 	}
 	return stdout, stderr, resp.GetExitCode(), nil
+}
+
+func (c vzscriptConfig) qemuExecUsesUserAgent() bool {
+	return c.qemuAgentAddress != "" && c.qemuUserAgentAddress != "" && !c.daemon
+}
+
+func (c vzscriptConfig) qemuUserAgentRequiredButMissing() bool {
+	return c.qemuAgentAddress != "" && c.qemuUserAgentAddress == "" && !c.daemon
+}
+
+func qemuUserAgentExecWait(timeout time.Duration) time.Duration {
+	if timeout <= 0 || timeout > 2*time.Minute {
+		return 2 * time.Minute
+	}
+	return timeout
 }
 
 func qemuAgentWriteFile(address, path string, data []byte, mode uint32) error {
@@ -681,6 +730,22 @@ func guestExec(cfg vzscriptConfig, args []string) (script.WaitFunc, error) {
 // plus final exit code. Optional callbacks receive live chunk data.
 func guestExecStream(cfg vzscriptConfig, args []string, timeout time.Duration, onStdout, onStderr func([]byte)) (string, string, int32, error) {
 	if cfg.qemuAgentAddress != "" {
+		if cfg.qemuExecUsesUserAgent() {
+			if err := waitWindowsQEMUUserAgentReady(cfg.qemuUserAgentAddress, qemuUserAgentExecWait(timeout), 10*time.Second); err != nil {
+				return "", "", 0, err
+			}
+			stdout, stderr, exitCode, err := qemuUserAgentExec(cfg.qemuUserAgentAddress, args, cfg.env, timeout)
+			if onStdout != nil && stdout != "" {
+				onStdout([]byte(stdout))
+			}
+			if onStderr != nil && stderr != "" {
+				onStderr([]byte(stderr))
+			}
+			return stdout, stderr, exitCode, err
+		}
+		if cfg.qemuUserAgentRequiredButMissing() {
+			return "", "", 0, fmt.Errorf("qemu windows user agent endpoint unavailable for user-context guest-exec; add # runs-on: daemon or provision/start the user agent")
+		}
 		return qemuAgentExecStream(cfg, args, timeout, onStdout, onStderr)
 	}
 	req := &controlpb.ControlRequest{

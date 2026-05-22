@@ -1,17 +1,21 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/rfb"
 	winsetup "github.com/tmc/cove/internal/windows"
 )
 
@@ -21,6 +25,83 @@ type qemuDoctorCheck struct {
 	Name    string `json:"name"`
 	Status  string `json:"status"`
 	Message string `json:"message"`
+}
+
+func verifyWindowsQEMUVM(target vmSelection) error {
+	status := readWindowsQEMUCTLStatus(target.Directory)
+	fmt.Println("=== Verifying Windows QEMU VM ===")
+	fmt.Printf("VM: %s\n", target.Directory)
+	fmt.Printf("State: %s\n", status.State)
+	fmt.Printf("Backend: %s\n\n", status.Backend)
+
+	allOK := true
+	check := func(ok bool, name, message string) {
+		state := "OK"
+		if !ok {
+			state = "FAIL"
+			allOK = false
+		}
+		fmt.Printf("  %s: %s (%s)\n", name, state, message)
+	}
+	warn := func(name, message string) {
+		fmt.Printf("  %s: WARN (%s)\n", name, message)
+	}
+
+	check(status.State == "running", "QEMU process", status.State)
+	check(windowsQEMUMonitorReachable(status.MonitorSockPath), "QEMU monitor", status.MonitorSockPath)
+	if status.VNCURL == "" {
+		warn("QEMU console", "VNC is not configured; restart with -vnc :5901 for gui open")
+	} else {
+		check(true, "QEMU console", status.VNCURL)
+		check(windowsQEMURFBReachable(status.VNCEndpoint), "QEMU RFB", status.VNCEndpoint)
+	}
+	if status.GuestUsername == "" || status.GuestPassword == "" {
+		warn("Windows credentials", "guest username/password not recorded in qemu metadata")
+	} else {
+		check(true, "Windows credentials", status.GuestUsername)
+	}
+	check(strings.HasPrefix(status.AgentHealth, "connected"), "daemon agent", status.AgentHealth)
+	if status.UserAgentEndpoint == "" {
+		warn("user agent", "no user-agent endpoint recorded")
+	} else {
+		check(strings.HasPrefix(status.UserAgentHealth, "connected"), "user agent", status.UserAgentHealth)
+	}
+	if strings.HasPrefix(status.AgentHealth, "connected") {
+		ok, msg := windowsQEMUFirewallProfilesDisabled(status.AgentEndpoint)
+		if ok {
+			check(true, "Windows firewall", msg)
+		} else {
+			warn("Windows firewall", msg)
+		}
+	}
+	if !allOK {
+		return errDoctorQEMUFailed
+	}
+	return nil
+}
+
+func windowsQEMUFirewallProfilesDisabled(address string) (bool, string) {
+	stdout, stderr, exitCode, err := qemuAgentExecStream(
+		vzscriptConfig{qemuAgentAddress: address},
+		[]string{"powershell.exe", "-NoProfile", "-Command", `Get-NetFirewallProfile | Select-Object Name,Enabled | ConvertTo-Json -Compress`},
+		10*time.Second,
+		nil,
+		nil,
+	)
+	if err != nil {
+		return false, err.Error()
+	}
+	if exitCode != 0 {
+		return false, strings.TrimSpace(stderr)
+	}
+	text := strings.TrimSpace(stdout)
+	if text == "" {
+		return false, "firewall profile query returned no output"
+	}
+	if strings.Contains(text, `"Enabled":true`) || strings.Contains(text, `"Enabled":1`) {
+		return false, text
+	}
+	return true, text
 }
 
 type qemuDoctorReport struct {
@@ -71,6 +152,9 @@ Checks:
   efi-code         AArch64 EFI pflash code image
   efi-vars         writable pflash vars template
   display          COVE_QEMU_DISPLAY_DEVICE value
+  screenshot-backend COVE_QEMU_SCREENSHOT_BACKEND value
+  text-backend    COVE_QEMU_TEXT_BACKEND value
+  qemu-vdagent     QEMU SPICE vdagent chardev for clipboard transport
   virtio-drivers   cached ARM64 VirtIO driver ISO, if present
 
 Flags:
@@ -91,6 +175,9 @@ func collectQEMUDoctorReport() qemuDoctorReport {
 			"QEMU_VARS.fd",
 		}),
 		qemuDoctorDisplayCheck(),
+		qemuDoctorBackendEnvCheck("screenshot-backend", "COVE_QEMU_SCREENSHOT_BACKEND", []string{"auto", "rfb", "vnc", "monitor", "screendump"}),
+		qemuDoctorBackendEnvCheck("text-backend", "COVE_QEMU_TEXT_BACKEND", []string{"auto", "rfb", "vnc", "monitor", "sendkey"}),
+		qemuDoctorVDAgentCheck(),
 		qemuDoctorVirtIODriversCheck(),
 	}
 
@@ -108,6 +195,20 @@ func collectQEMUDoctorReport() qemuDoctorReport {
 		}
 	}
 	return qemuDoctorReport{OK: ok, Status: status, Checks: checks}
+}
+
+func windowsQEMURFBReachable(endpoint string) bool {
+	if endpoint == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	c, err := rfb.Dial(ctx, endpoint)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
 }
 
 func writeQEMUDoctorReport(w io.Writer, report qemuDoctorReport) error {
@@ -171,6 +272,47 @@ func qemuDoctorDisplayCheck() qemuDoctorCheck {
 		return qemuDoctorCheck{"display", "warn", "display disabled with COVE_QEMU_DISPLAY_DEVICE=none"}
 	}
 	return qemuDoctorCheck{"display", "pass", device}
+}
+
+func qemuDoctorBackendEnvCheck(name, envName string, allowed []string) qemuDoctorCheck {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(envName)))
+	if value == "" {
+		return qemuDoctorCheck{name, "pass", envName + "=auto"}
+	}
+	for _, ok := range allowed {
+		if value == ok {
+			return qemuDoctorCheck{name, "pass", envName + "=" + value}
+		}
+	}
+	return qemuDoctorCheck{name, "fail", fmt.Sprintf("invalid %s=%q", envName, os.Getenv(envName))}
+}
+
+func qemuDoctorVDAgentCheck() qemuDoctorCheck {
+	qemuPath, err := findQEMUTool("COVE_QEMU_SYSTEM_AARCH64", "qemu-system-aarch64")
+	if err != nil {
+		return qemuDoctorCheck{"qemu-vdagent", "fail", err.Error()}
+	}
+	if err := windowsQEMUVDAgentSupported(qemuPath); err != nil {
+		return qemuDoctorCheck{"qemu-vdagent", "fail", err.Error()}
+	}
+	return qemuDoctorCheck{"qemu-vdagent", "pass", "qemu-vdagent chardev is available"}
+}
+
+func windowsQEMUVDAgentSupported(qemuPath string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, qemuPath, "-machine", "none", "-chardev", "help")
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("check qemu-vdagent chardev: timed out")
+	}
+	if err != nil {
+		return fmt.Errorf("check qemu-vdagent chardev: %w", err)
+	}
+	if !strings.Contains(string(output), "qemu-vdagent") {
+		return fmt.Errorf("qemu-vdagent chardev not available; install QEMU with CONFIG_SPICE_PROTOCOL")
+	}
+	return nil
 }
 
 func qemuDoctorVirtIODriversCheck() qemuDoctorCheck {

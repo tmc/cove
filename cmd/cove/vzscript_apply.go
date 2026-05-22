@@ -179,15 +179,12 @@ func vzscriptListWithGuestOS(filterOS string) error {
 	}
 	var entries []entry
 
-	files, err := fs.ReadDir(builtinScripts, "vzscripts")
+	files, err := builtinVZScriptFiles()
 	if err != nil {
 		return err
 	}
-	for _, f := range files {
-		if f.IsDir() || (!strings.HasSuffix(f.Name(), ".vzscript") && !strings.HasSuffix(f.Name(), ".vzscript.tmpl")) {
-			continue
-		}
-		data, err := builtinScripts.ReadFile("vzscripts/" + f.Name())
+	for _, file := range files {
+		data, err := builtinScripts.ReadFile(file)
 		if err != nil {
 			continue
 		}
@@ -195,13 +192,12 @@ func vzscriptListWithGuestOS(filterOS string) error {
 		meta := parseScriptMeta(ar.Comment)
 		name := meta.name
 		if name == "" {
-			name = strings.TrimSuffix(f.Name(), ".vzscript.tmpl")
-			name = strings.TrimSuffix(name, ".vzscript")
+			name = trimVZScriptExt(strings.TrimPrefix(file, "vzscripts/"))
 		}
 		if filterOS != "" && !vzscriptGuestOSMatches(meta.guestOS, filterOS) {
 			continue
 		}
-		entries = append(entries, entry{name, meta.desc, meta.guestOS, meta.requires, len(meta.mounts), strings.HasSuffix(f.Name(), ".tmpl")})
+		entries = append(entries, entry{name, meta.desc, meta.guestOS, meta.requires, len(meta.mounts), strings.HasSuffix(file, ".tmpl")})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 
@@ -307,26 +303,28 @@ func vzscriptRun(args []string) error {
 	if qemuAgentAddress == "" {
 		qemuAgentAddress = qemuAgentAddressForVMDir(targetVMDir)
 	}
+	qemuUserAgentAddress := qemuUserAgentAddressForVMDir(targetVMDir)
 	guestOS := vzscriptGuestOSForSocket(sock)
 	if qemuMonitorPath != "" || qemuAgentAddress != "" {
 		guestOS = "windows"
 	}
 
 	cfg := vzscriptConfig{
-		socketPath:       sock,
-		execTimeout:      *timeout,
-		verbose:          *verbose,
-		terminal:         *terminal,
-		terminalGUI:      *terminalGUI,
-		autoApprove:      *autoApprove,
-		daemon:           *daemon,
-		template:         *renderTemplate,
-		templateVars:     templateVars,
-		env:              envVars,
-		guestOS:          guestOS,
-		qemuMonitorPath:  qemuMonitorPath,
-		qemuAgentAddress: qemuAgentAddress,
-		qemuArtifactDir:  filepath.Join(targetVMDir, "qemu", "vzscript"),
+		socketPath:           sock,
+		execTimeout:          *timeout,
+		verbose:              *verbose,
+		terminal:             *terminal,
+		terminalGUI:          *terminalGUI,
+		autoApprove:          *autoApprove,
+		daemon:               *daemon,
+		template:             *renderTemplate,
+		templateVars:         templateVars,
+		env:                  envVars,
+		guestOS:              guestOS,
+		qemuMonitorPath:      qemuMonitorPath,
+		qemuAgentAddress:     qemuAgentAddress,
+		qemuUserAgentAddress: qemuUserAgentAddress,
+		qemuArtifactDir:      filepath.Join(targetVMDir, "qemu", "vzscript"),
 	}
 
 	// Open a persistent log file in the VM directory.
@@ -905,7 +903,59 @@ func loadVZScriptData(nameOrPath string) ([]byte, error) {
 			return data, nil
 		}
 	}
+	files, err := builtinVZScriptFiles()
+	if err == nil {
+		for _, file := range files {
+			rel := strings.TrimPrefix(file, "vzscripts/")
+			base := filepath.Base(rel)
+			if builtinVZScriptNameMatches(nameOrPath, rel) || builtinVZScriptNameMatches(nameOrPath, base) {
+				return builtinScripts.ReadFile(file)
+			}
+			data, err := builtinScripts.ReadFile(file)
+			if err != nil {
+				continue
+			}
+			if meta := parseScriptMeta(txtar.Parse(data).Comment); meta.name == strings.TrimSpace(nameOrPath) {
+				return data, nil
+			}
+		}
+	}
 	return nil, fmt.Errorf("recipe not found: %s (not a file and not a built-in)", nameOrPath)
+}
+
+func builtinVZScriptFiles() ([]string, error) {
+	var files []string
+	err := fs.WalkDir(builtinScripts, "vzscripts", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(path, ".vzscript") || strings.HasSuffix(path, ".vzscript.tmpl") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func builtinVZScriptNameMatches(want, got string) bool {
+	want = strings.TrimSpace(want)
+	if want == got {
+		return true
+	}
+	return want == trimVZScriptExt(got)
+}
+
+func trimVZScriptExt(name string) string {
+	name = strings.TrimSuffix(name, ".vzscript.tmpl")
+	name = strings.TrimSuffix(name, ".vzscript")
+	return name
 }
 
 func vzscriptBuiltinNames(name string) []string {

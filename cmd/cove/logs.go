@@ -5,8 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tmc/cove/internal/vmconfig"
 )
@@ -18,6 +23,8 @@ type logsOptions struct {
 }
 
 const defaultLogLines = 200
+
+var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;=?]*[A-Za-z]`)
 
 func parseLogsArgs(env commandEnv, args []string) (logsOptions, error) {
 	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
@@ -99,12 +106,84 @@ func logsCommand(env commandEnv, args []string) error {
 	if err != nil {
 		return err
 	}
+	if dir, err := requireExistingVMForControl(opts.VM); err == nil && windowsQEMUCTLVM(dir) {
+		return logsWindowsQEMU(opts, dir, env.Stdout)
+	}
 	argv, err := logsGuestCommand(opts)
 	if err != nil {
 		return err
 	}
 	shellArgs := append([]string{opts.VM, "--"}, argv...)
 	return shellCommand(shellArgs)
+}
+
+func logsWindowsQEMU(opts logsOptions, dir string, w io.Writer) error {
+	path := windowsQEMULogPath(dir)
+	if path == "" {
+		return fmt.Errorf("qemu windows serial log is not configured for %q", opts.VM)
+	}
+	if opts.Follow {
+		cmd := exec.Command("tail", "-f", path)
+		cmd.Stdout = w
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	return writeLastLogLines(w, path, opts.Lines)
+}
+
+func windowsQEMULogPath(dir string) string {
+	metadata := qemuMetadataForVMDir(dir)
+	var candidates []string
+	switch strings.TrimSpace(metadata.SerialOutput) {
+	case "", "stdout", "none":
+		if strings.TrimSpace(metadata.SerialOutput) == "none" {
+			return ""
+		}
+		candidates = append(candidates, filepath.Join(dir, "qemu", "serial.log"))
+	default:
+		candidates = append(candidates, metadata.SerialOutput)
+	}
+	if matches, err := filepath.Glob(filepath.Join(dir, "qemu", "serial*.log")); err == nil {
+		candidates = append(candidates, matches...)
+	}
+	return newestExistingFile(candidates)
+}
+
+func newestExistingFile(paths []string) string {
+	var newest string
+	var newestTime time.Time
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if newest == "" || info.ModTime().After(newestTime) {
+			newest = path
+			newestTime = info.ModTime()
+		}
+	}
+	return newest
+}
+
+func writeLastLogLines(w io.Writer, path string, lines int) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read log %s: %w", path, err)
+	}
+	if lines <= 0 {
+		lines = defaultLogLines
+	}
+	parts := strings.SplitAfter(string(data), "\n")
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) > lines {
+		parts = parts[len(parts)-lines:]
+	}
+	text := strings.Join(parts, "")
+	text = ansiEscapeRE.ReplaceAllString(text, "")
+	_, err = io.WriteString(w, text)
+	return err
 }
 
 func logsGuestCommand(opts logsOptions) ([]string, error) {

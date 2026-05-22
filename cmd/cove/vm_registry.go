@@ -69,6 +69,9 @@ func detectVMState(vmPath string) string {
 	if isVMRunningAt(vmPath) {
 		return "running"
 	}
+	if windowsQEMUCTLVM(vmPath) && windowsQEMUMonitorReachable(qemuMonitorPathForVMDir(vmPath)) {
+		return "running"
+	}
 	if state := detectRuntimeState(vmPath); state != "" {
 		return state
 	}

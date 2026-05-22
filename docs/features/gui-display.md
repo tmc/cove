@@ -51,6 +51,32 @@ cove ctl gui open                      # show window for headless VM
 cove ctl gui close                     # return to headless mode
 ```
 
+For Windows QEMU VMs, Cove either uses QEMU's Cocoa window or, when launched
+with `-vnc`, opens the local VNC console for headed runs. Use
+`cove gui -vm <name>` to reopen a QEMU VNC console. Use
+`cove gui -vm <name> diagnose` when the viewer appears stale or the login state
+is unclear; it writes a current screenshot under the VM's `qemu/screenshots`
+directory and reports whether Windows is already logged in. `gui close` cannot
+close an external VNC viewer window; close that viewer directly. The QEMU
+Windows VNC console is a localhost viewer endpoint. Windows credentials shown
+by `gui status` are guest-login credentials, not VNC authentication credentials.
+
+The Cove-owned QEMU viewer is the default for QEMU VNC VMs:
+
+```bash
+cove gui -vm win open
+```
+
+This renders the local QEMU RFB stream in a Cove AppKit window and makes
+`gui status` report `qemu-vnc-cove` while the viewer process is alive. In that
+mode, `gui close` closes only the Cove viewer and leaves QEMU running. The
+viewer uses the same persistent RFB connection for display refresh and end-user
+keyboard and pointer input. It also uses the same NSWindow frame autosave
+mechanism as native VM windows, keyed under a Windows QEMU VM identity. The
+viewer installs a minimal macOS menu and toolbar with screenshot and
+close-viewer actions.
+Set `COVE_QEMU_GUI_VIEWER=external` to open the system VNC viewer instead.
+
 ## Automation Backend
 
 Control how screenshots and input events are routed:

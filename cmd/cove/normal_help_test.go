@@ -89,6 +89,9 @@ func TestVNCHelpRequiresPasswordInUsage(t *testing.T) {
 	if strings.Contains(out, "Usage: cove run -vnc :5901 [flags]") {
 		t.Fatalf("vnc help still has bare vnc usage:\n%s", out)
 	}
+	if !strings.Contains(out, "cove vnc -vm win open") {
+		t.Fatalf("vnc help missing qemu open example:\n%s", out)
+	}
 }
 
 func TestAdvancedHelpVNCExampleRequiresPassword(t *testing.T) {
@@ -139,7 +142,7 @@ func TestSupportBundleAliasHelp(t *testing.T) {
 	if !handled || code != 0 {
 		t.Fatalf("handleEarlyCLI(support-bundle -h) = %v, %d", handled, code)
 	}
-	for _, want := range []string{"Usage: cove support-bundle", "-vm NAME", "-out PATH"} {
+	for _, want := range []string{"Usage: cove support bundle", "-vm NAME", "-out PATH", "-include-screenshot"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("support-bundle help missing %q:\n%s", want, stderr.String())
 		}
