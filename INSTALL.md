@@ -11,31 +11,19 @@ cove runs on Apple Silicon Macs and uses Apple's Virtualization.framework.
 
 ## Install the CLI
 
-```bash
-brew install tmc/tap/cove
-```
-
-If Homebrew says the formula is unavailable because the tap is missing, add the
-tap explicitly and retry:
-
-```bash
-brew tap tmc/tap
-brew info cove
-brew install cove
-```
-
-Or build from source:
+Build from source for now:
 
 ```bash
 git clone https://github.com/tmc/cove
 cd cove
 go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+install -m 0755 cove ~/bin/cove
 ```
 
 The Go module path remains `github.com/tmc/vz-macos` for compatibility, so
 `go install github.com/tmc/vz-macos@latest` is still valid when the module proxy
-has the release you want. The repository and Homebrew package are named `cove`.
+has the release you want. The repository is named `cove`.
 
 On first launch, cove signs the local binary with the Virtualization.framework entitlements it needs. If you build manually while developing cove, re-sign after each build:
 
@@ -44,10 +32,10 @@ go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
-Packaged installs should feel like a normal macOS CLI install: Homebrew and
-future app packages provide the `cove` binary, and cove asks for guest account
-details only when you create or provision a VM. There are no built-in guest
-credentials.
+The Homebrew formula is not the recommended first-run path yet. Packaged
+installs should eventually feel like a normal macOS CLI install: they provide
+the `cove` binary, and cove asks for guest account details only when you create
+or provision a VM. There are no built-in guest credentials.
 
 ## First VM
 
@@ -127,11 +115,13 @@ tokens, passwords, usernames, and home-directory paths are redacted.
 
 ## Update
 
-With Homebrew:
+For source builds:
 
 ```bash
-brew update
-brew upgrade cove
+git pull
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+install -m 0755 cove ~/bin/cove
 cove doctor host
 cove helper status
 ```
@@ -142,14 +132,15 @@ If `cove helper status` reports a stale helper, reinstall it:
 sudo cove helper install
 ```
 
-For source builds, rebuild and re-sign the binary, then run `cove doctor host`.
+When packaged installs become the recommended path, use the package manager's
+upgrade command and then run the same doctor/helper checks.
 
 ## Uninstall
 
 Choose the level of removal you want:
 
 ```bash
-brew uninstall cove          # remove the Homebrew CLI
+rm -f ~/bin/cove             # remove the source-built CLI
 cove helper uninstall        # remove the optional privileged helper
 cove daemon stop             # unload the per-user daemon if you started it
 rm -rf ~/.vz                 # remove VMs, images, runs, cache, and store data
