@@ -10,7 +10,7 @@ package main
 import (
 	"github.com/tmc/apple/corefoundation"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
+	"github.com/tmc/cove/internal/controlserver"
 )
 
 func init() {

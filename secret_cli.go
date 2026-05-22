@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/secrets"
+	"github.com/tmc/cove/internal/secrets"
 )
 
 func handleSecretCommand(args []string) error {

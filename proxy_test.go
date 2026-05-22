@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	pb "github.com/tmc/vz-macos/proto/agentpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
+	pb "github.com/tmc/cove/proto/agentpb"
 )
 
 func TestParseProxySpec(t *testing.T) {

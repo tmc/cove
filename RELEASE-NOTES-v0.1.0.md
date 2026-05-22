@@ -22,7 +22,7 @@ guests on Apple Silicon.
 ```bash
 brew install tmc/tap/cove
 # or
-go install github.com/tmc/vz-macos@latest
+go install github.com/tmc/cove@latest
 ```
 
 Build from source:

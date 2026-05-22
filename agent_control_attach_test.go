@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	pb "github.com/tmc/vz-macos/proto/agentpb"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	pb "github.com/tmc/cove/proto/agentpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // fakeAttachAgent satisfies the attachAgent interface with canned behaviour

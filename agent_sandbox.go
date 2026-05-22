@@ -18,8 +18,8 @@ import (
 	"time"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
-	"github.com/tmc/vz-macos/internal/agentsandbox"
-	runmetrics "github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/agentsandbox"
+	runmetrics "github.com/tmc/cove/internal/metrics"
 )
 
 type agentSandboxRunOptions struct {

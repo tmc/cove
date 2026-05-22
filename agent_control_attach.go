@@ -34,8 +34,8 @@ import (
 	"net"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // attachAgent is the subset of *agentstate.AgentClient that the attach

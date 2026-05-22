@@ -11,8 +11,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/softreset"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/softreset"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 var softresetProbeNames = []string{"filesystem", "process", "network", "memory"}

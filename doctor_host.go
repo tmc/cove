@@ -14,7 +14,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/cove/internal/bytefmt"
 )
 
 type hostDoctorCheck struct {

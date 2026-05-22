@@ -19,8 +19,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/metrics"
-	"github.com/tmc/vz-macos/internal/secrets"
+	"github.com/tmc/cove/internal/metrics"
+	"github.com/tmc/cove/internal/secrets"
 )
 
 // secretEnvFlag accumulates repeated --secret-env values.

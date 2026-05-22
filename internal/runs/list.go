@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/metrics"
 )
 
 const runCompleteEvent = "run_complete"

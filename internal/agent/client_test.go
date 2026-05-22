@@ -15,8 +15,8 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	pb "github.com/tmc/vz-macos/proto/agentpb"
-	"github.com/tmc/vz-macos/proto/agentpbconnect"
+	pb "github.com/tmc/cove/proto/agentpb"
+	"github.com/tmc/cove/proto/agentpbconnect"
 )
 
 func TestAgentClientCloseClosesUnderlyingConn(t *testing.T) {

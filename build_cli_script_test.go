@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestBuildCLIScriptLocalBaseCacheHit(t *testing.T) {

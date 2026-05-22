@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmrun"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func validLinuxPlanRunConfig() vmrun.RunConfig {

@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/vmrun"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func TestVmrunRunConfigPopulatesCollectionLoops(t *testing.T) {

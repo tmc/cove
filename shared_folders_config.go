@@ -1,6 +1,6 @@
 package main
 
-import "github.com/tmc/vz-macos/internal/vmconfig"
+import "github.com/tmc/cove/internal/vmconfig"
 
 type SharedFolderEntry = vmconfig.SharedFolderEntry
 

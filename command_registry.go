@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/tmc/apple/x/vzkit/disk"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 type commandDispatch int

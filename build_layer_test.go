@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/store"
+	"github.com/tmc/cove/internal/store"
 )
 
 func TestStoreAndApplyDiskDelta(t *testing.T) {

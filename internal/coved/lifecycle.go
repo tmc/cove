@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	controlx "github.com/tmc/vz-macos/internal/control"
-	"github.com/tmc/vz-macos/internal/vmpolicy"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlx "github.com/tmc/cove/internal/control"
+	"github.com/tmc/cove/internal/vmpolicy"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const DefaultLifecycleInterval = 30 * time.Second

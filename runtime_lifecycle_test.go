@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/lifecycle"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmpolicy"
+	"github.com/tmc/cove/internal/lifecycle"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmpolicy"
 )
 
 func TestRunCurrentVMWithDisposableClone(t *testing.T) {

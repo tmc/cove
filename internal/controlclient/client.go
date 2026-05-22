@@ -19,8 +19,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	control "github.com/tmc/vz-macos/internal/control"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	control "github.com/tmc/cove/internal/control"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // Client provides programmatic access to the VM control socket.

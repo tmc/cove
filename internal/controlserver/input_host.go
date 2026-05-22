@@ -11,7 +11,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // InputHost exposes the slice of control-server state the input bridge

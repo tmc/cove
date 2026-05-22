@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/vmquota"
+	"github.com/tmc/cove/internal/vmquota"
 )
 
 func TestParseQuotaArgs(t *testing.T) {

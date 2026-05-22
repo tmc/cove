@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/metrics"
 )
 
 // CompetitiveConfig configures the competitive benchmark report.

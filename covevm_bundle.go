@@ -12,7 +12,7 @@ import (
 
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/objc"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 const (

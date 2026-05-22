@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // mcpProtocolVersion is the MCP protocol revision cove implements. Clients

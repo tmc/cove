@@ -8,8 +8,8 @@ package main
 import (
 	"encoding/json"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // ITerm2Proxy is an alias of controlserver.ITerm2Proxy. The type lives

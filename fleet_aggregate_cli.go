@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	fleetpkg "github.com/tmc/vz-macos/internal/fleet"
+	fleetpkg "github.com/tmc/cove/internal/fleet"
 )
 
 type fleetAggregateRow struct {

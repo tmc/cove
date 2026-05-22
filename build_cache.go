@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/builddigest"
-	"github.com/tmc/vz-macos/internal/buildmeta"
-	"github.com/tmc/vz-macos/internal/buildpaths"
-	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/builddigest"
+	"github.com/tmc/cove/internal/buildmeta"
+	"github.com/tmc/cove/internal/buildpaths"
+	"github.com/tmc/cove/internal/ociimage"
 )
 
 const agentProtocolVersion = agent.ProtocolVersion

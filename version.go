@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	buildversion "github.com/tmc/vz-macos/internal/version"
+	buildversion "github.com/tmc/cove/internal/version"
 )
 
 // version, commit, and date are set by goreleaser or ldflags at build time.

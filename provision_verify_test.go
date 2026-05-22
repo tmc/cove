@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestAgentExecExitOK(t *testing.T) {

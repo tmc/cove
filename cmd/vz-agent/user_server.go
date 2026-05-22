@@ -11,8 +11,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	pb "github.com/tmc/vz-macos/proto/agentpb"
-	"github.com/tmc/vz-macos/proto/agentpbconnect"
+	pb "github.com/tmc/cove/proto/agentpb"
+	"github.com/tmc/cove/proto/agentpbconnect"
 )
 
 // userAgentServer implements the UserAgent service.

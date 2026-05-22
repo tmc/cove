@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/metrics"
 )
 
 func TestLoadShowPrefixAmbiguous(t *testing.T) {

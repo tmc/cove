@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/store"
+	"github.com/tmc/cove/internal/store"
 )
 
 type buildCacheEntry struct {

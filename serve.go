@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/tmc/vz-macos/internal/control/operations"
+	"github.com/tmc/cove/internal/control/operations"
 )
 
 type ServeConfig struct {

@@ -20,9 +20,9 @@ import (
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 
-	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/vmconfig"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 
 	"golang.org/x/tools/txtar"
 )

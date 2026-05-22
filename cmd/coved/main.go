@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/coved"
-	"github.com/tmc/vz-macos/internal/storagecensus"
-	"github.com/tmc/vz-macos/internal/storagepins"
-	buildversion "github.com/tmc/vz-macos/internal/version"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/coved"
+	"github.com/tmc/cove/internal/storagecensus"
+	"github.com/tmc/cove/internal/storagepins"
+	buildversion "github.com/tmc/cove/internal/version"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 var (

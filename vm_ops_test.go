@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // TestRenameVM_NotFound asserts that renaming a non-existent VM fails

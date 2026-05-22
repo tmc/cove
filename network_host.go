@@ -8,7 +8,7 @@
 package main
 
 import (
-	"github.com/tmc/vz-macos/internal/controlserver"
+	"github.com/tmc/cove/internal/controlserver"
 )
 
 var _ controlserver.NetworkHost = (*ControlServer)(nil)

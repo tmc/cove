@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/diskimages2"
+	"github.com/tmc/cove/internal/diskimages2"
 )
 
 func TestFrameworkAvailable(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tmc/vz-macos/internal/bench"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/bench"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func handleBenchCommand(args []string) error {

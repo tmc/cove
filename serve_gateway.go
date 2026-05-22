@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/tmc/vz-macos/internal/control/operations"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/control/operations"
+	"github.com/tmc/cove/internal/vmconfig"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // Gateway is a multi-VM HTTP gateway that proxies requests to individual VM

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/store"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/store"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestBuildScratchCreateWritesMetadata(t *testing.T) {

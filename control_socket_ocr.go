@@ -6,7 +6,7 @@ import (
 	"time"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // OCRClickText takes a screenshot, finds the given text via OCR, and clicks its center.

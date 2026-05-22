@@ -6,7 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	pb "github.com/tmc/vz-macos/proto/agentpb"
+	pb "github.com/tmc/cove/proto/agentpb"
 )
 
 func (s *agentServer) execStreamPTY(*pb.ExecRequest, *exec.Cmd, *connect.ServerStream[pb.ExecOutput]) error {

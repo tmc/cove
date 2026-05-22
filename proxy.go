@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	pb "github.com/tmc/vz-macos/proto/agentpb"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
+	pb "github.com/tmc/cove/proto/agentpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // ErrProxyRuntimeUnavailable is returned by proxyRuntimeClient methods

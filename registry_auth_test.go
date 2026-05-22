@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/cove/internal/ociimage"
 )
 
 func TestRegistryAuthorization(t *testing.T) {

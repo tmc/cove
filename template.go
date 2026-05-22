@@ -22,7 +22,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
 

@@ -12,7 +12,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/exp/networkfd"
-	"github.com/tmc/vz-macos/internal/pcap"
+	"github.com/tmc/cove/internal/pcap"
 )
 
 // Session owns the host-side socket and the VZ file-handle

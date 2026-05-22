@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/autosign"
+	"github.com/tmc/cove/internal/autosign"
 )
 
 func TestMain(m *testing.M) {

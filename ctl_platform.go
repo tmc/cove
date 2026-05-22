@@ -3,7 +3,7 @@ package main
 import (
 	"path/filepath"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
+	agentstate "github.com/tmc/cove/internal/agent"
 )
 
 func ctlGuestPlatform(socketPath string) string {

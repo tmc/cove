@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/secrets"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/secrets"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const buildSecretsGuestDir = "/tmp/cove-secrets"

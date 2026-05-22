@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 type vmTreeNode struct {

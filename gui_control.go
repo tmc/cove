@@ -12,7 +12,7 @@ import (
 	"github.com/tmc/apple/objc"
 	vz "github.com/tmc/apple/virtualization"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 type GUIStatus struct {

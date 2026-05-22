@@ -22,11 +22,11 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 
-	controlx "github.com/tmc/vz-macos/internal/control"
-	"github.com/tmc/vz-macos/internal/control/operations"
-	"github.com/tmc/vz-macos/internal/controlserver"
-	"github.com/tmc/vz-macos/internal/vmstate"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlx "github.com/tmc/cove/internal/control"
+	"github.com/tmc/cove/internal/control/operations"
+	"github.com/tmc/cove/internal/controlserver"
+	"github.com/tmc/cove/internal/vmstate"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const (

@@ -12,7 +12,7 @@ import (
 
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/cove/internal/bytefmt"
 	"golang.org/x/sys/unix"
 )
 

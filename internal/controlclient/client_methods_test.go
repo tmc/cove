@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	control "github.com/tmc/vz-macos/internal/control"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	control "github.com/tmc/cove/internal/control"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestClientSimpleRequests(t *testing.T) {

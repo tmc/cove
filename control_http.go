@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/control/operations"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/control/operations"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // NewHTTPHandler returns an http.Handler exposing a ControlServer over HTTP.

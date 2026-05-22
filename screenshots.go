@@ -20,9 +20,9 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/capture"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	"github.com/tmc/vz-macos/internal/sckit"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	"github.com/tmc/cove/internal/sckit"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // captureSCKitFn is the seam used by the SCKit capture branch in

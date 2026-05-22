@@ -8,7 +8,7 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/vz-macos/internal/nixos"
+	"github.com/tmc/cove/internal/nixos"
 )
 
 func installNixOSVM(resolvedDiskPath string, provConfig LinuxProvisionConfig) error {

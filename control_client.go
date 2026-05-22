@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"image"
 
-	"github.com/tmc/vz-macos/internal/controlclient"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlclient"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 type ControlClient struct {

@@ -6,9 +6,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/store"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/store"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func handleStoreCommand(args []string) error {

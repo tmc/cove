@@ -23,7 +23,7 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	"github.com/tmc/vz-macos/proto/agentpbconnect"
+	"github.com/tmc/cove/proto/agentpbconnect"
 )
 
 // relaySpecs collects -relay flags (vsockPort:tcpAddr).

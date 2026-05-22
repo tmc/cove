@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmstate"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmstate"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func testLinuxAgent(t *testing.T, vm *testVM) {

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // isImageForkFromRef returns true when ref does NOT match an existing

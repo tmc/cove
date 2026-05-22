@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/store"
+	"github.com/tmc/cove/internal/store"
 )
 
 func TestRecordCacheMissLayerStoresMetadata(t *testing.T) {

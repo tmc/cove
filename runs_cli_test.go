@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/metrics"
-	"github.com/tmc/vz-macos/internal/runs"
+	"github.com/tmc/cove/internal/metrics"
+	"github.com/tmc/cove/internal/runs"
 )
 
 func TestParseRunsShowArgsAllowsFlagsAfterPrefix(t *testing.T) {

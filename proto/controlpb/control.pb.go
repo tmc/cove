@@ -3051,7 +3051,7 @@ const file_control_proto_rawDesc = "" +
 	"\x05width\x18\x04 \x01(\x01R\x05width\x12\x16\n" +
 	"\x06height\x18\x05 \x01(\x01R\x06height\"/\n" +
 	"\x17ScreenDetectionResponse\x12\x14\n" +
-	"\x05state\x18\x01 \x01(\tR\x05stateB6Z'github.com/tmc/vz-macos/proto/controlpb\xba\x02\n" +
+	"\x05state\x18\x01 \x01(\tR\x05stateB2Z#github.com/tmc/cove/proto/controlpb\xba\x02\n" +
 	"VZControl_b\x06proto3"
 
 var (

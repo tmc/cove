@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/tmc/apple/virtualization"
-	"github.com/tmc/vz-macos/internal/vmpolicy"
+	"github.com/tmc/cove/internal/vmpolicy"
 )
 
 type fakeLifecycleClock struct {

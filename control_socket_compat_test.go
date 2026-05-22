@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestPopulateLegacyRequestPayloads_ScreenshotFlatFields(t *testing.T) {

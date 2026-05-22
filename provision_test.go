@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/proto/controlpb"
 )
 
 func TestApplyProvisioningPreWarmsBeforeDiskAttach(t *testing.T) {

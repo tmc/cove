@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/metrics"
 )
 
 type execOptions struct {

@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/control/operations"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/control/operations"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // newServeTestRegistry returns an in-memory OperationRegistry for testing.

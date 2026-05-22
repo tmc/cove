@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/vz-macos/internal/filehandle"
+	"github.com/tmc/cove/internal/filehandle"
 )
 
 var (

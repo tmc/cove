@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/softreset"
+	"github.com/tmc/cove/internal/softreset"
 )
 
 func TestParseSoftresetProbeArgsDefaultAll(t *testing.T) {

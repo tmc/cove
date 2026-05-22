@@ -1,6 +1,6 @@
 package guestplan
 
-import "github.com/tmc/vz-macos/internal/vmrun"
+import "github.com/tmc/cove/internal/vmrun"
 
 func Windows(rc vmrun.RunConfig, hc vmrun.HostConfig) (vmrun.DevicePlan, error) {
 	plan, err := vmrun.Plan(rc, hc)

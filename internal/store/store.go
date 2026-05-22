@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/cove/internal/ociimage"
 )
 
 const GCGrace = time.Hour

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package vz.agent.v1;
 
-option go_package = "github.com/tmc/vz-macos/proto/agentpb";
+option go_package = "github.com/tmc/cove/proto/agentpb";
 
 import "google/protobuf/timestamp.proto";
 

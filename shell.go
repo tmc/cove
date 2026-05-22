@@ -27,9 +27,9 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/tmc/vz-macos/internal/metrics"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/metrics"
+	"github.com/tmc/cove/internal/vmconfig"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // shellDefaultCommand is the guest-side command invoked when the user

@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/metrics"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/metrics"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // TestShellCommandRequiresVM confirms invocation with no positional args

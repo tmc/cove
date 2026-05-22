@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tmc/vz-macos/internal/store"
+	"github.com/tmc/cove/internal/store"
 )
 
 type buildApplyResult struct {

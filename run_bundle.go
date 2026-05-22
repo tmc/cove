@@ -29,8 +29,8 @@ import (
 	"sync"
 	"time"
 
-	runmetrics "github.com/tmc/vz-macos/internal/metrics"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	runmetrics "github.com/tmc/cove/internal/metrics"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // RunBundle owns the on-disk per-run directory. The zero value is not usable;

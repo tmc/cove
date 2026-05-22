@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/storagecensus"
-	"github.com/tmc/vz-macos/internal/storagepins"
-	"github.com/tmc/vz-macos/internal/store"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/storagecensus"
+	"github.com/tmc/cove/internal/storagepins"
+	"github.com/tmc/cove/internal/store"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func handleStorageCommand(args []string) error {

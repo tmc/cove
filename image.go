@@ -33,8 +33,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/imagestore"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/imagestore"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // ImagesBaseDir returns the local image store root. Mirrors vmconfig.BaseDir

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/tmc/apple/screencapturekit"
-	"github.com/tmc/vz-macos/internal/sckit"
+	"github.com/tmc/cove/internal/sckit"
 )
 
 // runSCKitSpike implements `cove doctor sckit-spike`. It is a design 041

@@ -18,11 +18,11 @@ import (
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	windowsconfig "github.com/tmc/apple/x/vzkit/windowsconfig"
-	"github.com/tmc/vz-macos/internal/guestplan"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmrun"
-	winsetup "github.com/tmc/vz-macos/internal/windows"
-	"github.com/tmc/vz-macos/internal/windows/esd"
+	"github.com/tmc/cove/internal/guestplan"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
+	winsetup "github.com/tmc/cove/internal/windows"
+	"github.com/tmc/cove/internal/windows/esd"
 )
 
 type windowsGraphics string

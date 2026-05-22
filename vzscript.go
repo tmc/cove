@@ -86,8 +86,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"rsc.io/script"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 type envFlag []string

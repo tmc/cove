@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	controlx "github.com/tmc/vz-macos/internal/control"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlx "github.com/tmc/cove/internal/control"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestWithBuildRuntimeGlobalsSetsAndRestores(t *testing.T) {

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	runmetrics "github.com/tmc/vz-macos/internal/metrics"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	runmetrics "github.com/tmc/cove/internal/metrics"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 type standaloneMetricsRun struct {

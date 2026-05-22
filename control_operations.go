@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/control/operations"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/control/operations"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // ensureOps lazily initializes the per-VM operations registry. The store is

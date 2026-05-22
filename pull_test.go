@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/cove/internal/ociimage"
 )
 
 func TestBuildPullPlanDryRunManifest(t *testing.T) {

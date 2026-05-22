@@ -18,8 +18,8 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	pb "github.com/tmc/vz-macos/proto/agentpb"
-	"github.com/tmc/vz-macos/proto/agentpbconnect"
+	pb "github.com/tmc/cove/proto/agentpb"
+	"github.com/tmc/cove/proto/agentpbconnect"
 )
 
 // systemInfo holds platform-agnostic system information.

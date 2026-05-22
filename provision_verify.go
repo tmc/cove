@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // VerifyResult holds the verification status for a single file

@@ -34,11 +34,11 @@ import (
 	"unicode/utf8"
 
 	vz "github.com/tmc/apple/virtualization"
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/controlserver"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/controlserver"
+	"github.com/tmc/cove/internal/vmconfig"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // getAgent / getUserAgent / consoleUser are thin forwarders that

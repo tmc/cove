@@ -21,7 +21,7 @@ import (
 
 	"golang.org/x/term"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
+	agentstate "github.com/tmc/cove/internal/agent"
 )
 
 // linuxShellCommand is the guest-side command launched when `-shell` is set.

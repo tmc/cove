@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/sckit"
+	"github.com/tmc/cove/internal/sckit"
 )
 
 func TestReportSCKitProbeTableAuthorized(t *testing.T) {

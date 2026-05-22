@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/tmc/apple/x/plist"
-	"github.com/tmc/vz-macos/internal/password"
+	"github.com/tmc/cove/internal/password"
 )
 
 type loginScreenCredentials struct {

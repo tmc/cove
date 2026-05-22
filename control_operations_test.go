@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/control/operations"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/control/operations"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // withTestOpsRegistry installs a fresh file-backed operations registry under

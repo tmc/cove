@@ -128,7 +128,7 @@ sandbox substrate:
 ```bash
 brew upgrade cove
 # or
-go install github.com/tmc/vz-macos@v0.3.0
+go install github.com/tmc/cove@v0.3.0
 # or
 nix run github:tmc/vz-macos
 ```

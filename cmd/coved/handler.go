@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/coved"
+	"github.com/tmc/cove/internal/coved"
 )
 
 type daemon struct {

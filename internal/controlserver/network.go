@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // NetworkBridge holds the network-listener state owned by a

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	runmetrics "github.com/tmc/vz-macos/internal/metrics"
+	runmetrics "github.com/tmc/cove/internal/metrics"
 )
 
 // gcTestSetup stages an isolated $HOME so vmconfig.BaseDir() and

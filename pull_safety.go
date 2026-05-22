@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const pullTargetProbeTimeout = 500 * time.Millisecond

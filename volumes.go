@@ -9,8 +9,8 @@ import (
 
 	vz "github.com/tmc/apple/virtualization"
 	virtiofsx "github.com/tmc/apple/x/vzkit/virtiofs"
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // volumeSlice implements flag.Value for collecting multiple -v flags.

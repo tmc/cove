@@ -12,9 +12,9 @@ import (
 
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit/configcodec"
-	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmrun"
+	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 const vmFrameworkConfigFileName = "framework-config.vzcfg"

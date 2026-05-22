@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // PortForwardManager is an alias of controlserver.PortForwardManager.

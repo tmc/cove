@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
+	agentstate "github.com/tmc/cove/internal/agent"
 )
 
 type imageVerifyStatus string

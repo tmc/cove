@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmstate"
+	"github.com/tmc/cove/internal/vmstate"
 )
 
 const vmRuntimeStateFile = "runtime.json"
