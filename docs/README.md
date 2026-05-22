@@ -10,7 +10,11 @@ cove is a CLI for creating and managing macOS and Linux virtual machines on Appl
 ## Get a VM running
 
 ```bash
-brew install tmc/tap/cove
+git clone https://github.com/tmc/cove
+cd cove
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+install -m 0755 cove ~/bin/cove
 cove up -user me
 ```
 
@@ -20,7 +24,7 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 
 ## Quick Links
 
-- [Installation](getting-started/install.md) -- brew, go install, or from source
+- [Installation](getting-started/install.md) -- source build and first-run requirements
 - [Quick Start](getting-started/quickstart.md) -- three paths to a running VM
 - [CLI Reference](reference/cli.md) -- every command and flag
 - [Cove after Cirrus CI](landing/cove-vs-cirrus.md) -- private landing-page draft for the June 2026 Cirrus shutdown window

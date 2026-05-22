@@ -10,27 +10,29 @@ title: Installation
 - Xcode Command Line Tools (`xcode-select --install`)
 - ~20GB free disk space for a macOS VM
 
-## Homebrew (recommended)
+## From Source
+
+Build from source for now:
 
 ```bash
-brew install tmc/tap/cove
+git clone https://github.com/tmc/cove
+cd cove
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+install -m 0755 cove ~/bin/cove
 ```
 
-If `brew info tmc/tap/cove` reports that the tap is missing, tap it first:
+Make sure `~/bin` is on `PATH`, then verify the installed command:
 
 ```bash
-brew tap tmc/tap
-brew info cove
-brew install cove
+cove version
+cove doctor host
 ```
 
-> [!NOTE]
-> cove auto-signs itself with virtualization entitlements on first launch. No manual codesigning step is needed.
-
-Homebrew and future app packages install the `cove` binary only. Guest account
-setup remains explicit: the first VM asks for a username and prompts for a
-password when `-password` is omitted. Cove does not create fixed default guest
-credentials.
+The Homebrew formula is not the recommended first-run path yet. Future packages
+should install the `cove` binary only. Guest account setup remains explicit: the
+first VM asks for a username and prompts for a password when `-password` is
+omitted. Cove does not create fixed default guest credentials.
 
 ## Go Install
 
@@ -38,17 +40,9 @@ credentials.
 go install github.com/tmc/vz-macos@latest
 ```
 
-The binary will be placed in `$GOPATH/bin` (or `$HOME/go/bin`). The Go module
-path remains `github.com/tmc/vz-macos` for compatibility; the repository and
-Homebrew package are named `cove`.
-
-## From Source
-
-```bash
-git clone https://github.com/tmc/cove
-cd cove
-go build -o cove .
-```
+The binary will be placed in `$GOPATH/bin` or `$HOME/go/bin`. The Go module path
+remains `github.com/tmc/vz-macos` for compatibility; the repository is named
+`cove`.
 
 ### Entitlements
 
@@ -135,11 +129,13 @@ optional VM-specific doctor/control diagnostics.
 
 ## Update
 
-With Homebrew:
+For source builds:
 
 ```bash
-brew update
-brew upgrade cove
+git pull
+go build -o cove .
+codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+install -m 0755 cove ~/bin/cove
 cove doctor host
 cove helper status
 ```
@@ -150,14 +146,15 @@ If the helper is stale after an upgrade:
 sudo cove helper install
 ```
 
-Source builds should be rebuilt, re-signed, and checked with `cove doctor host`.
+When packaged installs become the recommended path, use the package manager's
+upgrade command and then run the same doctor/helper checks.
 
 ## Uninstall
 
 Remove only the pieces you no longer want:
 
 ```bash
-brew uninstall cove          # CLI only
+rm -f ~/bin/cove             # source-built CLI only
 cove helper uninstall        # optional privileged helper
 cove daemon stop             # user daemon, if running
 rm -rf ~/.vz                 # VMs, images, caches, runs, and store data

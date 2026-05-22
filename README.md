@@ -22,20 +22,17 @@ history.
 
 ## Install
 
-Homebrew is the normal install path:
-
-```bash
-brew install tmc/tap/cove
-```
-
-Or build from source:
+Build from source for now:
 
 ```bash
 git clone https://github.com/tmc/cove
 cd cove
 go build -o cove .
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+install -m 0755 cove ~/bin/cove
 ```
+
+The Homebrew formula is not the recommended first-run path yet.
 
 After installing, check the host before creating a VM:
 
