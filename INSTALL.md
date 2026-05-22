@@ -11,25 +11,19 @@ cove runs on Apple Silicon Macs and uses Apple's Virtualization.framework.
 
 ## Install the CLI
 
-Build from source for now:
+Install from source for now:
 
 ```bash
-git clone https://github.com/tmc/cove
-cd cove
-go build -o cove .
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
-install -m 0755 cove ~/bin/cove
+go install github.com/tmc/cove@latest
 ```
 
-The Go module path remains `github.com/tmc/vz-macos` for compatibility, so
-`go install github.com/tmc/vz-macos@latest` is still valid when the module proxy
-has the release you want. The repository is named `cove`.
+The Go module path is `github.com/tmc/cove`.
 
-On first launch, cove signs the local binary with the Virtualization.framework entitlements it needs. If you build manually while developing cove, re-sign after each build:
+On first launch, cove signs the local binary with the Virtualization.framework
+entitlements it needs. If autosigning fails, sign the binary manually:
 
 ```bash
-go build -o cove .
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements internal/autosign/vz.entitlements "$(command -v cove)"
 ```
 
 The Homebrew formula is not the recommended first-run path yet. Packaged
@@ -118,10 +112,7 @@ tokens, passwords, usernames, and home-directory paths are redacted.
 For source builds:
 
 ```bash
-git pull
-go build -o cove .
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
-install -m 0755 cove ~/bin/cove
+go install github.com/tmc/cove@latest
 cove doctor host
 cove helper status
 ```
