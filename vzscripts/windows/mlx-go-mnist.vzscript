@@ -1,28 +1,22 @@
-# windows-mlx-go-mnist - Mount ml-explore and run mlx-go MNIST through WSL
+# windows-mlx-go-mnist - Run the native Windows ARM64 mlx-go MNIST package
 # guest-os: windows
-# requires: windows-wsl1, windows-webdav-client
 
 guest-wait 10m
-guest-write C:/ProgramData/cove/run-mlx-go-mnist.ps1 run-mlx-go-mnist.ps1
-guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/cove/run-mlx-go-mnist.ps1
+guest-write C:/Users/Public/cove/run-mlx-go-mnist.ps1 run-mlx-go-mnist.ps1
+guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/Users/Public/cove/run-mlx-go-mnist.ps1
 
 -- run-mlx-go-mnist.ps1 --
 $ErrorActionPreference = 'Stop'
 $Root = Join-Path $env:PUBLIC 'cove'
+$PkgRoot = Join-Path $Root 'mnist-windows-arm64'
+$Zip = Join-Path $Root 'mnist-windows-arm64.zip'
+$Log = Join-Path $Root 'mlx-go-mnist.log'
 New-Item -ItemType Directory -Force $Root | Out-Null
-try { Start-Transcript -Path (Join-Path $Root 'mlx-go-mnist.log') -Force | Out-Null } catch {}
+try { Start-Transcript -Path $Log -Force | Out-Null } catch {}
 
-$HostHTTP = $env:COVE_HOST_HTTP
-if ([string]::IsNullOrWhiteSpace($HostHTTP)) {
-  $HostHTTP = 'http://10.0.2.2:58080'
-}
-$HostWebDAV = $env:COVE_ML_EXPLORE_WEBDAV
-if ([string]::IsNullOrWhiteSpace($HostWebDAV)) {
-  $HostWebDAV = 'http://10.0.2.2:58081/'
-}
-$Distro = $env:COVE_WSL_DISTRO
-if ([string]::IsNullOrWhiteSpace($Distro)) {
-  $Distro = 'UbuntuNoble'
+$PackageURL = $env:COVE_MLX_GO_MNIST_ZIP
+if ([string]::IsNullOrWhiteSpace($PackageURL)) {
+  $PackageURL = 'http://10.0.2.2:58080/mnist-windows-arm64.zip'
 }
 
 function Invoke-Logged($File, [string[]]$Args, [int[]]$OkCodes) {
@@ -42,131 +36,45 @@ function Download-IfMissing($Uri, $Path) {
   Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Path
 }
 
-function Ensure-MLExploreDrive {
-  try {
-    Start-Service WebClient -ErrorAction SilentlyContinue
-  } catch {
-    Write-Output "WebClient start skipped: $($_.Exception.Message)"
+function Ensure-Package {
+  Download-IfMissing $PackageURL $Zip
+  Remove-Item -Recurse -Force $PkgRoot -ErrorAction SilentlyContinue
+  Expand-Archive -Path $Zip -DestinationPath $Root -Force
+  if (-not (Test-Path (Join-Path $PkgRoot 'mnist.exe'))) {
+    throw "missing mnist.exe in $PkgRoot; package should contain mnist-windows-arm64/mnist.exe"
   }
-  if (-not (Test-Path 'Z:\mlx-go\examples\mnist')) {
-    & net.exe use Z: /delete /y 2>$null | Out-Null
-    & net.exe use Z: $HostWebDAV /persistent:no
-  }
-  if (-not (Test-Path 'Z:\mlx-go\examples\mnist')) {
-    throw "ml-explore WebDAV mount missing: expected Z:\mlx-go\examples\mnist from $HostWebDAV"
-  }
-  Write-Output 'Mounted ml-explore at Z:'
-}
-
-function Sync-MLXGoSource {
-  $dst = Join-Path $Root 'mlx-go'
-  New-Item -ItemType Directory -Force $dst | Out-Null
-  & robocopy.exe 'Z:\mlx-go' $dst /MIR /XD .git .jj /NFL /NDL /NJH /NJS /NP
-  if ($LASTEXITCODE -gt 7) {
-    throw "robocopy mlx-go failed with code $LASTEXITCODE"
-  }
-  if (-not (Test-Path (Join-Path $dst 'examples\mnist\main.go'))) {
-    throw "mlx-go mirror missing examples\mnist\main.go at $dst"
-  }
-  Write-Output "Mirrored mlx-go to $dst"
-}
-
-function Ensure-WSLPackage {
-  $pkg = Get-AppxPackage MicrosoftCorporationII.WindowsSubsystemForLinux -ErrorAction SilentlyContinue
-  if ($pkg) {
-    Write-Output "WSL AppX installed: $($pkg.Version)"
-    return
-  }
-  $bundle = Join-Path $Root 'Microsoft.WSL_2.7.3.0_x64_ARM64.msixbundle'
-  Download-IfMissing "$HostHTTP/Microsoft.WSL_2.7.3.0_x64_ARM64.msixbundle" $bundle
-  Add-AppxPackage -Path $bundle
-  $pkg = Get-AppxPackage MicrosoftCorporationII.WindowsSubsystemForLinux -ErrorAction Stop
-  Write-Output "WSL AppX installed: $($pkg.Version)"
-}
-
-function Ensure-Ubuntu {
-  $distros = (& wsl.exe -l -q) -replace "`0", ''
-  if ($distros -contains $Distro) {
-    $verbose = (& wsl.exe -l -v) -replace "`0", ''
-    $line = $verbose | Where-Object { $_ -match "^\s*\*?\s*$([regex]::Escape($Distro))\s+" } | Select-Object -First 1
-    if ($line -notmatch '\s1\s*$') {
-      throw "WSL distro $Distro exists but is not WSL1; run: wsl.exe --set-version $Distro 1"
+  foreach ($dll in @('mlx.dll', 'mlxc.dll')) {
+    if (-not (Test-Path (Join-Path $PkgRoot $dll))) {
+      throw "missing $dll in $PkgRoot"
     }
-    Write-Output "WSL distro exists: $Distro"
-    return
   }
-  $rootfs = Join-Path $Root 'ubuntu-noble-wsl-arm64-wsl.rootfs.tar.gz'
-  Download-IfMissing "$HostHTTP/ubuntu-noble-wsl-arm64-wsl.rootfs.tar.gz" $rootfs
-  $installRoot = Join-Path $Root "wsl\$Distro"
-  New-Item -ItemType Directory -Force $installRoot | Out-Null
-  & wsl.exe --set-default-version 1
-  Invoke-Logged wsl.exe @('--import', $Distro, $installRoot, $rootfs, '--version', '1') @(0)
-  $verbose = (& wsl.exe -l -v) -replace "`0", ''
-  $line = $verbose | Where-Object { $_ -match "^\s*\*?\s*$([regex]::Escape($Distro))\s+" } | Select-Object -First 1
-  if ($line -notmatch '\s1\s*$') {
-    throw "WSL distro $Distro import did not produce WSL1: $line"
+  if (-not (Test-Path (Join-Path $PkgRoot 'run-mnist.ps1'))) {
+    @'
+$ErrorActionPreference = "Stop"
+$here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$env:PATH = "$here;$env:PATH"
+& "$here\mnist.exe" @args
+'@ | Set-Content -Encoding ASCII (Join-Path $PkgRoot 'run-mnist.ps1')
   }
 }
 
-function Ensure-LinuxGoArchive {
-  $goTar = Join-Path $Root 'go1.26.3.linux-arm64.tar.gz'
-  Download-IfMissing "$HostHTTP/go1.26.3.linux-arm64.tar.gz" $goTar
+Ensure-Package
+
+$DataDir = Join-Path $Root 'mnist-data'
+New-Item -ItemType Directory -Force $DataDir | Out-Null
+Push-Location $PkgRoot
+try {
+  Invoke-Logged powershell.exe @(
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', (Join-Path $PkgRoot 'run-mnist.ps1'),
+    '--epochs', '1',
+    '--batch-size', '1024',
+    '--data-dir', $DataDir
+  ) @(0)
+} finally {
+  Pop-Location
 }
 
-function Invoke-WSL($Command) {
-  Write-Output "> wsl -d $Distro -- bash -lc $Command"
-  & wsl.exe -d $Distro -- bash -lc $Command
-  if ($LASTEXITCODE -ne 0) {
-    throw "wsl command failed with code $LASTEXITCODE"
-  }
-}
-
-Ensure-MLExploreDrive
-Sync-MLXGoSource
-Ensure-WSLPackage
-Ensure-Ubuntu
-Ensure-LinuxGoArchive
-
-Invoke-WSL 'set -euo pipefail; uname -a'
-Invoke-WSL @'
-set -euo pipefail
-if ! command -v go >/dev/null 2>&1; then
-  cp /mnt/c/Users/Public/cove/go1.26.3.linux-arm64.tar.gz /tmp/go1.26.3.linux-arm64.tar.gz
-  rm -rf /usr/local/go
-  tar -C /usr/local -xzf go1.26.3.linux-arm64.tar.gz
-fi
-/usr/local/go/bin/go version
-'@
-
-Invoke-WSL @'
-set -euo pipefail
-repo=/mnt/c/Users/Public/cove/mlx-go
-mnist=$repo/examples/mnist
-if [ ! -d "$mnist" ]; then
-  echo "missing $mnist; Windows mlx-go mirror is not visible inside WSL" >&2
-  exit 1
-fi
-libdir=
-for d in "$repo"/mlxc/lib/dist/linux-arm64 "$repo"/mlxc/lib/dist-*/linux-arm64; do
-  if [ -f "$d/libmlx.so" ] && [ -f "$d/libmlxc.so" ]; then
-    libdir=$d
-    break
-  fi
-done
-if [ -z "$libdir" ]; then
-  cat >&2 <<'EOF'
-missing Linux ARM64 MLX libraries. Build them on the host with:
-  cd /Users/tmc/ml-explore/mlx-go/internal/mlxc/lib
-  go run generate.go -platform linux prep
-  make libs-linux-cpu-arm
-then rerun this recipe.
-EOF
-  exit 1
-fi
-export PATH=/usr/local/go/bin:$PATH
-export MLX_LIB_PATH=$libdir
-export LD_LIBRARY_PATH=$libdir:${LD_LIBRARY_PATH:-}
-mkdir -p /tmp/mnist
-cd "$mnist"
-go run . --epochs 1 --batch-size 1024 --data-dir /tmp/mnist
-'@
+Write-Output "mlx-go MNIST completed"
+Write-Output "log: $Log"

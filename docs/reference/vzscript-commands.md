@@ -340,14 +340,12 @@ cove vzscript run windows-webdav-client
 
 ### windows-mlx-go-mnist
 
-Mount `~/ml-explore` from the host through WebDAV, ensure the WSL AppX package
-and Ubuntu ARM64 WSL1 rootfs are installed, install Linux ARM64 Go in WSL, and
-run `mlx-go/examples/mnist` for one epoch. The host must serve `/tmp` on
-`http://10.0.2.2:58080` for the WSL bundle, rootfs, and Linux Go tarball cache,
-and `~/ml-explore` on `http://10.0.2.2:58081/` through WebDAV. This recipe runs
-in the logged-in Windows user context, so the QEMU user agent must be reachable.
-Override the host cache and WebDAV URLs with `-env COVE_HOST_HTTP=...` and
-`-env COVE_ML_EXPLORE_WEBDAV=...`.
+Download and run a native Windows ARM64 `mlx-go` MNIST package for one epoch.
+The package must contain `mnist.exe`, `mlx.dll`, `mlxc.dll`, and optionally
+`run-mnist.ps1` under a top-level `mnist-windows-arm64/` directory. By default
+the recipe downloads `http://10.0.2.2:58080/mnist-windows-arm64.zip`; override
+that with `-env COVE_MLX_GO_MNIST_ZIP=...`. This recipe runs in the logged-in
+Windows user context, so the QEMU user agent must be reachable.
 
 ```
 cove vzscript run -vm windows-qemu-agent4 windows-mlx-go-mnist
