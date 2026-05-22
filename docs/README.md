@@ -10,11 +10,7 @@ cove is a CLI for creating and managing macOS and Linux virtual machines on Appl
 ## Get a VM running
 
 ```bash
-git clone https://github.com/tmc/cove
-cd cove
-go build -o cove .
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
-install -m 0755 cove ~/bin/cove
+go install github.com/tmc/cove@latest
 cove up -user me
 ```
 

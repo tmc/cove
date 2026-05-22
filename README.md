@@ -22,14 +22,10 @@ history.
 
 ## Install
 
-Build from source for now:
+Install from source for now:
 
 ```bash
-git clone https://github.com/tmc/cove
-cd cove
-go build -o cove .
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
-install -m 0755 cove ~/bin/cove
+go install github.com/tmc/cove@latest
 ```
 
 The Homebrew formula is not the recommended first-run path yet.
@@ -339,7 +335,6 @@ cove/
 git clone https://github.com/tmc/cove
 cd cove
 go build -o cove .
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ./cove run
 ```
 

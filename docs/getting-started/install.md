@@ -10,19 +10,16 @@ title: Installation
 - Xcode Command Line Tools (`xcode-select --install`)
 - ~20GB free disk space for a macOS VM
 
-## From Source
+## Go Install
 
-Build from source for now:
+Install from source for now:
 
 ```bash
-git clone https://github.com/tmc/cove
-cd cove
-go build -o cove .
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
-install -m 0755 cove ~/bin/cove
+go install github.com/tmc/cove@latest
 ```
 
-Make sure `~/bin` is on `PATH`, then verify the installed command:
+Make sure `$GOPATH/bin` or `$HOME/go/bin` is on `PATH`, then verify the
+installed command:
 
 ```bash
 cove version
@@ -34,27 +31,20 @@ should install the `cove` binary only. Guest account setup remains explicit: the
 first VM asks for a username and prompts for a password when `-password` is
 omitted. Cove does not create fixed default guest credentials.
 
-## Go Install
-
-```bash
-go install github.com/tmc/vz-macos@latest
-```
-
-The binary will be placed in `$GOPATH/bin` or `$HOME/go/bin`. The Go module path
-remains `github.com/tmc/vz-macos` for compatibility; the repository is named
-`cove`.
+The Go module path is `github.com/tmc/cove`.
 
 ### Entitlements
 
 cove auto-signs itself on first launch with the required Virtualization.framework entitlements. No manual step is needed for normal use.
 
 > [!WARNING]
-> You must re-sign after every `go build` during development.
+> Manual signing is only needed if autosigning fails or you bypass normal
+> startup while developing cove.
 
 If you need to sign manually:
 
 ```bash
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements internal/autosign/vz.entitlements "$(command -v cove)"
 ```
 
 Required entitlements:
@@ -132,10 +122,7 @@ optional VM-specific doctor/control diagnostics.
 For source builds:
 
 ```bash
-git pull
-go build -o cove .
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
-install -m 0755 cove ~/bin/cove
+go install github.com/tmc/cove@latest
 cove doctor host
 cove helper status
 ```
