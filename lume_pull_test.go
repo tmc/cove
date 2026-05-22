@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/ociimage"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestParseLumeMemory(t *testing.T) {

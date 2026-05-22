@@ -24,9 +24,9 @@ import (
 	linuxconfig "github.com/tmc/apple/x/vzkit/linuxconfig"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
-	"github.com/tmc/vz-macos/internal/guestplan"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmrun"
+	"github.com/tmc/cove/internal/guestplan"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 // buildLinuxVMConfiguration builds a VZVirtualMachineConfiguration for Linux.

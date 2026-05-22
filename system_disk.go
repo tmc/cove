@@ -8,7 +8,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	pvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 type systemDiskAttachmentMode int

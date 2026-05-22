@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmpolicy"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmpolicy"
 )
 
 func handlePolicyCommand(args []string) error {

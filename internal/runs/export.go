@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/metrics"
 )
 
 // ExportJSON writes the full run metrics event array as JSON.

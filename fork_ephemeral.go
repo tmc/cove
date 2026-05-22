@@ -27,8 +27,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmidentity"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmidentity"
 )
 
 // ephemeralSentinel marks a vmDir as auto-deletable. cove gc removes

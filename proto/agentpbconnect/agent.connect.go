@@ -8,7 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	agentpb "github.com/tmc/vz-macos/proto/agentpb"
+	agentpb "github.com/tmc/cove/proto/agentpb"
 	http "net/http"
 	strings "strings"
 )

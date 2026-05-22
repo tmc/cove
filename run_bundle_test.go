@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // withTempHome points $HOME at a fresh temp dir BEFORE any code can call

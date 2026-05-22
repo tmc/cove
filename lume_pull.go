@@ -25,8 +25,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/ociimage"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // lumePullDisk downloads, concatenates, and untars a lume image into the

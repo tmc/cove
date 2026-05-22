@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func ctlPowerCommand(sock string, args []string, timeout time.Duration, raw bool) error {

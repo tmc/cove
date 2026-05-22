@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	fleetpkg "github.com/tmc/vz-macos/internal/fleet"
+	fleetpkg "github.com/tmc/cove/internal/fleet"
 )
 
 type localFleetRemoteRunner struct{}

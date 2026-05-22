@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func captureVZScriptStdout(t *testing.T, fn func() error) (string, error) {

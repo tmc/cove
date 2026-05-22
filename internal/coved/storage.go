@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	runmetrics "github.com/tmc/vz-macos/internal/metrics"
-	"github.com/tmc/vz-macos/internal/storagecensus"
+	runmetrics "github.com/tmc/cove/internal/metrics"
+	"github.com/tmc/cove/internal/storagecensus"
 )
 
 // DefaultStoragePollInterval is the cadence the storage poll loop uses

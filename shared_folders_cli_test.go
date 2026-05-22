@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestAddSharedFolderEntry(t *testing.T) {

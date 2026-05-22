@@ -29,11 +29,11 @@ import (
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	identityx "github.com/tmc/apple/x/vzkit/identity"
 	macosconfig "github.com/tmc/apple/x/vzkit/macosconfig"
-	"github.com/tmc/vz-macos/internal/assets"
-	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/guestplan"
-	"github.com/tmc/vz-macos/internal/vmrun"
-	"github.com/tmc/vz-macos/internal/vmstate"
+	"github.com/tmc/cove/internal/assets"
+	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/guestplan"
+	"github.com/tmc/cove/internal/vmrun"
+	"github.com/tmc/cove/internal/vmstate"
 )
 
 var errVMStartupInProgress = errors.New("vm startup already in progress")

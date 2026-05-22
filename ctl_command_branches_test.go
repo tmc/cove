@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // TestCtlCommandEarlyBranches covers the dispatch paths that exit before

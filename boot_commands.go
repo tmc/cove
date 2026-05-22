@@ -10,8 +10,8 @@ import (
 
 	"github.com/tmc/apple/appkit"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
-	"github.com/tmc/vz-macos/internal/controlserver"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // automationExecutor runs Recovery automation steps against a VM.

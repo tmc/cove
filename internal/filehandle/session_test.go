@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/pcap"
+	"github.com/tmc/cove/internal/pcap"
 	"golang.org/x/sys/unix"
 )
 

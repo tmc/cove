@@ -3,7 +3,7 @@ package controlclient
 import (
 	"testing"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestClientKeyWrappers(t *testing.T) {

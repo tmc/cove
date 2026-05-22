@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // VNCStatus is an alias of controlserver.VNCStatus. The type lives in

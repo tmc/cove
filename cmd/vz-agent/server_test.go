@@ -13,7 +13,7 @@ import (
 	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
 
-	pb "github.com/tmc/vz-macos/proto/agentpb"
+	pb "github.com/tmc/cove/proto/agentpb"
 )
 
 func TestNewExecCommandRejectsUnknownUser(t *testing.T) {

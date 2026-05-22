@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/anthropicadapter"
+	"github.com/tmc/cove/internal/anthropicadapter"
 )
 
 func TestFinalAnthropicAnswer(t *testing.T) {

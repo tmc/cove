@@ -1,4 +1,4 @@
-module github.com/tmc/vz-macos
+module github.com/tmc/cove
 
 go 1.25.5
 

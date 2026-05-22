@@ -14,7 +14,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/tmc/vz-macos/internal/sckit"
+	"github.com/tmc/cove/internal/sckit"
 )
 
 func runSCKitPreAuth(args []string) error {

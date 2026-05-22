@@ -7,7 +7,7 @@ import (
 	"github.com/tmc/apple/appkit"
 	vz "github.com/tmc/apple/virtualization"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // VMViewAsNSView casts a VZVirtualMachineView to appkit.NSView.

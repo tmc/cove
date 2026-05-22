@@ -14,7 +14,7 @@ import (
 	"github.com/knusbaum/go9p/client"
 	ninepfs "github.com/knusbaum/go9p/fs"
 	"github.com/knusbaum/go9p/proto"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestParseNinePAddr(t *testing.T) {

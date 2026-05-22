@@ -31,8 +31,8 @@ import (
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
 	configx "github.com/tmc/apple/x/vzkit/config"
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // LinuxProvisionConfig holds configuration for Linux VM provisioning.
@@ -1209,7 +1209,7 @@ func createCloudInitISO(config LinuxProvisionConfig) (string, string, error) {
 // populating it with all files from srcDir.
 // buildAgentBinaryTo cross-compiles the vz-agent binary to the given path.
 func buildAgentBinaryTo(outputPath, targetOS, targetArch string) error {
-	agentPkg := "github.com/tmc/vz-macos/cmd/vz-agent"
+	agentPkg := "github.com/tmc/cove/cmd/vz-agent"
 	moduleDir, err := findCoveModuleDir()
 	if err != nil {
 		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)

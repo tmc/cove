@@ -13,8 +13,8 @@ import (
 	"github.com/tmc/apple/x/capture"
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 type vmScreenshotProvider interface {

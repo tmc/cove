@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // TestDeleteVM_RefusesParentWithChildren asserts the lineage policy:

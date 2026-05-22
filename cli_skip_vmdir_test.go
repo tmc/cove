@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // TestSubcommandSkipsVMDir guards the allowlist of subcommands that must boot

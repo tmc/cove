@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
 )

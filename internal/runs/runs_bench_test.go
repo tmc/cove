@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/metrics"
 )
 
 // seedRuns creates n synthetic run dirs under root. Each dir has a

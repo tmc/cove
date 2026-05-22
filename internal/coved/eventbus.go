@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	runmetrics "github.com/tmc/vz-macos/internal/metrics"
+	runmetrics "github.com/tmc/cove/internal/metrics"
 )
 
 type Event = runmetrics.Event

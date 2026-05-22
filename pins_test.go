@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/storagepins"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/storagepins"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // pinsTestHome points coveRoot() at a temp directory via HOME override.

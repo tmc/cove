@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	fleetpkg "github.com/tmc/vz-macos/internal/fleet"
+	fleetpkg "github.com/tmc/cove/internal/fleet"
 )
 
 func runLocalCoveCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) error {

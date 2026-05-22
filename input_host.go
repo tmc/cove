@@ -10,8 +10,8 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 var _ controlserver.InputHost = (*ControlServer)(nil)

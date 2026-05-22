@@ -18,7 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	pw "github.com/tmc/vz-macos/internal/password"
+	pw "github.com/tmc/cove/internal/password"
 )
 
 const (

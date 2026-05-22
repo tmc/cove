@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/controlserver"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 type statusOptions struct {

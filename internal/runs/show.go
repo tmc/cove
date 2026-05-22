@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/metrics"
 )
 
 // ErrRunNotFound reports that no run directory matched the requested prefix.

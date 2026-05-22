@@ -11,9 +11,9 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 
-	"github.com/tmc/vz-macos/internal/lifecycle"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmpolicy"
+	"github.com/tmc/cove/internal/lifecycle"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmpolicy"
 )
 
 var (

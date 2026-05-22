@@ -15,7 +15,7 @@ import (
 
 	"github.com/knusbaum/go9p"
 	ninepfs "github.com/knusbaum/go9p/fs"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 const defaultNinePAddr = "unix:/tmp/cove.9p"

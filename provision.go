@@ -146,7 +146,7 @@ import (
 	"syscall"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
+	agentstate "github.com/tmc/cove/internal/agent"
 )
 
 func provisionStagingDirForVM(target vmSelection) string {

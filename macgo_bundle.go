@@ -13,8 +13,8 @@ import (
 	"os"
 
 	"github.com/tmc/macgo"
-	"github.com/tmc/vz-macos/internal/assets"
-	"github.com/tmc/vz-macos/internal/autosign"
+	"github.com/tmc/cove/internal/assets"
+	"github.com/tmc/cove/internal/autosign"
 )
 
 const vzmacEnableMacgoEnv = "VZMAC_ENABLE_MACGO"

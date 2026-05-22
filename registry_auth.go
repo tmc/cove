@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/cove/internal/ociimage"
 )
 
 type dockerConfig struct {

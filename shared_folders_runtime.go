@@ -11,9 +11,9 @@ import (
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
 
-	"github.com/tmc/vz-macos/internal/controlclient"
-	"github.com/tmc/vz-macos/internal/vmstate"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlclient"
+	"github.com/tmc/cove/internal/vmstate"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 type sharedFolderRuntimeApplier struct {

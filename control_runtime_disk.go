@@ -16,9 +16,9 @@ import (
 	"github.com/tmc/apple/x/vzkit/storagehotplug"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	agentpb "github.com/tmc/vz-macos/proto/agentpb"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	agentpb "github.com/tmc/cove/proto/agentpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const macOSResizeAPFSTimeout = 5 * time.Minute

@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // applyVMConfig loads saved VM config and applies defaults for flags

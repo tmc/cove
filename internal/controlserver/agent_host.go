@@ -6,7 +6,7 @@ import (
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
-	agentstate "github.com/tmc/vz-macos/internal/agent"
+	agentstate "github.com/tmc/cove/internal/agent"
 )
 
 // AgentHost is the narrow back-channel the agent sub-component needs

@@ -28,8 +28,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/ociimage"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // tartPullDisk fetches the tart manifest's nvram, config, and disk layers

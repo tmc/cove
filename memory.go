@@ -12,7 +12,7 @@ import (
 	balloonx "github.com/tmc/apple/x/vzkit/balloon"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // getMemoryInfo retrieves memory information from the VM.

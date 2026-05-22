@@ -17,9 +17,9 @@ import (
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmstate"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmstate"
 )
 
 // AgentBridge holds the agent clients and health state used by the

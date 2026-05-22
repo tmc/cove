@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // readyExitOK, readyExitFailed, and readyExitUnreachable are the documented

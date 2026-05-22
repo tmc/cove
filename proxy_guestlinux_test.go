@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	pb "github.com/tmc/vz-macos/proto/agentpb"
+	pb "github.com/tmc/cove/proto/agentpb"
 )
 
 type fakeLinuxProxyRT struct {

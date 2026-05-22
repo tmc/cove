@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/tmc/vz-macos/internal/vmrun"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 // vmrunRunConfig snapshots the relevant package-level globals into a

@@ -3,7 +3,7 @@ package controlserver
 import (
 	"testing"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestNetworkBridgeITerm2ProxyResponses(t *testing.T) {

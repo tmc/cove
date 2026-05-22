@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestPlatform(t *testing.T) {

@@ -20,7 +20,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/vm"
 	"github.com/tmc/apple/x/vzkit/vminput"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // CGEvent / keyboard primitives the bridge calls into. These are the

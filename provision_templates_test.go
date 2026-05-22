@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/password"
+	"github.com/tmc/cove/internal/password"
 )
 
 func TestGenerateEmbeddedProvisionScript(t *testing.T) {

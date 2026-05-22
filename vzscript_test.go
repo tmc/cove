@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
 )

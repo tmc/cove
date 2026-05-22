@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmquota"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmquota"
 )
 
 type quotaCommand struct {

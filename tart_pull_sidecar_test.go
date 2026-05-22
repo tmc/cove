@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/cove/internal/ociimage"
 )
 
 func newTartSidecarServer(t *testing.T, body []byte) *httptest.Server {

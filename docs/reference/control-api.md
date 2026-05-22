@@ -53,7 +53,7 @@ def send(req):
 All Go examples use the `ControlClient` from the main package:
 
 ```go
-import cove "github.com/tmc/vz-macos"
+import cove "github.com/tmc/cove"
 
 client := cove.NewControlClient(os.ExpandEnv("$HOME/.vz/vms/default/control.sock"))
 ```

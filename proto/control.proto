@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package vz.control.v1;
 
-option go_package = "github.com/tmc/vz-macos/proto/controlpb";
+option go_package = "github.com/tmc/cove/proto/controlpb";
 option swift_prefix = "VZControl_";
 
 // ControlRequest is the envelope for all control socket requests.

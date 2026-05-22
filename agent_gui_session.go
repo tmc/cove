@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	agentpb "github.com/tmc/vz-macos/proto/agentpb"
+	"github.com/tmc/cove/internal/controlserver"
+	agentpb "github.com/tmc/cove/proto/agentpb"
 )
 
 type linuxLoginctlSession struct {

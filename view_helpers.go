@@ -5,7 +5,7 @@ import (
 	"github.com/tmc/apple/objc"
 	vz "github.com/tmc/apple/virtualization"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
+	"github.com/tmc/cove/internal/controlserver"
 )
 
 // vmViewAsNSView casts a VZVirtualMachineView to appkit.NSView.

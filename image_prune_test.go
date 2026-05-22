@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/storagepins"
+	"github.com/tmc/cove/internal/storagepins"
 )
 
 func TestParseImagePruneDuration(t *testing.T) {

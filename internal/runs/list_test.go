@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/metrics"
+	"github.com/tmc/cove/internal/metrics"
 )
 
 func TestList(t *testing.T) {

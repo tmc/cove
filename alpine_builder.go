@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/vmconfig"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const alpineMinirootfsURL = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/alpine-minirootfs-3.23.4-aarch64.tar.gz"

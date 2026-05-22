@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/tmc/apple/x/plist"
-	"github.com/tmc/vz-macos/internal/password"
+	"github.com/tmc/cove/internal/password"
 )
 
 // TestProvisionScriptGeneration verifies the generated provision script structure.

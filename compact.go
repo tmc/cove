@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const compactTimeout = 30 * time.Minute

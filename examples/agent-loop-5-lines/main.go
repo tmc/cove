@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/tmc/vz-macos/agentsandbox"
+	"github.com/tmc/cove/agentsandbox"
 )
 
 func main() {

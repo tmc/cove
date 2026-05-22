@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	runmetrics "github.com/tmc/vz-macos/internal/metrics"
+	runmetrics "github.com/tmc/cove/internal/metrics"
 )
 
 func TestRunSuccess(t *testing.T) {

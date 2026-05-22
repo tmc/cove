@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // ErrVMNotFound is returned by DeleteVM/RenameVM (and friends) when

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/tmc/vz-macos/internal/controlclient"
+	"github.com/tmc/cove/internal/controlclient"
 )
 
 // formatControlSocketDialError rewrites low-level dial errors with VM-aware

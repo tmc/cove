@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmstate"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmstate"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 var (

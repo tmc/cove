@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/storagepins"
+	"github.com/tmc/cove/internal/storagepins"
 )
 
 type ImagePruneOptions struct {

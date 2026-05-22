@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/vmconfig"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const (

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/storagecensus"
-	"github.com/tmc/vz-macos/internal/storagepins"
+	"github.com/tmc/cove/internal/storagecensus"
+	"github.com/tmc/cove/internal/storagepins"
 )
 
 func TestStoragePollSchedulerEmitsTripwires(t *testing.T) {

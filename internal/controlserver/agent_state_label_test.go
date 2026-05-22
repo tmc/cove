@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	vz "github.com/tmc/apple/virtualization"
-	"github.com/tmc/vz-macos/internal/vmstate"
+	"github.com/tmc/cove/internal/vmstate"
 )
 
 func TestVMStateLabel(t *testing.T) {

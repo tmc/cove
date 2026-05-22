@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // runPostInstallVZScripts boots the VM, waits for the guest agent, runs

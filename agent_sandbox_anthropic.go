@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tmc/vz-macos/internal/anthropicadapter"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/anthropicadapter"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func runAnthropicAgentSandbox(ctx context.Context, opts agentSandboxRunOptions, vm, replayDir string) (agentsandboxResult, error) {

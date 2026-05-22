@@ -24,10 +24,10 @@ import (
 
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
-	"github.com/tmc/vz-macos/internal/bytefmt"
+	"github.com/tmc/cove/internal/bytefmt"
 	"golang.org/x/sys/unix"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // DiskSnapshotTarget specifies which disk(s) to snapshot.

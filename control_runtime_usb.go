@@ -16,7 +16,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/storagehotplug"
 	"github.com/tmc/apple/x/vzkit/usbpassthrough"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const runtimeUSBOperationTimeout = 10 * time.Second

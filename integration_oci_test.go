@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tmc/vz-macos/internal/ociimage"
+	"github.com/tmc/cove/internal/ociimage"
 )
 
 // TestPullDispatch_LumeManifest serves a lume tar-split manifest and asserts

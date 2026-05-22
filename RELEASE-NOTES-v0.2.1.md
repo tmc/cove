@@ -198,7 +198,7 @@ states.
 ```bash
 brew upgrade cove
 # or
-go install github.com/tmc/vz-macos@v0.2.1
+go install github.com/tmc/cove@v0.2.1
 # or
 nix run github:tmc/vz-macos
 ```

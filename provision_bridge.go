@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tmc/vz-macos/internal/provision"
+	"github.com/tmc/cove/internal/provision"
 )
 
 // Provision types are defined in internal/provision and re-exported here.

@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/ociimage"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/ociimage"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 type pushOptions struct {

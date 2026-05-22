@@ -2609,7 +2609,7 @@ const file_agent_proto_rawDesc = "" +
 	"\x06Reboot\x12\x1a.vz.agent.v1.RebootRequest\x1a\x1b.vz.agent.v1.RebootResponse2\x93\x01\n" +
 	"\tUserAgent\x12?\n" +
 	"\bUserExec\x12\x18.vz.agent.v1.ExecRequest\x1a\x19.vz.agent.v1.ExecResponse\x12E\n" +
-	"\x0eUserExecStream\x12\x18.vz.agent.v1.ExecRequest\x1a\x17.vz.agent.v1.ExecOutput0\x01B'Z%github.com/tmc/vz-macos/proto/agentpbb\x06proto3"
+	"\x0eUserExecStream\x12\x18.vz.agent.v1.ExecRequest\x1a\x17.vz.agent.v1.ExecOutput0\x01B#Z!github.com/tmc/cove/proto/agentpbb\x06proto3"
 
 var (
 	file_agent_proto_rawDescOnce sync.Once

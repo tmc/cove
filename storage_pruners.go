@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/storagecensus"
+	"github.com/tmc/cove/internal/storagecensus"
 )
 
 // buildScratchPruner adapts pruneBuildScratch to the storagecensus.Pruner

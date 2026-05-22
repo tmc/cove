@@ -22,7 +22,7 @@ import (
 	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
 	identityx "github.com/tmc/apple/x/vzkit/identity"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // guiUpdate holds pending UI changes that background goroutines request.

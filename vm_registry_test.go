@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestGetVMPathPrefersExistingLegacyVM(t *testing.T) {

@@ -28,7 +28,7 @@ AGENT_BIN="${AGENT_BIN:-$(dirname "$0")/vz-agent-guest}"
 if [ ! -f "$AGENT_BIN" ]; then
     echo "Building vz-agent..."
     cd "$(dirname "$0")"
-    CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o "$AGENT_BIN" github.com/tmc/vz-macos/cmd/vz-agent
+    CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o "$AGENT_BIN" github.com/tmc/cove/cmd/vz-agent
 fi
 
 # Copy binary

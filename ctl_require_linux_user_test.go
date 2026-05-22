@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestRequireLinuxUserExists(t *testing.T) {

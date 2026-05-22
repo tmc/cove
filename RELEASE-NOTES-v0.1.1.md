@@ -96,7 +96,7 @@ agent-exec`, the manual FDA grant is the supported path today.
 ```bash
 brew upgrade cove
 # or
-go install github.com/tmc/vz-macos@v0.1.1
+go install github.com/tmc/cove@v0.1.1
 ```
 
 If you have a v0.1.0 helper installed:

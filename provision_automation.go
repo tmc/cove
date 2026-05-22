@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/controlserver"
-	"github.com/tmc/vz-macos/proto/controlpb"
+	"github.com/tmc/cove/internal/controlserver"
+	"github.com/tmc/cove/proto/controlpb"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 )

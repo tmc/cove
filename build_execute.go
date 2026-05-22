@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/buildmeta"
-	"github.com/tmc/vz-macos/internal/store"
+	"github.com/tmc/cove/internal/buildmeta"
+	"github.com/tmc/cove/internal/store"
 )
 
 var errBuildCacheMissExecutionNotImplemented = errors.New("cove build: cache miss execution not yet implemented")

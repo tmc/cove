@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/coved"
+	"github.com/tmc/cove/internal/coved"
 )
 
 func TestHandleStatus(t *testing.T) {

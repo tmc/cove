@@ -16,11 +16,11 @@ import (
 	"github.com/tmc/apple/x/vzkit/configcodec"
 	"github.com/tmc/apple/x/vzkit/storagehotplug"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
-	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/sys/unix"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 type PITSnapshotInfo struct {

@@ -27,8 +27,8 @@ import (
 
 	vz "github.com/tmc/apple/virtualization"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 // agentBinaryName is the name of the guest agent binary.
@@ -58,7 +58,7 @@ func buildAgentBinary(outputPath string) error {
 }
 
 func buildAgentBinaryForOS(outputPath, targetOS string) error {
-	agentPkg := "github.com/tmc/vz-macos/cmd/vz-agent"
+	agentPkg := "github.com/tmc/cove/cmd/vz-agent"
 
 	moduleDir, err := findCoveModuleDir()
 	if err != nil {
@@ -121,9 +121,9 @@ func codesignAdHoc(path string) error {
 //
 // Resolution order:
 //  1. $COVE_SRC env var (explicit override)
-//  2. `go list -m -f {{.Dir}} github.com/tmc/vz-macos` from the working dir
-//  3. `go list -m -f {{.Dir}} github.com/tmc/vz-macos` from $GOPATH/src/github.com/tmc/vz-macos
-//  4. $GOPATH/src/github.com/tmc/vz-macos if it contains go.mod
+//  2. `go list -m -f {{.Dir}} github.com/tmc/cove` from the working dir
+//  3. `go list -m -f {{.Dir}} github.com/tmc/cove` from $GOPATH/src/github.com/tmc/cove
+//  4. $GOPATH/src/github.com/tmc/cove if it contains go.mod
 //
 // Returns the directory containing go.mod, or an error if none of the above
 // resolve to a valid module root.
@@ -159,7 +159,7 @@ func findCoveModuleDir() (string, error) {
 }
 
 func goListModuleDir(workingDir string) (string, error) {
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/tmc/vz-macos")
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/tmc/cove")
 	if workingDir != "" {
 		cmd.Dir = workingDir
 	}

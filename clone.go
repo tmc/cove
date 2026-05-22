@@ -11,7 +11,7 @@ import (
 	identityx "github.com/tmc/apple/x/vzkit/identity"
 	networkx "github.com/tmc/apple/x/vzkit/network"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
-	"github.com/tmc/vz-macos/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
 

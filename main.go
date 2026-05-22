@@ -19,10 +19,10 @@ import (
 
 	displayx "github.com/tmc/apple/x/vzkit/display"
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
-	"github.com/tmc/vz-macos/internal/action"
-	"github.com/tmc/vz-macos/internal/bytefmt"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmtree"
+	"github.com/tmc/cove/internal/action"
+	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmtree"
 	"golang.org/x/term"
 )
 

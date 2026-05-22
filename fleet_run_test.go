@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	pw "github.com/tmc/vz-macos/internal/password"
+	pw "github.com/tmc/cove/internal/password"
 )
 
 func TestExtractFleetRunPolicy(t *testing.T) {

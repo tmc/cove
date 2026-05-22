@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/control/operations"
+	"github.com/tmc/cove/internal/control/operations"
 )
 
 // stubControlServer returns a ControlServer configured with a dummy vmName

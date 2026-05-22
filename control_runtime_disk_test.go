@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	agentpb "github.com/tmc/vz-macos/proto/agentpb"
+	agentstate "github.com/tmc/cove/internal/agent"
+	agentpb "github.com/tmc/cove/proto/agentpb"
 )
 
 func TestParseRuntimeDiskActionRequest(t *testing.T) {

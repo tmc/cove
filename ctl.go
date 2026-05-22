@@ -18,14 +18,14 @@ import (
 	"time"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
-	agentstate "github.com/tmc/vz-macos/internal/agent"
-	pw "github.com/tmc/vz-macos/internal/password"
-	"github.com/tmc/vz-macos/internal/vmconfig"
-	"github.com/tmc/vz-macos/internal/vmstate"
+	agentstate "github.com/tmc/cove/internal/agent"
+	pw "github.com/tmc/cove/internal/password"
+	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmstate"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	controlpb "github.com/tmc/vz-macos/proto/controlpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func newCtlFlagSet() (*flag.FlagSet, *string, *time.Duration, *string, *bool, *time.Duration, *string) {

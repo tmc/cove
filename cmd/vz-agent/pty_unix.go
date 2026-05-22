@@ -10,7 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/creack/pty"
 
-	pb "github.com/tmc/vz-macos/proto/agentpb"
+	pb "github.com/tmc/cove/proto/agentpb"
 )
 
 func (s *agentServer) execStreamPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.ServerStream[pb.ExecOutput]) error {

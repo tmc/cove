@@ -10,7 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/tmc/vz-macos/internal/storagepins"
+	"github.com/tmc/cove/internal/storagepins"
 )
 
 // handlePinCommand implements `cove pin <object>`.
