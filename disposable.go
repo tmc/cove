@@ -9,18 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove/internal/disposable"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
-const disposableCloneStampFormat = "20060102-150405"
+const disposableCloneStampFormat = disposable.CloneStampFormat
 
 // DisposableClone describes a disposable VM clone created for a session.
-type DisposableClone struct {
-	Name      string
-	Path      string
-	Source    string
-	CreatedAt time.Time
-}
+type DisposableClone = disposable.Clone
 
 // DisposableSetupOptions configures disposable clone creation.
 type DisposableSetupOptions struct {
@@ -33,50 +29,20 @@ type DisposableSetupOptions struct {
 }
 
 // DisposableGCOptions configures disposable VM garbage collection.
-type DisposableGCOptions struct {
-	BaseDir   string
-	OlderThan time.Duration
-	DryRun    bool
-	Now       func() time.Time
-	IsActive  func(string) bool
-	RemoveAll func(string) error
-}
+type DisposableGCOptions = disposable.GCOptions
 
 // DisposableGCResult summarizes a garbage-collection run.
-type DisposableGCResult struct {
-	Scanned      int
-	Candidates   int
-	SkippedAlive int
-	Removed      int
-	Paths        []string
-}
+type DisposableGCResult = disposable.GCResult
 
 // disposableCloneName returns a human-readable disposable VM name.
 func disposableCloneName(base string, now time.Time) string {
-	base = disposableBaseName(base)
-	return fmt.Sprintf("%s-d-%s", base, now.Format(disposableCloneStampFormat))
+	return disposable.CloneName(base, now)
 }
 
 // parseDisposableCloneName parses a disposable VM name produced by
 // disposableCloneName.
 func parseDisposableCloneName(name string) (base string, createdAt time.Time, ok bool) {
-	idx := strings.LastIndex(name, "-d-")
-	if idx <= 0 {
-		return "", time.Time{}, false
-	}
-	stamp := name[idx+3:]
-	if len(stamp) != len(disposableCloneStampFormat) {
-		return "", time.Time{}, false
-	}
-	createdAt, err := time.ParseInLocation(disposableCloneStampFormat, stamp, time.Local)
-	if err != nil {
-		return "", time.Time{}, false
-	}
-	base = strings.TrimSpace(name[:idx])
-	if base == "" {
-		base = "vm"
-	}
-	return base, createdAt, true
+	return disposable.ParseCloneName(name)
 }
 
 // SetupDisposableClone creates a disposable VM clone from source.
@@ -136,72 +102,17 @@ func CleanupDisposableClone(path string) error {
 
 // GCDisposableClones removes disposable clones older than OlderThan.
 func GCDisposableClones(opts DisposableGCOptions) (DisposableGCResult, error) {
-	baseDir := opts.BaseDir
-	if baseDir == "" {
-		baseDir = vmconfig.BaseDir()
+	if opts.BaseDir == "" {
+		opts.BaseDir = vmconfig.BaseDir()
 	}
-	now := opts.Now
-	if now == nil {
-		now = time.Now
+	if opts.IsActive == nil {
+		opts.IsActive = disposableCloneIsActive
 	}
-	isActive := opts.IsActive
-	if isActive == nil {
-		isActive = disposableCloneIsActive
-	}
-	removeAll := opts.RemoveAll
-	if removeAll == nil {
-		removeAll = os.RemoveAll
-	}
-
-	entries, err := os.ReadDir(baseDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return DisposableGCResult{}, nil
-		}
-		return DisposableGCResult{}, fmt.Errorf("read vm base dir: %w", err)
-	}
-
-	var result DisposableGCResult
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		_, createdAt, ok := parseDisposableCloneName(name)
-		if !ok {
-			continue
-		}
-		result.Scanned++
-		path := filepath.Join(baseDir, name)
-		if isActive(path) {
-			result.SkippedAlive++
-			continue
-		}
-		if opts.OlderThan > 0 && now().Sub(createdAt) < opts.OlderThan {
-			continue
-		}
-		result.Candidates++
-		result.Paths = append(result.Paths, path)
-		if opts.DryRun {
-			continue
-		}
-		if err := removeAll(path); err != nil {
-			return result, fmt.Errorf("remove disposable clone %s: %w", path, err)
-		}
-		result.Removed++
-	}
-
-	return result, nil
+	return disposable.GC(opts)
 }
 
 func disposableBaseName(base string) string {
-	base = strings.TrimSpace(filepath.Base(base))
-	switch base {
-	case "", ".", "..", string(filepath.Separator):
-		return "vm"
-	default:
-		return base
-	}
+	return disposable.BaseName(base)
 }
 
 func disposableCloneIsActive(path string) bool {
