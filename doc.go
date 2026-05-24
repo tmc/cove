@@ -1,137 +1,92 @@
-// cove - macOS and Linux VM management using Apple's Virtualization framework
+// Command cove manages macOS and Linux virtual machines with Apple's
+// Virtualization framework.
 //
 // # Overview
 //
-// cove is a command-line tool for creating, provisioning, and running
-// virtual machines using Apple's Virtualization.framework. It supports both
-// macOS and Linux guests on Apple Silicon Macs.
+// cove creates, provisions, runs, snapshots, and controls local virtual
+// machines on Apple Silicon Macs. It uses generated purego bindings for
+// Apple's native frameworks, so the main binary is built without cgo.
 //
-// The tool uses purego for cgo-free Objective-C interop, making it a pure Go
-// implementation that interfaces directly with Apple's native frameworks.
+// VM data is stored under ~/.vz. A running VM exposes a per-VM Unix control
+// socket and token for local automation, and higher-level commands such as
+// cove ctl, cove shell, cove cp, and cove serve use the same control path.
 //
-// # Quick Start
+// # Common Commands
 //
-// Install and provision a macOS VM:
+// A typical first run is:
 //
-//	# Download and install macOS
-//	./cove install -ipsw ~/Downloads/UniversalMac_14.0_RestoreImage.ipsw
+//	cove doctor host
+//	cove up -user <name>
+//	cove list
+//	cove run
 //
-//	# Provision VM for automatic user creation
-//	./cove provision -user testuser -skip-setup-assistant
+// Common command groups are:
 //
-//	# Verify provisioning files are correct
-//	./cove verify
+//	install, up, run          create and boot VMs
+//	provision, verify         prepare guest users and agents
+//	ctl, shell, cp            control a running VM
+//	image, fork, clone        create reusable images and copy-on-write VMs
+//	snapshot, disk-snapshot   save and restore VM or disk state
+//	serve                    expose the local control API over HTTP/MCP
+//	support bundle           collect redacted diagnostics
 //
-//	# Run the VM with GUI
-//	./cove run -gui
+// Run cove help advanced for the complete command list, and cove <command> -h
+// for command-specific flags.
 //
-// # Architecture
+// # Guest Support
 //
-// The tool is organized into several components:
+// macOS guests are installed from IPSW restore images. Linux guests use EFI
+// boot and cloud-init based installation paths. Windows support is
+// experimental and lives behind explicit Windows commands and flags.
 //
-//	main.go           - CLI entry point and VM configuration
-//	installer.go      - macOS installation from IPSW restore images
-//	provision.go      - Disk provisioning and LaunchDaemon setup
-//	password.go       - Password hashing and auto-login encoding
-//	control_socket.go - Unix socket server for VM control
-//	screenshots.go    - Screen capture using CGWindowListCreateImage
-//	linux.go          - Linux VM support with EFI boot
-//	linux_installer.go - Cloud-init based Linux installation
-//
-// # Provisioning System
-//
-// The provisioning system enables fully non-interactive VM setup by injecting
-// files directly into the VM's disk image before first boot.
-//
-// Key concepts:
-//
-//  1. APFS Volume Mounting - VM disks contain multiple APFS volumes; the "Data"
-//     volume holds user data and configuration files.
-//
-//  2. LaunchDaemon Injection - A plist and script are written to
-//     /Library/LaunchDaemons/ to run at boot and create the user account.
-//
-//  3. Setup Assistant Bypass - The .AppleSetupDone marker tells macOS to skip
-//     the first-boot setup wizard.
-//
-//  4. Auto-Login - kcpassword and loginwindow.plist enable automatic login
-//     to the provisioned user account.
-//
-// See provision.go and password.go for detailed documentation of each component.
+// Each VM is stored in ~/.vz/vms/<name>. Images built by cove image are stored
+// separately under ~/.vz/images and can be materialized with cove run
+// -fork-from.
 //
 // # Control Socket
 //
-// Running VMs expose a Unix domain socket for control and monitoring:
+// Running VMs expose a local socket and token:
 //
 //	~/.vz/vms/<name>/control.sock
 //	~/.vz/vms/<name>/control.token
 //
-// Commands are sent as JSON (protobuf JSON mapping of ControlRequest).
-// The "type" field selects the handler; command payloads use the matching field name:
+// The socket accepts JSON using the protobuf JSON mapping of ControlRequest.
+// Most callers should use cove ctl or the internal controlclient package
+// instead of writing socket JSON by hand.
 //
-//	{"type":"ping","auth_token":"<token>"}                     - Health check
-//	{"type":"status","auth_token":"<token>"}                   - VM state and capabilities
-//	{"type":"screenshot","auth_token":"<token>"}               - Capture display (base64 PNG in response)
-//	{"type":"screenshot","auth_token":"<token>","screenshot":{"scale":0.5}} - Capture at half resolution
-//	{"type":"key","auth_token":"<token>","key":{"key_code":36}} - Send keypress (Return)
-//	{"type":"text","auth_token":"<token>","text":{"text":"hello"}} - Type text string
-//	{"type":"pause","auth_token":"<token>"}                    - Pause VM
-//	{"type":"resume","auth_token":"<token>"}                   - Resume VM
+// # Build and Signing
 //
-// See proto/control.proto for the full schema.
+// Virtualization.framework requires the virtualization entitlement. On normal
+// startup, cove checks the running binary, ad-hoc signs it with the embedded
+// entitlement when needed, and re-execs.
 //
-// Example usage:
+// If autosigning fails or the normal startup path is bypassed, sign the binary
+// manually:
 //
-//	TOKEN=$(cat ~/.vz/vms/default/control.token)
-//	echo "{\"type\":\"status\",\"auth_token\":\"$TOKEN\"}" | nc -U ~/.vz/vms/default/control.sock
+//	go build -o cove .
+//	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 //
-// # Linux VM Support
+// Manual signing is also useful for tests and launch paths that cannot re-exec
+// after autosigning.
 //
-// Linux VMs use a different boot mechanism than macOS:
+// # Repository Layout
 //
-//  1. EFI Boot - VZEFIBootLoader with NVRAM variable store
-//  2. Virtio GPU - VZVirtioGraphicsDeviceConfiguration for display
-//  3. Cloud-init - Automatic installation via NoCloud datasource
-//
-// Install and run a Linux VM:
-//
-//	./cove install -linux -provision-user ubuntu -provision-password <password>
-//	./cove run -linux -gui
-//
-// # VM Directory Structure
-//
-// Each VM is stored in ~/.vz/vms/<name>/ with these files:
-//
-//	disk.img      - Main storage (sparse APFS/ext4 image)
-//	aux.img       - macOS auxiliary storage (NVRAM, etc.)
-//	hw.model      - Hardware model identifier (macOS only)
-//	machine.id    - Machine identifier (macOS only)
-//	efi.nvram    - EFI variable store (Linux only)
-//	control.sock  - Control socket (when running)
-//	control.token - Control socket auth token (owner-read only)
-//
-// # Entitlements
-//
-// cove signs itself on first launch if the required virtualization
-// entitlements are missing. No manual codesign step is required.
-//
-// Required entitlements (internal/autosign/vz.entitlements):
-//
-//	com.apple.security.virtualization          - Basic VM capability
-//	com.apple.security.hypervisor             - Hypervisor access
+// Package main contains CLI dispatch and cove product policy. Reusable code is
+// kept in focused internal packages, such as internal/imagestore for local
+// image-store primitives and internal/controlclient for the control-socket
+// client. Product-neutral Virtualization.framework helpers live in the
+// github.com/tmc/apple/x/vzkit module.
 //
 // # Requirements
 //
-//   - Apple Silicon Mac (M1/M2/M3/M4)
-//   - macOS 12.0+ (Monterey or later)
-//   - Xcode Command Line Tools (for the automatic first-launch codesign step)
-//   - IPSW restore image for macOS installation
+//   - Apple Silicon Mac
+//   - macOS 14.0+ (Sonoma or later)
+//   - Xcode Command Line Tools
+//   - an IPSW restore image for macOS installation
 //
 // # References
 //
 //   - Apple Virtualization Framework: https://developer.apple.com/documentation/virtualization
-//   - purego: https://github.com/ebitengine/purego
-//   - Code-Hex/vz (CGO reference): https://github.com/Code-Hex/vz
 package main
 
 //go:generate go build -o cove .
