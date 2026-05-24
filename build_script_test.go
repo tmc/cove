@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -42,7 +43,7 @@ func TestRunBuildStepScriptHonorsContext(t *testing.T) {
 func TestRunBuildStepInScratchRequiresDir(t *testing.T) {
 	exec := testBuildExecutor(t.TempDir())
 	step := buildPlanStep{Name: "missing", Data: []byte("echo ok\n")}
-	err := exec.runBuildStepInScratch(context.Background(), step, buildScratch{})
+	err := exec.runBuildStepInScratch(context.Background(), step, buildscratch.Scratch{})
 	if err == nil || !strings.Contains(err.Error(), "scratch vm dir required") {
 		t.Fatalf("runBuildStepInScratch() = %v, want scratch dir error", err)
 	}
@@ -56,14 +57,14 @@ func TestRunBuildStepInScratchWaitsAndShutsDown(t *testing.T) {
 	})
 	defer restore()
 	exec := testBuildExecutor(t.TempDir())
-	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 		calls = append(calls, "start")
 		return func(context.Context) error {
 			calls = append(calls, "stop")
 			return nil
 		}, nil
 	}
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch")}
 	step := buildPlanStep{Name: "ok", Data: []byte("echo ok\n")}
 	if err := exec.runBuildStepInScratch(context.Background(), step, sc); err != nil {
 		t.Fatalf("runBuildStepInScratch(): %v", err)
@@ -82,18 +83,18 @@ func TestRunBuildStepInScratchCompactsBeforeShutdown(t *testing.T) {
 	})
 	defer restore()
 	exec := testBuildExecutor(t.TempDir())
-	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 		calls = append(calls, "start")
 		return func(context.Context) error {
 			calls = append(calls, "stop")
 			return nil
 		}, nil
 	}
-	exec.compactGuest = func(ctx context.Context, sc buildScratch, mode string) error {
+	exec.compactGuest = func(ctx context.Context, sc buildscratch.Scratch, mode string) error {
 		calls = append(calls, "compact:"+mode)
 		return nil
 	}
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch")}
 	step := buildPlanStep{Name: "ok", Data: []byte("echo ok\n"), Meta: buildScriptMeta{Compact: "thorough"}}
 	if err := exec.runBuildStepInScratch(context.Background(), step, sc); err != nil {
 		t.Fatalf("runBuildStepInScratch(): %v", err)
@@ -112,25 +113,25 @@ func TestRunBuildStepInScratchUnmountsSecretsBeforeCompaction(t *testing.T) {
 	})
 	defer restore()
 	exec := testBuildExecutor(t.TempDir())
-	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 		calls = append(calls, "start")
 		return func(context.Context) error {
 			calls = append(calls, "stop")
 			return nil
 		}, nil
 	}
-	exec.mountSecrets = func(context.Context, buildPlanStep, buildScratch, string) (buildGuestCleanup, error) {
+	exec.mountSecrets = func(context.Context, buildPlanStep, buildscratch.Scratch, string) (buildGuestCleanup, error) {
 		calls = append(calls, "mount-secrets")
 		return func(context.Context) error {
 			calls = append(calls, "unmount-secrets")
 			return nil
 		}, nil
 	}
-	exec.compactGuest = func(context.Context, buildScratch, string) error {
+	exec.compactGuest = func(context.Context, buildscratch.Scratch, string) error {
 		calls = append(calls, "compact")
 		return nil
 	}
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch")}
 	step := buildPlanStep{Name: "ok", Data: []byte("echo ok\n"), Meta: buildScriptMeta{Compact: "targeted", Secrets: []string{"TOKEN"}}}
 	if err := exec.runBuildStepInScratch(context.Background(), step, sc); err != nil {
 		t.Fatalf("runBuildStepInScratch(): %v", err)
@@ -147,14 +148,14 @@ func TestRunBuildStepInScratchSkipsFastCompaction(t *testing.T) {
 	})
 	defer restore()
 	exec := testBuildExecutor(t.TempDir())
-	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
-	exec.compactGuest = func(context.Context, buildScratch, string) error {
+	exec.compactGuest = func(context.Context, buildscratch.Scratch, string) error {
 		t.Fatal("fast compact called compactor")
 		return nil
 	}
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch")}
 	step := buildPlanStep{Name: "ok", Data: []byte("echo ok\n"), Meta: buildScriptMeta{Compact: "fast"}}
 	if err := exec.runBuildStepInScratch(context.Background(), step, sc); err != nil {
 		t.Fatalf("runBuildStepInScratch(): %v", err)
@@ -169,18 +170,18 @@ func TestRunBuildStepInScratchReportsCompactFailure(t *testing.T) {
 	})
 	defer restore()
 	exec := testBuildExecutor(t.TempDir())
-	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 		calls = append(calls, "start")
 		return func(context.Context) error {
 			calls = append(calls, "stop")
 			return nil
 		}, nil
 	}
-	exec.compactGuest = func(context.Context, buildScratch, string) error {
+	exec.compactGuest = func(context.Context, buildscratch.Scratch, string) error {
 		calls = append(calls, "compact")
 		return errors.New("compact failed")
 	}
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch")}
 	step := buildPlanStep{Name: "bad-compact", Data: []byte("echo ok\n"), Meta: buildScriptMeta{Compact: "targeted"}}
 	err := exec.runBuildStepInScratch(context.Background(), step, sc)
 	if err == nil || !strings.Contains(err.Error(), "compact targeted") {
@@ -199,13 +200,13 @@ func TestRunBuildStepInScratchCleansUpAfterScriptFailure(t *testing.T) {
 	})
 	defer restore()
 	exec := testBuildExecutor(t.TempDir())
-	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error {
 			stopped = true
 			return nil
 		}, nil
 	}
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch")}
 	step := buildPlanStep{Name: "bad", Data: []byte("unknown-command\n")}
 	err := exec.runBuildStepInScratch(context.Background(), step, sc)
 	if err == nil {
@@ -219,10 +220,10 @@ func TestRunBuildStepInScratchCleansUpAfterScriptFailure(t *testing.T) {
 func TestRunBuildStepInScratchReportsStartFailure(t *testing.T) {
 	exec := testBuildExecutor(t.TempDir())
 	wantErr := errors.New("start failed")
-	exec.startGuest = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 		return nil, wantErr
 	}
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch")}
 	step := buildPlanStep{Name: "bad", Data: []byte("echo ok\n")}
 	err := exec.runBuildStepInScratch(context.Background(), step, sc)
 	if !errors.Is(err, wantErr) {
@@ -251,7 +252,7 @@ func TestExecuteVMBuildRunsScriptAndRecordsLayer(t *testing.T) {
 		}
 	}
 	exec := testBuildExecutor(filepath.Join(root, "scratch"))
-	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
 	exec.plan.Steps = []buildPlanStep{{

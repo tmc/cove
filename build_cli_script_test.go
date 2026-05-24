@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -29,11 +30,11 @@ func TestBuildCLIScriptLocalBaseCacheHit(t *testing.T) {
 		defaultBuildCompact = oldCompact
 	}()
 	starts := 0
-	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	defaultBuildGuestStart = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		starts++
 		return func(context.Context) error { return nil }, nil
 	}
-	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
+	defaultBuildCompact = func(context.Context, buildscratch.Scratch, string) error { return nil }
 
 	root := t.TempDir()
 	t.Setenv("HOME", root)
@@ -84,11 +85,11 @@ func TestBuildCLIScriptFailureScratchPolicy(t *testing.T) {
 		defaultBuildCompact = oldCompact
 	}()
 	starts := 0
-	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	defaultBuildGuestStart = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		starts++
 		return func(context.Context) error { return nil }, nil
 	}
-	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
+	defaultBuildCompact = func(context.Context, buildscratch.Scratch, string) error { return nil }
 
 	root := t.TempDir()
 	t.Setenv("HOME", root)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/storagecensus"
 	"github.com/tmc/cove/internal/storagepins"
 	"github.com/tmc/cove/internal/store"
@@ -130,7 +131,7 @@ func runStoragePruneBuildScratch(args []string, out io.Writer) error {
 	return writePruneBuildScratchReport(out, rep)
 }
 
-func writePruneBuildScratchReport(out io.Writer, rep pruneBuildScratchReport) error {
+func writePruneBuildScratchReport(out io.Writer, rep buildscratch.Report) error {
 	mode := "dry-run"
 	if rep.Apply {
 		mode = "apply"

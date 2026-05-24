@@ -5,11 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/buildscratch"
 )
 
 func TestCleanupScratchEmptyDirNoOp(t *testing.T) {
 	exec := testBuildExecutor(t.TempDir())
-	if err := exec.cleanupScratch(buildScratch{}); err != nil {
+	if err := exec.cleanupScratch(buildscratch.Scratch{}); err != nil {
 		t.Fatalf("err = %v, want nil", err)
 	}
 }
@@ -29,7 +31,7 @@ func TestCleanupScratchRemoveError(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(root, 0755) })
 
-	err := exec.cleanupScratch(buildScratch{Dir: target})
+	err := exec.cleanupScratch(buildscratch.Scratch{Dir: target})
 	if err == nil || !strings.Contains(err.Error(), "remove build scratch") {
 		t.Fatalf("err = %v, want remove build scratch", err)
 	}

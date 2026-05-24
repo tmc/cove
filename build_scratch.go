@@ -13,11 +13,6 @@ import (
 	"github.com/tmc/cove/internal/buildscratch"
 )
 
-type buildScratch = buildscratch.Scratch
-type buildScratchMeta = buildscratch.Meta
-type buildScratchEntry = buildscratch.Entry
-type pruneBuildScratchReport = buildscratch.Report
-
 const pruneBuildScratchSanityFloor = buildscratch.PruneSanityFloor
 
 func defaultBuildScratchRoot() string {
@@ -28,7 +23,7 @@ func defaultBuildScratchRoot() string {
 	return filepath.Join(home, ".vz", "build-scratch")
 }
 
-func (e *buildExecutor) createScratch(parentDisk string) (buildScratch, error) {
+func (e *buildExecutor) createScratch(parentDisk string) (buildscratch.Scratch, error) {
 	if e.scratchRoot == "" {
 		e.scratchRoot = defaultBuildScratchRoot()
 	}
@@ -41,9 +36,9 @@ func (e *buildExecutor) createScratch(parentDisk string) (buildScratch, error) {
 	created := e.now().UTC()
 	id, err := buildscratch.NewID(created)
 	if err != nil {
-		return buildScratch{}, err
+		return buildscratch.Scratch{}, err
 	}
-	sc := buildScratch{
+	sc := buildscratch.Scratch{
 		ID:       id,
 		Dir:      filepath.Join(e.scratchRoot, id),
 		PIDPath:  filepath.Join(e.scratchRoot, id, "build.pid"),
@@ -52,13 +47,13 @@ func (e *buildExecutor) createScratch(parentDisk string) (buildScratch, error) {
 		Created:  created,
 	}
 	if err := os.MkdirAll(sc.Dir, 0o700); err != nil {
-		return buildScratch{}, fmt.Errorf("create build scratch: %w", err)
+		return buildscratch.Scratch{}, fmt.Errorf("create build scratch: %w", err)
 	}
 	if err := os.WriteFile(sc.PIDPath, []byte(strconv.Itoa(e.pid)+"\n"), 0644); err != nil {
 		os.RemoveAll(sc.Dir)
-		return buildScratch{}, fmt.Errorf("write build scratch pid: %w", err)
+		return buildscratch.Scratch{}, fmt.Errorf("write build scratch pid: %w", err)
 	}
-	meta := buildScratchMeta{
+	meta := buildscratch.Meta{
 		ID:               id,
 		PID:              e.pid,
 		PlanDigest:       digestBuildPlan(e.plan),
@@ -68,33 +63,33 @@ func (e *buildExecutor) createScratch(parentDisk string) (buildScratch, error) {
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		os.RemoveAll(sc.Dir)
-		return buildScratch{}, fmt.Errorf("marshal build scratch metadata: %w", err)
+		return buildscratch.Scratch{}, fmt.Errorf("marshal build scratch metadata: %w", err)
 	}
 	data = append(data, '\n')
 	if err := os.WriteFile(filepath.Join(sc.Dir, "build.json"), data, 0644); err != nil {
 		os.RemoveAll(sc.Dir)
-		return buildScratch{}, fmt.Errorf("write build scratch metadata: %w", err)
+		return buildscratch.Scratch{}, fmt.Errorf("write build scratch metadata: %w", err)
 	}
 	if parentDisk != "" {
 		if err := ForkVMDisk(parentDisk, sc.DiskPath); err != nil {
 			os.RemoveAll(sc.Dir)
-			return buildScratch{}, err
+			return buildscratch.Scratch{}, err
 		}
 	}
 	return sc, nil
 }
 
-func (e *buildExecutor) createScratchVM(parentDir string) (buildScratch, error) {
+func (e *buildExecutor) createScratchVM(parentDir string) (buildscratch.Scratch, error) {
 	if parentDir == "" {
-		return buildScratch{}, fmt.Errorf("create build scratch vm: parent vm dir required")
+		return buildscratch.Scratch{}, fmt.Errorf("create build scratch vm: parent vm dir required")
 	}
 	parentDisk, err := pushDiskPath(parentDir)
 	if err != nil {
-		return buildScratch{}, fmt.Errorf("create build scratch vm: %w", err)
+		return buildscratch.Scratch{}, fmt.Errorf("create build scratch vm: %w", err)
 	}
 	sc, err := e.createScratch("")
 	if err != nil {
-		return buildScratch{}, err
+		return buildscratch.Scratch{}, err
 	}
 	sc.DiskPath = filepath.Join(sc.Dir, filepath.Base(parentDisk))
 	cleanup := true
@@ -104,7 +99,7 @@ func (e *buildExecutor) createScratchVM(parentDir string) (buildScratch, error) 
 		}
 	}()
 	if err := ForkVMDisk(parentDisk, sc.DiskPath); err != nil {
-		return buildScratch{}, err
+		return buildscratch.Scratch{}, err
 	}
 	sourceOS := "macOS"
 	if filepath.Base(parentDisk) == "linux-disk.img" {
@@ -115,12 +110,12 @@ func (e *buildExecutor) createScratchVM(parentDir string) (buildScratch, error) 
 			continue
 		}
 		if err := copyBuildScratchFile(parentDir, sc.Dir, spec.name, spec.required); err != nil {
-			return buildScratch{}, err
+			return buildscratch.Scratch{}, err
 		}
 	}
 	for _, name := range cloneOptionalFiles(sourceOS) {
 		if err := copyBuildScratchFile(parentDir, sc.Dir, name, false); err != nil {
-			return buildScratch{}, err
+			return buildscratch.Scratch{}, err
 		}
 	}
 	cleanup = false
@@ -142,7 +137,7 @@ func copyBuildScratchFile(srcDir, dstDir, name string, required bool) error {
 	return nil
 }
 
-func (e *buildExecutor) cleanupScratch(sc buildScratch) error {
+func (e *buildExecutor) cleanupScratch(sc buildscratch.Scratch) error {
 	if sc.Dir == "" {
 		return nil
 	}
@@ -152,7 +147,7 @@ func (e *buildExecutor) cleanupScratch(sc buildScratch) error {
 	return nil
 }
 
-func pruneBuildScratch(root string, olderThan time.Duration, apply bool, isLive func(int) bool, now func() time.Time) (pruneBuildScratchReport, error) {
+func pruneBuildScratch(root string, olderThan time.Duration, apply bool, isLive func(int) bool, now func() time.Time) (buildscratch.Report, error) {
 	if isLive == nil {
 		isLive = processLive
 	}

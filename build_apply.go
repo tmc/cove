@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/store"
 )
 
@@ -11,7 +12,7 @@ type buildApplyResult struct {
 	Step        string
 	Key         string
 	LayerDigest string
-	Scratch     buildScratch
+	Scratch     buildscratch.Scratch
 	DiskPath    string
 }
 

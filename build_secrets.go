@@ -11,13 +11,14 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/secrets"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const buildSecretsGuestDir = "/tmp/cove-secrets"
 
-func mountBuildStepSecrets(ctx context.Context, step buildPlanStep, sc buildScratch, socketPath string) (buildGuestCleanup, error) {
+func mountBuildStepSecrets(ctx context.Context, step buildPlanStep, sc buildscratch.Scratch, socketPath string) (buildGuestCleanup, error) {
 	values, err := buildStepSecretValues(step)
 	if err != nil {
 		return nil, err

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/store"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
@@ -542,10 +543,10 @@ func TestHandleBuildRunsLocalBase(t *testing.T) {
 		defaultBuildGuestStart = oldStart
 		defaultBuildCompact = oldCompact
 	}()
-	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	defaultBuildGuestStart = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
-	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
+	defaultBuildCompact = func(context.Context, buildscratch.Scratch, string) error { return nil }
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -596,10 +597,10 @@ func TestHandleBuildPushesTags(t *testing.T) {
 		defaultBuildCompact = oldCompact
 		defaultBuildResultPusher = oldPusher
 	}()
-	defaultBuildGuestStart = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	defaultBuildGuestStart = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
-	defaultBuildCompact = func(context.Context, buildScratch, string) error { return nil }
+	defaultBuildCompact = func(context.Context, buildscratch.Scratch, string) error { return nil }
 	var pushed []string
 	var pushedDir string
 	var pushedChunkSize int64
