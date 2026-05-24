@@ -154,21 +154,11 @@ func pruneBuildScratch(root string, olderThan time.Duration, apply bool, isLive 
 	return buildscratch.Prune(root, olderThan, apply, isLive, now)
 }
 
-func dirBytes(dir string) int64 { return buildscratch.DirBytes(dir) }
-
 func gcBuildScratch(root string, isLive func(int) bool) error {
 	if isLive == nil {
 		isLive = processLive
 	}
 	return buildscratch.GC(root, isLive)
-}
-
-func readBuildScratchPID(path string) (int, bool) {
-	return buildscratch.ReadPID(path)
-}
-
-func newBuildScratchID(t time.Time) (string, error) {
-	return buildscratch.NewID(t)
 }
 
 func processLive(pid int) bool {
