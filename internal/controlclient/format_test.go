@@ -1,4 +1,4 @@
-package main
+package controlclient
 
 import (
 	"strings"
@@ -10,7 +10,7 @@ import (
 // TestFormatOperationsResponseSingleOp verifies that ctl operations get/wait
 // renders the proto OperationInfo fields rather than falling through to the
 // legacy "OK" path. Regression for v0.1.0 where operations get/wait/list
-// printed only "OK" because ctlPrintResponse ignored Result.Operation.
+// printed only "OK" because the CLI ignored Result.Operation.
 func TestFormatOperationsResponseSingleOp(t *testing.T) {
 	op := &controlpb.OperationInfo{
 		Id:        "op_07f8a057",
@@ -24,7 +24,7 @@ func TestFormatOperationsResponseSingleOp(t *testing.T) {
 		Result:  &controlpb.ControlResponse_Operation{Operation: op},
 	}
 
-	got := formatOperationsResponse(resp)
+	got := FormatOperationsResponse(resp)
 	for _, want := range []string{"op_07f8a057", "succeeded", "snapshots/smoke-async", "2026-04-26T12:00:00Z"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendered output missing %q; got:\n%s", want, got)
@@ -45,7 +45,7 @@ func TestFormatOperationsResponseFailedWithError(t *testing.T) {
 		Result:  &controlpb.ControlResponse_Operation{Operation: op},
 	}
 
-	got := formatOperationsResponse(resp)
+	got := FormatOperationsResponse(resp)
 	for _, want := range []string{"op_dead", "failed", "internal", "disk full"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendered output missing %q; got:\n%s", want, got)
@@ -66,7 +66,7 @@ func TestFormatOperationsResponseList(t *testing.T) {
 		},
 	}
 
-	got := formatOperationsResponse(resp)
+	got := FormatOperationsResponse(resp)
 	for _, want := range []string{"op_1", "op_2", "succeeded", "running", "snapshots/a", "snapshots/b", "ID", "STATUS"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendered output missing %q; got:\n%s", want, got)
@@ -81,18 +81,15 @@ func TestFormatOperationsResponseEmptyList(t *testing.T) {
 			OperationsList: &controlpb.OperationsListResponse{},
 		},
 	}
-	got := formatOperationsResponse(resp)
+	got := FormatOperationsResponse(resp)
 	if !strings.Contains(got, "no operations") {
 		t.Errorf("expected empty-list marker, got: %q", got)
 	}
 }
 
-// TestFormatOperationsResponseFallthrough verifies the helper returns "" when
-// neither Operation nor OperationsList is set, so ctlPrintResponse can fall
-// through to legacy resp.Data rendering.
 func TestFormatOperationsResponseFallthrough(t *testing.T) {
 	resp := &controlpb.ControlResponse{Success: true, Data: "legacy text"}
-	if got := formatOperationsResponse(resp); got != "" {
+	if got := FormatOperationsResponse(resp); got != "" {
 		t.Errorf("expected empty string for non-operations response, got %q", got)
 	}
 }
@@ -105,10 +102,10 @@ func TestFormatAgentSSHDResponseIsActive(t *testing.T) {
 			Stdout:   "active\n",
 		}},
 	}
-	got := formatAgentSSHDResponse(resp)
+	got := FormatAgentSSHDResponse(resp)
 	for _, want := range []string{"status: active", "exitCode: 0"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("formatAgentSSHDResponse() missing %q:\n%s", want, got)
+			t.Fatalf("FormatAgentSSHDResponse() missing %q:\n%s", want, got)
 		}
 	}
 }
@@ -118,13 +115,13 @@ func TestFormatAgentSSHDResponseLegacySystemctlStatus(t *testing.T) {
 		Success: true,
 		Data:    `{"exitCode":0,"stdout":"● ssh.service - OpenBSD Secure Shell server\n     Active: active (running) since Tue 2026-05-05 01:47:33 UTC\n","stderr":""}`,
 	}
-	got := formatAgentSSHDResponse(resp)
+	got := FormatAgentSSHDResponse(resp)
 	for _, want := range []string{"status: active", "exitCode: 0"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("formatAgentSSHDResponse() missing %q:\n%s", want, got)
+			t.Fatalf("FormatAgentSSHDResponse() missing %q:\n%s", want, got)
 		}
 	}
 	if strings.Contains(got, "OpenBSD Secure Shell") {
-		t.Fatalf("formatAgentSSHDResponse() leaked raw systemd output:\n%s", got)
+		t.Fatalf("FormatAgentSSHDResponse() leaked raw systemd output:\n%s", got)
 	}
 }
