@@ -223,9 +223,8 @@ type cliDocSpec struct {
 
 var cliDocSpecs = []cliDocSpec{
 	{Name: "up", Summary: "Install, provision, and boot a VM in one command.", Usage: func() string {
-		fs, _, _ := newUpFlagSet()
 		return captureWriter(func(w io.Writer) {
-			fs.SetOutput(w)
+			fs, _, _ := newUpFlagSet(w)
 			printUpUsage(w, fs)
 		})
 	}},

@@ -57,7 +57,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "shell":
 			printShellUsage(os.Stderr)
 		case "up":
-			fs, _, _ := newUpFlagSet()
+			fs, _, _ := newUpFlagSet(os.Stderr)
 			fs.Usage()
 		case "gc":
 			printGCUsage(os.Stderr)
@@ -312,7 +312,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 	case "up":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			fs, _, _ := newUpFlagSet()
+			fs, _, _ := newUpFlagSet(os.Stderr)
 			fs.Usage()
 			return true, 0
 		}

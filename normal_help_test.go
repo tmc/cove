@@ -69,7 +69,7 @@ func TestInstallHelpProvisionPasswordPrompt(t *testing.T) {
 }
 
 func TestUpHelpLinuxCredentialCaution(t *testing.T) {
-	fs, _, _ := newUpFlagSet()
+	fs, _, _ := newUpFlagSet(commandTestEnv().Stderr)
 
 	var buf bytes.Buffer
 	printUpUsage(&buf, fs)

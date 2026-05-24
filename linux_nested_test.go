@@ -34,7 +34,7 @@ func TestApplyNestedLinuxDefaultsBumpsImplicitCPU(t *testing.T) {
 }
 
 func TestParseUpFlagsNestedImpliesLinuxAndBumpsCPU(t *testing.T) {
-	cfg, err := parseUpFlags([]string{"-nested", "-headless"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-nested", "-headless"})
 	if err != nil {
 		t.Fatalf("parseUpFlags: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestParseUpFlagsNestedImpliesLinuxAndBumpsCPU(t *testing.T) {
 		t.Fatalf("cpuCount = %d, want 4", cfg.cpuCount)
 	}
 
-	cfg, err = parseUpFlags([]string{"-nested", "-cpu", "2", "-headless"})
+	cfg, err = parseUpFlags(commandTestEnv(), []string{"-nested", "-cpu", "2", "-headless"})
 	if err != nil {
 		t.Fatalf("parseUpFlags explicit cpu: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestParseUpFlagsNestedImpliesLinuxAndBumpsCPU(t *testing.T) {
 }
 
 func TestParseUpFlagsNVMeImpliesLinux(t *testing.T) {
-	cfg, err := parseUpFlags([]string{"-nvme", "-headless"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-nvme", "-headless"})
 	if err != nil {
 		t.Fatalf("parseUpFlags: %v", err)
 	}

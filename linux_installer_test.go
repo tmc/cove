@@ -512,7 +512,7 @@ func TestParseLinuxVariant(t *testing.T) {
 }
 
 func TestParseUpFlagsLinuxDistroDefaultUser(t *testing.T) {
-	cfg, err := parseUpFlags([]string{"-linux", "-distro", "alpine", "-headless"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-linux", "-distro", "alpine", "-headless"})
 	if err != nil {
 		t.Fatalf("parseUpFlags: %v", err)
 	}
