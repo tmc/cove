@@ -10,6 +10,8 @@ import (
 	"os"
 	"text/tabwriter"
 	"time"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 // handleImageCommand routes `cove image <subcmd>`.
@@ -180,7 +182,7 @@ type imageListResult struct {
 	Created string `json:"created,omitempty"`
 }
 
-func writeImageListJSON(w io.Writer, entries []ImageEntry) error {
+func writeImageListJSON(w io.Writer, entries []imagestore.Entry) error {
 	results := make([]imageListResult, 0, len(entries))
 	for _, entry := range entries {
 		result := imageListResult{

@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 const cacheImageDefaultTTL = 7 * 24 * time.Hour
@@ -165,7 +167,7 @@ func emitImageGCKeep(ref ImageRef, reason string, started time.Time) {
 	})
 }
 
-func imageCreatedAt(entry ImageEntry) time.Time {
+func imageCreatedAt(entry imagestore.Entry) time.Time {
 	if entry.Manifest != nil && !entry.Manifest.CreatedAt.IsZero() {
 		return entry.Manifest.CreatedAt
 	}

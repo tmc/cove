@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 // TestImageCreatedAt covers the three branches of imageCreatedAt:
@@ -17,7 +19,7 @@ func TestImageCreatedAt(t *testing.T) {
 	ref := ImageRef{Name: "test", Tag: "v1"}
 
 	t.Run("manifest timestamp wins", func(t *testing.T) {
-		entry := ImageEntry{Ref: ref, Manifest: &ImageManifest{CreatedAt: want}}
+		entry := imagestore.Entry{Ref: ref, Manifest: &ImageManifest{CreatedAt: want}}
 		got := imageCreatedAt(entry)
 		if !got.Equal(want) {
 			t.Errorf("imageCreatedAt = %v, want %v", got, want)
@@ -36,7 +38,7 @@ func TestImageCreatedAt(t *testing.T) {
 		if err := os.Chtimes(path, want, want); err != nil {
 			t.Fatal(err)
 		}
-		entry := ImageEntry{Ref: ref, Manifest: &ImageManifest{}} // zero CreatedAt
+		entry := imagestore.Entry{Ref: ref, Manifest: &ImageManifest{}} // zero CreatedAt
 		got := imageCreatedAt(entry)
 		if !got.Equal(want) {
 			t.Errorf("imageCreatedAt = %v, want %v", got, want)
@@ -44,7 +46,7 @@ func TestImageCreatedAt(t *testing.T) {
 	})
 
 	t.Run("now fallback when nothing on disk", func(t *testing.T) {
-		entry := ImageEntry{Ref: ImageRef{Name: "missing", Tag: "v1"}}
+		entry := imagestore.Entry{Ref: ImageRef{Name: "missing", Tag: "v1"}}
 		before := time.Now()
 		got := imageCreatedAt(entry)
 		after := time.Now()

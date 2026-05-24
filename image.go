@@ -291,12 +291,9 @@ func sha256AndSize(path string) (string, int64, error) {
 	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
-// ImageEntry is a row in `cove image list`.
-type ImageEntry = imagestore.Entry
-
 // ListImages walks the local image store and returns one entry per
 // (name, tag) pair that has a readable manifest.json.
-func ListImages() ([]ImageEntry, error) {
+func ListImages() ([]imagestore.Entry, error) {
 	root := ImagesBaseDir()
 	_, err := os.Stat(root)
 	if err != nil {
@@ -305,7 +302,7 @@ func ListImages() ([]ImageEntry, error) {
 		}
 		return nil, fmt.Errorf("stat images dir: %w", err)
 	}
-	var out []ImageEntry
+	var out []imagestore.Entry
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {
 			return nil
@@ -329,7 +326,7 @@ func ListImages() ([]ImageEntry, error) {
 		if err != nil {
 			return nil
 		}
-		out = append(out, ImageEntry{Ref: ref, Manifest: m})
+		out = append(out, imagestore.Entry{Ref: ref, Manifest: m})
 		return filepath.SkipDir
 	})
 	if err != nil {
