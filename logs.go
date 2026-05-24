@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -20,9 +19,10 @@ type logsOptions struct {
 
 const defaultLogLines = 200
 
-func parseLogsArgs(args []string) (logsOptions, error) {
+func parseLogsArgs(env commandEnv, args []string) (logsOptions, error) {
+	env = env.withDefaultIO()
 	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	follow := fs.Bool("f", false, "follow logs")
 	fs.BoolVar(follow, "follow", false, "follow logs")
 	lines := fs.Int("n", defaultLogLines, "maximum lines for one-shot logs")
@@ -92,8 +92,8 @@ func moveLogsFlagsFirst(args []string) []string {
 	return append(flags, rest...)
 }
 
-func logsCommand(args []string) error {
-	opts, err := parseLogsArgs(args)
+func logsCommand(env commandEnv, args []string) error {
+	opts, err := parseLogsArgs(env, args)
 	if errors.Is(err, errFlagHelp) {
 		return nil
 	}

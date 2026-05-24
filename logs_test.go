@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 )
 
 func TestParseLogsArgs(t *testing.T) {
+	env := commandEnv{Stderr: new(bytes.Buffer)}
 	oldVMName := vmName
 	t.Cleanup(func() { vmName = oldVMName })
 	vmName = ""
@@ -36,7 +38,7 @@ func TestParseLogsArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseLogsArgs(tt.args)
+			got, err := parseLogsArgs(env, tt.args)
 			if tt.fail {
 				if err == nil {
 					t.Fatal("parseLogsArgs error = nil")
@@ -64,10 +66,11 @@ func TestLogsUsageDocumentsFlagPlacement(t *testing.T) {
 }
 
 func TestParseLogsArgsUsesGlobalVM(t *testing.T) {
+	env := commandEnv{Stderr: new(bytes.Buffer)}
 	oldVMName := vmName
 	t.Cleanup(func() { vmName = oldVMName })
 	vmName = "global-vm"
-	got, err := parseLogsArgs(nil)
+	got, err := parseLogsArgs(env, nil)
 	if err != nil {
 		t.Fatalf("parseLogsArgs: %v", err)
 	}
@@ -84,7 +87,7 @@ func TestLogsGlobalMissingVMDoesNotCreateDir(t *testing.T) {
 	})
 	vmName = "missing-logs-vm"
 	vmDir = ""
-	err := logsCommand(nil)
+	err := logsCommand(commandEnv{Stderr: new(bytes.Buffer)}, nil)
 	if err == nil {
 		t.Fatal("logsCommand succeeded for missing VM")
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ func TestSetPolicyFieldErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := setPolicyField("vm", vmDir, tt.args)
+			err := setPolicyField(new(bytes.Buffer), "vm", vmDir, tt.args)
 			if err == nil {
 				t.Fatalf("setPolicyField(%v) = nil, want error containing %q", tt.args, tt.want)
 			}
@@ -54,14 +55,15 @@ func TestSetPolicyFieldHappyPaths(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out := captureStdout(t, func() error {
-				return setPolicyField("vm", vmDir, tt.args)
-			})
-			if !strings.Contains(out, "Saved policy for vm") {
-				t.Fatalf("setPolicyField(%v) stdout = %q, want Saved policy line", tt.args, out)
+			var out bytes.Buffer
+			if err := setPolicyField(&out, "vm", vmDir, tt.args); err != nil {
+				t.Fatalf("setPolicyField: %v", err)
 			}
-			if !strings.Contains(out, "Policy file:") {
-				t.Fatalf("setPolicyField(%v) stdout = %q, want Policy file line", tt.args, out)
+			if !strings.Contains(out.String(), "Saved policy for vm") {
+				t.Fatalf("setPolicyField(%v) stdout = %q, want Saved policy line", tt.args, out.String())
+			}
+			if !strings.Contains(out.String(), "Policy file:") {
+				t.Fatalf("setPolicyField(%v) stdout = %q, want Policy file line", tt.args, out.String())
 			}
 		})
 	}
@@ -92,7 +94,7 @@ func TestSetPolicyFieldPreservesExistingFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := setPolicyField("vm", vmDir, tt.args); err != nil {
+			if err := setPolicyField(new(bytes.Buffer), "vm", vmDir, tt.args); err != nil {
 				t.Fatalf("setPolicyField: %v", err)
 			}
 			got, err := vmpolicy.Load(vmDir)

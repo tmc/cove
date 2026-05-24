@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,8 +17,9 @@ type statusOptions struct {
 	VM string
 }
 
-func statusCommand(args ...string) error {
-	opts, err := parseStatusArgs(args)
+func statusCommand(env commandEnv, args ...string) error {
+	env = env.withDefaultIO()
+	opts, err := parseStatusArgs(env, args)
 	if errors.Is(err, errFlagHelp) {
 		return nil
 	}
@@ -34,7 +34,7 @@ func statusCommand(args ...string) error {
 		state := detectVMState(targetDir)
 		if state == "starting" {
 			_, note := runtimeListFields(targetDir, state)
-			fmt.Printf("starting: %s\n", note)
+			fmt.Fprintf(env.Stdout, "starting: %s\n", note)
 			return nil
 		}
 		name := filepath.Base(targetDir)
@@ -68,15 +68,16 @@ func statusCommand(args ...string) error {
 			status.GUISessionActive = ok
 		}
 	}
-	fmt.Println(controlserver.AgentHealthSummary(status))
+	fmt.Fprintln(env.Stdout, controlserver.AgentHealthSummary(status))
 	return nil
 }
 
-func parseStatusArgs(args []string) (statusOptions, error) {
+func parseStatusArgs(env commandEnv, args []string) (statusOptions, error) {
+	env = env.withDefaultIO()
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(env.Stderr)
 	vmFlag := fs.String("vm", "", "VM name")
-	fs.Usage = func() { printStatusUsage(os.Stdout) }
+	fs.Usage = func() { printStatusUsage(env.Stdout) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		return statusOptions{}, err
 	}

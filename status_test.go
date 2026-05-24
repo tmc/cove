@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ func TestStatusMissingNamedVMDoesNotCreateDir(t *testing.T) {
 	vmName = "missing-status-vm"
 	vmDir = ""
 
-	err := statusCommand()
+	err := statusCommand(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)})
 	if err == nil {
 		t.Fatal("statusCommand succeeded for missing VM")
 	}
@@ -59,7 +60,7 @@ func TestStatusVMFlagMissingVMDoesNotCreateDir(t *testing.T) {
 			if missing == "" {
 				missing = tt.args[1]
 			}
-			err := statusCommand(tt.args...)
+			err := statusCommand(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, tt.args...)
 			if err == nil {
 				t.Fatal("statusCommand succeeded for missing VM")
 			}
@@ -96,7 +97,7 @@ func TestParseStatusArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseStatusArgs(tt.args)
+			got, err := parseStatusArgs(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, tt.args)
 			if tt.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.err) {
 					t.Fatalf("parseStatusArgs error = %v, want %q", err, tt.err)
@@ -151,7 +152,7 @@ func TestStatusStoppedExistingVMReportsStoppedState(t *testing.T) {
 		t.Fatalf("write disk: %v", err)
 	}
 
-	err = statusCommand()
+	err = statusCommand(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)})
 	if err == nil {
 		t.Fatal("statusCommand succeeded for stopped VM without control socket")
 	}
