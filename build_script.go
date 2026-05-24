@@ -5,13 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/tmc/cove/internal/buildscratch"
 )
 
 func (e *buildExecutor) executeVMBuild(ctx context.Context, parentDir string) (buildExecutionResult, error) {
 	return e.executeVMWithMissRunner(ctx, parentDir, e.runBuildStepInScratch)
 }
 
-func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPlanStep, sc buildScratch) (err error) {
+func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPlanStep, sc buildscratch.Scratch) (err error) {
 	if sc.Dir == "" {
 		return fmt.Errorf("run build step %q: scratch vm dir required", step.Name)
 	}
@@ -45,7 +47,7 @@ func (e *buildExecutor) runBuildStepInScratch(ctx context.Context, step buildPla
 	return err
 }
 
-func (e *buildExecutor) compactBuildGuest(ctx context.Context, step buildPlanStep, sc buildScratch) error {
+func (e *buildExecutor) compactBuildGuest(ctx context.Context, step buildPlanStep, sc buildscratch.Scratch) error {
 	mode := step.Meta.Compact
 	if mode == "" {
 		mode = "targeted"
@@ -69,7 +71,7 @@ func (e *buildExecutor) compactBuildGuest(ctx context.Context, step buildPlanSte
 	return nil
 }
 
-func (e *buildExecutor) mountBuildStepSecrets(ctx context.Context, step buildPlanStep, sc buildScratch, socketPath string) (buildGuestCleanup, error) {
+func (e *buildExecutor) mountBuildStepSecrets(ctx context.Context, step buildPlanStep, sc buildscratch.Scratch, socketPath string) (buildGuestCleanup, error) {
 	if len(step.Meta.Secrets) == 0 {
 		return nil, nil
 	}

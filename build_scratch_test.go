@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/store"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
@@ -36,7 +37,7 @@ func TestBuildScratchCreateWritesMetadata(t *testing.T) {
 	if got := strings.TrimSpace(readFile(t, sc.PIDPath)); got != "1234" {
 		t.Fatalf("build.pid = %q, want 1234", got)
 	}
-	var meta buildScratchMeta
+	var meta buildscratch.Meta
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(sc.Dir, "build.json"))), &meta); err != nil {
 		t.Fatalf("unmarshal build.json: %v", err)
 	}
@@ -240,7 +241,7 @@ func TestBuildExecutorExecuteRunsLocalVMBuild(t *testing.T) {
 		AgentProtocolVersion: agentProtocolVersion,
 		Meta:                 buildScriptMeta{Compact: "targeted"},
 	}}
-	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
 	if err := exec.Execute(context.Background()); err != nil {
@@ -290,7 +291,7 @@ func TestBuildExecutorExecutePromotesFinalVM(t *testing.T) {
 		AgentProtocolVersion: agentProtocolVersion,
 		Meta:                 buildScriptMeta{Compact: "targeted"},
 	}}
-	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
 	if err := exec.Execute(context.Background()); err != nil {
@@ -343,7 +344,7 @@ func TestBuildExecutorExecuteSecondRunUsesCache(t *testing.T) {
 	exec.store = store.New(storeDir)
 	exec.plan.Base = parentDir
 	exec.plan.Steps = []buildPlanStep{step}
-	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
 	if err := exec.Execute(context.Background()); err != nil {
@@ -360,7 +361,7 @@ func TestBuildExecutorExecuteSecondRunUsesCache(t *testing.T) {
 	step.CacheHit = true
 	step.LayerDigest = entry.LayerDigest
 	second.plan.Steps = []buildPlanStep{step}
-	second.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	second.startGuest = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		t.Fatal("cache-hit build started guest")
 		return nil, nil
 	}
@@ -404,7 +405,7 @@ func TestBuildExecutorExecuteMissingSecretBeforeScratch(t *testing.T) {
 			Secrets: []string{"COVE_TEST_MISSING_SECRET"},
 		},
 	}}
-	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		t.Fatal("missing secret started guest")
 		return nil, nil
 	}
@@ -449,7 +450,7 @@ func TestBuildExecutorExecuteInvalidSecretBeforeScratch(t *testing.T) {
 			Secrets: []string{"../TOKEN"},
 		},
 	}}
-	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		t.Fatal("invalid secret started guest")
 		return nil, nil
 	}
@@ -498,7 +499,7 @@ func TestBuildExecutorSecretValueNotPersisted(t *testing.T) {
 			Secrets: []string{secretName},
 		},
 	}}
-	exec.startGuest = func(context.Context, buildScratch) (buildGuestCleanup, error) {
+	exec.startGuest = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
 		return func(context.Context) error { return nil }, nil
 	}
 	if err := exec.Execute(context.Background()); err != nil {
@@ -651,7 +652,7 @@ func testBuildExecutor(root string) *buildExecutor {
 			return time.Date(2026, 4, 30, 3, 30, 0, 0, time.UTC)
 		},
 		pid: 1234,
-		compactGuest: func(context.Context, buildScratch, string) error {
+		compactGuest: func(context.Context, buildscratch.Scratch, string) error {
 			return nil
 		},
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	controlx "github.com/tmc/cove/internal/control"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
@@ -56,7 +57,7 @@ func TestWithBuildRuntimeGlobalsSetsAndRestores(t *testing.T) {
 	autoMountVolumes = true
 	serialOutput = "stdout"
 
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch"), DiskPath: filepath.Join(t.TempDir(), "scratch", "linux-disk.img")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch"), DiskPath: filepath.Join(t.TempDir(), "scratch", "linux-disk.img")}
 	err := withBuildRuntimeGlobals(sc, func() error {
 		if vmDir != sc.Dir || diskPath != sc.DiskPath {
 			return fmt.Errorf("paths = %q/%q, want %q/%q", vmDir, diskPath, sc.Dir, sc.DiskPath)
@@ -79,7 +80,7 @@ func TestWithBuildRuntimeGlobalsRestoresAfterError(t *testing.T) {
 	t.Cleanup(func() { vmDir = oldVMDir })
 	vmDir = "old-vm"
 	wantErr := errors.New("failed")
-	sc := buildScratch{Dir: filepath.Join(t.TempDir(), "scratch"), DiskPath: filepath.Join(t.TempDir(), "scratch", "disk.img")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(t.TempDir(), "scratch"), DiskPath: filepath.Join(t.TempDir(), "scratch", "disk.img")}
 	err := withBuildRuntimeGlobals(sc, func() error { return wantErr })
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("withBuildRuntimeGlobals() = %v, want %v", err, wantErr)
@@ -90,10 +91,10 @@ func TestWithBuildRuntimeGlobalsRestoresAfterError(t *testing.T) {
 }
 
 func TestWithBuildRuntimeGlobalsRejectsIncompleteScratch(t *testing.T) {
-	if err := withBuildRuntimeGlobals(buildScratch{}, func() error { return nil }); err == nil {
+	if err := withBuildRuntimeGlobals(buildscratch.Scratch{}, func() error { return nil }); err == nil {
 		t.Fatal("withBuildRuntimeGlobals() error = nil, want missing dir")
 	}
-	if err := withBuildRuntimeGlobals(buildScratch{Dir: "scratch"}, func() error { return nil }); err == nil {
+	if err := withBuildRuntimeGlobals(buildscratch.Scratch{Dir: "scratch"}, func() error { return nil }); err == nil {
 		t.Fatal("withBuildRuntimeGlobals() error = nil, want missing disk")
 	}
 }
@@ -102,13 +103,13 @@ func TestStartBuildGuestUsesDefaultStarter(t *testing.T) {
 	old := defaultBuildGuestStart
 	defer func() { defaultBuildGuestStart = old }()
 
-	var got buildScratch
-	defaultBuildGuestStart = func(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+	var got buildscratch.Scratch
+	defaultBuildGuestStart = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 		got = sc
 		return func(context.Context) error { return nil }, nil
 	}
 	exec := testBuildExecutor(t.TempDir())
-	sc := buildScratch{Dir: "scratch", DiskPath: "disk.img"}
+	sc := buildscratch.Scratch{Dir: "scratch", DiskPath: "disk.img"}
 	cleanup, err := exec.startBuildGuest(context.Background(), sc)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +239,7 @@ func TestShutdownBuildGuestReportsFailure(t *testing.T) {
 
 func TestCompactBuildScratchTargetedLinux(t *testing.T) {
 	root := t.TempDir()
-	sc := buildScratch{Dir: filepath.Join(root, "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(root, "scratch")}
 	if err := os.MkdirAll(sc.Dir, 0755); err != nil {
 		t.Fatal(err)
 	}

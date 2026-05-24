@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/store"
 )
 
@@ -272,7 +273,7 @@ func TestExecuteWithMissRunnerRecordsAndChains(t *testing.T) {
 	exec.store = s
 	exec.opts.KeepIntermediate = false
 	exec.plan.Steps = []buildPlanStep{hit, miss}
-	result, err := exec.executeWithMissRunner(context.Background(), parent, func(ctx context.Context, step buildPlanStep, sc buildScratch) error {
+	result, err := exec.executeWithMissRunner(context.Background(), parent, func(ctx context.Context, step buildPlanStep, sc buildscratch.Scratch) error {
 		got, err := os.ReadFile(sc.DiskPath)
 		if err != nil {
 			return err
@@ -322,7 +323,7 @@ func TestExecuteWithMissRunnerFailureCleansScratch(t *testing.T) {
 	exec.opts.KeepIntermediate = false
 	exec.plan.Steps = []buildPlanStep{miss}
 	wantErr := errors.New("guest failed")
-	_, err := exec.executeWithMissRunner(context.Background(), parent, func(context.Context, buildPlanStep, buildScratch) error {
+	_, err := exec.executeWithMissRunner(context.Background(), parent, func(context.Context, buildPlanStep, buildscratch.Scratch) error {
 		return wantErr
 	})
 	if !errors.Is(err, wantErr) {
@@ -345,7 +346,7 @@ func TestExecuteWithMissRunnerFailureKeepsScratch(t *testing.T) {
 	exec.opts.KeepIntermediate = true
 	exec.plan.Steps = []buildPlanStep{miss}
 	wantErr := errors.New("guest failed")
-	_, err := exec.executeWithMissRunner(context.Background(), parent, func(context.Context, buildPlanStep, buildScratch) error {
+	_, err := exec.executeWithMissRunner(context.Background(), parent, func(context.Context, buildPlanStep, buildscratch.Scratch) error {
 		return wantErr
 	})
 	if !errors.Is(err, wantErr) {
@@ -398,7 +399,7 @@ func TestExecuteVMWithMissRunnerRecordsAndChains(t *testing.T) {
 	exec.store = s
 	exec.opts.KeepIntermediate = false
 	exec.plan.Steps = []buildPlanStep{hit, miss}
-	result, err := exec.executeVMWithMissRunner(context.Background(), parentDir, func(ctx context.Context, step buildPlanStep, sc buildScratch) error {
+	result, err := exec.executeVMWithMissRunner(context.Background(), parentDir, func(ctx context.Context, step buildPlanStep, sc buildscratch.Scratch) error {
 		got, err := os.ReadFile(sc.DiskPath)
 		if err != nil {
 			return err
@@ -493,7 +494,7 @@ func TestExecuteVMWithMissRunnerFailureKeepsScratch(t *testing.T) {
 	exec.opts.KeepIntermediate = true
 	exec.plan.Steps = []buildPlanStep{miss}
 	wantErr := errors.New("guest failed")
-	_, err := exec.executeVMWithMissRunner(context.Background(), parentDir, func(context.Context, buildPlanStep, buildScratch) error {
+	_, err := exec.executeVMWithMissRunner(context.Background(), parentDir, func(context.Context, buildPlanStep, buildscratch.Scratch) error {
 		return wantErr
 	})
 	if err != nil && strings.Contains(err.Error(), "clonefile") {

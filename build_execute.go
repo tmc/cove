@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/buildmeta"
+	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/store"
 )
 
@@ -34,9 +35,9 @@ type buildExecutionResult struct {
 	Steps    []buildApplyResult
 }
 
-type buildMissRunner func(context.Context, buildPlanStep, buildScratch) error
-type buildCompactor func(context.Context, buildScratch, string) error
-type buildSecretMounter func(context.Context, buildPlanStep, buildScratch, string) (buildGuestCleanup, error)
+type buildMissRunner func(context.Context, buildPlanStep, buildscratch.Scratch) error
+type buildCompactor func(context.Context, buildscratch.Scratch, string) error
+type buildSecretMounter func(context.Context, buildPlanStep, buildscratch.Scratch, string) (buildGuestCleanup, error)
 
 func newBuildExecutor(plan buildPlan, opts buildOptions, s store.Store) *buildExecutor {
 	return &buildExecutor{
@@ -252,7 +253,7 @@ func (e *buildExecutor) cleanupIntermediate(result buildExecutionResult) {
 	}
 }
 
-func buildStepFailureError(step buildPlanStep, sc buildScratch, err error, kept bool) error {
+func buildStepFailureError(step buildPlanStep, sc buildscratch.Scratch, err error, kept bool) error {
 	if kept && sc.Dir != "" {
 		return fmt.Errorf("cove build: step %q failed; scratch kept at %s: %w", step.Name, sc.Dir, err)
 	}

@@ -10,12 +10,13 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/buildscratch"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 type buildControlSender func(string, *controlpb.ControlRequest, time.Duration, string) (*controlpb.ControlResponse, error)
 type buildGuestCleanup func(context.Context) error
-type buildGuestStarter func(context.Context, buildScratch) (buildGuestCleanup, error)
+type buildGuestStarter func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error)
 
 var (
 	sendBuildControlRequest buildControlSender = ctlSendRequest
@@ -24,7 +25,7 @@ var (
 	defaultBuildSecretMount buildSecretMounter = mountBuildStepSecrets
 )
 
-func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -37,7 +38,7 @@ func (e *buildExecutor) startBuildGuest(ctx context.Context, sc buildScratch) (b
 	return defaultBuildGuestStart(ctx, sc)
 }
 
-func withBuildRuntimeGlobals(sc buildScratch, fn func() error) error {
+func withBuildRuntimeGlobals(sc buildscratch.Scratch, fn func() error) error {
 	if sc.Dir == "" {
 		return fmt.Errorf("build runtime: scratch vm dir required")
 	}
@@ -87,7 +88,7 @@ func withBuildRuntimeGlobals(sc buildScratch, fn func() error) error {
 	return fn()
 }
 
-func startScratchBuildGuest(ctx context.Context, sc buildScratch) (buildGuestCleanup, error) {
+func startScratchBuildGuest(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -269,7 +270,7 @@ func shutdownBuildGuest(ctx context.Context, socketPath string) error {
 	return nil
 }
 
-func compactBuildScratch(ctx context.Context, sc buildScratch, mode string) error {
+func compactBuildScratch(ctx context.Context, sc buildscratch.Scratch, mode string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -297,7 +298,7 @@ func compactBuildScratch(ctx context.Context, sc buildScratch, mode string) erro
 	}
 }
 
-func compactBuildScratchTargeted(ctx context.Context, sc buildScratch) error {
+func compactBuildScratchTargeted(ctx context.Context, sc buildscratch.Scratch) error {
 	script, err := targetedBuildCompactScript(agentstate.Platform(sc.Dir))
 	if err != nil {
 		return err

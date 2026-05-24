@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -17,7 +18,7 @@ func TestMountBuildStepSecretsLinux(t *testing.T) {
 	t.Setenv("BUILD_SECRET_A", "alpha")
 	t.Setenv("BUILD_SECRET_B", "beta")
 	root := t.TempDir()
-	sc := buildScratch{Dir: filepath.Join(root, "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(root, "scratch")}
 	if err := os.MkdirAll(sc.Dir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func TestMountBuildStepSecretsLinux(t *testing.T) {
 func TestMountBuildStepSecretsLinuxSwapFailure(t *testing.T) {
 	t.Setenv("BUILD_SECRET", "secret")
 	root := t.TempDir()
-	sc := buildScratch{Dir: filepath.Join(root, "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(root, "scratch")}
 	if err := os.MkdirAll(sc.Dir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +141,7 @@ func TestBuildStepSecretValuesSecretFromFileError(t *testing.T) {
 func TestMountBuildStepSecretsMacOS(t *testing.T) {
 	t.Setenv("BUILD_SECRET", "secret")
 	root := t.TempDir()
-	sc := buildScratch{Dir: filepath.Join(root, "scratch")}
+	sc := buildscratch.Scratch{Dir: filepath.Join(root, "scratch")}
 	if err := os.MkdirAll(sc.Dir, 0755); err != nil {
 		t.Fatal(err)
 	}
