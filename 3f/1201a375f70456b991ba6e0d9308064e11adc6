@@ -1,0 +1,9 @@
+commit: 3f1201a375f70456b991ba6e0d9308064e11adc6
+date: 2026-05-24T02:36:14Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 22503
+ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-rf-internal-deadcode-adapters-review.md
+rf-report: /tmp/rf-usage-report-002.md
