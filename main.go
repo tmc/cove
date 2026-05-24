@@ -987,7 +987,7 @@ Flags:
 }
 
 func writeUnknownCommand(w io.Writer, cmd string) {
-	if s := suggestCommand(cmd); s != "" {
+	if s := covecli.Suggest(cmd, commandNames()); s != "" {
 		fmt.Fprintf(w, "cove: unknown command %q. Did you mean %q?\n  help: cove %s -h\n", cmd, s, s)
 		return
 	}
