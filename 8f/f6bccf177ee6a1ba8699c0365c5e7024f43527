@@ -1,0 +1,13 @@
+commit: 8ff6bccf177ee6a1ba8699c0365c5e7024f43527
+date: 2026-05-24T14:36:16-07:00
+agent: codex
+model: GPT-5
+shell: bash
+tty: not a tty
+pid: 96807
+iterm_session_id: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-go-doc-root-docgo-rewrite-v4.md
+artifact: /Users/tmc/tmp/cove-package-extract-current/go-doc-root-package-docgo-rewrite-v4.txt
+gates: go doc .; git diff --check; go test ./...
+notebook_verdict: IN, no blockers
+no-push: true
