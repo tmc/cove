@@ -31,10 +31,6 @@ func DefaultPath() string {
 	return filepath.Join(home, ".vz", "fleet.json")
 }
 
-func Load() (*Config, error) {
-	return LoadPath(DefaultPath())
-}
-
 func LoadPath(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -51,10 +47,6 @@ func LoadPath(path string) (*Config, error) {
 		cfg.Remotes = make(map[string]Remote)
 	}
 	return &cfg, nil
-}
-
-func Save(cfg *Config) error {
-	return SavePath(DefaultPath(), cfg)
 }
 
 func SavePath(path string, cfg *Config) error {
