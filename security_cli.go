@@ -21,17 +21,23 @@ type securityStatus struct {
 }
 
 func runSecurityCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleSecurityCommand(args, env.Stdout))
+	return commandError(env, handleSecurityCommand(env, args))
 }
 
-func handleSecurityCommand(args []string, out io.Writer) error {
+func handleSecurityCommand(env commandEnv, args []string) error {
+	if env.Stdout == nil {
+		env.Stdout = os.Stdout
+	}
+	if env.Stderr == nil {
+		env.Stderr = os.Stderr
+	}
 	if len(args) > 0 && args[0] == "status" {
 		args = args[1:]
 	}
 	fs := flag.NewFlagSet("security", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(env.Stderr)
 	jsonFlag := fs.Bool("json", false, "emit JSON")
-	fs.Usage = func() { printSecurityUsage(os.Stderr) }
+	fs.Usage = func() { printSecurityUsage(env.Stderr) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if err == errFlagHelp {
 			return nil
@@ -50,18 +56,18 @@ func handleSecurityCommand(args []string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("marshal security status: %w", err)
 		}
-		fmt.Fprintln(out, string(data))
+		fmt.Fprintln(env.Stdout, string(data))
 		return nil
 	}
-	fmt.Fprintf(out, "sandbox: %s\n", status.SandboxLevel)
-	fmt.Fprintf(out, "host containment: %v\n", status.HostContainment)
-	fmt.Fprintf(out, "network: %s\n", status.NetworkMode)
-	fmt.Fprintf(out, "clipboard: %v\n", status.Clipboard)
-	fmt.Fprintf(out, "auto-mount volumes: %v\n", status.AutoMount)
-	fmt.Fprintf(out, "auto-upgrade agent: %v\n", status.AutoUpgrade)
-	fmt.Fprintf(out, "vnc: %v\n", status.VNC)
-	fmt.Fprintf(out, "debug stub: %v\n", status.DebugStub)
-	fmt.Fprintf(out, "http listener: %v\n", status.HTTP)
+	fmt.Fprintf(env.Stdout, "sandbox: %s\n", status.SandboxLevel)
+	fmt.Fprintf(env.Stdout, "host containment: %v\n", status.HostContainment)
+	fmt.Fprintf(env.Stdout, "network: %s\n", status.NetworkMode)
+	fmt.Fprintf(env.Stdout, "clipboard: %v\n", status.Clipboard)
+	fmt.Fprintf(env.Stdout, "auto-mount volumes: %v\n", status.AutoMount)
+	fmt.Fprintf(env.Stdout, "auto-upgrade agent: %v\n", status.AutoUpgrade)
+	fmt.Fprintf(env.Stdout, "vnc: %v\n", status.VNC)
+	fmt.Fprintf(env.Stdout, "debug stub: %v\n", status.DebugStub)
+	fmt.Fprintf(env.Stdout, "http listener: %v\n", status.HTTP)
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestSecurityStatusHostContainment(t *testing.T) {
 	autoUpgradeAgent = true
 
 	var out strings.Builder
-	if err := handleSecurityCommand([]string{"status"}, &out); err != nil {
+	if err := handleSecurityCommand(commandEnv{Stdout: &out, Stderr: &bytes.Buffer{}}, []string{"status"}); err != nil {
 		t.Fatalf("handleSecurityCommand: %v", err)
 	}
 	got := out.String()
@@ -62,11 +63,39 @@ func TestSecurityStatusJSON(t *testing.T) {
 	networkMode = "none"
 
 	var out strings.Builder
-	if err := handleSecurityCommand([]string{"status", "-json"}, &out); err != nil {
+	if err := handleSecurityCommand(commandEnv{Stdout: &out, Stderr: &bytes.Buffer{}}, []string{"status", "-json"}); err != nil {
 		t.Fatalf("handleSecurityCommand: %v", err)
 	}
 	got := out.String()
 	if !strings.Contains(got, `"sandbox_level": "host-containment"`) || !strings.Contains(got, `"host_containment": true`) {
 		t.Fatalf("security json = %s", got)
+	}
+}
+
+func TestRunSecurityCommandUsesEnvStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	env := commandEnv{Stdout: &stdout, Stderr: &stderr}
+	if code := runSecurityCommand(env, "security", []string{"-h"}); code != 0 {
+		t.Fatalf("runSecurityCommand help exit = %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("help wrote stdout: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Usage: cove security") {
+		t.Fatalf("help stderr missing usage: %q", stderr.String())
+	}
+}
+
+func TestRunSecurityCommandBadFlagUsesEnvStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	env := commandEnv{Stdout: &stdout, Stderr: &stderr}
+	if code := runSecurityCommand(env, "security", []string{"-bogus"}); code == 0 {
+		t.Fatal("runSecurityCommand bad flag exit = 0")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("bad flag wrote stdout: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "flag provided but not defined") {
+		t.Fatalf("bad flag stderr missing flag error: %q", stderr.String())
 	}
 }
