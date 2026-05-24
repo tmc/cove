@@ -321,7 +321,7 @@ func runVMCommandSpec(_ commandEnv, _ string, args []string) int {
 }
 
 func runVersionCommand(env commandEnv, _ string, _ []string) int {
-	fmt.Fprintln(env.Stdout, versionInfo())
+	covecli.PrintVersion(env.Stdout, versionInfo())
 	return 0
 }
 
