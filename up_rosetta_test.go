@@ -3,9 +3,9 @@ package main
 import "testing"
 
 func TestParseUpFlagsLinuxRosettaDefault(t *testing.T) {
-	cfg, err := parseUpFlags([]string{"-linux", "-headless"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-linux", "-headless"})
 	if err != nil {
-		t.Fatalf("parseUpFlags() error = %v", err)
+		t.Fatalf("parseUpFlags: %v", err)
 	}
 	if !cfg.rosetta {
 		t.Fatal("rosetta = false, want true")
@@ -13,9 +13,9 @@ func TestParseUpFlagsLinuxRosettaDefault(t *testing.T) {
 }
 
 func TestParseUpFlagsLinuxRosettaFalse(t *testing.T) {
-	cfg, err := parseUpFlags([]string{"-linux", "-headless", "-rosetta=false"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-linux", "-headless", "-rosetta=false"})
 	if err != nil {
-		t.Fatalf("parseUpFlags() error = %v", err)
+		t.Fatalf("parseUpFlags: %v", err)
 	}
 	if cfg.rosetta {
 		t.Fatal("rosetta = true, want false")
@@ -23,9 +23,9 @@ func TestParseUpFlagsLinuxRosettaFalse(t *testing.T) {
 }
 
 func TestParseUpFlagsDiskSync(t *testing.T) {
-	cfg, err := parseUpFlags([]string{"-linux", "-headless", "-disk-sync=none"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-linux", "-headless", "-disk-sync=none"})
 	if err != nil {
-		t.Fatalf("parseUpFlags() error = %v", err)
+		t.Fatalf("parseUpFlags: %v", err)
 	}
 	if cfg.diskSync != "none" {
 		t.Fatalf("diskSync = %q, want none", cfg.diskSync)

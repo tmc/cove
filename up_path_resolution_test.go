@@ -20,7 +20,7 @@ func TestUpPathResolutionFreshNamedVM(t *testing.T) {
 	}
 	vmDir = mainDir
 
-	cfg, err := parseUpFlags([]string{
+	cfg, err := parseUpFlags(commandTestEnv(), []string{
 		"-user", "smoketest",
 		"-password", "smokepass123",
 		"-vm", "smoketest-vm",
@@ -64,7 +64,7 @@ func TestUpPathResolutionFreshDefaultVM(t *testing.T) {
 	}
 	vmDir = mainDir
 
-	cfg, err := parseUpFlags([]string{
+	cfg, err := parseUpFlags(commandTestEnv(), []string{
 		"-user", "smoketest",
 		"-password", "smokepass123",
 		"-ipsw", filepath.Join(home, "RestoreImage.ipsw"),
@@ -107,7 +107,7 @@ func TestUpPathResolutionWithLegacyVM(t *testing.T) {
 	}
 	vmDir = mainDir
 
-	cfg, err := parseUpFlags([]string{
+	cfg, err := parseUpFlags(commandTestEnv(), []string{
 		"-user", "smoketest",
 		"-password", "smokepass123",
 		"-vm", "legacy-vm",

@@ -53,8 +53,8 @@ type upConfig struct {
 }
 
 // handleUp implements the "up" subcommand: install -> inject -> run -> vzscripts.
-func handleUp(args []string) error {
-	cfg, err := parseUpFlags(args)
+func handleUp(env commandEnv, args []string) error {
+	cfg, err := parseUpFlags(env, args)
 	if err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -68,7 +68,7 @@ func handleUp(args []string) error {
 	applyUpConfig(cfg)
 	maybeStartPprofServer()
 
-	if err := runUpPipeline(cfg); err != nil {
+	if err := runUpPipeline(env, cfg); err != nil {
 		return err
 	}
 	return nil
@@ -76,14 +76,14 @@ func handleUp(args []string) error {
 
 // parseUpFlags parses flags and prompts for missing values.
 // Returns a fully populated upConfig or an error.
-func parseUpFlags(args []string) (upConfig, error) {
+func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 	for _, arg := range args {
 		if arg == "-v" || strings.HasPrefix(arg, "-v=") {
 			return upConfig{}, fmt.Errorf("cove up: -v is not a verbose flag here; use -verbose")
 		}
 	}
 
-	fs, cfg, headless := newUpFlagSet()
+	fs, cfg, headless := newUpFlagSet(env.Stderr)
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -170,9 +170,9 @@ func parseUpFlags(args []string) (upConfig, error) {
 	return *cfg, nil
 }
 
-func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
+func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 	fs := flag.NewFlagSet("up", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(errOut)
 	cfg := &upConfig{}
 	headless := new(bool)
 
@@ -207,7 +207,7 @@ func newUpFlagSet() (*flag.FlagSet, *upConfig, *bool) {
 	fs.Var(&cfg.portForwards, "port-forward", "forward host TCP to guest vsock: hostPort:guestVsockPort (repeatable)")
 	fs.Var(&cfg.portForwards, "pf", "alias for -port-forward")
 	fs.Usage = func() {
-		printUpUsage(os.Stderr, fs)
+		printUpUsage(errOut, fs)
 	}
 	return fs, cfg, headless
 }
@@ -328,11 +328,11 @@ func vmAlreadyInstalled(dir string, linux bool) bool {
 // runUpPipeline executes the install -> inject -> run pipeline.
 // If the VM is already installed (disk exists) and -force is not set,
 // it skips install and provisioning and proceeds to boot + vzscripts.
-func runUpPipeline(cfg upConfig) (err error) {
+func runUpPipeline(env commandEnv, cfg upConfig) (err error) {
 	target := currentVMSelection()
 	metricsRun, metricsErr := beginStandaloneMetricsRun(target.Name, "")
 	if metricsErr != nil {
-		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", metricsErr)
+		fmt.Fprintf(env.Stderr, "warning: metrics init: %v\n", metricsErr)
 	}
 	defer finishStandaloneMetricsRun(metricsRun)
 	defer func(started time.Time) {
@@ -345,7 +345,7 @@ func runUpPipeline(cfg upConfig) (err error) {
 		}
 	}(time.Now())
 	if cfg.linux {
-		return runLinuxUpPipeline(cfg)
+		return runLinuxUpPipeline(env, cfg)
 	}
 
 	installed := vmAlreadyInstalled(target.Directory, false)
@@ -355,9 +355,9 @@ func runUpPipeline(cfg upConfig) (err error) {
 
 	// Step 1: Install macOS (skip if already installed).
 	if installed && !cfg.force {
-		fmt.Println("=== Step 1/3: Install (already done) ===")
+		fmt.Fprintln(env.Stdout, "=== Step 1/3: Install (already done) ===")
 	} else {
-		fmt.Println("=== Step 1/3: Installing macOS ===")
+		fmt.Fprintln(env.Stdout, "=== Step 1/3: Installing macOS ===")
 		createStarted := time.Now()
 		installErr := installMacOSLikeVZ(context.Background())
 		if installErr != nil && !errors.Is(installErr, errRestartVM) {
@@ -375,8 +375,8 @@ func runUpPipeline(cfg upConfig) (err error) {
 	// is idempotent).
 	verifyProvisionedUser := ""
 	if !didInjectSucceedForVM(target) {
-		fmt.Println()
-		fmt.Println("=== Step 2/3: Provisioning VM ===")
+		fmt.Fprintln(env.Stdout)
+		fmt.Fprintln(env.Stdout, "=== Step 2/3: Provisioning VM ===")
 		opts := InjectOptions{
 			Config: ProvisionConfig{
 				Username:          cfg.user,
@@ -394,7 +394,7 @@ func runUpPipeline(cfg upConfig) (err error) {
 		}
 		// Stage inject directives from vzscript recipes before applying.
 		if cfg.vzscripts != "" {
-			if err := stageVZScriptInjectsForVM(target, splitRecipes(cfg.vzscripts)); err != nil {
+			if err := stageVZScriptInjectsForVM(env, target, splitRecipes(cfg.vzscripts)); err != nil {
 				return fmt.Errorf("stage vzscript injects: %w", err)
 			}
 		}
@@ -403,8 +403,8 @@ func runUpPipeline(cfg upConfig) (err error) {
 		}
 		verifyProvisionedUser = cfg.user
 	} else {
-		fmt.Println()
-		fmt.Println("=== Step 2/3: Provisioning (already done) ===")
+		fmt.Fprintln(env.Stdout)
+		fmt.Fprintln(env.Stdout, "=== Step 2/3: Provisioning (already done) ===")
 	}
 
 	// Step 3: Boot VM and optionally run vzscripts and/or setup-script.
@@ -413,21 +413,21 @@ func runUpPipeline(cfg upConfig) (err error) {
 		if len(recipes) > 0 {
 			savePostInstallRecipes(target.Directory, cfg.vzscripts)
 		}
-		fmt.Println()
+		fmt.Fprintln(env.Stdout)
 		switch {
 		case len(recipes) > 0 && cfg.setupScriptPath != "":
-			fmt.Printf("=== Step 3/3: Boot + vzscripts (%s) + setup-script (%s) ===\n", cfg.vzscripts, cfg.setupScriptPath)
+			fmt.Fprintf(env.Stdout, "=== Step 3/3: Boot + vzscripts (%s) + setup-script (%s) ===\n", cfg.vzscripts, cfg.setupScriptPath)
 		case len(recipes) > 0:
-			fmt.Printf("=== Step 3/3: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
+			fmt.Fprintf(env.Stdout, "=== Step 3/3: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
 		default:
-			fmt.Printf("=== Step 3/3: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
+			fmt.Fprintf(env.Stdout, "=== Step 3/3: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
 		}
-		return runUpWithVZScripts(recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose, verifyProvisionedUser)
+		return runUpWithVZScripts(env, recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose, verifyProvisionedUser)
 	}
 
-	fmt.Println()
-	fmt.Println("=== Step 3/3: Booting VM ===")
-	return runUpMacOSVM(verifyProvisionedUser, cfg.verbose)
+	fmt.Fprintln(env.Stdout)
+	fmt.Fprintln(env.Stdout, "=== Step 3/3: Booting VM ===")
+	return runUpMacOSVM(env, verifyProvisionedUser, cfg.verbose)
 }
 
 var upEffectiveUID = os.Geteuid
@@ -449,7 +449,7 @@ func requireRootForMacOSUpProvisioning(cfg upConfig, target vmSelection, install
 // recipes followed by an optional plain setup-script, and either shuts down
 // the VM or leaves it running based on noShutdown. If the VM exits
 // unexpectedly during script execution, the error is returned immediately.
-func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verboseMode bool, verifyUser string) error {
+func runUpWithVZScripts(env commandEnv, recipes []string, setupScript string, noShutdown, verboseMode bool, verifyUser string) error {
 	if err := validateVZScriptRecipes(recipes); err != nil {
 		return err
 	}
@@ -471,48 +471,48 @@ func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verbos
 	scriptsDone := make(chan error, 1)
 	go func() {
 		// Wait for the guest agent.
-		fmt.Println("Waiting for VM to boot and guest agent...")
+		fmt.Fprintln(env.Stdout, "Waiting for VM to boot and guest agent...")
 		waitScript := []byte("guest-wait 15m\n")
 		if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
 			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
 			return
 		}
 		emitAgentReadyMetric()
-		if err := verifyProvisioningForUp(sock, verifyUser); err != nil {
+		if err := verifyProvisioningForUp(env, sock, verifyUser); err != nil {
 			_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
 			scriptsDone <- err
 			return
 		}
 
 		if len(recipes) > 0 {
-			fmt.Printf("\n=== Running vzscripts: %s ===\n", strings.Join(recipes, ", "))
+			fmt.Fprintf(env.Stdout, "\n=== Running vzscripts: %s ===\n", strings.Join(recipes, ", "))
 			if err := runVZScriptWithDeps(recipes, cfg); err != nil {
 				scriptsDone <- err
 				return
 			}
-			fmt.Println("=== Done: vzscripts ===")
+			fmt.Fprintln(env.Stdout, "=== Done: vzscripts ===")
 		}
 
 		if setupScript != "" {
-			fmt.Printf("\n=== Running setup-script: %s ===\n", setupScript)
+			fmt.Fprintf(env.Stdout, "\n=== Running setup-script: %s ===\n", setupScript)
 			if err := runSetupScript(setupScript); err != nil {
 				scriptsDone <- err
 				return
 			}
-			fmt.Printf("=== Done: setup-script ===\n")
+			fmt.Fprintf(env.Stdout, "=== Done: setup-script ===\n")
 		}
 
 		if noShutdown {
-			fmt.Println("\nAll post-boot scripts complete. VM is still running.")
-			fmt.Println("Use 'cove ctl stop' to shut it down.")
+			fmt.Fprintln(env.Stdout, "\nAll post-boot scripts complete. VM is still running.")
+			fmt.Fprintln(env.Stdout, "Use 'cove ctl stop' to shut it down.")
 			scriptsDone <- nil
 			return
 		}
 
 		// Shut down the VM gracefully.
-		fmt.Println("\nShutting down VM...")
+		fmt.Fprintln(env.Stdout, "\nShutting down VM...")
 		_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
-		fmt.Println("\nPost-install complete.")
+		fmt.Fprintln(env.Stdout, "\nPost-install complete.")
 		scriptsDone <- nil
 	}()
 
@@ -532,7 +532,7 @@ func runUpWithVZScripts(recipes []string, setupScript string, noShutdown, verbos
 	return vmErr
 }
 
-func runUpMacOSVM(verifyUser string, verboseMode bool) error {
+func runUpMacOSVM(env commandEnv, verifyUser string, verboseMode bool) error {
 	if strings.TrimSpace(verifyUser) == "" {
 		return runMacOSVM()
 	}
@@ -544,13 +544,13 @@ func runUpMacOSVM(verifyUser string, verboseMode bool) error {
 	}
 	verifyDone := make(chan error, 1)
 	go func() {
-		fmt.Println("Waiting for VM to boot and guest agent...")
+		fmt.Fprintln(env.Stdout, "Waiting for VM to boot and guest agent...")
 		waitScript := []byte("guest-wait 15m\n")
 		if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
 			verifyDone <- fmt.Errorf("wait-for-agent: %w", err)
 			return
 		}
-		if err := verifyProvisioningForUp(sock, verifyUser); err != nil {
+		if err := verifyProvisioningForUp(env, sock, verifyUser); err != nil {
 			_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
 			verifyDone <- err
 			return
@@ -569,7 +569,7 @@ func runUpMacOSVM(verifyUser string, verboseMode bool) error {
 	return vmErr
 }
 
-func verifyProvisioningForUp(sock, user string) error {
+func verifyProvisioningForUp(env commandEnv, sock, user string) error {
 	if strings.TrimSpace(user) == "" {
 		return nil
 	}
@@ -578,21 +578,21 @@ func verifyProvisioningForUp(sock, user string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Provisioning verified: user %s uid=%d home=%s\n", user, info.UID, info.Home)
+	fmt.Fprintf(env.Stdout, "Provisioning verified: user %s uid=%d home=%s\n", user, info.UID, info.Home)
 	return nil
 }
 
 // runLinuxUpPipeline executes the install -> run pipeline for Linux VMs.
 // Cloud-init handles user provisioning during install, so no inject step is needed.
-func runLinuxUpPipeline(cfg upConfig) error {
+func runLinuxUpPipeline(env commandEnv, cfg upConfig) error {
 	target := currentVMSelection()
 	installed := vmAlreadyInstalled(target.Directory, true)
 
 	// Step 1: Install Linux VM (skip if already installed).
 	if installed && !cfg.force {
-		fmt.Println("=== Step 1/2: Install (already done) ===")
+		fmt.Fprintln(env.Stdout, "=== Step 1/2: Install (already done) ===")
 	} else {
-		fmt.Println("=== Step 1/2: Installing Linux VM ===")
+		fmt.Fprintln(env.Stdout, "=== Step 1/2: Installing Linux VM ===")
 		createStarted := time.Now()
 		if err := installLinuxVM(); err != nil {
 			emitMetricEvent("vm_create", createStarted, err.Error(), map[string]any{"command": "up", "guest_os": "linux"})
@@ -607,26 +607,26 @@ func runLinuxUpPipeline(cfg upConfig) error {
 		if len(recipes) > 0 {
 			savePostInstallRecipes(target.Directory, cfg.vzscripts)
 		}
-		fmt.Println()
+		fmt.Fprintln(env.Stdout)
 		switch {
 		case len(recipes) > 0 && cfg.setupScriptPath != "":
-			fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) + setup-script (%s) ===\n", cfg.vzscripts, cfg.setupScriptPath)
+			fmt.Fprintf(env.Stdout, "=== Step 2/2: Boot + vzscripts (%s) + setup-script (%s) ===\n", cfg.vzscripts, cfg.setupScriptPath)
 		case len(recipes) > 0:
-			fmt.Printf("=== Step 2/2: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
+			fmt.Fprintf(env.Stdout, "=== Step 2/2: Boot + vzscripts (%s) ===\n", cfg.vzscripts)
 		default:
-			fmt.Printf("=== Step 2/2: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
+			fmt.Fprintf(env.Stdout, "=== Step 2/2: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
 		}
-		return runLinuxUpWithVZScripts(recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose)
+		return runLinuxUpWithVZScripts(env, recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose)
 	}
 
-	fmt.Println()
-	fmt.Println("=== Step 2/2: Booting Linux VM ===")
+	fmt.Fprintln(env.Stdout)
+	fmt.Fprintln(env.Stdout, "=== Step 2/2: Booting Linux VM ===")
 	return runLinuxVM()
 }
 
 // runLinuxUpWithVZScripts boots a Linux VM, runs vzscript recipes and an
 // optional plain setup-script, then shuts down (unless noShutdown).
-func runLinuxUpWithVZScripts(recipes []string, setupScript string, noShutdown, verboseMode bool) error {
+func runLinuxUpWithVZScripts(env commandEnv, recipes []string, setupScript string, noShutdown, verboseMode bool) error {
 	if err := validateVZScriptRecipes(recipes); err != nil {
 		return err
 	}
@@ -644,7 +644,7 @@ func runLinuxUpWithVZScripts(recipes []string, setupScript string, noShutdown, v
 
 	scriptsDone := make(chan error, 1)
 	go func() {
-		fmt.Println("Waiting for VM to boot and guest agent...")
+		fmt.Fprintln(env.Stdout, "Waiting for VM to boot and guest agent...")
 		waitScript := []byte("guest-wait 15m\n")
 		if err := runVZScript(waitScript, "wait-for-agent", cfg); err != nil {
 			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
@@ -653,33 +653,33 @@ func runLinuxUpWithVZScripts(recipes []string, setupScript string, noShutdown, v
 		emitAgentReadyMetric()
 
 		if len(recipes) > 0 {
-			fmt.Printf("\n=== Running vzscripts: %s ===\n", strings.Join(recipes, ", "))
+			fmt.Fprintf(env.Stdout, "\n=== Running vzscripts: %s ===\n", strings.Join(recipes, ", "))
 			if err := runVZScriptWithDeps(recipes, cfg); err != nil {
 				scriptsDone <- err
 				return
 			}
-			fmt.Println("=== Done: vzscripts ===")
+			fmt.Fprintln(env.Stdout, "=== Done: vzscripts ===")
 		}
 
 		if setupScript != "" {
-			fmt.Printf("\n=== Running setup-script: %s ===\n", setupScript)
+			fmt.Fprintf(env.Stdout, "\n=== Running setup-script: %s ===\n", setupScript)
 			if err := runSetupScript(setupScript); err != nil {
 				scriptsDone <- err
 				return
 			}
-			fmt.Printf("=== Done: setup-script ===\n")
+			fmt.Fprintf(env.Stdout, "=== Done: setup-script ===\n")
 		}
 
 		if noShutdown {
-			fmt.Println("\nAll post-boot scripts complete. VM is still running.")
-			fmt.Println("Use 'cove ctl stop' to shut it down.")
+			fmt.Fprintln(env.Stdout, "\nAll post-boot scripts complete. VM is still running.")
+			fmt.Fprintln(env.Stdout, "Use 'cove ctl stop' to shut it down.")
 			scriptsDone <- nil
 			return
 		}
 
-		fmt.Println("\nShutting down VM...")
+		fmt.Fprintln(env.Stdout, "\nShutting down VM...")
 		_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
-		fmt.Println("\nPost-install complete.")
+		fmt.Fprintln(env.Stdout, "\nPost-install complete.")
 		scriptsDone <- nil
 	}()
 
@@ -778,7 +778,7 @@ func validateVZScriptRecipes(recipes []string) error {
 // stages the referenced txtar files into the existing provisioning staging
 // directory. This runs between stageProvisioningFilesForVM and applyProvisioningFilesForVM
 // so the inject files are included in the same disk-write pass.
-func stageVZScriptInjectsForVM(target vmSelection, recipes []string) error {
+func stageVZScriptInjectsForVM(env commandEnv, target vmSelection, recipes []string) error {
 	stagingDir := provisionStagingDirForVM(target)
 	manifest, err := readManifest(stagingDir)
 	if err != nil {
@@ -844,7 +844,7 @@ func stageVZScriptInjectsForVM(target vmSelection, recipes []string) error {
 		if err := writeManifest(stagingDir, manifest); err != nil {
 			return fmt.Errorf("update manifest: %w", err)
 		}
-		fmt.Printf("Staged %d file(s) from vzscript inject directives\n", staged)
+		fmt.Fprintf(env.Stdout, "Staged %d file(s) from vzscript inject directives\n", staged)
 	}
 	return nil
 }

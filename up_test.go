@@ -113,9 +113,9 @@ func TestParseUpFlagsErrorPaths(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseUpFlags(tt.args)
+			_, err := parseUpFlags(commandTestEnv(), tt.args)
 			if err == nil {
-				t.Fatalf("parseUpFlags(%v) returned nil error, want %q", tt.args, tt.wantErr)
+				t.Fatalf("parseUpFlags(commandTestEnv(), %v) returned nil error, want %q", tt.args, tt.wantErr)
 			}
 			if !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(tt.wantErr)) {
 				t.Errorf("parseUpFlags error = %q, want substring %q", err, tt.wantErr)
@@ -129,7 +129,7 @@ func TestParseUpFlagsVerbose(t *testing.T) {
 	t.Setenv("HOME", home)
 	restoreVMGlobals(t)
 
-	cfg, err := parseUpFlags([]string{"-user", "u", "-password", "p", "-headless", "-verbose"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-user", "u", "-password", "p", "-headless", "-verbose"})
 	if err != nil {
 		t.Fatalf("parseUpFlags: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestParseUpFlagsHeadlessOverridesGUI(t *testing.T) {
 	t.Setenv("HOME", home)
 	restoreVMGlobals(t)
 
-	cfg, err := parseUpFlags([]string{"-user", "u", "-password", "p", "-gui=true", "-headless"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-user", "u", "-password", "p", "-gui=true", "-headless"})
 	if err != nil {
 		t.Fatalf("parseUpFlags: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestParseUpFlagsLinuxDefaultsPassword(t *testing.T) {
 	t.Setenv("HOME", home)
 	restoreVMGlobals(t)
 
-	cfg, err := parseUpFlags([]string{"-linux", "-user", "alice", "-headless"})
+	cfg, err := parseUpFlags(commandTestEnv(), []string{"-linux", "-user", "alice", "-headless"})
 	if err != nil {
 		t.Fatalf("parseUpFlags: %v", err)
 	}

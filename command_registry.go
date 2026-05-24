@@ -290,7 +290,7 @@ func runSupportBundleAliasCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, runSupportBundle(args, env.Stdout))
 }
 func runUpCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleUp(args))
+	return commandError(env, handleUp(env, args))
 }
 func runVerifyCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleVerify(args))
