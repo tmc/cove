@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/tmc/cove/internal/covecli"
 )
 
 func isHelpArg(s string) bool {
@@ -34,7 +36,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	switch cmd {
 	case "help":
 		if len(subargs) == 1 && (subargs[0] == "--json" || subargs[0] == "-json") {
-			if err := printCommandsJSON(os.Stdout); err != nil {
+			if err := covecli.PrintCommandsJSON(os.Stdout, covecli.Inventory(commandRegistry)); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return true, 1
 			}
@@ -50,7 +52,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "first-run":
 			printFirstRunUsage(os.Stderr)
 		case "commands":
-			printCommandsUsage(os.Stderr)
+			covecli.PrintCommandsUsage(os.Stderr)
 		case "ctl":
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
 			fs.Usage()
@@ -255,7 +257,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			return true, code
 		}
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printCommandsUsage(os.Stderr)
+			covecli.PrintCommandsUsage(os.Stderr)
 			return true, 0
 		}
 	case "action":
