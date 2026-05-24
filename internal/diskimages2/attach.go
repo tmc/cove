@@ -3,7 +3,6 @@ package diskimages2
 import (
 	"fmt"
 	"os/exec"
-	"unsafe"
 
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
@@ -53,40 +52,6 @@ func Attach(path string, opts AttachOptions) (*DeviceHandle, error) {
 		RegEntryID: handle.RegEntryID(),
 		handle:     handle,
 	}, nil
-}
-
-// AttachSimple attaches a disk image using DICommonAttach's convenience method.
-// Returns the BSD device name (e.g., "disk27").
-func AttachSimple(path string, readOnly, autoMount bool) (bsdName string, err error) {
-	if err := ensureLoaded(); err != nil {
-		return "", err
-	}
-
-	url := foundation.NewURLFileURLWithPath(path)
-
-	// The generated binding for DICommonAttach treats BSDName as a string
-	// param, but the ObjC method uses NSString ** (output parameter).
-	// Call the raw selector for correct semantics.
-	cls := objc.ID(objc.GetClass("DICommonAttach"))
-	var bsdNamePtr objc.ID
-	var errPtr objc.ID
-	ok := objc.Send[bool](
-		cls,
-		objc.Sel("diskImageAttach:readOnly:autoMount:BSDName:error:"),
-		url, readOnly, autoMount, unsafe.Pointer(&bsdNamePtr), unsafe.Pointer(&errPtr),
-	)
-	if !ok {
-		if errPtr != 0 {
-			nsErr := foundation.NSErrorFromID(errPtr)
-			return "", fmt.Errorf("diskimages2: %s", nsErr.LocalizedDescription())
-		}
-		return "", fmt.Errorf("diskimages2: diskImageAttach failed")
-	}
-
-	if bsdNamePtr != 0 {
-		return foundation.NSStringFromID(bsdNamePtr).String(), nil
-	}
-	return "", nil
 }
 
 // Detach detaches a previously attached disk image by BSD name.
