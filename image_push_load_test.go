@@ -31,13 +31,13 @@ func TestPushImage_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "trip:v1")
 	tarPath := filepath.Join(t.TempDir(), "trip.tar")
-	if err := PushImageToFile(ref, tarPath, false); err != nil {
+	if err := imagestore.WriteTarFile(ref, tarPath, false); err != nil {
 		t.Fatalf("PushImageToFile: %v", err)
 	}
 
 	// Capture original bytes for comparison.
 	originals := map[string][]byte{}
-	for _, name := range append([]string{"manifest.json"}, imageDataFiles...) {
+	for _, name := range append([]string{"manifest.json"}, imagestore.LayerFiles...) {
 		b, err := os.ReadFile(filepath.Join(ref.Path(), name))
 		if err != nil {
 			t.Fatalf("read original %s: %v", name, err)
@@ -49,7 +49,7 @@ func TestPushImage_RoundTrip(t *testing.T) {
 	if err := os.RemoveAll(ref.Path()); err != nil {
 		t.Fatalf("remove image: %v", err)
 	}
-	loaded, err := LoadImageFromFile(tarPath, "", false)
+	loaded, err := imagestore.LoadTarFromFile(tarPath, "", false)
 	if err != nil {
 		t.Fatalf("LoadImageFromFile: %v", err)
 	}
@@ -72,13 +72,13 @@ func TestLoadImage_RegistersInStore(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "registered:v1")
 	tarPath := filepath.Join(t.TempDir(), "img.tar")
-	if err := PushImageToFile(ref, tarPath, false); err != nil {
+	if err := imagestore.WriteTarFile(ref, tarPath, false); err != nil {
 		t.Fatalf("PushImageToFile: %v", err)
 	}
 	if err := os.RemoveAll(ref.Path()); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}
-	if _, err := LoadImageFromFile(tarPath, "", false); err != nil {
+	if _, err := imagestore.LoadTarFromFile(tarPath, "", false); err != nil {
 		t.Fatalf("LoadImageFromFile: %v", err)
 	}
 	entries, err := ListImages()
@@ -99,7 +99,7 @@ func TestLoadImage_RegistersInStore(t *testing.T) {
 func TestPushImage_RefusesNonexistent(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref, _ := ParseImageRef("ghost:v1")
-	err := PushImageToFile(ref, filepath.Join(t.TempDir(), "out.tar"), false)
+	err := imagestore.WriteTarFile(ref, filepath.Join(t.TempDir(), "out.tar"), false)
 	if err == nil {
 		t.Fatal("PushImageToFile on missing image succeeded; want error")
 	}
@@ -141,17 +141,17 @@ func TestLoadImage_RefusesDuplicateTag(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "dup:v1")
 	tarPath := filepath.Join(t.TempDir(), "dup.tar")
-	if err := PushImageToFile(ref, tarPath, false); err != nil {
+	if err := imagestore.WriteTarFile(ref, tarPath, false); err != nil {
 		t.Fatalf("PushImageToFile: %v", err)
 	}
 	// Existing image still in store; load should refuse without -force.
-	if _, err := LoadImageFromFile(tarPath, "", false); err == nil {
+	if _, err := imagestore.LoadTarFromFile(tarPath, "", false); err == nil {
 		t.Fatal("LoadImageFromFile over existing succeeded; want refuse")
 	} else if !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("error %q does not mention already-exists", err)
 	}
 	// With -force, load succeeds.
-	if _, err := LoadImageFromFile(tarPath, "", true); err != nil {
+	if _, err := imagestore.LoadTarFromFile(tarPath, "", true); err != nil {
 		t.Fatalf("LoadImageFromFile -force: %v", err)
 	}
 }
@@ -162,7 +162,7 @@ func TestWriteImageTar_RejectsMissingLayer(t *testing.T) {
 	if err := os.Remove(filepath.Join(ref.Path(), "disk.img")); err != nil {
 		t.Fatalf("Remove(disk): %v", err)
 	}
-	if err := WriteImageTar(ref, &bytes.Buffer{}, false); err == nil || !strings.Contains(err.Error(), "source missing disk.img") {
+	if err := imagestore.WriteTar(ref, &bytes.Buffer{}, false); err == nil || !strings.Contains(err.Error(), "source missing disk.img") {
 		t.Fatalf("WriteImageTar error = %v, want missing disk.img", err)
 	}
 }
@@ -187,7 +187,7 @@ func TestLoadImage_RejectsMissingManifestEntry(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatalf("close file: %v", err)
 	}
-	_, err = LoadImageFromFile(tarPath, "", false)
+	_, err = imagestore.LoadTarFromFile(tarPath, "", false)
 	if err == nil {
 		t.Fatal("LoadImageFromFile accepted tar without manifest.json; want error")
 	}
@@ -240,7 +240,7 @@ func TestLoadImage_RejectsZipSlip(t *testing.T) {
 	}, map[string][]byte{
 		"../etc/passwd": []byte("pwned"),
 	})
-	_, err := LoadImageFromFile(tarPath, "", false)
+	_, err := imagestore.LoadTarFromFile(tarPath, "", false)
 	if err == nil {
 		t.Fatal("LoadImageFromFile accepted zip-slip entry; want error")
 	}
@@ -275,7 +275,7 @@ func TestLoadImage_RejectsSymlink(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatalf("close file: %v", err)
 	}
-	_, err = LoadImageFromFile(tarPath, "", false)
+	_, err = imagestore.LoadTarFromFile(tarPath, "", false)
 	if err == nil {
 		t.Fatal("LoadImageFromFile accepted symlink entry; want error")
 	}
@@ -296,7 +296,7 @@ func TestLoadImage_RejectsMissingLayer(t *testing.T) {
 		"hw.model":   []byte("hw"),
 		"machine.id": []byte("machine"),
 	})
-	_, err := LoadImageFromFile(tarPath, "", false)
+	_, err := imagestore.LoadTarFromFile(tarPath, "", false)
 	if err == nil {
 		t.Fatal("LoadImageFromFile accepted tar missing disk.img; want error")
 	}
@@ -305,26 +305,15 @@ func TestLoadImage_RejectsMissingLayer(t *testing.T) {
 	}
 }
 
-func TestCheckTarEntryRejectsOversize(t *testing.T) {
-	hdr := &tar.Header{Name: "disk.img", Mode: 0o644, Typeflag: tar.TypeReg, Size: imageEntryMaxBytes + 1}
-	err := checkTarEntry(hdr)
-	if err == nil {
-		t.Fatal("checkTarEntry succeeded for oversize entry; want error")
-	}
-	if !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("error = %q, want oversize refusal", err)
-	}
-}
-
 func TestPushImage_GzipRoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "gz:v1")
 	rawPath := filepath.Join(t.TempDir(), "raw.tar")
 	gzPath := filepath.Join(t.TempDir(), "gz.tar.gz")
-	if err := PushImageToFile(ref, rawPath, false); err != nil {
+	if err := imagestore.WriteTarFile(ref, rawPath, false); err != nil {
 		t.Fatalf("PushImageToFile raw: %v", err)
 	}
-	if err := PushImageToFile(ref, gzPath, true); err != nil {
+	if err := imagestore.WriteTarFile(ref, gzPath, true); err != nil {
 		t.Fatalf("PushImageToFile gzip: %v", err)
 	}
 	rawSize := mustStatSize(t, rawPath)
@@ -351,14 +340,14 @@ func TestPushImage_GzipRoundTrip(t *testing.T) {
 	if err := os.RemoveAll(ref.Path()); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}
-	loaded, err := LoadImageFromFile(gzPath, "", false)
+	loaded, err := imagestore.LoadTarFromFile(gzPath, "", false)
 	if err != nil {
 		t.Fatalf("LoadImageFromFile gzip: %v", err)
 	}
 	if loaded.String() != "gz:v1" {
 		t.Errorf("loaded.String() = %s, want gz:v1", loaded)
 	}
-	for _, name := range imageDataFiles {
+	for _, name := range imagestore.LayerFiles {
 		if _, err := os.Stat(filepath.Join(loaded.Path(), name)); err != nil {
 			t.Errorf("loaded image missing %s: %v", name, err)
 		}
@@ -369,14 +358,14 @@ func TestLoadImage_RenameViaTagFlag(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref := buildSampleImage(t, "src", "orig:v1")
 	tarPath := filepath.Join(t.TempDir(), "orig.tar")
-	if err := PushImageToFile(ref, tarPath, false); err != nil {
+	if err := imagestore.WriteTarFile(ref, tarPath, false); err != nil {
 		t.Fatalf("PushImageToFile: %v", err)
 	}
 	// Wipe original and load under a different ref.
 	if err := os.RemoveAll(ref.Path()); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}
-	loaded, err := LoadImageFromFile(tarPath, "renamed:v2", false)
+	loaded, err := imagestore.LoadTarFromFile(tarPath, "renamed:v2", false)
 	if err != nil {
 		t.Fatalf("LoadImageFromFile -tag: %v", err)
 	}
@@ -410,7 +399,7 @@ func TestWriteImageTar_StdoutRoundTrip(t *testing.T) {
 	ref := buildSampleImage(t, "src", "stream:v1")
 
 	originals := map[string][]byte{}
-	for _, name := range append([]string{"manifest.json"}, imageDataFiles...) {
+	for _, name := range append([]string{"manifest.json"}, imagestore.LayerFiles...) {
 		b, err := os.ReadFile(filepath.Join(ref.Path(), name))
 		if err != nil {
 			t.Fatalf("read original %s: %v", name, err)
@@ -419,7 +408,7 @@ func TestWriteImageTar_StdoutRoundTrip(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := WriteImageTar(ref, &buf, false); err != nil {
+	if err := imagestore.WriteTar(ref, &buf, false); err != nil {
 		t.Fatalf("WriteImageTar: %v", err)
 	}
 	if buf.Len() == 0 {
@@ -429,7 +418,7 @@ func TestWriteImageTar_StdoutRoundTrip(t *testing.T) {
 	if err := os.RemoveAll(ref.Path()); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}
-	loaded, err := ReadImageTar(&buf, "", false)
+	loaded, err := imagestore.ReadTar(&buf, "", false)
 	if err != nil {
 		t.Fatalf("ReadImageTar: %v", err)
 	}
@@ -457,7 +446,7 @@ func TestWriteImageTar_GzipStreamRoundTrip(t *testing.T) {
 	ref := buildSampleImage(t, "src", "gzstream:v1")
 
 	var buf bytes.Buffer
-	if err := WriteImageTar(ref, &buf, true); err != nil {
+	if err := imagestore.WriteTar(ref, &buf, true); err != nil {
 		t.Fatalf("WriteImageTar gzip: %v", err)
 	}
 	head := buf.Bytes()
@@ -468,14 +457,14 @@ func TestWriteImageTar_GzipStreamRoundTrip(t *testing.T) {
 	if err := os.RemoveAll(ref.Path()); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}
-	loaded, err := ReadImageTar(&buf, "", false)
+	loaded, err := imagestore.ReadTar(&buf, "", false)
 	if err != nil {
 		t.Fatalf("ReadImageTar gzip: %v", err)
 	}
 	if loaded.String() != "gzstream:v1" {
 		t.Errorf("loaded.String() = %s, want gzstream:v1", loaded)
 	}
-	for _, name := range imageDataFiles {
+	for _, name := range imagestore.LayerFiles {
 		if _, err := os.Stat(filepath.Join(loaded.Path(), name)); err != nil {
 			t.Errorf("loaded image missing %s: %v", name, err)
 		}

@@ -51,6 +51,12 @@ func LoadManifest(ref Ref) (*Manifest, error) {
 	return &m, nil
 }
 
+// Exists reports whether the image at ref has a manifest on disk.
+func Exists(ref Ref) bool {
+	_, err := os.Stat(filepath.Join(ref.Path(), "manifest.json"))
+	return err == nil
+}
+
 // WriteManifest writes manifest.json in dir atomically.
 func WriteManifest(dir string, m *Manifest) error {
 	data, err := json.MarshalIndent(m, "", "  ")

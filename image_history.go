@@ -101,8 +101,8 @@ func imageHistoryEntry(ref imagestore.Ref) (ImageHistoryEntry, string, error) {
 }
 
 func imageHistoryLayers(ref imagestore.Ref) ([]ImageHistoryLayer, error) {
-	layers := make([]ImageHistoryLayer, 0, len(imageDataFiles))
-	for _, name := range imageDataFiles {
+	layers := make([]ImageHistoryLayer, 0, len(imagestore.LayerFiles))
+	for _, name := range imagestore.LayerFiles {
 		path := filepath.Join(ref.Path(), name)
 		info, err := os.Stat(path)
 		if err != nil {

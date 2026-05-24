@@ -63,8 +63,7 @@ func ParseImageRef(s string) (imagestore.Ref, error) {
 
 // ImageExists reports whether the image at ref has a manifest on disk.
 func ImageExists(ref imagestore.Ref) bool {
-	_, err := os.Stat(filepath.Join(ref.Path(), "manifest.json"))
-	return err == nil
+	return imagestore.Exists(ref)
 }
 
 // LoadImageManifest reads the manifest at ref or returns an error if

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/tmc/cove/internal/imagestore"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/registry"
@@ -109,8 +110,8 @@ func TestPushImageToTargetPacksCoveArtifact(t *testing.T) {
 	if manifest.Config.MediaType != coveImageConfigType {
 		t.Fatalf("config mediaType = %q, want %q", manifest.Config.MediaType, coveImageConfigType)
 	}
-	if len(manifest.Layers) != len(imageDataFiles) {
-		t.Fatalf("layer count = %d, want %d", len(manifest.Layers), len(imageDataFiles))
+	if len(manifest.Layers) != len(imagestore.LayerFiles) {
+		t.Fatalf("layer count = %d, want %d", len(manifest.Layers), len(imagestore.LayerFiles))
 	}
 	if got := manifest.Layers[0].MediaType; got != coveImageDiskType {
 		t.Fatalf("disk mediaType = %q, want %q", got, coveImageDiskType)
@@ -251,7 +252,7 @@ func TestPullImageFromTargetRoundTrip(t *testing.T) {
 	}
 
 	originals := map[string][]byte{}
-	for _, name := range append([]string{"manifest.json"}, imageDataFiles...) {
+	for _, name := range append([]string{"manifest.json"}, imagestore.LayerFiles...) {
 		b, err := os.ReadFile(filepath.Join(src.Path(), name))
 		if err != nil {
 			t.Fatalf("read original %s: %v", name, err)

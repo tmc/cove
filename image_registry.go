@@ -133,7 +133,7 @@ func PullImageFromRegistry(ctx context.Context, src, overrideTag string, force b
 }
 
 func PushImageToTarget(ctx context.Context, ref imagestore.Ref, target oras.Target, targetRef string) (ocispec.Descriptor, error) {
-	if !ImageExists(ref) {
+	if !imagestore.Exists(ref) {
 		return ocispec.Descriptor{}, fmt.Errorf("image push: %s not found in store", ref)
 	}
 	if targetRef == "" {
@@ -160,7 +160,7 @@ func PushImageToTarget(ctx context.Context, ref imagestore.Ref, target oras.Targ
 	}
 	defer cleanup()
 	layers := []ocispec.Descriptor{diskDesc}
-	for _, name := range imageDataFiles[1:] {
+	for _, name := range imagestore.LayerFiles[1:] {
 		desc, err := pushImageFile(ctx, target, filepath.Join(imgDir, name), name, coveImageFileType)
 		if err != nil {
 			return ocispec.Descriptor{}, err
@@ -229,7 +229,7 @@ func PullImageFromTarget(ctx context.Context, target oras.ReadOnlyTarget, srcRef
 	if err != nil {
 		return imagestore.Ref{}, ocispec.Descriptor{}, fmt.Errorf("image pull: invalid ref %q: %w", refSpec, err)
 	}
-	if ImageExists(ref) && !force {
+	if imagestore.Exists(ref) && !force {
 		return imagestore.Ref{}, ocispec.Descriptor{}, fmt.Errorf("image pull: %s already exists (use -force to overwrite)", ref)
 	}
 
@@ -260,7 +260,7 @@ func PullImageFromTarget(ctx context.Context, target oras.ReadOnlyTarget, srcRef
 	}
 
 	needed := map[string]bool{}
-	for _, name := range imageDataFiles {
+	for _, name := range imagestore.LayerFiles {
 		needed[name] = true
 	}
 	for _, layer := range ociManifest.Layers {
@@ -286,7 +286,7 @@ func PullImageFromTarget(ctx context.Context, target oras.ReadOnlyTarget, srcRef
 		return imagestore.Ref{}, ocispec.Descriptor{}, fmt.Errorf("image pull: oci artifact missing required files: %s", strings.Join(missing, ", "))
 	}
 
-	if force && ImageExists(ref) {
+	if force && imagestore.Exists(ref) {
 		if err := os.RemoveAll(dstDir); err != nil {
 			return imagestore.Ref{}, ocispec.Descriptor{}, fmt.Errorf("image pull: remove existing: %w", err)
 		}
@@ -396,7 +396,7 @@ func writePulledLayer(dst, title string, r io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("image pull: open %s: %w", title, err)
 	}
-	if _, err := io.Copy(out, io.LimitReader(r, imageEntryMaxBytes+1)); err != nil {
+	if _, err := io.Copy(out, io.LimitReader(r, imagestore.MaxEntryBytes+1)); err != nil {
 		out.Close()
 		return fmt.Errorf("image pull: write %s: %w", title, err)
 	}
@@ -407,8 +407,8 @@ func writePulledLayer(dst, title string, r io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("image pull: stat %s: %w", title, err)
 	}
-	if st.Size() > imageEntryMaxBytes {
-		return fmt.Errorf("image pull: %s exceeds %d byte cap", title, imageEntryMaxBytes)
+	if st.Size() > imagestore.MaxEntryBytes {
+		return fmt.Errorf("image pull: %s exceeds %d byte cap", title, imagestore.MaxEntryBytes)
 	}
 	return nil
 }
