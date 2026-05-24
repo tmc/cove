@@ -43,17 +43,6 @@ func NewSink(w io.Writer) Sink {
 	return NewJSONL(w)
 }
 
-// SinkFunc adapts a function to Sink.
-type SinkFunc func(context.Context, Event) error
-
-// Emit calls f(ctx, e).
-func (f SinkFunc) Emit(ctx context.Context, e Event) error {
-	return f(ctx, e)
-}
-
-// Close is a no-op.
-func (f SinkFunc) Close() error { return nil }
-
 // JSONL writes one JSON event per line.
 type JSONL struct {
 	mu      sync.Mutex

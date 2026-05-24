@@ -49,14 +49,6 @@ type Runner interface {
 	Run(context.Context, string, ...string) (Output, error)
 }
 
-// RunnerFunc adapts a function to Runner.
-type RunnerFunc func(context.Context, string, ...string) (Output, error)
-
-// Run calls f.
-func (f RunnerFunc) Run(ctx context.Context, name string, args ...string) (Output, error) {
-	return f(ctx, name, args...)
-}
-
 // ExecRunner runs commands with os/exec.
 type ExecRunner struct{}
 
