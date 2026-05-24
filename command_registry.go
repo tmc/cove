@@ -228,13 +228,13 @@ func runPolicyCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePolicyCommand(env, args))
 }
 func runPullCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handlePull(args))
+	return commandError(env, handlePull(env, args))
 }
 func runPinCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handlePinCommand(args))
+	return commandError(env, handlePinCommand(env, args))
 }
 func runPinsCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handlePinsCommand(args))
+	return commandError(env, handlePinsCommand(env, args))
 }
 func runPushCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePush(args))
@@ -246,13 +246,13 @@ func runQuotaCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleQuotaCommand(args))
 }
 func runUnpinCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleUnpinCommand(args))
+	return commandError(env, handleUnpinCommand(env, args))
 }
 func runRunsCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleRunsCommand(env, args))
 }
 func runSecretCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleSecretCommand(args))
+	return commandError(env, handleSecretCommand(env, args))
 }
 func runShellCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, shellCommand(args))
@@ -330,9 +330,8 @@ func runRunCommand(_ commandEnv, _ string, _ []string) int {
 	handleRun()
 	return 0
 }
-func runSnapshotCommandSpec(_ commandEnv, _ string, args []string) int {
-	handleSnapshotCommand(args)
-	return 0
+func runSnapshotCommandSpec(env commandEnv, _ string, args []string) int {
+	return commandError(env, handleSnapshotCommand(env, args))
 }
 func runStatusCommand(env commandEnv, _ string, args []string) int {
 	err := statusCommand(env, args...)

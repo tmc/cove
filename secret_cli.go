@@ -4,21 +4,20 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/tmc/cove/internal/secrets"
 )
 
-func handleSecretCommand(args []string) error {
+func handleSecretCommand(env commandEnv, args []string) error {
 	if len(args) == 0 || isHelpArg(args[0]) {
-		printSecretUsage(os.Stderr)
+		printSecretUsage(env.Stderr)
 		return nil
 	}
 	switch args[0] {
 	case "probe":
 		if len(args) == 2 && isHelpArg(args[1]) {
-			printSecretProbeUsage(os.Stderr)
+			printSecretProbeUsage(env.Stderr)
 			return nil
 		}
 		if len(args) != 2 {
@@ -28,7 +27,7 @@ func handleSecretCommand(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("secret resolved: %s (length: %d bytes)\n", redactSecretURI(args[1]), len(value))
+		fmt.Fprintf(env.Stdout, "secret resolved: %s (length: %d bytes)\n", redactSecretURI(args[1]), len(value))
 		return nil
 	default:
 		return fmt.Errorf("unknown secret command: %s", args[0])

@@ -280,15 +280,15 @@ func TestHandlePullDryRunOutput(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	manifestPath := writePullTestManifest(t)
 
-	out, err := captureStdoutResult(t, func() error {
-		return handlePull([]string{
-			"--dry-run",
-			"--manifest", manifestPath,
-			"--as", "local-dev",
-			"ghcr.io/me/dev-vm:v1",
-		})
-	})
-	if err != nil {
+	var out strings.Builder
+	env := commandTestEnv()
+	env.Stdout = &out
+	if err := handlePull(env, []string{
+		"--dry-run",
+		"--manifest", manifestPath,
+		"--as", "local-dev",
+		"ghcr.io/me/dev-vm:v1",
+	}); err != nil {
 		t.Fatalf("handlePull(): %v", err)
 	}
 	for _, want := range []string{
@@ -297,14 +297,14 @@ func TestHandlePullDryRunOutput(t *testing.T) {
 		"vm: local-dev",
 		"chunks: 1",
 	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("output %q missing %q", out, want)
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output %q missing %q", out.String(), want)
 		}
 	}
 }
 
 func TestHandlePullRequiresRef(t *testing.T) {
-	err := handlePull([]string{"--dry-run"})
+	err := handlePull(commandTestEnv(), []string{"--dry-run"})
 	if err == nil || !strings.Contains(err.Error(), "usage: cove pull") {
 		t.Fatalf("handlePull() error = %v, want usage", err)
 	}
@@ -375,7 +375,7 @@ func TestParsePullArgsAllowsTrailingFlags(t *testing.T) {
 }
 
 func TestHandlePullUsageShowsFlagsBeforeArgs(t *testing.T) {
-	err := handlePull([]string{"one", "two"})
+	err := handlePull(commandTestEnv(), []string{"one", "two"})
 	if err == nil || !strings.Contains(err.Error(), "usage: cove pull [flags] <ref>") {
 		t.Fatalf("handlePull usage error = %v, want flags-before-args usage", err)
 	}

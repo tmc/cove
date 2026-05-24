@@ -25,7 +25,9 @@ func pinsTestHome(t *testing.T) string {
 func TestRunPinsListEmpty(t *testing.T) {
 	pinsTestHome(t)
 	var buf bytes.Buffer
-	if err := runPinsList(nil, &buf); err != nil {
+	env := commandTestEnv()
+	env.Stdout = &buf
+	if err := runPinsList(env, nil); err != nil {
 		t.Fatalf("runPinsList: %v", err)
 	}
 	if got := buf.String(); got != "no pins\n" {
@@ -35,11 +37,13 @@ func TestRunPinsListEmpty(t *testing.T) {
 
 func TestRunPinsListJSON(t *testing.T) {
 	pinsTestHome(t)
-	if err := handlePinCommand([]string{"image:alpine:3"}); err != nil {
+	if err := handlePinCommand(commandTestEnv(), []string{"image:alpine:3"}); err != nil {
 		t.Fatalf("pin: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := runPinsList([]string{"-json"}, &buf); err != nil {
+	env := commandTestEnv()
+	env.Stdout = &buf
+	if err := runPinsList(env, []string{"-json"}); err != nil {
 		t.Fatalf("runPinsList -json: %v", err)
 	}
 	var pins []storagepins.Pin
@@ -53,7 +57,7 @@ func TestRunPinsListJSON(t *testing.T) {
 
 func TestPinUnpinRoundTrip(t *testing.T) {
 	home := pinsTestHome(t)
-	if err := handlePinCommand([]string{"vm:default"}); err != nil {
+	if err := handlePinCommand(commandTestEnv(), []string{"vm:default"}); err != nil {
 		t.Fatalf("pin: %v", err)
 	}
 	// Persisted on disk.
@@ -64,7 +68,7 @@ func TestPinUnpinRoundTrip(t *testing.T) {
 	if !f.IsPinned("vm", "default") {
 		t.Fatalf("vm:default not persisted under %s", home)
 	}
-	if err := handleUnpinCommand([]string{"vm:default"}); err != nil {
+	if err := handleUnpinCommand(commandTestEnv(), []string{"vm:default"}); err != nil {
 		t.Fatalf("unpin: %v", err)
 	}
 	f, err = storagepins.Load(filepath.Dir(vmconfig.BaseDir()))
@@ -89,10 +93,10 @@ func TestPinCommandParseErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := handlePinCommand(tc.args); err == nil {
+			if err := handlePinCommand(commandTestEnv(), tc.args); err == nil {
 				t.Errorf("handlePinCommand(%v) = nil, want error", tc.args)
 			}
-			if err := handleUnpinCommand(tc.args); err == nil {
+			if err := handleUnpinCommand(commandTestEnv(), tc.args); err == nil {
 				t.Errorf("handleUnpinCommand(%v) = nil, want error", tc.args)
 			}
 		})

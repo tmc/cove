@@ -43,8 +43,8 @@ type pullPlan struct {
 	ManifestDigest string
 }
 
-func handlePull(args []string) error {
-	opts, pos, err := parsePullArgs(args, os.Stderr)
+func handlePull(env commandEnv, args []string) error {
+	opts, pos, err := parsePullArgs(args, env.Stderr)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func handlePull(args []string) error {
 		return err
 	}
 	if opts.DryRun {
-		printPullDryRun(os.Stdout, plan)
+		printPullDryRun(env.Stdout, plan)
 		return nil
 	}
 	switch plan.Manifest.Format {
@@ -73,7 +73,7 @@ func handlePull(args []string) error {
 			return err
 		}
 	}
-	printPullResult(os.Stdout, plan)
+	printPullResult(env.Stdout, plan)
 	return nil
 }
 

@@ -21,7 +21,7 @@ func TestHandlePinsCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := handlePinsCommand(tt.args)
+			err := handlePinsCommand(commandTestEnv(), tt.args)
 			if tt.wantErr && err == nil {
 				t.Fatalf("handlePinsCommand(%v) = nil, want error", tt.args)
 			}
@@ -37,14 +37,14 @@ func TestHandlePinsCommand(t *testing.T) {
 
 func TestHandlePinsCommandListDispatchesToRunPinsList(t *testing.T) {
 	pinsTestHome(t)
-	if err := handlePinsCommand([]string{"list"}); err != nil {
+	if err := handlePinsCommand(commandTestEnv(), []string{"list"}); err != nil {
 		t.Fatalf("handlePinsCommand list: %v", err)
 	}
 }
 
 func TestHandleUnpinNotPinnedBranch(t *testing.T) {
 	pinsTestHome(t)
-	if err := handleUnpinCommand([]string{"vm:never-pinned"}); err != nil {
+	if err := handleUnpinCommand(commandTestEnv(), []string{"vm:never-pinned"}); err != nil {
 		t.Fatalf("unpin missing entry: %v", err)
 	}
 }
@@ -61,12 +61,12 @@ func TestPinAndUnpinHelpFlag(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name+" pin", func(t *testing.T) {
-			if err := handlePinCommand(tt.args); err != nil {
+			if err := handlePinCommand(commandTestEnv(), tt.args); err != nil {
 				t.Fatalf("handlePinCommand(%v) = %v, want nil", tt.args, err)
 			}
 		})
 		t.Run(tt.name+" unpin", func(t *testing.T) {
-			if err := handleUnpinCommand(tt.args); err != nil {
+			if err := handleUnpinCommand(commandTestEnv(), tt.args); err != nil {
 				t.Fatalf("handleUnpinCommand(%v) = %v, want nil", tt.args, err)
 			}
 		})
@@ -75,11 +75,13 @@ func TestPinAndUnpinHelpFlag(t *testing.T) {
 
 func TestRunPinsListTableWithEntries(t *testing.T) {
 	pinsTestHome(t)
-	if err := handlePinCommand([]string{"image:foo:bar"}); err != nil {
+	if err := handlePinCommand(commandTestEnv(), []string{"image:foo:bar"}); err != nil {
 		t.Fatalf("seed pin: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := runPinsList(nil, &buf); err != nil {
+	env := commandTestEnv()
+	env.Stdout = &buf
+	if err := runPinsList(env, nil); err != nil {
 		t.Fatalf("runPinsList: %v", err)
 	}
 	out := buf.String()
@@ -93,7 +95,9 @@ func TestRunPinsListTableWithEntries(t *testing.T) {
 func TestRunPinsListExtraArgsRejected(t *testing.T) {
 	pinsTestHome(t)
 	var buf bytes.Buffer
-	err := runPinsList([]string{"unexpected"}, &buf)
+	env := commandTestEnv()
+	env.Stdout = &buf
+	err := runPinsList(env, []string{"unexpected"})
 	if err == nil || !strings.Contains(err.Error(), "usage: cove pins list") {
 		t.Fatalf("runPinsList(extra) = %v, want usage error", err)
 	}

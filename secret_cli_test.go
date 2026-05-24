@@ -1,30 +1,34 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
 
 func TestHandleSecretProbePrintsLengthOnly(t *testing.T) {
 	t.Setenv("COVE_SECRET_PROBE", "super-secret")
-	out := captureStdout(t, func() error {
-		return handleSecretCommand([]string{"probe", "env://COVE_SECRET_PROBE"})
-	})
-	if !strings.Contains(out, "secret resolved: env://COVE_SECRET_PROBE (length: 12 bytes)") {
-		t.Fatalf("output = %q", out)
+	var out bytes.Buffer
+	env := commandTestEnv()
+	env.Stdout = &out
+	if err := handleSecretCommand(env, []string{"probe", "env://COVE_SECRET_PROBE"}); err != nil {
+		t.Fatalf("handleSecretCommand: %v", err)
 	}
-	if strings.Contains(out, "super-secret") {
-		t.Fatalf("output leaked secret value: %q", out)
+	if !strings.Contains(out.String(), "secret resolved: env://COVE_SECRET_PROBE (length: 12 bytes)") {
+		t.Fatalf("output = %q", out.String())
+	}
+	if strings.Contains(out.String(), "super-secret") {
+		t.Fatalf("output leaked secret value: %q", out.String())
 	}
 }
 
 func TestHandleSecretProbeHelp(t *testing.T) {
-	stderr, restore := captureStderr(t)
-	if err := handleSecretCommand([]string{"probe", "-h"}); err != nil {
-		restore()
+	var stderr bytes.Buffer
+	env := commandTestEnv()
+	env.Stderr = &stderr
+	if err := handleSecretCommand(env, []string{"probe", "-h"}); err != nil {
 		t.Fatalf("handleSecretCommand(probe -h): %v", err)
 	}
-	restore()
 	for _, want := range []string{"Usage: cove secret probe <uri>", "secret value is never", "env://VAR_NAME"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
@@ -43,7 +47,7 @@ func TestHandleSecretProbeErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := handleSecretCommand(tt.args)
+			err := handleSecretCommand(commandTestEnv(), tt.args)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("handleSecretCommand(%v) = %v, want %q", tt.args, err, tt.want)
 			}

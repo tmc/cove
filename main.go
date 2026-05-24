@@ -1751,10 +1751,10 @@ func handleVMCommand(args []string) {
 }
 
 // handleSnapshotCommand handles the snapshot subcommand
-func handleSnapshotCommand(args []string) {
+func handleSnapshotCommand(env commandEnv, args []string) error {
 	if len(args) == 0 {
-		printSnapshotUsage(os.Stderr)
-		os.Exit(1)
+		printSnapshotUsage(env.Stderr)
+		return fmt.Errorf("usage: cove snapshot <command>")
 	}
 
 	mgr := snapshotx.NewManager(vmDir)
@@ -1763,19 +1763,18 @@ func handleSnapshotCommand(args []string) {
 
 	switch subcmd {
 	case "help", "-h", "--help":
-		printSnapshotUsage(os.Stderr)
-		return
+		printSnapshotUsage(env.Stdout)
+		return nil
 	case "list":
 		snapshots, err := mgr.List()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 		if len(snapshots) == 0 {
-			fmt.Println("No snapshots found.")
-			return
+			fmt.Fprintln(env.Stdout, "No snapshots found.")
+			return nil
 		}
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tSIZE\tCREATED")
 		for _, s := range snapshots {
 			fmt.Fprintf(w, "%s\t%s\t%s\n",
@@ -1783,39 +1782,35 @@ func handleSnapshotCommand(args []string) {
 				bytefmt.Size(s.Size),
 				s.Created.Format("2006-01-02 15:04"))
 		}
-		w.Flush()
+		return w.Flush()
 
 	case "delete":
 		if len(subargs) < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: cove snapshot delete <name>")
-			os.Exit(1)
+			return fmt.Errorf("usage: cove snapshot delete <name>")
 		}
 		ok, err := confirmDeletef("Delete snapshot %q? This cannot be undone. [y/N] ", subargs[0])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 		if !ok {
-			return
+			return nil
 		}
 		if err := mgr.Delete(subargs[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
+		return nil
 
 	case "save", "restore":
 		if len(subargs) < 1 {
-			fmt.Fprintf(os.Stderr, "Usage: cove snapshot %s <name>\n", subcmd)
-			os.Exit(1)
+			return fmt.Errorf("usage: cove snapshot %s <name>", subcmd)
 		}
 		if err := snapshotViaControlSocket(subcmd, subargs[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
+		return nil
 
 	default:
-		fmt.Fprintf(os.Stderr, "unknown snapshot command: %s\nRun 'cove -help' for usage.\n", subcmd)
-		os.Exit(1)
+		return fmt.Errorf("unknown snapshot command: %s\nRun 'cove -help' for usage", subcmd)
 	}
 }
 
