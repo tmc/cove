@@ -437,7 +437,7 @@ func main() {
 		os.Exit(1)
 	}
 	if openedCoveVMDir != "" {
-		if err := runSelectedVM(); err != nil {
+		if err := runSelectedVM(newCommandEnv()); err != nil {
 			showCoveVMLaunchError("Cannot Start Cove VM", err)
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -666,7 +666,10 @@ func handleDefaultAction() {
 		} else if vms[0].OSType == "Windows" {
 			windowsMode = true
 		}
-		handleRun()
+		if err := handleRun(newCommandEnv()); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		showVMSelectorWindow(vms)
 	}
@@ -693,18 +696,15 @@ func handleUTM() {
 	}
 }
 
-func handleRun() {
-	if err := runSelectedVM(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
+func handleRun(env commandEnv) error {
+	return runSelectedVM(env)
 }
 
-func runSelectedVM() error {
+func runSelectedVM(env commandEnv) error {
 	if err := resolveRunTarget(); err != nil {
 		return err
 	}
-	if err := runCurrentVM(); err != nil {
+	if err := runCurrentVMWithEnv(env); err != nil {
 		return withVMLimitHint(err, vmName)
 	}
 	return nil
