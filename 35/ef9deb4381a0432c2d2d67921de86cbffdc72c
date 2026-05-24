@@ -1,0 +1,9 @@
+commit: 35ef9deb4381a0432c2d2d67921de86cbffdc72c
+date: 2026-05-24T09:52:37Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 92301
+ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-covecli-env-concrete-registry-review.md
+gates: go build ./...; go test ./...; go vet ./...
