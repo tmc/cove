@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
-	"text/tabwriter"
 
 	"github.com/tmc/cove/internal/covecli"
 )
@@ -48,36 +46,9 @@ dispatch timing, and output-format hints for automation.`)
 func printCommandsJSON(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(commandInventory())
+	return enc.Encode(covecli.Inventory(commandRegistry))
 }
 
 func printCommandsTable(w io.Writer) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "COMMAND\tALIASES\tDISPATCH\tOUTPUTS\tSUMMARY"); err != nil {
-		return err
-	}
-	for _, info := range commandInventory() {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", info.Name, strings.Join(info.Aliases, ","), info.Dispatch, strings.Join(info.Outputs, ","), info.Summary); err != nil {
-			return err
-		}
-	}
-	return tw.Flush()
-}
-
-func commandInventory() []covecli.Info {
-	out := make([]covecli.Info, 0, len(commandRegistry))
-	for _, spec := range commandRegistry {
-		out = append(out, covecli.Info{
-			Name:              spec.Name,
-			Aliases:           append([]string(nil), spec.Aliases...),
-			Summary:           spec.Summary,
-			Dispatch:          covecli.DispatchName(spec.Dispatch),
-			Outputs:           covecli.OutputHints(spec.Name),
-			SafeForDiscovery:  covecli.SafeForDiscovery(spec.Name),
-			MutatesState:      covecli.MutatesState(spec.Name),
-			RequiresRunningVM: covecli.RequiresRunningVM(spec.Name),
-			MayBootVM:         covecli.MayBootVM(spec.Name),
-		})
-	}
-	return out
+	return covecli.PrintCommandsTable(w, covecli.Inventory(commandRegistry))
 }
