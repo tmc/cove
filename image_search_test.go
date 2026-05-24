@@ -147,7 +147,7 @@ func TestWriteImageListJSONEmptyIsArray(t *testing.T) {
 func TestWriteImageListJSON(t *testing.T) {
 	created := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 	entries := []imagestore.Entry{{
-		Ref: ImageRef{Name: "base", Tag: "v1"},
+		Ref: imagestore.Ref{Name: "base", Tag: "v1"},
 		Manifest: &imagestore.Manifest{
 			DiskSize:  12,
 			SourceVM:  "src",

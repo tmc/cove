@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/storagepins"
 )
 
@@ -147,36 +148,36 @@ func TestPruneImagesTable(t *testing.T) {
 	tests := []struct {
 		name        string
 		opts        ImagePruneOptions
-		setup       func(t *testing.T) (removed, kept []ImageRef)
+		setup       func(t *testing.T) (removed, kept []imagestore.Ref)
 		wantRemoved int
 		wantSkipped int
 	}{
 		{
 			name:        "no images",
 			opts:        ImagePruneOptions{Filter: "*"},
-			setup:       func(t *testing.T) ([]ImageRef, []ImageRef) { return nil, nil },
+			setup:       func(t *testing.T) ([]imagestore.Ref, []imagestore.Ref) { return nil, nil },
 			wantRemoved: 0,
 		},
 		{
 			name: "all images pinned",
 			opts: ImagePruneOptions{Filter: "*"},
-			setup: func(t *testing.T) ([]ImageRef, []ImageRef) {
+			setup: func(t *testing.T) ([]imagestore.Ref, []imagestore.Ref) {
 				a := stageUnreferencedImage(t, "src-a", "pin:a")
 				b := stageUnreferencedImage(t, "src-b", "pin:b")
 				pinImage(t, a)
 				pinImage(t, b)
-				return nil, []ImageRef{a, b}
+				return nil, []imagestore.Ref{a, b}
 			},
 			wantSkipped: 2,
 		},
 		{
 			name: "mix pinned and unpinned",
 			opts: ImagePruneOptions{Filter: "*"},
-			setup: func(t *testing.T) ([]ImageRef, []ImageRef) {
+			setup: func(t *testing.T) ([]imagestore.Ref, []imagestore.Ref) {
 				drop := stageUnreferencedImage(t, "src-drop", "mix:drop")
 				keep := stageUnreferencedImage(t, "src-keep", "mix:keep")
 				pinImage(t, keep)
-				return []ImageRef{drop}, []ImageRef{keep}
+				return []imagestore.Ref{drop}, []imagestore.Ref{keep}
 			},
 			wantRemoved: 1,
 			wantSkipped: 1,
@@ -184,25 +185,25 @@ func TestPruneImagesTable(t *testing.T) {
 		{
 			name: "dangling tag",
 			opts: ImagePruneOptions{Filter: "tmp-*"},
-			setup: func(t *testing.T) ([]ImageRef, []ImageRef) {
+			setup: func(t *testing.T) ([]imagestore.Ref, []imagestore.Ref) {
 				base := stageUnreferencedImage(t, "src-base", "app:stable")
 				tmp, _ := ParseImageRef("app:tmp-1")
 				if err := TagImage(ImageTagOptions{Source: base, Target: tmp}); err != nil {
 					t.Fatalf("TagImage: %v", err)
 				}
-				return []ImageRef{tmp}, []ImageRef{base}
+				return []imagestore.Ref{tmp}, []imagestore.Ref{base}
 			},
 			wantRemoved: 1,
 		},
 		{
 			name: "age threshold",
 			opts: ImagePruneOptions{OlderThan: 7 * 24 * time.Hour, Now: func() time.Time { return now }},
-			setup: func(t *testing.T) ([]ImageRef, []ImageRef) {
+			setup: func(t *testing.T) ([]imagestore.Ref, []imagestore.Ref) {
 				old := stageUnreferencedImage(t, "src-old-age", "age:old")
 				new := stageUnreferencedImage(t, "src-new-age", "age:new")
 				backdateImage(t, old, now.Add(-8*24*time.Hour))
 				backdateImage(t, new, now.Add(-time.Hour))
-				return []ImageRef{old}, []ImageRef{new}
+				return []imagestore.Ref{old}, []imagestore.Ref{new}
 			},
 			wantRemoved: 1,
 		},
@@ -232,7 +233,7 @@ func TestPruneImagesTable(t *testing.T) {
 	}
 }
 
-func pinImage(t *testing.T, ref ImageRef) {
+func pinImage(t *testing.T, ref imagestore.Ref) {
 	t.Helper()
 	pins, err := storagepins.Load(coveRoot())
 	if err != nil {

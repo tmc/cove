@@ -30,13 +30,13 @@ type ImageGCOptions struct {
 
 // ImageGCSkipped records why a candidate was kept.
 type ImageGCSkipped struct {
-	Ref    ImageRef
+	Ref    imagestore.Ref
 	Reason string
 }
 
 // ImageGCResult summarizes a sweep.
 type ImageGCResult struct {
-	Removed []ImageRef
+	Removed []imagestore.Ref
 	Skipped []ImageGCSkipped
 }
 
@@ -113,7 +113,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 // is non-zero. If the lock cannot be acquired (concurrent fork or
 // tag), returns a Skipped reason and gc will retry next sweep. Closes
 // R1+R3+R7 in docs/research/image-gc-race-audit-2026-05-08.md.
-func gcImageLocked(ref ImageRef, now time.Time) (bool, *ImageGCSkipped) {
+func gcImageLocked(ref imagestore.Ref, now time.Time) (bool, *ImageGCSkipped) {
 	imgLock, err := TryAcquireImageLock(ref.Path())
 	if err != nil {
 		return false, &ImageGCSkipped{
@@ -157,7 +157,7 @@ func gcImageLocked(ref ImageRef, now time.Time) (bool, *ImageGCSkipped) {
 	return true, nil
 }
 
-func emitImageGCKeep(ref ImageRef, reason string, started time.Time) {
+func emitImageGCKeep(ref imagestore.Ref, reason string, started time.Time) {
 	if reason != "in_use" && reason != "recent" {
 		return
 	}
@@ -193,11 +193,11 @@ func pathSize(path string) int64 {
 	return total
 }
 
-func isCacheImage(ref ImageRef) bool {
+func isCacheImage(ref imagestore.Ref) bool {
 	return strings.HasPrefix(ref.Name, "cache/")
 }
 
-func cacheImageTTL(ref ImageRef) (time.Duration, bool) {
+func cacheImageTTL(ref imagestore.Ref) (time.Duration, bool) {
 	if !isCacheImage(ref) {
 		return 0, false
 	}

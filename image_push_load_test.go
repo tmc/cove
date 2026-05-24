@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 // buildSampleImage stages a fake VM and runs BuildImage so we have a real
 // on-disk image to push. Returns the ref of the built image.
-func buildSampleImage(t *testing.T, vmName, refSpec string) ImageRef {
+func buildSampleImage(t *testing.T, vmName, refSpec string) imagestore.Ref {
 	t.Helper()
 	stageMacOSVMForImage(t, vmName)
 	ref, err := ParseImageRef(refSpec)

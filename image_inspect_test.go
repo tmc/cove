@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 func TestInspectImage_Manifest(t *testing.T) {
@@ -356,7 +358,7 @@ func TestInspectImageDiff_MalformedManifest(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name string
-		ref  ImageRef
+		ref  imagestore.Ref
 	}{
 		{"side-a", refA},
 		{"side-b", refB},
@@ -377,7 +379,7 @@ func TestInspectImageDiff_MalformedManifest(t *testing.T) {
 	}
 }
 
-func patchManifest(t *testing.T, ref ImageRef, values map[string]any) {
+func patchManifest(t *testing.T, ref imagestore.Ref, values map[string]any) {
 	t.Helper()
 	m := readManifestMapForTest(t, ref)
 	for k, v := range values {
@@ -386,7 +388,7 @@ func patchManifest(t *testing.T, ref ImageRef, values map[string]any) {
 	writeManifestMapForTest(t, ref, m)
 }
 
-func removeManifestFields(t *testing.T, ref ImageRef, fields ...string) {
+func removeManifestFields(t *testing.T, ref imagestore.Ref, fields ...string) {
 	t.Helper()
 	m := readManifestMapForTest(t, ref)
 	for _, field := range fields {
@@ -395,7 +397,7 @@ func removeManifestFields(t *testing.T, ref ImageRef, fields ...string) {
 	writeManifestMapForTest(t, ref, m)
 }
 
-func readManifestMapForTest(t *testing.T, ref ImageRef) map[string]any {
+func readManifestMapForTest(t *testing.T, ref imagestore.Ref) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(ref.Path(), "manifest.json"))
 	if err != nil {
@@ -408,7 +410,7 @@ func readManifestMapForTest(t *testing.T, ref ImageRef) map[string]any {
 	return m
 }
 
-func writeManifestMapForTest(t *testing.T, ref ImageRef, m map[string]any) {
+func writeManifestMapForTest(t *testing.T, ref imagestore.Ref, m map[string]any) {
 	t.Helper()
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

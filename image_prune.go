@@ -21,12 +21,12 @@ type ImagePruneOptions struct {
 }
 
 type ImagePruneSkipped struct {
-	Ref    ImageRef
+	Ref    imagestore.Ref
 	Reason string
 }
 
 type ImagePruneResult struct {
-	Removed []ImageRef
+	Removed []imagestore.Ref
 	Skipped []ImagePruneSkipped
 }
 

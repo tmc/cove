@@ -16,7 +16,7 @@ func TestImageCreatedAt(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	want := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
-	ref := ImageRef{Name: "test", Tag: "v1"}
+	ref := imagestore.Ref{Name: "test", Tag: "v1"}
 
 	t.Run("manifest timestamp wins", func(t *testing.T) {
 		entry := imagestore.Entry{Ref: ref, Manifest: &imagestore.Manifest{CreatedAt: want}}
@@ -46,7 +46,7 @@ func TestImageCreatedAt(t *testing.T) {
 	})
 
 	t.Run("now fallback when nothing on disk", func(t *testing.T) {
-		entry := imagestore.Entry{Ref: ImageRef{Name: "missing", Tag: "v1"}}
+		entry := imagestore.Entry{Ref: imagestore.Ref{Name: "missing", Tag: "v1"}}
 		before := time.Now()
 		got := imageCreatedAt(entry)
 		after := time.Now()

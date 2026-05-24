@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 type ImageTagOptions struct {
-	Source ImageRef
-	Target ImageRef
+	Source imagestore.Ref
+	Target imagestore.Ref
 }
 
 func TagImage(opts ImageTagOptions) error {

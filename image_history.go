@@ -11,6 +11,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 type ImageHistory struct {
@@ -36,7 +38,7 @@ type ImageHistoryLayer struct {
 	Size   int64  `json:"size"`
 }
 
-func ImageHistoryFor(ref ImageRef) (ImageHistory, error) {
+func ImageHistoryFor(ref imagestore.Ref) (ImageHistory, error) {
 	seen := map[string]bool{}
 	var entries []ImageHistoryEntry
 	cur := ref
@@ -65,7 +67,7 @@ func ImageHistoryFor(ref ImageRef) (ImageHistory, error) {
 	return ImageHistory{Ref: ref.String(), Entries: entries}, nil
 }
 
-func imageHistoryEntry(ref ImageRef) (ImageHistoryEntry, string, error) {
+func imageHistoryEntry(ref imagestore.Ref) (ImageHistoryEntry, string, error) {
 	manifest, err := LoadImageManifest(ref)
 	if err != nil {
 		return ImageHistoryEntry{}, "", fmt.Errorf("image history: %w", err)
@@ -98,7 +100,7 @@ func imageHistoryEntry(ref ImageRef) (ImageHistoryEntry, string, error) {
 	return entry, parent, nil
 }
 
-func imageHistoryLayers(ref ImageRef) ([]ImageHistoryLayer, error) {
+func imageHistoryLayers(ref imagestore.Ref) ([]ImageHistoryLayer, error) {
 	layers := make([]ImageHistoryLayer, 0, len(imageDataFiles))
 	for _, name := range imageDataFiles {
 		path := filepath.Join(ref.Path(), name)
