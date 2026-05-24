@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 )
 
 func TestGenerateUserDataServer(t *testing.T) {
@@ -704,5 +706,11 @@ func TestSupportsDirectKernelInstall(t *testing.T) {
 				t.Fatalf("supportsDirectKernelInstall(%s) = %v, want %v", tt.variant, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLinuxInstallDiskCachePolicy(t *testing.T) {
+	if got := linuxInstallDiskCachePolicy(); got != storagex.CacheDurable {
+		t.Fatalf("linuxInstallDiskCachePolicy() = %v, want %v", got, storagex.CacheDurable)
 	}
 }

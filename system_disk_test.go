@@ -3,7 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 )
 
 func TestSystemDiskAttachmentModeString(t *testing.T) {
@@ -68,6 +71,40 @@ func TestVMPrimaryDiskPath(t *testing.T) {
 				t.Fatalf("vmPrimaryDiskPath(%s) = %q, want %q", tt.marker, got, want)
 			}
 		})
+	}
+}
+
+func TestDiskImageSyncMode(t *testing.T) {
+	old := diskSyncMode
+	t.Cleanup(func() { diskSyncMode = old })
+
+	tests := []struct {
+		name string
+		flag string
+	}{
+		{"default", ""},
+		{"fsync", "fsync"},
+		{"none", "none"},
+		{"full", "full"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diskSyncMode = tt.flag
+			if _, err := diskImageSyncMode(storagex.CacheDurable); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestDiskImageSyncModeInvalid(t *testing.T) {
+	old := diskSyncMode
+	t.Cleanup(func() { diskSyncMode = old })
+
+	diskSyncMode = "frobnicate"
+	_, err := diskImageSyncMode(storagex.CacheDurable)
+	if err == nil || !strings.Contains(err.Error(), "invalid -disk-sync") {
+		t.Fatalf("err = %v, want invalid -disk-sync", err)
 	}
 }
 

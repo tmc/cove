@@ -8,6 +8,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	pvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -41,6 +42,37 @@ func vmPrimaryDiskPath(vmPath string) string {
 		return filepath.Join(vmPath, "windows-disk.img")
 	}
 	return filepath.Join(vmPath, "disk.img")
+}
+
+func diskImageSyncMode(policy storagex.CachePolicy) (vz.VZDiskImageSynchronizationMode, error) {
+	_, sync, err := storagex.DiskImageModes(policy)
+	if err != nil {
+		return 0, err
+	}
+	switch strings.ToLower(strings.TrimSpace(diskSyncMode)) {
+	case "":
+		return sync, nil
+	case "fsync":
+		return vz.VZDiskImageSynchronizationModeFsync, nil
+	case "none":
+		return vz.VZDiskImageSynchronizationModeNone, nil
+	case "full":
+		return vz.VZDiskImageSynchronizationModeFull, nil
+	default:
+		return 0, fmt.Errorf("invalid -disk-sync %q (must be fsync, none, or full)", diskSyncMode)
+	}
+}
+
+func newDiskAttachment(url foundation.INSURL, readOnly bool, policy storagex.CachePolicy) (vz.VZDiskImageStorageDeviceAttachment, error) {
+	caching, _, err := storagex.DiskImageModes(policy)
+	if err != nil {
+		return vz.VZDiskImageStorageDeviceAttachment{}, err
+	}
+	sync, err := diskImageSyncMode(policy)
+	if err != nil {
+		return vz.VZDiskImageStorageDeviceAttachment{}, err
+	}
+	return storagex.NewDiskImageAttachmentWithSynchronizationMode(url, readOnly, caching, sync)
 }
 
 func selectedVMSourceName() string {
@@ -79,9 +111,9 @@ func createRuntimeStorageDeviceAttachment(path string, readOnly bool, mode syste
 		return attachment.VZStorageDeviceAttachment, nil
 	}
 
-	policy := DiskCacheDurable
+	policy := storagex.CacheDurable
 	if readOnly {
-		policy = DiskCacheReadOnly
+		policy = storagex.CacheReadOnly
 	}
 	attachment, err := newDiskAttachment(url, readOnly, policy)
 	if err != nil {
