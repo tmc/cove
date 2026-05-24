@@ -6,7 +6,7 @@ title: Installation
 ## Requirements
 
 - Apple Silicon Mac (M1/M2/M3/M4)
-- macOS 12.0+ (Monterey or later)
+- macOS 14.0+ (Sonoma or later)
 - Xcode Command Line Tools (`xcode-select --install`)
 - ~20GB free disk space for a macOS VM
 

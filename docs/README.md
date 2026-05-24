@@ -68,7 +68,7 @@ graph TD
 ## Requirements
 
 - Apple Silicon Mac (M1/M2/M3/M4)
-- macOS 12.0+ (Monterey or later)
+- macOS 14.0+ (Sonoma or later)
 - Xcode Command Line Tools
 
 ## Maturity

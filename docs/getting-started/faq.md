@@ -9,7 +9,7 @@ cove requires Apple Silicon (M1 or later). It uses Apple's Virtualization.framew
 
 ### What macOS versions are supported?
 
-The host must run macOS 12 (Monterey) or later. Guest VMs can run macOS 13 (Ventura) through macOS 15 (Sequoia). The guest version must be equal to or older than the host version.
+The host must run macOS 14.0 (Sonoma) or later. Guest VMs can run macOS 13 (Ventura) through macOS 15 (Sequoia). The guest version must be equal to or older than the host version.
 
 ### Does cove require root or sudo?
 
