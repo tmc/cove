@@ -43,9 +43,6 @@ func ImagesBaseDir() string {
 	return imagestore.BaseDir()
 }
 
-// ImageManifest is the on-disk schema for an image's manifest.json.
-type ImageManifest = imagestore.Manifest
-
 // ImageRef is a parsed name[:tag] image reference.
 type ImageRef = imagestore.Ref
 
@@ -71,7 +68,7 @@ func ImageExists(ref ImageRef) bool {
 
 // LoadImageManifest reads the manifest at ref or returns an error if
 // the image does not exist.
-func LoadImageManifest(ref ImageRef) (*ImageManifest, error) {
+func LoadImageManifest(ref ImageRef) (*imagestore.Manifest, error) {
 	return imagestore.LoadManifest(ref)
 }
 
@@ -88,7 +85,7 @@ type BuildImageOptions struct {
 // machine.id are byte-copied. The manifest records sha256(disk),
 // source config, and creation time. The source VM must exist and not
 // be running (run.lock not held).
-func BuildImage(opts BuildImageOptions) (*ImageManifest, error) {
+func BuildImage(opts BuildImageOptions) (*imagestore.Manifest, error) {
 	if strings.TrimSpace(opts.SourceVM) == "" {
 		return nil, errors.New("image build: source VM name required")
 	}
@@ -162,7 +159,7 @@ func BuildImage(opts BuildImageOptions) (*ImageManifest, error) {
 	if coveCommit == "" || coveCommit == "unknown" {
 		coveCommit = resolvedVersion().Version
 	}
-	manifest := &ImageManifest{
+	manifest := &imagestore.Manifest{
 		SchemaVersion:  1,
 		Name:           opts.Ref.Name,
 		Tag:            opts.Ref.Tag,
@@ -223,11 +220,11 @@ func copyImageFiles(srcDir, imgDir, osType string) error {
 	return nil
 }
 
-func writeImageManifest(dir string, m *ImageManifest) error {
+func writeImageManifest(dir string, m *imagestore.Manifest) error {
 	return imagestore.WriteManifest(dir, m)
 }
 
-func legacyImageManifest(m *ImageManifest) bool {
+func legacyImageManifest(m *imagestore.Manifest) bool {
 	if m == nil {
 		return true
 	}

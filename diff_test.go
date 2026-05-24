@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 func TestImageDiffDiskLayer(t *testing.T) {
@@ -270,7 +272,7 @@ func writeTestDiffImageOS(t *testing.T, ref ImageRef, osType, data string, ok bo
 	if err := os.MkdirAll(ref.Path(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifest := &ImageManifest{
+	manifest := &imagestore.Manifest{
 		SchemaVersion: 1,
 		Name:          ref.Name,
 		Tag:           ref.Tag,

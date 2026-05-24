@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -160,7 +161,7 @@ func maybeQuietImageForkSerial(cfg RunConfig) func() {
 	}
 }
 
-func runConfigForImageManifest(cfg RunConfig, manifest *ImageManifest) RunConfig {
+func runConfigForImageManifest(cfg RunConfig, manifest *imagestore.Manifest) RunConfig {
 	if manifest == nil {
 		return cfg
 	}

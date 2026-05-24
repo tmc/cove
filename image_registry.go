@@ -15,6 +15,7 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/tmc/cove/internal/imagestore"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/errdef"
@@ -215,7 +216,7 @@ func PullImageFromTarget(ctx context.Context, target oras.ReadOnlyTarget, srcRef
 	if err != nil {
 		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: fetch image metadata: %w", err)
 	}
-	var m ImageManifest
+	var m imagestore.Manifest
 	if err := json.Unmarshal(configBytes, &m); err != nil {
 		return ImageRef{}, ocispec.Descriptor{}, fmt.Errorf("image pull: parse image metadata: %w", err)
 	}
