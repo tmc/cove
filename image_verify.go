@@ -223,9 +223,9 @@ func (r *imageVerifyReport) worstStatus() imageVerifyStatus {
 	return worst
 }
 
-func runImageVerify(args []string) error {
+func runImageVerify(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image verify", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	quiet := fs.Bool("quiet", false, "only print on failure")
 	strict := fs.Bool("strict", false, "treat missing execattach.v3 as an error")
@@ -247,11 +247,11 @@ func runImageVerify(args []string) error {
 	}
 	report := VerifyImage(ref, imageVerifyOptions{Strict: *strict, NewerThan: *newerThan})
 	if *asJSON {
-		if err := writeImageVerifyJSON(os.Stdout, report); err != nil {
+		if err := writeImageVerifyJSON(env.Stdout, report); err != nil {
 			return err
 		}
 	} else if !*quiet || report.Verdict == imageVerifyFail {
-		writeImageVerifyText(os.Stdout, report)
+		writeImageVerifyText(env.Stdout, report)
 	}
 	if report.Verdict == imageVerifyFail {
 		return fmt.Errorf("image verify: %s", ref)

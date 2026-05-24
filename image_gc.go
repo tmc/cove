@@ -9,6 +9,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -213,9 +214,9 @@ func cacheImageTTL(ref imagestore.Ref) (time.Duration, bool) {
 }
 
 // runImageGC implements `cove image gc [-dry-run] [-yes] [-older-than D]`.
-func runImageGC(args []string) error {
+func runImageGC(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image gc", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	dryRun := fs.Bool("dry-run", false, "print images without deleting them")
 	yes := fs.Bool("yes", false, "skip confirmation prompt")
 	olderThan := fs.Duration("older-than", 0, "only delete images older than this duration")
@@ -227,7 +228,7 @@ func runImageGC(args []string) error {
 	}
 	metricsRun, metricsErr := beginStandaloneMetricsRun("image-gc", "cache")
 	if metricsErr != nil {
-		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", metricsErr)
+		fmt.Fprintf(env.Stderr, "warning: metrics init: %v\n", metricsErr)
 	}
 	defer finishStandaloneMetricsRun(metricsRun)
 
@@ -237,31 +238,30 @@ func runImageGC(args []string) error {
 	}
 	if len(plan.Removed) == 0 {
 		if *dryRun {
-			fmt.Println("No unreferenced images would be removed.")
+			fmt.Fprintln(env.Stdout, "No unreferenced images would be removed.")
 		} else {
-			fmt.Println("No unreferenced images to remove.")
+			fmt.Fprintln(env.Stdout, "No unreferenced images to remove.")
 		}
 		for _, sk := range plan.Skipped {
-			fmt.Printf("keep %s (%s)\n", sk.Ref, sk.Reason)
+			fmt.Fprintf(env.Stdout, "keep %s (%s)\n", sk.Ref, sk.Reason)
 		}
 		return nil
 	}
 	for _, ref := range plan.Removed {
-		fmt.Printf("would remove image %s\n", ref)
+		fmt.Fprintf(env.Stdout, "would remove image %s\n", ref)
 	}
 	for _, sk := range plan.Skipped {
-		fmt.Printf("keep %s (%s)\n", sk.Ref, sk.Reason)
+		fmt.Fprintf(env.Stdout, "keep %s (%s)\n", sk.Ref, sk.Reason)
 	}
 	if *dryRun {
 		return nil
 	}
 	if !*yes {
-		fmt.Printf("Remove %d image(s)? [y/N] ", len(plan.Removed))
-		var resp string
-		fmt.Scanln(&resp)
+		fmt.Fprintf(env.Stdout, "Remove %d image(s)? [y/N] ", len(plan.Removed))
+		resp, _ := bufio.NewReader(env.Stdin).ReadString('\n')
 		resp = strings.ToLower(strings.TrimSpace(resp))
 		if resp != "y" && resp != "yes" {
-			fmt.Println("aborted.")
+			fmt.Fprintln(env.Stdout, "aborted.")
 			return nil
 		}
 	}
@@ -270,10 +270,10 @@ func runImageGC(args []string) error {
 		return err
 	}
 	for _, ref := range actual.Removed {
-		fmt.Printf("removed image %s\n", ref)
+		fmt.Fprintf(env.Stdout, "removed image %s\n", ref)
 	}
 	for _, sk := range actual.Skipped {
-		fmt.Printf("keep %s (%s)\n", sk.Ref, sk.Reason)
+		fmt.Fprintf(env.Stdout, "keep %s (%s)\n", sk.Ref, sk.Reason)
 	}
 	return nil
 }

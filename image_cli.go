@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"text/tabwriter"
 	"time"
 
@@ -15,41 +14,41 @@ import (
 )
 
 // handleImageCommand routes `cove image <subcmd>`.
-func handleImageCommand(args []string) error {
+func handleImageCommand(env commandEnv, args []string) error {
 	if len(args) == 0 || isHelpArg(args[0]) {
-		printImageUsage(os.Stdout)
+		printImageUsage(env.Stdout)
 		return nil
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "build":
-		return runImageBuild(rest)
+		return runImageBuild(env, rest)
 	case "list", "ls":
-		return runImageList(rest)
+		return runImageList(env, rest)
 	case "inspect":
-		return runImageInspect(rest)
+		return runImageInspect(env, rest)
 	case "verify":
-		return runImageVerify(rest)
+		return runImageVerify(env, rest)
 	case "gc":
-		return runImageGC(rest)
+		return runImageGC(env, rest)
 	case "prune":
-		return runImagePrune(rest)
+		return runImagePrune(env, rest)
 	case "tag":
-		return runImageTag(rest)
+		return runImageTag(env, rest)
 	case "history":
-		return runImageHistory(rest)
+		return runImageHistory(env, rest)
 	case "search":
-		return runImageSearch(rest)
+		return runImageSearch(env, rest)
 	case "rm", "remove", "delete":
-		return runImageRm(rest)
+		return runImageRm(env, rest)
 	case "push":
-		return runImagePush(rest)
+		return runImagePush(env, rest)
 	case "pull":
-		return runImagePull(rest)
+		return runImagePull(env, rest)
 	case "load":
-		return runImageLoad(rest)
+		return runImageLoad(env, rest)
 	default:
-		printImageUsage(os.Stderr)
+		printImageUsage(env.Stderr)
 		return fmt.Errorf("unknown image subcommand: %s", sub)
 	}
 }
@@ -84,9 +83,9 @@ Examples:
   cove run -fork-from cove-runner-macos:14.5 -ephemeral`)
 }
 
-func runImageBuild(args []string) (err error) {
+func runImageBuild(env commandEnv, args []string) (err error) {
 	fs := flag.NewFlagSet("image build", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	from := fs.String("from", "", "source VM name (must be stopped)")
 	tag := fs.String("tag", "", "image ref: name[:tag] (default tag: latest)")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
@@ -105,7 +104,7 @@ func runImageBuild(args []string) (err error) {
 	}
 	metricsRun, metricsErr := beginStandaloneMetricsRun(*from, ref.String())
 	if metricsErr != nil {
-		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", metricsErr)
+		fmt.Fprintf(env.Stderr, "warning: metrics init: %v\n", metricsErr)
 	}
 	defer finishStandaloneMetricsRun(metricsRun)
 	defer func(started time.Time) {
@@ -129,16 +128,16 @@ func runImageBuild(args []string) (err error) {
 		return err
 	}
 	emitMetricEvent("vm_create", buildStarted, "ok", map[string]any{"source_vm": *from})
-	fmt.Printf("Built image %s from %s\n", ref, *from)
-	fmt.Printf("  path:   %s\n", ref.Path())
-	fmt.Printf("  disk:   %d bytes\n", manifest.DiskSize)
-	fmt.Printf("  sha256: %s\n", manifest.DiskSHA256)
+	fmt.Fprintf(env.Stdout, "Built image %s from %s\n", ref, *from)
+	fmt.Fprintf(env.Stdout, "  path:   %s\n", ref.Path())
+	fmt.Fprintf(env.Stdout, "  disk:   %d bytes\n", manifest.DiskSize)
+	fmt.Fprintf(env.Stdout, "  sha256: %s\n", manifest.DiskSHA256)
 	return nil
 }
 
-func runImageList(args []string) error {
+func runImageList(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image list", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	fs.Usage = func() { printImageListUsage(fs.Output()) }
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
@@ -152,15 +151,15 @@ func runImageList(args []string) error {
 		return err
 	}
 	if *asJSON {
-		return writeImageListJSON(os.Stdout, entries)
+		return writeImageListJSON(env.Stdout, entries)
 	}
 	if len(entries) == 0 {
-		fmt.Println("No images found.")
-		fmt.Println("  Images are optional. Create a VM first with: cove up -user <name>")
-		fmt.Println("  Snapshot a stopped VM later with: cove image build -from <vm> -tag <name>:latest")
+		fmt.Fprintln(env.Stdout, "No images found.")
+		fmt.Fprintln(env.Stdout, "  Images are optional. Create a VM first with: cove up -user <name>")
+		fmt.Fprintln(env.Stdout, "  Snapshot a stopped VM later with: cove image build -from <vm> -tag <name>:latest")
 		return nil
 	}
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	tw := tabwriter.NewWriter(env.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tTAG\tSIZE\tSOURCE\tCREATED")
 	for _, e := range entries {
 		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n",
@@ -225,9 +224,9 @@ Columns:
   CREATED   Manifest creation time`)
 }
 
-func runImageRm(args []string) error {
+func runImageRm(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image rm", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	fs.Usage = func() { printImageRmUsage(fs.Output()) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
@@ -245,7 +244,7 @@ func runImageRm(args []string) error {
 	if err := DeleteImage(ref); err != nil {
 		return err
 	}
-	fmt.Printf("Deleted image %s\n", ref)
+	fmt.Fprintf(env.Stdout, "Deleted image %s\n", ref)
 	return nil
 }
 

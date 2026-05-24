@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -190,26 +191,11 @@ func TestGCImages_DryRunNoMutation(t *testing.T) {
 	}
 }
 
-// runImageGCWithStdin swaps os.Stdin with the given pipe content and
-// restores it on cleanup. fmt.Scanln reads from os.Stdin directly so
-// the swap is the only way to drive the prompt deterministically.
 func runImageGCWithStdin(t *testing.T, input string, args []string) error {
 	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	if _, err := w.WriteString(input); err != nil {
-		t.Fatalf("write stdin: %v", err)
-	}
-	w.Close()
-	prev := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() {
-		os.Stdin = prev
-		r.Close()
-	})
-	return runImageGC(args)
+	env := imageTestEnv()
+	env.Stdin = strings.NewReader(input)
+	return runImageGC(env, args)
 }
 
 func TestRunImageGC_AbortsOnNonYes(t *testing.T) {

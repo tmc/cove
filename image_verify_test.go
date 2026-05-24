@@ -203,7 +203,7 @@ func TestRunImageVerifyQuiet(t *testing.T) {
 	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
 		t.Fatalf("BuildImage: %v", err)
 	}
-	if err := runImageVerify([]string{"--quiet", ref.String()}); err != nil {
+	if err := runImageVerify(imageTestEnv(), []string{"--quiet", ref.String()}); err != nil {
 		t.Fatalf("runImageVerify quiet pass: %v", err)
 	}
 }
@@ -218,7 +218,7 @@ func TestRunImageVerifyAllowsTrailingJSON(t *testing.T) {
 	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
 		t.Fatalf("BuildImage: %v", err)
 	}
-	if err := runImageVerify([]string{ref.String(), "-json"}); err != nil {
+	if err := runImageVerify(imageTestEnv(), []string{ref.String(), "-json"}); err != nil {
 		t.Fatalf("runImageVerify trailing -json: %v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestRunImageVerifyAllowsTrailingJSON(t *testing.T) {
 func TestRunImageVerifyMissingJSONWritesMachineReadableStdout(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	out, err := captureStdoutResult(t, func() error {
-		return runImageVerify([]string{"missing:latest", "-json"})
+		return runImageVerify(commandEnv{Stdout: os.Stdout, Stderr: os.Stderr}, []string{"missing:latest", "-json"})
 	})
 	if err == nil {
 		t.Fatal("runImageVerify missing -json = nil, want error")

@@ -145,9 +145,9 @@ func machineModelFingerprint(ref imagestore.Ref) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func runImageInspect(args []string) error {
+func runImageInspect(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image inspect", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	fs.Usage = func() { printImageInspectUsage(fs.Output()) }
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	diff := fs.Bool("diff", false, "compare two image refs")
@@ -172,14 +172,14 @@ func runImageInspect(args []string) error {
 		out, err := InspectImageDiff(a, b)
 		if err != nil {
 			if *asJSON {
-				_ = writeCLIErrorJSON(os.Stdout, "image inspect", err, "run 'cove image list' to see local images")
+				_ = writeCLIErrorJSON(env.Stdout, "image inspect", err, "run 'cove image list' to see local images")
 			}
 			return err
 		}
 		if *asJSON {
-			return writeInspectDiffJSON(os.Stdout, out)
+			return writeInspectDiffJSON(env.Stdout, out)
 		}
-		return writeInspectDiffText(os.Stdout, out)
+		return writeInspectDiffText(env.Stdout, out)
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("usage: cove image inspect [-json] <name[:tag]>")
@@ -193,7 +193,7 @@ func runImageInspect(args []string) error {
 		if errors.Is(err, os.ErrNotExist) {
 			hint := fmt.Sprintf("run 'cove image list' to see local images or 'cove image search %s' to search refs", ref.Name)
 			if *asJSON {
-				if jsonErr := writeInspectErrorJSON(os.Stdout, imageInspectErrorOutput{
+				if jsonErr := writeInspectErrorJSON(env.Stdout, imageInspectErrorOutput{
 					Ref:   ref.String(),
 					Error: err.Error(),
 					Hint:  hint,
@@ -206,9 +206,9 @@ func runImageInspect(args []string) error {
 		return err
 	}
 	if *asJSON {
-		return writeInspectJSON(os.Stdout, out)
+		return writeInspectJSON(env.Stdout, out)
 	}
-	return writeInspectText(os.Stdout, out)
+	return writeInspectText(env.Stdout, out)
 }
 
 func printImageInspectUsage(w io.Writer) {

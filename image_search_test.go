@@ -83,7 +83,7 @@ func TestSearchImagesNoMatch(t *testing.T) {
 
 func TestRunImageSearchAllowsTrailingJSON(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	if err := runImageSearch([]string{"missing", "-json"}); err != nil {
+	if err := runImageSearch(imageTestEnv(), []string{"missing", "-json"}); err != nil {
 		t.Fatalf("runImageSearch trailing -json: %v", err)
 	}
 	if got := strings.Join(moveImageSearchFlagsFirst([]string{"missing", "-json"}), " "); got != "-json missing" {

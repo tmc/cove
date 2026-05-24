@@ -73,7 +73,7 @@ func TestTagImageRejectsMissingSource(t *testing.T) {
 }
 
 func TestRunImageTagUsage(t *testing.T) {
-	if err := runImageTag(nil); err == nil {
+	if err := runImageTag(imageTestEnv(), nil); err == nil {
 		t.Fatalf("runImageTag with no args succeeded")
 	}
 }
@@ -106,12 +106,12 @@ func TestTagImageRejectsEmptyRefs(t *testing.T) {
 
 func TestRunImageTagHelpAndUnknownFlag(t *testing.T) {
 	t.Run("help flag returns nil", func(t *testing.T) {
-		if err := runImageTag([]string{"-h"}); err != nil {
+		if err := runImageTag(imageTestEnv(), []string{"-h"}); err != nil {
 			t.Fatalf("runImageTag -h: %v, want nil", err)
 		}
 	})
 	t.Run("unknown flag returns parse error", func(t *testing.T) {
-		err := runImageTag([]string{"-not-a-real-flag"})
+		err := runImageTag(imageTestEnv(), []string{"-not-a-real-flag"})
 		if err == nil {
 			t.Fatal("runImageTag(-not-a-real-flag) = nil, want parse error")
 		}
@@ -122,10 +122,10 @@ func TestRunImageTagHelpAndUnknownFlag(t *testing.T) {
 }
 
 func TestRunImageTagBadRef(t *testing.T) {
-	if err := runImageTag([]string{"::bad", "base:new"}); err == nil {
+	if err := runImageTag(imageTestEnv(), []string{"::bad", "base:new"}); err == nil {
 		t.Fatalf("runImageTag with malformed src ref succeeded")
 	}
-	if err := runImageTag([]string{"base:old", "::bad"}); err == nil {
+	if err := runImageTag(imageTestEnv(), []string{"base:old", "::bad"}); err == nil {
 		t.Fatalf("runImageTag with malformed dst ref succeeded")
 	}
 }

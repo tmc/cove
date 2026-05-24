@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -41,7 +42,7 @@ func TestWriteImageSearchJSONWriteError(t *testing.T) {
 
 func TestRunImageInspectMissingHint(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	err := runImageInspect([]string{"missing:latest"})
+	err := runImageInspect(imageTestEnv(), []string{"missing:latest"})
 	if err == nil {
 		t.Fatal("runImageInspect(missing) = nil, want error")
 	}
@@ -55,7 +56,7 @@ func TestRunImageInspectMissingHint(t *testing.T) {
 func TestRunImageInspectMissingJSONWritesMachineReadableStdout(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	out, err := captureStdoutResult(t, func() error {
-		return runImageInspect([]string{"-json", "missing:latest"})
+		return runImageInspect(commandEnv{Stdout: os.Stdout, Stderr: os.Stderr}, []string{"-json", "missing:latest"})
 	})
 	if err == nil {
 		t.Fatal("runImageInspect -json missing = nil, want error")
