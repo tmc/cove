@@ -3,42 +3,9 @@ package main
 import (
 	"sync"
 	"testing"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
-
-func TestImageLockReleaseNilSafe(t *testing.T) {
-	var lock *ImageLock
-	if err := lock.Release(); err != nil {
-		t.Fatalf("nil receiver Release: %v, want nil", err)
-	}
-	lock2 := &ImageLock{}
-	if err := lock2.Release(); err != nil {
-		t.Fatalf("zero-value Release: %v, want nil", err)
-	}
-	if err := lock2.Release(); err != nil {
-		t.Fatalf("second Release on zero-value: %v, want nil (idempotent)", err)
-	}
-}
-
-// TestImageLock_Basic exercises acquire/release.
-func TestImageLock_Basic(t *testing.T) {
-	gcTestSetup(t)
-	ref := stageUnreferencedImage(t, "src-basic", "test/basic:v1")
-	lock, err := AcquireImageLock(ref.Path())
-	if err != nil {
-		t.Fatalf("acquire: %v", err)
-	}
-	if _, err := TryAcquireImageLock(ref.Path()); err == nil {
-		t.Fatalf("second acquire should fail")
-	}
-	if err := lock.Release(); err != nil {
-		t.Fatalf("release: %v", err)
-	}
-	lock2, err := TryAcquireImageLock(ref.Path())
-	if err != nil {
-		t.Fatalf("acquire after release: %v", err)
-	}
-	lock2.Release()
-}
 
 // TestGCImages_R1_SkipsLockedImage simulates a fork-from in progress
 // (lock held by MaterializeImage) and asserts the gc sweep does not
@@ -49,7 +16,7 @@ func TestGCImages_R1_SkipsLockedImage(t *testing.T) {
 	ref := stageUnreferencedImage(t, "src-r1", "test/r1:v1")
 
 	// Hold the image lock as if MaterializeImage were mid-fork.
-	held, err := AcquireImageLock(ref.Path())
+	held, err := imagestore.AcquireLock(ref.Path())
 	if err != nil {
 		t.Fatalf("acquire holder: %v", err)
 	}

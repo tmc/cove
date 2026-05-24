@@ -50,6 +50,10 @@ func ImagesBaseDir() string {
 // matching individual messages.
 var ErrImageRefInvalid = imagestore.ErrRefInvalid
 
+// acquireImageLockHook lets tests stub out lock acquisition; mirrors
+// acquireRunLockHook in runtime_lifecycle.go.
+var acquireImageLockHook = imagestore.AcquireLock
+
 // ParseImageRef parses "name" or "name:tag" into an ImageRef. Default
 // tag is "latest". The name and tag are validated against the same
 // allow-set used by snapshot names so they are safe path components.

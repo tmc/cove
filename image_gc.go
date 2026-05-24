@@ -115,7 +115,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 // tag), returns a Skipped reason and gc will retry next sweep. Closes
 // R1+R3+R7 in docs/research/image-gc-race-audit-2026-05-08.md.
 func gcImageLocked(ref imagestore.Ref, now time.Time) (bool, *ImageGCSkipped) {
-	imgLock, err := TryAcquireImageLock(ref.Path())
+	imgLock, err := imagestore.TryAcquireLock(ref.Path())
 	if err != nil {
 		return false, &ImageGCSkipped{
 			Ref:    ref,
