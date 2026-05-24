@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/tmc/cove/internal/disposable"
 )
 
 func handleGCCommand(args []string) error {
@@ -16,7 +18,7 @@ func handleGCCommand(args []string) error {
 		return err
 	}
 
-	disposable, err := GCDisposableClones(DisposableGCOptions{
+	disposable, err := GCDisposableClones(disposable.GCOptions{
 		OlderThan: *olderThan,
 		DryRun:    *dryRun,
 	})

@@ -11,6 +11,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 
+	"github.com/tmc/cove/internal/disposable"
 	"github.com/tmc/cove/internal/lifecycle"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmpolicy"
@@ -128,7 +129,7 @@ func runVMWithConfig(cfg RunConfig) error {
 		return err
 	}
 
-	var clone DisposableClone
+	var clone disposable.Clone
 	temporaryClone := cfg.Disposable || cfg.RollbackSnapshot != ""
 	if temporaryClone {
 		source := originalVMName
@@ -136,7 +137,7 @@ func runVMWithConfig(cfg RunConfig) error {
 			source = filepathBase(originalVMDir)
 		}
 		var (
-			created DisposableClone
+			created disposable.Clone
 			err     error
 		)
 		if cfg.RollbackSnapshot != "" {

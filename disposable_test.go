@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/disposable"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -159,7 +160,7 @@ func TestGCDisposableClones(t *testing.T) {
 		}
 	}
 
-	got, err := GCDisposableClones(DisposableGCOptions{
+	got, err := GCDisposableClones(disposable.GCOptions{
 		BaseDir:   baseDir,
 		OlderThan: 24 * time.Hour,
 		Now: func() time.Time {

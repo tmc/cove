@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove/internal/disposable"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -26,26 +27,26 @@ type RollbackSnapshotCloneOptions struct {
 
 // SetupRollbackSnapshotClone creates a disposable VM clone whose disk is
 // sourced from the named disk snapshot rather than the live VM disk.
-func SetupRollbackSnapshotClone(opts RollbackSnapshotCloneOptions) (DisposableClone, error) {
+func SetupRollbackSnapshotClone(opts RollbackSnapshotCloneOptions) (disposable.Clone, error) {
 	source := strings.TrimSpace(opts.Source)
 	if source == "" {
-		return DisposableClone{}, fmt.Errorf("source vm is required")
+		return disposable.Clone{}, fmt.Errorf("source vm is required")
 	}
 	if err := validateSnapshotName(opts.Snapshot); err != nil {
-		return DisposableClone{}, err
+		return disposable.Clone{}, err
 	}
 
 	sourcePath := vmconfig.Path(source)
 	if !vmconfig.Validate(sourcePath) {
-		return DisposableClone{}, fmt.Errorf("source vm not found: %s", source)
+		return disposable.Clone{}, fmt.Errorf("source vm not found: %s", source)
 	}
 
 	snapshotDiskPath := filepath.Join(sourcePath, "disk-snapshots", opts.Snapshot, "disk.img")
 	if _, err := os.Stat(snapshotDiskPath); err != nil {
 		if os.IsNotExist(err) {
-			return DisposableClone{}, fmt.Errorf("disk snapshot '%s' not found", opts.Snapshot)
+			return disposable.Clone{}, fmt.Errorf("disk snapshot '%s' not found", opts.Snapshot)
 		}
-		return DisposableClone{}, fmt.Errorf("stat snapshot disk: %w", err)
+		return disposable.Clone{}, fmt.Errorf("stat snapshot disk: %w", err)
 	}
 
 	now := opts.Now
@@ -67,13 +68,13 @@ func SetupRollbackSnapshotClone(opts RollbackSnapshotCloneOptions) (DisposableCl
 		SourceDiskPath: snapshotDiskPath,
 	}
 	if err := cloneFn(cloneOpts); err != nil {
-		return DisposableClone{}, fmt.Errorf("create rollback clone: %w", err)
+		return disposable.Clone{}, fmt.Errorf("create rollback clone: %w", err)
 	}
 	if err := os.Remove(proxyStatePath(vmconfig.Path(cloneName))); err != nil && !os.IsNotExist(err) {
-		return DisposableClone{}, fmt.Errorf("clear proxy state from rollback clone: %w", err)
+		return disposable.Clone{}, fmt.Errorf("clear proxy state from rollback clone: %w", err)
 	}
 
-	return DisposableClone{
+	return disposable.Clone{
 		Name:      cloneName,
 		Path:      vmconfig.Path(cloneName),
 		Source:    source,
