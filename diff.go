@@ -84,7 +84,7 @@ Flags:
   -json    emit machine-readable JSON`)
 }
 
-func imageDiff(a, b ImageRef) (imageDiffOutput, error) {
+func imageDiff(a, b imagestore.Ref) (imageDiffOutput, error) {
 	if err := requireImageRefDir(a); err != nil {
 		return imageDiffOutput{}, err
 	}
@@ -114,7 +114,7 @@ func imageDiff(a, b ImageRef) (imageDiffOutput, error) {
 	}, nil
 }
 
-func imageDiffDiskNames(a, b ImageRef) ([]string, error) {
+func imageDiffDiskNames(a, b imagestore.Ref) ([]string, error) {
 	ma, err := LoadImageManifest(a)
 	if err != nil {
 		return nil, fmt.Errorf("diff %s: %w", a, err)
@@ -126,7 +126,7 @@ func imageDiffDiskNames(a, b ImageRef) ([]string, error) {
 	return imageDiskNamesForManifests(ma, mb), nil
 }
 
-func imageDiffLayerNames(a, b ImageRef) ([]string, error) {
+func imageDiffLayerNames(a, b imagestore.Ref) ([]string, error) {
 	ma, err := LoadImageManifest(a)
 	if err != nil {
 		return nil, fmt.Errorf("diff %s: %w", a, err)
@@ -173,7 +173,7 @@ func imageLayerNamesForManifests(manifests ...*imagestore.Manifest) []string {
 	return names
 }
 
-func requireImageRefDir(ref ImageRef) error {
+func requireImageRefDir(ref imagestore.Ref) error {
 	info, err := os.Stat(ref.Path())
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -187,7 +187,7 @@ func requireImageRefDir(ref ImageRef) error {
 	return nil
 }
 
-func diffImageFile(a, b ImageRef, name string) (imageDiffFile, error) {
+func diffImageFile(a, b imagestore.Ref, name string) (imageDiffFile, error) {
 	av, aok, err := inspectImageLayer(a, name)
 	if err != nil {
 		return imageDiffFile{}, fmt.Errorf("diff %s %s: %w", a, name, err)

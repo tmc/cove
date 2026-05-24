@@ -86,7 +86,7 @@ func runImagePush(args []string) error {
 
 // PushImageToFile tars an image directory to dst. Writes to dst+".tmp"
 // and renames on success; cleans the temp file on any error.
-func PushImageToFile(ref ImageRef, dst string, gzipOut bool) error {
+func PushImageToFile(ref imagestore.Ref, dst string, gzipOut bool) error {
 	tmp := dst + ".tmp"
 	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
@@ -120,7 +120,7 @@ func PushImageToFile(ref ImageRef, dst string, gzipOut bool) error {
 // WriteImageTar streams an image directory tarball to w. Used by both
 // the file path (PushImageToFile) and the stdout (`cove image push <ref> -`)
 // code paths. The same strict deterministic write order is preserved.
-func WriteImageTar(ref ImageRef, w io.Writer, gzipOut bool) error {
+func WriteImageTar(ref imagestore.Ref, w io.Writer, gzipOut bool) error {
 	if !ImageExists(ref) {
 		return fmt.Errorf("image push: %s not found in store", ref)
 	}
@@ -257,10 +257,10 @@ func runImagePull(args []string) error {
 // returns the ref under which the image was registered. The first tar
 // entry must be manifest.json; the embedded name+tag (or overrideTag)
 // is re-validated via ParseImageRef before any path is constructed.
-func LoadImageFromFile(src, overrideTag string, force bool) (ImageRef, error) {
+func LoadImageFromFile(src, overrideTag string, force bool) (imagestore.Ref, error) {
 	f, err := os.Open(src)
 	if err != nil {
-		return ImageRef{}, fmt.Errorf("image load: open %s: %w", src, err)
+		return imagestore.Ref{}, fmt.Errorf("image load: open %s: %w", src, err)
 	}
 	defer f.Close()
 
@@ -268,7 +268,7 @@ func LoadImageFromFile(src, overrideTag string, force bool) (ImageRef, error) {
 	if strings.HasSuffix(strings.ToLower(src), ".gz") || strings.HasSuffix(strings.ToLower(src), ".tgz") {
 		gz, err := gzip.NewReader(f)
 		if err != nil {
-			return ImageRef{}, fmt.Errorf("image load: gzip: %w", err)
+			return imagestore.Ref{}, fmt.Errorf("image load: gzip: %w", err)
 		}
 		defer gz.Close()
 		r = gz
@@ -279,10 +279,10 @@ func LoadImageFromFile(src, overrideTag string, force bool) (ImageRef, error) {
 // ReadImageTar extracts an image tarball from r into the local image store.
 // Mirrors LoadImageFromFile's auto-gzip detection by sniffing the first two
 // bytes for the gzip magic before handing off to the tar parser.
-func ReadImageTar(r io.Reader, overrideTag string, force bool) (ImageRef, error) {
+func ReadImageTar(r io.Reader, overrideTag string, force bool) (imagestore.Ref, error) {
 	br, err := maybeGunzip(r)
 	if err != nil {
-		return ImageRef{}, err
+		return imagestore.Ref{}, err
 	}
 	return readImageTarStream(br, overrideTag, force)
 }
@@ -310,26 +310,26 @@ func maybeGunzip(r io.Reader) (io.Reader, error) {
 
 // readImageTarStream is the shared core for LoadImageFromFile / ReadImageTar.
 // It assumes any gzip framing has already been peeled.
-func readImageTarStream(r io.Reader, overrideTag string, force bool) (ImageRef, error) {
+func readImageTarStream(r io.Reader, overrideTag string, force bool) (imagestore.Ref, error) {
 	tr := tar.NewReader(r)
 
 	hdr, err := tr.Next()
 	if err != nil {
-		return ImageRef{}, fmt.Errorf("image load: read first entry: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: read first entry: %w", err)
 	}
 	if err := checkTarEntry(hdr); err != nil {
-		return ImageRef{}, fmt.Errorf("image load: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: %w", err)
 	}
 	if hdr.Name != "manifest.json" {
-		return ImageRef{}, fmt.Errorf("image load: first tar entry is %q, want manifest.json", hdr.Name)
+		return imagestore.Ref{}, fmt.Errorf("image load: first tar entry is %q, want manifest.json", hdr.Name)
 	}
 	manifestBytes, err := io.ReadAll(io.LimitReader(tr, 1<<20)) // 1 MiB cap on manifest
 	if err != nil {
-		return ImageRef{}, fmt.Errorf("image load: read manifest: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: read manifest: %w", err)
 	}
 	var m imagestore.Manifest
 	if err := json.Unmarshal(manifestBytes, &m); err != nil {
-		return ImageRef{}, fmt.Errorf("image load: parse manifest: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: parse manifest: %w", err)
 	}
 
 	refSpec := m.Name + ":" + m.Tag
@@ -338,20 +338,20 @@ func readImageTarStream(r io.Reader, overrideTag string, force bool) (ImageRef, 
 	}
 	ref, err := ParseImageRef(refSpec)
 	if err != nil {
-		return ImageRef{}, fmt.Errorf("image load: invalid ref %q: %w", refSpec, err)
+		return imagestore.Ref{}, fmt.Errorf("image load: invalid ref %q: %w", refSpec, err)
 	}
 
 	dstDir := ref.Path()
 	if ImageExists(ref) && !force {
-		return ImageRef{}, fmt.Errorf("image load: %s already exists (use -force to overwrite)", ref)
+		return imagestore.Ref{}, fmt.Errorf("image load: %s already exists (use -force to overwrite)", ref)
 	}
 
 	tmpDir := dstDir + ".tmp"
 	if err := os.RemoveAll(tmpDir); err != nil {
-		return ImageRef{}, fmt.Errorf("image load: clear staging: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: clear staging: %w", err)
 	}
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
-		return ImageRef{}, fmt.Errorf("image load: mkdir staging: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: mkdir staging: %w", err)
 	}
 	cleanup := func() { os.RemoveAll(tmpDir) }
 	committed := false
@@ -368,12 +368,12 @@ func readImageTarStream(r io.Reader, overrideTag string, force bool) (ImageRef, 
 		m.Tag = ref.Tag
 		manifestBytes, err = json.MarshalIndent(&m, "", "  ")
 		if err != nil {
-			return ImageRef{}, fmt.Errorf("image load: re-marshal manifest: %w", err)
+			return imagestore.Ref{}, fmt.Errorf("image load: re-marshal manifest: %w", err)
 		}
 		manifestBytes = append(manifestBytes, '\n')
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), manifestBytes, 0o644); err != nil {
-		return ImageRef{}, fmt.Errorf("image load: write manifest: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: write manifest: %w", err)
 	}
 
 	wantData := map[string]bool{}
@@ -386,35 +386,35 @@ func readImageTarStream(r io.Reader, overrideTag string, force bool) (ImageRef, 
 			break
 		}
 		if err != nil {
-			return ImageRef{}, fmt.Errorf("image load: read tar: %w", err)
+			return imagestore.Ref{}, fmt.Errorf("image load: read tar: %w", err)
 		}
 		if err := checkTarEntry(hdr); err != nil {
-			return ImageRef{}, fmt.Errorf("image load: %w", err)
+			return imagestore.Ref{}, fmt.Errorf("image load: %w", err)
 		}
 		if !wantData[hdr.Name] {
-			return ImageRef{}, fmt.Errorf("image load: unexpected tar entry %q", hdr.Name)
+			return imagestore.Ref{}, fmt.Errorf("image load: unexpected tar entry %q", hdr.Name)
 		}
 		dst := filepath.Join(tmpDir, hdr.Name)
 		if !strings.HasPrefix(filepath.Clean(dst)+string(os.PathSeparator), filepath.Clean(tmpDir)+string(os.PathSeparator)) {
-			return ImageRef{}, fmt.Errorf("image load: entry %q escapes destination", hdr.Name)
+			return imagestore.Ref{}, fmt.Errorf("image load: entry %q escapes destination", hdr.Name)
 		}
 		out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 		if err != nil {
-			return ImageRef{}, fmt.Errorf("image load: open %s: %w", hdr.Name, err)
+			return imagestore.Ref{}, fmt.Errorf("image load: open %s: %w", hdr.Name, err)
 		}
 		if _, err := io.Copy(out, io.LimitReader(tr, imageEntryMaxBytes+1)); err != nil {
 			out.Close()
-			return ImageRef{}, fmt.Errorf("image load: write %s: %w", hdr.Name, err)
+			return imagestore.Ref{}, fmt.Errorf("image load: write %s: %w", hdr.Name, err)
 		}
 		if err := out.Close(); err != nil {
-			return ImageRef{}, fmt.Errorf("image load: close %s: %w", hdr.Name, err)
+			return imagestore.Ref{}, fmt.Errorf("image load: close %s: %w", hdr.Name, err)
 		}
 		st, err := os.Stat(dst)
 		if err != nil {
-			return ImageRef{}, fmt.Errorf("image load: stat %s: %w", hdr.Name, err)
+			return imagestore.Ref{}, fmt.Errorf("image load: stat %s: %w", hdr.Name, err)
 		}
 		if st.Size() > imageEntryMaxBytes {
-			return ImageRef{}, fmt.Errorf("image load: %s exceeds %d byte cap", hdr.Name, imageEntryMaxBytes)
+			return imagestore.Ref{}, fmt.Errorf("image load: %s exceeds %d byte cap", hdr.Name, imageEntryMaxBytes)
 		}
 		delete(wantData, hdr.Name)
 	}
@@ -423,19 +423,19 @@ func readImageTarStream(r io.Reader, overrideTag string, force bool) (ImageRef, 
 		for n := range wantData {
 			missing = append(missing, n)
 		}
-		return ImageRef{}, fmt.Errorf("image load: tar missing required files: %s", strings.Join(missing, ", "))
+		return imagestore.Ref{}, fmt.Errorf("image load: tar missing required files: %s", strings.Join(missing, ", "))
 	}
 
 	if force && ImageExists(ref) {
 		if err := os.RemoveAll(dstDir); err != nil {
-			return ImageRef{}, fmt.Errorf("image load: remove existing: %w", err)
+			return imagestore.Ref{}, fmt.Errorf("image load: remove existing: %w", err)
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(dstDir), 0o755); err != nil {
-		return ImageRef{}, fmt.Errorf("image load: mkdir parent: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: mkdir parent: %w", err)
 	}
 	if err := os.Rename(tmpDir, dstDir); err != nil {
-		return ImageRef{}, fmt.Errorf("image load: rename: %w", err)
+		return imagestore.Ref{}, fmt.Errorf("image load: rename: %w", err)
 	}
 	committed = true
 	return ref, nil

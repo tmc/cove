@@ -16,6 +16,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 // ImageInspectOutput is the JSON shape emitted by `cove image inspect -json`.
@@ -87,7 +89,7 @@ type imageInspectErrorOutput struct {
 
 // InspectImage assembles the inspect output for ref. The fork list reuses
 // VMsForkedFromImage so it stays in lockstep with `cove image rm`'s gate.
-func InspectImage(ref ImageRef) (ImageInspectOutput, error) {
+func InspectImage(ref imagestore.Ref) (ImageInspectOutput, error) {
 	manifest, err := LoadImageManifest(ref)
 	if err != nil {
 		return ImageInspectOutput{}, fmt.Errorf("inspect %s: %w", ref, err)
@@ -134,7 +136,7 @@ func InspectImage(ref ImageRef) (ImageInspectOutput, error) {
 // VZMacHardwareModel data blob). The raw bytes are an opaque Apple
 // payload; fingerprint keeps inspect output a single scalar while still
 // letting callers diff identity across images.
-func machineModelFingerprint(ref ImageRef) (string, error) {
+func machineModelFingerprint(ref imagestore.Ref) (string, error) {
 	data, err := os.ReadFile(filepath.Join(ref.Path(), "hw.model"))
 	if err != nil {
 		return "", err
@@ -243,7 +245,7 @@ func writeInspectErrorJSON(w io.Writer, out imageInspectErrorOutput) error {
 	return nil
 }
 
-func InspectImageDiff(a, b ImageRef) (imageInspectDiff, error) {
+func InspectImageDiff(a, b imagestore.Ref) (imageInspectDiff, error) {
 	ma, err := readImageManifestMap(a)
 	if err != nil {
 		return imageInspectDiff{}, fmt.Errorf("inspect diff %s: %w", a, err)
@@ -289,7 +291,7 @@ func (d *imageInspectDiff) addField(name string, old, new any, status string) {
 	}
 }
 
-func readImageManifestMap(ref ImageRef) (map[string]any, error) {
+func readImageManifestMap(ref imagestore.Ref) (map[string]any, error) {
 	data, err := os.ReadFile(filepath.Join(ref.Path(), "manifest.json"))
 	if err != nil {
 		return nil, fmt.Errorf("read image manifest: %w", err)
@@ -365,7 +367,7 @@ func imageInspectFieldRank(field string) int {
 	return len(order)
 }
 
-func diffImageLayers(a, b ImageRef) ([]imageInspectLayerDiff, error) {
+func diffImageLayers(a, b imagestore.Ref) ([]imageInspectLayerDiff, error) {
 	names, err := imageDiffLayerNames(a, b)
 	if err != nil {
 		return nil, err
@@ -399,7 +401,7 @@ func diffImageLayers(a, b ImageRef) ([]imageInspectLayerDiff, error) {
 	return rows, nil
 }
 
-func inspectImageLayer(ref ImageRef, name string) (imageInspectLayerValue, bool, error) {
+func inspectImageLayer(ref imagestore.Ref, name string) (imageInspectLayerValue, bool, error) {
 	path := filepath.Join(ref.Path(), name)
 	info, err := os.Stat(path)
 	if err != nil {

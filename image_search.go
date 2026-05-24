@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 type ImageSearchResult struct {
@@ -60,7 +62,7 @@ func SearchImages(query string) ([]ImageSearchResult, error) {
 	return out, nil
 }
 
-func imageSearchScore(query, haystack string, ref ImageRef) int {
+func imageSearchScore(query, haystack string, ref imagestore.Ref) int {
 	if query == "" {
 		return 1
 	}
@@ -92,7 +94,7 @@ func fuzzySubsequence(needle, haystack string) bool {
 	return j == len(needle)
 }
 
-func imageSearchLabels(ref ImageRef) []string {
+func imageSearchLabels(ref imagestore.Ref) []string {
 	seen := map[string]bool{}
 	var labels []string
 	add := func(s string) {

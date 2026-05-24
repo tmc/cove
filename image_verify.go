@@ -45,7 +45,7 @@ type imageVerifyOptions struct {
 	Now       time.Time
 }
 
-func VerifyImage(ref ImageRef, opts imageVerifyOptions) imageVerifyReport {
+func VerifyImage(ref imagestore.Ref, opts imageVerifyOptions) imageVerifyReport {
 	report := imageVerifyReport{Ref: ref.String(), Verdict: imageVerifyPass}
 	manifest, err := LoadImageManifest(ref)
 	if err != nil {
@@ -93,7 +93,7 @@ func VerifyImage(ref ImageRef, opts imageVerifyOptions) imageVerifyReport {
 	return report
 }
 
-func verifyImageLayout(ref ImageRef, manifest *imagestore.Manifest) error {
+func verifyImageLayout(ref imagestore.Ref, manifest *imagestore.Manifest) error {
 	required := imageLayoutRequiredFiles(manifest.OSType)
 	for _, name := range required {
 		path := filepath.Join(ref.Path(), name)

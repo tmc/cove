@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -334,13 +335,13 @@ func TestRunImageForkFromWithConfigWarnsAndProceeds(t *testing.T) {
 func TestVerifyImageManifestGaps(t *testing.T) {
 	cases := []struct {
 		name   string
-		mutate func(t *testing.T, ref ImageRef)
+		mutate func(t *testing.T, ref imagestore.Ref)
 		want   imageVerifyStatus
 		detail string
 	}{
 		{
 			name: "missing manifest",
-			mutate: func(t *testing.T, ref ImageRef) {
+			mutate: func(t *testing.T, ref imagestore.Ref) {
 				if err := os.Remove(filepath.Join(ref.Path(), "manifest.json")); err != nil {
 					t.Fatalf("remove manifest: %v", err)
 				}
@@ -350,7 +351,7 @@ func TestVerifyImageManifestGaps(t *testing.T) {
 		},
 		{
 			name: "malformed manifest json",
-			mutate: func(t *testing.T, ref ImageRef) {
+			mutate: func(t *testing.T, ref imagestore.Ref) {
 				path := filepath.Join(ref.Path(), "manifest.json")
 				if err := os.WriteFile(path, []byte("{not-json"), 0o644); err != nil {
 					t.Fatalf("write manifest: %v", err)
@@ -361,7 +362,7 @@ func TestVerifyImageManifestGaps(t *testing.T) {
 		},
 		{
 			name: "missing disk image",
-			mutate: func(t *testing.T, ref ImageRef) {
+			mutate: func(t *testing.T, ref imagestore.Ref) {
 				if err := os.Remove(filepath.Join(ref.Path(), "disk.img")); err != nil {
 					t.Fatalf("remove disk: %v", err)
 				}

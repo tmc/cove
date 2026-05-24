@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/imagestore"
 	runmetrics "github.com/tmc/cove/internal/metrics"
 )
 
@@ -22,7 +23,7 @@ func gcTestSetup(t *testing.T) {
 
 // stageUnreferencedImage builds an image from a fresh source VM with no
 // child VM, so VMsForkedFromImage returns empty.
-func stageUnreferencedImage(t *testing.T, srcVM, refStr string) ImageRef {
+func stageUnreferencedImage(t *testing.T, srcVM, refStr string) imagestore.Ref {
 	t.Helper()
 	stageMacOSVMForImage(t, srcVM)
 	ref, err := ParseImageRef(refStr)
@@ -37,7 +38,7 @@ func stageUnreferencedImage(t *testing.T, srcVM, refStr string) ImageRef {
 
 // stageReferencedImage builds an image AND materializes a child VM so
 // VMsForkedFromImage(ref) returns the child name.
-func stageReferencedImage(t *testing.T, srcVM, refStr, childName string) ImageRef {
+func stageReferencedImage(t *testing.T, srcVM, refStr, childName string) imagestore.Ref {
 	t.Helper()
 	ref := stageUnreferencedImage(t, srcVM, refStr)
 	if _, err := MaterializeImage(MaterializeImageOptions{Ref: ref, ChildName: childName}); err != nil {
@@ -48,7 +49,7 @@ func stageReferencedImage(t *testing.T, srcVM, refStr, childName string) ImageRe
 
 // backdateImage rewrites manifest.CreatedAt to the given time so the
 // -older-than filter has a deterministic age to compare against.
-func backdateImage(t *testing.T, ref ImageRef, when time.Time) {
+func backdateImage(t *testing.T, ref imagestore.Ref, when time.Time) {
 	t.Helper()
 	m, err := LoadImageManifest(ref)
 	if err != nil {
@@ -130,7 +131,7 @@ func TestGCImages_CacheTTLMarker(t *testing.T) {
 	gcTestSetup(t)
 	recent := stageUnreferencedImage(t, "src-recent", "cache/recent:latest")
 	old := stageUnreferencedImage(t, "src-old", "cache/old:latest")
-	for _, ref := range []ImageRef{recent, old} {
+	for _, ref := range []imagestore.Ref{recent, old} {
 		if err := os.WriteFile(ref.Path()+"/CACHE-TTL", []byte("168h\n"), 0o644); err != nil {
 			t.Fatalf("write CACHE-TTL %s: %v", ref, err)
 		}
@@ -333,13 +334,13 @@ func asInt64(t *testing.T, v any) int64 {
 }
 
 func TestEmitImageGCKeepUnknownReasonIsNoOp(t *testing.T) {
-	emitImageGCKeep(ImageRef{}, "frobnicate", time.Now())
+	emitImageGCKeep(imagestore.Ref{}, "frobnicate", time.Now())
 }
 
 func TestEmitImageGCKeepInUseDoesNotPanic(t *testing.T) {
-	emitImageGCKeep(ImageRef{Name: "demo", Tag: "v1"}, "in_use", time.Now())
+	emitImageGCKeep(imagestore.Ref{Name: "demo", Tag: "v1"}, "in_use", time.Now())
 }
 
 func TestEmitImageGCKeepRecentDoesNotPanic(t *testing.T) {
-	emitImageGCKeep(ImageRef{Name: "demo", Tag: "v1"}, "recent", time.Now())
+	emitImageGCKeep(imagestore.Ref{Name: "demo", Tag: "v1"}, "recent", time.Now())
 }

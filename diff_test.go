@@ -57,8 +57,8 @@ func TestImageDiffDiskLayer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
-			a := ImageRef{Name: "a", Tag: "latest"}
-			b := ImageRef{Name: "b", Tag: "latest"}
+			a := imagestore.Ref{Name: "a", Tag: "latest"}
+			b := imagestore.Ref{Name: "b", Tag: "latest"}
 			writeTestDiffImage(t, a, tt.old, tt.oldOK)
 			writeTestDiffImage(t, b, tt.new, tt.newOK)
 			out, err := imageDiff(a, b)
@@ -96,8 +96,8 @@ func TestImageDiffDiskLayer(t *testing.T) {
 
 func TestImageDiffLinuxDiskLayer(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	a := ImageRef{Name: "a", Tag: "latest"}
-	b := ImageRef{Name: "b", Tag: "latest"}
+	a := imagestore.Ref{Name: "a", Tag: "latest"}
+	b := imagestore.Ref{Name: "b", Tag: "latest"}
 	writeTestDiffImageOS(t, a, "Linux", "same", true)
 	writeTestDiffImageOS(t, b, "Linux", "same", true)
 
@@ -119,8 +119,8 @@ func TestImageDiffLinuxDiskLayer(t *testing.T) {
 
 func TestImageDiffMissingRefFails(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	a := ImageRef{Name: "a", Tag: "latest"}
-	b := ImageRef{Name: "b", Tag: "latest"}
+	a := imagestore.Ref{Name: "a", Tag: "latest"}
+	b := imagestore.Ref{Name: "b", Tag: "latest"}
 	writeTestDiffImage(t, a, "disk", true)
 
 	if _, err := imageDiff(a, b); err == nil {
@@ -137,8 +137,8 @@ func TestImageDiffMissingRefFails(t *testing.T) {
 
 func TestDiffCommandAllowsTrailingJSON(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	a := ImageRef{Name: "a", Tag: "latest"}
-	b := ImageRef{Name: "b", Tag: "latest"}
+	a := imagestore.Ref{Name: "a", Tag: "latest"}
+	b := imagestore.Ref{Name: "b", Tag: "latest"}
 	writeTestDiffImage(t, a, "same", true)
 	writeTestDiffImage(t, b, "same", true)
 
@@ -149,8 +149,8 @@ func TestDiffCommandAllowsTrailingJSON(t *testing.T) {
 
 func TestDiffCommandMissingRefJSON(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	a := ImageRef{Name: "missing-a", Tag: "latest"}
-	b := ImageRef{Name: "missing-b", Tag: "latest"}
+	a := imagestore.Ref{Name: "missing-a", Tag: "latest"}
+	b := imagestore.Ref{Name: "missing-b", Tag: "latest"}
 
 	var out bytes.Buffer
 	err := captureStdoutAllowError(t, &out, func() error {
@@ -176,8 +176,8 @@ func TestDiffCommandMissingRefJSON(t *testing.T) {
 
 func TestDiffCommandMissingRefText(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	a := ImageRef{Name: "missing-a", Tag: "latest"}
-	b := ImageRef{Name: "missing-b", Tag: "latest"}
+	a := imagestore.Ref{Name: "missing-a", Tag: "latest"}
+	b := imagestore.Ref{Name: "missing-b", Tag: "latest"}
 
 	var out bytes.Buffer
 	err := captureStdoutAllowError(t, &out, func() error {
@@ -262,12 +262,12 @@ func TestWriteImageDiffText(t *testing.T) {
 	}
 }
 
-func writeTestDiffImage(t *testing.T, ref ImageRef, data string, ok bool) {
+func writeTestDiffImage(t *testing.T, ref imagestore.Ref, data string, ok bool) {
 	t.Helper()
 	writeTestDiffImageOS(t, ref, "", data, ok)
 }
 
-func writeTestDiffImageOS(t *testing.T, ref ImageRef, osType, data string, ok bool) {
+func writeTestDiffImageOS(t *testing.T, ref imagestore.Ref, osType, data string, ok bool) {
 	t.Helper()
 	if err := os.MkdirAll(ref.Path(), 0o755); err != nil {
 		t.Fatal(err)

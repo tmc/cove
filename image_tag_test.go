@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 func TestTagImage(t *testing.T) {
@@ -83,10 +85,10 @@ func TestTagImageRejectsEmptyRefs(t *testing.T) {
 		opts ImageTagOptions
 		want string
 	}{
-		{"empty source", ImageTagOptions{Source: ImageRef{}, Target: good}, "source ref required"},
-		{"source missing tag", ImageTagOptions{Source: ImageRef{Name: "base"}, Target: good}, "source ref required"},
-		{"empty target", ImageTagOptions{Source: good, Target: ImageRef{}}, "target ref required"},
-		{"target missing tag", ImageTagOptions{Source: good, Target: ImageRef{Name: "base"}}, "target ref required"},
+		{"empty source", ImageTagOptions{Source: imagestore.Ref{}, Target: good}, "source ref required"},
+		{"source missing tag", ImageTagOptions{Source: imagestore.Ref{Name: "base"}, Target: good}, "source ref required"},
+		{"empty target", ImageTagOptions{Source: good, Target: imagestore.Ref{}}, "target ref required"},
+		{"target missing tag", ImageTagOptions{Source: good, Target: imagestore.Ref{Name: "base"}}, "target ref required"},
 		{"same ref", ImageTagOptions{Source: good, Target: good}, "source and target are the same"},
 	}
 	for _, tt := range tests {

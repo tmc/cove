@@ -43,9 +43,6 @@ func ImagesBaseDir() string {
 	return imagestore.BaseDir()
 }
 
-// ImageRef is a parsed name[:tag] image reference.
-type ImageRef = imagestore.Ref
-
 // ErrImageRefInvalid is returned by ParseImageRef when the supplied
 // string is empty, has multiple ':', or has an empty name/tag, or
 // when the name/tag fails component validation. Callers can branch on
@@ -56,26 +53,26 @@ var ErrImageRefInvalid = imagestore.ErrRefInvalid
 // ParseImageRef parses "name" or "name:tag" into an ImageRef. Default
 // tag is "latest". The name and tag are validated against the same
 // allow-set used by snapshot names so they are safe path components.
-func ParseImageRef(s string) (ImageRef, error) {
+func ParseImageRef(s string) (imagestore.Ref, error) {
 	return imagestore.ParseRef(s)
 }
 
 // ImageExists reports whether the image at ref has a manifest on disk.
-func ImageExists(ref ImageRef) bool {
+func ImageExists(ref imagestore.Ref) bool {
 	_, err := os.Stat(filepath.Join(ref.Path(), "manifest.json"))
 	return err == nil
 }
 
 // LoadImageManifest reads the manifest at ref or returns an error if
 // the image does not exist.
-func LoadImageManifest(ref ImageRef) (*imagestore.Manifest, error) {
+func LoadImageManifest(ref imagestore.Ref) (*imagestore.Manifest, error) {
 	return imagestore.LoadManifest(ref)
 }
 
 // BuildImageOptions configures cove image build.
 type BuildImageOptions struct {
 	SourceVM    string
-	Ref         ImageRef
+	Ref         imagestore.Ref
 	BuildRecipe string
 	Now         func() time.Time
 }
@@ -318,7 +315,7 @@ func ListImages() ([]imagestore.Entry, error) {
 		if len(parts) < 2 {
 			return nil
 		}
-		ref := ImageRef{Name: strings.Join(parts[:len(parts)-1], "/"), Tag: parts[len(parts)-1]}
+		ref := imagestore.Ref{Name: strings.Join(parts[:len(parts)-1], "/"), Tag: parts[len(parts)-1]}
 		m, err := LoadImageManifest(ref)
 		if err != nil {
 			return nil
@@ -341,7 +338,7 @@ func ListImages() ([]imagestore.Entry, error) {
 // VMsForkedFromImage returns names of VMs in vmconfig.BaseDir whose
 // config.json records ParentImage == ref.String(). This is the gate
 // used by `cove image rm` to refuse deletion while live forks remain.
-func VMsForkedFromImage(ref ImageRef) ([]string, error) {
+func VMsForkedFromImage(ref imagestore.Ref) ([]string, error) {
 	entries, err := os.ReadDir(vmconfig.BaseDir())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -370,7 +367,7 @@ func VMsForkedFromImage(ref ImageRef) ([]string, error) {
 
 // DeleteImage removes the image directory after refusing if any VM
 // still references it. The caller is responsible for confirming.
-func DeleteImage(ref ImageRef) error {
+func DeleteImage(ref imagestore.Ref) error {
 	if !ImageExists(ref) {
 		return fmt.Errorf("image %s not found", ref)
 	}
@@ -399,7 +396,7 @@ func DeleteImage(ref ImageRef) error {
 
 // MaterializeImageOptions configures fork-from-image.
 type MaterializeImageOptions struct {
-	Ref       ImageRef
+	Ref       imagestore.Ref
 	ChildName string
 	Ephemeral bool
 	Now       func() time.Time

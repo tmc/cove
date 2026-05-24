@@ -51,7 +51,7 @@ func validateImageForkFromBeforeBundle(refText string) error {
 	return nil
 }
 
-func missingForkFromImageError(ref ImageRef) error {
+func missingForkFromImageError(ref imagestore.Ref) error {
 	return fmt.Errorf("cove run -fork-from <image>: image %s not found; run 'cove image list' or 'cove image search %s' to find local images, or 'cove image verify %s' for manifest details", ref, ref.Name, ref)
 }
 
