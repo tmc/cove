@@ -36,9 +36,9 @@ const imageEntryMaxBytes int64 = 100 * 1024 * 1024 * 1024
 var stdoutIsTerminal = term.IsTerminal
 var stdinIsTerminal = term.IsTerminal
 
-func runImagePush(args []string) error {
+func runImagePush(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image push", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	gz := fs.Bool("gzip", false, "gzip-compress the tarball")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
@@ -63,24 +63,24 @@ func runImagePush(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Pushed image %s to %s\n", ref, dst)
-		fmt.Printf("  digest: %s\n", desc.Digest)
+		fmt.Fprintf(env.Stdout, "Pushed image %s to %s\n", ref, dst)
+		fmt.Fprintf(env.Stdout, "  digest: %s\n", desc.Digest)
 		return nil
 	}
 	if dst == "-" {
-		if stdoutIsTerminal(int(os.Stdout.Fd())) {
+		if fd, ok := writerFD(env.Stdout); ok && stdoutIsTerminal(fd) {
 			return fmt.Errorf("image push: refusing to write tarball to a TTY (redirect stdout or pass a file path)")
 		}
-		if err := WriteImageTar(ref, os.Stdout, *gz); err != nil {
+		if err := WriteImageTar(ref, env.Stdout, *gz); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "Pushed image %s to stdout\n", ref)
+		fmt.Fprintf(env.Stderr, "Pushed image %s to stdout\n", ref)
 		return nil
 	}
 	if err := PushImageToFile(ref, dst, *gz); err != nil {
 		return err
 	}
-	fmt.Printf("Pushed image %s to %s\n", ref, dst)
+	fmt.Fprintf(env.Stdout, "Pushed image %s to %s\n", ref, dst)
 	return nil
 }
 
@@ -191,9 +191,9 @@ func writeFileToTar(tw *tar.Writer, srcDir, name string) error {
 	return nil
 }
 
-func runImageLoad(args []string) error {
+func runImageLoad(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image load", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	tag := fs.String("tag", "", "override image ref on load (name[:tag])")
 	force := fs.Bool("force", false, "overwrite if image already exists")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
@@ -211,27 +211,27 @@ func runImageLoad(args []string) error {
 		return fmt.Errorf("image load: %q looks like a registry reference; use cove image pull", src)
 	}
 	if src == "-" {
-		if stdinIsTerminal(int(os.Stdin.Fd())) {
+		if fd, ok := readerFD(env.Stdin); ok && stdinIsTerminal(fd) {
 			return fmt.Errorf("image load: refusing to read tarball from a TTY (redirect stdin or pass a file path)")
 		}
-		ref, err := ReadImageTar(os.Stdin, *tag, *force)
+		ref, err := ReadImageTar(env.Stdin, *tag, *force)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Loaded image %s\n", ref)
+		fmt.Fprintf(env.Stdout, "Loaded image %s\n", ref)
 		return nil
 	}
 	ref, err := LoadImageFromFile(src, *tag, *force)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Loaded image %s\n", ref)
+	fmt.Fprintf(env.Stdout, "Loaded image %s\n", ref)
 	return nil
 }
 
-func runImagePull(args []string) error {
+func runImagePull(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image pull", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	tag := fs.String("tag", "", "override image ref on pull (name[:tag])")
 	force := fs.Bool("force", false, "overwrite if image already exists")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
@@ -248,9 +248,25 @@ func runImagePull(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Pulled image %s from %s\n", ref, fs.Arg(0))
-	fmt.Printf("  digest: %s\n", desc.Digest)
+	fmt.Fprintf(env.Stdout, "Pulled image %s from %s\n", ref, fs.Arg(0))
+	fmt.Fprintf(env.Stdout, "  digest: %s\n", desc.Digest)
 	return nil
+}
+
+func writerFD(w io.Writer) (int, bool) {
+	f, ok := w.(*os.File)
+	if !ok || f == nil {
+		return 0, false
+	}
+	return int(f.Fd()), true
+}
+
+func readerFD(r io.Reader) (int, bool) {
+	f, ok := r.(*os.File)
+	if !ok || f == nil {
+		return 0, false
+	}
+	return int(f.Fd()), true
 }
 
 // LoadImageFromFile extracts a tarball into the local image store and

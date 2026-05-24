@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -93,9 +93,9 @@ func imagePruneMatches(entry imagestore.Entry, opts ImagePruneOptions, now time.
 	return now.Sub(imageCreatedAt(entry)) >= opts.OlderThan
 }
 
-func runImagePrune(args []string) error {
+func runImagePrune(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image prune", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	olderThanText := fs.String("older-than", "7d", "delete images older than this duration")
 	filter := fs.String("filter", "", "delete images with tags matching this glob")
 	force := fs.Bool("force", false, "skip confirmation prompt")
@@ -118,7 +118,7 @@ func runImagePrune(args []string) error {
 	}
 	metricsRun, metricsErr := beginStandaloneMetricsRun("image-prune", "local")
 	if metricsErr != nil {
-		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", metricsErr)
+		fmt.Fprintf(env.Stderr, "warning: metrics init: %v\n", metricsErr)
 	}
 	defer finishStandaloneMetricsRun(metricsRun)
 
@@ -129,31 +129,30 @@ func runImagePrune(args []string) error {
 	}
 	if len(plan.Removed) == 0 {
 		if *dryRun {
-			fmt.Println("No images would be pruned.")
+			fmt.Fprintln(env.Stdout, "No images would be pruned.")
 		} else {
-			fmt.Println("No images to prune.")
+			fmt.Fprintln(env.Stdout, "No images to prune.")
 		}
 		for _, sk := range plan.Skipped {
-			fmt.Printf("keep %s (%s)\n", sk.Ref, sk.Reason)
+			fmt.Fprintf(env.Stdout, "keep %s (%s)\n", sk.Ref, sk.Reason)
 		}
 		return nil
 	}
 	for _, ref := range plan.Removed {
-		fmt.Printf("would prune image %s\n", ref)
+		fmt.Fprintf(env.Stdout, "would prune image %s\n", ref)
 	}
 	for _, sk := range plan.Skipped {
-		fmt.Printf("keep %s (%s)\n", sk.Ref, sk.Reason)
+		fmt.Fprintf(env.Stdout, "keep %s (%s)\n", sk.Ref, sk.Reason)
 	}
 	if *dryRun {
 		return nil
 	}
 	if !*force {
-		fmt.Printf("Prune %d image(s)? [y/N] ", len(plan.Removed))
-		var resp string
-		fmt.Scanln(&resp)
+		fmt.Fprintf(env.Stdout, "Prune %d image(s)? [y/N] ", len(plan.Removed))
+		resp, _ := bufio.NewReader(env.Stdin).ReadString('\n')
 		resp = strings.ToLower(strings.TrimSpace(resp))
 		if resp != "y" && resp != "yes" {
-			fmt.Println("aborted.")
+			fmt.Fprintln(env.Stdout, "aborted.")
 			return nil
 		}
 	}
@@ -163,10 +162,10 @@ func runImagePrune(args []string) error {
 		return err
 	}
 	for _, ref := range actual.Removed {
-		fmt.Printf("pruned image %s\n", ref)
+		fmt.Fprintf(env.Stdout, "pruned image %s\n", ref)
 	}
 	for _, sk := range actual.Skipped {
-		fmt.Printf("keep %s (%s)\n", sk.Ref, sk.Reason)
+		fmt.Fprintf(env.Stdout, "keep %s (%s)\n", sk.Ref, sk.Reason)
 	}
 	return nil
 }

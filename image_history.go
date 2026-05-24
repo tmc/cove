@@ -123,9 +123,9 @@ func imageHistoryLayers(ref imagestore.Ref) ([]ImageHistoryLayer, error) {
 	return layers, nil
 }
 
-func runImageHistory(args []string) error {
+func runImageHistory(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image history", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
@@ -145,9 +145,9 @@ func runImageHistory(args []string) error {
 		return err
 	}
 	if *asJSON {
-		return writeImageHistoryJSON(os.Stdout, history)
+		return writeImageHistoryJSON(env.Stdout, history)
 	}
-	return writeImageHistoryText(os.Stdout, history)
+	return writeImageHistoryText(env.Stdout, history)
 }
 
 func writeImageHistoryJSON(w io.Writer, history ImageHistory) error {

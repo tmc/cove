@@ -115,20 +115,20 @@ func TestRunImagePushAndLoadRefuseTTY(t *testing.T) {
 	oldStdout := stdoutIsTerminal
 	stdoutIsTerminal = func(int) bool { return true }
 	t.Cleanup(func() { stdoutIsTerminal = oldStdout })
-	if err := runImagePush([]string{ref.String(), "-"}); err == nil || !strings.Contains(err.Error(), "refusing to write tarball to a TTY") {
+	if err := runImagePush(commandEnv{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: new(bytes.Buffer)}, []string{ref.String(), "-"}); err == nil || !strings.Contains(err.Error(), "refusing to write tarball to a TTY") {
 		t.Fatalf("runImagePush tty error = %v, want tty refusal", err)
 	}
 
 	oldStdin := stdinIsTerminal
 	stdinIsTerminal = func(int) bool { return true }
 	t.Cleanup(func() { stdinIsTerminal = oldStdin })
-	if err := runImageLoad([]string{"-"}); err == nil || !strings.Contains(err.Error(), "refusing to read tarball from a TTY") {
+	if err := runImageLoad(commandEnv{Stdin: os.Stdin, Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, []string{"-"}); err == nil || !strings.Contains(err.Error(), "refusing to read tarball from a TTY") {
 		t.Fatalf("runImageLoad tty error = %v, want tty refusal", err)
 	}
 }
 
 func TestRunImageLoadRejectsRegistryReference(t *testing.T) {
-	err := runImageLoad([]string{"ghcr.io/acme/vm:v1"})
+	err := runImageLoad(imageTestEnv(), []string{"ghcr.io/acme/vm:v1"})
 	if err == nil {
 		t.Fatal("runImageLoad succeeded; want registry ref refusal")
 	}
@@ -496,7 +496,7 @@ func TestRunImagePushArgErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := runImagePush(tt.args)
+			err := runImagePush(imageTestEnv(), tt.args)
 			if err == nil {
 				t.Fatalf("runImagePush(%v) succeeded; want error", tt.args)
 			}
@@ -518,7 +518,7 @@ func TestRunImageLoadArgErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := runImageLoad(tt.args)
+			err := runImageLoad(imageTestEnv(), tt.args)
 			if err == nil {
 				t.Fatalf("runImageLoad(%v) succeeded; want error", tt.args)
 			}
@@ -530,13 +530,13 @@ func TestRunImageLoadArgErrors(t *testing.T) {
 }
 
 func TestRunImagePushHelp(t *testing.T) {
-	if err := runImagePush([]string{"-h"}); err != nil {
+	if err := runImagePush(imageTestEnv(), []string{"-h"}); err != nil {
 		t.Fatalf("runImagePush -h: %v", err)
 	}
 }
 
 func TestRunImageLoadHelp(t *testing.T) {
-	if err := runImageLoad([]string{"-h"}); err != nil {
+	if err := runImageLoad(imageTestEnv(), []string{"-h"}); err != nil {
 		t.Fatalf("runImageLoad -h: %v", err)
 	}
 }

@@ -135,9 +135,9 @@ func imageSearchLabels(ref imagestore.Ref) []string {
 	return labels
 }
 
-func runImageSearch(args []string) error {
+func runImageSearch(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image search", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	fs.Usage = func() { printImageSearchUsage(fs.Output()) }
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	if err := parseFlagsOrHelp(fs, moveImageSearchFlagsFirst(args)); err != nil {
@@ -158,9 +158,9 @@ func runImageSearch(args []string) error {
 		return err
 	}
 	if *asJSON {
-		return writeImageSearchJSON(os.Stdout, results)
+		return writeImageSearchJSON(env.Stdout, results)
 	}
-	return writeImageSearchText(os.Stdout, results)
+	return writeImageSearchText(env.Stdout, results)
 }
 
 func printImageSearchUsage(w io.Writer) {

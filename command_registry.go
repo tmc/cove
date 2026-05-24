@@ -214,7 +214,7 @@ func runGCCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleGCCommand(args))
 }
 func runImageCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleImageCommand(args))
+	return commandError(env, handleImageCommand(env, args))
 }
 func runLogsCommand(env commandEnv, _ string, args []string) int {
 	err := logsCommand(env, args)

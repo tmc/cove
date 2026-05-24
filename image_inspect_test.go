@@ -330,7 +330,7 @@ func TestRunImageInspectDiffJSONMissingRefWritesError(t *testing.T) {
 		t.Fatalf("BuildImage: %v", err)
 	}
 	out, err := captureStdoutResult(t, func() error {
-		return runImageInspect([]string{"-json", "-diff", "base:1", "ghost:1"})
+		return runImageInspect(commandEnv{Stdout: os.Stdout, Stderr: os.Stderr}, []string{"-json", "-diff", "base:1", "ghost:1"})
 	})
 	if err == nil {
 		t.Fatal("runImageInspect diff missing ref succeeded")

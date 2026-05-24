@@ -104,9 +104,9 @@ func cloneImageDirectory(src, dst string) error {
 	})
 }
 
-func runImageTag(args []string) error {
+func runImageTag(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image tag", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -127,6 +127,6 @@ func runImageTag(args []string) error {
 	if err := TagImage(ImageTagOptions{Source: src, Target: dst}); err != nil {
 		return err
 	}
-	fmt.Printf("Tagged image %s as %s\n", strings.TrimSpace(src.String()), dst)
+	fmt.Fprintf(env.Stdout, "Tagged image %s as %s\n", strings.TrimSpace(src.String()), dst)
 	return nil
 }
