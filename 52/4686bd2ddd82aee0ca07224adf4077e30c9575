@@ -1,11 +1,10 @@
 commit: 524686bd2ddd82aee0ca07224adf4077e30c9575
-date: 2026-05-24T11:18:01Z
+date: 2026-05-24T11:18:12Z
 agent: codex
 model: GPT-5
 tty: not a tty
-not a tty
-pid: 50525
+pid: 52044
 ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
 review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-bytefmt-parse-review.md
-gates: go test ./internal/bytefmt; go test . -run TestParseNonNegativeInt|TestParseOptionalNonNegativeInt|TestParseUint32|TestRuntimeDisk; go build ./...; go vet ./...; go test ./...
+gates: go test ./internal/bytefmt; go test . -run "TestParseNonNegativeInt|TestParseOptionalNonNegativeInt|TestParseUint32|TestRuntimeDisk"; go build ./...; go vet ./...; go test ./...
 no-push: true
