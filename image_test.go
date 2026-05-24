@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -12,6 +13,20 @@ import (
 	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 )
+
+func imageTestEnv() commandEnv {
+	return commandEnv{
+		Stdin:  strings.NewReader(""),
+		Stdout: new(bytes.Buffer),
+		Stderr: new(bytes.Buffer),
+	}
+}
+
+func imageTestEnvWithStdout(out *bytes.Buffer) commandEnv {
+	env := imageTestEnv()
+	env.Stdout = out
+	return env
+}
 
 // stageMacOSVMForImage writes a stopped VM directory with the minimal
 // files BuildImage needs: disk.img, aux.img, hw.model, machine.id.

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"os"
 	"text/tabwriter"
 	"time"
 
@@ -14,9 +12,9 @@ import (
 )
 
 // handlePinCommand implements `cove pin <object>`.
-func handlePinCommand(args []string) error {
+func handlePinCommand(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("pin", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "Usage: cove pin <object>\n  object is one of vm:<name>, image:<ref>, run:<id>, cache:<sha>")
 	}
@@ -44,14 +42,14 @@ func handlePinCommand(args []string) error {
 	if err := storagepins.Save(root, f); err != nil {
 		return fmt.Errorf("pin: %w", err)
 	}
-	fmt.Printf("pinned %s:%s\n", cat, id)
+	fmt.Fprintf(env.Stdout, "pinned %s:%s\n", cat, id)
 	return nil
 }
 
 // handleUnpinCommand implements `cove unpin <object>`.
-func handleUnpinCommand(args []string) error {
+func handleUnpinCommand(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("unpin", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "Usage: cove unpin <object>\n  object is one of vm:<name>, image:<ref>, run:<id>, cache:<sha>")
 	}
@@ -78,36 +76,36 @@ func handleUnpinCommand(args []string) error {
 		return fmt.Errorf("unpin: %w", err)
 	}
 	if !removed {
-		fmt.Printf("not pinned: %s:%s\n", cat, id)
+		fmt.Fprintf(env.Stdout, "not pinned: %s:%s\n", cat, id)
 		return nil
 	}
 	if err := storagepins.Save(root, f); err != nil {
 		return fmt.Errorf("unpin: %w", err)
 	}
-	fmt.Printf("unpinned %s:%s\n", cat, id)
+	fmt.Fprintf(env.Stdout, "unpinned %s:%s\n", cat, id)
 	return nil
 }
 
 // handlePinsCommand implements `cove pins list` and the `cove pins`
 // dispatcher umbrella.
-func handlePinsCommand(args []string) error {
+func handlePinsCommand(env commandEnv, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: cove pins <subcommand>\n  list   List pinned objects")
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		fmt.Fprintln(os.Stdout, "Usage: cove pins <subcommand>\n  list   List pinned objects")
+		fmt.Fprintln(env.Stdout, "Usage: cove pins <subcommand>\n  list   List pinned objects")
 		return nil
 	case "list":
-		return runPinsList(args[1:], os.Stdout)
+		return runPinsList(env, args[1:])
 	default:
 		return fmt.Errorf("pins: unknown subcommand %q", args[0])
 	}
 }
 
-func runPinsList(args []string, out io.Writer) error {
+func runPinsList(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("pins list", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	asJSON := fs.Bool("json", false, "render JSON instead of a fixed-width table")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
@@ -121,15 +119,15 @@ func runPinsList(args []string, out io.Writer) error {
 	}
 	pins := f.List()
 	if *asJSON {
-		enc := json.NewEncoder(out)
+		enc := json.NewEncoder(env.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(pins)
 	}
 	if len(pins) == 0 {
-		_, err := fmt.Fprintln(out, "no pins")
+		_, err := fmt.Fprintln(env.Stdout, "no pins")
 		return err
 	}
-	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(tw, "REF\tADDED"); err != nil {
 		return err
 	}

@@ -3,8 +3,17 @@ package main
 import (
 	"bytes"
 	"log/slog"
+	"strings"
 	"testing"
 )
+
+func commandTestEnv() commandEnv {
+	return commandEnv{
+		Stdin:  strings.NewReader(""),
+		Stdout: new(bytes.Buffer),
+		Stderr: new(bytes.Buffer),
+	}
+}
 
 func TestNewCommandEnvCapturesGlobals(t *testing.T) {
 	oldVMName, oldVMDir := vmName, vmDir
