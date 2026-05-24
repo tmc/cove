@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/tmc/cove/internal/covecli"
+)
 
 func TestSuggestCommand(t *testing.T) {
 	tests := []struct {
@@ -51,16 +55,16 @@ func TestLookupCommandAliases(t *testing.T) {
 	tests := []struct {
 		name      string
 		wantName  string
-		wantClass commandDispatch
+		wantClass covecli.Dispatch
 	}{
-		{"run", "run", commandDispatchLate},
-		{"ls", "list", commandDispatchLate},
-		{"inject", "inject", commandDispatchEarly},
-		{"doctor", "verify", commandDispatchEarly},
-		{"shared-folders", "shared-folder", commandDispatchEarly},
-		{"first-run", "first-run", commandDispatchEarly},
-		{"support-bundle", "support-bundle", commandDispatchEarly},
-		{"action", "action", commandDispatchPreUI},
+		{"run", "run", covecli.DispatchLate},
+		{"ls", "list", covecli.DispatchLate},
+		{"inject", "inject", covecli.DispatchEarly},
+		{"doctor", "verify", covecli.DispatchEarly},
+		{"shared-folders", "shared-folder", covecli.DispatchEarly},
+		{"first-run", "first-run", covecli.DispatchEarly},
+		{"support-bundle", "support-bundle", covecli.DispatchEarly},
+		{"action", "action", covecli.DispatchPreUI},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

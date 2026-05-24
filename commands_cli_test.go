@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/covecli"
 )
 
 func TestCommandsJSONIncludesInventory(t *testing.T) {
@@ -13,11 +15,11 @@ func TestCommandsJSONIncludesInventory(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("commands --json exit = %d", code)
 	}
-	var got []commandInfo
+	var got []covecli.Info
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("commands JSON: %v\n%s", err, stdout.String())
 	}
-	have := map[string]commandInfo{}
+	have := map[string]covecli.Info{}
 	for _, info := range got {
 		have[info.Name] = info
 	}
