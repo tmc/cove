@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,23 +13,27 @@ import (
 func TestHandlePolicyCommandSetShowClear(t *testing.T) {
 	withTempHome(t)
 	vmName := "policy-vm"
+	var out bytes.Buffer
+	env := commandEnv{Stdout: &out, Stderr: new(bytes.Buffer)}
 
-	out := captureStdout(t, func() error {
-		return handlePolicyCommand([]string{vmName, "idle", "30m"})
-	})
-	if !strings.Contains(out, "Saved policy for "+vmName) {
-		t.Fatalf("set output = %q", out)
+	if err := handlePolicyCommand(env, []string{vmName, "idle", "30m"}); err != nil {
+		t.Fatalf("set: %v", err)
 	}
-	out = captureStdout(t, func() error {
-		return handlePolicyCommand([]string{vmName, "show"})
-	})
-	if !strings.Contains(out, "Idle timeout: 30m0s") {
-		t.Fatalf("show output = %q", out)
+	if !strings.Contains(out.String(), "Saved policy for "+vmName) {
+		t.Fatalf("set output = %q", out.String())
 	}
-	if !strings.Contains(out, "Run budget:   -") {
-		t.Fatalf("show output = %q", out)
+	out.Reset()
+	if err := handlePolicyCommand(env, []string{vmName, "show"}); err != nil {
+		t.Fatalf("show: %v", err)
 	}
-	if err := handlePolicyCommand([]string{vmName, "clear"}); err != nil {
+	if !strings.Contains(out.String(), "Idle timeout: 30m0s") {
+		t.Fatalf("show output = %q", out.String())
+	}
+	if !strings.Contains(out.String(), "Run budget:   -") {
+		t.Fatalf("show output = %q", out.String())
+	}
+	out.Reset()
+	if err := handlePolicyCommand(env, []string{vmName, "clear"}); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.Path(vmName), "policy.json")); !os.IsNotExist(err) {
@@ -48,7 +53,7 @@ func TestHandlePolicyCommandRejectsBadInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := handlePolicyCommand(tt.args); err == nil {
+			if err := handlePolicyCommand(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, tt.args); err == nil {
 				t.Fatalf("handlePolicyCommand(%v) = nil, want error", tt.args)
 			}
 		})

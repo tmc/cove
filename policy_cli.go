@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -12,9 +11,10 @@ import (
 	"github.com/tmc/cove/internal/vmpolicy"
 )
 
-func handlePolicyCommand(args []string) error {
+func handlePolicyCommand(env commandEnv, args []string) error {
+	env = env.withDefaultIO()
 	if len(args) == 0 || isHelpArg(args[0]) {
-		printPolicyUsage(os.Stdout)
+		printPolicyUsage(env.Stdout)
 		return nil
 	}
 	vmName := strings.TrimSpace(args[0])
@@ -23,7 +23,7 @@ func handlePolicyCommand(args []string) error {
 	}
 	vmDir := vmconfig.Path(vmName)
 	if len(args) == 1 {
-		printPolicyUsage(os.Stderr)
+		printPolicyUsage(env.Stderr)
 		return fmt.Errorf("policy requires a command")
 	}
 	switch args[1] {
@@ -31,7 +31,7 @@ func handlePolicyCommand(args []string) error {
 		if len(args) != 2 {
 			return fmt.Errorf("usage: cove policy <vm> show")
 		}
-		return printPolicy(vmName, vmDir)
+		return printPolicy(env.Stdout, vmName, vmDir)
 	case "clear":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: cove policy <vm> clear")
@@ -39,14 +39,14 @@ func handlePolicyCommand(args []string) error {
 		if err := vmpolicy.Clear(vmDir); err != nil {
 			return err
 		}
-		fmt.Printf("Cleared policy for %s\n", vmName)
+		fmt.Fprintf(env.Stdout, "Cleared policy for %s\n", vmName)
 		return nil
 	case "set":
-		return setPolicyField(vmName, vmDir, args[2:])
+		return setPolicyField(env.Stdout, vmName, vmDir, args[2:])
 	case "idle", "max-age", "run-budget":
-		return setPolicyField(vmName, vmDir, args[1:])
+		return setPolicyField(env.Stdout, vmName, vmDir, args[1:])
 	default:
-		printPolicyUsage(os.Stderr)
+		printPolicyUsage(env.Stderr)
 		return fmt.Errorf("unknown policy command: %s", args[1])
 	}
 }
@@ -70,28 +70,28 @@ Examples:
   cove policy work-vm clear`)
 }
 
-func printPolicy(vmName, vmDir string) error {
+func printPolicy(w io.Writer, vmName, vmDir string) error {
 	p, err := vmpolicy.Load(vmDir)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("VM: %s\n", vmName)
-	fmt.Printf("Policy file: %s\n", vmpolicy.Path(vmDir))
+	fmt.Fprintf(w, "VM: %s\n", vmName)
+	fmt.Fprintf(w, "Policy file: %s\n", vmpolicy.Path(vmDir))
 	if p.Empty() {
-		fmt.Println("Policy: none")
+		fmt.Fprintln(w, "Policy: none")
 		return nil
 	}
-	fmt.Printf("Idle timeout: %s\n", durationOrDash(p.IdleTimeout))
-	fmt.Printf("Max age:      %s\n", durationOrDash(p.MaxAge))
+	fmt.Fprintf(w, "Idle timeout: %s\n", durationOrDash(p.IdleTimeout))
+	fmt.Fprintf(w, "Max age:      %s\n", durationOrDash(p.MaxAge))
 	if p.RunBudget > 0 {
-		fmt.Printf("Run budget:   %d\n", p.RunBudget)
+		fmt.Fprintf(w, "Run budget:   %d\n", p.RunBudget)
 	} else {
-		fmt.Printf("Run budget:   -\n")
+		fmt.Fprintf(w, "Run budget:   -\n")
 	}
 	return nil
 }
 
-func setPolicyField(vmName, vmDir string, args []string) error {
+func setPolicyField(w io.Writer, vmName, vmDir string, args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: cove policy <vm> [set] idle <duration>|max-age <duration>|run-budget <count>")
 	}
@@ -140,8 +140,8 @@ func setPolicyField(vmName, vmDir string, args []string) error {
 	if err := vmpolicy.Save(vmDir, next); err != nil {
 		return err
 	}
-	fmt.Printf("Saved policy for %s\n", vmName)
-	fmt.Printf("Policy file: %s\n", vmpolicy.Path(vmDir))
+	fmt.Fprintf(w, "Saved policy for %s\n", vmName)
+	fmt.Fprintf(w, "Policy file: %s\n", vmpolicy.Path(vmDir))
 	return nil
 }
 

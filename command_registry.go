@@ -216,7 +216,8 @@ func runImageCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleImageCommand(args))
 }
 func runLogsCommand(env commandEnv, _ string, args []string) int {
-	err := logsCommand(args)
+	env = env.withDefaultIO()
+	err := logsCommand(env, args)
 	if err != nil && strings.HasPrefix(err.Error(), "usage: cove logs ") {
 		printLogsUsage(env.Stderr)
 		return commandUsageError(env, err)
@@ -224,7 +225,8 @@ func runLogsCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, err)
 }
 func runPolicyCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handlePolicyCommand(args))
+	env = env.withDefaultIO()
+	return commandError(env, handlePolicyCommand(env, args))
 }
 func runPullCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePull(args))
@@ -334,7 +336,8 @@ func runSnapshotCommandSpec(_ commandEnv, _ string, args []string) int {
 	return 0
 }
 func runStatusCommand(env commandEnv, _ string, args []string) int {
-	err := statusCommand(args...)
+	env = env.withDefaultIO()
+	err := statusCommand(env, args...)
 	if err != nil && strings.HasPrefix(err.Error(), "usage: cove status") {
 		printStatusUsage(env.Stderr)
 		return commandUsageError(env, err)

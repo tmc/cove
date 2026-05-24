@@ -52,3 +52,16 @@ func newCommandEnv() commandEnv {
 		},
 	}
 }
+
+func (env commandEnv) withDefaultIO() commandEnv {
+	if env.Stdin == nil {
+		env.Stdin = os.Stdin
+	}
+	if env.Stdout == nil {
+		env.Stdout = os.Stdout
+	}
+	if env.Stderr == nil {
+		env.Stderr = os.Stderr
+	}
+	return env
+}
