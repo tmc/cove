@@ -15,9 +15,6 @@ import (
 
 const disposableCloneStampFormat = disposable.CloneStampFormat
 
-// DisposableClone describes a disposable VM clone created for a session.
-type DisposableClone = disposable.Clone
-
 // DisposableSetupOptions configures disposable clone creation.
 type DisposableSetupOptions struct {
 	Source         string
@@ -27,12 +24,6 @@ type DisposableSetupOptions struct {
 	Now            func() time.Time
 	Clone          func(CloneOptions) error
 }
-
-// DisposableGCOptions configures disposable VM garbage collection.
-type DisposableGCOptions = disposable.GCOptions
-
-// DisposableGCResult summarizes a garbage-collection run.
-type DisposableGCResult = disposable.GCResult
 
 // disposableCloneName returns a human-readable disposable VM name.
 func disposableCloneName(base string, now time.Time) string {
@@ -46,9 +37,9 @@ func parseDisposableCloneName(name string) (base string, createdAt time.Time, ok
 }
 
 // SetupDisposableClone creates a disposable VM clone from source.
-func SetupDisposableClone(opts DisposableSetupOptions) (DisposableClone, error) {
+func SetupDisposableClone(opts DisposableSetupOptions) (disposable.Clone, error) {
 	if strings.TrimSpace(opts.Source) == "" {
-		return DisposableClone{}, fmt.Errorf("source vm is required")
+		return disposable.Clone{}, fmt.Errorf("source vm is required")
 	}
 	now := opts.Now
 	if now == nil {
@@ -68,12 +59,12 @@ func SetupDisposableClone(opts DisposableSetupOptions) (DisposableClone, error) 
 		SourceDiskPath: opts.SourceDiskPath,
 	}
 	if err := cloneFn(cloneOpts); err != nil {
-		return DisposableClone{}, fmt.Errorf("create disposable clone: %w", err)
+		return disposable.Clone{}, fmt.Errorf("create disposable clone: %w", err)
 	}
 	if err := os.Remove(proxyStatePath(vmconfig.Path(cloneName))); err != nil && !os.IsNotExist(err) {
-		return DisposableClone{}, fmt.Errorf("clear proxy state from disposable clone: %w", err)
+		return disposable.Clone{}, fmt.Errorf("clear proxy state from disposable clone: %w", err)
 	}
-	return DisposableClone{
+	return disposable.Clone{
 		Name:      cloneName,
 		Path:      vmconfig.Path(cloneName),
 		Source:    opts.Source,
@@ -101,7 +92,7 @@ func CleanupDisposableClone(path string) error {
 }
 
 // GCDisposableClones removes disposable clones older than OlderThan.
-func GCDisposableClones(opts DisposableGCOptions) (DisposableGCResult, error) {
+func GCDisposableClones(opts disposable.GCOptions) (disposable.GCResult, error) {
 	if opts.BaseDir == "" {
 		opts.BaseDir = vmconfig.BaseDir()
 	}

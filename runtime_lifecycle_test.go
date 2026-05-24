@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tmc/cove/internal/disposable"
 	"github.com/tmc/cove/internal/lifecycle"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmpolicy"
@@ -46,7 +47,7 @@ func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 	vmName = "research-base"
 	vmDir = "/tmp/research-base"
 
-	clone := DisposableClone{
+	clone := disposable.Clone{
 		Name:   "research-base-d-20260330-120000",
 		Path:   "/tmp/research-base-d-20260330-120000",
 		Source: "research-base",
@@ -55,7 +56,7 @@ func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 	var gotRunVMName string
 	var gotRunVMDir string
 
-	setupDisposableCloneHook = func(opts DisposableSetupOptions) (DisposableClone, error) {
+	setupDisposableCloneHook = func(opts DisposableSetupOptions) (disposable.Clone, error) {
 		if opts.Source != "research-base" || !opts.Linked || opts.CopyMachineID {
 			t.Fatalf("SetupDisposableClone opts = %#v", opts)
 		}
@@ -135,14 +136,14 @@ func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 	vmName = "research-base"
 	vmDir = "/tmp/research-base"
 
-	clone := DisposableClone{
+	clone := disposable.Clone{
 		Name: "research-base-d-20260330-120000",
 		Path: "/tmp/research-base-d-20260330-120000",
 	}
 	wantErr := errors.New("boom")
 	cleanupCalled := false
 
-	setupDisposableCloneHook = func(DisposableSetupOptions) (DisposableClone, error) {
+	setupDisposableCloneHook = func(DisposableSetupOptions) (disposable.Clone, error) {
 		return clone, nil
 	}
 	runMacOSVMHook = func() error {
@@ -277,7 +278,7 @@ func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
 	vmName = "research-base"
 	vmDir = "/tmp/research-base"
 
-	clone := DisposableClone{
+	clone := disposable.Clone{
 		Name:   "research-base-d-20260422-123456",
 		Path:   "/tmp/research-base-d-20260422-123456",
 		Source: "research-base",
@@ -286,7 +287,7 @@ func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
 	var gotRunVMName string
 	var gotRunVMDir string
 
-	setupRollbackSnapshotCloneHook = func(opts RollbackSnapshotCloneOptions) (DisposableClone, error) {
+	setupRollbackSnapshotCloneHook = func(opts RollbackSnapshotCloneOptions) (disposable.Clone, error) {
 		if opts.Source != "research-base" || opts.Snapshot != "clean-base" {
 			t.Fatalf("SetupRollbackSnapshotClone opts = %#v", opts)
 		}
@@ -369,7 +370,7 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 	vmName = "research-base"
 	vmDir = "/tmp/research-base"
 
-	clone := DisposableClone{
+	clone := disposable.Clone{
 		Name: "research-base-d-20260422-123456",
 		Path: "/tmp/research-base-d-20260422-123456",
 	}
@@ -378,7 +379,7 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 	var gotDiskPathOverride string
 	var gotAttachmentMode systemDiskAttachmentMode
 
-	setupDisposableCloneHook = func(opts DisposableSetupOptions) (DisposableClone, error) {
+	setupDisposableCloneHook = func(opts DisposableSetupOptions) (disposable.Clone, error) {
 		if opts.SourceDiskPath != "/tmp/checkpoint/disk.img" {
 			t.Fatalf("SetupDisposableClone opts.SourceDiskPath = %q", opts.SourceDiskPath)
 		}
@@ -573,13 +574,13 @@ func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 	vmName = "linux-src"
 	vmDir = source
 
-	clone := DisposableClone{
+	clone := disposable.Clone{
 		Name: "linux-src-d-20260422-123456",
 		Path: filepath.Join(vmconfig.BaseDir(), "linux-src-d-20260422-123456"),
 	}
 	var ranLinux bool
 
-	setupDisposableCloneHook = func(opts DisposableSetupOptions) (DisposableClone, error) {
+	setupDisposableCloneHook = func(opts DisposableSetupOptions) (disposable.Clone, error) {
 		if opts.Source != "linux-src" {
 			t.Fatalf("SetupDisposableClone source = %q, want %q", opts.Source, "linux-src")
 		}
