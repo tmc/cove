@@ -102,10 +102,6 @@ func GCDisposableClones(opts disposable.GCOptions) (disposable.GCResult, error) 
 	return disposable.GC(opts)
 }
 
-func disposableBaseName(base string) string {
-	return disposable.BaseName(base)
-}
-
 func disposableCloneIsActive(path string) bool {
 	if isVMRunningAt(path) {
 		return true
