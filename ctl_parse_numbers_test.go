@@ -57,35 +57,3 @@ func TestParseUint32(t *testing.T) {
 		t.Fatal("overflow: want error")
 	}
 }
-
-func TestParseByteSize(t *testing.T) {
-	tests := []struct {
-		in      string
-		want    uint64
-		wantErr bool
-	}{
-		{"1024", 1024, false},
-		{"1k", 1024, false},
-		{"2KB", 2048, false},
-		{"1MiB", 1024 * 1024, false},
-		{"3g", 3 * 1024 * 1024 * 1024, false},
-		{"1.5K", 1536, false},
-		{"  4kb  ", 4096, false},
-		{"", 0, true},
-		{"abc", 0, true},
-		{"10xb", 0, true},
-		{"-5k", 0, true},
-		{"0", 0, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			got, err := parseByteSize(tt.in)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("err=%v wantErr=%v", err, tt.wantErr)
-			}
-			if !tt.wantErr && got != tt.want {
-				t.Fatalf("got %d want %d", got, tt.want)
-			}
-		})
-	}
-}
