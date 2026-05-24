@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -467,7 +468,7 @@ func TestIsImageForkFromRef(t *testing.T) {
 // valid JSON or absent. Closes R5 of image-gc-race-audit-2026-05-08.
 func TestWriteImageManifestAtomic(t *testing.T) {
 	dir := t.TempDir()
-	m := &ImageManifest{Name: "n", Tag: "t", SchemaVersion: 1}
+	m := &imagestore.Manifest{Name: "n", Tag: "t", SchemaVersion: 1}
 	if err := writeImageManifest(dir, m); err != nil {
 		t.Fatalf("writeImageManifest: %v", err)
 	}
@@ -483,7 +484,7 @@ func TestWriteImageManifestAtomic(t *testing.T) {
 	if len(data) == 0 {
 		t.Fatalf("manifest.json is empty")
 	}
-	var got ImageManifest
+	var got imagestore.Manifest
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal manifest: %v", err)
 	}
@@ -497,7 +498,7 @@ func TestWriteImageManifestAtomic(t *testing.T) {
 // manifest.json is left behind.
 func TestWriteImageManifestNoPartialOnDirMissing(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "does-not-exist")
-	m := &ImageManifest{Name: "n", Tag: "t", SchemaVersion: 1}
+	m := &imagestore.Manifest{Name: "n", Tag: "t", SchemaVersion: 1}
 	if err := writeImageManifest(dir, m); err == nil {
 		t.Fatalf("writeImageManifest: expected error for missing dir")
 	}

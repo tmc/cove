@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"golang.org/x/term"
 )
 
@@ -326,7 +327,7 @@ func readImageTarStream(r io.Reader, overrideTag string, force bool) (ImageRef, 
 	if err != nil {
 		return ImageRef{}, fmt.Errorf("image load: read manifest: %w", err)
 	}
-	var m ImageManifest
+	var m imagestore.Manifest
 	if err := json.Unmarshal(manifestBytes, &m); err != nil {
 		return ImageRef{}, fmt.Errorf("image load: parse manifest: %w", err)
 	}

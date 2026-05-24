@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -195,7 +196,7 @@ func TestMaybeQuietImageForkSerial(t *testing.T) {
 }
 
 func TestRunConfigForImageManifestInfersLinux(t *testing.T) {
-	cfg := runConfigForImageManifest(RunConfig{}, &ImageManifest{OSType: "Linux"})
+	cfg := runConfigForImageManifest(RunConfig{}, &imagestore.Manifest{OSType: "Linux"})
 	if !cfg.Linux {
 		t.Fatal("Linux = false, want true")
 	}
@@ -205,7 +206,7 @@ func TestRunConfigForImageManifestInfersLinux(t *testing.T) {
 }
 
 func TestRunConfigForImageManifestInfersWindows(t *testing.T) {
-	cfg := runConfigForImageManifest(RunConfig{Linux: true}, &ImageManifest{OSType: "Windows"})
+	cfg := runConfigForImageManifest(RunConfig{Linux: true}, &imagestore.Manifest{OSType: "Windows"})
 	if !cfg.Windows {
 		t.Fatal("Windows = false, want true")
 	}

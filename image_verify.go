@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 type imageVerifyStatus string
@@ -30,12 +31,12 @@ type imageVerifyCheck struct {
 }
 
 type imageVerifyReport struct {
-	Ref       string             `json:"ref"`
-	Verdict   imageVerifyStatus  `json:"verdict"`
-	Legacy    bool               `json:"legacy_manifest,omitempty"`
-	ForkCount int                `json:"fork_count"`
-	Checks    []imageVerifyCheck `json:"checks"`
-	Manifest  *ImageManifest     `json:"manifest,omitempty"`
+	Ref       string               `json:"ref"`
+	Verdict   imageVerifyStatus    `json:"verdict"`
+	Legacy    bool                 `json:"legacy_manifest,omitempty"`
+	ForkCount int                  `json:"fork_count"`
+	Checks    []imageVerifyCheck   `json:"checks"`
+	Manifest  *imagestore.Manifest `json:"manifest,omitempty"`
 }
 
 type imageVerifyOptions struct {
@@ -92,7 +93,7 @@ func VerifyImage(ref ImageRef, opts imageVerifyOptions) imageVerifyReport {
 	return report
 }
 
-func verifyImageLayout(ref ImageRef, manifest *ImageManifest) error {
+func verifyImageLayout(ref ImageRef, manifest *imagestore.Manifest) error {
 	required := imageLayoutRequiredFiles(manifest.OSType)
 	for _, name := range required {
 		path := filepath.Join(ref.Path(), name)
@@ -142,7 +143,7 @@ func imageLayoutDiskFile(osType string) string {
 // image from a missing manifest field or layout problem.
 var ErrImageDiskSizeMismatch = errors.New("image disk.img size mismatch")
 
-func verifyImageAgentFeatures(manifest *ImageManifest, strict bool) (imageVerifyStatus, string) {
+func verifyImageAgentFeatures(manifest *imagestore.Manifest, strict bool) (imageVerifyStatus, string) {
 	features := normalizeAgentFeatures(manifest.AgentFeatures)
 	if len(features) == 0 {
 		if strict {
@@ -159,7 +160,7 @@ func verifyImageAgentFeatures(manifest *ImageManifest, strict bool) (imageVerify
 	return imageVerifyPass, strings.Join(features, ", ")
 }
 
-func verifyImageCoveCommit(manifest *ImageManifest) (imageVerifyStatus, string) {
+func verifyImageCoveCommit(manifest *imagestore.Manifest) (imageVerifyStatus, string) {
 	if strings.TrimSpace(manifest.CoveCommit) == "" {
 		return imageVerifyWarn, "missing cove_commit"
 	}
@@ -178,7 +179,7 @@ func verifyImageCoveCommit(manifest *ImageManifest) (imageVerifyStatus, string) 
 	}
 }
 
-func verifyImageFreshness(manifest *ImageManifest, opts imageVerifyOptions) (imageVerifyStatus, string) {
+func verifyImageFreshness(manifest *imagestore.Manifest, opts imageVerifyOptions) (imageVerifyStatus, string) {
 	timestamp := manifest.BuiltAt
 	if timestamp.IsZero() {
 		timestamp = manifest.CreatedAt

@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"text/tabwriter"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 type imageDiffOutput struct {
@@ -136,7 +138,7 @@ func imageDiffLayerNames(a, b ImageRef) ([]string, error) {
 	return imageLayerNamesForManifests(ma, mb), nil
 }
 
-func imageDiskNamesForManifests(manifests ...*ImageManifest) []string {
+func imageDiskNamesForManifests(manifests ...*imagestore.Manifest) []string {
 	var names []string
 	seen := make(map[string]bool)
 	for _, manifest := range manifests {
@@ -153,7 +155,7 @@ func imageDiskNamesForManifests(manifests ...*ImageManifest) []string {
 	return names
 }
 
-func imageLayerNamesForManifests(manifests ...*ImageManifest) []string {
+func imageLayerNamesForManifests(manifests ...*imagestore.Manifest) []string {
 	var names []string
 	seen := make(map[string]bool)
 	for _, manifest := range manifests {
