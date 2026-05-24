@@ -5,6 +5,7 @@ import (
 	"io"
 
 	fleetpkg "github.com/tmc/cove/internal/fleet"
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 func runLocalCoveCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -20,12 +21,12 @@ func runLocalCoveCommand(args []string, stdin io.Reader, stdout, stderr io.Write
 		if err != nil {
 			return err
 		}
-		return WriteImageTar(ref, stdout, false)
+		return imagestore.WriteTar(ref, stdout, false)
 	case "load":
 		if len(args) != 3 || args[2] != "-" {
 			return fmt.Errorf("fleet local image load unsupported: %v", args)
 		}
-		_, err := ReadImageTar(stdin, "", false)
+		_, err := imagestore.ReadTar(stdin, "", false)
 		return err
 	default:
 		return fmt.Errorf("fleet local image command unsupported: %v", args)
