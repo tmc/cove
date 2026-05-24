@@ -18,7 +18,6 @@ type statusOptions struct {
 }
 
 func statusCommand(env commandEnv, args ...string) error {
-	env = env.withDefaultIO()
 	opts, err := parseStatusArgs(env, args)
 	if errors.Is(err, errFlagHelp) {
 		return nil
@@ -73,7 +72,6 @@ func statusCommand(env commandEnv, args ...string) error {
 }
 
 func parseStatusArgs(env commandEnv, args []string) (statusOptions, error) {
-	env = env.withDefaultIO()
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	vmFlag := fs.String("vm", "", "VM name")

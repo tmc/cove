@@ -20,7 +20,6 @@ type logsOptions struct {
 const defaultLogLines = 200
 
 func parseLogsArgs(env commandEnv, args []string) (logsOptions, error) {
-	env = env.withDefaultIO()
 	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	follow := fs.Bool("f", false, "follow logs")
@@ -29,7 +28,7 @@ func parseLogsArgs(env commandEnv, args []string) (logsOptions, error) {
 	fs.IntVar(lines, "lines", defaultLogLines, "maximum lines for one-shot logs")
 	vmFlag := fs.String("vm", "", "VM name")
 	fs.Usage = func() {
-		printLogsUsage(fs.Output())
+		printLogsUsage(env.Stdout)
 	}
 	if err := parseFlagsOrHelp(fs, moveLogsFlagsFirst(args)); err != nil {
 		return logsOptions{}, err

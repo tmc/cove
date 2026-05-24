@@ -130,6 +130,7 @@ func commandNames() []string {
 }
 
 func runRegisteredCommand(env commandEnv, spec *commandSpec, name string, args []string) int {
+	env = env.withDefaultIO()
 	if spec == nil || spec.Run == nil {
 		if spec != nil && spec.Name == "commands" {
 			return runCommandsCommand(env, name, args)
@@ -216,7 +217,6 @@ func runImageCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleImageCommand(args))
 }
 func runLogsCommand(env commandEnv, _ string, args []string) int {
-	env = env.withDefaultIO()
 	err := logsCommand(env, args)
 	if err != nil && strings.HasPrefix(err.Error(), "usage: cove logs ") {
 		printLogsUsage(env.Stderr)
@@ -225,7 +225,6 @@ func runLogsCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, err)
 }
 func runPolicyCommand(env commandEnv, _ string, args []string) int {
-	env = env.withDefaultIO()
 	return commandError(env, handlePolicyCommand(env, args))
 }
 func runPullCommand(env commandEnv, _ string, args []string) int {
@@ -250,7 +249,7 @@ func runUnpinCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleUnpinCommand(args))
 }
 func runRunsCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleRunsCommand(args))
+	return commandError(env, handleRunsCommand(env, args))
 }
 func runSecretCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleSecretCommand(args))
@@ -336,7 +335,6 @@ func runSnapshotCommandSpec(_ commandEnv, _ string, args []string) int {
 	return 0
 }
 func runStatusCommand(env commandEnv, _ string, args []string) int {
-	env = env.withDefaultIO()
 	err := statusCommand(env, args...)
 	if err != nil && strings.HasPrefix(err.Error(), "usage: cove status") {
 		printStatusUsage(env.Stderr)

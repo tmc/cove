@@ -12,7 +12,7 @@ import (
 )
 
 func TestParseLogsArgs(t *testing.T) {
-	env := commandEnv{Stderr: new(bytes.Buffer)}
+	env := commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}
 	oldVMName := vmName
 	t.Cleanup(func() { vmName = oldVMName })
 	vmName = ""
@@ -66,7 +66,7 @@ func TestLogsUsageDocumentsFlagPlacement(t *testing.T) {
 }
 
 func TestParseLogsArgsUsesGlobalVM(t *testing.T) {
-	env := commandEnv{Stderr: new(bytes.Buffer)}
+	env := commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}
 	oldVMName := vmName
 	t.Cleanup(func() { vmName = oldVMName })
 	vmName = "global-vm"
@@ -87,7 +87,7 @@ func TestLogsGlobalMissingVMDoesNotCreateDir(t *testing.T) {
 	})
 	vmName = "missing-logs-vm"
 	vmDir = ""
-	err := logsCommand(commandEnv{Stderr: new(bytes.Buffer)}, nil)
+	err := logsCommand(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, nil)
 	if err == nil {
 		t.Fatal("logsCommand succeeded for missing VM")
 	}

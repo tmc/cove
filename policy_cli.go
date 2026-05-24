@@ -12,7 +12,6 @@ import (
 )
 
 func handlePolicyCommand(env commandEnv, args []string) error {
-	env = env.withDefaultIO()
 	if len(args) == 0 || isHelpArg(args[0]) {
 		printPolicyUsage(env.Stdout)
 		return nil

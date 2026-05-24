@@ -36,7 +36,7 @@ func TestRunsUsageDocumentsNDJSONAlias(t *testing.T) {
 }
 
 func TestRunsListHelpExitsZero(t *testing.T) {
-	if err := runRunsList([]string{"-h"}); err != nil {
+	if err := runRunsList(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, []string{"-h"}); err != nil {
 		t.Fatalf("runRunsList(-h): %v", err)
 	}
 	var b bytes.Buffer
@@ -58,14 +58,12 @@ func TestRunsShowExportHelpExitsZero(t *testing.T) {
 		{"export", []string{"export", "--help"}, "Usage: cove runs export"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			out, err := captureStdoutResult(t, func() error {
-				return handleRunsCommand(tt.args)
-			})
-			if err != nil {
+			var out bytes.Buffer
+			if err := handleRunsCommand(commandEnv{Stdout: &out, Stderr: new(bytes.Buffer)}, tt.args); err != nil {
 				t.Fatalf("handleRunsCommand(%v): %v", tt.args, err)
 			}
-			if !strings.Contains(out, tt.want) {
-				t.Fatalf("help output = %q, want %q", out, tt.want)
+			if !strings.Contains(out.String(), tt.want) {
+				t.Fatalf("help output = %q, want %q", out.String(), tt.want)
 			}
 		})
 	}
@@ -78,12 +76,11 @@ func TestRunRunsListJSONModes(t *testing.T) {
 	writeRunsCLIRun(t, root, "20260510-a", "vm-a")
 	writeRunsCLIRun(t, root, "20260510-b", "vm-b")
 
-	jsonOut, err := captureStdoutResult(t, func() error {
-		return runRunsList([]string{"--json", "--limit", "2"})
-	})
-	if err != nil {
+	var jsonBuf bytes.Buffer
+	if err := runRunsList(commandEnv{Stdout: &jsonBuf, Stderr: new(bytes.Buffer)}, []string{"--json", "--limit", "2"}); err != nil {
 		t.Fatalf("runRunsList --json: %v", err)
 	}
+	jsonOut := jsonBuf.String()
 	var summaries []runs.Summary
 	if err := json.Unmarshal([]byte(jsonOut), &summaries); err != nil {
 		t.Fatalf("--json output is not a JSON array: %v\n%s", err, jsonOut)
@@ -92,12 +89,11 @@ func TestRunRunsListJSONModes(t *testing.T) {
 		t.Fatalf("--json summaries = %d, want 2: %s", len(summaries), jsonOut)
 	}
 
-	ndjsonOut, err := captureStdoutResult(t, func() error {
-		return runRunsList([]string{"--ndjson", "--limit", "2"})
-	})
-	if err != nil {
+	var ndjsonBuf bytes.Buffer
+	if err := runRunsList(commandEnv{Stdout: &ndjsonBuf, Stderr: new(bytes.Buffer)}, []string{"--ndjson", "--limit", "2"}); err != nil {
 		t.Fatalf("runRunsList --ndjson: %v", err)
 	}
+	ndjsonOut := ndjsonBuf.String()
 	if got := strings.Count(strings.TrimSpace(ndjsonOut), "\n") + 1; got != 2 {
 		t.Fatalf("--ndjson lines = %d, want 2:\n%s", got, ndjsonOut)
 	}
@@ -109,14 +105,12 @@ func TestRunRunsListLimitZeroReturnsEmpty(t *testing.T) {
 	root := filepath.Join(home, ".vz", "runs")
 	writeRunsCLIRun(t, root, "20260510-a", "vm-a")
 
-	out, err := captureStdoutResult(t, func() error {
-		return runRunsList([]string{"--json", "--limit", "0"})
-	})
-	if err != nil {
+	var out bytes.Buffer
+	if err := runRunsList(commandEnv{Stdout: &out, Stderr: new(bytes.Buffer)}, []string{"--json", "--limit", "0"}); err != nil {
 		t.Fatalf("runRunsList --limit 0: %v", err)
 	}
-	if strings.TrimSpace(out) != "[]" {
-		t.Fatalf("--limit 0 JSON = %q, want []", strings.TrimSpace(out))
+	if strings.TrimSpace(out.String()) != "[]" {
+		t.Fatalf("--limit 0 JSON = %q, want []", strings.TrimSpace(out.String()))
 	}
 }
 
@@ -124,42 +118,38 @@ func TestRunRunsListJSONMissingRootReturnsEmptyArray(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	out, err := captureStdoutResult(t, func() error {
-		return runRunsList([]string{"--json"})
-	})
-	if err != nil {
+	var out bytes.Buffer
+	env := commandEnv{Stdout: &out, Stderr: new(bytes.Buffer)}
+	if err := runRunsList(env, []string{"--json"}); err != nil {
 		t.Fatalf("runRunsList --json missing root: %v", err)
 	}
-	if strings.TrimSpace(out) != "[]" {
-		t.Fatalf("missing root JSON = %q, want []", strings.TrimSpace(out))
+	if strings.TrimSpace(out.String()) != "[]" {
+		t.Fatalf("missing root JSON = %q, want []", strings.TrimSpace(out.String()))
 	}
 
-	out, err = captureStdoutResult(t, func() error {
-		return runRunsList([]string{"--ndjson"})
-	})
-	if err != nil {
+	out.Reset()
+	if err := runRunsList(env, []string{"--ndjson"}); err != nil {
 		t.Fatalf("runRunsList --ndjson missing root: %v", err)
 	}
-	if out != "" {
-		t.Fatalf("missing root NDJSON = %q, want empty output", out)
+	if out.String() != "" {
+		t.Fatalf("missing root NDJSON = %q, want empty output", out.String())
 	}
 }
 
 func TestRunRunsShowMissingJSONWritesMachineReadableStdout(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	out, err := captureStdoutResult(t, func() error {
-		return runRunsShow([]string{"missing", "--json"})
-	})
+	var out bytes.Buffer
+	err := runRunsShow(commandEnv{Stdout: &out, Stderr: new(bytes.Buffer)}, []string{"missing", "--json"})
 	if err == nil {
 		t.Fatal("runRunsShow --json missing = nil, want error")
 	}
-	if strings.Contains(out, "error:") {
-		t.Fatalf("stdout contains plain text diagnostic: %q", out)
+	if strings.Contains(out.String(), "error:") {
+		t.Fatalf("stdout contains plain text diagnostic: %q", out.String())
 	}
 	var got runsShowErrorOutput
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, out.String())
 	}
 	if got.RunID != "missing" || got.Error == "" {
 		t.Fatalf("JSON output = %#v, want run_id/error", got)
@@ -262,7 +252,7 @@ func TestRunRunsExportIncludeGuestFailures(t *testing.T) {
 }
 
 func TestRunRunsExportRejectsUnknownFormat(t *testing.T) {
-	err := runRunsExport([]string{"abc123", "--format=yaml"})
+	err := runRunsExport(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, []string{"abc123", "--format=yaml"})
 	if err == nil || !strings.Contains(err.Error(), "unknown runs export format") {
 		t.Fatalf("err = %v; want unknown format error", err)
 	}
@@ -275,7 +265,7 @@ func TestRunRunsExportRequiresPrefixAndFormat(t *testing.T) {
 		{"abc123"},
 	}
 	for _, args := range tests {
-		err := runRunsExport(args)
+		err := runRunsExport(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, args)
 		if err == nil || !strings.Contains(err.Error(), "usage:") {
 			t.Fatalf("runRunsExport(%v) err = %v; want usage error", args, err)
 		}
