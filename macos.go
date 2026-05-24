@@ -93,7 +93,7 @@ func hasSuspendState() bool {
 }
 
 func removeCorruptSuspendState(path string) {
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(os.Stderr, "warning: corrupt suspend state detected but could not be removed: %v\n", err)
 		return
 	}
@@ -108,7 +108,7 @@ func moveAsideSuspendState(reason string) {
 	path := suspendStatePath()
 	backup := fmt.Sprintf("%s.broken-%s", path, time.Now().UTC().Format("20060102T150405Z"))
 	if err := os.Rename(path, backup); err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			fmt.Fprintf(os.Stderr, "warning: could not move aside suspend state (%s): %v\n", reason, err)
 			os.Remove(path)
 		}
@@ -410,7 +410,7 @@ func runMacOSVM() error {
 	diskExists := diskStatErr == nil
 
 	// Create disk if it doesn't exist
-	if os.IsNotExist(diskStatErr) {
+	if errors.Is(diskStatErr, os.ErrNotExist) {
 		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, rc.DiskSizeGB)
 		if err := createDiskImage(resolvedDiskPath, rc.DiskSizeGB); err != nil {
 			return fmt.Errorf("create disk image: %w", err)
@@ -529,7 +529,7 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	auxPath := filepath.Join(vmDir, "aux.img")
 	auxInfo, err := os.Stat(auxPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			issues = append(issues, "aux.img missing")
 		} else {
 			return nil, fmt.Errorf("stat %s: %w", auxPath, err)
@@ -545,7 +545,7 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	hwModelPath := filepath.Join(vmDir, "hw.model")
 	hwData, err := os.ReadFile(hwModelPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			issues = append(issues, "hw.model missing")
 		} else {
 			return nil, fmt.Errorf("read %s: %w", hwModelPath, err)
@@ -569,7 +569,7 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 	machineIDPath := filepath.Join(vmDir, "machine.id")
 	machineData, err := os.ReadFile(machineIDPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			issues = append(issues, "machine.id missing")
 		} else {
 			return nil, fmt.Errorf("read %s: %w", machineIDPath, err)
@@ -600,7 +600,7 @@ func recoverIdentityMetadata(issues []string) (string, error) {
 	for _, name := range backupCandidates {
 		src := filepath.Join(vmDir, name)
 		if _, err := os.Stat(src); err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return "", fmt.Errorf("stat %s: %w", src, err)
@@ -617,7 +617,7 @@ func recoverIdentityMetadata(issues []string) (string, error) {
 		filepath.Join(vmDir, "machine.id"),
 	}
 	for _, path := range resetFiles {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("reset %s: %w", path, err)
 		}
 	}
@@ -728,7 +728,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		auxStoragePath = utmAuxStoragePath
 	}
 	var auxStorage vz.VZMacAuxiliaryStorage
-	if _, statErr := os.Stat(auxStoragePath); os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(auxStoragePath); errors.Is(statErr, os.ErrNotExist) {
 		if hc.Verbose {
 			fmt.Println("  Creating auxiliary storage...")
 		}
@@ -884,7 +884,7 @@ func loadOrCreateMachineIdentifier() (vz.VZMacMachineIdentifier, error) {
 			fmt.Println("  Loaded existing machine identifier")
 		}
 		return machineID, nil
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return vz.VZMacMachineIdentifier{}, err
 	}
 
@@ -955,7 +955,7 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 			return vz.VZMacHardwareModel{}, err
 		}
 		return model, nil
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return vz.VZMacHardwareModel{}, fmt.Errorf("read hardware model: %w", err)
 	}
 
@@ -1391,10 +1391,12 @@ func currentVMState(vm vz.VZVirtualMachine, queue dispatch.Queue) (vz.VZVirtualM
 	DispatchAsyncQueue(queue, func() {
 		stateCh <- vz.VZVirtualMachineState(vm.State())
 	})
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
 	select {
 	case state := <-stateCh:
 		return state, nil
-	case <-time.After(5 * time.Second):
+	case <-timer.C:
 		return 0, fmt.Errorf("timed out checking VM state")
 	}
 }
@@ -1700,9 +1702,11 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		currentState = vz.VZVirtualMachineState(vm.State())
 		close(stateCh)
 	})
+	stateTimer := time.NewTimer(5 * time.Second)
+	defer stateTimer.Stop()
 	select {
 	case <-stateCh:
-	case <-time.After(5 * time.Second):
+	case <-stateTimer.C:
 		return fmt.Errorf("timed out checking VM state")
 	}
 	if currentState != vz.VZVirtualMachineStateStopped {
@@ -1720,12 +1724,14 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		})
 	})
 
+	restoreTimer := time.NewTimer(60 * time.Second)
+	defer restoreTimer.Stop()
 	select {
 	case err := <-errCh:
 		if err != nil {
 			return fmt.Errorf("restore state: %w", err)
 		}
-	case <-time.After(60 * time.Second):
+	case <-restoreTimer.C:
 		return fmt.Errorf("restore state timed out")
 	}
 
@@ -1737,12 +1743,14 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		})
 	})
 
+	resumeTimer := time.NewTimer(30 * time.Second)
+	defer resumeTimer.Stop()
 	select {
 	case err := <-resumeCh:
 		if err != nil {
 			return fmt.Errorf("resume after restore: %w", err)
 		}
-	case <-time.After(30 * time.Second):
+	case <-resumeTimer.C:
 		return fmt.Errorf("resume timed out")
 	}
 
@@ -1771,12 +1779,14 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		})
 	})
 
+	pauseTimer := time.NewTimer(30 * time.Second)
+	defer pauseTimer.Stop()
 	select {
 	case err := <-pauseCh:
 		if err != nil {
 			return fmt.Errorf("pause: %w", err)
 		}
-	case <-time.After(30 * time.Second):
+	case <-pauseTimer.C:
 		return fmt.Errorf("pause timed out")
 	}
 
@@ -1792,13 +1802,15 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		})
 	})
 
+	saveTimer := time.NewTimer(120 * time.Second)
+	defer saveTimer.Stop()
 	select {
 	case err := <-saveCh:
 		if err != nil {
 			os.Remove(stateFile) // Clean up partial file
 			return fmt.Errorf("save state: %w", err)
 		}
-	case <-time.After(120 * time.Second):
+	case <-saveTimer.C:
 		os.Remove(stateFile)
 		return fmt.Errorf("save state timed out")
 	}
