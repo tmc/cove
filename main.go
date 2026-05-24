@@ -21,6 +21,7 @@ import (
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 	"github.com/tmc/cove/internal/action"
 	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/covecli"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmtree"
 	"golang.org/x/term"
@@ -373,7 +374,7 @@ func main() {
 		return
 	}
 	if flag.NArg() > 0 {
-		if spec, ok := lookupCommand(flag.Arg(0)); ok && spec.Dispatch == commandDispatchPreUI {
+		if spec, ok := lookupCommand(flag.Arg(0)); ok && spec.Dispatch == covecli.DispatchPreUI {
 			os.Exit(runRegisteredCommand(newCommandEnv(), spec, flag.Arg(0), flag.Args()[1:]))
 		}
 	}
@@ -482,7 +483,7 @@ func main() {
 			return
 		}
 
-		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == commandDispatchEarly {
+		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == covecli.DispatchEarly {
 			os.Exit(runRegisteredCommand(newCommandEnv(), spec, cmd, args))
 		}
 
@@ -531,7 +532,7 @@ func main() {
 			os.Exit(code)
 		}
 
-		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == commandDispatchLate {
+		if spec, ok := lookupCommand(cmd); ok && spec.Dispatch == covecli.DispatchLate {
 			os.Exit(runRegisteredCommand(newCommandEnv(), spec, cmd, args))
 		}
 		writeUnknownCommand(os.Stderr, cmd)

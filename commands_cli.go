@@ -6,19 +6,9 @@ import (
 	"io"
 	"strings"
 	"text/tabwriter"
-)
 
-type commandInfo struct {
-	Name              string   `json:"name"`
-	Aliases           []string `json:"aliases,omitempty"`
-	Summary           string   `json:"summary"`
-	Dispatch          string   `json:"dispatch"`
-	Outputs           []string `json:"outputs"`
-	SafeForDiscovery  bool     `json:"safe_for_discovery"`
-	MutatesState      bool     `json:"mutates_state"`
-	RequiresRunningVM bool     `json:"requires_running_vm"`
-	MayBootVM         bool     `json:"may_boot_vm"`
-}
+	"github.com/tmc/cove/internal/covecli"
+)
 
 func runCommandsCommand(env commandEnv, _ string, args []string) int {
 	if env.Stdout == nil {
@@ -74,77 +64,20 @@ func printCommandsTable(w io.Writer) error {
 	return tw.Flush()
 }
 
-func commandInventory() []commandInfo {
-	out := make([]commandInfo, 0, len(commandRegistry))
+func commandInventory() []covecli.Info {
+	out := make([]covecli.Info, 0, len(commandRegistry))
 	for _, spec := range commandRegistry {
-		out = append(out, commandInfo{
+		out = append(out, covecli.Info{
 			Name:              spec.Name,
 			Aliases:           append([]string(nil), spec.Aliases...),
 			Summary:           spec.Summary,
-			Dispatch:          commandDispatchName(spec.Dispatch),
-			Outputs:           commandOutputHints(spec.Name),
-			SafeForDiscovery:  commandSafeForDiscovery(spec.Name),
-			MutatesState:      commandMutatesState(spec.Name),
-			RequiresRunningVM: commandRequiresRunningVM(spec.Name),
-			MayBootVM:         commandMayBootVM(spec.Name),
+			Dispatch:          covecli.DispatchName(spec.Dispatch),
+			Outputs:           covecli.OutputHints(spec.Name),
+			SafeForDiscovery:  covecli.SafeForDiscovery(spec.Name),
+			MutatesState:      covecli.MutatesState(spec.Name),
+			RequiresRunningVM: covecli.RequiresRunningVM(spec.Name),
+			MayBootVM:         covecli.MayBootVM(spec.Name),
 		})
 	}
 	return out
-}
-
-func commandDispatchName(dispatch commandDispatch) string {
-	switch dispatch {
-	case commandDispatchPreUI:
-		return "pre-ui"
-	case commandDispatchEarly:
-		return "early"
-	case commandDispatchLate:
-		return "late"
-	default:
-		return "unknown"
-	}
-}
-
-func commandSafeForDiscovery(name string) bool {
-	return !commandMutatesState(name) && !commandRequiresRunningVM(name) && !commandMayBootVM(name)
-}
-
-func commandMutatesState(name string) bool {
-	switch name {
-	case "action", "agent-sandbox", "agent-upgrade", "bench", "build", "clean", "clone", "compact", "config", "daemon", "disk-detach", "disk-snapshot", "export", "fleet", "fork", "forward", "gc", "helper", "image", "import", "inject", "inject-agent", "install", "network", "pin", "pit", "policy", "provision", "provision-agent", "push", "quota", "rename", "rm", "rosetta", "run", "serve", "shared-folder", "sip", "snapshot", "softreset", "storage", "store", "template", "trace", "uiscript", "unpin", "up", "verify", "vm", "vzscript":
-		return true
-	default:
-		return false
-	}
-}
-
-func commandRequiresRunningVM(name string) bool {
-	switch name {
-	case "agent-upgrade", "cp", "ctl", "logs", "shell", "status", "trace", "vzscript":
-		return true
-	default:
-		return false
-	}
-}
-
-func commandMayBootVM(name string) bool {
-	switch name {
-	case "agent-sandbox", "build", "install", "run", "up", "action":
-		return true
-	default:
-		return false
-	}
-}
-
-func commandOutputHints(name string) []string {
-	switch name {
-	case "action", "commands", "daemon", "diff", "recording", "runner", "runs", "security", "storage", "trace", "vm":
-		return []string{"text", "json"}
-	case "ctl":
-		return []string{"text", "json", "binary"}
-	case "serve":
-		return []string{"text", "http", "mcp"}
-	default:
-		return []string{"text"}
-	}
 }
