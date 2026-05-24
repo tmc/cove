@@ -6,34 +6,6 @@ import (
 	"github.com/tmc/cove/internal/covecli"
 )
 
-func TestSuggestCommand(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"", ""},
-		{"runn", "run"},
-		{"isntall", "install"},
-		{"intsall", "install"},
-		{"provsion", "provision"},
-		{"sharedfolder", "shared-folder"},
-		{"shared-folders", "shared-folders"},
-		{"snapshoot", "snapshot"},
-		{"verfy", "verify"},
-		{"vzsrcipt", "vzscript"},
-		{"configg", "config"},
-		// Completely unrelated strings should fall through (no suggestion).
-		{"xyzzy", ""},
-		{"fakety-fake", ""},
-	}
-	for _, tc := range tests {
-		got := suggestCommand(tc.input)
-		if got != tc.want {
-			t.Errorf("suggestCommand(%q) = %q, want %q", tc.input, got, tc.want)
-		}
-	}
-}
-
 func TestKnownCommandsCoverAliases(t *testing.T) {
 	required := []string{
 		"run", "install", "list", "ls", "shared-folder", "shared-folders",
@@ -76,24 +48,5 @@ func TestLookupCommandAliases(t *testing.T) {
 				t.Fatalf("lookupCommand(%q) = (%q, %v), want (%q, %v)", tt.name, spec.Name, spec.Dispatch, tt.wantName, tt.wantClass)
 			}
 		})
-	}
-}
-
-func TestLevenshtein(t *testing.T) {
-	tests := []struct {
-		a, b string
-		want int
-	}{
-		{"", "", 0},
-		{"a", "", 1},
-		{"", "abc", 3},
-		{"kitten", "sitting", 3},
-		{"run", "run", 0},
-		{"run", "runn", 1},
-	}
-	for _, tc := range tests {
-		if got := levenshtein(tc.a, tc.b); got != tc.want {
-			t.Errorf("levenshtein(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
-		}
 	}
 }

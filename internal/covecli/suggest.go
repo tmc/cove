@@ -1,39 +1,35 @@
-package main
+package covecli
 
 import "strings"
 
-// suggestCommand returns the closest known command to cmd, or "" if none is
-// close enough. The threshold scales with the input length so short typos
-// still match but long unrelated strings do not.
-func suggestCommand(cmd string) string {
-	if cmd == "" {
+// Suggest returns the closest choice to input, or "" if none is close enough.
+func Suggest(input string, choices []string) string {
+	if input == "" {
 		return ""
 	}
 	best := ""
 	bestDist := -1
-	for _, k := range commandNames() {
-		d := levenshtein(cmd, k)
+	for _, choice := range choices {
+		d := levenshtein(input, choice)
 		if bestDist == -1 || d < bestDist {
 			bestDist = d
-			best = k
+			best = choice
 		}
 	}
-	limit := max(len(cmd)/2, 2)
+	limit := max(len(input)/2, 2)
 	if bestDist <= limit {
 		return best
 	}
-	// Fall back to a substring hit so "sharedfolder" → "shared-folder".
-	lc := strings.ToLower(cmd)
-	for _, k := range commandNames() {
-		if strings.Contains(k, lc) || strings.Contains(lc, k) {
-			return k
+	lc := strings.ToLower(input)
+	for _, choice := range choices {
+		lowerChoice := strings.ToLower(choice)
+		if strings.Contains(lowerChoice, lc) || strings.Contains(lc, lowerChoice) {
+			return choice
 		}
 	}
 	return ""
 }
 
-// levenshtein computes the edit distance between a and b using a single-row
-// dynamic programming buffer.
 func levenshtein(a, b string) int {
 	if a == b {
 		return 0
