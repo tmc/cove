@@ -2,6 +2,7 @@
 //
 // Mirrors the pattern in authorization.go. Used by gateway_token.go to store the
 // cove serve master token as a generic password without shelling out to /usr/bin/security.
+
 package main
 
 import (

@@ -1,4 +1,5 @@
 // usb.go - USB mass storage device support
+
 package main
 
 import (

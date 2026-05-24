@@ -16,6 +16,7 @@
 // In restricted environments (Claude Code, sandboxed shells), the dialog
 // cannot appear; the user is told how to run the equivalent command by hand
 // and errRestrictedNoElevation is returned.
+
 package main
 
 import (

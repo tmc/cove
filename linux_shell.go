@@ -7,6 +7,7 @@
 // This wrapper is therefore output-only — useful for tail/log following and
 // for validating the SIGWINCH/SIGINT control plane end-to-end. Bidi stdin is
 // a v0.3 concern (see design 023).
+
 package main
 
 import (

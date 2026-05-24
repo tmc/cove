@@ -2,6 +2,7 @@
 //
 // Generic image utilities delegate to github.com/tmc/apple/x/capture.
 // ControlServer methods remain here since they depend on VM-specific state.
+
 package main
 
 import (

@@ -6,6 +6,7 @@
 // VMsForkedFromImage check that gates `cove image rm` is reused so a
 // concurrent fork that lands between planning and deletion still
 // blocks the sweep.
+
 package main
 
 import (

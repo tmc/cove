@@ -5,6 +5,7 @@
 // globals; the back-channels it needs (CGEvent helpers, UI-thread
 // dispatch, modifier helpers) are installed once at process start
 // through SetInputBridgeRuntime.
+
 package main
 
 import (

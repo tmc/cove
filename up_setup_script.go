@@ -1,4 +1,5 @@
 // up_setup_script.go — Run a plain text setup script via the guest agent.
+
 package main
 
 import (

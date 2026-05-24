@@ -18,6 +18,7 @@
 // underlying disk for VZTemporaryRAMStorageDeviceAttachmentWithURLReadOnly.
 // Phase 3 uses Model B (RAM-overlay against parent's disk) directly with
 // no clonefile fallback path. See validation1_test.go.
+
 package main
 
 import (

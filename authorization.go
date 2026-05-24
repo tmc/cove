@@ -3,6 +3,7 @@
 // This uses the Security framework to obtain an authorization reference and
 // then launches a privileged tool with AuthorizationExecuteWithPrivileges.
 // It avoids collecting the raw host admin password in app code.
+
 package main
 
 import (

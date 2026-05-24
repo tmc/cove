@@ -1,4 +1,5 @@
 // boot_commands.go - Recovery automation helpers shared by unattended setup and vzscript
+
 package main
 
 import (

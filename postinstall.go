@@ -1,4 +1,5 @@
 // postinstall.go — Run vzscripts after VM installation.
+
 package main
 
 import (

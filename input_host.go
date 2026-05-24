@@ -3,6 +3,7 @@
 //
 // These adapters expose existing control-server state under the names
 // the input bridge reaches for from internal/controlserver.
+
 package main
 
 import (

@@ -11,6 +11,7 @@
 // The LaunchDaemon is configured with KeepAlive=true so launchd restarts
 // the agent if it crashes. It runs as root to allow user management and
 // file operations across the guest filesystem.
+
 package main
 
 import (

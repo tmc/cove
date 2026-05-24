@@ -10,6 +10,7 @@
 // invocation). The set of built-in checks is defined in readyChecks below;
 // any name not in the map is treated as a generic "which <name>" probe so
 // callers can pass arbitrary tool names without code changes.
+
 package main
 
 import (

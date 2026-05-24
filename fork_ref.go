@@ -1,4 +1,5 @@
 // fork_ref.go — parse "parent[@snapshot]" refs for cove fork --from.
+
 package main
 
 import (

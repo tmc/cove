@@ -3,6 +3,7 @@
 // Supports two boot modes:
 // - Direct kernel boot: uses VZLinuxBootLoader with kernel + initrd
 // - EFI boot: uses VZEFIBootLoader with ISO image for installation
+
 package main
 
 import (

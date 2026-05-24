@@ -4,6 +4,7 @@
 // state without prompting the user. Exit code 0 when both flags are
 // true, 1 otherwise. Slice 1 of design 041; no production capture
 // path consumes the probe yet.
+
 package main
 
 import (

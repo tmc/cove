@@ -11,6 +11,7 @@
 // state-file key, a one-line description, and a dummy AppleScript
 // snippet whose only job is to provoke the kTCCServiceAppleEvents
 // dialog for the named target application.
+
 package main
 
 import (

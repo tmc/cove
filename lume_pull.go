@@ -10,6 +10,7 @@
 // the gzip wrapper if present, and concatenates the tar streams onto a
 // streaming reader, then extracts the single disk file out of the combined
 // tar. nvram.bin and config.json are dropped into the VM directory verbatim.
+
 package main
 
 import (

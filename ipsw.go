@@ -2,6 +2,7 @@
 //
 // This file contains native NSURLSession-based download functionality
 // for Apple IPSW restore images, with support for resumable downloads.
+
 package main
 
 import (

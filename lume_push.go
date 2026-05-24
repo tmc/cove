@@ -10,6 +10,7 @@
 // produce without uploading anything. A full push would mirror the structure
 // in pushImage but talk to the registry — that's a follow-up once the user
 // reviews the manifest shape.
+
 package main
 
 import (

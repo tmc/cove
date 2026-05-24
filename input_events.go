@@ -3,6 +3,7 @@
 // Wraps CoreGraphics CGEvent functions via purego (cgo-free) for creating
 // and posting keyboard and mouse events. Events can be posted to a specific
 // process (a VM window) or to the system HID event tap.
+
 package main
 
 import (

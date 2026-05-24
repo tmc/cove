@@ -1,4 +1,5 @@
 // installer.go - macOS installation following Code-Hex/vz patterns
+
 package main
 
 import (

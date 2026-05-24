@@ -2,6 +2,7 @@
 // over the control socket. The registry is lazily initialized on first use
 // against a file-backed store at <vmDir>/operations/, so the gateway and the
 // per-VM ctl client both see the same persistent op records.
+
 package main
 
 import (

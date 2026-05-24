@@ -19,6 +19,7 @@
 // suspend.vmstate is intentionally excluded per design 024: vmstate
 // binds to {machine.id, aux, MAC, disk} and does not survive identity
 // rotation. Cold-boot only in Slice 1.
+
 package main
 
 import (

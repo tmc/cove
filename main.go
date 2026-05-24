@@ -1,5 +1,6 @@
 // This example demonstrates running macOS and Linux virtual machines using the
 // generated purego bindings for Apple's Virtualization framework.
+
 package main
 
 import (

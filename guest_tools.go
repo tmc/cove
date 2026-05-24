@@ -15,6 +15,7 @@
 // macOS may prompt the user to allow these binaries on first launch.
 //
 // Requirements: macOS 13+ host, macOS 15+ guest for clipboard sharing.
+
 package main
 
 import (

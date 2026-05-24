@@ -1,4 +1,5 @@
 // control_socket_ocr.go - OCR-driven automation methods for ControlServer
+
 package main
 
 import (
