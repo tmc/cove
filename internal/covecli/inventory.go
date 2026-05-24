@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 )
 
-func Inventory[E any](registry []Spec[E]) []Info {
+func Inventory(registry []Spec) []Info {
 	out := make([]Info, 0, len(registry))
 	for _, spec := range registry {
 		out = append(out, Info{

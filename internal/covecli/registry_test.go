@@ -3,7 +3,7 @@ package covecli
 import "testing"
 
 func TestLookup(t *testing.T) {
-	registry := []Spec[int]{
+	registry := []Spec{
 		{Name: "run", Dispatch: DispatchLate},
 		{Name: "list", Aliases: []string{"ls"}, Dispatch: DispatchLate},
 	}
@@ -33,7 +33,7 @@ func TestLookup(t *testing.T) {
 }
 
 func TestNames(t *testing.T) {
-	registry := []Spec[int]{
+	registry := []Spec{
 		{Name: "run"},
 		{Name: "list", Aliases: []string{"ls"}},
 	}

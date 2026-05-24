@@ -77,7 +77,7 @@ func currentRunConfig() RunConfig {
 }
 
 func currentRunConfigForEnv(env commandEnv) RunConfig {
-	env = env.withDefaultIO()
+	env = env.WithDefaultIO()
 	cfg := currentRunConfig()
 	cfg.Stdout = env.Stdout
 	cfg.Stderr = env.Stderr

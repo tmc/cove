@@ -1,14 +1,14 @@
 package covecli
 
-type Spec[E any] struct {
+type Spec struct {
 	Name     string
 	Aliases  []string
 	Summary  string
 	Dispatch Dispatch
-	Run      func(env E, name string, args []string) int
+	Run      func(env Env, name string, args []string) int
 }
 
-func Lookup[E any](registry []Spec[E], name string) (*Spec[E], bool) {
+func Lookup(registry []Spec, name string) (*Spec, bool) {
 	for i := range registry {
 		spec := &registry[i]
 		if name == spec.Name {
@@ -23,7 +23,7 @@ func Lookup[E any](registry []Spec[E], name string) (*Spec[E], bool) {
 	return nil, false
 }
 
-func Names[E any](registry []Spec[E]) []string {
+func Names(registry []Spec) []string {
 	var names []string
 	for _, spec := range registry {
 		names = append(names, spec.Name)
