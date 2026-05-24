@@ -331,3 +331,15 @@ func asInt64(t *testing.T, v any) int64 {
 		return 0
 	}
 }
+
+func TestEmitImageGCKeepUnknownReasonIsNoOp(t *testing.T) {
+	emitImageGCKeep(ImageRef{}, "frobnicate", time.Now())
+}
+
+func TestEmitImageGCKeepInUseDoesNotPanic(t *testing.T) {
+	emitImageGCKeep(ImageRef{Name: "demo", Tag: "v1"}, "in_use", time.Now())
+}
+
+func TestEmitImageGCKeepRecentDoesNotPanic(t *testing.T) {
+	emitImageGCKeep(ImageRef{Name: "demo", Tag: "v1"}, "recent", time.Now())
+}
