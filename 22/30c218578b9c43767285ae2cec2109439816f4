@@ -1,0 +1,11 @@
+commit: 2230c218578b9c43767285ae2cec2109439816f4
+date: 2026-05-24T11:06:48Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 7417
+ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-vzkit-disk-attachment-v2-review.md
+gates: go build ./...; go test ./...; go vet ./...
+no-push: true
+apple-dependency-local-commit: 352f5b7c
