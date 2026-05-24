@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,8 @@ var (
 
 type RunConfig struct {
 	VM                       vmSelection
+	Stdout                   io.Writer
+	Stderr                   io.Writer
 	Linux                    bool
 	Windows                  bool
 	Disposable               bool
@@ -57,6 +60,8 @@ type RunConfig struct {
 func currentRunConfig() RunConfig {
 	return RunConfig{
 		VM:                       currentVMSelection(),
+		Stdout:                   os.Stdout,
+		Stderr:                   os.Stderr,
 		Linux:                    linuxMode,
 		Windows:                  windowsMode,
 		Disposable:               disposableMode,
@@ -71,11 +76,29 @@ func currentRunConfig() RunConfig {
 	}
 }
 
+func currentRunConfigForEnv(env commandEnv) RunConfig {
+	env = env.withDefaultIO()
+	cfg := currentRunConfig()
+	cfg.Stdout = env.Stdout
+	cfg.Stderr = env.Stderr
+	return cfg
+}
+
 func runCurrentVM() error {
 	return runVMWithConfig(currentRunConfig())
 }
 
+func runCurrentVMWithEnv(env commandEnv) error {
+	return runVMWithConfig(currentRunConfigForEnv(env))
+}
+
 func runVMWithConfig(cfg RunConfig) error {
+	if cfg.Stdout == nil {
+		cfg.Stdout = os.Stdout
+	}
+	if cfg.Stderr == nil {
+		cfg.Stderr = os.Stderr
+	}
 	originalVMName := cfg.VM.Name
 	originalVMDir := cfg.VM.Directory
 
@@ -97,7 +120,7 @@ func runVMWithConfig(cfg RunConfig) error {
 		// workstation and is intentionally excluded.
 		bundle, err := beginRunBundle(cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: run bundle init: %v\n", err)
+			fmt.Fprintf(cfg.Stderr, "warning: run bundle init: %v\n", err)
 		}
 		writeActiveNetworkPolicyAudit(bundle)
 
@@ -117,7 +140,7 @@ func runVMWithConfig(cfg RunConfig) error {
 
 	metricsRun, err := beginStandaloneMetricsRun(originalVMName, "", originalVMDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: metrics init: %v\n", err)
+		fmt.Fprintf(cfg.Stderr, "warning: metrics init: %v\n", err)
 	}
 	writeActiveNetworkPolicyAudit(metricsRun)
 	defer finishStandaloneMetricsRun(metricsRun)
@@ -166,15 +189,15 @@ func runVMWithConfig(cfg RunConfig) error {
 			}()
 		}
 		if cfg.RollbackSnapshot != "" {
-			fmt.Printf("Rollback snapshot: %s\n", cfg.RollbackSnapshot)
-			fmt.Printf("Rollback clone: %s\n", clone.Name)
-			fmt.Printf("Rollback path: %s\n", clone.Path)
+			fmt.Fprintf(cfg.Stdout, "Rollback snapshot: %s\n", cfg.RollbackSnapshot)
+			fmt.Fprintf(cfg.Stdout, "Rollback clone: %s\n", clone.Name)
+			fmt.Fprintf(cfg.Stdout, "Rollback path: %s\n", clone.Path)
 		} else {
-			fmt.Printf("Disposable clone: %s\n", clone.Name)
-			fmt.Printf("Disposable path: %s\n", clone.Path)
+			fmt.Fprintf(cfg.Stdout, "Disposable clone: %s\n", clone.Name)
+			fmt.Fprintf(cfg.Stdout, "Disposable path: %s\n", clone.Path)
 		}
 		if cfg.SystemDiskAttachment == systemDiskAttachmentTemporaryRAM {
-			fmt.Printf("System disk attachment: %s\n", cfg.SystemDiskAttachment)
+			fmt.Fprintf(cfg.Stdout, "System disk attachment: %s\n", cfg.SystemDiskAttachment)
 		}
 		defer func() {
 			vmName = originalVMName
@@ -189,7 +212,7 @@ func runVMWithConfig(cfg RunConfig) error {
 	noteVMRuntimePhase(vmDir, "starting", "configuring")
 	defer func() {
 		if releaseErr := lock.Release(); releaseErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
+			fmt.Fprintf(cfg.Stderr, "warning: release run.lock: %v\n", releaseErr)
 		}
 	}()
 
@@ -212,11 +235,11 @@ func runVMWithConfig(cfg RunConfig) error {
 
 	if temporaryClone {
 		if cleanupErr := cleanupDisposableCloneHook(clone.Path); cleanupErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: cleanup disposable clone: %v\n", cleanupErr)
+			fmt.Fprintf(cfg.Stderr, "warning: cleanup disposable clone: %v\n", cleanupErr)
 		} else if cfg.RollbackSnapshot != "" {
-			fmt.Printf("Rollback clone removed: %s\n", clone.Name)
+			fmt.Fprintf(cfg.Stdout, "Rollback clone removed: %s\n", clone.Name)
 		} else {
-			fmt.Printf("Disposable clone removed: %s\n", clone.Name)
+			fmt.Fprintf(cfg.Stdout, "Disposable clone removed: %s\n", clone.Name)
 		}
 	}
 
@@ -435,7 +458,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		return fmt.Errorf("cove run -fork-from: probe parent run.lock: %w", err)
 	}
 	if releaseErr := parentLock.Release(); releaseErr != nil {
-		fmt.Fprintf(os.Stderr, "warning: release parent run.lock: %v\n", releaseErr)
+		fmt.Fprintf(cfg.Stderr, "warning: release parent run.lock: %v\n", releaseErr)
 	}
 	if err := validateEphemeralForkVMParent(cfg.EphemeralForkParent, parentDir); err != nil {
 		return err
@@ -451,9 +474,9 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		return err
 	}
 
-	fmt.Printf("Ephemeral fork: %s\n", fork.Name)
-	fmt.Printf("Ephemeral path: %s\n", fork.Path)
-	fmt.Printf("Parent disk:    %s (RAM-overlay, read-only)\n", vmPrimaryDiskPath(parentDir))
+	fmt.Fprintf(cfg.Stdout, "Ephemeral fork: %s\n", fork.Name)
+	fmt.Fprintf(cfg.Stdout, "Ephemeral path: %s\n", fork.Path)
+	fmt.Fprintf(cfg.Stdout, "Parent disk:    %s (RAM-overlay, read-only)\n", vmPrimaryDiskPath(parentDir))
 	emitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
 		"child_name": fork.Name,
 		"child_path": fork.Path,
@@ -485,7 +508,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	}
 	defer func() {
 		if releaseErr := lock.Release(); releaseErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
+			fmt.Fprintf(cfg.Stderr, "warning: release run.lock: %v\n", releaseErr)
 		}
 	}()
 
@@ -499,13 +522,13 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	}
 
 	if cfg.EphemeralForkKeep {
-		fmt.Printf("Ephemeral fork retained (-keep): %s\n", fork.Path)
+		fmt.Fprintf(cfg.Stdout, "Ephemeral fork retained (-keep): %s\n", fork.Path)
 		return runErr
 	}
 	if cleanupErr := cleanupEphemeralForkHook(fork.Path); cleanupErr != nil {
-		fmt.Fprintf(os.Stderr, "warning: cleanup ephemeral fork: %v\n", cleanupErr)
+		fmt.Fprintf(cfg.Stderr, "warning: cleanup ephemeral fork: %v\n", cleanupErr)
 	} else {
-		fmt.Printf("Ephemeral fork removed: %s\n", fork.Name)
+		fmt.Fprintf(cfg.Stdout, "Ephemeral fork removed: %s\n", fork.Name)
 	}
 	return runErr
 }

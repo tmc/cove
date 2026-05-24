@@ -326,9 +326,8 @@ func runPITCommandSpec(env commandEnv, _ string, args []string) int {
 func runRosettaCommandSpec(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleRosettaCommand(args))
 }
-func runRunCommand(_ commandEnv, _ string, _ []string) int {
-	handleRun()
-	return 0
+func runRunCommand(env commandEnv, _ string, _ []string) int {
+	return commandError(env, handleRun(env))
 }
 func runSnapshotCommandSpec(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleSnapshotCommand(env, args))
@@ -451,8 +450,8 @@ func runLegacyInstallFlag() int {
 
 func runLegacyRunFlag() int {
 	fmt.Fprintf(os.Stderr, "warning: -run flag is deprecated, use 'cove run' command instead\n")
-	handleRun()
-	return 0
+	env := newCommandEnv()
+	return commandError(env, handleRun(env))
 }
 
 func rerunVMDirForPostCommand(cmd string, args []string) int {

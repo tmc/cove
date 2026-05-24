@@ -106,6 +106,21 @@ func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 	}
 }
 
+func TestCurrentRunConfigForEnvUsesCommandWriters(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	env := commandTestEnv()
+	env.Stdout = &stdout
+	env.Stderr = &stderr
+
+	cfg := currentRunConfigForEnv(env)
+	if cfg.Stdout != &stdout {
+		t.Fatalf("Stdout = %T, want command env stdout", cfg.Stdout)
+	}
+	if cfg.Stderr != &stderr {
+		t.Fatalf("Stderr = %T, want command env stderr", cfg.Stderr)
+	}
+}
+
 func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 	stubAcquireRunLockHook(t)
 	oldVMName := vmName
