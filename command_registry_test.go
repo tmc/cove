@@ -59,10 +59,10 @@ func TestCommandNamesContainsCoreCommands(t *testing.T) {
 func TestRunRegisteredCommandNilSpec(t *testing.T) {
 	tests := []struct {
 		name string
-		spec *covecli.Spec[commandEnv]
+		spec *covecli.Spec
 	}{
 		{name: "nil spec", spec: nil},
-		{name: "spec with nil Run", spec: &covecli.Spec[commandEnv]{Name: "x"}},
+		{name: "spec with nil Run", spec: &covecli.Spec{Name: "x"}},
 	}
 	env := commandEnv{}
 	for _, tt := range tests {
@@ -77,7 +77,7 @@ func TestRunRegisteredCommandNilSpec(t *testing.T) {
 
 func TestRunRegisteredCommandRunsSpec(t *testing.T) {
 	called := false
-	spec := &covecli.Spec[commandEnv]{
+	spec := &covecli.Spec{
 		Name: "fake",
 		Run: func(env commandEnv, name string, args []string) int {
 			called = true

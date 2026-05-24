@@ -7,7 +7,7 @@ import (
 )
 
 func TestInventory(t *testing.T) {
-	registry := []Spec[int]{
+	registry := []Spec{
 		{Name: "commands", Summary: "Print inventory", Dispatch: DispatchEarly},
 		{Name: "list", Aliases: []string{"ls"}, Summary: "List VMs", Dispatch: DispatchLate},
 		{Name: "run", Summary: "Run VM", Dispatch: DispatchLate},
