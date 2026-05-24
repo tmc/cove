@@ -5,7 +5,7 @@ cove runs on Apple Silicon Macs and uses Apple's Virtualization.framework.
 ## Requirements
 
 - Apple Silicon Mac (M1 or newer).
-- macOS 12 Monterey or newer.
+- macOS 14.0+ (Sonoma or later).
 - Xcode Command Line Tools.
 - Enough free disk for the restore image and VM disk. A fresh macOS install commonly needs tens of GB.
 
