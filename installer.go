@@ -22,6 +22,7 @@ import (
 	configx "github.com/tmc/apple/x/vzkit/config"
 	"github.com/tmc/apple/x/vzkit/disk"
 	identityx "github.com/tmc/apple/x/vzkit/identity"
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -1386,7 +1387,7 @@ func createBlockDeviceConfiguration(ctx context.Context, diskPath string) (vz.VZ
 
 	diskURL := foundation.NewURLFileURLWithPath(diskPath)
 	diskURL.Retain() // Create disk attachment
-	diskAttachment, err := newDiskAttachment(diskURL, false, DiskCacheEphemeral)
+	diskAttachment, err := newDiskAttachment(diskURL, false, storagex.CacheEphemeral)
 	if err != nil {
 		return vz.VZVirtioBlockDeviceConfiguration{}, fmt.Errorf("failed to create disk attachment: %w", err)
 	}

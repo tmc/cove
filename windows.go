@@ -308,9 +308,9 @@ func windowsUSBStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConf
 	}
 	url.Retain()
 
-	policy := DiskCacheDurable
+	policy := storagex.CacheDurable
 	if readOnly {
-		policy = DiskCacheReadOnly
+		policy = storagex.CacheReadOnly
 	}
 	attachment, err := newDiskAttachment(url, readOnly, policy)
 	if err != nil {

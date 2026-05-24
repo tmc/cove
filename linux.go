@@ -148,7 +148,7 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 	// (*vmrun.RunConfig).ResolveISO before calling the builder.
 	if rc.ISOPath != "" {
 		isoURL := foundation.NewURLFileURLWithPath(rc.ISOPath)
-		isoAttachment, err := newDiskAttachment(isoURL, true, DiskCacheReadOnly)
+		isoAttachment, err := newDiskAttachment(isoURL, true, storagex.CacheReadOnly)
 		if err != nil {
 			return config, fmt.Errorf("failed to create ISO attachment: %w", err)
 		}

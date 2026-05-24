@@ -31,6 +31,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
 	configx "github.com/tmc/apple/x/vzkit/config"
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 	agentstate "github.com/tmc/cove/internal/agent"
 	"github.com/tmc/cove/internal/vmconfig"
 )
@@ -515,7 +516,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	// block device won't be visible to cloud-init. USB mass storage is
 	// universally supported in the initramfs.
 	cloudInitURL := foundation.NewURLFileURLWithPath(cloudInitISO)
-	cloudInitAttachment, err := newDiskAttachment(cloudInitURL, true, DiskCacheReadOnly)
+	cloudInitAttachment, err := newDiskAttachment(cloudInitURL, true, storagex.CacheReadOnly)
 	if err != nil {
 		return config, fmt.Errorf("create cloud-init attachment: %w", err)
 	}
@@ -525,7 +526,7 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 
 	// Installation ISO as USB mass storage (EFI firmware can boot from USB)
 	isoURL := foundation.NewURLFileURLWithPath(installISO)
-	isoAttachment, err := newDiskAttachment(isoURL, true, DiskCacheReadOnly)
+	isoAttachment, err := newDiskAttachment(isoURL, true, storagex.CacheReadOnly)
 	if err != nil {
 		return config, fmt.Errorf("create ISO attachment: %w", err)
 	}
@@ -618,8 +619,8 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 	return config, nil
 }
 
-func linuxInstallDiskCachePolicy() DiskCachePolicy {
-	return DiskCacheDurable
+func linuxInstallDiskCachePolicy() storagex.CachePolicy {
+	return storagex.CacheDurable
 }
 
 // createLinuxInstallBootLoader creates a VZLinuxBootLoader for installer kernel/initrd.

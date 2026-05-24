@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 	pvz "github.com/tmc/apple/private/virtualization"
+	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/apple/x/vzkit/storagehotplug"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 
@@ -298,6 +299,19 @@ func (s *ControlServer) handleDiskSwap(req RuntimeDiskActionRequest) *controlpb.
 		Disk:    updated.Info,
 		Message: msg,
 	})
+}
+
+func newRuntimeDiskImageAttachment(path string, readOnly bool) (pvz.VZDiskImageStorageDeviceAttachment, error) {
+	url := foundation.NewURLFileURLWithPath(path)
+	if url.ID == 0 {
+		return pvz.VZDiskImageStorageDeviceAttachment{}, fmt.Errorf("create file url")
+	}
+	attachment, err := newDiskAttachment(url, readOnly, storagex.CacheDurable)
+	if err != nil {
+		return pvz.VZDiskImageStorageDeviceAttachment{}, fmt.Errorf("create disk image attachment: %w", err)
+	}
+	attachment.Retain()
+	return pvz.VZDiskImageStorageDeviceAttachmentFromID(attachment.ID), nil
 }
 
 func (s *ControlServer) handleDiskResize(req RuntimeDiskActionRequest) *controlpb.ControlResponse {
