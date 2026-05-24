@@ -3,8 +3,6 @@ package nixos
 import (
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -19,51 +17,8 @@ const (
 	InstallScript = "install-nixos.sh"
 )
 
-func DefaultCacheDir() (string, error) {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "vz"), nil
-}
-
 func CachedISOPath(cacheDir string) string {
 	return filepath.Join(cacheDir, ISOName)
-}
-
-func EnsureISO(cacheDir string) (string, error) {
-	if cacheDir == "" {
-		var err error
-		cacheDir, err = DefaultCacheDir()
-		if err != nil {
-			return "", fmt.Errorf("cache dir: %w", err)
-		}
-	}
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return "", fmt.Errorf("create cache dir: %w", err)
-	}
-	path := CachedISOPath(cacheDir)
-	if info, err := os.Stat(path); err == nil && info.Size() > MinISOSize {
-		return path, nil
-	}
-	return path, DownloadISO(path)
-}
-
-func DownloadISO(path string) error {
-	cmd := exec.Command("curl", "-L", "-C", "-", "-#", "-o", path, ISOURL)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("download nixos iso: %w", err)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("stat nixos iso: %w", err)
-	}
-	if info.Size() < MinISOSize {
-		return fmt.Errorf("nixos iso too small: %d bytes", info.Size())
-	}
-	return nil
 }
 
 func CheckISOURL(client *http.Client) error {
