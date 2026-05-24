@@ -1,0 +1,9 @@
+commit: 729051a19e3b6cf44bad75ea57b4124795210ab4
+date: 2026-05-24T09:46:18Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 80447
+ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-covecli-suggest-algorithm-v2-review.md
+gates: go build ./...; go test ./...; go vet ./...
