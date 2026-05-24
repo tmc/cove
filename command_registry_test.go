@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/covecli"
 )
 
 func TestLookupCommand(t *testing.T) {
@@ -57,10 +59,10 @@ func TestCommandNamesContainsCoreCommands(t *testing.T) {
 func TestRunRegisteredCommandNilSpec(t *testing.T) {
 	tests := []struct {
 		name string
-		spec *commandSpec
+		spec *covecli.Spec[commandEnv]
 	}{
 		{name: "nil spec", spec: nil},
-		{name: "spec with nil Run", spec: &commandSpec{Name: "x"}},
+		{name: "spec with nil Run", spec: &covecli.Spec[commandEnv]{Name: "x"}},
 	}
 	env := commandEnv{}
 	for _, tt := range tests {
@@ -75,7 +77,7 @@ func TestRunRegisteredCommandNilSpec(t *testing.T) {
 
 func TestRunRegisteredCommandRunsSpec(t *testing.T) {
 	called := false
-	spec := &commandSpec{
+	spec := &covecli.Spec[commandEnv]{
 		Name: "fake",
 		Run: func(env commandEnv, name string, args []string) int {
 			called = true

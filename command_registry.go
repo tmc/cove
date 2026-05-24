@@ -13,15 +13,7 @@ import (
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
-type commandSpec struct {
-	Name     string
-	Aliases  []string
-	Summary  string
-	Dispatch covecli.Dispatch
-	Run      func(env commandEnv, name string, args []string) int
-}
-
-var commandRegistry = []commandSpec{
+var commandRegistry = []covecli.Spec[commandEnv]{
 	{Name: "action", Summary: "Preflight helpers for private GitHub Actions runner images", Dispatch: covecli.DispatchPreUI, Run: runActionCommand},
 	{Name: "agent-sandbox", Summary: "Run a computer-use provider loop in a fresh VM fork", Dispatch: covecli.DispatchEarly, Run: runAgentSandboxCommand},
 	{Name: "agent-upgrade", Aliases: []string{"upgrade-agent"}, Summary: "Live-upgrade vz-agent in a running VM", Dispatch: covecli.DispatchEarly, Run: runAgentUpgradeCommand},
@@ -97,32 +89,15 @@ var commandRegistry = []commandSpec{
 	{Name: "vzscript", Summary: "Run guest-agent and UI automation scripts", Dispatch: covecli.DispatchEarly, Run: runVZScriptCommand},
 }
 
-func lookupCommand(name string) (*commandSpec, bool) {
-	for i := range commandRegistry {
-		spec := &commandRegistry[i]
-		if name == spec.Name {
-			return spec, true
-		}
-		for _, alias := range spec.Aliases {
-			if name == alias {
-				return spec, true
-			}
-		}
-	}
-	return nil, false
+func lookupCommand(name string) (*covecli.Spec[commandEnv], bool) {
+	return covecli.Lookup(commandRegistry, name)
 }
 
 func commandNames() []string {
-	var names []string
-	for _, spec := range commandRegistry {
-		names = append(names, spec.Name)
-		names = append(names, spec.Aliases...)
-	}
-	names = append(names, "help")
-	return names
+	return covecli.Names(commandRegistry)
 }
 
-func runRegisteredCommand(env commandEnv, spec *commandSpec, name string, args []string) int {
+func runRegisteredCommand(env commandEnv, spec *covecli.Spec[commandEnv], name string, args []string) int {
 	env = env.withDefaultIO()
 	if spec == nil || spec.Run == nil {
 		if spec != nil && spec.Name == "commands" {
