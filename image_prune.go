@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/storagepins"
 )
 
@@ -80,7 +81,7 @@ func PruneImages(opts ImagePruneOptions) (ImagePruneResult, error) {
 	return res, nil
 }
 
-func imagePruneMatches(entry ImageEntry, opts ImagePruneOptions, now time.Time) bool {
+func imagePruneMatches(entry imagestore.Entry, opts ImagePruneOptions, now time.Time) bool {
 	if opts.Filter != "" {
 		if ok, err := filepath.Match(opts.Filter, entry.Ref.Tag); err == nil && ok {
 			return true

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/cove/internal/imagestore"
 )
 
 func TestSearchImagesByRefAndLabels(t *testing.T) {
@@ -144,7 +146,7 @@ func TestWriteImageListJSONEmptyIsArray(t *testing.T) {
 
 func TestWriteImageListJSON(t *testing.T) {
 	created := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
-	entries := []ImageEntry{{
+	entries := []imagestore.Entry{{
 		Ref: ImageRef{Name: "base", Tag: "v1"},
 		Manifest: &ImageManifest{
 			DiskSize:  12,
