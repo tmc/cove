@@ -5,6 +5,7 @@
 // LifecycleContext and TimeoutContext are defined alongside the
 // AgentHost adapter in agent_control.go; they satisfy NetworkHost via
 // the same methods.
+
 package main
 
 import (

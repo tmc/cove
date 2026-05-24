@@ -16,6 +16,7 @@
 // Trust model: the helper is "cove's elevated half." Once installed, it
 // trusts the installing user's cove binary to send sensible manifests, but
 // the manifest schema strictly bounds what it can do — no exec hatch.
+
 package main
 
 import (

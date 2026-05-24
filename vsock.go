@@ -2,6 +2,7 @@
 //
 // Uses VZVirtioSocketDevice from Apple's Virtualization framework to establish
 // bidirectional socket connections with the guest agent over vsock.
+
 package main
 
 import (

@@ -4,6 +4,7 @@
 // it to an OCI registry, depending on the destination shape. `cove image load`
 // keeps the tarball import path for files/stdin; registry imports use
 // `cove image pull`.
+
 package main
 
 import (

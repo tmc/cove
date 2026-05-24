@@ -6,6 +6,7 @@
 // the materialized child is removed on stop via the existing
 // fork_ephemeral.go cleanup machinery (it carries an .ephemeral
 // sentinel for the same reason).
+
 package main
 
 import (

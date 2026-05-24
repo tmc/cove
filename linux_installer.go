@@ -9,6 +9,7 @@
 // - User account with password
 // - SSH server
 // - Hostname
+
 package main
 
 import (

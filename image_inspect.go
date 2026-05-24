@@ -1,4 +1,5 @@
 // image_inspect.go — `cove image inspect <ref>` subcommand.
+
 package main
 
 import (

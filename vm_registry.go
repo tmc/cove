@@ -1,4 +1,5 @@
 // vm_registry.go - VM discovery and management
+
 package main
 
 import (

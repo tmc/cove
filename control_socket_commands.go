@@ -1,6 +1,7 @@
 // control_socket_commands.go - Key code constants and modifier flags for VM control socket.
 //
 // Message types are defined in proto/controlpb/control.proto.
+
 package main
 
 // Common macOS virtual key codes

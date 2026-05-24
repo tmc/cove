@@ -5,6 +5,7 @@
 // nonzero, which is wrong for the golden help path. parseFlagsOrHelp
 // converts ErrHelp into a successful no-op (after printing usage to
 // stdout) so commandError returns 0.
+
 package main
 
 import (

@@ -8,6 +8,7 @@
 //
 // The fast mode uses APFS clonefile which creates a copy-on-write clone that
 // initially takes no additional disk space and only grows as blocks differ.
+
 package main
 
 import (

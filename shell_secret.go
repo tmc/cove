@@ -12,6 +12,7 @@
 // stderr warning ("--secret-env GH_TOKEN overrides --env GH_TOKEN").
 //
 // Empty resolved values are an error (no silent skip).
+
 package main
 
 import (

@@ -10,6 +10,7 @@
 //	    ├── disk.img           # Main disk image
 //	    ├── AuxiliaryStorage   # macOS NVRAM
 //	    └── vm.vzsave          # Saved VM state (macOS 14+)
+
 package main
 
 import (

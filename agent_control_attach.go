@@ -22,6 +22,7 @@
 // The two non-streaming commands are testable without a live VM via the
 // inner *JSONFor variants, which take the agent client as an interface so a
 // fake can stand in for an *agentstate.AgentClient.
+
 package main
 
 import (

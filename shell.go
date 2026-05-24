@@ -5,6 +5,7 @@
 // to ~/.vz/vms/<vm>/control.sock. The VM-owning cove process brokers each
 // frame to the in-process guest agent (Slice 1, agent_control_attach.go);
 // this client owns the host TTY, signal forwarding, and stream pumping.
+
 package main
 
 import (

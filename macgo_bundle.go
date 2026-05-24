@@ -5,6 +5,7 @@
 // macgo remains opt-in until the bundled launch path stops failing in the
 // current purego AppKit runtime. Helper and runtime commands stay on the plain
 // autosign path by default.
+
 package main
 
 import (

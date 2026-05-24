@@ -9,6 +9,7 @@
 // Each operation has two variants: an "inject" function that writes directly
 // to a mounted disk, and a "stage" function that writes to a staging directory
 // for later application via applyStagedFiles.
+
 package main
 
 import (

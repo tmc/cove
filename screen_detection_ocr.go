@@ -1,4 +1,5 @@
 // screen_detection_ocr.go - OCR-based screen state detection
+
 package main
 
 import (

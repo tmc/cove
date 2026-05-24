@@ -1,4 +1,5 @@
 // setup_assistant.go - Automate macOS Setup Assistant via OCR-driven navigation
+
 package main
 
 import (

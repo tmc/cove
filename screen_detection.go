@@ -1,4 +1,5 @@
 // screen_detection.go - Detect current guest UI state from screenshots
+
 package main
 
 import (
