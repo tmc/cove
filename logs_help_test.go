@@ -18,7 +18,7 @@ func TestParseLogsArgsHelpReturnsErrFlagHelp(t *testing.T) {
 }
 
 func TestParseLogsArgsUnknownFlag(t *testing.T) {
-	_, err := parseLogsArgs(commandEnv{Stderr: new(bytes.Buffer)}, []string{"-frobnicate"})
+	_, err := parseLogsArgs(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}, []string{"-frobnicate"})
 	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
 		t.Fatalf("err = %v, want parse error", err)
 	}

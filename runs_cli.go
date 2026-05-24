@@ -22,29 +22,29 @@ type runsShowErrorOutput struct {
 	Error string `json:"error"`
 }
 
-func handleRunsCommand(args []string) error {
+func handleRunsCommand(env commandEnv, args []string) error {
 	if len(args) == 0 || isHelpArg(args[0]) {
-		printRunsUsage(os.Stdout)
+		printRunsUsage(env.Stdout)
 		return nil
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "list", "ls":
-		return runRunsList(rest)
+		return runRunsList(env, rest)
 	case "show":
 		if len(rest) > 0 && isHelpArg(rest[0]) {
-			printRunsShowUsage(os.Stdout)
+			printRunsShowUsage(env.Stdout)
 			return nil
 		}
-		return runRunsShow(rest)
+		return runRunsShow(env, rest)
 	case "export":
 		if len(rest) > 0 && isHelpArg(rest[0]) {
-			printRunsExportUsage(os.Stdout)
+			printRunsExportUsage(env.Stdout)
 			return nil
 		}
-		return runRunsExport(rest)
+		return runRunsExport(env, rest)
 	default:
-		printRunsUsage(os.Stderr)
+		printRunsUsage(env.Stderr)
 		return fmt.Errorf("unknown runs subcommand: %s", sub)
 	}
 }
@@ -58,9 +58,9 @@ Subcommands:
   export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]`)
 }
 
-func runRunsList(args []string) error {
+func runRunsList(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("runs list", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	fs.Usage = func() { printRunsListUsage(fs.Output()) }
 	limit := fs.Int("limit", 25, "maximum runs to show")
 	sinceText := fs.String("since", "", "only show runs started within duration")
@@ -102,11 +102,11 @@ func runRunsList(args []string) error {
 		return fmt.Errorf("runs list: choose only one of --json or --ndjson")
 	}
 	if *jsonOut {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(env.Stdout)
 		return enc.Encode(summaries)
 	}
 	if *ndjsonOut {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(env.Stdout)
 		for _, summary := range summaries {
 			if err := enc.Encode(summary); err != nil {
 				return fmt.Errorf("runs list ndjson: %w", err)
@@ -114,7 +114,7 @@ func runRunsList(args []string) error {
 		}
 		return nil
 	}
-	return printRunsTable(os.Stdout, summaries)
+	return printRunsTable(env.Stdout, summaries)
 }
 
 func printRunsListUsage(w io.Writer) {
@@ -145,7 +145,7 @@ Export run artifacts as JSON, a GitHub Actions markdown summary, or a gzip
 tarball. --include-guest copies additional guest paths into tar exports.`)
 }
 
-func runRunsShow(args []string) error {
+func runRunsShow(env commandEnv, args []string) error {
 	prefix, jsonOut, err := parseRunsShowArgs(args)
 	if err != nil {
 		return err
@@ -156,7 +156,7 @@ func runRunsShow(args []string) error {
 	show, err := runs.LoadShow(vmconfig.RunsDir(), prefix)
 	if err != nil {
 		if jsonOut {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(env.Stdout)
 			enc.SetIndent("", "  ")
 			if jsonErr := enc.Encode(runsShowErrorOutput{
 				RunID: prefix,
@@ -168,15 +168,15 @@ func runRunsShow(args []string) error {
 		return err
 	}
 	if jsonOut {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(env.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(show.Events)
 	}
-	return runs.RenderShow(os.Stdout, show)
+	return runs.RenderShow(env.Stdout, show)
 }
 
-func runRunsExport(args []string) error {
-	return runRunsExportWith(context.Background(), args, vmconfig.RunsDir(), os.Stdout, newControlCpAgent)
+func runRunsExport(env commandEnv, args []string) error {
+	return runRunsExportWith(context.Background(), args, vmconfig.RunsDir(), env.Stdout, newControlCpAgent)
 }
 
 func runRunsExportWith(ctx context.Context, args []string, root string, out io.Writer, newAgent func(string) cpAgent) error {
