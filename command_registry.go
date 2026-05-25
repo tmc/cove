@@ -208,7 +208,7 @@ func runPushCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePush(args))
 }
 func runRecordingCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleRecordingCommand(args))
+	return commandError(env, handleRecordingCommand(env, args))
 }
 func runQuotaCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleQuotaCommand(args))
