@@ -464,14 +464,14 @@ func main() {
 		return
 	}
 	if installVM {
-		os.Exit(runLegacyInstallFlag())
+		os.Exit(runLegacyInstallFlag(newCommandEnv()))
 	}
 	if utmBundlePath != "" {
 		handleUTM()
 		return
 	}
 	if runVM {
-		os.Exit(runLegacyRunFlag())
+		os.Exit(runLegacyRunFlag(newCommandEnv()))
 	}
 	if flag.NArg() > 0 {
 		cmd := flag.Arg(0)

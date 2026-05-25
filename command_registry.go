@@ -411,14 +411,13 @@ func runVMSubcommand(_ commandEnv, name string, args []string) int {
 	return 0
 }
 
-func runLegacyInstallFlag() int {
-	fmt.Fprintf(os.Stderr, "warning: -install flag is deprecated, use 'cove install' command instead\n")
-	return runInstallCommand(newCommandEnv(), "install", nil)
+func runLegacyInstallFlag(env commandEnv) int {
+	fmt.Fprintf(env.Stderr, "warning: -install flag is deprecated, use 'cove install' command instead\n")
+	return runInstallCommand(env, "install", nil)
 }
 
-func runLegacyRunFlag() int {
-	fmt.Fprintf(os.Stderr, "warning: -run flag is deprecated, use 'cove run' command instead\n")
-	env := newCommandEnv()
+func runLegacyRunFlag(env commandEnv) int {
+	fmt.Fprintf(env.Stderr, "warning: -run flag is deprecated, use 'cove run' command instead\n")
 	return commandError(env, handleRun(env))
 }
 
