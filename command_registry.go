@@ -211,7 +211,7 @@ func runRecordingCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleRecordingCommand(env, args))
 }
 func runQuotaCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleQuotaCommand(args))
+	return commandError(env, handleQuotaCommand(env, args))
 }
 func runUnpinCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleUnpinCommand(env, args))
