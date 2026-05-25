@@ -185,21 +185,21 @@ func loadQuotaPath(vm string) (string, vmquota.Quota, error) {
 	return dir, q, nil
 }
 
-func persistInstallQuota(dir string) {
+func persistInstallQuota(w io.Writer, dir string) {
 	q := vmquota.Quota{CPUs: cpuCount, MemoryGB: memoryGB, DiskGB: diskSizeGB}
 	if err := vmquota.Save(dir, q); err != nil {
-		fmt.Printf("warning: save quota config: %v\n", err)
+		fmt.Fprintf(w, "warning: save quota config: %v\n", err)
 	}
 }
 
-func applyInstallDiskQuota(dir string) error {
+func applyInstallDiskQuota(w io.Writer, dir string) error {
 	if diskSizeGB == 0 {
 		return nil
 	}
 	if err := applyAPFSQuotaForInstall(dir, diskSizeGB); err != nil {
 		if errors.Is(err, vmquota.ErrAPFSQuotaUnsupported) ||
 			strings.Contains(err.Error(), `did not recognize APFS verb "setQuota"`) {
-			fmt.Printf("warning: APFS directory quotas are not supported on this host; continuing without host disk quota: %v\n", err)
+			fmt.Fprintf(w, "warning: APFS directory quotas are not supported on this host; continuing without host disk quota: %v\n", err)
 			return nil
 		}
 		return err

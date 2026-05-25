@@ -239,7 +239,10 @@ func DefaultLinuxProvisionConfig() LinuxProvisionConfig {
 }
 
 // installLinuxVM performs automated Linux (Ubuntu) installation.
-func installLinuxVM() error {
+func installLinuxVM(quotaWarnings io.Writer) error {
+	if quotaWarnings == nil {
+		quotaWarnings = io.Discard
+	}
 	fmt.Println("=== Linux VM Installer ===")
 
 	resolvedDiskPath := diskPath
@@ -288,8 +291,8 @@ func installLinuxVM() error {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
 	saveHardwareConfig(vmDir)
-	persistInstallQuota(vmDir)
-	if err := applyInstallDiskQuota(vmDir); err != nil {
+	persistInstallQuota(quotaWarnings, vmDir)
+	if err := applyInstallDiskQuota(quotaWarnings, vmDir); err != nil {
 		return err
 	}
 
@@ -1812,6 +1815,6 @@ func hashPassword(password string) string {
 }
 
 // handleLinuxInstall handles the "install -linux" command.
-func handleLinuxInstall() error {
-	return installLinuxVM()
+func handleLinuxInstall(quotaWarnings io.Writer) error {
+	return installLinuxVM(quotaWarnings)
 }
