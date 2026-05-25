@@ -164,7 +164,7 @@ func runControlAliasCommand(env commandEnv, name string, args []string) int {
 	return commandError(env, ctlCommand(controlAliasArgs(name, args)))
 }
 func runDaemonCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, daemonCommand(args))
+	return commandError(env, daemonCommand(env, args))
 }
 func runDiffCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, diffCommand(args))
