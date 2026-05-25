@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -521,7 +522,7 @@ func TestRerunVMDirForPostCommandSkipsStorage(t *testing.T) {
 	})
 	vmName = "missing-post-storage-vm"
 	vmDir = ""
-	if code := rerunVMDirForPostCommand("storage", nil); code != 0 {
+	if code := rerunVMDirForPostCommand(commandTestEnv(), "storage", nil); code != 0 {
 		t.Fatalf("rerunVMDirForPostCommand(storage) = %d, want 0", code)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), vmName)); !os.IsNotExist(err) {
@@ -537,7 +538,7 @@ func TestRerunVMDirForPostCommandSkipsRunForkFrom(t *testing.T) {
 	})
 	vmName = "missing-run-fork-child"
 	vmDir = ""
-	if code := rerunVMDirForPostCommand("run", []string{"-fork-from", "missing:image"}); code != 0 {
+	if code := rerunVMDirForPostCommand(commandTestEnv(), "run", []string{"-fork-from", "missing:image"}); code != 0 {
 		t.Fatalf("rerunVMDirForPostCommand(run -fork-from) = %d, want 0", code)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), vmName)); !os.IsNotExist(err) {
@@ -553,8 +554,12 @@ func TestRerunVMDirForPostCommandRunRequiresExistingVM(t *testing.T) {
 	})
 	vmName = "missing-post-run-vm"
 	vmDir = ""
-	if code := rerunVMDirForPostCommand("run", []string{"-vm", vmName, "-headless"}); code == 0 {
+	env := commandTestEnv()
+	if code := rerunVMDirForPostCommand(env, "run", []string{"-vm", vmName, "-headless"}); code == 0 {
 		t.Fatal("rerunVMDirForPostCommand(run missing) = 0, want nonzero")
+	}
+	if got := env.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "error:") {
+		t.Fatalf("stderr = %q, want error", got)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), vmName)); !os.IsNotExist(err) {
 		t.Fatalf("run missing VM dir stat = %v, want not exist", err)
@@ -576,7 +581,7 @@ func TestRerunVMDirForPostCommandRunAcceptsExistingVM(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := rerunVMDirForPostCommand("run", []string{"-vm", vmName, "-headless"}); code != 0 {
+	if code := rerunVMDirForPostCommand(commandTestEnv(), "run", []string{"-vm", vmName, "-headless"}); code != 0 {
 		t.Fatalf("rerunVMDirForPostCommand(run existing) = %d, want 0", code)
 	}
 	want, err := filepath.EvalSymlinks(dir)
@@ -600,7 +605,7 @@ func TestRerunVMDirForPostCommandSkipsUnknownCommand(t *testing.T) {
 	})
 	vmName = "missing-unknown-command"
 	vmDir = ""
-	if code := rerunVMDirForPostCommand("gui", []string{"status"}); code != 0 {
+	if code := rerunVMDirForPostCommand(commandTestEnv(), "gui", []string{"status"}); code != 0 {
 		t.Fatalf("rerunVMDirForPostCommand(unknown) = %d, want 0", code)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), vmName)); !os.IsNotExist(err) {
@@ -626,7 +631,7 @@ func TestRerunVMDirForPostCommandSkipsControlSocketCommands(t *testing.T) {
 			})
 			vmName = tt.vm
 			vmDir = ""
-			if code := rerunVMDirForPostCommand(tt.cmd, tt.args); code != 0 {
+			if code := rerunVMDirForPostCommand(commandTestEnv(), tt.cmd, tt.args); code != 0 {
 				t.Fatalf("rerunVMDirForPostCommand(%s) = %d, want 0", tt.cmd, code)
 			}
 			if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), tt.vm)); !os.IsNotExist(err) {
