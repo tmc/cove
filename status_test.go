@@ -123,7 +123,7 @@ func TestStatusPostCommandResolutionDoesNotCreateMissingVMDir(t *testing.T) {
 	vmName = "missing-post-status-vm"
 	vmDir = ""
 
-	if code := rerunVMDirForPostCommand("status", nil); code != 0 {
+	if code := rerunVMDirForPostCommand(commandTestEnv(), "status", nil); code != 0 {
 		t.Fatalf("rerunVMDirForPostCommand(status) = %d, want 0", code)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "missing-post-status-vm")); !os.IsNotExist(err) {

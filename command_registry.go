@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -421,13 +420,13 @@ func runLegacyRunFlag(env commandEnv) int {
 	return commandError(env, handleRun(env))
 }
 
-func rerunVMDirForPostCommand(cmd string, args []string) int {
+func rerunVMDirForPostCommand(env commandEnv, cmd string, args []string) int {
 	cmdArgs := append([]string{cmd}, args...)
 	if vmName == "" || subcommandSkipsVMDir(cmdArgs) {
 		if cmd == "run" && vmName != "" && !argsContainFlag(args, "fork-from") {
 			dir, err := requireExistingRunVMDir(vmName)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				fmt.Fprintf(env.Stderr, "error: %v\n", err)
 				return 1
 			}
 			vmDir = dir
@@ -438,7 +437,7 @@ func rerunVMDirForPostCommand(cmd string, args []string) int {
 	var err error
 	vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(env.Stderr, "error: %v\n", err)
 		return 1
 	}
 	return 0

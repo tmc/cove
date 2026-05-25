@@ -529,7 +529,7 @@ func main() {
 		}
 
 		// Re-resolve vmDir if -vm flag was provided after subcommand.
-		if code := rerunVMDirForPostCommand(cmd, args); code != 0 {
+		if code := rerunVMDirForPostCommand(newCommandEnv(), cmd, args); code != 0 {
 			os.Exit(code)
 		}
 
