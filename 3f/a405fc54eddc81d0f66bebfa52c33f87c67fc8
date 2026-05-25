@@ -1,0 +1,29 @@
+commit: 3fa405fc54eddc81d0f66bebfa52c33f87c67fc8
+date: 2026-05-25T03:55:42Z
+agent: Codex
+model: GPT-5
+tty: not a tty
+pid: 13438
+ITERM_SESSION_ID: w2t4p0:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+
+slice: post-command VM dir commandEnv threading
+chat_instructions: /Users/tmc/tmp/cove-package-extract-current/nlm-chat-instructions-power-go-team-2026-05-24T195154-0700.txt
+next_slice_review: /Users/tmc/tmp/cove-package-extract-current/go-team-next-iteration-after-legacy-flags-2026-05-24T204550-0700.md
+staged_diff_v1: /Users/tmc/tmp/cove-package-extract-current/staged-rerun-vmdir-env-threading-2026-05-24T204930-0700.diff
+precommit_review_v1: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-rerun-vmdir-env-threading-review-2026-05-24T204950-0700.md
+false_blocker_verification: /Users/tmc/tmp/cove-package-extract-current/staged-rerun-vmdir-review-verification-2026-05-24T205135-0700.md
+staged_diff_v2: /Users/tmc/tmp/cove-package-extract-current/staged-rerun-vmdir-env-threading-v2-2026-05-24T205148-0700.diff
+precommit_review_v2: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-rerun-vmdir-env-threading-review-v2-2026-05-24T205204-0700.md
+notebook_verdict: IN after verified false-blocker review
+
+gates:
+- go test . -run 'TestRerunVMDirForPostCommand.*|TestStatusPostCommandResolutionDoesNotCreateMissingVMDir': pass
+- go test . -run 'Test(Command|RunRegistered|NamespaceNoArg|NewCommandEnv)': pass
+- rg 'os\.Stderr' command_registry.go: zero matches
+- git diff --cached --check: pass
+- go build ./...: pass
+- go build -o cove . && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove: pass
+- go vet ./...: pass
+- go test ./...: pass
+
+push: not run
