@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,21 +9,25 @@ import (
 )
 
 func TestHandleBenchCommandNoArgsPrintsUsage(t *testing.T) {
-	if err := handleBenchCommand(nil); err != nil {
+	env := commandTestEnv()
+	if err := handleBenchCommand(env, nil); err != nil {
 		t.Fatalf("handleBenchCommand(nil) = %v, want nil", err)
+	}
+	if got := env.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "Usage: cove bench") {
+		t.Fatalf("stderr = %q, want usage", got)
 	}
 }
 
 func TestHandleBenchCommandHelpArg(t *testing.T) {
 	for _, arg := range []string{"-h", "--help", "help"} {
-		if err := handleBenchCommand([]string{arg}); err != nil {
+		if err := handleBenchCommand(commandTestEnv(), []string{arg}); err != nil {
 			t.Errorf("handleBenchCommand(%q) = %v, want nil", arg, err)
 		}
 	}
 }
 
 func TestHandleBenchCommandUnknownSubcommand(t *testing.T) {
-	err := handleBenchCommand([]string{"bogus"})
+	err := handleBenchCommand(commandTestEnv(), []string{"bogus"})
 	if err == nil {
 		t.Fatal("handleBenchCommand(bogus) = nil, want error")
 	}
@@ -34,14 +37,14 @@ func TestHandleBenchCommandUnknownSubcommand(t *testing.T) {
 }
 
 func TestRunBenchCompetitiveBadFlag(t *testing.T) {
-	err := runBenchCompetitive([]string{"-nope"})
+	err := runBenchCompetitive(commandTestEnv(), []string{"-nope"})
 	if err == nil {
 		t.Fatal("runBenchCompetitive(-nope) = nil, want flag parse error")
 	}
 }
 
 func TestRunBenchCompetitiveHelp(t *testing.T) {
-	if err := runBenchCompetitive([]string{"-h"}); err != nil {
+	if err := runBenchCompetitive(commandTestEnv(), []string{"-h"}); err != nil {
 		t.Fatalf("runBenchCompetitive(-h) = %v, want nil", err)
 	}
 }
@@ -57,11 +60,11 @@ func TestRunBenchCompetitiveDryRunDoesNotWriteDefaults(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
-	out := captureBenchStdout(t, func() {
-		if err := runBenchCompetitive([]string{"-dry-run"}); err != nil {
-			t.Fatalf("runBenchCompetitive(-dry-run): %v", err)
-		}
-	})
+	env := commandTestEnv()
+	if err := runBenchCompetitive(env, []string{"-dry-run"}); err != nil {
+		t.Fatalf("runBenchCompetitive(-dry-run): %v", err)
+	}
+	out := env.Stdout.(*bytes.Buffer).String()
 	if !strings.Contains(out, "benchmark dry run") {
 		t.Fatalf("output = %q, want dry run summary", out)
 	}
@@ -76,29 +79,11 @@ func TestRunBenchCompetitiveDryRunDoesNotWriteDefaults(t *testing.T) {
 }
 
 func TestRunBenchCompetitiveExtraArgs(t *testing.T) {
-	err := runBenchCompetitive([]string{"unexpected"})
+	err := runBenchCompetitive(commandTestEnv(), []string{"unexpected"})
 	if err == nil {
 		t.Fatal("runBenchCompetitive(unexpected) = nil, want error")
 	}
 	if !strings.Contains(err.Error(), "unexpected arguments") {
 		t.Errorf("error = %q, want contains 'unexpected arguments'", err)
 	}
-}
-
-func captureBenchStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe(): %v", err)
-	}
-	os.Stdout = w
-	fn()
-	_ = w.Close()
-	os.Stdout = old
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		t.Fatalf("Copy(): %v", err)
-	}
-	return buf.String()
 }

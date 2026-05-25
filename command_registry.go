@@ -138,7 +138,7 @@ func runAgentUpgradeCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleAgentUpgradeCommand(args))
 }
 func runBenchCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleBenchCommand(args))
+	return commandError(env, handleBenchCommand(env, args))
 }
 func runBuildCommand(env commandEnv, _ string, args []string) int {
 	if len(args) == 0 {
