@@ -66,9 +66,9 @@ func runSupportCommand(ctx context.Context, args ...string) supportCommandResult
 	return supportCommandResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: code, Err: err}
 }
 
-func handleSupportCommand(args []string) error {
+func handleSupportCommand(env commandEnv, args []string) error {
 	if len(args) == 0 || isHelpArg(args[0]) {
-		printSupportUsage(os.Stdout)
+		printSupportUsage(env.Stdout)
 		if len(args) == 0 {
 			return fmt.Errorf("support: command required")
 		}
@@ -76,7 +76,7 @@ func handleSupportCommand(args []string) error {
 	}
 	switch args[0] {
 	case "bundle":
-		return runSupportBundle(args[1:], os.Stdout)
+		return runSupportBundle(env, args[1:])
 	default:
 		return fmt.Errorf("unknown support command: %s", args[0])
 	}
@@ -89,9 +89,9 @@ Commands:
   bundle [-vm NAME] [-out PATH]   Create a redacted diagnostics bundle`)
 }
 
-func runSupportBundle(args []string, stdout io.Writer) error {
+func runSupportBundle(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("support bundle", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	fs.Usage = func() { printSupportBundleUsage(fs.Output()) }
 	vm := fs.String("vm", "", "VM name to include VM-specific diagnostics")
 	out := fs.String("out", "", "output .tar.gz path")
@@ -109,8 +109,8 @@ func runSupportBundle(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "Support bundle written to %s\n", path)
-	fmt.Fprintln(stdout, "Redacted diagnostics include host readiness, command inventory, trace/log discovery, and recent run metadata.")
+	fmt.Fprintf(env.Stdout, "Support bundle written to %s\n", path)
+	fmt.Fprintln(env.Stdout, "Redacted diagnostics include host readiness, command inventory, trace/log discovery, and recent run metadata.")
 	return nil
 }
 

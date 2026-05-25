@@ -249,13 +249,13 @@ func runFirstRunCommand(env commandEnv, _ string, _ []string) int {
 }
 func runSupportCommandSpec(env commandEnv, _ string, args []string) int {
 	if len(args) == 0 {
-		return commandUsageError(env, handleSupportCommand(args))
+		return commandUsageError(env, handleSupportCommand(env, args))
 	}
-	return commandError(env, handleSupportCommand(args))
+	return commandError(env, handleSupportCommand(env, args))
 }
 func runSupportBundleAliasCommand(env commandEnv, _ string, args []string) int {
 	fmt.Fprintln(env.Stderr, "note: support-bundle is an alias for 'cove support bundle'")
-	return commandError(env, runSupportBundle(args, env.Stdout))
+	return commandError(env, runSupportBundle(env, args))
 }
 func runUpCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleUp(env, args))
