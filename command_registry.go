@@ -313,7 +313,7 @@ func runTemplateCommand(_ commandEnv, _ string, args []string) int {
 	return 0
 }
 func runTraceCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleTraceCommand(args))
+	return commandError(env, handleTraceCommand(env, args))
 }
 func runVMCommandSpec(_ commandEnv, _ string, args []string) int {
 	handleVMCommand(args)

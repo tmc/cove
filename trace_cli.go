@@ -52,26 +52,26 @@ type traceStatusOutput struct {
 
 var traceNow = time.Now
 
-func handleTraceCommand(args []string) error {
+func handleTraceCommand(env commandEnv, args []string) error {
 	if len(args) == 0 || isHelpArg(args[0]) {
-		printTraceUsage(os.Stdout)
+		printTraceUsage(env.Stdout)
 		return nil
 	}
 	switch args[0] {
 	case "enable":
-		return runTraceEnable(args[1:])
+		return runTraceEnable(env, args[1:])
 	case "start":
-		return runTraceStart(args[1:])
+		return runTraceStart(env, args[1:])
 	case "stop":
-		return runTraceStop(args[1:])
+		return runTraceStop(env, args[1:])
 	case "export":
-		return runTraceExport(args[1:])
+		return runTraceExport(env, args[1:])
 	case "status":
-		return runTraceStatus(args[1:])
+		return runTraceStatus(env, args[1:])
 	case "capabilities":
-		return runTraceCapabilities(args[1:])
+		return runTraceCapabilities(env, args[1:])
 	default:
-		printTraceUsage(os.Stderr)
+		printTraceUsage(env.Stderr)
 		return fmt.Errorf("unknown trace subcommand: %s", args[0])
 	}
 }
@@ -93,7 +93,7 @@ guest-side eslogger capture is not wired in yet, the session is marked
 unsupported instead of hiding the failure.`)
 }
 
-func runTraceEnable(args []string) error {
+func runTraceEnable(env commandEnv, args []string) error {
 	vm, err := oneTraceVMArg("trace enable", args)
 	if err != nil {
 		return err
@@ -106,13 +106,13 @@ func runTraceEnable(args []string) error {
 	if err := writeJSONFile(traceConfigPath(dir), cfg); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "enabled eslogger tracing for %s; config: %s\n", vm, traceConfigPath(dir))
+	fmt.Fprintf(env.Stdout, "enabled eslogger tracing for %s; config: %s\n", vm, traceConfigPath(dir))
 	return nil
 }
 
-func runTraceStart(args []string) error {
+func runTraceStart(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("trace start", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	id := fs.String("id", "", "trace session id")
 	if err := fs.Parse(moveKnownFlagsFirst(args, map[string]bool{"id": true})); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -147,14 +147,14 @@ func runTraceStart(args []string) error {
 	if err := writeJSONFile(traceSessionPath(dir, sessionID), session); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "trace session %s prepared at %s\n", sessionID, sessionDir)
-	fmt.Fprintf(os.Stdout, "unsupported: %s\n", session.Note)
+	fmt.Fprintf(env.Stdout, "trace session %s prepared at %s\n", sessionID, sessionDir)
+	fmt.Fprintf(env.Stdout, "unsupported: %s\n", session.Note)
 	return nil
 }
 
-func runTraceStop(args []string) error {
+func runTraceStop(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("trace stop", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	id := fs.String("id", "", "trace session id")
 	if err := fs.Parse(moveKnownFlagsFirst(args, map[string]bool{"id": true})); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -183,52 +183,52 @@ func runTraceStop(args []string) error {
 	if err := writeJSONFile(traceSessionPath(dir, sessionID), session); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "stopped trace session %s\n", sessionID)
+	fmt.Fprintf(env.Stdout, "stopped trace session %s\n", sessionID)
 	return nil
 }
 
-func runTraceStatus(args []string) error {
-	vm, jsonOut, err := parseTraceStatusArgs(args)
+func runTraceStatus(env commandEnv, args []string) error {
+	vm, jsonOut, err := parseTraceStatusArgs(env.Stdout, args)
 	if err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
 		if jsonOut {
-			_ = writeCLIErrorJSON(os.Stdout, "trace status", err, "")
+			_ = writeCLIErrorJSON(env.Stdout, "trace status", err, "")
 		}
 		return err
 	}
 	dir, err := requireExistingVMForControl(vm)
 	if err != nil {
 		if jsonOut {
-			_ = writeCLIErrorJSON(os.Stdout, "trace status", err, "create or select an existing VM")
+			_ = writeCLIErrorJSON(env.Stdout, "trace status", err, "create or select an existing VM")
 		}
 		return err
 	}
 	status := traceStatus(dir, vm)
 	if jsonOut {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(env.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(status)
 	}
-	fmt.Fprintf(os.Stdout, "trace config: %s\n", traceConfigPath(dir))
+	fmt.Fprintf(env.Stdout, "trace config: %s\n", traceConfigPath(dir))
 	if status.Enabled {
-		fmt.Fprintf(os.Stdout, "enabled: yes updated_at=%s\n", status.UpdatedAt)
+		fmt.Fprintf(env.Stdout, "enabled: yes updated_at=%s\n", status.UpdatedAt)
 	} else {
-		fmt.Fprintln(os.Stdout, "enabled: no")
+		fmt.Fprintln(env.Stdout, "enabled: no")
 	}
 	if status.Latest != nil {
-		fmt.Fprintf(os.Stdout, "latest: %s status=%s log=%s\n", status.Latest.ID, status.Latest.Status, status.Latest.LogPath)
+		fmt.Fprintf(env.Stdout, "latest: %s status=%s log=%s\n", status.Latest.ID, status.Latest.Status, status.Latest.LogPath)
 	} else {
-		fmt.Fprintln(os.Stdout, "latest: none")
+		fmt.Fprintln(env.Stdout, "latest: none")
 	}
 	return nil
 }
 
-func runTraceCapabilities(args []string) error {
+func runTraceCapabilities(env commandEnv, args []string) error {
 	jsonOut := false
 	if len(args) > 0 && isHelpArg(args[0]) {
-		printTraceCapabilitiesUsage(os.Stdout)
+		printTraceCapabilitiesUsage(env.Stdout)
 		return nil
 	}
 	for _, arg := range args {
@@ -241,14 +241,14 @@ func runTraceCapabilities(args []string) error {
 	}
 	caps := defaultTraceCapabilities()
 	if jsonOut {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(env.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(caps)
 	}
-	fmt.Fprintf(os.Stdout, "supported guests: %s\n", strings.Join(caps.SupportedGuests, ", "))
-	fmt.Fprintf(os.Stdout, "guest capture wired: %v\n", caps.GuestCaptureWired)
-	fmt.Fprintf(os.Stdout, "requires guest tool: %s\n", caps.RequiresGuestTool)
-	fmt.Fprintf(os.Stdout, "session artifact status: %s\n", caps.SessionArtifactStatus)
+	fmt.Fprintf(env.Stdout, "supported guests: %s\n", strings.Join(caps.SupportedGuests, ", "))
+	fmt.Fprintf(env.Stdout, "guest capture wired: %v\n", caps.GuestCaptureWired)
+	fmt.Fprintf(env.Stdout, "requires guest tool: %s\n", caps.RequiresGuestTool)
+	fmt.Fprintf(env.Stdout, "session artifact status: %s\n", caps.SessionArtifactStatus)
 	return nil
 }
 
@@ -265,9 +265,9 @@ func printTraceCapabilitiesUsage(w io.Writer) {
 Show whether this host build can drive guest-side eslogger capture.`)
 }
 
-func runTraceExport(args []string) error {
+func runTraceExport(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("trace export", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	id := fs.String("id", "", "trace session id")
 	out := fs.String("out", "", "output tar.gz path")
 	if err := fs.Parse(moveKnownFlagsFirst(args, map[string]bool{"id": true, "out": true})); err != nil {
@@ -304,7 +304,7 @@ func runTraceExport(args []string) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("trace export: close %s: %w", *out, err)
 	}
-	fmt.Fprintf(os.Stdout, "exported trace %s for %s to %s\n", sessionID, vm, *out)
+	fmt.Fprintf(env.Stdout, "exported trace %s for %s to %s\n", sessionID, vm, *out)
 	return nil
 }
 
@@ -315,9 +315,9 @@ func oneTraceVMArg(usage string, args []string) (string, error) {
 	return args[0], nil
 }
 
-func parseTraceStatusArgs(args []string) (vm string, jsonOut bool, err error) {
+func parseTraceStatusArgs(out io.Writer, args []string) (vm string, jsonOut bool, err error) {
 	if len(args) > 0 && isHelpArg(args[0]) {
-		printTraceStatusUsage(os.Stdout)
+		printTraceStatusUsage(out)
 		return "", false, errFlagHelp
 	}
 	for _, arg := range args {
