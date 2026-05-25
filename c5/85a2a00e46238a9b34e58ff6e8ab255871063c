@@ -1,0 +1,27 @@
+commit: c585a2a00e46238a9b34e58ff6e8ab255871063c
+date: 2026-05-25T03:24:53Z
+agent: Codex
+model: GPT-5
+tty: not a tty
+pid: 10312
+ITERM_SESSION_ID: w2t4p0:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+
+slice: quota install warning writer threading
+chat_instructions: /Users/tmc/tmp/cove-package-extract-current/nlm-chat-instructions-power-go-team-2026-05-24T195154-0700.txt
+next_slice_review: /Users/tmc/tmp/cove-package-extract-current/go-team-next-iteration-after-trace-2026-05-24T201424-0700.md
+staged_diff: /Users/tmc/tmp/cove-package-extract-current/staged-quota-install-warnings-2026-05-24T201941-0700.diff
+precommit_review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-quota-install-warnings-review-2026-05-24T201954-0700.md
+notebook_verdict: IN
+
+gates:
+- go test . -run 'Test.*Quota|TestRunInstallCommand|Test.*Install': pass
+- go test ./internal/vmquota: pass
+- go test . -run 'TestApplyInstallDiskQuota|TestPersistInstallQuota|TestRunQuota': pass
+- rg 'fmt\.Printf\("warning: (save quota config|APFS directory quotas)' quota_cli.go: zero matches
+- git diff --cached --check: pass
+- go build ./...: pass
+- go build -o cove . && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove: pass
+- go vet ./...: pass
+- go test ./...: pass
+
+push: not run
