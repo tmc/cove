@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -29,12 +28,12 @@ type quotaManager interface {
 
 type fileQuotaManager struct{}
 
-func handleQuotaCommand(args []string) error {
-	return runQuota(context.Background(), args, fileQuotaManager{}, os.Stdout)
+func handleQuotaCommand(env commandEnv, args []string) error {
+	return runQuota(context.Background(), args, fileQuotaManager{}, env.Stdout)
 }
 
 func runQuota(ctx context.Context, args []string, manager quotaManager, out io.Writer) error {
-	cmd, err := parseQuotaArgs(args)
+	cmd, err := parseQuotaArgs(args, out)
 	if errors.Is(err, errFlagHelp) {
 		return nil
 	}
@@ -60,10 +59,10 @@ func runQuota(ctx context.Context, args []string, manager quotaManager, out io.W
 	return nil
 }
 
-func parseQuotaArgs(args []string) (quotaCommand, error) {
+func parseQuotaArgs(args []string, usage io.Writer) (quotaCommand, error) {
 	fs := flag.NewFlagSet("quota", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.Usage = func() { printQuotaUsage(os.Stdout) }
+	fs.Usage = func() { printQuotaUsage(usage) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		return quotaCommand{}, err
 	}

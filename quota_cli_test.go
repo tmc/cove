@@ -34,7 +34,7 @@ func TestParseQuotaArgs(t *testing.T) {
 		{name: "disk negative", args: []string{"vm1", "disk", "-1"}, err: "invalid disk value"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseQuotaArgs(tc.args)
+			got, err := parseQuotaArgs(tc.args, io.Discard)
 			if tc.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.err) {
 					t.Fatalf("parseQuotaArgs error = %v, want %q", err, tc.err)
