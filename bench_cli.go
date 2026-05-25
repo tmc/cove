@@ -6,28 +6,28 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
+	"io"
 
 	"github.com/tmc/cove/internal/bench"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
-func handleBenchCommand(args []string) error {
+func handleBenchCommand(env commandEnv, args []string) error {
 	if len(args) == 0 || isHelpArg(args[0]) {
-		printBenchUsage()
+		printBenchUsage(env.Stderr)
 		return nil
 	}
 	switch args[0] {
 	case "competitive":
-		return runBenchCompetitive(args[1:])
+		return runBenchCompetitive(env, args[1:])
 	default:
-		printBenchUsage()
+		printBenchUsage(env.Stderr)
 		return fmt.Errorf("unknown bench subcommand: %s", args[0])
 	}
 }
 
-func printBenchUsage() {
-	fmt.Fprintln(os.Stderr, `Usage: cove bench <subcommand> [options]
+func printBenchUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove bench <subcommand> [options]
 
 Subcommands:
   competitive   Normalize checked-in competitive benchmark evidence
@@ -36,9 +36,9 @@ Safe example:
   cove bench competitive -dry-run -json`)
 }
 
-func runBenchCompetitive(args []string) error {
+func runBenchCompetitive(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("bench competitive", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	out := fs.String("out", "docs/benchmarks/results-2026-05-cove.json", "write normalized JSON report")
 	markdown := fs.String("markdown", "docs/benchmarks/competitive-2026-05.md", "write Markdown summary")
 	jsonOut := fs.Bool("json", false, "also print JSON report to stdout")
@@ -67,16 +67,16 @@ func runBenchCompetitive(args []string) error {
 		return err
 	}
 	if *jsonOut || *stdout {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(env.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
 	}
 	if *dryRun {
-		fmt.Fprintf(os.Stdout, "benchmark dry run: %d result(s)\n", len(report.Results))
+		fmt.Fprintf(env.Stdout, "benchmark dry run: %d result(s)\n", len(report.Results))
 		return nil
 	}
-	fmt.Fprintf(os.Stdout, "benchmark report: %s\n", *out)
-	fmt.Fprintf(os.Stdout, "benchmark summary: %s\n", *markdown)
-	fmt.Fprintf(os.Stdout, "run id: %s\n", report.RunID)
+	fmt.Fprintf(env.Stdout, "benchmark report: %s\n", *out)
+	fmt.Fprintf(env.Stdout, "benchmark summary: %s\n", *markdown)
+	fmt.Fprintf(env.Stdout, "run id: %s\n", report.RunID)
 	return nil
 }
