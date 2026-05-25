@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"io"
@@ -12,6 +13,36 @@ import (
 
 	"github.com/tmc/cove/internal/vmconfig"
 )
+
+func TestHandleSupportCommandUsesEnvStdoutForUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	env := commandEnv{Stdout: &stdout, Stderr: &stderr}
+	err := handleSupportCommand(env, nil)
+	if err == nil || !strings.Contains(err.Error(), "support: command required") {
+		t.Fatalf("err = %v, want command required", err)
+	}
+	if !strings.Contains(stdout.String(), "Usage: cove support <command>") {
+		t.Fatalf("stdout missing usage:\n%s", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunSupportBundleUsesEnvStderrForFlagErrors(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	env := commandEnv{Stdout: &stdout, Stderr: &stderr}
+	err := runSupportBundle(env, []string{"-nope"})
+	if err == nil {
+		t.Fatal("err = nil, want flag error")
+	}
+	if !strings.Contains(stderr.String(), "flag provided but not defined") {
+		t.Fatalf("stderr missing flag error:\n%s", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
 
 func TestCreateSupportBundleRedactsDiagnostics(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
