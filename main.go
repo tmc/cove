@@ -477,7 +477,7 @@ func main() {
 		cmd := flag.Arg(0)
 		args := flag.Args()[1:]
 		if fleetName != "" && cmd != "fleet" {
-			if err := handleFleetRoute(context.Background(), fleetName, cmd, args); err != nil {
+			if err := handleFleetRoute(newCommandEnv(), context.Background(), fleetName, cmd, args); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}

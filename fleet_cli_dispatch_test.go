@@ -7,6 +7,28 @@ import (
 	"testing"
 )
 
+func TestHandleFleetCommandUsesEnvWriters(t *testing.T) {
+	env := commandTestEnv()
+	err := handleFleetCommand(env, nil)
+	if err == nil || !strings.Contains(err.Error(), "command required") {
+		t.Fatalf("handleFleetCommand(nil) error = %v, want command required", err)
+	}
+	if got := env.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "Usage: cove fleet") {
+		t.Fatalf("stderr = %q, want fleet usage", got)
+	}
+	if got := env.Stdout.(*bytes.Buffer).String(); got != "" {
+		t.Fatalf("stdout = %q, want empty", got)
+	}
+
+	env = commandTestEnv()
+	if err := handleFleetCommand(env, []string{"-h"}); err != nil {
+		t.Fatalf("handleFleetCommand(-h): %v", err)
+	}
+	if got := env.Stdout.(*bytes.Buffer).String(); !strings.Contains(got, "Usage: cove fleet") {
+		t.Fatalf("stdout = %q, want fleet usage", got)
+	}
+}
+
 func TestRunFleetCommandDispatchBranches(t *testing.T) {
 	path := writeFleetTestConfig(t)
 	runner := &fakeFleetRunner{}
