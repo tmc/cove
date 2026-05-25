@@ -171,9 +171,9 @@ func runDiffCommand(env commandEnv, _ string, args []string) int {
 }
 func runFleetCommandSpec(env commandEnv, _ string, args []string) int {
 	if len(args) == 0 {
-		return commandUsageError(env, handleFleetCommand(args))
+		return commandUsageError(env, handleFleetCommand(env, args))
 	}
-	return commandError(env, handleFleetCommand(args))
+	return commandError(env, handleFleetCommand(env, args))
 }
 func runForwardCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, forwardCommand(args))

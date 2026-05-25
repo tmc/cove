@@ -29,12 +29,12 @@ var (
 	fleetCtlCommand        = ctlCommand
 )
 
-func handleFleetCommand(args []string) error {
-	return runFleetCommand(args, fleetpkg.DefaultPath(), os.Stdout)
+func handleFleetCommand(env commandEnv, args []string) error {
+	return runFleetCommandWithRunner(context.Background(), args, fleetpkg.DefaultPath(), sshFleetRunner{}, env.Stdout, env.Stderr)
 }
 
-func runFleetCommand(args []string, path string, out io.Writer) error {
-	return runFleetCommandWithRunner(context.Background(), args, path, sshFleetRunner{}, out, os.Stderr)
+func runFleetCommand(args []string, path string, out, errOut io.Writer) error {
+	return runFleetCommandWithRunner(context.Background(), args, path, sshFleetRunner{}, out, errOut)
 }
 
 func runFleetCommandWithRunner(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
@@ -48,7 +48,7 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 	}
 	switch args[0] {
 	case "add":
-		return fleetAdd(args[1:], path)
+		return fleetAdd(args[1:], path, errOut)
 	case "ls", "list":
 		if len(args) > 1 && isHelpArg(args[1]) {
 			fmt.Fprintln(out, "Usage: cove fleet ls")
@@ -111,9 +111,9 @@ Commands:
   <remote> <command> [args...]`)
 }
 
-func fleetAdd(args []string, path string) error {
+func fleetAdd(args []string, path string, errOut io.Writer) error {
 	fs := flag.NewFlagSet("fleet add", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(errOut)
 	defaultVM := fs.String("vm", "", "default VM for this remote")
 	if done, err := parseFlagsOrHelpExit(fs, moveFleetAddFlagsFirst(args)); done || err != nil {
 		return err
@@ -191,8 +191,8 @@ func fleetRemove(args []string, path string) error {
 	return fleetpkg.SavePath(path, cfg)
 }
 
-func handleFleetRoute(ctx context.Context, name, cmd string, args []string) error {
-	return runFleetRoute(ctx, name, cmd, args, fleetpkg.DefaultPath(), sshFleetRunner{}, os.Stdout, os.Stderr)
+func handleFleetRoute(env commandEnv, ctx context.Context, name, cmd string, args []string) error {
+	return runFleetRoute(ctx, name, cmd, args, fleetpkg.DefaultPath(), sshFleetRunner{}, env.Stdout, env.Stderr)
 }
 
 func runFleetRoute(ctx context.Context, name, cmd string, args []string, path string, runner fleetRunner, stdout, stderr io.Writer) error {

@@ -31,11 +31,11 @@ func (f fakeReadWriteCloser) Close() error {
 
 func TestFleetAddListRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
-	if err := runFleetCommand([]string{"add", "demo", "me@localhost", "-vm", "ubuntu"}, path, &bytes.Buffer{}); err != nil {
+	if err := runFleetCommand([]string{"add", "demo", "me@localhost", "-vm", "ubuntu"}, path, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("fleet add: %v", err)
 	}
 	var out bytes.Buffer
-	if err := runFleetCommand([]string{"ls"}, path, &out); err != nil {
+	if err := runFleetCommand([]string{"ls"}, path, &out, &bytes.Buffer{}); err != nil {
 		t.Fatalf("fleet ls: %v", err)
 	}
 	got := out.String()
@@ -48,14 +48,14 @@ func TestFleetAddListRoundTrip(t *testing.T) {
 
 func TestFleetRemove(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
-	if err := runFleetCommand([]string{"add", "demo", "me@localhost"}, path, &bytes.Buffer{}); err != nil {
+	if err := runFleetCommand([]string{"add", "demo", "me@localhost"}, path, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("fleet add: %v", err)
 	}
-	if err := runFleetCommand([]string{"rm", "demo"}, path, &bytes.Buffer{}); err != nil {
+	if err := runFleetCommand([]string{"rm", "demo"}, path, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("fleet rm: %v", err)
 	}
 	var out bytes.Buffer
-	if err := runFleetCommand([]string{"ls"}, path, &out); err != nil {
+	if err := runFleetCommand([]string{"ls"}, path, &out, &bytes.Buffer{}); err != nil {
 		t.Fatalf("fleet ls: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "no fleet remotes") {
