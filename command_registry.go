@@ -241,7 +241,7 @@ func runStorageCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleStorageCommand(args))
 }
 func runStoreCommand(env commandEnv, _ string, args []string) int {
-	return commandError(env, handleStoreCommand(args))
+	return commandError(env, handleStoreCommand(env, args))
 }
 func runFirstRunCommand(env commandEnv, _ string, _ []string) int {
 	printFirstRunUsage(env.Stdout)
