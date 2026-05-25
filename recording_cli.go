@@ -32,26 +32,26 @@ type recordingEntry struct {
 	Artifacts []recordingArtifact `json:"artifacts"`
 }
 
-func handleRecordingCommand(args []string) error {
+func handleRecordingCommand(env commandEnv, args []string) error {
 	if len(args) == 0 || isHelpArg(args[0]) {
-		printRecordingUsage(os.Stdout)
+		printRecordingUsage(env.Stdout)
 		return nil
 	}
 	switch args[0] {
 	case "list", "ls":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printRecordingListUsage(os.Stdout)
+			printRecordingListUsage(env.Stdout)
 			return nil
 		}
-		return runRecordingList(args[1:])
+		return runRecordingList(env, args[1:])
 	case "export":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printRecordingExportUsage(os.Stdout)
+			printRecordingExportUsage(env.Stdout)
 			return nil
 		}
-		return runRecordingExport(args[1:])
+		return runRecordingExport(env, args[1:])
 	default:
-		printRecordingUsage(os.Stderr)
+		printRecordingUsage(env.Stderr)
 		return fmt.Errorf("unknown recording subcommand: %s", args[0])
 	}
 }
@@ -67,9 +67,9 @@ Recording export writes a gzip tarball containing the run manifest, metrics,
 events, logs, screenshots, replay files, and trace artifacts when present.`)
 }
 
-func runRecordingList(args []string) error {
+func runRecordingList(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("recording list", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	limit := fs.Int("limit", 25, "maximum recordings to show")
 	fs.Usage = func() { printRecordingListUsage(fs.Output()) }
@@ -93,11 +93,11 @@ func runRecordingList(args []string) error {
 		recordings = []recordingEntry{}
 	}
 	if *jsonOut {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(env.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(recordings)
 	}
-	return printRecordingTable(os.Stdout, recordings)
+	return printRecordingTable(env.Stdout, recordings)
 }
 
 func printRecordingListUsage(w io.Writer) {
@@ -115,7 +115,7 @@ manifest, events, metrics, logs, screenshots, replay files, and trace artifacts
 when present.`)
 }
 
-func runRecordingExport(args []string) error {
+func runRecordingExport(env commandEnv, args []string) error {
 	prefix, out, err := parseRecordingExportArgs(args)
 	if err != nil {
 		return err
@@ -148,7 +148,7 @@ func runRecordingExport(args []string) error {
 	if err := closeErr(); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "exported recording %s to %s\n", filepath.Base(dir), out)
+	fmt.Fprintf(env.Stdout, "exported recording %s to %s\n", filepath.Base(dir), out)
 	return nil
 }
 
