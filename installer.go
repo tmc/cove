@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -425,7 +426,10 @@ func checkExistingVM(dir string, diskName string) error {
 	return fmt.Errorf("vm disk already exists: %s (%d MB)\n\nTo install over this disk, use -force (THIS WILL DESTROY ALL DATA IN THE VM).\nTo use a different VM, use -vm <name>", diskFile, info.Size()/(1024*1024))
 }
 
-func installMacOSLikeVZ(ctx context.Context) error {
+func installMacOSLikeVZ(ctx context.Context, quotaWarnings io.Writer) error {
+	if quotaWarnings == nil {
+		quotaWarnings = io.Discard
+	}
 	fmt.Println("=== macOS Installation ===")
 
 	// Safety check: refuse to overwrite existing VM disk unless -force is specified.
@@ -438,8 +442,8 @@ func installMacOSLikeVZ(ctx context.Context) error {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
 	saveHardwareConfig(vmDir)
-	persistInstallQuota(vmDir)
-	if err := applyInstallDiskQuota(vmDir); err != nil {
+	persistInstallQuota(quotaWarnings, vmDir)
+	if err := applyInstallDiskQuota(quotaWarnings, vmDir); err != nil {
 		return err
 	}
 

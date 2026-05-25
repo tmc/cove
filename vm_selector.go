@@ -2105,7 +2105,7 @@ func performSelectorAction(action selectorAction) error {
 		if provisionUser != "" {
 			provisionStrategy = "auto"
 		}
-		err := installMacOSLikeVZ(context.Background())
+		err := installMacOSLikeVZ(context.Background(), os.Stderr)
 
 		// Save selected recipes to config.json so they survive failures.
 		if postInstallRecipes != "" {

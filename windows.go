@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -389,7 +390,10 @@ func runWindowsVM() error {
 	return startVMWithQueue(vm, vmQueue)
 }
 
-func installWindowsVM() error {
+func installWindowsVM(quotaWarnings io.Writer) error {
+	if quotaWarnings == nil {
+		quotaWarnings = io.Discard
+	}
 	rc := vmrunRunConfig(vmrun.GuestWindows)
 	hc := vmrunHostConfig()
 	fmt.Println("=== Windows VM Installer (experimental) ===")
@@ -401,8 +405,8 @@ func installWindowsVM() error {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
 	saveHardwareConfig(hc.VMDir)
-	persistInstallQuota(hc.VMDir)
-	if err := applyInstallDiskQuota(hc.VMDir); err != nil {
+	persistInstallQuota(quotaWarnings, hc.VMDir)
+	if err := applyInstallDiskQuota(quotaWarnings, hc.VMDir); err != nil {
 		return err
 	}
 

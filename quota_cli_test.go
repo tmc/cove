@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -111,13 +111,12 @@ func TestApplyInstallDiskQuotaIgnoresUnsupportedSetQuota(t *testing.T) {
 		}
 		return errors.New(`diskutil apfs did not recognize APFS verb "setQuota"; usage: diskutil apfs ...`)
 	}
-	out := captureQuotaStdout(t, func() {
-		if err := applyInstallDiskQuota("/tmp/vm"); err != nil {
-			t.Fatalf("applyInstallDiskQuota unsupported setQuota: %v", err)
-		}
-	})
-	if !strings.Contains(out, "APFS directory quotas are not supported") {
-		t.Fatalf("output = %q, want unsupported quota warning", out)
+	var out bytes.Buffer
+	if err := applyInstallDiskQuota(&out, "/tmp/vm"); err != nil {
+		t.Fatalf("applyInstallDiskQuota unsupported setQuota: %v", err)
+	}
+	if !strings.Contains(out.String(), "APFS directory quotas are not supported") {
+		t.Fatalf("output = %q, want unsupported quota warning", out.String())
 	}
 }
 
@@ -132,27 +131,25 @@ func TestApplyInstallDiskQuotaPropagatesOtherErrors(t *testing.T) {
 	want := errors.New("permission denied")
 	diskSizeGB = 64
 	applyAPFSQuotaForInstall = func(string, uint64) error { return want }
-	if err := applyInstallDiskQuota("/tmp/vm"); !errors.Is(err, want) {
+	if err := applyInstallDiskQuota(io.Discard, "/tmp/vm"); !errors.Is(err, want) {
 		t.Fatalf("applyInstallDiskQuota error = %v, want %v", err, want)
 	}
 }
 
-func captureQuotaStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe: %v", err)
+func TestPersistInstallQuotaWritesWarningToWriter(t *testing.T) {
+	oldCPU, oldMemory, oldDisk := cpuCount, memoryGB, diskSizeGB
+	t.Cleanup(func() {
+		cpuCount, memoryGB, diskSizeGB = oldCPU, oldMemory, oldDisk
+	})
+
+	cpuCount = 4
+	memoryGB = 8
+	diskSizeGB = 64
+	var out bytes.Buffer
+	persistInstallQuota(&out, filepath.Join(t.TempDir(), "missing"))
+	if !strings.Contains(out.String(), "warning: save quota config:") {
+		t.Fatalf("output = %q, want save warning", out.String())
 	}
-	os.Stdout = w
-	fn()
-	_ = w.Close()
-	os.Stdout = old
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		t.Fatalf("copy stdout: %v", err)
-	}
-	return buf.String()
 }
 
 type fakeQuotaManager struct {

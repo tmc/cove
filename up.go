@@ -360,7 +360,7 @@ func runUpPipeline(env commandEnv, cfg upConfig) (err error) {
 	} else {
 		fmt.Fprintln(env.Stdout, "=== Step 1/3: Installing macOS ===")
 		createStarted := time.Now()
-		installErr := installMacOSLikeVZ(context.Background())
+		installErr := installMacOSLikeVZ(context.Background(), env.Stderr)
 		if installErr != nil && !errors.Is(installErr, errRestartVM) {
 			emitMetricEvent("vm_create", createStarted, installErr.Error(), map[string]any{"command": "up"})
 			return fmt.Errorf("install: %w", installErr)
@@ -595,7 +595,7 @@ func runLinuxUpPipeline(env commandEnv, cfg upConfig) error {
 	} else {
 		fmt.Fprintln(env.Stdout, "=== Step 1/2: Installing Linux VM ===")
 		createStarted := time.Now()
-		if err := installLinuxVM(); err != nil {
+		if err := installLinuxVM(env.Stderr); err != nil {
 			emitMetricEvent("vm_create", createStarted, err.Error(), map[string]any{"command": "up", "guest_os": "linux"})
 			return fmt.Errorf("install: %w", err)
 		}

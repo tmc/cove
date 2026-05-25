@@ -651,7 +651,7 @@ func handleDefaultAction() {
 	switch len(vms) {
 	case 0:
 		guiMode = true
-		err := installMacOSLikeVZ(context.Background())
+		err := installMacOSLikeVZ(context.Background(), os.Stderr)
 		if errors.Is(err, errRestartVM) {
 			err = runMacOSVM()
 		}

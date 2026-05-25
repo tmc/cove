@@ -377,11 +377,11 @@ func runInstallCommand(env commandEnv, _ string, _ []string) int {
 	installVM = true
 	var err error
 	if windowsMode {
-		err = installWindowsVM()
+		err = installWindowsVM(env.Stderr)
 	} else if linuxMode {
-		err = handleLinuxInstall()
+		err = handleLinuxInstall(env.Stderr)
 	} else {
-		err = installMacOSLikeVZ(context.Background())
+		err = installMacOSLikeVZ(context.Background(), env.Stderr)
 	}
 	if errors.Is(err, errRestartVM) {
 		if err := runMacOSVM(); err != nil {
