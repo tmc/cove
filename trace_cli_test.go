@@ -15,11 +15,12 @@ import (
 func TestTraceEnableStartStopExport(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	dir := makeTraceTestVM(t, "mac")
+	env := commandTestEnv()
 	oldNow := traceNow
 	traceNow = func() time.Time { return time.Date(2026, 5, 13, 23, 45, 0, 0, time.UTC) }
 	t.Cleanup(func() { traceNow = oldNow })
 
-	if err := runTraceEnable([]string{"mac"}); err != nil {
+	if err := runTraceEnable(env, []string{"mac"}); err != nil {
 		t.Fatalf("runTraceEnable: %v", err)
 	}
 	var cfg esloggerTraceConfig
@@ -28,7 +29,7 @@ func TestTraceEnableStartStopExport(t *testing.T) {
 		t.Fatalf("config = %+v", cfg)
 	}
 
-	if err := runTraceStart([]string{"--id", "trace-a", "mac"}); err != nil {
+	if err := runTraceStart(env, []string{"--id", "trace-a", "mac"}); err != nil {
 		t.Fatalf("runTraceStart: %v", err)
 	}
 	var session esloggerTraceSession
@@ -40,7 +41,7 @@ func TestTraceEnableStartStopExport(t *testing.T) {
 		t.Fatalf("write trace log: %v", err)
 	}
 
-	if err := runTraceStop([]string{"mac", "--id", "trace-a"}); err != nil {
+	if err := runTraceStop(env, []string{"mac", "--id", "trace-a"}); err != nil {
 		t.Fatalf("runTraceStop: %v", err)
 	}
 	readJSON(t, traceSessionPath(dir, "trace-a"), &session)
@@ -49,7 +50,7 @@ func TestTraceEnableStartStopExport(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "trace.tar.gz")
-	if err := runTraceExport([]string{"mac", "--id", "trace-a", "--out", out}); err != nil {
+	if err := runTraceExport(env, []string{"mac", "--id", "trace-a", "--out", out}); err != nil {
 		t.Fatalf("runTraceExport: %v", err)
 	}
 	data, err := os.ReadFile(out)
@@ -73,7 +74,7 @@ func TestTraceRejectsUnsupportedGuest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(base, "linux", "linux-disk.img"), []byte("disk"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	err := runTraceEnable([]string{"linux"})
+	err := runTraceEnable(commandTestEnv(), []string{"linux"})
 	if err == nil || !strings.Contains(err.Error(), "supported for macOS") {
 		t.Fatalf("runTraceEnable linux err = %v", err)
 	}
@@ -82,11 +83,11 @@ func TestTraceRejectsUnsupportedGuest(t *testing.T) {
 func TestTraceStatusNoSession(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	makeTraceTestVM(t, "mac")
-	out, restore := captureStdoutForTraceTest(t)
-	if err := runTraceStatus([]string{"mac"}); err != nil {
+	env := commandTestEnv()
+	if err := runTraceStatus(env, []string{"mac"}); err != nil {
 		t.Fatalf("runTraceStatus: %v", err)
 	}
-	restore()
+	out := env.Stdout.(*bytes.Buffer)
 	if !strings.Contains(out.String(), "enabled: no") || !strings.Contains(out.String(), "latest: none") {
 		t.Fatalf("status output = %q", out.String())
 	}
@@ -110,13 +111,12 @@ func TestTraceStatusJSON(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write session: %v", err)
 	}
-	out, err := captureStdoutResult(t, func() error {
-		return runTraceStatus([]string{"mac", "--json"})
-	})
-	if err != nil {
+	env := commandTestEnv()
+	if err := runTraceStatus(env, []string{"mac", "--json"}); err != nil {
 		t.Fatalf("runTraceStatus --json: %v", err)
 	}
 	var got traceStatusOutput
+	out := env.Stdout.(*bytes.Buffer).String()
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("status JSON: %v\n%s", err, out)
 	}
@@ -130,13 +130,12 @@ func TestTraceStatusJSON(t *testing.T) {
 
 func TestTraceStatusJSONMissingVMWritesError(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	out, err := captureStdoutResult(t, func() error {
-		return runTraceStatus([]string{"missing-trace-vm", "--json"})
-	})
-	if err == nil {
+	env := commandTestEnv()
+	if err := runTraceStatus(env, []string{"missing-trace-vm", "--json"}); err == nil {
 		t.Fatal("runTraceStatus missing VM succeeded")
 	}
 	var got cliJSONError
+	out := env.Stdout.(*bytes.Buffer).String()
 	if jsonErr := json.Unmarshal([]byte(out), &got); jsonErr != nil {
 		t.Fatalf("trace status error output is not JSON: %v\n%s", jsonErr, out)
 	}
@@ -146,18 +145,31 @@ func TestTraceStatusJSONMissingVMWritesError(t *testing.T) {
 }
 
 func TestTraceCapabilitiesJSON(t *testing.T) {
-	out, err := captureStdoutResult(t, func() error {
-		return runTraceCapabilities([]string{"--json"})
-	})
-	if err != nil {
+	env := commandTestEnv()
+	if err := runTraceCapabilities(env, []string{"--json"}); err != nil {
 		t.Fatalf("runTraceCapabilities --json: %v", err)
 	}
 	var got traceCapabilities
+	out := env.Stdout.(*bytes.Buffer).String()
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("capabilities JSON: %v\n%s", err, out)
 	}
 	if len(got.SupportedGuests) != 1 || got.SupportedGuests[0] != "macOS" || got.GuestCaptureWired {
 		t.Fatalf("capabilities = %+v", got)
+	}
+}
+
+func TestHandleTraceCommandUsesEnvWriters(t *testing.T) {
+	env := commandTestEnv()
+	if err := handleTraceCommand(env, []string{"capabilities"}); err != nil {
+		t.Fatalf("handleTraceCommand capabilities: %v", err)
+	}
+	out := env.Stdout.(*bytes.Buffer).String()
+	if !strings.Contains(out, "supported guests: macOS") {
+		t.Fatalf("stdout = %q", out)
+	}
+	if got := env.Stderr.(*bytes.Buffer).String(); got != "" {
+		t.Fatalf("stderr = %q, want empty", got)
 	}
 }
 
@@ -184,27 +196,5 @@ func readJSON(t *testing.T, path string, v any) {
 	}
 	if err := json.Unmarshal(data, v); err != nil {
 		t.Fatalf("unmarshal %s: %v", path, err)
-	}
-}
-
-func captureStdoutForTraceTest(t *testing.T) (*bytes.Buffer, func()) {
-	t.Helper()
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = w
-	var buf bytes.Buffer
-	done := make(chan struct{})
-	go func() {
-		_, _ = buf.ReadFrom(r)
-		close(done)
-	}()
-	return &buf, func() {
-		_ = w.Close()
-		os.Stdout = old
-		<-done
-		_ = r.Close()
 	}
 }
