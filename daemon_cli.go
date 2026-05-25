@@ -54,13 +54,14 @@ var (
 	daemonExecutable = os.Executable
 )
 
-func daemonCommand(args []string) error {
+func daemonCommand(env commandEnv, args []string) error {
+	env = env.WithDefaultIO()
 	if len(args) == 0 {
-		printDaemonUsage(os.Stderr)
+		printDaemonUsage(env.Stderr)
 		return fmt.Errorf("daemon: command required")
 	}
 	if isHelpArg(args[0]) {
-		printDaemonUsage(os.Stdout)
+		printDaemonUsage(env.Stdout)
 		return nil
 	}
 	switch args[0] {
@@ -70,7 +71,7 @@ func daemonCommand(args []string) error {
 			return err
 		}
 		if len(args) > 1 && isHelpArg(args[1]) {
-			fmt.Fprintln(os.Stdout, "Usage: cove daemon status [--json]")
+			fmt.Fprintln(env.Stdout, "Usage: cove daemon status [--json]")
 			return nil
 		}
 		status, err := queryDaemonStatus(defaultDaemonPaths().SocketPath)
@@ -78,38 +79,38 @@ func daemonCommand(args []string) error {
 			if errors.Is(err, os.ErrNotExist) {
 				err = fmt.Errorf("daemon: stopped; start with: cove daemon start")
 				if jsonOut {
-					if jsonErr := writeDaemonErrorJSON(os.Stdout, "daemon status", err); jsonErr != nil {
+					if jsonErr := writeDaemonErrorJSON(env.Stdout, "daemon status", err); jsonErr != nil {
 						return jsonErr
 					}
 				}
 				return err
 			}
 			if jsonOut {
-				if jsonErr := writeDaemonErrorJSON(os.Stdout, "daemon status", err); jsonErr != nil {
+				if jsonErr := writeDaemonErrorJSON(env.Stdout, "daemon status", err); jsonErr != nil {
 					return jsonErr
 				}
 			}
 			return err
 		}
 		if jsonOut {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(env.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(status)
 		}
-		fmt.Printf("version: %s\nuptime_s: %d\nvms_managed: %d\nimage_gc_last_run_ts: %s\nimage_gc_runs_total: %d\nimage_gc_bytes_freed_total: %d\nlifecycle_enforced: %d\n",
+		fmt.Fprintf(env.Stdout, "version: %s\nuptime_s: %d\nvms_managed: %d\nimage_gc_last_run_ts: %s\nimage_gc_runs_total: %d\nimage_gc_bytes_freed_total: %d\nlifecycle_enforced: %d\n",
 			status.Version, status.UptimeS, status.VMsManaged, status.ImageGCLastRunTS, status.ImageGCRunsTotal, status.ImageGCBytesFreedTotal, status.LifecycleEnforced)
 		if status.LifecycleLastRunTS != "" {
-			fmt.Printf("lifecycle_last_run_ts: %s\n", status.LifecycleLastRunTS)
+			fmt.Fprintf(env.Stdout, "lifecycle_last_run_ts: %s\n", status.LifecycleLastRunTS)
 		}
 		return nil
 	case "metrics":
-		return daemonMetricsCommand(args[1:])
+		return daemonMetricsCommand(env, args[1:])
 	case "ui":
-		return daemonUICommand(args[1:])
+		return daemonUICommand(env, args[1:])
 	case "start":
-		return daemonStartCommand(args[1:])
+		return daemonStartCommand(env, args[1:])
 	case "stop":
-		return daemonStopCommand(args[1:])
+		return daemonStopCommand(env, args[1:])
 	default:
 		return fmt.Errorf("unknown daemon command: %s", args[0])
 	}
@@ -144,9 +145,10 @@ Commands:
   ui         Open the daemon web UI`)
 }
 
-func daemonUICommand(args []string) error {
+func daemonUICommand(env commandEnv, args []string) error {
+	env = env.WithDefaultIO()
 	fs := flag.NewFlagSet("daemon ui", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	addr := fs.String("addr", "127.0.0.1:9877", "web UI address")
 	openCmd := fs.String("open", "open", "open command")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
@@ -160,13 +162,14 @@ func daemonUICommand(args []string) error {
 	if err != nil {
 		return fmt.Errorf("open daemon ui: %w: %s", err, bytes.TrimSpace(out))
 	}
-	fmt.Println(url)
+	fmt.Fprintln(env.Stdout, url)
 	return nil
 }
 
-func daemonMetricsCommand(args []string) error {
+func daemonMetricsCommand(env commandEnv, args []string) error {
+	env = env.WithDefaultIO()
 	fs := flag.NewFlagSet("daemon metrics", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	raw := fs.Bool("json", false, "print raw prometheus exposition")
 	addr := fs.String("addr", "127.0.0.1:9876", "metrics address")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
@@ -179,17 +182,17 @@ func daemonMetricsCommand(args []string) error {
 	if err != nil {
 		err = daemonMetricsErrorWithHint(err)
 		if *raw {
-			if jsonErr := writeDaemonErrorJSON(os.Stdout, "daemon metrics", err); jsonErr != nil {
+			if jsonErr := writeDaemonErrorJSON(env.Stdout, "daemon metrics", err); jsonErr != nil {
 				return jsonErr
 			}
 		}
 		return err
 	}
 	if *raw {
-		fmt.Print(body)
+		fmt.Fprint(env.Stdout, body)
 		return nil
 	}
-	printDaemonMetrics(os.Stdout, body)
+	printDaemonMetrics(env.Stdout, body)
 	return nil
 }
 
@@ -246,9 +249,10 @@ func printDaemonMetrics(w io.Writer, body string) {
 	}
 }
 
-func daemonStartCommand(args []string) error {
+func daemonStartCommand(env commandEnv, args []string) error {
+	env = env.WithDefaultIO()
 	fs := flag.NewFlagSet("daemon start", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(env.Stderr)
 	covedPath := fs.String("coved", "", "path to coved binary")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
@@ -267,13 +271,14 @@ func daemonStartCommand(args []string) error {
 	if err != nil {
 		return fmt.Errorf("launchctl load: %w: %s", err, bytes.TrimSpace(out))
 	}
-	fmt.Printf("daemon plist: %s\n", paths.PlistPath)
+	fmt.Fprintf(env.Stdout, "daemon plist: %s\n", paths.PlistPath)
 	return nil
 }
 
-func daemonStopCommand(args []string) error {
+func daemonStopCommand(env commandEnv, args []string) error {
+	env = env.WithDefaultIO()
 	if len(args) == 1 && isHelpArg(args[0]) {
-		fmt.Fprintln(os.Stdout, "Usage: cove daemon stop")
+		fmt.Fprintln(env.Stdout, "Usage: cove daemon stop")
 		return nil
 	}
 	if len(args) != 0 {
