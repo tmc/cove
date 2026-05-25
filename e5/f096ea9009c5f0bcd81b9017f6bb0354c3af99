@@ -1,0 +1,28 @@
+commit: e5f096ea9009c5f0bcd81b9017f6bb0354c3af99
+date: 2026-05-25T03:44:44Z
+agent: Codex
+model: GPT-5
+tty: not a tty
+pid: 27483
+ITERM_SESSION_ID: w2t4p0:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+
+slice: legacy install/run flag commandEnv threading
+chat_instructions: /Users/tmc/tmp/cove-package-extract-current/nlm-chat-instructions-power-go-team-2026-05-24T195154-0700.txt
+next_slice_review: /Users/tmc/tmp/cove-package-extract-current/go-team-next-iteration-after-daemon-2026-05-24T203817-0700.md
+staged_diff: /Users/tmc/tmp/cove-package-extract-current/staged-legacy-flag-env-threading-2026-05-24T204112-0700.diff
+precommit_review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-legacy-flag-env-threading-review-2026-05-24T204128-0700.md
+notebook_verdict: IN
+
+gates:
+- go test . -run 'Test(Command|RunRegistered|NamespaceNoArg|NewCommandEnv)': pass
+- go build ./...: pass
+- git diff --cached --check: pass
+- go build -o cove . && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove: pass
+- go vet ./...: pass
+- go test ./...: pass
+
+manual checks:
+- cove -install: not run because it can start real installation side effects; NotebookLM accepted compile/tests for this slice
+- cove -run: not run for same side-effect boundary
+
+push: not run
