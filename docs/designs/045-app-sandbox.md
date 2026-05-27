@@ -80,13 +80,18 @@ Observed result:
   Virtualization.framework, local networking, and user-selected read/write file
   entitlements.
 - LaunchServices starts the app and `security status` reports
-  `apple app sandbox: true` and `apple app sandbox id: com.tmc.cove`.
+  `apple app sandbox: true`, `apple app sandbox id: com.tmc.cove`, and the
+  effective `home`, `state root`, and `vm root` paths.
 - On this host, `APP_SANDBOX_CONTAINER_ID` is empty for the ad-hoc bundle; the
   reliable active-sandbox signal is that `HOME` is rewritten to
   `~/Library/Containers/com.tmc.cove/Data`.
 - macgo's FIFO child check-in path is not compatible with this sandbox proof.
   The macgo workspace now uses LaunchServices `--stdout` and `--stderr` file
   redirection for App Sandbox launches.
+- `cove list` starts through the sandboxed macgo bundle. On the current host it
+  can still enumerate the operator's VM registry, so this is only a startup
+  proof. It is not an isolation claim for VM discovery until the file-access
+  model is reduced to explicit grants or security-scoped bookmarks.
 
 ## Expected breakage map
 
@@ -147,7 +152,8 @@ Current proof-only shape:
 - Sandboxed `.app` launcher or bundled runtime using the existing
   `macgo_bundle.go` direction, signed and launched by macgo when
   `COVE_APP_SANDBOX_MACGO=1`. This shape passes the non-mutating
-  `security status` proof.
+  `security status` and `list` startup proof. `security status` reports the
+  effective App Sandbox home and VM root for each invocation.
 
 Queued proof shapes:
 
@@ -176,7 +182,7 @@ Unsupported claims:
 5. Done: document supported package shapes and the exact proof gates before any
    "full sandbox" product claim.
 6. Done: add macgo `.app` proof mode and opt-in smoke for non-mutating
-   `security status`.
+   `security status` and `list`.
 
 ## Proof gates
 
