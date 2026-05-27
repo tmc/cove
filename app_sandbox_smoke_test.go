@@ -425,6 +425,9 @@ func TestAppSandboxRunWorkerSmoke(t *testing.T) {
 	if !report.Child.ReceivedFD || report.Child.Bytes == 0 || report.Child.SHA256 == "" {
 		t.Fatalf("run-worker child descriptor proof incomplete: %+v\n%s", report.Child, out)
 	}
+	if report.Child.Command != "probe" || report.Child.VMName == "" || report.Child.BookmarkLen == 0 {
+		t.Fatalf("run-worker child handoff proof incomplete: %+v\n%s", report.Child, out)
+	}
 	if strings.Contains(out, "Trace/BPT trap") {
 		t.Fatalf("run-worker crashed instead of returning proof:\n%s", out)
 	}

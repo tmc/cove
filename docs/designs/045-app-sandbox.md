@@ -11,9 +11,9 @@ routing for `-vol`, `-share-dir`, and read-only VM-root listing are
 implemented. `install -preflight` can consume a staged media bookmark and prove
 the sandboxed process can read the ISO/IPSW without creating a VM. Ambient
 mutating command surfaces now fail closed under Apple App Sandbox. A sandboxed
-run-worker IPC proof can receive an explicit descriptor from the unsandboxed
-CLI. Broader automatic command fallback and temporary-RAM overlay proofs are
-still queued.
+run-worker IPC proof can receive a typed handoff and explicit descriptor from
+the unsandboxed CLI. Broader automatic command fallback and temporary-RAM
+overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -121,10 +121,12 @@ Observed result:
   disk, kernel/initrd, pcap paths, disk swap/resize, provisioning, helper
   install/uninstall, shared-folder mutation, install, and `up` remain explicit
   App Sandbox denials instead of reaching OS-level sandbox traps.
-- `__run-worker probe` is the first hidden sandboxed run-worker boundary proof.
-  The unsandboxed parent opens a grant file and sends its descriptor to a
-  sandboxed child over a Unix socket with `SCM_RIGHTS`; the child reports
-  `apple_app_sandbox: true`, receives the descriptor, and verifies the payload.
+- `__run-worker probe` is the hidden sandboxed run-worker boundary proof. The
+  unsandboxed parent opens a grant file and sends a typed JSON handoff plus the
+  descriptor to a sandboxed child over a Unix socket with `SCM_RIGHTS`; the
+  child reports `apple_app_sandbox: true`, decodes the handoff, maps the
+  descriptor grant, and verifies the payload without resolving ambient host
+  paths.
 - `security bookmark-probe -json` exercises the purego Foundation bookmark
   calls through the sandboxed macgo bundle. It creates an app-scoped
   security-scoped bookmark for a temp file inside the app container, resolves
@@ -325,8 +327,12 @@ work in this order:
     grants and preserve noninteractive failure behavior.
 15. Done: add `install -preflight` to consume media bookmarks without creating
     VMs.
-16. Next: wire additional non-mutating VM metadata preflights, then define the
-    typed sandboxed run-worker handoff protocol.
+16. Done: define the typed sandboxed run-worker handoff protocol for the
+    existing proof path. `__run-worker probe` now sends a JSON handoff that
+    names the command, VM metadata, descriptor mapping, and bookmark metadata
+    alongside the descriptor passed with `SCM_RIGHTS`.
+17. Next: wire additional non-mutating VM metadata preflights, then decide
+    which real runtime inputs are safe to move behind the typed worker handoff.
 
 ## Proof gates
 
