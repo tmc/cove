@@ -389,6 +389,9 @@ func runForkCommand(_ commandEnv, _ string, args []string) int {
 
 func runInstallCommand(env commandEnv, _ string, _ []string) int {
 	installVM = true
+	if installPreflight {
+		return commandError(env, runInstallPreflight(env))
+	}
 	if err := denyAppleAppSandboxHostAccess("install"); err != nil {
 		return commandError(env, err)
 	}
