@@ -134,6 +134,10 @@ func createSystemDiskAttachment(path string, readOnly bool) (vz.VZStorageDeviceA
 }
 
 func runDisposableCloneFromDiskPath(source, diskPath string, attachmentMode systemDiskAttachmentMode) error {
+	return runDisposableCloneFromDiskPathWithHooks(source, diskPath, attachmentMode, defaultRunHooks())
+}
+
+func runDisposableCloneFromDiskPathWithHooks(source, diskPath string, attachmentMode systemDiskAttachmentMode, hooks RunHooks) error {
 	if disposableMode {
 		return fmt.Errorf("this command already creates a disposable clone; do not combine it with -disposable")
 	}
@@ -169,5 +173,7 @@ func runDisposableCloneFromDiskPath(source, diskPath string, attachmentMode syst
 		windowsMode = prevWindowsMode
 	}()
 
-	return runCurrentVM()
+	cfg := currentRunConfig()
+	cfg.Hooks = hooks.withDefaults()
+	return runVMWithConfig(cfg)
 }

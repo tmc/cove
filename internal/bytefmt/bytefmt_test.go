@@ -40,6 +40,9 @@ func TestParse(t *testing.T) {
 		{"10xb", 0, true},
 		{"-5k", 0, true},
 		{"0", 0, true},
+		{"1.5B", 0, true},
+		{"18446744073709551616B", 0, true},
+		{"100000000000000000000000000000000000000T", 0, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {

@@ -104,7 +104,7 @@ func TestDiskImageAttachmentCreation(t *testing.T) {
 	if attachment.ID == 0 {
 		t.Fatal("disk attachment ID is nil")
 	}
-	t.Logf("created disk image attachment: ID=%v readOnly=%v", attachment.ID, attachment.ReadOnly())
+	t.Logf("created disk image attachment: ID=%v readOnly=%v", attachment.ID, attachment.IsReadOnly())
 
 	// Wrap as private type to verify interop
 	pvzAttachment := pvz.VZDiskImageStorageDeviceAttachmentFromID(attachment.ID)

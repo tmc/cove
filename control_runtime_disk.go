@@ -13,37 +13,21 @@ import (
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 	pvz "github.com/tmc/apple/private/virtualization"
+	vz "github.com/tmc/apple/virtualization"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/apple/x/vzkit/storagehotplug"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 
 	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/vmconfig"
 	agentpb "github.com/tmc/cove/proto/agentpb"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 const macOSResizeAPFSTimeout = 5 * time.Minute
 
-const macOSResizeAPFSManualCommand = `/usr/sbin/diskutil apfs resizeContainer "$(/usr/sbin/diskutil info / | /usr/bin/awk -F: '/APFS Container/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')" 0`
-
-const macOSResizeAPFSScript = `set -eu
-PATH=/usr/sbin:/usr/bin:/bin:/sbin
-container=$(/usr/sbin/diskutil info / | /usr/bin/awk -F: '/APFS Container/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')
-if [ -z "$container" ]; then
-	echo "could not find APFS container for /" >&2
-	/usr/sbin/diskutil info / >&2 || true
-	exit 64
-fi
-before=$(/usr/sbin/diskutil info / | /usr/bin/awk -F'[()]' '/Container Total Space:/ {print $2; exit}' || true)
-/usr/sbin/diskutil apfs resizeContainer "$container" 0
-after=$(/usr/sbin/diskutil info / | /usr/bin/awk -F'[()]' '/Container Total Space:/ {print $2; exit}' || true)
-printf 'expanded APFS container %s\n' "$container"
-if [ -n "$before" ]; then
-	printf 'before: %s\n' "$before"
-fi
-if [ -n "$after" ]; then
-	printf 'after: %s\n' "$after"
-fi`
+const macOSResizeAPFSManualCommand = "find the APFS Container with `/usr/sbin/diskutil info /`, then run `/usr/sbin/diskutil apfs resizeContainer <container> 0` as root"
 
 // RuntimeDiskInfo describes one live storage device attached to a VM.
 type RuntimeDiskInfo struct {
@@ -77,9 +61,10 @@ type RuntimeDiskActionRequest struct {
 
 // RuntimeDiskListResponse is returned by list commands.
 type RuntimeDiskListResponse struct {
-	Action string            `json:"action"`
-	Count  int               `json:"count"`
-	Disks  []RuntimeDiskInfo `json:"disks"`
+	Action  string            `json:"action"`
+	Count   int               `json:"count"`
+	Summary string            `json:"summary,omitempty"`
+	Disks   []RuntimeDiskInfo `json:"disks"`
 }
 
 // RuntimeDiskMutationResponse is returned by swap/resize commands.
@@ -94,11 +79,15 @@ type RuntimeDiskMutationResponse struct {
 // RuntimeDiskGuestResize describes a guest-side filesystem expansion performed
 // after the live backing disk grew.
 type RuntimeDiskGuestResize struct {
-	Platform  string `json:"platform"`
-	Attempted bool   `json:"attempted"`
-	Expanded  bool   `json:"expanded"`
-	Stdout    string `json:"stdout,omitempty"`
-	Stderr    string `json:"stderr,omitempty"`
+	Platform                  string `json:"platform"`
+	Attempted                 bool   `json:"attempted"`
+	Expanded                  bool   `json:"expanded"`
+	Container                 string `json:"container,omitempty"`
+	PhysicalStore             string `json:"physical_store,omitempty"`
+	ContainerTotalBytesBefore uint64 `json:"container_total_bytes_before,omitempty"`
+	ContainerTotalBytesAfter  uint64 `json:"container_total_bytes_after,omitempty"`
+	Stdout                    string `json:"stdout,omitempty"`
+	Stderr                    string `json:"stderr,omitempty"`
 }
 
 type runtimeDiskEntry struct {
@@ -108,7 +97,7 @@ type runtimeDiskEntry struct {
 }
 
 type runtimeDiskGuestAgent interface {
-	Exec(ctx context.Context, args []string, env map[string]string, workDir string) (*agentpb.ExecResponse, error)
+	ResizeMacOSAPFS(ctx context.Context, preflightOnly bool) (*agentpb.ResizeMacOSAPFSResponse, error)
 }
 
 type runtimeDiskJSONEnvelope struct {
@@ -255,9 +244,10 @@ func (s *ControlServer) handleDiskList() *controlpb.ControlResponse {
 		disks = append(disks, entry.Info)
 	}
 	return statusControlResponse(RuntimeDiskListResponse{
-		Action: "list",
-		Count:  len(disks),
-		Disks:  disks,
+		Action:  "list",
+		Count:   len(disks),
+		Summary: runtimeDiskListSummary(disks),
+		Disks:   disks,
 	})
 }
 
@@ -329,9 +319,26 @@ func (s *ControlServer) handleDiskResize(req RuntimeDiskActionRequest) *controlp
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 
+	if current, ok := runtimeDiskCurrentSize(s.effectiveVMDir(), entry); ok && sizeBytes < current {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("disk resize can only grow disk %d: current size is %d bytes, requested %d bytes", entry.Index, current, sizeBytes)}
+	}
+	alreadySized := false
+	if current, ok := runtimeDiskCurrentSize(s.effectiveVMDir(), entry); ok && sizeBytes == current {
+		alreadySized = true
+	}
+	if entry.Info.ReadOnly {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("disk %d is read-only", entry.Index)}
+	}
+
 	attachment, ok := runtimeDiskDiskImageAttachment(entry.Device)
+	diskPath := entry.Info.Path
+	if diskPath == "" {
+		diskPath = runtimeDiskConfiguredPath(s.effectiveVMDir(), entry)
+	}
 	if !ok {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("disk %d is not backed by a disk image", entry.Index)}
+		if diskPath == "" || entry.Index != 0 {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("disk %d is not backed by a disk image", entry.Index)}
+		}
 	}
 
 	var macAgent runtimeDiskGuestAgent
@@ -342,15 +349,38 @@ func (s *ControlServer) handleDiskResize(req RuntimeDiskActionRequest) *controlp
 			return &controlpb.ControlResponse{Error: macOSResizeAgentUnavailableError(entry.Index, sizeBytes, err).Error()}
 		}
 		macAgent = a
+		if err := s.preflightMacOSRootAPFS(macAgent); err != nil {
+			return &controlpb.ControlResponse{Error: macOSResizePreflightFailedError(entry.Index, sizeBytes, alreadySized, err).Error()}
+		}
 	}
 
-	if err := storagehotplug.UpdateDiskSize(attachment, sizeBytes); err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("resize disk attachment: %v", err)}
+	if !alreadySized {
+		if ok {
+			if err := storagehotplug.UpdateDiskSize(attachment, sizeBytes); err != nil {
+				return &controlpb.ControlResponse{Error: fmt.Sprintf("resize disk attachment: %v", err)}
+			}
+		} else {
+			newAttachment, err := newRuntimeDiskImageAttachment(diskPath, false)
+			if err != nil {
+				return &controlpb.ControlResponse{Error: fmt.Sprintf("create disk attachment for %s: %v", diskPath, err)}
+			}
+			ctx, cancel := s.timeoutContext(30 * time.Second)
+			defer cancel()
+			if err := storagehotplug.SetAttachment(ctx, vmruntime.WrapQueue(s.vmQueue), entry.Device, newAttachment.VZStorageDeviceAttachment); err != nil {
+				return &controlpb.ControlResponse{Error: fmt.Sprintf("attach disk image %s before resize: %v", diskPath, err)}
+			}
+			if err := storagehotplug.UpdateDiskSize(newAttachment, sizeBytes); err != nil {
+				return &controlpb.ControlResponse{Error: fmt.Sprintf("resize disk attachment: %v", err)}
+			}
+		}
 	}
 
 	updated, err := s.runtimeDiskEntryByIndex(entry.Index)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("resized disk %d to %d bytes, but could not inspect updated disk: %v; next action: run `cove ctl disk list` and retry `cove ctl disk resize %d %dB` if the guest filesystem did not grow", entry.Index, sizeBytes, err, entry.Index, sizeBytes)}
+	}
+	if current, ok := runtimeDiskCurrentSize(s.effectiveVMDir(), updated); !ok || current < sizeBytes {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("resize disk %d did not reach requested size %d bytes", entry.Index, sizeBytes)}
 	}
 
 	var guestResize *RuntimeDiskGuestResize
@@ -362,6 +392,9 @@ func (s *ControlServer) handleDiskResize(req RuntimeDiskActionRequest) *controlp
 	}
 
 	msg := fmt.Sprintf("resized disk %d to %d bytes", entry.Index, sizeBytes)
+	if alreadySized {
+		msg = fmt.Sprintf("disk %d is already %d bytes", entry.Index, sizeBytes)
+	}
 	if guestResize != nil && guestResize.Expanded {
 		msg += " and expanded macOS APFS container"
 	} else if agentstate.Platform(s.effectiveVMDir()) == agentstate.PlatformMacOS && entry.Index != 0 {
@@ -377,7 +410,36 @@ func (s *ControlServer) handleDiskResize(req RuntimeDiskActionRequest) *controlp
 }
 
 func runtimeDiskShouldExpandMacOSRootAPFS(vmDirectory string, entry runtimeDiskEntry) bool {
-	return entry.Index == 0 && agentstate.Platform(vmDirectory) == agentstate.PlatformMacOS
+	return entry.Index == 0 && strings.EqualFold(vmconfig.DetectOSType(vmDirectory), "macOS")
+}
+
+func runtimeDiskCurrentSize(vmDirectory string, entry runtimeDiskEntry) (uint64, bool) {
+	if entry.Info.FileSizeBytes > 0 {
+		return entry.Info.FileSizeBytes, true
+	}
+	path := runtimeDiskConfiguredPath(vmDirectory, entry)
+	if path == "" {
+		return 0, false
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Size() < 0 {
+		return 0, false
+	}
+	return uint64(info.Size()), true
+}
+
+func runtimeDiskConfiguredPath(vmDirectory string, entry runtimeDiskEntry) string {
+	if entry.Info.Path != "" {
+		return entry.Info.Path
+	}
+	if entry.Index != 0 {
+		return ""
+	}
+	path := vmPrimaryDiskPath(vmDirectory)
+	if st, err := os.Stat(path); err == nil && !st.IsDir() {
+		return path
+	}
+	return ""
 }
 
 func (s *ControlServer) expandMacOSRootAPFS(agent runtimeDiskGuestAgent) (*RuntimeDiskGuestResize, error) {
@@ -387,7 +449,7 @@ func (s *ControlServer) expandMacOSRootAPFS(agent runtimeDiskGuestAgent) (*Runti
 	ctx, cancel := s.timeoutContext(macOSResizeAPFSTimeout)
 	defer cancel()
 
-	res, err := agent.Exec(ctx, []string{"/bin/sh", "-c", macOSResizeAPFSScript}, nil, "")
+	res, err := agent.ResizeMacOSAPFS(ctx, false)
 	if err != nil {
 		return nil, fmt.Errorf("run diskutil: %w", err)
 	}
@@ -396,25 +458,85 @@ func (s *ControlServer) expandMacOSRootAPFS(agent runtimeDiskGuestAgent) (*Runti
 	}
 
 	guestResize := &RuntimeDiskGuestResize{
-		Platform:  agentstate.PlatformMacOS,
-		Attempted: true,
-		Stdout:    strings.TrimSpace(responseText(res.GetStdout())),
-		Stderr:    strings.TrimSpace(responseText(res.GetStderr())),
+		Platform:                  agentstate.PlatformMacOS,
+		Attempted:                 true,
+		Expanded:                  res.GetExpanded(),
+		Container:                 res.GetContainer(),
+		PhysicalStore:             res.GetPhysicalStore(),
+		ContainerTotalBytesBefore: res.GetContainerTotalBytesBefore(),
+		ContainerTotalBytesAfter:  res.GetContainerTotalBytesAfter(),
+		Stdout:                    strings.TrimSpace(res.GetStdout()),
+		Stderr:                    strings.TrimSpace(res.GetStderr()),
 	}
-	if res.GetExitCode() != 0 {
-		detail := pickReadyDetail(guestResize.Stdout, guestResize.Stderr, int(res.GetExitCode()))
-		return guestResize, fmt.Errorf("diskutil exit %d: %s", res.GetExitCode(), detail)
-	}
-	guestResize.Expanded = true
 	return guestResize, nil
 }
 
+func (s *ControlServer) preflightMacOSRootAPFS(agent runtimeDiskGuestAgent) error {
+	if agent == nil {
+		return fmt.Errorf("guest agent unavailable")
+	}
+	ctx, cancel := s.timeoutContext(30 * time.Second)
+	defer cancel()
+
+	res, err := agent.ResizeMacOSAPFS(ctx, true)
+	if err != nil {
+		return fmt.Errorf("run diskutil preflight: %w", err)
+	}
+	if res == nil {
+		return fmt.Errorf("run diskutil preflight: missing response")
+	}
+	return nil
+}
+
 func macOSResizeAgentUnavailableError(index int, sizeBytes uint64, err error) error {
-	return fmt.Errorf("macOS disk resize requires the guest agent so cove can expand APFS after growing the backing image; no changes made; next action: start the VM, wait for `cove ctl agent-ping` to succeed, then rerun `cove ctl disk resize %d %dB`: %w", index, sizeBytes, err)
+	return fmt.Errorf("macOS disk resize requires the root guest agent so cove can expand APFS after growing the backing image; no host disk changes made; next action: start the VM, wait for `cove ctl agent-ping` to succeed, then rerun `cove ctl disk resize %d %dB`: %w", index, sizeBytes, err)
+}
+
+func macOSResizePreflightFailedError(index int, sizeBytes uint64, alreadySized bool, err error) error {
+	if alreadySized {
+		return fmt.Errorf("macOS APFS expansion preflight failed for disk %d at %d bytes: %v; host disk is already grown, so recovery only needs APFS expansion; next action: fix the guest partition layout, then rerun `cove ctl disk resize %d %dB`", index, sizeBytes, err, index, sizeBytes)
+	}
+	return fmt.Errorf("macOS APFS expansion preflight failed for disk %d at %d bytes: %v; no host disk changes made; next action: fix the guest partition layout, then rerun `cove ctl disk resize %d %dB`", index, sizeBytes, err, index, sizeBytes)
 }
 
 func macOSResizeGuestFailedError(index int, sizeBytes uint64, err error) error {
-	return fmt.Errorf("resized disk %d to %d bytes, but macOS APFS expansion failed: %v; next action: rerun `cove ctl disk resize %d %dB` after the guest agent is ready, or run inside the guest as root: %s", index, sizeBytes, err, index, sizeBytes, macOSResizeAPFSManualCommand)
+	return fmt.Errorf("resized disk %d to %d bytes, but macOS APFS expansion failed: %v; host disk is already grown, so recovery only needs APFS expansion; next action: rerun `cove ctl disk resize %d %dB` after the root guest agent is ready, or run inside the guest as root: %s", index, sizeBytes, err, index, sizeBytes, macOSResizeAPFSManualCommand)
+}
+
+func runtimeDiskListSummary(disks []RuntimeDiskInfo) string {
+	if len(disks) == 0 {
+		return "no disks"
+	}
+	var total uint64
+	var sized, readOnly int
+	for _, disk := range disks {
+		if disk.FileSizeBytes > 0 {
+			total += disk.FileSizeBytes
+			sized++
+		}
+		if disk.ReadOnly {
+			readOnly++
+		}
+	}
+	summary := fmt.Sprintf("%d disk", len(disks))
+	if len(disks) != 1 {
+		summary += "s"
+	}
+	if sized > 0 {
+		summary += fmt.Sprintf(", %s backing files", runtimeDiskFormatBytes(total))
+	}
+	if readOnly > 0 {
+		summary += fmt.Sprintf(", %d read-only", readOnly)
+	}
+	return summary
+}
+
+func runtimeDiskFormatBytes(bytes uint64) string {
+	const maxFormatBytes = uint64(1<<63 - 1)
+	if bytes <= maxFormatBytes {
+		return bytefmt.Size(int64(bytes))
+	}
+	return fmt.Sprintf("%d bytes", bytes)
 }
 
 func (s *ControlServer) runtimeDiskEntries() ([]runtimeDiskEntry, error) {
@@ -451,7 +573,22 @@ func (s *ControlServer) runtimeDiskEntries() ([]runtimeDiskEntry, error) {
 		}
 	})
 
+	for i := range entries {
+		augmentRuntimeDiskEntryInfo(s.effectiveVMDir(), &entries[i])
+	}
 	return entries, nil
+}
+
+func augmentRuntimeDiskEntryInfo(vmDirectory string, entry *runtimeDiskEntry) {
+	if entry == nil || entry.Info.Path != "" {
+		return
+	}
+	path := runtimeDiskConfiguredPath(vmDirectory, *entry)
+	if path == "" {
+		return
+	}
+	entry.Info.Kind = "disk-image"
+	runtimeDiskSetPathInfo(&entry.Info, path)
 }
 
 func (s *ControlServer) runtimeDiskEntryByIndex(index int) (runtimeDiskEntry, error) {
@@ -484,15 +621,11 @@ func runtimeDiskInfoForDevice(index int, device pvz.VZStorageDevice) RuntimeDisk
 
 	if diskAttachment, ok := runtimeDiskDiskImageAttachmentFromObject(attachment); ok {
 		info.Kind = "disk-image"
-		info.ReadOnly = diskAttachment.ReadOnly()
-		if objc.RespondsToSelector(diskAttachment.ID, objc.Sel("URL")) {
-			urlID := objc.Send[objc.ID](diskAttachment.ID, objc.Sel("URL"))
-			if path := strings.TrimSpace(foundation.NSURLFromID(urlID).Path()); path != "" {
-				info.Path = path
-				if stat, err := os.Stat(path); err == nil {
-					info.FileSizeBytes = uint64(stat.Size())
-					info.ModTime = stat.ModTime().UTC().Format(time.RFC3339)
-				}
+		publicAttachment := vz.VZDiskImageStorageDeviceAttachmentFromID(diskAttachment.ID)
+		info.ReadOnly = publicAttachment.IsReadOnly()
+		if url := publicAttachment.URL(); url.GetID() != 0 {
+			if path := strings.TrimSpace(url.Path()); path != "" {
+				runtimeDiskSetPathInfo(&info, path)
 			}
 		}
 		return info
@@ -506,13 +639,23 @@ func runtimeDiskDiskImageAttachmentFromObject(obj objectivec.IObject) (pvz.VZDis
 	if obj == nil || obj.GetID() == 0 {
 		return pvz.VZDiskImageStorageDeviceAttachment{}, false
 	}
-	if !objc.RespondsToSelector(obj.GetID(), objc.Sel("readOnly")) {
+	switch runtimeUSBClassName(obj) {
+	case "VZDiskImageStorageDeviceAttachment", "_VZDiskImageStorageDeviceAttachment":
+	default:
 		return pvz.VZDiskImageStorageDeviceAttachment{}, false
 	}
 	if !objc.RespondsToSelector(obj.GetID(), objc.Sel("URL")) {
 		return pvz.VZDiskImageStorageDeviceAttachment{}, false
 	}
 	return pvz.VZDiskImageStorageDeviceAttachmentFromID(obj.GetID()), true
+}
+
+func runtimeDiskSetPathInfo(info *RuntimeDiskInfo, path string) {
+	info.Path = path
+	if stat, err := os.Stat(path); err == nil {
+		info.FileSizeBytes = uint64(stat.Size())
+		info.ModTime = stat.ModTime().UTC().Format(time.RFC3339)
+	}
 }
 
 func runtimeDiskDiskImageAttachment(device pvz.VZStorageDevice) (pvz.VZDiskImageStorageDeviceAttachment, bool) {

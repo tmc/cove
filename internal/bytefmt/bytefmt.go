@@ -2,6 +2,7 @@ package bytefmt
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -64,5 +65,12 @@ func Parse(value string) (uint64, error) {
 		return 0, fmt.Errorf("unknown size unit %q", unitPart)
 	}
 
-	return uint64(n * multiplier), nil
+	bytes := n * multiplier
+	if math.IsInf(bytes, 0) || math.IsNaN(bytes) || bytes >= float64(^uint64(0)) {
+		return 0, fmt.Errorf("size too large")
+	}
+	if bytes != math.Trunc(bytes) {
+		return 0, fmt.Errorf("size must resolve to whole bytes")
+	}
+	return uint64(bytes), nil
 }

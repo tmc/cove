@@ -10,6 +10,7 @@ import (
 	"github.com/tmc/apple/x/vzkit/disk"
 	"github.com/tmc/cove/internal/covecli"
 	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 var commandRegistry = []covecli.Spec{
@@ -27,6 +28,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "ctl", Summary: "Control running VM via socket", Dispatch: covecli.DispatchEarly, Run: runCtlCommand},
 	{Name: "daemon", Summary: "Manage the cove background coordinator", Dispatch: covecli.DispatchEarly, Run: runDaemonCommand},
 	{Name: "diff", Summary: "Compare local image disk layer metadata", Dispatch: covecli.DispatchEarly, Run: runDiffCommand},
+	{Name: "disk", Summary: "Resize stopped VM disk images", Dispatch: covecli.DispatchEarly, Run: runDiskCommand},
 	{Name: "disk-detach", Summary: "Detach VM disk if stuck", Dispatch: covecli.DispatchEarly, Run: runDiskDetachCommand},
 	{Name: "disk-snapshot", Summary: "Manage disk-level snapshots", Dispatch: covecli.DispatchLate, Run: runDiskSnapshotCommand},
 	{Name: "export", Summary: "Export VM to tarball", Dispatch: covecli.DispatchLate, Run: runVMSubcommand},
@@ -380,7 +382,8 @@ func runInstallCommand(env commandEnv, _ string, _ []string) int {
 	} else if linuxMode {
 		err = handleLinuxInstall(env.Stderr)
 	} else {
-		err = installMacOSLikeVZ(context.Background(), env.Stderr)
+		opts := currentRuntimeOptions()
+		err = installMacOSLikeVZWithProvision(context.Background(), env.Stderr, macOSInstallProvisionFromRuntimeOptions(opts), opts.IPSWPath, opts.vmrunRunConfig(vmrun.GuestMacOS), opts.vmrunHostConfig())
 	}
 	if errors.Is(err, errRestartVM) {
 		if err := runMacOSVM(); err != nil {
