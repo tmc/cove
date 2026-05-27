@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/controlserver"
+	"github.com/tmc/cove/internal/vmrun"
 	"github.com/tmc/cove/proto/controlpb"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
@@ -22,10 +23,10 @@ const (
 //
 // It waits for the VM window to be capturable before starting, since the
 // ControlServer needs windowNum and viewContentHeight to take screenshots.
-func runProvisioningAutomation(cs *ControlServer) {
+func runProvisioningAutomation(cs *ControlServer, rc vmrun.RunConfig) {
 	fmt.Println("\n=== Starting Auto-Provisioning (GUI) ===")
-	fmt.Printf("Username: %s\n", provisionUser)
-	fmt.Printf("Admin: %v\n", provisionAdmin)
+	fmt.Printf("Username: %s\n", rc.ProvisionUser)
+	fmt.Printf("Admin: %v\n", rc.ProvisionAdmin)
 	fmt.Println()
 	vmDirectory := cs.effectiveVMDir()
 
@@ -56,10 +57,10 @@ func runProvisioningAutomation(cs *ControlServer) {
 	}
 
 	assistant := NewSetupAssistantInProcess(cs, ocr, ProvisionConfig{
-		Username: provisionUser,
-		Password: provisionPassword,
-		Fullname: provisionUser,
-		Admin:    provisionAdmin,
+		Username: rc.ProvisionUser,
+		Password: rc.ProvisionPassword,
+		Fullname: rc.ProvisionUser,
+		Admin:    rc.ProvisionAdmin,
 	}, verbose, debugDir)
 
 	// Run the automation
@@ -68,7 +69,7 @@ func runProvisioningAutomation(cs *ControlServer) {
 		fmt.Println("Attempting login screen fallback...")
 
 		socketPath := GetControlSocketPathForVM(vmDirectory)
-		creds := loginScreenCredentials{Username: provisionUser, Password: provisionPassword}
+		creds := loginScreenCredentials{Username: rc.ProvisionUser, Password: rc.ProvisionPassword}
 		if loginErr := tryLoginFallback(socketPath, creds, false); loginErr != nil {
 			fmt.Printf("Login fallback also failed: %v\n", loginErr)
 			fmt.Println("Manual intervention may be required.")
@@ -82,7 +83,7 @@ func runProvisioningAutomation(cs *ControlServer) {
 		fmt.Printf("Verification error: %v\n", err)
 	} else if success {
 		fmt.Println("\n=== Provisioning Complete ===")
-		fmt.Printf("User '%s' has been created.\n", provisionUser)
+		fmt.Printf("User '%s' has been created.\n", rc.ProvisionUser)
 	} else {
 		fmt.Println("\n=== Provisioning Incomplete ===")
 		fmt.Println("Please complete setup manually.")

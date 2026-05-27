@@ -8,9 +8,7 @@
 
 package main
 
-import (
-	"github.com/tmc/cove/internal/controlserver"
-)
+import "github.com/tmc/cove/internal/controlserver"
 
 var _ controlserver.NetworkHost = (*ControlServer)(nil)
 
@@ -20,8 +18,4 @@ var _ controlserver.NetworkHost = (*ControlServer)(nil)
 // later.
 func (s *ControlServer) GuestConnector() controlserver.GuestConnector {
 	return newControlServerGuestConnector(s)
-}
-
-func init() {
-	controlserver.ListenHostVsock = listenHostVsock
 }

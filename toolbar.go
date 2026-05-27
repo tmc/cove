@@ -14,6 +14,7 @@ import (
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 // Toolbar item identifiers.
@@ -53,6 +54,8 @@ type VMToolbar struct {
 	vm             vz.VZVirtualMachine
 	vmQueue        dispatch.Queue
 	vmDirectory    string
+	rc             vmrun.RunConfig
+	hc             vmrun.HostConfig
 	delegateID     objc.ID
 	items          map[string]appkit.NSToolbarItem
 	screenshots    vmScreenshotProvider
@@ -61,13 +64,15 @@ type VMToolbar struct {
 }
 
 // NewVMToolbar creates and attaches a toolbar to the VM window.
-func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.VZVirtualMachine, queue dispatch.Queue, screenshots vmScreenshotProvider, vmDirectory string) *VMToolbar {
+func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.VZVirtualMachine, queue dispatch.Queue, screenshots vmScreenshotProvider, vmDirectory string, rc vmrun.RunConfig, hc vmrun.HostConfig) *VMToolbar {
 	t := &VMToolbar{
 		window:      window,
 		vmView:      vmView,
 		vm:          vm,
 		vmQueue:     queue,
 		vmDirectory: vmDirectory,
+		rc:          rc,
+		hc:          hc,
 		items:       make(map[string]appkit.NSToolbarItem),
 		screenshots: screenshots,
 	}
@@ -197,7 +202,7 @@ func (t *VMToolbar) createItem(id, sfSymbol, label, action string) appkit.NSTool
 	item.SetAutovalidates(false)
 
 	item.SetTarget(objectivec.ObjectFromID(t.delegateID))
-	item.SetAction(objc.Sel(action))
+	item.SetAction(objectivec.SEL(objc.Sel(action)))
 
 	return item
 }
@@ -259,7 +264,7 @@ func (t *VMToolbar) populateSharedFolderMenu(menu appkit.NSMenu) {
 			}
 			item := appkit.NewMenuItemWithTitleActionKeyEquivalent(label, 0, "")
 			item.SetToolTip(f.Path)
-			item.SetAction(objc.Sel("removeSharedFolder:"))
+			item.SetAction(objectivec.SEL(objc.Sel("removeSharedFolder:")))
 			item.SetTarget(objectivec.ObjectFromID(t.delegateID))
 			item.SetTag(sharedFolderMenuTag + i)
 			folderImg := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("folder.fill", label)
@@ -403,11 +408,11 @@ func (t *VMToolbar) handleRestart(_ objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func (t *VMToolbar) handleBootRecovery(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	bootVMToRecovery("Toolbar", t.vm, t.vmQueue)
+	bootVMToRecovery("Toolbar", t.vm, t.vmQueue, t.hc.VMDir)
 }
 
 func (t *VMToolbar) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	requestVMSuspend("Toolbar", t.vm, t.vmQueue)
+	requestVMSuspend("Toolbar", t.vm, t.vmQueue, t.rc, t.hc)
 }
 
 func (t *VMToolbar) handleShowWindow(_ objc.ID, _ objc.SEL, _ objc.ID) {

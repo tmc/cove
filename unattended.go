@@ -9,6 +9,7 @@ import (
 	"time"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
+	"github.com/tmc/cove/internal/vmrun"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -20,7 +21,7 @@ import (
 // Setup Assistant via OCR + keyboard navigation.
 //
 // It can also run user-provided boot command scripts for custom automation.
-func runUnattendedSetup(cs *ControlServer) error {
+func runUnattendedSetup(cs *ControlServer, rc vmrun.RunConfig) error {
 	ocr := ocrx.NewService(verbose)
 	debugDir := ""
 	if debugOCR {
@@ -29,16 +30,16 @@ func runUnattendedSetup(cs *ControlServer) error {
 	}
 
 	// If an automation script file is provided, use that.
-	if bootCommandsFile != "" {
-		return runAutomationScript(cs, debugDir)
+	if rc.BootCommandsFile != "" {
+		return runAutomationScript(cs, debugDir, rc.BootCommandsFile)
 	}
 
 	// Otherwise, run the default unattended flow
-	return runDefaultUnattendedFlow(cs, ocr, debugDir)
+	return runDefaultUnattendedFlow(cs, ocr, debugDir, rc)
 }
 
 // runAutomationScript loads and executes a vzscript automation file.
-func runAutomationScript(cs *ControlServer, debugDir string) error {
+func runAutomationScript(cs *ControlServer, debugDir, bootCommandsFile string) error {
 	data, err := os.ReadFile(bootCommandsFile)
 	if err != nil {
 		return fmt.Errorf("read automation script: %w", err)
@@ -104,7 +105,7 @@ func forceBootCommandAutomationBackends(cs *ControlServer) func() {
 //  2. Check if we're at desktop (injection succeeded) — done
 //  3. Check if we're at login screen — type password, done
 //  4. Check if we're at Setup Assistant — run OCR-guided navigation
-func runDefaultUnattendedFlow(cs *ControlServer, ocr *ocrx.Service, debugDir string) error {
+func runDefaultUnattendedFlow(cs *ControlServer, ocr *ocrx.Service, debugDir string, rc vmrun.RunConfig) error {
 	fmt.Println("Waiting for VM to boot...")
 
 	// Wait up to 5 minutes for the screen to leave black/Apple logo
@@ -133,11 +134,11 @@ func runDefaultUnattendedFlow(cs *ControlServer, ocr *ocrx.Service, debugDir str
 
 		case ScreenStateLoginScreen:
 			fmt.Println("VM at login screen — attempting login...")
-			return attemptLogin(cs, ocr)
+			return attemptLogin(cs, ocr, rc.ProvisionPassword)
 
 		case ScreenStateSetupAssistant:
 			fmt.Println("VM at Setup Assistant — running OCR-guided navigation...")
-			return runOCRSetupAssistant(cs, ocr, debugDir)
+			return runOCRSetupAssistant(cs, ocr, debugDir, rc)
 
 		case ScreenStateBlack, ScreenStateAppleLogo:
 			// Still booting
@@ -153,14 +154,14 @@ func runDefaultUnattendedFlow(cs *ControlServer, ocr *ocrx.Service, debugDir str
 }
 
 // attemptLogin types the provisioning password at the login screen.
-func attemptLogin(cs *ControlServer, ocr *ocrx.Service) error {
-	if provisionPassword == "" {
+func attemptLogin(cs *ControlServer, ocr *ocrx.Service, password string) error {
+	if password == "" {
 		return fmt.Errorf("at login screen but no -provision-password set")
 	}
 
 	// Click in the password field area, then type password
 	time.Sleep(500 * time.Millisecond)
-	resp := cs.typeText(&controlpb.TextCommand{Text: provisionPassword})
+	resp := cs.typeText(&controlpb.TextCommand{Text: password})
 	if !resp.Success {
 		return fmt.Errorf("type password: %s", resp.Error)
 	}
@@ -189,12 +190,12 @@ func attemptLogin(cs *ControlServer, ocr *ocrx.Service) error {
 
 // runOCRSetupAssistant navigates Setup Assistant using OCR text detection.
 // This is the fallback path when disk injection didn't skip Setup Assistant.
-func runOCRSetupAssistant(cs *ControlServer, ocr *ocrx.Service, debugDir string) error {
+func runOCRSetupAssistant(cs *ControlServer, ocr *ocrx.Service, debugDir string, rc vmrun.RunConfig) error {
 	fmt.Println("Using OCR-driven Setup Assistant navigation...")
 	sa := NewSetupAssistantInProcess(cs, ocr, ProvisionConfig{
-		Username: provisionUser,
-		Password: provisionPassword,
-		Admin:    provisionAdmin,
+		Username: rc.ProvisionUser,
+		Password: rc.ProvisionPassword,
+		Admin:    rc.ProvisionAdmin,
 	}, verbose, debugDir)
 	return sa.Run()
 }

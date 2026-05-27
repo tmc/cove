@@ -22,6 +22,7 @@ import (
 
 	"github.com/tmc/cove/internal/bytefmt"
 	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 
 	"golang.org/x/tools/txtar"
@@ -2105,7 +2106,8 @@ func performSelectorAction(action selectorAction) error {
 		if provisionUser != "" {
 			provisionStrategy = "auto"
 		}
-		err := installMacOSLikeVZ(context.Background(), os.Stderr)
+		opts := currentRuntimeOptions()
+		err := installMacOSLikeVZWithProvision(context.Background(), os.Stderr, macOSInstallProvisionFromRuntimeOptions(opts), opts.IPSWPath, opts.vmrunRunConfig(vmrun.GuestMacOS), opts.vmrunHostConfig())
 
 		// Save selected recipes to config.json so they survive failures.
 		if postInstallRecipes != "" {

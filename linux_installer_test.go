@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,59 @@ import (
 
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 )
+
+func TestExtractKernelFromISOFedoraPXEBoot(t *testing.T) {
+	isoPath := filepath.Join(t.TempDir(), "fedora.iso")
+	f, err := os.Create(isoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	for _, file := range []struct {
+		name string
+		body string
+	}{
+		{"images/pxeboot/vmlinuz", "MZkernel"},
+		{"images/pxeboot/initrd.img", "initrd"},
+	} {
+		hdr := &tar.Header{Name: file.name, Mode: 0644, Size: int64(len(file.body))}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(file.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	vmDir := t.TempDir()
+	got, err := extractKernelFromISO(isoPath, vmDir)
+	if err != nil {
+		t.Fatalf("extractKernelFromISO: %v", err)
+	}
+	if got.kernel != filepath.Join(vmDir, "vmlinuz") {
+		t.Fatalf("kernel path = %q", got.kernel)
+	}
+	kernel, err := os.ReadFile(got.kernel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(kernel) != "MZkernel" {
+		t.Fatalf("kernel = %q", kernel)
+	}
+	initrd, err := os.ReadFile(got.initrd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(initrd) != "initrd" {
+		t.Fatalf("initrd = %q", initrd)
+	}
+}
 
 func TestGenerateUserDataServer(t *testing.T) {
 	config := LinuxProvisionConfig{
@@ -64,18 +118,15 @@ func TestGenerateUserDataServer(t *testing.T) {
 }
 
 func TestGenerateUserDataDesktopWithAgent(t *testing.T) {
-	old := linuxDesktopInstaller
-	t.Cleanup(func() { linuxDesktopInstaller = old })
-	linuxDesktopInstaller = "server"
-
 	config := LinuxProvisionConfig{
-		Username:  "me",
-		Password:  "secret",
-		Hostname:  "desktop-vm",
-		TimeZone:  "UTC",
-		Locale:    "en_US.UTF-8",
-		Variant:   LinuxVariantDesktop,
-		AutoLogin: true,
+		Username:         "me",
+		Password:         "secret",
+		Hostname:         "desktop-vm",
+		TimeZone:         "UTC",
+		Locale:           "en_US.UTF-8",
+		Variant:          LinuxVariantDesktop,
+		AutoLogin:        true,
+		DesktopInstaller: "server",
 	}
 
 	got := generateUserData(config, true, "http://192.168.64.1:1234/vz-agent")
@@ -533,14 +584,17 @@ func TestParseUpFlagsLinuxDistroDefaultUser(t *testing.T) {
 }
 
 func TestLinuxVariantInstallISOVariant(t *testing.T) {
-	if got, want := LinuxVariantDesktop.installISOVariant(), LinuxVariantDesktop; got != want {
+	if got, want := LinuxVariantDesktop.installISOVariant("oem"), LinuxVariantDesktop; got != want {
 		t.Fatalf("LinuxVariantDesktop.installISOVariant() = %q, want %q", got, want)
 	}
-	if got, want := LinuxVariantServer.installISOVariant(), LinuxVariantServer; got != want {
+	if got, want := LinuxVariantDesktop.installISOVariant("server"), LinuxVariantServer; got != want {
+		t.Fatalf("LinuxVariantDesktop.installISOVariant(server) = %q, want %q", got, want)
+	}
+	if got, want := LinuxVariantServer.installISOVariant("oem"), LinuxVariantServer; got != want {
 		t.Fatalf("LinuxVariantServer.installISOVariant() = %q, want %q", got, want)
 	}
 	for _, variant := range []LinuxVariant{LinuxVariantDebian, LinuxVariantFedora, LinuxVariantAlpine, LinuxVariantNixOS} {
-		if got := variant.installISOVariant(); got != variant {
+		if got := variant.installISOVariant("oem"); got != variant {
 			t.Fatalf("%s.installISOVariant() = %q, want %q", variant, got, variant)
 		}
 	}
@@ -549,14 +603,11 @@ func TestLinuxVariantInstallISOVariant(t *testing.T) {
 // TestLinuxVariantInstallISOVariantOEM verifies that opting in to the OEM
 // installer keeps the Desktop ISO instead of falling back to the Server ISO.
 func TestLinuxVariantInstallISOVariantOEM(t *testing.T) {
-	old := linuxDesktopInstaller
-	t.Cleanup(func() { linuxDesktopInstaller = old })
-	linuxDesktopInstaller = "oem"
-	if got, want := LinuxVariantDesktop.installISOVariant(), LinuxVariantDesktop; got != want {
+	if got, want := LinuxVariantDesktop.installISOVariant("oem"), LinuxVariantDesktop; got != want {
 		t.Fatalf("oem mode: LinuxVariantDesktop.installISOVariant() = %q, want %q", got, want)
 	}
 	// Server variant unaffected.
-	if got, want := LinuxVariantServer.installISOVariant(), LinuxVariantServer; got != want {
+	if got, want := LinuxVariantServer.installISOVariant("oem"), LinuxVariantServer; got != want {
 		t.Fatalf("oem mode: LinuxVariantServer.installISOVariant() = %q, want %q", got, want)
 	}
 }
@@ -565,18 +616,15 @@ func TestLinuxVariantInstallISOVariantOEM(t *testing.T) {
 // emits `oem: install: true`, drops the `packages: ubuntu-desktop` block
 // (already in the Desktop ISO), and selects `source: id: ubuntu-desktop`.
 func TestGenerateUserDataDesktopOEM(t *testing.T) {
-	old := linuxDesktopInstaller
-	t.Cleanup(func() { linuxDesktopInstaller = old })
-	linuxDesktopInstaller = "oem"
-
 	config := LinuxProvisionConfig{
-		Username:  "me",
-		Password:  "secret",
-		Hostname:  "desktop-vm",
-		TimeZone:  "UTC",
-		Locale:    "en_US.UTF-8",
-		Variant:   LinuxVariantDesktop,
-		AutoLogin: true,
+		Username:         "me",
+		Password:         "secret",
+		Hostname:         "desktop-vm",
+		TimeZone:         "UTC",
+		Locale:           "en_US.UTF-8",
+		Variant:          LinuxVariantDesktop,
+		AutoLogin:        true,
+		DesktopInstaller: "oem",
 	}
 	got := generateUserData(config, false, "")
 

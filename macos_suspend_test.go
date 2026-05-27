@@ -5,14 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func TestCurrentUSBControllerFingerprintCount(t *testing.T) {
-	oldRuntimeProfile := runtimeProfile
-	t.Cleanup(func() {
-		runtimeProfile = oldRuntimeProfile
-	})
-
 	tests := []struct {
 		name           string
 		runtimeProfile string
@@ -24,34 +21,19 @@ func TestCurrentUSBControllerFingerprintCount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtimeProfile = tt.runtimeProfile
-			if got := currentUSBControllerFingerprintCount(); got != tt.want {
-				t.Fatalf("currentUSBControllerFingerprintCount() = %d, want %d", got, tt.want)
+			hc := vmrun.HostConfig{RuntimeProfile: tt.runtimeProfile}
+			if got := usbControllerFingerprintCount(hc); got != tt.want {
+				t.Fatalf("usbControllerFingerprintCount() = %d, want %d", got, tt.want)
 			}
 		})
 	}
 }
 
 func TestCurrentVirtioDeviceFingerprintCounts(t *testing.T) {
-	oldVMDir := vmDir
-	oldRuntimeProfile := runtimeProfile
-	oldVolumes := volumes
-	oldShareDir := shareDir
-	t.Cleanup(func() {
-		vmDir = oldVMDir
-		runtimeProfile = oldRuntimeProfile
-		volumes = oldVolumes
-		shareDir = oldShareDir
-	})
-
-	vmDir = t.TempDir()
-	volumes = nil
-	shareDir = ""
-
 	tests := []struct {
 		name           string
 		runtimeProfile string
-		volumes        volumeSlice
+		volumes        []vmrun.VolumeMount
 		wantDirSharing int
 		wantSockets    int
 		wantBalloon    int
@@ -60,7 +42,7 @@ func TestCurrentVirtioDeviceFingerprintCounts(t *testing.T) {
 		{
 			name:           "full with tagged volumes",
 			runtimeProfile: "full",
-			volumes: volumeSlice{
+			volumes: []vmrun.VolumeMount{
 				{HostPath: "/tmp/a", Tag: "a"},
 				{HostPath: "/tmp/b", Tag: "b"},
 			},
@@ -73,63 +55,40 @@ func TestCurrentVirtioDeviceFingerprintCounts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtimeProfile = tt.runtimeProfile
-			volumes = tt.volumes
-			if got := currentDirectorySharingDeviceFingerprintCount(); got != tt.wantDirSharing {
-				t.Fatalf("currentDirectorySharingDeviceFingerprintCount() = %d, want %d", got, tt.wantDirSharing)
+			rc := vmrun.RunConfig{Volumes: tt.volumes}
+			hc := vmrun.HostConfig{RuntimeProfile: tt.runtimeProfile}
+			if got := directorySharingDeviceFingerprintCount(rc, hc); got != tt.wantDirSharing {
+				t.Fatalf("directorySharingDeviceFingerprintCount() = %d, want %d", got, tt.wantDirSharing)
 			}
-			if got := currentSocketDeviceFingerprintCount(); got != tt.wantSockets {
-				t.Fatalf("currentSocketDeviceFingerprintCount() = %d, want %d", got, tt.wantSockets)
+			if got := socketDeviceFingerprintCount(hc); got != tt.wantSockets {
+				t.Fatalf("socketDeviceFingerprintCount() = %d, want %d", got, tt.wantSockets)
 			}
-			if got := currentBalloonDeviceFingerprintCount(); got != tt.wantBalloon {
-				t.Fatalf("currentBalloonDeviceFingerprintCount() = %d, want %d", got, tt.wantBalloon)
+			if got := balloonDeviceFingerprintCount(hc); got != tt.wantBalloon {
+				t.Fatalf("balloonDeviceFingerprintCount() = %d, want %d", got, tt.wantBalloon)
 			}
 		})
 	}
 }
 
 func TestCurrentConfigFingerprintIncludesVirtioRuntimeSurface(t *testing.T) {
-	oldVMDir := vmDir
-	oldRuntimeProfile := runtimeProfile
-	oldCPUCount := cpuCount
-	oldMemoryGB := memoryGB
-	oldNetworkMode := networkMode
-	oldDisplays := displays
-	oldVolumes := volumes
-	oldShareDir := shareDir
-	oldUSBDevices := usbDevices
-	oldEnableClipboard := enableClipboard
-	oldSerialOutput := serialOutput
 	oldBootMode := currentBootSessionMode()
 	t.Cleanup(func() {
-		vmDir = oldVMDir
-		runtimeProfile = oldRuntimeProfile
-		cpuCount = oldCPUCount
-		memoryGB = oldMemoryGB
-		networkMode = oldNetworkMode
-		displays = oldDisplays
-		volumes = oldVolumes
-		shareDir = oldShareDir
-		usbDevices = oldUSBDevices
-		enableClipboard = oldEnableClipboard
-		serialOutput = oldSerialOutput
 		setActiveBootSessionMode(oldBootMode)
 	})
 
-	vmDir = t.TempDir()
-	runtimeProfile = "full"
-	cpuCount = 4
-	memoryGB = 8
-	networkMode = "nat"
-	displays = nil
-	volumes = volumeSlice{{HostPath: "/tmp/work", Tag: "work"}}
-	shareDir = ""
-	usbDevices = USBStorageSlice{{Path: "/tmp/disk1.img"}}
-	enableClipboard = true
-	serialOutput = "stdout"
 	setActiveBootSessionMode(bootSessionModeRecovery)
 
-	got := currentConfigFingerprint()
+	rc := vmrun.RunConfig{
+		CPUCount:        4,
+		MemoryGB:        8,
+		NetworkMode:     "nat",
+		Volumes:         []vmrun.VolumeMount{{HostPath: "/tmp/work", Tag: "work"}},
+		USB:             []vmrun.USBSpec{{Path: "/tmp/disk1.img"}},
+		EnableClipboard: true,
+		SerialOutput:    "stdout",
+	}
+	hc := vmrun.HostConfig{VMDir: t.TempDir(), RuntimeProfile: "full"}
+	got := currentConfigFingerprintForRun(rc, hc)
 	if got.DirectorySharingDevices != 2 {
 		t.Fatalf("currentConfigFingerprint().DirectorySharingDevices = %d, want 2", got.DirectorySharingDevices)
 	}
@@ -151,43 +110,8 @@ func TestCurrentConfigFingerprintIncludesVirtioRuntimeSurface(t *testing.T) {
 }
 
 func TestCheckSuspendConfigMatchDetectsUSBControllerChange(t *testing.T) {
-	oldVMDir := vmDir
-	oldCPUCount := cpuCount
-	oldMemoryGB := memoryGB
-	oldNetworkMode := networkMode
-	oldDisplays := displays
-	oldVolumes := volumes
-	oldShareDir := shareDir
-	oldUSBDevices := usbDevices
-	oldEnableClipboard := enableClipboard
-	oldSerialOutput := serialOutput
-	oldRuntimeProfile := runtimeProfile
-
-	t.Cleanup(func() {
-		vmDir = oldVMDir
-		cpuCount = oldCPUCount
-		memoryGB = oldMemoryGB
-		networkMode = oldNetworkMode
-		displays = oldDisplays
-		volumes = oldVolumes
-		shareDir = oldShareDir
-		usbDevices = oldUSBDevices
-		enableClipboard = oldEnableClipboard
-		serialOutput = oldSerialOutput
-		runtimeProfile = oldRuntimeProfile
-	})
-
-	vmDir = t.TempDir()
-	cpuCount = 2
-	memoryGB = 4
-	networkMode = "nat"
-	displays = nil
-	volumes = nil
-	shareDir = ""
-	usbDevices = nil
-	enableClipboard = false
-	serialOutput = "stdout"
-	runtimeProfile = "full"
+	rc := vmrun.RunConfig{CPUCount: 2, MemoryGB: 4, NetworkMode: "nat", SerialOutput: "stdout"}
+	hc := vmrun.HostConfig{VMDir: t.TempDir(), RuntimeProfile: "full"}
 
 	legacyFingerprint := `{
   "cpus": 2,
@@ -202,11 +126,11 @@ func TestCheckSuspendConfigMatchDetectsUSBControllerChange(t *testing.T) {
   "clipboard": false,
   "serial": true
 }`
-	if err := os.WriteFile(filepath.Join(vmDir, "suspend.config.json"), []byte(legacyFingerprint), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(hc.VMDir, "suspend.config.json"), []byte(legacyFingerprint), 0644); err != nil {
 		t.Fatalf("write suspend config: %v", err)
 	}
 
-	err := checkSuspendConfigMatch()
+	err := checkSuspendConfigMatchForRun(rc, hc)
 	if err == nil {
 		t.Fatal("checkSuspendConfigMatch() = nil, want mismatch error")
 	}
@@ -216,42 +140,8 @@ func TestCheckSuspendConfigMatchDetectsUSBControllerChange(t *testing.T) {
 }
 
 func TestCheckSuspendConfigMatchDetectsVirtioRuntimeSurfaceChange(t *testing.T) {
-	oldVMDir := vmDir
-	oldRuntimeProfile := runtimeProfile
-	oldCPUCount := cpuCount
-	oldMemoryGB := memoryGB
-	oldNetworkMode := networkMode
-	oldDisplays := displays
-	oldVolumes := volumes
-	oldShareDir := shareDir
-	oldUSBDevices := usbDevices
-	oldEnableClipboard := enableClipboard
-	oldSerialOutput := serialOutput
-	t.Cleanup(func() {
-		vmDir = oldVMDir
-		runtimeProfile = oldRuntimeProfile
-		cpuCount = oldCPUCount
-		memoryGB = oldMemoryGB
-		networkMode = oldNetworkMode
-		displays = oldDisplays
-		volumes = oldVolumes
-		shareDir = oldShareDir
-		usbDevices = oldUSBDevices
-		enableClipboard = oldEnableClipboard
-		serialOutput = oldSerialOutput
-	})
-
-	vmDir = t.TempDir()
-	runtimeProfile = "minimal"
-	cpuCount = 2
-	memoryGB = 4
-	networkMode = "nat"
-	displays = nil
-	volumes = nil
-	shareDir = ""
-	usbDevices = nil
-	enableClipboard = false
-	serialOutput = "none"
+	rc := vmrun.RunConfig{CPUCount: 2, MemoryGB: 4, NetworkMode: "nat", SerialOutput: "none"}
+	hc := vmrun.HostConfig{VMDir: t.TempDir(), RuntimeProfile: "minimal"}
 
 	savedFingerprint := `{
   "cpus": 2,
@@ -267,11 +157,11 @@ func TestCheckSuspendConfigMatchDetectsVirtioRuntimeSurfaceChange(t *testing.T) 
   "clipboard": false,
   "serial": false
 }`
-	if err := os.WriteFile(filepath.Join(vmDir, "suspend.config.json"), []byte(savedFingerprint), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(hc.VMDir, "suspend.config.json"), []byte(savedFingerprint), 0644); err != nil {
 		t.Fatalf("write suspend config: %v", err)
 	}
 
-	err := checkSuspendConfigMatch()
+	err := checkSuspendConfigMatchForRun(rc, hc)
 	if err == nil {
 		t.Fatal("checkSuspendConfigMatch() = nil, want mismatch error")
 	}
@@ -287,19 +177,6 @@ func TestCheckSuspendConfigMatchDetectsVirtioRuntimeSurfaceChange(t *testing.T) 
 }
 
 func TestRunRequiresColdBoot(t *testing.T) {
-	oldRecoveryMode := recoveryMode
-	oldBootCommandsFile := bootCommandsFile
-	oldForceDFU := forceDFU
-	oldStopInIBootStage1 := stopInIBootStage1
-	oldStopInIBootStage2 := stopInIBootStage2
-	t.Cleanup(func() {
-		recoveryMode = oldRecoveryMode
-		bootCommandsFile = oldBootCommandsFile
-		forceDFU = oldForceDFU
-		stopInIBootStage1 = oldStopInIBootStage1
-		stopInIBootStage2 = oldStopInIBootStage2
-	})
-
 	tests := []struct {
 		name             string
 		recovery         bool
@@ -317,16 +194,15 @@ func TestRunRequiresColdBoot(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			recoveryMode = tt.recovery
-			bootCommandsFile = tt.bootCommandsFile
-			forceDFU = tt.forceDFU
-			stopInIBootStage1 = false
-			stopInIBootStage2 = false
-
-			if got := runRequiresColdBoot(); got != tt.want {
+			rc := vmrun.RunConfig{
+				RecoveryMode:     tt.recovery,
+				ForceDFU:         tt.forceDFU,
+				BootCommandsFile: tt.bootCommandsFile,
+			}
+			if got := runRequiresColdBootForRun(rc); got != tt.want {
 				t.Fatalf("runRequiresColdBoot() = %v, want %v", got, tt.want)
 			}
-			if got := coldBootReason(); got != tt.wantReason {
+			if got := coldBootReasonForRun(rc); got != tt.wantReason {
 				t.Fatalf("coldBootReason() = %q, want %q", got, tt.wantReason)
 			}
 		})
@@ -334,44 +210,13 @@ func TestRunRequiresColdBoot(t *testing.T) {
 }
 
 func TestCheckSuspendConfigMatchTreatsMissingBootModeAsNormal(t *testing.T) {
-	oldVMDir := vmDir
-	oldRuntimeProfile := runtimeProfile
-	oldCPUCount := cpuCount
-	oldMemoryGB := memoryGB
-	oldNetworkMode := networkMode
-	oldDisplays := displays
-	oldVolumes := volumes
-	oldShareDir := shareDir
-	oldUSBDevices := usbDevices
-	oldEnableClipboard := enableClipboard
-	oldSerialOutput := serialOutput
 	oldBootMode := currentBootSessionMode()
 	t.Cleanup(func() {
-		vmDir = oldVMDir
-		runtimeProfile = oldRuntimeProfile
-		cpuCount = oldCPUCount
-		memoryGB = oldMemoryGB
-		networkMode = oldNetworkMode
-		displays = oldDisplays
-		volumes = oldVolumes
-		shareDir = oldShareDir
-		usbDevices = oldUSBDevices
-		enableClipboard = oldEnableClipboard
-		serialOutput = oldSerialOutput
 		setActiveBootSessionMode(oldBootMode)
 	})
 
-	vmDir = t.TempDir()
-	runtimeProfile = "full"
-	cpuCount = 2
-	memoryGB = 4
-	networkMode = "nat"
-	displays = nil
-	volumes = nil
-	shareDir = ""
-	usbDevices = nil
-	enableClipboard = false
-	serialOutput = "stdout"
+	rc := vmrun.RunConfig{CPUCount: 2, MemoryGB: 4, NetworkMode: "nat", SerialOutput: "stdout"}
+	hc := vmrun.HostConfig{VMDir: t.TempDir(), RuntimeProfile: "full"}
 	setActiveBootSessionMode(bootSessionModeNormal)
 
 	legacyFingerprint := `{
@@ -388,54 +233,23 @@ func TestCheckSuspendConfigMatchTreatsMissingBootModeAsNormal(t *testing.T) {
   "clipboard": false,
   "serial": true
 }`
-	if err := os.WriteFile(filepath.Join(vmDir, "suspend.config.json"), []byte(legacyFingerprint), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(hc.VMDir, "suspend.config.json"), []byte(legacyFingerprint), 0644); err != nil {
 		t.Fatalf("write suspend config: %v", err)
 	}
 
-	if err := checkSuspendConfigMatch(); err != nil {
+	if err := checkSuspendConfigMatchForRun(rc, hc); err != nil {
 		t.Fatalf("checkSuspendConfigMatch() = %v, want nil", err)
 	}
 }
 
 func TestCheckSuspendConfigMatchDetectsBootModeChange(t *testing.T) {
-	oldVMDir := vmDir
-	oldRuntimeProfile := runtimeProfile
-	oldCPUCount := cpuCount
-	oldMemoryGB := memoryGB
-	oldNetworkMode := networkMode
-	oldDisplays := displays
-	oldVolumes := volumes
-	oldShareDir := shareDir
-	oldUSBDevices := usbDevices
-	oldEnableClipboard := enableClipboard
-	oldSerialOutput := serialOutput
 	oldBootMode := currentBootSessionMode()
 	t.Cleanup(func() {
-		vmDir = oldVMDir
-		runtimeProfile = oldRuntimeProfile
-		cpuCount = oldCPUCount
-		memoryGB = oldMemoryGB
-		networkMode = oldNetworkMode
-		displays = oldDisplays
-		volumes = oldVolumes
-		shareDir = oldShareDir
-		usbDevices = oldUSBDevices
-		enableClipboard = oldEnableClipboard
-		serialOutput = oldSerialOutput
 		setActiveBootSessionMode(oldBootMode)
 	})
 
-	vmDir = t.TempDir()
-	runtimeProfile = "full"
-	cpuCount = 2
-	memoryGB = 4
-	networkMode = "nat"
-	displays = nil
-	volumes = nil
-	shareDir = ""
-	usbDevices = nil
-	enableClipboard = false
-	serialOutput = "stdout"
+	rc := vmrun.RunConfig{CPUCount: 2, MemoryGB: 4, NetworkMode: "nat", SerialOutput: "stdout"}
+	hc := vmrun.HostConfig{VMDir: t.TempDir(), RuntimeProfile: "full"}
 	setActiveBootSessionMode(bootSessionModeNormal)
 
 	fingerprint := `{
@@ -453,11 +267,11 @@ func TestCheckSuspendConfigMatchDetectsBootModeChange(t *testing.T) {
   "serial": true,
   "bootMode": "recovery"
 }`
-	if err := os.WriteFile(filepath.Join(vmDir, "suspend.config.json"), []byte(fingerprint), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(hc.VMDir, "suspend.config.json"), []byte(fingerprint), 0644); err != nil {
 		t.Fatalf("write suspend config: %v", err)
 	}
 
-	err := checkSuspendConfigMatch()
+	err := checkSuspendConfigMatchForRun(rc, hc)
 	if err == nil {
 		t.Fatal("checkSuspendConfigMatch() = nil, want mismatch error")
 	}
