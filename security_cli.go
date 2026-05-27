@@ -81,6 +81,9 @@ func handleSecurityCommand(env commandEnv, args []string) error {
 	if len(args) > 0 && args[0] == "bookmark-probe" {
 		return handleSecurityBookmarkProbeCommand(env, args[1:])
 	}
+	if len(args) > 0 && args[0] == "bookmark-store" {
+		return handleSecurityBookmarkStoreCommand(env, args[1:])
+	}
 	if len(args) > 0 && args[0] == "status" {
 		args = args[1:]
 	}
@@ -125,6 +128,109 @@ func handleSecurityCommand(env commandEnv, args []string) error {
 	fmt.Fprintf(env.Stdout, "vnc: %v\n", status.VNC)
 	fmt.Fprintf(env.Stdout, "debug stub: %v\n", status.DebugStub)
 	fmt.Fprintf(env.Stdout, "http listener: %v\n", status.HTTP)
+	return nil
+}
+
+func handleSecurityBookmarkStoreCommand(env commandEnv, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: cove security bookmark-store <save|resolve> [flags]")
+	}
+	switch args[0] {
+	case "save":
+		return handleSecurityBookmarkStoreSaveCommand(env, args[1:])
+	case "resolve":
+		return handleSecurityBookmarkStoreResolveCommand(env, args[1:])
+	default:
+		return fmt.Errorf("unknown security bookmark-store command: %s", args[0])
+	}
+}
+
+func securityBookmarkStoreFlag(fs *flag.FlagSet) *string {
+	store := fs.String("store", "", "bookmark store path")
+	return store
+}
+
+func securityBookmarkStorePath(flagValue string) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
+	}
+	return defaultSecurityBookmarkStorePath()
+}
+
+func handleSecurityBookmarkStoreSaveCommand(env commandEnv, args []string) error {
+	fs := flag.NewFlagSet("security bookmark-store save", flag.ContinueOnError)
+	fs.SetOutput(env.Stderr)
+	jsonFlag := fs.Bool("json", false, "emit JSON")
+	storeFlag := securityBookmarkStoreFlag(fs)
+	key := fs.String("key", "", "bookmark key")
+	kind := fs.String("kind", "file", "bookmark kind")
+	path := fs.String("path", "", "file to bookmark")
+	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if err == errFlagHelp {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 0 || *path == "" || *key == "" {
+		return fmt.Errorf("usage: cove security bookmark-store save -key key -path file [-store file] [-kind kind] [-json]")
+	}
+	storePath, err := securityBookmarkStorePath(*storeFlag)
+	if err != nil {
+		return err
+	}
+	report, err := saveSecurityBookmark(storePath, *key, *kind, *path)
+	if err != nil {
+		return err
+	}
+	return printSecurityBookmarkStoreReport(env, report, *jsonFlag)
+}
+
+func handleSecurityBookmarkStoreResolveCommand(env commandEnv, args []string) error {
+	fs := flag.NewFlagSet("security bookmark-store resolve", flag.ContinueOnError)
+	fs.SetOutput(env.Stderr)
+	jsonFlag := fs.Bool("json", false, "emit JSON")
+	storeFlag := securityBookmarkStoreFlag(fs)
+	key := fs.String("key", "", "bookmark key")
+	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if err == errFlagHelp {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 0 || *key == "" {
+		return fmt.Errorf("usage: cove security bookmark-store resolve -key key [-store file] [-json]")
+	}
+	storePath, err := securityBookmarkStorePath(*storeFlag)
+	if err != nil {
+		return err
+	}
+	report, err := resolveSecurityBookmarkFromStore(storePath, *key)
+	if err != nil {
+		return err
+	}
+	return printSecurityBookmarkStoreReport(env, report, *jsonFlag)
+}
+
+func printSecurityBookmarkStoreReport(env commandEnv, report securityBookmarkStoreReport, jsonFlag bool) error {
+	if jsonFlag {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal security bookmark store report: %w", err)
+		}
+		fmt.Fprintln(env.Stdout, string(data))
+		return nil
+	}
+	fmt.Fprintf(env.Stdout, "action: %s\n", report.Action)
+	fmt.Fprintf(env.Stdout, "store: %s\n", report.Store)
+	fmt.Fprintf(env.Stdout, "key: %s\n", report.Key)
+	fmt.Fprintf(env.Stdout, "path: %s\n", report.Entry.Path)
+	if report.Proof != nil {
+		fmt.Fprintf(env.Stdout, "resolved path: %s\n", report.Proof.ResolvedPath)
+		fmt.Fprintf(env.Stdout, "bookmark bytes: %d\n", report.Proof.BookmarkSize)
+		fmt.Fprintf(env.Stdout, "read bytes: %d\n", report.Proof.ReadBytes)
+	}
 	return nil
 }
 
@@ -511,6 +617,8 @@ func firstProbeOutputLine(s string) string {
 func printSecurityUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove security status [-json]
        cove security bookmark-probe [-json] [-path file]
+       cove security bookmark-store save -key key -path file [-store file] [-kind kind] [-json]
+       cove security bookmark-store resolve -key key [-store file] [-json]
        cove security probe-sandbox [-json]
 
 Show the effective host-containment and host-escape feature policy for this
