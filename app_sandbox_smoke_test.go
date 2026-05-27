@@ -34,6 +34,7 @@ func TestAppSandboxEntitlementFixture(t *testing.T) {
 	}
 	for _, key := range []string{
 		"com.apple.security.app-sandbox",
+		"com.apple.security.files.bookmarks.app-scope",
 		"com.apple.security.files.user-selected.read-write",
 		"com.apple.security.network.client",
 		"com.apple.security.network.server",
@@ -298,6 +299,35 @@ func TestAppSandboxRunWorkerSmoke(t *testing.T) {
 	}
 	if strings.Contains(out, "Trace/BPT trap") {
 		t.Fatalf("run-worker crashed instead of returning proof:\n%s", out)
+	}
+}
+
+func TestAppSandboxBookmarkProbeSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "security", "bookmark-probe", "-json")
+	t.Logf("sandboxed macgo security bookmark-probe err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo security bookmark-probe: %v\n%s", err, out)
+	}
+	var report securityScopedBookmarkReport
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &report); err != nil {
+		t.Fatalf("security bookmark-probe json: %v\n%s", err, out)
+	}
+	if !report.AppSandbox {
+		t.Fatalf("security bookmark-probe apple_app_sandbox = false:\n%s", out)
+	}
+	if report.BookmarkSize == 0 || !report.Started || report.ReadBytes == 0 || report.SHA256 == "" {
+		t.Fatalf("security bookmark-probe proof incomplete: %+v\n%s", report, out)
+	}
+	if report.Path == "" || report.ResolvedPath != report.Path {
+		t.Fatalf("security bookmark-probe path mismatch: %+v\n%s", report, out)
+	}
+	if strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("security bookmark-probe crashed instead of returning proof:\n%s", out)
 	}
 }
 

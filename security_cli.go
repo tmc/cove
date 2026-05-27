@@ -78,6 +78,9 @@ func handleSecurityCommand(env commandEnv, args []string) error {
 	if len(args) > 0 && args[0] == "probe-sandbox" {
 		return handleSecuritySandboxProbeCommand(env, args[1:])
 	}
+	if len(args) > 0 && args[0] == "bookmark-probe" {
+		return handleSecurityBookmarkProbeCommand(env, args[1:])
+	}
 	if len(args) > 0 && args[0] == "status" {
 		args = args[1:]
 	}
@@ -122,6 +125,59 @@ func handleSecurityCommand(env commandEnv, args []string) error {
 	fmt.Fprintf(env.Stdout, "vnc: %v\n", status.VNC)
 	fmt.Fprintf(env.Stdout, "debug stub: %v\n", status.DebugStub)
 	fmt.Fprintf(env.Stdout, "http listener: %v\n", status.HTTP)
+	return nil
+}
+
+func handleSecurityBookmarkProbeCommand(env commandEnv, args []string) error {
+	fs := flag.NewFlagSet("security bookmark-probe", flag.ContinueOnError)
+	fs.SetOutput(env.Stderr)
+	jsonFlag := fs.Bool("json", false, "emit JSON")
+	path := fs.String("path", "", "file to bookmark")
+	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if err == errFlagHelp {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove security bookmark-probe [-json] [-path file]")
+	}
+	target := *path
+	cleanup := func() {}
+	if target == "" {
+		dir, err := os.MkdirTemp("", "cove-bookmark-probe-")
+		if err != nil {
+			return fmt.Errorf("create bookmark probe dir: %w", err)
+		}
+		cleanup = func() { _ = os.RemoveAll(dir) }
+		target = filepath.Join(dir, "grant.txt")
+		if err := os.WriteFile(target, []byte("cove security-scoped bookmark proof\n"), 0600); err != nil {
+			cleanup()
+			return fmt.Errorf("write bookmark probe file: %w", err)
+		}
+	}
+	defer cleanup()
+
+	report, err := securityScopedBookmarkRoundTrip(target)
+	if err != nil {
+		return err
+	}
+	if *jsonFlag {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal security bookmark probe: %w", err)
+		}
+		fmt.Fprintln(env.Stdout, string(data))
+		return nil
+	}
+	fmt.Fprintf(env.Stdout, "apple app sandbox: %v\n", report.AppSandbox)
+	fmt.Fprintf(env.Stdout, "path: %s\n", report.Path)
+	fmt.Fprintf(env.Stdout, "resolved path: %s\n", report.ResolvedPath)
+	fmt.Fprintf(env.Stdout, "bookmark bytes: %d\n", report.BookmarkSize)
+	fmt.Fprintf(env.Stdout, "stale: %v\n", report.Stale)
+	fmt.Fprintf(env.Stdout, "started access: %v\n", report.Started)
+	fmt.Fprintf(env.Stdout, "read bytes: %d\n", report.ReadBytes)
 	return nil
 }
 
@@ -454,6 +510,7 @@ func firstProbeOutputLine(s string) string {
 
 func printSecurityUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove security status [-json]
+       cove security bookmark-probe [-json] [-path file]
        cove security probe-sandbox [-json]
 
 Show the effective host-containment and host-escape feature policy for this
