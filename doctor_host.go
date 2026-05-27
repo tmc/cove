@@ -79,6 +79,7 @@ func collectHostDoctorReport() hostDoctorReport {
 	checks = append(checks, hostDoctorPlatformCheck())
 	checks = append(checks, hostDoctorMacOSCheck())
 	checks = append(checks, hostDoctorCodesignCheck())
+	checks = append(checks, hostDoctorAppSandboxCheck())
 	checks = append(checks, hostDoctorDiskCheck())
 	checks = append(checks, hostDoctorStateWritableCheck())
 	checks = append(checks, hostDoctorNetworkCheck())
@@ -149,6 +150,17 @@ func hostDoctorCodesignCheck() hostDoctorCheck {
 		return hostDoctorCheck{"virtualization-entitlement", "fail", "missing com.apple.security.virtualization entitlement"}
 	}
 	return hostDoctorCheck{"virtualization-entitlement", "pass", "cove binary has virtualization entitlement"}
+}
+
+func hostDoctorAppSandboxCheck() hostDoctorCheck {
+	status := currentAppleAppSandboxStatus()
+	if status.Active {
+		if status.ContainerID != "" {
+			return hostDoctorCheck{"apple-app-sandbox", "pass", "active: " + status.ContainerID}
+		}
+		return hostDoctorCheck{"apple-app-sandbox", "pass", "active"}
+	}
+	return hostDoctorCheck{"apple-app-sandbox", "pass", "not active for this process"}
 }
 
 func hostDoctorDiskCheck() hostDoctorCheck {

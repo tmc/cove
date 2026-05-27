@@ -37,10 +37,29 @@ func TestSecurityStatusHostContainment(t *testing.T) {
 	for _, want := range []string{
 		"sandbox: host-containment",
 		"host containment: true",
+		"apple app sandbox: false",
 		"network: none",
 		"clipboard: false",
 		"auto-mount volumes: false",
 		"auto-upgrade agent: false",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("security status missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestSecurityStatusAppleAppSandbox(t *testing.T) {
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+
+	var out strings.Builder
+	if err := handleSecurityCommand(commandEnv{Stdout: &out, Stderr: &bytes.Buffer{}}, []string{"status"}); err != nil {
+		t.Fatalf("handleSecurityCommand: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"apple app sandbox: true",
+		"apple app sandbox id: com.tmc.cove",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("security status missing %q:\n%s", want, got)
@@ -61,13 +80,24 @@ func TestSecurityStatusJSON(t *testing.T) {
 	hostContainment = true
 	sandboxLevel = ""
 	networkMode = "none"
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
 
 	var out strings.Builder
 	if err := handleSecurityCommand(commandEnv{Stdout: &out, Stderr: &bytes.Buffer{}}, []string{"status", "-json"}); err != nil {
 		t.Fatalf("handleSecurityCommand: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, `"sandbox_level": "host-containment"`) || !strings.Contains(got, `"host_containment": true`) {
+	for _, want := range []string{
+		`"sandbox_level": "host-containment"`,
+		`"host_containment": true`,
+		`"apple_app_sandbox": true`,
+		`"apple_app_sandbox_id": "com.tmc.cove"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("security json missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, `"apple_app_sandbox_id": ""`) {
 		t.Fatalf("security json = %s", got)
 	}
 }

@@ -9,15 +9,17 @@ import (
 )
 
 type securityStatus struct {
-	SandboxLevel    string `json:"sandbox_level"`
-	HostContainment bool   `json:"host_containment"`
-	NetworkMode     string `json:"network_mode"`
-	Clipboard       bool   `json:"clipboard"`
-	AutoMount       bool   `json:"auto_mount_volumes"`
-	AutoUpgrade     bool   `json:"auto_upgrade_agent"`
-	VNC             bool   `json:"vnc"`
-	DebugStub       bool   `json:"debug_stub"`
-	HTTP            bool   `json:"http"`
+	SandboxLevel      string `json:"sandbox_level"`
+	HostContainment   bool   `json:"host_containment"`
+	AppleAppSandbox   bool   `json:"apple_app_sandbox"`
+	AppleAppSandboxID string `json:"apple_app_sandbox_id,omitempty"`
+	NetworkMode       string `json:"network_mode"`
+	Clipboard         bool   `json:"clipboard"`
+	AutoMount         bool   `json:"auto_mount_volumes"`
+	AutoUpgrade       bool   `json:"auto_upgrade_agent"`
+	VNC               bool   `json:"vnc"`
+	DebugStub         bool   `json:"debug_stub"`
+	HTTP              bool   `json:"http"`
 }
 
 func runSecurityCommand(env commandEnv, _ string, args []string) int {
@@ -61,6 +63,10 @@ func handleSecurityCommand(env commandEnv, args []string) error {
 	}
 	fmt.Fprintf(env.Stdout, "sandbox: %s\n", status.SandboxLevel)
 	fmt.Fprintf(env.Stdout, "host containment: %v\n", status.HostContainment)
+	fmt.Fprintf(env.Stdout, "apple app sandbox: %v\n", status.AppleAppSandbox)
+	if status.AppleAppSandboxID != "" {
+		fmt.Fprintf(env.Stdout, "apple app sandbox id: %s\n", status.AppleAppSandboxID)
+	}
 	fmt.Fprintf(env.Stdout, "network: %s\n", status.NetworkMode)
 	fmt.Fprintf(env.Stdout, "clipboard: %v\n", status.Clipboard)
 	fmt.Fprintf(env.Stdout, "auto-mount volumes: %v\n", status.AutoMount)
@@ -79,16 +85,19 @@ func currentSecurityStatus() securityStatus {
 		level = string(policy.Level)
 		contained = policy.HostContainment()
 	}
+	appSandbox := currentAppleAppSandboxStatus()
 	return securityStatus{
-		SandboxLevel:    level,
-		HostContainment: contained,
-		NetworkMode:     networkMode,
-		Clipboard:       enableClipboard,
-		AutoMount:       autoMountVolumes,
-		AutoUpgrade:     autoUpgradeAgent,
-		VNC:             vncEnabled(),
-		DebugStub:       debugStubEnabled(),
-		HTTP:            runHTTPAddr != "",
+		SandboxLevel:      level,
+		HostContainment:   contained,
+		AppleAppSandbox:   appSandbox.Active,
+		AppleAppSandboxID: appSandbox.ContainerID,
+		NetworkMode:       networkMode,
+		Clipboard:         enableClipboard,
+		AutoMount:         autoMountVolumes,
+		AutoUpgrade:       autoUpgradeAgent,
+		VNC:               vncEnabled(),
+		DebugStub:         debugStubEnabled(),
+		HTTP:              runHTTPAddr != "",
 	}
 }
 
