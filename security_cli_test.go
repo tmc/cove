@@ -129,6 +129,16 @@ func TestSecuritySandboxProbeUnixSocket(t *testing.T) {
 	}
 }
 
+func TestSecuritySandboxProbeLoopbackTCP(t *testing.T) {
+	check := probeSandboxLoopbackTCP()
+	if check.Status != "pass" {
+		t.Fatalf("probeSandboxLoopbackTCP status = %q message = %q", check.Status, check.Message)
+	}
+	if !strings.HasPrefix(check.Path, "127.0.0.1:") {
+		t.Fatalf("probeSandboxLoopbackTCP path = %q, want loopback address", check.Path)
+	}
+}
+
 func TestSecuritySandboxProbeHelperUnavailable(t *testing.T) {
 	oldDial := probeSandboxDialHelper
 	t.Cleanup(func() { probeSandboxDialHelper = oldDial })

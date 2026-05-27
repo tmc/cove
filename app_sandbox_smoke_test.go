@@ -216,7 +216,7 @@ func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 	default:
 		t.Fatalf("security probe-sandbox helper_ipc = %#v, want pass, skip, or blocked\n%s", helper, out)
 	}
-	for _, name := range []string{"unix_socket", "subprocess"} {
+	for _, name := range []string{"unix_socket", "loopback_tcp", "subprocess"} {
 		check, ok := probe[name].(map[string]any)
 		if !ok || check["status"] != "pass" {
 			t.Fatalf("security probe-sandbox %s = %#v, want pass\n%s", name, probe[name], out)

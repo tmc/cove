@@ -34,13 +34,14 @@ type securityStatus struct {
 }
 
 type securitySandboxProbe struct {
-	AppSandbox bool               `json:"apple_app_sandbox"`
-	HomeDir    string             `json:"home_dir"`
-	TempDir    string             `json:"temp_dir"`
-	VMRoot     string             `json:"vm_root"`
-	UnixSocket securityProbeCheck `json:"unix_socket"`
-	HelperIPC  securityProbeCheck `json:"helper_ipc"`
-	Subprocess securityProbeCheck `json:"subprocess"`
+	AppSandbox  bool               `json:"apple_app_sandbox"`
+	HomeDir     string             `json:"home_dir"`
+	TempDir     string             `json:"temp_dir"`
+	VMRoot      string             `json:"vm_root"`
+	UnixSocket  securityProbeCheck `json:"unix_socket"`
+	LoopbackTCP securityProbeCheck `json:"loopback_tcp"`
+	HelperIPC   securityProbeCheck `json:"helper_ipc"`
+	Subprocess  securityProbeCheck `json:"subprocess"`
 }
 
 type securityProbeCheck struct {
@@ -144,6 +145,11 @@ func handleSecuritySandboxProbeCommand(env commandEnv, args []string) error {
 		fmt.Fprintf(env.Stdout, " (%s)", probe.UnixSocket.Message)
 	}
 	fmt.Fprintln(env.Stdout)
+	fmt.Fprintf(env.Stdout, "loopback tcp: %s", probe.LoopbackTCP.Status)
+	if probe.LoopbackTCP.Message != "" {
+		fmt.Fprintf(env.Stdout, " (%s)", probe.LoopbackTCP.Message)
+	}
+	fmt.Fprintln(env.Stdout)
 	fmt.Fprintf(env.Stdout, "helper ipc: %s", probe.HelperIPC.Status)
 	if probe.HelperIPC.Message != "" {
 		fmt.Fprintf(env.Stdout, " (%s)", probe.HelperIPC.Message)
@@ -194,13 +200,14 @@ func currentSecuritySandboxProbe() securitySandboxProbe {
 	homeDir, _ := os.UserHomeDir()
 	vmRoot := vmconfig.BaseDir()
 	return securitySandboxProbe{
-		AppSandbox: appSandbox.Active,
-		HomeDir:    homeDir,
-		TempDir:    os.TempDir(),
-		VMRoot:     vmRoot,
-		UnixSocket: probeSandboxUnixSocket(vmRoot),
-		HelperIPC:  probeSandboxHelperIPC(),
-		Subprocess: probeSandboxSubprocess(),
+		AppSandbox:  appSandbox.Active,
+		HomeDir:     homeDir,
+		TempDir:     os.TempDir(),
+		VMRoot:      vmRoot,
+		UnixSocket:  probeSandboxUnixSocket(vmRoot),
+		LoopbackTCP: probeSandboxLoopbackTCP(),
+		HelperIPC:   probeSandboxHelperIPC(),
+		Subprocess:  probeSandboxSubprocess(),
 	}
 }
 
@@ -223,6 +230,52 @@ func probeSandboxUnixSocket(vmRoot string) securityProbeCheck {
 	_ = ln.Close()
 	check.Status = "pass"
 	check.Message = "bound and closed"
+	return check
+}
+
+func probeSandboxLoopbackTCP() securityProbeCheck {
+	check := securityProbeCheck{Name: "loopback-tcp"}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		check.Status = "fail"
+		check.Message = err.Error()
+		return check
+	}
+	defer ln.Close()
+	check.Path = ln.Addr().String()
+
+	accepted := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			accepted <- err
+			return
+		}
+		_ = conn.Close()
+		accepted <- nil
+	}()
+
+	conn, err := net.DialTimeout("tcp", ln.Addr().String(), 2*time.Second)
+	if err != nil {
+		check.Status = "fail"
+		check.Message = fmt.Sprintf("dial: %v", err)
+		return check
+	}
+	_ = conn.Close()
+	select {
+	case err := <-accepted:
+		if err != nil {
+			check.Status = "fail"
+			check.Message = fmt.Sprintf("accept: %v", err)
+			return check
+		}
+	case <-time.After(2 * time.Second):
+		check.Status = "fail"
+		check.Message = "accept timeout"
+		return check
+	}
+	check.Status = "pass"
+	check.Message = "bound and accepted"
 	return check
 }
 
