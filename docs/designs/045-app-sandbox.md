@@ -4,10 +4,11 @@ Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,
 host-process status reporting, elevation fail-closed guard, package-shape claim
 boundary, macgo `.app` non-mutating proof, listener proof, scratch VM
 start/stop proof, security-scoped bookmark binding proof, durable bookmark
-store proof, and non-interactive bookmark consumption are implemented. Ambient
-host-path and mutating command surfaces now fail closed under Apple App Sandbox.
-A sandboxed run-worker IPC proof can receive an explicit descriptor from the
-unsandboxed CLI. Powerbox UI and temporary-RAM overlay proofs are still queued.
+store proof, non-interactive bookmark consumption, and the first opt-in
+Powerbox prompt command are implemented. Ambient host-path and mutating command
+surfaces now fail closed under Apple App Sandbox. A sandboxed run-worker IPC
+proof can receive an explicit descriptor from the unsandboxed CLI. Automatic
+Powerbox fallback and temporary-RAM overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -135,6 +136,11 @@ Observed result:
   smoke stages a bookmark for a VM under the app container temp directory but
   outside `.vz/vms`; arbitrary host VM roots still need real Powerbox UI before
   they can be bookmarked by a sandboxed process.
+- `security powerbox-prompt` is the first interactive Powerbox primitive. It is
+  not wired into automatic status/run fallback yet; it opens `NSOpenPanel`,
+  asks the operator to choose a directory, creates an app-scoped bookmark, and
+  writes it to the durable bookmark store. Its smoke is opt-in because it
+  requires a human click.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -264,8 +270,10 @@ work in this order:
    app-scoped bookmark bytes across separate sandboxed macgo process launches.
 7. Done: consume pre-staged VM bookmarks from `status <vm>` and fail closed
    with a typed grant-required error when a bookmark is missing.
-8. Next: design Powerbox UI to create durable bookmarks for existing VM roots,
-   ISO/IPSW media, and shared-folder host paths when a bookmark is missing.
+8. Done: add the first opt-in Powerbox prompt command to create durable
+   directory bookmarks through `NSOpenPanel`.
+9. Next: wire missing-grant errors to a headed Powerbox fallback for existing VM
+   roots, ISO/IPSW media, and shared-folder host paths.
 
 ## Proof gates
 
@@ -287,6 +295,7 @@ COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxRunWorkerSmok
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxBookmarkProbeSmoke -v .
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxDurableBookmarkStorageSmoke -v .
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleBookmarkConsumeSmoke -v .
+COVE_TEST_POWERBOX_UI=1 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxPowerboxPromptSmoke -v .
 COVE_APP_SANDBOX_MACGO_BOOT_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleScratchBootSmoke -v .
 ```
 
