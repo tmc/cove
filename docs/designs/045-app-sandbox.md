@@ -2,9 +2,9 @@
 
 Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,
 host-process status reporting, elevation fail-closed guard, package-shape claim
-boundary, and macgo `.app` non-mutating proof are implemented. Scratch VM,
-control-socket, helper, provisioning, and shared-folder proofs are still
-queued.
+boundary, macgo `.app` non-mutating proof, listener proof, and scratch VM
+start/stop proof are implemented. Helper, provisioning, shared-folder, and
+temporary-RAM overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -92,6 +92,15 @@ Observed result:
   can still enumerate the operator's VM registry, so this is only a startup
   proof. It is not an isolation claim for VM discovery until the file-access
   model is reduced to explicit grants or security-scoped bookmarks.
+- `security probe-sandbox -json` passes Unix-socket, loopback TCP, subprocess,
+  and scratch VZ start/stop checks through the sandboxed macgo bundle. The
+  scratch VM proof uses a short path under the app container temp directory, an
+  APFS clone of an existing Linux disk, and EFI boot, then stops the VM before
+  guest readiness is required.
+- `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
+  this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
+  after `Starting virtual machine...`, so that issue belongs in the runtime
+  queue rather than the App Sandbox compatibility claim.
 
 ## Expected breakage map
 
@@ -102,6 +111,9 @@ These surfaces need explicit proof or denial before any release claim:
   command line;
 - Unix control sockets and helper sockets outside the app container;
 - listener surfaces: HTTP API, VNC, debug stub, port forwards, proxy runtime;
+- temporary-RAM storage attachments and RAM-overlay forks;
+- long app-container scratch paths that push Unix domain socket paths past
+  Darwin's `sun_path` limit;
 - subprocess-heavy paths that call `codesign`, `hdiutil`, `diskutil`, `curl`,
   `bsdtar`, `rsync`, or `go build`;
 - privilege paths in `helper.go`, `elevated_run.go`, `elevated_exec.go`,
@@ -183,6 +195,32 @@ Unsupported claims:
    "full sandbox" product claim.
 6. Done: add macgo `.app` proof mode and opt-in smoke for non-mutating
    `security status` and `list`.
+7. Done: add `security probe-sandbox` listener checks and a sandboxed macgo
+   scratch VM start/stop smoke using a short app-container path and APFS-cloned
+   Linux disk.
+8. Queued: investigate `VZTemporaryRAMStorageDeviceAttachment` trap outside App
+   Sandbox before using RAM-overlay forks as the sandbox boot proof.
+
+## Next implementation queue
+
+NotebookLM re-review after the scratch VM proof ranked the next App Sandbox
+work in this order:
+
+1. Triage the `VZTemporaryRAMStorageDeviceAttachment` trap outside App Sandbox.
+   Stop if this is a binding or framework limitation; RAM-overlay forks then
+   stay out of the App Sandbox claim.
+2. Mitigate Unix socket path length. App container paths are deep enough that
+   per-VM `control.sock` paths can exceed Darwin's `sun_path` limit unless the
+   sandbox runtime uses short scratch names or another rendezvous.
+3. Define explicit state-directory grants. The current macgo proof can start
+   and report container paths, but it is not an isolation claim for existing VM
+   discovery until Powerbox or security-scoped bookmarks are designed.
+4. Make helper IPC and privilege paths explicit denials or separately proved
+   capabilities. `cove-helper`, provisioning, and offline injection remain out
+   of the sandboxed runtime claim.
+5. Design the sandboxed run-worker protocol. The unsandboxed CLI should resolve
+   host paths and grants, then launch a sandboxed worker only if descriptors or
+   bookmarks can cross that process boundary cleanly.
 
 ## Proof gates
 
@@ -199,6 +237,7 @@ spctl --assess --type execute -vv /Users/tmc/tmp/cove-sandboxed
 /Users/tmc/tmp/cove-sandboxed --version
 /Users/tmc/tmp/cove-sandboxed list
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleSmoke -v .
+COVE_APP_SANDBOX_MACGO_BOOT_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleScratchBootSmoke -v .
 ```
 
 Stop before disk resize, provisioning mutation, helper install, or shared-folder

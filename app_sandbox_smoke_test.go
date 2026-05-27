@@ -19,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestAppSandboxEntitlementFixture(t *testing.T) {
@@ -221,6 +223,86 @@ func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 		if !ok || check["status"] != "pass" {
 			t.Fatalf("security probe-sandbox %s = %#v, want pass\n%s", name, probe[name], out)
 		}
+	}
+}
+
+func TestAppSandboxMacgoBundleScratchBootSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_BOOT_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_BOOT_SMOKE=1 to start and stop a sandboxed scratch VM")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	scratch := stageAppSandboxScratchBootVM(t)
+
+	out, err := runSandboxSmokeCommandEnv(t, 2*time.Minute, env, bin, "security", "probe-sandbox",
+		"-json",
+		"-vz-start-vm-dir", scratch.vmDir,
+		"-vz-start-disk", scratch.disk,
+		"-vz-start-linux",
+		"-vz-start-timeout", "45s",
+	)
+	t.Logf("sandboxed macgo scratch boot err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo scratch boot: %v\n%s", err, out)
+	}
+	var probe map[string]any
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &probe); err != nil {
+		t.Fatalf("security probe-sandbox json: %v\n%s", err, out)
+	}
+	check, ok := probe["vz_start"].(map[string]any)
+	if !ok || check["status"] != "pass" {
+		t.Fatalf("security probe-sandbox vz_start = %#v, want pass\n%s", probe["vz_start"], out)
+	}
+}
+
+type appSandboxScratchBootVM struct {
+	vmDir string
+	disk  string
+}
+
+func stageAppSandboxScratchBootVM(t *testing.T) appSandboxScratchBootVM {
+	t.Helper()
+
+	base := os.Getenv("COVE_APP_SANDBOX_BOOT_BASE")
+	if base == "" {
+		base = "vz-linux-test"
+	}
+	baseDir, ok := vmconfig.ExistingPath(base)
+	if !ok {
+		t.Skipf("scratch boot base VM %q not found; set COVE_APP_SANDBOX_BOOT_BASE", base)
+	}
+	baseDisk := filepath.Join(baseDir, "linux-disk.img")
+	if _, err := os.Stat(baseDisk); err != nil {
+		t.Skipf("scratch boot base VM %q missing linux-disk.img: %v", base, err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	root := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data", "tmp", fmt.Sprintf("cvbt%d", os.Getpid()))
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	vmDir := filepath.Join(root, "vm")
+	if err := os.MkdirAll(vmDir, 0700); err != nil {
+		t.Fatalf("create scratch vm dir: %v", err)
+	}
+
+	for _, name := range []string{"config.json", "mac.address", "linux-machine.id", "cloud-init.iso", "efi.nvram", "efi-vars.img"} {
+		src := filepath.Join(baseDir, name)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if err := copyFile(src, filepath.Join(vmDir, name)); err != nil {
+			t.Fatalf("copy %s: %v", name, err)
+		}
+	}
+	disk := filepath.Join(vmDir, "linux-disk.img")
+	if err := cloneFile(baseDisk, disk); err != nil {
+		t.Skipf("clone scratch boot disk: %v", err)
+	}
+
+	return appSandboxScratchBootVM{
+		vmDir: vmDir,
+		disk:  disk,
 	}
 }
 

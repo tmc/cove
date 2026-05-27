@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/tmc/cove/internal/buildscratch"
 )
 
 func TestSecurityStatusHostContainment(t *testing.T) {
@@ -136,6 +140,69 @@ func TestSecuritySandboxProbeLoopbackTCP(t *testing.T) {
 	}
 	if !strings.HasPrefix(check.Path, "127.0.0.1:") {
 		t.Fatalf("probeSandboxLoopbackTCP path = %q, want loopback address", check.Path)
+	}
+}
+
+func TestSecuritySandboxProbeVZStart(t *testing.T) {
+	oldStart := probeSandboxVZStartGuest
+	t.Cleanup(func() { probeSandboxVZStartGuest = oldStart })
+
+	var got buildscratch.Scratch
+	cleaned := false
+	probeSandboxVZStartGuest = func(ctx context.Context, sc buildscratch.Scratch) (buildGuestCleanup, error) {
+		got = sc
+		if !linuxMode {
+			t.Fatal("linuxMode = false, want true")
+		}
+		if kernelPath != "/tmp/vmlinuz" {
+			t.Fatalf("kernelPath = %q, want /tmp/vmlinuz", kernelPath)
+		}
+		if runtimeSystemDiskAttachment != systemDiskAttachmentDiskImage {
+			t.Fatalf("runtimeSystemDiskAttachment = %v, want disk image", runtimeSystemDiskAttachment)
+		}
+		return func(context.Context) error {
+			cleaned = true
+			return nil
+		}, nil
+	}
+
+	check := probeSandboxVZStart(securitySandboxProbeOptions{
+		VZStartVMDir:   "/tmp/cove-scratch",
+		VZStartDisk:    "/tmp/cove-scratch/linux-disk.img",
+		VZStartLinux:   true,
+		VZStartKernel:  "/tmp/vmlinuz",
+		VZStartInitrd:  "/tmp/initrd",
+		VZStartCmdline: "console=hvc0",
+		VZStartTimeout: time.Second,
+	})
+	if check.Status != "pass" {
+		t.Fatalf("probeSandboxVZStart status = %q message = %q", check.Status, check.Message)
+	}
+	if got.Dir != "/tmp/cove-scratch" || got.DiskPath != "/tmp/cove-scratch/linux-disk.img" {
+		t.Fatalf("scratch = %#v", got)
+	}
+	if !cleaned {
+		t.Fatal("cleanup was not called")
+	}
+}
+
+func TestSecuritySandboxProbeOptionsValid(t *testing.T) {
+	tests := []struct {
+		name string
+		opts securitySandboxProbeOptions
+		want bool
+	}{
+		{name: "empty", want: true},
+		{name: "both", opts: securitySandboxProbeOptions{VZStartVMDir: "/tmp/vm", VZStartDisk: "/tmp/disk.img"}, want: true},
+		{name: "missing disk", opts: securitySandboxProbeOptions{VZStartVMDir: "/tmp/vm"}, want: false},
+		{name: "missing dir", opts: securitySandboxProbeOptions{VZStartDisk: "/tmp/disk.img"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.opts.valid(); got != tt.want {
+				t.Fatalf("valid() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
