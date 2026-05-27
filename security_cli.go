@@ -260,7 +260,7 @@ func handleSecurityPowerboxPromptCommand(env commandEnv, args []string) error {
 	if err != nil {
 		return err
 	}
-	grant, err := promptPowerboxDirectory(*title, *message)
+	grant, err := powerboxPromptDirectory(*title, *message)
 	if err != nil {
 		return err
 	}
