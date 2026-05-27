@@ -152,6 +152,37 @@ func TestAppSandboxMacgoBundleServeSmoke(t *testing.T) {
 	t.Logf("sandboxed macgo serve output:\n%s", output)
 }
 
+func TestAppSandboxMacgoBundleStateSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "image", "list", "-json")
+	t.Logf("sandboxed macgo image list err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo image list: %v\n%s", err, out)
+	}
+	var images []any
+	if err := json.Unmarshal([]byte(firstJSONArray(out)), &images); err != nil {
+		t.Fatalf("image list json: %v\n%s", err, out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "storage", "census")
+	t.Logf("sandboxed macgo storage census err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo storage census: %v\n%s", err, out)
+	}
+	var census map[string]any
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &census); err != nil {
+		t.Fatalf("storage census json: %v\n%s", err, out)
+	}
+	root, ok := census["root"].(string)
+	if !ok || !strings.Contains(root, "/Library/Containers/com.tmc.cove/Data/.vz") {
+		t.Fatalf("storage census root = %v, want App Sandbox container root\n%s", census["root"], out)
+	}
+}
+
 func buildAppSandboxSmokeBinary(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("codesign"); err != nil {
@@ -241,6 +272,15 @@ func assertSandboxDoctorCommands(t *testing.T, run func(args ...string) (string,
 func firstJSONObject(s string) string {
 	start := strings.Index(s, "{")
 	end := strings.LastIndex(s, "}")
+	if start < 0 || end < start {
+		return s
+	}
+	return s[start : end+1]
+}
+
+func firstJSONArray(s string) string {
+	start := strings.Index(s, "[")
+	end := strings.LastIndex(s, "]")
 	if start < 0 || end < start {
 		return s
 	}
