@@ -38,6 +38,18 @@ func TestDoctorHostJSON(t *testing.T) {
 	if strings.Contains(buf.String(), "cove-version-floor") {
 		t.Fatalf("doctor host included action-doctor version floor check:\n%s", buf.String())
 	}
+	found := false
+	for _, check := range got.Checks {
+		if check.Name == "apple-app-sandbox" {
+			found = true
+			if check.Status != "pass" || !strings.Contains(check.Message, "not active") {
+				t.Fatalf("apple-app-sandbox check = %+v", check)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("doctor host json missing apple-app-sandbox check: %+v", got.Checks)
+	}
 }
 
 func TestDoctorHostHumanOutput(t *testing.T) {
@@ -61,9 +73,18 @@ func TestDoctorHostHumanOutput(t *testing.T) {
 	if err := handleDoctorHost(nil, &buf); err != nil {
 		t.Fatalf("handleDoctorHost: %v", err)
 	}
-	for _, want := range []string{"Host readiness:", "apple-silicon", "virtualization-entitlement"} {
+	for _, want := range []string{"Host readiness:", "apple-silicon", "virtualization-entitlement", "apple-app-sandbox"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Fatalf("doctor host output missing %q:\n%s", want, buf.String())
 		}
+	}
+}
+
+func TestDoctorHostAppleAppSandboxActive(t *testing.T) {
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+
+	check := hostDoctorAppSandboxCheck()
+	if check.Name != "apple-app-sandbox" || check.Status != "pass" || !strings.Contains(check.Message, "com.tmc.cove") {
+		t.Fatalf("hostDoctorAppSandboxCheck = %+v", check)
 	}
 }
