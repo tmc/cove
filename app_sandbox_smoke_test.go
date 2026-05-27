@@ -390,6 +390,58 @@ func TestAppSandboxDurableBookmarkStorageSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxMacgoBundleBookmarkConsumeSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	name := fmt.Sprintf("bookmark-consume-%d", os.Getpid())
+	containerHome := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data")
+	storeRoot := filepath.Join(containerHome, "tmp", fmt.Sprintf("cove-bookmark-consume-%d", os.Getpid()))
+	t.Cleanup(func() { _ = os.RemoveAll(storeRoot) })
+	if err := os.MkdirAll(storeRoot, 0700); err != nil {
+		t.Fatalf("create bookmark consume root: %v", err)
+	}
+	hostVM := filepath.Join(storeRoot, "outside-vm-root", name)
+	if err := os.MkdirAll(hostVM, 0700); err != nil {
+		t.Fatalf("create bookmarked VM: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(hostVM, "linux-disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatalf("write bookmarked VM disk: %v", err)
+	}
+	store := filepath.Join(storeRoot, "bookmarks.json")
+	grantEnv := append(append([]string{}, env...), securityBookmarkStoreEnv+"="+store)
+
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+		"-json", "-key", "vm:"+name, "-kind", "vm-root", "-path", hostVM)
+	t.Logf("sandboxed macgo bookmark consume save err=%v output:\n%s", err, out)
+	if err != nil || strings.Contains(out, "error:") {
+		t.Fatalf("sandboxed macgo bookmark consume save: %v\n%s", err, out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "status", name)
+	t.Logf("sandboxed macgo bookmarked status err=%v output:\n%s", err, out)
+	if !strings.Contains(out, `vm "`+name+`" is stopped`) {
+		t.Fatalf("sandboxed macgo status missing stopped VM proof:\n%s", out)
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) || strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("sandboxed macgo status failed to consume bookmark cleanly:\n%s", out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "status", name+"-missing")
+	t.Logf("sandboxed macgo missing bookmark status err=%v output:\n%s", err, out)
+	if !strings.Contains(out, errPowerboxGrantRequired.Error()) {
+		t.Fatalf("sandboxed macgo missing bookmark status missing grant-required error:\n%s", out)
+	}
+	if strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("sandboxed macgo missing bookmark status trapped:\n%s", out)
+	}
+}
+
 func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")

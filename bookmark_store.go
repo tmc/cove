@@ -40,7 +40,20 @@ type securityBookmarkEntryReport struct {
 	Updated      string `json:"updated"`
 }
 
+const securityBookmarkStoreEnv = "COVE_BOOKMARK_STORE"
+
+type securityBookmarkAccess struct {
+	Entry        securityBookmarkEntry
+	Path         string
+	Stale        bool
+	Stop         func()
+	BookmarkSize int
+}
+
 func defaultSecurityBookmarkStorePath() (string, error) {
+	if path := os.Getenv(securityBookmarkStoreEnv); path != "" {
+		return path, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("home dir: %w", err)
@@ -91,30 +104,12 @@ func saveSecurityBookmark(storePath, key, kind, path string) (securityBookmarkSt
 }
 
 func resolveSecurityBookmarkFromStore(storePath, key string) (securityBookmarkStoreReport, error) {
-	if key == "" {
-		return securityBookmarkStoreReport{}, fmt.Errorf("bookmark key required")
-	}
-	store, err := readSecurityBookmarkStore(storePath)
+	access, err := resolveSecurityBookmarkAccessFromStore(storePath, key)
 	if err != nil {
 		return securityBookmarkStoreReport{}, err
 	}
-	entry, ok := store.Entries[key]
-	if !ok {
-		return securityBookmarkStoreReport{}, fmt.Errorf("bookmark %q not found", key)
-	}
-	bookmark, err := base64.StdEncoding.DecodeString(entry.Bookmark)
-	if err != nil {
-		return securityBookmarkStoreReport{}, fmt.Errorf("decode bookmark %q: %w", key, err)
-	}
-	resolved, stale, stop, err := resolveSecurityScopedBookmark(bookmark)
-	if err != nil {
-		return securityBookmarkStoreReport{}, err
-	}
-	if stop == nil {
-		return securityBookmarkStoreReport{}, fmt.Errorf("security-scoped bookmark did not start access")
-	}
-	defer stop()
-	proof, err := readSecurityScopedBookmarkProof(entry.Path, resolved, stale, len(bookmark))
+	defer access.Stop()
+	proof, err := readSecurityScopedBookmarkProof(access.Entry.Path, access.Path, access.Stale, access.BookmarkSize)
 	if err != nil {
 		return securityBookmarkStoreReport{}, err
 	}
@@ -122,8 +117,40 @@ func resolveSecurityBookmarkFromStore(storePath, key string) (securityBookmarkSt
 		Action: "resolve",
 		Store:  storePath,
 		Key:    key,
-		Entry:  securityBookmarkEntryForReport(entry),
+		Entry:  securityBookmarkEntryForReport(access.Entry),
 		Proof:  &proof,
+	}, nil
+}
+
+func resolveSecurityBookmarkAccessFromStore(storePath, key string) (securityBookmarkAccess, error) {
+	if key == "" {
+		return securityBookmarkAccess{}, fmt.Errorf("bookmark key required")
+	}
+	store, err := readSecurityBookmarkStore(storePath)
+	if err != nil {
+		return securityBookmarkAccess{}, err
+	}
+	entry, ok := store.Entries[key]
+	if !ok {
+		return securityBookmarkAccess{}, fmt.Errorf("bookmark %q not found", key)
+	}
+	bookmark, err := base64.StdEncoding.DecodeString(entry.Bookmark)
+	if err != nil {
+		return securityBookmarkAccess{}, fmt.Errorf("decode bookmark %q: %w", key, err)
+	}
+	resolved, stale, stop, err := resolveSecurityScopedBookmark(bookmark)
+	if err != nil {
+		return securityBookmarkAccess{}, err
+	}
+	if stop == nil {
+		return securityBookmarkAccess{}, fmt.Errorf("security-scoped bookmark did not start access")
+	}
+	return securityBookmarkAccess{
+		Entry:        entry,
+		Path:         resolved,
+		Stale:        stale,
+		Stop:         stop,
+		BookmarkSize: len(bookmark),
 	}, nil
 }
 

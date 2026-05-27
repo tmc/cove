@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"github.com/tmc/apple/foundation"
@@ -51,7 +52,11 @@ func securityScopedBookmarkRoundTrip(path string) (securityScopedBookmarkReport,
 }
 
 func createSecurityScopedBookmark(path string) ([]byte, error) {
-	url := foundation.NewURLFileURLWithPath(path)
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat bookmark path: %w", err)
+	}
+	url := foundation.NewURLFileURLWithPathIsDirectory(path, info.IsDir())
 	if url.GetID() == 0 {
 		return nil, fmt.Errorf("create file URL for bookmark: nil NSURL")
 	}
@@ -90,7 +95,7 @@ func resolveSecurityScopedBookmark(bookmark []byte) (path string, stale bool, st
 }
 
 func readSecurityScopedBookmarkProof(path, resolved string, stale bool, bookmarkSize int) (securityScopedBookmarkReport, error) {
-	payload, err := os.ReadFile(resolved)
+	payload, err := readSecurityScopedBookmarkPayload(resolved)
 	if err != nil {
 		return securityScopedBookmarkReport{}, fmt.Errorf("read resolved bookmark path: %w", err)
 	}
@@ -106,6 +111,25 @@ func readSecurityScopedBookmarkProof(path, resolved string, stale bool, bookmark
 		ReadBytes:    len(payload),
 		SHA256:       hex.EncodeToString(sum[:]),
 	}, nil
+}
+
+func readSecurityScopedBookmarkPayload(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return os.ReadFile(path)
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return []byte(strings.Join(names, "\n")), nil
 }
 
 func copyNSData(data foundation.INSData) []byte {

@@ -66,6 +66,9 @@ func initMacgo() {
 		if stateDir := os.Getenv(vmconfig.StateDirEnv); stateDir != "" {
 			cfg.WithEnvironment(vmconfig.StateDirEnv, stateDir)
 		}
+		if bookmarkStore := os.Getenv(securityBookmarkStoreEnv); bookmarkStore != "" {
+			cfg.WithEnvironment(securityBookmarkStoreEnv, bookmarkStore)
+		}
 		cfg.WithAdHocSign()
 	}
 	cfg.WithPostCreateHook(func(bundlePath string, cfg *macgo.Config) error {

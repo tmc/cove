@@ -25,10 +25,11 @@ func statusCommand(env commandEnv, args ...string) error {
 	if err != nil {
 		return err
 	}
-	targetDir, err := resolveStatusVMDir(opts.VM)
+	targetDir, cleanup, err := resolveStatusVMDir(opts.VM)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	if !isVMRunningAt(targetDir) {
 		state := detectVMState(targetDir)
 		if state == "starting" {
@@ -107,14 +108,38 @@ Show guest-agent and GUI-session status for a running VM.
 If no VM is named, cove uses the active VM.`)
 }
 
-func resolveStatusVMDir(name string) (string, error) {
+func resolveStatusVMDir(name string) (string, func(), error) {
 	if strings.TrimSpace(name) != "" {
-		return requireExistingVMForControl(name)
+		return resolveStatusNamedVMDir(name)
 	}
 	if strings.TrimSpace(vmDir) != "" && vmconfig.Validate(vmDir) {
-		return vmDir, nil
+		return vmDir, func() {}, nil
 	}
-	return requireExistingVMForControl(vmconfig.ActiveName())
+	return resolveStatusNamedVMDir(vmconfig.ActiveName())
+}
+
+func resolveStatusNamedVMDir(name string) (string, func(), error) {
+	dir, err := requireExistingVMForControl(name)
+	if err == nil {
+		return dir, func() {}, nil
+	}
+	if !appleAppSandboxActive() {
+		return "", nil, err
+	}
+	storePath, storeErr := defaultSecurityBookmarkStorePath()
+	if storeErr != nil {
+		return "", nil, storeErr
+	}
+	key := "vm:" + strings.TrimSpace(name)
+	access, grantErr := resolveSecurityBookmarkAccessFromStore(storePath, key)
+	if grantErr != nil {
+		return "", nil, powerboxGrantRequired("resolve VM", key, storePath)
+	}
+	if !vmconfig.Validate(access.Path) {
+		access.Stop()
+		return "", nil, fmt.Errorf("bookmark %s resolved to invalid VM: %s", key, access.Path)
+	}
+	return access.Path, access.Stop, nil
 }
 
 func probeLinuxGUISessionControl(client *ControlClient) (controlserver.GUISession, bool, error) {

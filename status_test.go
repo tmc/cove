@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,5 +168,69 @@ func TestStatusStoppedExistingVMReportsStoppedState(t *testing.T) {
 	}
 	if strings.Contains(msg, "no VM named") {
 		t.Fatalf("statusCommand error = %q, did not want not-found diagnostic", msg)
+	}
+}
+
+func TestStatusAppSandboxMissingVMRequiresGrant(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(securityBookmarkStoreEnv, filepath.Join(home, "bookmarks.json"))
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "missing-sandbox-grant"
+	vmDir = ""
+
+	err := statusCommand(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)})
+	if err == nil {
+		t.Fatal("statusCommand succeeded for missing sandbox grant")
+	}
+	if !errors.Is(err, errPowerboxGrantRequired) {
+		t.Fatalf("statusCommand error = %v, want errPowerboxGrantRequired", err)
+	}
+}
+
+func TestStatusAppSandboxConsumesBookmark(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	storePath := filepath.Join(home, "bookmarks.json")
+	t.Setenv(securityBookmarkStoreEnv, storePath)
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "bookmarked-status-vm"
+	vmDir = ""
+	vmRoot := filepath.Join(t.TempDir(), vmName)
+	if err := os.MkdirAll(vmRoot, 0700); err != nil {
+		t.Fatalf("mkdir VM: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmRoot, "linux-disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatalf("write VM disk: %v", err)
+	}
+	if _, err := saveSecurityBookmark(storePath, "vm:"+vmName, "vm-root", vmRoot); err != nil {
+		if securityScopedBookmarkUnavailable(err) {
+			t.Skipf("security-scoped bookmarks unavailable in this process: %v", err)
+		}
+		t.Fatalf("saveSecurityBookmark: %v", err)
+	}
+
+	err := statusCommand(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)})
+	if err == nil {
+		t.Fatal("statusCommand succeeded for stopped VM")
+	}
+	msg := err.Error()
+	if errors.Is(err, errPowerboxGrantRequired) {
+		t.Fatalf("statusCommand returned grant error despite bookmark: %v", err)
+	}
+	if !strings.Contains(msg, `vm "bookmarked-status-vm" is stopped`) {
+		t.Fatalf("statusCommand error = %q, want stopped VM", msg)
 	}
 }
