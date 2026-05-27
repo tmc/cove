@@ -4,30 +4,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+const StateDirEnv = "COVE_STATE_DIR"
+
+// StateDir returns the root directory for cove state.
+func StateDir() string {
+	if dir := strings.TrimSpace(os.Getenv(StateDirEnv)); dir != "" {
+		if abs, err := filepath.Abs(dir); err == nil {
+			return abs
+		}
+		return filepath.Clean(dir)
+	}
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".vz")
+}
 
 // BaseDir returns the base directory for all VMs.
 func BaseDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "vms")
+	return filepath.Join(StateDir(), "vms")
 }
 
 // TemplateDir returns the directory for templates.
 func TemplateDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "templates")
+	return filepath.Join(StateDir(), "templates")
 }
 
 // BundleDir returns the directory for Finder-openable VM package aliases.
 func BundleDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "covevms")
+	return filepath.Join(StateDir(), "covevms")
 }
 
 // CacheDir returns the cache directory.
 func CacheDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "cache")
+	return filepath.Join(StateDir(), "cache")
 }
 
 // RunsDir returns the per-run artifact bundle root.
@@ -35,14 +46,12 @@ func CacheDir() string {
 // <RunsDir()>/<run-id>/ subdirectory holding manifest.json,
 // events.jsonl, stdout.log, stderr.log, and screenshots/.
 func RunsDir() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "runs")
+	return filepath.Join(StateDir(), "runs")
 }
 
 // CurrentLink returns the path to the current VM symlink.
 func CurrentLink() string {
-	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".vz", "current")
+	return filepath.Join(StateDir(), "current")
 }
 
 // Path returns the path to a VM by name.

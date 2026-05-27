@@ -185,6 +185,59 @@ func TestAppSandboxMacgoBundleStateSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxMacgoBundleStateDirGrantSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	containerHome := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data")
+	grantState := filepath.Join(containerHome, "tmp", fmt.Sprintf("cove-state-grant-%d", os.Getpid()))
+	ambientName := fmt.Sprintf("ambient-decoy-%d", os.Getpid())
+	grantedName := fmt.Sprintf("granted-vm-%d", os.Getpid())
+	ambientVM := filepath.Join(containerHome, ".vz", "vms", ambientName)
+	grantedVM := filepath.Join(grantState, "vms", grantedName)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(ambientVM)
+		_ = os.RemoveAll(grantState)
+	})
+	stageAppSandboxListVM(t, ambientVM)
+	stageAppSandboxListVM(t, grantedVM)
+
+	grantEnv := append(append([]string{}, env...), vmconfig.StateDirEnv+"="+grantState)
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "status", "-json")
+	t.Logf("sandboxed macgo state grant status err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo state grant status: %v\n%s", err, out)
+	}
+	var status map[string]any
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &status); err != nil {
+		t.Fatalf("security status json: %v\n%s", err, out)
+	}
+	if got, _ := status["state_root"].(string); got != grantState {
+		t.Fatalf("security status state_root = %q, want %q\n%s", got, grantState, out)
+	}
+	if got, _ := status["vm_root"].(string); got != filepath.Join(grantState, "vms") {
+		t.Fatalf("security status vm_root = %q, want grant vms root\n%s", got, out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "list")
+	t.Logf("sandboxed macgo state grant list err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo state grant list: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, grantedName) {
+		t.Fatalf("list missing granted VM %q:\n%s", grantedName, out)
+	}
+	if strings.Contains(out, ambientName) {
+		t.Fatalf("list included ambient container VM %q despite explicit state grant:\n%s", ambientName, out)
+	}
+}
+
 func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
@@ -251,6 +304,16 @@ func TestAppSandboxMacgoBundleScratchBootSmoke(t *testing.T) {
 	check, ok := probe["vz_start"].(map[string]any)
 	if !ok || check["status"] != "pass" {
 		t.Fatalf("security probe-sandbox vz_start = %#v, want pass\n%s", probe["vz_start"], out)
+	}
+}
+
+func stageAppSandboxListVM(t *testing.T, vmDir string) {
+	t.Helper()
+	if err := os.MkdirAll(vmDir, 0700); err != nil {
+		t.Fatalf("create list VM %s: %v", vmDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "linux-disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatalf("write list VM disk: %v", err)
 	}
 }
 

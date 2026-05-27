@@ -16,6 +16,7 @@ import (
 
 	"github.com/tmc/cove/internal/assets"
 	"github.com/tmc/cove/internal/autosign"
+	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/macgo"
 )
 
@@ -59,6 +60,9 @@ func initMacgo() {
 	if appSandboxMacgoEnabled() {
 		cfg.WithPermissions(macgo.Sandbox)
 		cfg.WithCustom("com.apple.security.files.user-selected.read-write")
+		if stateDir := os.Getenv(vmconfig.StateDirEnv); stateDir != "" {
+			cfg.WithEnvironment(vmconfig.StateDirEnv, stateDir)
+		}
 		cfg.WithAdHocSign()
 	}
 	cfg.WithPostCreateHook(func(bundlePath string, cfg *macgo.Config) error {

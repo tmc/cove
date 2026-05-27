@@ -39,6 +39,34 @@ func TestPathCandidates(t *testing.T) {
 	}
 }
 
+func TestStateDirEnvOverridesHome(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home")
+	stateDir := filepath.Join(t.TempDir(), "state")
+	t.Setenv(StateDirEnv, stateDir)
+
+	if got := StateDir(); got != stateDir {
+		t.Fatalf("StateDir() = %q, want %q", got, stateDir)
+	}
+	if got := BaseDir(); got != filepath.Join(stateDir, "vms") {
+		t.Fatalf("BaseDir() = %q", got)
+	}
+	if got := TemplateDir(); got != filepath.Join(stateDir, "templates") {
+		t.Fatalf("TemplateDir() = %q", got)
+	}
+	if got := BundleDir(); got != filepath.Join(stateDir, "covevms") {
+		t.Fatalf("BundleDir() = %q", got)
+	}
+	if got := CacheDir(); got != filepath.Join(stateDir, "cache") {
+		t.Fatalf("CacheDir() = %q", got)
+	}
+	if got := RunsDir(); got != filepath.Join(stateDir, "runs") {
+		t.Fatalf("RunsDir() = %q", got)
+	}
+	if got := CurrentLink(); got != filepath.Join(stateDir, "current") {
+		t.Fatalf("CurrentLink() = %q", got)
+	}
+}
+
 func TestIsSubdir(t *testing.T) {
 	tests := []struct {
 		name string
