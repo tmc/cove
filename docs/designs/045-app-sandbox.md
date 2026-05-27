@@ -228,11 +228,13 @@ work in this order:
    `cove-helper`, provisioning, offline injection, shared-folder mutation,
    install, and disk mutation remain out of the sandboxed runtime claim until
    they have Powerbox/bookmark or descriptor-based grants.
-4. Next: design Powerbox/security-scoped bookmark storage for existing VM
-   roots, ISO/IPSW media, and shared-folder host paths.
-5. Design the sandboxed run-worker protocol. The unsandboxed CLI should resolve
-   host paths and grants, then launch a sandboxed worker only if descriptors or
-   bookmarks can cross that process boundary cleanly.
+4. Next: design the sandboxed run-worker protocol. The unsandboxed CLI should
+   resolve host paths and grants, then launch a sandboxed worker only if
+   descriptors or bookmarks can cross that process boundary cleanly.
+5. Design Powerbox/security-scoped bookmark storage for existing VM roots,
+   ISO/IPSW media, and shared-folder host paths. This is still required for an
+   app-first workflow, but it should follow the smaller run-worker boundary
+   proof because the bookmark path is likely issue-rich.
 
 ## Proof gates
 
