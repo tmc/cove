@@ -1,6 +1,7 @@
 # Apple App Sandbox proof lane
 
-Status: queued for v0.7 proof work.
+Status: v0.7 proof lane. The entitlement fixture and opt-in smoke harness are
+implemented; the `.app` or run-worker packaging proof is still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -31,7 +32,8 @@ Virtualization.framework access:
 - `macgo_bundle.go`
 - `doctor_host.go`
 
-The App Sandbox proof entitlement used in the first local smoke was:
+The App Sandbox proof entitlement lives at
+`internal/autosign/app_sandbox.entitlements`:
 
 ```xml
 <key>com.apple.security.app-sandbox</key>
@@ -46,22 +48,19 @@ The App Sandbox proof entitlement used in the first local smoke was:
 <true/>
 ```
 
-The local smoke built and signed a throwaway binary:
+The opt-in local smoke harness is `TestAppSandboxSmoke` in
+`app_sandbox_smoke_test.go`. It builds and signs a throwaway binary:
 
 ```bash
-go build -o /Users/tmc/tmp/cove-sandboxed .
-codesign -s - -f --entitlements /Users/tmc/tmp/cove-app-sandbox.entitlements /Users/tmc/tmp/cove-sandboxed
-codesign -d --entitlements :- /Users/tmc/tmp/cove-sandboxed
-spctl --assess --type execute -vv /Users/tmc/tmp/cove-sandboxed
-/Users/tmc/tmp/cove-sandboxed --version
+COVE_APP_SANDBOX_SMOKE=1 go test -count=1 -run TestAppSandboxSmoke -v .
 ```
 
 Observed result:
 
 - `codesign` succeeded and embedded the App Sandbox entitlement.
 - `spctl --assess --type execute` rejected the ad-hoc binary.
-- `--version` failed before normal CLI output with `Trace/BPT trap: 5`
-  and exit status 133.
+- `--version`, `help`, and `list` failed before normal CLI output with
+  `signal: trace/BPT trap`.
 
 That is enough to make raw-binary sandboxing a proof problem before any live VM
 mutation test. The next useful proof should use a minimal `.app` bundle or a
@@ -111,8 +110,8 @@ smoke tests so the project can measure breakage without rewriting the product.
 
 ## Queued commits
 
-1. Add `internal/autosign/app_sandbox.entitlements`.
-2. Add an opt-in App Sandbox smoke harness that builds, signs, and runs
+1. Done: add `internal/autosign/app_sandbox.entitlements`.
+2. Done: add an opt-in App Sandbox smoke harness that builds, signs, and runs
    non-mutating commands (`--version`, `help`, `list`) while recording traps or
    sandbox denials.
 3. Add host-process App Sandbox detection to `security status` or
