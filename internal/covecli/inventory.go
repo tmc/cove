@@ -10,6 +10,9 @@ import (
 func Inventory(registry []Spec) []Info {
 	out := make([]Info, 0, len(registry))
 	for _, spec := range registry {
+		if spec.Hidden {
+			continue
+		}
 		out = append(out, Info{
 			Name:              spec.Name,
 			Aliases:           append([]string(nil), spec.Aliases...),

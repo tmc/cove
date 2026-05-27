@@ -4,8 +4,9 @@ Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,
 host-process status reporting, elevation fail-closed guard, package-shape claim
 boundary, macgo `.app` non-mutating proof, listener proof, and scratch VM
 start/stop proof are implemented. Ambient host-path and mutating command
-surfaces now fail closed under Apple App Sandbox. Powerbox/bookmark grants,
-sandboxed run-worker IPC, and temporary-RAM overlay proofs are still queued.
+surfaces now fail closed under Apple App Sandbox. A sandboxed run-worker IPC
+proof can receive an explicit descriptor from the unsandboxed CLI. Powerbox and
+bookmark grants, and temporary-RAM overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -109,6 +110,10 @@ Observed result:
   ISO/IPSW, kernel/initrd, pcap paths, disk swap/resize, provisioning,
   helper install/uninstall, shared-folder mutation, install, and `up` return a
   typed Go error instead of reaching OS-level sandbox traps.
+- `__run-worker probe` is the first hidden sandboxed run-worker boundary proof.
+  The unsandboxed parent opens a grant file and sends its descriptor to a
+  sandboxed child over a Unix socket with `SCM_RIGHTS`; the child reports
+  `apple_app_sandbox: true`, receives the descriptor, and verifies the payload.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -182,8 +187,9 @@ Current proof-only shape:
 Queued proof shapes:
 
 - Sandboxed run-worker child launched by the unsandboxed CLI after the CLI has
-  resolved paths and grants. This needs an explicit protocol before any VM
-  mutation path moves into it.
+  resolved paths and grants. The first descriptor-passing proof is implemented;
+  VM runtime handoff still needs a typed protocol before any mutation path moves
+  into it.
 
 Unsupported claims:
 
@@ -228,10 +234,10 @@ work in this order:
    `cove-helper`, provisioning, offline injection, shared-folder mutation,
    install, and disk mutation remain out of the sandboxed runtime claim until
    they have Powerbox/bookmark or descriptor-based grants.
-4. Next: design the sandboxed run-worker protocol. The unsandboxed CLI should
-   resolve host paths and grants, then launch a sandboxed worker only if
-   descriptors or bookmarks can cross that process boundary cleanly.
-5. Design Powerbox/security-scoped bookmark storage for existing VM roots,
+4. Done: prove the sandboxed run-worker IPC boundary. `__run-worker probe`
+   launches a sandboxed child and passes an explicit descriptor over a Unix
+   socket with `SCM_RIGHTS`.
+5. Next: design Powerbox/security-scoped bookmark storage for existing VM roots,
    ISO/IPSW media, and shared-folder host paths. This is still required for an
    app-first workflow, but it should follow the smaller run-worker boundary
    proof because the bookmark path is likely issue-rich.
@@ -252,6 +258,7 @@ spctl --assess --type execute -vv /Users/tmc/tmp/cove-sandboxed
 /Users/tmc/tmp/cove-sandboxed list
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleSmoke -v .
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleHostPathDenialSmoke -v .
+COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxRunWorkerSmoke -v .
 COVE_APP_SANDBOX_MACGO_BOOT_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleScratchBootSmoke -v .
 ```
 
@@ -265,6 +272,7 @@ A future "full sandbox" claim requires all of the following:
 - `security status` reports `apple app sandbox: true`;
 - state-directory behavior is recorded and does not silently hide existing VMs;
 - a control socket path is created or found inside the expected boundary;
+- a sandboxed worker can receive explicit grants from an unsandboxed parent;
 - one scratch VM proof runs without mutating existing user VMs;
 - helper, provisioning, shared-folder, and disk-resize paths remain explicitly
   denied or have separate passing proofs.

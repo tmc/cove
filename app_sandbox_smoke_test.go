@@ -271,6 +271,36 @@ func TestAppSandboxMacgoBundleHostPathDenialSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxRunWorkerSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	env = withoutEnv(env, coveAppSandboxMacgoEnv)
+
+	out, err := runSandboxSmokeCommandEnv(t, 90*time.Second, env, bin, "__run-worker", "probe", "-json")
+	t.Logf("sandboxed run-worker probe err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed run-worker probe: %v\n%s", err, out)
+	}
+	var report runWorkerProbeReport
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &report); err != nil {
+		t.Fatalf("run-worker probe json: %v\n%s", err, out)
+	}
+	if report.ParentAppSandbox {
+		t.Fatalf("run-worker parent unexpectedly sandboxed:\n%s", out)
+	}
+	if !report.Child.AppSandbox {
+		t.Fatalf("run-worker child apple_app_sandbox = false:\n%s", out)
+	}
+	if !report.Child.ReceivedFD || report.Child.Bytes == 0 || report.Child.SHA256 == "" {
+		t.Fatalf("run-worker child descriptor proof incomplete: %+v\n%s", report.Child, out)
+	}
+	if strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("run-worker crashed instead of returning proof:\n%s", out)
+	}
+}
+
 func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
@@ -457,6 +487,18 @@ func buildMacgoBundleSmokeBinary(t *testing.T) (string, []string) {
 		"GOPATH=" + tmp,
 		"MACGO_KEEP_BUNDLE=0",
 	}
+}
+
+func withoutEnv(env []string, key string) []string {
+	prefix := key + "="
+	out := env[:0]
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func assertSandboxDoctorCommands(t *testing.T, run func(args ...string) (string, error)) {
