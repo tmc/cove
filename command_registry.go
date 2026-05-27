@@ -303,7 +303,7 @@ func runSnapshotCommandSpec(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleSnapshotCommand(env, args))
 }
 func runStatusCommand(env commandEnv, _ string, args []string) int {
-	err := statusCommand(env, args...)
+	err := statusCommandWithPowerboxFallback(env, args...)
 	if err != nil && strings.HasPrefix(err.Error(), "usage: cove status") {
 		printStatusUsage(env.Stderr)
 		return commandUsageError(env, err)

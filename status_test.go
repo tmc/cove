@@ -234,3 +234,153 @@ func TestStatusAppSandboxConsumesBookmark(t *testing.T) {
 		t.Fatalf("statusCommand error = %q, want stopped VM", msg)
 	}
 }
+
+func TestStatusAppSandboxPowerboxFallbackSuccess(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	storePath := filepath.Join(home, "bookmarks.json")
+	t.Setenv(securityBookmarkStoreEnv, storePath)
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "powerbox-status-vm"
+	vmDir = ""
+	vmRoot := filepath.Join(t.TempDir(), vmName)
+	if err := os.MkdirAll(vmRoot, 0700); err != nil {
+		t.Fatalf("mkdir VM: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmRoot, "linux-disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatalf("write VM disk: %v", err)
+	}
+	bookmark, err := createSecurityScopedBookmark(vmRoot)
+	if err != nil {
+		if securityScopedBookmarkUnavailable(err) {
+			t.Skipf("security-scoped bookmarks unavailable in this process: %v", err)
+		}
+		t.Fatalf("createSecurityScopedBookmark: %v", err)
+	}
+
+	oldPrompt := powerboxPromptDirectory
+	t.Cleanup(func() { powerboxPromptDirectory = oldPrompt })
+	oldAllowed := statusPowerboxFallbackAllowed
+	t.Cleanup(func() { statusPowerboxFallbackAllowed = oldAllowed })
+	statusPowerboxFallbackAllowed = func(commandEnv) bool { return true }
+	promptCalls := 0
+	powerboxPromptDirectory = func(title, message string) (powerboxDirectoryGrant, error) {
+		promptCalls++
+		if !strings.Contains(title, "resolve VM") || !strings.Contains(message, "vm:"+vmName) {
+			t.Fatalf("prompt title/message = %q %q, want VM grant", title, message)
+		}
+		return powerboxDirectoryGrant{
+			Path:     vmRoot,
+			Bookmark: bookmark,
+		}, nil
+	}
+
+	err = statusCommandWithPowerboxFallback(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)})
+	if err == nil {
+		t.Fatal("statusCommandWithPowerboxFallback succeeded for stopped VM")
+	}
+	msg := err.Error()
+	if errors.Is(err, errPowerboxGrantRequired) {
+		t.Fatalf("statusCommandWithPowerboxFallback returned grant error despite fallback: %v", err)
+	}
+	if !strings.Contains(msg, `vm "powerbox-status-vm" is stopped`) {
+		t.Fatalf("statusCommandWithPowerboxFallback error = %q, want stopped VM", msg)
+	}
+	if promptCalls != 1 {
+		t.Fatalf("prompt calls = %d, want 1", promptCalls)
+	}
+	store, err := readSecurityBookmarkStore(storePath)
+	if err != nil {
+		t.Fatalf("readSecurityBookmarkStore: %v", err)
+	}
+	entry, ok := store.Entries["vm:"+vmName]
+	if !ok {
+		t.Fatalf("bookmark store missing vm:%s", vmName)
+	}
+	if entry.Kind != "vm-root" || entry.Path != vmRoot {
+		t.Fatalf("bookmark entry = %+v, want vm-root %q", entry, vmRoot)
+	}
+}
+
+func TestStatusAppSandboxPowerboxFallbackCancel(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	storePath := filepath.Join(home, "bookmarks.json")
+	t.Setenv(securityBookmarkStoreEnv, storePath)
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "cancel-powerbox-status-vm"
+	vmDir = ""
+
+	oldPrompt := powerboxPromptDirectory
+	t.Cleanup(func() { powerboxPromptDirectory = oldPrompt })
+	oldAllowed := statusPowerboxFallbackAllowed
+	t.Cleanup(func() { statusPowerboxFallbackAllowed = oldAllowed })
+	statusPowerboxFallbackAllowed = func(commandEnv) bool { return true }
+	promptCalls := 0
+	powerboxPromptDirectory = func(title, message string) (powerboxDirectoryGrant, error) {
+		promptCalls++
+		return powerboxDirectoryGrant{}, errPowerboxCanceled
+	}
+
+	err := statusCommandWithPowerboxFallback(commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)})
+	if !errors.Is(err, errPowerboxCanceled) {
+		t.Fatalf("statusCommandWithPowerboxFallback error = %v, want errPowerboxCanceled", err)
+	}
+	if promptCalls != 1 {
+		t.Fatalf("prompt calls = %d, want 1", promptCalls)
+	}
+	store, err := readSecurityBookmarkStore(storePath)
+	if err != nil {
+		t.Fatalf("readSecurityBookmarkStore: %v", err)
+	}
+	if len(store.Entries) != 0 {
+		t.Fatalf("store entries = %d, want 0", len(store.Entries))
+	}
+}
+
+func TestStatusAppSandboxPowerboxFallbackNoninteractive(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(securityBookmarkStoreEnv, filepath.Join(home, "bookmarks.json"))
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "noninteractive-powerbox-status-vm"
+	vmDir = ""
+
+	oldPrompt := powerboxPromptDirectory
+	t.Cleanup(func() { powerboxPromptDirectory = oldPrompt })
+	promptCalls := 0
+	powerboxPromptDirectory = func(title, message string) (powerboxDirectoryGrant, error) {
+		promptCalls++
+		return powerboxDirectoryGrant{}, nil
+	}
+
+	err := statusCommandWithPowerboxFallback(commandEnv{
+		Stdin:  strings.NewReader(""),
+		Stdout: new(bytes.Buffer),
+		Stderr: new(bytes.Buffer),
+	})
+	if !errors.Is(err, errPowerboxGrantRequired) {
+		t.Fatalf("statusCommandWithPowerboxFallback error = %v, want errPowerboxGrantRequired", err)
+	}
+	if promptCalls != 0 {
+		t.Fatalf("prompt calls = %d, want 0", promptCalls)
+	}
+}

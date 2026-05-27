@@ -13,6 +13,8 @@ import (
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
+var statusPowerboxFallbackAllowed = statusPowerboxFallbackInteractive
+
 type statusOptions struct {
 	VM string
 }
@@ -70,6 +72,23 @@ func statusCommand(env commandEnv, args ...string) error {
 	}
 	fmt.Fprintln(env.Stdout, controlserver.AgentHealthSummary(status))
 	return nil
+}
+
+func statusCommandWithPowerboxFallback(env commandEnv, args ...string) error {
+	if !statusPowerboxFallbackAllowed(env) {
+		return statusCommand(env, args...)
+	}
+	return withPowerboxFallback(func() error {
+		return statusCommand(env, args...)
+	})
+}
+
+func statusPowerboxFallbackInteractive(env commandEnv) bool {
+	env = env.WithDefaultIO()
+	if fd, ok := readerFD(env.Stdin); ok && stdinIsTerminal(fd) {
+		return true
+	}
+	return false
 }
 
 func parseStatusArgs(env commandEnv, args []string) (statusOptions, error) {
