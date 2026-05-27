@@ -116,7 +116,7 @@ func runImageBuild(env commandEnv, args []string) (err error) {
 		if err != nil {
 			status = err.Error()
 		}
-		emitMetricEvent("run_complete", started, status, map[string]any{"command": "image build"})
+		metricsRun.EmitMetricEvent("run_complete", started, status, map[string]any{"command": "image build"})
 	}(time.Now())
 	buildStarted := time.Now()
 	manifest, err := BuildImage(BuildImageOptions{
@@ -125,10 +125,10 @@ func runImageBuild(env commandEnv, args []string) (err error) {
 		BuildRecipe: fmt.Sprintf("cove image build -from %s -tag %s", *from, *tag),
 	})
 	if err != nil {
-		emitMetricEvent("vm_create", buildStarted, err.Error(), map[string]any{"source_vm": *from})
+		metricsRun.EmitMetricEvent("vm_create", buildStarted, err.Error(), map[string]any{"source_vm": *from})
 		return err
 	}
-	emitMetricEvent("vm_create", buildStarted, "ok", map[string]any{"source_vm": *from})
+	metricsRun.EmitMetricEvent("vm_create", buildStarted, "ok", map[string]any{"source_vm": *from})
 	fmt.Fprintf(env.Stdout, "Built image %s from %s\n", ref, *from)
 	fmt.Fprintf(env.Stdout, "  path:   %s\n", ref.Path())
 	fmt.Fprintf(env.Stdout, "  disk:   %d bytes\n", manifest.DiskSize)

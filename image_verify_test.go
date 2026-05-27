@@ -277,17 +277,17 @@ func TestRunImageForkFromWithConfigRefusesFailedVerify(t *testing.T) {
 		t.Fatalf("writeImageManifest: %v", err)
 	}
 
-	oldRunLinux := runLinuxVMHook
-	t.Cleanup(func() { runLinuxVMHook = oldRunLinux })
-	runLinuxVMHook = func() error {
+	hooks := defaultRunHooks()
+	hooks.RunLinuxVM = runHook(func() error {
 		t.Fatal("runLinuxVMHook should not be called on failed verify")
 		return nil
-	}
+	})
 
 	err = runImageForkFromWithConfig(RunConfig{
 		Linux:               true,
+		Hooks:               hooks,
 		EphemeralForkParent: ref.String(),
-	}, "", "")
+	}, "", "", nil)
 	if err == nil {
 		t.Fatal("runImageForkFromWithConfig succeeded; want refusal")
 	}
@@ -315,15 +315,15 @@ func TestRunImageForkFromWithConfigWarnsAndProceeds(t *testing.T) {
 		t.Fatalf("writeImageManifest: %v", err)
 	}
 
-	oldRunLinux := runLinuxVMHook
-	t.Cleanup(func() { runLinuxVMHook = oldRunLinux })
-	runLinuxVMHook = func() error { return nil }
+	hooks := defaultRunHooks()
+	hooks.RunLinuxVM = runHook(func() error { return nil })
 
 	err = runImageForkFromWithConfig(RunConfig{
 		Linux:               true,
+		Hooks:               hooks,
 		EphemeralForkParent: ref.String(),
 		EphemeralForkName:   "warn-child",
-	}, "", "")
+	}, "", "", nil)
 	if err != nil {
 		t.Fatalf("runImageForkFromWithConfig: %v", err)
 	}

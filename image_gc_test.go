@@ -232,9 +232,6 @@ func TestGCImagesEmitsTelemetry(t *testing.T) {
 	runsDirHook = func() string { return runsRoot }
 	t.Cleanup(func() {
 		runsDirHook = prev
-		activeMetricsMu.Lock()
-		activeMetricsRun = nil
-		activeMetricsMu.Unlock()
 	})
 
 	recent := stageUnreferencedImage(t, "src-recent", "recent:1")
@@ -247,7 +244,7 @@ func TestGCImagesEmitsTelemetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("beginStandaloneMetricsRun: %v", err)
 	}
-	_, err = GCImages(ImageGCOptions{OlderThan: 24 * time.Hour})
+	_, err = GCImages(ImageGCOptions{OlderThan: 24 * time.Hour, metrics: run})
 	finishStandaloneMetricsRun(run)
 	if err != nil {
 		t.Fatalf("GCImages: %v", err)
@@ -320,13 +317,13 @@ func asInt64(t *testing.T, v any) int64 {
 }
 
 func TestEmitImageGCKeepUnknownReasonIsNoOp(t *testing.T) {
-	emitImageGCKeep(imagestore.Ref{}, "frobnicate", time.Now())
+	ImageGCOptions{}.emitImageGCKeep(imagestore.Ref{}, "frobnicate", time.Now())
 }
 
 func TestEmitImageGCKeepInUseDoesNotPanic(t *testing.T) {
-	emitImageGCKeep(imagestore.Ref{Name: "demo", Tag: "v1"}, "in_use", time.Now())
+	ImageGCOptions{}.emitImageGCKeep(imagestore.Ref{Name: "demo", Tag: "v1"}, "in_use", time.Now())
 }
 
 func TestEmitImageGCKeepRecentDoesNotPanic(t *testing.T) {
-	emitImageGCKeep(imagestore.Ref{Name: "demo", Tag: "v1"}, "recent", time.Now())
+	ImageGCOptions{}.emitImageGCKeep(imagestore.Ref{Name: "demo", Tag: "v1"}, "recent", time.Now())
 }
