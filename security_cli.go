@@ -84,6 +84,9 @@ func handleSecurityCommand(env commandEnv, args []string) error {
 	if len(args) > 0 && args[0] == "bookmark-store" {
 		return handleSecurityBookmarkStoreCommand(env, args[1:])
 	}
+	if len(args) > 0 && args[0] == "powerbox-prompt" {
+		return handleSecurityPowerboxPromptCommand(env, args[1:])
+	}
 	if len(args) > 0 && args[0] == "status" {
 		args = args[1:]
 	}
@@ -232,6 +235,40 @@ func printSecurityBookmarkStoreReport(env commandEnv, report securityBookmarkSto
 		fmt.Fprintf(env.Stdout, "read bytes: %d\n", report.Proof.ReadBytes)
 	}
 	return nil
+}
+
+func handleSecurityPowerboxPromptCommand(env commandEnv, args []string) error {
+	fs := flag.NewFlagSet("security powerbox-prompt", flag.ContinueOnError)
+	fs.SetOutput(env.Stderr)
+	jsonFlag := fs.Bool("json", false, "emit JSON")
+	storeFlag := securityBookmarkStoreFlag(fs)
+	key := fs.String("key", "", "bookmark key")
+	kind := fs.String("kind", "vm-root", "bookmark kind")
+	title := fs.String("title", "Grant cove access", "Powerbox panel title")
+	message := fs.String("message", "Choose a directory to grant to cove.", "Powerbox panel message")
+	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if err == errFlagHelp {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 0 || *key == "" {
+		return fmt.Errorf("usage: cove security powerbox-prompt -key key [-store file] [-kind kind] [-title title] [-message text] [-json]")
+	}
+	storePath, err := securityBookmarkStorePath(*storeFlag)
+	if err != nil {
+		return err
+	}
+	grant, err := promptPowerboxDirectory(*title, *message)
+	if err != nil {
+		return err
+	}
+	report, err := saveSecurityBookmarkBytes(storePath, *key, *kind, grant.Path, grant.Bookmark)
+	if err != nil {
+		return err
+	}
+	return printSecurityBookmarkStoreReport(env, report, *jsonFlag)
 }
 
 func handleSecurityBookmarkProbeCommand(env commandEnv, args []string) error {
@@ -619,6 +656,7 @@ func printSecurityUsage(w io.Writer) {
        cove security bookmark-probe [-json] [-path file]
        cove security bookmark-store save -key key -path file [-store file] [-kind kind] [-json]
        cove security bookmark-store resolve -key key [-store file] [-json]
+       cove security powerbox-prompt -key key [-store file] [-kind kind] [-json]
        cove security probe-sandbox [-json]
 
 Show the effective host-containment and host-escape feature policy for this

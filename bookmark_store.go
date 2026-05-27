@@ -80,6 +80,19 @@ func saveSecurityBookmark(storePath, key, kind, path string) (securityBookmarkSt
 	if err != nil {
 		return securityBookmarkStoreReport{}, err
 	}
+	return saveSecurityBookmarkBytes(storePath, key, kind, abs, bookmark)
+}
+
+func saveSecurityBookmarkBytes(storePath, key, kind, path string, bookmark []byte) (securityBookmarkStoreReport, error) {
+	if key == "" {
+		return securityBookmarkStoreReport{}, fmt.Errorf("bookmark key required")
+	}
+	if len(bookmark) == 0 {
+		return securityBookmarkStoreReport{}, fmt.Errorf("bookmark bytes required")
+	}
+	if kind == "" {
+		kind = "file"
+	}
 	store, err := readSecurityBookmarkStore(storePath)
 	if err != nil {
 		return securityBookmarkStoreReport{}, err
@@ -87,7 +100,7 @@ func saveSecurityBookmark(storePath, key, kind, path string) (securityBookmarkSt
 	entry := securityBookmarkEntry{
 		Key:      key,
 		Kind:     kind,
-		Path:     abs,
+		Path:     path,
 		Bookmark: base64.StdEncoding.EncodeToString(bookmark),
 		Updated:  time.Now().UTC().Format(time.RFC3339),
 	}

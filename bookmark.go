@@ -60,6 +60,10 @@ func createSecurityScopedBookmark(path string) ([]byte, error) {
 	if url.GetID() == 0 {
 		return nil, fmt.Errorf("create file URL for bookmark: nil NSURL")
 	}
+	return createSecurityScopedBookmarkForURL(url)
+}
+
+func createSecurityScopedBookmarkForURL(url foundation.NSURL) ([]byte, error) {
 	data, err := url.BookmarkDataWithOptionsIncludingResourceValuesForKeysRelativeToURLError(
 		foundation.NSURLBookmarkCreationWithSecurityScope,
 		nil,
