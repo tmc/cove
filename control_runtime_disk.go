@@ -258,6 +258,9 @@ func (s *ControlServer) handleDiskList() *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) handleDiskSwap(req RuntimeDiskActionRequest) *controlpb.ControlResponse {
+	if err := denyAppleAppSandboxHostAccess("disk swap"); err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
+	}
 	idx, ok := req.targetIndex()
 	if !ok {
 		return &controlpb.ControlResponse{Error: "disk swap requires index"}
@@ -311,6 +314,9 @@ func newRuntimeDiskImageAttachment(path string, readOnly bool) (pvz.VZDiskImageS
 }
 
 func (s *ControlServer) handleDiskResize(req RuntimeDiskActionRequest) *controlpb.ControlResponse {
+	if err := denyAppleAppSandboxHostAccess("disk resize"); err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
+	}
 	idx, ok := req.targetIndex()
 	if !ok {
 		return &controlpb.ControlResponse{Error: "disk resize requires index"}

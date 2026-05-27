@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -38,6 +39,17 @@ func TestHelperInstallAndUninstallHelpDoNotElevate(t *testing.T) {
 				t.Fatalf("help output looks like it ran helper operation: %q", out)
 			}
 		})
+	}
+}
+
+func TestHelperInstallDeniedByAppleAppSandbox(t *testing.T) {
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+
+	for _, args := range [][]string{{"install"}, {"uninstall"}} {
+		err := runHelperCmd(args)
+		if !errors.Is(err, errAppleAppSandboxHostAccessDenied) {
+			t.Fatalf("runHelperCmd(%v) error = %v, want Apple App Sandbox denial", args, err)
+		}
 	}
 }
 

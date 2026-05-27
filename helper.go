@@ -197,6 +197,9 @@ func runHelperCmd(args []string) error {
 			helperInstallUsage()
 			return fmt.Errorf("usage: cove helper install")
 		}
+		if err := denyAppleAppSandboxHostAccess("helper install"); err != nil {
+			return err
+		}
 		return helperInstall()
 	case "uninstall":
 		if len(args) > 1 {
@@ -205,6 +208,9 @@ func runHelperCmd(args []string) error {
 			}
 			helperUninstallUsage()
 			return fmt.Errorf("usage: cove helper uninstall")
+		}
+		if err := denyAppleAppSandboxHostAccess("helper uninstall"); err != nil {
+			return err
 		}
 		return helperUninstall()
 	case "status":

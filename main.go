@@ -651,6 +651,10 @@ func handleDefaultAction() {
 
 	switch len(vms) {
 	case 0:
+		if err := denyAppleAppSandboxHostAccess("install"); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 		guiMode = true
 		opts := currentRuntimeOptions()
 		opts.GUI = guiMode
@@ -1759,6 +1763,10 @@ func handleVMCommand(args []string) {
 
 	case "shared-folder", "shared-folders":
 		if sharedFolderCommandBlocked(subargs) {
+			if appleAppSandboxActive() {
+				fmt.Fprintf(os.Stderr, "error: %v\n", denyAppleAppSandboxHostAccess("shared-folder mutation"))
+				os.Exit(1)
+			}
 			fmt.Fprintf(os.Stderr, "error: -sandbox-level %s does not allow shared-folder mutations\n", sandboxLevel)
 			os.Exit(1)
 		}

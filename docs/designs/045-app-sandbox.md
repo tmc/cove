@@ -3,8 +3,9 @@
 Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,
 host-process status reporting, elevation fail-closed guard, package-shape claim
 boundary, macgo `.app` non-mutating proof, listener proof, and scratch VM
-start/stop proof are implemented. Helper, provisioning, shared-folder, and
-temporary-RAM overlay proofs are still queued.
+start/stop proof are implemented. Ambient host-path and mutating command
+surfaces now fail closed under Apple App Sandbox. Powerbox/bookmark grants,
+sandboxed run-worker IPC, and temporary-RAM overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -103,6 +104,11 @@ Observed result:
   macgo forwards the variable into the sandboxed LaunchServices child. The
   current smoke proof uses a grant inside the app container and proves `list`
   sees only that granted VM root, not an ambient container `.vz`.
+- Ambient command-line host paths and mutations are explicit denials in the
+  sandboxed macgo proof. `-vol`, `-share-dir`, `-usb`, `-block`, explicit disk,
+  ISO/IPSW, kernel/initrd, pcap paths, disk swap/resize, provisioning,
+  helper install/uninstall, shared-folder mutation, install, and `up` return a
+  typed Go error instead of reaching OS-level sandbox traps.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -215,13 +221,16 @@ work in this order:
 1. Done: mitigate Unix socket path length. Long per-VM socket paths fall back to
    a hashed short path under the process temp directory, with a sidecar
    `control.token` for existing clients.
-2. In progress: define explicit state-directory grants. `COVE_STATE_DIR` is now
-   the process contract and is forwarded through macgo; real user-selected
-   existing VM access still needs Powerbox or security-scoped bookmark storage.
-3. Make helper IPC and privilege paths explicit denials or separately proved
-   capabilities. `cove-helper`, provisioning, and offline injection remain out
-   of the sandboxed runtime claim.
-4. Design the sandboxed run-worker protocol. The unsandboxed CLI should resolve
+2. Done: define explicit state-directory grants. `COVE_STATE_DIR` is now the
+   process contract and is forwarded through macgo; real user-selected existing
+   VM access still needs Powerbox or security-scoped bookmark storage.
+3. Done: make ambient host paths and mutating surfaces explicit denials.
+   `cove-helper`, provisioning, offline injection, shared-folder mutation,
+   install, and disk mutation remain out of the sandboxed runtime claim until
+   they have Powerbox/bookmark or descriptor-based grants.
+4. Next: design Powerbox/security-scoped bookmark storage for existing VM
+   roots, ISO/IPSW media, and shared-folder host paths.
+5. Design the sandboxed run-worker protocol. The unsandboxed CLI should resolve
    host paths and grants, then launch a sandboxed worker only if descriptors or
    bookmarks can cross that process boundary cleanly.
 
@@ -240,12 +249,13 @@ spctl --assess --type execute -vv /Users/tmc/tmp/cove-sandboxed
 /Users/tmc/tmp/cove-sandboxed --version
 /Users/tmc/tmp/cove-sandboxed list
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleSmoke -v .
+COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleHostPathDenialSmoke -v .
 COVE_APP_SANDBOX_MACGO_BOOT_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleScratchBootSmoke -v .
 ```
 
-Stop before disk resize, provisioning mutation, helper install, or shared-folder
-mutation until startup, state-dir, control-socket, and listener behavior are
-understood and documented.
+Disk resize, provisioning mutation, helper install, install/up, and
+shared-folder mutation are allowed in the sandboxed proof only as denial tests
+until Powerbox/bookmark grants or a sandboxed worker protocol are implemented.
 
 A future "full sandbox" claim requires all of the following:
 

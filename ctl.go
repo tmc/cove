@@ -1089,6 +1089,9 @@ func ctlRuntimeDiskCommand(sock string, args []string, timeout time.Duration, ra
 	case "list":
 		data["action"] = "list"
 	case "swap":
+		if err := denyAppleAppSandboxHostAccess("ctl disk swap"); err != nil {
+			return err
+		}
 		if len(args) < 3 {
 			return fmt.Errorf("usage: ctl disk swap <index> <path[:ro|rw]>")
 		}
@@ -1105,6 +1108,9 @@ func ctlRuntimeDiskCommand(sock string, args []string, timeout time.Duration, ra
 		data["path"] = spec.Path
 		data["read_only"] = spec.ReadOnly
 	case "resize":
+		if err := denyAppleAppSandboxHostAccess("ctl disk resize"); err != nil {
+			return err
+		}
 		resizeArgs := args[1:]
 		preflightOnly := false
 		if len(resizeArgs) > 0 && (resizeArgs[0] == "--preflight" || resizeArgs[0] == "-preflight") {

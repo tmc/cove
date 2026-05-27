@@ -49,4 +49,19 @@ func TestHandleProvisionEarlyReturns(t *testing.T) {
 			t.Fatalf("handleProvision missing -user: got %v, want ErrInjectFlagRequired", err)
 		}
 	})
+
+	t.Run("apple app sandbox denies provisioning", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+		oldVMDir, oldVMName := vmDir, vmName
+		t.Cleanup(func() { vmDir, vmName = oldVMDir, oldVMName })
+		vmDir = t.TempDir()
+		vmName = "sandboxed-provision"
+		_, err := captureStdoutResult(t, func() error {
+			return handleProvision([]string{"-stage-only"})
+		})
+		if !errors.Is(err, errAppleAppSandboxHostAccessDenied) {
+			t.Fatalf("handleProvision sandbox error = %v, want Apple App Sandbox denial", err)
+		}
+	})
 }
