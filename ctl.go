@@ -85,7 +85,7 @@ Commands:
   debug-stub status     Report debug stub status
   disk list             List runtime storage devices
   disk swap <n> <path[:ro|rw]>  Swap a live disk-image backing
-  disk resize <n> <size>  Resize live disk backing; macOS disk 0 expands APFS through the guest agent
+  disk resize [--preflight] <n> <size>  Resize live disk backing; macOS disk 0 expands APFS through the guest agent
   usb list              List runtime USB controllers and devices
   usb attach-storage <path[:ro|rw]> [controller]  Attach USB mass storage
   usb attach-host-service <id> [controller]       Attach host USB by service ID
@@ -171,6 +171,7 @@ Examples:
   cove ctl disk list
   cove ctl disk swap 0 /tmp/other.img:ro
   cove ctl disk resize 0 96G      # running macOS disk 0 also grows the APFS container
+  cove ctl disk resize --preflight 0 96G
   cove ctl usb list
   cove ctl usb attach-storage /tmp/installer.iso:ro
   cove ctl screenshot -o screen.jpg
@@ -1104,20 +1105,27 @@ func ctlRuntimeDiskCommand(sock string, args []string, timeout time.Duration, ra
 		data["path"] = spec.Path
 		data["read_only"] = spec.ReadOnly
 	case "resize":
-		if len(args) < 3 {
-			return fmt.Errorf("usage: ctl disk resize <index> <size>")
+		resizeArgs := args[1:]
+		preflightOnly := false
+		if len(resizeArgs) > 0 && (resizeArgs[0] == "--preflight" || resizeArgs[0] == "-preflight") {
+			preflightOnly = true
+			resizeArgs = resizeArgs[1:]
 		}
-		index, err := parseNonNegativeInt(args[1], "disk index")
+		if len(resizeArgs) != 2 {
+			return fmt.Errorf("usage: ctl disk resize [--preflight] <index> <size>")
+		}
+		index, err := parseNonNegativeInt(resizeArgs[0], "disk index")
 		if err != nil {
 			return err
 		}
-		sizeBytes, err := bytefmt.Parse(args[2])
+		sizeBytes, err := bytefmt.Parse(resizeArgs[1])
 		if err != nil {
 			return err
 		}
 		data["action"] = "resize"
 		data["index"] = index
 		data["size_bytes"] = sizeBytes
+		data["preflight_only"] = preflightOnly
 	default:
 		return fmt.Errorf("unknown disk action: %s (use list, swap, or resize)", args[0])
 	}

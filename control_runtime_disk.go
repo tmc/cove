@@ -43,20 +43,22 @@ type RuntimeDiskInfo struct {
 // RuntimeDiskActionRequest is the flat JSON request shape for runtime disk
 // commands. It accepts both snake_case and camelCase aliases for convenience.
 type RuntimeDiskActionRequest struct {
-	Action       string   `json:"action,omitempty"`
-	Type         string   `json:"type,omitempty"`
-	Index        *int     `json:"index,omitempty"`
-	StorageIndex *int     `json:"storage_index,omitempty"`
-	Path         string   `json:"path,omitempty"`
-	PathAlt      string   `json:"file_path,omitempty"`
-	ReadOnly     *bool    `json:"read_only,omitempty"`
-	ReadOnlyAlt  *bool    `json:"readOnly,omitempty"`
-	SizeBytes    *uint64  `json:"size_bytes,omitempty"`
-	SizeBytesAlt *uint64  `json:"sizeBytes,omitempty"`
-	SizeMB       *uint64  `json:"size_mb,omitempty"`
-	SizeMBAlt    *uint64  `json:"sizeMB,omitempty"`
-	SizeGB       *float64 `json:"size_gb,omitempty"`
-	SizeGBAlt    *float64 `json:"sizeGB,omitempty"`
+	Action           string   `json:"action,omitempty"`
+	Type             string   `json:"type,omitempty"`
+	Index            *int     `json:"index,omitempty"`
+	StorageIndex     *int     `json:"storage_index,omitempty"`
+	Path             string   `json:"path,omitempty"`
+	PathAlt          string   `json:"file_path,omitempty"`
+	ReadOnly         *bool    `json:"read_only,omitempty"`
+	ReadOnlyAlt      *bool    `json:"readOnly,omitempty"`
+	SizeBytes        *uint64  `json:"size_bytes,omitempty"`
+	SizeBytesAlt     *uint64  `json:"sizeBytes,omitempty"`
+	SizeMB           *uint64  `json:"size_mb,omitempty"`
+	SizeMBAlt        *uint64  `json:"sizeMB,omitempty"`
+	SizeGB           *float64 `json:"size_gb,omitempty"`
+	SizeGBAlt        *float64 `json:"sizeGB,omitempty"`
+	PreflightOnly    bool     `json:"preflight_only,omitempty"`
+	PreflightOnlyAlt bool     `json:"preflightOnly,omitempty"`
 }
 
 // RuntimeDiskListResponse is returned by list commands.
@@ -137,6 +139,10 @@ func (r RuntimeDiskActionRequest) readOnlyValue() bool {
 		return *r.ReadOnlyAlt
 	}
 	return false
+}
+
+func (r RuntimeDiskActionRequest) preflightOnlyValue() bool {
+	return r.PreflightOnly || r.PreflightOnlyAlt
 }
 
 func (r RuntimeDiskActionRequest) requestedSizeBytes() (uint64, error) {
@@ -352,6 +358,22 @@ func (s *ControlServer) handleDiskResize(req RuntimeDiskActionRequest) *controlp
 		if err := s.preflightMacOSRootAPFS(macAgent); err != nil {
 			return &controlpb.ControlResponse{Error: macOSResizePreflightFailedError(entry.Index, sizeBytes, alreadySized, err).Error()}
 		}
+	}
+	if req.preflightOnlyValue() {
+		msg := fmt.Sprintf("disk %d resize preflight passed for %d bytes; no host disk changes made", entry.Index, sizeBytes)
+		if !expandMacOSAPFS {
+			msg += "; guest APFS expansion preflight is only needed for macOS primary disk 0"
+		}
+		return statusControlResponse(RuntimeDiskMutationResponse{
+			Action: "resize-preflight",
+			Index:  entry.Index,
+			Disk:   entry.Info,
+			GuestResize: &RuntimeDiskGuestResize{
+				Platform:  agentstate.Platform(s.effectiveVMDir()),
+				Attempted: expandMacOSAPFS,
+			},
+			Message: msg,
+		})
 	}
 
 	if !alreadySized {

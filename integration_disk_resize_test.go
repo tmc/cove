@@ -105,6 +105,94 @@ func TestIntegrationDiskResize(t *testing.T) {
 	}
 }
 
+func TestIntegrationDiskResizePreflightOnly(t *testing.T) {
+	vm := acquireIntegrationVM(t)
+	defer vm.Cleanup(t)
+	artifacts := newIntegrationArtifacts(t, "disk-resize-preflight")
+	writeIntegrationBinaryArtifact(t, artifacts)
+
+	resp, err := ctlSendJSON(vm.sock, map[string]interface{}{
+		"type": "disk",
+		"data": map[string]any{
+			"action": "list",
+		},
+	}, 30*time.Second)
+	artifacts.writeJSON("disk-list.json", resp)
+	if err != nil {
+		t.Fatalf("disk list: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("disk list failed: %s", resp.Error)
+	}
+	var list RuntimeDiskListResponse
+	if err := json.Unmarshal([]byte(resp.GetData()), &list); err != nil {
+		t.Fatalf("decode disk list: %v\n%s", err, resp.GetData())
+	}
+	if len(list.Disks) == 0 {
+		t.Fatalf("disk list returned no disks")
+	}
+	disk := list.Disks[0]
+	if disk.Index != 0 {
+		t.Fatalf("first disk index = %d, want 0", disk.Index)
+	}
+	if disk.FileSizeBytes == 0 {
+		t.Fatalf("disk 0 file_size_bytes = 0: %+v", disk)
+	}
+	var beforeSize int64 = -1
+	if disk.Path != "" {
+		info, err := os.Stat(disk.Path)
+		if err != nil {
+			t.Fatalf("stat disk %q: %v", disk.Path, err)
+		}
+		beforeSize = info.Size()
+	}
+	targetSize := disk.FileSizeBytes + 512*1024*1024
+
+	resp, err = ctlSendJSON(vm.sock, map[string]interface{}{
+		"type": "disk",
+		"data": map[string]any{
+			"action":         "resize",
+			"index":          0,
+			"size_bytes":     targetSize,
+			"preflight_only": true,
+		},
+	}, 30*time.Second)
+	artifacts.writeJSON("resize-preflight-response.json", resp)
+	if err != nil {
+		t.Fatalf("disk resize preflight: %v", err)
+	}
+	if disk.Path != "" {
+		info, err := os.Stat(disk.Path)
+		if err != nil {
+			t.Fatalf("stat disk after preflight %q: %v", disk.Path, err)
+		}
+		if info.Size() != beforeSize {
+			t.Fatalf("disk size changed during preflight: before=%d after=%d", beforeSize, info.Size())
+		}
+	}
+	if !resp.Success {
+		if runtimeSurfaceMacOSRecoveryBlocksAPFS(resp.Error) {
+			for _, want := range []string{"APFS expansion preflight failed", "Recovery partition blocks", "no host disk changes made"} {
+				if !strings.Contains(resp.Error, want) {
+					t.Fatalf("preflight blocker missing %q: %s", want, resp.Error)
+				}
+			}
+			return
+		}
+		t.Fatalf("disk resize preflight failed: %s", resp.Error)
+	}
+	var preflight RuntimeDiskMutationResponse
+	if err := json.Unmarshal([]byte(resp.GetData()), &preflight); err != nil {
+		t.Fatalf("decode resize preflight: %v\n%s", err, resp.GetData())
+	}
+	if preflight.Action != "resize-preflight" {
+		t.Fatalf("preflight action = %q, want resize-preflight", preflight.Action)
+	}
+	if !strings.Contains(preflight.Message, "no host disk changes made") {
+		t.Fatalf("preflight message missing no-host-change text: %q", preflight.Message)
+	}
+}
+
 func writeIntegrationBinaryArtifact(t *testing.T, artifacts *integrationArtifacts) {
 	t.Helper()
 
