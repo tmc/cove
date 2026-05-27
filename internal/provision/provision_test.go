@@ -72,7 +72,7 @@ func TestManifestHelpers(t *testing.T) {
 		Version: 1,
 		Files: []ProvisionManifestFile{
 			{Path: filepath.Join("private", "var", "db", "vz-provision.sh"), Owner: "root:wheel"},
-			{Path: filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"), Owner: "root:wheel"},
+			{Path: filepath.Join("Library", "LaunchDaemons", "com.tmc.cove.provision.plist"), Owner: "root:wheel"},
 			{Path: filepath.Join("Library", "Preferences", "com.apple.loginwindow.plist"), Owner: "root:wheel"},
 			{Path: filepath.Join("usr", "local", "bin", "vz-agent"), Owner: "root:wheel"},
 			{Path: filepath.Join("private", "etc", "kcpassword")},
@@ -85,13 +85,13 @@ func TestManifestHelpers(t *testing.T) {
 	if got := ManifestIncludesLoginScreenCredentials(manifest); !got {
 		t.Fatal("ManifestIncludesLoginScreenCredentials returned false")
 	}
-	if got := ManifestIncludesAgent(manifest, "vz-agent", "com.github.tmc.vz-macos.vz-agent", "com.github.tmc.vz-macos.vz-agent-user"); !got {
+	if got := ManifestIncludesAgent(manifest, "vz-agent", "com.tmc.cove.vz-agent", "com.tmc.cove.vz-agent-user"); !got {
 		t.Fatal("ManifestIncludesAgent returned false")
 	}
 
 	want := []string{
 		filepath.Join("/Volumes/Data", "private", "var", "db", "vz-provision.sh"),
-		filepath.Join("/Volumes/Data", "Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"),
+		filepath.Join("/Volumes/Data", "Library", "LaunchDaemons", "com.tmc.cove.provision.plist"),
 		filepath.Join("/Volumes/Data", "Library", "Preferences", "com.apple.loginwindow.plist"),
 		filepath.Join("/Volumes/Data", "usr", "local", "bin", "vz-agent"),
 	}

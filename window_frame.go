@@ -13,7 +13,7 @@ import (
 	"github.com/tmc/apple/objc"
 )
 
-const windowFrameAutosavePrefix = "com.github.tmc.vz-macos.window."
+const windowFrameAutosavePrefix = "com.tmc.cove.window."
 
 // configureWindowFramePersistence restores a previously saved window frame (if
 // present) and enables automatic frame persistence for subsequent moves/resizes.

@@ -12,16 +12,16 @@ var provisionScriptTmpl string
 //go:embed templates/vz-autologin.sh.tmpl
 var autoLoginScriptTmpl string
 
-//go:embed templates/com.github.tmc.vz-macos.provision.plist
+//go:embed templates/com.tmc.cove.provision.plist
 var provisionLaunchDaemonPlist string
 
-//go:embed templates/com.github.tmc.vz-macos.autologin.plist
+//go:embed templates/com.tmc.cove.autologin.plist
 var autoLoginLaunchDaemonPlist string
 
-//go:embed templates/com.github.tmc.vz-macos.vz-agent.plist
+//go:embed templates/com.tmc.cove.vz-agent.plist
 var agentLaunchDaemonPlistEmbed string
 
-//go:embed templates/com.github.tmc.vz-macos.vz-agent-user.plist
+//go:embed templates/com.tmc.cove.vz-agent-user.plist
 var agentLaunchAgentPlistEmbed string
 
 // provisionTemplateData holds the values substituted into vz-provision.sh.tmpl.

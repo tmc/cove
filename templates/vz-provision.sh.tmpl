@@ -175,7 +175,7 @@ touch "$MARKER"
 log "Provisioning marker created: $MARKER"
 
 # Self-cleanup: remove the LaunchDaemon and script so they don't run again
-rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist 2>/dev/null || true
+rm -f /Library/LaunchDaemons/com.tmc.cove.provision.plist 2>/dev/null || true
 rm -f /var/db/vz-provision.sh 2>/dev/null || true
 log "LaunchDaemon and script removed (self-cleanup)"
 
@@ -194,6 +194,6 @@ log "=== Provisioning complete ==="
 # shows the login screen on first boot.
 log "Restarting loginwindow for auto-login..."
 killall loginwindow 2>/dev/null || true
-launchctl kickstart -k system/com.github.tmc.vz-macos.autologin 2>/dev/null || true
+launchctl kickstart -k system/com.tmc.cove.autologin 2>/dev/null || true
 
 exit 0

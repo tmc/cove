@@ -81,20 +81,20 @@ echo "Device: ${device}"
 echo "Data volume: ${data_part}"
 echo
 echo "Ownership:"
-check_stat "Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist"
+check_stat "Library/LaunchDaemons/com.tmc.cove.provision.plist"
 check_stat "private/var/db/vz-provision.sh"
 check_stat "private/etc/kcpassword"
 check_stat "Library/Preferences/com.apple.loginwindow.plist"
 check_stat "usr/local/bin/vz-agent"
-check_stat "Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist"
+check_stat "Library/LaunchDaemons/com.tmc.cove.vz-agent.plist"
 echo
 echo "Provisioning markers:"
 check_stat "private/var/log/vz-provision.log"
 check_stat "private/var/db/.vz-provisioned"
 echo
 echo "Provisioning LaunchDaemon:"
-if [[ -f "${mount_point}/Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist" ]]; then
-	plutil -p "${mount_point}/Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist"
+if [[ -f "${mount_point}/Library/LaunchDaemons/com.tmc.cove.provision.plist" ]]; then
+	plutil -p "${mount_point}/Library/LaunchDaemons/com.tmc.cove.provision.plist"
 fi
 echo
 echo "Auto-login preferences:"

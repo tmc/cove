@@ -199,7 +199,7 @@ func ManifestNeedsRootProvisioning(manifest *ProvisionManifest, autoLoginLaunchD
 	}
 	for _, file := range manifest.Files {
 		switch filepath.Clean(file.Path) {
-		case filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"),
+		case filepath.Join("Library", "LaunchDaemons", "com.tmc.cove.provision.plist"),
 			filepath.Join("private", "etc", "kcpassword"),
 			filepath.Join("Library", "Preferences", "com.apple.loginwindow.plist"),
 			filepath.FromSlash(autoLoginLaunchDaemonRelativePath):

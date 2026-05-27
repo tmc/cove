@@ -6,7 +6,7 @@
 // Injection writes two files to the Data volume:
 //
 //   - /usr/local/bin/vz-agent (the binary)
-//   - /Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist (the LaunchDaemon)
+//   - /Library/LaunchDaemons/com.tmc.cove.vz-agent.plist (the LaunchDaemon)
 //
 // The LaunchDaemon is configured with KeepAlive=true so launchd restarts
 // the agent if it crashes. It runs as root to allow user management and
@@ -36,10 +36,10 @@ import (
 const agentBinaryName = "vz-agent"
 
 // agentLaunchDaemonLabel is the launchd label for the guest agent daemon (root, port 1024).
-const agentLaunchDaemonLabel = "com.github.tmc.vz-macos.vz-agent"
+const agentLaunchDaemonLabel = "com.tmc.cove.vz-agent"
 
 // agentLaunchAgentLabel is the launchd label for the guest user agent (user session, port 1025).
-const agentLaunchAgentLabel = "com.github.tmc.vz-macos.vz-agent-user"
+const agentLaunchAgentLabel = "com.tmc.cove.vz-agent-user"
 
 const (
 	agentUpgradeReconnectInitialDelay = 5 * time.Second
@@ -890,11 +890,11 @@ func agentBuildTargetOS(guestOS string) string {
 
 // agentLaunchDaemonPlist is the launchd plist for the guest agent daemon.
 // Runs as root on boot (port 1024). KeepAlive ensures launchd restarts if it crashes.
-// Loaded from templates/com.github.tmc.vz-macos.vz-agent.plist via go:embed.
+// Loaded from templates/com.tmc.cove.vz-agent.plist via go:embed.
 var agentLaunchDaemonPlist = agentLaunchDaemonPlistEmbed
 
 // agentLaunchAgentPlist is the launchd plist for the guest user agent.
 // Runs in the logged-in user's session (port 1025) with TCC/FDA grants.
 // LimitLoadToSessionType: Aqua ensures it only starts in GUI sessions.
-// Loaded from templates/com.github.tmc.vz-macos.vz-agent-user.plist via go:embed.
+// Loaded from templates/com.tmc.cove.vz-agent-user.plist via go:embed.
 var agentLaunchAgentPlist = agentLaunchAgentPlistEmbed

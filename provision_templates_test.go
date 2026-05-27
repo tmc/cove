@@ -38,8 +38,8 @@ func TestGenerateEmbeddedProvisionScript(t *testing.T) {
 		{"date_format", "date '+%Y-%m-%d %H:%M:%S'"},
 		{"marker", `MARKER="/var/db/.vz-provisioned"`},
 		{"sysadminctl", "sysadminctl -addUser"},
-		{"self_cleanup", "rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist"},
-		{"autologin_kickstart", "launchctl kickstart -k system/com.github.tmc.vz-macos.autologin"},
+		{"self_cleanup", "rm -f /Library/LaunchDaemons/com.tmc.cove.provision.plist"},
+		{"autologin_kickstart", "launchctl kickstart -k system/com.tmc.cove.autologin"},
 	}
 
 	for _, c := range checks {
@@ -97,7 +97,7 @@ func TestProvisionScriptContainsPasswordOnlyInVariable(t *testing.T) {
 func TestGenerateEmbeddedLaunchDaemonPlist(t *testing.T) {
 	plist := generateEmbeddedLaunchDaemonPlist()
 	checks := []string{
-		"com.github.tmc.vz-macos.provision",
+		"com.tmc.cove.provision",
 		"/var/db/vz-provision.sh",
 		"RunAtLoad",
 		"LaunchOnlyOnce",

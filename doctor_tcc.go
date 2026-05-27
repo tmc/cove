@@ -157,7 +157,7 @@ func tccAppleEventsProbeScript() string {
     AND auth_value=2
     AND (
       client='/usr/local/bin/vz-agent'
-      OR client LIKE '%com.github.tmc.vz-macos.vz-agent%'
+      OR client LIKE '%com.tmc.cove.vz-agent%'
     )
     AND (
       indirect_object_identifier='com.apple.Terminal'

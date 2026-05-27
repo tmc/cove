@@ -2116,7 +2116,7 @@ func ctlResetPasswordForVM(target vmSelection, sock string, timeout time.Duratio
 	escapedPassword := shellEscape(password)
 	script := fmt.Sprintf(`#!/bin/bash
 dscl . -passwd %s %s
-rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pwreset.sh
+rm -f /Library/LaunchDaemons/com.tmc.cove.pwreset.plist /var/db/vz-pwreset.sh
 `, escapedUserPath, escapedPassword)
 	scriptPath := filepath.Join(mountPoint, "private", "var", "db", "vz-pwreset.sh")
 	if writeErr := os.WriteFile(scriptPath, []byte(script), 0755); writeErr != nil {
@@ -2128,7 +2128,7 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.github.tmc.vz-macos.pwreset</string>
+	<string>com.tmc.cove.pwreset</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
@@ -2138,7 +2138,7 @@ rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.pwreset.plist /var/db/vz-pw
 	<true/>
 </dict>
 </plist>`
-	plistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.github.tmc.vz-macos.pwreset.plist")
+	plistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.tmc.cove.pwreset.plist")
 	if writeErr := os.WriteFile(plistPath, []byte(plist), 0644); writeErr != nil {
 		return fmt.Errorf("write plist: %w", writeErr)
 	}
