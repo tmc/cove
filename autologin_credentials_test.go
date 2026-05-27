@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	pw "github.com/tmc/cove/internal/password"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func TestReadLoginScreenCredentials(t *testing.T) {
@@ -186,41 +187,39 @@ func TestReadLoginScreenCredentialsMalformedPlist(t *testing.T) {
 }
 
 func TestResolveLoginScreenWatchdogCredentialsFallsBackToBootCache(t *testing.T) {
-	savedUser, savedPass, savedBoot := provisionUser, provisionPassword, bootLoginScreenCredentials
+	savedBoot := bootLoginScreenCredentials
 	t.Cleanup(func() {
-		provisionUser, provisionPassword, bootLoginScreenCredentials = savedUser, savedPass, savedBoot
+		bootLoginScreenCredentials = savedBoot
 	})
-	provisionUser, provisionPassword = "", ""
+	target := vmSelection{Directory: t.TempDir(), Name: "watchdog"}
+	rc := vmrun.RunConfig{}
 	bootLoginScreenCredentials = loginScreenCredentials{Username: "boot", Password: "bootpw"}
-	got := resolveLoginScreenWatchdogCredentials()
+	got := resolveLoginScreenWatchdogCredentialsForRun(rc, target)
 	if got.Username != "boot" || got.Password != "bootpw" {
 		t.Fatalf("resolveLoginScreenWatchdogCredentials = %+v, want boot cache", got)
 	}
 
 	bootLoginScreenCredentials = loginScreenCredentials{}
-	got = resolveLoginScreenWatchdogCredentials()
+	got = resolveLoginScreenWatchdogCredentialsForRun(rc, target)
 	if got.Valid() {
 		t.Fatalf("resolveLoginScreenWatchdogCredentials = %+v, want empty", got)
 	}
 }
 
 func TestResolveLoginScreenWatchdogCredentialsPrefersProvisionAfterInject(t *testing.T) {
-	savedUser, savedPass, savedBoot := provisionUser, provisionPassword, bootLoginScreenCredentials
-	savedVMDir, savedVMName := vmDir, vmName
+	savedBoot := bootLoginScreenCredentials
 	t.Cleanup(func() {
-		provisionUser, provisionPassword, bootLoginScreenCredentials = savedUser, savedPass, savedBoot
-		vmDir, vmName = savedVMDir, savedVMName
+		bootLoginScreenCredentials = savedBoot
 	})
 	t.Setenv("HOME", t.TempDir())
-	vmDir = t.TempDir()
-	vmName = "watchdog-r312"
-	if err := os.WriteFile(filepath.Join(vmDir, ".inject-succeeded"), nil, 0o644); err != nil {
+	target := vmSelection{Directory: t.TempDir(), Name: "watchdog-r312"}
+	if err := os.WriteFile(filepath.Join(target.Directory, ".inject-succeeded"), nil, 0o644); err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
-	provisionUser, provisionPassword = "tester", "secret"
+	rc := vmrun.RunConfig{ProvisionUser: "tester", ProvisionPassword: "secret"}
 	bootLoginScreenCredentials = loginScreenCredentials{Username: "boot", Password: "bootpw"}
 
-	got := resolveLoginScreenWatchdogCredentials()
+	got := resolveLoginScreenWatchdogCredentialsForRun(rc, target)
 	if got.Username != "tester" || got.Password != "secret" {
 		t.Fatalf("got = %+v, want provision creds (after inject succeeded)", got)
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/tmc/apple/x/plist"
 	"github.com/tmc/cove/internal/password"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 type loginScreenCredentials struct {
@@ -112,11 +113,11 @@ func loadBootLoginScreenCredentials(vmDir, diskPath string) (loginScreenCredenti
 	return loginScreenCredentials{}, nil
 }
 
-func resolveLoginScreenWatchdogCredentials() loginScreenCredentials {
-	if provisionUser != "" && provisionPassword != "" && didInjectSucceed() {
+func resolveLoginScreenWatchdogCredentialsForRun(rc vmrun.RunConfig, target vmSelection) loginScreenCredentials {
+	if rc.ProvisionUser != "" && rc.ProvisionPassword != "" && didInjectSucceedForVM(target) {
 		return loginScreenCredentials{
-			Username: provisionUser,
-			Password: provisionPassword,
+			Username: rc.ProvisionUser,
+			Password: rc.ProvisionPassword,
 		}
 	}
 	return bootLoginScreenCredentials

@@ -30,12 +30,9 @@ import (
 	"github.com/tmc/cove/internal/vmrun"
 )
 
-// buildLinuxVMConfiguration builds a VZVirtualMachineConfiguration for Linux.
-// rc carries the per-run intent (including any host-resolved ISO path); pass
-// the same value runLinuxVM threaded through ResolveISO. Callers that have
-// no live rc (the recovery / codec path) snapshot a fresh one from globals.
-func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
-	hc := vmrunHostConfig()
+// buildLinuxVMConfigurationWithConfig builds a VZVirtualMachineConfiguration for Linux.
+// rc carries the per-run intent, including any host-resolved ISO path.
+func buildLinuxVMConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
 	rc.DiskPath = diskImagePath
 	plan, err := guestplan.Linux(rc, hc)
 	if err != nil {
@@ -228,7 +225,7 @@ func buildLinuxVMConfiguration(rc vmrun.RunConfig, diskImagePath string) (vz.VZV
 		}
 	}
 
-	if err := applyPrivateVMConfiguration(config); err != nil {
+	if err := applyPrivateVMConfigurationWithRunConfig(config, rc); err != nil {
 		return config, err
 	}
 
@@ -405,9 +402,7 @@ func loadOrCreateGenericMachineIdentifier() vz.VZGenericMachineIdentifier {
 }
 
 // runLinuxVM runs a Linux VM with the configured settings.
-func runLinuxVM() error {
-	rc := vmrunRunConfig(vmrun.GuestLinux)
-	hc := vmrunHostConfig()
+func runLinuxVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBundle, metrics runMetricRecorder) error {
 	fmt.Println("=== Linux VM Runner ===")
 
 	// Validate settings
@@ -485,7 +480,7 @@ func runLinuxVM() error {
 
 	// Build VM configuration
 	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
-	config, err := buildLinuxVMConfiguration(rc, resolvedDiskPath)
+	config, err := buildLinuxVMConfigurationWithConfig(rc, hc, resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
 	}
@@ -516,7 +511,7 @@ func runLinuxVM() error {
 
 	// Start VM
 	fmt.Println("Starting virtual machine...")
-	return startVMWithQueue(vm, vmQueue)
+	return startVMWithQueueForRun(vm, vmQueue, bundle, metrics, rc, hc)
 }
 
 func createLinuxRootStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConfiguration, error) {
@@ -547,7 +542,7 @@ func createLinuxStorageDeviceWithAttachment(attachment vz.VZStorageDeviceAttachm
 const (
 	UbuntuServerARM64URL  = "https://cdimage.ubuntu.com/releases/24.04.3/release/ubuntu-24.04.3-live-server-arm64.iso"
 	UbuntuDesktopARM64URL = "https://cdimage.ubuntu.com/releases/24.04.3/release/ubuntu-24.04.3-desktop-arm64.iso"
-	DebianARM64URL        = "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-13.4.0-arm64-netinst.iso"
+	DebianARM64URL        = "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-13.5.0-arm64-netinst.iso"
 	FedoraARM64URL        = "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Server/aarch64/iso/Fedora-Server-netinst-aarch64-43-1.6.iso"
 	AlpineARM64URL        = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/alpine-virt-3.23.4-aarch64.iso"
 )
@@ -575,7 +570,7 @@ func downloadLinuxISO(urlStr, path string, minSize int64) error {
 	fmt.Println()
 
 	// Use curl with resume support and progress
-	cmd := exec.Command("curl", "-L", "-C", "-", "-#", "-o", path, urlStr)
+	cmd := exec.Command("curl", "--fail", "-L", "-C", "-", "-#", "-o", path, urlStr)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -631,7 +626,7 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 	cacheFile := filepath.Join(cacheDir, desc.cacheName)
 
 	// Check variant-specific cache.
-	if info, err := os.Stat(cacheFile); err == nil && info.Size() > desc.minSize {
+	if info, err := os.Stat(cacheFile); err == nil && info.Size() > desc.minSize && !linuxISODownloadInProgress(cacheFile) {
 		fmt.Printf("Using cached ISO: %s (%.1f GB)\n", cacheFile, float64(info.Size())/(1024*1024*1024))
 		return cacheFile, nil
 	}
@@ -640,7 +635,7 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 	// requested variant. The historical linux.iso name did not encode
 	// Server vs Desktop, so blindly reusing it can boot the wrong installer.
 	legacyCache := filepath.Join(cacheDir, "linux.iso")
-	if info, err := os.Stat(legacyCache); err == nil && info.Size() > desc.minSize {
+	if info, err := os.Stat(legacyCache); err == nil && info.Size() > desc.minSize && !linuxISODownloadInProgress(legacyCache) {
 		if linuxISOMatchesVariant(legacyCache, variant) {
 			fmt.Printf("Using cached ISO: %s (%.1f GB)\n", legacyCache, float64(info.Size())/(1024*1024*1024))
 			return legacyCache, nil
@@ -650,7 +645,7 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 
 	// Fall back to per-VM directory for existing installs
 	legacyFile := filepath.Join(vmDir, "linux.iso")
-	if info, err := os.Stat(legacyFile); err == nil && info.Size() > desc.minSize {
+	if info, err := os.Stat(legacyFile); err == nil && info.Size() > desc.minSize && !linuxISODownloadInProgress(legacyFile) {
 		if linuxISOMatchesVariant(legacyFile, variant) {
 			fmt.Printf("Using existing ISO: %s (%.1f GB)\n", legacyFile, float64(info.Size())/(1024*1024*1024))
 			return legacyFile, nil
@@ -667,6 +662,11 @@ func ensureLinuxISOForVariant(variant LinuxVariant) (string, error) {
 		return "", err
 	}
 	return cacheFile, nil
+}
+
+func linuxISODownloadInProgress(path string) bool {
+	_, err := os.Stat(path + ".aria2")
+	return err == nil
 }
 
 func linuxISODescriptorForVariant(variant LinuxVariant) (linuxISODescriptor, error) {

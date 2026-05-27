@@ -154,12 +154,10 @@ func TestRunVMWithConfigWritesNetworkPolicyAudit(t *testing.T) {
 		runsDirHook = prevRuns
 		networkMode = prevNetwork
 	})
-	stubAcquireRunLockHook(t)
-	prevMac := runMacOSVMHook
-	runMacOSVMHook = func() error { return nil }
-	t.Cleanup(func() { runMacOSVMHook = prevMac })
+	hooks, _ := stubAcquireRunLockHook(t)
+	hooks.RunMacOSVM = runHook(func() error { return nil })
 
-	cfg := RunConfig{VM: vmSelection{Name: "plain-vm", Directory: t.TempDir()}}
+	cfg := RunConfig{VM: vmSelection{Name: "plain-vm", Directory: t.TempDir()}, Hooks: hooks}
 	if err := runVMWithConfig(cfg); err != nil {
 		t.Fatalf("runVMWithConfig: %v", err)
 	}

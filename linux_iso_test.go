@@ -127,6 +127,54 @@ func TestEnsureLinuxISOForVariantUsesPrimaryCache(t *testing.T) {
 	}
 }
 
+func TestEnsureLinuxISOForVariantIgnoresAria2Partial(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	saved := isoPath
+	t.Cleanup(func() { isoPath = saved })
+	isoPath = ""
+
+	cacheDir := filepath.Join(home, ".vz", "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cacheFile := filepath.Join(cacheDir, "linux-alpine.iso")
+	f, err := os.Create(cacheFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(31 * 1024 * 1024); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cacheFile+".aria2", []byte("incomplete"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	legacy := filepath.Join(cacheDir, "linux.iso")
+	data, err := os.ReadFile(writeTarWithDiskInfo(t, "Alpine Linux v3.23 arm64"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(legacy, 31*1024*1024); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ensureLinuxISOForVariant(LinuxVariantAlpine)
+	if err != nil {
+		t.Fatalf("ensureLinuxISOForVariant: %v", err)
+	}
+	if got != legacy {
+		t.Fatalf("got = %q, want legacy cache %q", got, legacy)
+	}
+}
+
 func TestEnsureLinuxISOForVariantUnsupported(t *testing.T) {
 	if _, err := ensureLinuxISOForVariant(LinuxVariant("nope-distro")); err == nil {
 		t.Fatal("ensureLinuxISOForVariant(nope-distro) err = nil, want error")

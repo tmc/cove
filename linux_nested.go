@@ -9,7 +9,7 @@ import (
 const nestedVirtualizationUnsupportedError = "nested virtualization requires M3/M4 chip on macOS 15+. Run without --nested to boot a standard VM (KVM will be disabled)."
 
 func nestedVirtualizationSupported() bool {
-	return vz.GetVZGenericPlatformConfigurationClass().NestedVirtualizationSupported()
+	return vz.GetVZGenericPlatformConfigurationClass().IsNestedVirtualizationSupported()
 }
 
 func validateNestedVirtualizationSupported() error {

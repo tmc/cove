@@ -11,10 +11,7 @@ import (
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
-var (
-	rollbackSnapshotName           string
-	setupRollbackSnapshotCloneHook = SetupRollbackSnapshotClone
-)
+var rollbackSnapshotName string
 
 // RollbackSnapshotCloneOptions configures creation of a disposable clone whose
 // system disk comes from a saved disk snapshot.

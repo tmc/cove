@@ -9,7 +9,7 @@ import (
 
 func TestForceBootCommandAutomationBackends(t *testing.T) {
 	tests := []struct {
-		name        string
+		name         string
 		startCapture automationBackendMode
 		startInput   automationBackendMode
 		during       automationBackendMode
@@ -103,11 +103,7 @@ func TestRunAutomationScript(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			old := bootCommandsFile
-			bootCommandsFile = tt.file
-			t.Cleanup(func() { bootCommandsFile = old })
-
-			err := runAutomationScript(&ControlServer{}, "")
+			err := runAutomationScript(&ControlServer{}, "", tt.file)
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func TestBootSessionModeString(t *testing.T) {
@@ -80,11 +82,11 @@ func TestHasSuspendState(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			vmDir = t.TempDir()
-			path := suspendStatePath()
+			dir := t.TempDir()
+			path := suspendStatePathForVM(dir)
 			tt.writeFn(t, path)
-			if got := hasSuspendState(); got != tt.want {
-				t.Fatalf("hasSuspendState() = %v, want %v", got, tt.want)
+			if got := hasSuspendStateForVM(dir); got != tt.want {
+				t.Fatalf("hasSuspendStateForVM() = %v, want %v", got, tt.want)
 			}
 			if tt.wantRemoved {
 				if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -96,12 +98,9 @@ func TestHasSuspendState(t *testing.T) {
 }
 
 func TestMoveAsideSuspendState(t *testing.T) {
-	oldVMDir := vmDir
-	t.Cleanup(func() { vmDir = oldVMDir })
-
-	vmDir = t.TempDir()
-	statePath := suspendStatePath()
-	cfgPath := suspendConfigPath()
+	dir := t.TempDir()
+	statePath := suspendStatePathForVM(dir)
+	cfgPath := suspendConfigPathForVM(dir)
 	if err := os.WriteFile(statePath, []byte("payload"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +108,7 @@ func TestMoveAsideSuspendState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	moveAsideSuspendState("test reason")
+	moveAsideSuspendStateForVM(dir, "test reason")
 
 	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
 		t.Fatalf("expected suspend state moved aside, stat err = %v", err)
@@ -127,17 +126,10 @@ func TestMoveAsideSuspendState(t *testing.T) {
 	}
 
 	// Second call when no state exists must be a clean no-op.
-	moveAsideSuspendState("no-state")
+	moveAsideSuspendStateForVM(dir, "no-state")
 }
 
-func TestShouldRunGUIAutomationForVM(t *testing.T) {
-	oldStrategy := provisionStrategy
-	oldInstall := installVM
-	t.Cleanup(func() {
-		provisionStrategy = oldStrategy
-		installVM = oldInstall
-	})
-
+func TestShouldRunGUIAutomationForRun(t *testing.T) {
 	dir := t.TempDir()
 	target := vmSelection{Directory: dir, Name: "t"}
 	marker := target.injectSucceededMarker()
@@ -164,10 +156,12 @@ func TestShouldRunGUIAutomationForVM(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			provisionStrategy = tt.strategy
-			installVM = tt.install
-			if got := shouldRunGUIAutomationForVM(target); got != tt.want {
-				t.Fatalf("shouldRunGUIAutomationForVM() = %v, want %v", got, tt.want)
+			rc := vmrun.RunConfig{
+				ProvisionStrategy: tt.strategy,
+				InstallVM:         tt.install,
+			}
+			if got := shouldRunGUIAutomationForRun(target, rc); got != tt.want {
+				t.Fatalf("shouldRunGUIAutomationForRun() = %v, want %v", got, tt.want)
 			}
 		})
 	}

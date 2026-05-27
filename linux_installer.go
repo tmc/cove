@@ -35,19 +35,21 @@ import (
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	agentstate "github.com/tmc/cove/internal/agent"
 	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 // LinuxProvisionConfig holds configuration for Linux VM provisioning.
 type LinuxProvisionConfig struct {
-	Username     string
-	Password     string
-	Hostname     string
-	SSHPubKey    string
-	AutoLogin    bool
-	TimeZone     string
-	Locale       string
-	InstallAgent bool // Install vz-agent during provisioning
-	Variant      LinuxVariant
+	Username         string
+	Password         string
+	Hostname         string
+	SSHPubKey        string
+	AutoLogin        bool
+	TimeZone         string
+	Locale           string
+	InstallAgent     bool // Install vz-agent during provisioning
+	Variant          LinuxVariant
+	DesktopInstaller string
 }
 
 // LinuxVariant identifies the Linux install source to provision.
@@ -132,13 +134,13 @@ func (v LinuxVariant) distroName() string {
 	}
 }
 
-func (v LinuxVariant) sourceID() string {
+func (v LinuxVariant) sourceID(desktopInstaller string) string {
 	switch v {
 	case LinuxVariantDesktop:
 		// Server-ISO path: leave source empty so Subiquity falls back to its
 		// default and ubuntu-desktop layers via apt.
 		// OEM path: select the desktop source baked into the Desktop ISO.
-		if strings.EqualFold(linuxDesktopInstaller, "oem") {
+		if strings.EqualFold(desktopInstaller, "oem") {
 			return "ubuntu-desktop"
 		}
 		return ""
@@ -149,14 +151,14 @@ func (v LinuxVariant) sourceID() string {
 	}
 }
 
-func (v LinuxVariant) installISOVariant() LinuxVariant {
+func (v LinuxVariant) installISOVariant(desktopInstaller string) LinuxVariant {
 	switch v {
 	case LinuxVariantDesktop:
 		// "oem" mode boots the desktop ISO directly and runs Subiquity's OEM
 		// autoinstall (Ubuntu 23.04+). The default "server" mode boots the
 		// server ISO and apt-installs ubuntu-desktop on top — slower at install
 		// time but the most-tested cove path.
-		if strings.EqualFold(linuxDesktopInstaller, "oem") {
+		if strings.EqualFold(desktopInstaller, "oem") {
 			return LinuxVariantDesktop
 		}
 		return LinuxVariantServer
@@ -226,20 +228,29 @@ func linuxInstallCommandLine(seedAddress string) string {
 // DefaultLinuxProvisionConfig returns default provisioning settings.
 func DefaultLinuxProvisionConfig() LinuxProvisionConfig {
 	variant := currentLinuxVariant()
+	return DefaultLinuxProvisionConfigForVariant(variant, linuxDesktopInstaller)
+}
+
+func DefaultLinuxProvisionConfigForVariant(variant LinuxVariant, desktopInstaller string) LinuxProvisionConfig {
 	user := defaultLinuxUser(variant)
 	return LinuxProvisionConfig{
-		Username:     user,
-		Password:     user,
-		Hostname:     variant.distroName() + "-vm",
-		TimeZone:     "UTC",
-		Locale:       "en_US.UTF-8",
-		InstallAgent: false,
-		Variant:      variant,
+		Username:         user,
+		Password:         user,
+		Hostname:         variant.distroName() + "-vm",
+		TimeZone:         "UTC",
+		Locale:           "en_US.UTF-8",
+		InstallAgent:     false,
+		Variant:          variant,
+		DesktopInstaller: desktopInstaller,
 	}
 }
 
 // installLinuxVM performs automated Linux (Ubuntu) installation.
 func installLinuxVM(quotaWarnings io.Writer) error {
+	return installLinuxVMWithConfig(quotaWarnings, DefaultLinuxProvisionConfig())
+}
+
+func installLinuxVMWithConfig(quotaWarnings io.Writer, provConfig LinuxProvisionConfig) error {
 	if quotaWarnings == nil {
 		quotaWarnings = io.Discard
 	}
@@ -251,7 +262,7 @@ func installLinuxVM(quotaWarnings io.Writer) error {
 	}
 	if !forceInstall {
 		if _, err := os.Stat(resolvedDiskPath); err == nil {
-			if ok, err := completeExistingLinuxInstall(vmDir, resolvedDiskPath, currentLinuxVariant()); err != nil {
+			if ok, err := completeExistingLinuxInstall(vmDir, resolvedDiskPath, provConfig.Variant); err != nil {
 				fmt.Printf("warning: inspect existing linux disk: %v\n", err)
 			} else if ok {
 				fmt.Println("Existing Linux installation is bootable; using it.")
@@ -271,7 +282,7 @@ func installLinuxVM(quotaWarnings io.Writer) error {
 	}
 
 	// Bump defaults for Desktop variant (needs more resources than Server)
-	if linuxDesktop {
+	if provConfig.Variant == LinuxVariantDesktop {
 		if cpuCount < 4 {
 			cpuCount = 4
 			fmt.Println("  Desktop mode: bumped CPU to 4")
@@ -297,7 +308,6 @@ func installLinuxVM(quotaWarnings io.Writer) error {
 	}
 
 	// Configure provisioning
-	provConfig := DefaultLinuxProvisionConfig()
 	if err := validateLinuxVariant(provConfig.Variant); err != nil {
 		return err
 	}
@@ -331,7 +341,7 @@ func installLinuxVM(quotaWarnings io.Writer) error {
 	}
 
 	// Get ISO (download if needed)
-	resolvedISO, err := ensureLinuxISOForVariant(provConfig.Variant.installISOVariant())
+	resolvedISO, err := ensureLinuxISOForVariant(provConfig.Variant.installISOVariant(provConfig.DesktopInstaller))
 	if err != nil {
 		return fmt.Errorf("ensure ISO: %w", err)
 	}
@@ -451,7 +461,9 @@ func installLinuxVM(quotaWarnings io.Writer) error {
 
 	// Start VM
 	fmt.Println("Starting installation...")
-	if err := startVMWithQueue(vm, vmQueue); err != nil {
+	rc, hc := vmrunRunConfig(vmrun.GuestLinux), vmrunHostConfig()
+	rc.DiskPath = resolvedDiskPath
+	if err := startVMWithQueueForRun(vm, vmQueue, nil, nil, rc, hc); err != nil {
 		return err
 	}
 	if err := verifyLinuxInstallBootable(resolvedDiskPath); err != nil {
@@ -702,12 +714,13 @@ func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
 	candidates := []struct {
 		kernel string
 		initrd string
+		strip  string
 	}{
-		{"casper/vmlinuz", "casper/initrd"},
-		{"casper/hwe-vmlinuz", "casper/hwe-initrd"},
-		{"install.a64/vmlinuz", "install.a64/initrd.gz"},
-		{"images/pxeboot/vmlinuz", "images/pxeboot/initrd.img"},
-		{"boot/vmlinuz-virt", "boot/initramfs-virt"},
+		{"casper/vmlinuz", "casper/initrd", "1"},
+		{"casper/hwe-vmlinuz", "casper/hwe-initrd", "1"},
+		{"install.a64/vmlinuz", "install.a64/initrd.gz", "1"},
+		{"images/pxeboot/vmlinuz", "images/pxeboot/initrd.img", "2"},
+		{"boot/vmlinuz-virt", "boot/initramfs-virt", "1"},
 	}
 	for _, c := range candidates {
 		dstKernel := filepath.Join(vmDir, "vmlinuz")
@@ -716,7 +729,7 @@ func extractKernelFromISO(isoPath, vmDir string) (*extractedKernel, error) {
 		if err != nil {
 			return nil, fmt.Errorf("create kernel extract dir: %w", err)
 		}
-		out, err := exec.Command("bsdtar", "-xf", isoPath, "-C", tmpDir, "--include", c.kernel, "--include", c.initrd, "--strip-components=1").CombinedOutput()
+		out, err := exec.Command("bsdtar", "-xf", isoPath, "-C", tmpDir, "--include", c.kernel, "--include", c.initrd, "--strip-components="+c.strip).CombinedOutput()
 		if err != nil {
 			os.RemoveAll(tmpDir)
 			continue
@@ -1252,7 +1265,7 @@ func linuxAutoLoginKeyringLateCommand(config LinuxProvisionConfig) string {
 }
 
 func linuxDesktopUserLateCommands(config LinuxProvisionConfig, hashedPassword string) string {
-	if config.Variant != LinuxVariantDesktop || !strings.EqualFold(linuxDesktopInstaller, "oem") {
+	if config.Variant != LinuxVariantDesktop || !strings.EqualFold(config.DesktopInstaller, "oem") {
 		return ""
 	}
 	username := shellQuote(config.Username)
@@ -1280,7 +1293,7 @@ func linuxDesktopPackagesSection(config LinuxProvisionConfig) string {
 	}
 	// OEM mode boots the Desktop ISO so ubuntu-desktop is already baked in.
 	// The Server-ISO path needs to apt-install it during provisioning.
-	if strings.EqualFold(linuxDesktopInstaller, "oem") {
+	if strings.EqualFold(config.DesktopInstaller, "oem") {
 		return ""
 	}
 	return `
@@ -1297,7 +1310,7 @@ func linuxOEMInstallSection(config LinuxProvisionConfig) string {
 	if config.Variant != LinuxVariantDesktop {
 		return ""
 	}
-	if !strings.EqualFold(linuxDesktopInstaller, "oem") {
+	if !strings.EqualFold(config.DesktopInstaller, "oem") {
 		return ""
 	}
 	return `
@@ -1306,7 +1319,7 @@ func linuxOEMInstallSection(config LinuxProvisionConfig) string {
 }
 
 func linuxSourceSection(config LinuxProvisionConfig) string {
-	sourceID := config.Variant.sourceID()
+	sourceID := config.Variant.sourceID(config.DesktopInstaller)
 	if sourceID == "" {
 		return ""
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/cove/internal/nixos"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func installNixOSVM(resolvedDiskPath string, provConfig LinuxProvisionConfig) error {
@@ -61,7 +62,9 @@ func installNixOSVM(resolvedDiskPath string, provConfig LinuxProvisionConfig) er
 		return fmt.Errorf("failed to create virtual machine")
 	}
 	vm.Retain()
-	if err := startVMWithQueue(vm, vmQueue); err != nil {
+	rc, hc := vmrunRunConfig(vmrun.GuestLinux), vmrunHostConfig()
+	rc.DiskPath = resolvedDiskPath
+	if err := startVMWithQueueForRun(vm, vmQueue, nil, nil, rc, hc); err != nil {
 		return err
 	}
 	if err := verifyLinuxInstallBootable(resolvedDiskPath); err != nil {

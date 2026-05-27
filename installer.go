@@ -26,6 +26,7 @@ import (
 	identityx "github.com/tmc/apple/x/vzkit/identity"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 // guiUpdate holds pending UI changes that background goroutines request.
@@ -164,9 +165,14 @@ func installerWindowTitleForVM(target vmSelection) string {
 	return "macOS VM Installation"
 }
 
+type macOSInstallProvision struct {
+	Config   ProvisionConfig
+	Strategy string
+}
+
 // stopVMAndInject stops a running VM, waits for the disk to be released, and
-// optionally injects provisioning files if provisionUser/provisionPassword are set.
-func stopVMAndInject(vm *virtualMachine) {
+// optionally injects provisioning files if provision credentials are set.
+func stopVMAndInject(vm *virtualMachine, provision macOSInstallProvision) {
 	target := currentVMSelection()
 	vzlog("stopVMAndInject: enter target.Directory=%q target.Name=%q (globals: vmDir=%q vmName=%q)", target.Directory, target.Name, vmDir, vmName)
 	fmt.Println("Stopping VM...")
@@ -203,11 +209,11 @@ func stopVMAndInject(vm *virtualMachine) {
 		fmt.Printf("warning: %v\n", err)
 	}
 
-	if provisionUser == "" || provisionPassword == "" {
+	if provision.Config.Username == "" || provision.Config.Password == "" {
 		return
 	}
 
-	if provisionStrategy == "gui" {
+	if provision.Strategy == "gui" {
 		fmt.Println("Skipping disk provisioning (strategy=gui).")
 		return
 	}
@@ -216,9 +222,9 @@ func stopVMAndInject(vm *virtualMachine) {
 	fmt.Println("Provisioning VM disk...")
 	injectOpts := InjectOptions{
 		Config: ProvisionConfig{
-			Username:          provisionUser,
-			Password:          provisionPassword,
-			Admin:             provisionAdmin,
+			Username:          provision.Config.Username,
+			Password:          provision.Config.Password,
+			Admin:             provision.Config.Admin,
 			BootstrapRecovery: true,
 		},
 		SkipSetupAssistant: true,
@@ -234,7 +240,7 @@ func stopVMAndInject(vm *virtualMachine) {
 	// provisioned.
 	provisionFailed := func(err error) {
 		fmt.Printf("warning: disk provisioning failed: %v\n", err)
-		if provisionStrategy == "auto" {
+		if provision.Strategy == "auto" {
 			fmt.Println("Will fall back to GUI automation on first boot.")
 			return
 		}
@@ -244,7 +250,7 @@ func stopVMAndInject(vm *virtualMachine) {
 		if flag := target.hintFlag(); flag != "" {
 			fmt.Printf("%s", flag)
 		}
-		fmt.Printf(" provision -user %s -password <password> -skip-setup-assistant\n", provisionUser)
+		fmt.Printf(" provision -user %s -password <password> -skip-setup-assistant\n", provision.Config.Username)
 	}
 	if _, err := stageProvisioningFilesForVM(target, injectOpts); err != nil {
 		provisionFailed(err)
@@ -409,12 +415,16 @@ func stopInstallerVM(vm *virtualMachine) error {
 // It returns an error if disk.img exists and -force was not specified,
 // preventing accidental data loss from re-installing over an existing VM.
 func checkExistingVM(dir string, diskName string) error {
+	return checkExistingVMWithForce(dir, diskName, forceInstall)
+}
+
+func checkExistingVMWithForce(dir, diskName string, force bool) error {
 	diskFile := filepath.Join(dir, diskName)
 	info, err := os.Stat(diskFile)
 	if err != nil {
 		return nil // doesn't exist, safe to proceed
 	}
-	if forceInstall {
+	if force {
 		fmt.Printf("warning: overwriting existing disk %s (%d MB)\n", diskFile, info.Size()/(1024*1024))
 		if err := os.Remove(diskFile); err != nil {
 			return fmt.Errorf("remove existing disk: %w", err)
@@ -426,24 +436,41 @@ func checkExistingVM(dir string, diskName string) error {
 	return fmt.Errorf("vm disk already exists: %s (%d MB)\n\nTo install over this disk, use -force (THIS WILL DESTROY ALL DATA IN THE VM).\nTo use a different VM, use -vm <name>", diskFile, info.Size()/(1024*1024))
 }
 
-func installMacOSLikeVZ(ctx context.Context, quotaWarnings io.Writer) error {
+func macOSInstallProvisionFromRuntimeOptions(opts runtimeOptions) macOSInstallProvision {
+	return macOSInstallProvision{
+		Config: ProvisionConfig{
+			Username: opts.ProvisionUser,
+			Password: opts.ProvisionPassword,
+			Admin:    opts.ProvisionAdmin,
+		},
+		Strategy: opts.ProvisionStrategy,
+	}
+}
+
+func installMacOSLikeVZWithProvision(ctx context.Context, quotaWarnings io.Writer, provision macOSInstallProvision, ipsw string, rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	if quotaWarnings == nil {
 		quotaWarnings = io.Discard
+	}
+	if hc.VMDir == "" {
+		hc = vmrunHostConfig()
+	}
+	if rc.OS == vmrun.GuestUnknown {
+		rc = vmrunRunConfig(vmrun.GuestMacOS)
 	}
 	fmt.Println("=== macOS Installation ===")
 
 	// Safety check: refuse to overwrite existing VM disk unless -force is specified.
-	if err := checkExistingVM(vmDir, "disk.img"); err != nil {
+	if err := checkExistingVMWithForce(hc.VMDir, "disk.img", rc.ForceInstall); err != nil {
 		return err
 	}
 
 	// Step 1: Create VM bundle directory
-	if err := os.MkdirAll(vmDir, 0755); err != nil {
+	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
-	saveHardwareConfig(vmDir)
-	persistInstallQuota(quotaWarnings, vmDir)
-	if err := applyInstallDiskQuota(quotaWarnings, vmDir); err != nil {
+	saveHardwareConfigWith(hc.VMDir, rc.CPUCount, rc.MemoryGB)
+	persistInstallQuota(quotaWarnings, hc.VMDir)
+	if err := applyInstallDiskQuota(quotaWarnings, hc.VMDir); err != nil {
 		return err
 	}
 
@@ -452,29 +479,29 @@ func installMacOSLikeVZ(ctx context.Context, quotaWarnings io.Writer) error {
 	// between MkdirAll and stopVMAndInject. Watcher is gated by VZ_DEBUG_INSTALL
 	// internally via vzlog and runs only when that env var is set.
 	if vzDebugInstall {
-		watcher := startVMDirWatcher(vmDir)
+		watcher := startVMDirWatcher(hc.VMDir)
 		defer watcher.Stop()
 	}
 
 	// In GUI mode, the entire lifecycle (download → install → first boot)
 	// happens within a single window. Hand off to the GUI installer early.
 	if guiMode {
-		return runFullInstallWithGUI(ctx)
+		return runFullInstallWithGUI(ctx, provision, ipsw, rc, hc)
 	}
 
 	// Headless path: download → install sequentially with stdout progress.
-	restoreImagePath, err := resolveOrDownloadIPSW(ctx)
+	restoreImagePath, err := resolveOrDownloadIPSW(ctx, ipsw)
 	if err != nil {
 		return err
 	}
 
-	installer, err := prepareInstaller(ctx, restoreImagePath)
+	installer, err := prepareInstaller(ctx, restoreImagePath, rc, hc)
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("Starting installation...")
-	if err := runInstallation(ctx, installer); err != nil {
+	if err := runInstallation(ctx, installer, provision); err != nil {
 		return err
 	}
 
@@ -486,7 +513,7 @@ func installMacOSLikeVZ(ctx context.Context, quotaWarnings io.Writer) error {
 	}
 
 	// If GUI provisioning is needed, auto-boot with GUI.
-	if provisionUser != "" && (provisionStrategy == "gui" || (provisionStrategy == "auto" && !didInjectSucceedForVM(currentVMSelection()))) {
+	if provision.Config.Username != "" && (provision.Strategy == "gui" || (provision.Strategy == "auto" && !didInjectSucceedForVM(currentVMSelection()))) {
 		fmt.Println("Booting VM for GUI provisioning...")
 		guiMode = true
 		return runMacOSVM()
@@ -503,7 +530,7 @@ func installMacOSLikeVZ(ctx context.Context, quotaWarnings io.Writer) error {
 // reflect.Value.call").
 // Background goroutines write to a shared guiUpdate struct; the main thread reads
 // it each iteration of the event loop and applies changes directly.
-func runFullInstallWithGUI(ctx context.Context) error {
+func runFullInstallWithGUI(ctx context.Context, provision macOSInstallProvision, ipsw string, rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	// Set up NSApplication early.
 	app := getSharedApp()
 	if app.ID == 0 {
@@ -544,7 +571,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 
 		// Phase 1: Resolve or download IPSW.
 		setStatus("Checking for cached restore image...", -1)
-		restoreImagePath, err := resolveOrDownloadIPSWWithProgress(ctx, setStatus)
+		restoreImagePath, err := resolveOrDownloadIPSWWithProgress(ctx, ipsw, setStatus)
 		if err != nil {
 			lifecycleErrMu.Lock()
 			lifecycleErr = err
@@ -556,7 +583,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 		setStatus("Loading restore image...", -1)
 		ui.setWindowTitle("cove - Loading Restore Image")
 		fmt.Println("Loading restore image...")
-		installer, err := prepareInstaller(ctx, restoreImagePath)
+		installer, err := prepareInstaller(ctx, restoreImagePath, rc, hc)
 		if err != nil {
 			lifecycleErrMu.Lock()
 			lifecycleErr = err
@@ -629,7 +656,7 @@ func runFullInstallWithGUI(ctx context.Context) error {
 					fmt.Fprintln(os.Stderr, "warning: timed out closing install window before stop")
 				}
 
-				stopVMAndInject(installer.vm)
+				stopVMAndInject(installer.vm, provision)
 
 				ui.requestSetVMWindowTitle("macOS VM Installation - Restarting...")
 				fmt.Println("Restarting VM for first boot...")
@@ -944,8 +971,7 @@ func ipswLooksComplete(path string) bool {
 }
 
 // resolveOrDownloadIPSW finds a cached IPSW or downloads one.
-func resolveOrDownloadIPSW(ctx context.Context) (string, error) {
-	restoreImagePath := ipswPath
+func resolveOrDownloadIPSW(ctx context.Context, restoreImagePath string) (string, error) {
 	if restoreImagePath == "" {
 		cacheIPSW := filepath.Join(vmconfig.CacheDir(), "RestoreImage.ipsw")
 		if ipswLooksComplete(cacheIPSW) {
@@ -982,8 +1008,7 @@ type progressFunc func(text string, pct float64)
 
 // resolveOrDownloadIPSWWithProgress is like resolveOrDownloadIPSW but reports
 // progress via a callback for GUI display. Terminal output is also printed.
-func resolveOrDownloadIPSWWithProgress(ctx context.Context, progress progressFunc) (string, error) {
-	restoreImagePath := ipswPath
+func resolveOrDownloadIPSWWithProgress(ctx context.Context, restoreImagePath string, progress progressFunc) (string, error) {
 	if restoreImagePath != "" {
 		progress("Using specified IPSW...", -1)
 		return resolvePath(restoreImagePath), nil
@@ -1028,7 +1053,7 @@ func resolveOrDownloadIPSWWithProgress(ctx context.Context, progress progressFun
 }
 
 // prepareInstaller loads the IPSW, configures the VM, and creates the installer.
-func prepareInstaller(ctx context.Context, restoreImagePath string) (*macOSInstaller, error) {
+func prepareInstaller(ctx context.Context, restoreImagePath string, rc vmrun.RunConfig, hc vmrun.HostConfig) (*macOSInstaller, error) {
 	if verbose {
 		fmt.Printf("Using restore image: %s\n", restoreImagePath)
 	}
@@ -1045,7 +1070,7 @@ func prepareInstaller(ctx context.Context, restoreImagePath string) (*macOSInsta
 	}
 
 	fmt.Println("Configuring virtual machine...")
-	config, err := setupVMConfigurationWithRequirements(ctx, &configReqs)
+	config, err := setupVMConfigurationWithRequirements(ctx, &configReqs, rc, hc)
 	if err != nil {
 		return nil, fmt.Errorf("setup configuration: %w", err)
 	}
@@ -1060,9 +1085,9 @@ func prepareInstaller(ctx context.Context, restoreImagePath string) (*macOSInsta
 		return nil, fmt.Errorf("create installer: %w", err)
 	}
 
-	if bootArgs != "" {
-		bootArgsPath := filepath.Join(vmDir, "boot-args.txt")
-		if err := os.WriteFile(bootArgsPath, []byte(bootArgs+"\n"), 0644); err != nil {
+	if rc.BootArgs != "" {
+		bootArgsPath := filepath.Join(hc.VMDir, "boot-args.txt")
+		if err := os.WriteFile(bootArgsPath, []byte(rc.BootArgs+"\n"), 0644); err != nil {
 			fmt.Printf("warning: could not save boot-args: %v\n", err)
 		}
 	}
@@ -1143,31 +1168,31 @@ func getMostFeaturefulSupportedConfiguration(img vz.VZMacOSRestoreImage) vz.VZMa
 
 // setupVMConfigurationWithRequirements creates VM config using IPSW requirements.
 // Mirrors Code-Hex/vz's setupVirtualMachineWithMacOSConfigurationRequirements.
-func setupVMConfigurationWithRequirements(ctx context.Context, reqs *vz.VZMacOSConfigurationRequirements) (vz.VZVirtualMachineConfiguration, error) {
+func setupVMConfigurationWithRequirements(ctx context.Context, reqs *vz.VZMacOSConfigurationRequirements, rc vmrun.RunConfig, hc vmrun.HostConfig) (vz.VZVirtualMachineConfiguration, error) {
 	// Create platform configuration
-	platformConfig, err := createMacInstallerPlatformConfiguration(reqs)
+	platformConfig, err := createMacInstallerPlatformConfiguration(reqs, hc)
 	if err != nil {
 		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("create platform config: %w", err)
 	}
 
 	// Create main VM configuration
-	return setupVMConfiguration(ctx, platformConfig, uint(reqs.MinimumSupportedCPUCount()), reqs.MinimumSupportedMemorySize())
+	return setupVMConfiguration(ctx, platformConfig, uint(reqs.MinimumSupportedCPUCount()), reqs.MinimumSupportedMemorySize(), rc, hc)
 }
 
 // createMacInstallerPlatformConfiguration creates platform config for installation.
 // Mirrors Code-Hex/vz's createMacInstallerPlatformConfiguration.
-func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequirements) (vz.VZMacPlatformConfiguration, error) {
+func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequirements, hc vmrun.HostConfig) (vz.VZMacPlatformConfiguration, error) {
 	// Get hardware model from requirements
 	hwModel := getHardwareModel(reqs)
 	if hwModel.ID == 0 {
 		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to get hardware model")
 	}
-	if !hwModel.Supported() {
+	if !hwModel.IsSupported() {
 		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("hardware model not supported on this host")
 	}
 
 	// Save hardware model data for future runs
-	hwModelPath := filepath.Join(vmDir, "hw.model")
+	hwModelPath := filepath.Join(hc.VMDir, "hw.model")
 	if err := identityx.SaveMacHardwareModel(hwModel, hwModelPath); err != nil {
 		fmt.Printf("warning: could not save hardware model: %v\n", err)
 	}
@@ -1179,13 +1204,13 @@ func createMacInstallerPlatformConfiguration(reqs *vz.VZMacOSConfigurationRequir
 	}
 
 	// Save machine identifier data for future runs
-	machineIDPath := filepath.Join(vmDir, "machine.id")
+	machineIDPath := filepath.Join(hc.VMDir, "machine.id")
 	if err := identityx.SaveMacMachineIdentifier(machineID, machineIDPath); err != nil {
 		fmt.Printf("warning: could not save machine identifier: %v\n", err)
 	}
 
 	// Create auxiliary storage with hardware model (key difference from runtime)
-	auxStoragePath := filepath.Join(vmDir, "aux.img")
+	auxStoragePath := filepath.Join(hc.VMDir, "aux.img")
 	auxStorage, err := identityx.CreateMacAuxiliaryStorage(auxStoragePath, hwModel, true)
 	if err != nil {
 		return vz.VZMacPlatformConfiguration{}, fmt.Errorf("failed to create auxiliary storage: %w", err)
@@ -1226,7 +1251,7 @@ func getHardwareModel(reqs *vz.VZMacOSConfigurationRequirements) vz.VZMacHardwar
 
 // setupVMConfiguration creates the full VM configuration.
 // Mirrors Code-Hex/vz's setupVMConfiguration.
-func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformConfiguration, minCPU uint, minMem uint64) (vz.VZVirtualMachineConfiguration, error) {
+func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformConfiguration, minCPU uint, minMem uint64, rc vmrun.RunConfig, hc vmrun.HostConfig) (vz.VZVirtualMachineConfiguration, error) {
 	// Create boot loader
 	bootloader := vz.NewVZMacOSBootLoader()
 	if bootloader.ID == 0 {
@@ -1236,8 +1261,8 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	// Create main configuration
 	config := vz.NewVZVirtualMachineConfiguration()
 	config.SetBootLoader(&bootloader.VZBootLoader)
-	config.SetCPUCount(computeInstallCPUCount(minCPU))
-	config.SetMemorySize(computeInstallMemorySize(minMem))
+	config.SetCPUCount(computeInstallCPUCount(minCPU, rc.CPUCount))
+	config.SetMemorySize(computeInstallMemorySize(minMem, rc.MemoryGB))
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
 
 	// Graphics
@@ -1248,8 +1273,8 @@ func setupVMConfiguration(ctx context.Context, platformConfig vz.VZMacPlatformCo
 	configx.SetMacGraphicsDevices(config, graphicsConfig)
 
 	// Storage (disk)
-	diskPath := filepath.Join(vmDir, "disk.img")
-	blockConfig, err := createBlockDeviceConfiguration(ctx, diskPath)
+	diskPath := filepath.Join(hc.VMDir, "disk.img")
+	blockConfig, err := createBlockDeviceConfiguration(ctx, diskPath, rc.DiskSizeGB)
 	if err != nil {
 		return config, fmt.Errorf("block device config: %w", err)
 	}
@@ -1323,13 +1348,13 @@ func clampInstallCPUCount(requested, frameworkMin, frameworkMax, restoreMin uint
 
 // computeInstallCPUCount returns an install-time CPU count that respects both
 // framework-wide limits and the restore image's minimum requirements.
-func computeInstallCPUCount(minRequired uint) uint {
+func computeInstallCPUCount(minRequired, requested uint) uint {
 	configClass := vz.GetVZVirtualMachineConfigurationClass()
 	frameworkMin := uint(configClass.MinimumAllowedCPUCount())
 	frameworkMax := uint(configClass.MaximumAllowedCPUCount())
-	virtualCPUCount := clampInstallCPUCount(cpuCount, frameworkMin, frameworkMax, minRequired)
+	virtualCPUCount := clampInstallCPUCount(requested, frameworkMin, frameworkMax, minRequired)
 	vzlog("computeInstallCPUCount: requested=%d, frameworkMin=%d, restoreMin=%d, max=%d, using=%d",
-		cpuCount, frameworkMin, minRequired, frameworkMax, virtualCPUCount)
+		requested, frameworkMin, minRequired, frameworkMax, virtualCPUCount)
 	return virtualCPUCount
 }
 
@@ -1349,7 +1374,7 @@ func clampInstallMemorySize(requested, frameworkMin, frameworkMax, restoreMin ui
 
 // computeInstallMemorySize returns an install-time memory size that respects
 // both framework-wide limits and the restore image's minimum requirements.
-func computeInstallMemorySize(minRequired uint64) uint64 {
+func computeInstallMemorySize(minRequired, memoryGB uint64) uint64 {
 	configClass := vz.GetVZVirtualMachineConfigurationClass()
 	frameworkMin := configClass.MinimumAllowedMemorySize()
 	frameworkMax := configClass.MaximumAllowedMemorySize()
@@ -1382,7 +1407,7 @@ func createGraphicsDeviceConfiguration() (vz.VZMacGraphicsDeviceConfiguration, e
 }
 
 // createBlockDeviceConfiguration creates disk storage configuration.
-func createBlockDeviceConfiguration(ctx context.Context, diskPath string) (vz.VZVirtioBlockDeviceConfiguration, error) {
+func createBlockDeviceConfiguration(ctx context.Context, diskPath string, diskSizeGB uint64) (vz.VZVirtioBlockDeviceConfiguration, error) {
 	// Create disk if needed
 	if err := createInstallDiskImage(diskPath, diskSizeGB); err != nil {
 		if !os.IsExist(err) {
@@ -1665,7 +1690,7 @@ func printProgress(percent float64) {
 // Instead, it passes nil and polls NSProgress.isFinished to detect completion.
 // This avoids XPC callback issues where purego blocks may interfere with
 // MobileDevice XPC services during the DFU->RestoreOS state transition.
-func runInstallation(ctx context.Context, installer *macOSInstaller) error {
+func runInstallation(ctx context.Context, installer *macOSInstaller, provision macOSInstallProvision) error {
 	defer installer.vm.stopMonitor()
 
 	const installProgressStallTimeout = 3 * time.Minute
@@ -1716,7 +1741,7 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 		case <-ctx.Done():
 			// Cancel installation
 			vzlog("runInstallation: context cancelled, cancelling installation")
-			if progress.Cancellable() {
+			if progress.IsCancellable() {
 				progress.Cancel()
 			}
 			return ctx.Err()
@@ -1749,10 +1774,10 @@ func runInstallation(ctx context.Context, installer *macOSInstaller) error {
 			fmt.Println("=== Installation Complete ===")
 			fmt.Println()
 
-			stopVMAndInject(installer.vm)
+			stopVMAndInject(installer.vm, provision)
 
 			fmt.Println("You can now run the VM with: ./cove run")
-			if provisionUser == "" {
+			if provision.Config.Username == "" {
 				fmt.Println()
 				fmt.Println("For auto-provisioning (automatic user creation), add flags:")
 				fmt.Println("  ./cove install -provision-user myuser -provision-password <password>")

@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 var statusItemDelegateSerial uint64
@@ -25,6 +26,8 @@ type VMStatusItemController struct {
 	name        string
 	vm          vz.VZVirtualMachine
 	vmQueue     dispatch.Queue
+	rc          vmrun.RunConfig
+	hc          vmrun.HostConfig
 	screenshots vmScreenshotProvider
 	gui         VMGUIController
 	toolbar     *VMToolbar
@@ -36,12 +39,14 @@ type VMStatusItemController struct {
 	delegateID objc.ID
 }
 
-func NewVMStatusItemController(app appkit.NSApplication, vm vz.VZVirtualMachine, queue dispatch.Queue, screenshots vmScreenshotProvider, window appkit.NSWindow, gui VMGUIController, toolbar *VMToolbar, quit func()) *VMStatusItemController {
+func NewVMStatusItemController(app appkit.NSApplication, vm vz.VZVirtualMachine, queue dispatch.Queue, screenshots vmScreenshotProvider, window appkit.NSWindow, gui VMGUIController, toolbar *VMToolbar, quit func(), rc vmrun.RunConfig, hc vmrun.HostConfig) *VMStatusItemController {
 	c := &VMStatusItemController{
 		app:         app,
 		name:        statusItemVMName(),
 		vm:          vm,
 		vmQueue:     queue,
+		rc:          rc,
+		hc:          hc,
 		screenshots: screenshots,
 		window:      window,
 		gui:         gui,
@@ -259,7 +264,7 @@ func (c *VMStatusItemController) isWindowVisible(window appkit.NSWindow) bool {
 	if c.gui != nil {
 		return c.gui.Status().Headed
 	}
-	return window.ID != 0 && window.Visible() && !window.Miniaturized()
+	return window.ID != 0 && window.IsVisible() && !window.IsMiniaturized()
 }
 
 func (c *VMStatusItemController) presentationMode() string {
@@ -276,7 +281,7 @@ func (c *VMStatusItemController) presentationModeWithWindow(window appkit.NSWind
 		}
 		return "headless"
 	}
-	if window.ID != 0 && window.Visible() && !window.Miniaturized() {
+	if window.ID != 0 && window.IsVisible() && !window.IsMiniaturized() {
 		return "window"
 	}
 	if window.ID != 0 {
@@ -387,7 +392,7 @@ func (c *VMStatusItemController) toggleWindow() {
 	if window.ID == 0 {
 		return
 	}
-	if window.Visible() && !window.Miniaturized() {
+	if window.IsVisible() && !window.IsMiniaturized() {
 		window.OrderOut(nil)
 		c.app.Deactivate()
 		c.refreshStatusItem()
@@ -418,13 +423,13 @@ func (c *VMStatusItemController) handleRestart(_ objc.ID, _ objc.SEL, _ objc.ID)
 
 func (c *VMStatusItemController) handleBootRecovery(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		bootVMToRecovery("Status item", c.vm, c.vmQueue)
+		bootVMToRecovery("Status item", c.vm, c.vmQueue, c.hc.VMDir)
 	})
 }
 
 func (c *VMStatusItemController) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		requestVMSuspend("Status item", c.vm, c.vmQueue)
+		requestVMSuspend("Status item", c.vm, c.vmQueue, c.rc, c.hc)
 	})
 }
 

@@ -42,20 +42,10 @@ var errVMStartupInProgress = errors.New("vm startup already in progress")
 func setAppIcon(app *appkit.NSApplication) {
 	iconData := assets.Icon
 	nsData := foundation.NewDataWithBytesLength(iconData)
-	img := appkit.NewImageWithData(&nsData)
+	img := appkit.NewImageWithData(nsData)
 	if img.ID != 0 {
 		app.SetApplicationIconImage(&img)
 	}
-}
-
-// suspendStatePath returns the path to the automatic suspend state file.
-func suspendStatePath() string {
-	return suspendStatePathForVM(vmDir)
-}
-
-// suspendConfigPath returns the path to the saved config fingerprint.
-func suspendConfigPath() string {
-	return suspendConfigPathForVM(vmDir)
 }
 
 func suspendStatePathForVM(vmDirectory string) string {
@@ -66,9 +56,8 @@ func suspendConfigPathForVM(vmDirectory string) string {
 	return filepath.Join(vmDirectory, "suspend.config.json")
 }
 
-// hasSuspendState checks if a suspend state file exists from a previous session.
-func hasSuspendState() bool {
-	path := suspendStatePath()
+func hasSuspendStateForVM(vmDirectory string) bool {
+	path := suspendStatePathForVM(vmDirectory)
 	info, err := os.Stat(path)
 	if err != nil {
 		return false
@@ -104,8 +93,8 @@ func removeCorruptSuspendState(path string) {
 // so the next boot cold-starts without auto-restoring the bad state. The saved
 // config fingerprint is removed unconditionally — it only matches a state file
 // that no longer exists. reason is used in the log line.
-func moveAsideSuspendState(reason string) {
-	path := suspendStatePath()
+func moveAsideSuspendStateForVM(vmDirectory, reason string) {
+	path := suspendStatePathForVM(vmDirectory)
 	backup := fmt.Sprintf("%s.broken-%s", path, time.Now().UTC().Format("20060102T150405Z"))
 	if err := os.Rename(path, backup); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -115,7 +104,7 @@ func moveAsideSuspendState(reason string) {
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: suspend state moved aside (%s): %s\n", reason, backup)
 	}
-	os.Remove(suspendConfigPath())
+	os.Remove(suspendConfigPathForVM(vmDirectory))
 }
 
 // suspendConfigFingerprint captures the VM config params that must match between save and restore.
@@ -148,11 +137,11 @@ const (
 
 var activeBootSessionMode atomic.Uint32
 
-func requestedBootSessionMode() bootSessionMode {
+func requestedBootSessionModeForRun(rc vmrun.RunConfig) bootSessionMode {
 	switch {
-	case recoveryMode:
+	case rc.RecoveryMode:
 		return bootSessionModeRecovery
-	case privateMacStartOptionsEnabled():
+	case rc.ForceDFU || rc.StopIBoot1 || rc.StopIBoot2:
 		return bootSessionModePrivateStart
 	default:
 		return bootSessionModeNormal
@@ -193,89 +182,86 @@ func shouldSuspendCurrentSession() bool {
 	return canSaveRestore && activeBootSessionAllowsSuspend()
 }
 
-func runRequiresColdBoot() bool {
-	return bootCommandsFile != "" || requestedBootSessionMode() != bootSessionModeNormal
+func runRequiresColdBootForRun(rc vmrun.RunConfig) bool {
+	return rc.BootCommandsFile != "" || requestedBootSessionModeForRun(rc) != bootSessionModeNormal
 }
 
-func coldBootReason() string {
+func coldBootReasonForRun(rc vmrun.RunConfig) string {
 	switch {
-	case recoveryMode && bootCommandsFile != "":
+	case rc.RecoveryMode && rc.BootCommandsFile != "":
 		return "recovery mode with boot automation"
-	case recoveryMode:
+	case rc.RecoveryMode:
 		return "recovery mode"
-	case bootCommandsFile != "":
+	case rc.BootCommandsFile != "":
 		return "boot automation"
-	case privateMacStartOptionsEnabled():
+	case rc.ForceDFU || rc.StopIBoot1 || rc.StopIBoot2:
 		return "private macOS boot options"
 	default:
 		return "current run mode"
 	}
 }
 
-func shouldStopOnAutomationFailure() bool {
-	return bootCommandsFile != "" || requestedBootSessionMode() != bootSessionModeNormal
+func shouldStopOnAutomationFailureForRun(rc vmrun.RunConfig) bool {
+	return rc.BootCommandsFile != "" || requestedBootSessionModeForRun(rc) != bootSessionModeNormal
 }
 
-func currentConfigFingerprint() suspendConfigFingerprint {
+func currentConfigFingerprintForRun(rc vmrun.RunConfig, hc vmrun.HostConfig) suspendConfigFingerprint {
 	return suspendConfigFingerprint{
-		CPUs:                    int(cpuCount),
-		MemoryGB:                int(memoryGB),
-		Network:                 networkMode,
-		Displays:                max(len(displays), 1),
-		Volumes:                 len(getEffectiveVolumes()),
-		DirectorySharingDevices: currentDirectorySharingDeviceFingerprintCount(),
-		USBDevices:              len(usbDevices),
-		USBControllers:          currentUSBControllerFingerprintCount(),
-		SocketDevices:           currentSocketDeviceFingerprintCount(),
-		BalloonDevices:          currentBalloonDeviceFingerprintCount(),
-		Clipboard:               enableClipboard,
-		Serial:                  serialOutput != "none",
+		CPUs:                    int(rc.CPUCount),
+		MemoryGB:                int(rc.MemoryGB),
+		Network:                 rc.NetworkMode,
+		Displays:                max(len(rc.Displays), 1),
+		Volumes:                 len(rc.Volumes),
+		DirectorySharingDevices: directorySharingDeviceFingerprintCount(rc, hc),
+		USBDevices:              len(rc.USB),
+		USBControllers:          usbControllerFingerprintCount(hc),
+		SocketDevices:           socketDeviceFingerprintCount(hc),
+		BalloonDevices:          balloonDeviceFingerprintCount(hc),
+		Clipboard:               rc.EnableClipboard,
+		Serial:                  rc.SerialOutput != "none",
 		BootMode:                bootSessionModeString(currentBootSessionMode()),
 	}
 }
 
-func currentUSBControllerFingerprintCount() int {
-	if runtimeProfile == "minimal" {
+func usbControllerFingerprintCount(hc vmrun.HostConfig) int {
+	if hc.RuntimeProfile == "minimal" {
 		return 0
 	}
 	return 1
 }
 
-func currentDirectorySharingDeviceFingerprintCount() int {
-	if runtimeProfile == "minimal" {
+func directorySharingDeviceFingerprintCount(rc vmrun.RunConfig, hc vmrun.HostConfig) int {
+	if hc.RuntimeProfile == "minimal" {
 		return 0
 	}
-	count := len(getEffectiveVolumes())
+	count := len(rc.Volumes)
 	return count + 1 // dedicated shared-folders VirtioFS device
 }
 
-func currentSocketDeviceFingerprintCount() int {
-	if runtimeProfile == "minimal" {
+func socketDeviceFingerprintCount(hc vmrun.HostConfig) int {
+	if hc.RuntimeProfile == "minimal" {
 		return 0
 	}
 	return 1
 }
 
-func currentBalloonDeviceFingerprintCount() int {
-	if runtimeProfile == "minimal" {
+func balloonDeviceFingerprintCount(hc vmrun.HostConfig) int {
+	if hc.RuntimeProfile == "minimal" {
 		return 0
 	}
 	return 1
 }
 
-// saveSuspendConfig writes the current config fingerprint alongside the suspend state.
-func saveSuspendConfig() {
-	fp := currentConfigFingerprint()
+func saveSuspendConfigForRun(rc vmrun.RunConfig, hc vmrun.HostConfig) {
+	fp := currentConfigFingerprintForRun(rc, hc)
 	data, _ := json.MarshalIndent(fp, "", "  ")
-	if err := os.WriteFile(suspendConfigPath(), append(data, '\n'), 0644); err != nil {
+	if err := os.WriteFile(suspendConfigPathForVM(hc.VMDir), append(data, '\n'), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: save suspend config: %v\n", err)
 	}
 }
 
-// checkSuspendConfigMatch compares the saved config fingerprint with the current one.
-// Returns nil if they match or no saved config exists. Returns a descriptive error if mismatched.
-func checkSuspendConfigMatch() error {
-	data, err := os.ReadFile(suspendConfigPath())
+func checkSuspendConfigMatchForRun(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
+	data, err := os.ReadFile(suspendConfigPathForVM(hc.VMDir))
 	if err != nil {
 		return nil // No saved config, skip check
 	}
@@ -283,7 +269,7 @@ func checkSuspendConfigMatch() error {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		return nil // Corrupt, skip check
 	}
-	current := currentConfigFingerprint()
+	current := currentConfigFingerprintForRun(rc, hc)
 	var diffs []string
 	if saved.CPUs != current.CPUs {
 		diffs = append(diffs, fmt.Sprintf("CPUs: %d -> %d", saved.CPUs, current.CPUs))
@@ -326,7 +312,7 @@ func checkSuspendConfigMatch() error {
 	}
 	if len(diffs) > 0 {
 		return fmt.Errorf("vm config changed since suspend (%s); delete %s to cold boot",
-			strings.Join(diffs, ", "), suspendStatePath())
+			strings.Join(diffs, ", "), suspendStatePathForVM(hc.VMDir))
 	}
 	return nil
 }
@@ -371,15 +357,19 @@ const (
 	defaultWindowHeight = 768
 )
 
-// runMacOSVM runs a macOS VM with the configured settings.
-func runMacOSVM() error {
-	rc := vmrunRunConfig(vmrun.GuestMacOS)
-	hc := vmrunHostConfig()
+func vmSelectionFromHostConfig(hc vmrun.HostConfig) vmSelection {
+	return vmSelection{
+		Directory: hc.VMDir,
+		Name:      hc.VMName,
+	}
+}
+
+// runMacOSVMWithConfig runs a macOS VM with the configured settings.
+func runMacOSVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBundle, metrics runMetricRecorder) error {
 	if hc.Verbose {
 		fmt.Println("=== macOS VM Runner ===")
 	}
-	target := currentVMSelection()
-	preferPasswordDialog = rc.GUI && !rc.Headless
+	target := vmSelectionFromHostConfig(hc)
 
 	stopAppleLogStream := maybeStartAppleLogStream()
 	defer stopAppleLogStream()
@@ -477,7 +467,7 @@ func runMacOSVM() error {
 		fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
 	}
 	noteVMRuntimePhase(target.Directory, "starting", "building-config")
-	config, err := buildVMConfiguration(resolvedDiskPath)
+	config, err := buildVMConfigurationWithConfig(rc, hc, resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
 	}
@@ -497,7 +487,7 @@ func runMacOSVM() error {
 	vm.Retain()
 
 	// Start VM - delegate to startVMWithQueue for proper handling
-	return startVMWithQueue(vm, vmQueue)
+	return startVMWithQueueForRun(vm, vmQueue, bundle, metrics, rc, hc)
 }
 
 func validateExistingMacOSIdentityMetadata() error {
@@ -561,7 +551,7 @@ func macOSIdentityMetadataIssues() ([]string, error) {
 		default:
 			issues = append(issues, "hw.model invalid")
 		}
-		if model.ID != 0 && !model.Supported() {
+		if model.ID != 0 && !model.IsSupported() {
 			issues = append(issues, "hw.model unsupported on this host")
 		}
 	}
@@ -649,11 +639,8 @@ func validateVMSettings() error {
 	return nil
 }
 
-// buildVMConfiguration builds a VZVirtualMachineConfiguration for macOS.
-func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
-	rc := vmrunRunConfig(vmrun.GuestMacOS)
-	hc := vmrunHostConfig()
-
+// buildVMConfigurationWithConfig builds a VZVirtualMachineConfiguration for macOS.
+func buildVMConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
 	// Resolve symlinks for all paths
 	diskImagePath = resolvePath(diskImagePath)
 
@@ -863,7 +850,7 @@ func buildVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguratio
 		}
 	}
 
-	if err := applyPrivateVMConfiguration(config); err != nil {
+	if err := applyPrivateVMConfigurationWithRunConfig(config, rc); err != nil {
 		return config, err
 	}
 
@@ -949,7 +936,7 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 		}
 		model, err := identityx.LoadMacHardwareModel(hwModelPath)
 		if verbose {
-			fmt.Printf("  Hardware model ID: %#x, Supported: %v\n", model.ID, model.ID != 0 && model.Supported())
+			fmt.Printf("  Hardware model ID: %#x, Supported: %v\n", model.ID, model.ID != 0 && model.IsSupported())
 		}
 		if err != nil {
 			return vz.VZMacHardwareModel{}, err
@@ -993,7 +980,7 @@ func loadOrCreateHardwareModel() (vz.VZMacHardwareModel, error) {
 		return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model is nil")
 	}
 
-	if !model.Supported() {
+	if !model.IsSupported() {
 		return vz.VZMacHardwareModel{}, fmt.Errorf("hardware model not supported on this host")
 	}
 
@@ -1083,96 +1070,101 @@ func setDirectorySharingDevicesMulti(config vz.VZVirtualMachineConfiguration, de
 	configx.SetDirectorySharingDevices(config, devices)
 }
 
-// startVMWithQueue starts the virtual machine using a dispatch queue.
-// If a suspend state file exists and recovery mode is not requested,
-// it restores from the saved state for near-instant resume.
-func startVMWithQueue(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
-	if guiMode {
-		return runVMWithGUI(vm, queue)
+func startVMWithQueueForRun(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundle, metrics runMetricRecorder, rc vmrun.RunConfig, hc vmrun.HostConfig) error {
+	target := vmSelectionFromHostConfig(hc)
+	if rc.GUI {
+		return runVMWithGUI(vm, queue, bundle, metrics, rc, hc)
 	}
 
 	// Headless mode keeps an ordered-out VM window for GUI attach and
 	// framebuffer screenshots. Initialize NSApplication before starting or
 	// restoring the VM so resume paths do not bootstrap AppKit against a live VM.
 	app := ensureAppReady(appkit.NSApplicationActivationPolicyAccessory)
-	guiController, err := newHeadlessGUIController(app, currentVMSelection(), vm, queue, nil, false)
+	guiController, err := newHeadlessGUIController(app, target, vm, queue, nil, false, rc, hc)
 	if err != nil {
 		return fmt.Errorf("headless presentation: %w", err)
 	}
 	preparedHeadlessGUIController = guiController
 
-	if err := startConfiguredVM(vm, queue, true); err != nil {
+	if err := startConfiguredVM(vm, queue, true, metrics, rc, hc); err != nil {
 		preparedHeadlessGUIController = nil
 		return err
 	}
 
-	return runVMHeadless(vm, queue)
+	return runVMHeadless(vm, queue, bundle, metrics, rc, hc)
 }
 
-func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop bool) error {
+func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop bool, metrics runMetricRecorder, rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	// Handle boot-args - save to file for manual application inside guest
-	if bootArgs != "" {
-		bootArgsPath := filepath.Join(vmDir, "boot-args.txt")
-		if err := os.WriteFile(bootArgsPath, []byte(bootArgs+"\n"), 0644); err != nil {
+	if rc.BootArgs != "" {
+		bootArgsPath := filepath.Join(hc.VMDir, "boot-args.txt")
+		if err := os.WriteFile(bootArgsPath, []byte(rc.BootArgs+"\n"), 0644); err != nil {
 			fmt.Printf("warning: could not save boot-args: %v\n", err)
 		} else {
 			fmt.Printf("Boot args saved to: %s\n", bootArgsPath)
-			fmt.Printf("To apply inside guest: sudo nvram boot-args=\"%s\"\n", bootArgs)
+			fmt.Printf("To apply inside guest: sudo nvram boot-args=\"%s\"\n", rc.BootArgs)
 		}
 	}
 
 	// Try to restore from suspend state (UTM-style fast resume)
-	if skipResume && hasSuspendState() {
+	if rc.SkipResume && hasSuspendStateForVM(hc.VMDir) {
 		fmt.Println("Discarding saved suspend state and performing cold boot...")
-		os.Remove(suspendStatePath())
-		os.Remove(suspendConfigPath())
+		os.Remove(suspendStatePathForVM(hc.VMDir))
+		os.Remove(suspendConfigPathForVM(hc.VMDir))
 	}
-	if hasSuspendState() && !skipResume && runRequiresColdBoot() {
-		fmt.Printf("%s requires a cold boot; moving aside saved suspend state...\n", coldBootReason())
-		moveAsideSuspendState(coldBootReason())
+	if hasSuspendStateForVM(hc.VMDir) && !rc.SkipResume && runRequiresColdBootForRun(rc) {
+		reason := coldBootReasonForRun(rc)
+		fmt.Printf("%s requires a cold boot; moving aside saved suspend state...\n", reason)
+		moveAsideSuspendStateForVM(hc.VMDir, reason)
 	}
-	if canSaveRestore && !runRequiresColdBoot() && hasSuspendState() {
-		stateFile := suspendStatePath()
-		if err := checkSuspendConfigMatch(); err != nil {
+	if canSaveRestore && !runRequiresColdBootForRun(rc) && hasSuspendStateForVM(hc.VMDir) {
+		stateFile := suspendStatePathForVM(hc.VMDir)
+		if err := checkSuspendConfigMatchForRun(rc, hc); err != nil {
 			fmt.Printf("Cannot restore suspend state: %v\n", err)
 			fmt.Println("Performing cold boot...")
-			moveAsideSuspendState("config-mismatch")
+			moveAsideSuspendStateForVM(hc.VMDir, "config-mismatch")
 		} else {
 			if info, err := os.Stat(stateFile); err == nil {
 				fmt.Printf("Restoring VM from suspended state (%s)...\n", bytefmt.Size(info.Size()))
 			} else {
 				fmt.Println("Restoring VM from suspended state...")
 			}
-			if err := restoreAndResumeVM(vm, queue); err == nil {
+			if err := restoreAndResumeVM(vm, queue, hc); err == nil {
 				setActiveBootSessionMode(bootSessionModeNormal)
 				fmt.Println("VM resumed from saved state")
-				os.Remove(suspendConfigPath())
+				os.Remove(suspendConfigPathForVM(hc.VMDir))
 				return nil
 			} else {
 				fmt.Printf("Suspend restore failed: %v\n", err)
 				fmt.Println("Performing cold boot...")
-				moveAsideSuspendState("restore-failed")
+				moveAsideSuspendStateForVM(hc.VMDir, "restore-failed")
 			}
 		}
 	}
 
-	if summary := privateRuntimeSummary(); summary != "" {
+	if summary := privateRuntimeSummaryForRun(rc); summary != "" {
 		fmt.Printf("Starting virtual machine (%s)...\n", summary)
 	} else {
 		fmt.Println("Starting virtual machine...")
 	}
-	noteVMRuntimePhase(currentVMSelection().Directory, "starting", "awaiting-start")
+	noteVMRuntimePhase(hc.VMDir, "starting", "awaiting-start")
 	started := time.Now()
-	startErr := beginVMStart(vm, queue)
+	startErr := beginVMStart(vm, queue, rc)
+	diagDiskPath := rc.DiskPath
+	if diagDiskPath == "" {
+		diagDiskPath = filepath.Join(hc.VMDir, "disk.img")
+	}
 	if err := waitForVMStart(vm, queue, startErr, pumpRunLoop, vmStartDiagnostics{
-		VMDir:       currentVMSelection().Directory,
-		DiskPath:    diskPath,
+		VMDir:       hc.VMDir,
+		DiskPath:    diagDiskPath,
 		QueueHandle: queue.Handle(),
 		BootMode:    bootSessionModeString(currentBootSessionMode()),
-		Recovery:    recoveryMode,
-		Headless:    headlessMode,
+		Recovery:    rc.RecoveryMode,
+		Headless:    rc.Headless,
 	}); err != nil {
-		emitMetricEvent("vm_start", started, err.Error(), nil)
+		if metrics != nil {
+			metrics.EmitMetricEvent("vm_start", started, err.Error(), nil)
+		}
 		if !printNSErrorSummary("VM start error", err) {
 			fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
 		}
@@ -1180,7 +1172,7 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		// "storage device attachment is invalid".
 		diskFile := diskPath
 		if diskFile == "" {
-			diskFile = filepath.Join(vmDir, "disk.img")
+			diskFile = filepath.Join(hc.VMDir, "disk.img")
 		}
 		if _, found, _ := disk.FindAttachedDisk(diskFile); found {
 			fmt.Println()
@@ -1190,12 +1182,14 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 		return fmt.Errorf("vm start failed: %w", err)
 	}
 	fmt.Println("VM started successfully")
-	noteVMRuntimeState(currentVMSelection().Directory, "running")
-	emitMetricEvent("vm_start", started, "ok", nil)
+	noteVMRuntimeState(hc.VMDir, "running")
+	if metrics != nil {
+		metrics.EmitMetricEvent("vm_start", started, "ok", nil)
+	}
 	return nil
 }
 
-func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
+func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue, rc vmrun.RunConfig) <-chan error {
 	startErr := make(chan error, 1)
 	startHandlerFn := func(err error) {
 		startErr <- snapshotNSError(err)
@@ -1203,7 +1197,7 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 
 	if verbose {
 		fmt.Printf("beginVMStart: queue=%#x currentState=%s recovery=%v\n",
-			queue.Handle(), vmStateName(vz.VZVirtualMachineState(vm.State())), recoveryMode)
+			queue.Handle(), vmStateName(vz.VZVirtualMachineState(vm.State())), rc.RecoveryMode)
 	}
 
 	DispatchAsyncQueue(queue, func() {
@@ -1213,7 +1207,7 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 			startErr <- nil
 			return
 		case vz.VZVirtualMachineStatePaused:
-			if recoveryMode || privateMacStartOptionsEnabled() {
+			if rc.RecoveryMode || privateMacStartOptionsEnabledForRun(rc) {
 				startErr <- fmt.Errorf("private macOS boot options require a stopped VM; stop it first")
 				return
 			}
@@ -1227,15 +1221,15 @@ func beginVMStart(vm vz.VZVirtualMachine, queue dispatch.Queue) <-chan error {
 			startErr <- fmt.Errorf("vm busy in state %s", vmStateName(state))
 			return
 		}
-		if recoveryMode {
+		if rc.RecoveryMode {
 			fmt.Println("Starting VM in recovery mode...")
 			setActiveBootSessionMode(bootSessionModeRecovery)
-			startVMWithRuntimeOptions(vm, startHandlerFn)
+			startVMWithRunConfig(vm, rc, startHandlerFn)
 			return
 		}
-		if privateMacStartOptionsEnabled() {
+		if privateMacStartOptionsEnabledForRun(rc) {
 			setActiveBootSessionMode(bootSessionModePrivateStart)
-			startVMWithRuntimeOptions(vm, startHandlerFn)
+			startVMWithRunConfig(vm, rc, startHandlerFn)
 			return
 		}
 		setActiveBootSessionMode(bootSessionModeNormal)
@@ -1402,11 +1396,11 @@ func currentVMState(vm vz.VZVirtualMachine, queue dispatch.Queue) (vz.VZVirtualM
 }
 
 // runVMHeadless runs the VM in headless mode with serial console and signal handling.
-func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
-	target := currentVMSelection()
+func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundle, metrics runMetricRecorder, rc vmrun.RunConfig, hc vmrun.HostConfig) error {
+	target := vmSelectionFromHostConfig(hc)
 	// Put terminal in raw mode for serial console interaction
 	var restoreTerminal func()
-	if serialOutput == "stdout" {
+	if rc.SerialOutput == "stdout" {
 		restoreTerminal = setRawMode()
 	}
 
@@ -1414,6 +1408,9 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 	sock := target.controlSocketPath()
 	controlServer := NewControlServerWithVMDir(sock, target.Directory)
+	controlServer.SetRunContext(rc, hc)
+	controlServer.SetRunBundle(bundle)
+	controlServer.SetMetricsRecorder(metrics)
 	controlServer.SetVM(vm, queue)
 	runtimeFeatures, err := newRuntimeFeatureState()
 	if err != nil {
@@ -1426,7 +1423,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	guiController := preparedHeadlessGUIController
 	preparedHeadlessGUIController = nil
 	if guiController == nil {
-		guiController, err = newHeadlessGUIController(app, currentVMSelection(), vm, queue, nil, false)
+		guiController, err = newHeadlessGUIController(app, target, vm, queue, nil, false, rc, hc)
 		if err != nil {
 			if restoreTerminal != nil {
 				restoreTerminal()
@@ -1463,7 +1460,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return err
 	}
 
-	if !recoveryMode {
+	if !rc.RecoveryMode {
 		go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
 	}
 
@@ -1497,7 +1494,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			return
 		}
 		wrapped := fmt.Errorf("unattended setup failed: %w", err)
-		if !shouldStopOnAutomationFailure() {
+		if !shouldStopOnAutomationFailureForRun(rc) {
 			fmt.Fprintf(os.Stderr, "warning: %v\n", wrapped)
 			return
 		}
@@ -1509,13 +1506,13 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		})
 	}
 
-	if unattended {
+	if rc.Unattended {
 		go func() {
-			handleUnattendedError(runUnattendedSetup(controlServer))
+			handleUnattendedError(runUnattendedSetup(controlServer, rc))
 		}()
-	} else if provisionUser != "" && shouldRunGUIAutomation() {
-		go runProvisioningAutomation(controlServer)
-	} else if creds := resolveLoginScreenWatchdogCredentials(); creds.Valid() {
+	} else if rc.ProvisionUser != "" && shouldRunGUIAutomationForRun(target, rc) {
+		go runProvisioningAutomation(controlServer, rc)
+	} else if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() {
 		go runLoginScreenWatchdog(controlServer, creds)
 	}
 
@@ -1607,7 +1604,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		}
 		if shouldSuspendCurrentSession() {
 			fmt.Println("\nSuspending VM...")
-			if err := suspendVM(vm, queue); err != nil {
+			if err := suspendVM(vm, queue, rc, hc); err != nil {
 				fmt.Printf("Suspend failed: %v, stopping VM...\n", err)
 				hardStopVM(vm, queue)
 			} else {
@@ -1633,7 +1630,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		cleanupOnce.Do(cleanup)
 	}
 	shellQuit.Store(&quitRuntime)
-	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, appkit.NSWindow{}, guiController, nil, quitRuntime)
+	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, appkit.NSWindow{}, guiController, nil, quitRuntime, rc, hc)
 	setupSignalHandler(func() {
 		quitRuntime()
 	})
@@ -1654,8 +1651,8 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						statusItem.UpdateState(state)
 					}
 					if terminate {
-						os.Remove(suspendStatePath())
-						os.Remove(suspendConfigPath())
+						os.Remove(suspendStatePathForVM(hc.VMDir))
+						os.Remove(suspendConfigPathForVM(hc.VMDir))
 						clearInjectSucceeded()
 						appLoopStop.Store(true)
 						postDummyEvent(app)
@@ -1680,8 +1677,8 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	if restoreTerminal != nil {
 		restoreTerminal()
 	}
-	os.Remove(suspendStatePath())
-	os.Remove(suspendConfigPath())
+	os.Remove(suspendStatePathForVM(hc.VMDir))
+	os.Remove(suspendConfigPathForVM(hc.VMDir))
 	clearInjectSucceeded()
 	closeSerialOutputFile()
 	noteVMRuntimeState(target.Directory, "stopped")
@@ -1692,8 +1689,8 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 // restoreAndResumeVM restores VM state from the suspend file and resumes execution.
 // The VM must be in stopped state. After restore it enters paused state, then resume
 // brings it back to running.
-func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
-	stateFile := suspendStatePath()
+func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue, hc vmrun.HostConfig) error {
+	stateFile := suspendStatePathForVM(hc.VMDir)
 
 	// Verify the VM is in the right state for restore.
 	var currentState vz.VZVirtualMachineState
@@ -1761,7 +1758,7 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 
 // suspendVM pauses the VM and saves its state to the suspend file.
 // After a successful save the VM can be restored on next launch.
-func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
+func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue, rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	// Pause the VM first
 	pauseCh := make(chan error, 1)
 	DispatchAsyncQueue(queue, func() {
@@ -1791,13 +1788,13 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 
 	// Save state to file
-	stateFile := suspendStatePath()
+	stateFile := suspendStatePathForVM(hc.VMDir)
 	saveURL := foundation.NewURLFileURLWithPath(stateFile)
 	saveURL.Retain()
 
 	saveCh := make(chan error, 1)
 	DispatchAsyncQueue(queue, func() {
-		saveMachineStateWithRuntimeOptions(vm, saveURL, func(err error) {
+		saveMachineStateWithRunConfig(vm, saveURL, rc, func(err error) {
 			saveCh <- snapshotNSError(err)
 		})
 	})
@@ -1820,7 +1817,7 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	}
 
 	// Save config fingerprint so we can detect mismatches on restore.
-	saveSuspendConfig()
+	saveSuspendConfigForRun(rc, hc)
 
 	return nil
 }
@@ -1837,8 +1834,8 @@ func hardStopVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 }
 
 // runVMWithGUI shows a GUI window with the VM display and runs the NSApplication event loop.
-func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
-	target := currentVMSelection()
+func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundle, metrics runMetricRecorder, rc vmrun.RunConfig, hc vmrun.HostConfig) error {
+	target := vmSelectionFromHostConfig(hc)
 	// Transform the process into a foreground app so the window server
 	// routes events to us. This is required for ForceDirectExecution
 	// (bare binary) where SetActivationPolicy alone doesn't work.
@@ -1853,7 +1850,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		if verbose {
 			fmt.Println("GUI launch order: start-first")
 		}
-		if err := startConfiguredVM(vm, queue, true); err != nil {
+		if err := startConfiguredVM(vm, queue, true, metrics, rc, hc); err != nil {
 			return err
 		}
 	} else if verbose {
@@ -1939,7 +1936,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		window.Center()
 	}
 
-	bootOverlayTitle, bootOverlaySubtitle, holdBootOverlay := bootOverlayMessage()
+	bootOverlayTitle, bootOverlaySubtitle, holdBootOverlay := bootOverlayMessageForRun(rc, target)
 
 	// Add a boot overlay while the VM starts. First-boot login/provisioning
 	// flows keep it visible until cove sees the daemon agent; if the user
@@ -1963,6 +1960,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// Start control socket for screenshots, keyboard, mouse control
 	sock := target.controlSocketPath()
 	controlServer := NewControlServerWithVMDir(sock, target.Directory)
+	controlServer.SetRunContext(rc, hc)
+	controlServer.SetRunBundle(bundle)
+	controlServer.SetMetricsRecorder(metrics)
 	controlServer.SetWindowTitleBase(windowTitle)
 	lastWindowTitle = controlServer.WindowTitle()
 	window.SetTitle(lastWindowTitle)
@@ -2000,13 +2000,13 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		return err
 	}
 
-	if !recoveryMode {
+	if !rc.RecoveryMode {
 		go checkAgentAvailability(newControlServerAgentAvailabilityTarget(controlServer, target.Name))
 	}
 
 	// Create and attach toolbar
-	vmToolbar := NewVMToolbar(window, vmView, vm, queue, controlServer, target.Directory)
-	guiController := newAttachedGUIController(app, target, vm, queue, controlServer, window, vmView, vmToolbar, frameAutosaveName)
+	vmToolbar := NewVMToolbar(window, vmView, vm, queue, controlServer, target.Directory, rc, hc)
+	guiController := newAttachedGUIController(app, target, vm, queue, controlServer, window, vmView, vmToolbar, frameAutosaveName, rc, hc)
 	controlServer.SetGUIController(guiController)
 
 	// Setup main menu bar
@@ -2042,7 +2042,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 			return
 		}
 		wrapped := fmt.Errorf("unattended setup failed: %w", err)
-		if !shouldStopOnAutomationFailure() {
+		if !shouldStopOnAutomationFailureForRun(rc) {
 			fmt.Fprintf(os.Stderr, "warning: %v\n", wrapped)
 			return
 		}
@@ -2057,13 +2057,13 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	// Start unattended or provisioning automation if requested.
 	// Unattended mode uses OCR for reliable detection; the older
 	// provisioning path uses pixel heuristics.
-	if unattended {
+	if rc.Unattended {
 		go func() {
-			handleUnattendedError(runUnattendedSetup(controlServer))
+			handleUnattendedError(runUnattendedSetup(controlServer, rc))
 		}()
-	} else if provisionUser != "" && shouldRunGUIAutomation() {
-		go runProvisioningAutomation(controlServer)
-	} else if creds := resolveLoginScreenWatchdogCredentials(); creds.Valid() {
+	} else if rc.ProvisionUser != "" && shouldRunGUIAutomationForRun(target, rc) {
+		go runProvisioningAutomation(controlServer, rc)
+	} else if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() {
 		// Disk inject already provisioned the user, but kcpassword auto-login
 		// can still fail in headed boots. Watch for a login screen in the
 		// background; if one appears, type the cached password.
@@ -2088,7 +2088,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		ch := make(chan error, 1)
 		startResult = ch
 		go func() {
-			ch <- startConfiguredVM(vm, queue, false)
+			ch <- startConfiguredVM(vm, queue, false, metrics, rc, hc)
 		}()
 	}
 
@@ -2142,7 +2142,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		stopControlRuntimeInfrastructure(controlServer)
 		if shouldSuspendCurrentSession() {
 			fmt.Println("\nSuspending VM...")
-			if err := suspendVM(vm, queue); err != nil {
+			if err := suspendVM(vm, queue, rc, hc); err != nil {
 				fmt.Printf("Suspend failed: %v, stopping VM...\n", err)
 				hardStopVM(vm, queue)
 			} else {
@@ -2171,7 +2171,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 		window.SaveFrameUsingName(frameAutosaveName)
 		doCleanup()
 	}
-	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, window, guiController, vmToolbar, quitRuntime)
+	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, window, guiController, vmToolbar, quitRuntime, rc, hc)
 
 	// Close-window should behave like app quit: clean up VM lifecycle and stop the app.
 	windowDelegate := appkit.NewNSWindowDelegate(appkit.NSWindowDelegateConfig{
@@ -2287,7 +2287,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 						}
 					}
 					if stateUpdate.terminate {
-						os.Remove(suspendStatePath())
+						os.Remove(suspendStatePathForVM(hc.VMDir))
 						clearInjectSucceeded()
 						appLoopStop.Store(true)
 						stateUpdate.mu.Unlock()
@@ -2383,19 +2383,15 @@ func transformToForegroundApp() {
 // because disk provisioning requires pre-boot disk manipulation. In this case,
 // we auto-upgrade to GUI automation so that -provision-user works as expected
 // without requiring -provision-strategy gui.
-func shouldRunGUIAutomation() bool {
-	return shouldRunGUIAutomationForVM(currentVMSelection())
-}
-
-func shouldRunGUIAutomationForVM(target vmSelection) bool {
-	switch provisionStrategy {
+func shouldRunGUIAutomationForRun(target vmSelection, rc vmrun.RunConfig) bool {
+	switch rc.ProvisionStrategy {
 	case "gui":
 		return true
 	case "auto":
 		return !didInjectSucceedForVM(target)
 	case "disk":
 		// During "run", disk provisioning is not applicable — auto-upgrade to GUI.
-		if !installVM {
+		if !rc.InstallVM {
 			if verbose {
 				fmt.Println("[provision] auto-upgrading strategy from disk to gui (disk only applies during install)")
 			}
@@ -2407,17 +2403,17 @@ func shouldRunGUIAutomationForVM(target vmSelection) bool {
 	}
 }
 
-func bootOverlayMessage() (title, subtitle string, hold bool) {
+func bootOverlayMessageForRun(rc vmrun.RunConfig, target vmSelection) (title, subtitle string, hold bool) {
 	if currentBootSessionMode() != bootSessionModeNormal {
 		return "Booting...", "", false
 	}
-	if unattended {
+	if rc.Unattended {
 		return "Preparing macOS", "Running first-boot automation.", true
 	}
-	if provisionUser != "" && shouldRunGUIAutomation() {
+	if rc.ProvisionUser != "" && shouldRunGUIAutomationForRun(target, rc) {
 		return "Preparing macOS", "Completing user setup.", true
 	}
-	if creds := resolveLoginScreenWatchdogCredentials(); creds.Valid() {
+	if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() {
 		return "Preparing macOS", "Finishing first boot and signing in.", true
 	}
 	return "Booting...", "", false

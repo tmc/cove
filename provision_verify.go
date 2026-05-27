@@ -32,6 +32,9 @@ func handleVerify(args []string) error {
 	if len(args) > 0 && args[0] == "host" {
 		return handleDoctorHost(args[1:], os.Stdout)
 	}
+	if len(args) > 0 && args[0] == "vm-processes" {
+		return handleDoctorVMProcesses(args[1:], os.Stdout)
+	}
 	if len(args) > 0 && args[0] == "tcc-preauth" {
 		return runPreAuth(args[1:])
 	}
@@ -126,6 +129,7 @@ func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string, *string) {
 func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintf(w, `Usage: cove doctor [options]
        cove doctor host [-json]
+       cove doctor vm-processes
 
 Diagnose VM health: provisioning, agent, and file ownership.
 
@@ -145,6 +149,7 @@ Options:
 Examples:
   cove doctor host
   cove doctor host -json
+  cove doctor vm-processes
   cove doctor
   cove doctor --fix
   cove doctor --tcc-path /Volumes/work

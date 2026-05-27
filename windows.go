@@ -65,10 +65,8 @@ func parseWindowsSerialMode(s string) (windowsSerial, error) {
 	}
 }
 
-func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
-	rc := vmrunRunConfig(vmrun.GuestWindows)
-
-	config, err := buildWindowsBaseConfiguration()
+func buildWindowsVMConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, diskImagePath string) (vz.VZVirtualMachineConfiguration, error) {
+	config, err := buildWindowsBaseConfigurationWithConfig(rc, hc)
 	if err != nil {
 		return config, err
 	}
@@ -96,10 +94,8 @@ func buildWindowsVMConfiguration(diskImagePath string) (vz.VZVirtualMachineConfi
 	return config, nil
 }
 
-func buildWindowsInstallConfiguration(diskImagePath, windowsISO string) (vz.VZVirtualMachineConfiguration, error) {
-	hc := vmrunHostConfig()
-
-	config, err := buildWindowsBaseConfiguration()
+func buildWindowsInstallConfiguration(rc vmrun.RunConfig, hc vmrun.HostConfig, diskImagePath, windowsISO string) (vz.VZVirtualMachineConfiguration, error) {
+	config, err := buildWindowsBaseConfigurationWithConfig(rc, hc)
 	if err != nil {
 		return config, err
 	}
@@ -148,10 +144,7 @@ func buildWindowsInstallConfiguration(diskImagePath, windowsISO string) (vz.VZVi
 	return config, nil
 }
 
-func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
-	rc := vmrunRunConfig(vmrun.GuestWindows)
-	hc := vmrunHostConfig()
-
+func buildWindowsBaseConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig) (vz.VZVirtualMachineConfiguration, error) {
 	plan, err := guestplan.Windows(rc, hc)
 	if err != nil {
 		return vz.VZVirtualMachineConfiguration{}, err
@@ -221,7 +214,7 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 		configx.SetNetworkDevices(config, networkDeviceConfig)
 	}
 
-	serialConfig, err := createWindowsSerialConsoleConfig()
+	serialConfig, err := createWindowsSerialConsoleConfigWithConfig(rc)
 	if err != nil {
 		return config, err
 	}
@@ -230,14 +223,13 @@ func buildWindowsBaseConfiguration() (vz.VZVirtualMachineConfiguration, error) {
 		fmt.Println("  Serial console attached")
 	}
 
-	if err := applyPrivateVMConfiguration(config); err != nil {
+	if err := applyPrivateVMConfigurationWithRunConfig(config, rc); err != nil {
 		return config, err
 	}
 	return config, nil
 }
 
-func createWindowsSerialConsoleConfig() (vz.VZSerialPortConfiguration, error) {
-	rc := vmrunRunConfig(vmrun.GuestWindows)
+func createWindowsSerialConsoleConfigWithConfig(rc vmrun.RunConfig) (vz.VZSerialPortConfiguration, error) {
 	mode, err := parseWindowsSerialMode(rc.WindowsSerialMode)
 	if err != nil {
 		return vz.VZSerialPortConfiguration{}, err
@@ -340,9 +332,7 @@ func loadOrCreateWindowsMachineIdentifier() vz.VZGenericMachineIdentifier {
 	return machineID
 }
 
-func runWindowsVM() error {
-	rc := vmrunRunConfig(vmrun.GuestWindows)
-	hc := vmrunHostConfig()
+func runWindowsVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBundle, metrics runMetricRecorder) error {
 	fmt.Println("=== Windows VM Runner (experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
@@ -365,7 +355,7 @@ func runWindowsVM() error {
 	}
 
 	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
-	config, err := buildWindowsVMConfiguration(resolvedDiskPath)
+	config, err := buildWindowsVMConfigurationWithConfig(rc, hc, resolvedDiskPath)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
 	}
@@ -387,15 +377,14 @@ func runWindowsVM() error {
 	vm.Retain()
 
 	fmt.Println("Starting virtual machine...")
-	return startVMWithQueue(vm, vmQueue)
+	return startVMWithQueueForRun(vm, vmQueue, bundle, metrics, rc, hc)
 }
 
 func installWindowsVM(quotaWarnings io.Writer) error {
 	if quotaWarnings == nil {
 		quotaWarnings = io.Discard
 	}
-	rc := vmrunRunConfig(vmrun.GuestWindows)
-	hc := vmrunHostConfig()
+	rc, hc := currentWindowsRunAndHostConfig()
 	fmt.Println("=== Windows VM Installer (experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
@@ -428,7 +417,7 @@ func installWindowsVM(quotaWarnings io.Writer) error {
 	}
 
 	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)
-	config, err := buildWindowsInstallConfiguration(resolvedDiskPath, windowsISO)
+	config, err := buildWindowsInstallConfiguration(rc, hc, resolvedDiskPath, windowsISO)
 	if err != nil {
 		return fmt.Errorf("build configuration: %w", err)
 	}
@@ -449,7 +438,7 @@ func installWindowsVM(quotaWarnings io.Writer) error {
 	vm.Retain()
 
 	fmt.Println("Starting Windows installer...")
-	return startVMWithQueue(vm, vmQueue)
+	return startVMWithQueueForRun(vm, vmQueue, nil, nil, rc, hc)
 }
 
 func ensureWindowsISO() (string, error) {

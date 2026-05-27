@@ -11,6 +11,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/cove/internal/vmrun"
 
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
@@ -46,6 +47,8 @@ type vmGUIController struct {
 	bindings        vmGUIBindings
 	target          vmSelection
 	vmDirectory     string
+	rc              vmrun.RunConfig
+	hc              vmrun.HostConfig
 	windowTitleBase string
 
 	mu               sync.Mutex
@@ -100,13 +103,11 @@ func ensureAppLaunched(app appkit.NSApplication) {
 // while letting CLI lifecycles stop without entering a long-lived app.Run.
 func runAppEventLoopUntil(app appkit.NSApplication, stop func() bool) {
 	registerUIThread()
-	mode := foundation.NewStringWithString(foundation.RunLoopDefaultMode)
-	defer mode.Release()
 	for !stop() {
 		drainUIThreadTasks()
 		objc.AutoreleasePool(func() {
 			limit := foundation.GetNSDateClass().DateWithTimeIntervalSinceNow(0.05)
-			event := app.NextEventMatchingMaskUntilDateInModeDequeue(nsEventMaskAny, limit, mode, true)
+			event := app.NextEventMatchingMaskUntilDateInModeDequeue(nsEventMaskAny, limit, foundation.RunLoopDefaultMode, true)
 			if event.GetID() == 0 {
 				return
 			}
@@ -117,7 +118,7 @@ func runAppEventLoopUntil(app appkit.NSApplication, stop func() bool) {
 	}
 }
 
-func newHeadlessGUIController(app appkit.NSApplication, target vmSelection, vm vz.VZVirtualMachine, queue dispatch.Queue, bindings vmGUIBindings, initiallyHeaded bool) (*vmGUIController, error) {
+func newHeadlessGUIController(app appkit.NSApplication, target vmSelection, vm vz.VZVirtualMachine, queue dispatch.Queue, bindings vmGUIBindings, initiallyHeaded bool, rc vmrun.RunConfig, hc vmrun.HostConfig) (*vmGUIController, error) {
 	c := &vmGUIController{
 		app:         app,
 		vm:          vm,
@@ -125,6 +126,8 @@ func newHeadlessGUIController(app appkit.NSApplication, target vmSelection, vm v
 		bindings:    bindings,
 		target:      target,
 		vmDirectory: target.Directory,
+		rc:          rc,
+		hc:          hc,
 		headed:      initiallyHeaded,
 	}
 	c.windowTitleBase = controllerWindowTitle(target)
@@ -134,7 +137,7 @@ func newHeadlessGUIController(app appkit.NSApplication, target vmSelection, vm v
 	return c, nil
 }
 
-func newAttachedGUIController(app appkit.NSApplication, target vmSelection, vm vz.VZVirtualMachine, queue dispatch.Queue, bindings vmGUIBindings, window appkit.NSWindow, vmView vz.VZVirtualMachineView, toolbar *VMToolbar, frameAutosaveName appkit.NSWindowFrameAutosaveName) *vmGUIController {
+func newAttachedGUIController(app appkit.NSApplication, target vmSelection, vm vz.VZVirtualMachine, queue dispatch.Queue, bindings vmGUIBindings, window appkit.NSWindow, vmView vz.VZVirtualMachineView, toolbar *VMToolbar, frameAutosaveName appkit.NSWindowFrameAutosaveName, rc vmrun.RunConfig, hc vmrun.HostConfig) *vmGUIController {
 	c := &vmGUIController{
 		app:             app,
 		vm:              vm,
@@ -142,6 +145,8 @@ func newAttachedGUIController(app appkit.NSApplication, target vmSelection, vm v
 		bindings:        bindings,
 		target:          target,
 		vmDirectory:     target.Directory,
+		rc:              rc,
+		hc:              hc,
 		window:          window,
 		vmView:          vmView,
 		toolbar:         toolbar,
@@ -270,7 +275,7 @@ func (c *vmGUIController) initWindow() error {
 
 	if c.bindings != nil {
 		c.bindings.SetVMViewWithWindow(c.vmView, window)
-		toolbar := NewVMToolbar(window, c.vmView, c.vm, c.vmQueue, c.bindings, c.vmDirectory)
+		toolbar := NewVMToolbar(window, c.vmView, c.vm, c.vmQueue, c.bindings, c.vmDirectory, c.rc, c.hc)
 		toolbar.UpdateState(vz.VZVirtualMachineState(c.vm.State()))
 		c.toolbar = toolbar
 	}
@@ -441,7 +446,7 @@ func (c *vmGUIController) setControlBindings(bindings vmGUIBindings) {
 	}
 	c.bindings.SetVMViewWithWindow(c.vmView, c.window)
 	if c.window.ID != 0 && c.toolbar == nil {
-		toolbar := NewVMToolbar(c.window, c.vmView, c.vm, c.vmQueue, c.bindings, c.vmDirectory)
+		toolbar := NewVMToolbar(c.window, c.vmView, c.vm, c.vmQueue, c.bindings, c.vmDirectory, c.rc, c.hc)
 		toolbar.UpdateState(vz.VZVirtualMachineState(c.vm.State()))
 		c.toolbar = toolbar
 	}

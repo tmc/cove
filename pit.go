@@ -501,8 +501,11 @@ func (s *ControlServer) handlePITSave(name string) *controlpb.ControlResponse {
 			saveURL := foundation.NewURLFileURLWithPath(path)
 			saveURL.Retain()
 			done := make(chan error, 1)
+			s.mu.Lock()
+			rc := s.runConfig
+			s.mu.Unlock()
 			queue.Sync(func() {
-				saveMachineStateWithRuntimeOptions(s.vm, saveURL, func(err error) {
+				saveMachineStateWithRunConfig(s.vm, saveURL, rc, func(err error) {
 					done <- snapshotNSError(err)
 				})
 			})
@@ -529,7 +532,16 @@ func (s *ControlServer) handlePITSave(name string) *controlpb.ControlResponse {
 			}
 			return 0, nil
 		},
-		Fingerprint: currentConfigFingerprint,
+		Fingerprint: func() suspendConfigFingerprint {
+			s.mu.Lock()
+			rc := s.runConfig
+			hc := s.hostConfig
+			s.mu.Unlock()
+			if hc.VMDir == "" {
+				hc.VMDir = s.vmDir
+			}
+			return currentConfigFingerprintForRun(rc, hc)
+		},
 		StateDescription: func() string {
 			var desc string
 			queue.Sync(func() {
