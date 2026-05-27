@@ -3,12 +3,16 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,6 +126,32 @@ func TestAppSandboxMacgoBundleDoctorSmoke(t *testing.T) {
 	})
 }
 
+func TestAppSandboxMacgoBundleServeSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	tokenDir := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data", "tmp")
+	if err := os.MkdirAll(tokenDir, 0o700); err != nil {
+		t.Fatalf("create token dir: %v", err)
+	}
+	tokenFile := filepath.Join(tokenDir, fmt.Sprintf("cove-serve-smoke-%d.token", os.Getpid()))
+	t.Cleanup(func() { _ = os.Remove(tokenFile) })
+	addr := freeLocalTCPAddr(t)
+
+	output := startSandboxServeSmoke(t, env, tokenFile, "http://"+addr+"/healthz", bin, "serve",
+		"-listen", "tcp://"+addr,
+		"-token-file", tokenFile,
+		"-vms", "__cove_sandbox_smoke_no_vms__",
+	)
+	t.Logf("sandboxed macgo serve output:\n%s", output)
+}
+
 func buildAppSandboxSmokeBinary(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("codesign"); err != nil {
@@ -220,6 +250,90 @@ func firstJSONObject(s string) string {
 func isCommandExit(err error) bool {
 	var exit *exec.ExitError
 	return errors.As(err, &exit)
+}
+
+func freeLocalTCPAddr(t *testing.T) string {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen free tcp addr: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().String()
+}
+
+func startSandboxServeSmoke(t *testing.T, env []string, tokenFile, healthURL, name string, args ...string) string {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), env...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("serve stdout pipe: %v", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("serve stderr pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start serve: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	t.Cleanup(func() {
+		cancel()
+		stopSandboxServeSmoke(tokenFile)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+		}
+	})
+
+	lines := make(chan string, 64)
+	scan := func(r io.Reader) {
+		s := bufio.NewScanner(r)
+		for s.Scan() {
+			lines <- s.Text()
+		}
+	}
+	go scan(stdout)
+	go scan(stderr)
+
+	var output strings.Builder
+	deadline := time.After(45 * time.Second)
+	tick := time.NewTicker(250 * time.Millisecond)
+	defer tick.Stop()
+	client := http.Client{Timeout: time.Second}
+	for {
+		select {
+		case line := <-lines:
+			output.WriteString(line)
+			output.WriteByte('\n')
+		case <-tick.C:
+			resp, err := client.Get(healthURL)
+			if err != nil {
+				continue
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return output.String()
+			}
+		case err := <-done:
+			t.Fatalf("serve exited before listening: %v\n%s", err, output.String())
+		case <-deadline:
+			t.Fatalf("serve did not report listener before timeout\n%s", output.String())
+		}
+	}
+}
+
+func stopSandboxServeSmoke(tokenFile string) {
+	_ = exec.Command("pkill", "-TERM", "-f", tokenFile).Run()
 }
 
 func runSandboxSmokeCommand(t *testing.T, timeout time.Duration, name string, args ...string) (string, error) {
