@@ -183,6 +183,35 @@ func TestAppSandboxMacgoBundleStateSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "security", "probe-sandbox", "-json")
+	t.Logf("sandboxed macgo security probe-sandbox err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo security probe-sandbox: %v\n%s", err, out)
+	}
+	var probe map[string]any
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &probe); err != nil {
+		t.Fatalf("security probe-sandbox json: %v\n%s", err, out)
+	}
+	if probe["apple_app_sandbox"] != true {
+		t.Fatalf("security probe-sandbox apple_app_sandbox = %v, want true\n%s", probe["apple_app_sandbox"], out)
+	}
+	if root, _ := probe["vm_root"].(string); !strings.Contains(root, "/Library/Containers/com.tmc.cove/Data/.vz/vms") {
+		t.Fatalf("security probe-sandbox vm_root = %v, want App Sandbox container VM root\n%s", probe["vm_root"], out)
+	}
+	for _, name := range []string{"unix_socket", "subprocess"} {
+		check, ok := probe[name].(map[string]any)
+		if !ok || check["status"] != "pass" {
+			t.Fatalf("security probe-sandbox %s = %#v, want pass\n%s", name, probe[name], out)
+		}
+	}
+}
+
 func buildAppSandboxSmokeBinary(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("codesign"); err != nil {
