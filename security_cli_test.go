@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -105,6 +107,23 @@ func TestSecurityStatusJSON(t *testing.T) {
 	}
 	if strings.Contains(got, `"apple_app_sandbox_id": ""`) {
 		t.Fatalf("security json = %s", got)
+	}
+}
+
+func TestSecuritySandboxProbeUnixSocket(t *testing.T) {
+	home, err := os.MkdirTemp("/tmp", "cove-security-probe-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	t.Setenv("HOME", home)
+
+	check := probeSandboxUnixSocket(filepath.Join(home, ".vz", "vms"))
+	if check.Status != "pass" {
+		t.Fatalf("probeSandboxUnixSocket status = %q message = %q", check.Status, check.Message)
+	}
+	if !strings.Contains(check.Path, filepath.Join(home, ".vz", "vms")) {
+		t.Fatalf("probeSandboxUnixSocket path = %q, want under test home", check.Path)
 	}
 }
 
