@@ -6,11 +6,11 @@ boundary, macgo `.app` non-mutating proof, listener proof, scratch VM
 start/stop proof, security-scoped bookmark binding proof, durable bookmark
 store proof, non-interactive bookmark consumption, the first opt-in Powerbox
 prompt command, a mocked Powerbox fallback router, automatic `status <vm>`
-Powerbox fallback, and typed ISO/IPSW media grant routing are implemented.
-Ambient mutating command surfaces now fail closed under Apple App Sandbox. A
-sandboxed run-worker IPC proof can receive an explicit descriptor from the
-unsandboxed CLI. Broader automatic command fallback and temporary-RAM overlay
-proofs are still queued.
+Powerbox fallback, typed ISO/IPSW media grant routing, and typed directory grant
+routing for `-vol` and `-share-dir` are implemented. Ambient mutating command
+surfaces now fail closed under Apple App Sandbox. A sandboxed run-worker IPC
+proof can receive an explicit descriptor from the unsandboxed CLI. Broader
+automatic command fallback and temporary-RAM overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -111,11 +111,12 @@ Observed result:
   macgo forwards the variable into the sandboxed LaunchServices child. The
   current smoke proof uses a grant inside the app container and proves `list`
   sees only that granted VM root, not an ambient container `.vz`.
-- Ambient command-line host paths and mutations are explicit denials in the
-  sandboxed macgo proof. `-vol`, `-share-dir`, `-usb`, `-block`, explicit disk,
-  ISO/IPSW, kernel/initrd, pcap paths, disk swap/resize, provisioning,
-  helper install/uninstall, shared-folder mutation, install, and `up` return a
-  typed Go error instead of reaching OS-level sandbox traps.
+- Ambient command-line host paths and mutations are explicit Go errors in the
+  sandboxed macgo proof. `-vol`, `-share-dir`, and local ISO/IPSW paths return
+  typed Powerbox/bookmark grant-required errors. `-usb`, `-block`, explicit
+  disk, kernel/initrd, pcap paths, disk swap/resize, provisioning, helper
+  install/uninstall, shared-folder mutation, install, and `up` remain explicit
+  App Sandbox denials instead of reaching OS-level sandbox traps.
 - `__run-worker probe` is the first hidden sandboxed run-worker boundary proof.
   The unsandboxed parent opens a grant file and sends its descriptor to a
   sandboxed child over a Unix socket with `SCM_RIGHTS`; the child reports
@@ -163,6 +164,10 @@ Observed result:
   media bookmarks are resolved during sandbox guard evaluation, but `install`
   and `up` still stop at their command-level mutation denial before VM creation,
   disk mutation, or provisioning code can run.
+- App Sandbox shared-directory flags now use typed grant-required errors. `-vol`
+  and `-share-dir` paths request `dir:<absolute-path>` bookmarks and accept
+  staged directory bookmarks during sandbox guard evaluation. The `shared-folder`
+  mutation command remains denied before it can rewrite VM shared-folder state.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -301,9 +306,11 @@ work in this order:
     grants without lifting the App Sandbox install/up denial.
 12. Done: route ISO/IPSW missing-grant errors through the file Powerbox fallback
     and preserve the install/up mutation denial boundary.
-13. Next: decide whether a sandboxed preflight-only install mode should consume
-    media bookmarks without creating VMs, then handle shared-folder host paths
-    separately.
+13. Done: route `-vol` and `-share-dir` missing-grant errors to typed directory
+    grants while preserving shared-folder mutation denial.
+14. Next: decide whether a sandboxed preflight-only install mode should consume
+    media bookmarks without creating VMs, then handle read-only ambient VM-root
+    access separately.
 
 ## Proof gates
 

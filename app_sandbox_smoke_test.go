@@ -249,7 +249,6 @@ func TestAppSandboxMacgoBundleHostPathDenialSmoke(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "volume", args: []string{"run", "-headless", "-vol", "/tmp:/tmp", "__missing__"}},
 		{name: "disk resize", args: []string{"disk", "resize", "__missing__", "128G"}},
 		{name: "shared folder add", args: []string{"shared-folder", "add", "/tmp", "tmp"}},
 		{name: "provision", args: []string{"provision", "-stage-only"}},
@@ -269,6 +268,60 @@ func TestAppSandboxMacgoBundleHostPathDenialSmoke(t *testing.T) {
 				t.Fatalf("%s crashed instead of returning Go error:\n%s", tc.name, out)
 			}
 		})
+	}
+}
+
+func TestAppSandboxDirectoryGrantBoundarySmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	root := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data", "tmp", fmt.Sprintf("cove-dir-grant-%d", os.Getpid()))
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	share := filepath.Join(root, "share")
+	if err := os.MkdirAll(share, 0700); err != nil {
+		t.Fatalf("create share: %v", err)
+	}
+	absShare, err := filepath.Abs(share)
+	if err != nil {
+		t.Fatalf("abs share: %v", err)
+	}
+	store := filepath.Join(root, "bookmarks.json")
+	grantEnv := append(append([]string{}, env...), securityBookmarkStoreEnv+"="+store)
+
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "run", "-headless", "-vol", share+":share", "__missing__")
+	t.Logf("sandboxed macgo missing directory grant err=%v output:\n%s", err, out)
+	if err != nil && !isCommandExit(err) {
+		t.Fatalf("missing directory grant err = %v, want clean return or command exit\n%s", err, out)
+	}
+	if !strings.Contains(out, errPowerboxGrantRequired.Error()) || !strings.Contains(out, "dir:"+absShare) {
+		t.Fatalf("missing directory grant output = %q, want typed directory grant", out)
+	}
+	if strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("missing directory grant crashed instead of returning Go error:\n%s", out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+		"-json", "-store", store, "-key", "dir:"+absShare, "-kind", "host-dir", "-path", share)
+	t.Logf("sandboxed macgo directory bookmark save err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo directory bookmark save: %v\n%s", err, out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "run", "-headless", "-vol", share+":share", "__missing__")
+	t.Logf("sandboxed macgo directory grant run boundary err=%v output:\n%s", err, out)
+	if err != nil && !isCommandExit(err) {
+		t.Fatalf("directory grant run boundary err = %v, want clean return or command exit\n%s", err, out)
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) {
+		t.Fatalf("directory grant run still requested grant:\n%s", out)
+	}
+	if !strings.Contains(out, "no VM named") && !strings.Contains(out, "run: no VM selected") && !strings.Contains(out, "is invalid under") {
+		t.Fatalf("directory grant run output = %q, want VM selection boundary", out)
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -312,8 +313,13 @@ func applyAppleAppSandboxGuards() error {
 	if !appleAppSandboxActive() {
 		return nil
 	}
-	if len(volumes) > 0 || strings.TrimSpace(shareDir) != "" {
-		return denyAppleAppSandboxHostAccess("-vol and -share-dir")
+	for _, volume := range volumes {
+		if err := requireAppleAppSandboxDirectoryGrant("-vol", volume.HostPath); err != nil {
+			return err
+		}
+	}
+	if err := requireAppleAppSandboxDirectoryGrant("-share-dir", shareDir); err != nil {
+		return err
 	}
 	if len(usbDevices) > 0 {
 		return denyAppleAppSandboxHostAccess("-usb")
@@ -339,6 +345,35 @@ func applyAppleAppSandboxGuards() error {
 		if strings.TrimSpace(path.value) != "" {
 			return denyAppleAppSandboxHostAccess(path.flag)
 		}
+	}
+	return nil
+}
+
+func requireAppleAppSandboxDirectoryGrant(flagName, rawPath string) error {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" {
+		return nil
+	}
+	abs, err := filepath.Abs(rawPath)
+	if err != nil {
+		return fmt.Errorf("%s: resolve path: %w", flagName, err)
+	}
+	storePath, err := defaultSecurityBookmarkStorePath()
+	if err != nil {
+		return err
+	}
+	key := "dir:" + abs
+	access, err := resolveSecurityBookmarkAccessFromStore(storePath, key)
+	if err != nil {
+		return powerboxGrantRequiredKind("read directory", key, "host-dir", storePath)
+	}
+	defer access.Stop()
+	info, err := os.Stat(access.Path)
+	if err != nil {
+		return fmt.Errorf("stat bookmark %s: %w", key, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("bookmark %s resolved to non-directory path: %s", key, access.Path)
 	}
 	return nil
 }
