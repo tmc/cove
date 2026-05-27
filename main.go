@@ -1169,6 +1169,9 @@ func confirmDeletef(format string, args ...any) (bool, error) {
 }
 
 func handleListTo(stdout io.Writer) error {
+	if listWorkerDelegationEnabled() {
+		return handleListViaRunWorker(stdout)
+	}
 	stop, err := startAppleAppSandboxVMRootAccess("list VM root")
 	if err != nil {
 		return err
@@ -1245,7 +1248,57 @@ func handleListTo(stdout io.Writer) error {
 	return nil
 }
 
+func handleListViaRunWorker(stdout io.Writer) error {
+	report, err := runWorkerListPreflight()
+	if err != nil {
+		return err
+	}
+	vms := report.Child.VMs
+	if len(vms) == 0 {
+		fmt.Fprintln(stdout, "No VMs found.")
+		fmt.Fprintln(stdout, "  Check this Mac first: cove doctor host")
+		fmt.Fprintln(stdout, "  Create your first VM: cove up -user <name>")
+		return nil
+	}
+	fmt.Fprintln(stdout, "VMs:")
+	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "  NAME\tOS\tSTATE\tUPTIME\tNOTE\tSIZE\tCREATED\tACTIVE")
+	for _, vm := range vms {
+		created := "-"
+		if !vm.Created.IsZero() {
+			created = vm.Created.Format("2006-01-02")
+		}
+		uptime, note := vm.Uptime, vm.Note
+		if uptime == "" {
+			uptime = "-"
+		}
+		if note == "" {
+			note = "-"
+		}
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			vm.Name,
+			vm.OSType,
+			vm.State,
+			uptime,
+			note,
+			bytefmt.Size(vm.DiskSize),
+			created,
+			"")
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "GUI state: cove ctl -vm <name> gui status")
+	return nil
+}
+
 var listPowerboxFallbackAllowed = statusPowerboxFallbackInteractive
+
+const listWorkerDelegationEnv = "COVE_APP_SANDBOX_DELEGATE_LIST"
+
+func listWorkerDelegationEnabled() bool {
+	return os.Getenv(listWorkerDelegationEnv) == "1"
+}
 
 func startAppleAppSandboxVMRootAccess(action string) (func(), error) {
 	if !appleAppSandboxActive() || strings.TrimSpace(os.Getenv(vmconfig.StateDirEnv)) != "" {

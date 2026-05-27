@@ -184,6 +184,17 @@ func TestListAppSandboxRequiresVMRootGrantNoninteractive(t *testing.T) {
 	}
 }
 
+func TestListWorkerDelegationEnabled(t *testing.T) {
+	t.Setenv(listWorkerDelegationEnv, "")
+	if listWorkerDelegationEnabled() {
+		t.Fatal("listWorkerDelegationEnabled = true, want false")
+	}
+	t.Setenv(listWorkerDelegationEnv, "1")
+	if !listWorkerDelegationEnabled() {
+		t.Fatal("listWorkerDelegationEnabled = false, want true")
+	}
+}
+
 func TestListAppSandboxAcceptsVMRootBookmark(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
 	if err := os.MkdirAll(home, 0700); err != nil {

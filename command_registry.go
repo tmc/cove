@@ -285,7 +285,9 @@ func runListCommand(env commandEnv, _ string, _ []string) int {
 		return handleListTo(env.Stdout)
 	}
 	var err error
-	if listPowerboxFallbackAllowed(env) {
+	if listWorkerDelegationEnabled() {
+		err = action()
+	} else if listPowerboxFallbackAllowed(env) {
 		err = withPowerboxFallback(action)
 	} else {
 		err = action()
