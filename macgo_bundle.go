@@ -59,7 +59,10 @@ func initMacgo() {
 	)
 	if appSandboxMacgoEnabled() {
 		cfg.WithPermissions(macgo.Sandbox)
-		cfg.WithCustom("com.apple.security.files.user-selected.read-write")
+		cfg.WithCustom(
+			"com.apple.security.files.bookmarks.app-scope",
+			"com.apple.security.files.user-selected.read-write",
+		)
 		if stateDir := os.Getenv(vmconfig.StateDirEnv); stateDir != "" {
 			cfg.WithEnvironment(vmconfig.StateDirEnv, stateDir)
 		}
