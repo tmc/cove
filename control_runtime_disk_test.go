@@ -78,6 +78,25 @@ func TestRuntimeDiskRequestedSizeBytesRejectsAmbiguousSizes(t *testing.T) {
 	}
 }
 
+func TestRuntimeDiskPreflightOnlyValue(t *testing.T) {
+	tests := []struct {
+		name string
+		req  RuntimeDiskActionRequest
+		want bool
+	}{
+		{name: "zero", req: RuntimeDiskActionRequest{}, want: false},
+		{name: "snake", req: RuntimeDiskActionRequest{PreflightOnly: true}, want: true},
+		{name: "camel", req: RuntimeDiskActionRequest{PreflightOnlyAlt: true}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.req.preflightOnlyValue(); got != tt.want {
+				t.Fatalf("preflightOnlyValue() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleDiskJSONRequestNoVM(t *testing.T) {
 	s := NewControlServerWithVMDir("", t.TempDir())
 	resp := s.handleDiskJSONRequest([]byte(`{"action":"list"}`))
@@ -145,6 +164,23 @@ func TestRuntimeDiskActionNameAliasAndCase(t *testing.T) {
 	req := RuntimeDiskActionRequest{Type: "  SWAP  "}
 	if got := req.actionName(); got != "swap" {
 		t.Fatalf("actionName via Type alias = %q, want %q", got, "swap")
+	}
+}
+
+func TestParseRuntimeDiskActionRequestPreflightOnly(t *testing.T) {
+	req, err := parseRuntimeDiskActionRequest([]byte(`{"data":{"action":"resize","index":0,"sizeBytes":1024,"preflightOnly":true}}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !req.preflightOnlyValue() {
+		t.Fatalf("preflightOnlyValue() = false")
+	}
+	size, err := req.requestedSizeBytes()
+	if err != nil {
+		t.Fatalf("requested size: %v", err)
+	}
+	if size != 1024 {
+		t.Fatalf("requested size = %d, want 1024", size)
 	}
 }
 
