@@ -95,6 +95,7 @@
 * [Storage budget for ~/.vz/](designs/040-storage-budget.md)
 * [ScreenCaptureKit migration](designs/041-screencapturekit-migration.md)
 * [Integration harness goal](designs/044-integration-harness-goal.md)
+* [Apple App Sandbox proof lane](designs/045-app-sandbox.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
