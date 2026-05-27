@@ -1,9 +1,10 @@
 # Apple App Sandbox proof lane
 
 Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,
-host-process status reporting, elevation fail-closed guard, and package-shape
-claim boundary are implemented; the `.app` or run-worker packaging proof is
-still queued.
+host-process status reporting, elevation fail-closed guard, package-shape claim
+boundary, and macgo `.app` non-mutating proof are implemented. Scratch VM,
+control-socket, helper, provisioning, and shared-folder proofs are still
+queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -65,9 +66,27 @@ Observed result:
   `signal: trace/BPT trap`.
 
 That is enough to make raw-binary sandboxing a proof problem before any live VM
-mutation test. The next useful proof should use a minimal `.app` bundle or a
-macgo-backed launcher rather than assuming a standalone Mach-O is the product
-shape.
+mutation test.
+
+The macgo-backed `.app` smoke harness is `TestAppSandboxMacgoBundleSmoke`:
+
+```bash
+COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleSmoke -v .
+```
+
+Observed result:
+
+- macgo creates an ad-hoc signed `.app` with App Sandbox,
+  Virtualization.framework, local networking, and user-selected read/write file
+  entitlements.
+- LaunchServices starts the app and `security status` reports
+  `apple app sandbox: true` and `apple app sandbox id: com.tmc.cove`.
+- On this host, `APP_SANDBOX_CONTAINER_ID` is empty for the ad-hoc bundle; the
+  reliable active-sandbox signal is that `HOME` is rewritten to
+  `~/Library/Containers/com.tmc.cove/Data`.
+- macgo's FIFO child check-in path is not compatible with this sandbox proof.
+  The macgo workspace now uses LaunchServices `--stdout` and `--stderr` file
+  redirection for App Sandbox launches.
 
 ## Expected breakage map
 
@@ -125,12 +144,13 @@ Current proof-only shape:
   `COVE_APP_SANDBOX_SMOKE=1 go test -run TestAppSandboxSmoke`.
   This shape is only a negative proof harness: it currently traps before
   non-mutating CLI commands start.
+- Sandboxed `.app` launcher or bundled runtime using the existing
+  `macgo_bundle.go` direction, signed and launched by macgo when
+  `COVE_APP_SANDBOX_MACGO=1`. This shape passes the non-mutating
+  `security status` proof.
 
 Queued proof shapes:
 
-- Sandboxed `.app` launcher or bundled runtime using the existing
-  `macgo_bundle.go` direction, limited first to non-mutating startup,
-  state-directory, and status checks.
 - Sandboxed run-worker child launched by the unsandboxed CLI after the CLI has
   resolved paths and grants. This needs an explicit protocol before any VM
   mutation path moves into it.
@@ -155,6 +175,8 @@ Unsupported claims:
 4. Done: make elevation paths fail closed when App Sandbox is detected.
 5. Done: document supported package shapes and the exact proof gates before any
    "full sandbox" product claim.
+6. Done: add macgo `.app` proof mode and opt-in smoke for non-mutating
+   `security status`.
 
 ## Proof gates
 
@@ -170,6 +192,7 @@ codesign -d --entitlements :- /Users/tmc/tmp/cove-sandboxed
 spctl --assess --type execute -vv /Users/tmc/tmp/cove-sandboxed
 /Users/tmc/tmp/cove-sandboxed --version
 /Users/tmc/tmp/cove-sandboxed list
+COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleSmoke -v .
 ```
 
 Stop before disk resize, provisioning mutation, helper install, or shared-folder
