@@ -544,6 +544,69 @@ func TestAppSandboxStatusWorkerDelegationSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxRunWorkerListPreflightSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	containerHome := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data")
+	stateRoot := filepath.Join(containerHome, "tmp", fmt.Sprintf("cove-list-worker-%d", os.Getpid()), "state")
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(stateRoot)) })
+	vmRoot := filepath.Join(stateRoot, "vms")
+	for _, name := range []string{"list-worker-b", "list-worker-a"} {
+		dir := filepath.Join(vmRoot, name)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatalf("create list worker VM: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0600); err != nil {
+			t.Fatalf("write list worker VM disk: %v", err)
+		}
+		if err := vmconfig.Save(dir, &vmconfig.Config{CPU: 2, MemoryGB: 4}); err != nil {
+			t.Fatalf("write list worker VM config: %v", err)
+		}
+	}
+	store := filepath.Join(filepath.Dir(stateRoot), "bookmarks.json")
+	grantEnv := append(append([]string{}, env...), securityBookmarkStoreEnv+"="+store, vmconfig.StateDirEnv+"="+stateRoot)
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+		"-json", "-key", "dir:"+vmRoot, "-kind", "host-dir", "-path", vmRoot)
+	t.Logf("sandboxed macgo list worker bookmark save err=%v output:\n%s", err, out)
+	if err != nil || strings.Contains(out, "error:") {
+		t.Fatalf("sandboxed macgo list worker bookmark save: %v\n%s", err, out)
+	}
+
+	workerEnv := withoutEnv(grantEnv, coveAppSandboxMacgoEnv)
+	out, err = runSandboxSmokeCommandEnv(t, 90*time.Second, workerEnv, bin, "__run-worker", "list-preflight", "-json")
+	t.Logf("sandboxed run-worker list preflight err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed run-worker list preflight: %v\n%s", err, out)
+	}
+	var report runWorkerProbeReport
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &report); err != nil {
+		t.Fatalf("run-worker list preflight json: %v\n%s", err, out)
+	}
+	if report.ParentAppSandbox {
+		t.Fatalf("run-worker list parent unexpectedly sandboxed:\n%s", out)
+	}
+	if !report.Child.AppSandbox || report.Child.Command != "list-preflight" || report.Child.VMCount != 2 {
+		t.Fatalf("run-worker list child proof incomplete: %+v\n%s", report.Child, out)
+	}
+	if len(report.Child.VMs) != 2 || report.Child.VMs[0].Name != "list-worker-a" || report.Child.VMs[1].Name != "list-worker-b" {
+		t.Fatalf("run-worker list VMs = %+v\n%s", report.Child.VMs, out)
+	}
+	for _, vm := range report.Child.VMs {
+		if vm.OSType != "Linux" || vm.State != "stopped" || !vm.ConfigRead {
+			t.Fatalf("run-worker list VM metadata = %+v\n%s", vm, out)
+		}
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) || strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) || strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("run-worker list preflight hit sandbox/grant failure:\n%s", out)
+	}
+}
+
 func TestAppSandboxBookmarkProbeSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
