@@ -18,8 +18,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const runWorkerFDMessage = "cove run-worker fd\n"
-
 type runWorkerProbeReport struct {
 	Action            string               `json:"action"`
 	ParentAppSandbox  bool                 `json:"parent_apple_app_sandbox"`
@@ -34,8 +32,13 @@ type runWorkerChildReport struct {
 	ContainerID string `json:"apple_app_sandbox_id,omitempty"`
 	HomeDir     string `json:"home_dir"`
 	ReceivedFD  bool   `json:"received_fd"`
+	ReceivedFDs int    `json:"received_fds"`
 	Bytes       int    `json:"bytes"`
 	SHA256      string `json:"sha256"`
+	Command     string `json:"handoff_command,omitempty"`
+	VMName      string `json:"vm_name,omitempty"`
+	BookmarkKey string `json:"bookmark_key,omitempty"`
+	BookmarkLen int    `json:"bookmark_bytes,omitempty"`
 	Message     string `json:"message,omitempty"`
 }
 
@@ -115,6 +118,27 @@ func runWorkerProbe() (runWorkerProbeReport, error) {
 		return runWorkerProbeReport{}, fmt.Errorf("open descriptor grant: %w", err)
 	}
 	defer file.Close()
+	handoff := runWorkerHandoff{
+		Version: runWorkerHandoffVersion,
+		Command: "probe",
+		VM: runWorkerHandoffVM{
+			Name: "sandbox-worker-probe",
+			Dir:  dir,
+		},
+		FDs: []runWorkerHandoffFD{{
+			Name:   "grant",
+			Index:  0,
+			Path:   grantPath,
+			Mode:   "read",
+			SHA256: want,
+		}},
+		Bookmarks: []runWorkerHandoffBookmark{{
+			Key:   "vm:sandbox-worker-probe",
+			Kind:  "vm",
+			Path:  dir,
+			Bytes: []byte("cove app-scope bookmark placeholder"),
+		}},
+	}
 
 	sockPath := filepath.Join(dir, "rw.sock")
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sockPath, Net: "unix"})
@@ -125,14 +149,14 @@ func runWorkerProbe() (runWorkerProbeReport, error) {
 
 	sendErr := make(chan error, 1)
 	go func() {
-		sendErr <- sendRunWorkerFD(ln, file, 45*time.Second)
+		sendErr <- sendRunWorkerHandoff(ln, handoff, []*os.File{file}, 45*time.Second)
 	}()
 
 	exe, err := os.Executable()
 	if err != nil {
 		return runWorkerProbeReport{}, fmt.Errorf("find executable: %w", err)
 	}
-	cmd := exec.Command(exe, "__run-worker", "child", "-sock", sockPath, "-want-sha256", want)
+	cmd := exec.Command(exe, "__run-worker", "child", "-sock", sockPath)
 	cmd.Env = runWorkerChildEnv(os.Environ())
 	out, childErr := cmd.CombinedOutput()
 
@@ -153,7 +177,7 @@ func runWorkerProbe() (runWorkerProbeReport, error) {
 	if !child.AppSandbox {
 		return runWorkerProbeReport{}, fmt.Errorf("sandboxed worker did not report Apple App Sandbox")
 	}
-	if !child.ReceivedFD || child.SHA256 != want {
+	if !child.ReceivedFD || child.SHA256 != want || child.Command != handoff.Command || child.VMName != handoff.VM.Name {
 		return runWorkerProbeReport{}, fmt.Errorf("sandboxed worker descriptor proof failed: %+v", child)
 	}
 	return runWorkerProbeReport{
@@ -168,18 +192,17 @@ func runWorkerChildCommand(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("__run-worker child", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	sockPath := fs.String("sock", "", "Unix socket for descriptor handoff")
-	wantSHA := fs.String("want-sha256", "", "expected descriptor payload SHA256")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
 		}
 		return err
 	}
-	if fs.NArg() != 0 || *sockPath == "" || *wantSHA == "" {
-		return fmt.Errorf("usage: cove __run-worker child -sock path -want-sha256 hex")
+	if fs.NArg() != 0 || *sockPath == "" {
+		return fmt.Errorf("usage: cove __run-worker child -sock path")
 	}
 
-	report, err := runWorkerChild(*sockPath, *wantSHA)
+	report, err := runWorkerChild(*sockPath)
 	if err != nil {
 		return err
 	}
@@ -191,16 +214,24 @@ func runWorkerChildCommand(env commandEnv, args []string) error {
 	return nil
 }
 
-func runWorkerChild(sockPath, wantSHA string) (runWorkerChildReport, error) {
+func runWorkerChild(sockPath string) (runWorkerChildReport, error) {
 	status := currentAppleAppSandboxStatus()
 	if !status.Active {
 		return runWorkerChildReport{}, fmt.Errorf("run-worker child requires Apple App Sandbox")
 	}
-	file, err := receiveRunWorkerFD(sockPath, 45*time.Second)
+	handoff, files, err := receiveRunWorkerHandoff(sockPath, 45*time.Second)
 	if err != nil {
 		return runWorkerChildReport{}, err
 	}
-	defer file.Close()
+	defer closeRunWorkerFiles(files)
+	grant, ok := handoff.fd("grant")
+	if !ok {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker handoff missing grant descriptor")
+	}
+	if grant.Index >= len(files) {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker handoff grant index %d, received %d descriptors", grant.Index, len(files))
+	}
+	file := files[grant.Index]
 
 	payload, err := io.ReadAll(file)
 	if err != nil {
@@ -208,8 +239,12 @@ func runWorkerChild(sockPath, wantSHA string) (runWorkerChildReport, error) {
 	}
 	sum := sha256.Sum256(payload)
 	got := hex.EncodeToString(sum[:])
-	if got != wantSHA {
-		return runWorkerChildReport{}, fmt.Errorf("descriptor grant sha256 = %s, want %s", got, wantSHA)
+	if got != grant.SHA256 {
+		return runWorkerChildReport{}, fmt.Errorf("descriptor grant sha256 = %s, want %s", got, grant.SHA256)
+	}
+	bookmark := runWorkerHandoffBookmark{}
+	if len(handoff.Bookmarks) > 0 {
+		bookmark = handoff.Bookmarks[0]
 	}
 	home, _ := os.UserHomeDir()
 	return runWorkerChildReport{
@@ -218,13 +253,18 @@ func runWorkerChild(sockPath, wantSHA string) (runWorkerChildReport, error) {
 		ContainerID: status.ContainerID,
 		HomeDir:     home,
 		ReceivedFD:  true,
+		ReceivedFDs: len(files),
 		Bytes:       len(payload),
 		SHA256:      got,
-		Message:     "read descriptor passed over Unix socket",
+		Command:     handoff.Command,
+		VMName:      handoff.VM.Name,
+		BookmarkKey: bookmark.Key,
+		BookmarkLen: len(bookmark.Bytes),
+		Message:     "decoded handoff and read descriptor passed over Unix socket",
 	}, nil
 }
 
-func sendRunWorkerFD(ln *net.UnixListener, file *os.File, timeout time.Duration) error {
+func sendRunWorkerHandoff(ln *net.UnixListener, handoff runWorkerHandoff, files []*os.File, timeout time.Duration) error {
 	if err := ln.SetDeadline(time.Now().Add(timeout)); err != nil {
 		return fmt.Errorf("set run-worker socket deadline: %w", err)
 	}
@@ -233,14 +273,30 @@ func sendRunWorkerFD(ln *net.UnixListener, file *os.File, timeout time.Duration)
 		return fmt.Errorf("accept run-worker socket: %w", err)
 	}
 	defer conn.Close()
-	rights := unix.UnixRights(int(file.Fd()))
-	if _, _, err := conn.WriteMsgUnix([]byte(runWorkerFDMessage), rights, nil); err != nil {
-		return fmt.Errorf("send descriptor to run-worker: %w", err)
+	data, err := encodeRunWorkerHandoff(handoff)
+	if err != nil {
+		return err
+	}
+	if len(files) != len(handoff.FDs) {
+		return fmt.Errorf("run-worker handoff has %d fd mappings for %d descriptors", len(handoff.FDs), len(files))
+	}
+	for _, fd := range handoff.FDs {
+		if fd.Index >= len(files) {
+			return fmt.Errorf("run-worker handoff fd %s index %d, have %d descriptors", fd.Name, fd.Index, len(files))
+		}
+	}
+	rightsFDs := make([]int, len(files))
+	for i, file := range files {
+		rightsFDs[i] = int(file.Fd())
+	}
+	rights := unix.UnixRights(rightsFDs...)
+	if _, _, err := conn.WriteMsgUnix(data, rights, nil); err != nil {
+		return fmt.Errorf("send handoff to run-worker: %w", err)
 	}
 	return nil
 }
 
-func receiveRunWorkerFD(sockPath string, timeout time.Duration) (*os.File, error) {
+func receiveRunWorkerHandoff(sockPath string, timeout time.Duration) (runWorkerHandoff, []*os.File, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
@@ -252,31 +308,48 @@ func receiveRunWorkerFD(sockPath string, timeout time.Duration) (*os.File, error
 		}
 		defer conn.Close()
 		if err := conn.SetDeadline(deadline); err != nil {
-			return nil, fmt.Errorf("set run-worker child deadline: %w", err)
+			return runWorkerHandoff{}, nil, fmt.Errorf("set run-worker child deadline: %w", err)
 		}
-		buf := make([]byte, len(runWorkerFDMessage))
-		oob := make([]byte, unix.CmsgSpace(4))
-		_, oobn, _, _, err := conn.ReadMsgUnix(buf, oob)
+		buf := make([]byte, 64*1024)
+		oob := make([]byte, unix.CmsgSpace(4*16))
+		n, oobn, flags, _, err := conn.ReadMsgUnix(buf, oob)
 		if err != nil {
-			return nil, fmt.Errorf("receive descriptor from run-worker socket: %w", err)
+			return runWorkerHandoff{}, nil, fmt.Errorf("receive handoff from run-worker socket: %w", err)
+		}
+		if flags&(unix.MSG_TRUNC|unix.MSG_CTRUNC) != 0 {
+			return runWorkerHandoff{}, nil, fmt.Errorf("run-worker handoff was truncated")
+		}
+		handoff, err := decodeRunWorkerHandoff(buf[:n])
+		if err != nil {
+			return runWorkerHandoff{}, nil, err
 		}
 		messages, err := unix.ParseSocketControlMessage(oob[:oobn])
 		if err != nil {
-			return nil, fmt.Errorf("parse descriptor control message: %w", err)
+			return runWorkerHandoff{}, nil, fmt.Errorf("parse descriptor control message: %w", err)
 		}
+		var files []*os.File
 		for _, message := range messages {
 			fds, err := unix.ParseUnixRights(&message)
 			if err != nil {
 				continue
 			}
-			if len(fds) == 0 {
-				continue
+			for _, fd := range fds {
+				files = append(files, os.NewFile(uintptr(fd), "cove-run-worker-grant"))
 			}
-			return os.NewFile(uintptr(fds[0]), "cove-run-worker-grant"), nil
 		}
-		return nil, fmt.Errorf("run-worker socket did not include descriptor")
+		if len(files) != len(handoff.FDs) {
+			closeRunWorkerFiles(files)
+			return runWorkerHandoff{}, nil, fmt.Errorf("run-worker handoff received %d descriptors, want %d", len(files), len(handoff.FDs))
+		}
+		return handoff, files, nil
 	}
-	return nil, fmt.Errorf("connect run-worker socket: %w", lastErr)
+	return runWorkerHandoff{}, nil, fmt.Errorf("connect run-worker socket: %w", lastErr)
+}
+
+func closeRunWorkerFiles(files []*os.File) {
+	for _, file := range files {
+		file.Close()
+	}
 }
 
 func runWorkerChildEnv(env []string) []string {
