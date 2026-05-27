@@ -480,8 +480,6 @@ func TestApplyAppleAppSandboxGuardsRejectHostPaths(t *testing.T) {
 		{name: "usb", want: "-usb", set: func() { usbDevices = USBStorageSlice{{Path: "/tmp/disk.img"}} }},
 		{name: "block", want: "-block", set: func() { blockDevices = blockDeviceSlice{{Path: "/dev/rdisk9", ReadOnly: true}} }},
 		{name: "disk", want: "-disk", set: func() { diskPath = "/tmp/disk.img" }},
-		{name: "ipsw", want: "-ipsw", set: func() { ipswPath = "/tmp/restore.ipsw" }},
-		{name: "iso", want: "-iso", set: func() { isoPath = "/tmp/install.iso" }},
 		{name: "kernel", want: "-kernel", set: func() { kernelPath = "/tmp/vmlinuz" }},
 		{name: "initrd", want: "-initrd", set: func() { initrdPath = "/tmp/initrd" }},
 		{name: "pcap", want: "-pcap", set: func() { pcapPath = "/tmp/net.pcap" }},
@@ -504,6 +502,84 @@ func TestApplyAppleAppSandboxGuardsRejectHostPaths(t *testing.T) {
 				t.Fatalf("applyAppleAppSandboxGuards() error = %v, want %q and sentinel", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestApplyAppleAppSandboxGuardsRequiresMediaGrant(t *testing.T) {
+	oldIPSW := ipswPath
+	oldISO := isoPath
+	t.Cleanup(func() {
+		ipswPath = oldIPSW
+		isoPath = oldISO
+	})
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+	t.Setenv(securityBookmarkStoreEnv, filepath.Join(t.TempDir(), "bookmarks.json"))
+
+	tests := []struct {
+		name string
+		path string
+		kind string
+		set  func(string)
+	}{
+		{name: "ipsw", path: "/tmp/restore.ipsw", kind: "ipsw", set: func(path string) { ipswPath = path }},
+		{name: "iso", path: "/tmp/install.iso", kind: "iso", set: func(path string) { isoPath = path }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ipswPath = ""
+			isoPath = ""
+			tt.set(tt.path)
+			err := applyAppleAppSandboxGuards()
+			var grant *powerboxGrantRequiredError
+			if !errors.As(err, &grant) {
+				t.Fatalf("applyAppleAppSandboxGuards() error = %v, want powerbox grant", err)
+			}
+			if grant.Kind != tt.kind || !strings.Contains(grant.Key, tt.path) {
+				t.Fatalf("grant = %+v, want kind %q for %q", grant, tt.kind, tt.path)
+			}
+		})
+	}
+}
+
+func TestApplyAppleAppSandboxGuardsAcceptsMediaBookmark(t *testing.T) {
+	oldISO := isoPath
+	t.Cleanup(func() { isoPath = oldISO })
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+	storePath := filepath.Join(t.TempDir(), "bookmarks.json")
+	t.Setenv(securityBookmarkStoreEnv, storePath)
+	path := filepath.Join(t.TempDir(), "install.iso")
+	if err := os.WriteFile(path, []byte("iso"), 0600); err != nil {
+		t.Fatalf("write ISO: %v", err)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("abs ISO: %v", err)
+	}
+	if _, err := saveSecurityBookmark(storePath, "iso:"+abs, "iso", path); err != nil {
+		if securityScopedBookmarkUnavailable(err) {
+			t.Skipf("security-scoped bookmarks unavailable in this process: %v", err)
+		}
+		t.Fatalf("saveSecurityBookmark: %v", err)
+	}
+	ipswPath = ""
+	isoPath = path
+	if err := applyAppleAppSandboxGuards(); err != nil {
+		t.Fatalf("applyAppleAppSandboxGuards: %v", err)
+	}
+}
+
+func TestInstallCommandStillDeniedByAppleAppSandbox(t *testing.T) {
+	oldInstallVM := installVM
+	t.Cleanup(func() { installVM = oldInstallVM })
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+
+	var stderr strings.Builder
+	code := runInstallCommand(commandEnv{Stdout: &strings.Builder{}, Stderr: &stderr}, "install", nil)
+	if code != 1 {
+		t.Fatalf("runInstallCommand code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), errAppleAppSandboxHostAccessDenied.Error()) {
+		t.Fatalf("runInstallCommand stderr = %q, want App Sandbox denial", stderr.String())
 	}
 }
 

@@ -35,10 +35,14 @@ func denyAppleAppSandboxHostAccess(action string) error {
 }
 
 func powerboxGrantRequired(action, key, storePath string) error {
+	return powerboxGrantRequiredKind(action, key, "vm-root", storePath)
+}
+
+func powerboxGrantRequiredKind(action, key, kind, storePath string) error {
 	return &powerboxGrantRequiredError{
 		Action:    action,
 		Key:       key,
-		Kind:      "vm-root",
+		Kind:      kind,
 		StorePath: storePath,
 	}
 }

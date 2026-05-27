@@ -6,11 +6,11 @@ boundary, macgo `.app` non-mutating proof, listener proof, scratch VM
 start/stop proof, security-scoped bookmark binding proof, durable bookmark
 store proof, non-interactive bookmark consumption, the first opt-in Powerbox
 prompt command, a mocked Powerbox fallback router, automatic `status <vm>`
-Powerbox fallback, and the file-selection Powerbox primitive for media grants
-are implemented. Ambient host-path and mutating command surfaces now fail closed
-under Apple App Sandbox. A sandboxed run-worker IPC proof can receive an
-explicit descriptor from the unsandboxed CLI. Broader automatic command fallback
-and temporary-RAM overlay proofs are still queued.
+Powerbox fallback, and typed ISO/IPSW media grant routing are implemented.
+Ambient mutating command surfaces now fail closed under Apple App Sandbox. A
+sandboxed run-worker IPC proof can receive an explicit descriptor from the
+unsandboxed CLI. Broader automatic command fallback and temporary-RAM overlay
+proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -156,10 +156,13 @@ Observed result:
   error.
 - The native Powerbox layer now has a file-selection primitive in addition to
   the directory picker. The file primitive can constrain media picks to `.iso`
-  and `.ipsw` UTTypes and rejects mismatched extensions after selection. It is
-  not wired into `install` or `up` yet; those commands remain blanket-denied
-  under App Sandbox until the media grant can be routed without exposing the
-  rest of the install mutation path.
+  and `.ipsw` UTTypes and rejects mismatched extensions after selection.
+- App Sandbox media flags now use typed grant-required errors. Local `-iso` and
+  `-ipsw` paths request `iso:<absolute-path>` or `ipsw:<absolute-path>`
+  bookmarks instead of returning the generic ambient host-path denial. Existing
+  media bookmarks are resolved during sandbox guard evaluation, but `install`
+  and `up` still stop at their command-level mutation denial before VM creation,
+  disk mutation, or provisioning code can run.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -296,9 +299,11 @@ work in this order:
     fallback router with mocked retry/cancel tests and a noninteractive guard.
 11. Done: add a native Powerbox file-selection primitive for ISO/IPSW media
     grants without lifting the App Sandbox install/up denial.
-12. Next: wire missing-grant errors to headed Powerbox fallback for ISO/IPSW
-    media without exposing unrelated install/up mutation paths, then handle
-    shared-folder host paths separately.
+12. Done: route ISO/IPSW missing-grant errors through the file Powerbox fallback
+    and preserve the install/up mutation denial boundary.
+13. Next: decide whether a sandboxed preflight-only install mode should consume
+    media bookmarks without creating VMs, then handle shared-folder host paths
+    separately.
 
 ## Proof gates
 
