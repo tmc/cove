@@ -183,6 +183,9 @@ func goListModuleDir(workingDir string) (string, error) {
 // Idempotent: if the running VM already has the same agent version, returns
 // without rebuilding.
 func provisionAgent() error {
+	if err := denyAppleAppSandboxHostAccess("provision-agent"); err != nil {
+		return err
+	}
 	target := currentVMSelection()
 	if vmName != "" {
 		var err error

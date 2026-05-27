@@ -256,6 +256,9 @@ func sandboxAllowsAgentUpgrade() bool {
 }
 
 func applySandboxDefaults() error {
+	if err := applyAppleAppSandboxGuards(); err != nil {
+		return err
+	}
 	policy, err := currentSandboxPolicy()
 	if err != nil {
 		return err
@@ -304,6 +307,37 @@ func applySandboxDefaults() error {
 	return nil
 }
 
+func applyAppleAppSandboxGuards() error {
+	if !appleAppSandboxActive() {
+		return nil
+	}
+	if len(volumes) > 0 || strings.TrimSpace(shareDir) != "" {
+		return denyAppleAppSandboxHostAccess("-vol and -share-dir")
+	}
+	if len(usbDevices) > 0 {
+		return denyAppleAppSandboxHostAccess("-usb")
+	}
+	if len(blockDevices) > 0 {
+		return denyAppleAppSandboxHostAccess("-block")
+	}
+	for _, path := range []struct {
+		flag  string
+		value string
+	}{
+		{"-disk", diskPath},
+		{"-ipsw", ipswPath},
+		{"-iso", isoPath},
+		{"-kernel", kernelPath},
+		{"-initrd", initrdPath},
+		{"-pcap", pcapPath},
+	} {
+		if strings.TrimSpace(path.value) != "" {
+			return denyAppleAppSandboxHostAccess(path.flag)
+		}
+	}
+	return nil
+}
+
 func effectiveSharedFolders(vmDirectory string) []SharedFolderEntry {
 	policy, err := currentSandboxPolicy()
 	if err != nil {
@@ -313,7 +347,7 @@ func effectiveSharedFolders(vmDirectory string) []SharedFolderEntry {
 }
 
 func sharedFolderCommandBlocked(args []string) bool {
-	if !sandboxActive() || len(args) == 0 {
+	if (!sandboxActive() && !appleAppSandboxActive()) || len(args) == 0 {
 		return false
 	}
 	switch args[0] {

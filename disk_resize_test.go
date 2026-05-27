@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,15 @@ func TestParseDiskResizeArgs(t *testing.T) {
 	}
 	if vm != "other" || size != "96G" {
 		t.Fatalf("parseDiskResizeArgs explicit = %q, %q, want other, 96G", vm, size)
+	}
+}
+
+func TestDiskResizeDeniedByAppleAppSandbox(t *testing.T) {
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+
+	err := handleDiskCommand(commandEnv{Stdout: ioDiscard{}}, []string{"resize", "vm", "128G"})
+	if err == nil || !errors.Is(err, errAppleAppSandboxHostAccessDenied) {
+		t.Fatalf("handleDiskCommand resize error = %v, want Apple App Sandbox denial", err)
 	}
 }
 

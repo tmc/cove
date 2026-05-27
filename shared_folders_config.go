@@ -9,6 +9,9 @@ func LoadSharedFolders(vmDirectory string) []SharedFolderEntry {
 }
 
 func saveSharedFolders(vmDirectory string, folders []SharedFolderEntry) error {
+	if err := denyAppleAppSandboxHostAccess("shared-folder mutation"); err != nil {
+		return err
+	}
 	return vmconfig.SaveSharedFolders(vmDirectory, folders)
 }
 

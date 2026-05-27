@@ -11,6 +11,7 @@ import (
 
 	agentstate "github.com/tmc/cove/internal/agent"
 	agentpb "github.com/tmc/cove/proto/agentpb"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestParseRuntimeDiskActionRequest(t *testing.T) {
@@ -29,6 +30,31 @@ func TestParseRuntimeDiskActionRequest(t *testing.T) {
 	}
 	if !req.readOnlyValue() {
 		t.Fatalf("read only = false")
+	}
+}
+
+func TestRuntimeDiskMutationsDeniedByAppleAppSandbox(t *testing.T) {
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+	s := NewControlServerWithVMDir("", t.TempDir())
+	index := 0
+	size := uint64(1024)
+
+	for _, tc := range []struct {
+		name string
+		resp *controlpb.ControlResponse
+	}{
+		{
+			name: "swap",
+			resp: s.handleDiskSwap(RuntimeDiskActionRequest{Index: &index, Path: "/tmp/disk.img"}),
+		},
+		{
+			name: "resize",
+			resp: s.handleDiskResize(RuntimeDiskActionRequest{Index: &index, SizeBytes: &size}),
+		},
+	} {
+		if tc.resp == nil || !strings.Contains(tc.resp.Error, errAppleAppSandboxHostAccessDenied.Error()) {
+			t.Fatalf("%s response = %+v, want Apple App Sandbox denial", tc.name, tc.resp)
+		}
 	}
 }
 

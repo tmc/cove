@@ -63,6 +63,9 @@ func handleUp(env commandEnv, args []string) error {
 		}
 		return err
 	}
+	if err := denyAppleAppSandboxHostAccess("up"); err != nil {
+		return err
+	}
 	opts := runtimeOptionsForUp(cfg)
 	return withUpRuntimeOptions(opts, func() error {
 		maybeStartPprofServer()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -427,6 +428,82 @@ func TestSharedFolderCommandBlocked(t *testing.T) {
 	}
 	if !sharedFolderCommandBlocked([]string{"add", "/foo"}) {
 		t.Fatalf("sharedFolderCommandBlocked(add) under sandbox: want true")
+	}
+}
+
+func TestSharedFolderCommandBlockedByAppleAppSandbox(t *testing.T) {
+	oldLevel := sandboxLevel
+	t.Cleanup(func() { sandboxLevel = oldLevel })
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+
+	sandboxLevel = ""
+	if sharedFolderCommandBlocked([]string{"list"}) {
+		t.Fatalf("sharedFolderCommandBlocked(list) under Apple App Sandbox: want false")
+	}
+	if !sharedFolderCommandBlocked([]string{"add", "/foo"}) {
+		t.Fatalf("sharedFolderCommandBlocked(add) under Apple App Sandbox: want true")
+	}
+}
+
+func TestApplyAppleAppSandboxGuardsRejectHostPaths(t *testing.T) {
+	oldVolumes := volumes
+	oldShareDir := shareDir
+	oldUSB := usbDevices
+	oldBlock := blockDevices
+	oldDisk := diskPath
+	oldIPSW := ipswPath
+	oldISO := isoPath
+	oldKernel := kernelPath
+	oldInitrd := initrdPath
+	oldPCAP := pcapPath
+	t.Cleanup(func() {
+		volumes = oldVolumes
+		shareDir = oldShareDir
+		usbDevices = oldUSB
+		blockDevices = oldBlock
+		diskPath = oldDisk
+		ipswPath = oldIPSW
+		isoPath = oldISO
+		kernelPath = oldKernel
+		initrdPath = oldInitrd
+		pcapPath = oldPCAP
+	})
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+
+	tests := []struct {
+		name string
+		want string
+		set  func()
+	}{
+		{name: "volumes", want: "-vol", set: func() { volumes = volumeSlice{{HostPath: "/tmp/share"}} }},
+		{name: "share dir", want: "-vol", set: func() { shareDir = "/tmp/share" }},
+		{name: "usb", want: "-usb", set: func() { usbDevices = USBStorageSlice{{Path: "/tmp/disk.img"}} }},
+		{name: "block", want: "-block", set: func() { blockDevices = blockDeviceSlice{{Path: "/dev/rdisk9", ReadOnly: true}} }},
+		{name: "disk", want: "-disk", set: func() { diskPath = "/tmp/disk.img" }},
+		{name: "ipsw", want: "-ipsw", set: func() { ipswPath = "/tmp/restore.ipsw" }},
+		{name: "iso", want: "-iso", set: func() { isoPath = "/tmp/install.iso" }},
+		{name: "kernel", want: "-kernel", set: func() { kernelPath = "/tmp/vmlinuz" }},
+		{name: "initrd", want: "-initrd", set: func() { initrdPath = "/tmp/initrd" }},
+		{name: "pcap", want: "-pcap", set: func() { pcapPath = "/tmp/net.pcap" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			volumes = nil
+			shareDir = ""
+			usbDevices = nil
+			blockDevices = nil
+			diskPath = ""
+			ipswPath = ""
+			isoPath = ""
+			kernelPath = ""
+			initrdPath = ""
+			pcapPath = ""
+			tt.set()
+			err := applyAppleAppSandboxGuards()
+			if err == nil || !strings.Contains(err.Error(), tt.want) || !errors.Is(err, errAppleAppSandboxHostAccessDenied) {
+				t.Fatalf("applyAppleAppSandboxGuards() error = %v, want %q and sentinel", err, tt.want)
+			}
+		})
 	}
 }
 

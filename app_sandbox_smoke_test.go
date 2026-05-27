@@ -238,6 +238,39 @@ func TestAppSandboxMacgoBundleStateDirGrantSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxMacgoBundleHostPathDenialSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "volume", args: []string{"run", "-headless", "-vol", "/tmp:/tmp", "__missing__"}},
+		{name: "disk resize", args: []string{"disk", "resize", "__missing__", "128G"}},
+		{name: "shared folder add", args: []string{"shared-folder", "add", "/tmp", "tmp"}},
+		{name: "provision", args: []string{"provision", "-stage-only"}},
+		{name: "helper install", args: []string{"helper", "install"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, tc.args...)
+			t.Logf("sandboxed macgo denial %s err=%v output:\n%s", strings.Join(tc.args, " "), err, out)
+			if err != nil && !isCommandExit(err) {
+				t.Fatalf("%s err = %v, want clean return or command exit\n%s", tc.name, err, out)
+			}
+			if !strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) {
+				t.Fatalf("%s output missing App Sandbox denial:\n%s", tc.name, out)
+			}
+			if strings.Contains(out, "Trace/BPT trap") {
+				t.Fatalf("%s crashed instead of returning Go error:\n%s", tc.name, out)
+			}
+		})
+	}
+}
+
 func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")

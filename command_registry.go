@@ -342,6 +342,9 @@ func runProvisionAgentCommand(env commandEnv, name string, _ []string) int {
 
 func runSharedFolderCommand(env commandEnv, _ string, args []string) int {
 	if sharedFolderCommandBlocked(args) {
+		if appleAppSandboxActive() {
+			return commandError(env, denyAppleAppSandboxHostAccess("shared-folder mutation"))
+		}
 		fmt.Fprintf(env.Stderr, "error: -sandbox-level %s does not allow shared-folder mutations\n", sandboxLevel)
 		return 1
 	}
@@ -376,6 +379,9 @@ func runForkCommand(_ commandEnv, _ string, args []string) int {
 
 func runInstallCommand(env commandEnv, _ string, _ []string) int {
 	installVM = true
+	if err := denyAppleAppSandboxHostAccess("install"); err != nil {
+		return commandError(env, err)
+	}
 	var err error
 	if windowsMode {
 		err = installWindowsVM(env.Stderr)

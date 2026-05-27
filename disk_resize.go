@@ -36,6 +36,9 @@ primary disks, the live ctl path also expands the guest APFS container.`)
 func handleDiskCommand(env commandEnv, args []string) error {
 	switch args[0] {
 	case "resize":
+		if err := denyAppleAppSandboxHostAccess("disk resize"); err != nil {
+			return err
+		}
 		vm, size, err := parseDiskResizeArgs(args[1:])
 		if err != nil {
 			return err

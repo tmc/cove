@@ -54,6 +54,9 @@ func handleProvision(args []string) error {
 		}
 		return err
 	}
+	if err := denyAppleAppSandboxHostAccess("provision"); err != nil {
+		return err
+	}
 
 	// Enable verbose mode from flag
 	if *verboseFlag {
