@@ -94,9 +94,10 @@ Observed result:
   model is reduced to explicit grants or security-scoped bookmarks.
 - `security probe-sandbox -json` passes Unix-socket, loopback TCP, subprocess,
   and scratch VZ start/stop checks through the sandboxed macgo bundle. The
-  scratch VM proof uses a short path under the app container temp directory, an
-  APFS clone of an existing Linux disk, and EFI boot, then stops the VM before
-  guest readiness is required.
+  scratch VM proof uses a deliberately long VM path under the app container
+  temp directory, a hashed short control socket path, an APFS clone of an
+  existing Linux disk, and EFI boot, then stops the VM before guest readiness is
+  required.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -206,9 +207,9 @@ Unsupported claims:
 NotebookLM re-review after the scratch VM proof ranked the next App Sandbox
 work in this order:
 
-1. Mitigate Unix socket path length. App container paths are deep enough that
-   per-VM `control.sock` paths can exceed Darwin's `sun_path` limit unless the
-   sandbox runtime uses short scratch names or another rendezvous.
+1. Done: mitigate Unix socket path length. Long per-VM socket paths fall back to
+   a hashed short path under the process temp directory, with a sidecar
+   `control.token` for existing clients.
 2. Define explicit state-directory grants. The current macgo proof can start
    and report container paths, but it is not an isolation claim for existing VM
    discovery until Powerbox or security-scoped bookmarks are designed.

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -33,7 +34,9 @@ import (
 
 const (
 	controlTokenFileName = "control.token"
+	controlVMDirFileName = "control.vm-dir"
 	controlTokenEnvVar   = "VZ_MACOS_CTL_TOKEN"
+	controlSocketMaxPath = 103
 )
 
 var (
@@ -331,6 +334,9 @@ func (s *ControlServer) Start() error {
 		}
 		s.authToken = token
 	}
+	if err := s.prepareSocketPath(); err != nil {
+		return err
+	}
 	s.setPolicyStartTime(vmLifecycleClock.Now())
 
 	s.controlServer = &controlx.Server{
@@ -353,6 +359,24 @@ func (s *ControlServer) Start() error {
 	return s.controlServer.Start(lifecycleCtx)
 }
 
+func (s *ControlServer) prepareSocketPath() error {
+	if err := os.MkdirAll(filepath.Dir(s.socketPath), 0700); err != nil {
+		return fmt.Errorf("create control socket dir: %w", err)
+	}
+	vmDir := s.effectiveVMDir()
+	if !controlSocketUsesVMDir(vmDir, s.socketPath) {
+		tokenPath := filepath.Join(filepath.Dir(s.socketPath), controlTokenFileName)
+		if err := os.WriteFile(tokenPath, []byte(s.authToken+"\n"), 0600); err != nil {
+			return fmt.Errorf("write short control token: %w", err)
+		}
+		vmDirPath := filepath.Join(filepath.Dir(s.socketPath), controlVMDirFileName)
+		if err := os.WriteFile(vmDirPath, []byte(vmDir+"\n"), 0600); err != nil {
+			return fmt.Errorf("write short control VM dir: %w", err)
+		}
+	}
+	return nil
+}
+
 // Stop closes the control server
 func (s *ControlServer) Stop() {
 	s.running.Store(false)
@@ -371,6 +395,17 @@ func (s *ControlServer) Stop() {
 	} else {
 		os.Remove(s.socketPath)
 	}
+	s.cleanupShortSocketPath()
+}
+
+func (s *ControlServer) cleanupShortSocketPath() {
+	if controlSocketUsesVMDir(s.effectiveVMDir(), s.socketPath) {
+		return
+	}
+	dir := filepath.Dir(s.socketPath)
+	_ = os.Remove(filepath.Join(dir, controlTokenFileName))
+	_ = os.Remove(filepath.Join(dir, controlVMDirFileName))
+	_ = os.Remove(dir)
 }
 
 func (s *ControlServer) handleConnection(conn net.Conn) {
@@ -843,7 +878,25 @@ func GetControlSocketPath() string {
 
 // GetControlSocketPathForVM returns the control socket path for a specific VM dir.
 func GetControlSocketPathForVM(vmDirectory string) string {
-	return filepath.Join(vmDirectory, "control.sock")
+	return controlSocketPathForVMWithTemp(vmDirectory, os.TempDir())
+}
+
+func controlSocketPathForVMWithTemp(vmDirectory, tempDir string) string {
+	path := filepath.Join(vmDirectory, "control.sock")
+	if len(path) <= controlSocketMaxPath {
+		return path
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(vmDirectory)))
+	name := "cv" + hex.EncodeToString(sum[:6])
+	path = filepath.Join(tempDir, name, "c.sock")
+	if len(path) <= controlSocketMaxPath {
+		return path
+	}
+	return filepath.Join(string(filepath.Separator), "tmp", name, "c.sock")
+}
+
+func controlSocketUsesVMDir(vmDirectory, socketPath string) bool {
+	return filepath.Clean(socketPath) == filepath.Clean(filepath.Join(vmDirectory, "control.sock"))
 }
 
 // GetControlTokenPathForVM returns the control token file path for a specific VM dir.

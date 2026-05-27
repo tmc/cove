@@ -43,6 +43,24 @@ func TestGetControlSocketPathForVM(t *testing.T) {
 	}
 }
 
+func TestControlSocketPathForVMLongPathUsesShortTempPath(t *testing.T) {
+	temp := filepath.Join(string(filepath.Separator), "tmp")
+	vmDir := filepath.Join(temp, strings.Repeat("very-long-vm-dir-", 7), "vm")
+	got := controlSocketPathForVMWithTemp(vmDir, temp)
+	if got == filepath.Join(vmDir, "control.sock") {
+		t.Fatalf("control socket path did not shorten: %q", got)
+	}
+	if !strings.HasPrefix(got, filepath.Join(temp, "cv")) {
+		t.Fatalf("control socket path = %q, want temp cv path", got)
+	}
+	if len(got) > controlSocketMaxPath {
+		t.Fatalf("control socket path length = %d, want <= %d: %q", len(got), controlSocketMaxPath, got)
+	}
+	if !strings.HasSuffix(got, "c.sock") {
+		t.Fatalf("control socket path = %q, want c.sock suffix", got)
+	}
+}
+
 func TestLoadControlTokenFromPath(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "nope")

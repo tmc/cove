@@ -116,10 +116,11 @@ func TestCollectVMProcessesCorrelatesServerInfoOwnerPID(t *testing.T) {
 			return []vmconfig.Info{{Name: "hermes", Path: legacyDir}}, nil
 		},
 		func(sock string) (RuntimeServerInfo, bool) {
-			if !strings.HasSuffix(sock, "/control.sock") {
-				t.Fatalf("server-info socket = %q", sock)
+			wantSock := GetControlSocketPathForVM(legacyDir)
+			if sock != wantSock {
+				t.Fatalf("server-info socket = %q, want %q", sock, wantSock)
 			}
-			return RuntimeServerInfo{PID: 78347, VMDir: legacyDir, SocketPath: filepath.Join(legacyDir, "control.sock")}, true
+			return RuntimeServerInfo{PID: 78347, VMDir: legacyDir, SocketPath: wantSock}, true
 		},
 	)
 	runner := fakeVMProcessRunner{

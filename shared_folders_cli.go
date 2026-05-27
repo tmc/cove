@@ -419,14 +419,15 @@ func handleVMSharedFolderClear(vmDirectory string) error {
 }
 
 func applySharedFoldersAndPrint(vmDirectory string) error {
-	client := NewControlClient(GetControlSocketPathForVM(vmDirectory))
+	socketPath := GetControlSocketPathForVM(vmDirectory)
+	client := NewControlClient(socketPath)
 	client.SetTimeout(15 * time.Second)
 	if msg, err := client.SharedFoldersApply(); err == nil {
 		fmt.Printf("applied to running VM: %s\n", msg)
 		return nil
 	} else {
 		if sharedFolderVMStopped(err) {
-			fmt.Println("changes saved; VM is stopped, so live mount was skipped")
+			fmt.Printf("VM %q (%s): changes saved; VM is stopped, so live mount was skipped\n", vmconfig.NameForPath(vmDirectory), socketPath)
 			fmt.Println("changes will apply on next boot")
 			return nil
 		}
