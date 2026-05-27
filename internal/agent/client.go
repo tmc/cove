@@ -313,6 +313,16 @@ func (c *AgentClient) SetTime(ctx context.Context, t time.Time) error {
 	return err
 }
 
+func (c *AgentClient) ResizeMacOSAPFS(ctx context.Context, preflightOnly bool) (*pb.ResizeMacOSAPFSResponse, error) {
+	resp, err := c.client.ResizeMacOSAPFS(ctx, connect.NewRequest(&pb.ResizeMacOSAPFSRequest{
+		PreflightOnly: preflightOnly,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
 // ExecAs runs a command in the guest as the specified user.
 func (c *AgentClient) ExecAs(ctx context.Context, user string, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
 	if err := checkAgentExecArgv(args); err != nil {

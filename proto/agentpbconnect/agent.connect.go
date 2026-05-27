@@ -51,6 +51,8 @@ const (
 	AgentSignalExecProcedure = "/vz.agent.v1.Agent/SignalExec"
 	// AgentSetTimeProcedure is the fully-qualified name of the Agent's SetTime RPC.
 	AgentSetTimeProcedure = "/vz.agent.v1.Agent/SetTime"
+	// AgentResizeMacOSAPFSProcedure is the fully-qualified name of the Agent's ResizeMacOSAPFS RPC.
+	AgentResizeMacOSAPFSProcedure = "/vz.agent.v1.Agent/ResizeMacOSAPFS"
 	// AgentCopyInProcedure is the fully-qualified name of the Agent's CopyIn RPC.
 	AgentCopyInProcedure = "/vz.agent.v1.Agent/CopyIn"
 	// AgentCopyOutProcedure is the fully-qualified name of the Agent's CopyOut RPC.
@@ -91,6 +93,8 @@ type AgentClient interface {
 	ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error)
 	SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error)
 	SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error)
+	// ResizeMacOSAPFS expands the macOS root APFS container after its backing disk grows.
+	ResizeMacOSAPFS(context.Context, *connect.Request[agentpb.ResizeMacOSAPFSRequest]) (*connect.Response[agentpb.ResizeMacOSAPFSResponse], error)
 	// CopyIn transfers a file from the host into the guest.
 	CopyIn(context.Context) *connect.ClientStreamForClient[agentpb.CopyInChunk, agentpb.CopyInResponse]
 	// CopyOut transfers a file from the guest to the host.
@@ -170,6 +174,12 @@ func NewAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...conne
 			connect.WithSchema(agentMethods.ByName("SetTime")),
 			connect.WithClientOptions(opts...),
 		),
+		resizeMacOSAPFS: connect.NewClient[agentpb.ResizeMacOSAPFSRequest, agentpb.ResizeMacOSAPFSResponse](
+			httpClient,
+			baseURL+AgentResizeMacOSAPFSProcedure,
+			connect.WithSchema(agentMethods.ByName("ResizeMacOSAPFS")),
+			connect.WithClientOptions(opts...),
+		),
 		copyIn: connect.NewClient[agentpb.CopyInChunk, agentpb.CopyInResponse](
 			httpClient,
 			baseURL+AgentCopyInProcedure,
@@ -229,23 +239,24 @@ func NewAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...conne
 
 // agentClient implements AgentClient.
 type agentClient struct {
-	ping          *connect.Client[agentpb.PingRequest, agentpb.PingResponse]
-	info          *connect.Client[agentpb.InfoRequest, agentpb.InfoResponse]
-	exec          *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
-	execStream    *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
-	execAttach    *connect.Client[agentpb.ExecAttachRequest, agentpb.ExecAttachOutput]
-	resizeExecTTY *connect.Client[agentpb.ResizeExecTTYRequest, agentpb.ResizeExecTTYResponse]
-	signalExec    *connect.Client[agentpb.SignalExecRequest, agentpb.SignalExecResponse]
-	setTime       *connect.Client[agentpb.SetTimeRequest, agentpb.SetTimeResponse]
-	copyIn        *connect.Client[agentpb.CopyInChunk, agentpb.CopyInResponse]
-	copyOut       *connect.Client[agentpb.CopyOutRequest, agentpb.CopyOutChunk]
-	writeFile     *connect.Client[agentpb.WriteFileRequest, agentpb.WriteFileResponse]
-	readFile      *connect.Client[agentpb.ReadFileRequest, agentpb.ReadFileResponse]
-	mkdir         *connect.Client[agentpb.MkdirRequest, agentpb.MkdirResponse]
-	mount         *connect.Client[agentpb.MountRequest, agentpb.MountResponse]
-	unmount       *connect.Client[agentpb.UnmountRequest, agentpb.UnmountResponse]
-	shutdown      *connect.Client[agentpb.ShutdownRequest, agentpb.ShutdownResponse]
-	reboot        *connect.Client[agentpb.RebootRequest, agentpb.RebootResponse]
+	ping            *connect.Client[agentpb.PingRequest, agentpb.PingResponse]
+	info            *connect.Client[agentpb.InfoRequest, agentpb.InfoResponse]
+	exec            *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
+	execStream      *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
+	execAttach      *connect.Client[agentpb.ExecAttachRequest, agentpb.ExecAttachOutput]
+	resizeExecTTY   *connect.Client[agentpb.ResizeExecTTYRequest, agentpb.ResizeExecTTYResponse]
+	signalExec      *connect.Client[agentpb.SignalExecRequest, agentpb.SignalExecResponse]
+	setTime         *connect.Client[agentpb.SetTimeRequest, agentpb.SetTimeResponse]
+	resizeMacOSAPFS *connect.Client[agentpb.ResizeMacOSAPFSRequest, agentpb.ResizeMacOSAPFSResponse]
+	copyIn          *connect.Client[agentpb.CopyInChunk, agentpb.CopyInResponse]
+	copyOut         *connect.Client[agentpb.CopyOutRequest, agentpb.CopyOutChunk]
+	writeFile       *connect.Client[agentpb.WriteFileRequest, agentpb.WriteFileResponse]
+	readFile        *connect.Client[agentpb.ReadFileRequest, agentpb.ReadFileResponse]
+	mkdir           *connect.Client[agentpb.MkdirRequest, agentpb.MkdirResponse]
+	mount           *connect.Client[agentpb.MountRequest, agentpb.MountResponse]
+	unmount         *connect.Client[agentpb.UnmountRequest, agentpb.UnmountResponse]
+	shutdown        *connect.Client[agentpb.ShutdownRequest, agentpb.ShutdownResponse]
+	reboot          *connect.Client[agentpb.RebootRequest, agentpb.RebootResponse]
 }
 
 // Ping calls vz.agent.v1.Agent.Ping.
@@ -286,6 +297,11 @@ func (c *agentClient) SignalExec(ctx context.Context, req *connect.Request[agent
 // SetTime calls vz.agent.v1.Agent.SetTime.
 func (c *agentClient) SetTime(ctx context.Context, req *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error) {
 	return c.setTime.CallUnary(ctx, req)
+}
+
+// ResizeMacOSAPFS calls vz.agent.v1.Agent.ResizeMacOSAPFS.
+func (c *agentClient) ResizeMacOSAPFS(ctx context.Context, req *connect.Request[agentpb.ResizeMacOSAPFSRequest]) (*connect.Response[agentpb.ResizeMacOSAPFSResponse], error) {
+	return c.resizeMacOSAPFS.CallUnary(ctx, req)
 }
 
 // CopyIn calls vz.agent.v1.Agent.CopyIn.
@@ -348,6 +364,8 @@ type AgentHandler interface {
 	ResizeExecTTY(context.Context, *connect.Request[agentpb.ResizeExecTTYRequest]) (*connect.Response[agentpb.ResizeExecTTYResponse], error)
 	SignalExec(context.Context, *connect.Request[agentpb.SignalExecRequest]) (*connect.Response[agentpb.SignalExecResponse], error)
 	SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error)
+	// ResizeMacOSAPFS expands the macOS root APFS container after its backing disk grows.
+	ResizeMacOSAPFS(context.Context, *connect.Request[agentpb.ResizeMacOSAPFSRequest]) (*connect.Response[agentpb.ResizeMacOSAPFSResponse], error)
 	// CopyIn transfers a file from the host into the guest.
 	CopyIn(context.Context, *connect.ClientStream[agentpb.CopyInChunk]) (*connect.Response[agentpb.CopyInResponse], error)
 	// CopyOut transfers a file from the guest to the host.
@@ -423,6 +441,12 @@ func NewAgentHandler(svc AgentHandler, opts ...connect.HandlerOption) (string, h
 		connect.WithSchema(agentMethods.ByName("SetTime")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentResizeMacOSAPFSHandler := connect.NewUnaryHandler(
+		AgentResizeMacOSAPFSProcedure,
+		svc.ResizeMacOSAPFS,
+		connect.WithSchema(agentMethods.ByName("ResizeMacOSAPFS")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentCopyInHandler := connect.NewClientStreamHandler(
 		AgentCopyInProcedure,
 		svc.CopyIn,
@@ -495,6 +519,8 @@ func NewAgentHandler(svc AgentHandler, opts ...connect.HandlerOption) (string, h
 			agentSignalExecHandler.ServeHTTP(w, r)
 		case AgentSetTimeProcedure:
 			agentSetTimeHandler.ServeHTTP(w, r)
+		case AgentResizeMacOSAPFSProcedure:
+			agentResizeMacOSAPFSHandler.ServeHTTP(w, r)
 		case AgentCopyInProcedure:
 			agentCopyInHandler.ServeHTTP(w, r)
 		case AgentCopyOutProcedure:
@@ -552,6 +578,10 @@ func (UnimplementedAgentHandler) SignalExec(context.Context, *connect.Request[ag
 
 func (UnimplementedAgentHandler) SetTime(context.Context, *connect.Request[agentpb.SetTimeRequest]) (*connect.Response[agentpb.SetTimeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.SetTime is not implemented"))
+}
+
+func (UnimplementedAgentHandler) ResizeMacOSAPFS(context.Context, *connect.Request[agentpb.ResizeMacOSAPFSRequest]) (*connect.Response[agentpb.ResizeMacOSAPFSResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.Agent.ResizeMacOSAPFS is not implemented"))
 }
 
 func (UnimplementedAgentHandler) CopyIn(context.Context, *connect.ClientStream[agentpb.CopyInChunk]) (*connect.Response[agentpb.CopyInResponse], error) {
