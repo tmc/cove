@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net"
 	"os"
+	"syscall"
 	"testing"
 )
 
@@ -16,8 +18,9 @@ func TestIsClosedFileError(t *testing.T) {
 	}{
 		{name: "nil", err: nil, want: false},
 		{name: "os.ErrClosed", err: os.ErrClosed, want: true},
-		{name: "wrapped closed", err: errors.New("read: file already closed"), want: true},
-		{name: "bad fd", err: errors.New("bad file descriptor"), want: true},
+		{name: "wrapped closed", err: &os.PathError{Op: "read", Path: "fd", Err: os.ErrClosed}, want: true},
+		{name: "net closed", err: net.ErrClosed, want: true},
+		{name: "bad fd", err: &os.PathError{Op: "read", Path: "fd", Err: syscall.EBADF}, want: true},
 		{name: "unrelated", err: errors.New("connection refused"), want: false},
 	}
 	for _, tt := range tests {

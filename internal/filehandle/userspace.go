@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/tmc/apple/x/vzkit/exp/networkfd"
@@ -163,9 +165,8 @@ func isClosedFileError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, os.ErrClosed) {
+	if errors.Is(err, os.ErrClosed) || errors.Is(err, net.ErrClosed) || errors.Is(err, syscall.EBADF) {
 		return true
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "file already closed") || strings.Contains(msg, "bad file descriptor")
+	return false
 }

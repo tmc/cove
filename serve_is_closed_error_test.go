@@ -2,6 +2,9 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"net"
+	"os"
 	"testing"
 )
 
@@ -13,7 +16,9 @@ func TestIsClosedError(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"unrelated", errors.New("connection refused"), false},
-		{"closed", errors.New("write: use of closed network connection"), true},
+		{"net closed", net.ErrClosed, true},
+		{"wrapped net closed", fmt.Errorf("write: %w", net.ErrClosed), true},
+		{"os closed", &os.PathError{Op: "read", Path: "listener", Err: os.ErrClosed}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

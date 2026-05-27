@@ -53,6 +53,49 @@ func TestCtlAgentExecDaemonFlagForcesDaemon(t *testing.T) {
 	}
 }
 
+func TestCtlExecStreamAliasUsesStreamingTransport(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantType string
+		wantArgs []string
+	}{
+		{
+			name:     "auto route",
+			args:     []string{"exec", "--stream", "tail", "-f", "/var/log/system.log"},
+			wantType: "agent-exec-stream-auto",
+			wantArgs: []string{"tail", "-f", "/var/log/system.log"},
+		},
+		{
+			name:     "daemon",
+			args:     []string{"exec", "--stream", "--daemon", "whoami"},
+			wantType: "agent-exec-stream",
+			wantArgs: []string{"whoami"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			vmDir := shortSharedFolderVMDir(t)
+			stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{
+				{
+					wantType: tc.wantType,
+					wantArgs: tc.wantArgs,
+					resp: &controlpb.ControlResponse{
+						Success: true,
+						Data:    `{"done":true}`,
+					},
+				},
+			})
+			defer stop()
+
+			args := append([]string{"-socket", GetControlSocketPathForVM(vmDir)}, tc.args...)
+			if err := ctlCommand(args); err != nil {
+				t.Fatalf("ctlCommand() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestCtlAgentExecAutoIsInternal(t *testing.T) {
 	err := ctlCommand([]string{"-socket", "/tmp/missing.sock", "agent-exec-auto", "whoami"})
 	if err == nil {

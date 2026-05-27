@@ -2,8 +2,8 @@
 // forwarding manager.
 //
 // PortForwardManager owns the lifecycle of a set of forwards. The
-// platform-specific host vsock listener is injected via
-// ListenHostVsock so this package stays portable.
+// platform-specific host vsock listener is injected into
+// PortForwardManager so this package stays portable.
 package controlserver
 
 import (
@@ -17,10 +17,8 @@ import (
 	"time"
 )
 
-// ListenHostVsock binds a host-side vsock listener on port. Set by
-// package main during startup. PortForwardManager.StartReverse and
-// StartReverseUDP fail with a clear error if it is nil.
-var ListenHostVsock func(port uint32) (net.Listener, error)
+// HostVsockListener binds a host-side vsock listener on port.
+type HostVsockListener func(port uint32) (net.Listener, error)
 
 // ForwardRelayBasePort and ForwardRelayPortWindow scope the host
 // vsock relay range used by reverse port forwards. Match the values
@@ -59,25 +57,31 @@ func (pf *PortForward) TotalAccepted() int64 {
 
 // PortForwardManager tracks active port forwards.
 type PortForwardManager struct {
-	mu       sync.Mutex
-	ctx      context.Context
-	forwards map[int]*PortForward // keyed by host port
-	reverse  map[int]*ReversePortForward
-	udp      map[int]*UDPForward
-	udpRev   map[int]*ReverseUDPForward
+	mu              sync.Mutex
+	ctx             context.Context
+	listenHostVsock HostVsockListener
+	forwards        map[int]*PortForward // keyed by host port
+	reverse         map[int]*ReversePortForward
+	udp             map[int]*UDPForward
+	udpRev          map[int]*ReverseUDPForward
 }
 
 // NewPortForwardManager creates a new manager.
-func NewPortForwardManager(ctx context.Context) *PortForwardManager {
+func NewPortForwardManager(ctx context.Context, listeners ...HostVsockListener) *PortForwardManager {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	var listenHostVsock HostVsockListener
+	if len(listeners) > 0 {
+		listenHostVsock = listeners[0]
+	}
 	return &PortForwardManager{
-		ctx:      ctx,
-		forwards: make(map[int]*PortForward),
-		reverse:  make(map[int]*ReversePortForward),
-		udp:      make(map[int]*UDPForward),
-		udpRev:   make(map[int]*ReverseUDPForward),
+		ctx:             ctx,
+		listenHostVsock: listenHostVsock,
+		forwards:        make(map[int]*PortForward),
+		reverse:         make(map[int]*ReversePortForward),
+		udp:             make(map[int]*UDPForward),
+		udpRev:          make(map[int]*ReverseUDPForward),
 	}
 }
 
@@ -149,11 +153,11 @@ func (m *PortForwardManager) StartReverse(hostPort int, guestPort int) error {
 	if _, exists := m.reverse[guestPort]; exists {
 		return fmt.Errorf("guest port %d already reverse-forwarded", guestPort)
 	}
-	if ListenHostVsock == nil {
+	if m.listenHostVsock == nil {
 		return fmt.Errorf("host vsock listener not configured")
 	}
 	relayPort := uint32(ForwardRelayBasePort + guestPort%ForwardRelayPortWindow)
-	ln, err := ListenHostVsock(relayPort)
+	ln, err := m.listenHostVsock(relayPort)
 	if err != nil {
 		return fmt.Errorf("listen vsock:%d: %w", relayPort, err)
 	}
@@ -178,11 +182,11 @@ func (m *PortForwardManager) StartReverseUDP(hostPort int, guestPort int) error 
 	if _, exists := m.udpRev[guestPort]; exists {
 		return fmt.Errorf("guest udp port %d already reverse-forwarded", guestPort)
 	}
-	if ListenHostVsock == nil {
+	if m.listenHostVsock == nil {
 		return fmt.Errorf("host vsock listener not configured")
 	}
 	relayPort := relayPortFor(guestPort)
-	ln, err := ListenHostVsock(relayPort)
+	ln, err := m.listenHostVsock(relayPort)
 	if err != nil {
 		return fmt.Errorf("listen vsock:%d: %w", relayPort, err)
 	}

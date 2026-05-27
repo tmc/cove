@@ -3,6 +3,7 @@ package coved
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -85,6 +86,49 @@ func TestWebhookSubscriberCountsDeliveredAndFailed(t *testing.T) {
 	if bad.Failed() != 1 {
 		t.Fatalf("Failed = %d, want 1", bad.Failed())
 	}
+}
+
+func TestWebhookSubscriberRetryDelayHonorsContext(t *testing.T) {
+	calls := make(chan struct{}, 1)
+	w := &WebhookSubscriber{
+		URL: "http://webhook.test",
+		Client: &http.Client{Transport: webhookErrorRoundTripper{
+			calls: calls,
+		}},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		w.deliver(ctx, Event{EventType: "x"})
+		close(done)
+	}()
+
+	select {
+	case <-calls:
+	case <-time.After(time.Second):
+		t.Fatal("webhook post was not attempted")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("webhook retry delay ignored context cancellation")
+	}
+	if w.Failed() != 0 {
+		t.Fatalf("Failed = %d, want 0 after cancellation", w.Failed())
+	}
+}
+
+type webhookErrorRoundTripper struct {
+	calls chan<- struct{}
+}
+
+func (r webhookErrorRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	select {
+	case r.calls <- struct{}{}:
+	default:
+	}
+	return nil, errors.New("temporary webhook failure")
 }
 
 func waitSubscribers(t *testing.T, bus *EventBus) {

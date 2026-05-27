@@ -64,13 +64,14 @@ func printCtlUsage(w io.Writer, fs *flag.FlagSet) {
 Commands:
   ping                  Test connection
   status                Get VM state and capabilities
+  server-info           Show the cove process that owns this VM socket
   capabilities          Get machine-readable control protocol capabilities
   screenshot            Capture VM screen (base64 JPEG)
   screenshot -o file    Save screenshot to file
   pause                 Pause VM
   resume                Resume paused VM
   stop                  Force stop VM
-  request-stop          Send ACPI power button (guest may ignore it)
+  request-stop [--wait 30s]  Send ACPI power button; optionally wait for stop
   reboot-to-recovery    Stop VM and start macOS Recovery
   network-info          Get VM network info (MAC address, guest IP, mode)
   gui status            Report whether the VM is currently headed or headless
@@ -84,7 +85,7 @@ Commands:
   debug-stub status     Report debug stub status
   disk list             List runtime storage devices
   disk swap <n> <path[:ro|rw]>  Swap a live disk-image backing
-  disk resize <n> <size>  Resize live disk backing; macOS disk 0 expands APFS
+  disk resize <n> <size>  Resize live disk backing; macOS disk 0 expands APFS through the guest agent
   usb list              List runtime USB controllers and devices
   usb attach-storage <path[:ro|rw]> [controller]  Attach USB mass storage
   usb attach-host-service <id> [controller]       Attach host USB by service ID
@@ -127,8 +128,9 @@ Guest agent (gRPC over vsock):
   agent-connect         Connect to guest agent
   agent-ping            Ping guest agent
   agent-info            Get guest system info
-  exec <cmd> [args...]        Run command in guest (auto-routed by path)
+  exec [--stream] <cmd> [args...]  Run command in guest (auto-routed by path)
   exec --daemon <cmd>         Run command via root daemon instead
+  exec --stream --daemon <cmd> Stream via root daemon instead
   agent-exec <cmd> [args...]  Legacy alias for exec
   agent-exec-stream <cmd> [args...]  Stream command output (auto-routed by path)
   agent-exec-stream --daemon <cmd>   Stream via root daemon instead
@@ -136,7 +138,7 @@ Guest agent (gRPC over vsock):
   agent-cp -from-guest <guest> <host>  Copy file guest→host
   agent-read <path>     Read file from guest (base64)
   agent-write <path> <data>   Write data to file in guest
-  agent-shutdown [force]      Graceful guest shutdown
+  agent-shutdown [force] [--wait 30s]  Graceful guest shutdown; optionally wait for stop
   agent-reboot                Reboot guest
   agent-sshd <on|off|start|stop|enable|status>  Manage SSH remote login
   agent-mount-volumes         Mount tagged VirtioFS volumes in guest
@@ -161,13 +163,14 @@ Options:
 Examples:
   cove ctl ping
   cove ctl status
+  cove ctl server-info
   cove ctl gui status
   cove ctl gui open
   cove ctl vnc status
   cove ctl debug-stub status
   cove ctl disk list
   cove ctl disk swap 0 /tmp/other.img:ro
-  cove ctl disk resize 0 96G      # macOS disk 0 also grows the APFS container
+  cove ctl disk resize 0 96G      # running macOS disk 0 also grows the APFS container
   cove ctl usb list
   cove ctl usb attach-storage /tmp/installer.iso:ro
   cove ctl screenshot -o screen.jpg
@@ -179,7 +182,9 @@ Examples:
   cove ctl click-menu Utilities Terminal
   cove ctl step
   cove ctl -wait 60s agent-ping
+  cove ctl agent-shutdown --wait 30s
   cove ctl exec ls /tmp
+  cove ctl exec --stream tail -f /var/log/system.log
   cove ctl exec --daemon whoami
   cove ctl -vm smoke ping
   cove ctl ready --require xcode-cli,go,homebrew
@@ -193,8 +198,9 @@ Examples:
 // follow it are passed through verbatim to the subcommand's payload — for
 // example "agent-exec -- ls --color" forwards "ls" "--color" to the guest
 // instead of stealing --color or treating "--" itself as the command name.
-func extractCtlSubcommandFlags(subArgs []string, outputFile *string) ([]string, bool) {
+func extractCtlSubcommandFlags(subArgs []string, outputFile *string) ([]string, bool, bool) {
 	useDaemon := false
+	stream := false
 	out := subArgs[:0]
 	stop := false
 	for i := 0; i < len(subArgs); i++ {
@@ -210,11 +216,62 @@ func extractCtlSubcommandFlags(subArgs []string, outputFile *string) ([]string, 
 			i++
 		case subArgs[i] == "--daemon" || subArgs[i] == "-daemon":
 			useDaemon = true
+		case subArgs[i] == "--stream" || subArgs[i] == "-stream":
+			stream = true
 		default:
 			out = append(out, subArgs[i])
 		}
 	}
-	return out, useDaemon
+	return out, useDaemon, stream
+}
+
+const ctlShutdownDefaultWait = 30 * time.Second
+
+var ctlShutdownPollInterval = 500 * time.Millisecond
+
+func parseCtlShutdownWaitArgs(args []string, allowForce bool) (force bool, wait time.Duration, err error) {
+	sawWait := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "force":
+			if !allowForce {
+				return false, 0, fmt.Errorf("unexpected argument %q", arg)
+			}
+			force = true
+		case arg == "--wait" || arg == "-wait":
+			sawWait = true
+			wait = ctlShutdownDefaultWait
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && args[i+1] != "force" {
+				parsed, parseErr := time.ParseDuration(args[i+1])
+				if parseErr != nil {
+					return false, 0, fmt.Errorf("invalid --wait duration %q: %w", args[i+1], parseErr)
+				}
+				wait = parsed
+				i++
+			}
+		case strings.HasPrefix(arg, "--wait="):
+			sawWait = true
+			parsed, parseErr := time.ParseDuration(strings.TrimPrefix(arg, "--wait="))
+			if parseErr != nil {
+				return false, 0, fmt.Errorf("invalid --wait duration %q: %w", strings.TrimPrefix(arg, "--wait="), parseErr)
+			}
+			wait = parsed
+		case strings.HasPrefix(arg, "-wait="):
+			sawWait = true
+			parsed, parseErr := time.ParseDuration(strings.TrimPrefix(arg, "-wait="))
+			if parseErr != nil {
+				return false, 0, fmt.Errorf("invalid -wait duration %q: %w", strings.TrimPrefix(arg, "-wait="), parseErr)
+			}
+			wait = parsed
+		default:
+			return false, 0, fmt.Errorf("unexpected argument %q", arg)
+		}
+		if sawWait && wait <= 0 {
+			return false, 0, fmt.Errorf("wait duration must be positive")
+		}
+	}
+	return force, wait, nil
 }
 
 func parseCtlScreenshotArgs(subArgs []string, outputFile *string) (string, error) {
@@ -323,7 +380,16 @@ func ctlCommand(args []string) error {
 		return ctlReady(sock, subArgs)
 	}
 
-	subArgs, useDaemon := extractCtlSubcommandFlags(subArgs, outputFile)
+	subArgs, useDaemon, stream := extractCtlSubcommandFlags(subArgs, outputFile)
+	if stream {
+		switch cmdType {
+		case "agent-exec":
+			cmdType = "agent-exec-stream"
+		case "agent-exec-stream":
+		default:
+			return fmt.Errorf("%s does not support --stream", cmdType)
+		}
+	}
 
 	// Determine socket path
 	sock := *socketPath
@@ -454,10 +520,18 @@ func ctlCommand(args []string) error {
 	// Build proto request
 	req := &controlpb.ControlRequest{Type: cmdType}
 	req.AuthToken = resolveControlTokenForSocket(sock)
+	var shutdownWait time.Duration
 
 	switch cmdType {
-	case "ping", "status", "capabilities", "pause", "resume", "stop", "request-stop", "reboot-to-recovery", "boot-recovery", "shared-folders-apply", "shared-folders-runtime-status":
+	case "ping", "status", "server-info", "capabilities", "pause", "resume", "stop", "reboot-to-recovery", "boot-recovery", "shared-folders-apply", "shared-folders-runtime-status":
 		// No payload needed
+
+	case "request-stop":
+		_, wait, err := parseCtlShutdownWaitArgs(subArgs, false)
+		if err != nil {
+			return err
+		}
+		shutdownWait = wait
 
 	case "memory":
 		if len(subArgs) < 1 {
@@ -667,9 +741,14 @@ func ctlCommand(args []string) error {
 		}
 
 	case "agent-shutdown":
+		force, wait, err := parseCtlShutdownWaitArgs(subArgs, true)
+		if err != nil {
+			return err
+		}
+		shutdownWait = wait
 		req.Command = &controlpb.ControlRequest_AgentShutdown{
 			AgentShutdown: &controlpb.AgentShutdownCommand{
-				Force: len(subArgs) > 0 && subArgs[0] == "force",
+				Force: force,
 			},
 		}
 
@@ -814,7 +893,91 @@ func ctlCommand(args []string) error {
 		fmt.Printf("warning: record guest agent capability: %v\n", err)
 	}
 
-	return ctlPrintResponse(resp, cmdType, *raw, *outputFile)
+	if !*raw {
+		resp = ctlEnrichResponseForPrint(sock, resp, cmdType)
+	}
+	if err := ctlPrintResponse(resp, cmdType, *raw, *outputFile); err != nil {
+		return err
+	}
+	if shutdownWait > 0 {
+		return ctlWaitForVMStopped(sock, shutdownWait)
+	}
+	return nil
+}
+
+func ctlEnrichResponseForPrint(sock string, resp *controlpb.ControlResponse, cmdType string) *controlpb.ControlResponse {
+	if resp == nil || !resp.Success || resp.Data == "" {
+		return resp
+	}
+	switch cmdType {
+	case "server-info":
+		return ctlEnrichServerInfoResponse(resp)
+	case "status":
+		return ctlEnrichStatusResponse(sock, resp)
+	default:
+		return resp
+	}
+}
+
+func ctlEnrichServerInfoResponse(resp *controlpb.ControlResponse) *controlpb.ControlResponse {
+	var info RuntimeServerInfo
+	if err := json.Unmarshal([]byte(resp.Data), &info); err != nil {
+		return resp
+	}
+	if !enrichRuntimeServerInfo(&info) {
+		return resp
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		return resp
+	}
+	out := proto.Clone(resp).(*controlpb.ControlResponse)
+	out.Data = string(data)
+	return out
+}
+
+func ctlEnrichStatusResponse(sock string, resp *controlpb.ControlResponse) *controlpb.ControlResponse {
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(resp.Data), &payload); err != nil {
+		return resp
+	}
+	if _, ok := payload["ownerPID"]; ok {
+		if _, ok := payload["ownerCommand"]; ok {
+			return resp
+		}
+	}
+	info, ok := serverInfoForVMProcess(sock)
+	if !ok {
+		return resp
+	}
+	if info.PID != 0 {
+		payload["ownerPID"] = info.PID
+	}
+	if info.PPID != 0 {
+		payload["ownerPPID"] = info.PPID
+	}
+	if info.SessionID != 0 {
+		payload["ownerSessionID"] = info.SessionID
+	}
+	if info.Command != "" {
+		payload["ownerCommand"] = info.Command
+	}
+	if info.ParentCommand != "" {
+		payload["ownerParentCommand"] = info.ParentCommand
+	}
+	if info.StartSource != "" {
+		payload["startSource"] = info.StartSource
+	}
+	if info.StartedAt != "" {
+		payload["ownerStartedAt"] = info.StartedAt
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return resp
+	}
+	out := proto.Clone(resp).(*controlpb.ControlResponse)
+	out.Data = string(data)
+	return out
 }
 
 func controlAliasArgs(kind string, args []string) []string {
@@ -2414,6 +2577,43 @@ func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {
 	}
 	rawState, _ := parsed["state"].(string)
 	return vmstate.Canonical(rawState), nil
+}
+
+func ctlWaitForVMStopped(sock string, wait time.Duration) error {
+	if wait <= 0 {
+		return nil
+	}
+	start := time.Now()
+	deadline := start.Add(wait)
+	timeout := ctlShutdownPollInterval
+	if timeout < 250*time.Millisecond {
+		timeout = 250 * time.Millisecond
+	}
+	lastState := "unknown"
+	for {
+		state, err := ctlVMStatusState(sock, timeout)
+		if err != nil {
+			fmt.Printf("VM stopped (control socket unavailable after %s)\n", time.Since(start).Round(time.Millisecond))
+			return nil
+		}
+		if state != "" {
+			lastState = state
+		}
+		if state == vmstate.Canonical("stopped") {
+			fmt.Printf("VM state: %s\n", state)
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("shutdown requested but VM still %s after %s; use `cove ctl -socket %s stop` to force stop", lastState, wait, sock)
+		}
+		sleep := ctlShutdownPollInterval
+		if remaining := time.Until(deadline); remaining < sleep {
+			sleep = remaining
+		}
+		if sleep > 0 {
+			time.Sleep(sleep)
+		}
+	}
 }
 
 // ctlConnectError wraps a control socket dial error with actionable guidance.

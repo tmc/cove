@@ -13,6 +13,7 @@ func TestExtractCtlSubcommandFlags(t *testing.T) {
 		wantArgs   []string
 		wantOutput string
 		wantDaemon bool
+		wantStream bool
 		seedOutput string
 	}{
 		{
@@ -48,6 +49,17 @@ func TestExtractCtlSubcommandFlags(t *testing.T) {
 			wantArgs: []string{"agent-exec", "myprog", "--daemon"},
 		},
 		{
+			name:       "ctl --stream before payload",
+			in:         []string{"exec", "--stream", "tail", "-f", "/var/log/system.log"},
+			wantArgs:   []string{"exec", "tail", "-f", "/var/log/system.log"},
+			wantStream: true,
+		},
+		{
+			name:     "payload --stream after dash dash is preserved",
+			in:       []string{"exec", "--", "myprog", "--stream"},
+			wantArgs: []string{"exec", "myprog", "--stream"},
+		},
+		{
 			name:       "ctl -o before subcommand payload",
 			in:         []string{"screenshot", "-o", "/tmp/x.png"},
 			wantArgs:   []string{"screenshot"},
@@ -68,12 +80,15 @@ func TestExtractCtlSubcommandFlags(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			out := tc.seedOutput
-			got, daemon := extractCtlSubcommandFlags(append([]string(nil), tc.in...), &out)
+			got, daemon, stream := extractCtlSubcommandFlags(append([]string(nil), tc.in...), &out)
 			if !reflect.DeepEqual(got, tc.wantArgs) {
 				t.Errorf("args = %#v, want %#v", got, tc.wantArgs)
 			}
 			if daemon != tc.wantDaemon {
 				t.Errorf("daemon = %v, want %v", daemon, tc.wantDaemon)
+			}
+			if stream != tc.wantStream {
+				t.Errorf("stream = %v, want %v", stream, tc.wantStream)
 			}
 			if out != tc.wantOutput {
 				t.Errorf("output = %q, want %q", out, tc.wantOutput)

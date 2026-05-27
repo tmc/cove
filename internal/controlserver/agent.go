@@ -28,8 +28,8 @@ import (
 // healthMu protects the proactive health-monitor record. Splitting
 // them keeps RPC fast paths from blocking on health writes.
 //
-// Construct with NewAgentBridge; the zero value is also usable for
-// tests that don't call host methods.
+// Construct with NewAgentBridge. The zero value is usable for tests
+// that don't call host methods.
 type AgentBridge struct {
 	host AgentHost
 
@@ -41,12 +41,9 @@ type AgentBridge struct {
 	health   AgentHealthState
 }
 
-// SetHost wires the host onto a zero-value bridge held by value.
-// ControlServer constructors call this once during init so existing
-// &ControlServer{} test patterns keep compiling without explicit
-// bridge construction.
-func (b *AgentBridge) SetHost(host AgentHost) {
-	b.host = host
+// NewAgentBridge returns an agent bridge wired to host.
+func NewAgentBridge(host AgentHost) AgentBridge {
+	return AgentBridge{host: host}
 }
 
 // LastPing returns the time of the last successful agent health ping,
