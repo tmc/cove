@@ -16,35 +16,24 @@ import (
 	"github.com/tmc/cove/internal/lifecycle"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmpolicy"
-)
-
-var (
-	setupDisposableCloneHook             = SetupDisposableClone
-	cleanupDisposableCloneHook           = CleanupDisposableClone
-	setupEphemeralForkHook               = SetupEphemeralFork
-	cleanupEphemeralForkHook             = CleanupEphemeralFork
-	runMacOSVMHook                       = runMacOSVM
-	runLinuxVMHook                       = runLinuxVM
-	runWindowsVMHook                     = runWindowsVM
-	startPreparedFileHandleNetworkHook   = startPreparedFileHandleNetwork
-	stopPreparedFileHandleNetworkHook    = stopPreparedFileHandleNetwork
-	configureRequestedProxyAfterBootHook = configureRequestedProxyAfterBoot
-	teardownRequestedProxyHook           = teardownRequestedProxy
-	acquireRunLockHook                   = AcquireRunLock
-	consumeRunBudgetHook                 = lifecycle.ConsumeRunBudget
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 type RunConfig struct {
-	VM                       vmSelection
-	Stdout                   io.Writer
-	Stderr                   io.Writer
-	Linux                    bool
-	Windows                  bool
-	Disposable               bool
-	RollbackSnapshot         string
-	DisposableSourceDiskPath string
-	SystemDiskAttachment     systemDiskAttachmentMode
-	SystemDiskPathOverride   string
+	VM                         vmSelection
+	Stdout                     io.Writer
+	Stderr                     io.Writer
+	Linux                      bool
+	Windows                    bool
+	Disposable                 bool
+	RollbackSnapshot           string
+	SetupRollbackSnapshotClone func(RollbackSnapshotCloneOptions) (disposable.Clone, error)
+	Hooks                      RunHooks
+	VMRun                      vmrun.RunConfig
+	VMHost                     vmrun.HostConfig
+	DisposableSourceDiskPath   string
+	SystemDiskAttachment       systemDiskAttachmentMode
+	SystemDiskPathOverride     string
 	// EphemeralForkParent triggers Phase 3 RAM-overlay ephemeral mode:
 	// boot a short-lived sibling that shares the parent's disk.img
 	// read-only and discards writes on shutdown. Mutually exclusive
@@ -57,22 +46,108 @@ type RunConfig struct {
 	Ephemeral bool
 }
 
+type RunHooks struct {
+	SetupDisposableClone             func(DisposableSetupOptions) (disposable.Clone, error)
+	CleanupDisposableClone           func(string) error
+	SetupEphemeralFork               func(EphemeralForkOptions) (EphemeralFork, error)
+	CleanupEphemeralFork             func(string) error
+	RunMacOSVM                       func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error
+	RunLinuxVM                       func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error
+	RunWindowsVM                     func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error
+	StartPreparedFileHandleNetwork   func()
+	StopPreparedFileHandleNetwork    func()
+	ConfigureRequestedProxyAfterBoot func(*ControlServer)
+	TeardownRequestedProxy           func(*ControlServer)
+	AcquireRunLock                   func(string) (*RunLock, error)
+	ConsumeRunBudget                 func(string, int) (int, error)
+}
+
+func defaultRunHooks() RunHooks {
+	return RunHooks{
+		SetupDisposableClone:             SetupDisposableClone,
+		CleanupDisposableClone:           CleanupDisposableClone,
+		SetupEphemeralFork:               SetupEphemeralFork,
+		CleanupEphemeralFork:             CleanupEphemeralFork,
+		RunMacOSVM:                       runMacOSVMWithConfig,
+		RunLinuxVM:                       runLinuxVMWithConfig,
+		RunWindowsVM:                     runWindowsVMWithConfig,
+		StartPreparedFileHandleNetwork:   startPreparedFileHandleNetwork,
+		StopPreparedFileHandleNetwork:    stopPreparedFileHandleNetwork,
+		ConfigureRequestedProxyAfterBoot: configureRequestedProxyAfterBoot,
+		TeardownRequestedProxy:           teardownRequestedProxy,
+		AcquireRunLock:                   AcquireRunLock,
+		ConsumeRunBudget:                 lifecycle.ConsumeRunBudget,
+	}
+}
+
+func (h RunHooks) withDefaults() RunHooks {
+	defaults := defaultRunHooks()
+	if h.SetupDisposableClone == nil {
+		h.SetupDisposableClone = defaults.SetupDisposableClone
+	}
+	if h.CleanupDisposableClone == nil {
+		h.CleanupDisposableClone = defaults.CleanupDisposableClone
+	}
+	if h.SetupEphemeralFork == nil {
+		h.SetupEphemeralFork = defaults.SetupEphemeralFork
+	}
+	if h.CleanupEphemeralFork == nil {
+		h.CleanupEphemeralFork = defaults.CleanupEphemeralFork
+	}
+	if h.RunMacOSVM == nil {
+		h.RunMacOSVM = defaults.RunMacOSVM
+	}
+	if h.RunLinuxVM == nil {
+		h.RunLinuxVM = defaults.RunLinuxVM
+	}
+	if h.RunWindowsVM == nil {
+		h.RunWindowsVM = defaults.RunWindowsVM
+	}
+	if h.StartPreparedFileHandleNetwork == nil {
+		h.StartPreparedFileHandleNetwork = defaults.StartPreparedFileHandleNetwork
+	}
+	if h.StopPreparedFileHandleNetwork == nil {
+		h.StopPreparedFileHandleNetwork = defaults.StopPreparedFileHandleNetwork
+	}
+	if h.ConfigureRequestedProxyAfterBoot == nil {
+		h.ConfigureRequestedProxyAfterBoot = defaults.ConfigureRequestedProxyAfterBoot
+	}
+	if h.TeardownRequestedProxy == nil {
+		h.TeardownRequestedProxy = defaults.TeardownRequestedProxy
+	}
+	if h.AcquireRunLock == nil {
+		h.AcquireRunLock = defaults.AcquireRunLock
+	}
+	if h.ConsumeRunBudget == nil {
+		h.ConsumeRunBudget = defaults.ConsumeRunBudget
+	}
+	return h
+}
+
 func currentRunConfig() RunConfig {
+	return currentRuntimeOptions().runConfig()
+}
+
+func (opts runtimeOptions) runConfig() RunConfig {
 	return RunConfig{
-		VM:                       currentVMSelection(),
-		Stdout:                   os.Stdout,
-		Stderr:                   os.Stderr,
-		Linux:                    linuxMode,
-		Windows:                  windowsMode,
-		Disposable:               disposableMode,
-		RollbackSnapshot:         rollbackSnapshotName,
-		DisposableSourceDiskPath: disposableSourceDiskPath,
-		SystemDiskAttachment:     runtimeSystemDiskAttachment,
-		SystemDiskPathOverride:   runtimeSystemDiskPathOverride,
-		EphemeralForkParent:      ephemeralForkParent,
-		EphemeralForkName:        ephemeralForkName,
-		EphemeralForkKeep:        ephemeralForkKeep,
-		Ephemeral:                runEphemeral,
+		VM:                         currentVMSelection(),
+		Stdout:                     os.Stdout,
+		Stderr:                     os.Stderr,
+		Linux:                      opts.Linux,
+		Windows:                    opts.Windows,
+		Disposable:                 opts.Disposable,
+		RollbackSnapshot:           opts.RollbackSnapshot,
+		SetupRollbackSnapshotClone: SetupRollbackSnapshotClone,
+		Hooks:                      defaultRunHooks(),
+		VMRun:                      opts.vmrunRunConfig(opts.guestOS()),
+		VMHost:                     opts.vmrunHostConfig(),
+		DisposableSourceDiskPath:   opts.DisposableSourceDiskPath,
+		SystemDiskAttachment:       opts.SystemDiskAttachment,
+		SystemDiskPathOverride:     opts.SystemDiskPathOverride,
+		EphemeralForkParent:        opts.EphemeralForkParent,
+		EphemeralForkName:          opts.EphemeralForkName,
+		EphemeralForkKeep:          opts.EphemeralForkKeep,
+		Ephemeral:                  opts.Ephemeral,
 	}
 }
 
@@ -99,6 +174,8 @@ func runVMWithConfig(cfg RunConfig) error {
 	if cfg.Stderr == nil {
 		cfg.Stderr = os.Stderr
 	}
+	hooks := cfg.Hooks.withDefaults()
+	rc, hc := cfg.vmrunConfigs()
 	originalVMName := cfg.VM.Name
 	originalVMDir := cfg.VM.Directory
 
@@ -130,9 +207,9 @@ func runVMWithConfig(cfg RunConfig) error {
 		// the ref is a VM name.
 		var runErr error
 		if isImageForkFromRef(cfg.EphemeralForkParent) {
-			runErr = runImageForkFromWithConfig(cfg, originalVMName, originalVMDir)
+			runErr = runImageForkFromWithConfig(cfg, originalVMName, originalVMDir, bundle)
 		} else {
-			runErr = runEphemeralForkWithConfig(cfg, originalVMName, originalVMDir)
+			runErr = runEphemeralForkWithConfig(cfg, originalVMName, originalVMDir, bundle)
 		}
 		finishRunBundle(bundle, runErr)
 		return runErr
@@ -145,9 +222,9 @@ func runVMWithConfig(cfg RunConfig) error {
 	writeActiveNetworkPolicyAudit(metricsRun)
 	defer finishStandaloneMetricsRun(metricsRun)
 
-	if err := enforceRunBudget(originalVMName, originalVMDir, metricsRun); err != nil {
+	if err := enforceRunBudget(originalVMName, originalVMDir, metricsRun, hooks.ConsumeRunBudget); err != nil {
 		if metricsRun != nil {
-			emitMetricEvent("run_complete", metricsRun.started, err.Error(), nil)
+			metricsRun.EmitMetricEvent("run_complete", metricsRun.started, err.Error(), nil)
 		}
 		return err
 	}
@@ -164,12 +241,16 @@ func runVMWithConfig(cfg RunConfig) error {
 			err     error
 		)
 		if cfg.RollbackSnapshot != "" {
-			created, err = setupRollbackSnapshotCloneHook(RollbackSnapshotCloneOptions{
+			setupRollbackSnapshotClone := cfg.SetupRollbackSnapshotClone
+			if setupRollbackSnapshotClone == nil {
+				setupRollbackSnapshotClone = SetupRollbackSnapshotClone
+			}
+			created, err = setupRollbackSnapshotClone(RollbackSnapshotCloneOptions{
 				Source:   source,
 				Snapshot: cfg.RollbackSnapshot,
 			})
 		} else {
-			created, err = setupDisposableCloneHook(DisposableSetupOptions{
+			created, err = hooks.SetupDisposableClone(DisposableSetupOptions{
 				Source:         source,
 				Linked:         true,
 				CopyMachineID:  false,
@@ -205,7 +286,7 @@ func runVMWithConfig(cfg RunConfig) error {
 		}()
 	}
 
-	lock, err := acquireRunLockHook(vmDir)
+	lock, err := hooks.AcquireRunLock(vmDir)
 	if err != nil {
 		return fmt.Errorf("cove run: %w", err)
 	}
@@ -218,23 +299,23 @@ func runVMWithConfig(cfg RunConfig) error {
 
 	var runErr error
 	if cfg.Windows {
-		runErr = runWindowsVMHook()
+		runErr = hooks.RunWindowsVM(rc, hc, nil, metricsRun)
 	} else if cfg.Linux {
-		runErr = runLinuxVMHook()
+		runErr = hooks.RunLinuxVM(rc, hc, nil, metricsRun)
 	} else {
-		runErr = runMacOSVMHook()
+		runErr = hooks.RunMacOSVM(rc, hc, nil, metricsRun)
 	}
 	exit := "ok"
 	if runErr != nil {
 		exit = runErr.Error()
 	}
 	if metricsRun != nil {
-		emitResourceSampleMetric(metricsRun, "end")
-		emitMetricEvent("run_complete", metricsRun.started, exit, nil)
+		metricsRun.EmitResourceSampleMetric("end")
+		metricsRun.EmitMetricEvent("run_complete", metricsRun.started, exit, nil)
 	}
 
 	if temporaryClone {
-		if cleanupErr := cleanupDisposableCloneHook(clone.Path); cleanupErr != nil {
+		if cleanupErr := hooks.CleanupDisposableClone(clone.Path); cleanupErr != nil {
 			fmt.Fprintf(cfg.Stderr, "warning: cleanup disposable clone: %v\n", cleanupErr)
 		} else if cfg.RollbackSnapshot != "" {
 			fmt.Fprintf(cfg.Stdout, "Rollback clone removed: %s\n", clone.Name)
@@ -246,7 +327,54 @@ func runVMWithConfig(cfg RunConfig) error {
 	return runErr
 }
 
-func enforceRunBudget(vmName, vmDir string, metricsRun *standaloneMetricsRun) error {
+func currentGuestOS() vmrun.GuestOS {
+	return currentRuntimeOptions().guestOS()
+}
+
+func (opts runtimeOptions) guestOS() vmrun.GuestOS {
+	switch {
+	case opts.Windows:
+		return vmrun.GuestWindows
+	case opts.Linux:
+		return vmrun.GuestLinux
+	default:
+		return vmrun.GuestMacOS
+	}
+}
+
+func (cfg RunConfig) guestOS() vmrun.GuestOS {
+	switch {
+	case cfg.Windows:
+		return vmrun.GuestWindows
+	case cfg.Linux:
+		return vmrun.GuestLinux
+	default:
+		return vmrun.GuestMacOS
+	}
+}
+
+func (cfg RunConfig) vmrunConfigs() (vmrun.RunConfig, vmrun.HostConfig) {
+	rc := cfg.VMRun
+	if rc.OS == vmrun.GuestUnknown {
+		rc = vmrunRunConfig(cfg.guestOS())
+	}
+	if rc.OS == vmrun.GuestUnknown {
+		rc.OS = cfg.guestOS()
+	}
+	hc := cfg.VMHost
+	if hc.VMDir == "" && hc.VMName == "" {
+		hc = vmrunHostConfig()
+	}
+	if cfg.VM.Name != "" {
+		hc.VMName = cfg.VM.Name
+	}
+	if cfg.VM.Directory != "" {
+		hc.VMDir = cfg.VM.Directory
+	}
+	return rc, hc
+}
+
+func enforceRunBudget(vmName, vmDir string, metricsRun *standaloneMetricsRun, consumeRunBudget func(string, int) (int, error)) error {
 	policy, err := vmpolicy.Load(vmDir)
 	if err != nil {
 		return err
@@ -254,13 +382,16 @@ func enforceRunBudget(vmName, vmDir string, metricsRun *standaloneMetricsRun) er
 	if policy.RunBudget <= 0 {
 		return nil
 	}
-	runsUsed, err := consumeRunBudgetHook(vmDir, policy.RunBudget)
+	if consumeRunBudget == nil {
+		consumeRunBudget = lifecycle.ConsumeRunBudget
+	}
+	runsUsed, err := consumeRunBudget(vmDir, policy.RunBudget)
 	if errors.Is(err, lifecycle.ErrBudgetExceeded) {
 		started := time.Time{}
 		if metricsRun != nil {
 			started = metricsRun.started
 		}
-		emitMetricEvent("lifecycle.budget.exceeded", started, "exceeded", map[string]any{
+		metricsRun.EmitMetricEvent("lifecycle.budget.exceeded", started, "exceeded", map[string]any{
 			"vm_name":      vmName,
 			"budget_count": policy.RunBudget,
 			"runs_used":    runsUsed,
@@ -295,14 +426,24 @@ func startRuntimeFeatureServices(runtimeFeatures *runtimeFeatureState, vm vz.VZV
 }
 
 func startControlRuntimeInfrastructure(controlServer *ControlServer) {
-	startPreparedFileHandleNetworkHook()
-	configureRequestedProxyAfterBootHook(controlServer)
+	startControlRuntimeInfrastructureWithHooks(controlServer, defaultRunHooks())
+}
+
+func startControlRuntimeInfrastructureWithHooks(controlServer *ControlServer, hooks RunHooks) {
+	hooks = hooks.withDefaults()
+	hooks.StartPreparedFileHandleNetwork()
+	hooks.ConfigureRequestedProxyAfterBoot(controlServer)
 	startVMLifecyclePolicyMonitor(controlServer)
 }
 
 func stopControlRuntimeInfrastructure(controlServer *ControlServer) {
-	teardownRequestedProxyHook(controlServer)
-	stopPreparedFileHandleNetworkHook()
+	stopControlRuntimeInfrastructureWithHooks(controlServer, defaultRunHooks())
+}
+
+func stopControlRuntimeInfrastructureWithHooks(controlServer *ControlServer, hooks RunHooks) {
+	hooks = hooks.withDefaults()
+	hooks.TeardownRequestedProxy(controlServer)
+	hooks.StopPreparedFileHandleNetwork()
 	if controlServer != nil {
 		controlServer.StopRuntimeFeatureState()
 		controlServer.Stop()
@@ -422,7 +563,7 @@ func (s *ControlServer) checkVMLifecyclePolicy() {
 	}
 
 	vmDir := s.effectiveVMDir()
-	emitMetricEvent(lifecyclePolicyEventType(reason), startedAt, "tripped", map[string]any{
+	s.recordMetric(lifecyclePolicyEventType(reason), startedAt, "tripped", map[string]any{
 		"reason":           reason,
 		"vm_name":          filepathBase(vmDir),
 		"policy_path":      vmpolicy.Path(vmDir),
@@ -440,7 +581,9 @@ func (s *ControlServer) checkVMLifecyclePolicy() {
 // in-memory child that shares the parent's disk.img read-only via
 // VZTemporaryRAMStorageDeviceAttachment. The child's vmDir is
 // auto-removed on exit unless cfg.EphemeralForkKeep is set.
-func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir string) error {
+func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir string, bundle *RunBundle) error {
+	hooks := cfg.Hooks.withDefaults()
+	rc, hc := cfg.vmrunConfigs()
 	parentDir := vmconfig.Path(cfg.EphemeralForkParent)
 	if !vmconfig.Validate(parentDir) {
 		return missingForkFromParentError(cfg.EphemeralForkParent)
@@ -450,7 +593,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	// LOCK_EX, the parent is running and we refuse to attach to its
 	// disk.img. Validation #1 showed VZ takes no file lock at attach
 	// time, so this guard is enforced on our side.
-	parentLock, err := acquireRunLockHook(parentDir)
+	parentLock, err := hooks.AcquireRunLock(parentDir)
 	if err != nil {
 		if errors.Is(err, ErrRunLockHeld) {
 			return fmt.Errorf("cove run -fork-from: parent VM %q is running; ephemeral fork requires parent stopped", cfg.EphemeralForkParent)
@@ -465,7 +608,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	}
 
 	forkStarted := time.Now()
-	fork, err := setupEphemeralForkHook(EphemeralForkOptions{
+	fork, err := hooks.SetupEphemeralFork(EphemeralForkOptions{
 		Parent:           cfg.EphemeralForkParent,
 		Name:             cfg.EphemeralForkName,
 		PreserveIdentity: true,
@@ -477,7 +620,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	fmt.Fprintf(cfg.Stdout, "Ephemeral fork: %s\n", fork.Name)
 	fmt.Fprintf(cfg.Stdout, "Ephemeral path: %s\n", fork.Path)
 	fmt.Fprintf(cfg.Stdout, "Parent disk:    %s (RAM-overlay, read-only)\n", vmPrimaryDiskPath(parentDir))
-	emitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
+	bundle.EmitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
 		"child_name": fork.Name,
 		"child_path": fork.Path,
 	})
@@ -499,11 +642,11 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		vmDir = originalVMDir
 	}()
 
-	lock, err := acquireRunLockHook(vmDir)
+	lock, err := hooks.AcquireRunLock(vmDir)
 	if err != nil {
 		// Lock acquisition failed before booting; remove the dir so
 		// no orphan is left behind (it won't have been used).
-		_ = cleanupEphemeralForkHook(fork.Path)
+		_ = hooks.CleanupEphemeralFork(fork.Path)
 		return fmt.Errorf("cove run -fork-from: %w", err)
 	}
 	defer func() {
@@ -514,18 +657,18 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 
 	var runErr error
 	if cfg.Windows {
-		runErr = runWindowsVMHook()
+		runErr = hooks.RunWindowsVM(rc, hc, bundle, bundle)
 	} else if cfg.Linux {
-		runErr = runLinuxVMHook()
+		runErr = hooks.RunLinuxVM(rc, hc, bundle, bundle)
 	} else {
-		runErr = runMacOSVMHook()
+		runErr = hooks.RunMacOSVM(rc, hc, bundle, bundle)
 	}
 
 	if cfg.EphemeralForkKeep {
 		fmt.Fprintf(cfg.Stdout, "Ephemeral fork retained (-keep): %s\n", fork.Path)
 		return runErr
 	}
-	if cleanupErr := cleanupEphemeralForkHook(fork.Path); cleanupErr != nil {
+	if cleanupErr := hooks.CleanupEphemeralFork(fork.Path); cleanupErr != nil {
 		fmt.Fprintf(cfg.Stderr, "warning: cleanup ephemeral fork: %v\n", cleanupErr)
 	} else {
 		fmt.Fprintf(cfg.Stdout, "Ephemeral fork removed: %s\n", fork.Name)

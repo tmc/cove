@@ -330,29 +330,6 @@ func (w *bundleWriter) Write(p []byte) (int, error) {
 	return (*w.fp).Write(p)
 }
 
-// activeRunBundle is the singleton bundle for the current `cove run`
-// invocation, set during fork-from runs and consulted by the control
-// socket so handler events can be teed without threading a pointer
-// through every helper. nil whenever bundling is disabled.
-var (
-	activeRunBundleMu sync.Mutex
-	activeRunBundle   *RunBundle
-)
-
-func setActiveRunBundle(b *RunBundle) {
-	activeRunBundleMu.Lock()
-	activeRunBundle = b
-	activeRunBundleMu.Unlock()
-}
-
-// ActiveRunBundle returns the bundle for the in-flight run, or nil if
-// bundling is disabled (e.g. plain `cove run <vm>`).
-func ActiveRunBundle() *RunBundle {
-	activeRunBundleMu.Lock()
-	defer activeRunBundleMu.Unlock()
-	return activeRunBundle
-}
-
 // runsDirHook returns the on-disk root for run bundles. Indirected through
 // a var so tests can swap in t.TempDir() without touching $HOME.
 var runsDirHook = vmconfig.RunsDir
@@ -371,7 +348,6 @@ func beginRunBundle(cfg RunConfig) (*RunBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	setActiveRunBundle(b)
 	if verbose {
 		fmt.Printf("run bundle: %s (%s)\n", b.ID(), b.Dir())
 	}
@@ -390,7 +366,6 @@ func beginRunBundle(cfg RunConfig) (*RunBundle, error) {
 // Safe to call with a nil bundle.
 func finishRunBundle(b *RunBundle, runErr error) {
 	if b == nil {
-		setActiveRunBundle(nil)
 		return
 	}
 	exit := "ok"
@@ -404,21 +379,18 @@ func finishRunBundle(b *RunBundle, runErr error) {
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: run bundle exit event: %v\n", err)
 	}
-	emitMetricEvent("run_complete", b.startedAt, exit, nil)
+	b.EmitMetricEvent("run_complete", b.startedAt, exit, nil)
 	if err := b.Finalize(runErr); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: run bundle finalize: %v\n", err)
 	}
-	setActiveRunBundle(nil)
 }
 
-// teeControlEvent appends a one-line event to the active bundle for each
-// control-socket request handled. Outside fork-from runs the active bundle
-// is nil and this is effectively free.
+// TeeControlEvent appends a one-line event to the bundle for each
+// control-socket request handled.
 //
-// resp is intentionally typed by interface so the unit tests in this
-// package can synthesize fake responses without pulling in controlpb.
-func teeControlEvent(reqType string, resp interface{ GetError() string }) {
-	b := ActiveRunBundle()
+// resp is intentionally typed by interface so the unit tests in this package
+// can synthesize fake responses without pulling in controlpb.
+func (b *RunBundle) TeeControlEvent(reqType string, resp interface{ GetError() string }) {
 	if b == nil {
 		return
 	}
@@ -430,7 +402,7 @@ func teeControlEvent(reqType string, resp interface{ GetError() string }) {
 		if errStr := resp.GetError(); errStr != "" {
 			event["error"] = errStr
 		} else if reqType == "agent-ping" {
-			emitAgentReadyMetric()
+			b.MarkAgentReady()
 		}
 	}
 	_ = b.AppendEvent(event)

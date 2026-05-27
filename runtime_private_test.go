@@ -76,7 +76,7 @@ func TestValidatePrivateRuntimeOptions(t *testing.T) {
 			recoveryMode, linuxMode, windowsMode = false, false, false
 			forceDFU, stopInIBootStage1, stopInIBootStage2 = false, false, false
 			tt.setup()
-			checkErr(t, validatePrivateRuntimeOptions(), tt.wantErr)
+			checkErr(t, validatePrivateRuntimeOptionsForOptions(currentRuntimeOptions()), tt.wantErr)
 		})
 	}
 }

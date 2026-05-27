@@ -14,10 +14,8 @@ type stubGetErrorResp struct{ err string }
 func (s stubGetErrorResp) GetError() string { return s.err }
 
 func TestTeeControlEventNoActiveBundleNoOp(t *testing.T) {
-	if ActiveRunBundle() != nil {
-		t.Skip("active run bundle leaked from another test")
-	}
-	teeControlEvent("agent-ping", stubGetErrorResp{})
+	var b *RunBundle
+	b.TeeControlEvent("agent-ping", stubGetErrorResp{})
 }
 
 func TestTeeControlEventAppendsEvent(t *testing.T) {
@@ -27,11 +25,8 @@ func TestTeeControlEventAppendsEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunBundle: %v", err)
 	}
-	setActiveRunBundle(b)
-	t.Cleanup(func() { setActiveRunBundle(nil) })
-
-	teeControlEvent("snapshot-save", stubGetErrorResp{})
-	teeControlEvent("disk-list", stubGetErrorResp{err: "boom"})
+	b.TeeControlEvent("snapshot-save", stubGetErrorResp{})
+	b.TeeControlEvent("disk-list", stubGetErrorResp{err: "boom"})
 
 	data, err := os.ReadFile(filepath.Join(b.Dir(), "events.jsonl"))
 	if err != nil {
@@ -68,10 +63,7 @@ func TestTeeControlEventNilResp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunBundle: %v", err)
 	}
-	setActiveRunBundle(b)
-	t.Cleanup(func() { setActiveRunBundle(nil) })
-
-	teeControlEvent("vm-state", nil)
+	b.TeeControlEvent("vm-state", nil)
 
 	data, err := os.ReadFile(filepath.Join(b.Dir(), "events.jsonl"))
 	if err != nil {

@@ -40,8 +40,7 @@ func TestUpPathResolutionFreshNamedVM(t *testing.T) {
 		t.Fatalf("resolved vm dir is not a directory: mode=%v", info.Mode())
 	}
 
-	applyUpConfig(cfg)
-	target := currentVMSelection()
+	target := runtimeOptionsForUp(cfg).vmSelection()
 	if target.Name != "smoketest-vm" {
 		t.Fatalf("target.Name = %q, want smoketest-vm", target.Name)
 	}
@@ -78,8 +77,7 @@ func TestUpPathResolutionFreshDefaultVM(t *testing.T) {
 		t.Fatalf("cfg.vmDir = %q, want %q", got, wantDir)
 	}
 
-	applyUpConfig(cfg)
-	target := currentVMSelection()
+	target := runtimeOptionsForUp(cfg).vmSelection()
 	if target.Directory != cfg.vmDir {
 		t.Fatalf("target.Directory = %q, want %q", target.Directory, cfg.vmDir)
 	}
@@ -129,8 +127,7 @@ func TestUpPathResolutionWithLegacyVM(t *testing.T) {
 		t.Fatalf("alias %q is not a symlink (mode=%v)", aliasPath, info.Mode())
 	}
 
-	applyUpConfig(cfg)
-	target := currentVMSelection()
+	target := runtimeOptionsForUp(cfg).vmSelection()
 	if target.Directory != cfg.vmDir {
 		t.Fatalf("target.Directory = %q, want %q", target.Directory, cfg.vmDir)
 	}

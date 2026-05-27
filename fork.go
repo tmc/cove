@@ -169,7 +169,7 @@ func ForkVMWithSnapshot(opts ForkVMOptions) error {
 	// Phase 0 invariant: a running parent holds this lock; if the
 	// acquire fails with ErrRunLockHeld, the parent is running and a
 	// snapshot-seeded fork would race with parent writes to aux.img.
-	lock, err := acquireRunLockHook(parentDir)
+	lock, err := AcquireRunLock(parentDir)
 	if err != nil {
 		if errors.Is(err, ErrRunLockHeld) {
 			return fmt.Errorf("fork: parent VM %q is running; -snapshot fork requires parent stopped (or use plain 'cove fork' for best-effort)", opts.Parent)

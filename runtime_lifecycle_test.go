@@ -16,7 +16,7 @@ import (
 )
 
 func TestRunCurrentVMWithDisposableClone(t *testing.T) {
-	stubAcquireRunLockHook(t)
+	hooks, _ := stubAcquireRunLockHook(t)
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -24,10 +24,6 @@ func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 	oldLinuxMode := linuxMode
 	oldRuntimeSystemDiskPathOverride := runtimeSystemDiskPathOverride
 	oldRuntimeSystemDiskAttachment := runtimeSystemDiskAttachment
-	oldSetupHook := setupDisposableCloneHook
-	oldCleanupHook := cleanupDisposableCloneHook
-	oldRunMacHook := runMacOSVMHook
-	oldRunLinuxHook := runLinuxVMHook
 	t.Cleanup(func() {
 		vmName = oldVMName
 		vmDir = oldVMDir
@@ -36,10 +32,6 @@ func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 		linuxMode = oldLinuxMode
 		runtimeSystemDiskPathOverride = oldRuntimeSystemDiskPathOverride
 		runtimeSystemDiskAttachment = oldRuntimeSystemDiskAttachment
-		setupDisposableCloneHook = oldSetupHook
-		cleanupDisposableCloneHook = oldCleanupHook
-		runMacOSVMHook = oldRunMacHook
-		runLinuxVMHook = oldRunLinuxHook
 	})
 
 	disposableMode = true
@@ -56,27 +48,32 @@ func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 	var gotRunVMName string
 	var gotRunVMDir string
 
-	setupDisposableCloneHook = func(opts DisposableSetupOptions) (disposable.Clone, error) {
+	hooks.SetupDisposableClone = func(opts DisposableSetupOptions) (disposable.Clone, error) {
 		if opts.Source != "research-base" || !opts.Linked || opts.CopyMachineID {
 			t.Fatalf("SetupDisposableClone opts = %#v", opts)
 		}
 		return clone, nil
 	}
-	runMacOSVMHook = func() error {
+	hooks.RunMacOSVM = runHook(func() error {
 		gotRunVMName = vmName
 		gotRunVMDir = vmDir
 		return nil
-	}
-	runLinuxVMHook = func() error {
+	})
+	hooks.RunLinuxVM = runHook(func() error {
 		t.Fatal("runLinuxVMHook should not be called")
 		return nil
-	}
-	cleanupDisposableCloneHook = func(path string) error {
+	})
+	hooks.CleanupDisposableClone = func(path string) error {
 		gotCleanupPath = path
 		return nil
 	}
 
-	out, err := captureStdoutResult(t, runCurrentVM)
+	cfg := currentRunConfig()
+	cfg.Stdout = nil
+	cfg.Stderr = nil
+	cfg.Hooks = hooks
+
+	out, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
 	if err != nil {
 		t.Fatalf("runCurrentVM() error = %v", err)
 	}
@@ -122,7 +119,7 @@ func TestCurrentRunConfigForEnvUsesCommandWriters(t *testing.T) {
 }
 
 func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
-	stubAcquireRunLockHook(t)
+	hooks, _ := stubAcquireRunLockHook(t)
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -130,9 +127,6 @@ func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 	oldLinuxMode := linuxMode
 	oldRuntimeSystemDiskPathOverride := runtimeSystemDiskPathOverride
 	oldRuntimeSystemDiskAttachment := runtimeSystemDiskAttachment
-	oldSetupHook := setupDisposableCloneHook
-	oldCleanupHook := cleanupDisposableCloneHook
-	oldRunMacHook := runMacOSVMHook
 	t.Cleanup(func() {
 		vmName = oldVMName
 		vmDir = oldVMDir
@@ -141,9 +135,6 @@ func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 		linuxMode = oldLinuxMode
 		runtimeSystemDiskPathOverride = oldRuntimeSystemDiskPathOverride
 		runtimeSystemDiskAttachment = oldRuntimeSystemDiskAttachment
-		setupDisposableCloneHook = oldSetupHook
-		cleanupDisposableCloneHook = oldCleanupHook
-		runMacOSVMHook = oldRunMacHook
 	})
 
 	disposableMode = true
@@ -158,13 +149,13 @@ func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 	wantErr := errors.New("boom")
 	cleanupCalled := false
 
-	setupDisposableCloneHook = func(DisposableSetupOptions) (disposable.Clone, error) {
+	hooks.SetupDisposableClone = func(DisposableSetupOptions) (disposable.Clone, error) {
 		return clone, nil
 	}
-	runMacOSVMHook = func() error {
+	hooks.RunMacOSVM = runHook(func() error {
 		return wantErr
-	}
-	cleanupDisposableCloneHook = func(path string) error {
+	})
+	hooks.CleanupDisposableClone = func(path string) error {
 		cleanupCalled = true
 		if path != clone.Path {
 			t.Fatalf("cleanup path = %q, want %q", path, clone.Path)
@@ -172,7 +163,12 @@ func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 		return nil
 	}
 
-	_, err := captureStdoutResult(t, runCurrentVM)
+	cfg := currentRunConfig()
+	cfg.Stdout = nil
+	cfg.Stderr = nil
+	cfg.Hooks = hooks
+
+	_, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("runCurrentVM() error = %v, want %v", err, wantErr)
 	}
@@ -189,27 +185,25 @@ func TestRunCurrentVMCleansUpDisposableCloneAfterError(t *testing.T) {
 
 func TestRunVMWithConfigEnforcesRunBudgetBeforeBoot(t *testing.T) {
 	withTempHome(t)
-	stubAcquireRunLockHook(t)
+	hooks, _ := stubAcquireRunLockHook(t)
 
 	runsRoot := t.TempDir()
 	prevRuns := runsDirHook
 	runsDirHook = func() string { return runsRoot }
 	t.Cleanup(func() { runsDirHook = prevRuns })
 
-	oldRunMacHook := runMacOSVMHook
-	t.Cleanup(func() { runMacOSVMHook = oldRunMacHook })
-
 	dir := t.TempDir()
 	if err := vmpolicy.Save(dir, vmpolicy.Policy{RunBudget: 1}); err != nil {
 		t.Fatalf("Save(): %v", err)
 	}
-	cfg := RunConfig{VM: vmSelection{Name: "budget-vm", Directory: dir}}
+	cfg := RunConfig{VM: vmSelection{Name: "budget-vm", Directory: dir}, Hooks: hooks}
 
 	runs := 0
-	runMacOSVMHook = func() error {
+	hooks.RunMacOSVM = runHook(func() error {
 		runs++
 		return nil
-	}
+	})
+	cfg.Hooks = hooks
 	if err := runVMWithConfig(cfg); err != nil {
 		t.Fatalf("first runVMWithConfig: %v", err)
 	}
@@ -259,7 +253,7 @@ func TestRunVMWithConfigEnforcesRunBudgetBeforeBoot(t *testing.T) {
 }
 
 func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
-	stubAcquireRunLockHook(t)
+	hooks, _ := stubAcquireRunLockHook(t)
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -268,10 +262,6 @@ func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
 	oldLinuxMode := linuxMode
 	oldRuntimeSystemDiskPathOverride := runtimeSystemDiskPathOverride
 	oldRuntimeSystemDiskAttachment := runtimeSystemDiskAttachment
-	oldSetupRollbackHook := setupRollbackSnapshotCloneHook
-	oldCleanupHook := cleanupDisposableCloneHook
-	oldRunMacHook := runMacOSVMHook
-	oldRunLinuxHook := runLinuxVMHook
 	t.Cleanup(func() {
 		vmName = oldVMName
 		vmDir = oldVMDir
@@ -281,10 +271,6 @@ func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
 		linuxMode = oldLinuxMode
 		runtimeSystemDiskPathOverride = oldRuntimeSystemDiskPathOverride
 		runtimeSystemDiskAttachment = oldRuntimeSystemDiskAttachment
-		setupRollbackSnapshotCloneHook = oldSetupRollbackHook
-		cleanupDisposableCloneHook = oldCleanupHook
-		runMacOSVMHook = oldRunMacHook
-		runLinuxVMHook = oldRunLinuxHook
 	})
 
 	disposableMode = false
@@ -302,29 +288,34 @@ func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
 	var gotRunVMName string
 	var gotRunVMDir string
 
-	setupRollbackSnapshotCloneHook = func(opts RollbackSnapshotCloneOptions) (disposable.Clone, error) {
+	hooks.RunMacOSVM = runHook(func() error {
+		gotRunVMName = vmName
+		gotRunVMDir = vmDir
+		return nil
+	})
+	hooks.RunLinuxVM = runHook(func() error {
+		t.Fatal("runLinuxVMHook should not be called")
+		return nil
+	})
+	hooks.CleanupDisposableClone = func(path string) error {
+		gotCleanupPath = path
+		return nil
+	}
+
+	cfg := currentRunConfig()
+	cfg.Stdout = nil
+	cfg.Stderr = nil
+	cfg.Hooks = hooks
+	cfg.SetupRollbackSnapshotClone = func(opts RollbackSnapshotCloneOptions) (disposable.Clone, error) {
 		if opts.Source != "research-base" || opts.Snapshot != "clean-base" {
 			t.Fatalf("SetupRollbackSnapshotClone opts = %#v", opts)
 		}
 		return clone, nil
 	}
-	runMacOSVMHook = func() error {
-		gotRunVMName = vmName
-		gotRunVMDir = vmDir
-		return nil
-	}
-	runLinuxVMHook = func() error {
-		t.Fatal("runLinuxVMHook should not be called")
-		return nil
-	}
-	cleanupDisposableCloneHook = func(path string) error {
-		gotCleanupPath = path
-		return nil
-	}
 
-	out, err := captureStdoutResult(t, runCurrentVM)
+	out, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
 	if err != nil {
-		t.Fatalf("runCurrentVM() error = %v", err)
+		t.Fatalf("runVMWithConfig() error = %v", err)
 	}
 	if gotRunVMName != clone.Name {
 		t.Fatalf("runCurrentVM() ran vmName %q, want %q", gotRunVMName, clone.Name)
@@ -354,7 +345,7 @@ func TestRunCurrentVMWithRollbackSnapshotClone(t *testing.T) {
 }
 
 func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
-	stubAcquireRunLockHook(t)
+	hooks, _ := stubAcquireRunLockHook(t)
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -362,9 +353,6 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 	oldLinuxMode := linuxMode
 	oldRuntimeSystemDiskPathOverride := runtimeSystemDiskPathOverride
 	oldRuntimeSystemDiskAttachment := runtimeSystemDiskAttachment
-	oldSetupHook := setupDisposableCloneHook
-	oldCleanupHook := cleanupDisposableCloneHook
-	oldRunMacHook := runMacOSVMHook
 	t.Cleanup(func() {
 		vmName = oldVMName
 		vmDir = oldVMDir
@@ -373,9 +361,6 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 		linuxMode = oldLinuxMode
 		runtimeSystemDiskPathOverride = oldRuntimeSystemDiskPathOverride
 		runtimeSystemDiskAttachment = oldRuntimeSystemDiskAttachment
-		setupDisposableCloneHook = oldSetupHook
-		cleanupDisposableCloneHook = oldCleanupHook
-		runMacOSVMHook = oldRunMacHook
 	})
 
 	disposableMode = true
@@ -394,22 +379,27 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 	var gotDiskPathOverride string
 	var gotAttachmentMode systemDiskAttachmentMode
 
-	setupDisposableCloneHook = func(opts DisposableSetupOptions) (disposable.Clone, error) {
+	hooks.SetupDisposableClone = func(opts DisposableSetupOptions) (disposable.Clone, error) {
 		if opts.SourceDiskPath != "/tmp/checkpoint/disk.img" {
 			t.Fatalf("SetupDisposableClone opts.SourceDiskPath = %q", opts.SourceDiskPath)
 		}
 		return clone, nil
 	}
-	runMacOSVMHook = func() error {
+	hooks.RunMacOSVM = runHook(func() error {
 		gotRunVMName = vmName
 		gotRunVMDir = vmDir
 		gotDiskPathOverride = runtimeSystemDiskPathOverride
 		gotAttachmentMode = runtimeSystemDiskAttachment
 		return nil
-	}
-	cleanupDisposableCloneHook = func(string) error { return nil }
+	})
+	hooks.CleanupDisposableClone = func(string) error { return nil }
 
-	out, err := captureStdoutResult(t, runCurrentVM)
+	cfg := currentRunConfig()
+	cfg.Stdout = nil
+	cfg.Stderr = nil
+	cfg.Hooks = hooks
+
+	out, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
 	if err != nil {
 		t.Fatalf("runCurrentVM() error = %v", err)
 	}
@@ -435,7 +425,7 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 }
 
 func TestRunEphemeralForkRejectsMacOSVMParentBeforeSetup(t *testing.T) {
-	stubAcquireRunLockHook(t)
+	hooks, _ := stubAcquireRunLockHook(t)
 	t.Setenv("HOME", t.TempDir())
 	parent := "identity-parent"
 	stageParentVMForEphemeralFork(t, parent)
@@ -444,34 +434,29 @@ func TestRunEphemeralForkRejectsMacOSVMParentBeforeSetup(t *testing.T) {
 	oldVMDir := vmDir
 	oldRuntimeSystemDiskPathOverride := runtimeSystemDiskPathOverride
 	oldRuntimeSystemDiskAttachment := runtimeSystemDiskAttachment
-	oldSetupHook := setupEphemeralForkHook
-	oldCleanupHook := cleanupEphemeralForkHook
-	oldRunMacHook := runMacOSVMHook
 	t.Cleanup(func() {
 		vmName = oldVMName
 		vmDir = oldVMDir
 		runtimeSystemDiskPathOverride = oldRuntimeSystemDiskPathOverride
 		runtimeSystemDiskAttachment = oldRuntimeSystemDiskAttachment
-		setupEphemeralForkHook = oldSetupHook
-		cleanupEphemeralForkHook = oldCleanupHook
-		runMacOSVMHook = oldRunMacHook
 	})
 
-	setupEphemeralForkHook = func(opts EphemeralForkOptions) (EphemeralFork, error) {
+	hooks.SetupEphemeralFork = func(opts EphemeralForkOptions) (EphemeralFork, error) {
 		t.Fatalf("SetupEphemeralFork called for unsupported VM parent: %#v", opts)
 		return EphemeralFork{}, nil
 	}
-	cleanupEphemeralForkHook = func(path string) error {
+	hooks.CleanupEphemeralFork = func(path string) error {
 		t.Fatalf("CleanupEphemeralFork called before child exists: %s", path)
 		return nil
 	}
-	runMacOSVMHook = func() error {
+	hooks.RunMacOSVM = runHook(func() error {
 		t.Fatal("runMacOSVM called for unsupported VM-parent fork")
 		return nil
-	}
+	})
 
 	cfg := RunConfig{
 		VM:                  vmSelection{Name: "original", Directory: filepath.Join(vmconfig.BaseDir(), "original")},
+		Hooks:               hooks,
 		EphemeralForkParent: parent,
 	}
 	_, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
@@ -493,7 +478,7 @@ func TestRunEphemeralForkRejectsMacOSVMParentBeforeSetup(t *testing.T) {
 }
 
 func TestRunEphemeralForkRejectsLinuxVMParentBeforeSetup(t *testing.T) {
-	stubAcquireRunLockHook(t)
+	hooks, _ := stubAcquireRunLockHook(t)
 	t.Setenv("HOME", t.TempDir())
 	parent := "linux-parent"
 	parentDir := filepath.Join(vmconfig.BaseDir(), parent)
@@ -504,29 +489,22 @@ func TestRunEphemeralForkRejectsLinuxVMParentBeforeSetup(t *testing.T) {
 		t.Fatalf("write linux disk: %v", err)
 	}
 
-	oldSetupHook := setupEphemeralForkHook
-	oldCleanupHook := cleanupEphemeralForkHook
-	oldRunLinuxHook := runLinuxVMHook
-	t.Cleanup(func() {
-		setupEphemeralForkHook = oldSetupHook
-		cleanupEphemeralForkHook = oldCleanupHook
-		runLinuxVMHook = oldRunLinuxHook
-	})
-	setupEphemeralForkHook = func(opts EphemeralForkOptions) (EphemeralFork, error) {
+	hooks.SetupEphemeralFork = func(opts EphemeralForkOptions) (EphemeralFork, error) {
 		t.Fatalf("SetupEphemeralFork called for unsupported Linux parent: %#v", opts)
 		return EphemeralFork{}, nil
 	}
-	cleanupEphemeralForkHook = func(path string) error {
+	hooks.CleanupEphemeralFork = func(path string) error {
 		t.Fatalf("CleanupEphemeralFork called before child exists: %s", path)
 		return nil
 	}
-	runLinuxVMHook = func() error {
+	hooks.RunLinuxVM = runHook(func() error {
 		t.Fatal("runLinuxVM called for unsupported VM-parent fork")
 		return nil
-	}
+	})
 
 	cfg := RunConfig{
 		Linux:               true,
+		Hooks:               hooks,
 		EphemeralForkParent: parent,
 	}
 	_, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
@@ -542,7 +520,7 @@ func TestRunEphemeralForkRejectsLinuxVMParentBeforeSetup(t *testing.T) {
 }
 
 func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
-	stubAcquireRunLockHook(t)
+	hooks, _ := stubAcquireRunLockHook(t)
 	oldHome, homeErr := os.UserHomeDir()
 	if homeErr != nil {
 		t.Fatalf("UserHomeDir: %v", homeErr)
@@ -554,10 +532,6 @@ func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 	oldLinuxMode := linuxMode
 	oldRuntimeSystemDiskPathOverride := runtimeSystemDiskPathOverride
 	oldRuntimeSystemDiskAttachment := runtimeSystemDiskAttachment
-	oldSetupHook := setupDisposableCloneHook
-	oldCleanupHook := cleanupDisposableCloneHook
-	oldRunMacHook := runMacOSVMHook
-	oldRunLinuxHook := runLinuxVMHook
 	t.Cleanup(func() {
 		if err := os.Setenv("HOME", oldHome); err != nil {
 			t.Fatalf("restore HOME: %v", err)
@@ -569,10 +543,6 @@ func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 		linuxMode = oldLinuxMode
 		runtimeSystemDiskPathOverride = oldRuntimeSystemDiskPathOverride
 		runtimeSystemDiskAttachment = oldRuntimeSystemDiskAttachment
-		setupDisposableCloneHook = oldSetupHook
-		cleanupDisposableCloneHook = oldCleanupHook
-		runMacOSVMHook = oldRunMacHook
-		runLinuxVMHook = oldRunLinuxHook
 	})
 
 	home := t.TempDir()
@@ -595,7 +565,7 @@ func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 	}
 	var ranLinux bool
 
-	setupDisposableCloneHook = func(opts DisposableSetupOptions) (disposable.Clone, error) {
+	hooks.SetupDisposableClone = func(opts DisposableSetupOptions) (disposable.Clone, error) {
 		if opts.Source != "linux-src" {
 			t.Fatalf("SetupDisposableClone source = %q, want %q", opts.Source, "linux-src")
 		}
@@ -604,21 +574,21 @@ func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 		}
 		return clone, nil
 	}
-	runMacOSVMHook = func() error {
+	hooks.RunMacOSVM = runHook(func() error {
 		t.Fatal("runMacOSVMHook should not be called for Linux disposable PIT runs")
 		return nil
-	}
-	runLinuxVMHook = func() error {
+	})
+	hooks.RunLinuxVM = runHook(func() error {
 		ranLinux = true
 		if !linuxMode {
 			t.Fatal("linuxMode = false during Linux disposable PIT run")
 		}
 		return nil
-	}
-	cleanupDisposableCloneHook = func(string) error { return nil }
+	})
+	hooks.CleanupDisposableClone = func(string) error { return nil }
 
 	if _, err := captureStdoutResult(t, func() error {
-		return runDisposableCloneFromDiskPath("linux-src", "/tmp/checkpoint/linux-disk.img", systemDiskAttachmentTemporaryRAM)
+		return runDisposableCloneFromDiskPathWithHooks("linux-src", "/tmp/checkpoint/linux-disk.img", systemDiskAttachmentTemporaryRAM, hooks)
 	}); err != nil {
 		t.Fatalf("runDisposableCloneFromDiskPath() error = %v", err)
 	}
@@ -631,31 +601,21 @@ func TestRunDisposableCloneFromDiskPathPreservesLinuxMode(t *testing.T) {
 }
 
 func TestControlRuntimeInfrastructureHooks(t *testing.T) {
-	oldStartFileHandle := startPreparedFileHandleNetworkHook
-	oldStopFileHandle := stopPreparedFileHandleNetworkHook
-	oldStartProxy := configureRequestedProxyAfterBootHook
-	oldStopProxy := teardownRequestedProxyHook
-	t.Cleanup(func() {
-		startPreparedFileHandleNetworkHook = oldStartFileHandle
-		stopPreparedFileHandleNetworkHook = oldStopFileHandle
-		configureRequestedProxyAfterBootHook = oldStartProxy
-		teardownRequestedProxyHook = oldStopProxy
-	})
-
 	var calls []string
-	startPreparedFileHandleNetworkHook = func() {
+	hooks := defaultRunHooks()
+	hooks.StartPreparedFileHandleNetwork = func() {
 		calls = append(calls, "start-filehandle")
 	}
-	stopPreparedFileHandleNetworkHook = func() {
+	hooks.StopPreparedFileHandleNetwork = func() {
 		calls = append(calls, "stop-filehandle")
 	}
-	configureRequestedProxyAfterBootHook = func(cs *ControlServer) {
+	hooks.ConfigureRequestedProxyAfterBoot = func(cs *ControlServer) {
 		if cs == nil {
 			t.Fatal("configureRequestedProxyAfterBootHook received nil control server")
 		}
 		calls = append(calls, "start-proxy")
 	}
-	teardownRequestedProxyHook = func(cs *ControlServer) {
+	hooks.TeardownRequestedProxy = func(cs *ControlServer) {
 		if cs == nil {
 			t.Fatal("teardownRequestedProxyHook received nil control server")
 		}
@@ -663,8 +623,8 @@ func TestControlRuntimeInfrastructureHooks(t *testing.T) {
 	}
 
 	controlServer := NewControlServerWithVMDir("", t.TempDir())
-	startControlRuntimeInfrastructure(controlServer)
-	stopControlRuntimeInfrastructure(controlServer)
+	startControlRuntimeInfrastructureWithHooks(controlServer, hooks)
+	stopControlRuntimeInfrastructureWithHooks(controlServer, hooks)
 
 	want := []string{"start-filehandle", "start-proxy", "stop-proxy", "stop-filehandle"}
 	if strings.Join(calls, ",") != strings.Join(want, ",") {

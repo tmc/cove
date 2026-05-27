@@ -115,9 +115,10 @@ func handleBuild(args []string) (err error) {
 		if err != nil {
 			status = err.Error()
 		}
-		emitMetricEvent("run_complete", started, status, map[string]any{"command": "build"})
+		metricsRun.EmitMetricEvent("run_complete", started, status, map[string]any{"command": "build"})
 	}(time.Now())
 	exec := newBuildExecutor(plan, opts, blobStore)
+	exec.metrics = metricsRun
 	if err := exec.Execute(ctx); err != nil {
 		return err
 	}

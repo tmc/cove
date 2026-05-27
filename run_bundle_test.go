@@ -157,19 +157,14 @@ func TestRunBundle_OnlyForkFrom(t *testing.T) {
 
 	// Stub the runtime hooks so runVMWithConfig short-circuits without
 	// touching the Virtualization framework or grabbing a real run.lock.
-	stubAcquireRunLockHook(t)
-	prevMac := runMacOSVMHook
-	t.Cleanup(func() { runMacOSVMHook = prevMac })
-	runMacOSVMHook = func() error { return nil }
+	hooks, _ := stubAcquireRunLockHook(t)
+	hooks.RunMacOSVM = runHook(func() error { return nil })
 
 	// Plain run with no fork-from must not activate the run bundle; it may
 	// still create a metrics-only run directory.
-	cfg := RunConfig{VM: vmSelection{Name: "vm-plain", Directory: t.TempDir()}}
+	cfg := RunConfig{VM: vmSelection{Name: "vm-plain", Directory: t.TempDir()}, Hooks: hooks}
 	if err := runVMWithConfig(cfg); err != nil {
 		t.Fatalf("plain run: %v", err)
-	}
-	if ActiveRunBundle() != nil {
-		t.Fatalf("plain run left an active bundle behind")
 	}
 }
 

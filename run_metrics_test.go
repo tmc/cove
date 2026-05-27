@@ -10,6 +10,7 @@ import (
 
 	"github.com/tmc/cove/internal/controlserver"
 	runmetrics "github.com/tmc/cove/internal/metrics"
+	"github.com/tmc/cove/internal/vmrun"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -20,16 +21,13 @@ func TestStandaloneMetricsRunWritesJSONL(t *testing.T) {
 	runsDirHook = func() string { return runsRoot }
 	t.Cleanup(func() {
 		runsDirHook = prev
-		activeMetricsMu.Lock()
-		activeMetricsRun = nil
-		activeMetricsMu.Unlock()
 	})
 
 	run, err := beginStandaloneMetricsRun("vm-x", "image:ci")
 	if err != nil {
 		t.Fatalf("beginStandaloneMetricsRun: %v", err)
 	}
-	emitMetricEvent("vm_start", run.started, "ok", map[string]any{"mode": "test"})
+	run.EmitMetricEvent("vm_start", run.started, "ok", map[string]any{"mode": "test"})
 	finishStandaloneMetricsRun(run)
 
 	events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
@@ -55,9 +53,6 @@ func TestMetricEventTypes(t *testing.T) {
 	runsDirHook = func() string { return runsRoot }
 	t.Cleanup(func() {
 		runsDirHook = prev
-		activeMetricsMu.Lock()
-		activeMetricsRun = nil
-		activeMetricsMu.Unlock()
 	})
 
 	run, err := beginStandaloneMetricsRun("vm-x", "image:ci")
@@ -66,7 +61,7 @@ func TestMetricEventTypes(t *testing.T) {
 	}
 	started := run.started
 	for _, typ := range []string{"vm_create", "vm_start", "agent_ready", "fork_created", "build_step", "run_complete"} {
-		emitMetricEvent(typ, started, "ok", map[string]any{"source": "test"})
+		run.EmitMetricEvent(typ, started, "ok", map[string]any{"source": "test"})
 	}
 	finishStandaloneMetricsRun(run)
 
@@ -95,16 +90,13 @@ func TestCaptureLatencyMetricWritesJSONL(t *testing.T) {
 	runsDirHook = func() string { return runsRoot }
 	t.Cleanup(func() {
 		runsDirHook = prev
-		activeMetricsMu.Lock()
-		activeMetricsRun = nil
-		activeMetricsMu.Unlock()
 	})
 
 	run, err := beginStandaloneMetricsRun("vm-x", "image:ci")
 	if err != nil {
 		t.Fatalf("beginStandaloneMetricsRun: %v", err)
 	}
-	emitCaptureLatencyMetric(context.Background(), controlserver.CaptureLatencyEvent{
+	run.EmitCaptureLatency(context.Background(), controlserver.CaptureLatencyEvent{
 		Backend:          "sckit",
 		RequestedBackend: "sckit",
 		Width:            640,
@@ -142,16 +134,13 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 	t.Cleanup(func() {
 		runsDirHook = prevRuns
 		resourceAgentInfoHook = prevInfo
-		activeMetricsMu.Lock()
-		activeMetricsRun = nil
-		activeMetricsMu.Unlock()
 	})
 
 	run, err := beginStandaloneMetricsRun("vm-x", "", "/tmp/vm-x")
 	if err != nil {
 		t.Fatalf("beginStandaloneMetricsRun: %v", err)
 	}
-	emitResourceSampleMetric(run, "start")
+	run.EmitResourceSampleMetric("start")
 	finishStandaloneMetricsRun(run)
 
 	events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
@@ -176,15 +165,13 @@ func TestRunVMWithConfigEmitsRunComplete(t *testing.T) {
 	prevRuns := runsDirHook
 	runsDirHook = func() string { return runsRoot }
 	t.Cleanup(func() { runsDirHook = prevRuns })
-	stubAcquireRunLockHook(t)
-	prevMac := runMacOSVMHook
-	runMacOSVMHook = func() error {
-		emitAgentReadyMetric()
+	hooks, _ := stubAcquireRunLockHook(t)
+	hooks.RunMacOSVM = func(_ vmrun.RunConfig, _ vmrun.HostConfig, _ *RunBundle, recorder runMetricRecorder) error {
+		recorder.MarkAgentReady()
 		return nil
 	}
-	t.Cleanup(func() { runMacOSVMHook = prevMac })
 
-	cfg := RunConfig{VM: vmSelection{Name: "plain-vm", Directory: t.TempDir()}}
+	cfg := RunConfig{VM: vmSelection{Name: "plain-vm", Directory: t.TempDir()}, Hooks: hooks}
 	if err := runVMWithConfig(cfg); err != nil {
 		t.Fatalf("runVMWithConfig: %v", err)
 	}

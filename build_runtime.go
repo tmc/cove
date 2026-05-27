@@ -11,6 +11,7 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	agentstate "github.com/tmc/cove/internal/agent"
 	"github.com/tmc/cove/internal/buildscratch"
+	"github.com/tmc/cove/internal/vmrun"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -114,6 +115,14 @@ func startScratchBuildGuest(ctx context.Context, sc buildscratch.Scratch) (build
 		sock := GetControlSocketPathForVM(sc.Dir)
 		controlServer := NewControlServerWithVMDir(sock, sc.Dir)
 		controlServer.SetVM(vm, queue)
+		guest := vmrun.GuestMacOS
+		if linuxMode {
+			guest = vmrun.GuestLinux
+		} else if windowsMode {
+			guest = vmrun.GuestWindows
+		}
+		rc, hc := vmrunRunConfig(guest), vmrunHostConfig()
+		controlServer.SetRunContext(rc, hc)
 		if err := controlServer.Start(); err != nil {
 			return fmt.Errorf("control socket: %w", err)
 		}
@@ -123,7 +132,7 @@ func startScratchBuildGuest(ctx context.Context, sc buildscratch.Scratch) (build
 			queue:         queue,
 			controlServer: controlServer,
 		}
-		if err := startConfiguredVM(vm, queue, true); err != nil {
+		if err := startConfiguredVM(vm, queue, true, nil, rc, hc); err != nil {
 			return fmt.Errorf("start vm: %w", err)
 		}
 		return nil
