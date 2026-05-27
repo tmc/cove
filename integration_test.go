@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -25,6 +26,7 @@ var (
 	flagIntegrationLinuxVM     = flag.String("integration.linux-vm", envOrString("VZ_TEST_LINUX_VM", "vz-linux-test"), "Linux VM name for integration tests")
 	flagIntegrationHeadless    = flag.Bool("integration.headless", integrationEnvBool("VZ_TEST_HEADLESS"), "skip GUI-dependent integration tests")
 	flagIntegrationHeaded      = flag.Bool("integration.headed", integrationEnvBool("VZ_TEST_HEADED"), "force GUI mode for macOS integration provisioning and runtime")
+	flagIntegrationArtifacts   = flag.String("integration.artifacts", os.Getenv("VZ_TEST_ARTIFACTS"), "directory for integration failure artifacts")
 	flagIntegrationSIP         = flag.Bool("integration.sip", integrationEnvBool("VZ_TEST_SIP"), "run SIP recovery integration test")
 	flagIntegrationSIPUser     = flag.String("integration.sip-user", os.Getenv("VZ_TEST_SIP_USER"), "recovery auth username for SIP integration test")
 	flagIntegrationSIPPassword = flag.String("integration.sip-password", os.Getenv("VZ_TEST_SIP_PASSWORD"), "recovery auth password for SIP integration test")
@@ -40,6 +42,12 @@ type testVM struct {
 	cmd           *exec.Cmd
 	waitCh        chan error
 	logPath       string
+}
+
+type integrationArtifacts struct {
+	tb       testing.TB
+	dir      string
+	explicit bool
 }
 
 var (
@@ -80,6 +88,82 @@ func TestLinuxIntegration(t *testing.T) {
 func integrationEnvBool(name string) bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
 	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func newIntegrationArtifacts(tb testing.TB, name string) *integrationArtifacts {
+	tb.Helper()
+
+	base := strings.TrimSpace(*flagIntegrationArtifacts)
+	explicit := base != ""
+	var dir string
+	var err error
+	if explicit {
+		dir = filepath.Join(base, integrationArtifactName(name))
+		err = os.MkdirAll(dir, 0755)
+	} else {
+		dir, err = os.MkdirTemp("", "cove-integration-"+integrationArtifactName(name)+"-*")
+	}
+	if err != nil {
+		tb.Fatalf("create integration artifact dir: %v", err)
+	}
+
+	artifacts := &integrationArtifacts{tb: tb, dir: dir, explicit: explicit}
+	tb.Cleanup(func() {
+		if tb.Failed() {
+			tb.Logf("integration artifacts: %s", dir)
+			return
+		}
+		if !explicit {
+			_ = os.RemoveAll(dir)
+		}
+	})
+	return artifacts
+}
+
+func integrationArtifactName(name string) string {
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		default:
+			return '-'
+		}
+	}, name)
+	name = strings.Trim(name, "-")
+	if name == "" {
+		name = "integration"
+	}
+	if len(name) > 80 {
+		name = strings.Trim(name[:80], "-")
+	}
+	if name == "" {
+		return "integration"
+	}
+	return name
+}
+
+func (a *integrationArtifacts) writeText(name, text string) {
+	a.tb.Helper()
+	if err := os.WriteFile(filepath.Join(a.dir, name), []byte(text), 0644); err != nil {
+		a.tb.Logf("write integration artifact %s: %v", name, err)
+	}
+}
+
+func (a *integrationArtifacts) writeJSON(name string, value any) {
+	a.tb.Helper()
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		a.tb.Logf("marshal integration artifact %s: %v", name, err)
+		return
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(a.dir, name), data, 0644); err != nil {
+		a.tb.Logf("write integration artifact %s: %v", name, err)
+	}
 }
 
 func acquireTestVM(t *testing.T) *testVM {

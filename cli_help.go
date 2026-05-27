@@ -89,6 +89,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printQuotaUsage(os.Stderr)
 		case "diff":
 			printDiffUsage(os.Stderr)
+		case "disk":
+			printDiskUsage(os.Stderr)
 		case "image":
 			printImageUsage(os.Stderr)
 		case "logs":
@@ -214,6 +216,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) > 1 && subargs[0] == "ready" && isHelpArg(subargs[1]) {
 			printReadyUsage(os.Stderr)
 			return true, 0
+		}
+	case "disk":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printDiskUsage(os.Stderr)
+			return true, usageExitCode(subargs)
 		}
 	case "shell":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {

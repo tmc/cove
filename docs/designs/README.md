@@ -46,6 +46,7 @@ implementation review. Start there before choosing new work.
 34. [Storage budget for `~/.vz/`](040-storage-budget.md) — shipped Phases 0-5 on 2026-05-08 (`78b2e7b`, `ce1a2c0`, `e6a9850`, `5660b13`, `7e9ea28`, `292b81d`, `394b812`, `42714c0`, `1f7ffa4`, `ecb75ed`, `cacce19`) — unified disk-budget enforcement covering images, runs, snapshot lineages, and orphaned VM scratch.
 35. [ScreenCaptureKit migration](041-screencapturekit-migration.md) — Slices 1-3 shipped on 2026-05-08 (`8d55d7a`, `d0877b8`, `55257f2`); Slice 4 spec landed (`318d801`) — replaces the deprecated `CGWindowListCreateImage` path in `screenshots.go` with `SCScreenshotManager` / `SCStream`.
 36. [Capture latency observability](042-capture-latency-observability.md) — spec landed — production metric path for SCKit/CGWindow/framebuffer capture latency through runs JSONL and coved Prometheus.
+37. [Integration harness goal](044-integration-harness-goal.md) — goal prompt — strengthens runtime feature integration tests with host and guest assertions, destructive-clone isolation, artifact capture, and disk resize acceptance coverage.
 
 ## Strategy inputs
 

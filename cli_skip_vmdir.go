@@ -25,6 +25,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"config":          true,
 	"daemon":          true,
 	"diff":            true,
+	"disk":            true,
 	"gc":              true,
 	"gui":             true,
 	"helper":          true,
