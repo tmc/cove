@@ -47,22 +47,7 @@ func securityScopedBookmarkRoundTrip(path string) (securityScopedBookmarkReport,
 	}
 	defer stop()
 
-	payload, err := os.ReadFile(resolved)
-	if err != nil {
-		return securityScopedBookmarkReport{}, fmt.Errorf("read resolved bookmark path: %w", err)
-	}
-	sum := sha256.Sum256(payload)
-	return securityScopedBookmarkReport{
-		Action:       "bookmark-probe",
-		AppSandbox:   appleAppSandboxActive(),
-		Path:         abs,
-		ResolvedPath: resolved,
-		BookmarkSize: len(bookmark),
-		Stale:        stale,
-		Started:      true,
-		ReadBytes:    len(payload),
-		SHA256:       hex.EncodeToString(sum[:]),
-	}, nil
+	return readSecurityScopedBookmarkProof(abs, resolved, stale, len(bookmark))
 }
 
 func createSecurityScopedBookmark(path string) ([]byte, error) {
@@ -102,6 +87,25 @@ func resolveSecurityScopedBookmark(bookmark []byte) (path string, stale bool, st
 		return "", stale, nil, fmt.Errorf("start security-scoped bookmark access: denied")
 	}
 	return url.Path(), stale, url.StopAccessingSecurityScopedResource, nil
+}
+
+func readSecurityScopedBookmarkProof(path, resolved string, stale bool, bookmarkSize int) (securityScopedBookmarkReport, error) {
+	payload, err := os.ReadFile(resolved)
+	if err != nil {
+		return securityScopedBookmarkReport{}, fmt.Errorf("read resolved bookmark path: %w", err)
+	}
+	sum := sha256.Sum256(payload)
+	return securityScopedBookmarkReport{
+		Action:       "bookmark-probe",
+		AppSandbox:   appleAppSandboxActive(),
+		Path:         path,
+		ResolvedPath: resolved,
+		BookmarkSize: bookmarkSize,
+		Stale:        stale,
+		Started:      true,
+		ReadBytes:    len(payload),
+		SHA256:       hex.EncodeToString(sum[:]),
+	}, nil
 }
 
 func copyNSData(data foundation.INSData) []byte {

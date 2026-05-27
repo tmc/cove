@@ -3,11 +3,11 @@
 Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,
 host-process status reporting, elevation fail-closed guard, package-shape claim
 boundary, macgo `.app` non-mutating proof, listener proof, scratch VM
-start/stop proof, and security-scoped bookmark binding proof are implemented.
-Ambient host-path and mutating command surfaces now fail closed under Apple App
-Sandbox. A sandboxed run-worker IPC proof can receive an explicit descriptor
-from the unsandboxed CLI. Powerbox UI, bookmark grant storage, and temporary-RAM
-overlay proofs are still queued.
+start/stop proof, security-scoped bookmark binding proof, and durable bookmark
+store proof are implemented. Ambient host-path and mutating command surfaces now
+fail closed under Apple App Sandbox. A sandboxed run-worker IPC proof can
+receive an explicit descriptor from the unsandboxed CLI. Powerbox UI and
+temporary-RAM overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -123,6 +123,12 @@ Observed result:
   it, starts access, reads the file, and stops access without an Objective-C
   trap. This proves the data model and binding path, not durable grant storage
   or Powerbox UI.
+- `security bookmark-store save` and `security bookmark-store resolve` add the
+  first durable grant store proof. The store is a JSON file under
+  `~/Library/Application Support/cove/security-scoped-bookmarks.json` by
+  default, which resolves inside the app container for the sandboxed macgo
+  bundle. The smoke uses a test store inside the app container temp directory
+  and resolves it from a separate sandboxed process.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -247,10 +253,11 @@ work in this order:
    launches a sandboxed child and passes an explicit descriptor over a Unix
    socket with `SCM_RIGHTS`.
 5. Done: prove the security-scoped bookmark data model and Foundation binding
-   path under the sandboxed macgo bundle. Durable bookmark storage and Powerbox
-   UI are not wired yet.
-6. Next: design Powerbox/security-scoped bookmark storage for existing VM roots,
-   ISO/IPSW media, and shared-folder host paths.
+   path under the sandboxed macgo bundle.
+6. Done: add a durable bookmark store proof. The store can save and resolve
+   app-scoped bookmark bytes across separate sandboxed macgo process launches.
+7. Next: design Powerbox UI to create durable bookmarks for existing VM roots,
+   ISO/IPSW media, and shared-folder host paths when a bookmark is missing.
 
 ## Proof gates
 
@@ -270,6 +277,7 @@ COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleSm
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleHostPathDenialSmoke -v .
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxRunWorkerSmoke -v .
 COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxBookmarkProbeSmoke -v .
+COVE_APP_SANDBOX_MACGO_SMOKE=1 go test -count=1 -run TestAppSandboxDurableBookmarkStorageSmoke -v .
 COVE_APP_SANDBOX_MACGO_BOOT_SMOKE=1 go test -count=1 -run TestAppSandboxMacgoBundleScratchBootSmoke -v .
 ```
 

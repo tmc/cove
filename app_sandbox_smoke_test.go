@@ -331,6 +331,65 @@ func TestAppSandboxBookmarkProbeSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxDurableBookmarkStorageSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	root := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data", "tmp", fmt.Sprintf("cove-bookmark-store-%d", os.Getpid()))
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatalf("create bookmark store root: %v", err)
+	}
+	target := filepath.Join(root, "grant.txt")
+	if err := os.WriteFile(target, []byte("cove durable bookmark proof\n"), 0600); err != nil {
+		t.Fatalf("write bookmark grant: %v", err)
+	}
+	store := filepath.Join(root, "bookmarks.json")
+	key := "vm:durable-smoke"
+
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "security", "bookmark-store", "save",
+		"-json", "-store", store, "-key", key, "-kind", "vm-root", "-path", target)
+	t.Logf("sandboxed macgo security bookmark-store save err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo security bookmark-store save: %v\n%s", err, out)
+	}
+	var saved securityBookmarkStoreReport
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &saved); err != nil {
+		t.Fatalf("security bookmark-store save json: %v\n%s", err, out)
+	}
+	if saved.Key != key || saved.Entry.BookmarkSize == 0 || saved.Entry.Path == "" {
+		t.Fatalf("security bookmark-store save incomplete: %+v\n%s", saved, out)
+	}
+	if _, err := os.Stat(store); err != nil {
+		t.Fatalf("bookmark store was not written: %v", err)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "security", "bookmark-store", "resolve",
+		"-json", "-store", store, "-key", key)
+	t.Logf("sandboxed macgo security bookmark-store resolve err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo security bookmark-store resolve: %v\n%s", err, out)
+	}
+	var resolved securityBookmarkStoreReport
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &resolved); err != nil {
+		t.Fatalf("security bookmark-store resolve json: %v\n%s", err, out)
+	}
+	if resolved.Key != key || resolved.Proof == nil || resolved.Proof.BookmarkSize == 0 || !resolved.Proof.Started || resolved.Proof.ReadBytes == 0 {
+		t.Fatalf("security bookmark-store resolve incomplete: %+v\n%s", resolved, out)
+	}
+	if resolved.Proof.ResolvedPath != resolved.Proof.Path {
+		t.Fatalf("security bookmark-store resolved path mismatch: %+v\n%s", *resolved.Proof, out)
+	}
+	if strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("security bookmark-store crashed instead of returning proof:\n%s", out)
+	}
+}
+
 func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
