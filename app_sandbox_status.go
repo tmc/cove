@@ -12,13 +12,15 @@ type appleAppSandboxStatus struct {
 	ContainerID string
 }
 
+var checkAppleAppSandboxEntitlement = appleAppSandboxEntitlement
+
 func currentAppleAppSandboxStatus() appleAppSandboxStatus {
 	id := os.Getenv(appleAppSandboxContainerEnv)
 	if id == "" {
 		id = appleAppSandboxContainerIDFromHome(os.Getenv("HOME"))
 	}
 	return appleAppSandboxStatus{
-		Active:      id != "",
+		Active:      id != "" || checkAppleAppSandboxEntitlement(),
 		ContainerID: id,
 	}
 }

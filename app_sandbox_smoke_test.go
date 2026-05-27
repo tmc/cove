@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -42,6 +43,87 @@ func TestAppSandboxSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_SMOKE=1 to build and run a sandbox-signed cove binary")
 	}
+	bin := buildAppSandboxSmokeBinary(t)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "version", args: []string{"--version"}},
+		{name: "help", args: []string{"help"}},
+		{name: "list", args: []string{"list"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := runSandboxedCoveSmokeCommand(t, bin, tc.args...)
+			t.Logf("%s %s err=%v output:\n%s", filepath.Base(bin), strings.Join(tc.args, " "), err, out)
+			if os.Getenv("COVE_APP_SANDBOX_SMOKE_EXPECT_START") == "1" && err != nil {
+				t.Fatalf("%s %v: %v\n%s", bin, tc.args, err, out)
+			}
+		})
+	}
+}
+
+func TestAppSandboxDoctorSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_SMOKE=1 to build and run a sandbox-signed cove binary")
+	}
+	bin := buildAppSandboxSmokeBinary(t)
+
+	out, err := runSandboxedCoveSmokeCommand(t, bin, "doctor", "host", "-json")
+	t.Logf("raw sandbox doctor host err=%v output:\n%s", err, out)
+	if err != nil {
+		if os.Getenv("COVE_APP_SANDBOX_SMOKE_EXPECT_START") == "1" {
+			t.Fatalf("raw sandbox doctor host: %v\n%s", err, out)
+		}
+		return
+	}
+	assertSandboxDoctorCommands(t, func(args ...string) (string, error) {
+		return runSandboxedCoveSmokeCommand(t, bin, args...)
+	})
+}
+
+func TestAppSandboxMacgoBundleSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "security", "status")
+	t.Logf("sandboxed macgo bundle security status err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo bundle security status: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"apple app sandbox: true",
+		"apple app sandbox id: com.tmc.cove",
+		"/Library/Containers/com.tmc.cove/Data/.vz",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("security status missing %q:\n%s", want, out)
+		}
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "list")
+	t.Logf("sandboxed macgo bundle list err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo bundle list: %v\n%s", err, out)
+	}
+}
+
+func TestAppSandboxMacgoBundleDoctorSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+
+	assertSandboxDoctorCommands(t, func(args ...string) (string, error) {
+		return runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, args...)
+	})
+}
+
+func buildAppSandboxSmokeBinary(t *testing.T) string {
+	t.Helper()
 	if _, err := exec.LookPath("codesign"); err != nil {
 		t.Skipf("codesign unavailable: %v", err)
 	}
@@ -69,29 +151,11 @@ func TestAppSandboxSmoke(t *testing.T) {
 	out, err = runSandboxSmokeCommand(t, time.Minute, "spctl", "--assess", "--type", "execute", "-vv", bin)
 	t.Logf("spctl err=%v output:\n%s", err, out)
 
-	cases := []struct {
-		name string
-		args []string
-	}{
-		{name: "version", args: []string{"--version"}},
-		{name: "help", args: []string{"help"}},
-		{name: "list", args: []string{"list"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := runSandboxedCoveSmokeCommand(t, bin, tc.args...)
-			t.Logf("%s %s err=%v output:\n%s", filepath.Base(bin), strings.Join(tc.args, " "), err, out)
-			if os.Getenv("COVE_APP_SANDBOX_SMOKE_EXPECT_START") == "1" && err != nil {
-				t.Fatalf("%s %v: %v\n%s", bin, tc.args, err, out)
-			}
-		})
-	}
+	return bin
 }
 
-func TestAppSandboxMacgoBundleSmoke(t *testing.T) {
-	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
-		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
-	}
+func buildMacgoBundleSmokeBinary(t *testing.T) (string, []string) {
+	t.Helper()
 	if _, err := exec.LookPath("codesign"); err != nil {
 		t.Skipf("codesign unavailable: %v", err)
 	}
@@ -105,35 +169,57 @@ func TestAppSandboxMacgoBundleSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build cove: %v\n%s", err, out)
 	}
-
-	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, []string{
+	return bin, []string{
 		coveAppSandboxMacgoEnv + "=1",
 		"GOPATH=" + tmp,
 		"MACGO_KEEP_BUNDLE=0",
-	}, bin, "security", "status")
-	t.Logf("sandboxed macgo bundle security status err=%v output:\n%s", err, out)
-	if err != nil {
-		t.Fatalf("sandboxed macgo bundle security status: %v\n%s", err, out)
 	}
-	for _, want := range []string{
-		"apple app sandbox: true",
-		"apple app sandbox id: com.tmc.cove",
-		"/Library/Containers/com.tmc.cove/Data/.vz",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("security status missing %q:\n%s", want, out)
+}
+
+func assertSandboxDoctorCommands(t *testing.T, run func(args ...string) (string, error)) {
+	t.Helper()
+
+	out, err := run("doctor", "host", "-json")
+	t.Logf("sandbox doctor host err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandbox doctor host: %v\n%s", err, out)
+	}
+	var host map[string]any
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &host); err != nil {
+		t.Fatalf("doctor host json: %v\n%s", err, out)
+	}
+	if _, ok := host["checks"].([]any); !ok {
+		t.Fatalf("doctor host json missing checks array:\n%s", out)
+	}
+
+	out, err = run("doctor", "sckit-preauth", "-json")
+	t.Logf("sandbox doctor sckit-preauth err=%v output:\n%s", err, out)
+	if err != nil && !isCommandExit(err) {
+		t.Fatalf("sandbox doctor sckit-preauth: %v\n%s", err, out)
+	}
+	var probe map[string]any
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &probe); err != nil {
+		t.Fatalf("doctor sckit-preauth json: %v\n%s", err, out)
+	}
+	for _, key := range []string{"SCKitAvailable", "ScreenRecordingAuthorized", "MacOSVersion"} {
+		if _, ok := probe[key]; !ok {
+			t.Fatalf("doctor sckit-preauth json missing %q:\n%s", key, out)
 		}
 	}
+}
 
-	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, []string{
-		coveAppSandboxMacgoEnv + "=1",
-		"GOPATH=" + tmp,
-		"MACGO_KEEP_BUNDLE=0",
-	}, bin, "list")
-	t.Logf("sandboxed macgo bundle list err=%v output:\n%s", err, out)
-	if err != nil {
-		t.Fatalf("sandboxed macgo bundle list: %v\n%s", err, out)
+func firstJSONObject(s string) string {
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start < 0 || end < start {
+		return s
 	}
+	return s[start : end+1]
+}
+
+func isCommandExit(err error) bool {
+	var exit *exec.ExitError
+	return errors.As(err, &exit)
 }
 
 func runSandboxSmokeCommand(t *testing.T, timeout time.Duration, name string, args ...string) (string, error) {

@@ -3,14 +3,12 @@
 package sckit
 
 import (
-	"context"
-	"os/exec"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/ebitengine/purego"
 	"github.com/tmc/apple/objc"
+	"golang.org/x/sys/unix"
 )
 
 const sckitMinMacOSMajor = 14
@@ -48,11 +46,9 @@ func Detect() Probe {
 }
 
 func readMacOSVersion() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "sw_vers", "-productVersion").Output()
+	version, err := unix.Sysctl("kern.osproductversion")
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(version)
 }

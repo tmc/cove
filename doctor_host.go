@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/tmc/cove/internal/bytefmt"
+	"golang.org/x/sys/unix"
 )
 
 type hostDoctorCheck struct {
@@ -125,11 +126,11 @@ func hostDoctorPlatformCheck() hostDoctorCheck {
 }
 
 func hostDoctorMacOSCheck() hostDoctorCheck {
-	out, err := hostDoctorRunCommand("sw_vers", "-productVersion")
+	version, err := unix.Sysctl("kern.osproductversion")
 	if err != nil {
-		return hostDoctorCheck{"macos-version", "warn", "could not read macOS version: " + strings.TrimSpace(string(out))}
+		return hostDoctorCheck{"macos-version", "warn", "could not read macOS version: " + err.Error()}
 	}
-	version := strings.TrimSpace(string(out))
+	version = strings.TrimSpace(version)
 	if version == "" {
 		return hostDoctorCheck{"macos-version", "warn", "macOS version was empty"}
 	}
@@ -137,6 +138,9 @@ func hostDoctorMacOSCheck() hostDoctorCheck {
 }
 
 func hostDoctorCodesignCheck() hostDoctorCheck {
+	if currentAppleAppSandboxStatus().Active {
+		return hostDoctorCheck{"virtualization-entitlement", "warn", "skipped codesign subprocess under Apple App Sandbox"}
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return hostDoctorCheck{"virtualization-entitlement", "warn", "could not locate cove binary"}
@@ -230,6 +234,9 @@ func hostDoctorHelperCheck() hostDoctorCheck {
 }
 
 func hostDoctorXcodeCheck() hostDoctorCheck {
+	if currentAppleAppSandboxStatus().Active {
+		return hostDoctorCheck{"xcode-cli", "warn", "skipped xcode-select subprocess under Apple App Sandbox"}
+	}
 	out, err := hostDoctorRunCommand("xcode-select", "-p")
 	if err != nil {
 		return hostDoctorCheck{"xcode-cli", "warn", "Xcode Command Line Tools not found; run xcode-select --install if cove prompts for toolchain support"}
