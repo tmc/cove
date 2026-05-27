@@ -106,7 +106,7 @@ func TestProvisionScriptGeneration(t *testing.T) {
 			}
 
 			// All scripts should have self-cleanup.
-			if !strings.Contains(script, "rm -f /Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist") {
+			if !strings.Contains(script, "rm -f /Library/LaunchDaemons/com.tmc.cove.provision.plist") {
 				t.Error("script missing LaunchDaemon self-cleanup")
 			}
 			if !strings.Contains(script, "rm -f /var/db/vz-provision.sh") {
@@ -121,7 +121,7 @@ func TestLaunchDaemonPlistGeneration(t *testing.T) {
 	plist := generateEmbeddedLaunchDaemonPlist()
 
 	required := []string{
-		"com.github.tmc.vz-macos.provision",
+		"com.tmc.cove.provision",
 		"/bin/bash",
 		"/var/db/vz-provision.sh",
 		"<key>RunAtLoad</key>",
@@ -247,12 +247,12 @@ func TestStageLaunchDaemonProvisioning(t *testing.T) {
 	}
 
 	// Verify plist was staged.
-	plistPath := filepath.Join(stagingDir, "Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist")
+	plistPath := filepath.Join(stagingDir, "Library", "LaunchDaemons", "com.tmc.cove.provision.plist")
 	plistData, err := os.ReadFile(plistPath)
 	if err != nil {
 		t.Fatalf("read staged plist: %v", err)
 	}
-	if !strings.Contains(string(plistData), "com.github.tmc.vz-macos.provision") {
+	if !strings.Contains(string(plistData), "com.tmc.cove.provision") {
 		t.Error("staged plist missing label")
 	}
 

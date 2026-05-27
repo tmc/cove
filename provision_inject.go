@@ -24,7 +24,7 @@ import (
 
 const (
 	autoLoginScriptRelativePath       = "private/var/db/vz-autologin.sh"
-	autoLoginLaunchDaemonRelativePath = "Library/LaunchDaemons/com.github.tmc.vz-macos.autologin.plist"
+	autoLoginLaunchDaemonRelativePath = "Library/LaunchDaemons/com.tmc.cove.autologin.plist"
 )
 
 // --- LaunchDaemon provisioning ---
@@ -42,7 +42,7 @@ func stageLaunchDaemonProvisioning(stagingDir string, config ProvisionConfig, ma
 	}
 
 	plistContent := generateEmbeddedLaunchDaemonPlist()
-	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"),
+	if err := stageFile(stagingDir, filepath.Join("Library", "LaunchDaemons", "com.tmc.cove.provision.plist"),
 		[]byte(plistContent), 0644, "root:wheel", manifest); err != nil {
 		return err
 	}

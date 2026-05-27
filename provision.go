@@ -15,7 +15,7 @@
 //
 // The injection process mounts the VM's APFS "Data" volume and writes:
 //
-//  1. LaunchDaemon plist (/Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist)
+//  1. LaunchDaemon plist (/Library/LaunchDaemons/com.tmc.cove.provision.plist)
 //  2. Provisioning script (/var/db/vz-provision.sh)
 //  3. Setup Assistant bypass marker (/var/db/.AppleSetupDone)
 //  4. Auto-login credentials (/etc/kcpassword + loginwindow.plist)
@@ -31,7 +31,7 @@
 //
 // # LaunchDaemon Provisioning
 //
-// The LaunchDaemon (com.github.tmc.vz-macos.provision.plist) is configured with RunAtLoad=true,
+// The LaunchDaemon (com.tmc.cove.provision.plist) is configured with RunAtLoad=true,
 // which causes launchd to execute the provisioning script immediately at boot.
 // The script uses sysadminctl to create the user account with proper credentials.
 //

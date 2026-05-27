@@ -108,7 +108,7 @@ func TestVerifyRunningGuestProbesMacOS(t *testing.T) {
 	for _, probe := range probes {
 		if probe.desc == "Agent LaunchDaemon" {
 			found = true
-			if got, want := probe.args, []string{"test", "-f", "/Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist"}; !reflect.DeepEqual(got, want) {
+			if got, want := probe.args, []string{"test", "-f", "/Library/LaunchDaemons/com.tmc.cove.vz-agent.plist"}; !reflect.DeepEqual(got, want) {
 				t.Fatalf("launchdaemon args = %#v, want %#v", got, want)
 			}
 		}

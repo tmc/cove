@@ -19,21 +19,21 @@ func TestWindowFrameAutosaveNameForVM(t *testing.T) {
 			vmName: "",
 			vmDir:  "/Users/tmc/.vz/vms/default",
 			linux:  false,
-			want:   "com.github.tmc.vz-macos.window.macos.default",
+			want:   "com.tmc.cove.window.macos.default",
 		},
 		{
 			name:   "linux named vm",
 			vmName: "macos-3",
 			vmDir:  "/Users/tmc/.vz/vms/macos-3",
 			linux:  true,
-			want:   "com.github.tmc.vz-macos.window.linux.macos-3",
+			want:   "com.tmc.cove.window.linux.macos-3",
 		},
 		{
 			name:   "sanitize token",
 			vmName: "My VM/Dev",
 			vmDir:  "/tmp/ignored",
 			linux:  false,
-			want:   "com.github.tmc.vz-macos.window.macos.my_vm_dev",
+			want:   "com.tmc.cove.window.macos.my_vm_dev",
 		},
 	}
 	for _, tt := range tests {
@@ -60,9 +60,9 @@ func TestWindowDisplayPlacementPath(t *testing.T) {
 	vmDir = "/Users/tmc/.vz/vms/macos-3"
 	t.Cleanup(func() { vmDir = prevVMDir })
 
-	name := "com.github.tmc.vz-macos.window.macos.macos-3"
+	name := "com.tmc.cove.window.macos.macos-3"
 	got := windowDisplayPlacementPath(name)
-	want := "/Users/tmc/.vz/vms/macos-3/window-display-com.github.tmc.vz-macos.window.macos.macos-3.json"
+	want := "/Users/tmc/.vz/vms/macos-3/window-display-com.tmc.cove.window.macos.macos-3.json"
 	if got != want {
 		t.Fatalf("windowDisplayPlacementPath() = %q, want %q", got, want)
 	}

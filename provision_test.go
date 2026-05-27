@@ -131,7 +131,7 @@ func TestApplyProvisioningDoesNotWarnWhenNativeAuthAvailable(t *testing.T) {
 	manifest := &ProvisionManifest{
 		Version: 1,
 		Files: []ProvisionManifestFile{
-			{Path: filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"), Mode: "0644", Owner: "root:wheel"},
+			{Path: filepath.Join("Library", "LaunchDaemons", "com.tmc.cove.provision.plist"), Mode: "0644", Owner: "root:wheel"},
 			{Path: filepath.Join("private", "etc", "kcpassword"), Mode: "0600", Owner: "root:wheel"},
 		},
 	}
@@ -183,7 +183,7 @@ func TestApplyProvisioningWarnsWhenManualElevationRequired(t *testing.T) {
 	manifest := &ProvisionManifest{
 		Version: 1,
 		Files: []ProvisionManifestFile{
-			{Path: filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"), Mode: "0644", Owner: "root:wheel"},
+			{Path: filepath.Join("Library", "LaunchDaemons", "com.tmc.cove.provision.plist"), Mode: "0644", Owner: "root:wheel"},
 			{Path: filepath.Join("private", "etc", "kcpassword"), Mode: "0600", Owner: "root:wheel"},
 		},
 	}
@@ -238,7 +238,7 @@ func TestRootWheelVerifyTargetsIncludesEveryRootOwnedFile(t *testing.T) {
 		Version: 1,
 		Files: []ProvisionManifestFile{
 			{Path: filepath.Join("private", "var", "db", "vz-provision.sh"), Owner: "root:wheel"},
-			{Path: filepath.Join("Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"), Owner: "root:wheel"},
+			{Path: filepath.Join("Library", "LaunchDaemons", "com.tmc.cove.provision.plist"), Owner: "root:wheel"},
 			{Path: filepath.Join("private", "var", "db", ".AppleSetupDone")},
 			{Path: filepath.Join("usr", "local", "bin", agentBinaryName), Owner: "root:wheel"},
 		},
@@ -246,7 +246,7 @@ func TestRootWheelVerifyTargetsIncludesEveryRootOwnedFile(t *testing.T) {
 	got := rootWheelVerifyTargets(manifest, "/Volumes/Data")
 	want := []string{
 		filepath.Join("/Volumes/Data", "private", "var", "db", "vz-provision.sh"),
-		filepath.Join("/Volumes/Data", "Library", "LaunchDaemons", "com.github.tmc.vz-macos.provision.plist"),
+		filepath.Join("/Volumes/Data", "Library", "LaunchDaemons", "com.tmc.cove.provision.plist"),
 		filepath.Join("/Volumes/Data", "usr", "local", "bin", agentBinaryName),
 	}
 	if len(got) != len(want) {

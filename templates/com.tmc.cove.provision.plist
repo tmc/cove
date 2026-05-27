@@ -3,18 +3,20 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.github.tmc.vz-macos.autologin</string>
+    <string>com.tmc.cove.provision</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/var/db/vz-autologin.sh</string>
+        <string>/var/db/vz-provision.sh</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
+    <key>LaunchOnlyOnce</key>
+    <true/>
     <key>StandardOutPath</key>
-    <string>/var/log/vz-autologin.log</string>
+    <string>/var/log/vz-provision.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/vz-autologin.log</string>
+    <string>/var/log/vz-provision.log</string>
     <key>WaitForDebugger</key>
     <false/>
 </dict>

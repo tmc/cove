@@ -316,9 +316,9 @@ func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
 			},
 			{
 				desc:    "Agent LaunchDaemon",
-				args:    []string{"test", "-f", "/Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist"},
+				args:    []string{"test", "-f", "/Library/LaunchDaemons/com.tmc.cove.vz-agent.plist"},
 				ok:      "present",
-				missing: "not found (/Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist)",
+				missing: "not found (/Library/LaunchDaemons/com.tmc.cove.vz-agent.plist)",
 			},
 			{
 				desc:    "Provisioning completed marker",
@@ -404,7 +404,7 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 		required     bool
 		description  string
 	}{
-		{"Library/LaunchDaemons/com.github.tmc.vz-macos.provision.plist", "root:wheel", provisionRequired, "LaunchDaemon plist"},
+		{"Library/LaunchDaemons/com.tmc.cove.provision.plist", "root:wheel", provisionRequired, "LaunchDaemon plist"},
 		{"private/var/db/vz-provision.sh", "root:wheel", provisionRequired, "Provisioning script"},
 		{"private/var/db/.AppleSetupDone", "any", false, "Setup Assistant skip marker"},
 		{"private/etc/kcpassword", "root:wheel", false, "Auto-login password (kcpassword)"},
@@ -415,7 +415,7 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 		{"private/var/db/vz-guest-tools.pkg", "root:wheel", false, "SPICE guest tools package (pending install)"},
 		{"private/var/db/.vz-guest-tools-installed", "any", false, "SPICE guest tools installed marker"},
 		{"usr/local/bin/vz-agent", "root:wheel", false, "Guest agent binary (vz-agent)"},
-		{"Library/LaunchDaemons/com.github.tmc.vz-macos.vz-agent.plist", "root:wheel", false, "Guest agent LaunchDaemon"},
+		{"Library/LaunchDaemons/com.tmc.cove.vz-agent.plist", "root:wheel", false, "Guest agent LaunchDaemon"},
 	}
 
 	var results []VerifyResult
@@ -487,7 +487,7 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 
 	// Check for missing agent.
 	agentBinPath := filepath.Join(mountPoint, "usr", "local", "bin", "vz-agent")
-	agentPlistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.github.tmc.vz-macos.vz-agent.plist")
+	agentPlistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.tmc.cove.vz-agent.plist")
 	agentMissing := false
 	if _, err := os.Stat(agentBinPath); os.IsNotExist(err) {
 		agentMissing = true

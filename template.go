@@ -475,10 +475,10 @@ var provisioningSourceFiles = []string{
 	"agent_inject.go",
 	"templates/vz-provision.sh.tmpl",
 	"templates/vz-autologin.sh.tmpl",
-	"templates/com.github.tmc.vz-macos.provision.plist",
-	"templates/com.github.tmc.vz-macos.autologin.plist",
-	"templates/com.github.tmc.vz-macos.vz-agent.plist",
-	"templates/com.github.tmc.vz-macos.vz-agent-user.plist",
+	"templates/com.tmc.cove.provision.plist",
+	"templates/com.tmc.cove.autologin.plist",
+	"templates/com.tmc.cove.vz-agent.plist",
+	"templates/com.tmc.cove.vz-agent-user.plist",
 }
 
 // ProvisioningSourceHash computes a short SHA-256 hash of the provisioning

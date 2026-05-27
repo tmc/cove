@@ -3,12 +3,12 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.github.tmc.vz-macos.vz-agent-user</string>
+    <string>com.tmc.cove.vz-agent</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/vz-agent</string>
         <string>-mode</string>
-        <string>agent</string>
+        <string>daemon</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -16,11 +16,9 @@
     <true/>
     <key>ThrottleInterval</key>
     <integer>5</integer>
-    <key>LimitLoadToSessionType</key>
-    <string>Aqua</string>
     <key>StandardOutPath</key>
-    <string>/tmp/vz-agent-user.log</string>
+    <string>/var/log/vz-agent.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/vz-agent-user.log</string>
+    <string>/var/log/vz-agent.log</string>
 </dict>
 </plist>
