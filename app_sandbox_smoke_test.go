@@ -281,7 +281,10 @@ func stageAppSandboxScratchBootVM(t *testing.T) appSandboxScratchBootVM {
 	}
 	root := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data", "tmp", fmt.Sprintf("cvbt%d", os.Getpid()))
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
-	vmDir := filepath.Join(root, "vm")
+	vmDir := filepath.Join(root, "vm-"+strings.Repeat("deep", 10))
+	if direct := filepath.Join(vmDir, "control.sock"); len(direct) <= controlSocketMaxPath {
+		t.Fatalf("scratch VM dir too short for socket fallback proof: %s", direct)
+	}
 	if err := os.MkdirAll(vmDir, 0700); err != nil {
 		t.Fatalf("create scratch vm dir: %v", err)
 	}

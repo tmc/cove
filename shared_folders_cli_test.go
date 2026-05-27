@@ -295,7 +295,7 @@ func TestSharedFolderCommandVMDirHonorsVMFlag(t *testing.T) {
 	if got != want {
 		t.Fatalf("sharedFolderCommandVMDir() = %q, want %q", got, want)
 	}
-	if sock := GetControlSocketPathForVM(got); sock != filepath.Join(want, "control.sock") {
+	if sock := GetControlSocketPathForVM(got); sock != GetControlSocketPathForVM(want) {
 		t.Fatalf("socket path = %q", sock)
 	}
 }
@@ -318,7 +318,7 @@ func TestApplySharedFoldersWarningNamesTargetVM(t *testing.T) {
 	})
 	for _, want := range []string{
 		`VM "ubuntu-gh-runner-headed"`,
-		filepath.Join(vmDirectory, "control.sock"),
+		GetControlSocketPathForVM(vmDirectory),
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)

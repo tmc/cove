@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,6 +83,44 @@ func TestControlServerStartCreatesTokenAndLocksSocketPermissions(t *testing.T) {
 	}
 	if socketInfo.Mode().Perm() != 0600 {
 		t.Fatalf("socket perms = %04o, want 0600", socketInfo.Mode().Perm())
+	}
+}
+
+func TestControlServerStartWritesTokenBesideShortSocket(t *testing.T) {
+	vmDir := filepath.Join(t.TempDir(), strings.Repeat("deep-", 30), "vm")
+	sockRoot := t.TempDir()
+	sock := controlSocketPathForVMWithTemp(vmDir, sockRoot)
+
+	s := NewControlServerWithVMDir(sock, vmDir)
+	if err := s.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer s.Stop()
+
+	if sock == filepath.Join(vmDir, "control.sock") {
+		t.Fatalf("socket path was not shortened: %q", sock)
+	}
+	if _, err := os.Stat(sock); err != nil {
+		t.Fatalf("stat socket: %v", err)
+	}
+	sidecarToken := filepath.Join(filepath.Dir(sock), controlTokenFileName)
+	token, err := LoadControlTokenFromPath(sidecarToken)
+	if err != nil {
+		t.Fatalf("read sidecar token: %v", err)
+	}
+	if token != s.authToken {
+		t.Fatalf("sidecar token = %q, want %q", token, s.authToken)
+	}
+	if got := resolveControlTokenForSocket(sock); got != s.authToken {
+		t.Fatalf("resolveControlTokenForSocket = %q, want %q", got, s.authToken)
+	}
+	sidecarVMDir := filepath.Join(filepath.Dir(sock), controlVMDirFileName)
+	data, err := os.ReadFile(sidecarVMDir)
+	if err != nil {
+		t.Fatalf("read sidecar VM dir: %v", err)
+	}
+	if got := strings.TrimSpace(string(data)); got != vmDir {
+		t.Fatalf("sidecar VM dir = %q, want %q", got, vmDir)
 	}
 }
 

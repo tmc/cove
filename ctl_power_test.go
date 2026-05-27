@@ -76,7 +76,7 @@ func TestCtlPowerCommandErrorPaths(t *testing.T) {
 }
 
 func TestCtlPowerRefusesLinuxGuest(t *testing.T) {
-	vmDir := t.TempDir()
+	vmDir := shortSharedFolderVMDir(t)
 	if err := os.WriteFile(filepath.Join(vmDir, "linux-disk.img"), nil, 0644); err != nil {
 		t.Fatalf("write linux marker: %v", err)
 	}
@@ -86,5 +86,28 @@ func TestCtlPowerRefusesLinuxGuest(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "power: not supported for Linux guests; use systemd-inhibit directly via agent-exec --daemon") {
 		t.Fatalf("ctlPowerCommand() error = %v", err)
+	}
+}
+
+func TestCtlGuestPlatformUsesShortSocketVMDir(t *testing.T) {
+	vmDir := filepath.Join(t.TempDir(), strings.Repeat("deep-", 30), "vm")
+	if err := os.MkdirAll(vmDir, 0700); err != nil {
+		t.Fatalf("create vm dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "linux-disk.img"), nil, 0644); err != nil {
+		t.Fatalf("write linux marker: %v", err)
+	}
+	sock := controlSocketPathForVMWithTemp(vmDir, t.TempDir())
+	if sock == filepath.Join(vmDir, "control.sock") {
+		t.Fatalf("socket path was not shortened: %q", sock)
+	}
+	if err := os.MkdirAll(filepath.Dir(sock), 0700); err != nil {
+		t.Fatalf("create socket dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(sock), controlVMDirFileName), []byte(vmDir+"\n"), 0600); err != nil {
+		t.Fatalf("write sidecar VM dir: %v", err)
+	}
+	if !ctlGuestIsLinux(sock) {
+		t.Fatalf("ctlGuestIsLinux(%q) = false, want true", sock)
 	}
 }
