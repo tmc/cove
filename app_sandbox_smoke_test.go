@@ -607,6 +607,57 @@ func TestAppSandboxRunWorkerListPreflightSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxListWorkerDelegationSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	containerHome := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data")
+	stateRoot := filepath.Join(containerHome, "tmp", fmt.Sprintf("cove-list-delegate-%d", os.Getpid()), "state")
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(stateRoot)) })
+	vmRoot := filepath.Join(stateRoot, "vms")
+	for _, name := range []string{"list-delegate-b", "list-delegate-a"} {
+		dir := filepath.Join(vmRoot, name)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatalf("create list delegate VM: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0600); err != nil {
+			t.Fatalf("write list delegate VM disk: %v", err)
+		}
+		if err := vmconfig.Save(dir, &vmconfig.Config{CPU: 2, MemoryGB: 4}); err != nil {
+			t.Fatalf("write list delegate VM config: %v", err)
+		}
+	}
+	store := filepath.Join(filepath.Dir(stateRoot), "bookmarks.json")
+	grantEnv := append(append([]string{}, env...), securityBookmarkStoreEnv+"="+store, vmconfig.StateDirEnv+"="+stateRoot)
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+		"-json", "-key", "dir:"+vmRoot, "-kind", "host-dir", "-path", vmRoot)
+	t.Logf("sandboxed macgo list delegation bookmark save err=%v output:\n%s", err, out)
+	if err != nil || strings.Contains(out, "error:") {
+		t.Fatalf("sandboxed macgo list delegation bookmark save: %v\n%s", err, out)
+	}
+
+	workerEnv := withoutEnv(grantEnv, coveAppSandboxMacgoEnv)
+	workerEnv = append(workerEnv, listWorkerDelegationEnv+"=1")
+	out, err = runSandboxSmokeCommandEnv(t, 90*time.Second, workerEnv, bin, "list")
+	t.Logf("sandboxed list worker delegation err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed list worker delegation: %v\n%s", err, out)
+	}
+	for _, want := range []string{"VMs:", "list-delegate-a", "list-delegate-b", "Linux", "stopped", "GUI state: cove ctl -vm <name> gui status"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("list worker delegation output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) || strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) || strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("list worker delegation hit sandbox/grant failure:\n%s", out)
+	}
+}
+
 func TestAppSandboxBookmarkProbeSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")

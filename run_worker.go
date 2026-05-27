@@ -54,12 +54,16 @@ type runWorkerChildReport struct {
 }
 
 type runWorkerVMMetadata struct {
-	Name        string `json:"name"`
-	Dir         string `json:"dir"`
-	OSType      string `json:"os_type"`
-	State       string `json:"state"`
-	ConfigRead  bool   `json:"config_read,omitempty"`
-	RuntimeRead bool   `json:"runtime_read,omitempty"`
+	Name        string    `json:"name"`
+	Dir         string    `json:"dir"`
+	OSType      string    `json:"os_type"`
+	State       string    `json:"state"`
+	DiskSize    int64     `json:"disk_size_bytes"`
+	Created     time.Time `json:"created"`
+	Uptime      string    `json:"uptime,omitempty"`
+	Note        string    `json:"note,omitempty"`
+	ConfigRead  bool      `json:"config_read,omitempty"`
+	RuntimeRead bool      `json:"runtime_read,omitempty"`
 }
 
 func runWorkerCommand(env commandEnv, _ string, args []string) int {
@@ -678,9 +682,12 @@ func runWorkerListVMRoot(root string) ([]runWorkerVMMetadata, error) {
 			Dir:         info.Path,
 			OSType:      info.OSType,
 			State:       info.State,
+			DiskSize:    info.DiskSize,
+			Created:     info.Created,
 			ConfigRead:  fileExists(filepath.Join(info.Path, "config.json")),
 			RuntimeRead: fileExists(filepath.Join(info.Path, vmRuntimeStateFile)),
 		}
+		meta.Uptime, meta.Note = runtimeListFields(info.Path, info.State)
 		vms = append(vms, meta)
 	}
 	sort.Slice(vms, func(i, j int) bool {

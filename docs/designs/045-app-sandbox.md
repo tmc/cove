@@ -144,6 +144,10 @@ Observed result:
   resolves the root, scans valid VM directories, and reports per-VM name, path,
   OS type, state, and metadata-file read proof without creating aliases or
   reading ambient VM roots.
+- `COVE_APP_SANDBOX_DELEGATE_LIST=1` is the explicit opt-in user-facing list
+  delegation path. In that mode, `list` formats the VM table from the sandboxed
+  worker's `list-preflight` result. The default production `list` path remains
+  unchanged.
 - `security bookmark-probe -json` exercises the purego Foundation bookmark
   calls through the sandboxed macgo bundle. It creates an app-scoped
   security-scoped bookmark for a temp file inside the app container, resolves
@@ -358,9 +362,13 @@ work in this order:
 19. Done: add hidden `__run-worker list-preflight` for a staged
     `dir:<vm-root>` grant. It lists valid VMs from the bookmarked root in the
     sandboxed worker without mutating aliases or falling back to ambient roots.
-20. Next: decide whether `list` should gain an explicit worker-delegation opt-in
-    like `status`, or whether the next proof should cover read-only image/cache
-    metadata under a staged state-dir grant.
+20. Done: add explicit opt-in `list` worker delegation with
+    `COVE_APP_SANDBOX_DELEGATE_LIST=1`. This keeps default list behavior
+    unchanged while proving the parent can consume and format the sandboxed
+    worker VM-root metadata result.
+21. Next: cover read-only image/cache metadata under a staged state-dir grant,
+    or ask NotebookLM for the next App Sandbox blocker before expanding the
+    user-facing delegation surface further.
 
 ## Proof gates
 
