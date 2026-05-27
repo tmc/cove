@@ -272,6 +272,63 @@ func TestAppSandboxMacgoBundleHostPathDenialSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxInstallMediaGrantBoundarySmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	root := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data", "tmp", fmt.Sprintf("cove-media-grant-%d", os.Getpid()))
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatalf("create media grant root: %v", err)
+	}
+	iso := filepath.Join(root, "install.iso")
+	if err := os.WriteFile(iso, []byte("iso"), 0600); err != nil {
+		t.Fatalf("write ISO: %v", err)
+	}
+	absISO, err := filepath.Abs(iso)
+	if err != nil {
+		t.Fatalf("abs ISO: %v", err)
+	}
+	store := filepath.Join(root, "bookmarks.json")
+	grantEnv := append(append([]string{}, env...), securityBookmarkStoreEnv+"="+store)
+
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "install", "-linux", "-iso", iso)
+	t.Logf("sandboxed macgo missing media grant err=%v output:\n%s", err, out)
+	if err != nil && !isCommandExit(err) {
+		t.Fatalf("missing media grant err = %v, want clean return or command exit\n%s", err, out)
+	}
+	if !strings.Contains(out, errPowerboxGrantRequired.Error()) || !strings.Contains(out, "iso:"+absISO) {
+		t.Fatalf("missing media grant output = %q, want typed ISO grant", out)
+	}
+	if strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("missing media grant crashed instead of returning Go error:\n%s", out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+		"-json", "-store", store, "-key", "iso:"+absISO, "-kind", "iso", "-path", iso)
+	t.Logf("sandboxed macgo media bookmark save err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo media bookmark save: %v\n%s", err, out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "install", "-linux", "-iso", iso)
+	t.Logf("sandboxed macgo media grant install boundary err=%v output:\n%s", err, out)
+	if err != nil && !isCommandExit(err) {
+		t.Fatalf("media grant install boundary err = %v, want clean return or command exit\n%s", err, out)
+	}
+	if !strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) {
+		t.Fatalf("media grant install output = %q, want install mutation denial", out)
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) {
+		t.Fatalf("media grant install still requested grant:\n%s", out)
+	}
+}
+
 func TestAppSandboxRunWorkerSmoke(t *testing.T) {
 	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
 		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")

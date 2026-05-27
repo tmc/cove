@@ -37,14 +37,33 @@ func withPowerboxFallback(action func() error) error {
 	if !errors.As(err, &grantRequired) {
 		return err
 	}
-	grant, err := powerboxPromptDirectory(powerboxPromptTitle(grantRequired), powerboxPromptMessage(grantRequired))
+	path, bookmark, err := promptPowerboxGrant(grantRequired)
 	if err != nil {
 		return err
 	}
-	if _, err := saveSecurityBookmarkBytes(grantRequired.StorePath, grantRequired.Key, grantRequired.Kind, grant.Path, grant.Bookmark); err != nil {
+	if _, err := saveSecurityBookmarkBytes(grantRequired.StorePath, grantRequired.Key, grantRequired.Kind, path, bookmark); err != nil {
 		return fmt.Errorf("save Powerbox bookmark: %w", err)
 	}
 	return action()
+}
+
+func promptPowerboxGrant(grantRequired *powerboxGrantRequiredError) (path string, bookmark []byte, err error) {
+	title := powerboxPromptTitle(grantRequired)
+	message := powerboxPromptMessage(grantRequired)
+	switch grantRequired.Kind {
+	case "iso", "ipsw":
+		grant, err := powerboxPromptFile(title, message, []string{grantRequired.Kind})
+		if err != nil {
+			return "", nil, err
+		}
+		return grant.Path, grant.Bookmark, nil
+	default:
+		grant, err := powerboxPromptDirectory(title, message)
+		if err != nil {
+			return "", nil, err
+		}
+		return grant.Path, grant.Bookmark, nil
+	}
 }
 
 func powerboxPromptTitle(grant *powerboxGrantRequiredError) string {
@@ -56,7 +75,12 @@ func powerboxPromptTitle(grant *powerboxGrantRequiredError) string {
 
 func powerboxPromptMessage(grant *powerboxGrantRequiredError) string {
 	if grant.Key != "" {
-		return "Choose the directory to grant for " + grant.Key + "."
+		switch grant.Kind {
+		case "iso", "ipsw":
+			return "Choose the file to grant for " + grant.Key + "."
+		default:
+			return "Choose the directory to grant for " + grant.Key + "."
+		}
 	}
 	return "Choose a directory to grant to cove."
 }

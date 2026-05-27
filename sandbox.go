@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/tmc/cove/internal/vmconfig"
@@ -320,13 +321,17 @@ func applyAppleAppSandboxGuards() error {
 	if len(blockDevices) > 0 {
 		return denyAppleAppSandboxHostAccess("-block")
 	}
+	if err := requireAppleAppSandboxMediaGrant("-ipsw", ipswPath, "ipsw"); err != nil {
+		return err
+	}
+	if err := requireAppleAppSandboxMediaGrant("-iso", isoPath, "iso"); err != nil {
+		return err
+	}
 	for _, path := range []struct {
 		flag  string
 		value string
 	}{
 		{"-disk", diskPath},
-		{"-ipsw", ipswPath},
-		{"-iso", isoPath},
 		{"-kernel", kernelPath},
 		{"-initrd", initrdPath},
 		{"-pcap", pcapPath},
@@ -334,6 +339,49 @@ func applyAppleAppSandboxGuards() error {
 		if strings.TrimSpace(path.value) != "" {
 			return denyAppleAppSandboxHostAccess(path.flag)
 		}
+	}
+	return nil
+}
+
+func requireAppleAppSandboxMediaGrant(flagName, rawPath, kind string) error {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" {
+		return nil
+	}
+	path := rawPath
+	switch kind {
+	case "ipsw":
+		src, err := parseIPSWSource(rawPath)
+		if err != nil {
+			return fmt.Errorf("%s: %w", flagName, err)
+		}
+		if src.IsURL {
+			return nil
+		}
+		path = src.Path
+	case "iso":
+		if isURL(rawPath) {
+			return nil
+		}
+	default:
+		return fmt.Errorf("unknown media grant kind %q", kind)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("%s: resolve path: %w", flagName, err)
+	}
+	storePath, err := defaultSecurityBookmarkStorePath()
+	if err != nil {
+		return err
+	}
+	key := kind + ":" + abs
+	access, err := resolveSecurityBookmarkAccessFromStore(storePath, key)
+	if err != nil {
+		return powerboxGrantRequiredKind("read media", key, kind, storePath)
+	}
+	defer access.Stop()
+	if !powerboxFileExtensionAllowed(access.Path, []string{kind}) {
+		return fmt.Errorf("bookmark %s resolved to unsupported media path: %s", key, access.Path)
 	}
 	return nil
 }
