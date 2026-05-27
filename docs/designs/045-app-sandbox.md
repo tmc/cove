@@ -98,6 +98,11 @@ Observed result:
   temp directory, a hashed short control socket path, an APFS clone of an
   existing Linux disk, and EFI boot, then stops the VM before guest readiness is
   required.
+- `COVE_STATE_DIR` is the first explicit state-directory grant contract. When
+  set, all `vmconfig` roots move from `$HOME/.vz` to that granted root, and
+  macgo forwards the variable into the sandboxed LaunchServices child. The
+  current smoke proof uses a grant inside the app container and proves `list`
+  sees only that granted VM root, not an ambient container `.vz`.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -210,9 +215,9 @@ work in this order:
 1. Done: mitigate Unix socket path length. Long per-VM socket paths fall back to
    a hashed short path under the process temp directory, with a sidecar
    `control.token` for existing clients.
-2. Define explicit state-directory grants. The current macgo proof can start
-   and report container paths, but it is not an isolation claim for existing VM
-   discovery until Powerbox or security-scoped bookmarks are designed.
+2. In progress: define explicit state-directory grants. `COVE_STATE_DIR` is now
+   the process contract and is forwarded through macgo; real user-selected
+   existing VM access still needs Powerbox or security-scoped bookmark storage.
 3. Make helper IPC and privilege paths explicit denials or separately proved
    capabilities. `cove-helper`, provisioning, and offline injection remain out
    of the sandboxed runtime claim.

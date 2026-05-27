@@ -207,17 +207,13 @@ func currentSecurityStatus() securityStatus {
 	}
 	appSandbox := currentAppleAppSandboxStatus()
 	homeDir, _ := os.UserHomeDir()
-	stateRoot := ""
-	if homeDir != "" {
-		stateRoot = filepath.Join(homeDir, ".vz")
-	}
 	return securityStatus{
 		SandboxLevel:      level,
 		HostContainment:   contained,
 		AppleAppSandbox:   appSandbox.Active,
 		AppleAppSandboxID: appSandbox.ContainerID,
 		HomeDir:           homeDir,
-		StateRoot:         stateRoot,
+		StateRoot:         vmconfig.StateDir(),
 		VMRoot:            vmconfig.BaseDir(),
 		NetworkMode:       networkMode,
 		Clipboard:         enableClipboard,

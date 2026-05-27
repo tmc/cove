@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/buildscratch"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestSecurityStatusHostContainment(t *testing.T) {
@@ -72,6 +73,25 @@ func TestSecurityStatusAppleAppSandbox(t *testing.T) {
 		"home: /Users/tmc/Library/Containers/com.tmc.cove/Data",
 		"state root: /Users/tmc/Library/Containers/com.tmc.cove/Data/.vz",
 		"vm root: /Users/tmc/Library/Containers/com.tmc.cove/Data/.vz/vms",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("security status missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestSecurityStatusReportsStateDirEnv(t *testing.T) {
+	stateDir := filepath.Join(t.TempDir(), "granted-state")
+	t.Setenv(vmconfig.StateDirEnv, stateDir)
+
+	var out strings.Builder
+	if err := handleSecurityCommand(commandEnv{Stdout: &out, Stderr: &bytes.Buffer{}}, []string{"status"}); err != nil {
+		t.Fatalf("handleSecurityCommand: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"state root: " + stateDir,
+		"vm root: " + filepath.Join(stateDir, "vms"),
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("security status missing %q:\n%s", want, got)
