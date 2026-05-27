@@ -118,10 +118,21 @@ func TestAppSandboxMacgoBundleSmoke(t *testing.T) {
 	for _, want := range []string{
 		"apple app sandbox: true",
 		"apple app sandbox id: com.tmc.cove",
+		"/Library/Containers/com.tmc.cove/Data/.vz",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("security status missing %q:\n%s", want, out)
 		}
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, []string{
+		coveAppSandboxMacgoEnv + "=1",
+		"GOPATH=" + tmp,
+		"MACGO_KEEP_BUNDLE=0",
+	}, bin, "list")
+	t.Logf("sandboxed macgo bundle list err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo bundle list: %v\n%s", err, out)
 	}
 }
 

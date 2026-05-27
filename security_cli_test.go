@@ -51,6 +51,7 @@ func TestSecurityStatusHostContainment(t *testing.T) {
 
 func TestSecurityStatusAppleAppSandbox(t *testing.T) {
 	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+	t.Setenv("HOME", "/Users/tmc/Library/Containers/com.tmc.cove/Data")
 
 	var out strings.Builder
 	if err := handleSecurityCommand(commandEnv{Stdout: &out, Stderr: &bytes.Buffer{}}, []string{"status"}); err != nil {
@@ -60,6 +61,9 @@ func TestSecurityStatusAppleAppSandbox(t *testing.T) {
 	for _, want := range []string{
 		"apple app sandbox: true",
 		"apple app sandbox id: com.tmc.cove",
+		"home: /Users/tmc/Library/Containers/com.tmc.cove/Data",
+		"state root: /Users/tmc/Library/Containers/com.tmc.cove/Data/.vz",
+		"vm root: /Users/tmc/Library/Containers/com.tmc.cove/Data/.vz/vms",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("security status missing %q:\n%s", want, got)
@@ -92,6 +96,8 @@ func TestSecurityStatusJSON(t *testing.T) {
 		`"host_containment": true`,
 		`"apple_app_sandbox": true`,
 		`"apple_app_sandbox_id": "com.tmc.cove"`,
+		`"state_root":`,
+		`"vm_root":`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("security json missing %q:\n%s", want, got)

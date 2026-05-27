@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 type securityStatus struct {
@@ -13,6 +16,9 @@ type securityStatus struct {
 	HostContainment   bool   `json:"host_containment"`
 	AppleAppSandbox   bool   `json:"apple_app_sandbox"`
 	AppleAppSandboxID string `json:"apple_app_sandbox_id,omitempty"`
+	HomeDir           string `json:"home_dir"`
+	StateRoot         string `json:"state_root"`
+	VMRoot            string `json:"vm_root"`
 	NetworkMode       string `json:"network_mode"`
 	Clipboard         bool   `json:"clipboard"`
 	AutoMount         bool   `json:"auto_mount_volumes"`
@@ -67,6 +73,9 @@ func handleSecurityCommand(env commandEnv, args []string) error {
 	if status.AppleAppSandboxID != "" {
 		fmt.Fprintf(env.Stdout, "apple app sandbox id: %s\n", status.AppleAppSandboxID)
 	}
+	fmt.Fprintf(env.Stdout, "home: %s\n", status.HomeDir)
+	fmt.Fprintf(env.Stdout, "state root: %s\n", status.StateRoot)
+	fmt.Fprintf(env.Stdout, "vm root: %s\n", status.VMRoot)
 	fmt.Fprintf(env.Stdout, "network: %s\n", status.NetworkMode)
 	fmt.Fprintf(env.Stdout, "clipboard: %v\n", status.Clipboard)
 	fmt.Fprintf(env.Stdout, "auto-mount volumes: %v\n", status.AutoMount)
@@ -86,11 +95,19 @@ func currentSecurityStatus() securityStatus {
 		contained = policy.HostContainment()
 	}
 	appSandbox := currentAppleAppSandboxStatus()
+	homeDir, _ := os.UserHomeDir()
+	stateRoot := ""
+	if homeDir != "" {
+		stateRoot = filepath.Join(homeDir, ".vz")
+	}
 	return securityStatus{
 		SandboxLevel:      level,
 		HostContainment:   contained,
 		AppleAppSandbox:   appSandbox.Active,
 		AppleAppSandboxID: appSandbox.ContainerID,
+		HomeDir:           homeDir,
+		StateRoot:         stateRoot,
+		VMRoot:            vmconfig.BaseDir(),
 		NetworkMode:       networkMode,
 		Clipboard:         enableClipboard,
 		AutoMount:         autoMountVolumes,
