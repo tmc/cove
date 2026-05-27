@@ -64,6 +64,21 @@ func TestControlServerRuntimeStatusCommands(t *testing.T) {
 	if !debugStatus.Enabled || debugStatus.Kind != "gdb" || debugStatus.Port != 1234 || !debugStatus.ListenAll || debugStatus.Connect == "" {
 		t.Fatalf("debug status = %#v", debugStatus)
 	}
+
+	resp = sendControlLine(t, sock, `{"type":"server-info","auth_token":"`+s.authToken+`"}`)
+	if !resp.Success {
+		t.Fatalf("server-info failed: %s", resp.Error)
+	}
+	var serverInfo RuntimeServerInfo
+	if err := json.Unmarshal([]byte(resp.Data), &serverInfo); err != nil {
+		t.Fatalf("unmarshal server info: %v", err)
+	}
+	if serverInfo.PID == 0 || serverInfo.Executable == "" || serverInfo.Commit == "" || serverInfo.SocketPath != sock {
+		t.Fatalf("server info = %#v", serverInfo)
+	}
+	if serverInfo.Command == "" || serverInfo.StartSource == "" {
+		t.Fatalf("server info missing owner context: %#v", serverInfo)
+	}
 }
 
 func TestCtlCommandRuntimeStatus(t *testing.T) {
@@ -100,6 +115,13 @@ func TestCtlCommandRuntimeStatus(t *testing.T) {
 	if !strings.Contains(debugOut, `"connect": "lldb -o 'gdb-remote 127.0.0.1:1234'"`) {
 		t.Fatalf("ctl debug-stub status missing connect hint: %q", debugOut)
 	}
+
+	serverOut := captureStdout(t, func() error {
+		return ctlCommand([]string{"-socket", sock, "-token", s.authToken, "server-info"})
+	})
+	if !strings.Contains(serverOut, `"pid":`) || !strings.Contains(serverOut, `"socket_path": "`+sock+`"`) {
+		t.Fatalf("ctl server-info output = %q", serverOut)
+	}
 }
 
 func TestControlServerCapabilitiesIncludeRuntimeStatusCommands(t *testing.T) {
@@ -115,6 +137,7 @@ func TestControlServerCapabilitiesIncludeRuntimeStatusCommands(t *testing.T) {
 	wantCommands := map[string]bool{
 		"vnc-status":        false,
 		"debug-stub-status": false,
+		"server-info":       false,
 		"disk":              false,
 		"usb":               false,
 	}
