@@ -99,8 +99,8 @@ Observed result:
   guest readiness is required.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
-  after `Starting virtual machine...`, so that issue belongs in the runtime
-  queue rather than the App Sandbox compatibility claim.
+  after `Starting virtual machine...`. Cove therefore fails closed before
+  creating runtime temporary-RAM storage attachments.
 
 ## Expected breakage map
 
@@ -198,27 +198,24 @@ Unsupported claims:
 7. Done: add `security probe-sandbox` listener checks and a sandboxed macgo
    scratch VM start/stop smoke using a short app-container path and APFS-cloned
    Linux disk.
-8. Queued: investigate `VZTemporaryRAMStorageDeviceAttachment` trap outside App
-   Sandbox before using RAM-overlay forks as the sandbox boot proof.
+8. Done: investigate `VZTemporaryRAMStorageDeviceAttachment` trap outside App
+   Sandbox and fail closed before creating runtime temporary-RAM attachments.
 
 ## Next implementation queue
 
 NotebookLM re-review after the scratch VM proof ranked the next App Sandbox
 work in this order:
 
-1. Triage the `VZTemporaryRAMStorageDeviceAttachment` trap outside App Sandbox.
-   Stop if this is a binding or framework limitation; RAM-overlay forks then
-   stay out of the App Sandbox claim.
-2. Mitigate Unix socket path length. App container paths are deep enough that
+1. Mitigate Unix socket path length. App container paths are deep enough that
    per-VM `control.sock` paths can exceed Darwin's `sun_path` limit unless the
    sandbox runtime uses short scratch names or another rendezvous.
-3. Define explicit state-directory grants. The current macgo proof can start
+2. Define explicit state-directory grants. The current macgo proof can start
    and report container paths, but it is not an isolation claim for existing VM
    discovery until Powerbox or security-scoped bookmarks are designed.
-4. Make helper IPC and privilege paths explicit denials or separately proved
+3. Make helper IPC and privilege paths explicit denials or separately proved
    capabilities. `cove-helper`, provisioning, and offline injection remain out
    of the sandboxed runtime claim.
-5. Design the sandboxed run-worker protocol. The unsandboxed CLI should resolve
+4. Design the sandboxed run-worker protocol. The unsandboxed CLI should resolve
    host paths and grants, then launch a sandboxed worker only if descriptors or
    bookmarks can cross that process boundary cleanly.
 

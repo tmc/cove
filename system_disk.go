@@ -103,12 +103,7 @@ func createRuntimeStorageDeviceAttachment(path string, readOnly bool, mode syste
 	url.Retain()
 
 	if mode == systemDiskAttachmentTemporaryRAM {
-		attachment, err := pvz.NewVZTemporaryRAMStorageDeviceAttachmentWithURLReadOnlyError(url, readOnly)
-		if err != nil {
-			return pvz.VZStorageDeviceAttachment{}, fmt.Errorf("create temporary ram attachment: %w", err)
-		}
-		attachment.Retain()
-		return attachment.VZStorageDeviceAttachment, nil
+		return pvz.VZStorageDeviceAttachment{}, fmt.Errorf("temporary ram storage attachment is disabled: Virtualization.framework traps during VM start")
 	}
 
 	policy := storagex.CacheDurable

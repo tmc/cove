@@ -108,6 +108,17 @@ func TestDiskImageSyncModeInvalid(t *testing.T) {
 	}
 }
 
+func TestCreateRuntimeStorageDeviceAttachmentRejectsTemporaryRAM(t *testing.T) {
+	disk := filepath.Join(t.TempDir(), "disk.img")
+	if err := os.WriteFile(disk, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := createRuntimeStorageDeviceAttachment(disk, false, systemDiskAttachmentTemporaryRAM)
+	if err == nil || !strings.Contains(err.Error(), "temporary ram storage attachment is disabled") {
+		t.Fatalf("err = %v, want temporary ram disabled", err)
+	}
+}
+
 func TestSelectedVMSourceName(t *testing.T) {
 	prevName, prevDir := vmName, vmDir
 	t.Cleanup(func() { vmName, vmDir = prevName, prevDir })

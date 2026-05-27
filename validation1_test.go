@@ -50,7 +50,12 @@ func TestValidation1_MultiAttachRO(t *testing.T) {
 			t.Fatalf("%s: NewURLFileURLWithPath returned nil", label)
 		}
 		url.Retain()
-		return createRuntimeStorageDeviceAttachment(diskPath, true, systemDiskAttachmentTemporaryRAM)
+		attachment, err := pvz.NewVZTemporaryRAMStorageDeviceAttachmentWithURLReadOnlyError(url, true)
+		if err != nil {
+			return pvz.VZStorageDeviceAttachment{}, err
+		}
+		attachment.Retain()
+		return attachment.VZStorageDeviceAttachment, nil
 	}
 
 	a, err := make("A")
