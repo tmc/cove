@@ -39,6 +39,7 @@ type securitySandboxProbe struct {
 	TempDir    string             `json:"temp_dir"`
 	VMRoot     string             `json:"vm_root"`
 	UnixSocket securityProbeCheck `json:"unix_socket"`
+	HelperIPC  securityProbeCheck `json:"helper_ipc"`
 	Subprocess securityProbeCheck `json:"subprocess"`
 }
 
@@ -143,6 +144,11 @@ func handleSecuritySandboxProbeCommand(env commandEnv, args []string) error {
 		fmt.Fprintf(env.Stdout, " (%s)", probe.UnixSocket.Message)
 	}
 	fmt.Fprintln(env.Stdout)
+	fmt.Fprintf(env.Stdout, "helper ipc: %s", probe.HelperIPC.Status)
+	if probe.HelperIPC.Message != "" {
+		fmt.Fprintf(env.Stdout, " (%s)", probe.HelperIPC.Message)
+	}
+	fmt.Fprintln(env.Stdout)
 	fmt.Fprintf(env.Stdout, "subprocess: %s", probe.Subprocess.Status)
 	if probe.Subprocess.Message != "" {
 		fmt.Fprintf(env.Stdout, " (%s)", probe.Subprocess.Message)
@@ -193,6 +199,7 @@ func currentSecuritySandboxProbe() securitySandboxProbe {
 		TempDir:    os.TempDir(),
 		VMRoot:     vmRoot,
 		UnixSocket: probeSandboxUnixSocket(vmRoot),
+		HelperIPC:  probeSandboxHelperIPC(),
 		Subprocess: probeSandboxSubprocess(),
 	}
 }
@@ -216,6 +223,48 @@ func probeSandboxUnixSocket(vmRoot string) securityProbeCheck {
 	_ = ln.Close()
 	check.Status = "pass"
 	check.Message = "bound and closed"
+	return check
+}
+
+var probeSandboxDialHelper = dialHelper
+
+func probeSandboxHelperIPC() securityProbeCheck {
+	check := securityProbeCheck{Name: "helper-ipc", Path: helperSocketPath}
+	conn, err := probeSandboxDialHelper()
+	if err != nil {
+		switch {
+		case errors.Is(err, errHelperUnavailable):
+			check.Status = "skip"
+			check.Message = "helper socket not present"
+		case errors.Is(err, os.ErrPermission):
+			check.Status = "blocked"
+			check.Message = err.Error()
+		default:
+			check.Status = "fail"
+			check.Message = err.Error()
+		}
+		return check
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if err := json.NewEncoder(conn).Encode(helperRequest{Op: "ping"}); err != nil {
+		check.Status = "fail"
+		check.Message = fmt.Sprintf("send ping: %v", err)
+		return check
+	}
+	var resp helperResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		check.Status = "fail"
+		check.Message = fmt.Sprintf("read ping response: %v", err)
+		return check
+	}
+	if !resp.OK {
+		check.Status = "fail"
+		check.Message = fmt.Sprintf("helper: %s", resp.Error)
+		return check
+	}
+	check.Status = "pass"
+	check.Message = "ping ok"
 	return check
 }
 
