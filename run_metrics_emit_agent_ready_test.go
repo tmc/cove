@@ -2,30 +2,24 @@ package main
 
 import "testing"
 
-func TestEmitAgentReadyMetricNoActiveIsNoOp(t *testing.T) {
-	prev := ActiveRunBundle()
-	t.Cleanup(func() { setActiveRunBundle(prev) })
-	setActiveRunBundle(nil)
-	emitAgentReadyMetric()
+func TestMarkAgentReadyNilIsNoOp(t *testing.T) {
+	var b *RunBundle
+	b.MarkAgentReady()
 }
 
-func TestEmitAgentReadyMetricBundleSetsFlagOnce(t *testing.T) {
-	prev := ActiveRunBundle()
-	t.Cleanup(func() { setActiveRunBundle(prev) })
-
+func TestMarkAgentReadyBundleSetsFlagOnce(t *testing.T) {
 	b, err := NewRunBundle(t.TempDir(), "vm", "")
 	if err != nil {
 		t.Fatalf("NewRunBundle: %v", err)
 	}
-	setActiveRunBundle(b)
 	if b.metricAgentReady {
 		t.Fatal("metricAgentReady true before emit")
 	}
-	emitAgentReadyMetric()
+	b.MarkAgentReady()
 	if !b.metricAgentReady {
 		t.Fatal("metricAgentReady not set after first emit")
 	}
-	emitAgentReadyMetric() // idempotent re-entry
+	b.MarkAgentReady() // idempotent re-entry
 	if !b.metricAgentReady {
 		t.Fatal("metricAgentReady cleared by second emit")
 	}

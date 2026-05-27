@@ -16,6 +16,7 @@ import (
 
 	"github.com/tmc/cove/internal/controlserver"
 	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 	"golang.org/x/tools/txtar"
 )
@@ -62,17 +63,11 @@ func handleUp(env commandEnv, args []string) error {
 		}
 		return err
 	}
-
-	// Apply configuration to package-level state.
-	// The install/inject/run functions read these globals directly.
-	// This is the single point where "up" touches global state.
-	applyUpConfig(cfg)
-	maybeStartPprofServer()
-
-	if err := runUpPipeline(env, cfg); err != nil {
-		return err
-	}
-	return nil
+	opts := runtimeOptionsForUp(cfg)
+	return withUpRuntimeOptions(opts, func() error {
+		maybeStartPprofServer()
+		return runUpPipeline(env, cfg, opts)
+	})
 }
 
 // parseUpFlags parses flags and prompts for missing values.
@@ -262,53 +257,90 @@ Linux username/password defaults are for disposable local VMs. Pass -user and
 `)
 }
 
-// applyUpConfig sets the package-level globals that installMacOSLikeVZ,
-// stageProvisioningFiles, applyProvisioningFiles, and runMacOSVM read.
-func applyUpConfig(cfg upConfig) {
-	vzlog("applyUpConfig: cfg.vmName=%q cfg.vmDir=%q (pre globals: vmDir=%q vmName=%q)", cfg.vmName, cfg.vmDir, vmDir, vmName)
-	vmName = cfg.vmName
-	vmDir = cfg.vmDir
-	vzlog("applyUpConfig: post globals: vmDir=%q vmName=%q", vmDir, vmName)
+func runtimeOptionsForUp(cfg upConfig) runtimeOptions {
+	opts := currentRuntimeOptions()
+	opts.VMName = cfg.vmName
+	opts.VMDir = cfg.vmDir
 	if cfg.ipswPath != "" {
-		ipswPath = cfg.ipswPath
+		opts.IPSWPath = cfg.ipswPath
 	}
-	forceInstall = cfg.force
-	cpuCount = cfg.cpuCount
-	memoryGB = cfg.memoryGB
-	diskSizeGB = cfg.diskSizeGB
-	verbose = cfg.verbose
-	controlserver.Verbose = cfg.verbose
-	guiMode = cfg.gui
-	automationBackend = cfg.automationBackend
-	automationCaptureBackend = cfg.automationCaptureBackend
-	automationInputBackend = cfg.automationInputBackend
-	provisionUser = cfg.user
-	provisionPassword = cfg.password
-	provisionStrategy = "disk"
-	installVM = true
-	if cfg.linux {
-		linuxMode = true
-	}
-	enableRosetta = cfg.rosetta
-	if cfg.desktop {
-		linuxDesktop = true
-	}
-	if cfg.desktopInstaller != "" {
-		linuxDesktopInstaller = cfg.desktopInstaller
-	}
-	diskSyncMode = cfg.diskSync
-	if cfg.distro != "" {
-		linuxDistro = cfg.distro
-	}
-	if cfg.nested {
-		linuxNested = true
-	}
-	if cfg.nvme {
-		linuxNVMe = true
-	}
-	cpuExplicit = cfg.cpuExplicit
-	networkMode = cfg.networkMode
-	startupPortForwards = cfg.portForwards
+	opts.ForceInstall = cfg.force
+	opts.CPUCount = cfg.cpuCount
+	opts.MemoryGB = cfg.memoryGB
+	opts.DiskSizeGB = cfg.diskSizeGB
+	opts.Verbose = cfg.verbose
+	opts.GUI = cfg.gui
+	opts.Headless = !cfg.gui
+	opts.AutomationBackend = cfg.automationBackend
+	opts.AutomationCaptureBackend = cfg.automationCaptureBackend
+	opts.AutomationInputBackend = cfg.automationInputBackend
+	opts.InstallVM = true
+	opts.Linux = cfg.linux
+	opts.Windows = false
+	opts.EnableRosetta = cfg.rosetta
+	opts.DiskSyncMode = cfg.diskSync
+	opts.LinuxNested = cfg.nested
+	opts.LinuxNVMe = cfg.nvme
+	opts.CPUExplicit = cfg.cpuExplicit
+	opts.NetworkMode = cfg.networkMode
+	opts.StartupPortForwards = cfg.portForwards
+	return opts
+}
+
+func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
+	prev := currentRuntimeOptions()
+	prevControlVerbose := controlserver.Verbose
+	vmName = opts.VMName
+	vmDir = opts.VMDir
+	ipswPath = opts.IPSWPath
+	forceInstall = opts.ForceInstall
+	cpuCount = opts.CPUCount
+	memoryGB = opts.MemoryGB
+	diskSizeGB = opts.DiskSizeGB
+	verbose = opts.Verbose
+	controlserver.Verbose = opts.Verbose
+	guiMode = opts.GUI
+	headlessMode = opts.Headless
+	automationBackend = opts.AutomationBackend
+	automationCaptureBackend = opts.AutomationCaptureBackend
+	automationInputBackend = opts.AutomationInputBackend
+	installVM = opts.InstallVM
+	linuxMode = opts.Linux
+	windowsMode = opts.Windows
+	enableRosetta = opts.EnableRosetta
+	diskSyncMode = opts.DiskSyncMode
+	linuxNested = opts.LinuxNested
+	linuxNVMe = opts.LinuxNVMe
+	cpuExplicit = opts.CPUExplicit
+	networkMode = opts.NetworkMode
+	startupPortForwards = opts.StartupPortForwards
+	defer func() {
+		vmName = prev.VMName
+		vmDir = prev.VMDir
+		ipswPath = prev.IPSWPath
+		forceInstall = prev.ForceInstall
+		cpuCount = prev.CPUCount
+		memoryGB = prev.MemoryGB
+		diskSizeGB = prev.DiskSizeGB
+		verbose = prev.Verbose
+		controlserver.Verbose = prevControlVerbose
+		guiMode = prev.GUI
+		headlessMode = prev.Headless
+		automationBackend = prev.AutomationBackend
+		automationCaptureBackend = prev.AutomationCaptureBackend
+		automationInputBackend = prev.AutomationInputBackend
+		installVM = prev.InstallVM
+		linuxMode = prev.Linux
+		windowsMode = prev.Windows
+		enableRosetta = prev.EnableRosetta
+		diskSyncMode = prev.DiskSyncMode
+		linuxNested = prev.LinuxNested
+		linuxNVMe = prev.LinuxNVMe
+		cpuExplicit = prev.CPUExplicit
+		networkMode = prev.NetworkMode
+		startupPortForwards = prev.StartupPortForwards
+	}()
+	return fn()
 }
 
 // vmAlreadyInstalled reports whether the VM disk already exists, meaning
@@ -329,8 +361,9 @@ func vmAlreadyInstalled(dir string, linux bool) bool {
 // runUpPipeline executes the install -> inject -> run pipeline.
 // If the VM is already installed (disk exists) and -force is not set,
 // it skips install and provisioning and proceeds to boot + vzscripts.
-func runUpPipeline(env commandEnv, cfg upConfig) (err error) {
-	target := currentVMSelection()
+func runUpPipeline(env commandEnv, cfg upConfig, opts runtimeOptions) (err error) {
+	target := opts.vmSelection()
+	rc, hc := opts.vmrunRunConfig(vmrun.GuestMacOS), opts.vmrunHostConfig()
 	metricsRun, metricsErr := beginStandaloneMetricsRun(target.Name, "")
 	if metricsErr != nil {
 		fmt.Fprintf(env.Stderr, "warning: metrics init: %v\n", metricsErr)
@@ -342,11 +375,12 @@ func runUpPipeline(env commandEnv, cfg upConfig) (err error) {
 			if err != nil {
 				status = err.Error()
 			}
-			emitMetricEvent("run_complete", started, status, map[string]any{"command": "up"})
+			metricsRun.EmitMetricEvent("run_complete", started, status, map[string]any{"command": "up"})
 		}
 	}(time.Now())
 	if cfg.linux {
-		return runLinuxUpPipeline(env, cfg)
+		rc, hc = opts.vmrunRunConfig(vmrun.GuestLinux), opts.vmrunHostConfig()
+		return runLinuxUpPipeline(env, cfg, target, rc, hc, metricsRun)
 	}
 
 	installed := vmAlreadyInstalled(target.Directory, false)
@@ -360,12 +394,12 @@ func runUpPipeline(env commandEnv, cfg upConfig) (err error) {
 	} else {
 		fmt.Fprintln(env.Stdout, "=== Step 1/3: Installing macOS ===")
 		createStarted := time.Now()
-		installErr := installMacOSLikeVZ(context.Background(), env.Stderr)
+		installErr := installMacOSLikeVZWithProvision(context.Background(), env.Stderr, macOSInstallProvisionForUp(cfg), opts.IPSWPath, rc, hc)
 		if installErr != nil && !errors.Is(installErr, errRestartVM) {
-			emitMetricEvent("vm_create", createStarted, installErr.Error(), map[string]any{"command": "up"})
+			metricsRun.EmitMetricEvent("vm_create", createStarted, installErr.Error(), map[string]any{"command": "up"})
 			return fmt.Errorf("install: %w", installErr)
 		}
-		emitMetricEvent("vm_create", createStarted, "ok", map[string]any{"command": "up"})
+		metricsRun.EmitMetricEvent("vm_create", createStarted, "ok", map[string]any{"command": "up"})
 	}
 
 	// Step 2: Inject provisioning files.
@@ -423,12 +457,23 @@ func runUpPipeline(env commandEnv, cfg upConfig) (err error) {
 		default:
 			fmt.Fprintf(env.Stdout, "=== Step 3/3: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
 		}
-		return runUpWithVZScripts(env, recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose, verifyProvisionedUser)
+		return runUpWithVZScripts(env, recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose, verifyProvisionedUser, cfg.user, cfg.password, rc, hc, metricsRun)
 	}
 
 	fmt.Fprintln(env.Stdout)
 	fmt.Fprintln(env.Stdout, "=== Step 3/3: Booting VM ===")
-	return runUpMacOSVM(env, verifyProvisionedUser, cfg.verbose)
+	return runUpMacOSVM(env, verifyProvisionedUser, cfg.verbose, rc, hc, metricsRun)
+}
+
+func macOSInstallProvisionForUp(cfg upConfig) macOSInstallProvision {
+	return macOSInstallProvision{
+		Config: ProvisionConfig{
+			Username: cfg.user,
+			Password: cfg.password,
+			Admin:    true,
+		},
+		Strategy: "disk",
+	}
 }
 
 var upEffectiveUID = os.Geteuid
@@ -450,7 +495,7 @@ func requireRootForMacOSUpProvisioning(cfg upConfig, target vmSelection, install
 // recipes followed by an optional plain setup-script, and either shuts down
 // the VM or leaves it running based on noShutdown. If the VM exits
 // unexpectedly during script execution, the error is returned immediately.
-func runUpWithVZScripts(env commandEnv, recipes []string, setupScript string, noShutdown, verboseMode bool, verifyUser string) error {
+func runUpWithVZScripts(env commandEnv, recipes []string, setupScript string, noShutdown, verboseMode bool, verifyUser, envUser, envPassword string, rc vmrun.RunConfig, hc vmrun.HostConfig, metrics *standaloneMetricsRun) error {
 	if err := validateVZScriptRecipes(recipes); err != nil {
 		return err
 	}
@@ -461,8 +506,8 @@ func runUpWithVZScripts(env commandEnv, recipes []string, setupScript string, no
 		execTimeout: 30 * time.Minute,
 		verbose:     verboseMode,
 		env: []string{
-			"USERNAME=" + provisionUser,
-			"PASSWORD=" + provisionPassword,
+			"USERNAME=" + envUser,
+			"PASSWORD=" + envPassword,
 		},
 	}
 
@@ -478,7 +523,7 @@ func runUpWithVZScripts(env commandEnv, recipes []string, setupScript string, no
 			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
 			return
 		}
-		emitAgentReadyMetric()
+		metrics.MarkAgentReady()
 		if err := verifyProvisioningForUp(env, sock, verifyUser); err != nil {
 			_, _ = ctlSendRequest(sock, &controlpb.ControlRequest{Type: "agent-shutdown"}, 30*time.Second, "agent-shutdown")
 			scriptsDone <- err
@@ -519,7 +564,7 @@ func runUpWithVZScripts(env commandEnv, recipes []string, setupScript string, no
 
 	// Run the VM on the main thread (required for AppKit).
 	// This blocks until the VM exits (user closes window, shutdown, or crash).
-	vmErr := runMacOSVM()
+	vmErr := runMacOSVMWithConfig(rc, hc, nil, metrics)
 
 	// Check if scripts reported an error before VM exited.
 	select {
@@ -533,9 +578,9 @@ func runUpWithVZScripts(env commandEnv, recipes []string, setupScript string, no
 	return vmErr
 }
 
-func runUpMacOSVM(env commandEnv, verifyUser string, verboseMode bool) error {
+func runUpMacOSVM(env commandEnv, verifyUser string, verboseMode bool, rc vmrun.RunConfig, hc vmrun.HostConfig, metrics *standaloneMetricsRun) error {
 	if strings.TrimSpace(verifyUser) == "" {
-		return runMacOSVM()
+		return runMacOSVMWithConfig(rc, hc, nil, metrics)
 	}
 	sock := GetControlSocketPath()
 	cfg := vzscriptConfig{
@@ -559,7 +604,7 @@ func runUpMacOSVM(env commandEnv, verifyUser string, verboseMode bool) error {
 		verifyDone <- nil
 	}()
 
-	vmErr := runMacOSVM()
+	vmErr := runMacOSVMWithConfig(rc, hc, nil, metrics)
 	select {
 	case err := <-verifyDone:
 		if err != nil {
@@ -585,8 +630,7 @@ func verifyProvisioningForUp(env commandEnv, sock, user string) error {
 
 // runLinuxUpPipeline executes the install -> run pipeline for Linux VMs.
 // Cloud-init handles user provisioning during install, so no inject step is needed.
-func runLinuxUpPipeline(env commandEnv, cfg upConfig) error {
-	target := currentVMSelection()
+func runLinuxUpPipeline(env commandEnv, cfg upConfig, target vmSelection, rc vmrun.RunConfig, hc vmrun.HostConfig, metrics *standaloneMetricsRun) error {
 	installed := vmAlreadyInstalled(target.Directory, true)
 
 	// Step 1: Install Linux VM (skip if already installed).
@@ -595,11 +639,15 @@ func runLinuxUpPipeline(env commandEnv, cfg upConfig) error {
 	} else {
 		fmt.Fprintln(env.Stdout, "=== Step 1/2: Installing Linux VM ===")
 		createStarted := time.Now()
-		if err := installLinuxVM(env.Stderr); err != nil {
-			emitMetricEvent("vm_create", createStarted, err.Error(), map[string]any{"command": "up", "guest_os": "linux"})
+		provConfig, err := linuxProvisionConfigForUp(cfg)
+		if err != nil {
+			return err
+		}
+		if err := installLinuxVMWithConfig(env.Stderr, provConfig); err != nil {
+			metrics.EmitMetricEvent("vm_create", createStarted, err.Error(), map[string]any{"command": "up", "guest_os": "linux"})
 			return fmt.Errorf("install: %w", err)
 		}
-		emitMetricEvent("vm_create", createStarted, "ok", map[string]any{"command": "up", "guest_os": "linux"})
+		metrics.EmitMetricEvent("vm_create", createStarted, "ok", map[string]any{"command": "up", "guest_os": "linux"})
 	}
 
 	// Step 2: Boot VM and optionally run vzscripts and/or setup-script.
@@ -617,17 +665,31 @@ func runLinuxUpPipeline(env commandEnv, cfg upConfig) error {
 		default:
 			fmt.Fprintf(env.Stdout, "=== Step 2/2: Boot + setup-script (%s) ===\n", cfg.setupScriptPath)
 		}
-		return runLinuxUpWithVZScripts(env, recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose)
+		return runLinuxUpWithVZScripts(env, recipes, cfg.setupScriptPath, cfg.noShutdown, cfg.verbose, cfg.user, cfg.password, rc, hc, metrics)
 	}
 
 	fmt.Fprintln(env.Stdout)
 	fmt.Fprintln(env.Stdout, "=== Step 2/2: Booting Linux VM ===")
-	return runLinuxVM()
+	return runLinuxVMWithConfig(rc, hc, nil, metrics)
+}
+
+func linuxProvisionConfigForUp(cfg upConfig) (LinuxProvisionConfig, error) {
+	variant, err := parseLinuxVariant(cfg.distro, cfg.desktop)
+	if err != nil {
+		return LinuxProvisionConfig{}, err
+	}
+	provConfig := DefaultLinuxProvisionConfigForVariant(variant, cfg.desktopInstaller)
+	provConfig.Username = cfg.user
+	provConfig.Password = cfg.password
+	if variant == LinuxVariantDesktop {
+		provConfig.AutoLogin = true
+	}
+	return provConfig, nil
 }
 
 // runLinuxUpWithVZScripts boots a Linux VM, runs vzscript recipes and an
 // optional plain setup-script, then shuts down (unless noShutdown).
-func runLinuxUpWithVZScripts(env commandEnv, recipes []string, setupScript string, noShutdown, verboseMode bool) error {
+func runLinuxUpWithVZScripts(env commandEnv, recipes []string, setupScript string, noShutdown, verboseMode bool, envUser, envPassword string, rc vmrun.RunConfig, hc vmrun.HostConfig, metrics *standaloneMetricsRun) error {
 	if err := validateVZScriptRecipes(recipes); err != nil {
 		return err
 	}
@@ -638,8 +700,8 @@ func runLinuxUpWithVZScripts(env commandEnv, recipes []string, setupScript strin
 		execTimeout: 30 * time.Minute,
 		verbose:     verboseMode,
 		env: []string{
-			"USERNAME=" + provisionUser,
-			"PASSWORD=" + provisionPassword,
+			"USERNAME=" + envUser,
+			"PASSWORD=" + envPassword,
 		},
 	}
 
@@ -651,7 +713,7 @@ func runLinuxUpWithVZScripts(env commandEnv, recipes []string, setupScript strin
 			scriptsDone <- fmt.Errorf("wait-for-agent: %w", err)
 			return
 		}
-		emitAgentReadyMetric()
+		metrics.MarkAgentReady()
 
 		if len(recipes) > 0 {
 			fmt.Fprintf(env.Stdout, "\n=== Running vzscripts: %s ===\n", strings.Join(recipes, ", "))
@@ -684,7 +746,7 @@ func runLinuxUpWithVZScripts(env commandEnv, recipes []string, setupScript strin
 		scriptsDone <- nil
 	}()
 
-	vmErr := runLinuxVM()
+	vmErr := runLinuxVMWithConfig(rc, hc, nil, metrics)
 
 	select {
 	case err := <-scriptsDone:

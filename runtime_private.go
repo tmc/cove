@@ -13,6 +13,7 @@ import (
 	debugstubx "github.com/tmc/apple/x/vzkit/debugstub"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 	vncx "github.com/tmc/apple/x/vzkit/vnc"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 type runtimeFeatureSnapshot struct {
@@ -326,42 +327,50 @@ func debugStubEnabled() bool {
 	return strings.TrimSpace(gdbAddress) != ""
 }
 
-func privateMacStartOptionsEnabled() bool {
-	return forceDFU || stopInIBootStage1 || stopInIBootStage2
+func privateMacStartOptionsEnabledForRun(rc vmrun.RunConfig) bool {
+	return rc.ForceDFU || rc.StopIBoot1 || rc.StopIBoot2
 }
 
-func privateSaveOptionsEnabled() bool {
-	return saveCompress || saveEncrypt
+func privateSaveOptionsEnabledForRun(rc vmrun.RunConfig) bool {
+	return rc.SaveCompress || rc.SaveEncrypt
 }
 
-func applyPrivateVMConfiguration(config vz.VZVirtualMachineConfiguration) error {
-	if len(blockDevices) > 0 {
-		if err := addBlockDevicesToConfig(config, blockDevices); err != nil {
+func applyPrivateVMConfigurationWithRunConfig(config vz.VZVirtualMachineConfiguration, rc vmrun.RunConfig) error {
+	if len(rc.BlockDevices) > 0 {
+		devices := make(blockDeviceSlice, 0, len(rc.BlockDevices))
+		for _, b := range rc.BlockDevices {
+			devices = append(devices, blockDeviceSpec{
+				Path:     b.Path,
+				ReadOnly: b.ReadOnly,
+				Sync:     b.Cache,
+			})
+		}
+		if err := addBlockDevicesToConfig(config, devices); err != nil {
 			return fmt.Errorf("add block devices: %w", err)
 		}
 	}
-	if debugStubEnabled() {
-		port, err := parsePortSpec(gdbAddress)
+	if strings.TrimSpace(rc.GDBAddress) != "" {
+		port, err := parsePortSpec(rc.GDBAddress)
 		if err != nil {
 			return err
 		}
 		privConfig := pvz.VZVirtualMachineConfigurationFromID(config.ID)
-		if err := debugstubx.AttachGDB(privConfig, port, gdbListenAll); err != nil {
+		if err := debugstubx.AttachGDB(privConfig, port, rc.GDBListenAll); err != nil {
 			return fmt.Errorf("attach gdb debug stub: %w", err)
 		}
 	}
 	return nil
 }
 
-func startVMWithRuntimeOptions(machine vz.VZVirtualMachine, completion func(error)) {
-	if !linuxMode && !windowsMode && (recoveryMode || privateMacStartOptionsEnabled()) {
+func startVMWithRunConfig(machine vz.VZVirtualMachine, rc vmrun.RunConfig, completion func(error)) {
+	if rc.OS == vmrun.GuestMacOS && (rc.RecoveryMode || privateMacStartOptionsEnabledForRun(rc)) {
 		opts := vz.NewVZMacOSVirtualMachineStartOptions()
-		opts.SetStartUpFromMacOSRecovery(recoveryMode)
-		if privateMacStartOptionsEnabled() {
+		opts.SetStartUpFromMacOSRecovery(rc.RecoveryMode)
+		if privateMacStartOptionsEnabledForRun(rc) {
 			privateOpts := pvz.VZMacOSVirtualMachineStartOptionsFromID(opts.ID)
-			privateOpts.SetForceDFU(forceDFU)
-			privateOpts.SetStopInIBootStage1(stopInIBootStage1)
-			privateOpts.SetStopInIBootStage2(stopInIBootStage2)
+			privateOpts.SetForceDFU(rc.ForceDFU)
+			privateOpts.SetStopInIBootStage1(rc.StopIBoot1)
+			privateOpts.SetStopInIBootStage2(rc.StopIBoot2)
 		}
 		machine.StartWithOptionsCompletionHandler(&opts.VZVirtualMachineStartOptions, completion)
 		return
@@ -369,28 +378,28 @@ func startVMWithRuntimeOptions(machine vz.VZVirtualMachine, completion func(erro
 	machine.StartWithCompletionHandler(completion)
 }
 
-func saveMachineStateWithRuntimeOptions(machine vz.VZVirtualMachine, url foundation.INSURL, completion func(error)) {
-	if !privateSaveOptionsEnabled() {
+func saveMachineStateWithRunConfig(machine vz.VZVirtualMachine, url foundation.NSURL, rc vmrun.RunConfig, completion func(error)) {
+	if !privateSaveOptionsEnabledForRun(rc) {
 		machine.SaveMachineStateToURLCompletionHandler(url, completion)
 		return
 	}
 
 	options := pvz.NewVZVirtualMachineSaveOptions()
-	options.SetCompress(saveCompress)
-	options.SetEncrypt(saveEncrypt)
+	options.SetCompress(rc.SaveCompress)
+	options.SetEncrypt(rc.SaveEncrypt)
 	pvz.VZVirtualMachineFromID(machine.ID).SaveMachineStateToURLOptionsCompletionHandler(url, options, completion)
 }
 
-func privateRuntimeSummary() string {
+func privateRuntimeSummaryForRun(rc vmrun.RunConfig) string {
 	parts := make([]string, 0, 3)
 	switch {
-	case recoveryMode:
+	case rc.RecoveryMode:
 		parts = append(parts, "recovery")
-	case forceDFU:
+	case rc.ForceDFU:
 		parts = append(parts, "dfu")
-	case stopInIBootStage1:
+	case rc.StopIBoot1:
 		parts = append(parts, "iboot-stage1")
-	case stopInIBootStage2:
+	case rc.StopIBoot2:
 		parts = append(parts, "iboot-stage2")
 	}
 	if debugStubEnabled() {
@@ -402,35 +411,36 @@ func privateRuntimeSummary() string {
 	return strings.Join(parts, ", ")
 }
 
-func validatePrivateRuntimeOptions() error {
-	if _, err := parsePortSpec(vncAddress); err != nil {
+func validatePrivateRuntimeOptionsForOptions(opts runtimeOptions) error {
+	if _, err := parsePortSpec(opts.VNCAddress); err != nil {
 		return fmt.Errorf("invalid -vnc: %w", err)
 	}
-	if strings.TrimSpace(vncPassword) != "" && !vncEnabled() {
+	vncRequested := strings.TrimSpace(opts.VNCAddress) != "" || strings.TrimSpace(opts.VNCBonjourService) != ""
+	if strings.TrimSpace(opts.VNCPassword) != "" && !vncRequested {
 		return fmt.Errorf("-vnc-password requires -vnc or -vnc-bonjour")
 	}
-	if strings.TrimSpace(vncBonjourService) != "" && strings.TrimSpace(vncPassword) == "" {
+	if strings.TrimSpace(opts.VNCBonjourService) != "" && strings.TrimSpace(opts.VNCPassword) == "" {
 		return fmt.Errorf("-vnc-bonjour requires -vnc-password so advertised VNC is not unauthenticated")
 	}
-	if _, err := parsePortSpec(gdbAddress); err != nil {
+	if _, err := parsePortSpec(opts.GDBAddress); err != nil {
 		return fmt.Errorf("invalid -gdb: %w", err)
 	}
-	if gdbListenAll && !debugStubEnabled() {
+	if opts.GDBListenAll && strings.TrimSpace(opts.GDBAddress) == "" {
 		return fmt.Errorf("-gdb-listen-all requires -gdb")
 	}
-	if (linuxMode || windowsMode) && recoveryMode {
+	if (opts.Linux || opts.Windows) && opts.RecoveryMode {
 		return fmt.Errorf("-recovery is only valid for macOS VMs")
 	}
-	if (linuxMode || windowsMode) && privateMacStartOptionsEnabled() {
+	if (opts.Linux || opts.Windows) && (opts.ForceDFU || opts.StopIBoot1 || opts.StopIBoot2) {
 		return fmt.Errorf("macOS-only start options require a macOS VM")
 	}
-	if stopInIBootStage1 && stopInIBootStage2 {
+	if opts.StopIBoot1 && opts.StopIBoot2 {
 		return fmt.Errorf("-iboot-stage1 and -iboot-stage2 are mutually exclusive")
 	}
-	if recoveryMode && (forceDFU || stopInIBootStage1 || stopInIBootStage2) {
+	if opts.RecoveryMode && (opts.ForceDFU || opts.StopIBoot1 || opts.StopIBoot2) {
 		return fmt.Errorf("recovery mode cannot be combined with private macOS boot-stop options")
 	}
-	if forceDFU && (stopInIBootStage1 || stopInIBootStage2) {
+	if opts.ForceDFU && (opts.StopIBoot1 || opts.StopIBoot2) {
 		return fmt.Errorf("-force-dfu cannot be combined with -iboot-stage1 or -iboot-stage2")
 	}
 	return nil

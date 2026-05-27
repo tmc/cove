@@ -65,6 +65,7 @@ func TestCheckVMLifecyclePolicyStopsForIdle(t *testing.T) {
 		t.Fatalf("beginStandaloneMetricsRun: %v", err)
 	}
 	defer finishStandaloneMetricsRun(run)
+	s.SetMetricsRecorder(run)
 
 	s.checkVMLifecyclePolicy()
 	if !stopped {
@@ -122,6 +123,7 @@ func TestCheckVMLifecyclePolicyStopsForMaxAge(t *testing.T) {
 		t.Fatalf("beginStandaloneMetricsRun: %v", err)
 	}
 	defer finishStandaloneMetricsRun(run)
+	s.SetMetricsRecorder(run)
 	s.checkVMLifecyclePolicy()
 	if !stopped {
 		t.Fatal("policy stop did not request shutdown")

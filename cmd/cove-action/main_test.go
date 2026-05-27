@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -258,6 +259,15 @@ func TestRunCacheDuplicateSaveIsNonfatal(t *testing.T) {
 	}
 }
 
+func TestDuplicateCacheSaveUsesSentinel(t *testing.T) {
+	if !duplicateCacheSave(errDuplicateCacheSave) {
+		t.Fatal("duplicateCacheSave should match sentinel")
+	}
+	if duplicateCacheSave(errors.New("image already exists")) {
+		t.Fatal("duplicateCacheSave matched string-only error")
+	}
+}
+
 func TestCacheImageRefNormalizesUnsafeKey(t *testing.T) {
 	got := cacheImageRef("linux/go main@abc")
 	if got != "cache/linux-go-main-abc:latest" {
@@ -324,13 +334,15 @@ image)
 		if [ "$prev" = "-tag" ]; then tag="$arg"; fi
 		prev="$arg"
 	done
-	if [ "${COVE_STUB_DUPLICATE_SAVE:-}" = "1" ]; then
-		echo "image build: image $tag already exists" >&2
-		exit 1
-	fi
 	name=${tag%:*}
 	version=${tag##*:}
 	img_dir="$HOME/.vz/images/$name/$version"
+	if [ "${COVE_STUB_DUPLICATE_SAVE:-}" = "1" ]; then
+		mkdir -p "$img_dir"
+		printf '{"name":"%s","tag":"%s","createdAt":"2026-05-05T00:00:00Z","diskSize":1}\n' "$name" "$version" > "$img_dir/manifest.json"
+		echo "image build: image $tag already exists" >&2
+		exit 1
+	fi
 	if [ -e "$img_dir/manifest.json" ]; then
 		echo "image build: image $tag already exists" >&2
 		exit 1

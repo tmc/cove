@@ -12,6 +12,10 @@ type commandVMSelection = covecli.VMSelection
 type commandOptions = covecli.Options
 
 func newCommandEnv() commandEnv {
+	return currentRuntimeOptions().commandEnv()
+}
+
+func (opts runtimeOptions) commandEnv() commandEnv {
 	logger := slog.Default()
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -22,15 +26,15 @@ func newCommandEnv() commandEnv {
 		Stderr: os.Stderr,
 		Logger: logger,
 		VM: commandVMSelection{
-			Name: vmName,
-			Dir:  vmDir,
+			Name: opts.VMName,
+			Dir:  opts.VMDir,
 		},
 		Options: commandOptions{
-			Verbose:  verbose,
-			Fleet:    fleetName,
-			Headless: headlessMode,
-			GUI:      guiMode,
-			Linux:    linuxMode,
+			Verbose:  opts.Verbose,
+			Fleet:    opts.Fleet,
+			Headless: opts.Headless,
+			GUI:      opts.GUI,
+			Linux:    opts.Linux,
 		},
 	}
 }

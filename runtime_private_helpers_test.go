@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func TestRuntimePrivatePredicates(t *testing.T) {
@@ -18,7 +20,7 @@ func TestRuntimePrivatePredicates(t *testing.T) {
 	}
 
 	reset()
-	if vncEnabled() || debugStubEnabled() || privateMacStartOptionsEnabled() || privateSaveOptionsEnabled() {
+	if vncEnabled() || debugStubEnabled() || privateMacStartOptionsEnabledForRun(vmrun.RunConfig{}) || privateSaveOptionsEnabledForRun(vmrun.RunConfig{}) {
 		t.Fatal("predicates should be false on zero state")
 	}
 
@@ -41,37 +43,34 @@ func TestRuntimePrivatePredicates(t *testing.T) {
 	}
 
 	reset()
-	stopInIBootStage1 = true
-	if !privateMacStartOptionsEnabled() {
+	if !privateMacStartOptionsEnabledForRun(vmrun.RunConfig{StopIBoot1: true}) {
 		t.Error("privateMacStartOptionsEnabled() = false, want true")
 	}
 
 	reset()
-	saveEncrypt = true
-	if !privateSaveOptionsEnabled() {
+	if !privateSaveOptionsEnabledForRun(vmrun.RunConfig{SaveEncrypt: true}) {
 		t.Error("privateSaveOptionsEnabled() = false, want true")
 	}
 }
 
 func TestPrivateRuntimeSummary(t *testing.T) {
-	oR, oF, oS1, oS2, oG, oV := recoveryMode, forceDFU, stopInIBootStage1, stopInIBootStage2, gdbAddress, vncAddress
+	oG, oV := gdbAddress, vncAddress
 	t.Cleanup(func() {
-		recoveryMode, forceDFU, stopInIBootStage1, stopInIBootStage2, gdbAddress, vncAddress = oR, oF, oS1, oS2, oG, oV
+		gdbAddress, vncAddress = oG, oV
 	})
 	reset := func() {
-		recoveryMode, forceDFU, stopInIBootStage1, stopInIBootStage2, gdbAddress, vncAddress = false, false, false, false, "", ""
+		gdbAddress, vncAddress = "", ""
 	}
 
 	reset()
-	if got := privateRuntimeSummary(); got != "" {
+	if got := privateRuntimeSummaryForRun(vmrun.RunConfig{}); got != "" {
 		t.Errorf("zero state = %q, want empty", got)
 	}
 
 	reset()
-	recoveryMode = true
 	gdbAddress = ":1234"
 	vncAddress = ":5900"
-	got := privateRuntimeSummary()
+	got := privateRuntimeSummaryForRun(vmrun.RunConfig{RecoveryMode: true})
 	for _, want := range []string{"recovery", "gdb", "vnc"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary %q missing %q", got, want)
@@ -79,14 +78,12 @@ func TestPrivateRuntimeSummary(t *testing.T) {
 	}
 
 	reset()
-	stopInIBootStage2 = true
-	if got := privateRuntimeSummary(); !strings.Contains(got, "iboot-stage2") {
+	if got := privateRuntimeSummaryForRun(vmrun.RunConfig{StopIBoot2: true}); !strings.Contains(got, "iboot-stage2") {
 		t.Errorf("iboot-stage2 summary = %q", got)
 	}
 
 	reset()
-	forceDFU = true
-	if got := privateRuntimeSummary(); !strings.Contains(got, "dfu") {
+	if got := privateRuntimeSummaryForRun(vmrun.RunConfig{ForceDFU: true}); !strings.Contains(got, "dfu") {
 		t.Errorf("dfu summary = %q", got)
 	}
 }
@@ -143,7 +140,7 @@ func TestValidatePrivateRuntimeOptionsExtraBranches(t *testing.T) {
 			recoveryMode, linuxMode, windowsMode = false, false, false
 			forceDFU, stopInIBootStage1, stopInIBootStage2 = false, false, false
 			tt.setup()
-			checkErr(t, validatePrivateRuntimeOptions(), tt.wantErr)
+			checkErr(t, validatePrivateRuntimeOptionsForOptions(currentRuntimeOptions()), tt.wantErr)
 		})
 	}
 }

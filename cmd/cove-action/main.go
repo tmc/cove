@@ -27,6 +27,8 @@ var (
 	cleanupWait        = 5 * time.Second
 )
 
+var errDuplicateCacheSave = errors.New("duplicate cache image")
+
 const cacheImageDefaultTTL = 7 * 24 * time.Hour
 
 // Cache modes mirror GitHub actions/cache: restore-save (default) does both,
@@ -399,6 +401,9 @@ func saveCacheImage(ctx context.Context, cfg config, key, ref string, started ti
 			"cache_key":   key,
 			"cache_image": ref,
 		})
+		if cacheImageExists(cfg, ref) {
+			return fmt.Errorf("save cache image: %w", errDuplicateCacheSave)
+		}
 		return fmt.Errorf("save cache image: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	size := cacheImageSize(cfg, ref)
@@ -443,7 +448,16 @@ func writeCacheTTLMarker(cfg config, ref string) {
 }
 
 func duplicateCacheSave(err error) bool {
-	return strings.Contains(err.Error(), "already exists")
+	return errors.Is(err, errDuplicateCacheSave)
+}
+
+func cacheImageExists(cfg config, ref string) bool {
+	path, ok := localImagePath(cfg, ref)
+	if !ok {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(path, "manifest.json"))
+	return err == nil && !info.IsDir()
 }
 
 func deleteVM(cfg config) {

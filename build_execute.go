@@ -24,6 +24,7 @@ type buildExecutor struct {
 	startGuest   buildGuestStarter
 	compactGuest buildCompactor
 	mountSecrets buildSecretMounter
+	metrics      *standaloneMetricsRun
 	now          func() time.Time
 	pid          int
 	result       buildExecutionResult
@@ -137,14 +138,14 @@ func (e *buildExecutor) executeVMWithMissRunner(ctx context.Context, parentDir s
 		stepStarted := time.Now()
 		applied, err := e.executeVMStep(ctx, step, currentDir, runMiss)
 		if err != nil {
-			emitMetricEvent("build_step", stepStarted, err.Error(), map[string]any{
+			e.metrics.EmitMetricEvent("build_step", stepStarted, err.Error(), map[string]any{
 				"step":      step.Name,
 				"cache_hit": step.CacheHit,
 			})
 			e.cleanupIntermediate(result)
 			return result, err
 		}
-		emitMetricEvent("build_step", stepStarted, "ok", map[string]any{
+		e.metrics.EmitMetricEvent("build_step", stepStarted, "ok", map[string]any{
 			"step":      step.Name,
 			"cache_hit": step.CacheHit,
 			"key":       step.Key,

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tmc/cove/internal/vmrun"
 	"golang.org/x/sys/unix"
 )
 
@@ -150,19 +151,22 @@ func TestErrRunLockHeld_IsEWOULDBLOCK(t *testing.T) {
 	}
 }
 
-// stubAcquireRunLockHook installs a no-op acquireRunLockHook for tests
-// that drive runVMWithConfig with a fake vmDir that does not exist on
-// disk. Restores the original hook on test cleanup. Returns a pointer
-// to a string that records the last vmDir the hook was invoked with so
-// callers can assert lock-target correctness.
-func stubAcquireRunLockHook(t *testing.T) *string {
+// stubAcquireRunLockHook returns run hooks with a no-op run.lock
+// acquisition for tests that drive runVMWithConfig with a fake vmDir.
+// It also returns a pointer to the last vmDir the hook saw.
+func stubAcquireRunLockHook(t *testing.T) (RunHooks, *string) {
 	t.Helper()
-	old := acquireRunLockHook
 	var lastDir string
-	acquireRunLockHook = func(dir string) (*RunLock, error) {
+	hooks := defaultRunHooks()
+	hooks.AcquireRunLock = func(dir string) (*RunLock, error) {
 		lastDir = dir
 		return &RunLock{}, nil
 	}
-	t.Cleanup(func() { acquireRunLockHook = old })
-	return &lastDir
+	return hooks, &lastDir
+}
+
+func runHook(fn func() error) func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error {
+	return func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error {
+		return fn()
+	}
 }

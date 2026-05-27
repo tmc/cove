@@ -49,9 +49,13 @@ type RunConfig struct {
 	GUI          bool
 	Headless     bool
 	RecoveryMode bool
+	ForceDFU     bool
+	StopIBoot1   bool
+	StopIBoot2   bool
 	ForceInstall bool
 	SkipResume   bool
 	Unattended   bool
+	InstallVM    bool
 
 	// Display configuration. Width/height/PPI per scanout. An empty slice
 	// means "use the entry point's default for this OS".
@@ -74,6 +78,10 @@ type RunConfig struct {
 	// Optional features.
 	EnableRosetta   bool
 	EnableClipboard bool
+	SaveCompress    bool
+	SaveEncrypt     bool
+	GDBAddress      string
+	GDBListenAll    bool
 
 	// Linux-specific.
 	LinuxNested bool
@@ -89,6 +97,7 @@ type RunConfig struct {
 	// records the user's request.
 	ProvisionUser     string
 	ProvisionPassword string
+	ProvisionAdmin    bool
 	ProvisionStrategy string
 
 	// Diagnostics and timing.

@@ -10,6 +10,7 @@ import (
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/uniformtypeidentifiers"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func actionSourceLabel(source string) string {
@@ -91,14 +92,14 @@ func restartVM(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
 	})
 }
 
-func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
+func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, vmDirectory string) {
 	label := actionSourceLabel(source)
 	fmt.Printf("%s: booting to recovery mode...\n", label)
 	DispatchAsyncQueue(queue, func() {
 		startRecovery := func() {
-			if hasSuspendState() {
+			if hasSuspendStateForVM(vmDirectory) {
 				fmt.Printf("%s: recovery mode requires a cold boot; moving aside saved suspend state...\n", label)
-				moveAsideSuspendState("recovery-mode")
+				moveAsideSuspendStateForVM(vmDirectory, "recovery-mode")
 			}
 			setActiveBootSessionMode(bootSessionModeRecovery)
 			opts := vz.NewVZMacOSVirtualMachineStartOptions()
@@ -129,7 +130,7 @@ func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 	})
 }
 
-func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
+func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, rc vmrun.RunConfig, hc vmrun.HostConfig) {
 	label := actionSourceLabel(source)
 	if !canSaveRestore {
 		fmt.Printf("%s: save/restore not supported for this VM configuration\n", label)
@@ -141,7 +142,7 @@ func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 	}
 	fmt.Printf("%s: suspending VM...\n", label)
 	go func() {
-		if err := suspendVM(vm, queue); err != nil {
+		if err := suspendVM(vm, queue, rc, hc); err != nil {
 			fmt.Fprintf(os.Stderr, "error: suspend: %v\n", err)
 			return
 		}

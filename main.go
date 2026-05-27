@@ -24,6 +24,7 @@ import (
 	"github.com/tmc/cove/internal/bytefmt"
 	"github.com/tmc/cove/internal/covecli"
 	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmrun"
 	"github.com/tmc/cove/internal/vmtree"
 	"golang.org/x/term"
 )
@@ -651,7 +652,9 @@ func handleDefaultAction() {
 	switch len(vms) {
 	case 0:
 		guiMode = true
-		err := installMacOSLikeVZ(context.Background(), os.Stderr)
+		opts := currentRuntimeOptions()
+		opts.GUI = guiMode
+		err := installMacOSLikeVZWithProvision(context.Background(), os.Stderr, macOSInstallProvisionFromRuntimeOptions(opts), opts.IPSWPath, opts.vmrunRunConfig(vmrun.GuestMacOS), opts.vmrunHostConfig())
 		if errors.Is(err, errRestartVM) {
 			err = runMacOSVM()
 		}
@@ -848,6 +851,7 @@ VM Management:
   commands        Print command inventory (use --json for automation)
   daemon          Manage the cove background coordinator
   compact         Zero guest free space for smaller pushes
+  disk            Resize stopped VM disk images
   fleet           Register and use remote cove hosts
   build           Chain vzscript steps into a cache-keyed VM image
   action          Preflight helpers for private GitHub Actions runner images
@@ -1122,7 +1126,7 @@ func validateLaunchOptions() error {
 	if err := validateProxyFlags(); err != nil {
 		return err
 	}
-	if err := validatePrivateRuntimeOptions(); err != nil {
+	if err := validatePrivateRuntimeOptionsForOptions(currentRuntimeOptions()); err != nil {
 		return err
 	}
 	return nil
@@ -1229,6 +1233,9 @@ func handleListTo(stdout io.Writer) error {
 }
 
 func runtimeListFields(vmPath, state string) (string, string) {
+	if state == "running" {
+		return runningRuntimeListFields(vmPath)
+	}
 	if state != "starting" {
 		return "-", "-"
 	}
@@ -1249,6 +1256,25 @@ func runtimeListFields(vmPath, state string) (string, string) {
 		return "-", note
 	}
 	return shortDuration(time.Since(since)), note
+}
+
+func runningRuntimeListFields(vmPath string) (string, string) {
+	info, ok := serverInfoForVMProcess(GetControlSocketPathForVM(vmPath))
+	if !ok {
+		return "-", "-"
+	}
+	uptime := "-"
+	if started, err := time.Parse(time.RFC3339, info.StartedAt); err == nil {
+		uptime = shortDuration(time.Since(started))
+	}
+	note := "owner"
+	if info.PID > 0 {
+		note = fmt.Sprintf("owner pid=%d", info.PID)
+	}
+	if info.StartSource != "" {
+		note += " " + info.StartSource
+	}
+	return uptime, note
 }
 
 func shortDuration(d time.Duration) string {
