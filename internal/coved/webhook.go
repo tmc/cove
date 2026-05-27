@@ -15,10 +15,10 @@ type WebhookSubscriber struct {
 	Events map[string]bool
 	Client *http.Client
 
-	delivered     atomic.Uint64
-	failed        atomic.Uint64
-	rejected      atomic.Uint64
-	lastDelivery  atomic.Int64
+	delivered    atomic.Uint64
+	failed       atomic.Uint64
+	rejected     atomic.Uint64
+	lastDelivery atomic.Int64
 }
 
 // LastDeliveryUnix returns the Unix timestamp of the most recent
@@ -107,9 +107,22 @@ func (w *WebhookSubscriber) deliver(ctx context.Context, event Event) {
 			w.lastDelivery.Store(time.Now().Unix())
 			return
 		}
-		time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+		if !webhookRetryDelay(ctx, time.Duration(attempt+1)*100*time.Millisecond) {
+			return
+		}
 	}
 	w.failed.Add(1)
+}
+
+func webhookRetryDelay(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func (w *WebhookSubscriber) post(ctx context.Context, event Event) error {

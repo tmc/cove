@@ -17,12 +17,10 @@ import (
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
-// NetworkBridge holds the network-listener state owned by a
-// ControlServer. The zero value is usable; package main embeds it by
-// value and assigns the host back-channel after construction so
-// existing &ControlServer{} test constructors keep working.
+// NetworkBridge holds the network-listener state owned by a ControlServer.
 type NetworkBridge struct {
-	host NetworkHost
+	host            NetworkHost
+	listenHostVsock HostVsockListener
 
 	mu              sync.Mutex
 	iterm2Proxy     *ITerm2Proxy
@@ -32,9 +30,14 @@ type NetworkBridge struct {
 	debugStubStatus DebugStubStatus
 }
 
-// SetHost wires the back-channel used to derive contexts and obtain a
-// guest connector. May be called multiple times (e.g. tests).
-func (b *NetworkBridge) SetHost(host NetworkHost) { b.host = host }
+// NewNetworkBridge returns a network bridge wired to host.
+func NewNetworkBridge(host NetworkHost, listeners ...HostVsockListener) NetworkBridge {
+	var listenHostVsock HostVsockListener
+	if len(listeners) > 0 {
+		listenHostVsock = listeners[0]
+	}
+	return NetworkBridge{host: host, listenHostVsock: listenHostVsock}
+}
 
 func (b *NetworkBridge) lifecycleContext() context.Context {
 	if b.host == nil {
@@ -57,7 +60,7 @@ func (b *NetworkBridge) PortForwards() *PortForwardManager {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.portForwards == nil {
-		b.portForwards = NewPortForwardManager(b.lifecycleContext())
+		b.portForwards = NewPortForwardManager(b.lifecycleContext(), b.listenHostVsock)
 	}
 	return b.portForwards
 }

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -167,8 +169,7 @@ func isClosedError(err error) bool {
 	if err == nil {
 		return false
 	}
-	s := err.Error()
-	return strings.Contains(s, "use of closed network connection")
+	return errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrClosed)
 }
 
 // checkSharedHost warns when multiple users are logged in and master-token

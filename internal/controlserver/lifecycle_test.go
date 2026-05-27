@@ -1,7 +1,6 @@
 package controlserver
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -70,99 +69,5 @@ func TestLifecycleMarkPolicyStopIssuedOneShot(t *testing.T) {
 	}
 	if l.MarkPolicyStopIssued() {
 		t.Error("third MarkPolicyStopIssued = true, want false")
-	}
-}
-
-// TestLifecycleContextBeforeStartReturnsBackground verifies the
-// zero-value path: callers that read Context() before Start() receive
-// context.Background() rather than nil, so derived TimeoutContext
-// calls do not panic.
-func TestLifecycleContextBeforeStartReturnsBackground(t *testing.T) {
-	l := &Lifecycle{}
-
-	ctx := l.Context()
-	if ctx == nil {
-		t.Fatal("Context() = nil, want context.Background()")
-	}
-	if ctx != context.Background() {
-		t.Errorf("Context() = %v, want context.Background()", ctx)
-	}
-	select {
-	case <-ctx.Done():
-		t.Error("zero-state context is Done, want live")
-	default:
-	}
-}
-
-// TestLifecycleShutdownCancelsAndIsIdempotent verifies that Shutdown
-// cancels the context returned by Start and that a second Shutdown
-// call is a no-op.
-func TestLifecycleShutdownCancelsAndIsIdempotent(t *testing.T) {
-	l := &Lifecycle{}
-
-	ctx := l.Start()
-	select {
-	case <-ctx.Done():
-		t.Fatal("Start() context already Done")
-	default:
-	}
-
-	l.Shutdown()
-	select {
-	case <-ctx.Done():
-	case <-time.After(time.Second):
-		t.Fatal("Shutdown did not cancel start context within 1s")
-	}
-
-	l.Shutdown()
-	if got := l.Context(); got != context.Background() {
-		t.Errorf("Context() after double Shutdown = %v, want Background", got)
-	}
-}
-
-// TestLifecycleShutdownWithoutStartDoesNotPanic verifies that
-// Shutdown on a never-started Lifecycle is safe. ControlServer.Stop
-// may run before Start in error paths and must not panic.
-func TestLifecycleShutdownWithoutStartDoesNotPanic(t *testing.T) {
-	l := &Lifecycle{}
-	l.Shutdown()
-	if got := l.Context(); got != context.Background() {
-		t.Errorf("Context() after lone Shutdown = %v, want Background", got)
-	}
-}
-
-func TestLifecycleTimeoutContext(t *testing.T) {
-	_ = t.TempDir()
-	tests := []struct {
-		name     string
-		start    bool
-		shutdown bool
-	}{
-		{"background", false, false},
-		{"started", true, false},
-		{"shutdown", true, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var l Lifecycle
-			if tt.start {
-				l.Start()
-			}
-			ctx, cancel := l.TimeoutContext(time.Hour)
-			defer cancel()
-			if tt.shutdown {
-				l.Shutdown()
-			}
-			select {
-			case <-ctx.Done():
-				if !tt.shutdown {
-					t.Fatal("timeout context canceled early")
-				}
-			default:
-				if tt.shutdown {
-					t.Fatal("timeout context still live after shutdown")
-				}
-			}
-		})
 	}
 }

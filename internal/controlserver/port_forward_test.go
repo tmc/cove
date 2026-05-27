@@ -185,15 +185,28 @@ func TestPortForwardManagerErrors(t *testing.T) {
 		{"reverse no listener", func(m *PortForwardManager) error { return m.StartReverse(80, 22) }, "host vsock listener not configured"},
 		{"reverse udp no listener", func(m *PortForwardManager) error { return m.StartReverseUDP(80, 22) }, "host vsock listener not configured"},
 	}
-	old := ListenHostVsock
-	t.Cleanup(func() { ListenHostVsock = old })
-	ListenHostVsock = nil
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.run(NewPortForwardManager(nil)); err == nil || err.Error() != tt.want {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestPortForwardManagerUsesInjectedHostVsockListener(t *testing.T) {
+	var gotPort uint32
+	m := NewPortForwardManager(context.Background(), func(port uint32) (net.Listener, error) {
+		gotPort = port
+		return net.Listen("tcp", "127.0.0.1:0")
+	})
+	t.Cleanup(m.StopAll)
+
+	if err := m.StartReverse(8080, 22); err != nil {
+		t.Fatalf("StartReverse: %v", err)
+	}
+	if want := relayPortFor(22); gotPort != want {
+		t.Fatalf("listener port = %d, want %d", gotPort, want)
 	}
 }
 

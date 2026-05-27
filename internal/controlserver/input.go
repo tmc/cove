@@ -118,10 +118,10 @@ type InputBridge struct {
 	host InputHost
 }
 
-// SetHost wires (or rewires) the host back-channel. Mirrors the
-// pattern used by AgentBridge so ControlServer can keep embedding
-// the bridge by value with a zero-usable struct.
-func (b *InputBridge) SetHost(host InputHost) { b.host = host }
+// NewInputBridge returns an input bridge wired to host.
+func NewInputBridge(host InputHost) InputBridge {
+	return InputBridge{host: host}
+}
 
 // SendMouse sends a mouse event to the VM. Uses either the direct VM
 // input path or the host window-server CGEvent path, depending on the

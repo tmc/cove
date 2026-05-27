@@ -26,6 +26,7 @@ import (
 	controlx "github.com/tmc/cove/internal/control"
 	"github.com/tmc/cove/internal/control/operations"
 	"github.com/tmc/cove/internal/controlserver"
+	"github.com/tmc/cove/internal/vmrun"
 	"github.com/tmc/cove/internal/vmstate"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
@@ -63,10 +64,17 @@ type ControlServer struct {
 	windowTitleBase   string
 	windowTitleState  string
 	windowTitleLabel  string
-	life              controlserver.Lifecycle // cancellable lifecycle ctx + policy counters (owns its own mutexes)
+	life              controlserver.Lifecycle // policy counters
+	lifeMu            sync.RWMutex
+	lifeDone          chan struct{}
 	gui               VMGUIController
 	captureMode       atomic.Int32
 	inputMode         atomic.Int32
+	runBundleMu       sync.RWMutex
+	runBundle         *RunBundle
+	metrics           runMetricRecorder
+	runConfig         vmrun.RunConfig
+	hostConfig        vmrun.HostConfig
 
 	opsMu  sync.Mutex                    // guards opsReg lazy init
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
@@ -81,24 +89,118 @@ func NewControlServerWithVMDir(socketPath, vmDirectory string) *ControlServer {
 		socketPath: socketPath,
 		vmDir:      vmDirectory,
 	}
-	s.life.Start()
-	s.bridge.SetHost(s)
-	s.network.SetHost(s)
-	s.input.SetHost(s)
-	s.capture.SetMetrics(captureMetricsFunc(emitCaptureLatencyMetric))
+	s.startLifecycleContext()
+	s.bridge = controlserver.NewAgentBridge(s)
+	s.network = controlserver.NewNetworkBridge(s, listenHostVsock)
+	s.input = controlserver.NewInputBridge(s)
+	s.capture.SetMetrics(s)
 	capture, input := resolveAutomationBackends()
 	s.setCaptureBackend(capture)
 	s.setInputBackend(input)
 	return s
 }
 
+func (s *ControlServer) SetRunContext(rc vmrun.RunConfig, hc vmrun.HostConfig) {
+	if hc.VMDir == "" {
+		hc.VMDir = s.vmDir
+	}
+	s.mu.Lock()
+	s.runConfig = rc
+	s.hostConfig = hc
+	s.mu.Unlock()
+}
+
 func (s *ControlServer) lifecycleContext() context.Context {
-	return s.life.Context()
+	s.lifeMu.RLock()
+	done := s.lifeDone
+	defer s.lifeMu.RUnlock()
+	if done == nil {
+		return context.Background()
+	}
+	return lifecycleDoneContext{done: done}
 }
 
 func (s *ControlServer) timeoutContext(timeout time.Duration) (context.Context, context.CancelFunc) {
-	return s.life.TimeoutContext(timeout)
+	return context.WithTimeout(s.lifecycleContext(), timeout)
 }
+
+func (s *ControlServer) startLifecycleContext() context.Context {
+	s.lifeMu.Lock()
+	if s.lifeDone == nil {
+		s.lifeDone = make(chan struct{})
+	}
+	done := s.lifeDone
+	s.lifeMu.Unlock()
+	return lifecycleDoneContext{done: done}
+}
+
+func (s *ControlServer) shutdownLifecycleContext() {
+	s.lifeMu.Lock()
+	done := s.lifeDone
+	if done != nil {
+		close(done)
+		s.lifeDone = nil
+	}
+	s.lifeMu.Unlock()
+}
+
+func (s *ControlServer) SetRunBundle(b *RunBundle) {
+	s.runBundleMu.Lock()
+	s.runBundle = b
+	s.runBundleMu.Unlock()
+}
+
+func (s *ControlServer) SetMetricsRecorder(r runMetricRecorder) {
+	s.runBundleMu.Lock()
+	s.metrics = r
+	s.runBundleMu.Unlock()
+}
+
+func (s *ControlServer) teeControlEvent(reqType string, resp interface{ GetError() string }) {
+	s.runBundleMu.RLock()
+	b := s.runBundle
+	s.runBundleMu.RUnlock()
+	if b != nil {
+		b.TeeControlEvent(reqType, resp)
+	}
+}
+
+func (s *ControlServer) EmitCaptureLatency(ctx context.Context, e controlserver.CaptureLatencyEvent) {
+	s.runBundleMu.RLock()
+	recorder := s.metrics
+	s.runBundleMu.RUnlock()
+	if recorder != nil {
+		recorder.EmitCaptureLatency(ctx, e)
+	}
+}
+
+func (s *ControlServer) recordMetric(eventType string, started time.Time, status string, extra map[string]any) {
+	s.runBundleMu.RLock()
+	recorder := s.metrics
+	s.runBundleMu.RUnlock()
+	if recorder != nil {
+		recorder.EmitMetricEvent(eventType, started, status, extra)
+	}
+}
+
+type lifecycleDoneContext struct {
+	done <-chan struct{}
+}
+
+func (c lifecycleDoneContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+
+func (c lifecycleDoneContext) Done() <-chan struct{} { return c.done }
+
+func (c lifecycleDoneContext) Err() error {
+	select {
+	case <-c.done:
+		return context.Canceled
+	default:
+		return nil
+	}
+}
+
+func (c lifecycleDoneContext) Value(any) any { return nil }
 
 func (s *ControlServer) captureBackend() automationBackendMode {
 	return automationBackendMode(s.captureMode.Load())
@@ -117,12 +219,10 @@ func (s *ControlServer) setInputBackend(mode automationBackendMode) {
 }
 
 // inputs returns the input bridge with its host back-channel wired.
-// Test constructors that build &ControlServer{} skip
-// NewControlServerWithVMDir, so the bridge can be reached with a nil
-// host; the forwarders go through inputs() to ensure the host is
-// always live.
+// InputBridge carries no mutable state, so direct &ControlServer{}
+// tests can lazily construct the bridge here.
 func (s *ControlServer) inputs() *controlserver.InputBridge {
-	s.input.SetHost(s)
+	s.input = controlserver.NewInputBridge(s)
 	return &s.input
 }
 
@@ -223,7 +323,7 @@ func (s *ControlServer) WindowTitle() string {
 
 // Start begins listening on the Unix socket
 func (s *ControlServer) Start() error {
-	lifecycleCtx := s.life.Start()
+	lifecycleCtx := s.startLifecycleContext()
 	if s.authToken == "" {
 		token, err := EnsureControlTokenForVM(s.effectiveVMDir())
 		if err != nil {
@@ -259,7 +359,7 @@ func (s *ControlServer) Stop() {
 	proxyCtx, cancel := s.timeoutContext(5 * time.Second)
 	s.network.StopITerm2Proxy(proxyCtx)
 	cancel()
-	s.life.Shutdown()
+	s.shutdownLifecycleContext()
 	s.network.StopPortForwards()
 	s.network.CloseHTTPListeners()
 	if s.listener != nil {
@@ -337,6 +437,8 @@ func (s *ControlServer) HandleRaw(req *controlpb.ControlRequest, raw []byte) (*c
 
 	switch req.Type {
 	case "disk":
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		return s.handleDiskJSONRequest(raw), true
 	case "pit":
 		return s.handlePITJSONRequest(raw), true
@@ -355,7 +457,7 @@ func (s *ControlServer) Handle(req *controlpb.ControlRequest) *controlpb.Control
 }
 
 func (s *ControlServer) Event(reqType string, resp *controlpb.ControlResponse) {
-	teeControlEvent(reqType, resp)
+	s.teeControlEvent(reqType, resp)
 }
 
 func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.ControlResponse {
@@ -379,6 +481,8 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.handleVNCStatus()
 	case "debug-stub-status":
 		return s.handleDebugStubStatus()
+	case "server-info":
+		return s.handleServerInfo()
 	case "ping":
 		return &controlpb.ControlResponse{Success: true, Data: "pong", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "pong"}}}
 	case "status":
@@ -840,6 +944,13 @@ func (s *ControlServer) getVMStatus() *controlpb.ControlResponse {
 	status["policyStartedAt"] = startedAt.Format(time.RFC3339)
 	status["policyExecCount"] = execCount
 	status["policyStopIssued"] = stopIssued
+	owner := currentRuntimeOwnerInfo()
+	status["ownerPID"] = owner.PID
+	status["ownerPPID"] = owner.PPID
+	status["ownerSessionID"] = owner.SessionID
+	status["ownerCommand"] = owner.Command
+	status["ownerParentCommand"] = owner.ParentCommand
+	status["startSource"] = owner.StartSource
 	lastPing := s.bridge.LastPing()
 	status["lastPing"] = lastPing.Format(time.RFC3339)
 
@@ -958,7 +1069,7 @@ func (s *ControlServer) stopVM() *controlpb.ControlResponse {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("cannot stop VM in state: %s", state.String())}
 	}
 
-	teardownRequestedProxyHook(s)
+	teardownRequestedProxy(s)
 
 	errCh := make(chan error, 1)
 	DispatchAsyncQueue(s.vmQueue, func() {
@@ -991,8 +1102,8 @@ func (s *ControlServer) rebootToRecovery() *controlpb.ControlResponse {
 	done := make(chan error, 1)
 	DispatchAsyncQueue(queue, func() {
 		startRecovery := func() {
-			if hasSuspendState() {
-				moveAsideSuspendState("recovery-mode")
+			if hasSuspendStateForVM(s.vmDir) {
+				moveAsideSuspendStateForVM(s.vmDir, "recovery-mode")
 			}
 			setActiveBootSessionMode(bootSessionModeRecovery)
 			opts := vz.NewVZMacOSVirtualMachineStartOptions()
@@ -1191,7 +1302,7 @@ func controlCapabilityCommands(linuxGuest, windowsGuest bool) []string {
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
 		"shared-folders-apply", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
-		"vnc-status", "debug-stub-status", "disk", "pit", "usb",
+		"vnc-status", "debug-stub-status", "server-info", "disk", "pit", "usb",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
