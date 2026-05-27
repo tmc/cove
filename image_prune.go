@@ -18,6 +18,7 @@ type ImagePruneOptions struct {
 	Filter    string
 	DryRun    bool
 	Now       func() time.Time
+	metrics   *standaloneMetricsRun
 }
 
 type ImagePruneSkipped struct {
@@ -73,7 +74,7 @@ func PruneImages(opts ImagePruneOptions) (ImagePruneResult, error) {
 			continue
 		}
 		res.Removed = append(res.Removed, ref)
-		emitMetricEvent("image_gc_evict", cutoff, "ok", map[string]any{
+		opts.metrics.EmitMetricEvent("image_gc_evict", cutoff, "ok", map[string]any{
 			"image_ref":   ref.String(),
 			"bytes_freed": freed,
 		})
@@ -122,7 +123,7 @@ func runImagePrune(env commandEnv, args []string) error {
 	}
 	defer finishStandaloneMetricsRun(metricsRun)
 
-	opts := ImagePruneOptions{OlderThan: olderThan, Filter: strings.TrimSpace(*filter), DryRun: true}
+	opts := ImagePruneOptions{OlderThan: olderThan, Filter: strings.TrimSpace(*filter), DryRun: true, metrics: metricsRun}
 	plan, err := PruneImages(opts)
 	if err != nil {
 		return err
@@ -157,6 +158,7 @@ func runImagePrune(env commandEnv, args []string) error {
 		}
 	}
 	opts.DryRun = false
+	opts.metrics = metricsRun
 	actual, err := PruneImages(opts)
 	if err != nil {
 		return err

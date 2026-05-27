@@ -51,8 +51,7 @@ func ImagesBaseDir() string {
 // matching individual messages.
 var ErrImageRefInvalid = imagestore.ErrRefInvalid
 
-// acquireImageLockHook lets tests stub out lock acquisition; mirrors
-// acquireRunLockHook in runtime_lifecycle.go.
+// acquireImageLockHook lets tests stub out image-store lock acquisition.
 var acquireImageLockHook = imagestore.AcquireLock
 
 // ParseImageRef parses "name" or "name:tag" into an ImageRef. Default
@@ -100,7 +99,7 @@ func BuildImage(opts BuildImageOptions) (*imagestore.Manifest, error) {
 	osType := vmconfig.DetectOSType(srcDir)
 
 	// Refuse to snapshot a running VM. Probe-and-release the run.lock.
-	srcLock, err := acquireRunLockHook(srcDir)
+	srcLock, err := AcquireRunLock(srcDir)
 	if err != nil {
 		if errors.Is(err, ErrRunLockHeld) {
 			return nil, fmt.Errorf("image build: source VM %q is running; stop it first", opts.SourceVM)

@@ -28,6 +28,7 @@ const cacheImageDefaultTTL = 7 * 24 * time.Hour
 type ImageGCOptions struct {
 	OlderThan time.Duration
 	DryRun    bool
+	metrics   *standaloneMetricsRun
 }
 
 // ImageGCSkipped records why a candidate was kept.
@@ -59,7 +60,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			created := imageCreatedAt(entry)
 			age := now.Sub(created)
 			if age < cacheTTL {
-				emitImageGCKeep(ref, "recent", now)
+				opts.emitImageGCKeep(ref, "recent", now)
 				res.Skipped = append(res.Skipped, ImageGCSkipped{
 					Ref:    ref,
 					Reason: fmt.Sprintf("cache image newer than CACHE-TTL (age %s, ttl %s)", age.Round(time.Second), cacheTTL),
@@ -70,7 +71,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 		if opts.OlderThan > 0 && entry.Manifest != nil {
 			age := now.Sub(entry.Manifest.CreatedAt)
 			if age < opts.OlderThan {
-				emitImageGCKeep(ref, "recent", now)
+				opts.emitImageGCKeep(ref, "recent", now)
 				res.Skipped = append(res.Skipped, ImageGCSkipped{
 					Ref:    ref,
 					Reason: fmt.Sprintf("newer than -older-than threshold (age %s)", age.Round(time.Second)),
@@ -87,7 +88,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			continue
 		}
 		if len(forks) > 0 {
-			emitImageGCKeep(ref, "in_use", now)
+			opts.emitImageGCKeep(ref, "in_use", now)
 			res.Skipped = append(res.Skipped, ImageGCSkipped{
 				Ref:    ref,
 				Reason: "has live forks: " + strings.Join(forks, ", "),
@@ -98,7 +99,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 			res.Removed = append(res.Removed, ref)
 			continue
 		}
-		removed, skipped := gcImageLocked(ref, now)
+		removed, skipped := gcImageLocked(ref, now, opts)
 		if skipped != nil {
 			res.Skipped = append(res.Skipped, *skipped)
 			continue
@@ -115,7 +116,7 @@ func GCImages(opts ImageGCOptions) (ImageGCResult, error) {
 // is non-zero. If the lock cannot be acquired (concurrent fork or
 // tag), returns a Skipped reason and gc will retry next sweep. Closes
 // R1+R3+R7 in docs/research/image-gc-race-audit-2026-05-08.md.
-func gcImageLocked(ref imagestore.Ref, now time.Time) (bool, *ImageGCSkipped) {
+func gcImageLocked(ref imagestore.Ref, now time.Time, opts ImageGCOptions) (bool, *ImageGCSkipped) {
 	imgLock, err := imagestore.TryAcquireLock(ref.Path())
 	if err != nil {
 		return false, &ImageGCSkipped{
@@ -132,7 +133,7 @@ func gcImageLocked(ref imagestore.Ref, now time.Time) (bool, *ImageGCSkipped) {
 		}
 	}
 	if len(recheck) > 0 {
-		emitImageGCKeep(ref, "in_use", now)
+		opts.emitImageGCKeep(ref, "in_use", now)
 		return false, &ImageGCSkipped{
 			Ref:    ref,
 			Reason: "fork raced into existence: " + strings.Join(recheck, ", "),
@@ -152,18 +153,18 @@ func gcImageLocked(ref imagestore.Ref, now time.Time) (bool, *ImageGCSkipped) {
 			Reason: fmt.Sprintf("remove failed: %v", err),
 		}
 	}
-	emitMetricEvent("image_gc_evict", now, "ok", map[string]any{
+	opts.metrics.EmitMetricEvent("image_gc_evict", now, "ok", map[string]any{
 		"image_ref":   ref.String(),
 		"bytes_freed": freed,
 	})
 	return true, nil
 }
 
-func emitImageGCKeep(ref imagestore.Ref, reason string, started time.Time) {
+func (opts ImageGCOptions) emitImageGCKeep(ref imagestore.Ref, reason string, started time.Time) {
 	if reason != "in_use" && reason != "recent" {
 		return
 	}
-	emitMetricEvent("image_gc_keep", started, "ok", map[string]any{
+	opts.metrics.EmitMetricEvent("image_gc_keep", started, "ok", map[string]any{
 		"image_ref": ref.String(),
 		"reason":    reason,
 	})
@@ -233,7 +234,7 @@ func runImageGC(env commandEnv, args []string) error {
 	}
 	defer finishStandaloneMetricsRun(metricsRun)
 
-	plan, err := GCImages(ImageGCOptions{OlderThan: *olderThan, DryRun: true})
+	plan, err := GCImages(ImageGCOptions{OlderThan: *olderThan, DryRun: true, metrics: metricsRun})
 	if err != nil {
 		return err
 	}
@@ -266,7 +267,7 @@ func runImageGC(env commandEnv, args []string) error {
 			return nil
 		}
 	}
-	actual, err := GCImages(ImageGCOptions{OlderThan: *olderThan, DryRun: false})
+	actual, err := GCImages(ImageGCOptions{OlderThan: *olderThan, DryRun: false, metrics: metricsRun})
 	if err != nil {
 		return err
 	}

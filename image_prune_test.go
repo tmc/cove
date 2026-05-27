@@ -112,16 +112,13 @@ func TestPruneImagesEmitsTelemetry(t *testing.T) {
 	runsDirHook = func() string { return runsRoot }
 	t.Cleanup(func() {
 		runsDirHook = prev
-		activeMetricsMu.Lock()
-		activeMetricsRun = nil
-		activeMetricsMu.Unlock()
 	})
 	ref := stageUnreferencedImage(t, "src-drop", "drop:old")
 	run, err := beginStandaloneMetricsRun("image-prune", "local")
 	if err != nil {
 		t.Fatalf("beginStandaloneMetricsRun: %v", err)
 	}
-	_, err = PruneImages(ImagePruneOptions{Filter: "old"})
+	_, err = PruneImages(ImagePruneOptions{Filter: "old", metrics: run})
 	finishStandaloneMetricsRun(run)
 	if err != nil {
 		t.Fatalf("PruneImages: %v", err)

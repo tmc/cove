@@ -12,7 +12,7 @@ import (
 
 func TestRunImageForkFromWithConfigInvalidRef(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	err := runImageForkFromWithConfig(RunConfig{EphemeralForkParent: "::bad"}, "", "")
+	err := runImageForkFromWithConfig(RunConfig{EphemeralForkParent: "::bad"}, "", "", nil)
 	if err == nil {
 		t.Fatal("runImageForkFromWithConfig(::bad) = nil, want parse error")
 	}
@@ -23,7 +23,7 @@ func TestRunImageForkFromWithConfigInvalidRef(t *testing.T) {
 
 func TestRunImageForkFromWithConfigMissingImage(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	err := runImageForkFromWithConfig(RunConfig{EphemeralForkParent: "ghost-image:v1"}, "", "")
+	err := runImageForkFromWithConfig(RunConfig{EphemeralForkParent: "ghost-image:v1"}, "", "", nil)
 	if err == nil {
 		t.Fatal("runImageForkFromWithConfig(missing image) = nil, want not-found")
 	}
@@ -86,8 +86,6 @@ func TestRunForkFromUntaggedMissingParentGivesImageAndVMHints(t *testing.T) {
 
 func TestRunMissingImageForkFromDoesNotCreateDefaultOrRunDirs(t *testing.T) {
 	home := withTempHome(t)
-	prevBundle := ActiveRunBundle()
-	t.Cleanup(func() { setActiveRunBundle(prevBundle) })
 	err := runVMWithConfig(RunConfig{
 		VM:                  vmSelection{Name: "default", Directory: filepath.Join(vmconfig.BaseDir(), "default")},
 		EphemeralForkParent: "ghost-image:v1",
@@ -98,9 +96,6 @@ func TestRunMissingImageForkFromDoesNotCreateDefaultOrRunDirs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "image ghost-image:v1 not found") {
 		t.Fatalf("err = %v, want missing image", err)
-	}
-	if ActiveRunBundle() != nil {
-		t.Fatal("missing image left an active run bundle")
 	}
 	if _, statErr := os.Stat(filepath.Join(home, ".vz", "vms", "default")); !os.IsNotExist(statErr) {
 		t.Fatalf("default VM dir stat = %v, want not exist", statErr)
@@ -141,13 +136,12 @@ func TestRunExistingImageForkFromStillCreatesRunBundle(t *testing.T) {
 	if _, err := BuildImage(BuildImageOptions{SourceVM: "src-existing-image", Ref: ref}); err != nil {
 		t.Fatalf("BuildImage: %v", err)
 	}
-	stubAcquireRunLockHook(t)
-	oldRunMac := runMacOSVMHook
-	t.Cleanup(func() { runMacOSVMHook = oldRunMac })
-	runMacOSVMHook = func() error { return nil }
+	hooks, _ := stubAcquireRunLockHook(t)
+	hooks.RunMacOSVM = runHook(func() error { return nil })
 
 	err = runVMWithConfig(RunConfig{
 		VM:                  vmSelection{Name: "default", Directory: filepath.Join(vmconfig.BaseDir(), "default")},
+		Hooks:               hooks,
 		EphemeralForkParent: ref.String(),
 		Ephemeral:           true,
 	})

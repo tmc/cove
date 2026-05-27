@@ -59,7 +59,9 @@ func missingForkFromImageError(ref imagestore.Ref) error {
 // runImageForkFromWithConfig handles the design 024 fork-from-image
 // path: materialize a fresh bundle, take the run.lock, boot, and
 // (when -ephemeral) destroy on stop.
-func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir string) error {
+func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir string, bundle *RunBundle) error {
+	hooks := cfg.Hooks.withDefaults()
+	rc, hc := cfg.vmrunConfigs()
 	ref, err := ParseImageRef(cfg.EphemeralForkParent)
 	if err != nil {
 		return fmt.Errorf("cove run -fork-from <image>: %w", err)
@@ -101,7 +103,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if cfg.Ephemeral {
 		fmt.Printf("  mode:   ephemeral (destroyed on stop)\n")
 	}
-	emitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
+	bundle.EmitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
 		"child_name": childName,
 		"child_path": childPath,
 	})
@@ -115,7 +117,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	restoreSerial := maybeQuietImageForkSerial(cfg)
 	defer restoreSerial()
 
-	lock, err := acquireRunLockHook(vmDir)
+	lock, err := hooks.AcquireRunLock(vmDir)
 	if err != nil {
 		os.RemoveAll(childPath)
 		return fmt.Errorf("cove run -fork-from <image>: %w", err)
@@ -128,9 +130,9 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 
 	var runErr error
 	if cfg.Linux {
-		runErr = runLinuxVMHook()
+		runErr = hooks.RunLinuxVM(rc, hc, bundle, bundle)
 	} else {
-		runErr = runMacOSVMHook()
+		runErr = hooks.RunMacOSVM(rc, hc, bundle, bundle)
 	}
 
 	if !cfg.Ephemeral {
@@ -140,7 +142,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		fmt.Printf("Ephemeral image fork retained: %s\n", childName)
 		return runErr
 	}
-	if cleanupErr := cleanupEphemeralForkHook(childPath); cleanupErr != nil {
+	if cleanupErr := hooks.CleanupEphemeralFork(childPath); cleanupErr != nil {
 		// The cleanup helper refuses any path missing the .ephemeral
 		// sentinel, which we wrote during MaterializeImage. Still log
 		// any error so the operator notices left-over state.
