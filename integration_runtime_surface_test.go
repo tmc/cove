@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -71,99 +73,67 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 	})
 
 	t.Run("disk-list", func(t *testing.T) {
-		resp, err := ctlSendJSON(vm.sock, map[string]interface{}{
-			"type": "disk",
-			"data": map[string]any{"action": "list"},
-		}, 30*time.Second)
-		if err != nil {
-			t.Fatalf("disk list: %v", err)
-		}
-		if !resp.Success {
-			t.Fatalf("disk list failed: %s", resp.Error)
-		}
-		var disks RuntimeDiskListResponse
-		if err := json.Unmarshal([]byte(resp.GetData()), &disks); err != nil {
-			t.Fatalf("decode disk list: %v\n%s", err, resp.GetData())
-		}
+		disks := runtimeSurfaceDiskList(t, vm)
 		if disks.Count == 0 || len(disks.Disks) == 0 {
 			t.Fatalf("disk list empty: %+v", disks)
 		}
 		if disks.Disks[0].Index != 0 {
 			t.Fatalf("first disk index = %d, want 0", disks.Disks[0].Index)
 		}
+		assertRuntimeSurfacePrimaryDiskImage(t, vm, disks.Disks[0])
 	})
 
 	t.Run("disk-resize-live", func(t *testing.T) {
-		resp, err := ctlSendJSON(vm.sock, map[string]interface{}{
-			"type": "disk",
-			"data": map[string]any{"action": "list"},
-		}, 30*time.Second)
-		if err != nil {
-			t.Fatalf("disk list: %v", err)
-		}
-		if !resp.Success {
-			t.Fatalf("disk list failed: %s", resp.Error)
-		}
-		var baseDisks RuntimeDiskListResponse
-		if err := json.Unmarshal([]byte(resp.GetData()), &baseDisks); err != nil {
-			t.Fatalf("decode disk list: %v\n%s", err, resp.GetData())
-		}
+		artifacts := newIntegrationArtifacts(t, "disk-resize-live")
+		baseDisks := runtimeSurfaceDiskList(t, vm)
+		artifacts.writeJSON("base-disk-list.json", baseDisks)
 		if len(baseDisks.Disks) == 0 {
 			t.Fatalf("disk list empty: %+v", baseDisks)
 		}
-		if baseDisks.Disks[0].Kind != "disk-image" {
-			t.Skipf("runtime disk resize unavailable for disk kind %q", baseDisks.Disks[0].Kind)
-		}
+		assertRuntimeSurfacePrimaryDiskImage(t, vm, baseDisks.Disks[0])
 
-		cloneName := integrationCloneName(t.Name())
-		if err := CloneVM(CloneOptions{Source: vm.name, Target: cloneName, Linked: true}); err != nil {
-			t.Fatalf("CloneVM() error = %v", err)
-		}
-		clone := clonedTestVM(t, cloneName, vm.linux)
+		clone := cloneTestVM(t, vm)
+		artifacts.writeText("clone.txt", fmt.Sprintf("name=%s\ndir=%s\nlog=%s\n", clone.name, clone.dir, clone.logPath))
 
-		startTestVM(t, clone)
-		waitVMReadyTB(t, clone, integrationVMReadyTimeout(clone, false))
-
-		resp, err = ctlSendJSON(clone.sock, map[string]interface{}{
-			"type": "disk",
-			"data": map[string]any{"action": "list"},
-		}, 30*time.Second)
-		if err != nil {
-			t.Fatalf("disk list: %v", err)
-		}
-		if !resp.Success {
-			t.Fatalf("disk list failed: %s", resp.Error)
-		}
-		var disks RuntimeDiskListResponse
-		if err := json.Unmarshal([]byte(resp.GetData()), &disks); err != nil {
-			t.Fatalf("decode disk list: %v\n%s", err, resp.GetData())
-		}
+		disks := runtimeSurfaceDiskList(t, clone)
+		artifacts.writeJSON("clone-disk-list-before.json", disks)
 		if len(disks.Disks) == 0 {
 			t.Fatalf("disk list empty: %+v", disks)
 		}
-		if disks.Disks[0].Kind != "disk-image" {
-			t.Skipf("runtime disk resize unavailable for disk kind %q", disks.Disks[0].Kind)
-		}
+		assertRuntimeSurfacePrimaryDiskImage(t, clone, disks.Disks[0])
 
 		diskPath := filepath.Join(clone.dir, runtimeSurfaceDiskFileName(clone))
 		before, err := os.Stat(diskPath)
 		if err != nil {
 			t.Fatalf("stat disk %q: %v", diskPath, err)
 		}
-		targetSize := uint64(before.Size()) + 64*1024*1024
+		artifacts.writeText("host-disk-before.txt", fmt.Sprintf("path=%s\nsize=%d\n", diskPath, before.Size()))
 
-		resp, err = ctlSendJSON(clone.sock, map[string]interface{}{
+		var beforeGuest macOSRuntimeDiskState
+		if !clone.linux {
+			beforeGuest = captureMacOSRuntimeDiskState(t, artifacts, clone, "before")
+		}
+		targetSize := uint64(before.Size()) + 512*1024*1024
+
+		resp, err := ctlSendJSON(clone.sock, map[string]interface{}{
 			"type": "disk",
 			"data": map[string]any{
 				"action":     "resize",
 				"index":      0,
 				"size_bytes": targetSize,
 			},
-		}, 30*time.Second)
+		}, 5*time.Minute)
+		artifacts.writeJSON("resize-response.json", resp)
 		if err != nil {
 			t.Fatalf("disk resize: %v", err)
 		}
 		if !resp.Success {
+			if !clone.linux {
+				_ = captureMacOSRuntimeDiskState(t, artifacts, clone, "after-failed")
+				if runtimeSurfaceMacOSRecoveryBlocksAPFS(resp.Error) {
+					t.Skipf("macOS APFS expansion unsupported for this guest partition layout: %s", resp.Error)
+				}
+			}
 			t.Fatalf("disk resize failed: %s", resp.Error)
 		}
 		var resized RuntimeDiskMutationResponse
@@ -174,23 +144,33 @@ func testRuntimeSurface(t *testing.T, vm *testVM) {
 			t.Fatalf("resize index = %d, want 0", resized.Index)
 		}
 
-		deadline := time.Now().Add(30 * time.Second)
-		for time.Now().Before(deadline) {
+		if !waitRuntimeSurfaceDiskSize(t, diskPath, targetSize, 30*time.Second) {
 			info, err := os.Stat(diskPath)
 			if err != nil {
 				t.Fatalf("stat resized disk %q: %v", diskPath, err)
 			}
-			if uint64(info.Size()) >= targetSize {
-				return
-			}
-			time.Sleep(500 * time.Millisecond)
+			t.Fatalf("disk size after resize = %d, want at least %d", info.Size(), targetSize)
 		}
-
-		info, err := os.Stat(diskPath)
+		after, err := os.Stat(diskPath)
 		if err != nil {
 			t.Fatalf("stat resized disk %q: %v", diskPath, err)
 		}
-		t.Fatalf("disk size after resize = %d, want at least %d", info.Size(), targetSize)
+		artifacts.writeText("host-disk-after.txt", fmt.Sprintf("path=%s\nsize=%d\ntarget=%d\n", diskPath, after.Size(), targetSize))
+		if !clone.linux {
+			if resized.GuestResize == nil || !resized.GuestResize.Attempted || !resized.GuestResize.Expanded {
+				t.Fatalf("macOS disk resize did not report APFS expansion: %+v", resized.GuestResize)
+			}
+			afterGuest := captureMacOSRuntimeDiskState(t, artifacts, clone, "after")
+			if afterGuest.PhysicalDiskBytes < targetSize {
+				t.Fatalf("guest disk0 physical size = %d, want at least %d", afterGuest.PhysicalDiskBytes, targetSize)
+			}
+			if afterGuest.ContainerBytes <= beforeGuest.ContainerBytes {
+				t.Fatalf("guest APFS container size = %d, want greater than before %d", afterGuest.ContainerBytes, beforeGuest.ContainerBytes)
+			}
+			if afterGuest.RootKBytes <= beforeGuest.RootKBytes {
+				t.Fatalf("guest root df blocks = %d, want greater than before %d", afterGuest.RootKBytes, beforeGuest.RootKBytes)
+			}
+		}
 	})
 
 	t.Run("usb-list", func(t *testing.T) {
@@ -286,6 +266,169 @@ func runtimeSurfaceDiskFileName(vm *testVM) string {
 		return "linux-disk.img"
 	}
 	return "disk.img"
+}
+
+func runtimeSurfaceDiskList(t *testing.T, vm *testVM) RuntimeDiskListResponse {
+	t.Helper()
+
+	resp, err := ctlSendJSON(vm.sock, map[string]interface{}{
+		"type": "disk",
+		"data": map[string]any{"action": "list"},
+	}, 30*time.Second)
+	if err != nil {
+		t.Fatalf("disk list: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("disk list failed: %s", resp.Error)
+	}
+	var disks RuntimeDiskListResponse
+	if err := json.Unmarshal([]byte(resp.GetData()), &disks); err != nil {
+		t.Fatalf("decode disk list: %v\n%s", err, resp.GetData())
+	}
+	return disks
+}
+
+func assertRuntimeSurfacePrimaryDiskImage(t *testing.T, vm *testVM, disk RuntimeDiskInfo) {
+	t.Helper()
+
+	path := filepath.Join(vm.dir, runtimeSurfaceDiskFileName(vm))
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		t.Fatalf("stat primary disk %q: %v", path, err)
+	}
+	if disk.Kind != "disk-image" {
+		t.Fatalf("disk 0 kind = %q, want disk-image for cove-managed primary disk %s", disk.Kind, path)
+	}
+	if disk.Path == "" {
+		t.Fatalf("disk 0 path is empty, want %s", path)
+	}
+	if disk.FileSizeBytes == 0 {
+		t.Fatalf("disk 0 file_size_bytes = 0, want current host file size")
+	}
+}
+
+func waitRuntimeSurfaceDiskSize(t *testing.T, path string, want uint64, timeout time.Duration) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat resized disk %q: %v", path, err)
+		}
+		if uint64(info.Size()) >= want {
+			return true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
+}
+
+type macOSRuntimeDiskState struct {
+	PhysicalDiskBytes uint64 `json:"physical_disk_bytes"`
+	ContainerBytes    uint64 `json:"container_bytes"`
+	RootKBytes        uint64 `json:"root_kbytes"`
+}
+
+func captureMacOSRuntimeDiskState(t *testing.T, artifacts *integrationArtifacts, vm *testVM, phase string) macOSRuntimeDiskState {
+	t.Helper()
+
+	script := strings.Join([]string{
+		"set +e",
+		"echo '== diskutil-list ==' ; /usr/sbin/diskutil list",
+		"echo '== diskutil-apfs-list ==' ; /usr/sbin/diskutil apfs list",
+		"echo '== diskutil-info-root ==' ; /usr/sbin/diskutil info /",
+		"echo '== diskutil-info-disk0 ==' ; /usr/sbin/diskutil info /dev/disk0",
+		"echo '== df-root ==' ; /bin/df -k /",
+	}, "\n")
+	result := agentExecResultTimeoutTB(t, vm, 3*time.Minute, "/bin/sh", "-lc", script)
+	stdout := result.GetStdout()
+	text := "exit=" + strconv.FormatInt(int64(result.GetExitCode()), 10) + "\n" +
+		"stdout:\n" + stdout + "\n" +
+		"stderr:\n" + result.GetStderr()
+	artifacts.writeText("macos-disk-state-"+phase+".txt", text)
+	if result.GetExitCode() != 0 {
+		t.Fatalf("capture macOS disk state %s: exit %d\nstdout:\n%s\nstderr:\n%s", phase, result.GetExitCode(), stdout, result.GetStderr())
+	}
+
+	state := macOSRuntimeDiskState{
+		PhysicalDiskBytes: parseDiskutilByteLine(t, runtimeSurfaceOutputSection(stdout, "== diskutil-info-disk0 =="), "Disk Size:"),
+		ContainerBytes:    parseDiskutilByteLine(t, runtimeSurfaceOutputSection(stdout, "== diskutil-info-root =="), "Container Total Space:"),
+		RootKBytes:        parseDFRootKBytes(t, stdout),
+	}
+	artifacts.writeJSON("macos-disk-state-"+phase+".json", state)
+	return state
+}
+
+func runtimeSurfaceOutputSection(text, marker string) string {
+	idx := strings.Index(text, marker)
+	if idx < 0 {
+		return text
+	}
+	section := text[idx+len(marker):]
+	if next := strings.Index(section, "\n== "); next >= 0 {
+		section = section[:next]
+	}
+	return section
+}
+
+func parseDiskutilByteLine(t *testing.T, text, label string) uint64 {
+	t.Helper()
+
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, label) {
+			continue
+		}
+		close := strings.Index(line, " Bytes")
+		if close < 0 {
+			continue
+		}
+		open := strings.LastIndex(line[:close], "(")
+		if open < 0 {
+			continue
+		}
+		raw := strings.TrimSpace(line[open+1 : close])
+		raw = strings.ReplaceAll(raw, ",", "")
+		n, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			t.Fatalf("parse %s byte count from %q: %v", label, line, err)
+		}
+		return n
+	}
+	t.Fatalf("missing %s in guest disk state:\n%s", label, text)
+	return 0
+}
+
+func parseDFRootKBytes(t *testing.T, text string) uint64 {
+	t.Helper()
+
+	inDF := false
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "== df-root ==") {
+			inDF = true
+			continue
+		}
+		if !inDF {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 6 || fields[0] == "Filesystem" {
+			continue
+		}
+		n, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			t.Fatalf("parse df root blocks from %q: %v", line, err)
+		}
+		return n
+	}
+	t.Fatalf("missing df -k / output in guest disk state:\n%s", text)
+	return 0
+}
+
+func runtimeSurfaceMacOSRecoveryBlocksAPFS(text string) bool {
+	return strings.Contains(text, "Recovery partition blocks APFS expansion")
 }
 
 func runtimeSurfaceContainsString(list []string, want string) bool {

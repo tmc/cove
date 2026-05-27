@@ -94,6 +94,7 @@
 * [Package boundary extraction (v0.5 facade move)](designs/039-package-boundary-extraction.md)
 * [Storage budget for ~/.vz/](designs/040-storage-budget.md)
 * [ScreenCaptureKit migration](designs/041-screencapturekit-migration.md)
+* [Integration harness goal](designs/044-integration-harness-goal.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
