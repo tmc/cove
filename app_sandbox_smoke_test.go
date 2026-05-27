@@ -207,6 +207,15 @@ func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 	if tempDir, _ := probe["temp_dir"].(string); !strings.Contains(tempDir, "/Library/Containers/com.tmc.cove/Data/tmp") {
 		t.Fatalf("security probe-sandbox temp_dir = %v, want App Sandbox container temp dir\n%s", probe["temp_dir"], out)
 	}
+	helper, ok := probe["helper_ipc"].(map[string]any)
+	if !ok {
+		t.Fatalf("security probe-sandbox helper_ipc missing or wrong type: %#v\n%s", probe["helper_ipc"], out)
+	}
+	switch helper["status"] {
+	case "pass", "skip", "blocked":
+	default:
+		t.Fatalf("security probe-sandbox helper_ipc = %#v, want pass, skip, or blocked\n%s", helper, out)
+	}
 	for _, name := range []string{"unix_socket", "subprocess"} {
 		check, ok := probe[name].(map[string]any)
 		if !ok || check["status"] != "pass" {

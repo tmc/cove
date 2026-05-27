@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,6 +126,48 @@ func TestSecuritySandboxProbeUnixSocket(t *testing.T) {
 	}
 	if !strings.Contains(check.Path, filepath.Join(home, ".vz", "vms")) {
 		t.Fatalf("probeSandboxUnixSocket path = %q, want under test home", check.Path)
+	}
+}
+
+func TestSecuritySandboxProbeHelperUnavailable(t *testing.T) {
+	oldDial := probeSandboxDialHelper
+	t.Cleanup(func() { probeSandboxDialHelper = oldDial })
+	probeSandboxDialHelper = func() (net.Conn, error) {
+		return nil, errHelperUnavailable
+	}
+
+	check := probeSandboxHelperIPC()
+	if check.Status != "skip" {
+		t.Fatalf("probeSandboxHelperIPC status = %q, want skip", check.Status)
+	}
+	if !strings.Contains(check.Message, "helper socket not present") {
+		t.Fatalf("probeSandboxHelperIPC message = %q", check.Message)
+	}
+}
+
+func TestSecuritySandboxProbeHelperPing(t *testing.T) {
+	oldDial := probeSandboxDialHelper
+	t.Cleanup(func() { probeSandboxDialHelper = oldDial })
+	probeSandboxDialHelper = func() (net.Conn, error) {
+		client, server := net.Pipe()
+		go func() {
+			defer server.Close()
+			var req helperRequest
+			if err := json.NewDecoder(server).Decode(&req); err != nil {
+				return
+			}
+			if req.Op != "ping" {
+				_ = json.NewEncoder(server).Encode(helperResponse{Error: "unexpected op"})
+				return
+			}
+			_ = json.NewEncoder(server).Encode(helperResponse{OK: true})
+		}()
+		return client, nil
+	}
+
+	check := probeSandboxHelperIPC()
+	if check.Status != "pass" {
+		t.Fatalf("probeSandboxHelperIPC status = %q message = %q, want pass", check.Status, check.Message)
 	}
 }
 
