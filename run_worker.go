@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,26 +29,37 @@ type runWorkerProbeReport struct {
 }
 
 type runWorkerChildReport struct {
-	Action      string `json:"action"`
-	AppSandbox  bool   `json:"apple_app_sandbox"`
-	ContainerID string `json:"apple_app_sandbox_id,omitempty"`
-	HomeDir     string `json:"home_dir"`
-	ReceivedFD  bool   `json:"received_fd"`
-	ReceivedFDs int    `json:"received_fds"`
-	Bytes       int    `json:"bytes"`
-	SHA256      string `json:"sha256"`
-	Command     string `json:"handoff_command,omitempty"`
-	VMName      string `json:"vm_name,omitempty"`
-	VMDir       string `json:"vm_dir,omitempty"`
-	ResolvedDir string `json:"resolved_dir,omitempty"`
-	OSType      string `json:"os_type,omitempty"`
-	State       string `json:"state,omitempty"`
+	Action      string                `json:"action"`
+	AppSandbox  bool                  `json:"apple_app_sandbox"`
+	ContainerID string                `json:"apple_app_sandbox_id,omitempty"`
+	HomeDir     string                `json:"home_dir"`
+	ReceivedFD  bool                  `json:"received_fd"`
+	ReceivedFDs int                   `json:"received_fds"`
+	Bytes       int                   `json:"bytes"`
+	SHA256      string                `json:"sha256"`
+	Command     string                `json:"handoff_command,omitempty"`
+	VMName      string                `json:"vm_name,omitempty"`
+	VMDir       string                `json:"vm_dir,omitempty"`
+	ResolvedDir string                `json:"resolved_dir,omitempty"`
+	OSType      string                `json:"os_type,omitempty"`
+	State       string                `json:"state,omitempty"`
+	ConfigRead  bool                  `json:"config_read,omitempty"`
+	RuntimeRead bool                  `json:"runtime_read,omitempty"`
+	Stale       bool                  `json:"bookmark_stale,omitempty"`
+	BookmarkKey string                `json:"bookmark_key,omitempty"`
+	BookmarkLen int                   `json:"bookmark_bytes,omitempty"`
+	VMCount     int                   `json:"vm_count,omitempty"`
+	VMs         []runWorkerVMMetadata `json:"vms,omitempty"`
+	Message     string                `json:"message,omitempty"`
+}
+
+type runWorkerVMMetadata struct {
+	Name        string `json:"name"`
+	Dir         string `json:"dir"`
+	OSType      string `json:"os_type"`
+	State       string `json:"state"`
 	ConfigRead  bool   `json:"config_read,omitempty"`
 	RuntimeRead bool   `json:"runtime_read,omitempty"`
-	Stale       bool   `json:"bookmark_stale,omitempty"`
-	BookmarkKey string `json:"bookmark_key,omitempty"`
-	BookmarkLen int    `json:"bookmark_bytes,omitempty"`
-	Message     string `json:"message,omitempty"`
 }
 
 func runWorkerCommand(env commandEnv, _ string, args []string) int {
@@ -63,6 +75,8 @@ func handleRunWorkerCommand(env commandEnv, args []string) error {
 		return runWorkerProbeCommand(env, args[1:])
 	case "status-preflight":
 		return runWorkerStatusPreflightCommand(env, args[1:])
+	case "list-preflight":
+		return runWorkerListPreflightCommand(env, args[1:])
 	case "child":
 		return runWorkerChildCommand(env, args[1:])
 	default:
@@ -137,6 +151,36 @@ func runWorkerStatusPreflightCommand(env commandEnv, args []string) error {
 		return nil
 	}
 	fmt.Fprintf(env.Stdout, "run-worker status preflight: %s %s\n", report.Child.VMName, report.Child.State)
+	return nil
+}
+
+func runWorkerListPreflightCommand(env commandEnv, args []string) error {
+	fs := flag.NewFlagSet("__run-worker list-preflight", flag.ContinueOnError)
+	fs.SetOutput(env.Stderr)
+	jsonFlag := fs.Bool("json", false, "emit JSON")
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: cove __run-worker list-preflight [-json]")
+	}
+
+	report, err := runWorkerListPreflight()
+	if err != nil {
+		return err
+	}
+	if *jsonFlag {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal run-worker list preflight: %w", err)
+		}
+		fmt.Fprintln(env.Stdout, string(data))
+		return nil
+	}
+	fmt.Fprintf(env.Stdout, "run-worker list preflight: %d VMs\n", report.Child.VMCount)
 	return nil
 }
 
@@ -325,6 +369,99 @@ func runWorkerStatusPreflight(name string) (runWorkerProbeReport, error) {
 	}, nil
 }
 
+func runWorkerListPreflight() (runWorkerProbeReport, error) {
+	storePath, err := defaultSecurityBookmarkStorePath()
+	if err != nil {
+		return runWorkerProbeReport{}, err
+	}
+	root, err := filepath.Abs(vmconfig.BaseDir())
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("resolve VM root: %w", err)
+	}
+	key := "dir:" + root
+	entry, bookmark, err := readSecurityBookmarkBytesFromStore(storePath, key)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return runWorkerProbeReport{}, powerboxGrantRequiredKind("list VM root", key, "host-dir", storePath)
+		}
+		return runWorkerProbeReport{}, err
+	}
+
+	workerRoot, err := runWorkerContainerTempDir()
+	if err != nil {
+		return runWorkerProbeReport{}, err
+	}
+	if err := os.MkdirAll(workerRoot, 0o700); err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("create run-worker temp dir: %w", err)
+	}
+	dir, err := os.MkdirTemp(workerRoot, "cove-run-worker-list-")
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("create run-worker workspace: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	handoff := runWorkerHandoff{
+		Version: runWorkerHandoffVersion,
+		Command: "list-preflight",
+		VM: runWorkerHandoffVM{
+			Name: "vm-root",
+			Dir:  entry.Path,
+		},
+		Bookmarks: []runWorkerHandoffBookmark{{
+			Key:   key,
+			Kind:  "host-dir",
+			Path:  entry.Path,
+			Bytes: bookmark,
+		}},
+	}
+	sockPath := filepath.Join(dir, "rw.sock")
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sockPath, Net: "unix"})
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("listen run-worker socket: %w", err)
+	}
+	defer ln.Close()
+
+	sendErr := make(chan error, 1)
+	go func() {
+		sendErr <- sendRunWorkerHandoff(ln, handoff, nil, 45*time.Second)
+	}()
+
+	exe, err := os.Executable()
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("find executable: %w", err)
+	}
+	cmd := exec.Command(exe, "__run-worker", "child", "-sock", sockPath)
+	cmd.Env = runWorkerChildEnv(os.Environ())
+	out, childErr := cmd.CombinedOutput()
+
+	if err := <-sendErr; err != nil {
+		return runWorkerProbeReport{}, err
+	}
+	if childErr != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("run sandboxed worker: %w: %s", childErr, strings.TrimSpace(string(out)))
+	}
+	childJSON, err := firstJSONObjectBytes(out)
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("parse sandboxed worker output: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	var child runWorkerChildReport
+	if err := json.Unmarshal(childJSON, &child); err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("decode sandboxed worker output: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	if !child.AppSandbox {
+		return runWorkerProbeReport{}, fmt.Errorf("sandboxed worker did not report Apple App Sandbox")
+	}
+	if child.Command != handoff.Command || child.VMCount != len(child.VMs) {
+		return runWorkerProbeReport{}, fmt.Errorf("sandboxed worker list preflight failed: %+v", child)
+	}
+	return runWorkerProbeReport{
+		Action:           "list-preflight",
+		ParentAppSandbox: appleAppSandboxActive(),
+		Child:            child,
+		Message:          "sandboxed worker resolved VM root bookmark and listed metadata",
+	}, nil
+}
+
 func runWorkerChildCommand(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("__run-worker child", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
@@ -366,6 +503,8 @@ func runWorkerChild(sockPath string) (runWorkerChildReport, error) {
 		return runWorkerProbeChild(status, handoff, files)
 	case "status-preflight":
 		return runWorkerStatusPreflightChild(status, handoff)
+	case "list-preflight":
+		return runWorkerListPreflightChild(status, handoff)
 	default:
 		return runWorkerChildReport{}, fmt.Errorf("unknown run-worker handoff command %q", handoff.Command)
 	}
@@ -466,6 +605,88 @@ func runWorkerStatusPreflightChild(status appleAppSandboxStatus, handoff runWork
 		BookmarkLen: len(bookmark.Bytes),
 		Message:     "resolved VM bookmark and read metadata",
 	}, nil
+}
+
+func runWorkerListPreflightChild(status appleAppSandboxStatus, handoff runWorkerHandoff) (runWorkerChildReport, error) {
+	bookmark, ok := handoff.bookmark("host-dir")
+	if !ok {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker list preflight missing VM root bookmark")
+	}
+	if len(bookmark.Bytes) == 0 {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker list preflight bookmark %s has no bytes", bookmark.Key)
+	}
+	resolved, stale, stop, err := resolveSecurityScopedBookmark(bookmark.Bytes)
+	if err != nil {
+		return runWorkerChildReport{}, err
+	}
+	defer stop()
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return runWorkerChildReport{}, fmt.Errorf("stat VM root: %w", err)
+	}
+	if !info.IsDir() {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker list preflight bookmark resolved to non-directory: %s", resolved)
+	}
+	vms, err := runWorkerListVMRoot(resolved)
+	if err != nil {
+		return runWorkerChildReport{}, err
+	}
+	home, _ := os.UserHomeDir()
+	return runWorkerChildReport{
+		Action:      "child",
+		AppSandbox:  status.Active,
+		ContainerID: status.ContainerID,
+		HomeDir:     home,
+		Command:     handoff.Command,
+		VMDir:       handoff.VM.Dir,
+		ResolvedDir: resolved,
+		Stale:       stale,
+		BookmarkKey: bookmark.Key,
+		BookmarkLen: len(bookmark.Bytes),
+		VMCount:     len(vms),
+		VMs:         vms,
+		Message:     "resolved VM root bookmark and listed metadata",
+	}, nil
+}
+
+func runWorkerListVMRoot(root string) ([]runWorkerVMMetadata, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read VM root: %w", err)
+	}
+	vms := make([]runWorkerVMMetadata, 0, len(entries))
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		if !entry.IsDir() {
+			if entry.Type()&os.ModeSymlink == 0 {
+				continue
+			}
+			target, err := os.Stat(path)
+			if err != nil || !target.IsDir() {
+				continue
+			}
+		}
+		info, err := vmconfig.InfoFor(path, detectVMState)
+		if err != nil {
+			continue
+		}
+		meta := runWorkerVMMetadata{
+			Name:        info.Name,
+			Dir:         info.Path,
+			OSType:      info.OSType,
+			State:       info.State,
+			ConfigRead:  fileExists(filepath.Join(info.Path, "config.json")),
+			RuntimeRead: fileExists(filepath.Join(info.Path, vmRuntimeStateFile)),
+		}
+		vms = append(vms, meta)
+	}
+	sort.Slice(vms, func(i, j int) bool {
+		return vms[i].Name < vms[j].Name
+	})
+	return vms, nil
 }
 
 func sendRunWorkerHandoff(ln *net.UnixListener, handoff runWorkerHandoff, files []*os.File, timeout time.Duration) error {

@@ -138,6 +138,12 @@ Observed result:
   command delegation path. In that mode, `status <vm>` calls the worker
   status-preflight path and formats the stopped-VM result through the normal
   status diagnostic. The default production `status` path is unchanged.
+- `__run-worker list-preflight` is the first VM-root metadata consumer behind
+  the typed worker handoff. The parent loads a staged `dir:<vm-root>` bookmark
+  from the durable store and sends its bytes to the sandboxed child. The child
+  resolves the root, scans valid VM directories, and reports per-VM name, path,
+  OS type, state, and metadata-file read proof without creating aliases or
+  reading ambient VM roots.
 - `security bookmark-probe -json` exercises the purego Foundation bookmark
   calls through the sandboxed macgo bundle. It creates an app-scoped
   security-scoped bookmark for a temp file inside the app container, resolves
@@ -349,8 +355,12 @@ work in this order:
     `COVE_APP_SANDBOX_DELEGATE_STATUS=1`. This keeps default status behavior
     unchanged while proving the parent can consume and format the sandboxed
     worker metadata result.
-19. Next: add a hidden `list` metadata preflight for a staged `dir:<vm-root>`
-    grant before changing user-facing list routing.
+19. Done: add hidden `__run-worker list-preflight` for a staged
+    `dir:<vm-root>` grant. It lists valid VMs from the bookmarked root in the
+    sandboxed worker without mutating aliases or falling back to ambient roots.
+20. Next: decide whether `list` should gain an explicit worker-delegation opt-in
+    like `status`, or whether the next proof should cover read-only image/cache
+    metadata under a staged state-dir grant.
 
 ## Proof gates
 

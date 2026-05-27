@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestRunWorkerChildEnvEnablesSandboxMacgo(t *testing.T) {
@@ -171,5 +173,39 @@ func TestRunWorkerHandoffSocketWithoutDescriptor(t *testing.T) {
 	}
 	if len(files) != 0 {
 		t.Fatalf("received %d files, want 0", len(files))
+	}
+}
+
+func TestRunWorkerListVMRoot(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"b", "a"} {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatalf("mkdir VM: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "linux-disk.img"), []byte("disk"), 0600); err != nil {
+			t.Fatalf("write VM disk: %v", err)
+		}
+		if err := vmconfig.Save(dir, &vmconfig.Config{CPU: 2}); err != nil {
+			t.Fatalf("save VM config: %v", err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(root, "not-a-vm"), 0700); err != nil {
+		t.Fatalf("mkdir non-VM: %v", err)
+	}
+	vms, err := runWorkerListVMRoot(root)
+	if err != nil {
+		t.Fatalf("runWorkerListVMRoot: %v", err)
+	}
+	if len(vms) != 2 {
+		t.Fatalf("listed %d VMs, want 2: %+v", len(vms), vms)
+	}
+	if vms[0].Name != "a" || vms[1].Name != "b" {
+		t.Fatalf("VM order = %+v, want a,b", vms)
+	}
+	for _, vm := range vms {
+		if vm.OSType != "Linux" || vm.State != "stopped" || !vm.ConfigRead {
+			t.Fatalf("VM metadata = %+v, want Linux stopped with config", vm)
+		}
 	}
 }
