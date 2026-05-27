@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -34,14 +35,15 @@ type securityStatus struct {
 }
 
 type securitySandboxProbe struct {
-	AppSandbox  bool               `json:"apple_app_sandbox"`
-	HomeDir     string             `json:"home_dir"`
-	TempDir     string             `json:"temp_dir"`
-	VMRoot      string             `json:"vm_root"`
-	UnixSocket  securityProbeCheck `json:"unix_socket"`
-	LoopbackTCP securityProbeCheck `json:"loopback_tcp"`
-	HelperIPC   securityProbeCheck `json:"helper_ipc"`
-	Subprocess  securityProbeCheck `json:"subprocess"`
+	AppSandbox  bool                `json:"apple_app_sandbox"`
+	HomeDir     string              `json:"home_dir"`
+	TempDir     string              `json:"temp_dir"`
+	VMRoot      string              `json:"vm_root"`
+	UnixSocket  securityProbeCheck  `json:"unix_socket"`
+	LoopbackTCP securityProbeCheck  `json:"loopback_tcp"`
+	HelperIPC   securityProbeCheck  `json:"helper_ipc"`
+	Subprocess  securityProbeCheck  `json:"subprocess"`
+	VZStart     *securityProbeCheck `json:"vz_start,omitempty"`
 }
 
 type securityProbeCheck struct {
@@ -50,6 +52,16 @@ type securityProbeCheck struct {
 	Path    string `json:"path,omitempty"`
 	Command string `json:"command,omitempty"`
 	Message string `json:"message,omitempty"`
+}
+
+type securitySandboxProbeOptions struct {
+	VZStartVMDir   string
+	VZStartDisk    string
+	VZStartLinux   bool
+	VZStartKernel  string
+	VZStartInitrd  string
+	VZStartCmdline string
+	VZStartTimeout time.Duration
 }
 
 func runSecurityCommand(env commandEnv, _ string, args []string) int {
@@ -117,6 +129,14 @@ func handleSecuritySandboxProbeCommand(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("security probe-sandbox", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	jsonFlag := fs.Bool("json", false, "emit JSON")
+	var opts securitySandboxProbeOptions
+	fs.StringVar(&opts.VZStartVMDir, "vz-start-vm-dir", "", "scratch VM directory for an optional VZ start/stop probe")
+	fs.StringVar(&opts.VZStartDisk, "vz-start-disk", "", "scratch disk image for an optional VZ start/stop probe")
+	fs.BoolVar(&opts.VZStartLinux, "vz-start-linux", false, "treat the optional VZ start/stop probe as a Linux VM")
+	fs.StringVar(&opts.VZStartKernel, "vz-start-kernel", "", "Linux kernel for the optional VZ start/stop probe")
+	fs.StringVar(&opts.VZStartInitrd, "vz-start-initrd", "", "Linux initrd for the optional VZ start/stop probe")
+	fs.StringVar(&opts.VZStartCmdline, "vz-start-cmdline", "", "Linux kernel command line for the optional VZ start/stop probe")
+	fs.DurationVar(&opts.VZStartTimeout, "vz-start-timeout", 30*time.Second, "timeout for the optional VZ start/stop probe")
 	fs.Usage = func() { printSecurityUsage(env.Stderr) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if err == errFlagHelp {
@@ -124,10 +144,10 @@ func handleSecuritySandboxProbeCommand(env commandEnv, args []string) error {
 		}
 		return err
 	}
-	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: cove security probe-sandbox [-json]")
+	if fs.NArg() != 0 || !opts.valid() {
+		return fmt.Errorf("usage: cove security probe-sandbox [-json] [-vz-start-vm-dir dir -vz-start-disk disk]")
 	}
-	probe := currentSecuritySandboxProbe()
+	probe := currentSecuritySandboxProbe(opts)
 	if *jsonFlag {
 		data, err := json.MarshalIndent(probe, "", "  ")
 		if err != nil {
@@ -160,7 +180,21 @@ func handleSecuritySandboxProbeCommand(env commandEnv, args []string) error {
 		fmt.Fprintf(env.Stdout, " (%s)", probe.Subprocess.Message)
 	}
 	fmt.Fprintln(env.Stdout)
+	if probe.VZStart != nil {
+		fmt.Fprintf(env.Stdout, "vz start: %s", probe.VZStart.Status)
+		if probe.VZStart.Message != "" {
+			fmt.Fprintf(env.Stdout, " (%s)", probe.VZStart.Message)
+		}
+		fmt.Fprintln(env.Stdout)
+	}
 	return nil
+}
+
+func (opts securitySandboxProbeOptions) valid() bool {
+	if opts.VZStartVMDir == "" && opts.VZStartDisk == "" {
+		return true
+	}
+	return opts.VZStartVMDir != "" && opts.VZStartDisk != ""
 }
 
 func currentSecurityStatus() securityStatus {
@@ -195,11 +229,11 @@ func currentSecurityStatus() securityStatus {
 	}
 }
 
-func currentSecuritySandboxProbe() securitySandboxProbe {
+func currentSecuritySandboxProbe(opts securitySandboxProbeOptions) securitySandboxProbe {
 	appSandbox := currentAppleAppSandboxStatus()
 	homeDir, _ := os.UserHomeDir()
 	vmRoot := vmconfig.BaseDir()
-	return securitySandboxProbe{
+	probe := securitySandboxProbe{
 		AppSandbox:  appSandbox.Active,
 		HomeDir:     homeDir,
 		TempDir:     os.TempDir(),
@@ -209,6 +243,11 @@ func currentSecuritySandboxProbe() securitySandboxProbe {
 		HelperIPC:   probeSandboxHelperIPC(),
 		Subprocess:  probeSandboxSubprocess(),
 	}
+	if opts.VZStartVMDir != "" {
+		check := probeSandboxVZStart(opts)
+		probe.VZStart = &check
+	}
+	return probe
 }
 
 func probeSandboxUnixSocket(vmRoot string) securityProbeCheck {
@@ -340,6 +379,72 @@ func probeSandboxSubprocess() securityProbeCheck {
 	check.Status = "pass"
 	check.Message = "executed"
 	return check
+}
+
+var probeSandboxVZStartGuest = startScratchBuildGuest
+
+func probeSandboxVZStart(opts securitySandboxProbeOptions) securityProbeCheck {
+	check := securityProbeCheck{Name: "vz-start", Path: opts.VZStartVMDir}
+	if opts.VZStartTimeout <= 0 {
+		opts.VZStartTimeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), opts.VZStartTimeout)
+	defer cancel()
+
+	cleanup, err := withSandboxVZStartGlobals(opts, func() (buildGuestCleanup, error) {
+		return probeSandboxVZStartGuest(ctx, buildscratch.Scratch{
+			ID:       "sandbox-probe",
+			Dir:      opts.VZStartVMDir,
+			DiskPath: opts.VZStartDisk,
+			Created:  time.Now(),
+		})
+	})
+	if err != nil {
+		check.Status = "fail"
+		check.Message = err.Error()
+		return check
+	}
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cleanupCancel()
+	if err := cleanup(cleanupCtx); err != nil {
+		check.Status = "fail"
+		check.Message = fmt.Sprintf("cleanup: %v", err)
+		return check
+	}
+	check.Status = "pass"
+	check.Message = "started and stopped"
+	return check
+}
+
+func withSandboxVZStartGlobals(opts securitySandboxProbeOptions, fn func() (buildGuestCleanup, error)) (buildGuestCleanup, error) {
+	oldLinuxMode := linuxMode
+	oldWindowsMode := windowsMode
+	oldKernelPath := kernelPath
+	oldInitrdPath := initrdPath
+	oldCmdLine := cmdLine
+	oldStartTimeout := startTimeout
+	oldAttachment := runtimeSystemDiskAttachment
+	oldClipboard := enableClipboard
+	defer func() {
+		linuxMode = oldLinuxMode
+		windowsMode = oldWindowsMode
+		kernelPath = oldKernelPath
+		initrdPath = oldInitrdPath
+		cmdLine = oldCmdLine
+		startTimeout = oldStartTimeout
+		runtimeSystemDiskAttachment = oldAttachment
+		enableClipboard = oldClipboard
+	}()
+
+	linuxMode = opts.VZStartLinux
+	windowsMode = false
+	kernelPath = opts.VZStartKernel
+	initrdPath = opts.VZStartInitrd
+	cmdLine = opts.VZStartCmdline
+	startTimeout = opts.VZStartTimeout
+	enableClipboard = false
+	runtimeSystemDiskAttachment = systemDiskAttachmentDiskImage
+	return fn()
 }
 
 func firstProbeOutputLine(s string) string {
