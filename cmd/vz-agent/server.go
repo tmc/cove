@@ -291,6 +291,14 @@ func (s *agentServer) SetTime(_ context.Context, req *connect.Request[pb.SetTime
 	return connect.NewResponse(&pb.SetTimeResponse{}), nil
 }
 
+func (s *agentServer) ResizeMacOSAPFS(ctx context.Context, req *connect.Request[pb.ResizeMacOSAPFSRequest]) (*connect.Response[pb.ResizeMacOSAPFSResponse], error) {
+	resp, err := resizeMacOSAPFS(ctx, req.Msg.GetPreflightOnly())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
 func (s *agentServer) trackExec(r *pb.ExecRequest, cmd *exec.Cmd) {
 	if r.GetExecId() == "" || cmd.Process == nil {
 		return

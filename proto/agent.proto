@@ -24,6 +24,8 @@ service Agent {
   rpc ResizeExecTTY(ResizeExecTTYRequest) returns (ResizeExecTTYResponse);
   rpc SignalExec(SignalExecRequest) returns (SignalExecResponse);
   rpc SetTime(SetTimeRequest) returns (SetTimeResponse);
+  // ResizeMacOSAPFS expands the macOS root APFS container after its backing disk grows.
+  rpc ResizeMacOSAPFS(ResizeMacOSAPFSRequest) returns (ResizeMacOSAPFSResponse);
 
   // CopyIn transfers a file from the host into the guest.
   rpc CopyIn(stream CopyInChunk) returns (CopyInResponse);
@@ -175,6 +177,22 @@ message SetTimeRequest {
 }
 
 message SetTimeResponse {}
+
+message ResizeMacOSAPFSRequest {
+  bool preflight_only = 1;
+}
+
+message ResizeMacOSAPFSResponse {
+  bool expanded = 1;
+  string container = 2;
+  string physical_store = 3;
+  string physical_disk = 4;
+  uint32 store_partition = 5;
+  uint64 container_total_bytes_before = 6;
+  uint64 container_total_bytes_after = 7;
+  string stdout = 8;
+  string stderr = 9;
+}
 
 // File transfer
 
