@@ -423,6 +423,16 @@ grows. If the guest APFS step cannot run, the command fails with no host-side
 change. If the backing image has already grown but the guest step fails, the
 error says so and prints the exact retry/manual recovery command.
 
+For a stopped VM, use:
+
+```sh
+cove disk resize <vm> <size>
+```
+
+That grows the primary backing image only. For macOS guests, boot the VM and
+then run `cove ctl -vm <vm> disk resize 0 <size>` so cove expands the APFS
+container through the guest agent.
+
 ### USB Commands
 
 | Command | Description |

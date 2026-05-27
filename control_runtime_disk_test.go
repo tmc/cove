@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,6 +150,9 @@ func TestRuntimeDiskActionNameAliasAndCase(t *testing.T) {
 
 func TestRuntimeDiskShouldExpandMacOSRootAPFS(t *testing.T) {
 	macDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(macDir, "hw.model"), []byte("mac"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if !runtimeDiskShouldExpandMacOSRootAPFS(macDir, runtimeDiskEntry{Index: 0}) {
 		t.Fatalf("macOS primary disk should expand APFS")
 	}
@@ -163,14 +167,48 @@ func TestRuntimeDiskShouldExpandMacOSRootAPFS(t *testing.T) {
 	if runtimeDiskShouldExpandMacOSRootAPFS(linuxDir, runtimeDiskEntry{Index: 0}) {
 		t.Fatalf("Linux disk should not use macOS APFS expansion")
 	}
+
+	windowsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(windowsDir, "windows-disk.img"), []byte("windows"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if runtimeDiskShouldExpandMacOSRootAPFS(windowsDir, runtimeDiskEntry{Index: 0}) {
+		t.Fatalf("Windows disk should not use macOS APFS expansion")
+	}
+}
+
+func TestRuntimeDiskCurrentSizeUsesConfiguredPrimaryDisk(t *testing.T) {
+	vmDir := t.TempDir()
+	diskPath := filepath.Join(vmDir, "disk.img")
+	if err := os.WriteFile(filepath.Join(vmDir, "hw.model"), []byte("mac"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(diskPath, []byte("disk-bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := runtimeDiskEntry{Index: 0, Info: RuntimeDiskInfo{Kind: "storage-device"}}
+	got, ok := runtimeDiskCurrentSize(vmDir, entry)
+	if !ok || got != uint64(len("disk-bytes")) {
+		t.Fatalf("runtimeDiskCurrentSize = %d, %v, want %d, true", got, ok, len("disk-bytes"))
+	}
+
+	augmentRuntimeDiskEntryInfo(vmDir, &entry)
+	if entry.Info.Kind != "disk-image" || entry.Info.Path != diskPath || entry.Info.FileSizeBytes != uint64(len("disk-bytes")) {
+		t.Fatalf("augmented entry = %+v", entry.Info)
+	}
 }
 
 func TestExpandMacOSRootAPFS(t *testing.T) {
 	s := NewControlServerWithVMDir("", t.TempDir())
 	agent := &fakeRuntimeDiskGuestAgent{
-		resp: &agentpb.ExecResponse{
-			ExitCode: 0,
-			Stdout:   []byte("expanded APFS container disk3\n"),
+		resp: &agentpb.ResizeMacOSAPFSResponse{
+			Expanded:                  true,
+			Container:                 "disk3",
+			PhysicalStore:             "disk0s2",
+			ContainerTotalBytesBefore: 58 << 30,
+			ContainerTotalBytesAfter:  96 << 30,
+			Stdout:                    "started APFS operation\nfinished APFS operation\n",
 		},
 	}
 
@@ -181,59 +219,108 @@ func TestExpandMacOSRootAPFS(t *testing.T) {
 	if got.Platform != agentstate.PlatformMacOS || !got.Attempted || !got.Expanded {
 		t.Fatalf("guest resize = %+v", got)
 	}
-	if len(agent.args) != 3 || agent.args[0] != "/bin/sh" || agent.args[1] != "-c" {
-		t.Fatalf("agent args = %#v", agent.args)
+	if agent.preflightOnly || !agent.called {
+		t.Fatalf("agent call = called %v preflight %v, want resize", agent.called, agent.preflightOnly)
 	}
-	if !strings.Contains(agent.args[2], `diskutil apfs resizeContainer "$container" 0`) {
-		t.Fatalf("script missing resizeContainer:\n%s", agent.args[2])
+	if got.Container != "disk3" || got.PhysicalStore != "disk0s2" {
+		t.Fatalf("guest resize = %+v", got)
+	}
+	if got.ContainerTotalBytesBefore != 58<<30 || got.ContainerTotalBytesAfter != 96<<30 {
+		t.Fatalf("guest resize bytes = %+v", got)
+	}
+}
+
+func TestPreflightMacOSRootAPFSReportsRecoveryBlocker(t *testing.T) {
+	s := NewControlServerWithVMDir("", t.TempDir())
+	agent := &fakeRuntimeDiskGuestAgent{
+		err: errors.New("Recovery partition blocks APFS expansion: disk0s2 is followed by disk0s3 on /dev/disk0"),
+	}
+
+	err := s.preflightMacOSRootAPFS(agent)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, want := range []string{
+		"run diskutil preflight",
+		"Recovery partition blocks APFS expansion",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %q", want, err)
+		}
+	}
+	if !agent.called || !agent.preflightOnly {
+		t.Fatalf("agent call = called %v preflight %v, want preflight", agent.called, agent.preflightOnly)
 	}
 }
 
 func TestExpandMacOSRootAPFSReportsDiskutilFailure(t *testing.T) {
 	s := NewControlServerWithVMDir("", t.TempDir())
 	agent := &fakeRuntimeDiskGuestAgent{
-		resp: &agentpb.ExecResponse{
-			ExitCode: 64,
-			Stderr:   []byte("could not find APFS container\n"),
-		},
+		err: errors.New("resize APFS container: stderr: could not find APFS container"),
 	}
 
 	guest, err := s.expandMacOSRootAPFS(agent)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if guest == nil || guest.Expanded {
-		t.Fatalf("guest resize = %+v, want attempted failure", guest)
+	if guest != nil {
+		t.Fatalf("guest resize = %+v, want nil", guest)
 	}
-	if !strings.Contains(err.Error(), "diskutil exit 64: could not find APFS container") {
-		t.Fatalf("error = %q", err)
+	for _, want := range []string{
+		"run diskutil",
+		"could not find APFS container",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %q", want, err)
+		}
 	}
 }
 
 func TestMacOSResizeErrorsIncludeNextAction(t *testing.T) {
 	unavailable := macOSResizeAgentUnavailableError(0, 96<<30, context.Canceled)
-	for _, want := range []string{"no changes made", "cove ctl agent-ping", "cove ctl disk resize 0 103079215104B"} {
+	for _, want := range []string{"root guest agent", "no host disk changes made", "cove ctl agent-ping", "cove ctl disk resize 0 103079215104B"} {
 		if !strings.Contains(unavailable.Error(), want) {
 			t.Fatalf("unavailable error missing %q: %s", want, unavailable)
 		}
 	}
 
 	failed := macOSResizeGuestFailedError(0, 96<<30, context.Canceled)
-	for _, want := range []string{"resized disk 0 to 103079215104 bytes", "macOS APFS expansion failed", macOSResizeAPFSManualCommand} {
+	for _, want := range []string{"resized disk 0 to 103079215104 bytes", "macOS APFS expansion failed", "host disk is already grown", "root guest agent", macOSResizeAPFSManualCommand} {
 		if !strings.Contains(failed.Error(), want) {
 			t.Fatalf("failed error missing %q: %s", want, failed)
+		}
+	}
+
+	preflight := macOSResizePreflightFailedError(0, 96<<30, false, errors.New("Recovery partition blocks APFS expansion"))
+	for _, want := range []string{"APFS expansion preflight failed", "Recovery partition blocks", "no host disk changes made", "cove ctl disk resize 0 103079215104B"} {
+		if !strings.Contains(preflight.Error(), want) {
+			t.Fatalf("preflight error missing %q: %s", want, preflight)
+		}
+	}
+}
+
+func TestRuntimeDiskListSummary(t *testing.T) {
+	got := runtimeDiskListSummary([]RuntimeDiskInfo{
+		{Index: 0, FileSizeBytes: 8 << 30},
+		{Index: 1, FileSizeBytes: 512 << 20, ReadOnly: true},
+	})
+	for _, want := range []string{"2 disks", "8.5 GB backing files", "1 read-only"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary missing %q: %q", want, got)
 		}
 	}
 }
 
 type fakeRuntimeDiskGuestAgent struct {
-	args []string
-	resp *agentpb.ExecResponse
-	err  error
+	resp          *agentpb.ResizeMacOSAPFSResponse
+	err           error
+	called        bool
+	preflightOnly bool
 }
 
-func (f *fakeRuntimeDiskGuestAgent) Exec(ctx context.Context, args []string, env map[string]string, workDir string) (*agentpb.ExecResponse, error) {
-	f.args = append([]string(nil), args...)
+func (f *fakeRuntimeDiskGuestAgent) ResizeMacOSAPFS(ctx context.Context, preflightOnly bool) (*agentpb.ResizeMacOSAPFSResponse, error) {
+	f.called = true
+	f.preflightOnly = preflightOnly
 	return f.resp, f.err
 }
 

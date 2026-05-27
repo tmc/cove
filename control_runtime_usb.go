@@ -479,7 +479,7 @@ func runtimeUSBMassStorageDetails(id objectivec.IObject) (string, bool) {
 	if url := disk.URL(); url.GetID() != 0 {
 		path = url.Path()
 	}
-	return path, disk.ReadOnly()
+	return path, disk.IsReadOnly()
 }
 
 func runtimeUSBClassName(obj objectivec.IObject) string {
