@@ -96,3 +96,12 @@ func (h runWorkerHandoff) fd(name string) (runWorkerHandoffFD, bool) {
 	}
 	return runWorkerHandoffFD{}, false
 }
+
+func (h runWorkerHandoff) bookmark(kind string) (runWorkerHandoffBookmark, bool) {
+	for _, bookmark := range h.Bookmarks {
+		if bookmark.Kind == kind {
+			return bookmark, true
+		}
+	}
+	return runWorkerHandoffBookmark{}, false
+}

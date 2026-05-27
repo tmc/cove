@@ -130,3 +130,46 @@ func TestRunWorkerHandoffSocketCarriesDescriptor(t *testing.T) {
 		t.Fatalf("descriptor payload = %q, want %q", body, payload)
 	}
 }
+
+func TestRunWorkerHandoffSocketWithoutDescriptor(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "cove-rw-")
+	if err != nil {
+		t.Fatalf("create short socket dir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	handoff := runWorkerHandoff{
+		Version: runWorkerHandoffVersion,
+		Command: "status-preflight",
+		VM:      runWorkerHandoffVM{Name: "vm", Dir: dir},
+		Bookmarks: []runWorkerHandoffBookmark{{
+			Key:   "vm:vm",
+			Kind:  "vm",
+			Path:  dir,
+			Bytes: []byte("bookmark"),
+		}},
+	}
+	sockPath := filepath.Join(dir, "rw.sock")
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sockPath, Net: "unix"})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	errc := make(chan error, 1)
+	go func() {
+		errc <- sendRunWorkerHandoff(ln, handoff, nil, time.Second)
+	}()
+	got, files, err := receiveRunWorkerHandoff(sockPath, time.Second)
+	if err != nil {
+		t.Fatalf("receiveRunWorkerHandoff: %v", err)
+	}
+	defer closeRunWorkerFiles(files)
+	if err := <-errc; err != nil {
+		t.Fatalf("sendRunWorkerHandoff: %v", err)
+	}
+	if got.Command != "status-preflight" || got.VM.Name != "vm" {
+		t.Fatalf("handoff = %+v", got)
+	}
+	if len(files) != 0 {
+		t.Fatalf("received %d files, want 0", len(files))
+	}
+}

@@ -139,17 +139,9 @@ func resolveSecurityBookmarkAccessFromStore(storePath, key string) (securityBook
 	if key == "" {
 		return securityBookmarkAccess{}, fmt.Errorf("bookmark key required")
 	}
-	store, err := readSecurityBookmarkStore(storePath)
+	entry, bookmark, err := readSecurityBookmarkBytesFromStore(storePath, key)
 	if err != nil {
 		return securityBookmarkAccess{}, err
-	}
-	entry, ok := store.Entries[key]
-	if !ok {
-		return securityBookmarkAccess{}, fmt.Errorf("bookmark %q not found", key)
-	}
-	bookmark, err := base64.StdEncoding.DecodeString(entry.Bookmark)
-	if err != nil {
-		return securityBookmarkAccess{}, fmt.Errorf("decode bookmark %q: %w", key, err)
 	}
 	resolved, stale, stop, err := resolveSecurityScopedBookmark(bookmark)
 	if err != nil {
@@ -165,6 +157,25 @@ func resolveSecurityBookmarkAccessFromStore(storePath, key string) (securityBook
 		Stop:         stop,
 		BookmarkSize: len(bookmark),
 	}, nil
+}
+
+func readSecurityBookmarkBytesFromStore(storePath, key string) (securityBookmarkEntry, []byte, error) {
+	if key == "" {
+		return securityBookmarkEntry{}, nil, fmt.Errorf("bookmark key required")
+	}
+	store, err := readSecurityBookmarkStore(storePath)
+	if err != nil {
+		return securityBookmarkEntry{}, nil, err
+	}
+	entry, ok := store.Entries[key]
+	if !ok {
+		return securityBookmarkEntry{}, nil, fmt.Errorf("bookmark %q not found", key)
+	}
+	bookmark, err := base64.StdEncoding.DecodeString(entry.Bookmark)
+	if err != nil {
+		return securityBookmarkEntry{}, nil, fmt.Errorf("decode bookmark %q: %w", key, err)
+	}
+	return entry, bookmark, nil
 }
 
 func securityBookmarkEntryForReport(entry securityBookmarkEntry) securityBookmarkEntryReport {
