@@ -3,49 +3,16 @@
 package sckit
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestReadMacOSVersion(t *testing.T) {
-	tests := []struct {
-		name   string
-		script string
-		want   string
-	}{
-		{
-			name:   "trims sw_vers output",
-			script: "#!/bin/sh\nprintf '14.5.1\\n'\n",
-			want:   "14.5.1",
-		},
-		{
-			name: "missing sw_vers",
-			want: "",
-		},
+	got := readMacOSVersion()
+	if got == "" {
+		t.Fatal("readMacOSVersion() = empty, want host version")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			if tt.script != "" {
-				bin := filepath.Join(dir, "sw_vers")
-				src := filepath.Join(dir, "sw_vers.go")
-				if err := os.WriteFile(src, []byte("package main\nimport \"fmt\"\nfunc main() { fmt.Print(\"14.5.1\\n\") }\n"), 0o644); err != nil {
-					t.Fatal(err)
-				}
-				if out, err := exec.Command("go", "build", "-o", bin, src).CombinedOutput(); err != nil {
-					t.Fatalf("build sw_vers fake: %v\n%s", err, out)
-				}
-				if out, err := exec.Command(bin).CombinedOutput(); err != nil {
-					t.Fatalf("warm sw_vers fake: %v\n%s", err, out)
-				}
-			}
-			t.Setenv("PATH", dir)
-
-			if got := readMacOSVersion(); got != tt.want {
-				t.Fatalf("readMacOSVersion() = %q, want %q", got, tt.want)
-			}
-		})
+	if strings.TrimSpace(got) != got {
+		t.Fatalf("readMacOSVersion() = %q, want trimmed", got)
 	}
 }

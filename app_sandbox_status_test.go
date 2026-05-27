@@ -27,9 +27,25 @@ func TestAppleAppSandboxContainerIDFromHome(t *testing.T) {
 func TestCurrentAppleAppSandboxStatusFromHome(t *testing.T) {
 	t.Setenv(appleAppSandboxContainerEnv, "")
 	t.Setenv("HOME", "/Users/tmc/Library/Containers/com.tmc.cove/Data")
+	oldCheck := checkAppleAppSandboxEntitlement
+	t.Cleanup(func() { checkAppleAppSandboxEntitlement = oldCheck })
+	checkAppleAppSandboxEntitlement = func() bool { return false }
 
 	got := currentAppleAppSandboxStatus()
 	if !got.Active || got.ContainerID != "com.tmc.cove" {
 		t.Fatalf("currentAppleAppSandboxStatus() = %+v, want active com.tmc.cove", got)
+	}
+}
+
+func TestCurrentAppleAppSandboxStatusFromEntitlement(t *testing.T) {
+	t.Setenv(appleAppSandboxContainerEnv, "")
+	t.Setenv("HOME", "/Users/tmc")
+	oldCheck := checkAppleAppSandboxEntitlement
+	t.Cleanup(func() { checkAppleAppSandboxEntitlement = oldCheck })
+	checkAppleAppSandboxEntitlement = func() bool { return true }
+
+	got := currentAppleAppSandboxStatus()
+	if !got.Active || got.ContainerID != "" {
+		t.Fatalf("currentAppleAppSandboxStatus() = %+v, want active without container id", got)
 	}
 }
