@@ -7,10 +7,11 @@ start/stop proof, security-scoped bookmark binding proof, durable bookmark
 store proof, non-interactive bookmark consumption, the first opt-in Powerbox
 prompt command, a mocked Powerbox fallback router, automatic `status <vm>`
 Powerbox fallback, typed ISO/IPSW media grant routing, and typed directory grant
-routing for `-vol` and `-share-dir` are implemented. Ambient mutating command
-surfaces now fail closed under Apple App Sandbox. A sandboxed run-worker IPC
-proof can receive an explicit descriptor from the unsandboxed CLI. Broader
-automatic command fallback and temporary-RAM overlay proofs are still queued.
+routing for `-vol`, `-share-dir`, and read-only VM-root listing are
+implemented. Ambient mutating command surfaces now fail closed under Apple App
+Sandbox. A sandboxed run-worker IPC proof can receive an explicit descriptor
+from the unsandboxed CLI. Broader automatic command fallback and temporary-RAM
+overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -96,10 +97,11 @@ Observed result:
 - macgo's FIFO child check-in path is not compatible with this sandbox proof.
   The macgo workspace now uses LaunchServices `--stdout` and `--stderr` file
   redirection for App Sandbox launches.
-- `cove list` starts through the sandboxed macgo bundle. On the current host it
-  can still enumerate the operator's VM registry, so this is only a startup
-  proof. It is not an isolation claim for VM discovery until the file-access
-  model is reduced to explicit grants or security-scoped bookmarks.
+- `cove list` starts through the sandboxed macgo bundle and now fails closed
+  with a typed VM-root directory grant requirement unless `COVE_STATE_DIR` is
+  set or a durable `dir:<vm-root>` bookmark has been staged. This replaces the
+  earlier startup-only proof where `list` could still enumerate ambient VM
+  registry state on this host.
 - `security probe-sandbox -json` passes Unix-socket, loopback TCP, subprocess,
   and scratch VZ start/stop checks through the sandboxed macgo bundle. The
   scratch VM proof uses a deliberately long VM path under the app container
@@ -168,6 +170,10 @@ Observed result:
   and `-share-dir` paths request `dir:<absolute-path>` bookmarks and accept
   staged directory bookmarks during sandbox guard evaluation. The `shared-folder`
   mutation command remains denied before it can rewrite VM shared-folder state.
+- Read-only VM-root listing now uses the same directory bookmark model. Without
+  `COVE_STATE_DIR`, `cove list` requests a `dir:<vm-root>` bookmark before
+  reading the registry; noninteractive macgo smoke runs keep the grant-required
+  error instead of opening `NSOpenPanel`.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -308,9 +314,10 @@ work in this order:
     and preserve the install/up mutation denial boundary.
 13. Done: route `-vol` and `-share-dir` missing-grant errors to typed directory
     grants while preserving shared-folder mutation denial.
-14. Next: decide whether a sandboxed preflight-only install mode should consume
-    media bookmarks without creating VMs, then handle read-only ambient VM-root
-    access separately.
+14. Done: route read-only `cove list` VM-root access through typed directory
+    grants and preserve noninteractive failure behavior.
+15. Next: decide whether a sandboxed preflight-only install mode should consume
+    media bookmarks without creating VMs.
 
 ## Proof gates
 

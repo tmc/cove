@@ -1166,6 +1166,12 @@ func confirmDeletef(format string, args ...any) (bool, error) {
 }
 
 func handleListTo(stdout io.Writer) error {
+	stop, err := startAppleAppSandboxVMRootAccess("list VM root")
+	if err != nil {
+		return err
+	}
+	defer stop()
+
 	// List VMs
 	vms, err := vmconfig.List(detectVMState)
 	if err != nil {
@@ -1234,6 +1240,29 @@ func handleListTo(stdout io.Writer) error {
 		fmt.Fprintln(stdout, "Remove with: cove vm delete <name>")
 	}
 	return nil
+}
+
+var listPowerboxFallbackAllowed = statusPowerboxFallbackInteractive
+
+func startAppleAppSandboxVMRootAccess(action string) (func(), error) {
+	if !appleAppSandboxActive() || strings.TrimSpace(os.Getenv(vmconfig.StateDirEnv)) != "" {
+		return func() {}, nil
+	}
+	base := vmconfig.BaseDir()
+	abs, err := filepath.Abs(base)
+	if err != nil {
+		return nil, fmt.Errorf("resolve VM root: %w", err)
+	}
+	storePath, err := defaultSecurityBookmarkStorePath()
+	if err != nil {
+		return nil, err
+	}
+	key := "dir:" + abs
+	access, err := resolveSecurityBookmarkAccessFromStore(storePath, key)
+	if err != nil {
+		return nil, powerboxGrantRequiredKind(action, key, "host-dir", storePath)
+	}
+	return access.Stop, nil
 }
 
 func runtimeListFields(vmPath, state string) (string, string) {
