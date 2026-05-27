@@ -16,7 +16,42 @@ type powerboxDirectoryGrant struct {
 	Bookmark []byte
 }
 
-func promptPowerboxDirectory(title, message string) (powerboxDirectoryGrant, error) {
+var powerboxPromptDirectory = promptPowerboxDirectoryNative
+
+func withPowerboxFallback(action func() error) error {
+	err := action()
+	if err == nil {
+		return nil
+	}
+	var grantRequired *powerboxGrantRequiredError
+	if !errors.As(err, &grantRequired) {
+		return err
+	}
+	grant, err := powerboxPromptDirectory(powerboxPromptTitle(grantRequired), powerboxPromptMessage(grantRequired))
+	if err != nil {
+		return err
+	}
+	if _, err := saveSecurityBookmarkBytes(grantRequired.StorePath, grantRequired.Key, grantRequired.Kind, grant.Path, grant.Bookmark); err != nil {
+		return fmt.Errorf("save Powerbox bookmark: %w", err)
+	}
+	return action()
+}
+
+func powerboxPromptTitle(grant *powerboxGrantRequiredError) string {
+	if grant.Action != "" {
+		return "Grant cove access: " + grant.Action
+	}
+	return "Grant cove access"
+}
+
+func powerboxPromptMessage(grant *powerboxGrantRequiredError) string {
+	if grant.Key != "" {
+		return "Choose the directory to grant for " + grant.Key + "."
+	}
+	return "Choose a directory to grant to cove."
+}
+
+func promptPowerboxDirectoryNative(title, message string) (powerboxDirectoryGrant, error) {
 	panel := appkit.GetNSOpenPanelClass().OpenPanel()
 	if panel.GetID() == 0 {
 		return powerboxDirectoryGrant{}, fmt.Errorf("create Powerbox open panel: nil NSOpenPanel")

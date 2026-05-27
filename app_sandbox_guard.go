@@ -8,6 +8,21 @@ import (
 var errAppleAppSandboxHostAccessDenied = errors.New("apple app sandbox denies ambient host access")
 var errPowerboxGrantRequired = errors.New("apple app sandbox requires a Powerbox or bookmark grant")
 
+type powerboxGrantRequiredError struct {
+	Action    string
+	Key       string
+	Kind      string
+	StorePath string
+}
+
+func (e *powerboxGrantRequiredError) Error() string {
+	return fmt.Sprintf("%s: %v for %s in %s", e.Action, errPowerboxGrantRequired, e.Key, e.StorePath)
+}
+
+func (e *powerboxGrantRequiredError) Unwrap() error {
+	return errPowerboxGrantRequired
+}
+
 func appleAppSandboxActive() bool {
 	return currentAppleAppSandboxStatus().Active
 }
@@ -20,5 +35,10 @@ func denyAppleAppSandboxHostAccess(action string) error {
 }
 
 func powerboxGrantRequired(action, key, storePath string) error {
-	return fmt.Errorf("%s: %w for %s in %s", action, errPowerboxGrantRequired, key, storePath)
+	return &powerboxGrantRequiredError{
+		Action:    action,
+		Key:       key,
+		Kind:      "vm-root",
+		StorePath: storePath,
+	}
 }
