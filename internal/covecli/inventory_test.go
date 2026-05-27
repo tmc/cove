@@ -11,10 +11,11 @@ func TestInventory(t *testing.T) {
 		{Name: "commands", Summary: "Print inventory", Dispatch: DispatchEarly},
 		{Name: "list", Aliases: []string{"ls"}, Summary: "List VMs", Dispatch: DispatchLate},
 		{Name: "run", Summary: "Run VM", Dispatch: DispatchLate},
+		{Name: "__hidden", Summary: "Hidden", Dispatch: DispatchEarly, Hidden: true},
 	}
 	got := Inventory(registry)
-	if len(got) != len(registry) {
-		t.Fatalf("Inventory length = %d, want %d", len(got), len(registry))
+	if len(got) != len(registry)-1 {
+		t.Fatalf("Inventory length = %d, want %d", len(got), len(registry)-1)
 	}
 	if got[0].Name != "commands" || got[0].Dispatch != "early" || !got[0].SafeForDiscovery {
 		t.Fatalf("commands inventory = %+v", got[0])

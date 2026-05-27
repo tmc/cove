@@ -19,6 +19,7 @@ import (
 // from EnsureDir): for normal commands an unwritable ~/.vz/vms is still a
 // real failure that should surface immediately.
 var vmDirIndependentCommands = map[string]bool{
+	"__run-worker":    true,
 	"agent-upgrade":   true,
 	"upgrade-agent":   true,
 	"commands":        true,

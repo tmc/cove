@@ -6,6 +6,7 @@ type Spec struct {
 	Summary  string
 	Dispatch Dispatch
 	Run      func(env Env, name string, args []string) int
+	Hidden   bool
 }
 
 func Lookup(registry []Spec, name string) (*Spec, bool) {
@@ -26,6 +27,9 @@ func Lookup(registry []Spec, name string) (*Spec, bool) {
 func Names(registry []Spec) []string {
 	var names []string
 	for _, spec := range registry {
+		if spec.Hidden {
+			continue
+		}
 		names = append(names, spec.Name)
 		names = append(names, spec.Aliases...)
 	}

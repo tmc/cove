@@ -36,6 +36,7 @@ func TestNames(t *testing.T) {
 	registry := []Spec{
 		{Name: "run"},
 		{Name: "list", Aliases: []string{"ls"}},
+		{Name: "__hidden", Hidden: true},
 	}
 	got := Names(registry)
 	want := []string{"run", "list", "ls", "help"}
