@@ -9,8 +9,14 @@ import (
 	"strings"
 )
 
+// BaseDirEnv names the environment variable that overrides the image store root.
+const BaseDirEnv = "COVE_IMAGE_DIR"
+
 // BaseDir returns the local image store root.
 func BaseDir() string {
+	if dir := strings.TrimSpace(os.Getenv(BaseDirEnv)); dir != "" {
+		return dir
+	}
 	homeDir, _ := os.UserHomeDir()
 	return filepath.Join(homeDir, ".vz", "images")
 }

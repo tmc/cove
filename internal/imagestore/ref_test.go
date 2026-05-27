@@ -2,8 +2,17 @@ package imagestore
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 )
+
+func TestBaseDirEnv(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "images")
+	t.Setenv(BaseDirEnv, dir)
+	if got := BaseDir(); got != dir {
+		t.Fatalf("BaseDir() = %q, want %q", got, dir)
+	}
+}
 
 func TestParseRef(t *testing.T) {
 	tests := []struct {
