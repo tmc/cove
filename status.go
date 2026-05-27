@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,6 +15,8 @@ import (
 )
 
 var statusPowerboxFallbackAllowed = statusPowerboxFallbackInteractive
+
+const statusWorkerDelegationEnv = "COVE_APP_SANDBOX_DELEGATE_STATUS"
 
 type statusOptions struct {
 	VM string
@@ -26,6 +29,9 @@ func statusCommand(env commandEnv, args ...string) error {
 	}
 	if err != nil {
 		return err
+	}
+	if statusWorkerDelegationEnabled() {
+		return statusCommandViaRunWorker(env, opts)
 	}
 	targetDir, cleanup, err := resolveStatusVMDir(opts.VM)
 	if err != nil {
@@ -71,6 +77,23 @@ func statusCommand(env commandEnv, args ...string) error {
 		}
 	}
 	fmt.Fprintln(env.Stdout, controlserver.AgentHealthSummary(status))
+	return nil
+}
+
+func statusWorkerDelegationEnabled() bool {
+	return os.Getenv(statusWorkerDelegationEnv) == "1"
+}
+
+func statusCommandViaRunWorker(env commandEnv, opts statusOptions) error {
+	report, err := runWorkerStatusPreflight(opts.VM)
+	if err != nil {
+		return err
+	}
+	child := report.Child
+	if child.State != "running" {
+		return fmt.Errorf("vm %q is %s; status requires a running VM\n  start it with: cove -vm %s run\n  list VMs with: cove list", child.VMName, child.State, child.VMName)
+	}
+	fmt.Fprintln(env.Stdout, "agent health unknown: delegated status worker does not query running guest agents yet")
 	return nil
 }
 

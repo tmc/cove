@@ -244,6 +244,9 @@ func runWorkerStatusPreflight(name string) (runWorkerProbeReport, error) {
 	key := "vm:" + strings.TrimSpace(name)
 	entry, bookmark, err := readSecurityBookmarkBytesFromStore(storePath, key)
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return runWorkerProbeReport{}, powerboxGrantRequired("resolve VM", key, storePath)
+		}
 		return runWorkerProbeReport{}, err
 	}
 

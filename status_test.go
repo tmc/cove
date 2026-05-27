@@ -115,6 +115,17 @@ func TestParseStatusArgs(t *testing.T) {
 	}
 }
 
+func TestStatusWorkerDelegationEnabled(t *testing.T) {
+	t.Setenv(statusWorkerDelegationEnv, "")
+	if statusWorkerDelegationEnabled() {
+		t.Fatal("statusWorkerDelegationEnabled = true, want false")
+	}
+	t.Setenv(statusWorkerDelegationEnv, "1")
+	if !statusWorkerDelegationEnabled() {
+		t.Fatal("statusWorkerDelegationEnabled = false, want true")
+	}
+}
+
 func TestStatusPostCommandResolutionDoesNotCreateMissingVMDir(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	oldVMName, oldVMDir := vmName, vmDir

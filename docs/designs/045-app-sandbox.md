@@ -134,6 +134,10 @@ Observed result:
   child. The child resolves the security-scoped bookmark, validates the VM
   layout, reads `config.json` and `runtime.json` when present, reports OS type
   and state, and does not resolve `~/.vz` or any other ambient host path.
+- `COVE_APP_SANDBOX_DELEGATE_STATUS=1` is the first explicit opt-in user-facing
+  command delegation path. In that mode, `status <vm>` calls the worker
+  status-preflight path and formats the stopped-VM result through the normal
+  status diagnostic. The default production `status` path is unchanged.
 - `security bookmark-probe -json` exercises the purego Foundation bookmark
   calls through the sandboxed macgo bundle. It creates an app-scoped
   security-scoped bookmark for a temp file inside the app container, resolves
@@ -341,9 +345,12 @@ work in this order:
 17. Done: add `__run-worker status-preflight` as the first non-mutating VM
     metadata preflight behind the typed worker handoff. It consumes a staged VM
     bookmark and reads stopped-VM metadata in the sandboxed child.
-18. Next: decide whether normal `status <vm>` should delegate to the worker
-    under an explicit opt-in mode, or add another hidden metadata preflight for
-    `list` before changing user-facing command routing.
+18. Done: add explicit opt-in `status <vm>` worker delegation with
+    `COVE_APP_SANDBOX_DELEGATE_STATUS=1`. This keeps default status behavior
+    unchanged while proving the parent can consume and format the sandboxed
+    worker metadata result.
+19. Next: add a hidden `list` metadata preflight for a staged `dir:<vm-root>`
+    grant before changing user-facing list routing.
 
 ## Proof gates
 
