@@ -281,7 +281,16 @@ func runHelperCommandSpec(env commandEnv, _ string, args []string) int {
 	return commandError(env, runHelperCmd(args))
 }
 func runListCommand(env commandEnv, _ string, _ []string) int {
-	if err := handleListTo(env.Stdout); err != nil {
+	action := func() error {
+		return handleListTo(env.Stdout)
+	}
+	var err error
+	if listPowerboxFallbackAllowed(env) {
+		err = withPowerboxFallback(action)
+	} else {
+		err = action()
+	}
+	if err != nil {
 		return commandError(env, err)
 	}
 	return 0

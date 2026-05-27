@@ -113,8 +113,14 @@ func TestAppSandboxMacgoBundleSmoke(t *testing.T) {
 
 	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, env, bin, "list")
 	t.Logf("sandboxed macgo bundle list err=%v output:\n%s", err, out)
-	if err != nil {
+	if err != nil && !isCommandExit(err) {
 		t.Fatalf("sandboxed macgo bundle list: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, errPowerboxGrantRequired.Error()) {
+		t.Fatalf("sandboxed macgo bundle list missing grant-required error:\n%s", out)
+	}
+	if strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("sandboxed macgo bundle list crashed instead of returning Go error:\n%s", out)
 	}
 }
 

@@ -158,3 +158,64 @@ func TestHandleListEmptyStatePointsToFirstRun(t *testing.T) {
 		}
 	}
 }
+
+func TestListAppSandboxRequiresVMRootGrantNoninteractive(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(securityBookmarkStoreEnv, filepath.Join(home, "bookmarks.json"))
+
+	var stdout, stderr strings.Builder
+	code := runListCommand(commandEnv{
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: &stderr,
+	}, "list", nil)
+	if code != 1 {
+		t.Fatalf("runListCommand code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), errPowerboxGrantRequired.Error()) || !strings.Contains(stderr.String(), "dir:"+vmconfig.BaseDir()) {
+		t.Fatalf("runListCommand stderr = %q, want VM root grant", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("runListCommand stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestListAppSandboxAcceptsVMRootBookmark(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	storePath := filepath.Join(home, "bookmarks.json")
+	t.Setenv(securityBookmarkStoreEnv, storePath)
+	base := vmconfig.BaseDir()
+	if err := os.MkdirAll(base, 0700); err != nil {
+		t.Fatalf("mkdir VM root: %v", err)
+	}
+	if _, err := saveSecurityBookmark(storePath, "dir:"+base, "host-dir", base); err != nil {
+		if securityScopedBookmarkUnavailable(err) {
+			t.Skipf("security-scoped bookmarks unavailable in this process: %v", err)
+		}
+		t.Fatalf("saveSecurityBookmark: %v", err)
+	}
+
+	var stdout, stderr strings.Builder
+	code := runListCommand(commandEnv{
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: &stderr,
+	}, "list", nil)
+	if code != 0 {
+		t.Fatalf("runListCommand code = %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "No VMs found.") {
+		t.Fatalf("runListCommand stdout = %q, want no VMs", stdout.String())
+	}
+	if strings.Contains(stderr.String(), errPowerboxGrantRequired.Error()) {
+		t.Fatalf("runListCommand stderr = %q, did not want grant error", stderr.String())
+	}
+}
