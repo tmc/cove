@@ -8,10 +8,12 @@ store proof, non-interactive bookmark consumption, the first opt-in Powerbox
 prompt command, a mocked Powerbox fallback router, automatic `status <vm>`
 Powerbox fallback, typed ISO/IPSW media grant routing, and typed directory grant
 routing for `-vol`, `-share-dir`, and read-only VM-root listing are
-implemented. Ambient mutating command surfaces now fail closed under Apple App
-Sandbox. A sandboxed run-worker IPC proof can receive an explicit descriptor
-from the unsandboxed CLI. Broader automatic command fallback and temporary-RAM
-overlay proofs are still queued.
+implemented. `install -preflight` can consume a staged media bookmark and prove
+the sandboxed process can read the ISO/IPSW without creating a VM. Ambient
+mutating command surfaces now fail closed under Apple App Sandbox. A sandboxed
+run-worker IPC proof can receive an explicit descriptor from the unsandboxed
+CLI. Broader automatic command fallback and temporary-RAM overlay proofs are
+still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -174,6 +176,11 @@ Observed result:
   `COVE_STATE_DIR`, `cove list` requests a `dir:<vm-root>` bookmark before
   reading the registry; noninteractive macgo smoke runs keep the grant-required
   error instead of opening `NSOpenPanel`.
+- `install -preflight` is a non-mutating media-read proof. With a staged
+  `iso:<absolute-path>` or `ipsw:<absolute-path>` bookmark, the sandboxed macgo
+  bundle opens the media, reads from it, prints a preflight proof line, and exits
+  before VM creation, disk allocation, or provisioning. Normal `install` remains
+  denied under App Sandbox after media grant evaluation.
 - `VZTemporaryRAMStorageDeviceAttachment` is not part of the passing proof. On
   this host it traps outside App Sandbox too, with `FIXME: "Implement" line 52`
   after `Starting virtual machine...`. Cove therefore fails closed before
@@ -316,8 +323,10 @@ work in this order:
     grants while preserving shared-folder mutation denial.
 14. Done: route read-only `cove list` VM-root access through typed directory
     grants and preserve noninteractive failure behavior.
-15. Next: decide whether a sandboxed preflight-only install mode should consume
-    media bookmarks without creating VMs.
+15. Done: add `install -preflight` to consume media bookmarks without creating
+    VMs.
+16. Next: wire additional non-mutating VM metadata preflights, then define the
+    typed sandboxed run-worker handoff protocol.
 
 ## Proof gates
 

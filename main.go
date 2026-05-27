@@ -37,7 +37,9 @@ var (
 	fetchLatest bool
 	runVM       bool // Deprecated: kept for compatibility, now handled by commands
 	installVM   bool // Deprecated: kept for compatibility, now handled by commands
-	guiMode     bool
+	// Install preflight validates install media without creating a VM.
+	installPreflight bool
+	guiMode          bool
 
 	linuxMode             bool
 	windowsMode           bool
@@ -194,6 +196,7 @@ func init() {
 	flag.BoolVar(&fetchLatest, "fetch-latest", false, "fetch latest supported restore image info")
 	flag.BoolVar(&runVM, "run", false, "deprecated: use the run command")
 	flag.BoolVar(&installVM, "install", false, "deprecated: use the install command")
+	flag.BoolVar(&installPreflight, "preflight", false, "validate install media without creating a VM")
 	flag.BoolVar(&guiMode, "gui", true, "show VM display in a window")
 	flag.BoolVar(&headlessMode, "headless", false, "run without GUI window")
 

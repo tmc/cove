@@ -386,6 +386,18 @@ func TestAppSandboxInstallMediaGrantBoundarySmoke(t *testing.T) {
 	if strings.Contains(out, errPowerboxGrantRequired.Error()) {
 		t.Fatalf("media grant install still requested grant:\n%s", out)
 	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "install", "-linux", "-iso", iso, "-preflight")
+	t.Logf("sandboxed macgo media grant install preflight err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("media grant install preflight: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "install preflight: iso readable: "+iso) {
+		t.Fatalf("media grant install preflight output = %q, want readable proof", out)
+	}
+	if strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) || strings.Contains(out, errPowerboxGrantRequired.Error()) {
+		t.Fatalf("media grant install preflight hit denial/grant error:\n%s", out)
+	}
 }
 
 func TestAppSandboxRunWorkerSmoke(t *testing.T) {
