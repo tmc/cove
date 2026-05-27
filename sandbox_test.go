@@ -475,8 +475,6 @@ func TestApplyAppleAppSandboxGuardsRejectHostPaths(t *testing.T) {
 		want string
 		set  func()
 	}{
-		{name: "volumes", want: "-vol", set: func() { volumes = volumeSlice{{HostPath: "/tmp/share"}} }},
-		{name: "share dir", want: "-vol", set: func() { shareDir = "/tmp/share" }},
 		{name: "usb", want: "-usb", set: func() { usbDevices = USBStorageSlice{{Path: "/tmp/disk.img"}} }},
 		{name: "block", want: "-block", set: func() { blockDevices = blockDeviceSlice{{Path: "/dev/rdisk9", ReadOnly: true}} }},
 		{name: "disk", want: "-disk", set: func() { diskPath = "/tmp/disk.img" }},
@@ -502,6 +500,77 @@ func TestApplyAppleAppSandboxGuardsRejectHostPaths(t *testing.T) {
 				t.Fatalf("applyAppleAppSandboxGuards() error = %v, want %q and sentinel", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestApplyAppleAppSandboxGuardsRequiresDirectoryGrant(t *testing.T) {
+	oldVolumes := volumes
+	oldShareDir := shareDir
+	t.Cleanup(func() {
+		volumes = oldVolumes
+		shareDir = oldShareDir
+	})
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+	t.Setenv(securityBookmarkStoreEnv, filepath.Join(t.TempDir(), "bookmarks.json"))
+
+	tests := []struct {
+		name string
+		path string
+		set  func(string)
+	}{
+		{name: "volume", path: "/tmp/volume-share", set: func(path string) { volumes = volumeSlice{{HostPath: path}} }},
+		{name: "share dir", path: "/tmp/share-dir", set: func(path string) { shareDir = path }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			volumes = nil
+			shareDir = ""
+			tt.set(tt.path)
+			err := applyAppleAppSandboxGuards()
+			var grant *powerboxGrantRequiredError
+			if !errors.As(err, &grant) {
+				t.Fatalf("applyAppleAppSandboxGuards() error = %v, want powerbox grant", err)
+			}
+			if grant.Kind != "host-dir" || !strings.Contains(grant.Key, tt.path) {
+				t.Fatalf("grant = %+v, want host-dir for %q", grant, tt.path)
+			}
+		})
+	}
+}
+
+func TestApplyAppleAppSandboxGuardsAcceptsDirectoryBookmark(t *testing.T) {
+	oldVolumes := volumes
+	oldShareDir := shareDir
+	t.Cleanup(func() {
+		volumes = oldVolumes
+		shareDir = oldShareDir
+	})
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+	storePath := filepath.Join(t.TempDir(), "bookmarks.json")
+	t.Setenv(securityBookmarkStoreEnv, storePath)
+	path := filepath.Join(t.TempDir(), "share")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatalf("mkdir share: %v", err)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("abs share: %v", err)
+	}
+	if _, err := saveSecurityBookmark(storePath, "dir:"+abs, "host-dir", path); err != nil {
+		if securityScopedBookmarkUnavailable(err) {
+			t.Skipf("security-scoped bookmarks unavailable in this process: %v", err)
+		}
+		t.Fatalf("saveSecurityBookmark: %v", err)
+	}
+	shareDir = ""
+	volumes = volumeSlice{{HostPath: path}}
+	if err := applyAppleAppSandboxGuards(); err != nil {
+		t.Fatalf("applyAppleAppSandboxGuards volume: %v", err)
+	}
+	volumes = nil
+	shareDir = path
+	if err := applyAppleAppSandboxGuards(); err != nil {
+		t.Fatalf("applyAppleAppSandboxGuards share-dir: %v", err)
 	}
 }
 
