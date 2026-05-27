@@ -204,6 +204,9 @@ func TestAppSandboxMacgoBundleSocketAndSubprocessSmoke(t *testing.T) {
 	if root, _ := probe["vm_root"].(string); !strings.Contains(root, "/Library/Containers/com.tmc.cove/Data/.vz/vms") {
 		t.Fatalf("security probe-sandbox vm_root = %v, want App Sandbox container VM root\n%s", probe["vm_root"], out)
 	}
+	if tempDir, _ := probe["temp_dir"].(string); !strings.Contains(tempDir, "/Library/Containers/com.tmc.cove/Data/tmp") {
+		t.Fatalf("security probe-sandbox temp_dir = %v, want App Sandbox container temp dir\n%s", probe["temp_dir"], out)
+	}
 	for _, name := range []string{"unix_socket", "subprocess"} {
 		check, ok := probe[name].(map[string]any)
 		if !ok || check["status"] != "pass" {

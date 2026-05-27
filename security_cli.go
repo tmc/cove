@@ -36,6 +36,7 @@ type securityStatus struct {
 type securitySandboxProbe struct {
 	AppSandbox bool               `json:"apple_app_sandbox"`
 	HomeDir    string             `json:"home_dir"`
+	TempDir    string             `json:"temp_dir"`
 	VMRoot     string             `json:"vm_root"`
 	UnixSocket securityProbeCheck `json:"unix_socket"`
 	Subprocess securityProbeCheck `json:"subprocess"`
@@ -135,6 +136,7 @@ func handleSecuritySandboxProbeCommand(env commandEnv, args []string) error {
 	}
 	fmt.Fprintf(env.Stdout, "apple app sandbox: %v\n", probe.AppSandbox)
 	fmt.Fprintf(env.Stdout, "home: %s\n", probe.HomeDir)
+	fmt.Fprintf(env.Stdout, "temp: %s\n", probe.TempDir)
 	fmt.Fprintf(env.Stdout, "vm root: %s\n", probe.VMRoot)
 	fmt.Fprintf(env.Stdout, "unix socket: %s", probe.UnixSocket.Status)
 	if probe.UnixSocket.Message != "" {
@@ -188,6 +190,7 @@ func currentSecuritySandboxProbe() securitySandboxProbe {
 	return securitySandboxProbe{
 		AppSandbox: appSandbox.Active,
 		HomeDir:    homeDir,
+		TempDir:    os.TempDir(),
 		VMRoot:     vmRoot,
 		UnixSocket: probeSandboxUnixSocket(vmRoot),
 		Subprocess: probeSandboxSubprocess(),
