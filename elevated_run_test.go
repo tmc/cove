@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -32,6 +33,34 @@ func TestPrintManualElevationManifestLeadsWithUserPath(t *testing.T) {
 	rawAt := strings.Index(out, elevatedOpArg)
 	if rawAt < helperAt {
 		t.Fatalf("raw elevated command appears before helper guidance:\n%s", out)
+	}
+}
+
+func TestRunElevatedRefusesAppleAppSandbox(t *testing.T) {
+	t.Setenv(appleAppSandboxContainerEnv, "com.tmc.cove")
+	t.Setenv("COVE_USE_HELPER", "1")
+
+	oldHook := runElevatedManifestNativeHook
+	t.Cleanup(func() { runElevatedManifestNativeHook = oldHook })
+	runElevatedManifestNativeHook = func(string, string, string) error {
+		t.Fatal("native elevation called from app sandbox")
+		return nil
+	}
+
+	out := captureStderrString(t, func() {
+		err := runElevatedOnCurrentThread(&elevatedManifest{MkdirAll: []string{"/Library/CoveTest"}}, "Need root.")
+		if !errors.Is(err, errAppSandboxNoElevation) {
+			t.Fatalf("runElevatedOnCurrentThread error = %v, want errAppSandboxNoElevation", err)
+		}
+	})
+	for _, notWant := range []string{
+		"sudo cove helper install",
+		elevatedOpArg,
+		"Advanced manual recovery",
+	} {
+		if strings.Contains(out, notWant) {
+			t.Fatalf("app sandbox elevation wrote %q to stderr:\n%s", notWant, out)
+		}
 	}
 }
 

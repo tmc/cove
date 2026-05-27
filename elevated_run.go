@@ -31,6 +31,8 @@ import (
 
 var runElevatedManifestNativeHook = runElevatedManifestNative
 
+var errAppSandboxNoElevation = errors.New("apple app sandbox does not allow host elevation")
+
 // runElevated executes a manifest with root privileges. Prompt is shown to
 // the user inside the AEWP dialog body (one short sentence).
 func runElevated(m *elevatedManifest, prompt string) error {
@@ -40,6 +42,9 @@ func runElevated(m *elevatedManifest, prompt string) error {
 }
 
 func runElevatedOnCurrentThread(m *elevatedManifest, prompt string) error {
+	if currentAppleAppSandboxStatus().Active {
+		return fmt.Errorf("%w; run this operation from the unsandboxed cove CLI", errAppSandboxNoElevation)
+	}
 	if os.Geteuid() == 0 {
 		return runElevatedManifest(m)
 	}

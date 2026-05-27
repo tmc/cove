@@ -1,8 +1,8 @@
 # Apple App Sandbox proof lane
 
-Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness, and
-host-process status reporting are implemented; the `.app` or run-worker
-packaging proof is still queued.
+Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,
+host-process status reporting, and elevation fail-closed guard are implemented;
+the `.app` or run-worker packaging proof is still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -117,7 +117,7 @@ smoke tests so the project can measure breakage without rewriting the product.
    sandbox denials.
 3. Done: add host-process App Sandbox detection to `security status` and
    `doctor host`, reported separately from cove's guest sandbox level.
-4. Make elevation paths fail closed when App Sandbox is detected.
+4. Done: make elevation paths fail closed when App Sandbox is detected.
 5. Document supported package shapes and the exact proof gates before any
    "full sandbox" product claim.
 
