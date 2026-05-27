@@ -12,8 +12,9 @@ implemented. `install -preflight` can consume a staged media bookmark and prove
 the sandboxed process can read the ISO/IPSW without creating a VM. Ambient
 mutating command surfaces now fail closed under Apple App Sandbox. A sandboxed
 run-worker IPC proof can receive a typed handoff and explicit descriptor from
-the unsandboxed CLI. Broader automatic command fallback and temporary-RAM
-overlay proofs are still queued.
+the unsandboxed CLI. The first worker metadata preflight can resolve a VM
+bookmark and read stopped-VM metadata inside the sandboxed child. Broader
+automatic command fallback and temporary-RAM overlay proofs are still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -127,6 +128,12 @@ Observed result:
   child reports `apple_app_sandbox: true`, decodes the handoff, maps the
   descriptor grant, and verifies the payload without resolving ambient host
   paths.
+- `__run-worker status-preflight` is the first real metadata consumer behind
+  the typed worker handoff. The unsandboxed parent loads a staged `vm:<name>`
+  bookmark from the durable store and sends the bookmark bytes to the sandboxed
+  child. The child resolves the security-scoped bookmark, validates the VM
+  layout, reads `config.json` and `runtime.json` when present, reports OS type
+  and state, and does not resolve `~/.vz` or any other ambient host path.
 - `security bookmark-probe -json` exercises the purego Foundation bookmark
   calls through the sandboxed macgo bundle. It creates an app-scoped
   security-scoped bookmark for a temp file inside the app container, resolves
@@ -331,8 +338,12 @@ work in this order:
     existing proof path. `__run-worker probe` now sends a JSON handoff that
     names the command, VM metadata, descriptor mapping, and bookmark metadata
     alongside the descriptor passed with `SCM_RIGHTS`.
-17. Next: wire additional non-mutating VM metadata preflights, then decide
-    which real runtime inputs are safe to move behind the typed worker handoff.
+17. Done: add `__run-worker status-preflight` as the first non-mutating VM
+    metadata preflight behind the typed worker handoff. It consumes a staged VM
+    bookmark and reads stopped-VM metadata in the sandboxed child.
+18. Next: decide whether normal `status <vm>` should delegate to the worker
+    under an explicit opt-in mode, or add another hidden metadata preflight for
+    `list` before changing user-facing command routing.
 
 ## Proof gates
 
