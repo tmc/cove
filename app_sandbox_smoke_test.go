@@ -88,13 +88,59 @@ func TestAppSandboxSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxMacgoBundleSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	if _, err := exec.LookPath("codesign"); err != nil {
+		t.Skipf("codesign unavailable: %v", err)
+	}
+	if _, err := exec.LookPath("open"); err != nil {
+		t.Skipf("open unavailable: %v", err)
+	}
+
+	tmp := t.TempDir()
+	bin := filepath.Join(tmp, "cove")
+	out, err := runSandboxSmokeCommand(t, 3*time.Minute, "go", "build", "-o", bin, ".")
+	if err != nil {
+		t.Fatalf("build cove: %v\n%s", err, out)
+	}
+
+	out, err = runSandboxSmokeCommandEnv(t, 45*time.Second, []string{
+		coveAppSandboxMacgoEnv + "=1",
+		"GOPATH=" + tmp,
+		"MACGO_KEEP_BUNDLE=0",
+	}, bin, "security", "status")
+	t.Logf("sandboxed macgo bundle security status err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed macgo bundle security status: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"apple app sandbox: true",
+		"apple app sandbox id: com.tmc.cove",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("security status missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func runSandboxSmokeCommand(t *testing.T, timeout time.Duration, name string, args ...string) (string, error) {
+	t.Helper()
+
+	return runSandboxSmokeCommandEnv(t, timeout, nil, name, args...)
+}
+
+func runSandboxSmokeCommandEnv(t *testing.T, timeout time.Duration, env []string, name string, args ...string) (string, error) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = "."
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	out, err := cmd.CombinedOutput()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		err = fmt.Errorf("%s %s: timeout after %s", name, strings.Join(args, " "), timeout)

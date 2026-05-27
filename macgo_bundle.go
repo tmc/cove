@@ -12,20 +12,30 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/tmc/macgo"
 	"github.com/tmc/cove/internal/assets"
 	"github.com/tmc/cove/internal/autosign"
+	"github.com/tmc/macgo"
 )
 
-const vzmacEnableMacgoEnv = "VZMAC_ENABLE_MACGO"
+const (
+	vzmacEnableMacgoEnv    = "VZMAC_ENABLE_MACGO"
+	coveAppSandboxMacgoEnv = "COVE_APP_SANDBOX_MACGO"
+)
 
 // initMacgo ensures entitlements and optionally enables macgo for headed UI
 // experiments. Helper and runtime commands stay on the plain autosign path by
 // default.
 func initMacgo() {
-	if err := autosign.EnsureEntitlements(); err != nil {
-		fmt.Fprintf(os.Stderr, "autosign: %v\n", err)
+	inAppBundle := runningInAppBundle()
+	if !inAppBundle {
+		if err := autosign.EnsureEntitlements(); err != nil {
+			fmt.Fprintf(os.Stderr, "autosign: %v\n", err)
+		}
+	}
+	if inAppBundle && appSandboxMacgoEnabled() {
+		return
 	}
 	if !shouldEnableMacgo(flag.Args(), guiMode, headlessMode, runVM, installVM, utmBundlePath) {
 		return
@@ -46,6 +56,11 @@ func initMacgo() {
 		"com.apple.security.network.client",
 		"com.apple.security.network.server",
 	)
+	if appSandboxMacgoEnabled() {
+		cfg.WithPermissions(macgo.Sandbox)
+		cfg.WithCustom("com.apple.security.files.user-selected.read-write")
+		cfg.WithAdHocSign()
+	}
 	cfg.WithPostCreateHook(func(bundlePath string, cfg *macgo.Config) error {
 		return installCoveVMDocumentTypes(bundlePath)
 	})
@@ -69,10 +84,25 @@ func shouldEnableMacgo(args []string, gui, headless, legacyRun, legacyInstall bo
 	if os.Getenv("VZMAC_NO_MACGO") == "1" {
 		return false
 	}
+	if appSandboxMacgoEnabled() {
+		return true
+	}
 	if os.Getenv(vzmacEnableMacgoEnv) != "1" {
 		return false
 	}
 	return wantsRegularUIMode(args, gui, headless, legacyRun, legacyInstall, utmPath)
+}
+
+func appSandboxMacgoEnabled() bool {
+	return os.Getenv(coveAppSandboxMacgoEnv) == "1"
+}
+
+func runningInAppBundle() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(exe, ".app/Contents/MacOS/")
 }
 
 func wantsMacgoRuntime(args []string, legacyRun, legacyInstall bool, utmPath string) bool {
@@ -110,6 +140,9 @@ func wantsRegularUIMode(args []string, gui, headless, legacyRun, legacyInstall b
 }
 
 func desiredMacgoUIMode(args []string, gui, headless, legacyRun, legacyInstall bool, utmPath string) macgo.UIMode {
+	if appSandboxMacgoEnabled() {
+		return macgo.UIModeAccessory
+	}
 	if wantsRegularUIMode(args, gui, headless, legacyRun, legacyInstall, utmPath) {
 		return macgo.UIModeRegular
 	}

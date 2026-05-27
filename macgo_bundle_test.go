@@ -71,6 +71,7 @@ func TestWantsMacgoRuntime(t *testing.T) {
 func TestDesiredMacgoUIMode(t *testing.T) {
 	tests := []struct {
 		name          string
+		env           map[string]string
 		args          []string
 		gui           bool
 		headless      bool
@@ -84,10 +85,15 @@ func TestDesiredMacgoUIMode(t *testing.T) {
 		{name: "explicit headless flag uses accessory", args: []string{"run", "-headless"}, gui: true, want: "accessory"},
 		{name: "gui false uses accessory", args: []string{"run", "-gui=false"}, gui: true, want: "accessory"},
 		{name: "legacy headed install uses regular", gui: true, legacyInstall: true, want: "regular"},
+		{name: "app sandbox proof uses accessory", env: map[string]string{coveAppSandboxMacgoEnv: "1"}, args: []string{"security", "status"}, gui: true, want: "accessory"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(coveAppSandboxMacgoEnv, "")
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
 			got := desiredMacgoUIMode(tt.args, tt.gui, tt.headless, tt.legacyRun, tt.legacyInstall, tt.utmPath)
 			if string(got) != tt.want {
 				t.Fatalf("desiredMacgoUIMode(%q) = %q, want %q", tt.args, got, tt.want)
@@ -147,10 +153,32 @@ func TestShouldEnableMacgo(t *testing.T) {
 			gui:  true,
 			want: false,
 		},
+		{
+			name: "app sandbox proof enables helper command",
+			env: map[string]string{
+				coveAppSandboxMacgoEnv: "1",
+			},
+			args: []string{"security", "status"},
+			gui:  true,
+			want: true,
+		},
+		{
+			name: "explicit disable beats app sandbox proof",
+			env: map[string]string{
+				"VZMAC_NO_MACGO":       "1",
+				coveAppSandboxMacgoEnv: "1",
+			},
+			args: []string{"security", "status"},
+			gui:  true,
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("VZMAC_NO_MACGO", "")
+			t.Setenv(vzmacEnableMacgoEnv, "")
+			t.Setenv(coveAppSandboxMacgoEnv, "")
 			for key, value := range tt.env {
 				t.Setenv(key, value)
 			}
