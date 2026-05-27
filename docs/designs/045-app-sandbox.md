@@ -148,6 +148,12 @@ Observed result:
   delegation path. In that mode, `list` formats the VM table from the sandboxed
   worker's `list-preflight` result. The default production `list` path remains
   unchanged.
+- `__run-worker image-list-preflight` and
+  `COVE_APP_SANDBOX_DELEGATE_IMAGE_LIST=1` extend the same read-only proof to
+  local image metadata. The worker resolves a staged `dir:<images-root>`
+  bookmark, reads only local `manifest.json` files under that root, and the
+  opt-in `image list` path formats the returned image table. It does not pull,
+  push, delete, garbage-collect, or build images.
 - `security bookmark-probe -json` exercises the purego Foundation bookmark
   calls through the sandboxed macgo bundle. It creates an app-scoped
   security-scoped bookmark for a temp file inside the app container, resolves
@@ -366,9 +372,14 @@ work in this order:
     `COVE_APP_SANDBOX_DELEGATE_LIST=1`. This keeps default list behavior
     unchanged while proving the parent can consume and format the sandboxed
     worker VM-root metadata result.
-21. Next: cover read-only image/cache metadata under a staged state-dir grant,
-    or ask NotebookLM for the next App Sandbox blocker before expanding the
-    user-facing delegation surface further.
+21. Done: cover read-only local image metadata under a staged images-root grant.
+    `__run-worker image-list-preflight` lists manifest metadata in the
+    sandboxed worker, and `COVE_APP_SANDBOX_DELEGATE_IMAGE_LIST=1` lets
+    `image list` consume and format that result without changing default image
+    command behavior.
+22. Next: ask NotebookLM whether read-only cache/store metadata is still a
+    separate blocker, or whether the next high-value proof is an opt-in worker
+    handoff for a non-mutating `image inspect`.
 
 ## Proof gates
 

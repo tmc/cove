@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -656,6 +657,117 @@ func TestAppSandboxListWorkerDelegationSmoke(t *testing.T) {
 	if strings.Contains(out, errPowerboxGrantRequired.Error()) || strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) || strings.Contains(out, "Trace/BPT trap") {
 		t.Fatalf("list worker delegation hit sandbox/grant failure:\n%s", out)
 	}
+}
+
+func TestAppSandboxRunWorkerImageListPreflightSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	imageRoot, _, grantEnv := setupImageListWorkerSmoke(t, env, "preflight")
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+		"-json", "-key", "dir:"+imageRoot, "-kind", "host-dir", "-path", imageRoot)
+	t.Logf("sandboxed macgo image list preflight bookmark save err=%v output:\n%s", err, out)
+	if err != nil || strings.Contains(out, "error:") {
+		t.Fatalf("sandboxed macgo image list preflight bookmark save: %v\n%s", err, out)
+	}
+
+	workerEnv := withoutEnv(grantEnv, coveAppSandboxMacgoEnv)
+	out, err = runSandboxSmokeCommandEnv(t, 90*time.Second, workerEnv, bin, "__run-worker", "image-list-preflight", "-json")
+	t.Logf("sandboxed run-worker image list preflight err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed run-worker image list preflight: %v\n%s", err, out)
+	}
+	var report runWorkerProbeReport
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &report); err != nil {
+		t.Fatalf("run-worker image list preflight json: %v\n%s", err, out)
+	}
+	if report.ParentAppSandbox {
+		t.Fatalf("run-worker image list parent unexpectedly sandboxed:\n%s", out)
+	}
+	if !report.Child.AppSandbox || report.Child.Command != "image-list-preflight" || report.Child.ImageCount != 2 {
+		t.Fatalf("run-worker image list child proof incomplete: %+v\n%s", report.Child, out)
+	}
+	if len(report.Child.Images) != 2 || report.Child.Images[0].Ref != "base:v1" || report.Child.Images[1].Ref != "nested/image:latest" {
+		t.Fatalf("run-worker image list images = %+v\n%s", report.Child.Images, out)
+	}
+	for _, image := range report.Child.Images {
+		if image.DiskSize == 0 || image.SourceVM == "" || !image.ManifestRead {
+			t.Fatalf("run-worker image metadata = %+v\n%s", image, out)
+		}
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) || strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) || strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("run-worker image list preflight hit sandbox/grant failure:\n%s", out)
+	}
+}
+
+func TestAppSandboxImageListWorkerDelegationSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	imageRoot, _, grantEnv := setupImageListWorkerSmoke(t, env, "delegate")
+	out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+		"-json", "-key", "dir:"+imageRoot, "-kind", "host-dir", "-path", imageRoot)
+	t.Logf("sandboxed macgo image list delegation bookmark save err=%v output:\n%s", err, out)
+	if err != nil || strings.Contains(out, "error:") {
+		t.Fatalf("sandboxed macgo image list delegation bookmark save: %v\n%s", err, out)
+	}
+
+	workerEnv := withoutEnv(grantEnv, coveAppSandboxMacgoEnv)
+	workerEnv = append(workerEnv, imageListWorkerDelegationEnv+"=1")
+	out, err = runSandboxSmokeCommandEnv(t, 90*time.Second, workerEnv, bin, "image", "list")
+	t.Logf("sandboxed image list worker delegation err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed image list worker delegation: %v\n%s", err, out)
+	}
+	for _, want := range []string{"NAME", "TAG", "SIZE", "SOURCE", "base", "v1", "nested/image", "latest", "source-vm"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("image list worker delegation output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) || strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) || strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("image list worker delegation hit sandbox/grant failure:\n%s", out)
+	}
+}
+
+func setupImageListWorkerSmoke(t *testing.T, env []string, suffix string) (imageRoot, store string, grantEnv []string) {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	containerHome := filepath.Join(home, "Library", "Containers", "com.tmc.cove", "Data")
+	root := filepath.Join(containerHome, "tmp", fmt.Sprintf("cove-image-list-%s-%d", suffix, os.Getpid()))
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	imageRoot = filepath.Join(root, "images")
+	created := time.Date(2026, 5, 27, 1, 2, 3, 0, time.UTC)
+	for _, image := range []struct {
+		name string
+		tag  string
+		size int64
+	}{
+		{name: "nested/image", tag: "latest", size: 20},
+		{name: "base", tag: "v1", size: 10},
+	} {
+		dir := filepath.Join(append([]string{imageRoot}, append(strings.Split(image.name, "/"), image.tag)...)...)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatalf("create image dir: %v", err)
+		}
+		if err := imagestore.WriteManifest(dir, &imagestore.Manifest{
+			SchemaVersion: 1,
+			Name:          image.name,
+			Tag:           image.tag,
+			SourceVM:      "source-vm",
+			DiskSize:      image.size,
+			CreatedAt:     created,
+		}); err != nil {
+			t.Fatalf("write image manifest: %v", err)
+		}
+	}
+	store = filepath.Join(root, "bookmarks.json")
+	grantEnv = append(append([]string{}, env...), imagestore.BaseDirEnv+"="+imageRoot, securityBookmarkStoreEnv+"="+store)
+	return imageRoot, store, grantEnv
 }
 
 func TestAppSandboxBookmarkProbeSmoke(t *testing.T) {

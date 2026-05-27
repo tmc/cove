@@ -16,6 +16,7 @@ import (
 
 	"github.com/tmc/cove/internal/assets"
 	"github.com/tmc/cove/internal/autosign"
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/macgo"
 )
@@ -68,6 +69,9 @@ func initMacgo() {
 		}
 		if bookmarkStore := os.Getenv(securityBookmarkStoreEnv); bookmarkStore != "" {
 			cfg.WithEnvironment(securityBookmarkStoreEnv, bookmarkStore)
+		}
+		if imageDir := os.Getenv(imagestore.BaseDirEnv); imageDir != "" {
+			cfg.WithEnvironment(imagestore.BaseDirEnv, imageDir)
 		}
 		cfg.WithAdHocSign()
 	}

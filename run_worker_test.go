@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -206,6 +207,48 @@ func TestRunWorkerListVMRoot(t *testing.T) {
 	for _, vm := range vms {
 		if vm.OSType != "Linux" || vm.State != "stopped" || !vm.ConfigRead {
 			t.Fatalf("VM metadata = %+v, want Linux stopped with config", vm)
+		}
+	}
+}
+
+func TestRunWorkerListImageRoot(t *testing.T) {
+	root := t.TempDir()
+	created := time.Date(2026, 5, 27, 1, 2, 3, 0, time.UTC)
+	for _, tt := range []struct {
+		name string
+		tag  string
+	}{
+		{name: "b/image", tag: "latest"},
+		{name: "a-image", tag: "v1"},
+	} {
+		dir := filepath.Join(append([]string{root}, append(strings.Split(tt.name, "/"), tt.tag)...)...)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatalf("mkdir image: %v", err)
+		}
+		if err := imagestore.WriteManifest(dir, &imagestore.Manifest{
+			SchemaVersion: 1,
+			Name:          tt.name,
+			Tag:           tt.tag,
+			SourceVM:      "source",
+			DiskSize:      123,
+			CreatedAt:     created,
+		}); err != nil {
+			t.Fatalf("write manifest: %v", err)
+		}
+	}
+	images, err := runWorkerListImageRoot(root)
+	if err != nil {
+		t.Fatalf("runWorkerListImageRoot: %v", err)
+	}
+	if len(images) != 2 {
+		t.Fatalf("listed %d images, want 2: %+v", len(images), images)
+	}
+	if images[0].Ref != "a-image:v1" || images[1].Ref != "b/image:latest" {
+		t.Fatalf("image order = %+v, want a-image:v1, b/image:latest", images)
+	}
+	for _, image := range images {
+		if image.DiskSize != 123 || image.SourceVM != "source" || !image.ManifestRead || !image.CreatedAt.Equal(created) {
+			t.Fatalf("image metadata = %+v", image)
 		}
 	}
 }

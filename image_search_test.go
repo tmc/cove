@@ -144,6 +144,17 @@ func TestWriteImageListJSONEmptyIsArray(t *testing.T) {
 	}
 }
 
+func TestImageListWorkerDelegationEnabled(t *testing.T) {
+	t.Setenv(imageListWorkerDelegationEnv, "")
+	if imageListWorkerDelegationEnabled() {
+		t.Fatal("imageListWorkerDelegationEnabled = true, want false")
+	}
+	t.Setenv(imageListWorkerDelegationEnv, "1")
+	if !imageListWorkerDelegationEnabled() {
+		t.Fatal("imageListWorkerDelegationEnabled = false, want true")
+	}
+}
+
 func TestWriteImageListJSON(t *testing.T) {
 	created := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 	entries := []imagestore.Entry{{

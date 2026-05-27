@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"text/tabwriter"
 	"time"
 
@@ -147,6 +148,9 @@ func runImageList(env commandEnv, args []string) error {
 		}
 		return err
 	}
+	if imageListWorkerDelegationEnabled() {
+		return runImageListViaWorker(env, *asJSON)
+	}
 	entries, err := ListImages()
 	if err != nil {
 		return err
@@ -169,6 +173,63 @@ func runImageList(env commandEnv, args []string) error {
 			e.Manifest.DiskSize,
 			e.Manifest.SourceVM,
 			e.Manifest.CreatedAt.UTC().Format("2006-01-02 15:04:05"))
+	}
+	return tw.Flush()
+}
+
+const imageListWorkerDelegationEnv = "COVE_APP_SANDBOX_DELEGATE_IMAGE_LIST"
+
+func imageListWorkerDelegationEnabled() bool {
+	return os.Getenv(imageListWorkerDelegationEnv) == "1"
+}
+
+func runImageListViaWorker(env commandEnv, asJSON bool) error {
+	report, err := runWorkerImageListPreflight()
+	if err != nil {
+		return err
+	}
+	images := report.Child.Images
+	if asJSON {
+		results := make([]imageListResult, 0, len(images))
+		for _, image := range images {
+			result := imageListResult{
+				Ref:    image.Ref,
+				Name:   image.Name,
+				Tag:    image.Tag,
+				Size:   image.DiskSize,
+				Source: image.SourceVM,
+			}
+			if !image.CreatedAt.IsZero() {
+				result.Created = image.CreatedAt.UTC().Format(time.RFC3339)
+			}
+			results = append(results, result)
+		}
+		data, err := json.MarshalIndent(results, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode image list: %w", err)
+		}
+		_, err = env.Stdout.Write(append(data, '\n'))
+		return err
+	}
+	if len(images) == 0 {
+		fmt.Fprintln(env.Stdout, "No images found.")
+		fmt.Fprintln(env.Stdout, "  Images are optional. Create a VM first with: cove up -user <name>")
+		fmt.Fprintln(env.Stdout, "  Snapshot a stopped VM later with: cove image build -from <vm> -tag <name>:latest")
+		return nil
+	}
+	tw := tabwriter.NewWriter(env.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tTAG\tSIZE\tSOURCE\tCREATED")
+	for _, image := range images {
+		created := ""
+		if !image.CreatedAt.IsZero() {
+			created = image.CreatedAt.UTC().Format("2006-01-02 15:04:05")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n",
+			image.Name,
+			image.Tag,
+			image.DiskSize,
+			image.SourceVM,
+			created)
 	}
 	return tw.Flush()
 }
