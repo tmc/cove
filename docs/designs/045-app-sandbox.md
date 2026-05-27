@@ -1,8 +1,9 @@
 # Apple App Sandbox proof lane
 
 Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,
-host-process status reporting, and elevation fail-closed guard are implemented;
-the `.app` or run-worker packaging proof is still queued.
+host-process status reporting, elevation fail-closed guard, and package-shape
+claim boundary are implemented; the `.app` or run-worker packaging proof is
+still queued.
 
 This design tracks whether cove can run selected host-side runtime surfaces with
 Apple App Sandbox enabled. This is separate from cove's existing guest
@@ -109,6 +110,40 @@ boundary and a clear protocol.
 This is the first implementation step. It adds fixtures, status reporting, and
 smoke tests so the project can measure breakage without rewriting the product.
 
+## Supported package shapes
+
+Current supported shape:
+
+- Unsandboxed `cove` CLI, signed with `internal/autosign/vz.entitlements`.
+  This is the only supported production shape today. It owns normal install,
+  run, provision, helper, image, and control-socket workflows.
+
+Current proof-only shape:
+
+- Ad-hoc sandbox-signed `cove` test binary, signed with
+  `internal/autosign/app_sandbox.entitlements` by
+  `COVE_APP_SANDBOX_SMOKE=1 go test -run TestAppSandboxSmoke`.
+  This shape is only a negative proof harness: it currently traps before
+  non-mutating CLI commands start.
+
+Queued proof shapes:
+
+- Sandboxed `.app` launcher or bundled runtime using the existing
+  `macgo_bundle.go` direction, limited first to non-mutating startup,
+  state-directory, and status checks.
+- Sandboxed run-worker child launched by the unsandboxed CLI after the CLI has
+  resolved paths and grants. This needs an explicit protocol before any VM
+  mutation path moves into it.
+
+Unsupported claims:
+
+- Do not describe the production CLI as Apple App Sandbox protected.
+- Do not describe guest `-sandbox-level strict` or `host-containment` as Apple
+  App Sandbox. They are VM configuration policies, not host-process sandboxing.
+- Do not claim helper, provisioning, shared-folder mutation, disk resize, or
+  arbitrary command-line host paths are sandbox-compatible until each has a
+  passing proof gate.
+
 ## Queued commits
 
 1. Done: add `internal/autosign/app_sandbox.entitlements`.
@@ -118,7 +153,7 @@ smoke tests so the project can measure breakage without rewriting the product.
 3. Done: add host-process App Sandbox detection to `security status` and
    `doctor host`, reported separately from cove's guest sandbox level.
 4. Done: make elevation paths fail closed when App Sandbox is detected.
-5. Document supported package shapes and the exact proof gates before any
+5. Done: document supported package shapes and the exact proof gates before any
    "full sandbox" product claim.
 
 ## Proof gates
@@ -140,3 +175,13 @@ spctl --assess --type execute -vv /Users/tmc/tmp/cove-sandboxed
 Stop before disk resize, provisioning mutation, helper install, or shared-folder
 mutation until startup, state-dir, control-socket, and listener behavior are
 understood and documented.
+
+A future "full sandbox" claim requires all of the following:
+
+- a sandboxed process starts without `Trace/BPT trap`;
+- `security status` reports `apple app sandbox: true`;
+- state-directory behavior is recorded and does not silently hide existing VMs;
+- a control socket path is created or found inside the expected boundary;
+- one scratch VM proof runs without mutating existing user VMs;
+- helper, provisioning, shared-folder, and disk-resize paths remain explicitly
+  denied or have separate passing proofs.
