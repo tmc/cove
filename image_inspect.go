@@ -91,6 +91,7 @@ type imageInspectErrorOutput struct {
 // InspectImage assembles the inspect output for ref. The fork list reuses
 // VMsForkedFromImage so it stays in lockstep with `cove image rm`'s gate.
 func InspectImage(ref imagestore.Ref) (ImageInspectOutput, error) {
+	imageDir := ref.Path()
 	manifest, err := LoadImageManifest(ref)
 	if err != nil {
 		return ImageInspectOutput{}, fmt.Errorf("inspect %s: %w", ref, err)
@@ -99,6 +100,10 @@ func InspectImage(ref imagestore.Ref) (ImageInspectOutput, error) {
 	if err != nil {
 		return ImageInspectOutput{}, fmt.Errorf("inspect %s: %w", ref, err)
 	}
+	return inspectImageOutput(ref, imageDir, manifest, forks)
+}
+
+func inspectImageOutput(ref imagestore.Ref, imageDir string, manifest *imagestore.Manifest, forks []string) (ImageInspectOutput, error) {
 	if forks == nil {
 		forks = []string{}
 	}
@@ -106,7 +111,7 @@ func InspectImage(ref imagestore.Ref) (ImageInspectOutput, error) {
 		Ref:            ref.String(),
 		Name:           manifest.Name,
 		Tag:            manifest.Tag,
-		ManifestPath:   filepath.Join(ref.Path(), "manifest.json"),
+		ManifestPath:   filepath.Join(imageDir, "manifest.json"),
 		DiskSize:       manifest.DiskSize,
 		DiskSHA256:     manifest.DiskSHA256,
 		BaseImage:      manifest.BaseImage,
@@ -127,7 +132,7 @@ func InspectImage(ref imagestore.Ref) (ImageInspectOutput, error) {
 	if !manifest.BuiltAt.IsZero() {
 		out.BuiltAt = manifest.BuiltAt.UTC().Format(time.RFC3339)
 	}
-	if id, err := machineModelFingerprint(ref); err == nil {
+	if id, err := machineModelFingerprintDir(imageDir); err == nil {
 		out.MachineModelID = id
 	}
 	return out, nil
@@ -138,7 +143,11 @@ func InspectImage(ref imagestore.Ref) (ImageInspectOutput, error) {
 // payload; fingerprint keeps inspect output a single scalar while still
 // letting callers diff identity across images.
 func machineModelFingerprint(ref imagestore.Ref) (string, error) {
-	data, err := os.ReadFile(filepath.Join(ref.Path(), "hw.model"))
+	return machineModelFingerprintDir(ref.Path())
+}
+
+func machineModelFingerprintDir(dir string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "hw.model"))
 	if err != nil {
 		return "", err
 	}
@@ -189,6 +198,9 @@ func runImageInspect(env commandEnv, args []string) error {
 	if err != nil {
 		return err
 	}
+	if imageInspectWorkerDelegationEnabled() {
+		return runImageInspectViaWorker(env, ref, *asJSON)
+	}
 	out, err := InspectImage(ref)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -210,6 +222,26 @@ func runImageInspect(env commandEnv, args []string) error {
 		return writeInspectJSON(env.Stdout, out)
 	}
 	return writeInspectText(env.Stdout, out)
+}
+
+const imageInspectWorkerDelegationEnv = "COVE_APP_SANDBOX_DELEGATE_IMAGE_INSPECT"
+
+func imageInspectWorkerDelegationEnabled() bool {
+	return os.Getenv(imageInspectWorkerDelegationEnv) == "1"
+}
+
+func runImageInspectViaWorker(env commandEnv, ref imagestore.Ref, asJSON bool) error {
+	report, err := runWorkerImageInspectPreflight(ref)
+	if err != nil {
+		return err
+	}
+	if report.Child.ImageInspect == nil {
+		return fmt.Errorf("sandboxed worker image inspect returned no result")
+	}
+	if asJSON {
+		return writeInspectJSON(env.Stdout, *report.Child.ImageInspect)
+	}
+	return writeInspectText(env.Stdout, *report.Child.ImageInspect)
 }
 
 func printImageInspectUsage(w io.Writer) {

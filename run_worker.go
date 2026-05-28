@@ -30,30 +30,31 @@ type runWorkerProbeReport struct {
 }
 
 type runWorkerChildReport struct {
-	Action      string                   `json:"action"`
-	AppSandbox  bool                     `json:"apple_app_sandbox"`
-	ContainerID string                   `json:"apple_app_sandbox_id,omitempty"`
-	HomeDir     string                   `json:"home_dir"`
-	ReceivedFD  bool                     `json:"received_fd"`
-	ReceivedFDs int                      `json:"received_fds"`
-	Bytes       int                      `json:"bytes"`
-	SHA256      string                   `json:"sha256"`
-	Command     string                   `json:"handoff_command,omitempty"`
-	VMName      string                   `json:"vm_name,omitempty"`
-	VMDir       string                   `json:"vm_dir,omitempty"`
-	ResolvedDir string                   `json:"resolved_dir,omitempty"`
-	OSType      string                   `json:"os_type,omitempty"`
-	State       string                   `json:"state,omitempty"`
-	ConfigRead  bool                     `json:"config_read,omitempty"`
-	RuntimeRead bool                     `json:"runtime_read,omitempty"`
-	Stale       bool                     `json:"bookmark_stale,omitempty"`
-	BookmarkKey string                   `json:"bookmark_key,omitempty"`
-	BookmarkLen int                      `json:"bookmark_bytes,omitempty"`
-	VMCount     int                      `json:"vm_count,omitempty"`
-	VMs         []runWorkerVMMetadata    `json:"vms,omitempty"`
-	ImageCount  int                      `json:"image_count,omitempty"`
-	Images      []runWorkerImageMetadata `json:"images,omitempty"`
-	Message     string                   `json:"message,omitempty"`
+	Action       string                   `json:"action"`
+	AppSandbox   bool                     `json:"apple_app_sandbox"`
+	ContainerID  string                   `json:"apple_app_sandbox_id,omitempty"`
+	HomeDir      string                   `json:"home_dir"`
+	ReceivedFD   bool                     `json:"received_fd"`
+	ReceivedFDs  int                      `json:"received_fds"`
+	Bytes        int                      `json:"bytes"`
+	SHA256       string                   `json:"sha256"`
+	Command      string                   `json:"handoff_command,omitempty"`
+	VMName       string                   `json:"vm_name,omitempty"`
+	VMDir        string                   `json:"vm_dir,omitempty"`
+	ResolvedDir  string                   `json:"resolved_dir,omitempty"`
+	OSType       string                   `json:"os_type,omitempty"`
+	State        string                   `json:"state,omitempty"`
+	ConfigRead   bool                     `json:"config_read,omitempty"`
+	RuntimeRead  bool                     `json:"runtime_read,omitempty"`
+	Stale        bool                     `json:"bookmark_stale,omitempty"`
+	BookmarkKey  string                   `json:"bookmark_key,omitempty"`
+	BookmarkLen  int                      `json:"bookmark_bytes,omitempty"`
+	VMCount      int                      `json:"vm_count,omitempty"`
+	VMs          []runWorkerVMMetadata    `json:"vms,omitempty"`
+	ImageCount   int                      `json:"image_count,omitempty"`
+	Images       []runWorkerImageMetadata `json:"images,omitempty"`
+	ImageInspect *ImageInspectOutput      `json:"image_inspect,omitempty"`
+	Message      string                   `json:"message,omitempty"`
 }
 
 type runWorkerVMMetadata struct {
@@ -97,6 +98,8 @@ func handleRunWorkerCommand(env commandEnv, args []string) error {
 		return runWorkerListPreflightCommand(env, args[1:])
 	case "image-list-preflight":
 		return runWorkerImageListPreflightCommand(env, args[1:])
+	case "image-inspect-preflight":
+		return runWorkerImageInspectPreflightCommand(env, args[1:])
 	case "child":
 		return runWorkerChildCommand(env, args[1:])
 	default:
@@ -231,6 +234,43 @@ func runWorkerImageListPreflightCommand(env commandEnv, args []string) error {
 		return nil
 	}
 	fmt.Fprintf(env.Stdout, "run-worker image list preflight: %d images\n", report.Child.ImageCount)
+	return nil
+}
+
+func runWorkerImageInspectPreflightCommand(env commandEnv, args []string) error {
+	fs := flag.NewFlagSet("__run-worker image-inspect-preflight", flag.ContinueOnError)
+	fs.SetOutput(env.Stderr)
+	jsonFlag := fs.Bool("json", false, "emit JSON")
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: cove __run-worker image-inspect-preflight [-json] <name[:tag]>")
+	}
+	ref, err := ParseImageRef(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+
+	report, err := runWorkerImageInspectPreflight(ref)
+	if err != nil {
+		return err
+	}
+	if *jsonFlag {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal run-worker image inspect preflight: %w", err)
+		}
+		fmt.Fprintln(env.Stdout, string(data))
+		return nil
+	}
+	if report.Child.ImageInspect == nil {
+		return fmt.Errorf("run-worker image inspect preflight returned no result")
+	}
+	fmt.Fprintf(env.Stdout, "run-worker image inspect preflight: %s\n", report.Child.ImageInspect.Ref)
 	return nil
 }
 
@@ -605,6 +645,119 @@ func runWorkerImageListPreflight() (runWorkerProbeReport, error) {
 	}, nil
 }
 
+func runWorkerImageInspectPreflight(ref imagestore.Ref) (runWorkerProbeReport, error) {
+	storePath, err := defaultSecurityBookmarkStorePath()
+	if err != nil {
+		return runWorkerProbeReport{}, err
+	}
+	imageRoot, err := filepath.Abs(ImagesBaseDir())
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("resolve images root: %w", err)
+	}
+	vmRoot, err := filepath.Abs(vmconfig.BaseDir())
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("resolve VM root: %w", err)
+	}
+	imageKey := "dir:" + imageRoot
+	imageEntry, imageBookmark, err := readSecurityBookmarkBytesFromStore(storePath, imageKey)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return runWorkerProbeReport{}, powerboxGrantRequiredKind("inspect image root", imageKey, "host-dir", storePath)
+		}
+		return runWorkerProbeReport{}, err
+	}
+	vmKey := "dir:" + vmRoot
+	vmEntry, vmBookmark, err := readSecurityBookmarkBytesFromStore(storePath, vmKey)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return runWorkerProbeReport{}, powerboxGrantRequiredKind("inspect VM root", vmKey, "host-dir", storePath)
+		}
+		return runWorkerProbeReport{}, err
+	}
+
+	workerRoot, err := runWorkerContainerTempDir()
+	if err != nil {
+		return runWorkerProbeReport{}, err
+	}
+	if err := os.MkdirAll(workerRoot, 0o700); err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("create run-worker temp dir: %w", err)
+	}
+	dir, err := os.MkdirTemp(workerRoot, "cove-run-worker-inspect-")
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("create run-worker workspace: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	handoff := runWorkerHandoff{
+		Version: runWorkerHandoffVersion,
+		Command: "image-inspect-preflight",
+		VM: runWorkerHandoffVM{
+			Name: ref.String(),
+			Dir:  imageEntry.Path,
+		},
+		Bookmarks: []runWorkerHandoffBookmark{
+			{
+				Key:   imageKey,
+				Kind:  "image-root",
+				Path:  imageEntry.Path,
+				Bytes: imageBookmark,
+			},
+			{
+				Key:   vmKey,
+				Kind:  "vm-root",
+				Path:  vmEntry.Path,
+				Bytes: vmBookmark,
+			},
+		},
+	}
+	sockPath := filepath.Join(dir, "rw.sock")
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sockPath, Net: "unix"})
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("listen run-worker socket: %w", err)
+	}
+	defer ln.Close()
+
+	sendErr := make(chan error, 1)
+	go func() {
+		sendErr <- sendRunWorkerHandoff(ln, handoff, nil, 45*time.Second)
+	}()
+
+	exe, err := os.Executable()
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("find executable: %w", err)
+	}
+	cmd := exec.Command(exe, "__run-worker", "child", "-sock", sockPath)
+	cmd.Env = runWorkerChildEnv(os.Environ())
+	out, childErr := cmd.CombinedOutput()
+
+	if err := <-sendErr; err != nil {
+		return runWorkerProbeReport{}, err
+	}
+	if childErr != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("run sandboxed worker: %w: %s", childErr, strings.TrimSpace(string(out)))
+	}
+	childJSON, err := firstJSONObjectBytes(out)
+	if err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("parse sandboxed worker output: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	var child runWorkerChildReport
+	if err := json.Unmarshal(childJSON, &child); err != nil {
+		return runWorkerProbeReport{}, fmt.Errorf("decode sandboxed worker output: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	if !child.AppSandbox {
+		return runWorkerProbeReport{}, fmt.Errorf("sandboxed worker did not report Apple App Sandbox")
+	}
+	if child.Command != handoff.Command || child.ImageInspect == nil || child.ImageInspect.Ref != ref.String() {
+		return runWorkerProbeReport{}, fmt.Errorf("sandboxed worker image inspect preflight failed: %+v", child)
+	}
+	return runWorkerProbeReport{
+		Action:           "image-inspect-preflight",
+		ParentAppSandbox: appleAppSandboxActive(),
+		Child:            child,
+		Message:          "sandboxed worker resolved image and VM root bookmarks and inspected image metadata",
+	}, nil
+}
+
 func runWorkerChildCommand(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("__run-worker child", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
@@ -650,6 +803,8 @@ func runWorkerChild(sockPath string) (runWorkerChildReport, error) {
 		return runWorkerListPreflightChild(status, handoff)
 	case "image-list-preflight":
 		return runWorkerImageListPreflightChild(status, handoff)
+	case "image-inspect-preflight":
+		return runWorkerImageInspectPreflightChild(status, handoff)
 	default:
 		return runWorkerChildReport{}, fmt.Errorf("unknown run-worker handoff command %q", handoff.Command)
 	}
@@ -836,6 +991,72 @@ func runWorkerImageListPreflightChild(status appleAppSandboxStatus, handoff runW
 	}, nil
 }
 
+func runWorkerImageInspectPreflightChild(status appleAppSandboxStatus, handoff runWorkerHandoff) (runWorkerChildReport, error) {
+	imageBookmark, ok := handoff.bookmark("image-root")
+	if !ok {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker image inspect preflight missing image root bookmark")
+	}
+	if len(imageBookmark.Bytes) == 0 {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker image inspect preflight bookmark %s has no bytes", imageBookmark.Key)
+	}
+	vmBookmark, ok := handoff.bookmark("vm-root")
+	if !ok {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker image inspect preflight missing VM root bookmark")
+	}
+	if len(vmBookmark.Bytes) == 0 {
+		return runWorkerChildReport{}, fmt.Errorf("run-worker image inspect preflight bookmark %s has no bytes", vmBookmark.Key)
+	}
+	imageRoot, imageStale, stopImage, err := resolveSecurityScopedBookmark(imageBookmark.Bytes)
+	if err != nil {
+		return runWorkerChildReport{}, err
+	}
+	defer stopImage()
+	vmRoot, _, stopVM, err := resolveSecurityScopedBookmark(vmBookmark.Bytes)
+	if err != nil {
+		return runWorkerChildReport{}, err
+	}
+	defer stopVM()
+	for _, dir := range []struct {
+		name string
+		path string
+	}{
+		{name: "image root", path: imageRoot},
+		{name: "VM root", path: vmRoot},
+	} {
+		info, err := os.Stat(dir.path)
+		if err != nil {
+			return runWorkerChildReport{}, fmt.Errorf("stat %s: %w", dir.name, err)
+		}
+		if !info.IsDir() {
+			return runWorkerChildReport{}, fmt.Errorf("run-worker image inspect preflight %s resolved to non-directory: %s", dir.name, dir.path)
+		}
+	}
+	ref, err := ParseImageRef(handoff.VM.Name)
+	if err != nil {
+		return runWorkerChildReport{}, err
+	}
+	inspect, err := runWorkerInspectImageRoots(ref, imageRoot, vmRoot)
+	if err != nil {
+		return runWorkerChildReport{}, err
+	}
+	home, _ := os.UserHomeDir()
+	return runWorkerChildReport{
+		Action:       "child",
+		AppSandbox:   status.Active,
+		ContainerID:  status.ContainerID,
+		HomeDir:      home,
+		Command:      handoff.Command,
+		VMName:       ref.String(),
+		VMDir:        vmRoot,
+		ResolvedDir:  imageRoot,
+		Stale:        imageStale,
+		BookmarkKey:  imageBookmark.Key,
+		BookmarkLen:  len(imageBookmark.Bytes) + len(vmBookmark.Bytes),
+		ImageInspect: &inspect,
+		Message:      "resolved image and VM root bookmarks and inspected image metadata",
+	}, nil
+}
+
 func runWorkerListVMRoot(root string) ([]runWorkerVMMetadata, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -938,6 +1159,49 @@ func runWorkerListImageRoot(root string) ([]runWorkerImageMetadata, error) {
 		return images[i].Tag < images[j].Tag
 	})
 	return images, nil
+}
+
+func runWorkerInspectImageRoots(ref imagestore.Ref, imageRoot, vmRoot string) (ImageInspectOutput, error) {
+	imageDir := filepath.Join(append([]string{imageRoot}, append(strings.Split(ref.Name, "/"), ref.Tag)...)...)
+	data, err := os.ReadFile(filepath.Join(imageDir, "manifest.json"))
+	if err != nil {
+		return ImageInspectOutput{}, fmt.Errorf("read image manifest: %w", err)
+	}
+	var manifest imagestore.Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return ImageInspectOutput{}, fmt.Errorf("parse image manifest: %w", err)
+	}
+	forks, err := runWorkerForksFromImageRoot(vmRoot, ref)
+	if err != nil {
+		return ImageInspectOutput{}, err
+	}
+	return inspectImageOutput(ref, imageDir, &manifest, forks)
+}
+
+func runWorkerForksFromImageRoot(root string, ref imagestore.Ref) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read VM root: %w", err)
+	}
+	var hits []string
+	want := ref.String()
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		cfg, err := vmconfig.Load(filepath.Join(root, entry.Name()))
+		if err != nil {
+			continue
+		}
+		if cfg.ParentImage == want {
+			hits = append(hits, vmconfig.NameForPath(entry.Name()))
+		}
+	}
+	sort.Strings(hits)
+	return hits, nil
 }
 
 func sendRunWorkerHandoff(ln *net.UnixListener, handoff runWorkerHandoff, files []*os.File, timeout time.Duration) error {
