@@ -731,6 +731,90 @@ func TestAppSandboxImageListWorkerDelegationSmoke(t *testing.T) {
 	}
 }
 
+func TestAppSandboxRunWorkerImageInspectPreflightSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	imageRoot, vmRoot, grantEnv := setupImageInspectWorkerSmoke(t, env, "preflight")
+	for _, grant := range []struct {
+		key  string
+		path string
+	}{
+		{key: "dir:" + imageRoot, path: imageRoot},
+		{key: "dir:" + vmRoot, path: vmRoot},
+	} {
+		out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+			"-json", "-key", grant.key, "-kind", "host-dir", "-path", grant.path)
+		t.Logf("sandboxed macgo image inspect preflight bookmark save %s err=%v output:\n%s", grant.key, err, out)
+		if err != nil || strings.Contains(out, "error:") {
+			t.Fatalf("sandboxed macgo image inspect preflight bookmark save %s: %v\n%s", grant.key, err, out)
+		}
+	}
+
+	workerEnv := withoutEnv(grantEnv, coveAppSandboxMacgoEnv)
+	out, err := runSandboxSmokeCommandEnv(t, 90*time.Second, workerEnv, bin, "__run-worker", "image-inspect-preflight", "-json", "base:v1")
+	t.Logf("sandboxed run-worker image inspect preflight err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed run-worker image inspect preflight: %v\n%s", err, out)
+	}
+	var report runWorkerProbeReport
+	if err := json.Unmarshal([]byte(firstJSONObject(out)), &report); err != nil {
+		t.Fatalf("run-worker image inspect preflight json: %v\n%s", err, out)
+	}
+	if report.ParentAppSandbox {
+		t.Fatalf("run-worker image inspect parent unexpectedly sandboxed:\n%s", out)
+	}
+	if !report.Child.AppSandbox || report.Child.Command != "image-inspect-preflight" || report.Child.ImageInspect == nil {
+		t.Fatalf("run-worker image inspect child proof incomplete: %+v\n%s", report.Child, out)
+	}
+	inspect := report.Child.ImageInspect
+	if inspect.Ref != "base:v1" || inspect.ForkCount != 1 || len(inspect.Forks) != 1 || inspect.Forks[0] != "forked-vm" {
+		t.Fatalf("run-worker image inspect result = %+v\n%s", inspect, out)
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) || strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) || strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("run-worker image inspect preflight hit sandbox/grant failure:\n%s", out)
+	}
+}
+
+func TestAppSandboxImageInspectWorkerDelegationSmoke(t *testing.T) {
+	if os.Getenv("COVE_APP_SANDBOX_MACGO_SMOKE") != "1" {
+		t.Skip("set COVE_APP_SANDBOX_MACGO_SMOKE=1 to build and run a sandboxed macgo bundle")
+	}
+	bin, env := buildMacgoBundleSmokeBinary(t)
+	imageRoot, vmRoot, grantEnv := setupImageInspectWorkerSmoke(t, env, "delegate")
+	for _, grant := range []struct {
+		key  string
+		path string
+	}{
+		{key: "dir:" + imageRoot, path: imageRoot},
+		{key: "dir:" + vmRoot, path: vmRoot},
+	} {
+		out, err := runSandboxSmokeCommandEnv(t, 45*time.Second, grantEnv, bin, "security", "bookmark-store", "save",
+			"-json", "-key", grant.key, "-kind", "host-dir", "-path", grant.path)
+		t.Logf("sandboxed macgo image inspect delegation bookmark save %s err=%v output:\n%s", grant.key, err, out)
+		if err != nil || strings.Contains(out, "error:") {
+			t.Fatalf("sandboxed macgo image inspect delegation bookmark save %s: %v\n%s", grant.key, err, out)
+		}
+	}
+
+	workerEnv := withoutEnv(grantEnv, coveAppSandboxMacgoEnv)
+	workerEnv = append(workerEnv, imageInspectWorkerDelegationEnv+"=1")
+	out, err := runSandboxSmokeCommandEnv(t, 90*time.Second, workerEnv, bin, "image", "inspect", "base:v1")
+	t.Logf("sandboxed image inspect worker delegation err=%v output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("sandboxed image inspect worker delegation: %v\n%s", err, out)
+	}
+	for _, want := range []string{"Image base:v1", "manifest:", "disk:", "forks:       1", "- forked-vm"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("image inspect worker delegation output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, errPowerboxGrantRequired.Error()) || strings.Contains(out, errAppleAppSandboxHostAccessDenied.Error()) || strings.Contains(out, "Trace/BPT trap") {
+		t.Fatalf("image inspect worker delegation hit sandbox/grant failure:\n%s", out)
+	}
+}
+
 func setupImageListWorkerSmoke(t *testing.T, env []string, suffix string) (imageRoot, store string, grantEnv []string) {
 	t.Helper()
 	home, err := os.UserHomeDir()
@@ -768,6 +852,32 @@ func setupImageListWorkerSmoke(t *testing.T, env []string, suffix string) (image
 	store = filepath.Join(root, "bookmarks.json")
 	grantEnv = append(append([]string{}, env...), imagestore.BaseDirEnv+"="+imageRoot, securityBookmarkStoreEnv+"="+store)
 	return imageRoot, store, grantEnv
+}
+
+func setupImageInspectWorkerSmoke(t *testing.T, env []string, suffix string) (imageRoot, vmRoot string, grantEnv []string) {
+	t.Helper()
+	imageRoot, _, grantEnv = setupImageListWorkerSmoke(t, env, "inspect-"+suffix)
+	stateRoot := filepath.Dir(imageRoot)
+	vmRoot = filepath.Join(stateRoot, "vms")
+	if err := os.MkdirAll(vmRoot, 0700); err != nil {
+		t.Fatalf("create VM root: %v", err)
+	}
+	forkDir := filepath.Join(vmRoot, "forked-vm")
+	if err := os.MkdirAll(forkDir, 0700); err != nil {
+		t.Fatalf("create fork VM: %v", err)
+	}
+	if err := vmconfig.Save(forkDir, &vmconfig.Config{ParentImage: "base:v1"}); err != nil {
+		t.Fatalf("save fork VM config: %v", err)
+	}
+	otherDir := filepath.Join(vmRoot, "other-vm")
+	if err := os.MkdirAll(otherDir, 0700); err != nil {
+		t.Fatalf("create other VM: %v", err)
+	}
+	if err := vmconfig.Save(otherDir, &vmconfig.Config{ParentImage: "other:v1"}); err != nil {
+		t.Fatalf("save other VM config: %v", err)
+	}
+	grantEnv = append(grantEnv, vmconfig.StateDirEnv+"="+stateRoot)
+	return imageRoot, vmRoot, grantEnv
 }
 
 func TestAppSandboxBookmarkProbeSmoke(t *testing.T) {

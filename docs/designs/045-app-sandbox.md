@@ -154,6 +154,12 @@ Observed result:
   bookmark, reads only local `manifest.json` files under that root, and the
   opt-in `image list` path formats the returned image table. It does not pull,
   push, delete, garbage-collect, or build images.
+- `__run-worker image-inspect-preflight` and
+  `COVE_APP_SANDBOX_DELEGATE_IMAGE_INSPECT=1` prove a multi-bookmark read-only
+  worker flow. The child resolves both `dir:<images-root>` and `dir:<vm-root>`,
+  reads the selected image manifest, scans VM configs for downstream forks, and
+  returns the normal `image inspect` output shape. The default inspect path and
+  `-diff` path remain unchanged.
 - `security bookmark-probe -json` exercises the purego Foundation bookmark
   calls through the sandboxed macgo bundle. It creates an app-scoped
   security-scoped bookmark for a temp file inside the app container, resolves
@@ -377,9 +383,12 @@ work in this order:
     sandboxed worker, and `COVE_APP_SANDBOX_DELEGATE_IMAGE_LIST=1` lets
     `image list` consume and format that result without changing default image
     command behavior.
-22. Next: ask NotebookLM whether read-only cache/store metadata is still a
-    separate blocker, or whether the next high-value proof is an opt-in worker
-    handoff for a non-mutating `image inspect`.
+22. Done: add an opt-in non-mutating `image inspect` worker path. The hidden
+    `__run-worker image-inspect-preflight` handoff resolves image-root and
+    VM-root bookmarks in one sandboxed child so `image inspect` can report
+    manifest metadata and downstream forks without ambient host access.
+23. Next: ask NotebookLM for the next App Sandbox blocker after the
+    multi-bookmark inspect proof.
 
 ## Proof gates
 

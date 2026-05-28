@@ -99,6 +99,17 @@ func TestInspectImage_WithForks(t *testing.T) {
 	}
 }
 
+func TestImageInspectWorkerDelegationEnabled(t *testing.T) {
+	t.Setenv(imageInspectWorkerDelegationEnv, "")
+	if imageInspectWorkerDelegationEnabled() {
+		t.Fatal("imageInspectWorkerDelegationEnabled = true, want false")
+	}
+	t.Setenv(imageInspectWorkerDelegationEnv, "1")
+	if !imageInspectWorkerDelegationEnabled() {
+		t.Fatal("imageInspectWorkerDelegationEnabled = false, want true")
+	}
+}
+
 func TestInspectImage_NotFound(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ref, _ := ParseImageRef("ghost:1")

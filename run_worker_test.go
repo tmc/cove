@@ -252,3 +252,58 @@ func TestRunWorkerListImageRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestRunWorkerInspectImageRoots(t *testing.T) {
+	imageRoot := t.TempDir()
+	vmRoot := t.TempDir()
+	ref := imagestore.Ref{Name: "base", Tag: "v1"}
+	imageDir := filepath.Join(imageRoot, "base", "v1")
+	if err := os.MkdirAll(imageDir, 0700); err != nil {
+		t.Fatalf("mkdir image: %v", err)
+	}
+	created := time.Date(2026, 5, 27, 1, 2, 3, 0, time.UTC)
+	if err := imagestore.WriteManifest(imageDir, &imagestore.Manifest{
+		SchemaVersion: 1,
+		Name:          ref.Name,
+		Tag:           ref.Tag,
+		SourceVM:      "source",
+		DiskSize:      123,
+		DiskSHA256:    strings.Repeat("a", 64),
+		CreatedAt:     created,
+	}); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(imageDir, "hw.model"), []byte("hardware"), 0600); err != nil {
+		t.Fatalf("write hw.model: %v", err)
+	}
+	for _, name := range []string{"fork-b", "fork-a"} {
+		dir := filepath.Join(vmRoot, name)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatalf("mkdir VM: %v", err)
+		}
+		if err := vmconfig.Save(dir, &vmconfig.Config{ParentImage: ref.String()}); err != nil {
+			t.Fatalf("save VM config: %v", err)
+		}
+	}
+	other := filepath.Join(vmRoot, "other")
+	if err := os.MkdirAll(other, 0700); err != nil {
+		t.Fatalf("mkdir other VM: %v", err)
+	}
+	if err := vmconfig.Save(other, &vmconfig.Config{ParentImage: "other:v1"}); err != nil {
+		t.Fatalf("save other VM config: %v", err)
+	}
+
+	out, err := runWorkerInspectImageRoots(ref, imageRoot, vmRoot)
+	if err != nil {
+		t.Fatalf("runWorkerInspectImageRoots: %v", err)
+	}
+	if out.Ref != ref.String() || out.DiskSize != 123 || out.Created != created.Format(time.RFC3339) {
+		t.Fatalf("inspect output = %+v", out)
+	}
+	if out.ForkCount != 2 || strings.Join(out.Forks, ",") != "fork-a,fork-b" {
+		t.Fatalf("forks = %v count=%d, want fork-a,fork-b", out.Forks, out.ForkCount)
+	}
+	if out.MachineModelID == "" {
+		t.Fatalf("MachineModelID is empty: %+v", out)
+	}
+}
