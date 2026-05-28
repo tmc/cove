@@ -387,8 +387,15 @@ work in this order:
     `__run-worker image-inspect-preflight` handoff resolves image-root and
     VM-root bookmarks in one sandboxed child so `image inspect` can report
     manifest metadata and downstream forks without ambient host access.
-23. Next: ask NotebookLM for the next App Sandbox blocker after the
-    multi-bookmark inspect proof.
+23. Done: run the completion audit after the multi-bookmark inspect proof. The
+    audit is recorded in `docs/designs/045-app-sandbox-proof-audit.md` and
+    freezes the non-mutating proof lane on Architecture C: an unsandboxed CLI
+    coordinator launches sandboxed run-worker children for sandbox-sensitive
+    command execution.
+24. Next: start a separate design for mutating VM lifecycle under App Sandbox
+    before changing `run`, `install`, `up`, provisioning, helper installation,
+    shared-folder mutation, or disk resizing from fail-closed denial to
+    sandboxed execution.
 
 ## Proof gates
 
