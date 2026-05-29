@@ -33,6 +33,8 @@ func main() {
 	configPath := flag.String("config", coved.DefaultConfigPath(), "config file path")
 	showVersion := flag.Bool("version", false, "print version information")
 	storagePollInterval := flag.Duration("storage-poll-interval", defaultStoragePollInterval(), "storage budget poll interval (0 disables)")
+	fleetURL := flag.String("fleet-url", os.Getenv("COVE_FLEET_URL"), "dial-out fleet controller URL (empty disables worker mode)")
+	fleetToken := flag.String("fleet-token", os.Getenv("COVE_FLEET_TOKEN"), "fleet controller register token")
 	flag.Parse()
 
 	info := buildversion.Resolve(version, commit, date)
@@ -115,6 +117,14 @@ func main() {
 	})
 	d.lifecycle = lifecycle
 	go lifecycle.Run(ctx)
+	if *fleetURL != "" {
+		startWorker(ctx, *fleetURL, *fleetToken, logger, &coved.BoundedHandler{
+			VMRoot:    d.vmRoot,
+			Logger:    logger,
+			Lifecycle: lifecycle,
+			ImageGC:   gc,
+		})
+	}
 	metricsHandler := coved.PrometheusHandler(d.prometheusSnapshot)
 	if cfg.Daemon.MetricsAddr != "" {
 		startHTTPServer(ctx, cfg.Daemon.MetricsAddr, metricsHandler, "metrics")
@@ -146,6 +156,29 @@ func startHTTPServer(ctx context.Context, addr string, handler http.Handler, nam
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
+}
+
+// startWorker launches coved's dial-out fleet worker. Worker mode is MIT: it
+// only performs bounded VM-lifecycle, image-sync, policy, and image-gc
+// assignments and refuses any arbitrary host-shell request. The handler reuses
+// the daemon's lifecycle enforcer and image-gc scheduler so pushed policy and GC
+// run through the same machinery as local enforcement.
+func startWorker(ctx context.Context, url, token string, logger *slog.Logger, handler coved.AssignmentHandler) {
+	worker, err := coved.NewWorker(coved.WorkerConfig{
+		ControllerURL: url,
+		Token:         token,
+		Handler:       handler,
+	})
+	if err != nil {
+		logger.Error("fleet worker init", slog.Any("err", err))
+		return
+	}
+	go func() {
+		if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
+			logger.Error("fleet worker", slog.Any("err", err))
+		}
+	}()
+	logger.Info("fleet worker dialing controller", slog.String("url", url))
 }
 
 func defaultStoragePollInterval() time.Duration {
