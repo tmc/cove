@@ -258,6 +258,19 @@ trademark/brand + public/private decisions before any *public* leaderboard.
 | Slice 6 — leaderboard + human-verified tier + contamination controls | maybe | design | M | Slice 5, privacy gate | [047](047-gui-agent-benchmark-harness.md) §6, §11 | Versioned corpus, egress lockdown, maintainer-run verified tier so numbers aren't dismissed as vendor self-reports. PUBLIC publication brand-gated. |
 | Slice 7 — reusable-harness packaging (the wedge) | maybe | design | M | Slice 6 | [047](047-gui-agent-benchmark-harness.md) §9 | Stable schema spec + provider interface so third parties run their own macOS corpus on cove. |
 
+Three additions below were folded in after a NotebookLM pressure-test of the
+**trycua/cua** eval surface (cua-bench + HUD/OSWorld + ScreenSpot) against 047,
+recorded in [047](047-gui-agent-benchmark-harness.md) §16. They each reinforce
+the macOS-native wedge rather than chase parity; the bulk of trycua's surface
+(RL dataloader, web-themed simulated desktop, universal cross-OS spec, composed
+planning+grounding) was deliberately **skipped** as wedge-diluting.
+
+| Item | Priority | Status | Size | Depends on | Source | Why |
+|---|---|---|---|---|---|---|
+| Slice 4b — oracle-trajectory export (HF-schema) from the self-check | maybe | design | S | Slice 4 | [047](047-gui-agent-benchmark-harness.md) §16 | Slice 4 already authors known-good solutions and the run bundle already captures screenshots+actions+events; emitting a HuggingFace-schema trajectory is near-zero marginal cost and yields a **native-macOS UI-grounding dataset no competitor has** (none run real macOS at scale). trycua reuses one `@solve_task` for both self-check and training export. |
+| Slice 6b — "verified-rigor" leaderboard metadata (the brand play) | maybe | design | S | Slice 6 | [047](047-gui-agent-benchmark-harness.md) §16 | Publish per-task isolation (RAM-overlay fork), egress-lockdown status, privilege tier (A/B/C), and flush-discipline (cfprefsd/WAL) as first-class leaderboard columns. trycua is **silent** on all four; this weaponizes verifier rigor the way OSWorld-Verified made "300+ fixes" its brand. |
+| Slice 8 — local interactive trace viewer (runs UX) | maybe | design | M | run bundles (shipped) | [047](047-gui-agent-benchmark-harness.md) §16 | cove already dumps `events.jsonl`/`metrics.jsonl`/screenshots/OCR to `~/.vz/runs/<id>/` but it's hostile to a human debugging a failed task. A local HTML timeline (`cove runs show`, merging the Slice-4 `examine` tool) closes trycua's "agent-facing product clarity" lead with **no cloud dependency**. Not benchmark-gated; useful for all agent-sandbox runs. |
+
 ## v0.3 implementation slices
 
 The next implementation branches should stay directly based on `origin/main`
