@@ -198,7 +198,7 @@ states.
 ```bash
 brew upgrade cove
 # or
-go install github.com/tmc/cove@v0.2.1
+go install github.com/tmc/cove/cmd/cove@v0.2.1
 # or
 nix run github:tmc/vz-macos
 ```
@@ -206,7 +206,7 @@ nix run github:tmc/vz-macos
 Build from source:
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
@@ -291,4 +291,4 @@ architecture).
 - Tag points at commit: dd5f58fcaf39d12186e58bd2d517a44eed73088a
 - Binary: cove (darwin/arm64)
 - SHA256: d5896de5889ac38c4fdfc840747c1d107d5cc786c8389ed67cd804c38d4ee002
-- Build command: `go build -o cove ./`, then codesign per `internal/autosign/vz.entitlements`
+- Build command: `go build -o cove ./cmd/cove`, then codesign per `internal/autosign/vz.entitlements`

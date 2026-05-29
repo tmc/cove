@@ -4,7 +4,7 @@ This example installs Ubuntu Desktop with the Desktop ISO/OEM path, boots the
 installed VM, and opens the GUI.
 
 ```sh
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 
 ./cove -vm linux-gui-debug -display 1280x720 up -linux -desktop -user debug -gui

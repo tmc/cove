@@ -10,7 +10,7 @@ VM: ubuntu-gh-runner-headed
 Command:
 
 ```sh
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 

@@ -12,7 +12,7 @@ has `cove` installed and signed.
 1. Install and sign `cove` on the Mac:
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 

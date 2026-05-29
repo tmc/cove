@@ -66,7 +66,7 @@ trusted Apple Silicon runner host:
 ```bash
 git clone git@github.com:tmc/cove.git
 cd cove
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 

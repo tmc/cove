@@ -11,7 +11,7 @@ Launch cove for manual black-screen classification during git bisect.
 The script:
 - forces a cold start by deleting saved suspend state files
 - refuses to run if the VM control socket is active
-- launches through `go run .`, which keeps macgo in the path
+- launches through `go run ./cmd/cove`, which keeps macgo in the path
 - prompts on /dev/tty for good/bad/skip after the app exits
 
 Exit codes are suitable for `git bisect run`:
@@ -158,7 +158,7 @@ rm -f \
 	"$vm_dir/suspend.vmstate" \
 	"$vm_dir/suspend.config.json"
 
-cmd=(go run .)
+cmd=(go run ./cmd/cove)
 case "$mode" in
 run)
 	# Use the direct run path so the bisect isolates display startup instead

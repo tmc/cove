@@ -18,7 +18,7 @@ DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 mkdir -p "$OUT" dist/Casks
 
-GOWORK=off go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE" -o "$BIN" .
+GOWORK=off go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE" -o "$BIN" ./cmd/cove
 codesign -s - -f --entitlements "$ENTITLEMENTS" "$BIN"
 codesign --verify --strict --verbose=2 "$BIN"
 

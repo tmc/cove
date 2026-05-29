@@ -57,7 +57,7 @@ Fresh after-change command:
 The binary was rebuilt and re-signed before the run:
 
 ```
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
@@ -113,7 +113,7 @@ Run this when a host VM slot is free:
 Before the run, rebuild and re-sign:
 
 ```sh
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
@@ -185,6 +185,6 @@ command line, guest-visible device name, and whether `sync=full` or
 Rebuild and re-sign before each run:
 
 ```sh
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```

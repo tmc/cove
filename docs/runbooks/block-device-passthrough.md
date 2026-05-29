@@ -9,7 +9,7 @@ data you need.
 Build and install a fresh helper from the same cove binary you will run:
 
 ```
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 sudo ./cove helper install
 ```

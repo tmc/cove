@@ -12,7 +12,7 @@ Dirty worktree note: pre-existing edits in `agent_control.go`,
 Built and signed a throwaway binary:
 
 ```
-go build -o /tmp/cove-r107 .
+go build -o /tmp/cove-r107 ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements /tmp/cove-r107
 ```
 

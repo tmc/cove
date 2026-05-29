@@ -13,7 +13,7 @@ base VM or local image and throw the child away.
 Install cove, create a base VM, and verify the control plane:
 
 ```bash
-go install github.com/tmc/cove@latest
+go install github.com/tmc/cove/cmd/cove@latest
 cove up -vm macos-base -user agent
 cove ctl -vm macos-base -wait 120s agent-ping
 cove ctl -vm macos-base screenshot -o /tmp/macos-base.png

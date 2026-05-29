@@ -104,5 +104,5 @@ per release; cask bumps are manual.
 ```bash
 brew upgrade cove           # via Homebrew tap (cask updated post-release)
 # or
-go install github.com/tmc/cove@v0.1.3
+go install github.com/tmc/cove/cmd/cove@v0.1.3
 ```

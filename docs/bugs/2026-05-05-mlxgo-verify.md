@@ -24,7 +24,7 @@ is already `root:wheel`.
 ## Local build gate
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 go test ./...
 ```

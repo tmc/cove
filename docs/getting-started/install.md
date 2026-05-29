@@ -15,7 +15,7 @@ title: Installation
 Install from source for now:
 
 ```bash
-go install github.com/tmc/cove@latest
+go install github.com/tmc/cove/cmd/cove@latest
 ```
 
 Make sure `$GOPATH/bin` or `$HOME/go/bin` is on `PATH`, then verify the
@@ -122,7 +122,7 @@ optional VM-specific doctor/control diagnostics.
 For source builds:
 
 ```bash
-go install github.com/tmc/cove@latest
+go install github.com/tmc/cove/cmd/cove@latest
 cove doctor host
 cove helper status
 ```

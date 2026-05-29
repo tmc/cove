@@ -16,7 +16,7 @@ Built and signed the test binary:
 
 ```
 go build ./...
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 go test ./...
 ```

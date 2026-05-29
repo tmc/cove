@@ -226,4 +226,4 @@ gated by the repo/privacy decision.
 - Tag points at commit: dd5f58fcaf39d12186e58bd2d517a44eed73088a
 - Binary: cove (darwin/arm64)
 - SHA256: 2e0f6a3adbca8f01b96e4c147924da829bbe0c1e4a39e89abcee16d96ec8db93
-- Build command: `go build -o cove ./`, then codesign per `internal/autosign/vz.entitlements`
+- Build command: `go build -o cove ./cmd/cove`, then codesign per `internal/autosign/vz.entitlements`

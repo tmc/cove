@@ -26,8 +26,8 @@ Commands that continued to work against the same running VM:
 
 Current workaround:
 
-- `VZMAC_NO_MACGO=1 go run . ctl ...`
-- `VZMAC_NO_MACGO=1 go run . vzscript run ...`
+- `VZMAC_NO_MACGO=1 go run ./cmd/cove ctl ...`
+- `VZMAC_NO_MACGO=1 go run ./cmd/cove vzscript run ...`
 
 Notes:
 
@@ -42,7 +42,7 @@ Notes:
 Next checks:
 
 - capture stderr and exit metadata for each killed helper path
-- compare `./cove ctl ...` against `go run . ctl ...` under the same VM
+- compare `./cove ctl ...` against `go run ./cmd/cove ctl ...` under the same VM
 - isolate `macgo` setup for non-UI helper commands
 - test whether the kill is tied to autosign, bundle startup, or process-group
   cleanup

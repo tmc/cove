@@ -6,7 +6,7 @@ Date: 2026-05-05
 
 ```bash
 go test ./...
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 

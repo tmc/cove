@@ -183,7 +183,7 @@ follow-up.
 `hdiutil` and `ln`. Dry-run before the real cut:
 
 ```bash
-GOWORK=off go build -o /tmp/cove .
+GOWORK=off go build -o /tmp/cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements /tmp/cove
 ./scripts/build-dmg.sh /tmp/cove 0.1.4-dryrun /tmp/cove-dryrun.dmg
 hdiutil verify /tmp/cove-dryrun.dmg

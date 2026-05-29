@@ -128,7 +128,7 @@ sandbox substrate:
 ```bash
 brew upgrade cove
 # or
-go install github.com/tmc/cove@v0.3.0
+go install github.com/tmc/cove/cmd/cove@v0.3.0
 # or
 nix run github:tmc/vz-macos
 ```
@@ -136,7 +136,7 @@ nix run github:tmc/vz-macos
 Build from source:
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 
