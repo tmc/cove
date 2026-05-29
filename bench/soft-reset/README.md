@@ -14,7 +14,7 @@ The default `soft-reset` profile is the six-concern matrix from
 `docs/designs/014-roadmap-update-post-v0.1.md` and the planner Gap 1 artifact.
 
 ```bash
-go run ./cmd/soft-reset-matrix \
+go run ./bench/soft-reset/matrix \
   -vm soft-reset-eval-001 \
   -host "$(sw_vers -productVersion) $(sysctl -n machdep.cpu.brand_string)" \
   -out bench/soft-reset/matrix-$(date +%Y%m%d).md
@@ -24,7 +24,7 @@ The roadmap handoff also calls out a host-boundary checklist. Render it with
 `-profile boundary`:
 
 ```bash
-go run ./cmd/soft-reset-matrix \
+go run ./bench/soft-reset/matrix \
   -profile boundary \
   -vm boundary-eval-001 \
   -host "$(sw_vers -productVersion) $(sysctl -n machdep.cpu.brand_string)" \
@@ -36,7 +36,7 @@ go run ./cmd/soft-reset-matrix \
 Each concern is recorded as `pass`, `fail`, `limit`, or `pending`:
 
 ```bash
-go run ./cmd/soft-reset-matrix \
+go run ./bench/soft-reset/matrix \
   -vm soft-reset-eval-001 \
   -result tcc=fail:"Screen Recording grant visible to replacement user" \
   -result keychain=limit:"System trust store is global by design" \
