@@ -1,0 +1,29 @@
+{
+  "id": "calendar-delete-integrity",
+  "image": "macos-base:v1",
+  "domain": "Calendar",
+  "instruction": "Open Calendar and delete the event titled {TARGET} from the Work calendar. Leave every other event on that calendar untouched.",
+  "source": "cove-original (design 047 §5 before/after integrity); AndroidWorld validate_rows_removal_integrity over the Work calendar's event summaries — deleting all events scores 0",
+  "complexity": 4,
+  "schema": [
+    {"name": "TARGET", "pool": ["Cancelled call", "Old review", "Postponed demo", "Stale sync"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Calendar\"' -e 'if not (exists calendar \"Work\") then make new calendar with properties {name:\"Work\"}' -e 'tell calendar \"Work\" to delete every event' -e 'set d to (current date)' -e 'repeat with n in {\"Standup\", \"Retro\", \"{TARGET}\"}' -e 'tell calendar \"Work\" to make new event with properties {summary:(contents of n), start date:d, end date:d, allday event:true}' -e 'end repeat' -e 'end tell' 2>/dev/null || true; mkdir -p \"$HOME/.guibench\"; osascript -e 'set s to summary of every event of calendar \"Work\" of application \"Calendar\"' -e 'set AppleScript'\\''s text item delimiters to linefeed' -e 'return (s as text)' 2>/dev/null > \"$HOME/.guibench/calendar.before\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Calendar\" to tell calendar \"Work\" to delete (every event whose summary is \"{TARGET}\")' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "rows_removed_integrity",
+    "result": {
+      "kind": "applescript",
+      "script": "set s to {} \n tell application \"Calendar\" to set s to summary of every event of calendar \"Work\" \n set AppleScript's text item delimiters to linefeed \n return (s as text)"
+    },
+    "expected": {
+      "kind": "file",
+      "path": "/Users/tmc/.guibench/calendar.before"
+    },
+    "options": {"target": "{TARGET}"}
+  }
+}

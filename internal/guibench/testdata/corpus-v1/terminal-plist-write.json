@@ -1,0 +1,24 @@
+{
+  "id": "terminal-plist-write",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, write the string value {VALUE} for key {KEY} in the preference domain com.guibench.demo.",
+  "source": "cove-original (design 047 §7 cfprefsd flush); Tier-A defaults getter reads the live value after a cfprefsd flush",
+  "complexity": 2,
+  "schema": [
+    {"name": "KEY", "pool": ["theme", "mode", "layout"]},
+    {"name": "VALUE", "pool": ["compact", "expanded", "grid"]},
+    {"name": "BASELINE", "expected_from": "VALUE", "derive": {"compact": "expanded", "expanded": "grid", "grid": "compact"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "defaults write com.guibench.demo {KEY} -string {BASELINE}; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "defaults write com.guibench.demo {KEY} -string {VALUE}; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "plist_equals",
+    "result": {"kind": "defaults", "domain": "com.guibench.demo", "key": "{KEY}"},
+    "options": {"expected": "{VALUE}"}
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "settings-natural-scroll",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "In System Settings under Trackpad, turn natural scrolling {STATE}.",
+  "source": "cove-original (design 047 §7); Tier-A defaults boolean (NSGlobalDomain com.apple.swipescrolldirection)",
+  "complexity": 2,
+  "schema": [
+    {"name": "STATE", "pool": ["on", "off"]},
+    {"name": "EXPECTED", "expected_from": "STATE", "derive": {"on": "1", "off": "0"}},
+    {"name": "BASELINE", "expected_from": "STATE", "derive": {"on": "false", "off": "true"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "defaults write -g com.apple.swipescrolldirection -bool {BASELINE}; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "if [ {STATE} = on ]; then defaults write -g com.apple.swipescrolldirection -bool true; else defaults write -g com.apple.swipescrolldirection -bool false; fi; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "plist_equals",
+    "result": {"kind": "defaults", "domain": "-g", "key": "com.apple.swipescrolldirection"},
+    "options": {"expected": "{EXPECTED}"}
+  }
+}

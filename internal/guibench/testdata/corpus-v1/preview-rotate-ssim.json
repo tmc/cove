@@ -1,0 +1,29 @@
+{
+  "id": "preview-rotate-ssim",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "Open ~/Pictures/photo.png in Preview, rotate it {DEGREES} degrees clockwise, and save it to ~/Pictures/rotated.png.",
+  "source": "cove-original (design 047 §5 image fidelity); verified with image_similar (thresholded MSE) so the Preview re-encode + EXIF rewrite that breaks hash_equals still matches the gold, the macOS analogue of OSWorld gimp.py structure_check",
+  "complexity": 3,
+  "schema": [
+    {"name": "DEGREES", "pool": ["90", "180", "270"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Pictures\"; printf 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGElEQVR4nGO4IycHR0jMOwxUlEDm0EgCAEKdRgHZX5G5AAAAAElFTkSuQmCC' | base64 --decode > \"$HOME/Pictures/photo.png\"; sips -r {DEGREES} \"$HOME/Pictures/photo.png\" --out \"$HOME/Pictures/gold.png\" >/dev/null 2>&1; cp \"$HOME/Pictures/photo.png\" \"$HOME/Pictures/rotated.png\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sips -r {DEGREES} \"$HOME/Pictures/photo.png\" --out \"$HOME/Pictures/rotated.png\" >/dev/null 2>&1"]}
+  ],
+  "evaluator": {
+    "func": "image_similar",
+    "result": {
+      "kind": "file",
+      "path": "/Users/tmc/Pictures/rotated.png"
+    },
+    "expected": {
+      "kind": "file",
+      "path": "/Users/tmc/Pictures/gold.png"
+    },
+    "options": {"tolerance": 0.02}
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "preview-flip-ssim",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "Open ~/Pictures/photo.png in Preview, flip it {DIRECTION}, and save the result to ~/Pictures/flipped.png.",
+  "source": "cove-original (design 047 §5 image fidelity); image_similar tolerates the Preview re-encode so a correct horizontal/vertical flip matches the gold despite recompression",
+  "complexity": 3,
+  "schema": [
+    {"name": "DIRECTION", "pool": ["horizontally", "vertically"]},
+    {"name": "AXIS", "expected_from": "DIRECTION", "derive": {"horizontally": "horizontal", "vertically": "vertical"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Pictures\"; printf 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGElEQVR4nGO4IycHR0jMOwxUlEDm0EgCAEKdRgHZX5G5AAAAAElFTkSuQmCC' | base64 --decode > \"$HOME/Pictures/photo.png\"; sips -f {AXIS} \"$HOME/Pictures/photo.png\" --out \"$HOME/Pictures/gold.png\" >/dev/null 2>&1; cp \"$HOME/Pictures/photo.png\" \"$HOME/Pictures/flipped.png\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sips -f {AXIS} \"$HOME/Pictures/photo.png\" --out \"$HOME/Pictures/flipped.png\" >/dev/null 2>&1"]}
+  ],
+  "evaluator": {
+    "func": "image_similar",
+    "result": {
+      "kind": "file",
+      "path": "/Users/tmc/Pictures/flipped.png"
+    },
+    "expected": {
+      "kind": "file",
+      "path": "/Users/tmc/Pictures/gold.png"
+    },
+    "options": {"tolerance": 0.02}
+  }
+}

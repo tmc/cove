@@ -1,0 +1,25 @@
+{
+  "id": "calendar-create-event",
+  "image": "macos-base:v1",
+  "domain": "Calendar",
+  "instruction": "Open Calendar and create an all-day event titled {EVENT} on the calendar named Work for next Monday.",
+  "source": "cove-original (design 047 §10 Calendar template); Tier-C AppleScript reads the event summary back from the Work calendar",
+  "complexity": 4,
+  "schema": [
+    {"name": "EVENT", "pool": ["Sprint review", "Team offsite", "Budget sync", "Onboarding"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Calendar\"' -e 'if not (exists calendar \"Work\") then make new calendar with properties {name:\"Work\"}' -e 'tell calendar \"Work\" to delete (every event whose summary is \"{EVENT}\")' -e 'end tell' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'set d to (current date)' -e 'tell application \"Calendar\" to tell calendar \"Work\" to make new event with properties {summary:\"{EVENT}\", start date:d, end date:d, allday event:true}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "applescript",
+      "script": "set s to {} \n tell application \"Calendar\" to set s to summary of every event of calendar \"Work\" \n set AppleScript's text item delimiters to linefeed \n return (s as text)"
+    },
+    "options": {"expected": "{EVENT}"}
+  }
+}

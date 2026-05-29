@@ -1,0 +1,26 @@
+{
+  "id": "finder-set-comment",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, set the Spotlight comment of ~/Documents/{FILE} to {COMMENT}.",
+  "source": "cove-original (design 047 §5); Tier-C AppleScript reads the Finder comment back",
+  "complexity": 3,
+  "schema": [
+    {"name": "FILE", "pool": ["draft.txt", "memo.txt", "spec.txt"]},
+    {"name": "COMMENT", "pool": ["needs review", "approved", "final version"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Documents\"; : > \"$HOME/Documents/{FILE}\"; osascript -e 'on run argv' -e 'tell application \"Finder\" to set comment of (POSIX file (item 1 of argv) as alias) to \"\"' -e 'end run' \"$HOME/Documents/{FILE}\" 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'on run argv' -e 'tell application \"Finder\" to set comment of (POSIX file (item 1 of argv) as alias) to (item 2 of argv)' -e 'end run' \"$HOME/Documents/{FILE}\" \"{COMMENT}\" 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "fuzzy_match",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Finder\" to return comment of (POSIX file \"/Users/tmc/Documents/{FILE}\" as alias)"
+    },
+    "options": {"expected": "{COMMENT}"}
+  }
+}

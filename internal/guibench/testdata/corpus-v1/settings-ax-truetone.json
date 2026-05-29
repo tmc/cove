@@ -1,0 +1,28 @@
+{
+  "id": "settings-ax-truetone",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "Open System Settings, go to Displays, and turn the True Tone switch {STATE}.",
+  "source": "cove-original (design 047 §5 AX-tree, §7); the True Tone switch is verified from the live AX checkbox value rather than a plist read prone to cfprefsd flush lag",
+  "complexity": 3,
+  "schema": [
+    {"name": "STATE", "pool": ["on", "off"]},
+    {"name": "WANT", "expected_from": "STATE", "derive": {"on": "1", "off": "0"}},
+    {"name": "BASELINE", "expected_from": "STATE", "derive": {"on": "0", "off": "1"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "defaults write com.apple.CoreBrightness TrueToneEnabled -int {BASELINE}; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "defaults write com.apple.CoreBrightness TrueToneEnabled -int {WANT}; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "accessibility_match",
+    "result": {
+      "kind": "accessibility",
+      "app": "System Settings",
+      "dump": true
+    },
+    "options": {"role": "AXCheckBox", "title": "True Tone", "value": "{WANT}"}
+  }
+}

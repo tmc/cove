@@ -1,0 +1,25 @@
+{
+  "id": "textedit-create-rtf",
+  "image": "macos-base:v1",
+  "domain": "TextEdit",
+  "instruction": "Open TextEdit and create a document at ~/Documents/note.rtf containing the text {BODY}.",
+  "source": "cove-original (intent-port of a LibreOffice-Writer doc task to TextEdit, design 047 §3 adapter rule); Tier-A exec reads the RTF text via textutil",
+  "complexity": 3,
+  "schema": [
+    {"name": "BODY", "pool": ["hello world", "draft proposal", "shopping list", "weekly summary"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Documents\"; printf 'placeholder' > \"$HOME/Documents/note.txt\"; textutil -convert rtf \"$HOME/Documents/note.txt\" -output \"$HOME/Documents/note.rtf\" 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "printf '%s' '{BODY}' > \"$HOME/Documents/note.txt\"; textutil -convert rtf \"$HOME/Documents/note.txt\" -output \"$HOME/Documents/note.rtf\" 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "textutil -convert txt -stdout \"$HOME/Documents/note.rtf\" 2>/dev/null"]
+    },
+    "options": {"expected": "{BODY}"}
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "terminal-chmod-bits",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, set the permission bits of ~/bin/{SCRIPT} to {MODE}.",
+  "source": "cove-original (design 047 §5); Tier-A exec reads the octal mode via stat",
+  "complexity": 2,
+  "schema": [
+    {"name": "SCRIPT", "pool": ["run.sh", "build.sh", "deploy.sh"]},
+    {"name": "MODE", "pool": ["755", "700", "644"]},
+    {"name": "BASELINE", "expected_from": "MODE", "derive": {"755": "600", "700": "644", "644": "755"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/bin\"; : > \"$HOME/bin/{SCRIPT}\"; chmod {BASELINE} \"$HOME/bin/{SCRIPT}\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "chmod {MODE} \"$HOME/bin/{SCRIPT}\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "stat -f '%Lp' \"$HOME/bin/{SCRIPT}\""]
+    },
+    "options": {"expected": "{MODE}"}
+  }
+}

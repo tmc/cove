@@ -1,0 +1,26 @@
+{
+  "id": "mail-create-draft",
+  "image": "macos-base:v1",
+  "domain": "Mail",
+  "instruction": "Open Mail and create a new draft message with the subject {SUBJECT} addressed to {TO}.",
+  "source": "cove-original (intent-port of Thunderbird compose to Apple Mail, design 047 §3 adapter rule); Tier-C AppleScript reads the draft subject back",
+  "complexity": 4,
+  "schema": [
+    {"name": "SUBJECT", "pool": ["Quarterly update", "Lunch plans", "Project kickoff", "Bug report"]},
+    {"name": "TO", "pool": ["alex@example.com", "sam@example.org", "jordan@example.net"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Mail\" to delete (every message of drafts mailbox whose subject is \"{SUBJECT}\")' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Mail\"' -e 'set m to make new outgoing message with properties {subject:\"{SUBJECT}\", content:\"draft\", visible:false}' -e 'tell m to make new to recipient with properties {address:\"{TO}\"}' -e 'save m' -e 'end tell' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "applescript",
+      "script": "set s to {} \n tell application \"Mail\" to set s to subject of every message of drafts mailbox \n set AppleScript's text item delimiters to linefeed \n return (s as text)"
+    },
+    "options": {"expected": "{SUBJECT}"}
+  }
+}

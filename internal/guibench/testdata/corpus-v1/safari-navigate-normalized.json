@@ -1,0 +1,26 @@
+{
+  "id": "safari-navigate-normalized",
+  "image": "macos-base:v1",
+  "domain": "Safari",
+  "instruction": "Open Safari and navigate to the {SITE} homepage.",
+  "source": "cove-original (design 047 §5 URL fidelity); url_match_normalized strips the tracking/session query Safari may append, the macOS analogue of OSWorld is_expected_active_tab_approximate",
+  "complexity": 2,
+  "schema": [
+    {"name": "SITE", "pool": ["Wikipedia", "IANA", "Example"]},
+    {"name": "URL", "expected_from": "SITE", "derive": {"Wikipedia": "https://www.wikipedia.org/", "IANA": "https://www.iana.org/", "Example": "https://example.org/"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Safari\" to quit' 2>/dev/null || true; sleep 1; osascript -e 'tell application \"Safari\" to make new document with properties {URL:\"https://www.cove.invalid/start\"}' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Safari\" to set URL of front document to \"{URL}\"' -e 'delay 1' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "url_match_normalized",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Safari\" to return URL of front document"
+    },
+    "options": {"expected": "{URL}"}
+  }
+}

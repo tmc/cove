@@ -1,0 +1,29 @@
+{
+  "id": "calculator-ax-result",
+  "image": "macos-base:v1",
+  "domain": "Calculator",
+  "instruction": "Open Calculator and compute {A} plus {B}.",
+  "source": "cove-original (design 047 §5 AX-tree scalar read); the result is read from the live Calculator display via its AX value, the canonical synchronous probe (no async plist)",
+  "complexity": 2,
+  "schema": [
+    {"name": "PAIR", "pool": ["12+5", "20+8", "33+11", "47+26"]},
+    {"name": "A", "expected_from": "PAIR", "derive": {"12+5": "12", "20+8": "20", "33+11": "33", "47+26": "47"}},
+    {"name": "B", "expected_from": "PAIR", "derive": {"12+5": "5", "20+8": "8", "33+11": "11", "47+26": "26"}},
+    {"name": "SUM", "expected_from": "PAIR", "derive": {"12+5": "17", "20+8": "28", "33+11": "44", "47+26": "73"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Calculator\" to quit' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "open -a Calculator; sleep 1; osascript -e 'tell application \"System Events\" to keystroke \"{A}+{B}=\"' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "accessibility_match",
+    "result": {
+      "kind": "accessibility",
+      "app": "Calculator",
+      "attr": "value of static text 1 of group 1"
+    },
+    "options": {"value": "{SUM}", "exact": false}
+  }
+}

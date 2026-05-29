@@ -1,0 +1,20 @@
+{
+  "id": "preview-grayscale-ssim",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "Open ~/Pictures/color.png in Preview, convert it to grayscale, and save it to ~/Pictures/gray.png.",
+  "source": "cove-original (design 047 §5 image fidelity); a color source vs a grayscale gold always differ, so image_similar cleanly separates a correct convert from a no-op despite the Preview re-encode",
+  "complexity": 3,
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Pictures\"; printf 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGElEQVR4nGO4IycHR0jMOwxUlEDm0EgCAEKdRgHZX5G5AAAAAElFTkSuQmCC' | base64 --decode > \"$HOME/Pictures/color.png\"; sips -s format png -m '/System/Library/ColorSync/Profiles/Generic Gray Profile.icc' \"$HOME/Pictures/color.png\" --out \"$HOME/Pictures/gold.png\" >/dev/null 2>&1; cp \"$HOME/Pictures/color.png\" \"$HOME/Pictures/gray.png\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sips -s format png -m '/System/Library/ColorSync/Profiles/Generic Gray Profile.icc' \"$HOME/Pictures/color.png\" --out \"$HOME/Pictures/gray.png\" >/dev/null 2>&1"]}
+  ],
+  "evaluator": {
+    "func": "image_similar",
+    "result": {"kind": "file", "path": "/Users/tmc/Pictures/gray.png"},
+    "expected": {"kind": "file", "path": "/Users/tmc/Pictures/gold.png"},
+    "options": {"tolerance": 0.02}
+  }
+}

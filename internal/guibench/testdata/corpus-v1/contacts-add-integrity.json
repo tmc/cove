@@ -1,0 +1,26 @@
+{
+  "id": "contacts-add-integrity",
+  "image": "macos-base:v1",
+  "domain": "Contacts",
+  "instruction": "Open Contacts and add a new contact named {TARGET}. Do not modify any existing contact.",
+  "source": "cove-original (design 047 §5 before/after integrity); validate_rows_addition_integrity over the contact name set — wiping the address book then adding only the target scores 0",
+  "complexity": 4,
+  "schema": [
+    {"name": "TARGET", "pool": ["Marie Curie", "Niels Bohr", "Rosalind Franklin", "Carl Sagan"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Contacts\" to delete (every person whose name is \"{TARGET}\")' -e 'tell application \"Contacts\" to save' 2>/dev/null || true; mkdir -p \"$HOME/.guibench\"; osascript -e 'set s to name of every person of application \"Contacts\"' -e 'set AppleScript'\\''s text item delimiters to linefeed' -e 'return (s as text)' 2>/dev/null | sort > \"$HOME/.guibench/contacts.before\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Contacts\" to make new person with properties {first name:(word 1 of \"{TARGET}\"), last name:(word 2 of \"{TARGET}\")}' -e 'tell application \"Contacts\" to save' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "rows_added_integrity",
+    "result": {
+      "kind": "applescript",
+      "script": "set s to {} \n tell application \"Contacts\" to set s to name of every person \n set AppleScript's text item delimiters to linefeed \n return (s as text)"
+    },
+    "expected": {"kind": "file", "path": "/Users/tmc/.guibench/contacts.before"},
+    "options": {"target": "{TARGET}"}
+  }
+}

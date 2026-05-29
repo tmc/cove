@@ -1,0 +1,26 @@
+{
+  "id": "finder-tag-file",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, add the {TAG} tag to the file ~/Documents/{FILE}.",
+  "source": "cove-original (design 047 §5); Tier-A exec reads the file's Finder tag via the com.apple.metadata:_kMDItemUserTags extended attribute",
+  "complexity": 3,
+  "schema": [
+    {"name": "FILE", "pool": ["report.txt", "notes.txt", "budget.txt"]},
+    {"name": "TAG", "pool": ["Red", "Green", "Important"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Documents\"; : > \"$HOME/Documents/{FILE}\"; xattr -d com.apple.metadata:_kMDItemUserTags \"$HOME/Documents/{FILE}\" 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'on run argv' -e 'tell application \"Finder\" to set the tag names of (POSIX file (item 1 of argv) as alias) to {item 2 of argv}' -e 'end run' \"$HOME/Documents/{FILE}\" \"{TAG}\" 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "xattr -p com.apple.metadata:_kMDItemUserTags \"$HOME/Documents/{FILE}\" 2>/dev/null | xxd -r -p 2>/dev/null | plutil -convert json -o - - 2>/dev/null || echo none"]
+    },
+    "options": {"expected": "{TAG}"}
+  }
+}

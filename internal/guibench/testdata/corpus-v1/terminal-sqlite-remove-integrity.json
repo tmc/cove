@@ -1,0 +1,31 @@
+{
+  "id": "terminal-sqlite-remove-integrity",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal and sqlite3, in ~/db/{DB} delete the row of the tasks table whose title is {TARGET}. Leave every other row untouched.",
+  "source": "cove-original (design 047 §5 before/after integrity, §7 WAL checkpoint); fully VM-free self-checkable — AndroidWorld validate_rows_removal_integrity, so DELETE FROM tasks (wiping everything) scores 0",
+  "complexity": 3,
+  "schema": [
+    {"name": "DB", "pool": ["work.db", "home.db"]},
+    {"name": "TARGET", "pool": ["Old draft", "Stale ticket", "Cancelled trip", "Duplicate entry"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/db\"; mkdir -p \"$HOME/db\" \"$HOME/.guibench\"; sqlite3 \"$HOME/db/{DB}\" 'CREATE TABLE tasks(id INTEGER PRIMARY KEY, title TEXT);'; sqlite3 \"$HOME/db/{DB}\" \"INSERT INTO tasks(id,title) VALUES(1,'Standup'),(2,'Deploy'),(3,'{TARGET}');\"; sqlite3 \"$HOME/db/{DB}\" \"SELECT id||'|'||title FROM tasks ORDER BY id\" > \"$HOME/.guibench/{DB}.before\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sqlite3 \"$HOME/db/{DB}\" \"DELETE FROM tasks WHERE title='{TARGET}';\""]}
+  ],
+  "evaluator": {
+    "func": "rows_removed_integrity",
+    "result": {
+      "kind": "sqlite",
+      "path": "/Users/tmc/db/{DB}",
+      "query": "SELECT id||'|'||title FROM tasks ORDER BY id;"
+    },
+    "expected": {
+      "kind": "file",
+      "path": "/Users/tmc/.guibench/{DB}.before"
+    },
+    "options": {"target": "3|{TARGET}"}
+  }
+}

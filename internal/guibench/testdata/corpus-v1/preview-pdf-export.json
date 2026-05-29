@@ -1,0 +1,25 @@
+{
+  "id": "preview-pdf-export",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "Create a PDF at ~/Documents/out.pdf whose text contains the phrase {PHRASE}.",
+  "source": "cove-original (design 047 §5 PDF fidelity); pdf_contains tolerates the reflowed whitespace of a PDF export, the macOS analogue of OSWorld docs/pdf text checks",
+  "complexity": 3,
+  "schema": [
+    {"name": "PHRASE", "pool": ["quarterly results", "meeting agenda", "design review", "release notes"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Documents\"; printf 'placeholder body\\n' > \"$HOME/Documents/src.txt\"; cupsfilter \"$HOME/Documents/src.txt\" > \"$HOME/Documents/out.pdf\" 2>/dev/null || textutil -convert pdf \"$HOME/Documents/src.txt\" -output \"$HOME/Documents/out.pdf\" 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "printf '%s\\n' '{PHRASE}' > \"$HOME/Documents/src.txt\"; cupsfilter \"$HOME/Documents/src.txt\" > \"$HOME/Documents/out.pdf\" 2>/dev/null || textutil -convert pdf \"$HOME/Documents/src.txt\" -output \"$HOME/Documents/out.pdf\" 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "pdf_contains",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "/usr/bin/mdimport -d2 \"$HOME/Documents/out.pdf\" 2>/dev/null; python3 -c 'import sys,subprocess; print(subprocess.run([\"/usr/bin/mdls\",\"-name\",\"kMDItemTextContent\",sys.argv[1]],capture_output=True,text=True).stdout)' \"$HOME/Documents/out.pdf\" 2>/dev/null || strings \"$HOME/Documents/out.pdf\""]
+    },
+    "options": {"expected": "{PHRASE}"}
+  }
+}

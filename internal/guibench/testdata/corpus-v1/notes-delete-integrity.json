@@ -1,0 +1,29 @@
+{
+  "id": "notes-delete-integrity",
+  "image": "macos-base:v1",
+  "domain": "Notes",
+  "instruction": "Open Notes and delete the note titled {TARGET}. Leave every other note untouched.",
+  "source": "cove-original (design 047 §5 before/after integrity); AndroidWorld validate_rows_removal_integrity over the live Notes title set — deleting all notes scores 0, deleting only the target scores 1",
+  "complexity": 4,
+  "schema": [
+    {"name": "TARGET", "pool": ["Recipe", "Meeting notes", "Wishlist", "Phone numbers"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "for n in Recipe \"Meeting notes\" Wishlist \"Phone numbers\" Journal Budget; do osascript -e \"tell application \\\"Notes\\\" to delete (every note whose name is \\\"$n\\\")\" 2>/dev/null || true; done; for n in Journal Budget \"{TARGET}\"; do osascript -e \"tell application \\\"Notes\\\" to make new note with properties {name:\\\"$n\\\", body:\\\"$n\\\"}\" 2>/dev/null || true; done; mkdir -p \"$HOME/.guibench\"; osascript -e 'set t to name of every note of application \"Notes\"' -e 'set AppleScript'\\''s text item delimiters to linefeed' -e 'return (t as text)' 2>/dev/null > \"$HOME/.guibench/notes.before\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to delete (every note whose name is \"{TARGET}\")' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "rows_removed_integrity",
+    "result": {
+      "kind": "applescript",
+      "script": "set t to {} \n tell application \"Notes\" to set t to name of every note \n set AppleScript's text item delimiters to linefeed \n return (t as text)"
+    },
+    "expected": {
+      "kind": "file",
+      "path": "/Users/tmc/.guibench/notes.before"
+    },
+    "options": {"target": "{TARGET}"}
+  }
+}

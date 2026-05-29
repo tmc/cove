@@ -1,0 +1,29 @@
+{
+  "id": "reminders-add-integrity",
+  "image": "macos-base:v1",
+  "domain": "Reminders",
+  "instruction": "Open Reminders and add a new reminder titled {TARGET} to the Reminders list. Do not modify any existing reminder.",
+  "source": "cove-original (design 047 §5 before/after integrity); AndroidWorld validate_rows_addition_integrity ported to Reminders — clearing the list then adding only the target scores 0",
+  "complexity": 4,
+  "schema": [
+    {"name": "TARGET", "pool": ["Buy groceries", "Schedule dentist", "Water plants", "Return library books"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Reminders\" to tell list \"Reminders\" to delete every reminder' 2>/dev/null || true; for n in \"Pay rent\" \"Call Mom\"; do osascript -e \"tell application \\\"Reminders\\\" to tell list \\\"Reminders\\\" to make new reminder with properties {name:\\\"$n\\\"}\" 2>/dev/null || true; done; mkdir -p \"$HOME/.guibench\"; osascript -e 'set t to name of every reminder of list \"Reminders\" of application \"Reminders\"' -e 'set AppleScript'\\''s text item delimiters to linefeed' -e 'return (t as text)' 2>/dev/null > \"$HOME/.guibench/reminders.before\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Reminders\" to tell list \"Reminders\" to make new reminder with properties {name:\"{TARGET}\"}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "rows_added_integrity",
+    "result": {
+      "kind": "applescript",
+      "script": "set t to {} \n tell application \"Reminders\" to set t to name of every reminder of list \"Reminders\" \n set AppleScript's text item delimiters to linefeed \n return (t as text)"
+    },
+    "expected": {
+      "kind": "file",
+      "path": "/Users/tmc/.guibench/reminders.before"
+    },
+    "options": {"target": "{TARGET}"}
+  }
+}

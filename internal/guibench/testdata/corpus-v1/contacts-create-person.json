@@ -1,0 +1,26 @@
+{
+  "id": "contacts-create-person",
+  "image": "macos-base:v1",
+  "domain": "Contacts",
+  "instruction": "Open Contacts and create a new contact with first name {FIRST} and last name {LAST}.",
+  "source": "cove-original (design 047 §10 Contacts template); Tier-C AppleScript reads the contact's full name back",
+  "complexity": 3,
+  "schema": [
+    {"name": "FIRST", "pool": ["Ada", "Alan", "Grace", "Edsger"]},
+    {"name": "LAST", "pool": ["Lovelace", "Turing", "Hopper", "Dijkstra"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Contacts\" to delete (every person whose first name is \"{FIRST}\" and last name is \"{LAST}\")' -e 'tell application \"Contacts\" to save' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Contacts\" to make new person with properties {first name:\"{FIRST}\", last name:\"{LAST}\"}' -e 'tell application \"Contacts\" to save' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "applescript",
+      "script": "set s to {} \n tell application \"Contacts\" to set s to name of every person whose first name is \"{FIRST}\" and last name is \"{LAST}\" \n set AppleScript's text item delimiters to linefeed \n return (s as text)"
+    },
+    "options": {"expected": "{FIRST} {LAST}"}
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "finder-zip-archive",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, compress the folder ~/Documents/{FOLDER} into a zip archive named {FOLDER}.zip in the same directory.",
+  "source": "cove-original (design 047 §5); Tier-A exec confirms the archive exists and lists the expected entry",
+  "complexity": 3,
+  "schema": [
+    {"name": "FOLDER", "pool": ["Project", "Photos", "Backup"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/Documents/{FOLDER}\" \"$HOME/Documents/{FOLDER}.zip\"; mkdir -p \"$HOME/Documents/{FOLDER}\"; : > \"$HOME/Documents/{FOLDER}/a.txt\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "cd \"$HOME/Documents\" && /usr/bin/ditto -c -k --keepParent \"{FOLDER}\" \"{FOLDER}.zip\""]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "test -f \"$HOME/Documents/{FOLDER}.zip\" && unzip -l \"$HOME/Documents/{FOLDER}.zip\" 2>/dev/null | grep -o 'a.txt' | head -1 || echo missing"]
+    },
+    "options": {"expected": "a.txt"}
+  }
+}

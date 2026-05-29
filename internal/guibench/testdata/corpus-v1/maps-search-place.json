@@ -1,0 +1,23 @@
+{
+  "id": "maps-search-place",
+  "image": "macos-base:v1",
+  "domain": "Maps",
+  "instruction": "Open Maps and search for {PLACE}.",
+  "source": "cove-original (design 047 §5 URL scheme verify); the active search is driven through the maps:// URL scheme and the resulting document URL is checked, a native deterministic surface for an otherwise non-scriptable app",
+  "complexity": 2,
+  "schema": [
+    {"name": "PLACE", "pool": ["Golden Gate Bridge", "Statue of Liberty", "Space Needle", "Willis Tower"]},
+    {"name": "QUERY", "expected_from": "PLACE", "derive": {"Golden Gate Bridge": "Golden%20Gate%20Bridge", "Statue of Liberty": "Statue%20of%20Liberty", "Space Needle": "Space%20Needle", "Willis Tower": "Willis%20Tower"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -f \"$HOME/.guibench/maps.url\"; mkdir -p \"$HOME/.guibench\"; echo 'https://maps.apple.com/?q=placeholder' > \"$HOME/.guibench/maps.url\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "echo 'https://maps.apple.com/?q={QUERY}&utm_campaign=share' > \"$HOME/.guibench/maps.url\""]}
+  ],
+  "evaluator": {
+    "func": "url_match_normalized",
+    "result": {"kind": "file", "path": "/Users/tmc/.guibench/maps.url"},
+    "options": {"expected": "https://maps.apple.com/?q={QUERY}", "keep_query": ["q"]}
+  }
+}
