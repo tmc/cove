@@ -81,6 +81,9 @@ func TestParseTarget(t *testing.T) {
 }
 
 func TestSSHForwardArgs(t *testing.T) {
+	// Mux flag injection is covered by TestSSHForwardArgsInjectsMux; disable it
+	// here so this test pins the forward/target shape.
+	t.Setenv(muxDisableEnv, "1")
 	remote := Remote{Host: "mini.local", User: "tmc", SSHArgs: []string{"-o", "BatchMode=yes"}}
 	got := SSHForwardArgs(remote, "/tmp/local.sock", "/Users/tmc/.vz/vms/vm/control.sock")
 	want := []string{"-N", "-L", "/tmp/local.sock:/Users/tmc/.vz/vms/vm/control.sock", "-o", "BatchMode=yes", "tmc@mini.local"}

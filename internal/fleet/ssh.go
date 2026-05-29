@@ -24,6 +24,7 @@ func DialControlSocket(ctx context.Context, remote Remote, vm string) (*Tunnel, 
 	if vm == "" {
 		return nil, fmt.Errorf("fleet vm required")
 	}
+	_ = EnsureMuxDir()
 	dir, err := os.MkdirTemp("", "cove-fleet-*")
 	if err != nil {
 		return nil, fmt.Errorf("create tunnel dir: %w", err)
@@ -69,6 +70,7 @@ func (t *Tunnel) Close() error {
 
 func SSHForwardArgs(remote Remote, localSock, remoteSock string) []string {
 	args := []string{"-N", "-L", localSock + ":" + remoteSock}
+	args = append(args, SSHMuxOptions(remote)...)
 	args = append(args, remote.SSHArgs...)
 	args = append(args, remoteTarget(remote))
 	return args
@@ -87,7 +89,8 @@ func ReadControlToken(ctx context.Context, remote Remote, vm string) (string, er
 	if vm == "" {
 		return "", fmt.Errorf("fleet vm required")
 	}
-	args := append([]string{}, remote.SSHArgs...)
+	args := append([]string{}, SSHMuxOptions(remote)...)
+	args = append(args, remote.SSHArgs...)
 	args = append(args, remoteTarget(remote), "cat", RemoteControlTokenPath(remote, vm))
 	data, err := exec.CommandContext(ctx, sshBinary(), args...).Output()
 	if err != nil {

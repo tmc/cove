@@ -36,6 +36,9 @@ func TestRemoteControlTokenPath(t *testing.T) {
 }
 
 func TestReadControlToken(t *testing.T) {
+	// Disable mux so the asserted ssh argv stays mux-flag free; mux injection
+	// into ReadControlToken is exercised by TestReadControlTokenInjectsMux.
+	t.Setenv("COVE_FLEET_NO_MUX", "1")
 	dir := t.TempDir()
 	log := filepath.Join(dir, "args")
 	ssh := filepath.Join(dir, "ssh")

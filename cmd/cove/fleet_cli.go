@@ -69,9 +69,15 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 		return runFleetAggregateCommand(ctx, args, path, runner, out, errOut)
 	case "ps":
 		return runFleetPSCommand(ctx, args[1:], path, runner, out, errOut)
+	case "health":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(out, "Usage: cove fleet health [--json] [--timeout d]")
+			return nil
+		}
+		return runFleetHealthCommand(ctx, args[1:], path, runner, out, errOut)
 	case "run":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			fmt.Fprintln(out, "Usage: cove fleet run --policy=least-loaded [run flags]")
+			fmt.Fprintln(out, "Usage: cove fleet run --policy=least-loaded|fan-out [run flags] (or --all)")
 			return nil
 		}
 		return runFleetRunCommand(ctx, args[1:], path, runner, out, errOut)
@@ -106,7 +112,8 @@ Commands:
   vm ls [--json]
   image ls [--json]
   ps
-  run --policy=least-loaded [run flags]
+  health [--json] [--timeout d]
+  run --policy=least-loaded|fan-out [run flags] (or --all)
   metrics
   <remote> <command> [args...]`)
 }
@@ -285,7 +292,9 @@ func (sshFleetRunner) RunCommand(ctx context.Context, remote fleetpkg.Remote, ar
 }
 
 func runSSHFleetCommand(ctx context.Context, remote fleetpkg.Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	sshArgs := append([]string{}, remote.SSHArgs...)
+	_ = fleetpkg.EnsureMuxDir()
+	sshArgs := append([]string{}, fleetpkg.SSHMuxOptions(remote)...)
+	sshArgs = append(sshArgs, remote.SSHArgs...)
 	sshArgs = append(sshArgs, fleetRemoteTarget(remote), "cove")
 	sshArgs = append(sshArgs, shellJoinArgs(args))
 	cmd := exec.CommandContext(ctx, fleetSSHBinary(), sshArgs...)
