@@ -54,7 +54,29 @@ func Aggregate(outcomes []Outcome, runs int, meta Meta, baseline *HumanBaseline)
 			report.FlaggedCells++
 		}
 	}
+	report.Rigor = summarizeCellRigor(cells)
 	return report, nil
+}
+
+// summarizeCellRigor rolls the per-cell rigor into a corpus [RigorSummary],
+// counting each task once regardless of how many provider cells scored it. It
+// returns nil when no cell carried rigor (a hand-built fixture), so the report
+// omits the section rather than printing an empty rollup.
+func summarizeCellRigor(cells []Cell) *RigorSummary {
+	byTask := make(map[string]TaskRigor)
+	for _, c := range cells {
+		if c.Rigor == nil {
+			continue
+		}
+		if _, seen := byTask[c.TaskID]; !seen {
+			byTask[c.TaskID] = *c.Rigor
+		}
+	}
+	if len(byTask) == 0 {
+		return nil
+	}
+	s := SummarizeRigor(byTask)
+	return &s
 }
 
 // buildCells groups outcomes by (provider, task) and computes each cell's
@@ -84,6 +106,7 @@ func buildCells(outcomes []Outcome) []Cell {
 		scores := make([]float64, 0, len(g))
 		errors := 0
 		domain := ""
+		var rigor *TaskRigor
 		for _, o := range g {
 			scores = append(scores, o.Score)
 			if o.Status == StatusError {
@@ -91,6 +114,9 @@ func buildCells(outcomes []Outcome) []Cell {
 			}
 			if domain == "" {
 				domain = o.Domain
+			}
+			if rigor == nil && o.Rigor != nil {
+				rigor = o.Rigor
 			}
 		}
 		m := mean(scores)
@@ -105,6 +131,7 @@ func buildCells(outcomes []Outcome) []Cell {
 			Spread:   sp,
 			Flagged:  sp > VarianceFlagThreshold,
 			Errors:   errors,
+			Rigor:    rigor,
 		})
 	}
 	return cells

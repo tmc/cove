@@ -45,6 +45,7 @@ type GetterSpec struct {
 	App     string            `json:"app,omitempty"`      // accessibility: target application name
 	Element string            `json:"element,omitempty"`  // accessibility: AX element selector
 	Attr    string            `json:"attr,omitempty"`     // accessibility: AX attribute to read
+	Dump    bool              `json:"dump,omitempty"`     // accessibility: emit the front-window AX tree as XML instead of one attr
 }
 
 // getterKinds is the set of valid getter kinds, with the privilege tier each
@@ -103,7 +104,9 @@ func (g GetterSpec) validate() error {
 		if g.App == "" {
 			return fmt.Errorf("accessibility getter: app is empty")
 		}
-		if g.Attr == "" {
+		// A dump reads the whole front-window AX tree, so it needs no single
+		// attribute; a scalar read requires Attr.
+		if !g.Dump && g.Attr == "" {
 			return fmt.Errorf("accessibility getter: attr is empty")
 		}
 	}
@@ -276,14 +279,25 @@ func getAppleScript(p Probe, g GetterSpec, params map[string]string) (string, er
 	return strings.TrimRight(stdout, "\n"), nil
 }
 
-// getAccessibility reads an attribute (Attr) off an AX element in App's
-// frontmost window via a generated AppleScript over System Events, the
-// reliable synchronous GUI-state probe (design 047 §5). Element optionally
-// narrows to a named UI element; when empty the attribute is read off the
-// front window. This needs the Accessibility grant (Tier C, independent of
-// Apple Events / FDA); a denial surfaces as a nonzero exit.
+// getAccessibility reads guest GUI state through System Events, the reliable
+// synchronous AX probe (design 047 §5). With Dump set it returns the front
+// window's AX subtree as an XML document (see [axDumpScript]) for the
+// accessibility_match metric to select over; otherwise it returns a single
+// attribute (Attr) off App's front window, optionally narrowed by Element.
+// This needs the Accessibility grant (Tier C, independent of Apple Events /
+// FDA); a denial surfaces as a nonzero exit.
 func getAccessibility(p Probe, g GetterSpec, params map[string]string) (string, error) {
 	app := Materialize(g.App, params)
+	if g.Dump {
+		exit, stdout, stderr, err := p.Exec([]string{"osascript", "-l", "JavaScript", "-e", axDumpScript(app)}, nil, "")
+		if err != nil {
+			return "", fmt.Errorf("accessibility getter: %w", err)
+		}
+		if exit != 0 {
+			return "", fmt.Errorf("accessibility getter: dump tree of %s exited %d (check Accessibility grant): %s", app, exit, strings.TrimSpace(stderr))
+		}
+		return strings.TrimSpace(stdout), nil
+	}
 	element := Materialize(g.Element, params)
 	attr := Materialize(g.Attr, params)
 	script := axScript(app, element, attr)
@@ -309,6 +323,53 @@ func axScript(app, element, attr string) string {
 		"tell application \"System Events\" to tell process %s to get %s of %s",
 		quoteAS(app), attr, target,
 	)
+}
+
+// axDumpScript builds the JXA (JavaScript for Automation) program that walks
+// the front window's UI-element subtree of the named process via System Events
+// and prints it as the XML document the accessibility_match metric selects
+// over: a <node> per UI element carrying role, title, identifier (subrole), and
+// value attributes, nested by containment. Depth is capped so a deep view
+// hierarchy cannot run unbounded. The app name is JSON-quoted so it cannot
+// break out of the string literal.
+//
+// The emitted shape (one line per run, reformatted here) is:
+//
+//	<ax app="Notes">
+//	  <node role="AXWindow" title="Notes" identifier="" value="">
+//	    <node role="AXTextArea" title="" identifier="" value="Buy milk"/>
+//	  </node>
+//	</ax>
+func axDumpScript(app string) string {
+	// xmlEsc and a recursive walk live inside the JXA program so the whole dump
+	// is one osascript invocation (the §13 one-shot path, no guest-agent RPC).
+	return fmt.Sprintf(`
+function xmlEsc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function attr(e,name){try{return e[name]();}catch(x){return "";}}
+function walk(e,depth){
+  if(depth>20){return "";}
+  var role=attr(e,"role"), title=attr(e,"title"), ident=attr(e,"subrole"), value=attr(e,"value");
+  var open='<node role="'+xmlEsc(role)+'" title="'+xmlEsc(title)+'" identifier="'+xmlEsc(ident)+'" value="'+xmlEsc(value)+'">';
+  var kids="";
+  var children;
+  try{children=e.uiElements();}catch(x){children=[];}
+  for(var i=0;i<children.length;i++){kids+=walk(children[i],depth+1);}
+  return open+kids+'</node>';
+}
+var se=Application("System Events");
+var proc=se.processes[%s];
+var out='<ax app="'+xmlEsc(%s)+'">';
+var wins=proc.windows();
+if(wins.length>0){out+=walk(wins[0],0);}
+out+='</ax>';
+out;`, quoteJS(app), quoteJS(app))
+}
+
+// quoteJS wraps s as a JavaScript double-quoted string literal, escaping
+// backslashes and quotes so the value cannot break out of the literal.
+func quoteJS(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`)
+	return `"` + r.Replace(s) + `"`
 }
 
 // quoteAS wraps s in AppleScript double quotes, escaping embedded backslashes

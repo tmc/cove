@@ -28,6 +28,19 @@ func Metrics() map[string]Metric {
 		"sqlite_row_matches": metricSQLiteRowMatches,
 		"url_in":             metricURLIn,
 		"infeasible":         metricInfeasible,
+		// Before/after whole-table integrity (collateral-damage check),
+		// implemented in integrity.go.
+		"rows_added_integrity":   metricRowsAddedIntegrity,
+		"rows_removed_integrity": metricRowsRemovedIntegrity,
+		// AX-tree node existence + attribute match, implemented in
+		// metric_accessibility.go.
+		"accessibility_match": metricAccessibilityMatch,
+		// Fidelity metrics: tolerant comparison for lossy native-macOS edits
+		// (image re-encode, URL tracking params, PDF reflow), in
+		// metric_fidelity.go.
+		"image_similar":        metricImageSimilar,
+		"pdf_contains":         metricPDFContains,
+		"url_match_normalized": metricURLMatchNormalized,
 	}
 }
 

@@ -28,6 +28,13 @@ type Outcome struct {
 	Score    float64 `json:"score"`           // [0,1]
 	Status   string  `json:"status"`          // "scored" | "error"
 	Error    string  `json:"error,omitempty"` // populated when Status == "error"
+	// Rigor is the verification-rigor provenance the runner enforced for this
+	// task (isolation, egress lockdown, privilege tier, pre-read flushes; design
+	// 047 §16). It is a pure projection of the task, stamped by the runner so the
+	// citable report can publish it as first-class columns rather than leaving a
+	// reader to assume the discipline. Zero value when an outcome was synthesized
+	// without a task (e.g. a hand-built fixture).
+	Rigor *TaskRigor `json:"rigor,omitempty"`
 }
 
 // Outcome status values.
@@ -51,6 +58,11 @@ type Cell struct {
 	Spread   float64   `json:"spread"`
 	Flagged  bool      `json:"flagged"`
 	Errors   int       `json:"errors,omitempty"` // runs that crashed (counted as 0)
+	// Rigor is the verification-rigor provenance of the task this cell scored
+	// (design 047 §16), carried up from the cell's outcomes so the per-task
+	// matrix can publish isolation, egress, tier, and flush columns. Nil when the
+	// outcomes carried no rigor (a hand-built fixture).
+	Rigor *TaskRigor `json:"rigor,omitempty"`
 }
 
 // DomainScore is a provider's mean success rate over all tasks in one domain.
@@ -90,6 +102,11 @@ type ScoreReport struct {
 	Cells         []Cell          `json:"cells"`
 	HumanBaseline *HumanBaseline  `json:"human_baseline,omitempty"`
 	FlaggedCells  int             `json:"flagged_cells"`
+	// Rigor is the corpus-level verification-rigor rollup (design 047 §16): the
+	// one-line "100% egress-locked, N Tier-C AX-verified, all persisted-state
+	// getters flush before read" claim, derived from the per-task rigor carried
+	// on the cells. Nil when no cell carried rigor.
+	Rigor *RigorSummary `json:"rigor,omitempty"`
 }
 
 // HumanBaseline is the human success-rate column reported alongside the agents

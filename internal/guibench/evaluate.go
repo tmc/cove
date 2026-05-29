@@ -39,8 +39,9 @@ func Evaluate(p Probe, t *Task, params map[string]string, agentAnswer string) (f
 // also be supplied directly through an "expected" option (a literal gold value
 // computed from params), which overrides the passed expected when set.
 func ScoreMetrics(e Evaluator, result, expected string, params map[string]string) (float64, error) {
-	if lit, ok := e.Options["expected"].(string); ok {
-		expected = Materialize(lit, params)
+	options := materializeOptions(e.Options, params)
+	if lit, ok := options["expected"].(string); ok {
+		expected = lit
 	}
 	registry := Metrics()
 	scores := make([]float64, 0, len(e.Func))
@@ -49,7 +50,7 @@ func ScoreMetrics(e Evaluator, result, expected string, params map[string]string
 		if !ok {
 			return 0, fmt.Errorf("unknown metric %q", name)
 		}
-		s, err := m(result, expected, e.Options)
+		s, err := m(result, expected, options)
 		if err != nil {
 			return 0, err
 		}
@@ -69,6 +70,46 @@ func ScoreMetrics(e Evaluator, result, expected string, params map[string]string
 	default:
 		return 0, fmt.Errorf("invalid conj %q", e.Conj)
 	}
+}
+
+// materializeOptions resolves {PARAM} placeholders in the evaluator's options
+// against the materialized task params, so a metric-specific gold value
+// (the "expected" literal, the integrity "target" row, an accessibility "value"
+// target, a "keep_query" list) tracks the seeded variation the same way the
+// instruction and getter specs do. String values and []string/[]any-of-string
+// values are materialized element-wise; every other value (bool, number) is
+// copied through unchanged. The map is freshly allocated, leaving the task's
+// declared options untouched. Returns nil for nil input.
+func materializeOptions(options map[string]any, params map[string]string) map[string]any {
+	if options == nil {
+		return nil
+	}
+	out := make(map[string]any, len(options))
+	for k, v := range options {
+		switch val := v.(type) {
+		case string:
+			out[k] = Materialize(val, params)
+		case []string:
+			ms := make([]string, len(val))
+			for i, s := range val {
+				ms[i] = Materialize(s, params)
+			}
+			out[k] = ms
+		case []any:
+			ms := make([]any, len(val))
+			for i, e := range val {
+				if s, ok := e.(string); ok {
+					ms[i] = Materialize(s, params)
+				} else {
+					ms[i] = e
+				}
+			}
+			out[k] = ms
+		default:
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // mean returns the arithmetic mean of scores (caller guarantees len > 0).
