@@ -8,7 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
+
+	"golang.org/x/sys/unix"
 )
 
 const FileName = "quotas.json"
@@ -81,6 +85,53 @@ func Save(vmDir string, q Quota) error {
 	return nil
 }
 
+// macOS 26 (Darwin 25) removed the "diskutil apfs setQuota" verb. APFSQuotaSupported
+// reports whether the host's diskutil is expected to recognize it, so callers can skip
+// the attempt (and its noisy "did not recognize" output) on hosts that dropped it.
+var (
+	apfsQuotaSupportedOnce sync.Once
+	apfsQuotaSupportedVal  bool
+	// apfsQuotaSupported is the gate ApplyAPFSQuota consults; overridable in tests.
+	apfsQuotaSupported = APFSQuotaSupported
+)
+
+// APFSQuotaSupported reports whether this host supports "diskutil apfs setQuota".
+// The result is probed once per process and cached.
+func APFSQuotaSupported() bool {
+	apfsQuotaSupportedOnce.Do(func() {
+		apfsQuotaSupportedVal = probeAPFSQuotaSupported()
+	})
+	return apfsQuotaSupportedVal
+}
+
+// probeAPFSQuotaSupported infers support from the Darwin kernel release. If the
+// release cannot be read, assume supported and let ApplyAPFSQuota fall back to the
+// ErrAPFSQuotaUnsupported path.
+func probeAPFSQuotaSupported() bool {
+	release, err := unix.Sysctl("kern.osrelease")
+	if err != nil {
+		return true
+	}
+	return apfsQuotaSupportedForRelease(release)
+}
+
+// apfsQuotaSupportedForRelease reports whether the given Darwin kernel release
+// (e.g. "24.6.0") supports "diskutil apfs setQuota". Darwin 24 is macOS 15
+// (Sequoia, last to ship the verb); Darwin 25 is macOS 26, which removed it.
+// An unparseable release is treated as supported so callers fall back to probing
+// diskutil directly.
+func apfsQuotaSupportedForRelease(release string) bool {
+	major := release
+	if i := strings.IndexByte(major, '.'); i >= 0 {
+		major = major[:i]
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(major))
+	if err != nil {
+		return true
+	}
+	return n < 25
+}
+
 func ApplyAPFSQuota(vmDir string, gb uint64) error {
 	return ApplyAPFSQuotaWithRunner(vmDir, gb, execRunner{})
 }
@@ -94,6 +145,11 @@ func ApplyAPFSQuotaWithRunner(vmDir string, gb uint64, runner Runner) error {
 	}
 	if runner == nil {
 		return fmt.Errorf("runner required")
+	}
+	if !apfsQuotaSupported() {
+		// Host dropped the setQuota verb; treat as a successful no-op so callers
+		// persist DiskGB for daemon enforcement without a spurious failure.
+		return nil
 	}
 	out, err := runner.Run("diskutil", "apfs", "setQuota", vmDir, fmt.Sprintf("%dg", gb))
 	if err != nil {

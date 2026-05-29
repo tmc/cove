@@ -97,26 +97,48 @@ func TestRunQuotaPropagatesError(t *testing.T) {
 }
 
 func TestApplyInstallDiskQuotaIgnoresUnsupportedSetQuota(t *testing.T) {
-	oldDiskSize := diskSizeGB
-	oldApply := applyAPFSQuotaForInstall
-	defer func() {
-		diskSizeGB = oldDiskSize
-		applyAPFSQuotaForInstall = oldApply
-	}()
+	for _, tc := range []struct {
+		name      string
+		verbose   bool
+		wantInfo  bool
+		wantQuiet bool
+	}{
+		{name: "default quiet", verbose: false, wantQuiet: true},
+		{name: "verbose info", verbose: true, wantInfo: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldDiskSize := diskSizeGB
+			oldApply := applyAPFSQuotaForInstall
+			oldVerbose := verbose
+			defer func() {
+				diskSizeGB = oldDiskSize
+				applyAPFSQuotaForInstall = oldApply
+				verbose = oldVerbose
+			}()
 
-	diskSizeGB = 64
-	applyAPFSQuotaForInstall = func(dir string, gb uint64) error {
-		if dir != "/tmp/vm" || gb != 64 {
-			return fmt.Errorf("got dir=%q gb=%d", dir, gb)
-		}
-		return errors.New(`diskutil apfs did not recognize APFS verb "setQuota"; usage: diskutil apfs ...`)
-	}
-	var out bytes.Buffer
-	if err := applyInstallDiskQuota(&out, "/tmp/vm"); err != nil {
-		t.Fatalf("applyInstallDiskQuota unsupported setQuota: %v", err)
-	}
-	if !strings.Contains(out.String(), "APFS directory quotas are not supported") {
-		t.Fatalf("output = %q, want unsupported quota warning", out.String())
+			diskSizeGB = 64
+			verbose = tc.verbose
+			applyAPFSQuotaForInstall = func(dir string, gb uint64) error {
+				if dir != "/tmp/vm" || gb != 64 {
+					return fmt.Errorf("got dir=%q gb=%d", dir, gb)
+				}
+				return errors.New(`diskutil apfs did not recognize APFS verb "setQuota"; usage: diskutil apfs ...`)
+			}
+			var out bytes.Buffer
+			if err := applyInstallDiskQuota(&out, "/tmp/vm"); err != nil {
+				t.Fatalf("applyInstallDiskQuota unsupported setQuota: %v", err)
+			}
+			got := out.String()
+			if strings.Contains(got, "warning:") {
+				t.Fatalf("output = %q, must not contain a warning", got)
+			}
+			if tc.wantQuiet && got != "" {
+				t.Fatalf("output = %q, want no output without -verbose", got)
+			}
+			if tc.wantInfo && !strings.Contains(got, "apfs directory quotas are not supported") {
+				t.Fatalf("output = %q, want verbose info line", got)
+			}
+		})
 	}
 }
 

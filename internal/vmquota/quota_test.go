@@ -76,6 +76,7 @@ func TestQuotaUpdateOverwritesSavedCap(t *testing.T) {
 }
 
 func TestApplyAPFSQuotaCommand(t *testing.T) {
+	setAPFSQuotaSupported(t, true)
 	vmDir := filepath.Join(t.TempDir(), "vm")
 	runner := &recordRunner{}
 	if err := ApplyAPFSQuotaWithRunner(vmDir, 50, runner); err != nil {
@@ -142,6 +143,7 @@ func (r *recordRunner) Run(name string, args ...string) ([]byte, error) {
 }
 
 func TestApplyAPFSQuotaIncludesOutput(t *testing.T) {
+	setAPFSQuotaSupported(t, true)
 	err := ApplyAPFSQuotaWithRunner(t.TempDir(), 2, &recordRunner{err: errors.New("exit status 1")})
 	if err == nil {
 		t.Fatal("ApplyAPFSQuotaWithRunner succeeded, want error")
@@ -152,6 +154,7 @@ func TestApplyAPFSQuotaIncludesOutput(t *testing.T) {
 }
 
 func TestApplyAPFSQuotaUnsupported(t *testing.T) {
+	setAPFSQuotaSupported(t, true)
 	err := ApplyAPFSQuotaWithRunner(t.TempDir(), 2, &recordRunner{
 		err: errors.New("exit status 1"),
 		out: []byte(`diskutil: did not recognize APFS verb "setQuota"`),
@@ -159,4 +162,63 @@ func TestApplyAPFSQuotaUnsupported(t *testing.T) {
 	if !errors.Is(err, ErrAPFSQuotaUnsupported) {
 		t.Fatalf("error = %v, want ErrAPFSQuotaUnsupported", err)
 	}
+}
+
+func TestApplyAPFSQuotaSkippedWhenUnsupported(t *testing.T) {
+	setAPFSQuotaSupported(t, false)
+	runner := &recordRunner{}
+	if err := ApplyAPFSQuotaWithRunner(t.TempDir(), 50, runner); err != nil {
+		t.Fatalf("ApplyAPFSQuotaWithRunner on unsupported host = %v, want nil", err)
+	}
+	if runner.name != "" || runner.args != nil {
+		t.Fatalf("runner invoked on unsupported host: name=%q args=%#v", runner.name, runner.args)
+	}
+}
+
+// TestSaveSucceedsWhenQuotaUnsupported proves DiskGB persists even when the host
+// cannot apply an APFS quota: the apply is a no-op and Save records the cap.
+func TestSaveSucceedsWhenQuotaUnsupported(t *testing.T) {
+	setAPFSQuotaSupported(t, false)
+	dir := t.TempDir()
+	if err := ApplyAPFSQuotaWithRunner(dir, 64, &recordRunner{}); err != nil {
+		t.Fatalf("ApplyAPFSQuotaWithRunner: %v", err)
+	}
+	want := Quota{CPUs: 4, MemoryGB: 8, DiskGB: 64}
+	if err := Save(dir, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got != want {
+		t.Fatalf("Load = %#v, want %#v", got, want)
+	}
+}
+
+func TestProbeRecognizesDarwinRelease(t *testing.T) {
+	for _, tc := range []struct {
+		release string
+		want    bool
+	}{
+		{release: "24.0.0", want: true},  // macOS 15 Sequoia
+		{release: "24.6.0", want: true},  // macOS 15.x
+		{release: "25.5.0", want: false}, // macOS 26
+		{release: "26.0.0", want: false},
+		{release: "garbage", want: true}, // unknown: assume supported, rely on fallback
+	} {
+		t.Run(tc.release, func(t *testing.T) {
+			if got := apfsQuotaSupportedForRelease(tc.release); got != tc.want {
+				t.Fatalf("apfsQuotaSupportedForRelease(%q) = %v, want %v", tc.release, got, tc.want)
+			}
+		})
+	}
+}
+
+// setAPFSQuotaSupported forces the capability gate for the duration of the test.
+func setAPFSQuotaSupported(t *testing.T, ok bool) {
+	t.Helper()
+	prev := apfsQuotaSupported
+	apfsQuotaSupported = func() bool { return ok }
+	t.Cleanup(func() { apfsQuotaSupported = prev })
 }

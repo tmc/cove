@@ -199,7 +199,13 @@ func applyInstallDiskQuota(w io.Writer, dir string) error {
 	if err := applyAPFSQuotaForInstall(dir, diskSizeGB); err != nil {
 		if errors.Is(err, vmquota.ErrAPFSQuotaUnsupported) ||
 			strings.Contains(err.Error(), `did not recognize APFS verb "setQuota"`) {
-			fmt.Fprintf(w, "warning: APFS directory quotas are not supported on this host; continuing without host disk quota: %v\n", err)
+			// Hosts that dropped the setQuota verb are normally caught by the
+			// vmquota capability probe (silent no-op). Reaching here means the
+			// probe was wrong; DiskGB is still persisted for daemon enforcement,
+			// so this is informational only and shown under -verbose.
+			if verbose {
+				fmt.Fprintf(w, "apfs directory quotas are not supported on this host; continuing without host disk quota: %v\n", err)
+			}
 			return nil
 		}
 		return err
