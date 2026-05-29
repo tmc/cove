@@ -189,10 +189,56 @@ log "Auto-login configured for: $USERNAME"
 
 log "=== Provisioning complete ==="
 
-# Restart loginwindow so it picks up the newly created user and auto-login
-# settings. Without this, loginwindow starts before the user exists and
-# shows the login screen on first boot.
-log "Restarting loginwindow for auto-login..."
+# macOS 26 auto-login race:
+#   loginwindow evaluates autoLoginUser on its FIRST launch, which happens
+#   before this daemon's sysadminctl finishes creating the user (~13s gap).
+#   On macOS 26 loginwindow caches the interactive prompt and does NOT re-read
+#   /etc/kcpassword when restarted, so "killall loginwindow" / "launchctl
+#   kickstart" recovery is ineffective. The reliable fix is to reboot once now:
+#   on the SECOND boot the user already exists in DirectoryServices, so
+#   loginwindow reads kcpassword on its first (and only) evaluation and
+#   auto-login wins with no race.
+#
+# Reboot only when every prerequisite is durably in place, so we never reboot
+# into a state that cannot auto-login (and never reboot-loop). Re-running after
+# reboot is already prevented two ways: the LaunchDaemon plist was removed in
+# the self-cleanup above (so launchd won't load this job again), and the
+# "$MARKER" guard at the top of this script returns early.
+AUTOLOGIN_READY=true
+
+# User must exist (this is already verified above with a hard exit, but re-check
+# defensively in case the script is modified later).
+if ! dscl . -read /Users/"$USERNAME" &>/dev/null; then
+    log "guard: user $USERNAME not present; will not reboot"
+    AUTOLOGIN_READY=false
+fi
+
+# kcpassword carries the auto-login secret; without it auto-login cannot
+# complete on the next boot. It is written host-side during inject/stage.
+if [ ! -s /etc/kcpassword ]; then
+    log "guard: /etc/kcpassword missing or empty; will not reboot"
+    AUTOLOGIN_READY=false
+fi
+
+# loginwindow.plist must name the auto-login user. We wrote autoLoginUser via
+# "defaults write" above; confirm the value is actually present.
+if [ "$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null)" != "$USERNAME" ]; then
+    log "guard: loginwindow autoLoginUser != $USERNAME; will not reboot"
+    AUTOLOGIN_READY=false
+fi
+
+if [ "$AUTOLOGIN_READY" = "true" ]; then
+    log "vz-provision: user verified, rebooting for clean auto-login"
+    # Flush marker, kcpassword, and loginwindow.plist to disk so the reboot
+    # cannot lose them (and re-trigger provisioning or break auto-login).
+    sync
+    shutdown -r now 2>/dev/null || reboot 2>/dev/null || true
+    exit 0
+fi
+
+# Fallback (some prerequisite failed): keep the legacy best-effort recovery so
+# behavior is no worse than before for partially-provisioned VMs.
+log "auto-login prerequisites incomplete; restarting loginwindow (legacy recovery)"
 killall loginwindow 2>/dev/null || true
 launchctl kickstart -k system/com.tmc.cove.autologin 2>/dev/null || true
 

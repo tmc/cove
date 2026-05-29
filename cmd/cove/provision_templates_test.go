@@ -40,12 +40,54 @@ func TestGenerateEmbeddedProvisionScript(t *testing.T) {
 		{"sysadminctl", "sysadminctl -addUser"},
 		{"self_cleanup", "rm -f /Library/LaunchDaemons/com.tmc.cove.provision.plist"},
 		{"autologin_kickstart", "launchctl kickstart -k system/com.tmc.cove.autologin"},
+		{"reboot", "shutdown -r now"},
 	}
 
 	for _, c := range checks {
 		if !strings.Contains(result, c.want) {
 			t.Errorf("%s: expected %q not found in output", c.name, c.want)
 		}
+	}
+}
+
+// TestProvisionScriptRebootsOnlyWhenAutoLoginReady verifies the macOS 26
+// reboot-after-provision fix is guarded: the reboot must be gated on
+// AUTOLOGIN_READY, prerequisites (user, kcpassword, loginwindow autoLoginUser)
+// must be checked, the marker is flushed with sync, and the legacy
+// killall/kickstart recovery remains as a fallback when guards fail.
+func TestProvisionScriptRebootsOnlyWhenAutoLoginReady(t *testing.T) {
+	script, err := generateEmbeddedProvisionScript(ProvisionConfig{
+		Username: "testuser",
+		Password: "secret123",
+		Admin:    true,
+	})
+	if err != nil {
+		t.Fatalf("generateEmbeddedProvisionScript: %v", err)
+	}
+
+	mustContain := []string{
+		"AUTOLOGIN_READY",                       // guard variable
+		"/etc/kcpassword",                       // kcpassword presence check
+		"autoLoginUser",                         // loginwindow value check
+		`if [ "$AUTOLOGIN_READY" = "true" ]`,    // reboot is gated on the guard
+		"vz-provision: user verified, rebooting for clean auto-login", // log line before reboot
+		"sync",            // flush before reboot
+		"shutdown -r now", // the reboot itself
+		"killall loginwindow",                                  // legacy fallback retained
+		"launchctl kickstart -k system/com.tmc.cove.autologin", // legacy fallback retained
+	}
+	for _, s := range mustContain {
+		if !strings.Contains(script, s) {
+			t.Errorf("provision script missing %q", s)
+		}
+	}
+
+	// The reboot must come before the legacy fallback in source order, and the
+	// fallback's killall must not be the only path (i.e. reboot is preferred).
+	rebootIdx := strings.Index(script, "shutdown -r now")
+	fallbackIdx := strings.LastIndex(script, "killall loginwindow")
+	if rebootIdx < 0 || fallbackIdx < 0 || rebootIdx > fallbackIdx {
+		t.Errorf("reboot (idx %d) should appear before legacy fallback killall (idx %d)", rebootIdx, fallbackIdx)
 	}
 }
 
