@@ -1,0 +1,26 @@
+{
+  "id": "mail-plain-signature",
+  "image": "macos-base:v1",
+  "domain": "Mail",
+  "instruction": "In Mail's settings, create a plain-text email signature named {SIGNAME} whose content is exactly: {SIGTEXT}",
+  "source": "adapted:osworld:3f28fe4f-5d9d-4994-a456-efd78cfae1a3 mode=intent; OSWorld Thunderbird 'set up a plain text signature for my email account' — Thunderbird is NOT installed on macOS; the INTENT (define a named plain-text mail signature) is re-expressed against Apple Mail, whose signature content is read back via the Tier-C AppleScript one-shot",
+  "complexity": 3,
+  "schema": [
+    {"name": "SIGNAME", "pool": ["Work", "Personal", "Support"]},
+    {"name": "SIGTEXT", "pool": ["Best regards, Alex", "Sent from my Mac", "Thanks, the team"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Mail\" to delete (every signature whose name is \"{SIGNAME}\")' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Mail\" to make new signature with properties {name:\"{SIGNAME}\", content:\"{SIGTEXT}\"}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Mail\" to return content of first signature whose name is \"{SIGNAME}\""
+    },
+    "options": {"expected": "{SIGTEXT}"}
+  }
+}

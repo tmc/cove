@@ -1,0 +1,27 @@
+{
+  "id": "finder-collect-by-ext",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In ~/{SRC} there are files in nested subfolders. Recursively find every .{EXT} file and copy it into the flat folder ~/{DST}.",
+  "source": "adapted:osworld:23393935-50c7-4a86-aeea-2b78fd089c5c mode=port; OSWorld os 'recursively go through folders and copy any .jpg files into one directory' is a generic filesystem-collection task; maps to Finder/Terminal (find -name / cp) with a Tier-A exec getter counting the collected files",
+  "complexity": 3,
+  "schema": [
+    {"name": "SRC", "pool": ["photos", "media", "assets"]},
+    {"name": "DST", "pool": ["collected", "flat", "out"]},
+    {"name": "EXT", "pool": ["jpg", "png", "txt"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/{SRC}\" \"$HOME/{DST}\"; mkdir -p \"$HOME/{SRC}/a/b\" \"$HOME/{DST}\"; touch \"$HOME/{SRC}/one.{EXT}\" \"$HOME/{SRC}/a/two.{EXT}\" \"$HOME/{SRC}/a/b/three.{EXT}\" \"$HOME/{SRC}/a/skip.other\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "find \"$HOME/{SRC}\" -type f -name '*.{EXT}' -exec cp {} \"$HOME/{DST}/\" \\;"]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "find \"$HOME/{DST}\" -type f -name '*.{EXT}' | wc -l | tr -d ' '"]
+    },
+    "options": {"expected": "3"}
+  }
+}

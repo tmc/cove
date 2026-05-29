@@ -1,0 +1,27 @@
+{
+  "id": "terminal-count-lines",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, count the total number of lines across all .{EXT} files under ~/{DIR} recursively, and write just that number to ~/{OUT}.",
+  "source": "adapted:osworld:4127319a-8b79-4410-b58a-7a151e15f3d7 mode=port; OSWorld os 'count all the lines of all php files in the current directory recursively' is a generic POSIX text-analysis task; maps verbatim to Terminal/exec (find / wc -l) with a Tier-A file getter on the recorded count",
+  "complexity": 2,
+  "schema": [
+    {"name": "DIR", "pool": ["code", "src", "tree"]},
+    {"name": "EXT", "pool": ["txt", "md", "log"]},
+    {"name": "OUT", "pool": ["count.txt", "lines.txt", "total.txt"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/{DIR}\"; mkdir -p \"$HOME/{DIR}/sub\"; printf 'a\\nb\\n' > \"$HOME/{DIR}/one.{EXT}\"; printf 'c\\nd\\ne\\n' > \"$HOME/{DIR}/sub/two.{EXT}\"; printf 'ignore\\n' > \"$HOME/{DIR}/sub/skip.other\"; rm -f \"$HOME/{OUT}\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "n=$(find \"$HOME/{DIR}\" -type f -name '*.{EXT}' -exec cat {} + | wc -l | tr -d ' '); printf '%s' \"$n\" > \"$HOME/{OUT}\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "file",
+      "path": "/Users/tmc/{OUT}"
+    },
+    "options": {"expected": "5"}
+  }
+}

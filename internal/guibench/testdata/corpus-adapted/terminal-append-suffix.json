@@ -1,0 +1,26 @@
+{
+  "id": "terminal-append-suffix",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, append the suffix {SUFFIX} to the end of each line of the file ~/{FILE} (whose lines are 1, 2, 3) and save the result to ~/output.txt.",
+  "source": "adapted:osworld:5ced85fc-fa1a-4217-95fd-0fb530545ce2 mode=port; OSWorld os 'append <br/> to each line and save to output.txt' is a POSIX text-processing task; maps verbatim to Terminal/exec (sed) with a Tier-A file getter",
+  "complexity": 2,
+  "schema": [
+    {"name": "FILE", "pool": ["input.txt", "lines.txt", "data.txt"]},
+    {"name": "SUFFIX", "pool": [";", " end", "-x"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "printf '1\\n2\\n3\\n' > \"$HOME/{FILE}\"; rm -f \"$HOME/output.txt\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sed 's/$/{SUFFIX}/' \"$HOME/{FILE}\" > \"$HOME/output.txt\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "cat \"$HOME/output.txt\""]
+    },
+    "options": {"expected": "1{SUFFIX}\n2{SUFFIX}\n3{SUFFIX}"}
+  }
+}

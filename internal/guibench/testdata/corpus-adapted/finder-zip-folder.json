@@ -1,0 +1,26 @@
+{
+  "id": "finder-zip-folder",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "Compress every file under ~/{DIR} into a single zip archive at ~/{ARCHIVE}.zip.",
+  "source": "adapted:osworld:37887e8c-da15-4192-923c-08fa390a176d mode=port; OSWorld os 'compress files under a directory into an archive' is a generic archiving task; maps to Finder (Compress) / Terminal (zip) with a Tier-A exec getter that lists the archive's entries",
+  "complexity": 2,
+  "schema": [
+    {"name": "DIR", "pool": ["logs", "reports", "data"]},
+    {"name": "ARCHIVE", "pool": ["bundle", "backup", "out"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/{DIR}\" \"$HOME/{ARCHIVE}.zip\"; mkdir -p \"$HOME/{DIR}\"; printf 'x' > \"$HOME/{DIR}/a.txt\"; printf 'y' > \"$HOME/{DIR}/b.txt\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "cd \"$HOME/{DIR}\" && zip -q -r \"$HOME/{ARCHIVE}.zip\" ."]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "unzip -Z1 \"$HOME/{ARCHIVE}.zip\" 2>/dev/null | grep -c '\\.txt$' | tr -d ' '"]
+    },
+    "options": {"expected": "2"}
+  }
+}

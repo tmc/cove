@@ -1,0 +1,25 @@
+{
+  "id": "reminders-create-item",
+  "image": "macos-base:v1",
+  "domain": "Reminders",
+  "instruction": "Open Reminders and add a new reminder with the title {TITLE} to the default list.",
+  "source": "adapted:cua-bench:apps/reminders.py mode=intent; trycua cua-bench models Apple Reminders with AppleScript getters (get_all_reminders) as the native-macOS analogue of foreign 'create a task/reminder' tasks (AndroidWorld task-management); the INTENT is re-expressed against Apple Reminders and the created item is read back via the Tier-C AppleScript one-shot",
+  "complexity": 3,
+  "schema": [
+    {"name": "TITLE", "pool": ["Call dentist", "Submit report", "Water plants", "Renew license"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Reminders\" to delete (every reminder whose name is \"{TITLE}\")' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Reminders\" to make new reminder with properties {name:\"{TITLE}\"}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Reminders\" to return (count of (every reminder whose name is \"{TITLE}\") > 0)"
+    },
+    "options": {"expected": "true"}
+  }
+}

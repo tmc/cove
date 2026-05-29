@@ -1,0 +1,30 @@
+{
+  "id": "numbers-column-total",
+  "image": "macos-base:v1",
+  "domain": "Numbers",
+  "instruction": "Open the spreadsheet ~/{FILE} in Numbers. It has an 'amount' column of sales figures. Append a final row of the form 'Total,<sum>' whose value is the sum of that column, then export the sheet back to ~/{FILE} as CSV.",
+  "source": "adapted:osworld:0326d92d-d218-48a8-9ca1-981cd6d064c7 mode=intent; OSWorld LibreOffice Calc 'calculate the total sales in a row called Total' — LibreOffice is NOT installed on macOS; the INTENT (sum a column, append a labeled total) is re-expressed against Apple Numbers, verified on the exported CSV. The expected getter recomputes the sum of the data rows host-independently (awk), so the score is a real arithmetic check, not a label match.",
+  "complexity": 3,
+  "schema": [
+    {"name": "FILE", "pool": ["sales.csv", "q1.csv", "figures.csv"]},
+    {"name": "A", "pool": ["10", "20", "30"]},
+    {"name": "B", "pool": ["5", "15", "25"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "printf 'amount\\n{A}\\n{B}\\n' > \"$HOME/{FILE}\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "t=$(( {A} + {B} )); printf 'amount\\n{A}\\n{B}\\nTotal,%s\\n' \"$t\" > \"$HOME/{FILE}\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "awk -F, '$1==\"Total\"{print $2}' \"$HOME/{FILE}\""]
+    },
+    "expected": {
+      "kind": "exec",
+      "args": ["sh", "-c", "awk -F, 'NR>1 && $1!=\"Total\"{s+=$1} END{print s}' \"$HOME/{FILE}\""]
+    }
+  }
+}

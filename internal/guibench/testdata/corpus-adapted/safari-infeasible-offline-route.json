@@ -1,0 +1,18 @@
+{
+  "id": "safari-infeasible-offline-route",
+  "image": "macos-base:v1",
+  "domain": "Safari",
+  "instruction": "Using only Safari with no network access, look up the live walking distance from {ORIGIN} to the nearest {PLACE} and report it.",
+  "source": "adapted:webarena:101 mode=port; WebArena task 101 ('nearest In-N-Out + walking distance') has reference_answer fuzzy_match=N/A — an unachievable task the agent must decline; re-expressed as an offline Safari lookup that cannot be answered without the network, so success is the agent answering FAIL (WebArena llm_ua_match intent)",
+  "complexity": 1,
+  "subset": ["test_small"],
+  "infeasible": true,
+  "schema": [
+    {"name": "ORIGIN", "pool": ["the Ferry Building", "Union Square", "the train station"]},
+    {"name": "PLACE", "pool": ["coffee shop", "pharmacy", "burger restaurant"]}
+  ],
+  "evaluator": {
+    "func": "infeasible",
+    "result": {"kind": "exec", "args": ["true"]}
+  }
+}

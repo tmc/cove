@@ -1,0 +1,26 @@
+{
+  "id": "terminal-chmod-files",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, change the permission of every regular file under ~/{DIR} to {MODE}.",
+  "source": "adapted:osworld:4d117223-a354-47fb-8b45-62ab1390a95f mode=port; OSWorld os 'change the permission of all regular files under the current directory tree to 644' is a POSIX permission task; maps verbatim to Terminal/exec (find -type f / chmod) with a Tier-A exec getter that reads the mode back",
+  "complexity": 2,
+  "schema": [
+    {"name": "DIR", "pool": ["work", "src", "files"]},
+    {"name": "MODE", "pool": ["644", "600", "664"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/{DIR}\"; mkdir -p \"$HOME/{DIR}/sub\"; touch \"$HOME/{DIR}/a.txt\" \"$HOME/{DIR}/sub/b.txt\"; chmod 700 \"$HOME/{DIR}/a.txt\" \"$HOME/{DIR}/sub/b.txt\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "find \"$HOME/{DIR}\" -type f -exec chmod {MODE} {} +"]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "find \"$HOME/{DIR}\" -type f -exec stat -f '%Lp' {} + | sort -u | paste -sd, -"]
+    },
+    "options": {"expected": "{MODE}"}
+  }
+}

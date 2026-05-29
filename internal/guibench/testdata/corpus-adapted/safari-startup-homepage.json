@@ -1,0 +1,22 @@
+{
+  "id": "safari-startup-homepage",
+  "image": "macos-base:v1",
+  "domain": "Safari",
+  "instruction": "Safari currently opens an unwanted site on launch. In Safari's general settings, change the homepage so it opens {URL} instead.",
+  "source": "adapted:osworld:3299584d-8f11-4457-bf4c-ce98f7600250 mode=port; OSWorld Chrome 'always opens funbrain.com on launch — make it stop' is a generic browser-startup-page preference; maps to Safari com.apple.Safari HomePage read via Tier-A defaults",
+  "complexity": 2,
+  "schema": [
+    {"name": "URL", "pool": ["https://example.com/", "https://duckduckgo.com/", "https://www.iana.org/"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "defaults write com.apple.Safari HomePage -string 'https://funbrain.invalid/'; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "defaults write com.apple.Safari HomePage -string '{URL}'; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "plist_equals",
+    "result": {"kind": "defaults", "domain": "com.apple.Safari", "key": "HomePage"},
+    "options": {"expected": "{URL}"}
+  }
+}

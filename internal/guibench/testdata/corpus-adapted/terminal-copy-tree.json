@@ -1,0 +1,26 @@
+{
+  "id": "terminal-copy-tree",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, copy the entire directory hierarchy from ~/{SRC} to ~/{DST}, preserving its subfolder structure.",
+  "source": "adapted:osworld:4783cc41-c03c-4e1b-89b4-50658f642bd5 mode=port; OSWorld os 'copy directory hierarchy from $sourceDir to $targetDir' is a generic recursive-copy task; maps verbatim to Terminal/exec (cp -R) with a Tier-A exec getter that diffs the two trees",
+  "complexity": 2,
+  "schema": [
+    {"name": "SRC", "pool": ["proj", "tree", "root"]},
+    {"name": "DST", "pool": ["copy", "mirror", "dup"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/{SRC}\" \"$HOME/{DST}\"; mkdir -p \"$HOME/{SRC}/x/y\"; touch \"$HOME/{SRC}/top.txt\" \"$HOME/{SRC}/x/mid.txt\" \"$HOME/{SRC}/x/y/leaf.txt\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "cp -R \"$HOME/{SRC}\" \"$HOME/{DST}\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "a=$(cd \"$HOME/{SRC}\" 2>/dev/null && find . | sort); b=$(cd \"$HOME/{DST}\" 2>/dev/null && find . | sort); [ -n \"$a\" ] && [ \"$a\" = \"$b\" ] && echo match || echo differ"]
+    },
+    "options": {"expected": "match"}
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "safari-navigate-tab",
+  "image": "macos-base:v1",
+  "domain": "Safari",
+  "instruction": "Open Safari and navigate the active tab to {URL}.",
+  "source": "adapted:webarena:1 mode=port; WebArena navigates a Playwright page to a start_url; the cross-platform intent (drive a browser tab to a URL) maps to Safari, whose active-tab URL is read via Tier-C AppleScript (url_in, WebArena gold-in-pred)",
+  "complexity": 2,
+  "schema": [
+    {"name": "URL", "pool": ["https://example.com/", "https://www.iana.org/", "https://example.net/"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Safari\" to quit' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Safari\" to make new document with properties {URL:\"{URL}\"}' -e 'delay 1' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "url_in",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Safari\" to return URL of front document"
+    },
+    "options": {"expected": "{URL}"}
+  }
+}

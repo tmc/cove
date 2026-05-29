@@ -1,0 +1,25 @@
+{
+  "id": "settings-output-volume",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "Set the system output volume to {LEVEL} percent.",
+  "source": "adapted:osworld:28cc3b7e-b194-4bc9-8353-d04c0f4d56d2 mode=port; OSWorld os 'turn up the system volume' is a generic OS audio-setting task; maps to macOS Sound settings, set/read via the Tier-C AppleScript 'set/get volume' one-shot (output volume is 0-100)",
+  "complexity": 2,
+  "schema": [
+    {"name": "LEVEL", "pool": ["25", "50", "75"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'set volume output volume 0' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'set volume output volume {LEVEL}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "applescript",
+      "script": "output volume of (get volume settings)"
+    },
+    "options": {"expected": "{LEVEL}"}
+  }
+}

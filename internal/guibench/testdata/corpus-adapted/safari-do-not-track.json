@@ -1,0 +1,25 @@
+{
+  "id": "safari-do-not-track",
+  "image": "macos-base:v1",
+  "domain": "Safari",
+  "instruction": "In Safari's privacy settings, {ACTION} the 'Ask websites not to track me' (Do Not Track) preference.",
+  "source": "adapted:osworld:030eeff7-b492-4218-b312-701ec99ee0cc mode=port; OSWorld Chrome 'enable Do Not Track' is a generic browser-privacy toggle; maps to Safari com.apple.Safari SendDoNotTrackHTTPHeader read via Tier-A defaults",
+  "complexity": 2,
+  "subset": ["test_small"],
+  "schema": [
+    {"name": "ACTION", "pool": ["enable", "disable"]},
+    {"name": "GOAL", "expected_from": "ACTION", "derive": {"enable": "1", "disable": "0"}},
+    {"name": "BASELINE", "expected_from": "ACTION", "derive": {"enable": "0", "disable": "1"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "defaults write com.apple.Safari SendDoNotTrackHTTPHeader -bool {BASELINE}; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "defaults write com.apple.Safari SendDoNotTrackHTTPHeader -bool {GOAL}; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "plist_equals",
+    "result": {"kind": "defaults", "domain": "com.apple.Safari", "key": "SendDoNotTrackHTTPHeader"},
+    "options": {"expected": "{GOAL}"}
+  }
+}
