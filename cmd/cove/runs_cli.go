@@ -43,6 +43,12 @@ func handleRunsCommand(env commandEnv, args []string) error {
 			return nil
 		}
 		return runRunsExport(env, rest)
+	case "view":
+		if len(rest) > 0 && isHelpArg(rest[0]) {
+			printRunsViewUsage(env.Stdout)
+			return nil
+		}
+		return runBenchGUIView(env, rest)
 	default:
 		printRunsUsage(env.Stderr)
 		return fmt.Errorf("unknown runs subcommand: %s", sub)
@@ -55,7 +61,17 @@ func printRunsUsage(w io.Writer) {
 Subcommands:
   list [--limit N] [--since D] [--status ok|fail|all] [--json|--ndjson]
   show <run-id-prefix> [--json|--summary-json]
-  export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]`)
+  export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]
+  view <run-id-prefix | run-dir> [--stdout]`)
+}
+
+func printRunsViewUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove runs view <run-id-prefix | run-dir> [--stdout]
+
+Render a run bundle as a self-contained local HTML timeline (step-by-step:
+screenshot, action, observation, score). Writes index.html next to the bundle
+and prints its file:// URL; --stdout writes the HTML to stdout instead. No cloud
+dependency; screenshots are referenced by relative path.`)
 }
 
 func runRunsList(env commandEnv, args []string) error {

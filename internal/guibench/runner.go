@@ -115,6 +115,7 @@ type cell struct {
 // captured into a Status [StatusError], Score 0 outcome, so the caller's suite
 // loop never aborts (design 047 §9).
 func runOne(ctx context.Context, b Backend, cfg RunConfig, t *Task, run int) Outcome {
+	rigor := RigorOf(t)
 	o := Outcome{
 		Provider: cfg.Provider,
 		Model:    cfg.Model,
@@ -122,6 +123,7 @@ func runOne(ctx context.Context, b Backend, cfg RunConfig, t *Task, run int) Out
 		Domain:   t.Domain,
 		Run:      run,
 		Status:   StatusScored,
+		Rigor:    &rigor,
 	}
 	score, err := scoreTask(ctx, b, cfg, t)
 	if err != nil {

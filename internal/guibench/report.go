@@ -15,11 +15,137 @@ func RenderMarkdown(w io.Writer, r *ScoreReport) error {
 	bw := &errWriter{w: w}
 	bw.printf("# macOS GUI-agent benchmark results\n\n")
 	renderProvenance(bw, r)
+	renderRigor(bw, r)
 	renderOverall(bw, r)
 	renderDomains(bw, r)
 	renderTasks(bw, r)
+	renderRigorColumns(bw, r)
 	renderFlagged(bw, r)
 	return bw.err
+}
+
+// renderRigor writes the corpus-level verification-rigor rollup (design 047
+// §16): the one-line headline claim plus a small table a reader can audit
+// against the per-task rigor columns. trycua and the other GUI-agent
+// leaderboards publish none of this; making it citable is the brand play. An
+// empty report (no cell carried rigor) prints nothing.
+func renderRigor(w *errWriter, r *ScoreReport) {
+	if r.Rigor == nil {
+		return
+	}
+	s := r.Rigor
+	w.printf("## Verification rigor\n\n")
+	w.printf("%s.\n\n", s.Headline())
+	w.printf("| Property | Value |\n|---|---|\n")
+	w.printf("| Isolation | %s |\n", orNotRecorded(s.Isolation))
+	w.printf("| Egress-locked (deny-all) | %d / %d |\n", s.EgressLocked, s.Tasks)
+	w.printf("| Egress-allowlisted | %d / %d |\n", s.EgressAllowlisted, s.Tasks)
+	for _, tier := range []Tier{TierA, TierB, TierC} {
+		if n := s.TierCounts[string(tier)]; n > 0 {
+			w.printf("| Tier-%s verified (%s) | %d / %d |\n", string(tier), tier.Grant(), n, s.Tasks)
+		}
+	}
+	w.printf("| Flush cfprefsd before read | %s |\n", allOrSome(s.FlushesAllTasks, s.Tasks))
+	w.printf("| Checkpoint SQLite WAL before read | %d / %d |\n\n", s.WALCheckpointTasks, s.Tasks)
+}
+
+// renderRigorColumns writes the per-task rigor matrix: one row per task carrying
+// the isolation/egress/tier/flush provenance for that task's number. It is the
+// per-cell view a reader audits the headline claim against. Tasks with no
+// recorded rigor are skipped; an all-skip report prints nothing.
+func renderRigorColumns(w *errWriter, r *ScoreReport) {
+	rows := taskRigorRows(r)
+	if len(rows) == 0 {
+		return
+	}
+	w.printf("## Per-task verification rigor\n\n")
+	w.printf("| Task | Isolation | Egress | Tier | Flushes |\n")
+	w.printf("|---|---|---|---|---|\n")
+	for _, row := range rows {
+		w.printf("| %s | %s | %s | %s | %s |\n",
+			row.taskID, row.isolation, row.egress, row.tier, row.flushes)
+	}
+	w.printf("\n")
+}
+
+// taskRigorRow is one rendered per-task rigor line.
+type taskRigorRow struct {
+	taskID, isolation, egress, tier, flushes string
+}
+
+// taskRigorRows builds the per-task rigor rows in sorted task-id order, taking
+// each task's rigor from the first cell that scored it (rigor is a per-task
+// projection, identical across providers).
+func taskRigorRows(r *ScoreReport) []taskRigorRow {
+	byTask := make(map[string]*TaskRigor)
+	for i := range r.Cells {
+		c := r.Cells[i]
+		if c.Rigor == nil {
+			continue
+		}
+		if _, seen := byTask[c.TaskID]; !seen {
+			byTask[c.TaskID] = c.Rigor
+		}
+	}
+	rows := make([]taskRigorRow, 0, len(byTask))
+	for _, id := range r.sortedTaskIDs() {
+		rg, ok := byTask[id]
+		if !ok {
+			continue
+		}
+		rows = append(rows, taskRigorRow{
+			taskID:    id,
+			isolation: shortIsolation(rg.Isolation),
+			egress:    egressLabel(*rg),
+			tier:      fmt.Sprintf("%s (%s)", string(rg.Tier), rg.Tier.Grant()),
+			flushes:   flushLabel(rg.Flushes),
+		})
+	}
+	return rows
+}
+
+// shortIsolation abbreviates the isolation label for the per-task column, where
+// the full phrase is repeated every row; the corpus section carries the long
+// form.
+func shortIsolation(s string) string {
+	if s == "" {
+		return orNotRecorded(s)
+	}
+	return "fork-per-task"
+}
+
+// egressLabel renders a task's egress as "deny-all" or "allow: a, b".
+func egressLabel(r TaskRigor) string {
+	if len(r.EgressAllow) == 0 {
+		return "deny-all"
+	}
+	return "allow: " + strings.Join(r.EgressAllow, ", ")
+}
+
+// flushLabel renders a task's pre-read flushes as a sorted, de-duplicated list.
+func flushLabel(flushes []FlushKind) string {
+	if len(flushes) == 0 {
+		return "—"
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range sortedFlushKinds(flushes) {
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return strings.Join(out, ", ")
+}
+
+// allOrSome renders a coverage cell as "all (N)" when complete or "N tasks"
+// otherwise.
+func allOrSome(all bool, n int) string {
+	if all {
+		return fmt.Sprintf("all (%d)", n)
+	}
+	return fmt.Sprintf("%d tasks", n)
 }
 
 // renderTasks writes the per-task matrix: one row per task, one column per

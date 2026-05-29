@@ -37,6 +37,10 @@ func runBenchGUI(env commandEnv, args []string) error {
 		return runBenchGUISelfCheck(env, args[1:])
 	case "examine":
 		return runBenchGUIExamine(env, args[1:])
+	case "export-trajectories":
+		return runBenchGUIExportTrajectories(env, args[1:])
+	case "view":
+		return runBenchGUIView(env, args[1:])
 	default:
 		printBenchGUIUsage(env.Stderr)
 		return fmt.Errorf("unknown bench gui subcommand: %s", args[0])
@@ -56,6 +60,8 @@ Subcommands:
   report         Render an existing score.json into the citable table (-in score.json [-markdown <path>])
   selfcheck      Verify each task's gold solution scores 1.0 and a no-op scores 0.0 (-corpus <dir> [-subset test_small])
   examine        Run a task's setup, pause for manual action, then print the verifier state (-corpus <dir> -task-id <id>)
+  export-trajectories  Export oracle (gold) or scored-run trajectories as a HuggingFace-loadable dataset (-out <dir> [-oracle -corpus <dir>] | [-run <bundle> -task-id <id> -reward <0..1>])
+  view           Render a run bundle as a local HTML timeline (<run-dir> | <run-id-prefix>) [-stdout]
 
 Example:
   cove bench gui validate -corpus docs/benchmarks/gui-corpus
@@ -63,7 +69,10 @@ Example:
   cove bench gui run -corpus docs/benchmarks/gui-corpus -providers anthropic,openai,gemini -runs 3 -subset test_small -report bench/gui/run
   cove bench gui report -in bench/gui/run/score.json
   cove bench gui selfcheck -corpus internal/guibench/testdata/corpus-v0
-  cove bench gui examine -corpus internal/guibench/testdata/corpus-v0 -task-id finder-create-folder`)
+  cove bench gui examine -corpus internal/guibench/testdata/corpus-v0 -task-id finder-create-folder
+  cove bench gui export-trajectories -oracle -corpus internal/guibench/testdata/corpus-v0 -out bench/gui/oracle-dataset
+  cove bench gui export-trajectories -run ~/.vz/runs/ab12cd34 -task-id finder-create-folder -reward 1 -out bench/gui/scored-dataset
+  cove bench gui view ~/.vz/runs/deadbeef`)
 }
 
 func runBenchGUIValidate(env commandEnv, args []string) error {

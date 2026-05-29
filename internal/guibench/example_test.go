@@ -2,6 +2,7 @@ package guibench_test
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/tmc/cove/internal/guibench"
@@ -58,6 +59,24 @@ func ExampleMetrics() {
 	// Output: 1
 }
 
+// ExampleMetrics_accessibilityMatch scores the AX dump from the accessibility
+// getter (Dump=true): it asserts a node with a given role exists and its
+// AXValue matches, the macOS-AX analogue of OSWorld's check_accessibility_tree.
+func ExampleMetrics_accessibilityMatch() {
+	// The accessibility getter with Dump set emits the front window's AX subtree
+	// as XML; here we stand in with a Notes window holding one text area.
+	dump := `<ax app="Notes">` +
+		`<node role="AXWindow" title="Notes" identifier="" value="">` +
+		`<node role="AXTextArea" title="Body" identifier="" value="Buy milk" />` +
+		`</node>` +
+		`</ax>`
+
+	m := guibench.Metrics()["accessibility_match"]
+	score, _ := m(dump, "", map[string]any{"role": "AXTextArea", "value": "Buy milk"})
+	fmt.Printf("%.0f\n", score)
+	// Output: 1
+}
+
 // ExampleStepBudget shows the complexity-scaled agent step budget (design 047
 // §7): the budget grows with task complexity rather than using one fixed cap.
 func ExampleStepBudget() {
@@ -68,4 +87,39 @@ func ExampleStepBudget() {
 	// 15
 	// 30
 	// 60
+}
+
+// ExampleMetrics_rowsAddedIntegrity scores a before/after whole-table snapshot:
+// the agent must add the target row AND leave every other ("noise") row intact.
+// Deleting the noise rows and re-creating only the target — the false positive a
+// single-point read accepts — scores 0 (AndroidWorld
+// validate_rows_addition_integrity).
+func ExampleMetrics_rowsAddedIntegrity() {
+	m := guibench.Metrics()["rows_added_integrity"]
+
+	const before = "2|Groceries\n3|Standup agenda"
+	const target = "4|Trip itinerary"
+
+	// Target added, noise intact.
+	ok, _ := m(before+"\n"+target, before, map[string]any{"target": target})
+	// Noise wiped, only the target left behind.
+	bad, _ := m(target, before, map[string]any{"target": target})
+
+	fmt.Printf("intact=%.0f wiped=%.0f\n", ok, bad)
+	// Output: intact=1 wiped=0
+}
+
+// ExampleNoiseRows seeds deterministic distractor rows so an integrity task does
+// not ship a table with only the target present. The same seed always yields the
+// same rows, keeping the gold answer self-consistent across runs (design 047
+// §10).
+func ExampleNoiseRows() {
+	pools := [][]string{
+		{"1", "2", "3"},
+		{"Groceries", "Standup agenda", "Reading list"},
+	}
+	first := guibench.NoiseRows(7, 2, pools)
+	again := guibench.NoiseRows(7, 2, pools)
+	fmt.Printf("rows=%d deterministic=%t\n", len(first), reflect.DeepEqual(first, again))
+	// Output: rows=2 deterministic=true
 }
