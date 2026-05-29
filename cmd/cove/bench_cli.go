@@ -20,6 +20,8 @@ func handleBenchCommand(env commandEnv, args []string) error {
 	switch args[0] {
 	case "competitive":
 		return runBenchCompetitive(env, args[1:])
+	case "gui":
+		return runBenchGUI(env, args[1:])
 	default:
 		printBenchUsage(env.Stderr)
 		return fmt.Errorf("unknown bench subcommand: %s", args[0])
@@ -31,9 +33,11 @@ func printBenchUsage(w io.Writer) {
 
 Subcommands:
   competitive   Normalize checked-in competitive benchmark evidence
+  gui           macOS GUI-agent benchmark (design 047)
 
 Safe example:
-  cove bench competitive -dry-run -json`)
+  cove bench competitive -dry-run -json
+  cove bench gui metrics`)
 }
 
 func runBenchCompetitive(env commandEnv, args []string) error {
