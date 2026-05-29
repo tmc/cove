@@ -7,7 +7,7 @@ LDFLAGS  = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DA
 .PHONY: build sign agent test clean lint proto proto-go proto-swift release-tools release-check release-local
 
 build:
-	go build -buildvcs=true -ldflags "$(LDFLAGS)" -o $(BINARY) .
+	go build -buildvcs=true -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/cove
 
 agent:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o cmd/vz-agent/vz-agent ./cmd/vz-agent

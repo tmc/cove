@@ -2,27 +2,17 @@ package main
 
 import (
 	"bytes"
-	_ "embed"
 	"text/template"
+
+	coveassets "github.com/tmc/cove"
 )
 
-//go:embed templates/vz-provision.sh.tmpl
-var provisionScriptTmpl string
-
-//go:embed templates/vz-autologin.sh.tmpl
-var autoLoginScriptTmpl string
-
-//go:embed templates/com.tmc.cove.provision.plist
-var provisionLaunchDaemonPlist string
-
-//go:embed templates/com.tmc.cove.autologin.plist
-var autoLoginLaunchDaemonPlist string
-
-//go:embed templates/com.tmc.cove.vz-agent.plist
-var agentLaunchDaemonPlistEmbed string
-
-//go:embed templates/com.tmc.cove.vz-agent-user.plist
-var agentLaunchAgentPlistEmbed string
+var (
+	provisionLaunchDaemonPlist = coveassets.ProvisionLaunchDaemonPlist
+	autoLoginLaunchDaemonPlist = coveassets.AutoLoginLaunchDaemonPlist
+	agentLaunchDaemonPlist     = coveassets.AgentLaunchDaemonPlist
+	agentLaunchAgentPlist      = coveassets.AgentLaunchAgentPlist
+)
 
 // provisionTemplateData holds the values substituted into vz-provision.sh.tmpl.
 type provisionTemplateData struct {
@@ -40,8 +30,8 @@ type autoLoginTemplateData struct {
 	Username string // shell-escaped
 }
 
-var provisionScriptTemplate = template.Must(template.New("vz-provision.sh").Parse(provisionScriptTmpl))
-var autoLoginScriptTemplate = template.Must(template.New("vz-autologin.sh").Parse(autoLoginScriptTmpl))
+var provisionScriptTemplate = template.Must(template.New("vz-provision.sh").Parse(coveassets.ProvisionScriptTmpl))
+var autoLoginScriptTemplate = template.Must(template.New("vz-autologin.sh").Parse(coveassets.AutoLoginScriptTmpl))
 
 // renderProvisionScript renders the provision script template with the given data.
 func renderProvisionScript(data provisionTemplateData) (string, error) {

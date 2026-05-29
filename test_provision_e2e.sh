@@ -184,7 +184,7 @@ trap cleanup EXIT
 
 # Build
 log "Building cove..."
-go build -o cove . || { error "build failed"; exit 1; }
+go build -o cove ./cmd/cove || { error "build failed"; exit 1; }
 
 mkdir -p "$VZ_HOME"
 require_free_space

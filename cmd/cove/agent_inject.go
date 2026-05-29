@@ -890,14 +890,3 @@ func agentBuildTargetOS(guestOS string) string {
 	}
 	return "darwin"
 }
-
-// agentLaunchDaemonPlist is the launchd plist for the guest agent daemon.
-// Runs as root on boot (port 1024). KeepAlive ensures launchd restarts if it crashes.
-// Loaded from templates/com.tmc.cove.vz-agent.plist via go:embed.
-var agentLaunchDaemonPlist = agentLaunchDaemonPlistEmbed
-
-// agentLaunchAgentPlist is the launchd plist for the guest user agent.
-// Runs in the logged-in user's session (port 1025) with TCC/FDA grants.
-// LimitLoadToSessionType: Aqua ensures it only starts in GUI sessions.
-// Loaded from templates/com.tmc.cove.vz-agent-user.plist via go:embed.
-var agentLaunchAgentPlist = agentLaunchAgentPlistEmbed

@@ -8,7 +8,7 @@ before:
 
 builds:
   - id: cove
-    main: .
+    main: ./cmd/cove
     binary: cove
     goos:
       - darwin

@@ -15,10 +15,7 @@ import (
 func TestHelperCommandDoesNotRewriteBinary(t *testing.T) {
 	tmp := t.TempDir()
 	exe := filepath.Join(tmp, "cove")
-	entitlements, err := filepath.Abs(filepath.Join("internal", "autosign", "vz.entitlements"))
-	if err != nil {
-		t.Fatalf("resolve entitlements: %v", err)
-	}
+	entitlements := repoPath(t, "internal", "autosign", "vz.entitlements")
 
 	build := exec.Command("go", "build", "-o", exe, ".")
 	build.Dir = "."
