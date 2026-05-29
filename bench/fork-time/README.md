@@ -9,9 +9,9 @@ The harness is black-box on purpose. It invokes the built `cove` binary instead 
 ## Build
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
-go run ./cmd/fork-bench -h
+go run ./bench/fork-time/fork-bench -h
 ```
 
 ## Fork-only Measurement
@@ -19,7 +19,7 @@ go run ./cmd/fork-bench -h
 Run this against one or more existing stopped parent VMs:
 
 ```bash
-go run ./cmd/fork-bench \
+go run ./bench/fork-time/fork-bench \
   -cove ./cove \
   -parents macos-10g,macos-60g,macos-200g \
   -runs 5 \
@@ -34,7 +34,7 @@ The `-max-fork 250ms` threshold is the regression guard for the v0.1.1 smoke res
 To measure the roadmap ship-gate predicate, add `-boot`:
 
 ```bash
-go run ./cmd/fork-bench \
+go run ./bench/fork-time/fork-bench \
   -cove ./cove \
   -parents macos-30g-base \
   -runs 3 \

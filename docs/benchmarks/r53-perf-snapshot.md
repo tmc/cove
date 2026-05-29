@@ -30,14 +30,14 @@ quiet host before drawing release-gate conclusions.
 - Parent VM: `hermes-mlx-go-60g-v10` (60 GiB logical, 39.2 GiB stat-blocks,
   stopped). This is the same parent used for the v0.1.1 baseline at
   `bench/fork-time/results-20260427.md`.
-- Bench harness: `cmd/fork-bench` (existing). No new bench code added.
+- Bench harness: `bench/fork-time/fork-bench` (existing). No new bench code added.
 
 ## Measurements
 
 ### Fork-only wall time (`cove fork`)
 
 ```
-go run ./cmd/fork-bench -cove ./cove -parents hermes-mlx-go-60g-v10 \
+go run ./bench/fork-time/fork-bench -cove ./cove -parents hermes-mlx-go-60g-v10 \
     -runs 5 -max-fork 250ms
 ```
 
@@ -130,7 +130,7 @@ worth investigating.
 ## Constraints honored
 
 - Single doc commit (this file).
-- No new benches added; existing `cmd/fork-bench` exercised.
+- No new benches added; existing `bench/fork-time/fork-bench` exercised.
 - No code changes.
 - Host load explicitly recorded; numbers labelled as uncalibrated.
 - No regression-finding filed because the premise (clean host) was not met.

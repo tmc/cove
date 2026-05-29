@@ -236,7 +236,7 @@ remain fork-first. `cove-sandbox` is not yet published as a package.
 
 **Likely files**:
 
-- `cmd/fork-bench/main.go`
+- `bench/fork-time/fork-bench/main.go`
 - `bench/fork-time/README.md`
 - `bench/fork-time/results-*.md`
 - `adapters/openai-agents-python/README.md`
