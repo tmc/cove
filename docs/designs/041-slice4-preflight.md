@@ -7,7 +7,7 @@ No-ship: this host cannot produce the Slice 2 p50/p95 evidence yet.
 Commands run from an isolated worktree at `origin/main` (`b305c86`):
 
 ```sh
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ./cove doctor sckit-preauth -json
 ./cove list
@@ -28,7 +28,7 @@ Observed state:
 Run later on a TCC-granted host with a visible cove GUI VM:
 
 ```sh
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ./cove doctor sckit-preauth
 COVE_TEST_SCKIT_GRANT=1 COVE_TEST_SCKIT_WINDOW_ID=<id> go test -tags sckit_live ./internal/sckit/
@@ -78,7 +78,7 @@ git fetch origin main conductor/sckit-slice4
 git worktree add ../vz-macos-sckit-slice4-merge origin/main
 cd ../vz-macos-sckit-slice4-merge
 git merge --no-commit --no-ff origin/conductor/sckit-slice4
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ./cove doctor sckit-preauth
 COVE_TEST_SCKIT_GRANT=1 go test -tags sckit_live ./internal/sckit/

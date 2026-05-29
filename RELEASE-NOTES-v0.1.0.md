@@ -22,13 +22,13 @@ guests on Apple Silicon.
 ```bash
 brew install tmc/tap/cove
 # or
-go install github.com/tmc/cove@latest
+go install github.com/tmc/cove/cmd/cove@latest
 ```
 
 Build from source:
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 

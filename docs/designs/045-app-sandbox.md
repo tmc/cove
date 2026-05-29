@@ -403,9 +403,9 @@ Minimum non-mutating gate:
 
 ```bash
 go test -count=1 ./...
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
-go build -o /Users/tmc/tmp/cove-sandboxed .
+go build -o /Users/tmc/tmp/cove-sandboxed ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/app_sandbox.entitlements /Users/tmc/tmp/cove-sandboxed
 codesign -d --entitlements :- /Users/tmc/tmp/cove-sandboxed
 spctl --assess --type execute -vv /Users/tmc/tmp/cove-sandboxed

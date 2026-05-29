@@ -25,7 +25,7 @@ history.
 Install from source for now:
 
 ```bash
-go install github.com/tmc/cove@latest
+go install github.com/tmc/cove/cmd/cove@latest
 ```
 
 The Homebrew formula is not the recommended first-run path yet.
@@ -269,42 +269,15 @@ cove uses Apple's Virtualization.framework through [purego](https://github.com/e
 
 ```
 cove/
-├── main.go                     # CLI entry point, subcommand routing
-├── macos.go                    # macOS VM configuration and lifecycle
-├── linux.go                    # Linux VM configuration
-├── installer.go                # macOS installation from IPSW
-├── linux_installer.go          # Cloud-init based Linux installation
-│
-├── provision.go                # Core provisioning types and orchestration
-├── provision_cli.go            # inject/provision CLI handling
-├── provision_mount.go          # Disk mount/unmount for injection
-├── provision_launchdaemon.go   # LaunchDaemon plist generation
-├── provision_autologin.go      # kcpassword + loginwindow auto-login
-│
-├── control_socket.go           # Unix socket server for VM control
-├── control_client.go           # Programmatic control client
-├── ctl.go                      # ctl subcommand CLI
-│
-├── screenshots.go              # CGWindowListCreateImage capture
-├── screen_detection_ocr.go     # OCR-based UI state detection
-├── ocr.go                      # Vision framework OCR bindings
-│
-├── vzscript.go                 # VZScript engine (rsc.io/script)
-├── vzscript_apply.go           # VZScript CLI and runner
-├── vzscripts/                  # Built-in recipes (.vzscript)
-│
-├── agent_inject.go             # Cross-compile and inject guest agent
-├── agent_client.go             # Agent client API
+├── cmd/cove/                   # cove CLI command
+│   └── main.go                 # CLI entry point, subcommand routing
 ├── cmd/vz-agent/               # In-guest agent daemon (vsock gRPC)
-│
-├── snapshots.go                # VM state + disk-level snapshots
-├── sip.go                      # SIP management
-├── up.go                       # "up" command orchestrator
-├── boot_commands.go            # Boot command DSL parser
-├── unattended.go               # Unattended install orchestrator
-│
+├── cmd/coved/                  # Host-side cove coordinator daemon
+├── vzscripts/                  # Built-in recipes (.vzscript)
+├── templates/                  # Embedded launchd and provisioning templates
 ├── proto/                      # Protobuf definitions (agent + control)
-├── internal/autosign/          # Auto-signing with entitlements
+├── internal/                   # Reusable implementation packages
+├── docs/                       # Guides, design notes, and release material
 └── swift/VZControl/            # Swift package for control socket client
 ```
 
@@ -334,7 +307,7 @@ cove/
 ```bash
 git clone https://github.com/tmc/cove
 cd cove
-go build -o cove .
+go build -o cove ./cmd/cove
 ./cove run
 ```
 

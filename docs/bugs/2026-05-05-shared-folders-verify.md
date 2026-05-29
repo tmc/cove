@@ -13,7 +13,7 @@ Run from the repo root:
 
 ```sh
 go test ./internal/agent
-go test . -run 'TestSharedFolder(AddLiveApplies|StatusLinuxUses|Default)'
+go test ./cmd/cove -run 'TestSharedFolder(AddLiveApplies|StatusLinuxUses|Default)'
 ```
 
 Expected result: routing treats `/Volumes/My Shared Files/...` as a user path,

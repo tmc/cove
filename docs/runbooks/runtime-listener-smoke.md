@@ -6,7 +6,7 @@ have host-visible surfaces, then checks each listener from the host.
 Build and sign the local binary first:
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 

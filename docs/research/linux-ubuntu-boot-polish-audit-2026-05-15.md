@@ -191,7 +191,7 @@ recoverability.
 Commands run on 2026-05-15:
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 go test ./...
 ./cove -vm ubuntu-gui-kvm -display 1280x720 up -linux -desktop -nested \

@@ -14,7 +14,7 @@ cove runs on Apple Silicon Macs and uses Apple's Virtualization.framework.
 Install from source for now:
 
 ```bash
-go install github.com/tmc/cove@latest
+go install github.com/tmc/cove/cmd/cove@latest
 ```
 
 The Go module path is `github.com/tmc/cove`.
@@ -112,7 +112,7 @@ tokens, passwords, usernames, and home-directory paths are redacted.
 For source builds:
 
 ```bash
-go install github.com/tmc/cove@latest
+go install github.com/tmc/cove/cmd/cove@latest
 cove doctor host
 cove helper status
 ```

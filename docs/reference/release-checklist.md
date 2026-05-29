@@ -35,7 +35,7 @@ brew install goreleaser
 
 ```bash
 go test ./...
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 codesign -dv --entitlements - ./cove
 make release-check
@@ -281,7 +281,7 @@ or explicitly gated/documented before tag:
 ## Docs Gates
 
 ```bash
-go test . -run 'TestBuildCLIDocs|TestBuildDumpDocs'
+go test ./cmd/cove -run 'TestBuildCLIDocs|TestBuildDumpDocs'
 ./cove dump-docs -type cli -pretty >/tmp/cove-cli-docs.json
 ```
 

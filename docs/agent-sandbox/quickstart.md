@@ -5,7 +5,7 @@ From zero to a fork-isolated provider loop:
 ```bash
 git clone git@github.com:tmc/cove.git
 cd cove
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 export PATH="$PWD:$PATH"
 
