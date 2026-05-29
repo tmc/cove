@@ -1,0 +1,16 @@
+{
+  "id": "settings-appearance",
+  "image": "macos-base:v1",
+  "instruction": "Open System Settings and switch the appearance to Dark mode.",
+  "source": "guibench example corpus (design 047 §9 slice 7); Tier-A defaults+cfprefsd demonstration",
+  "complexity": 3,
+  "evaluator": {
+    "func": "plist_equals",
+    "result": {
+      "kind": "defaults",
+      "domain": "-g",
+      "key": "AppleInterfaceStyle"
+    },
+    "options": {"expected": "Dark"}
+  }
+}

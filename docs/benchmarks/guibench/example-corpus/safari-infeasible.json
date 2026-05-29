@@ -1,0 +1,18 @@
+{
+  "id": "safari-infeasible",
+  "image": "macos-base:v1",
+  "instruction": "In Safari, open the browser's built-in time machine and restore the page you visited on {DATE}.",
+  "source": "guibench example corpus (design 047 §9 slice 7); infeasible-task demonstration (agent must decline)",
+  "complexity": 1,
+  "infeasible": true,
+  "schema": [
+    {"name": "DATE", "pool": ["2019-04-01", "2020-12-25", "2021-07-04"]}
+  ],
+  "evaluator": {
+    "func": "infeasible",
+    "result": {
+      "kind": "exec",
+      "args": ["true"]
+    }
+  }
+}
