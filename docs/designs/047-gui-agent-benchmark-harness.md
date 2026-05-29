@@ -479,3 +479,78 @@ image moved before the corpus; parameterization and crash/resume moved into the
 foundation), and added the §11 minimum-credible-launch bar and the §6 SEP-identity
 constraint. Every NotebookLM claim about cove's own substrate was re-verified
 against the filesystem before adoption.
+
+## 16. trycua/cua eval surface vs. 047 (2026-05-29 pressure-test)
+
+After the design was drafted, the eval coverage of the most direct competitor —
+**trycua/cua** (17.3k★, "Sandboxes, SDKs, and benchmarks … macOS, Linux, Windows")
+— was synced into the same NotebookLM notebook (`7666f3d3`, source
+`trycua-cua-bench-and-eval-coverage`) and pressure-tested against 047. trycua's
+surface, from their docs:
+
+- **cua-bench** (their own framework): Python decorator tasks
+  (`@tasks_config`/`@setup_task`/`@evaluate_task`/`@solve_task`), an **oracle
+  reference solution** per task, a **2-container Docker** architecture, a
+  **Playwright "simulated desktop"** provider (HTML/CSS `win11`/`macos` *themes*,
+  not a real OS) for the bulk of tasks plus a thin `native` provider, **macOS app
+  helpers via `osascript`** (Notes/Reminders/Calendar), **GenAI task generation**
+  (`cb task generate`), an **RL training dataloader** + HuggingFace-schema
+  trajectory export, and agent-trace telemetry.
+- **HUD integration**: they don't run OSWorld themselves — they wrap hosted
+  **HUD** (hud.ai) to run **OSWorld-Verified (369)** and **SheetBench**, with a
+  live streamed trace viewer.
+- **ScreenSpot-v2 / ScreenSpot-Pro**: static click-prediction grounding scripts;
+  plus a plan-vs-coordinate-vs-composed agent distinction.
+- **Adapters roadmap**: Windows Arena (173, available), OSWorld/WebArena/
+  AndroidWorld ("coming soon"), and **macOSWorld** (`macos-lume`, 100+, "coming
+  soon") — the head-to-head with 047's macOS-native wedge.
+
+### macOSWorld head-to-head (where 047 is structurally stronger)
+
+On the four dimensions that decide benchmark credibility, the notebook found 047
+stronger on all four, and trycua **silent** on three:
+
+| Dimension | trycua | cove 047 |
+|---|---|---|
+| Reset / isolation | Lume + 2-container; no hard whole-OS per-task fork contract | APFS-clonefile RAM-overlay fork-per-task, ~130 ms, whole-OS hermetic (§6) |
+| macOS state fidelity | `osascript` app-helpers (Notes/Reminders/Calendar) | privilege-tier getters A/B/C incl. **FDA sqlite + AX-tree** synchronous probe (§5) |
+| Async-flush (cfprefsd/WAL) staleness | **silent** | explicit pre-read flush discipline (§7) |
+| Contamination / egress | **silent** | host-side-only gold refs + egress lockdown (§8) |
+
+trycua's silence on verifier rigor is itself the finding: their evaluations are
+likely susceptible to exactly the async-flush false-negatives and gold-reference
+contamination that 047 defends against by construction.
+
+### What 047 adopts, defers, and skips
+
+Of the categories trycua covers that 047 did not, the notebook (challenged on its
+first ranking) settled on:
+
+- **ADOPT-NOW — oracle-trajectory export (HF schema).** Slice 4 already authors
+  known-good solutions and the run bundle already captures screenshots/actions/
+  events, so emitting a HuggingFace-schema trajectory is near-zero marginal cost
+  and yields a **native-macOS UI-grounding dataset no competitor has** (none run
+  real macOS at scale). → ROADMAP Slice **4b**.
+- **ADOPT-NOW — "verified-rigor" leaderboard metadata.** Publish per-task
+  isolation, egress-lockdown status, privilege tier, and flush-discipline as
+  first-class leaderboard columns — the OSWorld-Verified "300+ fixes" brand play,
+  turned on trycua's silences. → ROADMAP Slice **6b**.
+- **ADOPT-NOW — local interactive trace viewer.** An HTML timeline over the
+  existing `~/.vz/runs/<id>/` bundles (merging the Slice-4 examine tool), closing
+  trycua's `cb trace view` / app.hud.ai product-clarity lead with **no cloud
+  dependency**. → ROADMAP Slice **8**.
+- **ADOPT-LATER — GenAI task generation; third-party-benchmark adapters
+  (OSWorld/WAA/WebArena/AndroidWorld as macOS-native getters); external
+  eval-platform (HUD) streaming.** Valuable for corpus scale and reach, but only
+  after the human-authored macOS-native baseline and verifier infra (Slices 1–4)
+  are stable.
+- **DELIBERATELY-SKIP — RL training dataloader, simulated/web-themed desktop
+  provider, universal cross-OS single task spec, composed planning+grounding
+  agent architecture.** Each is parity-chasing that dilutes the wedge or trades on
+  ML/web infrastructure cove should not own: cove is the *real-macOS execution
+  substrate*, not an ML framework, and a browser-faked desktop directly
+  undermines the "native macOS on Apple Silicon" moat (and risks false positives
+  where an agent solves the HTML sim but fails the real OS).
+
+The throughline: **deepen the macOS-native verifier wedge and weaponize rigor;
+do not chase feature-parity with a 17k★ general-purpose framework.**
