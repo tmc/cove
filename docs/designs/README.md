@@ -47,6 +47,7 @@ implementation review. Start there before choosing new work.
 35. [ScreenCaptureKit migration](041-screencapturekit-migration.md) — Slices 1-3 shipped on 2026-05-08 (`8d55d7a`, `d0877b8`, `55257f2`); Slice 4 spec landed (`318d801`) — replaces the deprecated `CGWindowListCreateImage` path in `screenshots.go` with `SCScreenshotManager` / `SCStream`.
 36. [Capture latency observability](042-capture-latency-observability.md) — spec landed — production metric path for SCKit/CGWindow/framebuffer capture latency through runs JSONL and coved Prometheus.
 37. [Integration harness goal](044-integration-harness-goal.md) — goal prompt — strengthens runtime feature integration tests with host and guest assertions, destructive-clone isolation, artifact capture, and disk resize acceptance coverage.
+38. [Fleet control plane (open-core)](046-fleet-control-plane.md) — roadmap input, NotebookLM-backed — north-star controller + dial-out `coved` workers above the shipped stateless SSH fleet (034); base-image-affinity scheduler and fork-warm-pool as cove's edge; MIT core / paid multi-host boundary at Slice 5; monetize governance + hosted macOS sandboxes, not the scheduler (Cirrus/Orchard vacated the paid Apple-Silicon fleet niche).
 
 ## Strategy inputs
 

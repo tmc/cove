@@ -205,6 +205,32 @@ interfaces. `ControlServer` in package main is a thin facade.
 | `cove up` config ownership cleanup | should | planned; overlaps active quota/up lane | active `up.go` work | Go-team prod-ready review 2026-05-11 | `applyUpConfig` still syncs `upConfig` into package globals (`vmName`, `vmDir`) read by install/run helpers, which keeps the command path single-process and test-hostile. Follow-up should thread explicit config or command environment through the `up` install/run path. Keep this scoped away from SCKit CGWindowList fallback, public OCI/privacy gates, and OCI disk cleanup/atomic rename paths. |
 | `macos.go` lifecycle cleanup | should | planned; overlaps protected dirty `macos.go` work | active macOS/up lane | Go-team prod-ready review 2026-05-11 | Remaining cleanup is mechanical and local to `macos.go`: prefer `errors.Is(err, os.ErrNotExist)` over `os.IsNotExist`, replace one-shot `time.After` waits with timers where cleanup matters, and review private VM/recovery directory `MkdirAll` modes. Do not fold this into SCKit default-flip, public OCI/privacy, or disk cleanup classifications. |
 
+## Fleet horizon — multi-host control plane (open-core)
+
+**Status: design input, not scheduled.** The shipped fleet (design 034, MIT) is
+stateless SSH fan-out + read-aggregation + image transfer + least-loaded
+placement; `coved` (design 033) is a single-host daemon. The next horizon adds a
+real control plane. [046](046-fleet-control-plane.md) is the NotebookLM-backed
+design: north-star topology, scheduler/placement, open-core line, license
+choice, hosted-offering shape, and the slice plan. **Packaging decision: the
+single-host core stays MIT in cove; the multi-host control plane is a
+separate/paid layer.** The MIT/paid boundary is at Slice 5 (the stateful
+controller). Strategic reframing from the prior-art audit: Cirrus Labs joined
+OpenAI, dropped fees, and is relicensing Tart/Orchard permissive while Cirrus CI
+shuts down 2026-06-01 — so **monetize governance (SSO/RBAC/audit) and hosted
+macOS sandboxes, not the scheduler** (permissive-Orchard will give scheduling
+away). These rows are gated by the unresolved trademark/brand and
+public/private decisions before any paid or hosted launch.
+
+| Item | Priority | Status | Size | Depends on | Source | Why |
+|---|---|---|---|---|---|---|
+| Slice 4 — maximize stateless SSH (pooling, concurrent multi-host run, parallel health probes) | maybe | planned | M | 034 S1-3 | [046](046-fleet-control-plane.md) §slices | Exhausts the stateless design space (all 034-deferred) with no new trust surface; burst CI capacity. Stays MIT. |
+| Slice 5 — stateful fleet controller (the MIT/paid boundary) | maybe | design | L | Slice 4 | [046](046-fleet-control-plane.md) §topology | New control-plane binary accepts worker dial-ins; `coved` gains worker mode (dial-out + heartbeat + four-verb protocol). NAT traversal; SSH fan-out bottleneck. Controller is PAID; worker mode stays MIT. |
+| Slice 6 — fleet-wide policy & GC push | maybe | design | M | Slice 5 | [046](046-fleet-control-plane.md), [031](031-vm-lifecycle.md), [040](040-storage-budget.md) | Controller pushes lifecycle/GC down worker streams. PAID. |
+| Slice 7 — top-k bin-pack scheduler + base-image affinity + fork-warm-pool | maybe | design | L | Slice 5 | [046](046-fleet-control-plane.md) §scheduler | Controller-side placement replacing client-side least-loaded; image-locality is cove's edge over Orchard/Daytona. PAID. |
+| Slice 8 — hosted sandbox-by-API + SDK provider abstraction + metering | maybe | design | L | Slice 7 | [046](046-fleet-control-plane.md) §hosted | `provider=local\|cloud` SDK, `/v1/sandboxes` REST surface, per-resource metering, BYO-LLM-key. The macOS-fork wedge Cua Cloud structurally lacks. PAID/hosted, brand-gated. |
+| Slice 9 — fleet RBAC / SSO / audit | maybe | design | L | Slice 5 | [046](046-fleet-control-plane.md) §security | SAML/OIDC, namespaces, fleet audit log. The durable governance monetization axis (Teleport line). PAID. |
+
 ## v0.3 implementation slices
 
 The next implementation branches should stay directly based on `origin/main`
@@ -260,6 +286,7 @@ see [017](archive/017-v03-execution-roadmap.md) for files, gates, and docs updat
 
 ## Recent changes
 
+- **2026-05-29**: Added the **Fleet horizon** milestone and design [046](046-fleet-control-plane.md) (NotebookLM-backed, notebook `a455776b`). Roadmaps the multi-host control plane above the shipped stateless SSH fleet (034): controller + dial-out `coved` workers, base-image-affinity scheduler + fork-warm-pool, hosted sandbox-by-API. Open-core decision recorded: MIT single-host core in cove, paid multi-host control plane (boundary at Slice 5). Prior-art reframing: monetize governance + hosted macOS sandboxes, not the scheduler, because Cirrus Labs (Tart/Orchard) joined OpenAI, dropped fees, and is relicensing permissive while Cirrus CI shuts down 2026-06-01. All rows `maybe`/unscheduled and gated by the trademark/brand + public/private decisions. Every cove claim verified against `origin/main`; competitor facts cited.
 - **2026-05-11** (R113/R117): Capture-latency production wiring shipped at `ecbf3bb`; final local gate cleanup at `cd14f9e` makes `go build ./...`, `go vet ./...`, and `go test ./...` pass on main. The private PR workflow now runs green on cove-hermes-v10 (`1c31744`, `0d5b7af`).
 - **2026-05-11** (R127/R133): Go-team closeout status is current: `applyUpConfig` global-state cleanup remains a v0.7 follow-up, and R132 handled the cache/store isolation surface at `4262a85`.
 - **2026-05-11** (R139): Dirty-file triage added the bounded `macos.go` lifecycle cleanup follow-up; no protected source files were edited.
