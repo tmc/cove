@@ -1,0 +1,26 @@
+{
+  "id": "notes-create-titled",
+  "image": "macos-base:v1",
+  "domain": "Notes",
+  "instruction": "Open Notes and create a new note titled {TITLE} containing the text {BODY}.",
+  "source": "cove-original (design 047 §9 slice 4, §10 Notes template); Tier-C AppleScript reads the note body by title",
+  "complexity": 3,
+  "schema": [
+    {"name": "TITLE", "pool": ["Groceries", "Standup", "Roadmap", "Packing"]},
+    {"name": "BODY", "pool": ["buy milk", "ship the release", "call the bank", "water the plants"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to delete (every note whose name is \"{TITLE}\")' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to make new note with properties {name:\"{TITLE}\", body:\"{BODY}\"}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Notes\" to return body of first note whose name is \"{TITLE}\""
+    },
+    "options": {"expected": "{BODY}"}
+  }
+}

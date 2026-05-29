@@ -1,0 +1,25 @@
+{
+  "id": "terminal-make-executable",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "In Terminal, make the script ~/bin/{SCRIPT} executable.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A exec checks the executable bit",
+  "complexity": 1,
+  "schema": [
+    {"name": "SCRIPT", "pool": ["build.sh", "deploy.sh", "run.sh"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/bin\"; printf '#!/bin/sh\\necho hi\\n' > \"$HOME/bin/{SCRIPT}\"; chmod 644 \"$HOME/bin/{SCRIPT}\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "chmod +x \"$HOME/bin/{SCRIPT}\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "if [ -x \"$HOME/bin/{SCRIPT}\" ]; then echo yes; else echo no; fi"]
+    },
+    "options": {"expected": "yes"}
+  }
+}

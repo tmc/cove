@@ -1,0 +1,17 @@
+{
+  "id": "safari-infeasible",
+  "image": "macos-base:v1",
+  "domain": "Safari",
+  "instruction": "In Safari, open the browser's built-in time machine and restore the exact page you visited on {DATE}.",
+  "source": "cove-original (design 047 §9 slice 4); infeasible-task — no such feature exists, agent must answer FAIL",
+  "complexity": 1,
+  "subset": ["test_small"],
+  "infeasible": true,
+  "schema": [
+    {"name": "DATE", "pool": ["2019-04-01", "2020-12-25", "2021-07-04"]}
+  ],
+  "evaluator": {
+    "func": "infeasible",
+    "result": {"kind": "exec", "args": ["true"]}
+  }
+}

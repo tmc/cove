@@ -1,0 +1,25 @@
+{
+  "id": "finder-zip-folder",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, compress the folder ~/Desktop/{FOLDER} into ~/Desktop/{FOLDER}.zip.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A exec confirms a valid zip archive at the target",
+  "complexity": 2,
+  "schema": [
+    {"name": "FOLDER", "pool": ["Receipts", "Logs", "Exports"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Desktop/{FOLDER}\"; printf 'x' > \"$HOME/Desktop/{FOLDER}/a.txt\"; rm -f \"$HOME/Desktop/{FOLDER}.zip\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "cd \"$HOME/Desktop\" && zip -rq \"{FOLDER}.zip\" \"{FOLDER}\""]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "file -b \"$HOME/Desktop/{FOLDER}.zip\" 2>/dev/null || echo missing"]
+    },
+    "options": {"expected": "Zip archive"}
+  }
+}

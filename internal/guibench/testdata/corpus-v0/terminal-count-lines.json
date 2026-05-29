@@ -1,0 +1,27 @@
+{
+  "id": "terminal-count-lines",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, write the number of lines in ~/data/{SRC} to ~/{OUT}.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A exec derived gold",
+  "complexity": 2,
+  "schema": [
+    {"name": "SRC", "pool": ["three.txt", "five.txt", "seven.txt"]},
+    {"name": "OUT", "pool": ["count.txt", "lines.txt"]},
+    {"name": "EXPECTED", "expected_from": "SRC", "derive": {"three.txt": "3", "five.txt": "5", "seven.txt": "7"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/data\" \"$HOME/{OUT}\"; mkdir -p \"$HOME/data\"; n=$(printf '%s' {SRC} | tr -dc 'a-z'); case {SRC} in three.txt) seq 3;; five.txt) seq 5;; seven.txt) seq 7;; esac > \"$HOME/data/{SRC}\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "wc -l < \"$HOME/data/{SRC}\" | tr -d ' ' > \"$HOME/{OUT}\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "cat \"$HOME/{OUT}\""]
+    },
+    "options": {"expected": "{EXPECTED}"}
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "preview-export-format",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "Open ~/Pictures/source.png in Preview and export it as {FORMAT} to ~/Pictures/out.{EXT}.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A exec reads the exported file's type via the `file` tool",
+  "complexity": 3,
+  "schema": [
+    {"name": "FORMAT", "pool": ["JPEG", "TIFF"]},
+    {"name": "EXT", "expected_from": "FORMAT", "derive": {"JPEG": "jpg", "TIFF": "tiff"}},
+    {"name": "SIPS", "expected_from": "FORMAT", "derive": {"JPEG": "jpeg", "TIFF": "tiff"}},
+    {"name": "EXPECTED", "expected_from": "FORMAT", "derive": {"JPEG": "JPEG", "TIFF": "TIFF"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Pictures\"; rm -f \"$HOME/Pictures/out.\"*; printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' | base64 --decode > \"$HOME/Pictures/source.png\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sips -s format {SIPS} \"$HOME/Pictures/source.png\" --out \"$HOME/Pictures/out.{EXT}\""]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "file -b \"$HOME/Pictures/out.{EXT}\""]
+    },
+    "options": {"expected": "{EXPECTED}"}
+  }
+}

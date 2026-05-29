@@ -1,0 +1,27 @@
+{
+  "id": "settings-appearance",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "Open System Settings, go to Appearance, and switch to {THEME} mode.",
+  "source": "cove-original (design 047 §9 slice 4, §10 Settings template); Tier-A defaults+cfprefsd (§7)",
+  "complexity": 3,
+  "subset": ["test_small"],
+  "schema": [
+    {"name": "THEME", "pool": ["Dark", "Light"]},
+    {"name": "BASELINE", "expected_from": "THEME", "derive": {"Dark": "Light", "Light": "Dark"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "if [ {BASELINE} = Dark ]; then defaults write -g AppleInterfaceStyle -string Dark; else defaults delete -g AppleInterfaceStyle 2>/dev/null || true; fi; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "if [ {THEME} = Dark ]; then defaults write -g AppleInterfaceStyle -string Dark; else defaults delete -g AppleInterfaceStyle 2>/dev/null || true; fi; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "plist_equals",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "killall cfprefsd 2>/dev/null; defaults read -g AppleInterfaceStyle 2>/dev/null || echo Light"]
+    },
+    "options": {"expected": "{THEME}"}
+  }
+}

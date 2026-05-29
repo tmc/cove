@@ -1,0 +1,26 @@
+{
+  "id": "finder-rename-file",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, rename the file ~/Desktop/{OLD} to {NEW}.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A exec confirms the new name exists and the old one does not",
+  "complexity": 2,
+  "schema": [
+    {"name": "OLD", "pool": ["untitled.txt", "scratch.txt", "tmp.txt"]},
+    {"name": "NEW", "pool": ["final.txt", "report.txt", "notes.txt"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Desktop\"; rm -f \"$HOME/Desktop/{NEW}\"; printf 'data' > \"$HOME/Desktop/{OLD}\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "mv \"$HOME/Desktop/{OLD}\" \"$HOME/Desktop/{NEW}\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "if [ -f \"$HOME/Desktop/{NEW}\" ] && [ ! -e \"$HOME/Desktop/{OLD}\" ]; then echo ok; else echo no; fi"]
+    },
+    "options": {"expected": "ok"}
+  }
+}

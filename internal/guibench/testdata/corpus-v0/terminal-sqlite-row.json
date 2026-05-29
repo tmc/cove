@@ -1,0 +1,27 @@
+{
+  "id": "terminal-sqlite-row",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal and sqlite3, in the database ~/db/{DB} insert a contact named {NAME} into the contacts table.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-B sqlite getter with WAL checkpoint (§7)",
+  "complexity": 2,
+  "schema": [
+    {"name": "DB", "pool": ["app.db", "store.db"]},
+    {"name": "NAME", "pool": ["Alice", "Bob", "Carol", "Dave"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/db\"; mkdir -p \"$HOME/db\"; sqlite3 \"$HOME/db/{DB}\" 'CREATE TABLE contacts(name TEXT);'"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sqlite3 \"$HOME/db/{DB}\" \"INSERT INTO contacts(name) VALUES('{NAME}');\""]}
+  ],
+  "evaluator": {
+    "func": "sqlite_row_matches",
+    "result": {
+      "kind": "sqlite",
+      "path": "/Users/tmc/db/{DB}",
+      "query": "SELECT name FROM contacts LIMIT 1;"
+    },
+    "options": {"expected": "{NAME}"}
+  }
+}

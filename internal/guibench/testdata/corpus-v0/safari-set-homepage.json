@@ -1,0 +1,22 @@
+{
+  "id": "safari-set-homepage",
+  "image": "macos-base:v1",
+  "domain": "Safari",
+  "instruction": "In Safari's settings, set the homepage to {URL}.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A defaults reads com.apple.Safari HomePage",
+  "complexity": 2,
+  "schema": [
+    {"name": "URL", "pool": ["https://example.com/", "https://duckduckgo.com/", "https://apple.com/"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "defaults write com.apple.Safari HomePage -string 'https://www.cove.invalid/'; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "defaults write com.apple.Safari HomePage -string '{URL}'; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "plist_equals",
+    "result": {"kind": "defaults", "domain": "com.apple.Safari", "key": "HomePage"},
+    "options": {"expected": "{URL}"}
+  }
+}

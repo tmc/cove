@@ -1,0 +1,26 @@
+{
+  "id": "notes-append-line",
+  "image": "macos-base:v1",
+  "domain": "Notes",
+  "instruction": "Open Notes, find the note titled {TITLE}, and append a line reading {LINE} to it.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-C AppleScript verifies the appended line is present in the note body",
+  "complexity": 3,
+  "schema": [
+    {"name": "TITLE", "pool": ["Errands", "Ideas", "Shopping"]},
+    {"name": "LINE", "pool": ["pick up dry cleaning", "renew passport", "book flights"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to delete (every note whose name is \"{TITLE}\")' 2>/dev/null || true; osascript -e 'tell application \"Notes\" to make new note with properties {name:\"{TITLE}\", body:\"seed line\"}' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to set body of (first note whose name is \"{TITLE}\") to (body of (first note whose name is \"{TITLE}\") & \"<br>{LINE}\")' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Notes\" to return body of first note whose name is \"{TITLE}\""
+    },
+    "options": {"expected": "{LINE}"}
+  }
+}

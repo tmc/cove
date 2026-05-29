@@ -1,0 +1,25 @@
+{
+  "id": "safari-open-url",
+  "image": "macos-base:v1",
+  "domain": "Safari",
+  "instruction": "Open Safari and navigate to {URL}.",
+  "source": "cove-original (design 047 §9 slice 4, §10 Safari template); Tier-C AppleScript reads the active-tab URL",
+  "complexity": 2,
+  "schema": [
+    {"name": "URL", "pool": ["https://example.com/", "https://example.org/", "https://www.iana.org/"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Safari\" to quit' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Safari\" to make new document with properties {URL:\"{URL}\"}' -e 'delay 1' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "url_in",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Safari\" to return URL of front document"
+    },
+    "options": {"expected": "{URL}"}
+  }
+}

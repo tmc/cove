@@ -1,0 +1,27 @@
+{
+  "id": "terminal-write-file",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Open Terminal and create a file at ~/{FILE} whose only line is the word {WORD}.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A file getter exact_match",
+  "complexity": 1,
+  "subset": ["test_small"],
+  "schema": [
+    {"name": "FILE", "pool": ["note.txt", "out.txt", "result.txt", "marker.txt"]},
+    {"name": "WORD", "pool": ["alpha", "bravo", "charlie", "delta"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -f \"$HOME/{FILE}\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "printf '%s\\n' {WORD} > \"$HOME/{FILE}\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "cat \"$HOME/{FILE}\""]
+    },
+    "options": {"expected": "{WORD}"}
+  }
+}

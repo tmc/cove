@@ -1,0 +1,25 @@
+{
+  "id": "preview-resize-width",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "In Preview, resize ~/Pictures/wide.png to a width of {WIDTH} pixels, keeping it at ~/Pictures/wide.png.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A exec reads pixel width via sips",
+  "complexity": 2,
+  "schema": [
+    {"name": "WIDTH", "pool": ["64", "100", "128"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/Pictures\"; printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' | base64 --decode > \"$HOME/Pictures/wide.png\"; sips --resampleWidth 256 \"$HOME/Pictures/wide.png\" >/dev/null"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sips --resampleWidth {WIDTH} \"$HOME/Pictures/wide.png\" >/dev/null"]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "sips -g pixelWidth \"$HOME/Pictures/wide.png\" | awk '/pixelWidth/{print $2}'"]
+    },
+    "options": {"expected": "{WIDTH}"}
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "settings-screenshot-location",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "Change the macOS screenshot save location to ~/{DIR}.",
+  "source": "cove-original (design 047 §9 slice 4); Tier-A defaults reads com.apple.screencapture location",
+  "complexity": 2,
+  "schema": [
+    {"name": "DIR", "pool": ["Screenshots", "Captures", "Shots"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/{DIR}\"; defaults write com.apple.screencapture location -string \"$HOME/Desktop\"; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "defaults write com.apple.screencapture location -string \"$HOME/{DIR}\"; killall cfprefsd 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "killall cfprefsd 2>/dev/null; defaults read com.apple.screencapture location"]
+    },
+    "options": {"expected": "/Users/tmc/{DIR}"}
+  }
+}

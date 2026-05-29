@@ -1,0 +1,26 @@
+{
+  "id": "finder-move-keyword",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, move every file in ~/Documents whose name contains {KEYWORD} into the ~/{TARGET} folder.",
+  "source": "cove-original (design 047 §9 slice 4, §10 Finder/Terminal template); Tier-A exec",
+  "complexity": 3,
+  "schema": [
+    {"name": "KEYWORD", "pool": ["report", "invoice", "draft", "memo"]},
+    {"name": "TARGET", "pool": ["Archive", "Sorted", "Filed"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/Documents\" \"$HOME/{TARGET}\"; mkdir -p \"$HOME/Documents\" \"$HOME/{TARGET}\"; touch \"$HOME/Documents/{KEYWORD}-1.txt\" \"$HOME/Documents/{KEYWORD}-2.txt\" \"$HOME/Documents/keep.txt\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "for f in \"$HOME/Documents/\"*{KEYWORD}*; do mv \"$f\" \"$HOME/{TARGET}/\"; done"]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "exec",
+      "args": ["sh", "-c", "printf '%s' \"$(ls \"$HOME/{TARGET}\" | grep -c {KEYWORD}):$(ls \"$HOME/Documents\" | grep -c {KEYWORD})\""]
+    },
+    "options": {"expected": "2:0"}
+  }
+}
