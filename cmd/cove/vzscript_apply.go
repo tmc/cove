@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,14 +18,14 @@ import (
 	"sync"
 	"time"
 
+	coveassets "github.com/tmc/cove"
 	agentstate "github.com/tmc/cove/internal/agent"
 	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/tools/txtar"
 	"rsc.io/script"
 )
 
-//go:embed vzscripts/*.vzscript
-var builtinScripts embed.FS
+var builtinScripts = coveassets.VZScripts
 
 // vzscriptCommand handles the "vzscript" subcommand.
 func vzscriptCommand(args []string) error {

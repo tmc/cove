@@ -25,7 +25,7 @@ import (
 )
 
 func TestAppSandboxEntitlementFixture(t *testing.T) {
-	path := filepath.Join("internal", "autosign", "app_sandbox.entitlements")
+	path := repoPath(t, "internal", "autosign", "app_sandbox.entitlements")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
@@ -1162,10 +1162,7 @@ func buildAppSandboxSmokeBinary(t *testing.T) string {
 
 	tmp := t.TempDir()
 	bin := filepath.Join(tmp, "cove-sandboxed")
-	entitlements, err := filepath.Abs(filepath.Join("internal", "autosign", "app_sandbox.entitlements"))
-	if err != nil {
-		t.Fatalf("resolve app sandbox entitlements: %v", err)
-	}
+	entitlements := repoPath(t, "internal", "autosign", "app_sandbox.entitlements")
 
 	out, err := runSandboxSmokeCommand(t, 3*time.Minute, "go", "build", "-o", bin, ".")
 	if err != nil {

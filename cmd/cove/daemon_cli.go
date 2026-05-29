@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -16,10 +15,11 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	coveassets "github.com/tmc/cove"
 )
 
-//go:embed internal/coved/com.cove.daemon.plist.tmpl
-var covedPlistTemplate string
+var covedPlistTemplate = coveassets.CovedPlistTemplate
 
 type daemonStatus struct {
 	Version                string `json:"version"`

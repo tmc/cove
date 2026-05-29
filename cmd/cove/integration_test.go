@@ -871,7 +871,7 @@ func buildIntegrationBinary(tb testing.TB) string {
 			integrationBinaryErr = fmt.Errorf("go build: %v\n%s", err, out)
 			return
 		}
-		signCmd := exec.Command("codesign", "-s", "-", "-f", "--entitlements", "internal/autosign/vz.entitlements", path)
+		signCmd := exec.Command("codesign", "-s", "-", "-f", "--entitlements", repoPath(tb, "internal", "autosign", "vz.entitlements"), path)
 		signCmd.Dir = cmd.Dir
 		out, err = signCmd.CombinedOutput()
 		if err != nil {

@@ -7,7 +7,7 @@ Project conventions for AI coding agents working in this repo.
 After every Go build, re-sign the binary with the virtualization entitlement:
 
 ```bash
-go build -o cove .
+go build -o cove ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 ```
 

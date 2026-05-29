@@ -63,7 +63,7 @@
 // If autosigning fails or the normal startup path is bypassed, sign the binary
 // manually:
 //
-//	go build -o cove .
+//	go build -o cove ./cmd/cove
 //	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
 //
 // Manual signing is also useful for tests and launch paths that cannot re-exec
@@ -89,5 +89,5 @@
 //   - Apple Virtualization Framework: https://developer.apple.com/documentation/virtualization
 package main
 
-//go:generate go build -o cove .
-//go:generate codesign --entitlements internal/autosign/vz.entitlements -f -s - ./cove
+//go:generate go build -o ../../cove .
+//go:generate codesign --entitlements ../../internal/autosign/vz.entitlements -f -s - ../../cove
