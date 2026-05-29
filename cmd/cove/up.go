@@ -488,8 +488,13 @@ func requireRootForMacOSUpProvisioning(cfg upConfig, target vmSelection, install
 	if installed && didInjectSucceedForVM(target) {
 		return nil
 	}
-	if restrictedEnvironment() {
-		return fmt.Errorf("auto-login provisioning needs the native macOS admin dialog; re-run cove up from a normal terminal")
+	// Provisioning writes auto-login files as root:wheel. In a restricted shell
+	// (tmux, ssh, sandboxed, CI) the native admin dialog cannot appear, so the
+	// only way to elevate is the privileged helper. Fail here, before install
+	// and staging run, so a non-interactive caller stops in under a second
+	// instead of after a full install. Mirrors the gate in injectAgentOnly.
+	if restrictedEnvironment() && !helperInstalled() {
+		return fmt.Errorf("auto-login provisioning needs the native macOS admin dialog or the privileged helper; install it once with 'cove helper install' (needs sudo) or re-run cove up from a normal terminal")
 	}
 	return nil
 }

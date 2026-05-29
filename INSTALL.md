@@ -65,6 +65,14 @@ write root-owned launchd files into the guest, or install/update the optional
 helper. Those prompts authorize local disk preparation only; cove does not send
 credentials to a remote service.
 
+Each provision that runs as your normal user triggers one of these admin
+dialogs. Installing the privileged helper once (`sudo cove helper install`)
+elevates through the helper instead, so subsequent provisions run without any
+dialog. A non-interactive shell (tmux, ssh, sandboxed, or CI) cannot display
+the native dialog at all, so the helper is required there: without it,
+`cove up` stops early and tells you to install it or re-run from a normal
+terminal. See [Helper Daemon](#helper-daemon).
+
 When a VM runs with the native GUI, cove also adds a macOS status item for that
 VM. The status item shows the VM state and provides quick menu actions such as
 opening or closing the window and requesting a clean stop. It is a per-run UI
@@ -84,6 +92,12 @@ tart-guest-agent license comparison.
 
 Most cove commands run as your normal user. Some disk-injection operations need root-owned files inside a mounted guest disk because launchd requires LaunchDaemon plists to be `root:wheel`.
 
+Without the helper, every such operation prompts for administrator approval via
+the native macOS admin dialog — one prompt per provision. With the helper
+installed, those operations elevate through it and prompt zero times. The helper
+is therefore optional in an interactive terminal but required in any shell that
+cannot show the native dialog (tmux, ssh, sandboxed, or CI).
+
 cove supports an optional privileged helper:
 
 ```bash
@@ -91,7 +105,10 @@ cove helper status
 sudo cove helper install
 ```
 
-Use it only if you want to avoid repeated one-shot authorization prompts. `cove helper status` reports whether the installed helper binary is stale.
+`cove helper status` reports whether the installed helper binary is stale (its
+SHA does not match the current `cove` build); refresh a stale helper by
+re-running `sudo cove helper install`. `cove doctor host` flags the same stale
+state.
 
 ## Support Bundle
 

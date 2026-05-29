@@ -176,6 +176,10 @@ func TestRequireRootForMacOSUpProvisioningRejectsManualElevationContext(t *testi
 	upEffectiveUID = func() int { return 501 }
 	t.Setenv("COVE_FORCE_MANUAL_ELEVATION", "1")
 
+	oldHelperInstalled := helperInstalled
+	t.Cleanup(func() { helperInstalled = oldHelperInstalled })
+	helperInstalled = func() bool { return false }
+
 	err := requireRootForMacOSUpProvisioning(cfg, target, false)
 	if err == nil {
 		t.Fatal("requireRootForMacOSUpProvisioning returned nil error")
@@ -183,8 +187,30 @@ func TestRequireRootForMacOSUpProvisioningRejectsManualElevationContext(t *testi
 	if want := "auto-login provisioning needs the native macOS admin dialog"; !strings.Contains(err.Error(), want) {
 		t.Fatalf("error = %v, want %q", err, want)
 	}
-	if strings.Contains(err.Error(), "sudo") {
-		t.Fatalf("error suggests sudo: %v", err)
+	// The error may point at the one-time 'cove helper install' (which needs
+	// sudo), but it must never tell the user to re-run the command itself with
+	// sudo — that is the recurring-elevation antipattern we avoid.
+	if strings.Contains(err.Error(), "sudo cove up") {
+		t.Fatalf("error suggests re-running with sudo: %v", err)
+	}
+}
+
+func TestRequireRootForMacOSUpProvisioningAllowsHelper(t *testing.T) {
+	restoreVMGlobals(t)
+	oldEUID := upEffectiveUID
+	t.Cleanup(func() { upEffectiveUID = oldEUID })
+
+	cfg := upConfig{user: "mlxqa", password: "mlxqa123", vmName: "mlxgo-fresh-nodev-20260505"}
+	target := vmSelection{Name: cfg.vmName, Directory: t.TempDir()}
+	upEffectiveUID = func() int { return 501 }
+	t.Setenv("COVE_FORCE_MANUAL_ELEVATION", "1")
+
+	oldHelperInstalled := helperInstalled
+	t.Cleanup(func() { helperInstalled = oldHelperInstalled })
+	helperInstalled = func() bool { return true }
+
+	if err := requireRootForMacOSUpProvisioning(cfg, target, false); err != nil {
+		t.Fatalf("with helper installed: %v", err)
 	}
 }
 

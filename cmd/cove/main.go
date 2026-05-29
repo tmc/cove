@@ -804,8 +804,17 @@ func printFirstRunUsage(w io.Writer) {
 
 What to expect:
   - cove prompts for the guest account password if -password is omitted.
-  - macOS may ask for administrator approval to prepare guest disk files.
+  - 'cove up' writes auto-login files into the guest disk as root, so macOS
+    asks for administrator approval (the native admin dialog) the first time.
   - VM data is stored under ~/.vz/.
+
+Avoiding repeated password dialogs:
+  - Install the privileged helper once and cove stops prompting for every
+    provision:
+      sudo cove helper install
+  - Non-interactive shells (tmux, ssh, sandboxed, or CI) cannot show the
+    native admin dialog, so they REQUIRE the helper. Without it, 'cove up'
+    stops early and tells you to install it or re-run from a normal terminal.
 
 Support:
   cove support bundle

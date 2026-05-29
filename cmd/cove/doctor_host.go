@@ -223,13 +223,19 @@ func hostDoctorHelperCheck() hostDoctorCheck {
 	socket := fileExists(helperSocketPath)
 	switch {
 	case plist && bin && socket:
+		// A fully-installed helper can still be stale: the user replaced
+		// /usr/local/bin/cove with a newer build but didn't re-run the
+		// installer, so the daemon runs the old binary. That is actionable.
+		if matches, _, err := helperBinaryFreshness(); err == nil && !matches {
+			return hostDoctorCheck{"helper", "warn", "privileged helper is stale (does not match this cove build); refresh with: sudo cove helper install"}
+		}
 		return hostDoctorCheck{"helper", "pass", "privileged helper installed and socket present"}
 	case plist && bin:
-		return hostDoctorCheck{"helper", "warn", "privileged helper installed but socket is not present; it may be stopped"}
+		return hostDoctorCheck{"helper", "warn", "privileged helper installed but socket is not present; it may be stopped. Inspect with: cove helper status (reinstall with: sudo cove helper install)"}
 	case plist || bin || socket:
-		return hostDoctorCheck{"helper", "warn", "partial privileged helper install; run cove helper status"}
+		return hostDoctorCheck{"helper", "warn", "partial privileged helper install. Inspect with: cove helper status, then reinstall with: sudo cove helper install"}
 	default:
-		return hostDoctorCheck{"helper", "pass", "privileged helper not installed; cove will use one-shot authorization prompts when needed"}
+		return hostDoctorCheck{"helper", "pass", "privileged helper not installed; cove will use one-shot authorization prompts when needed. Install it once to skip those: sudo cove helper install"}
 	}
 }
 
