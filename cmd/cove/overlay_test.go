@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"github.com/tmc/cove/internal/vmrun"
@@ -34,6 +35,21 @@ func TestBootOverlayMessage(t *testing.T) {
 	title, subtitle, hold = bootOverlayMessageForRun(rc, target)
 	if title != "Preparing macOS" || subtitle == "" || !hold {
 		t.Fatalf("bootOverlayMessage() unattended = %q, %q, %v", title, subtitle, hold)
+	}
+
+	// A VM with an injected provision pending (the default `cove up` path) holds
+	// the overlay through first-boot account creation and the auto-login reboot,
+	// even without explicit provision credentials on this run.
+	rc.Unattended = false
+	if err := os.WriteFile(target.injectSucceededMarker(), []byte("ok"), 0644); err != nil {
+		t.Fatalf("write inject marker: %v", err)
+	}
+	title, subtitle, hold = bootOverlayMessageForRun(rc, target)
+	if title != "Preparing macOS" || subtitle == "" || !hold {
+		t.Fatalf("bootOverlayMessage() injected first boot = %q, %q, %v", title, subtitle, hold)
+	}
+	if err := os.Remove(target.injectSucceededMarker()); err != nil {
+		t.Fatalf("remove inject marker: %v", err)
 	}
 
 	setActiveBootSessionMode(bootSessionModeRecovery)

@@ -1946,6 +1946,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	if currentState != vz.VZVirtualMachineStateRunning {
 		bootOverlay = createBootOverlay(currentVMViewSize(vmView, contentRect.Size), bootOverlayTitle, bootOverlaySubtitle)
 		vmViewAsNSView(vmView).AddSubview(&bootOverlay)
+		// While the overlay is held through a long first-boot/provisioning wait,
+		// pulse the subtitle so the dark screen reads as working, not frozen.
+		if holdBootOverlay {
+			pulseMessageOverlaySubtitle(bootOverlay)
+		}
 	}
 
 	// Show window and make VM view first responder for keyboard input.
@@ -2211,6 +2216,14 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	var pauseFadeStep int = -1    // -1 means not fading; >0 means fading in; used for fade-out too
 	var healthPollCounter int     // poll agent health every ~1s (30 frames)
 	var lastHealthSubtitle string // avoid redundant SetSubtitle calls
+	// holdFrames bounds how long the boot overlay may stay held when the agent
+	// never reports connected (e.g. agent not installed, or a stalled first
+	// boot). Without this, a held overlay would linger forever. First-boot
+	// provisioning (account creation + one auto-login reboot) completes well
+	// inside this window; a healthy agent releases the hold far sooner via
+	// bootOverlayReadyToFade. ~30 Hz * 180s.
+	const maxBootOverlayHoldFrames = 30 * 180
+	var bootOverlayHoldFrames int
 
 	// Self-rescheduling one-shot timer handles state updates on the main
 	// thread at ~30 Hz. Each invocation creates a fresh reflect frame via
@@ -2335,6 +2348,18 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 					}
 				}
 
+				// Safety release: never hold the overlay indefinitely. If the agent
+				// never reports connected (not installed, or a stalled boot), fade
+				// once the bounded window elapses so the user is not stuck behind a
+				// dark screen.
+				if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 {
+					bootOverlayHoldFrames++
+					if bootOverlayHoldFrames >= maxBootOverlayHoldFrames {
+						holdBootOverlay = false
+						overlayFadeStep = 15
+					}
+				}
+
 				// Reschedule for next frame.
 				scheduleTimer()
 			},
@@ -2415,6 +2440,18 @@ func bootOverlayMessageForRun(rc vmrun.RunConfig, target vmSelection) (title, su
 	}
 	if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() {
 		return "Preparing macOS", "Finishing first boot and signing in.", true
+	}
+	// A VM provisioned via the injected LaunchDaemon (the default `cove up` /
+	// `inject` path) self-creates the user and reboots once on first boot. That
+	// whole window — agent start, account creation, the auto-login reboot — has no
+	// useful guest UI, so hold the overlay across it instead of fading to a blank
+	// screen the instant the VM reaches Running. The hold self-releases as soon as
+	// the guest agent connects (see bootOverlayReadyToFade), so on an
+	// already-set-up VM it only lingers for the few seconds until the agent reports
+	// in; a hard timeout in the run loop guards the case where no agent ever
+	// connects. The agent is injected by default, so a provisioned VM will connect.
+	if didInjectSucceedForVM(target) {
+		return "Preparing macOS", "Creating your account and signing in...", true
 	}
 	return "Booting...", "", false
 }
@@ -2520,10 +2557,65 @@ func createMessageOverlay(size corefoundation.CGSize, title, subtitle string, wh
 			Size:   corefoundation.CGSize{Width: size.Width, Height: subtitleHeight},
 		})
 		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setAutoresizingMask:"), uint(2|8|32))
+		// Tag the subtitle so the run loop can find it later (e.g. to start a
+		// pulse once the overlay is on screen, or to update its text in place).
+		objc.Send[objc.ID](subtitleLabel.ID, objc.Sel("setTag:"), messageOverlaySubtitleTag)
 		overlay.AddSubview(&subtitleLabel.NSView)
 	}
 	addMessageOverlayDismissButton(overlay, size)
 	return overlay
+}
+
+// messageOverlaySubtitleTag identifies the subtitle label within an overlay view
+// so it can be retrieved via -viewWithTag: without threading the label out of
+// createMessageOverlay.
+const messageOverlaySubtitleTag = 0x7C0E5 // "COVES" leetish; just a stable nonzero tag
+
+// pulseMessageOverlaySubtitle starts a gentle, indefinitely-repeating opacity
+// pulse on the overlay's subtitle label, signalling that a long wait (install or
+// first-boot provisioning) is making progress rather than frozen. It is a no-op
+// if the overlay has no subtitle. The animation runs on the render server, so it
+// costs no per-frame Go work and is unaffected by main-thread load. Removing the
+// subtitle from its superview (overlay teardown) cancels it automatically.
+func pulseMessageOverlaySubtitle(overlay appkit.NSView) {
+	if overlay.ID == 0 {
+		return
+	}
+	subtitle := objc.Send[objc.ID](overlay.ID, objc.Sel("viewWithTag:"), messageOverlaySubtitleTag)
+	if subtitle == 0 {
+		return
+	}
+	objc.Send[objc.ID](subtitle, objc.Sel("setWantsLayer:"), true)
+	layer := objc.Send[objc.ID](subtitle, objc.Sel("layer"))
+	if layer == 0 {
+		return
+	}
+	anim := objc.Send[objc.ID](
+		objc.ID(objc.GetClass("CABasicAnimation")),
+		objc.Sel("animationWithKeyPath:"),
+		objc.String("opacity"),
+	)
+	if anim == 0 {
+		return
+	}
+	fromValue := objc.Send[objc.ID](objc.ID(objc.GetClass("NSNumber")), objc.Sel("numberWithDouble:"), 0.35)
+	toValue := objc.Send[objc.ID](objc.ID(objc.GetClass("NSNumber")), objc.Sel("numberWithDouble:"), 1.0)
+	objc.Send[objc.ID](anim, objc.Sel("setFromValue:"), fromValue)
+	objc.Send[objc.ID](anim, objc.Sel("setToValue:"), toValue)
+	objc.Send[objc.ID](anim, objc.Sel("setDuration:"), 0.9)
+	objc.Send[objc.ID](anim, objc.Sel("setAutoreverses:"), true)
+	// HUGE_VALF — repeat forever; the animation dies with the layer.
+	objc.Send[objc.ID](anim, objc.Sel("setRepeatCount:"), float32(3.4028235e38))
+	// Ease in/out so the pulse breathes rather than blinks.
+	timing := objc.Send[objc.ID](
+		objc.ID(objc.GetClass("CAMediaTimingFunction")),
+		objc.Sel("functionWithName:"),
+		objc.String("easeInEaseOut"),
+	)
+	if timing != 0 {
+		objc.Send[objc.ID](anim, objc.Sel("setTimingFunction:"), timing)
+	}
+	objc.Send[objc.ID](layer, objc.Sel("addAnimation:forKey:"), anim, objc.String("covePulse"))
 }
 
 var (

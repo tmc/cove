@@ -761,6 +761,7 @@ func runFullInstallWithGUI(ctx context.Context, provision macOSInstallProvision,
 						title, subtitle, _ := installOverlayMessage(installOverlayStarting, 0)
 						vmOverlay = createInstallOverlay(contentRect.Size, title, subtitle)
 						addSubview(vmViewAsNSView(vmView), vmOverlay)
+						pulseMessageOverlaySubtitle(vmOverlay)
 					}()
 
 					vmWindow.MakeKeyAndOrderFront(nil)
@@ -802,6 +803,7 @@ func runFullInstallWithGUI(ctx context.Context, provision macOSInstallProvision,
 					objc.Send[objc.ID](vmOverlay.ID, objc.Sel("removeFromSuperview"))
 					vmOverlay = createInstallOverlay(currentVMViewSize(vmView, corefoundation.CGSize{Width: 1024, Height: 768}), title, subtitle)
 					addSubview(vmViewAsNSView(vmView), vmOverlay)
+					pulseMessageOverlaySubtitle(vmOverlay)
 				}
 
 				// Fade out overlay — animate over ~10 iterations (~0.33s at 30 Hz).
