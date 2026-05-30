@@ -71,7 +71,7 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 		return runFleetPSCommand(ctx, args[1:], path, runner, out, errOut)
 	case "run":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			fmt.Fprintln(out, "Usage: cove fleet run --policy=least-loaded [run flags]")
+			fmt.Fprintln(out, "Usage: cove fleet run --policy=least-loaded|image-affinity [run flags]")
 			return nil
 		}
 		return runFleetRunCommand(ctx, args[1:], path, runner, out, errOut)
@@ -106,7 +106,7 @@ Commands:
   vm ls [--json]
   image ls [--json]
   ps
-  run --policy=least-loaded [run flags]
+  run --policy=least-loaded|image-affinity [run flags]
   metrics
   <remote> <command> [args...]`)
 }

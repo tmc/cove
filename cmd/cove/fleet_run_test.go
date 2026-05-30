@@ -86,6 +86,26 @@ func TestExtractFleetRunPolicy(t *testing.T) {
 	}
 }
 
+func TestFleetRunForkFrom(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "separate", args: []string{"-fork-from", "base:latest"}, want: "base:latest"},
+		{name: "equals", args: []string{"--fork-from=base:v1"}, want: "base:v1"},
+		{name: "after separator", args: []string{"--", "-fork-from", "base:v2"}, want: "base:v2"},
+		{name: "missing", args: []string{"-linux"}, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fleetRunForkFrom(tt.args); got != tt.want {
+				t.Fatalf("fleetRunForkFrom(%#v) = %q, want %q", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateKCPasswordFile(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good")

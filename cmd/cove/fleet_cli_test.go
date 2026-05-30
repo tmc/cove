@@ -123,6 +123,67 @@ func TestFleetRunLeastLoadedIgnoresUnreachable(t *testing.T) {
 	runner.assertSawCall(t, "b.local", []string{"run"})
 }
 
+func TestFleetRunImageAffinitySelectsWarmHost(t *testing.T) {
+	path := writeFleetHostsConfig(t, "a", "b", "c")
+	vmListKey := fakeFleetArgsKey([]string{"vm", "list"})
+	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
+	runner := &fakeFleetRunner{
+		outputsByArgs: map[string]map[string]string{
+			"a.local": {vmListKey: ""},
+			"b.local": {vmListKey: "b1 running\nb2 running\n", inspectKey: `{"ok":true}`},
+			"c.local": {vmListKey: ""},
+		},
+		errsByArgs: map[string]map[string]error{
+			"a.local": {inspectKey: errors.New("missing image")},
+			"c.local": {inspectKey: errors.New("missing image")},
+		},
+	}
+	var out bytes.Buffer
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--policy=image-affinity", "-fork-from", "base:latest", "-ephemeral",
+	}, path, runner, &out, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("fleet run image-affinity: %v", err)
+	}
+	if !strings.Contains(out.String(), "selected b") {
+		t.Fatalf("output = %q, want selected b", out.String())
+	}
+	runner.assertCallsWithArgs(t, []string{"vm", "list"}, 3)
+	runner.assertCallsWithArgs(t, []string{"image", "inspect", "-json", "base:latest"}, 3)
+	runner.assertSawCall(t, "b.local", []string{"run", "-fork-from", "base:latest", "-ephemeral"})
+}
+
+func TestFleetRunImageAffinityRequiresForkFrom(t *testing.T) {
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--policy=image-affinity",
+	}, writeFleetTestConfig(t), &fakeFleetRunner{}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "requires -fork-from") {
+		t.Fatalf("fleet run error = %v, want -fork-from requirement", err)
+	}
+}
+
+func TestFleetRunImageAffinityRequiresWarmHost(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	vmListKey := fakeFleetArgsKey([]string{"vm", "list"})
+	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
+	runner := &fakeFleetRunner{
+		outputsByArgs: map[string]map[string]string{
+			"a.local": {vmListKey: ""},
+			"b.local": {vmListKey: ""},
+		},
+		errsByArgs: map[string]map[string]error{
+			"a.local": {inspectKey: errors.New("missing image")},
+			"b.local": {inspectKey: errors.New("missing image")},
+		},
+	}
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--policy=image-affinity", "-fork-from=base:latest",
+	}, path, runner, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "no reachable remote has image base:latest") {
+		t.Fatalf("fleet run error = %v, want no warm host", err)
+	}
+}
+
 func TestFleetRunRequiresOptInPolicy(t *testing.T) {
 	err := runFleetCommandWithRunner(context.Background(), []string{"run"}, writeFleetTestConfig(t), &fakeFleetRunner{}, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "least-loaded") {
@@ -576,7 +637,9 @@ type fakeFleetRunner struct {
 	remote        fleetpkg.Remote
 	args          []string
 	outputs       map[string]string
+	outputsByArgs map[string]map[string]string
 	errs          map[string]error
+	errsByArgs    map[string]map[string]error
 	calls         []fakeFleetCall
 	commandCalls  []fakeFleetCommandCall
 	streamPayload string
@@ -589,12 +652,25 @@ func (f *fakeFleetRunner) Run(ctx context.Context, remote fleetpkg.Remote, args 
 	f.args = append([]string(nil), args...)
 	f.calls = append(f.calls, fakeFleetCall{remote: remote, args: append([]string(nil), args...)})
 	out := ""
+	key := fakeFleetArgsKey(args)
+	if byHost := f.outputsByArgs[remote.Host]; byHost != nil {
+		if value, ok := byHost[key]; ok {
+			out = value
+		}
+	}
 	if f.outputs != nil {
-		out = f.outputs[remote.Host]
+		if value, ok := f.outputs[remote.Host]; ok {
+			out = value
+		}
 	}
 	err := error(nil)
+	if byHost := f.errsByArgs[remote.Host]; byHost != nil {
+		err = byHost[key]
+	}
 	if f.errs != nil {
-		err = f.errs[remote.Host]
+		if value, ok := f.errs[remote.Host]; ok {
+			err = value
+		}
 	}
 	f.mu.Unlock()
 	if err != nil {
@@ -602,6 +678,10 @@ func (f *fakeFleetRunner) Run(ctx context.Context, remote fleetpkg.Remote, args 
 	}
 	_, _ = io.WriteString(stdout, out)
 	return nil
+}
+
+func fakeFleetArgsKey(args []string) string {
+	return strings.Join(args, "\x00")
 }
 
 func (f *fakeFleetRunner) RunCommand(ctx context.Context, remote fleetpkg.Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
