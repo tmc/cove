@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestLoadSave(t *testing.T) {
@@ -212,6 +214,95 @@ func TestProbeRecognizesDarwinRelease(t *testing.T) {
 				t.Fatalf("apfsQuotaSupportedForRelease(%q) = %v, want %v", tc.release, got, tc.want)
 			}
 		})
+	}
+}
+
+// apfsVerbList returns realistic "diskutil apfs" help output listing the given verbs.
+func apfsVerbList(verbs ...string) []byte {
+	var b strings.Builder
+	b.WriteString("Usage:  diskutil [quiet] ap[fs] <verb> <options>\n")
+	b.WriteString("        where <verb> is as follows:\n\n")
+	for _, v := range verbs {
+		b.WriteString("     " + v + "    (some description)\n")
+	}
+	b.WriteString("\ndiskutil apfs <verb> with no options will provide help on that verb\n")
+	return []byte(b.String())
+}
+
+func TestAPFSVerbListed(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		out        []byte
+		wantListed bool
+		wantOK     bool
+	}{
+		{
+			name:       "darwin24 lists setQuota",
+			out:        apfsVerbList("list", "resizeContainer", "setQuota", "addVolume"),
+			wantListed: true,
+			wantOK:     true,
+		},
+		{
+			name:       "darwin25 omits setQuota",
+			out:        apfsVerbList("list", "resizeContainer", "addVolume"),
+			wantListed: false,
+			wantOK:     true,
+		},
+		{
+			name:   "non-listing output is not authoritative",
+			out:    []byte("diskutil: command not found"),
+			wantOK: false,
+		},
+		{
+			name:   "empty output is not authoritative",
+			out:    nil,
+			wantOK: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listed, ok := apfsVerbListed(tc.out, "setQuota")
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if ok && listed != tc.wantListed {
+				t.Fatalf("listed = %v, want %v", listed, tc.wantListed)
+			}
+		})
+	}
+}
+
+// fixedRunner returns the same output and error for every Run call.
+type fixedRunner struct {
+	out []byte
+	err error
+}
+
+func (r fixedRunner) Run(string, ...string) ([]byte, error) { return r.out, r.err }
+
+func TestProbeAPFSQuotaSupportedDiscovery(t *testing.T) {
+	// Discovery is authoritative: a verb list containing setQuota means supported,
+	// regardless of the host's actual OS version.
+	if !probeAPFSQuotaSupported(fixedRunner{out: apfsVerbList("list", "setQuota")}) {
+		t.Fatal("probe with setQuota in verb list = false, want true")
+	}
+	// A verb list lacking setQuota means unsupported.
+	if probeAPFSQuotaSupported(fixedRunner{out: apfsVerbList("list", "resizeContainer")}) {
+		t.Fatal("probe without setQuota in verb list = true, want false")
+	}
+}
+
+func TestProbeAPFSQuotaSupportedFallsBackToRelease(t *testing.T) {
+	// When diskutil cannot be consulted (error, no usable verb list), the probe falls
+	// back to the OS-release heuristic rather than panicking. We can't control
+	// kern.osrelease here, so assert the fallback path matches the release heuristic
+	// for whatever release this host reports.
+	got := probeAPFSQuotaSupported(fixedRunner{err: exec.ErrNotFound})
+	release, err := unix.Sysctl("kern.osrelease")
+	if err != nil {
+		return // sysctl unavailable; the no-panic check above is enough
+	}
+	if want := apfsQuotaSupportedForRelease(release); got != want {
+		t.Fatalf("fallback probe = %v, want %v for release %q", got, want, release)
 	}
 }
 

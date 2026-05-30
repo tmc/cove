@@ -86,8 +86,14 @@ func Save(vmDir string, q Quota) error {
 }
 
 // macOS 26 (Darwin 25) removed the "diskutil apfs setQuota" verb. APFSQuotaSupported
-// reports whether the host's diskutil is expected to recognize it, so callers can skip
-// the attempt (and its noisy "did not recognize" output) on hosts that dropped it.
+// reports whether the host's diskutil recognizes it, so callers can skip the attempt
+// (and its noisy "did not recognize" output) on hosts that dropped it.
+//
+// Support is discovered by asking diskutil itself rather than inferring from the OS
+// version: "diskutil apfs" with no verb prints the list of verbs it accepts, and we
+// check whether "setQuota" is among them. This is version-agnostic — it stays correct
+// if a future macOS re-adds the verb, or an older one lacks it. The Darwin-release
+// heuristic remains only as a fallback for when diskutil cannot be consulted.
 var (
 	apfsQuotaSupportedOnce sync.Once
 	apfsQuotaSupportedVal  bool
@@ -99,27 +105,52 @@ var (
 // The result is probed once per process and cached.
 func APFSQuotaSupported() bool {
 	apfsQuotaSupportedOnce.Do(func() {
-		apfsQuotaSupportedVal = probeAPFSQuotaSupported()
+		apfsQuotaSupportedVal = probeAPFSQuotaSupported(execRunner{})
 	})
 	return apfsQuotaSupportedVal
 }
 
-// probeAPFSQuotaSupported infers support from the Darwin kernel release. If the
-// release cannot be read, assume supported and let ApplyAPFSQuota fall back to the
+// probeAPFSQuotaSupported discovers setQuota support from the host's diskutil. It
+// runs "diskutil apfs" (no verb), which prints the supported verb list, and reports
+// whether setQuota appears. If diskutil cannot be consulted (missing binary, empty or
+// unparseable output), it falls back to the Darwin-release heuristic so callers still
+// get a reasonable answer; a wrong guess there is caught at apply time by the
 // ErrAPFSQuotaUnsupported path.
-func probeAPFSQuotaSupported() bool {
-	release, err := unix.Sysctl("kern.osrelease")
-	if err != nil {
+func probeAPFSQuotaSupported(runner Runner) bool {
+	out, err := runner.Run("diskutil", "apfs")
+	if listed, ok := apfsVerbListed(out, "setQuota"); ok {
+		return listed
+	}
+	// Could not read a usable verb list (err and/or unrecognized output); guess from
+	// the OS version as a last resort.
+	_ = err
+	release, rerr := unix.Sysctl("kern.osrelease")
+	if rerr != nil {
 		return true
 	}
 	return apfsQuotaSupportedForRelease(release)
 }
 
+// apfsVerbListed reports whether verb appears in the output of "diskutil apfs"
+// (the verb-listing help text). ok is false when out does not look like a verb
+// list at all, so the caller can fall back to another signal. Matching is
+// case-insensitive because diskutil's own casing has varied across releases.
+func apfsVerbListed(out []byte, verb string) (listed, ok bool) {
+	text := strings.ToLower(string(out))
+	// Sanity-check that this is the verb-listing help and not, say, an error: every
+	// known diskutil prints these alongside the verb table.
+	if !strings.Contains(text, "verb") || !strings.Contains(text, "list") {
+		return false, false
+	}
+	return strings.Contains(text, strings.ToLower(verb)), true
+}
+
 // apfsQuotaSupportedForRelease reports whether the given Darwin kernel release
-// (e.g. "24.6.0") supports "diskutil apfs setQuota". Darwin 24 is macOS 15
-// (Sequoia, last to ship the verb); Darwin 25 is macOS 26, which removed it.
-// An unparseable release is treated as supported so callers fall back to probing
-// diskutil directly.
+// (e.g. "24.6.0") is expected to support "diskutil apfs setQuota". It is only a
+// fallback for when diskutil's verb list cannot be read; discovery via
+// apfsVerbListed is preferred. Darwin 24 is macOS 15 (Sequoia, last to ship the
+// verb); Darwin 25 is macOS 26, which removed it. An unparseable release is treated
+// as supported so callers fall back to probing diskutil at apply time.
 func apfsQuotaSupportedForRelease(release string) bool {
 	major := release
 	if i := strings.IndexByte(major, '.'); i >= 0 {
