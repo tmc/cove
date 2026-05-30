@@ -425,7 +425,10 @@ dismissed as vendor self-reports:
   Lean complexity-scaled; macOS tasks are mostly short.
 - AX-tree getter: a clean `ctl agent-exec` AX helper (osascript/Swift one-shot)
   vs. a small guest-agent AX RPC? Slice-3 spike decides; the helper path needs no
-  proto bump.
+  proto bump. **Resolved in [048](048-guest-ax-snapshot-over-socket.md):** the
+  XML osascript helper shipped first (no proto bump); a structured `AXSnapshot`
+  RPC (geometry + enabled/settable + actions + stable element index, reusing
+  axmcp's `appstate` semantics) is the fidelity follow-on.
 - Partial credit: adopt OSWorld's `and`-mean fractional scoring or stay strictly
   binary for v0? Lean binary for v0 to shrink verifier surface.
 - How much of OSWorld's *metric* code (Apache-2.0 pure functions) ports directly
@@ -554,3 +557,20 @@ first ranking) settled on:
 
 The throughline: **deepen the macOS-native verifier wedge and weaponize rigor;
 do not chase feature-parity with a 17k★ general-purpose framework.**
+
+### Deepening the AX-tree probe (the verifier-wedge follow-on)
+
+The §5 "macOS state fidelity" row above is the wedge trycua is silent on, and a
+deep pass over [`github.com/tmc/axmcp`](https://github.com/tmc/axmcp) (a mature
+macOS AX-automation toolkit on the same `apple/x/axuiautomation` dep cove pins)
+shows how to widen it further. The shipped `accessibility` getter emits a
+four-attribute XML tree via a one-shot JXA dumper; axmcp's `computeruse/appstate`
+builds a richer structured snapshot (per-element **geometry, enabled/settable,
+available actions, and a stable element index**) — the Codex Computer Use
+`get_app_state` shape. [048](048-guest-ax-snapshot-over-socket.md) specs adopting
+that as an in-guest `AXSnapshot` RPC surfaced over the control socket (mirroring
+the OCR-over-socket pattern), reusing axmcp's snapshot semantics; it rejects
+proxying *host*-run axmcp because `axuiautomation` is a local-OS binding and the
+guest AX tree can only be read in-guest. This resolves the §13 AX-getter open
+question and raises `accessibility_match` precision beyond what the XML dumper
+allows. → ROADMAP Slice **3b**.
