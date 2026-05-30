@@ -5,37 +5,55 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/tmc/cove/internal/ociimage"
+	"github.com/tmc/cove/internal/store"
+	"github.com/tmc/cove/internal/vmconfig"
 )
+
+type buildRegistryBaseMeta struct {
+	Ref            string    `json:"ref"`
+	ManifestDigest string    `json:"manifest_digest"`
+	Format         string    `json:"format"`
+	CreatedAt      time.Time `json:"created_at"`
+}
 
 func materializeBuildRegistryBase(ctx context.Context, refText string, opts buildOptions) (string, func() error, error) {
 	ref, err := ociimage.ParseReference(refText)
 	if err != nil {
 		return "", nil, fmt.Errorf("cove build: parse registry base: %w", err)
 	}
-	root := defaultBuildScratchRoot()
-	if err := os.MkdirAll(root, 0700); err != nil {
-		return "", nil, fmt.Errorf("cove build: create build scratch root: %w", err)
-	}
-	dir, err := os.MkdirTemp(root, "registry-base-")
-	if err != nil {
-		return "", nil, fmt.Errorf("cove build: create registry base scratch: %w", err)
-	}
-	cleanup := func() error {
-		if err := os.RemoveAll(dir); err != nil {
-			return fmt.Errorf("remove registry base scratch %s: %w", dir, err)
+	if ref.Digest != "" {
+		dir, ok, err := cachedBuildRegistryBase(opts, ref.Digest)
+		if err != nil {
+			return "", nil, err
 		}
-		return nil
+		if ok {
+			return dir, noopBuildRegistryBaseCleanup, nil
+		}
 	}
 	pullOpts := pullOptions{
 		RegistryBaseURL: opts.RegistryBaseURL,
 		RegistryToken:   opts.RegistryToken,
+		StoreDir:        opts.StoreDir,
 	}
 	parsed, manifestDigest, manifestRaw, err := fetchPullManifest(ctx, ref, pullOpts)
 	if err != nil {
-		_ = cleanup()
 		return "", nil, fmt.Errorf("cove build: fetch registry base: %w", err)
+	}
+	if dir, ok, err := cachedBuildRegistryBase(opts, manifestDigest); err != nil {
+		return "", nil, err
+	} else if ok {
+		return dir, noopBuildRegistryBaseCleanup, nil
+	}
+	dir, err := newBuildRegistryBaseTempDir(opts, manifestDigest)
+	if err != nil {
+		return "", nil, err
+	}
+	cleanupTemp := func() {
+		_ = os.RemoveAll(dir)
 	}
 	plan := &pullPlan{
 		Ref:            ref,
@@ -46,10 +64,104 @@ func materializeBuildRegistryBase(ctx context.Context, refText string, opts buil
 		ManifestDigest: manifestDigest,
 	}
 	if err := pullBuildRegistryBase(ctx, plan, pullOpts); err != nil {
-		_ = cleanup()
+		cleanupTemp()
 		return "", nil, err
 	}
-	return dir, cleanup, nil
+	if err := writeBuildRegistryBaseMeta(dir, refText, manifestDigest, parsed.Format); err != nil {
+		cleanupTemp()
+		return "", nil, err
+	}
+	finalDir, err := promoteBuildRegistryBaseCache(opts, manifestDigest, dir)
+	if err != nil {
+		cleanupTemp()
+		return "", nil, err
+	}
+	return finalDir, noopBuildRegistryBaseCleanup, nil
+}
+
+func cachedBuildRegistryBase(opts buildOptions, digest string) (string, bool, error) {
+	dir, err := buildRegistryBaseCacheDir(opts, digest)
+	if err != nil {
+		return "", false, err
+	}
+	if validBuildRegistryBaseCache(dir, digest) {
+		return dir, true, nil
+	}
+	if _, err := os.Stat(dir); err == nil {
+		if err := os.RemoveAll(dir); err != nil {
+			return "", false, fmt.Errorf("remove stale registry base cache %s: %w", dir, err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return "", false, fmt.Errorf("stat registry base cache %s: %w", dir, err)
+	}
+	return dir, false, nil
+}
+
+func buildRegistryBaseCacheDir(opts buildOptions, digest string) (string, error) {
+	_, hexDigest, err := splitStoreDigest(digest)
+	if err != nil {
+		return "", fmt.Errorf("cove build: registry base digest: %w", err)
+	}
+	return filepath.Join(store.New(opts.StoreDir).Dir, "build-registry-bases", "sha256", hexDigest), nil
+}
+
+func newBuildRegistryBaseTempDir(opts buildOptions, digest string) (string, error) {
+	cacheDir, err := buildRegistryBaseCacheDir(opts, digest)
+	if err != nil {
+		return "", err
+	}
+	root := filepath.Join(filepath.Dir(cacheDir), ".tmp")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return "", fmt.Errorf("cove build: create registry base cache: %w", err)
+	}
+	dir, err := os.MkdirTemp(root, digestFileName(digest)+"-")
+	if err != nil {
+		return "", fmt.Errorf("cove build: create registry base cache temp: %w", err)
+	}
+	return dir, nil
+}
+
+func promoteBuildRegistryBaseCache(opts buildOptions, digest, dir string) (string, error) {
+	finalDir, err := buildRegistryBaseCacheDir(opts, digest)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Rename(dir, finalDir); err != nil {
+		if validBuildRegistryBaseCache(finalDir, digest) {
+			_ = os.RemoveAll(dir)
+			return finalDir, nil
+		}
+		return "", fmt.Errorf("promote registry base cache: %w", err)
+	}
+	return finalDir, nil
+}
+
+func validBuildRegistryBaseCache(dir, digest string) bool {
+	data, err := os.ReadFile(filepath.Join(dir, "disk.provenance"))
+	if err != nil || strings.TrimSpace(string(data)) != digest {
+		return false
+	}
+	if !vmconfig.Validate(dir) {
+		return false
+	}
+	if _, err := pushDiskPath(dir); err != nil {
+		return false
+	}
+	return true
+}
+
+func writeBuildRegistryBaseMeta(dir, refText, manifestDigest string, format ociimage.ManifestFormat) error {
+	meta := buildRegistryBaseMeta{
+		Ref:            refText,
+		ManifestDigest: manifestDigest,
+		Format:         format.String(),
+		CreatedAt:      time.Now().UTC(),
+	}
+	return writeBuildCacheJSON(filepath.Join(dir, "build-registry-base.json"), meta)
+}
+
+func noopBuildRegistryBaseCleanup() error {
+	return nil
 }
 
 func pullBuildRegistryBase(ctx context.Context, plan *pullPlan, opts pullOptions) error {

@@ -33,6 +33,7 @@ type pullOptions struct {
 	ManifestPath    string
 	RegistryBaseURL string
 	RegistryToken   string
+	StoreDir        string
 }
 
 type pullPlan struct {
@@ -221,7 +222,7 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	if err := vmconfig.EnsureCompatibilityAlias(plan.VMName, plan.VMDir); err != nil {
 		return fmt.Errorf("create VM compatibility alias: %w", err)
 	}
-	blobStore := store.New("")
+	blobStore := store.New(opts.StoreDir)
 	unlock, err := blobStore.LockShared()
 	if err != nil {
 		return err
