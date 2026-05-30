@@ -6,13 +6,20 @@
 // guarded by a mutex, and serves an in-memory assignment queue per host.
 //
 // The controller is a deliberate single point of failure: back up the -state
-// file. TLS is a TODO; bearer-token auth (register token, then per-host lease)
-// runs over plain HTTP for now.
+// file. Bearer-token auth (register token, then per-host lease) and SSO JWTs
+// cross the wire, so serve over TLS in production: set -tls-cert and -tls-key
+// (PEM paths) to enable TLS, and -tls-client-ca to additionally require and
+// verify worker client certificates (mTLS). Plaintext HTTP is the dev-only
+// default when neither -tls-cert nor -tls-key is set; setting exactly one of
+// them is rejected rather than silently falling back to plaintext.
 package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -51,6 +58,9 @@ func main() {
 	auditPath := flag.String("audit-log", defaultAuditPath(), "tamper-evident fleet audit log path (empty disables persistence)")
 	saAccounts := flag.String("service-accounts", os.Getenv("COVE_FLEET_SERVICE_ACCOUNTS"), "comma-separated token=subject service-account pairs (empty leaves RBAC middleware off)")
 	oidcSecret := flag.String("oidc-hmac-secret", os.Getenv("COVE_FLEET_OIDC_HMAC_SECRET"), "shared HS256 secret for SSO token verification (empty uses service accounts only)")
+	tlsCert := flag.String("tls-cert", os.Getenv("COVE_FLEET_TLS_CERT"), "server certificate PEM path (with -tls-key enables TLS; empty serves plaintext)")
+	tlsKey := flag.String("tls-key", os.Getenv("COVE_FLEET_TLS_KEY"), "server key PEM path (with -tls-cert enables TLS; empty serves plaintext)")
+	tlsClientCA := flag.String("tls-client-ca", os.Getenv("COVE_FLEET_TLS_CLIENT_CA"), "PEM CA bundle to require and verify worker client certs (mTLS); empty disables mTLS")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil)).With(slog.String("component", "cove-fleetd"))
@@ -92,7 +102,13 @@ func main() {
 		hosted.RegisterHandlers(mux)
 	}
 
-	server := &http.Server{Addr: *listen, Handler: mux}
+	tlsConfig, err := buildServerTLSConfig(*tlsCert, *tlsKey, *tlsClientCA)
+	if err != nil {
+		slog.Error("tls config", slog.Any("err", err))
+		os.Exit(1)
+	}
+
+	server := &http.Server{Addr: *listen, Handler: mux, TLSConfig: tlsConfig}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
@@ -102,11 +118,59 @@ func main() {
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	slog.Info("fleet controller listening", slog.String("listen", *listen), slog.String("state", *state))
+	if tlsConfig != nil {
+		mtls := tlsConfig.ClientAuth == tls.RequireAndVerifyClientCert
+		slog.Info("fleet controller listening", slog.String("listen", *listen), slog.String("state", *state), slog.String("mode", "tls"), slog.Bool("mtls", mtls))
+		// Certificates are already loaded into TLSConfig, so the file args are empty.
+		if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			slog.Error("serve", slog.Any("err", err))
+			os.Exit(1)
+		}
+		return
+	}
+
+	slog.Info("fleet controller listening", slog.String("listen", *listen), slog.String("state", *state), slog.String("mode", "plaintext"))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("serve", slog.Any("err", err))
 		os.Exit(1)
 	}
+}
+
+// buildServerTLSConfig assembles the controller's server TLS configuration. It
+// returns (nil, nil) when neither certFile nor keyFile is set, signalling the
+// dev-only plaintext path. It returns an error when exactly one of certFile and
+// keyFile is set, refusing to silently fall back to plaintext after a partial
+// TLS configuration. When both are set it loads the key pair at MinVersion
+// TLS 1.2; a non-empty clientCAFile additionally requires and verifies worker
+// client certificates against that CA bundle (mTLS).
+func buildServerTLSConfig(certFile, keyFile, clientCAFile string) (*tls.Config, error) {
+	if certFile == "" && keyFile == "" {
+		return nil, nil
+	}
+	if certFile == "" || keyFile == "" {
+		return nil, fmt.Errorf("tls: -tls-cert and -tls-key must be set together")
+	}
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("tls: load server cert: %w", err)
+	}
+	cfg := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+	}
+	if clientCAFile != "" {
+		pem, err := os.ReadFile(clientCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("tls: read client ca: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("tls: parse client ca %q: no certificates found", clientCAFile)
+		}
+		cfg.ClientCAs = pool
+		cfg.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+	return cfg, nil
 }
 
 func defaultStatePath() string {

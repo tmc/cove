@@ -35,6 +35,9 @@ func main() {
 	storagePollInterval := flag.Duration("storage-poll-interval", defaultStoragePollInterval(), "storage budget poll interval (0 disables)")
 	fleetURL := flag.String("fleet-url", os.Getenv("COVE_FLEET_URL"), "dial-out fleet controller URL (empty disables worker mode)")
 	fleetToken := flag.String("fleet-token", os.Getenv("COVE_FLEET_TOKEN"), "fleet controller register token")
+	fleetTLSCA := flag.String("fleet-tls-ca", os.Getenv("COVE_FLEET_TLS_CA"), "PEM CA bundle trusting the controller's server cert (empty uses system roots)")
+	fleetTLSCert := flag.String("fleet-tls-cert", os.Getenv("COVE_FLEET_TLS_CERT"), "client certificate PEM presented for controller mTLS (paired with -fleet-tls-key)")
+	fleetTLSKey := flag.String("fleet-tls-key", os.Getenv("COVE_FLEET_TLS_KEY"), "client key PEM presented for controller mTLS (paired with -fleet-tls-cert)")
 	flag.Parse()
 
 	info := buildversion.Resolve(version, commit, date)
@@ -118,7 +121,13 @@ func main() {
 	d.lifecycle = lifecycle
 	go lifecycle.Run(ctx)
 	if *fleetURL != "" {
-		startWorker(ctx, *fleetURL, *fleetToken, logger, &coved.BoundedHandler{
+		startWorker(ctx, fleetDialConfig{
+			url:     *fleetURL,
+			token:   *fleetToken,
+			tlsCA:   *fleetTLSCA,
+			tlsCert: *fleetTLSCert,
+			tlsKey:  *fleetTLSKey,
+		}, logger, &coved.BoundedHandler{
 			VMRoot:    d.vmRoot,
 			Logger:    logger,
 			Lifecycle: lifecycle,
@@ -158,16 +167,31 @@ func startHTTPServer(ctx context.Context, addr string, handler http.Handler, nam
 	}()
 }
 
+// fleetDialConfig carries the worker dial-out settings parsed from flags.
+type fleetDialConfig struct {
+	url     string
+	token   string
+	tlsCA   string
+	tlsCert string
+	tlsKey  string
+}
+
 // startWorker launches coved's dial-out fleet worker. Worker mode is MIT: it
 // only performs bounded VM-lifecycle, image-sync, policy, and image-gc
 // assignments and refuses any arbitrary host-shell request. The handler reuses
 // the daemon's lifecycle enforcer and image-gc scheduler so pushed policy and GC
-// run through the same machinery as local enforcement.
-func startWorker(ctx context.Context, url, token string, logger *slog.Logger, handler coved.AssignmentHandler) {
+// run through the same machinery as local enforcement. TLS settings are
+// optional: an https:// URL with empty TLS fields trusts the system roots, a CA
+// bundle trusts a private controller cert, and a client cert pair satisfies a
+// controller that requires mTLS.
+func startWorker(ctx context.Context, dial fleetDialConfig, logger *slog.Logger, handler coved.AssignmentHandler) {
 	worker, err := coved.NewWorker(coved.WorkerConfig{
-		ControllerURL: url,
-		Token:         token,
-		Handler:       handler,
+		ControllerURL:     dial.url,
+		Token:             dial.token,
+		Handler:           handler,
+		TLSClientCA:       dial.tlsCA,
+		TLSClientCertFile: dial.tlsCert,
+		TLSClientKeyFile:  dial.tlsKey,
 	})
 	if err != nil {
 		logger.Error("fleet worker init", slog.Any("err", err))
@@ -178,7 +202,7 @@ func startWorker(ctx context.Context, url, token string, logger *slog.Logger, ha
 			logger.Error("fleet worker", slog.Any("err", err))
 		}
 	}()
-	logger.Info("fleet worker dialing controller", slog.String("url", url))
+	logger.Info("fleet worker dialing controller", slog.String("url", dial.url))
 }
 
 func defaultStoragePollInterval() time.Duration {

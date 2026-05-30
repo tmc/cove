@@ -105,10 +105,12 @@ func (c chainAuthenticator) Authenticate(r *http.Request) (Subject, error) {
 	return Subject{}, fmt.Errorf("no authenticator accepted request: %w", ErrUnauthenticated)
 }
 
-// ssoClaims is the minimal JWT-shaped claim set OIDCAuthenticator understands. A
-// real OIDC flow would carry the standard registered claims (iss, aud, etc.);
-// this stub validates the subject, expiry, and per-namespace role grants needed
-// to build a Subject. Grants map namespace -> role string.
+// ssoClaims is the minimal JWT-shaped claim set OIDCAuthenticator understands:
+// the subject, expiry, and per-namespace role grants needed to build a Subject.
+// The standard registered claims (iss, aud, etc.) are intentionally not modeled.
+// The signature verification in OIDCAuthenticator is real (it fails closed on
+// alg:none, alg mismatch, a bad signature, expiry, or an empty subject); only
+// the claim set here is minimal. Grants map namespace -> role string.
 type ssoClaims struct {
 	Subject   string          `json:"sub"`
 	ExpiresAt int64           `json:"exp,omitempty"`

@@ -2,6 +2,8 @@ package coved
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -54,6 +56,16 @@ type WorkerConfig struct {
 	Handler AssignmentHandler
 	// Client is the HTTP client; defaults to a client with a sane timeout.
 	Client *http.Client
+
+	// TLSClientCA is an optional path to a PEM CA bundle used to trust the
+	// controller's server certificate. Empty uses the system root pool. It is
+	// only consulted when Client is nil.
+	TLSClientCA string
+	// TLSClientCertFile and TLSClientKeyFile are an optional client certificate
+	// pair presented to the controller when it requires mTLS. Both must be set
+	// together. They are only consulted when Client is nil.
+	TLSClientCertFile string
+	TLSClientKeyFile  string
 }
 
 // DefaultHeartbeatInterval is the default heartbeat period.
@@ -94,9 +106,64 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 	}
 	client := cfg.Client
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		c, err := newWorkerClient(cfg)
+		if err != nil {
+			return nil, err
+		}
+		client = c
 	}
 	return &Worker{cfg: cfg, client: client}, nil
+}
+
+// newWorkerClient builds the default HTTP client. With no TLS fields set it
+// returns a plain client with a sane timeout, which already dials both http://
+// and https:// controllers using the system root pool. When any TLS field is
+// set it carries a tls.Config trusting cfg.TLSClientCA (in addition to, or in
+// place of, the system roots) and presenting the client certificate pair when
+// the controller requires mTLS. It never disables verification.
+func newWorkerClient(cfg WorkerConfig) (*http.Client, error) {
+	tlsCfg, err := workerTLSConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if tlsCfg == nil {
+		return &http.Client{Timeout: 30 * time.Second}, nil
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = tlsCfg
+	return &http.Client{Timeout: 30 * time.Second, Transport: transport}, nil
+}
+
+// workerTLSConfig assembles the worker's outbound tls.Config from cfg, or
+// returns nil when no TLS fields are set (use the default transport). It never
+// sets InsecureSkipVerify.
+func workerTLSConfig(cfg WorkerConfig) (*tls.Config, error) {
+	if cfg.TLSClientCA == "" && cfg.TLSClientCertFile == "" && cfg.TLSClientKeyFile == "" {
+		return nil, nil
+	}
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if cfg.TLSClientCA != "" {
+		pem, err := os.ReadFile(cfg.TLSClientCA)
+		if err != nil {
+			return nil, fmt.Errorf("worker: read tls client ca: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("worker: parse tls client ca %q: no certificates found", cfg.TLSClientCA)
+		}
+		tlsCfg.RootCAs = pool
+	}
+	if cfg.TLSClientCertFile != "" || cfg.TLSClientKeyFile != "" {
+		if cfg.TLSClientCertFile == "" || cfg.TLSClientKeyFile == "" {
+			return nil, fmt.Errorf("worker: tls client cert and key must be set together")
+		}
+		cert, err := tls.LoadX509KeyPair(cfg.TLSClientCertFile, cfg.TLSClientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("worker: load tls client cert: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+	return tlsCfg, nil
 }
 
 // LeaseID returns the lease issued by the controller after Register, or the
