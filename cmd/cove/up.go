@@ -34,6 +34,7 @@ type upConfig struct {
 	cpuCount                 uint
 	memoryGB                 uint64
 	diskSizeGB               uint64
+	diskImageFormat          string
 	automationBackend        string
 	automationCaptureBackend string
 	automationInputBackend   string
@@ -132,6 +133,13 @@ func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 	if err := validateNetworkMode(cfg.networkMode); err != nil {
 		return upConfig{}, err
 	}
+	format, err := parseDiskImageFormat(cfg.diskImageFormat)
+	if err != nil {
+		return upConfig{}, err
+	}
+	if rawDisk && format != diskImageFormatRaw {
+		return upConfig{}, fmt.Errorf("-raw-disk requires -disk-format raw")
+	}
 
 	// Validate setup script is readable before doing any heavy work.
 	if cfg.setupScriptPath != "" {
@@ -186,6 +194,7 @@ func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 	fs.UintVar(&cfg.cpuCount, "cpu", 2, "Number of CPUs")
 	fs.Uint64Var(&cfg.memoryGB, "memory", 4, "Memory in GB")
 	fs.Uint64Var(&cfg.diskSizeGB, "disk-size", 64, "Disk size in GB")
+	fs.StringVar(&cfg.diskImageFormat, "disk-format", "raw", "disk image format for new disks: raw or asif")
 	fs.StringVar(&cfg.automationBackend, "automation-backend", "auto", "UI automation backend: auto, framebuffer, or window")
 	fs.StringVar(&cfg.automationCaptureBackend, "automation-capture-backend", "", "override screenshot backend: auto, framebuffer, or window")
 	fs.StringVar(&cfg.automationInputBackend, "automation-input-backend", "", "override input backend: auto, direct, or window")
@@ -271,6 +280,7 @@ func runtimeOptionsForUp(cfg upConfig) runtimeOptions {
 	opts.CPUCount = cfg.cpuCount
 	opts.MemoryGB = cfg.memoryGB
 	opts.DiskSizeGB = cfg.diskSizeGB
+	opts.DiskImageFormat = cfg.diskImageFormat
 	opts.Verbose = cfg.verbose
 	opts.GUI = cfg.gui
 	opts.Headless = !cfg.gui
@@ -300,6 +310,8 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 	cpuCount = opts.CPUCount
 	memoryGB = opts.MemoryGB
 	diskSizeGB = opts.DiskSizeGB
+	rawDisk = opts.RawDisk
+	diskImageFormatFlag = opts.DiskImageFormat
 	verbose = opts.Verbose
 	controlserver.Verbose = opts.Verbose
 	guiMode = opts.GUI
@@ -325,6 +337,8 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 		cpuCount = prev.CPUCount
 		memoryGB = prev.MemoryGB
 		diskSizeGB = prev.DiskSizeGB
+		rawDisk = prev.RawDisk
+		diskImageFormatFlag = prev.DiskImageFormat
 		verbose = prev.Verbose
 		controlserver.Verbose = prevControlVerbose
 		guiMode = prev.GUI

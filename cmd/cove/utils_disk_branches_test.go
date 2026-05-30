@@ -38,3 +38,34 @@ func TestCreateSparseDiskImageBytesExistingIsNoop(t *testing.T) {
 		t.Fatalf("file contents changed to %q, want preserved", data)
 	}
 }
+
+func TestParseDiskImageFormat(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    diskImageFormat
+		wantErr string
+	}{
+		{name: "default", in: "", want: diskImageFormatRaw},
+		{name: "raw", in: "raw", want: diskImageFormatRaw},
+		{name: "asif", in: "ASIF", want: diskImageFormatASIF},
+		{name: "bad", in: "qcow2", wantErr: "invalid disk image format"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseDiskImageFormat(tt.in)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("parseDiskImageFormat(%q) error = %v, want %q", tt.in, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseDiskImageFormat(%q): %v", tt.in, err)
+			}
+			if got != tt.want {
+				t.Fatalf("parseDiskImageFormat(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

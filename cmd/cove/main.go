@@ -56,6 +56,7 @@ var (
 	diskPath              string
 	diskSizeGB            uint64
 	rawDisk               bool
+	diskImageFormatFlag   string
 	ipswPath              string
 	vmDir                 string
 	// Linux-specific flags
@@ -217,6 +218,7 @@ func init() {
 	flag.StringVar(&diskPath, "disk", "", "path to disk image")
 	flag.Uint64Var(&diskSizeGB, "disk-size", 64, "disk size in GB for new disk images")
 	flag.BoolVar(&rawDisk, "raw-disk", false, "preallocate new install disk images")
+	flag.StringVar(&diskImageFormatFlag, "disk-format", "raw", "disk image format for new disk images: raw or asif")
 	flag.StringVar(&ipswPath, "ipsw", "", "path to IPSW restore image")
 	flag.StringVar(&vmDir, "vm-dir", "", "directory for VM files (default: ~/.vz/vms/)")
 	// Linux-specific flags
@@ -1117,6 +1119,13 @@ func validateLaunchOptions() error {
 	}
 	if diskSizeGB > 16384 {
 		return fmt.Errorf("disk-size must be at most 16384 (16 TB)")
+	}
+	format, err := parseDiskImageFormat(diskImageFormatFlag)
+	if err != nil {
+		return err
+	}
+	if rawDisk && format != diskImageFormatRaw {
+		return fmt.Errorf("-raw-disk requires -disk-format raw")
 	}
 	if cpuCount < 1 {
 		return fmt.Errorf("cpu must be at least 1")

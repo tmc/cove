@@ -696,6 +696,7 @@ Common flags:
   -cpu N                  CPU count (default 2)
   -memory N               memory in GB (default 4)
   -disk-size N            disk size in GB (default 64)
+  -disk-format raw|asif   disk image format for new disks (default raw)
   -force                  overwrite an existing VM disk
   -provision-user <name>  create user during install
   -provision-password <p> password for provisioned user (prompts if empty)

@@ -17,11 +17,12 @@ type runtimeOptions struct {
 	Linux   bool
 	Windows bool
 
-	CPUCount   uint
-	MemoryGB   uint64
-	DiskPath   string
-	DiskSizeGB uint64
-	RawDisk    bool
+	CPUCount        uint
+	MemoryGB        uint64
+	DiskPath        string
+	DiskSizeGB      uint64
+	RawDisk         bool
+	DiskImageFormat string
 
 	IPSWPath   string
 	ISOPath    string
@@ -113,11 +114,12 @@ func currentRuntimeOptions() runtimeOptions {
 		Linux:   linuxMode,
 		Windows: windowsMode,
 
-		CPUCount:   cpuCount,
-		MemoryGB:   memoryGB,
-		DiskPath:   diskPath,
-		DiskSizeGB: diskSizeGB,
-		RawDisk:    rawDisk,
+		CPUCount:        cpuCount,
+		MemoryGB:        memoryGB,
+		DiskPath:        diskPath,
+		DiskSizeGB:      diskSizeGB,
+		RawDisk:         rawDisk,
+		DiskImageFormat: diskImageFormatFlag,
 
 		IPSWPath:   ipswPath,
 		ISOPath:    isoPath,

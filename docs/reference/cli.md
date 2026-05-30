@@ -36,6 +36,7 @@ cove install [flags]
 | `-cpu <n>` | 2 | Number of CPUs |
 | `-memory <n>` | 4 | Memory in GB |
 | `-disk-size <n>` | 64 | Disk size in GB |
+| `-disk-format <fmt>` | raw | Disk image format for new disks: raw or asif |
 | `-force` | false | Force install even if VM disk exists (destroys existing data) |
 | `-provision-user <name>` | | Username for auto-provisioned user |
 | `-provision-password <pw>` | | Password for auto-provisioned user |
@@ -240,6 +241,7 @@ cove up [flags]
 | `-cpu <n>` | 2 | Number of CPUs |
 | `-memory <n>` | 4 | Memory in GB |
 | `-disk-size <n>` | 64 | Disk size in GB |
+| `-disk-format <fmt>` | raw | Disk image format for new disks: raw or asif |
 | `-no-shutdown` | false | Leave VM running after vzscripts complete |
 | `-vm <name>` | | VM name |
 | `-linux` | false | Install Linux instead of macOS |

@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/apple/foundation"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/diskimages2"
 	"golang.org/x/sys/unix"
 )
 
@@ -29,10 +30,30 @@ func resolvePath(path string) string {
 	return realPath
 }
 
-// createDiskImage creates a sparse disk image using truncate (same as vz library).
+type diskImageFormat string
+
+const (
+	diskImageFormatRaw  diskImageFormat = "raw"
+	diskImageFormatASIF diskImageFormat = "asif"
+)
+
+var createASIFDiskImage = diskimages2.CreateASIF
+
+func parseDiskImageFormat(value string) (diskImageFormat, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", string(diskImageFormatRaw):
+		return diskImageFormatRaw, nil
+	case string(diskImageFormatASIF):
+		return diskImageFormatASIF, nil
+	default:
+		return "", fmt.Errorf("invalid disk image format %q (want raw or asif)", value)
+	}
+}
+
+// createDiskImage creates a disk image using the configured disk image format.
 func createDiskImage(path string, sizeGB uint64) error {
 	sizeBytes := int64(sizeGB) * 1024 * 1024 * 1024
-	return createSparseDiskImageBytes(path, sizeBytes)
+	return createDiskImageBytes(path, sizeBytes)
 }
 
 func createInstallDiskImage(path string, sizeGB uint64) error {
@@ -40,11 +61,37 @@ func createInstallDiskImage(path string, sizeGB uint64) error {
 	return createInstallDiskImageBytes(path, sizeBytes)
 }
 
-func createInstallDiskImageBytes(path string, sizeBytes int64) error {
-	if rawDisk {
-		return createRawDiskImageBytes(path, sizeBytes)
+func createDiskImageBytes(path string, sizeBytes int64) error {
+	format, err := parseDiskImageFormat(diskImageFormatFlag)
+	if err != nil {
+		return err
 	}
-	return createSparseDiskImageBytes(path, sizeBytes)
+	return createDiskImageBytesWithFormat(path, sizeBytes, format, false)
+}
+
+func createInstallDiskImageBytes(path string, sizeBytes int64) error {
+	format, err := parseDiskImageFormat(diskImageFormatFlag)
+	if err != nil {
+		return err
+	}
+	if rawDisk && format != diskImageFormatRaw {
+		return fmt.Errorf("-raw-disk requires -disk-format raw")
+	}
+	return createDiskImageBytesWithFormat(path, sizeBytes, format, rawDisk)
+}
+
+func createDiskImageBytesWithFormat(path string, sizeBytes int64, format diskImageFormat, preallocate bool) error {
+	switch format {
+	case diskImageFormatRaw:
+		if preallocate {
+			return createRawDiskImageBytes(path, sizeBytes)
+		}
+		return createSparseDiskImageBytes(path, sizeBytes)
+	case diskImageFormatASIF:
+		return createASIFDiskImageBytes(path, sizeBytes)
+	default:
+		return fmt.Errorf("invalid disk image format %q (want raw or asif)", format)
+	}
 }
 
 func createSparseDiskImageBytes(path string, sizeBytes int64) error {
@@ -79,6 +126,22 @@ func createRawDiskImageBytes(path string, sizeBytes int64) error {
 	if err := preallocateFile(f, sizeBytes); err != nil {
 		os.Remove(path)
 		return err
+	}
+	return nil
+}
+
+func createASIFDiskImageBytes(path string, sizeBytes int64) error {
+	if sizeBytes < 0 {
+		return fmt.Errorf("negative disk size %d", sizeBytes)
+	}
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := createASIFDiskImage(path, sizeBytes); err != nil {
+		os.Remove(path)
+		return fmt.Errorf("create ASIF disk image: %w", err)
 	}
 	return nil
 }
