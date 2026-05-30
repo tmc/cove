@@ -165,6 +165,11 @@ lume's `lume-config.json`) for round-trip fidelity.
 
 ### Phase 2: push (`--format tart`)
 
+Status: implemented. `cove push --format tart` builds and publishes the
+Tart-compatible OCI layout directly: tart VMConfig layer, Apple-LZ4 disk-v2
+layers with uncompressed annotations, NVRAM layer, Docker-Hub-compatible OCI
+config blob, and manifest tags.
+
 `tart_push.go` mirroring `lume_push.go`:
 
 1. Read cove vmconfig, project to tart VMConfig JSON, push as the config
@@ -181,8 +186,9 @@ lume's `lume-config.json`) for round-trip fidelity.
    (`uncompressed-disk-size`, `upload-time`) and push.
 
 `push.go` adds `--format tart` to the format flag's allowed set and
-dispatches to `tartPush` when selected. `--dry-run` lands first; live
-push is a separate commit if/when ready.
+dispatches to `tartPush` when selected. `--dry-run` writes the same manifest
+without registry access; non-dry-run uploads blobs and pushes all requested
+tags.
 
 ### Phase 3: integration tests
 
@@ -244,8 +250,9 @@ a pure-Go decoder instead:
 - `cove push --format tart --dry-run` produces a manifest whose
   field-by-field shape matches a captured `tart push` output (modulo
   timestamps and digests).
-- Reverse trip: `cove push --format tart` then `tart pull` against the
-  resulting reference, if a tart binary is available locally.
+- Reverse trip: `cove push --format tart` uploads a manifest that cove's
+  tart parser consumes; run `tart pull` against the resulting reference when
+  a tart binary and private registry target are available locally.
 
 ## Files
 

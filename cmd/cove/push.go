@@ -86,8 +86,14 @@ func handlePush(args []string) error {
 			return err
 		}
 		return runLumePush(context.Background(), lumePlan, opts)
+	case "tart":
+		tartPlan, err := buildTartPushPlan(pos[0], pos[1], opts)
+		if err != nil {
+			return err
+		}
+		return runTartPush(context.Background(), tartPlan, opts)
 	default:
-		return fmt.Errorf("unknown push format %q (want cove or lume)", opts.Format)
+		return fmt.Errorf("unknown push format %q (want cove, lume, or tart)", opts.Format)
 	}
 	plan, err := buildPushPlan(pos[0], pos[1], opts)
 	if err != nil {
@@ -124,7 +130,7 @@ func parsePushArgs(args []string, w io.Writer) (pushOptions, []string, error) {
 	chunkSizeMB := fs.Int64("chunk-size", opts.ChunkSize>>20, "chunk size in megabytes")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the plan without uploading")
 	fs.BoolVar(&opts.LumeCompat, "lume-compat", false, "emit dual cove and lume annotations")
-	fs.StringVar(&opts.Format, "format", "cove", "output image format: cove (default) or lume (tar-split)")
+	fs.StringVar(&opts.Format, "format", "cove", "output image format: cove (default), lume (tar-split), or tart")
 	fs.Var(&opts.AdditionalTags, "additional-tag", "additional tag to publish")
 	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write OCI manifest JSON to path")
 	fs.Usage = func() { printPushUsage(w) }
@@ -576,7 +582,7 @@ Flags:
   --chunk-size <mb>         Chunk size in megabytes (default 512)
   --dry-run                 Print the chunk plan without uploading
   --lume-compat             Plan dual cove and lume annotations
-  --format <fmt>            Output format: cove (default) or lume (tar-split)
+  --format <fmt>            Output format: cove (default), lume (tar-split), or tart
   --additional-tag <tag>    Additional tag to publish (repeatable)
   --manifest-out <path>     Write OCI manifest JSON to path`)
 }

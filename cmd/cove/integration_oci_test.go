@@ -249,6 +249,32 @@ func TestPullDispatch_TartManifest(t *testing.T) {
 	}
 }
 
+func TestPullDispatch_TartReverseTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	stageTartPushVM(t, "dev-vm", []byte("reverse trip tart disk"))
+	plan, err := buildTartPushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", pushOptions{})
+	if err != nil {
+		t.Fatalf("buildTartPushPlan(): %v", err)
+	}
+	srv := newOCIDispatchRegistry(t, plan.Manifest)
+	t.Cleanup(srv.Close)
+
+	pulled, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
+		DryRun:          true,
+		RegistryBaseURL: srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if pulled.Manifest.Format != ociimage.FormatTart {
+		t.Fatalf("Format = %s, want tart", pulled.Manifest.Format)
+	}
+	if got, want := len(pulled.Manifest.Tart.DiskLayers), len(plan.DiskLayers); got != want {
+		t.Fatalf("DiskLayers = %d, want %d", got, want)
+	}
+}
+
 // TestPullDispatch_TartFullPull drives the full handlePull dispatch into
 // tartPullDisk: a synthesised tart manifest with two chunks of Apple-LZ4-
 // compressed disk bytes plus stub config/nvram blobs is served by httptest,
