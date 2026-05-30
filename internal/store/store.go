@@ -183,6 +183,25 @@ func (s Store) StoreManifest(digest string, data []byte) error {
 	return nil
 }
 
+func (s Store) LoadManifest(digest string) (ociimage.Manifest, bool, error) {
+	var manifest ociimage.Manifest
+	_, hexDigest, err := splitDigest(digest)
+	if err != nil {
+		return manifest, false, err
+	}
+	data, err := os.ReadFile(filepath.Join(s.Dir, "manifests", "sha256", hexDigest+".json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return manifest, false, nil
+		}
+		return manifest, false, err
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return manifest, false, fmt.Errorf("parse stored manifest %s: %w", digest, err)
+	}
+	return manifest, true, nil
+}
+
 func (s Store) LockShared() (func() error, error) {
 	return s.lock(unix.LOCK_SH)
 }

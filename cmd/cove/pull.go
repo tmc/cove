@@ -229,10 +229,14 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 			return err
 		}
 	}
+	baseReuse, err := planPullBaseReuse(plan, blobStore)
+	if err != nil {
+		return err
+	}
 
 	partialPath := filepath.Join(plan.VMDir, "disk.img.partial")
 	diskPath := filepath.Join(plan.VMDir, "disk.img")
-	disk, err := ociimage.CreatePartialDisk(partialPath, plan.Manifest.Annotations.UncompressedDiskSize)
+	disk, baseReuse, err := createPullPartialDisk(partialPath, plan.Manifest.Annotations.UncompressedDiskSize, baseReuse)
 	if err != nil {
 		return err
 	}
@@ -244,7 +248,7 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}()
 
 	client := pullRegistryClient(plan.Ref, opts)
-	if err := pullDiskChunks(ctx, client, plan, disk, blobStore); err != nil {
+	if err := pullDiskChunks(ctx, client, plan, disk, blobStore, baseReuse); err != nil {
 		return err
 	}
 	if err := pullMetadataBlobs(ctx, client, plan, blobStore); err != nil {
@@ -269,8 +273,11 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	return nil
 }
 
-func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, disk io.WriterAt, blobStore store.Store) error {
-	layers := nonZeroDiskLayers(plan.Manifest.DiskLayers)
+func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, disk io.WriterAt, blobStore store.Store, baseReuse *pullBaseReuse) error {
+	layers, zeroLayers := pullDiskChunkWork(plan.Manifest.DiskLayers, baseReuse)
+	if err := zeroPullDiskChunks(disk, zeroLayers); err != nil {
+		return err
+	}
 	if len(layers) == 0 {
 		return nil
 	}
@@ -319,16 +326,6 @@ send:
 		return err
 	}
 	return nil
-}
-
-func nonZeroDiskLayers(layers []ociimage.DiskLayer) []ociimage.DiskLayer {
-	out := make([]ociimage.DiskLayer, 0, len(layers))
-	for _, layer := range layers {
-		if !layer.Chunk.Zero {
-			out = append(out, layer)
-		}
-	}
-	return out
 }
 
 func pullDiskChunk(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, disk io.WriterAt, layer ociimage.DiskLayer, blobStore store.Store) error {

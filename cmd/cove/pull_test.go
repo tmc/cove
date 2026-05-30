@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/ociimage"
+	"github.com/tmc/cove/internal/store"
 )
 
 func TestBuildPullPlanDryRunManifest(t *testing.T) {
@@ -166,6 +167,92 @@ func TestPullDiskReusesStoredBlobs(t *testing.T) {
 	}
 	if got := blobGets.Load(); got != firstBlobGets {
 		t.Fatalf("blob GETs after second pull = %d, want %d", got, firstBlobGets)
+	}
+}
+
+func TestPullDiskReusesBaseDiskClone(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if !SupportsClonefile(home) {
+		t.Skip("clonefile not supported")
+	}
+
+	baseDisk := []byte("aaaabbbb")
+	targetDisk := []byte("aaaacccc")
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, baseDisk, 4)
+	baseData, baseDigest := pullTestManifestData(t, baseManifest)
+	blobStore := store.New("")
+	if err := blobStore.StoreManifest(baseDigest, baseData); err != nil {
+		t.Fatalf("StoreManifest(base): %v", err)
+	}
+	writePullBaseVM(t, home, "base", baseDigest, baseDisk)
+
+	manifest, blobs, diskDigests := pullCompressedChunkedTestManifest(t, targetDisk, 4)
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	var diskGets atomic.Int32
+	srv := pullCountingRegistry(t, manifest, blobs, diskDigests, &diskGets)
+	defer srv.Close()
+
+	opts := pullOptions{RegistryBaseURL: srv.URL, As: "child"}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(): %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(home, ".vz", "vms", "child", "disk.img"))
+	if err != nil {
+		t.Fatalf("ReadFile(disk.img): %v", err)
+	}
+	if !bytes.Equal(got, targetDisk) {
+		t.Fatalf("disk = %q, want %q", got, targetDisk)
+	}
+	if got := diskGets.Load(); got != 1 {
+		t.Fatalf("disk blob GETs = %d, want one changed chunk", got)
+	}
+}
+
+func TestPullDiskZerosChangedBaseChunk(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if !SupportsClonefile(home) {
+		t.Skip("clonefile not supported")
+	}
+
+	baseDisk := []byte("aaaa")
+	targetDisk := []byte{0, 0, 0, 0}
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, baseDisk, 4)
+	baseData, baseDigest := pullTestManifestData(t, baseManifest)
+	blobStore := store.New("")
+	if err := blobStore.StoreManifest(baseDigest, baseData); err != nil {
+		t.Fatalf("StoreManifest(base): %v", err)
+	}
+	writePullBaseVM(t, home, "base", baseDigest, baseDisk)
+
+	manifest, blobs, diskDigests := pullCompressedChunkedTestManifest(t, targetDisk, 4)
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	var diskGets atomic.Int32
+	srv := pullCountingRegistry(t, manifest, blobs, diskDigests, &diskGets)
+	defer srv.Close()
+
+	opts := pullOptions{RegistryBaseURL: srv.URL, As: "child"}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(): %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(home, ".vz", "vms", "child", "disk.img"))
+	if err != nil {
+		t.Fatalf("ReadFile(disk.img): %v", err)
+	}
+	if !bytes.Equal(got, targetDisk) {
+		t.Fatalf("disk = %v, want zeros", got)
+	}
+	if got := diskGets.Load(); got != 0 {
+		t.Fatalf("disk blob GETs = %d, want zero for sparse target chunk", got)
 	}
 }
 
@@ -458,6 +545,15 @@ func pullCompressedChunkedTestManifest(t *testing.T, disk []byte, chunkSize int6
 		if err != nil {
 			t.Fatalf("PrepareChunkLayer(): %v", err)
 		}
+		if prepared.SkipUpload {
+			layers = append(layers, ociimage.Descriptor{
+				MediaType:   ociimage.MediaTypeLayer,
+				Size:        0,
+				Digest:      chunk.Digest,
+				Annotations: ociimage.ChunkLayerAnnotations(chunk, len(chunks)),
+			})
+			continue
+		}
 		layers = append(layers, prepared.Descriptor)
 		blobs[prepared.Descriptor.Digest] = prepared.Data
 		diskDigests[prepared.Descriptor.Digest] = true
@@ -522,6 +618,48 @@ func pullTestRegistry(t *testing.T, manifest ociimage.Manifest, blobs map[string
 			_, _ = w.Write(data)
 		}
 	}))
+}
+
+func pullCountingRegistry(t *testing.T, manifest ociimage.Manifest, blobs map[string][]byte, diskDigests map[string]bool, diskGets *atomic.Int32) *httptest.Server {
+	t.Helper()
+	manifestData, manifestDigest := pullTestManifestData(t, manifest)
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/me/dev-vm/manifests/v1":
+			w.Header().Set("Docker-Content-Digest", manifestDigest)
+			_, _ = w.Write(manifestData)
+		default:
+			const prefix = "/v2/me/dev-vm/blobs/"
+			if !strings.HasPrefix(r.URL.Path, prefix) {
+				t.Fatalf("path = %q", r.URL.Path)
+			}
+			digest := strings.TrimPrefix(r.URL.Path, prefix)
+			if diskDigests[digest] {
+				diskGets.Add(1)
+			}
+			data, ok := blobs[digest]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write(data)
+		}
+	}))
+}
+
+func writePullBaseVM(t *testing.T, home, name, provenance string, disk []byte) {
+	t.Helper()
+	vmDir := filepath.Join(home, ".vz", "vms", name)
+	if err := os.MkdirAll(vmDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(base VM): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "disk.img"), disk, 0600); err != nil {
+		t.Fatalf("WriteFile(base disk): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "disk.provenance"), []byte(provenance+"\n"), 0644); err != nil {
+		t.Fatalf("WriteFile(base provenance): %v", err)
+	}
 }
 
 func pullTestManifestData(t *testing.T, manifest ociimage.Manifest) ([]byte, string) {

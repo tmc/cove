@@ -179,6 +179,39 @@ func TestStoreManifestRejectsInvalidDigest(t *testing.T) {
 	}
 }
 
+func TestLoadManifest(t *testing.T) {
+	s := New(t.TempDir())
+	manifest := ociimage.Manifest{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageManifest,
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal(): %v", err)
+	}
+	digest := testDigest(data)
+	if err := s.StoreManifest(digest, data); err != nil {
+		t.Fatalf("StoreManifest(): %v", err)
+	}
+	got, ok, err := s.LoadManifest(digest)
+	if err != nil {
+		t.Fatalf("LoadManifest(): %v", err)
+	}
+	if !ok {
+		t.Fatal("LoadManifest() ok = false, want true")
+	}
+	if got.SchemaVersion != manifest.SchemaVersion || got.MediaType != manifest.MediaType {
+		t.Fatalf("LoadManifest() = %#v, want %#v", got, manifest)
+	}
+	missing, ok, err := s.LoadManifest(testDigest([]byte("missing")))
+	if err != nil {
+		t.Fatalf("LoadManifest(missing): %v", err)
+	}
+	if ok || missing.SchemaVersion != 0 {
+		t.Fatalf("LoadManifest(missing) = (%#v, %v), want zero false", missing, ok)
+	}
+}
+
 func TestReachableFromBuildCache(t *testing.T) {
 	s := New(t.TempDir())
 	want := testDigest([]byte("layer"))
