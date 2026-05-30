@@ -302,9 +302,11 @@ var cliDocSpecs = []cliDocSpec{
 	}, Flags: []cliFlagDoc{
 		{Name: "--as", Argument: "<name>", Summary: "Destination VM name."},
 		{Name: "--dry-run", Summary: "Validate inputs without writing a disk."},
+		{Name: "--resume", Summary: "Continue an interrupted pull from disk.img.partial."},
 		{Name: "--manifest", Argument: "<path>", Summary: "Local OCI manifest JSON instead of fetching the registry."},
 	}, Examples: []string{
 		"cove pull ghcr.io/me/dev-vm:v1 --dry-run",
+		"cove pull ghcr.io/me/dev-vm:v1 --resume",
 		"cove pull ghcr.io/me/dev-vm:v1 --as restored-vm",
 	}},
 	{Name: "store", Summary: "Manage the local content-addressed OCI blob store.", Usage: func() string {

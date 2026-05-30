@@ -29,6 +29,7 @@ const (
 type pullOptions struct {
 	As              string
 	DryRun          bool
+	Resume          bool
 	ManifestPath    string
 	RegistryBaseURL string
 	RegistryToken   string
@@ -83,6 +84,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.SetOutput(w)
 	fs.StringVar(&opts.As, "as", "", "destination VM name")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "validate inputs without writing a disk")
+	fs.BoolVar(&opts.Resume, "resume", false, "continue an interrupted pull from disk.img.partial")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.Usage = func() { printPullUsage(w) }
 	if err := fs.Parse(movePullFlagsFirst(args)); err != nil {
@@ -98,6 +100,7 @@ func movePullFlagsFirst(args []string) []string {
 	return moveKnownFlagsFirst(args, map[string]bool{
 		"as":       true,
 		"dry-run":  false,
+		"resume":   false,
 		"manifest": true,
 	})
 }
@@ -118,7 +121,7 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		return nil, fmt.Errorf("cove pull: destination VM name is empty")
 	}
 	vmDirectory := vmconfig.Path(name)
-	if err := checkPullTarget(vmDirectory); err != nil {
+	if err := checkPullTarget(vmDirectory, opts.Resume); err != nil {
 		return nil, err
 	}
 
@@ -154,17 +157,17 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 	}, nil
 }
 
-func checkPullTarget(vmDirectory string) error {
+func checkPullTarget(vmDirectory string, resume bool) error {
 	diskPath := filepath.Join(vmDirectory, "disk.img")
 	if _, err := os.Stat(diskPath); err == nil {
 		if err := ensurePullTargetInactive(vmDirectory); err != nil {
 			return err
 		}
-		return checkIncompletePullDisk(vmDirectory, diskPath)
+		return checkIncompletePullDisk(vmDirectory, diskPath, resume)
 	} else if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("stat disk: %w", err)
 	}
-	return checkIncompletePullDisk(vmDirectory, diskPath)
+	return checkIncompletePullDisk(vmDirectory, diskPath, resume)
 }
 
 func readPullManifest(path string) (ociimage.ParsedManifest, string, error) {
@@ -209,7 +212,7 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	if len(plan.Manifest.DiskLayers) == 0 {
 		return fmt.Errorf("cove pull: manifest has no disk chunks")
 	}
-	if err := checkPullTarget(plan.VMDir); err != nil {
+	if err := checkPullTarget(plan.VMDir, opts.Resume); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(plan.VMDir, 0755); err != nil {
@@ -236,7 +239,7 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 
 	partialPath := filepath.Join(plan.VMDir, "disk.img.partial")
 	diskPath := filepath.Join(plan.VMDir, "disk.img")
-	disk, baseReuse, err := createPullPartialDisk(partialPath, plan.Manifest.Annotations.UncompressedDiskSize, baseReuse)
+	disk, baseReuse, zeroExisting, err := createPullPartialDisk(partialPath, plan.Manifest.Annotations.UncompressedDiskSize, baseReuse, opts.Resume)
 	if err != nil {
 		return err
 	}
@@ -248,7 +251,7 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}()
 
 	client := pullRegistryClient(plan.Ref, opts)
-	if err := pullDiskChunks(ctx, client, plan, disk, blobStore, baseReuse); err != nil {
+	if err := pullDiskChunks(ctx, client, plan, disk, blobStore, baseReuse, zeroExisting); err != nil {
 		return err
 	}
 	if err := pullMetadataBlobs(ctx, client, plan, blobStore); err != nil {
@@ -273,8 +276,8 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	return nil
 }
 
-func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, disk io.WriterAt, blobStore store.Store, baseReuse *pullBaseReuse) error {
-	layers, zeroLayers := pullDiskChunkWork(plan.Manifest.DiskLayers, baseReuse)
+func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, disk io.WriterAt, blobStore store.Store, baseReuse *pullBaseReuse, zeroExisting bool) error {
+	layers, zeroLayers := pullDiskChunkWork(plan.Manifest.DiskLayers, baseReuse, zeroExisting)
 	if err := zeroPullDiskChunks(disk, zeroLayers); err != nil {
 		return err
 	}
@@ -554,5 +557,6 @@ without writing a disk.
 Flags:
   --as <name>          Destination VM name
   --dry-run            Validate inputs without writing a disk
+  --resume             Continue an interrupted pull from disk.img.partial
   --manifest <path>    Local OCI manifest JSON instead of fetching the registry`)
 }

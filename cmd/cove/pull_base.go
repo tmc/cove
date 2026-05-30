@@ -122,29 +122,42 @@ func samePullPath(a, b string) bool {
 	return resolvePath(a) == resolvePath(b)
 }
 
-func createPullPartialDisk(path string, size int64, baseReuse *pullBaseReuse) (*os.File, *pullBaseReuse, error) {
+func createPullPartialDisk(path string, size int64, baseReuse *pullBaseReuse, resume bool) (*os.File, *pullBaseReuse, bool, error) {
+	if resume {
+		f, err := os.OpenFile(path, os.O_RDWR, 0600)
+		if err == nil {
+			if err := f.Truncate(size); err != nil {
+				f.Close()
+				return nil, nil, false, fmt.Errorf("size partial disk: %w", err)
+			}
+			return f, nil, true, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, nil, false, fmt.Errorf("open partial disk: %w", err)
+		}
+	}
 	if baseReuse == nil {
 		f, err := ociimage.CreatePartialDisk(path, size)
-		return f, nil, err
+		return f, nil, false, err
 	}
 	if err := cloneFile(baseReuse.DiskPath, path); err != nil {
 		f, createErr := ociimage.CreatePartialDisk(path, size)
-		return f, nil, createErr
+		return f, nil, false, createErr
 	}
 	f, err := os.OpenFile(path, os.O_RDWR, 0600)
 	if err != nil {
 		os.Remove(path)
-		return nil, nil, fmt.Errorf("open cloned partial disk: %w", err)
+		return nil, nil, false, fmt.Errorf("open cloned partial disk: %w", err)
 	}
 	if err := f.Truncate(size); err != nil {
 		f.Close()
 		os.Remove(path)
-		return nil, nil, fmt.Errorf("size cloned partial disk: %w", err)
+		return nil, nil, false, fmt.Errorf("size cloned partial disk: %w", err)
 	}
-	return f, baseReuse, nil
+	return f, baseReuse, false, nil
 }
 
-func pullDiskChunkWork(layers []ociimage.DiskLayer, baseReuse *pullBaseReuse) ([]ociimage.DiskLayer, []ociimage.DiskLayer) {
+func pullDiskChunkWork(layers []ociimage.DiskLayer, baseReuse *pullBaseReuse, zeroExisting bool) ([]ociimage.DiskLayer, []ociimage.DiskLayer) {
 	fetchLayers := make([]ociimage.DiskLayer, 0, len(layers))
 	var zeroLayers []ociimage.DiskLayer
 	for _, layer := range layers {
@@ -152,7 +165,7 @@ func pullDiskChunkWork(layers []ociimage.DiskLayer, baseReuse *pullBaseReuse) ([
 			continue
 		}
 		if layer.Chunk.Zero {
-			if baseReuse != nil {
+			if baseReuse != nil || zeroExisting {
 				zeroLayers = append(zeroLayers, layer)
 			}
 			continue

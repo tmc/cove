@@ -466,7 +466,7 @@ func runLinuxVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBu
 	if resolvedDiskPath == "" {
 		resolvedDiskPath = filepath.Join(hc.VMDir, "linux-disk.img")
 	}
-	if err := checkIncompletePullDisk(hc.VMDir, resolvedDiskPath); err != nil {
+	if err := checkIncompletePullDisk(hc.VMDir, resolvedDiskPath, false); err != nil {
 		return err
 	}
 

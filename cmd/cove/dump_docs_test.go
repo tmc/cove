@@ -163,6 +163,9 @@ func TestBuildCLIDocsIncludesCapturedUsage(t *testing.T) {
 	if got := cliFlagByName(pull.Flags, "--manifest"); got == nil {
 		t.Fatal("pull docs missing --manifest flag")
 	}
+	if got := cliFlagByName(pull.Flags, "--resume"); got == nil {
+		t.Fatal("pull docs missing --resume flag")
+	}
 	if len(pull.Examples) == 0 {
 		t.Fatal("pull docs missing examples")
 	}

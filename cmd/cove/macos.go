@@ -392,7 +392,7 @@ func runMacOSVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBu
 	if resolvedDiskPath == "" {
 		resolvedDiskPath = target.diskPath()
 	}
-	if err := checkIncompletePullDisk(target.Directory, resolvedDiskPath); err != nil {
+	if err := checkIncompletePullDisk(target.Directory, resolvedDiskPath, false); err != nil {
 		return err
 	}
 

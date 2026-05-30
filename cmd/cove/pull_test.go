@@ -363,6 +363,80 @@ func TestPullDiskLeavesPartialOnBlobFailure(t *testing.T) {
 	}
 }
 
+func TestPullDiskResumeRewritesPartial(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	diskData := []byte("bootable")
+	manifest, blobs := pullCompressedTestManifest(t, diskData)
+	srv := pullTestRegistry(t, manifest, blobs)
+	defer srv.Close()
+
+	vmDir := filepath.Join(home, ".vz", "vms", "dev-vm")
+	if err := os.MkdirAll(vmDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	partialPath := filepath.Join(vmDir, "disk.img.partial")
+	if err := os.WriteFile(partialPath, []byte("stale partial bytes"), 0600); err != nil {
+		t.Fatalf("WriteFile(partial): %v", err)
+	}
+
+	opts := pullOptions{RegistryBaseURL: srv.URL, Resume: true}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(resume): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(resume): %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(vmDir, "disk.img"))
+	if err != nil {
+		t.Fatalf("ReadFile(disk.img): %v", err)
+	}
+	if !bytes.Equal(got, diskData) {
+		t.Fatalf("disk = %q, want %q", got, diskData)
+	}
+	if _, err := os.Stat(partialPath); !os.IsNotExist(err) {
+		t.Fatalf("partial stat error = %v, want not exist", err)
+	}
+}
+
+func TestPullDiskResumeZerosPartialSparseChunk(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	diskData := []byte{0, 0, 0, 0}
+	manifest, blobs, diskDigests := pullCompressedChunkedTestManifest(t, diskData, 4)
+	var diskGets atomic.Int32
+	srv := pullCountingRegistry(t, manifest, blobs, diskDigests, &diskGets)
+	defer srv.Close()
+
+	vmDir := filepath.Join(home, ".vz", "vms", "dev-vm")
+	if err := os.MkdirAll(vmDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "disk.img.partial"), []byte("xxxx"), 0600); err != nil {
+		t.Fatalf("WriteFile(partial): %v", err)
+	}
+
+	opts := pullOptions{RegistryBaseURL: srv.URL, Resume: true}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(resume): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(resume): %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(vmDir, "disk.img"))
+	if err != nil {
+		t.Fatalf("ReadFile(disk.img): %v", err)
+	}
+	if !bytes.Equal(got, diskData) {
+		t.Fatalf("disk = %v, want zeros", got)
+	}
+	if got := diskGets.Load(); got != 0 {
+		t.Fatalf("disk blob GETs = %d, want zero for sparse chunk", got)
+	}
+}
+
 func TestHandlePullDryRunOutput(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	manifestPath := writePullTestManifest(t)
@@ -400,6 +474,7 @@ func TestHandlePullRequiresRef(t *testing.T) {
 func TestParsePullArgs(t *testing.T) {
 	opts, pos, err := parsePullArgs([]string{
 		"--as", "local-dev",
+		"--resume",
 		"--dry-run",
 		"--manifest", "manifest.json",
 		"ghcr.io/me/dev-vm:v1",
@@ -407,7 +482,7 @@ func TestParsePullArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsePullArgs(): %v", err)
 	}
-	if !opts.DryRun || opts.As != "local-dev" || opts.ManifestPath != "manifest.json" {
+	if !opts.DryRun || !opts.Resume || opts.As != "local-dev" || opts.ManifestPath != "manifest.json" {
 		t.Fatalf("opts = %#v", opts)
 	}
 	if strings.Join(pos, ",") != "ghcr.io/me/dev-vm:v1" {
@@ -423,7 +498,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.As != "" || opts.ManifestPath != "" {
+	if opts.DryRun || opts.Resume || opts.As != "" || opts.ManifestPath != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -441,19 +516,23 @@ func TestPrintPullUsageShowsFlagsBeforeArgs(t *testing.T) {
 	if !strings.Contains(b.String(), "Usage: cove pull [flags] <ref>") {
 		t.Fatalf("usage = %q", b.String())
 	}
+	if !strings.Contains(b.String(), "--resume") {
+		t.Fatalf("usage = %q, want --resume", b.String())
+	}
 }
 
 func TestParsePullArgsAllowsTrailingFlags(t *testing.T) {
 	opts, pos, err := parsePullArgs([]string{
 		"registry.example/cove/vm:latest",
 		"--dry-run",
+		"--resume",
 		"--as", "vm",
 		"--manifest=manifest.json",
 	}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("parsePullArgs trailing flags: %v", err)
 	}
-	if !opts.DryRun || opts.As != "vm" || opts.ManifestPath != "manifest.json" {
+	if !opts.DryRun || !opts.Resume || opts.As != "vm" || opts.ManifestPath != "manifest.json" {
 		t.Fatalf("opts = %#v, want dry-run/as/manifest", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
@@ -489,6 +568,22 @@ func TestBuildPullPlanRejectsIncompleteTarget(t *testing.T) {
 	_, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{DryRun: true})
 	if err == nil || !strings.Contains(err.Error(), "pull was interrupted") {
 		t.Fatalf("buildPullPlan() error = %v, want incomplete disk", err)
+	}
+}
+
+func TestBuildPullPlanResumeAllowsIncompleteTarget(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	vmPath := filepath.Join(home, ".vz", "vms", "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img.partial"), []byte("partial"), 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{DryRun: true, Resume: true}); err != nil {
+		t.Fatalf("buildPullPlan(resume): %v", err)
 	}
 }
 

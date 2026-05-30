@@ -42,7 +42,9 @@ cove: VM <name> has incomplete disk (pull was interrupted).
 Delete <path> and rerun cove pull, or use cove pull --resume <ref> to continue.
 ```
 
-Rerunning `cove pull` reuses any verified blobs already present in `~/.vz/store/`, so an interrupted pull does not redownload chunks that landed before the failure.
+With `--resume`, cove reopens `disk.img.partial`, rewrites verified non-zero
+chunks, explicitly zeros sparse chunks, and reuses any verified blobs already
+present in `~/.vz/store/`.
 
 ## Local Store
 

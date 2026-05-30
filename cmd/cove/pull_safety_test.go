@@ -89,9 +89,12 @@ func TestCheckIncompletePullDisk(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	err := checkIncompletePullDisk(vmPath, diskPath)
+	err := checkIncompletePullDisk(vmPath, diskPath, false)
 	if err == nil || !strings.Contains(err.Error(), "pull was interrupted") || !strings.Contains(err.Error(), partial) {
 		t.Fatalf("checkIncompletePullDisk() error = %v, want interrupted pull path", err)
+	}
+	if err := checkIncompletePullDisk(vmPath, diskPath, true); err != nil {
+		t.Fatalf("checkIncompletePullDisk(resume) = %v, want nil", err)
 	}
 }
 

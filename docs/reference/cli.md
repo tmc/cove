@@ -1338,10 +1338,12 @@ cove pull <ref> [flags]
 |------|---------|-------------|
 | `--as <name>` | inferred from ref | Destination VM name |
 | `--dry-run` | false | Validate inputs without writing a disk |
+| `--resume` | false | Continue an interrupted pull from `disk.img.partial` |
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
 
 ```bash
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
+cove pull ghcr.io/example/macos-sequoia:15.2 --resume
 cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --manifest manifest.json
 ```
 

@@ -65,9 +65,12 @@ func probeControlSocket(sock string, timeout time.Duration) (bool, error) {
 	return true, nil
 }
 
-func checkIncompletePullDisk(vmDirectory, diskPath string) error {
+func checkIncompletePullDisk(vmDirectory, diskPath string, resume bool) error {
 	partial := pullPartialDiskPath(diskPath)
 	if _, err := os.Stat(partial); err == nil {
+		if resume {
+			return nil
+		}
 		name := filepath.Base(vmDirectory)
 		return fmt.Errorf("cove: VM %s has incomplete disk (pull was interrupted). Delete %s and rerun cove pull, or use cove pull --resume <ref> to continue", name, partial)
 	} else if !os.IsNotExist(err) {
