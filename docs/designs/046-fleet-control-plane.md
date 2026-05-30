@@ -42,6 +42,65 @@ that tags `github.com/tmc/apple` at `v0.6.10`, resolving the earlier
 clean-clone API-drift; the dev build still resolves the local `apple`/`macgo`
 checkouts through the gitignored `go.work`, as elsewhere in the repo.
 
+### Go-team code review follow-ups (2026-05-30)
+
+A multi-lens Go-team panel review (api-design, topology, smells, consistency)
+ran against the live fleet code. Every finding below was triaged against the
+filesystem; hallucinated and out-of-scope claims were discarded. One finding
+was fixed immediately (see "fixed"); the rest are captured here as deferred
+work because they either harden against scale the deliberately-simple SPOF
+controller does not yet face, or re-open the open-core split that is itself
+privacy-gated (Slice 3 deferred indefinitely).
+
+**Fixed:** dead `/v1/assignments` long-poll route removed; assignments are
+delivered on the heartbeat response, and three doc comments that described a
+long-poll the worker never performed were corrected (consistency lens).
+
+**Deferred — security (do before any non-loopback deployment):**
+- *Fail-open hosted API.* `HostedAPI.authorized` returns `true` when no API
+  keys are configured, and `cmd/cove-fleetd` mounts the unprotected mux when
+  neither service accounts nor an OIDC secret are set. Both default the
+  control plane to unauthenticated. Proposed fix: when no credentials are
+  configured, restrict to loopback (reject non-127.0.0.1 `RemoteAddr`) rather
+  than serving the network, and require an explicit `--insecure-disable-auth`
+  to open keyless to a non-loopback bind. This is a behavior change — needs a
+  product call on keyless-loopback vs. refuse-to-start. (api-design + smells,
+  blocker.)
+
+**Deferred — scale hardening (the controller is a documented small-fleet
+SPOF; revisit when fleet size or uptime warrants):**
+- `HostRegistry.persist` runs JSON marshal + `MkdirAll`/`WriteFile`/`Rename`
+  while holding `r.mu`, so disk latency stalls all heartbeats. Snapshot under
+  the lock, write outside it (or in a dedicated writer goroutine).
+- `AuditLog.entries` and `HostRegistry.results` (the push-record map) grow
+  unbounded in memory
+  (and `NewAuditLog` loads the whole file at startup). Add rotation/streaming
+  for the audit chain and a TTL/size cap for push results.
+- `worker.Heartbeat` dispatches assignments synchronously, coupling control-
+  plane liveness to data-plane latency; dispatch in bounded goroutines.
+- `HostedAPI.itemWait` polls the store on a 50ms tick; replace with a
+  `sync.Cond`/channel broadcast from `SetState`.
+
+**Deferred — open-core structure (gated on the public/private decision):**
+- The MIT/paid boundary is enforced by per-file header inside one `fleet`
+  package, so Go's package visibility does not enforce it and a future OSS
+  strip step would break the build or leak paid code. When the public split
+  is actually scheduled, move the paid control-plane files into
+  `internal/fleetd/{scheduler,rbac,metering,api}` subpackages and relocate the
+  paid HTTP helpers out of the MIT `fleetproto` package. (topology, blocker —
+  but the strip pipeline it warns about does not exist yet.)
+
+**Low-value polish (noted, not scheduled):** `DecodeJSON` could thread
+`http.ResponseWriter` into `MaxBytesReader` for a proper 413; `AssignmentHandler.Handle`
+could return a struct instead of `(state, detail string, err error)`; static
+validation errors could become `errors.New` sentinels. None gate anything.
+
+**Patterns the panel said to keep:** the constrained generics
+(`fleetproto.Call[Req,Resp]`, `QueryAll[T]`), the NAT-friendly worker dial-out
+topology, the small capability interfaces (`Provider`, `WarmForker`,
+`Authenticator`, `OIDCVerifier`), and the stdlib-only `net/http` middleware
+chain.
+
 ## Problem
 
 cove already has a *fleet surface*, but not a *fleet control plane*. Design 034
