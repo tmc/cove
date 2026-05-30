@@ -46,14 +46,30 @@ func planPullBaseReuse(plan *pullPlan, blobStore store.Store) (*pullBaseReuse, e
 	if len(matching) == 0 {
 		return nil, nil
 	}
-	diskPath, ok, err := findPullBaseDisk(vmconfig.BaseDir(), baseDigest, plan.Manifest.Annotations.UncompressedDiskSize, plan.VMDir)
-	if err != nil || !ok {
+	diskPath, ok, err := findPullBaseDiskInRoots([]string{
+		vmconfig.BaseDir(),
+		buildRegistryBaseCacheRoot(blobStore.Dir),
+	}, baseDigest, plan.Manifest.Annotations.UncompressedDiskSize, plan.VMDir)
+	if err != nil {
 		return nil, err
+	}
+	if !ok {
+		return nil, nil
 	}
 	return &pullBaseReuse{
 		DiskPath:       diskPath,
 		MatchingChunks: matching,
 	}, nil
+}
+
+func findPullBaseDiskInRoots(roots []string, digest string, size int64, targetDir string) (string, bool, error) {
+	for _, root := range roots {
+		diskPath, ok, err := findPullBaseDisk(root, digest, size, targetDir)
+		if err != nil || ok {
+			return diskPath, ok, err
+		}
+	}
+	return "", false, nil
 }
 
 func matchingPullBaseChunks(target, base []ociimage.DiskLayer) map[int]bool {

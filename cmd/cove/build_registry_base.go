@@ -102,7 +102,11 @@ func buildRegistryBaseCacheDir(opts buildOptions, digest string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("cove build: registry base digest: %w", err)
 	}
-	return filepath.Join(store.New(opts.StoreDir).Dir, "build-registry-bases", "sha256", hexDigest), nil
+	return filepath.Join(buildRegistryBaseCacheRoot(store.New(opts.StoreDir).Dir), hexDigest), nil
+}
+
+func buildRegistryBaseCacheRoot(storeDir string) string {
+	return filepath.Join(storeDir, "build-registry-bases", "sha256")
 }
 
 func newBuildRegistryBaseTempDir(opts buildOptions, digest string) (string, error) {

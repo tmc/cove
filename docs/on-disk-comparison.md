@@ -28,7 +28,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **Quota / size cap** | live APFS directory quota with runtime verb probe and Darwin fallback; persisted in `vmDir/quotas.json` (`internal/vmquota`) | no live cap; `tart set --disk-size` grows disk | none found | passes runtime disk-size knobs; no independent live cap |
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
 | **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
-| **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, and persistent registry-base materialization for builds | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
+| **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, and persistent registry-base materialization shared by builds and pulls | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
 | **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host (`cmd/cove/fleet_run.go`) | none | none | full controller/scheduler model |
 
 ## Where cove now leads
@@ -52,7 +52,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
    annotate the result with the base manifest. Pulls can resume interrupted
    downloads, reuse an already-materialized base disk where the manifest proves
    it is the right parent, and cache materialized registry bases for repeated
-   `cove build --base <ref>` runs.
+   builds and child pulls.
 
 5. **Image-aware fleet placement.** cove is not orchard's controller, but its
    fleet CLI now understands image locality: it prefers a reachable host that

@@ -213,6 +213,64 @@ func TestPullDiskReusesBaseDiskClone(t *testing.T) {
 	}
 }
 
+func TestPullDiskReusesRegistryBaseCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if !SupportsClonefile(home) {
+		t.Skip("clonefile not supported")
+	}
+
+	baseDisk := []byte("aaaabbbb")
+	targetDisk := []byte("aaaacccc")
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, baseDisk, 4)
+	baseData, baseDigest := pullTestManifestData(t, baseManifest)
+	blobStore := store.New("")
+	if err := blobStore.StoreManifest(baseDigest, baseData); err != nil {
+		t.Fatalf("StoreManifest(base): %v", err)
+	}
+	cacheDir, err := buildRegistryBaseCacheDir(buildOptions{}, baseDigest)
+	if err != nil {
+		t.Fatalf("buildRegistryBaseCacheDir(): %v", err)
+	}
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(cacheDir): %v", err)
+	}
+	for name, data := range map[string][]byte{
+		"disk.img":        baseDisk,
+		"aux.img":         []byte("aux"),
+		"disk.provenance": []byte(baseDigest + "\n"),
+	} {
+		if err := os.WriteFile(filepath.Join(cacheDir, name), data, 0644); err != nil {
+			t.Fatalf("WriteFile(%s): %v", name, err)
+		}
+	}
+
+	manifest, blobs, diskDigests := pullCompressedChunkedTestManifest(t, targetDisk, 4)
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	var diskGets atomic.Int32
+	srv := pullCountingRegistry(t, manifest, blobs, diskDigests, &diskGets)
+	defer srv.Close()
+
+	opts := pullOptions{RegistryBaseURL: srv.URL, As: "child"}
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if err := pullDisk(context.Background(), plan, opts); err != nil {
+		t.Fatalf("pullDisk(): %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(home, ".vz", "vms", "child", "disk.img"))
+	if err != nil {
+		t.Fatalf("ReadFile(disk.img): %v", err)
+	}
+	if !bytes.Equal(got, targetDisk) {
+		t.Fatalf("disk = %q, want %q", got, targetDisk)
+	}
+	if got := diskGets.Load(); got != 1 {
+		t.Fatalf("disk blob GETs = %d, want one changed chunk", got)
+	}
+}
+
 func TestPullDiskZerosChangedBaseChunk(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
