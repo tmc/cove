@@ -162,13 +162,14 @@ func TestFleetRunImageAffinityRequiresForkFrom(t *testing.T) {
 	}
 }
 
-func TestFleetRunImageAffinityRequiresWarmHost(t *testing.T) {
+func TestFleetRunImageAffinityStagesLocalImageWhenCold(t *testing.T) {
 	path := writeFleetTestConfig(t)
 	vmListKey := fakeFleetArgsKey([]string{"vm", "list"})
 	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
 	runner := &fakeFleetRunner{
+		streamPayload: "tarball",
 		outputsByArgs: map[string]map[string]string{
-			"a.local": {vmListKey: ""},
+			"a.local": {vmListKey: "a1 running\n"},
 			"b.local": {vmListKey: ""},
 		},
 		errsByArgs: map[string]map[string]error{
@@ -176,11 +177,41 @@ func TestFleetRunImageAffinityRequiresWarmHost(t *testing.T) {
 			"b.local": {inspectKey: errors.New("missing image")},
 		},
 	}
+	var out bytes.Buffer
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--policy=image-affinity", "-fork-from=base:latest", "-ephemeral",
+	}, path, runner, &out, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("fleet run image-affinity: %v", err)
+	}
+	for _, want := range []string{
+		"staged image base:latest from local to b",
+		"selected b",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertCallsWithArgs(t, []string{"vm", "list"}, 2)
+	runner.assertCallsWithArgs(t, []string{"image", "inspect", "-json", "base:latest"}, 2)
+	runner.assertCommandCalls(t, []fakeFleetCommandCall{
+		{host: "", args: []string{"image", "push", "base:latest", "-"}},
+		{host: "b.local", args: []string{"image", "load", "-"}},
+	})
+	if runner.loaded != "tarball" {
+		t.Fatalf("loaded = %q, want tarball", runner.loaded)
+	}
+	runner.assertSawCall(t, "b.local", []string{"run", "-fork-from=base:latest", "-ephemeral"})
+}
+
+func TestFleetRunImageAffinityAllRemotesUnreachable(t *testing.T) {
 	err := runFleetCommandWithRunner(context.Background(), []string{
 		"run", "--policy=image-affinity", "-fork-from=base:latest",
-	}, path, runner, &bytes.Buffer{}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "no reachable remote has image base:latest") {
-		t.Fatalf("fleet run error = %v, want no warm host", err)
+	}, writeFleetTestConfig(t), &fakeFleetRunner{
+		errs: map[string]error{"a.local": errors.New("down"), "b.local": errors.New("down")},
+	}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "all remotes unreachable") {
+		t.Fatalf("fleet run error = %v, want all remotes unreachable", err)
 	}
 }
 

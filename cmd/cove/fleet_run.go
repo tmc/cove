@@ -17,6 +17,19 @@ type fleetRunProbe struct {
 	HasImage bool
 }
 
+type fleetRunPlacement struct {
+	Selected fleetpkg.Entry
+	Loads    []fleetpkg.HostLoad
+	Prestage *fleetRunPrestage
+}
+
+type fleetRunPrestage struct {
+	Ref         string
+	SourceName  string
+	Source      fleetpkg.Remote
+	Destination fleetpkg.Entry
+}
+
 func runFleetRunCommand(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
 	policy, runArgs, err := extractFleetRunPolicy(args)
 	if err != nil {
@@ -34,10 +47,18 @@ func runFleetRunCommand(ctx context.Context, args []string, path string, runner 
 		return err
 	}
 	entries := cfg.List()
-	selected, loads, err := selectFleetRunHost(ctx, policy, runArgs, entries, runner)
+	placement, err := planFleetRunPlacement(ctx, policy, runArgs, entries, runner)
 	if err != nil {
 		return err
 	}
+	if placement.Prestage != nil {
+		stage := placement.Prestage
+		if err := fleetpkg.TransferImage(ctx, stage.Ref, stage.Source, stage.Destination.Remote, fleetImageCommandRunner(runner)); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "staged image %s from %s to %s\n", stage.Ref, stage.SourceName, stage.Destination.Name)
+	}
+	selected, loads := placement.Selected, placement.Loads
 	if summary := fleetpkg.FormatHostLoads(loads); summary != "" {
 		fmt.Fprintf(out, "selected %s (%s)\n", selected.Name, summary)
 	} else {
@@ -47,17 +68,23 @@ func runFleetRunCommand(ctx context.Context, args []string, path string, runner 
 }
 
 func selectFleetRunHost(ctx context.Context, policy string, runArgs []string, entries []fleetpkg.Entry, runner fleetRunner) (fleetpkg.Entry, []fleetpkg.HostLoad, error) {
+	placement, err := planFleetRunPlacement(ctx, policy, runArgs, entries, runner)
+	return placement.Selected, placement.Loads, err
+}
+
+func planFleetRunPlacement(ctx context.Context, policy string, runArgs []string, entries []fleetpkg.Entry, runner fleetRunner) (fleetRunPlacement, error) {
 	if policy == "least-loaded" {
-		return fleetpkg.SelectLeastLoadedHost(ctx, entries, func(ctx context.Context, entry fleetpkg.Entry) (string, error) {
+		selected, loads, err := fleetpkg.SelectLeastLoadedHost(ctx, entries, func(ctx context.Context, entry fleetpkg.Entry) (string, error) {
 			return runFleetVMList(ctx, entry, runner)
 		})
+		return fleetRunPlacement{Selected: selected, Loads: loads}, err
 	}
 	imageRef := fleetRunForkFrom(runArgs)
 	if imageRef == "" {
-		return fleetpkg.Entry{}, nil, errors.New("fleet run: image-affinity requires -fork-from <image-ref>")
+		return fleetRunPlacement{}, errors.New("fleet run: image-affinity requires -fork-from <image-ref>")
 	}
 	if len(entries) == 0 {
-		return fleetpkg.Entry{}, nil, errors.New("fleet placement: no remotes configured")
+		return fleetRunPlacement{}, errors.New("fleet placement: no remotes configured")
 	}
 	results := fleetpkg.QueryAll(ctx, entries, func(ctx context.Context, entry fleetpkg.Entry) (fleetRunProbe, error) {
 		vmList, err := runFleetVMList(ctx, entry, runner)
@@ -73,29 +100,48 @@ func selectFleetRunHost(ctx context.Context, policy string, runArgs []string, en
 	})
 	loads := make([]fleetpkg.HostLoad, 0, len(results))
 	var candidates []fleetpkg.Entry
+	var reachable []fleetpkg.Entry
 	counts := make(map[string]int, len(results))
 	for i, result := range results {
 		load := fleetpkg.HostLoad{Host: result.Host, Error: result.Error}
 		if result.Error == nil {
 			load.Count = fleetpkg.CountRunningVMs(result.Value.VMList)
 			counts[result.Host] = load.Count
+			reachable = append(reachable, entries[i])
 			if result.Value.HasImage {
 				candidates = append(candidates, entries[i])
 			}
 		}
 		loads = append(loads, load)
 	}
-	if len(candidates) == 0 {
-		return fleetpkg.Entry{}, loads, fmt.Errorf("fleet placement: no reachable remote has image %s", imageRef)
+	if len(candidates) > 0 {
+		return fleetRunPlacement{Selected: leastLoadedFleetRunEntry(candidates, counts), Loads: loads}, nil
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		li, lj := counts[candidates[i].Name], counts[candidates[j].Name]
+	if len(reachable) == 0 {
+		return fleetRunPlacement{Loads: loads}, errors.New("fleet placement: all remotes unreachable")
+	}
+	selected := leastLoadedFleetRunEntry(reachable, counts)
+	return fleetRunPlacement{
+		Selected: selected,
+		Loads:    loads,
+		Prestage: &fleetRunPrestage{
+			Ref:         imageRef,
+			SourceName:  "local",
+			Source:      fleetpkg.Remote{},
+			Destination: selected,
+		},
+	}, nil
+}
+
+func leastLoadedFleetRunEntry(entries []fleetpkg.Entry, counts map[string]int) fleetpkg.Entry {
+	sort.Slice(entries, func(i, j int) bool {
+		li, lj := counts[entries[i].Name], counts[entries[j].Name]
 		if li != lj {
 			return li < lj
 		}
-		return candidates[i].Name < candidates[j].Name
+		return entries[i].Name < entries[j].Name
 	})
-	return candidates[0], loads, nil
+	return entries[0]
 }
 
 func fleetRunForkFrom(args []string) string {

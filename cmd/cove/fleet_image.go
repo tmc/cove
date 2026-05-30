@@ -19,12 +19,7 @@ func (localFleetRemoteRunner) Run(ctx context.Context, remote fleetpkg.Remote, a
 }
 
 func runFleetImageTransferCommand(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
-	commandRunner := fleetCommandRunner(localFleetRemoteRunner{})
-	if r, ok := runner.(interface {
-		RunCommand(context.Context, fleetpkg.Remote, []string, io.Reader, io.Writer, io.Writer) error
-	}); ok {
-		commandRunner = commandRunnerFunc(r.RunCommand)
-	}
+	commandRunner := fleetImageCommandRunner(runner)
 	if len(args) == 0 {
 		return fmt.Errorf("usage: cove fleet image push <ref> <dst-host> | pull <ref> <src-host> | sync <ref> <src-host> <dst-host>")
 	}
@@ -94,6 +89,19 @@ func runFleetImageTransferCommand(ctx context.Context, args []string, path strin
 	default:
 		return fmt.Errorf("fleet: unknown image command %q", args[0])
 	}
+}
+
+func fleetImageCommandRunner(runner fleetRunner) fleetCommandRunner {
+	switch runner.(type) {
+	case sshFleetRunner, *sshFleetRunner:
+		return localFleetRemoteRunner{}
+	}
+	if r, ok := runner.(interface {
+		RunCommand(context.Context, fleetpkg.Remote, []string, io.Reader, io.Writer, io.Writer) error
+	}); ok {
+		return commandRunnerFunc(r.RunCommand)
+	}
+	return localFleetRemoteRunner{}
 }
 
 func fleetRemoteByName(cfg *fleetpkg.Config, name string) (fleetpkg.Remote, error) {
