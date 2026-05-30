@@ -204,7 +204,10 @@ func (r *HostRegistry) Heartbeat(req fleetproto.Heartbeat) (fleetproto.Heartbeat
 }
 
 // Assignments returns and clears the queued assignments for a host after
-// validating its lease. It backs the long-poll assignments endpoint.
+// validating its lease. The live worker protocol delivers assignments on the
+// heartbeat response (see Heartbeat); this method exposes the same lease-checked
+// queue drain for operator tooling and tests that need to inspect what was
+// enqueued without a full heartbeat round-trip.
 func (r *HostRegistry) Assignments(hostID, leaseID string) ([]fleetproto.Assignment, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -297,8 +300,7 @@ func newLeaseID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-// Controller serves the four-verb worker protocol over HTTP backed by a
-// HostRegistry.
+// Controller serves the worker protocol over HTTP backed by a HostRegistry.
 type Controller struct {
 	Registry *HostRegistry
 }
@@ -309,8 +311,8 @@ func NewController(reg *HostRegistry) *Controller {
 }
 
 // Handler returns the HTTP handler implementing the worker verbs (register,
-// heartbeat, assignments long-poll GET, report-status) plus the operator-facing
-// policy/image-gc push and results endpoints.
+// heartbeat, report-status; the heartbeat response delivers queued assignments)
+// plus the operator-facing policy/image-gc push and results endpoints.
 func (c *Controller) Handler() http.Handler {
 	mux := http.NewServeMux()
 	c.RegisterHandlers(mux)
@@ -325,15 +327,14 @@ func (c *Controller) RegisterHandlers(mux *http.ServeMux) {
 	c.RegisterOperatorHandlers(mux)
 }
 
-// RegisterWorkerHandlers adds only the four worker verbs (register, heartbeat,
-// assignments long-poll, report-status) to mux. A deployment that wraps the
-// operator endpoints in RBAC/audit middleware (Slice 9) registers the worker
-// verbs here and mounts the operator surface separately so the worker dial-ins,
-// authenticated by the per-host lease, stay unwrapped.
+// RegisterWorkerHandlers adds only the worker verbs (register, heartbeat,
+// report-status) to mux. A deployment that wraps the operator endpoints in
+// RBAC/audit middleware (Slice 9) registers the worker verbs here and mounts
+// the operator surface separately so the worker dial-ins, authenticated by the
+// per-host lease, stay unwrapped.
 func (c *Controller) RegisterWorkerHandlers(mux *http.ServeMux) {
 	mux.HandleFunc(fleetproto.PathRegister, c.handleRegister)
 	mux.HandleFunc(fleetproto.PathHeartbeat, c.handleHeartbeat)
-	mux.HandleFunc(fleetproto.PathAssignments, c.handleAssignments)
 	mux.HandleFunc(fleetproto.PathStatus, c.handleStatus)
 }
 
@@ -375,24 +376,6 @@ func (c *Controller) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fleetproto.WriteJSON(w, http.StatusOK, resp)
-}
-
-func (c *Controller) handleAssignments(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		fleetproto.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	hostID := r.URL.Query().Get("host_id")
-	lease := fleetproto.BearerToken(r)
-	assigned, err := c.Registry.Assignments(hostID, lease)
-	if err != nil {
-		fleetproto.WriteError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-	if assigned == nil {
-		assigned = []fleetproto.Assignment{}
-	}
-	fleetproto.WriteJSON(w, http.StatusOK, assigned)
 }
 
 func (c *Controller) handleStatus(w http.ResponseWriter, r *http.Request) {

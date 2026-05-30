@@ -1,6 +1,8 @@
 // Package fleetproto defines the worker<->controller wire protocol for the
-// cove fleet control plane. The four verbs are register, heartbeat,
-// poll/await-assignment, and report-status, exchanged as JSON over HTTP.
+// cove fleet control plane. The three verbs are register, heartbeat, and
+// report-status, exchanged as JSON over HTTP. Assignments are not a separate
+// verb: the heartbeat response carries any queued work for the host, so a
+// worker awaits assignments simply by heartbeating on its interval.
 //
 // The message types in this file are header-free because both the MIT
 // worker-mode client (internal/coved) and the paid controller import them.
@@ -9,13 +11,12 @@ package fleetproto
 
 import "encoding/json"
 
-// HTTP paths for the four verbs. Workers POST to register/heartbeat/status and
-// long-poll GET on assignments.
+// HTTP paths for the three verbs. Workers POST to all three; the heartbeat
+// response (HeartbeatResp.Assignments) delivers queued work.
 const (
-	PathRegister    = "/v1/register"
-	PathHeartbeat   = "/v1/heartbeat"
-	PathAssignments = "/v1/assignments"
-	PathStatus      = "/v1/status"
+	PathRegister  = "/v1/register"
+	PathHeartbeat = "/v1/heartbeat"
+	PathStatus    = "/v1/status"
 )
 
 // AuthHeader carries the bearer credential: the one-time register token on

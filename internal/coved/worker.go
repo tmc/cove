@@ -72,9 +72,10 @@ type WorkerConfig struct {
 const DefaultHeartbeatInterval = 10 * time.Second
 
 // Worker is coved's dial-out fleet client. It registers with a controller,
-// heartbeats this host's facts, long-polls for assignments, and reports their
-// status. It is MIT (single-host worker mode), distinct from the paid
-// controller. The zero value is not usable; build one with NewWorker.
+// heartbeats this host's facts (the heartbeat response delivers any queued
+// assignments), and reports their status. It is MIT (single-host worker mode),
+// distinct from the paid controller. The zero value is not usable; build one
+// with NewWorker.
 type Worker struct {
 	cfg     WorkerConfig
 	client  *http.Client
