@@ -18,6 +18,7 @@ const disposableCloneStampFormat = disposable.CloneStampFormat
 // DisposableSetupOptions configures disposable clone creation.
 type DisposableSetupOptions struct {
 	Source         string
+	Target         string
 	Linked         bool
 	CopyMachineID  bool
 	SourceDiskPath string
@@ -46,7 +47,13 @@ func SetupDisposableClone(opts DisposableSetupOptions) (disposable.Clone, error)
 		now = time.Now
 	}
 	createdAt := now()
-	cloneName := disposableCloneName(opts.Source, createdAt)
+	cloneName := strings.TrimSpace(opts.Target)
+	if cloneName == "" {
+		cloneName = disposableCloneName(opts.Source, createdAt)
+	}
+	if cloneName == opts.Source {
+		return disposable.Clone{}, fmt.Errorf("target vm must differ from source")
+	}
 	cloneFn := opts.Clone
 	if cloneFn == nil {
 		cloneFn = CloneVM

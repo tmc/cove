@@ -58,7 +58,7 @@ func TestRunMissingImageForkFromDoesNotCreateSelectedVMDir(t *testing.T) {
 	}
 }
 
-func TestRunForkFromUntaggedMissingParentGivesImageAndVMHints(t *testing.T) {
+func TestRunForkFromUntaggedMissingParentGivesImageHints(t *testing.T) {
 	home := withTempHome(t)
 	err := runVMWithConfig(RunConfig{
 		VM:                  vmSelection{Name: "default", Directory: filepath.Join(vmconfig.BaseDir(), "default")},
@@ -72,8 +72,6 @@ func TestRunForkFromUntaggedMissingParentGivesImageAndVMHints(t *testing.T) {
 		"no local image ghost-image:latest",
 		"cove image list",
 		"cove image search ghost-image",
-		"cove fork ghost-image <child>",
-		"cove clone --linked ghost-image <child>",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)

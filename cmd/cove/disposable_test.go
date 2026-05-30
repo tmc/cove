@@ -110,6 +110,32 @@ func TestSetupDisposableCloneUsesInjectedClone(t *testing.T) {
 	}
 }
 
+func TestSetupDisposableCloneUsesExplicitTarget(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	var gotOpts CloneOptions
+	clone := func(opts CloneOptions) error {
+		gotOpts = opts
+		return os.MkdirAll(vmconfig.Path(opts.Target), 0755)
+	}
+
+	got, err := SetupDisposableClone(DisposableSetupOptions{
+		Source: "research-base",
+		Target: "job-123",
+		Linked: true,
+		Clone:  clone,
+	})
+	if err != nil {
+		t.Fatalf("SetupDisposableClone() error = %v", err)
+	}
+	if got.Name != "job-123" {
+		t.Fatalf("SetupDisposableClone() name = %q, want job-123", got.Name)
+	}
+	if gotOpts.Target != "job-123" {
+		t.Fatalf("Clone target = %q, want job-123", gotOpts.Target)
+	}
+}
+
 func TestCleanupDisposableClone(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "clone")

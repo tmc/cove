@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/cove/internal/lifecycle"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmpolicy"
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func TestRunCurrentVMWithDisposableClone(t *testing.T) {
@@ -424,7 +425,7 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 	}
 }
 
-func TestRunEphemeralForkRejectsMacOSVMParentBeforeSetup(t *testing.T) {
+func TestRunEphemeralForkUsesLinkedCloneForMacOSVMParent(t *testing.T) {
 	hooks, _ := stubAcquireRunLockHook(t)
 	t.Setenv("HOME", t.TempDir())
 	parent := "identity-parent"
@@ -441,32 +442,71 @@ func TestRunEphemeralForkRejectsMacOSVMParentBeforeSetup(t *testing.T) {
 		runtimeSystemDiskAttachment = oldRuntimeSystemDiskAttachment
 	})
 
-	hooks.SetupEphemeralFork = func(opts EphemeralForkOptions) (EphemeralFork, error) {
-		t.Fatalf("SetupEphemeralFork called for unsupported VM parent: %#v", opts)
-		return EphemeralFork{}, nil
+	clonePath := filepath.Join(vmconfig.BaseDir(), "identity-child")
+	var gotOpts DisposableSetupOptions
+	hooks.SetupDisposableClone = func(opts DisposableSetupOptions) (disposable.Clone, error) {
+		gotOpts = opts
+		if err := os.MkdirAll(clonePath, 0o755); err != nil {
+			return disposable.Clone{}, err
+		}
+		return disposable.Clone{Name: "identity-child", Path: clonePath, Source: opts.Source}, nil
 	}
-	hooks.CleanupEphemeralFork = func(path string) error {
-		t.Fatalf("CleanupEphemeralFork called before child exists: %s", path)
+	hooks.CleanupDisposableClone = func(path string) error {
+		t.Fatalf("CleanupDisposableClone called after successful mark: %s", path)
 		return nil
 	}
-	hooks.RunMacOSVM = runHook(func() error {
-		t.Fatal("runMacOSVM called for unsupported VM-parent fork")
+	var gotRunVMName, gotRunVMDir string
+	hooks.RunMacOSVM = func(rc vmrun.RunConfig, hc vmrun.HostConfig, _ *RunBundle, _ runMetricRecorder) error {
+		gotRunVMName = vmName
+		gotRunVMDir = vmDir
+		if rc.OS != vmrun.GuestMacOS {
+			t.Fatalf("rc.OS = %v, want macOS", rc.OS)
+		}
+		if hc.VMDir != clonePath {
+			t.Fatalf("hc.VMDir = %q, want %q", hc.VMDir, clonePath)
+		}
+		if _, err := os.Stat(filepath.Join(clonePath, ephemeralSentinel)); err != nil {
+			t.Fatalf("ephemeral sentinel missing: %v", err)
+		}
+		return nil
+	}
+	hooks.RunLinuxVM = runHook(func() error {
+		t.Fatal("runLinuxVM called for macOS parent")
 		return nil
 	})
+	var cleanupPath string
+	hooks.CleanupEphemeralFork = func(path string) error {
+		cleanupPath = path
+		return nil
+	}
 
 	cfg := RunConfig{
 		VM:                  vmSelection{Name: "original", Directory: filepath.Join(vmconfig.BaseDir(), "original")},
 		Hooks:               hooks,
 		EphemeralForkParent: parent,
+		EphemeralForkName:   "identity-child",
 	}
-	_, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
-	if err == nil {
-		t.Fatal("runVMWithConfig succeeded for unsupported VM-parent fork")
+	out, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
+	if err != nil {
+		t.Fatalf("runVMWithConfig() error = %v", err)
 	}
-	msg := err.Error()
-	for _, want := range []string{"RAM-overlay runtime", "not implemented", "No VM was created", "cove fork", "cove clone --linked", "image refs"} {
-		if !strings.Contains(msg, want) {
-			t.Fatalf("error = %q, want %q", msg, want)
+	if gotOpts.Source != parent || gotOpts.Target != "identity-child" || !gotOpts.Linked || gotOpts.CopyMachineID {
+		t.Fatalf("SetupDisposableClone opts = %#v", gotOpts)
+	}
+	if gotRunVMName != "identity-child" || gotRunVMDir != clonePath {
+		t.Fatalf("run globals = (%q, %q), want (%q, %q)", gotRunVMName, gotRunVMDir, "identity-child", clonePath)
+	}
+	if cleanupPath != clonePath {
+		t.Fatalf("cleanup path = %q, want %q", cleanupPath, clonePath)
+	}
+	for _, want := range []string{
+		"Ephemeral fork: identity-child",
+		"Parent:         " + parent,
+		"Mode:           linked clone",
+		"Ephemeral fork removed: identity-child",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("run output %q does not contain %q", out, want)
 		}
 	}
 	if runtimeSystemDiskPathOverride != oldRuntimeSystemDiskPathOverride {
@@ -477,7 +517,7 @@ func TestRunEphemeralForkRejectsMacOSVMParentBeforeSetup(t *testing.T) {
 	}
 }
 
-func TestRunEphemeralForkRejectsLinuxVMParentBeforeSetup(t *testing.T) {
+func TestRunEphemeralForkUsesLinkedCloneForLinuxVMParent(t *testing.T) {
 	hooks, _ := stubAcquireRunLockHook(t)
 	t.Setenv("HOME", t.TempDir())
 	parent := "linux-parent"
@@ -489,33 +529,79 @@ func TestRunEphemeralForkRejectsLinuxVMParentBeforeSetup(t *testing.T) {
 		t.Fatalf("write linux disk: %v", err)
 	}
 
-	hooks.SetupEphemeralFork = func(opts EphemeralForkOptions) (EphemeralFork, error) {
-		t.Fatalf("SetupEphemeralFork called for unsupported Linux parent: %#v", opts)
-		return EphemeralFork{}, nil
+	clonePath := filepath.Join(vmconfig.BaseDir(), "linux-child")
+	hooks.SetupDisposableClone = func(opts DisposableSetupOptions) (disposable.Clone, error) {
+		if opts.Source != parent || !opts.Linked || opts.CopyMachineID {
+			t.Fatalf("SetupDisposableClone opts = %#v", opts)
+		}
+		if err := os.MkdirAll(clonePath, 0o755); err != nil {
+			return disposable.Clone{}, err
+		}
+		return disposable.Clone{Name: "linux-child", Path: clonePath, Source: opts.Source}, nil
 	}
-	hooks.CleanupEphemeralFork = func(path string) error {
-		t.Fatalf("CleanupEphemeralFork called before child exists: %s", path)
-		return nil
-	}
-	hooks.RunLinuxVM = runHook(func() error {
-		t.Fatal("runLinuxVM called for unsupported VM-parent fork")
+	hooks.RunMacOSVM = runHook(func() error {
+		t.Fatal("runMacOSVM called for Linux parent")
 		return nil
 	})
+	var ranLinux bool
+	hooks.RunLinuxVM = func(rc vmrun.RunConfig, hc vmrun.HostConfig, _ *RunBundle, _ runMetricRecorder) error {
+		ranLinux = true
+		if rc.OS != vmrun.GuestLinux {
+			t.Fatalf("rc.OS = %v, want Linux", rc.OS)
+		}
+		if hc.VMDir != clonePath {
+			t.Fatalf("hc.VMDir = %q, want %q", hc.VMDir, clonePath)
+		}
+		return nil
+	}
+	hooks.CleanupEphemeralFork = func(string) error { return nil }
 
 	cfg := RunConfig{
-		Linux:               true,
 		Hooks:               hooks,
 		EphemeralForkParent: parent,
 	}
-	_, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
-	if err == nil {
-		t.Fatal("runVMWithConfig succeeded for unsupported Linux VM-parent fork")
+	if _, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) }); err != nil {
+		t.Fatalf("runVMWithConfig() error = %v", err)
 	}
-	msg := err.Error()
-	for _, want := range []string{"Linux", "VM-parent RAM-overlay forks are not implemented", "cove fork", "cove clone --linked"} {
-		if !strings.Contains(msg, want) {
-			t.Fatalf("error = %q, want %q", msg, want)
+	if !ranLinux {
+		t.Fatal("RunLinuxVM was not called")
+	}
+}
+
+func TestRunEphemeralForkKeepRetainsLinkedClone(t *testing.T) {
+	hooks, _ := stubAcquireRunLockHook(t)
+	t.Setenv("HOME", t.TempDir())
+	parent := "keep-parent"
+	stageParentVMForEphemeralFork(t, parent)
+
+	clonePath := filepath.Join(vmconfig.BaseDir(), "keep-child")
+	hooks.SetupDisposableClone = func(opts DisposableSetupOptions) (disposable.Clone, error) {
+		if err := os.MkdirAll(clonePath, 0o755); err != nil {
+			return disposable.Clone{}, err
 		}
+		return disposable.Clone{Name: "keep-child", Path: clonePath, Source: opts.Source}, nil
+	}
+	hooks.RunMacOSVM = runHook(func() error { return nil })
+	hooks.CleanupEphemeralFork = func(path string) error {
+		t.Fatalf("CleanupEphemeralFork called with -keep: %s", path)
+		return nil
+	}
+
+	cfg := RunConfig{
+		Hooks:               hooks,
+		EphemeralForkParent: parent,
+		EphemeralForkName:   "keep-child",
+		EphemeralForkKeep:   true,
+	}
+	out, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
+	if err != nil {
+		t.Fatalf("runVMWithConfig() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(clonePath, ephemeralSentinel)); err != nil {
+		t.Fatalf("ephemeral sentinel missing on kept clone: %v", err)
+	}
+	if !strings.Contains(out, "Ephemeral fork retained (-keep): "+clonePath) {
+		t.Fatalf("run output %q does not contain retained line", out)
 	}
 }
 

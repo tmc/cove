@@ -216,10 +216,11 @@ cove image build -from macos-base -tag macos-agent:latest
 cove run -fork-from macos-agent:latest -ephemeral -headless
 ```
 
-VM parents must be stopped before `cove fork` or `cove clone --linked`.
-`cove run -fork-from` takes a local image ref such as `macos-agent:latest`;
-VM-parent RAM-overlay forks are not implemented. Keep secrets and untrusted
-state inside the child; discard the child after each task.
+VM parents must be stopped before `cove fork`, `cove clone --linked`, or
+`cove run -fork-from <vm>`. `cove run -fork-from` takes a local image ref such
+as `macos-agent:latest` or a stopped VM parent. VM parents use a temporary
+linked clone while the temporary-RAM overlay path remains disabled. Keep secrets
+and untrusted state inside the child; discard the child after each task.
 
 ## Per-run Artifacts
 

@@ -34,10 +34,9 @@ type RunConfig struct {
 	DisposableSourceDiskPath   string
 	SystemDiskAttachment       systemDiskAttachmentMode
 	SystemDiskPathOverride     string
-	// EphemeralForkParent triggers Phase 3 RAM-overlay ephemeral mode:
-	// boot a short-lived sibling that shares the parent's disk.img
-	// read-only and discards writes on shutdown. Mutually exclusive
-	// with Disposable and RollbackSnapshot.
+	// EphemeralForkParent boots a short-lived sibling from a VM name or
+	// image ref. VM parents use a linked clone fallback while the
+	// temporary-RAM attachment remains disabled.
 	EphemeralForkParent string
 	EphemeralForkName   string
 	EphemeralForkKeep   bool
@@ -577,13 +576,13 @@ func (s *ControlServer) checkVMLifecyclePolicy() {
 	}
 }
 
-// runEphemeralForkWithConfig boots a Phase 3 ephemeral sibling: an
-// in-memory child that shares the parent's disk.img read-only via
-// VZTemporaryRAMStorageDeviceAttachment. The child's vmDir is
-// auto-removed on exit unless cfg.EphemeralForkKeep is set.
+// runEphemeralForkWithConfig boots a short-lived VM-parent fork.
+// The original Phase 3 RAM-overlay path is still blocked by
+// VZTemporaryRAMStorageDeviceAttachment trapping at VM start, so this
+// user path uses the reliable linked-clone fallback and marks the child
+// with .ephemeral for crash cleanup.
 func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir string, bundle *RunBundle) error {
 	hooks := cfg.Hooks.withDefaults()
-	rc, hc := cfg.vmrunConfigs()
 	parentDir := vmconfig.Path(cfg.EphemeralForkParent)
 	if !vmconfig.Validate(parentDir) {
 		return missingForkFromParentError(cfg.EphemeralForkParent)
@@ -603,40 +602,44 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if releaseErr := parentLock.Release(); releaseErr != nil {
 		fmt.Fprintf(cfg.Stderr, "warning: release parent run.lock: %v\n", releaseErr)
 	}
-	if err := validateEphemeralForkVMParent(cfg.EphemeralForkParent, parentDir); err != nil {
-		return err
-	}
 
 	forkStarted := time.Now()
-	fork, err := hooks.SetupEphemeralFork(EphemeralForkOptions{
-		Parent:           cfg.EphemeralForkParent,
-		Name:             cfg.EphemeralForkName,
-		PreserveIdentity: true,
+	clone, err := hooks.SetupDisposableClone(DisposableSetupOptions{
+		Source:        cfg.EphemeralForkParent,
+		Target:        cfg.EphemeralForkName,
+		Linked:        true,
+		CopyMachineID: false,
 	})
 	if err != nil {
 		return err
 	}
+	cleanupClone := func() {
+		if cleanupErr := hooks.CleanupDisposableClone(clone.Path); cleanupErr != nil {
+			fmt.Fprintf(cfg.Stderr, "warning: cleanup vm-parent fork: %v\n", cleanupErr)
+		}
+	}
+	if err := markEphemeralForkPath(clone.Path); err != nil {
+		cleanupClone()
+		return err
+	}
 
-	fmt.Fprintf(cfg.Stdout, "Ephemeral fork: %s\n", fork.Name)
-	fmt.Fprintf(cfg.Stdout, "Ephemeral path: %s\n", fork.Path)
-	fmt.Fprintf(cfg.Stdout, "Parent disk:    %s (RAM-overlay, read-only)\n", vmPrimaryDiskPath(parentDir))
+	sourceOS := vmconfig.DetectOSType(parentDir)
+	cfg.VM = vmSelection{Name: clone.Name, Directory: clone.Path}
+	cfg.Linux = sourceOS == "Linux"
+	cfg.Windows = sourceOS == "Windows"
+	rc, hc := cfg.vmrunConfigs()
+
+	fmt.Fprintf(cfg.Stdout, "Ephemeral fork: %s\n", clone.Name)
+	fmt.Fprintf(cfg.Stdout, "Ephemeral path: %s\n", clone.Path)
+	fmt.Fprintf(cfg.Stdout, "Parent:         %s\n", cfg.EphemeralForkParent)
+	fmt.Fprintf(cfg.Stdout, "Mode:           linked clone (temporary RAM overlay disabled)\n")
 	bundle.EmitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
-		"child_name": fork.Name,
-		"child_path": fork.Path,
+		"child_name": clone.Name,
+		"child_path": clone.Path,
 	})
 
-	parentDisk := vmPrimaryDiskPath(parentDir)
-	prevAttachment := runtimeSystemDiskAttachment
-	prevOverride := runtimeSystemDiskPathOverride
-	runtimeSystemDiskAttachment = systemDiskAttachmentTemporaryRAM
-	runtimeSystemDiskPathOverride = parentDisk
-	defer func() {
-		runtimeSystemDiskAttachment = prevAttachment
-		runtimeSystemDiskPathOverride = prevOverride
-	}()
-
-	vmName = fork.Name
-	vmDir = fork.Path
+	vmName = clone.Name
+	vmDir = clone.Path
 	defer func() {
 		vmName = originalVMName
 		vmDir = originalVMDir
@@ -644,9 +647,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 
 	lock, err := hooks.AcquireRunLock(vmDir)
 	if err != nil {
-		// Lock acquisition failed before booting; remove the dir so
-		// no orphan is left behind (it won't have been used).
-		_ = hooks.CleanupEphemeralFork(fork.Path)
+		cleanupClone()
 		return fmt.Errorf("cove run -fork-from: %w", err)
 	}
 	defer func() {
@@ -656,24 +657,35 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	}()
 
 	var runErr error
-	if cfg.Windows {
+	switch sourceOS {
+	case "Windows":
 		runErr = hooks.RunWindowsVM(rc, hc, bundle, bundle)
-	} else if cfg.Linux {
+	case "Linux":
 		runErr = hooks.RunLinuxVM(rc, hc, bundle, bundle)
-	} else {
+	default:
 		runErr = hooks.RunMacOSVM(rc, hc, bundle, bundle)
 	}
 
 	if cfg.EphemeralForkKeep {
-		fmt.Fprintf(cfg.Stdout, "Ephemeral fork retained (-keep): %s\n", fork.Path)
+		fmt.Fprintf(cfg.Stdout, "Ephemeral fork retained (-keep): %s\n", clone.Path)
 		return runErr
 	}
-	if cleanupErr := hooks.CleanupEphemeralFork(fork.Path); cleanupErr != nil {
+	if cleanupErr := hooks.CleanupEphemeralFork(clone.Path); cleanupErr != nil {
 		fmt.Fprintf(cfg.Stderr, "warning: cleanup ephemeral fork: %v\n", cleanupErr)
 	} else {
-		fmt.Fprintf(cfg.Stdout, "Ephemeral fork removed: %s\n", fork.Name)
+		fmt.Fprintf(cfg.Stdout, "Ephemeral fork removed: %s\n", clone.Name)
 	}
 	return runErr
+}
+
+func markEphemeralForkPath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("ephemeral fork: path required")
+	}
+	if err := os.WriteFile(filepath.Join(path, ephemeralSentinel), nil, 0644); err != nil {
+		return fmt.Errorf("ephemeral fork: write sentinel: %w", err)
+	}
+	return nil
 }
 
 func missingForkFromParentError(parent string) error {
@@ -681,16 +693,5 @@ func missingForkFromParentError(parent string) error {
 	if err != nil {
 		return fmt.Errorf("cove run -fork-from: no VM named %q under %s", parent, vmconfig.BaseDir())
 	}
-	return fmt.Errorf("cove run -fork-from: no VM named %q under %s and no local image %s; run 'cove image list' or 'cove image search %s' to find images, or use 'cove fork %s <child>' / 'cove clone --linked %s <child>' for VM parents", parent, vmconfig.BaseDir(), ref, ref.Name, parent, parent)
-}
-
-func validateEphemeralForkVMParent(parent, parentDir string) error {
-	switch vmconfig.DetectOSType(parentDir) {
-	case "Linux":
-		return fmt.Errorf("cove run -fork-from: VM parent %q is Linux; VM-parent RAM-overlay forks are not implemented. Use 'cove fork %s <child>' or 'cove clone --linked %s <child>', then run the child VM", parent, parent, parent)
-	case "Windows":
-		return fmt.Errorf("cove run -fork-from: VM parent %q is Windows; VM-parent RAM-overlay forks are not implemented. Use 'cove fork %s <child>' or 'cove clone --linked %s <child>', then run the child VM", parent, parent, parent)
-	default:
-		return fmt.Errorf("cove run -fork-from: VM parent %q uses the RAM-overlay runtime, which is not implemented. No VM was created. Use 'cove fork %s <child>' or 'cove clone --linked %s <child>', then run the child VM; image refs still work with -fork-from", parent, parent, parent)
-	}
+	return fmt.Errorf("cove run -fork-from: no VM named %q under %s and no local image %s; run 'cove image list' or 'cove image search %s' to find images", parent, vmconfig.BaseDir(), ref, ref.Name)
 }

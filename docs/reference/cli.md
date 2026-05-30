@@ -92,10 +92,10 @@ cove run [flags]
 | `-pcap <path>` | | Write PCAP when using `-network filehandle` |
 | `--port-forward <host:guest>` / `--pf <host:guest>` | | Forward host TCP to a guest vsock port (repeatable) |
 | `-disposable` | false | Run from a disposable linked clone |
-| `-fork-from <image-ref>` | | Boot a fresh VM from a local image ref (`<name>:<tag>`); see [`cove image`](#image). VM-parent RAM-overlay forks are not implemented; use `cove fork` or `cove clone --linked` for VM parents. Auto-bundles per-run artifacts (`manifest.json`, `events.jsonl`, `stdout.log`, `stderr.log`, `screenshots/`) under `~/.vz/runs/<run-id>/` for post-mortem inspection. |
+| `-fork-from <image-ref\|vm>` | | Boot a fresh VM from a local image ref (`<name>:<tag>`) or stopped VM parent; see [`cove image`](#image). VM parents use a temporary linked clone while the temporary-RAM overlay path remains disabled. Auto-bundles per-run artifacts (`manifest.json`, `events.jsonl`, `stdout.log`, `stderr.log`, `screenshots/`) under `~/.vz/runs/<run-id>/` for post-mortem inspection. |
 | `-fork-name <name>` | | Explicit name for the forked VM |
 | `-keep` | false | Keep the forked VM directory after exit |
-| `-ephemeral` | false | With `-fork-from <image-ref>`, remove the materialized child on stop and sweep it with `cove gc`. Useful for disposable CI runners; see [design 024](../designs/024-cove-runner-images.md). |
+| `-ephemeral` | false | With `-fork-from <image-ref>`, remove the materialized child on stop and sweep it with `cove gc`. VM-parent forks are short-lived by default and use `-keep` to retain the child. Useful for disposable CI runners; see [design 024](../designs/024-cove-runner-images.md). |
 | `-launch-order <mode>` | window-first | GUI startup order: window-first or start-first |
 | `-runtime-profile <mode>` | full | macOS device profile: full or minimal |
 | `-apple-log` | false | Stream Apple unified logs |

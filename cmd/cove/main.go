@@ -97,9 +97,9 @@ var (
 	cloneLinked bool
 	// Disposable run mode; boots from a temporary linked clone.
 	disposableMode bool
-	// Ephemeral fork mode for local image refs. The older VM-parent
-	// RAM-overlay path is rejected with an actionable error until the
-	// temporary RAM storage attachment path is implemented.
+	// Ephemeral fork mode for local image refs and VM parents. VM parents
+	// use a linked clone fallback while the temporary RAM storage
+	// attachment remains disabled.
 	ephemeralForkParent string
 	ephemeralForkName   string
 	ephemeralForkKeep   bool
@@ -246,7 +246,7 @@ func init() {
 	flag.BoolVar(&cloneLinked, "linked", false, "create linked clone using APFS copy-on-write")
 	flag.BoolVar(&disposableMode, "disposable", false, "run from a disposable linked clone and delete it after shutdown")
 	// Ephemeral fork (design 013 Phase 3)
-	flag.StringVar(&ephemeralForkParent, "fork-from", "", "boot a fork from a local image ref; VM-parent RAM-overlay forks are not implemented")
+	flag.StringVar(&ephemeralForkParent, "fork-from", "", "boot a short-lived fork from a local image ref or stopped VM")
 	flag.StringVar(&ephemeralForkName, "fork-name", "", "explicit name for the forked VM")
 	flag.BoolVar(&ephemeralForkKeep, "keep", false, "with -fork-from, retain the ephemeral vmDir after exit")
 	flag.BoolVar(&runEphemeral, "ephemeral", false, "with -fork-from <image-ref>, destroy the materialized child on stop and skip vm tree registration")
