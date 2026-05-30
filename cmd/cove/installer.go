@@ -1942,7 +1942,7 @@ func installOverlayMessage(phase installOverlayPhase, percent float64) (title, s
 		if percent > 100 {
 			percent = 100
 		}
-		return "Installing macOS", fmt.Sprintf("Restoring system files... %.0f%%", percent), true
+		return "Installing macOS", fmt.Sprintf("Writing system files... %.0f%%", percent), true
 	case installOverlayFirstBoot:
 		return "Installing macOS", "First boot in progress...", true
 	default:

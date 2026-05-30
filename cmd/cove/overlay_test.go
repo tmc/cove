@@ -97,14 +97,14 @@ func TestInstallOverlayMessage(t *testing.T) {
 			phase:        installOverlayRestoring,
 			percent:      42.4,
 			wantTitle:    "Installing macOS",
-			wantSubtitle: "Restoring system files... 42%",
+			wantSubtitle: "Writing system files... 42%",
 		},
 		{
 			name:         "restoring clamps high",
 			phase:        installOverlayRestoring,
 			percent:      123,
 			wantTitle:    "Installing macOS",
-			wantSubtitle: "Restoring system files... 100%",
+			wantSubtitle: "Writing system files... 100%",
 		},
 		{
 			name:         "first boot",
