@@ -800,10 +800,10 @@ func runFullInstallWithGUI(ctx context.Context, provision macOSInstallProvision,
 					subtitle := ui.overlaySubtitle
 					ui.setOverlayTitle = ""
 					ui.overlaySubtitle = ""
-					objc.Send[objc.ID](vmOverlay.ID, objc.Sel("removeFromSuperview"))
-					vmOverlay = createInstallOverlay(currentVMViewSize(vmView, corefoundation.CGSize{Width: 1024, Height: 768}), title, subtitle)
-					addSubview(vmViewAsNSView(vmView), vmOverlay)
-					pulseMessageOverlaySubtitle(vmOverlay)
+					// Update the existing labels in place rather than rebuilding the
+					// overlay, so the subtitle pulse keeps running smoothly across
+					// the frequent (per-percent) install progress updates.
+					updateMessageOverlayText(vmOverlay, title, subtitle)
 				}
 
 				// Fade out overlay — animate over ~10 iterations (~0.33s at 30 Hz).

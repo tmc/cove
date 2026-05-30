@@ -2536,6 +2536,7 @@ func createMessageOverlay(size corefoundation.CGSize, title, subtitle string, wh
 		Size:   corefoundation.CGSize{Width: size.Width, Height: titleHeight},
 	})
 	objc.Send[objc.ID](label.ID, objc.Sel("setAutoresizingMask:"), uint(2|8|32))
+	objc.Send[objc.ID](label.ID, objc.Sel("setTag:"), messageOverlayTitleTag)
 	overlay.AddSubview(&label.NSView)
 
 	if subtitle != "" {
@@ -2566,10 +2567,36 @@ func createMessageOverlay(size corefoundation.CGSize, title, subtitle string, wh
 	return overlay
 }
 
-// messageOverlaySubtitleTag identifies the subtitle label within an overlay view
-// so it can be retrieved via -viewWithTag: without threading the label out of
-// createMessageOverlay.
-const messageOverlaySubtitleTag = 0x7C0E5 // "COVES" leetish; just a stable nonzero tag
+// messageOverlayTitleTag and messageOverlaySubtitleTag identify the title and
+// subtitle labels within an overlay view so they can be retrieved via
+// -viewWithTag: (to update text in place, or to start a subtitle pulse) without
+// threading the labels out of createMessageOverlay.
+const (
+	messageOverlayTitleTag    = 0x7C0E4
+	messageOverlaySubtitleTag = 0x7C0E5
+)
+
+// updateMessageOverlayText sets the overlay's title and subtitle text in place,
+// reusing the existing labels instead of rebuilding the overlay. This keeps any
+// running subtitle pulse (see pulseMessageOverlaySubtitle) uninterrupted, so a
+// frequently-updated overlay (install progress, which ticks every percent) pulses
+// smoothly rather than restarting the animation on each update. A label is left
+// untouched if it does not exist (e.g. the overlay was created without a subtitle).
+func updateMessageOverlayText(overlay appkit.NSView, title, subtitle string) {
+	if overlay.ID == 0 {
+		return
+	}
+	if title != "" {
+		if label := objc.Send[objc.ID](overlay.ID, objc.Sel("viewWithTag:"), messageOverlayTitleTag); label != 0 {
+			objc.Send[objc.ID](label, objc.Sel("setStringValue:"), objc.String(title))
+		}
+	}
+	if subtitle != "" {
+		if label := objc.Send[objc.ID](overlay.ID, objc.Sel("viewWithTag:"), messageOverlaySubtitleTag); label != 0 {
+			objc.Send[objc.ID](label, objc.Sel("setStringValue:"), objc.String(subtitle))
+		}
+	}
+}
 
 // pulseMessageOverlaySubtitle starts a gentle, indefinitely-repeating opacity
 // pulse on the overlay's subtitle label, signalling that a long wait (install or
@@ -2598,11 +2625,14 @@ func pulseMessageOverlaySubtitle(overlay appkit.NSView) {
 	if anim == 0 {
 		return
 	}
-	fromValue := objc.Send[objc.ID](objc.ID(objc.GetClass("NSNumber")), objc.Sel("numberWithDouble:"), 0.35)
+	// Gentle range and a slow ~2.2s breath (1.1s each way) so it reads as a calm
+	// "alive" pulse, not a blink. The 0.55 floor keeps the text legible at the dim
+	// end rather than nearly vanishing.
+	fromValue := objc.Send[objc.ID](objc.ID(objc.GetClass("NSNumber")), objc.Sel("numberWithDouble:"), 0.55)
 	toValue := objc.Send[objc.ID](objc.ID(objc.GetClass("NSNumber")), objc.Sel("numberWithDouble:"), 1.0)
 	objc.Send[objc.ID](anim, objc.Sel("setFromValue:"), fromValue)
 	objc.Send[objc.ID](anim, objc.Sel("setToValue:"), toValue)
-	objc.Send[objc.ID](anim, objc.Sel("setDuration:"), 0.9)
+	objc.Send[objc.ID](anim, objc.Sel("setDuration:"), 1.1)
 	objc.Send[objc.ID](anim, objc.Sel("setAutoreverses:"), true)
 	// HUGE_VALF — repeat forever; the animation dies with the layer.
 	objc.Send[objc.ID](anim, objc.Sel("setRepeatCount:"), float32(3.4028235e38))
