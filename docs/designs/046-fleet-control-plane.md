@@ -25,18 +25,22 @@ the shared `fleetproto` wire types stay MIT (no header). The new surfaces:
 - `internal/fleet/{fanout,health,ssh_mux}.go` (MIT, slice 4) + `cove fleet
   run --all` / `cove fleet health` wired in `cmd/cove/fleet_*.go`.
 - `internal/fleet/fleetproto/` — the four-verb protocol.
-- `internal/fleet/controller.go`, `cmd/cove-fleetd/` — controller binary.
-- `internal/coved/worker.go` + `worker_policy.go` — `coved -fleet-url` worker.
+- `internal/fleet/controller.go`, `cmd/cove-fleetd/` — controller binary,
+  served over TLS (`-tls-cert`/`-tls-key`, optional mTLS via `-tls-client-ca`);
+  plaintext stays the dev-only default, half-configured TLS fails closed.
+- `internal/coved/worker.go` + `worker_policy.go` — `coved -fleet-url` worker,
+  with `-fleet-tls-ca`/`-fleet-tls-cert`/`-fleet-tls-key` to trust a private
+  controller cert and present a client cert for mTLS.
 - `internal/fleet/{scheduler,warmpool,hostedapi,provider,cloudprovider,
   metering,cordon,policy_push,policy_http,rbac,sso,audit,middleware}.go`.
 
 This is in-repo code on a private repo. It is **not** wired into a public or
 paid product surface, and the gates in *Open questions* (trademark/brand,
 public/private, "cove Cloud" scope) remain unresolved — do not launch a
-paid/hosted fleet surface before they are. A clean-clone CI build of the whole
-module still requires `github.com/tmc/apple` to be tagged at a version
-carrying the newer `storagex`/`virtualization` APIs the root package uses
-(a pre-existing condition, unrelated to this branch).
+paid/hosted fleet surface before they are. The branch is rebased on a `main`
+that tags `github.com/tmc/apple` at `v0.6.10`, resolving the earlier
+clean-clone API-drift; the dev build still resolves the local `apple`/`macgo`
+checkouts through the gitignored `go.work`, as elsewhere in the repo.
 
 ## Problem
 
