@@ -1,7 +1,8 @@
 # cove → lume export
 
-Status: dry-run only. Live publish is gated until the user reviews the
-manifest shape against a real lume consumer.
+Status: live publish implemented. `cove push --format lume` uploads the
+tar-split OCI blobs, publishes the manifest, and still supports `--dry-run`
+for inspecting the plan without touching a registry.
 
 ## What lume publishes
 
@@ -44,9 +45,9 @@ archive contains one regular file (the disk image). The `cpuCount` /
 `memorySize` / `os` / `display` / `macAddress` / `diskSize` config blob
 ships as a separate layer addressed by `org.opencontainers.image.title`.
 
-## What cove now produces (dry-run)
+## What cove now produces
 
-`cove push --format lume --dry-run <vm> <ref>` builds the same shape.
+`cove push --format lume <vm> <ref>` publishes the same shape.
 On a 30 GB snap-bench VM with default chunk size:
 
 - 35 parts at 512 MiB each (last part shorter)
@@ -119,20 +120,15 @@ consumer before relying on this.
 
 ## Known gaps and follow-ups
 
-1. **Live publish path.** `--format lume` errors on non-dry-run today.
-   The follow-up: `lumePushImage` mirroring `pushImage`'s upload calls
-   (UploadBlob + PushManifest), but tar-streamed instead of LZ4'd. Needs
-   reusable upload logic abstracted out of `push.go`.
-
-2. **`artifactType` field.** Lume sets it; we don't. Probably harmless
+1. **`artifactType` field.** Lume sets it; we don't. Probably harmless
    (clients fall back to `config.mediaType`) but should be confirmed.
 
-3. **Streaming part split.** Today we tar+gzip to a temp file, then read
+2. **Streaming part split.** Today we tar+gzip to a temp file, then read
    it back to compute per-part digests. For a 30 GB VM this writes ~17 GB
    of temp (the gzip ratio). A streaming digest-as-you-tar implementation
    would halve disk I/O. Not urgent — registry uploads dominate runtime.
 
-4. **`LumeConfig` decoder mismatch.** `internal/ociimage/lume.go`'s
+3. **`LumeConfig` decoder mismatch.** `internal/ociimage/lume.go`'s
    `DecodeLumeConfig` reads `cpu` (int) and `memory` (string) — but real
    lume images carry `cpuCount` (int) and `memorySize` (uint64 bytes).
    The import path's projection currently won't pick up CPU/memory from

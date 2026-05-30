@@ -3,9 +3,12 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -346,18 +349,16 @@ func TestWriteLumeManifestOutWriteError(t *testing.T) {
 	}
 }
 
-func TestLumePushDryRunOnlyRejectsNonDryRun(t *testing.T) {
-	plan := &lumePushPlan{VMName: "x", Ref: "r"}
-	err := lumePushDryRunOnly(plan, pushOptions{DryRun: false})
-	if err == nil {
-		t.Fatal("expected error for non-dry-run")
-	}
-	if !strings.Contains(err.Error(), "--dry-run") {
-		t.Errorf("error %q does not mention --dry-run", err.Error())
+func TestBuildLumePushPlanRejectsBase(t *testing.T) {
+	_, err := buildLumePushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", pushOptions{
+		BaseRef: "ghcr.io/me/base:v1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not support --base") {
+		t.Fatalf("buildLumePushPlan() error = %v, want unsupported base", err)
 	}
 }
 
-func TestLumePushDryRunOnlyWritesManifest(t *testing.T) {
+func TestRunLumePushDryRunWritesManifest(t *testing.T) {
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "out.json")
 	plan := &lumePushPlan{
@@ -379,11 +380,115 @@ func TestLumePushDryRunOnlyWritesManifest(t *testing.T) {
 		devnull.Close()
 	}()
 
-	if err := lumePushDryRunOnly(plan, pushOptions{DryRun: true, ManifestOut: manifestPath}); err != nil {
-		t.Fatalf("lumePushDryRunOnly: %v", err)
+	if err := runLumePush(context.Background(), plan, pushOptions{DryRun: true, ManifestOut: manifestPath}); err != nil {
+		t.Fatalf("runLumePush: %v", err)
 	}
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Fatalf("manifest not written: %v", err)
+	}
+}
+
+func TestRunLumePushUploadsRegistryContent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vmPath := filepath.Join(vmconfig.BaseDir(), "dev-vm")
+	if err := os.MkdirAll(vmPath, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	disk := make([]byte, 512)
+	for i := range disk {
+		disk[i] = byte(i)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "disk.img"), disk, 0644); err != nil {
+		t.Fatalf("WriteFile(disk.img) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vmPath, "aux.img"), []byte("aux"), 0644); err != nil {
+		t.Fatalf("WriteFile(aux.img) error = %v", err)
+	}
+	if err := vmconfig.Save(vmPath, &vmconfig.Config{CPU: 6, MemoryGB: 8}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	uploaded := map[string][]byte{}
+	manifests := map[string]ociimage.Manifest{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const blobPrefix = "/v2/me/dev-vm/blobs/"
+		const uploadPrefix = "/v2/me/dev-vm/blobs/uploads/"
+		const manifestPrefix = "/v2/me/dev-vm/manifests/"
+		switch {
+		case r.Method == http.MethodHead && strings.HasPrefix(r.URL.Path, blobPrefix):
+			digest := strings.TrimPrefix(r.URL.Path, blobPrefix)
+			if _, ok := uploaded[digest]; ok {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == uploadPrefix:
+			w.Header().Set("Location", uploadPrefix+"upload-id")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && r.URL.Path == uploadPrefix+"upload-id":
+			digest := r.URL.Query().Get("digest")
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			if got := pushTestDigest(data); got != digest {
+				t.Fatalf("uploaded digest = %q, want %q", got, digest)
+			}
+			if r.ContentLength >= 0 && r.ContentLength != int64(len(data)) {
+				t.Fatalf("ContentLength = %d, want %d", r.ContentLength, len(data))
+			}
+			uploaded[digest] = data
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, manifestPrefix):
+			tag := strings.TrimPrefix(r.URL.Path, manifestPrefix)
+			var manifest ociimage.Manifest
+			if err := json.NewDecoder(r.Body).Decode(&manifest); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			manifests[tag] = manifest
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("%s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer srv.Close()
+
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	opts := pushOptions{
+		ChunkSize:       64,
+		AdditionalTags:  stringList{"latest"},
+		ManifestOut:     manifestPath,
+		RegistryBaseURL: srv.URL,
+	}
+	plan, err := buildLumePushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", opts)
+	if err != nil {
+		t.Fatalf("buildLumePushPlan(): %v", err)
+	}
+	out, err := captureStdoutResult(t, func() error {
+		return runLumePush(context.Background(), plan, opts)
+	})
+	if err != nil {
+		t.Fatalf("runLumePush(): %v", err)
+	}
+	if !strings.Contains(out, "Push complete (lume tar-split format)") {
+		t.Fatalf("output %q missing completion line", out)
+	}
+	if _, ok := manifests["v1"]; !ok {
+		t.Fatal("missing v1 manifest")
+	}
+	if _, ok := manifests["latest"]; !ok {
+		t.Fatal("missing latest manifest")
+	}
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("manifest not written: %v", err)
+	}
+	if _, ok := uploaded[plan.Manifest.Config.Digest]; !ok {
+		t.Fatalf("empty config digest %s was not uploaded", plan.Manifest.Config.Digest)
+	}
+	for _, layer := range plan.Manifest.Layers {
+		if _, ok := uploaded[layer.Digest]; !ok {
+			t.Fatalf("layer digest %s was not uploaded", layer.Digest)
+		}
 	}
 }
 

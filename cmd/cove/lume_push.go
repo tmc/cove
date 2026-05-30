@@ -5,17 +5,12 @@
 // tar-gzipped stream sliced byte-wise into N "disk.img.part.aa..bo" layers.
 // The two formats disagree on compression, addressing, and verification, so
 // instead of merging them we build the lume manifest in a parallel module.
-//
-// This file is dry-run only: it computes the manifest the export would
-// produce without uploading anything. A full push would mirror the structure
-// in pushImage but talk to the registry — that's a follow-up once the user
-// reviews the manifest shape.
-
 package main
 
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -67,7 +62,7 @@ type lumeConfigOut struct {
 	MACAddress string `json:"macAddress,omitempty"`
 }
 
-// lumePushPlan is the dry-run plan for a cove→lume export.
+// lumePushPlan is the plan for a cove-to-lume export.
 type lumePushPlan struct {
 	VMName      string
 	VMDir       string
@@ -95,16 +90,22 @@ type lumePushPart struct {
 	MediaType string
 }
 
-// buildLumePushPlan constructs a dry-run lume export plan for the named VM.
+// buildLumePushPlan constructs a lume export plan for the named VM.
 // The plan includes the manifest, sidecar digests, and per-part metadata
-// (number, title, size, digest, mediaType) but no upload state.
+// (number, title, size, digest, mediaType).
 //
 // The disk is tar+gzipped to a temp file, split into chunkSize byte slices,
 // and each slice is sha256'd. We use a temp file rather than streaming
 // because the manifest must reference per-part sizes/digests up front, and
 // the gzipped tar stream's total size isn't known until it's written.
 func buildLumePushPlan(vmName, ref string, opts pushOptions) (*lumePushPlan, error) {
-	vmDir := vmconfig.Path(vmName)
+	if err := validatePushReferences(ref, opts); err != nil {
+		return nil, err
+	}
+	if opts.BaseRef != "" {
+		return nil, fmt.Errorf("cove push --format lume does not support --base")
+	}
+	vmDir := pushSourceDir(vmName)
 	if !vmconfig.Validate(vmDir) {
 		return nil, fmt.Errorf("vm not found or invalid: %s", vmDir)
 	}
@@ -221,19 +222,18 @@ func readMACAddress(vmDir string) (string, bool) {
 // byte count. The tar stream is buffered in a temp file because the manifest
 // must list every part's size and digest before any upload.
 func planLumeDiskParts(diskPath string, chunkSize int64) ([]lumePushPart, int64, error) {
-	tmp, err := os.CreateTemp("", "cove-lume-export-*.tar.gz")
+	tmpPath, err := writeLumeDiskStreamTemp(diskPath)
 	if err != nil {
-		return nil, 0, fmt.Errorf("create temp stream: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
-
-	if err := writeTarGzipStream(tmp, diskPath); err != nil {
 		return nil, 0, err
 	}
-	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		return nil, 0, fmt.Errorf("seek temp stream: %w", err)
+	defer os.Remove(tmpPath)
+
+	tmp, err := os.Open(tmpPath)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open temp stream: %w", err)
 	}
+	defer tmp.Close()
+
 	info, err := tmp.Stat()
 	if err != nil {
 		return nil, 0, fmt.Errorf("stat temp stream: %w", err)
@@ -275,6 +275,32 @@ func planLumeDiskParts(diskPath string, chunkSize int64) ([]lumePushPart, int64,
 		})
 	}
 	return parts, total, nil
+}
+
+func writeLumeDiskStreamTemp(diskPath string) (string, error) {
+	tmp, err := os.CreateTemp("", "cove-lume-export-*.tar.gz")
+	if err != nil {
+		return "", fmt.Errorf("create temp stream: %w", err)
+	}
+	path := tmp.Name()
+	ok := false
+	defer func() {
+		if !ok {
+			os.Remove(path)
+		}
+		if tmp != nil {
+			tmp.Close()
+		}
+	}()
+	if err := writeTarGzipStream(tmp, diskPath); err != nil {
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("close temp stream: %w", err)
+	}
+	tmp = nil
+	ok = true
+	return path, nil
 }
 
 // writeTarGzipStream writes a gzip(tar(disk.img)) stream to w, where the
@@ -406,6 +432,16 @@ func printLumePushDryRun(w io.Writer, plan *lumePushPlan) {
 	}
 }
 
+func printLumePushResult(w io.Writer, plan *lumePushPlan, opts pushOptions) {
+	fmt.Fprintln(w, "Push complete (lume tar-split format)")
+	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
+	fmt.Fprintf(w, "  ref: %s\n", plan.Ref)
+	fmt.Fprintf(w, "  parts: %d (total compressed %s)\n", len(plan.Parts), bytefmt.Size(plan.StreamSize))
+	if len(opts.AdditionalTags) > 0 {
+		fmt.Fprintf(w, "  additional tags: %s\n", strings.Join(opts.AdditionalTags, ", "))
+	}
+}
+
 // writeLumeManifestOut serializes plan.Manifest as JSON to path.
 func writeLumeManifestOut(path string, m ociimage.Manifest) error {
 	data, err := json.MarshalIndent(m, "", "  ")
@@ -422,12 +458,18 @@ func writeLumeManifestOut(path string, m ociimage.Manifest) error {
 	return nil
 }
 
-// lumePushDryRunOnly is the entry point used by handlePush when --format lume
-// is set. It refuses non-dry-run invocations until a follow-up review
-// authorizes a real registry upload.
-func lumePushDryRunOnly(plan *lumePushPlan, opts pushOptions) error {
+func runLumePush(ctx context.Context, plan *lumePushPlan, opts pushOptions) error {
 	if !opts.DryRun {
-		return fmt.Errorf("cove push --format lume currently supports --dry-run only")
+		if err := pushLumeImage(ctx, plan, opts); err != nil {
+			return err
+		}
+		if opts.ManifestOut != "" {
+			if err := writeLumeManifestOut(opts.ManifestOut, plan.Manifest); err != nil {
+				return err
+			}
+		}
+		printLumePushResult(os.Stdout, plan, opts)
+		return nil
 	}
 	if opts.ManifestOut != "" {
 		if err := writeLumeManifestOut(opts.ManifestOut, plan.Manifest); err != nil {
@@ -435,5 +477,108 @@ func lumePushDryRunOnly(plan *lumePushPlan, opts pushOptions) error {
 		}
 	}
 	printLumePushDryRun(os.Stdout, plan)
+	return nil
+}
+
+func pushLumeImage(ctx context.Context, plan *lumePushPlan, opts pushOptions) error {
+	ref, err := ociimage.ParseReference(plan.Ref)
+	if err != nil {
+		return fmt.Errorf("cove push: invalid target ref %q: %w", plan.Ref, err)
+	}
+	client := pushRegistryClient(ref, opts)
+	if err := uploadBytesBlob(ctx, client, ref, plan.Manifest.Config, []byte("{}")); err != nil {
+		return err
+	}
+
+	streamPath, err := writeLumeDiskStreamTemp(plan.DiskPath)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(streamPath)
+
+	var offset int64
+	for _, part := range plan.Parts {
+		desc := ociimage.Descriptor{MediaType: part.MediaType, Size: part.Size, Digest: part.Digest}
+		if err := uploadFileSectionBlob(ctx, client, ref, desc, streamPath, offset); err != nil {
+			return fmt.Errorf("upload %s: %w", part.Title, err)
+		}
+		offset += part.Size
+	}
+
+	configDesc, err := lumeLayerDescriptor(plan.Manifest, ociimage.LumeConfigTitle)
+	if err != nil {
+		return err
+	}
+	if err := uploadBytesBlob(ctx, client, ref, configDesc, plan.ConfigJSON); err != nil {
+		return err
+	}
+	nvramDesc, err := lumeLayerDescriptor(plan.Manifest, ociimage.LumeNvramTitle)
+	if err != nil {
+		return err
+	}
+	if err := uploadFileBlob(ctx, client, ref, nvramDesc, plan.NvramPath); err != nil {
+		return err
+	}
+
+	if _, err := client.PushManifest(ctx, ref, plan.Manifest); err != nil {
+		return err
+	}
+	for _, tag := range opts.AdditionalTags {
+		extra := ref
+		extra.Tag = tag
+		if _, err := client.PushManifest(ctx, extra, plan.Manifest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func lumeLayerDescriptor(m ociimage.Manifest, title string) (ociimage.Descriptor, error) {
+	for _, layer := range m.Layers {
+		if layer.Annotations["org.opencontainers.image.title"] == title {
+			return layer, nil
+		}
+	}
+	return ociimage.Descriptor{}, fmt.Errorf("lume manifest missing %s layer", title)
+}
+
+func uploadFileSectionBlob(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, desc ociimage.Descriptor, path string, offset int64) error {
+	exists, err := client.BlobExists(ctx, ref, desc.Digest)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open blob: %w", err)
+	}
+	defer f.Close()
+	if err := verifyFileSectionDigest(f, desc, offset); err != nil {
+		return err
+	}
+	return client.UploadBlob(ctx, ref, desc, io.NewSectionReader(f, offset, desc.Size))
+}
+
+func verifyFileSectionDigest(f *os.File, desc ociimage.Descriptor, offset int64) error {
+	if offset < 0 {
+		return fmt.Errorf("negative blob offset %d", offset)
+	}
+	if desc.Size < 0 {
+		return fmt.Errorf("negative blob size %d", desc.Size)
+	}
+	h := sha256.New()
+	n, err := io.Copy(h, io.NewSectionReader(f, offset, desc.Size))
+	if err != nil {
+		return fmt.Errorf("hash blob section: %w", err)
+	}
+	if n != desc.Size {
+		return fmt.Errorf("hash blob section: read %d bytes, want %d", n, desc.Size)
+	}
+	got := "sha256:" + hex.EncodeToString(h.Sum(nil))
+	if got != desc.Digest {
+		return fmt.Errorf("blob digest %s, want %s", got, desc.Digest)
+	}
 	return nil
 }

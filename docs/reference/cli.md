@@ -1362,7 +1362,7 @@ cove push <vm|dir> <ref> [flags]
 | `--chunk-size <mb>` | 512 | Chunk size in megabytes |
 | `--dry-run` | false | Print the plan without uploading |
 | `--lume-compat` | false | Emit dual annotations for Lume interop |
-| `--format <fmt>` | cove | Output format: cove or lume (`--dry-run` only) |
+| `--format <fmt>` | cove | Output format: cove or lume |
 | `--additional-tag <tag>` | | Additional tag to publish (repeatable) |
 | `--manifest-out <path>` | | Write OCI manifest JSON to path |
 
