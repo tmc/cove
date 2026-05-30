@@ -13,7 +13,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pierrec/lz4/v4 v4.1.26
-	github.com/tmc/apple v0.6.10
+	github.com/tmc/apple v0.6.11
 	github.com/tmc/macgo v0.1.4-0.20260527192223-4bb97879961e
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
