@@ -1,0 +1,2 @@
+claude-code; model=claude-opus-4-8[1m]; tty=not a tty
+unknown; pid=46296; iterm=86045B8D; date=2026-05-30T00:38:46Z; rebased-onto=main@a8a0ba97; build=green-via-go.work
