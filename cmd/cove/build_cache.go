@@ -200,6 +200,10 @@ func localBuildBaseDir(refText string) (string, bool) {
 }
 
 func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Reference, string, error) {
+	return resolveBuildBaseDigestWithOptions(ctx, refText, buildOptions{})
+}
+
+func resolveBuildBaseDigestWithOptions(ctx context.Context, refText string, opts buildOptions) (ociimage.Reference, string, error) {
 	if path, ok := localBuildBaseDir(refText); ok {
 		digest, err := digestLocalBuildBase(path)
 		if err != nil {
@@ -214,7 +218,12 @@ func resolveBuildBaseDigest(ctx context.Context, refText string) (ociimage.Refer
 	if ref.Digest != "" {
 		return ref, ref.Digest, nil
 	}
-	client := ociimage.RegistryClient{TokenCache: ociimage.NewRegistryTokenCache()}
+	client := ociimage.RegistryClient{
+		BaseURL:       opts.RegistryBaseURL,
+		Token:         opts.RegistryToken,
+		Authorization: registryAuthorization(ref, opts.RegistryToken),
+		TokenCache:    ociimage.NewRegistryTokenCache(),
+	}
 	_, digest, err := client.FetchManifest(ctx, ref)
 	if err != nil {
 		return ref, "", err

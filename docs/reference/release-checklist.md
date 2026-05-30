@@ -48,22 +48,24 @@ For `cove build`, verify the production boundary before tagging:
 
 ```bash
 ./cove help build
-./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript vm
-./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript --tag ghcr.io/acme/vm:test --push vm
-./cove build --base ghcr.io/acme/base@sha256:base --script missing.vzscript --push vm
-./cove build vm --base ghcr.io/acme/base@sha256:base --script missing.vzscript --cache-from ghcr.io/acme/cache:build --dry-run
+./cove build --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript vm
+./cove build --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript --tag ghcr.io/acme/vm:test --push vm
+./cove build --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript --push vm
+./cove build vm --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript --cache-from ghcr.io/acme/cache:build --dry-run
 ```
 
-The second command must fail before script loading with:
+The second command must fail before registry base materialization with a missing
+script diagnostic:
 
 ```text
-cove build: non-dry-run requires local VM base directory
+missing.vzscript
 ```
 
-The third command must fail before script loading with:
+The third command must also fail before registry base materialization with a
+missing script diagnostic:
 
 ```text
-cove build: non-dry-run requires local VM base directory
+missing.vzscript
 ```
 
 The fourth command must fail before script loading with:
@@ -78,9 +80,11 @@ The fifth command must fail before script loading with:
 cove build: --cache-from registry cache is not implemented yet
 ```
 
-Then verify local-base execution with a disposable VM directory:
+Then verify build execution with disposable bases:
 
 - Run one tiny recipe against a local VM base with `--compact fast`.
+- Run one tiny recipe against a private registry base and confirm the base is
+  materialized into build scratch before execution.
 - Repeat the same command and confirm `cache hits: 1/1`.
 - Run one tiny recipe with `# cache-ttl: 1s`, wait at least two seconds, repeat
   it, and confirm the expired entry is treated as a cache miss.
@@ -291,18 +295,13 @@ Check that:
   canonical "what ships / what's deferred" boundary below.
 - `docs/reference/cli.md` matches the command help.
 - `docs/designs/ROADMAP.md` does not mark unfinished work as shipped.
-- `docs/designs/archive/016-notebooklm-roadmap-refresh-2026-04-30.md` and
-  `docs/designs/archive/017-v03-execution-roadmap.md` agree with this checklist on the
-  deferred-items list.
-- Public docs say non-dry-run `cove build` requires a local VM base directory
-  for execution, registry bases remain planning-only, build output can be
-  handed to `cove push`, and `--push` requires at least one output tag.
+- Public docs say non-dry-run `cove build` accepts local VM directory or
+  registry bases, build output can be handed to `cove push`, and `--push`
+  requires at least one output tag.
 
 The canonical deferred-items list (must appear consistently across the CLI
-reference, changelog, roadmap, 016 refresh, and 017 execution roadmap):
+reference, changelog, and roadmap):
 
-- Registry-base `cove build` execution. Non-dry-run requires a local VM
-  directory base.
 - Registry cache import/export (`--cache-from`, `--cache-to`). Reserved and
   rejected before planning.
 - Public curated `cove` image registry and signed agentkit image channels.

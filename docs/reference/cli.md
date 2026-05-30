@@ -1404,8 +1404,9 @@ cove compact -vm dev-vm
 
 Build VM images from vzscript steps with content-addressed cache keys. `--dry-run`
 prints the resolved plan, cache keys, and local cache hits without booting a
-scratch VM. Non-dry-run execution currently requires a local VM directory as the
-base; registry bases remain planning-only until base materialization lands.
+scratch VM. Non-dry-run execution accepts either a local VM directory or an OCI
+registry base; registry bases are first pulled into build scratch, then executed
+through the same cache-aware VM builder.
 
 ```
 cove build <name> --base <ref> --script <step> [flags]
@@ -1428,14 +1429,14 @@ cove build <name> --base <ref> --script <step> [flags]
 
 ```bash
 cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --dry-run
+cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew --tag ghcr.io/me/macos-workstation:v1 --push
 cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1
 cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --push
 ```
 
-Non-dry-run registry-base builds fail with
-`cove build: non-dry-run requires local VM base directory`. `--push` requires at
-least one `--tag` and pushes the reported final VM directory after a successful
-local-base build.
+`--push` requires at least one `--tag` and pushes the reported final VM
+directory after a successful build. Registry-base builds leave the materialized
+base and scratch VMs behind only when `--keep-intermediate` is set.
 
 Registry cache import/export is not implemented yet. Builds that pass
 `--cache-from` or `--cache-to` fail before planning instead of silently ignoring

@@ -27,7 +27,11 @@ type buildOptions struct {
 	ChunkSizeMB      int
 	Compact          string
 	StoreDir         string
+	RegistryBaseURL  string
+	RegistryToken    string
 }
+
+var buildRegistryBaseMaterializer = materializeBuildRegistryBase
 
 func handleBuild(args []string) (err error) {
 	var scripts, tags, cacheFrom, cacheTo stringList
@@ -86,11 +90,6 @@ func handleBuild(args []string) (err error) {
 	if opts.Push && len(opts.Tags) == 0 {
 		return fmt.Errorf("cove build: --push requires at least one --tag")
 	}
-	if !opts.DryRun {
-		if _, ok := localBuildBaseDir(opts.Base); !ok {
-			return fmt.Errorf("cove build: non-dry-run requires local VM base directory")
-		}
-	}
 	ctx := context.Background()
 	blobStore := store.New(opts.StoreDir)
 	plan, err := buildDryPlanWithStore(ctx, posArgs[0], opts, http.DefaultClient, blobStore)
@@ -101,6 +100,21 @@ func handleBuild(args []string) (err error) {
 	if opts.DryRun {
 		printBuildPlan(os.Stdout, plan, opts)
 		return nil
+	}
+	execPlan := plan
+	if _, ok := localBuildBaseDir(opts.Base); !ok {
+		baseDir, cleanup, err := buildRegistryBaseMaterializer(ctx, opts.Base, opts)
+		if err != nil {
+			return err
+		}
+		execPlan.Base = baseDir
+		if cleanup != nil && !opts.KeepIntermediate {
+			defer func() {
+				if cleanupErr := cleanup(); cleanupErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: cleanup registry build base: %v\n", cleanupErr)
+				}
+			}()
+		}
 	}
 	metricsRun, metricsErr := beginStandaloneMetricsRun(plan.Name, opts.Base)
 	if metricsErr != nil {
@@ -117,7 +131,7 @@ func handleBuild(args []string) (err error) {
 		}
 		metricsRun.EmitMetricEvent("run_complete", started, status, map[string]any{"command": "build"})
 	}(time.Now())
-	exec := newBuildExecutor(plan, opts, blobStore)
+	exec := newBuildExecutor(execPlan, opts, blobStore)
 	exec.metrics = metricsRun
 	if err := exec.Execute(ctx); err != nil {
 		return err
@@ -198,7 +212,7 @@ func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *h
 }
 
 func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, client *http.Client, blobStore store.Store) (buildPlan, error) {
-	_, parentDigest, err := resolveBuildBaseDigest(ctx, opts.Base)
+	_, parentDigest, err := resolveBuildBaseDigestWithOptions(ctx, opts.Base, opts)
 	if err != nil {
 		return buildPlan{}, fmt.Errorf("resolve base: %w", err)
 	}

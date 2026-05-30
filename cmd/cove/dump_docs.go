@@ -263,7 +263,7 @@ var cliDocSpecs = []cliDocSpec{
 	{Name: "compact", Summary: "Zero guest free space for smaller OCI pushes.", Usage: func() string {
 		return captureWriter(printCompactUsage)
 	}},
-	{Name: "build", Summary: "Build VM images from vzscript steps with content-addressed cache keys. Non-dry-run execution requires a local VM base directory.", Usage: func() string {
+	{Name: "build", Summary: "Build VM images from vzscript steps with content-addressed cache keys. Base can be a registry reference or local VM directory.", Usage: func() string {
 		return captureWriter(printBuildUsage)
 	}, Flags: []cliFlagDoc{
 		{Name: "--base", Argument: "<ref|dir>", Summary: "Base OCI image reference or local VM directory."},

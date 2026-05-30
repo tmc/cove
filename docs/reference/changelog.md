@@ -35,7 +35,6 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ### Deferred
 The following are explicitly deferred for this RC. Public docs keep this list
 visible and consistent across CLI reference, roadmap, and release checklist:
-- Registry-base `cove build` execution. Non-dry-run requires a local VM directory base; registry refs stay planning-only and fail with `cove build: non-dry-run requires local VM base directory`.
 - Registry cache import/export (`--cache-from`, `--cache-to`). The flags are reserved and fail before planning if used.
 - Public curated `cove` image registry and signed agentkit image channels until trademark counsel clears the name or a rename lands.
 - External secret stores beyond `env://` and `file://` (1Password, Vault, SOPS, age, cloud secret managers).
@@ -50,7 +49,7 @@ visible and consistent across CLI reference, roadmap, and release checklist:
 - Build cache hits now require complete step metadata, verify it before applying a layer, and honor `# cache-ttl:` expiry.
 - `cove build <name> --base ... --script ... --dry-run` now accepts the documented command order.
 - `cove build --dry-run` can use `--store-dir` to inspect cache hits in a specific content store.
-- `cove build` registry-base non-dry-run use remains gated until base materialization lands; `--push` requires at least one `--tag`.
+- `cove build` can now materialize registry bases into build scratch for non-dry-run execution; `--push` requires at least one `--tag`.
 - `--compact thorough` on macOS guests no longer targets the read-only System volume.
 
 ## v0.2.1 - 2026-05-05

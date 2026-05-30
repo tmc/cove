@@ -60,8 +60,8 @@ metadata validation before apply; published fork-only and boot-to-agent fork
 benchmarks on named M4 hardware; OpenAI Agents SDK adapter v1 with live-smoke
 and package-check documentation.
 
-**Explicitly deferred.** Registry-base `cove build` execution; registry cache
-import/export (`--cache-from`, `--cache-to`); public curated `cove` image
+**Explicitly deferred.** Registry cache import/export (`--cache-from`,
+`--cache-to`); public curated `cove` image
 registry and signed agentkit image channels; external secret stores
 (1Password, Vault, SOPS, age); BuildKit-style parallel step execution; Packer
 plugin shim; product-name resolution before any public registry or signed
@@ -107,7 +107,7 @@ channel.
 
 | Item | Priority | Depends on | Source | Why |
 |---|---|---|---|---|
-| `cove build` VM execution path | done | v0.2 store + dry-run planner | [003](archive/003-cove-build-oci-caching.md) | Local-base builds create scratch VMs, restore cache-hit layers, execute misses, persist metadata, and leave pushable image state. Registry-base execution remains deferred. |
+| `cove build` VM execution path | done | v0.2 store + dry-run planner | [003](archive/003-cove-build-oci-caching.md) | Local and registry-base builds create scratch VMs, restore cache-hit layers, execute misses, persist metadata, and leave pushable image state. |
 | Secrets via tmpfs (`# secret:` directive) with guest swap disabled | done | build execution | [003](archive/003-cove-build-oci-caching.md) | Prevents secret leakage into pushed OCI block diffs. |
 | `cove build` compaction integration | done | build execution | [002](archive/002-cove-disks-oci.md), [003](archive/003-cove-build-oci-caching.md) | Wires `fast`, `targeted`, and `thorough` build compaction into the pipeline before diffing and pushing images. |
 | Fork-only benchmark publication | done | existing fork support | [012](archive/012-product-roadmap-2026.md), [015](archive/015-soft-reset-empirical.md), [bench result](../../bench/fork-time/results-20260427.md) | Published 132-140 ms stopped-VM fork measurements on the M4 smoke host after soft reset failed as the isolation primitive. |

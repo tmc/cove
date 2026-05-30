@@ -660,13 +660,96 @@ func TestHandleBuildPushesTags(t *testing.T) {
 	}
 }
 
-func TestHandleBuildNonDryRunRequiresLocalBase(t *testing.T) {
-	err := handleBuild([]string{"--base", "ghcr.io/acme/base:latest", "--script", "missing.vzscript", "vm"})
-	if err == nil {
-		t.Fatal("handleBuild() error = nil, want local-base error")
+func TestHandleBuildLoadsScriptBeforeRegistryBaseMaterialization(t *testing.T) {
+	oldMaterializer := buildRegistryBaseMaterializer
+	defer func() { buildRegistryBaseMaterializer = oldMaterializer }()
+	buildRegistryBaseMaterializer = func(context.Context, string, buildOptions) (string, func() error, error) {
+		t.Fatal("registry base materializer called before script validation")
+		return "", nil, nil
 	}
-	if !strings.Contains(err.Error(), "requires local VM base directory") {
-		t.Fatalf("handleBuild() error = %q", err)
+
+	err := handleBuild([]string{"--base", "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64), "--script", "missing.vzscript", "vm"})
+	if err == nil {
+		t.Fatal("handleBuild() error = nil, want missing script error")
+	}
+	if !strings.Contains(err.Error(), "missing.vzscript") {
+		t.Fatalf("handleBuild() error = %q, want missing script path", err)
+	}
+}
+
+func TestHandleBuildRunsRegistryBase(t *testing.T) {
+	restoreControl := stubBuildControlSender(t, func(call *int, sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
+		return &controlpb.ControlResponse{Success: true}, nil
+	})
+	defer restoreControl()
+	oldStart := defaultBuildGuestStart
+	oldCompact := defaultBuildCompact
+	oldMaterializer := buildRegistryBaseMaterializer
+	defer func() {
+		defaultBuildGuestStart = oldStart
+		defaultBuildCompact = oldCompact
+		buildRegistryBaseMaterializer = oldMaterializer
+	}()
+	defaultBuildGuestStart = func(context.Context, buildscratch.Scratch) (buildGuestCleanup, error) {
+		return func(context.Context) error { return nil }, nil
+	}
+	defaultBuildCompact = func(context.Context, buildscratch.Scratch, string) error { return nil }
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var materializedRef string
+	var materializedDir string
+	var cleaned bool
+	buildRegistryBaseMaterializer = func(ctx context.Context, ref string, opts buildOptions) (string, func() error, error) {
+		materializedRef = ref
+		parentDir := filepath.Join(home, "registry-base")
+		if err := os.MkdirAll(parentDir, 0755); err != nil {
+			return "", nil, err
+		}
+		for name, data := range map[string]string{
+			"disk.img":   "base image\n",
+			"aux.img":    "aux",
+			"hw.model":   "hw",
+			"machine.id": "machine",
+		} {
+			if err := os.WriteFile(filepath.Join(parentDir, name), []byte(data), 0644); err != nil {
+				return "", nil, err
+			}
+		}
+		materializedDir = parentDir
+		return parentDir, func() error {
+			cleaned = true
+			return os.RemoveAll(parentDir)
+		}, nil
+	}
+
+	script := filepath.Join(home, "hello.vzscript")
+	if err := os.WriteFile(script, []byte("echo hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ref := "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64)
+	out, err := captureStdoutResult(t, func() error {
+		return handleBuild([]string{
+			"test-image",
+			"--base", ref,
+			"--script", script,
+			"--store-dir", filepath.Join(home, "store"),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handleBuild(): %v", err)
+	}
+	if materializedRef != ref {
+		t.Fatalf("materialized ref = %q, want %q", materializedRef, ref)
+	}
+	if !strings.Contains(out, "Build complete") || !strings.Contains(out, "base: "+ref) {
+		t.Fatalf("output missing build result or original base:\n%s", out)
+	}
+	if !cleaned {
+		t.Fatal("registry base cleanup was not called")
+	}
+	if _, err := os.Stat(materializedDir); !os.IsNotExist(err) {
+		t.Fatalf("materialized dir stat = %v, want not exist", err)
 	}
 }
 
