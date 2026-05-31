@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -191,6 +192,17 @@ func runWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
+	lock, err := AcquireRunLock(hc.VMDir)
+	if err != nil {
+		return fmt.Errorf("cove run -windows -windows-backend qemu: %w", err)
+	}
+	defer func() {
+		if releaseErr := lock.Release(); releaseErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
+		}
+	}()
+	noteVMRuntimePhase(hc.VMDir, "starting", "qemu-run-prepare")
+
 	saveHardwareConfig(hc.VMDir)
 
 	cfg, err := windowsQEMUConfigFromRun(rc, hc, false)
@@ -566,8 +578,24 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-monitor")
 		return err
 	}
+	controlServer, err := startWindowsQEMUControlServer(context.Background(), cfg.VMDir)
+	if err != nil {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			<-done
+		}
+		process.State = "error"
+		process.ExitError = err.Error()
+		exitedAt := time.Now().UTC()
+		process.ExitedAt = &exitedAt
+		_ = writeWindowsQEMUProcessMetadata(processPath, process)
+		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-control")
+		return fmt.Errorf("start qemu control socket: %w", err)
+	}
+	defer controlServer.Stop()
 	noteVMRuntimePhase(cfg.VMDir, "running", "qemu-monitor-ready")
 	fmt.Printf("QEMU monitor: %s\n", cfg.MonitorSockPath)
+	fmt.Printf("Control socket: %s\n", controlServer.SocketPath())
 	if err := openWindowsQEMUVNCIfNeeded(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: open QEMU VNC console: %v\n", err)
 	}

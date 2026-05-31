@@ -532,6 +532,10 @@ func qemuKeyName(name string) (string, error) {
 		return "minus", nil
 	case "equals", "equal":
 		return "equal", nil
+	case "leftbracket", "lbracket":
+		return "bracket_left", nil
+	case "rightbracket", "rbracket":
+		return "bracket_right", nil
 	case "grave", "backtick":
 		return "grave_accent", nil
 	}

@@ -39,6 +39,23 @@ func TestParseWindowsBackend(t *testing.T) {
 	}
 }
 
+func TestRunWindowsQEMUVMWithConfigRespectsRunLock(t *testing.T) {
+	dir := t.TempDir()
+	lock, err := AcquireRunLock(dir)
+	if err != nil {
+		t.Fatalf("AcquireRunLock: %v", err)
+	}
+	defer lock.Release()
+
+	err = runWindowsQEMUVMWithConfig(vmrun.RunConfig{}, vmrun.HostConfig{VMDir: dir})
+	if err == nil {
+		t.Fatal("runWindowsQEMUVMWithConfig succeeded with held run lock")
+	}
+	if !strings.Contains(err.Error(), "run.lock") {
+		t.Fatalf("runWindowsQEMUVMWithConfig error = %v, want run.lock", err)
+	}
+}
+
 func TestWindowsQEMUArgsInstallShape(t *testing.T) {
 	dir := t.TempDir()
 	iso := filepath.Join(dir, "windows.iso")
