@@ -25,9 +25,11 @@ cove image inspect -remote <ref> -json            # inspect registry metadata on
 ```
 
 Current implementation supports registry pulls for cove-native LZ4 manifests,
-Tart manifests, and Lume tar-split manifests. Use `cove image inspect -remote`
-to fetch the registry manifest metadata without pulling disks, or `--manifest`
-to validate local manifest JSON.
+Tart manifests, and Lume tar-split manifests. Tags may point directly at an
+image manifest or at an OCI image index / Docker manifest list; cove resolves
+the index to a same-repository image manifest before parsing. Use
+`cove image inspect -remote` to fetch the registry manifest metadata without
+pulling disks, or `--manifest` to validate local manifest JSON.
 
 What happens:
 

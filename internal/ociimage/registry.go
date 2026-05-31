@@ -27,12 +27,19 @@ type RegistryTokenCache struct {
 	tokens map[string]string
 }
 
+const (
+	registryManifestResolveLimit = 4
+	registryManifestAccept       = MediaTypeImageManifest + ", " + MediaTypeDockerManifest + ", " + MediaTypeImageIndex + ", " + MediaTypeDockerList
+)
+
 // NewRegistryTokenCache returns an empty registry token cache.
 func NewRegistryTokenCache() *RegistryTokenCache {
 	return &RegistryTokenCache{tokens: map[string]string{}}
 }
 
-// FetchManifest fetches and decodes ref's OCI image manifest.
+// FetchManifest fetches and decodes ref's OCI image manifest. If the ref points
+// to an OCI image index or Docker manifest list, it resolves the best child
+// image manifest in the same repository and returns that manifest digest.
 func (c RegistryClient) FetchManifest(ctx context.Context, ref Reference) (Manifest, string, error) {
 	var manifest Manifest
 	target := ref.Tag
@@ -42,11 +49,19 @@ func (c RegistryClient) FetchManifest(ctx context.Context, ref Reference) (Manif
 	if target == "" {
 		return manifest, "", fmt.Errorf("fetch manifest: reference must include tag or digest")
 	}
+	return c.fetchManifestTarget(ctx, ref, target, 0)
+}
+
+func (c RegistryClient) fetchManifestTarget(ctx context.Context, ref Reference, target string, depth int) (Manifest, string, error) {
+	var manifest Manifest
+	if depth > registryManifestResolveLimit {
+		return manifest, "", fmt.Errorf("fetch manifest: image index resolution exceeded %d hops", registryManifestResolveLimit)
+	}
 	req, err := c.newRequest(ctx, http.MethodGet, ref, "manifests/"+target)
 	if err != nil {
 		return manifest, "", err
 	}
-	req.Header.Set("Accept", MediaTypeImageManifest)
+	req.Header.Set("Accept", registryManifestAccept)
 	resp, err := c.do(req, ref, "pull")
 	if err != nil {
 		return manifest, "", fmt.Errorf("fetch manifest: %w", err)
@@ -59,12 +74,21 @@ func (c RegistryClient) FetchManifest(ctx context.Context, ref Reference) (Manif
 	if err != nil {
 		return manifest, "", fmt.Errorf("fetch manifest: read: %w", err)
 	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return manifest, "", fmt.Errorf("fetch manifest: decode: %w", err)
-	}
 	digest := resp.Header.Get("Docker-Content-Digest")
 	if digest == "" {
 		digest = digestBytes(data)
+	}
+	if index, ok, err := parseRegistryIndex(data); err != nil {
+		return manifest, "", err
+	} else if ok {
+		child, err := selectRegistryIndexManifest(index)
+		if err != nil {
+			return manifest, "", err
+		}
+		return c.fetchManifestTarget(ctx, ref, child.Digest, depth+1)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return manifest, "", fmt.Errorf("fetch manifest: decode: %w", err)
 	}
 	return manifest, digest, nil
 }
@@ -87,6 +111,72 @@ func (c RegistryClient) FetchBlob(ctx context.Context, ref Reference, digest str
 		return nil, fmt.Errorf("fetch blob: registry returned %s", resp.Status)
 	}
 	return resp.Body, nil
+}
+
+func parseRegistryIndex(data []byte) (Index, bool, error) {
+	var head struct {
+		SchemaVersion int               `json:"schemaVersion"`
+		MediaType     string            `json:"mediaType"`
+		Manifests     []json.RawMessage `json:"manifests"`
+	}
+	if err := json.Unmarshal(data, &head); err != nil {
+		return Index{}, false, fmt.Errorf("fetch manifest: decode: %w", err)
+	}
+	if len(head.Manifests) == 0 && head.MediaType != MediaTypeImageIndex && head.MediaType != MediaTypeDockerList {
+		return Index{}, false, nil
+	}
+	var index Index
+	if err := json.Unmarshal(data, &index); err != nil {
+		return Index{}, false, fmt.Errorf("fetch manifest: decode index: %w", err)
+	}
+	if index.SchemaVersion != 2 {
+		return Index{}, false, fmt.Errorf("fetch manifest: index schema version %d, want 2", index.SchemaVersion)
+	}
+	return index, true, nil
+}
+
+func selectRegistryIndexManifest(index Index) (IndexDescriptor, error) {
+	var best IndexDescriptor
+	bestScore := -1
+	for _, desc := range index.Manifests {
+		if desc.Digest == "" {
+			continue
+		}
+		if desc.MediaType != "" && desc.MediaType != MediaTypeImageManifest && desc.MediaType != MediaTypeDockerManifest {
+			continue
+		}
+		score := registryIndexPlatformScore(desc.Platform)
+		if score > bestScore {
+			best = desc
+			bestScore = score
+		}
+	}
+	if bestScore < 0 {
+		return IndexDescriptor{}, fmt.Errorf("fetch manifest: image index has no OCI image manifest descriptors")
+	}
+	return best, nil
+}
+
+func registryIndexPlatformScore(platform *Platform) int {
+	if platform == nil {
+		return 10
+	}
+	osName := strings.ToLower(platform.OS)
+	arch := strings.ToLower(platform.Architecture)
+	switch {
+	case (osName == "darwin" || osName == "macos") && (arch == "arm64" || arch == "aarch64"):
+		return 50
+	case osName == "darwin" || osName == "macos":
+		return 40
+	case osName == "linux" && (arch == "arm64" || arch == "aarch64"):
+		return 30
+	case osName == "linux":
+		return 20
+	case osName == "" && arch == "":
+		return 10
+	default:
+		return 1
+	}
 }
 
 // UploadBlob uploads desc using the OCI monolithic blob upload flow.

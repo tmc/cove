@@ -11,9 +11,12 @@ import (
 )
 
 const (
-	MediaTypeImageManifest = "application/vnd.oci.image.manifest.v1+json"
-	MediaTypeImageConfig   = "application/vnd.oci.image.config.v1+json"
-	MediaTypeLayer         = "application/octet-stream"
+	MediaTypeImageManifest  = "application/vnd.oci.image.manifest.v1+json"
+	MediaTypeImageIndex     = "application/vnd.oci.image.index.v1+json"
+	MediaTypeImageConfig    = "application/vnd.oci.image.config.v1+json"
+	MediaTypeDockerManifest = "application/vnd.docker.distribution.manifest.v2+json"
+	MediaTypeDockerList     = "application/vnd.docker.distribution.manifest.list.v2+json"
+	MediaTypeLayer          = "application/octet-stream"
 )
 
 // Descriptor is an OCI content descriptor.
@@ -31,6 +34,28 @@ type Manifest struct {
 	Config        Descriptor        `json:"config"`
 	Layers        []Descriptor      `json:"layers"`
 	Annotations   map[string]string `json:"annotations,omitempty"`
+}
+
+// Index is an OCI image index or Docker manifest list.
+type Index struct {
+	SchemaVersion int               `json:"schemaVersion"`
+	MediaType     string            `json:"mediaType"`
+	Manifests     []IndexDescriptor `json:"manifests"`
+}
+
+// IndexDescriptor is an image-index descriptor with optional platform metadata.
+type IndexDescriptor struct {
+	Descriptor
+	Platform *Platform `json:"platform,omitempty"`
+}
+
+// Platform describes the target platform for an image-index descriptor.
+type Platform struct {
+	Architecture string   `json:"architecture,omitempty"`
+	OS           string   `json:"os,omitempty"`
+	OSVersion    string   `json:"os.version,omitempty"`
+	Variant      string   `json:"variant,omitempty"`
+	Features     []string `json:"features,omitempty"`
 }
 
 // Blob describes one non-disk file included in the image.

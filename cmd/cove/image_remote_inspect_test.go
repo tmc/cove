@@ -36,6 +36,46 @@ func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	}
 }
 
+func TestInspectRemoteImageResolvesIndex(t *testing.T) {
+	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
+	manifestData, manifestDigest := pullTestManifestData(t, manifest)
+	index := ociimage.Index{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageIndex,
+		Manifests: []ociimage.IndexDescriptor{
+			{
+				Descriptor: ociimage.Descriptor{
+					MediaType: ociimage.MediaTypeImageManifest,
+					Size:      123,
+					Digest:    "sha256:" + strings.Repeat("0", 64),
+				},
+				Platform: &ociimage.Platform{OS: "linux", Architecture: "amd64"},
+			},
+			{
+				Descriptor: ociimage.Descriptor{
+					MediaType: ociimage.MediaTypeImageManifest,
+					Size:      int64(len(manifestData)),
+					Digest:    manifestDigest,
+				},
+				Platform: &ociimage.Platform{OS: "darwin", Architecture: "arm64"},
+			},
+		},
+	}
+	srv := newRemoteInspectIndexRegistry(t, index, manifestData, manifestDigest)
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{RegistryBaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.ManifestDigest != manifestDigest {
+		t.Fatalf("manifest digest = %q, want %q", out.ManifestDigest, manifestDigest)
+	}
+	if out.Format != "cove" || out.DiskSize != 16 {
+		t.Fatalf("format/disk = %s/%d, want cove/16", out.Format, out.DiskSize)
+	}
+}
+
 func TestInspectRemoteImageLumeManifest(t *testing.T) {
 	srv := newOCIDispatchRegistry(t, newLumeMockManifest())
 	t.Cleanup(srv.Close)
@@ -187,6 +227,26 @@ func newRemoteInspectRegistry(t *testing.T, manifest ociimage.Manifest, blobs ma
 				return
 			}
 			_, _ = w.Write(data)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func newRemoteInspectIndexRegistry(t *testing.T, index ociimage.Index, manifestData []byte, manifestDigest string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/me/dev-vm/manifests/v1":
+			w.Header().Set("Content-Type", ociimage.MediaTypeImageIndex)
+			w.Header().Set("Docker-Content-Digest", "sha256:index")
+			if err := json.NewEncoder(w).Encode(index); err != nil {
+				t.Errorf("encode index: %v", err)
+			}
+		case "/v2/me/dev-vm/manifests/" + manifestDigest:
+			w.Header().Set("Content-Type", ociimage.MediaTypeImageManifest)
+			w.Header().Set("Docker-Content-Digest", manifestDigest)
+			_, _ = w.Write(manifestData)
 		default:
 			http.NotFound(w, r)
 		}

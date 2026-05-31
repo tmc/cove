@@ -1346,11 +1346,12 @@ cove serve -http 127.0.0.1:7777 -per-vm-auth -vms ci-runner,dev-vm
 Validate or pull an OCI image into a VM disk. Pull fetches the registry
 manifest, streams verified LZ4 disk chunks into `disk.img.partial`, restores
 macOS identity metadata, and atomically renames the verified disk into place.
-Lume-format tar-split pulls prefetch disk parts concurrently, then stream them
-in manifest order with descriptor size/digest checks before extraction.
-Use `--dry-run` to validate the manifest and target without writing a disk, or
-`cove image inspect -remote <ref>` to fetch only registry metadata before a
-pull.
+OCI image indexes and Docker manifest lists resolve to a same-repository image
+manifest before parsing. Lume-format tar-split pulls prefetch disk parts
+concurrently, then stream them in manifest order with descriptor size/digest
+checks before extraction. Use `--dry-run` to validate the manifest and target
+without writing a disk, or `cove image inspect -remote <ref>` to fetch only
+registry metadata before a pull.
 
 ```
 cove pull <ref> [flags]

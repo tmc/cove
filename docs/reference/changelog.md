@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove pull`, registry-base builds, build-cache imports, delta-base checks, and
+  `cove image inspect -remote` now resolve OCI image indexes and Docker manifest
+  lists to a same-repository image manifest before parsing cove/Tart/Lume
+  metadata.
 - `cove image inspect -remote [-json] <registry/ref:tag|digest>` now fetches
   registry metadata without pulling disks and summarizes cove-native, Tart,
   Lume, and cove image-store artifacts with digest, format, disk/chunk/part

@@ -26,7 +26,7 @@ func TestRegistryClientFetchManifest(t *testing.T) {
 		if r.URL.Path != "/v2/team/vm/manifests/latest" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
-		if r.Header.Get("Accept") != MediaTypeImageManifest {
+		if !strings.Contains(r.Header.Get("Accept"), MediaTypeImageManifest) {
 			t.Fatalf("Accept = %q", r.Header.Get("Accept"))
 		}
 		w.Header().Set("Docker-Content-Digest", "sha256:manifest")
@@ -60,6 +60,81 @@ func TestRegistryClientFetchManifestByDigest(t *testing.T) {
 
 	if _, _, err := (RegistryClient{BaseURL: srv.URL}).FetchManifest(context.Background(), ref); err != nil {
 		t.Fatalf("FetchManifest(): %v", err)
+	}
+}
+
+func TestRegistryClientFetchManifestResolvesIndex(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	want := Manifest{
+		SchemaVersion: 2,
+		MediaType:     MediaTypeImageManifest,
+		Annotations: map[string]string{
+			CoveUncompressedDiskSize: "0",
+		},
+	}
+	manifestData, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("Marshal(manifest): %v", err)
+	}
+	manifestDigest := digestBytes(manifestData)
+	index := Index{
+		SchemaVersion: 2,
+		MediaType:     MediaTypeImageIndex,
+		Manifests: []IndexDescriptor{
+			{
+				Descriptor: Descriptor{
+					MediaType: MediaTypeImageManifest,
+					Size:      123,
+					Digest:    "sha256:" + strings.Repeat("0", 64),
+				},
+				Platform: &Platform{OS: "linux", Architecture: "amd64"},
+			},
+			{
+				Descriptor: Descriptor{
+					MediaType: MediaTypeDockerManifest,
+					Size:      int64(len(manifestData)),
+					Digest:    manifestDigest,
+				},
+				Platform: &Platform{OS: "darwin", Architecture: "arm64"},
+			},
+		},
+	}
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/v2/team/vm/manifests/latest":
+			if !strings.Contains(r.Header.Get("Accept"), MediaTypeImageIndex) || !strings.Contains(r.Header.Get("Accept"), MediaTypeImageManifest) {
+				t.Fatalf("Accept = %q, want index and manifest media types", r.Header.Get("Accept"))
+			}
+			w.Header().Set("Content-Type", MediaTypeImageIndex)
+			w.Header().Set("Docker-Content-Digest", "sha256:index")
+			if err := json.NewEncoder(w).Encode(index); err != nil {
+				t.Fatalf("Encode(index): %v", err)
+			}
+		case "/v2/team/vm/manifests/" + manifestDigest:
+			w.Header().Set("Content-Type", MediaTypeImageManifest)
+			w.Header().Set("Docker-Content-Digest", manifestDigest)
+			_, _ = w.Write(manifestData)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	got, digest, err := (RegistryClient{BaseURL: srv.URL}).FetchManifest(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("FetchManifest(): %v", err)
+	}
+	if digest != manifestDigest {
+		t.Fatalf("digest = %q, want %q", digest, manifestDigest)
+	}
+	if got.SchemaVersion != want.SchemaVersion || got.Annotations[CoveUncompressedDiskSize] != "0" {
+		t.Fatalf("manifest = %#v, want %#v", got, want)
+	}
+	wantPaths := []string{"/v2/team/vm/manifests/latest", "/v2/team/vm/manifests/" + manifestDigest}
+	if strings.Join(paths, "\n") != strings.Join(wantPaths, "\n") {
+		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)
 	}
 }
 
@@ -230,7 +305,7 @@ func TestRegistryClientFetchManifestBearerChallenge(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer pull-token" {
 				t.Fatalf("Authorization = %q, want bearer token", r.Header.Get("Authorization"))
 			}
-			if r.Header.Get("Accept") != MediaTypeImageManifest {
+			if !strings.Contains(r.Header.Get("Accept"), MediaTypeImageManifest) {
 				t.Fatalf("Accept = %q", r.Header.Get("Accept"))
 			}
 			_ = json.NewEncoder(w).Encode(Manifest{SchemaVersion: 2})
