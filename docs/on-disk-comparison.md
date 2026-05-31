@@ -3,7 +3,7 @@
 Scope: how each macOS-VM tool lays out, clones, sizes, distributes, and resets
 VMs on disk. Competitor notes are from the synced source snapshot in the
 NotebookLM notebook `a2b42c2a-4522-47fd-b8ef-468e6cd7eb79`; cove notes reflect
-this repo as of 2026-05-30.
+this repo as of 2026-05-31.
 
 ## Tools
 
@@ -29,7 +29,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
 | **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; Lume tar-split pulls prefetch parts concurrently, preserve part order, and verify descriptor size/digest; OCI build-cache import/export; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `lume_pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
 | **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, persistent registry-base materialization shared by builds and pulls, and portable build-cache layers via `--cache-from` / `--cache-to` | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
-| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; `fleet run --all` fans out concurrently to every non-cordoned host and pre-stages `-fork-from` only to cold targets; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version; repeated SSH operations reuse OpenSSH ControlMaster sockets; initial `cove-fleetd` control-plane boundary now accepts `coved -fleet-url` worker register/heartbeat/report dial-ins, tracks worker image refs, persists leased controller assignments, places assignments with least-loaded, image-affinity, or bin-pack policy plus anti-affinity hints, returns retained top-k placement plans, reconciles stale workers and expired leases, supports controller-side worker cordon/uncordon, queues fleet image-preparation pulls, image-GC assignments, lifecycle-policy assignments, and storage budget/prune assignments onto matching workers, reconciles fork warm-pool quotas into `cove run -fork-from` assignments, probes warm slots with `cove shell` before marking them ready, claims ready warm slots into same-worker guest exec assignments, stops claimed warm VMs after the guest command returns, downsizes warm pools by canceling pending surplus slots or queueing same-worker stop assignments for started surplus slots, exposes named warm-pool get/delete lifecycle operations with graceful claimed-slot deferral, persists controller audit events, binds service-account bearer tokens to audit actors, scopes assignment/warm-pool/service-account/audit resources by service-account namespace, enforces `viewer`/`operator`/`admin` service-account roles, renews active `cove` assignments, and executes leased `cove` assignments asynchronously on workers (`cmd/cove/fleet_run.go`, `cmd/cove/fleet_health.go`, `cmd/cove-fleetd`, `cmd/coved`, `internal/fleetcontrol`, `internal/coved`) | none | none | full controller/scheduler model |
+| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; `fleet run --all` fans out concurrently to every non-cordoned host and pre-stages `-fork-from` only to cold targets; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version; repeated SSH operations reuse OpenSSH ControlMaster sockets; initial `cove-fleetd` control-plane boundary now accepts `coved -fleet-url` worker register/heartbeat/report dial-ins, tracks worker image refs, persists leased controller assignments, places assignments with least-loaded, image-affinity, or bin-pack policy plus anti-affinity hints, returns retained top-k placement plans, reconciles stale workers and expired leases, supports controller-side worker cordon/uncordon, queues fleet image-preparation pulls, image-GC assignments, lifecycle-policy assignments, and storage budget/prune assignments onto matching workers, reconciles fork warm-pool quotas into `cove run -fork-from` assignments, probes warm slots with `cove shell` before marking them ready, claims ready warm slots into same-worker guest exec assignments, stops claimed warm VMs after the guest command returns, downsizes warm pools by canceling pending surplus slots or queueing same-worker stop assignments for started surplus slots, exposes named warm-pool get/delete lifecycle operations with graceful claimed-slot deferral, persists hash-chained controller audit events with global verification, binds service-account bearer tokens to audit actors, scopes assignment/warm-pool/service-account/audit resources by service-account namespace, enforces `viewer`/`operator`/`admin` service-account roles, renews active `cove` assignments, and executes leased `cove` assignments asynchronously on workers (`cmd/cove/fleet_run.go`, `cmd/cove/fleet_health.go`, `cmd/cove-fleetd`, `cmd/coved`, `internal/fleetcontrol`, `internal/coved`) | none | none | full controller/scheduler model |
 
 ## Where cove now leads
 
@@ -79,9 +79,10 @@ delegates the disk/runtime work to `tart` or `vetu`.
   placement plus anti-affinity hints,
   retained placement plans, and first warm-pool quota replenishment plus
   agent-ready slot claim into guest `Exec` with stop, downsize, and delete
-  cleanup, plus a persisted controller audit feed, service-account actor
-  binding, namespace-scoped controller resources, and basic service-account
-  roles; orchard still owns richer SSO and controller operations.
+  cleanup, plus a persisted hash-chained controller audit feed,
+  service-account actor binding, namespace-scoped controller resources, and
+  basic service-account roles; orchard still owns richer SSO and controller
+  operations.
 - **tart has the mature public image lane.** cove now speaks tart format, but
   tart still has the established image catalog and local layer-cache machinery.
 - **lume has native ecosystem defaults.** cove can interoperate with Lume
@@ -104,6 +105,6 @@ push, and worker-side `cove` assignment execution plus
 least-loaded/image-affinity/bin-pack placement with anti-affinity hints and
 retained placement plans, warm-pool quota replenishment, and agent-ready slot
 claim into same-worker guest `Exec` with stop, downsize, and delete cleanup,
-plus a persisted audit feed with service-account actor binding, namespace
-filters, and basic service-account roles, but tart and lume still lead in
-ecosystem maturity, and orchard still leads as a full fleet controller.
+plus a persisted hash-chained audit feed with service-account actor binding,
+namespace filters, and basic service-account roles, but tart and lume still
+lead in ecosystem maturity, and orchard still leads as a full fleet controller.

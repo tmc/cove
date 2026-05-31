@@ -94,6 +94,21 @@ type AuditEvent struct {
 	AssignmentID string            `json:"assignment_id,omitempty"`
 	Status       string            `json:"status,omitempty"`
 	Fields       map[string]string `json:"fields,omitempty"`
+	PrevHash     string            `json:"prev_hash,omitempty"`
+	Hash         string            `json:"hash,omitempty"`
+}
+
+type AuditVerifyResult struct {
+	OK       bool              `json:"ok"`
+	Events   int               `json:"events"`
+	HeadHash string            `json:"head_hash,omitempty"`
+	Issues   []AuditChainIssue `json:"issues,omitempty"`
+}
+
+type AuditChainIssue struct {
+	Index  int    `json:"index"`
+	ID     string `json:"id,omitempty"`
+	Reason string `json:"reason"`
 }
 
 type ServiceAccount struct {

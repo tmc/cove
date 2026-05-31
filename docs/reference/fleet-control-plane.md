@@ -87,19 +87,23 @@ curl -H 'authorization: Bearer local-secret' \
 curl http://127.0.0.1:9758/v1/assignments?namespace=team-a
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
+curl http://127.0.0.1:9758/v1/audit/verify
 curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
 ```
 
 The controller persists audit events in the fleet store for high-value state
 changes: worker registration, cordon lifecycle, assignment creation, assignment
 leases, terminal assignment reports, fleet reconcile changes, image/policy/
-storage fan-out, and warm-pool ensure/claim/delete operations. Service-account
-tokens are stored only as SHA-256 hashes, so operators should provide
-high-entropy random tokens and keep the plaintext in their own secret manager.
-Supplying a matching bearer token on operator requests records audit actor
-`service-account:<name>`; unauthenticated local requests still record
-`controller`, and worker protocol events record `worker:<id>`. This is
-service-account RBAC for controller resources, not SAML/OIDC SSO yet.
+storage fan-out, and warm-pool ensure/claim/delete operations. Each new event
+carries `prev_hash` and `hash` fields that chain the global audit log;
+`GET /v1/audit/verify` recomputes the chain and returns `ok`, `events`,
+`head_hash`, and any chain issues. Service-account tokens are stored only as
+SHA-256 hashes, so operators should provide high-entropy random tokens and keep
+the plaintext in their own secret manager. Supplying a matching bearer token on
+operator requests records audit actor `service-account:<name>`;
+unauthenticated local requests still record `controller`, and worker protocol
+events record `worker:<id>`.
+This is service-account RBAC for controller resources, not SAML/OIDC SSO yet.
 If a service account has `namespace` set, assignment, warm-pool, service-account,
 and audit list/read/mutation requests through that bearer token are scoped to
 that namespace; attempts to write another namespace are rejected. Service
@@ -110,8 +114,9 @@ service accounts. Omitted role defaults to `admin` for compatibility. Service
 accounts without `namespace` and unauthenticated local requests remain unscoped
 for the local-first controller workflow. Requests with an unknown bearer token
 are rejected instead of falling back to local controller identity. Worker
-registration, heartbeat, reports, and host inventory remain fleet-global in
-this slice.
+registration, heartbeat, reports, host inventory, and audit-chain verification
+remain fleet-global in this slice, so namespace-scoped service accounts can
+read their filtered audit events but cannot verify the global chain.
 
 Image preparation endpoint:
 

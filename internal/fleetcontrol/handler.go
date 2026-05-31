@@ -58,6 +58,9 @@ func Handler(store *Store) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, result)
 	})
+	mux.HandleFunc("/v1/audit/verify", func(w http.ResponseWriter, r *http.Request) {
+		handleAuditVerify(w, r, store)
+	})
 	mux.HandleFunc("/v1/audit", func(w http.ResponseWriter, r *http.Request) {
 		handleAudit(w, r, store)
 	})
@@ -150,6 +153,21 @@ func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {
 	}
 	namespace := namespaceFilterFromRequest(r, identity)
 	writeJSON(w, http.StatusOK, map[string]any{"events": store.ListAuditNamespace(limit, namespace)})
+}
+
+func handleAuditVerify(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	writeJSON(w, http.StatusOK, store.VerifyAudit())
 }
 
 func handleServiceAccounts(w http.ResponseWriter, r *http.Request, store *Store) {

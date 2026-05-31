@@ -115,6 +115,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		}
 		s.audit = append(s.audit, event)
 	}
+	s.audit = chainLegacyAuditEvents(s.audit)
 	for _, account := range file.ServiceAccounts {
 		account = normalizeServiceAccountRecord(account)
 		if account.Name == "" || account.TokenHash == "" || account.Role == "" {
@@ -1167,6 +1168,12 @@ func (s *Store) ListAuditNamespace(limit int, namespace string) []AuditEvent {
 	return cloneAuditEvents(events)
 }
 
+func (s *Store) VerifyAudit() AuditVerifyResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return verifyAuditEvents(cloneAuditEvents(s.audit))
+}
+
 func (s *Store) UpsertServiceAccount(req ServiceAccountRequest) (ServiceAccountResult, error) {
 	return s.UpsertServiceAccountActor("controller", req)
 }
@@ -1462,7 +1469,7 @@ func (s *Store) persistLocked() error {
 	})
 	assignments := s.sortedAssignmentsLocked()
 	warmPools := s.sortedWarmPoolsLocked()
-	audit := s.sortedAuditLocked()
+	audit := cloneAuditEvents(s.audit)
 	accounts := s.sortedServiceAccountsLocked()
 	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, ServiceAccounts: accounts}, "", "  ")
 	if err != nil {
@@ -2247,6 +2254,8 @@ func (s *Store) appendAuditLocked(now time.Time, event AuditEvent) AuditEvent {
 	if event.Actor == "" {
 		event.Actor = "controller"
 	}
+	event.PrevHash = s.lastAuditHashLocked()
+	event.Hash = auditEventHash(event)
 	s.audit = append(s.audit, cloneAuditEvent(event))
 	return event
 }
@@ -2262,10 +2271,115 @@ func normalizeAuditEvent(event AuditEvent) AuditEvent {
 	event.AssignmentID = strings.TrimSpace(event.AssignmentID)
 	event.Status = strings.TrimSpace(event.Status)
 	event.Fields = cloneLabels(event.Fields)
+	event.PrevHash = strings.TrimSpace(event.PrevHash)
+	event.Hash = strings.TrimSpace(event.Hash)
 	if !event.Time.IsZero() {
 		event.Time = event.Time.UTC()
 	}
 	return event
+}
+
+func (s *Store) lastAuditHashLocked() string {
+	if len(s.audit) == 0 {
+		return ""
+	}
+	last := normalizeAuditEvent(s.audit[len(s.audit)-1])
+	if last.Hash != "" {
+		return last.Hash
+	}
+	return auditEventHash(last)
+}
+
+func chainLegacyAuditEvents(events []AuditEvent) []AuditEvent {
+	events = cloneAuditEvents(events)
+	prev := ""
+	for i := range events {
+		events[i] = normalizeAuditEvent(events[i])
+		if events[i].PrevHash == "" && events[i].Hash == "" {
+			events[i].PrevHash = prev
+			events[i].Hash = auditEventHash(events[i])
+		}
+		if events[i].Hash != "" {
+			prev = events[i].Hash
+		} else {
+			prev = auditEventHash(events[i])
+		}
+	}
+	return events
+}
+
+func verifyAuditEvents(events []AuditEvent) AuditVerifyResult {
+	result := AuditVerifyResult{
+		OK:     true,
+		Events: len(events),
+	}
+	wantPrev := ""
+	for i, event := range events {
+		event = normalizeAuditEvent(event)
+		if event.PrevHash != wantPrev {
+			result.OK = false
+			result.Issues = append(result.Issues, AuditChainIssue{
+				Index:  i,
+				ID:     event.ID,
+				Reason: "prev_hash mismatch",
+			})
+		}
+		wantHash := auditEventHash(event)
+		switch {
+		case event.Hash == "":
+			result.OK = false
+			result.Issues = append(result.Issues, AuditChainIssue{
+				Index:  i,
+				ID:     event.ID,
+				Reason: "hash missing",
+			})
+		case event.Hash != wantHash:
+			result.OK = false
+			result.Issues = append(result.Issues, AuditChainIssue{
+				Index:  i,
+				ID:     event.ID,
+				Reason: "hash mismatch",
+			})
+		}
+		wantPrev = wantHash
+	}
+	result.HeadHash = wantPrev
+	return result
+}
+
+func auditEventHash(event AuditEvent) string {
+	event = normalizeAuditEvent(event)
+	event.Hash = ""
+	h := sha256.New()
+	write := func(value string) {
+		_, _ = h.Write([]byte(strconv.Itoa(len(value))))
+		_, _ = h.Write([]byte(":"))
+		_, _ = h.Write([]byte(value))
+	}
+	writeField := func(name, value string) {
+		write(name)
+		write(value)
+	}
+	writeField("id", event.ID)
+	writeField("time", event.Time.UTC().Format(time.RFC3339Nano))
+	writeField("prev_hash", event.PrevHash)
+	writeField("namespace", event.Namespace)
+	writeField("actor", event.Actor)
+	writeField("action", event.Action)
+	writeField("target_type", event.TargetType)
+	writeField("target_id", event.TargetID)
+	writeField("worker_id", event.WorkerID)
+	writeField("assignment_id", event.AssignmentID)
+	writeField("status", event.Status)
+	keys := make([]string, 0, len(event.Fields))
+	for key := range event.Fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		writeField("field:"+key, event.Fields[key])
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func normalizeServiceAccountRecord(record serviceAccountRecord) serviceAccountRecord {

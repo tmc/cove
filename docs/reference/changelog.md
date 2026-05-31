@@ -71,6 +71,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` service accounts now support `viewer`, `operator`, and `admin`
   roles so scoped tokens can be read-only, operational, or allowed to manage
   service accounts.
+- `cove-fleetd` audit events now carry a deterministic `prev_hash`/`hash`
+  chain, and `GET /v1/audit/verify` verifies the global audit log for
+  unscoped viewers.
 - `cove-fleetd` assignment placement now supports `policy:"bin-pack"` plus
   `resources.vms` hints and worker `max_vms` slot caps, packing work onto the
   densest ready worker that still fits.

@@ -78,6 +78,23 @@ func TestStoreAuditsFleetMutations(t *testing.T) {
 	if event.AssignmentID != created.ID || event.WorkerID != "worker-1" || event.Fields["verb"] != "noop" {
 		t.Fatalf("assignment audit = %+v, want assignment %s worker-1 noop", event, created.ID)
 	}
+	for i, event := range events {
+		if event.Hash == "" {
+			t.Fatalf("audit event %d missing hash: %+v", i, event)
+		}
+		if i == 0 {
+			if event.PrevHash != "" {
+				t.Fatalf("first audit prev_hash = %q, want empty", event.PrevHash)
+			}
+			continue
+		}
+		if event.PrevHash != events[i-1].Hash {
+			t.Fatalf("audit event %d prev_hash = %q, want %q", i, event.PrevHash, events[i-1].Hash)
+		}
+	}
+	if verify := store.VerifyAudit(); !verify.OK || verify.Events != len(events) || verify.HeadHash == "" {
+		t.Fatalf("VerifyAudit = %+v, want ok with %d events", verify, len(events))
+	}
 
 	reopened, err := OpenStore(path, time.Minute)
 	if err != nil {
@@ -85,6 +102,68 @@ func TestStoreAuditsFleetMutations(t *testing.T) {
 	}
 	if event := auditAction(reopened.ListAudit(0), "assignment.create"); event == nil || event.AssignmentID != created.ID {
 		t.Fatalf("reopened audit missing assignment create: %+v", reopened.ListAudit(0))
+	}
+	if verify := reopened.VerifyAudit(); !verify.OK || verify.Events != len(events) {
+		t.Fatalf("reopened VerifyAudit = %+v, want ok with %d events", verify, len(events))
+	}
+}
+
+func TestStoreAuditHashChainDetectsTamper(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if verify := store.VerifyAudit(); !verify.OK {
+		t.Fatalf("VerifyAudit before tamper = %+v, want ok", verify)
+	}
+	store.mu.Lock()
+	store.audit[0].Action = "worker.tampered"
+	store.mu.Unlock()
+	verify := store.VerifyAudit()
+	if verify.OK || len(verify.Issues) == 0 {
+		t.Fatalf("VerifyAudit after tamper = %+v, want issues", verify)
+	}
+}
+
+func TestStoreAuditHashChainUpgradesLegacyEvents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	data, err := json.Marshal(storeFile{AuditEvents: []AuditEvent{
+		{ID: "audit-1", Time: now, Action: "worker.register", TargetType: "worker", TargetID: "worker-1"},
+		{ID: "audit-2", Time: now.Add(time.Second), Action: "worker.cordon", TargetType: "worker", TargetID: "worker-1"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verify := store.VerifyAudit(); !verify.OK || verify.Events != 2 || verify.HeadHash == "" {
+		t.Fatalf("legacy VerifyAudit = %+v, want upgraded ok", verify)
+	}
+	store.now = func() time.Time { return now.Add(2 * time.Second) }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verify := reopened.VerifyAudit(); !verify.OK || verify.Events != 3 {
+		t.Fatalf("reopened VerifyAudit = %+v, want ok with upgraded events", verify)
+	}
+	for i, event := range reopened.ListAudit(0) {
+		if event.Hash == "" {
+			t.Fatalf("event %d missing upgraded hash: %+v", i, event)
+		}
 	}
 }
 
@@ -1886,6 +1965,11 @@ func TestHandlerAudit(t *testing.T) {
 	if len(list.Events) != 1 || list.Events[0].Action != "assignment.create" || list.Events[0].AssignmentID != created.ID {
 		t.Fatalf("audit events = %+v, want latest assignment.create %s", list.Events, created.ID)
 	}
+	var verify AuditVerifyResult
+	getJSON(t, server.URL+"/v1/audit/verify", &verify)
+	if !verify.OK || verify.Events == 0 || verify.HeadHash == "" {
+		t.Fatalf("audit verify = %+v, want ok with head hash", verify)
+	}
 	resp, err := http.Get(server.URL + "/v1/audit?limit=bad")
 	if err != nil {
 		t.Fatal(err)
@@ -1989,6 +2073,9 @@ func TestHandlerServiceAccountNamespaceScope(t *testing.T) {
 		if event.Namespace != "team-a" {
 			t.Fatalf("audit event namespace = %q, want team-a: %+v", event.Namespace, event)
 		}
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/audit/verify", "token-a"); code != http.StatusForbidden {
+		t.Fatalf("scoped audit verify status = %d, want 403", code)
 	}
 }
 
