@@ -28,6 +28,10 @@ Check auth and network reachability:
 cove agent-sandbox doctor --provider all
 ```
 
+`cove agent-sandbox run` also checks the selected provider credential before it
+starts a VM fork. If a key or project is missing, it exits immediately with the
+matching `doctor --provider ...` command.
+
 Switch provider with one flag:
 
 ```bash
@@ -47,6 +51,14 @@ The replay bundle includes `summary.md`, screenshots, OCR text, control events,
 the final answer, and a metrics symlink. Use a dedicated throwaway guest session
 for agent runs; cove isolates the VM fork, but the current macOS capture/control
 path is not a Cua Driver-style focus-safe background automation guarantee.
+
+Export the run bundle when you need to hand it to CI or another operator:
+
+```bash
+run_id=<run-id>
+cove runs export "$run_id" --format tar > "agent-sandbox-$run_id.tar.gz"
+cove runs export "$run_id" --format gha-summary >> "$GITHUB_STEP_SUMMARY"
+```
 
 Provider benchmark protocols live in `bench/agent-sandbox-providers/`. Use
 `cove agent-sandbox bench --provider all` to record the protocol without API

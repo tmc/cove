@@ -342,6 +342,9 @@ func parseAgentSandboxRunArgs(args []string) (agentSandboxRunOptions, error) {
 }
 
 func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr error) {
+	if err := checkAgentSandboxRunProvider(opts.provider); err != nil {
+		return err
+	}
 	suffix, err := generateRunID()
 	if err != nil {
 		return err
@@ -473,6 +476,37 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 		fmt.Printf("agent-sandbox summary: %s\n", stats.SummaryPath)
 	}
 	return providerErr
+}
+
+func checkAgentSandboxRunProvider(provider string) error {
+	reqs := providerRequiredEnv(provider)
+	for _, req := range reqs {
+		names := strings.Split(req, " or ")
+		var missing []string
+		for _, name := range names {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if envIsSet(name) {
+				missing = nil
+				break
+			}
+			missing = append(missing, name)
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		if len(missing) == 1 {
+			return fmt.Errorf("agent-sandbox run: provider %s requires %s; set it or run `cove agent-sandbox doctor --provider %s`", provider, missing[0], provider)
+		}
+		return fmt.Errorf("agent-sandbox run: provider %s requires one of %s; set one or run `cove agent-sandbox doctor --provider %s`", provider, strings.Join(missing, ", "), provider)
+	}
+	return nil
+}
+
+func envIsSet(name string) bool {
+	return strings.TrimSpace(os.Getenv(name)) != ""
 }
 
 func prepareAgentSandboxReplay(replayDir, replayScreenshots, eventsPath string) error {

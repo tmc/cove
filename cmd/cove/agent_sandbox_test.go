@@ -137,6 +137,79 @@ func TestParseAgentSandboxRunArgsProviderSwitchOnly(t *testing.T) {
 	}
 }
 
+func TestCheckAgentSandboxRunProviderMissingEnv(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider string
+		env      []string
+		want     string
+	}{
+		{name: "openai", provider: "openai", env: []string{"OPENAI_API_KEY"}, want: "requires OPENAI_API_KEY"},
+		{name: "anthropic", provider: "anthropic", env: []string{"ANTHROPIC_API_KEY"}, want: "requires ANTHROPIC_API_KEY"},
+		{name: "gemini", provider: "gemini", env: []string{"GEMINI_API_KEY"}, want: "requires GEMINI_API_KEY"},
+		{name: "vertex", provider: "vertex", env: []string{"GOOGLE_CLOUD_PROJECT", "COVE_VERTEX_PROJECT"}, want: "requires one of GOOGLE_CLOUD_PROJECT, COVE_VERTEX_PROJECT"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, env := range tc.env {
+				t.Setenv(env, "")
+			}
+			err := checkAgentSandboxRunProvider(tc.provider)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "agent-sandbox doctor --provider "+tc.provider) {
+				t.Fatalf("error = %v, want %q and doctor hint", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckAgentSandboxRunProviderPassesWhenEnvSet(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider string
+		env      map[string]string
+	}{
+		{name: "openai", provider: "openai", env: map[string]string{"OPENAI_API_KEY": "test"}},
+		{name: "anthropic", provider: "anthropic", env: map[string]string{"ANTHROPIC_API_KEY": "test"}},
+		{name: "gemini", provider: "gemini", env: map[string]string{"GEMINI_API_KEY": "test"}},
+		{name: "vertex google", provider: "vertex", env: map[string]string{"GOOGLE_CLOUD_PROJECT": "test", "COVE_VERTEX_PROJECT": ""}},
+		{name: "vertex cove", provider: "vertex", env: map[string]string{"GOOGLE_CLOUD_PROJECT": "", "COVE_VERTEX_PROJECT": "test"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if err := checkAgentSandboxRunProvider(tc.provider); err != nil {
+				t.Fatalf("checkAgentSandboxRunProvider(%q): %v", tc.provider, err)
+			}
+		})
+	}
+}
+
+func TestRunAgentSandboxProviderPreflightBeforeBundle(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	runsRoot := t.TempDir()
+	prevRuns := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	t.Cleanup(func() { runsDirHook = prevRuns })
+
+	err := runAgentSandbox(context.Background(), agentSandboxRunOptions{
+		provider: "openai",
+		image:    "agentkit/macos-base:latest",
+		task:     "describe desktop",
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires OPENAI_API_KEY") {
+		t.Fatalf("error = %v, want missing OPENAI_API_KEY", err)
+	}
+	entries, readErr := os.ReadDir(runsRoot)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("preflight created run bundles: %v", entries)
+	}
+}
+
 func TestParseAgentSandboxBenchArgs(t *testing.T) {
 	opts, err := parseAgentSandboxBenchArgs([]string{
 		"--provider", "gemini",

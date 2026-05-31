@@ -37,6 +37,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   the run bundle, replay bundle, and summary paths on success. The summary
   records provider, image, VM, status, task, screenshot/control-event counts,
   artifact list, and final answer.
+- `cove agent-sandbox run` now fails before creating a VM fork when the selected
+  provider's required credential environment is missing, with a direct
+  `cove agent-sandbox doctor --provider <name>` hint.
+- Agent-sandbox docs now include the standard replay export recipe through
+  `cove runs export --format tar` and `--format gha-summary`.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

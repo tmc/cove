@@ -737,6 +737,10 @@ cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> -
 | `--max-steps <n>` | 25 | Maximum provider tool-call rounds |
 | `--vm <name>` | generated | Ephemeral fork name |
 
+Before creating the VM fork, `run` validates the selected provider's required
+credential environment and points failures at `cove agent-sandbox doctor
+--provider <name>`.
+
 On success the command prints the run bundle, replay bundle, and
 `replay/summary.md` paths. The replay bundle contains `summary.md`, numbered
 screenshots, OCR text, control events, final answer, and a `metrics.jsonl`

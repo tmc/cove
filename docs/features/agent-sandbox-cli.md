@@ -18,6 +18,12 @@ The parent image is not used directly. Each run creates a disposable fork,
 waits for the guest agent, runs the provider bridge, records artifacts, and
 stops the fork on exit.
 
+Before creating the fork, `run` checks the provider credential environment and
+fails with a direct `doctor` hint when a required value is missing. For example,
+OpenAI requires `OPENAI_API_KEY`, Anthropic requires `ANTHROPIC_API_KEY`, Gemini
+requires `GEMINI_API_KEY`, and Vertex requires either `GOOGLE_CLOUD_PROJECT` or
+`COVE_VERTEX_PROJECT`.
+
 On success the command prints the run bundle, replay bundle, and Markdown
 summary paths:
 
@@ -125,6 +131,24 @@ each screenshot. `control-events.jsonl` records the cove control-socket actions
 performed by the provider bridge. `summary.md` records the run id, VM, provider,
 image, final status, replay path, metrics path, screenshot count, control-event
 count, task, artifact list, and final answer.
+
+## Export
+
+The printed run path includes the run id. Export the complete replay bundle and
+metrics as a tarball with `cove runs export`:
+
+```bash
+run_id=<run-id>
+cove runs export "$run_id" --format tar > "agent-sandbox-$run_id.tar.gz"
+```
+
+For GitHub Actions summaries, append the run summary to
+`GITHUB_STEP_SUMMARY` and upload the tarball with your scheduler's artifact
+step:
+
+```bash
+cove runs export "$run_id" --format gha-summary >> "$GITHUB_STEP_SUMMARY"
+```
 
 ## Background Safety
 
