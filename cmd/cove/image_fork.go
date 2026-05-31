@@ -96,6 +96,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		return err
 	}
 	childName := vmconfig.NameForPath(childPath)
+	bundle.SetVMDir(childPath)
 
 	fmt.Printf("Image fork: %s\n", ref)
 	fmt.Printf("  child:  %s\n", childName)
@@ -134,6 +135,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	} else {
 		runErr = hooks.RunMacOSVM(rc, hc, bundle, bundle)
 	}
+	bundle.EmitResourceSampleMetric("end")
 
 	if !cfg.Ephemeral {
 		return runErr

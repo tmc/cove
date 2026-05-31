@@ -57,9 +57,11 @@ time before diff/OCR work. `extra` includes `backend`, `requested_backend`,
 truncated `error` string when `status` is `error`.
 
 `resource_sample`
-: Best-effort guest resource snapshot emitted when the guest agent is reachable.
-`extra.phase` is `start` or `end`; memory fields use byte counts from guest
-agent info when available.
+: Best-effort resource snapshot emitted for standalone runs and forked run
+bundles. `extra.phase` is `start` or `end`; guest memory fields use byte counts
+from agent info when available, and Virtualization.framework memory fields
+report configured/target memory plus balloon support when the runtime exposes
+them.
 
 `build_step`
 : Emitted for each `cove build` step. `extra` includes `step`, `cache_hit`,

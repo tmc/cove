@@ -16,15 +16,16 @@ import (
 )
 
 type standaloneMetricsRun struct {
-	id       string
-	dir      string
-	vmName   string
-	vmDir    string
-	imageRef string
-	started  time.Time
-	sink     runmetrics.Sink
-	mu       sync.Mutex
-	agentOK  bool
+	id              string
+	dir             string
+	vmName          string
+	vmDir           string
+	imageRef        string
+	started         time.Time
+	sink            runmetrics.Sink
+	mu              sync.Mutex
+	agentOK         bool
+	resourceSampled map[string]bool
 }
 
 type runMetricRecorder interface {
@@ -36,6 +37,11 @@ type runMetricRecorder interface {
 var resourceAgentInfoHook = func(vmDir string) (*controlpb.AgentInfoResponse, error) {
 	client := NewControlClient(GetControlSocketPathForVM(vmDir))
 	return client.AgentInfo()
+}
+
+var resourceMemoryInfoHook = func(vmDir string) (*controlpb.MemoryInfoResponse, error) {
+	client := NewControlClient(GetControlSocketPathForVM(vmDir))
+	return client.MemoryInfo()
 }
 
 func beginStandaloneMetricsRun(vmName, imageRef string, vmDir ...string) (*standaloneMetricsRun, error) {
@@ -151,6 +157,7 @@ func (b *RunBundle) MarkAgentReady() {
 	started := b.startedAt
 	b.mu.Unlock()
 	b.EmitMetricEvent("agent_ready", started, "ok", nil)
+	b.EmitResourceSampleMetric("start")
 }
 
 func (run *standaloneMetricsRun) MarkAgentReady() {
@@ -169,31 +176,108 @@ func (run *standaloneMetricsRun) MarkAgentReady() {
 	run.EmitResourceSampleMetric("start")
 }
 
+func (b *RunBundle) EmitResourceSampleMetric(phase string) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	vmDir := b.vmDir
+	started := b.startedAt
+	b.mu.Unlock()
+	emitResourceSampleMetric(b, started, vmDir, phase, b.markResourceSampled)
+}
+
 func (run *standaloneMetricsRun) EmitResourceSampleMetric(phase string) {
-	if run == nil || strings.TrimSpace(run.vmDir) == "" {
+	if run == nil {
 		return
 	}
-	info, err := resourceAgentInfoHook(run.vmDir)
-	if err != nil || info == nil || strings.TrimSpace(info.RawJson) == "" {
-		return
-	}
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(info.RawJson), &raw); err != nil {
-		return
-	}
-	total, okTotal := metricUint(raw, "memory_total", "memoryTotal")
-	available, okAvailable := metricUint(raw, "memory_available", "memoryAvailable")
-	if !okTotal && !okAvailable {
+	emitResourceSampleMetric(run, run.started, run.vmDir, phase, run.markResourceSampled)
+}
+
+func emitResourceSampleMetric(recorder interface {
+	EmitMetricEvent(string, time.Time, string, map[string]any)
+}, started time.Time, vmDir string, phase string, mark func(string) bool) {
+	if recorder == nil || strings.TrimSpace(vmDir) == "" {
 		return
 	}
 	extra := map[string]any{"phase": phase}
+	added := addGuestResourceFields(vmDir, extra)
+	added = addVZMemoryResourceFields(vmDir, extra) || added
+	if !added {
+		return
+	}
+	if mark != nil && !mark(phase) {
+		return
+	}
+	recorder.EmitMetricEvent("resource_sample", started, "ok", extra)
+}
+
+func addGuestResourceFields(vmDir string, extra map[string]any) bool {
+	info, err := resourceAgentInfoHook(vmDir)
+	if err != nil || info == nil || strings.TrimSpace(info.RawJson) == "" {
+		return false
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(info.RawJson), &raw); err != nil {
+		return false
+	}
+	added := false
+	total, okTotal := metricUint(raw, "memory_total", "memoryTotal")
+	available, okAvailable := metricUint(raw, "memory_available", "memoryAvailable")
 	if okTotal {
 		extra["memory_total_bytes"] = total
+		added = true
 	}
 	if okAvailable {
 		extra["memory_available_bytes"] = available
+		added = true
 	}
-	run.EmitMetricEvent("resource_sample", run.started, "ok", extra)
+	return added
+}
+
+func addVZMemoryResourceFields(vmDir string, extra map[string]any) bool {
+	info, err := resourceMemoryInfoHook(vmDir)
+	if err != nil || info == nil || info.GetInfo() == nil {
+		return false
+	}
+	mem := info.GetInfo()
+	if mem.GetConfiguredGb() > 0 {
+		extra["configured_memory_gb"] = mem.GetConfiguredGb()
+	}
+	if mem.GetTargetGb() > 0 {
+		extra["target_memory_gb"] = mem.GetTargetGb()
+	}
+	if mem.GetMinimumAllowedMb() > 0 {
+		extra["minimum_allowed_memory_mb"] = mem.GetMinimumAllowedMb()
+	}
+	extra["has_balloon"] = mem.GetHasBalloon()
+	return true
+}
+
+func (b *RunBundle) markResourceSampled(phase string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.resourceSampled == nil {
+		b.resourceSampled = make(map[string]bool)
+	}
+	if b.resourceSampled[phase] {
+		return false
+	}
+	b.resourceSampled[phase] = true
+	return true
+}
+
+func (run *standaloneMetricsRun) markResourceSampled(phase string) bool {
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	if run.resourceSampled == nil {
+		run.resourceSampled = make(map[string]bool)
+	}
+	if run.resourceSampled[phase] {
+		return false
+	}
+	run.resourceSampled[phase] = true
+	return true
 }
 
 func metricUint(raw map[string]any, names ...string) (uint64, bool) {

@@ -53,6 +53,8 @@ type RunBundle struct {
 	stderrFile       *os.File
 	metricsSink      runmetrics.Sink
 	metricAgentReady bool
+	vmDir            string
+	resourceSampled  map[string]bool
 	screenshotN      int
 }
 
@@ -98,6 +100,15 @@ func (b *RunBundle) Dir() string {
 		return ""
 	}
 	return b.dir
+}
+
+func (b *RunBundle) SetVMDir(dir string) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	b.vmDir = dir
+	b.mu.Unlock()
 }
 
 // ScreenshotsDir returns the screenshots/ subdirectory under the bundle.

@@ -131,9 +131,19 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 	resourceAgentInfoHook = func(string) (*controlpb.AgentInfoResponse, error) {
 		return &controlpb.AgentInfoResponse{RawJson: `{"memory_total":8192,"memory_available":4096}`}, nil
 	}
+	prevMemory := resourceMemoryInfoHook
+	resourceMemoryInfoHook = func(string) (*controlpb.MemoryInfoResponse, error) {
+		return &controlpb.MemoryInfoResponse{Info: &controlpb.MemoryInfo{
+			ConfiguredGb:     8,
+			TargetGb:         6,
+			MinimumAllowedMb: 1024,
+			HasBalloon:       true,
+		}}, nil
+	}
 	t.Cleanup(func() {
 		runsDirHook = prevRuns
 		resourceAgentInfoHook = prevInfo
+		resourceMemoryInfoHook = prevMemory
 	})
 
 	run, err := beginStandaloneMetricsRun("vm-x", "", "/tmp/vm-x")
@@ -154,8 +164,67 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 	if got.Extra["phase"] != "start" || got.Extra["memory_total_bytes"].(float64) != 8192 || got.Extra["memory_available_bytes"].(float64) != 4096 {
 		t.Fatalf("extra = %#v", got.Extra)
 	}
+	if got.Extra["configured_memory_gb"].(float64) != 8 || got.Extra["target_memory_gb"].(float64) != 6 || got.Extra["minimum_allowed_memory_mb"].(float64) != 1024 || got.Extra["has_balloon"].(bool) != true {
+		t.Fatalf("vz memory extra = %#v", got.Extra)
+	}
 	if events[1].Extra["phase"] != "end" {
 		t.Fatalf("end extra = %#v", events[1].Extra)
+	}
+	run.EmitResourceSampleMetric("end")
+	events = readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
+	if len(events) != 2 {
+		t.Fatalf("events after duplicate end = %d, want 2", len(events))
+	}
+}
+
+func TestRunBundleResourceSampleUsesChildVMDir(t *testing.T) {
+	withTempHome(t)
+	runsRoot := t.TempDir()
+	prevInfo := resourceAgentInfoHook
+	prevMemory := resourceMemoryInfoHook
+	var agentDir, memoryDir string
+	resourceAgentInfoHook = func(vmDir string) (*controlpb.AgentInfoResponse, error) {
+		agentDir = vmDir
+		return &controlpb.AgentInfoResponse{RawJson: `{"memoryTotal":"16384","memoryAvailable":"8192"}`}, nil
+	}
+	resourceMemoryInfoHook = func(vmDir string) (*controlpb.MemoryInfoResponse, error) {
+		memoryDir = vmDir
+		return &controlpb.MemoryInfoResponse{Info: &controlpb.MemoryInfo{ConfiguredGb: 16}}, nil
+	}
+	t.Cleanup(func() {
+		resourceAgentInfoHook = prevInfo
+		resourceMemoryInfoHook = prevMemory
+	})
+
+	b, err := NewRunBundle(runsRoot, "child", "base:latest")
+	if err != nil {
+		t.Fatalf("NewRunBundle: %v", err)
+	}
+	b.SetVMDir("/tmp/child-vm")
+	b.MarkAgentReady()
+	b.EmitResourceSampleMetric("end")
+	if err := b.Finalize(nil); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+
+	events := readMetricEvents(t, filepath.Join(b.Dir(), "metrics.jsonl"))
+	var samples []runmetrics.Event
+	for _, e := range events {
+		if e.EventType == "resource_sample" {
+			samples = append(samples, e)
+		}
+	}
+	if len(samples) != 2 {
+		t.Fatalf("resource samples = %d in %+v, want 2", len(samples), events)
+	}
+	if agentDir != "/tmp/child-vm" || memoryDir != "/tmp/child-vm" {
+		t.Fatalf("hook dirs agent=%q memory=%q, want child vm dir", agentDir, memoryDir)
+	}
+	if samples[0].Extra["phase"] != "start" || samples[0].Extra["memory_total_bytes"].(float64) != 16384 || samples[0].Extra["memory_available_bytes"].(float64) != 8192 {
+		t.Fatalf("start sample = %#v", samples[0].Extra)
+	}
+	if samples[1].Extra["phase"] != "end" || samples[1].Extra["configured_memory_gb"].(float64) != 16 {
+		t.Fatalf("end sample = %#v", samples[1].Extra)
 	}
 }
 

@@ -52,6 +52,7 @@ parameterized helpers `emitMetricEvent` (package main) and
 | `vm_start` | `macos.go` | VM started |
 | `agent_ready` | `run_metrics.go` | Guest agent came up; emitted at most once per run |
 | `capture_latency` | `screenshots.go` | Screenshot capture completed before diff/OCR work. `extra` carries `backend`, `requested_backend`, `fallback`, optional `fallback_cause`, optional `width` and `height`, and optional truncated `error`. |
+| `resource_sample` | `run_metrics.go` | Best-effort runtime resource snapshot. `extra.phase` is `start` or `end`. Guest-agent fields include `memory_total_bytes` and `memory_available_bytes` when agent info reports them. Virtualization.framework memory fields include `configured_memory_gb`, `target_memory_gb`, `minimum_allowed_memory_mb`, and `has_balloon` when balloon info is available. |
 | `vm_stop` | (sink test only) | VM stopped |
 | `fork_created` | `image_fork.go`, `runtime_lifecycle.go` | Fork-from VM materialized |
 | `run_complete` | `up.go`, `build.go`, `runtime_lifecycle.go`, `run_bundle.go`, `image_cli.go` | Terminal event; carries the final `status` and `extra.exit_code` |
@@ -106,9 +107,9 @@ defined in `internal/runs/show.go` (`lifecycleEvents` map):
 `lifecycle.maxage.tripped`, `run_complete`.
 
 Events not in this list (image GC, agent sandbox, capture latency, daemon-side
-`lifecycle.policy.stop`, `vm_policy_stop` fallback) still appear in `runs
-show -v` and `runs export` JSON, but are not rendered in the default
-lifecycle phase table.
+`lifecycle.policy.stop`, `resource_sample`, `vm_policy_stop` fallback) still
+appear in `runs show -v` and `runs export` JSON, but are not rendered in the
+default lifecycle phase table.
 
 ## Export formats
 

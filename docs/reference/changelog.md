@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- Forked run bundles now emit best-effort `resource_sample` metrics on
+  agent-ready and before cleanup, including guest memory totals when the agent
+  reports them and Virtualization.framework memory/balloon fields when the
+  runtime exposes them.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

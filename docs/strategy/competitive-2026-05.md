@@ -54,7 +54,7 @@ Refresh sources checked on 2026-05-11:
 | Public install and public trust path | Still gated. The repo remains private; public Homebrew/Marketplace/image-catalog language must stay out of operator docs until the privacy/release decision is made. | Cua and Tart are much easier to evaluate from public docs. | User-gated release/distribution decision; do not auto-ship from conductor. |
 | Public image catalog and signed provenance | Private OCI and tar transport work; public catalog, cosign/SLSA, and curated base images remain deferred. | Tart's GHCR image ecosystem is still the benchmark; Lume documents registry push/pull. | Decide the public registry/signing posture before marketing cove as drop-in image infrastructure. |
 | Hosted queue semantics | Intentionally absent. Cove owns VM/image/fork execution and expects GitHub Actions, Buildkite, or an operator scheduler to schedule hosts. | Cirrus users expect queue semantics; Daytona-style products sell the API-hosted sandbox. | Keep as non-goal, but make scheduler handoff examples boring. |
-| Resource observability | Run JSONL, OTLP, daemon/fleet metrics, and runs UX exist, but there is no periodic guest/host RAM/CPU sample in run metrics. `vz-agent info` exposes guest memory total/available as a point-in-time raw payload. | Cirrus users expect task resource visibility; hosted sandbox products expose operational state through APIs. | Add a small resource-sample metrics event: start/end first, periodic later if needed. |
+| Resource observability | Run JSONL, OTLP, daemon/fleet metrics, runs UX, and best-effort `resource_sample` events now exist for standalone runs and forked run bundles. Samples include guest memory totals when agent info reports them and VZ memory/balloon fields when available; periodic CPU/RAM sampling remains future work. | Cirrus users expect task resource visibility; hosted sandbox products expose operational state through APIs. | Add periodic samples and CPU/process attribution after start/end samples prove useful in real runs. |
 | Guest artifact copy-out | Run bundles and `cove runs export` exist; guest-to-host artifact copy still requires explicit `ctl cp` or script cooperation. | Cirrus artifacts are first-class. | Add a cove-action artifact copy-out convention before public CI positioning. |
 | GitHub annotations | Guest output is logs; `::error`/file-line annotation UX is not first-class. | CI users expect structured failures. | Parse/forward explicit annotation records or document the supported escape hatch. |
 | Agent-facing UX | The canonical local path is `cove agent-sandbox run`: fork a local image, wait for the guest agent, run one provider loop, and write replay artifacts. The remaining gap is operator polish around default artifact summaries and background-safety expectations. | Cua leads with a clearer computer-use product. Daytona leads with API-first managed sandbox framing. | Keep `cove agent-sandbox run` as the one operator-facing path; make replay, metrics, and artifact summary defaults boring before adding new agent entrypoints. |
@@ -65,10 +65,9 @@ Refresh sources checked on 2026-05-11:
 
 ### Current ranking
 
-1. **Resource samples in run metrics.** This is the smallest new product gap
-   exposed by the May 11 audit. Cove already has the metrics pipe and guest
-   memory fields; it needs a stable `resource_sample` event before users debug
-   CI flakes by guessing.
+1. **Periodic resource samples in run metrics.** Start/end `resource_sample`
+   events now cover standalone and forked runs; the next step is periodic
+   CPU/RAM sampling for long-lived CI flakes and hosted sandbox sessions.
 2. **Guest artifact copy-out.** This is the most practical Cirrus migration UX
    gap left after secrets, action preflight, and runs export work.
 3. **GitHub annotation forwarding.** Useful for CI parity, smaller than public
@@ -85,8 +84,8 @@ Refresh sources checked on 2026-05-11:
 
 Cove is production-plausible for private, operator-owned Apple-Silicon VM
 runners after the R122-R139 hardening. It is not done as a public product. The
-next non-gated gap to close is resource observability in `metrics.jsonl`,
-followed by artifact copy-out and CI annotation polish. The larger public
+next non-gated gap to close is periodic resource observability in
+`metrics.jsonl`, followed by artifact copy-out and CI annotation polish. The larger public
 catalog/signing/Marketplace story should remain gated until the repo and brand
 posture are deliberately chosen.
 

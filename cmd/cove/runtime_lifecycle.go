@@ -622,6 +622,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		cleanupClone()
 		return err
 	}
+	bundle.SetVMDir(clone.Path)
 
 	sourceOS := vmconfig.DetectOSType(parentDir)
 	cfg.VM = vmSelection{Name: clone.Name, Directory: clone.Path}
@@ -665,6 +666,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	default:
 		runErr = hooks.RunMacOSVM(rc, hc, bundle, bundle)
 	}
+	bundle.EmitResourceSampleMetric("end")
 
 	if cfg.EphemeralForkKeep {
 		fmt.Fprintf(cfg.Stdout, "Ephemeral fork retained (-keep): %s\n", clone.Path)
