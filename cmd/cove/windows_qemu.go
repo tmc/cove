@@ -259,7 +259,7 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 	}
 	serialLogPath := filepath.Join(qemuDir, "serial.log")
 	serialOutput := rc.SerialOutput
-	if install && !flagWasProvided(flag.CommandLine, "serial") {
+	if !flagWasProvided(flag.CommandLine, "serial") {
 		serialOutput = serialLogPath
 	}
 	smbSharedDirectory, err := windowsQEMUSMBSharedDirectoryFromEnv()
@@ -809,7 +809,7 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 	} else if cfg.Headless {
 		args = append(args, "-display", "none")
 	} else {
-		args = append(args, "-display", "cocoa")
+		args = append(args, "-display", "cocoa,zoom-to-fit=on,show-cursor=on")
 	}
 	return args, nil
 }
@@ -823,15 +823,16 @@ func windowsQEMUClipboardArgs() []string {
 }
 
 func windowsQEMUDisplayDeviceArgs(device string) ([]string, error) {
+	virtioGPU := "virtio-gpu-pci," + windowsQEMUDisplaySizeArg()
 	switch strings.ToLower(strings.TrimSpace(device)) {
 	case "", "ramfb":
 		return []string{"-device", "ramfb"}, nil
 	case "virtio-gpu", "virtio-gpu-pci":
-		return []string{"-device", "virtio-gpu-pci,xres=1280,yres=800"}, nil
+		return []string{"-device", virtioGPU}, nil
 	case "ramfb+virtio-gpu", "ramfb+virtio-gpu-pci", "virtio-gpu+ramfb", "virtio-gpu-pci+ramfb":
 		return []string{
 			"-device", "ramfb",
-			"-device", "virtio-gpu-pci,xres=1280,yres=800",
+			"-device", virtioGPU,
 		}, nil
 	case "bochs", "bochs-display":
 		return []string{"-device", "bochs-display"}, nil
@@ -840,6 +841,23 @@ func windowsQEMUDisplayDeviceArgs(device string) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("invalid COVE_QEMU_DISPLAY_DEVICE %q (must be ramfb, virtio-gpu-pci, ramfb+virtio-gpu-pci, bochs-display, or none)", device)
 	}
+}
+
+func windowsQEMUDisplaySizeArg() string {
+	s := strings.TrimSpace(os.Getenv("COVE_QEMU_DISPLAY_SIZE"))
+	if s == "" {
+		return "xres=1280,yres=800"
+	}
+	w, h, ok := strings.Cut(strings.ToLower(s), "x")
+	if !ok {
+		return "xres=1280,yres=800"
+	}
+	width, errW := strconv.Atoi(strings.TrimSpace(w))
+	height, errH := strconv.Atoi(strings.TrimSpace(h))
+	if errW != nil || errH != nil || width < 640 || height < 480 {
+		return "xres=1280,yres=800"
+	}
+	return fmt.Sprintf("xres=%d,yres=%d", width, height)
 }
 
 func windowsQEMUInputDeviceFromEnv() string {

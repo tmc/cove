@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tmc/cove/internal/vmrun"
 )
 
 func TestParseWindowsBackend(t *testing.T) {
@@ -110,6 +112,44 @@ func TestWindowsQEMUArgsInstallShape(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("QEMU args missing %q in:\n%s", want, joined)
 		}
+	}
+}
+
+func TestWindowsQEMUConfigDefaultsSerialToLog(t *testing.T) {
+	dir := t.TempDir()
+	tool := filepath.Join(dir, "qemu-tool")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	code := filepath.Join(dir, "code.fd")
+	if err := os.WriteFile(code, []byte("code"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	vars := filepath.Join(dir, "vars.fd")
+	if err := os.WriteFile(vars, []byte("vars"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("COVE_QEMU_SYSTEM_AARCH64", tool)
+	t.Setenv("COVE_QEMU_IMG", tool)
+	t.Setenv("COVE_QEMU_EFI_CODE", code)
+	t.Setenv("COVE_QEMU_EFI_VARS_TEMPLATE", vars)
+
+	vmDir := filepath.Join(dir, "vm.covevm")
+	cfg, err := windowsQEMUConfigFromRun(vmrun.RunConfig{
+		CPUCount:     2,
+		MemoryGB:     4,
+		NetworkMode:  "nat",
+		SerialOutput: "stdout",
+	}, vmrun.HostConfig{VMDir: vmDir}, false)
+	if err != nil {
+		t.Fatalf("windowsQEMUConfigFromRun: %v", err)
+	}
+	want := filepath.Join(vmDir, "qemu", "serial.log")
+	if cfg.SerialOutput != want {
+		t.Fatalf("SerialOutput = %q, want %q", cfg.SerialOutput, want)
+	}
+	if cfg.SerialLogPath != want {
+		t.Fatalf("SerialLogPath = %q, want %q", cfg.SerialLogPath, want)
 	}
 }
 
@@ -504,6 +544,53 @@ func TestWindowsQEMUDisplayDeviceArgs(t *testing.T) {
 	}
 	if _, err := windowsQEMUDisplayDeviceArgs("virtio-ramfb"); err == nil {
 		t.Fatalf("virtio-ramfb succeeded")
+	}
+}
+
+func TestWindowsQEMUDisplayDeviceArgsUsesDisplaySize(t *testing.T) {
+	t.Setenv("COVE_QEMU_DISPLAY_SIZE", "1440x900")
+	got, err := windowsQEMUDisplayDeviceArgs("virtio-gpu-pci")
+	if err != nil {
+		t.Fatalf("windowsQEMUDisplayDeviceArgs: %v", err)
+	}
+	want := []string{"-device", "virtio-gpu-pci,xres=1440,yres=900"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("windowsQEMUDisplayDeviceArgs = %v, want %v", got, want)
+	}
+}
+
+func TestWindowsQEMUDisplaySizeArgRejectsInvalid(t *testing.T) {
+	for _, in := range []string{"", "wide", "320x200", "1280"} {
+		t.Setenv("COVE_QEMU_DISPLAY_SIZE", in)
+		if got := windowsQEMUDisplaySizeArg(); got != "xres=1280,yres=800" {
+			t.Fatalf("display size %q = %q, want default", in, got)
+		}
+	}
+}
+
+func TestWindowsQEMUCocoaDisplayScalesToWindow(t *testing.T) {
+	dir := t.TempDir()
+	cfg := windowsQEMUConfig{
+		CPUCount:        2,
+		MemoryGB:        4,
+		DiskPath:        filepath.Join(dir, "windows.qcow2"),
+		DiskFormat:      "qcow2",
+		EFICodePath:     filepath.Join(dir, "edk2-code.fd"),
+		EFIVarsPath:     filepath.Join(dir, "efi-vars.fd"),
+		MonitorSockPath: filepath.Join(dir, "monitor.sock"),
+		SerialOutput:    filepath.Join(dir, "serial.log"),
+		SerialLogPath:   filepath.Join(dir, "serial.log"),
+		DisplayDevice:   "ramfb",
+		InputDevice:     "usb-tablet",
+		NetworkMode:     "nat",
+		Nodefaults:      true,
+	}
+	args, err := windowsQEMUArgs(cfg)
+	if err != nil {
+		t.Fatalf("windowsQEMUArgs: %v", err)
+	}
+	if got := strings.Join(args, "\x00"); !strings.Contains(got, "-display\x00cocoa,zoom-to-fit=on,show-cursor=on") {
+		t.Fatalf("windowsQEMUArgs missing cocoa zoom-to-fit display: %v", args)
 	}
 }
 
