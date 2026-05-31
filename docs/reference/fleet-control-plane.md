@@ -104,15 +104,15 @@ operator requests records audit actor `service-account:<name>`;
 unauthenticated local requests still record `controller`, and worker protocol
 events record `worker:<id>`.
 This is service-account RBAC for controller resources, not SAML/OIDC SSO yet.
-If a service account has `namespace` set, assignment, warm-pool, service-account,
-and audit list/read/mutation requests through that bearer token are scoped to
-that namespace; attempts to write another namespace are rejected. Service
-accounts also carry a `role`: `viewer` can list/read scoped resources and plan
-placements, `operator` can mutate operational resources such as assignments,
-warm-pools, image/policy/storage fan-out, and claims, and `admin` can manage
-service accounts. Omitted role defaults to `admin` for compatibility. Service
-accounts without `namespace` and unauthenticated local requests remain unscoped
-for the local-first controller workflow. Requests with an unknown bearer token
+If a service account has `namespace` set, assignment, warm-pool, sandbox,
+service-account, and audit list/read/mutation requests through that bearer token
+are scoped to that namespace; attempts to write another namespace are rejected.
+Service accounts also carry a `role`: `viewer` can list/read scoped resources
+and plan placements, `operator` can mutate operational resources such as
+assignments, warm-pools, image/policy/storage fan-out, and claims, and `admin`
+can manage service accounts. Omitted role defaults to `admin` for compatibility.
+Service accounts without `namespace` and unauthenticated local requests remain
+unscoped for the local-first controller workflow. Requests with an unknown bearer token
 are rejected instead of falling back to local controller identity. Worker
 registration, heartbeat, reports, host inventory, and audit-chain verification
 remain fleet-global in this slice, so namespace-scoped service accounts can
@@ -245,6 +245,36 @@ assignments returned in `cleanup`. `DELETE /v1/warm-pools/{name}` removes the
 pool definition, cancels pending slots, queues the same cleanup for idle
 started slots, and returns claimed slots in `deferred` so in-flight guest work
 can finish and use its existing claimed-slot stop path.
+
+Sandbox endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:9758/v1/sandboxes \
+  -H 'content-type: application/json' \
+  -d '{"id":"job-1","image_ref":"macos-runner:14.5","required_labels":{"zone":"desk"},"args":["--net","nat"]}'
+curl http://127.0.0.1:9758/v1/sandboxes
+curl http://127.0.0.1:9758/v1/sandboxes/job-1
+curl -X DELETE http://127.0.0.1:9758/v1/sandboxes/job-1
+```
+
+The sandbox API is the first hosted-style handle surface. `POST /v1/sandboxes`
+creates one image-affinity `cove run -fork-from <image_ref> -fork-name <vm>
+-ephemeral -keep -headless` assignment and returns an opaque sandbox id, VM
+name, worker, status, and backing assignment. `id` is optional; if omitted the
+controller generates `sandbox-<timestamp>`. `vm_name` is optional and defaults
+to `cove-sandbox-<id>`. The controller records the backing assignment with
+`sandbox_id` and `sandbox_role:"run"` so the handle can be listed and fetched
+without a separate scheduler. Extra `args` are appended to `cove run`, but
+fork/source/lifetime/headless flags are reserved by the controller.
+
+`coved -fleet-url` probes sandbox run assignments with `cove shell <vm> --
+/bin/sh -c true` before reporting `ready`, matching warm-pool readiness
+semantics. `DELETE /v1/sandboxes/{id}` cancels a pending sandbox; once the
+sandbox has started, it marks the run assignment `draining` and queues a
+same-worker `cove ctl -vm <vm> stop` cleanup assignment with
+`sandbox_role:"stop"`. This is a scaffold for the hosted `/v1/sandboxes`
+lifecycle: create/list/get/delete are present, while start/stop/wait verbs,
+leases, metering, and SDK provider switching remain follow-up work.
 
 Assignment endpoints:
 

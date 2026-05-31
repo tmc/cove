@@ -314,12 +314,48 @@ type WarmPoolClaimResult struct {
 	Assignment Assignment `json:"assignment"`
 }
 
+type SandboxRequest struct {
+	Namespace       string            `json:"namespace,omitempty"`
+	ID              string            `json:"id,omitempty"`
+	ImageRef        string            `json:"image_ref"`
+	VMName          string            `json:"vm_name,omitempty"`
+	Policy          string            `json:"policy,omitempty"`
+	RequiredLabels  map[string]string `json:"required_labels,omitempty"`
+	AntiAffinityKey string            `json:"anti_affinity_key,omitempty"`
+	Resources       Capacity          `json:"resources,omitempty"`
+	Args            []string          `json:"args,omitempty"`
+}
+
+type SandboxStatus struct {
+	Namespace  string     `json:"namespace,omitempty"`
+	ID         string     `json:"id"`
+	VMName     string     `json:"vm_name"`
+	ImageRef   string     `json:"image_ref"`
+	WorkerID   string     `json:"worker_id,omitempty"`
+	Status     string     `json:"status"`
+	Assignment Assignment `json:"assignment"`
+	Created    time.Time  `json:"created,omitempty"`
+	Updated    time.Time  `json:"updated,omitempty"`
+}
+
+type SandboxDeleteResult struct {
+	Namespace  string      `json:"namespace,omitempty"`
+	ID         string      `json:"id"`
+	VMName     string      `json:"vm_name"`
+	Status     string      `json:"status,omitempty"`
+	Canceled   bool        `json:"canceled,omitempty"`
+	Assignment Assignment  `json:"assignment"`
+	Cleanup    *Assignment `json:"cleanup,omitempty"`
+}
+
 type Assignment struct {
 	ID              string            `json:"id"`
 	Namespace       string            `json:"namespace,omitempty"`
 	WorkerID        string            `json:"worker_id,omitempty"`
 	WarmPool        string            `json:"warm_pool,omitempty"`
 	WarmPoolSlot    string            `json:"warm_pool_slot,omitempty"`
+	SandboxID       string            `json:"sandbox_id,omitempty"`
+	SandboxRole     string            `json:"sandbox_role,omitempty"`
 	Policy          string            `json:"policy,omitempty"`
 	ImageRef        string            `json:"image_ref,omitempty"`
 	RequiredLabels  map[string]string `json:"required_labels,omitempty"`

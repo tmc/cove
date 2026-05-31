@@ -167,6 +167,93 @@ func TestStoreAuditHashChainUpgradesLegacyEvents(t *testing.T) {
 	}
 }
 
+func TestStoreCreateSandbox(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "cold", Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "warm", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	sandbox, err := store.CreateSandbox(SandboxRequest{
+		ID:       "job-1",
+		ImageRef: "base:v1",
+		Args:     []string{"--net", "nat"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sandbox.ID != "job-1" || sandbox.VMName != "cove-sandbox-job-1" || sandbox.WorkerID != "warm" || sandbox.Status != "pending" {
+		t.Fatalf("sandbox = %+v, want job-1 on warm pending", sandbox)
+	}
+	wantArgs := []string{"run", "-fork-from", "base:v1", "-fork-name", "cove-sandbox-job-1", "-ephemeral", "-keep", "-headless", "--net", "nat"}
+	if !equalStrings(sandbox.Assignment.Args, wantArgs) || sandbox.Assignment.SandboxID != "job-1" || sandbox.Assignment.SandboxRole != "run" {
+		t.Fatalf("sandbox assignment = %+v, want args %+v", sandbox.Assignment, wantArgs)
+	}
+	if got, ok := store.GetSandbox("job-1"); !ok || got.ID != sandbox.ID {
+		t.Fatalf("GetSandbox = %+v, %v", got, ok)
+	}
+	if got := store.ListSandboxes(); len(got) != 1 || got[0].ID != "job-1" {
+		t.Fatalf("ListSandboxes = %+v, want job-1", got)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.create"); event == nil || event.TargetID != "job-1" || event.WorkerID != "warm" {
+		t.Fatalf("sandbox create audit = %+v", event)
+	}
+	deleted, err := store.DeleteSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deleted.Canceled || deleted.Status != "canceled" || deleted.Cleanup != nil {
+		t.Fatalf("DeleteSandbox pending = %+v, want canceled without cleanup", deleted)
+	}
+}
+
+func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != sandbox.Assignment.ID {
+		t.Fatalf("leased = %+v, want %s", leased, sandbox.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := store.DeleteSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.Status != "draining" || deleted.Cleanup == nil {
+		t.Fatalf("DeleteSandbox running = %+v, want draining cleanup", deleted)
+	}
+	wantArgs := []string{"ctl", "-vm", "cove-sandbox-job-1", "stop"}
+	if deleted.Cleanup.SandboxID != "job-1" || deleted.Cleanup.SandboxRole != "stop" || deleted.Cleanup.WorkerID != "worker-1" || !equalStrings(deleted.Cleanup.Args, wantArgs) {
+		t.Fatalf("cleanup = %+v, want worker-1 args %+v", deleted.Cleanup, wantArgs)
+	}
+	deletedAgain, err := store.DeleteSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deletedAgain.Cleanup == nil || deletedAgain.Cleanup.ID != deleted.Cleanup.ID {
+		t.Fatalf("second DeleteSandbox cleanup = %+v, want %s", deletedAgain.Cleanup, deleted.Cleanup.ID)
+	}
+}
+
 func TestStoreServiceAccountsPersistTokenHashes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	store, err := OpenStore(path, time.Minute)
@@ -1977,6 +2064,69 @@ func TestHandlerAudit(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad audit limit status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestHandlerSandboxes(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+	if created.ID != "job-1" || created.WorkerID != "worker-1" || created.Assignment.SandboxRole != "run" {
+		t.Fatalf("created sandbox = %+v", created)
+	}
+	var list struct {
+		Sandboxes []SandboxStatus `json:"sandboxes"`
+	}
+	getJSON(t, server.URL+"/v1/sandboxes", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-1" {
+		t.Fatalf("sandboxes = %+v, want job-1", list.Sandboxes)
+	}
+	var got SandboxStatus
+	getJSON(t, server.URL+"/v1/sandboxes/job-1", &got)
+	if got.ID != "job-1" || got.VMName != "cove-sandbox-job-1" {
+		t.Fatalf("sandbox = %+v, want job-1", got)
+	}
+	var deleted SandboxDeleteResult
+	deleteJSON(t, server.URL+"/v1/sandboxes/job-1", &deleted)
+	if !deleted.Canceled || deleted.ID != "job-1" {
+		t.Fatalf("deleted sandbox = %+v, want canceled job-1", deleted)
+	}
+}
+
+func TestHandlerSandboxNamespaceScope(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}, &record)
+
+	var created SandboxStatus
+	postJSONAuth(t, server.URL+"/v1/sandboxes", "token-a", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+	if created.Namespace != "team-a" {
+		t.Fatalf("sandbox namespace = %q, want team-a", created.Namespace)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1", "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox GET status = %d, want 404", code)
+	}
+	var list struct {
+		Sandboxes []SandboxStatus `json:"sandboxes"`
+	}
+	getJSONAuth(t, server.URL+"/v1/sandboxes", "token-a", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-1" {
+		t.Fatalf("team-a sandboxes = %+v, want job-1", list.Sandboxes)
+	}
+	getJSONAuth(t, server.URL+"/v1/sandboxes", "token-b", &list)
+	if len(list.Sandboxes) != 0 {
+		t.Fatalf("team-b sandboxes = %+v, want none", list.Sandboxes)
 	}
 }
 

@@ -293,7 +293,8 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   `controller`/`worker:<id>` actors, and service-account bearer tokens now bind
   operator requests to `service-account:<name>` actors. Service accounts can
   now carry a namespace, and scoped bearer tokens are filtered to that namespace
-  for assignment, warm-pool, service-account, and audit controller resources.
+  for assignment, warm-pool, sandbox, service-account, and audit controller
+  resources.
   Service-account roles now split read-only `viewer`, operational `operator`,
   and service-account-managing `admin` verbs. Audit events now carry a
   deterministic `prev_hash`/`hash` chain, and `GET /v1/audit/verify` verifies
@@ -313,8 +314,12 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   `POST /v1/sandboxes` (create = fork-from a snapshot), `GET /v1/sandboxes/{id}`,
   `POST /v1/sandboxes/{id}/{start|stop|wait}`, `DELETE /v1/sandboxes/{id}`, plus
   `lease` (exclusive-modify lock) and controller-backed `cordon` (prevent
-  placement across all clients). The bar to beat is Daytona's create→exec→delete
-  in under six lines with an opaque handle.
+  placement across all clients). The first scaffold now exists:
+  `POST/GET/DELETE /v1/sandboxes` creates a tracked fork-run assignment, probes
+  readiness through `cove shell`, and deletes by canceling pending work or
+  queueing same-worker stop cleanup. Remaining work is the richer lifecycle and
+  SDK/provider surface. The bar to beat is Daytona's create→exec→delete in
+  under six lines with an opaque handle.
 - **The wedge.** Cua Cloud runs **Linux/Windows only** — Apple-Silicon macOS does
   not scale horizontally cheaply, so they abandoned hosted macOS — and Cua users
   are openly asking for remote/multi-host macOS (Cua issues #1446, #1021) that
@@ -343,7 +348,7 @@ Each slice is independently shippable. The MIT/paid boundary is at **Slice 5**.
 | 5 | **Stateful fleet controller (the boundary)** | new control-plane binary (working name `cove-fleetd`) accepts worker dial-ins; `coved` gains `--fleet-url` outbound stream + four-verb worker protocol; embedded host-inventory store | **PAID** (controller) / **MIT** (worker mode) | Slice 4 | NAT traversal for remote Macs; N-way SSH fan-out becomes the bottleneck; establishes the monetization boundary. |
 | 6 | Fleet-wide policy & GC | controller pushes lifecycle policy, image-GC, and storage budget/prune down worker streams; workers report results | PAID | Slice 5 | Fulfills 034-deferred fleet-wide policy; image-GC, VM lifecycle-policy, and storage budget/prune push have landed. |
 | 7 | Top-k bin-pack scheduler + base-image affinity + warm-pool | controller-side placement replacing client-side least-loaded; base-image affinity; fork-warm-pool quota plus agent-ready slot claim, downsize, delete, and cleanup | PAID | Slice 5 | Resolves oversubscription races; lights up cove's image-locality edge for CI/agent pools. |
-| 8 | Hosted API + SDK provider abstraction + metering | REST `/v1/sandboxes` surface; `provider=local\|cloud` SDK; per-resource metering; BYO-LLM-key | PAID (hosted) | Slice 7 | Use case C; competes with Daytona/Cua on the macOS wedge. |
+| 8 | Hosted API + SDK provider abstraction + metering | REST `/v1/sandboxes` surface; create/list/get/delete scaffold has started; `provider=local\|cloud` SDK; per-resource metering; BYO-LLM-key | PAID (hosted) | Slice 7 | Use case C; competes with Daytona/Cua on the macOS wedge. |
 | 9 | Fleet RBAC / SSO / audit | SAML/OIDC, namespaces, fleet audit log; initial persisted audit feed, service-account actor binding, namespace filters, service-account roles, and audit-chain verification have started | PAID | Slice 5 | Enterprise-governance monetization axis (Teleport line); the durable revenue, not the scheduler. |
 | — | Federation (deferred) | independent per-site controllers, no cross-site consensus | PAID | Slice 7 | Multi-datacenter scale; deliberately deferred to avoid premature distributed-systems complexity. |
 

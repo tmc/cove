@@ -269,7 +269,7 @@ func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcon
 		case err = <-done:
 			goto finished
 		case <-ticker.C:
-			if activeStatus != "ready" && assignment.WarmPool != "" && w.warmPoolReady(runCtx, assignment) {
+			if activeStatus != "ready" && assignmentNeedsReadyProbe(assignment) && w.warmPoolReady(runCtx, assignment) {
 				activeStatus = "ready"
 			}
 			w.reportAssignmentStatus(runCtx, assignment.ID, activeStatus)
@@ -346,8 +346,15 @@ func warmPoolClaimVMName(args []string) string {
 	return ""
 }
 
+func assignmentNeedsReadyProbe(assignment fleetcontrol.Assignment) bool {
+	return assignment.WarmPool != "" || (assignment.SandboxID != "" && assignment.SandboxRole == "run")
+}
+
 func (w *FleetWorker) warmPoolReady(ctx context.Context, assignment fleetcontrol.Assignment) bool {
 	vmName := fleetcontrol.WarmPoolAssignmentVMName(assignment)
+	if assignment.SandboxID != "" {
+		vmName = fleetcontrol.SandboxAssignmentVMName(assignment)
+	}
 	if vmName == "" {
 		return false
 	}

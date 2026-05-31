@@ -65,9 +65,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `service-account:<name>` while local unauthenticated requests still work as
   `controller`.
 - `cove-fleetd` service accounts can now carry a `namespace`; scoped bearer
-  tokens can only create, list, read, and audit assignment/warm-pool/service
-  account resources in that namespace, while unscoped local controller workflows
-  remain unchanged and unknown bearer tokens are rejected.
+  tokens can only create, list, read, and audit assignment, warm-pool, sandbox,
+  and service-account resources in that namespace, while unscoped local
+  controller workflows remain unchanged and unknown bearer tokens are rejected.
 - `cove-fleetd` service accounts now support `viewer`, `operator`, and `admin`
   roles so scoped tokens can be read-only, operational, or allowed to manage
   service accounts.
@@ -103,6 +103,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Deleting a warm-pool now removes the desired pool, cancels pending slots,
   queues stop cleanup for idle started slots, and defers claimed slots until
   their guest-exec assignment finishes.
+- `cove-fleetd` now exposes hosted-style sandbox handles at
+  `POST/GET/DELETE /v1/sandboxes`: create maps to an image-affinity
+  `cove run -fork-from ... -ephemeral -keep -headless` assignment, `coved`
+  reports the sandbox ready after a `cove shell` probe, and delete cancels
+  pending sandboxes or queues same-worker stop cleanup.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

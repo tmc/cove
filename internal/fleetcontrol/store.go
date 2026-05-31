@@ -45,6 +45,11 @@ type serviceAccountRecord struct {
 	Updated   time.Time `json:"updated,omitempty"`
 }
 
+const (
+	sandboxRoleRun  = "run"
+	sandboxRoleStop = "stop"
+)
+
 func OpenStore(path string, ttl time.Duration) (*Store, error) {
 	if ttl <= 0 {
 		ttl = DefaultWorkerTTL
@@ -93,6 +98,8 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignment.Args = cloneStrings(assignment.Args)
 		assignment.WarmPool = strings.TrimSpace(assignment.WarmPool)
 		assignment.WarmPoolSlot = strings.TrimSpace(assignment.WarmPoolSlot)
+		assignment.SandboxID = strings.TrimSpace(assignment.SandboxID)
+		assignment.SandboxRole = strings.TrimSpace(assignment.SandboxRole)
 		assignment.ImageRef = strings.TrimSpace(assignment.ImageRef)
 		assignment.AntiAffinityKey = strings.TrimSpace(assignment.AntiAffinityKey)
 		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
@@ -354,6 +361,9 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 				storedStatus = "claimed"
 			}
 			if assignment.WarmPool != "" && assignment.Status == "draining" && (status == "ready" || status == "running") {
+				storedStatus = "draining"
+			}
+			if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun && assignment.Status == "draining" && (status == "ready" || status == "running") {
 				storedStatus = "draining"
 			}
 			assignment.Status = storedStatus
@@ -681,6 +691,215 @@ func (s *Store) ClaimWarmPoolActor(actor string, req WarmPoolClaimRequest) (Warm
 		Slot:       cloneAssignment(slot),
 		Assignment: cloneAssignment(assignment),
 	}, nil
+}
+
+func (s *Store) CreateSandbox(req SandboxRequest) (SandboxStatus, error) {
+	return s.CreateSandboxActor("controller", req)
+}
+
+func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxStatus, error) {
+	imageRef := strings.TrimSpace(req.ImageRef)
+	if imageRef == "" {
+		return SandboxStatus{}, fmt.Errorf("sandbox image_ref required")
+	}
+	args := cloneStrings(req.Args)
+	if err := validateForkRunArgs(args, "sandbox"); err != nil {
+		return SandboxStatus{}, err
+	}
+	assignment := Assignment{
+		Namespace:       normalizeNamespace(req.Namespace),
+		Policy:          strings.TrimSpace(req.Policy),
+		ImageRef:        imageRef,
+		RequiredLabels:  cloneLabels(req.RequiredLabels),
+		AntiAffinityKey: strings.TrimSpace(req.AntiAffinityKey),
+		Resources:       req.Resources,
+	}
+	policy, imageRef, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(assignment)
+	if err != nil {
+		return SandboxStatus{}, err
+	}
+	if policy == "" {
+		policy = PolicyImageAffinity
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		id = s.nextSandboxIDLocked(now)
+	}
+	if strings.Contains(id, "/") {
+		return SandboxStatus{}, fmt.Errorf("sandbox id must not contain /")
+	}
+	if _, ok := s.sandboxRunAssignmentLocked(id); ok {
+		return SandboxStatus{}, fmt.Errorf("sandbox %q already exists", id)
+	}
+	if _, ok := s.assignments[id]; ok {
+		return SandboxStatus{}, fmt.Errorf("assignment %q already exists", id)
+	}
+	workerID, err := s.selectWorkerLocked(policy, imageRef, requiredLabels, antiAffinityKey, resources)
+	if err != nil {
+		return SandboxStatus{}, err
+	}
+	vmName := strings.TrimSpace(req.VMName)
+	if vmName == "" {
+		vmName = sandboxVMName(id)
+	}
+	assignment = Assignment{
+		ID:              id,
+		Namespace:       normalizeNamespace(req.Namespace),
+		WorkerID:        workerID,
+		SandboxID:       id,
+		SandboxRole:     sandboxRoleRun,
+		Policy:          policy,
+		ImageRef:        imageRef,
+		RequiredLabels:  requiredLabels,
+		AntiAffinityKey: antiAffinityKey,
+		Resources:       normalizeResources(resources),
+		Verb:            "cove",
+		Args:            sandboxRunArgs(imageRef, vmName, args),
+		Status:          "pending",
+		Created:         now,
+		Updated:         now,
+	}
+	s.assignments[id] = assignment
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       "sandbox.create",
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     workerID,
+		AssignmentID: id,
+		Fields: map[string]string{
+			"image_ref": imageRef,
+			"vm_name":   vmName,
+			"policy":    policy,
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SandboxStatus{}, err
+	}
+	return sandboxStatusFromAssignment(assignment), nil
+}
+
+func (s *Store) GetSandbox(id string) (SandboxStatus, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxStatus{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assignment, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxStatus{}, false
+	}
+	return sandboxStatusFromAssignment(assignment), true
+}
+
+func (s *Store) ListSandboxes() []SandboxStatus {
+	return s.ListSandboxesNamespace("")
+}
+
+func (s *Store) ListSandboxesNamespace(namespace string) []SandboxStatus {
+	namespace = normalizeNamespace(namespace)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var sandboxes []SandboxStatus
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.SandboxID == "" || assignment.SandboxRole != sandboxRoleRun {
+			continue
+		}
+		if !namespaceMatches(assignment.Namespace, namespace) {
+			continue
+		}
+		sandboxes = append(sandboxes, sandboxStatusFromAssignment(assignment))
+	}
+	return sandboxes
+}
+
+func (s *Store) DeleteSandbox(id string) (SandboxDeleteResult, error) {
+	return s.DeleteSandboxActor("controller", id)
+}
+
+func (s *Store) DeleteSandboxActor(actor, id string) (SandboxDeleteResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxDeleteResult{}, fmt.Errorf("sandbox id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	assignment, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxDeleteResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	vmName := SandboxAssignmentVMName(assignment)
+	result := SandboxDeleteResult{
+		Namespace:  assignment.Namespace,
+		ID:         id,
+		VMName:     vmName,
+		Status:     assignment.Status,
+		Assignment: cloneAssignment(assignment),
+	}
+	switch assignment.Status {
+	case "pending":
+		assignment.Status = "canceled"
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		result.Status = assignment.Status
+		result.Canceled = true
+		result.Assignment = cloneAssignment(assignment)
+	case "leased", "running", "ready", "draining":
+		cleanup, ok := s.activeSandboxCleanupLocked(id)
+		if !ok {
+			cleanup = Assignment{
+				ID:          s.nextAssignmentIDLocked(now),
+				Namespace:   assignment.Namespace,
+				WorkerID:    assignment.WorkerID,
+				SandboxID:   id,
+				SandboxRole: sandboxRoleStop,
+				Verb:        "cove",
+				Args:        sandboxStopArgs(vmName),
+				Status:      "pending",
+				Created:     now,
+				Updated:     now,
+			}
+			s.assignments[cleanup.ID] = cleanup
+		}
+		assignment.Status = "draining"
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		result.Status = assignment.Status
+		result.Assignment = cloneAssignment(assignment)
+		cleanup = cloneAssignment(cleanup)
+		result.Cleanup = &cleanup
+	}
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       "sandbox.delete",
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     assignment.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields: map[string]string{
+			"vm_name":  vmName,
+			"status":   result.Status,
+			"canceled": strconv.FormatBool(result.Canceled),
+			"cleanup":  strconv.FormatBool(result.Cleanup != nil),
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SandboxDeleteResult{}, err
+	}
+	return result, nil
 }
 
 func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error) {
@@ -1917,6 +2136,42 @@ func (s *Store) claimableWarmPoolSlotLocked(name string) (Assignment, bool) {
 	return Assignment{}, false
 }
 
+func (s *Store) sandboxRunAssignmentLocked(id string) (Assignment, bool) {
+	id = strings.TrimSpace(id)
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.SandboxID == id && assignment.SandboxRole == sandboxRoleRun {
+			return cloneAssignment(assignment), true
+		}
+	}
+	return Assignment{}, false
+}
+
+func (s *Store) activeSandboxCleanupLocked(id string) (Assignment, bool) {
+	id = strings.TrimSpace(id)
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.SandboxID != id || assignment.SandboxRole != sandboxRoleStop {
+			continue
+		}
+		if activeAssignmentStatus(assignment.Status) {
+			return cloneAssignment(assignment), true
+		}
+	}
+	return Assignment{}, false
+}
+
+func (s *Store) nextSandboxIDLocked(now time.Time) string {
+	base := fmt.Sprintf("sandbox-%d", now.UnixNano())
+	id := base
+	for i := 2; ; i++ {
+		if _, ok := s.sandboxRunAssignmentLocked(id); !ok {
+			if _, exists := s.assignments[id]; !exists {
+				return id
+			}
+		}
+		id = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
 func warmPoolFromRequest(req WarmPoolRequest, now time.Time) (WarmPool, error) {
 	pool := WarmPool{
 		Namespace:      normalizeNamespace(req.Namespace),
@@ -1943,7 +2198,7 @@ func normalizeWarmPool(pool WarmPool, now time.Time) (WarmPool, error) {
 	pool.Policy = strings.TrimSpace(pool.Policy)
 	pool.RequiredLabels = cloneLabels(pool.RequiredLabels)
 	pool.Args = cloneStrings(pool.Args)
-	if err := validateWarmPoolArgs(pool.Args); err != nil {
+	if err := validateForkRunArgs(pool.Args, "warm pool"); err != nil {
 		return WarmPool{}, err
 	}
 	resources, err := sanitizeResources(pool.Resources)
@@ -1990,6 +2245,14 @@ func warmPoolArgs(pool WarmPool, assignmentID string) []string {
 }
 
 func WarmPoolAssignmentVMName(assignment Assignment) string {
+	return assignmentForkName(assignment, warmPoolForkName(assignment.WarmPool, assignment.ID))
+}
+
+func SandboxAssignmentVMName(assignment Assignment) string {
+	return assignmentForkName(assignment, sandboxVMName(assignment.SandboxID))
+}
+
+func assignmentForkName(assignment Assignment, fallback string) string {
 	for i, arg := range assignment.Args {
 		if (arg == "-fork-name" || arg == "--fork-name") && i+1 < len(assignment.Args) {
 			name := strings.TrimSpace(assignment.Args[i+1])
@@ -2006,7 +2269,42 @@ func WarmPoolAssignmentVMName(assignment Assignment) string {
 			}
 		}
 	}
-	return warmPoolForkName(assignment.WarmPool, assignment.ID)
+	return fallback
+}
+
+func sandboxStatusFromAssignment(assignment Assignment) SandboxStatus {
+	assignment = cloneAssignment(assignment)
+	return SandboxStatus{
+		Namespace:  assignment.Namespace,
+		ID:         assignment.SandboxID,
+		VMName:     SandboxAssignmentVMName(assignment),
+		ImageRef:   assignment.ImageRef,
+		WorkerID:   assignment.WorkerID,
+		Status:     assignment.Status,
+		Assignment: assignment,
+		Created:    assignment.Created,
+		Updated:    assignment.Updated,
+	}
+}
+
+func sandboxRunArgs(imageRef, vmName string, extra []string) []string {
+	args := []string{
+		"run",
+		"-fork-from", imageRef,
+		"-fork-name", vmName,
+		"-ephemeral",
+		"-keep",
+		"-headless",
+	}
+	return append(args, cloneStrings(extra)...)
+}
+
+func sandboxStopArgs(vmName string) []string {
+	return []string{"ctl", "-vm", vmName, "stop"}
+}
+
+func sandboxVMName(id string) string {
+	return "cove-sandbox-" + warmPoolSafeName(id)
 }
 
 func warmPoolClaimArgs(vmName string, command []string, env map[string]string) []string {
@@ -2029,7 +2327,11 @@ func warmPoolStopArgs(vmName string) []string {
 	return []string{"ctl", "-vm", vmName, "stop"}
 }
 
-func validateWarmPoolArgs(args []string) error {
+func validateForkRunArgs(args []string, label string) error {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = "fork run"
+	}
 	reserved := map[string]bool{
 		"-fork-from":  true,
 		"--fork-from": true,
@@ -2048,7 +2350,7 @@ func validateWarmPoolArgs(args []string) error {
 			flag = flag[:i]
 		}
 		if reserved[flag] {
-			return fmt.Errorf("warm pool args must not set %s", flag)
+			return fmt.Errorf("%s args must not set %s", label, flag)
 		}
 	}
 	return nil
@@ -2153,7 +2455,7 @@ func normalizePlacementFields(a Assignment) (policy, imageRef, antiAffinityKey s
 }
 
 func assignmentVMs(assignment Assignment) int {
-	if assignment.WarmPoolSlot != "" {
+	if assignment.WarmPoolSlot != "" || assignment.SandboxRole == sandboxRoleStop {
 		return 0
 	}
 	return normalizeResources(assignment.Resources).VMs

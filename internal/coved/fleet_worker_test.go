@@ -254,6 +254,71 @@ exit 0
 	}
 }
 
+func TestFleetWorkerMarksSandboxReady(t *testing.T) {
+	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	t.Setenv("COVE_TEST_ARGS", argsPath)
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+if [ "$1" = "shell" ]; then
+  exit 0
+fi
+printf '%s\n' "$*" > "$COVE_TEST_ARGS"
+sleep 0.2
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL:      server.URL,
+		ID:                 "worker-1",
+		CoveBin:            coveBin,
+		AssignmentInterval: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	sandbox, err := store.CreateSandbox(fleetcontrol.SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- worker.PollAssignment(ctx)
+	}()
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
+		assignment, ok := store.GetAssignment(sandbox.Assignment.ID)
+		return ok && assignment.Status == "ready" && assignment.LastReport != nil && assignment.LastReport.Status == "ready"
+	})
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("PollAssignment: %v", err)
+		}
+	case <-time.After(fleetWorkerTestTimeout):
+		t.Fatal("PollAssignment did not finish")
+	}
+	data, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(string(data))
+	if !strings.Contains(got, "run -fork-from base:v1") || !strings.Contains(got, "-fork-name cove-sandbox-job-1") {
+		t.Fatalf("sandbox cove args = %q", got)
+	}
+	assignment, ok := store.GetAssignment(sandbox.Assignment.ID)
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "complete" || assignment.SandboxID != "job-1" || assignment.SandboxRole != "run" {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+}
+
 func TestFleetWorkerDoesNotClaimWarmPoolBeforeReady(t *testing.T) {
 	release := filepath.Join(t.TempDir(), "release")
 	t.Setenv("COVE_TEST_RELEASE", release)

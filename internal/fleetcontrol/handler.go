@@ -70,6 +70,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/service-accounts", func(w http.ResponseWriter, r *http.Request) {
 		handleServiceAccounts(w, r, store)
 	})
+	mux.HandleFunc("/v1/sandboxes/", func(w http.ResponseWriter, r *http.Request) {
+		handleSandbox(w, r, store)
+	})
+	mux.HandleFunc("/v1/sandboxes", func(w http.ResponseWriter, r *http.Request) {
+		handleSandboxes(w, r, store)
+	})
 	mux.HandleFunc("/v1/storage/budget", func(w http.ResponseWriter, r *http.Request) {
 		handleStorageBudget(w, r, store)
 	})
@@ -225,6 +231,83 @@ func handleServiceAccount(w http.ResponseWriter, r *http.Request, store *Store) 
 			}
 		}
 		result, err := store.DeleteServiceAccountActor(identity.Actor, name)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {
+	identity := identityFromRequest(r, store)
+	switch r.Method {
+	case http.MethodGet:
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
+		if !reconcile(w, store) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"sandboxes": store.ListSandboxesNamespace(namespaceFilterFromRequest(r, identity))})
+	case http.MethodPost:
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		var req SandboxRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode sandbox: %v", err))
+			return
+		}
+		if !applyScopedNamespace(w, identity, &req.Namespace) {
+			return
+		}
+		result, err := store.CreateSandboxActor(identity.Actor, req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleSandbox(w http.ResponseWriter, r *http.Request, store *Store) {
+	id, err := nameFromPath(r.URL.Path, "/v1/sandboxes/", "sandbox")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	switch r.Method {
+	case http.MethodGet:
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
+		if !reconcile(w, store) {
+			return
+		}
+		sandbox, ok := store.GetSandbox(id)
+		if !ok || !canAccessNamespace(identity, sandbox.Namespace) {
+			writeError(w, http.StatusNotFound, "sandbox not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, sandbox)
+	case http.MethodDelete:
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if identity.Scoped {
+			sandbox, ok := store.GetSandbox(id)
+			if !ok || !canAccessNamespace(identity, sandbox.Namespace) {
+				writeError(w, http.StatusNotFound, "sandbox not found")
+				return
+			}
+		}
+		result, err := store.DeleteSandboxActor(identity.Actor, id)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
