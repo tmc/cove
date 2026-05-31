@@ -27,7 +27,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **Layout** | `~/.vz/vms/<name>/`; images under `~/.vz/images/<name>/<tag>/`; OCI blobs/manifests in the content store | `<home>/vms/`; OCI cache under `<cache>/OCIs/<host>/<digest>` | configurable `LumeSettings.vmLocations` | generated worker VM dirs such as `orchard-<name>-<uid>-<restartCount>` |
 | **Quota / size cap** | live APFS directory quota with runtime verb probe and Darwin fallback; persisted in `vmDir/quotas.json` (`internal/vmquota`) | no live cap; `tart set --disk-size` grows disk | none found | passes runtime disk-size knobs; no independent live cap |
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
-| **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; OCI build-cache import/export; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
+| **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; Lume tar-split pulls prefetch parts concurrently, preserve part order, and verify descriptor size/digest; OCI build-cache import/export; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `lume_pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
 | **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, persistent registry-base materialization shared by builds and pulls, and portable build-cache layers via `--cache-from` / `--cache-to` | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
 | **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; `fleet run --all` fans out concurrently to every non-cordoned host and pre-stages `-fork-from` only to cold targets; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version; repeated SSH operations reuse OpenSSH ControlMaster sockets (`cmd/cove/fleet_run.go`, `cmd/cove/fleet_health.go`, `internal/fleet/ssh.go`) | none | none | full controller/scheduler model |
 
@@ -45,7 +45,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
 3. **Registry interop, not just a native format.** cove can publish its own
    chunked OCI format and can also push/pull tart and lume-compatible images.
    That makes it a bridge across the two established registry ecosystems instead
-   of another isolated format.
+   of another isolated format. Lume tar-split imports now fetch parts
+   concurrently, write them back in manifest order, and verify each fetched part
+   against the OCI descriptor before extraction.
 
 4. **Base-aware distribution.** cove-format pushes can reference a base image,
    skip zero chunks, mount already-present blobs in the destination registry, and
@@ -74,16 +76,16 @@ delegates the disk/runtime work to `tart` or `vetu`.
   scheduler/controller concerns.
 - **tart has the mature public image lane.** cove now speaks tart format, but
   tart still has the established image catalog and local layer-cache machinery.
-- **lume's legacy chunk transport is elaborate.** cove can interoperate with
-  lume tar-split images, but lume still owns its native concurrent chunk
-  reassembly pipeline and ecosystem defaults.
+- **lume has native ecosystem defaults.** cove can interoperate with Lume
+  tar-split images and now matches its concurrent part-fetch shape on import,
+  but Lume still owns its native image defaults and user-facing ecosystem.
 
 ## One-line takeaway
 
 cove's disk story is no longer "local-only raw disk plus clonefile." It is a VM
 runtime with RAM-overlay disposability, live quota caps, optional ASIF disks,
-multi-format OCI distribution, base/delta reuse, portable OCI build caches,
-resumable pulls, and
+multi-format OCI distribution including concurrent verified Lume tar-split
+imports, base/delta reuse, portable OCI build caches, resumable pulls, and
 image-aware fleet placement with cordon drains, local launch leases, and
 concurrent multi-host run fan-out with cold-target image staging and reused SSH
 transports. tart and lume still lead in ecosystem maturity, and orchard still

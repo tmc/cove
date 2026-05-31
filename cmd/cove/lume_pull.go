@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/tmc/cove/internal/ociimage"
 	"github.com/tmc/cove/internal/vmconfig"
@@ -293,26 +294,171 @@ func parseLumeMemory(s string) (uint64, bool) {
 	return gb, true
 }
 
-// lumeFeedTarStream copies each disk part body, in part-number order, into w.
-// Returns the first error encountered (sequential — parallel fetch would need
-// reorder buffering, not worth it for a 41-part stream).
+type lumeFetchedPart struct {
+	index int
+	part  ociimage.LumeLayer
+	path  string
+	err   error
+}
+
+// lumeFeedTarStream fetches disk parts concurrently and writes them in
+// part-number order into w.
 func lumeFeedTarStream(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, w io.Writer) error {
-	for _, part := range plan.Manifest.Lume.DiskParts {
-		if err := ctx.Err(); err != nil {
-			return err
+	parts := plan.Manifest.Lume.DiskParts
+	if len(parts) == 0 {
+		return nil
+	}
+	cacheDir, err := os.MkdirTemp(plan.VMDir, ".lume-parts-")
+	if err != nil {
+		return fmt.Errorf("create lume part cache: %w", err)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan int, len(parts))
+	for i := range parts {
+		jobs <- i
+	}
+	close(jobs)
+
+	workers := pullChunkWorkers
+	if len(parts) < workers {
+		workers = len(parts)
+	}
+	results := make(chan lumeFetchedPart, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				if err := ctx.Err(); err != nil {
+					return
+				}
+				result := lumeFetchPart(ctx, client, plan.Ref, parts[index], cacheDir, index)
+				select {
+				case results <- result:
+				case <-ctx.Done():
+					if result.path != "" {
+						_ = os.Remove(result.path)
+					}
+					return
+				}
+			}
+		}()
+	}
+	defer func() {
+		cancel()
+		wg.Wait()
+		_ = os.RemoveAll(cacheDir)
+	}()
+
+	pending := make(map[int]lumeFetchedPart)
+	next := 0
+	for received := 0; received < len(parts); received++ {
+		var result lumeFetchedPart
+		select {
+		case result = <-results:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-		body, err := client.FetchBlob(ctx, plan.Ref, part.Descriptor.Digest)
-		if err != nil {
-			return fmt.Errorf("fetch part %s: %w", part.Title, err)
+		if result.err != nil {
+			return result.err
 		}
-		_, copyErr := io.Copy(w, body)
-		closeErr := body.Close()
-		if copyErr != nil {
-			return fmt.Errorf("read part %s: %w", part.Title, copyErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close part %s: %w", part.Title, closeErr)
+		pending[result.index] = result
+		for {
+			ready, ok := pending[next]
+			if !ok {
+				break
+			}
+			if err := lumeWriteFetchedPart(w, ready); err != nil {
+				return err
+			}
+			delete(pending, next)
+			next++
 		}
 	}
 	return nil
+}
+
+func lumeFetchPart(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, part ociimage.LumeLayer, dir string, index int) lumeFetchedPart {
+	result := lumeFetchedPart{index: index, part: part}
+	label := lumePartLabel(part, index)
+	body, err := client.FetchBlob(ctx, ref, part.Descriptor.Digest)
+	if err != nil {
+		result.err = fmt.Errorf("fetch part %s: %w", label, err)
+		return result
+	}
+
+	path := filepath.Join(dir, fmt.Sprintf("part-%06d", index))
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		_ = body.Close()
+		result.err = fmt.Errorf("open part %s: %w", label, err)
+		return result
+	}
+	h := sha256.New()
+	n, copyErr := io.Copy(f, io.TeeReader(body, h))
+	bodyErr := body.Close()
+	closeErr := f.Close()
+	if copyErr != nil {
+		_ = os.Remove(path)
+		result.err = fmt.Errorf("read part %s: %w", label, copyErr)
+		return result
+	}
+	if bodyErr != nil {
+		_ = os.Remove(path)
+		result.err = fmt.Errorf("close part %s: %w", label, bodyErr)
+		return result
+	}
+	if closeErr != nil {
+		_ = os.Remove(path)
+		result.err = fmt.Errorf("close part %s: %w", label, closeErr)
+		return result
+	}
+	if part.Descriptor.Size > 0 && n != part.Descriptor.Size {
+		_ = os.Remove(path)
+		result.err = fmt.Errorf("read part %s: size %d, want %d", label, n, part.Descriptor.Size)
+		return result
+	}
+	if part.Descriptor.Digest != "" {
+		got := "sha256:" + hex.EncodeToString(h.Sum(nil))
+		if got != part.Descriptor.Digest {
+			_ = os.Remove(path)
+			result.err = fmt.Errorf("read part %s: digest %s, want %s", label, got, part.Descriptor.Digest)
+			return result
+		}
+	}
+	result.path = path
+	return result
+}
+
+func lumeWriteFetchedPart(w io.Writer, part lumeFetchedPart) error {
+	label := lumePartLabel(part.part, part.index)
+	f, err := os.Open(part.path)
+	if err != nil {
+		return fmt.Errorf("open part %s: %w", label, err)
+	}
+	_, copyErr := io.Copy(w, f)
+	closeErr := f.Close()
+	if removeErr := os.Remove(part.path); removeErr != nil && copyErr == nil && closeErr == nil {
+		return fmt.Errorf("remove part %s: %w", label, removeErr)
+	}
+	if copyErr != nil {
+		return fmt.Errorf("write part %s: %w", label, copyErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close part %s: %w", label, closeErr)
+	}
+	return nil
+}
+
+func lumePartLabel(part ociimage.LumeLayer, index int) string {
+	if part.Title != "" {
+		return part.Title
+	}
+	if part.PartNumber > 0 {
+		return fmt.Sprintf("%d", part.PartNumber)
+	}
+	return fmt.Sprintf("%d", index+1)
 }

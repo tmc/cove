@@ -20,6 +20,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Fleet SSH calls now enable OpenSSH ControlMaster reuse by default, with
   `COVE_FLEET_SSH_MULTIPLEX=0` available for troubleshooting isolated
   transports.
+- Lume-format `cove pull` now prefetches tar-split disk parts concurrently,
+  writes them back in manifest order, and verifies each part's OCI
+  size/digest before extraction.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.
