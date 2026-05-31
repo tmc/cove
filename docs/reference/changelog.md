@@ -129,6 +129,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `cove run -fork-from ... -ephemeral -keep -headless` assignment, `coved`
   reports the sandbox ready after a `cove shell` probe, and stop/delete cancel
   pending sandboxes or queue same-worker stop cleanup.
+- `GET /v1/sandboxes` now accepts `status`, `worker_id`, `image_ref`, and
+  non-negative `limit` filters so hosted clients can list only the handles they
+  need without fetching the whole controller inventory.
 - `POST /v1/sandboxes/{id}/wait` now waits for a sandbox handle to reach a
   terminal state, and sandbox stop-cleanup completion transitions the handle to
   `stopped`.

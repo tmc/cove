@@ -330,7 +330,9 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   same-worker `cove shell` execution, `POST /v1/sandboxes/{id}/control` for
   same-worker screenshot/key/text/mouse control-socket events, plus `GET
   /v1/sandboxes/{id}/metering` and `GET /v1/metering/sandboxes` for scoped usage
-  records. The OpenAI Agents Python adapter now has a `provider="cloud"`
+  records. `GET /v1/sandboxes` now filters by status, worker, image, namespace,
+  and limit, so hosted clients can narrow the response to the handles they need. The
+  OpenAI Agents Python adapter now has a `provider="cloud"`
   `SandboxRunConfig` path over this REST surface, and the public Go
   `agentsandbox` package now has a matching local/cloud client for hosted
   create/list/get/wait/lease/restart/exec/control/metering/delete and

@@ -344,10 +344,15 @@ func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {
 		if !requireRole(w, identity, ServiceAccountRoleViewer) {
 			return
 		}
+		filter, err := sandboxListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if !reconcile(w, store) {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"sandboxes": store.ListSandboxesNamespace(namespaceFilterFromRequest(r, identity))})
+		writeJSON(w, http.StatusOK, map[string]any{"sandboxes": store.ListSandboxesFiltered(filter)})
 	case http.MethodPost:
 		if !requireRole(w, identity, ServiceAccountRoleOperator) {
 			return
@@ -369,6 +374,23 @@ func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func sandboxListFilterFromRequest(r *http.Request, namespace string) (SandboxListFilter, error) {
+	filter := SandboxListFilter{
+		Namespace: namespace,
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		WorkerID:  strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return SandboxListFilter{}, fmt.Errorf("sandbox limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	return filter, nil
 }
 
 func handleSandbox(w http.ResponseWriter, r *http.Request, store *Store) {

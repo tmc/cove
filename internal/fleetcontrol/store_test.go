@@ -220,6 +220,48 @@ func TestStoreCreateSandbox(t *testing.T) {
 	}
 }
 
+func TestStoreListSandboxesFiltered(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "a"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-2", Labels: map[string]string{"zone": "b"}, ImageRefs: []string{"base:v2"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-ready", ImageRef: "base:v1", RequiredLabels: map[string]string{"zone": "a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: ready.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-pending", ImageRef: "base:v2", RequiredLabels: map[string]string{"zone": "b"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-b", ID: "job-other", ImageRef: "base:v1", RequiredLabels: map[string]string{"zone": "a"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a"}); len(got) != 2 {
+		t.Fatalf("team-a sandboxes = %+v, want 2", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", Status: "ready"}); len(got) != 1 || got[0].ID != "job-ready" {
+		t.Fatalf("ready sandboxes = %+v, want job-ready", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", WorkerID: "worker-2"}); len(got) != 1 || got[0].ID != "job-pending" {
+		t.Fatalf("worker-2 sandboxes = %+v, want job-pending", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", ImageRef: "base:v2"}); len(got) != 1 || got[0].ID != "job-pending" {
+		t.Fatalf("base:v2 sandboxes = %+v, want job-pending", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", Limit: 1}); len(got) != 1 || got[0].ID != "job-ready" {
+		t.Fatalf("limited sandboxes = %+v, want first team-a sandbox", got)
+	}
+}
+
 func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -2945,6 +2987,41 @@ func TestHandlerSandboxes(t *testing.T) {
 	postJSON(t, server.URL+"/v1/sandboxes/job-2/restart", map[string]string{}, &restart)
 	if restart.Restarting || restart.ID != "job-2" || restart.Status != "pending" {
 		t.Fatalf("restart pending sandbox = %+v, want pending no-op", restart)
+	}
+}
+
+func TestHandlerSandboxListFilters(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1", "base:v2"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var ready SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-ready", ImageRef: "base:v1"}, &ready)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
+	var pending SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-pending", ImageRef: "base:v2"}, &pending)
+
+	var list struct {
+		Sandboxes []SandboxStatus `json:"sandboxes"`
+	}
+	getJSON(t, server.URL+"/v1/sandboxes?status=ready", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" {
+		t.Fatalf("ready sandboxes = %+v, want job-ready", list.Sandboxes)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes?image_ref=base:v2", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-pending" {
+		t.Fatalf("base:v2 sandboxes = %+v, want job-pending", list.Sandboxes)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes?worker_id=worker-1&limit=1", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" {
+		t.Fatalf("limited worker sandboxes = %+v, want first sandbox", list.Sandboxes)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes?limit=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad sandbox list limit status = %d, want 400", code)
 	}
 }
 

@@ -945,7 +945,14 @@ func (s *Store) ListSandboxes() []SandboxStatus {
 }
 
 func (s *Store) ListSandboxesNamespace(namespace string) []SandboxStatus {
-	namespace = normalizeNamespace(namespace)
+	return s.ListSandboxesFiltered(SandboxListFilter{Namespace: namespace})
+}
+
+func (s *Store) ListSandboxesFiltered(filter SandboxListFilter) []SandboxStatus {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.Status = strings.TrimSpace(filter.Status)
+	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
+	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now().UTC()
@@ -954,10 +961,23 @@ func (s *Store) ListSandboxesNamespace(namespace string) []SandboxStatus {
 		if assignment.SandboxID == "" || assignment.SandboxRole != sandboxRoleRun {
 			continue
 		}
-		if !namespaceMatches(assignment.Namespace, namespace) {
+		if !namespaceMatches(assignment.Namespace, filter.Namespace) {
 			continue
 		}
-		sandboxes = append(sandboxes, sandboxStatusFromAssignment(assignment, now))
+		sandbox := sandboxStatusFromAssignment(assignment, now)
+		if filter.Status != "" && sandbox.Status != filter.Status {
+			continue
+		}
+		if filter.WorkerID != "" && sandbox.WorkerID != filter.WorkerID {
+			continue
+		}
+		if filter.ImageRef != "" && sandbox.ImageRef != filter.ImageRef {
+			continue
+		}
+		sandboxes = append(sandboxes, sandbox)
+		if filter.Limit > 0 && len(sandboxes) >= filter.Limit {
+			break
+		}
 	}
 	return sandboxes
 }

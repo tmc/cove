@@ -397,6 +397,14 @@ type SandboxStatus struct {
 	Updated    time.Time     `json:"updated,omitempty"`
 }
 
+type SandboxListFilter struct {
+	Namespace string `json:"namespace,omitempty"`
+	Status    string `json:"status,omitempty"`
+	WorkerID  string `json:"worker_id,omitempty"`
+	ImageRef  string `json:"image_ref,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
 type SandboxLeaseRequest struct {
 	Holder string `json:"holder,omitempty"`
 	TTL    string `json:"ttl,omitempty"`
