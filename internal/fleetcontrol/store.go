@@ -511,6 +511,11 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 				s.finishSandboxStopLocked(received, assignment.SandboxID, storedStatus)
 			}
 			if auditReportStatus(storedStatus) {
+				fields := map[string]string{"exit_code": strconv.Itoa(r.ExitCode)}
+				if assignment.SandboxID != "" {
+					fields["sandbox_id"] = assignment.SandboxID
+					fields["sandbox_role"] = assignment.SandboxRole
+				}
 				s.appendAuditLocked(received, AuditEvent{
 					Actor:        "worker:" + id,
 					Namespace:    assignment.Namespace,
@@ -520,7 +525,7 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 					WorkerID:     id,
 					AssignmentID: assignment.ID,
 					Status:       storedStatus,
-					Fields:       map[string]string{"exit_code": strconv.Itoa(r.ExitCode)},
+					Fields:       fields,
 				})
 			}
 		}
@@ -2020,6 +2025,7 @@ func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
 	filter.Action = strings.TrimSpace(filter.Action)
 	filter.TargetType = strings.TrimSpace(filter.TargetType)
 	filter.TargetID = strings.TrimSpace(filter.TargetID)
+	filter.SandboxID = strings.TrimSpace(filter.SandboxID)
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -2046,6 +2052,9 @@ func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
 		if filter.TargetID != "" && event.TargetID != filter.TargetID {
 			continue
 		}
+		if filter.SandboxID != "" && !auditEventMatchesSandbox(event, filter.SandboxID) {
+			continue
+		}
 		filtered = append(filtered, event)
 	}
 	result := AuditListResult{Offset: filter.Offset, Limit: filter.Limit}
@@ -2061,6 +2070,12 @@ func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
 	result.Events = cloneAuditEvents(filtered[start:end])
 	result.Count = len(result.Events)
 	return result
+}
+
+func (s *Store) ListSandboxEventsPage(namespace, id string, filter AuditListFilter) AuditListResult {
+	filter.Namespace = namespace
+	filter.SandboxID = strings.TrimSpace(id)
+	return s.ListAuditPage(filter)
 }
 
 func (s *Store) VerifyAudit() AuditVerifyResult {
@@ -3848,6 +3863,17 @@ func normalizeAuditEvent(event AuditEvent) AuditEvent {
 		event.Time = event.Time.UTC()
 	}
 	return event
+}
+
+func auditEventMatchesSandbox(event AuditEvent, id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	if event.TargetType == "sandbox" && event.TargetID == id {
+		return true
+	}
+	return event.Fields["sandbox_id"] == id
 }
 
 func normalizeSandboxMeteringRecord(record SandboxMeteringRecord) SandboxMeteringRecord {

@@ -8,9 +8,12 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `GET /v1/sandboxes/{id}/events` for sandbox-scoped
+  audit history, and the Go/Python hosted sandbox clients expose matching event
+  list helpers.
 - `cove-fleetd` audit queries now support actor, action, target type, target
-  ID, offset, limit, count, and next-offset metadata for namespace-scoped
-  controller audit review.
+  ID, sandbox ID, offset, limit, count, and next-offset metadata for
+  namespace-scoped controller audit review.
 - `cove-fleetd` now exposes `GET /v1/operations/summary` for unscoped viewers,
   aggregating worker readiness, active assignments, sandbox handles, warm-pool
   slots, and sandbox metering for operator dashboards.

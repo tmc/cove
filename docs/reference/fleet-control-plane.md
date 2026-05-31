@@ -141,9 +141,9 @@ carries `prev_hash` and `hash` fields that chain the global audit log;
 `GET /v1/audit/verify` recomputes the chain and returns `ok`, `events`,
 `head_hash`, and any chain issues. `GET /v1/audit` returns `events`, `count`,
 `offset`, `limit`, and `next_offset`; query filters include `namespace`,
-`actor`, `action`, `target_type`, and `target_id`. `limit` preserves the
-existing latest-events behavior, and `offset` pages backward through matching
-events. Service-account tokens are stored only as
+`actor`, `action`, `target_type`, `target_id`, and `sandbox_id`. `limit`
+preserves the existing latest-events behavior, and `offset` pages backward
+through matching events. Service-account tokens are stored only as
 SHA-256 hashes, so operators should provide high-entropy random tokens and keep
 the plaintext in their own secret manager. Supplying a matching bearer token on
 operator requests records audit actor `service-account:<name>`;
@@ -334,6 +334,7 @@ curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/exec?timeout=30s' \
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/control?timeout=30s' \
   -H 'content-type: application/json' \
   -d '{"holder":"runner-42","type":"screenshot","screenshot":{"format":"png","scale":1}}'
+curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/events?action=sandbox.exec&limit=20'
 curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/metering'
 curl 'http://127.0.0.1:9758/v1/metering/sandboxes?sandbox_id=job-1'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop \
@@ -417,14 +418,20 @@ millisecond totals from the sandbox resources, and does not meter pending,
 stopped, draining, or restarting time. Namespace-scoped service accounts only
 see records in their namespace.
 
+`GET /v1/sandboxes/{id}/events` returns the sandbox-scoped slice of the
+hash-chained controller audit feed. It includes lifecycle, lease, exec, control,
+and worker report events for that sandbox; `actor`, `action`, `offset`, and
+`limit` query filters match the global audit-list semantics. Namespace-scoped
+service accounts receive `404` for sandboxes outside their namespace.
+
 This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
-create/list/get/delete/start/restart/stop/wait/exec/control, leases, and
+create/list/get/delete/start/restart/stop/wait/exec/control, leases, events, and
 metering are present. The OpenAI Agents Python adapter and public Go
 `agentsandbox` package can switch between local VM control and this
 cloud/control-plane path, including hosted lifecycle helpers, leases,
-metering, and ComputerTool-style screenshot/key/text/mouse events. Both SDKs
-remember the holder returned by `lease` and include it on later hosted sandbox
-mutations until `release_lease`/`ReleaseLease` succeeds.
+metering, sandbox event history, and ComputerTool-style screenshot/key/text/mouse
+events. Both SDKs remember the holder returned by `lease` and include it on
+later hosted sandbox mutations until `release_lease`/`ReleaseLease` succeeds.
 
 Go SDK example:
 
@@ -468,6 +475,11 @@ if err != nil {
 	log.Fatal(err)
 }
 fmt.Printf("metered records: %d\n", metering.Summary.Records)
+events, err := sb.Events(ctx, agentsandbox.SandboxEventListOptions{Action: "sandbox.exec", Limit: 20})
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Printf("exec events: %d\n", events.Count)
 ```
 
 Assignment endpoints:

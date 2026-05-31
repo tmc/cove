@@ -685,6 +685,56 @@ func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxEventsIncludeAssignmentReports(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandboxActor("service-account:ci", SandboxRequest{Namespace: "team-a", ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	execResult, err := store.ExecSandboxActor("oidc:github-main", "job-1", SandboxExecRequest{Command: []string{"true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: execResult.Assignment.ID, Status: "complete", ExitCode: 0}); err != nil {
+		t.Fatal(err)
+	}
+
+	page := store.ListSandboxEventsPage("team-a", "job-1", AuditListFilter{Limit: 2})
+	if page.Count != 2 || page.Limit != 2 || len(page.Events) != 2 {
+		t.Fatalf("sandbox events page = %+v, want two latest events", page)
+	}
+	if page.Events[0].Action != "sandbox.exec" || page.Events[1].Action != "assignment.report" {
+		t.Fatalf("sandbox events = %+v, want exec then assignment report", page.Events)
+	}
+	if page.Events[1].Fields["sandbox_id"] != "job-1" || page.Events[1].Fields["sandbox_role"] != sandboxRoleExec {
+		t.Fatalf("assignment report fields = %+v, want sandbox id/role", page.Events[1].Fields)
+	}
+	report := store.ListAuditPage(AuditListFilter{SandboxID: "job-1", Action: "assignment.report", Limit: 1})
+	if report.Count != 1 || report.Events[0].AssignmentID != execResult.Assignment.ID {
+		t.Fatalf("sandbox report audit page = %+v, want exec assignment report", report)
+	}
+	if events := store.ListSandboxEventsPage("team-b", "job-1", AuditListFilter{}).Events; len(events) != 0 {
+		t.Fatalf("team-b sandbox events = %+v, want none", events)
+	}
+}
+
 func TestStoreSandboxControlQueuesSameWorkerControl(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -3406,6 +3456,21 @@ func TestHandlerSandboxExec(t *testing.T) {
 	}
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/control?timeout=0", "token-b", SandboxControlRequest{Type: "text", Text: map[string]any{"text": "hi"}}); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox control status = %d, want 404", code)
+	}
+	var events AuditListResult
+	getJSONAuth(t, server.URL+"/v1/sandboxes/job-1/events?action=sandbox.exec&limit=1", "token-a", &events)
+	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].Action != "sandbox.exec" || events.Events[0].TargetID != "job-1" {
+		t.Fatalf("sandbox events = %+v, want sandbox.exec job-1", events)
+	}
+	getJSONAuth(t, server.URL+"/v1/audit?sandbox_id=job-1&action=sandbox.control&limit=1", "token-a", &events)
+	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].Action != "sandbox.control" || events.Events[0].TargetID != "job-1" {
+		t.Fatalf("sandbox audit filter = %+v, want sandbox.control job-1", events)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/events", "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox events status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/events?offset=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad sandbox events offset status = %d, want 400", code)
 	}
 }
 

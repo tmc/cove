@@ -230,6 +230,30 @@ def test_fleet_client_list_filters() -> None:
         server.stop()
 
 
+def test_fleet_client_events() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        client = CoveFleetClient(sandbox_id="job-1", fleet_url=server.url, api_key="secret", namespace="team-a")
+        page = client.events(actor="service-account:ci", action="sandbox.exec", offset=2, limit=5)
+        assert page["count"] == 1
+        assert page["offset"] == 2
+        assert page["limit"] == 5
+        assert page["events"][0]["action"] == "sandbox.exec"
+        query = server.requests[-1]["query"]
+        assert query["actor"] == ["service-account:ci"]
+        assert query["action"] == ["sandbox.exec"]
+        assert query["offset"] == ["2"]
+        assert query["limit"] == ["5"]
+
+        with pytest.raises(ValueError, match="limit must be non-negative"):
+            client.events(limit=-1)
+        with pytest.raises(ValueError, match="offset must be non-negative"):
+            client.events(offset=-1)
+    finally:
+        server.stop()
+
+
 def test_fleet_client_passes_lease_holder_to_mutations() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -410,6 +434,28 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/sandboxes/job-1/metering":
                     self._write(_metering("job-1"))
+                    return
+                if path == "/v1/sandboxes/job-1/events":
+                    self._write(
+                        {
+                            "events": [
+                                {
+                                    "id": "audit-1",
+                                    "time": "2026-05-31T10:00:00Z",
+                                    "namespace": "team-a",
+                                    "actor": "service-account:ci",
+                                    "action": "sandbox.exec",
+                                    "target_type": "sandbox",
+                                    "target_id": "job-1",
+                                    "assignment_id": "assignment-1",
+                                    "fields": {"argc": "1"},
+                                }
+                            ],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
                     return
                 if path == "/v1/metering/sandboxes":
                     self._write(_metering(query.get("sandbox_id", ["job-1"])[0]))

@@ -492,6 +492,33 @@ class CoveFleetClient:
         query = {"namespace": self.namespace, "sandbox_id": sandbox_id or ""}
         return self._request("GET", _query_path("/v1/metering/sandboxes", query), timeout=self.timeout)
 
+    def events(
+        self,
+        *,
+        actor: str = "",
+        action: str = "",
+        offset: int = 0,
+        limit: int = 0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("sandbox events offset must be non-negative")
+        if limit < 0:
+            raise ValueError("sandbox events limit must be non-negative")
+        query = {
+            "actor": actor,
+            "action": action,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        data = self._request("GET", _query_path(self._sandbox_path("events"), query), timeout=self.timeout)
+        events = data.get("events") or []
+        if not isinstance(events, list):
+            raise CoveError("GET sandbox events: expected events list")
+        page = dict(data)
+        page["events"] = [dict(item) for item in events if isinstance(item, dict)]
+        page["count"] = int(page.get("count") or len(page["events"]))
+        return page
+
     def wait_ready(self, timeout: float = 120.0) -> None:
         deadline = time.monotonic() + timeout
         last_status = ""

@@ -126,6 +126,37 @@ type MeteringResult struct {
 	Summary MeteringSummary  `json:"summary"`
 }
 
+type SandboxEvent struct {
+	ID           string            `json:"id"`
+	Time         time.Time         `json:"time"`
+	Namespace    string            `json:"namespace,omitempty"`
+	Actor        string            `json:"actor,omitempty"`
+	Action       string            `json:"action"`
+	TargetType   string            `json:"target_type,omitempty"`
+	TargetID     string            `json:"target_id,omitempty"`
+	WorkerID     string            `json:"worker_id,omitempty"`
+	AssignmentID string            `json:"assignment_id,omitempty"`
+	Status       string            `json:"status,omitempty"`
+	Fields       map[string]string `json:"fields,omitempty"`
+	PrevHash     string            `json:"prev_hash,omitempty"`
+	Hash         string            `json:"hash,omitempty"`
+}
+
+type SandboxEventListOptions struct {
+	Actor  string
+	Action string
+	Offset int
+	Limit  int
+}
+
+type SandboxEventListResult struct {
+	Events     []SandboxEvent `json:"events"`
+	Count      int            `json:"count,omitempty"`
+	Offset     int            `json:"offset,omitempty"`
+	Limit      int            `json:"limit,omitempty"`
+	NextOffset int            `json:"next_offset,omitempty"`
+}
+
 type WaitResult struct {
 	Done    bool          `json:"done"`
 	Sandbox SandboxStatus `json:"sandbox"`
@@ -409,6 +440,29 @@ func (o SandboxListOptions) query() (map[string]string, error) {
 	return query, nil
 }
 
+func (o SandboxEventListOptions) query() (map[string]string, error) {
+	if o.Limit < 0 {
+		return nil, errors.New("agentsandbox: sandbox events limit must be non-negative")
+	}
+	if o.Offset < 0 {
+		return nil, errors.New("agentsandbox: sandbox events offset must be non-negative")
+	}
+	query := make(map[string]string)
+	if actor := strings.TrimSpace(o.Actor); actor != "" {
+		query["actor"] = actor
+	}
+	if action := strings.TrimSpace(o.Action); action != "" {
+		query["action"] = action
+	}
+	if o.Offset > 0 {
+		query["offset"] = strconv.Itoa(o.Offset)
+	}
+	if o.Limit > 0 {
+		query["limit"] = strconv.Itoa(o.Limit)
+	}
+	return query, nil
+}
+
 func (c *Client) Wait(ctx context.Context, timeout time.Duration) (WaitResult, error) {
 	if err := c.ready(); err != nil {
 		return WaitResult{}, err
@@ -558,6 +612,31 @@ func (c *Client) ListMetering(ctx context.Context, sandboxID string) (MeteringRe
 	var result MeteringResult
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/metering/sandboxes", query), nil, &result, c.timeout); err != nil {
 		return MeteringResult{}, err
+	}
+	return result, nil
+}
+
+func (c *Client) Events(ctx context.Context, options ...SandboxEventListOptions) (SandboxEventListResult, error) {
+	if err := c.ready(); err != nil {
+		return SandboxEventListResult{}, err
+	}
+	if c.provider != ProviderCloud {
+		return SandboxEventListResult{}, errors.New("agentsandbox: events are only supported for cloud sandboxes")
+	}
+	opt := SandboxEventListOptions{}
+	if len(options) > 0 {
+		opt = options[0]
+	}
+	query, err := opt.query()
+	if err != nil {
+		return SandboxEventListResult{}, err
+	}
+	var result SandboxEventListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(c.sandboxPath("events"), query), nil, &result, c.timeout); err != nil {
+		return SandboxEventListResult{}, err
+	}
+	if result.Count == 0 && len(result.Events) > 0 {
+		result.Count = len(result.Events)
 	}
 	return result, nil
 }

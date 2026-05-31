@@ -266,6 +266,43 @@ func TestCloudClientListFilters(t *testing.T) {
 	}
 }
 
+func TestCloudClientEvents(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	client, err := NewClient(ClientOptions{
+		Provider:  ProviderCloud,
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		SandboxID: "job-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.Events(ctx, SandboxEventListOptions{
+		Actor:  "service-account:ci",
+		Action: "sandbox.exec",
+		Offset: 2,
+		Limit:  5,
+	})
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if page.Count != 1 || page.Offset != 2 || page.Limit != 5 || len(page.Events) != 1 || page.Events[0].Action != "sandbox.exec" {
+		t.Fatalf("Events = %+v, want sandbox.exec page", page)
+	}
+	query := server.requests[len(server.requests)-1].query
+	if query.Get("actor") != "service-account:ci" || query.Get("action") != "sandbox.exec" || query.Get("offset") != "2" || query.Get("limit") != "5" {
+		t.Fatalf("events query = %q", query.Encode())
+	}
+	if _, err := client.Events(ctx, SandboxEventListOptions{Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("negative event limit err = %v, want validation error", err)
+	}
+	if _, err := client.Events(ctx, SandboxEventListOptions{Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("negative event offset err = %v, want validation error", err)
+	}
+}
+
 func TestExecResultCheck(t *testing.T) {
 	err := (ExecResult{ExitCode: 2, Stderr: "nope\n"}).Check()
 	if err == nil || err.Error() != "guest command exited 2: nope" {
@@ -367,6 +404,23 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			writeSDKJSON(t, w, map[string]any{"done": true, "response": map[string]any{"success": true}})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes/job-1/metering":
 			writeSDKJSON(t, w, sdkMetering("job-1"))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes/job-1/events":
+			writeSDKJSON(t, w, SandboxEventListResult{
+				Events: []SandboxEvent{{
+					ID:           "audit-1",
+					Time:         time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+					Namespace:    "team-a",
+					Actor:        "service-account:ci",
+					Action:       "sandbox.exec",
+					TargetType:   "sandbox",
+					TargetID:     "job-1",
+					AssignmentID: "assignment-1",
+					Fields:       map[string]string{"argc": "1"},
+				}},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/metering/sandboxes":
 			writeSDKJSON(t, w, sdkMetering("job-1"))
 		case r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/job-1":

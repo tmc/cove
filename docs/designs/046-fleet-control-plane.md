@@ -331,14 +331,15 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   exec, and control, `POST /v1/sandboxes/{id}/exec` for same-worker `cove
   shell` execution, `POST /v1/sandboxes/{id}/control` for same-worker
   screenshot/key/text/mouse control-socket events, plus `GET
-  /v1/sandboxes/{id}/metering` and `GET /v1/metering/sandboxes` for scoped usage
-  records. `GET /v1/sandboxes` now filters by status, worker, image, namespace,
-  offset, and limit, and returns `next_offset`, so hosted clients can page
-  through only the handles they need; the Go and Python SDKs expose the same
-  filters and page metadata. The OpenAI Agents Python adapter now has a `provider="cloud"`
+  /v1/sandboxes/{id}/events` for sandbox-scoped audit history and `GET
+  /v1/sandboxes/{id}/metering` and `GET /v1/metering/sandboxes` for scoped
+  usage records. `GET /v1/sandboxes` now filters by status, worker, image,
+  namespace, offset, and limit, and returns `next_offset`, so hosted clients can
+  page through only the handles they need; the Go and Python SDKs expose the
+  same filters and page metadata. The OpenAI Agents Python adapter now has a `provider="cloud"`
   `SandboxRunConfig` path over this REST surface, and the public Go
   `agentsandbox` package now has a matching local/cloud client for hosted
-  create/list/get/wait/lease/restart/exec/control/metering/delete and
+  create/list/get/wait/lease/restart/exec/control/events/metering/delete and
   screenshot/key/text/mouse flows; both SDKs carry held lease holders into
   later hosted mutations.
   `POST /v1/workers/{id}/drain` now gives operators a host-maintenance control
