@@ -243,14 +243,30 @@ func TestWriteReplayArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "step-001.png"), png, 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeReplayArtifacts(replay, dst, src, "done"); err != nil {
+	summary := agentSandboxReplaySummary{
+		RunID:       "run-1",
+		VMName:      "agent-sandbox-test",
+		Provider:    "anthropic",
+		Image:       "agentkit/macos-base:latest",
+		Task:        "describe | desktop",
+		Status:      "ok",
+		ReplayDir:   replay,
+		MetricsPath: filepath.Join(filepath.Dir(replay), "metrics.jsonl"),
+		FinalAnswer: "done",
+	}
+	stats, err := writeReplayArtifacts(replay, dst, src, summary)
+	if err != nil {
 		t.Fatalf("writeReplayArtifacts: %v", err)
+	}
+	if stats.Screenshots != 1 || stats.ControlEvents != 0 || stats.SummaryPath != filepath.Join(replay, "summary.md") {
+		t.Fatalf("stats = %+v", stats)
 	}
 	assertDirMode(t, replay, 0700)
 	assertDirMode(t, dst, 0700)
 	for _, rel := range []string{
 		"final-answer.md",
 		"ocr-text.txt",
+		"summary.md",
 		filepath.Join("screenshots", "step-001.png"),
 	} {
 		if _, err := os.Stat(filepath.Join(replay, rel)); err != nil {
@@ -261,8 +277,17 @@ func TestWriteReplayArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "done" {
+	if string(data) != "done\n" {
 		t.Fatalf("final answer = %q", data)
+	}
+	summaryData, err := os.ReadFile(filepath.Join(replay, "summary.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"# Agent Sandbox Summary", "| Provider | anthropic |", "| Screenshots | 1 |", "describe | desktop", "## Final Answer\n\ndone"} {
+		if !strings.Contains(string(summaryData), want) {
+			t.Fatalf("summary missing %q:\n%s", want, summaryData)
+		}
 	}
 }
 

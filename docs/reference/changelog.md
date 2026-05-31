@@ -33,6 +33,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   raw annotation workflow commands or JSON records to `COVE_GITHUB_ANNOTATIONS`,
   cove copies `github-annotations.log` into the run bundle, forwards only
   `error` / `warning` / `notice`, and records `github_annotation_forward`.
+- `cove agent-sandbox run` now writes `replay/summary.md` by default and prints
+  the run bundle, replay bundle, and summary paths on success. The summary
+  records provider, image, VM, status, task, screenshot/control-event counts,
+  artifact list, and final answer.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

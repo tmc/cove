@@ -17,11 +17,13 @@ cove agent-sandbox run \
 Expected output:
 
 ```text
+agent-sandbox run: /Users/me/.vz/runs/<run-id>
 agent-sandbox replay: /Users/me/.vz/runs/<run-id>/replay
+agent-sandbox summary: /Users/me/.vz/runs/<run-id>/replay/summary.md
 ```
 
-The replay bundle contains screenshots, OCR text, control events, and the
-final answer.
+The replay bundle contains `summary.md`, screenshots, OCR text, control events,
+and the final answer.
 
 ## OpenAI With Network Access Only to api.openai.com
 
@@ -47,7 +49,9 @@ cove agent-sandbox run \
 Expected output:
 
 ```text
+agent-sandbox run: /Users/me/.vz/runs/<run-id>
 agent-sandbox replay: /Users/me/.vz/runs/<run-id>/replay
+agent-sandbox summary: /Users/me/.vz/runs/<run-id>/replay/summary.md
 ```
 
 Install the local OpenAI adapter first:
@@ -77,7 +81,9 @@ wait
 Expected output:
 
 ```text
+agent-sandbox run: /Users/me/.vz/runs/<run-id>
 agent-sandbox replay: /Users/me/.vz/runs/<run-id>/replay
+agent-sandbox summary: /Users/me/.vz/runs/<run-id>/replay/summary.md
 ```
 
 All providers require valid credentials and a local `agentkit/macos-base:latest`

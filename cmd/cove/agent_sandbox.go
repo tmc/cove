@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -29,6 +30,24 @@ type agentSandboxRunOptions struct {
 	screenshotDir string
 	maxSteps      int
 	vmName        string
+}
+
+type agentSandboxReplaySummary struct {
+	RunID       string
+	VMName      string
+	Provider    string
+	Image       string
+	Task        string
+	Status      string
+	ReplayDir   string
+	MetricsPath string
+	FinalAnswer string
+}
+
+type agentSandboxReplayStats struct {
+	Screenshots   int
+	ControlEvents int
+	SummaryPath   string
 }
 
 type agentSandboxBenchOptions struct {
@@ -358,13 +377,26 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 	if err := prepareAgentSandboxReplay(replayDir, replayScreenshots, eventsPath); err != nil {
 		return err
 	}
+	replaySummary := func(status, answer string) agentSandboxReplaySummary {
+		return agentSandboxReplaySummary{
+			RunID:       bundle.ID(),
+			VMName:      vm,
+			Provider:    opts.provider,
+			Image:       opts.image,
+			Task:        opts.task,
+			Status:      status,
+			ReplayDir:   replayDir,
+			MetricsPath: filepath.Join(runDir, "metrics.jsonl"),
+			FinalAnswer: answer,
+		}
+	}
 	finalAnswer := ""
 	replayWritten := false
 	defer func() {
 		if replayWritten {
 			return
 		}
-		if err := writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, finalAnswer); err != nil && runErr == nil {
+		if _, err := writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, replaySummary(agentSandboxStatus(runErr), finalAnswer)); err != nil && runErr == nil {
 			runErr = err
 		}
 	}()
@@ -425,20 +457,22 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 		providerErr = err
 	}
 	finalAnswer = result.FinalAnswer
-	if writeErr := writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, result.FinalAnswer); writeErr != nil && providerErr == nil {
-		providerErr = writeErr
-	} else if writeErr == nil {
-		replayWritten = true
-	}
 	if stopErr := stopAgentSandboxVM(ctx, coveBin, vm); stopErr != nil && providerErr == nil {
 		providerErr = stopErr
 	}
 	stopped = true
-	if providerErr != nil {
-		return providerErr
+	stats, writeErr := writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, replaySummary(agentSandboxStatus(providerErr), result.FinalAnswer))
+	if writeErr != nil && providerErr == nil {
+		providerErr = writeErr
+	} else if writeErr == nil {
+		replayWritten = true
 	}
-	fmt.Printf("agent-sandbox replay: %s\n", replayDir)
-	return nil
+	if providerErr == nil {
+		fmt.Printf("agent-sandbox run: %s\n", runDir)
+		fmt.Printf("agent-sandbox replay: %s\n", replayDir)
+		fmt.Printf("agent-sandbox summary: %s\n", stats.SummaryPath)
+	}
+	return providerErr
 }
 
 func prepareAgentSandboxReplay(replayDir, replayScreenshots, eventsPath string) error {
@@ -495,23 +529,135 @@ func waitAgentSandboxRun(cmd *exec.Cmd) error {
 	}
 }
 
-func writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, finalAnswer string) error {
+func writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir string, summary agentSandboxReplaySummary) (agentSandboxReplayStats, error) {
+	var stats agentSandboxReplayStats
 	if err := os.MkdirAll(replayDir, 0700); err != nil {
-		return fmt.Errorf("agent-sandbox: create replay dir: %w", err)
+		return stats, fmt.Errorf("agent-sandbox: create replay dir: %w", err)
 	}
 	if err := copyScreenshots(screenshotDir, replayScreenshots); err != nil {
-		return err
+		return stats, err
 	}
 	if err := writeOCRText(filepath.Join(replayDir, "ocr-text.txt"), replayScreenshots); err != nil {
-		return err
+		return stats, err
 	}
-	if strings.TrimSpace(finalAnswer) == "" {
-		finalAnswer = "(no final answer)\n"
+	finalAnswer := strings.TrimSpace(summary.FinalAnswer)
+	if finalAnswer == "" {
+		finalAnswer = "(no final answer)"
 	}
-	if err := os.WriteFile(filepath.Join(replayDir, "final-answer.md"), []byte(finalAnswer), 0644); err != nil {
-		return fmt.Errorf("agent-sandbox: write final answer: %w", err)
+	if err := os.WriteFile(filepath.Join(replayDir, "final-answer.md"), []byte(finalAnswer+"\n"), 0644); err != nil {
+		return stats, fmt.Errorf("agent-sandbox: write final answer: %w", err)
+	}
+	stats = agentSandboxReplayStats{
+		Screenshots:   countReplayScreenshots(replayScreenshots),
+		ControlEvents: countLines(filepath.Join(replayDir, "control-events.jsonl")),
+		SummaryPath:   filepath.Join(replayDir, "summary.md"),
+	}
+	summary.FinalAnswer = finalAnswer
+	if err := writeAgentSandboxSummary(stats.SummaryPath, summary, stats); err != nil {
+		return stats, err
+	}
+	return stats, nil
+}
+
+func writeAgentSandboxSummary(path string, summary agentSandboxReplaySummary, stats agentSandboxReplayStats) error {
+	var b strings.Builder
+	b.WriteString("# Agent Sandbox Summary\n\n")
+	b.WriteString("| Field | Value |\n| --- | --- |\n")
+	rows := [][2]string{
+		{"Run ID", summary.RunID},
+		{"VM", summary.VMName},
+		{"Provider", summary.Provider},
+		{"Image", summary.Image},
+		{"Status", agentSandboxStatusText(summary.Status)},
+		{"Replay", summary.ReplayDir},
+		{"Metrics", summary.MetricsPath},
+		{"Screenshots", fmt.Sprint(stats.Screenshots)},
+		{"Control events", fmt.Sprint(stats.ControlEvents)},
+	}
+	for _, row := range rows {
+		b.WriteString("| ")
+		b.WriteString(markdownTableCell(row[0]))
+		b.WriteString(" | ")
+		b.WriteString(markdownTableCell(row[1]))
+		b.WriteString(" |\n")
+	}
+	if task := strings.TrimSpace(summary.Task); task != "" {
+		b.WriteString("\n## Task\n\n")
+		b.WriteString(task)
+		b.WriteString("\n")
+	}
+	b.WriteString("\n## Artifacts\n\n")
+	for _, rel := range []string{
+		"screenshots/",
+		"ocr-text.txt",
+		"control-events.jsonl",
+		"final-answer.md",
+		"metrics.jsonl",
+	} {
+		b.WriteString("- `")
+		b.WriteString(rel)
+		b.WriteString("`\n")
+	}
+	b.WriteString("\n## Final Answer\n\n")
+	answer := strings.TrimSpace(summary.FinalAnswer)
+	if answer == "" {
+		answer = "(no final answer)"
+	}
+	b.WriteString(answer)
+	b.WriteString("\n")
+	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
+		return fmt.Errorf("agent-sandbox: write replay summary: %w", err)
 	}
 	return nil
+}
+
+func agentSandboxStatus(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	return err.Error()
+}
+
+func agentSandboxStatusText(status string) string {
+	if strings.TrimSpace(status) == "" {
+		return "ok"
+	}
+	return status
+}
+
+func markdownTableCell(s string) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "|", `\|`)
+	return strings.TrimSpace(s)
+}
+
+func countReplayScreenshots(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".png") {
+			count++
+		}
+	}
+	return count
+}
+
+func countLines(path string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	count := 0
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		count++
+	}
+	return count
 }
 
 func copyScreenshots(srcDir, dstDir string) error {
@@ -644,8 +790,10 @@ Options:
   --vm <name>             ephemeral VM name (default: agent-sandbox-<id>)
 
 Replay:
-  writes ~/.vz/runs/<run-id>/replay/ with screenshots, OCR text, control events,
-  final-answer.md, and a metrics.jsonl symlink.
+  prints the run, replay, and summary paths on success. Writes
+  ~/.vz/runs/<run-id>/replay/summary.md with provider, image, VM, status,
+  artifact counts, task, and final answer, plus screenshots, OCR text,
+  control-events.jsonl, final-answer.md, and a metrics.jsonl symlink.
 
 Bench:
   wraps bench/agent-sandbox-providers/run.sh. Without --live, the benchmark

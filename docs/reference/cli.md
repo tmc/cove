@@ -737,8 +737,10 @@ cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> -
 | `--max-steps <n>` | 25 | Maximum provider tool-call rounds |
 | `--vm <name>` | generated | Ephemeral fork name |
 
-The command writes `~/.vz/runs/<run-id>/replay/` with numbered screenshots,
-OCR text, control events, final answer, and a `metrics.jsonl` symlink.
+On success the command prints the run bundle, replay bundle, and
+`replay/summary.md` paths. The replay bundle contains `summary.md`, numbered
+screenshots, OCR text, control events, final answer, and a `metrics.jsonl`
+symlink.
 
 ```bash
 cove agent-sandbox run --provider anthropic --image macos-agent:latest --task "Describe the desktop."

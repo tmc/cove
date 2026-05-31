@@ -4,7 +4,8 @@ title: Agent Sandbox CLI
 # Agent Sandbox CLI
 
 `cove agent-sandbox run` starts a fresh fork from a local image, runs one
-computer-use provider loop, writes a replay bundle, and stops the fork.
+computer-use provider loop, writes a self-describing replay bundle, and stops
+the fork.
 
 ```bash
 cove agent-sandbox run \
@@ -16,6 +17,15 @@ cove agent-sandbox run \
 The parent image is not used directly. Each run creates a disposable fork,
 waits for the guest agent, runs the provider bridge, records artifacts, and
 stops the fork on exit.
+
+On success the command prints the run bundle, replay bundle, and Markdown
+summary paths:
+
+```text
+agent-sandbox run: /Users/me/.vz/runs/<run-id>
+agent-sandbox replay: /Users/me/.vz/runs/<run-id>/replay
+agent-sandbox summary: /Users/me/.vz/runs/<run-id>/replay/summary.md
+```
 
 ## Options
 
@@ -101,6 +111,7 @@ Each run writes:
 
 ```text
 ~/.vz/runs/<run-id>/replay/
+  summary.md
   screenshots/step-NNN.png
   ocr-text.txt
   control-events.jsonl
@@ -111,7 +122,17 @@ Each run writes:
 Provider screenshots are written to disk before the provider receives them.
 The replay directory then gets a numbered copy plus OCR text extracted from
 each screenshot. `control-events.jsonl` records the cove control-socket actions
-performed by the provider bridge.
+performed by the provider bridge. `summary.md` records the run id, VM, provider,
+image, final status, replay path, metrics path, screenshot count, control-event
+count, task, artifact list, and final answer.
+
+## Background Safety
+
+`agent-sandbox run` isolates the provider loop in a fresh VM fork, not in the
+host desktop. Screenshots, keyboard, text, and mouse actions are sent through
+cove's guest control surface. Keep agent runs in a dedicated throwaway guest
+session and do not treat the current macOS capture path as a Cua Driver-style
+focus-safe background automation guarantee.
 
 Use a local or approved artifact store for replay bundles. Screenshots and OCR
 text may contain secrets visible in the guest.

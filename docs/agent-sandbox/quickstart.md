@@ -35,7 +35,18 @@ cove agent-sandbox run --provider gemini --image agentkit/macos-base:latest --ta
 cove agent-sandbox run --provider vertex --image agentkit/macos-base:latest --task "Open Safari."
 ```
 
-Every run writes a replay bundle under `~/.vz/runs/<run-id>/replay`.
+Every successful run prints three paths:
+
+```text
+agent-sandbox run: ~/.vz/runs/<run-id>
+agent-sandbox replay: ~/.vz/runs/<run-id>/replay
+agent-sandbox summary: ~/.vz/runs/<run-id>/replay/summary.md
+```
+
+The replay bundle includes `summary.md`, screenshots, OCR text, control events,
+the final answer, and a metrics symlink. Use a dedicated throwaway guest session
+for agent runs; cove isolates the VM fork, but the current macOS capture/control
+path is not a Cua Driver-style focus-safe background automation guarantee.
 
 Provider benchmark protocols live in `bench/agent-sandbox-providers/`. Use
 `cove agent-sandbox bench --provider all` to record the protocol without API
