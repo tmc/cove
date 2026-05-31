@@ -653,6 +653,65 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	}
 }
 
+func TestStorePushesImageGCAssignments(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "stale", Labels: map[string]string{"zone": "desk"}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CordonWorker("drain", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "rack", Labels: map[string]string{"zone": "rack"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.PushImageGC(ImageGCRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		OlderThan:      "24h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 1 {
+		t.Fatalf("assignments = %+v, want 1", result.Assignments)
+	}
+	assignment := result.Assignments[0]
+	wantArgs := []string{"image", "gc", "-dry-run", "-older-than", "24h"}
+	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
+		t.Fatalf("assignment = %+v, want worker desk args %+v", assignment, wantArgs)
+	}
+	if skipImageGCReason(result.Skipped, "drain") != "cordoned" || skipImageGCReason(result.Skipped, "stale") != "stale" || skipImageGCReason(result.Skipped, "rack") != "" {
+		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+
+	result, err = store.PushImageGC(ImageGCRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		OlderThan:      "24h",
+		Apply:          true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 0 || skipImageGCReason(result.Skipped, "desk") != "active" {
+		t.Fatalf("second image gc = %+v, want active skip for desk", result)
+	}
+}
+
 func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -1077,6 +1136,28 @@ func TestHandlerPrepareImage(t *testing.T) {
 	}
 }
 
+func TestHandlerImageGC(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	var result ImageGCResult
+	postJSON(t, server.URL+"/v1/images/gc", ImageGCRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		OlderThan:      "1h",
+		Apply:          true,
+	}, &result)
+	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
+		t.Fatalf("image gc result = %+v", result)
+	}
+	wantArgs := []string{"image", "gc", "-yes", "-older-than", "1h"}
+	if !equalStrings(result.Assignments[0].Args, wantArgs) {
+		t.Fatalf("args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
+	}
+}
+
 func TestHandlerWarmPools(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -1218,6 +1299,15 @@ func equalStrings(a, b []string) bool {
 }
 
 func skipReason(skipped []ImagePrepareSkip, workerID string) string {
+	for _, skip := range skipped {
+		if skip.WorkerID == workerID {
+			return skip.Reason
+		}
+	}
+	return ""
+}
+
+func skipImageGCReason(skipped []ImageGCSkip, workerID string) string {
 	for _, skip := range skipped {
 		if skip.WorkerID == workerID {
 			return skip.Reason

@@ -42,6 +42,9 @@ func Handler(store *Store) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, result)
 	})
+	mux.HandleFunc("/v1/images/gc", func(w http.ResponseWriter, r *http.Request) {
+		handleImageGC(w, r, store)
+	})
 	mux.HandleFunc("/v1/images/prepare", func(w http.ResponseWriter, r *http.Request) {
 		handleImagePrepare(w, r, store)
 	})
@@ -184,6 +187,24 @@ func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	result, err := store.PrepareImage(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func handleImageGC(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req ImageGCRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode image gc: %v", err))
+		return
+	}
+	result, err := store.PushImageGC(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

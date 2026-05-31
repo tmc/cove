@@ -511,6 +511,55 @@ func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error
 	return result, nil
 }
 
+func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
+	labels := cloneLabels(req.RequiredLabels)
+	olderThan, err := normalizeDurationString(req.OlderThan, "image gc older_than")
+	if err != nil {
+		return ImageGCResult{}, err
+	}
+	now := s.now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reconciled := s.reconcileLocked(now)
+	var result ImageGCResult
+	for _, host := range s.sortedHostsLocked() {
+		host = s.statusLocked(host)
+		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if host.Status != "ready" {
+			result.Skipped = append(result.Skipped, ImageGCSkip{WorkerID: host.ID, Reason: host.Status})
+			continue
+		}
+		if s.activeImageGCLocked(host.ID) {
+			result.Skipped = append(result.Skipped, ImageGCSkip{WorkerID: host.ID, Reason: "active"})
+			continue
+		}
+		assignment := Assignment{
+			ID:             s.nextAssignmentIDLocked(now),
+			WorkerID:       host.ID,
+			RequiredLabels: labels,
+			Verb:           "cove",
+			Args:           imageGCArgs(olderThan, req.Apply),
+			Status:         "pending",
+			Created:        now,
+			Updated:        now,
+		}
+		s.assignments[assignment.ID] = assignment
+		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
+	}
+	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
+		return result, fmt.Errorf("no workers match image gc")
+	}
+	if len(result.Assignments) > 0 || reconciled.changed() {
+		if err := s.persistLocked(); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -1252,12 +1301,52 @@ func (s *Store) activeImagePrepareLocked(workerID, imageRef string) bool {
 	return false
 }
 
+func (s *Store) activeImageGCLocked(workerID string) bool {
+	for _, assignment := range s.assignments {
+		if assignment.WorkerID != workerID {
+			continue
+		}
+		if assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "image" && assignment.Args[1] == "gc" && activeAssignmentStatus(assignment.Status) {
+			return true
+		}
+	}
+	return false
+}
+
 func imagePrepareArgs(sourceRef, imageRef string, force bool) []string {
 	args := []string{"image", "pull", "-tag", imageRef}
 	if force {
 		args = append(args, "-force")
 	}
 	return append(args, sourceRef)
+}
+
+func imageGCArgs(olderThan string, apply bool) []string {
+	args := []string{"image", "gc"}
+	if apply {
+		args = append(args, "-yes")
+	} else {
+		args = append(args, "-dry-run")
+	}
+	if olderThan != "" {
+		args = append(args, "-older-than", olderThan)
+	}
+	return args
+}
+
+func normalizeDurationString(value, name string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return "", fmt.Errorf("%s invalid: %w", name, err)
+	}
+	if duration <= 0 {
+		return "", fmt.Errorf("%s must be positive", name)
+	}
+	return value, nil
 }
 
 func labelsMatch(have, want map[string]string) bool {

@@ -224,12 +224,19 @@ func (w *FleetWorker) HandleAssignment(ctx context.Context, assignment fleetcont
 	if _, err := w.ReportStatus(ctx, report); err != nil {
 		return err
 	}
-	if report.Status == "complete" && strings.TrimSpace(assignment.ImageRef) != "" {
+	if report.Status == "complete" && assignmentRefreshesImageRefs(assignment) {
 		if err := w.Heartbeat(ctx); err != nil {
 			w.warn("fleet image refresh heartbeat", err)
 		}
 	}
 	return nil
+}
+
+func assignmentRefreshesImageRefs(assignment fleetcontrol.Assignment) bool {
+	if strings.TrimSpace(assignment.ImageRef) != "" {
+		return true
+	}
+	return assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "image" && assignment.Args[1] == "gc"
 }
 
 func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment) fleetcontrol.WorkerReport {

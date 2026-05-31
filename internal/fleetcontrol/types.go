@@ -97,6 +97,22 @@ type ImagePrepareSkip struct {
 	Reason   string `json:"reason"`
 }
 
+type ImageGCRequest struct {
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	OlderThan      string            `json:"older_than,omitempty"`
+	Apply          bool              `json:"apply,omitempty"`
+}
+
+type ImageGCResult struct {
+	Assignments []Assignment  `json:"assignments,omitempty"`
+	Skipped     []ImageGCSkip `json:"skipped,omitempty"`
+}
+
+type ImageGCSkip struct {
+	WorkerID string `json:"worker_id"`
+	Reason   string `json:"reason"`
+}
+
 type PlacementPlanRequest struct {
 	Assignment
 	Limit int `json:"limit,omitempty"`

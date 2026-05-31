@@ -86,6 +86,23 @@ in `skipped`. After a successful image preparation assignment, `coved` sends an
 extra heartbeat so the controller can place later `image-affinity` work against
 fresh image refs.
 
+Image GC endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:9758/v1/images/gc \
+  -H 'content-type: application/json' \
+  -d '{"required_labels":{"zone":"desk"},"older_than":"168h","apply":true}'
+```
+
+Image GC creates one `cove image gc` assignment for each non-cordoned ready
+worker that matches `required_labels`. `apply` defaults to false, which queues
+`cove image gc -dry-run`; set `apply:true` to queue `cove image gc -yes`.
+`older_than` is an optional Go duration string passed through as `-older-than`.
+Workers that are cordoned or stale, or already have an active image-GC
+assignment, are returned in `skipped`. After a successful image-GC assignment,
+`coved` sends an extra heartbeat so the controller's image refs reflect the
+post-GC store.
+
 Placement planning endpoint:
 
 ```bash

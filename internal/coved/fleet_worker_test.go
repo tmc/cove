@@ -453,6 +453,46 @@ exit 0
 	}
 }
 
+func TestFleetWorkerRefreshesImageRefsAfterImageGC(t *testing.T) {
+	imageRoot := t.TempDir()
+	writeManifest(t, imageRoot, "base", "v1")
+	t.Setenv("COVE_TEST_IMAGE_ROOT", imageRoot)
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+rm -f "$COVE_TEST_IMAGE_ROOT/base/v1/manifest.json"
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL: server.URL,
+		ID:            "worker-1",
+		CoveBin:       coveBin,
+		ImageRoot:     imageRoot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.PushImageGC(fleetcontrol.ImageGCRequest{Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.PollAssignment(ctx); err != nil {
+		t.Fatalf("PollAssignment: %v", err)
+	}
+	record, ok := store.Get("worker-1")
+	if !ok {
+		t.Fatal("worker missing")
+	}
+	if len(record.ImageRefs) != 0 {
+		t.Fatalf("image refs = %+v, want none after gc", record.ImageRefs)
+	}
+}
+
 func TestFleetWorkerRenewsRunningCoveAssignment(t *testing.T) {
 	store := fleetcontrol.NewMemoryStore(time.Minute)
 	server := httptest.NewServer(fleetcontrol.Handler(store))
