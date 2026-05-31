@@ -1420,8 +1420,8 @@ cove build <name> --base <ref> --script <step> [flags]
 | `--push` | false | Push output tags after build |
 | `--dry-run` | false | Print the resolved build plan and cache keys only |
 | `--no-cache` | false | Re-run every step instead of restoring cached layers |
-| `--cache-from <ref>` | | Reserved for registry cache import (repeatable) |
-| `--cache-to <ref>` | | Reserved for registry cache export (repeatable) |
+| `--cache-from <ref>` | | Import an OCI build cache before cache hit evaluation (repeatable) |
+| `--cache-to <ref>` | | Export build cache entries after a successful build (repeatable) |
 | `--keep-intermediate` | false | Leave scratch VMs behind for debugging |
 | `--chunk-size <mb>` | 512 | Chunk size in MiB |
 | `--compact <mode>` | targeted | Compaction mode: fast, targeted, or thorough |
@@ -1438,9 +1438,10 @@ cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr
 directory after a successful build. Registry-base builds leave the materialized
 base and scratch VMs behind only when `--keep-intermediate` is set.
 
-Registry cache import/export is not implemented yet. Builds that pass
-`--cache-from` or `--cache-to` fail before planning instead of silently ignoring
-the remote cache ref.
+`--cache-from` imports cove build-cache artifacts from OCI refs into the local
+content store before cache hits are evaluated. `--cache-to` exports the cache
+entries and block-delta blobs produced by a successful build. Cache refs must
+include a registry and a tag or digest.
 
 Scripts may declare `# secret:` names for host environment variables that must
 exist before guest execution starts. During the step, declared values are written

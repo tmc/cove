@@ -51,7 +51,7 @@ For `cove build`, verify the production boundary before tagging:
 ./cove build --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript vm
 ./cove build --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript --tag ghcr.io/acme/vm:test --push vm
 ./cove build --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript --push vm
-./cove build vm --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript --cache-from ghcr.io/acme/cache:build --dry-run
+./cove build vm --base ghcr.io/acme/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --script missing.vzscript --cache-from acme/cache --dry-run
 ```
 
 The second command must fail before registry base materialization with a missing
@@ -77,7 +77,7 @@ cove build: --push requires at least one --tag
 The fifth command must fail before script loading with:
 
 ```text
-cove build: --cache-from registry cache is not implemented yet
+cove build: invalid --cache-from "acme/cache": reference must include registry and repository
 ```
 
 Then verify build execution with disposable bases:
@@ -86,6 +86,9 @@ Then verify build execution with disposable bases:
 - Run one tiny recipe against a private registry base and confirm the base is
   materialized into build scratch before execution.
 - Repeat the same command and confirm `cache hits: 1/1`.
+- When a private test registry is available, export that recipe with
+  `--cache-to <ref>`, remove the local build-cache keys/layers, import with
+  `--cache-from <ref> --dry-run`, and confirm the step reports `cache: hit`.
 - Run one tiny recipe with `# cache-ttl: 1s`, wait at least two seconds, repeat
   it, and confirm the expired entry is treated as a cache miss.
 - Run the same tiny recipe with `--compact targeted` and `--compact thorough`
@@ -296,14 +299,13 @@ Check that:
 - `docs/reference/cli.md` matches the command help.
 - `docs/designs/ROADMAP.md` does not mark unfinished work as shipped.
 - Public docs say non-dry-run `cove build` accepts local VM directory or
-  registry bases, build output can be handed to `cove push`, and `--push`
+  registry bases, `--cache-from` / `--cache-to` move build-cache artifacts
+  through OCI refs, build output can be handed to `cove push`, and `--push`
   requires at least one output tag.
 
-The canonical deferred-items list (must appear consistently across the CLI
-reference, changelog, and roadmap):
+The canonical deferred-items list (must appear consistently across the
+changelog and roadmap):
 
-- Registry cache import/export (`--cache-from`, `--cache-to`). Reserved and
-  rejected before planning.
 - Public curated `cove` image registry and signed agentkit image channels.
 - External secret stores (1Password, Vault, SOPS, age). v0.3 secrets are host
   environment variables mounted through tmpfs only.

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove/internal/ociimage"
 	"github.com/tmc/cove/internal/store"
 )
 
@@ -31,7 +32,11 @@ type buildOptions struct {
 	RegistryToken    string
 }
 
-var buildRegistryBaseMaterializer = materializeBuildRegistryBase
+var (
+	buildRegistryBaseMaterializer = materializeBuildRegistryBase
+	buildRegistryCacheImporter    = importBuildRegistryCaches
+	buildRegistryCacheExporter    = exportBuildRegistryCaches
+)
 
 func handleBuild(args []string) (err error) {
 	var scripts, tags, cacheFrom, cacheTo stringList
@@ -44,8 +49,8 @@ func handleBuild(args []string) (err error) {
 	fs.BoolVar(&opts.Push, "push", false, "push output tags after build")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print plan and cache keys without running VMs")
 	fs.BoolVar(&opts.NoCache, "no-cache", false, "run every step even when a cache entry exists")
-	fs.Var(&cacheFrom, "cache-from", "reserved for registry cache import (repeatable)")
-	fs.Var(&cacheTo, "cache-to", "reserved for registry cache export (repeatable)")
+	fs.Var(&cacheFrom, "cache-from", "OCI build cache ref to import (repeatable)")
+	fs.Var(&cacheTo, "cache-to", "OCI build cache ref to export after build (repeatable)")
 	fs.BoolVar(&opts.KeepIntermediate, "keep-intermediate", false, "leave scratch VMs behind for debugging")
 	fs.IntVar(&opts.ChunkSizeMB, "chunk-size", 512, "chunk size in MiB")
 	fs.StringVar(&opts.Compact, "compact", "targeted", "compaction mode: fast, targeted, thorough")
@@ -92,8 +97,14 @@ func handleBuild(args []string) (err error) {
 	}
 	ctx := context.Background()
 	blobStore := store.New(opts.StoreDir)
-	plan, err := buildDryPlanWithStore(ctx, posArgs[0], opts, http.DefaultClient, blobStore)
+	plan, err := buildPlanWithoutCache(ctx, posArgs[0], opts, http.DefaultClient)
 	if err != nil {
+		return err
+	}
+	if err := buildRegistryCacheImporter(ctx, opts, blobStore); err != nil {
+		return err
+	}
+	if err := markBuildPlanCacheHits(&plan, opts, blobStore); err != nil {
 		return err
 	}
 	printBuildWarnings(os.Stderr, plan)
@@ -137,6 +148,9 @@ func handleBuild(args []string) (err error) {
 		return err
 	}
 	if err := pushBuildResult(ctx, exec.Result(), opts); err != nil {
+		return err
+	}
+	if err := buildRegistryCacheExporter(ctx, plan, opts, blobStore); err != nil {
 		return err
 	}
 	printBuildResult(os.Stdout, plan, exec.Result(), opts)
@@ -194,17 +208,25 @@ func splitBuildArgs(args []string) (flagArgs, posArgs []string, err error) {
 }
 
 func validateBuildRegistryCache(opts buildOptions) error {
-	var flags []string
-	if len(opts.CacheFrom) > 0 {
-		flags = append(flags, "--cache-from")
+	for _, ref := range opts.CacheFrom {
+		parsed, err := ociimage.ParseReference(ref)
+		if err != nil {
+			return fmt.Errorf("cove build: invalid --cache-from %q: %w", ref, err)
+		}
+		if parsed.Tag == "" && parsed.Digest == "" {
+			return fmt.Errorf("cove build: --cache-from %q must include a tag or digest", ref)
+		}
 	}
-	if len(opts.CacheTo) > 0 {
-		flags = append(flags, "--cache-to")
+	for _, ref := range opts.CacheTo {
+		parsed, err := ociimage.ParseReference(ref)
+		if err != nil {
+			return fmt.Errorf("cove build: invalid --cache-to %q: %w", ref, err)
+		}
+		if parsed.Tag == "" && parsed.Digest == "" {
+			return fmt.Errorf("cove build: --cache-to %q must include a tag or digest", ref)
+		}
 	}
-	if len(flags) == 0 {
-		return nil
-	}
-	return fmt.Errorf("cove build: %s registry cache is not implemented yet", strings.Join(flags, " and "))
+	return nil
 }
 
 func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *http.Client) (buildPlan, error) {
@@ -212,6 +234,17 @@ func buildDryPlan(ctx context.Context, name string, opts buildOptions, client *h
 }
 
 func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, client *http.Client, blobStore store.Store) (buildPlan, error) {
+	plan, err := buildPlanWithoutCache(ctx, name, opts, client)
+	if err != nil {
+		return plan, err
+	}
+	if err := markBuildPlanCacheHits(&plan, opts, blobStore); err != nil {
+		return plan, err
+	}
+	return plan, nil
+}
+
+func buildPlanWithoutCache(ctx context.Context, name string, opts buildOptions, client *http.Client) (buildPlan, error) {
 	_, parentDigest, err := resolveBuildBaseDigestWithOptions(ctx, opts.Base, opts)
 	if err != nil {
 		return buildPlan{}, fmt.Errorf("resolve base: %w", err)
@@ -222,7 +255,6 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 	}
 	plan := buildPlan{Name: name, Base: base, ParentDigest: parentDigest, Tags: append([]string(nil), opts.Tags...)}
 	currentParent := parentDigest
-	now := time.Now().UTC()
 	for _, scriptName := range opts.Scripts {
 		step, err := loadBuildScript(scriptName)
 		if err != nil {
@@ -245,24 +277,38 @@ func buildDryPlanWithStore(ctx context.Context, name string, opts buildOptions, 
 			AgentProtocolVersion: keyInput.AgentProtocolVersion,
 			Meta:                 step.Meta,
 		}
-		if !opts.NoCache {
-			entry, err := loadBuildCacheEntry(blobStore, key)
-			if err == nil {
-				if buildCacheEntryFresh(entry, step.Meta.CacheTTL, now) {
-					if err := validateBuildCacheEntryForStep(entry, planStep); err != nil {
-						return plan, fmt.Errorf("build cache entry %s: %w", key, err)
-					}
-					planStep.CacheHit = true
-					planStep.LayerDigest = entry.LayerDigest
-				}
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return plan, err
-			}
-		}
 		plan.Steps = append(plan.Steps, planStep)
 		currentParent = key
 	}
 	return plan, nil
+}
+
+func markBuildPlanCacheHits(plan *buildPlan, opts buildOptions, blobStore store.Store) error {
+	now := time.Now().UTC()
+	for i := range plan.Steps {
+		step := &plan.Steps[i]
+		step.CacheHit = false
+		step.LayerDigest = ""
+		if opts.NoCache {
+			continue
+		}
+		entry, err := loadBuildCacheEntry(blobStore, step.Key)
+		if err == nil {
+			if !buildCacheEntryFresh(entry, step.Meta.CacheTTL, now) {
+				continue
+			}
+			if err := validateBuildCacheEntryForStep(entry, *step); err != nil {
+				return fmt.Errorf("build cache entry %s: %w", step.Key, err)
+			}
+			step.CacheHit = true
+			step.LayerDigest = entry.LayerDigest
+			continue
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 func buildCacheEntryFresh(entry buildCacheEntry, ttl time.Duration, now time.Time) bool {
@@ -399,8 +445,8 @@ Flags:
   --push                    Push output tags after build.
   --dry-run                 Print the resolved build plan and cache keys only.
   --no-cache                Re-run every step instead of restoring cached layers.
-  --cache-from <ref>        Reserved for registry cache import. Repeatable.
-  --cache-to <ref>          Reserved for registry cache export. Repeatable.
+  --cache-from <ref>        Import an OCI build cache before cache hit evaluation. Repeatable.
+  --cache-to <ref>          Export build cache entries after a successful build. Repeatable.
   --keep-intermediate       Keep scratch VMs for debugging.
   --chunk-size <mb>         Chunk size in MiB. Default 512.
   --compact <mode>          fast, targeted, or thorough. Default targeted.

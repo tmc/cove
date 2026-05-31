@@ -9,7 +9,7 @@ this repo as of 2026-05-30.
 
 | Tool | Lang | Layer | Repo |
 |------|------|-------|------|
-| **cove** | Go (purego Virtualization.framework) | VM runtime, image store, OCI bridge, lightweight fleet CLI | github.com/tmc/cove (this repo) |
+| **cove** | Go (purego Virtualization.framework) | VM runtime, image store, OCI bridge, build cache, lightweight fleet CLI | github.com/tmc/cove (this repo) |
 | **tart** | Swift | single-host VM runtime + OCI dist | github.com/cirruslabs/tart |
 | **lume** | Swift | single-host VM runtime + OCI dist | github.com/trycua/cua (libs/lume) |
 | **orchard** | Go | fleet orchestrator over tart/vetu | github.com/cirruslabs/orchard |
@@ -27,8 +27,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **Layout** | `~/.vz/vms/<name>/`; images under `~/.vz/images/<name>/<tag>/`; OCI blobs/manifests in the content store | `<home>/vms/`; OCI cache under `<cache>/OCIs/<host>/<digest>` | configurable `LumeSettings.vmLocations` | generated worker VM dirs such as `orchard-<name>-<uid>-<restartCount>` |
 | **Quota / size cap** | live APFS directory quota with runtime verb probe and Darwin fallback; persisted in `vmDir/quotas.json` (`internal/vmquota`) | no live cap; `tart set --disk-size` grows disk | none found | passes runtime disk-size knobs; no independent live cap |
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
-| **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
-| **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, and persistent registry-base materialization shared by builds and pulls | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
+| **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; OCI build-cache import/export; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
+| **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, persistent registry-base materialization shared by builds and pulls, and portable build-cache layers via `--cache-from` / `--cache-to` | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
 | **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host (`cmd/cove/fleet_run.go`) | none | none | full controller/scheduler model |
 
 ## Where cove now leads
@@ -52,7 +52,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    annotate the result with the base manifest. Pulls can resume interrupted
    downloads, reuse an already-materialized base disk where the manifest proves
    it is the right parent, and cache materialized registry bases for repeated
-   builds and child pulls.
+   builds and child pulls. Builds can also import and export cove build-cache
+   artifacts as OCI images, so cache entries and block-delta blobs can move
+   between runners through the same private registry path as images.
 
 5. **Image-aware fleet placement.** cove is not orchard's controller, but its
    fleet CLI now understands image locality: it prefers a reachable host that
@@ -74,6 +76,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 
 cove's disk story is no longer "local-only raw disk plus clonefile." It is a VM
 runtime with RAM-overlay disposability, live quota caps, optional ASIF disks,
-multi-format OCI distribution, base/delta reuse, resumable pulls, and
+multi-format OCI distribution, base/delta reuse, portable OCI build caches,
+resumable pulls, and
 image-aware fleet placement. tart and lume still lead in ecosystem maturity, and
 orchard still leads as a full fleet controller.

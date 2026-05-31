@@ -41,12 +41,30 @@ func doctorE2EBinary(t *testing.T) string {
 			doctorE2EBinaryErr = wrapBuildErr(err, out)
 			return
 		}
+		if err := signDoctorE2EBinary(path); err != nil {
+			doctorE2EBinaryErr = err
+			return
+		}
 		doctorE2EBinaryPath = path
 	})
 	if doctorE2EBinaryErr != nil {
 		t.Fatalf("build cove binary: %v", doctorE2EBinaryErr)
 	}
 	return doctorE2EBinaryPath
+}
+
+func signDoctorE2EBinary(path string) error {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return errors.New("resolve test source path")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	entitlements := filepath.Join(root, "internal", "autosign", "vz.entitlements")
+	cmd := exec.Command("codesign", "-s", "-", "-f", "--entitlements", entitlements, path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return wrapBuildErr(err, out)
+	}
+	return nil
 }
 
 func wrapBuildErr(err error, out []byte) error {

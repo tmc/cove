@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove build --cache-from` and `--cache-to` now import and export cove
+  build-cache artifacts through OCI refs, carrying cache entries, layer
+  manifests, and block-delta blobs between runners.
 - Cirrus-displacement migration surface: private landing-page draft, five-step
   quickstart, full `.cirrus.yml` migration walkthrough, operator checklist,
   migration doctor VZScript, and May 2026 benchmark report. Public install and

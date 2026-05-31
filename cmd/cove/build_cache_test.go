@@ -478,7 +478,7 @@ func TestHandleBuildReportsCacheHitWithStoreDir(t *testing.T) {
 	}
 }
 
-func TestHandleBuildRejectsRegistryCacheRefs(t *testing.T) {
+func TestHandleBuildRejectsInvalidRegistryCacheRefs(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "hello.vzscript")
 	if err := os.WriteFile(script, []byte("exec echo hello\n"), 0644); err != nil {
@@ -488,14 +488,13 @@ func TestHandleBuildRejectsRegistryCacheRefs(t *testing.T) {
 		"test-image",
 		"--base", "ghcr.io/acme/base@sha256:" + strings.Repeat("a", 64),
 		"--script", script,
-		"--cache-from", "ghcr.io/acme/build-cache:cache",
-		"--cache-to", "ghcr.io/acme/build-cache:cache",
+		"--cache-from", "acme/build-cache",
 		"--dry-run",
 	})
 	if err == nil {
-		t.Fatal("handleBuild() error = nil, want unsupported registry cache error")
+		t.Fatal("handleBuild() error = nil, want invalid registry cache error")
 	}
-	for _, want := range []string{"--cache-from", "--cache-to", "not implemented"} {
+	for _, want := range []string{"--cache-from", "reference must include registry"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("handleBuild() error = %q, want %q", err, want)
 		}
