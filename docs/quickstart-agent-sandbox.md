@@ -52,6 +52,9 @@ cove agent-sandbox run \
   --task "Take a screenshot of the desktop and describe what is visible."
 ```
 
+Add `--json` when a workflow or SDK wrapper should receive the final
+run/replay/summary handles on stdout without provider logs mixed in.
+
 See [Agent Sandbox CLI](features/agent-sandbox-cli.md) for Anthropic, Gemini,
 Vertex AI, and OpenAI provider examples.
 

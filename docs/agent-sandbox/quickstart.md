@@ -47,6 +47,10 @@ agent-sandbox replay: ~/.vz/runs/<run-id>/replay
 agent-sandbox summary: ~/.vz/runs/<run-id>/replay/summary.md
 ```
 
+For CI steps and SDK wrappers, add `--json`. Cove keeps child-run and provider
+logs on stderr and writes the final run/replay/summary handles to stdout as one
+JSON object.
+
 The replay bundle includes `summary.md`, screenshots, OCR text, control events,
 the final answer, and a metrics symlink. Use a dedicated throwaway guest session
 for agent runs; cove isolates the VM fork, but the current macOS capture/control

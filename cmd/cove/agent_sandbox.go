@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +31,7 @@ type agentSandboxRunOptions struct {
 	screenshotDir string
 	maxSteps      int
 	vmName        string
+	jsonOutput    bool
 }
 
 type agentSandboxReplaySummary struct {
@@ -48,6 +50,23 @@ type agentSandboxReplayStats struct {
 	Screenshots   int
 	ControlEvents int
 	SummaryPath   string
+}
+
+type agentSandboxRunOutput struct {
+	OK            bool   `json:"ok"`
+	Status        string `json:"status"`
+	RunID         string `json:"run_id,omitempty"`
+	VMName        string `json:"vm_name,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	Image         string `json:"image,omitempty"`
+	RunDir        string `json:"run_dir,omitempty"`
+	ReplayDir     string `json:"replay_dir,omitempty"`
+	SummaryPath   string `json:"summary_path,omitempty"`
+	MetricsPath   string `json:"metrics_path,omitempty"`
+	Screenshots   int    `json:"screenshots"`
+	ControlEvents int    `json:"control_events"`
+	FinalAnswer   string `json:"final_answer,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 type agentSandboxBenchOptions struct {
@@ -315,6 +334,7 @@ func parseAgentSandboxRunArgs(args []string) (agentSandboxRunOptions, error) {
 	fs.StringVar(&opts.screenshotDir, "screenshot-dir", "", "directory for per-step screenshots")
 	fs.IntVar(&opts.maxSteps, "max-steps", 25, "maximum provider agent steps")
 	fs.StringVar(&opts.vmName, "vm", "", "ephemeral VM name")
+	fs.BoolVar(&opts.jsonOutput, "json", false, "write machine-readable run result to stdout")
 	if err := fs.Parse(args); err != nil {
 		return opts, err
 	}
@@ -343,6 +363,15 @@ func parseAgentSandboxRunArgs(args []string) (agentSandboxRunOptions, error) {
 
 func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr error) {
 	if err := checkAgentSandboxRunProvider(opts.provider); err != nil {
+		if opts.jsonOutput {
+			_ = writeAgentSandboxRunOutput(os.Stdout, agentSandboxRunOutput{
+				OK:       false,
+				Status:   "fail",
+				Provider: opts.provider,
+				Image:    opts.image,
+				Error:    err.Error(),
+			})
+		}
 		return err
 	}
 	suffix, err := generateRunID()
@@ -365,16 +394,41 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 	}); err != nil {
 		return err
 	}
+	var replayStats agentSandboxReplayStats
+	runDir := bundle.Dir()
+	replayDir := filepath.Join(runDir, "replay")
+	metricsPath := filepath.Join(runDir, "metrics.jsonl")
+	finalAgentSandboxAnswer := ""
+	logOut := io.Writer(os.Stdout)
+	if opts.jsonOutput {
+		defer func() {
+			_ = writeAgentSandboxRunOutput(os.Stdout, agentSandboxRunOutput{
+				OK:            runErr == nil,
+				Status:        agentSandboxOutputStatus(runErr),
+				RunID:         bundle.ID(),
+				VMName:        vm,
+				Provider:      opts.provider,
+				Image:         opts.image,
+				RunDir:        runDir,
+				ReplayDir:     replayDir,
+				SummaryPath:   replayStats.SummaryPath,
+				MetricsPath:   metricsPath,
+				Screenshots:   replayStats.Screenshots,
+				ControlEvents: replayStats.ControlEvents,
+				FinalAnswer:   finalAgentSandboxAnswer,
+				Error:         agentSandboxErrorText(runErr),
+			})
+		}()
+		logOut = os.Stderr
+	}
 	defer func() {
 		finishAgentSandboxBundle(bundle, runErr)
 	}()
 
-	runDir := bundle.Dir()
 	screenshotDir := opts.screenshotDir
 	if screenshotDir == "" {
 		screenshotDir = filepath.Join(runDir, "screenshots")
 	}
-	replayDir := filepath.Join(runDir, "replay")
 	replayScreenshots := filepath.Join(replayDir, "screenshots")
 	eventsPath := filepath.Join(replayDir, "control-events.jsonl")
 	if err := prepareAgentSandboxReplay(replayDir, replayScreenshots, eventsPath); err != nil {
@@ -389,19 +443,23 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 			Task:        opts.task,
 			Status:      status,
 			ReplayDir:   replayDir,
-			MetricsPath: filepath.Join(runDir, "metrics.jsonl"),
+			MetricsPath: metricsPath,
 			FinalAnswer: answer,
 		}
 	}
-	finalAnswer := ""
 	replayWritten := false
 	defer func() {
 		if replayWritten {
 			return
 		}
-		if _, err := writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, replaySummary(agentSandboxStatus(runErr), finalAnswer)); err != nil && runErr == nil {
-			runErr = err
+		stats, err := writeReplayArtifacts(replayDir, replayScreenshots, screenshotDir, replaySummary(agentSandboxStatus(runErr), finalAgentSandboxAnswer))
+		if err != nil {
+			if runErr == nil {
+				runErr = err
+			}
+			return
 		}
+		replayStats = stats
 	}()
 	if err := bundle.EmitMetric(ctx, runmetrics.Event{
 		EventType: "agent_sandbox_start",
@@ -421,7 +479,7 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 		return fmt.Errorf("agent-sandbox: resolve cove binary: %w", err)
 	}
 	runCmd := exec.CommandContext(ctx, coveBin, "run", "-fork-from", opts.image, "-fork-name", vm, "-ephemeral", "-auto-upgrade-agent")
-	runCmd.Stdout = os.Stdout
+	runCmd.Stdout = logOut
 	runCmd.Stderr = os.Stderr
 	if err := runCmd.Start(); err != nil {
 		return fmt.Errorf("agent-sandbox: start fork: %w", err)
@@ -429,7 +487,7 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 	stopped := false
 	defer func() {
 		if !stopped {
-			stopAgentSandboxVM(context.Background(), coveBin, vm)
+			stopAgentSandboxVM(context.Background(), coveBin, vm, logOut, os.Stderr)
 		}
 		waitErr := waitAgentSandboxRun(runCmd)
 		if runErr == nil && waitErr != nil {
@@ -437,7 +495,7 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 		}
 	}()
 
-	if err := waitAgentSandboxReady(ctx, coveBin, vm); err != nil {
+	if err := waitAgentSandboxReady(ctx, coveBin, vm, logOut, os.Stderr); err != nil {
 		return err
 	}
 	var result agentsandboxResult
@@ -453,14 +511,14 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 			ScreenshotDir: screenshotDir,
 			ReplayDir:     replayDir,
 			EventsPath:    eventsPath,
-			Stdout:        os.Stdout,
+			Stdout:        logOut,
 			Stderr:        os.Stderr,
 		})
 		result = agentsandboxResult{FinalAnswer: providerResult.FinalAnswer}
 		providerErr = err
 	}
-	finalAnswer = result.FinalAnswer
-	if stopErr := stopAgentSandboxVM(ctx, coveBin, vm); stopErr != nil && providerErr == nil {
+	finalAgentSandboxAnswer = result.FinalAnswer
+	if stopErr := stopAgentSandboxVM(ctx, coveBin, vm, logOut, os.Stderr); stopErr != nil && providerErr == nil {
 		providerErr = stopErr
 	}
 	stopped = true
@@ -469,13 +527,34 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 		providerErr = writeErr
 	} else if writeErr == nil {
 		replayWritten = true
+		replayStats = stats
 	}
-	if providerErr == nil {
+	if providerErr == nil && !opts.jsonOutput {
 		fmt.Printf("agent-sandbox run: %s\n", runDir)
 		fmt.Printf("agent-sandbox replay: %s\n", replayDir)
 		fmt.Printf("agent-sandbox summary: %s\n", stats.SummaryPath)
 	}
 	return providerErr
+}
+
+func writeAgentSandboxRunOutput(w io.Writer, out agentSandboxRunOutput) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+func agentSandboxOutputStatus(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	return "fail"
+}
+
+func agentSandboxErrorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func checkAgentSandboxRunProvider(provider string) error {
@@ -526,20 +605,20 @@ func prepareAgentSandboxReplay(replayDir, replayScreenshots, eventsPath string) 
 	return nil
 }
 
-func waitAgentSandboxReady(ctx context.Context, coveBin, vm string) error {
+func waitAgentSandboxReady(ctx context.Context, coveBin, vm string, stdout, stderr io.Writer) error {
 	cmd := exec.CommandContext(ctx, coveBin, "ctl", "-vm", vm, "-wait", "120s", "agent-ping")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("agent-sandbox: wait for guest agent: %w", err)
 	}
 	return nil
 }
 
-func stopAgentSandboxVM(ctx context.Context, coveBin, vm string) error {
+func stopAgentSandboxVM(ctx context.Context, coveBin, vm string, stdout, stderr io.Writer) error {
 	cmd := exec.CommandContext(ctx, coveBin, "ctl", "-vm", vm, "stop")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("agent-sandbox: stop fork: %w", err)
 	}
@@ -822,6 +901,7 @@ Options:
   --screenshot-dir <dir>  screenshot output directory (default: ~/.vz/runs/<run-id>/screenshots)
   --max-steps N           maximum provider agent steps (default: 25)
   --vm <name>             ephemeral VM name (default: agent-sandbox-<id>)
+  --json                  print a machine-readable run result to stdout
 
 Replay:
   prints the run, replay, and summary paths on success. Writes

@@ -40,6 +40,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove agent-sandbox run` now fails before creating a VM fork when the selected
   provider's required credential environment is missing, with a direct
   `cove agent-sandbox doctor --provider <name>` hint.
+- `cove agent-sandbox run --json` now emits a machine-readable final result on
+  stdout with run, replay, summary, metrics, provider, image, status, artifact
+  counts, final answer, and error fields while moving child/provider logs to
+  stderr.
 - Agent-sandbox docs now include the standard replay export recipe through
   `cove runs export --format tar` and `--format gha-summary`.
 - `cove user` now has agent-backed guest lifecycle commands:

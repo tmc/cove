@@ -33,6 +33,33 @@ agent-sandbox replay: /Users/me/.vz/runs/<run-id>/replay
 agent-sandbox summary: /Users/me/.vz/runs/<run-id>/replay/summary.md
 ```
 
+Use `--json` when a CI step or SDK wrapper needs a stable handle instead of
+human text. In JSON mode, cove keeps child-run and provider logs on stderr and
+writes one result object to stdout:
+
+```bash
+cove agent-sandbox run \
+  --provider openai \
+  --image macos-agent:latest \
+  --task "Describe the desktop." \
+  --json
+```
+
+```json
+{
+  "ok": true,
+  "status": "ok",
+  "run_id": "20260531-120000-abcd1234",
+  "vm_name": "agent-sandbox-20260531-120000-abcd1234",
+  "provider": "openai",
+  "image": "macos-agent:latest",
+  "run_dir": "/Users/me/.vz/runs/20260531-120000-abcd1234",
+  "replay_dir": "/Users/me/.vz/runs/20260531-120000-abcd1234/replay",
+  "summary_path": "/Users/me/.vz/runs/20260531-120000-abcd1234/replay/summary.md",
+  "metrics_path": "/Users/me/.vz/runs/20260531-120000-abcd1234/metrics.jsonl"
+}
+```
+
 ## Options
 
 | Flag | Default | Description |
@@ -43,6 +70,7 @@ agent-sandbox summary: /Users/me/.vz/runs/<run-id>/replay/summary.md
 | `--screenshot-dir` | `~/.vz/runs/<run-id>/screenshots` | Provider screenshot output directory. |
 | `--max-steps` | `25` | Maximum provider tool-call rounds. |
 | `--vm` | generated | Ephemeral fork name. |
+| `--json` | `false` | Print the final run result as JSON on stdout. |
 
 ## Providers
 

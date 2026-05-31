@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -17,6 +18,7 @@ func TestParseAgentSandboxRunArgs(t *testing.T) {
 		"--provider", "anthropic",
 		"--image", "agentkit/macos:latest",
 		"--task", "describe the desktop",
+		"--json",
 	})
 	if err != nil {
 		t.Fatalf("parseAgentSandboxRunArgs: %v", err)
@@ -32,6 +34,9 @@ func TestParseAgentSandboxRunArgs(t *testing.T) {
 	}
 	if opts.maxSteps != 25 {
 		t.Fatalf("maxSteps = %d, want 25", opts.maxSteps)
+	}
+	if !opts.jsonOutput {
+		t.Fatal("jsonOutput = false, want true")
 	}
 }
 
@@ -210,6 +215,28 @@ func TestRunAgentSandboxProviderPreflightBeforeBundle(t *testing.T) {
 	}
 }
 
+func TestRunAgentSandboxPreflightJSON(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	stdout, runErr := captureStdoutResult(t, func() error {
+		return runAgentSandbox(context.Background(), agentSandboxRunOptions{
+			provider:   "openai",
+			image:      "agentkit/macos-base:latest",
+			task:       "describe desktop",
+			jsonOutput: true,
+		})
+	})
+	if runErr == nil {
+		t.Fatal("runAgentSandbox = nil, want missing credential error")
+	}
+	var got agentSandboxRunOutput
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v\n%s", err, stdout)
+	}
+	if got.OK || got.Status != "fail" || got.Provider != "openai" || got.Image != "agentkit/macos-base:latest" || !strings.Contains(got.Error, "requires OPENAI_API_KEY") {
+		t.Fatalf("json output = %+v", got)
+	}
+}
+
 func TestParseAgentSandboxBenchArgs(t *testing.T) {
 	opts, err := parseAgentSandboxBenchArgs([]string{
 		"--provider", "gemini",
@@ -269,10 +296,39 @@ func TestAgentSandboxUsageListsProviderEnvVars(t *testing.T) {
 	var b strings.Builder
 	printAgentSandboxUsage(&b)
 	out := b.String()
-	for _, want := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "COVE_VERTEX_PROJECT", "agent-sandbox bench", "system temp directory"} {
+	for _, want := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "COVE_VERTEX_PROJECT", "agent-sandbox bench", "--json", "system temp directory"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestWriteAgentSandboxRunOutput(t *testing.T) {
+	var b strings.Builder
+	err := writeAgentSandboxRunOutput(&b, agentSandboxRunOutput{
+		OK:            true,
+		Status:        "ok",
+		RunID:         "run-1",
+		VMName:        "agent-sandbox-run-1",
+		Provider:      "openai",
+		Image:         "agentkit/macos-base:latest",
+		RunDir:        "/tmp/runs/run-1",
+		ReplayDir:     "/tmp/runs/run-1/replay",
+		SummaryPath:   "/tmp/runs/run-1/replay/summary.md",
+		MetricsPath:   "/tmp/runs/run-1/metrics.jsonl",
+		Screenshots:   2,
+		ControlEvents: 3,
+		FinalAnswer:   "done",
+	})
+	if err != nil {
+		t.Fatalf("writeAgentSandboxRunOutput: %v", err)
+	}
+	var got agentSandboxRunOutput
+	if err := json.Unmarshal([]byte(b.String()), &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v\n%s", err, b.String())
+	}
+	if !got.OK || got.Status != "ok" || got.RunID != "run-1" || got.Screenshots != 2 || got.ControlEvents != 3 || got.Error != "" {
+		t.Fatalf("json output = %+v", got)
 	}
 }
 
