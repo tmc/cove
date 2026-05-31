@@ -458,6 +458,62 @@ func TestStoreSandboxMeteringRecordsRunningIntervals(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.ExecSandbox("job-1", SandboxExecRequest{
+		Command: []string{"/bin/echo", "ok"},
+		Env:     map[string]string{"B": "2", "A": "1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Done {
+		t.Fatalf("exec result Done = true, want false")
+	}
+	if result.Assignment.WorkerID != "worker-1" || result.Assignment.SandboxID != "job-1" || result.Assignment.SandboxRole != sandboxRoleExec {
+		t.Fatalf("exec assignment = %+v, want same-worker sandbox exec", result.Assignment)
+	}
+	wantArgs := []string{"shell", "--env", "A=1", "--env", "B=2", "cove-sandbox-job-1", "--", "/bin/echo", "ok"}
+	if got := strings.Join(result.Assignment.Args, " "); got != strings.Join(wantArgs, " ") {
+		t.Fatalf("exec args = %q, want %q", got, strings.Join(wantArgs, " "))
+	}
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased.ID != result.Assignment.ID {
+		t.Fatalf("leased exec assignment = %+v, want %s", leased, result.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: result.Assignment.ID, Status: "complete", ExitCode: 0, Stdout: "ok\n"}); err != nil {
+		t.Fatal(err)
+	}
+	finished, ok := store.GetAssignment(result.Assignment.ID)
+	if !ok {
+		t.Fatal("exec assignment missing")
+	}
+	done := sandboxExecResult("job-1", "cove-sandbox-job-1", finished)
+	if !done.Done || done.ExitCode != 0 || done.Stdout != "ok\n" {
+		t.Fatalf("finished exec = %+v, want done ok", done)
+	}
+}
+
 func TestStoreSandboxLeaseAcquireRenewRelease(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -2456,6 +2512,38 @@ func TestHandlerSandboxMetering(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/metering", "token-b"); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox metering status = %d, want 404", code)
+	}
+}
+
+func TestHandlerSandboxExec(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSONAuth(t, server.URL+"/v1/sandboxes", "token-a", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	now = now.Add(time.Second)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
+
+	var execResult SandboxExecResult
+	postJSONAuth(t, server.URL+"/v1/sandboxes/job-1/exec?timeout=0", "token-a", SandboxExecRequest{
+		Command: []string{"/bin/echo", "ok"},
+		Env:     map[string]string{"A": "1"},
+	}, &execResult)
+	if execResult.Done || execResult.Assignment.SandboxRole != sandboxRoleExec || execResult.Assignment.WorkerID != "worker-1" {
+		t.Fatalf("exec result = %+v, want pending same-worker exec", execResult)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/exec?timeout=0", "token-b", SandboxExecRequest{Command: []string{"true"}}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox exec status = %d, want 404", code)
 	}
 }
 

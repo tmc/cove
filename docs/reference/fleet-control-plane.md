@@ -261,6 +261,9 @@ curl -X DELETE 'http://127.0.0.1:9758/v1/sandboxes/job-1/lease?holder=runner-42'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/start
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/restart
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/wait?timeout=30s'
+curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/exec?timeout=30s' \
+  -H 'content-type: application/json' \
+  -d '{"command":["/usr/bin/sw_vers"],"env":{"CI":"1"}}'
 curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/metering'
 curl 'http://127.0.0.1:9758/v1/metering/sandboxes?sandbox_id=job-1'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop
@@ -302,6 +305,12 @@ sandbox handle becomes `stopped`.
 `DELETE /v1/sandboxes/{id}` uses the same stop/cancel path and records a delete
 audit event.
 
+`POST /v1/sandboxes/{id}/exec` queues a same-worker `cove shell <vm> -- ...`
+assignment for a `ready` sandbox and returns the worker report when it finishes.
+The body requires `command`; `env` is optional. `timeout` can be supplied in the
+query string or JSON body. `timeout=0` returns the queued assignment without
+polling, which lets clients watch `/v1/assignments/{assignment_id}` themselves.
+
 `GET /v1/sandboxes/{id}/metering` and `GET /v1/metering/sandboxes` return
 append-only records for metered sandbox run intervals. The controller records
 time spent in `running` and `ready`, derives VM, CPU, and memory-byte
@@ -310,8 +319,10 @@ stopped, draining, or restarting time. Namespace-scoped service accounts only
 see records in their namespace.
 
 This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
-create/list/get/delete/start/restart/stop/wait, leases, and metering are
-present, while SDK provider switching remains follow-up work.
+create/list/get/delete/start/restart/stop/wait/exec, leases, and metering are
+present. The OpenAI Agents Python adapter can switch `SandboxRunConfig` between
+local VM control and this cloud/control-plane path; remaining SDK follow-up is
+Go SDK parity and hosted GUI event proxying.
 
 Assignment endpoints:
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from .client import CoveClient, CoveError
+from .client import CoveClient, CoveError, CoveFleetClient
 
 try:  # pragma: no cover - covered when openai-agents is installed.
     from agents.sandbox.manifest import Manifest
@@ -60,12 +60,18 @@ if _AGENTS_AVAILABLE:
 
     class CoveSandboxClientOptions(BaseSandboxClientOptions):
         type: Literal["cove"] = "cove"
+        provider: Literal["local", "cloud"] = "local"
         vm: str | None = None
         parent: str | None = None
         name: str | None = None
+        image_ref: str | None = None
+        sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
         socket_path: str | None = None
+        fleet_url: str | None = None
+        api_key: str | None = None
+        namespace: str | None = None
         workspace_root: str | None = None
         start: bool = True
         gui: bool = False
@@ -78,11 +84,17 @@ if _AGENTS_AVAILABLE:
             self,
             vm: str | None = None,
             *,
+            provider: Literal["local", "cloud"] = "local",
             parent: str | None = None,
             name: str | None = None,
+            image_ref: str | None = None,
+            sandbox_id: str | None = None,
             cove: str = "cove",
             token: str | None = None,
             socket_path: str | None = None,
+            fleet_url: str | None = None,
+            api_key: str | None = None,
+            namespace: str | None = None,
             workspace_root: str | None = None,
             start: bool = True,
             gui: bool = False,
@@ -94,12 +106,18 @@ if _AGENTS_AVAILABLE:
         ) -> None:
             super().__init__(
                 type=type,
+                provider=provider,
                 vm=vm,
                 parent=parent,
                 name=name,
+                image_ref=image_ref,
+                sandbox_id=sandbox_id,
                 cove=cove,
                 token=token,
                 socket_path=socket_path,
+                fleet_url=fleet_url,
+                api_key=api_key,
+                namespace=namespace,
                 workspace_root=workspace_root,
                 start=start,
                 gui=gui,
@@ -113,12 +131,18 @@ else:
 
     @dataclass(frozen=True)
     class CoveSandboxClientOptions(BaseSandboxClientOptions):  # type: ignore[no-redef]
+        provider: str = "local"
         vm: str | None = None
         parent: str | None = None
         name: str | None = None
+        image_ref: str | None = None
+        sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
         socket_path: str | None = None
+        fleet_url: str | None = None
+        api_key: str | None = None
+        namespace: str | None = None
         workspace_root: str | None = None
         start: bool = True
         gui: bool = False
@@ -137,10 +161,15 @@ if _AGENTS_AVAILABLE:
 
     class CoveSandboxSessionState(SandboxSessionState):
         type: Literal["cove"] = "cove"
+        provider: Literal["local", "cloud"] = "local"
         vm: str
+        sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
         socket_path: str | None = None
+        fleet_url: str | None = None
+        api_key: str | None = None
+        namespace: str | None = None
         workspace_root: str
         stop_on_close: bool = True
         delete_on_close: bool = False
@@ -152,9 +181,14 @@ else:
     class CoveSandboxSessionState(SandboxSessionState):  # type: ignore[no-redef]
         vm: str
         workspace_root: str
+        provider: str = "local"
+        sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
         socket_path: str | None = None
+        fleet_url: str | None = None
+        api_key: str | None = None
+        namespace: str | None = None
         stop_on_close: bool = True
         delete_on_close: bool = False
         owned: bool = False
@@ -192,12 +226,21 @@ class CoveSandboxSession(BaseSandboxSession):
         extra_run_args: tuple[str, ...] = (),
     ) -> None:
         self.state = state
-        self._client = CoveClient(
-            vm=state.vm,
-            socket_path=state.socket_path,
-            cove=state.cove,
-            token=state.token,
-        )
+        if state.provider == "cloud":
+            self._client = CoveFleetClient(
+                sandbox_id=state.sandbox_id or state.vm,
+                fleet_url=state.fleet_url,
+                api_key=state.api_key,
+                namespace=state.namespace,
+                vm=state.vm,
+            )
+        else:
+            self._client = CoveClient(
+                vm=state.vm,
+                socket_path=state.socket_path,
+                cove=state.cove,
+                token=state.token,
+            )
         self._start = start
         self._gui = gui
         self._wait_ready_timeout = wait_ready_timeout
@@ -375,17 +418,35 @@ class CoveSandboxClient(BaseSandboxClient):
     ) -> Any:
         opts = options or CoveSandboxClientOptions()
         session_id = uuid.uuid4()
-        vm, owned = await self._resolve_vm(opts, session_id=session_id)
+        provider = _normalize_provider(opts.provider)
+        if provider == "cloud":
+            fleet, owned = await self._resolve_fleet(opts, session_id=session_id)
+            vm = fleet.vm or fleet.sandbox_id
+            sandbox_id = fleet.sandbox_id
+            fleet_url = fleet.fleet_url
+            api_key = fleet.api_key
+            namespace = fleet.namespace
+        else:
+            vm, owned = await self._resolve_vm(opts, session_id=session_id)
+            sandbox_id = None
+            fleet_url = opts.fleet_url
+            api_key = opts.api_key
+            namespace = opts.namespace
         workspace_root = opts.workspace_root or f"{_DEFAULT_WORKSPACE_PREFIX}{session_id.hex[:12]}"
         manifest = _manifest_with_root(manifest, workspace_root)
         state = CoveSandboxSessionState(
             session_id=session_id,
             snapshot=resolve_snapshot(snapshot, str(session_id)),
             manifest=manifest,
+            provider=provider,
             vm=vm,
+            sandbox_id=sandbox_id,
             cove=opts.cove,
             token=opts.token,
             socket_path=opts.socket_path,
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
             workspace_root=workspace_root,
             stop_on_close=opts.stop_on_close,
             delete_on_close=opts.delete_on_close,
@@ -434,6 +495,38 @@ class CoveSandboxClient(BaseSandboxClient):
             return opts.vm, False
         raise CoveError("CoveSandboxClientOptions requires vm or parent")
 
+    async def _resolve_fleet(
+        self,
+        opts: CoveSandboxClientOptions,
+        *,
+        session_id: uuid.UUID,
+    ) -> tuple[CoveFleetClient, bool]:
+        sandbox_id = opts.sandbox_id or opts.name or opts.vm
+        image_ref = opts.image_ref or opts.parent
+        if image_ref:
+            client = await asyncio.to_thread(
+                CoveFleetClient.create_sandbox,
+                fleet_url=opts.fleet_url,
+                image_ref=image_ref,
+                sandbox_id=sandbox_id or f"sandbox-{session_id.hex[:8]}",
+                api_key=opts.api_key,
+                namespace=opts.namespace,
+                timeout=opts.wait_ready_timeout,
+            )
+            return client, True
+        if sandbox_id:
+            return (
+                CoveFleetClient(
+                    sandbox_id=sandbox_id,
+                    fleet_url=opts.fleet_url,
+                    api_key=opts.api_key,
+                    namespace=opts.namespace,
+                    timeout=opts.wait_ready_timeout,
+                ),
+                False,
+            )
+        raise CoveError("cloud CoveSandboxClientOptions requires image_ref, parent, sandbox_id, name, or vm")
+
 
 def sandbox_run_config(
     *,
@@ -453,6 +546,13 @@ def sandbox_run_config(
             options=CoveSandboxClientOptions(vm=vm, parent=parent, name=name, **kwargs),
         )
     )
+
+
+def _normalize_provider(provider: str) -> Literal["local", "cloud"]:
+    provider = str(provider or "local").strip()
+    if provider not in {"local", "cloud"}:
+        raise CoveError("cove sandbox provider must be local or cloud")
+    return provider  # type: ignore[return-value]
 
 
 def _manifest_with_root(manifest: Any | None, root: str) -> Any:

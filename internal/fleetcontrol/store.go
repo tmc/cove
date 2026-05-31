@@ -50,6 +50,7 @@ type serviceAccountRecord struct {
 const (
 	sandboxRoleRun  = "run"
 	sandboxRoleStop = "stop"
+	sandboxRoleExec = "exec"
 )
 
 func OpenStore(path string, ttl time.Duration) (*Store, error) {
@@ -868,6 +869,72 @@ func (s *Store) ListSandboxMetering(namespace, sandboxID string) SandboxMetering
 		Records: records,
 		Summary: sandboxMeteringSummary(namespace, sandboxID, records),
 	}
+}
+
+func (s *Store) ExecSandbox(id string, req SandboxExecRequest) (SandboxExecResult, error) {
+	return s.ExecSandboxActor("controller", id, req)
+}
+
+func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (SandboxExecResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxExecResult{}, fmt.Errorf("sandbox id required")
+	}
+	command := cloneStrings(req.Command)
+	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
+		return SandboxExecResult{}, fmt.Errorf("sandbox exec command required")
+	}
+	env, err := normalizeEnv(req.Env)
+	if err != nil {
+		return SandboxExecResult{}, err
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	sandbox, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxExecResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	if sandbox.Status != "ready" {
+		return SandboxExecResult{}, fmt.Errorf("sandbox %q is %s", id, sandbox.Status)
+	}
+	if err := s.requireSandboxWorkerReadyLocked(now, sandbox.WorkerID); err != nil {
+		return SandboxExecResult{}, err
+	}
+	vmName := SandboxAssignmentVMName(sandbox)
+	assignment := Assignment{
+		ID:          s.nextAssignmentIDLocked(now),
+		Namespace:   sandbox.Namespace,
+		WorkerID:    sandbox.WorkerID,
+		SandboxID:   id,
+		SandboxRole: sandboxRoleExec,
+		Verb:        "cove",
+		Args:        sandboxExecArgs(vmName, command, env),
+		Status:      "pending",
+		Created:     now,
+		Updated:     now,
+	}
+	s.assignments[assignment.ID] = assignment
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    sandbox.Namespace,
+		Action:       "sandbox.exec",
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     sandbox.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields: map[string]string{
+			"vm_name": vmName,
+			"argc":    strconv.Itoa(len(command)),
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SandboxExecResult{}, err
+	}
+	return sandboxExecResult(id, vmName, assignment), nil
 }
 
 func (s *Store) LeaseSandbox(id string, req SandboxLeaseRequest) (SandboxLeaseResult, error) {
@@ -2853,6 +2920,10 @@ func warmPoolClaimArgs(vmName string, command []string, env map[string]string) [
 	return append(args, cloneStrings(command)...)
 }
 
+func sandboxExecArgs(vmName string, command []string, env map[string]string) []string {
+	return warmPoolClaimArgs(vmName, command, env)
+}
+
 func warmPoolStopArgs(vmName string) []string {
 	return []string{"ctl", "-vm", vmName, "stop"}
 }
@@ -3188,6 +3259,23 @@ func sandboxMeteringSummary(namespace, sandboxID string, records []SandboxMeteri
 		summary.MemoryByteMillis = saturatingAddUint64(summary.MemoryByteMillis, record.MemoryByteMillis)
 	}
 	return summary
+}
+
+func sandboxExecResult(id, vmName string, assignment Assignment) SandboxExecResult {
+	result := SandboxExecResult{
+		Namespace:  assignment.Namespace,
+		ID:         strings.TrimSpace(id),
+		VMName:     strings.TrimSpace(vmName),
+		Done:       !activeAssignmentStatus(assignment.Status),
+		Assignment: cloneAssignment(assignment),
+	}
+	if assignment.LastReport != nil {
+		result.ExitCode = assignment.LastReport.ExitCode
+		result.Stdout = assignment.LastReport.Stdout
+		result.Stderr = assignment.LastReport.Stderr
+		result.Error = assignment.LastReport.Error
+	}
+	return result
 }
 
 func sandboxMeteredStatus(status string) bool {

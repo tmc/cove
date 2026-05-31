@@ -7,6 +7,9 @@ import shlex
 import socket
 import subprocess
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -256,3 +259,230 @@ class CoveClient:
         if not chunks:
             raise CoveError("control socket returned no response")
         return b"".join(chunks).split(b"\n", 1)[0].decode()
+
+
+class CoveFleetClient:
+    def __init__(
+        self,
+        *,
+        sandbox_id: str,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        vm: str | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        sandbox_id = sandbox_id.strip()
+        if not sandbox_id:
+            raise ValueError("sandbox_id is required")
+        fleet_url = (fleet_url or os.environ.get("COVE_FLEET_URL") or "").strip()
+        if not fleet_url:
+            raise ValueError("fleet_url is required")
+        self.sandbox_id = sandbox_id
+        self.fleet_url = fleet_url.rstrip("/")
+        self.api_key = api_key if api_key is not None else _fleet_api_key_from_env()
+        self.namespace = namespace.strip() if namespace else ""
+        self.vm = vm
+        self.timeout = timeout
+
+    @classmethod
+    def create_sandbox(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        image_ref: str,
+        sandbox_id: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        vm_name: str | None = None,
+        timeout: float = 30.0,
+    ) -> "CoveFleetClient":
+        image_ref = image_ref.strip()
+        if not image_ref:
+            raise ValueError("image_ref is required")
+        body: dict[str, object] = {"image_ref": image_ref}
+        if sandbox_id:
+            body["id"] = sandbox_id
+        if namespace:
+            body["namespace"] = namespace
+        if vm_name:
+            body["vm_name"] = vm_name
+        seed = cls(
+            sandbox_id=sandbox_id or "pending",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        data = seed._request("POST", "/v1/sandboxes", body, timeout=timeout)
+        created_id = str(data.get("id") or sandbox_id or "").strip()
+        if not created_id:
+            raise CoveError("fleet sandbox create returned no id")
+        return cls(
+            sandbox_id=created_id,
+            fleet_url=seed.fleet_url,
+            api_key=seed.api_key,
+            namespace=str(data.get("namespace") or namespace or ""),
+            vm=str(data.get("vm_name") or vm_name or ""),
+            timeout=timeout,
+        )
+
+    def start(self, *, gui: bool = False, extra_args: Sequence[str] = ()) -> None:
+        del gui, extra_args
+        self._request("POST", self._sandbox_path("start"), {}, timeout=self.timeout)
+
+    def stop(self, *, force: bool = False) -> None:
+        del force
+        self._request("POST", self._sandbox_path("stop"), {}, timeout=self.timeout)
+
+    def wait_ready(self, timeout: float = 120.0) -> None:
+        deadline = time.monotonic() + timeout
+        last_status = ""
+        while True:
+            data = self._request("GET", self._sandbox_path(), timeout=min(max(timeout, 0.1), self.timeout))
+            last_status = str(data.get("status") or "")
+            self.vm = str(data.get("vm_name") or self.vm or "")
+            if last_status == "ready":
+                return
+            if last_status in {"canceled", "complete", "failed", "stopped"}:
+                raise CoveError(f"sandbox {self.sandbox_id} is {last_status}")
+            if time.monotonic() >= deadline:
+                raise CoveError(f"timed out waiting for sandbox {self.sandbox_id} to become ready: {last_status}")
+            time.sleep(1)
+
+    def exec(
+        self,
+        command: str | Sequence[str],
+        *,
+        env: Mapping[str, str] | None = None,
+        cwd: str = "",
+        timeout: float | None = None,
+    ) -> ExecResult:
+        args = ["/bin/zsh", "-lc", command] if isinstance(command, str) else list(command)
+        if cwd:
+            quoted = " ".join(shlex.quote(part) for part in args)
+            args = ["/bin/zsh", "-lc", f"cd {shlex.quote(cwd)} && exec {quoted}"]
+        wait = max(self.timeout, 600) if timeout is None else timeout
+        data = self._request(
+            "POST",
+            self._sandbox_path("exec"),
+            {
+                "command": args,
+                "env": dict(env or {}),
+                "timeout": _format_seconds(wait),
+            },
+            timeout=wait + min(wait, 30),
+        )
+        if not data.get("done"):
+            raise CoveError(f"sandbox exec timed out after {_format_seconds(wait)}")
+        return ExecResult(
+            exit_code=int(data.get("exit_code", 0)),
+            stdout=str(data.get("stdout", "")),
+            stderr=str(data.get("stderr", "")),
+        )
+
+    def read_file(self, path: str) -> bytes:
+        result = self.exec(["/bin/sh", "-c", "/usr/bin/base64 < " + shlex.quote(path)])
+        result.check_returncode()
+        return base64.b64decode(result.stdout)
+
+    def write_file(self, path: str, data: bytes | str, *, mode: int = 0o644) -> None:
+        raw = data.encode() if isinstance(data, str) else data
+        payload = base64.b64encode(raw).decode("ascii")
+        script = (
+            f"/usr/bin/base64 -d > {shlex.quote(path)} <<'COVE_EOF'\n"
+            f"{payload}\n"
+            "COVE_EOF\n"
+            f"chmod {mode:o} {shlex.quote(path)}\n"
+        )
+        self.exec(["/bin/sh", "-c", script]).check_returncode()
+
+    def screenshot(self, *, scale: float = 1.0, fmt: str = "png", quality: int = 90) -> bytes:
+        del scale, fmt, quality
+        raise CoveError("screenshots are not available through the fleet sandbox provider")
+
+    def key(self, key_code: int, *, down: bool | None = None, modifiers: int = 0) -> None:
+        del key_code, down, modifiers
+        raise CoveError("keyboard events are not available through the fleet sandbox provider")
+
+    def text(self, text: str) -> None:
+        del text
+        raise CoveError("text events are not available through the fleet sandbox provider")
+
+    def mouse(self, x: int, y: int, action: str, *, button: int = 0) -> None:
+        del x, y, action, button
+        raise CoveError("mouse events are not available through the fleet sandbox provider")
+
+    def control(self, request: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
+        if request.get("type") != "agent-ping":
+            raise CoveError("control socket requests are not available through the fleet sandbox provider")
+        data = self._request("GET", self._sandbox_path(), timeout=timeout or self.timeout)
+        if data.get("status") != "ready":
+            raise CoveError(f"sandbox {self.sandbox_id} is {data.get('status')}")
+        return {"success": True}
+
+    def delete_vm(self, vm: str | None = None) -> None:
+        del vm
+        self._request("DELETE", self._sandbox_path(), timeout=max(self.timeout, 120))
+
+    def _sandbox_path(self, action: str = "") -> str:
+        path = "/v1/sandboxes/" + urllib.parse.quote(self.sandbox_id, safe="")
+        if action:
+            path += "/" + urllib.parse.quote(action, safe="")
+        return path
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, object] | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        url = self.fleet_url + path
+        data = None
+        headers: dict[str, str] = {}
+        if payload is not None:
+            data = json.dumps(payload, separators=(",", ":")).encode()
+            headers["content-type"] = "application/json"
+        if self.api_key:
+            headers["authorization"] = "Bearer " + self.api_key
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+                body = resp.read()
+        except urllib.error.HTTPError as exc:
+            body = exc.read()
+            msg = _json_error(body) or exc.reason or str(exc)
+            raise CoveError(f"{method} {path}: {msg}") from exc
+        except urllib.error.URLError as exc:
+            raise CoveError(f"{method} {path}: {exc.reason}") from exc
+        if not body:
+            return {}
+        try:
+            loaded = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise CoveError(f"{method} {path}: invalid json response") from exc
+        if not isinstance(loaded, dict):
+            raise CoveError(f"{method} {path}: expected json object")
+        return loaded
+
+
+def _fleet_api_key_from_env() -> str:
+    return (os.environ.get("COVE_API_KEY") or os.environ.get("COVE_FLEET_TOKEN") or "").strip()
+
+
+def _format_seconds(seconds: float) -> str:
+    if seconds == int(seconds):
+        return f"{int(seconds)}s"
+    return f"{seconds}s"
+
+
+def _json_error(data: bytes) -> str:
+    try:
+        loaded = json.loads(data)
+    except json.JSONDecodeError:
+        return data.decode(errors="replace").strip()
+    if isinstance(loaded, dict):
+        return str(loaded.get("error") or "").strip()
+    return ""

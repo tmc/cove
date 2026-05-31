@@ -407,6 +407,24 @@ type SandboxMeteringResult struct {
 	Summary SandboxMeteringSummary  `json:"summary"`
 }
 
+type SandboxExecRequest struct {
+	Command []string          `json:"command"`
+	Env     map[string]string `json:"env,omitempty"`
+	Timeout string            `json:"timeout,omitempty"`
+}
+
+type SandboxExecResult struct {
+	Namespace  string     `json:"namespace,omitempty"`
+	ID         string     `json:"id"`
+	VMName     string     `json:"vm_name"`
+	Done       bool       `json:"done"`
+	Assignment Assignment `json:"assignment"`
+	ExitCode   int        `json:"exit_code,omitempty"`
+	Stdout     string     `json:"stdout,omitempty"`
+	Stderr     string     `json:"stderr,omitempty"`
+	Error      string     `json:"error,omitempty"`
+}
+
 type SandboxDeleteResult struct {
 	Namespace  string      `json:"namespace,omitempty"`
 	ID         string      `json:"id"`

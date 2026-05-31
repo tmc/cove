@@ -2,11 +2,12 @@
 
 `cove-sandbox` is the OpenAI Agents SDK adapter for cove. It lets an Agents SDK
 `ComputerTool` drive a local Apple-Silicon macOS VM through cove's control
-socket, and it also exposes a `SandboxRunConfig` helper for `SandboxAgent`
+socket, and it exposes a `SandboxRunConfig` helper for `SandboxAgent`
 workflows.
 
-This is a local adapter. It does not send VM state, screenshots, files, or
-commands to a hosted sandbox provider.
+The `ComputerTool` path is local-only. `SandboxRunConfig` can run locally through
+the VM control socket or remotely through a private `cove-fleetd` control plane
+with `provider="cloud"`.
 
 ## Install
 
@@ -137,6 +138,30 @@ result = await Runner.run(agent, "Run sw_vers in the sandbox.", run_config=run_c
 `parent` forks a fresh VM with `cove fork`. Use `vm=` instead when you want to
 attach to an existing VM. The backend maps SDK `exec`, `read`, `write`, and
 workspace persistence calls onto the cove control socket and guest agent.
+
+For a hosted/control-plane sandbox, switch only the provider options:
+
+```python
+run_config = RunConfig(
+    sandbox=SandboxRunConfig(
+        client=CoveSandboxClient(),
+        options=CoveSandboxClientOptions(
+            provider="cloud",
+            fleet_url="https://fleet.internal.example",
+            api_key="cove_...",
+            image_ref="macos-base:latest",
+            name="eval-001",
+            delete_on_close=True,
+        ),
+    )
+)
+```
+
+The cloud provider creates `POST /v1/sandboxes` handles, polls until the sandbox
+is `ready`, maps SDK `exec`/workspace file calls onto
+`POST /v1/sandboxes/{id}/exec`, and deletes the sandbox handle on close when
+`delete_on_close=True`. Set `COVE_FLEET_URL` and `COVE_API_KEY` (or
+`COVE_FLEET_TOKEN`) instead of passing `fleet_url` and `api_key` directly.
 
 For a copy-paste helper that returns the SDK `RunConfig` wrapper directly,
 import `sandbox_run_config` from `cove_sandbox`.

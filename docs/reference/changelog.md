@@ -119,10 +119,17 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `POST/DELETE /v1/sandboxes/{id}/lease` now acquires, renews, and releases
   exclusive sandbox handle leases with TTLs, conflict responses, namespace
   scoping, and audit events.
+- `POST /v1/sandboxes/{id}/exec` now queues same-worker `cove shell` work for a
+  ready hosted sandbox and can wait for the worker report, giving SDKs a real
+  create-exec-delete control-plane loop.
 - `cove-fleetd` now persists per-sandbox metering records for active
   `running` and `ready` intervals, with scoped `GET
   /v1/metering/sandboxes` and `GET /v1/sandboxes/{id}/metering` summaries for
   VM, CPU, and memory-byte milliseconds.
+- The OpenAI Agents Python adapter now supports
+  `CoveSandboxClientOptions(provider="cloud", ...)`, creating sandboxes through
+  `cove-fleetd`, polling readiness, executing commands, and deleting handles
+  through the REST control plane.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

@@ -4,7 +4,7 @@ from .backend import (
     CoveSandboxSession,
     CoveSandboxSessionState,
 )
-from .client import CoveClient, CoveError, ExecResult
+from .client import CoveClient, CoveError, CoveFleetClient, ExecResult
 from .computer import CoveComputer
 from .sandbox import CoveSandbox
 from .sandbox_run_config import sandbox_run_config
@@ -13,6 +13,7 @@ __all__ = [
     "CoveClient",
     "CoveComputer",
     "CoveError",
+    "CoveFleetClient",
     "CoveSandbox",
     "CoveSandboxClient",
     "CoveSandboxClientOptions",

@@ -6,11 +6,12 @@ import os
 import socket
 import threading
 import uuid
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
 
-from cove_sandbox import CoveClient, CoveComputer, CoveError
+from cove_sandbox import CoveClient, CoveComputer, CoveError, CoveFleetClient
 from cove_sandbox import backend as backend_module
 from cove_sandbox.backend import CoveSandboxClientOptions, CoveSandboxSessionState
 from cove_sandbox.computer import _resolve_keys
@@ -94,14 +95,18 @@ def test_write_file_sends_base64(tmp_path: Path) -> None:
 
 def test_backend_options_round_trip_without_agents() -> None:
     opts = CoveSandboxClientOptions(
+        provider="cloud",
         parent="base",
         name="eval-001",
+        fleet_url="http://127.0.0.1:9758",
         workspace_root="/tmp/work",
         gui=True,
         extra_run_args=("-disposable",),
     )
     assert opts.model_dump()["type"] == "cove"
+    assert opts.model_dump()["provider"] == "cloud"
     assert opts.model_dump()["parent"] == "base"
+    assert opts.model_dump()["fleet_url"] == "http://127.0.0.1:9758"
     assert opts.model_dump()["extra_run_args"] == ("-disposable",)
 
 
@@ -114,6 +119,41 @@ def test_backend_state_round_trip_without_agents() -> None:
     assert restored.vm == "eval-001"
     assert restored.workspace_root == "/tmp/work"
     assert restored.owned is True
+
+
+def test_fleet_client_create_wait_exec_and_delete() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        client = CoveFleetClient.create_sandbox(
+            fleet_url=server.url,
+            api_key="secret",
+            image_ref="base:v1",
+            sandbox_id="job-1",
+        )
+        client.wait_ready(timeout=1)
+        result = client.exec(["/bin/echo", "ok"], env={"A": "1"}, timeout=2.5)
+        assert result.exit_code == 7
+        assert result.stdout == "out"
+        assert result.stderr == "err"
+        client.delete_vm()
+
+        paths = [req["path"] for req in server.requests]
+        assert paths == [
+            "/v1/sandboxes",
+            "/v1/sandboxes/job-1",
+            "/v1/sandboxes/job-1/exec",
+            "/v1/sandboxes/job-1",
+        ]
+        create = server.requests[0]
+        assert create["authorization"] == "Bearer secret"
+        assert create["body"]["image_ref"] == "base:v1"
+        exec_req = server.requests[2]
+        assert exec_req["body"]["command"] == ["/bin/echo", "ok"]
+        assert exec_req["body"]["env"] == {"A": "1"}
+        assert exec_req["body"]["timeout"] == "2.5s"
+    finally:
+        server.stop()
 
 
 def _state_kwargs() -> dict[str, object]:
@@ -174,3 +214,89 @@ class _UnixServer:
                 self.path.unlink()
             except FileNotFoundError:
                 pass
+
+
+class _FleetHTTPServer:
+    def __init__(self) -> None:
+        self.requests: list[dict[str, object]] = []
+        self.httpd = HTTPServer(("127.0.0.1", 0), self._handler())
+        host, port = self.httpd.server_address
+        self.url = f"http://{host}:{port}"
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.httpd.shutdown()
+        self.thread.join(timeout=1)
+        self.httpd.server_close()
+
+    def _handler(self) -> type[BaseHTTPRequestHandler]:
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                owner.requests.append(
+                    {
+                        "method": "GET",
+                        "path": self.path,
+                        "authorization": self.headers.get("authorization", ""),
+                        "body": {},
+                    }
+                )
+                if self.path == "/v1/sandboxes/job-1":
+                    self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "ready"})
+                    return
+                self.send_error(404)
+
+            def do_POST(self) -> None:  # noqa: N802
+                body = self._read_json()
+                owner.requests.append(
+                    {
+                        "method": "POST",
+                        "path": self.path,
+                        "authorization": self.headers.get("authorization", ""),
+                        "body": body,
+                    }
+                )
+                if self.path == "/v1/sandboxes":
+                    self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "pending"})
+                    return
+                if self.path == "/v1/sandboxes/job-1/exec":
+                    self._write({"done": True, "exit_code": 7, "stdout": "out", "stderr": "err"})
+                    return
+                self.send_error(404)
+
+            def do_DELETE(self) -> None:  # noqa: N802
+                owner.requests.append(
+                    {
+                        "method": "DELETE",
+                        "path": self.path,
+                        "authorization": self.headers.get("authorization", ""),
+                        "body": {},
+                    }
+                )
+                if self.path == "/v1/sandboxes/job-1":
+                    self._write({"id": "job-1", "status": "draining"})
+                    return
+                self.send_error(404)
+
+            def log_message(self, format: str, *args: object) -> None:
+                del format, args
+
+            def _read_json(self) -> dict[str, object]:
+                n = int(self.headers.get("content-length") or "0")
+                if n == 0:
+                    return {}
+                return json.loads(self.rfile.read(n))
+
+            def _write(self, payload: dict[str, object]) -> None:
+                data = json.dumps(payload).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        return Handler
