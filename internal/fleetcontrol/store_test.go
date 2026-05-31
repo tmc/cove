@@ -712,6 +712,98 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 	}
 }
 
+func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "stale", Labels: map[string]string{"zone": "desk"}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CordonWorker("drain", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "rack", Labels: map[string]string{"zone": "rack"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.PushLifecyclePolicy(LifecyclePolicyRequest{
+		VMName:         "ci-runner",
+		RequiredLabels: map[string]string{"zone": "desk"},
+		IdleTimeout:    "30m",
+		MaxAge:         "24h",
+		RunBudget:      100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VMName != "ci-runner" || len(result.Assignments) != 1 {
+		t.Fatalf("result = %+v, want one ci-runner assignment", result)
+	}
+	assignment := result.Assignments[0]
+	wantArgs := []string{"policy", "ci-runner", "set", "idle=30m", "max-age=24h", "run-budget=100"}
+	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
+		t.Fatalf("assignment = %+v, want worker desk args %+v", assignment, wantArgs)
+	}
+	if skipLifecyclePolicyReason(result.Skipped, "drain") != "cordoned" || skipLifecyclePolicyReason(result.Skipped, "stale") != "stale" || skipLifecyclePolicyReason(result.Skipped, "rack") != "" {
+		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+
+	result, err = store.PushLifecyclePolicy(LifecyclePolicyRequest{
+		VMName:         "ci-runner",
+		RequiredLabels: map[string]string{"zone": "desk"},
+		Clear:          true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 0 || skipLifecyclePolicyReason(result.Skipped, "desk") != "active" {
+		t.Fatalf("second lifecycle policy = %+v, want active skip for desk", result)
+	}
+}
+
+func TestLifecyclePolicyArgs(t *testing.T) {
+	_, args, err := lifecyclePolicyArgs(LifecyclePolicyRequest{VMName: "vm", Clear: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"policy", "vm", "clear"}; !equalStrings(args, want) {
+		t.Fatalf("clear args = %+v, want %+v", args, want)
+	}
+
+	tests := []struct {
+		name string
+		req  LifecyclePolicyRequest
+		want string
+	}{
+		{name: "missing vm", req: LifecyclePolicyRequest{IdleTimeout: "1m"}, want: "vm_name required"},
+		{name: "missing threshold", req: LifecyclePolicyRequest{VMName: "vm"}, want: "threshold required"},
+		{name: "clear with threshold", req: LifecyclePolicyRequest{VMName: "vm", Clear: true, MaxAge: "1h"}, want: "clear cannot include thresholds"},
+		{name: "bad idle", req: LifecyclePolicyRequest{VMName: "vm", IdleTimeout: "bad"}, want: "idle_timeout invalid"},
+		{name: "negative budget", req: LifecyclePolicyRequest{VMName: "vm", RunBudget: -1}, want: "run_budget must be non-negative"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := lifecyclePolicyArgs(tt.req)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("lifecyclePolicyArgs(%+v) err = %v, want %q", tt.req, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -1158,6 +1250,29 @@ func TestHandlerImageGC(t *testing.T) {
 	}
 }
 
+func TestHandlerLifecyclePolicy(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	var result LifecyclePolicyResult
+	postJSON(t, server.URL+"/v1/policies/lifecycle", LifecyclePolicyRequest{
+		VMName:         "ci-runner",
+		RequiredLabels: map[string]string{"zone": "desk"},
+		IdleTimeout:    "15m",
+		RunBudget:      5,
+	}, &result)
+	if result.VMName != "ci-runner" || len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
+		t.Fatalf("lifecycle policy result = %+v", result)
+	}
+	wantArgs := []string{"policy", "ci-runner", "set", "idle=15m", "run-budget=5"}
+	if !equalStrings(result.Assignments[0].Args, wantArgs) {
+		t.Fatalf("args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
+	}
+}
+
 func TestHandlerWarmPools(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -1308,6 +1423,15 @@ func skipReason(skipped []ImagePrepareSkip, workerID string) string {
 }
 
 func skipImageGCReason(skipped []ImageGCSkip, workerID string) string {
+	for _, skip := range skipped {
+		if skip.WorkerID == workerID {
+			return skip.Reason
+		}
+	}
+	return ""
+}
+
+func skipLifecyclePolicyReason(skipped []LifecyclePolicySkip, workerID string) string {
 	for _, skip := range skipped {
 		if skip.WorkerID == workerID {
 			return skip.Reason

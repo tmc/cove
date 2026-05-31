@@ -393,6 +393,11 @@ func captureCommandOSFile(target **os.File, fn func()) string {
 		return ""
 	}
 	defer r.Close()
+	outc := make(chan []byte, 1)
+	go func() {
+		data, _ := io.ReadAll(r)
+		outc <- data
+	}()
 
 	old := *target
 	*target = w
@@ -402,12 +407,9 @@ func captureCommandOSFile(target **os.File, fn func()) string {
 
 	fn()
 	_ = w.Close()
+	*target = old
 
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
+	return strings.TrimSpace(string(<-outc))
 }
 
 func cloneMap(in map[string]any) map[string]any {

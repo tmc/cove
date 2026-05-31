@@ -50,6 +50,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `cove image gc` assignments on matching ready workers, with dry-run by default,
   optional `apply:true`, active-operation skip reporting, and post-GC image-ref
   refreshes from `coved`.
+- `cove-fleetd` now exposes `POST /v1/policies/lifecycle` to push
+  `cove policy <vm> set ...` or `clear` assignments to matching ready workers,
+  and `cove policy <vm> set` now accepts multiple `field=value` updates.
 - `cove-fleetd` assignment placement now supports `policy:"bin-pack"` plus
   `resources.vms` hints and worker `max_vms` slot caps, packing work onto the
   densest ready worker that still fits.

@@ -113,6 +113,26 @@ type ImageGCSkip struct {
 	Reason   string `json:"reason"`
 }
 
+type LifecyclePolicyRequest struct {
+	VMName         string            `json:"vm_name"`
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	Clear          bool              `json:"clear,omitempty"`
+	IdleTimeout    string            `json:"idle_timeout,omitempty"`
+	MaxAge         string            `json:"max_age,omitempty"`
+	RunBudget      int               `json:"run_budget,omitempty"`
+}
+
+type LifecyclePolicyResult struct {
+	VMName      string                `json:"vm_name"`
+	Assignments []Assignment          `json:"assignments,omitempty"`
+	Skipped     []LifecyclePolicySkip `json:"skipped,omitempty"`
+}
+
+type LifecyclePolicySkip struct {
+	WorkerID string `json:"worker_id"`
+	Reason   string `json:"reason"`
+}
+
 type PlacementPlanRequest struct {
 	Assignment
 	Limit int `json:"limit,omitempty"`

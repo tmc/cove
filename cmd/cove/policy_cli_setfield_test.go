@@ -69,6 +69,33 @@ func TestSetPolicyFieldHappyPaths(t *testing.T) {
 	}
 }
 
+func TestSetPolicyFieldMultipleFields(t *testing.T) {
+	withTempHome(t)
+	vmDir := vmconfig.Path("vm")
+	if err := setPolicyField(new(bytes.Buffer), "vm", vmDir, []string{"idle=10m", "max-age=2h", "run-budget=6"}); err != nil {
+		t.Fatalf("setPolicyField named: %v", err)
+	}
+	got, err := vmpolicy.Load(vmDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := vmpolicy.Policy{IdleTimeout: 10 * time.Minute, MaxAge: 2 * time.Hour, RunBudget: 6}
+	if got != want {
+		t.Fatalf("named policy = %#v, want %#v", got, want)
+	}
+	if err := setPolicyField(new(bytes.Buffer), "vm", vmDir, []string{"idle", "15m", "run-budget", "7"}); err != nil {
+		t.Fatalf("setPolicyField pairs: %v", err)
+	}
+	got, err = vmpolicy.Load(vmDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want = vmpolicy.Policy{IdleTimeout: 15 * time.Minute, MaxAge: 2 * time.Hour, RunBudget: 7}
+	if got != want {
+		t.Fatalf("paired policy = %#v, want %#v", got, want)
+	}
+}
+
 func TestSetPolicyFieldPreservesExistingFields(t *testing.T) {
 	withTempHome(t)
 	vmDir := vmconfig.Path("vm")

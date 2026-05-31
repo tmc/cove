@@ -1048,8 +1048,8 @@ cove policy <vm> show
 cove policy <vm> clear
 cove policy <vm> idle <duration>
 cove policy <vm> max-age <duration>
-cove policy <vm> run-budget <duration>
-cove policy <vm> set idle=<duration> max-age=<duration> run-budget=<duration>
+cove policy <vm> run-budget <count>
+cove policy <vm> set idle=<duration> max-age=<duration> run-budget=<count>
 cove quota <vm> show
 cove quota <vm> cpu <n>
 cove quota <vm> memory <gb>
@@ -1060,14 +1060,14 @@ cove quota <vm> disk <gb>
 |---------|-------------|
 | `policy <vm> show` / `vm policy show` | Show idle, max-age, and run-budget policy for a VM. |
 | `policy <vm> clear` | Clear the VM lifecycle policy. |
-| `policy <vm> idle|max-age|run-budget <duration>` | Set one lifecycle policy threshold. |
+| `policy <vm> idle|max-age <duration>` / `run-budget <count>` | Set one lifecycle policy threshold. |
 | `policy <vm> set ...` | Set multiple lifecycle policy fields at once. |
 | `quota <vm> show` | Show durable CPU, memory, and disk quota intent. |
 | `quota <vm> cpu|memory|disk <n>` | Update quota intent; disk quota applies the APFS quota wrapper. |
 
 ```bash
 cove policy ci-runner idle 30m
-cove policy ci-runner run-budget 8h
+cove policy ci-runner run-budget 100
 cove quota ci-runner cpu 4
 cove quota ci-runner memory 8
 ```

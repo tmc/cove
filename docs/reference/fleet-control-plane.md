@@ -10,8 +10,8 @@ controller-side placement can choose a ready worker by least-loaded or
 image-affinity or bin-pack policy, and the controller reconciles stale workers
 and expired assignment leases. Operators can cordon workers for maintenance
 without dropping their heartbeat history, and can ask the controller to prepare
-a base image across the fleet before job placement or keep a fork warm-pool
-quota active.
+a base image across the fleet before job placement, push VM lifecycle policy
+updates, or keep a fork warm-pool quota active.
 
 Start a private controller:
 
@@ -102,6 +102,25 @@ Workers that are cordoned or stale, or already have an active image-GC
 assignment, are returned in `skipped`. After a successful image-GC assignment,
 `coved` sends an extra heartbeat so the controller's image refs reflect the
 post-GC store.
+
+Lifecycle policy endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
+  -H 'content-type: application/json' \
+  -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"idle_timeout":"30m","max_age":"24h","run_budget":100}'
+curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
+  -H 'content-type: application/json' \
+  -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"clear":true}'
+```
+
+Lifecycle policy push creates one `cove policy <vm> set ...` assignment for
+each non-cordoned ready worker that matches `required_labels`. The controller
+passes `idle_timeout` and `max_age` as Go duration strings and `run_budget` as
+the guest exec count. `clear:true` queues `cove policy <vm> clear` and cannot be
+combined with thresholds. Workers that are cordoned or stale, or already have
+an active lifecycle-policy assignment for the same VM, are returned in
+`skipped`.
 
 Placement planning endpoint:
 
@@ -207,7 +226,7 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 ```
 
 This surface is intentionally private and local-first. It now has basic
-controller reconciliation, worker cordon lifecycle, and fleet image
-preparation, retained placement plans, and a first fork warm-pool quota
-reconciler with agent-ready slot claim and guest `Exec` handoff through the
-`cove shell` path plus claimed-slot stop cleanup.
+controller reconciliation, worker cordon lifecycle, fleet image preparation,
+fleet image-GC push, lifecycle-policy push, retained placement plans, and a
+first fork warm-pool quota reconciler with agent-ready slot claim and guest
+`Exec` handoff through the `cove shell` path plus claimed-slot stop cleanup.

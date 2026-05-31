@@ -48,6 +48,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/images/prepare", func(w http.ResponseWriter, r *http.Request) {
 		handleImagePrepare(w, r, store)
 	})
+	mux.HandleFunc("/v1/policies/lifecycle", func(w http.ResponseWriter, r *http.Request) {
+		handleLifecyclePolicy(w, r, store)
+	})
 	mux.HandleFunc("/v1/placements/plan", func(w http.ResponseWriter, r *http.Request) {
 		handlePlacementPlan(w, r, store)
 	})
@@ -205,6 +208,24 @@ func handleImageGC(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	result, err := store.PushImageGC(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func handleLifecyclePolicy(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LifecyclePolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode lifecycle policy: %v", err))
+		return
+	}
+	result, err := store.PushLifecyclePolicy(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

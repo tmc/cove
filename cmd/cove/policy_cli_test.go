@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tmc/cove/internal/vmconfig"
+	"github.com/tmc/cove/internal/vmpolicy"
 )
 
 func TestHandlePolicyCommandSetShowClear(t *testing.T) {
@@ -38,6 +40,23 @@ func TestHandlePolicyCommandSetShowClear(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.Path(vmName), "policy.json")); !os.IsNotExist(err) {
 		t.Fatalf("policy.json exists after clear: %v", err)
+	}
+}
+
+func TestHandlePolicyCommandSetMultipleFields(t *testing.T) {
+	withTempHome(t)
+	vmName := "policy-vm"
+	env := commandEnv{Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer)}
+	if err := handlePolicyCommand(env, []string{vmName, "set", "idle=30m", "max-age=24h", "run-budget=100"}); err != nil {
+		t.Fatalf("set multiple: %v", err)
+	}
+	got, err := vmpolicy.Load(vmconfig.Path(vmName))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := vmpolicy.Policy{IdleTimeout: 30 * time.Minute, MaxAge: 24 * time.Hour, RunBudget: 100}
+	if got != want {
+		t.Fatalf("policy = %#v, want %#v", got, want)
 	}
 }
 

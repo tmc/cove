@@ -321,23 +321,10 @@ func TestVZScriptListRejectsInvalidOS(t *testing.T) {
 }
 
 func TestVZScriptListLinuxRecipes(t *testing.T) {
-	var buf bytes.Buffer
-	old := os.Stdout
-	r, w, err := os.Pipe()
+	out, err := captureVZScriptStdout(t, func() error { return vzscriptListWithGuestOS("linux") })
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = w
-	err = vzscriptListWithGuestOS("linux")
-	w.Close()
-	os.Stdout = old
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := buf.ReadFrom(r); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
 	for _, want := range []string{"agentkit-linux-base", "agentkit-linux-claude-ready", "cirrus-migrate-doctor", "kvm-test", "nixos-base"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("linux list missing %q:\n%s", want, out)
@@ -570,23 +557,10 @@ func TestVZScriptListFilterMatrix(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, w, err := os.Pipe()
+			out, err := captureVZScriptStdout(t, func() error { return vzscriptListWithGuestOS(tt.filter) })
 			if err != nil {
 				t.Fatal(err)
 			}
-			old := os.Stdout
-			os.Stdout = w
-			runErr := vzscriptListWithGuestOS(tt.filter)
-			w.Close()
-			os.Stdout = old
-			if runErr != nil {
-				t.Fatal(runErr)
-			}
-			var buf bytes.Buffer
-			if _, err := buf.ReadFrom(r); err != nil {
-				t.Fatal(err)
-			}
-			out := buf.String()
 			for _, want := range tt.mustHave {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing recipe %q in output:\n%s", want, out)

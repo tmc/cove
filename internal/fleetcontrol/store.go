@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -551,6 +552,55 @@ func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
 	}
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match image gc")
+	}
+	if len(result.Assignments) > 0 || reconciled.changed() {
+		if err := s.persistLocked(); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) PushLifecyclePolicy(req LifecyclePolicyRequest) (LifecyclePolicyResult, error) {
+	vmName, args, err := lifecyclePolicyArgs(req)
+	if err != nil {
+		return LifecyclePolicyResult{}, err
+	}
+	labels := cloneLabels(req.RequiredLabels)
+	now := s.now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reconciled := s.reconcileLocked(now)
+	result := LifecyclePolicyResult{VMName: vmName}
+	for _, host := range s.sortedHostsLocked() {
+		host = s.statusLocked(host)
+		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if host.Status != "ready" {
+			result.Skipped = append(result.Skipped, LifecyclePolicySkip{WorkerID: host.ID, Reason: host.Status})
+			continue
+		}
+		if s.activeLifecyclePolicyLocked(host.ID, vmName) {
+			result.Skipped = append(result.Skipped, LifecyclePolicySkip{WorkerID: host.ID, Reason: "active"})
+			continue
+		}
+		assignment := Assignment{
+			ID:             s.nextAssignmentIDLocked(now),
+			WorkerID:       host.ID,
+			RequiredLabels: labels,
+			Verb:           "cove",
+			Args:           cloneStrings(args),
+			Status:         "pending",
+			Created:        now,
+			Updated:        now,
+		}
+		s.assignments[assignment.ID] = assignment
+		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
+	}
+	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
+		return result, fmt.Errorf("no workers match lifecycle policy")
 	}
 	if len(result.Assignments) > 0 || reconciled.changed() {
 		if err := s.persistLocked(); err != nil {
@@ -1313,6 +1363,18 @@ func (s *Store) activeImageGCLocked(workerID string) bool {
 	return false
 }
 
+func (s *Store) activeLifecyclePolicyLocked(workerID, vmName string) bool {
+	for _, assignment := range s.assignments {
+		if assignment.WorkerID != workerID {
+			continue
+		}
+		if assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "policy" && assignment.Args[1] == vmName && activeAssignmentStatus(assignment.Status) {
+			return true
+		}
+	}
+	return false
+}
+
 func imagePrepareArgs(sourceRef, imageRef string, force bool) []string {
 	args := []string{"image", "pull", "-tag", imageRef}
 	if force {
@@ -1332,6 +1394,49 @@ func imageGCArgs(olderThan string, apply bool) []string {
 		args = append(args, "-older-than", olderThan)
 	}
 	return args
+}
+
+func lifecyclePolicyArgs(req LifecyclePolicyRequest) (string, []string, error) {
+	vmName := strings.TrimSpace(req.VMName)
+	if vmName == "" {
+		return "", nil, fmt.Errorf("lifecycle policy vm_name required")
+	}
+	idleTimeout, err := normalizeDurationString(req.IdleTimeout, "lifecycle policy idle_timeout")
+	if err != nil {
+		return "", nil, err
+	}
+	maxAge, err := normalizeDurationString(req.MaxAge, "lifecycle policy max_age")
+	if err != nil {
+		return "", nil, err
+	}
+	if req.RunBudget < 0 {
+		return "", nil, fmt.Errorf("lifecycle policy run_budget must be non-negative")
+	}
+	fields := lifecyclePolicyFields(idleTimeout, maxAge, req.RunBudget)
+	if req.Clear {
+		if len(fields) > 0 {
+			return "", nil, fmt.Errorf("lifecycle policy clear cannot include thresholds")
+		}
+		return vmName, []string{"policy", vmName, "clear"}, nil
+	}
+	if len(fields) == 0 {
+		return "", nil, fmt.Errorf("lifecycle policy threshold required")
+	}
+	return vmName, append([]string{"policy", vmName, "set"}, fields...), nil
+}
+
+func lifecyclePolicyFields(idleTimeout, maxAge string, runBudget int) []string {
+	var fields []string
+	if idleTimeout != "" {
+		fields = append(fields, "idle="+idleTimeout)
+	}
+	if maxAge != "" {
+		fields = append(fields, "max-age="+maxAge)
+	}
+	if runBudget > 0 {
+		fields = append(fields, "run-budget="+strconv.Itoa(runBudget))
+	}
+	return fields
 }
 
 func normalizeDurationString(value, name string) (string, error) {

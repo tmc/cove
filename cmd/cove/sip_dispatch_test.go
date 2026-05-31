@@ -16,11 +16,20 @@ func captureSIPStdout(t *testing.T, fn func()) string {
 	}
 	old := os.Stdout
 	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = old })
+	outc := make(chan string, 1)
+	go func() {
+		out, _ := io.ReadAll(r)
+		outc <- string(out)
+	}()
+	defer func() {
+		os.Stdout = old
+		_ = r.Close()
+	}()
 	fn()
-	w.Close()
-	out, _ := io.ReadAll(r)
-	return string(out)
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
+	return <-outc
 }
 
 func TestHandleSIPCommandUsage(t *testing.T) {
