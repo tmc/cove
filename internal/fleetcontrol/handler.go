@@ -45,6 +45,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/images/prepare", func(w http.ResponseWriter, r *http.Request) {
 		handleImagePrepare(w, r, store)
 	})
+	mux.HandleFunc("/v1/placements/plan", func(w http.ResponseWriter, r *http.Request) {
+		handlePlacementPlan(w, r, store)
+	})
 	mux.HandleFunc("/v1/workers/register", func(w http.ResponseWriter, r *http.Request) {
 		handleWorkerHeartbeat(w, r, store, VerbRegister)
 	})
@@ -180,6 +183,24 @@ func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func handlePlacementPlan(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req PlacementPlanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode placement plan: %v", err))
+		return
+	}
+	plan, err := store.PlanAssignment(req.Assignment, req.Limit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, plan)
 }
 
 func handleWorkerCordon(w http.ResponseWriter, r *http.Request, store *Store, id string) {

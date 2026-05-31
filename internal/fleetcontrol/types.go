@@ -19,6 +19,8 @@ const DefaultWorkerTTL = 30 * time.Second
 
 const DefaultAssignmentTTL = 30 * time.Second
 
+const DefaultPlacementPlanLimit = 5
+
 type Capacity struct {
 	CPUs        int    `json:"cpus,omitempty"`
 	MemoryBytes uint64 `json:"memory_bytes,omitempty"`
@@ -92,6 +94,30 @@ type ImagePrepareResult struct {
 type ImagePrepareSkip struct {
 	WorkerID string `json:"worker_id"`
 	Reason   string `json:"reason"`
+}
+
+type PlacementPlanRequest struct {
+	Assignment
+	Limit int `json:"limit,omitempty"`
+}
+
+type PlacementPlan struct {
+	Policy          string               `json:"policy"`
+	ImageRef        string               `json:"image_ref,omitempty"`
+	RequiredLabels  map[string]string    `json:"required_labels,omitempty"`
+	AntiAffinityKey string               `json:"anti_affinity_key,omitempty"`
+	Resources       Capacity             `json:"resources,omitempty"`
+	Candidates      []PlacementCandidate `json:"candidates,omitempty"`
+}
+
+type PlacementCandidate struct {
+	Rank             int    `json:"rank"`
+	WorkerID         string `json:"worker_id"`
+	Load             int    `json:"load"`
+	MaxVMs           int    `json:"max_vms,omitempty"`
+	RequestedVMs     int    `json:"requested_vms"`
+	AntiAffinityLoad int    `json:"anti_affinity_load,omitempty"`
+	HasImage         bool   `json:"has_image,omitempty"`
 }
 
 type Assignment struct {

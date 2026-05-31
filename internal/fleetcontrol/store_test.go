@@ -399,6 +399,60 @@ func TestStoreSchedulesBinPackWithAntiAffinity(t *testing.T) {
 	}
 }
 
+func TestStorePlansPlacementCandidates(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "dense", Labels: map[string]string{"zone": "desk"}, ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 3, MaxVMs: 5}},
+		{ID: "open", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 2, MaxVMs: 5}},
+		{ID: "full", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 5, MaxVMs: 5}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}, Capacity: Capacity{VMs: 0, MaxVMs: 5}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CreateAssignment(Assignment{
+		ID:              "existing",
+		WorkerID:        "dense",
+		AntiAffinityKey: "job-a",
+		Resources:       Capacity{VMs: 1},
+		Verb:            "cove",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	request := Assignment{
+		Policy:          PolicyBinPack,
+		ImageRef:        "macos-runner:latest",
+		RequiredLabels:  map[string]string{"zone": "desk"},
+		AntiAffinityKey: "job-a",
+		Resources:       Capacity{VMs: 1},
+		Verb:            "cove",
+	}
+	plan, err := store.PlanAssignment(request, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Policy != PolicyBinPack || plan.ImageRef != "macos-runner:latest" || plan.Resources.VMs != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if len(plan.Candidates) != 2 {
+		t.Fatalf("candidates = %+v, want 2", plan.Candidates)
+	}
+	if got := plan.Candidates[0]; got.Rank != 1 || got.WorkerID != "open" || got.Load != 2 || got.RequestedVMs != 1 || got.AntiAffinityLoad != 0 {
+		t.Fatalf("first candidate = %+v, want open", got)
+	}
+	if got := plan.Candidates[1]; got.Rank != 2 || got.WorkerID != "dense" || got.Load != 4 || got.RequestedVMs != 1 || got.AntiAffinityLoad != 1 || !got.HasImage {
+		t.Fatalf("second candidate = %+v, want dense", got)
+	}
+	created, err := store.CreateAssignment(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.WorkerID != plan.Candidates[0].WorkerID {
+		t.Fatalf("CreateAssignment WorkerID = %q, want plan first candidate %q", created.WorkerID, plan.Candidates[0].WorkerID)
+	}
+}
+
 func TestStoreImageAffinityPrefersWarmBeforeAntiAffinity(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	for _, hb := range []WorkerHeartbeat{
@@ -723,6 +777,33 @@ func TestHandlerSchedulesAssignment(t *testing.T) {
 	}, &created)
 	if created.WorkerID != "warm" {
 		t.Fatalf("created assignment = %+v, want warm worker", created)
+	}
+}
+
+func TestHandlerPlansPlacement(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "warm", ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 1, MaxVMs: 3}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "cold", Capacity: Capacity{VMs: 0, MaxVMs: 3}}, &record)
+
+	var plan PlacementPlan
+	postJSON(t, server.URL+"/v1/placements/plan", PlacementPlanRequest{
+		Assignment: Assignment{
+			Policy:    PolicyImageAffinity,
+			ImageRef:  "macos-runner:latest",
+			Resources: Capacity{VMs: 2},
+			Verb:      "cove",
+		},
+		Limit: 1,
+	}, &plan)
+	if plan.Policy != PolicyImageAffinity || len(plan.Candidates) != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if got := plan.Candidates[0]; got.WorkerID != "warm" || got.Rank != 1 || got.RequestedVMs != 2 || !got.HasImage {
+		t.Fatalf("candidate = %+v, want warm image candidate", got)
 	}
 }
 

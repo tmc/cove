@@ -272,19 +272,9 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 		return Assignment{}, fmt.Errorf("assignment verb required")
 	}
 	workerID := strings.TrimSpace(a.WorkerID)
-	policy := strings.TrimSpace(a.Policy)
-	imageRef := strings.TrimSpace(a.ImageRef)
-	antiAffinityKey := strings.TrimSpace(a.AntiAffinityKey)
-	requiredLabels := cloneLabels(a.RequiredLabels)
-	resources, err := sanitizeResources(a.Resources)
+	policy, imageRef, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
 	if err != nil {
 		return Assignment{}, err
-	}
-	if policy == "" && imageRef != "" {
-		policy = PolicyImageAffinity
-	}
-	if policy != "" && policy != PolicyLeastLoaded && policy != PolicyImageAffinity && policy != PolicyBinPack {
-		return Assignment{}, fmt.Errorf("unknown assignment policy %q", policy)
 	}
 	now := s.now().UTC()
 
@@ -329,6 +319,42 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 		return Assignment{}, err
 	}
 	return cloneAssignment(a), nil
+}
+
+func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
+	policy, imageRef, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
+	if err != nil {
+		return PlacementPlan{}, err
+	}
+	if policy == "" {
+		policy = PolicyLeastLoaded
+	}
+	if limit <= 0 {
+		limit = DefaultPlacementPlanLimit
+	}
+	now := s.now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reconciled := s.reconcileLocked(now)
+	candidates := s.placementCandidatesLocked(policy, imageRef, requiredLabels, antiAffinityKey, resources)
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	plan := PlacementPlan{
+		Policy:          policy,
+		ImageRef:        imageRef,
+		RequiredLabels:  cloneLabels(requiredLabels),
+		AntiAffinityKey: antiAffinityKey,
+		Resources:       normalizeResources(resources),
+		Candidates:      clonePlacementCandidates(candidates),
+	}
+	if reconciled.changed() {
+		if err := s.persistLocked(); err != nil {
+			return plan, err
+		}
+	}
+	return plan, nil
 }
 
 func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error) {
@@ -665,6 +691,15 @@ func cloneAssignment(in Assignment) Assignment {
 	return out
 }
 
+func clonePlacementCandidates(in []PlacementCandidate) []PlacementCandidate {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]PlacementCandidate, len(in))
+	copy(out, in)
+	return out
+}
+
 func cloneStrings(in []string) []string {
 	if len(in) == 0 {
 		return nil
@@ -683,13 +718,20 @@ func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]st
 	default:
 		return "", fmt.Errorf("unknown assignment policy %q", policy)
 	}
+	candidates := s.placementCandidatesLocked(policy, imageRef, labels, antiAffinityKey, resources)
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no ready worker matches assignment")
+	}
+	return candidates[0].WorkerID, nil
+}
+
+func (s *Store) placementCandidatesLocked(policy, imageRef string, labels map[string]string, antiAffinityKey string, resources Capacity) []PlacementCandidate {
+	if policy == "" {
+		policy = PolicyLeastLoaded
+	}
 	resources = normalizeResources(resources)
-	var best HostRecord
-	bestSet := false
-	bestLoad := 0
-	bestHasImage := false
-	bestAntiAffinityLoad := 0
-	for _, host := range s.hosts {
+	var candidates []PlacementCandidate
+	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if host.Status != "ready" {
 			continue
@@ -703,47 +745,44 @@ func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]st
 		}
 		hasImage := imageRef != "" && containsString(host.ImageRefs, imageRef)
 		antiAffinityLoad := s.antiAffinityLoadLocked(host.ID, antiAffinityKey)
-		if !bestSet {
-			best = host
-			bestSet = true
-			bestLoad = load
-			bestHasImage = hasImage
-			bestAntiAffinityLoad = antiAffinityLoad
-			continue
-		}
-		if betterHost(policy, host.ID, load, hasImage, antiAffinityLoad, best.ID, bestLoad, bestHasImage, bestAntiAffinityLoad) {
-			best = host
-			bestLoad = load
-			bestHasImage = hasImage
-			bestAntiAffinityLoad = antiAffinityLoad
-		}
+		candidates = append(candidates, PlacementCandidate{
+			WorkerID:         host.ID,
+			Load:             load,
+			MaxVMs:           host.Capacity.MaxVMs,
+			RequestedVMs:     resources.VMs,
+			AntiAffinityLoad: antiAffinityLoad,
+			HasImage:         hasImage,
+		})
 	}
-	if !bestSet {
-		return "", fmt.Errorf("no ready worker matches assignment")
+	sort.Slice(candidates, func(i, j int) bool {
+		return betterCandidate(policy, candidates[i], candidates[j])
+	})
+	for i := range candidates {
+		candidates[i].Rank = i + 1
 	}
-	return best.ID, nil
+	return candidates
 }
 
-func betterHost(policy, id string, load int, hasImage bool, antiAffinityLoad int, bestID string, bestLoad int, bestHasImage bool, bestAntiAffinityLoad int) bool {
-	if policy == PolicyImageAffinity && hasImage != bestHasImage {
-		return hasImage
+func betterCandidate(policy string, a, b PlacementCandidate) bool {
+	if policy == PolicyImageAffinity && a.HasImage != b.HasImage {
+		return a.HasImage
 	}
-	if antiAffinityLoad != bestAntiAffinityLoad {
-		return antiAffinityLoad < bestAntiAffinityLoad
+	if a.AntiAffinityLoad != b.AntiAffinityLoad {
+		return a.AntiAffinityLoad < b.AntiAffinityLoad
 	}
 	if policy == PolicyBinPack {
-		if load != bestLoad {
-			return load > bestLoad
+		if a.Load != b.Load {
+			return a.Load > b.Load
 		}
-		if hasImage != bestHasImage {
-			return hasImage
+		if a.HasImage != b.HasImage {
+			return a.HasImage
 		}
-		return id < bestID
+		return a.WorkerID < b.WorkerID
 	}
-	if load != bestLoad {
-		return load < bestLoad
+	if a.Load != b.Load {
+		return a.Load < b.Load
 	}
-	return id < bestID
+	return a.WorkerID < b.WorkerID
 }
 
 func (s *Store) antiAffinityLoadLocked(workerID, key string) int {
@@ -788,6 +827,26 @@ func sanitizeResources(in Capacity) (Capacity, error) {
 		return Capacity{}, fmt.Errorf("assignment resources must not be negative")
 	}
 	return in, nil
+}
+
+func normalizePlacementFields(a Assignment) (policy, imageRef, antiAffinityKey string, labels map[string]string, resources Capacity, err error) {
+	policy = strings.TrimSpace(a.Policy)
+	imageRef = strings.TrimSpace(a.ImageRef)
+	antiAffinityKey = strings.TrimSpace(a.AntiAffinityKey)
+	labels = cloneLabels(a.RequiredLabels)
+	resources, err = sanitizeResources(a.Resources)
+	if err != nil {
+		return "", "", "", nil, Capacity{}, err
+	}
+	if policy == "" && imageRef != "" {
+		policy = PolicyImageAffinity
+	}
+	switch policy {
+	case "", PolicyLeastLoaded, PolicyImageAffinity, PolicyBinPack:
+	default:
+		return "", "", "", nil, Capacity{}, fmt.Errorf("unknown assignment policy %q", policy)
+	}
+	return policy, imageRef, antiAffinityKey, labels, resources, nil
 }
 
 func assignmentVMs(assignment Assignment) int {

@@ -85,6 +85,19 @@ in `skipped`. After a successful image preparation assignment, `coved` sends an
 extra heartbeat so the controller can place later `image-affinity` work against
 fresh image refs.
 
+Placement planning endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:9758/v1/placements/plan \
+  -H 'content-type: application/json' \
+  -d '{"policy":"bin-pack","image_ref":"macos-runner:latest","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"limit":5}'
+```
+
+Placement planning returns the retained ranked feasible workers without storing
+an assignment. It uses the same policy, required-label, image-affinity,
+anti-affinity, and slot-cap logic as assignment creation. `limit` defaults to
+five candidates.
+
 Assignment endpoints:
 
 ```bash
@@ -129,6 +142,7 @@ count. Assignment `resources.vms` defaults to one scheduling slot when omitted.
 Set `anti_affinity_key` to spread active assignments for the same job, base, or
 replica group across workers. `image-affinity` still prefers a warm worker
 before applying the anti-affinity tie-break.
+`POST /v1/placements/plan` exposes the same ranking as a read-only top-k plan.
 
 Register a worker record manually:
 
@@ -140,4 +154,5 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 
 This surface is intentionally private and local-first. It now has basic
 controller reconciliation, worker cordon lifecycle, and fleet image
-preparation, but it does not yet provide fork warm pools.
+preparation, plus retained placement plans, but it does not yet provide fork
+warm pools.
