@@ -139,15 +139,17 @@ type OIDCKey struct {
 }
 
 type OIDCBinding struct {
-	Name      string    `json:"name"`
-	Issuer    string    `json:"issuer"`
-	Subject   string    `json:"subject"`
-	Audience  string    `json:"audience"`
-	Namespace string    `json:"namespace,omitempty"`
-	Role      string    `json:"role,omitempty"`
-	KeyIDs    []string  `json:"key_ids,omitempty"`
-	Created   time.Time `json:"created,omitempty"`
-	Updated   time.Time `json:"updated,omitempty"`
+	Name        string    `json:"name"`
+	Issuer      string    `json:"issuer"`
+	Subject     string    `json:"subject"`
+	Audience    string    `json:"audience"`
+	Namespace   string    `json:"namespace,omitempty"`
+	Role        string    `json:"role,omitempty"`
+	JWKSURL     string    `json:"jwks_url,omitempty"`
+	JWKSFetched time.Time `json:"jwks_fetched,omitempty"`
+	KeyIDs      []string  `json:"key_ids,omitempty"`
+	Created     time.Time `json:"created,omitempty"`
+	Updated     time.Time `json:"updated,omitempty"`
 }
 
 type OIDCBindingRequest struct {
@@ -157,7 +159,8 @@ type OIDCBindingRequest struct {
 	Audience  string    `json:"audience"`
 	Namespace string    `json:"namespace,omitempty"`
 	Role      string    `json:"role,omitempty"`
-	Keys      []OIDCKey `json:"keys"`
+	JWKSURL   string    `json:"jwks_url,omitempty"`
+	Keys      []OIDCKey `json:"keys,omitempty"`
 }
 
 type OIDCBindingResult struct {

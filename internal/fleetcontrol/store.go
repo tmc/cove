@@ -1,6 +1,7 @@
 package fleetcontrol
 
 import (
+	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -11,6 +12,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
+	"math/big"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -55,15 +60,17 @@ type serviceAccountRecord struct {
 }
 
 type oidcBindingRecord struct {
-	Name      string          `json:"name"`
-	Issuer    string          `json:"issuer"`
-	Subject   string          `json:"subject"`
-	Audience  string          `json:"audience"`
-	Namespace string          `json:"namespace,omitempty"`
-	Role      string          `json:"role,omitempty"`
-	Keys      []oidcKeyRecord `json:"keys,omitempty"`
-	Created   time.Time       `json:"created,omitempty"`
-	Updated   time.Time       `json:"updated,omitempty"`
+	Name        string          `json:"name"`
+	Issuer      string          `json:"issuer"`
+	Subject     string          `json:"subject"`
+	Audience    string          `json:"audience"`
+	Namespace   string          `json:"namespace,omitempty"`
+	Role        string          `json:"role,omitempty"`
+	JWKSURL     string          `json:"jwks_url,omitempty"`
+	JWKSFetched time.Time       `json:"jwks_fetched,omitempty"`
+	Keys        []oidcKeyRecord `json:"keys,omitempty"`
+	Created     time.Time       `json:"created,omitempty"`
+	Updated     time.Time       `json:"updated,omitempty"`
 }
 
 type oidcKeyRecord struct {
@@ -1950,6 +1957,7 @@ func (s *Store) UpsertOIDCBindingActor(actor string, req OIDCBindingRequest) (OI
 		Audience:  strings.TrimSpace(req.Audience),
 		Namespace: normalizeNamespace(req.Namespace),
 		Role:      strings.TrimSpace(req.Role),
+		JWKSURL:   strings.TrimSpace(req.JWKSURL),
 		Keys:      oidcRequestKeys(req.Keys),
 	}
 	var err error
@@ -1981,6 +1989,7 @@ func (s *Store) UpsertOIDCBindingActor(actor string, req OIDCBindingRequest) (OI
 			"issuer":   record.Issuer,
 			"audience": record.Audience,
 			"role":     record.Role,
+			"jwks_url": record.JWKSURL,
 		},
 	})
 	if err := s.persistLocked(); err != nil {
@@ -2452,15 +2461,17 @@ func publicServiceAccount(record serviceAccountRecord) ServiceAccount {
 
 func publicOIDCBinding(record oidcBindingRecord) OIDCBinding {
 	return OIDCBinding{
-		Name:      record.Name,
-		Issuer:    record.Issuer,
-		Subject:   record.Subject,
-		Audience:  record.Audience,
-		Namespace: record.Namespace,
-		Role:      record.Role,
-		KeyIDs:    oidcKeyIDs(record.Keys),
-		Created:   record.Created,
-		Updated:   record.Updated,
+		Name:        record.Name,
+		Issuer:      record.Issuer,
+		Subject:     record.Subject,
+		Audience:    record.Audience,
+		Namespace:   record.Namespace,
+		Role:        record.Role,
+		JWKSURL:     record.JWKSURL,
+		JWKSFetched: record.JWKSFetched,
+		KeyIDs:      oidcKeyIDs(record.Keys),
+		Created:     record.Created,
+		Updated:     record.Updated,
 	}
 }
 
@@ -3769,9 +3780,24 @@ func normalizeOIDCBindingRecord(record oidcBindingRecord) (oidcBindingRecord, er
 	}
 	record.Role = role
 	record.Namespace = normalizeNamespace(record.Namespace)
+	record.JWKSURL = strings.TrimSpace(record.JWKSURL)
+	if record.JWKSURL != "" {
+		record.JWKSURL, err = normalizeOIDCURL(record.JWKSURL, "oidc binding jwks_url")
+		if err != nil {
+			return oidcBindingRecord{}, err
+		}
+	}
 	record.Keys, err = normalizeOIDCKeys(record.Keys)
 	if err != nil {
 		return oidcBindingRecord{}, err
+	}
+	if len(record.Keys) == 0 && record.JWKSURL == "" {
+		if _, err := oidcDiscoveryURL(record.Issuer); err != nil {
+			return oidcBindingRecord{}, fmt.Errorf("oidc binding key or jwks_url required")
+		}
+	}
+	if !record.JWKSFetched.IsZero() {
+		record.JWKSFetched = record.JWKSFetched.UTC()
 	}
 	if !record.Created.IsZero() {
 		record.Created = record.Created.UTC()
@@ -3784,7 +3810,7 @@ func normalizeOIDCBindingRecord(record oidcBindingRecord) (oidcBindingRecord, er
 
 func normalizeOIDCKeys(keys []oidcKeyRecord) ([]oidcKeyRecord, error) {
 	if len(keys) == 0 {
-		return nil, fmt.Errorf("oidc binding key required")
+		return nil, nil
 	}
 	out := make([]oidcKeyRecord, 0, len(keys))
 	for _, key := range keys {
@@ -3833,6 +3859,261 @@ func oidcKeyIDs(keys []oidcKeyRecord) []string {
 	return ids
 }
 
+const (
+	oidcHTTPTimeout  = 5 * time.Second
+	oidcMaxJSONBytes = 1 << 20
+)
+
+type oidcDiscoveryDocument struct {
+	Issuer  string `json:"issuer"`
+	JWKSURI string `json:"jwks_uri"`
+}
+
+type oidcJWKSet struct {
+	Keys []oidcJWK `json:"keys"`
+}
+
+type oidcJWK struct {
+	KTY string `json:"kty"`
+	KID string `json:"kid,omitempty"`
+	Use string `json:"use,omitempty"`
+	Alg string `json:"alg,omitempty"`
+	N   string `json:"n"`
+	E   string `json:"e"`
+}
+
+func normalizeOIDCURL(rawURL, field string) (string, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", fmt.Errorf("%s required", field)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("%s invalid: %w", field, err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("%s must be an absolute http url", field)
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return "", fmt.Errorf("%s must use http or https", field)
+	}
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func oidcDiscoveryURL(issuer string) (string, error) {
+	issuer, err := normalizeOIDCURL(issuer, "oidc binding issuer")
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return "", fmt.Errorf("oidc binding issuer invalid: %w", err)
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/.well-known/openid-configuration"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func fetchOIDCBindingKeys(record oidcBindingRecord) ([]oidcKeyRecord, string, error) {
+	jwksURL := record.JWKSURL
+	if jwksURL == "" {
+		discovered, err := fetchOIDCDiscoveryJWKSURL(record.Issuer)
+		if err != nil {
+			return nil, "", err
+		}
+		jwksURL = discovered
+	}
+	keys, err := fetchOIDCJWKSKeys(jwksURL)
+	if err != nil {
+		return nil, "", err
+	}
+	return keys, jwksURL, nil
+}
+
+func fetchOIDCDiscoveryJWKSURL(issuer string) (string, error) {
+	discoveryURL, err := oidcDiscoveryURL(issuer)
+	if err != nil {
+		return "", err
+	}
+	var doc oidcDiscoveryDocument
+	if err := fetchOIDCJSON(discoveryURL, &doc); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(doc.Issuer) != strings.TrimSpace(issuer) {
+		return "", fmt.Errorf("oidc discovery issuer mismatch")
+	}
+	jwksURL, err := normalizeOIDCURL(doc.JWKSURI, "oidc discovery jwks_uri")
+	if err != nil {
+		return "", err
+	}
+	return jwksURL, nil
+}
+
+func fetchOIDCJWKSKeys(jwksURL string) ([]oidcKeyRecord, error) {
+	jwksURL, err := normalizeOIDCURL(jwksURL, "oidc binding jwks_url")
+	if err != nil {
+		return nil, err
+	}
+	var set oidcJWKSet
+	if err := fetchOIDCJSON(jwksURL, &set); err != nil {
+		return nil, err
+	}
+	keys, err := oidcJWKSetKeys(set)
+	if err != nil {
+		return nil, err
+	}
+	return normalizeOIDCKeys(keys)
+}
+
+func fetchOIDCJSON(rawURL string, out any) error {
+	ctx, cancel := context.WithTimeout(context.Background(), oidcHTTPTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return fmt.Errorf("build oidc request: %w", err)
+	}
+	req.Header.Set("accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetch oidc json: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("fetch oidc json: status %d", resp.StatusCode)
+	}
+	dec := json.NewDecoder(io.LimitReader(resp.Body, oidcMaxJSONBytes))
+	if err := dec.Decode(out); err != nil {
+		return fmt.Errorf("decode oidc json: %w", err)
+	}
+	return nil
+}
+
+func oidcJWKSetKeys(set oidcJWKSet) ([]oidcKeyRecord, error) {
+	out := make([]oidcKeyRecord, 0, len(set.Keys))
+	for _, jwk := range set.Keys {
+		key, ok, err := oidcJWKKey(jwk)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, key)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("oidc jwks has no rs256 rsa keys")
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].KID != out[j].KID {
+			return out[i].KID < out[j].KID
+		}
+		return out[i].PEM < out[j].PEM
+	})
+	return out, nil
+}
+
+func oidcJWKKey(jwk oidcJWK) (oidcKeyRecord, bool, error) {
+	if strings.TrimSpace(jwk.KTY) != "RSA" {
+		return oidcKeyRecord{}, false, nil
+	}
+	if use := strings.TrimSpace(jwk.Use); use != "" && use != "sig" {
+		return oidcKeyRecord{}, false, nil
+	}
+	if alg := strings.TrimSpace(jwk.Alg); alg != "" && alg != "RS256" {
+		return oidcKeyRecord{}, false, nil
+	}
+	n, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(jwk.N))
+	if err != nil {
+		return oidcKeyRecord{}, false, fmt.Errorf("decode oidc jwk modulus: %w", err)
+	}
+	if len(n) == 0 {
+		return oidcKeyRecord{}, false, fmt.Errorf("invalid oidc jwk modulus")
+	}
+	e, err := oidcJWKExponent(strings.TrimSpace(jwk.E))
+	if err != nil {
+		return oidcKeyRecord{}, false, err
+	}
+	pub := &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: e}
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return oidcKeyRecord{}, false, fmt.Errorf("marshal oidc jwk public key: %w", err)
+	}
+	pemData := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	return oidcKeyRecord{KID: strings.TrimSpace(jwk.KID), Alg: "RS256", PEM: string(pemData)}, true, nil
+}
+
+func oidcJWKExponent(data string) (int, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(data)
+	if err != nil {
+		return 0, fmt.Errorf("decode oidc jwk exponent: %w", err)
+	}
+	if len(raw) == 0 || len(raw) > 4 {
+		return 0, fmt.Errorf("invalid oidc jwk exponent")
+	}
+	var out int
+	for _, b := range raw {
+		out = (out << 8) + int(b)
+	}
+	if out < 3 {
+		return 0, fmt.Errorf("invalid oidc jwk exponent")
+	}
+	return out, nil
+}
+
+func (s *Store) refreshOIDCBindingKeys(name string) (oidcBindingRecord, bool) {
+	s.mu.Lock()
+	record, ok := s.oidcBindings[name]
+	if ok {
+		record = cloneOIDCBindingRecord(record)
+	}
+	s.mu.Unlock()
+	if !ok {
+		return oidcBindingRecord{}, false
+	}
+	keys, jwksURL, err := fetchOIDCBindingKeys(record)
+	if err != nil {
+		return oidcBindingRecord{}, false
+	}
+
+	now := s.now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.oidcBindings[name]
+	if !ok {
+		return oidcBindingRecord{}, false
+	}
+	if !sameOIDCRefreshBinding(current, record, jwksURL) {
+		return cloneOIDCBindingRecord(current), true
+	}
+	current.JWKSURL = jwksURL
+	current.JWKSFetched = now
+	current.Keys = keys
+	current.Updated = now
+	s.oidcBindings[name] = current
+	if err := s.persistLocked(); err != nil {
+		return oidcBindingRecord{}, false
+	}
+	return cloneOIDCBindingRecord(current), true
+}
+
+func sameOIDCRefreshBinding(current, base oidcBindingRecord, jwksURL string) bool {
+	if current.Issuer != base.Issuer || current.Subject != base.Subject || current.Audience != base.Audience {
+		return false
+	}
+	if current.Namespace != base.Namespace || current.Role != base.Role {
+		return false
+	}
+	if current.JWKSURL == base.JWKSURL {
+		return true
+	}
+	return base.JWKSURL == "" && current.JWKSURL == jwksURL
+}
+
+func oidcBindingUsesDynamicKeys(record oidcBindingRecord) bool {
+	return record.JWKSURL != "" || len(record.Keys) == 0
+}
+
 func (s *Store) authenticateOIDCBearer(token string) (authenticatedPrincipal, bool) {
 	parsed, err := parseOIDCJWT(token)
 	if err != nil {
@@ -3851,6 +4132,16 @@ func (s *Store) authenticateOIDCBearer(token string) (authenticatedPrincipal, bo
 				Actor:     "oidc:" + binding.Name,
 				Namespace: binding.Namespace,
 				Role:      binding.Role,
+			}, true
+		}
+		if parsed.header.Alg != "RS256" || !oidcBindingUsesDynamicKeys(binding) {
+			continue
+		}
+		if refreshed, ok := s.refreshOIDCBindingKeys(binding.Name); ok && oidcClaimsMatch(refreshed, parsed.claims, now) && verifyOIDCSignature(refreshed.Keys, parsed) {
+			return authenticatedPrincipal{
+				Actor:     "oidc:" + refreshed.Name,
+				Namespace: refreshed.Namespace,
+				Role:      refreshed.Role,
 			}, true
 		}
 	}

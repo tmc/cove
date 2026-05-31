@@ -16,6 +16,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   hosted sandbox create/wait/exec/control/delete flows.
 - `cove-fleetd` now supports admin-managed RS256 OIDC bearer bindings that map
   verified issuer/subject/audience claims onto namespace-scoped controller roles.
+- OIDC bindings can now fetch public keys from `jwks_url`, discover
+  `jwks_uri` from the issuer, cache fetched key IDs, and refresh the JWKS on
+  key misses for provider key rotation.
 - `cove fleet cordon` and `uncordon` now mark registered hosts as skipped for
   `fleet run` placement while keeping direct `--fleet=<name>` routing intact.
 - `cove fleet run` now records short local placement leases and counts active

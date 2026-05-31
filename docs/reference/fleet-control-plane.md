@@ -94,7 +94,7 @@ curl -X POST http://127.0.0.1:9758/v1/oidc-bindings \
     "audience":"cove-fleet",
     "namespace":"team-a",
     "role":"operator",
-    "keys":[{"kid":"kid-1","pem":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"}]
+    "jwks_url":"https://token.actions.githubusercontent.com/.well-known/jwks"
   }'
 curl http://127.0.0.1:9758/v1/oidc-bindings
 curl http://127.0.0.1:9758/v1/audit
@@ -117,17 +117,21 @@ unauthenticated local requests still record `controller`, and worker protocol
 events record `worker:<id>`.
 `/v1/oidc-bindings` adds an initial OIDC identity-binding path: admin users bind
 one issuer, subject, audience, namespace, role, and one or more RS256 public
-keys. A matching bearer JWT must verify with one of those public keys, must not
-be expired, and records audit actor `oidc:<binding-name>`. This is not dynamic
-OIDC discovery/JWKS fetch or SAML yet; operators upload the trusted public keys
-explicitly.
+keys or a `jwks_url`. If neither keys nor `jwks_url` are supplied, the
+controller discovers `jwks_uri` from `<issuer>/.well-known/openid-configuration`
+the first time a matching token arrives. A matching bearer JWT must verify with
+one of those public keys, must not be expired, and records audit actor
+`oidc:<binding-name>`. Cached JWKS keys persist in the fleet store and refresh
+on key misses so provider key rotation does not require rewriting the binding.
+SAML identity binding is still future work.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.
 Service accounts also carry a `role`: `viewer` can list/read scoped resources
 and plan placements, `operator` can mutate operational resources such as
 assignments, warm-pools, image/policy/storage fan-out, and claims, and `admin`
-can manage service accounts. Omitted role defaults to `admin` for compatibility.
+can manage service accounts and OIDC bindings. Omitted role defaults to `admin`
+for compatibility.
 Service accounts without `namespace` and unauthenticated local requests remain
 unscoped for the local-first controller workflow. Requests with an unknown bearer token
 are rejected instead of falling back to local controller identity. Worker

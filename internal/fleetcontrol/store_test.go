@@ -10,11 +10,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -781,6 +783,133 @@ func TestStoreOIDCBindingAuthenticatesRS256JWT(t *testing.T) {
 	}
 	if bytes.Contains(data, []byte("PRIVATE KEY")) {
 		t.Fatalf("store file contains private key:\n%s", data)
+	}
+}
+
+func TestStoreOIDCBindingDiscoversJWKS(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	key, _ := testOIDCKey(t)
+	var discoveryRequests int32
+	var jwksRequests int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			atomic.AddInt32(&discoveryRequests, 1)
+			writeTestJSON(w, map[string]any{
+				"issuer":   "http://" + r.Host,
+				"jwks_uri": "http://" + r.Host + "/jwks",
+			})
+		case "/jwks":
+			atomic.AddInt32(&jwksRequests, 1)
+			writeTestJSON(w, map[string]any{"keys": []any{testOIDCJWK(key, "kid-1")}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	result, err := store.UpsertOIDCBinding(OIDCBindingRequest{
+		Name:      "github-main",
+		Issuer:    server.URL,
+		Subject:   "repo:tmc/cove:ref:refs/heads/main",
+		Audience:  "cove-fleet",
+		Namespace: "team-a",
+		Role:      ServiceAccountRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Binding.JWKSURL != "" || len(result.Binding.KeyIDs) != 0 {
+		t.Fatalf("binding = %+v, want discovery pending without cached keys", result.Binding)
+	}
+	token := signOIDCJWT(t, key, "kid-1", map[string]any{
+		"iss": server.URL,
+		"sub": "repo:tmc/cove:ref:refs/heads/main",
+		"aud": "cove-fleet",
+		"exp": now.Add(time.Hour).Unix(),
+	})
+	principal, ok := store.AuthenticateBearer(token)
+	if !ok {
+		t.Fatal("AuthenticateBearer(discovered oidc token) = false")
+	}
+	if principal.Actor != "oidc:github-main" || principal.Namespace != "team-a" || principal.Role != ServiceAccountRoleOperator {
+		t.Fatalf("principal = %+v, want oidc github-main team-a operator", principal)
+	}
+	if atomic.LoadInt32(&discoveryRequests) != 1 || atomic.LoadInt32(&jwksRequests) != 1 {
+		t.Fatalf("requests discovery=%d jwks=%d, want 1/1", discoveryRequests, jwksRequests)
+	}
+	bindings := store.ListOIDCBindings()
+	if len(bindings) != 1 || bindings[0].JWKSURL != server.URL+"/jwks" || len(bindings[0].KeyIDs) != 1 || bindings[0].KeyIDs[0] != "kid-1" || bindings[0].JWKSFetched.IsZero() {
+		t.Fatalf("bindings = %+v, want cached jwks key", bindings)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.now = func() time.Time { return now }
+	server.Close()
+	if _, ok := reopened.AuthenticateBearer(token); !ok {
+		t.Fatal("reopened AuthenticateBearer(discovered oidc token) = false")
+	}
+}
+
+func TestStoreOIDCBindingRefreshesJWKSOnKeyMiss(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	oldKey, oldKeyPEM := testOIDCKey(t)
+	newKey, _ := testOIDCKey(t)
+	var jwksRequests int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&jwksRequests, 1)
+		writeTestJSON(w, map[string]any{"keys": []any{testOIDCJWK(newKey, "kid-2")}})
+	}))
+	defer server.Close()
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertOIDCBinding(OIDCBindingRequest{
+		Name:      "okta-ci",
+		Issuer:    "https://issuer.example",
+		Subject:   "repo:tmc/cove:ref:main",
+		Audience:  "cove-fleet",
+		Namespace: "team-a",
+		Role:      ServiceAccountRoleOperator,
+		JWKSURL:   server.URL,
+		Keys:      []OIDCKey{{KID: "kid-1", PEM: oldKeyPEM}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	token := signOIDCJWT(t, newKey, "kid-2", map[string]any{
+		"iss": "https://issuer.example",
+		"sub": "repo:tmc/cove:ref:main",
+		"aud": "cove-fleet",
+		"exp": now.Add(time.Hour).Unix(),
+	})
+	principal, ok := store.AuthenticateBearer(token)
+	if !ok {
+		t.Fatal("AuthenticateBearer(rotated oidc token) = false")
+	}
+	if principal.Actor != "oidc:okta-ci" {
+		t.Fatalf("principal = %+v, want oidc:okta-ci", principal)
+	}
+	if atomic.LoadInt32(&jwksRequests) != 1 {
+		t.Fatalf("jwks requests = %d, want 1", jwksRequests)
+	}
+	bindings := store.ListOIDCBindings()
+	if len(bindings) != 1 || len(bindings[0].KeyIDs) != 1 || bindings[0].KeyIDs[0] != "kid-2" {
+		t.Fatalf("bindings = %+v, want refreshed kid-2", bindings)
+	}
+	oldToken := signOIDCJWT(t, oldKey, "kid-1", map[string]any{
+		"iss": "https://issuer.example",
+		"sub": "repo:tmc/cove:ref:main",
+		"aud": "cove-fleet",
+		"exp": now.Add(time.Hour).Unix(),
+	})
+	if _, ok := store.AuthenticateBearer(oldToken); ok {
+		t.Fatal("AuthenticateBearer(old oidc token) = true")
 	}
 }
 
@@ -3145,6 +3274,17 @@ func testOIDCKey(t *testing.T) (*rsa.PrivateKey, string) {
 	return key, string(pem.EncodeToMemory(block))
 }
 
+func testOIDCJWK(key *rsa.PrivateKey, kid string) map[string]string {
+	return map[string]string{
+		"kty": "RSA",
+		"kid": kid,
+		"use": "sig",
+		"alg": "RS256",
+		"n":   base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
+		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes()),
+	}
+}
+
 func signOIDCJWT(t *testing.T, key *rsa.PrivateKey, kid string, claims map[string]any) string {
 	t.Helper()
 	header := map[string]any{"alg": "RS256", "typ": "JWT"}
@@ -3167,6 +3307,11 @@ func signOIDCJWT(t *testing.T, key *rsa.PrivateKey, kid string, claims map[strin
 		t.Fatal(err)
 	}
 	return signingInput + "." + enc.EncodeToString(sig)
+}
+
+func writeTestJSON(w http.ResponseWriter, value any) {
+	w.Header().Set("content-type", "application/json")
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func auditAction(events []AuditEvent, action string) *AuditEvent {
