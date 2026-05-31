@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/tmc/cove/internal/coved"
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/storagecensus"
 	"github.com/tmc/cove/internal/storagepins"
 	buildversion "github.com/tmc/cove/internal/version"
@@ -33,6 +35,12 @@ func main() {
 	configPath := flag.String("config", coved.DefaultConfigPath(), "config file path")
 	showVersion := flag.Bool("version", false, "print version information")
 	storagePollInterval := flag.Duration("storage-poll-interval", defaultStoragePollInterval(), "storage budget poll interval (0 disables)")
+	fleetURL := flag.String("fleet-url", "", "fleet controller URL for worker dial-out")
+	fleetID := flag.String("fleet-id", "", "fleet worker id (default hostname)")
+	fleetHeartbeatInterval := flag.Duration("fleet-heartbeat-interval", coved.DefaultFleetHeartbeatInterval, "fleet heartbeat interval")
+	fleetAssignmentInterval := flag.Duration("fleet-assignment-interval", coved.DefaultFleetAssignmentInterval, "fleet assignment poll interval")
+	var fleetLabels stringList
+	flag.Var(&fleetLabels, "fleet-label", "fleet worker label key=value (repeatable)")
 	flag.Parse()
 
 	info := buildversion.Resolve(version, commit, date)
@@ -82,6 +90,29 @@ func main() {
 		pidPath:   *pidPath,
 		connected: make(chan struct{}),
 		events:    coved.NewEventBus(50),
+	}
+	if *fleetURL != "" {
+		labels, err := parseFleetLabels([]string(fleetLabels))
+		if err != nil {
+			slog.Error("parse fleet labels", slog.Any("err", err))
+			os.Exit(1)
+		}
+		worker, err := coved.NewFleetWorker(coved.FleetWorkerConfig{
+			ControllerURL:      *fleetURL,
+			ID:                 *fleetID,
+			Version:            d.version,
+			VMRoot:             d.vmRoot,
+			ImageRoot:          imagestore.BaseDir(),
+			Labels:             labels,
+			Log:                logger,
+			HeartbeatInterval:  *fleetHeartbeatInterval,
+			AssignmentInterval: *fleetAssignmentInterval,
+		})
+		if err != nil {
+			slog.Error("configure fleet worker", slog.Any("err", err))
+			os.Exit(1)
+		}
+		go worker.Run(ctx)
 	}
 	gc := coved.NewImageGCScheduler("", logger)
 	gc.Bus = d.events
@@ -172,4 +203,35 @@ func writePIDFile(path string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644)
+}
+
+type stringList []string
+
+func (s *stringList) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+func (s *stringList) String() string {
+	if s == nil {
+		return ""
+	}
+	return strings.Join(*s, ",")
+}
+
+func parseFleetLabels(values []string) (map[string]string, error) {
+	labels := make(map[string]string)
+	for _, value := range values {
+		key, val, ok := strings.Cut(value, "=")
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		if !ok || key == "" {
+			return nil, fmt.Errorf("fleet label must be key=value")
+		}
+		labels[key] = val
+	}
+	if len(labels) == 0 {
+		return nil, nil
+	}
+	return labels, nil
 }

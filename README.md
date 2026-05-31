@@ -273,6 +273,7 @@ cove/
 │   └── main.go                 # CLI entry point, subcommand routing
 ├── cmd/vz-agent/               # In-guest agent daemon (vsock gRPC)
 ├── cmd/coved/                  # Host-side cove coordinator daemon
+├── cmd/cove-fleetd/            # Private fleet control-plane daemon
 ├── vzscripts/                  # Built-in recipes (.vzscript)
 ├── templates/                  # Embedded launchd and provisioning templates
 ├── proto/                      # Protobuf definitions (agent + control)

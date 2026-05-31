@@ -26,6 +26,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now provides the first stateful fleet-control-plane boundary:
   a private host-inventory store plus worker register, heartbeat,
   await-assignment, and report-status HTTP endpoints.
+- `coved -fleet-url` can now dial out to `cove-fleetd` as a fleet worker,
+  register host capacity, send periodic heartbeats, poll assignments, and report
+  unsupported assignment verbs until execution lands.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

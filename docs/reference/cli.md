@@ -1013,7 +1013,7 @@ cove fleet health
 The one-shot `cove daemon` command starts, stops, or queries that daemon.
 
 ```
-coved
+coved [-fleet-url <url>] [-fleet-id <id>] [-fleet-label key=value]
 cove daemon start [-coved <path>]
 cove daemon stop
 cove daemon status [--json]
@@ -1023,7 +1023,7 @@ cove daemon ui [-addr <host:port>] [-open <cmd>]
 
 | Command | Description |
 |---------|-------------|
-| `coved` | Start the host-side coordinator daemon. |
+| `coved` | Start the host-side coordinator daemon; `-fleet-url` enables worker dial-out to `cove-fleetd`. |
 | `cove daemon start [-coved <path>]` | Start `coved`, optionally from an explicit binary path. |
 | `cove daemon stop` | Stop the user-session daemon. |
 | `cove daemon status [--json]` | Show daemon reachability, lifecycle enforcement, and image-GC counters. |
@@ -1032,6 +1032,7 @@ cove daemon ui [-addr <host:port>] [-open <cmd>]
 
 ```bash
 coved
+coved -fleet-url http://127.0.0.1:9758 -fleet-id mini-1
 cove daemon status
 cove daemon status --json
 ```

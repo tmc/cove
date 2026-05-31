@@ -4,8 +4,8 @@ title: Fleet Control Plane
 # Fleet Control Plane
 
 `cove-fleetd` is the first stateful fleet-control-plane boundary. It owns host
-inventory and the worker-facing protocol surface; `coved` worker dial-out and
-controller-side scheduling are the next slices.
+inventory and the worker-facing protocol surface. `coved` can now dial out as a
+worker; controller-side scheduling is the next slice.
 
 Start a private controller:
 
@@ -22,14 +22,30 @@ Options:
 | `-worker-ttl <duration>` | `30s` | Time before a worker heartbeat is marked stale |
 | `-version` | false | Print build version |
 
+Start a worker:
+
+```bash
+coved -fleet-url http://127.0.0.1:9758 -fleet-id mini-1 -fleet-label zone=desk
+```
+
+Worker flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-fleet-url <url>` | empty | Controller URL; empty disables worker dial-out |
+| `-fleet-id <id>` | hostname | Stable worker id registered with the controller |
+| `-fleet-heartbeat-interval <duration>` | `10s` | Heartbeat cadence |
+| `-fleet-assignment-interval <duration>` | `5s` | Assignment poll cadence |
+| `-fleet-label key=value` | none | Worker label; repeat for multiple labels |
+
 Worker protocol:
 
 | Verb | Endpoint | Shape |
 |------|----------|-------|
-| register | `POST /v1/workers/register` | Worker sends host id, version, labels, and capacity; controller stores the host record. |
-| heartbeat | `POST /v1/workers/heartbeat` | Worker refreshes `last_seen` and capacity. |
-| await-assignment | `GET /v1/workers/<id>/assignments` | Returns `204 No Content` until scheduler assignments exist. |
-| report-status | `POST /v1/workers/<id>/reports` | Worker reports assignment status; controller records the latest report. |
+| register | `POST /v1/workers/register` | `coved` sends host id, version, labels, CPU count, VM count, and local image count; controller stores the host record. |
+| heartbeat | `POST /v1/workers/heartbeat` | `coved` refreshes `last_seen` and capacity. |
+| await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller returns `204 No Content` until scheduler assignments exist. |
+| report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` assignments as complete and reports other verbs as unsupported until assignment execution ships. |
 
 Inventory endpoints:
 
@@ -48,5 +64,5 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 ```
 
 This surface is intentionally private and local-first. It does not yet replace
-`cove fleet` SSH placement, execute assignments, or provide Orchard-style
+`cove fleet` SSH placement, execute VM assignments, or provide Orchard-style
 reconciliation.
