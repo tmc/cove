@@ -39,6 +39,7 @@ type storeFile struct {
 type serviceAccountRecord struct {
 	Name      string    `json:"name"`
 	Namespace string    `json:"namespace,omitempty"`
+	Role      string    `json:"role,omitempty"`
 	TokenHash string    `json:"token_sha256"`
 	Created   time.Time `json:"created,omitempty"`
 	Updated   time.Time `json:"updated,omitempty"`
@@ -116,7 +117,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 	}
 	for _, account := range file.ServiceAccounts {
 		account = normalizeServiceAccountRecord(account)
-		if account.Name == "" || account.TokenHash == "" {
+		if account.Name == "" || account.TokenHash == "" || account.Role == "" {
 			continue
 		}
 		s.accounts[account.Name] = account
@@ -1179,11 +1180,16 @@ func (s *Store) UpsertServiceAccountActor(actor string, req ServiceAccountReques
 	if token == "" {
 		return ServiceAccountResult{}, fmt.Errorf("service account token required")
 	}
+	role, err := normalizeServiceAccountRole(req.Role)
+	if err != nil {
+		return ServiceAccountResult{}, err
+	}
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
 	record := serviceAccountRecord{
 		Name:      name,
 		Namespace: normalizeNamespace(req.Namespace),
+		Role:      role,
 		TokenHash: tokenHash(token),
 		Created:   now,
 		Updated:   now,
@@ -1204,6 +1210,7 @@ func (s *Store) UpsertServiceAccountActor(actor string, req ServiceAccountReques
 		Action:     "service_account.upsert",
 		TargetType: "service_account",
 		TargetID:   name,
+		Fields:     map[string]string{"role": record.Role},
 	})
 	if err := s.persistLocked(); err != nil {
 		return ServiceAccountResult{}, err
@@ -1613,6 +1620,7 @@ func publicServiceAccount(record serviceAccountRecord) ServiceAccount {
 	return ServiceAccount{
 		Name:      record.Name,
 		Namespace: record.Namespace,
+		Role:      record.Role,
 		Created:   record.Created,
 		Updated:   record.Updated,
 	}
@@ -2263,6 +2271,7 @@ func normalizeAuditEvent(event AuditEvent) AuditEvent {
 func normalizeServiceAccountRecord(record serviceAccountRecord) serviceAccountRecord {
 	record.Name = strings.TrimSpace(record.Name)
 	record.Namespace = normalizeNamespace(record.Namespace)
+	record.Role = normalizeStoredServiceAccountRole(record.Role)
 	record.TokenHash = strings.TrimSpace(record.TokenHash)
 	if !record.Created.IsZero() {
 		record.Created = record.Created.UTC()
@@ -2271,6 +2280,32 @@ func normalizeServiceAccountRecord(record serviceAccountRecord) serviceAccountRe
 		record.Updated = record.Updated.UTC()
 	}
 	return record
+}
+
+func normalizeServiceAccountRole(role string) (string, error) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return ServiceAccountRoleAdmin, nil
+	}
+	switch role {
+	case ServiceAccountRoleViewer, ServiceAccountRoleOperator, ServiceAccountRoleAdmin:
+		return role, nil
+	default:
+		return "", fmt.Errorf("unknown service account role %q", role)
+	}
+}
+
+func normalizeStoredServiceAccountRole(role string) string {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return ServiceAccountRoleAdmin
+	}
+	switch role {
+	case ServiceAccountRoleViewer, ServiceAccountRoleOperator, ServiceAccountRoleAdmin:
+		return role
+	default:
+		return ""
+	}
 }
 
 func normalizeNamespace(namespace string) string {

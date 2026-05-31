@@ -101,6 +101,9 @@ func TestStoreServiceAccountsPersistTokenHashes(t *testing.T) {
 	if result.ServiceAccount.Name != "ci" {
 		t.Fatalf("service account = %+v, want ci", result.ServiceAccount)
 	}
+	if result.ServiceAccount.Role != ServiceAccountRoleAdmin {
+		t.Fatalf("service account role = %q, want admin", result.ServiceAccount.Role)
+	}
 	if _, ok := store.AuthenticateServiceAccount("secret-token"); !ok {
 		t.Fatal("AuthenticateServiceAccount(secret-token) = false")
 	}
@@ -1986,6 +1989,45 @@ func TestHandlerServiceAccountNamespaceScope(t *testing.T) {
 		if event.Namespace != "team-a" {
 			t.Fatalf("audit event namespace = %q, want team-a: %+v", event.Namespace, event)
 		}
+	}
+}
+
+func TestHandlerServiceAccountRoles(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "viewer", Namespace: "team-a", Role: ServiceAccountRoleViewer, Token: "viewer-token"}, &account)
+	if account.ServiceAccount.Role != ServiceAccountRoleViewer {
+		t.Fatalf("viewer role = %q", account.ServiceAccount.Role)
+	}
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "operator", Namespace: "team-a", Role: ServiceAccountRoleOperator, Token: "operator-token"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "admin", Namespace: "team-a", Role: ServiceAccountRoleAdmin, Token: "admin-token"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+
+	var assignments struct {
+		Assignments []Assignment `json:"assignments"`
+	}
+	getJSONAuth(t, server.URL+"/v1/assignments", "viewer-token", &assignments)
+	if code := postJSONStatus(t, server.URL+"/v1/assignments", "viewer-token", Assignment{WorkerID: "worker-1", Verb: "noop"}); code != http.StatusForbidden {
+		t.Fatalf("viewer assignment POST status = %d, want 403", code)
+	}
+	var created Assignment
+	postJSONAuth(t, server.URL+"/v1/assignments", "operator-token", Assignment{WorkerID: "worker-1", Verb: "noop"}, &created)
+	if created.Namespace != "team-a" {
+		t.Fatalf("operator assignment namespace = %q, want team-a", created.Namespace)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/service-accounts", "operator-token", ServiceAccountRequest{Name: "denied", Token: "denied-token"}); code != http.StatusForbidden {
+		t.Fatalf("operator service-account POST status = %d, want 403", code)
+	}
+	postJSONAuth(t, server.URL+"/v1/service-accounts", "admin-token", ServiceAccountRequest{Name: "next-viewer", Role: ServiceAccountRoleViewer, Token: "next-viewer-token"}, &account)
+	if account.ServiceAccount.Namespace != "team-a" || account.ServiceAccount.Role != ServiceAccountRoleViewer {
+		t.Fatalf("admin-created account = %+v", account.ServiceAccount)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/service-accounts", "", ServiceAccountRequest{Name: "bad-role", Role: "owner", Token: "bad-role-token"}); code != http.StatusBadRequest {
+		t.Fatalf("bad role status = %d, want 400", code)
 	}
 }
 

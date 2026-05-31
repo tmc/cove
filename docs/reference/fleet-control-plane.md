@@ -76,7 +76,7 @@ Service-account and audit endpoints:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/service-accounts \
   -H 'content-type: application/json' \
-  -d '{"name":"ci","namespace":"team-a","token":"local-secret"}'
+  -d '{"name":"ci","namespace":"team-a","role":"operator","token":"local-secret"}'
 curl http://127.0.0.1:9758/v1/service-accounts
 curl -H 'authorization: Bearer local-secret' \
   -X POST http://127.0.0.1:9758/v1/assignments \
@@ -98,11 +98,15 @@ tokens are stored only as SHA-256 hashes, so operators should provide
 high-entropy random tokens and keep the plaintext in their own secret manager.
 Supplying a matching bearer token on operator requests records audit actor
 `service-account:<name>`; unauthenticated local requests still record
-`controller`, and worker protocol events record `worker:<id>`. This is actor
-binding plus namespace filtering for controller resources, not full RBAC yet.
+`controller`, and worker protocol events record `worker:<id>`. This is
+service-account RBAC for controller resources, not SAML/OIDC SSO yet.
 If a service account has `namespace` set, assignment, warm-pool, service-account,
 and audit list/read/mutation requests through that bearer token are scoped to
 that namespace; attempts to write another namespace are rejected. Service
+accounts also carry a `role`: `viewer` can list/read scoped resources and plan
+placements, `operator` can mutate operational resources such as assignments,
+warm-pools, image/policy/storage fan-out, and claims, and `admin` can manage
+service accounts. Omitted role defaults to `admin` for compatibility. Service
 accounts without `namespace` and unauthenticated local requests remain unscoped
 for the local-first controller workflow. Requests with an unknown bearer token
 are rejected instead of falling back to local controller identity. Worker

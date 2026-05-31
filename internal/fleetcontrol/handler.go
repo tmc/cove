@@ -27,6 +27,10 @@ func Handler(store *Store) http.Handler {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
 		if !requireUnscoped(w, r, store) {
 			return
 		}
@@ -38,6 +42,10 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/reconcile", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
 			return
 		}
 		if !requireUnscoped(w, r, store) {
@@ -137,6 +145,9 @@ func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {
 		limit = n
 	}
 	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
 	namespace := namespaceFilterFromRequest(r, identity)
 	writeJSON(w, http.StatusOK, map[string]any{"events": store.ListAuditNamespace(limit, namespace)})
 }
@@ -145,8 +156,14 @@ func handleServiceAccounts(w http.ResponseWriter, r *http.Request, store *Store)
 	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodGet:
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"service_accounts": store.ListServiceAccountsNamespace(namespaceFilterFromRequest(r, identity))})
 	case http.MethodPost:
+		if !requireRole(w, identity, ServiceAccountRoleAdmin) {
+			return
+		}
 		var req ServiceAccountRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode service account: %v", err))
@@ -175,6 +192,9 @@ func handleServiceAccount(w http.ResponseWriter, r *http.Request, store *Store) 
 	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodDelete:
+		if !requireRole(w, identity, ServiceAccountRoleAdmin) {
+			return
+		}
 		if identity.Scoped {
 			account, ok := serviceAccountByName(store.ListServiceAccountsNamespace(identity.Namespace), name)
 			if !ok {
@@ -210,6 +230,10 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
 		if !requireUnscoped(w, r, store) {
 			return
 		}
@@ -232,6 +256,10 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 	case "assignments":
 		handleWorkerAssignments(w, r, store, id)
 	case "cordon":
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
 		if !requireUnscoped(w, r, store) {
 			return
 		}
@@ -239,6 +267,10 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 	case "reports":
 		handleWorkerReports(w, r, store, id)
 	case "uncordon":
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
 		if !requireUnscoped(w, r, store) {
 			return
 		}
@@ -300,6 +332,9 @@ func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
 	if !applyScopedNamespace(w, identity, &req.Namespace) {
 		return
 	}
@@ -322,6 +357,9 @@ func handleImageGC(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
 	if !applyScopedNamespace(w, identity, &req.Namespace) {
 		return
 	}
@@ -344,6 +382,9 @@ func handleLifecyclePolicy(w http.ResponseWriter, r *http.Request, store *Store)
 		return
 	}
 	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
 	if !applyScopedNamespace(w, identity, &req.Namespace) {
 		return
 	}
@@ -366,6 +407,9 @@ func handleStorageBudget(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
 	if !applyScopedNamespace(w, identity, &req.Namespace) {
 		return
 	}
@@ -388,6 +432,9 @@ func handleStoragePrune(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
 	if !applyScopedNamespace(w, identity, &req.Namespace) {
 		return
 	}
@@ -410,6 +457,9 @@ func handlePlacementPlan(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
 	if !applyScopedNamespace(w, identity, &req.Assignment.Namespace) {
 		return
 	}
@@ -425,11 +475,17 @@ func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
 	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodGet:
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
 		if !reconcile(w, store) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"warm_pools": store.ListWarmPoolsNamespace(namespaceFilterFromRequest(r, identity))})
 	case http.MethodPost:
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
 		var req WarmPoolRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode warm pool: %v", err))
@@ -458,6 +514,9 @@ func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
 	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodGet:
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
 		if !reconcile(w, store) {
 			return
 		}
@@ -472,6 +531,9 @@ func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
 		}
 		writeJSON(w, http.StatusOK, status)
 	case http.MethodDelete:
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
 		status, ok := store.GetWarmPool(name)
 		if !ok || !canAccessNamespace(identity, status.Namespace) {
 			writeError(w, http.StatusNotFound, fmt.Sprintf("warm pool %q not found", name))
@@ -511,6 +573,7 @@ func nameFromPath(path, prefix, label string) (string, error) {
 type requestIdentity struct {
 	Actor     string
 	Namespace string
+	Role      string
 	Scoped    bool
 	Invalid   bool
 }
@@ -529,12 +592,13 @@ func identityFromRequest(r *http.Request, store *Store) requestIdentity {
 			return requestIdentity{
 				Actor:     "service-account:" + account.Name,
 				Namespace: namespace,
+				Role:      account.Role,
 				Scoped:    namespace != "",
 			}
 		}
 		return requestIdentity{Invalid: true}
 	}
-	return requestIdentity{Actor: "controller"}
+	return requestIdentity{Actor: "controller", Role: ServiceAccountRoleAdmin}
 }
 
 func rejectInvalidAuth(next http.Handler, store *Store) http.Handler {
@@ -566,6 +630,27 @@ func applyScopedNamespace(w http.ResponseWriter, identity requestIdentity, names
 	}
 	*namespace = current
 	return true
+}
+
+func requireRole(w http.ResponseWriter, identity requestIdentity, role string) bool {
+	if serviceAccountRoleRank(identity.Role) < serviceAccountRoleRank(role) {
+		writeError(w, http.StatusForbidden, "role not allowed")
+		return false
+	}
+	return true
+}
+
+func serviceAccountRoleRank(role string) int {
+	switch role {
+	case ServiceAccountRoleViewer:
+		return 1
+	case ServiceAccountRoleOperator:
+		return 2
+	case ServiceAccountRoleAdmin:
+		return 3
+	default:
+		return 0
+	}
 }
 
 func canAccessNamespace(identity requestIdentity, namespace string) bool {
@@ -601,6 +686,9 @@ func handleWarmPoolClaim(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
 	if !applyScopedNamespace(w, identity, &req.Namespace) {
 		return
 	}
@@ -647,11 +735,17 @@ func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodGet:
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
 		if !reconcile(w, store) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"assignments": store.ListAssignmentsNamespace(namespaceFilterFromRequest(r, identity))})
 	case http.MethodPost:
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
 		var assignment Assignment
 		if err := json.NewDecoder(r.Body).Decode(&assignment); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode assignment: %v", err))
@@ -679,6 +773,9 @@ func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
 	}
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !requireRole(w, identityFromRequest(r, store), ServiceAccountRoleViewer) {
 		return
 	}
 	if !reconcile(w, store) {

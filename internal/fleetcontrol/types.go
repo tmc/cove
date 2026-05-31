@@ -15,6 +15,12 @@ const (
 	PolicyBinPack       = "bin-pack"
 )
 
+const (
+	ServiceAccountRoleViewer   = "viewer"
+	ServiceAccountRoleOperator = "operator"
+	ServiceAccountRoleAdmin    = "admin"
+)
+
 const DefaultWorkerTTL = 30 * time.Second
 
 const DefaultAssignmentTTL = 30 * time.Second
@@ -93,6 +99,7 @@ type AuditEvent struct {
 type ServiceAccount struct {
 	Name      string    `json:"name"`
 	Namespace string    `json:"namespace,omitempty"`
+	Role      string    `json:"role,omitempty"`
 	Created   time.Time `json:"created,omitempty"`
 	Updated   time.Time `json:"updated,omitempty"`
 }
@@ -100,6 +107,7 @@ type ServiceAccount struct {
 type ServiceAccountRequest struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
+	Role      string `json:"role,omitempty"`
 	Token     string `json:"token"`
 }
 
