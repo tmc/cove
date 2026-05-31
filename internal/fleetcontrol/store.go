@@ -263,7 +263,7 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 		assignment, ok := s.assignments[r.AssignmentID]
 		if ok {
 			storedStatus := status
-			if assignment.WarmPool != "" && assignment.Status == "claimed" && status == "running" {
+			if assignment.WarmPool != "" && assignment.Status == "claimed" && (status == "ready" || status == "running") {
 				storedStatus = "claimed"
 			}
 			assignment.Status = storedStatus
@@ -420,9 +420,9 @@ func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, er
 	}
 	slot, ok := s.claimableWarmPoolSlotLocked(name)
 	if !ok {
-		return WarmPoolClaimResult{}, fmt.Errorf("warm pool %q has no running slot to claim", name)
+		return WarmPoolClaimResult{}, fmt.Errorf("warm pool %q has no ready slot to claim", name)
 	}
-	vmName := warmPoolAssignmentVMName(slot)
+	vmName := WarmPoolAssignmentVMName(slot)
 	slot.Status = "claimed"
 	slot.Updated = now
 	s.assignments[slot.ID] = slot
@@ -698,7 +698,7 @@ func (r ReconcileResult) changed() bool {
 
 func activeAssignmentStatus(status string) bool {
 	switch status {
-	case "pending", "leased", "running":
+	case "pending", "leased", "running", "ready":
 		return true
 	default:
 		return false
@@ -715,7 +715,7 @@ func loadAssignmentStatus(status string) bool {
 
 func assignmentLeaseStatus(status string) bool {
 	switch status {
-	case "leased", "running", "claimed":
+	case "leased", "running", "ready", "claimed":
 		return true
 	default:
 		return false
@@ -997,7 +997,7 @@ func (s *Store) warmPoolAssignmentsLocked(name string) []Assignment {
 
 func (s *Store) claimableWarmPoolSlotLocked(name string) (Assignment, bool) {
 	for _, assignment := range s.sortedAssignmentsLocked() {
-		if assignment.WarmPool == name && assignment.WorkerID != "" && assignment.Status == "running" {
+		if assignment.WarmPool == name && assignment.WorkerID != "" && assignment.Status == "ready" {
 			return assignment, true
 		}
 	}
@@ -1074,7 +1074,7 @@ func warmPoolArgs(pool WarmPool, assignmentID string) []string {
 	return append(args, cloneStrings(pool.Args)...)
 }
 
-func warmPoolAssignmentVMName(assignment Assignment) string {
+func WarmPoolAssignmentVMName(assignment Assignment) string {
 	for i, arg := range assignment.Args {
 		if (arg == "-fork-name" || arg == "--fork-name") && i+1 < len(assignment.Args) {
 			name := strings.TrimSpace(assignment.Args[i+1])

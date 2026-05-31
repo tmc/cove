@@ -59,9 +59,15 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   durable fork warm-pool quotas; reconciliation creates replenishable
   `cove run -fork-from ... -ephemeral -keep -headless` assignments through
   `coved`.
-- `cove-fleetd` now exposes `POST /v1/warm-pools/claim` to claim a running
-  warm fork, mark the slot unavailable, and queue same-worker guest execution
-  through `cove shell <vm> -- ...` while replenishing the warm-pool quota.
+- `coved -fleet-url` now marks warm-pool slots `ready` only after a successful
+  `cove shell <vm> -- /bin/sh -c true` probe, so `POST /v1/warm-pools/claim`
+  hands off agent-ready forks instead of merely live `cove run` processes.
+- `cove-fleetd` now exposes `POST /v1/warm-pools/claim` to claim a ready warm
+  fork, mark the slot unavailable, and queue same-worker guest execution through
+  `cove shell <vm> -- ...` while replenishing the warm-pool quota.
+- `coved -fleet-url` now stops a claimed warm-pool VM after the claimed
+  guest-exec assignment finishes, allowing the original warm-run assignment to
+  terminate and the controller to replenish capacity cleanly.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

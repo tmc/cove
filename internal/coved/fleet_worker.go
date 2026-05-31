@@ -248,7 +248,8 @@ func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcon
 		report.Error = err.Error()
 		return report
 	}
-	w.reportRunning(runCtx, assignment.ID)
+	activeStatus := "running"
+	w.reportAssignmentStatus(runCtx, assignment.ID, activeStatus)
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
@@ -261,7 +262,10 @@ func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcon
 		case err = <-done:
 			goto finished
 		case <-ticker.C:
-			w.reportRunning(runCtx, assignment.ID)
+			if activeStatus != "ready" && assignment.WarmPool != "" && w.warmPoolReady(runCtx, assignment) {
+				activeStatus = "ready"
+			}
+			w.reportAssignmentStatus(runCtx, assignment.ID, activeStatus)
 		}
 	}
 finished:
@@ -272,24 +276,94 @@ finished:
 	}
 	if runCtx.Err() == context.DeadlineExceeded {
 		report.Error = fmt.Sprintf("assignment timed out after %s", w.assignmentTimeout)
-		return report
+		return w.finishCoveAssignment(ctx, assignment, report)
 	}
 	if err != nil {
 		report.Error = err.Error()
-		return report
+		return w.finishCoveAssignment(ctx, assignment, report)
 	}
 	report.Status = "complete"
 	report.Error = ""
+	return w.finishCoveAssignment(ctx, assignment, report)
+}
+
+func (w *FleetWorker) finishCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment, report fleetcontrol.WorkerReport) fleetcontrol.WorkerReport {
+	if assignment.WarmPoolSlot != "" {
+		if err := w.stopClaimedWarmPoolVM(ctx, assignment); err != nil {
+			if report.Error != "" {
+				report.Error += "; "
+			}
+			report.Status = "failed"
+			report.Error += "cleanup claimed warm pool slot: " + err.Error()
+		}
+	}
 	return report
 }
 
-func (w *FleetWorker) reportRunning(ctx context.Context, assignmentID string) {
+func (w *FleetWorker) stopClaimedWarmPoolVM(ctx context.Context, assignment fleetcontrol.Assignment) error {
+	vmName := warmPoolClaimVMName(assignment.Args)
+	if vmName == "" {
+		return fmt.Errorf("claim assignment vm name missing")
+	}
+	timeout := w.assignmentInterval
+	if timeout < time.Second {
+		timeout = time.Second
+	}
+	if timeout > 10*time.Second {
+		timeout = 10 * time.Second
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(stopCtx, w.coveBin, "ctl", "-vm", vmName, "stop")
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func warmPoolClaimVMName(args []string) string {
+	if len(args) == 0 || args[0] != "shell" {
+		return ""
+	}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--":
+			return ""
+		case "--env":
+			i++
+			continue
+		default:
+			return args[i]
+		}
+	}
+	return ""
+}
+
+func (w *FleetWorker) warmPoolReady(ctx context.Context, assignment fleetcontrol.Assignment) bool {
+	vmName := fleetcontrol.WarmPoolAssignmentVMName(assignment)
+	if vmName == "" {
+		return false
+	}
+	timeout := w.assignmentInterval
+	if timeout < time.Second {
+		timeout = time.Second
+	}
+	if timeout > 5*time.Second {
+		timeout = 5 * time.Second
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(probeCtx, w.coveBin, "shell", vmName, "--", "/bin/sh", "-c", "true")
+	return cmd.Run() == nil
+}
+
+func (w *FleetWorker) reportAssignmentStatus(ctx context.Context, assignmentID, status string) {
 	_, err := w.ReportStatus(ctx, fleetcontrol.WorkerReport{
 		AssignmentID: assignmentID,
-		Status:       "running",
+		Status:       status,
 	})
 	if err != nil {
-		w.warn("fleet assignment running report", err)
+		w.warn("fleet assignment status report", err)
 	}
 }
 

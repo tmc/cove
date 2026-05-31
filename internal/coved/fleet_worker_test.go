@@ -190,6 +190,9 @@ func TestFleetWorkerRunsWarmPoolAssignment(t *testing.T) {
 	server := httptest.NewServer(fleetcontrol.Handler(store))
 	defer server.Close()
 	coveBin := writeExecutable(t, `#!/bin/sh
+if [ "$1" = "shell" ]; then
+  exit 0
+fi
 printf '%s\n' "$*" > "$COVE_TEST_ARGS"
 sleep 0.2
 exit 0
@@ -222,7 +225,7 @@ exit 0
 	}()
 	waitUntil(t, time.Second, func() bool {
 		assignment, ok := store.GetAssignment(assignmentID)
-		return ok && assignment.Status == "running" && assignment.LastReport != nil && assignment.LastReport.Status == "running"
+		return ok && assignment.Status == "ready" && assignment.LastReport != nil && assignment.LastReport.Status == "ready"
 	})
 	select {
 	case err := <-done:
@@ -246,6 +249,161 @@ exit 0
 	}
 	if assignment.Status != "complete" || assignment.WarmPool != "runner" {
 		t.Fatalf("assignment = %+v", assignment)
+	}
+}
+
+func TestFleetWorkerDoesNotClaimWarmPoolBeforeReady(t *testing.T) {
+	release := filepath.Join(t.TempDir(), "release")
+	t.Setenv("COVE_TEST_RELEASE", release)
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+if [ "$1" = "shell" ]; then
+  exit 1
+fi
+while [ ! -f "$COVE_TEST_RELEASE" ]; do
+  sleep 0.02
+done
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL:      server.URL,
+		ID:                 "worker-1",
+		CoveBin:            coveBin,
+		AssignmentInterval: 20 * time.Millisecond,
+		AssignmentTimeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	result, err := store.EnsureWarmPool(fleetcontrol.WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignmentID := result.Created[0].ID
+	done := make(chan error, 1)
+	go func() {
+		done <- worker.PollAssignment(ctx)
+	}()
+	waitUntil(t, time.Second, func() bool {
+		assignment, ok := store.GetAssignment(assignmentID)
+		return ok && assignment.Status == "running" && assignment.LastReport != nil && assignment.LastReport.Status == "running"
+	})
+	_, err = store.ClaimWarmPool(fleetcontrol.WarmPoolClaimRequest{Name: "runner", Command: []string{"/bin/true"}})
+	if err == nil || !strings.Contains(err.Error(), "has no ready slot to claim") {
+		t.Fatalf("ClaimWarmPool err = %v, want no ready slot error", err)
+	}
+	if err := os.WriteFile(release, []byte("done\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("PollAssignment: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PollAssignment did not finish")
+	}
+}
+
+func TestFleetWorkerExecutesClaimedWarmPoolAssignment(t *testing.T) {
+	release := filepath.Join(t.TempDir(), "release")
+	shellArgs := filepath.Join(t.TempDir(), "shell-args.txt")
+	stopArgs := filepath.Join(t.TempDir(), "stop-args.txt")
+	t.Setenv("COVE_TEST_RELEASE", release)
+	t.Setenv("COVE_TEST_SHELL_ARGS", shellArgs)
+	t.Setenv("COVE_TEST_STOP_ARGS", stopArgs)
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+if [ "$1" = "shell" ]; then
+  if [ "$4" = "/bin/sh" ] && [ "$5" = "-c" ] && [ "$6" = "true" ]; then
+    exit 0
+  fi
+  printf '%s\n' "$*" > "$COVE_TEST_SHELL_ARGS"
+  exit 0
+fi
+if [ "$1" = "ctl" ]; then
+  printf '%s\n' "$*" > "$COVE_TEST_STOP_ARGS"
+  touch "$COVE_TEST_RELEASE"
+  exit 0
+fi
+while [ ! -f "$COVE_TEST_RELEASE" ]; do
+  sleep 0.02
+done
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL:      server.URL,
+		ID:                 "worker-1",
+		CoveBin:            coveBin,
+		AssignmentInterval: 20 * time.Millisecond,
+		AssignmentTimeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	result, err := store.EnsureWarmPool(fleetcontrol.WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slotID := result.Created[0].ID
+	warmDone := make(chan error, 1)
+	go func() {
+		warmDone <- worker.PollAssignment(ctx)
+	}()
+	waitUntil(t, time.Second, func() bool {
+		assignment, ok := store.GetAssignment(slotID)
+		return ok && assignment.Status == "ready"
+	})
+	claim, err := store.ClaimWarmPool(fleetcontrol.WarmPoolClaimRequest{Name: "runner", Command: []string{"/bin/echo", "ok"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.PollAssignment(ctx); err != nil {
+		t.Fatalf("PollAssignment claim: %v", err)
+	}
+	assignment, ok := store.GetAssignment(claim.Assignment.ID)
+	if !ok || assignment.Status != "complete" {
+		t.Fatalf("claim assignment = %+v, ok=%v", assignment, ok)
+	}
+	data, err := os.ReadFile(shellArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(string(data))
+	want := "shell " + claim.VMName + " -- /bin/echo ok"
+	if got != want {
+		t.Fatalf("claim shell args = %q, want %q", got, want)
+	}
+	data, err = os.ReadFile(stopArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = strings.TrimSpace(string(data))
+	want = "ctl -vm " + claim.VMName + " stop"
+	if got != want {
+		t.Fatalf("claim cleanup args = %q, want %q", got, want)
+	}
+	select {
+	case err := <-warmDone:
+		if err != nil {
+			t.Fatalf("warm PollAssignment: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("warm PollAssignment did not finish")
 	}
 }
 

@@ -119,13 +119,15 @@ placement scheduler and anti-affinity key `warm-pool/<name>`. Each slot runs:
 cove run -fork-from <image_ref> -fork-name <generated> -ephemeral -keep -headless
 ```
 
-The first slice keeps those fork assignments active and replenishes completed or
-failed slots. `POST /v1/warm-pools/claim` claims an already-running slot,
-marks that slot `claimed`, and queues a zero-slot same-worker guest-exec
-assignment that runs `cove shell <generated> -- <command...>`. The claimed VM
-continues counting against host capacity, while reconciliation creates a
-replacement warm slot when capacity allows. Explicit per-slot agent readiness
-and stopping excess slots after a downsize are later controller work.
+The first slice keeps those fork assignments active, probes the warmed VM with
+`cove shell <generated> -- /bin/sh -c true`, and replenishes completed or failed
+slots. `POST /v1/warm-pools/claim` claims only a `ready` slot, marks that slot
+`claimed`, and queues a zero-slot same-worker guest-exec assignment that runs
+`cove shell <generated> -- <command...>`. The claimed VM continues counting
+against host capacity; when the guest-exec assignment finishes, `coved` stops
+the claimed warm VM with `cove ctl -vm <generated> stop`, and reconciliation
+creates a replacement warm slot when capacity allows. Stopping excess slots
+after a downsize is later controller work.
 
 Assignment endpoints:
 
@@ -146,13 +148,17 @@ curl http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 ```
 
-Assignments are stored with `pending`, `leased`, `running`, `claimed`, or
-worker-reported terminal status. `claimed` is used for a warm-pool slot that has
-been handed to a job; it still consumes host capacity but is no longer counted
-as an available warm slot. `coved` renews active `cove` assignments with
-`running` reports. Reconciliation marks expired workers stale, requeues expired
-assignment leases, rejects late reports for reclaimed leases, and can move a
-policy-placed assignment from a stale worker to another ready worker.
+Assignments are stored with `pending`, `leased`, `running`, `ready`, `claimed`,
+or worker-reported terminal status. `ready` is used for a warm-pool slot whose
+guest agent accepted a probe through `cove shell`; `claimed` is used for a
+ready warm-pool slot that has been handed to a job. A claimed slot still
+consumes host capacity but is no longer counted as an available warm slot.
+`coved` renews active `cove` assignments with `running` or `ready` reports.
+Claimed warm-pool guest-exec assignments stop the claimed VM after the guest
+command returns.
+Reconciliation marks expired workers stale, requeues expired assignment leases,
+rejects late reports for reclaimed leases, and can move a policy-placed
+assignment from a stale worker to another ready worker.
 
 Cordoned workers keep heartbeating and reporting, but controller placement
 skips them for unbound and policy-placed assignments. Explicit `worker_id`
@@ -186,5 +192,5 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 This surface is intentionally private and local-first. It now has basic
 controller reconciliation, worker cordon lifecycle, and fleet image
 preparation, retained placement plans, and a first fork warm-pool quota
-reconciler with running-slot claim and guest `Exec` handoff through the
-`cove shell` path. Explicit agent-ready slot state is not wired yet.
+reconciler with agent-ready slot claim and guest `Exec` handoff through the
+`cove shell` path plus claimed-slot stop cleanup.

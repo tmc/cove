@@ -780,7 +780,7 @@ func TestStoreClaimsWarmPoolSlot(t *testing.T) {
 	if leased == nil || leased.ID != slotID {
 		t.Fatalf("leased = %+v, want %s", leased, slotID)
 	}
-	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "running"}); err != nil {
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "ready"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -808,10 +808,10 @@ func TestStoreClaimsWarmPoolSlot(t *testing.T) {
 	if !ok {
 		t.Fatal("claimed slot missing")
 	}
-	if slot.Status != "claimed" || slot.LastReport == nil || slot.LastReport.Status != "running" {
-		t.Fatalf("stored slot = %+v, want claimed with running report", slot)
+	if slot.Status != "claimed" || slot.LastReport == nil || slot.LastReport.Status != "ready" {
+		t.Fatalf("stored slot = %+v, want claimed with ready report", slot)
 	}
-	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "running"}); err != nil {
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "ready"}); err != nil {
 		t.Fatal(err)
 	}
 	slot, _ = store.GetAssignment(slotID)
@@ -824,7 +824,7 @@ func TestStoreClaimsWarmPoolSlot(t *testing.T) {
 	}
 }
 
-func TestStoreClaimWarmPoolRequiresRunningSlot(t *testing.T) {
+func TestStoreClaimWarmPoolRequiresReadySlot(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 1}}); err != nil {
 		t.Fatal(err)
@@ -833,8 +833,8 @@ func TestStoreClaimWarmPoolRequiresRunningSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := store.ClaimWarmPool(WarmPoolClaimRequest{Name: "runner", Command: []string{"/bin/true"}})
-	if err == nil || !strings.Contains(err.Error(), "has no running slot to claim") {
-		t.Fatalf("ClaimWarmPool err = %v, want no running slot error", err)
+	if err == nil || !strings.Contains(err.Error(), "has no ready slot to claim") {
+		t.Fatalf("ClaimWarmPool err = %v, want no ready slot error", err)
 	}
 }
 
@@ -851,7 +851,7 @@ func TestStoreClaimedWarmPoolSlotCountsAgainstCapacity(t *testing.T) {
 	if _, err := store.AwaitAssignment("worker-1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "running"}); err != nil {
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "ready"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.ClaimWarmPool(WarmPoolClaimRequest{Name: "runner", Command: []string{"/bin/true"}}); err != nil {
@@ -1112,7 +1112,7 @@ func TestHandlerWarmPools(t *testing.T) {
 	}
 	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{
 		AssignmentID: leased.ID,
-		Status:       "running",
+		Status:       "ready",
 	}, &record)
 
 	var claim WarmPoolClaimResult
