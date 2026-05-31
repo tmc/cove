@@ -67,6 +67,7 @@ var subSubHelp = []subSubHelpCase{
 	{"fleet", "image"},
 	{"fleet", "ps"},
 	{"fleet", "run"},
+	{"fleet", "health"},
 	{"fleet", "metrics"},
 	{"pins", "list"},
 	{"storage", "census"},

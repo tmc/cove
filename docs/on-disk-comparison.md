@@ -29,7 +29,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
 | **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; OCI build-cache import/export; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
 | **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, persistent registry-base materialization shared by builds and pulls, and portable build-cache layers via `--cache-from` / `--cache-to` | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
-| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; cordon/uncordon skips hosts for placement; short local placement leases count as pending load (`cmd/cove/fleet_run.go`) | none | none | full controller/scheduler model |
+| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version (`cmd/cove/fleet_run.go`, `cmd/cove/fleet_health.go`) | none | none | full controller/scheduler model |
 
 ## Where cove now leads
 
@@ -58,8 +58,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
 
 5. **Image-aware, drainable fleet placement.** cove is not orchard's controller,
    but its fleet CLI now understands image locality, operator drain intent, and
-   short local placement leases: it skips cordoned hosts, counts recent local
-   selections as pending load, prefers a reachable host that already has
+   short local placement leases, and explicit reachability checks: it skips
+   cordoned hosts, counts recent local selections as pending load, reports
+   remote cove health/version, prefers a reachable host that already has
    `-fork-from`, and if none do, stages the local image to the least-loaded
    reachable host before running the VM there.
 

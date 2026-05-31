@@ -76,7 +76,7 @@ func TestRunFleetCommandDispatchBranches(t *testing.T) {
 	})
 
 	t.Run("subHelp", func(t *testing.T) {
-		for _, sub := range []string{"cordon", "uncordon", "ls", "rm", "vm", "image", "run"} {
+		for _, sub := range []string{"cordon", "uncordon", "ls", "rm", "vm", "image", "run", "health"} {
 			var out bytes.Buffer
 			if err := runFleetCommandWithRunner(context.Background(), []string{sub, "-h"}, path, runner, &out, &bytes.Buffer{}); err != nil {
 				t.Fatalf("%s -h err = %v", sub, err)

@@ -360,6 +360,42 @@ func TestFleetMetricsJSONIncludesErrors(t *testing.T) {
 	}
 }
 
+func TestFleetHealthReportsReachability(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	runner := &fakeFleetRunner{
+		outputs: map[string]string{"a.local": "cove dev\n"},
+		errs:    map[string]error{"b.local": errors.New("ssh refused")},
+	}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"health"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet health: %v", err)
+	}
+	for _, want := range []string{"a\tok\tcove dev", "b\tunreachable\tssh refused"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("health output missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertCallsWithArgs(t, []string{"version"}, 2)
+}
+
+func TestFleetHealthJSONIncludesFailures(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	runner := &fakeFleetRunner{
+		outputs: map[string]string{"a.local": "cove dev\n"},
+		errs:    map[string]error{"b.local": errors.New("ssh refused")},
+	}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"health", "--json"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet health --json: %v", err)
+	}
+	for _, want := range []string{`"host": "a"`, `"ok": true`, `"version": "cove dev"`, `"host": "b"`, `"ok": false`, `"error": "ssh refused"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("health json missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertCallsWithArgs(t, []string{"version"}, 2)
+}
+
 func TestRunFleetRouteInvokesRunner(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	cfg := &fleetpkg.Config{}

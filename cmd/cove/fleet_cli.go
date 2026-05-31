@@ -87,6 +87,12 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 			return nil
 		}
 		return runFleetRunCommand(ctx, args[1:], path, runner, out, errOut)
+	case "health":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(out, "Usage: cove fleet health [--json]")
+			return nil
+		}
+		return runFleetHealthCommand(ctx, args[1:], path, runner, out, errOut)
 	case "metrics":
 		return runFleetMetricsCommand(ctx, args[1:], path, runner, out, errOut)
 	default:
@@ -121,6 +127,7 @@ Commands:
   image ls [--json]
   ps
   run --policy=least-loaded|image-affinity [run flags]
+  health [--json]
   metrics
   <remote> <command> [args...]`)
 }

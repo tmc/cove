@@ -79,6 +79,12 @@ the selected hosts. Those leases count as pending load during later placement,
 so bursty starts from the same workstation spread out before the remote VM list
 has caught up.
 
+Check remote cove reachability and versions:
+
+```sh
+cove fleet health
+```
+
 Remove a remote:
 
 ```sh
