@@ -425,6 +425,30 @@ type SandboxExecResult struct {
 	Error      string     `json:"error,omitempty"`
 }
 
+type SandboxControlRequest struct {
+	Type       string         `json:"type"`
+	Timeout    string         `json:"timeout,omitempty"`
+	Screenshot map[string]any `json:"screenshot,omitempty"`
+	Key        map[string]any `json:"key,omitempty"`
+	Mouse      map[string]any `json:"mouse,omitempty"`
+	Text       map[string]any `json:"text,omitempty"`
+}
+
+type SandboxControlResult struct {
+	Namespace  string         `json:"namespace,omitempty"`
+	ID         string         `json:"id"`
+	VMName     string         `json:"vm_name"`
+	Type       string         `json:"type"`
+	Done       bool           `json:"done"`
+	Assignment Assignment     `json:"assignment"`
+	Data       string         `json:"data,omitempty"`
+	Response   map[string]any `json:"response,omitempty"`
+	ExitCode   int            `json:"exit_code,omitempty"`
+	Stdout     string         `json:"stdout,omitempty"`
+	Stderr     string         `json:"stderr,omitempty"`
+	Error      string         `json:"error,omitempty"`
+}
+
 type SandboxDeleteResult struct {
 	Namespace  string      `json:"namespace,omitempty"`
 	ID         string      `json:"id"`

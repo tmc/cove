@@ -398,28 +398,92 @@ class CoveFleetClient:
         self.exec(["/bin/sh", "-c", script]).check_returncode()
 
     def screenshot(self, *, scale: float = 1.0, fmt: str = "png", quality: int = 90) -> bytes:
-        del scale, fmt, quality
-        raise CoveError("screenshots are not available through the fleet sandbox provider")
+        data = self._control(
+            {
+                "type": "screenshot",
+                "screenshot": {
+                    "scale": scale,
+                    "quality": quality,
+                    "format": fmt,
+                },
+            },
+            timeout=max(self.timeout, 30),
+        )
+        image = data.get("data")
+        response = data.get("response") or {}
+        if not image and isinstance(response, dict):
+            result = response.get("screenshot_result") or {}
+            if isinstance(result, dict):
+                image = result.get("image_data")
+            if not image:
+                image = response.get("data")
+        if not isinstance(image, str):
+            raise CoveError("screenshot returned no image data")
+        return base64.b64decode(image)
 
     def key(self, key_code: int, *, down: bool | None = None, modifiers: int = 0) -> None:
-        del key_code, down, modifiers
-        raise CoveError("keyboard events are not available through the fleet sandbox provider")
+        if down is None:
+            self.key(key_code, down=True, modifiers=modifiers)
+            time.sleep(0.05)
+            self.key(key_code, down=False, modifiers=modifiers)
+            return
+        self._control(
+            {
+                "type": "key",
+                "key": {
+                    "key_code": key_code,
+                    "key_down": down,
+                    "modifiers": modifiers,
+                    "use_cg_event": modifiers != 0,
+                },
+            }
+        )
 
     def text(self, text: str) -> None:
-        del text
-        raise CoveError("text events are not available through the fleet sandbox provider")
+        self._control({"type": "text", "text": {"text": text}}, timeout=max(self.timeout, 10 + len(text) / 10))
 
     def mouse(self, x: int, y: int, action: str, *, button: int = 0) -> None:
-        del x, y, action, button
-        raise CoveError("mouse events are not available through the fleet sandbox provider")
+        self._control(
+            {
+                "type": "mouse",
+                "mouse": {
+                    "x": x,
+                    "y": y,
+                    "button": button,
+                    "action": action,
+                    "absolute": True,
+                },
+            }
+        )
 
     def control(self, request: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
+        if request.get("type") in {"screenshot", "key", "mouse", "text"}:
+            return self._control(request, timeout=timeout)
         if request.get("type") != "agent-ping":
-            raise CoveError("control socket requests are not available through the fleet sandbox provider")
+            raise CoveError("control socket request type is not available through the fleet sandbox provider")
         data = self._request("GET", self._sandbox_path(), timeout=timeout or self.timeout)
         if data.get("status") != "ready":
             raise CoveError(f"sandbox {self.sandbox_id} is {data.get('status')}")
         return {"success": True}
+
+    def _control(self, request: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
+        wait = timeout or self.timeout
+        payload = dict(request)
+        payload["timeout"] = _format_seconds(wait)
+        data = self._request(
+            "POST",
+            self._sandbox_path("control"),
+            payload,
+            timeout=wait + min(wait, 30),
+        )
+        if not data.get("done"):
+            raise CoveError(f"sandbox control timed out after {_format_seconds(wait)}")
+        if data.get("error"):
+            raise CoveError(str(data["error"]))
+        response = data.get("response") or {}
+        if isinstance(response, dict) and response.get("success") is False:
+            raise CoveError(str(response.get("error") or "control request failed"))
+        return data
 
     def delete_vm(self, vm: str | None = None) -> None:
         del vm

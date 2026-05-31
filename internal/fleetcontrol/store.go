@@ -48,9 +48,10 @@ type serviceAccountRecord struct {
 }
 
 const (
-	sandboxRoleRun  = "run"
-	sandboxRoleStop = "stop"
-	sandboxRoleExec = "exec"
+	sandboxRoleRun     = "run"
+	sandboxRoleStop    = "stop"
+	sandboxRoleExec    = "exec"
+	sandboxRoleControl = "control"
 )
 
 func OpenStore(path string, ttl time.Duration) (*Store, error) {
@@ -935,6 +936,68 @@ func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (Sand
 		return SandboxExecResult{}, err
 	}
 	return sandboxExecResult(id, vmName, assignment), nil
+}
+
+func (s *Store) ControlSandbox(id string, req SandboxControlRequest) (SandboxControlResult, error) {
+	return s.ControlSandboxActor("controller", id, req)
+}
+
+func (s *Store) ControlSandboxActor(actor, id string, req SandboxControlRequest) (SandboxControlResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxControlResult{}, fmt.Errorf("sandbox id required")
+	}
+	payload, typ, err := sandboxControlPayload(req)
+	if err != nil {
+		return SandboxControlResult{}, err
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	sandbox, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxControlResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	if sandbox.Status != "ready" {
+		return SandboxControlResult{}, fmt.Errorf("sandbox %q is %s", id, sandbox.Status)
+	}
+	if err := s.requireSandboxWorkerReadyLocked(now, sandbox.WorkerID); err != nil {
+		return SandboxControlResult{}, err
+	}
+	vmName := SandboxAssignmentVMName(sandbox)
+	assignment := Assignment{
+		ID:          s.nextAssignmentIDLocked(now),
+		Namespace:   sandbox.Namespace,
+		WorkerID:    sandbox.WorkerID,
+		SandboxID:   id,
+		SandboxRole: sandboxRoleControl,
+		Verb:        "cove-control",
+		Args:        []string{vmName, string(payload)},
+		Status:      "pending",
+		Created:     now,
+		Updated:     now,
+	}
+	s.assignments[assignment.ID] = assignment
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    sandbox.Namespace,
+		Action:       "sandbox.control",
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     sandbox.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields: map[string]string{
+			"vm_name": vmName,
+			"type":    typ,
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SandboxControlResult{}, err
+	}
+	return sandboxControlResult(id, vmName, typ, assignment), nil
 }
 
 func (s *Store) LeaseSandbox(id string, req SandboxLeaseRequest) (SandboxLeaseResult, error) {
@@ -2924,6 +2987,37 @@ func sandboxExecArgs(vmName string, command []string, env map[string]string) []s
 	return warmPoolClaimArgs(vmName, command, env)
 }
 
+func sandboxControlPayload(req SandboxControlRequest) ([]byte, string, error) {
+	typ := strings.TrimSpace(req.Type)
+	var body map[string]any
+	switch typ {
+	case "screenshot":
+		body = req.Screenshot
+		if body == nil {
+			body = map[string]any{}
+		}
+	case "key":
+		body = req.Key
+	case "mouse":
+		body = req.Mouse
+	case "text":
+		body = req.Text
+	default:
+		return nil, "", fmt.Errorf("sandbox control type must be screenshot, key, mouse, or text")
+	}
+	if body == nil {
+		return nil, "", fmt.Errorf("sandbox control %s payload required", typ)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"type": typ,
+		typ:    body,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("encode sandbox control payload: %w", err)
+	}
+	return payload, typ, nil
+}
+
 func warmPoolStopArgs(vmName string) []string {
 	return []string{"ctl", "-vm", vmName, "stop"}
 }
@@ -3274,6 +3368,44 @@ func sandboxExecResult(id, vmName string, assignment Assignment) SandboxExecResu
 		result.Stdout = assignment.LastReport.Stdout
 		result.Stderr = assignment.LastReport.Stderr
 		result.Error = assignment.LastReport.Error
+	}
+	return result
+}
+
+func sandboxControlResult(id, vmName, typ string, assignment Assignment) SandboxControlResult {
+	result := SandboxControlResult{
+		Namespace:  assignment.Namespace,
+		ID:         strings.TrimSpace(id),
+		VMName:     strings.TrimSpace(vmName),
+		Type:       strings.TrimSpace(typ),
+		Done:       !activeAssignmentStatus(assignment.Status),
+		Assignment: cloneAssignment(assignment),
+	}
+	if assignment.LastReport == nil {
+		return result
+	}
+	result.ExitCode = assignment.LastReport.ExitCode
+	result.Stdout = assignment.LastReport.Stdout
+	result.Stderr = assignment.LastReport.Stderr
+	result.Error = assignment.LastReport.Error
+	var response map[string]any
+	if err := json.Unmarshal([]byte(assignment.LastReport.Stdout), &response); err == nil {
+		result.Response = response
+		if data, ok := response["data"].(string); ok {
+			result.Data = data
+		}
+		if result.Data == "" {
+			if screenshot, ok := response["screenshot_result"].(map[string]any); ok {
+				if data, ok := screenshot["image_data"].(string); ok {
+					result.Data = data
+				}
+			}
+		}
+		if success, ok := response["success"].(bool); ok && !success && result.Error == "" {
+			if msg, ok := response["error"].(string); ok {
+				result.Error = msg
+			}
+		}
 	}
 	return result
 }

@@ -1,12 +1,14 @@
 package coved
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -220,6 +222,8 @@ func (w *FleetWorker) HandleAssignment(ctx context.Context, assignment fleetcont
 		report.Error = ""
 	case "cove":
 		report = w.runCoveAssignment(ctx, assignment)
+	case "cove-control":
+		report = w.runControlAssignment(ctx, assignment)
 	}
 	if _, err := w.ReportStatus(ctx, report); err != nil {
 		return err
@@ -292,6 +296,122 @@ finished:
 	report.Status = "complete"
 	report.Error = ""
 	return w.finishCoveAssignment(ctx, assignment, report)
+}
+
+func (w *FleetWorker) runControlAssignment(ctx context.Context, assignment fleetcontrol.Assignment) fleetcontrol.WorkerReport {
+	report := fleetcontrol.WorkerReport{
+		AssignmentID: assignment.ID,
+		Status:       "failed",
+		ExitCode:     -1,
+	}
+	if len(assignment.Args) != 2 {
+		report.Error = "control assignment requires vm name and request json"
+		return report
+	}
+	vmName := strings.TrimSpace(assignment.Args[0])
+	if vmName == "" {
+		report.Error = "control assignment vm name required"
+		return report
+	}
+	request, err := w.controlRequest(vmName, assignment.Args[1])
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	runCtx, cancel := context.WithTimeout(ctx, w.assignmentTimeout)
+	defer cancel()
+	w.reportAssignmentStatus(runCtx, assignment.ID, "running")
+	response, err := w.sendControlRequest(runCtx, vmName, request)
+	if err != nil {
+		if runCtx.Err() == context.DeadlineExceeded {
+			report.Error = fmt.Sprintf("assignment timed out after %s", w.assignmentTimeout)
+		} else {
+			report.Error = err.Error()
+		}
+		return report
+	}
+	report.Stdout = response
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(response), &decoded); err != nil {
+		report.Error = fmt.Sprintf("decode control response: %v", err)
+		return report
+	}
+	if success, _ := decoded["success"].(bool); !success {
+		report.ExitCode = 1
+		if msg, ok := decoded["error"].(string); ok && strings.TrimSpace(msg) != "" {
+			report.Error = msg
+		} else {
+			report.Error = "control request failed"
+		}
+		return report
+	}
+	report.Status = "complete"
+	report.ExitCode = 0
+	report.Error = ""
+	return report
+}
+
+func (w *FleetWorker) controlRequest(vmName, raw string) ([]byte, error) {
+	var request map[string]any
+	if err := json.Unmarshal([]byte(raw), &request); err != nil {
+		return nil, fmt.Errorf("decode control request: %w", err)
+	}
+	if request == nil {
+		return nil, fmt.Errorf("control request must be a json object")
+	}
+	if _, ok := request["auth_token"]; !ok {
+		token, err := w.controlToken(vmName)
+		if err != nil {
+			return nil, err
+		}
+		if token != "" {
+			request["auth_token"] = token
+		}
+	}
+	data, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("encode control request: %w", err)
+	}
+	return append(data, '\n'), nil
+}
+
+func (w *FleetWorker) sendControlRequest(ctx context.Context, vmName string, request []byte) (string, error) {
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "unix", w.controlSocketPath(vmName))
+	if err != nil {
+		return "", fmt.Errorf("dial control socket: %w", err)
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	if _, err := conn.Write(request); err != nil {
+		return "", fmt.Errorf("write control request: %w", err)
+	}
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil && !(err == io.EOF && line != "") {
+		return "", fmt.Errorf("read control response: %w", err)
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", fmt.Errorf("control socket returned no response")
+	}
+	return line, nil
+}
+
+func (w *FleetWorker) controlSocketPath(vmName string) string {
+	return filepath.Join(w.vmRoot, vmName, "control.sock")
+}
+
+func (w *FleetWorker) controlToken(vmName string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(w.vmRoot, vmName, "control.token"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read control token: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 func (w *FleetWorker) finishCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment, report fleetcontrol.WorkerReport) fleetcontrol.WorkerReport {

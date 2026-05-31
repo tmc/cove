@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `POST /v1/sandboxes/{id}/control` for hosted
+  screenshot, key, text, and mouse events through the backing VM control socket.
+- The OpenAI Agents Python cloud provider now maps `ComputerTool`
+  screenshot/key/text/mouse calls onto the sandbox control endpoint.
 - `cove fleet cordon` and `uncordon` now mark registered hosts as skipped for
   `fleet run` placement while keeping direct `--fleet=<name>` routing intact.
 - `cove fleet run` now records short local placement leases and counts active

@@ -406,6 +406,8 @@ func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, i
 		handleSandboxLease(w, r, store, id)
 	case "exec":
 		handleSandboxExec(w, r, store, id, identity)
+	case "control":
+		handleSandboxControl(w, r, store, id, identity)
 	case "metering":
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -452,6 +454,40 @@ func handleSandboxExec(w http.ResponseWriter, r *http.Request, store *Store, id 
 	result, ok := waitSandboxExec(r, store, result, timeout)
 	if !ok {
 		writeError(w, http.StatusNotFound, "sandbox exec assignment not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func handleSandboxControl(w http.ResponseWriter, r *http.Request, store *Store, id string, identity requestIdentity) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
+	if !sandboxVisible(w, store, id, identity) {
+		return
+	}
+	var req SandboxControlRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode sandbox control: %v", err))
+		return
+	}
+	result, err := store.ControlSandboxActor(identity.Actor, id, req)
+	if err != nil {
+		writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
+		return
+	}
+	timeout, err := sandboxControlTimeout(r, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, ok := waitSandboxControl(r, store, result, timeout)
+	if !ok {
+		writeError(w, http.StatusNotFound, "sandbox control assignment not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -627,6 +663,21 @@ func sandboxExecTimeout(r *http.Request, req SandboxExecRequest) (time.Duration,
 	return timeout, nil
 }
 
+func sandboxControlTimeout(r *http.Request, req SandboxControlRequest) (time.Duration, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("timeout"))
+	if raw == "" {
+		raw = strings.TrimSpace(req.Timeout)
+	}
+	if raw == "" {
+		return 30 * time.Second, nil
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout < 0 {
+		return 0, fmt.Errorf("sandbox control timeout must be a non-negative duration")
+	}
+	return timeout, nil
+}
+
 func waitSandboxExec(r *http.Request, store *Store, result SandboxExecResult, timeout time.Duration) (SandboxExecResult, bool) {
 	if timeout == 0 || result.Done {
 		return result, true
@@ -641,6 +692,33 @@ func waitSandboxExec(r *http.Request, store *Store, result SandboxExecResult, ti
 			return result, false
 		}
 		result = sandboxExecResult(result.ID, result.VMName, assignment)
+		if result.Done {
+			return result, true
+		}
+		select {
+		case <-r.Context().Done():
+			return result, true
+		case <-deadline.C:
+			return result, true
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitSandboxControl(r *http.Request, store *Store, result SandboxControlResult, timeout time.Duration) (SandboxControlResult, bool) {
+	if timeout == 0 || result.Done {
+		return result, true
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		assignment, ok := store.GetAssignment(result.Assignment.ID)
+		if !ok {
+			return result, false
+		}
+		result = sandboxControlResult(result.ID, result.VMName, result.Type, assignment)
 		if result.Done {
 			return result, true
 		}

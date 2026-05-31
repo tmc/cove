@@ -1,7 +1,11 @@
 package coved
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -182,6 +186,82 @@ exit 0
 	}
 	if !strings.Contains(report.Stdout, "stdout:run -ephemeral") || !strings.Contains(report.Stderr, "stderr:run -ephemeral") {
 		t.Fatalf("report output = stdout %q stderr %q", report.Stdout, report.Stderr)
+	}
+}
+
+func TestFleetWorkerRunsControlAssignment(t *testing.T) {
+	vmRoot := shortTempDir(t)
+	vmName := "cove-sandbox-job-1"
+	vmDir := filepath.Join(vmRoot, vmName)
+	mustMkdirAll(t, vmDir)
+	if err := os.WriteFile(filepath.Join(vmDir, "control.token"), []byte("tok\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", filepath.Join(vmDir, "control.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	requests := make(chan map[string]any, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		line, err := bufio.NewReader(conn).ReadBytes('\n')
+		if err != nil {
+			return
+		}
+		var request map[string]any
+		if err := json.Unmarshal(bytes.TrimSpace(line), &request); err != nil {
+			return
+		}
+		requests <- request
+		_, _ = conn.Write([]byte(`{"success":true,"screenshot_result":{"image_data":"cG5n"}}` + "\n"))
+	}()
+
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL: server.URL,
+		ID:            "worker-1",
+		VMRoot:        vmRoot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{
+		ID:       "assignment-1",
+		WorkerID: "worker-1",
+		Verb:     "cove-control",
+		Args:     []string{vmName, `{"type":"screenshot","screenshot":{"format":"png"}}`},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.PollAssignment(ctx); err != nil {
+		t.Fatalf("PollAssignment: %v", err)
+	}
+	select {
+	case request := <-requests:
+		if request["auth_token"] != "tok" || request["type"] != "screenshot" {
+			t.Fatalf("control request = %+v, want token and screenshot", request)
+		}
+	case <-time.After(fleetWorkerTestTimeout):
+		t.Fatal("control request not received")
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	report := assignment.LastReport
+	if assignment.Status != "complete" || report == nil || report.ExitCode != 0 || !strings.Contains(report.Stdout, `"image_data":"cG5n"`) {
+		t.Fatalf("assignment = %+v", assignment)
 	}
 }
 

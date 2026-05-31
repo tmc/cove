@@ -264,6 +264,9 @@ curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/wait?timeout=30s'
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/exec?timeout=30s' \
   -H 'content-type: application/json' \
   -d '{"command":["/usr/bin/sw_vers"],"env":{"CI":"1"}}'
+curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/control?timeout=30s' \
+  -H 'content-type: application/json' \
+  -d '{"type":"screenshot","screenshot":{"format":"png","scale":1}}'
 curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/metering'
 curl 'http://127.0.0.1:9758/v1/metering/sandboxes?sandbox_id=job-1'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop
@@ -311,6 +314,14 @@ The body requires `command`; `env` is optional. `timeout` can be supplied in the
 query string or JSON body. `timeout=0` returns the queued assignment without
 polling, which lets clients watch `/v1/assignments/{assignment_id}` themselves.
 
+`POST /v1/sandboxes/{id}/control` queues a same-worker VM control-socket request
+for a `ready` sandbox. Supported types are `screenshot`, `key`, `mouse`, and
+`text`; the body uses the same typed payloads as the local control socket and
+accepts `timeout` in the query string or JSON body. Screenshot responses expose
+the base64 image data as `data` and preserve the full control-socket response in
+`response`, so hosted OpenAI `ComputerTool` calls can use the same
+screenshot/key/text/mouse methods as local VMs.
+
 `GET /v1/sandboxes/{id}/metering` and `GET /v1/metering/sandboxes` return
 append-only records for metered sandbox run intervals. The controller records
 time spent in `running` and `ready`, derives VM, CPU, and memory-byte
@@ -319,10 +330,12 @@ stopped, draining, or restarting time. Namespace-scoped service accounts only
 see records in their namespace.
 
 This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
-create/list/get/delete/start/restart/stop/wait/exec, leases, and metering are
-present. The OpenAI Agents Python adapter can switch `SandboxRunConfig` between
-local VM control and this cloud/control-plane path; remaining SDK follow-up is
-Go SDK parity and hosted GUI event proxying.
+create/list/get/delete/start/restart/stop/wait/exec/control, leases, and
+metering are present. The OpenAI Agents Python adapter can switch
+`SandboxRunConfig` between
+local VM control and this cloud/control-plane path, including hosted
+ComputerTool screenshot/key/text/mouse events; remaining SDK follow-up is Go SDK
+parity.
 
 Assignment endpoints:
 

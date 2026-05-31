@@ -514,6 +514,72 @@ func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxControlQueuesSameWorkerControl(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.ControlSandbox("job-1", SandboxControlRequest{
+		Type:       "screenshot",
+		Screenshot: map[string]any{"format": "png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Done {
+		t.Fatalf("control result Done = true, want false")
+	}
+	if result.Assignment.WorkerID != "worker-1" || result.Assignment.SandboxID != "job-1" || result.Assignment.SandboxRole != sandboxRoleControl || result.Assignment.Verb != "cove-control" {
+		t.Fatalf("control assignment = %+v, want same-worker sandbox control", result.Assignment)
+	}
+	if len(result.Assignment.Args) != 2 || result.Assignment.Args[0] != "cove-sandbox-job-1" {
+		t.Fatalf("control args = %+v, want vm name and json payload", result.Assignment.Args)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.Assignment.Args[1]), &payload); err != nil {
+		t.Fatalf("decode control payload: %v", err)
+	}
+	if payload["type"] != "screenshot" {
+		t.Fatalf("control payload = %+v, want screenshot", payload)
+	}
+	screenshot, ok := payload["screenshot"].(map[string]any)
+	if !ok || screenshot["format"] != "png" {
+		t.Fatalf("screenshot payload = %+v, want format png", payload["screenshot"])
+	}
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased.ID != result.Assignment.ID {
+		t.Fatalf("leased control assignment = %+v, want %s", leased, result.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: result.Assignment.ID, Status: "complete", ExitCode: 0, Stdout: `{"success":true,"screenshot_result":{"image_data":"cG5n"}}`}); err != nil {
+		t.Fatal(err)
+	}
+	finished, ok := store.GetAssignment(result.Assignment.ID)
+	if !ok {
+		t.Fatal("control assignment missing")
+	}
+	done := sandboxControlResult("job-1", "cove-sandbox-job-1", "screenshot", finished)
+	if !done.Done || done.ExitCode != 0 || done.Data != "cG5n" {
+		t.Fatalf("finished control = %+v, want done image data", done)
+	}
+}
+
 func TestStoreSandboxLeaseAcquireRenewRelease(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -2544,6 +2610,17 @@ func TestHandlerSandboxExec(t *testing.T) {
 	}
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/exec?timeout=0", "token-b", SandboxExecRequest{Command: []string{"true"}}); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox exec status = %d, want 404", code)
+	}
+	var controlResult SandboxControlResult
+	postJSONAuth(t, server.URL+"/v1/sandboxes/job-1/control?timeout=0", "token-a", SandboxControlRequest{
+		Type: "key",
+		Key:  map[string]any{"key_code": float64(36), "key_down": true, "modifiers": float64(1 << 20), "use_cg_event": true},
+	}, &controlResult)
+	if controlResult.Done || controlResult.Type != "key" || controlResult.Assignment.SandboxRole != sandboxRoleControl || controlResult.Assignment.WorkerID != "worker-1" {
+		t.Fatalf("control result = %+v, want pending same-worker control", controlResult)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/control?timeout=0", "token-b", SandboxControlRequest{Type: "text", Text: map[string]any{"text": "hi"}}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox control status = %d, want 404", code)
 	}
 }
 

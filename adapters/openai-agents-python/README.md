@@ -1,13 +1,12 @@
 # cove-sandbox
 
 `cove-sandbox` is the OpenAI Agents SDK adapter for cove. It lets an Agents SDK
-`ComputerTool` drive a local Apple-Silicon macOS VM through cove's control
-socket, and it exposes a `SandboxRunConfig` helper for `SandboxAgent`
-workflows.
+`ComputerTool` drive Apple-Silicon macOS VMs through cove's local control socket
+or a private `cove-fleetd` control plane, and it exposes a `SandboxRunConfig`
+helper for `SandboxAgent` workflows.
 
-The `ComputerTool` path is local-only. `SandboxRunConfig` can run locally through
-the VM control socket or remotely through a private `cove-fleetd` control plane
-with `provider="cloud"`.
+`SandboxRunConfig` can run locally through the VM control socket or remotely
+through a control-plane sandbox with `provider="cloud"`.
 
 ## Install
 
@@ -159,9 +158,11 @@ run_config = RunConfig(
 
 The cloud provider creates `POST /v1/sandboxes` handles, polls until the sandbox
 is `ready`, maps SDK `exec`/workspace file calls onto
-`POST /v1/sandboxes/{id}/exec`, and deletes the sandbox handle on close when
-`delete_on_close=True`. Set `COVE_FLEET_URL` and `COVE_API_KEY` (or
-`COVE_FLEET_TOKEN`) instead of passing `fleet_url` and `api_key` directly.
+`POST /v1/sandboxes/{id}/exec`, maps `ComputerTool`
+screenshot/key/text/mouse calls onto `POST /v1/sandboxes/{id}/control`, and
+deletes the sandbox handle on close when `delete_on_close=True`. Set
+`COVE_FLEET_URL` and `COVE_API_KEY` (or `COVE_FLEET_TOKEN`) instead of passing
+`fleet_url` and `api_key` directly.
 
 For a copy-paste helper that returns the SDK `RunConfig` wrapper directly,
 import `sandbox_run_config` from `cove_sandbox`.

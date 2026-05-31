@@ -156,6 +156,38 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         server.stop()
 
 
+def test_fleet_client_control_events() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        client = CoveFleetClient(sandbox_id="job-1", fleet_url=server.url, api_key="secret", timeout=1)
+        assert client.screenshot(fmt="png") == b"png"
+        client.key(36, modifiers=1 << 20)
+        client.text("hi")
+        client.mouse(4, 5, "click", button=1)
+
+        control_requests = [req for req in server.requests if req["path"] == "/v1/sandboxes/job-1/control"]
+        assert len(control_requests) == 5
+        assert control_requests[0]["body"]["screenshot"]["format"] == "png"
+        assert control_requests[1]["body"]["key"] == {
+            "key_code": 36,
+            "key_down": True,
+            "modifiers": 1 << 20,
+            "use_cg_event": True,
+        }
+        assert control_requests[2]["body"]["key"]["key_down"] is False
+        assert control_requests[3]["body"]["text"] == {"text": "hi"}
+        assert control_requests[4]["body"]["mouse"] == {
+            "x": 4,
+            "y": 5,
+            "button": 1,
+            "action": "click",
+            "absolute": True,
+        }
+    finally:
+        server.stop()
+
+
 def _state_kwargs() -> dict[str, object]:
     kwargs: dict[str, object] = {
         "vm": "eval-001",
@@ -265,6 +297,18 @@ class _FleetHTTPServer:
                     return
                 if self.path == "/v1/sandboxes/job-1/exec":
                     self._write({"done": True, "exit_code": 7, "stdout": "out", "stderr": "err"})
+                    return
+                if self.path == "/v1/sandboxes/job-1/control":
+                    if body.get("type") == "screenshot":
+                        self._write(
+                            {
+                                "done": True,
+                                "data": _b64(b"png"),
+                                "response": {"success": True, "screenshot_result": {"image_data": _b64(b"png")}},
+                            }
+                        )
+                        return
+                    self._write({"done": True, "response": {"success": True}})
                     return
                 self.send_error(404)
 
