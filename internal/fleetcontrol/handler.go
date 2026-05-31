@@ -850,6 +850,15 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 			return
 		}
 		handleWorkerCordon(w, r, store, id)
+	case "drain":
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !requireUnscoped(w, r, store) {
+			return
+		}
+		handleWorkerDrain(w, r, store, id)
 	case "reports":
 		handleWorkerReports(w, r, store, id)
 	case "uncordon":
@@ -1312,6 +1321,24 @@ func handleWorkerCordon(w http.ResponseWriter, r *http.Request, store *Store, id
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func handleWorkerDrain(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var lifecycle WorkerLifecycle
+	if err := json.NewDecoder(r.Body).Decode(&lifecycle); err != nil && err != io.EOF {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode worker lifecycle: %v", err))
+		return
+	}
+	result, err := store.DrainWorkerActor(actorFromRequest(r, store), id, lifecycle.Reason)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func handleWorkerUncordon(w http.ResponseWriter, r *http.Request, store *Store, id string) {

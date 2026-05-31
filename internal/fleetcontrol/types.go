@@ -171,6 +171,18 @@ type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+type WorkerDrainResult struct {
+	Worker    HostRecord          `json:"worker"`
+	Sandboxes []SandboxStopResult `json:"sandboxes,omitempty"`
+	Skipped   []WorkerDrainSkip   `json:"skipped,omitempty"`
+}
+
+type WorkerDrainSkip struct {
+	SandboxID string `json:"sandbox_id"`
+	Status    string `json:"status,omitempty"`
+	Reason    string `json:"reason"`
+}
+
 type ImagePrepareRequest struct {
 	Namespace      string            `json:"namespace,omitempty"`
 	SourceRef      string            `json:"source_ref"`

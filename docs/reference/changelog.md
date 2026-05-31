@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `POST /v1/workers/{id}/drain`, which cordons a
+  worker and stops or cancels its hosted sandbox handles through the existing
+  same-worker cleanup path.
 - `cove-fleetd` now exposes `POST /v1/sandboxes/{id}/control` for hosted
   screenshot, key, text, and mouse events through the backing VM control socket.
 - The OpenAI Agents Python cloud provider now maps `ComputerTool`

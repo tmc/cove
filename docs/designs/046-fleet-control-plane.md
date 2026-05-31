@@ -316,7 +316,8 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   `POST /v1/sandboxes` (create = fork-from a snapshot), `GET /v1/sandboxes/{id}`,
   `POST /v1/sandboxes/{id}/{start|stop|wait}`, `DELETE /v1/sandboxes/{id}`, plus
   `lease` (exclusive-modify lock) and controller-backed `cordon` (prevent
-  placement across all clients). The first scaffold now exists:
+  placement across all clients) plus `drain` (cordon a worker and stop/cancel
+  hosted sandbox handles already placed there). The first scaffold now exists:
   `POST/GET/DELETE /v1/sandboxes` creates a tracked fork-run assignment, probes
   readiness through `cove shell`, waits on terminal status, starts stopped
   handles from the retained VM, restarts active handles through stop cleanup
@@ -331,6 +332,8 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   `agentsandbox` package now has a matching local/cloud client for hosted
   create/list/get/wait/lease/restart/exec/control/metering/delete and
   screenshot/key/text/mouse flows.
+  `POST /v1/workers/{id}/drain` now gives operators a host-maintenance control
+  operation over hosted sandboxes without hand-enumerating handles.
   The bar to beat is Daytona's create→exec→delete in under six lines with an
   opaque handle.
 - **The wedge.** Cua Cloud runs **Linux/Windows only** — Apple-Silicon macOS does

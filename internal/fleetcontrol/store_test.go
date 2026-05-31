@@ -1445,6 +1445,77 @@ func TestStoreCordonPersistsAcrossHeartbeatAndSkipsPlacement(t *testing.T) {
 	}
 }
 
+func TestStoreDrainWorkerCordonsAndStopsSandboxes(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := store.CreateSandbox(SandboxRequest{ID: "job-ready", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.AwaitAssignment("drain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != ready.Assignment.ID {
+		t.Fatalf("leased = %+v, want %s", leased, ready.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "drain", AssignmentID: ready.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := store.CreateSandbox(SandboxRequest{ID: "job-pending", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	result, err := store.DrainWorker("drain", "maintenance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Worker.Cordoned || result.Worker.Status != "cordoned" || result.Worker.CordonReason != "maintenance" {
+		t.Fatalf("drained worker = %+v, want cordoned maintenance", result.Worker)
+	}
+	if len(result.Sandboxes) != 2 {
+		t.Fatalf("drain sandboxes = %+v, want 2", result.Sandboxes)
+	}
+	byID := make(map[string]SandboxStopResult)
+	for _, stopped := range result.Sandboxes {
+		byID[stopped.ID] = stopped
+	}
+	if got := byID["job-ready"]; got.Status != "draining" || got.Cleanup == nil || got.Cleanup.WorkerID != "drain" {
+		t.Fatalf("job-ready drain = %+v, want draining cleanup on worker", got)
+	}
+	if got := byID["job-pending"]; got.Status != "canceled" || !got.Canceled || got.Cleanup != nil {
+		t.Fatalf("job-pending drain = %+v, want canceled without cleanup", got)
+	}
+	if got, ok := store.GetSandbox("job-ready"); !ok || got.Status != "draining" {
+		t.Fatalf("GetSandbox(job-ready) = %+v, %v; want draining", got, ok)
+	}
+	if got, ok := store.GetSandbox("job-pending"); !ok || got.Status != "canceled" || got.Assignment.ID != pending.Assignment.ID {
+		t.Fatalf("GetSandbox(job-pending) = %+v, %v; want canceled", got, ok)
+	}
+	if event := auditAction(store.ListAudit(0), "worker.drain"); event == nil || event.WorkerID != "drain" || event.Fields["sandboxes"] != "2" {
+		t.Fatalf("worker drain audit = %+v", event)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.drain"); event == nil || event.WorkerID != "drain" {
+		t.Fatalf("sandbox drain audit = %+v", event)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "ready", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := store.CreateSandbox(SandboxRequest{ID: "job-next", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.WorkerID != "ready" {
+		t.Fatalf("post-drain sandbox worker = %q, want ready", next.WorkerID)
+	}
+}
+
 func TestStoreUncordonRestoresPlacement(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	for _, id := range []string{"a", "b"} {
@@ -2443,6 +2514,33 @@ func TestHandlerWorkerCordonLifecycle(t *testing.T) {
 	postJSON(t, server.URL+"/v1/workers/drain/uncordon", map[string]string{}, &record)
 	if record.Cordoned || record.Status != "ready" {
 		t.Fatalf("uncordon response = %+v", record)
+	}
+}
+
+func TestHandlerWorkerDrainStopsHostedSandboxes(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var sandbox SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &sandbox)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
+
+	var drain WorkerDrainResult
+	postJSON(t, server.URL+"/v1/workers/worker-1/drain", WorkerLifecycle{Reason: "maintenance"}, &drain)
+	if !drain.Worker.Cordoned || drain.Worker.CordonReason != "maintenance" {
+		t.Fatalf("drain worker = %+v, want cordoned maintenance", drain.Worker)
+	}
+	if len(drain.Sandboxes) != 1 || drain.Sandboxes[0].ID != "job-1" || drain.Sandboxes[0].Cleanup == nil {
+		t.Fatalf("drain result = %+v, want job-1 cleanup", drain)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes/job-1", &sandbox)
+	if sandbox.Status != "draining" {
+		t.Fatalf("sandbox after drain = %+v, want draining", sandbox)
 	}
 }
 

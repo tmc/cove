@@ -326,6 +326,77 @@ func (s *Store) CordonWorkerActor(actor, id, reason string) (HostRecord, error) 
 	return s.statusLocked(record), nil
 }
 
+func (s *Store) DrainWorker(id, reason string) (WorkerDrainResult, error) {
+	return s.DrainWorkerActor("controller", id, reason)
+}
+
+func (s *Store) DrainWorkerActor(actor, id, reason string) (WorkerDrainResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return WorkerDrainResult{}, fmt.Errorf("worker id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	reason = strings.TrimSpace(reason)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.hosts[id]
+	if !ok {
+		return WorkerDrainResult{}, fmt.Errorf("worker %q not registered", id)
+	}
+	record.Cordoned = true
+	record.CordonReason = reason
+	record.CordonedAt = now
+	if now.After(record.Expires) {
+		record.Status = "stale"
+	} else {
+		record.Status = "cordoned"
+	}
+	s.hosts[id] = record
+
+	result := WorkerDrainResult{Worker: s.statusLocked(record)}
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.WorkerID != id || assignment.SandboxID == "" || assignment.SandboxRole != sandboxRoleRun {
+			continue
+		}
+		if sandboxTerminalStatus(assignment.Status) {
+			result.Skipped = append(result.Skipped, WorkerDrainSkip{
+				SandboxID: assignment.SandboxID,
+				Status:    assignment.Status,
+				Reason:    "terminal",
+			})
+			continue
+		}
+		stopped, err := s.stopSandboxLocked(now, actor, assignment.SandboxID, "sandbox.drain")
+		if err != nil {
+			result.Skipped = append(result.Skipped, WorkerDrainSkip{
+				SandboxID: assignment.SandboxID,
+				Status:    assignment.Status,
+				Reason:    err.Error(),
+			})
+			continue
+		}
+		result.Sandboxes = append(result.Sandboxes, stopped)
+	}
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Action:     "worker.drain",
+		TargetType: "worker",
+		TargetID:   id,
+		WorkerID:   id,
+		Fields: map[string]string{
+			"reason":    reason,
+			"sandboxes": strconv.Itoa(len(result.Sandboxes)),
+			"skipped":   strconv.Itoa(len(result.Skipped)),
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return WorkerDrainResult{}, err
+	}
+	return result, nil
+}
+
 func (s *Store) UncordonWorker(id string) (HostRecord, error) {
 	return s.UncordonWorkerActor("controller", id)
 }

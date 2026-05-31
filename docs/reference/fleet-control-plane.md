@@ -8,11 +8,11 @@ inventory, assignment leases, and the worker-facing protocol surface. `coved`
 can now dial out as a worker and execute leased `cove` assignments;
 controller-side placement can choose a ready worker by least-loaded or
 image-affinity or bin-pack policy, and the controller reconciles stale workers
-and expired assignment leases. Operators can cordon workers for maintenance
-without dropping their heartbeat history, and can ask the controller to prepare
-a base image across the fleet before job placement, push VM lifecycle policy
-updates, fan out storage budget/prune policy, or keep a fork warm-pool quota
-active.
+and expired assignment leases. Operators can cordon or drain workers for
+maintenance without dropping their heartbeat history, and can ask the controller
+to prepare a base image across the fleet before job placement, push VM lifecycle
+policy updates, fan out storage budget/prune policy, or keep a fork warm-pool
+quota active.
 
 Start a private controller:
 
@@ -67,9 +67,22 @@ curl http://127.0.0.1:9758/v1/workers/mini-1
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/drain \
+  -H 'content-type: application/json' \
+  -d '{"reason":"maintenance"}'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/uncordon
 curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
+
+`POST /v1/workers/{id}/drain` is the controller maintenance path for hosted
+sandbox workloads. It cordons the worker to prevent new placement, then walks
+hosted sandbox handles assigned to that worker: pending sandbox runs are
+canceled, and leased/running/ready handles are marked `draining` with a
+same-worker `cove ctl -vm <vm> stop` cleanup assignment. The response includes
+the updated worker, per-sandbox stop results, and skipped terminal sandboxes.
+The operation records both `worker.drain` and per-sandbox `sandbox.drain` audit
+events. Like cordon/uncordon, drain is a fleet-global operator action and
+requires an unscoped operator/admin identity.
 
 Service-account and audit endpoints:
 
