@@ -37,6 +37,7 @@ type Show struct {
 	Events        []metrics.Event  `json:"events"`
 	Lifecycle     []metrics.Event  `json:"lifecycle"`
 	Result        Result           `json:"result"`
+	Network       *NetworkSummary  `json:"network,omitempty"`
 	Resource      *ResourceSummary `json:"resource,omitempty"`
 	Artifacts     []string         `json:"artifacts"`
 	ArtifactBytes int64            `json:"artifact_bytes"`
@@ -78,6 +79,7 @@ func LoadShow(root, prefix string) (Show, error) {
 		Events:        events,
 		Lifecycle:     lifecycle(events),
 		Result:        result(events),
+		Network:       summarizeNetwork(events),
 		Resource:      summarizeResources(events),
 		Artifacts:     artifacts,
 		ArtifactBytes: artifactBytes,
@@ -136,6 +138,14 @@ func RenderShow(w io.Writer, show Show) error {
 	}
 	if show.Failure.Class != "" {
 		if _, err := fmt.Fprintf(w, "Failure: %s: %s\n", show.Failure.Class, show.Failure.Reason); err != nil {
+			return err
+		}
+	}
+	if show.Network != nil {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if err := renderNetworkSummary(w, show.Network); err != nil {
 			return err
 		}
 	}

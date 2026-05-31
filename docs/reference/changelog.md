@@ -62,6 +62,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Runs now emit a `network_policy` metric for direct modes, named policies, and
   `egress:<...>` allowlists, so `cove network audit` can show policy context
   from `metrics.jsonl` even when `network.log` is absent.
+- `cove runs show`, `runs show --summary-json`, and GitHub summary exports now
+  fold `network_policy` events into network summaries with policy, mode,
+  enforcement, allowlists, audit-log flag, and limitations.
 - `--net egress:<domain,ip,cidr...>` now records a custom per-run egress
   allowlist in `network.log` and `cove network audit`, giving CI and agent
   runs an explicit network intent artifact while Virtualization.framework NAT

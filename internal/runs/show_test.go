@@ -80,6 +80,15 @@ func TestRenderShow(t *testing.T) {
 	events := []metrics.Event{
 		event("fork_created", "ok", 10, nil),
 		event("vm_create", "ok", 20, nil),
+		event("network_policy", "ok", 22, map[string]any{
+			"policy":        "egress",
+			"mode":          "nat",
+			"enforcement":   "not-hooked",
+			"audit_log":     true,
+			"allow_domains": []any{"api.openai.com", "ghcr.io"},
+			"allow_cidrs":   []any{"10.0.0.0/8"},
+			"limitation":    "nat records intent",
+		}),
 		event("resource_sample", "ok", 25, map[string]any{
 			"phase":                  "periodic",
 			"memory_total_bytes":     8 * 1024 * 1024 * 1024,
@@ -118,6 +127,9 @@ func TestRenderShow(t *testing.T) {
 	if show.Resource == nil || show.Resource.SampleCount != 1 || show.Resource.TopGuestProcess == nil || show.Resource.TopGuestProcess.Command != "xcodebuild" {
 		t.Fatalf("resource = %+v", show.Resource)
 	}
+	if show.Network == nil || show.Network.Policy != "egress" || show.Network.Mode != "nat" || !show.Network.AuditLog || len(show.Network.AllowDomains) != 2 {
+		t.Fatalf("network = %+v", show.Network)
+	}
 
 	var buf bytes.Buffer
 	if err := RenderShow(&buf, show); err != nil {
@@ -129,6 +141,13 @@ func TestRenderShow(t *testing.T) {
 		"fork_created  ok  10ms",
 		"Result: failed exit_code=2 wallclock=150ms failed_events=2",
 		"Failure: vm_start: boot failed",
+		"Network:",
+		"policy: egress mode=nat",
+		"enforcement: not-hooked",
+		"audit_log: true",
+		"allow_domains: api.openai.com, ghcr.io",
+		"allow_cidrs: 10.0.0.0/8",
+		"limitation: nat records intent",
 		"Resources:",
 		"guest_memory_min_available: 512.0 MB (6.2%)",
 		"guest_load_avg_1_peak: 5.25",

@@ -117,14 +117,15 @@ defined in `internal/runs/show.go` (`lifecycleEvents` map):
 `benchmark_result`, `lifecycle.budget.exceeded`, `lifecycle.idle.tripped`,
 `lifecycle.maxage.tripped`, `run_complete`.
 
-Events not in this list (image GC, agent sandbox, capture latency,
-`network_policy`, daemon-side
+Events not in this list (image GC, agent sandbox, capture latency, daemon-side
 `lifecycle.policy.stop`, `vm_policy_stop` fallback) still appear in
 `runs show --json`, `runs show --summary-json`, and `runs export` JSON, but are
 not rendered in the default lifecycle phase table. `resource_sample` events are
 also folded into the `runs show` resource summary, which reports sample count,
 guest memory/load and process peaks, host CPU/RSS peaks, and best-effort
-pressure hints.
+pressure hints. `network_policy` events are folded into the network summary,
+which reports the selected policy, effective mode, enforcement shape,
+allowlists, audit-log flag, and any limitation.
 
 ## Export formats
 

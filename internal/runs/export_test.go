@@ -37,6 +37,14 @@ func TestExportGHASummary(t *testing.T) {
 	root := t.TempDir()
 	writeRun(t, root, "20260505-gha", []metrics.Event{
 		event("fork_created", "ok", 10, nil),
+		event("network_policy", "ok", 12, map[string]any{
+			"policy":        "packages",
+			"mode":          "nat",
+			"enforcement":   "not-hooked",
+			"audit_log":     true,
+			"allow_domains": []any{"pypi.org", "ghcr.io"},
+			"limitation":    "nat records intent",
+		}),
 		event("vm_start", "failed", 20, map[string]any{"reason": "boot failed"}),
 		event("run_complete", "failed", 30, map[string]any{"exit_code": 1}),
 	}, nil)
@@ -53,6 +61,12 @@ func TestExportGHASummary(t *testing.T) {
 		"| vm_start | [fail] failed | 20ms |",
 		"**Result:** [fail] failed exit_code=1 wallclock=30ms failed_events=2",
 		"**Failure:** `vm_start`: boot failed",
+		"### Network",
+		"| policy | packages mode=nat |",
+		"| enforcement | not-hooked |",
+		"| audit_log | true |",
+		"| allow_domains | pypi.org, ghcr.io |",
+		"| limitation | nat records intent |",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("summary missing %q:\n%s", want, out)

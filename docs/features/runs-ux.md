@@ -35,7 +35,8 @@ duration such as `24h` or `7d`, `--status` filters successful or failed runs,
 line.
 
 `runs show`
-: Prints one run's lifecycle, result, resource summary, and artifacts.
+: Prints one run's lifecycle, result, network policy summary, resource summary,
+and artifacts.
 `--json` emits the raw event array for compatibility; `--summary-json` emits
 the structured show object for scripts, including raw events.
 
@@ -82,6 +83,13 @@ short resource summary:
 The raw `resource_sample` events remain in `runs show --json` and
 `cove runs export <id> --format json`. The derived summary is available in
 human `runs show`, `runs show --summary-json`, and GitHub summary export.
+
+## Network Summary
+
+When a run contains a `network_policy` event, `runs show` folds it into a short
+network summary with the selected policy, effective mode, enforcement shape,
+allowlisted domains/CIDRs, audit-log flag, and any limitation. GitHub summary
+exports include the same derived network section.
 
 ## Export Formats
 

@@ -83,8 +83,31 @@ func ExportGHASummary(w io.Writer, root, prefix string) error {
 			return err
 		}
 	}
+	if show.Network != nil {
+		if err := exportNetworkSummaryMarkdown(w, show.Network); err != nil {
+			return err
+		}
+	}
 	if show.Resource != nil {
 		if err := exportResourceSummaryMarkdown(w, show.Resource); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func exportNetworkSummaryMarkdown(w io.Writer, s *NetworkSummary) error {
+	if _, err := fmt.Fprint(w, "\n### Network\n\n"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "| Field | Value |"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "| --- | --- |"); err != nil {
+		return err
+	}
+	for _, row := range networkSummaryRows(s) {
+		if _, err := fmt.Fprintf(w, "| %s | %s |\n", markdownCell(row.Name), markdownCell(row.Value)); err != nil {
 			return err
 		}
 	}
