@@ -73,7 +73,16 @@ type SandboxListOptions struct {
 	Status    string
 	WorkerID  string
 	ImageRef  string
+	Offset    int
 	Limit     int
+}
+
+type SandboxListResult struct {
+	Sandboxes  []SandboxStatus `json:"sandboxes"`
+	Count      int             `json:"count,omitempty"`
+	Offset     int             `json:"offset,omitempty"`
+	Limit      int             `json:"limit,omitempty"`
+	NextOffset int             `json:"next_offset,omitempty"`
 }
 
 type Lease struct {
@@ -315,8 +324,16 @@ func (c *Client) Get(ctx context.Context) (SandboxStatus, error) {
 }
 
 func (c *Client) List(ctx context.Context, options ...SandboxListOptions) ([]SandboxStatus, error) {
-	if err := c.ready(); err != nil {
+	result, err := c.ListPage(ctx, options...)
+	if err != nil {
 		return nil, err
+	}
+	return result.Sandboxes, nil
+}
+
+func (c *Client) ListPage(ctx context.Context, options ...SandboxListOptions) (SandboxListResult, error) {
+	if err := c.ready(); err != nil {
+		return SandboxListResult{}, err
 	}
 	opt := SandboxListOptions{Namespace: c.namespace}
 	if len(options) > 0 {
@@ -327,25 +344,31 @@ func (c *Client) List(ctx context.Context, options ...SandboxListOptions) ([]San
 	}
 	query, err := opt.query()
 	if err != nil {
-		return nil, err
+		return SandboxListResult{}, err
 	}
 	if c.provider == ProviderLocal {
 		status, err := c.Status(ctx)
 		if err != nil {
-			return nil, err
+			return SandboxListResult{}, err
 		}
+		result := SandboxListResult{Offset: opt.Offset, Limit: opt.Limit}
 		if !sandboxMatchesListOptions(status, opt) {
-			return nil, nil
+			return result, nil
 		}
-		return []SandboxStatus{status}, nil
+		if opt.Offset == 0 {
+			result.Sandboxes = []SandboxStatus{status}
+		}
+		result.Count = len(result.Sandboxes)
+		return result, nil
 	}
-	var result struct {
-		Sandboxes []SandboxStatus `json:"sandboxes"`
-	}
+	var result SandboxListResult
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/sandboxes", query), nil, &result, c.timeout); err != nil {
-		return nil, err
+		return SandboxListResult{}, err
 	}
-	return result.Sandboxes, nil
+	if result.Count == 0 && len(result.Sandboxes) > 0 {
+		result.Count = len(result.Sandboxes)
+	}
+	return result, nil
 }
 
 func sandboxMatchesListOptions(status SandboxStatus, options SandboxListOptions) bool {
@@ -368,11 +391,17 @@ func (o SandboxListOptions) query() (map[string]string, error) {
 	if o.Limit < 0 {
 		return nil, errors.New("agentsandbox: sandbox list limit must be non-negative")
 	}
+	if o.Offset < 0 {
+		return nil, errors.New("agentsandbox: sandbox list offset must be non-negative")
+	}
 	query := map[string]string{
 		"namespace": o.Namespace,
 		"status":    o.Status,
 		"worker_id": o.WorkerID,
 		"image_ref": o.ImageRef,
+	}
+	if o.Offset > 0 {
+		query["offset"] = strconv.Itoa(o.Offset)
 	}
 	if o.Limit > 0 {
 		query["limit"] = strconv.Itoa(o.Limit)

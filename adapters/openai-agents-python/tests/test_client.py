@@ -198,13 +198,17 @@ def test_fleet_client_list_filters() -> None:
     server.start()
     try:
         client = CoveFleetClient(sandbox_id="job-1", fleet_url=server.url, api_key="secret", namespace="team-a")
-        sandboxes = client.list(status="ready", worker_id="worker-1", image_ref="base:v1", limit=5)
-        assert sandboxes[0]["id"] == "job-1"
+        page = client.list_page(status="ready", worker_id="worker-1", image_ref="base:v1", offset=2, limit=5)
+        assert page["sandboxes"][0]["id"] == "job-1"
+        assert page["count"] == 1
+        assert page["offset"] == 2
+        assert page["limit"] == 5
         query = server.requests[-1]["query"]
         assert query["namespace"] == ["team-a"]
         assert query["status"] == ["ready"]
         assert query["worker_id"] == ["worker-1"]
         assert query["image_ref"] == ["base:v1"]
+        assert query["offset"] == ["2"]
         assert query["limit"] == ["5"]
 
         listed = CoveFleetClient.list_sandboxes(
@@ -220,6 +224,8 @@ def test_fleet_client_list_filters() -> None:
 
         with pytest.raises(ValueError, match="limit must be non-negative"):
             client.list(limit=-1)
+        with pytest.raises(ValueError, match="offset must be non-negative"):
+            client.list(offset=-1)
     finally:
         server.stop()
 
@@ -392,7 +398,10 @@ class _FleetHTTPServer:
                                     "image_ref": "base:v1",
                                     "status": "ready",
                                 }
-                            ]
+                            ],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
                         }
                     )
                     return

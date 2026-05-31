@@ -949,14 +949,25 @@ func (s *Store) ListSandboxesNamespace(namespace string) []SandboxStatus {
 }
 
 func (s *Store) ListSandboxesFiltered(filter SandboxListFilter) []SandboxStatus {
+	return s.ListSandboxesPage(filter).Sandboxes
+}
+
+func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 	filter.Namespace = normalizeNamespace(filter.Namespace)
 	filter.Status = strings.TrimSpace(filter.Status)
 	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
 	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now().UTC()
-	var sandboxes []SandboxStatus
+	result := SandboxListResult{Offset: filter.Offset, Limit: filter.Limit}
+	offset := 0
 	for _, assignment := range s.sortedAssignmentsLocked() {
 		if assignment.SandboxID == "" || assignment.SandboxRole != sandboxRoleRun {
 			continue
@@ -974,12 +985,18 @@ func (s *Store) ListSandboxesFiltered(filter SandboxListFilter) []SandboxStatus 
 		if filter.ImageRef != "" && sandbox.ImageRef != filter.ImageRef {
 			continue
 		}
-		sandboxes = append(sandboxes, sandbox)
-		if filter.Limit > 0 && len(sandboxes) >= filter.Limit {
+		if offset < filter.Offset {
+			offset++
+			continue
+		}
+		if filter.Limit > 0 && len(result.Sandboxes) >= filter.Limit {
+			result.NextOffset = filter.Offset + len(result.Sandboxes)
 			break
 		}
+		result.Sandboxes = append(result.Sandboxes, sandbox)
 	}
-	return sandboxes
+	result.Count = len(result.Sandboxes)
+	return result
 }
 
 func (s *Store) ListSandboxMetering(namespace, sandboxID string) SandboxMeteringResult {

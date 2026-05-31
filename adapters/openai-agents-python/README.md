@@ -176,7 +176,8 @@ client = CoveFleetClient.create_sandbox(
     image_ref="macos-base:latest",
     sandbox_id="eval-001",
 )
-ready = client.list(status="ready", image_ref="macos-base:latest", limit=10)
+ready = client.list_page(status="ready", image_ref="macos-base:latest", offset=0, limit=10)
+print(ready.get("next_offset"))
 lease = client.lease(holder="runner-42", ttl=30)
 client.wait_ready(timeout=120)
 print(client.exec("sw_vers").stdout)

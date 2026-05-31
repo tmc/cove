@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -236,24 +237,32 @@ func TestCloudClientListFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	list, err := client.List(ctx, SandboxListOptions{
+	page, err := client.ListPage(ctx, SandboxListOptions{
 		Status:   "ready",
 		WorkerID: "worker-1",
 		ImageRef: "base:v1",
+		Offset:   2,
 		Limit:    5,
 	})
 	if err != nil {
-		t.Fatalf("List filtered: %v", err)
+		t.Fatalf("ListPage filtered: %v", err)
 	}
+	list := page.Sandboxes
 	if len(list) != 1 || list[0].ID != "job-1" {
-		t.Fatalf("List filtered = %+v, want job-1", list)
+		t.Fatalf("ListPage filtered = %+v, want job-1", page)
+	}
+	if page.Offset != 2 || page.Limit != 5 || page.Count != 1 {
+		t.Fatalf("ListPage metadata = %+v, want offset 2 limit 5 count 1", page)
 	}
 	query := server.requests[len(server.requests)-1].query
-	if query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("worker_id") != "worker-1" || query.Get("image_ref") != "base:v1" || query.Get("limit") != "5" {
+	if query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("worker_id") != "worker-1" || query.Get("image_ref") != "base:v1" || query.Get("offset") != "2" || query.Get("limit") != "5" {
 		t.Fatalf("filtered list query = %q", query.Encode())
 	}
 	if _, err := client.List(ctx, SandboxListOptions{Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
 		t.Fatalf("negative limit err = %v, want validation error", err)
+	}
+	if _, err := client.List(ctx, SandboxListOptions{Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("negative offset err = %v, want validation error", err)
 	}
 }
 
@@ -326,7 +335,12 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes":
 			writeSDKJSON(t, w, SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", Status: "pending"})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes":
-			writeSDKJSON(t, w, map[string]any{"sandboxes": []SandboxStatus{{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", ImageRef: "base:v1", Status: "ready"}}})
+			writeSDKJSON(t, w, map[string]any{
+				"sandboxes": []SandboxStatus{{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", ImageRef: "base:v1", Status: "ready"}},
+				"count":     1,
+				"offset":    atoiDefault(r.URL.Query().Get("offset"), 0),
+				"limit":     atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/job-1/wait":
 			writeSDKJSON(t, w, WaitResult{Done: true, Sandbox: SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", Status: "ready"}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/job-1/lease":
@@ -381,6 +395,17 @@ func sdkMetering(id string) MeteringResult {
 		Records: []MeteringRecord{{ID: "metering-1", SandboxID: id, AssignmentID: "assignment-1", Status: "ready", DurationMillis: 1000, VMMillis: 1000}},
 		Summary: MeteringSummary{SandboxID: id, Records: 1, DurationMillis: 1000, VMMillis: 1000},
 	}
+}
+
+func atoiDefault(raw string, fallback int) int {
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 func readSDKBody(t *testing.T, r *http.Request) map[string]any {

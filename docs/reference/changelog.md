@@ -22,7 +22,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   hosted sandbox create/list/get/wait/lease/restart/exec/control/metering/delete
   flows, and the Python fleet client exposes matching lifecycle helpers.
 - The public Go `agentsandbox` package and Python fleet client now expose hosted
-  sandbox list filters for status, worker, image, namespace, and limit.
+  sandbox list filters and pagination for status, worker, image, namespace,
+  offset, limit, count, and next-offset metadata.
 - `cove-fleetd` now supports admin-managed RS256 OIDC bearer bindings that map
   verified issuer/subject/audience claims onto namespace-scoped controller roles.
 - OIDC bindings can now fetch public keys from `jwks_url`, discover
@@ -131,9 +132,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `cove run -fork-from ... -ephemeral -keep -headless` assignment, `coved`
   reports the sandbox ready after a `cove shell` probe, and stop/delete cancel
   pending sandboxes or queue same-worker stop cleanup.
-- `GET /v1/sandboxes` now accepts `status`, `worker_id`, `image_ref`, and
-  non-negative `limit` filters so hosted clients can list only the handles they
-  need without fetching the whole controller inventory.
+- `GET /v1/sandboxes` now accepts `status`, `worker_id`, `image_ref`,
+  non-negative `offset`, and non-negative `limit` filters, and returns
+  `count`/`next_offset` pagination metadata so hosted clients can list only the
+  handles they need without fetching the whole controller inventory.
 - `POST /v1/sandboxes/{id}/wait` now waits for a sandbox handle to reach a
   terminal state, and sandbox stop-cleanup completion transitions the handle to
   `stopped`.

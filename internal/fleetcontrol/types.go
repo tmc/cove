@@ -402,7 +402,16 @@ type SandboxListFilter struct {
 	Status    string `json:"status,omitempty"`
 	WorkerID  string `json:"worker_id,omitempty"`
 	ImageRef  string `json:"image_ref,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
+}
+
+type SandboxListResult struct {
+	Sandboxes  []SandboxStatus `json:"sandboxes"`
+	Count      int             `json:"count"`
+	Offset     int             `json:"offset,omitempty"`
+	Limit      int             `json:"limit,omitempty"`
+	NextOffset int             `json:"next_offset,omitempty"`
 }
 
 type SandboxLeaseRequest struct {

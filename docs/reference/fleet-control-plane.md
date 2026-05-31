@@ -310,7 +310,7 @@ curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -H 'content-type: application/json' \
   -d '{"id":"job-1","image_ref":"macos-runner:14.5","required_labels":{"zone":"desk"},"args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
-curl 'http://127.0.0.1:9758/v1/sandboxes?status=ready&image_ref=macos-runner:14.5&limit=20'
+curl 'http://127.0.0.1:9758/v1/sandboxes?status=ready&image_ref=macos-runner:14.5&offset=0&limit=20'
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/lease \
   -H 'content-type: application/json' \
@@ -348,10 +348,13 @@ without a separate scheduler. Extra `args` are appended to `cove run`, but
 fork/source/lifetime/headless flags are reserved by the controller.
 
 `GET /v1/sandboxes` accepts `namespace`, `status`, `worker_id`, `image_ref`,
-and `limit` query parameters. Namespace-scoped bearer tokens still force their
-own namespace, and `limit` must be non-negative. Filters apply after
-reconciliation, so clients can ask for ready handles, draining cleanup, a
-single worker, or a base image without fetching the whole controller inventory.
+`offset`, and `limit` query parameters. Namespace-scoped bearer tokens still
+force their own namespace, and `offset`/`limit` must be non-negative. Filters
+apply after reconciliation, then `offset` skips matching handles and `limit`
+caps the response. The result includes `sandboxes`, `count`, `offset`, `limit`,
+and `next_offset` when another page is available, so clients can ask for ready
+handles, draining cleanup, a single worker, or a base image without fetching
+the whole controller inventory.
 
 `POST /v1/sandboxes/{id}/lease` acquires or renews an exclusive client lease on
 the sandbox handle. The optional `holder` defaults to the authenticated actor;
@@ -431,15 +434,16 @@ if err != nil {
 	log.Fatal(err)
 }
 defer sb.Delete(ctx)
-ready, err := sb.List(ctx, agentsandbox.SandboxListOptions{
+page, err := sb.ListPage(ctx, agentsandbox.SandboxListOptions{
 	Status:   "ready",
 	ImageRef: "macos-base:latest",
+	Offset:   0,
 	Limit:    10,
 })
 if err != nil {
 	log.Fatal(err)
 }
-_ = ready
+_ = page.NextOffset
 lease, err := sb.Lease(ctx, "runner-42", 30*time.Second)
 if err != nil {
 	log.Fatal(err)

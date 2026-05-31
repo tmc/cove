@@ -352,7 +352,7 @@ func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {
 		if !reconcile(w, store) {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"sandboxes": store.ListSandboxesFiltered(filter)})
+		writeJSON(w, http.StatusOK, store.ListSandboxesPage(filter))
 	case http.MethodPost:
 		if !requireRole(w, identity, ServiceAccountRoleOperator) {
 			return
@@ -389,6 +389,13 @@ func sandboxListFilterFromRequest(r *http.Request, namespace string) (SandboxLis
 			return SandboxListFilter{}, fmt.Errorf("sandbox limit must be non-negative")
 		}
 		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return SandboxListFilter{}, fmt.Errorf("sandbox offset must be non-negative")
+		}
+		filter.Offset = offset
 	}
 	return filter, nil
 }

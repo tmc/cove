@@ -338,9 +338,37 @@ class CoveFleetClient:
         status: str | None = None,
         worker_id: str | None = None,
         image_ref: str | None = None,
+        offset: int | None = None,
         limit: int | None = None,
         timeout: float = 30.0,
     ) -> list[dict[str, Any]]:
+        data = cls.list_sandboxes_page(
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            status=status,
+            worker_id=worker_id,
+            image_ref=image_ref,
+            offset=offset,
+            limit=limit,
+            timeout=timeout,
+        )
+        return [dict(item) for item in data["sandboxes"] if isinstance(item, dict)]
+
+    @classmethod
+    def list_sandboxes_page(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        status: str | None = None,
+        worker_id: str | None = None,
+        image_ref: str | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
         seed = cls(
             sandbox_id="list",
             fleet_url=fleet_url,
@@ -348,10 +376,11 @@ class CoveFleetClient:
             namespace=namespace,
             timeout=timeout,
         )
-        return seed.list(
+        return seed.list_page(
             status=status,
             worker_id=worker_id,
             image_ref=image_ref,
+            offset=offset,
             limit=limit,
         )
 
@@ -361,8 +390,21 @@ class CoveFleetClient:
         status: str | None = None,
         worker_id: str | None = None,
         image_ref: str | None = None,
+        offset: int | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
+        data = self.list_page(status=status, worker_id=worker_id, image_ref=image_ref, offset=offset, limit=limit)
+        return [dict(item) for item in data["sandboxes"] if isinstance(item, dict)]
+
+    def list_page(
+        self,
+        *,
+        status: str | None = None,
+        worker_id: str | None = None,
+        image_ref: str | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
         query: dict[str, str] = {
             "namespace": self.namespace,
             "status": status or "",
@@ -374,12 +416,20 @@ class CoveFleetClient:
                 raise ValueError("limit must be non-negative")
             if limit > 0:
                 query["limit"] = str(limit)
+        if offset is not None:
+            if offset < 0:
+                raise ValueError("offset must be non-negative")
+            if offset > 0:
+                query["offset"] = str(offset)
         path = _query_path("/v1/sandboxes", query)
         data = self._request("GET", path, timeout=self.timeout)
         sandboxes = data.get("sandboxes") or []
         if not isinstance(sandboxes, list):
             raise CoveError("GET /v1/sandboxes: expected sandboxes list")
-        return [dict(item) for item in sandboxes if isinstance(item, dict)]
+        page = dict(data)
+        page["sandboxes"] = [dict(item) for item in sandboxes if isinstance(item, dict)]
+        page["count"] = int(page.get("count") or len(page["sandboxes"]))
+        return page
 
     def status(self, *, timeout: float | None = None) -> dict[str, Any]:
         data = self._request("GET", self._sandbox_path(), timeout=timeout or self.timeout)

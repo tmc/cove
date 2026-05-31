@@ -260,6 +260,14 @@ func TestStoreListSandboxesFiltered(t *testing.T) {
 	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", Limit: 1}); len(got) != 1 || got[0].ID != "job-ready" {
 		t.Fatalf("limited sandboxes = %+v, want first team-a sandbox", got)
 	}
+	page := store.ListSandboxesPage(SandboxListFilter{Namespace: "team-a", Limit: 1})
+	if len(page.Sandboxes) != 1 || page.Sandboxes[0].ID != "job-ready" || page.Count != 1 || page.NextOffset != 1 {
+		t.Fatalf("first page = %+v, want job-ready count 1 next 1", page)
+	}
+	page = store.ListSandboxesPage(SandboxListFilter{Namespace: "team-a", Offset: 1, Limit: 1})
+	if len(page.Sandboxes) != 1 || page.Sandboxes[0].ID != "job-pending" || page.Offset != 1 || page.NextOffset != 0 {
+		t.Fatalf("second page = %+v, want job-pending offset 1 no next", page)
+	}
 }
 
 func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
@@ -3063,7 +3071,11 @@ func TestHandlerSandboxes(t *testing.T) {
 		t.Fatalf("created sandbox = %+v", created)
 	}
 	var list struct {
-		Sandboxes []SandboxStatus `json:"sandboxes"`
+		Sandboxes  []SandboxStatus `json:"sandboxes"`
+		Count      int             `json:"count"`
+		Offset     int             `json:"offset,omitempty"`
+		Limit      int             `json:"limit,omitempty"`
+		NextOffset int             `json:"next_offset,omitempty"`
 	}
 	getJSON(t, server.URL+"/v1/sandboxes", &list)
 	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-1" {
@@ -3195,7 +3207,11 @@ func TestHandlerSandboxListFilters(t *testing.T) {
 	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-pending", ImageRef: "base:v2"}, &pending)
 
 	var list struct {
-		Sandboxes []SandboxStatus `json:"sandboxes"`
+		Sandboxes  []SandboxStatus `json:"sandboxes"`
+		Count      int             `json:"count"`
+		Offset     int             `json:"offset,omitempty"`
+		Limit      int             `json:"limit,omitempty"`
+		NextOffset int             `json:"next_offset,omitempty"`
 	}
 	getJSON(t, server.URL+"/v1/sandboxes?status=ready", &list)
 	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" {
@@ -3206,11 +3222,25 @@ func TestHandlerSandboxListFilters(t *testing.T) {
 		t.Fatalf("base:v2 sandboxes = %+v, want job-pending", list.Sandboxes)
 	}
 	getJSON(t, server.URL+"/v1/sandboxes?worker_id=worker-1&limit=1", &list)
-	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" {
-		t.Fatalf("limited worker sandboxes = %+v, want first sandbox", list.Sandboxes)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" || list.Count != 1 || list.Limit != 1 || list.NextOffset != 1 {
+		t.Fatalf("limited worker sandboxes = %+v, want first sandbox next page", list)
+	}
+	list = struct {
+		Sandboxes  []SandboxStatus `json:"sandboxes"`
+		Count      int             `json:"count"`
+		Offset     int             `json:"offset,omitempty"`
+		Limit      int             `json:"limit,omitempty"`
+		NextOffset int             `json:"next_offset,omitempty"`
+	}{}
+	getJSON(t, server.URL+"/v1/sandboxes?worker_id=worker-1&offset=1&limit=1", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-pending" || list.Offset != 1 || list.NextOffset != 0 {
+		t.Fatalf("offset worker sandboxes = %+v, want second sandbox no next", list)
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/sandboxes?limit=-1", ""); code != http.StatusBadRequest {
 		t.Fatalf("bad sandbox list limit status = %d, want 400", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes?offset=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad sandbox list offset status = %d, want 400", code)
 	}
 }
 
