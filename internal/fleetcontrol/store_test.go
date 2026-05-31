@@ -327,6 +327,46 @@ func TestStoreSchedulesImageAffinityAssignment(t *testing.T) {
 	}
 }
 
+func TestStoreSchedulesBinPackAssignment(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "low", Capacity: Capacity{VMs: 1, MaxVMs: 4}},
+		{ID: "dense", Capacity: Capacity{VMs: 3, MaxVMs: 4}},
+		{ID: "full", Capacity: Capacity{VMs: 4, MaxVMs: 4}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assignment, err := store.CreateAssignment(Assignment{
+		ID:     "assignment-1",
+		Policy: PolicyBinPack,
+		Verb:   "cove",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.WorkerID != "dense" {
+		t.Fatalf("WorkerID = %q, want dense", assignment.WorkerID)
+	}
+
+	assignment, err = store.CreateAssignment(Assignment{
+		ID:        "assignment-2",
+		Policy:    PolicyBinPack,
+		Resources: Capacity{VMs: 2},
+		Verb:      "cove",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.WorkerID != "low" {
+		t.Fatalf("WorkerID = %q, want low", assignment.WorkerID)
+	}
+	if assignment.Resources.VMs != 2 {
+		t.Fatalf("resources = %+v, want VMs 2", assignment.Resources)
+	}
+}
+
 func TestStoreSchedulesWithRequiredLabelsAndPendingLoad(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	for _, hb := range []WorkerHeartbeat{

@@ -340,6 +340,7 @@ func (w *FleetWorker) capacity(images int) fleetcontrol.Capacity {
 	return fleetcontrol.Capacity{
 		CPUs:   runtime.NumCPU(),
 		VMs:    countDirEntries(w.vmRoot),
+		MaxVMs: runtime.NumCPU(),
 		Images: images,
 	}
 }

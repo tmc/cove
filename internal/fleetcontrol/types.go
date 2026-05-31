@@ -12,6 +12,7 @@ const (
 const (
 	PolicyLeastLoaded   = "least-loaded"
 	PolicyImageAffinity = "image-affinity"
+	PolicyBinPack       = "bin-pack"
 )
 
 const DefaultWorkerTTL = 30 * time.Second
@@ -22,6 +23,7 @@ type Capacity struct {
 	CPUs        int    `json:"cpus,omitempty"`
 	MemoryBytes uint64 `json:"memory_bytes,omitempty"`
 	VMs         int    `json:"vms,omitempty"`
+	MaxVMs      int    `json:"max_vms,omitempty"`
 	Images      int    `json:"images,omitempty"`
 }
 
@@ -98,6 +100,7 @@ type Assignment struct {
 	Policy         string            `json:"policy,omitempty"`
 	ImageRef       string            `json:"image_ref,omitempty"`
 	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	Resources      Capacity          `json:"resources,omitempty"`
 	Verb           string            `json:"verb"`
 	Args           []string          `json:"args,omitempty"`
 	Status         string            `json:"status,omitempty"`

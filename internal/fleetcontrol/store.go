@@ -111,7 +111,7 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 	if id == "" {
 		return HostRecord{}, fmt.Errorf("worker id required")
 	}
-	if h.CPUs < 0 || h.VMs < 0 || h.Images < 0 {
+	if h.CPUs < 0 || h.VMs < 0 || h.MaxVMs < 0 || h.Images < 0 {
 		return HostRecord{}, fmt.Errorf("worker capacity must not be negative")
 	}
 	now := s.now().UTC()
@@ -274,10 +274,14 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	policy := strings.TrimSpace(a.Policy)
 	imageRef := strings.TrimSpace(a.ImageRef)
 	requiredLabels := cloneLabels(a.RequiredLabels)
+	resources, err := sanitizeResources(a.Resources)
+	if err != nil {
+		return Assignment{}, err
+	}
 	if policy == "" && imageRef != "" {
 		policy = PolicyImageAffinity
 	}
-	if policy != "" && policy != PolicyLeastLoaded && policy != PolicyImageAffinity {
+	if policy != "" && policy != PolicyLeastLoaded && policy != PolicyImageAffinity && policy != PolicyBinPack {
 		return Assignment{}, fmt.Errorf("unknown assignment policy %q", policy)
 	}
 	now := s.now().UTC()
@@ -297,7 +301,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 			return Assignment{}, fmt.Errorf("worker %q not registered", workerID)
 		}
 	} else if policy != "" || len(requiredLabels) > 0 {
-		selected, err := s.selectWorkerLocked(policy, imageRef, requiredLabels)
+		selected, err := s.selectWorkerLocked(policy, imageRef, requiredLabels, resources)
 		if err != nil {
 			return Assignment{}, err
 		}
@@ -308,6 +312,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	a.Policy = policy
 	a.ImageRef = imageRef
 	a.RequiredLabels = requiredLabels
+	a.Resources = resources
 	a.Verb = verb
 	a.Args = cloneStrings(a.Args)
 	a.Status = "pending"
@@ -510,7 +515,7 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 			changed = true
 		}
 		if workerStale && assignmentCanPlace(assignment) {
-			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.RequiredLabels)
+			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.RequiredLabels, assignment.Resources)
 			if err == nil && selected != assignment.WorkerID {
 				assignment.WorkerID = selected
 				result.ReplacedAssignments = append(result.ReplacedAssignments, assignment.ID)
@@ -666,15 +671,16 @@ func cloneStrings(in []string) []string {
 	return out
 }
 
-func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]string) (string, error) {
+func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]string, resources Capacity) (string, error) {
 	if policy == "" {
 		policy = PolicyLeastLoaded
 	}
 	switch policy {
-	case PolicyLeastLoaded, PolicyImageAffinity:
+	case PolicyLeastLoaded, PolicyImageAffinity, PolicyBinPack:
 	default:
 		return "", fmt.Errorf("unknown assignment policy %q", policy)
 	}
+	resources = normalizeResources(resources)
 	var best HostRecord
 	bestSet := false
 	bestLoad := 0
@@ -688,6 +694,9 @@ func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]st
 			continue
 		}
 		load := host.Capacity.VMs + s.pendingAssignmentsLocked(host.ID)
+		if host.Capacity.MaxVMs > 0 && load+resources.VMs > host.Capacity.MaxVMs {
+			continue
+		}
 		hasImage := imageRef != "" && containsString(host.ImageRefs, imageRef)
 		if !bestSet {
 			best = host
@@ -712,6 +721,15 @@ func betterHost(policy, id string, load int, hasImage bool, bestID string, bestL
 	if policy == PolicyImageAffinity && hasImage != bestHasImage {
 		return hasImage
 	}
+	if policy == PolicyBinPack {
+		if load != bestLoad {
+			return load > bestLoad
+		}
+		if hasImage != bestHasImage {
+			return hasImage
+		}
+		return id < bestID
+	}
 	if load != bestLoad {
 		return load < bestLoad
 	}
@@ -725,10 +743,28 @@ func (s *Store) pendingAssignmentsLocked(workerID string) int {
 			continue
 		}
 		if activeAssignmentStatus(assignment.Status) {
-			n++
+			n += assignmentVMs(assignment)
 		}
 	}
 	return n
+}
+
+func normalizeResources(in Capacity) Capacity {
+	if in.VMs <= 0 {
+		in.VMs = 1
+	}
+	return in
+}
+
+func sanitizeResources(in Capacity) (Capacity, error) {
+	if in.CPUs < 0 || in.VMs < 0 || in.MaxVMs < 0 || in.Images < 0 {
+		return Capacity{}, fmt.Errorf("assignment resources must not be negative")
+	}
+	return in, nil
+}
+
+func assignmentVMs(assignment Assignment) int {
+	return normalizeResources(assignment.Resources).VMs
 }
 
 func (s *Store) activeImagePrepareLocked(workerID, imageRef string) bool {

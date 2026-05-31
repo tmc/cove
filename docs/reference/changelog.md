@@ -46,6 +46,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `POST /v1/images/prepare` to queue `cove image
   pull` assignments only on matching ready workers missing a base image; `coved`
   refreshes image refs immediately after successful image-prep assignments.
+- `cove-fleetd` assignment placement now supports `policy:"bin-pack"` plus
+  `resources.vms` hints and worker `max_vms` slot caps, packing work onto the
+  densest ready worker that still fits.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

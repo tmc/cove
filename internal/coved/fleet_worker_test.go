@@ -62,6 +62,9 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 	if record.Capacity.CPUs <= 0 || record.Capacity.VMs != 1 || record.Capacity.Images != 2 {
 		t.Fatalf("worker capacity = %+v", record.Capacity)
 	}
+	if record.Capacity.MaxVMs != record.Capacity.CPUs {
+		t.Fatalf("worker max VMs = %d, want CPU count %d", record.Capacity.MaxVMs, record.Capacity.CPUs)
+	}
 	wantRefs := []string{"base:v1", "nested/image:latest"}
 	if strings.Join(record.ImageRefs, ",") != strings.Join(wantRefs, ",") {
 		t.Fatalf("image refs = %+v, want %+v", record.ImageRefs, wantRefs)
