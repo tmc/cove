@@ -39,6 +39,53 @@ func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	}
 }
 
+func TestInspectRemoteImageBaseChainAuditOK(t *testing.T) {
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
+	_, baseDigest := pullTestManifestData(t, baseManifest)
+	manifest := baseManifest
+	manifest.Annotations = cloneStringMap(manifest.Annotations)
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	srv := newRemoteInspectManifestRegistry(t, manifest, map[string]ociimage.Manifest{
+		baseDigest: baseManifest,
+	})
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{RegistryBaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.BaseManifest != baseDigest {
+		t.Fatalf("base manifest = %q, want %q", out.BaseManifest, baseDigest)
+	}
+	if out.BaseChainAudit != "ok" || out.BaseChainDepth != 1 || len(out.BaseChain) != 1 {
+		t.Fatalf("base audit = %q depth=%d chain=%+v, want one ok entry", out.BaseChainAudit, out.BaseChainDepth, out.BaseChain)
+	}
+	base := out.BaseChain[0]
+	if base.Digest != baseDigest || base.Status != "ok" || base.Format != "cove" || base.MatchingChunks == 0 {
+		t.Fatalf("base entry = %+v, want cove ok with matching chunks", base)
+	}
+}
+
+func TestInspectRemoteImageBaseChainAuditMissing(t *testing.T) {
+	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
+	missingDigest := "sha256:" + strings.Repeat("f", 64)
+	manifest.Annotations = cloneStringMap(manifest.Annotations)
+	manifest.Annotations[ociimage.CoveBaseManifest] = missingDigest
+	srv := newRemoteInspectManifestRegistry(t, manifest, nil)
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{RegistryBaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.BaseChainAudit != "missing" || len(out.BaseChain) != 1 {
+		t.Fatalf("base audit = %q chain=%+v, want missing", out.BaseChainAudit, out.BaseChain)
+	}
+	if out.BaseChain[0].Digest != missingDigest || out.BaseChain[0].Status != "missing" {
+		t.Fatalf("base entry = %+v, want missing digest %s", out.BaseChain[0], missingDigest)
+	}
+}
+
 func TestInspectRemoteImageBlobAuditMissing(t *testing.T) {
 	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
 	srv := newOCIDispatchRegistry(t, manifest)
@@ -313,11 +360,20 @@ func TestWriteRemoteInspectText(t *testing.T) {
 		ChunkCount:          2,
 		LayerCount:          3,
 		TotalLayerBytes:     9,
+		BaseManifest:        "sha256:" + strings.Repeat("1", 64),
+		BaseChainAudit:      "ok",
+		BaseChainDepth:      1,
+		BaseChain: []ImageRemoteBaseManifest{{
+			Digest:         "sha256:" + strings.Repeat("1", 64),
+			Status:         "ok",
+			Format:         "cove",
+			MatchingChunks: 2,
+		}},
 	})
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "chunks:          2"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "chunks:          2", "base audit:      ok", "matching_chunks=2"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}
@@ -393,6 +449,44 @@ func newRemoteInspectRegistry(t *testing.T, manifest ociimage.Manifest, blobs ma
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func newRemoteInspectManifestRegistry(t *testing.T, tagManifest ociimage.Manifest, byDigest map[string]ociimage.Manifest) *httptest.Server {
+	t.Helper()
+	tagData, tagDigest := pullTestManifestData(t, tagManifest)
+	digests := map[string][]byte{}
+	for digest, manifest := range byDigest {
+		data, _ := pullTestManifestData(t, manifest)
+		digests[digest] = data
+	}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/me/dev-vm/manifests/v1":
+			w.Header().Set("Content-Type", ociimage.MediaTypeImageManifest)
+			w.Header().Set("Docker-Content-Digest", tagDigest)
+			_, _ = w.Write(tagData)
+		case strings.HasPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/"):
+			digest := strings.TrimPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/")
+			data, ok := digests[digest]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", ociimage.MediaTypeImageManifest)
+			w.Header().Set("Docker-Content-Digest", digest)
+			_, _ = w.Write(data)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in)+1)
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func newRemoteInspectIndexRegistry(t *testing.T, index ociimage.Index, manifestData []byte, manifestDigest string) *httptest.Server {

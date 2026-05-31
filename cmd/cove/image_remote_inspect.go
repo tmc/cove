@@ -14,6 +14,7 @@ import (
 )
 
 const remoteInspectTimeout = 30 * time.Second
+const remoteBaseChainLimit = 8
 
 type remoteInspectOptions struct {
 	RegistryBaseURL string
@@ -22,44 +23,58 @@ type remoteInspectOptions struct {
 }
 
 type ImageRemoteInspectOutput struct {
-	Ref                 string   `json:"ref"`
-	Error               string   `json:"error,omitempty"`
-	ManifestDigest      string   `json:"manifest_digest,omitempty"`
-	ResolvedFromIndex   bool     `json:"resolved_from_index,omitempty"`
-	IndexDigest         string   `json:"index_digest,omitempty"`
-	IndexMediaType      string   `json:"index_media_type,omitempty"`
-	SelectedDigest      string   `json:"selected_digest,omitempty"`
-	SelectedPlatform    string   `json:"selected_platform,omitempty"`
-	Kind                string   `json:"kind"`
-	Format              string   `json:"format"`
-	PullPlan            string   `json:"pull_plan,omitempty"`
-	Verification        string   `json:"verification,omitempty"`
-	BlobAudit           string   `json:"blob_audit,omitempty"`
-	BlobDescriptors     int      `json:"blob_descriptors,omitempty"`
-	BlobBytes           int64    `json:"blob_bytes,omitempty"`
-	MissingBlobs        []string `json:"missing_blobs,omitempty"`
-	MediaType           string   `json:"media_type,omitempty"`
-	ConfigMediaType     string   `json:"config_media_type,omitempty"`
-	LayerCount          int      `json:"layer_count"`
-	TotalLayerBytes     int64    `json:"total_layer_bytes"`
-	DiskSize            int64    `json:"disk_size,omitempty"`
-	DiskSHA256          string   `json:"disk_sha256,omitempty"`
-	CompressedDiskBytes int64    `json:"compressed_disk_bytes,omitempty"`
-	ChunkCount          int      `json:"chunk_count,omitempty"`
-	ZeroChunks          int      `json:"zero_chunks,omitempty"`
-	DiskLayerCount      int      `json:"disk_layer_count,omitempty"`
-	DiskPartCount       int      `json:"disk_part_count,omitempty"`
-	MetadataBlobs       int      `json:"metadata_blobs,omitempty"`
-	MetadataBytes       int64    `json:"metadata_bytes,omitempty"`
-	ConfigBytes         int64    `json:"config_bytes,omitempty"`
-	NVRAMBytes          int64    `json:"nvram_bytes,omitempty"`
-	BaseManifest        string   `json:"base_manifest,omitempty"`
-	UploadTime          string   `json:"upload_time,omitempty"`
-	ImageRef            string   `json:"image_ref,omitempty"`
-	ImageName           string   `json:"image_name,omitempty"`
-	ImageTag            string   `json:"image_tag,omitempty"`
-	Created             string   `json:"created,omitempty"`
-	BuiltAt             string   `json:"built_at,omitempty"`
+	Ref                 string                    `json:"ref"`
+	Error               string                    `json:"error,omitempty"`
+	ManifestDigest      string                    `json:"manifest_digest,omitempty"`
+	ResolvedFromIndex   bool                      `json:"resolved_from_index,omitempty"`
+	IndexDigest         string                    `json:"index_digest,omitempty"`
+	IndexMediaType      string                    `json:"index_media_type,omitempty"`
+	SelectedDigest      string                    `json:"selected_digest,omitempty"`
+	SelectedPlatform    string                    `json:"selected_platform,omitempty"`
+	Kind                string                    `json:"kind"`
+	Format              string                    `json:"format"`
+	PullPlan            string                    `json:"pull_plan,omitempty"`
+	Verification        string                    `json:"verification,omitempty"`
+	BlobAudit           string                    `json:"blob_audit,omitempty"`
+	BlobDescriptors     int                       `json:"blob_descriptors,omitempty"`
+	BlobBytes           int64                     `json:"blob_bytes,omitempty"`
+	MissingBlobs        []string                  `json:"missing_blobs,omitempty"`
+	MediaType           string                    `json:"media_type,omitempty"`
+	ConfigMediaType     string                    `json:"config_media_type,omitempty"`
+	LayerCount          int                       `json:"layer_count"`
+	TotalLayerBytes     int64                     `json:"total_layer_bytes"`
+	DiskSize            int64                     `json:"disk_size,omitempty"`
+	DiskSHA256          string                    `json:"disk_sha256,omitempty"`
+	CompressedDiskBytes int64                     `json:"compressed_disk_bytes,omitempty"`
+	ChunkCount          int                       `json:"chunk_count,omitempty"`
+	ZeroChunks          int                       `json:"zero_chunks,omitempty"`
+	DiskLayerCount      int                       `json:"disk_layer_count,omitempty"`
+	DiskPartCount       int                       `json:"disk_part_count,omitempty"`
+	MetadataBlobs       int                       `json:"metadata_blobs,omitempty"`
+	MetadataBytes       int64                     `json:"metadata_bytes,omitempty"`
+	ConfigBytes         int64                     `json:"config_bytes,omitempty"`
+	NVRAMBytes          int64                     `json:"nvram_bytes,omitempty"`
+	BaseManifest        string                    `json:"base_manifest,omitempty"`
+	BaseChainAudit      string                    `json:"base_chain_audit,omitempty"`
+	BaseChainDepth      int                       `json:"base_chain_depth,omitempty"`
+	BaseChain           []ImageRemoteBaseManifest `json:"base_chain,omitempty"`
+	UploadTime          string                    `json:"upload_time,omitempty"`
+	ImageRef            string                    `json:"image_ref,omitempty"`
+	ImageName           string                    `json:"image_name,omitempty"`
+	ImageTag            string                    `json:"image_tag,omitempty"`
+	Created             string                    `json:"created,omitempty"`
+	BuiltAt             string                    `json:"built_at,omitempty"`
+}
+
+type ImageRemoteBaseManifest struct {
+	Digest         string `json:"digest"`
+	Status         string `json:"status"`
+	Format         string `json:"format,omitempty"`
+	DiskSize       int64  `json:"disk_size,omitempty"`
+	ChunkCount     int    `json:"chunk_count,omitempty"`
+	MatchingChunks int    `json:"matching_chunks,omitempty"`
+	BaseManifest   string `json:"base_manifest,omitempty"`
+	Error          string `json:"error,omitempty"`
 }
 
 func InspectRemoteImages(ctx context.Context, refs []string, opts remoteInspectOptions) ([]ImageRemoteInspectOutput, error) {
@@ -109,7 +124,9 @@ func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectO
 	if err != nil {
 		return ImageRemoteInspectOutput{}, fmt.Errorf("image inspect remote: parse manifest: %w", err)
 	}
-	return maybeAuditRemoteBlobs(ctx, client, ref, manifest, inspectRemoteVMManifest(parsed, out), opts)
+	out = inspectRemoteVMManifest(parsed, out)
+	out = maybeAuditRemoteBaseChain(ctx, client, ref, parsed, out)
+	return maybeAuditRemoteBlobs(ctx, client, ref, manifest, out, opts)
 }
 
 func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResolution, manifest ociimage.Manifest) ImageRemoteInspectOutput {
@@ -284,6 +301,141 @@ func maybeAuditRemoteBlobs(ctx context.Context, client ociimage.RegistryClient, 
 	out.BlobBytes = audit.Bytes
 	out.MissingBlobs = audit.Missing
 	return out, nil
+}
+
+func maybeAuditRemoteBaseChain(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, parsed ociimage.ParsedManifest, out ImageRemoteInspectOutput) ImageRemoteInspectOutput {
+	if parsed.Format != ociimage.FormatCove || strings.TrimSpace(parsed.Annotations.BaseManifest) == "" {
+		return out
+	}
+	audit := auditRemoteBaseChain(ctx, client, ref, parsed)
+	out.BaseChainAudit = audit.Status
+	out.BaseChainDepth = len(audit.Entries)
+	out.BaseChain = audit.Entries
+	return out
+}
+
+type remoteBaseChainAudit struct {
+	Status  string
+	Entries []ImageRemoteBaseManifest
+}
+
+func auditRemoteBaseChain(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, child ociimage.ParsedManifest) remoteBaseChainAudit {
+	audit := remoteBaseChainAudit{Status: "ok"}
+	seen := map[string]bool{}
+	current := child
+	for depth := 0; depth < remoteBaseChainLimit; depth++ {
+		digest := strings.TrimSpace(current.Annotations.BaseManifest)
+		if digest == "" {
+			return audit
+		}
+		entry := ImageRemoteBaseManifest{Digest: digest, Status: "ok"}
+		if seen[digest] {
+			entry.Status = "cycle"
+			entry.Error = "base manifest repeats earlier digest"
+			audit.Entries = append(audit.Entries, entry)
+			audit.Status = remoteBaseChainWorst(audit.Status, entry.Status)
+			return audit
+		}
+		seen[digest] = true
+		if !validSHA256Digest(digest) {
+			entry.Status = "invalid"
+			entry.Error = "base manifest digest is not sha256:<64 lowercase hex>"
+			audit.Entries = append(audit.Entries, entry)
+			audit.Status = remoteBaseChainWorst(audit.Status, entry.Status)
+			return audit
+		}
+		baseManifest, err := fetchRemoteBaseManifest(ctx, client, ref, digest)
+		if err != nil {
+			entry.Status = remoteBaseFetchStatus(err)
+			entry.Error = err.Error()
+			audit.Entries = append(audit.Entries, entry)
+			audit.Status = remoteBaseChainWorst(audit.Status, entry.Status)
+			return audit
+		}
+		base, err := ociimage.ParseManifest(baseManifest)
+		if err != nil {
+			entry.Status = "invalid"
+			entry.Error = err.Error()
+			audit.Entries = append(audit.Entries, entry)
+			audit.Status = remoteBaseChainWorst(audit.Status, entry.Status)
+			return audit
+		}
+		entry.Format = base.Format.String()
+		entry.DiskSize = base.Annotations.UncompressedDiskSize
+		entry.ChunkCount = len(base.Chunks)
+		entry.BaseManifest = strings.TrimSpace(base.Annotations.BaseManifest)
+		entry.MatchingChunks = len(matchingPullBaseChunks(current.DiskLayers, base.DiskLayers))
+		if base.Format != ociimage.FormatCove {
+			entry.Status = "invalid"
+			entry.Error = "base manifest is not cove format"
+		} else if base.Annotations.UncompressedDiskSize != current.Annotations.UncompressedDiskSize {
+			entry.Status = "incompatible"
+			entry.Error = fmt.Sprintf("disk size %d, child %d", base.Annotations.UncompressedDiskSize, current.Annotations.UncompressedDiskSize)
+		} else if entry.MatchingChunks == 0 {
+			entry.Status = "incompatible"
+			entry.Error = "no reusable chunk descriptors match child"
+		}
+		audit.Entries = append(audit.Entries, entry)
+		audit.Status = remoteBaseChainWorst(audit.Status, entry.Status)
+		current = base
+	}
+	if next := strings.TrimSpace(current.Annotations.BaseManifest); next != "" {
+		entry := ImageRemoteBaseManifest{
+			Digest: next,
+			Status: "depth-limit",
+			Error:  fmt.Sprintf("base chain exceeds %d manifests", remoteBaseChainLimit),
+		}
+		audit.Entries = append(audit.Entries, entry)
+		audit.Status = remoteBaseChainWorst(audit.Status, entry.Status)
+	}
+	return audit
+}
+
+func fetchRemoteBaseManifest(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, digest string) (ociimage.Manifest, error) {
+	baseRef := ref
+	baseRef.Tag = ""
+	baseRef.Digest = digest
+	manifest, _, err := client.FetchManifestInfo(ctx, baseRef)
+	return manifest, err
+}
+
+func remoteBaseFetchStatus(err error) string {
+	text := strings.ToLower(err.Error())
+	if strings.Contains(text, "404") || strings.Contains(text, "not found") {
+		return "missing"
+	}
+	return "error"
+}
+
+func remoteBaseChainWorst(current, next string) string {
+	if current == "" {
+		return next
+	}
+	if remoteBaseChainRank(next) > remoteBaseChainRank(current) {
+		return next
+	}
+	return current
+}
+
+func remoteBaseChainRank(status string) int {
+	switch status {
+	case "ok":
+		return 0
+	case "incompatible":
+		return 1
+	case "depth-limit":
+		return 2
+	case "cycle":
+		return 3
+	case "missing":
+		return 4
+	case "invalid":
+		return 5
+	case "error":
+		return 6
+	default:
+		return 7
+	}
 }
 
 type remoteBlobAudit struct {
@@ -501,6 +653,29 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 	}
 	if out.BaseManifest != "" {
 		fmt.Fprintf(w, "  base manifest:   %s\n", out.BaseManifest)
+	}
+	if out.BaseChainAudit != "" {
+		fmt.Fprintf(w, "  base audit:      %s", out.BaseChainAudit)
+		if out.BaseChainDepth > 0 {
+			fmt.Fprintf(w, " (%d manifests)", out.BaseChainDepth)
+		}
+		fmt.Fprintln(w)
+		for _, entry := range out.BaseChain {
+			fmt.Fprintf(w, "    base:          %s %s", entry.Digest, entry.Status)
+			if entry.Format != "" {
+				fmt.Fprintf(w, " format=%s", entry.Format)
+			}
+			if entry.MatchingChunks > 0 {
+				fmt.Fprintf(w, " matching_chunks=%d", entry.MatchingChunks)
+			}
+			if entry.BaseManifest != "" {
+				fmt.Fprintf(w, " parent=%s", entry.BaseManifest)
+			}
+			if entry.Error != "" {
+				fmt.Fprintf(w, " error=%s", entry.Error)
+			}
+			fmt.Fprintln(w)
+		}
 	}
 	if out.UploadTime != "" {
 		fmt.Fprintf(w, "  upload time:     %s\n", out.UploadTime)

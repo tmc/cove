@@ -56,9 +56,10 @@ delegates the disk/runtime work to `tart` or `vetu`.
    before extraction. `cove image inspect -remote` fetches only registry
    metadata and identifies cove-native, Tart, Lume, and cove image-store
    artifacts before a disk pull, including index/list resolution details,
-   selected platform, pull plan, and verification posture; `-verify-blobs`
-   HEAD-audits every remote config/layer descriptor without downloading disks,
-   and multiple refs can be inspected as one batch for private catalog audits.
+   selected platform, pull plan, cove base-chain availability/compatibility, and
+   verification posture; `-verify-blobs` HEAD-audits every remote config/layer
+   descriptor without downloading disks, and multiple refs can be inspected as
+   one batch for private catalog audits.
 
 4. **Base-aware distribution.** cove-format pushes can reference a base image,
    skip zero chunks, mount already-present blobs in the destination registry, and
@@ -68,9 +69,11 @@ delegates the disk/runtime work to `tart` or `vetu`.
    builds and child pulls. Local images built from pulled VMs preserve the
    source registry manifest digest, image forks restore it to child
    `disk.provenance`, and store GC treats those image manifests as roots.
-   Builds can also import and export cove build-cache artifacts as OCI images,
-   so cache entries and block-delta blobs can move between runners through the
-   same private registry path as images.
+   Remote inspect walks declared base-manifest chains by digest and reports
+   missing or incompatible parents plus reusable chunk counts before disk
+   download. Builds can also import and export cove build-cache artifacts as OCI
+   images, so cache entries and block-delta blobs can move between runners
+   through the same private registry path as images.
 
 5. **Image-aware, drainable fleet placement.** cove is not orchard's controller,
    but its fleet CLI now understands image locality, operator drain intent, and

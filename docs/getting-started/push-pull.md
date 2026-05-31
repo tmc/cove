@@ -34,7 +34,8 @@ the index to a same-repository image manifest before parsing. Use
 pulling disks. Multiple refs are inspected as a batch, with JSON emitted as an
 array for private catalog audits. Remote inspect reports index/list resolution
 details, the selected platform, the pull plan for cove/Tart/Lume/image-store
-artifacts, and the verification work cove will perform during pull/import.
+artifacts, cove base-chain availability/compatibility when a base manifest is
+declared, and the verification work cove will perform during pull/import.
 Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
 so a private catalog audit can catch missing registry blobs without downloading
 VM disks. Use `--manifest` to validate local manifest JSON.
