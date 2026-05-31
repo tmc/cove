@@ -54,7 +54,7 @@ func printRunsUsage(w io.Writer) {
 
 Subcommands:
   list [--limit N] [--since D] [--status ok|fail|all] [--json|--ndjson]
-  show <run-id-prefix> [--json]
+  show <run-id-prefix> [--json|--summary-json]
   export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]`)
 }
 
@@ -131,11 +131,12 @@ Flags:
 }
 
 func printRunsShowUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove runs show <run-id-prefix> [--json]
+	fmt.Fprintln(w, `Usage: cove runs show <run-id-prefix> [--json|--summary-json]
 
-Show metrics events for one run. --json emits the run event array; when the run
-is missing, --json writes a machine-readable error object before returning an
-error exit.`)
+Show one run with lifecycle, result, resource summary, artifacts, and raw events.
+--json emits the raw event array for compatibility. --summary-json emits the
+structured show object. When the run is missing, JSON modes write a
+machine-readable error object before returning an error exit.`)
 }
 
 func printRunsExportUsage(w io.Writer) {
@@ -146,16 +147,16 @@ tarball. --include-guest copies additional guest paths into tar exports.`)
 }
 
 func runRunsShow(env commandEnv, args []string) error {
-	prefix, jsonOut, err := parseRunsShowArgs(args)
+	prefix, jsonOut, summaryJSON, err := parseRunsShowArgs(args)
 	if err != nil {
 		return err
 	}
 	if prefix == "" {
-		return fmt.Errorf("usage: cove runs show <run-id-prefix> [--json]")
+		return fmt.Errorf("usage: cove runs show <run-id-prefix> [--json|--summary-json]")
 	}
 	show, err := runs.LoadShow(vmconfig.RunsDir(), prefix)
 	if err != nil {
-		if jsonOut {
+		if jsonOut || summaryJSON {
 			enc := json.NewEncoder(env.Stdout)
 			enc.SetIndent("", "  ")
 			if jsonErr := enc.Encode(runsShowErrorOutput{
@@ -171,6 +172,11 @@ func runRunsShow(env commandEnv, args []string) error {
 		enc := json.NewEncoder(env.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(show.Events)
+	}
+	if summaryJSON {
+		enc := json.NewEncoder(env.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(show)
 	}
 	return runs.RenderShow(env.Stdout, show)
 }
@@ -207,22 +213,27 @@ func runRunsExportWith(ctx context.Context, args []string, root string, out io.W
 	}
 }
 
-func parseRunsShowArgs(args []string) (prefix string, jsonOut bool, err error) {
+func parseRunsShowArgs(args []string) (prefix string, jsonOut, summaryJSON bool, err error) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--json", "-json":
 			jsonOut = true
+		case "--summary-json", "-summary-json":
+			summaryJSON = true
 		default:
 			if strings.HasPrefix(args[i], "-") {
-				return "", false, fmt.Errorf("unknown runs show flag %q", args[i])
+				return "", false, false, fmt.Errorf("unknown runs show flag %q", args[i])
 			}
 			if prefix != "" {
-				return "", false, fmt.Errorf("usage: cove runs show <run-id-prefix> [--json]")
+				return "", false, false, fmt.Errorf("usage: cove runs show <run-id-prefix> [--json|--summary-json]")
 			}
 			prefix = args[i]
 		}
 	}
-	return prefix, jsonOut, nil
+	if jsonOut && summaryJSON {
+		return "", false, false, fmt.Errorf("runs show: choose only one of --json or --summary-json")
+	}
+	return prefix, jsonOut, summaryJSON, nil
 }
 
 func parseRunsExportArgs(args []string) (prefix, format string, guestPaths []string, err error) {

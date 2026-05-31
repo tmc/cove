@@ -870,14 +870,14 @@ See [Run Metrics](../features/metrics.md) and [Runs UX](../features/runs-ux.md).
 
 ```
 cove runs list [--limit N] [--since DURATION] [--status ok|fail|all] [--json|--ndjson]
-cove runs show <run-id-prefix> [--json]
+cove runs show <run-id-prefix> [--json|--summary-json]
 cove runs export <run-id-prefix> --format json|gha-summary|tar
 ```
 
 | Subcommand | Description |
 |------------|-------------|
 | `list [--limit N] [--since DURATION] [--status ok\|fail\|all] [--json\|--ndjson]` | List recent runs. Fields: run-id prefix, `image_ref`, `vm_name`, `status`, `total_duration_ms`, `exit_code`, `started_at`. `--json` emits one array (`[]` when empty); `--ndjson` emits one object per line and no output when empty. |
-| `show <run-id-prefix> [--json]` | Show one run by unique run-id prefix. Fails if the prefix matches no run or more than one run. |
+| `show <run-id-prefix> [--json\|--summary-json]` | Show one run by unique run-id prefix, including lifecycle, result, resource summary, artifacts, and raw events. `--json` keeps the raw event-array output; `--summary-json` emits the structured show object. Fails if the prefix matches no run or more than one run. |
 | `export <run-id-prefix> --format json\|gha-summary\|tar` | Export one run. `json` emits structured data, `gha-summary` emits Markdown for `GITHUB_STEP_SUMMARY`, and `tar` writes a gzip tar archive to stdout. |
 
 `runs show` and `runs export` use prefix matching against local run directory
@@ -889,6 +889,7 @@ cove runs list --limit 20 --since 24h --status all
 cove runs list --json
 cove runs list --ndjson
 cove runs show 20260505
+cove runs show 20260505 --summary-json
 cove runs export 20260505 --format gha-summary >> "$GITHUB_STEP_SUMMARY"
 cove runs export 20260505 --format tar > cove-run.tar.gz
 ```

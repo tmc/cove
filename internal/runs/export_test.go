@@ -79,6 +79,40 @@ func TestExportGHASummaryIncludesImageRef(t *testing.T) {
 	}
 }
 
+func TestExportGHASummaryIncludesResourceSummary(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "20260510-res", []metrics.Event{
+		event("resource_sample", "ok", 10, map[string]any{
+			"phase":                  "periodic",
+			"memory_total_bytes":     1024,
+			"memory_available_bytes": 64,
+			"guest_load_avg_1":       4.5,
+			"guest_top_processes": []any{
+				map[string]any{"pid": 301, "cpu_percent": 81.25, "rss_bytes": 128, "command": "swift"},
+			},
+		}),
+		event("run_complete", "failed", 20, map[string]any{"exit_code": 1}),
+	}, nil)
+
+	var buf bytes.Buffer
+	if err := ExportGHASummary(&buf, root, "20260510-res"); err != nil {
+		t.Fatalf("ExportGHASummary: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"### Resources",
+		"| guest_memory_min_available | 64 B (6.2%) |",
+		"| guest_top_process | swift pid=301 cpu=81.2% rss=128 B phase=periodic |",
+		"**Resource hints:**",
+		"`guest_memory_low`",
+		"`guest_process_hot`",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("summary missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestExportGHASummaryOmitsImageRefWhenAbsent(t *testing.T) {
 	root := t.TempDir()
 	writeRun(t, root, "20260510-noimg", []metrics.Event{

@@ -83,6 +83,11 @@ func ExportGHASummary(w io.Writer, root, prefix string) error {
 			return err
 		}
 	}
+	if show.Resource != nil {
+		if err := exportResourceSummaryMarkdown(w, show.Resource); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -173,4 +178,39 @@ func badge(status string) string {
 	default:
 		return "[fail] " + status
 	}
+}
+
+func exportResourceSummaryMarkdown(w io.Writer, s *ResourceSummary) error {
+	if _, err := fmt.Fprint(w, "\n### Resources\n\n"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "| Metric | Value |"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "| --- | ---: |"); err != nil {
+		return err
+	}
+	for _, row := range resourceSummaryRows(s) {
+		if _, err := fmt.Fprintf(w, "| %s | %s |\n", markdownCell(row.Name), markdownCell(row.Value)); err != nil {
+			return err
+		}
+	}
+	if len(s.Warnings) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "\n**Resource hints:**"); err != nil {
+		return err
+	}
+	for _, warning := range s.Warnings {
+		if _, err := fmt.Fprintf(w, "- `%s`: %s\n", markdownCell(warning.Class), markdownCell(warning.Reason)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func markdownCell(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "|", `\|`)
+	return s
 }

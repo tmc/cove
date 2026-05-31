@@ -32,29 +32,30 @@ var lifecycleEvents = map[string]bool{
 
 // Show is the rendered data for a run.
 type Show struct {
-	RunID         string
-	Dir           string
-	Events        []metrics.Event
-	Lifecycle     []metrics.Event
-	Result        Result
-	Artifacts     []string
-	ArtifactBytes int64
-	Failure       Failure
+	RunID         string           `json:"run_id"`
+	Dir           string           `json:"dir"`
+	Events        []metrics.Event  `json:"events"`
+	Lifecycle     []metrics.Event  `json:"lifecycle"`
+	Result        Result           `json:"result"`
+	Resource      *ResourceSummary `json:"resource,omitempty"`
+	Artifacts     []string         `json:"artifacts"`
+	ArtifactBytes int64            `json:"artifact_bytes"`
+	Failure       Failure          `json:"failure,omitempty"`
 }
 
 // Result summarizes the terminal run status.
 type Result struct {
-	Status       string
-	ExitCode     int
-	HasExitCode  bool
-	WallclockMS  int64
-	FailedEvents int
+	Status       string `json:"status,omitempty"`
+	ExitCode     int    `json:"exit_code,omitempty"`
+	HasExitCode  bool   `json:"has_exit_code,omitempty"`
+	WallclockMS  int64  `json:"wallclock_ms,omitempty"`
+	FailedEvents int    `json:"failed_events,omitempty"`
 }
 
 // Failure summarizes the first failed event in a run.
 type Failure struct {
-	Class  string
-	Reason string
+	Class  string `json:"class,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // LoadShow loads show data for the run matching prefix under root.
@@ -77,6 +78,7 @@ func LoadShow(root, prefix string) (Show, error) {
 		Events:        events,
 		Lifecycle:     lifecycle(events),
 		Result:        result(events),
+		Resource:      summarizeResources(events),
 		Artifacts:     artifacts,
 		ArtifactBytes: artifactBytes,
 	}
@@ -129,6 +131,14 @@ func RenderShow(w io.Writer, show Show) error {
 	}
 	if show.Failure.Class != "" {
 		if _, err := fmt.Fprintf(w, "Failure: %s: %s\n", show.Failure.Class, show.Failure.Reason); err != nil {
+			return err
+		}
+	}
+	if show.Resource != nil {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if err := renderResourceSummary(w, show.Resource); err != nil {
 			return err
 		}
 	}

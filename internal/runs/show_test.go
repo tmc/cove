@@ -80,6 +80,18 @@ func TestRenderShow(t *testing.T) {
 	events := []metrics.Event{
 		event("fork_created", "ok", 10, nil),
 		event("vm_create", "ok", 20, nil),
+		event("resource_sample", "ok", 25, map[string]any{
+			"phase":                  "periodic",
+			"memory_total_bytes":     8 * 1024 * 1024 * 1024,
+			"memory_available_bytes": 512 * 1024 * 1024,
+			"guest_load_avg_1":       5.25,
+			"guest_process_count":    42,
+			"guest_top_processes": []any{
+				map[string]any{"pid": 301, "cpu_percent": 91.5, "rss_bytes": 256 * 1024 * 1024, "command": "xcodebuild"},
+			},
+			"host_cpu_percent": 27.5,
+			"host_rss_bytes":   2 * 1024 * 1024 * 1024,
+		}),
 		event("vm_start", "error", 30, map[string]any{"reason": "boot failed\nfull detail"}),
 		event("agent_ready", "ok", 40, nil),
 		event("build_step", "ok", 50, nil),
@@ -103,6 +115,9 @@ func TestRenderShow(t *testing.T) {
 	if show.Failure.Class != "vm_start" || show.Failure.Reason != "boot failed" {
 		t.Fatalf("failure = %+v", show.Failure)
 	}
+	if show.Resource == nil || show.Resource.SampleCount != 1 || show.Resource.TopGuestProcess == nil || show.Resource.TopGuestProcess.Command != "xcodebuild" {
+		t.Fatalf("resource = %+v", show.Resource)
+	}
 
 	var buf bytes.Buffer
 	if err := RenderShow(&buf, show); err != nil {
@@ -114,6 +129,12 @@ func TestRenderShow(t *testing.T) {
 		"fork_created  ok  10ms",
 		"Result: failed exit_code=2 wallclock=150ms failed_events=2",
 		"Failure: vm_start: boot failed",
+		"Resources:",
+		"guest_memory_min_available: 512.0 MB (6.2%)",
+		"guest_load_avg_1_peak: 5.25",
+		"guest_top_process: xcodebuild pid=301 cpu=91.5% rss=256.0 MB phase=periodic",
+		"guest_memory_low",
+		"guest_process_hot",
 		"Artifacts (",
 		" bytes):",
 		"metrics.jsonl",
@@ -122,6 +143,67 @@ func TestRenderShow(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestLoadShowResourceSummaryCombinesSamples(t *testing.T) {
+	root := t.TempDir()
+	writeRun(t, root, "20260510-res", []metrics.Event{
+		event("resource_sample", "ok", 10, map[string]any{
+			"phase":                  "start",
+			"memory_total_bytes":     "4096",
+			"memory_available_bytes": "2048",
+			"guest_load_avg_1":       "1.5",
+			"guest_process_count":    "5",
+			"guest_top_processes": []any{
+				map[string]any{"pid": 11, "cpuPercent": "7.5", "rssBytes": "1024", "command": "sh"},
+			},
+			"host_cpu_percent": 3.5,
+			"host_rss_bytes":   8192,
+		}),
+		event("resource_sample", "ok", 20, map[string]any{
+			"phase":                  "end",
+			"memory_total_bytes":     4096,
+			"memory_available_bytes": 512,
+			"guest_load_avg_1":       2.75,
+			"guest_process_count":    9,
+			"guest_top_processes": []map[string]any{
+				{"pid": 12, "cpu_percent": 9.5, "rss_bytes": 2048, "command": "make"},
+			},
+			"host_cpu_percent": 4.5,
+			"host_rss_bytes":   16384,
+		}),
+		event(runCompleteEvent, "ok", 30, nil),
+	}, nil)
+
+	show, err := LoadShow(root, "20260510-res")
+	if err != nil {
+		t.Fatalf("LoadShow: %v", err)
+	}
+	s := show.Resource
+	if s == nil {
+		t.Fatal("Resource = nil")
+	}
+	if s.SampleCount != 2 {
+		t.Fatalf("SampleCount = %d, want 2", s.SampleCount)
+	}
+	if s.MinGuestMemoryAvailableBytes == nil || *s.MinGuestMemoryAvailableBytes != 512 {
+		t.Fatalf("MinGuestMemoryAvailableBytes = %v", s.MinGuestMemoryAvailableBytes)
+	}
+	if s.PeakGuestLoadAvg1 == nil || *s.PeakGuestLoadAvg1 != 2.75 {
+		t.Fatalf("PeakGuestLoadAvg1 = %v", s.PeakGuestLoadAvg1)
+	}
+	if s.PeakGuestProcessCount == nil || *s.PeakGuestProcessCount != 9 {
+		t.Fatalf("PeakGuestProcessCount = %v", s.PeakGuestProcessCount)
+	}
+	if s.TopGuestProcess == nil || s.TopGuestProcess.Command != "make" || s.TopGuestProcess.Phase != "end" {
+		t.Fatalf("TopGuestProcess = %+v", s.TopGuestProcess)
+	}
+	if s.PeakHostCPUPercent == nil || *s.PeakHostCPUPercent != 4.5 {
+		t.Fatalf("PeakHostCPUPercent = %v", s.PeakHostCPUPercent)
+	}
+	if s.PeakHostRSSBytes == nil || *s.PeakHostRSSBytes != 16384 {
+		t.Fatalf("PeakHostRSSBytes = %v", s.PeakHostRSSBytes)
 	}
 }
 

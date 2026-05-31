@@ -67,6 +67,10 @@ CPU percentage, RSS bytes, and executable label. Virtualization.framework memory
 fields report configured/target memory plus balloon support when the runtime
 exposes them, and host-process fields report the owning cove process PID, CPU
 percentage, RSS bytes, and start source when cove can resolve them.
+`cove runs show` and `cove runs show --summary-json` summarize these samples
+into peak/min resource rows and best-effort pressure hints, while
+`cove runs show --json` and `cove runs export --format json` keep the raw events
+for downstream analysis.
 
 `build_step`
 : Emitted for each `cove build` step. `extra` includes `step`, `cache_hit`,

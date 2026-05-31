@@ -107,9 +107,12 @@ defined in `internal/runs/show.go` (`lifecycleEvents` map):
 `lifecycle.maxage.tripped`, `run_complete`.
 
 Events not in this list (image GC, agent sandbox, capture latency, daemon-side
-`lifecycle.policy.stop`, `resource_sample`, `vm_policy_stop` fallback) still
-appear in `runs show -v` and `runs export` JSON, but are not rendered in the
-default lifecycle phase table.
+`lifecycle.policy.stop`, `vm_policy_stop` fallback) still appear in
+`runs show --json`, `runs show --summary-json`, and `runs export` JSON, but are
+not rendered in the default lifecycle phase table. `resource_sample` events are
+also folded into the `runs show` resource summary, which reports sample count,
+guest memory/load and process peaks, host CPU/RSS peaks, and best-effort
+pressure hints.
 
 ## Export formats
 

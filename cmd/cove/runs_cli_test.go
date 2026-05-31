@@ -18,12 +18,12 @@ import (
 )
 
 func TestParseRunsShowArgsAllowsFlagsAfterPrefix(t *testing.T) {
-	prefix, jsonOut, err := parseRunsShowArgs([]string{"abc123", "--json"})
+	prefix, jsonOut, summaryJSON, err := parseRunsShowArgs([]string{"abc123", "--json"})
 	if err != nil {
 		t.Fatalf("parseRunsShowArgs: %v", err)
 	}
-	if prefix != "abc123" || !jsonOut {
-		t.Fatalf("prefix/json = %q/%v, want abc123/true", prefix, jsonOut)
+	if prefix != "abc123" || !jsonOut || summaryJSON {
+		t.Fatalf("prefix/json/summary = %q/%v/%v, want abc123/true/false", prefix, jsonOut, summaryJSON)
 	}
 }
 
@@ -153,6 +153,60 @@ func TestRunRunsShowMissingJSONWritesMachineReadableStdout(t *testing.T) {
 	}
 	if got.RunID != "missing" || got.Error == "" {
 		t.Fatalf("JSON output = %#v, want run_id/error", got)
+	}
+}
+
+func TestRunRunsShowSummaryJSONIncludesResourceSummary(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".vz", "runs")
+	writeRunsCLIEvents(t, root, "20260510-json", []metrics.Event{
+		{Timestamp: time.Unix(0, 0).UTC().Format(time.RFC3339Nano), EventType: "resource_sample", Status: "ok", Extra: map[string]any{
+			"phase":                  "periodic",
+			"memory_total_bytes":     2048,
+			"memory_available_bytes": 256,
+			"guest_top_processes": []any{
+				map[string]any{"pid": 301, "cpu_percent": 12.5, "command": "make"},
+			},
+		}},
+		{Timestamp: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), EventType: "run_complete", VMName: "vm-json", Status: "ok", Extra: map[string]any{"run_id": "20260510-json"}},
+	})
+
+	var out bytes.Buffer
+	if err := runRunsShow(commandEnv{Stdout: &out, Stderr: new(bytes.Buffer)}, []string{"20260510-json", "--summary-json"}); err != nil {
+		t.Fatalf("runRunsShow --summary-json: %v", err)
+	}
+	var got runs.Show
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not show JSON: %v\n%s", err, out.String())
+	}
+	if got.RunID != "20260510-json" || len(got.Events) != 2 {
+		t.Fatalf("show JSON = %+v", got)
+	}
+	if got.Resource == nil || got.Resource.SampleCount != 1 || got.Resource.TopGuestProcess == nil || got.Resource.TopGuestProcess.Command != "make" {
+		t.Fatalf("resource summary = %+v", got.Resource)
+	}
+}
+
+func TestRunRunsShowJSONKeepsRawEvents(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".vz", "runs")
+	writeRunsCLIEvents(t, root, "20260510-events", []metrics.Event{
+		{Timestamp: time.Unix(0, 0).UTC().Format(time.RFC3339Nano), EventType: "resource_sample", Status: "ok"},
+		{Timestamp: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), EventType: "run_complete", Status: "ok", Extra: map[string]any{"run_id": "20260510-events"}},
+	})
+
+	var out bytes.Buffer
+	if err := runRunsShow(commandEnv{Stdout: &out, Stderr: new(bytes.Buffer)}, []string{"20260510-events", "--json"}); err != nil {
+		t.Fatalf("runRunsShow --json: %v", err)
+	}
+	var got []metrics.Event
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not event JSON: %v\n%s", err, out.String())
+	}
+	if len(got) != 2 || got[0].EventType != "resource_sample" {
+		t.Fatalf("events JSON = %+v", got)
 	}
 }
 
@@ -299,6 +353,14 @@ func TestPrintRunsTableIncludesEventCount(t *testing.T) {
 
 func writeRunsCLIRun(t *testing.T, root, id, vm string) {
 	t.Helper()
+	writeRunsCLIEvents(t, root, id, []metrics.Event{
+		{Timestamp: time.Unix(0, 0).UTC().Format(time.RFC3339Nano), EventType: "vm_start", VMName: vm, Status: "ok"},
+		{Timestamp: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), EventType: "run_complete", VMName: vm, Status: "ok", Extra: map[string]any{"run_id": id}},
+	})
+}
+
+func writeRunsCLIEvents(t *testing.T, root, id string, events []metrics.Event) {
+	t.Helper()
 	dir := filepath.Join(root, id)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -309,10 +371,7 @@ func writeRunsCLIRun(t *testing.T, root, id, vm string) {
 	}
 	defer f.Close()
 	enc := json.NewEncoder(f)
-	for _, event := range []metrics.Event{
-		{Timestamp: time.Unix(0, 0).UTC().Format(time.RFC3339Nano), EventType: "vm_start", VMName: vm, Status: "ok"},
-		{Timestamp: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), EventType: "run_complete", VMName: vm, Status: "ok", Extra: map[string]any{"run_id": id}},
-	} {
+	for _, event := range events {
 		if err := enc.Encode(event); err != nil {
 			t.Fatalf("Encode metrics: %v", err)
 		}

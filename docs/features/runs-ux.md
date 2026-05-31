@@ -24,7 +24,7 @@ code without requiring an external telemetry service.
 
 ```bash
 cove runs list [--limit N] [--since DURATION] [--status ok|fail|all] [--json|--ndjson]
-cove runs show <run-id-prefix> [--json]
+cove runs show <run-id-prefix> [--json|--summary-json]
 cove runs export <run-id-prefix> --format json|gha-summary|tar
 ```
 
@@ -35,8 +35,9 @@ duration such as `24h` or `7d`, `--status` filters successful or failed runs,
 line.
 
 `runs show`
-: Prints one run's summary and available metrics. `--json` emits the same data
-as structured JSON for scripts.
+: Prints one run's lifecycle, result, resource summary, and artifacts.
+`--json` emits the raw event array for compatibility; `--summary-json` emits
+the structured show object for scripts, including raw events.
 
 `runs export`
 : Writes one run in a requested format. `json` emits structured run data,
@@ -63,6 +64,24 @@ Commands that take `<run-id-prefix>` match local directories under `~/.vz/runs`.
 The prefix must identify exactly one run. If no run matches, the command fails.
 If more than one run matches, the command fails with an ambiguous-prefix error
 and the operator should pass more characters from the run id.
+
+## Resource Summary
+
+When a run contains `resource_sample` events, `runs show` folds them into a
+short resource summary:
+
+- sample count
+- minimum guest memory available, with percentage when total memory was sampled
+- peak guest 1-minute load average
+- peak guest process count
+- hottest sampled guest process by CPU, with PID, RSS, command, and sample phase
+- peak owning host process CPU and RSS
+- heuristic hints for low guest memory, high guest load, hot guest process, or
+  unusually high process count
+
+The raw `resource_sample` events remain in `runs show --json` and
+`cove runs export <id> --format json`. The derived summary is available in
+human `runs show`, `runs show --summary-json`, and GitHub summary export.
 
 ## Export Formats
 
