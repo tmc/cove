@@ -112,6 +112,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `POST /v1/warm-pools/claim` to claim a ready warm
   fork, mark the slot unavailable, and queue same-worker guest execution through
   `cove shell <vm> -- ...` while replenishing the warm-pool quota.
+- Warm-pool status responses now include open slot totals, per-state
+  pending/leased/running/ready/claimed/draining/terminal counts, `by_status`,
+  and claimed/draining slot visibility for operator lifecycle diagnostics.
 - `coved -fleet-url` now stops a claimed warm-pool VM after the claimed
   guest-exec assignment finishes, allowing the original warm-run assignment to
   terminate and the controller to replenish capacity cleanly.

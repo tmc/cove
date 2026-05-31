@@ -172,7 +172,10 @@ cove's **unique scheduler dimension** — neither Orchard nor Daytona has it:
   path for this shape: `coved` probes each warm slot through `cove shell` before
   marking it `ready`; the controller then claims that ready slot, marks it
   unavailable, queues same-worker guest execution, and the worker stops the
-  claimed warm VM after the guest command returns.
+  claimed warm VM after the guest command returns. Pool status responses report
+  open slots plus pending/leased/running/ready/claimed/draining/terminal counts,
+  so operators can separate usable ready capacity from in-flight claims and
+  cleanup.
 
 **Correctness / serialization.** The one thing that must be serialized is the
 final "commit this VM to this host" decision, so two placements cannot
@@ -367,7 +370,7 @@ Each slice is independently shippable. The MIT/paid boundary is at **Slice 5**.
 | 4 | Maximize stateless SSH | SSH connection pooling; concurrent multi-host `cove run`; parallel health/inventory probes over SSH | MIT | 034 S1–3 | Exhausts the stateless design space (all 034-deferred). Burst CI capacity with zero new operational surface or trust change. |
 | 5 | **Stateful fleet controller (the boundary)** | new control-plane binary (working name `cove-fleetd`) accepts worker dial-ins; `coved` gains `--fleet-url` outbound stream + four-verb worker protocol; embedded host-inventory store plus operations summary | **PAID** (controller) / **MIT** (worker mode) | Slice 4 | NAT traversal for remote Macs; N-way SSH fan-out becomes the bottleneck; establishes the monetization boundary. |
 | 6 | Fleet-wide policy & GC | controller pushes lifecycle policy, image-GC, and storage budget/prune down worker streams; workers report results | PAID | Slice 5 | Fulfills 034-deferred fleet-wide policy; image-GC, VM lifecycle-policy, and storage budget/prune push have landed. |
-| 7 | Top-k bin-pack scheduler + base-image affinity + warm-pool | controller-side placement replacing client-side least-loaded; base-image affinity; fork-warm-pool quota plus agent-ready slot claim, downsize, delete, and cleanup | PAID | Slice 5 | Resolves oversubscription races; lights up cove's image-locality edge for CI/agent pools. |
+| 7 | Top-k bin-pack scheduler + base-image affinity + warm-pool | controller-side placement replacing client-side least-loaded; base-image affinity; fork-warm-pool quota plus agent-ready slot claim, downsize, delete, cleanup, and lifecycle status counts | PAID | Slice 5 | Resolves oversubscription races; lights up cove's image-locality edge for CI/agent pools. |
 | 8 | Hosted API + SDK provider abstraction + metering | REST `/v1/sandboxes` surface; create/list/get/delete/start/restart/stop/wait/lease/exec/control/metering scaffold has started; Python `provider=local\|cloud` SDK path; BYO-LLM-key | PAID (hosted) | Slice 7 | Use case C; competes with Daytona/Cua on the macOS wedge. |
 | 9 | Fleet RBAC / SSO / audit | SAML/OIDC, namespaces, fleet audit log; initial persisted audit feed, service-account actor binding, namespace filters, service-account roles, audit-chain verification, and RS256 OIDC bearer bindings with discovery/JWKS refresh have started | PAID | Slice 5 | Enterprise-governance monetization axis (Teleport line); the durable revenue, not the scheduler. |
 | — | Federation (deferred) | independent per-site controllers, no cross-site consensus | PAID | Slice 7 | Multi-datacenter scale; deliberately deferred to avoid premature distributed-systems complexity. |

@@ -2024,7 +2024,7 @@ func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Pool.Policy != PolicyImageAffinity || result.Pool.Active != 2 {
+	if result.Pool.Policy != PolicyImageAffinity || result.Pool.Active != 2 || result.Pool.Slots != 2 || result.Pool.Pending != 2 {
 		t.Fatalf("pool result = %+v", result.Pool)
 	}
 	if len(result.Created) != 2 {
@@ -2046,7 +2046,7 @@ func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Created) != 0 || result.Pool.Active != 2 {
+	if len(result.Created) != 0 || result.Pool.Active != 2 || result.Pool.Slots != 2 {
 		t.Fatalf("second ensure = %+v", result)
 	}
 	reopened, err := OpenStore(path, time.Minute)
@@ -2054,7 +2054,7 @@ func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	pools := reopened.ListWarmPools()
-	if len(pools) != 1 || pools[0].Name != "runner" || pools[0].Active != 2 {
+	if len(pools) != 1 || pools[0].Name != "runner" || pools[0].Active != 2 || pools[0].Slots != 2 {
 		t.Fatalf("reopened pools = %+v", pools)
 	}
 }
@@ -2096,7 +2096,7 @@ func TestStoreReconcileReplenishesWarmPool(t *testing.T) {
 		t.Fatalf("reconcile reused completed assignment id %q", first)
 	}
 	pools := store.ListWarmPools()
-	if len(pools) != 1 || pools[0].Active != 1 || pools[0].Assignments[0].ID == first {
+	if len(pools) != 1 || pools[0].Active != 1 || pools[0].Slots != 1 || pools[0].Assignments[0].ID == first {
 		t.Fatalf("pools = %+v", pools)
 	}
 }
@@ -2162,8 +2162,11 @@ func TestStoreClaimsWarmPoolSlot(t *testing.T) {
 		t.Fatalf("renewed slot status = %q, want claimed", slot.Status)
 	}
 	pools := store.ListWarmPools()
-	if len(pools) != 1 || pools[0].Active != 1 || pools[0].Assignments[0].ID == slotID {
-		t.Fatalf("pools after claim = %+v, want replenished active replacement", pools)
+	if len(pools) != 1 || pools[0].Active != 1 || pools[0].Slots != 2 || pools[0].Pending != 1 || pools[0].Claimed != 1 {
+		t.Fatalf("pools after claim = %+v, want claimed slot plus replenished replacement", pools)
+	}
+	if statusByAssignmentID(pools[0].Assignments, slotID) != "claimed" {
+		t.Fatalf("pools after claim assignments = %+v, want claimed slot visible", pools[0].Assignments)
 	}
 }
 
@@ -2201,8 +2204,8 @@ func TestStoreClaimedWarmPoolSlotCountsAgainstCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	pools := store.ListWarmPools()
-	if len(pools) != 1 || pools[0].Active != 0 {
-		t.Fatalf("pools after capacity-bound claim = %+v, want no replacement", pools)
+	if len(pools) != 1 || pools[0].Active != 0 || pools[0].Slots != 1 || pools[0].Claimed != 1 {
+		t.Fatalf("pools after capacity-bound claim = %+v, want one claimed slot and no replacement", pools)
 	}
 }
 
@@ -2259,8 +2262,8 @@ func TestStoreDownsizesWarmPoolReadySlots(t *testing.T) {
 		t.Fatalf("cleanup = %+v, want worker %q args %+v", cleanup, slot.WorkerID, wantArgs)
 	}
 	pools := store.ListWarmPools()
-	if len(pools) != 1 || pools[0].Active != 1 {
-		t.Fatalf("pools after downsize = %+v, want active 1", pools)
+	if len(pools) != 1 || pools[0].Active != 1 || pools[0].Slots != 2 || pools[0].Ready != 1 || pools[0].Draining != 1 {
+		t.Fatalf("pools after downsize = %+v, want one ready slot and one draining slot", pools)
 	}
 	if _, err := store.Report(WorkerReport{ID: slot.WorkerID, AssignmentID: slot.ID, Status: "ready"}); err != nil {
 		t.Fatal(err)
@@ -2294,7 +2297,7 @@ func TestStoreDownsizesWarmPoolPendingSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Canceled) != 2 || len(result.Cleanup) != 0 || result.Pool.Active != 0 {
+	if len(result.Canceled) != 2 || len(result.Cleanup) != 0 || result.Pool.Active != 0 || result.Pool.Slots != 0 || result.Pool.Terminal != 2 {
 		t.Fatalf("downsize result = %+v, want two canceled pending slots", result)
 	}
 	for _, id := range result.Canceled {
@@ -2758,7 +2761,7 @@ func TestHandlerWarmPools(t *testing.T) {
 		ImageRef: "base:v1",
 		Size:     1,
 	}, &result)
-	if result.Pool.Name != "runner" || result.Pool.Active != 1 || len(result.Created) != 1 {
+	if result.Pool.Name != "runner" || result.Pool.Active != 1 || result.Pool.Slots != 1 || result.Pool.Pending != 1 || len(result.Created) != 1 {
 		t.Fatalf("warm pool result = %+v", result)
 	}
 	if result.Created[0].WorkerID != "worker-1" || result.Created[0].WarmPool != "runner" {
@@ -2769,7 +2772,7 @@ func TestHandlerWarmPools(t *testing.T) {
 		WarmPools []WarmPoolStatus `json:"warm_pools"`
 	}
 	getJSON(t, server.URL+"/v1/warm-pools", &list)
-	if len(list.WarmPools) != 1 || list.WarmPools[0].Name != "runner" || list.WarmPools[0].Active != 1 {
+	if len(list.WarmPools) != 1 || list.WarmPools[0].Name != "runner" || list.WarmPools[0].Active != 1 || list.WarmPools[0].Slots != 1 {
 		t.Fatalf("warm pool list = %+v", list)
 	}
 
@@ -2810,7 +2813,7 @@ func TestHandlerWarmPoolDownsize(t *testing.T) {
 		t.Fatalf("warm pool create = %+v, want 2 created", result)
 	}
 	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 0}, &result)
-	if len(result.Canceled) != 2 || len(result.Cleanup) != 0 || result.Pool.Active != 0 {
+	if len(result.Canceled) != 2 || len(result.Cleanup) != 0 || result.Pool.Active != 0 || result.Pool.Terminal != 2 {
 		t.Fatalf("warm pool downsize = %+v, want two canceled pending slots", result)
 	}
 }
@@ -2826,7 +2829,7 @@ func TestHandlerWarmPoolGetDelete(t *testing.T) {
 	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 2}, &result)
 	var status WarmPoolStatus
 	getJSON(t, server.URL+"/v1/warm-pools/runner", &status)
-	if status.Name != "runner" || status.Active != 2 {
+	if status.Name != "runner" || status.Active != 2 || status.Slots != 2 || status.Pending != 2 {
 		t.Fatalf("warm pool status = %+v, want runner active 2", status)
 	}
 	var deleted WarmPoolDeleteResult
@@ -3525,6 +3528,15 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func statusByAssignmentID(assignments []Assignment, id string) string {
+	for _, assignment := range assignments {
+		if assignment.ID == id {
+			return assignment.Status
+		}
+	}
+	return ""
 }
 
 func skipReason(skipped []ImagePrepareSkip, workerID string) string {

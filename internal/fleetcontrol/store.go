@@ -1064,10 +1064,12 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 		}
 
 		if assignment.WarmPool != "" {
-			summary.WarmPools.Slots++
 			addStatusCount(summary.WarmPools.ByStatus, status)
-			if openAssignmentStatus(status) {
+			if activeAssignmentStatus(status) {
 				summary.WarmPools.Active++
+			}
+			if openAssignmentStatus(status) {
+				summary.WarmPools.Slots++
 			} else {
 				summary.WarmPools.Terminal++
 			}
@@ -2927,12 +2929,41 @@ func (s *Store) warmPoolStatusLocked(name string) WarmPoolStatus {
 	if !ok {
 		return WarmPoolStatus{}
 	}
-	assignments := s.warmPoolAssignmentsLocked(name)
-	return WarmPoolStatus{
-		WarmPool:    cloneWarmPool(pool),
-		Active:      len(assignments),
-		Assignments: cloneAssignments(assignments),
+	status := WarmPoolStatus{
+		WarmPool: cloneWarmPool(pool),
+		ByStatus: make(map[string]int),
 	}
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.WarmPool != name {
+			continue
+		}
+		assignmentStatus := normalizeOperationStatus(assignment.Status)
+		addStatusCount(status.ByStatus, assignmentStatus)
+		switch assignmentStatus {
+		case "pending":
+			status.Pending++
+		case "leased":
+			status.Leased++
+		case "running":
+			status.Running++
+		case "ready":
+			status.Ready++
+		case "claimed":
+			status.Claimed++
+		case "draining":
+			status.Draining++
+		}
+		if activeAssignmentStatus(assignmentStatus) {
+			status.Active++
+		}
+		if openAssignmentStatus(assignmentStatus) {
+			status.Slots++
+			status.Assignments = append(status.Assignments, cloneAssignment(assignment))
+		} else {
+			status.Terminal++
+		}
+	}
+	return status
 }
 
 func (s *Store) warmPoolAssignmentsLocked(name string) []Assignment {

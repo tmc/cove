@@ -329,8 +329,17 @@ type WarmPool struct {
 
 type WarmPoolStatus struct {
 	WarmPool
-	Active      int          `json:"active"`
-	Assignments []Assignment `json:"assignments,omitempty"`
+	Slots       int            `json:"slots"`
+	Active      int            `json:"active"`
+	Pending     int            `json:"pending"`
+	Leased      int            `json:"leased"`
+	Running     int            `json:"running"`
+	Ready       int            `json:"ready"`
+	Claimed     int            `json:"claimed"`
+	Draining    int            `json:"draining"`
+	Terminal    int            `json:"terminal"`
+	ByStatus    map[string]int `json:"by_status,omitempty"`
+	Assignments []Assignment   `json:"assignments,omitempty"`
 }
 
 type WarmPoolResult struct {

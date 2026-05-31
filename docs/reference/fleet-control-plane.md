@@ -292,6 +292,14 @@ pool definition, cancels pending slots, queues the same cleanup for idle
 started slots, and returns claimed slots in `deferred` so in-flight guest work
 can finish and use its existing claimed-slot stop path.
 
+Warm-pool status responses include `slots` for all non-terminal slot
+assignments, `active` for slots still counting toward the desired pool quota,
+per-state counts (`pending`, `leased`, `running`, `ready`, `claimed`,
+`draining`, `terminal`), a `by_status` map, and the open slot assignments.
+Claimed and draining slots stay visible even after a replacement slot is
+queued, so operators can distinguish ready capacity from in-flight guest work
+and cleanup.
+
 Sandbox endpoint:
 
 ```bash
