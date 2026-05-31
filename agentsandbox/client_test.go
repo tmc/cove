@@ -181,6 +181,48 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	}
 }
 
+func TestCloudClientPassesLeaseHolderToMutations(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	client, err := NewClient(ClientOptions{
+		Provider:  ProviderCloud,
+		FleetURL:  server.URL,
+		SandboxID: "job-1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Lease(ctx, "runner-42", time.Second); err != nil {
+		t.Fatalf("Lease: %v", err)
+	}
+	if err := client.Restart(ctx); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if _, err := client.Exec(ctx, ExecRequest{Command: []string{"true"}, Timeout: time.Second}); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if _, err := client.Screenshot(ctx, ScreenshotOptions{Format: "png"}); err != nil {
+		t.Fatalf("Screenshot: %v", err)
+	}
+	if err := client.Delete(ctx); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if got := server.requests[1].body["holder"]; got != "runner-42" {
+		t.Fatalf("restart holder = %v, want runner-42", got)
+	}
+	if got := server.requests[2].body["holder"]; got != "runner-42" {
+		t.Fatalf("exec holder = %v, want runner-42", got)
+	}
+	if got := server.requests[3].body["holder"]; got != "runner-42" {
+		t.Fatalf("control holder = %v, want runner-42", got)
+	}
+	if got := server.requests[4].query.Get("holder"); got != "runner-42" {
+		t.Fatalf("delete holder = %q, want runner-42", got)
+	}
+}
+
 func TestCloudClientListFilters(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()

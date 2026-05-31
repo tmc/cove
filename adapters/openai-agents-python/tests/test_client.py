@@ -224,6 +224,25 @@ def test_fleet_client_list_filters() -> None:
         server.stop()
 
 
+def test_fleet_client_passes_lease_holder_to_mutations() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        client = CoveFleetClient(sandbox_id="job-1", fleet_url=server.url, api_key="secret", timeout=1)
+        client.lease(holder="runner-42", ttl=1)
+        client.restart()
+        client.exec(["true"], timeout=1)
+        client.screenshot(fmt="png")
+        client.delete_vm()
+
+        assert server.requests[1]["body"]["holder"] == "runner-42"
+        assert server.requests[2]["body"]["holder"] == "runner-42"
+        assert server.requests[3]["body"]["holder"] == "runner-42"
+        assert server.requests[4]["query"]["holder"] == ["runner-42"]
+    finally:
+        server.stop()
+
+
 def test_fleet_client_control_events() -> None:
     server = _FleetHTTPServer()
     server.start()

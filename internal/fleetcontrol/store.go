@@ -368,7 +368,7 @@ func (s *Store) DrainWorkerActor(actor, id, reason string) (WorkerDrainResult, e
 			})
 			continue
 		}
-		stopped, err := s.stopSandboxLocked(now, actor, assignment.SandboxID, "sandbox.drain")
+		stopped, err := s.stopSandboxLocked(now, actor, assignment.SandboxID, "sandbox.drain", "")
 		if err != nil {
 			result.Skipped = append(result.Skipped, WorkerDrainSkip{
 				SandboxID: assignment.SandboxID,
@@ -1140,6 +1140,9 @@ func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (Sand
 	if !ok {
 		return SandboxExecResult{}, fmt.Errorf("sandbox %q not found", id)
 	}
+	if err := requireSandboxLeaseHolder(now, id, &sandbox, req.Holder); err != nil {
+		return SandboxExecResult{}, err
+	}
 	if sandbox.Status != "ready" {
 		return SandboxExecResult{}, fmt.Errorf("sandbox %q is %s", id, sandbox.Status)
 	}
@@ -1201,6 +1204,9 @@ func (s *Store) ControlSandboxActor(actor, id string, req SandboxControlRequest)
 	sandbox, ok := s.sandboxRunAssignmentLocked(id)
 	if !ok {
 		return SandboxControlResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	if err := requireSandboxLeaseHolder(now, id, &sandbox, req.Holder); err != nil {
+		return SandboxControlResult{}, err
 	}
 	if sandbox.Status != "ready" {
 		return SandboxControlResult{}, fmt.Errorf("sandbox %q is %s", id, sandbox.Status)
@@ -1348,11 +1354,11 @@ func (s *Store) StartSandbox(id string) (SandboxStartResult, error) {
 	return s.StartSandboxActor("controller", id)
 }
 
-func (s *Store) StartSandboxActor(actor, id string) (SandboxStartResult, error) {
+func (s *Store) StartSandboxActor(actor, id string, reqs ...SandboxMutationRequest) (SandboxStartResult, error) {
 	now := s.now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	result, err := s.startSandboxLocked(now, normalizeActor(actor), id, "sandbox.start")
+	result, err := s.startSandboxLocked(now, normalizeActor(actor), id, "sandbox.start", sandboxMutationHolder(reqs))
 	if err != nil {
 		return SandboxStartResult{}, err
 	}
@@ -1368,13 +1374,14 @@ func (s *Store) RestartSandbox(id string) (SandboxRestartResult, error) {
 	return s.RestartSandboxActor("controller", id)
 }
 
-func (s *Store) RestartSandboxActor(actor, id string) (SandboxRestartResult, error) {
+func (s *Store) RestartSandboxActor(actor, id string, reqs ...SandboxMutationRequest) (SandboxRestartResult, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return SandboxRestartResult{}, fmt.Errorf("sandbox id required")
 	}
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
+	holder := sandboxMutationHolder(reqs)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
@@ -1382,8 +1389,11 @@ func (s *Store) RestartSandboxActor(actor, id string) (SandboxRestartResult, err
 	if !ok {
 		return SandboxRestartResult{}, fmt.Errorf("sandbox %q not found", id)
 	}
+	if err := requireSandboxLeaseHolder(now, id, &assignment, holder); err != nil {
+		return SandboxRestartResult{}, err
+	}
 	if sandboxTerminalStatus(assignment.Status) {
-		started, err := s.startSandboxLocked(now, actor, id, "sandbox.restart")
+		started, err := s.startSandboxLocked(now, actor, id, "sandbox.restart", holder)
 		if err != nil {
 			return SandboxRestartResult{}, err
 		}
@@ -1464,11 +1474,11 @@ func (s *Store) DeleteSandbox(id string) (SandboxDeleteResult, error) {
 	return s.DeleteSandboxActor("controller", id)
 }
 
-func (s *Store) DeleteSandboxActor(actor, id string) (SandboxDeleteResult, error) {
+func (s *Store) DeleteSandboxActor(actor, id string, reqs ...SandboxMutationRequest) (SandboxDeleteResult, error) {
 	now := s.now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	result, err := s.stopSandboxLocked(now, normalizeActor(actor), id, "sandbox.delete")
+	result, err := s.stopSandboxLocked(now, normalizeActor(actor), id, "sandbox.delete", sandboxMutationHolder(reqs))
 	if err != nil {
 		return SandboxDeleteResult{}, err
 	}
@@ -1482,11 +1492,11 @@ func (s *Store) StopSandbox(id string) (SandboxStopResult, error) {
 	return s.StopSandboxActor("controller", id)
 }
 
-func (s *Store) StopSandboxActor(actor, id string) (SandboxStopResult, error) {
+func (s *Store) StopSandboxActor(actor, id string, reqs ...SandboxMutationRequest) (SandboxStopResult, error) {
 	now := s.now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	result, err := s.stopSandboxLocked(now, normalizeActor(actor), id, "sandbox.stop")
+	result, err := s.stopSandboxLocked(now, normalizeActor(actor), id, "sandbox.stop", sandboxMutationHolder(reqs))
 	if err != nil {
 		return SandboxStopResult{}, err
 	}
@@ -3029,7 +3039,7 @@ func (s *Store) activeSandboxCleanupLocked(id string) (Assignment, bool) {
 	return Assignment{}, false
 }
 
-func (s *Store) startSandboxLocked(now time.Time, actor, id, action string) (SandboxStartResult, error) {
+func (s *Store) startSandboxLocked(now time.Time, actor, id, action, holder string) (SandboxStartResult, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return SandboxStartResult{}, fmt.Errorf("sandbox id required")
@@ -3038,6 +3048,9 @@ func (s *Store) startSandboxLocked(now time.Time, actor, id, action string) (San
 	assignment, ok := s.sandboxRunAssignmentLocked(id)
 	if !ok {
 		return SandboxStartResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	if err := requireSandboxLeaseHolder(now, id, &assignment, holder); err != nil {
+		return SandboxStartResult{}, err
 	}
 	vmName := SandboxAssignmentVMName(assignment)
 	result := SandboxStartResult{
@@ -3108,7 +3121,7 @@ func (s *Store) requireSandboxWorkerReadyLocked(now time.Time, workerID string) 
 	return nil
 }
 
-func (s *Store) stopSandboxLocked(now time.Time, actor, id, action string) (SandboxStopResult, error) {
+func (s *Store) stopSandboxLocked(now time.Time, actor, id, action, holder string) (SandboxStopResult, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return SandboxStopResult{}, fmt.Errorf("sandbox id required")
@@ -3117,6 +3130,9 @@ func (s *Store) stopSandboxLocked(now time.Time, actor, id, action string) (Sand
 	assignment, ok := s.sandboxRunAssignmentLocked(id)
 	if !ok {
 		return SandboxStopResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	if err := requireSandboxLeaseHolder(now, id, &assignment, holder); err != nil {
+		return SandboxStopResult{}, err
 	}
 	vmName := SandboxAssignmentVMName(assignment)
 	result := SandboxStopResult{
@@ -3347,6 +3363,24 @@ func sandboxLeaseRequest(req SandboxLeaseRequest, actor string, now time.Time) (
 		ttl = parsed
 	}
 	return holder, now.Add(ttl), nil
+}
+
+func sandboxMutationHolder(reqs []SandboxMutationRequest) string {
+	if len(reqs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(reqs[0].Holder)
+}
+
+func requireSandboxLeaseHolder(now time.Time, id string, assignment *Assignment, holder string) error {
+	clearExpiredSandboxLease(assignment, now)
+	if assignment == nil || assignment.SandboxLeaseHolder == "" {
+		return nil
+	}
+	if strings.TrimSpace(holder) == assignment.SandboxLeaseHolder {
+		return nil
+	}
+	return fmt.Errorf("sandbox %q lease held by %q", strings.TrimSpace(id), assignment.SandboxLeaseHolder)
 }
 
 func normalizeSandboxLeaseHolder(holder, actor string) string {

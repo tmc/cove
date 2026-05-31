@@ -42,17 +42,18 @@ type ClientOptions struct {
 }
 
 type Client struct {
-	provider  string
-	vm        string
-	coveBin   string
-	local     *controlclient.Client
-	fleetURL  string
-	apiKey    string
-	namespace string
-	sandboxID string
-	vmName    string
-	timeout   time.Duration
-	http      *http.Client
+	provider    string
+	vm          string
+	coveBin     string
+	local       *controlclient.Client
+	fleetURL    string
+	apiKey      string
+	namespace   string
+	sandboxID   string
+	vmName      string
+	leaseHolder string
+	timeout     time.Duration
+	http        *http.Client
 }
 
 type SandboxStatus struct {
@@ -469,6 +470,7 @@ func (c *Client) Lease(ctx context.Context, holder string, ttl time.Duration) (L
 	}
 	c.vmName = result.Sandbox.VMName
 	c.namespace = result.Sandbox.Namespace
+	c.leaseHolder = result.Lease.Holder
 	return result, nil
 }
 
@@ -480,8 +482,12 @@ func (c *Client) ReleaseLease(ctx context.Context, holder string) (LeaseResult, 
 		return LeaseResult{}, errors.New("agentsandbox: lease is only supported for cloud sandboxes")
 	}
 	path := c.sandboxPath("lease")
-	if strings.TrimSpace(holder) != "" {
-		path = c.queryPath(path, map[string]string{"holder": strings.TrimSpace(holder)})
+	holder = strings.TrimSpace(holder)
+	if holder == "" {
+		holder = c.leaseHolder
+	}
+	if holder != "" {
+		path = c.queryPath(path, map[string]string{"holder": holder})
 	}
 	var result LeaseResult
 	if err := c.request(ctx, http.MethodDelete, path, nil, &result, c.timeout); err != nil {
@@ -489,6 +495,9 @@ func (c *Client) ReleaseLease(ctx context.Context, holder string) (LeaseResult, 
 	}
 	c.vmName = result.Sandbox.VMName
 	c.namespace = result.Sandbox.Namespace
+	if holder == c.leaseHolder {
+		c.leaseHolder = ""
+	}
 	return result, nil
 }
 
@@ -529,7 +538,11 @@ func (c *Client) Delete(ctx context.Context) error {
 		return err
 	}
 	if c.provider == ProviderCloud {
-		return c.request(ctx, http.MethodDelete, c.sandboxPath(""), nil, nil, maxDuration(c.timeout, 2*time.Minute))
+		path := c.sandboxPath("")
+		if c.leaseHolder != "" {
+			path = c.queryPath(path, map[string]string{"holder": c.leaseHolder})
+		}
+		return c.request(ctx, http.MethodDelete, path, nil, nil, maxDuration(c.timeout, 2*time.Minute))
 	}
 	if c.vm == "" {
 		return errors.New("agentsandbox: local delete requires vm name")
@@ -595,6 +608,9 @@ func (c *Client) Exec(ctx context.Context, req ExecRequest) (ExecResult, error) 
 		"command": command,
 		"env":     cloneStringMap(req.Env),
 		"timeout": formatSeconds(timeout),
+	}
+	if c.leaseHolder != "" {
+		body["holder"] = c.leaseHolder
 	}
 	if err := c.request(ctx, http.MethodPost, c.sandboxPath("exec"), body, &result, timeout+minDuration(timeout, 30*time.Second)); err != nil {
 		return ExecResult{}, err
@@ -868,7 +884,11 @@ func (c *Client) sandboxAction(ctx context.Context, action string) error {
 		return fmt.Errorf("agentsandbox: %s is only supported for cloud sandboxes", action)
 	}
 	var status SandboxStatus
-	return c.request(ctx, http.MethodPost, c.sandboxPath(action), map[string]any{}, &status, c.timeout)
+	body := map[string]any{}
+	if c.leaseHolder != "" {
+		body["holder"] = c.leaseHolder
+	}
+	return c.request(ctx, http.MethodPost, c.sandboxPath(action), body, &status, c.timeout)
 }
 
 type controlResult struct {
@@ -884,6 +904,9 @@ func (c *Client) control(ctx context.Context, payload map[string]any, timeout ti
 	}
 	body := cloneAnyMap(payload)
 	body["timeout"] = formatSeconds(timeout)
+	if c.leaseHolder != "" {
+		body["holder"] = c.leaseHolder
+	}
 	var result controlResult
 	if err := c.request(ctx, http.MethodPost, c.sandboxPath("control"), body, &result, timeout+minDuration(timeout, 30*time.Second)); err != nil {
 		return controlResult{}, err

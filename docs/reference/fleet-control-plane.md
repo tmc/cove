@@ -82,10 +82,13 @@ sandbox workloads. It cordons the worker to prevent new placement, then walks
 hosted sandbox handles assigned to that worker: pending sandbox runs are
 canceled, and leased/running/ready handles are marked `draining` with a
 same-worker `cove ctl -vm <vm> stop` cleanup assignment. The response includes
-the updated worker, per-sandbox stop results, and skipped terminal sandboxes.
-The operation records both `worker.drain` and per-sandbox `sandbox.drain` audit
-events. Like cordon/uncordon, drain is a fleet-global operator action and
-requires an unscoped operator/admin identity.
+the updated worker, per-sandbox stop results, and skipped terminal or
+lease-held sandboxes. Active sandbox modify leases are honored during drain:
+the holder must release the lease, let it expire, or stop/delete the handle
+directly with the holder before a later drain can stop it. The operation
+records both `worker.drain` and per-sandbox `sandbox.drain` audit events for
+stopped handles. Like cordon/uncordon, drain is a fleet-global operator action
+and requires an unscoped operator/admin identity.
 
 `GET /v1/operations/summary` is the dashboard entry point for operators. It
 reconciles first, then returns worker readiness/cordon/stale counts with
@@ -312,20 +315,26 @@ curl http://127.0.0.1:9758/v1/sandboxes/job-1
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/lease \
   -H 'content-type: application/json' \
   -d '{"holder":"runner-42","ttl":"30s"}'
-curl -X DELETE 'http://127.0.0.1:9758/v1/sandboxes/job-1/lease?holder=runner-42'
-curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/start
-curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/restart
+curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/start \
+  -H 'content-type: application/json' \
+  -d '{"holder":"runner-42"}'
+curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/restart \
+  -H 'content-type: application/json' \
+  -d '{"holder":"runner-42"}'
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/wait?timeout=30s'
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/exec?timeout=30s' \
   -H 'content-type: application/json' \
-  -d '{"command":["/usr/bin/sw_vers"],"env":{"CI":"1"}}'
+  -d '{"holder":"runner-42","command":["/usr/bin/sw_vers"],"env":{"CI":"1"}}'
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/control?timeout=30s' \
   -H 'content-type: application/json' \
-  -d '{"type":"screenshot","screenshot":{"format":"png","scale":1}}'
+  -d '{"holder":"runner-42","type":"screenshot","screenshot":{"format":"png","scale":1}}'
 curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/metering'
 curl 'http://127.0.0.1:9758/v1/metering/sandboxes?sandbox_id=job-1'
-curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop
-curl -X DELETE http://127.0.0.1:9758/v1/sandboxes/job-1
+curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop \
+  -H 'content-type: application/json' \
+  -d '{"holder":"runner-42"}'
+curl -X DELETE 'http://127.0.0.1:9758/v1/sandboxes/job-1?holder=runner-42'
+curl -X DELETE 'http://127.0.0.1:9758/v1/sandboxes/job-1/lease?holder=runner-42'
 ```
 
 The sandbox API is the first hosted-style handle surface. `POST /v1/sandboxes`
@@ -350,7 +359,12 @@ the optional `ttl` defaults to `30s`. A different holder receives `409
 Conflict` until the current lease expires or is released. `DELETE
 /v1/sandboxes/{id}/lease?holder=<holder>` releases the lease and returns the
 updated sandbox status. Lease state is embedded in both the sandbox status and
-the backing assignment, and lease acquire/release operations are audited.
+the backing assignment, and lease acquire/release operations are audited. While
+a lease is active, sandbox mutations require the matching holder: start,
+restart, stop, exec, control, and delete return `409 Conflict` when the holder
+is missing or different. Reads, waits, metering, and lease release remain
+available; `holder` can be sent in the JSON body for `POST` mutations or as a
+query parameter on `DELETE /v1/sandboxes/{id}`.
 
 `coved -fleet-url` probes sandbox run assignments with `cove shell <vm> --
 /bin/sh -c true` before reporting `ready`, matching warm-pool readiness
@@ -365,15 +379,18 @@ retained VM start when cleanup reports complete. `POST
 /v1/sandboxes/{id}/stop` cancels a pending sandbox, or marks a started sandbox
 `draining` and queues a same-worker `cove ctl -vm <vm> stop` cleanup assignment
 with `sandbox_role:"stop"`. When that stop assignment reports complete, the
-sandbox handle becomes `stopped`.
+sandbox handle becomes `stopped`. Start, restart, and stop accept optional
+JSON `holder` fields for leased sandboxes.
 `DELETE /v1/sandboxes/{id}` uses the same stop/cancel path and records a delete
-audit event.
+audit event; pass the lease holder as `?holder=<holder>` when the sandbox is
+leased.
 
 `POST /v1/sandboxes/{id}/exec` queues a same-worker `cove shell <vm> -- ...`
 assignment for a `ready` sandbox and returns the worker report when it finishes.
 The body requires `command`; `env` is optional. `timeout` can be supplied in the
 query string or JSON body. `timeout=0` returns the queued assignment without
 polling, which lets clients watch `/v1/assignments/{assignment_id}` themselves.
+Pass `holder` in the JSON body when the sandbox has an active lease.
 
 `POST /v1/sandboxes/{id}/control` queues a same-worker VM control-socket request
 for a `ready` sandbox. Supported types are `screenshot`, `key`, `mouse`, and
@@ -381,7 +398,8 @@ for a `ready` sandbox. Supported types are `screenshot`, `key`, `mouse`, and
 accepts `timeout` in the query string or JSON body. Screenshot responses expose
 the base64 image data as `data` and preserve the full control-socket response in
 `response`, so hosted OpenAI `ComputerTool` calls can use the same
-screenshot/key/text/mouse methods as local VMs.
+screenshot/key/text/mouse methods as local VMs. Pass `holder` in the JSON body
+when the sandbox has an active lease.
 
 `GET /v1/sandboxes/{id}/metering` and `GET /v1/metering/sandboxes` return
 append-only records for metered sandbox run intervals. The controller records
@@ -395,7 +413,9 @@ create/list/get/delete/start/restart/stop/wait/exec/control, leases, and
 metering are present. The OpenAI Agents Python adapter and public Go
 `agentsandbox` package can switch between local VM control and this
 cloud/control-plane path, including hosted lifecycle helpers, leases,
-metering, and ComputerTool-style screenshot/key/text/mouse events.
+metering, and ComputerTool-style screenshot/key/text/mouse events. Both SDKs
+remember the holder returned by `lease` and include it on later hosted sandbox
+mutations until `release_lease`/`ReleaseLease` succeeds.
 
 Go SDK example:
 

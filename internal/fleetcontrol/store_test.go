@@ -774,6 +774,114 @@ func TestStoreSandboxLeaseAcquireRenewRelease(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxLeaseGuardsMutations(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*Store) error
+		held func(*Store) error
+	}{
+		{
+			name: "start",
+			run: func(store *Store) error {
+				_, err := store.StartSandbox("job-1")
+				return err
+			},
+			held: func(store *Store) error {
+				_, err := store.StartSandboxActor("controller", "job-1", SandboxMutationRequest{Holder: "client-a"})
+				return err
+			},
+		},
+		{
+			name: "restart",
+			run: func(store *Store) error {
+				_, err := store.RestartSandbox("job-1")
+				return err
+			},
+			held: func(store *Store) error {
+				_, err := store.RestartSandboxActor("controller", "job-1", SandboxMutationRequest{Holder: "client-a"})
+				return err
+			},
+		},
+		{
+			name: "stop",
+			run: func(store *Store) error {
+				_, err := store.StopSandbox("job-1")
+				return err
+			},
+			held: func(store *Store) error {
+				_, err := store.StopSandboxActor("controller", "job-1", SandboxMutationRequest{Holder: "client-a"})
+				return err
+			},
+		},
+		{
+			name: "delete",
+			run: func(store *Store) error {
+				_, err := store.DeleteSandbox("job-1")
+				return err
+			},
+			held: func(store *Store) error {
+				_, err := store.DeleteSandboxActor("controller", "job-1", SandboxMutationRequest{Holder: "client-a"})
+				return err
+			},
+		},
+		{
+			name: "exec",
+			run: func(store *Store) error {
+				_, err := store.ExecSandbox("job-1", SandboxExecRequest{Command: []string{"true"}})
+				return err
+			},
+			held: func(store *Store) error {
+				_, err := store.ExecSandbox("job-1", SandboxExecRequest{Holder: "client-a", Command: []string{"true"}})
+				return err
+			},
+		},
+		{
+			name: "control",
+			run: func(store *Store) error {
+				_, err := store.ControlSandbox("job-1", SandboxControlRequest{Type: "text", Text: map[string]any{"text": "hi"}})
+				return err
+			},
+			held: func(store *Store) error {
+				_, err := store.ControlSandbox("job-1", SandboxControlRequest{Holder: "client-a", Type: "text", Text: map[string]any{"text": "hi"}})
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := readyLeasedSandboxStore(t)
+			if err := tt.run(store); err == nil || !strings.Contains(err.Error(), "lease held by") {
+				t.Fatalf("%s without holder err = %v, want held-by error", tt.name, err)
+			}
+			if err := tt.held(store); err != nil {
+				t.Fatalf("%s with holder: %v", tt.name, err)
+			}
+		})
+	}
+}
+
+func readyLeasedSandboxStore(t *testing.T) *Store {
+	t.Helper()
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.LeaseSandbox("job-1", SandboxLeaseRequest{Holder: "client-a", TTL: "30s"}); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
 func TestStoreServiceAccountsPersistTokenHashes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	store, err := OpenStore(path, time.Minute)
@@ -1579,6 +1687,24 @@ func TestStoreDrainWorkerCordonsAndStopsSandboxes(t *testing.T) {
 	if _, err := store.Report(WorkerReport{ID: "drain", AssignmentID: ready.Assignment.ID, Status: "ready"}); err != nil {
 		t.Fatal(err)
 	}
+	held, err := store.CreateSandbox(SandboxRequest{ID: "job-held", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err = store.AwaitAssignment("drain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != held.Assignment.ID {
+		t.Fatalf("held lease = %+v, want %s", leased, held.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "drain", AssignmentID: held.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.LeaseSandbox("job-held", SandboxLeaseRequest{Holder: "client-a", TTL: "30s"}); err != nil {
+		t.Fatal(err)
+	}
 	pending, err := store.CreateSandbox(SandboxRequest{ID: "job-pending", ImageRef: "base:v1"})
 	if err != nil {
 		t.Fatal(err)
@@ -1593,6 +1719,9 @@ func TestStoreDrainWorkerCordonsAndStopsSandboxes(t *testing.T) {
 	}
 	if len(result.Sandboxes) != 2 {
 		t.Fatalf("drain sandboxes = %+v, want 2", result.Sandboxes)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0].SandboxID != "job-held" || !strings.Contains(result.Skipped[0].Reason, "lease held by") {
+		t.Fatalf("drain skipped = %+v, want job-held lease skip", result.Skipped)
 	}
 	byID := make(map[string]SandboxStopResult)
 	for _, stopped := range result.Sandboxes {
@@ -1610,7 +1739,7 @@ func TestStoreDrainWorkerCordonsAndStopsSandboxes(t *testing.T) {
 	if got, ok := store.GetSandbox("job-pending"); !ok || got.Status != "canceled" || got.Assignment.ID != pending.Assignment.ID {
 		t.Fatalf("GetSandbox(job-pending) = %+v, %v; want canceled", got, ok)
 	}
-	if event := auditAction(store.ListAudit(0), "worker.drain"); event == nil || event.WorkerID != "drain" || event.Fields["sandboxes"] != "2" {
+	if event := auditAction(store.ListAudit(0), "worker.drain"); event == nil || event.WorkerID != "drain" || event.Fields["sandboxes"] != "2" || event.Fields["skipped"] != "1" {
 		t.Fatalf("worker drain audit = %+v", event)
 	}
 	if event := auditAction(store.ListAudit(0), "sandbox.drain"); event == nil || event.WorkerID != "drain" {
@@ -2990,6 +3119,66 @@ func TestHandlerSandboxes(t *testing.T) {
 	}
 }
 
+func TestHandlerSandboxLeaseGuardsMutations(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
+	var lease SandboxLeaseResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/lease", SandboxLeaseRequest{Holder: "client-a", TTL: "30s"}, &lease)
+
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/exec?timeout=0", "", SandboxExecRequest{Command: []string{"true"}}); code != http.StatusConflict {
+		t.Fatalf("leased exec without holder status = %d, want 409", code)
+	}
+	var execResult SandboxExecResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/exec?timeout=0", SandboxExecRequest{Holder: "client-a", Command: []string{"true"}}, &execResult)
+	if execResult.Assignment.SandboxRole != sandboxRoleExec {
+		t.Fatalf("leased exec with holder = %+v, want exec assignment", execResult)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/control?timeout=0", "", SandboxControlRequest{Type: "text", Text: map[string]any{"text": "hi"}}); code != http.StatusConflict {
+		t.Fatalf("leased control without holder status = %d, want 409", code)
+	}
+	var controlResult SandboxControlResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/control?timeout=0", SandboxControlRequest{Holder: "client-a", Type: "text", Text: map[string]any{"text": "hi"}}, &controlResult)
+	if controlResult.Assignment.SandboxRole != sandboxRoleControl {
+		t.Fatalf("leased control with holder = %+v, want control assignment", controlResult)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/start", "", map[string]string{}); code != http.StatusConflict {
+		t.Fatalf("leased start without holder status = %d, want 409", code)
+	}
+	var started SandboxStartResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/start", SandboxMutationRequest{Holder: "client-a"}, &started)
+	if started.ID != "job-1" {
+		t.Fatalf("leased start with holder = %+v, want job-1", started)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/restart", "", map[string]string{}); code != http.StatusConflict {
+		t.Fatalf("leased restart without holder status = %d, want 409", code)
+	}
+	var restart SandboxRestartResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/restart", SandboxMutationRequest{Holder: "client-a"}, &restart)
+	if !restart.Restarting || restart.Cleanup == nil {
+		t.Fatalf("leased restart with holder = %+v, want cleanup", restart)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/stop", "", map[string]string{}); code != http.StatusConflict {
+		t.Fatalf("leased stop without holder status = %d, want 409", code)
+	}
+	if code := deleteJSONStatus(t, server.URL+"/v1/sandboxes/job-1"); code != http.StatusConflict {
+		t.Fatalf("leased delete without holder status = %d, want 409", code)
+	}
+	var deleted SandboxDeleteResult
+	deleteJSON(t, server.URL+"/v1/sandboxes/job-1?holder=client-a", &deleted)
+	if deleted.Cleanup == nil || deleted.ID != "job-1" {
+		t.Fatalf("leased delete with holder = %+v, want cleanup", deleted)
+	}
+}
+
 func TestHandlerSandboxListFilters(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -3530,6 +3719,20 @@ func deleteJSON(t *testing.T, url string, out any) {
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func deleteJSONStatus(t *testing.T, url string) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode
 }
 
 func testOIDCKey(t *testing.T) (*rsa.PrivateKey, string) {

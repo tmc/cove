@@ -429,9 +429,14 @@ func handleSandbox(w http.ResponseWriter, r *http.Request, store *Store) {
 				return
 			}
 		}
-		result, err := store.DeleteSandboxActor(identity.Actor, id)
+		req, err := sandboxMutationRequestFromRequest(r, "delete")
 		if err != nil {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		result, err := store.DeleteSandboxActor(identity.Actor, id, req)
+		if err != nil {
+			writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
@@ -454,7 +459,12 @@ func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, i
 		if !sandboxVisible(w, store, id, identity) {
 			return
 		}
-		result, err := store.StartSandboxActor(identity.Actor, id)
+		req, err := sandboxMutationRequestFromRequest(r, "start")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		result, err := store.StartSandboxActor(identity.Actor, id, req)
 		if err != nil {
 			writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
 			return
@@ -471,7 +481,12 @@ func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, i
 		if !sandboxVisible(w, store, id, identity) {
 			return
 		}
-		result, err := store.RestartSandboxActor(identity.Actor, id)
+		req, err := sandboxMutationRequestFromRequest(r, "restart")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		result, err := store.RestartSandboxActor(identity.Actor, id, req)
 		if err != nil {
 			writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
 			return
@@ -492,9 +507,14 @@ func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, i
 				return
 			}
 		}
-		result, err := store.StopSandboxActor(identity.Actor, id)
+		req, err := sandboxMutationRequestFromRequest(r, "stop")
 		if err != nil {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		result, err := store.StopSandboxActor(identity.Actor, id, req)
+		if err != nil {
+			writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
@@ -607,6 +627,18 @@ func handleSandboxControl(w http.ResponseWriter, r *http.Request, store *Store, 
 	writeJSON(w, http.StatusOK, result)
 }
 
+func sandboxMutationRequestFromRequest(r *http.Request, action string) (SandboxMutationRequest, error) {
+	var req SandboxMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		return SandboxMutationRequest{}, fmt.Errorf("decode sandbox %s: %v", action, err)
+	}
+	if holder := strings.TrimSpace(r.URL.Query().Get("holder")); holder != "" {
+		req.Holder = holder
+	}
+	req.Holder = strings.TrimSpace(req.Holder)
+	return req, nil
+}
+
 func handleSandboxMetering(w http.ResponseWriter, r *http.Request, store *Store) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -702,8 +734,12 @@ func sandboxLifecycleErrorStatus(err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
-	if strings.Contains(err.Error(), "not found") {
+	msg := err.Error()
+	if strings.Contains(msg, "not found") {
 		return http.StatusNotFound
+	}
+	if strings.Contains(msg, "lease held by") {
+		return http.StatusConflict
 	}
 	return http.StatusBadRequest
 }

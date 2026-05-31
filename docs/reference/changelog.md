@@ -144,7 +144,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   after cleanup completes.
 - `POST/DELETE /v1/sandboxes/{id}/lease` now acquires, renews, and releases
   exclusive sandbox handle leases with TTLs, conflict responses, namespace
-  scoping, and audit events.
+  scoping, and audit events. Active leases now guard hosted sandbox
+  start/restart/stop/delete/exec/control mutations unless the caller supplies
+  the matching holder, and the Go/Python SDKs carry held lease holders forward
+  automatically.
 - `POST /v1/sandboxes/{id}/exec` now queues same-worker `cove shell` work for a
   ready hosted sandbox and can wait for the worker report, giving SDKs a real
   create-exec-delete control-plane loop.

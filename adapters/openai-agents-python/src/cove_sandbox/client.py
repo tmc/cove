@@ -284,6 +284,7 @@ class CoveFleetClient:
         self.namespace = namespace.strip() if namespace else ""
         self.vm = vm
         self.timeout = timeout
+        self._lease_holder = ""
 
     @classmethod
     def create_sandbox(
@@ -401,14 +402,14 @@ class CoveFleetClient:
 
     def start(self, *, gui: bool = False, extra_args: Sequence[str] = ()) -> None:
         del gui, extra_args
-        self._request("POST", self._sandbox_path("start"), {}, timeout=self.timeout)
+        self._request("POST", self._sandbox_path("start"), self._lease_body(), timeout=self.timeout)
 
     def stop(self, *, force: bool = False) -> None:
         del force
-        self._request("POST", self._sandbox_path("stop"), {}, timeout=self.timeout)
+        self._request("POST", self._sandbox_path("stop"), self._lease_body(), timeout=self.timeout)
 
     def restart(self) -> None:
-        self._request("POST", self._sandbox_path("restart"), {}, timeout=self.timeout)
+        self._request("POST", self._sandbox_path("restart"), self._lease_body(), timeout=self.timeout)
 
     def lease(self, *, holder: str = "", ttl: float | None = None) -> dict[str, Any]:
         if ttl is not None and ttl < 0:
@@ -418,13 +419,21 @@ class CoveFleetClient:
             body["holder"] = holder.strip()
         if ttl is not None:
             body["ttl"] = _format_seconds(ttl)
-        return self._request("POST", self._sandbox_path("lease"), body, timeout=self.timeout)
+        data = self._request("POST", self._sandbox_path("lease"), body, timeout=self.timeout)
+        lease = data.get("lease") or {}
+        if isinstance(lease, dict):
+            self._lease_holder = str(lease.get("holder") or "").strip()
+        return data
 
     def release_lease(self, *, holder: str = "") -> dict[str, Any]:
         path = self._sandbox_path("lease")
-        if holder.strip():
-            path = _query_path(path, {"holder": holder.strip()})
-        return self._request("DELETE", path, timeout=self.timeout)
+        holder = holder.strip() or self._lease_holder
+        if holder:
+            path = _query_path(path, {"holder": holder})
+        data = self._request("DELETE", path, timeout=self.timeout)
+        if holder == self._lease_holder:
+            self._lease_holder = ""
+        return data
 
     def metering(self) -> dict[str, Any]:
         return self._request("GET", self._sandbox_path("metering"), timeout=self.timeout)
@@ -467,6 +476,7 @@ class CoveFleetClient:
                 "command": args,
                 "env": dict(env or {}),
                 "timeout": _format_seconds(wait),
+                **self._lease_body(),
             },
             timeout=wait + min(wait, 30),
         )
@@ -567,6 +577,7 @@ class CoveFleetClient:
         wait = timeout or self.timeout
         payload = dict(request)
         payload["timeout"] = _format_seconds(wait)
+        payload.update(self._lease_body())
         data = self._request(
             "POST",
             self._sandbox_path("control"),
@@ -584,7 +595,15 @@ class CoveFleetClient:
 
     def delete_vm(self, vm: str | None = None) -> None:
         del vm
-        self._request("DELETE", self._sandbox_path(), timeout=max(self.timeout, 120))
+        path = self._sandbox_path()
+        if self._lease_holder:
+            path = _query_path(path, {"holder": self._lease_holder})
+        self._request("DELETE", path, timeout=max(self.timeout, 120))
+
+    def _lease_body(self) -> dict[str, object]:
+        if not self._lease_holder:
+            return {}
+        return {"holder": self._lease_holder}
 
     def _sandbox_path(self, action: str = "") -> str:
         path = "/v1/sandboxes/" + urllib.parse.quote(self.sandbox_id, safe="")

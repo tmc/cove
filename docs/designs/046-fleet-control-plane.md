@@ -326,9 +326,10 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   handles from the retained VM, restarts active handles through stop cleanup
   plus requeue, stops/deletes by canceling pending work or queueing same-worker
   stop cleanup, and exposes `POST/DELETE /v1/sandboxes/{id}/lease` for
-  TTL-based exclusive modify locks, `POST /v1/sandboxes/{id}/exec` for
-  same-worker `cove shell` execution, `POST /v1/sandboxes/{id}/control` for
-  same-worker screenshot/key/text/mouse control-socket events, plus `GET
+  TTL-based exclusive modify locks enforced by start/restart/stop/delete,
+  exec, and control, `POST /v1/sandboxes/{id}/exec` for same-worker `cove
+  shell` execution, `POST /v1/sandboxes/{id}/control` for same-worker
+  screenshot/key/text/mouse control-socket events, plus `GET
   /v1/sandboxes/{id}/metering` and `GET /v1/metering/sandboxes` for scoped usage
   records. `GET /v1/sandboxes` now filters by status, worker, image, namespace,
   and limit, so hosted clients can narrow the response to the handles they need;
@@ -336,7 +337,8 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   `SandboxRunConfig` path over this REST surface, and the public Go
   `agentsandbox` package now has a matching local/cloud client for hosted
   create/list/get/wait/lease/restart/exec/control/metering/delete and
-  screenshot/key/text/mouse flows.
+  screenshot/key/text/mouse flows; both SDKs carry held lease holders into
+  later hosted mutations.
   `POST /v1/workers/{id}/drain` now gives operators a host-maintenance control
   operation over hosted sandboxes without hand-enumerating handles.
   `GET /v1/operations/summary` now gives unscoped viewers a reconciled

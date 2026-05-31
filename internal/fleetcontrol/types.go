@@ -410,6 +410,10 @@ type SandboxLeaseRequest struct {
 	TTL    string `json:"ttl,omitempty"`
 }
 
+type SandboxMutationRequest struct {
+	Holder string `json:"holder,omitempty"`
+}
+
 type SandboxLease struct {
 	Holder  string    `json:"holder"`
 	Expires time.Time `json:"expires"`
@@ -521,6 +525,7 @@ type WarmPoolOperationsSummary struct {
 }
 
 type SandboxExecRequest struct {
+	Holder  string            `json:"holder,omitempty"`
 	Command []string          `json:"command"`
 	Env     map[string]string `json:"env,omitempty"`
 	Timeout string            `json:"timeout,omitempty"`
@@ -539,6 +544,7 @@ type SandboxExecResult struct {
 }
 
 type SandboxControlRequest struct {
+	Holder     string         `json:"holder,omitempty"`
 	Type       string         `json:"type"`
 	Timeout    string         `json:"timeout,omitempty"`
 	Screenshot map[string]any `json:"screenshot,omitempty"`
