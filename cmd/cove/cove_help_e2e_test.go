@@ -13,11 +13,13 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // helpSubcommands lists top-level subcommands whose `-h` surface is
@@ -105,13 +107,19 @@ func TestCoveSubcommandHelp(t *testing.T) {
 
 	for _, name := range helpSubcommands {
 		t.Run(name, func(t *testing.T) {
-			cmd := exec.Command(bin, name, "-h")
+			t.Parallel()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, bin, name, "-h")
 			cmd.Env = append(os.Environ(), "HOME="+home)
 			cmd.Stdin = strings.NewReader("")
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
 			err := cmd.Run()
+			if ctx.Err() == context.DeadlineExceeded {
+				t.Fatalf("%s -h timed out\nstdout:\n%s\nstderr:\n%s", name, stdout.String(), stderr.String())
+			}
 			exit := 0
 			if err != nil {
 				ee, ok := err.(*exec.ExitError)
