@@ -212,6 +212,9 @@ func TestPullDiskReusesBaseDiskClone(t *testing.T) {
 	if got := diskGets.Load(); got != 1 {
 		t.Fatalf("disk blob GETs = %d, want one changed chunk", got)
 	}
+	if plan.BaseReusePath == "" || plan.BaseReuseDiskFormat != "raw" || plan.BaseReuseChunks != 1 || plan.BaseReuseBytes != 4 {
+		t.Fatalf("base reuse summary = path:%q format:%q chunks:%d bytes:%d, want raw one 4-byte chunk", plan.BaseReusePath, plan.BaseReuseDiskFormat, plan.BaseReuseChunks, plan.BaseReuseBytes)
+	}
 }
 
 func TestPlanPullBaseReuseRequiresManifestDiskFormatMatch(t *testing.T) {

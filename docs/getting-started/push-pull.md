@@ -95,6 +95,11 @@ make delta push and parallel uploads straightforward; `HEAD
 
 Delta push with `--base <ref>` pulls the base manifest first and only uploads chunks whose uncompressed content digest differs. Remote inspect walks declared cove base chains and reports parent disk format, size, and matching chunks so raw/ASIF mismatches are visible before pull; pull base reuse applies the same disk-format check before cloning a local or cached base disk. Typical result: a fresh Xcode install on top of a vanilla macOS base uploads single-digit GBs instead of 60.
 
+When a pull actually clones a compatible local or cached base disk, the
+completion output reports the reused chunk count, reused bytes, disk format,
+and base disk path. If cove falls back to a fresh partial disk, no base-reuse
+line is printed.
+
 Push compresses non-zero disk chunks as LZ4 OCI layers, skips sparse zero
 chunks, uploads missing blobs, and publishes the manifest tag. Use `--dry-run`
 to see the detected disk format plus how many chunks and bytes a push would

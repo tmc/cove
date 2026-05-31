@@ -105,6 +105,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Cove pull base reuse now requires matching manifest disk format and detected
   base-file disk format before cloning a local or cached base disk; registry
   base cache metadata records the cove-native disk format.
+- Cove pull completion now reports actual base reuse with reused chunk count,
+  reused bytes, disk format, and source base disk path after a base clone
+  succeeds.
 - `cove image inspect -remote -verify-blobs` now audits every remote config and
   layer descriptor with HEAD requests, reporting missing registry blobs without
   downloading VM disk content.

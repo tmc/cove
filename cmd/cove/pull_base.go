@@ -17,6 +17,7 @@ const pullBaseProbeTimeout = 50 * time.Millisecond
 
 type pullBaseReuse struct {
 	DiskPath       string
+	DiskFormat     string
 	MatchingChunks map[int]bool
 }
 
@@ -61,8 +62,25 @@ func planPullBaseReuse(plan *pullPlan, blobStore store.Store) (*pullBaseReuse, e
 	}
 	return &pullBaseReuse{
 		DiskPath:       diskPath,
+		DiskFormat:     parsedBase.Annotations.DiskFormat,
 		MatchingChunks: matching,
 	}, nil
+}
+
+func recordPullBaseReuse(plan *pullPlan, baseReuse *pullBaseReuse) {
+	if plan == nil || baseReuse == nil || len(baseReuse.MatchingChunks) == 0 {
+		return
+	}
+	plan.BaseReusePath = baseReuse.DiskPath
+	plan.BaseReuseDiskFormat = baseReuse.DiskFormat
+	plan.BaseReuseChunks = len(baseReuse.MatchingChunks)
+	var bytes int64
+	for _, layer := range plan.Manifest.DiskLayers {
+		if baseReuse.MatchingChunks[layer.Chunk.Index] {
+			bytes += layer.Chunk.Size
+		}
+	}
+	plan.BaseReuseBytes = bytes
 }
 
 func findPullBaseDiskInRoots(roots []string, digest string, size int64, diskFormat string, targetDir string) (string, bool, error) {

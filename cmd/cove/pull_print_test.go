@@ -29,14 +29,18 @@ func TestPullNameFromReference(t *testing.T) {
 
 func TestPrintPullResult(t *testing.T) {
 	plan := &pullPlan{
-		Ref:    ociimage.Reference{Registry: "ghcr.io", Repository: "acme/macos", Tag: "v1"},
-		VMName: "dev",
-		VMDir:  "/tmp/dev",
+		Ref:                 ociimage.Reference{Registry: "ghcr.io", Repository: "acme/macos", Tag: "v1"},
+		VMName:              "dev",
+		VMDir:               "/tmp/dev",
+		BaseReusePath:       "/tmp/base/disk.img",
+		BaseReuseDiskFormat: "raw",
+		BaseReuseChunks:     2,
+		BaseReuseBytes:      8192,
 	}
 	var buf bytes.Buffer
 	printPullResult(&buf, plan)
 	out := buf.String()
-	for _, want := range []string{"Pull complete", "ghcr.io/acme/macos:v1", "vm: dev", "target: /tmp/dev"} {
+	for _, want := range []string{"Pull complete", "ghcr.io/acme/macos:v1", "vm: dev", "target: /tmp/dev", "base reuse: 2 chunks", "format=raw", "from=/tmp/base/disk.img"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("printPullResult output missing %q\n--- got ---\n%s", want, out)
 		}

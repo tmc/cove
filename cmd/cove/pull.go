@@ -37,12 +37,16 @@ type pullOptions struct {
 }
 
 type pullPlan struct {
-	Ref            ociimage.Reference
-	VMName         string
-	VMDir          string
-	Manifest       ociimage.ParsedManifest
-	ManifestRaw    []byte
-	ManifestDigest string
+	Ref                 ociimage.Reference
+	VMName              string
+	VMDir               string
+	Manifest            ociimage.ParsedManifest
+	ManifestRaw         []byte
+	ManifestDigest      string
+	BaseReusePath       string
+	BaseReuseDiskFormat string
+	BaseReuseChunks     int
+	BaseReuseBytes      int64
 }
 
 func handlePull(env commandEnv, args []string) error {
@@ -244,6 +248,7 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	if err != nil {
 		return err
 	}
+	recordPullBaseReuse(plan, baseReuse)
 	closed := false
 	defer func() {
 		if !closed {
@@ -546,6 +551,16 @@ func printPullResult(w io.Writer, plan *pullPlan) {
 	fmt.Fprintf(w, "  ref: %s\n", plan.Ref.String())
 	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
 	fmt.Fprintf(w, "  target: %s\n", plan.VMDir)
+	if plan.BaseReuseChunks > 0 {
+		fmt.Fprintf(w, "  base reuse: %d chunks (%s)", plan.BaseReuseChunks, bytefmt.Size(plan.BaseReuseBytes))
+		if plan.BaseReuseDiskFormat != "" {
+			fmt.Fprintf(w, " format=%s", plan.BaseReuseDiskFormat)
+		}
+		if plan.BaseReusePath != "" {
+			fmt.Fprintf(w, " from=%s", plan.BaseReusePath)
+		}
+		fmt.Fprintln(w)
+	}
 }
 
 func printPullUsage(w io.Writer) {

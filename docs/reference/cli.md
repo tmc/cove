@@ -1407,7 +1407,9 @@ concurrently, then stream them in manifest order with descriptor size/digest
 checks before extraction. Use `--dry-run` to validate the manifest and target
 without writing a disk; cove-native dry-runs also print the registry manifest's
 disk format. Use `cove image inspect -remote <ref>...` to fetch only registry
-metadata before a pull or private catalog audit.
+metadata before a pull or private catalog audit. When a cove pull actually
+reuses a cloned base disk, completion output includes reused chunks, reused
+bytes, disk format, and the source base path.
 
 ```
 cove pull <ref> [flags]
