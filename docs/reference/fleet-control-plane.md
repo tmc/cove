@@ -105,6 +105,9 @@ Warm-pool endpoint:
 curl -X POST http://127.0.0.1:9758/v1/warm-pools \
   -H 'content-type: application/json' \
   -d '{"name":"runner-14","image_ref":"macos-runner:14.5","size":3,"required_labels":{"zone":"desk"},"resources":{"vms":1}}'
+curl -X POST http://127.0.0.1:9758/v1/warm-pools/claim \
+  -H 'content-type: application/json' \
+  -d '{"name":"runner-14","command":["/bin/sh","-lc","make test"],"env":{"CI":"1"}}'
 curl http://127.0.0.1:9758/v1/warm-pools
 ```
 
@@ -117,9 +120,12 @@ cove run -fork-from <image_ref> -fork-name <generated> -ephemeral -keep -headles
 ```
 
 The first slice keeps those fork assignments active and replenishes completed or
-failed slots. Claiming a ready fork for guest `Exec`, stopping excess slots
-after a downsize, and exposing per-slot agent readiness are later controller
-work.
+failed slots. `POST /v1/warm-pools/claim` claims an already-running slot,
+marks that slot `claimed`, and queues a zero-slot same-worker guest-exec
+assignment that runs `cove shell <generated> -- <command...>`. The claimed VM
+continues counting against host capacity, while reconciliation creates a
+replacement warm slot when capacity allows. Explicit per-slot agent readiness
+and stopping excess slots after a downsize are later controller work.
 
 Assignment endpoints:
 
@@ -140,9 +146,11 @@ curl http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 ```
 
-Assignments are stored with `pending`, `leased`, `running`, or worker-reported
-terminal status. `coved` renews active `cove` assignments with `running`
-reports. Reconciliation marks expired workers stale, requeues expired
+Assignments are stored with `pending`, `leased`, `running`, `claimed`, or
+worker-reported terminal status. `claimed` is used for a warm-pool slot that has
+been handed to a job; it still consumes host capacity but is no longer counted
+as an available warm slot. `coved` renews active `cove` assignments with
+`running` reports. Reconciliation marks expired workers stale, requeues expired
 assignment leases, rejects late reports for reclaimed leases, and can move a
 policy-placed assignment from a stale worker to another ready worker.
 
@@ -178,4 +186,5 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 This surface is intentionally private and local-first. It now has basic
 controller reconciliation, worker cordon lifecycle, and fleet image
 preparation, retained placement plans, and a first fork warm-pool quota
-reconciler. Ready-slot claim and guest `Exec` handoff are not wired yet.
+reconciler with running-slot claim and guest `Exec` handoff through the
+`cove shell` path. Explicit agent-ready slot state is not wired yet.

@@ -72,6 +72,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignment.ID = id
 		assignment.Args = cloneStrings(assignment.Args)
 		assignment.WarmPool = strings.TrimSpace(assignment.WarmPool)
+		assignment.WarmPoolSlot = strings.TrimSpace(assignment.WarmPoolSlot)
 		assignment.ImageRef = strings.TrimSpace(assignment.ImageRef)
 		assignment.AntiAffinityKey = strings.TrimSpace(assignment.AntiAffinityKey)
 		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
@@ -261,7 +262,11 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 	if r.AssignmentID != "" {
 		assignment, ok := s.assignments[r.AssignmentID]
 		if ok {
-			assignment.Status = status
+			storedStatus := status
+			if assignment.WarmPool != "" && assignment.Status == "claimed" && status == "running" {
+				storedStatus = "claimed"
+			}
+			assignment.Status = storedStatus
 			assignment.Updated = received
 			assignment.LastReport = &r
 			if assignmentLeaseStatus(status) {
@@ -313,6 +318,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	a.ID = id
 	a.WorkerID = workerID
 	a.WarmPool = strings.TrimSpace(a.WarmPool)
+	a.WarmPoolSlot = strings.TrimSpace(a.WarmPoolSlot)
 	a.Policy = policy
 	a.ImageRef = imageRef
 	a.AntiAffinityKey = antiAffinityKey
@@ -388,6 +394,60 @@ func (s *Store) EnsureWarmPool(req WarmPoolRequest) (WarmPoolResult, error) {
 		return WarmPoolResult{Pool: status}, err
 	}
 	return WarmPoolResult{Pool: status, Created: cloneAssignments(created)}, nil
+}
+
+func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return WarmPoolClaimResult{}, fmt.Errorf("warm pool name required")
+	}
+	command := cloneStrings(req.Command)
+	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
+		return WarmPoolClaimResult{}, fmt.Errorf("warm pool claim command required")
+	}
+	env, err := normalizeEnv(req.Env)
+	if err != nil {
+		return WarmPoolClaimResult{}, err
+	}
+	now := s.now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	pool, ok := s.warmPools[name]
+	if !ok {
+		return WarmPoolClaimResult{}, fmt.Errorf("warm pool %q not found", name)
+	}
+	slot, ok := s.claimableWarmPoolSlotLocked(name)
+	if !ok {
+		return WarmPoolClaimResult{}, fmt.Errorf("warm pool %q has no running slot to claim", name)
+	}
+	vmName := warmPoolAssignmentVMName(slot)
+	slot.Status = "claimed"
+	slot.Updated = now
+	s.assignments[slot.ID] = slot
+
+	assignment := Assignment{
+		ID:           s.nextAssignmentIDLocked(now),
+		WorkerID:     slot.WorkerID,
+		WarmPoolSlot: slot.ID,
+		Verb:         "cove",
+		Args:         warmPoolClaimArgs(vmName, command, env),
+		Status:       "pending",
+		Created:      now,
+		Updated:      now,
+	}
+	s.assignments[assignment.ID] = assignment
+	s.ensureWarmPoolLocked(now, pool)
+	if err := s.persistLocked(); err != nil {
+		return WarmPoolClaimResult{}, err
+	}
+	return WarmPoolClaimResult{
+		Pool:       name,
+		VMName:     vmName,
+		Slot:       cloneAssignment(slot),
+		Assignment: cloneAssignment(assignment),
+	}, nil
 }
 
 func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error) {
@@ -564,7 +624,7 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 	}
 
 	for _, assignment := range s.sortedAssignmentsLocked() {
-		if !activeAssignmentStatus(assignment.Status) {
+		if !reconcileAssignmentStatus(assignment.Status) {
 			continue
 		}
 		leaseExpired := assignmentLeaseStatus(assignment.Status) && !assignment.LeaseExpires.IsZero() && now.After(assignment.LeaseExpires)
@@ -645,9 +705,17 @@ func activeAssignmentStatus(status string) bool {
 	}
 }
 
+func reconcileAssignmentStatus(status string) bool {
+	return activeAssignmentStatus(status) || status == "claimed"
+}
+
+func loadAssignmentStatus(status string) bool {
+	return activeAssignmentStatus(status) || status == "claimed"
+}
+
 func assignmentLeaseStatus(status string) bool {
 	switch status {
-	case "leased", "running":
+	case "leased", "running", "claimed":
 		return true
 	default:
 		return false
@@ -655,6 +723,9 @@ func assignmentLeaseStatus(status string) bool {
 }
 
 func assignmentCanPlace(assignment Assignment) bool {
+	if assignment.WarmPoolSlot != "" {
+		return false
+	}
 	return assignment.Policy != "" || assignment.ImageRef != "" || len(assignment.RequiredLabels) > 0
 }
 
@@ -924,6 +995,15 @@ func (s *Store) warmPoolAssignmentsLocked(name string) []Assignment {
 	return assignments
 }
 
+func (s *Store) claimableWarmPoolSlotLocked(name string) (Assignment, bool) {
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.WarmPool == name && assignment.WorkerID != "" && assignment.Status == "running" {
+			return assignment, true
+		}
+	}
+	return Assignment{}, false
+}
+
 func warmPoolFromRequest(req WarmPoolRequest, now time.Time) (WarmPool, error) {
 	pool := WarmPool{
 		Name:           strings.TrimSpace(req.Name),
@@ -994,6 +1074,42 @@ func warmPoolArgs(pool WarmPool, assignmentID string) []string {
 	return append(args, cloneStrings(pool.Args)...)
 }
 
+func warmPoolAssignmentVMName(assignment Assignment) string {
+	for i, arg := range assignment.Args {
+		if (arg == "-fork-name" || arg == "--fork-name") && i+1 < len(assignment.Args) {
+			name := strings.TrimSpace(assignment.Args[i+1])
+			if name != "" {
+				return name
+			}
+		}
+		for _, prefix := range []string{"-fork-name=", "--fork-name="} {
+			if strings.HasPrefix(arg, prefix) {
+				name := strings.TrimSpace(strings.TrimPrefix(arg, prefix))
+				if name != "" {
+					return name
+				}
+			}
+		}
+	}
+	return warmPoolForkName(assignment.WarmPool, assignment.ID)
+}
+
+func warmPoolClaimArgs(vmName string, command []string, env map[string]string) []string {
+	args := []string{"shell"}
+	if len(env) > 0 {
+		keys := make([]string, 0, len(env))
+		for key := range env {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			args = append(args, "--env", key+"="+env[key])
+		}
+	}
+	args = append(args, vmName, "--")
+	return append(args, cloneStrings(command)...)
+}
+
 func validateWarmPoolArgs(args []string) error {
 	reserved := map[string]bool{
 		"-fork-from":  true,
@@ -1060,7 +1176,7 @@ func (s *Store) antiAffinityLoadLocked(workerID, key string) int {
 	}
 	var n int
 	for _, assignment := range s.assignments {
-		if assignment.AntiAffinityKey != key || !activeAssignmentStatus(assignment.Status) {
+		if assignment.AntiAffinityKey != key || !loadAssignmentStatus(assignment.Status) {
 			continue
 		}
 		if assignment.WorkerID == workerID || assignment.LeasedTo == workerID {
@@ -1076,7 +1192,7 @@ func (s *Store) pendingAssignmentsLocked(workerID string) int {
 		if assignment.WorkerID != workerID && assignment.LeasedTo != workerID {
 			continue
 		}
-		if activeAssignmentStatus(assignment.Status) {
+		if loadAssignmentStatus(assignment.Status) {
 			n += assignmentVMs(assignment)
 		}
 	}
@@ -1118,6 +1234,9 @@ func normalizePlacementFields(a Assignment) (policy, imageRef, antiAffinityKey s
 }
 
 func assignmentVMs(assignment Assignment) int {
+	if assignment.WarmPoolSlot != "" {
+		return 0
+	}
 	return normalizeResources(assignment.Resources).VMs
 }
 
@@ -1186,4 +1305,25 @@ func cloneLabels(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func normalizeEnv(in map[string]string) (map[string]string, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("env key required")
+		}
+		if strings.Contains(key, "=") {
+			return nil, fmt.Errorf("env key %q must not contain =", key)
+		}
+		if _, ok := out[key]; ok {
+			return nil, fmt.Errorf("env key %q repeated", key)
+		}
+		out[key] = value
+	}
+	return out, nil
 }

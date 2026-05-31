@@ -154,10 +154,24 @@ type WarmPoolResult struct {
 	Created []Assignment   `json:"created,omitempty"`
 }
 
+type WarmPoolClaimRequest struct {
+	Name    string            `json:"name"`
+	Command []string          `json:"command"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+
+type WarmPoolClaimResult struct {
+	Pool       string     `json:"pool"`
+	VMName     string     `json:"vm_name"`
+	Slot       Assignment `json:"slot"`
+	Assignment Assignment `json:"assignment"`
+}
+
 type Assignment struct {
 	ID              string            `json:"id"`
 	WorkerID        string            `json:"worker_id,omitempty"`
 	WarmPool        string            `json:"warm_pool,omitempty"`
+	WarmPoolSlot    string            `json:"warm_pool_slot,omitempty"`
 	Policy          string            `json:"policy,omitempty"`
 	ImageRef        string            `json:"image_ref,omitempty"`
 	RequiredLabels  map[string]string `json:"required_labels,omitempty"`

@@ -758,6 +758,111 @@ func TestStoreReconcileReplenishesWarmPool(t *testing.T) {
 	}
 }
 
+func TestStoreClaimsWarmPoolSlot(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 1 {
+		t.Fatalf("created = %+v, want 1", result.Created)
+	}
+	slotID := result.Created[0].ID
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != slotID {
+		t.Fatalf("leased = %+v, want %s", leased, slotID)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+
+	now = now.Add(time.Second)
+	claim, err := store.ClaimWarmPool(WarmPoolClaimRequest{
+		Name:    "runner",
+		Command: []string{"/bin/echo", "ok"},
+		Env:     map[string]string{"B": "2", "A": "1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVMName := warmPoolForkName("runner", slotID)
+	if claim.Pool != "runner" || claim.VMName != wantVMName {
+		t.Fatalf("claim identity = %+v, want pool runner vm %s", claim, wantVMName)
+	}
+	if claim.Slot.ID != slotID || claim.Slot.Status != "claimed" {
+		t.Fatalf("claimed slot = %+v, want %s claimed", claim.Slot, slotID)
+	}
+	wantArgs := []string{"shell", "--env", "A=1", "--env", "B=2", wantVMName, "--", "/bin/echo", "ok"}
+	if claim.Assignment.WorkerID != "worker-1" || claim.Assignment.WarmPoolSlot != slotID || claim.Assignment.WarmPool != "" || claim.Assignment.Verb != "cove" || !equalStrings(claim.Assignment.Args, wantArgs) {
+		t.Fatalf("claim assignment = %+v, want args %+v", claim.Assignment, wantArgs)
+	}
+	slot, ok := store.GetAssignment(slotID)
+	if !ok {
+		t.Fatal("claimed slot missing")
+	}
+	if slot.Status != "claimed" || slot.LastReport == nil || slot.LastReport.Status != "running" {
+		t.Fatalf("stored slot = %+v, want claimed with running report", slot)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	slot, _ = store.GetAssignment(slotID)
+	if slot.Status != "claimed" {
+		t.Fatalf("renewed slot status = %q, want claimed", slot.Status)
+	}
+	pools := store.ListWarmPools()
+	if len(pools) != 1 || pools[0].Active != 1 || pools[0].Assignments[0].ID == slotID {
+		t.Fatalf("pools after claim = %+v, want replenished active replacement", pools)
+	}
+}
+
+func TestStoreClaimWarmPoolRequiresRunningSlot(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := store.ClaimWarmPool(WarmPoolClaimRequest{Name: "runner", Command: []string{"/bin/true"}})
+	if err == nil || !strings.Contains(err.Error(), "has no running slot to claim") {
+		t.Fatalf("ClaimWarmPool err = %v, want no running slot error", err)
+	}
+}
+
+func TestStoreClaimedWarmPoolSlotCountsAgainstCapacity(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slotID := result.Created[0].ID
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimWarmPool(WarmPoolClaimRequest{Name: "runner", Command: []string{"/bin/true"}}); err != nil {
+		t.Fatal(err)
+	}
+	pools := store.ListWarmPools()
+	if len(pools) != 1 || pools[0].Active != 0 {
+		t.Fatalf("pools after capacity-bound claim = %+v, want no replacement", pools)
+	}
+}
+
 func TestStoreWarmPoolRejectsReservedArgs(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	_, err := store.EnsureWarmPool(WarmPoolRequest{
@@ -998,6 +1103,29 @@ func TestHandlerWarmPools(t *testing.T) {
 	getJSON(t, server.URL+"/v1/warm-pools", &list)
 	if len(list.WarmPools) != 1 || list.WarmPools[0].Name != "runner" || list.WarmPools[0].Active != 1 {
 		t.Fatalf("warm pool list = %+v", list)
+	}
+
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	if leased.ID != result.Created[0].ID {
+		t.Fatalf("leased warm slot = %+v, want %s", leased, result.Created[0].ID)
+	}
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{
+		AssignmentID: leased.ID,
+		Status:       "running",
+	}, &record)
+
+	var claim WarmPoolClaimResult
+	postJSON(t, server.URL+"/v1/warm-pools/claim", WarmPoolClaimRequest{
+		Name:    "runner",
+		Command: []string{"/bin/true"},
+	}, &claim)
+	if claim.Pool != "runner" || claim.Slot.ID != leased.ID || claim.Slot.Status != "claimed" {
+		t.Fatalf("claim response = %+v", claim)
+	}
+	wantArgs := []string{"shell", claim.VMName, "--", "/bin/true"}
+	if claim.Assignment.WorkerID != "worker-1" || claim.Assignment.WarmPoolSlot != leased.ID || !equalStrings(claim.Assignment.Args, wantArgs) {
+		t.Fatalf("claim assignment = %+v, want args %+v", claim.Assignment, wantArgs)
 	}
 }
 
