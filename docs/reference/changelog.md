@@ -111,6 +111,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Cove pull dry-runs now preflight compatible local or registry-cache base disk
   reuse when a cove-native manifest is available, printing reusable chunks,
   bytes, disk format, and source base path before disk download.
+- Cove-native pull dry-runs now also summarize transfer coverage before disk
+  download: local content-store disk chunks, registry disk chunks to fetch,
+  sparse zero chunks, and metadata blobs already present or still needed.
 - `cove image inspect -remote -verify-blobs` now audits every remote config and
   layer descriptor with HEAD requests, reporting missing registry blobs without
   downloading VM disk content.

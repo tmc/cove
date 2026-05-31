@@ -67,16 +67,17 @@ func planPullBaseReuse(plan *pullPlan, blobStore store.Store) (*pullBaseReuse, e
 	}, nil
 }
 
-func planPullDryRunBaseReuse(plan *pullPlan, opts pullOptions) error {
-	if plan == nil || !opts.DryRun || len(plan.Manifest.DiskLayers) == 0 {
+func planPullDryRunReuse(plan *pullPlan, opts pullOptions) error {
+	if plan == nil || !opts.DryRun || plan.Manifest.Format != ociimage.FormatCove || len(plan.Manifest.DiskLayers) == 0 {
 		return nil
 	}
-	baseReuse, err := planPullBaseReuse(plan, store.New(opts.StoreDir))
+	blobStore := store.New(opts.StoreDir)
+	baseReuse, err := planPullBaseReuse(plan, blobStore)
 	if err != nil {
 		return err
 	}
 	recordPullBaseReuse(plan, baseReuse)
-	return nil
+	return recordPullDryRunTransfer(plan, blobStore, baseReuse)
 }
 
 func recordPullBaseReuse(plan *pullPlan, baseReuse *pullBaseReuse) {
@@ -87,6 +88,52 @@ func recordPullBaseReuse(plan *pullPlan, baseReuse *pullBaseReuse) {
 	plan.BaseReuseDiskFormat = baseReuse.DiskFormat
 	plan.BaseReuseChunks = len(baseReuse.MatchingChunks)
 	plan.BaseReuseBytes = matchingPullBaseBytes(plan.Manifest.DiskLayers, baseReuse.MatchingChunks)
+}
+
+func recordPullDryRunTransfer(plan *pullPlan, blobStore store.Store, baseReuse *pullBaseReuse) error {
+	for _, layer := range plan.Manifest.DiskLayers {
+		if baseReuse != nil && baseReuse.MatchingChunks[layer.Chunk.Index] {
+			continue
+		}
+		if layer.Chunk.Zero {
+			plan.ZeroDiskChunks++
+			plan.ZeroDiskBytes += layer.Chunk.Size
+			continue
+		}
+		if layer.Descriptor.Size < 0 {
+			return fmt.Errorf("pull disk chunk %d: negative blob size %d", layer.Chunk.Index, layer.Descriptor.Size)
+		}
+		if blobStore.VerifyBlob(layer.Descriptor.Digest, layer.Descriptor.Size) == nil {
+			plan.StoreDiskChunks++
+			plan.StoreDiskBytes += layer.Descriptor.Size
+			continue
+		}
+		plan.FetchDiskChunks++
+		plan.FetchDiskBytes += layer.Descriptor.Size
+	}
+	for _, desc := range plan.Manifest.Blobs {
+		_, ok, err := pullMetadataFileName(desc)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if desc.Digest == "" {
+			return fmt.Errorf("pull metadata blob: missing digest")
+		}
+		if desc.Size < 0 {
+			return fmt.Errorf("pull metadata blob: negative size %d", desc.Size)
+		}
+		if blobStore.VerifyBlob(desc.Digest, desc.Size) == nil {
+			plan.StoreMetadataBlobs++
+			plan.StoreMetadataBytes += desc.Size
+			continue
+		}
+		plan.FetchMetadataBlobs++
+		plan.FetchMetadataBytes += desc.Size
+	}
+	return nil
 }
 
 func findPullBaseDiskInRoots(roots []string, digest string, size int64, diskFormat string, targetDir string) (string, bool, error) {

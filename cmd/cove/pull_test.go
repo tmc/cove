@@ -84,6 +84,80 @@ func TestBuildPullPlanDryRunReportsLocalBaseReuse(t *testing.T) {
 	}
 }
 
+func TestBuildPullPlanDryRunReportsTransferPreflight(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	baseDisk := []byte("aaaaxxxxddddzzzz")
+	targetDisk := []byte("aaaabbbbcccc\x00\x00\x00\x00")
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, baseDisk, 4)
+	baseData, baseDigest := pullTestManifestData(t, baseManifest)
+	blobStore := store.New("")
+	if err := blobStore.StoreManifest(baseDigest, baseData); err != nil {
+		t.Fatalf("StoreManifest(base): %v", err)
+	}
+	writePullBaseVM(t, home, "base", baseDigest, baseDisk)
+
+	manifest, blobs, _ := pullCompressedChunkedTestManifest(t, targetDisk, 4)
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	parsed, err := ociimage.ParseManifest(manifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(target): %v", err)
+	}
+	storeDisk := parsed.DiskLayers[1].Descriptor
+	if err := blobStore.Put(storeDisk.Digest, storeDisk.Size, bytes.NewReader(blobs[storeDisk.Digest])); err != nil {
+		t.Fatalf("Put(store disk): %v", err)
+	}
+	storeMetadata := parsed.Blobs[0]
+	if err := blobStore.Put(storeMetadata.Digest, storeMetadata.Size, bytes.NewReader(blobs[storeMetadata.Digest])); err != nil {
+		t.Fatalf("Put(store metadata): %v", err)
+	}
+	manifestPath := writePullManifest(t, manifest)
+
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
+		As:           "child",
+		DryRun:       true,
+		ManifestPath: manifestPath,
+	})
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if plan.BaseReuseChunks != 1 || plan.BaseReuseBytes != 4 {
+		t.Fatalf("base reuse = (%d, %d), want (1, 4)", plan.BaseReuseChunks, plan.BaseReuseBytes)
+	}
+	if plan.StoreDiskChunks != 1 || plan.StoreDiskBytes != parsed.DiskLayers[1].Descriptor.Size {
+		t.Fatalf("disk store reuse = (%d, %d), want (1, %d)", plan.StoreDiskChunks, plan.StoreDiskBytes, parsed.DiskLayers[1].Descriptor.Size)
+	}
+	if plan.FetchDiskChunks != 1 || plan.FetchDiskBytes != parsed.DiskLayers[2].Descriptor.Size {
+		t.Fatalf("disk fetch = (%d, %d), want (1, %d)", plan.FetchDiskChunks, plan.FetchDiskBytes, parsed.DiskLayers[2].Descriptor.Size)
+	}
+	if plan.ZeroDiskChunks != 1 || plan.ZeroDiskBytes != 4 {
+		t.Fatalf("zero chunks = (%d, %d), want (1, 4)", plan.ZeroDiskChunks, plan.ZeroDiskBytes)
+	}
+	if plan.StoreMetadataBlobs != 1 || plan.StoreMetadataBytes != parsed.Blobs[0].Size {
+		t.Fatalf("metadata store reuse = (%d, %d), want (1, %d)", plan.StoreMetadataBlobs, plan.StoreMetadataBytes, parsed.Blobs[0].Size)
+	}
+	wantFetchMetadataBytes := parsed.Blobs[1].Size + parsed.Blobs[2].Size
+	if plan.FetchMetadataBlobs != 2 || plan.FetchMetadataBytes != wantFetchMetadataBytes {
+		t.Fatalf("metadata fetch = (%d, %d), want (2, %d)", plan.FetchMetadataBlobs, plan.FetchMetadataBytes, wantFetchMetadataBytes)
+	}
+
+	var out strings.Builder
+	printPullDryRun(&out, plan)
+	for _, want := range []string{
+		"disk fetch: 1 chunks",
+		"disk store reuse: 1 chunks",
+		"zero chunks: 1 (4 B)",
+		"metadata fetch: 2 blobs",
+		"metadata store reuse: 1 blobs",
+		"base reuse: 1 chunks",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("dry-run output %q missing %q", out.String(), want)
+		}
+	}
+}
+
 func TestBuildPullPlanDryRunWithoutManifestIsNetworkFree(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{

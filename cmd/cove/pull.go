@@ -47,6 +47,16 @@ type pullPlan struct {
 	BaseReuseDiskFormat string
 	BaseReuseChunks     int
 	BaseReuseBytes      int64
+	FetchDiskChunks     int
+	FetchDiskBytes      int64
+	StoreDiskChunks     int
+	StoreDiskBytes      int64
+	ZeroDiskChunks      int
+	ZeroDiskBytes       int64
+	FetchMetadataBlobs  int
+	FetchMetadataBytes  int64
+	StoreMetadataBlobs  int
+	StoreMetadataBytes  int64
 }
 
 func handlePull(env commandEnv, args []string) error {
@@ -161,7 +171,7 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		ManifestDigest: manifestDigest,
 	}
 	if opts.DryRun {
-		if err := planPullDryRunBaseReuse(plan, opts); err != nil {
+		if err := planPullDryRunReuse(plan, opts); err != nil {
 			return nil, err
 		}
 	}
@@ -550,6 +560,7 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	}
 	fmt.Fprintf(w, "  chunks: %d\n", len(plan.Manifest.Chunks))
 	fmt.Fprintf(w, "  metadata blobs: %d\n", len(plan.Manifest.Blobs))
+	printPullDryRunTransfer(w, plan)
 	printPullBaseReuse(w, plan)
 }
 
@@ -571,6 +582,24 @@ func printPullBaseReuse(w io.Writer, plan *pullPlan) {
 			fmt.Fprintf(w, " from=%s", plan.BaseReusePath)
 		}
 		fmt.Fprintln(w)
+	}
+}
+
+func printPullDryRunTransfer(w io.Writer, plan *pullPlan) {
+	if plan.FetchDiskChunks > 0 {
+		fmt.Fprintf(w, "  disk fetch: %d chunks (%s compressed)\n", plan.FetchDiskChunks, bytefmt.Size(plan.FetchDiskBytes))
+	}
+	if plan.StoreDiskChunks > 0 {
+		fmt.Fprintf(w, "  disk store reuse: %d chunks (%s compressed)\n", plan.StoreDiskChunks, bytefmt.Size(plan.StoreDiskBytes))
+	}
+	if plan.ZeroDiskChunks > 0 {
+		fmt.Fprintf(w, "  zero chunks: %d (%s)\n", plan.ZeroDiskChunks, bytefmt.Size(plan.ZeroDiskBytes))
+	}
+	if plan.FetchMetadataBlobs > 0 {
+		fmt.Fprintf(w, "  metadata fetch: %d blobs (%s)\n", plan.FetchMetadataBlobs, bytefmt.Size(plan.FetchMetadataBytes))
+	}
+	if plan.StoreMetadataBlobs > 0 {
+		fmt.Fprintf(w, "  metadata store reuse: %d blobs (%s)\n", plan.StoreMetadataBlobs, bytefmt.Size(plan.StoreMetadataBytes))
 	}
 }
 
