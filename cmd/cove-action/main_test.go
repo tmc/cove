@@ -39,6 +39,7 @@ func TestRunSuccess(t *testing.T) {
 		"exit-code=0",
 		"log-path=" + filepath.Join(dir, ".vz", "runs"),
 		"metrics-path=" + filepath.Join(dir, ".vz", "runs", "stub-run", "metrics.jsonl"),
+		"artifact-path=" + filepath.Join(dir, ".vz", "runs", "stub-run"),
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("outputs missing %q in:\n%s", want, got)
@@ -60,6 +61,99 @@ func TestRunSuccess(t *testing.T) {
 		if !strings.Contains(log, want) {
 			t.Fatalf("log missing %q in:\n%s", want, log)
 		}
+	}
+}
+
+func TestRunCopiesGuestArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 0)
+	out := filepath.Join(dir, "out")
+	code := run([]string{
+		"-cove-bin", stub,
+		"-image", "ubuntu-ci",
+		"-command", "echo ok",
+		"-artifacts", "/tmp/report.txt\n# keep comments\n/var/log/app.log",
+	}, []string{
+		"HOME=" + dir,
+		"GITHUB_OUTPUT=" + out,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+	}, os.Stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, want 0", code)
+	}
+	runDir := filepath.Join(dir, ".vz", "runs", "stub-run")
+	for _, name := range []string{"guest/tmp/report.txt", "guest/var/log/app.log"} {
+		path := filepath.Join(runDir, filepath.FromSlash(name))
+		if got := readFile(t, path); !strings.Contains(got, "artifact from") {
+			t.Fatalf("%s = %q, want copied artifact", path, got)
+		}
+	}
+	got := readFile(t, out)
+	if !strings.Contains(got, "artifact-path="+runDir) {
+		t.Fatalf("outputs missing artifact path:\n%s", got)
+	}
+	log := readFile(t, filepath.Join(dir, "log"))
+	for _, want := range []string{
+		"cp cove-action-local-1:/tmp/report.txt " + filepath.Join(runDir, "guest", "tmp", "report.txt"),
+		"cp cove-action-local-1:/var/log/app.log " + filepath.Join(runDir, "guest", "var", "log", "app.log"),
+	} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("log missing %q in:\n%s", want, log)
+		}
+	}
+	events := readActionMetricEventsDetailed(t, filepath.Join(runDir, "metrics.jsonl"))
+	var copied int
+	for _, e := range events {
+		if e.EventType != "artifact_copy" {
+			continue
+		}
+		copied++
+		if e.Status != "ok" || e.Extra["guest_path"] == "" || e.Extra["host_path"] == "" || actionAsInt64(t, e.Extra["bytes"]) <= 0 {
+			t.Fatalf("artifact_copy event = %#v", e)
+		}
+	}
+	if copied != 2 {
+		t.Fatalf("artifact_copy events = %d, want 2 in %+v", copied, events)
+	}
+}
+
+func TestRunArtifactCopyFailureFailsAction(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 0)
+	out := filepath.Join(dir, "out")
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "echo ok", "-artifacts", "/tmp/report.txt"}, []string{
+		"HOME=" + dir,
+		"GITHUB_OUTPUT=" + out,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+		"COVE_STUB_CP_FAIL=1",
+	}, os.Stdout, os.Stderr)
+	if code != 1 {
+		t.Fatalf("run returned %d, want 1", code)
+	}
+	got := readFile(t, out)
+	if !strings.Contains(got, "exit-code=0") || !strings.Contains(got, "artifact-path="+filepath.Join(dir, ".vz", "runs", "stub-run")) {
+		t.Fatalf("outputs should preserve guest exit and run dir:\n%s", got)
+	}
+	events := readActionMetricEventsDetailed(t, filepath.Join(dir, ".vz", "runs", "stub-run", "metrics.jsonl"))
+	var found bool
+	for _, e := range events {
+		if e.EventType == "artifact_copy" {
+			found = true
+			if e.Status == "ok" {
+				t.Fatalf("artifact_copy status = ok, want error: %#v", e)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("missing artifact_copy failure in %+v", events)
 	}
 }
 
@@ -282,6 +376,40 @@ func TestParseConfigRequiresCommand(t *testing.T) {
 	}
 }
 
+func TestParseArtifactPaths(t *testing.T) {
+	got, err := parseArtifactPaths("\n# skip\n/tmp/report.txt\n /var/log/app.log \n")
+	if err != nil {
+		t.Fatalf("parseArtifactPaths: %v", err)
+	}
+	want := []string{"/tmp/report.txt", "/var/log/app.log"}
+	if len(got) != len(want) {
+		t.Fatalf("paths = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("paths = %v, want %v", got, want)
+		}
+	}
+	for _, in := range []string{"tmp/report.txt", "/"} {
+		if _, err := parseArtifactPaths(in); err == nil {
+			t.Fatalf("parseArtifactPaths(%q) err = nil, want error", in)
+		}
+	}
+}
+
+func TestArtifactHostPath(t *testing.T) {
+	got, err := artifactHostPath("/runs/r1", "/tmp/report.txt")
+	if err != nil {
+		t.Fatalf("artifactHostPath: %v", err)
+	}
+	if got != filepath.Join("/runs/r1", "guest", "tmp", "report.txt") {
+		t.Fatalf("artifactHostPath = %q", got)
+	}
+	if _, err := artifactHostPath("/runs/r1", "/"); err == nil {
+		t.Fatal("artifactHostPath root err = nil, want error")
+	}
+}
+
 func writeStubCove(t *testing.T, dir string, jobExit int) string {
 	t.Helper()
 	path := filepath.Join(dir, "cove-stub")
@@ -320,6 +448,17 @@ shell)
 		exit 0
 	fi
 	exit ` + strconv.Itoa(jobExit) + `
+	;;
+cp)
+	src="$2"
+	dst="$3"
+	if [ "${COVE_STUB_CP_FAIL:-}" = "1" ]; then
+		echo "copy failed" >&2
+		exit 3
+	fi
+	mkdir -p "$(dirname "$dst")"
+	printf 'artifact from %s\n' "$src" > "$dst"
+	exit 0
 	;;
 ctl)
 	exit 0

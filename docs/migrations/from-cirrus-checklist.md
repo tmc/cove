@@ -61,8 +61,11 @@ mounted into the VM. For a precise host-side registry audit, keep using
 ## Known gaps to plan around
 
 - The private GitHub Action is not a public Marketplace action.
-- The Slice 1 `secrets` input is reserved and fails when non-empty.
-- Guest artifact copy-out is not yet a first-class action input.
+- The private action `secrets` input is available for trusted self-hosted
+  workflows; avoid saving secret-bearing state into whole-VM caches.
+- Guest artifact copy-out uses the private action `artifacts` input. List
+  absolute guest paths and upload `${{ steps.cove.outputs.artifact-path }}` from
+  the host workflow.
 - cove runs on Apple Silicon hosts; it is not a cross-platform hosted CI
   service.
 - Soft reset probes exist for research, but CI jobs should use disposable image

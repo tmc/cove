@@ -85,7 +85,7 @@ outputs:
     description: Host-side metrics JSONL file, when cove produced one.
     value: ${{ steps.cove.outputs.metrics-path }}
   artifact-path:
-    description: Host-side cove run artifact bundle, when cove produced metrics.
+    description: Host-side cove run artifact bundle. Guest artifacts land under guest/ when inputs.artifacts is set.
     value: ${{ steps.metrics.outputs.artifact-path }}
   cache-hit:
     description: true when cache-key restored an existing local cache image.

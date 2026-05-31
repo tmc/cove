@@ -25,6 +25,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   fold `resource_sample` events into resource summaries with
   memory/load/process/host peaks and pressure hints, while raw JSON exports keep
   the event array.
+- `cove-action` now treats guest artifact copy-out as a first-class CI path:
+  `artifacts` / `COVE_ACTION_ARTIFACTS` lists absolute guest paths, copies them
+  into the run bundle under `guest/`, exposes the bundle path, and records
+  `artifact_copy` metrics.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

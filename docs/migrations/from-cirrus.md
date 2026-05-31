@@ -89,8 +89,8 @@ Semantic changes:
 | Container image | Build a cove Linux runner image once, then fork it per job. |
 | Checkout | GitHub Actions checkout runs on the host; copy or mount source explicitly in later slices. For Slice 1, keep the guest command self-contained or fetch source inside the guest. |
 | Environment | Non-secret `KEY=VALUE` lines use the action `env` input. |
-| Secrets | Slice 1 does not mount secret URI values into the guest. Use non-sensitive smoke inputs or wait for the secret-mount slice. |
-| Artifacts | Upload `~/.vz/runs/<run-id>/` from the host. Guest artifact copy-out is not part of Slice 1. |
+| Secrets | Use the action `secrets` input with `KEY=env://VAR`, `KEY=file:///path`, or literal `KEY=value` entries. Cove resolves them on the host, forwards through `cove shell --secret-env`, and redacts matching log bytes. |
+| Artifacts | Use the action `artifacts` input with absolute guest paths, then upload `${{ steps.cove.outputs.artifact-path }}` from the host. Copied guest files land under `guest/` inside the run bundle. |
 | Cache | Use whole-VM `cache-key`; it snapshots a cove image, not individual directories. |
 
 ## macOS task
@@ -130,12 +130,20 @@ jobs:
       - uses: actions/checkout@v4
       - run: cove action prepare-image macos-runner:latest --ttl 24h
       - uses: ./.github/actions/cove-action
+        id: cove
         with:
           image: macos-runner:latest
           env: |
             DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
           script: |
             xcodebuild test -scheme App -destination 'platform=macOS'
+          artifacts: |
+            /tmp/xcresult
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cove-macos-run
+          path: ${{ steps.cove.outputs.artifact-path }}
 ```
 
 Semantic changes:
@@ -145,7 +153,7 @@ Semantic changes:
 | `macos_instance.image` | Local cove image ref, usually built from a maintained parent VM. |
 | `install_script` | Bake slow tool setup into the parent image before `cove image build`. |
 | `script` | Action `script` input, executed by the guest agent in the disposable fork. |
-| Artifacts | Preserve result bundles by copying them to the run artifact area in a later artifact slice, or inspect the kept fork with `keep: true` while migrating. |
+| Artifacts | Action `artifacts` input copies absolute guest paths into the host run bundle before teardown. |
 | Cache | Whole-VM cache images can retain DerivedData, package caches, and tool installs. Avoid writing credentials to disk before saving caches. |
 
 ## persistent_worker
@@ -257,7 +265,8 @@ Keep the first migration private and boring:
 - keep the Cirrus task and cove job running on the same commit until outputs
   match;
 - upload `~/.vz/runs/<run-id>/` as a workflow artifact for every failed run;
-- do not pass GitHub secrets through the Slice 1 action `secrets` input;
+- pass GitHub secrets through the action `secrets` input only from trusted
+  self-hosted workflows;
 - do not publish a Marketplace action while cove is still private;
 - do not treat soft reset as the CI isolation boundary.
 

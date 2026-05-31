@@ -36,13 +36,14 @@ The private action accepts these inputs:
 | `args` | no |  | Alias for `command`. |
 | `script` | no |  | Multiline shell script to execute in the guest. Overrides `command` and `args`. |
 | `env` | no |  | Multiline `KEY=VALUE` entries injected into the guest command environment. |
-| `secrets` | no |  | Reserved for cove secret URI mounting in a later slice. Non-empty input fails. |
+| `secrets` | no |  | Multiline `KEY=value`, `KEY=env://VAR`, or `KEY=file:///path` entries resolved on the host and injected with log redaction. |
 | `timeout` | no | `30m` | Maximum runtime for provisioning and commands. |
 | `cove-bin` | no | `cove` | Host-side cove binary path. |
 | `vm-name` | no | generated | Ephemeral fork name. |
 | `keep` | no | `false` | Keep the ephemeral fork after the run for debugging. |
 | `cache-key` | no |  | Whole-VM cache key. Empty disables cache restore and save. |
 | `cache-paths` | no |  | Multiline guest paths expected to benefit from the whole-VM cache. Informational only; cove snapshots the whole disk. |
+| `artifacts` | no |  | Multiline absolute guest paths copied into the run bundle under `guest/` after the command finishes. |
 
 Outputs:
 
@@ -185,9 +186,9 @@ outside active CI windows.
 
 ## Secrets
 
-Slice 1 does not mount secret URI values into the guest. Use GitHub Actions
-environment injection for non-sensitive smoke inputs, or wait for the later
-secret-mount slice before passing credentials to guest jobs.
+The `secrets` input forwards entries to `cove shell --secret-env`, so values are
+resolved on the trusted host and redacted from cove run logs. Each non-comment
+line is `KEY=value`, `KEY=env://VAR`, or `KEY=file:///path`.
 
 Example:
 
@@ -195,16 +196,16 @@ Example:
 with:
   image: ubuntu-runner
   script: ./ci/run-private-tests.sh
-  env: |
-    CI=1
+  secrets: |
+    GH_TOKEN=env://GH_TOKEN
 ```
 
 Limitations:
 
-- GitHub-injected secrets should not be passed through this Slice 1 wrapper.
 - The host runner and operator remain trusted.
-- Non-empty `secrets` input aborts the action instead of pretending to mount
-  credentials.
+- Secrets are process environment variables inside the guest command. They are
+  not an isolated tmpfs secret mount.
+- Avoid writing secrets to disk before saving whole-VM caches.
 
 ## Security Limits
 
@@ -239,18 +240,19 @@ Known limits:
 At the end of each run the wrapper:
 
 1. records the guest command exit code
-2. writes the action outputs
-3. shuts down the fork
-4. removes the ephemeral fork state
+2. copies any declared guest artifacts into the cove run bundle
+3. writes the action outputs
+4. shuts down the fork
+5. removes the ephemeral fork state
 
-Artifact collection is not part of Slice 1. The wrapper reports the host-side
-`~/.vz/runs` root so operators can inspect cove's per-run logs. If teardown
-fails, the action reports the orphaned VM name so the operator can inspect or
-remove it with cove tooling.
+Declare guest artifact paths with the `artifacts` input. Paths must be absolute
+inside the guest. Cove copies them into the host-side run bundle under
+`guest/<path-without-leading-slash>/` before teardown, then exposes the bundle
+directory as `steps.<id>.outputs.artifact-path`.
 
-Run logs are written to cove's host-side run directory. The workflow is
-responsible for uploading them with `actions/upload-artifact` if they should be
-retained by GitHub.
+Run logs and copied guest artifacts are written to cove's host-side run
+directory. The workflow is responsible for uploading that directory with
+`actions/upload-artifact` if it should be retained by GitHub.
 
 Each `cove-action` invocation also writes cove run metrics to
 `~/.vz/runs/<run-id>/metrics.jsonl`. The stream uses the schema documented in
@@ -259,7 +261,9 @@ normal cove run events, the action wrapper records `action_start` and
 `action_complete` events around the guest job; `action_complete.extra.exit_code`
 records the guest exit code. The wrapper also records `command_complete` after
 the guest command returns so operators can separate wrapper time from VM boot,
-readiness, command execution, and teardown.
+readiness, command execution, and teardown. Each copied guest artifact records an
+`artifact_copy` event with `guest_path`, `host_path`, and copied byte count when
+the host can stat the copied data.
 
 Example:
 
@@ -269,18 +273,15 @@ Example:
         with:
           image: ubuntu-runner
           script: ./ci/test.sh
+          artifacts: |
+            /tmp/junit.xml
+            /tmp/build/report.html
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cove-run-logs
-          path: ${{ steps.cove.outputs.log-path }}
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: cove-run-metrics
-          path: ~/.vz/runs/**/metrics.jsonl
+          name: cove-run
+          path: ${{ steps.cove.outputs.artifact-path }}
 ```
 
 ## Publication Status

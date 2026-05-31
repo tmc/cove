@@ -13,13 +13,15 @@ cove's *currently shipped* surface against the documented Cirrus surface a
 typical `.cirrus.yml` user depends on. Strategic positioning lives in
 [competitive-2026-05.md](competitive-2026-05.md); this is operator-facing.
 
-**T-22 days (2026-05-10).** The pure-engineering Cirrus secrets blocker is
-closed: `cove shell --secret-env` plus run-log redaction shipped at `29ff983`
-and `13ce8c0`, and the private cove-action `secrets:` input now forwards to
-that path at `ab7f159`. The remaining blockers are either deferred product /
-privacy gates (public Marketplace action, public image catalog, public
-signing/provenance channel) or operational polish with workable substitutes
-(guest artifact copy-out, GitHub annotations, cache server semantics).
+**T-1 day (2026-05-31).** The pure-engineering Cirrus secrets and guest artifact
+copy-out blockers are closed: `cove shell --secret-env` plus run-log redaction
+shipped at `29ff983` and `13ce8c0`, the private cove-action `secrets:` input
+forwards to that path at `ab7f159`, and the private cove-action `artifacts:`
+input copies declared absolute guest paths into each run bundle under `guest/`.
+The remaining blockers are either deferred product / privacy gates (public
+Marketplace action, public image catalog, public signing/provenance channel) or
+operational polish with workable substitutes (GitHub annotations, cache server
+semantics).
 
 ## Method
 
@@ -51,7 +53,7 @@ this doc is the readiness gap report behind it.
 | Cirrus surface | cove today | What's missing | Effort |
 |---|---|---|---|
 | Whole-VM cache (`cache-key` / `fingerprint_script`) | `cove-action` accepts `cache-key` + `cache-paths`; local cache image restore/save | No content-addressed fingerprint; key must be host-computed (e.g. `hashFiles()`) | S |
-| Artifacts upload | `~/.vz/runs/<run-id>/` exists; `cove runs show/export` reports and packages run artifacts, including total artifact bytes (`c93136c`, `c9b2392`) | No first-class **guest → host** artifact copy-out; user must `cove ctl cp` or include in script | M |
+| Artifacts upload | `~/.vz/runs/<run-id>/` exists; `cove runs show/export` reports and packages run artifacts, including total artifact bytes (`c93136c`, `c9b2392`), and cove-action `artifacts:` copies declared absolute guest paths under `guest/` before teardown. | Host upload still belongs to the scheduler, for example `actions/upload-artifact` over `steps.cove.outputs.artifact-path`. | S |
 | Matrix tasks | GitHub Actions `strategy.matrix` selects per-row image | No native cove matrix expander; relies entirely on the scheduler | S (docs only) |
 | Cron / scheduled tasks | GitHub Actions `schedule` triggers the workflow | cove has no built-in cron; `coved` daemon (`394b812` `42714c0`) schedules image GC, not user tasks | S (docs only) |
 | Network audit | per-mode policy + `cove network audit <run-id>` (`7ec82c1`) and `cove network logs <vm> -f` (`6e6fa18`) | Packet capture remains available only on `filehandle` mode | M |
@@ -78,7 +80,7 @@ this doc is the readiness gap report behind it.
 2. Public image catalog (privacy gate)
 3. Cosign-signed images / SLSA provenance public channel (public-channel decision)
 
-Hosted queue and multi-OS hosted CI remain out of scope by design, not blockers. Items 1 and 2 are real shipping cost but both gated by the privacy gate; item 3 is coupled to the public registry/signing decision. Cirrus-style secrets → guest env has shipped; GitHub Actions annotations from-guest and guest artifact copy-out remain **M** UX polish with documented workarounds.
+Hosted queue and multi-OS hosted CI remain out of scope by design, not blockers. Items 1 and 2 are real shipping cost but both gated by the privacy gate; item 3 is coupled to the public registry/signing decision. Cirrus-style secrets → guest env and guest artifact copy-out have shipped; GitHub Actions annotations from-guest remain **M** UX polish with documented workarounds.
 
 ## Recommended migration steps
 
@@ -92,7 +94,7 @@ For each `.cirrus.yml` task class, in this order:
 6. **Translate caches.** Move `fingerprint_script` to GitHub `hashFiles()`; pass via `cache-key:`. Sensitive caches stay on the trusted host.
 7. **Translate secrets.** Decrypt Cirrus `ENCRYPTED[…]` values on the trusted host, then pass them via `cove-action` `secrets:` entries such as `TOKEN=env://TOKEN`; cove forwards them through `cove shell --secret-env` and redacts matching run-log bytes.
 8. **A/B run.** Same commit, both workflows, compare exit code + test summary + `metrics.jsonl` for one soak period.
-9. **Capture artifacts.** Until guest copy-out lands, end each script with explicit `cove ctl cp` or upload `~/.vz/runs/<run-id>/` as a workflow artifact.
+9. **Capture artifacts.** Map Cirrus artifact paths to cove-action `artifacts:` absolute guest paths, then upload `${{ steps.cove.outputs.artifact-path }}` with the scheduler's artifact step.
 10. **Cut over and keep `.cirrus.yml` until 2026-06-01.** Cirrus deletes itself on that date; until then it is your rollback.
 
 ## Bottom line
@@ -100,7 +102,7 @@ For each `.cirrus.yml` task class, in this order:
 Cove's runner-shaped surface is **functionally complete for ~80% of `.cirrus.yml` task shapes** as of `d0877b8` (origin/main, 2026-05-08). The gaps that block migration are concentrated in:
 
 - **Privacy gate** — public action / public image catalog can't ship while the cove repo is private.
-- **Annotations + guest artifact copy-out** — UX polish, sized M; workarounds work today.
+- **Annotations** — UX polish, sized M; workarounds work today. Guest artifact copy-out has moved into cove-action `artifacts:`.
 - **Public signing/provenance channel** — local provenance exists, but public cosign/SLSA distribution remains deferred with the registry decision.
 
 Operators planning a 2026-06-01 cutover should start at step 1 today.

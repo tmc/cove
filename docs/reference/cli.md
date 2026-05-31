@@ -834,6 +834,7 @@ are read from environment variables (`COVE_ACTION_*`) or the matching flags.
 | `-cache-scope` | `COVE_ACTION_CACHE_SCOPE` | | Namespace prefix joined to `-cache-key` as `<scope>:<key>` |
 | `-env` | `COVE_ACTION_ENV` | | Newline-separated `KEY=VALUE` guest env |
 | `-secrets` | `COVE_ACTION_SECRETS` | | Newline-separated `KEY=value\|env://VAR\|file:///path` secrets |
+| `-artifacts` | `COVE_ACTION_ARTIFACTS` | | Newline-separated absolute guest paths copied into the run bundle under `guest/` |
 | `-vm-name` | `COVE_ACTION_VM_NAME` | derived | Ephemeral VM fork name |
 | `-keep` | `COVE_ACTION_KEEP` | false | Leave the ephemeral fork in place |
 | `-timeout` | `COVE_ACTION_TIMEOUT` | `30m` | Overall timeout |

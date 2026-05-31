@@ -91,8 +91,10 @@ func run(args, environ []string, stdout, stderr io.Writer) int {
 	res, err := runJob(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "cove-action: %v\n", err)
-		if res.Code != 0 {
+		if res.Code != 0 || res.MetricsPath != "" || res.ArtifactDir != "" || res.CacheImage != "" {
 			_ = writeOutputs(cfg, res)
+		}
+		if res.Code != 0 {
 			return res.Code
 		}
 		return 1
@@ -252,6 +254,7 @@ func runJob(cfg config) (res result, err error) {
 	}()
 
 	res.MetricsPath = waitForMetricsPath(ctx, cfg, actionStarted)
+	res.ArtifactDir = artifactDirForMetrics(res.MetricsPath)
 	emitActionMetric(res.MetricsPath, "action_start", actionStarted, "ok", nil)
 	if cacheEvictBytes > 0 {
 		extra := map[string]any{
@@ -286,10 +289,9 @@ func runJob(cfg config) (res result, err error) {
 		return res, err
 	}
 	if len(cfg.Artifacts) > 0 {
-		if err := copyArtifacts(ctx, cfg, res.MetricsPath); err != nil {
+		if err := copyArtifacts(ctx, cfg, res.MetricsPath, actionStarted); err != nil {
 			return res, err
 		}
-		res.ArtifactDir = filepath.Dir(res.MetricsPath)
 	}
 	if keepForCache && res.Code == 0 {
 		cleanup(cfg, runCmd, runDone)
@@ -487,10 +489,11 @@ func parseArtifactPaths(s string) ([]string, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if !filepath.IsAbs(filepath.Clean(line)) {
-			return nil, fmt.Errorf("artifact path %q must be absolute", line)
+		clean, err := cleanArtifactPath(line)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, filepath.Clean(line))
+		out = append(out, clean)
 	}
 	return out, nil
 }
@@ -609,7 +612,14 @@ func writeOutputs(cfg config, res result) error {
 	return err
 }
 
-func copyArtifacts(ctx context.Context, cfg config, metricsPath string) error {
+func artifactDirForMetrics(metricsPath string) string {
+	if metricsPath == "" {
+		return ""
+	}
+	return filepath.Dir(metricsPath)
+}
+
+func copyArtifacts(ctx context.Context, cfg config, metricsPath string, started time.Time) error {
 	if metricsPath == "" {
 		return errors.New("copy artifacts: metrics path not found")
 	}
@@ -628,22 +638,62 @@ func copyArtifacts(ctx context.Context, cfg config, metricsPath string) error {
 		cmd.Stderr = cfg.Stderr
 		cmd.Env = cfg.Environ
 		if err := cmd.Run(); err != nil {
+			emitActionMetric(metricsPath, "artifact_copy", started, err.Error(), map[string]any{
+				"guest_path": guestPath,
+				"host_path":  hostPath,
+			})
 			return fmt.Errorf("copy artifact %s: %w", guestPath, err)
 		}
+		extra := map[string]any{
+			"guest_path": guestPath,
+			"host_path":  hostPath,
+		}
+		if bytes, ok := artifactBytes(hostPath); ok {
+			extra["bytes"] = bytes
+		}
+		emitActionMetric(metricsPath, "artifact_copy", started, "ok", extra)
 	}
 	return nil
 }
 
 func artifactHostPath(runDir, guestPath string) (string, error) {
+	clean, err := cleanArtifactPath(guestPath)
+	if err != nil {
+		return "", err
+	}
+	rel := strings.TrimPrefix(clean, string(filepath.Separator))
+	return filepath.Join(runDir, "guest", rel), nil
+}
+
+func cleanArtifactPath(guestPath string) (string, error) {
 	clean := filepath.Clean(strings.TrimSpace(guestPath))
 	if !filepath.IsAbs(clean) {
 		return "", fmt.Errorf("artifact path %q must be absolute", guestPath)
 	}
 	rel := strings.TrimPrefix(clean, string(filepath.Separator))
 	if rel == "" || rel == "." {
-		return "", fmt.Errorf("artifact path %q does not name a file", guestPath)
+		return "", fmt.Errorf("artifact path %q does not name a file or directory", guestPath)
 	}
-	return filepath.Join(runDir, "guest", rel), nil
+	return clean, nil
+}
+
+func artifactBytes(path string) (int64, bool) {
+	var total int64
+	err := filepath.WalkDir(path, func(_ string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	return total, err == nil
 }
 
 func forwardGitHubAnnotations(cfg config, metricsPath string) {

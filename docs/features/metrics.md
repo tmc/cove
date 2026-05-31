@@ -85,6 +85,17 @@ entrypoints.
 `extra` includes `workload`, `tool`, `source`, `methodology`, and `reason` when
 the cell is `not_measured`.
 
+`action_start`, `command_complete`, `action_complete`
+: Emitted by `cmd/cove-action` around private GitHub Actions executor runs.
+`command_complete.extra.exit_code` records the guest command exit code, and
+`action_complete.extra.exit_code` records the guest command exit code when one
+was observed.
+
+`artifact_copy`
+: Emitted by `cmd/cove-action` for each guest artifact declared through the
+`artifacts` input. `extra` includes `guest_path`, `host_path`, and `bytes` when
+the host can stat the copied file or directory.
+
 ## OpenTelemetry
 
 Local JSONL is always available. OpenTelemetry export is optional and enabled by
